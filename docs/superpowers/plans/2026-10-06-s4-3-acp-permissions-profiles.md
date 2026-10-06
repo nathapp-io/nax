@@ -38,7 +38,7 @@
 - `src/` imports its own modules as `#src/client/<module>`.
 - No `throw new Error(` in `src/` (`check-nax-error`, baseline 0).
 - Only options the agent offered are chosen: `allow` → its `allow_once`, `deny` → its `reject_once`. `allow_always` and `reject_always` are never chosen (§6.4).
-- Agent-supplied `kind`, `title`, `locations` and `rawInput` are display data only and never decide (§6.4 "untrusted fields").
+- The agent-supplied `toolCall` fields (`toolCall.kind`, `title`, `locations`, `rawInput`, `toolCallId`) are display data only and never decide (§6.4 "untrusted fields"). Only the permission option kinds (`allow_once`, `reject_once`) select the answer.
 - Expiry: deadline → `reject_once` (`decidedBy: "timeout"`); turn abort or process death → `cancelled` (§6.4).
 - Out-of-turn requests → `reject_once`, else `cancelled`; logged; no event (§6.3).
 - Client capabilities at `initialize` stay `{}`: no fs, no terminal (R11), and no elicitation until S4-5.
@@ -63,10 +63,10 @@
    - the agent ends the prompt without waiting for the answer
    - the agent process dies
 
-   In each case the answer is `cancelled`, `approval_resolved` precedes `turn_end`, and neither `send()` nor `close()` hangs. Pinned in Task 3 (router release waits for pending decisions) and Task 4 (all three cases end to end).
-2. **Secrets or control characters in agent text reaching an approval event.** Agent text here means the title, the `rawInput.command` of an execute call, or a location path. Secret-named env values must appear as `[REDACTED]` and pattern secrets as `[REDACTED:<kind>]` (maskForPrompt). Control characters must be stripped and the text capped. A secret that cannot be masked safely makes the request unshowable, and under `ask` it is denied without asking. Pinned in Tasks 1, 2 and 4.
+   In each case the answer is `cancelled`, `approval_resolved` precedes `turn_end`, and neither `send()` nor `close()` hangs. A request that arrives after the turn was cancelled, while the agent still has `cancelGraceMs` to stop, is answered `cancelled` even under `full`: a cancelled turn must not start new tools. Pinned in Task 2 (aborted signal), Task 3 (router release waits for pending decisions; turn signal reaches the decision) and Task 4 (all cases end to end).
+2. **Hostile agent text reaching an approval event or stalling the process.** Agent text here means the title, the `rawInput.command` of an execute call, a location path or the `toolCallId`. Secret-named env values must appear as `[REDACTED]` and pattern secrets as `[REDACTED:<kind>]`. Control and invisible format characters (bidi overrides, zero-width) must be stripped, the one-line fields must stay one line, and the text must be capped. A `toolCallId` holding a secret is dropped. `maskForPrompt` is quadratic, so oversized raw text is withheld without being masked: one huge title must not freeze the event loop. A secret that cannot be masked safely makes the request unshowable, and under `ask` it is denied without asking. Pinned in Tasks 1, 2 and 4.
 3. **Persistent options are never selected.** An agent that offers only `allow_always` or `reject_always`, or lists them first, must never get either back. Pinned in Task 2.
-4. **Out-of-turn or foreign-session permission requests.** A request after the turn ended, or one naming another agent session, must be rejected locally, must not reach the decider, and must raise no event. Pinned in Task 3 (router) and Task 4 (foreign session end to end).
+4. **Out-of-turn, foreign-session or flooding permission requests.** A request after the turn ended, one naming another agent session, or one beyond `MAX_PENDING_DECISIONS` concurrent decisions must be rejected locally, must not reach the decider, and must raise no event. The log line is written once per reason per session, and a throwing host logger never changes the answer. Pinned in Task 3 (router) and Task 4 (foreign session end to end).
 5. **Plan mode must hold under `none` and `read`.** Claude asks permission to leave plan mode (ExitPlanMode, kind `switch_mode`), and that request must be rejected. Malformed input must also yield a defined answer: `options: null`, `toolCall: null`, a non-string `optionId`, or an unknown `kind`. Pinned in Tasks 1, 2 and 4.
 
 ## Decisions taken in this plan (for review)
@@ -77,29 +77,45 @@
   - `command` is set only for kind `execute` whose `rawInput.command` is a non-empty string.
   - `callId` is the `toolCallId` when it is a non-empty string of at most 512 characters after cleaning. This is the same id S4-5 will use for `tool_call` events.
 
-  Every string is control-stripped and scrubbed of the session's secret values, then masked with `maskForPrompt` (as nax-agent's own ask link does), then capped. The caps are `summary` 1024 bytes and `command` `TOOL_CALL_INPUT_BYTES` (8192).
+  The pipeline for `summary` and `command`:
+  1. raw text over a size limit is withheld (unshowable) without being masked: 8 KiB for `summary`, 32 KiB for `command`. `maskForPrompt` is quadratic: 8 KiB of `sk-` repeats takes 4 ms, 32 KiB 56 ms, 256 KiB 3.5 s. Truncating first would show a cut secret prefix, so oversized text is withheld instead.
+  2. control characters (`\p{Cc}`) and invisible format characters (`\p{Cf}`: bidi overrides, zero-width) are stripped; `summary` also collapses newlines and tabs to one space, `command` keeps them.
+  3. the session's secret values are scrubbed, then `maskForPrompt` masks pattern secrets (as nax-agent's own ask link does), then `redactSecrets` runs (as `errors.ts` does).
+  4. capped: `summary` 1024 bytes, `command` `TOOL_CALL_INPUT_BYTES` (8192).
+
+  `callId` goes through steps 2 and 3 with all whitespace removed, and is dropped when any step would change it. An id with a secret in it is not shown masked: it would no longer match the agent's id.
 - **D3-b. Unshowable requests fail closed.** When `maskForPrompt` refuses (a secret spans shell syntax), the request is unshowable.
-  - Under `ask` it is denied without asking: `recordAutoDecision(..., "deny")` with the reason "the request could not be shown safely". The port can only record `decidedBy: "profile"`, not `"unshowable"`; that is accepted.
+  - Under `ask` it is denied without asking: `recordAutoDecision(..., "deny")` with the reason "the request could not be shown safely". `ApprovalDecidedBy` has `"unshowable"`, but `recordAutoDecision` always records `"profile"`. That is accepted rather than widening the port in S4-3.
+  - `maskForPrompt` also refuses some legitimate commands, for example `FOO_TOKEN=x; cmd`. Those are denied under `ask` too; the README says so.
   - Under the other profiles the auto-decision proceeds with a withheld summary, `"<kind> tool call (details withheld: they could not be shown safely)"`, and no command.
-- **D3-c. "During a turn" means the router has a binding and the request names the bound agent session.** Anything else is rejected locally (`reject_once`, else `cancelled`). It is logged with `getLogger().warn("acp", ...)` and `{ reason: "no-turn" | "foreign-session" }` (no agent text in the log) and raises no event.
-- **D3-d. Pending decisions settle on any of three signals:**
-  - the facade's turn signal (inside the ask port: cancel, turn timeout, close)
-  - the router binding's scope, aborted when `sendTurn` releases it
+- **D3-c. "During a turn" means the router has a binding and the request names the bound agent session.**
+  - Anything else is rejected locally (`reject_once`, else `cancelled`) and raises no event.
+  - So is a request beyond `MAX_PENDING_DECISIONS` (16) concurrent decisions in one turn: a flooding agent cannot grow the pending set without bound.
+  - Each rejection reason (`"no-turn"`, `"foreign-session"`, `"too-many"`) is logged once per session with `getLogger().warn("acp", ...)` and `{ reason }`. There is no agent text in the log. A throw from the host's logger is contained.
+- **D3-d. One signal per turn binding decides when a decision is moot.** `router.attach(agentSessionId, collector, turnSignal)` combines, once per turn:
+  - the binding's scope, aborted when `sendTurn` releases it
+  - the turn signal (cancel, turn timeout, close)
   - the backend's process-gone signal, aborted when the agent process exits
 
-  `sendTurn` awaits the release, which waits for every pending decision. So `approval_resolved` is emitted before the adapter returns and before `turn_end`.
+  `sendTurn` passes `AbortSignal.any([turnSignal, gone.signal])` as `turnSignal`, and the router adds its scope. That is two composite signals per turn and none per request. A decision whose signal is already aborted answers `cancelled` with no event, under every profile. That closes the cancel grace window: after `cancel()` the agent has `cancelGraceMs` to stop, and a request it sends then is never allowed. The ask port also aborts on the same signal. `sendTurn` awaits the release, which waits for every pending decision, so `approval_resolved` is emitted before the adapter returns and before `turn_end`.
 - **D3-e. Order of the checks:**
-  1. `none`/`read` → deny. This holds even when no `allow_once` was offered.
-  2. no `allow_once` offered → deny, with the reason "agent offered no allow-once option".
-  3. `full` → allow.
-  4. under `ask`, an unshowable request → deny (D3-b).
-  5. otherwise ask the caller.
+  1. the signal is already aborted → `cancelled`, no event (D3-d).
+  2. `none`/`read` → deny. This holds even when no `allow_once` was offered.
+  3. no `allow_once` offered → deny, with the reason "agent offered no allow-once option".
+  4. `full` → allow.
+  5. under `ask`, an unshowable request → deny (D3-b).
+  6. otherwise ask the caller.
 
-  The reason strings are fixed constants, exported for tests.
+  The profile check is an exhaustive `switch` whose `default` denies, so a profile added later fails closed. The reason strings are fixed constants, exported for tests.
 - **D3-f. Any throw from the ask port answers `cancelled`.** This covers the port's `no-turn`, raised when the turn ended between routing and asking, and any failure in the decider. Fail closed.
 - **D3-g. `rejectLocally` moves from `inbound.ts` to `permissions.ts`, next to `offeredOptions`.** `createInboundRouter` takes a required `PermissionDecider`; there is no default, so a forgotten wiring cannot silently reject everything.
-- **D3-h. The fake agent's `permission` step is extended.** It can override the tool call, address another session, or be sent `detached` (without waiting for the answer). Each answer is also recorded as `permission-answer` with its `toolCallId`. A refused request is recorded as `permission-error` instead of failing the prompt. The in-memory launcher gains `crash()`.
+- **D3-h. The fake agent's `permission` step is extended.** It can override the tool call, address another session, or be sent `detached` (without waiting for the answer). Each answer is also recorded as `permission-answer` with its `toolCallId`. A refused request is recorded as `permission-error` instead of failing the prompt. Two steps are added:
+  - `settled` waits for every detached answer of the prompt
+  - `awaitCancel` waits for `session/cancel` and then carries on with the next step (`waitForCancel` stops the turn)
+
+  The in-memory launcher gains `crash()`.
 - **D3-i. nax-agent exports `getLogger` on `.`.** Spec §6.3 says an out-of-turn permission request is logged, but nax-agent-acp may import only the public entry, which has `setAgentLogger` and the `AgentLogger` type but no getter. `getLogger()` returns the host's logger or a silent no-op and never throws. This is the same kind of 0.3.0 contract addition as S4-2's `NaxError` (D-a): unreleased, one API-snapshot line, no change under `native/`, `tools/`, `permissions/`, `session/` or `internal/`, so no billed smoke. Spec §5.6 is amended in Task 0.
+- **D3-j. An answer to a request on a closed connection needs no handling.** The SDK awaits the responder inside the handler, catches the failure and returns silently when the connection was aborted (`acp.js` `registerAppRequest`, `jsonrpc.js` `processIncomingMessage`). A write failure on a live connection is logged by the SDK and the connection stays up. Neither path produces an unhandled rejection, so `connection.ts` does not change. (Checked by the final review against SDK 1.7.0.)
 
 ---
 
@@ -109,24 +125,24 @@
 
 | Path | Responsibility |
 |---|---|
-| `src/client/text.ts` | `isRecord`, `stripControl`, `scrubSecrets`, `capBytes` |
+| `src/client/text.ts` | `isRecord`, `stripControl`, `stripInvisible`, `scrubSecrets`, `capBytes` |
 | `src/client/tool-display.ts` | `describeToolCall(toolCall, secrets): ToolCallDisplay` |
 | `src/client/permissions.ts` | `offeredOptions`, `rejectWith`, `rejectLocally`, `decidePermission`, reason constants |
 | `test/unit/client/text.test.ts` | text helpers |
 | `test/unit/client/tool-display.test.ts` | display, hygiene, unshowable |
 | `test/unit/client/permissions.test.ts` | the §6.4 table against a stub ask port |
 | `test/unit/client/backend-permissions.test.ts` | all four profiles through the facade, in process |
-| `test/helpers/session-events.ts` | `driveTurn`, `drain`, `endOf`, `indexOfType` for facade-level tests |
+| `test/helpers/session-events.ts` | `driveTurn`, `endOf`, `indexOfType` for facade-level tests |
 
 **Modify:**
 
 | Path | Change |
 |---|---|
 | `src/client/errors.ts` | `agentTextExcerpt` uses `text.ts`; local `capBytes` and `MIN_SECRET_LENGTH` removed |
-| `src/client/inbound.ts` | decider routing, out-of-turn rejection with a log, release waits for pending decisions |
-| `src/client/backend.ts` | profile refusal removed; decider and process-gone signal wired; `sendTurn` awaits the release |
+| `src/client/inbound.ts` | decider routing, out-of-turn and over-cap rejection with a log, release waits for pending decisions |
+| `src/client/backend.ts` | Task 3: interim reject-all decider on the new router API, `sendTurn` awaits the release. Task 4: profile refusal removed; decider and process-gone signal wired |
 | `src/client/index.ts` | header comment (status) |
-| `test/fixtures/fake-agent/script.ts`, `agent.ts` | `PermissionStep` (D3-h) |
+| `test/fixtures/fake-agent/script.ts`, `agent.ts` | `PermissionStep`, `settled`, `awaitCancel` (D3-h) |
 | `test/helpers/in-memory-launch.ts` | `crash()` |
 | `test/unit/client/inbound.test.ts` | router tests for the new contract |
 | `test/unit/client/open.test.ts`, `connection.test.ts` | `rejectLocally` import and the router's decider argument |
@@ -232,15 +248,16 @@ git commit -m "feat(nax-agent): export getLogger on the public entry for session
 - Test: `packages/nax-agent-acp/test/unit/client/tool-display.test.ts`
 
 **Interfaces:**
-- Consumes: `maskForPrompt(text): { ok: true; masked: string; count: number } | { ok: false; reason: string }`, `redactSecrets`, `TOOL_CALL_INPUT_BYTES` (8192) from `@nathapp/nax-agent`.
+- Consumes: `maskForPrompt(text): { ok: true; masked: string; count: number } | { ok: false; reason: string }`, `redactSecrets<T>(input: T): T`, `TOOL_CALL_INPUT_BYTES` (8192) from `@nathapp/nax-agent`.
 - Produces:
   - `text.ts`:
     - `isRecord(value: unknown): value is Readonly<Record<string, unknown>>`
     - `stripControl(text: string): string`
+    - `stripInvisible(text: string): string`
     - `scrubSecrets(text: string, secrets: readonly string[]): string`
     - `capBytes(text: string, maxBytes: number): string`
   - `tool-display.ts`:
-    - `SUMMARY_MAX_BYTES = 1024`
+    - `SUMMARY_MAX_BYTES = 1024`, `SUMMARY_RAW_MAX_BYTES = 8192`, `COMMAND_RAW_MAX_BYTES = 32768`
     - `interface ToolCallDisplay { callId?: string; tool: string; summary: string; command?: string; showable: boolean }`
     - `describeToolCall(toolCall: unknown, secrets: readonly string[]): ToolCallDisplay`
 
@@ -252,11 +269,15 @@ All work runs from `packages/nax-agent-acp` unless a step says otherwise.
 
 ```ts
 import { describe, expect, test } from "bun:test";
-import { capBytes, isRecord, scrubSecrets, stripControl } from "#src/client/text";
+import { capBytes, isRecord, scrubSecrets, stripControl, stripInvisible } from "#src/client/text";
 
 describe("text hygiene (spec §6.4 untrusted fields, §7)", () => {
   test("stripControl keeps newline and tab, drops other control characters", () => {
     expect(stripControl("a\u0000b\u001b[31mc\nd\te\u007f")).toBe("ab[31mc\nd\te");
+  });
+
+  test("stripInvisible drops format characters: bidi overrides and zero-width", () => {
+    expect(stripInvisible("a\u200bb\u202ec\u2066d\ufeffe")).toBe("abcde");
   });
 
   test("scrubSecrets replaces values of 8+ characters only", () => {
@@ -304,6 +325,11 @@ export function stripControl(text: string): string {
   return text.replace(/\p{Cc}/gu, (c) => (c === "\n" || c === "\t" ? c : ""));
 }
 
+/** Invisible format characters removed (bidi overrides, zero-width): they can hide text from a person. */
+export function stripInvisible(text: string): string {
+  return text.replace(/\p{Cf}/gu, "");
+}
+
 /** Each known secret value of 8 or more characters replaced by [REDACTED]. */
 export function scrubSecrets(text: string, secrets: readonly string[]): string {
   return secrets
@@ -345,7 +371,12 @@ Expected: PASS. `errors.test.ts` is unchanged and still green, which proves the 
 ```ts
 import { describe, expect, test } from "bun:test";
 import { TOOL_CALL_INPUT_BYTES } from "@nathapp/nax-agent";
-import { describeToolCall, SUMMARY_MAX_BYTES } from "#src/client/tool-display";
+import {
+  COMMAND_RAW_MAX_BYTES,
+  describeToolCall,
+  SUMMARY_MAX_BYTES,
+  SUMMARY_RAW_MAX_BYTES,
+} from "#src/client/tool-display";
 
 const SECRET = "s3cr3t-token-value-0123";
 const GH_TOKEN = `ghp_${"a".repeat(36)}`;
@@ -397,7 +428,49 @@ describe("describeToolCall (spec §6.4 untrusted fields, D3-a)", () => {
   test("an unusable call id is dropped", () => {
     expect(describeToolCall({ toolCallId: "" }, []).callId).toBe(undefined);
     expect(describeToolCall({ toolCallId: "x".repeat(513) }, []).callId).toBe(undefined);
-    expect(describeToolCall({ toolCallId: "a\u0000b" }, []).callId).toBe("ab");
+    expect(describeToolCall({ toolCallId: "a\u0000b\u200b c" }, []).callId).toBe("abc");
+  });
+
+  test("a call id holding a secret is dropped, not shown masked", () => {
+    expect(describeToolCall({ toolCallId: GH_TOKEN }, []).callId).toBe(undefined);
+    expect(describeToolCall({ toolCallId: `id-${SECRET}` }, [SECRET]).callId).toBe(undefined);
+  });
+
+  test("summary is one line; a command keeps its newlines; invisible characters are stripped", () => {
+    const shown = describeToolCall(
+      {
+        toolCallId: "c",
+        kind: "execute",
+        title: "Run\n  the\ttests\u202e",
+        rawInput: { command: "cd x\nbun test" },
+      },
+      [],
+    );
+    expect(shown.summary).toBe("Run the tests");
+    expect(shown.command).toBe("cd x\nbun test");
+  });
+
+  test("oversized raw text is withheld without being masked (maskForPrompt is quadratic)", () => {
+    const flood = "sk-".repeat(100_000);
+    const started = Date.now();
+    const titled = describeToolCall({ toolCallId: "c", kind: "edit", title: flood }, []);
+    const commanded = describeToolCall(
+      { toolCallId: "c", kind: "execute", title: "Run", rawInput: { command: flood } },
+      [],
+    );
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(titled).toMatchObject({
+      summary: "edit tool call (details withheld: they could not be shown safely)",
+      showable: false,
+    });
+    expect(commanded).toMatchObject({ summary: "Run", showable: false });
+    expect(commanded.command).toBe(undefined);
+  });
+
+  test("text at the raw limits is still shown", () => {
+    expect(describeToolCall({ toolCallId: "c", title: "t".repeat(SUMMARY_RAW_MAX_BYTES) }, []).showable).toBe(true);
+    const atLimit = { toolCallId: "c", kind: "execute", rawInput: { command: "c".repeat(COMMAND_RAW_MAX_BYTES) } };
+    expect(describeToolCall(atLimit, []).showable).toBe(true);
   });
 
   test("control characters stripped; session secrets and pattern secrets masked", () => {
@@ -457,14 +530,22 @@ Expected: FAIL, cannot resolve `#src/client/tool-display`.
  * fields", D3-a). The agent's kind, title, locations and rawInput are display data
  * only: they never decide. Every string is control-stripped, scrubbed of the
  * session's secret values, masked as nax-agent's own approvals are
- * (maskForPrompt) and capped. Text whose secret cannot be masked safely makes the
- * request unshowable: it is never put in front of a person (D3-b).
+ * (maskForPrompt), redacted and capped. Oversized raw text and text whose secret
+ * cannot be masked safely make the request unshowable: it is never put in front
+ * of a person (D3-b).
  */
 import type { ToolKind } from "@agentclientprotocol/sdk";
-import { maskForPrompt, TOOL_CALL_INPUT_BYTES } from "@nathapp/nax-agent";
-import { capBytes, isRecord, scrubSecrets, stripControl } from "#src/client/text";
+import { maskForPrompt, redactSecrets, TOOL_CALL_INPUT_BYTES } from "@nathapp/nax-agent";
+import { capBytes, isRecord, scrubSecrets, stripControl, stripInvisible } from "#src/client/text";
 
 export const SUMMARY_MAX_BYTES = 1024;
+/**
+ * Raw agent text above these sizes is withheld without being masked: maskForPrompt
+ * is quadratic (8 KiB takes about 4 ms, 256 KiB seconds), and truncating first
+ * would show a cut secret prefix.
+ */
+export const SUMMARY_RAW_MAX_BYTES = 8 * 1024;
+export const COMMAND_RAW_MAX_BYTES = 32 * 1024;
 const CALL_ID_MAX_CHARS = 512;
 const WITHHELD = "(details withheld: they could not be shown safely)";
 
@@ -493,19 +574,41 @@ export interface ToolCallDisplay {
 type Call = Readonly<Record<string, unknown>>;
 type Shown = { readonly ok: true; readonly text: string } | { readonly ok: false };
 
-function show(raw: string, secrets: readonly string[], maxBytes: number): Shown {
-  const masked = maskForPrompt(scrubSecrets(stripControl(raw), secrets));
-  return masked.ok ? { ok: true, text: capBytes(masked.masked, maxBytes) } : { ok: false };
+interface ShowLimits {
+  readonly rawMaxBytes: number;
+  readonly capBytes: number;
+  /** Newlines and tabs collapse to one space. */
+  readonly oneLine: boolean;
+}
+
+const SUMMARY: ShowLimits = { rawMaxBytes: SUMMARY_RAW_MAX_BYTES, capBytes: SUMMARY_MAX_BYTES, oneLine: true };
+const COMMAND: ShowLimits = { rawMaxBytes: COMMAND_RAW_MAX_BYTES, capBytes: TOOL_CALL_INPUT_BYTES, oneLine: false };
+
+/** Visible, secret-free text: strip, scrub the session's secrets, mask pattern secrets, redact. */
+function clean(text: string, secrets: readonly string[]): Shown {
+  const masked = maskForPrompt(scrubSecrets(stripInvisible(stripControl(text)), secrets));
+  return masked.ok ? { ok: true, text: redactSecrets(masked.masked) } : { ok: false };
+}
+
+function show(raw: string, secrets: readonly string[], limits: ShowLimits): Shown {
+  if (Buffer.byteLength(raw, "utf8") > limits.rawMaxBytes) return { ok: false };
+  const text = limits.oneLine ? raw.replace(/[\n\t]+\s*/g, " ") : raw;
+  const shown = clean(text, secrets);
+  return shown.ok ? { ok: true, text: capBytes(shown.text, limits.capBytes) } : { ok: false };
 }
 
 function kindOf(call: Call): string {
   return typeof call.kind === "string" && KINDS.has(call.kind) ? call.kind : "other";
 }
 
+/** The agent's id without invisible characters or whitespace; dropped when it held a secret. */
 function callIdOf(call: Call, secrets: readonly string[]): string | undefined {
-  if (typeof call.toolCallId !== "string") return undefined;
-  const clean = scrubSecrets(stripControl(call.toolCallId).replace(/[\n\t]/g, ""), secrets);
-  return clean === "" || clean.length > CALL_ID_MAX_CHARS ? undefined : clean;
+  if (typeof call.toolCallId !== "string" || call.toolCallId.length > CALL_ID_MAX_CHARS) return undefined;
+  const id = stripInvisible(stripControl(call.toolCallId)).replace(/\s+/g, "");
+  if (id === "") return undefined;
+  const shown = clean(id, secrets);
+  // An id that held a secret is dropped, not shown masked: it would no longer match the agent's id.
+  return shown.ok && shown.text === id ? id : undefined;
 }
 
 function firstPath(call: Call): string | undefined {
@@ -531,9 +634,9 @@ export function describeToolCall(toolCall: unknown, secrets: readonly string[]):
   const call: Call = isRecord(toolCall) ? toolCall : {};
   const kind = kindOf(call);
   const callId = callIdOf(call, secrets);
-  const summary = show(summarySource(call, kind), secrets, SUMMARY_MAX_BYTES);
+  const summary = show(summarySource(call, kind), secrets, SUMMARY);
   const rawCommand = commandSource(call, kind);
-  const command = rawCommand === undefined ? undefined : show(rawCommand, secrets, TOOL_CALL_INPUT_BYTES);
+  const command = rawCommand === undefined ? undefined : show(rawCommand, secrets, COMMAND);
   return {
     ...(callId === undefined ? {} : { callId }),
     tool: kind,
@@ -583,7 +686,7 @@ git commit -m "feat(nax-agent-acp): S4-3 agent-text hygiene and the tool-call di
   - `rejectWith(offered: OfferedOptions): RequestPermissionResponse`
   - `rejectLocally(request: RequestPermissionRequest): RequestPermissionResponse`
   - `decidePermission(request: RequestPermissionRequest, ctx: PermissionContext): Promise<RequestPermissionResponse>`
-  - the reason constants `NO_ALLOW_ONCE_REASON`, `UNSHOWABLE_REASON`, `ASK_REASON`, `FULL_REASON` and the function `readOnlyReason(profile)`
+  - the reason constants `NO_ALLOW_ONCE_REASON`, `UNSHOWABLE_REASON`, `ASK_REASON`, `FULL_REASON`, `UNKNOWN_PROFILE_REASON` and the function `readOnlyReason(profile)`
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -591,7 +694,11 @@ git commit -m "feat(nax-agent-acp): S4-3 agent-text hygiene and the tool-call di
 
 ```ts
 import { describe, expect, test } from "bun:test";
-import type { PermissionOptionKind, RequestPermissionRequest } from "@agentclientprotocol/sdk";
+import type {
+  PermissionOptionKind,
+  RequestPermissionRequest,
+  RequestPermissionResponse,
+} from "@agentclientprotocol/sdk";
 import type { AgentSessionProfile, ApprovalDecidedBy, ApprovalRequest, SessionAskPort } from "@nathapp/nax-agent";
 import {
   ASK_REASON,
@@ -645,8 +752,11 @@ function ctx(profile: AgentSessionProfile, port: SessionAskPort, signal: AbortSi
   return { profile, asks: port, secrets: [], signal };
 }
 
-const selected = (kind: string) => ({ outcome: { outcome: "selected", optionId: `opt-${kind}` } });
-const CANCELLED = { outcome: { outcome: "cancelled" } };
+// Typed: bun's toEqual is typed against the actual value, and a widened `outcome: string` does not compile.
+const selected = (kind: string): RequestPermissionResponse => ({
+  outcome: { outcome: "selected", optionId: `opt-${kind}` },
+});
+const CANCELLED: RequestPermissionResponse = { outcome: { outcome: "cancelled" } };
 
 describe("offeredOptions and rejectLocally", () => {
   test("only the *_once kinds are picked; the first of each wins", () => {
@@ -667,6 +777,19 @@ describe("offeredOptions and rejectLocally", () => {
     expect(offeredOptions(malformed)).toEqual({});
     const noList: RequestPermissionRequest = JSON.parse('{"sessionId":"s","toolCall":null,"options":null}');
     expect(rejectLocally(noList)).toEqual(CANCELLED);
+  });
+});
+
+describe("decidePermission: an aborted signal (D3-d, spec §6.4 expiry)", () => {
+  test.each(["none", "read", "ask", "full"] as const)("%s: cancelled, no event, nobody asked", async (profile) => {
+    const { port, seen } = asks();
+    const aborted = new AbortController();
+    aborted.abort();
+    expect(
+      await decidePermission(request(["allow_once", "reject_once"]), ctx(profile, port, aborted.signal)),
+    ).toEqual(CANCELLED);
+    expect(seen.auto).toEqual([]);
+    expect(seen.asked).toEqual([]);
   });
 });
 
@@ -812,6 +935,7 @@ export const NO_ALLOW_ONCE_REASON = "agent offered no allow-once option";
 export const UNSHOWABLE_REASON = "the request could not be shown safely";
 export const ASK_REASON = "the ACP agent asks permission";
 export const FULL_REASON = 'profile "full" allows every permission request';
+export const UNKNOWN_PROFILE_REASON = "unknown profile";
 
 export function readOnlyReason(profile: AgentSessionProfile): string {
   return `profile "${profile}" rejects every permission request`;
@@ -860,6 +984,8 @@ export function rejectLocally(request: RequestPermissionRequest): RequestPermiss
   return rejectWith(offeredOptions(request));
 }
 
+type AutoDecide = (reason: string, decision: "allow" | "deny") => void;
+
 function eventFields(display: ToolCallDisplay) {
   return {
     ...(display.callId === undefined ? {} : { callId: display.callId }),
@@ -872,27 +998,38 @@ export async function decidePermission(
   request: RequestPermissionRequest,
   ctx: PermissionContext,
 ): Promise<RequestPermissionResponse> {
+  // The turn was cancelled, timed out or lost its process: nothing is decided, no event (D3-d).
+  if (ctx.signal.aborted) return cancelled();
   const offered = offeredOptions(request);
   const display = describeToolCall(request.toolCall, ctx.secrets);
-  const auto = (reason: string, decision: "allow" | "deny"): void =>
+  const auto: AutoDecide = (reason, decision) =>
     ctx.asks.recordAutoDecision({ ...eventFields(display), reason }, decision);
-  if (ctx.profile === "none" || ctx.profile === "read") {
-    auto(readOnlyReason(ctx.profile), "deny");
-    return rejectWith(offered);
+  switch (ctx.profile) {
+    case "none":
+    case "read":
+      auto(readOnlyReason(ctx.profile), "deny");
+      return rejectWith(offered);
+    case "full":
+      if (offered.allowOnce === undefined) return denyNoAllowOnce(offered, auto);
+      auto(FULL_REASON, "allow");
+      return selected(offered.allowOnce);
+    case "ask":
+      if (offered.allowOnce === undefined) return denyNoAllowOnce(offered, auto);
+      if (!display.showable) {
+        auto(UNSHOWABLE_REASON, "deny");
+        return rejectWith(offered);
+      }
+      return askCaller(display, offered.allowOnce, offered, ctx);
+    default:
+      // A profile this build does not know: fail closed.
+      auto(UNKNOWN_PROFILE_REASON, "deny");
+      return rejectWith(offered);
   }
-  if (offered.allowOnce === undefined) {
-    auto(NO_ALLOW_ONCE_REASON, "deny");
-    return rejectWith(offered);
-  }
-  if (ctx.profile === "full") {
-    auto(FULL_REASON, "allow");
-    return selected(offered.allowOnce);
-  }
-  if (!display.showable) {
-    auto(UNSHOWABLE_REASON, "deny");
-    return rejectWith(offered);
-  }
-  return askCaller(display, offered.allowOnce, offered, ctx);
+}
+
+function denyNoAllowOnce(offered: OfferedOptions, auto: AutoDecide): RequestPermissionResponse {
+  auto(NO_ALLOW_ONCE_REASON, "deny");
+  return rejectWith(offered);
 }
 
 async function askCaller(
@@ -940,6 +1077,7 @@ git commit -m "feat(nax-agent-acp): S4-3 permission decisions by profile (spec 6
 
 **Files:**
 - Modify: `packages/nax-agent-acp/src/client/inbound.ts` (whole file)
+- Modify: `packages/nax-agent-acp/src/client/backend.ts:23,63,114-120` (interim wiring, so this task's commit typechecks)
 - Modify: `packages/nax-agent-acp/test/unit/client/inbound.test.ts` (whole file)
 - Modify: `packages/nax-agent-acp/test/unit/client/open.test.ts` (import, and 4 `createInboundRouter()` call sites)
 - Modify: `packages/nax-agent-acp/test/unit/client/connection.test.ts` (the `rejectLocally` import)
@@ -948,8 +1086,9 @@ git commit -m "feat(nax-agent-acp): S4-3 permission decisions by profile (spec 6
 - Consumes: `rejectLocally` (Task 2); `getLogger` from `@nathapp/nax-agent` (Task 0); `TurnCollector` (S4-2 `events.ts`); `InboundHandlers` (S4-2 `connection.ts`).
 - Produces:
   - `type PermissionDecider = (request: RequestPermissionRequest, signal: AbortSignal) => Promise<RequestPermissionResponse>`
+  - `MAX_PENDING_DECISIONS = 16`
   - `createInboundRouter(decide: PermissionDecider): InboundRouter`
-  - `InboundRouter.attach(agentSessionId: string, collector: TurnCollector): () => Promise<void>`. The release now returns a promise (it was a void function in S4-2).
+  - `InboundRouter.attach(agentSessionId: string, collector: TurnCollector, turnSignal: AbortSignal): () => Promise<void>`. It gains the `turnSignal` parameter, and the release now returns a promise (it was a void function in S4-2).
 
 - [ ] **Step 1: Rewrite the router tests (failing)**
 
@@ -964,7 +1103,9 @@ import type {
 } from "@agentclientprotocol/sdk";
 import { type AgentLogger, setAgentLogger } from "@nathapp/nax-agent";
 import { createTurnCollector } from "#src/client/events";
-import { createInboundRouter, type PermissionDecider } from "#src/client/inbound";
+import { createInboundRouter, MAX_PENDING_DECISIONS, type PermissionDecider } from "#src/client/inbound";
+
+const IDLE = new AbortController().signal;
 
 function request(sessionId: string, kinds: readonly PermissionOptionKind[] = ["allow_once", "reject_once"]) {
   const req: RequestPermissionRequest = {
@@ -982,6 +1123,7 @@ const text = (t: string) => ({
 
 const ALLOW: RequestPermissionResponse = { outcome: { outcome: "selected", optionId: "opt-allow_once" } };
 const REJECT: RequestPermissionResponse = { outcome: { outcome: "selected", optionId: "opt-reject_once" } };
+const CANCELLED: RequestPermissionResponse = { outcome: { outcome: "cancelled" } };
 
 function recordingDecider(answer: (signal: AbortSignal) => Promise<RequestPermissionResponse> = async () => ALLOW) {
   const seen: AbortSignal[] = [];
@@ -991,6 +1133,12 @@ function recordingDecider(answer: (signal: AbortSignal) => Promise<RequestPermis
   };
   return { decide, seen };
 }
+
+/** A decider that answers `cancelled` once its signal aborts, and never before. */
+const untilAborted = (signal: AbortSignal) =>
+  new Promise<RequestPermissionResponse>((resolve) => {
+    signal.addEventListener("abort", () => resolve(CANCELLED));
+  });
 
 function recordingLogger(): { logger: AgentLogger; warnings: { message: string; data: unknown }[] } {
   const warnings: { message: string; data: unknown }[] = [];
@@ -1017,7 +1165,7 @@ describe("createInboundRouter: updates", () => {
     const router = createInboundRouter(recordingDecider().decide);
     const collector = createTurnCollector(undefined);
     router.handlers.onUpdate({ sessionId: "a", update: text("before") });
-    const release = router.attach("a", collector);
+    const release = router.attach("a", collector, IDLE);
     router.handlers.onUpdate({ sessionId: "a", update: text("mine") });
     router.handlers.onUpdate({ sessionId: "b", update: text("theirs") });
     await release();
@@ -1029,8 +1177,8 @@ describe("createInboundRouter: updates", () => {
     const router = createInboundRouter(recordingDecider().decide);
     const first = createTurnCollector(undefined);
     const second = createTurnCollector(undefined);
-    const releaseFirst = router.attach("a", first);
-    router.attach("a", second);
+    const releaseFirst = router.attach("a", first, IDLE);
+    router.attach("a", second, IDLE);
     await releaseFirst();
     router.handlers.onUpdate({ sessionId: "a", update: text("x") });
     expect(second.output()).toBe("x");
@@ -1041,23 +1189,22 @@ describe("createInboundRouter: permission requests (spec §6.3, §6.4, D3-c, D3-
   test("during a turn, for the attached session: the decider answers", async () => {
     const { decide, seen } = recordingDecider();
     const router = createInboundRouter(decide);
-    const release = router.attach("a", createTurnCollector(undefined));
+    const release = router.attach("a", createTurnCollector(undefined), IDLE);
     expect(await router.handlers.onPermission(request("a"))).toEqual(ALLOW);
     expect(seen).toHaveLength(1);
+    expect(seen[0]?.aborted).toBe(false);
     await release();
   });
 
-  test("no turn: rejected locally and logged; the decider is not called", async () => {
+  test("no turn: rejected locally, logged once per reason; the decider is not called", async () => {
     const { logger, warnings } = recordingLogger();
     setAgentLogger(logger);
     const { decide, seen } = recordingDecider();
     const router = createInboundRouter(decide);
     expect(await router.handlers.onPermission(request("a"))).toEqual(REJECT);
-    expect(await router.handlers.onPermission(request("a", ["allow_once"]))).toEqual({
-      outcome: { outcome: "cancelled" },
-    });
+    expect(await router.handlers.onPermission(request("a", ["allow_once"]))).toEqual(CANCELLED);
     expect(seen).toHaveLength(0);
-    expect(warnings.map((w) => w.data)).toEqual([{ reason: "no-turn" }, { reason: "no-turn" }]);
+    expect(warnings.map((w) => w.data)).toEqual([{ reason: "no-turn" }]);
   });
 
   test("another agent session during a turn: rejected locally and logged", async () => {
@@ -1065,71 +1212,116 @@ describe("createInboundRouter: permission requests (spec §6.3, §6.4, D3-c, D3-
     setAgentLogger(logger);
     const { decide, seen } = recordingDecider();
     const router = createInboundRouter(decide);
-    const release = router.attach("a", createTurnCollector(undefined));
+    const release = router.attach("a", createTurnCollector(undefined), IDLE);
     expect(await router.handlers.onPermission(request("b"))).toEqual(REJECT);
     expect(seen).toHaveLength(0);
     expect(warnings.map((w) => w.data)).toEqual([{ reason: "foreign-session" }]);
     await release();
   });
 
+  test("a throwing host logger does not change the answer", async () => {
+    const { logger } = recordingLogger();
+    setAgentLogger({
+      ...logger,
+      warn: () => {
+        throw new Error("logger down");
+      },
+    });
+    const router = createInboundRouter(recordingDecider().decide);
+    expect(await router.handlers.onPermission(request("a"))).toEqual(REJECT);
+  });
+
+  test("the turn signal reaches the decision: an aborted turn hands the decider an aborted signal", async () => {
+    const { decide, seen } = recordingDecider();
+    const router = createInboundRouter(decide);
+    const turn = new AbortController();
+    const release = router.attach("a", createTurnCollector(undefined), turn.signal);
+    turn.abort();
+    await router.handlers.onPermission(request("a"));
+    expect(seen[0]?.aborted).toBe(true);
+    await release();
+  });
+
   test("release aborts pending decisions and resolves only after they are answered", async () => {
-    let answeredAt: "pending" | "answered" = "pending";
+    const state = { answered: false };
     const { decide, seen } = recordingDecider(
       (signal) =>
         new Promise((resolve) => {
           signal.addEventListener("abort", () =>
             setTimeout(() => {
-              answeredAt = "answered";
-              resolve({ outcome: { outcome: "cancelled" } });
+              state.answered = true;
+              resolve(CANCELLED);
             }, 20),
           );
         }),
     );
     const router = createInboundRouter(decide);
-    const release = router.attach("a", createTurnCollector(undefined));
+    const release = router.attach("a", createTurnCollector(undefined), IDLE);
     const response = router.handlers.onPermission(request("a"));
     await Promise.resolve();
     expect(seen[0]?.aborted).toBe(false);
     await release();
     expect(seen[0]?.aborted).toBe(true);
-    expect(answeredAt).toBe("answered");
-    expect(await response).toEqual({ outcome: { outcome: "cancelled" } });
+    expect(state.answered).toBe(true);
+    expect(await response).toEqual(CANCELLED);
+  });
+
+  test("beyond MAX_PENDING_DECISIONS concurrent requests, the extra ones are rejected locally", async () => {
+    const { logger, warnings } = recordingLogger();
+    setAgentLogger(logger);
+    const { decide, seen } = recordingDecider(untilAborted);
+    const router = createInboundRouter(decide);
+    const release = router.attach("a", createTurnCollector(undefined), IDLE);
+    const pending = Array.from({ length: MAX_PENDING_DECISIONS }, () => router.handlers.onPermission(request("a")));
+    expect(await router.handlers.onPermission(request("a"))).toEqual(REJECT);
+    expect(seen).toHaveLength(MAX_PENDING_DECISIONS);
+    expect(warnings.map((w) => w.data)).toEqual([{ reason: "too-many" }]);
+    await release();
+    expect(await Promise.all(pending)).toEqual(Array.from({ length: MAX_PENDING_DECISIONS }, () => CANCELLED));
   });
 
   test("a throwing decider answers cancelled", async () => {
     const router = createInboundRouter(async () => {
       throw new Error("boom");
     });
-    const release = router.attach("a", createTurnCollector(undefined));
-    expect(await router.handlers.onPermission(request("a"))).toEqual({ outcome: { outcome: "cancelled" } });
+    const release = router.attach("a", createTurnCollector(undefined), IDLE);
+    expect(await router.handlers.onPermission(request("a"))).toEqual(CANCELLED);
     await release();
   });
 });
 ```
 
+The test-file `throw new Error` lines are fine: `check-nax-error` scans `src/` only.
+
 - [ ] **Step 2: Run it to make sure it fails**
 
 Run: `bun test ./test/unit/client/inbound.test.ts`
-Expected: FAIL. With the S4-2 router the decider is never called and `release()` returns `undefined`; the type errors show up under `bun run typecheck`.
+Expected: FAIL. `MAX_PENDING_DECISIONS` is not exported, the S4-2 router never calls the decider, and its `release()` returns `undefined`.
 
 - [ ] **Step 3: Rewrite `inbound.ts`**
 
 ```ts
 /**
  * Messages the agent initiates (S4 spec §6.3, §6.4). While a turn runs the router
- * holds one binding: the agent session the turn prompts and its collector.
- * session/update reaches that collector only when it names the bound session;
- * anything else is dropped. session/request_permission for the bound session goes
- * to the backend's decider with a signal that aborts when the binding is released;
- * any other request (no turn, another session) is rejected locally, logged and
- * raises no event (D3-c). Releasing a binding aborts its pending decisions and
- * waits for their answers, so approval_resolved always precedes turn_end (D3-d).
+ * holds one binding: the agent session the turn prompts, its collector and its
+ * signal. session/update reaches that collector only when it names the bound
+ * session; anything else is dropped. session/request_permission for the bound
+ * session goes to the backend's decider with the binding's signal, which aborts
+ * when the turn is cancelled, times out or loses its process, and when the binding
+ * is released (D3-d). Any other request (no turn, another session, more than
+ * MAX_PENDING_DECISIONS at once) is rejected locally and raises no event; each
+ * reason is logged once per session (D3-c). Releasing a binding aborts its pending
+ * decisions and waits for their answers, so approval_resolved always precedes
+ * turn_end.
  */
 import type { RequestPermissionRequest, RequestPermissionResponse } from "@agentclientprotocol/sdk";
 import { getLogger } from "@nathapp/nax-agent";
 import type { InboundHandlers } from "#src/client/connection";
 import type { TurnCollector } from "#src/client/events";
 import { rejectLocally } from "#src/client/permissions";
+
+/** Concurrent permission decisions one turn may hold; further requests are rejected locally. */
+export const MAX_PENDING_DECISIONS = 16;
 
 export type PermissionDecider = (
   request: RequestPermissionRequest,
@@ -1139,33 +1331,33 @@ export type PermissionDecider = (
 export interface InboundRouter {
   readonly handlers: InboundHandlers;
   /**
-   * Routes `agentSessionId`'s updates and permission requests to this turn. The
-   * returned function detaches it, aborts its pending permission decisions and
-   * resolves once each has been answered.
+   * Routes `agentSessionId`'s updates and permission requests to this turn.
+   * `turnSignal` aborts the turn's decisions (cancel, timeout, process gone). The
+   * returned function detaches the turn, aborts its pending permission decisions
+   * and resolves once each has been answered.
    */
-  attach(agentSessionId: string, collector: TurnCollector): () => Promise<void>;
+  attach(agentSessionId: string, collector: TurnCollector, turnSignal: AbortSignal): () => Promise<void>;
 }
+
+type Rejection = "no-turn" | "foreign-session" | "too-many";
 
 interface Binding {
   readonly sessionId: string;
   readonly collector: TurnCollector;
   readonly scope: AbortController;
+  /** The scope and the turn signal: what every decision of this turn is given. */
+  readonly signal: AbortSignal;
   readonly pending: Set<Promise<RequestPermissionResponse>>;
 }
 
 const cancelled = (): RequestPermissionResponse => ({ outcome: { outcome: "cancelled" } });
-
-function outsideTurn(request: RequestPermissionRequest, reason: "no-turn" | "foreign-session") {
-  getLogger().warn("acp", "Rejected a permission request outside the running turn", { reason });
-  return rejectLocally(request);
-}
 
 async function decideInTurn(
   binding: Binding,
   decide: PermissionDecider,
   request: RequestPermissionRequest,
 ): Promise<RequestPermissionResponse> {
-  const answer = decide(request, binding.scope.signal).catch(cancelled);
+  const answer = decide(request, binding.signal).catch(cancelled);
   binding.pending.add(answer);
   try {
     return await answer;
@@ -1176,6 +1368,18 @@ async function decideInTurn(
 
 export function createInboundRouter(decide: PermissionDecider): InboundRouter {
   let active: Binding | undefined;
+  const logged = new Set<Rejection>();
+  const reject = (request: RequestPermissionRequest, reason: Rejection): RequestPermissionResponse => {
+    if (!logged.has(reason)) {
+      logged.add(reason);
+      try {
+        getLogger().warn("acp", "Rejected a permission request locally", { reason });
+      } catch {
+        // A throwing host logger must not change the answer.
+      }
+    }
+    return rejectLocally(request);
+  };
   return {
     handlers: {
       onUpdate(notification) {
@@ -1185,17 +1389,25 @@ export function createInboundRouter(decide: PermissionDecider): InboundRouter {
       },
       onPermission: async (request) => {
         const binding = active;
-        if (binding === undefined) return outsideTurn(request, "no-turn");
-        if (request.sessionId !== binding.sessionId) return outsideTurn(request, "foreign-session");
+        if (binding === undefined) return reject(request, "no-turn");
+        if (request.sessionId !== binding.sessionId) return reject(request, "foreign-session");
+        if (binding.pending.size >= MAX_PENDING_DECISIONS) return reject(request, "too-many");
         return decideInTurn(binding, decide, request);
       },
     },
-    attach(sessionId, collector) {
-      const binding: Binding = { sessionId, collector, scope: new AbortController(), pending: new Set() };
+    attach(sessionId, collector, turnSignal) {
+      const scope = new AbortController();
+      const binding: Binding = {
+        sessionId,
+        collector,
+        scope,
+        signal: AbortSignal.any([scope.signal, turnSignal]),
+        pending: new Set(),
+      };
       active = binding;
       return async () => {
         if (active === binding) active = undefined;
-        binding.scope.abort();
+        scope.abort();
         await Promise.allSettled([...binding.pending]);
       };
     },
@@ -1203,55 +1415,83 @@ export function createInboundRouter(decide: PermissionDecider): InboundRouter {
 }
 ```
 
-- [ ] **Step 4: Update the callers in tests**
+`decideInTurn` adds to `pending` synchronously (before its first `await`), so the cap counts every request already being decided.
+
+- [ ] **Step 4: Update the callers (interim wiring in `backend.ts`)**
 
 - In `test/unit/client/connection.test.ts`, change `import { rejectLocally } from "#src/client/inbound";` to `import { rejectLocally } from "#src/client/permissions";`.
 - In `test/unit/client/open.test.ts`:
   - add `import { rejectLocally } from "#src/client/permissions";`
-  - replace each `createInboundRouter().handlers` (4 sites) with `createInboundRouter(async (r) => rejectLocally(r)).handlers`
+  - replace each `createInboundRouter().handlers` (4 sites: lines 46, 90, 163, 178) with `createInboundRouter(async (r) => rejectLocally(r)).handlers`
+- In `src/client/backend.ts`, keep S4-2's behaviour (every permission rejected locally) on the new router API. Task 4 replaces this decider.
+  - add `import { rejectLocally } from "#src/client/permissions";`
+  - change `const router = createInboundRouter();` to `const router = createInboundRouter(async (request) => rejectLocally(request));`
+  - in `sendTurn`, compute the signal once and hand it to the router, and await the release:
 
-`backend.ts` still calls `createInboundRouter()` with no argument, and its `release()` is not awaited, so `bun run typecheck` fails here. Task 4 fixes that.
+```ts
+  const collector = createTurnCollector(opts.onTurnEvent);
+  const signal = opts.signal ?? ctx.turnSignal();
+  const release = live.router.attach(live.acp.agentSessionId, collector, signal);
+  try {
+    return await runPromptTurn(live.state, { text, signal, collector });
+  } finally {
+    await release();
+  }
+```
 
-- [ ] **Step 5: Run the router, connection and open tests**
+- [ ] **Step 5: Run the router, connection, open and backend tests, typecheck and lint**
 
-Run: `bun test ./test/unit/client/inbound.test.ts ./test/unit/client/connection.test.ts ./test/unit/client/open.test.ts`
-Expected: PASS. Bun runs these without typechecking `backend.ts`.
+Run:
+```bash
+bun test ./test/unit/client/inbound.test.ts ./test/unit/client/connection.test.ts ./test/unit/client/open.test.ts ./test/unit/client/backend.test.ts
+bun run typecheck
+bun run lint:fix && bun run check:all
+```
+Expected: PASS, and both commands exit 0. `backend.test.ts` is unchanged here; its S4-2 D-d test still sees `reject_once` and no events.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/client/inbound.ts test/unit/client/inbound.test.ts test/unit/client/open.test.ts test/unit/client/connection.test.ts
+git add src/client/inbound.ts src/client/backend.ts test/unit/client/inbound.test.ts test/unit/client/open.test.ts test/unit/client/connection.test.ts
 git commit -m "feat(nax-agent-acp): S4-3 route permission requests by turn and session"
 ```
-
-Typecheck is red between this commit and Task 4's. If the executor requires every commit to typecheck, squash Tasks 3 and 4 into one commit at the end of Task 4 instead.
 
 ---
 
 ### Task 4: `acpBackend()` with all four profiles, end to end in process
 
 **Files:**
-- Modify: `packages/nax-agent-acp/src/client/backend.ts:1-80,102-121`
+- Modify: `packages/nax-agent-acp/src/client/backend.ts` (header, imports, `refuseUnbuilt`, `openBackend`, `Live`, `sendTurn`)
 - Modify: `packages/nax-agent-acp/test/fixtures/fake-agent/script.ts:19-33`
-- Modify: `packages/nax-agent-acp/test/fixtures/fake-agent/agent.ts:48-90`
+- Modify: `packages/nax-agent-acp/test/fixtures/fake-agent/agent.ts:23-104`
 - Modify: `packages/nax-agent-acp/test/helpers/in-memory-launch.ts`
 - Create: `packages/nax-agent-acp/test/helpers/session-events.ts`
 - Create: `packages/nax-agent-acp/test/unit/client/backend-permissions.test.ts`
 - Modify: `packages/nax-agent-acp/test/unit/client/backend.test.ts` (remove superseded tests)
 
 **Interfaces:**
-- Consumes: `createInboundRouter(decide)` and `PermissionDecider` (Task 3); `decidePermission`, the reason constants and `readOnlyReason` (Task 2).
+- Consumes:
+  - `createInboundRouter(decide)`, `PermissionDecider`, and `attach(agentSessionId, collector, turnSignal)` (Task 3)
+  - `decidePermission`, the reason constants and `readOnlyReason` (Task 2)
 - Produces:
   - `InMemoryAgent.crash(code?: number): void`
-  - `PermissionStep` in the fake's script, with `toolCall?`, `sessionId?` and `detached?`
+  - in the fake's script: an exported `PermissionStep` with `toolCall?`, `sessionId?` and `detached?`, plus the steps `{ kind: "settled" }` and `{ kind: "awaitCancel" }`
   - fake records `permission-answer` `{ toolCallId, outcome }` and `permission-error` `{ toolCallId, message }`
-  - `test/helpers/session-events.ts`: `driveTurn(session, message, onEvent?)`, `drain(events)`, `endOf(events)`, `indexOfType(events, type)`
+  - `test/helpers/session-events.ts`: `driveTurn(session, message, onEvent?)`, `endOf(events)`, `indexOfType(events, type)`
 
-- [ ] **Step 1: Extend the fake agent's permission step**
+- [ ] **Step 1: Extend the fake agent**
 
 In `test/fixtures/fake-agent/script.ts`:
 - Add `ToolCallUpdate` to the SDK type import.
-- Replace the `permission` member of `FakeStep` with `| PermissionStep`.
+- In `FakeStep`, replace the `permission` member with `| PermissionStep`, and add two members:
+
+```ts
+  /** Waits until every detached permission request of this prompt has been answered. */
+  | { readonly kind: "settled" }
+  /** Waits for session/cancel, then carries on with the next step (waitForCancel stops the turn instead). */
+  | { readonly kind: "awaitCancel" }
+```
+
 - Add:
 
 ```ts
@@ -1270,7 +1510,39 @@ export interface PermissionStep {
 
 In `test/fixtures/fake-agent/agent.ts`:
 - Import the `PermissionStep` type from `./script.ts`.
-- Replace the `case "permission": { ... }` block with `case "permission": await requestPermission(step, sessionId, client, hooks); return undefined;`.
+- Give `PromptState` a list of detached answers:
+
+```ts
+interface PromptState {
+  readonly cancelled: Promise<void>;
+  readonly markCancelled: () => void;
+  /** Detached permission requests of this prompt, settled when answered. */
+  readonly detached: Promise<void>[];
+}
+
+function newPromptState(): PromptState {
+  let mark: () => void = () => {};
+  const cancelled = new Promise<void>((resolve) => {
+    mark = resolve;
+  });
+  return { cancelled, markCancelled: () => mark(), detached: [] };
+}
+```
+
+- In `runStep`, replace the `case "permission": { ... }` block and add the two new cases:
+
+```ts
+    case "permission":
+      await requestPermission(step, sessionId, client, state, hooks);
+      return undefined;
+    case "settled":
+      await Promise.all(state.detached);
+      return undefined;
+    case "awaitCancel":
+      await state.cancelled;
+      return undefined;
+```
+
 - Add the function:
 
 ```ts
@@ -1278,6 +1550,7 @@ async function requestPermission(
   step: PermissionStep,
   sessionId: string,
   client: AgentContext,
+  state: PromptState,
   hooks: FakeHooks,
 ): Promise<void> {
   const toolCallId = step.toolCall?.toolCallId ?? "fake-permission";
@@ -1296,7 +1569,11 @@ async function requestPermission(
         hooks.record("permission-error", { toolCallId, message: String(error) });
       },
     );
-  if (step.detached !== true) await answered;
+  if (step.detached === true) {
+    state.detached.push(answered);
+    return;
+  }
+  await answered;
 }
 ```
 
@@ -1325,12 +1602,6 @@ export async function driveTurn(
     onEvent(event);
   }
   return events;
-}
-
-export async function drain(events: AsyncIterable<SessionEvent>): Promise<SessionEvent[]> {
-  const out: SessionEvent[] = [];
-  for await (const event of events) out.push(event);
-  return out;
 }
 
 export function endOf(events: readonly SessionEvent[]) {
@@ -1362,7 +1633,12 @@ import { waitForCondition } from "@nathapp/nax-test-kit/bun/timeout";
 import { _acpBackendDeps, acpBackend } from "#src/client/backend";
 import type { AcpBackendOptions } from "#src/client/options";
 import { ASK_REASON, FULL_REASON, NO_ALLOW_ONCE_REASON, readOnlyReason } from "#src/client/permissions";
-import { CLAUDE_CONFIG_OPTIONS, type FakeScript, type FakeStep } from "#test/fixtures/fake-agent/script";
+import {
+  CLAUDE_CONFIG_OPTIONS,
+  type FakeScript,
+  type FakeStep,
+  type PermissionStep,
+} from "#test/fixtures/fake-agent/script";
 import { rejection, sessionError } from "#test/helpers/errors";
 import { type InMemoryAgent, inMemoryAgent } from "#test/helpers/in-memory-launch";
 import { driveTurn, endOf, indexOfType } from "#test/helpers/session-events";
@@ -1411,10 +1687,16 @@ async function open(
   return { fake, session };
 }
 
-const EDIT: FakeStep = { kind: "permission", options: ["allow_once", "reject_once"] };
+const EDIT: PermissionStep = { kind: "permission", options: ["allow_once", "reject_once"] };
+const RUN_TESTS: PermissionStep = {
+  kind: "permission",
+  options: ["allow_once", "reject_once"],
+  toolCall: { kind: "execute", title: "Run tests", rawInput: { command: "bun test ./x" } },
+};
 const answers = (o: Opened) => o.fake.callsTo("permission-outcome");
 const types = (events: readonly SessionEvent[]) => events.map((e) => e.type);
 const find = (events: readonly SessionEvent[], type: SessionEvent["type"]) => events.find((e) => e.type === type);
+const approvals = (events: readonly SessionEvent[]) => events.filter((e) => e.type.startsWith("approval_"));
 
 describe("profiles none and read (spec §6.4)", () => {
   test("read: plan mode; every request rejected with a profile decision", async () => {
@@ -1451,32 +1733,41 @@ describe("profiles none and read (spec §6.4)", () => {
     expect(answers(o)).toEqual([{ outcome: "selected", optionId: "opt-reject_once" }]);
   });
 
-  test.each(["read", "none"] as const)("%s on an agent without a read-only mode: refused after initialize", async (profile) => {
-    const fake = inMemoryAgent({});
-    _acpBackendDeps.launch = fake.launch;
-    const err = sessionError(
-      await rejection(
-        createAgentSession({
-          backend: acpBackend({ agent: "codex", allowUnsandboxed: true, command: "fake-codex" }),
-          profile,
-          ...(profile === "none" ? {} : { workdir }),
-          transcriptStore: createMemoryTranscriptStore(),
-        }),
-      ),
-    );
-    expect(err.code).toBe("AGENT_SESSION_CAPABILITY_UNSUPPORTED");
-    expect(err.context).toMatchObject({ capability: "profile" });
-    expect(fake.callsTo("initialize")).toHaveLength(1);
-    expect(fake.callsTo("session/new")).toEqual([]);
-    expect(fake.kills()).toBe(1);
-  });
+  test.each(["read", "none"] as const)(
+    "%s on an agent without a read-only mode: refused after initialize",
+    async (profile) => {
+      const fake = inMemoryAgent({});
+      _acpBackendDeps.launch = fake.launch;
+      const err = sessionError(
+        await rejection(
+          createAgentSession({
+            backend: acpBackend({ agent: "codex", allowUnsandboxed: true, command: "fake-codex" }),
+            profile,
+            ...(profile === "none" ? {} : { workdir }),
+            transcriptStore: createMemoryTranscriptStore(),
+          }),
+        ),
+      );
+      expect(err.code).toBe("AGENT_SESSION_CAPABILITY_UNSUPPORTED");
+      expect(err.context).toMatchObject({ capability: "profile" });
+      expect(fake.callsTo("initialize")).toHaveLength(1);
+      expect(fake.callsTo("session/new")).toEqual([]);
+      expect(fake.kills()).toBe(1);
+    },
+  );
 });
 
 describe("profile full", () => {
   test("default mode; allow_once with a profile decision; secrets scrubbed from the summary", async () => {
     const o = await open(
       "full",
-      [{ kind: "permission", options: ["allow_always", "allow_once", "reject_once"], toolCall: { title: `cat ${SECRET}` } }],
+      [
+        {
+          kind: "permission",
+          options: ["allow_always", "allow_once", "reject_once"],
+          toolCall: { title: `cat ${SECRET}` },
+        },
+      ],
       { env: { MY_TOKEN: SECRET } },
     );
     expect(o.fake.callsTo("session/set_config_option")).toEqual([
@@ -1496,15 +1787,20 @@ describe("profile full", () => {
     expect(find(events, "approval_requested")).toMatchObject({ reason: NO_ALLOW_ONCE_REASON });
     expect(find(events, "approval_resolved")).toMatchObject({ decision: "deny", decidedBy: "profile" });
   });
+
+  test("a request sent after cancel(), inside the cancel grace window, is never allowed (D3-d)", async () => {
+    const o = await open("full", [{ kind: "text", text: "started" }, { kind: "awaitCancel" }, EDIT]);
+    const events = await driveTurn(o.session, "go", (event) => {
+      if (event.type === "text_delta") o.session.cancel();
+    });
+    expect(endOf(events).status).toBe("cancelled");
+    expect(answers(o)).toEqual([{ outcome: "cancelled" }]);
+    expect(approvals(events)).toEqual([]);
+    expect(o.fake.kills()).toBe(0);
+  });
 });
 
 describe("profile ask: the caller decides through answer()", () => {
-  const RUN_TESTS: FakeStep = {
-    kind: "permission",
-    options: ["allow_once", "reject_once"],
-    toolCall: { kind: "execute", title: "Run tests", rawInput: { command: "bun test ./x" } },
-  };
-
   test("allow: approval_requested carries the command; the agent gets allow_once", async () => {
     const o = await open("ask", [RUN_TESTS, { kind: "text", text: "ran" }]);
     expect(o.fake.callsTo("session/set_config_option")).toEqual([
@@ -1539,14 +1835,13 @@ describe("profile ask: the caller decides through answer()", () => {
     const o = await open("ask", [
       { ...RUN_TESTS, toolCall: { toolCallId: "a", kind: "edit", title: "Edit A" }, detached: true },
       { ...RUN_TESTS, toolCall: { toolCallId: "b", kind: "edit", title: "Edit B" }, detached: true },
-      { kind: "delay", ms: 50 },
+      { kind: "settled" },
     ]);
     await driveTurn(o.session, "two", (event) => {
       if (event.type === "approval_requested") {
         o.session.answer(event.requestId, { decision: event.summary === "Edit A" ? "allow" : "deny" });
       }
     });
-    await waitForCondition(() => o.fake.callsTo("permission-answer").length === 2, 2_000);
     expect(o.fake.callsTo("permission-answer")).toContainEqual({
       toolCallId: "a",
       outcome: { outcome: "selected", optionId: "opt-allow_once" },
@@ -1569,6 +1864,8 @@ describe("profile ask: the caller decides through answer()", () => {
   });
 
   test("the agent ends its turn with a request unanswered: cancelled before turn_end (D3-d)", async () => {
+    // The request is written to the stream before the prompt's response, so it is routed
+    // while the turn is bound; the delay is margin only, not what the test relies on.
     const o = await open("ask", [{ ...RUN_TESTS, detached: true }, { kind: "delay", ms: 30 }]);
     const events = await driveTurn(o.session, "test it");
     expect(find(events, "approval_resolved")).toMatchObject({ decidedBy: "cancelled" });
@@ -1589,6 +1886,7 @@ describe("profile ask: the caller decides through answer()", () => {
   });
 
   test("a request naming another agent session is rejected locally, with no event", async () => {
+    // No approval_* event at all proves the decider never ran: under `ask`, any decision emits one.
     const o = await open("ask", [{ ...RUN_TESTS, sessionId: "someone-else" }, { kind: "text", text: "after" }]);
     const events = await driveTurn(o.session, "test it");
     expect(answers(o)).toEqual([{ outcome: "selected", optionId: "opt-reject_once" }]);
@@ -1597,12 +1895,12 @@ describe("profile ask: the caller decides through answer()", () => {
 });
 ```
 
-Check one assumption while writing this file. The facade's ask port settles a cancelled approval with `decision: "deny"` (`askPerson`: `allowed` is false unless a human allowed), so the `approval_resolved` assertions on `decidedBy: "cancelled"` assume `decision: "deny"`. That is the merged S4-0 behaviour (`packages/nax-agent/src/session/session-ask-link.ts:49-51`).
+The facade's ask port settles a cancelled approval with `decision: "deny"` (`askPerson`: `allowed` is false unless a human allowed; `packages/nax-agent/src/session/session-ask-link.ts:49-51`). The assertions on `decidedBy: "cancelled"` rely on that.
 
 - [ ] **Step 4: Run it to make sure it fails**
 
 Run: `bun test ./test/unit/client/backend-permissions.test.ts`
-Expected: FAIL. `read`, `none` and `ask` are still refused with `CAPABILITY_UNSUPPORTED` (D-b), and `full` answers `reject_once` with no events (D-d).
+Expected: FAIL. `read`, `none` and `ask` are still refused with `CAPABILITY_UNSUPPORTED` (D-b), and `full` answers `reject_once` with no events (Task 3's interim decider).
 
 - [ ] **Step 5: Wire permissions into `backend.ts`**
 
@@ -1613,15 +1911,15 @@ Expected: FAIL. `read`, `none` and `ask` are still refused with `CAPABILITY_UNSU
  * acpBackend(): nax-agent's SessionBackend over ACP (S4 spec §6). It serves all
  * four profiles: the agent's mode is set at open (§6.4 layer 1), and each
  * session/request_permission is decided by profile (layer 2, permissions.ts),
- * through the caller under `ask`. Pending decisions settle when the turn ends or
- * the agent process exits (D3-d). Until their stages land it refuses, before
- * spawning anything: embedder tools (S4-4) and resume (S4-6). A crashed or killed
- * agent leaves the session disconnected; reconnect is S4-6, so until then later
- * turns end AGENT_SESSION_CLOSED (D-f).
+ * through the caller under `ask`. A turn's decisions are cancelled when the turn
+ * is cancelled, times out, ends or loses its process (D3-d). Until their stages
+ * land it refuses, before spawning anything: embedder tools (S4-4) and resume
+ * (S4-6). A crashed or killed agent leaves the session disconnected; reconnect is
+ * S4-6, so until then later turns end AGENT_SESSION_CLOSED (D-f).
  */
 ```
 
-2. Imports: add `import { decidePermission } from "#src/client/permissions";`.
+2. Imports: replace Task 3's `import { rejectLocally } from "#src/client/permissions";` with `import { decidePermission } from "#src/client/permissions";`.
 
 3. Replace `refuseUnbuilt`:
 
@@ -1632,20 +1930,16 @@ function refuseUnbuilt(ctx: BackendOpenContext): void {
 }
 ```
 
-4. In `openBackend`, replace the router creation and the exit hook:
+4. Add `readonly gone: AbortController;` to `interface Live`, with the doc comment `/** Aborted when the agent process exits: the running turn's permission decisions settle cancelled (§6.3 step 5). */`.
+
+5. In `openBackend`, replace Task 3's interim router, extend the exit hook, and pass `gone` to `assemble`:
 
 ```ts
 async function openBackend(options: ResolvedAcpOptions, ctx: BackendOpenContext): Promise<OpenedBackend> {
   refuseUnbuilt(ctx);
-  // Aborted when the agent process exits: pending permission decisions settle `cancelled` (§6.3 step 5).
   const gone = new AbortController();
   const router = createInboundRouter((request, signal) =>
-    decidePermission(request, {
-      profile: ctx.profile,
-      asks: ctx.asks,
-      secrets: options.secrets,
-      signal: AbortSignal.any([signal, gone.signal]),
-    }),
+    decidePermission(request, { profile: ctx.profile, asks: ctx.asks, secrets: options.secrets, signal }),
   );
   const acp = await openAcpSession(options, ctx, router.handlers, _acpBackendDeps.launch);
   const flags: SessionFlags = { disconnected: false, closing: undefined, instructionsSent: false };
@@ -1653,22 +1947,18 @@ async function openBackend(options: ResolvedAcpOptions, ctx: BackendOpenContext)
     flags.disconnected = true;
     gone.abort();
   });
-  // ... the TurnState construction and `return assemble(...)` stay as they are
+  // ... the TurnState construction stays as it is
+  return assemble({ options, ctx, acp, router, flags, state, gone });
 }
 ```
 
-5. In `sendTurn`, await the release:
+6. In `sendTurn`, combine the turn signal with `gone` once per turn (D3-d) when attaching:
 
 ```ts
-  const release = live.router.attach(live.acp.agentSessionId, collector);
-  try {
-    return await runPromptTurn(live.state, { text, signal: opts.signal ?? ctx.turnSignal(), collector });
-  } finally {
-    await release();
-  }
+  const release = live.router.attach(live.acp.agentSessionId, collector, AbortSignal.any([signal, live.gone.signal]));
 ```
 
-`options.secrets` already exists on `ResolvedAcpOptions` (S4-2 D-g). Confirm the name with `grep -n "secrets" src/client/options.ts`.
+`options.secrets` already exists on `ResolvedAcpOptions` (S4-2 D-g).
 
 - [ ] **Step 6: Remove the superseded S4-2 tests**
 
@@ -1688,7 +1978,7 @@ bun run lint:fix && bun run check:all
 ```
 Expected: all PASS, and every command exits 0.
 
-If the crash test leaves an unhandled rejection, find where it comes from. The SDK may reject the inbound handler's response write after the connection closed. Bun reports that as an error after the test. In that case, catch it in `connection.ts`'s `onRequest` wrapper for permission requests; do not swallow it in the test. Add a unit test in `connection.test.ts` that pins the fix.
+Answering a permission request after the connection closed (the crash test) needs no handling in `connection.ts` (D3-j).
 
 - [ ] **Step 8: Commit**
 
@@ -1870,8 +2160,13 @@ answer to each permission request the agent sends.
 - **Expiry and failure deny.** An unanswered approval expires to a deny after
   `approvalTimeoutMs`. A cancelled turn or a dead agent process answers `cancelled`.
 - **What you see is display data.** The request's title, command and paths come from
-  the agent. They are redacted and capped, and they never decide anything. A request
-  whose secret cannot be masked safely is denied without being shown.
+  the agent. They are redacted and capped, and they never decide anything.
+- **Some requests are denied without being shown under `ask`.** This happens when a
+  secret cannot be masked safely next to shell syntax, or the agent's text is too large
+  to check. Some legitimate commands are caught too, for example `FOO_TOKEN=x; cmd`.
+- **A cancelled turn starts nothing new.** A permission request that arrives after
+  `cancel()`, while the agent is still stopping, is answered `cancelled` under every
+  profile, `full` included.
 - **The agent process is unsandboxed** under every profile.
 ```
 
@@ -1885,8 +2180,10 @@ Under `[Unreleased]`, append:
   rejected under `none`/`read`, put to the caller through `approval_requested` and
   `answer()` under `ask`, allowed under `full`. Only one-time options are chosen.
   Auto-decisions are recorded with `decidedBy: "profile"`. Agent text in approval
-  events is redacted and capped. Pending approvals settle `cancelled` when the turn
-  ends or the agent process exits.
+  events is stripped, redacted and capped; oversized or unmaskable text is withheld.
+  Pending approvals settle `cancelled` when the turn is cancelled, ends or loses its
+  agent process, and a request after `cancel()` is never allowed. Out-of-turn,
+  foreign-session and over-cap (16 concurrent) requests are rejected locally.
 ```
 
 - [ ] **Step 4: context.md**
@@ -1959,8 +2256,8 @@ Expected: all exit 0. Each new src file (`text.ts`, `tool-display.ts`, `permissi
 
 Run:
 ```bash
-git diff --stat origin/main -- packages/nax/ | cat
-git diff --stat origin/main -- packages/nax-agent/ | cat
+git diff --stat origin/main...HEAD -- packages/nax/ | cat
+git diff --stat origin/main...HEAD -- packages/nax-agent/ | cat
 ```
 Expected:
 - `packages/nax/`: empty (spec §11.4).
@@ -1986,7 +2283,7 @@ gh pr create --base main --title "feat(nax-agent-acp): S4-3 permissions and all 
 
 The body covers:
 - the S4-3 scope (spec §10 row)
-- decisions D3-a to D3-i
+- decisions D3-a to D3-j
 - the guarantees as documented in the README
 - the test plan: CI jobs `nax-agent-acp`, `nax-agent-acp: node 22/24`, `nax-agent`, `nax`, `tooling`
 - the one nax-agent addition (`getLogger` on `.`, D3-i)
@@ -2003,7 +2300,7 @@ The body covers:
   - options rule (`allow_once`/`reject_once` only; no `allow_once` → deny with the reason; no `reject_once` → `cancelled`): Task 2
   - auto-decisions with `decidedBy: "profile"`: Tasks 2 and 4
   - untrusted fields: Tasks 1 and 4
-  - expiry: deadline (Task 2, stub `timeout`), turn abort (Task 4, cancel), process death (Task 4, crash)
+  - expiry: deadline (Task 2, stub `timeout`), turn abort (Task 4, cancel while pending and a request inside the cancel grace window), process death (Task 4, crash)
   - guarantees documented: Task 6
 - **§6.3 inbound with no active turn:** permission rejected, logged (`getLogger` from Task 0), no event: Task 3. Elicitation and MCP `tools/call` stay S4-5 and S4-4.
 - **§6.3 step 5, pending asks settle `cancelled` on a crash:** Task 4. Questions do not exist before S4-5.
@@ -2011,6 +2308,6 @@ The body covers:
 - **Not covered by design:** the approval deadline end to end. The facade's minimum `approvalTimeoutMs` is 30 s, so it is pinned at the decision level (Task 2, `decidedBy: "timeout"` → `reject_once`). The facade's own deadline is covered by nax-agent's tests.
 - **Type consistency:**
   - `PermissionDecider`'s `(request, signal)` matches Tasks 3 and 4
-  - `release` is `() => Promise<void>` in Tasks 3 and 4
+  - `release` is `() => Promise<void>` and `attach` takes `(agentSessionId, collector, turnSignal)` in Tasks 3 and 4
   - `ToolCallDisplay` field names match Tasks 1 and 2
   - the reason constants are imported by name in Tasks 2 and 4
