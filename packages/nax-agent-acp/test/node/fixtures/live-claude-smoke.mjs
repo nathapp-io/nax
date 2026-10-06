@@ -105,7 +105,10 @@ async function phaseAsk() {
   assert.equal(u1.costSource, "reported", "turn 1 cost is not reported");
   const second = await turn(session, "Reply with the single word: done.", allowAll(session));
   const u2 = usageOf(second);
-  assert.ok(u2.outputTokens < u1.outputTokens, `turn 2 output ${u2.outputTokens} looks cumulative (turn 1: ${u1.outputTokens})`);
+  assert.ok(
+    u2.outputTokens < u1.outputTokens,
+    `turn 2 output ${u2.outputTokens} looks cumulative (turn 1: ${u1.outputTokens})`,
+  );
   results.push({ phase: "ask", approvals, turn1: u1, turn2: u2, capabilities: session.backend.capabilities });
   await session.close();
 }
@@ -237,6 +240,8 @@ if (process.argv[2] === "--resume-child") {
   console.log("phase E: resume");
   await phaseResume();
   const total = costs.reduce((sum, cost) => sum + cost, 0);
-  console.log(JSON.stringify({ model: model ?? "agent default", totalUsd: Number(total.toFixed(4)), results }, null, 2));
+  console.log(
+    JSON.stringify({ model: model ?? "agent default", totalUsd: Number(total.toFixed(4)), results }, null, 2),
+  );
   console.log(`live claude smoke ok ($${total.toFixed(4)})`);
 }
