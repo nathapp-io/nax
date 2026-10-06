@@ -245,6 +245,7 @@ The shared type becomes `AgentSessionProfile = "none" | "read" | "ask" | "full"`
 - A bounded `StderrTail` (rolling buffer, control-character stripping, redaction on read).
 - `AgentSessionError` and the error-code union (already public).
 - `NaxError`, the base class of `AgentSessionError` (added in S4-2): a backend throws its own codes (`ACP_STOP_*`, `AGENT_SESSION_TURN_FAILED`) with it, and the facade maps any `NaxError` code into `turn_end.error.code`.
+- `getLogger` (added in S4-3): a backend logs through the host's logger (for example the ACP backend's out-of-turn permission rejections, §6.3).
 
 S4-0 lists exact export names in its plan, and the API snapshot pins them. Nothing else moves; `./internal` stays as is for nax.
 

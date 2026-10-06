@@ -222,27 +222,6 @@ describe("acpBackend: turn outcomes (spec §5.7, §7)", () => {
     });
     await o.session.close();
   });
-
-  test("permission requests are answered reject_once, or cancelled without one (D-d), with no events", async () => {
-    const o = await open({
-      turns: [
-        {
-          steps: [
-            { kind: "permission", options: ["allow_once", "reject_once"] },
-            { kind: "permission", options: ["allow_once", "allow_always"] },
-            { kind: "text", text: "done" },
-          ],
-        },
-      ],
-    });
-    const events = await drain(o.session.send("x"));
-    expect(o.fake.callsTo("permission-outcome")).toEqual([
-      { outcome: "selected", optionId: "opt-reject_once" },
-      { outcome: "cancelled" },
-    ]);
-    expect(events.map((e) => e.type)).toEqual(["turn_start", "text_delta", "turn_end"]);
-    await o.session.close();
-  });
 });
 
 describe("acpBackend: cancel (spec §6.3 step 3)", () => {
@@ -299,37 +278,6 @@ describe("acpBackend: stages not built yet are refused before spawning (D-b)", (
     approval: "never",
     run: async () => ({ content: "x" }),
   };
-
-  test.each(["read", "ask"] as const)("profile %s -> CAPABILITY_UNSUPPORTED profile", async (profile) => {
-    const fake = inMemoryAgent({});
-    _acpBackendDeps.launch = fake.launch;
-    const err = sessionError(
-      await rejection(
-        createAgentSession({
-          backend: acpBackend({ agent: "claude", allowUnsandboxed: true }),
-          profile,
-          workdir,
-          transcriptStore: createMemoryTranscriptStore(),
-        }),
-      ),
-    );
-    expect(err.code).toBe("AGENT_SESSION_CAPABILITY_UNSUPPORTED");
-    expect(err.context).toMatchObject({ capability: "profile" });
-    expect(fake.requests).toHaveLength(0);
-  });
-
-  test("profile none (no workdir) -> CAPABILITY_UNSUPPORTED profile", async () => {
-    const err = sessionError(
-      await rejection(
-        createAgentSession({
-          backend: acpBackend({ agent: "claude", allowUnsandboxed: true }),
-          profile: "none",
-          transcriptStore: createMemoryTranscriptStore(),
-        }),
-      ),
-    );
-    expect(err.context).toMatchObject({ capability: "profile" });
-  });
 
   test("embedder tools -> CAPABILITY_UNSUPPORTED tools", async () => {
     const fake = inMemoryAgent({});

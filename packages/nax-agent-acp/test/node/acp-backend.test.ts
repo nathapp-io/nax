@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { createAgentSession, createMemoryTranscriptStore, isProcessAlive, type SessionEvent } from "@nathapp/nax-agent";
 import { afterEach, expect, test } from "vitest";
 import { acpBackend } from "#src/client/index";
-import { FAKE_MAIN, fakeEnv, startOf } from "#test/helpers/fake-process";
+import { FAKE_MAIN, fakeEnv, readRecords, startOf } from "#test/helpers/fake-process";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -44,4 +44,44 @@ test("a text turn and close over a Node agent process", async () => {
   const { pid } = startOf(record);
   await session.close();
   await until(() => !isProcessAlive(pid), 5_000);
+});
+
+test("an ask approval round trip over a Node agent process", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "acp-node-ask-"));
+  dirs.push(workdir);
+  const record = join(workdir, "record.jsonl");
+  const session = await createAgentSession({
+    backend: acpBackend({
+      agent: { name: "fake", command: process.execPath, args: [FAKE_MAIN] },
+      allowUnsandboxed: true,
+      env: fakeEnv(
+        {
+          turns: [
+            {
+              steps: [
+                { kind: "permission", options: ["allow_once", "reject_once"] },
+                { kind: "text", text: "ok" },
+              ],
+            },
+          ],
+        },
+        record,
+      ),
+    }),
+    profile: "ask",
+    workdir,
+    transcriptStore: createMemoryTranscriptStore(),
+  });
+  const events: SessionEvent[] = [];
+  for await (const event of session.send("go")) {
+    events.push(event);
+    if (event.type === "approval_requested") session.answer(event.requestId, { decision: "allow" });
+  }
+  expect(events.at(-1)).toMatchObject({ type: "turn_end", status: "completed" });
+  await until(() => readRecords(record).some((r) => r.method === "permission-outcome"), 5_000);
+  expect(readRecords(record).find((r) => r.method === "permission-outcome")?.params).toEqual({
+    outcome: "selected",
+    optionId: "opt-allow_once",
+  });
+  await session.close();
 });

@@ -5,12 +5,10 @@
  */
 import { RequestError } from "@agentclientprotocol/sdk";
 import { AgentSessionError, NaxError, redactSecrets } from "@nathapp/nax-agent";
+import { capBytes, scrubSecrets, stripControl } from "#src/client/text";
 
 /** Byte cap of every agent-text excerpt (stderr, JSON-RPC messages). */
 export const EXCERPT_BYTES = 4096;
-
-/** Shorter secret values are not replaced verbatim: they would garble ordinary text. */
-const MIN_SECRET_LENGTH = 8;
 
 /** JSON-RPC code of `RequestError.authRequired()`. */
 const AUTH_REQUIRED_CODE = -32000;
@@ -25,20 +23,9 @@ export const ACP_STOP_CODES = Object.freeze({
 
 export type AcpStopCode = (typeof ACP_STOP_CODES)[keyof typeof ACP_STOP_CODES];
 
-function capBytes(text: string, maxBytes: number): string {
-  const bytes = Buffer.from(text, "utf8");
-  if (bytes.byteLength <= maxBytes) return text;
-  // A cut inside a multi-byte character decodes to U+FFFD; drop it.
-  return bytes.subarray(0, maxBytes).toString("utf8").replace(/�+$/u, "");
-}
-
 /** Agent text made safe for an error: control characters stripped (except \n, \t), secrets redacted, capped. */
 export function agentTextExcerpt(text: string, secrets: readonly string[]): string {
-  const visible = text.replace(/\p{Cc}/gu, (c) => (c === "\n" || c === "\t" ? c : ""));
-  const scrubbed = secrets
-    .filter((secret) => secret.length >= MIN_SECRET_LENGTH)
-    .reduce((acc, secret) => acc.split(secret).join("[REDACTED]"), visible);
-  return capBytes(redactSecrets(scrubbed), EXCERPT_BYTES);
+  return capBytes(redactSecrets(scrubSecrets(stripControl(text), secrets)), EXCERPT_BYTES);
 }
 
 export function capabilityUnsupported(capability: string, reason: string): AgentSessionError {

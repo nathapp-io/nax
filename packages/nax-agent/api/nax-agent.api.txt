@@ -330,6 +330,7 @@ findSecretSpans
 flushOpenToolAuditSinks
 getAgentRuntime
 getCodingTool
+getLogger
 gitCommitTool
 gitExcludePathspecsOf
 gitIgnorePatternsOf

@@ -8,6 +8,7 @@ import type {
   PermissionOptionKind,
   SessionConfigOption,
   StopReason,
+  ToolCallUpdate,
   Usage,
 } from "@agentclientprotocol/sdk";
 
@@ -21,8 +22,11 @@ export type FakeStep =
   | { readonly kind: "text"; readonly text: string; readonly sessionId?: string }
   | { readonly kind: "thought"; readonly text: string }
   | { readonly kind: "delay"; readonly ms: number }
-  /** session/request_permission with one option per kind; the outcome is recorded as "permission-outcome". */
-  | { readonly kind: "permission"; readonly options: readonly PermissionOptionKind[] }
+  | PermissionStep
+  /** Waits until every detached permission request of this prompt has been answered. */
+  | { readonly kind: "settled" }
+  /** Waits for session/cancel, then carries on with the next step (waitForCancel stops the turn instead). */
+  | { readonly kind: "awaitCancel" }
   /** Blocks until session/cancel arrives; the turn then stops "cancelled". */
   | { readonly kind: "waitForCancel" }
   /** Never settles and ignores session/cancel. */
@@ -31,6 +35,18 @@ export type FakeStep =
   | { readonly kind: "exit"; readonly code: number; readonly stderr?: string }
   /** The prompt request fails with this JSON-RPC error. */
   | { readonly kind: "fail"; readonly failure: RpcFailure };
+
+/** session/request_permission with one option per kind (optionId "opt-<kind>"). */
+export interface PermissionStep {
+  readonly kind: "permission";
+  readonly options: readonly PermissionOptionKind[];
+  /** Overrides the default tool call { toolCallId: "fake-permission", title: "Edit a file", kind: "edit" }. */
+  readonly toolCall?: Partial<Pick<ToolCallUpdate, "toolCallId" | "title" | "kind" | "rawInput" | "locations">>;
+  /** Addresses another session (routing tests). */
+  readonly sessionId?: string;
+  /** Sent without waiting for the answer; the answer is still recorded. */
+  readonly detached?: boolean;
+}
 
 export interface FakeTurn {
   readonly steps: readonly FakeStep[];

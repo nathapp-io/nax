@@ -6,6 +6,7 @@ import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
 import { createInboundRouter } from "#src/client/inbound";
 import { openAcpSession } from "#src/client/open";
 import { type AcpBackendOptions, resolveAcpOptions } from "#src/client/options";
+import { rejectLocally } from "#src/client/permissions";
 import { CLAUDE_CONFIG_OPTIONS, type FakeScript } from "#test/fixtures/fake-agent/script";
 import { rejection, sessionError } from "#test/helpers/errors";
 import { inMemoryAgent } from "#test/helpers/in-memory-launch";
@@ -43,7 +44,12 @@ function options(extra: Partial<AcpBackendOptions> = {}) {
 async function openWith(script: FakeScript, extra: Partial<AcpBackendOptions> = {}, store?: TranscriptStore) {
   const fake = inMemoryAgent(script);
   const ctx = openContext(dir, store === undefined ? {} : { transcriptStore: store });
-  const opened = openAcpSession(options(extra), ctx, createInboundRouter().handlers, fake.launch);
+  const opened = openAcpSession(
+    options(extra),
+    ctx,
+    createInboundRouter(async (r) => rejectLocally(r)).handlers,
+    fake.launch,
+  );
   return { fake, ctx, opened };
 }
 
@@ -87,7 +93,14 @@ describe("openAcpSession: the happy path (spec §6.3 step 1)", () => {
       { PATH: "/usr/bin" },
     );
     const err = sessionError(
-      await rejection(openAcpSession(resolved, openContext(dir), createInboundRouter().handlers, fake.launch)),
+      await rejection(
+        openAcpSession(
+          resolved,
+          openContext(dir),
+          createInboundRouter(async (r) => rejectLocally(r)).handlers,
+          fake.launch,
+        ),
+      ),
     );
     expect(err.code).toBe("AGENT_SESSION_BACKEND_UNAVAILABLE");
     expect(err.message).toContain("gemini");
@@ -160,7 +173,7 @@ describe("openAcpSession: openSignal (close() during open)", () => {
         openAcpSession(
           options(),
           openContext(dir, { openSignal: controller.signal }),
-          createInboundRouter().handlers,
+          createInboundRouter(async (r) => rejectLocally(r)).handlers,
           fake.launch,
         ),
       ),
@@ -175,7 +188,7 @@ describe("openAcpSession: openSignal (close() during open)", () => {
     const opened = openAcpSession(
       options(),
       openContext(dir, { openSignal: controller.signal }),
-      createInboundRouter().handlers,
+      createInboundRouter(async (r) => rejectLocally(r)).handlers,
       fake.launch,
     );
     setTimeout(() => controller.abort(), 20);
