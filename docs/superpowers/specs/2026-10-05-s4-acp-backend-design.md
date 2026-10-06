@@ -54,7 +54,7 @@ S4 delivers:
 | R6 | **Profiles `none \| read \| ask \| full`: the same contract on both backends; enforcement differs.** Native enforces in its own tool runtime. ACP enforces through the agent's mode and the permission gate, so its guarantees cover only actions the agent routes through `request_permission` (§6.4). |
 | R7 | **`acpBackend` always requires `allowUnsandboxed: true`**: the agent process runs on the host, unsandboxed. |
 | R8 | **MCP tool host is HTTP-only in S4**; a stdio bridge is deferred. |
-| R9 | **Elicitation:** message-only and single-field forms become `question` events; richer forms are declined. |
+| R9 | **Elicitation** (amended in S4-5, D5-i, maintainer ruling 2026-10-06): each field of a form becomes its own `question` event: free text, single-select and multi-select fields, with a `<key>_custom` free-text field folded into its select `<key>` (Claude's AskUserQuestion "Other" box). Other field types, oversized forms and non-form requests are declined. |
 | R10 | **Versioning:** nax-agent-acp starts at 0.3.0, in step with nax-agent. Both are released together and always bump together (the `^0.3.0` peer range admits only 0.3.x). Everything goes 1.0.0 together after S6. |
 | R11 | **No client fs/terminal in S4** (final review): no targeted adapter calls them. The handlers are out of scope until an agent that uses them becomes first-class. |
 | R12 | **Embedder tools are pre-approved at the adapter** (final review, paperclip pattern). Their `request_permission` would otherwise break `none` and `read` and double-prompt under `ask`. Our tool host is the only approval point for them (§6.6). |
@@ -151,8 +151,8 @@ export interface SessionAskPort {
     Promise<{ decision: "allow" | "deny"; decidedBy: ApprovalDecidedBy }>;
   /** Emits approval_requested then approval_resolved (decidedBy "profile") with a fresh requestId; never enters the pending table. No-op when no turn is active. */
   recordAutoDecision(req: { callId?: string; tool: string; summary: string; reason: string }, decision: "allow" | "deny"): void;
-  /** null on deadline, cancel or no active turn. */
-  askQuestion(text: string): Promise<string | null>;
+  /** null on deadline, cancel (the turn signal or opts.signal, S4-5 D5-j) or no active turn. */
+  askQuestion(text: string, opts?: { signal?: AbortSignal }): Promise<string | null>;
   /** Informational question event with a fresh requestId; answer() on it returns "cancelled". */
   noteQuestion(text: string): void;
 }
@@ -388,7 +388,7 @@ Out of scope (R11). Never advertised in S4.
   - no CORS headers
   - bodies over 1 MiB → 413
   - at most 8 concurrent `tools/call` → MCP tool error beyond that
-- **Token secrecy:** the token joins the redaction set for errors, the stderr tail, approval displays and tool summaries. It is never written to `env` or the transcript document. Agent-authored text is not scrubbed in S4-4 (S4-4 D4-m).
+- **Token secrecy:** the token joins the redaction set for errors, the stderr tail, approval displays and tool summaries. It is never written to `env` or the transcript document. From S4-5 it is also scrubbed from agent-authored text and thinking, tool events and `turn_end.output` (S4-5 D5-g).
 - **Accepted threat:** Claude's adapter passes the server's headers to the Claude CLI's argv (`--mcp-config`), so a process of the same user can read the token and reach the tools. The token stops browsers (with the `Host`/`Origin` checks) and other users; each tool's `approval` stays its gate (S4-4 D4-m).
 - **Pre-approval (R12):** for Claude, `session/new._meta.claudeCode.options.allowedTools` lists one exact rule per embedder tool, `mcp__nax__<tool>` (verified in the S4-4 plan, D4-a, against claude-agent-acp 0.85.1 and claude-agent-sdk 0.3.286), so the adapter never asks permission for embedder tools. The host is their only approval point:
   - `approval: "always"` → `asks.requestApproval`
@@ -403,33 +403,47 @@ Out of scope (R11). Never advertised in S4.
 
 ### 6.7 Event mapping and usage (`events.ts`)
 
+Amended in S4-5 (D5-a to D5-h) after reading claude-agent-acp 0.85.1.
+
 | ACP `session/update` | Event |
 |---|---|
 | `agent_message_chunk` text | `text_delta { round: 0, text }` |
 | `agent_message_chunk` non-text | dropped |
-| `agent_thought_chunk` | `thinking_delta { round: 0, text }` |
-| `tool_call` | `tool_call { callId: toolCallId, name, input }`: `name` is the first title seen for that id that is non-empty and not a placeholder (`"tool call"`, `"Tool"`, case-insensitive), capped at 200 characters, else `kind`; `input` is `rawInput`, redacted and capped |
-| `tool_call_update` status completed or failed | `tool_result { callId, isError: status === "failed", preview }`: the preview is built from content (text; a diff as `edit <path> (+a -b)`; terminal output), redacted and capped |
-| `tool_call_update` other | updates title memory only |
-| `plan`, `available_commands_update`, `current_mode_update`, `config_option_update` | dropped |
+| `agent_thought_chunk` text | `thinking_delta { round: 0, text }` |
+| `tool_call`, `tool_call_update` | merged per call (`tool-events.ts`); `tool_call` goes out when the call is used: a permission request names it, or its status is `in_progress`, `completed` or `failed` (D5-c) |
+| `tool_call` / `tool_call_update` status `completed` or `failed` | `tool_result { callId, isError: status === "failed", preview }`, once per call (D5-e) |
+| `usage_update` | its `cost` feeds the session's cost meter; no event |
+| `plan`, `available_commands_update`, `current_mode_update`, `config_option_update`, any other update | dropped |
 | `user_message_chunk`, and any update during `session/load` | suppressed |
+
+- **Tool calls (D5-c to D5-f):**
+  - `callId` is the agent's id, cleaned as for approval displays, so it equals `approval_requested.callId`; an id that holds a secret is dropped with its events.
+  - `name`: the first non-empty `name` the agent sent (Claude: its tool name); else the first title that is non-empty and not a placeholder (`"tool call"`, `"Tool"`, case-insensitive); else `kind`; else `"tool"`. One line, visible characters, secrets scrubbed, at most 200 characters.
+  - `input`: the latest `rawInput` when the event goes out (`{}` if none), secrets scrubbed, redacted and capped as native caps it.
+  - `preview`: the latest content: text blocks, a `resource_link`'s `uri`, each diff as `edit <path> (+a -b)` (no counts above 1 MiB of text); `terminal` entries skipped (R11); else `rawOutput` when it is a string. Redacted and capped.
+  - Every `tool_call` is followed by exactly one `tool_result`. At turn end, an announced call without one gets `isError: true` and `"Not answered: the turn ended."`. A call never used emits nothing. At most 512 calls are tracked per turn.
+- **Text (D5-g):** `text_delta`, `thinking_delta` and `turn_end.output` have the session's secret values (`env` secrets of 8 or more characters, the tool host's token) replaced with `[REDACTED]`. Each stream holds back at most the longest such value's length minus one characters, so a value split across chunks is caught; held text goes out before the other stream's next delta, before any tool event and at turn end. No pattern redaction on deltas, as on native.
 
 `round` is always 0. `stream_reset` and `compaction` are never emitted by the ACP backend. `turn_end.output` is the turn's concatenated agent message text.
 
-**Usage** (per turn; one `usage` event at turn end):
-- **Tokens:** `PromptResponse.usage` (`inputTokens`, `outputTokens`, `thoughtTokens?`, `cachedReadTokens?`, `cachedWriteTokens?`) is session-cumulative. The per-turn value is the delta against the cumulative totals recorded after the previous turn.
-- **Baseline:** taken at open, resume and reconnect from the first reported value; the agent may restart its counters at zero. A delta that goes negative resets the baseline and reports that turn's raw values.
-- **Mapping:** output tokens = `outputTokens + thoughtTokens`; cache read and write map to `cacheRead` / `cacheWrite`.
-- **Cost:** the delta of `usage_update.cost.amount` (session-cumulative, USD only) with `costSource: "reported"`. With no cost reported: `costUsd: 0`, `costSource: "unpriced"`.
+**Usage** (per turn; one `usage` event per `PromptResponse`, D5-h):
+- **Tokens (D5-a):** `PromptResponse.usage` (`inputTokens`, `outputTokens`, `thoughtTokens?`, `cachedReadTokens?`, `cachedWriteTokens?`) is taken as the turn's own usage. The protocol field is UNSTABLE and its comments contradict each other ("for this turn" vs "across all turns"); claude-agent-acp 0.85.1 resets it when a turn starts (`acp-agent.js` 2491).
+- **Mapping:** output tokens = `outputTokens + thoughtTokens`; cache read and write map to `cacheRead` / `cacheWrite`, absent when not reported.
+- **Cost (D5-b):** `usage_update.cost.amount` is cumulative for the session (USD only). The session's meter keeps the reading taken at the end of the last priced turn (0 for a new agent process; S4-6 resets it on reconnect and resume). A turn's cost is its latest reading minus that, `costSource: "reported"`; a negative difference reports the raw reading. A turn with no reading: `costUsd: 0`, `costSource: "unpriced"`, baseline unchanged.
 - **No usage reported at all:** zeros with `unpriced`.
+- **When:** after the turn's last delta and tool result, also for a stop reason other than `end_turn`. A turn that ends without a `PromptResponse` (abort, crash, JSON-RPC error) emits none. An errored turn's `turn_end.usage` stays zero, because the facade reads an errored turn's spend only from nax-agent's own turn error.
 
 ### 6.8 Elicitation → `question`
 
-Advertised under `ask` and `full` (`elicitation.form`). Responses use the protocol's actions `accept`, `decline` and `cancel`.
+Amended in S4-5 (D5-i, maintainer ruling 2026-10-06). Advertised under `ask` and `full` (`elicitation.form`); under `none` and `read` a request is declined unasked. Responses use the protocol's actions `accept`, `decline` and `cancel`. Routing follows permissions (D5-k): only the bound session during a turn, under the shared cap of 16 pending inbound requests; anything else → `cancel`, no event.
+
+- **Form shape:** only `mode: "form"` with a `requestedSchema` object. A `string` field without choices is free text; a `string` with `enum` or `oneOf` is a single-select; an `array` whose `items` has `enum`, `anyOf` or `oneOf` is a multi-select. A plain string field `<key>_custom` next to a select `<key>` is its companion and is not asked on its own.
+- **Declined unasked:** any other field type, an empty or malformed choice list, more than 32 choices, more than 16 fields, a URL or unknown mode. `asks.noteQuestion("declined: <message>")`, then `decline`.
 - **Message-only form:** `asks.askQuestion(message)`. A reply → `accept` with empty content; `null` → `cancel`.
-- **Single string field:** a reply → `accept` with that field.
-- **Single enum field:** the question lists the choices. The reply matches a choice after trimming, case-insensitively → `accept`; no match → `decline`.
-- **Any other schema:** `asks.noteQuestion("declined: <message>")`, then `decline`.
+- **Each other field is one question**, in order, asked under the turn binding's signal (`askQuestion(text, { signal })`, D5-j): the message (first question only), the field's title and description (`(i/n)` when there are several), numbered choices, and an instruction line.
+- **Replies** (trimmed): empty skips an optional field and declines a required one. A single-select matches a choice by number, value or title, case-insensitively; no match goes to the companion, or declines without one. A multi-select splits on commas; unmatched parts join the companion with `", "`, or decline without one. Free text is taken as written. A decline after a reply is noted with `noteQuestion`.
+- **No reply** (deadline, cancel, turn end, process exit) → `cancel`; later fields are not asked.
+- **Question text** is agent data: control and invisible characters stripped, session secrets scrubbed, at most 4096 bytes.
 
 ### 6.9 Resume and reconnect (`resume.ts`)
 
@@ -552,7 +566,8 @@ Nothing is released before S4-6, so partial `./client` states are never publishe
    - a `question` round trip, if Claude emits an elicitation for a prompted AskUserQuestion. If it does not, this is recorded as not observed, not failed.
    - turn 1 states a random nonce; `close()`; `resumeAgentSession` from a new process (asserting `session/resume` was used) and the agent returns the nonce
    - under `read`: a write attempt is rejected (`decidedBy: "profile"`)
-   - a `usage` event with non-zero tokens
+   - a `usage` event with non-zero tokens and `costSource: "reported"`; in a two-turn session the second turn's tokens are that turn's own (S4-5 D5-a)
+   - a `tool_call` / `tool_result` pair for a file read, whose `input` names the file (S4-5 D5-c)
    - Record the model, cost and commit.
 3. **Initialize-only smoke** for codex, gemini, opencode and pi where installed: `initialize` plus `session/new`, no prompt. The capability matrix is recorded in the master plan.
 4. **nax unaffected:** `git diff --exit-code origin/main -- packages/nax/` is empty (aside from the lockfile); the nax suite and typecheck pass; the S4-0 billed smoke result (§10) is recorded.
@@ -566,7 +581,7 @@ Nothing is released before S4-6, so partial `./client` states are never publishe
 | SDK churn (1.x moving fast) | `~1.7.0` pin; `ClientApp` builder only; no `/experimental` or v2 |
 | Users read ACP `read`/`ask` as a hard sandbox | the documented guarantees (§6.4); the required `allowUnsandboxed: true` |
 | Bun stream interop with the SDK | Node and Bun matrix over real subprocess pipes with the fake agent |
-| Cumulative usage semantics differ per adapter | delta with reset handling; conformance asserts per-turn values |
+| Usage semantics differ per adapter (the protocol field is UNSTABLE) | tokens taken per turn as Claude 0.85.1 reports them (S4-5 D5-a); cost differenced from cumulative readings with restart handling (D5-b); the live smoke checks a two-turn session |
 
 ## 13. Handoff to S4b and S5 (not designed here)
 

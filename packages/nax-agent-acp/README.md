@@ -5,10 +5,10 @@ nax-agent session API (`createAgentSession`, `send()`, `answer()`, `cancel()`, `
 drive external coding agents such as Claude Code over ACP.
 
 **Status: pre-release.** The package is built in stages (S4-1 to S4-6) and is not
-published yet. Today `acpBackend()` serves text sessions under all four profiles,
-and embedder tools on Claude. Tool and usage events (S4-5) and resume (S4-6) are
-refused with `AGENT_SESSION_CAPABILITY_UNSUPPORTED` until their stage lands.
-`./server` is reserved for a later ACP server.
+published yet. Today `acpBackend()` serves sessions under all four profiles, with
+thinking, tool and usage events, questions from the agent, and embedder tools on
+Claude. Resume (S4-6) is refused with `AGENT_SESSION_CAPABILITY_UNSUPPORTED` until
+its stage lands. `./server` is reserved for a later ACP server.
 
 ```ts
 import { createAgentSession, createMemoryTranscriptStore } from "@nathapp/nax-agent";
@@ -34,8 +34,10 @@ What to know:
 - **Instructions** are prepended to the first prompt only; ACP has no system prompt.
 - **Stop reasons.** A turn that stops for anything but `end_turn` ends `errored` with
   an `ACP_STOP_*` code (`ACP_STOP_CODES`).
-- **Usage** is reported as zeros with `costSource: "unpriced"`. Never sum
-  `unpriced` rows as a cost.
+- **Usage.** Each turn ends with one `usage` event: the tokens the agent reports for
+  the turn, and the cost it reports (`costSource: "reported"`). An agent that reports
+  no cost gives `costUsd: 0` with `costSource: "unpriced"`. Never sum `unpriced`
+  rows as a cost. See "Events and usage on ACP".
 - **A crashed or killed agent leaves the session disconnected.** Later turns end
   `AGENT_SESSION_CLOSED`. A cancel the agent ignores for `cancelGraceMs` kills it.
 - **A crash between `session/new` and the first save** loses the agent's session
@@ -93,9 +95,9 @@ MCP server this client runs for the session.
   the server's headers to the Claude CLI on its command line, so any process
   running as your user (including the agent's own shell) can read the token from
   the process table. Treat your tools' `approval` as their real gate.
-- **Where the token is redacted.** Errors, the agent's stderr, approval displays
-  and tool summaries, and it is never stored in the transcript. Text the agent
-  writes itself is passed through as written.
+- **Where the token is redacted.** Errors, the agent's stderr, approval displays,
+  tool summaries, tool events, and the agent's own text and thinking. It is never
+  stored in the transcript.
 - **The name `nax` is reserved.** If your Claude user or project settings define an
   MCP server named `nax`, it can collide with this one. Rename yours.
 - **Pre-approved at the agent.** Claude is told to allow exactly `mcp__nax__<tool>`
@@ -114,3 +116,61 @@ MCP server this client runs for the session.
 - **A permission request that names one of your tools is not trusted as such.** The
   agent's tool title is display data. If an agent asks permission for an MCP tool
   anyway, it is decided by profile like any other request.
+
+## Events and usage on ACP
+
+A turn on ACP emits the same event types as on the native backend, with these
+differences.
+
+- **Text and thinking** arrive as `text_delta` and `thinking_delta`, always with
+  `round: 0`. `stream_reset` and `compaction` never occur.
+- **Your secrets are scrubbed from the agent's text.** The values of `env` keys
+  named like `KEY`, `TOKEN`, `SECRET` or `PASSWORD` (8 characters or more) and the
+  tool host's token show as `[REDACTED]` in `text_delta`, `thinking_delta` and
+  `turn_end.output`, also when a value arrives split across two chunks. To catch
+  that, up to one such value's length of text is held back until the next chunk;
+  without such values nothing is held. Other secrets are not pattern-redacted in
+  text, as on the native backend.
+- **Tool calls.** `tool_call` is sent when the agent uses the call: it asks
+  permission for it, reports progress, or finishes. It is not sent when the call is
+  first mentioned, because Claude fills in a call's input after mentioning it.
+  `name` is the agent's tool name (with Claude: `Read`, `Bash`, `mcp__nax__<tool>`).
+  Every `tool_call` is followed by exactly one `tool_result`. A call still running
+  when the turn ends gets `isError: true` and `"Not answered: the turn ended."`. A
+  call the agent mentions but never uses produces no events.
+- **Inputs and previews** are capped and redacted best-effort, as on the native
+  backend. A file edit shows as `edit <path> (+added -removed)` lines.
+- **Usage.** One `usage` event per turn, after the turn's last delta and tool
+  result, also when the turn stops for a reason other than `end_turn`.
+  - Tokens are the agent's numbers for the turn. Output tokens include thinking
+    tokens. Cache fields appear only when the agent reports them.
+  - Cost: the agent reports a running total for the session, and each turn's cost
+    is the difference. Spend between turns, or in a turn that ends without the
+    agent's final answer (cancel, crash), is counted in the next turn that reports
+    a cost.
+  - A turn that ends `errored` has zero `usage` in `turn_end`; read its `usage`
+    event instead.
+
+## Questions from the agent
+
+Under `ask` and `full` this client tells the agent it can show forms. Claude uses
+forms for its AskUserQuestion tool and for some model-fallback prompts. Under `none`
+and `read` forms are not offered, and one that arrives anyway is declined.
+
+- **Each form field is one `question` event.** Answer it with
+  `answer(requestId, { text })`.
+  - Choices are numbered. Reply with a number or the choice's text, in any case.
+  - A multi-select takes a comma-separated list.
+  - Claude's "Other" box: a reply that is not one of the choices becomes your own
+    answer.
+  - An empty reply skips an optional field.
+- **Declined forms.** Forms with number, boolean or other field types, more than 16
+  fields or more than 32 choices, and requests to open a URL are declined. You see
+  an informational `question` that starts with `declined:`; `answer()` on it
+  returns `"cancelled"`. A reply that matches no choice (when there is no "Other"
+  box) and an empty reply to a required field also decline the form, with a note.
+- **No answer cancels.** An unanswered question after `approvalTimeoutMs`, a
+  cancelled turn, the turn ending or the agent process dying cancels the whole form,
+  and later fields are not asked. `answer()` on that question returns `"cancelled"`.
+- **Question text comes from the agent.** Control characters are stripped, your
+  secrets scrubbed, and it is capped at 4 KiB.
