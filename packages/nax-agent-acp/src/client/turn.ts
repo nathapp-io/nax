@@ -1,10 +1,12 @@
 /**
- * One ACP prompt turn (S4 spec §6.3 steps 2 and 3, §5.7). end_turn returns a
- * TurnResult; any other stop reason throws its ACP_STOP_* NaxError. When the turn
- * signal aborts (cancel(), the facade's turn timeout, close()), session/cancel is
- * sent and the prompt gets cancelGraceMs to settle; past that the process group
- * is killed and the session is marked disconnected. The facade reports cancelled
- * or timed_out from the signal, so after an abort this throws the signal's reason.
+ * One ACP prompt turn (S4 spec §6.3 steps 2 and 3, §5.7, §6.7). The response settles
+ * the turn's collector first, so its usage event goes out for every stop reason
+ * (S4-5 D5-h); end_turn then returns a TurnResult with the turn's tokens and cost,
+ * and any other stop reason throws its ACP_STOP_* NaxError. When the turn signal
+ * aborts (cancel(), the facade's turn timeout, close()), session/cancel is sent and
+ * the prompt gets cancelGraceMs to settle; past that the process group is killed
+ * and the session is marked disconnected. The facade reports cancelled or timed_out
+ * from the signal, so after an abort this throws the signal's reason.
  */
 import type { PromptResponse } from "@agentclientprotocol/sdk";
 import { NaxError, type TurnResult } from "@nathapp/nax-agent";
@@ -48,13 +50,13 @@ export async function runPromptTurn(state: TurnState, input: TurnInput): Promise
 }
 
 function resultOf(response: PromptResponse, collector: TurnCollector): TurnResult {
+  const spend = collector.settle(response);
   if (response.stopReason !== "end_turn") throw stopReasonError(String(response.stopReason));
-  // Usage and cost arrive with S4-5 (§6.7); until then a turn is unpriced zeros (D-e).
   return {
     output: collector.output(),
-    tokenUsage: { inputTokens: 0, outputTokens: 0 },
-    estimatedCostUsd: 0,
-    costSource: "unpriced",
+    tokenUsage: spend.tokenUsage,
+    estimatedCostUsd: spend.costUsd,
+    costSource: spend.costSource,
     internalRoundTrips: 1,
   };
 }

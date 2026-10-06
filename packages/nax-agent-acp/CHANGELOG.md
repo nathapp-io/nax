@@ -28,3 +28,14 @@ step with `@nathapp/nax-agent`.
   Calls run only during a turn, under the turn's signal, and are abandoned when it
   stops. The token is redacted everywhere and never stored; the server stops on
   close. Agents without HTTP MCP or pre-approval refuse tools after `initialize`.
+- Turn events, usage and questions on `acpBackend()` (S4-5). Agent thoughts become
+  `thinking_delta`. Tool calls become `tool_call` / `tool_result`: sent when the
+  call is used, one result per call, calls still running at turn end closed as not
+  answered. Each turn ends with one `usage` event with the agent's per-turn tokens
+  and the turn's share of its cumulative reported cost (`costSource: "reported"`,
+  else `"unpriced"`). Session secret values, the tool host's token included, are
+  scrubbed from agent text, thinking and `turn_end.output`, also when split across
+  chunks. Form elicitations become `question` events under `ask` and `full`, one per
+  field (single- and multi-select, free text, Claude's "Other" box); other forms are
+  declined, and an unanswered or abandoned form is cancelled. Needs nax-agent's
+  `askQuestion(text, { signal })`.

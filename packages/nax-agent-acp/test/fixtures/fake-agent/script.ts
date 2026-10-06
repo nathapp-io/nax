@@ -5,8 +5,10 @@
  */
 import type {
   AgentCapabilities,
+  ElicitationSchema,
   PermissionOptionKind,
   SessionConfigOption,
+  SessionUpdate,
   StopReason,
   ToolCallUpdate,
   Usage,
@@ -18,12 +20,19 @@ export interface RpcFailure {
 }
 
 export type FakeStep =
-  /** An agent_message_chunk; `sessionId` addresses another session (routing tests). */
-  | { readonly kind: "text"; readonly text: string; readonly sessionId?: string }
+  /**
+   * An agent_message_chunk; `sessionId` addresses another session (routing tests);
+   * `echoMcpAuth` appends the tool host's Authorization value (scrubbing tests, S4-5).
+   */
+  | { readonly kind: "text"; readonly text: string; readonly sessionId?: string; readonly echoMcpAuth?: boolean }
   | { readonly kind: "thought"; readonly text: string }
+  /** Any session/update for the prompt's session: tool calls, usage, plans (S4-5 D5-m). */
+  | { readonly kind: "update"; readonly update: SessionUpdate }
+  /** elicitation/create (S4-5 D5-m). */
+  | ElicitStep
   | { readonly kind: "delay"; readonly ms: number }
   | PermissionStep
-  /** Waits until every detached permission request and MCP call of this prompt has been answered. */
+  /** Waits until every detached permission request, MCP call and elicitation of this prompt has been answered. */
   | { readonly kind: "settled" }
   /** Waits for session/cancel, then carries on with the next step (waitForCancel stops the turn instead). */
   | { readonly kind: "awaitCancel" }
@@ -44,6 +53,20 @@ export interface McpCallStep {
   readonly tool: string;
   readonly input?: Readonly<Record<string, unknown>>;
   /** Sent without waiting for the result; `settled` waits for it. */
+  readonly detached?: boolean;
+}
+
+/** Records `elicitation-answer` (the response) or `elicitation-error` `{ message }`. */
+export interface ElicitStep {
+  readonly kind: "elicit";
+  readonly message: string;
+  /** Absent: a message-only form (no properties). */
+  readonly requestedSchema?: ElicitationSchema;
+  /** Default "form"; "url" sends a url-mode request. */
+  readonly mode?: "form" | "url";
+  /** Default "session" (the prompt's session); "request" is request-scoped; "other" names another session. */
+  readonly scope?: "session" | "request" | "other";
+  /** Sent without waiting for the answer; `settled` waits for it. */
   readonly detached?: boolean;
 }
 

@@ -1,7 +1,8 @@
 /**
  * The fake ACP agent (S4 spec §9) on the SDK's agent side. It answers initialize,
  * session/new, session/set_config_option, session/prompt and session/close from a
- * FakeScript and records each request through FakeHooks. It runs in process (the
+ * FakeScript, sends updates, permission requests, MCP calls and elicitations as its
+ * steps say, and records each request through FakeHooks. It runs in process (the
  * client connects to the AgentApp directly) or as a subprocess (main.ts). Erasable
  * TypeScript only: Node runs it with type stripping.
  */
@@ -9,6 +10,7 @@ import {
   type AgentApp,
   type AgentContext,
   agent,
+  type CreateElicitationRequest,
   type McpServer,
   methods,
   type PermissionOption,
@@ -18,14 +20,23 @@ import {
   type StopReason,
 } from "@agentclientprotocol/sdk";
 import { callMcpTool, httpServerOf } from "./mcp.ts";
-import type { FakeHooks, FakeScript, FakeStep, FakeTurn, McpCallStep, PermissionStep, RpcFailure } from "./script.ts";
+import type {
+  ElicitStep,
+  FakeHooks,
+  FakeScript,
+  FakeStep,
+  FakeTurn,
+  McpCallStep,
+  PermissionStep,
+  RpcFailure,
+} from "./script.ts";
 
 const DEFAULT_TURN: FakeTurn = { steps: [{ kind: "text", text: "ok" }] };
 
 interface PromptState {
   readonly cancelled: Promise<void>;
   readonly markCancelled: () => void;
-  /** Detached permission requests and MCP calls of this prompt, settled when answered. */
+  /** Detached permission requests, MCP calls and elicitations of this prompt, settled when answered. */
   readonly detached: Promise<void>[];
   /** The mcpServers session/new received. */
   readonly mcpServers: readonly McpServer[];
@@ -70,11 +81,19 @@ async function runStep(
   hooks: FakeHooks,
 ): Promise<StopReason | undefined> {
   switch (step.kind) {
-    case "text":
+    case "text": {
+      const auth = step.echoMcpAuth === true ? (httpServerOf(state.mcpServers)?.headers.Authorization ?? "") : "";
       await client.notify(methods.client.session.update, {
         sessionId: step.sessionId ?? sessionId,
-        update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: step.text } },
+        update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: `${step.text}${auth}` } },
       });
+      return undefined;
+    }
+    case "update":
+      await client.notify(methods.client.session.update, { sessionId, update: step.update });
+      return undefined;
+    case "elicit":
+      await elicit(step, sessionId, client, state, hooks);
       return undefined;
     case "thought":
       await client.notify(methods.client.session.update, {
@@ -138,6 +157,46 @@ async function requestPermission(
         hooks.record("permission-error", { toolCallId, message: String(error) });
       },
     );
+  if (step.detached === true) {
+    state.detached.push(answered);
+    return;
+  }
+  await answered;
+}
+
+function elicitationRequest(step: ElicitStep, sessionId: string): CreateElicitationRequest {
+  const scope =
+    step.scope === "request"
+      ? { requestId: "fake-request-1" }
+      : { sessionId: step.scope === "other" ? "other-session" : sessionId };
+  if (step.mode === "url") {
+    return {
+      ...scope,
+      mode: "url",
+      message: step.message,
+      elicitationId: "fake-elicitation-1",
+      url: "https://example.com/auth",
+    };
+  }
+  const requestedSchema = step.requestedSchema ?? { type: "object", properties: {} };
+  return { ...scope, mode: "form", message: step.message, requestedSchema };
+}
+
+async function elicit(
+  step: ElicitStep,
+  sessionId: string,
+  client: AgentContext,
+  state: PromptState,
+  hooks: FakeHooks,
+): Promise<void> {
+  const answered = client.request(methods.client.elicitation.create, elicitationRequest(step, sessionId)).then(
+    (response) => {
+      hooks.record("elicitation-answer", response);
+    },
+    (error: unknown) => {
+      hooks.record("elicitation-error", { message: String(error) });
+    },
+  );
   if (step.detached === true) {
     state.detached.push(answered);
     return;

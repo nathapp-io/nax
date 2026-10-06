@@ -145,3 +145,85 @@ test("an embedder tool call from a Node agent process, over loopback HTTP MCP", 
   ]);
   await session.close();
 });
+
+test("tool events, usage and a question round trip over a Node agent process", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "acp-node-events-"));
+  dirs.push(workdir);
+  const record = join(workdir, "record.jsonl");
+  const session = await createAgentSession({
+    backend: acpBackend({
+      agent: "claude",
+      allowUnsandboxed: true,
+      command: process.execPath,
+      args: [FAKE_MAIN],
+      env: fakeEnv(
+        {
+          configOptions: CLAUDE_CONFIG_OPTIONS,
+          turns: [
+            {
+              steps: [
+                {
+                  kind: "update",
+                  update: {
+                    sessionUpdate: "tool_call",
+                    toolCallId: "t1",
+                    name: "Read",
+                    title: "Read",
+                    status: "completed",
+                    rawInput: { file_path: "a.ts" },
+                    content: [{ type: "content", content: { type: "text", text: "body" } }],
+                  },
+                },
+                {
+                  kind: "elicit",
+                  message: "Which env?",
+                  requestedSchema: {
+                    type: "object",
+                    properties: { env: { type: "string", enum: ["staging", "prod"] } },
+                  },
+                },
+                {
+                  kind: "update",
+                  update: {
+                    sessionUpdate: "usage_update",
+                    used: 10,
+                    size: 100,
+                    cost: { amount: 0.01, currency: "USD" },
+                  },
+                },
+              ],
+              usage: { totalTokens: 3, inputTokens: 1, outputTokens: 2 },
+            },
+          ],
+        },
+        record,
+      ),
+    }),
+    profile: "ask",
+    workdir,
+    transcriptStore: createMemoryTranscriptStore(),
+  });
+  const events: SessionEvent[] = [];
+  for await (const event of session.send("go")) {
+    events.push(event);
+    if (event.type === "question") session.answer(event.requestId, { text: "prod" });
+  }
+  expect(events.map((e) => e.type)).toEqual([
+    "turn_start",
+    "tool_call",
+    "tool_result",
+    "question",
+    "usage",
+    "turn_end",
+  ]);
+  expect(events.find((e) => e.type === "usage")).toMatchObject({
+    inputTokens: 1,
+    outputTokens: 2,
+    costUsd: 0.01,
+    costSource: "reported",
+  });
+  expect(readRecords(record).filter((r) => r.method === "elicitation-answer")).toMatchObject([
+    { params: { action: "accept", content: { env: "prod" } } },
+  ]);
+  await session.close();
+});

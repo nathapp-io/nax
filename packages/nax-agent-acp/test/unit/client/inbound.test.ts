@@ -1,12 +1,19 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type {
+  CreateElicitationRequest,
+  CreateElicitationResponse,
   PermissionOptionKind,
   RequestPermissionRequest,
   RequestPermissionResponse,
 } from "@agentclientprotocol/sdk";
-import { type AgentLogger, setAgentLogger } from "@nathapp/nax-agent";
+import { type AgentLogger, setAgentLogger, type TurnEvent } from "@nathapp/nax-agent";
 import { createTurnCollector } from "#src/client/events";
-import { createInboundRouter, MAX_PENDING_DECISIONS, type PermissionDecider } from "#src/client/inbound";
+import {
+  createInboundRouter,
+  type ElicitationHandler,
+  MAX_PENDING_DECISIONS,
+  type PermissionDecider,
+} from "#src/client/inbound";
 
 const IDLE = new AbortController().signal;
 
@@ -228,5 +235,115 @@ describe("activeSignal (S4-4: what an embedder tool call runs under)", () => {
     void router.attach("agent-1", createTurnCollector(undefined), turn.signal);
     turn.abort();
     expect(router.activeSignal()?.aborted).toBe(true);
+  });
+});
+
+function elicitation(scope: { readonly sessionId: string } | { readonly requestId: string }): CreateElicitationRequest {
+  return { ...scope, mode: "form", message: "Pick", requestedSchema: { type: "object", properties: {} } };
+}
+
+const ACCEPT: CreateElicitationResponse = { action: "accept", content: {} };
+const CANCEL: CreateElicitationResponse = { action: "cancel" };
+
+function recordingElicit(answer: (signal: AbortSignal) => Promise<CreateElicitationResponse> = async () => ACCEPT) {
+  const seen: AbortSignal[] = [];
+  const elicit: ElicitationHandler = (_request, signal) => {
+    seen.push(signal);
+    return answer(signal);
+  };
+  return { elicit, seen };
+}
+
+describe("createInboundRouter: elicitation (S4-5 D5-k)", () => {
+  test("the bound session's elicitation reaches the handler with the binding signal", async () => {
+    const { elicit, seen } = recordingElicit();
+    const router = createInboundRouter(recordingDecider().decide, elicit);
+    const release = router.attach("a", createTurnCollector(undefined), IDLE);
+    expect(await router.handlers.onElicitation(elicitation({ sessionId: "a" }))).toEqual(ACCEPT);
+    expect(router.activeSignal()).toBe(seen[0]);
+    await release();
+  });
+
+  test("no turn, another session or request-scoped: cancel, the handler never runs, each reason logged once", async () => {
+    const { logger, warnings } = recordingLogger();
+    setAgentLogger(logger);
+    const { elicit, seen } = recordingElicit();
+    const router = createInboundRouter(recordingDecider().decide, elicit);
+    expect(await router.handlers.onElicitation(elicitation({ sessionId: "a" }))).toEqual(CANCEL);
+    expect(await router.handlers.onElicitation(elicitation({ sessionId: "a" }))).toEqual(CANCEL);
+    const release = router.attach("a", createTurnCollector(undefined), IDLE);
+    expect(await router.handlers.onElicitation(elicitation({ sessionId: "b" }))).toEqual(CANCEL);
+    expect(await router.handlers.onElicitation(elicitation({ requestId: "r-1" }))).toEqual(CANCEL);
+    expect(seen).toEqual([]);
+    expect(warnings).toEqual([
+      { message: "Cancelled an elicitation locally", data: { reason: "no-turn" } },
+      { message: "Cancelled an elicitation locally", data: { reason: "foreign-session" } },
+    ]);
+    await release();
+  });
+
+  test("permissions and elicitations share the pending cap", async () => {
+    const { decide } = recordingDecider(untilAborted);
+    const { elicit, seen } = recordingElicit();
+    const router = createInboundRouter(decide, elicit);
+    const release = router.attach("a", createTurnCollector(undefined), IDLE);
+    const pending = Array.from({ length: MAX_PENDING_DECISIONS }, () => router.handlers.onPermission(request("a")));
+    expect(await router.handlers.onElicitation(elicitation({ sessionId: "a" }))).toEqual(CANCEL);
+    expect(seen).toEqual([]);
+    await release();
+    await Promise.all(pending);
+  });
+
+  test("release aborts a pending elicitation and waits for its answer", async () => {
+    const state = { answered: false };
+    const { elicit } = recordingElicit(
+      (signal) =>
+        new Promise((resolve) => {
+          signal.addEventListener("abort", () =>
+            setTimeout(() => {
+              state.answered = true;
+              resolve(CANCEL);
+            }, 20),
+          );
+        }),
+    );
+    const router = createInboundRouter(recordingDecider().decide, elicit);
+    const release = router.attach("a", createTurnCollector(undefined), IDLE);
+    const answer = router.handlers.onElicitation(elicitation({ sessionId: "a" }));
+    await release();
+    expect(state.answered).toBe(true);
+    expect(await answer).toEqual(CANCEL);
+  });
+
+  test("a throwing handler, or no handler at all, answers cancel", async () => {
+    const throwing = createInboundRouter(recordingDecider().decide, async () => {
+      throw new Error("boom");
+    });
+    const releaseThrowing = throwing.attach("a", createTurnCollector(undefined), IDLE);
+    expect(await throwing.handlers.onElicitation(elicitation({ sessionId: "a" }))).toEqual(CANCEL);
+    await releaseThrowing();
+    const bare = createInboundRouter(recordingDecider().decide);
+    const releaseBare = bare.attach("a", createTurnCollector(undefined), IDLE);
+    expect(await bare.handlers.onElicitation(elicitation({ sessionId: "a" }))).toEqual(CANCEL);
+    await releaseBare();
+  });
+});
+
+describe("createInboundRouter: a permission request announces its tool call (S4-5 D5-c)", () => {
+  test("tool_call goes out before the decision; not for another session or after the abort", async () => {
+    const events: TurnEvent[] = [];
+    const router = createInboundRouter(recordingDecider().decide);
+    const turn = new AbortController();
+    const release = router.attach(
+      "a",
+      createTurnCollector((e) => events.push(e)),
+      turn.signal,
+    );
+    await router.handlers.onPermission({ ...request("a"), toolCall: { toolCallId: "t1", title: "Run tests" } });
+    await router.handlers.onPermission({ ...request("b"), toolCall: { toolCallId: "t2", title: "Other" } });
+    turn.abort();
+    await router.handlers.onPermission({ ...request("a"), toolCall: { toolCallId: "t3", title: "Late" } });
+    expect(events).toEqual([{ type: "tool_call", callId: "t1", name: "Run tests", input: {} }]);
+    await release();
   });
 });

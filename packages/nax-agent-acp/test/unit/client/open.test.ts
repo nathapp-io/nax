@@ -5,7 +5,7 @@ import type { EmbedderTool } from "@nathapp/nax-agent";
 import { type AgentSessionErrorCode, createMemoryTranscriptStore, type TranscriptStore } from "@nathapp/nax-agent";
 import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
 import { createInboundRouter } from "#src/client/inbound";
-import { openAcpSession } from "#src/client/open";
+import { clientCapabilitiesFor, openAcpSession } from "#src/client/open";
 import { type AcpBackendOptions, resolveAcpOptions } from "#src/client/options";
 import { rejectLocally } from "#src/client/permissions";
 import type { HttpMcpServer, ToolHost } from "#src/client/tool-host";
@@ -62,7 +62,10 @@ describe("openAcpSession: the happy path (spec §6.3 step 1)", () => {
     expect(fake.requests).toEqual([
       { command: "fake-claude", args: [], cwd: dir, env: { PATH: "/usr/bin", MY_TOKEN: SECRET } },
     ]);
-    expect(fake.callsTo("initialize")).toEqual([{ protocolVersion: 1, clientCapabilities: CLIENT_CAPABILITIES }]);
+    // openContext's profile is "full": form elicitation is advertised (D5-l).
+    expect(fake.callsTo("initialize")).toEqual([
+      { protocolVersion: 1, clientCapabilities: { ...CLIENT_CAPABILITIES, elicitation: { form: {} } } },
+    ]);
     expect(fake.callsTo("session/new")).toEqual([{ cwd: dir, mcpServers: [] }]);
     expect(fake.callsTo("session/set_config_option")).toEqual([
       { sessionId: "fake-session-1", configId: "mode", value: "default" },
@@ -285,5 +288,14 @@ describe("openAcpSession: the tool host (spec §6.3 steps 3-4, §6.6)", () => {
     expect(err.message).toContain("the tool host could not start: EADDRNOTAVAIL");
     expect(fake.callsTo("session/new")).toEqual([]);
     expect(fake.kills()).toBe(1);
+  });
+});
+
+describe("clientCapabilitiesFor (S4-5 D5-l)", () => {
+  test("form elicitation under ask and full only; never fs or terminal", () => {
+    expect(clientCapabilitiesFor("ask")).toEqual({ elicitation: { form: {} } });
+    expect(clientCapabilitiesFor("full")).toEqual({ elicitation: { form: {} } });
+    expect(clientCapabilitiesFor("read")).toEqual({});
+    expect(clientCapabilitiesFor("none")).toEqual({});
   });
 });

@@ -2,12 +2,14 @@
  * The ACP client connection (S4 spec §6.1 connection). One ClientApp per agent
  * process, attached with connect() for the session's lifetime (not connectWith).
  * Outbound calls use the connection's request API directly; inbound
- * session/update and session/request_permission go to the backend's handlers.
- * Requests are not bounded here: callers race them (race.ts), because the SDK's
- * cancellation is cooperative and still waits for the agent's answer.
+ * session/update, session/request_permission and elicitation/create go to the
+ * backend's handlers. Requests are not bounded here: callers race them (race.ts),
+ * because the SDK's cancellation is cooperative and still waits for the agent's answer.
  */
 import {
   type ClientConnection,
+  type CreateElicitationRequest,
+  type CreateElicitationResponse,
   client,
   type InitializeRequest,
   type InitializeResponse,
@@ -27,6 +29,7 @@ import type { LaunchTarget } from "#src/client/launch";
 export interface InboundHandlers {
   onUpdate(notification: SessionNotification): void;
   onPermission(request: RequestPermissionRequest): Promise<RequestPermissionResponse>;
+  onElicitation(request: CreateElicitationRequest): Promise<CreateElicitationResponse>;
 }
 
 export interface AcpLink {
@@ -45,7 +48,8 @@ export interface AcpLink {
 export function openConnection(target: LaunchTarget, handlers: InboundHandlers): AcpLink {
   const app = client({ name: "nax-agent-acp" })
     .onNotification(methods.client.session.update, (ctx) => handlers.onUpdate(ctx.params))
-    .onRequest(methods.client.session.requestPermission, (ctx) => handlers.onPermission(ctx.params));
+    .onRequest(methods.client.session.requestPermission, (ctx) => handlers.onPermission(ctx.params))
+    .onRequest(methods.client.elicitation.create, (ctx) => handlers.onElicitation(ctx.params));
   const connection: ClientConnection =
     target.kind === "stream" ? app.connect(target.stream) : app.connect(target.agent);
   const agent = connection.agent;

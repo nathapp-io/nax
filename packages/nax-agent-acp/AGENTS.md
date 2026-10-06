@@ -36,13 +36,14 @@ Design: `docs/superpowers/specs/2026-10-05-s4-acp-backend-design.md`.
 Built in stages S4-1 to S4-6. S4-2 added `acpBackend()`: launch, connection,
 capabilities, the session lifecycle and text turns. S4-3 added all four profiles:
 mode by profile and permission requests decided by profile (`permissions.ts`), with
-`ask` going to the caller through the facade's ask port. S4-4 adds embedder tools:
+`ask` going to the caller through the facade's ask port. S4-4 added embedder tools:
 a per-session loopback MCP tool host (`tool-host.ts`, `tool-calls.ts`) and Claude
-pre-approval (`pre-approval.ts`). Tested against a fake ACP agent
+pre-approval (`pre-approval.ts`). S4-5 adds turn events (thinking, tool calls,
+usage) and elicitation as questions. Tested against a fake ACP agent
 (`test/fixtures/fake-agent/`, in process and as a subprocess; its `mcpCall` step is
-a real MCP client). Full events and usage (S4-5) and resume (S4-6) are refused with
-`AGENT_SESSION_CAPABILITY_UNSUPPORTED` until then. `./server` is reserved for S5.
-Nothing is released before S4-6.
+a real MCP client, and its `update` and `elicit` steps send any session update and
+elicitation). Resume (S4-6) is refused with `AGENT_SESSION_CAPABILITY_UNSUPPORTED`
+until then. `./server` is reserved for S5. Nothing is released before S4-6.
 
 ## Module map (`src/client/`)
 
@@ -54,7 +55,11 @@ Nothing is released before S4-6.
 | `connection.ts` | one SDK `ClientApp` per process; outbound requests |
 | `capabilities.ts` | capability record, requirement checks, config options |
 | `open.ts` | open sequence; kills the agent on any failure |
-| `turn.ts`, `events.ts`, `inbound.ts` | prompt turn and abort; text events; inbound routing by turn and session |
+| `turn.ts`, `events.ts`, `inbound.ts` | prompt turn and abort; the turn's event collector; inbound routing (updates, permissions, elicitations) by turn and session |
+| `stream-scrub.ts` | session secrets scrubbed from streamed agent text, holding back only a possible secret's start |
+| `tool-events.ts` | `tool_call` / `tool_result` from ACP tool updates: sent when used, one result per call |
+| `usage.ts` | per-turn tokens; the session's cost meter over cumulative reported cost |
+| `elicitation.ts` | `elicitation/create` forms asked one field at a time as questions |
 | `permissions.ts` | §6.4 decision per permission request, by profile; only `*_once` options |
 | `tool-display.ts`, `text.ts` | what a person sees of a tool call; control-strip, secret scrub, caps |
 | `tool-host.ts` | loopback MCP server for embedder tools: gate (Host, Origin, token, body cap), one stateless MCP server per request |

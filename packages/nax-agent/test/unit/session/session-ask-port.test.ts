@@ -75,6 +75,21 @@ describe("createSessionAskPort", () => {
     expect(await second).toBeNull();
   });
 
+  test("an extra abort signal settles the question cancelled at once (S4-5 D5-j)", async () => {
+    const { events, table, port } = setup();
+    const extra = new AbortController();
+    const pending = port.askQuestion("Which env?", { signal: extra.signal });
+    const q = events.find((e) => e.type === "question") as { requestId: string };
+    extra.abort();
+    expect(await pending).toBeNull();
+    expect(table.answer(q.requestId, { text: "late" })).toBe("cancelled");
+  });
+
+  test("an already-aborted extra signal settles the question at once", async () => {
+    const { port } = setup();
+    expect(await port.askQuestion("Which env?", { signal: AbortSignal.abort() })).toBeNull();
+  });
+
   test("noteQuestion emits a question whose answer is cancelled", () => {
     const { events, table, port } = setup();
     port.noteQuestion("declined: rich form");

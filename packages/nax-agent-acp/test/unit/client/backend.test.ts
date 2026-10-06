@@ -22,13 +22,24 @@ const realLaunch = _acpBackendDeps.launch;
 const SECRET = "s3cr3t-token-value-0123";
 let workdir: string;
 
+/** Ambient secret-named env vars, held out of the resolved agent env so suites stay hermetic (env.ts SECRET_KEY). */
+const SECRET_KEY = /(KEY|TOKEN|SECRET|PASSWORD)/i;
+const ambientEnv: [string, string][] = [];
+
 beforeEach(() => {
   workdir = makeTempDir("acp-backend-");
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value !== undefined && SECRET_KEY.test(key)) {
+      ambientEnv.push([key, value]);
+      delete process.env[key];
+    }
+  }
 });
 
 afterEach(() => {
   _acpBackendDeps.launch = realLaunch;
   cleanupTempDir(workdir);
+  for (const [key, value] of ambientEnv.splice(0)) process.env[key] = value;
 });
 
 interface Opened {
