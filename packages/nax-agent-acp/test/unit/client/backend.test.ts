@@ -4,7 +4,6 @@ import {
   type CreateAgentSessionOptions,
   createAgentSession,
   createMemoryTranscriptStore,
-  resumeAgentSession,
   type SessionEvent,
   type TranscriptDoc,
   type TranscriptStore,
@@ -15,7 +14,6 @@ import { _acpBackendDeps, acpBackend } from "#src/client/backend";
 import * as publicClient from "#src/client/index";
 import type { AcpBackendOptions } from "#src/client/options";
 import { CLAUDE_CONFIG_OPTIONS, type FakeScript } from "#test/fixtures/fake-agent/script";
-import { rejection, sessionError } from "#test/helpers/errors";
 import { type InMemoryAgent, inMemoryAgent } from "#test/helpers/in-memory-launch";
 
 const realLaunch = _acpBackendDeps.launch;
@@ -277,32 +275,6 @@ describe("acpBackend: close (spec §6.3 step 4, D-j)", () => {
     await o.session.close();
     expect(o.fake.callsTo("session/close")).toEqual([]);
     expect(o.fake.terminations()).toBe(1);
-  });
-});
-
-describe("acpBackend: stages not built yet are refused before spawning (D-b)", () => {
-  test("resume -> CAPABILITY_UNSUPPORTED resume", async () => {
-    const fake = inMemoryAgent({});
-    _acpBackendDeps.launch = fake.launch;
-    const store = createMemoryTranscriptStore();
-    await store.save("s-1", {
-      backend: "acp:claude",
-      acp: { agentSessionId: "a-1", agent: "claude", cwd: workdir },
-      messages: [],
-      savedAt: new Date().toISOString(),
-    });
-    const err = sessionError(
-      await rejection(
-        resumeAgentSession("s-1", {
-          backend: acpBackend({ agent: "claude", allowUnsandboxed: true }),
-          profile: "full",
-          workdir,
-          transcriptStore: store,
-        }),
-      ),
-    );
-    expect(err.context).toMatchObject({ capability: "resume" });
-    expect(fake.requests).toHaveLength(0);
   });
 });
 

@@ -96,7 +96,7 @@ describe("acpBackend over a real agent process (spec §9 subprocess fake)", () =
     expect(endOf(await drain(session.send("x"))).status).toBe("completed");
   });
 
-  test("a crash mid-turn: BACKEND_UNAVAILABLE with redacted stderr; later turns AGENT_SESSION_CLOSED", async () => {
+  test("a crash mid-turn: BACKEND_UNAVAILABLE with redacted stderr; an agent without resume: later turns AGENT_SESSION_CLOSED", async () => {
     const session = await open({
       turns: [
         {
@@ -116,6 +116,29 @@ describe("acpBackend over a real agent process (spec §9 subprocess fake)", () =
       status: "errored",
       error: { code: "AGENT_SESSION_CLOSED" },
     });
+  });
+
+  test("a crash mid-turn, then the next turn reconnects with session/resume in a new process (S4-6)", async () => {
+    const session = await open({
+      capabilities: { sessionCapabilities: { resume: {} } },
+      turns: [
+        {
+          steps: [
+            { kind: "text", text: "partial" },
+            { kind: "exit", code: 7 },
+          ],
+        },
+      ],
+      relaunch: { turns: [{ steps: [{ kind: "text", text: "back" }] }] },
+    });
+    expect(endOf(await drain(session.send("x"))).status).toBe("errored");
+    expect(endOf(await drain(session.send("y")))).toMatchObject({ status: "completed", output: "back" });
+    const records = readRecords(record);
+    const pids = records.filter((r) => r.method === "start").map((r) => JSON.parse(JSON.stringify(r.params)).pid);
+    expect(new Set(pids).size).toBe(2);
+    expect(records.filter((r) => r.method === "session/resume").map((r) => r.params)).toEqual([
+      { sessionId: "fake-session-1", cwd: workdir, mcpServers: [] },
+    ]);
   });
 
   test("an ignored cancel: cancelled within the grace, the process killed, later turns CLOSED", async () => {

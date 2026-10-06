@@ -6,18 +6,25 @@
  * tool host (§6.6, tool-host.ts) and pre-approved at the adapter (R12); the
  * host's token joins the session's redaction set before the agent starts (D4-i).
  * The agent's updates become turn events with per-turn usage priced by one cost
- * meter per session (§6.7, events.ts, usage.ts), and its form elicitations become
- * questions under `ask` and `full` (§6.8, elicitation.ts). A turn's permission
- * decisions, questions and tool calls are cancelled when the turn is cancelled,
- * times out, ends or loses its process (D3-d, D4-f, D5-j). Until its stage lands
- * it refuses resume (S4-6) before spawning anything. A crashed or killed agent
- * leaves the session disconnected; reconnect is S4-6, so until then later turns
- * end AGENT_SESSION_CLOSED (D-f).
+ * meter per agent process (§6.7, events.ts, usage.ts), and its form elicitations
+ * become questions under `ask` and `full` (§6.8, elicitation.ts). A turn's
+ * permission decisions, questions and tool calls are cancelled when the turn is
+ * cancelled, times out, ends or loses its process (D3-d, D4-f, D5-j).
+ *
+ * A stored session is restored with session/resume, else session/load, never as
+ * a fresh one (§6.9, resume.ts). A crashed or killed agent leaves the session
+ * disconnected; the next turn reconnects once the same way, with a new process,
+ * router and tool host token, and the cost baseline carried over (§6.3 step 5,
+ * S4-6 D6-a, D6-g). An agent that can do neither, or a reconnect that fails,
+ * leaves the session closed: later turns end AGENT_SESSION_CLOSED. The baseline
+ * is written to the transcript document after each priced turn, so a resume in a
+ * new process prices its first turn from it (D6-a).
  */
 import {
   type AgentSessionAdapter,
-  AgentSessionError,
+  type BackendInfo,
   type BackendOpenContext,
+  getLogger,
   NO_OP_INTERACTION_HANDLER,
   type OpenedBackend,
   type SendTurnOpts,
@@ -27,7 +34,7 @@ import {
   type TurnResult,
 } from "@nathapp/nax-agent";
 import { answerElicitation } from "#src/client/elicitation";
-import { capabilityUnsupported } from "#src/client/errors";
+import { sessionLost } from "#src/client/errors";
 import { createTurnCollector } from "#src/client/events";
 import { createInboundRouter, type InboundRouter } from "#src/client/inbound";
 import { type LaunchFn, launchAgent } from "#src/client/launch";
@@ -35,6 +42,7 @@ import { type OpenedAcp, openAcpSession } from "#src/client/open";
 import { type AcpBackendOptions, type ResolvedAcpOptions, resolveAcpOptions } from "#src/client/options";
 import { decidePermission } from "#src/client/permissions";
 import { race } from "#src/client/race";
+import { canRestore, type Restore, storedSessionOf } from "#src/client/resume";
 import { createToolCalls } from "#src/client/tool-calls";
 import { createToolHost, newToolHostToken, type ToolHost } from "#src/client/tool-host";
 import { runPromptTurn, type TurnState } from "#src/client/turn";
@@ -43,25 +51,35 @@ import { type CostMeter, createCostMeter } from "#src/client/usage";
 /** Test seam: the process launcher. Production always uses launchAgent. */
 export const _acpBackendDeps: { launch: LaunchFn } = { launch: launchAgent };
 
-interface SessionFlags {
-  disconnected: boolean;
-  closing: Promise<void> | undefined;
-  instructionsSent: boolean;
-}
-
+/** One agent process and everything bound to it. A reconnect replaces it whole (D6-g). */
 interface Live {
   readonly options: ResolvedAcpOptions;
-  readonly ctx: BackendOpenContext;
   readonly acp: OpenedAcp;
   readonly router: InboundRouter;
-  readonly flags: SessionFlags;
   readonly state: TurnState;
   /** Aborted when the agent process exits: the running turn's permission decisions settle cancelled (§6.3 step 5). */
   readonly gone: AbortController;
   /** The embedder tools' MCP host; undefined when the session has no tools. */
   readonly host: ToolHost | undefined;
-  /** The agent process's cumulative cost readings, one meter per process (D5-b). */
+  /** The process's cumulative cost readings (D5-b), seeded with the session's baseline (D6-a). */
   readonly meter: CostMeter;
+  /** Every tool host token the session has used; retired ones stay in the redaction set (D6-g). */
+  readonly tokens: readonly string[];
+  /** Set when the process exits or is killed. */
+  readonly status: { disconnected: boolean };
+}
+
+/** The session across its agent processes. */
+interface AcpSession {
+  readonly base: ResolvedAcpOptions;
+  readonly ctx: BackendOpenContext;
+  live: Live;
+  closing: Promise<void> | undefined;
+  instructionsSent: boolean;
+  /** No reconnect is possible any more: later turns end AGENT_SESSION_CLOSED (§6.3 step 5). */
+  lost: boolean;
+  /** The cost baseline the transcript document holds (D6-a). */
+  savedBaseline: number;
 }
 
 export function acpBackend(input: AcpBackendOptions): SessionBackend {
@@ -69,14 +87,10 @@ export function acpBackend(input: AcpBackendOptions): SessionBackend {
   return Object.freeze({ kind: options.kind, open: (ctx: BackendOpenContext) => openBackend(options, ctx) });
 }
 
-function refuseUnbuilt(ctx: BackendOpenContext): void {
-  if (ctx.resume !== undefined) throw capabilityUnsupported("resume", "resuming an ACP session arrives in S4-6");
-}
-
-/** The session's options: the tool host's token joins the redaction set (D4-i). */
-function withToken(options: ResolvedAcpOptions, token: string | undefined): ResolvedAcpOptions {
-  if (token === undefined) return options;
-  return Object.freeze({ ...options, secrets: Object.freeze([...options.secrets, token]) });
+/** The process's options: the session's tool host tokens join the redaction set (D4-i, D6-g). */
+function withTokens(options: ResolvedAcpOptions, tokens: readonly string[]): ResolvedAcpOptions {
+  if (tokens.length === 0) return options;
+  return Object.freeze({ ...options, secrets: Object.freeze([...options.secrets, ...tokens]) });
 }
 
 function toolHostFor(
@@ -106,22 +120,28 @@ function routerFor(ctx: BackendOpenContext, secrets: readonly string[]): Inbound
   );
 }
 
-async function openBackend(base: ResolvedAcpOptions, ctx: BackendOpenContext): Promise<OpenedBackend> {
-  refuseUnbuilt(ctx);
+/** One agent process: a new agent session, or `restore` restored in it (§6.3 step 1, §6.9). */
+async function connect(
+  base: ResolvedAcpOptions,
+  ctx: BackendOpenContext,
+  restore: Restore | undefined,
+  retiredTokens: readonly string[],
+): Promise<Live> {
   const token = ctx.tools.length > 0 ? newToolHostToken() : undefined;
-  const options = withToken(base, token);
+  const tokens = token === undefined ? retiredTokens : [...retiredTokens, token];
+  const options = withTokens(base, tokens);
   const gone = new AbortController();
   const router = routerFor(ctx, options.secrets);
   const host = toolHostFor(ctx, router, options.secrets, token);
-  const acp = await openAcpSession(options, ctx, router.handlers, _acpBackendDeps.launch, host).catch(
+  const acp = await openAcpSession(options, ctx, router.handlers, _acpBackendDeps.launch, host, restore).catch(
     async (err: unknown) => {
       await host?.stop();
       throw err;
     },
   );
-  const flags: SessionFlags = { disconnected: false, closing: undefined, instructionsSent: false };
+  const status = { disconnected: false };
   void acp.launched.exited.then(() => {
-    flags.disconnected = true;
+    status.disconnected = true;
     gone.abort();
   });
   const state: TurnState = {
@@ -131,46 +151,105 @@ async function openBackend(base: ResolvedAcpOptions, ctx: BackendOpenContext): P
     cancelGraceMs: options.cancelGraceMs,
     secrets: options.secrets,
     disconnect: () => {
-      flags.disconnected = true;
+      status.disconnected = true;
     },
   };
-  return assemble({ options, ctx, acp, router, flags, state, gone, host, meter: createCostMeter() });
+  const meter = createCostMeter(restore?.costUsd ?? 0);
+  return { options, acp, router, state, gone, host, meter, tokens, status };
 }
 
-function assemble(live: Live): OpenedBackend {
-  const handle: SessionHandle = Object.freeze({ id: live.ctx.sessionId, agentName: live.options.kind });
+async function openBackend(base: ResolvedAcpOptions, ctx: BackendOpenContext): Promise<OpenedBackend> {
+  // §6.9 step 1 runs before anything is spawned.
+  const restore = ctx.resume === undefined ? undefined : storedSessionOf(ctx.resume.doc, ctx, base);
+  const live = await connect(base, ctx, restore, []);
+  return assemble({
+    base,
+    ctx,
+    live,
+    closing: undefined,
+    // A restored agent already holds the instructions once a turn has run (D6-f).
+    instructionsSent: ctx.resume?.doc.turn !== undefined,
+    lost: false,
+    savedBaseline: restore?.costUsd ?? 0,
+  });
+}
+
+/** D6-h: the live process's capability record; a restored process adds restoredWith. */
+function infoOf(s: AcpSession): BackendInfo {
+  const { record, restoredWith } = s.live.acp;
+  const capabilities = restoredWith === undefined ? { ...record } : { ...record, restoredWith };
+  return Object.freeze({ kind: s.base.kind, capabilities: Object.freeze(capabilities) });
+}
+
+function assemble(s: AcpSession): OpenedBackend {
+  const handle: SessionHandle = Object.freeze({ id: s.ctx.sessionId, agentName: s.base.kind });
   const adapter: AgentSessionAdapter = {
     openSession: async () => handle,
-    sendTurn: (_handle, prompt, opts) => sendTurn(live, prompt, opts),
+    sendTurn: (_handle, prompt, opts) => sendTurn(s, prompt, opts),
     // The agent session closes in OpenedBackend.close(), within the §6.3 step 4 bound (D-j).
     closeSession: async () => {},
   };
   return {
     adapter,
     handle,
-    info: Object.freeze({ kind: live.options.kind, capabilities: live.acp.record }),
+    // Read at access: a reconnect replaces the process and its capability record (D6-h).
+    get info() {
+      return infoOf(s);
+    },
     turnOpts: () => ({ interactionHandler: NO_OP_INTERACTION_HANDLER }),
     close: () => {
-      live.flags.closing ??= shutdown(live);
-      return live.flags.closing;
+      s.closing ??= shutdown(s);
+      return s.closing;
     },
   };
 }
 
-async function sendTurn(live: Live, prompt: string, opts: SendTurnOpts): Promise<TurnResult> {
-  const { ctx, flags } = live;
-  if (flags.disconnected || flags.closing !== undefined) {
-    throw new AgentSessionError(
-      `ACP session "${ctx.sessionId}" has lost its agent process; reconnect arrives in S4-6`,
-      "AGENT_SESSION_CLOSED",
-      { sessionId: ctx.sessionId },
+/** The process a turn runs on: reconnects once after a crash or kill (§6.3 step 5). */
+async function liveFor(s: AcpSession, signal: AbortSignal): Promise<Live> {
+  if (s.closing !== undefined || s.lost) {
+    throw sessionLost(s.ctx.sessionId, "its agent process is gone and cannot be reconnected");
+  }
+  if (!s.live.status.disconnected) return s.live;
+  if (!canRestore(s.live.acp.record)) {
+    s.lost = true;
+    throw sessionLost(
+      s.ctx.sessionId,
+      "its agent process is gone and the agent supports neither session/resume nor session/load",
     );
   }
-  const instructions = flags.instructionsSent ? undefined : ctx.instructions;
-  flags.instructionsSent = true;
+  return reconnect(s, signal);
+}
+
+/** D6-g: a new process restores the session; a stopped attempt may be retried, a failed one ends the session. */
+async function reconnect(s: AcpSession, signal: AbortSignal): Promise<Live> {
+  const old = s.live;
+  old.acp.launched.kill();
+  old.acp.link.close();
+  // The old tool host stops and its token is revoked (§6.6).
+  await old.host?.stop();
+  const restore: Restore = {
+    agentSessionId: old.acp.agentSessionId,
+    cwd: old.acp.cwd,
+    costUsd: old.meter.baseline(),
+  };
+  // close() aborts openSignal; cancel() and the turn timeout abort the turn signal.
+  const ctx: BackendOpenContext = { ...s.ctx, openSignal: AbortSignal.any([s.ctx.openSignal, signal]) };
+  try {
+    s.live = await connect(s.base, ctx, restore, old.tokens);
+    return s.live;
+  } catch (err) {
+    if (!signal.aborted && !s.ctx.openSignal.aborted) s.lost = true;
+    throw err;
+  }
+}
+
+async function sendTurn(s: AcpSession, prompt: string, opts: SendTurnOpts): Promise<TurnResult> {
+  const signal = opts.signal ?? s.ctx.turnSignal();
+  const live = await liveFor(s, signal);
+  const instructions = s.instructionsSent ? undefined : s.ctx.instructions;
+  s.instructionsSent = true;
   const text = instructions === undefined || instructions === "" ? prompt : `${instructions}\n\n${prompt}`;
   const collector = createTurnCollector(opts.onTurnEvent, { secrets: live.options.secrets, meter: live.meter });
-  const signal = opts.signal ?? ctx.turnSignal();
   const release = live.router.attach(live.acp.agentSessionId, collector, AbortSignal.any([signal, live.gone.signal]));
   try {
     return await runPromptTurn(live.state, { text, signal, collector });
@@ -180,22 +259,45 @@ async function sendTurn(live: Live, prompt: string, opts: SendTurnOpts): Promise
     await live.host?.drain();
     // Held text and calls left without a result go out before turn_end (D5-e, D5-g).
     collector.finish();
+    await saveBaseline(s, live.meter.baseline());
   }
 }
 
-async function shutdown(live: Live): Promise<void> {
-  const { acp, options, flags } = live;
-  if (!flags.disconnected && acp.record.close) {
+/** D6-a: load-merge the baseline into the document. Best effort: a failure is logged, never fatal. */
+async function saveBaseline(s: AcpSession, baseline: number): Promise<void> {
+  if (baseline === s.savedBaseline) return;
+  const { transcriptStore: store, sessionId } = s.ctx;
+  try {
+    const doc = await store.load(sessionId);
+    if (doc?.acp === undefined) return;
+    await store.save(sessionId, { ...doc, acp: { ...doc.acp, costUsd: baseline } });
+    s.savedBaseline = baseline;
+  } catch {
+    warn("Could not save the ACP cost baseline", sessionId);
+  }
+}
+
+function warn(message: string, sessionId: string): void {
+  try {
+    getLogger().warn("acp", message, { sessionId });
+  } catch {
+    // A throwing host logger must not fail the turn.
+  }
+}
+
+async function shutdown(s: AcpSession): Promise<void> {
+  const { acp, options, status, host } = s.live;
+  if (!status.disconnected && acp.record.close) {
     await race(acp.link.closeSession(acp.agentSessionId), { timeoutMs: options.cancelGraceMs });
   }
   await acp.launched.terminate(options.cancelGraceMs);
   acp.link.close();
   // §6.3 close step 4: stop the tool host and revoke its token.
-  await live.host?.stop();
-  await saveFinal(live.ctx.transcriptStore, live.ctx.sessionId);
+  await host?.stop();
+  await saveFinal(s.ctx.transcriptStore, s.ctx.sessionId);
 }
 
-/** §6.3 step 4.5: the document with its final savedAt. Load-merge keeps the facade's turn marker. */
+/** §6.3 step 4.5: the document with its final savedAt. Load-merge keeps the facade's turn marker and the baseline. */
 async function saveFinal(store: TranscriptStore, sessionId: string): Promise<void> {
   const doc = await store.load(sessionId);
   if (doc !== null) await store.save(sessionId, { ...doc, savedAt: new Date().toISOString() });
