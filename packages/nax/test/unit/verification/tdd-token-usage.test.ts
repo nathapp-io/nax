@@ -4,8 +4,8 @@
  * `SF:` record. This exercises its one runtime value.
  */
 import { describe, expect, test } from "bun:test";
-import { sumTddTokenUsage } from "@/tdd/types";
 import type { TddSessionResult } from "@/tdd/types";
+import { sumTddTokenUsage } from "@/tdd/types";
 
 function session(tokenUsage?: TddSessionResult["tokenUsage"]): TddSessionResult {
   return { role: "implementer", success: true, estimatedCostUsd: 0, filesChanged: [], durationMs: 0, tokenUsage };
