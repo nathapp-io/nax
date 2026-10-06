@@ -48,9 +48,10 @@ async function turn(session, message, onEvent = () => {}) {
     onEvent(event);
   }
   const end = events.at(-1);
-  costs.push(end.costUsd);
-  console.log(`  turn_end ${end.status} $${end.costUsd.toFixed(4)} ${JSON.stringify(end.output).slice(0, 160)}`);
+  const costText = typeof end.costUsd === "number" ? end.costUsd.toFixed(4) : "n/a";
+  console.log(`  turn_end ${end.status} $${costText} ${JSON.stringify(end.output).slice(0, 160)}`);
   assert.equal(end.status, "completed", JSON.stringify(end.error));
+  costs.push(end.costUsd);
   return events;
 }
 
