@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { getLogger as publicGetLogger, setAgentLogger as publicSetAgentLogger } from "@nathapp/nax-agent";
 import { type AgentLogger, getLogger, getSafeLogger, setAgentLogger } from "#src/infra/index";
 
 function recordingLogger(): AgentLogger & { calls: string[] } {
@@ -41,5 +42,13 @@ describe("agent logger slot", () => {
     getLogger().error("s", "m");
     expect(first.calls).toEqual([]);
     expect(second.calls).toEqual(["error:s:m"]);
+  });
+
+  test("getLogger is on the public entry and reads the slot setAgentLogger fills (S4-3, spec §5.6)", () => {
+    expect(publicGetLogger).toBe(getLogger);
+    const logger = recordingLogger();
+    publicSetAgentLogger(logger);
+    publicGetLogger().warn("acp", "seen");
+    expect(logger.calls).toEqual(["warn:acp:seen"]);
   });
 });

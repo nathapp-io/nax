@@ -78,7 +78,7 @@ export {
   parseModelSpec,
 } from "#src/cost/model-spec";
 export type { AgentLogger, CredentialAuthConfig, CredentialsConfig } from "#src/infra/index";
-export { configureCredentials, setAgentLogger } from "#src/infra/index";
+export { configureCredentials, getLogger, setAgentLogger } from "#src/infra/index";
 export { createStderrTail, type StderrTail } from "#src/infra/stderr-tail";
 export { isProcessAlive } from "#src/internal/process-alive";
 export { killProcessGroup } from "#src/internal/process-kill";
