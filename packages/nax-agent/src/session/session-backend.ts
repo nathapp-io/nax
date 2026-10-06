@@ -33,8 +33,12 @@ export interface SessionAskPort {
   ): Promise<{ readonly decision: "allow" | "deny"; readonly decidedBy: ApprovalDecidedBy }>;
   /** Emits approval_requested then approval_resolved (decidedBy "profile"). No-op when no turn is running. */
   recordAutoDecision(req: Omit<ApprovalRequest, "command" | "signal">, decision: "allow" | "deny"): void;
-  /** The person's text, or null on deadline, cancel or no running turn. */
-  askQuestion(text: string): Promise<string | null>;
+  /**
+   * The person's text, or null on deadline, cancel or no running turn. `opts.signal`
+   * is an extra abort source combined with the turn signal, as for approvals (for
+   * example a backend's per-request scope that ends before the turn does).
+   */
+  askQuestion(text: string, opts?: { readonly signal?: AbortSignal }): Promise<string | null>;
   /** An informational question event; answer() on its id returns "cancelled". No-op when no turn is running. */
   noteQuestion(text: string): void;
 }

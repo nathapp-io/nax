@@ -54,10 +54,11 @@ export function createSessionAskPort(deps: SessionAskPortDeps): SessionAskPort {
       });
       deps.emit({ type: "approval_resolved", requestId, decision, decidedBy: "profile" });
     },
-    async askQuestion(text) {
+    async askQuestion(text, opts) {
       const turn = deps.turn();
       if (turn === undefined) return null;
-      const { requestId, expiresAt, settled } = deps.table.issue("question", turn.signal);
+      const signal = opts?.signal === undefined ? turn.signal : AbortSignal.any([turn.signal, opts.signal]);
+      const { requestId, expiresAt, settled } = deps.table.issue("question", signal);
       deps.emit({ type: "question", requestId, text, expiresAt });
       const settlement = await settled;
       return settlement.by === "human" && "text" in settlement.reply ? settlement.reply.text : null;
