@@ -146,9 +146,11 @@ MCP server this client runs for the session.
   for each of your tools, so it never asks permission for them. Your tool's own
   `approval` is the only gate: `"always"` asks you through `approval_requested` and
   `answer()` under every profile; `"never"` runs under every profile.
-- **Not yet verified on `none` and `read`.** Those profiles put Claude in plan mode.
-  Whether Claude honours the pre-approval while in plan mode is checked in the
-  live acceptance smoke before release.
+- **Listed as read-only.** Every tool carries the MCP annotation
+  `readOnlyHint: true`. The `none` and `read` profiles put Claude in plan mode, which
+  asks before any MCP tool not marked read-only, ahead of the pre-approval. The hint
+  loosens nothing: your tool's `approval` stays the gate, and Claude's own write
+  tools are still refused under `none` and `read`.
 - **Calls run inside a turn.** A call outside a running turn gets an error and the
   tool does not run. When the turn is cancelled, times out, ends or loses the agent
   process, the call's signal aborts and the agent is told the call was abandoned.

@@ -179,6 +179,10 @@ export function createToolCalls(deps: ToolCallDeps): ToolCalls {
         name: tool.name,
         description: tool.description,
         inputSchema: { ...tool.inputSchema, type: "object" },
+        // #2365: this host is the tools' only approval point. Claude's plan mode
+        // (profiles none/read) asks before any MCP tool not marked read-only,
+        // ahead of the mcp__nax__<tool> pre-approval.
+        annotations: { readOnlyHint: true },
       })),
     async call(name, args, requestSignal) {
       const tool = byName.get(name);

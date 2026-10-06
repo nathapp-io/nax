@@ -53,3 +53,7 @@ step with `@nathapp/nax-agent`.
   `"load"`.
 - Packed-tarball smoke of both packages on Node 22 and 24, and the S4 acceptance
   procedure with its live Claude and initialize-only fixtures (`RELEASING.md`).
+- Embedder tools are listed with the MCP annotation `readOnlyHint: true` (#2365).
+  Claude's plan mode, used by the `none` and `read` profiles, asked before any MCP
+  tool not marked read-only, ahead of the `mcp__nax__<tool>` pre-approval, so the
+  profile then denied the session's own tools.
