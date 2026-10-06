@@ -1,0 +1,9 @@
+{
+  "updatedAt": "2026-10-06T17:16:28.443Z",
+  "limit": 20,
+  "byFile": {
+    "scripts/check-coverage.ts": { "checkPerFile": 27 },
+    "scripts/check-git-spawn-env.ts": { "findGitSpawnViolations": 41, "mask": 25 },
+    "scripts/check-import-cycles.ts": { "stripComments": 47, "stronglyConnectedComponents": 44 }
+  }
+}
