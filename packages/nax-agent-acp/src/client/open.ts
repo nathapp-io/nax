@@ -1,20 +1,17 @@
 /**
- * Opening an ACP session (S4 spec §6.3 step 1): spawn, initialize (form
- * elicitation advertised under ask and full, S4-5 D5-l), capability
- * check, the tool host when the session has tools, session/new (with the host's
- * server entry and the pre-approval _meta, §6.6), the profile's mode, then the
- * model, then the initial transcript document. Every failure after the spawn
+ * Opening an ACP session (S4 spec §6.3 step 1, §6.9): spawn, initialize (form
+ * elicitation advertised under ask and full, S4-5 D5-l), capability check, the
+ * tool host when the session has tools, then session/new (with the host's server
+ * entry and the pre-approval _meta, §6.6) or, for a stored session, session/resume
+ * or session/load with the same entry and _meta (resume.ts), then the profile's
+ * mode and the model. A new session writes its initial transcript document; a
+ * restored one leaves the document as it is (D6-f). Every failure after the spawn
  * kills the agent's process group before it propagates, so a failed open leaves
  * no process behind; the caller stops the tool host. Each agent request is
  * bounded by initializeTimeoutMs (D-c) and by openSignal: close() during open
  * rejects AGENT_SESSION_CLOSED.
  */
-import {
-  type ClientCapabilities,
-  type McpServer,
-  PROTOCOL_VERSION,
-  type SessionConfigOption,
-} from "@agentclientprotocol/sdk";
+import { type ClientCapabilities, PROTOCOL_VERSION, type SessionConfigOption } from "@agentclientprotocol/sdk";
 import { type AgentSessionProfile, type BackendOpenContext, NaxError, type TranscriptDoc } from "@nathapp/nax-agent";
 import {
   buildCapabilityRecord,
@@ -38,16 +35,24 @@ import type { ResolvedAcpOptions } from "#src/client/options";
 import { preApprovalMeta } from "#src/client/pre-approval";
 import { race } from "#src/client/race";
 import type { LaunchCandidate } from "#src/client/registry";
+import {
+  isUsableSessionId,
+  type Restore,
+  type RestoredWith,
+  restoreSession,
+  type SessionSetup,
+} from "#src/client/resume";
 import type { ToolHost } from "#src/client/tool-host";
-
-/** An agent session id longer than this is not trusted (Review Focus 5). */
-const MAX_SESSION_ID_CHARS = 512;
 
 export interface OpenedAcp {
   readonly launched: LaunchedAgent;
   readonly link: AcpLink;
   readonly record: CapabilityRecord;
   readonly agentSessionId: string;
+  /** The cwd the agent session was created with; a reconnect restores it with this spelling (D6-c). */
+  readonly cwd: string;
+  /** How a stored session was restored (§6.9); undefined for a new session. */
+  readonly restoredWith?: RestoredWith;
 }
 
 interface Opening {
@@ -56,12 +61,15 @@ interface Opening {
   readonly launched: LaunchedAgent;
   readonly link: AcpLink;
   readonly host: ToolHost | undefined;
+  readonly restore: Restore | undefined;
 }
 
-/** What session/new adds to `cwd`: the tool host's entry and the pre-approval `_meta` (§6.6). */
-interface SessionSetup {
-  readonly mcpServers: McpServer[];
-  readonly _meta?: Record<string, unknown>;
+/** The agent session before the mode and model are applied. */
+interface Established {
+  readonly agentSessionId: string;
+  readonly cwd: string;
+  readonly configOptions: readonly SessionConfigOption[];
+  readonly restoredWith?: RestoredWith;
 }
 
 function chooseLaunch(options: ResolvedAcpOptions): LaunchCandidate {
@@ -77,12 +85,14 @@ function chooseLaunch(options: ResolvedAcpOptions): LaunchCandidate {
   );
 }
 
+/** `restore`: restore that stored agent session instead of creating one (§6.9). */
 export async function openAcpSession(
   options: ResolvedAcpOptions,
   ctx: BackendOpenContext,
   handlers: InboundHandlers,
   launch: LaunchFn,
   host?: ToolHost,
+  restore?: Restore,
 ): Promise<OpenedAcp> {
   if (ctx.openSignal.aborted) throw closedDuringOpen(ctx.sessionId);
   const candidate = chooseLaunch(options);
@@ -92,7 +102,7 @@ export async function openAcpSession(
     link.close(new NaxError("The ACP agent process exited", "ACP_AGENT_EXITED", { stage: "acp" })),
   );
   try {
-    return await establish({ options, ctx, launched, link, host });
+    return await establish({ options, ctx, launched, link, host, restore });
   } catch (err) {
     launched.kill();
     link.close();
@@ -141,18 +151,32 @@ async function establish(o: Opening): Promise<OpenedAcp> {
   const unmet = unmetRequirement(record, {
     profile: o.ctx.profile,
     toolCount: o.ctx.tools.length,
-    resume: o.ctx.resume !== undefined,
+    resume: o.restore !== undefined,
   });
   if (unmet !== undefined) throw capabilityUnsupported(unmet.capability, unmet.reason);
   const setup = await sessionSetup(o);
-  const created = await step(o, "session/new", o.link.newSession({ cwd: o.ctx.workdir, ...setup }));
-  const agentSessionId = created.sessionId;
-  if (typeof agentSessionId !== "string" || agentSessionId === "" || agentSessionId.length > MAX_SESSION_ID_CHARS) {
-    throw backendUnavailable("session/new returned no usable session id");
+  const session =
+    o.restore === undefined
+      ? await newSession(o, setup)
+      : await restoreSession(o.restore, record, setup, o.link, (label, request) => step(o, label, request));
+  await applyConfig(o, session.agentSessionId, session.configOptions);
+  if (o.restore === undefined) {
+    await o.ctx.transcriptStore.save(o.ctx.sessionId, initialDoc(o, record, session.agentSessionId));
   }
-  await applyConfig(o, agentSessionId, created.configOptions ?? []);
-  await o.ctx.transcriptStore.save(o.ctx.sessionId, initialDoc(o, record, agentSessionId));
-  return { launched: o.launched, link: o.link, record, agentSessionId };
+  return {
+    launched: o.launched,
+    link: o.link,
+    record,
+    agentSessionId: session.agentSessionId,
+    cwd: session.cwd,
+    ...(session.restoredWith === undefined ? {} : { restoredWith: session.restoredWith }),
+  };
+}
+
+async function newSession(o: Opening, setup: SessionSetup): Promise<Established> {
+  const created = await step(o, "session/new", o.link.newSession({ cwd: o.ctx.workdir, ...setup }));
+  if (!isUsableSessionId(created.sessionId)) throw backendUnavailable("session/new returned no usable session id");
+  return { agentSessionId: created.sessionId, cwd: o.ctx.workdir, configOptions: created.configOptions ?? [] };
 }
 
 /** §6.3 step 3: start the tool host when the session has tools; its entry and the pre-approval `_meta` (§6.6). */

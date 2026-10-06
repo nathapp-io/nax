@@ -8,9 +8,10 @@ import { createInboundRouter } from "#src/client/inbound";
 import { clientCapabilitiesFor, openAcpSession } from "#src/client/open";
 import { type AcpBackendOptions, resolveAcpOptions } from "#src/client/options";
 import { rejectLocally } from "#src/client/permissions";
+import type { Restore } from "#src/client/resume";
 import type { HttpMcpServer, ToolHost } from "#src/client/tool-host";
 import { CLAUDE_CONFIG_OPTIONS, type FakeScript } from "#test/fixtures/fake-agent/script";
-import { rejection, sessionError } from "#test/helpers/errors";
+import { naxError, rejection, sessionError } from "#test/helpers/errors";
 import { inMemoryAgent } from "#test/helpers/in-memory-launch";
 import { openContext } from "#test/helpers/open-context";
 
@@ -297,5 +298,95 @@ describe("clientCapabilitiesFor (S4-5 D5-l)", () => {
     expect(clientCapabilitiesFor("full")).toEqual({ elicitation: { form: {} } });
     expect(clientCapabilitiesFor("read")).toEqual({});
     expect(clientCapabilitiesFor("none")).toEqual({});
+  });
+});
+
+describe("openAcpSession: restoring a stored session (spec §6.9, S4-6)", () => {
+  function restoreWith(script: FakeScript, restore: Partial<Restore> = {}) {
+    const fake = inMemoryAgent({ ...CLAUDE_SCRIPT, ...script });
+    const ctx = openContext(dir);
+    const opened = openAcpSession(
+      options(),
+      ctx,
+      createInboundRouter(async (r) => rejectLocally(r)).handlers,
+      fake.launch,
+      undefined,
+      { agentSessionId: "fake-session-1", cwd: dir, costUsd: 0, ...restore },
+    );
+    return { fake, ctx, opened };
+  }
+
+  test("session/resume when advertised: no session/new, the mode re-applied, the document untouched", async () => {
+    const { fake, ctx, opened } = restoreWith({
+      capabilities: { loadSession: true, sessionCapabilities: { resume: {} } },
+    });
+    const acp = await opened;
+    expect(fake.callsTo("session/new")).toEqual([]);
+    expect(fake.callsTo("session/load")).toEqual([]);
+    expect(fake.callsTo("session/resume")).toEqual([{ sessionId: "fake-session-1", cwd: dir, mcpServers: [] }]);
+    expect(fake.callsTo("session/set_config_option")).toEqual([
+      { sessionId: "fake-session-1", configId: "mode", value: "default" },
+    ]);
+    expect(acp).toMatchObject({ agentSessionId: "fake-session-1", cwd: dir, restoredWith: "resume" });
+    expect(await ctx.transcriptStore.load("session-1")).toBeNull();
+  });
+
+  test("session/load when only loadSession is advertised", async () => {
+    const { fake, opened } = restoreWith({ capabilities: { loadSession: true } });
+    expect((await opened).restoredWith).toBe("load");
+    expect(fake.callsTo("session/load")).toEqual([{ sessionId: "fake-session-1", cwd: dir, mcpServers: [] }]);
+  });
+
+  test("a new session reports its cwd and no restoredWith", async () => {
+    const { opened } = await openWith(CLAUDE_SCRIPT);
+    const acp = await opened;
+    expect(acp.cwd).toBe(dir);
+    expect(acp.restoredWith).toBeUndefined();
+  });
+
+  test.each([
+    ["neither resume nor load", {}, "AGENT_SESSION_CAPABILITY_UNSUPPORTED"],
+    [
+      "the agent lost the session",
+      { capabilities: { sessionCapabilities: { resume: {} } }, knownSessions: [] },
+      "AGENT_SESSION_NOT_FOUND",
+    ],
+    [
+      "auth on resume",
+      { capabilities: { sessionCapabilities: { resume: {} } }, restoreFailure: { code: -32000, message: "login" } },
+      "AGENT_SESSION_AUTH_REQUIRED",
+    ],
+  ] as const)("%s: %s after initialize; the process is killed", async (_label, script, code) => {
+    const { fake, opened } = restoreWith(script);
+    expect(sessionError(await rejection(opened)).code).toBe(code);
+    expect(fake.kills()).toBe(1);
+    expect(fake.callsTo("session/new")).toEqual([]);
+  });
+
+  test("another session restored: TURN_FAILED identity; the process is killed", async () => {
+    const { fake, opened } = restoreWith({
+      capabilities: { sessionCapabilities: { resume: {} } },
+      restoredSessionId: "someone-else",
+    });
+    const err = naxError(await rejection(opened));
+    expect(err.code).toBe("AGENT_SESSION_TURN_FAILED");
+    expect(err.context).toMatchObject({ detail: "identity" });
+    expect(fake.kills()).toBe(1);
+  });
+
+  test("the model is re-applied after the mode", async () => {
+    const fake = inMemoryAgent({ ...CLAUDE_SCRIPT, capabilities: { sessionCapabilities: { resume: {} } } });
+    await openAcpSession(
+      options({ model: "sonnet" }),
+      openContext(dir),
+      createInboundRouter(async (r) => rejectLocally(r)).handlers,
+      fake.launch,
+      undefined,
+      { agentSessionId: "fake-session-1", cwd: dir, costUsd: 0 },
+    );
+    expect(fake.callsTo("session/set_config_option")).toEqual([
+      { sessionId: "fake-session-1", configId: "mode", value: "default" },
+      { sessionId: "fake-session-1", configId: "model", value: "sonnet" },
+    ]);
   });
 });
