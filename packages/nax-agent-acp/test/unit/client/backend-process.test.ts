@@ -3,6 +3,7 @@ import { realpathSync } from "node:fs";
 import { join } from "node:path";
 import {
   type AgentSession,
+  type AgentSessionProfile,
   createAgentSession,
   createMemoryTranscriptStore,
   isProcessAlive,
@@ -15,6 +16,7 @@ import type { AcpBackendOptions } from "#src/client/options";
 import type { FakeScript } from "#test/fixtures/fake-agent/script";
 import { rejection, sessionError } from "#test/helpers/errors";
 import { FAKE_MAIN, fakeEnv, readRecords, startOf } from "#test/helpers/fake-process";
+import { driveTurn } from "#test/helpers/session-events";
 
 const SECRET = "s3cr3t-token-value-0123";
 let workdir: string;
@@ -40,10 +42,14 @@ function backend(script: FakeScript, extra: Partial<AcpBackendOptions> = {}) {
   });
 }
 
-async function open(script: FakeScript, extra: Partial<AcpBackendOptions> = {}): Promise<AgentSession> {
+async function open(
+  script: FakeScript,
+  extra: Partial<AcpBackendOptions> = {},
+  profile: AgentSessionProfile = "full",
+): Promise<AgentSession> {
   const session = await createAgentSession({
     backend: backend(script, extra),
-    profile: "full",
+    profile,
     workdir,
     transcriptStore: createMemoryTranscriptStore(),
   });
@@ -175,5 +181,43 @@ describe("acpBackend: failed opens leave no process (Review Focus 1)", () => {
     );
     expect(err.code).toBe("AGENT_SESSION_BACKEND_UNAVAILABLE");
     expect(err.message).toContain("could not be started");
+  });
+});
+
+describe("profile ask over a real agent process (spec §6.4)", () => {
+  test("approval_requested answered allow reaches the agent as allow_once; reject_once on deny", async () => {
+    const session = await open(
+      {
+        turns: [
+          {
+            steps: [
+              { kind: "permission", options: ["allow_once", "reject_once"] },
+              { kind: "text", text: "one" },
+            ],
+          },
+          {
+            steps: [
+              { kind: "permission", options: ["allow_once", "reject_once"] },
+              { kind: "text", text: "two" },
+            ],
+          },
+        ],
+      },
+      {},
+      "ask",
+    );
+    let decision: "allow" | "deny" = "allow";
+    const answer = (event: SessionEvent) => {
+      if (event.type === "approval_requested") session.answer(event.requestId, { decision });
+    };
+    expect(endOf(await driveTurn(session, "first", answer)).status).toBe("completed");
+    decision = "deny";
+    expect(endOf(await driveTurn(session, "second", answer)).status).toBe("completed");
+    const outcomes = () => readRecords(record).filter((r) => r.method === "permission-outcome");
+    await waitForCondition(() => outcomes().length === 2, 5_000);
+    expect(outcomes().map((r) => r.params)).toEqual([
+      { outcome: "selected", optionId: "opt-allow_once" },
+      { outcome: "selected", optionId: "opt-reject_once" },
+    ]);
   });
 });
