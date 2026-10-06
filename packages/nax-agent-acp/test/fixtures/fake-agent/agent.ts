@@ -16,13 +16,15 @@ import {
   RequestError,
   type StopReason,
 } from "@agentclientprotocol/sdk";
-import type { FakeHooks, FakeScript, FakeStep, FakeTurn, RpcFailure } from "./script.ts";
+import type { FakeHooks, FakeScript, FakeStep, FakeTurn, PermissionStep, RpcFailure } from "./script.ts";
 
 const DEFAULT_TURN: FakeTurn = { steps: [{ kind: "text", text: "ok" }] };
 
 interface PromptState {
   readonly cancelled: Promise<void>;
   readonly markCancelled: () => void;
+  /** Detached permission requests of this prompt, settled when answered. */
+  readonly detached: Promise<void>[];
 }
 
 function newPromptState(): PromptState {
@@ -30,7 +32,7 @@ function newPromptState(): PromptState {
   const cancelled = new Promise<void>((resolve) => {
     mark = resolve;
   });
-  return { cancelled, markCancelled: () => mark() };
+  return { cancelled, markCancelled: () => mark(), detached: [] };
 }
 
 function rpcError(failure: RpcFailure): RequestError {
@@ -68,15 +70,15 @@ async function runStep(
     case "delay":
       await sleep(step.ms);
       return undefined;
-    case "permission": {
-      const response = await client.request(methods.client.session.requestPermission, {
-        sessionId,
-        toolCall: { toolCallId: "fake-permission", title: "Edit a file", kind: "edit", status: "pending" },
-        options: step.options.map((kind): PermissionOption => ({ optionId: `opt-${kind}`, name: kind, kind })),
-      });
-      hooks.record("permission-outcome", response.outcome);
+    case "permission":
+      await requestPermission(step, sessionId, client, state, hooks);
       return undefined;
-    }
+    case "settled":
+      await Promise.all(state.detached);
+      return undefined;
+    case "awaitCancel":
+      await state.cancelled;
+      return undefined;
     case "waitForCancel":
       await state.cancelled;
       return "cancelled";
@@ -87,6 +89,42 @@ async function runStep(
     case "fail":
       throw rpcError(step.failure);
   }
+}
+
+async function requestPermission(
+  step: PermissionStep,
+  sessionId: string,
+  client: AgentContext,
+  state: PromptState,
+  hooks: FakeHooks,
+): Promise<void> {
+  const toolCallId = step.toolCall?.toolCallId ?? "fake-permission";
+  const answered = client
+    .request(methods.client.session.requestPermission, {
+      sessionId: step.sessionId ?? sessionId,
+      toolCall: {
+        toolCallId: "fake-permission",
+        title: "Edit a file",
+        kind: "edit",
+        status: "pending",
+        ...step.toolCall,
+      },
+      options: step.options.map((kind): PermissionOption => ({ optionId: `opt-${kind}`, name: kind, kind })),
+    })
+    .then(
+      (response) => {
+        hooks.record("permission-outcome", response.outcome);
+        hooks.record("permission-answer", { toolCallId, outcome: response.outcome });
+      },
+      (error: unknown) => {
+        hooks.record("permission-error", { toolCallId, message: String(error) });
+      },
+    );
+  if (step.detached === true) {
+    state.detached.push(answered);
+    return;
+  }
+  await answered;
 }
 
 async function runTurn(

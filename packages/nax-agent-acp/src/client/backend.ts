@@ -1,10 +1,12 @@
 /**
- * acpBackend(): nax-agent's SessionBackend over ACP (S4 spec §6). S4-2 serves
- * text-only `full` sessions end to end. Until their stages land it refuses,
- * before spawning anything (D-b): profiles other than `full` (S4-3), embedder
- * tools (S4-4) and resume (S4-6). A crashed or killed agent leaves the session
- * disconnected; reconnect is S4-6, so until then later turns end
- * AGENT_SESSION_CLOSED (D-f).
+ * acpBackend(): nax-agent's SessionBackend over ACP (S4 spec §6). It serves all
+ * four profiles: the agent's mode is set at open (§6.4 layer 1), and each
+ * session/request_permission is decided by profile (layer 2, permissions.ts),
+ * through the caller under `ask`. A turn's decisions are cancelled when the turn
+ * is cancelled, times out, ends or loses its process (D3-d). Until their stages
+ * land it refuses, before spawning anything: embedder tools (S4-4) and resume
+ * (S4-6). A crashed or killed agent leaves the session disconnected; reconnect is
+ * S4-6, so until then later turns end AGENT_SESSION_CLOSED (D-f).
  */
 import {
   type AgentSessionAdapter,
@@ -24,7 +26,7 @@ import { createInboundRouter, type InboundRouter } from "#src/client/inbound";
 import { type LaunchFn, launchAgent } from "#src/client/launch";
 import { type OpenedAcp, openAcpSession } from "#src/client/open";
 import { type AcpBackendOptions, type ResolvedAcpOptions, resolveAcpOptions } from "#src/client/options";
-import { rejectLocally } from "#src/client/permissions";
+import { decidePermission } from "#src/client/permissions";
 import { race } from "#src/client/race";
 import { runPromptTurn, type TurnState } from "#src/client/turn";
 
@@ -44,6 +46,8 @@ interface Live {
   readonly router: InboundRouter;
   readonly flags: SessionFlags;
   readonly state: TurnState;
+  /** Aborted when the agent process exits: the running turn's permission decisions settle cancelled (§6.3 step 5). */
+  readonly gone: AbortController;
 }
 
 export function acpBackend(input: AcpBackendOptions): SessionBackend {
@@ -52,20 +56,21 @@ export function acpBackend(input: AcpBackendOptions): SessionBackend {
 }
 
 function refuseUnbuilt(ctx: BackendOpenContext): void {
-  if (ctx.profile !== "full") {
-    throw capabilityUnsupported("profile", `profile "${ctx.profile}" on ACP arrives in S4-3; this build serves "full"`);
-  }
   if (ctx.tools.length > 0) throw capabilityUnsupported("tools", "embedder tools on ACP arrive in S4-4");
   if (ctx.resume !== undefined) throw capabilityUnsupported("resume", "resuming an ACP session arrives in S4-6");
 }
 
 async function openBackend(options: ResolvedAcpOptions, ctx: BackendOpenContext): Promise<OpenedBackend> {
   refuseUnbuilt(ctx);
-  const router = createInboundRouter(async (request) => rejectLocally(request));
+  const gone = new AbortController();
+  const router = createInboundRouter((request, signal) =>
+    decidePermission(request, { profile: ctx.profile, asks: ctx.asks, secrets: options.secrets, signal }),
+  );
   const acp = await openAcpSession(options, ctx, router.handlers, _acpBackendDeps.launch);
   const flags: SessionFlags = { disconnected: false, closing: undefined, instructionsSent: false };
   void acp.launched.exited.then(() => {
     flags.disconnected = true;
+    gone.abort();
   });
   const state: TurnState = {
     link: acp.link,
@@ -77,7 +82,7 @@ async function openBackend(options: ResolvedAcpOptions, ctx: BackendOpenContext)
       flags.disconnected = true;
     },
   };
-  return assemble({ options, ctx, acp, router, flags, state });
+  return assemble({ options, ctx, acp, router, flags, state, gone });
 }
 
 function assemble(live: Live): OpenedBackend {
@@ -114,7 +119,7 @@ async function sendTurn(live: Live, prompt: string, opts: SendTurnOpts): Promise
   const text = instructions === undefined || instructions === "" ? prompt : `${instructions}\n\n${prompt}`;
   const collector = createTurnCollector(opts.onTurnEvent);
   const signal = opts.signal ?? ctx.turnSignal();
-  const release = live.router.attach(live.acp.agentSessionId, collector, signal);
+  const release = live.router.attach(live.acp.agentSessionId, collector, AbortSignal.any([signal, live.gone.signal]));
   try {
     return await runPromptTurn(live.state, { text, signal, collector });
   } finally {

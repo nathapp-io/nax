@@ -15,18 +15,21 @@ export interface InMemoryAgent {
   callsTo(method: string): readonly unknown[];
   kills(): number;
   terminations(): number;
+  crash(code?: number): void;
 }
 
 export function inMemoryAgent(script: FakeScript = {}): InMemoryAgent {
   const calls: FakeRecord[] = [];
   const requests: LaunchRequest[] = [];
   const counts = { kills: 0, terminations: 0 };
+  let endLatest: (exit: AgentExit) => void = () => {};
   const launch: LaunchFn = (request) => {
     requests.push(request);
     let end: (exit: AgentExit) => void = () => {};
     const exited = new Promise<AgentExit>((resolve) => {
       end = resolve;
     });
+    endLatest = end;
     const app = buildFakeAgent(script, {
       record: (method, params) => {
         calls.push({ method, params });
@@ -59,5 +62,6 @@ export function inMemoryAgent(script: FakeScript = {}): InMemoryAgent {
     callsTo: (method) => calls.filter((call) => call.method === method).map((call) => call.params),
     kills: () => counts.kills,
     terminations: () => counts.terminations,
+    crash: (code = 1) => endLatest({ code, signal: null }),
   };
 }
