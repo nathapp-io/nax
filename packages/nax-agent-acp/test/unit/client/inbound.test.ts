@@ -183,6 +183,23 @@ describe("createInboundRouter: permission requests (spec §6.3, §6.4, D3-c, D3-
     expect(await Promise.all(pending)).toEqual(Array.from({ length: MAX_PENDING_DECISIONS }, () => CANCELLED));
   });
 
+  test("an aborted turn answers local rejections cancelled, with no event and no log (D3-d)", async () => {
+    const { logger, warnings } = recordingLogger();
+    setAgentLogger(logger);
+    const { decide, seen } = recordingDecider(untilAborted);
+    const router = createInboundRouter(decide);
+    const turn = new AbortController();
+    const release = router.attach("a", createTurnCollector(undefined), turn.signal);
+    const pending = Array.from({ length: MAX_PENDING_DECISIONS }, () => router.handlers.onPermission(request("a")));
+    turn.abort();
+    expect(await router.handlers.onPermission(request("a"))).toEqual(CANCELLED);
+    expect(await router.handlers.onPermission(request("b"))).toEqual(CANCELLED);
+    expect(seen).toHaveLength(MAX_PENDING_DECISIONS);
+    expect(warnings).toEqual([]);
+    await release();
+    expect(await Promise.all(pending)).toEqual(Array.from({ length: MAX_PENDING_DECISIONS }, () => CANCELLED));
+  });
+
   test("a throwing decider answers cancelled", async () => {
     const router = createInboundRouter(async () => {
       throw new Error("boom");

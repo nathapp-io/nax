@@ -79,6 +79,22 @@ describe("describeToolCall (spec §6.4 untrusted fields, D3-a)", () => {
     expect(shown.command).toBe("cd x\nbun test");
   });
 
+  test("line and paragraph separators fold in the one-line summary but not the command", () => {
+    const shown = describeToolCall(
+      {
+        toolCallId: "c",
+        kind: "execute",
+        title: "Line\u2028Break\u2029Here",
+        rawInput: { command: "cd x\nbun test" },
+      },
+      [],
+    );
+    expect(shown.summary).toBe("Line Break Here");
+    expect(/[\u2028\u2029]/.test(shown.summary)).toBe(false);
+    expect(shown.command).toBe("cd x\nbun test");
+    expect(shown.showable).toBe(true);
+  });
+
   test("oversized raw text is withheld without being masked (maskForPrompt is quadratic)", () => {
     const flood = "sk-".repeat(100_000);
     const started = Date.now();

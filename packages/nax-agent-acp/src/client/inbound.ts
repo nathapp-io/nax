@@ -87,8 +87,9 @@ export function createInboundRouter(decide: PermissionDecider): InboundRouter {
       onPermission: async (request) => {
         const binding = active;
         if (binding === undefined) return reject(request, "no-turn");
-        if (request.sessionId !== binding.sessionId) return reject(request, "foreign-session");
-        if (binding.pending.size >= MAX_PENDING_DECISIONS) return reject(request, "too-many");
+        const aborted = binding.signal.aborted;
+        if (request.sessionId !== binding.sessionId) return aborted ? cancelled() : reject(request, "foreign-session");
+        if (binding.pending.size >= MAX_PENDING_DECISIONS) return aborted ? cancelled() : reject(request, "too-many");
         return decideInTurn(binding, decide, request);
       },
     },

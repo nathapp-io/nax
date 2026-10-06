@@ -65,7 +65,7 @@ function clean(text: string, secrets: readonly string[]): Shown {
 
 function show(raw: string, secrets: readonly string[], limits: ShowLimits): Shown {
   if (Buffer.byteLength(raw, "utf8") > limits.rawMaxBytes) return { ok: false };
-  const text = limits.oneLine ? raw.replace(/[\n\t]+\s*/g, " ") : raw;
+  const text = limits.oneLine ? raw.replace(/[\n\t\u2028\u2029]+\s*/g, " ") : raw;
   const shown = clean(text, secrets);
   return shown.ok ? { ok: true, text: capBytes(shown.text, limits.capBytes) } : { ok: false };
 }
