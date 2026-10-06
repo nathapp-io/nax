@@ -103,9 +103,10 @@ answer to each permission request the agent sends.
   routes through a permission request are decided here.
   - Under `none` and `read`, Claude may still run tools it does not ask about, such
     as reads and search. `none` means no permitted side effects, not no reads.
-  - Under `none` and `read`, Claude cannot call `ExitPlanMode`. Asked to change
-    something, it reaches for a write tool, which is refused, and the turn completes.
-    Left available, its refused plan would end the turn as cancelled.
+  - Under `none` and `read`, Claude cannot call `ExitPlanMode`. Left available, its
+    refused plan would end the turn as cancelled. The `_meta` that blocks it is part
+    of what Claude's adapter compares on resume, so resuming under another profile
+    may rebuild the agent's session.
   - Plan mode lets Claude write its own plan file under `~/.claude/plans/` without
     asking, so `none` and `read` do not stop that write.
   - Under `ask`, actions Claude's `default` mode allows without asking (reads and

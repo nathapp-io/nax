@@ -46,7 +46,7 @@ export interface RestoredSession {
   readonly restoredWith: RestoredWith;
 }
 
-/** What session/new, session/resume and session/load add to `cwd`: the tool host's entry and the pre-approval `_meta` (§6.6). */
+/** What session/new, session/resume and session/load add to `cwd`: the tool host's entry and Claude's `_meta` (§6.6, #2365). */
 export interface SessionSetup {
   readonly mcpServers: McpServer[];
   readonly _meta?: Record<string, unknown>;

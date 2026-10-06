@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import type { EmbedderTool } from "@nathapp/nax-agent";
+import type { AgentSessionProfile, EmbedderTool } from "@nathapp/nax-agent";
 import { type AgentSessionErrorCode, createMemoryTranscriptStore, type TranscriptStore } from "@nathapp/nax-agent";
 import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
 import { createInboundRouter } from "#src/client/inbound";
@@ -302,9 +302,9 @@ describe("clientCapabilitiesFor (S4-5 D5-l)", () => {
 });
 
 describe("openAcpSession: restoring a stored session (spec §6.9, S4-6)", () => {
-  function restoreWith(script: FakeScript, restore: Partial<Restore> = {}) {
+  function restoreWith(script: FakeScript, restore: Partial<Restore> = {}, profile: AgentSessionProfile = "full") {
     const fake = inMemoryAgent({ ...CLAUDE_SCRIPT, ...script });
-    const ctx = openContext(dir);
+    const ctx = openContext(dir, { profile });
     const opened = openAcpSession(
       options(),
       ctx,
@@ -335,6 +335,29 @@ describe("openAcpSession: restoring a stored session (spec §6.9, S4-6)", () => 
     const { fake, opened } = restoreWith({ capabilities: { loadSession: true } });
     expect((await opened).restoredWith).toBe("load");
     expect(fake.callsTo("session/load")).toEqual([{ sessionId: "fake-session-1", cwd: dir, mcpServers: [] }]);
+  });
+
+  // #2365: claude-agent-acp fingerprints _meta.claudeCode.options on restore.
+  const READ_META = { claudeCode: { options: { disallowedTools: ["ExitPlanMode"] } } };
+
+  test("read: session/resume carries the ExitPlanMode lock", async () => {
+    const { fake, opened } = restoreWith(
+      { capabilities: { loadSession: true, sessionCapabilities: { resume: {} } } },
+      {},
+      "read",
+    );
+    await opened;
+    expect(fake.callsTo("session/resume")).toEqual([
+      { sessionId: "fake-session-1", cwd: dir, mcpServers: [], _meta: READ_META },
+    ]);
+  });
+
+  test("read: session/load carries the ExitPlanMode lock", async () => {
+    const { fake, opened } = restoreWith({ capabilities: { loadSession: true } }, {}, "read");
+    await opened;
+    expect(fake.callsTo("session/load")).toEqual([
+      { sessionId: "fake-session-1", cwd: dir, mcpServers: [], _meta: READ_META },
+    ]);
   });
 
   test("a new session reports its cwd and no restoredWith", async () => {
