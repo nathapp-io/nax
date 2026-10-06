@@ -7,6 +7,7 @@
 
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { findProjectDir, loadConfig, validateDirectory } from "../config";
+import { checkInteraction, type InteractionCheckReport } from "../interaction";
 import { determineConfigSources } from "./config-display";
 import { maskProfileValues } from "./config-profile";
 import { buildConfigRequirements, type ConfigRequirements } from "./config-requirements";
@@ -17,6 +18,8 @@ export interface ConfigJsonReport {
   profileChain: string[];
   sources: { global: string | null; project: string | null };
   requirements: ConfigRequirements;
+  /** Whether the resolved config's interaction plugin can start in this environment (koda #207). */
+  interaction: InteractionCheckReport;
   config: Record<string, unknown>;
 }
 
@@ -31,9 +34,14 @@ export interface ConfigJsonOptions {
 export const _configJsonDeps: {
   log: (text: string) => void;
   buildConfigRequirements: typeof buildConfigRequirements;
+  checkInteraction: typeof checkInteraction;
+  /** Same rule as the run path: stdin that is not a TTY means no cli prompts. */
+  isHeadless: () => boolean;
 } = {
   log: (text: string) => console.log(text),
   buildConfigRequirements,
+  checkInteraction,
+  isHeadless: () => !process.stdin.isTTY,
 };
 
 export async function configJsonCommand(options: ConfigJsonOptions): Promise<number> {
@@ -49,11 +57,13 @@ export async function configJsonCommand(options: ConfigJsonOptions): Promise<num
     const profile = options.profile ?? [];
     const config = await loadConfig(projectDir ?? dir, { profile });
     const requirements = _configJsonDeps.buildConfigRequirements(config);
+    const interaction = await _configJsonDeps.checkInteraction(config, { headless: _configJsonDeps.isHeadless() });
     const report: ConfigJsonReport = {
       profile: config.profile ?? "default",
       profileChain: config.profileChain ?? [],
       sources: determineConfigSources(options.dir),
       requirements,
+      interaction,
       config: maskProfileValues(config as unknown as Record<string, unknown>),
     };
     _configJsonDeps.log(JSON.stringify(report, null, 2));
