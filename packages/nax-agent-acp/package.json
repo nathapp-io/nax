@@ -57,5 +57,11 @@
   "bugs": {
     "url": "https://github.com/nathapp-io/nax/issues"
   },
-  "keywords": ["acp", "agent-client-protocol", "coding-agent", "claude-code", "nax"]
+  "keywords": [
+    "acp",
+    "agent-client-protocol",
+    "coding-agent",
+    "claude-code",
+    "nax"
+  ]
 }
