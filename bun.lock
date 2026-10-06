@@ -40,7 +40,7 @@
     },
     "packages/nax-agent": {
       "name": "@nathapp/nax-agent",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "dependencies": {
         "@anthropic-ai/sandbox-runtime": "0.0.77",
         "@nathapp/nax-ai": "0.1.16",
