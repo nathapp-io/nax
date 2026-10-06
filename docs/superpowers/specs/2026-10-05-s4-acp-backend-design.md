@@ -566,7 +566,7 @@ Nothing is released before S4-6, so partial `./client` states are never publishe
    - under `read` (Claude plan mode), the same embedder tool runs through MCP without a permission prompt (S4-4 D4-b: not provable from the source; the first live run failed here, fixed by `readOnlyHint` in #2365). The follow-up write turn met `ExitPlanMode`, whose refusal the adapter turns into an interrupt (turn `cancelled`); under `none`/`read` the Claude `_meta` now also carries `disallowedTools: ["ExitPlanMode"]`, sent with or without tools (#2365)
    - a `question` round trip, if Claude emits an elicitation for a prompted AskUserQuestion. If it does not, this is recorded as not observed, not failed.
    - turn 1 states a random nonce; `close()`; `resumeAgentSession` from a new process (asserting `session/resume` was used) and the agent returns the nonce
-   - under `read`: a write attempt is rejected (`decidedBy: "profile"`)
+   - under `read`: asked to write, no write lands, no permission request is allowed and the turn completes. The count of `decidedBy: "profile"` denials is recorded, not required: Claude's plan mode may refuse the write itself without asking (#2365 live run)
    - a `usage` event with non-zero tokens and `costSource: "reported"`; in a two-turn session the second turn's tokens are that turn's own (S4-5 D5-a)
    - a `tool_call` / `tool_result` pair for a file read, whose `input` names the file (S4-5 D5-c)
    - Record the model, cost and commit.
