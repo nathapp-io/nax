@@ -20,7 +20,7 @@ The backend seam for S4. Breaking: `createAgentSession` takes a `SessionBackend`
 - `ApprovalDecidedBy` gains `"profile"`; `usage` and `turn_end` gain `costSource` (`computed` | `reported` | `unpriced`; `CostSource`); `TurnResult` gains `costSource`.
 - Error codes `AGENT_SESSION_BACKEND_UNAVAILABLE`, `AGENT_SESSION_AUTH_REQUIRED`, `AGENT_SESSION_CAPABILITY_UNSUPPORTED`, `AGENT_SESSION_BACKEND_MISMATCH`.
 - `TranscriptDoc.backend` and `TranscriptDoc.acp` (`TranscriptAcpRecord`), optional and additive (schemaVersion stays 1).
-- Backend kit on `.`: `redactSecrets`, `capStrings`, `killProcessGroup`, `isProcessAlive`, `TOOL_CALL_INPUT_BYTES`, `TOOL_RESULT_PREVIEW_BYTES`, `createStderrTail` (`StderrTail`).
+- Backend kit on `.`: `redactSecrets`, `capStrings`, `killProcessGroup`, `isProcessAlive`, `TOOL_CALL_INPUT_BYTES`, `TOOL_RESULT_PREVIEW_BYTES`, `createStderrTail` (`StderrTail`), and `NaxError`, the base class of `AgentSessionError`, so a backend can throw codes outside `AgentSessionErrorCode` (S4 spec §5.7).
 
 ## [0.2.0] - 2026-10-05
 

@@ -83,6 +83,7 @@ export { createStderrTail, type StderrTail } from "#src/infra/stderr-tail";
 export { isProcessAlive } from "#src/internal/process-alive";
 export { killProcessGroup } from "#src/internal/process-kill";
 export { capStrings, redactSecrets } from "#src/internal/redact";
+export { NaxError } from "#src/infra/nax-error";
 export type { CredentialSource } from "#src/native/credentials/session-source";
 export {
   AuthCancelledError,

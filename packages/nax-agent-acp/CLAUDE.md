@@ -31,9 +31,29 @@ Design: `docs/superpowers/specs/2026-10-05-s4-acp-backend-design.md`.
 
 ## Status
 
-Built in stages S4-1 to S4-6. S4-1 is the scaffold plus the agent registry
-(`src/client/registry.ts`); `./client` exports nothing until S4-2 adds `acpBackend()`.
-`./server` is reserved for S5 and stays empty. Nothing is released before S4-6.
+Built in stages S4-1 to S4-6. S4-2 adds `acpBackend()`: launch, connection,
+capabilities, the session lifecycle and text-only `full` turns, tested against a fake
+ACP agent (`test/fixtures/fake-agent/`, in process and as a subprocess). Profiles
+none/read/ask (S4-3), tools (S4-4), full events and usage (S4-5) and resume (S4-6)
+are refused with `AGENT_SESSION_CAPABILITY_UNSUPPORTED` until then. `./server` is
+reserved for S5. Nothing is released before S4-6.
+
+## Module map (`src/client/`)
+
+| Module | Role |
+|:-------|:-----|
+| `options.ts`, `env.ts` | zod options; agent env allowlist and redaction set |
+| `registry.ts` | per-agent launch, mode, pre-approval and auth data |
+| `launch.ts` | process-group spawn, ndjson stream, stderr tail, `agentGoneError` |
+| `connection.ts` | one SDK `ClientApp` per process; outbound requests |
+| `capabilities.ts` | capability record, requirement checks, config options |
+| `open.ts` | open sequence; kills the agent on any failure |
+| `turn.ts`, `events.ts`, `inbound.ts` | prompt turn and abort; text events; inbound routing |
+| `backend.ts` | `acpBackend()`, adapter, close; `_acpBackendDeps.launch` test seam |
+
+Tests reach a process only through `_acpBackendDeps.launch`
+(`test/helpers/in-memory-launch.ts`) or the subprocess fake (`FAKE_MAIN`). Never
+start a real ACP adapter in the unit suite.
 
 ## Boundaries
 

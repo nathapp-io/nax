@@ -2,5 +2,11 @@
 # One line per exported name, sorted by code point. `type ` marks a name with no runtime value.
 
 [./client]
+ACP_STOP_CODES
+type AcpAgentName
+type AcpAgentSpec
+type AcpBackendOptions
+type AcpStopCode
+acpBackend
 
 [./server]
