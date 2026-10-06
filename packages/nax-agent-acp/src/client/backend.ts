@@ -2,11 +2,14 @@
  * acpBackend(): nax-agent's SessionBackend over ACP (S4 spec §6). It serves all
  * four profiles: the agent's mode is set at open (§6.4 layer 1), and each
  * session/request_permission is decided by profile (layer 2, permissions.ts),
- * through the caller under `ask`. A turn's decisions are cancelled when the turn
- * is cancelled, times out, ends or loses its process (D3-d). Until their stages
- * land it refuses, before spawning anything: embedder tools (S4-4) and resume
- * (S4-6). A crashed or killed agent leaves the session disconnected; reconnect is
- * S4-6, so until then later turns end AGENT_SESSION_CLOSED (D-f).
+ * through the caller under `ask`. Embedder tools are served by a per-session MCP
+ * tool host (§6.6, tool-host.ts) and pre-approved at the adapter (R12); the
+ * host's token joins the session's redaction set before the agent starts (D4-i).
+ * A turn's permission decisions and tool calls are cancelled when the turn is
+ * cancelled, times out, ends or loses its process (D3-d, D4-f). Until its stage
+ * lands it refuses resume (S4-6) before spawning anything. A crashed or killed
+ * agent leaves the session disconnected; reconnect is S4-6, so until then later
+ * turns end AGENT_SESSION_CLOSED (D-f).
  */
 import {
   type AgentSessionAdapter,
@@ -28,6 +31,8 @@ import { type OpenedAcp, openAcpSession } from "#src/client/open";
 import { type AcpBackendOptions, type ResolvedAcpOptions, resolveAcpOptions } from "#src/client/options";
 import { decidePermission } from "#src/client/permissions";
 import { race } from "#src/client/race";
+import { createToolCalls } from "#src/client/tool-calls";
+import { createToolHost, newToolHostToken, type ToolHost } from "#src/client/tool-host";
 import { runPromptTurn, type TurnState } from "#src/client/turn";
 
 /** Test seam: the process launcher. Production always uses launchAgent. */
@@ -48,6 +53,8 @@ interface Live {
   readonly state: TurnState;
   /** Aborted when the agent process exits: the running turn's permission decisions settle cancelled (§6.3 step 5). */
   readonly gone: AbortController;
+  /** The embedder tools' MCP host; undefined when the session has no tools. */
+  readonly host: ToolHost | undefined;
 }
 
 export function acpBackend(input: AcpBackendOptions): SessionBackend {
@@ -56,17 +63,48 @@ export function acpBackend(input: AcpBackendOptions): SessionBackend {
 }
 
 function refuseUnbuilt(ctx: BackendOpenContext): void {
-  if (ctx.tools.length > 0) throw capabilityUnsupported("tools", "embedder tools on ACP arrive in S4-4");
   if (ctx.resume !== undefined) throw capabilityUnsupported("resume", "resuming an ACP session arrives in S4-6");
 }
 
-async function openBackend(options: ResolvedAcpOptions, ctx: BackendOpenContext): Promise<OpenedBackend> {
+/** The session's options: the tool host's token joins the redaction set (D4-i). */
+function withToken(options: ResolvedAcpOptions, token: string | undefined): ResolvedAcpOptions {
+  if (token === undefined) return options;
+  return Object.freeze({ ...options, secrets: Object.freeze([...options.secrets, token]) });
+}
+
+function toolHostFor(
+  ctx: BackendOpenContext,
+  router: InboundRouter,
+  secrets: readonly string[],
+  token: string | undefined,
+): ToolHost | undefined {
+  if (token === undefined) return undefined;
+  const calls = createToolCalls({
+    sessionId: ctx.sessionId,
+    tools: ctx.tools,
+    asks: ctx.asks,
+    currentTurnId: ctx.currentTurnId,
+    turnSignal: () => router.activeSignal(),
+    secrets,
+  });
+  return createToolHost(calls, token);
+}
+
+async function openBackend(base: ResolvedAcpOptions, ctx: BackendOpenContext): Promise<OpenedBackend> {
   refuseUnbuilt(ctx);
+  const token = ctx.tools.length > 0 ? newToolHostToken() : undefined;
+  const options = withToken(base, token);
   const gone = new AbortController();
   const router = createInboundRouter((request, signal) =>
     decidePermission(request, { profile: ctx.profile, asks: ctx.asks, secrets: options.secrets, signal }),
   );
-  const acp = await openAcpSession(options, ctx, router.handlers, _acpBackendDeps.launch);
+  const host = toolHostFor(ctx, router, options.secrets, token);
+  const acp = await openAcpSession(options, ctx, router.handlers, _acpBackendDeps.launch, host).catch(
+    async (err: unknown) => {
+      await host?.stop();
+      throw err;
+    },
+  );
   const flags: SessionFlags = { disconnected: false, closing: undefined, instructionsSent: false };
   void acp.launched.exited.then(() => {
     flags.disconnected = true;
@@ -82,7 +120,7 @@ async function openBackend(options: ResolvedAcpOptions, ctx: BackendOpenContext)
       flags.disconnected = true;
     },
   };
-  return assemble({ options, ctx, acp, router, flags, state, gone });
+  return assemble({ options, ctx, acp, router, flags, state, gone, host });
 }
 
 function assemble(live: Live): OpenedBackend {
@@ -124,6 +162,8 @@ async function sendTurn(live: Live, prompt: string, opts: SendTurnOpts): Promise
     return await runPromptTurn(live.state, { text, signal, collector });
   } finally {
     await release();
+    // The release aborted this turn's tool calls; wait for their answers (D4-f).
+    await live.host?.drain();
   }
 }
 
@@ -134,6 +174,8 @@ async function shutdown(live: Live): Promise<void> {
   }
   await acp.launched.terminate(options.cancelGraceMs);
   acp.link.close();
+  // §6.3 close step 4: stop the tool host and revoke its token.
+  await live.host?.stop();
   await saveFinal(live.ctx.transcriptStore, live.ctx.sessionId);
 }
 

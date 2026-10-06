@@ -1,12 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
+import type { EmbedderTool } from "@nathapp/nax-agent";
 import { type AgentSessionErrorCode, createMemoryTranscriptStore, type TranscriptStore } from "@nathapp/nax-agent";
 import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
 import { createInboundRouter } from "#src/client/inbound";
 import { openAcpSession } from "#src/client/open";
 import { type AcpBackendOptions, resolveAcpOptions } from "#src/client/options";
 import { rejectLocally } from "#src/client/permissions";
+import type { HttpMcpServer, ToolHost } from "#src/client/tool-host";
 import { CLAUDE_CONFIG_OPTIONS, type FakeScript } from "#test/fixtures/fake-agent/script";
 import { rejection, sessionError } from "#test/helpers/errors";
 import { inMemoryAgent } from "#test/helpers/in-memory-launch";
@@ -193,6 +195,95 @@ describe("openAcpSession: openSignal (close() during open)", () => {
     );
     setTimeout(() => controller.abort(), 20);
     expect(sessionError(await rejection(opened)).code).toBe("AGENT_SESSION_CLOSED");
+    expect(fake.kills()).toBe(1);
+  });
+});
+
+describe("openAcpSession: the tool host (spec §6.3 steps 3-4, §6.6)", () => {
+  const SERVER: HttpMcpServer = {
+    type: "http",
+    name: "nax",
+    url: "http://127.0.0.1:1/mcp",
+    headers: [{ name: "Authorization", value: "Bearer test-token-0123456789" }],
+  };
+  const tool = (name: string): EmbedderTool => ({
+    name,
+    description: name,
+    inputSchema: { type: "object" },
+    approval: "never",
+    run: async () => ({ content: "" }),
+  });
+  const HTTP_CLAUDE: FakeScript = { ...CLAUDE_SCRIPT, capabilities: { mcpCapabilities: { http: true } } };
+
+  function stubHost(start: () => Promise<HttpMcpServer> = async () => SERVER) {
+    const counts = { starts: 0 };
+    const host: ToolHost = {
+      token: "test-token-0123456789",
+      start: () => {
+        counts.starts += 1;
+        return start();
+      },
+      drain: async () => {},
+      stop: async () => {},
+    };
+    return { host, counts };
+  }
+
+  async function openWithTools(script: FakeScript, host: ToolHost, extra: Partial<AcpBackendOptions> = {}) {
+    const fake = inMemoryAgent(script);
+    const ctx = openContext(dir, { tools: [tool("lookup"), tool("fetch_page")] });
+    const opened = openAcpSession(
+      options(extra),
+      ctx,
+      createInboundRouter(async (r) => rejectLocally(r)).handlers,
+      fake.launch,
+      host,
+    );
+    return { fake, opened };
+  }
+
+  test("session/new carries the host's server entry and one pre-approval rule per tool", async () => {
+    const { host, counts } = stubHost();
+    const { fake, opened } = await openWithTools(HTTP_CLAUDE, host);
+    await opened;
+    expect(counts.starts).toBe(1);
+    expect(fake.callsTo("session/new")).toEqual([
+      {
+        cwd: dir,
+        mcpServers: [SERVER],
+        _meta: { claudeCode: { options: { allowedTools: ["mcp__nax__lookup", "mcp__nax__fetch_page"] } } },
+      },
+    ]);
+  });
+
+  test("no HTTP MCP support: CAPABILITY_UNSUPPORTED tools after initialize; the host never starts; killed", async () => {
+    const { host, counts } = stubHost();
+    const { fake, opened } = await openWithTools(CLAUDE_SCRIPT, host);
+    const err = sessionError(await rejection(opened));
+    expect(err.code).toBe("AGENT_SESSION_CAPABILITY_UNSUPPORTED");
+    expect(err.context).toMatchObject({ capability: "tools" });
+    expect(counts.starts).toBe(0);
+    expect(fake.callsTo("initialize")).toHaveLength(1);
+    expect(fake.callsTo("session/new")).toEqual([]);
+    expect(fake.kills()).toBe(1);
+  });
+
+  test("an agent without pre-approval (codex): CAPABILITY_UNSUPPORTED tools; the host never starts", async () => {
+    const { host, counts } = stubHost();
+    const { opened } = await openWithTools({ capabilities: { mcpCapabilities: { http: true } } }, host, {
+      agent: "codex",
+    });
+    expect(sessionError(await rejection(opened)).context).toMatchObject({ capability: "tools" });
+    expect(counts.starts).toBe(0);
+  });
+
+  test("a host that cannot start: BACKEND_UNAVAILABLE and the agent is killed", async () => {
+    const { host } = stubHost(() => Promise.reject(new Error("EADDRNOTAVAIL")));
+    const { fake, opened } = await openWithTools(HTTP_CLAUDE, host);
+    const err = sessionError(await rejection(opened));
+    expect(err.code).toBe("AGENT_SESSION_BACKEND_UNAVAILABLE");
+    expect(err.message).toContain("the tool host could not start: EADDRNOTAVAIL");
+    expect(fake.callsTo("session/new")).toEqual([]);
     expect(fake.kills()).toBe(1);
   });
 });

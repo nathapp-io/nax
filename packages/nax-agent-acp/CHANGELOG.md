@@ -20,3 +20,11 @@ step with `@nathapp/nax-agent`.
   Pending approvals settle `cancelled` when the turn is cancelled, ends or loses its
   agent process, and a request after `cancel()` is never allowed. Out-of-turn,
   foreign-session and over-cap (16 concurrent) requests are rejected locally.
+- Embedder tools on `acpBackend()` (S4-4). A per-session MCP server on `127.0.0.1`
+  (ephemeral port, path `/mcp`) serves the session's tools to the agent: bearer
+  token compared in constant time, `Host` and `Origin` checks, a 1 MiB body cap,
+  at most 8 concurrent calls, no CORS. Claude's adapter pre-approves each tool with
+  an exact `mcp__nax__<tool>` rule, so the tool's own `approval` is its only gate.
+  Calls run only during a turn, under the turn's signal, and are abandoned when it
+  stops. The token is redacted everywhere and never stored; the server stops on
+  close. Agents without HTTP MCP or pre-approval refuse tools after `initialize`.

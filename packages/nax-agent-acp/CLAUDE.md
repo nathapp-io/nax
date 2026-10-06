@@ -32,11 +32,13 @@ Design: `docs/superpowers/specs/2026-10-05-s4-acp-backend-design.md`.
 ## Status
 
 Built in stages S4-1 to S4-6. S4-2 added `acpBackend()`: launch, connection,
-capabilities, the session lifecycle and text turns. S4-3 adds all four profiles:
+capabilities, the session lifecycle and text turns. S4-3 added all four profiles:
 mode by profile and permission requests decided by profile (`permissions.ts`), with
-`ask` going to the caller through the facade's ask port. Tested against a fake ACP
-agent (`test/fixtures/fake-agent/`, in process and as a subprocess). Tools (S4-4),
-full events and usage (S4-5) and resume (S4-6) are refused with
+`ask` going to the caller through the facade's ask port. S4-4 adds embedder tools:
+a per-session loopback MCP tool host (`tool-host.ts`, `tool-calls.ts`) and Claude
+pre-approval (`pre-approval.ts`). Tested against a fake ACP agent
+(`test/fixtures/fake-agent/`, in process and as a subprocess; its `mcpCall` step is
+a real MCP client). Full events and usage (S4-5) and resume (S4-6) are refused with
 `AGENT_SESSION_CAPABILITY_UNSUPPORTED` until then. `./server` is reserved for S5.
 Nothing is released before S4-6.
 
@@ -53,7 +55,10 @@ Nothing is released before S4-6.
 | `turn.ts`, `events.ts`, `inbound.ts` | prompt turn and abort; text events; inbound routing by turn and session |
 | `permissions.ts` | §6.4 decision per permission request, by profile; only `*_once` options |
 | `tool-display.ts`, `text.ts` | what a person sees of a tool call; control-strip, secret scrub, caps |
-| `backend.ts` | `acpBackend()`, adapter, close; `_acpBackendDeps.launch` test seam |
+| `tool-host.ts` | loopback MCP server for embedder tools: gate (Host, Origin, token, body cap), one stateless MCP server per request |
+| `tool-calls.ts` | tools/list and tools/call: turn check, 8-call cap, `always` approval, run under the turn signal |
+| `pre-approval.ts` | server name `nax`, rule `mcp__nax__<tool>`, Claude `_meta` |
+| `backend.ts` | `acpBackend()`, adapter, tool host wiring, close; `_acpBackendDeps.launch` test seam |
 
 Tests reach a process only through `_acpBackendDeps.launch`
 (`test/helpers/in-memory-launch.ts`) or the subprocess fake (`FAKE_MAIN`). Never

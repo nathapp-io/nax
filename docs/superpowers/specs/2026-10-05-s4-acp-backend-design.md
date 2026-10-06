@@ -358,7 +358,7 @@ ACP enforcement has two layers. Client fs/terminal are never advertised (R11).
 | Layer | `none` | `read` | `ask` | `full` |
 |---|---|---|---|---|
 | 1. Agent mode (registry mode ids; Claude: config option `mode`) | `plan` | `plan` | `default` | `default` |
-| 2. `request_permission` (embedder tools excluded, §6.6) | reject locally | reject locally | `asks.requestApproval` → `answer()` | allow locally |
+| 2. `request_permission` (embedder tools are pre-approved and normally never asked about, §6.6; if asked, decided like any request, S4-4 D4-c) | reject locally | reject locally | `asks.requestApproval` → `answer()` | allow locally |
 
 - **Enforceability:** `none` and `read` require a registry mode id for a read-only mode. Agents without one (codex, gemini, opencode, pi, custom) → `AGENT_SESSION_CAPABILITY_UNSUPPORTED` for `none` and `read`. `ask` and `full` need only the permission gate.
 - **Options:** only options the agent offered are used. `allow` → its `allow_once`; `deny` → its `reject_once`.
@@ -388,15 +388,15 @@ Out of scope (R11). Never advertised in S4.
   - no CORS headers
   - bodies over 1 MiB → 413
   - at most 8 concurrent `tools/call` → MCP tool error beyond that
-- **Token secrecy:** the token joins the redaction set for events, errors and the stderr tail. It is never written to `env` or the transcript document.
-- **Accepted threat:** a local process of the same user could reach the port but not pass the token check.
-- **Pre-approval (R12):** for Claude, `session/new._meta.claudeCode.options.allowedTools` includes the server's rule (`mcp__nax`; the exact rule string is verified in the S4-4 plan), so the adapter never asks permission for embedder tools. The host is their only approval point:
+- **Token secrecy:** the token joins the redaction set for errors, the stderr tail, approval displays and tool summaries. It is never written to `env` or the transcript document. Agent-authored text is not scrubbed in S4-4 (S4-4 D4-m).
+- **Accepted threat:** Claude's adapter passes the server's headers to the Claude CLI's argv (`--mcp-config`), so a process of the same user can read the token and reach the tools. The token stops browsers (with the `Host`/`Origin` checks) and other users; each tool's `approval` stays its gate (S4-4 D4-m).
+- **Pre-approval (R12):** for Claude, `session/new._meta.claudeCode.options.allowedTools` lists one exact rule per embedder tool, `mcp__nax__<tool>` (verified in the S4-4 plan, D4-a, against claude-agent-acp 0.85.1 and claude-agent-sdk 0.3.286), so the adapter never asks permission for embedder tools. The host is their only approval point:
   - `approval: "always"` → `asks.requestApproval`
   - `"never"` → runs under every profile, matching native `none`
 - **`tools/list`:** exactly the session's embedder tools (`name`, `description`, `inputSchema`). The agent sees them as `mcp__nax__<name>`.
 - **`tools/call`:**
   - reads `currentTurnId()` and `turnSignal()` at call time; with no turn, an MCP tool error
-  - otherwise runs `run(input, { sessionId, toolCallId: "mcp-<n>", signal })`, where `signal` is the turn signal, so a call that outlives its turn aborts
+  - otherwise runs `run(input, { sessionId, toolCallId: "mcp-<n>", signal })`, where `signal` is the turn's binding signal (turn signal, turn end, process exit) combined with the request's and the host's, so a call that outlives its turn aborts (S4-4 D4-f, D4-l)
   - `{ content, isError }` → MCP `CallToolResult`; a throw → `isError: true` with the message
 - **Close and resume:** stopped, and the token revoked, on close. Reconnect and resume start a new host with a new token and re-supply `mcpServers` and `_meta`.
 - **Events:** none of its own; the agent's updates for `mcp__nax__*` carry `tool_call` / `tool_result`.
@@ -548,6 +548,7 @@ Nothing is released before S4-6, so partial `./client` states are never publishe
 2. **Billed live Claude smoke** (maintainer approval at launch), on the packed tarballs in a fresh Node project:
    - under `ask`: the agent is asked to edit a file; an `approval_requested` is answered `allow` via `answer()`, and the edit lands on disk
    - an embedder tool (`approval: "never"`) called through MCP without any permission prompt
+   - under `read` (Claude plan mode), the same embedder tool runs through MCP without a permission prompt (S4-4 D4-b: not provable from the source)
    - a `question` round trip, if Claude emits an elicitation for a prompted AskUserQuestion. If it does not, this is recorded as not observed, not failed.
    - turn 1 states a random nonce; `close()`; `resumeAgentSession` from a new process (asserting `session/resume` was used) and the agent returns the nonce
    - under `read`: a write attempt is rejected (`decidedBy: "profile"`)

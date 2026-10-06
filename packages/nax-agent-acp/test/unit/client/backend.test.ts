@@ -4,7 +4,6 @@ import {
   type CreateAgentSessionOptions,
   createAgentSession,
   createMemoryTranscriptStore,
-  type EmbedderTool,
   resumeAgentSession,
   type SessionEvent,
   type TranscriptDoc,
@@ -271,32 +270,6 @@ describe("acpBackend: close (spec §6.3 step 4, D-j)", () => {
 });
 
 describe("acpBackend: stages not built yet are refused before spawning (D-b)", () => {
-  const tool: EmbedderTool = {
-    name: "lookup",
-    description: "Look something up",
-    inputSchema: { type: "object", properties: {} },
-    approval: "never",
-    run: async () => ({ content: "x" }),
-  };
-
-  test("embedder tools -> CAPABILITY_UNSUPPORTED tools", async () => {
-    const fake = inMemoryAgent({});
-    _acpBackendDeps.launch = fake.launch;
-    const err = sessionError(
-      await rejection(
-        createAgentSession({
-          backend: acpBackend({ agent: "claude", allowUnsandboxed: true }),
-          profile: "full",
-          workdir,
-          tools: [tool],
-          transcriptStore: createMemoryTranscriptStore(),
-        }),
-      ),
-    );
-    expect(err.context).toMatchObject({ capability: "tools" });
-    expect(fake.requests).toHaveLength(0);
-  });
-
   test("resume -> CAPABILITY_UNSUPPORTED resume", async () => {
     const fake = inMemoryAgent({});
     _acpBackendDeps.launch = fake.launch;
