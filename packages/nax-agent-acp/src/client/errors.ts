@@ -13,6 +13,19 @@ export const EXCERPT_BYTES = 4096;
 /** JSON-RPC code of `RequestError.authRequired()`. */
 const AUTH_REQUIRED_CODE = -32000;
 
+/** JSON-RPC code of `RequestError.resourceNotFound()`: Claude's adapter answers an unknown session with it (D6-e). */
+const RESOURCE_NOT_FOUND_CODE = -32002;
+
+/** The steps whose not-found answer means the agent lost the stored session (§6.9 step 2). */
+const RESTORE_STEPS: ReadonlySet<string> = new Set(["session/resume", "session/load"]);
+
+/** Agent text reporting a lost session, for agents that answer with another code. */
+const SESSION_NOT_FOUND_TEXT = /session not found|no conversation found/i;
+
+function lostOnRestore(step: string, err: RequestError): boolean {
+  return RESTORE_STEPS.has(step) && (err.code === RESOURCE_NOT_FOUND_CODE || SESSION_NOT_FOUND_TEXT.test(err.message));
+}
+
 /** Stop reasons other than end_turn, as NaxError codes owned by this package (§5.7). */
 export const ACP_STOP_CODES = Object.freeze({
   max_tokens: "ACP_STOP_MAX_TOKENS",
@@ -48,18 +61,36 @@ export function closedDuringOpen(sessionId: string): AgentSessionError {
   });
 }
 
+/** The session cannot run another turn: closed, or its agent is gone and cannot be reconnected (§6.3 step 5). */
+export function sessionLost(sessionId: string, reason: string): AgentSessionError {
+  return new AgentSessionError(`ACP session "${sessionId}" is closed: ${reason}`, "AGENT_SESSION_CLOSED", {
+    sessionId,
+  });
+}
+
 /** The JSON-RPC error the agent answered with; undefined for transport failures. */
 export function rpcErrorOf(err: unknown): RequestError | undefined {
   return err instanceof RequestError ? err : undefined;
 }
 
-/** A rejected open-phase request: initialize, session/new or session/set_config_option. */
+/**
+ * A rejected open-phase request: initialize, session/new, session/resume,
+ * session/load or session/set_config_option. Classification runs on the raw
+ * message; only the redacted excerpt escapes (§7).
+ */
 export function openRequestError(step: string, err: RequestError, secrets: readonly string[]): AgentSessionError {
   const excerpt = agentTextExcerpt(err.message, secrets);
   if (err.code === AUTH_REQUIRED_CODE) {
     return new AgentSessionError(
       `The ACP agent requires authentication (${step}): ${excerpt}`,
       "AGENT_SESSION_AUTH_REQUIRED",
+      { step },
+    );
+  }
+  if (lostOnRestore(step, err)) {
+    return new AgentSessionError(
+      `The ACP agent no longer has this session (${step}): ${excerpt}`,
+      "AGENT_SESSION_NOT_FOUND",
       { step },
     );
   }

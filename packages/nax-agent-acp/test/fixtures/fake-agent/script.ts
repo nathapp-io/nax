@@ -115,6 +115,18 @@ export interface FakeScript {
   readonly turns?: readonly FakeTurn[];
   /** Subprocess only: variables whose presence the "start" record reports. */
   readonly recordEnv?: readonly string[];
+  /** session/resume and session/load find these agent sessions; default [the script's sessionId]. Others: resourceNotFound. */
+  readonly knownSessions?: readonly string[];
+  /** Echoed as a top-level `sessionId` in resume/load answers, the way Claude's adapter does (S4-6 D6-d). */
+  readonly restoredSessionId?: string;
+  /** session/resume and session/load fail with this JSON-RPC error. */
+  readonly restoreFailure?: RpcFailure;
+  /** session/update notifications sent while session/load runs: the history replay. */
+  readonly loadReplay?: readonly SessionUpdate[];
+  /** One session/request_permission while session/load runs; its answer is recorded as `load-permission-outcome`. */
+  readonly loadPermission?: boolean;
+  /** Overrides for every launch after the first (reconnect and resume tests, S4-6 D6-l). */
+  readonly relaunch?: Omit<FakeScript, "relaunch">;
 }
 
 export interface FakeRecord {
@@ -154,3 +166,8 @@ export const CLAUDE_CONFIG_OPTIONS: readonly SessionConfigOption[] = [
     ],
   },
 ];
+
+/** The script one launch runs: `relaunch` overrides every launch after the first (S4-6 D6-l). */
+export function scriptFor(script: FakeScript, launchIndex: number): FakeScript {
+  return launchIndex > 0 && script.relaunch !== undefined ? { ...script, ...script.relaunch } : script;
+}

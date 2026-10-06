@@ -4,11 +4,10 @@ ACP (Agent Client Protocol) backend for `@nathapp/nax-agent` sessions. It lets t
 nax-agent session API (`createAgentSession`, `send()`, `answer()`, `cancel()`, `close()`)
 drive external coding agents such as Claude Code over ACP.
 
-**Status: pre-release.** The package is built in stages (S4-1 to S4-6) and is not
-published yet. Today `acpBackend()` serves sessions under all four profiles, with
-thinking, tool and usage events, questions from the agent, and embedder tools on
-Claude. Resume (S4-6) is refused with `AGENT_SESSION_CAPABILITY_UNSUPPORTED` until
-its stage lands. `./server` is reserved for a later ACP server.
+**Status: pre-release (0.3.0, not yet published).** `acpBackend()` serves sessions
+under all four profiles, with thinking, tool and usage events, questions from the
+agent, embedder tools on Claude, resume across processes and reconnect after a
+crash. `./server` is reserved for a later ACP server.
 
 ```ts
 import { createAgentSession, createMemoryTranscriptStore } from "@nathapp/nax-agent";
@@ -38,10 +37,53 @@ What to know:
   the turn, and the cost it reports (`costSource: "reported"`). An agent that reports
   no cost gives `costUsd: 0` with `costSource: "unpriced"`. Never sum `unpriced`
   rows as a cost. See "Events and usage on ACP".
-- **A crashed or killed agent leaves the session disconnected.** Later turns end
-  `AGENT_SESSION_CLOSED`. A cancel the agent ignores for `cancelGraceMs` kills it.
+- **A crashed or killed agent is reconnected once.** The next turn starts a new agent
+  process and restores the session in it. See "Resume and reconnect". A cancel the
+  agent ignores for `cancelGraceMs` kills it.
 - **A crash between `session/new` and the first save** loses the agent's session
   id. The next `createAgentSession` with the same id starts fresh.
+
+## Resume and reconnect
+
+```ts
+const store = createFileTranscriptStore("/path/to/transcripts");
+const session = await resumeAgentSession(sessionId, {
+  backend: acpBackend({ agent: "claude", allowUnsandboxed: true }),
+  profile: "full",
+  workdir: "/path/to/repo", // the directory the session was created in
+  transcriptStore: store,
+});
+```
+
+- **The agent keeps the history.** The transcript document holds the agent's
+  session id, its directory and the cost baseline, not the messages. A resume asks
+  the agent to restore its own session: `session/resume` when it supports it, else
+  `session/load`. It never starts a fresh session in its place.
+- **What can fail:**
+  - The agent supports neither: `AGENT_SESSION_CAPABILITY_UNSUPPORTED` (`capability: "resume"`).
+  - The agent no longer has the session: `AGENT_SESSION_NOT_FOUND`.
+  - It restores a different one: `AGENT_SESSION_TURN_FAILED` (`detail: "identity"`).
+  - The document was written by another backend: `AGENT_SESSION_BACKEND_MISMATCH`.
+  - Its ACP record is damaged: `TRANSCRIPT_CORRUPT`.
+- **Same directory.** `workdir` must be the directory the session was created in.
+  Another spelling of it (a symlink, a trailing slash) is fine. A `none` session
+  created without `workdir` cannot be resumed, so pass a `workdir` if you will
+  resume it.
+- **`session.backend.capabilities.restoredWith`** is `"resume"` or `"load"` for a
+  restored agent process.
+- **History is not replayed into your events.** A `session/load` replay never
+  reaches `send()`, and requests the agent makes during it are refused.
+- **Instructions** are sent again only when the session never ran a turn.
+- **Cost after a resume.** The baseline is saved in the document after each priced
+  turn, so the first turn after a resume costs only its own share, even when the
+  agent's running total includes the earlier turns.
+- **Reconnect.** When the agent process dies (a crash, or a kill after an ignored
+  cancel), the turn that was running ends `errored`. The next `send()` starts a new
+  process and restores the session once:
+  - The tool host gets a new token.
+  - A cancel or `close()` while it starts stops the attempt; the next `send()` tries again.
+  - If the agent supports neither resume nor load, or the reconnect fails, later
+    turns end `AGENT_SESSION_CLOSED`.
 
 ## Profiles on ACP
 

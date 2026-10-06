@@ -11,6 +11,7 @@ import {
   openRequestError,
   promptRequestError,
   rpcErrorOf,
+  sessionLost,
   stopReasonError,
 } from "#src/client/errors";
 
@@ -103,5 +104,42 @@ describe("session errors", () => {
 
   test("closedDuringOpen is AGENT_SESSION_CLOSED", () => {
     expect(closedDuringOpen("s-1").code).toBe("AGENT_SESSION_CLOSED");
+  });
+});
+
+describe("openRequestError on a restore (S4-6 D6-e)", () => {
+  test("resourceNotFound on session/resume or session/load: AGENT_SESSION_NOT_FOUND", () => {
+    for (const step of ["session/resume", "session/load"]) {
+      const err = openRequestError(step, RequestError.resourceNotFound("fake-session-1"), []);
+      expect(err.code).toBe("AGENT_SESSION_NOT_FOUND");
+      expect(err.context).toMatchObject({ step });
+    }
+  });
+
+  test("an agent's own 'session not found' text on a restore is NOT_FOUND too", () => {
+    const err = openRequestError("session/load", new RequestError(-32603, "Session not found: abc"), []);
+    expect(err.code).toBe("AGENT_SESSION_NOT_FOUND");
+  });
+
+  test("-32002 on another step stays BACKEND_UNAVAILABLE", () => {
+    expect(openRequestError("session/new", RequestError.resourceNotFound("x"), []).code).toBe(
+      "AGENT_SESSION_BACKEND_UNAVAILABLE",
+    );
+  });
+
+  test("auth on a restore stays AUTH_REQUIRED; the excerpt is redacted", () => {
+    const secret = "s3cr3t-token-value-0123";
+    const err = openRequestError("session/resume", new RequestError(-32000, `login needed ${secret}`), [secret]);
+    expect(err.code).toBe("AGENT_SESSION_AUTH_REQUIRED");
+    expect(err.message).not.toContain(secret);
+  });
+});
+
+describe("sessionLost (S4-6 D6-g)", () => {
+  test("AGENT_SESSION_CLOSED with the session id", () => {
+    const err = sessionLost("s-1", "its agent process is gone");
+    expect(err.code).toBe("AGENT_SESSION_CLOSED");
+    expect(err.message).toContain("its agent process is gone");
+    expect(err.context).toMatchObject({ sessionId: "s-1" });
   });
 });

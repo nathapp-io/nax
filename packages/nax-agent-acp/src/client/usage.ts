@@ -4,9 +4,11 @@
  * when a turn starts (D5-a). Output tokens include thought tokens; cache fields stay
  * absent when not reported. Cost comes from usage_update.cost, a cumulative USD
  * reading: the session's meter remembers the reading at the end of the last priced
- * turn (0 for a new agent process), and a turn's cost is its latest reading minus
- * that. A reading below the baseline means the agent's counter restarted, so the
- * raw reading is the turn's cost. No reading: costUsd 0, "unpriced", baseline kept.
+ * turn, and a turn's cost is its latest reading minus that. A new session starts at
+ * 0; a resumed or reconnected one starts at the stored baseline, because the agent's
+ * running total survives a resume (S4-6 D6-a). A reading below the baseline means
+ * the agent's counter restarted, so the raw reading is the turn's cost. No reading:
+ * costUsd 0, "unpriced", baseline kept.
  */
 import type { PromptResponse } from "@agentclientprotocol/sdk";
 import type { TokenUsage, TurnEvent } from "@nathapp/nax-agent";
@@ -28,6 +30,8 @@ export interface CostMeter {
   observe(cost: unknown): void;
   /** The turn's cost; a priced turn moves the baseline to its latest reading. */
   settle(): TurnCost;
+  /** The reading the next priced turn is measured from (D6-a). */
+  baseline(): number;
 }
 
 const UNPRICED: TurnCost = Object.freeze({ costUsd: 0, costSource: "unpriced" });
@@ -54,8 +58,9 @@ export function tokenUsageOf(usage: unknown): TokenUsage {
   };
 }
 
-export function createCostMeter(): CostMeter {
-  let baseline = 0;
+/** `initialBaseline`: the stored reading of a resumed session; anything but a finite, non-negative number is 0. */
+export function createCostMeter(initialBaseline = 0): CostMeter {
+  let baseline = Number.isFinite(initialBaseline) && initialBaseline >= 0 ? initialBaseline : 0;
   let latest: number | undefined;
   return {
     beginTurn() {
@@ -73,6 +78,7 @@ export function createCostMeter(): CostMeter {
       latest = undefined;
       return { costUsd: delta < 0 ? reading : delta, costSource: "reported" };
     },
+    baseline: () => baseline,
   };
 }
 

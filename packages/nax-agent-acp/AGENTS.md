@@ -42,8 +42,13 @@ pre-approval (`pre-approval.ts`). S4-5 adds turn events (thinking, tool calls,
 usage) and elicitation as questions. Tested against a fake ACP agent
 (`test/fixtures/fake-agent/`, in process and as a subprocess; its `mcpCall` step is
 a real MCP client, and its `update` and `elicit` steps send any session update and
-elicitation). Resume (S4-6) is refused with `AGENT_SESSION_CAPABILITY_UNSUPPORTED`
-until then. `./server` is reserved for S5. Nothing is released before S4-6.
+elicitation). S4-6 added resume (`resume.ts`: stored-record check before spawning, `session/resume`
+else `session/load`, identity via the id Claude echoes) and one reconnect after the
+agent process dies (`backend.ts`: a new process, router and tool host token; the cost
+baseline is carried over and persisted as `acp.costUsd`). `./server` is reserved for S5.
+The packed smoke (`test/node/pack-smoke.test.ts`) stages both packages at one version.
+The live Claude and initialize-only fixtures in `test/node/fixtures/` are
+maintainer-run and billed, and never run in CI.
 
 ## Module map (`src/client/`)
 

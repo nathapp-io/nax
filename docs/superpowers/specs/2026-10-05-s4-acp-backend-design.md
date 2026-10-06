@@ -231,7 +231,7 @@ The shared type becomes `AgentSessionProfile = "none" | "read" | "ask" | "full"`
   - readers that sum `costUsd` must skip `unpriced` rows; this is documented in the README
 - **`TranscriptDoc`** gains optional fields:
   - `backend?: string`: absent means `"native"`
-  - `acp?: { agentSessionId: string; agent: string; agentVersion?: string; cwd: string }`
+  - `acp?: { agentSessionId: string; agent: string; agentVersion?: string; cwd: string; costUsd?: number }` (`costUsd`: the cumulative cost reading at the last priced turn, S4-6 D6-a)
 
   `schemaVersion` stays 1 (additive). The file store spreads unknown fields, so `markTurn` preserves them.
 - **Old documents:**
@@ -342,6 +342,7 @@ acpBackend({
    - the session is marked disconnected
    - the next `send()` claims the turn slot, writes `markTurn(running)`, then attempts one reconnect via §6.9 before prompting
    - if the reconnect fails, the turn ends `errored` and later `send()`s throw `AGENT_SESSION_CLOSED`
+   - a reconnect stopped by `cancel()`, the turn timeout or `close()` is not a failure; the next `send()` tries again. An agent with neither resume nor load throws `AGENT_SESSION_CLOSED` without spawning (S4-6 D6-g)
 
    Writing `markTurn(running)` before the reconnect means a crash during reconnect resumes as `interrupted`. `close()` during a reconnect aborts it via `openSignal`.
 
@@ -429,7 +430,7 @@ Amended in S4-5 (D5-a to D5-h) after reading claude-agent-acp 0.85.1.
 **Usage** (per turn; one `usage` event per `PromptResponse`, D5-h):
 - **Tokens (D5-a):** `PromptResponse.usage` (`inputTokens`, `outputTokens`, `thoughtTokens?`, `cachedReadTokens?`, `cachedWriteTokens?`) is taken as the turn's own usage. The protocol field is UNSTABLE and its comments contradict each other ("for this turn" vs "across all turns"); claude-agent-acp 0.85.1 resets it when a turn starts (`acp-agent.js` 2491).
 - **Mapping:** output tokens = `outputTokens + thoughtTokens`; cache read and write map to `cacheRead` / `cacheWrite`, absent when not reported.
-- **Cost (D5-b):** `usage_update.cost.amount` is cumulative for the session (USD only). The session's meter keeps the reading taken at the end of the last priced turn (0 for a new agent process; S4-6 resets it on reconnect and resume). A turn's cost is its latest reading minus that, `costSource: "reported"`; a negative difference reports the raw reading. A turn with no reading: `costUsd: 0`, `costSource: "unpriced"`, baseline unchanged.
+- **Cost (D5-b):** `usage_update.cost.amount` is cumulative for the session (USD only). The session's meter keeps the reading taken at the end of the last priced turn (0 for a new session; a resume or reconnect starts from the stored baseline, because the agent's running total survives a resume, S4-6 D6-a). A turn's cost is its latest reading minus that, `costSource: "reported"`; a negative difference reports the raw reading. A turn with no reading: `costUsd: 0`, `costSource: "unpriced"`, baseline unchanged.
 - **No usage reported at all:** zeros with `unpriced`.
 - **When:** after the turn's last delta and tool result, also for a stop reason other than `end_turn`. A turn that ends without a `PromptResponse` (abort, crash, JSON-RPC error) emits none. An errored turn's `turn_end.usage` stays zero, because the facade reads an errored turn's spend only from nax-agent's own turn error.
 
@@ -447,21 +448,21 @@ Amended in S4-5 (D5-i, maintainer ruling 2026-10-06). Advertised under `ask` and
 
 ### 6.9 Resume and reconnect (`resume.ts`)
 
-1. **Validate the stored document** (the facade already checked presence and schema):
+1. **Validate the stored document** before anything is spawned (S4-6 D6-b, D6-c):
    - `backend` equals this backend's `kind`, else `AGENT_SESSION_BACKEND_MISMATCH`
-   - `acp` is present, else `TRANSCRIPT_CORRUPT`
-   - `acp.agent` matches
-   - `acp.cwd` equals `workdir`, else `AGENT_SESSION_INVALID_OPTIONS`
+   - `acp` is present with a usable `agentSessionId` (non-empty, at most 512 characters) and non-empty `agent` and `cwd`, else `TRANSCRIPT_CORRUPT`
+   - `acp.agent` is this backend's agent, else `TRANSCRIPT_CORRUPT`
+   - `acp.cwd` is the same directory as `workdir` (compared canonically), else `AGENT_SESSION_INVALID_OPTIONS`; the agent is given the stored spelling
 2. **Spawn and initialize, then choose:**
    - `session/resume` if advertised (no replay)
-   - else `session/load`, with all updates suppressed and inbound requests refused until it returns
+   - else `session/load`; its replayed updates reach no turn and are dropped, and inbound requests are refused until it returns
    - else `AGENT_SESSION_CAPABILITY_UNSUPPORTED`
 
-   The backend never silently creates a fresh session. An agent "session not found" → `AGENT_SESSION_NOT_FOUND`.
-3. **Identity:** the session the agent resumes must be `acp.agentSessionId`. A mismatch → `AGENT_SESSION_TURN_FAILED`, detail `identity`.
-4. **Re-supply:** `mcpServers` and `_meta` (new tool host), then the mode and `model`; reset the usage baseline.
+   The backend never silently creates a fresh session. JSON-RPC -32002, or agent text "session not found" / "no conversation found", on either → `AGENT_SESSION_NOT_FOUND`.
+3. **Identity:** the protocol's responses carry no session id; Claude's adapter echoes one. An echoed id other than `acp.agentSessionId` → `AGENT_SESSION_TURN_FAILED`, detail `identity` (S4-6 D6-d).
+4. **Re-supply:** `mcpServers` and `_meta` (new tool host, new token), then the mode and `model`. The cost meter starts from `acp.costUsd` (D6-a).
 
-The document's `messages` stay empty; the agent's own store holds history. The facade's `markTurn` handling is unchanged, so a turn left `running` by a dead process reports `interrupted`.
+The document's `messages` stay empty; the agent's own store holds history. A restore writes no initial document. `instructions` go with the first prompt only when the document has no turn marker (D6-f). `AgentSession.backend.capabilities.restoredWith` is `"resume"` or `"load"` for a restored process (D6-h). The facade's `markTurn` handling is unchanged, so a turn left `running` by a dead process reports `interrupted`.
 
 ### 6.10 Registry entries (initial)
 
@@ -535,7 +536,7 @@ Release order: nax-ai → nax-agent → nax-agent-acp → nax. nax does not depe
   - auth errors
   - hangs, crashes, malformed JSON-RPC and oversized frames
   - inbound requests with no active turn
-- **Conformance suite** parameterised by target: the fake agent always; Claude only with `NAX_AGENT_ACP_LIVE=1` (billed).
+- **Conformance** (S4-6 D6-j): the fake-agent suites (in process, subprocess, Node) are the always-on target; the billed live Claude fixture (`test/node/fixtures/live-claude-smoke.mjs`, §11.2) is the Claude target, run by the maintainer before release.
 - **MCP host security tests:** missing or wrong token, wrong `Host`, an `Origin` header, an oversized body, the concurrency cap, a call after turn end, a call after close.
 - **nax-agent 0.3.0:**
   - the S3 suites move to `nativeBackend()` with unchanged assertions
@@ -581,7 +582,7 @@ Nothing is released before S4-6, so partial `./client` states are never publishe
 | SDK churn (1.x moving fast) | `~1.7.0` pin; `ClientApp` builder only; no `/experimental` or v2 |
 | Users read ACP `read`/`ask` as a hard sandbox | the documented guarantees (§6.4); the required `allowUnsandboxed: true` |
 | Bun stream interop with the SDK | Node and Bun matrix over real subprocess pipes with the fake agent |
-| Usage semantics differ per adapter (the protocol field is UNSTABLE) | tokens taken per turn as Claude 0.85.1 reports them (S4-5 D5-a); cost differenced from cumulative readings with restart handling (D5-b); the live smoke checks a two-turn session |
+| Usage semantics differ per adapter (the protocol field is UNSTABLE) | tokens taken per turn as Claude 0.85.1 reports them (S4-5 D5-a); cost differenced from cumulative readings with restart handling (D5-b); the live smoke checks a two-turn session; the meter's baseline is persisted so a resumed session's first turn is priced from it (S4-6 D6-a) |
 
 ## 13. Handoff to S4b and S5 (not designed here)
 

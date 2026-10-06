@@ -39,3 +39,17 @@ step with `@nathapp/nax-agent`.
   field (single- and multi-select, free text, Claude's "Other" box); other forms are
   declined, and an unanswered or abandoned form is cancelled. Needs nax-agent's
   `askQuestion(text, { signal })`.
+- Resume and reconnect on `acpBackend()` (S4-6). `resumeAgentSession` restores the
+  agent's own session in a new process with `session/resume`, else `session/load`,
+  never as a fresh session. The stored record is checked before anything starts:
+  backend, agent, session id and directory. A lost session is
+  `AGENT_SESSION_NOT_FOUND`, and a different restored session is
+  `AGENT_SESSION_TURN_FAILED` (`detail: "identity"`). A `session/load` replay never
+  reaches the caller. The mode and model are re-applied, and the tool host restarts
+  with a new token. After a crash or kill, the next turn reconnects once the same
+  way; otherwise later turns end `AGENT_SESSION_CLOSED`. The cost baseline is saved
+  in the transcript (`acp.costUsd`), so the first turn after a resume costs only its
+  own share. `AgentSession.backend.capabilities.restoredWith` reports `"resume"` or
+  `"load"`.
+- Packed-tarball smoke of both packages on Node 22 and 24, and the S4 acceptance
+  procedure with its live Claude and initialize-only fixtures (`RELEASING.md`).

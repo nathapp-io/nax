@@ -2,12 +2,13 @@
  * An in-process ACP agent for the unit suite (D-k): `launch` hands the backend
  * the fake agent's AgentApp instead of a process. kill() and terminate() end it
  * the way a real exit would (the backend then closes the connection) and are
- * counted, so tests can assert "the process group was killed".
+ * counted, so tests can assert "the process group was killed". Each launch runs
+ * scriptFor(script, n), so `relaunch` applies from the second launch on (S4-6).
  */
 import { createStderrTail } from "@nathapp/nax-agent";
 import type { AgentExit, LaunchedAgent, LaunchFn, LaunchRequest } from "#src/client/launch";
 import { buildFakeAgent } from "#test/fixtures/fake-agent/agent";
-import type { FakeRecord, FakeScript } from "#test/fixtures/fake-agent/script";
+import { type FakeRecord, type FakeScript, scriptFor } from "#test/fixtures/fake-agent/script";
 
 export interface InMemoryAgent {
   readonly launch: LaunchFn;
@@ -30,7 +31,7 @@ export function inMemoryAgent(script: FakeScript = {}): InMemoryAgent {
       end = resolve;
     });
     endLatest = end;
-    const app = buildFakeAgent(script, {
+    const app = buildFakeAgent(scriptFor(script, requests.length - 1), {
       record: (method, params) => {
         calls.push({ method, params });
       },

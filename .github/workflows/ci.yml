@@ -294,10 +294,12 @@ jobs:
       - name: Coverage floor
         run: bun run test:coverage
 
+  # S4-6: the contract suite now includes the packed smoke (two builds, two packs,
+  # an npm install), so it needs more than the unit job's time.
   nax-agent-acp-node:
     name: "nax-agent-acp: node ${{ matrix.node }}"
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:

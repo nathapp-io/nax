@@ -7,9 +7,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   createAgentSession,
+  createFileTranscriptStore,
   createMemoryTranscriptStore,
   type EmbedderTool,
   isProcessAlive,
+  resumeAgentSession,
   type SessionEvent,
 } from "@nathapp/nax-agent";
 import { afterEach, expect, test } from "vitest";
@@ -226,4 +228,41 @@ test("tool events, usage and a question round trip over a Node agent process", a
     { params: { action: "accept", content: { env: "prod" } } },
   ]);
   await session.close();
+});
+
+test("resume over Node: a second session object restores the agent session in a new process", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "acp-node-resume-"));
+  const storeDir = mkdtempSync(join(tmpdir(), "acp-node-store-"));
+  dirs.push(workdir, storeDir);
+  const record = join(workdir, "record.jsonl");
+  const options = () => ({
+    backend: acpBackend({
+      agent: { name: "fake", command: process.execPath, args: [FAKE_MAIN] },
+      allowUnsandboxed: true,
+      env: fakeEnv(
+        {
+          capabilities: { sessionCapabilities: { resume: {} } },
+          turns: [{ steps: [{ kind: "text", text: "first" }] }],
+          relaunch: { turns: [{ steps: [{ kind: "text", text: "resumed" }] }] },
+        },
+        record,
+      ),
+    }),
+    profile: "full" as const,
+    workdir,
+    transcriptStore: createFileTranscriptStore(storeDir),
+    sessionId: "node-resume",
+  });
+  const first = await createAgentSession(options());
+  for await (const _event of first.send("one")) {
+    // drain
+  }
+  await first.close();
+  const second = await resumeAgentSession("node-resume", options());
+  expect(second.backend.capabilities).toMatchObject({ restoredWith: "resume" });
+  const events: SessionEvent[] = [];
+  for await (const event of second.send("two")) events.push(event);
+  expect(events.at(-1)).toMatchObject({ type: "turn_end", status: "completed", output: "resumed" });
+  await second.close();
+  expect(readRecords(record).filter((r) => r.method === "session/resume")).toHaveLength(1);
 });
