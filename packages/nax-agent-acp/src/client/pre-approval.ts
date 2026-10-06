@@ -5,6 +5,8 @@
  * `allowedTools` rules allow a tool without a permission request. One exact rule
  * per tool, `mcp__nax__<tool>`, so only the session's own tools are allowed. Tool
  * names are already restricted by the facade, so a rule never needs escaping.
+ * Plan mode (profiles none/read) asks before any MCP tool not marked read-only,
+ * ahead of these rules; tool-calls.ts lists every tool with readOnlyHint (#2365).
  */
 import type { AgentRegistryEntry } from "#src/client/registry";
 

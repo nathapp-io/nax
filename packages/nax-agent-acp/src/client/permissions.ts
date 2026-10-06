@@ -5,8 +5,8 @@
  * and only the *_once kinds: allow_always would outlive the session. Auto-decisions
  * are recorded with decidedBy "profile". Fail closed: a deny or deadline answers
  * reject_once; a turn abort, process death or ask-port failure answers
- * `cancelled`. Embedder tools are pre-approved at the adapter (S4-4), so they are
- * normally never asked about; if an agent asks anyway, the request is decided
+ * `cancelled`. Embedder tools are pre-approved at the adapter (S4-4) and listed
+ * read-only for plan mode (#2365), so they are normally never asked about; if an agent asks anyway, the request is decided
  * like any other, because its title is display data (S4-4 D4-c).
  */
 import type { RequestPermissionRequest, RequestPermissionResponse } from "@agentclientprotocol/sdk";

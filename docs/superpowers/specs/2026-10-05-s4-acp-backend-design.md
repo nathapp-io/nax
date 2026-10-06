@@ -57,7 +57,7 @@ S4 delivers:
 | R9 | **Elicitation** (amended in S4-5, D5-i, maintainer ruling 2026-10-06): each field of a form becomes its own `question` event: free text, single-select and multi-select fields, with a `<key>_custom` free-text field folded into its select `<key>` (Claude's AskUserQuestion "Other" box). Other field types, oversized forms and non-form requests are declined. |
 | R10 | **Versioning:** nax-agent-acp starts at 0.3.0, in step with nax-agent. Both are released together and always bump together (the `^0.3.0` peer range admits only 0.3.x). Everything goes 1.0.0 together after S6. |
 | R11 | **No client fs/terminal in S4** (final review): no targeted adapter calls them. The handlers are out of scope until an agent that uses them becomes first-class. |
-| R12 | **Embedder tools are pre-approved at the adapter** (final review, paperclip pattern). Their `request_permission` would otherwise break `none` and `read` and double-prompt under `ask`. Our tool host is the only approval point for them (§6.6). |
+| R12 | **Embedder tools are pre-approved at the adapter** (final review, paperclip pattern). Their `request_permission` would otherwise break `none` and `read` and double-prompt under `ask`. Our tool host is the only approval point for them (§6.6). Amended by #2365: Claude's plan mode asks before any MCP tool not marked read-only, ahead of `allowedTools`, so the host also lists every tool with `readOnlyHint: true`. |
 
 ## 3. Out of scope
 
@@ -391,7 +391,7 @@ Out of scope (R11). Never advertised in S4.
   - at most 8 concurrent `tools/call` → MCP tool error beyond that
 - **Token secrecy:** the token joins the redaction set for errors, the stderr tail, approval displays and tool summaries. It is never written to `env` or the transcript document. From S4-5 it is also scrubbed from agent-authored text and thinking, tool events and `turn_end.output` (S4-5 D5-g).
 - **Accepted threat:** Claude's adapter passes the server's headers to the Claude CLI's argv (`--mcp-config`), so a process of the same user can read the token and reach the tools. The token stops browsers (with the `Host`/`Origin` checks) and other users; each tool's `approval` stays its gate (S4-4 D4-m).
-- **Pre-approval (R12):** for Claude, `session/new._meta.claudeCode.options.allowedTools` lists one exact rule per embedder tool, `mcp__nax__<tool>` (verified in the S4-4 plan, D4-a, against claude-agent-acp 0.85.1 and claude-agent-sdk 0.3.286), so the adapter never asks permission for embedder tools. The host is their only approval point:
+- **Pre-approval (R12):** for Claude, `session/new._meta.claudeCode.options.allowedTools` lists one exact rule per embedder tool, `mcp__nax__<tool>` (verified in the S4-4 plan, D4-a, against claude-agent-acp 0.85.1 and claude-agent-sdk 0.3.286), so the adapter never asks permission for embedder tools. Plan mode (`none`/`read`) asks before any MCP tool not marked read-only, ahead of these rules, so the host lists every embedder tool with the MCP annotation `readOnlyHint: true` (#2365, found by the S4 live smoke; Claude Code reads an MCP tool's `isReadOnly` from that hint). The host is their only approval point:
   - `approval: "always"` → `asks.requestApproval`
   - `"never"` → runs under every profile, matching native `none`
 - **`tools/list`:** exactly the session's embedder tools (`name`, `description`, `inputSchema`). The agent sees them as `mcp__nax__<name>`.
@@ -563,7 +563,7 @@ Nothing is released before S4-6, so partial `./client` states are never publishe
 2. **Billed live Claude smoke** (maintainer approval at launch), on the packed tarballs in a fresh Node project:
    - under `ask`: the agent is asked to edit a file; an `approval_requested` is answered `allow` via `answer()`, and the edit lands on disk
    - an embedder tool (`approval: "never"`) called through MCP without any permission prompt
-   - under `read` (Claude plan mode), the same embedder tool runs through MCP without a permission prompt (S4-4 D4-b: not provable from the source)
+   - under `read` (Claude plan mode), the same embedder tool runs through MCP without a permission prompt (S4-4 D4-b: not provable from the source; the first live run failed here, fixed by `readOnlyHint` in #2365)
    - a `question` round trip, if Claude emits an elicitation for a prompted AskUserQuestion. If it does not, this is recorded as not observed, not failed.
    - turn 1 states a random nonce; `close()`; `resumeAgentSession` from a new process (asserting `session/resume` was used) and the agent returns the nonce
    - under `read`: a write attempt is rejected (`decidedBy: "profile"`)

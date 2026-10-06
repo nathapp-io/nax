@@ -46,7 +46,7 @@ maintainer-run and billed, and never run in CI.
 | `permissions.ts` | §6.4 decision per permission request, by profile; only `*_once` options |
 | `tool-display.ts`, `text.ts` | what a person sees of a tool call; control-strip, secret scrub, caps |
 | `tool-host.ts` | loopback MCP server for embedder tools: gate (Host, Origin, token, body cap), one stateless MCP server per request |
-| `tool-calls.ts` | tools/list and tools/call: turn check, 8-call cap, `always` approval, run under the turn signal |
+| `tool-calls.ts` | tools/list (every tool `readOnlyHint: true`, #2365) and tools/call: turn check, 8-call cap, `always` approval, run under the turn signal |
 | `pre-approval.ts` | server name `nax`, rule `mcp__nax__<tool>`, Claude `_meta` |
 | `backend.ts` | `acpBackend()`, adapter, tool host wiring, close; `_acpBackendDeps.launch` test seam |
 
