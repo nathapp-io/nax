@@ -7,8 +7,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { makeNaxConfig } from "@test/helpers";
+import { makeNaxConfig, mockFetch } from "@test/helpers";
 import type { NaxConfig } from "@/config";
+import type { InteractionConfig } from "@/config/selectors";
 import { NaxError } from "@/errors";
 import { _interactionCheckDeps, _telegramPluginDeps, checkInteraction, INTERACTION_INIT_FAILED } from "@/interaction";
 import type { InteractionPlugin } from "@/interaction/types";
@@ -51,10 +52,10 @@ beforeEach(() => {
     delete process.env[name];
   }
   fetchCalls = 0;
-  _telegramPluginDeps.fetch = (async () => {
+  _telegramPluginDeps.fetch = mockFetch(async () => {
     fetchCalls += 1;
     throw new Error("the interaction check must not use the network");
-  }) as unknown as typeof fetch;
+  });
 });
 
 afterEach(() => {
@@ -69,7 +70,8 @@ afterEach(() => {
 
 describe("checkInteraction — skipped and cli", () => {
   test("no interaction section is skipped with a null plugin", async () => {
-    expect(await checkInteraction({} as NaxConfig, { headless: true })).toEqual({ plugin: null, status: "skipped" });
+    const noInteraction: InteractionConfig = {};
+    expect(await checkInteraction(noInteraction, { headless: true })).toEqual({ plugin: null, status: "skipped" });
   });
 
   test("Review focus 2: cli is never built — skipped when headless, ok on a terminal", async () => {

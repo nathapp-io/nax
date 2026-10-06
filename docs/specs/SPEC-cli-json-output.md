@@ -112,12 +112,14 @@ export interface AuthListReport {
     "providers": ["deepseek", "openai"],
     "sandbox": true
   },
+  "interaction": { "plugin": "telegram", "status": "failed", "code": "TELEGRAM_NOT_CONFIGURED", "message": "Telegram plugin requires botToken and chatId (env: NAX_TELEGRAM_TOKEN or TELEGRAM_BOT_TOKEN, NAX_TELEGRAM_CHAT_ID)" },
   "config": { "...": "the masked resolved config" }
 }
 ```
 
 - `profile` / `profileChain` — the values `loadConfig` force-sets on the resolved config (`"default"` and `[]` when no overlay applied).
 - `sources` — `determineConfigSources(dir)`: the global config path when the file exists, and `<projectDir>/config.json` when `findProjectDir(dir)` finds a project and that file exists; `null` otherwise.
+- `interaction` (added for koda #207, after this spec shipped) — `checkInteraction(config, { headless: !process.stdin.isTTY })` (`src/interaction/check.ts`): the resolved config's interaction plugin is built with the same factory as `initInteractionChain`, `init()` is called (offline for every built-in plugin) and `destroy()` always follows. `status` is `ok`, `failed` (with the thrown `NaxError` code, or `INTERACTION_INIT_FAILED`, and a redacted message of at most 300 characters) or `skipped` (no interaction section, or `cli` while headless). The `cli` plugin is never started, since its init opens a readline on stdin; on a terminal it reports `ok`. A failing plugin does not change the exit code.
 - `requirements` — `_configJsonDeps.buildConfigRequirements(config)`:
   - `agent` — `resolveDefaultAgent(config)`.
   - `transport` — `"native"` when `agent === NATIVE_AGENT`, else `"acp"` (the agent registry's routing rule).
