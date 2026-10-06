@@ -32,7 +32,7 @@ import {
 } from "#src/client/errors";
 import { agentGoneError, type LaunchedAgent, type LaunchFn, pickCandidate } from "#src/client/launch";
 import type { ResolvedAcpOptions } from "#src/client/options";
-import { preApprovalMeta } from "#src/client/pre-approval";
+import { claudeSessionMeta } from "#src/client/pre-approval";
 import { race } from "#src/client/race";
 import type { LaunchCandidate } from "#src/client/registry";
 import {
@@ -179,13 +179,15 @@ async function newSession(o: Opening, setup: SessionSetup): Promise<Established>
   return { agentSessionId: created.sessionId, cwd: o.ctx.workdir, configOptions: created.configOptions ?? [] };
 }
 
-/** §6.3 step 3: start the tool host when the session has tools; its entry and the pre-approval `_meta` (§6.6). */
+/** §6.3 step 3: start the tool host when the session has tools; its entry and Claude's `_meta` (§6.6, #2365). */
 async function sessionSetup(o: Opening): Promise<SessionSetup> {
-  if (o.host === undefined) return { mcpServers: [] };
-  const meta = preApprovalMeta(
-    o.options.entry?.preApproval,
+  const kind = o.options.entry?.preApproval;
+  const meta = claudeSessionMeta(
+    kind,
     o.ctx.tools.map((tool) => tool.name),
+    o.ctx.profile,
   );
+  if (o.host === undefined) return meta === undefined ? { mcpServers: [] } : { mcpServers: [], _meta: { ...meta } };
   if (meta === undefined) throw capabilityUnsupported("tools", "the agent has no way to pre-approve embedder tools");
   const server = await o.host.start().catch((err: unknown) => {
     throw backendUnavailable(`the tool host could not start: ${err instanceof Error ? err.message : String(err)}`);

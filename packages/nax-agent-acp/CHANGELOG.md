@@ -57,3 +57,7 @@ step with `@nathapp/nax-agent`.
   Claude's plan mode, used by the `none` and `read` profiles, asked before any MCP
   tool not marked read-only, ahead of the `mcp__nax__<tool>` pre-approval, so the
   profile then denied the session's own tools.
+- Under `none` and `read`, Claude sessions disallow `ExitPlanMode` (#2365). Asked
+  to change something, Claude asked to leave plan mode, the profile refused, and the
+  adapter turned that refusal into an interrupt, so the turn ended
+  `ACP_STOP_CANCELLED`. The `_meta` is now sent even when the session has no tools.

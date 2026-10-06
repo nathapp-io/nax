@@ -563,7 +563,7 @@ Nothing is released before S4-6, so partial `./client` states are never publishe
 2. **Billed live Claude smoke** (maintainer approval at launch), on the packed tarballs in a fresh Node project:
    - under `ask`: the agent is asked to edit a file; an `approval_requested` is answered `allow` via `answer()`, and the edit lands on disk
    - an embedder tool (`approval: "never"`) called through MCP without any permission prompt
-   - under `read` (Claude plan mode), the same embedder tool runs through MCP without a permission prompt (S4-4 D4-b: not provable from the source; the first live run failed here, fixed by `readOnlyHint` in #2365)
+   - under `read` (Claude plan mode), the same embedder tool runs through MCP without a permission prompt (S4-4 D4-b: not provable from the source; the first live run failed here, fixed by `readOnlyHint` in #2365). The follow-up write turn met `ExitPlanMode`, whose refusal the adapter turns into an interrupt (turn `cancelled`); under `none`/`read` the Claude `_meta` now also carries `disallowedTools: ["ExitPlanMode"]`, sent with or without tools (#2365)
    - a `question` round trip, if Claude emits an elicitation for a prompted AskUserQuestion. If it does not, this is recorded as not observed, not failed.
    - turn 1 states a random nonce; `close()`; `resumeAgentSession` from a new process (asserting `session/resume` was used) and the agent returns the nonce
    - under `read`: a write attempt is rejected (`decidedBy: "profile"`)

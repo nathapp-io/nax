@@ -390,3 +390,14 @@ describe("openAcpSession: restoring a stored session (spec §6.9, S4-6)", () => 
     ]);
   });
 });
+
+describe("openAcpSession: plan mode cannot be left (#2365)", () => {
+  test("read without tools: session/new disallows ExitPlanMode", async () => {
+    const fake = inMemoryAgent(CLAUDE_SCRIPT);
+    const ctx = openContext(dir, { profile: "read" });
+    await openAcpSession(options(), ctx, createInboundRouter(async (r) => rejectLocally(r)).handlers, fake.launch);
+    expect(fake.callsTo("session/new")).toEqual([
+      { cwd: dir, mcpServers: [], _meta: { claudeCode: { options: { disallowedTools: ["ExitPlanMode"] } } } },
+    ]);
+  });
+});
