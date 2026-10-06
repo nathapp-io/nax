@@ -6,7 +6,8 @@
  *
  * - packages/nax-agent imports only node: builtins (Bun imports in tests only), its declared
  *   dependencies, `#src/` and `#test/`, relative paths that stay inside the
- *   package, and itself. Never `@nathapp/nax`, never a tsconfig alias (`@/`).
+ *   package, and itself from test/ only (the packaging tests import the public
+ *   entry by name). Never `@nathapp/nax`, never a tsconfig alias (`@/`).
  * - packages/nax-ai imports neither @nathapp/nax nor @nathapp/nax-agent.
  * - packages/nax reaches nax-agent only through `@nathapp/nax-agent` or
  *   `@nathapp/nax-agent/internal`, and never a nax-agent test helper (S2-1
@@ -114,7 +115,14 @@ function agentViolation(pkg: PackageInfo, file: string, spec: string): string | 
   const name = packageName(spec);
   if (name === "@nathapp/nax") return "imports nax";
   if (name === ACP) return "nax-agent imports nax-agent-acp";
-  if (name === AGENT || pkg.deps.has(name)) return null;
+  if (name === AGENT) {
+    // The packaging tests import the public entry by name; everything else must
+    // use #src/ — the rule nax-agent's own context states (#2323 item 4).
+    return inDir(pkg, file, "test")
+      ? null
+      : "self-import by package name; use #src/ (test/ may import the public entry)";
+  }
+  if (pkg.deps.has(name)) return null;
   const inTests = inDir(pkg, file, "test");
   if (pkg.devDeps.has(name)) return inTests ? null : `devDependency ${name} imported outside test/`;
   return `undeclared dependency ${name}`;
