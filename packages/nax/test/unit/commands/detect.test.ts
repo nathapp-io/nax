@@ -35,7 +35,7 @@ describe("detectCommand", () => {
 
   function startCapture(): string[] {
     logs = [];
-    prevExitCode = process.exitCode ?? 0;
+    prevExitCode = typeof process.exitCode === "number" ? process.exitCode : 0;
     logSpy = spyOn(console, "log").mockImplementation((line) => {
       logs.push(String(line));
     });
