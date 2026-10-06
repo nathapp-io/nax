@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { TOOL_CALL_INPUT_BYTES } from "@nathapp/nax-agent";
 import {
   COMMAND_RAW_MAX_BYTES,
+  cleanCallId,
   describeToolCall,
   SUMMARY_MAX_BYTES,
   SUMMARY_RAW_MAX_BYTES,
@@ -156,5 +157,19 @@ describe("describeToolCall (spec §6.4 untrusted fields, D3-a)", () => {
       summary: "execute tool call (details withheld: they could not be shown safely)",
       showable: false,
     });
+  });
+});
+
+describe("cleanCallId (S4-5 D5-e)", () => {
+  test("keeps an ordinary id, strips invisible characters and whitespace", () => {
+    expect(cleanCallId("toolu_01", [])).toBe("toolu_01");
+    expect(cleanCallId("tool u​_02", [])).toBe("toolu_02");
+  });
+
+  test("drops a missing, empty, oversized or secret-holding id", () => {
+    expect(cleanCallId(undefined, [])).toBeUndefined();
+    expect(cleanCallId("  ", [])).toBeUndefined();
+    expect(cleanCallId("x".repeat(513), [])).toBeUndefined();
+    expect(cleanCallId("id-s3cr3t-token-value-0123", ["s3cr3t-token-value-0123"])).toBeUndefined();
   });
 });

@@ -74,10 +74,14 @@ function kindOf(call: Call): string {
   return typeof call.kind === "string" && KINDS.has(call.kind) ? call.kind : "other";
 }
 
-/** The agent's id without invisible characters or whitespace; dropped when it held a secret. */
-function callIdOf(call: Call, secrets: readonly string[]): string | undefined {
-  if (typeof call.toolCallId !== "string" || call.toolCallId.length > CALL_ID_MAX_CHARS) return undefined;
-  const id = stripInvisible(stripControl(call.toolCallId)).replace(/\s+/g, "");
+/**
+ * The agent's tool call id without invisible characters or whitespace; undefined
+ * when it is not a string, is empty or oversized, or held a secret. Approval events
+ * and tool events both use it, so their callIds match (S4-5 D5-e).
+ */
+export function cleanCallId(value: unknown, secrets: readonly string[]): string | undefined {
+  if (typeof value !== "string" || value.length > CALL_ID_MAX_CHARS) return undefined;
+  const id = stripInvisible(stripControl(value)).replace(/\s+/g, "");
   if (id === "") return undefined;
   const shown = clean(id, secrets);
   // An id that held a secret is dropped, not shown masked: it would no longer match the agent's id.
@@ -106,7 +110,7 @@ function commandSource(call: Call, kind: string): string | undefined {
 export function describeToolCall(toolCall: unknown, secrets: readonly string[]): ToolCallDisplay {
   const call: Call = isRecord(toolCall) ? toolCall : {};
   const kind = kindOf(call);
-  const callId = callIdOf(call, secrets);
+  const callId = cleanCallId(call.toolCallId, secrets);
   const summary = show(summarySource(call, kind), secrets, SUMMARY);
   const rawCommand = commandSource(call, kind);
   const command = rawCommand === undefined ? undefined : show(rawCommand, secrets, COMMAND);
