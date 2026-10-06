@@ -84,7 +84,14 @@ describe("profiles none and read (spec §6.4)", () => {
     ]);
     const events = await driveTurn(o.session, "edit it");
     expect(answers(o)).toEqual([{ outcome: "selected", optionId: "opt-reject_once" }]);
-    expect(types(events)).toEqual(["turn_start", "approval_requested", "approval_resolved", "text_delta", "turn_end"]);
+    expect(types(events)).toEqual([
+      "turn_start",
+      "approval_requested",
+      "approval_resolved",
+      "text_delta",
+      "usage",
+      "turn_end",
+    ]);
     expect(find(events, "approval_requested")).toMatchObject({
       callId: "fake-permission",
       tool: "edit",
@@ -274,6 +281,6 @@ describe("profile ask: the caller decides through answer()", () => {
     ]);
     const events = await driveTurn(o.session, "test it");
     expect(answers(o)).toEqual([{ outcome: "selected", optionId: "opt-reject_once" }]);
-    expect(types(events)).toEqual(["turn_start", "text_delta", "turn_end"]);
+    expect(types(events)).toEqual(["turn_start", "text_delta", "usage", "turn_end"]);
   });
 });
