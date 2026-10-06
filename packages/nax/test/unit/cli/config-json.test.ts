@@ -37,6 +37,10 @@ const originalGlobalDir = process.env.NAX_GLOBAL_CONFIG_DIR;
 const originalProfile = process.env.NAX_PROFILE;
 const realLog = _configJsonDeps.log;
 const realBuildConfigRequirements = _configJsonDeps.buildConfigRequirements;
+const realIsHeadless = _configJsonDeps.isHeadless;
+const TELEGRAM_ENV = ["NAX_TELEGRAM_TOKEN", "TELEGRAM_BOT_TOKEN", "NAX_TELEGRAM_CHAT_ID"] as const;
+const savedTelegramEnv = new Map<string, string | undefined>();
+const TELEGRAM_INTERACTION = { plugin: "telegram", config: {}, defaults: { timeout: 600000 }, triggers: {} };
 
 let globalDir: string;
 let tempProject: string;
@@ -84,6 +88,11 @@ beforeEach(() => {
   _configJsonDeps.log = (text: string) => {
     out.push(text);
   };
+  _configJsonDeps.isHeadless = () => true;
+  for (const name of TELEGRAM_ENV) {
+    savedTelegramEnv.set(name, process.env[name]);
+    delete process.env[name];
+  }
 });
 
 afterEach(() => {
@@ -94,6 +103,12 @@ afterEach(() => {
     delete process.env.NAX_PROFILE;
   } else {
     process.env.NAX_PROFILE = originalProfile;
+  }
+  _configJsonDeps.isHeadless = realIsHeadless;
+  for (const name of TELEGRAM_ENV) {
+    const value = savedTelegramEnv.get(name);
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
   }
   while (tempDirs.length > 0) cleanupTempDir(tempDirs.pop());
 });
@@ -293,5 +308,63 @@ describe("configJsonCommand — error documents", () => {
     await configJsonCommand({ dir: tempProject, profile: ["missing"] });
 
     expect(out).toHaveLength(1);
+  });
+});
+
+describe("configJsonCommand — interaction (koda #207)", () => {
+  test("the default cli plugin is skipped when headless", async () => {
+    const exitCode = await configJsonCommand({ dir: tempProject });
+
+    expect(exitCode).toBe(0);
+    expect(document().interaction).toEqual({ plugin: "cli", status: "skipped" });
+  });
+
+  test("Review focus 2: on a terminal the cli plugin is ok and nothing reads stdin", async () => {
+    _configJsonDeps.isHeadless = () => false;
+
+    await configJsonCommand({ dir: tempProject });
+
+    expect(document().interaction).toEqual({ plugin: "cli", status: "ok" });
+  });
+
+  test("a telegram plugin without its token fails in the field, and the command still exits 0 with one document", async () => {
+    writeGlobalConfig({ interaction: TELEGRAM_INTERACTION });
+
+    const exitCode = await configJsonCommand({ dir: tempProject });
+
+    expect(exitCode).toBe(0);
+    expect(out).toHaveLength(1);
+    expect(document().error).toBeUndefined();
+    expect(document().interaction).toMatchObject({
+      plugin: "telegram",
+      status: "failed",
+      code: "TELEGRAM_NOT_CONFIGURED",
+    });
+  });
+
+  test("Review focus 5: the field follows the profile chain", async () => {
+    writeGlobalProfile("tg", { interaction: TELEGRAM_INTERACTION });
+
+    await configJsonCommand({ dir: tempProject, profile: ["tg"] });
+
+    expect(document().profileChain).toEqual(["tg"]);
+    expect(document().interaction).toMatchObject({ plugin: "telegram", status: "failed" });
+  });
+
+  test("telegram with its env present is ok", async () => {
+    writeGlobalConfig({ interaction: TELEGRAM_INTERACTION });
+    process.env.NAX_TELEGRAM_TOKEN = "123456:abc";
+    process.env.NAX_TELEGRAM_CHAT_ID = "123456789";
+
+    await configJsonCommand({ dir: tempProject });
+
+    expect(document().interaction).toEqual({ plugin: "telegram", status: "ok" });
+  });
+
+  test("the error document (a failing load) carries no interaction field", async () => {
+    await configJsonCommand({ dir: tempProject, explain: true });
+
+    expect(document().error?.code).toBe("CONFIG_FLAGS_CONFLICT");
+    expect(document().interaction).toBeUndefined();
   });
 });
