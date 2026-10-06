@@ -11,12 +11,14 @@ Design: `docs/superpowers/specs/2026-10-05-s4-acp-backend-design.md`.
 
 ## Status
 
-Built in stages S4-1 to S4-6. S4-2 adds `acpBackend()`: launch, connection,
-capabilities, the session lifecycle and text-only `full` turns, tested against a fake
-ACP agent (`test/fixtures/fake-agent/`, in process and as a subprocess). Profiles
-none/read/ask (S4-3), tools (S4-4), full events and usage (S4-5) and resume (S4-6)
-are refused with `AGENT_SESSION_CAPABILITY_UNSUPPORTED` until then. `./server` is
-reserved for S5. Nothing is released before S4-6.
+Built in stages S4-1 to S4-6. S4-2 added `acpBackend()`: launch, connection,
+capabilities, the session lifecycle and text turns. S4-3 adds all four profiles:
+mode by profile and permission requests decided by profile (`permissions.ts`), with
+`ask` going to the caller through the facade's ask port. Tested against a fake ACP
+agent (`test/fixtures/fake-agent/`, in process and as a subprocess). Tools (S4-4),
+full events and usage (S4-5) and resume (S4-6) are refused with
+`AGENT_SESSION_CAPABILITY_UNSUPPORTED` until then. `./server` is reserved for S5.
+Nothing is released before S4-6.
 
 ## Module map (`src/client/`)
 
@@ -28,7 +30,9 @@ reserved for S5. Nothing is released before S4-6.
 | `connection.ts` | one SDK `ClientApp` per process; outbound requests |
 | `capabilities.ts` | capability record, requirement checks, config options |
 | `open.ts` | open sequence; kills the agent on any failure |
-| `turn.ts`, `events.ts`, `inbound.ts` | prompt turn and abort; text events; inbound routing |
+| `turn.ts`, `events.ts`, `inbound.ts` | prompt turn and abort; text events; inbound routing by turn and session |
+| `permissions.ts` | §6.4 decision per permission request, by profile; only `*_once` options |
+| `tool-display.ts`, `text.ts` | what a person sees of a tool call; control-strip, secret scrub, caps |
 | `backend.ts` | `acpBackend()`, adapter, close; `_acpBackendDeps.launch` test seam |
 
 Tests reach a process only through `_acpBackendDeps.launch`
