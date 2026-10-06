@@ -23,7 +23,7 @@ export type FakeStep =
   | { readonly kind: "thought"; readonly text: string }
   | { readonly kind: "delay"; readonly ms: number }
   | PermissionStep
-  /** Waits until every detached permission request of this prompt has been answered. */
+  /** Waits until every detached permission request and MCP call of this prompt has been answered. */
   | { readonly kind: "settled" }
   /** Waits for session/cancel, then carries on with the next step (waitForCancel stops the turn instead). */
   | { readonly kind: "awaitCancel" }
@@ -33,8 +33,19 @@ export type FakeStep =
   | { readonly kind: "hang" }
   /** Subprocess only: writes `stderr` and exits with `code` mid-turn. */
   | { readonly kind: "exit"; readonly code: number; readonly stderr?: string }
-  /** The prompt request fails with this JSON-RPC error. */
-  | { readonly kind: "fail"; readonly failure: RpcFailure };
+  /** Calls an embedder tool through the session's HTTP MCP server, as an MCP client (S4-4 D4-k). */
+  | McpCallStep
+  /** The prompt request fails with this JSON-RPC error; `echoMcpAuth` appends the MCP server's Authorization value (leak tests). */
+  | { readonly kind: "fail"; readonly failure: RpcFailure; readonly echoMcpAuth?: boolean };
+
+/** Records `mcp-result` `{ tool, result }` or `mcp-error` `{ tool, message }`. */
+export interface McpCallStep {
+  readonly kind: "mcpCall";
+  readonly tool: string;
+  readonly input?: Readonly<Record<string, unknown>>;
+  /** Sent without waiting for the result; `settled` waits for it. */
+  readonly detached?: boolean;
+}
 
 /** session/request_permission with one option per kind (optionId "opt-<kind>"). */
 export interface PermissionStep {
