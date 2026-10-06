@@ -134,14 +134,13 @@ async function phaseTool(profile) {
   );
   const result = { phase: profile, toolRuns: runs.length };
   if (profile === "read") {
+    // turn() already requires the turn to complete (no ExitPlanMode cancel, #2365).
     const write = await turn(session, "Now create a file named created.txt containing the word hello.");
-    const denied = write.filter((e) => e.type === "approval_resolved" && e.decidedBy === "profile");
+    const resolved = write.filter((e) => e.type === "approval_resolved");
     assert.ok(!existsSync(join(workdir, "created.txt")), "a write landed under read");
-    assert.ok(
-      denied.some((e) => e.decision === "deny"),
-      "no write attempt was rejected with decidedBy profile (record the agent's behaviour)",
-    );
-    result.profileDenials = denied.length;
+    assert.ok(!resolved.some((e) => e.decision === "allow"), "a permission request was allowed under read");
+    // Recorded, not required: plan mode may refuse the write itself, without asking.
+    result.profileDenials = resolved.filter((e) => e.decidedBy === "profile" && e.decision === "deny").length;
   }
   results.push(result);
   await session.close();

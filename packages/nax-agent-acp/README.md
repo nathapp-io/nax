@@ -103,6 +103,12 @@ answer to each permission request the agent sends.
   routes through a permission request are decided here.
   - Under `none` and `read`, Claude may still run tools it does not ask about, such
     as reads and search. `none` means no permitted side effects, not no reads.
+  - Under `none` and `read`, Claude cannot call `ExitPlanMode`. Left available, its
+    refused plan would end the turn as cancelled. The `_meta` that blocks it is part
+    of what Claude's adapter compares on resume, so resuming under another profile
+    may rebuild the agent's session.
+  - Plan mode lets Claude write its own plan file under `~/.claude/plans/` without
+    asking, so `none` and `read` do not stop that write.
   - Under `ask`, actions Claude's `default` mode allows without asking (reads and
     other non-mutating tools) are not shown to you.
 - **Only one-time options are chosen.** "Always allow" is never chosen, because it
@@ -146,9 +152,11 @@ MCP server this client runs for the session.
   for each of your tools, so it never asks permission for them. Your tool's own
   `approval` is the only gate: `"always"` asks you through `approval_requested` and
   `answer()` under every profile; `"never"` runs under every profile.
-- **Not yet verified on `none` and `read`.** Those profiles put Claude in plan mode.
-  Whether Claude honours the pre-approval while in plan mode is checked in the
-  live acceptance smoke before release.
+- **Listed as read-only.** Every tool carries the MCP annotation
+  `readOnlyHint: true`. The `none` and `read` profiles put Claude in plan mode, which
+  asks before any MCP tool not marked read-only, ahead of the pre-approval. The hint
+  loosens nothing: your tool's `approval` stays the gate, and Claude's own write
+  tools are still refused under `none` and `read`.
 - **Calls run inside a turn.** A call outside a running turn gets an error and the
   tool does not run. When the turn is cancelled, times out, ends or loses the agent
   process, the call's signal aborts and the agent is told the call was abandoned.
