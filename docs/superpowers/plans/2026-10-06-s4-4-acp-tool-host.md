@@ -67,7 +67,7 @@
 
 1. **A tool call that outlives its turn must answer, not hang, and must not run on.** The turn can stop while a call is waiting for approval, or while a run ignores its signal: the caller cancels, the turn times out, or the agent process dies. In each case the call answers the agent at once with an MCP tool error, the run's `ctx.signal` is aborted, `approval_resolved` precedes `turn_end`, and `send()` returns. A call whose run finishes after that is ignored. Pinned in Task 1 (abort before and during the run and the ask) and Task 4 (cancel during the approval, cancel during a slow run, crash during a slow run).
 2. **Anything else on the local machine reaching the port.** Without the right bearer token a request gets 401. A DNS-rebinding page (wrong `Host`) or any browser request (`Origin`) gets 403 even with the token. A request for another path or method never reaches MCP. A body over 1 MiB gets 413, whether it is declared up front or streamed. A ninth concurrent call gets a tool error and does not run. No response carries a CORS header. Pinned in Task 2.
-3. **The token leaking.** The token must never appear in the transcript document, in any event, or in an error excerpt, including an agent error message that echoes the `Authorization` header back. After `close()` the port refuses connections, and a failed open leaves no listening port behind. Pinned in Task 4.
+3. **The token leaking through our own paths.** The token must never appear in the transcript document or in a text the backend composes: error excerpts (including an agent error message that echoes the `Authorization` header back), the stderr tail, approval displays and tool summaries. After `close()` the port refuses connections, and a failed open leaves no listening port behind. Agent-authored message text is out of this claim (D4-m): the agent can read the token, and its text reaches `text_delta` unscrubbed until S4-5 decides event scrubbing. Pinned in Task 4.
 4. **Calls outside a turn.** A call before the first turn, between turns, or after the turn's binding is released gets "No active turn" and the tool does not run. An unknown tool name (including `__proto__` and `constructor`) gets an error and nothing runs. Pinned in Task 1 and Task 4.
 5. **Hostile or odd tool input in an approval.** The summary is the tool's `describe(input)` or the JSON input. Secret values, both the session's own (env secrets and the token) and pattern secrets, show as `[REDACTED]`. Control and invisible characters are stripped, newlines collapse, and it is capped at 1024 bytes. A throwing `describe` falls back to the input. An input that cannot be serialized still yields a summary. Pinned in Task 1.
 
@@ -83,9 +83,10 @@
 - **D4-c. A permission request for an `mcp__nax__*` tool is not special-cased.** Pre-approval means the adapter does not ask. If an adapter asks anyway, the request is decided by profile like any other (S4-3): denied under `none`/`read`, put to the caller under `ask`, allowed under `full`. The agent's tool title is display data and never decides (§6.4), so the host cannot trust a title that says `mcp__nax__`. The README says so.
 - **D4-d. One stateless MCP server per request, JSON responses, `POST` only.** Each `POST /mcp` gets a fresh `Server` and `StreamableHTTPServerTransport({ enableJsonResponse: true })` with no session id generator. The SDK refuses to reuse a stateless transport ("Stateless transport cannot be reused across requests"), and per-request servers mean a reconnecting client never meets "already initialized". `GET` (the optional SSE stream) and every other method get 405 with `Allow: POST`; the SDK client tolerates a 405 on its `GET`. A narrow probe while planning (the SDK client against this exact server shape, under Bun 1.4.2 and Node 22.22.2) passed both: `initialize`, `tools/list` and `tools/call` round-tripped. A raw `tools/list` with no `initialize` also returned 200, and no response carried an `access-control-*` header.
 - **D4-e. Gate order:** path → 404; method → 405; `Host` or `Origin` → 403; token (constant time, both sides SHA-256 hashed so the lengths match) or a revoked host → 401; a declared `content-length` over 1 MiB → 413 at once (with `Connection: close`); then the body is read. A streamed body past 1 MiB is drained and discarded, so memory stays bounded and the 413 is still delivered; invalid JSON → 400. `Host`/`Origin` come before the token, so a rebinding page never reaches the token compare. Every refusal is `text/plain` and carries no CORS header.
-- **D4-f. A call runs under the turn's binding signal, not the bare facade turn signal.** The facade does not abort a turn's signal when the turn completes normally (`agent-session-turn.ts` `claimTurn` aborts only on cancel, timeout and stall). The router's binding signal (S4-3 D3-d) already combines the binding scope (aborted when `sendTurn` releases it), the facade turn signal and the process-gone signal. `inbound.ts` exposes it as `activeSignal()`, and the host reads it at call time together with `ctx.currentTurnId()`. Either missing → "No active turn". The call's signal is `AbortSignal.any([binding signal, request signal])`, where the request signal aborts when the HTTP response closes (the agent hung up, or `stop()` dropped the connection). `sendTurn` awaits the binding release, then `host.drain()`, which resolves once every in-flight call has answered. Aborted calls answer at once, so the drain is bounded, and `approval_resolved` for an `always` tool is emitted before `turn_end`.
+- **D4-f. A call runs under the turn's binding signal, not the bare facade turn signal.** The facade does not abort a turn's signal when the turn completes normally (`agent-session-turn.ts` `claimTurn` aborts only on cancel, timeout and stall). The router's binding signal (S4-3 D3-d) already combines the binding scope (aborted when `sendTurn` releases it), the facade turn signal and the process-gone signal. `inbound.ts` exposes it as `activeSignal()`, and the host reads it at call time together with `ctx.currentTurnId()`. Either missing → "No active turn". The call's signal is `AbortSignal.any([binding signal, request signal])`, where the request signal aborts when the HTTP response closes (the agent hung up) or the host stops (D4-l). `sendTurn` awaits the binding release, then `host.drain()`, which resolves once every in-flight call has answered. Aborted calls answer at once, so the drain is bounded, and `approval_resolved` for an `always` tool is emitted before `turn_end`.
 - **D4-g. Approval, denial and results.**
-  - `approval: "never"` runs without asking. Any other value asks (fail closed).
+  - `approval: "never"` runs without asking. Any other value asks (fail closed). Native asks only on `"always"`; the facade's zod schema admits only `"never" | "always"`, so the two never differ in practice.
+  - A run that resolves nothing answers `Tool "<name>" returned no result.` as a tool error, never a protocol error.
   - The ask is `requestApproval({ callId: "mcp-<n>", tool: <name>, summary, reason: '"<name>" asks before every run', signal })`, the same reason text as the native backend's.
   - A deny answers `isError: true` with `Denied: <reason>`. The reason maps `decidedBy` to nax-agent's public `ASK_*_REASON` constants exactly as nax-agent's internal `askDenyReason` does: timeout, human, cancelled, unshowable, profile, else the no-channel reason. A throw from the port (its `no-turn`) answers "No active turn". Unlike native, a deny here is a tool error, so the agent sees that the tool did not run.
   - The run is raced against the signal, as native's `invoke` is. On abort the answer is `Tool "<name>" was abandoned: the turn ended.` and the late result is ignored. A throw answers `Tool "<name>" failed: <message>`. A result answers one text block with `content`, plus `isError: true` when the tool set it.
@@ -95,6 +96,9 @@
 - **D4-h. The approval summary.** The summary is `describe(input)` when the tool has one (a throw falls back), else the JSON of the input. The scan is first capped at 16 KiB and `redactSecrets` runs over it, as native's `summaryFor`/`defaultSummary` do. Then control and invisible characters are stripped, the session's secret values (env secrets and the token) are scrubbed, newlines and tabs collapse to one space, and the result is capped at 1024 bytes. There is no `maskForPrompt`, as on the native backend: the summary is not a shell command.
 - **D4-i. The token exists before the agent does.** When the session has tools, `openBackend` creates the token first, then derives the session's options with `secrets: [...env secrets, token]`. Every consumer of `options.secrets` gets it from the start: the open-step stderr excerpts, the turn's error excerpts, the permission display and the tool summaries. The host listens only after the capability check (§6.3 step 3). A failed open stops the host. A crash does not stop it: the session is disconnected, and `close()` stops it (§6.3 close step 4, after the agent is terminated).
 - **D4-j. Refusal timing changes for tools.** Until now tools were refused before spawning (S4-2 D-b). Now an agent that cannot take tools (no HTTP MCP, or no registry pre-approval: codex, gemini, opencode, pi, any custom agent) is refused after `initialize` by the existing check in `capabilities.ts` (`AGENT_SESSION_CAPABILITY_UNSUPPORTED`, `capability: "tools"`), and the host never listens.
+- **D4-l. `stop()` aborts calls itself and closes in the order Bun needs (final review).** On Bun 1.4.2, `server.close(cb)` followed by `closeAllConnections()` never fires the close callback or the response's `close` event while a request is in flight, so `stop()` and `close()` would hang. Probed while fixing: `closeAllConnections()` first, then `close(cb)`, closes and fires `res` `close` on both Bun 1.4.2 and Node 22.22.2. Beyond the order, the host owns an abort controller that every call's signal includes, so `stop()` aborts calls even where a dropped socket fires nothing, and the wait for the port is bounded (2 s). `start()` after `stop()` refuses (`ACP_TOOL_HOST_STOPPED`), so a stopped host can never listen again. A body past 8 MiB gets its 413 at once and the connection is closed after it, so an authenticated agent cannot hold a socket with an endless body.
+- **D4-m. What the token does and does not protect (final review).** Claude's adapter copies our entry's `headers` into the Claude Agent SDK options, and the SDK passes `--mcp-config <json>` to the Claude CLI, so the bearer token is in the CLI's argv: any process of the same user (and the agent's own Bash) can read it. The token therefore stops browsers, other users and anything that cannot see the process table, not same-user local processes. `Host`/`Origin` still stop browser pages, and each tool's `approval` stays its gate. Consequences: spec §6.6 "Accepted threat" is amended (Task 6), and the README says it plainly. The redaction claim covers what the backend composes (errors, the stderr tail, approval displays, tool summaries) and the transcript; agent-authored text events are not scrubbed in S4-4, because the agent can read the token anyway and S4-5 owns event mapping.
+- **D4-n. The server name stays `nax` (final review: kept, documented).** A Claude user- or project-level MCP server also named `nax` could collide with ours, and an `mcp__nax__<tool>` rule would then pre-approve whichever server Claude keeps. A per-session name (`nax-<hex>`) would avoid it, but it changes the tool names the model sees on every session (`mcp__nax-1a2b__lookup`), which embedder instructions and prompt caching depend on, and the spec fixes the name. Kept, and the README names the collision as a known limitation.
 - **D4-k. The fake agent's `mcpCall` step.** The fake records `session/new`'s `mcpServers`. An `mcpCall` step connects an SDK `Client` over `StreamableHTTPClientTransport` to the first `http` entry with its headers, calls the tool, and records `mcp-result` `{ tool, result }` or `mcp-error` `{ tool, message }`. `detached: true` sends it without waiting, and `settled` waits for it, as with detached permission requests. The `fail` step gains `echoMcpAuth`, which appends the entry's `Authorization` value to the JSON-RPC error message (leak tests).
 
 ---
@@ -132,7 +136,8 @@
 | `test/node/acp-backend.test.ts` | a tool call over a Node agent process |
 | `README.md`, `CHANGELOG.md` | embedder tools on ACP |
 | `.nax/mono/packages/nax-agent-acp/context.md` (repo root) | status and module map |
-| `docs/superpowers/specs/2026-10-05-s4-acp-backend-design.md` | §6.6 rule string; §11.2 acceptance line (D4-a, D4-b) |
+| `docs/superpowers/specs/2026-10-05-s4-acp-backend-design.md` | §6.4 table row, §6.6 rule string, token secrecy, accepted threat and call signal; §11.2 acceptance line (D4-a, D4-b, D4-c, D4-f, D4-m) |
+| `src/client/permissions.ts` | header comment (D4-c) |
 
 ---
 
@@ -259,7 +264,7 @@ function deps(overrides: Partial<ToolCallDeps> = {}): ToolCallDeps {
   };
 }
 
-const text = (t: string) => [{ type: "text", text: t }];
+const text = (t: string) => [{ type: "text" as const, text: t }];
 
 describe("tools/list", () => {
   test("exactly the session's tools, in order, with an object input schema", () => {
@@ -343,6 +348,14 @@ describe("tools/call: approval never", () => {
       }),
     );
     expect(await calls.call("lookup", {}, IDLE)).toEqual({ content: text('Tool "lookup" failed: boom'), isError: true });
+  });
+
+  test("a run that resolves nothing: a tool error, not a protocol error", async () => {
+    const calls = createToolCalls(deps({ tools: [tool({ run: async () => JSON.parse("null") })] }));
+    expect(await calls.call("lookup", {}, IDLE)).toEqual({
+      content: text('Tool "lookup" returned no result.'),
+      isError: true,
+    });
   });
 
   test("a non-Error throw is stringified", async () => {
@@ -493,6 +506,31 @@ describe("tools/call: concurrency cap (spec §6.6)", () => {
     await Promise.all(first);
     expect(await calls.call("lookup", {}, IDLE)).toEqual({ content: text("done") });
   });
+
+  test("calls waiting for approval count; aborting them frees every slot", async () => {
+    const turn = new AbortController();
+    let pending = 0;
+    const { port } = askPort(
+      (req) =>
+        new Promise((resolve) => {
+          pending += 1;
+          req.signal?.addEventListener("abort", () => resolve({ decision: "deny", decidedBy: "cancelled" }));
+        }),
+    );
+    const ran: Ran[] = [];
+    const calls = createToolCalls(
+      deps({ tools: [tool({ approval: "always" }, ran)], asks: port, turnSignal: () => turn.signal }),
+    );
+    const waiting = Array.from({ length: MAX_CONCURRENT_TOOL_CALLS }, () => calls.call("lookup", {}, IDLE));
+    await waitForCondition(() => pending === MAX_CONCURRENT_TOOL_CALLS);
+    expect(await calls.call("lookup", {}, IDLE)).toEqual({ content: text(TOO_MANY_TEXT), isError: true });
+    turn.abort();
+    await Promise.all(waiting);
+    await calls.drain();
+    // The slots are free: the next call is no longer refused by the cap (it is abandoned: the turn is aborted).
+    expect((await calls.call("lookup", {}, IDLE)).content).toEqual(text('Tool "lookup" was abandoned: the turn ended.'));
+    expect(ran).toEqual([]);
+  });
 });
 
 describe("drain", () => {
@@ -556,7 +594,7 @@ describe("toolSummary (Review Focus 5)", () => {
   });
 
   test("control and invisible characters stripped; newlines and tabs collapse; trimmed", () => {
-    const odd = tool({ describe: () => "  a\u0007b‮c\nd\t\te  " });
+    const odd = tool({ describe: () => "  a\u0007b\u202ec\nd\t\te  " });
     expect(toolSummary(odd, {}, [])).toBe("abc d e");
   });
 
@@ -693,7 +731,10 @@ function runSafely(tool: EmbedderTool, input: unknown, ctx: EmbedderToolContext)
   return Promise.resolve()
     .then(() => tool.run(input, ctx))
     .then(
-      (result: EmbedderToolResult) => textResult(String(result.content), result.isError === true),
+      (result: EmbedderToolResult | undefined | null) =>
+        result === undefined || result === null
+          ? textResult(`Tool "${tool.name}" returned no result.`, true)
+          : textResult(String(result.content), result.isError === true),
       (err: unknown) => textResult(`Tool "${tool.name}" failed: ${err instanceof Error ? err.message : String(err)}`, true),
     );
 }
@@ -948,6 +989,7 @@ import {
   type ToolCallDeps,
 } from "#src/client/tool-calls";
 import { createToolHost, MAX_BODY_BYTES, newToolHostToken, type ToolHost } from "#src/client/tool-host";
+import { naxError, rejection } from "#test/helpers/errors";
 import { rawRequest } from "#test/helpers/http";
 import { mcpClient } from "#test/helpers/mcp-client";
 
@@ -1134,14 +1176,30 @@ describe("the gate (spec §6.6 request checks; Review Focus 2)", () => {
     expect((await rawRequest({ port: a.port, headers: withToken(b.token), body: [LIST] })).status).toBe(401);
   });
 
-  test("a Host other than 127.0.0.1:<port> (DNS rebinding): 403 even with the token", async () => {
+  test.each([
+    ["localhost:<port>", (port: number) => `localhost:${port}`],
+    ["127.0.0.1 without a port", () => "127.0.0.1"],
+    ["127.0.0.1 on another port", (port: number) => `127.0.0.1:${port + 1}`],
+    ["an attacker's name", (port: number) => `evil.example:${port}`],
+  ])("Host %s (DNS rebinding): 403 even with the token", async (_label, hostFor) => {
     const s = await started();
     const res = await rawRequest({
       port: s.port,
-      headers: { ...withToken(s.token), host: `localhost:${s.port}` },
+      headers: { ...withToken(s.token), host: hostFor(s.port) },
       body: [LIST],
     });
     expect(res.status).toBe(403);
+  });
+
+  test.each([
+    ["no token", 401, (_s: Started) => ({ ...MCP_HEADERS })],
+    ["a wrong Host", 403, (s: Started) => ({ ...withToken(s.token), host: `localhost:${s.port}` })],
+    ["an Origin", 403, (s: Started) => ({ ...withToken(s.token), origin: "http://evil.example" })],
+  ])("%s, headers only: refused without reading any body", async (_label, status, headersFor) => {
+    const s = await started();
+    // The request declares a body but never sends it: the refusal must not wait for one.
+    const res = await rawRequest({ port: s.port, headers: { ...headersFor(s), "content-length": "100" } });
+    expect(res.status).toBe(status);
   });
 
   test("any Origin header: 403 even with the token", async () => {
@@ -1213,6 +1271,13 @@ describe("drain and stop (spec §6.6 close; Review Focus 1, 3)", () => {
     await s.host.stop();
     await expect(rawRequest({ port: s.port, headers: withToken(s.token), body: [LIST] })).rejects.toThrow();
     await createToolHost(createToolCalls(baseDeps())).stop();
+  });
+
+  test("start() after stop() refuses: a stopped host never listens again", async () => {
+    const host = createToolHost(createToolCalls(baseDeps()));
+    await host.stop();
+    const err = naxError(await rejection(host.start()));
+    expect(err.code).toBe("ACP_TOOL_HOST_STOPPED");
   });
 
   test("stop() during a call: the call's signal aborts (the connection is dropped)", async () => {
@@ -1287,7 +1352,8 @@ Create `packages/nax-agent-acp/src/client/tool-host.ts`:
  * Each POST then gets a fresh stateless MCP server and transport (D4-d): the SDK
  * refuses to reuse a stateless transport. The token exists before the host
  * listens, so it joins the session's redaction set from the start (D4-i). stop()
- * revokes the token, drops open connections and closes the port.
+ * revokes the token, aborts calls, drops open connections and closes the port
+ * (D4-l).
  */
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server as HttpServer, type ServerResponse } from "node:http";
@@ -1295,13 +1361,19 @@ import type { McpServer } from "@agentclientprotocol/sdk";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { NaxError } from "@nathapp/nax-agent";
 import { TOOL_HOST_SERVER_NAME } from "#src/client/pre-approval";
+import { race } from "#src/client/race";
 import type { ToolCalls } from "#src/client/tool-calls";
 
 export type HttpMcpServer = Extract<McpServer, { type: "http" }>;
 
 export const TOOL_HOST_PATH = "/mcp";
 export const MAX_BODY_BYTES = 1024 * 1024;
+/** Past this many body bytes the 413 is sent at once and the connection closed. */
+export const MAX_DRAIN_BYTES = 8 * MAX_BODY_BYTES;
+/** stop() waits at most this long for the port to close. */
+const CLOSE_WAIT_MS = 2_000;
 const LOOPBACK = "127.0.0.1";
 const BEARER = "Bearer ";
 /** MCP-level server identity shown to the agent; not the package version. */
@@ -1314,15 +1386,20 @@ export interface ToolHost {
   start(): Promise<HttpMcpServer>;
   /** Resolves once every call in flight has answered. */
   drain(): Promise<void>;
-  /** Revokes the token, drops open connections, closes the port. Idempotent; safe before start(). */
+  /**
+   * Revokes the token, aborts every call in flight, drops open connections and
+   * closes the port (bounded wait). Idempotent; safe before start(); start()
+   * after it refuses.
+   */
   stop(): Promise<void>;
 }
 
 interface HostState {
   readonly token: string;
   readonly calls: ToolCalls;
+  /** Aborted by stop(): every call's signal includes it, so calls answer even where a dropped socket fires nothing. */
+  readonly stopped: AbortController;
   port: number;
-  revoked: boolean;
 }
 
 interface Refusal {
@@ -1356,7 +1433,7 @@ function refusalFor(state: HostState, req: IncomingMessage): Refusal | undefined
   if (pathOf(req.url) !== TOOL_HOST_PATH) return { status: 404 };
   if (req.method !== "POST") return { status: 405, headers: { allow: "POST" } };
   if (req.headers.host !== `${LOOPBACK}:${state.port}` || req.headers.origin !== undefined) return { status: 403 };
-  if (state.revoked || !tokenMatches(req.headers.authorization, state.token)) return { status: 401 };
+  if (state.stopped.signal.aborted || !tokenMatches(req.headers.authorization, state.token)) return { status: 401 };
   if (Number(req.headers["content-length"] ?? 0) > MAX_BODY_BYTES) {
     return { status: 413, headers: { connection: "close" } };
   }
@@ -1376,7 +1453,11 @@ function parseJson(bytes: Buffer): Body {
   }
 }
 
-/** At most MAX_BODY_BYTES kept; past that the rest is drained and discarded, so the 413 is still delivered. */
+/**
+ * At most MAX_BODY_BYTES kept; past that the rest is drained and discarded, so the
+ * 413 is still delivered. Past MAX_DRAIN_BYTES the 413 is sent at once and the
+ * connection is closed after it: an endless body cannot hold the socket.
+ */
 function readBody(req: IncomingMessage): Promise<Body> {
   return new Promise((resolve) => {
     const chunks: Buffer[] = [];
@@ -1384,6 +1465,7 @@ function readBody(req: IncomingMessage): Promise<Body> {
     req.on("data", (chunk: Buffer) => {
       size += chunk.length;
       if (size <= MAX_BODY_BYTES) chunks.push(chunk);
+      else if (size > MAX_DRAIN_BYTES) resolve({ kind: "too-large" });
     });
     req.on("end", () => resolve(size > MAX_BODY_BYTES ? { kind: "too-large" } : parseJson(Buffer.concat(chunks))));
     req.on("error", () => resolve({ kind: "invalid" }));
@@ -1391,13 +1473,14 @@ function readBody(req: IncomingMessage): Promise<Body> {
   });
 }
 
-/** One stateless MCP server per request (D4-d). Its calls abort when the response closes. */
-async function serveMcp(calls: ToolCalls, req: IncomingMessage, res: ServerResponse, body: unknown): Promise<void> {
+/** One stateless MCP server per request (D4-d). Its calls abort when the response closes or the host stops. */
+async function serveMcp(state: HostState, req: IncomingMessage, res: ServerResponse, body: unknown): Promise<void> {
   const gone = new AbortController();
+  const signal = AbortSignal.any([gone.signal, state.stopped.signal]);
   const server = new Server(SERVER_INFO, { capabilities: { tools: {} } });
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: calls.list() }));
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: state.calls.list() }));
   server.setRequestHandler(CallToolRequestSchema, (request) =>
-    calls.call(request.params.name, request.params.arguments, gone.signal),
+    state.calls.call(request.params.name, request.params.arguments, signal),
   );
   const transport = new StreamableHTTPServerTransport({ enableJsonResponse: true });
   res.on("close", () => {
@@ -1413,9 +1496,12 @@ async function handle(state: HostState, req: IncomingMessage, res: ServerRespons
   const refusal = refusalFor(state, req);
   if (refusal !== undefined) return reply(res, refusal);
   const body = await readBody(req);
-  if (body.kind === "too-large") return reply(res, { status: 413, headers: { connection: "close" } });
+  if (body.kind === "too-large") {
+    res.once("finish", () => req.destroy());
+    return reply(res, { status: 413, headers: { connection: "close" } });
+  }
   if (body.kind === "invalid") return reply(res, { status: 400 });
-  await serveMcp(state.calls, req, res, body.value);
+  await serveMcp(state, req, res, body.value);
 }
 
 function failed(res: ServerResponse): void {
@@ -1437,16 +1523,23 @@ function listen(http: HttpServer): Promise<number> {
   });
 }
 
-function close(http: HttpServer): Promise<void> {
-  if (!http.listening) return Promise.resolve();
-  return new Promise((resolve) => {
-    http.close(() => resolve());
+/**
+ * closeAllConnections() first, then close(): on Bun 1.4 the reverse order never
+ * fires the close callback while a request is in flight (probed while planning;
+ * Node works either way). The wait is bounded all the same, so close() can never
+ * hang on a runtime quirk.
+ */
+async function close(http: HttpServer): Promise<void> {
+  if (!http.listening) return;
+  const closed = new Promise<void>((resolve) => {
     http.closeAllConnections();
+    http.close(() => resolve());
   });
+  await race(closed, { timeoutMs: CLOSE_WAIT_MS });
 }
 
 export function createToolHost(calls: ToolCalls, token: string = newToolHostToken()): ToolHost {
-  const state: HostState = { token, calls, port: 0, revoked: false };
+  const state: HostState = { token, calls, stopped: new AbortController(), port: 0 };
   const http = createServer((req, res) => {
     void handle(state, req, res).catch(() => failed(res));
   });
@@ -1454,6 +1547,9 @@ export function createToolHost(calls: ToolCalls, token: string = newToolHostToke
   return {
     token,
     async start() {
+      if (state.stopped.signal.aborted) {
+        throw new NaxError("The MCP tool host was already stopped", "ACP_TOOL_HOST_STOPPED", { stage: "acp" });
+      }
       state.port = await listen(http);
       return {
         type: "http",
@@ -1464,7 +1560,7 @@ export function createToolHost(calls: ToolCalls, token: string = newToolHostToke
     },
     drain: () => calls.drain(),
     stop() {
-      state.revoked = true;
+      state.stopped.abort();
       stopping ??= close(http);
       return stopping;
     },
@@ -1961,8 +2057,8 @@ Create `packages/nax-agent-acp/test/fixtures/fake-agent/mcp.ts`:
 ```ts
 /**
  * The fake ACP agent's MCP client (S4-4 D4-k): calls one tool on the session's
- * HTTP MCP server (the `mcpServers` session/new received), as Claude's adapter
- * would. Erasable TypeScript only: Node runs it with type stripping.
+ * HTTP MCP server (the `mcpServers` session/new received), the way Claude's
+ * adapter would. Erasable TypeScript only: Node runs it with type stripping.
  */
 import type { McpServer } from "@agentclientprotocol/sdk";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -2805,14 +2901,15 @@ git commit -m "test(nax-agent-acp): embedder tool call over a Node agent process
 
 ---
 
-### Task 6: Docs, context and the spec amendment
+### Task 6: Docs, context and the spec amendments
 
 **Files:**
 - Modify: `packages/nax-agent-acp/src/client/index.ts:1-9`
 - Modify: `packages/nax-agent-acp/README.md`
 - Modify: `packages/nax-agent-acp/CHANGELOG.md`
 - Modify: `.nax/mono/packages/nax-agent-acp/context.md` (repo root)
-- Modify: `docs/superpowers/specs/2026-10-05-s4-acp-backend-design.md` (§6.6, §11.2)
+- Modify: `docs/superpowers/specs/2026-10-05-s4-acp-backend-design.md` (§6.4 table, §6.6, §11.2)
+- Modify: `packages/nax-agent-acp/src/client/permissions.ts` (header comment only)
 - Regenerated: `packages/nax-agent-acp/CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `codex.md`
 
 **Interfaces:** none.
@@ -2857,11 +2954,19 @@ MCP server this client runs for the session.
 - **Claude only.** The agent needs HTTP MCP support and a way to pre-approve the
   tools. Other agents fail with `AGENT_SESSION_CAPABILITY_UNSUPPORTED`
   (`capability: "tools"`) after `initialize`.
-- **Loopback only, token-protected.** The server listens on `127.0.0.1` on a random
-  port. Every request needs the session's bearer token; requests with another
-  `Host`, any `Origin`, or a body over 1 MiB are refused. The token is redacted from
-  events, errors and the agent's stderr, and is never stored in the transcript.
-  It stops when the session closes.
+- **Loopback only.** The server listens on `127.0.0.1` on a random port. Every
+  request needs the session's bearer token; requests with another `Host`, any
+  `Origin`, or a body over 1 MiB are refused, so browser pages cannot reach it. It
+  stops when the session closes.
+- **The token is not a secret from your own processes.** Claude's adapter hands
+  the server's headers to the Claude CLI on its command line, so any process
+  running as your user (including the agent's own shell) can read the token from
+  the process table. Treat your tools' `approval` as their real gate.
+- **Where the token is redacted.** Errors, the agent's stderr, approval displays
+  and tool summaries, and it is never stored in the transcript. Text the agent
+  writes itself is passed through as written.
+- **The name `nax` is reserved.** If your Claude user or project settings define an
+  MCP server named `nax`, it can collide with this one. Rename yours.
 - **Pre-approved at the agent.** Claude is told to allow exactly `mcp__nax__<tool>`
   for each of your tools, so it never asks permission for them. Your tool's own
   `approval` is the only gate: `"always"` asks you through `approval_requested` and
@@ -2922,7 +3027,7 @@ In the module map, add these rows before the `backend.ts` row:
 
 and change the `backend.ts` row's role to `` `acpBackend()`, adapter, tool host wiring, close; `_acpBackendDeps.launch` test seam ``.
 
-- [ ] **Step 5: Spec amendment (D4-a, D4-b)**
+- [ ] **Step 5: Spec and comment amendments (D4-a, D4-b, D4-c, D4-f, D4-m)**
 
 In `docs/superpowers/specs/2026-10-05-s4-acp-backend-design.md` §6.6, replace:
 
@@ -2942,6 +3047,48 @@ In §11.2, after the line `- an embedder tool (`approval: "never"`) called throu
    - under `read` (Claude plan mode), the same embedder tool runs through MCP without a permission prompt (S4-4 D4-b: not provable from the source)
 ```
 
+In §6.6, replace:
+
+```md
+- **Token secrecy:** the token joins the redaction set for events, errors and the stderr tail. It is never written to `env` or the transcript document.
+- **Accepted threat:** a local process of the same user could reach the port but not pass the token check.
+```
+
+with:
+
+```md
+- **Token secrecy:** the token joins the redaction set for errors, the stderr tail, approval displays and tool summaries. It is never written to `env` or the transcript document. Agent-authored text is not scrubbed in S4-4 (S4-4 D4-m).
+- **Accepted threat:** Claude's adapter passes the server's headers to the Claude CLI's argv (`--mcp-config`), so a process of the same user can read the token and reach the tools. The token stops browsers (with the `Host`/`Origin` checks) and other users; each tool's `approval` stays its gate (S4-4 D4-m).
+```
+
+In §6.6, replace:
+
+```md
+  - otherwise runs `run(input, { sessionId, toolCallId: "mcp-<n>", signal })`, where `signal` is the turn signal, so a call that outlives its turn aborts
+```
+
+with:
+
+```md
+  - otherwise runs `run(input, { sessionId, toolCallId: "mcp-<n>", signal })`, where `signal` is the turn's binding signal (turn signal, turn end, process exit) combined with the request's and the host's, so a call that outlives its turn aborts (S4-4 D4-f, D4-l)
+```
+
+In §6.4's layer table, replace `| 2. \`request_permission\` (embedder tools excluded, §6.6) |` with `| 2. \`request_permission\` (embedder tools are pre-approved and normally never asked about, §6.6; if asked, decided like any request, S4-4 D4-c) |`.
+
+In `packages/nax-agent-acp/src/client/permissions.ts`, header comment, replace:
+
+```ts
+ * `cancelled`. Embedder tools never get here: they are pre-approved (S4-4).
+```
+
+with:
+
+```ts
+ * `cancelled`. Embedder tools are pre-approved at the adapter (S4-4), so they are
+ * normally never asked about; if an agent asks anyway, the request is decided
+ * like any other, because its title is display data (S4-4 D4-c).
+```
+
 - [ ] **Step 6: Regenerate and check**
 
 Run (repo root):
@@ -2957,8 +3104,8 @@ Expected: PASS with no snapshot change. S4-4 adds no export to `./client`.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add packages/nax-agent-acp/src/client/index.ts packages/nax-agent-acp/README.md packages/nax-agent-acp/CHANGELOG.md .nax/mono/packages/nax-agent-acp/context.md packages/nax-agent-acp/CLAUDE.md packages/nax-agent-acp/AGENTS.md packages/nax-agent-acp/GEMINI.md packages/nax-agent-acp/codex.md docs/superpowers/specs/2026-10-05-s4-acp-backend-design.md
-git commit -m "docs(nax-agent-acp): S4-4 embedder tools on ACP; spec pre-approval rule and plan-mode acceptance line"
+git add packages/nax-agent-acp/src/client/index.ts packages/nax-agent-acp/README.md packages/nax-agent-acp/CHANGELOG.md .nax/mono/packages/nax-agent-acp/context.md packages/nax-agent-acp/CLAUDE.md packages/nax-agent-acp/AGENTS.md packages/nax-agent-acp/GEMINI.md packages/nax-agent-acp/codex.md docs/superpowers/specs/2026-10-05-s4-acp-backend-design.md packages/nax-agent-acp/src/client/permissions.ts
+git commit -m "docs(nax-agent-acp): S4-4 embedder tools on ACP; spec pre-approval rule, token threat model, plan-mode acceptance line"
 ```
 
 ---
@@ -3040,3 +3187,4 @@ The body covers:
   - `createToolHost(calls, token?)` and `newToolHostToken()` match (Tasks 2, 4)
   - the fake's `McpCallStep` fields match the tests (Tasks 4, 5)
 - **Placeholder scan:** none.
+- **Final review (2026-10-06, one fix round):** two read-only reviewers (accuracy; feasibility/security), both "ready after fixes". Fixed: the Bun `stop()` hang (D4-l, both reviewers), the `as const` typecheck errors and the escape-hatch comment in the fake's `mcp.ts`, a raw bidi character in a test, headers-only refusal tests and more `Host` variants, the null-result guard, the approval-wait cap test, start-after-stop, the 8 MiB drain cap. Narrowed and documented: the token threat model (D4-m, token in the Claude CLI argv) and redaction scope, the `nax` name collision (D4-n, kept), spec drift (§6.4, §6.6 signal, `permissions.ts` header). Not changed: the host stays up after a crash until `close()` (spec §6.3 close step 4; the agent already knows the token); `host.start()` is not raced against `openSignal` (a local listen).
