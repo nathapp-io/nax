@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { TranscriptDoc } from "@nathapp/nax-agent";
 import type { ConversationMessage } from "@nathapp/nax-ai";
 import {
   _resetTranscriptTruncationWarningForTests,
@@ -378,7 +379,7 @@ describe("createFileTranscriptStore", () => {
 
   test("an ACP document round-trips its backend and acp record, cost baseline included (S4-6 D6-a)", async () => {
     const store = createFileTranscriptStore(dir);
-    const doc = {
+    const doc: TranscriptDoc = {
       backend: "acp:claude",
       acp: { agentSessionId: "a-1", agent: "claude", agentVersion: "0.85.1", cwd: "/w", costUsd: 0.0125 },
       savedAt: "t",
