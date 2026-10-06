@@ -13,10 +13,8 @@ import { TelegramInteractionPlugin } from "./plugins/telegram";
 import { WebhookInteractionPlugin } from "./plugins/webhook";
 import type { InteractionPlugin } from "./types";
 
-/**
- * Create interaction plugin based on config
- */
-function createInteractionPlugin(pluginName: string): InteractionPlugin {
+/** Create interaction plugin based on config. Shared with checkInteraction (check.ts). */
+export function createInteractionPlugin(pluginName: string): InteractionPlugin {
   switch (pluginName) {
     case "cli":
       return new CLIInteractionPlugin();

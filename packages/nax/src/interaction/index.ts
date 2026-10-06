@@ -9,6 +9,9 @@ export { buildInteractionBridge } from "./bridge-builder";
 export type { ChainConfig } from "./chain";
 // Chain
 export { InteractionChain } from "./chain";
+// Offline plugin check (`nax config --json` `interaction`)
+export type { InteractionCheckReport, InteractionCheckStatus } from "./check";
+export { _interactionCheckDeps, checkInteraction, INTERACTION_INIT_FAILED } from "./check";
 export type {
   ApprovalsSealOptions,
   DispatchAskDeps,
