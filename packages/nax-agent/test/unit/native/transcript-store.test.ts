@@ -376,6 +376,18 @@ describe("createFileTranscriptStore", () => {
     expect(await store.load("s")).toEqual(doc);
   });
 
+  test("an ACP document round-trips its backend and acp record, cost baseline included (S4-6 D6-a)", async () => {
+    const store = createFileTranscriptStore(dir);
+    const doc = {
+      backend: "acp:claude",
+      acp: { agentSessionId: "a-1", agent: "claude", agentVersion: "0.85.1", cwd: "/w", costUsd: 0.0125 },
+      savedAt: "t",
+      messages: [],
+    };
+    await store.save("s", doc);
+    expect(await store.load("s")).toEqual(doc);
+  });
+
   test("save writes the same bytes saveTranscript writes for a loop document", async () => {
     const store = createFileTranscriptStore(dir);
     const doc = { owner: "o", model: "p/m", savedAt: "2026-10-04T00:00:00.000Z", messages: msgs };

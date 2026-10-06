@@ -20,6 +20,7 @@ The backend seam for S4. Breaking: `createAgentSession` takes a `SessionBackend`
 - `ApprovalDecidedBy` gains `"profile"`; `usage` and `turn_end` gain `costSource` (`computed` | `reported` | `unpriced`; `CostSource`); `TurnResult` gains `costSource`.
 - Error codes `AGENT_SESSION_BACKEND_UNAVAILABLE`, `AGENT_SESSION_AUTH_REQUIRED`, `AGENT_SESSION_CAPABILITY_UNSUPPORTED`, `AGENT_SESSION_BACKEND_MISMATCH`.
 - `TranscriptDoc.backend` and `TranscriptDoc.acp` (`TranscriptAcpRecord`), optional and additive (schemaVersion stays 1).
+- `TranscriptAcpRecord.costUsd`: the ACP agent's cumulative cost reading at the session's last priced turn, so a resumed ACP session prices its next turn from it.
 - Backend kit on `.`: `redactSecrets`, `capStrings`, `killProcessGroup`, `isProcessAlive`, `TOOL_CALL_INPUT_BYTES`, `TOOL_RESULT_PREVIEW_BYTES`, `createStderrTail` (`StderrTail`), and `NaxError`, the base class of `AgentSessionError`, so a backend can throw codes outside `AgentSessionErrorCode` (S4 spec §5.7).
 - `getLogger` on `.`: the logger the host installed with `setAgentLogger`, or a silent no-op, so a backend can log through the host's logger.
 - `SessionAskPort.askQuestion(text, { signal })`: an extra abort source combined with the turn signal, as `ApprovalRequest.signal` is for approvals, so a backend can settle a question when its own request scope ends (S4 spec §6.3 step 5).

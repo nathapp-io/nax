@@ -19,6 +19,12 @@ export interface TranscriptAcpRecord {
   readonly agent: string;
   readonly agentVersion?: string;
   readonly cwd: string;
+  /**
+   * The agent's cumulative cost reading (USD) at the end of the session's last
+   * priced turn. A resumed ACP session measures its next turn's cost from it,
+   * because the agent's running total survives a resume (S4-6 D6-a).
+   */
+  readonly costUsd?: number;
 }
 
 export interface TranscriptDoc {
