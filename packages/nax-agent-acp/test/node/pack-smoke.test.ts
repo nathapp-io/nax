@@ -74,6 +74,11 @@ beforeAll(() => {
   const acpTgz = pack(stageAcp(version));
   consumer = temp("acp-consumer-");
   run("npm", ["init", "-y"], consumer);
+  // npm init -y leaves no "type", so Node 24 loads the fake agent's .ts entry as CJS and fails.
+  writeFileSync(
+    join(consumer, "package.json"),
+    `${JSON.stringify({ ...readJson(join(consumer, "package.json")), type: "module" }, null, 2)}\n`,
+  );
   run(
     "npm",
     ["install", "--no-audit", "--no-fund", agentTgz, acpTgz, "typescript@7.0.2", "@types/node@25.2.3"],
