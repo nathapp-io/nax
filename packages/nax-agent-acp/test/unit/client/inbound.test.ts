@@ -209,3 +209,24 @@ describe("createInboundRouter: permission requests (spec §6.3, §6.4, D3-c, D3-
     await release();
   });
 });
+
+describe("activeSignal (S4-4: what an embedder tool call runs under)", () => {
+  test("undefined between turns; the binding's signal during one; aborted by release", async () => {
+    const router = createInboundRouter(recordingDecider().decide);
+    expect(router.activeSignal()).toBeUndefined();
+    const release = router.attach("agent-1", createTurnCollector(undefined), IDLE);
+    const signal = router.activeSignal();
+    expect(signal?.aborted).toBe(false);
+    await release();
+    expect(signal?.aborted).toBe(true);
+    expect(router.activeSignal()).toBeUndefined();
+  });
+
+  test("the turn signal aborting aborts it", () => {
+    const router = createInboundRouter(recordingDecider().decide);
+    const turn = new AbortController();
+    void router.attach("agent-1", createTurnCollector(undefined), turn.signal);
+    turn.abort();
+    expect(router.activeSignal()?.aborted).toBe(true);
+  });
+});

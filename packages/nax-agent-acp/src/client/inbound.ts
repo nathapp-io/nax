@@ -34,6 +34,12 @@ export interface InboundRouter {
    * and resolves once each has been answered.
    */
   attach(agentSessionId: string, collector: TurnCollector, turnSignal: AbortSignal): () => Promise<void>;
+  /**
+   * The running turn's binding signal, or undefined between turns: what an
+   * embedder tool call runs under (S4-4 D4-f). It aborts on cancel, timeout,
+   * close and process exit, and when the binding is released.
+   */
+  activeSignal(): AbortSignal | undefined;
 }
 
 type Rejection = "no-turn" | "foreign-session" | "too-many";
@@ -93,6 +99,7 @@ export function createInboundRouter(decide: PermissionDecider): InboundRouter {
         return decideInTurn(binding, decide, request);
       },
     },
+    activeSignal: () => active?.signal,
     attach(sessionId, collector, turnSignal) {
       const scope = new AbortController();
       const binding: Binding = {

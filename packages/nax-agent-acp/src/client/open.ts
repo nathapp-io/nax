@@ -1,12 +1,14 @@
 /**
  * Opening an ACP session (S4 spec §6.3 step 1): spawn, initialize, capability
- * check, session/new, the profile's mode, then the model, then the initial
- * transcript document. Every failure after the spawn kills the agent's process
- * group before it propagates, so a failed open leaves no process behind. Each
- * agent request is bounded by initializeTimeoutMs (D-c) and by openSignal: close()
- * during open rejects AGENT_SESSION_CLOSED.
+ * check, the tool host when the session has tools, session/new (with the host's
+ * server entry and the pre-approval _meta, §6.6), the profile's mode, then the
+ * model, then the initial transcript document. Every failure after the spawn
+ * kills the agent's process group before it propagates, so a failed open leaves
+ * no process behind; the caller stops the tool host. Each agent request is
+ * bounded by initializeTimeoutMs (D-c) and by openSignal: close() during open
+ * rejects AGENT_SESSION_CLOSED.
  */
-import { PROTOCOL_VERSION, type SessionConfigOption } from "@agentclientprotocol/sdk";
+import { type McpServer, PROTOCOL_VERSION, type SessionConfigOption } from "@agentclientprotocol/sdk";
 import { type BackendOpenContext, NaxError, type TranscriptDoc } from "@nathapp/nax-agent";
 import {
   buildCapabilityRecord,
@@ -27,8 +29,10 @@ import {
 } from "#src/client/errors";
 import { agentGoneError, type LaunchedAgent, type LaunchFn, pickCandidate } from "#src/client/launch";
 import type { ResolvedAcpOptions } from "#src/client/options";
+import { preApprovalMeta } from "#src/client/pre-approval";
 import { race } from "#src/client/race";
 import type { LaunchCandidate } from "#src/client/registry";
+import type { ToolHost } from "#src/client/tool-host";
 
 /** An agent session id longer than this is not trusted (Review Focus 5). */
 const MAX_SESSION_ID_CHARS = 512;
@@ -45,6 +49,13 @@ interface Opening {
   readonly ctx: BackendOpenContext;
   readonly launched: LaunchedAgent;
   readonly link: AcpLink;
+  readonly host: ToolHost | undefined;
+}
+
+/** What session/new adds to `cwd`: the tool host's entry and the pre-approval `_meta` (§6.6). */
+interface SessionSetup {
+  readonly mcpServers: McpServer[];
+  readonly _meta?: Record<string, unknown>;
 }
 
 function chooseLaunch(options: ResolvedAcpOptions): LaunchCandidate {
@@ -65,6 +76,7 @@ export async function openAcpSession(
   ctx: BackendOpenContext,
   handlers: InboundHandlers,
   launch: LaunchFn,
+  host?: ToolHost,
 ): Promise<OpenedAcp> {
   if (ctx.openSignal.aborted) throw closedDuringOpen(ctx.sessionId);
   const candidate = chooseLaunch(options);
@@ -74,7 +86,7 @@ export async function openAcpSession(
     link.close(new NaxError("The ACP agent process exited", "ACP_AGENT_EXITED", { stage: "acp" })),
   );
   try {
-    return await establish({ options, ctx, launched, link });
+    return await establish({ options, ctx, launched, link, host });
   } catch (err) {
     launched.kill();
     link.close();
@@ -121,7 +133,8 @@ async function establish(o: Opening): Promise<OpenedAcp> {
     resume: o.ctx.resume !== undefined,
   });
   if (unmet !== undefined) throw capabilityUnsupported(unmet.capability, unmet.reason);
-  const created = await step(o, "session/new", o.link.newSession({ cwd: o.ctx.workdir, mcpServers: [] }));
+  const setup = await sessionSetup(o);
+  const created = await step(o, "session/new", o.link.newSession({ cwd: o.ctx.workdir, ...setup }));
   const agentSessionId = created.sessionId;
   if (typeof agentSessionId !== "string" || agentSessionId === "" || agentSessionId.length > MAX_SESSION_ID_CHARS) {
     throw backendUnavailable("session/new returned no usable session id");
@@ -129,6 +142,20 @@ async function establish(o: Opening): Promise<OpenedAcp> {
   await applyConfig(o, agentSessionId, created.configOptions ?? []);
   await o.ctx.transcriptStore.save(o.ctx.sessionId, initialDoc(o, record, agentSessionId));
   return { launched: o.launched, link: o.link, record, agentSessionId };
+}
+
+/** §6.3 step 3: start the tool host when the session has tools; its entry and the pre-approval `_meta` (§6.6). */
+async function sessionSetup(o: Opening): Promise<SessionSetup> {
+  if (o.host === undefined) return { mcpServers: [] };
+  const meta = preApprovalMeta(
+    o.options.entry?.preApproval,
+    o.ctx.tools.map((tool) => tool.name),
+  );
+  if (meta === undefined) throw capabilityUnsupported("tools", "the agent has no way to pre-approve embedder tools");
+  const server = await o.host.start().catch((err: unknown) => {
+    throw backendUnavailable(`the tool host could not start: ${err instanceof Error ? err.message : String(err)}`);
+  });
+  return { mcpServers: [server], _meta: { ...meta } };
 }
 
 /** §6.3 step 5: the profile's mode, then the model. Only values the agent offered are set. */
