@@ -3,6 +3,7 @@ import type { AdapterFailure } from "../context/engine";
 import { NaxError } from "../errors";
 import { parseAgentError } from "./errors";
 import { isTransportFailureMessage } from "./transport-failure-message";
+import { SessionFailureError, SessionTurnError } from "./types";
 
 /**
  * Classify an exception thrown out of `adapter.complete()` into an
@@ -29,6 +30,10 @@ import { isTransportFailureMessage } from "./transport-failure-message";
 const MAX_FAILURE_MESSAGE_CHARS = 500;
 
 export function classifyCompleteException(err: unknown): AdapterFailure {
+  // The sdk transport throws its failure pre-classified (S4b spec §6.6, D3-b); message parsing is for every other adapter.
+  if ((err instanceof SessionTurnError || err instanceof SessionFailureError) && err.adapterFailure !== undefined) {
+    return err.adapterFailure;
+  }
   const fullMessage = errorMessage(err);
   const message = fullMessage.slice(0, MAX_FAILURE_MESSAGE_CHARS);
 

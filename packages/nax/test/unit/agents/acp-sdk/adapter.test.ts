@@ -167,19 +167,12 @@ describe("AcpSdkAgentAdapter without a process", () => {
     expect(await new AcpSdkAgentAdapter("codex").isInstalled()).toBe(false);
   });
 
-  test("identity rows match the entries; complete() waits for S4b-3", async () => {
+  test("identity rows match the entries", () => {
     const adapter = new AcpSdkAgentAdapter("claude");
     expect(adapter).toMatchObject({ name: "claude", displayName: "Claude Code (ACP)", binary: "claude" });
     expect(adapter.capabilities.supportedTiers).toEqual(["fast", "balanced", "powerful"]);
     expect(adapter.buildCommand()).toEqual(["acp", "claude"]);
     expect(adapter.buildAllowedEnv().HOME).toBeDefined();
-    await expect(
-      adapter.complete("x", {
-        modelDef: { provider: "anthropic", model: "sonnet" },
-        workdir: dir,
-        resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
-      }),
-    ).rejects.toMatchObject({ code: "ACP_SDK_COMPLETE_UNAVAILABLE" });
   });
 
   test("closeSession on an unknown handle is a no-op", async () => {

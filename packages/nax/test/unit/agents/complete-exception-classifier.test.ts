@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { classifyCompleteException } from "@/agents";
+import { classifyCompleteException, SessionFailureError, SessionTurnError } from "@/agents";
 import { NaxError } from "@/errors";
 
 describe("classifyCompleteException", () => {
@@ -100,5 +100,26 @@ describe("classifyCompleteException", () => {
     expect(failure.retriable).toBe(true);
     expect(failure.retryAfterSeconds).toBe(12);
     expect(failure.message.length).toBe(500);
+  });
+
+  test("a SessionTurnError carrying an adapterFailure is returned as is (sdk transport, spec §6.6)", () => {
+    const failure = {
+      category: "availability" as const,
+      outcome: "fail-auth" as const,
+      retriable: false,
+      message: "login",
+    };
+    const err = new SessionTurnError("login", false, false, undefined, 0, undefined, undefined, failure);
+    expect(classifyCompleteException(err)).toBe(failure);
+  });
+
+  test("a SessionFailureError's adapterFailure is returned as is (sdk complete() open failure, D3-a)", () => {
+    const failure = {
+      category: "quality" as const,
+      outcome: "fail-adapter-error" as const,
+      retriable: false,
+      message: "model",
+    };
+    expect(classifyCompleteException(new SessionFailureError("model", failure))).toBe(failure);
   });
 });
