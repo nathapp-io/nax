@@ -97,7 +97,7 @@ export interface AgentAcpConfig {
  * (nax#1870). The native counterpart to `agent.acp.promptRetries`: acpx's
  * spawned CLI process absorbs a transient provider stall internally before
  * nax ever observes it, but native has no such process — nax is the harness
- * for it, and `src/agents/native/session/turn-retry.ts` is where it lives.
+ * for it, and `packages/nax-agent/src/native/session/turn-retry.ts` is where it lives.
  */
 export interface AgentNativeTransportRetryConfig {
   /** Total call attempts including the first (default: 3 — two retries beyond the original call). */

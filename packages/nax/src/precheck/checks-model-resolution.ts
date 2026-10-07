@@ -14,10 +14,10 @@
  * warning, not a silent override-loss.
  *
  * Production wiring: `_modelResolutionDeps.resolveNative` is `resolveNativeId`
- * from `src/agents/native/model-resolver.ts`, which uses the cached nax-ai
- * client (`getNativeClient(catalogOverrides)`). The precheck sees the exact
- * same catalog and overrides the dispatch will use. Tests swap the seam to
- * drive specific outcomes without loading the bundled catalog.
+ * from `packages/nax-agent/src/native/model-resolver.ts`. The precheck uses
+ * the cached nax-ai client (`getNativeClient(catalogOverrides)`), matching
+ * dispatch. Tests swap the seam to drive specific outcomes without loading
+ * the bundled catalog.
  */
 
 import { NATIVE_AGENT, resolveNativeId } from "@nathapp/nax-agent";
@@ -49,9 +49,9 @@ export interface ModelResolutionDeps {
 
 /**
  * Injectable seam — production wires `resolveNative` to `resolveNativeId` from
- * `src/agents/native/model-resolver.ts` so the cached nax-ai client (and
- * `agent.native.catalogOverrides`) is threaded through the same client the
- * dispatch uses. Tests swap both fields to drive specific resolution outcomes
+ * `packages/nax-agent/src/native/model-resolver.ts`, threading
+ * `agent.native.catalogOverrides` through the same client the dispatch uses.
+ * Tests swap both fields to drive specific resolution outcomes
  * without loading the bundled catalog. ACP ids are deliberately unverified:
  * acpx validates them against the live agent's advertised models at dispatch.
  */
@@ -76,11 +76,11 @@ export { collectConfiguredModelPins };
  *
  * Dispatch rule: only the native agent uses the local resolver (production
  * wires it to nax-ai's bundled snapshot via `getNativeClient` in
- * `src/agents/native/client.ts`). ACP ids are left unverified because acpx
- * validates them against live agent capabilities at dispatch. A native id the
- * override-aware client cannot resolve is a blocker, because that is exactly
- * the failure mode that caused `nax#1983` (an adversarial-review parse error
- * 22 minutes into a run for an id the resolver had no answer for).
+ * `packages/nax-agent/src/native/client.ts`). ACP ids are left unverified
+ * because acpx validates them against live agent capabilities at dispatch.
+ * A native id the override-aware client cannot resolve is a blocker, because
+ * that is exactly the failure mode behind `nax#1983`: an adversarial-review
+ * parse error 22 minutes into a run for an id the resolver had no answer for.
  *
  * The check can emit mixed results (a blocker for an unresolved native id
  * alongside a native catalog-infrastructure warning).
@@ -97,9 +97,10 @@ export async function checkModelResolution(config: unknown): Promise<Check[]> {
 
   const checks: Check[] = [];
 
-  // getNativeClient is cached per override set (see src/agents/native/client.ts); the
-  // override list we just built is what the precheck-side resolver hands to it so the
-  // user-declared ids reach the runtime. AC10 verifies the dispatch wiring.
+  // getNativeClient is cached per override set (see
+  // packages/nax-agent/src/native/client.ts). The override list we just built
+  // is what the precheck-side resolver hands it so user-declared ids reach the
+  // runtime. AC10 verifies the dispatch wiring.
 
   // ── Tier entry walk — `models.<agent>.<tier>` ──
   for (const entry of tierEntries) {

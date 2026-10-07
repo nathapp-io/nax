@@ -373,7 +373,7 @@ describe("formatLogEntry — ANSI/control-char sanitization (SEC-09)", () => {
 
 describe("formatLogEntry — coding-tool call noise (normal mode)", () => {
   // The outcome-sniffing special case this block used to pin was removed: the
-  // level now carries the decision (src/tools/runtime.ts picks debug for `ok`
+  // level now carries the decision (packages/nax-agent/src/tools/runtime.ts picks debug for `ok`
   // and for a routineErrors tool's error, warn for every other failure, error
   // for a policy breach), so the generic debug filter does the same job for
   // every stage rather than for this one by name.
@@ -393,7 +393,7 @@ describe("formatLogEntry — coding-tool call noise (normal mode)", () => {
   });
 
   test("a denied call is still displayed", () => {
-    // src/tools/runtime.ts logs every outcome precisely so a refused call stays
+    // packages/nax-agent/src/tools/runtime.ts logs every outcome precisely so a refused call stays
     // distinguishable from one never made. Suppressing that would defeat it.
     expect(formatLogEntry(invoked("warn", "denied"), { mode: "normal", useColor: false }).shouldDisplay).toBe(true);
   });

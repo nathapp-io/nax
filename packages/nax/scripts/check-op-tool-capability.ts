@@ -96,8 +96,9 @@ interface Baseline {
  *
  * `resolveDeclaredTools` also carries the ambient scratchpad tools: they are
  * appended to every op at dispatch (`declaredWithProviders` in
- * src/agents/coding-tool-support.ts), so an op that omits `tools` receives
- * them alongside the read-only default. A tool with `scope.confineTo` set can
+ * `packages/nax-agent/src/coding-tools/coding-tool-support.ts`), so an op that
+ * omits `tools` receives them alongside the read-only default. A tool with
+ * `scope.confineTo` set can
  * only ever resolve paths under its own directory -- `ScratchpadWrite` can no
  * more satisfy a role's `Write` requirement than `Read` can -- so it is not
  * part of the surface this gate reports. Filtering on the scope rather than on

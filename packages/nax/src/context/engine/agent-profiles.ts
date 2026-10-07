@@ -163,7 +163,7 @@ export const AGENT_PROFILES: Record<string, AgentProfile> = {
       toolSchemaDialect: "none",
     },
   },
-  // "native" is src/agents/native's NATIVE_AGENT id (src/agents/native/models.ts).
+  // "native" is nax-agent's NATIVE_AGENT id (packages/nax-agent/src/native/models.ts).
   // Like opencode and pi, native is multi-provider — the model string names the
   // provider (ADR-027 s1) — so there is no single vendor tool dialect to name
   // here either. nax-ai normalizes tool schemas per provider inside

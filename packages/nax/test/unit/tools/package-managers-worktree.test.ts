@@ -33,7 +33,7 @@ describe("Exec target repoRoot under worktree isolation (nax#2093)", () => {
 
   test("a repo-root package collapses the package target to the worktree root", () => {
     // `packageRelPath === ""` means the story IS the repo root, so BOTH targets
-    // collapse to repoRoot (src/tools/package-managers.ts:363-366). Keeping
+    // collapse to repoRoot (packages/nax-agent/src/tools/package-managers.ts). Keeping
     // packageWorkdir distinct from repoRoot is what makes this detect the
     // collapse: with the two equal, the cwd ternary's branches yield the same
     // string and the assertion cannot fail.

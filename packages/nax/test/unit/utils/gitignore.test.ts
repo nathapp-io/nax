@@ -53,7 +53,7 @@ describe("NAX_GITIGNORE_ENTRIES", () => {
   });
 
   test("covers the scratchpad directory with a nested-worktree pattern (US-004)", () => {
-    // The scratchpad tools write throwaway files there (src/tools/scratchpad.ts).
+    // The scratchpad tools write throwaway files there (packages/nax-agent/src/tools/scratchpad.ts).
     // US-004 AC4 pins the entry exactly as written: the `**/` prefix is what
     // keeps a monorepo package's own scratchpad out of the story worktree
     // commit, and dropping it lands the story branch in the merge-back abort

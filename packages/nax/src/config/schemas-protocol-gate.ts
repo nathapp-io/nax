@@ -105,7 +105,7 @@ export function validateProtocolGate(data: ProtocolGateInput, ctx: z.RefinementC
  * The native path reads the provider out of the model STRING and deliberately
  * ignores `ModelDef.provider`: `resolveModel` INFERS that field from the model
  * name, and a billed call must not route on a guess (see
- * `src/agents/native/complete.ts`). Nothing said so at config load, so the
+ * `packages/nax-agent/src/native/complete.ts`). Nothing said so at config load, so the
  * natural object form — `{ provider: "anthropic", model: "claude-sonnet-5" }`,
  * which validates cleanly against the documented `ModelDef` — parsed fine and
  * then died 74ms into a run that had already paid for its acceptance stage.
