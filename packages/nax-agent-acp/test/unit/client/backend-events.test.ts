@@ -269,7 +269,16 @@ describe("tool calls and usage end to end (spec §6.7; D5-a to D5-f, D5-h)", () 
       if (event.type === "tool_call") o.session.cancel();
     });
     expect(find(events, "usage")).toBeUndefined();
-    expect(endOf(events)).toMatchObject({ status: "cancelled", costUsd: 0 });
+    expect(endOf(events)).toMatchObject({ status: "cancelled", costUsd: 0, costSource: "unpriced" });
+  });
+
+  test("a JSON-RPC error on the prompt: turn_end says unpriced, not just zero (Review Focus 3)", async () => {
+    const o = await open([{ steps: [usd(0.01), { kind: "fail", failure: { code: -32603, message: "boom" } }] }]);
+    expect(endOf(await driveTurn(o.session, "go"))).toMatchObject({
+      status: "errored",
+      costUsd: 0,
+      costSource: "unpriced",
+    });
   });
 });
 

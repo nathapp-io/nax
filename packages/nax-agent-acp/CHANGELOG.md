@@ -7,7 +7,7 @@ step with `@nathapp/nax-agent`.
 
 ### Fixed
 
-- An errored or cancelled turn's `turn_end` carries the usage, cost and `costSource` the turn had already reported, instead of zero (#2367). A cancelled turn whose agent answers within the grace period emits its `usage` event before `turn_end`. Needs `@nathapp/nax-agent` 0.3.1.
+- An errored or cancelled turn's `turn_end` carries the usage, cost and `costSource` the turn had already reported, instead of zero (#2367). A cancelled turn whose agent answers within the grace period emits its `usage` event before `turn_end`. A turn that ends with no prompt response (killed after the grace, agent gone, or a JSON-RPC error) reports cost 0 with `costSource: "unpriced"`; any reading it saw is billed to the next priced turn. Needs `@nathapp/nax-agent` 0.3.1.
 - Session instructions are no longer lost when the agent dies before it has the prompt. They count as delivered on the first turn-content update or the prompt's response; otherwise the next prompt, after the reconnect, carries them again (#2364).
 - Profiles `none` and `read` on Claude no longer use plan mode, which wrote its plan file under `~/.claude/plans/` without a permission request. They run in `default` mode with `Write`, `Edit`, `MultiEdit`, `NotebookEdit` and `EnterPlanMode` removed, and load no Claude settings files, so settings allow rules, hooks and MCP servers cannot act outside the profile. Embedder tools no longer carry `readOnlyHint`. Resuming a 0.3.0 `none`/`read` session may rebuild Claude's agent session (#2366).
 

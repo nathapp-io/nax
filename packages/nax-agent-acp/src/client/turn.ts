@@ -11,7 +11,7 @@
  * from the signal, so after an abort this throws the signal's reason.
  */
 import type { PromptResponse } from "@agentclientprotocol/sdk";
-import { attachTurnSpend, NaxError, type TurnResult } from "@nathapp/nax-agent";
+import { attachTurnSpend, type FailedTurnSpend, NaxError, type TurnResult } from "@nathapp/nax-agent";
 import type { AcpLink } from "#src/client/connection";
 import { promptRequestError, rpcErrorOf, stopReasonError } from "#src/client/errors";
 import type { TurnCollector } from "#src/client/events";
@@ -34,6 +34,13 @@ export interface TurnInput {
   readonly collector: TurnCollector;
 }
 
+/** A turn that ended with no prompt response reports nothing it can price; its reading moves to the next turn. */
+const NO_RESPONSE_SPEND: FailedTurnSpend = Object.freeze({
+  tokenUsage: Object.freeze({ inputTokens: 0, outputTokens: 0 }),
+  costUsd: 0,
+  costSource: "unpriced",
+});
+
 export async function runPromptTurn(state: TurnState, input: TurnInput): Promise<TurnResult> {
   const pending = state.link.prompt({
     sessionId: state.agentSessionId,
@@ -43,13 +50,16 @@ export async function runPromptTurn(state: TurnState, input: TurnInput): Promise
   switch (outcome.kind) {
     case "ok":
       return resultOf(outcome.value, input.collector);
-    case "failed":
-      throw await promptFailure(state, outcome.error);
+    case "failed": {
+      const error = await promptFailure(state, outcome.error);
+      attachTurnSpend(error, NO_RESPONSE_SPEND);
+      throw error;
+    }
     default: {
       const response = await cancelTurn(state, pending);
       const reason = abortReason(input.signal);
       // #2367: an answer inside the grace still reports what the turn spent.
-      if (response !== undefined) attachTurnSpend(reason, input.collector.settle(response));
+      attachTurnSpend(reason, response === undefined ? NO_RESPONSE_SPEND : input.collector.settle(response));
       throw reason;
     }
   }
