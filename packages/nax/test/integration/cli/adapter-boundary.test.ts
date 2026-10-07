@@ -20,6 +20,7 @@ const ALLOWED_FILES = new Set([
   "agents/manager.ts", // IAgentManager implementation
   "agents/utils.ts", // wrapAdapterAsManager() — wraps bare adapter as IAgentManager
   "session/manager.ts", // ADR-019 Phase B: openSession/sendTurn/closeSession wiring layer
+  "agents/acp-sdk/turn-loop.ts", // S4b-2 sdk transport: the send-turn loop over nax-agent-acp's adapter
 ]);
 
 // Patterns that indicate direct adapter method calls.
