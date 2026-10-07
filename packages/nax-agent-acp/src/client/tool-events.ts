@@ -158,12 +158,40 @@ export function previewOf(
   return capBytes(redactSecrets(scrubSecrets(visible, secrets)), TOOL_RESULT_PREVIEW_BYTES);
 }
 
+const UTF8 = new TextEncoder();
+
+/** UTF-8 byte length of the full result text, before any cap (S4b spec §7.4). */
+export function resultBytesOf(call: { readonly content?: unknown; readonly rawOutput?: unknown }): number {
+  const fromContent = contentText(call.content);
+  const raw = fromContent !== "" ? fromContent : typeof call.rawOutput === "string" ? call.rawOutput : "";
+  return UTF8.encode(raw).byteLength;
+}
+
+/** At most one tool_progress per call per this interval (S4b-0 finding f). */
+export const TOOL_PROGRESS_MIN_INTERVAL_MS = 30_000;
+
 function isStarted(status: unknown): boolean {
   return status === "in_progress" || status === "completed" || status === "failed";
 }
 
-export function createToolEvents(emit: (event: TurnEvent) => void, secrets: readonly string[]): ToolEvents {
+export function createToolEvents(
+  emit: (event: TurnEvent) => void,
+  secrets: readonly string[],
+  now: () => number = Date.now,
+): ToolEvents {
   const calls = new Map<string, CallState>();
+  const lastBeat = new Map<string, number>();
+  /** Calls whose tool has started (their first in_progress); only these send liveness beats. */
+  const running = new Set<string>();
+  /** A non-terminal update on a running call: a throttled liveness beat (the agent's heartbeat). */
+  const beat = (state: CallState): void => {
+    if (!running.has(state.id) || state.resolved) return;
+    const at = now();
+    const last = lastBeat.get(state.id);
+    if (last !== undefined && at - last < TOOL_PROGRESS_MIN_INTERVAL_MS) return;
+    lastBeat.set(state.id, at);
+    emit({ type: "tool_progress", callId: state.id });
+  };
   const merge = (update: unknown): CallState | undefined => {
     if (!isRecord(update)) return undefined;
     const id = cleanCallId(update.toolCallId, secrets);
@@ -181,18 +209,27 @@ export function createToolEvents(emit: (event: TurnEvent) => void, secrets: read
     emit({ type: "tool_call", callId: state.id, name: nameOf(state), input: inputOf(state.rawInput, secrets) });
     return next;
   };
-  const resolve = (state: CallState, isError: boolean, preview: string): void => {
+  const resolve = (state: CallState, isError: boolean, preview: string, resultBytes: number): void => {
     if (state.resolved) return;
     calls.set(state.id, { ...state, resolved: true });
-    emit({ type: "tool_result", callId: state.id, isError, preview });
+    lastBeat.delete(state.id);
+    running.delete(state.id);
+    emit({ type: "tool_result", callId: state.id, isError, preview, resultBytes });
   };
   return {
     onUpdate(update) {
       const state = merge(update);
       const status = isRecord(update) ? update.status : undefined;
-      if (state === undefined || !isStarted(status)) return;
+      if (state === undefined) return;
+      if (status === undefined || (status === "in_progress" && running.has(state.id))) {
+        beat(state);
+        return;
+      }
+      if (!isStarted(status)) return;
+      if (status === "in_progress") running.add(state.id);
       const shown = announce(state);
-      if (status !== "in_progress") resolve(shown, status === "failed", previewOf(shown, secrets));
+      if (status !== "in_progress")
+        resolve(shown, status === "failed", previewOf(shown, secrets), resultBytesOf(shown));
     },
     announce(toolCall) {
       const state = merge(toolCall);
@@ -200,7 +237,7 @@ export function createToolEvents(emit: (event: TurnEvent) => void, secrets: read
     },
     flush() {
       for (const state of [...calls.values()]) {
-        if (state.announced) resolve(state, true, UNANSWERED_PREVIEW);
+        if (state.announced) resolve(state, true, UNANSWERED_PREVIEW, 0);
       }
     },
   };

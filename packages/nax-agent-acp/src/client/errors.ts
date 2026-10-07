@@ -97,12 +97,29 @@ export function openRequestError(step: string, err: RequestError, secrets: reado
   return backendUnavailable(`${step} failed: ${excerpt}`, { step, rpcCode: err.code });
 }
 
+/**
+ * A rate limit, read from structured JSON-RPC error data only (S4b spec §8); never
+ * from message text. claude-agent-acp sends `data.errorKind: "rate_limit"` and no
+ * retry-after (S4b-0 finding a).
+ */
+export function rateLimitOf(data: unknown): { readonly retryAfterSeconds?: number } | undefined {
+  if (typeof data !== "object" || data === null || Array.isArray(data)) return undefined;
+  return "errorKind" in data && data.errorKind === "rate_limit" ? {} : undefined;
+}
+
 /** A rejected session/prompt (§7: a JSON-RPC error on prompt is AGENT_SESSION_TURN_FAILED). */
 export function promptRequestError(err: RequestError, secrets: readonly string[]): NaxError {
   const excerpt = agentTextExcerpt(err.message, secrets);
   if (err.code === AUTH_REQUIRED_CODE) {
     return new AgentSessionError(`The ACP agent requires authentication: ${excerpt}`, "AGENT_SESSION_AUTH_REQUIRED", {
       step: "session/prompt",
+    });
+  }
+  const limit = rateLimitOf(err.data);
+  if (limit !== undefined) {
+    return new AgentSessionError(`The ACP agent was rate-limited: ${excerpt}`, "AGENT_SESSION_RATE_LIMITED", {
+      step: "session/prompt",
+      ...limit,
     });
   }
   return new NaxError(`The ACP prompt failed: ${excerpt}`, "AGENT_SESSION_TURN_FAILED", {

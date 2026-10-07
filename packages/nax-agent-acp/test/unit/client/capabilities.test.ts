@@ -3,6 +3,7 @@ import type { InitializeResponse, SessionConfigOption } from "@agentclientprotoc
 import {
   buildCapabilityRecord,
   type CapabilityRecord,
+  effortOptionId,
   modeFor,
   modelOptionId,
   offersValue,
@@ -159,5 +160,40 @@ describe("config options", () => {
     expect(modeFor("ask", registryEntry("codex"))).toBeUndefined();
     expect(readOnlyFor("none", registryEntry("codex"))).toBeUndefined();
     expect(modeFor("full", undefined)).toBeUndefined();
+  });
+});
+
+function select(id: string, category: string | undefined, values: readonly string[]): SessionConfigOption {
+  return {
+    id,
+    name: id,
+    ...(category === undefined ? {} : { category }),
+    type: "select",
+    currentValue: values[0] ?? "",
+    options: values.map((value) => ({ value, name: value })),
+  };
+}
+
+describe("effortOptionId (S4b spec §6.7, §8)", () => {
+  test("category thought_level wins when it offers the value", () => {
+    const options = [select("effort", undefined, ["high"]), select("thinking", "thought_level", ["low", "high"])];
+    expect(effortOptionId(options, "claude", "high")).toBe("thinking");
+  });
+
+  test("falls back to the agent's id when no thought_level option offers the value", () => {
+    expect(effortOptionId([select("reasoning_effort", undefined, ["low", "high"])], "codex", "high")).toBe(
+      "reasoning_effort",
+    );
+    expect(effortOptionId([select("effort", undefined, ["high"])], "claude", "high")).toBe("effort");
+  });
+
+  test("undefined when the value is not offered, the agent has no fallback, or there are no options", () => {
+    expect(effortOptionId([select("effort", "thought_level", ["low"])], "claude", "high")).toBeUndefined();
+    expect(effortOptionId([select("effort", undefined, ["high"])], "gemini", "high")).toBeUndefined();
+    expect(effortOptionId([], "claude", "high")).toBeUndefined();
+  });
+
+  test("an inherited object key is not an agent fallback", () => {
+    expect(effortOptionId([select("toString", undefined, ["high"])], "toString", "high")).toBeUndefined();
   });
 });

@@ -248,6 +248,7 @@ type SystemOneRequest
 TOOL_CALL_INPUT_BYTES
 TOOL_RESULT_PREVIEW_BYTES
 type TokenUsage
+type ToolAuditHeader
 type ToolAuditSink
 type ToolCallContext
 type ToolCallRecord

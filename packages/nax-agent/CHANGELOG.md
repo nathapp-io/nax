@@ -9,6 +9,11 @@ release may change the public API.
 ### Added
 
 - `attachTurnSpend(err, spend)` and `readTurnSpend(err)`, with the `FailedTurnSpend` type: a backend attaches the spend a failed turn had already incurred to the error it throws, and the turn's `turn_end` reports it (#2367).
+- `OpenSessionOpts.toolAudit` (optional `{ dir, header }`): the tool-audit ledger location and header for an S1 adapter that writes its own ledger (nax's ACP adapter, S4b). nax-agent itself does not read it; native takes its sink from coding-tool support.
+- `resultBytes` (optional) on the `tool_result` turn event: the UTF-8 byte length of the full result before the preview cap.
+- `ToolAuditHeader` is exported from the package entry.
+- `AGENT_SESSION_RATE_LIMITED` error code (a backend's rate-limited turn).
+- `tool_progress` turn event: a running tool's liveness beat (no content), for S1 callers such as nax's idle watchdog. The session facade does not forward it as a session event.
 
 ### Fixed
 

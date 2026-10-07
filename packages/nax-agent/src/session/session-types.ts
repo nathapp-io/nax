@@ -143,6 +143,13 @@ export interface OpenSessionOpts extends TrackedSpawnDeadlineOptions {
    */
   transcriptDir?: string;
   /**
+   * S4b spec 7.4: where an S1 adapter that writes its own tool-audit ledger (nax's
+   * ACP adapter) writes it, and the run-scoped header stamped on it. nax fills it
+   * from the same resolution the native coding tools use. nax-agent itself does not
+   * read it; native takes its sink from coding-tool support.
+   */
+  toolAudit?: { readonly dir: string; readonly header: import("#src/tools/tool-audit").ToolAuditHeader };
+  /**
    * Native: identity that owns this session's transcript — the op invocation's
    * `scopeId ?? callId`. Stable across the retries and hops of one invocation,
    * different for every new stage entry, run and process, which is exactly the

@@ -282,6 +282,27 @@ describe("tool calls and usage end to end (spec §6.7; D5-a to D5-f, D5-h)", () 
   });
 });
 
+describe("tool heartbeats (S4b-0 finding f)", () => {
+  test("a running tool's heartbeat is a liveness beat for S1 callers, never a session event", async () => {
+    const o = await open([
+      {
+        steps: [
+          update({ sessionUpdate: "tool_call", toolCallId: "toolu_9", title: "Bash", status: "in_progress" }),
+          update({ sessionUpdate: "tool_call_update", toolCallId: "toolu_9" }),
+          update({
+            sessionUpdate: "tool_call_update",
+            toolCallId: "toolu_9",
+            status: "completed",
+            content: [{ type: "content", content: { type: "text", text: "ok" } }],
+          }),
+        ],
+      },
+    ]);
+    const events = await driveTurn(o.session, "go");
+    expect(types(events)).toEqual(["turn_start", "tool_call", "tool_result", "usage", "turn_end"]);
+  });
+});
+
 describe("agent text is scrubbed of the session's secrets (D5-g, Review Focus 1)", () => {
   test("an env secret split across text chunks, and one in a thought", async () => {
     const o = await open(

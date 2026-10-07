@@ -5,6 +5,15 @@ step with `@nathapp/nax-agent`.
 
 ## [Unreleased]
 
+### Added
+
+- A rate-limited prompt (structured `data.errorKind: "rate_limit"`, as Claude's adapter sends) is `AGENT_SESSION_RATE_LIMITED`, classified from structured error data only. Needs `@nathapp/nax-agent` 0.3.1.
+- `effort` option: sets the agent's reasoning effort after the model; skipped with a warning when not offered.
+- `onProcess` option (`AcpProcessHooks`): `spawned(pid)` and `exited(pid)` for every agent process, including after a reconnect.
+- `tool_result` events carry `resultBytes`: the UTF-8 byte length of the full result before the preview cap (0 for a call the turn never answered).
+- `isAgentLaunchable` and `launchCandidateKind`: whether a registered agent's launcher resolves on PATH, and whether only the npx fallback does.
+- The agent's heartbeats on a running tool surface as `tool_progress` turn events, at most one per call per 30 s; they are not session events.
+
 ### Fixed
 
 - An errored or cancelled turn's `turn_end` carries the usage, cost and `costSource` the turn had already reported, instead of zero (#2367). A cancelled turn whose agent answers within the grace period emits its `usage` event before `turn_end`. A turn that ends with no prompt response (killed after the grace, agent gone, or a JSON-RPC error) reports cost 0 with `costSource: "unpriced"`; any reading it saw is billed to the next priced turn. Needs `@nathapp/nax-agent` 0.3.1.

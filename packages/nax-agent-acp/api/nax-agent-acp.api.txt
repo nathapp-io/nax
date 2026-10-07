@@ -6,7 +6,11 @@ ACP_STOP_CODES
 type AcpAgentName
 type AcpAgentSpec
 type AcpBackendOptions
+type AcpProcessHooks
 type AcpStopCode
+type LaunchCandidateKind
 acpBackend
+isAgentLaunchable
+launchCandidateKind
 
 [./server]

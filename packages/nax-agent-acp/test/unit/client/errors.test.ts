@@ -10,6 +10,7 @@ import {
   EXCERPT_BYTES,
   openRequestError,
   promptRequestError,
+  rateLimitOf,
   rpcErrorOf,
   sessionLost,
   stopReasonError,
@@ -87,6 +88,39 @@ describe("request errors (spec §6.3, §7)", () => {
     expect(failed).toBeInstanceOf(NaxError);
     expect(failed.code).toBe("AGENT_SESSION_TURN_FAILED");
     expect(failed.message).not.toContain(SECRET);
+  });
+});
+
+describe("rate limits (S4b spec §8: structured data only; S4b-0 finding a)", () => {
+  test("claude-agent-acp's errorKind rate_limit is a rate limit", () => {
+    expect(rateLimitOf({ errorKind: "rate_limit" })).toEqual({});
+  });
+
+  test.each<[unknown]>([
+    [undefined],
+    [null],
+    ["rate_limit"],
+    [["rate_limit"]],
+    [{ errorKind: "overloaded" }],
+    [{ errorKind: "RATE_LIMIT" }],
+    [{ message: "rate limit exceeded" }],
+  ])("rateLimitOf(%p) is not a rate limit", (data) => {
+    expect(rateLimitOf(data)).toBeUndefined();
+  });
+
+  test("a rate-limited session/prompt is AGENT_SESSION_RATE_LIMITED, redacted", () => {
+    const err = promptRequestError(new RequestError(-32603, `Rate limited ${SECRET}`, { errorKind: "rate_limit" }), [
+      SECRET,
+    ]);
+    expect(err).toBeInstanceOf(AgentSessionError);
+    expect(err.code).toBe("AGENT_SESSION_RATE_LIMITED");
+    expect(err.context).toMatchObject({ step: "session/prompt" });
+    expect(err.message).not.toContain(SECRET);
+  });
+
+  test("message text alone never classifies as a rate limit", () => {
+    const err = promptRequestError(new RequestError(-32603, "rate limit exceeded, retry later"), []);
+    expect(err.code).toBe("AGENT_SESSION_TURN_FAILED");
   });
 });
 

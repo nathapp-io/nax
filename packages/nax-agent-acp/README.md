@@ -33,6 +33,15 @@ What to know:
 - **Instructions** are prepended to the first prompt only; ACP has no system prompt.
 - **Stop reasons.** A turn that stops for anything but `end_turn` ends `errored` with
   an `ACP_STOP_*` code (`ACP_STOP_CODES`).
+- **Model and effort.** `model` and `effort` are set through `session/set_config_option`,
+  after the profile's mode: the model only when the agent offers it (else
+  `AGENT_SESSION_CAPABILITY_UNSUPPORTED`), the effort through the agent's `thought_level`
+  option (or its known effort option) and skipped with a warning when the value is not offered.
+- **Agent processes.** `onProcess: { spawned(pid), exited(pid) }` is called for every agent
+  process, including a reconnect's; not when the spawn fails. A throwing hook is logged and ignored.
+- **Rate limits.** A prompt the agent rejects with structured `data.errorKind: "rate_limit"`
+  (as Claude's adapter does) ends `AGENT_SESSION_RATE_LIMITED`. It is read from structured error
+  data only, never from message text; Claude's adapter sends no retry-after.
 - **Usage.** Each turn ends with one `usage` event: the tokens the agent reports for
   the turn, and the cost it reports (`costSource: "reported"`). An agent that reports
   no cost gives `costUsd: 0` with `costSource: "unpriced"`. Never sum `unpriced`
@@ -42,6 +51,14 @@ What to know:
   agent ignores for `cancelGraceMs` kills it.
 - **A crash between `session/new` and the first save** loses the agent's session
   id. The next `createAgentSession` with the same id starts fresh.
+
+## Is the agent installed?
+
+`isAgentLaunchable(agent, env?)` is true when one of the agent's registry launch
+candidates resolves on `PATH`, using the same resolution the backend uses at spawn.
+`launchCandidateKind(agent, env?)` says which: `"local"` for the agent's own launcher,
+`"npx"` when only the npx fallback resolves (the first open then downloads the
+launcher), or `undefined`.
 
 ## Resume and reconnect
 

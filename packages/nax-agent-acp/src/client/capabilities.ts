@@ -101,6 +101,27 @@ export function modelOptionId(options: readonly SessionConfigOption[], model: st
   return options.find((option) => option.category === "model" && selectValues(option).includes(model))?.id;
 }
 
+/** Per-agent effort option ids, tried when no option has category "thought_level" (nax's EFFORT_OPTION_BY_AGENT). */
+export const EFFORT_FALLBACK_IDS: Readonly<Record<string, string>> = Object.freeze({
+  claude: "effort",
+  codex: "reasoning_effort",
+  opencode: "effort",
+  pi: "thought_level",
+});
+
+/** The option that sets `effort`: a "thought_level" option offering it, else the agent's fallback id offering it. */
+export function effortOptionId(
+  options: readonly SessionConfigOption[],
+  agentName: string,
+  effort: string,
+): string | undefined {
+  const offering = options.filter((option) => selectValues(option).includes(effort));
+  const byCategory = offering.find((option) => option.category === "thought_level");
+  if (byCategory !== undefined) return byCategory.id;
+  const fallback = Object.hasOwn(EFFORT_FALLBACK_IDS, agentName) ? EFFORT_FALLBACK_IDS[agentName] : undefined;
+  return fallback === undefined ? undefined : offering.find((option) => option.id === fallback)?.id;
+}
+
 /** The read-only enforcement a profile uses: the entry's for none/read, none otherwise. */
 export function readOnlyFor(
   profile: AgentSessionProfile,

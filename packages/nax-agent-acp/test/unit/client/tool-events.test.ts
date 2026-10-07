@@ -7,6 +7,7 @@ import {
   inputOf,
   MAX_TRACKED_CALLS,
   previewOf,
+  resultBytesOf,
   UNANSWERED_PREVIEW,
 } from "#src/client/tool-events";
 
@@ -29,7 +30,7 @@ describe("createToolEvents: when a call is announced (D5-c)", () => {
     tools.onUpdate({ toolCallId: "c1", status: "completed", content: [text("body")] });
     expect(events).toEqual([
       { type: "tool_call", callId: "c1", name: "Read", input: { file_path: "/w/a.ts" } },
-      { type: "tool_result", callId: "c1", isError: false, preview: "body" },
+      { type: "tool_result", callId: "c1", isError: false, preview: "body", resultBytes: 4 },
     ]);
   });
 
@@ -44,6 +45,7 @@ describe("createToolEvents: when a call is announced (D5-c)", () => {
       callId: "c2",
       isError: true,
       preview: "Permission denied: no",
+      resultBytes: 21,
     });
   });
 
@@ -80,8 +82,8 @@ describe("createToolEvents: one result per announced call (D5-e)", () => {
     tools.flush();
     expect(events.filter((e) => e.type === "tool_call").map((e) => e.callId)).toEqual(["started", "done"]);
     expect(events.filter((e) => e.type === "tool_result")).toEqual([
-      { type: "tool_result", callId: "done", isError: false, preview: "" },
-      { type: "tool_result", callId: "started", isError: true, preview: UNANSWERED_PREVIEW },
+      { type: "tool_result", callId: "done", isError: false, preview: "", resultBytes: 0 },
+      { type: "tool_result", callId: "started", isError: true, preview: UNANSWERED_PREVIEW, resultBytes: 0 },
     ]);
   });
 
@@ -177,5 +179,95 @@ describe("inputOf and previewOf (D5-f)", () => {
     expect(diffSummary({ newText: "a" })).toBe("edit (unknown path) (+1 -0)");
     const huge = "z\n".repeat(DIFF_COUNT_MAX_CHARS);
     expect(diffSummary({ path: "/w/huge.ts", oldText: "", newText: huge })).toBe("edit /w/huge.ts");
+  });
+});
+
+describe("resultBytes (S4b spec §7.4)", () => {
+  test("a completed call carries the UTF-8 byte length of its full result", () => {
+    const { events, tools } = setup();
+    tools.onUpdate({
+      toolCallId: "c1",
+      name: "Read",
+      status: "completed",
+      rawInput: {},
+      content: [text("h\u00e9llo")],
+    });
+    expect(events.at(-1)).toEqual({
+      type: "tool_result",
+      callId: "c1",
+      isError: false,
+      preview: "h\u00e9llo",
+      resultBytes: 6,
+    });
+  });
+
+  test("Review Focus 4: bytes count the raw output, not the capped preview or characters", () => {
+    expect(resultBytesOf({ content: [text("\u00e9".repeat(100_000))] })).toBe(200_000);
+    expect(resultBytesOf({ rawOutput: "abc" })).toBe(3);
+    expect(resultBytesOf({ content: [text("a"), text("b")] })).toBe(3);
+    expect(resultBytesOf({})).toBe(0);
+  });
+
+  test("an unanswered call reports 0 bytes", () => {
+    const { events, tools } = setup();
+    tools.onUpdate({ toolCallId: "c9", name: "Bash", status: "in_progress", rawInput: {} });
+    tools.flush();
+    expect(events.at(-1)).toMatchObject({ type: "tool_result", callId: "c9", isError: true, resultBytes: 0 });
+  });
+});
+
+describe("tool_progress (S4b-0 finding f)", () => {
+  test("a heartbeat on a running call emits tool_progress, throttled per call", () => {
+    let now = 0;
+    const events: TurnEvent[] = [];
+    const tools = createToolEvents(
+      (event) => events.push(event),
+      [],
+      () => now,
+    );
+    tools.onUpdate({ toolCallId: "c1", name: "Bash", status: "in_progress", rawInput: { command: "sleep" } });
+    tools.onUpdate({ toolCallId: "c1" });
+    now = 10_000;
+    tools.onUpdate({ toolCallId: "c1" });
+    now = 31_000;
+    tools.onUpdate({ toolCallId: "c1", status: "in_progress" });
+    expect(events).toEqual([
+      { type: "tool_call", callId: "c1", name: "Bash", input: { command: "sleep" } },
+      { type: "tool_progress", callId: "c1" },
+      { type: "tool_progress", callId: "c1" },
+    ]);
+  });
+
+  test("the throttle is per call", () => {
+    const events: TurnEvent[] = [];
+    const tools = createToolEvents(
+      (event) => events.push(event),
+      [],
+      () => 0,
+    );
+    tools.onUpdate({ toolCallId: "a", name: "Bash", status: "in_progress", rawInput: {} });
+    tools.onUpdate({ toolCallId: "b", name: "Bash", status: "in_progress", rawInput: {} });
+    tools.onUpdate({ toolCallId: "a" });
+    tools.onUpdate({ toolCallId: "b" });
+    expect(events.filter((e) => e.type === "tool_progress")).toEqual([
+      { type: "tool_progress", callId: "a" },
+      { type: "tool_progress", callId: "b" },
+    ]);
+  });
+
+  test("no tool_progress before the call is announced or after it resolved", () => {
+    let now = 0;
+    const events: TurnEvent[] = [];
+    const tools = createToolEvents(
+      (event) => events.push(event),
+      [],
+      () => now,
+    );
+    tools.onUpdate({ toolCallId: "c2", name: "Read", status: "pending", rawInput: {} });
+    tools.onUpdate({ toolCallId: "c2" });
+    tools.onUpdate({ toolCallId: "c2", status: "completed", content: [text("x")] });
+    now = 60_000;
+    tools.onUpdate({ toolCallId: "c2" });
+    expect(events.map((e) => e.type)).toEqual(["tool_call", "tool_result"]);
   });
 });

@@ -12,10 +12,17 @@
  * rejects AGENT_SESSION_CLOSED.
  */
 import { type ClientCapabilities, PROTOCOL_VERSION, type SessionConfigOption } from "@agentclientprotocol/sdk";
-import { type AgentSessionProfile, type BackendOpenContext, NaxError, type TranscriptDoc } from "@nathapp/nax-agent";
+import {
+  type AgentSessionProfile,
+  type BackendOpenContext,
+  getLogger,
+  NaxError,
+  type TranscriptDoc,
+} from "@nathapp/nax-agent";
 import {
   buildCapabilityRecord,
   type CapabilityRecord,
+  effortOptionId,
   modeFor,
   modelOptionId,
   offersValue,
@@ -32,7 +39,7 @@ import {
   rpcErrorOf,
 } from "#src/client/errors";
 import { agentGoneError, type LaunchedAgent, type LaunchFn, pickCandidate } from "#src/client/launch";
-import type { ResolvedAcpOptions } from "#src/client/options";
+import type { AcpProcessHooks, ResolvedAcpOptions } from "#src/client/options";
 import { claudeSessionMeta } from "#src/client/pre-approval";
 import { race } from "#src/client/race";
 import type { LaunchCandidate } from "#src/client/registry";
@@ -98,6 +105,7 @@ export async function openAcpSession(
   if (ctx.openSignal.aborted) throw closedDuringOpen(ctx.sessionId);
   const candidate = chooseLaunch(options);
   const launched = launch({ command: candidate.command, args: candidate.args, cwd: ctx.workdir, env: options.env });
+  watchProcess(options.onProcess, launched);
   const link = openConnection(launched.target, handlers);
   void launched.exited.then(() =>
     link.close(new NaxError("The ACP agent process exited", "ACP_AGENT_EXITED", { stage: "acp" })),
@@ -109,6 +117,28 @@ export async function openAcpSession(
     link.close();
     throw err;
   }
+}
+
+/** S4b spec §8: report the agent process to the embedder; a throwing hook is logged, never propagated. */
+function watchProcess(hooks: AcpProcessHooks | undefined, launched: LaunchedAgent): void {
+  const pid = launched.pid;
+  if (hooks === undefined || pid === undefined) return;
+  const ignored = (name: string) => (err: unknown) => {
+    getLogger().warn("acp", `onProcess.${name} threw; ignored`, {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  };
+  const call = (name: "spawned" | "exited"): void => {
+    try {
+      // An async hook's rejection is caught too; the hook is typed void, but async functions satisfy it.
+      const result: unknown = hooks[name]?.(pid);
+      if (result instanceof Promise) result.catch(ignored(name));
+    } catch (err) {
+      ignored(name)(err);
+    }
+  };
+  call("spawned");
+  void launched.exited.then(() => call("exited"));
 }
 
 async function step<T>(o: Opening, label: string, request: Promise<T>): Promise<T> {
@@ -196,22 +226,53 @@ async function sessionSetup(o: Opening): Promise<SessionSetup> {
   return { mcpServers: [server], _meta: { ...meta } };
 }
 
-/** §6.3 step 5: the profile's mode, then the model. Only values the agent offered are set. */
+/** §6.3 step 5: the profile's mode, then the model, then the effort (S4b). Only values the agent offered are set. */
 async function applyConfig(o: Opening, sessionId: string, offered: readonly SessionConfigOption[]): Promise<void> {
+  const afterMode = await applyMode(o, sessionId, offered);
+  const afterModel = await applyModel(o, sessionId, afterMode);
+  await applyEffort(o, sessionId, afterModel);
+}
+
+async function applyMode(
+  o: Opening,
+  sessionId: string,
+  offered: readonly SessionConfigOption[],
+): Promise<readonly SessionConfigOption[]> {
   const mode = modeFor(o.ctx.profile, o.options.entry);
-  if (mode !== undefined && !offersValue(offered, mode.configId, mode.value)) {
+  if (mode === undefined) return offered;
+  if (!offersValue(offered, mode.configId, mode.value)) {
     throw capabilityUnsupported("profile", `the agent does not offer ${mode.configId} "${mode.value}"`);
   }
-  const afterMode =
-    mode === undefined
-      ? offered
-      : ((await step(o, "session/set_config_option", o.link.setConfigOption({ sessionId, ...mode }))).configOptions ??
-        offered);
+  const set = await step(o, "session/set_config_option", o.link.setConfigOption({ sessionId, ...mode }));
+  return set.configOptions ?? offered;
+}
+
+async function applyModel(
+  o: Opening,
+  sessionId: string,
+  offered: readonly SessionConfigOption[],
+): Promise<readonly SessionConfigOption[]> {
   const model = o.options.model;
-  if (model === undefined) return;
-  const configId = modelOptionId(afterMode, model);
+  if (model === undefined) return offered;
+  const configId = modelOptionId(offered, model);
   if (configId === undefined) throw capabilityUnsupported("model", `the agent offers no model option "${model}"`);
-  await step(o, "session/set_config_option", o.link.setConfigOption({ sessionId, configId, value: model }));
+  const set = await step(o, "session/set_config_option", o.link.setConfigOption({ sessionId, configId, value: model }));
+  return set.configOptions ?? offered;
+}
+
+/** S4b spec §6.7: an effort the agent does not offer is skipped with a warning, as acpx does. */
+async function applyEffort(o: Opening, sessionId: string, offered: readonly SessionConfigOption[]): Promise<void> {
+  const effort = o.options.effort;
+  if (effort === undefined) return;
+  const configId = effortOptionId(offered, o.options.agentName, effort);
+  if (configId === undefined) {
+    getLogger().warn("acp", "The agent offers no effort option for this value; effort skipped", {
+      agent: o.options.agentName,
+      effort,
+    });
+    return;
+  }
+  await step(o, "session/set_config_option", o.link.setConfigOption({ sessionId, configId, value: effort }));
 }
 
 function initialDoc(o: Opening, record: CapabilityRecord, agentSessionId: string): TranscriptDoc {
