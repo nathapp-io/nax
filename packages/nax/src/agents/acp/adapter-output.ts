@@ -1,16 +1,14 @@
 /**
- * ACP output helpers — context tool parsing, response extraction, and
- * interaction handler wiring. Extracted from adapter.ts.
+ * ACP output helpers — acpx response extraction and token/cost assembly.
+ * Extracted from adapter.ts; the shared parts moved to agents/ in S4b-1.
  */
 
-import type { ToolDescriptor } from "@/context/engine";
 import type { ITokenUsageMapper, RateCard, TokenUsage } from "../cost";
 import { priceCall } from "../cost";
-import type { AgentRunOptions, InteractionExchange, TurnResult } from "../types";
+import { assembleTurnResult } from "../turn";
+import type { InteractionExchange, TurnResult } from "../types";
 import type { AcpSessionResponse } from "./adapter-session-types";
 import type { SessionTokenUsage } from "./wire-types";
-
-const CONTEXT_TOOL_CALL_PATTERN = /<nax_tool_call\s+name="([^"]+)">\s*([\s\S]*?)\s*<\/nax_tool_call>/i;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Response output helpers
@@ -24,178 +22,6 @@ export function extractOutput(response: { messages: Array<{ role: string; conten
     .join("\n")
     .trim();
 }
-
-export function extractQuestion(output: string): string | null {
-  const text = output.trim();
-  if (!text) return null;
-
-  // @design: BUG-097: Only check the last non-empty line for question marks.
-  // Scanning all sentences caused false positives on code snippets mid-output
-  // containing ?. (optional chaining), ?? (nullish coalescing), or ternary ?.
-  const lines = text.split("\n").filter((l) => l.trim().length > 0);
-  const lastLine = lines.at(-1)?.trim() ?? "";
-
-  // Keyword markers — also scoped to the last line to avoid mid-message false positives
-  const lower = lastLine.toLowerCase();
-  const markers = [
-    "please confirm",
-    "please specify",
-    "please provide",
-    "which would you",
-    "should i ",
-    "do you want",
-    "can you clarify",
-  ];
-
-  const isQuestion = (lastLine.endsWith("?") && lastLine.length > 10) || markers.some((m) => lower.includes(m));
-
-  if (!isQuestion) return null;
-
-  // Return the last two paragraphs so the caller has full context.
-  //
-  // Agents often structure their final turn as:
-  //   <long output: tables, code blocks, AC coverage>
-  //   \n\n
-  //   <conclusion sentence>   ← paragraph[-2]
-  //   \n\n
-  //   <question>              ← paragraph[-1]
-  //
-  // Returning only paragraph[-1] drops the conclusion sentence that explains
-  // WHY the agent is asking — leaving the user without meaningful context.
-  const paragraphs = text.split(/\n\n+/);
-  const questionPara = paragraphs.at(-1)?.trim() ?? lastLine;
-  const contextPara = paragraphs.at(-2)?.trim();
-  return contextPara ? `${contextPara}\n\n${questionPara}` : questionPara;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Context tool helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-export function extractContextToolCall(output: string): { name: string; input?: unknown; error?: string } | null {
-  const match = output.match(CONTEXT_TOOL_CALL_PATTERN);
-  if (!match) return null;
-
-  const [, name, rawInput] = match;
-  const trimmedInput = rawInput.trim();
-  if (!trimmedInput) {
-    return { name, input: {} };
-  }
-
-  try {
-    return { name, input: JSON.parse(trimmedInput) as unknown };
-  } catch (error) {
-    return {
-      name,
-      error: `Invalid JSON tool input: ${error instanceof Error ? error.message : String(error)}`,
-    };
-  }
-}
-
-/**
- * Render a pull tool's JSON Schema as an agent-readable argument list.
- *
- * The descriptors have always carried a full `inputSchema`, but the preamble
- * used to advertise only name + description — so an agent was told
- * `query_neighbor` exists and never told it needs `filePath`. It had to guess
- * the payload, and a guessed `{}` produced an empty result. Rendering the
- * schema is what closes that gap.
- *
- * Kept tolerant of a partial schema (no `properties`, no `required`, a
- * type-less property): a descriptor that omits a field degrades to a coarser
- * line rather than throwing inside prompt assembly.
- */
-/**
- * Build a concrete call payload for the first advertised tool.
- *
- * The preamble used to show a fixed `{"key":"value"}`, which named no real
- * argument — so an agent had to infer the key, and a wrong guess reached the
- * handler as a missing argument. Deriving the example from the descriptor's
- * own schema means the one worked example is always a valid call.
- *
- * Placeholders are typed rather than invented (`"<string>"`, not a fabricated
- * path) so the example can never be mistaken for a real value to send back.
- */
-function renderCallExample(tool: ToolDescriptor): string {
-  const properties = tool.inputSchema.properties;
-  if (typeof properties !== "object" || properties === null) return "{}";
-
-  const entries = Object.entries(properties as Record<string, unknown>);
-  const required = new Set(
-    Array.isArray(tool.inputSchema.required)
-      ? tool.inputSchema.required.filter((name): name is string => typeof name === "string")
-      : [],
-  );
-
-  // Required arguments make the example a valid call; when none are declared,
-  // the first optional one still shows the payload shape.
-  const shown = entries.filter(([name]) => required.has(name));
-  const chosen = shown.length > 0 ? shown : entries.slice(0, 1);
-  if (chosen.length === 0) return "{}";
-
-  const fields = chosen.map(([name, raw]) => {
-    const spec = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
-    const type = typeof spec.type === "string" ? spec.type : "any";
-    const placeholder = type === "number" ? "1" : type === "boolean" ? "true" : `"<${type}>"`;
-    return `"${name}": ${placeholder}`;
-  });
-
-  return `{${fields.join(", ")}}`;
-}
-
-function renderToolArguments(inputSchema: Record<string, unknown>): string {
-  const properties = inputSchema.properties;
-  if (typeof properties !== "object" || properties === null) return "";
-
-  const required = new Set(
-    Array.isArray(inputSchema.required) ? inputSchema.required.filter((name) => typeof name === "string") : [],
-  );
-
-  const lines = Object.entries(properties as Record<string, unknown>).map(([name, raw]) => {
-    const spec = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
-    const type = typeof spec.type === "string" ? spec.type : "any";
-    const necessity = required.has(name) ? "required" : "optional";
-    const description = typeof spec.description === "string" ? `: ${spec.description}` : "";
-    return `  - ${name} (${type}, ${necessity})${description}`;
-  });
-
-  return lines.length > 0 ? `\n  Arguments:\n${lines.join("\n")}` : "";
-}
-
-export function buildContextToolPreamble(options: AgentRunOptions): string {
-  const tools = options.contextPullTools;
-  if (!tools || tools.length === 0 || !options.contextToolRuntime) {
-    return options.prompt;
-  }
-
-  const toolList = tools
-    .map(
-      (tool) =>
-        `- ${tool.name}: ${tool.description} (max ${tool.maxCallsPerSession} calls/session)` +
-        renderToolArguments(tool.inputSchema),
-    )
-    .join("\n");
-
-  const example = tools[0];
-  const exampleCall = example
-    ? `<nax_tool_call name="${example.name}">\n${renderCallExample(example)}\n</nax_tool_call>`
-    : "";
-
-  return `${options.prompt}
-
-## Context Pull Tools
-When you need more repo context, you may request one tool call by replying with exactly:
-${exampleCall}
-
-Pass the arguments listed for the tool you are calling.
-
-Available tools:
-${toolList}
-
-After you receive a <nax_tool_result ...> block, continue the task normally.`;
-}
-
-export { buildRunInteractionHandler } from "../run-interaction-handler";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Turn result assembly (US-001)
@@ -258,45 +84,10 @@ export function deriveTokenUsage(
 }
 
 /**
- * Build a `TurnResult` from the accumulated session-turn bookkeeping.
- * Extracted from `AcpAgentAdapter.sendTurn()` so the timeout transport fact
- * (`timedOut`) is set in exactly one place (US-001 AC1/AC2/AC3).
- *
- * When `timedOut` is true, output is forced to "" regardless of any leftover
- * lastResponse — the wall-clock timeout must not leak partial agent output
- * into the policy layer.
- *
- * US-002: `estimatedCostUsd` is priced from `rateCard.rates` and
- * `pricingSource` reports `rateCard.source`. `exactCostUsd` is untouched by
- * the card — a wire-reported cost passes through unchanged, and the cost
- * middleware is what decides "wire" wins over the card's source.
- *
- * US-002: `rates` is the post-tier, post-fallback `PricingRates` returned
- * by `priceCall`. The field is OMITTED (not undefined, not zeroed) when
- * the accumulated tokens are zero, so the nonzero-usage guard stays visible
- * to the cost subscriber — "did not price" and "priced at zero" stay
- * distinguishable on the result.
+ * acpx wrapper over the shared `assembleTurnResult` (S4b-1, D1-d): reads the
+ * assistant text off the acpx response shape. Deleted with agents/acp/ in S4b-5.
  */
 export function buildTurnResult(input: BuildTurnResultInput): TurnResult {
-  const { lastResponse, totalTokenUsage, totalExactCostUsd, turnCount, interactions, timedOut, rateCard } = input;
-  const output = timedOut ? "" : extractOutput(lastResponse);
-  const hasUsage = totalTokenUsage.inputTokens > 0 || totalTokenUsage.outputTokens > 0;
-  // Single `priceCall` invocation: both `costUsd` and `resolvedRates` come
-  // from the same call so they cannot diverge — the verifiability property
-  // the story names ("recorded rates reproduce recorded cost") would
-  // silently break if tier selection ever grew a side channel.
-  const priced = hasUsage ? priceCall(totalTokenUsage, rateCard.rates) : undefined;
-  return {
-    output,
-    tokenUsage: totalTokenUsage,
-    estimatedCostUsd: priced?.costUsd ?? 0,
-    exactCostUsd: totalExactCostUsd,
-    internalRoundTrips: turnCount,
-    ...(interactions.length > 0 ? { interactions } : {}),
-    timedOut,
-    pricingSource: rateCard.source,
-    // US-002: forward the four per-1M rates that priced the turn. Omitted
-    // when the nonzero-usage guard skipped pricing — see comment above.
-    ...(priced?.resolvedRates !== undefined ? { rates: priced.resolvedRates } : {}),
-  };
+  const { lastResponse, ...rest } = input;
+  return assembleTurnResult({ ...rest, output: extractOutput(lastResponse) });
 }

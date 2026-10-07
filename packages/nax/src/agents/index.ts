@@ -14,7 +14,6 @@ export {
   _spawnClientDeps,
   AcpAgentAdapter,
   buildTurnResult,
-  computeAcpHandle,
   createParseState,
   createSpawnAcpClient,
   finalizeParseState,
@@ -62,6 +61,7 @@ export {
   timeoutRetryShouldRetry,
   trySameAgentRetry,
 } from "./retry";
+export { computeAcpHandle } from "./session-naming";
 export type { ResolvedAgentAssignment } from "./shared";
 export { resolveAgentAssignment } from "./shared";
 export { describeAgentCapabilities, validateAgentFeature, validateAgentForTier } from "./shared/validation";

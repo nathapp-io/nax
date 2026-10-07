@@ -3,16 +3,16 @@
  * naming, and injectable dependencies. Extracted from adapter.ts.
  */
 
-import { createHash } from "node:crypto";
 import type { ProtocolIds, SessionModel } from "@nathapp/nax-agent";
 import type { RateCard } from "@/agents/cost";
 import { resolveRateCard as defaultResolveRateCard } from "@/agents/cost";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import { sleep, which } from "@/utils/bun-deps";
+import { parseAgentError } from "../errors";
+import { throwIfAborted } from "../turn";
 import type { SessionHandle } from "../types";
 import type { AcpClient, AcpClientOptions, AcpSession, AcpSessionResponse } from "./adapter-session-types";
-import { parseAgentError } from "./parse-agent-error";
 import { createSpawnAcpClient } from "./spawn-client";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -83,85 +83,6 @@ export const _fallbackDeps = {
   parseAgentError,
   sleep,
 };
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Abort helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-function createAbortError(signal?: AbortSignal, fallback = "Run aborted"): Error {
-  const reason = signal?.reason;
-  if (reason instanceof Error) {
-    return reason;
-  }
-  if (typeof reason === "string" && reason.length > 0) {
-    return new Error(reason);
-  }
-  return new Error(fallback);
-}
-
-export function throwIfAborted(signal?: AbortSignal, fallback?: string): void {
-  if (signal?.aborted) {
-    throw createAbortError(signal, fallback);
-  }
-}
-
-export async function raceWithAbort<T>(promise: Promise<T>, signal?: AbortSignal, fallback?: string): Promise<T> {
-  if (!signal) {
-    return promise;
-  }
-  if (signal.aborted) {
-    throw createAbortError(signal, fallback);
-  }
-
-  return await new Promise<T>((resolve, reject) => {
-    const onAbort = () => reject(createAbortError(signal, fallback));
-    signal.addEventListener("abort", onAbort, { once: true });
-
-    promise.then(
-      (value) => {
-        signal.removeEventListener("abort", onAbort);
-        resolve(value);
-      },
-      (error) => {
-        signal.removeEventListener("abort", onAbort);
-        reject(error);
-      },
-    );
-  });
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Session naming
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Compute a deterministic ACP session handle.
- *
- * Format: nax-<gitRootHash8>-<featureName>-<storyId>[-<sessionRole>]
- *
- * The workdir hash (first 8 chars of SHA-256) prevents cross-repo and
- * cross-worktree session name collisions. Each git worktree has a distinct
- * root path, so different worktrees of the same repo get different hashes.
- */
-export function computeAcpHandle(
-  workdir: string,
-  featureName?: string,
-  storyId?: string,
-  sessionRole?: string,
-): string {
-  const hash = createHash("sha256").update(workdir).digest("hex").slice(0, 8);
-  const sanitize = (s: string) =>
-    s
-      .replace(/[^a-z0-9]+/gi, "-")
-      .toLowerCase()
-      .replace(/^-+|-+$/g, "");
-
-  const parts = ["nax", hash];
-  if (featureName) parts.push(sanitize(featureName));
-  if (storyId) parts.push(sanitize(storyId));
-  if (sessionRole) parts.push(sanitize(sessionRole));
-  return parts.join("-");
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Session lifecycle functions
@@ -265,18 +186,6 @@ export async function runSessionPrompt(
   }
 
   return { response: winner as AcpSessionResponse, timedOut: false, aborted: false };
-}
-
-/**
- * Explicit log to distinguish a wall-clock timeout from the idle watchdog
- * (fail-stale). Shared by sendTurn's pre-flight deadline check and its
- * per-turn `runSessionPrompt` timeout branch.
- */
-export function warnWallClockTimeout(sessionName: string, timeoutSeconds: number): void {
-  getSafeLogger()?.warn("acp-adapter", "wall-clock timeout exceeded — session terminated", {
-    sessionName,
-    timeoutSeconds,
-  });
 }
 
 /**

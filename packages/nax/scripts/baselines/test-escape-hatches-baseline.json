@@ -691,7 +691,7 @@
     "test/unit/agents/acp/adapter-lifecycle.test.ts": {
       "looseCast": 1
     },
-    "test/unit/agents/acp/parse-agent-error.test.ts": {
+    "test/unit/agents/errors/parse-agent-error.test.ts": {
       "looseCast": 1
     },
     "test/unit/agents/acp/parser.test.ts": {

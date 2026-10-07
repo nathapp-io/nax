@@ -11,26 +11,26 @@
  * interaction opts, the rate card, and the turn deadline.
  */
 
-import type { AdapterInteraction } from "@nathapp/nax-agent";
 import { createTurnDeadline } from "@nathapp/nax-agent";
 import { getSafeLogger } from "@/logger";
 import type { ITokenUsageMapper, RateCard, TokenUsage } from "../cost";
 import { addTokenUsage, estimateCostUsd } from "../cost";
+import {
+  awaitInteractionReply,
+  type ContextToolCall,
+  extractContextToolCall,
+  extractQuestion,
+  type InteractionReplyContext,
+  toContextToolInteraction,
+} from "../interaction";
+import { warnWallClockTimeout } from "../turn";
 import type { InteractionExchange, SendTurnOpts, TurnResult } from "../types";
 import { SessionTurnError } from "../types";
-import {
-  type AcpSessionHandleImpl,
-  ensureAcpSession,
-  raceWithAbort,
-  runSessionPrompt,
-  warnWallClockTimeout,
-} from "./adapter-lifecycle";
-import { buildTurnResult, extractContextToolCall, extractOutput, extractQuestion } from "./adapter-output";
+import { type AcpSessionHandleImpl, ensureAcpSession, runSessionPrompt } from "./adapter-lifecycle";
+import { buildTurnResult, extractOutput } from "./adapter-output";
 import type { AcpSessionResponse } from "./adapter-session-types";
 import type { SessionTokenUsage } from "./wire-types";
 
-const INTERACTION_TIMEOUT_MS = 5 * 60 * 1000; // 5 min for human to respond
-const ABORT_MESSAGE = "Run aborted — shutdown in progress";
 const DEFAULT_MAX_INTERACTIONS = 10;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -122,7 +122,7 @@ type BeginTurnOutcome = { kind: "break" } | { kind: "response"; response: AcpSes
 async function beginTurnIteration(frame: SendTurnFrame, state: SendTurnState): Promise<BeginTurnOutcome> {
   if (frame.turnDeadline.expired()) {
     state.timedOut = true;
-    warnWallClockTimeout(frame.sessionName, frame.timeoutSeconds);
+    warnWallClockTimeout(frame.sessionName, frame.timeoutSeconds, "acp-adapter");
     return { kind: "break" };
   }
   state.turnCount++;
@@ -139,7 +139,7 @@ async function beginTurnIteration(frame: SendTurnFrame, state: SendTurnState): P
 
   if (turnResult.timedOut) {
     state.timedOut = true;
-    warnWallClockTimeout(frame.sessionName, frame.timeoutSeconds);
+    warnWallClockTimeout(frame.sessionName, frame.timeoutSeconds, "acp-adapter");
     return { kind: "break" };
   }
   if (turnResult.aborted) {
@@ -208,58 +208,22 @@ function accumulateUsage(frame: SendTurnFrame, state: SendTurnState, response: A
   }
 }
 
-type InteractionReply = { kind: "answered"; answer: string } | { kind: "aborted" } | { kind: "no-reply" };
-
-/**
- * The interaction race shared by the context-tool and question branches:
- * handler reply vs. the fixed human-response timeout, with the abort check
- * and the failure warn. `warnSuffix` completes the warn message verbatim
- * (" for context-tool: ..." vs ": ...").
- */
-async function awaitInteractionReply(
-  frame: SendTurnFrame,
-  interaction: AdapterInteraction,
-  warnSuffix: string,
-): Promise<InteractionReply> {
-  let timeoutId: ReturnType<typeof setTimeout> | undefined;
-  try {
-    const response = await Promise.race([
-      raceWithAbort(frame.opts.interactionHandler.onInteraction(interaction), frame.opts.signal, ABORT_MESSAGE),
-      new Promise<null>((resolve) => {
-        timeoutId = setTimeout(() => resolve(null), INTERACTION_TIMEOUT_MS);
-      }),
-    ]);
-    if (response) {
-      return { kind: "answered", answer: response.answer };
-    }
-  } catch (err) {
-    if (frame.opts.signal?.aborted) {
-      return { kind: "aborted" };
-    }
-    getSafeLogger()?.warn(
-      "acp-adapter",
-      `InteractionHandler.onInteraction failed${warnSuffix}${err instanceof Error ? err.message : String(err)}`,
-    );
-  } finally {
-    clearTimeout(timeoutId);
-  }
-  return { kind: "no-reply" };
+function replyContext(frame: SendTurnFrame): InteractionReplyContext {
+  return { interactionHandler: frame.opts.interactionHandler, signal: frame.opts.signal, stage: "acp-adapter" };
 }
 
 async function handleContextToolCall(
   frame: SendTurnFrame,
   state: SendTurnState,
-  toolCall: { name: string; input?: unknown; error?: string },
+  toolCall: ContextToolCall,
 ): Promise<boolean> {
-  const interaction: AdapterInteraction = toolCall.error
-    ? { kind: "context-tool", name: toolCall.name, error: toolCall.error }
-    : { kind: "context-tool", name: toolCall.name, input: toolCall.input };
+  const interaction = toContextToolInteraction(toolCall);
 
   // BUG-18 — this path previously raced only against `signal` (abort),
   // with no deadline: a hung interaction handler (e.g. a black-holing
   // webhook URL) stalled the story indefinitely. Mirrors the `question`
   // block below, which already races against INTERACTION_TIMEOUT_MS.
-  const reply = await awaitInteractionReply(frame, interaction, " for context-tool: ");
+  const reply = await awaitInteractionReply(replyContext(frame), interaction, " for context-tool: ");
   if (reply.kind === "answered") {
     state.currentPrompt = reply.answer;
     return true;
@@ -271,7 +235,7 @@ async function handleContextToolCall(
 }
 
 async function handleQuestion(frame: SendTurnFrame, state: SendTurnState, question: string): Promise<boolean> {
-  const reply = await awaitInteractionReply(frame, { kind: "question", text: question }, ": ");
+  const reply = await awaitInteractionReply(replyContext(frame), { kind: "question", text: question }, ": ");
   if (reply.kind === "answered") {
     state.interactions.push({ turnIndex: state.turnCount, question, reply: reply.answer });
     state.currentPrompt = reply.answer;
