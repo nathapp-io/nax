@@ -14,6 +14,7 @@
 import type { ProtocolIds } from "@nathapp/nax-agent";
 import { getSafeLogger } from "@/logger";
 import type { ITokenUsageMapper } from "../cost";
+import { raceWithAbort, throwIfAborted } from "../turn";
 import type {
   AgentAdapter,
   AgentCapabilities,
@@ -27,14 +28,7 @@ import type {
 } from "../types";
 import { closePhysicalSession as closePhysicalSessionImpl } from "./adapter-close-physical";
 import { runCompleteFlow } from "./adapter-complete-flow";
-import {
-  _acpAdapterDeps,
-  AcpSessionHandleImpl,
-  closeAcpSession,
-  ensureAcpSession,
-  raceWithAbort,
-  throwIfAborted,
-} from "./adapter-lifecycle";
+import { _acpAdapterDeps, AcpSessionHandleImpl, closeAcpSession, ensureAcpSession } from "./adapter-lifecycle";
 import { buildSendTurnFrame, initialSendTurnState, runTurnLoop, zeroCostAbortedResult } from "./adapter-send-turn";
 import { resolveRegistryEntry } from "./agent-entries";
 import { defaultAcpTokenUsageMapper } from "./token-mapper";

@@ -9,6 +9,7 @@ import { resolveRateCard as defaultResolveRateCard } from "@/agents/cost";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import { sleep, which } from "@/utils/bun-deps";
+import { throwIfAborted } from "../turn";
 import type { SessionHandle } from "../types";
 import type { AcpClient, AcpClientOptions, AcpSession, AcpSessionResponse } from "./adapter-session-types";
 import { parseAgentError } from "./parse-agent-error";
@@ -82,52 +83,6 @@ export const _fallbackDeps = {
   parseAgentError,
   sleep,
 };
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Abort helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-function createAbortError(signal?: AbortSignal, fallback = "Run aborted"): Error {
-  const reason = signal?.reason;
-  if (reason instanceof Error) {
-    return reason;
-  }
-  if (typeof reason === "string" && reason.length > 0) {
-    return new Error(reason);
-  }
-  return new Error(fallback);
-}
-
-export function throwIfAborted(signal?: AbortSignal, fallback?: string): void {
-  if (signal?.aborted) {
-    throw createAbortError(signal, fallback);
-  }
-}
-
-export async function raceWithAbort<T>(promise: Promise<T>, signal?: AbortSignal, fallback?: string): Promise<T> {
-  if (!signal) {
-    return promise;
-  }
-  if (signal.aborted) {
-    throw createAbortError(signal, fallback);
-  }
-
-  return await new Promise<T>((resolve, reject) => {
-    const onAbort = () => reject(createAbortError(signal, fallback));
-    signal.addEventListener("abort", onAbort, { once: true });
-
-    promise.then(
-      (value) => {
-        signal.removeEventListener("abort", onAbort);
-        resolve(value);
-      },
-      (error) => {
-        signal.removeEventListener("abort", onAbort);
-        reject(error);
-      },
-    );
-  });
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Session lifecycle functions

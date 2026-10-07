@@ -17,12 +17,12 @@ import { getSafeLogger } from "@/logger";
 import type { ITokenUsageMapper, RateCard, TokenUsage } from "../cost";
 import { addTokenUsage, estimateCostUsd } from "../cost";
 import { extractContextToolCall, extractQuestion } from "../interaction";
+import { raceWithAbort } from "../turn";
 import type { InteractionExchange, SendTurnOpts, TurnResult } from "../types";
 import { SessionTurnError } from "../types";
 import {
   type AcpSessionHandleImpl,
   ensureAcpSession,
-  raceWithAbort,
   runSessionPrompt,
   warnWallClockTimeout,
 } from "./adapter-lifecycle";
