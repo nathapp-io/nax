@@ -133,6 +133,39 @@ describe("AcpSdkAgentAdapter over a real agent process", () => {
     await waitForCondition(() => firstPid !== undefined && !isProcessAlive(firstPid), 5_000);
     await adapter.closeSession(handle);
   }, 30_000);
+
+  test("onPidSpawned/onPidExited fire for the first process and for the reconnect's process", async () => {
+    _acpSdkDeps.acpBackend = fakeAcpBackend(
+      {
+        capabilities: { sessionCapabilities: { resume: {} } },
+        turns: [
+          {
+            steps: [
+              { kind: "text", text: "partial" },
+              { kind: "exit", code: 7 },
+            ],
+          },
+        ],
+        relaunch: { turns: [{ steps: [{ kind: "text", text: "back" }] }] },
+      },
+      record,
+    );
+    const spawned: number[] = [];
+    const exited: number[] = [];
+    const adapter = new AcpSdkAgentAdapter("claude");
+    const handle = await adapter.openSession("nax-pids", {
+      ...opts(),
+      onPidSpawned: (pid) => spawned.push(pid),
+      onPidExited: (pid) => exited.push(pid),
+    });
+    await adapter.sendTurn(handle, "x", { interactionHandler: NO_OP_INTERACTION_HANDLER }).catch(() => undefined);
+    const result = await adapter.sendTurn(handle, "y", { interactionHandler: NO_OP_INTERACTION_HANDLER });
+    expect(result.output).toBe("back");
+    await adapter.closeSession(handle);
+    expect(new Set(spawned).size).toBe(2);
+    expect(spawned).toEqual(fakeStartPids(record));
+    await waitForCondition(() => exited.length === 2, 5_000);
+  }, 30_000);
 });
 
 describe("AcpSdkAgentAdapter without a process", () => {
