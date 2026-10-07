@@ -23,14 +23,10 @@ import {
   type InteractionReplyContext,
   toContextToolInteraction,
 } from "../interaction";
+import { warnWallClockTimeout } from "../turn";
 import type { InteractionExchange, SendTurnOpts, TurnResult } from "../types";
 import { SessionTurnError } from "../types";
-import {
-  type AcpSessionHandleImpl,
-  ensureAcpSession,
-  runSessionPrompt,
-  warnWallClockTimeout,
-} from "./adapter-lifecycle";
+import { type AcpSessionHandleImpl, ensureAcpSession, runSessionPrompt } from "./adapter-lifecycle";
 import { buildTurnResult, extractOutput } from "./adapter-output";
 import type { AcpSessionResponse } from "./adapter-session-types";
 import type { SessionTokenUsage } from "./wire-types";
@@ -126,7 +122,7 @@ type BeginTurnOutcome = { kind: "break" } | { kind: "response"; response: AcpSes
 async function beginTurnIteration(frame: SendTurnFrame, state: SendTurnState): Promise<BeginTurnOutcome> {
   if (frame.turnDeadline.expired()) {
     state.timedOut = true;
-    warnWallClockTimeout(frame.sessionName, frame.timeoutSeconds);
+    warnWallClockTimeout(frame.sessionName, frame.timeoutSeconds, "acp-adapter");
     return { kind: "break" };
   }
   state.turnCount++;
@@ -143,7 +139,7 @@ async function beginTurnIteration(frame: SendTurnFrame, state: SendTurnState): P
 
   if (turnResult.timedOut) {
     state.timedOut = true;
-    warnWallClockTimeout(frame.sessionName, frame.timeoutSeconds);
+    warnWallClockTimeout(frame.sessionName, frame.timeoutSeconds, "acp-adapter");
     return { kind: "break" };
   }
   if (turnResult.aborted) {
