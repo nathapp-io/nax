@@ -6,7 +6,9 @@
  * the original "CLI compare options and contestant pre-flight" story.
  */
 
-import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, spyOn } from "bun:test";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { assertNaxError, makeNaxConfig, makeSpawn } from "@test/helpers";
 import {
   assertCompareAgentExclusive,
@@ -156,6 +158,44 @@ describe("validateContestants", () => {
         },
       }),
     ).rejects.toThrow(boom);
+  });
+
+  // S4b-2: the brief's transport-routing tests drive validateContestants with
+  // only `isInstalled`, so loadProfile falls back to the real
+  // _preflightDeps.loadProfile against projectRoot — which needs the profile
+  // fixture ("cross-agent-pi" → agent "pi") materialised on disk.
+  describe("S4b-2 transport routing", () => {
+    const profileDir = join(projectRoot, ".nax", "profiles");
+
+    beforeAll(() => {
+      mkdirSync(profileDir, { recursive: true });
+      writeFileSync(join(profileDir, "cross-agent-pi.json"), JSON.stringify({ agent: { default: "pi" } }), "utf8");
+    });
+
+    afterAll(() => {
+      rmSync(projectRoot, { recursive: true, force: true });
+    });
+
+    it("isInstalled is asked with the contestant's transport", async () => {
+      const seen: string[] = [];
+      await validateContestants(
+        ["cross-agent-pi"],
+        projectRoot,
+        {
+          isInstalled: (agent, transport) => {
+            seen.push(`${agent}:${transport}`);
+            return true;
+          },
+        },
+        "sdk",
+      );
+      expect(seen).toEqual(["pi:sdk"]);
+    });
+
+    it("an async isInstalled answer is honoured", async () => {
+      const result = await validateContestants(["cross-agent-pi"], projectRoot, { isInstalled: async () => false });
+      expect(result.errors).toMatchObject([{ reason: "dnf-not-installed" }]);
+    });
   });
 });
 

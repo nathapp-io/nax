@@ -42,7 +42,7 @@ export type {
   IAgentManager,
   RunAsSessionOpts,
 } from "./manager-types";
-export { checkAgentHealth, getAllAgentNames, getInstalledAgents, KNOWN_AGENT_NAMES } from "./registry";
+export { acpAdapterFor, checkAgentHealth, getAllAgentNames, getInstalledAgents, KNOWN_AGENT_NAMES } from "./registry";
 export type {
   RetryContext,
   RetryDecision,

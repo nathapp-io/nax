@@ -49,9 +49,10 @@
  *    vendored seccomp binaries and `srt-win.exe` relative to its own files,
  *    which a bundle would not carry.
  *
- * 4. `@nathapp/nax-agent` is bundled, never installed: nax lists it only as a
- *    `workspace:*` devDependency, and declares every runtime dependency of
- *    nax-agent itself (scripts/lib/agent-bundling.ts).
+ * 4. `@nathapp/nax-agent` and `@nathapp/nax-agent-acp` are bundled, never
+ *    installed: nax lists each only as a `workspace:*` devDependency, and
+ *    declares every runtime dependency of each itself
+ *    (scripts/lib/agent-bundling.ts).
  *
  * Usage:
  *   bun scripts/check-bundle-externals.ts
@@ -62,7 +63,7 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { checkAgentBundling } from "./lib/agent-bundling";
+import { checkAcpBundling, checkAgentBundling } from "./lib/agent-bundling";
 
 const REQUIRED_EXTERNAL = '--external "@nathapp/nax-ai"';
 const REQUIRED_SANDBOX_EXTERNAL = '--external "@anthropic-ai/sandbox-runtime"';
@@ -119,11 +120,14 @@ if (!existsSync(STUB_ENTRY)) {
 const agentPkg = JSON.parse(readFileSync(join(import.meta.dir, "..", "..", "nax-agent", "package.json"), "utf8"));
 failures.push(...checkAgentBundling(pkg, agentPkg));
 
+const acpPkg = JSON.parse(readFileSync(join(import.meta.dir, "..", "..", "nax-agent-acp", "package.json"), "utf8"));
+failures.push(...checkAcpBundling(pkg, acpPkg));
+
 if (failures.length > 0) {
   for (const f of failures) console.error(`check-bundle-externals: ${f}\n`);
   process.exit(1);
 }
 
 console.log(
-  "check-bundle-externals: nax-ai and sandbox-runtime stay external; react-devtools-core resolves to the stub; nax-agent is bundled",
+  "check-bundle-externals: nax-ai and sandbox-runtime stay external; react-devtools-core resolves to the stub; nax-agent and nax-agent-acp are bundled",
 );

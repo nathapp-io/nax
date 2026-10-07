@@ -15,6 +15,7 @@ import { makeNaxConfig } from "@test/helpers";
 import { KNOWN_AGENT_NAMES } from "@/agents";
 import { ACP_ADAPTER_NAMES } from "@/agents/acp";
 import { _acpAdapterDeps } from "@/agents/acp/adapter";
+import { _acpSdkDeps } from "@/agents/acp-sdk";
 import { _cliAgentsDeps, agentsListCommand } from "@/cli/agents";
 import { DEFAULT_CONFIG } from "@/config";
 
@@ -83,5 +84,24 @@ describe("agentsListCommand (US-005 AC8: listing driven by ACP_ADAPTER_NAMES)", 
     // registry still names it (so context-generation and precheck loops
     // that walk KNOWN_AGENT_NAMES keep working).
     expect(KNOWN_AGENT_NAMES).toContain("aider");
+  });
+
+  test("S4b-2: transport sdk lists the same agents through the SDK adapter", async () => {
+    const original = _acpSdkDeps.isAgentLaunchable;
+    _acpSdkDeps.isAgentLaunchable = (agent) => agent === "claude";
+    try {
+      const config = makeNaxConfig({ agent: { default: "claude", acp: { transport: "sdk" } } });
+      await agentsListCommand(config, "/tmp/workdir");
+      const flat = captured
+        .map((entry) => entry.args.map((a) => (typeof a === "string" ? a : "")).join(" "))
+        .join("\n");
+      const claudeRow = flat.split("\n").find((line) => line.includes("Claude Code (ACP)"));
+      expect(claudeRow).toContain("installed");
+      const codexRow = flat.split("\n").find((line) => line.includes("OpenAI Codex (ACP)"));
+      expect(codexRow).toContain("unavailable");
+      expect(flat).not.toContain("ACP Agent");
+    } finally {
+      _acpSdkDeps.isAgentLaunchable = original;
+    }
   });
 });

@@ -116,6 +116,8 @@ The folder is `agents/acp-sdk/` while both transports exist. It is renamed to `a
 | `open-context.ts` | Builds `BackendOpenContext` and the `acpBackend` options from `OpenSessionOpts` (§6.1). | `profile-map`, `ask-port` |
 | `profile-map.ts` | Pure: `ResolvedPermissions.mode` + agent name -> ACP profile (§6.4). | none |
 | `ask-port.ts` | nax's `SessionAskPort` (§6.3). | `InteractionHandler`, logger |
+| `session.ts` | One session: open with the crash-leftover policy, re-open, close; `_acpSdkDeps`. | `open-context`, `ask-port`, `turn-slot`, `stream-bridge`, `agents/cost` |
+| `turn-slot.ts` | The running turn, read by the backend context and the ask port. | `stream-bridge` |
 | `turn-loop.ts` | The `adapter-send-turn.ts` loop with the acpx calls swapped for `opened.adapter.sendTurn`: the deadline, question and context-tool interactions, the shared budget, mid-turn NO_SESSION recovery, `promptRetries`, and one aggregated `TurnResult` (§6.2). | `stream-bridge`, `failure-map`, `pricing` |
 | `stream-bridge.ts` | Per backend turn: maps `TurnEvent`s to the `AgentStreamEvent` sequence the acpx client emits today (§6.2.1), writes tool audit (§7.4), collects usage and spend, and tracks whether output or a tool call has happened. | tool-audit sink |
 | `pricing.ts` | `estimatedCostUsd` from the rate card; `exactCostUsd` from the reported cost (§7.3). | `agents/cost` |
@@ -299,7 +301,7 @@ The loop is the `adapter-send-turn.ts` loop with the transport swapped. Concrete
 - The model spec string is parsed by the moved `agents/model-effort.ts`.
 - `model` goes to `acpBackend({ model })`.
   - The backend requires an exact match with an offered config value (`open.ts`, `modelOptionId`).
-  - S4b-0 check (g) confirms that nax's Claude model strings and tier defaults match the values `claude-agent-acp` offers. If they don't, a mapping table in `model-effort.ts` is added.
+  - Probed 2026-10-07 against claude-agent-acp 0.85.1: offered `default, sonnet, haiku, opus, fable`; nax's tier defaults match verbatim; no mapping table.
 - The effort suffix goes to the new `effort` option (§8).
   - That option sets the thought-level config option, falling back to `EFFORT_OPTION_BY_AGENT`.
   - When the agent doesn't offer it, effort is skipped with a warning, as today.
@@ -344,6 +346,8 @@ The loop is the `adapter-send-turn.ts` loop with the transport swapped. Concrete
 | anything else | `fail-unknown` | no | none |
 
 The cancel cause is set on the reason object by whoever aborts, and is never inferred from a stop reason. The plan's parity tests take each "Today" cell from the acpx unit suite, so any row that turns out to differ is caught before deletion.
+
+Run abort: acpx returned a zero-output TurnResult from this path; the sdk transport throws as the table says (S4b-2 D2-c). S4b-3's parity tests confirm or amend this row before the flip.
 
 ### 7.2 Kept running logic (B7)
 
@@ -464,6 +468,7 @@ Each slice is one PR that leaves main green. Check gates that every slice must k
 5. **Questions may also arrive through ACP elicitation**, routed to the same handler and budget.
 6. **`closePhysicalSession` for a handle this adapter instance never opened is a no-op.** acpx could close a named session from a fresh client.
 7. **`acpx` is no longer required on PATH.** Each agent's ACP launcher is required instead (S4 §6.10). With only `npx` available, the first run downloads the launcher inside the startup deadline, and the precheck warns.
+8. **A configured model id must be one the agent offers verbatim** (for Claude: `default`, `sonnet`, `haiku`, `opus`, `fable`). Any other id fails the open with `AGENT_SESSION_CAPABILITY_UNSUPPORTED`; acpx passed it through and Claude's adapter resolved it fuzzily.
 
 ## 12. Risks
 
@@ -471,7 +476,7 @@ Each slice is one PR that leaves main green. Check gates that every slice must k
 |---|---|
 | Claude sends no structured rate-limit signal | S4b-0 (a). Fallback: `TURN_FAILED` maps to `fail-adapter-error`, recorded as a known limitation; no new code is added |
 | The watchdog cancels a long tool call for lack of activity | S4b-0 (f); an additive tool-progress event if needed |
-| Model string mismatch fails every open | S4b-0 (g); a mapping table in `model-effort.ts` |
+| Model string mismatch fails every open | Probed in S4b-2 (D2-a): tier defaults match; non-alias ids are behaviour change 8 |
 | Spawn latency or process count of throwaway `complete()` calls | Parity with acpx's throwaway one-shots; latency measured in the smoke; warm process and cap deferred |
 | Parity gaps hidden by the rewrite | §9 parity tests taken from the acpx suite, and integration tests on both transports, before the flip |
 | `promptRetries` repeating side effects | Retry only before any visible output or tool call (§7.2) |

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fail if any file under src/agents/{acp,native-agent}/ reads NaxConfig or CompleteConfig from complete() options,
+# Fail if any file under src/agents/{acp,acp-sdk,native-agent}/ reads NaxConfig or CompleteConfig from complete() options,
 # or imports NaxConfig / DEFAULT_CONFIG / config loader directly.
 # This enforces the adapter boundary: adapters receive a resolved ModelDef, not raw NaxConfig.
 #
@@ -8,7 +8,7 @@
 set -euo pipefail
 
 # src/agents/native/ moved to packages/nax-agent (S1-5); check-package-boundaries keeps it free of nax.
-scan_dirs="src/agents/acp/ src/agents/native-agent/"
+scan_dirs="src/agents/acp/ src/agents/acp-sdk/ src/agents/native-agent/"
 
 # Block direct NaxConfig / CompleteConfig / DEFAULT_CONFIG imports (structural config reads)
 banned_imports=$(grep -r "import.*\(NaxConfig\|CompleteConfig\|DEFAULT_CONFIG\)" $scan_dirs --include="*.ts" 2>/dev/null || true)

@@ -99,6 +99,25 @@ describe("AgentConfigSchema", () => {
     expect(() => NaxConfigSchema.parse({ agent: { acp: { promptRetries: 6 } } })).toThrow();
   });
 
+  test("agent.acp.transport defaults to acpx", () => {
+    const result = NaxConfigSchema.parse({});
+    expect(result.agent?.acp?.transport).toBe("acpx");
+  });
+
+  test("agent.acp.transport accepts sdk and keeps the other acp defaults", () => {
+    const result = NaxConfigSchema.parse({ agent: { acp: { transport: "sdk" } } });
+    expect(result.agent?.acp).toEqual({
+      transport: "sdk",
+      promptRetries: 0,
+      trackedSpawnDeadlineMs: 10_000,
+      trackedSpawnStartupDeadlineMs: 30_000,
+    });
+  });
+
+  test("agent.acp.transport rejects an unknown transport", () => {
+    expect(() => NaxConfigSchema.parse({ agent: { acp: { transport: "acp" } } })).toThrow();
+  });
+
   test("agent.idleWatchdog defaults to enabled", () => {
     const result = NaxConfigSchema.parse({});
     expect(result.agent?.idleWatchdog?.enabled).toBe(true);

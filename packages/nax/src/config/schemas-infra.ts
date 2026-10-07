@@ -5,7 +5,7 @@
  */
 
 import { z } from "zod";
-import { DEFAULT_AGENT_NAME, DEFAULT_AGENT_PROTOCOL } from "./agent-defaults";
+import { DEFAULT_ACP_TRANSPORT, DEFAULT_AGENT_NAME, DEFAULT_AGENT_PROTOCOL } from "./agent-defaults";
 import { ConfiguredModelSchema, ModelTierSchema, ProviderCatalogOverrideSchema } from "./schemas-model";
 
 export const PlanConfigSchema = z.object({
@@ -320,6 +320,12 @@ export const AgentSpinBreakerConfigSchema = z
   });
 
 const AgentAcpConfigSchema = z.object({
+  /**
+   * S4b development key: "acpx" (default) drives ACP agents through the acpx
+   * CLI, "sdk" through @nathapp/nax-agent-acp. The sdk transport is incomplete
+   * until S4b-3 (no complete(), no promptRetries).
+   */
+  transport: z.enum(["acpx", "sdk"]).default(DEFAULT_ACP_TRANSPORT),
   promptRetries: z.number().int().min(0).max(5).default(0),
   /**
    * trackedSpawn hard deadline (ms) for teardown ops — `sessions close`,
@@ -401,6 +407,7 @@ export const AgentConfigSchema = z.object({
     rebuildContext: true,
   }),
   acp: AgentAcpConfigSchema.default({
+    transport: DEFAULT_ACP_TRANSPORT,
     promptRetries: 0,
     trackedSpawnDeadlineMs: 10_000,
     trackedSpawnStartupDeadlineMs: 30_000,

@@ -12,8 +12,9 @@ import { _clientDeps, _resetNativeClient } from "@nathapp/nax-agent/internal";
 import type { Client } from "@nathapp/nax-ai";
 import { makeNaxConfig } from "@test/helpers";
 import { AcpAgentAdapter } from "@/agents/acp/adapter";
+import { AcpSdkAgentAdapter } from "@/agents/acp-sdk";
 import { NativeAgentAdapter } from "@/agents/native-agent";
-import { createAgentRegistry, getAllAgents, KNOWN_AGENT_NAMES } from "@/agents/registry";
+import { acpAdapterFor, createAgentRegistry, getAllAgents, KNOWN_AGENT_NAMES } from "@/agents/registry";
 import type { ProviderCatalogOverride } from "@/config/schema-types";
 
 const REAL_BUILD = _clientDeps.build;
@@ -68,6 +69,24 @@ describe("registry discrimination", () => {
   test("the native adapter reports no binary, so nothing tries to spawn it", () => {
     const native = getAllAgents().find((a) => a.name === "native");
     expect(native?.binary).toBe("");
+  });
+});
+
+describe("ACP transport routing (S4b spec §5.3)", () => {
+  test("acpAdapterFor picks the adapter by transport", () => {
+    expect(acpAdapterFor("claude", "acpx")).toBeInstanceOf(AcpAgentAdapter);
+    expect(acpAdapterFor("claude", "sdk")).toBeInstanceOf(AcpSdkAgentAdapter);
+  });
+
+  test("createAgentRegistry routes ACP agents by agent.acp.transport, native unchanged", () => {
+    const sdk = createAgentRegistry(makeNaxConfig({ agent: { acp: { transport: "sdk" } } }));
+    expect(sdk.getAgent("claude")).toBeInstanceOf(AcpSdkAgentAdapter);
+    expect(sdk.getAgent("native")).toBeInstanceOf(NativeAgentAdapter);
+    expect(createAgentRegistry(makeNaxConfig({})).getAgent("claude")).toBeInstanceOf(AcpAgentAdapter);
+  });
+
+  test("the config-less listings use the default transport (D2-n)", () => {
+    expect(getAllAgents().find((a) => a.name === "claude")).toBeInstanceOf(AcpAgentAdapter);
   });
 });
 

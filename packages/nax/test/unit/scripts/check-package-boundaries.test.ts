@@ -354,16 +354,27 @@ describe("nax-agent-acp", () => {
 
   test("no other package may import nax-agent-acp before S4b", () => {
     acp();
-    write("packages/nax/src/bad.ts", 'import { c } from "@nathapp/nax-agent-acp/client";\n');
+    write("packages/nax/src/bad.ts", 'import { c } from "@nathapp/nax-agent-acp/server";\n');
     write("packages/nax-agent/src/bad.ts", 'import { c } from "@nathapp/nax-agent-acp/client";\n');
     write("packages/nax-ai/src/bad.ts", 'import { c } from "@nathapp/nax-agent-acp/client";\n');
     write("packages/test-kit/src/bun/bad.ts", 'import { c } from "@nathapp/nax-agent-acp/client";\n');
     // Package directories are scanned in code-point order: nax, nax-agent, nax-agent-acp, nax-ai, ..., test-kit.
     expect(whys()).toEqual([
-      "packages/nax/src/bad.ts @nathapp/nax-agent-acp/client nax does not depend on nax-agent-acp until S4b",
+      "packages/nax/src/bad.ts @nathapp/nax-agent-acp/server only @nathapp/nax-agent-acp/client",
       "packages/nax-agent/src/bad.ts @nathapp/nax-agent-acp/client nax-agent imports nax-agent-acp",
       "packages/nax-ai/src/bad.ts @nathapp/nax-agent-acp/client nax-ai imports @nathapp/nax-agent-acp",
       "packages/test-kit/src/bun/bad.ts @nathapp/nax-agent-acp/client @nathapp/nax-test-kit imports @nathapp/nax-agent-acp",
     ]);
+  });
+
+  test("nax may import nax-agent-acp through ./client only (S4b-2)", () => {
+    acp();
+    write(
+      "packages/nax/src/ok-acp.ts",
+      'import { acpBackend } from "@nathapp/nax-agent-acp/client";\nimport type { AcpAgentName } from "@nathapp/nax-agent-acp/client";\n',
+    );
+    write("packages/nax/test/ok-acp.test.ts", 'import { acpBackend } from "@nathapp/nax-agent-acp/client";\n');
+    write("packages/nax/src/bad-acp.ts", 'import { x } from "@nathapp/nax-agent-acp";\n');
+    expect(whys()).toEqual(["packages/nax/src/bad-acp.ts @nathapp/nax-agent-acp only @nathapp/nax-agent-acp/client"]);
   });
 });
