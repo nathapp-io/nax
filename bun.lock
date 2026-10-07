@@ -10,7 +10,7 @@
     },
     "packages/nax": {
       "name": "@nathapp/nax",
-      "version": "0.83.3",
+      "version": "0.83.4",
       "bin": {
         "nax": "./dist/nax.js",
       },
@@ -40,7 +40,7 @@
     },
     "packages/nax-agent": {
       "name": "@nathapp/nax-agent",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "dependencies": {
         "@anthropic-ai/sandbox-runtime": "0.0.77",
         "@nathapp/nax-ai": "0.1.16",
@@ -58,7 +58,7 @@
     },
     "packages/nax-agent-acp": {
       "name": "@nathapp/nax-agent-acp",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "dependencies": {
         "@agentclientprotocol/sdk": "~1.7.0",
         "@modelcontextprotocol/sdk": "^1.30.0",
