@@ -134,7 +134,7 @@ These move out of `agents/acp/` in S4b-1 with their tests, with no behaviour cha
 | `buildContextToolPreamble` | `adapter-output.ts:165` | `agents/tool-preamble.ts` (its consumer) |
 | the interaction-reply helpers used by the loop (`awaitInteractionReply` and the context-tool call shaping in `adapter-send-turn.ts`) | `adapter-send-turn.ts` | `agents/interaction/turn-interactions.ts` |
 | `createTurnDeadline` and the `timedOut` result builder | `adapter-send-turn.ts` / `adapter-output.ts:280-` | `agents/turn/turn-deadline.ts` |
-| the model-spec effort parsing (`spawn-client.ts:76-83`) and `EFFORT_OPTION_BY_AGENT` | `spawn-client.ts`, `reasoning-effort.ts` | `agents/model-effort.ts` |
+| the model-spec effort parsing (`spawn-client.ts:76-83`) and `EFFORT_OPTION_BY_AGENT` | `spawn-client.ts`, `reasoning-effort.ts` | **Not moved in S4b-1 (ruling D1-b, 2026-10-07).** The parsing is `parseModelSpec` from `@nathapp/nax-agent`, which both transports can call directly. nax-agent-acp keeps its own copy of the fallback names (S4b-0), and nax's `EFFORT_OPTION_BY_AGENT` is read only by the acpx `acpx set` path, so it is deleted in S4b-5. `agents/model-effort.ts` is created in S4b-2 only if the model-alias probe needs a mapping table (§6.7). |
 | `parseAgentError`, `classifyParsedAgentError` | `parse-agent-error.ts` | `agents/errors/parse-agent-error.ts` (used by `complete-exception-classifier.ts` for every adapter) |
 | the `buildRunInteractionHandler` re-export | `adapter-output.ts:198` | removed; callers import `agents/run-interaction-handler.ts` |
 
