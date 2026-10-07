@@ -161,10 +161,28 @@ describe("AcpSdkAgentAdapter without a process", () => {
     });
   });
 
-  test("isInstalled asks whether the agent's ACP launcher resolves", async () => {
-    _acpSdkDeps.isAgentLaunchable = (agent) => agent === "claude";
-    expect(await new AcpSdkAgentAdapter("claude").isInstalled()).toBe(true);
-    expect(await new AcpSdkAgentAdapter("codex").isInstalled()).toBe(false);
+  describe("isInstalled and launchNote (spec §6.8, D3-k)", () => {
+    test.each([
+      ["local", true],
+      ["npx", true],
+      [undefined, false],
+    ] as const)("launch candidate %p -> installed %p", async (kind, installed) => {
+      _acpSdkDeps.launchCandidateKind = () => kind;
+      expect(await new AcpSdkAgentAdapter("claude").isInstalled()).toBe(installed);
+    });
+
+    test("an npx-only launcher has a launch note; a local one has none", () => {
+      _acpSdkDeps.launchCandidateKind = () => "npx";
+      expect(new AcpSdkAgentAdapter("claude").launchNote()).toContain("npx");
+      _acpSdkDeps.launchCandidateKind = () => "local";
+      expect(new AcpSdkAgentAdapter("claude").launchNote()).toBeUndefined();
+    });
+
+    test("aider has no launcher and no note", async () => {
+      const adapter = new AcpSdkAgentAdapter("aider");
+      expect(await adapter.isInstalled()).toBe(false);
+      expect(adapter.launchNote()).toBeUndefined();
+    });
   });
 
   test("identity rows match the entries", () => {

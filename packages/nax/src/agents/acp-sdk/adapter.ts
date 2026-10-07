@@ -65,7 +65,13 @@ export class AcpSdkAgentAdapter implements AgentAdapter {
 
   /** True when nax-agent-acp finds a launch candidate for the agent, the npx fallback included (spec §6.8). */
   async isInstalled(): Promise<boolean> {
-    return this.entry !== undefined && _acpSdkDeps.isAgentLaunchable(this.entry.agent);
+    return this.entry !== undefined && _acpSdkDeps.launchCandidateKind(this.entry.agent) !== undefined;
+  }
+
+  /** Spec §6.8, D3-k: the run's install check warns when only the npx fallback resolves. */
+  launchNote(): string | undefined {
+    if (this.entry === undefined || _acpSdkDeps.launchCandidateKind(this.entry.agent) !== "npx") return undefined;
+    return `Only the npx fallback can launch ACP agent "${this.name}"; the first run downloads it inside the startup deadline`;
   }
 
   /** Display only: the backend resolves the launch command per session. */

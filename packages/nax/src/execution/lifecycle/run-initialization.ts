@@ -164,6 +164,11 @@ async function checkAgentInstalled(config: NaxConfig, dryRun: boolean, agentGetF
     logger?.error("execution", "Please install the agent and try again");
     throw new AgentNotInstalledError(resolveDefaultAgent(config), agent.binary);
   }
+
+  const note = agent.launchNote?.();
+  if (note !== undefined) {
+    logger?.warn("execution", note, { agent: resolveDefaultAgent(config) });
+  }
 }
 
 /**

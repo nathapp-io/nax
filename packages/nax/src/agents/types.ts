@@ -546,6 +546,13 @@ export interface AgentAdapter extends AgentSessionAdapter {
   /** Check if the agent binary is available on this machine. */
   isInstalled(): Promise<boolean>;
 
+  /**
+   * A note the run's install check logs as a warning for the configured agent
+   * (S4b spec §6.8: an ACP agent only the npx fallback can launch). Optional;
+   * undefined means nothing to say.
+   */
+  launchNote?(): string | undefined;
+
   /** Build the CLI command for a given run (for dry-run display). */
   buildCommand(options: AgentRunOptions): string[];
 

@@ -26,7 +26,8 @@ import {
   type AcpBackendOptions,
   type AcpProcessHooks,
   acpBackend,
-  isAgentLaunchable,
+  type LaunchCandidateKind,
+  launchCandidateKind,
 } from "@nathapp/nax-agent-acp/client";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
@@ -51,7 +52,7 @@ const DISCARD_CODES: ReadonlySet<string> = new Set([
 /** Test seam. Production always uses the package functions. */
 export const _acpSdkDeps = {
   acpBackend: (options: AcpBackendOptions): SessionBackend => acpBackend(options),
-  isAgentLaunchable: (agent: AcpAgentName): boolean => isAgentLaunchable(agent),
+  launchCandidateKind: (agent: AcpAgentName): LaunchCandidateKind | undefined => launchCandidateKind(agent),
   resolveRateCard: (modelId: string): Promise<RateCard> => resolveRateCard(modelId),
   /** promptRetries' backoff; rejects with the signal's reason when it aborts (D3-h). */
   delay: (ms: number, signal?: AbortSignal): Promise<void> => cancellableDelay(ms, signal),
