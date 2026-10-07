@@ -294,7 +294,12 @@ describe("acpBackend: close (spec §6.3 step 4, D-j)", () => {
 });
 
 describe("the public entry", () => {
-  test("./client exports acpBackend and ACP_STOP_CODES", () => {
-    expect(Object.keys(publicClient).sort()).toEqual(["ACP_STOP_CODES", "acpBackend"]);
+  test("./client exports acpBackend, ACP_STOP_CODES and the launcher checks (S4b)", () => {
+    expect(Object.keys(publicClient).sort()).toEqual([
+      "ACP_STOP_CODES",
+      "acpBackend",
+      "isAgentLaunchable",
+      "launchCandidateKind",
+    ]);
   });
 });
