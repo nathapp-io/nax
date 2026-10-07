@@ -9,10 +9,10 @@ import { resolveRateCard as defaultResolveRateCard } from "@/agents/cost";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import { sleep, which } from "@/utils/bun-deps";
+import { parseAgentError } from "../errors";
 import { throwIfAborted } from "../turn";
 import type { SessionHandle } from "../types";
 import type { AcpClient, AcpClientOptions, AcpSession, AcpSessionResponse } from "./adapter-session-types";
-import { parseAgentError } from "./parse-agent-error";
 import { createSpawnAcpClient } from "./spawn-client";
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -17,13 +17,13 @@
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import type { ITokenUsageMapper, RateCard } from "../cost";
+import { classifyCompleteError, classifyParsedAgentError } from "../errors";
 import { computeAcpHandle } from "../session-naming";
 import type { AgentAdapter, CompleteResult, ResolvedCompleteOptions } from "../types";
 import { CompleteError } from "../types";
 import { _fallbackDeps } from "./adapter-lifecycle";
 import { deriveTokenUsage } from "./adapter-output";
 import type { AcpSession, AcpSessionResponse } from "./adapter-session-types";
-import { classifyCompleteError, classifyParsedAgentError } from "./parse-agent-error";
 import type { SessionTokenUsage } from "./wire-types";
 
 export async function runCompleteFlow(input: {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { classifyCompleteError, classifyParsedAgentError, parseAgentError } from "@/agents/acp/parse-agent-error";
+import { classifyCompleteError, classifyParsedAgentError, parseAgentError } from "@/agents/errors/parse-agent-error";
 import { CompleteError } from "@/agents/types";
 
 describe("parseAgentError", () => {

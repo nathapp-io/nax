@@ -12,7 +12,6 @@ export {
   buildTurnResult,
 } from "./adapter";
 export type { AcpClient, AcpClientOptions, AcpSession, AcpSessionResponse } from "./adapter-session-types";
-export { parseAgentError } from "./parse-agent-error";
 export type {
   AcpxLineActivity as AcpLineActivity,
   AcpxParseState as AcpParseState,

@@ -1,7 +1,7 @@
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { AdapterFailure } from "../context/engine";
 import { NaxError } from "../errors";
-import { parseAgentError } from "./acp";
+import { parseAgentError } from "./errors";
 import { isTransportFailureMessage } from "./transport-failure-message";
 
 /**
