@@ -215,3 +215,59 @@ describe("resultBytes (S4b spec §7.4)", () => {
     expect(events.at(-1)).toMatchObject({ type: "tool_result", callId: "c9", isError: true, resultBytes: 0 });
   });
 });
+
+describe("tool_progress (S4b-0 finding f)", () => {
+  test("a heartbeat on a running call emits tool_progress, throttled per call", () => {
+    let now = 0;
+    const events: TurnEvent[] = [];
+    const tools = createToolEvents(
+      (event) => events.push(event),
+      [],
+      () => now,
+    );
+    tools.onUpdate({ toolCallId: "c1", name: "Bash", status: "in_progress", rawInput: { command: "sleep" } });
+    tools.onUpdate({ toolCallId: "c1" });
+    now = 10_000;
+    tools.onUpdate({ toolCallId: "c1" });
+    now = 31_000;
+    tools.onUpdate({ toolCallId: "c1", status: "in_progress" });
+    expect(events).toEqual([
+      { type: "tool_call", callId: "c1", name: "Bash", input: { command: "sleep" } },
+      { type: "tool_progress", callId: "c1" },
+      { type: "tool_progress", callId: "c1" },
+    ]);
+  });
+
+  test("the throttle is per call", () => {
+    const events: TurnEvent[] = [];
+    const tools = createToolEvents(
+      (event) => events.push(event),
+      [],
+      () => 0,
+    );
+    tools.onUpdate({ toolCallId: "a", name: "Bash", status: "in_progress", rawInput: {} });
+    tools.onUpdate({ toolCallId: "b", name: "Bash", status: "in_progress", rawInput: {} });
+    tools.onUpdate({ toolCallId: "a" });
+    tools.onUpdate({ toolCallId: "b" });
+    expect(events.filter((e) => e.type === "tool_progress")).toEqual([
+      { type: "tool_progress", callId: "a" },
+      { type: "tool_progress", callId: "b" },
+    ]);
+  });
+
+  test("no tool_progress before the call is announced or after it resolved", () => {
+    let now = 0;
+    const events: TurnEvent[] = [];
+    const tools = createToolEvents(
+      (event) => events.push(event),
+      [],
+      () => now,
+    );
+    tools.onUpdate({ toolCallId: "c2", name: "Read", status: "pending", rawInput: {} });
+    tools.onUpdate({ toolCallId: "c2" });
+    tools.onUpdate({ toolCallId: "c2", status: "completed", content: [text("x")] });
+    now = 60_000;
+    tools.onUpdate({ toolCallId: "c2" });
+    expect(events.map((e) => e.type)).toEqual(["tool_call", "tool_result"]);
+  });
+});

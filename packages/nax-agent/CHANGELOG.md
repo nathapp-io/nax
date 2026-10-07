@@ -13,6 +13,7 @@ release may change the public API.
 - `resultBytes` (optional) on the `tool_result` turn event: the UTF-8 byte length of the full result before the preview cap.
 - `ToolAuditHeader` is exported from the package entry.
 - `AGENT_SESSION_RATE_LIMITED` error code (a backend's rate-limited turn).
+- `tool_progress` turn event: a running tool's liveness beat (no content), for S1 callers such as nax's idle watchdog. The session facade does not forward it as a session event.
 
 ### Fixed
 

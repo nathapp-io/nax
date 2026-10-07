@@ -152,7 +152,10 @@ function sendTurn(ctx: TurnRunContext, live: LiveTurn, message: string): Promise
     maxInteractions: ASK_HUMAN_BUDGET,
     turnId: live.turnId,
     signal: live.signal,
-    onTurnEvent: (event) => live.emit(event),
+    // tool_progress is a liveness beat for S1 callers (nax's idle watchdog), not a session event.
+    onTurnEvent: (event) => {
+      if (event.type !== "tool_progress") live.emit(event);
+    },
   });
 }
 

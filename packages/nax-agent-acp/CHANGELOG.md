@@ -12,6 +12,7 @@ step with `@nathapp/nax-agent`.
 - `onProcess` option (`AcpProcessHooks`): `spawned(pid)` and `exited(pid)` for every agent process, including after a reconnect.
 - `tool_result` events carry `resultBytes`: the UTF-8 byte length of the full result before the preview cap (0 for a call the turn never answered).
 - `isAgentLaunchable` and `launchCandidateKind`: whether a registered agent's launcher resolves on PATH, and whether only the npx fallback does.
+- The agent's heartbeats on a running tool surface as `tool_progress` turn events, at most one per call per 30 s; they are not session events.
 
 ### Fixed
 

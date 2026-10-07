@@ -34,6 +34,8 @@ export type TurnEvent =
       /** UTF-8 byte length of the full result before the preview cap (S4b spec 7.4). Absent when unknown. */
       readonly resultBytes?: number;
     }
+  /** A running tool's liveness beat (an ACP heartbeat); carries no content. Not a session event. */
+  | { readonly type: "tool_progress"; readonly callId: string }
   | {
       readonly type: "usage";
       readonly round: number;
