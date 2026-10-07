@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { attachTurnSpend } from "@nathapp/nax-agent";
-import { FALLBACK_RATES } from "@/agents/cost";
 import { addSpend, failedSpendFields, NO_SPEND, spendOfError, spendOfResult } from "@/agents/acp-sdk/pricing";
+import { FALLBACK_RATES } from "@/agents/cost";
 
 const CARD = { rates: FALLBACK_RATES, source: "fallback-rates" } as const;
 
@@ -42,7 +42,10 @@ describe("acp-sdk pricing (S4b spec §7.3)", () => {
   });
 
   test("failedSpendFields prices tokens from the card and keeps the reported cost (BUG-57)", () => {
-    const fields = failedSpendFields({ tokenUsage: { inputTokens: 1_000_000, outputTokens: 0 }, exactCostUsd: 2 }, CARD);
+    const fields = failedSpendFields(
+      { tokenUsage: { inputTokens: 1_000_000, outputTokens: 0 }, exactCostUsd: 2 },
+      CARD,
+    );
     expect(fields.estimatedCostUsd).toBeCloseTo(3);
     expect(fields.exactCostUsd).toBe(2);
     expect(fields.pricingSource).toBe("fallback-rates");

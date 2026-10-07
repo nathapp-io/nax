@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import { SessionTurnError } from "@nathapp/nax-agent";
-import { FALLBACK_RATES } from "@/agents/cost";
 import {
   classifyTurnFailure,
   RunAborted,
@@ -8,6 +7,7 @@ import {
   turnFailureError,
   WatchdogCancel,
 } from "@/agents/acp-sdk/failure-map";
+import { FALLBACK_RATES } from "@/agents/cost";
 
 const CARD = { rates: FALLBACK_RATES, source: "fallback-rates" } as const;
 
@@ -25,13 +25,19 @@ describe("classifyTurnFailure (S4b spec §7.1, cancel rows)", () => {
   });
 
   test("an abort with an unknown reason fails safe as fail-aborted", () => {
-    expect(classifyTurnFailure(new Error("x"), new DOMException("aborted")).adapterFailure.outcome).toBe("fail-aborted");
+    expect(classifyTurnFailure(new Error("x"), new DOMException("aborted")).adapterFailure.outcome).toBe(
+      "fail-aborted",
+    );
   });
 
   test("no abort: fail-adapter-error carrying the error's message, as acpx today (S4b-3 adds the code rows)", () => {
     const failure = classifyTurnFailure(new Error("agent exploded"), undefined);
     expect(failure).toMatchObject({ cancelled: false, retryable: false, message: "agent exploded" });
-    expect(failure.adapterFailure).toMatchObject({ category: "availability", outcome: "fail-adapter-error", retriable: false });
+    expect(failure.adapterFailure).toMatchObject({
+      category: "availability",
+      outcome: "fail-adapter-error",
+      retriable: false,
+    });
   });
 
   test("the message is capped at 500 characters", () => {
@@ -47,7 +53,11 @@ describe("classifyTurnFailure (S4b spec §7.1, cancel rows)", () => {
 describe("turnFailureError", () => {
   test("builds a SessionTurnError with the spend and the adapter failure", () => {
     const failure = classifyTurnFailure(new WatchdogCancel(), new WatchdogCancel());
-    const err = turnFailureError(failure, { tokenUsage: { inputTokens: 10, outputTokens: 0 }, exactCostUsd: 0.5 }, CARD);
+    const err = turnFailureError(
+      failure,
+      { tokenUsage: { inputTokens: 10, outputTokens: 0 }, exactCostUsd: 0.5 },
+      CARD,
+    );
     expect(err).toBeInstanceOf(SessionTurnError);
     expect(err.cancelled).toBe(true);
     expect(err.retryable).toBe(true);

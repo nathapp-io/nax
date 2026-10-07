@@ -5,7 +5,7 @@
  */
 
 import { z } from "zod";
-import { DEFAULT_AGENT_NAME, DEFAULT_AGENT_PROTOCOL, DEFAULT_ACP_TRANSPORT } from "./agent-defaults";
+import { DEFAULT_ACP_TRANSPORT, DEFAULT_AGENT_NAME, DEFAULT_AGENT_PROTOCOL } from "./agent-defaults";
 import { ConfiguredModelSchema, ModelTierSchema, ProviderCatalogOverrideSchema } from "./schemas-model";
 
 export const PlanConfigSchema = z.object({
