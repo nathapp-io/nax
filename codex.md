@@ -34,7 +34,7 @@ This repository is a Bun-workspace monorepo. Package-specific context lives in
 | `packages/repo-tooling` | `@nathapp/nax-repo-tooling` | Check scripts shared by the packages (private; never published) |
 | `packages/test-kit` | `@nathapp/nax-test-kit` | Shared bun:test helpers (private; never published) |
 
-Dependency direction: `nax-ai` → `nax-agent` → `nax`, and `nax-agent` → `nax-agent-acp` (peer). No package imports nax-agent-acp until S4b; it reaches nax-agent only through its public entry. `check:package-boundaries` (packages/nax) enforces both.
+Dependency direction: `nax-ai` → `nax-agent` → `nax`, and `nax-agent` → `nax-agent-acp` (peer). nax imports nax-agent-acp only through `@nathapp/nax-agent-acp/client` and bundles it like nax-agent (S4b-2); nax-agent-acp reaches nax-agent only through its public entry. `check:package-boundaries` (packages/nax) enforces both.
 
 ## Tooling
 

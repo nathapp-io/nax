@@ -60,7 +60,7 @@ start a real ACP adapter in the unit suite.
   `@nathapp/nax-agent/internal` or a deep path, in src/ or test/.
 - `src/` imports only `@agentclientprotocol/sdk` (root, never `/experimental`),
   `@modelcontextprotocol/sdk`, `zod` and `node:` builtins. No Bun API in `src/`.
-- No other package imports this one until S4b.
+- nax imports this package only through `./client` (S4b-2); no other package imports it.
 - `bun run check:package-boundaries` in packages/nax enforces these rules.
 
 ## Commands (from packages/nax-agent-acp)

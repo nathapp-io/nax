@@ -85,6 +85,7 @@
     "spec:lint": "bun run scripts/spec-lint.ts"
   },
   "dependencies": {
+    "@agentclientprotocol/sdk": "~1.7.0",
     "@anthropic-ai/sandbox-runtime": "0.0.77",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@nathapp/nax-ai": "0.1.16",
@@ -104,6 +105,7 @@
     "react-devtools-core": "file:./stubs/react-devtools-core",
     "typescript": "^7.0.2",
     "@nathapp/nax-agent": "workspace:*",
+    "@nathapp/nax-agent-acp": "workspace:*",
     "@nathapp/nax-repo-tooling": "workspace:*",
     "@nathapp/nax-test-kit": "workspace:*"
   },

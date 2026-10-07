@@ -19,7 +19,8 @@
  * - packages/nax-agent-acp (S4 spec section 4) reaches nax-agent only through
  *   `@nathapp/nax-agent`, never `./internal` or a deep path, from src/ and test/
  *   alike. Its src/ imports only the ACP SDK root, the MCP SDK, zod and node:
- *   builtins. No other package imports it (nax adopts it in S4b).
+ *   builtins. nax imports it only through `@nathapp/nax-agent-acp/client`
+ *   (S4b-2); no other package imports it.
  *
  * Scans src/, test/, bin/ and scripts/ of every package.
  *
@@ -60,6 +61,7 @@ const NAX_ALLOWED_AGENT_SPECS = new Set([AGENT, `${AGENT}/internal`]);
 const TEST_KIT = "@nathapp/nax-test-kit";
 const REPO_TOOLING = "@nathapp/nax-repo-tooling";
 const ACP = "@nathapp/nax-agent-acp";
+const ACP_CLIENT = `${ACP}/client`;
 const ACP_SDK = "@agentclientprotocol/sdk";
 const ACP_SRC_DEPS = new Set([ACP_SDK, "@modelcontextprotocol/sdk", "zod"]);
 const NAX_PACKAGES = new Set(["@nathapp/nax", AGENT, "@nathapp/nax-ai", ACP, TEST_KIT, REPO_TOOLING]);
@@ -135,7 +137,7 @@ function naxAiViolation(_pkg: PackageInfo, _file: string, spec: string): string 
 
 function naxViolation(pkg: PackageInfo, file: string, spec: string): string | null {
   if (leavesPackage(pkg, file, spec)) return "relative import leaves the package";
-  if (packageName(spec) === ACP) return "nax does not depend on nax-agent-acp until S4b";
+  if (packageName(spec) === ACP) return spec === ACP_CLIENT ? null : `only ${ACP_CLIENT}`;
   const name = packageName(spec);
   if (name === TEST_KIT) return inDir(pkg, file, "test") ? null : `${TEST_KIT} imported outside test/`;
   if (name === REPO_TOOLING) {
