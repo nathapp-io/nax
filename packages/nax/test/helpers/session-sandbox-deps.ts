@@ -1,6 +1,6 @@
 /**
  * Shared stub for the `_sessionSandboxDeps` seam
- * (`src/agents/coding-tool-sandbox.ts`).
+ * (`packages/nax-agent/src/coding-tools/coding-tool-sandbox.ts`).
  *
  * US-002 adds three dependencies to that seam — `mkdir`, `tmpdir` and
  * `runTempRoots` — so a test that pins the confined run-temp-root decision has

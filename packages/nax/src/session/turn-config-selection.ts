@@ -19,7 +19,7 @@ export interface NativeTurnConfigSelection {
 
 /**
  * Resolves the native turn loop's config-derived settings once, at the
- * wiring layer — `src/agents/native/` must not read NaxConfig directly
+ * wiring layer — `packages/nax-agent/src/native/` must not read NaxConfig directly
  * (check:adapter-no-config-import).
  *
  * `transportRetry` (nax#1870) always resolves to concrete numbers, matching

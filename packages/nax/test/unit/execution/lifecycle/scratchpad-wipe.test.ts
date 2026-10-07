@@ -1,7 +1,7 @@
 /**
  * US-004 — wipe the scratchpad at run start.
  *
- * The scratchpad tools (src/tools/scratchpad.ts) advertise throwaway storage:
+ * The scratchpad tools (packages/nax-agent/src/tools/scratchpad.ts) advertise throwaway storage:
  * "It is never committed and is wiped when a run finishes (a failed run's
  * scratchpad is retained for inspection until the next run starts and clears
  * it)." This start wipe is the half of that contract that survives a run

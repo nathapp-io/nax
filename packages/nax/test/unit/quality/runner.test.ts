@@ -246,7 +246,7 @@ describe("runQualityCommand — storyId correlation", () => {
 //  - the harness's own deterministic ops (lintCheckOp, typecheckCheckOp, the
 //    finish gates, `nax setup`), which run a gate once and whose outcome the
 //    operator must see; and
-//  - the agent's `RunCommand` coding tool (src/tools/run-command.ts), which is
+//  - the agent's `RunCommand` coding tool (packages/nax-agent/src/tools/run-command.ts), which is
 //    the agent's own iteration loop. On acpx that loop runs inside the spawned
 //    agent process and nax never observes it; on the native path it comes back
 //    through this runner. In one observed run 283 of 289 invocations (98%) were

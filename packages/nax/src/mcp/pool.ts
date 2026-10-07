@@ -9,7 +9,7 @@
  *
  * Requests are serialized per connection by construction: the turn loop
  * dispatches tool calls in a sequential `for` loop
- * (src/agents/native/session/turn-loop.ts:406), awaiting each before the next,
+ * (`packages/nax-agent/src/native/session/turn-loop.ts`), awaiting each before the next,
  * so one hop never has two calls in flight against one server.
  */
 

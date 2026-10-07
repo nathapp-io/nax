@@ -1,4 +1,4 @@
-# Bun test configuration for nax-agent (mirrors packages/nax/bunfig.toml).
+# Bun test configuration for nax-agent. Shared test settings align with packages/nax/bunfig.toml.
 
 [test]
 smol = true

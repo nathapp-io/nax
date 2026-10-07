@@ -67,6 +67,14 @@ import { errorMessage } from "@nathapp/nax-agent/internal";
 const msg = errorMessage(err); // Safe for unknown, Error, string, undefined
 ```
 
+In nax-agent code, use its package-local import:
+
+```typescript
+import { errorMessage } from "#src/infra/errors";
+
+const msg = errorMessage(err); // Safe for unknown, Error, string, undefined
+```
+
 ## Return vs Throw
 
 | Situation | Action |

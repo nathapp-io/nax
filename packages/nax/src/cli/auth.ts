@@ -1,9 +1,9 @@
 /**
  * The `nax auth` commands.
  *
- * Terminal I/O only. Everything touching nax-ai lives behind
- * src/agents/native/, the only place in src/ permitted to import it, so
- * nothing here imports the wire package or its types.
+ * Terminal I/O only. Native auth and nax-ai integration live in
+ * `packages/nax-agent/src/native/`; this command uses the package's public
+ * auth API and does not import the wire package or its types.
  *
  * Each command returns an exit code rather than calling process.exit, so the
  * behaviour is testable and bin/nax.ts owns the process.

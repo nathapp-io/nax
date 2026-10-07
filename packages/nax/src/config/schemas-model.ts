@@ -95,7 +95,7 @@ export const CatalogModelOverrideSchema = z
     thinkingLevels: z.array(ThinkingLevelSchema),
     pricing: CatalogPricingSchema,
     // nax#2191: forwarded verbatim to nax-ai's `ResolvedModel.openRouterRouting`.
-    // Omitted when undeclared — the mapper (`src/agents/native/models.ts`
+    // Omitted when undeclared — the mapper (`packages/nax-agent/src/native/models.ts`
     // `toProviderOverrides`) is conditional on `!== undefined`, and nax-ai's
     // protocol-side check rejects both an empty declaration and routing on a
     // non-`openai-completions` protocol.
@@ -189,7 +189,7 @@ const ModelDefSchema = z.object({
   // nax#1848: overrides nax-ai's ResolvedModel.contextWindow. Without this
   // field Zod strips it silently at config load (the exact failure mode
   // #1847 shipped for pricing.tiers), and the override never reaches
-  // src/agents/native/models.ts#resolveContextWindow.
+  // packages/nax-agent/src/native/models.ts#resolveContextWindow.
   contextWindow: z.number().int().positive().optional(),
   env: z.record(z.string(), z.string()).optional(),
 });

@@ -1,8 +1,8 @@
 /**
  * nax's native AgentAdapter (S1 port 2): the full adapter surface nax's
  * registry and manager use, composed from the package-side session adapter
- * and `nativeComplete`. Lives outside `src/agents/native/` because that
- * directory moves into `@nathapp/nax-agent` and `AgentAdapter` stays in nax.
+ * and `nativeComplete`. Lives outside `packages/nax-agent/src/native/` because
+ * `AgentAdapter` stays in nax while its implementation lives in nax-agent.
  *
  * Members that describe a process are answered honestly rather than faked:
  * there is no binary, no command and no pid.

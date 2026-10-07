@@ -35,7 +35,7 @@ import {
 import { addSink, initLogger, resetLogger } from "@/logger";
 import type { LogEntry } from "@/logger/types";
 
-// Schema shape copied from src/tools/run-command.ts:270-292 — the live defect
+// Schema shape copied from packages/nax-agent/src/tools/run-command.ts — the live defect
 // was values expected object, model returned values:"". We do not depend on
 // the real createRunCommandTool here because it pulls in policy/runtime; the
 // validator only needs properties.{command,values} for this contract.

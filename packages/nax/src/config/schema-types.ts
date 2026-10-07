@@ -48,7 +48,7 @@ export interface ConfigPricing {
  * One threshold-based rate override. The greatest `inputTokensAbove` that a
  * request's total input-class usage exceeds applies to the WHOLE request —
  * not just the tokens above the threshold. See `estimateCostUsd` in
- * `src/agents/native/models.ts` for the selection rule.
+ * `packages/nax-agent/src/native/models.ts` for the selection rule.
  */
 export interface ConfigPricingTier {
   inputPer1M: number;
@@ -103,7 +103,7 @@ export interface ModelDef {
   /**
    * Overrides nax-ai's `ResolvedModel.contextWindow` (nax#1848). Never sent
    * to the provider -- it feeds only the native path's own
-   * `shouldCompact` / `keepBudget` math (`src/agents/native/models.ts`,
+   * `shouldCompact` / `keepBudget` math (`packages/nax-agent/src/native/models.ts`,
    * `resolveContextWindow`), which is what makes lowering it a way to force
    * compaction to actually fire: `execution.compaction.compactAtPercent`
    * floors at 50, and real windows (`claude-sonnet-5` is 1,000,000) put that

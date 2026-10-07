@@ -3,7 +3,7 @@
  *
  * Its own module rather than a field on `selectNativeTurnConfig` because the
  * breaker is transport-neutral by design (src/runtime/spin-breaker.ts) — only
- * its current consumer is native. `src/agents/native/` must not read NaxConfig
+ * its current consumer is native. `packages/nax-agent/src/native/` must not read NaxConfig
  * (check:adapter-no-config-import), so the resolved primitive is what crosses
  * the boundary.
  *
