@@ -24,12 +24,14 @@
 - Maintainer rulings 2026-10-07: **D2-b = strict + probe** (exact model match stays fail-closed; the refusal lists the offered ids; an unbilled probe of codex/opencode/pi runs before the flip). **D2-c = throw** (a run abort on `sendTurn` throws `SessionTurnError` `fail-aborted`; spec §7.1 row stands).
 - S4b-0 Ruling T1-1: `promptRetries` follows acpx 0.19.4, not the spec's looser wording: retry only on JSON-RPC `-32603` / `-32700` (a rate limit is `-32603`), only when the failed attempt produced **no turn event of any kind**, backoff `min(1000 * 2^n, 10000)` ms, **no jitter**, never after output.
 
-## Decisions (D3-a .. D3-k)
+## Decisions (D3-a .. D3-m)
+
+Final-reviewed 2026-10-07 by one read-only reviewer ("ready after fixes", 0 BLOCKER, 9 MAJOR, 11 MINOR); this revision is the single fix round.
 
 | # | Decision |
 |---|---|
-| D3-a | **`complete()` reuses `createSession` + `runTurnLoop`** with `maxInteractions: 1` and `NO_OP_INTERACTION_HANDLER`, on a memory transcript store and no tool audit, then closes with `force: true`. A `timedOut` result becomes `NaxError("complete() timed out", "AGENT_TIMEOUT", { stage: "acp", timeoutMs })` (the code `complete-exception-classifier.ts` already maps to `fail-timeout`). A cancelled `SessionTurnError` (watchdog or run abort) becomes `CompleteResult{ cancelled: true }` with the burned tokens priced and no `adapterFailure`, as acpx (`fail-stale-watchdog.test.ts` AC9). Any other `SessionTurnError` is rethrown; it carries the pre-classified `adapterFailure`. Blank output throws `CompleteError("complete() returned empty output")`, as acpx. acpx's `{"type":"result","result":...}` unwrap is acpx envelope plumbing and is not carried. |
-| D3-b | **The classifier branch is `SessionTurnError` with `adapterFailure`** (spec §6.6 item 5): `classifyCompleteException` returns `err.adapterFailure` as is. No new error class. |
+| D3-a | **`complete()` reuses `createSession` + `runTurnLoop`** with `maxInteractions: 1` and `NO_OP_INTERACTION_HANDLER`, on a memory transcript store and no tool audit, then closes with `force: true`. A `timedOut` result becomes `NaxError("complete() timed out", "AGENT_TIMEOUT", { stage: "acp", timeoutMs })` (the code `complete-exception-classifier.ts` already maps to `fail-timeout`). **Only a watchdog cancel** (`adapterFailure.outcome === "fail-stale"`) becomes `CompleteResult{ cancelled: true }` with the burned tokens priced and no `adapterFailure`, as acpx (`fail-stale-watchdog.test.ts` AC9). A run abort (`fail-aborted`) is rethrown: returning it as cancelled would make `manager.ts:262-278` synthesize a retriable `fail-stale` and retry during shutdown, against D2-c (acpx never observed `options.signal` in `complete()`). Any other `SessionTurnError` is rethrown pre-classified. A failure while opening the throwaway session is classified through the same `failure-map` and thrown as `SessionFailureError(message, adapterFailure)` (`agents/types.ts:508`), the abort cause taken from the run signal. Blank output throws `CompleteError("complete() returned empty output")`, as acpx. acpx's `{"type":"result","result":...}` unwrap is acpx envelope plumbing and is not carried. |
+| D3-b | **The classifier branch takes a pre-classified failure** (spec §6.6 item 5): `classifyCompleteException` returns `err.adapterFailure` as is for a `SessionTurnError` or `SessionFailureError` that carries one. No new error class. |
 | D3-c | **acpx degraded auth / rate-limit / model-not-available into a returned `CompleteResult` with `adapterFailure`; the sdk transport throws** with the same pre-classified failure (spec §6.6 "Other failures are thrown"). `dispatchCompleteHop` reads either; listed as §11 item 10. |
 | D3-d | **Categories per row.** `availability`: `fail-auth`, `fail-rate-limit`, `fail-aborted`, `fail-stale`, and the session-error rows (`BACKEND_UNAVAILABLE`, `TURN_FAILED`, `CLOSED`, `NOT_FOUND` after recovery), matching the `availability/fail-adapter-error` that `session-run-hop.ts` synthesizes for acpx today. `quality`: `CAPABILITY_UNSUPPORTED` (acpx's model-not-available was `quality`), the `ACP_STOP_*` rows and `fail-unknown` (as `complete-exception-classifier.ts`). |
 | D3-e | **A plain `Error` (no NaxError code) is `fail-unknown`**, per the §7.1 "anything else" row. S4b-2's fallback was `fail-adapter-error`; the existing turn-loop test that pins it is updated. A `NOT_FOUND` that recovery could not fix maps to the session-error row (`fail-adapter-error`, availability). |
@@ -38,14 +40,16 @@
 | D3-h | **Retries stay inside one call.** A retried attempt reuses the iteration's controller, slot and call bridge (one `call_started` / `call_ended`, as acpx retried inside its own process), adds the failed attempt's spend, is not counted as a turn, and waits through `cancellableDelay` on the iteration signal, so an abort during the backoff classifies like any other abort. |
 | D3-i | **Deadlines.** `initializeTimeoutMs = trackedSpawnStartupDeadlineMs ?? 30_000` and `cancelGraceMs = trackedSpawnDeadlineMs ?? 10_000` (the schema defaults, restated because the adapter cannot read config), each clamped to the backend's schema maxima (3_600_000 and 600_000), since nax's schema has no upper bound and an over-max value would fail the open. |
 | D3-j | **Tool audit recorder** (`acp-sdk/tool-audit.ts`): pairs `tool_call` / `tool_result` by ACP call id; an ask-port deny between them marks the pending call `denied` with the request's reason, so a denied call is one row, not two. A deny with no matching pending call writes a row at once (`input: {}`). Calls still pending at flush are written with outcome `error` and `resultBytes: 0`. `toolCallId` is the ACP call id. With no `opts.toolAudit` the recorder is a no-op. |
-| D3-k | **npx-only warning lives in `isInstalled()`** (spec §6.8): `_acpSdkDeps.launchCandidateKind` replaces `isAgentLaunchable`; `"npx"` logs one warning per adapter instance and still returns true. `run-initialization.ts` already calls `isInstalled()` for the configured agent, so the precheck surfaces it with no precheck-module change. |
+| D3-k | **npx-only warning is raised by the run's install check, for the configured agent only** (spec §6.8). `registry.ts` and `cli/agents.ts` call `isInstalled()` on every adapter, so a warning inside `isInstalled()` would fire for unused agents on every run. Instead `AgentAdapter` gains an optional `launchNote?(): string \| undefined`; `AcpSdkAgentAdapter` returns a note when `_acpSdkDeps.launchCandidateKind` (which replaces `isAgentLaunchable`) is `"npx"`, and `checkAgentInstalled` (`execution/lifecycle/run-initialization.ts:145`) logs it as a warning after the agent is found installed. `isInstalled()` stays silent and returns `kind !== undefined`. |
+| D3-l | **Open-phase failures on sessions stay unclassified, as acpx's.** `session-run-hop.ts:92` calls `sessionManager.openSession` outside its `try`, so a classified error there would change nothing today; wiring open failures into the retry and swap policy is a logic change, deferred (spec §11 item 12). `complete()` classifies its open failures (D3-a) because spec §6.6 item 5 requires a pre-classified failure. |
+| D3-m | **`complete()` session-error rows are `availability`** (shared `failure-map`), where acpx's `complete()` classified a crash as `quality/fail-adapter-error`. Recorded as spec §11 item 13. |
 
 ## Review Focus
 
 1. **A retry after any turn event.** A failed prompt that emitted only thinking, or only usage, must NOT be resent (T1-1: any update counts). Expect the error to propagate after one attempt. Test: Task 5 "a thinking-only attempt is not retried".
 2. **Abort during the retry backoff.** A run abort or watchdog cancel while the loop waits between attempts must end the turn as `fail-aborted` / `fail-stale`, not start another attempt. Test: Task 5 "an abort during the backoff ends the turn, no resend".
-3. **A denied tool call recorded twice.** `tool_call`, then the ask port's deny, then the refusal `tool_result` must yield one `denied` row with the reason. Test: Task 7 "a denied call is one denied row".
-4. **`complete()` timing out with the agent still running.** Expect `AGENT_TIMEOUT`, the session force-closed and no agent process left. Test: Task 8 "a hung complete() times out and leaves no agent process".
+3. **A denied tool call recorded twice.** `tool_call`, then the ask port's deny, then the refusal `tool_result` must yield one `denied` row with the reason. Tests: Task 7 "a denied call is one denied row" (recorder) and "a call the profile refuses is one denied row, end to end through the fake agent" (real wiring).
+4. **`complete()` timing out with the agent still running.** Expect `AGENT_TIMEOUT`, the session force-closed and no agent process left. Test: Task 8 "a hung complete() times out and leaves no agent process". (Related, also in Task 8: a run abort during `complete()` is thrown `fail-aborted`, never returned as a cancelled result that the manager would retry as `fail-stale`.)
 5. **A session-gone error that is also a retryable `-32603`.** It must be recovered by re-opening, not resent on the dead session. Test: Task 5 "a session-gone -32603 is recovered, not retried".
 
 ---
@@ -70,6 +74,9 @@
 | `packages/nax/src/agents/acp-sdk/complete.ts` | create | one-shot `complete()` (D3-a) |
 | `packages/nax/src/agents/acp-sdk/adapter.ts` | modify | `complete()`, npx warning |
 | `packages/nax/src/agents/complete-exception-classifier.ts` | modify | pre-classified branch (D3-b) |
+| `packages/nax/src/agents/types.ts` | modify | optional `AgentAdapter.launchNote?` (D3-k) |
+| `packages/nax/src/execution/lifecycle/run-initialization.ts` | modify | warns the configured agent's launch note (D3-k) |
+| `packages/nax/src/cli/config-descriptions.ts` | modify | transport description no longer says "incomplete" |
 | `packages/nax/src/config/schemas-infra.ts` | modify | transport comment no longer says "incomplete" |
 | `packages/nax/test/unit/agents/acp-sdk/*.test.ts` | create/modify | unit and parity tests |
 | `packages/nax/test/integration/agents/fail-stale-watchdog-sdk.test.ts` | create | watchdog AC9/AC7 on `sdk` |
@@ -125,19 +132,20 @@ export function capabilityUnsupported(
 }
 ```
 
-In `open.ts`, import `selectValues` from `#src/client/capabilities` (add it to the existing import list) and replace `applyModel`:
+In `open.ts`, import `selectValues` from `#src/client/capabilities` (add it to the existing import list) and `cleanLabel` from `#src/client/text` (it strips control and invisible characters, scrubs the session's secrets and caps the length, as every other agent-text path does; a raw control-character regex would also trip biome's `noControlCharactersInRegex`). Replace `applyModel`:
 
 ```ts
-/** At most this many offered ids, each capped, go into a model refusal (agent-supplied text). */
+/** At most this many offered ids, each cleaned and capped, go into a model refusal (agent-supplied text). */
 const MAX_OFFERED_MODELS = 50;
 const MAX_MODEL_ID_CHARS = 100;
 
-function offeredModels(offered: readonly SessionConfigOption[]): string[] {
+function offeredModels(offered: readonly SessionConfigOption[], secrets: readonly string[]): string[] {
   return offered
     .filter((option) => option.category === "model")
     .flatMap((option) => selectValues(option))
     .slice(0, MAX_OFFERED_MODELS)
-    .map((id) => id.replace(/[\u0000-\u001f\u007f]/g, "").slice(0, MAX_MODEL_ID_CHARS));
+    .map((id) => cleanLabel(id, secrets, MAX_MODEL_ID_CHARS) ?? "")
+    .filter((id) => id !== "");
 }
 
 async function applyModel(
@@ -149,7 +157,7 @@ async function applyModel(
   if (model === undefined) return offered;
   const configId = modelOptionId(offered, model);
   if (configId === undefined) {
-    const ids = offeredModels(offered);
+    const ids = offeredModels(offered, o.options.secrets);
     throw capabilityUnsupported(
       "model",
       `the agent offers no model option "${model}"; offered: ${ids.length === 0 ? "(none)" : ids.join(", ")}`,
@@ -168,8 +176,10 @@ Add at the top of `CHANGELOG.md`, above `## [0.3.1]`:
 
 ### Changed
 
-- A model the agent does not offer verbatim still fails the open with `AGENT_SESSION_CAPABILITY_UNSUPPORTED`; the error now lists the model ids the agent does offer (message and `context.offered`, at most 50, control characters stripped).
+- A model the agent does not offer verbatim still fails the open with `AGENT_SESSION_CAPABILITY_UNSUPPORTED`; the error now lists the model ids the agent does offer (message and `context.offered`, at most 50, cleaned like other agent text).
 ```
+
+`o.options` is the `ResolvedAcpOptions` the opening carries (`options.ts:67` declares `secrets`); if `Opening` names it differently, use the field `open.ts` already passes to `agentTextExcerpt` / `openRequestError` for the same purpose.
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
@@ -208,17 +218,14 @@ It opens each named agent with a model id no agent offers, so the open fails at 
  * Usage (from packages/nax-agent-acp):
  *   bun test/node/fixtures/model-probe.mjs codex=gpt-6-luna,gpt-6-sol opencode=minimax/MiniMax-M3
  */
-import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createAgentSession, createMemoryTranscriptStore } from "@nathapp/nax-agent";
-import { acpBackend } from "@nathapp/nax-agent-acp/client";
+import { acpBackend, launchCandidateKind } from "@nathapp/nax-agent-acp/client";
 
-const LAUNCHERS = { claude: "claude-agent-acp", codex: "codex-acp", gemini: "gemini", opencode: "opencode", pi: "pi-acp" };
+const AGENTS = new Set(["claude", "codex", "gemini", "opencode", "pi"]);
 const PROBE_MODEL = "nax-model-probe-unknown";
-
-const installed = (command) => spawnSync("sh", ["-c", `command -v ${command}`], { stdio: "ignore" }).status === 0;
 
 async function offeredIds(agent) {
   const workdir = mkdtempSync(join(tmpdir(), `acp-model-probe-${agent}-`));
@@ -244,15 +251,17 @@ async function offeredIds(agent) {
 for (const arg of process.argv.slice(2)) {
   const [agent, list = ""] = arg.split("=");
   const wanted = list.split(",").filter((id) => id !== "");
-  const launcher = LAUNCHERS[agent];
-  if (launcher === undefined) {
+  if (!AGENTS.has(agent)) {
     console.log(`${agent}: unknown agent`);
     continue;
   }
-  if (!installed(launcher)) {
-    console.log(`${agent}: not installed (${launcher} is not on PATH)`);
+  // The backend's own resolution, npx fallback included (an npx-only launcher is the likely case for codex/pi).
+  const kind = launchCandidateKind(agent);
+  if (kind === undefined) {
+    console.log(`${agent}: no launch candidate (not installed, and no npx)`);
     continue;
   }
+  if (kind === "npx") console.log(`${agent}: launching through npx (first run downloads the launcher)`);
   const probe = await offeredIds(agent);
   if (probe.error !== undefined) {
     console.log(`${agent}: ${probe.error}`);
@@ -571,6 +580,7 @@ git commit -m "fix(nax): sdk turn loop recovers a prompt-time session-not-found 
 - Create: `packages/nax/test/unit/agents/acp-sdk/prompt-retry.test.ts`
 - Modify: `packages/nax/src/agents/acp-sdk/stream-bridge.ts` (`anyEvent()`)
 - Modify: `packages/nax/test/unit/agents/acp-sdk/stream-bridge.test.ts`
+- Modify: `packages/nax/test/unit/agents/acp-sdk/ask-port.test.ts` (its `CallBridge` literal, ~lines 22-29, gains `anyEvent: () => false`)
 - Modify: `packages/nax/src/agents/acp-sdk/session.ts` (`_acpSdkDeps.delay`)
 - Modify: `packages/nax/src/agents/acp-sdk/turn-loop.ts` (`runIteration`)
 - Modify: `packages/nax/test/unit/agents/acp-sdk/turn-loop.test.ts`
@@ -672,16 +682,16 @@ Expected: PASS.
 
 - [ ] **Step 5: Write the failing bridge test**
 
-Add to `stream-bridge.test.ts` (use the file's existing context builder; if it has none, build the `StreamContext` inline as in its first test):
+Add to `stream-bridge.test.ts`. The file already has `context(events: AgentStreamEvent[], pid?)` (line 5) returning a `StreamContext`; use it. `TurnEvent`'s `text_delta`, `thinking_delta` and `usage` members require `round` (`turn-event.ts:25-52`), as the file's existing literals show:
 
 ```ts
   test("anyEvent is true after any turn event, thinking and usage included (T1-1)", () => {
     for (const event of [
-      { type: "thinking_delta", text: "hm" },
-      { type: "usage", inputTokens: 1, outputTokens: 0, costUsd: 0, costSource: "unpriced" },
+      { type: "thinking_delta", text: "hm", round: 1 },
+      { type: "usage", round: 1, inputTokens: 1, outputTokens: 0, costUsd: 0, costSource: "unpriced" },
       { type: "tool_progress", callId: "c1" },
     ] as const) {
-      const call = startCall(context());
+      const call = startCall(context([]));
       expect(call.anyEvent()).toBe(false);
       call.sink(event);
       expect(call.anyEvent()).toBe(true);
@@ -690,22 +700,9 @@ Add to `stream-bridge.test.ts` (use the file's existing context builder; if it h
   });
 ```
 
-where `context()` is the file's helper returning a `StreamContext`. If the file builds its context inline, add this helper at the top of the file and use it:
+If the `usage` member's required fields differ from these, copy them from the file's existing usage literal.
 
-```ts
-function context(): StreamContext {
-  return {
-    emit: undefined,
-    agentName: "claude",
-    sessionName: "s",
-    runId: "r",
-    storyId: undefined,
-    model: "sonnet",
-    timeoutSeconds: 60,
-    pid: () => undefined,
-  };
-}
-```
+In `ask-port.test.ts`, add `anyEvent: () => false,` to the `CallBridge` object literal (~lines 22-29) so it still satisfies the interface.
 
 Run: `cd packages/nax && bun test test/unit/agents/acp-sdk/stream-bridge.test.ts --timeout=30000`
 Expected: FAIL, `anyEvent` is not a function.
@@ -719,7 +716,7 @@ In `stream-bridge.ts`, add to `CallBridge`:
   anyEvent(): boolean;
 ```
 
-and change the `sideEffects` doc to "True once the prompt produced visible text or a tool call." In `startCall`, add `let anyEvent = false;` beside `sideEffects`, set `anyEvent = true;` as the first statement after the `if (ended) return;` guard in `sink`, and return `anyEvent: () => anyEvent,`.
+and change the `sideEffects` doc to "True once the prompt produced visible text or a tool call." Also fix the stale `StreamContext.pid` doc ("S4b-3 wires it from onProcess") to "kept current by the session's onProcess hooks". In `startCall`, add `let anyEvent = false;` beside `sideEffects`, set `anyEvent = true;` as the first statement after the `if (ended) return;` guard in `sink`, and return `anyEvent: () => anyEvent,`.
 
 - [ ] **Step 7: Add the delay seam**
 
@@ -788,7 +785,10 @@ describe("runTurnLoop: promptRetries (spec §7.2, T1-1)", () => {
 
   test("a thinking-only attempt is not retried (Review Focus 1)", async () => {
     recordDelays();
-    const script = scriptedOpened([eventThenFail({ type: "thinking_delta", text: "hm" }, transient()), replyTurn("x")]);
+    const script = scriptedOpened([
+      eventThenFail({ type: "thinking_delta", text: "hm", round: 1 }, transient()),
+      replyTurn("x"),
+    ]);
     const { session } = build(script.opened, { promptRetries: 3 });
     await expect(runTurnLoop(session, "p", { interactionHandler: NONE })).rejects.toBeInstanceOf(SessionTurnError);
     expect(script.prompts).toEqual(["p"]);
@@ -904,7 +904,7 @@ Expected: PASS.
 - [ ] **Step 11: Commit**
 
 ```bash
-git add packages/nax/src/agents/acp-sdk/prompt-retry.ts packages/nax/src/agents/acp-sdk/stream-bridge.ts packages/nax/src/agents/acp-sdk/session.ts packages/nax/src/agents/acp-sdk/turn-loop.ts packages/nax/test/unit/agents/acp-sdk/prompt-retry.test.ts packages/nax/test/unit/agents/acp-sdk/stream-bridge.test.ts packages/nax/test/unit/agents/acp-sdk/turn-loop.test.ts
+git add packages/nax/src/agents/acp-sdk/prompt-retry.ts packages/nax/src/agents/acp-sdk/stream-bridge.ts packages/nax/src/agents/acp-sdk/session.ts packages/nax/src/agents/acp-sdk/turn-loop.ts packages/nax/test/unit/agents/acp-sdk/prompt-retry.test.ts packages/nax/test/unit/agents/acp-sdk/stream-bridge.test.ts packages/nax/test/unit/agents/acp-sdk/turn-loop.test.ts packages/nax/test/unit/agents/acp-sdk/ask-port.test.ts
 git commit -m "feat(nax): promptRetries on the sdk transport, acpx semantics (S4b-3 T1-1)"
 ```
 
@@ -916,35 +916,39 @@ git commit -m "feat(nax): promptRetries on the sdk transport, acpx semantics (S4
 - Modify: `packages/nax/src/agents/acp-sdk/open-context.ts` (`backendOptions`, constants)
 - Modify: `packages/nax/src/agents/acp-sdk/session.ts` (use the moved constant)
 - Modify: `packages/nax/test/unit/agents/acp-sdk/open-context.test.ts`
+- Modify: `packages/nax/test/unit/agents/acp-sdk/session.test.ts` (startup-deadline test)
 
 **Interfaces:**
 - Produces: `DEFAULT_STARTUP_DEADLINE_MS = 30_000`, `DEFAULT_CLOSE_DEADLINE_MS = 10_000` exported from `open-context.ts`; `backendOptions` now sets `effort`, `initializeTimeoutMs`, `cancelGraceMs`.
 
 - [ ] **Step 1: Write the failing tests**
 
-The existing test "backendOptions effort strip" asserts no `effort`; replace it and add the deadline tests (use the file's existing `OpenSessionOpts` builder; the name below is `sessionOpts(overrides)`, adapt to the helper the file defines):
+The file's fixture is the const `OPTS: OpenSessionOpts` (line 7, whose model is an effort-suffixed `sonnet[...]`). Its existing test "strips the effort suffix from the model and never inherits the whole env" stays as is. Add, overriding `OPTS` by spread:
 
 ```ts
 describe("backendOptions: effort and deadlines (spec §6.7, §7.2)", () => {
   test("the model spec's effort suffix becomes the effort option; the bare id is the model", () => {
-    const options = backendOptions("claude", sessionOpts({ modelDef: { provider: "anthropic", model: "sonnet[high]" } }));
+    const options = backendOptions("claude", { ...OPTS, modelDef: { provider: "anthropic", model: "sonnet[high]" } });
     expect(options).toMatchObject({ model: "sonnet", effort: "high" });
   });
 
   test("no suffix, no effort", () => {
-    expect("effort" in backendOptions("claude", sessionOpts())).toBe(false);
+    const options = backendOptions("claude", { ...OPTS, modelDef: { provider: "anthropic", model: "sonnet" } });
+    expect("effort" in options).toBe(false);
   });
 
   test("the configured deadlines become initializeTimeoutMs and cancelGraceMs", () => {
-    const options = backendOptions(
-      "claude",
-      sessionOpts({ trackedSpawnStartupDeadlineMs: 45_000, trackedSpawnDeadlineMs: 7_000 }),
-    );
+    const options = backendOptions("claude", {
+      ...OPTS,
+      trackedSpawnStartupDeadlineMs: 45_000,
+      trackedSpawnDeadlineMs: 7_000,
+    });
     expect(options).toMatchObject({ initializeTimeoutMs: 45_000, cancelGraceMs: 7_000 });
   });
 
   test("absent deadlines fall back to nax's schema defaults, not the backend's 60 s", () => {
-    expect(backendOptions("claude", sessionOpts())).toMatchObject({
+    const { trackedSpawnDeadlineMs: _t, trackedSpawnStartupDeadlineMs: _s, ...bare } = OPTS;
+    expect(backendOptions("claude", bare)).toMatchObject({
       initializeTimeoutMs: DEFAULT_STARTUP_DEADLINE_MS,
       cancelGraceMs: DEFAULT_CLOSE_DEADLINE_MS,
     });
@@ -953,13 +957,25 @@ describe("backendOptions: effort and deadlines (spec §6.7, §7.2)", () => {
   });
 
   test("over-max deadlines are clamped to what the backend accepts (D3-i)", () => {
-    const options = backendOptions(
-      "claude",
-      sessionOpts({ trackedSpawnStartupDeadlineMs: 9_000_000, trackedSpawnDeadlineMs: 9_000_000 }),
-    );
+    const options = backendOptions("claude", {
+      ...OPTS,
+      trackedSpawnStartupDeadlineMs: 9_000_000,
+      trackedSpawnDeadlineMs: 9_000_000,
+    });
     expect(options).toMatchObject({ initializeTimeoutMs: 3_600_000, cancelGraceMs: 600_000 });
   });
 });
+```
+
+And one behavioural startup-deadline test in `session.test.ts` (spec §9 "startup and teardown deadlines"; teardown is already covered there), using that file's `useFake()` / `opts()` helpers:
+
+```ts
+  test("the startup deadline bounds initialize: a hung agent fails the open BACKEND_UNAVAILABLE (§7.2)", async () => {
+    useFake({ hangInitialize: true });
+    await expect(createSession("nax-start", "claude", opts({ trackedSpawnStartupDeadlineMs: 50 }))).rejects.toMatchObject({
+      code: "AGENT_SESSION_BACKEND_UNAVAILABLE",
+    });
+  }, 20_000);
 ```
 
 Import `DEFAULT_CLOSE_DEADLINE_MS` and `DEFAULT_STARTUP_DEADLINE_MS` from `@/agents/acp-sdk/open-context`.
@@ -1015,7 +1031,7 @@ Expected: PASS.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add packages/nax/src/agents/acp-sdk/open-context.ts packages/nax/src/agents/acp-sdk/session.ts packages/nax/test/unit/agents/acp-sdk/open-context.test.ts
+git add packages/nax/src/agents/acp-sdk/open-context.ts packages/nax/src/agents/acp-sdk/session.ts packages/nax/test/unit/agents/acp-sdk/open-context.test.ts packages/nax/test/unit/agents/acp-sdk/session.test.ts
 git commit -m "feat(nax): sdk transport passes effort and the tracked-spawn deadlines (S4b-3)"
 ```
 
@@ -1135,7 +1151,7 @@ describe("createAuditRecorder (spec §7.4, D3-j)", () => {
   test("non-tool events are ignored, and no target means nothing is written", async () => {
     const audit = createAuditRecorder("nax-s", undefined);
     audit.onEvent({ type: "tool_call", callId: "c1", name: "Read", input: {} });
-    audit.onEvent({ type: "text_delta", text: "x" });
+    audit.onEvent({ type: "text_delta", text: "x", round: 1 });
     await audit.flush();
     expect(readdirSync(dir)).toEqual([]);
   });
@@ -1260,7 +1276,7 @@ In `stream-bridge.test.ts`:
   test("every event reaches the audit recorder, also after call_ended", () => {
     const seen: string[] = [];
     const audit = { onEvent: (e: { type: string }) => seen.push(e.type), denied: () => {}, flush: async () => {} };
-    const call = startCall({ ...context(), audit });
+    const call = startCall({ ...context([]), audit });
     call.sink({ type: "tool_call", callId: "c1", name: "Read", input: {} });
     call.end("error");
     call.sink({ type: "tool_result", callId: "c1", isError: false, preview: "" });
@@ -1281,22 +1297,59 @@ In `ask-port.test.ts`:
   });
 ```
 
-In `session.test.ts` (it already builds sessions through `fakeAcpBackend` or a scripted backend; reuse its open helper, shown here as `openSession(opts)`):
+In `session.test.ts`, using its `useFake(script)`, `opts(overrides)`, `dir` and `createSession(name, "claude", opts(...))` helpers (lines 12-45):
 
 ```ts
   test("close flushes the tool audit before deleting the transcript (spec §7.4)", async () => {
+    useFake();
     const auditDir = join(dir, "audit");
-    const session = await openSession({ toolAudit: { dir: auditDir, header: { runId: "run-1", storyId: "US-1" } } });
+    const session = await createSession(
+      "nax-audit",
+      "claude",
+      opts({ toolAudit: { dir: auditDir, header: { runId: "run-1", storyId: "US-1" } } }),
+    );
     session.audit.onEvent({ type: "tool_call", callId: "c1", name: "Read", input: {} });
     session.audit.onEvent({ type: "tool_result", callId: "c1", isError: false, preview: "x", resultBytes: 1 });
-    await shutdownSession(session, { waitMs: 1_000 });
+    await shutdownSession(session, { waitMs: 2_000 });
     const files = readdirSync(auditDir);
     expect(files).toHaveLength(1);
     expect(files[0]).toContain("run-1");
-  });
+  }, 20_000);
+
+  test("a call the profile refuses is one denied row, end to end through the fake agent (Review Focus 3)", async () => {
+    useFake({
+      turns: [
+        {
+          steps: [
+            {
+              kind: "permission",
+              options: ["allow_once", "reject_once"],
+              toolCall: { kind: "edit", title: "Write x", rawInput: { path: "x" } },
+            },
+            { kind: "text", text: "done" },
+          ],
+        },
+      ],
+    });
+    const auditDir = join(dir, "audit-deny");
+    const session = await createSession(
+      "nax-deny",
+      "claude",
+      opts({
+        resolvedPermissions: { mode: "approve-reads", bashApproval: "raw" },
+        toolAudit: { dir: auditDir, header: { runId: "run-2", storyId: "US-2" } },
+      }),
+    );
+    await runTurnLoop(session, "go", { interactionHandler: NO_OP_INTERACTION_HANDLER });
+    await shutdownSession(session, { waitMs: 2_000 });
+    const [file] = readdirSync(auditDir);
+    const calls = (JSON.parse(readFileSync(join(auditDir, file ?? ""), "utf8")) as { calls: Array<{ outcome: string }> })
+      .calls;
+    expect(calls.map((c) => c.outcome)).toEqual(["denied"]);
+  }, 20_000);
 ```
 
-Adapt `openSession`/`dir` to the helper and temp-dir names `session.test.ts` already uses; import `readdirSync` from `node:fs` and `join` from `node:path` if absent.
+Imports if absent: `readdirSync`, `readFileSync` from `node:fs`; `join` from `node:path`; `NO_OP_INTERACTION_HANDLER` from `@nathapp/nax-agent`; `runTurnLoop` from `@/agents/acp-sdk/turn-loop`. The permission-step shape is the one `packages/nax-agent-acp/test/unit/client/backend-permissions.test.ts:79-84` uses; `approve-reads` maps to profile `read`, which auto-denies (S4b-2 profile map), and the backend announces the `tool_call` before deciding (`nax-agent-acp/src/client/inbound.ts:133`).
 
 In `turn-loop.test.ts`'s `build()`, add the new required field to the literal: `audit: createAuditRecorder("nax-loop", undefined),` (import from `@/agents/acp-sdk/tool-audit`).
 
@@ -1370,7 +1423,7 @@ git commit -m "feat(nax): tool audit rows on the sdk transport (S4b-3 spec §7.4
 - Modify: `packages/nax/test/unit/agents/acp-sdk/adapter.test.ts` (drop the "complete() waits for S4b-3" assertion)
 
 **Interfaces:**
-- Consumes: `createSession`, `shutdownSession`, `closeDeadlineMs` (session.ts); `runTurnLoop`; `toSessionModel` (`../session-model-mapping`); `computeAcpHandle` (`../session-naming`); `priceCall` (`../cost`).
+- Consumes: `createSession`, `shutdownSession`, `closeDeadlineMs`, `type AcpSdkSession` (session.ts); `runTurnLoop`; `classifyTurnFailure`, `RunAborted` (failure-map.ts, Task 3); `SessionFailureError` (`agents/types.ts:508`, constructor `(message, adapterFailure)`); `toSessionModel` (`../session-model-mapping`); `computeAcpHandle` (`../session-naming`); `priceCall` (`../cost`).
 - Produces: `runComplete(adapterName: string, agent: AcpAgentName, prompt: string, options: ResolvedCompleteOptions): Promise<CompleteResult>`; `DEFAULT_COMPLETE_TIMEOUT_MS = 120_000`.
 
 - [ ] **Step 1: Write the failing classifier test**
@@ -1388,21 +1441,35 @@ Add to `test/unit/agents/complete-exception-classifier.test.ts` (import `Session
     const err = new SessionTurnError("login", false, false, undefined, 0, undefined, undefined, failure);
     expect(classifyCompleteException(err)).toBe(failure);
   });
+
+  test("a SessionFailureError's adapterFailure is returned as is (sdk complete() open failure, D3-a)", () => {
+    const failure = {
+      category: "quality" as const,
+      outcome: "fail-adapter-error" as const,
+      retriable: false,
+      message: "model",
+    };
+    expect(classifyCompleteException(new SessionFailureError("model", failure))).toBe(failure);
+  });
 ```
+
+Import `SessionFailureError` from `@/agents` as well.
 
 Run: `cd packages/nax && bun test test/unit/agents/complete-exception-classifier.test.ts --timeout=30000`
 Expected: FAIL (message parsing yields `fail-unknown`).
 
 - [ ] **Step 2: Implement the branch**
 
-In `complete-exception-classifier.ts`, import `SessionTurnError` from `./types` and make the first statement of `classifyCompleteException`:
+In `complete-exception-classifier.ts`, import `SessionFailureError` and `SessionTurnError` from `./types` and make the first statement of `classifyCompleteException`:
 
 ```ts
-  // The sdk transport throws its failure pre-classified (S4b spec §6.6); message parsing is for every other adapter.
-  if (err instanceof SessionTurnError && err.adapterFailure !== undefined) return err.adapterFailure;
+  // The sdk transport throws its failure pre-classified (S4b spec §6.6, D3-b); message parsing is for every other adapter.
+  if ((err instanceof SessionTurnError || err instanceof SessionFailureError) && err.adapterFailure !== undefined) {
+    return err.adapterFailure;
+  }
 ```
 
-Run the classifier test again: PASS. Run `bun run check:import-cycles` from `packages/nax`: PASS (if a new cycle is reported, import `SessionTurnError` from `@nathapp/nax-agent` instead, which `types.ts` re-exports).
+Run the classifier test again: PASS. Run `bun run check:import-cycles` from `packages/nax`: PASS (if a new cycle is reported, import both classes from the `./types` leaf is already the narrowest path; report the cycle rather than routing through a barrel).
 
 - [ ] **Step 3: Write the failing complete() tests**
 
@@ -1412,12 +1479,12 @@ Run the classifier test again: PASS. Run `bun run check:import-cycles` from `pac
 // test/unit/agents/acp-sdk/complete.test.ts
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { AgentSessionError, NaxError } from "@nathapp/nax-agent";
-import { cleanupTempDir, isProcessAlive, makeTempDir, waitForCondition } from "@test/helpers";
+import { AgentSessionError, isProcessAlive, NaxError } from "@nathapp/nax-agent";
+import { cleanupTempDir, makeTempDir, waitForCondition } from "@test/helpers";
 import { failTurn, fakeAcpBackend, fakeStartPids, hangTurn, replyTurn, scriptedOpened } from "@test/helpers/acp-fake-agent";
 import { _acpSdkDeps, AcpSdkAgentAdapter } from "@/agents/acp-sdk";
 import { FALLBACK_RATES } from "@/agents/cost";
-import { CompleteError, type ResolvedCompleteOptions, SessionTurnError } from "@/agents/types";
+import { CompleteError, type ResolvedCompleteOptions, SessionFailureError, SessionTurnError } from "@/agents/types";
 
 const REAL = { ..._acpSdkDeps };
 let dir: string;
@@ -1480,9 +1547,48 @@ describe("AcpSdkAgentAdapter.complete() (spec §6.6)", () => {
     const err = await new AcpSdkAgentAdapter("claude")
       .complete("q", options({ timeoutMs: 50 }))
       .catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(NaxError);
-    expect((err as NaxError).code).toBe("AGENT_TIMEOUT");
+    if (!(err instanceof NaxError)) throw err;
+    expect(err.code).toBe("AGENT_TIMEOUT");
     expect(script.closeCount()).toBe(1);
+  });
+
+  test("a run abort is rethrown fail-aborted, never a cancelled result (D3-a, D2-c)", async () => {
+    scripted(hangTurn());
+    const run = new AbortController();
+    const cancels: Array<() => Promise<void>> = [];
+    const pending = new AcpSdkAgentAdapter("claude").complete(
+      "q",
+      options({ signal: run.signal, onActiveCall: (_id, cancel) => cancels.push(cancel) }),
+    );
+    await waitForCondition(() => cancels.length > 0);
+    run.abort("shutdown");
+    const err = await pending.catch((e: unknown) => e);
+    if (!(err instanceof SessionTurnError)) throw err;
+    expect(err.adapterFailure?.outcome).toBe("fail-aborted");
+  });
+
+  test("an open-time failure is thrown pre-classified as SessionFailureError (D3-a)", async () => {
+    _acpSdkDeps.acpBackend = () => ({
+      kind: "acp:claude",
+      open: async () => {
+        throw new AgentSessionError("login", "AGENT_SESSION_AUTH_REQUIRED");
+      },
+    });
+    const err = await new AcpSdkAgentAdapter("claude").complete("q", options()).catch((e: unknown) => e);
+    if (!(err instanceof SessionFailureError)) throw err;
+    expect(err.adapterFailure).toMatchObject({ outcome: "fail-auth", category: "availability" });
+  });
+
+  test("a model refusal at open is fail-adapter-error / quality (D2-b through complete())", async () => {
+    _acpSdkDeps.acpBackend = () => ({
+      kind: "acp:claude",
+      open: async () => {
+        throw new AgentSessionError("no model", "AGENT_SESSION_CAPABILITY_UNSUPPORTED", { capability: "model" });
+      },
+    });
+    const err = await new AcpSdkAgentAdapter("claude").complete("q", options()).catch((e: unknown) => e);
+    if (!(err instanceof SessionFailureError)) throw err;
+    expect(err.adapterFailure).toMatchObject({ outcome: "fail-adapter-error", category: "quality" });
   });
 
   test("a watchdog cancel returns cancelled with the burned tokens priced, no adapterFailure (BUG-57)", async () => {
@@ -1555,10 +1661,12 @@ describe("AcpSdkAgentAdapter.complete() (spec §6.6)", () => {
     async () => {
       const record = join(dir, "record.jsonl");
       _acpSdkDeps.acpBackend = fakeAcpBackend({ turns: [{ steps: [{ kind: "hang" }] }] }, record);
+      // The fake's "hang" ignores session/cancel, so the close waits out cancelGraceMs: keep it short.
       const err = await new AcpSdkAgentAdapter("claude")
-        .complete("q", options({ timeoutMs: 300 }))
+        .complete("q", options({ timeoutMs: 300, trackedSpawnDeadlineMs: 500 }))
         .catch((e: unknown) => e);
-      expect((err as NaxError).code).toBe("AGENT_TIMEOUT");
+      if (!(err instanceof NaxError)) throw err;
+      expect(err.code).toBe("AGENT_TIMEOUT");
       const pid = fakeStartPids(record)[0];
       expect(pid).toBeDefined();
       await waitForCondition(() => pid !== undefined && !isProcessAlive(pid), 5_000);
@@ -1568,7 +1676,7 @@ describe("AcpSdkAgentAdapter.complete() (spec §6.6)", () => {
 });
 ```
 
-If `isProcessAlive` is not exported from `@test/helpers`, import it from where `adapter.test.ts` imports it (it is used there for the same pid-liveness check).
+`isProcessAlive` comes from `@nathapp/nax-agent`, as in `adapter.test.ts:5`. No `as` casts in test code: the `looseCast` ratchet in `check:all` (`check-test-escape-hatches.ts`) rejects growth; narrow with `instanceof` as above.
 
 Run: `cd packages/nax && bun test test/unit/agents/acp-sdk/complete.test.ts --timeout=30000`
 Expected: FAIL, `ACP_SDK_COMPLETE_UNAVAILABLE`.
@@ -1582,8 +1690,9 @@ Expected: FAIL, `ACP_SDK_COMPLETE_UNAVAILABLE`.
  * memory transcript, no tools, no tool audit, the profile from
  * resolvedPermissions, one prompt through the same turn loop (so the stream,
  * deadlines, promptRetries and spend are shared with sessions), then a forced
- * close. A timeout is NaxError AGENT_TIMEOUT; a cancel returns cancelled with
- * the burned tokens priced; any other failure is thrown pre-classified.
+ * close. A timeout is NaxError AGENT_TIMEOUT; a watchdog cancel returns
+ * cancelled with the burned tokens priced; a run abort and every other failure
+ * are thrown pre-classified, open failures as SessionFailureError (D3-a).
  */
 import { NO_OP_INTERACTION_HANDLER, type OpenSessionOpts } from "@nathapp/nax-agent";
 import type { AcpAgentName } from "@nathapp/nax-agent-acp/client";
@@ -1592,8 +1701,16 @@ import { getSafeLogger } from "@/logger";
 import { priceCall, type RateCard } from "../cost";
 import { toSessionModel } from "../session-model-mapping";
 import { computeAcpHandle } from "../session-naming";
-import { CompleteError, type CompleteResult, type ResolvedCompleteOptions, SessionTurnError, type TurnResult } from "../types";
-import { closeDeadlineMs, createSession, shutdownSession } from "./session";
+import {
+  CompleteError,
+  type CompleteResult,
+  type ResolvedCompleteOptions,
+  SessionFailureError,
+  SessionTurnError,
+  type TurnResult,
+} from "../types";
+import { classifyTurnFailure, RunAborted } from "./failure-map";
+import { type AcpSdkSession, closeDeadlineMs, createSession, shutdownSession } from "./session";
 import { runTurnLoop } from "./turn-loop";
 
 const STAGE = "acp-sdk";
@@ -1665,7 +1782,7 @@ export async function runComplete(
   if (options.maxTokens !== undefined) {
     getSafeLogger()?.debug(STAGE, "maxTokens has no ACP equivalent; ignored", { sessionName: name });
   }
-  const session = await createSession(name, agent, sessionOptsFor(adapterName, options, timeoutMs));
+  const session = await openClassified(name, agent, sessionOptsFor(adapterName, options, timeoutMs));
   try {
     const result = await runTurnLoop(session, prompt, {
       interactionHandler: NO_OP_INTERACTION_HANDLER,
@@ -1677,13 +1794,29 @@ export async function runComplete(
     }
     return successResult(result, session.handle.protocolIds?.sessionId);
   } catch (err) {
-    if (err instanceof SessionTurnError && err.cancelled) return cancelledResult(err, session.rateCard);
+    // Only the watchdog's cancel is a cancelled result; a run abort stays fail-aborted (D3-a, D2-c).
+    if (err instanceof SessionTurnError && err.adapterFailure?.outcome === "fail-stale") {
+      return cancelledResult(err, session.rateCard);
+    }
     throw err;
   } finally {
     await shutdownSession(session, { waitMs: closeDeadlineMs(session.opts), force: true });
   }
 }
+
+/** Opens the throwaway session; an open failure is classified like a turn's (§7.1) and thrown pre-classified (D3-a). */
+async function openClassified(name: string, agent: AcpAgentName, opts: OpenSessionOpts): Promise<AcpSdkSession> {
+  try {
+    return await createSession(name, agent, opts);
+  } catch (err) {
+    const cause = opts.signal?.aborted === true ? new RunAborted(opts.signal.reason) : undefined;
+    const failure = classifyTurnFailure(err, cause);
+    throw new SessionFailureError(failure.message, failure.adapterFailure);
+  }
+}
 ```
+
+`SessionFailureError` (`agents/types.ts:508`) has no `cause` field; the original error's message is carried in the failure's message (capped at 500 by `classifyTurnFailure`).
 
 If `TurnResult.pricingSource` is typed as required, drop the conditional spread and assign it directly; follow the type.
 
@@ -1717,57 +1850,99 @@ git commit -m "feat(nax): complete() on the sdk transport, throwaway session (S4
 ### Task 9: The npx-only launcher warning (spec §6.8, D3-k)
 
 **Files:**
+- Modify: `packages/nax/src/agents/types.ts` (`AgentAdapter.launchNote?`, near `isInstalled` at ~line 547)
 - Modify: `packages/nax/src/agents/acp-sdk/session.ts` (`_acpSdkDeps.launchCandidateKind` replaces `isAgentLaunchable`)
-- Modify: `packages/nax/src/agents/acp-sdk/adapter.ts` (`isInstalled`)
+- Modify: `packages/nax/src/agents/acp-sdk/adapter.ts` (`isInstalled`, `launchNote`)
+- Modify: `packages/nax/src/execution/lifecycle/run-initialization.ts` (`checkAgentInstalled`, ~line 145)
 - Modify: `packages/nax/test/unit/agents/acp-sdk/adapter.test.ts`
+- Modify: `packages/nax/test/unit/cli/agents-list.test.ts` (lines 89-106 stub `isAgentLaunchable`)
+- Modify: `packages/nax/test/unit/execution/lifecycle/run-initialization.test.ts` (`describe("agent preflight")`, ~line 430)
 
 **Interfaces:**
-- Produces: `_acpSdkDeps.launchCandidateKind: (agent: AcpAgentName) => LaunchCandidateKind | undefined`.
+- Produces:
+  - `AgentAdapter.launchNote?(): string | undefined` (optional; only the sdk adapter implements it).
+  - `_acpSdkDeps.launchCandidateKind: (agent: AcpAgentName) => LaunchCandidateKind | undefined`.
 
-- [ ] **Step 1: Write the failing tests**
+- [ ] **Step 1: Write the failing adapter tests**
 
 Replace the existing `isInstalled` test in `adapter.test.ts` with:
 
 ```ts
-describe("isInstalled (spec §6.8, D3-k)", () => {
+describe("isInstalled and launchNote (spec §6.8, D3-k)", () => {
   test.each([
     ["local", true],
     ["npx", true],
     [undefined, false],
-  ] as const)("launch candidate %p -> %p", async (kind, installed) => {
+  ] as const)("launch candidate %p -> installed %p", async (kind, installed) => {
     _acpSdkDeps.launchCandidateKind = () => kind;
     expect(await new AcpSdkAgentAdapter("claude").isInstalled()).toBe(installed);
   });
 
-  test("an npx-only launcher warns once per adapter", async () => {
+  test("an npx-only launcher has a launch note; a local one has none", () => {
+    _acpSdkDeps.launchCandidateKind = () => "npx";
+    expect(new AcpSdkAgentAdapter("claude").launchNote()).toContain("npx");
+    _acpSdkDeps.launchCandidateKind = () => "local";
+    expect(new AcpSdkAgentAdapter("claude").launchNote()).toBeUndefined();
+  });
+
+  test("aider has no launcher and no note", async () => {
+    const adapter = new AcpSdkAgentAdapter("aider");
+    expect(await adapter.isInstalled()).toBe(false);
+    expect(adapter.launchNote()).toBeUndefined();
+  });
+});
+```
+
+If the old test set `_acpSdkDeps.isAgentLaunchable`, remove that.
+
+- [ ] **Step 2: Write the failing preflight test**
+
+In `run-initialization.test.ts`, inside `describe("agent preflight")`, reusing its `makePrd` / `tmpDir` / `makeAgentAdapter` (lines 430-455):
+
+```ts
+  test("an installed agent's launch note is logged as a warning (spec §6.8, D3-k)", async () => {
     resetLogger();
     initLogger({ level: "silent" });
     const warnSpy = spyOn(getLogger(), "warn").mockImplementation(() => {});
     try {
-      _acpSdkDeps.launchCandidateKind = () => "npx";
-      const adapter = new AcpSdkAgentAdapter("claude");
-      await adapter.isInstalled();
-      await adapter.isInstalled();
-      const npxWarnings = warnSpy.mock.calls.filter((call) => String(call[1]).includes("npx"));
-      expect(npxWarnings).toHaveLength(1);
+      const prdPath = join(tmpDir, "prd-preflight-note.json");
+      await Bun.write(prdPath, JSON.stringify(makePrd({ status: "pending", passes: false })));
+      const adapter = {
+        ...makeAgentAdapter({ binary: "claude", isInstalled: () => Promise.resolve(true) }),
+        launchNote: () => "Only the npx fallback can launch this ACP agent",
+      };
+      await initializeRun({
+        config: { ...DEFAULT_CONFIG, acceptance: { ...DEFAULT_CONFIG.acceptance, enabled: false } },
+        prdPath,
+        workdir: tmpDir,
+        dryRun: false,
+        agentGetFn: () => adapter,
+      });
+      expect(warnSpy.mock.calls.some((call) => String(call[1]).includes("npx"))).toBe(true);
     } finally {
       warnSpy.mockRestore();
       resetLogger();
     }
   });
-
-  test("aider has no launcher", async () => {
-    expect(await new AcpSdkAgentAdapter("aider").isInstalled()).toBe(false);
-  });
-});
 ```
 
-Imports: `spyOn` from `bun:test`; `getLogger`, `initLogger`, `resetLogger` from `@/logger` (the pattern `test/unit/agents/native/models.test.ts` uses; `getSafeLogger()` returns the same logger once one is initialized). If the existing `isInstalled` test set `_acpSdkDeps.isAgentLaunchable`, remove that.
+Imports if absent: `spyOn` from `bun:test`; `getLogger`, `initLogger`, `resetLogger` from `@/logger` (the pattern `test/unit/agents/native/models.test.ts` uses). If `initializeRun` needs more context than the file's other preflight tests pass, copy `initWith`'s argument shape exactly.
 
-Run: `cd packages/nax && bun test test/unit/agents/acp-sdk/adapter.test.ts --timeout=30000`
+Run: `cd packages/nax && bun test test/unit/agents/acp-sdk/adapter.test.ts test/unit/execution/lifecycle/run-initialization.test.ts --timeout=30000`
 Expected: FAIL.
 
-- [ ] **Step 2: Implement**
+- [ ] **Step 3: Implement**
+
+`agents/types.ts`, in `AgentAdapter` after `isInstalled()`:
+
+```ts
+  /**
+   * A note the run's install check logs as a warning for the configured agent
+   * (S4b spec §6.8: an ACP agent only the npx fallback can launch). Optional;
+   * undefined means nothing to say.
+   */
+  launchNote?(): string | undefined;
+```
 
 `session.ts`: in the `@nathapp/nax-agent-acp/client` import, replace `isAgentLaunchable` with `launchCandidateKind` and `type LaunchCandidateKind`; in `_acpSdkDeps` replace the `isAgentLaunchable` entry with:
 
@@ -1775,37 +1950,42 @@ Expected: FAIL.
   launchCandidateKind: (agent: AcpAgentName): LaunchCandidateKind | undefined => launchCandidateKind(agent),
 ```
 
-`adapter.ts`: add a private field `private npxWarned = false;` and replace `isInstalled`:
+`adapter.ts`:
 
 ```ts
-  /** True when nax-agent-acp finds a launch candidate; an npx-only launcher warns once (spec §6.8, D3-k). */
+  /** True when nax-agent-acp finds a launch candidate for the agent, the npx fallback included (spec §6.8). */
   async isInstalled(): Promise<boolean> {
-    if (this.entry === undefined) return false;
-    const kind = _acpSdkDeps.launchCandidateKind(this.entry.agent);
-    if (kind === "npx" && !this.npxWarned) {
-      this.npxWarned = true;
-      getSafeLogger()?.warn(
-        STAGE,
-        "Only the npx fallback can launch this ACP agent; the first run downloads it inside the startup deadline",
-        { agentName: this.name },
-      );
-    }
-    return kind !== undefined;
+    return this.entry !== undefined && _acpSdkDeps.launchCandidateKind(this.entry.agent) !== undefined;
+  }
+
+  /** Spec §6.8, D3-k: the run's install check warns when only the npx fallback resolves. */
+  launchNote(): string | undefined {
+    if (this.entry === undefined || _acpSdkDeps.launchCandidateKind(this.entry.agent) !== "npx") return undefined;
+    return `Only the npx fallback can launch ACP agent "${this.name}"; the first run downloads it inside the startup deadline`;
   }
 ```
 
-Grep for other users of `_acpSdkDeps.isAgentLaunchable` (`grep -rn "isAgentLaunchable" packages/nax/src packages/nax/test`) and move each to `launchCandidateKind` (a test stub `() => true` becomes `() => "local"`, `() => false` becomes `() => undefined`).
+`run-initialization.ts`, in `checkAgentInstalled`, after the `if (!installed) { ... }` block:
 
-- [ ] **Step 3: Run the tests**
+```ts
+  const note = agent.launchNote?.();
+  if (note !== undefined) {
+    logger?.warn("execution", note, { agent: resolveDefaultAgent(config) });
+  }
+```
 
-Run: `cd packages/nax && bun test test/unit/agents/acp-sdk/ --timeout=30000 && bun run typecheck`
+`agents-list.test.ts` (lines 89-106): replace `_acpSdkDeps.isAgentLaunchable` with `_acpSdkDeps.launchCandidateKind`, the stub `(agent) => agent === "claude"` with `(agent) => (agent === "claude" ? "local" : undefined)`, and the saved/restored `original` accordingly. Then `grep -rn "isAgentLaunchable" packages/nax/src packages/nax/test` must return nothing.
+
+- [ ] **Step 4: Run the tests**
+
+Run: `cd packages/nax && bun test test/unit/agents/acp-sdk/ test/unit/cli/agents-list.test.ts test/unit/execution/lifecycle/run-initialization.test.ts --timeout=30000 && bun run typecheck && bun run check:all`
 Expected: PASS.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add packages/nax/src/agents/acp-sdk/session.ts packages/nax/src/agents/acp-sdk/adapter.ts packages/nax/test/unit/agents/acp-sdk/
-git commit -m "feat(nax): warn when only the npx fallback can launch an ACP agent (S4b-3 §6.8)"
+git add packages/nax/src/agents/types.ts packages/nax/src/agents/acp-sdk/session.ts packages/nax/src/agents/acp-sdk/adapter.ts packages/nax/src/execution/lifecycle/run-initialization.ts packages/nax/test/unit/agents/acp-sdk/adapter.test.ts packages/nax/test/unit/cli/agents-list.test.ts packages/nax/test/unit/execution/lifecycle/run-initialization.test.ts
+git commit -m "feat(nax): the run warns when only the npx fallback can launch the ACP agent (S4b-3 §6.8)"
 ```
 
 ---
@@ -1856,19 +2036,33 @@ describe("sendTurn parity with acpx (spec §9)", () => {
   });
 
   test("the default budget is 10 prompts and spending it warns (adapter-send-turn-edges)", async () => {
-    const script = scriptedOpened([replyTurn("Shall I continue?")]);
-    const { session } = build(script.opened);
-    const result = await runTurnLoop(session, "p", { interactionHandler: answering(..."yyyyyyyyyyyy".split("")) });
-    expect(result.internalRoundTrips).toBe(10);
+    resetLogger();
+    initLogger({ level: "silent" });
+    const warnSpy = spyOn(getLogger(), "warn").mockImplementation(() => {});
+    try {
+      const script = scriptedOpened([replyTurn("Shall I continue?")]);
+      const { session } = build(script.opened);
+      const result = await runTurnLoop(session, "p", { interactionHandler: answering(..."yyyyyyyyyyyy".split("")) });
+      expect(result.internalRoundTrips).toBe(10);
+      expect(warnSpy.mock.calls.some((call) => String(call[1]).includes("Interaction budget spent"))).toBe(true);
+    } finally {
+      warnSpy.mockRestore();
+      resetLogger();
+    }
   });
 
   test("the deadline expiring between iterations returns timedOut (adapter-send-turn-edges)", async () => {
     const script = scriptedOpened([replyTurn('<nax_tool_call name="t">{}</nax_tool_call>')]);
     const { session } = build(script.opened, { timeoutSeconds: 0.05 });
-    const slow: InteractionHandler = {
-      onInteraction: () => new Promise((resolve) => setTimeout(() => resolve({ answer: "r" }), 120)),
+    const started = Date.now();
+    // The reply is withheld until the 50 ms deadline has passed; no fixed timer in the test.
+    const late: InteractionHandler = {
+      onInteraction: async () => {
+        await waitForCondition(() => Date.now() - started > 60);
+        return { answer: "r" };
+      },
     };
-    const result = await runTurnLoop(session, "p", { interactionHandler: slow });
+    const result = await runTurnLoop(session, "p", { interactionHandler: late });
     expect(result).toMatchObject({ timedOut: true, output: "" });
   });
 
@@ -1919,7 +2113,7 @@ describe("sendTurn parity with acpx (spec §9)", () => {
 });
 ```
 
-Imports: `failurePolicyFor` from `@/agents/retry/failure-policy`; `NO_OP_INTERACTION_HANDLER`, `AgentSessionError`, `SessionTurnError`, `type InteractionHandler` from `@nathapp/nax-agent`; the `scriptedOpened` doubles from `@test/helpers/acp-fake-agent`; `waitForCondition` from `@test/helpers`. The interaction handler's `setTimeout` in "the deadline expiring between iterations" is a test double resolving a promise, not a sleep; if `check:test-sleeps` (or the repo's equivalent gate) rejects it, use the fake clock helper the turn tests use instead.
+Imports: `failurePolicyFor` from `@/agents/retry/failure-policy`; `NO_OP_INTERACTION_HANDLER`, `AgentSessionError`, `SessionTurnError`, `type InteractionHandler` from `@nathapp/nax-agent`; the `scriptedOpened` doubles from `@test/helpers/acp-fake-agent`; `waitForCondition` from `@test/helpers`; `spyOn` from `bun:test`; `getLogger`, `initLogger`, `resetLogger` from `@/logger`. The parity files mirror no single `src` module (they mirror acpx test files); say so in the PR body.
 
 - [ ] **Step 2: Write `parity-complete.test.ts`**
 
@@ -1989,7 +2183,7 @@ Add to `test/unit/agents/acp-sdk/adapter.test.ts`, which already drives the fake
       const exited: number[] = [];
       const adapter = new AcpSdkAgentAdapter("claude");
       const handle = await adapter.openSession("nax-pids", {
-        ...openOpts(),
+        ...opts(),
         onPidSpawned: (pid) => spawned.push(pid),
         onPidExited: (pid) => exited.push(pid),
       });
@@ -2005,7 +2199,7 @@ Add to `test/unit/agents/acp-sdk/adapter.test.ts`, which already drives the fake
   );
 ```
 
-`openOpts()` is the `OpenSessionOpts` builder `adapter.test.ts` already uses for its open/turn/close test (use its real name). Import `NO_OP_INTERACTION_HANDLER` from `@nathapp/nax-agent`. If the first `sendTurn` resolves instead of rejecting (the backend may report the crash as an errored turn that nax maps to a thrown `SessionTurnError`), the `.catch` keeps the test indifferent to which; the assertion is on the PIDs.
+`opts()` is the `OpenSessionOpts` builder `adapter.test.ts` already defines and uses for its open/turn/close test; `record` is its fake-agent record path. Import `NO_OP_INTERACTION_HANDLER` from `@nathapp/nax-agent`. If the first `sendTurn` resolves instead of rejecting (the backend may report the crash as an errored turn that nax maps to a thrown `SessionTurnError`), the `.catch` keeps the test indifferent to which; the assertion is on the PIDs.
 
 - [ ] **Step 4: Run the tests**
 
@@ -2040,8 +2234,8 @@ Copy `makeWatchdogConfig` from `fail-stale-watchdog.test.ts`. The sdk bridge sta
  * memory (scriptedOpened) instead of a mock acpx client.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { makeFakeClock, makeNaxConfig, waitForCondition } from "@test/helpers";
 import { hangTurn, scriptedOpened } from "@test/helpers/acp-fake-agent";
-import { makeFakeClock, makeNaxConfig } from "@test/helpers";
 import { _acpSdkDeps, AcpSdkAgentAdapter } from "@/agents/acp-sdk";
 import { FALLBACK_RATES } from "@/agents/cost";
 import { _idleWatchdogDeps, AgentStreamEventBus, attachAgentIdleWatchdog } from "@/runtime";
@@ -2088,6 +2282,8 @@ describe("Idle watchdog stale cancellation (sdk transport)", () => {
     const detach = attachAgentIdleWatchdog(bus, registry, makeWatchdogConfig(IDLE_TIMEOUT_MS));
     try {
       const pending = new AcpSdkAgentAdapter("claude").complete("p", completeOptions(registry, bus, 5_000));
+      // createSession does real async work before call_started; wait until the call is registered.
+      await waitForCondition(() => registry.size > 0);
       await clock.advance(0);
       await clock.advance(IDLE_TIMEOUT_MS * 2);
       const result = await pending;
@@ -2105,6 +2301,8 @@ describe("Idle watchdog stale cancellation (sdk transport)", () => {
     const detach = attachAgentIdleWatchdog(bus, registry, makeWatchdogConfig(IDLE_TIMEOUT_MS));
     try {
       const pending = new AcpSdkAgentAdapter("claude").complete("p", completeOptions(registry, bus, 5_000));
+      // createSession does real async work before call_started; wait until the call is registered.
+      await waitForCondition(() => registry.size > 0);
       await clock.advance(0);
       await clock.advance(IDLE_TIMEOUT_MS * 2);
       const outcome = await pending.then(
@@ -2119,7 +2317,7 @@ describe("Idle watchdog stale cancellation (sdk transport)", () => {
 });
 ```
 
-Paste `makeWatchdogConfig` verbatim from the acpx file above the `describe`. If `clock.advance(0)` does not let `createSession`'s awaits settle before the tick (the acpx test needed two advances for the same reason), add one more `await clock.advance(0)` before the idle advance and note it in a comment.
+Paste `makeWatchdogConfig` verbatim from the acpx file above the `describe`. `waitForCondition` polls on real time while the watchdog runs on the fake clock; `onActiveCall` registers the call right after `call_started`, so once `registry.size > 0` the watchdog is tracking the call and the clock advances fire its tick. Run `bunx biome check --write` on the new file if import ordering is reported.
 
 - [ ] **Step 2: Write the `nax agents` variant**
 
@@ -2212,9 +2410,9 @@ git commit -m "test(nax): watchdog and nax agents integration on the sdk transpo
 - Modify: `packages/nax/src/config/schemas-infra.ts:325-328` (transport comment)
 - Modify: `docs/superpowers/specs/2026-10-07-s4b-nax-run-acp-cutover-design.md` (§6.7, §7.1, §7.2, §11)
 
-- [ ] **Step 1: Schema comment**
+- [ ] **Step 1: Schema comment and config description**
 
-In `schemas-infra.ts`, replace the transport comment's "incomplete until S4b-3 (no complete(), no promptRetries)" sentence with "complete on both transports since S4b-3; S4b-4 flips the default to sdk and S4b-5 deletes the key with acpx."
+In `schemas-infra.ts`, replace the transport comment's "incomplete until S4b-3 (no complete(), no promptRetries)" sentence with "complete on both transports since S4b-3; S4b-4 flips the default to sdk and S4b-5 deletes the key with acpx." In `packages/nax/src/cli/config-descriptions.ts:303`, replace "(S4b development key, incomplete until S4b-3)" with "(S4b development key; S4b-4 makes sdk the default)". If a test pins the description text (`grep -rn "incomplete until S4b-3" packages/nax/test`), update it in the same commit.
 
 - [ ] **Step 2: Run the model probe (maintainer machine, unbilled, D2-b)**
 
@@ -2240,6 +2438,9 @@ In the spec:
   - "9. **Sessions classify auth and rate-limit failures** (`fail-auth`, `fail-rate-limit`). acpx's `sendTurn` had no such classification; only its `complete()` parsed them."
   - "10. **`complete()` throws its auth, rate-limit and model failures pre-classified** (`SessionTurnError.adapterFailure`), where acpx returned a degraded `CompleteResult` carrying `adapterFailure` (D3-c)."
   - "11. **`promptRetries` still applies only to `complete()` in practice.** `SessionManager` never fills `OpenSessionOpts.promptRetries`, so acpx sessions never passed `--prompt-retries`; the sdk loop honours the field when set (D3-g)."
+  - "12. **Session open failures stay unclassified, as on acpx.** `session-run-hop.ts` opens the session outside its `try`; wiring open failures into the retry and swap policy is deferred (D3-l). `complete()` classifies its open failures (§6.6 item 5)."
+  - "13. **`complete()` session errors are `availability`** (`BACKEND_UNAVAILABLE`, `TURN_FAILED`, `CLOSED`), where acpx's `complete()` classified a crash as `quality/fail-adapter-error`; this can change swap versus escalate for complete-kind ops (D3-m)."
+  - "14. **A run abort during `complete()` throws `fail-aborted`.** acpx's `complete()` never observed the run signal; returning a cancelled result would be retried by the manager as `fail-stale` (D3-a)."
 
 - [ ] **Step 4: Full gates**
 
@@ -2260,8 +2461,8 @@ Expected: all green; `test:coverage` passes with every new or changed `src/agent
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/nax/src/config/schemas-infra.ts docs/superpowers/specs/2026-10-07-s4b-nax-run-acp-cutover-design.md
-git commit -m "docs(spec): S4b-3 rulings D2-b/D2-c, T1-1 retries, behaviour changes 9-11"
+git add packages/nax/src/config/schemas-infra.ts packages/nax/src/cli/config-descriptions.ts docs/superpowers/specs/2026-10-07-s4b-nax-run-acp-cutover-design.md
+git commit -m "docs(spec): S4b-3 rulings D2-b/D2-c, T1-1 retries, behaviour changes 9-14"
 ```
 
 ---
@@ -2272,4 +2473,4 @@ git commit -m "docs(spec): S4b-3 rulings D2-b/D2-c, T1-1 retries, behaviour chan
 - `typecheck`, `check:all`, `bun run test` and `test:coverage` are green in `packages/nax`; nax-agent-acp's gates and `check:api` are green.
 - The model probe output is in the PR body and spec §6.7.
 - Default transport unchanged (`acpx`); no release; no billed run.
-- PR body: decisions D3-a..D3-k, the parity map, the two transport-agnostic integration tests, the probe result, and any `[FAIL]` model ids for the maintainer.
+- PR body: decisions D3-a..D3-m, the parity map, the two transport-agnostic integration tests, the probe result, and any `[FAIL]` model ids for the maintainer.
