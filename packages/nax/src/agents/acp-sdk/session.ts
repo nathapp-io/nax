@@ -26,20 +26,20 @@ import {
   type AcpBackendOptions,
   type AcpProcessHooks,
   acpBackend,
-  isAgentLaunchable,
+  type LaunchCandidateKind,
+  launchCandidateKind,
 } from "@nathapp/nax-agent-acp/client";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
+import { cancellableDelay } from "@/utils/bun-deps";
 import { type RateCard, resolveRateCard } from "../cost";
-import { createAskPort } from "./ask-port";
-import { backendOptions, openContext, transcriptStoreFor } from "./open-context";
+import { AWAITING_HUMAN_BEAT_MS, createAskPort } from "./ask-port";
+import { backendOptions, DEFAULT_CLOSE_DEADLINE_MS, openContext, transcriptStoreFor } from "./open-context";
 import type { StreamContext } from "./stream-bridge";
+import { type AuditRecorder, createAuditRecorder } from "./tool-audit";
 import { createTurnSlot, type TurnSlot } from "./turn-slot";
 
 const STAGE = "acp-sdk";
-
-/** `agent.acp.trackedSpawnDeadlineMs`'s schema default, used only when the opener passes none. */
-const DEFAULT_CLOSE_DEADLINE_MS = 10_000;
 
 /** A leftover the backend cannot restore: deleted, then the session opens fresh (D2-j). */
 const DISCARD_CODES: ReadonlySet<string> = new Set([
@@ -52,8 +52,10 @@ const DISCARD_CODES: ReadonlySet<string> = new Set([
 /** Test seam. Production always uses the package functions. */
 export const _acpSdkDeps = {
   acpBackend: (options: AcpBackendOptions): SessionBackend => acpBackend(options),
-  isAgentLaunchable: (agent: AcpAgentName): boolean => isAgentLaunchable(agent),
+  launchCandidateKind: (agent: AcpAgentName): LaunchCandidateKind | undefined => launchCandidateKind(agent),
   resolveRateCard: (modelId: string): Promise<RateCard> => resolveRateCard(modelId),
+  /** promptRetries' backoff; rejects with the signal's reason when it aborts (D3-h). */
+  delay: (ms: number, signal?: AbortSignal): Promise<void> => cancellableDelay(ms, signal),
   async cwdExists(dir: string): Promise<boolean> {
     try {
       return (await stat(dir)).isDirectory();
@@ -77,6 +79,7 @@ export interface AcpSdkSession {
   readonly store: TranscriptStore;
   readonly slot: TurnSlot;
   readonly asks: SessionAskPort;
+  readonly audit: AuditRecorder;
   /** Aborted when the session starts closing: the backend's openSignal, and an abort for a running prompt. */
   readonly closer: AbortController;
   readonly process: ProcessTracker;
@@ -90,7 +93,10 @@ export interface AcpSdkSession {
   readonly unlinkRun: () => void;
 }
 
-type OpenBase = Pick<AcpSdkSession, "name" | "agent" | "opts" | "store" | "slot" | "asks" | "closer" | "process">;
+type OpenBase = Pick<
+  AcpSdkSession,
+  "name" | "agent" | "opts" | "store" | "slot" | "asks" | "audit" | "closer" | "process"
+>;
 
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -190,7 +196,12 @@ function linkRunSignal(signal: AbortSignal | undefined, closer: AbortController)
   return () => signal.removeEventListener("abort", onAbort);
 }
 
-function streamContextOf(name: string, opts: OpenSessionOpts, process: ProcessTracker): StreamContext {
+function streamContextOf(
+  name: string,
+  opts: OpenSessionOpts,
+  process: ProcessTracker,
+  audit: AuditRecorder,
+): StreamContext {
   const header = opts.toolAudit?.header;
   return {
     emit: opts.onStreamActivity,
@@ -201,6 +212,7 @@ function streamContextOf(name: string, opts: OpenSessionOpts, process: ProcessTr
     model: opts.modelDef.model,
     timeoutSeconds: opts.timeoutSeconds,
     pid: () => process.pid,
+    audit,
   };
 }
 
@@ -208,13 +220,15 @@ export async function createSession(name: string, agent: AcpAgentName, opts: Ope
   const slot = createTurnSlot();
   const closer = new AbortController();
   const unlinkRun = linkRunSignal(opts.signal, closer);
+  const audit = createAuditRecorder(name, opts.toolAudit);
   const base: OpenBase = {
     name,
     agent,
     opts,
     store: transcriptStoreFor(opts.transcriptDir),
     slot,
-    asks: createAskPort(slot),
+    asks: createAskPort(slot, AWAITING_HUMAN_BEAT_MS, audit),
+    audit,
     closer,
     process: { pid: undefined },
   };
@@ -233,7 +247,7 @@ export async function createSession(name: string, agent: AcpAgentName, opts: Ope
       ...base,
       handle,
       rateCard,
-      stream: streamContextOf(name, opts, base.process),
+      stream: streamContextOf(name, opts, base.process, audit),
       opened,
       running: undefined,
       unlinkRun,
@@ -303,7 +317,12 @@ export async function shutdownSession(session: AcpSdkSession, options: ShutdownO
   }
   // The backend's sendTurn saves the cost baseline in its finally; let it land before the delete.
   if (session.running !== undefined) await settleWithin(session.running, options.waitMs);
-  // S4b-3: flush the tool-audit sink here, before the document goes.
+  await session.audit.flush().catch((err: unknown) => {
+    getSafeLogger()?.warn(STAGE, "Could not write the ACP session's tool audit", {
+      sessionName: session.name,
+      error: errorText(err),
+    });
+  });
   await discard(session.store, session.name);
 }
 

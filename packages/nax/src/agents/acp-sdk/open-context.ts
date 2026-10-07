@@ -3,8 +3,9 @@
  * BackendOpenContext and its acpBackend options. nax keeps its own env
  * allowlist (agents/shared/env.ts) with inheritEnv false, puts everything in the
  * prompt (no instructions), registers no tools (B5) and enforces the turn
- * deadline itself, so turnTimeoutSeconds is informational. Model only: effort
- * is S4b-3; the probe found nax's model aliases offered verbatim (D2-a).
+ * deadline itself, so turnTimeoutSeconds is informational. Model and effort
+ * come from the model spec (§6.7, D2-a); the startup and teardown deadlines
+ * become initializeTimeoutMs and cancelGraceMs (§7.2, D3-i).
  */
 import {
   type BackendOpenContext,
@@ -35,18 +36,32 @@ export function backendEnv(modelEnv?: Readonly<Record<string, string>>): Record<
   );
 }
 
+/** `agent.acp.trackedSpawnStartupDeadlineMs`'s schema default; the adapter cannot read config (#1583). */
+export const DEFAULT_STARTUP_DEADLINE_MS = 30_000;
+/** `agent.acp.trackedSpawnDeadlineMs`'s schema default (PERF-1). */
+export const DEFAULT_CLOSE_DEADLINE_MS = 10_000;
+/** nax-agent-acp's option schema maxima (options.ts); nax's schema has no upper bound (D3-i). */
+const BACKEND_MAX_INITIALIZE_MS = 3_600_000;
+const BACKEND_MAX_CANCEL_GRACE_MS = 600_000;
+
 export function backendOptions(
   agent: AcpAgentName,
   opts: OpenSessionOpts,
   onProcess?: AcpProcessHooks,
 ): AcpBackendOptions {
-  const { model } = parseModelSpec(opts.modelDef.model);
+  const { model, effort } = parseModelSpec(opts.modelDef.model);
   return {
     agent,
     allowUnsandboxed: true,
     ...(model === "" ? {} : { model }),
+    ...(effort === undefined ? {} : { effort }),
     env: backendEnv(opts.modelDef.env),
     inheritEnv: false,
+    initializeTimeoutMs: Math.min(
+      opts.trackedSpawnStartupDeadlineMs ?? DEFAULT_STARTUP_DEADLINE_MS,
+      BACKEND_MAX_INITIALIZE_MS,
+    ),
+    cancelGraceMs: Math.min(opts.trackedSpawnDeadlineMs ?? DEFAULT_CLOSE_DEADLINE_MS, BACKEND_MAX_CANCEL_GRACE_MS),
     ...(onProcess === undefined ? {} : { onProcess }),
   };
 }

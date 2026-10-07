@@ -302,6 +302,12 @@ The loop is the `adapter-send-turn.ts` loop with the transport swapped. Concrete
 - `model` goes to `acpBackend({ model })`.
   - The backend requires an exact match with an offered config value (`open.ts`, `modelOptionId`).
   - Probed 2026-10-07 against claude-agent-acp 0.85.1: offered `default, sonnet, haiku, opus, fable`; nax's tier defaults match verbatim; no mapping table.
+  - S4b-3 probe (D2-b, 2026-10-07), against the maintainer's `~/.nax/config.json` (effort suffixes stripped); every configured id is offered verbatim, no `[FAIL]`:
+    - claude offers `default, sonnet, haiku, opus, fable`; configured `haiku`, `sonnet` — offered.
+    - codex offers `gpt-6.1-sol, gpt-6-astra, gpt-6-sol, gpt-6-luna, gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna`; configured `gpt-6-luna`, `gpt-6-sol` — offered.
+    - opencode offers a 50-id list (the refusal caps at 50) including `minimax/MiniMax-M2.7`, `minimax/MiniMax-M3`; configured both — offered.
+    - pi offers a 50-id list including `minimax/MiniMax-M2.7`, `minimax/MiniMax-M3`, `opencode-go/deepseek-v4-flash`; configured all three — offered.
+    - A model refusal now lists the offered ids (nax-agent-acp `[Unreleased]`).
 - The effort suffix goes to the new `effort` option (§8).
   - That option sets the thought-level config option, falling back to `EFFORT_OPTION_BY_AGENT`.
   - When the agent doesn't offer it, effort is skipped with a warning, as today.
@@ -345,9 +351,11 @@ The loop is the `adapter-send-turn.ts` loop with the transport swapped. Concrete
 | `AGENT_SESSION_TURN_FAILED`; `AGENT_SESSION_CLOSED` after the backend's reconnect failed | `fail-adapter-error` | no | session error (acpx `retryable` was false unless acpx flagged it) |
 | anything else | `fail-unknown` | no | none |
 
+Categories (S4b-3 D3-d): session-error rows are `availability`, as `session-run-hop.ts` synthesizes for acpx; capability, stop-reason and unknown rows are `quality`. A plain `Error` is `fail-unknown` (D3-e). A prompt-time not-found (`TURN_FAILED` with `rpcCode` -32002 or the not-found text) is recovered like `AGENT_SESSION_NOT_FOUND` (D3-f).
+
 The cancel cause is set on the reason object by whoever aborts, and is never inferred from a stop reason. The plan's parity tests take each "Today" cell from the acpx unit suite, so any row that turns out to differ is caught before deletion.
 
-Run abort: acpx returned a zero-output TurnResult from this path; the sdk transport throws as the table says (S4b-2 D2-c). S4b-3's parity tests confirm or amend this row before the flip.
+Run abort: acpx returned a zero-output TurnResult from this path; the sdk transport throws `fail-aborted` as the table says. Ruled 2026-10-07 (D2-c): the policy never retries or swaps `fail-aborted`, and the native adapter already throws; pinned by `parity-turn.test.ts`.
 
 ### 7.2 Kept running logic (B7)
 
@@ -355,7 +363,7 @@ Run abort: acpx returned a zero-output TurnResult from this path; the sdk transp
 |---|---|---|
 | `agent.acp.trackedSpawnStartupDeadlineMs` (30 s) | bounds session startup (#1583) | `acpBackend({ initializeTimeoutMs })`. It bounds each open-phase request: initialize, session/new or resume/load, and set_config_option for model and effort. |
 | `agent.acp.trackedSpawnDeadlineMs` (10 s) | bounds teardown so a wedged agent cannot hang the run (PERF-1) | `acpBackend({ cancelGraceMs })` and the bound on `opened.close()`. Never reused for startup (#1583). |
-| `agent.acp.promptRetries` (0, opt-in) | retry a prompt that failed on a transient fault | in `turn-loop` and `complete.ts`: up to N retries with jittered backoff. It applies **only when the failed attempt produced no visible output and no tool call**, meaning no `text_delta` and no `tool_call` (thinking alone does not count). It applies only to the fault classes acpx 0.19.4 retries under `--prompt-retries` (S4b-0 check (b)). The retry resends on the same session, and a retried attempt is not counted as a turn. |
+| `agent.acp.promptRetries` (0, opt-in) | retry a prompt that failed on a transient fault | in `turn-loop` and `complete.ts`: up to N retries with backoff `min(1000 * 2^n, 10000)` ms and no jitter. It applies **only when the failed attempt produced no turn event of any kind** (S4b-0 Ruling T1-1, acpx parity). It applies only to the fault classes acpx 0.19.4 retries under `--prompt-retries` (S4b-0 check (b)). The retry resends on the same session, and a retried attempt is not counted as a turn. |
 
 `config/tracked-spawn-deadlines.ts` and the `promptRetries` resolution (`agents/manager-dispatch.ts:384`) stay as they are. Only acpx wording in the schema comments is updated.
 
@@ -469,6 +477,12 @@ Each slice is one PR that leaves main green. Check gates that every slice must k
 6. **`closePhysicalSession` for a handle this adapter instance never opened is a no-op.** acpx could close a named session from a fresh client.
 7. **`acpx` is no longer required on PATH.** Each agent's ACP launcher is required instead (S4 §6.10). With only `npx` available, the first run downloads the launcher inside the startup deadline, and the precheck warns.
 8. **A configured model id must be one the agent offers verbatim** (for Claude: `default`, `sonnet`, `haiku`, `opus`, `fable`). Any other id fails the open with `AGENT_SESSION_CAPABILITY_UNSUPPORTED`; acpx passed it through and Claude's adapter resolved it fuzzily.
+9. **Sessions classify auth and rate-limit failures** (`fail-auth`, `fail-rate-limit`). acpx's `sendTurn` had no such classification; only its `complete()` parsed them.
+10. **`complete()` throws its auth, rate-limit and model failures pre-classified** (`SessionTurnError.adapterFailure`), where acpx returned a degraded `CompleteResult` carrying `adapterFailure` (D3-c).
+11. **`promptRetries` still applies only to `complete()` in practice.** `SessionManager` never fills `OpenSessionOpts.promptRetries`, so acpx sessions never passed `--prompt-retries`; the sdk loop honours the field when set (D3-g).
+12. **Session open failures stay unclassified, as on acpx.** `session-run-hop.ts` opens the session outside its `try`; wiring open failures into the retry and swap policy is deferred (D3-l). `complete()` classifies its open failures (§6.6 item 5).
+13. **`complete()` session errors are `availability`** (`BACKEND_UNAVAILABLE`, `TURN_FAILED`, `CLOSED`), where acpx's `complete()` classified a crash as `quality/fail-adapter-error`; this can change swap versus escalate for complete-kind ops (D3-m).
+14. **A run abort during `complete()` throws `fail-aborted`.** acpx's `complete()` never observed the run signal; returning a cancelled result would be retried by the manager as `fail-stale` (D3-a).
 
 ## 12. Risks
 

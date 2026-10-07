@@ -87,8 +87,8 @@ describe("agentsListCommand (US-005 AC8: listing driven by ACP_ADAPTER_NAMES)", 
   });
 
   test("S4b-2: transport sdk lists the same agents through the SDK adapter", async () => {
-    const original = _acpSdkDeps.isAgentLaunchable;
-    _acpSdkDeps.isAgentLaunchable = (agent) => agent === "claude";
+    const original = _acpSdkDeps.launchCandidateKind;
+    _acpSdkDeps.launchCandidateKind = (agent) => (agent === "claude" ? "local" : undefined);
     try {
       const config = makeNaxConfig({ agent: { default: "claude", acp: { transport: "sdk" } } });
       await agentsListCommand(config, "/tmp/workdir");
@@ -101,7 +101,7 @@ describe("agentsListCommand (US-005 AC8: listing driven by ACP_ADAPTER_NAMES)", 
       expect(codexRow).toContain("unavailable");
       expect(flat).not.toContain("ACP Agent");
     } finally {
-      _acpSdkDeps.isAgentLaunchable = original;
+      _acpSdkDeps.launchCandidateKind = original;
     }
   });
 });

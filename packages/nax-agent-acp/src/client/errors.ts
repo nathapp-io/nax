@@ -41,11 +41,15 @@ export function agentTextExcerpt(text: string, secrets: readonly string[]): stri
   return capBytes(redactSecrets(scrubSecrets(stripControl(text), secrets)), EXCERPT_BYTES);
 }
 
-export function capabilityUnsupported(capability: string, reason: string): AgentSessionError {
+export function capabilityUnsupported(
+  capability: string,
+  reason: string,
+  details: Readonly<Record<string, unknown>> = {},
+): AgentSessionError {
   return new AgentSessionError(
     `The ACP agent cannot meet the "${capability}" requirement: ${reason}`,
     "AGENT_SESSION_CAPABILITY_UNSUPPORTED",
-    { capability },
+    { ...details, capability },
   );
 }
 

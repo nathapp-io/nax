@@ -94,6 +94,16 @@ describe("startCall (S4b spec §6.2.1)", () => {
     expect(events[1]).toMatchObject({ status: "error" });
   });
 
+  test("every event reaches the audit recorder, also after call_ended", () => {
+    const seen: string[] = [];
+    const audit = { onEvent: (e: { type: string }) => seen.push(e.type), denied: () => {}, flush: async () => {} };
+    const call = startCall({ ...context([]), audit });
+    call.sink({ type: "tool_call", callId: "c1", name: "Read", input: {} });
+    call.end("error");
+    call.sink({ type: "tool_result", callId: "c1", isError: false, preview: "" });
+    expect(seen).toEqual(["tool_call", "tool_result"]);
+  });
+
   test("tracks side effects: text or a tool call, not thinking", () => {
     const events: AgentStreamEvent[] = [];
     const thinking = startCall(context(events));
@@ -102,6 +112,20 @@ describe("startCall (S4b spec §6.2.1)", () => {
     const tool = startCall(context(events));
     tool.sink({ type: "tool_call", callId: "t", name: "Bash", input: {} });
     expect(tool.sideEffects()).toBe(true);
+  });
+
+  test("anyEvent is true after any turn event, thinking and usage included (T1-1)", () => {
+    for (const event of [
+      { type: "thinking_delta", text: "hm", round: 1 },
+      { type: "usage", round: 1, inputTokens: 1, outputTokens: 0, costUsd: 0, costSource: "unpriced" },
+      { type: "tool_progress", callId: "c1" },
+    ] as const) {
+      const call = startCall(context([]));
+      expect(call.anyEvent()).toBe(false);
+      call.sink(event);
+      expect(call.anyEvent()).toBe(true);
+      expect(call.sideEffects()).toBe(false);
+    }
   });
 
   test("awaitingHuman emits agent.awaiting_human on the call", () => {

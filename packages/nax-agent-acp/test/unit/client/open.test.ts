@@ -173,6 +173,13 @@ describe("openAcpSession: every failure after the spawn kills the agent (Review 
     expect(mode.context).toMatchObject({ capability: "profile" });
   });
 
+  test("a model refusal lists the model ids the agent offers (D2-b)", async () => {
+    const err = sessionError(await rejection((await openWith(CLAUDE_SCRIPT, { model: "gpt-9" })).opened));
+    expect(err.context).toMatchObject({ capability: "model", offered: ["default", "sonnet"] });
+    expect(err.message).toContain('"gpt-9"');
+    expect(err.message).toContain("offered: default, sonnet");
+  });
+
   test("a transcript save failure propagates and kills the agent", async () => {
     const inner = createMemoryTranscriptStore();
     const failing: TranscriptStore = {

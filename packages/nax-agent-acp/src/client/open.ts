@@ -27,6 +27,7 @@ import {
   modelOptionId,
   offersValue,
   readOnlyFor,
+  selectValues,
   unmetRequirement,
 } from "#src/client/capabilities";
 import { type AcpLink, type InboundHandlers, openConnection } from "#src/client/connection";
@@ -50,6 +51,7 @@ import {
   restoreSession,
   type SessionSetup,
 } from "#src/client/resume";
+import { cleanLabel } from "#src/client/text";
 import type { ToolHost } from "#src/client/tool-host";
 
 export interface OpenedAcp {
@@ -247,6 +249,19 @@ async function applyMode(
   return set.configOptions ?? offered;
 }
 
+/** At most this many offered ids, each cleaned and capped, go into a model refusal (agent-supplied text). */
+const MAX_OFFERED_MODELS = 50;
+const MAX_MODEL_ID_CHARS = 100;
+
+function offeredModels(offered: readonly SessionConfigOption[], secrets: readonly string[]): string[] {
+  return offered
+    .filter((option) => option.category === "model")
+    .flatMap((option) => selectValues(option))
+    .slice(0, MAX_OFFERED_MODELS)
+    .map((id) => cleanLabel(id, secrets, MAX_MODEL_ID_CHARS) ?? "")
+    .filter((id) => id !== "");
+}
+
 async function applyModel(
   o: Opening,
   sessionId: string,
@@ -255,7 +270,14 @@ async function applyModel(
   const model = o.options.model;
   if (model === undefined) return offered;
   const configId = modelOptionId(offered, model);
-  if (configId === undefined) throw capabilityUnsupported("model", `the agent offers no model option "${model}"`);
+  if (configId === undefined) {
+    const ids = offeredModels(offered, o.options.secrets);
+    throw capabilityUnsupported(
+      "model",
+      `the agent offers no model option "${model}"; offered: ${ids.length === 0 ? "(none)" : ids.join(", ")}`,
+      { offered: ids },
+    );
+  }
   const set = await step(o, "session/set_config_option", o.link.setConfigOption({ sessionId, configId, value: model }));
   return set.configOptions ?? offered;
 }

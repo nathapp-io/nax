@@ -133,6 +133,39 @@ describe("AcpSdkAgentAdapter over a real agent process", () => {
     await waitForCondition(() => firstPid !== undefined && !isProcessAlive(firstPid), 5_000);
     await adapter.closeSession(handle);
   }, 30_000);
+
+  test("onPidSpawned/onPidExited fire for the first process and for the reconnect's process", async () => {
+    _acpSdkDeps.acpBackend = fakeAcpBackend(
+      {
+        capabilities: { sessionCapabilities: { resume: {} } },
+        turns: [
+          {
+            steps: [
+              { kind: "text", text: "partial" },
+              { kind: "exit", code: 7 },
+            ],
+          },
+        ],
+        relaunch: { turns: [{ steps: [{ kind: "text", text: "back" }] }] },
+      },
+      record,
+    );
+    const spawned: number[] = [];
+    const exited: number[] = [];
+    const adapter = new AcpSdkAgentAdapter("claude");
+    const handle = await adapter.openSession("nax-pids", {
+      ...opts(),
+      onPidSpawned: (pid) => spawned.push(pid),
+      onPidExited: (pid) => exited.push(pid),
+    });
+    await adapter.sendTurn(handle, "x", { interactionHandler: NO_OP_INTERACTION_HANDLER }).catch(() => undefined);
+    const result = await adapter.sendTurn(handle, "y", { interactionHandler: NO_OP_INTERACTION_HANDLER });
+    expect(result.output).toBe("back");
+    await adapter.closeSession(handle);
+    expect(new Set(spawned).size).toBe(2);
+    expect(spawned).toEqual(fakeStartPids(record));
+    await waitForCondition(() => exited.length === 2, 5_000);
+  }, 30_000);
 });
 
 describe("AcpSdkAgentAdapter without a process", () => {
@@ -161,25 +194,36 @@ describe("AcpSdkAgentAdapter without a process", () => {
     });
   });
 
-  test("isInstalled asks whether the agent's ACP launcher resolves", async () => {
-    _acpSdkDeps.isAgentLaunchable = (agent) => agent === "claude";
-    expect(await new AcpSdkAgentAdapter("claude").isInstalled()).toBe(true);
-    expect(await new AcpSdkAgentAdapter("codex").isInstalled()).toBe(false);
+  describe("isInstalled and launchNote (spec §6.8, D3-k)", () => {
+    test.each([
+      ["local", true],
+      ["npx", true],
+      [undefined, false],
+    ] as const)("launch candidate %p -> installed %p", async (kind, installed) => {
+      _acpSdkDeps.launchCandidateKind = () => kind;
+      expect(await new AcpSdkAgentAdapter("claude").isInstalled()).toBe(installed);
+    });
+
+    test("an npx-only launcher has a launch note; a local one has none", () => {
+      _acpSdkDeps.launchCandidateKind = () => "npx";
+      expect(new AcpSdkAgentAdapter("claude").launchNote()).toContain("npx");
+      _acpSdkDeps.launchCandidateKind = () => "local";
+      expect(new AcpSdkAgentAdapter("claude").launchNote()).toBeUndefined();
+    });
+
+    test("aider has no launcher and no note", async () => {
+      const adapter = new AcpSdkAgentAdapter("aider");
+      expect(await adapter.isInstalled()).toBe(false);
+      expect(adapter.launchNote()).toBeUndefined();
+    });
   });
 
-  test("identity rows match the entries; complete() waits for S4b-3", async () => {
+  test("identity rows match the entries", () => {
     const adapter = new AcpSdkAgentAdapter("claude");
     expect(adapter).toMatchObject({ name: "claude", displayName: "Claude Code (ACP)", binary: "claude" });
     expect(adapter.capabilities.supportedTiers).toEqual(["fast", "balanced", "powerful"]);
     expect(adapter.buildCommand()).toEqual(["acp", "claude"]);
     expect(adapter.buildAllowedEnv().HOME).toBeDefined();
-    await expect(
-      adapter.complete("x", {
-        modelDef: { provider: "anthropic", model: "sonnet" },
-        workdir: dir,
-        resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
-      }),
-    ).rejects.toMatchObject({ code: "ACP_SDK_COMPLETE_UNAVAILABLE" });
   });
 
   test("closeSession on an unknown handle is a no-op", async () => {

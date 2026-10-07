@@ -1,7 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createMemoryTranscriptStore, type OpenSessionOpts } from "@nathapp/nax-agent";
 import { createAskPort } from "@/agents/acp-sdk/ask-port";
-import { backendEnv, backendOptions, openContext, transcriptStoreFor } from "@/agents/acp-sdk/open-context";
+import {
+  backendEnv,
+  backendOptions,
+  DEFAULT_CLOSE_DEADLINE_MS,
+  DEFAULT_STARTUP_DEADLINE_MS,
+  openContext,
+  transcriptStoreFor,
+} from "@/agents/acp-sdk/open-context";
 import { createTurnSlot } from "@/agents/acp-sdk/turn-slot";
 
 const OPTS: OpenSessionOpts = {
@@ -63,6 +70,46 @@ describe("backendOptions", () => {
     expect(backendOptions("claude", { ...OPTS, modelDef: { provider: "anthropic", model: "" } })).not.toHaveProperty(
       "model",
     );
+  });
+});
+
+describe("backendOptions: effort and deadlines (spec §6.7, §7.2)", () => {
+  test("the model spec's effort suffix becomes the effort option; the bare id is the model", () => {
+    const options = backendOptions("claude", { ...OPTS, modelDef: { provider: "anthropic", model: "sonnet[high]" } });
+    expect(options).toMatchObject({ model: "sonnet", effort: "high" });
+  });
+
+  test("no suffix, no effort", () => {
+    const options = backendOptions("claude", { ...OPTS, modelDef: { provider: "anthropic", model: "sonnet" } });
+    expect("effort" in options).toBe(false);
+  });
+
+  test("the configured deadlines become initializeTimeoutMs and cancelGraceMs", () => {
+    const options = backendOptions("claude", {
+      ...OPTS,
+      trackedSpawnStartupDeadlineMs: 45_000,
+      trackedSpawnDeadlineMs: 7_000,
+    });
+    expect(options).toMatchObject({ initializeTimeoutMs: 45_000, cancelGraceMs: 7_000 });
+  });
+
+  test("absent deadlines fall back to nax's schema defaults, not the backend's 60 s", () => {
+    const { trackedSpawnDeadlineMs: _t, trackedSpawnStartupDeadlineMs: _s, ...bare } = OPTS;
+    expect(backendOptions("claude", bare)).toMatchObject({
+      initializeTimeoutMs: DEFAULT_STARTUP_DEADLINE_MS,
+      cancelGraceMs: DEFAULT_CLOSE_DEADLINE_MS,
+    });
+    expect(DEFAULT_STARTUP_DEADLINE_MS).toBe(30_000);
+    expect(DEFAULT_CLOSE_DEADLINE_MS).toBe(10_000);
+  });
+
+  test("over-max deadlines are clamped to what the backend accepts (D3-i)", () => {
+    const options = backendOptions("claude", {
+      ...OPTS,
+      trackedSpawnStartupDeadlineMs: 9_000_000,
+      trackedSpawnDeadlineMs: 9_000_000,
+    });
+    expect(options).toMatchObject({ initializeTimeoutMs: 3_600_000, cancelGraceMs: 600_000 });
   });
 });
 

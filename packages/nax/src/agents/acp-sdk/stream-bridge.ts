@@ -10,6 +10,7 @@
 import { randomUUID } from "node:crypto";
 import type { AgentStreamEvent, TurnEvent, TurnEventSink } from "@nathapp/nax-agent";
 import { getSafeLogger } from "@/logger";
+import type { AuditRecorder } from "./tool-audit";
 
 export interface StreamContext {
   readonly emit: ((event: AgentStreamEvent) => void) | undefined;
@@ -20,16 +21,20 @@ export interface StreamContext {
   readonly storyId: string | undefined;
   readonly model: string;
   readonly timeoutSeconds: number;
-  /** The live agent process's pid, when known (S4b-3 wires it from onProcess). */
+  /** The live agent process's pid, when known (kept current by the session's onProcess hooks). */
   readonly pid: () => number | undefined;
+  /** Tool audit (§7.4); every event goes to it, also after call_ended, so no row is lost. */
+  readonly audit?: AuditRecorder;
 }
 
 export interface CallBridge {
   readonly callId: string;
   /** The backend's onTurnEvent for this prompt. */
   readonly sink: TurnEventSink;
-  /** True once the prompt produced visible text or a tool call (S4b-3 promptRetries reads it). */
+  /** True once the prompt produced visible text or a tool call. */
   sideEffects(): boolean;
+  /** True once the prompt produced any turn event at all (promptRetries, S4b-0 Ruling T1-1). */
+  anyEvent(): boolean;
   /** Tells the idle watchdog this call waits on a person (§6.2.1). */
   awaitingHuman(): void;
   /** Emits agent.call_ended once; later calls and events are ignored. */
@@ -122,18 +127,22 @@ export function startCall(ctx: StreamContext, now: () => number = Date.now): Cal
   const toolNames = new Map<string, string>();
   let ended = false;
   let sideEffects = false;
+  let anyEvent = false;
   send({ ...base, kind: "agent.call_started", model: ctx.model, timeoutSeconds: ctx.timeoutSeconds, timestamp: now() });
   const pid = ctx.pid();
   if (pid !== undefined) send({ ...base, kind: "agent.process_update", status: "spawned", pid, timestamp: now() });
   return {
     callId,
     sink: (event) => {
+      ctx.audit?.onEvent(event);
       if (ended) return;
+      anyEvent = true;
       if (event.type === "text_delta" || event.type === "tool_call") sideEffects = true;
       const activity = activityOf(event, toolNames);
       if (activity !== undefined) send({ ...base, ...activity, timestamp: now() });
     },
     sideEffects: () => sideEffects,
+    anyEvent: () => anyEvent,
     awaitingHuman: () => {
       if (!ended) send({ ...base, kind: "agent.awaiting_human", timestamp: now() });
     },

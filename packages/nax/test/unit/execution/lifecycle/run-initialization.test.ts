@@ -8,12 +8,13 @@
  * - No failureStage => NOT reconciled to "passed", reset to "pending" for re-run
  */
 
-import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { makeAgentAdapter, makeSpawn, makeTempDir, withWarnSpy } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { _reconcileDeps, initializeRun } from "@/execution/lifecycle/run-initialization";
+import { getLogger, initLogger, resetLogger } from "@/logger";
 import type { PRD } from "@/prd/types";
 import type { ReviewResult } from "@/review/types";
 
@@ -479,5 +480,30 @@ describe("agent preflight", () => {
     await expect(initWith(prd, { installed: false, acceptance: true, suffix: "acceptance" })).rejects.toThrow(
       /not installed or not in PATH/,
     );
+  });
+
+  test("an installed agent's launch note is logged as a warning (spec §6.8, D3-k)", async () => {
+    resetLogger();
+    initLogger({ level: "silent" });
+    const warnSpy = spyOn(getLogger(), "warn").mockImplementation(() => {});
+    try {
+      const prdPath = join(tmpDir, "prd-preflight-note.json");
+      await Bun.write(prdPath, JSON.stringify(makePrd({ status: "pending", passes: false })));
+      const adapter = {
+        ...makeAgentAdapter({ binary: "claude", isInstalled: () => Promise.resolve(true) }),
+        launchNote: () => "Only the npx fallback can launch this ACP agent",
+      };
+      await initializeRun({
+        config: { ...DEFAULT_CONFIG, acceptance: { ...DEFAULT_CONFIG.acceptance, enabled: false } },
+        prdPath,
+        workdir: tmpDir,
+        dryRun: false,
+        agentGetFn: () => adapter,
+      });
+      expect(warnSpy.mock.calls.some((call) => String(call[1]).includes("npx"))).toBe(true);
+    } finally {
+      warnSpy.mockRestore();
+      resetLogger();
+    }
   });
 });

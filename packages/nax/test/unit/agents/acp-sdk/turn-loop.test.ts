@@ -6,14 +6,17 @@ import {
   type AgentStreamEvent,
   createMemoryTranscriptStore,
   type InteractionHandler,
+  NaxError,
   type OpenedBackend,
   type OpenSessionOpts,
+  type SendTurnOpts,
   SessionTurnError,
 } from "@nathapp/nax-agent";
 import { waitForCondition } from "@test/helpers";
-import { failTurn, hangTurn, replyTurn, scriptedOpened } from "@test/helpers/acp-fake-agent";
+import { failTurn, hangTurn, replyTurn, type ScriptedTurn, scriptedOpened } from "@test/helpers/acp-fake-agent";
 import { createAskPort } from "@/agents/acp-sdk/ask-port";
 import { _acpSdkDeps, type AcpSdkSession } from "@/agents/acp-sdk/session";
+import { createAuditRecorder } from "@/agents/acp-sdk/tool-audit";
 import { runTurnLoop } from "@/agents/acp-sdk/turn-loop";
 import { createTurnSlot } from "@/agents/acp-sdk/turn-slot";
 import { FALLBACK_RATES } from "@/agents/cost";
@@ -52,6 +55,7 @@ function build(opened: OpenedBackend, overrides: Partial<OpenSessionOpts> = {}):
     store: createMemoryTranscriptStore(),
     slot,
     asks: createAskPort(slot),
+    audit: createAuditRecorder("nax-loop", undefined),
     closer: new AbortController(),
     rateCard: { rates: FALLBACK_RATES, source: "fallback-rates" },
     stream: {
@@ -239,7 +243,21 @@ describe("runTurnLoop: failures", () => {
     await expect(runTurnLoop(session, "p", { interactionHandler: NONE })).rejects.toBeInstanceOf(SessionTurnError);
   });
 
-  test("any other failure throws SessionTurnError fail-adapter-error with the summed spend", async () => {
+  test("a prompt-time not-found (TURN_FAILED, rpcCode -32002) re-opens fresh once (D3-f, acpx exit code 4)", async () => {
+    const gone = new NaxError("The ACP prompt failed: Resource not found", "AGENT_SESSION_TURN_FAILED", {
+      stage: "acp",
+      rpcCode: -32002,
+    });
+    const first = scriptedOpened([failTurn(gone)]);
+    const second = scriptedOpened([replyTurn("recovered")]);
+    _acpSdkDeps.acpBackend = () => ({ kind: "acp:claude", open: async () => second.opened });
+    const { session } = build(first.opened);
+    const result = await runTurnLoop(session, "p", { interactionHandler: NONE });
+    expect(result).toMatchObject({ output: "recovered", internalRoundTrips: 1 });
+    expect(second.prompts).toEqual(["p"]);
+  });
+
+  test("any other failure throws SessionTurnError with the summed spend (fail-unknown for a plain Error, D3-e)", async () => {
     const script = scriptedOpened([
       replyTurn('<nax_tool_call name="t">{}</nax_tool_call>'),
       failTurn(new Error("agent exploded")),
@@ -249,7 +267,7 @@ describe("runTurnLoop: failures", () => {
     if (!(err instanceof SessionTurnError)) throw err;
     expect(err).toMatchObject({ cancelled: false, retryable: false, message: "agent exploded" });
     expect(err.tokenUsage?.inputTokens).toBe(20);
-    expect(err.adapterFailure?.outcome).toBe("fail-adapter-error");
+    expect(err.adapterFailure?.outcome).toBe("fail-unknown");
   });
 
   test("a second concurrent turn on the session is refused", async () => {
@@ -260,5 +278,108 @@ describe("runTurnLoop: failures", () => {
       code: "ACP_SDK_TURN_IN_FLIGHT",
     });
     await first;
+  });
+});
+
+describe("runTurnLoop: promptRetries (spec §7.2, T1-1)", () => {
+  const transient = () =>
+    new NaxError("The ACP prompt failed: internal", "AGENT_SESSION_TURN_FAILED", { stage: "acp", rpcCode: -32603 });
+
+  function recordDelays(): number[] {
+    const waits: number[] = [];
+    _acpSdkDeps.delay = async (ms) => {
+      waits.push(ms);
+    };
+    return waits;
+  }
+
+  /** Emits one turn event through the bridge sink, then fails like failTurn. */
+  function eventThenFail(event: Parameters<NonNullable<SendTurnOpts["onTurnEvent"]>>[0], err: Error): ScriptedTurn {
+    return async (prompt, opts) => {
+      opts.onTurnEvent?.(event);
+      return failTurn(err)(prompt, opts);
+    };
+  }
+
+  test("a transient failure before any event is resent on the same call, up to promptRetries", async () => {
+    const waits = recordDelays();
+    const script = scriptedOpened([failTurn(transient()), failTurn(transient()), replyTurn("ok")]);
+    const { session, events } = build(script.opened, { promptRetries: 2 });
+    const result = await runTurnLoop(session, "p", { interactionHandler: NONE });
+    expect(result).toMatchObject({ output: "ok", internalRoundTrips: 1 });
+    expect(script.prompts).toEqual(["p", "p", "p"]);
+    expect(waits).toEqual([1_000, 2_000]);
+    expect(result.tokenUsage.inputTokens).toBe(30);
+    expect(events.filter((e) => e.kind === "agent.call_started")).toHaveLength(1);
+  });
+
+  test("promptRetries 0 (the default) never resends", async () => {
+    recordDelays();
+    const script = scriptedOpened([failTurn(transient()), replyTurn("never")]);
+    const { session } = build(script.opened);
+    await expect(runTurnLoop(session, "p", { interactionHandler: NONE })).rejects.toBeInstanceOf(SessionTurnError);
+    expect(script.prompts).toEqual(["p"]);
+  });
+
+  test("retries run out: the last failure is thrown with every attempt's spend", async () => {
+    recordDelays();
+    const script = scriptedOpened([failTurn(transient())]);
+    const { session } = build(script.opened, { promptRetries: 1 });
+    const err = await runTurnLoop(session, "p", { interactionHandler: NONE }).catch((e: unknown) => e);
+    if (!(err instanceof SessionTurnError)) throw err;
+    expect(script.prompts).toHaveLength(2);
+    expect(err.tokenUsage?.inputTokens).toBe(20);
+    expect(err.adapterFailure?.outcome).toBe("fail-adapter-error");
+  });
+
+  test("a thinking-only attempt is not retried (Review Focus 1)", async () => {
+    recordDelays();
+    const script = scriptedOpened([
+      eventThenFail({ type: "thinking_delta", text: "hm", round: 1 }, transient()),
+      replyTurn("x"),
+    ]);
+    const { session } = build(script.opened, { promptRetries: 3 });
+    await expect(runTurnLoop(session, "p", { interactionHandler: NONE })).rejects.toBeInstanceOf(SessionTurnError);
+    expect(script.prompts).toEqual(["p"]);
+  });
+
+  test("a non-retryable code is not retried", async () => {
+    recordDelays();
+    const script = scriptedOpened([failTurn(new NaxError("t", "ACP_STOP_MAX_TOKENS")), replyTurn("x")]);
+    const { session } = build(script.opened, { promptRetries: 3 });
+    await expect(runTurnLoop(session, "p", { interactionHandler: NONE })).rejects.toMatchObject({
+      adapterFailure: { outcome: "fail-incomplete" },
+    });
+    expect(script.prompts).toEqual(["p"]);
+  });
+
+  test("an abort during the backoff ends the turn, no resend (Review Focus 2)", async () => {
+    const run = new AbortController();
+    _acpSdkDeps.delay = (_ms, signal) =>
+      new Promise((_resolve, reject) => {
+        signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+        run.abort("shutdown");
+      });
+    const script = scriptedOpened([failTurn(transient()), replyTurn("never")]);
+    const { session } = build(script.opened, { promptRetries: 3 });
+    const err = await runTurnLoop(session, "p", { interactionHandler: NONE, signal: run.signal }).catch(
+      (e: unknown) => e,
+    );
+    if (!(err instanceof SessionTurnError)) throw err;
+    expect(err.adapterFailure?.outcome).toBe("fail-aborted");
+    expect(script.prompts).toEqual(["p"]);
+  });
+
+  test("a session-gone -32603 is recovered, not retried (Review Focus 5)", async () => {
+    const waits = recordDelays();
+    const gone = new NaxError("Session not found", "AGENT_SESSION_TURN_FAILED", { stage: "acp", rpcCode: -32603 });
+    const first = scriptedOpened([failTurn(gone)]);
+    const second = scriptedOpened([replyTurn("recovered")]);
+    _acpSdkDeps.acpBackend = () => ({ kind: "acp:claude", open: async () => second.opened });
+    const { session } = build(first.opened, { promptRetries: 3 });
+    const result = await runTurnLoop(session, "p", { interactionHandler: NONE });
+    expect(result.output).toBe("recovered");
+    expect(first.prompts).toEqual(["p"]);
+    expect(waits).toEqual([]);
   });
 });

@@ -5,8 +5,7 @@
  * turns and closes from a nax handle id to its session; it is never used to
  * reuse a session, which SessionManager owns (§6.1).
  *
- * S4b-2 scope (D2-d): complete() lands in S4b-3, with promptRetries, the backend
- * deadline options, tool audit and effort.
+ * complete() is a throwaway session (complete.ts, B3).
  */
 import type { OpenSessionOpts, ProtocolIds } from "@nathapp/nax-agent";
 import { NaxError } from "@/errors";
@@ -23,6 +22,7 @@ import type {
   SessionHandle,
   TurnResult,
 } from "../types";
+import { runComplete } from "./complete";
 import { type AcpSdkEntry, acpSdkEntry, UNSUPPORTED_ENTRY } from "./entries";
 import { _acpSdkDeps, type AcpSdkSession, closeDeadlineMs, createSession, shutdownSession } from "./session";
 import { runTurnLoop } from "./turn-loop";
@@ -65,7 +65,13 @@ export class AcpSdkAgentAdapter implements AgentAdapter {
 
   /** True when nax-agent-acp finds a launch candidate for the agent, the npx fallback included (spec §6.8). */
   async isInstalled(): Promise<boolean> {
-    return this.entry !== undefined && _acpSdkDeps.isAgentLaunchable(this.entry.agent);
+    return this.entry !== undefined && _acpSdkDeps.launchCandidateKind(this.entry.agent) !== undefined;
+  }
+
+  /** Spec §6.8, D3-k: the run's install check warns when only the npx fallback resolves. */
+  launchNote(): string | undefined {
+    if (this.entry === undefined || _acpSdkDeps.launchCandidateKind(this.entry.agent) !== "npx") return undefined;
+    return `Only the npx fallback can launch ACP agent "${this.name}"; the first run downloads it inside the startup deadline`;
   }
 
   /** Display only: the backend resolves the launch command per session. */
@@ -77,14 +83,11 @@ export class AcpSdkAgentAdapter implements AgentAdapter {
     return buildAllowedEnv(options?.modelDef.env === undefined ? undefined : { modelEnv: options.modelDef.env });
   }
 
-  complete(_prompt: string, _options: ResolvedCompleteOptions): Promise<CompleteResult> {
-    return Promise.reject(
-      new NaxError(
-        `complete() on the ACP SDK transport lands in S4b-3 (agent "${this.name}"); use agent.acp.transport "acpx"`,
-        "ACP_SDK_COMPLETE_UNAVAILABLE",
-        { stage: STAGE, agentName: this.name },
-      ),
-    );
+  async complete(prompt: string, options: ResolvedCompleteOptions): Promise<CompleteResult> {
+    const entry = this.requireEntry(options.sessionName ?? "complete");
+    throwIfAborted(options.signal, "Run aborted — shutdown in progress");
+    await this.requireWorkdir(options.sessionName ?? "complete", options.workdir);
+    return runComplete(this.name, entry.agent, prompt, options);
   }
 
   async openSession(name: string, opts: OpenSessionOpts): Promise<SessionHandle> {
