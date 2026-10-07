@@ -89,4 +89,15 @@ describe("check-adapter-no-config-import: the src/plugins rule", () => {
 
     expect(code).toBe(0);
   });
+
+  test("S4b-2: the acp-sdk adapter is scanned too", () => {
+    root = tree({
+      "src/agents/acp-sdk/x.ts": 'import type { NaxConfig } from "@/config";\nexport type C = NaxConfig;\n',
+    });
+
+    const { code, out } = runGate(root);
+
+    expect(code).toBe(1);
+    expect(out).toContain("acp-sdk/x.ts");
+  });
 });

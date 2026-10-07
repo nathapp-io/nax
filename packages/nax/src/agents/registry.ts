@@ -2,15 +2,17 @@
  * Agent Registry
  *
  * Discovers and manages available coding agents. The agent name selects the
- * transport: every known name but `native` is an ACP adapter via acpx, and
- * `native` is the in-process nax-ai path (ADR-027 section 3).
+ * transport: every known name but `native` is an ACP adapter, over acpx or
+ * nax-agent-acp per `agent.acp.transport` (S4b), and `native` is the
+ * in-process nax-ai path (ADR-027 section 3).
  */
 
 import { NATIVE_AGENT } from "@nathapp/nax-agent";
-import { DEFAULT_AGENT_PROTOCOL } from "@/config";
+import { type AcpTransport, DEFAULT_ACP_TRANSPORT, DEFAULT_AGENT_PROTOCOL } from "@/config";
 import type { AgentManagerConfig } from "@/config/selectors";
 import { getLogger } from "../logger";
 import { AcpAgentAdapter } from "./acp/adapter";
+import { AcpSdkAgentAdapter } from "./acp-sdk";
 import { NativeAgentAdapter } from "./native-agent";
 import type { AgentAdapter } from "./types";
 
@@ -33,12 +35,18 @@ export function getAllAgentNames(): string[] {
   return KNOWN_AGENT_NAMES;
 }
 
+/** The adapter for a non-native agent on an ACP transport (S4b spec §5.3). */
+export function acpAdapterFor(name: string, transport: AcpTransport): AgentAdapter {
+  return transport === "sdk" ? new AcpSdkAgentAdapter(name) : new AcpAgentAdapter(name);
+}
+
 /**
  * The registry is a routing decision, not one adapter kind repeated: the agent
  * name selects the transport (ADR-027 section 3).
  */
 function adapterFor(name: string): AgentAdapter {
-  return name === NATIVE_AGENT ? new NativeAgentAdapter() : new AcpAgentAdapter(name);
+  // Config-less: the default transport (D2-n).
+  return name === NATIVE_AGENT ? new NativeAgentAdapter() : acpAdapterFor(name, DEFAULT_ACP_TRANSPORT);
 }
 
 function buildAdapterList(): AgentAdapter[] {
@@ -111,6 +119,11 @@ export function createAgentRegistry(config: AgentManagerConfig): AgentRegistry {
 
   logger?.info("agents", `Agent protocol: ${protocol}`, { protocol, hasConfig: !!config.agent });
 
+  const transport = config.agent?.acp?.transport ?? DEFAULT_ACP_TRANSPORT;
+  if (transport !== DEFAULT_ACP_TRANSPORT) {
+    logger?.info("agents", `ACP transport: ${transport} (S4b development key)`, { transport });
+  }
+
   function cachedAdapter(name: string): AgentAdapter {
     let adapter = adapterCache.get(name);
     if (adapter === undefined) {
@@ -125,7 +138,7 @@ export function createAgentRegistry(config: AgentManagerConfig): AgentRegistry {
             // needs no ADR-019 selector change: it is declaration data for the
             // native client, not model resolution at the callOp seam.
             new NativeAgentAdapter(undefined, config.agent?.native?.catalogOverrides ?? [])
-          : new AcpAgentAdapter(name);
+          : acpAdapterFor(name, transport);
       adapterCache.set(name, adapter);
       logger?.debug("agents", `Created ${adapter.constructor.name} for ${name}`, { name });
     }

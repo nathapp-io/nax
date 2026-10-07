@@ -8,13 +8,12 @@
 
 import { join } from "node:path";
 import type { NaxConfig } from "../config";
-import { featureDir } from "../config";
+import { DEFAULT_ACP_TRANSPORT, featureDir } from "../config";
 import { assertPrdCommitted } from "../prd";
 import { WorktreeManager } from "../worktree/manager";
 import type { ContestantOptions } from "./contestant";
 import { runContestant } from "./contestant";
 import { pipeline } from "./pipeline-adapter";
-import type { ContestantValidationResult } from "./preflight";
 import { buildContestantConfig, parseCompareList, reclaimStaleBakeoffBranches, validateContestants } from "./preflight";
 import { rankContestants } from "./ranking";
 import type { BakeoffResult, ContestantResult } from "./types";
@@ -31,7 +30,7 @@ export interface BakeoffOptions {
 
 /** Injectable dependencies for the coordinator. Tests override individual entries. */
 export interface BakeoffCoordinatorDeps {
-  validateContestants: (names: string[], projectRoot: string) => Promise<ContestantValidationResult>;
+  validateContestants: typeof validateContestants;
   runContestant: (agent: string, options: ContestantOptions) => Promise<ContestantResult>;
   rankContestants: typeof rankContestants;
   persistBakeoffResult: (result: BakeoffResult, outputDir: string) => Promise<void>;
@@ -79,7 +78,12 @@ export async function runBakeoff(
   // failures are logged and swallowed inside the function itself.
   await reclaimStaleBakeoffBranches(options.projectRoot);
 
-  const { validAgents, errors, profileData } = await merged.validateContestants(options.agents, options.projectRoot);
+  const { validAgents, errors, profileData } = await merged.validateContestants(
+    options.agents,
+    options.projectRoot,
+    undefined,
+    options.config.agent?.acp?.transport ?? DEFAULT_ACP_TRANSPORT,
+  );
 
   const results: ContestantResult[] = [];
   for (const agent of validAgents) {
