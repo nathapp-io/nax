@@ -30,6 +30,7 @@ import {
 } from "@nathapp/nax-agent-acp/client";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
+import { cancellableDelay } from "@/utils/bun-deps";
 import { type RateCard, resolveRateCard } from "../cost";
 import { createAskPort } from "./ask-port";
 import { backendOptions, openContext, transcriptStoreFor } from "./open-context";
@@ -54,6 +55,8 @@ export const _acpSdkDeps = {
   acpBackend: (options: AcpBackendOptions): SessionBackend => acpBackend(options),
   isAgentLaunchable: (agent: AcpAgentName): boolean => isAgentLaunchable(agent),
   resolveRateCard: (modelId: string): Promise<RateCard> => resolveRateCard(modelId),
+  /** promptRetries' backoff; rejects with the signal's reason when it aborts (D3-h). */
+  delay: (ms: number, signal?: AbortSignal): Promise<void> => cancellableDelay(ms, signal),
   async cwdExists(dir: string): Promise<boolean> {
     try {
       return (await stat(dir)).isDirectory();

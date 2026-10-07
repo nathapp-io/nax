@@ -12,7 +12,7 @@
  *   and resends, the dead attempt uncounted (acpx exit code 4);
  * - one TurnResult for the loop: last output, summed spend, round trips.
  * Any other failure throws SessionTurnError with the spend of every prompt
- * (BUG-57). promptRetries is S4b-3.
+ * (BUG-57). promptRetries resends a prompt that failed before any turn event, on the same call (S4b-0 Ruling T1-1, D3-h).
  */
 import { randomUUID } from "node:crypto";
 import { createTurnDeadline, type InteractionExchange, type SendTurnOpts } from "@nathapp/nax-agent";
@@ -37,8 +37,9 @@ import {
   WatchdogCancel,
 } from "./failure-map";
 import { addSpend, NO_SPEND, type Spend, spendOfError, spendOfResult } from "./pricing";
-import { type AcpSdkSession, reopenFresh } from "./session";
-import { startCall } from "./stream-bridge";
+import { isRetryablePromptError, promptRetryDelayMs } from "./prompt-retry";
+import { _acpSdkDeps, type AcpSdkSession, reopenFresh } from "./session";
+import { type CallBridge, startCall } from "./stream-bridge";
 
 const STAGE = "acp-sdk";
 const DEFAULT_MAX_INTERACTIONS = 10;
@@ -131,6 +132,47 @@ async function afterFailure(loop: Loop, err: unknown, cause: unknown): Promise<I
   return { kind: "reopened" };
 }
 
+type BackendResult = Awaited<ReturnType<AcpSdkSession["opened"]["adapter"]["sendTurn"]>>;
+
+interface Attempt {
+  readonly controller: AbortController;
+  readonly call: CallBridge;
+  readonly turnId: string;
+}
+
+function sendOnce(session: AcpSdkSession, prompt: string, attempt: Attempt): Promise<BackendResult> {
+  return session.opened.adapter.sendTurn(session.opened.handle, prompt, {
+    ...session.opened.turnOpts(),
+    signal: attempt.controller.signal,
+    turnId: attempt.turnId,
+    onTurnEvent: attempt.call.sink,
+  });
+}
+
+/**
+ * Sends the iteration's prompt, resending on the same call while T1-1 allows
+ * (D3-h). A resent attempt is not a turn; its failed spend is kept. The backoff
+ * waits on the iteration signal, so an abort there rejects with the abort reason.
+ */
+async function sendWithRetries(loop: Loop, attempt: Attempt): Promise<BackendResult> {
+  const retries = loop.session.opts.promptRetries ?? 0;
+  for (let retryIndex = 0; retryIndex < retries; retryIndex++) {
+    try {
+      return await sendOnce(loop.session, loop.state.currentPrompt, attempt);
+    } catch (err) {
+      if (attempt.controller.signal.aborted || attempt.call.anyEvent() || !isRetryablePromptError(err)) throw err;
+      loop.state.spend = addSpend(loop.state.spend, spendOfError(err));
+      getSafeLogger()?.info(STAGE, "ACP prompt failed before any output; resending", {
+        sessionName: loop.session.name,
+        retry: retryIndex + 1,
+        of: retries,
+      });
+      await _acpSdkDeps.delay(promptRetryDelayMs(retryIndex), attempt.controller.signal);
+    }
+  }
+  return sendOnce(loop.session, loop.state.currentPrompt, attempt);
+}
+
 async function runIteration(loop: Loop): Promise<IterationOutcome> {
   const { session, opts, state } = loop;
   const controller = new AbortController();
@@ -156,12 +198,7 @@ async function runIteration(loop: Loop): Promise<IterationOutcome> {
         state.interactions.push({ turnIndex: state.turnCount, question, reply });
       },
     });
-    const result = await session.opened.adapter.sendTurn(session.opened.handle, state.currentPrompt, {
-      ...session.opened.turnOpts(),
-      signal: controller.signal,
-      turnId,
-      onTurnEvent: call.sink,
-    });
+    const result = await sendWithRetries(loop, { controller, call, turnId });
     call.end("success");
     state.spend = addSpend(state.spend, spendOfResult(result));
     return { kind: "ok", output: result.output };

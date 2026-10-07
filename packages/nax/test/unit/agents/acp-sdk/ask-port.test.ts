@@ -23,6 +23,7 @@ function harness(handler: InteractionHandler, budget = 5): Harness {
     callId: "c1",
     sink: () => {},
     sideEffects: () => false,
+    anyEvent: () => false,
     awaitingHuman: () => {
       beats++;
     },

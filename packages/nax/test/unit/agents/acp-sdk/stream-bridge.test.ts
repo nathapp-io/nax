@@ -104,6 +104,20 @@ describe("startCall (S4b spec §6.2.1)", () => {
     expect(tool.sideEffects()).toBe(true);
   });
 
+  test("anyEvent is true after any turn event, thinking and usage included (T1-1)", () => {
+    for (const event of [
+      { type: "thinking_delta", text: "hm", round: 1 },
+      { type: "usage", round: 1, inputTokens: 1, outputTokens: 0, costUsd: 0, costSource: "unpriced" },
+      { type: "tool_progress", callId: "c1" },
+    ] as const) {
+      const call = startCall(context([]));
+      expect(call.anyEvent()).toBe(false);
+      call.sink(event);
+      expect(call.anyEvent()).toBe(true);
+      expect(call.sideEffects()).toBe(false);
+    }
+  });
+
   test("awaitingHuman emits agent.awaiting_human on the call", () => {
     const events: AgentStreamEvent[] = [];
     const call = startCall(context(events));
