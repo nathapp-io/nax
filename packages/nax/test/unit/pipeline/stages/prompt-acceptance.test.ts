@@ -61,7 +61,8 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
       testStrategy: "tdd-simple",
       reasoning: "",
     },
-    workdir: WORKDIR,
+    workdir: "/feature",
+    projectDir: "/feature",
     ...overrides,
   } as Partial<PipelineContext>);
 }
@@ -135,11 +136,11 @@ describe("promptStage.execute() — reads acceptanceTestPaths files", () => {
     await promptStage.execute(ctx);
 
     expect(readFileMock).toHaveBeenCalledTimes(2);
-    expect(readFileMock).toHaveBeenCalledWith("/feature/test/a.test.ts");
-    expect(readFileMock).toHaveBeenCalledWith("/feature/test/b.test.ts");
+    expect(readFileMock).toHaveBeenCalledWith("/feature/test/a.test.ts", true);
+    expect(readFileMock).toHaveBeenCalledWith("/feature/test/b.test.ts", true);
   });
 
-  test("prompt includes acceptance test content when files exist", async () => {
+  test("prompt includes metadata without acceptance source when files exist", async () => {
     _promptStageDeps.readFile = mock(async (_path: string) => ({
       exists: true,
       text: "ACCEPTANCE_FILE_CONTENT_MARKER",
@@ -150,7 +151,7 @@ describe("promptStage.execute() — reads acceptanceTestPaths files", () => {
     });
     await promptStage.execute(ctx);
 
-    expect(ctx.prompt).toContain("ACCEPTANCE_FILE_CONTENT_MARKER");
+    expect(ctx.prompt).not.toContain("ACCEPTANCE_FILE_CONTENT_MARKER");
   });
 
   test("prompt includes the test path in the acceptance section", async () => {
@@ -164,7 +165,7 @@ describe("promptStage.execute() — reads acceptanceTestPaths files", () => {
     });
     await promptStage.execute(ctx);
 
-    expect(ctx.prompt).toContain("/feature/acceptance.test.ts");
+    expect(ctx.prompt).toContain("acceptance.test.ts");
   });
 });
 
@@ -204,6 +205,39 @@ describe("promptStage.execute() — skips non-existent files", () => {
     await promptStage.execute(ctx);
 
     expect(ctx.prompt).not.toContain("/feature/missing.test.ts");
-    expect(ctx.prompt).toContain("PRESENT_CONTENT_MARKER");
+    expect(ctx.prompt).toContain("real.test.ts");
   });
+});
+
+test("acceptance guidance uses package Jest override and exact story IDs without embedding source", async () => {
+  const ids = Array.from({ length: 10 }, (_, i) => `AC-${58 + i}`);
+  const story = makeStory({ id: "US-006", workdir: "apps/api" });
+  const ctx = makeCtx({
+    story,
+    stories: [story],
+    projectDir: WORKDIR,
+    workdir: `${WORKDIR}/apps/api`,
+    featureDir: `${WORKDIR}/.nax/features/bridge`,
+    acceptanceTestPaths: [
+      {
+        testPath: `${WORKDIR}/apps/api/.nax/features/bridge/.nax-acceptance.test.ts`,
+        packageDir: `${WORKDIR}/apps/api`,
+        testFramework: "jest",
+        commandOverride: "bunx jest --config jest.nax.config.js {{FILE}}",
+      },
+    ],
+  });
+  _promptStageDeps.readFile = mock(async (filePath: string) => ({
+    exists: true,
+    text: filePath.endsWith("acceptance-refined.json")
+      ? JSON.stringify(ids.map((acId) => ({ acId, storyId: "US-006", refined: "works", testable: true })))
+      : "WHOLE_SOURCE_MUST_NOT_APPEAR",
+  }));
+  await promptStage.execute(ctx);
+  expect(ctx.prompt).toContain("bunx jest --config jest.nax.config.js");
+  expect(ctx.prompt).toContain("apps/api/.nax/features/bridge/.nax-acceptance.test.ts");
+  expect(ctx.prompt).toContain("AC-58");
+  expect(ctx.prompt).toContain("AC-67");
+  expect(ctx.prompt).toContain("--testNamePattern");
+  expect(ctx.prompt).not.toContain("WHOLE_SOURCE_MUST_NOT_APPEAR");
 });

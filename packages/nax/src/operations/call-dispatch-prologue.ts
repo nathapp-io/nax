@@ -1,3 +1,4 @@
+import { buildAcceptanceExecutionSection } from "../prompts";
 /**
  * callOpDispatch prologue — the resolution every non-deterministic dispatch
  * performs before branching on `op.kind` (extracted from call.ts for the A6
@@ -103,7 +104,13 @@ export function buildDispatchPrologue<I, O, C>(
   const slicedConfig = selector.select(config);
   const buildCtx = { packageView: ctx.packageView, config: slicedConfig };
   const sections = composeSections(op.build(input, buildCtx));
-  const prompt = join(sections);
+  const acceptance =
+    op.kind === "run" &&
+    ["implementer", "source-fix", "test-fix", "test-writer", "repo-scoped-test-fix"].includes(op.session.role) &&
+    (op.stage === "rectification" || op.name === "rectify" || op.name.includes("rectify"))
+      ? buildAcceptanceExecutionSection(ctx.acceptanceExecution ?? [])
+      : "";
+  const prompt = [join(sections), acceptance].filter(Boolean).join("\n\n");
   const timeoutMs = resolveTimeoutMs(op, input, buildCtx);
   // Stamp a fresh callId per invocation; preserve caller-supplied one (AC7).
   const callId = ctx.callId ?? newCorrelationId();

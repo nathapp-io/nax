@@ -707,9 +707,11 @@ _gitDeps
 _gitGuardDeps
 _globDeps
 _grepDeps
+_instructionAccessDeps
 _launcherDeps
 _policyInputDeps
 _probeDeps
+_repositoryInstructionDeps
 _resetBuiltinsForTest
 _resetCredentialStore
 _resetCredentialsConfig

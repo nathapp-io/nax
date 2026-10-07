@@ -60,3 +60,27 @@ export function buildAcceptanceSection(entries: AcceptanceEntry[]): string {
   const parts = working.map((e) => `## ${e.testPath}\n\n\`\`\`typescript\n${e.content}\n\`\`\``);
   return parts.join("\n\n");
 }
+
+/** Bounded metadata; agents can read the generated source selectively when needed. */
+export function buildAcceptanceExecutionSection(entries: import("../../acceptance").AcceptanceExecution[]): string {
+  if (!entries.length) return "";
+  return (
+    "# Acceptance execution\n\n" +
+    entries
+      .map((entry) =>
+        [
+          `- Stories: ${entry.storyIds.join(", ")}`,
+          `- Acceptance file (repository-relative): \`${entry.testPath}\``,
+          `- Command cwd (repository-relative): \`${entry.cwd}\``,
+          `- Story AC IDs: ${entry.acIds.length ? entry.acIds.join(", ") : "mapping unavailable"}`,
+          `- Run from that cwd: \`${entry.command}\``,
+          entry.filtered
+            ? "- Selection matches exact AC IDs, including delimiters."
+            : "- Unfiltered fallback: no supported story selector or no AC mapping; this runs the whole acceptance target.",
+          "- Read only the relevant test declarations when needed. Do not edit or weaken this generated acceptance file.",
+          "- This command uses the acceptance configuration. Execute the exact shell command; do not substitute ordinary testScoped.",
+        ].join("\n"),
+      )
+      .join("\n\n")
+  );
+}

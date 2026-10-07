@@ -26,6 +26,7 @@ import type { GuardedCredentialStore } from "./credentials/index.ts";
 import { type CredentialSource, createSessionCredentialStore } from "./credentials/session-source.ts";
 import { toAdapterFailure } from "./errors.ts";
 import { buildRateCard, NATIVE_AGENT, parseNativeModel, resolveContextWindow, toThinkingLevel } from "./models.ts";
+import { createInstructionInteraction } from "./session/instruction-interaction.ts";
 import {
   closeNativeSession,
   createNativeSessionState,
@@ -175,6 +176,10 @@ export class NativeSessionAdapter implements AgentSessionAdapter {
     const thinking = toThinkingLevel(effort);
     const client = await this.client();
     const resolved = await client.model(provider, model);
+    const contextWindow = resolveContextWindow(handle.modelDef?.contextWindow, resolved.contextWindow);
+    this.state.repositoryInstructions
+      .get(handle.id)
+      ?.setContextBudget(contextWindow, this.state.systemPrompts.get(handle.id));
     const catalog = client.pricing(resolved);
     const { rates, source: pricingSource } = buildRateCard(catalog, handle.modelDef?.pricing);
     const storedTimeoutSeconds = this.state.timeouts.get(handle.id);
@@ -190,7 +195,10 @@ export class NativeSessionAdapter implements AgentSessionAdapter {
     const sessionId = nativeSessionId(handle.id);
     // S3-4: the session's system prompt (facade `instructions`), or `{}`.
     // Resolved here so the `complete` closure spreads it without a branch.
-    const systemField = systemFieldFor(this.state, handle.id);
+    const instructionInteraction = createInstructionInteraction(
+      this.state.repositoryInstructions.get(handle.id),
+      opts.interactionHandler,
+    );
 
     // One budget for the whole turn, not one per round-trip. Created here
     // because this is where `timeoutSeconds` is known; consulted by the loop.
@@ -242,6 +250,7 @@ export class NativeSessionAdapter implements AgentSessionAdapter {
     const turnSignals: AbortSignal[] = [turnController.signal, deadlineController.signal];
     if (opts.signal !== undefined) turnSignals.unshift(opts.signal);
     const turnSignal = AbortSignal.any(turnSignals);
+    const turnOpts = { ...opts, interactionHandler: instructionInteraction.handler };
 
     let result: TurnResult;
     try {
@@ -250,10 +259,10 @@ export class NativeSessionAdapter implements AgentSessionAdapter {
       // `AbortSignal.any` above holds a reference to `deadlineController.signal`,
       // so a settled turn must drop its timer to avoid keeping it armed past
       // the turn boundary.
-      result = await runNativeTurn(handle, prompt, opts, {
+      result = await runNativeTurn(handle, prompt, turnOpts, {
         sessionState: this.state,
         deadline,
-        contextWindow: resolveContextWindow(handle.modelDef?.contextWindow, resolved.contextWindow),
+        contextWindow,
         ...(this.state.compaction.get(handle.id) !== undefined
           ? { compaction: this.state.compaction.get(handle.id) }
           : {}),
@@ -309,7 +318,12 @@ export class NativeSessionAdapter implements AgentSessionAdapter {
             });
             const summaryUsage = res.usage;
             const { costUsd, resolvedRates } = priceCall(summaryUsage, rates);
-            return { text: res.text, usage: summaryUsage, costUsd, rates: resolvedRates };
+            return {
+              text: res.text,
+              usage: summaryUsage,
+              costUsd,
+              rates: resolvedRates,
+            };
           } finally {
             if (timer !== undefined) _adapterDeps.clearTimeout(timer);
           }
@@ -337,6 +351,7 @@ export class NativeSessionAdapter implements AgentSessionAdapter {
           const requestThinking = requestOptions?.thinking === false ? undefined : thinking;
 
           try {
+            instructionInteraction.acknowledge();
             const res = await streamComplete(
               client,
               resolved,
@@ -344,7 +359,7 @@ export class NativeSessionAdapter implements AgentSessionAdapter {
                 messages,
                 ...(tools.length > 0 ? { tools } : {}),
                 sessionId,
-                ...systemField,
+                ...systemFieldFor(this.state, handle.id),
                 signal,
                 ...(requestThinking !== undefined ? { thinking: requestThinking } : {}),
                 ...(requestOptions?.temperature !== undefined ? { temperature: requestOptions.temperature } : {}),
@@ -467,6 +482,9 @@ export class NativeSessionAdapter implements AgentSessionAdapter {
     _workdir?: string,
     _options?: { force?: boolean; signal?: AbortSignal },
   ): Promise<void> {
-    return closeNativeSession(this.state, { id: handle, agentName: NATIVE_AGENT });
+    return closeNativeSession(this.state, {
+      id: handle,
+      agentName: NATIVE_AGENT,
+    });
   }
 }

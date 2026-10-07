@@ -5,7 +5,7 @@
  */
 
 export type { AcceptanceEntry } from "./acceptance";
-export { buildAcceptanceSection } from "./acceptance";
+export { buildAcceptanceExecutionSection, buildAcceptanceSection } from "./acceptance";
 export { buildAgentScopeSection } from "./agent-scope";
 export type { GuardrailLevel, GuardrailRole } from "./behavioral-guardrails";
 export { buildBehavioralGuardrailsSection } from "./behavioral-guardrails";

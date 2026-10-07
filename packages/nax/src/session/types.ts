@@ -150,6 +150,10 @@ export interface OpenSessionRequest {
   role?: SessionRole;
   /** Working directory for the session. */
   workdir: string;
+  /** Native repository instruction scope, independent of the file-tool execution root. */
+  instructionDirectories?: readonly string[];
+  instructionProtectedPaths?: OpenSessionOpts["instructionProtectedPaths"];
+  instructionDenyPaths?: readonly string[];
   /** Pipeline stage — used by SessionManager to call resolvePermissions. */
   pipelineStage: import("../config/permissions").PipelineStage;
   /** SEC-3: per-package effective config — iteration-runner threads this for monorepo batches. Falls back to SessionManager._config. */

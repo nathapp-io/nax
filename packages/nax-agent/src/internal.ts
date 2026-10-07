@@ -62,6 +62,7 @@ export * from "#src/native/session/loop-events/external-handler";
 export * from "#src/native/session/loop-events/index";
 export * from "#src/native/session/loop-events/types";
 export * from "#src/native/session/memory-transcript-store";
+export { _repositoryInstructionDeps } from "#src/native/session/repository-instructions";
 export * from "#src/native/session/session";
 export * as sessionModule from "#src/native/session/session";
 export * from "#src/native/session/tool-mapping";
@@ -86,6 +87,7 @@ export * from "#src/tools/git";
 export * from "#src/tools/git-commit";
 export * from "#src/tools/grep";
 export * from "#src/tools/index";
+export { _instructionAccessDeps } from "#src/tools/instruction-access";
 // S3-2: the port (nax supplies the policy behind it from its own module).
 export * from "#src/tools/owned-paths";
 export * from "#src/tools/package-managers";

@@ -24,7 +24,7 @@
 import path from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { AcceptanceCriterion, RefinedCriterion } from "@/acceptance";
-import { generateSkeletonTests, groupStoriesByPackage } from "@/acceptance";
+import { effectiveAcceptanceFramework, generateSkeletonTests, groupStoriesByPackage } from "@/acceptance";
 import type { AgentAdapter } from "@/agents/types";
 import type { NaxConfig } from "@/config";
 import { loadConfigForPackage } from "@/config";
@@ -482,7 +482,7 @@ async function runAcceptanceSetup(
     acceptanceTestPaths.push({
       testPath: g.testPath,
       packageDir: g.packageDir,
-      testFramework: groupConfig.project?.testFramework,
+      testFramework: effectiveAcceptanceFramework(groupConfig),
       commandOverride: groupConfig.acceptance.command,
       storyCount: g.stories.length,
       acceptanceEnabled: groupConfig.acceptance.enabled,
@@ -490,7 +490,7 @@ async function runAcceptanceSetup(
     redGateEntries.push({
       testPath: g.testPath,
       packageDir: g.packageDir,
-      testFramework: groupConfig.project?.testFramework,
+      testFramework: effectiveAcceptanceFramework(groupConfig),
       commandOverride: groupConfig.acceptance.command,
       language: g.language,
       storyId: g.stories[0]?.id,

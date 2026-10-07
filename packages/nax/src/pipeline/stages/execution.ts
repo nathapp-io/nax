@@ -1,3 +1,4 @@
+import { resolveAcceptanceExecution } from "@/acceptance";
 /**
  * Execution Stage
  *
@@ -34,7 +35,7 @@ import {
 import { getLogger } from "@/logger";
 import type { CallContext } from "@/operations/types";
 import { captureGitRef, getUntrackedPaths } from "@/utils/git";
-import { storyPackageDir } from "@/utils/path-frame";
+import { storyPackageDir, storyWorkdir } from "@/utils/path-frame";
 import { resolveScopeFiles } from "../scope-files";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
@@ -143,6 +144,8 @@ export const executionStage: PipelineStage = {
       runtime: ctx.runtime,
       packageView,
       packageDir: ctx.workdir,
+      acceptanceExecution: await resolveAcceptanceExecution(ctx),
+      instructionDirectories: [...new Set(ctx.stories.map(storyWorkdir))],
       // nax#2066: the per-story effective config (loadConfigForWorkdir over
       // story.workdir). callOp forwards it to both dispatch hops, so the
       // declared-command map and resolvePermissions see the package's values.

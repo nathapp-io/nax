@@ -21,6 +21,7 @@ import { gitTool } from "./git.ts";
 import { gitCommitTool } from "./git-commit.ts";
 import { globTool } from "./glob.ts";
 import { grepTool } from "./grep.ts";
+import { enforceInstructionAccess } from "./instruction-access.ts";
 import type { OwnedPathsPolicy } from "./owned-paths.ts";
 import type { ProtectedPathsPolicy } from "./protected-paths.ts";
 import { readTool } from "./read.ts";
@@ -64,7 +65,11 @@ export type CodingToolOutcome =
       /** Records the final model-facing content when shaping was deferred. */
       readonly finalizeAudit?: (content: string) => void;
     }
-  | { readonly kind: "denied"; readonly reason: string; readonly breach: boolean };
+  | {
+      readonly kind: "denied";
+      readonly reason: string;
+      readonly breach: boolean;
+    };
 
 /** Injectable logger seam, mirroring _pullToolsDeps.getLogger. */
 export const _codingToolDeps = { getLogger: getSafeLogger };
@@ -402,7 +407,10 @@ export function createCodingToolRuntime(opts: {
           audit?.approval?.decidedBy,
           audit?.executed === undefined
             ? undefined
-            : { executed: audit.executed, ...(audit.cwd !== undefined ? { cwd: audit.cwd } : {}) },
+            : {
+                executed: audit.executed,
+                ...(audit.cwd !== undefined ? { cwd: audit.cwd } : {}),
+              },
         );
       };
 
@@ -423,7 +431,11 @@ export function createCodingToolRuntime(opts: {
         target: CodingTool,
         callInput: Record<string, unknown>,
         resolvedPaths: readonly string[],
-        approval?: { decidedBy: string; remembered: boolean; latencyMs: number },
+        approval?: {
+          decidedBy: string;
+          remembered: boolean;
+          latencyMs: number;
+        },
       ): Promise<CodingToolOutcome> {
         // US-002 AC15: a per-call `ToolCallContext.signal` (the native batch's
         // turn signal) takes priority over the runtime-level signal. Both
@@ -434,6 +446,7 @@ export function createCodingToolRuntime(opts: {
         // scope.
         const callSignal = context?.signal ?? signal;
         try {
+          await enforceInstructionAccess(target.name, resolvedPaths, opts.policy, opts.protectedPaths);
           const result = await target.run(callInput, {
             root: opts.policy.root,
             resolvedPaths,

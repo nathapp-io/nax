@@ -19,6 +19,9 @@ export interface BuildContext<C> {
 }
 
 export interface CallContext {
+  readonly instructionDirectories?: readonly string[];
+  /** Resolved story acceptance guidance, shared with fix-role sessions. */
+  readonly acceptanceExecution?: import("../acceptance").AcceptanceExecution[];
   readonly runtime: NaxRuntime;
   readonly packageView: PackageView;
   readonly packageDir: string;
