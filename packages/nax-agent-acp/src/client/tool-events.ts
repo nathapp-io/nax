@@ -158,6 +158,15 @@ export function previewOf(
   return capBytes(redactSecrets(scrubSecrets(visible, secrets)), TOOL_RESULT_PREVIEW_BYTES);
 }
 
+const UTF8 = new TextEncoder();
+
+/** UTF-8 byte length of the full result text, before any cap (S4b spec §7.4). */
+export function resultBytesOf(call: { readonly content?: unknown; readonly rawOutput?: unknown }): number {
+  const fromContent = contentText(call.content);
+  const raw = fromContent !== "" ? fromContent : typeof call.rawOutput === "string" ? call.rawOutput : "";
+  return UTF8.encode(raw).byteLength;
+}
+
 function isStarted(status: unknown): boolean {
   return status === "in_progress" || status === "completed" || status === "failed";
 }
@@ -181,10 +190,10 @@ export function createToolEvents(emit: (event: TurnEvent) => void, secrets: read
     emit({ type: "tool_call", callId: state.id, name: nameOf(state), input: inputOf(state.rawInput, secrets) });
     return next;
   };
-  const resolve = (state: CallState, isError: boolean, preview: string): void => {
+  const resolve = (state: CallState, isError: boolean, preview: string, resultBytes: number): void => {
     if (state.resolved) return;
     calls.set(state.id, { ...state, resolved: true });
-    emit({ type: "tool_result", callId: state.id, isError, preview });
+    emit({ type: "tool_result", callId: state.id, isError, preview, resultBytes });
   };
   return {
     onUpdate(update) {
@@ -192,7 +201,8 @@ export function createToolEvents(emit: (event: TurnEvent) => void, secrets: read
       const status = isRecord(update) ? update.status : undefined;
       if (state === undefined || !isStarted(status)) return;
       const shown = announce(state);
-      if (status !== "in_progress") resolve(shown, status === "failed", previewOf(shown, secrets));
+      if (status !== "in_progress")
+        resolve(shown, status === "failed", previewOf(shown, secrets), resultBytesOf(shown));
     },
     announce(toolCall) {
       const state = merge(toolCall);
@@ -200,7 +210,7 @@ export function createToolEvents(emit: (event: TurnEvent) => void, secrets: read
     },
     flush() {
       for (const state of [...calls.values()]) {
-        if (state.announced) resolve(state, true, UNANSWERED_PREVIEW);
+        if (state.announced) resolve(state, true, UNANSWERED_PREVIEW, 0);
       }
     },
   };

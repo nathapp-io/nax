@@ -87,7 +87,7 @@ describe("createTurnCollector: tools, finish and settle (D5-c, D5-e, D5-h)", () 
     collector.finish();
     expect(events).toEqual([
       { type: "tool_call", callId: "p1", name: "Edit a file", input: {} },
-      { type: "tool_result", callId: "p1", isError: true, preview: UNANSWERED_PREVIEW },
+      { type: "tool_result", callId: "p1", isError: true, preview: UNANSWERED_PREVIEW, resultBytes: 0 },
     ]);
   });
 
