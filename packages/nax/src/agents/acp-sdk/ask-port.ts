@@ -4,11 +4,12 @@
  * question (elicitation) goes to the run's interaction handler as a question,
  * on the same budget as the loop's own interactions, with the awaiting-human
  * beat running so the idle watchdog does not cancel a turn waiting on a person.
- * recordAutoDecision only logs in S4b-2; S4b-3 writes the tool-audit row (D2-k).
+ * recordAutoDecision writes a denied tool-audit row (D2-k, D3-j).
  */
 import type { SessionAskPort } from "@nathapp/nax-agent";
 import { getSafeLogger } from "@/logger";
 import { awaitInteractionReply } from "../interaction";
+import type { AuditRecorder } from "./tool-audit";
 import type { RunningTurn, TurnSlot } from "./turn-slot";
 
 const STAGE = "acp-sdk";
@@ -54,7 +55,11 @@ async function askQuestion(
   }
 }
 
-export function createAskPort(slot: TurnSlot, beatMs: number = AWAITING_HUMAN_BEAT_MS): SessionAskPort {
+export function createAskPort(
+  slot: TurnSlot,
+  beatMs: number = AWAITING_HUMAN_BEAT_MS,
+  audit?: AuditRecorder,
+): SessionAskPort {
   return {
     requestApproval: async (req) => {
       getSafeLogger()?.warn(STAGE, "ACP approval requested, but nax never opens a session under profile ask; denied", {
@@ -63,12 +68,12 @@ export function createAskPort(slot: TurnSlot, beatMs: number = AWAITING_HUMAN_BE
       return { decision: "deny", decidedBy: "profile" };
     },
     recordAutoDecision: (req, decision) => {
-      if (decision === "deny") {
-        getSafeLogger()?.debug(STAGE, "ACP request denied by the session profile", {
-          tool: req.tool,
-          reason: req.reason,
-        });
-      }
+      if (decision !== "deny") return;
+      getSafeLogger()?.debug(STAGE, "ACP request denied by the session profile", {
+        tool: req.tool,
+        reason: req.reason,
+      });
+      audit?.denied(req.callId, req.tool, req.reason);
     },
     askQuestion: (text, opts) => askQuestion(slot, text, opts?.signal, beatMs),
     noteQuestion: (text) => {

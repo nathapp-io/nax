@@ -94,6 +94,16 @@ describe("startCall (S4b spec §6.2.1)", () => {
     expect(events[1]).toMatchObject({ status: "error" });
   });
 
+  test("every event reaches the audit recorder, also after call_ended", () => {
+    const seen: string[] = [];
+    const audit = { onEvent: (e: { type: string }) => seen.push(e.type), denied: () => {}, flush: async () => {} };
+    const call = startCall({ ...context([]), audit });
+    call.sink({ type: "tool_call", callId: "c1", name: "Read", input: {} });
+    call.end("error");
+    call.sink({ type: "tool_result", callId: "c1", isError: false, preview: "" });
+    expect(seen).toEqual(["tool_call", "tool_result"]);
+  });
+
   test("tracks side effects: text or a tool call, not thinking", () => {
     const events: AgentStreamEvent[] = [];
     const thinking = startCall(context(events));

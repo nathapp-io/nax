@@ -10,6 +10,7 @@
 import { randomUUID } from "node:crypto";
 import type { AgentStreamEvent, TurnEvent, TurnEventSink } from "@nathapp/nax-agent";
 import { getSafeLogger } from "@/logger";
+import type { AuditRecorder } from "./tool-audit";
 
 export interface StreamContext {
   readonly emit: ((event: AgentStreamEvent) => void) | undefined;
@@ -22,6 +23,8 @@ export interface StreamContext {
   readonly timeoutSeconds: number;
   /** The live agent process's pid, when known (kept current by the session's onProcess hooks). */
   readonly pid: () => number | undefined;
+  /** Tool audit (§7.4); every event goes to it, also after call_ended, so no row is lost. */
+  readonly audit?: AuditRecorder;
 }
 
 export interface CallBridge {
@@ -131,6 +134,7 @@ export function startCall(ctx: StreamContext, now: () => number = Date.now): Cal
   return {
     callId,
     sink: (event) => {
+      ctx.audit?.onEvent(event);
       if (ended) return;
       anyEvent = true;
       if (event.type === "text_delta" || event.type === "tool_call") sideEffects = true;

@@ -112,6 +112,19 @@ describe("createAskPort (S4b spec §6.3)", () => {
     expect(await second).toBeNull();
   });
 
+  test("an auto-deny is written to the audit recorder (D2-k, D3-j)", () => {
+    const denied: Array<[string | undefined, string, string]> = [];
+    const audit = {
+      onEvent: () => {},
+      denied: (c: string | undefined, t: string, r: string) => denied.push([c, t, r]),
+      flush: async () => {},
+    };
+    const port = createAskPort(createTurnSlot(), 30_000, audit);
+    port.recordAutoDecision({ callId: "c1", tool: "Write", summary: "s", reason: "profile read" }, "deny");
+    port.recordAutoDecision({ callId: "c2", tool: "Read", summary: "s", reason: "full" }, "allow");
+    expect(denied).toEqual([["c1", "Write", "profile read"]]);
+  });
+
   test("requestApproval denies (ask is never mapped); the other members are inert", async () => {
     const port = createAskPort(createTurnSlot());
     expect(await port.requestApproval({ tool: "Edit", summary: "edit", reason: "r" })).toEqual({

@@ -16,6 +16,7 @@ import { waitForCondition } from "@test/helpers";
 import { failTurn, hangTurn, replyTurn, type ScriptedTurn, scriptedOpened } from "@test/helpers/acp-fake-agent";
 import { createAskPort } from "@/agents/acp-sdk/ask-port";
 import { _acpSdkDeps, type AcpSdkSession } from "@/agents/acp-sdk/session";
+import { createAuditRecorder } from "@/agents/acp-sdk/tool-audit";
 import { runTurnLoop } from "@/agents/acp-sdk/turn-loop";
 import { createTurnSlot } from "@/agents/acp-sdk/turn-slot";
 import { FALLBACK_RATES } from "@/agents/cost";
@@ -54,6 +55,7 @@ function build(opened: OpenedBackend, overrides: Partial<OpenSessionOpts> = {}):
     store: createMemoryTranscriptStore(),
     slot,
     asks: createAskPort(slot),
+    audit: createAuditRecorder("nax-loop", undefined),
     closer: new AbortController(),
     rateCard: { rates: FALLBACK_RATES, source: "fallback-rates" },
     stream: {

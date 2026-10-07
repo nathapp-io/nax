@@ -1,10 +1,16 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { chmodSync, writeFileSync } from "node:fs";
+import { chmodSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { createFileTranscriptStore, isProcessAlive, type OpenSessionOpts } from "@nathapp/nax-agent";
+import {
+  createFileTranscriptStore,
+  isProcessAlive,
+  NO_OP_INTERACTION_HANDLER,
+  type OpenSessionOpts,
+} from "@nathapp/nax-agent";
 import { cleanupTempDir, makeTempDir, waitForCondition } from "@test/helpers";
 import { fakeAcpBackend, fakeMethods, fakeStartPids } from "@test/helpers/acp-fake-agent";
 import { _acpSdkDeps, createSession, reopenFresh, shutdownSession } from "@/agents/acp-sdk/session";
+import { runTurnLoop } from "@/agents/acp-sdk/turn-loop";
 import { FALLBACK_RATES } from "@/agents/cost";
 
 const REAL = { ..._acpSdkDeps };
@@ -223,5 +229,54 @@ describe("shutdownSession and reopenFresh", () => {
       chmodSync(transcripts, 0o755);
     }
     expect(session.closer.signal.aborted).toBe(true);
+  }, 20_000);
+
+  test("close flushes the tool audit before deleting the transcript (spec §7.4)", async () => {
+    useFake();
+    const auditDir = join(dir, "audit");
+    const session = await createSession(
+      "nax-audit",
+      "claude",
+      opts({ toolAudit: { dir: auditDir, header: { runId: "run-1", storyId: "US-1" } } }),
+    );
+    session.audit.onEvent({ type: "tool_call", callId: "c1", name: "Read", input: {} });
+    session.audit.onEvent({ type: "tool_result", callId: "c1", isError: false, preview: "x", resultBytes: 1 });
+    await shutdownSession(session, { waitMs: 2_000 });
+    const files = readdirSync(auditDir);
+    expect(files).toHaveLength(1);
+    expect(files[0]).toContain("run-1");
+  }, 20_000);
+
+  test("a call the profile refuses is one denied row, end to end through the fake agent (Review Focus 3)", async () => {
+    useFake({
+      turns: [
+        {
+          steps: [
+            {
+              kind: "permission",
+              options: ["allow_once", "reject_once"],
+              toolCall: { kind: "edit", title: "Write x", rawInput: { path: "x" } },
+            },
+            { kind: "text", text: "done" },
+          ],
+        },
+      ],
+    });
+    const auditDir = join(dir, "audit-deny");
+    const session = await createSession(
+      "nax-deny",
+      "claude",
+      opts({
+        resolvedPermissions: { mode: "approve-reads", bashApproval: "raw" },
+        toolAudit: { dir: auditDir, header: { runId: "run-2", storyId: "US-2" } },
+      }),
+    );
+    await runTurnLoop(session, "go", { interactionHandler: NO_OP_INTERACTION_HANDLER });
+    await shutdownSession(session, { waitMs: 2_000 });
+    const [file] = readdirSync(auditDir);
+    const calls = (
+      JSON.parse(readFileSync(join(auditDir, file ?? ""), "utf8")) as { calls: Array<{ outcome: string }> }
+    ).calls;
+    expect(calls.map((c) => c.outcome)).toEqual(["denied"]);
   }, 20_000);
 });
