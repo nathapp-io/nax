@@ -8,6 +8,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { shellQuoteArg } from "@nathapp/nax-agent/internal";
+import type { NaxConfig } from "../config";
 import { AcceptancePromptBuilder } from "../prompts/builders/acceptance-builder";
 import {
   acceptanceTestFilename as defaultAcceptanceTestFilename,
@@ -62,6 +63,14 @@ export function substituteAcceptanceTestPath(command: string, testPath: string):
     .replace(/\{\{files\}\}/g, () => testPath)
     .replace(/\{\{file\}\}/g, () => testPath)
     .replace(/\{\{FILE\}\}/g, () => testPath);
+}
+
+/** The resolved package carrier wins; acceptance overrides precede ordinary project tests. */
+export function effectiveAcceptanceFramework(
+  config: Pick<NaxConfig, "acceptance" | "project">,
+  resolvedFramework?: string,
+): string | undefined {
+  return resolvedFramework ?? config.acceptance?.testFramework ?? config.project?.testFramework;
 }
 
 export function buildAcceptanceRunCommand(

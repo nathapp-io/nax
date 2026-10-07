@@ -43,6 +43,9 @@ export interface TranscriptDoc {
    * (S3 spec 5.5 write order: markTurn(running), turn, markTurn(ended)).
    */
   readonly turn?: TurnMarker;
+  /** Native instruction discovery audit, independent of compacted message history. */
+  readonly instructionSources?: readonly import("./repository-instructions.ts").InstructionSource[];
+  readonly instructionDirectories?: readonly string[];
 }
 
 export interface TranscriptStore {

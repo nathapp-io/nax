@@ -7,6 +7,7 @@ import { SessionFailureError, SessionTurnError } from "../agents/types";
 import { getSafeLogger } from "../logger";
 import type { ISessionManager } from "../session";
 import { recordAgentHandoff } from "../session";
+import { instructionOptionsForSession } from "../session/instruction-options";
 
 export interface SessionRunHopResult {
   result: AgentResult;
@@ -94,6 +95,7 @@ export function createSessionRunHop(
       role: options.sessionRole,
       workdir: options.workdir,
       pipelineStage: options.pipelineStage ?? "run",
+      ...instructionOptionsForSession(agentName, options),
       // SEC-3: thread per-package config so monorepo permissionProfile is honored.
       config: options.config,
       modelDef: options.modelDef,

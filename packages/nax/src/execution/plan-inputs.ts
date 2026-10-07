@@ -1,3 +1,4 @@
+import { resolveAcceptanceExecution } from "@/acceptance";
 /**
  * PlanInputs Assembly
  *
@@ -206,6 +207,7 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
   const resolvedTestPatterns = await resolveTestFilePatterns(config, ctx.projectDir, packageDirRel);
   const executionMode: StoryExecutionMode = ctx.skipPrdPersistence === true ? "parallel" : "sequential";
   const tddOpts = {
+    acceptanceExecution: await resolveAcceptanceExecution(ctx),
     lite: isLite,
     contextMarkdown: ctx.contextMarkdown,
     featureContextMarkdown: ctx.featureContextMarkdown,

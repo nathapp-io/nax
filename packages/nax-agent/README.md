@@ -37,6 +37,12 @@ Three pieces of host knowledge are passed in as data or functions, because the p
 - **`ProtectedPathsPolicy`** names the paths you own and want kept away from the agent: git pathspecs the Git tool excludes from its default view, gitignore patterns `GitCommit` refuses to stage, the project state directory, the credential directory and the trust-store file the sandbox protects. If you do not supply it, the Git tool excludes nothing from its default view, and `GitCommit` fails closed: it refuses every path and stages nothing until the policy supplies a non-empty `gitIgnorePatterns` (an empty list refuses the same way). Supply it whenever the agent works in a directory that holds files you own. Building a sandboxed session requires it.
 - **`commandInterceptor`** may rewrite a command before it runs (for example to prefix a wrapper binary). Rewrites are validated: an argv rewrite may only prefix the original argv with the provider's own binary, and a shell rewrite goes through the same narrowing. If you do not supply one, commands run unchanged. An interceptor that throws, or returns a rewrite that fails validation, is treated as a decline, and the original command runs.
 
+## Repository instructions
+
+Native sessions load repository-local instructions from the session workdir. In each directory, `AGENTS.override.md` takes precedence over `AGENTS.md`, with `CLAUDE.md` as a fallback. The native adapter's `OpenSessionOpts.instructionDirectories` adds package scopes relative to that workdir; a monorepo session can supply `["apps/api", "packages/client"]` to load each root-to-package chain. `OpenSessionOpts.instructionFileName` selects another Markdown basename, such as `TEAM.md`. A custom name loads only that filename in each directory, with no override or legacy fallback. Names must be nonhidden Markdown basenames without path separators, colon or control characters. More specific directory instructions override ancestor instructions within their scope. Other packages are discovered when authorized file tools enter them.
+
+Local Markdown `@path.md` imports are deduplicated and bounded. Discovery stays inside the active checkout and respects protected paths and denied paths. Each session retains its own instructions outside compactable message history; transcripts record source paths, scopes and hashes. Resume reloads the applicable files from disk using the filename supplied again in the session options. ACP sessions use their CLI's instruction discovery.
+
 ## Conversational sessions
 
 `createAgentSession` gives an embedder (for example a long-running Node service) a multi-turn chat with a person in the loop. Events stream, tools come from the embedder, history lives in a store the embedder supplies, and a turn can be cancelled or answered with an approval.
@@ -79,7 +85,7 @@ Profiles set what a session may do:
 | `ask` | every Write, Edit, Delete, GitCommit and Bash is put to `answer()`; |
 | `full` | no prompts; `bashApproval` and the sandbox floor apply. |
 
-`createAgentSession` takes a `SessionBackend`. `nativeBackend(opts)` takes `model`, `credentials`, `catalogOverrides`, `loopHandlers`, `hostPorts`, `bashApproval` and `allowUnsandboxed`. The ACP backend ships in `@nathapp/nax-agent-acp`.
+`createAgentSession` takes a `SessionBackend`. `nativeBackend(opts)` takes `instructionFileName` (default `AGENTS.md`), `model`, `credentials`, `catalogOverrides`, `loopHandlers`, `hostPorts`, `bashApproval` and `allowUnsandboxed`. The ACP backend ships in `@nathapp/nax-agent-acp`.
 
 `usage.costSource` is `computed` (native), `reported` or `unpriced`; never sum `unpriced` rows as cost.
 

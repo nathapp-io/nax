@@ -111,6 +111,8 @@ export interface AgentNativeTransportRetryConfig {
 
 /** Native-agent-specific configuration, the counterpart to AgentAcpConfig. */
 export interface AgentNativeConfig {
+  /** Repository instruction filename (default: AGENTS.md); a basename ending in .md. */
+  instructionFileName?: string;
   /** Bounded retry for a transport/overloaded fault thrown by the turn loop's complete() call. */
   transportRetry?: AgentNativeTransportRetryConfig;
   /**

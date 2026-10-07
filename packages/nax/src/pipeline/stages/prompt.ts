@@ -21,44 +21,21 @@
  * ```
  */
 
+import { resolveAcceptanceExecution } from "@/acceptance";
 import { assembleForStage, executionContextStage } from "@/context/engine";
 import { getLogger } from "@/logger";
 import { PromptBuilder } from "@/prompts";
-import type { AcceptanceEntry } from "@/prompts/sections/acceptance";
 import { commandSpecIncludes, renderCommandSpec, resolveSelfVerificationPromptInput } from "@/quality";
 import { resolveScopeFiles } from "../scope-files";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 export const _promptStageDeps = {
-  async readFile(filePath: string): Promise<{ exists: boolean; text: string }> {
+  async readFile(filePath: string, metadataOnly = false): Promise<{ exists: boolean; text: string }> {
     const file = Bun.file(filePath);
     const exists = await file.exists();
-    return { exists, text: exists ? await file.text() : "" };
+    return { exists, text: exists && !metadataOnly ? await file.text() : "" };
   },
 };
-
-async function _loadAcceptanceEntries(
-  ctx: PipelineContext,
-  logger: ReturnType<typeof getLogger>,
-): Promise<AcceptanceEntry[]> {
-  if (!ctx.acceptanceTestPaths || ctx.acceptanceTestPaths.length === 0) {
-    return [];
-  }
-  const entries: AcceptanceEntry[] = [];
-  for (const item of ctx.acceptanceTestPaths) {
-    const testPath = typeof item === "string" ? item : item.testPath;
-    const { exists, text } = await _promptStageDeps.readFile(testPath);
-    if (!exists) {
-      logger.debug("prompt", "Acceptance test file not found, skipping", {
-        storyId: ctx.story?.id ?? "batch",
-        testPath,
-      });
-      continue;
-    }
-    entries.push({ testPath, content: text });
-  }
-  return entries;
-}
 
 export const promptStage: PipelineStage = {
   name: "prompt",
@@ -70,7 +47,7 @@ export const promptStage: PipelineStage = {
     const isBatch = ctx.stories.length > 1;
 
     // AC6–AC8: load acceptance test file content from ctx.acceptanceTestPaths
-    const acceptanceEntries = await _loadAcceptanceEntries(ctx, logger);
+    const acceptanceEntries = await resolveAcceptanceExecution(ctx, _promptStageDeps);
     const selfVerification = await resolveSelfVerificationPromptInput(ctx.config, ctx.workdir);
 
     // Assemble a stage-specific v2 bundle for the execution stage so the agent receives
@@ -106,7 +83,7 @@ export const promptStage: PipelineStage = {
         .scopedTestCommand(scopedTestCommand)
         .hermeticConfig(ctx.config.quality?.testing)
         .selfVerification(selfVerification);
-      if (acceptanceEntries.length > 0) builder.acceptanceContext(acceptanceEntries);
+      if (acceptanceEntries.length > 0) builder.acceptanceExecution(acceptanceEntries);
       prompt = await builder.build();
     } else {
       // no-test uses a dedicated role; all other single-session strategies use tdd-simple
@@ -123,7 +100,7 @@ export const promptStage: PipelineStage = {
         .hermeticConfig(ctx.config.quality?.testing)
         .selfVerification(selfVerification)
         .noTestJustification(ctx.story.routing?.noTestJustification);
-      if (acceptanceEntries.length > 0) builder.acceptanceContext(acceptanceEntries);
+      if (acceptanceEntries.length > 0) builder.acceptanceExecution(acceptanceEntries);
       prompt = await builder.build();
     }
 

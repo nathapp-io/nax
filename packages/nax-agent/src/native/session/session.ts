@@ -14,6 +14,10 @@ import type { OpenSessionOpts, SessionHandle } from "#src/session/session-types"
 import { NATIVE_AGENT } from "../models.ts";
 import { nativeSessionId } from "../session-affinity.ts";
 import type { ResolvedCompaction } from "./compaction.ts";
+import { instructionFileNameFor } from "./instruction-file-name.ts";
+import { openRepositoryInstructions } from "./instruction-session.ts";
+import { instructionTranscriptStore } from "./instruction-transcript.ts";
+import type { RepositoryInstructions } from "./repository-instructions.ts";
 import { createFileTranscriptStore } from "./transcript-store.ts";
 import type { TranscriptStore } from "./transcript-types.ts";
 import type { TurnRetryConfig } from "./turn-retry.ts";
@@ -149,6 +153,7 @@ export interface NativeSessionState {
    * lifecycle as the maps above: set on open, cleared on close.
    */
   readonly systemPrompts: Map<string, string>;
+  readonly repositoryInstructions: Map<string, RepositoryInstructions>;
 }
 
 export function createNativeSessionState(): NativeSessionState {
@@ -165,6 +170,7 @@ export function createNativeSessionState(): NativeSessionState {
     spinBreakers: new Map(),
     lastUsage: new Map(),
     systemPrompts: new Map(),
+    repositoryInstructions: new Map(),
   };
 }
 
@@ -243,7 +249,9 @@ function recordSystemPrompt(state: NativeSessionState, name: string, systemPromp
 
 /** The request field for the session's system prompt: `{ system }`, or `{}` when it has none. */
 export function systemFieldFor(state: NativeSessionState, sessionName: string): { readonly system?: string } {
-  const system = state.systemPrompts.get(sessionName);
+  const base = state.systemPrompts.get(sessionName);
+  const repository = state.repositoryInstructions.get(sessionName)?.render();
+  const system = [base, repository].filter(Boolean).join("\n\n") || undefined;
   return system === undefined ? {} : { system };
 }
 
@@ -252,15 +260,25 @@ export async function openNativeSession(
   name: string,
   opts: OpenSessionOpts,
 ): Promise<SessionHandle> {
+  instructionFileNameFor(opts.instructionFileName);
   const store = openTranscriptStore(name, opts);
   if (opts.transcriptDir) state.transcriptDirs.set(name, opts.transcriptDir);
   else state.transcriptDirs.delete(name);
-  state.transcripts.set(name, { store, retainOnClose: opts.retainOnClose === true });
+  state.transcripts.set(name, {
+    store,
+    retainOnClose: opts.retainOnClose === true,
+  });
   state.timeouts.set(name, opts.timeoutSeconds);
   state.scratchpadRoots.set(name, opts.workdir);
   if (opts.transcriptOwner !== undefined) state.transcriptOwners.set(name, opts.transcriptOwner);
   else state.transcriptOwners.delete(name);
   recordSystemPrompt(state, name, opts.systemPrompt);
+  const instructions = await openRepositoryInstructions(name, opts, store);
+  state.repositoryInstructions.set(name, instructions);
+  state.transcripts.set(name, {
+    store: instructionTranscriptStore(store, instructions),
+    retainOnClose: opts.retainOnClose === true,
+  });
   // `resume` is SessionManager's "this name already has a descriptor in this
   // process" signal, and it had no consumer on this transport (nax#1877) — a
   // native session resumed whatever transcript happened to be on disk. Honouring
@@ -283,7 +301,10 @@ export async function openNativeSession(
     // native has no reconnect, so its logical and physical identity genuinely
     // coincide. `nativeSessionId` is a pure hash of the name and deliberately
     // not memoised, so this is exactly the id `sendTurn` later puts on the wire.
-    protocolIds: { recordId: nativeSessionId(name), sessionId: nativeSessionId(name) },
+    protocolIds: {
+      recordId: nativeSessionId(name),
+      sessionId: nativeSessionId(name),
+    },
     ...(opts.modelDef !== undefined ? { modelDef: opts.modelDef } : {}),
     ...(opts.modelTier !== undefined ? { modelTier: opts.modelTier } : {}),
   };
@@ -312,6 +333,7 @@ export function clearNativeSessionState(state: NativeSessionState, sessionName: 
   state.spinBreakers.delete(sessionName);
   state.lastUsage.delete(sessionName);
   state.systemPrompts.delete(sessionName);
+  state.repositoryInstructions.delete(sessionName);
 }
 
 /**

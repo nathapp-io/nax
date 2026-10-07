@@ -148,7 +148,10 @@ export interface OpenSessionOpts extends TrackedSpawnDeadlineOptions {
    * from the same resolution the native coding tools use. nax-agent itself does not
    * read it; native takes its sink from coding-tool support.
    */
-  toolAudit?: { readonly dir: string; readonly header: import("#src/tools/tool-audit").ToolAuditHeader };
+  toolAudit?: {
+    readonly dir: string;
+    readonly header: import("#src/tools/tool-audit").ToolAuditHeader;
+  };
   /**
    * Native: identity that owns this session's transcript — the op invocation's
    * `scopeId ?? callId`. Stable across the retries and hops of one invocation,
@@ -178,6 +181,14 @@ export interface OpenSessionOpts extends TrackedSpawnDeadlineOptions {
    * facade sets it from `instructions`; nax leaves it unset. ACP ignores it.
    */
   systemPrompt?: string;
+  /** Native: repository-relative instruction scopes, independent of the file-tool root. */
+  instructionDirectories?: readonly string[];
+  /** Native: instruction Markdown basename; defaults to AGENTS.md and its legacy fallback chain. */
+  instructionFileName?: string;
+  /** Native: repository-relative paths excluded from automatic instruction reads. */
+  instructionDenyPaths?: readonly string[];
+  /** Native: host credential and trust-store paths excluded from instruction discovery. */
+  instructionProtectedPaths?: import("#src/tools/protected-paths").ProtectedPathsPolicy;
   /**
    * Native: resolved compaction settings. A resolved primitive, never NaxConfig —
    * src/agents/native/ must not read config (check:adapter-no-config-import).
@@ -316,7 +327,10 @@ export interface TurnResult {
    *
    * A turn-observed fact surfaced to the wiring layer, like `interactions`.
    */
-  codingToolUse?: { readonly advertised: number; readonly called: readonly string[] };
+  codingToolUse?: {
+    readonly advertised: number;
+    readonly called: readonly string[];
+  };
   /** Protocol-specific IDs for prompt-audit correlation. */
   protocolIds?: ProtocolIds;
   /**

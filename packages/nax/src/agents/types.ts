@@ -101,6 +101,8 @@ export interface AgentRunOptions {
   prompt: string;
   /** Working directory */
   workdir: string;
+  /** Repository-relative initial instruction scopes; batches name only their participating packages. */
+  instructionDirectories?: readonly string[];
   /** Model tier (for cost estimation) */
   modelTier: ModelTier;
   /** Resolved model definition */

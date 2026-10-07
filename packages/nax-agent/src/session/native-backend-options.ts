@@ -9,12 +9,15 @@ import type { BashApprovalMode } from "#src/config/bash-approval";
 import type { NativeCatalogOverrides } from "#src/native/client";
 import type { CredentialSource } from "#src/native/credentials/session-source";
 import { parseNativeModel } from "#src/native/models";
+import { isInstructionFileName } from "#src/native/session/instruction-file-name";
 import type { LoopHandlerSet } from "#src/native/session/loop-events/types";
 import { AgentSessionError } from "./agent-session-errors.ts";
 import type { AgentSessionHostPorts, AgentSessionProfile } from "./agent-session-types.ts";
 
 export interface NativeBackendOptions {
   readonly model: string;
+  /** Repository instruction basename; defaults to AGENTS.md. */
+  readonly instructionFileName?: string;
   readonly credentials?: CredentialSource;
   readonly catalogOverrides?: NativeCatalogOverrides;
   readonly loopHandlers?: LoopHandlerSet;
@@ -42,6 +45,13 @@ const isStringArray = (value: unknown): boolean =>
 
 const OptionsSchema = z.strictObject({
   model: z.string().min(1),
+  instructionFileName: z
+    .string()
+    .refine(
+      isInstructionFileName,
+      "must be a nonhidden Markdown basename without path separators, colon or control characters",
+    )
+    .optional(),
   credentials: z
     .custom(
       (value) => isRecord(value) && (value.kind === "memory" || value.kind === "exec"),

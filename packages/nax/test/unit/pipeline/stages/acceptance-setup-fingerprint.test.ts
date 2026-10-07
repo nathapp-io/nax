@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { assertDefined, makeDispatchContext } from "@test/helpers";
+import { assertDefined, makeDispatchContext, makeNaxConfig } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import {
   _acceptanceSetupDeps,
@@ -329,6 +329,16 @@ describe("US-001: per-package test file generation by workdir", () => {
       stories,
     });
 
+    _acceptanceSetupDeps.loadGroupConfig = async (_root, packageDir) =>
+      makeNaxConfig({
+        project: { language: "typescript", testFramework: "bun" },
+        acceptance: {
+          enabled: true,
+          refinement: true,
+          redGate: true,
+          testFramework: packageDir === "apps/api" ? "jest" : "vitest",
+        },
+      });
     _acceptanceSetupDeps.fileExists = async () => false;
     _acceptanceSetupDeps.readMeta = async () => null;
     _acceptanceSetupDeps.callOp = makeDefaultCallOp();
@@ -345,6 +355,8 @@ describe("US-001: per-package test file generation by workdir", () => {
     expect(acceptancePaths.every((p) => p.testPath && p.packageDir)).toBe(true);
     expect(acceptancePaths.some((p) => p.packageDir.endsWith("apps/api"))).toBe(true);
     expect(acceptancePaths.some((p) => p.packageDir.endsWith("apps/cli"))).toBe(true);
+    expect(acceptancePaths.find((p) => p.packageDir.endsWith("apps/api"))?.testFramework).toBe("jest");
+    expect(acceptancePaths.find((p) => p.packageDir.endsWith("apps/cli"))?.testFramework).toBe("vitest");
   });
 
   test("US-003 AC-10: each ctx.acceptanceTestPaths entry's storyCount equals the number of PRD stories grouped into its package", async () => {

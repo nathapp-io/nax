@@ -41,6 +41,7 @@ import type {
 import { getLogger } from "../logger";
 import { RectifierPromptBuilder } from "../prompts";
 import { recordAgentHandoff } from "../session";
+import { instructionOptionsForSession } from "../session/instruction-options";
 import type { OpenSessionRequest } from "../session/types";
 import type { _buildHopCallbackDeps, BuildHopCallbackContext } from "./build-hop-callback";
 import type { HopEndpoint } from "./hop-endpoint";
@@ -401,6 +402,7 @@ export function prepareHopSession(input: HopInvocation): HopSession {
     role: resolvedRunOptions.sessionRole ?? "implementer",
     workdir: ctx.workdir,
     pipelineStage: stage,
+    ...instructionOptionsForSession(agentName, resolvedRunOptions),
     // SEC-3: thread per-package config so monorepo permissionProfile is honored.
     config: ctx.config,
     modelDef,

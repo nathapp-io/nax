@@ -5,7 +5,11 @@
  * Sub-schemas are extracted into schemas-*.ts files.
  */
 
-import { DEFAULT_BASH_APPROVAL_MODE, DEFAULT_SANDBOX_CONFIG } from "@nathapp/nax-agent/internal";
+import {
+  DEFAULT_BASH_APPROVAL_MODE,
+  DEFAULT_INSTRUCTION_FILE_NAME,
+  DEFAULT_SANDBOX_CONFIG,
+} from "@nathapp/nax-agent/internal";
 import { z } from "zod";
 import {
   DEFAULT_ACP_TRANSPORT,
@@ -357,7 +361,11 @@ export const NaxConfigSchema = z
         trackedSpawnDeadlineMs: 10_000,
         trackedSpawnStartupDeadlineMs: 30_000,
       },
-      native: { transportRetry: { maxAttempts: 3, baseDelayMs: 2000 }, catalogOverrides: [] },
+      native: {
+        instructionFileName: DEFAULT_INSTRUCTION_FILE_NAME,
+        transportRetry: { maxAttempts: 3, baseDelayMs: 2000 },
+        catalogOverrides: [],
+      },
       idleWatchdog: DEFAULT_AGENT_IDLE_WATCHDOG_CONFIG,
       timeoutRetry: DEFAULT_AGENT_TIMEOUT_RETRY_CONFIG,
       spinBreaker: {

@@ -12,12 +12,37 @@ import { deriveNativeTranscriptDir } from "./manager-deps";
 import type { OpenSessionRequest } from "./types";
 
 export function openSessionExtras(
-  opts: Pick<OpenSessionRequest, "transcriptDir" | "transcriptOwner" | "toolAudit" | "featureName">,
+  opts: Pick<
+    OpenSessionRequest,
+    | "transcriptDir"
+    | "transcriptOwner"
+    | "toolAudit"
+    | "featureName"
+    | "instructionDirectories"
+    | "instructionFileName"
+    | "instructionProtectedPaths"
+    | "instructionDenyPaths"
+  >,
   transcriptRoot: string | undefined,
-): Pick<OpenSessionOpts, "transcriptDir" | "transcriptOwner" | "toolAudit"> {
+): Pick<
+  OpenSessionOpts,
+  | "transcriptDir"
+  | "transcriptOwner"
+  | "toolAudit"
+  | "instructionDirectories"
+  | "instructionFileName"
+  | "instructionProtectedPaths"
+  | "instructionDenyPaths"
+> {
   return {
     transcriptDir: opts.transcriptDir ?? deriveNativeTranscriptDir({ featureName: opts.featureName, transcriptRoot }),
     ...(opts.transcriptOwner !== undefined ? { transcriptOwner: opts.transcriptOwner } : {}),
     ...(opts.toolAudit !== undefined ? { toolAudit: opts.toolAudit } : {}),
+    ...(opts.instructionDirectories !== undefined ? { instructionDirectories: opts.instructionDirectories } : {}),
+    ...(opts.instructionFileName !== undefined ? { instructionFileName: opts.instructionFileName } : {}),
+    ...(opts.instructionProtectedPaths !== undefined
+      ? { instructionProtectedPaths: opts.instructionProtectedPaths }
+      : {}),
+    ...(opts.instructionDenyPaths !== undefined ? { instructionDenyPaths: opts.instructionDenyPaths } : {}),
   };
 }

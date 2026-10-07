@@ -644,6 +644,7 @@ describe("acceptance-setup: testFramework appears in generate callOp input", () 
     expect(capturedFrameworkOverrideLine).toBeDefined();
     assertDefined(capturedFrameworkOverrideLine, "capturedFrameworkOverrideLine");
     expect(capturedFrameworkOverrideLine).toContain("ink-testing-library");
+    expect(ctx.acceptanceTestPaths?.[0]?.testFramework).toBe("ink-testing-library");
   });
 
   test("frameworkOverrideLine is empty string when testFramework is not set", async () => {

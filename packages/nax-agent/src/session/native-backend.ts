@@ -25,7 +25,10 @@ import { buildSessionToolSupport, defaultProtectedPaths, resolveSessionLauncher 
 export const NATIVE_BACKEND_KIND = "native";
 
 /** nax's agent.native.transportRetry default (S3 spec 5.3). */
-const SESSION_TRANSPORT_RETRY: TurnRetryConfig = { maxAttempts: 3, baseDelayMs: 2000 };
+const SESSION_TRANSPORT_RETRY: TurnRetryConfig = {
+  maxAttempts: 3,
+  baseDelayMs: 2000,
+};
 
 function createAdapter(raw: NativeBackendOptions): NativeSessionAdapter {
   const overrides = raw.catalogOverrides ?? [];
@@ -51,7 +54,10 @@ async function openNative(resolved: ResolvedNativeOptions, ctx: BackendOpenConte
   const raw = resolved.raw;
   if (ctx.resume !== undefined) checkResumeModel(ctx.resume.doc, ctx.sessionId, raw.model);
   const { bashApproval, allowUnsandboxed } = nativeProfileRules(ctx.profile, raw);
-  const protectedPaths = { ...defaultProtectedPaths(raw.credentials !== undefined), ...raw.hostPorts?.protectedPaths };
+  const protectedPaths = {
+    ...defaultProtectedPaths(raw.credentials !== undefined),
+    ...raw.hostPorts?.protectedPaths,
+  };
   const launcher = await resolveSessionLauncher({
     profile: ctx.profile,
     root: ctx.workdir,
@@ -84,6 +90,8 @@ async function openNative(resolved: ResolvedNativeOptions, ctx: BackendOpenConte
   const handle = await adapter.openSession(ctx.sessionId, {
     agentName: NATIVE_AGENT,
     workdir: ctx.workdir,
+    instructionProtectedPaths: protectedPaths,
+    instructionFileName: raw.instructionFileName,
     resolvedPermissions: { mode: "default", toolGrants: grants, bashApproval },
     modelDef: { provider: resolved.provider, model: raw.model },
     timeoutSeconds: ctx.turnTimeoutSeconds,
@@ -119,5 +127,8 @@ async function openNative(resolved: ResolvedNativeOptions, ctx: BackendOpenConte
 
 export function nativeBackend(options: NativeBackendOptions): SessionBackend {
   const resolved = parseNativeBackendOptions(options);
-  return { kind: NATIVE_BACKEND_KIND, open: (ctx) => openNative(resolved, ctx) };
+  return {
+    kind: NATIVE_BACKEND_KIND,
+    open: (ctx) => openNative(resolved, ctx),
+  };
 }

@@ -62,3 +62,5 @@ export type { PromptOptions, PromptRole, PromptSection, SectionSlot } from "./co
 export { SLOT_ORDER } from "./core/types";
 // Out-of-scope section — shared by the story sections and both reviewer prompts.
 export { buildOutOfScopeLines, buildReviewOutOfScopeBlock } from "./sections";
+
+export { buildAcceptanceExecutionSection } from "./sections/acceptance";

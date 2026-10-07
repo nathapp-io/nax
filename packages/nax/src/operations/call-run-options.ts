@@ -68,6 +68,7 @@ export function buildRunDispatchOptions(ctx: CallContext, params: RunDispatchOpt
   return {
     prompt,
     workdir: storyExecRoot(ctx.packageView),
+    ...(ctx.instructionDirectories !== undefined ? { instructionDirectories: ctx.instructionDirectories } : {}),
     modelTier: effectiveTier,
     modelDef: dispatchModelDef,
     timeoutSeconds:

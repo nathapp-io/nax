@@ -13,12 +13,14 @@ export {
   makeAcceptanceCoverageCollector,
   warnMissingAcceptanceTests,
 } from "./coverage";
+export type { AcceptanceExecution } from "./execution-description";
+export { _acceptanceExecutionDeps, resolveAcceptanceExecution } from "./execution-description";
 export { loadSourceFilesForDiagnosis } from "./fix-diagnosis";
-
 export {
   acceptanceTestFilename,
   buildAcceptanceRunCommand,
   buildAcceptanceTestPrompt,
+  effectiveAcceptanceFramework,
   generateSkeletonTests,
   parseAcceptanceCriteria,
   substituteAcceptanceTestPath,

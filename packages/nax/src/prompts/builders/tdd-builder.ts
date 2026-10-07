@@ -34,6 +34,7 @@ import type { PromptOptions, PromptRole, PromptSection } from "../core";
 import { SectionAccumulator, universalConstitutionSection, universalContextSection } from "../core";
 import type { AcceptanceEntry, GuardrailRole } from "../sections";
 import {
+  buildAcceptanceExecutionSection,
   buildAcceptanceSection,
   buildBatchStorySection,
   buildBehavioralGuardrailsSection,
@@ -75,6 +76,7 @@ export class TddPromptBuilder {
   private scopedTestCommand_: string | undefined;
   private hermeticConfig_: { hermetic?: boolean; externalBoundaries?: string[]; mockGuidance?: string } | undefined;
   private noTestJustification_: string | undefined;
+  private acceptanceExecution_: import("../../acceptance").AcceptanceExecution[] = [];
   private acceptanceEntries_: AcceptanceEntry[] | undefined;
   private selfVerification_: SelfVerificationPromptInput | undefined;
   /** US-004 — the story's persisted baseline. Rendered as one bounded upfront section. */
@@ -167,6 +169,11 @@ export class TddPromptBuilder {
     return this;
   }
 
+  acceptanceExecution(entries: import("../../acceptance").AcceptanceExecution[]): this {
+    this.acceptanceExecution_ = entries;
+    return this;
+  }
+
   acceptanceContext(entries: AcceptanceEntry[]): this {
     this.acceptanceEntries_ = entries;
     return this;
@@ -218,6 +225,8 @@ export class TddPromptBuilder {
       const baselineSection = buildTestBaselineSection(this.testBaseline_);
       if (baselineSection) acc.add(this.s("test-baseline", baselineSection));
     }
+
+    acc.add(this.s("acceptance-execution", buildAcceptanceExecutionSection(this.acceptanceExecution_)));
 
     // (3.6) Acceptance test context
     if (this.acceptanceEntries_ && this.acceptanceEntries_.length > 0) {
@@ -338,6 +347,7 @@ export class TddPromptBuilder {
     config: NaxConfig,
     story: UserStory,
     opts: {
+      acceptanceExecution?: import("../../acceptance").AcceptanceExecution[];
       lite?: boolean;
       contextMarkdown?: string;
       featureContextMarkdown?: string;
@@ -360,6 +370,7 @@ export class TddPromptBuilder {
       .withLoader(workdir, config)
       .story(story)
       .testBaseline(testBaseline)
+      .acceptanceExecution(opts.acceptanceExecution ?? [])
       .context(opts.contextMarkdown)
       .v2FeatureContext(opts.contextBundle?.pushMarkdown)
       .featureContext(opts.contextBundle ? undefined : opts.featureContextMarkdown)

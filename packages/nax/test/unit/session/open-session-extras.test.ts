@@ -18,4 +18,14 @@ describe("openSessionExtras", () => {
   test("no root and no feature: no transcriptDir key at all", () => {
     expect(openSessionExtras({}, undefined)).toEqual({ transcriptDir: undefined });
   });
+
+  test("forwards package guidance and access restrictions to the native adapter", () => {
+    const options = {
+      instructionFileName: "TEAM.md",
+      instructionDirectories: ["apps/api", "packages/client"],
+      instructionProtectedPaths: { projectStateDir: ".nax", gitExcludePathspecs: [], gitIgnorePatterns: [] },
+      instructionDenyPaths: ["docs/private/**"],
+    };
+    expect(openSessionExtras(options, undefined)).toEqual({ transcriptDir: undefined, ...options });
+  });
 });
