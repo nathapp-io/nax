@@ -16,6 +16,7 @@ import { createTurnDeadline } from "@nathapp/nax-agent";
 import { getSafeLogger } from "@/logger";
 import type { ITokenUsageMapper, RateCard, TokenUsage } from "../cost";
 import { addTokenUsage, estimateCostUsd } from "../cost";
+import { extractContextToolCall, extractQuestion } from "../interaction";
 import type { InteractionExchange, SendTurnOpts, TurnResult } from "../types";
 import { SessionTurnError } from "../types";
 import {
@@ -25,7 +26,7 @@ import {
   runSessionPrompt,
   warnWallClockTimeout,
 } from "./adapter-lifecycle";
-import { buildTurnResult, extractContextToolCall, extractOutput, extractQuestion } from "./adapter-output";
+import { buildTurnResult, extractOutput } from "./adapter-output";
 import type { AcpSessionResponse } from "./adapter-session-types";
 import type { SessionTokenUsage } from "./wire-types";
 
