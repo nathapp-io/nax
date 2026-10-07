@@ -321,10 +321,9 @@ export const AgentSpinBreakerConfigSchema = z
 
 const AgentAcpConfigSchema = z.object({
   /**
-   * S4b development key: "acpx" (default) drives ACP agents through the acpx
-   * CLI, "sdk" through @nathapp/nax-agent-acp. Complete on both transports
-   * since S4b-3; S4b-4 flips the default to sdk and S4b-5 deletes the key
-   * with acpx.
+   * S4b development key: "sdk" (default since S4b-4) drives ACP agents through
+   * @nathapp/nax-agent-acp, "acpx" through the acpx CLI. S4b-5 deletes the
+   * key with acpx.
    */
   transport: z.enum(["acpx", "sdk"]).default(DEFAULT_ACP_TRANSPORT),
   promptRetries: z.number().int().min(0).max(5).default(0),

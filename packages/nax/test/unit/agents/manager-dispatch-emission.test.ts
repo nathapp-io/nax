@@ -279,7 +279,9 @@ describe("completeAs — dispatch emission", () => {
 
   test("emits exactly one complete event", async () => {
     const bus = new DispatchEventBus();
-    const manager = new AgentManager(DEFAULT_CONFIG, undefined, { dispatchEvents: bus });
+    // acpx transport pinned until S4b-5 deletes it: the mocked client above is acpx's.
+    const config = makeNaxConfig({ agent: { acp: { transport: "acpx" } } });
+    const manager = new AgentManager(config, undefined, { dispatchEvents: bus });
 
     const received: CompleteDispatchEvent[] = [];
     bus.onDispatch((e) => {

@@ -49,12 +49,12 @@ describe("registry discrimination", () => {
     expect(KNOWN_AGENT_NAMES).toContain("native");
   });
 
-  test("builds a NativeAgentAdapter for native and AcpAgentAdapter for the rest", () => {
+  test("builds a NativeAgentAdapter for native and the default-transport ACP adapter for the rest", () => {
     const byName = new Map(getAllAgents().map((a) => [a.name, a]));
 
     expect(byName.get("native")).toBeInstanceOf(NativeAgentAdapter);
-    expect(byName.get("claude")).toBeInstanceOf(AcpAgentAdapter);
-    expect(byName.get("codex")).toBeInstanceOf(AcpAgentAdapter);
+    expect(byName.get("claude")).toBeInstanceOf(AcpSdkAgentAdapter);
+    expect(byName.get("codex")).toBeInstanceOf(AcpSdkAgentAdapter);
   });
 
   test("resolves native through the config-aware registry too", () => {
@@ -79,14 +79,14 @@ describe("ACP transport routing (S4b spec §5.3)", () => {
   });
 
   test("createAgentRegistry routes ACP agents by agent.acp.transport, native unchanged", () => {
-    const sdk = createAgentRegistry(makeNaxConfig({ agent: { acp: { transport: "sdk" } } }));
-    expect(sdk.getAgent("claude")).toBeInstanceOf(AcpSdkAgentAdapter);
-    expect(sdk.getAgent("native")).toBeInstanceOf(NativeAgentAdapter);
-    expect(createAgentRegistry(makeNaxConfig({})).getAgent("claude")).toBeInstanceOf(AcpAgentAdapter);
+    const acpx = createAgentRegistry(makeNaxConfig({ agent: { acp: { transport: "acpx" } } }));
+    expect(acpx.getAgent("claude")).toBeInstanceOf(AcpAgentAdapter);
+    expect(acpx.getAgent("native")).toBeInstanceOf(NativeAgentAdapter);
+    expect(createAgentRegistry(makeNaxConfig({})).getAgent("claude")).toBeInstanceOf(AcpSdkAgentAdapter);
   });
 
-  test("the config-less listings use the default transport (D2-n)", () => {
-    expect(getAllAgents().find((a) => a.name === "claude")).toBeInstanceOf(AcpAgentAdapter);
+  test("the config-less listings use the default transport, sdk since S4b-4 (D2-n)", () => {
+    expect(getAllAgents().find((a) => a.name === "claude")).toBeInstanceOf(AcpSdkAgentAdapter);
   });
 });
 

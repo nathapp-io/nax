@@ -244,7 +244,8 @@ describe("AgentManager — middleware envelope", () => {
   });
 
   function makeMiddlewareManager(mw?: AgentMiddleware): AgentManager {
-    return new AgentManager(DEFAULT_CONFIG, undefined, {
+    // acpx transport pinned until S4b-5 deletes it: the mocked client above is acpx's.
+    return new AgentManager(makeNaxConfig({ agent: { acp: { transport: "acpx" } } }), undefined, {
       middleware: mw ? MiddlewareChain.from([mw]) : MiddlewareChain.empty(),
       runId: "r-test",
     });

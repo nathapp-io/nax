@@ -300,7 +300,7 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "agent.protocol": "Protocol for agent communication: 'acp' (default) | 'native' | 'hybrid'",
   "agent.acp": "ACP agent transport settings (claude, codex, opencode, gemini, pi)",
   "agent.acp.transport":
-    "How ACP agents are driven: 'acpx' (default) shells out to the acpx CLI; 'sdk' uses @nathapp/nax-agent-acp in-process (S4b development key; S4b-4 makes sdk the default)",
+    "How ACP agents are driven: 'sdk' (default) uses @nathapp/nax-agent-acp in-process; 'acpx' shells out to the acpx CLI (S4b development key; S4b-5 removes acpx and this key)",
   "agent.native.catalogOverrides":
     "Native only. Explicit catalog entries for model ids newer than the bundled pi-ai snapshot, plus optional provider-wide baseUrl/headers.",
   "agent.native.catalogOverrides.baseUrl":

@@ -192,6 +192,33 @@ describe("validateContestants", () => {
       expect(seen).toEqual(["pi:sdk"]);
     });
 
+    it("with no baseTransport, a contestant gets the sdk default (S4b-4)", async () => {
+      const seen: string[] = [];
+      await validateContestants(["cross-agent-pi"], projectRoot, {
+        isInstalled: (agent, transport) => {
+          seen.push(`${agent}:${transport}`);
+          return true;
+        },
+      });
+      expect(seen).toEqual(["pi:sdk"]);
+    });
+
+    it("a profile's agent.acp.transport acpx still wins over the sdk default", async () => {
+      writeFileSync(
+        join(profileDir, "cross-agent-pi-acpx.json"),
+        JSON.stringify({ agent: { default: "pi", acp: { transport: "acpx" } } }),
+        "utf8",
+      );
+      const seen: string[] = [];
+      await validateContestants(["cross-agent-pi-acpx"], projectRoot, {
+        isInstalled: (agent, transport) => {
+          seen.push(`${agent}:${transport}`);
+          return true;
+        },
+      });
+      expect(seen).toEqual(["pi:acpx"]);
+    });
+
     it("an async isInstalled answer is honoured", async () => {
       const result = await validateContestants(["cross-agent-pi"], projectRoot, { isInstalled: async () => false });
       expect(result.errors).toMatchObject([{ reason: "dnf-not-installed" }]);
