@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { writeFileSync } from "node:fs";
+import { chmodSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createFileTranscriptStore, isProcessAlive, type OpenSessionOpts } from "@nathapp/nax-agent";
 import { cleanupTempDir, makeTempDir, waitForCondition } from "@test/helpers";
@@ -125,6 +125,14 @@ describe("createSession (spec §6.1)", () => {
       code: "AGENT_SESSION_BACKEND_UNAVAILABLE",
     });
   }, 20_000);
+
+  test("an already-aborted run signal fails the open and unlinks the no-op remover", async () => {
+    useFake();
+    const runSignal = new AbortController();
+    runSignal.abort(new Error("run aborted before the session opened"));
+    await expect(createSession("nax-s8", "claude", opts({ signal: runSignal.signal }))).rejects.toThrow();
+    expect(await createFileTranscriptStore(transcripts).load("nax-s8")).toBeNull();
+  }, 20_000);
 });
 
 describe("shutdownSession and reopenFresh", () => {
@@ -165,5 +173,46 @@ describe("shutdownSession and reopenFresh", () => {
     expect(fakeMethods(record).filter((m) => m === "session/new")).toHaveLength(2);
     expect(fakeMethods(record)).not.toContain("session/resume");
     await shutdownSession(session, { waitMs: 2_000 });
+  }, 20_000);
+
+  test("a run signal aborts the closer and is unlinked on close", async () => {
+    useFake();
+    const runSignal = new AbortController();
+    const session = await createSession("nax-c4", "claude", opts({ signal: runSignal.signal }));
+    expect(session.closer.signal.aborted).toBe(false);
+    runSignal.abort(new Error("run aborted"));
+    expect(session.closer.signal.aborted).toBe(true);
+    await shutdownSession(session, { waitMs: 2_000 });
+  }, 20_000);
+
+  test("a close that rejects is warned about and the teardown still completes", async () => {
+    useFake();
+    const session = await createSession("nax-c6", "claude", opts());
+    session.opened = { ...session.opened, close: () => Promise.reject(new Error("close boom")) };
+    await shutdownSession(session, { waitMs: 2_000 });
+    expect(await createFileTranscriptStore(transcripts).load("nax-c6")).toBeNull();
+  }, 20_000);
+
+  test("a close that outlives the teardown deadline kills the process group", async () => {
+    useFake();
+    const session = await createSession("nax-c7", "claude", opts());
+    const [pid] = fakeStartPids(record);
+    session.opened = { ...session.opened, close: () => new Promise<void>(() => {}) };
+    await shutdownSession(session, { waitMs: 20 });
+    expect(session.closer.signal.aborted).toBe(true);
+    await waitForCondition(() => pid !== undefined && !isProcessAlive(pid), 5_000);
+    expect(await createFileTranscriptStore(transcripts).load("nax-c7")).toBeNull();
+  }, 20_000);
+
+  test("a transcript document that cannot be deleted does not fail the close", async () => {
+    useFake();
+    const session = await createSession("nax-c8", "claude", opts());
+    chmodSync(transcripts, 0o555);
+    try {
+      await shutdownSession(session, { waitMs: 2_000 });
+    } finally {
+      chmodSync(transcripts, 0o755);
+    }
+    expect(session.closer.signal.aborted).toBe(true);
   }, 20_000);
 });
