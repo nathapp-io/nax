@@ -12,10 +12,17 @@
  * rejects AGENT_SESSION_CLOSED.
  */
 import { type ClientCapabilities, PROTOCOL_VERSION, type SessionConfigOption } from "@agentclientprotocol/sdk";
-import { type AgentSessionProfile, type BackendOpenContext, NaxError, type TranscriptDoc } from "@nathapp/nax-agent";
+import {
+  type AgentSessionProfile,
+  type BackendOpenContext,
+  getLogger,
+  NaxError,
+  type TranscriptDoc,
+} from "@nathapp/nax-agent";
 import {
   buildCapabilityRecord,
   type CapabilityRecord,
+  effortOptionId,
   modeFor,
   modelOptionId,
   offersValue,
@@ -196,22 +203,53 @@ async function sessionSetup(o: Opening): Promise<SessionSetup> {
   return { mcpServers: [server], _meta: { ...meta } };
 }
 
-/** §6.3 step 5: the profile's mode, then the model. Only values the agent offered are set. */
+/** §6.3 step 5: the profile's mode, then the model, then the effort (S4b). Only values the agent offered are set. */
 async function applyConfig(o: Opening, sessionId: string, offered: readonly SessionConfigOption[]): Promise<void> {
+  const afterMode = await applyMode(o, sessionId, offered);
+  const afterModel = await applyModel(o, sessionId, afterMode);
+  await applyEffort(o, sessionId, afterModel);
+}
+
+async function applyMode(
+  o: Opening,
+  sessionId: string,
+  offered: readonly SessionConfigOption[],
+): Promise<readonly SessionConfigOption[]> {
   const mode = modeFor(o.ctx.profile, o.options.entry);
-  if (mode !== undefined && !offersValue(offered, mode.configId, mode.value)) {
+  if (mode === undefined) return offered;
+  if (!offersValue(offered, mode.configId, mode.value)) {
     throw capabilityUnsupported("profile", `the agent does not offer ${mode.configId} "${mode.value}"`);
   }
-  const afterMode =
-    mode === undefined
-      ? offered
-      : ((await step(o, "session/set_config_option", o.link.setConfigOption({ sessionId, ...mode }))).configOptions ??
-        offered);
+  const set = await step(o, "session/set_config_option", o.link.setConfigOption({ sessionId, ...mode }));
+  return set.configOptions ?? offered;
+}
+
+async function applyModel(
+  o: Opening,
+  sessionId: string,
+  offered: readonly SessionConfigOption[],
+): Promise<readonly SessionConfigOption[]> {
   const model = o.options.model;
-  if (model === undefined) return;
-  const configId = modelOptionId(afterMode, model);
+  if (model === undefined) return offered;
+  const configId = modelOptionId(offered, model);
   if (configId === undefined) throw capabilityUnsupported("model", `the agent offers no model option "${model}"`);
-  await step(o, "session/set_config_option", o.link.setConfigOption({ sessionId, configId, value: model }));
+  const set = await step(o, "session/set_config_option", o.link.setConfigOption({ sessionId, configId, value: model }));
+  return set.configOptions ?? offered;
+}
+
+/** S4b spec §6.7: an effort the agent does not offer is skipped with a warning, as acpx does. */
+async function applyEffort(o: Opening, sessionId: string, offered: readonly SessionConfigOption[]): Promise<void> {
+  const effort = o.options.effort;
+  if (effort === undefined) return;
+  const configId = effortOptionId(offered, o.options.agentName, effort);
+  if (configId === undefined) {
+    getLogger().warn("acp", "The agent offers no effort option for this value; effort skipped", {
+      agent: o.options.agentName,
+      effort,
+    });
+    return;
+  }
+  await step(o, "session/set_config_option", o.link.setConfigOption({ sessionId, configId, value: effort }));
 }
 
 function initialDoc(o: Opening, record: CapabilityRecord, agentSessionId: string): TranscriptDoc {

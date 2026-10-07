@@ -33,6 +33,10 @@ What to know:
 - **Instructions** are prepended to the first prompt only; ACP has no system prompt.
 - **Stop reasons.** A turn that stops for anything but `end_turn` ends `errored` with
   an `ACP_STOP_*` code (`ACP_STOP_CODES`).
+- **Model and effort.** `model` and `effort` are set through `session/set_config_option`,
+  after the profile's mode: the model only when the agent offers it (else
+  `AGENT_SESSION_CAPABILITY_UNSUPPORTED`), the effort through the agent's `thought_level`
+  option (or its known effort option) and skipped with a warning when the value is not offered.
 - **Rate limits.** A prompt the agent rejects with structured `data.errorKind: "rate_limit"`
   (as Claude's adapter does) ends `AGENT_SESSION_RATE_LIMITED`. It is read from structured error
   data only, never from message text; Claude's adapter sends no retry-after.

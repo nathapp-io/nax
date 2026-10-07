@@ -109,3 +109,17 @@ describe("resolveAcpOptions: invalid input is AGENT_SESSION_INVALID_OPTIONS", ()
     ).toBe("explicit");
   });
 });
+
+describe("resolveAcpOptions: effort (S4b spec §8)", () => {
+  test("absent by default; a non-empty string is kept", () => {
+    expect(resolveAcpOptions({ agent: "claude", allowUnsandboxed: true }, SOURCE).effort).toBeUndefined();
+    expect(resolveAcpOptions({ agent: "claude", allowUnsandboxed: true, effort: "high" }, SOURCE).effort).toBe("high");
+  });
+
+  test("an empty effort is AGENT_SESSION_INVALID_OPTIONS at effort", () => {
+    expect(invalid({ agent: "claude", allowUnsandboxed: true, effort: "" })).toEqual({
+      code: "AGENT_SESSION_INVALID_OPTIONS",
+      path: "effort",
+    });
+  });
+});

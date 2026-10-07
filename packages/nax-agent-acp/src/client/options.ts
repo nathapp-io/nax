@@ -28,6 +28,8 @@ export interface AcpBackendOptions {
   readonly allowUnsandboxed: true;
   /** Applied via session/set_config_option (category "model") before open returns. */
   readonly model?: string;
+  /** Reasoning effort, set via session/set_config_option after the model (S4b spec 8). Skipped when not offered. */
+  readonly effort?: string;
   /** Added to the agent's environment. */
   readonly env?: Readonly<Record<string, string>>;
   /** Default false: the allowlist only. true hands the whole process.env to the agent. */
@@ -51,6 +53,7 @@ export interface ResolvedAcpOptions {
   readonly entry: AgentRegistryEntry | undefined;
   readonly launch: AcpLaunch;
   readonly model: string | undefined;
+  readonly effort: string | undefined;
   readonly env: Readonly<Record<string, string>>;
   /** Values redacted from every agent excerpt (D-g). */
   readonly secrets: readonly string[];
@@ -78,6 +81,7 @@ const SCHEMA = z
     agent: z.union([z.enum(["claude", "codex", "gemini", "opencode", "pi"]), customAgent]),
     allowUnsandboxed: z.literal(true),
     model: z.string().min(1).optional(),
+    effort: z.string().min(1).optional(),
     env: z.record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/), plain).optional(),
     inheritEnv: z.boolean().optional(),
     command: command.optional(),
@@ -124,6 +128,7 @@ function resolved(data: ParsedOptions, source: Readonly<Record<string, string | 
     entry,
     launch: launchOf(data, entry),
     model: data.model,
+    effort: data.effort,
     env: Object.freeze(env),
     secrets: Object.freeze([...secretValues(env)]),
     cancelGraceMs: data.cancelGraceMs ?? DEFAULT_CANCEL_GRACE_MS,

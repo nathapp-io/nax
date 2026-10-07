@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
+import type { SessionConfigOption } from "@agentclientprotocol/sdk";
 import type { AgentSessionProfile, EmbedderTool } from "@nathapp/nax-agent";
 import { type AgentSessionErrorCode, createMemoryTranscriptStore, type TranscriptStore } from "@nathapp/nax-agent";
 import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
@@ -437,5 +438,66 @@ describe("openAcpSession: read-only without plan mode (#2366)", () => {
     expect(fake.callsTo("session/set_config_option")).toEqual([
       { sessionId: "fake-session-1", configId: "mode", value: "default" },
     ]);
+  });
+});
+
+const EFFORT_OPTION: SessionConfigOption = {
+  id: "effort",
+  name: "Effort",
+  category: "thought_level",
+  type: "select",
+  currentValue: "medium",
+  options: [
+    { value: "low", name: "Low" },
+    { value: "medium", name: "Medium" },
+    { value: "high", name: "High" },
+  ],
+};
+const EFFORT_SCRIPT: FakeScript = { ...CLAUDE_SCRIPT, configOptions: [...CLAUDE_CONFIG_OPTIONS, EFFORT_OPTION] };
+
+function configIdsOf(calls: readonly unknown[]): unknown[] {
+  return calls.map((call) =>
+    typeof call === "object" && call !== null && "configId" in call ? call.configId : undefined,
+  );
+}
+
+describe("openAcpSession: effort (S4b spec §8)", () => {
+  test("applied after the mode and the model, through the thought-level option", async () => {
+    const { fake, opened } = await openWith(EFFORT_SCRIPT, { model: "sonnet", effort: "high" });
+    await opened;
+    expect(fake.callsTo("session/set_config_option")).toEqual([
+      { sessionId: "fake-session-1", configId: "mode", value: "default" },
+      { sessionId: "fake-session-1", configId: "model", value: "sonnet" },
+      { sessionId: "fake-session-1", configId: "effort", value: "high" },
+    ]);
+  });
+
+  test("applied without a model", async () => {
+    const { fake, opened } = await openWith(EFFORT_SCRIPT, { effort: "low" });
+    await opened;
+    expect(fake.callsTo("session/set_config_option").at(-1)).toEqual({
+      sessionId: "fake-session-1",
+      configId: "effort",
+      value: "low",
+    });
+  });
+
+  test("Review Focus 1: a value the option does not offer is skipped; the open succeeds", async () => {
+    const { fake, opened } = await openWith(EFFORT_SCRIPT, { effort: "max" });
+    await opened;
+    expect(configIdsOf(fake.callsTo("session/set_config_option"))).toEqual(["mode"]);
+  });
+
+  test("an agent with no effort option: skipped, the open succeeds", async () => {
+    const { fake, opened } = await openWith(CLAUDE_SCRIPT, { effort: "high" });
+    await opened;
+    expect(configIdsOf(fake.callsTo("session/set_config_option"))).toEqual(["mode"]);
+  });
+
+  test("a model the agent does not offer still fails first", async () => {
+    const { fake, opened } = await openWith(EFFORT_SCRIPT, { model: "gpt-9", effort: "high" });
+    const err = sessionError(await rejection(opened));
+    expect(err.context).toMatchObject({ capability: "model" });
+    expect(configIdsOf(fake.callsTo("session/set_config_option"))).toEqual(["mode"]);
   });
 });
