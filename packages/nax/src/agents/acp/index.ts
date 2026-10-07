@@ -11,7 +11,6 @@ export {
   AcpSessionHandleImpl,
   buildTurnResult,
 } from "./adapter";
-export { computeAcpHandle } from "./adapter-lifecycle";
 export type { AcpClient, AcpClientOptions, AcpSession, AcpSessionResponse } from "./adapter-session-types";
 export { parseAgentError } from "./parse-agent-error";
 export type {

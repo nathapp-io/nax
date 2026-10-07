@@ -49,7 +49,6 @@ export {
   _fallbackDeps,
   AcpSessionHandleImpl,
   closeAcpSession,
-  computeAcpHandle,
   ensureAcpSession,
   runSessionPrompt,
 } from "./adapter-lifecycle";
