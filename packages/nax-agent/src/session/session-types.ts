@@ -143,10 +143,10 @@ export interface OpenSessionOpts extends TrackedSpawnDeadlineOptions {
    */
   transcriptDir?: string;
   /**
-   * ACP (S4b spec 7.4): where this session's tool-audit ledger is written and the
-   * run-scoped header stamped on it. nax fills it from the same resolution the
-   * native coding tools use. Native ignores it: its sink comes from coding-tool
-   * support. Absent: the session writes no ledger.
+   * S4b spec 7.4: where an S1 adapter that writes its own tool-audit ledger (nax's
+   * ACP adapter) writes it, and the run-scoped header stamped on it. nax fills it
+   * from the same resolution the native coding tools use. nax-agent itself does not
+   * read it; native takes its sink from coding-tool support.
    */
   toolAudit?: { readonly dir: string; readonly header: import("#src/tools/tool-audit").ToolAuditHeader };
   /**

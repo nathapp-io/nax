@@ -5,6 +5,7 @@ import type { SessionConfigOption } from "@agentclientprotocol/sdk";
 import type { AgentSessionProfile, EmbedderTool } from "@nathapp/nax-agent";
 import { type AgentSessionErrorCode, createMemoryTranscriptStore, type TranscriptStore } from "@nathapp/nax-agent";
 import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
+import { waitForCondition } from "@nathapp/nax-test-kit/bun/timeout";
 import { createInboundRouter } from "#src/client/inbound";
 import { clientCapabilitiesFor, openAcpSession } from "#src/client/open";
 import { type AcpBackendOptions, resolveAcpOptions } from "#src/client/options";
@@ -530,6 +531,30 @@ describe("openAcpSession: onProcess (S4b spec §8)", () => {
     fake.crash();
     await acp.launched.exited;
     expect(seen).toEqual([]);
+  });
+
+  test("an async hook that rejects is caught, not an unhandled rejection", async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const hooks = {
+        spawned: async () => {
+          throw new Error("async embedder bug");
+        },
+        exited: async () => {
+          throw new Error("async embedder bug");
+        },
+      };
+      const { fake, opened } = await openWith(CLAUDE_SCRIPT, { onProcess: hooks }, undefined, [9]);
+      const acp = await opened;
+      fake.crash();
+      await acp.launched.exited;
+      await waitForCondition(() => true, 50);
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
   });
 
   test("Review Focus 2: a throwing hook does not fail the open or the exit", async () => {

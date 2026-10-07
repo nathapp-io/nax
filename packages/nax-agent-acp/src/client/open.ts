@@ -123,13 +123,18 @@ export async function openAcpSession(
 function watchProcess(hooks: AcpProcessHooks | undefined, launched: LaunchedAgent): void {
   const pid = launched.pid;
   if (hooks === undefined || pid === undefined) return;
+  const ignored = (name: string) => (err: unknown) => {
+    getLogger().warn("acp", `onProcess.${name} threw; ignored`, {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  };
   const call = (name: "spawned" | "exited"): void => {
     try {
-      hooks[name]?.(pid);
+      // An async hook's rejection is caught too; the hook is typed void, but async functions satisfy it.
+      const result: unknown = hooks[name]?.(pid);
+      if (result instanceof Promise) result.catch(ignored(name));
     } catch (err) {
-      getLogger().warn("acp", `onProcess.${name} threw; ignored`, {
-        error: err instanceof Error ? err.message : String(err),
-      });
+      ignored(name)(err);
     }
   };
   call("spawned");
