@@ -14,6 +14,7 @@ import type { OpenSessionOpts, SessionHandle } from "#src/session/session-types"
 import { NATIVE_AGENT } from "../models.ts";
 import { nativeSessionId } from "../session-affinity.ts";
 import type { ResolvedCompaction } from "./compaction.ts";
+import { instructionFileNameFor } from "./instruction-file-name.ts";
 import { openRepositoryInstructions } from "./instruction-session.ts";
 import { instructionTranscriptStore } from "./instruction-transcript.ts";
 import type { RepositoryInstructions } from "./repository-instructions.ts";
@@ -259,6 +260,7 @@ export async function openNativeSession(
   name: string,
   opts: OpenSessionOpts,
 ): Promise<SessionHandle> {
+  instructionFileNameFor(opts.instructionFileName);
   const store = openTranscriptStore(name, opts);
   if (opts.transcriptDir) state.transcriptDirs.set(name, opts.transcriptDir);
   else state.transcriptDirs.delete(name);

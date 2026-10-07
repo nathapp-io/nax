@@ -183,6 +183,8 @@ export interface OpenSessionOpts extends TrackedSpawnDeadlineOptions {
   systemPrompt?: string;
   /** Native: repository-relative instruction scopes, independent of the file-tool root. */
   instructionDirectories?: readonly string[];
+  /** Native: instruction Markdown basename; defaults to AGENTS.md and its legacy fallback chain. */
+  instructionFileName?: string;
   /** Native: repository-relative paths excluded from automatic instruction reads. */
   instructionDenyPaths?: readonly string[];
   /** Native: host credential and trust-store paths excluded from instruction discovery. */

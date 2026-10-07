@@ -2,6 +2,33 @@ import { describe, expect, test } from "bun:test";
 import { NaxConfigSchema } from "@/config";
 
 describe("AgentConfigSchema", () => {
+  test("native instruction filename defaults to AGENTS.md", () => {
+    expect(NaxConfigSchema.parse({}).agent?.native?.instructionFileName).toBe("AGENTS.md");
+    expect(NaxConfigSchema.parse({ agent: { native: {} } }).agent?.native?.instructionFileName).toBe("AGENTS.md");
+  });
+
+  test("accepts a custom native instruction filename", () => {
+    expect(
+      NaxConfigSchema.parse({ agent: { native: { instructionFileName: "TEAM.md" } } }).agent?.native
+        ?.instructionFileName,
+    ).toBe("TEAM.md");
+  });
+
+  test.each([
+    "",
+    " ",
+    "../TEAM.md",
+    "docs/TEAM.md",
+    "docs\\TEAM.md",
+    "/TEAM.md",
+    ".private.md",
+    "TEAM.txt",
+    "C:TEAM.md",
+    "TEAM\u0000.md",
+  ])("rejects invalid instruction filename %s", (instructionFileName) => {
+    expect(() => NaxConfigSchema.parse({ agent: { native: { instructionFileName } } })).toThrow();
+  });
+
   test("default values", () => {
     const result = NaxConfigSchema.parse({});
     expect(result.agent).toBeDefined();

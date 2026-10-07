@@ -122,7 +122,10 @@ For full flag details, see the [CLI Reference](docs/guides/cli-reference.md).
 {
   "agent": {
     "protocol": "hybrid",                  // "acp" | "native" | "hybrid" — which transports are permitted
-    "default": "native"                    // In-process nax-ai agent; or an ACP agent such as "claude"
+    "default": "native",                   // In-process nax-ai agent; or an ACP agent such as "claude"
+    "native": {
+      "instructionFileName": "AGENTS.md"   // Repository instruction basename; e.g. "TEAM.md"
+    }
   },
   "execution": {
     "maxIterations": 20,                   // Note: `nax run -m <n>` overrides this only when the flag is passed

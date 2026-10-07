@@ -516,6 +516,7 @@ type CredentialOrigin
 type CredentialsConfig
 DEFAULT_BASH_APPROVAL_MODE
 DEFAULT_BASH_SHELL
+DEFAULT_INSTRUCTION_FILE_NAME
 DEFAULT_LOG_FORMAT
 DEFAULT_LOG_MAX_COUNT
 DEFAULT_PI_AUTH_PATH
@@ -835,6 +836,7 @@ interceptArgv
 interceptShell
 isForgeCapable
 isInside
+isInstructionFileName
 isKnownManager
 isProcessAlive
 isProtocolStreamError

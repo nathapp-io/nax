@@ -6,6 +6,7 @@ import { readPrefix } from "#src/internal/bounded-io";
 import { credentialReadRefusal } from "#src/tools/credential-read-deny";
 import { matchesDenyPaths } from "#src/tools/deny-paths";
 import type { ProtectedPathsPolicy } from "#src/tools/protected-paths";
+import { DEFAULT_INSTRUCTION_FILE_NAME, instructionFileNameFor } from "./instruction-file-name.ts";
 import { MIN_INSTRUCTION_NOTICE_BYTES, renderRepositoryInstructions } from "./instruction-render.ts";
 
 export const _repositoryInstructionDeps = { realpath, readPrefix };
@@ -42,11 +43,19 @@ export class RepositoryInstructions {
   private limited = false;
   private pending: Promise<void> = Promise.resolve();
   private renderMaxBytes = Number.POSITIVE_INFINITY;
+  private readonly fileNames: readonly string[];
   constructor(
     private readonly workdir: string,
     private readonly protectedPaths?: ProtectedPathsPolicy,
     private readonly denyPaths?: readonly string[],
-  ) {}
+    fileName?: string,
+  ) {
+    const selected = instructionFileNameFor(fileName);
+    this.fileNames =
+      selected === DEFAULT_INSTRUCTION_FILE_NAME
+        ? ["AGENTS.override.md", DEFAULT_INSTRUCTION_FILE_NAME, "CLAUDE.md"]
+        : [selected];
+  }
   get directories(): readonly string[] {
     return [...this.scopes];
   }
@@ -98,7 +107,7 @@ export class RepositoryInstructions {
     let dir = this.root;
     for (const part of ["", ...parts]) {
       if (part !== "") dir = resolve(dir, part);
-      for (const name of ["AGENTS.override.md", "AGENTS.md", "CLAUDE.md"]) {
+      for (const name of this.fileNames) {
         const found = await this.load(resolve(dir, name), relative(this.root, dir) || ".", 0, canRead, protectedPaths);
         if (found) break;
       }

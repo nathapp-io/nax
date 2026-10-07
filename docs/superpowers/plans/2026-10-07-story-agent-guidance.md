@@ -52,3 +52,11 @@ The two production areas have disjoint ownership and may be implemented concurre
 - Native Node compatibility: 79 tests passed.
 - Independent review found no remaining material defects after fixes.
 - Worktree moved to `/private/tmp/nax-fix-2380-agent-guidance` because Biome excludes `.worktrees` paths. Temporary formatting configuration changes were restored; the active checkout was not edited.
+
+## Configurable instruction filename follow-up
+
+The user approved `agent.native.instructionFileName`, default `AGENTS.md`. Preserve the default precedence chain for compatibility; custom filenames load only that filename at every applicable directory. Accept non-hidden Markdown basenames and validate both configuration and direct session input. Forward through both native dispatch paths and SessionManager, expose it to native embedders, and keep imports, provenance, resume and access restrictions intact.
+
+Validation: demonstrate schema/dispatch/custom-loader regressions before implementation, then run native and host regressions, complete workspace gates, Node/API checks and the coverage gates. Keep the changes on the existing isolated branch.
+
+Follow-up results: custom filename and invalid-input regressions passed after demonstrated failures. Package overlays now retain root native settings by field, including the configured filename, with explicit package filenames taking precedence. Full workspace tests, build, check:all, API checks and 79 Node compatibility tests passed. Final coverage gates passed: nax 96.50% lines / 93.68% functions, nax-agent 98.00% lines / 95.76% functions; no missing source records. Independent review found no remaining material defects.

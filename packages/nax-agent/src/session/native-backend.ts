@@ -91,6 +91,7 @@ async function openNative(resolved: ResolvedNativeOptions, ctx: BackendOpenConte
     agentName: NATIVE_AGENT,
     workdir: ctx.workdir,
     instructionProtectedPaths: protectedPaths,
+    instructionFileName: raw.instructionFileName,
     resolvedPermissions: { mode: "default", toolGrants: grants, bashApproval },
     modelDef: { provider: resolved.provider, model: raw.model },
     timeoutSeconds: ctx.turnTimeoutSeconds,

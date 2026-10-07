@@ -23,7 +23,7 @@ describe("native instruction scopes at dispatch", () => {
         return { id: "native-guidance", agentName: "native" };
       },
     });
-    const config = makeNaxConfig();
+    const config = makeNaxConfig({ agent: { native: { instructionFileName: "TEAM.md" } } });
     const options = { ...runOptions, config, instructionDirectories: ["apps/api", "packages/client"] };
     const callback = buildHopCallback(
       {
@@ -44,6 +44,7 @@ describe("native instruction scopes at dispatch", () => {
     expect(opened?.workdir).toBe(options.workdir);
     expect(opened?.instructionDirectories).toEqual(["apps/api", "packages/client"]);
     expect(opened?.instructionProtectedPaths?.projectStateDir).toBe(".nax");
+    expect(opened?.instructionFileName).toBe("TEAM.md");
   });
 
   test.each([
@@ -67,6 +68,7 @@ describe("native instruction scopes at dispatch", () => {
     await createSessionRunHop(sessions)("native", { ...runOptions, ...extra });
     expect(opened?.workdir).toBe("/repo/.nax-wt/US-006");
     expect(opened?.instructionDirectories).toEqual(expected);
+    expect(opened?.instructionFileName).toBe("AGENTS.md");
   });
 
   test("preserves host protected paths and configured denied files", async () => {
@@ -97,5 +99,6 @@ describe("native instruction scopes at dispatch", () => {
     await createSessionRunHop(sessions)("claude", { ...runOptions, codingToolWorkdirLabel: "apps/api" });
     expect(opened?.instructionDirectories).toBeUndefined();
     expect(opened?.instructionProtectedPaths).toBeUndefined();
+    expect(opened?.instructionFileName).toBeUndefined();
   });
 });

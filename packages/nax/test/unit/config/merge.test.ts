@@ -53,7 +53,33 @@ function makeRoot(): NaxConfig {
   };
 }
 
+const nativeSiblingOverrides: NonNullable<NonNullable<NaxConfig["agent"]>["native"]>[] = [
+  { transportRetry: { maxAttempts: 5 } },
+  { catalogOverrides: [] },
+];
+
 describe("mergePackageConfig", () => {
+  test.each(nativeSiblingOverrides)(
+    "inherits the root instruction filename when a package changes a native sibling: %j",
+    (native) => {
+      const root = makeNaxConfig({ agent: { native: { instructionFileName: "TEAM.md" } } });
+      const result = mergePackageConfig(root, { agent: { ...root.agent, native } });
+      expect(result.agent?.native?.instructionFileName).toBe("TEAM.md");
+      expect(result.agent?.native).toMatchObject(native);
+      expect(root.agent?.native?.instructionFileName).toBe("TEAM.md");
+    },
+  );
+
+  test("a package can explicitly replace the instruction filename while retaining sibling native settings", () => {
+    const root = makeNaxConfig({ agent: { native: { instructionFileName: "TEAM.md" } } });
+    const result = mergePackageConfig(root, {
+      agent: { ...root.agent, native: { instructionFileName: "PACKAGE.md" } },
+    });
+    expect(result.agent?.native?.instructionFileName).toBe("PACKAGE.md");
+    expect(result.agent?.native?.transportRetry).toEqual(root.agent?.native?.transportRetry);
+    expect(root.agent?.native?.instructionFileName).toBe("TEAM.md");
+  });
+
   test("returns root unchanged when packageOverride has no mergeable fields", () => {
     const root = makeRoot();
     const result = mergePackageConfig(root, {});

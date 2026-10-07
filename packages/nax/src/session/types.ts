@@ -152,6 +152,7 @@ export interface OpenSessionRequest {
   workdir: string;
   /** Native repository instruction scope, independent of the file-tool execution root. */
   instructionDirectories?: readonly string[];
+  instructionFileName?: string;
   instructionProtectedPaths?: OpenSessionOpts["instructionProtectedPaths"];
   instructionDenyPaths?: readonly string[];
   /** Pipeline stage — used by SessionManager to call resolvePermissions. */

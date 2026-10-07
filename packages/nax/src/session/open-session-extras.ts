@@ -19,6 +19,7 @@ export function openSessionExtras(
     | "toolAudit"
     | "featureName"
     | "instructionDirectories"
+    | "instructionFileName"
     | "instructionProtectedPaths"
     | "instructionDenyPaths"
   >,
@@ -29,6 +30,7 @@ export function openSessionExtras(
   | "transcriptOwner"
   | "toolAudit"
   | "instructionDirectories"
+  | "instructionFileName"
   | "instructionProtectedPaths"
   | "instructionDenyPaths"
 > {
@@ -37,6 +39,7 @@ export function openSessionExtras(
     ...(opts.transcriptOwner !== undefined ? { transcriptOwner: opts.transcriptOwner } : {}),
     ...(opts.toolAudit !== undefined ? { toolAudit: opts.toolAudit } : {}),
     ...(opts.instructionDirectories !== undefined ? { instructionDirectories: opts.instructionDirectories } : {}),
+    ...(opts.instructionFileName !== undefined ? { instructionFileName: opts.instructionFileName } : {}),
     ...(opts.instructionProtectedPaths !== undefined
       ? { instructionProtectedPaths: opts.instructionProtectedPaths }
       : {}),

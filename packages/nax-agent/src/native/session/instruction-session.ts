@@ -12,6 +12,7 @@ export async function openRepositoryInstructions(
     opts.workdir,
     opts.instructionProtectedPaths,
     opts.instructionDenyPaths,
+    opts.instructionFileName,
   );
   for (const directory of [".", ...(opts.instructionDirectories ?? [])]) await instructions.discover(directory);
   if (opts.resume !== true) return instructions;

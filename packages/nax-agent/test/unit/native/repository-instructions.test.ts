@@ -128,108 +128,112 @@ test("bounds imports, cycles, external symlinks, hidden credentials and director
   expect(sources.every((source) => /^[a-f0-9]{64}$/.test(source.hash))).toBe(true);
 });
 
-test("native discovers cross-package instructions before an authorized Write and sends them next round", async () => {
-  const f = await fixture();
-  await f.put("AGENTS.md", "ROOT");
-  await f.put("packages/b/AGENTS.md", "CROSS PACKAGE RULE");
-  const systems: string[] = [];
-  let calls = 0;
-  let writes = 0;
-  const model: ResolvedModel = {
-    id: "test",
-    provider: "openai",
-    protocol: "openai-responses",
-    pricing: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: 128000,
-    supportsTools: true,
-    thinkingLevels: [],
-  };
-  const realBuild = _clientDeps.build;
-  try {
-    _resetNativeClient();
-    _clientDeps.build = async () =>
-      withDerivedStream<Client>({
-        model: async () => model,
-        listModels: async () => [model],
-        pricing: () => ({ input: 1, output: 1, cacheRead: 0, cacheWrite: 0 }),
-        stream: async function* () {},
-        validate: () => {},
-        complete: async (_model: ResolvedModel, request: ClientRequest) => {
-          systems.push(request.system ?? "");
-          calls++;
-          return {
-            text: calls <= 2 ? "" : "done",
-            usage: { inputTokens: 1, outputTokens: 1 },
-            stopReason: calls <= 2 ? "tool_use" : "stop",
-            ...(calls <= 2
-              ? {
-                  toolCalls: [
-                    {
-                      id: "write",
-                      name: "Write",
-                      input: { path: "packages/b/new.ts", content: "hello" },
-                    },
-                  ],
-                }
-              : {}),
-          };
+test.each(["AGENTS.md", "TEAM.md"])(
+  "native discovers cross-package instructions before an authorized Write and sends them next round (%s)",
+  async (fileName) => {
+    const f = await fixture();
+    await f.put(fileName, "ROOT");
+    await f.put(`packages/b/${fileName}`, "CROSS PACKAGE RULE");
+    const systems: string[] = [];
+    let calls = 0;
+    let writes = 0;
+    const model: ResolvedModel = {
+      id: "test",
+      provider: "openai",
+      protocol: "openai-responses",
+      pricing: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 128000,
+      supportsTools: true,
+      thinkingLevels: [],
+    };
+    const realBuild = _clientDeps.build;
+    try {
+      _resetNativeClient();
+      _clientDeps.build = async () =>
+        withDerivedStream<Client>({
+          model: async () => model,
+          listModels: async () => [model],
+          pricing: () => ({ input: 1, output: 1, cacheRead: 0, cacheWrite: 0 }),
+          stream: async function* () {},
+          validate: () => {},
+          complete: async (_model: ResolvedModel, request: ClientRequest) => {
+            systems.push(request.system ?? "");
+            calls++;
+            return {
+              text: calls <= 2 ? "" : "done",
+              usage: { inputTokens: 1, outputTokens: 1 },
+              stopReason: calls <= 2 ? "tool_use" : "stop",
+              ...(calls <= 2
+                ? {
+                    toolCalls: [
+                      {
+                        id: "write",
+                        name: "Write",
+                        input: { path: "packages/b/new.ts", content: "hello" },
+                      },
+                    ],
+                  }
+                : {}),
+            };
+          },
+        });
+      const adapter = new NativeSessionAdapter();
+      const handle = await adapter.openSession("native", {
+        ...f.opts(),
+        instructionFileName: fileName,
+        modelDef: { provider: "openai", model: "openai/test" },
+      });
+      const state = nativeSessionStateOf(adapter);
+      const runtime = createCodingToolRuntime({
+        policy: compileToolPolicy(
+          [
+            { tool: "Read", patterns: ["*"] },
+            { tool: "Write", patterns: ["*"] },
+          ],
+          f.root,
+        ),
+        extraTools: [
+          {
+            name: "Write",
+            description: "test",
+            scope: { pathFields: ["path"] },
+            inputSchema: {
+              type: "object",
+              properties: {
+                path: { type: "string" },
+                content: { type: "string" },
+              },
+              required: ["path", "content"],
+            },
+            run: async () => {
+              writes += 1;
+              expect(systemFieldFor(state, "native").system).toContain("CROSS PACKAGE RULE");
+              return { content: "written" };
+            },
+          },
+        ],
+      });
+      await adapter.sendTurn(handle, "go", {
+        codingTools: runtime.advertised(["Write"]),
+        interactionHandler: {
+          onInteraction: async (request) => {
+            if (request.kind !== "coding-tool") return null;
+            const outcome = await runtime.callTool(request.name, request.input ?? {});
+            return {
+              answer: outcome.kind === "denied" ? outcome.reason : outcome.content,
+            };
+          },
         },
       });
-    const adapter = new NativeSessionAdapter();
-    const handle = await adapter.openSession("native", {
-      ...f.opts(),
-      modelDef: { provider: "openai", model: "openai/test" },
-    });
-    const state = nativeSessionStateOf(adapter);
-    const runtime = createCodingToolRuntime({
-      policy: compileToolPolicy(
-        [
-          { tool: "Read", patterns: ["*"] },
-          { tool: "Write", patterns: ["*"] },
-        ],
-        f.root,
-      ),
-      extraTools: [
-        {
-          name: "Write",
-          description: "test",
-          scope: { pathFields: ["path"] },
-          inputSchema: {
-            type: "object",
-            properties: {
-              path: { type: "string" },
-              content: { type: "string" },
-            },
-            required: ["path", "content"],
-          },
-          run: async () => {
-            writes += 1;
-            expect(systemFieldFor(state, "native").system).toContain("CROSS PACKAGE RULE");
-            return { content: "written" };
-          },
-        },
-      ],
-    });
-    await adapter.sendTurn(handle, "go", {
-      codingTools: runtime.advertised(["Write"]),
-      interactionHandler: {
-        onInteraction: async (request) => {
-          if (request.kind !== "coding-tool") return null;
-          const outcome = await runtime.callTool(request.name, request.input ?? {});
-          return {
-            answer: outcome.kind === "denied" ? outcome.reason : outcome.content,
-          };
-        },
-      },
-    });
-    expect(writes).toBe(1);
-    expect(systems[0]).not.toContain("CROSS PACKAGE RULE");
-    expect(systems[1]).toContain("CROSS PACKAGE RULE");
-  } finally {
-    _clientDeps.build = realBuild;
-    _resetNativeClient();
-  }
-});
+      expect(writes).toBe(1);
+      expect(systems[0]).not.toContain("CROSS PACKAGE RULE");
+      expect(systems[1]).toContain("CROSS PACKAGE RULE");
+    } finally {
+      _clientDeps.build = realBuild;
+      _resetNativeClient();
+    }
+  },
+);
 
 test("missing and empty guides produce no fabricated guidance or fallback duplication", async () => {
   const f = await fixture();
@@ -375,6 +379,20 @@ test("facade native sessions reload root guidance and retain it through proactiv
     expect(systems[0]).toContain("PERSISTENT ROOT RULE");
     expect(systems[0]).toContain("HOST RULE");
     await session.close();
+    await f.put("TEAM.md", "CUSTOM FACADE RULE");
+    const custom = await createAgentSession({
+      backend: nativeBackend({ model: "openai/test", instructionFileName: "TEAM.md" }),
+      sessionId: "custom-facade",
+      profile: "read",
+      workdir: f.root,
+      transcriptStore: f.store,
+    });
+    for await (const event of custom.send("go")) {
+      if (event.type === "turn_end") expect(event.status).toBe("completed");
+    }
+    expect(systems[1]).toContain("CUSTOM FACADE RULE");
+    expect(systems[1]).not.toContain("PERSISTENT ROOT RULE");
+    await custom.close();
     const adapter = new NativeSessionAdapter();
     const handle = await adapter.openSession("compact", {
       ...f.opts(),
@@ -421,7 +439,7 @@ test("an import denied by its lexical alias cannot bypass exclusion through a pe
 
 test("small model windows bound repository system context while retaining complete instruction provenance", async () => {
   const f = await fixture();
-  await f.put("AGENTS.md", "ROOT " + "guidance ".repeat(2500));
+  await f.put("AGENTS.md", `ROOT ${"guidance ".repeat(2500)}`);
   await f.put("packages/a/AGENTS.md", "PACKAGE A RULE");
   const realBuild = _clientDeps.build;
   const systems: string[] = [];
@@ -449,7 +467,7 @@ test("small model windows bound repository system context while retaining comple
         },
       });
     const adapter = new NativeSessionAdapter();
-    const host = "HOST " + "h".repeat(495);
+    const host = `HOST ${"h".repeat(495)}`;
     const handle = await adapter.openSession("budget", {
       ...f.opts(["packages/a"]),
       modelDef: { provider: "openai", model: "openai/test" },
@@ -497,3 +515,77 @@ test("protected lexical instruction aliases are refused before loader path resol
     readSpy.mockRestore();
   }
 });
+
+test("custom instruction filenames load only their root, package and nested chains and persist through resume", async () => {
+  const f = await fixture();
+  await f.put("TEAM.md", "TEAM ROOT");
+  await f.put("packages/TEAM.md", "TEAM INTERMEDIATE");
+  await f.put("packages/a/TEAM.md", "TEAM PACKAGE");
+  await f.put("packages/a/nested/TEAM.md", "TEAM NESTED");
+  await f.put("AGENTS.override.md", "LEGACY OVERRIDE");
+  await f.put("AGENTS.md", "LEGACY AGENTS");
+  await f.put("CLAUDE.md", "LEGACY CLAUDE");
+  await f.put("TEAM.override.md", "CUSTOM OVERRIDE MUST NOT WIN");
+  await f.put("packages/a/nested/AGENTS.md", "LEGACY NESTED");
+  const state = createNativeSessionState();
+  await openNativeSession(state, "custom", { ...f.opts(["packages/a"]), instructionFileName: "TEAM.md" });
+  expect(systemFieldFor(state, "custom").system).toContain("TEAM ROOT");
+  expect(systemFieldFor(state, "custom").system).toContain("TEAM INTERMEDIATE");
+  expect(systemFieldFor(state, "custom").system).toContain("TEAM PACKAGE");
+  expect(systemFieldFor(state, "custom").system).not.toContain("LEGACY");
+  expect(systemFieldFor(state, "custom").system).not.toContain("CUSTOM OVERRIDE");
+  await state.repositoryInstructions.get("custom")?.discover("packages/a/nested");
+  await state.transcripts.get("custom")?.store.save("custom", { savedAt: "now", messages: [] });
+  const resumed = createNativeSessionState();
+  await openNativeSession(resumed, "custom", { ...f.opts(), resume: true, instructionFileName: "TEAM.md" });
+  expect(systemFieldFor(resumed, "custom").system).toContain("TEAM NESTED");
+  expect(systemFieldFor(resumed, "custom").system).not.toContain("LEGACY NESTED");
+  expect(resumed.repositoryInstructions.get("custom")?.sources.map((source) => source.path)).toEqual([
+    "TEAM.md",
+    "packages/TEAM.md",
+    "packages/a/TEAM.md",
+    "packages/a/nested/TEAM.md",
+  ]);
+});
+
+test("native backend accepts a custom basename Markdown instruction filename", () => {
+  expect(() => nativeBackend({ model: "openai/test", instructionFileName: "TEAM.md" })).not.toThrow();
+});
+
+test.each([
+  "",
+  "  ",
+  ".md",
+  ".hidden.md",
+  "../TEAM.md",
+  "nested/TEAM.md",
+  "nested\\TEAM.md",
+  "C:TEAM.md",
+  "TEAM.txt",
+  "TEAM.md\u0000",
+  "TEAM.md\u001f",
+  "TEAM.md\u007f",
+])("direct native open rejects invalid instruction filename %j before recording session state", async (name) => {
+  const f = await fixture();
+  const state = createNativeSessionState();
+  await expect(openNativeSession(state, "invalid", { ...f.opts(), instructionFileName: name })).rejects.toMatchObject({
+    code: "INVALID_INSTRUCTION_FILE_NAME",
+  });
+  expect(state.transcripts.has("invalid")).toBe(false);
+  expect(() => nativeBackend({ model: "openai/test", instructionFileName: name })).toThrow();
+});
+
+test.each([undefined, "AGENTS.md"])(
+  "default filename preserves override and CLAUDE fallback (%s)",
+  async (fileName) => {
+    const f = await fixture();
+    await f.put("AGENTS.override.md", "DEFAULT OVERRIDE");
+    await f.put("AGENTS.md", "DEFAULT AGENTS");
+    await f.put("packages/a/CLAUDE.md", "DEFAULT PACKAGE FALLBACK");
+    const state = createNativeSessionState();
+    await openNativeSession(state, "default", { ...f.opts(["packages/a"]), instructionFileName: fileName });
+    expect(systemFieldFor(state, "default").system).toContain("DEFAULT OVERRIDE");
+    expect(systemFieldFor(state, "default").system).not.toContain("DEFAULT AGENTS");
+    expect(systemFieldFor(state, "default").system).toContain("DEFAULT PACKAGE FALLBACK");
+  },
+);

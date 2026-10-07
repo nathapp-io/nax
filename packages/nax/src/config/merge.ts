@@ -9,6 +9,13 @@
 
 import type { NaxConfig } from "./schema";
 
+type NativeConfig = NonNullable<NaxConfig["agent"]>["native"];
+
+/** A package's native field overrides must preserve unrelated root settings. */
+function mergeNativeConfig(root: NativeConfig, override: NativeConfig): NativeConfig {
+  return override == null ? root : { ...root, ...override };
+}
+
 /**
  * Deep-merge per-agent model tier maps. A package override of one agent's
  * tiers (e.g. `models.claude.fast`) must not drop that agent's other tiers
@@ -70,6 +77,7 @@ export function mergePackageConfig(root: NaxConfig, packageOverride: Partial<Nax
         ? {
             ...root.agent,
             ...packageOverride.agent,
+            native: mergeNativeConfig(root.agent?.native, packageOverride.agent.native),
             promptAudit: {
               enabled: packageOverride.agent.promptAudit?.enabled ?? root.agent?.promptAudit?.enabled ?? false,
               ...(packageOverride.agent.promptAudit?.dir !== undefined

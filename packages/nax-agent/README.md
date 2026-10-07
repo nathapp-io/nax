@@ -39,9 +39,9 @@ Three pieces of host knowledge are passed in as data or functions, because the p
 
 ## Repository instructions
 
-Native sessions load repository-local instructions from the session workdir. In each directory, `AGENTS.override.md` takes precedence over `AGENTS.md`, with `CLAUDE.md` as a fallback. The native adapter's `OpenSessionOpts.instructionDirectories` adds package scopes relative to that workdir; a monorepo session can supply `["apps/api", "packages/client"]` to load each root-to-package chain. More specific directory instructions override ancestor instructions within their scope. Other packages are discovered when authorized file tools enter them.
+Native sessions load repository-local instructions from the session workdir. In each directory, `AGENTS.override.md` takes precedence over `AGENTS.md`, with `CLAUDE.md` as a fallback. The native adapter's `OpenSessionOpts.instructionDirectories` adds package scopes relative to that workdir; a monorepo session can supply `["apps/api", "packages/client"]` to load each root-to-package chain. `OpenSessionOpts.instructionFileName` selects another Markdown basename, such as `TEAM.md`. A custom name loads only that filename in each directory, with no override or legacy fallback. Names must be nonhidden Markdown basenames without path separators, colon or control characters. More specific directory instructions override ancestor instructions within their scope. Other packages are discovered when authorized file tools enter them.
 
-Local Markdown `@path.md` imports are deduplicated and bounded. Discovery stays inside the active checkout and respects protected paths and denied paths. Each session retains its own instructions outside compactable message history; transcripts record source paths, scopes and hashes. Resume reloads the applicable files from disk. ACP sessions use their CLI's instruction discovery.
+Local Markdown `@path.md` imports are deduplicated and bounded. Discovery stays inside the active checkout and respects protected paths and denied paths. Each session retains its own instructions outside compactable message history; transcripts record source paths, scopes and hashes. Resume reloads the applicable files from disk using the filename supplied again in the session options. ACP sessions use their CLI's instruction discovery.
 
 ## Conversational sessions
 
@@ -85,7 +85,7 @@ Profiles set what a session may do:
 | `ask` | every Write, Edit, Delete, GitCommit and Bash is put to `answer()`; |
 | `full` | no prompts; `bashApproval` and the sandbox floor apply. |
 
-`createAgentSession` takes a `SessionBackend`. `nativeBackend(opts)` takes `model`, `credentials`, `catalogOverrides`, `loopHandlers`, `hostPorts`, `bashApproval` and `allowUnsandboxed`. The ACP backend ships in `@nathapp/nax-agent-acp`.
+`createAgentSession` takes a `SessionBackend`. `nativeBackend(opts)` takes `instructionFileName` (default `AGENTS.md`), `model`, `credentials`, `catalogOverrides`, `loopHandlers`, `hostPorts`, `bashApproval` and `allowUnsandboxed`. The ACP backend ships in `@nathapp/nax-agent-acp`.
 
 `usage.costSource` is `computed` (native), `reported` or `unpriced`; never sum `unpriced` rows as cost.
 

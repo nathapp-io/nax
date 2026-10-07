@@ -4,6 +4,7 @@
  * Extracted from schemas.ts to stay within the 600-line file limit.
  */
 
+import { DEFAULT_INSTRUCTION_FILE_NAME, isInstructionFileName } from "@nathapp/nax-agent/internal";
 import { z } from "zod";
 import { DEFAULT_ACP_TRANSPORT, DEFAULT_AGENT_NAME, DEFAULT_AGENT_PROTOCOL } from "./agent-defaults";
 import { ConfiguredModelSchema, ModelTierSchema, ProviderCatalogOverrideSchema } from "./schemas-model";
@@ -366,6 +367,13 @@ const AgentNativeTransportRetryConfigSchema = z.object({
 
 const AgentNativeConfigSchema = z
   .object({
+    instructionFileName: z
+      .string()
+      .refine(
+        isInstructionFileName,
+        "instructionFileName must be a non-hidden Markdown filename without path separators",
+      )
+      .default(DEFAULT_INSTRUCTION_FILE_NAME),
     transportRetry: AgentNativeTransportRetryConfigSchema.default({ maxAttempts: 3, baseDelayMs: 2000 }),
     /** nax#1982: explicit catalog entries for ids the bundled pi-ai snapshot does not know. */
     catalogOverrides: z.array(ProviderCatalogOverrideSchema).default([]),
@@ -413,6 +421,7 @@ export const AgentConfigSchema = z.object({
     trackedSpawnStartupDeadlineMs: 30_000,
   }),
   native: AgentNativeConfigSchema.default({
+    instructionFileName: DEFAULT_INSTRUCTION_FILE_NAME,
     transportRetry: { maxAttempts: 3, baseDelayMs: 2000 },
     catalogOverrides: [],
   }),
