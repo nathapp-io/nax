@@ -57,7 +57,7 @@ S4 delivers:
 | R9 | **Elicitation** (amended in S4-5, D5-i, maintainer ruling 2026-10-06): each field of a form becomes its own `question` event: free text, single-select and multi-select fields, with a `<key>_custom` free-text field folded into its select `<key>` (Claude's AskUserQuestion "Other" box). Other field types, oversized forms and non-form requests are declined. |
 | R10 | **Versioning:** nax-agent-acp starts at 0.3.0, in step with nax-agent. Both are released together and always bump together (the `^0.3.0` peer range admits only 0.3.x). Everything goes 1.0.0 together after S6. |
 | R11 | **No client fs/terminal in S4** (final review): no targeted adapter calls them. The handlers are out of scope until an agent that uses them becomes first-class. |
-| R12 | **Embedder tools are pre-approved at the adapter** (final review, paperclip pattern). Their `request_permission` would otherwise break `none` and `read` and double-prompt under `ask`. Our tool host is the only approval point for them (§6.6). Amended by #2365: Claude's plan mode asks before any MCP tool not marked read-only, ahead of `allowedTools`, so the host also lists every tool with `readOnlyHint: true`. |
+| R12 | **Embedder tools are pre-approved at the adapter** (final review, paperclip pattern). Their `request_permission` would otherwise break `none` and `read` and double-prompt under `ask`. Our tool host is the only approval point for them (§6.6). Amended by #2365: Claude's plan mode asks before any MCP tool not marked read-only, ahead of `allowedTools`, so the host also lists every tool with `readOnlyHint: true`. The `readOnlyHint` part is superseded by the 2026-10-07 fix bundle (#2366): plan mode is gone, so the hint was removed. |
 
 ## 3. Out of scope
 
@@ -360,6 +360,8 @@ ACP enforcement has two layers. Client fs/terminal are never advertised (R11).
 |---|---|---|---|---|
 | 1. Agent mode (registry mode ids; Claude: config option `mode`) | `plan` | `plan` | `default` | `default` |
 | 2. `request_permission` (embedder tools are pre-approved and normally never asked about, §6.6; if asked, decided like any request, S4-4 D4-c) | reject locally | reject locally | `asks.requestApproval` → `answer()` | allow locally |
+
+> **Superseded for `none`/`read` by the 2026-10-07 fix bundle** (`2026-10-07-acp-fix-bundle-2364-2366-2367-design.md`, #2366): Claude runs in `default` mode with `Write`, `Edit`, `MultiEdit`, `NotebookEdit` and `EnterPlanMode` removed and no settings files loaded; plan mode is no longer used. The registry's read-only mode id is now a read-only enforcement entry.
 
 - **Enforceability:** `none` and `read` require a registry mode id for a read-only mode. Agents without one (codex, gemini, opencode, pi, custom) → `AGENT_SESSION_CAPABILITY_UNSUPPORTED` for `none` and `read`. `ask` and `full` need only the permission gate.
 - **Options:** only options the agent offered are used. `allow` → its `allow_once`; `deny` → its `reject_once`.
