@@ -1121,6 +1121,63 @@ git commit -m "feat(nax-agent-acp): isAgentLaunchable and launchCandidateKind"
 
 ---
 
+### Task 7b: `tool_progress` turn event (added by Task 1 finding (f))
+
+**Files:**
+- Modify: `packages/nax-agent/src/session/turn-event.ts` (add the union member)
+- Modify: any exhaustive `switch` over `TurnEvent.type` in `packages/nax-agent/src` that the typecheck flags. The facade's event mapping ignores the new member: it is a liveness signal, not a session event.
+- Modify: `packages/nax-agent-acp/src/client/tool-events.ts` (`onUpdate`)
+- Modify: both CHANGELOGs, nax-agent API snapshot
+- Test: `packages/nax-agent-acp/test/unit/client/tool-events.test.ts`
+
+**Interfaces:**
+- Produces: `TurnEvent` member `{ readonly type: "tool_progress"; readonly callId: string }`. `createToolEvents` emits it for an update on an announced, unresolved call that carries no terminal status, at most once per call per `TOOL_PROGRESS_MIN_INTERVAL_MS` (30 000), with the clock injectable for tests. S4b-2's stream bridge maps it to the watchdog's `tool_call_update` activity.
+
+- [ ] **Step 1: Write the failing tests** in `tool-events.test.ts`:
+
+```ts
+describe("tool_progress (S4b-0 finding f)", () => {
+  test("a heartbeat on a running call emits tool_progress, throttled per call", () => {
+    let now = 0;
+    const events: TurnEvent[] = [];
+    const tools = createToolEvents((event) => events.push(event), [], () => now);
+    tools.onUpdate({ toolCallId: "c1", name: "Bash", status: "in_progress", rawInput: { command: "sleep" } });
+    tools.onUpdate({ toolCallId: "c1" });
+    now = 10_000;
+    tools.onUpdate({ toolCallId: "c1" });
+    now = 31_000;
+    tools.onUpdate({ toolCallId: "c1", status: "in_progress" });
+    expect(events.map((e) => e.type)).toEqual(["tool_call", "tool_progress", "tool_progress"]);
+  });
+
+  test("no tool_progress before the call is announced or after it resolved", () => {
+    let now = 0;
+    const events: TurnEvent[] = [];
+    const tools = createToolEvents((event) => events.push(event), [], () => now);
+    tools.onUpdate({ toolCallId: "c2", name: "Read", status: "pending", rawInput: {} });
+    tools.onUpdate({ toolCallId: "c2", status: "completed", content: [text("x")] });
+    now = 60_000;
+    tools.onUpdate({ toolCallId: "c2" });
+    expect(events.map((e) => e.type)).toEqual(["tool_call", "tool_result"]);
+  });
+});
+```
+
+- [ ] **Step 2: Run to verify they fail**: `cd packages/nax-agent-acp && bun test ./test/unit/client/tool-events.test.ts`. Expected: FAIL (no third parameter, no `tool_progress`).
+
+- [ ] **Step 3: Implement.**
+  - In nax-agent `turn-event.ts`, add `| { readonly type: "tool_progress"; readonly callId: string }` with the doc comment "A running tool's liveness beat (ACP heartbeat); carries no content."
+  - In `tool-events.ts`, add `export const TOOL_PROGRESS_MIN_INTERVAL_MS = 30_000;` and give `createToolEvents` a third parameter, `now: () => number = Date.now`.
+  - In `onUpdate`, after `merge`: if the state is announced and unresolved and the update's status is absent or `in_progress`, emit `{ type: "tool_progress", callId }` when `now() - lastBeat >= TOOL_PROGRESS_MIN_INTERVAL_MS` or when no beat has been sent yet. Track `lastBeat` per call id in a `Map`, deleted on resolve.
+  - The `in_progress` update that first announces a call emits only `tool_call`, never a beat in the same update.
+  - Fix every exhaustive switch the nax-agent typecheck reports by ignoring the new type.
+
+- [ ] **Step 4: Run** `cd packages/nax-agent && bun run typecheck && bun run test`, then `cd ../nax-agent-acp && bun run test && bun run typecheck`. Expected: PASS.
+
+- [ ] **Step 5: Docs, snapshot, commit.** nax-agent CHANGELOG `### Added`: `- \`tool_progress\` turn event: a running tool's liveness beat (no content).` nax-agent-acp CHANGELOG `### Added`: `- The agent's tool heartbeats surface as \`tool_progress\` events, at most one per call per 30 s.` Then `bun run api:update` in nax-agent, and commit both packages: `feat(nax-agent, nax-agent-acp): tool_progress liveness event`.
+
+---
+
 ### Task 8: Full gates, PR, and release (approval at each publish step)
 
 **Files:**
@@ -1183,3 +1240,13 @@ npm view @nathapp/nax-agent-acp@0.3.1 version dist-tags --json
 ```
 
 Expected: both at 0.3.1 under `latest`. Record the release in the master plan's S4b row.
+
+## S4b-0 findings (recorded 2026-10-07, native executor)
+
+Sources: `@agentclientprotocol/claude-agent-acp@0.85.1` and `acpx@0.19.4` tarballs, read only (not executed).
+
+- **(a) Rate-limit shape.** A failed turn rejects `session/prompt` with `RequestError.internalError` (code `-32603`) and `data: { errorKind: <SDK assistant error> }` (`acp-agent.js:4326-4391`, `errorKindData`). A rate limit is `errorKind: "rate_limit"` (`session-failure-extension.js:348`). Other kinds include `overloaded`, `authentication_failed`, `billing_error` and `server_error`. There is no retry-after field; the separate advisory `rate_limit_event` session update carries `_meta["_claude/rateLimit"]` only. **Task 3: RUN**, matching `data.errorKind === "rate_limit"` only, with no `retryAfterSeconds` (none is sent).
+- **(b) acpx --prompt-retries.** It retries only when the prompt error is an ACP JSON-RPC error with code `-32603` (internal) or `-32700` (parse) (`isRetryablePromptError`, `ipc-*.js:416`). It never retries permission-denied, permission-prompt-unavailable, timeout, no-session or usage errors. It retries only if the turn produced **no session update of any kind and no client operation** (`promptTurnHadSideEffects`, set by any `onSessionUpdate` or `onClientOperation`). The backoff is `min(1000 * 2^attempt, 10000)` ms with no jitter, and it is re-checked after the wait. Retry after output: **no**. Because a rate limit is `-32603`, acpx **does** retry rate limits. Spec §7.2 says "no `text_delta` and no `tool_call` (thinking alone does not count)" and "jittered backoff"; acpx is stricter (any update counts) and has no jitter. S4b-3 follows acpx (see Ruling T1-1 in the ledger).
+- **(e) acpx without --approve-all.** The default mode is `approve-reads`. A request whose inferred tool kind is a read kind is auto-allowed; anything else, with no TTY (always so under nax), follows `nonInteractivePermissions`, default `deny`, which selects the reject option (`resolveReadOrPromptPermission`, `queue-owner-runtime-*.js:1054`). Write tool: **deny**. Spec §6.4 mapping (`approve-reads` -> `read`): **stands**.
+- **(f) Watchdog during a long tool call.** The watchdog fires `idle_timeout_exceeded` after `idleTimeoutSeconds` (900) with no activity of any kind (`idle-watchdog/index.ts:229`). The 1800 s tool-call-only clock is a separate cap, not a relaxation. `claude-agent-acp` sends `tool_call_update` heartbeat beats while a tool runs (`tool_progress`, `acp-agent.js:4875-4915`), which acpx forwarded and which reset the clock (`agent.tool_call_update` -> `resetActivity`). The new backend drops non-terminal updates, so a tool running over 15 minutes would be cancelled. Tool-progress event: **needed**. Added as Task 7b (Ruling T1-2).
+- **(g) Models and effort.** The model option (id `model`, category `model`) offers `default` plus the SDK's account-dependent `availableModels` ids, so it cannot be determined statically. The adapter's own `set_config_option` accepts aliases such as `opus` and `sonnet` by fuzzy resolution (`acp-agent.js:5459-5480`). nax-agent-acp, however, pre-checks the value with an exact `modelOptionId` match (`open.ts` `applyModel`) and rejects with `CAPABILITY_UNSUPPORTED` before the agent can resolve the alias. Whether `haiku`, `sonnet` and `opus` are offered verbatim: **unknown statically**. Effort option: id `effort`, category `thought_level`, values `default` plus the current model's `supportedEffortLevels` (`session-effort.js:63-95`). This matches the Task 4 fixture. The model question is carried to S4b-2 (Ruling T1-3).
