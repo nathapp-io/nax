@@ -10,13 +10,13 @@ import type { TokenUsage } from "#src/cost/standard-types";
 import { NaxError } from "#src/infra/nax-error";
 import { redactSecrets } from "#src/internal/redact";
 import type { TranscriptStore } from "#src/native/session/transcript-types";
-import { readNativeTurnFailureUsage } from "#src/native/session/turn-types";
 import { _agentSessionDeps } from "./agent-session-deps.ts";
 import { AgentSessionError } from "./agent-session-errors.ts";
-import type { SessionEvent, SessionEventBody, TurnEndStatus } from "./agent-session-types.ts";
+import type { CostSource, SessionEvent, SessionEventBody, TurnEndStatus } from "./agent-session-types.ts";
 import type { TurnContribution } from "./session-backend.ts";
 import { createSessionEventChannel } from "./session-event-channel.ts";
 import { type AgentSessionAdapter, type SessionHandle, SessionTurnError, type TurnResult } from "./session-types.ts";
+import { readTurnSpend } from "./turn-spend.ts";
 
 /** The ask_human budget per turn: nax's agent.maxInteractionTurns default. */
 export const ASK_HUMAN_BUDGET = 10;
@@ -116,9 +116,19 @@ function errorOf(err: unknown): TurnFailure {
   return failure("AGENT_SESSION_TURN_FAILED", message);
 }
 
-function spendOf(err: unknown): { readonly usage: TokenUsage; readonly costUsd: number } {
-  const recorded = readNativeTurnFailureUsage(err);
-  if (recorded !== undefined) return { usage: recorded.tokenUsage, costUsd: recorded.costUsd };
+interface Spend {
+  readonly usage: TokenUsage;
+  readonly costUsd: number;
+  readonly costSource?: CostSource;
+}
+
+/** A failed turn's spend: attached to its error (#2367), carried by a SessionTurnError, or zero. */
+function spendOf(err: unknown): Spend {
+  const attached = readTurnSpend(err);
+  if (attached !== undefined) {
+    const { tokenUsage: usage, costUsd, costSource } = attached;
+    return costSource === undefined ? { usage, costUsd } : { usage, costUsd, costSource };
+  }
   if (err instanceof SessionTurnError)
     return { usage: err.tokenUsage ?? ZERO_USAGE, costUsd: err.estimatedCostUsd ?? 0 };
   return { usage: ZERO_USAGE, costUsd: 0 };

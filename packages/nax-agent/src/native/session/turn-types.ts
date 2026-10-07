@@ -6,11 +6,10 @@
  * algorithm and the file under the 600-line hard limit (see
  * .nax/rules/project-conventions.md).
  *
- * The failure-usage ledger (`failureUsageByError` WeakMap +
- * `recordNativeTurnFailureUsage` / `readNativeTurnFailureUsage`) also lives
- * here: it is module-level state with a process-lifetime scope, and the
- * loop's catch block only ever calls the write side through this file's
- * public API. Adapter.ts reads through `readNativeTurnFailureUsage` to
+ * The failure-usage ledger's native API (`recordNativeTurnFailureUsage` /
+ * `readNativeTurnFailureUsage`) also lives here; the WeakMap itself lives in
+ * `#src/session/turn-spend`, shared with ACP backends (#2367). The loop's
+ * catch block only ever calls the write side through this file's public API. Adapter.ts reads through `readNativeTurnFailureUsage` to
  * attribute round-trip spend to the error a failed turn threw (nax#1840).
  */
 
@@ -18,6 +17,7 @@ import type { ConversationMessage, ThinkingBlock, ToolCall } from "@nathapp/nax-
 import type { PricingRates, TokenUsage } from "#src/cost/standard-types";
 import type { SpinBreaker } from "#src/infra/spin-breaker/index";
 import type { TurnDeadline } from "#src/session/turn-deadline";
+import { attachTurnSpend, readTurnSpend } from "#src/session/turn-spend";
 import type { TranscriptMessage as NativeTranscriptMessage, ResolvedCompaction } from "./compaction.ts";
 import type {
   CompleteCallOptions,
@@ -181,16 +181,15 @@ export interface NativeTurnFailureUsage {
   readonly costUsd: number;
 }
 
-const failureUsageByError = new WeakMap<object, NativeTurnFailureUsage>();
-
 /** Writes the spend a failed turn accumulated, keyed on the error's own identity. */
 export function recordNativeTurnFailureUsage(err: object, usage: NativeTurnFailureUsage): void {
-  failureUsageByError.set(err, usage);
+  attachTurnSpend(err, usage);
 }
 
 /** Reads back what the catch block recorded, if anything did. */
 export function readNativeTurnFailureUsage(err: unknown): NativeTurnFailureUsage | undefined {
-  return typeof err === "object" && err !== null ? failureUsageByError.get(err) : undefined;
+  const spend = readTurnSpend(err);
+  return spend === undefined ? undefined : { tokenUsage: spend.tokenUsage, costUsd: spend.costUsd };
 }
 
 /**
