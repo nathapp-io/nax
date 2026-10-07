@@ -169,3 +169,12 @@ describe("FIELD_DESCRIPTIONS.auth (US-001)", () => {
     },
   );
 });
+
+describe("FIELD_DESCRIPTIONS agent.acp.transport (S4b-2)", () => {
+  test("names both transports and the default", () => {
+    const text = FIELD_DESCRIPTIONS["agent.acp.transport"];
+    expect(text).toContain("'acpx'");
+    expect(text).toContain("'sdk'");
+    expect(text).toContain("default");
+  });
+});

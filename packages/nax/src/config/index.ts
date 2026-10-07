@@ -1,6 +1,13 @@
 export type { BashApprovalMode, SandboxConfig } from "@nathapp/nax-agent/internal";
 export { DEFAULT_SANDBOX_CONFIG, resolveBashApproval } from "@nathapp/nax-agent/internal";
-export { DEFAULT_AGENT_NAME, DEFAULT_AGENT_PROTOCOL, isBuiltInModelMap, NATIVE_AGENT_NAME } from "./agent-defaults";
+export {
+  type AcpTransport,
+  DEFAULT_ACP_TRANSPORT,
+  DEFAULT_AGENT_NAME,
+  DEFAULT_AGENT_PROTOCOL,
+  isBuiltInModelMap,
+  NATIVE_AGENT_NAME,
+} from "./agent-defaults";
 export { configureNaxCredentials, readGlobalAuthConfig } from "./auth";
 export { rejectGlobalOnlyKeys } from "./global-only-keys";
 export { BASH_DECLARING_STAGES, findInertBashStages } from "./inert-bash-stages";

@@ -5,6 +5,7 @@
  * to keep each file within the 600-line project limit.
  */
 
+import type { AcpTransport } from "./agent-defaults";
 import type { ProviderCatalogOverride } from "./schema-types";
 
 /** Generate command configuration */
@@ -78,7 +79,9 @@ export interface IdleWatchdogConfig {
 
 /** ACP-specific agent configuration */
 export interface AgentAcpConfig {
-  /** Retries for transient prompt failures via acpx --prompt-retries (default: 0 — opt-in) */
+  /** How ACP agents are driven: "acpx" (default) or "sdk" (S4b development key). */
+  transport?: AcpTransport;
+  /** Retries for transient prompt failures (default: 0, opt-in) */
   promptRetries?: number;
   /**
    * trackedSpawn hard deadline (ms) for teardown ops — sessions close/stop/cancel
