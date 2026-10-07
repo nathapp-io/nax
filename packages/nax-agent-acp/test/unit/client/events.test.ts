@@ -135,3 +135,61 @@ describe("createTurnCollector: tools, finish and settle (D5-c, D5-e, D5-h)", () 
     expect(silent.output()).toBe("y");
   });
 });
+
+describe("createTurnCollector: onReceipt (#2364)", () => {
+  function receipts() {
+    let count = 0;
+    const collector = createTurnCollector(() => {}, { onReceipt: () => count++ });
+    return { collector, count: () => count };
+  }
+  const END = { stopReason: "end_turn" } as const;
+
+  test.each<SessionUpdate>([
+    say("hi"),
+    think("hm"),
+    { sessionUpdate: "tool_call", toolCallId: "c1", title: "Read", status: "in_progress" },
+    { sessionUpdate: "tool_call_update", toolCallId: "c1", status: "completed" },
+    { sessionUpdate: "usage_update", used: 1, size: 2 },
+    { sessionUpdate: "plan", entries: [] },
+  ])("turn content %#: fires once, however many updates follow", (update) => {
+    const r = receipts();
+    r.collector.onUpdate(update);
+    r.collector.onUpdate(say("more"));
+    r.collector.settle(END);
+    expect(r.count()).toBe(1);
+  });
+
+  test.each<SessionUpdate>([
+    { sessionUpdate: "available_commands_update", availableCommands: [] },
+    { sessionUpdate: "current_mode_update", currentModeId: "default" },
+    { sessionUpdate: "user_message_chunk", content: { type: "text", text: "replayed" } },
+    { sessionUpdate: "config_option_update", configOptions: [] },
+  ])("session-level update %#: not receipt", (update) => {
+    const r = receipts();
+    r.collector.onUpdate(update);
+    expect(r.count()).toBe(0);
+  });
+
+  test("settle is receipt for any stop reason, also after finish", () => {
+    const r = receipts();
+    r.collector.finish();
+    r.collector.settle({ stopReason: "refusal" });
+    expect(r.count()).toBe(1);
+  });
+
+  test("nothing after finish without an update or a settle", () => {
+    const r = receipts();
+    r.collector.finish();
+    r.collector.onUpdate(say("late"));
+    expect(r.count()).toBe(0);
+  });
+
+  test("a throwing onReceipt does not break the turn", () => {
+    const collector = createTurnCollector(() => {}, {
+      onReceipt: () => {
+        throw new Error("boom");
+      },
+    });
+    expect(() => collector.onUpdate(say("hi"))).not.toThrow();
+  });
+});

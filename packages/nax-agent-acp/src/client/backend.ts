@@ -247,9 +247,19 @@ async function sendTurn(s: AcpSession, prompt: string, opts: SendTurnOpts): Prom
   const signal = opts.signal ?? s.ctx.turnSignal();
   const live = await liveFor(s, signal);
   const instructions = s.instructionsSent ? undefined : s.ctx.instructions;
-  s.instructionsSent = true;
   const text = instructions === undefined || instructions === "" ? prompt : `${instructions}\n\n${prompt}`;
-  const collector = createTurnCollector(opts.onTurnEvent, { secrets: live.options.secrets, meter: live.meter });
+  // #2364: delivered once the agent shows it has the prompt, not when it is sent.
+  const onReceipt =
+    instructions === undefined
+      ? undefined
+      : () => {
+          s.instructionsSent = true;
+        };
+  const collector = createTurnCollector(opts.onTurnEvent, {
+    secrets: live.options.secrets,
+    meter: live.meter,
+    ...(onReceipt === undefined ? {} : { onReceipt }),
+  });
   const release = live.router.attach(live.acp.agentSessionId, collector, AbortSignal.any([signal, live.gone.signal]));
   try {
     return await runPromptTurn(live.state, { text, signal, collector });

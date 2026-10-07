@@ -7,7 +7,9 @@
  * usage_update costs feed the session's cost meter (D5-b). User chunks, plans, mode,
  * config and command updates, and anything unknown are dropped. finish() flushes
  * held text and answers unanswered tool calls; settle(response) does that and then
- * emits the turn's one usage event (D5-h). Nothing is emitted after finish(). The
+ * emits the turn's one usage event (D5-h). onReceipt fires once, on the first
+ * turn-content update or the settle, so the backend knows its instructions arrived
+ * (#2364). Nothing is emitted after finish(). The
  * sink is the facade's; a throw from it is contained.
  */
 import type { PromptResponse, SessionUpdate } from "@agentclientprotocol/sdk";
@@ -22,6 +24,8 @@ export interface CollectorOptions {
   readonly secrets?: readonly string[];
   /** The session's cost meter; a fresh one when absent. */
   readonly meter?: CostMeter;
+  /** Called once, when the turn first shows the agent has the prompt: a turn-content update or the prompt's response (#2364). */
+  readonly onReceipt?: () => void;
 }
 
 export interface TurnCollector {
@@ -71,6 +75,20 @@ function containedSink(emit: TurnEventSink | undefined): (event: TurnEvent) => v
   };
 }
 
+/**
+ * Update kinds that prove the agent is working on the prompt (#2364). An allowlist:
+ * session-level updates (commands, mode, config, session info) and replayed history
+ * can arrive after attach but before the agent reads the prompt.
+ */
+const RECEIPT_KINDS: ReadonlySet<string> = new Set([
+  "agent_message_chunk",
+  "agent_thought_chunk",
+  "tool_call",
+  "tool_call_update",
+  "usage_update",
+  "plan",
+]);
+
 export function createTurnCollector(emit: TurnEventSink | undefined, options: CollectorOptions = {}): TurnCollector {
   const secrets = options.secrets ?? [];
   const meter = options.meter ?? createCostMeter();
@@ -84,6 +102,16 @@ export function createTurnCollector(emit: TurnEventSink | undefined, options: Co
   const parts: string[] = [];
   let done = false;
   let spend: TurnSpend | undefined;
+  let received = false;
+  const receipt = (): void => {
+    if (received) return;
+    received = true;
+    try {
+      options.onReceipt?.();
+    } catch {
+      // The backend's bookkeeping must not break the turn.
+    }
+  };
   const route = (update: SessionUpdate): void => {
     switch (update.sessionUpdate) {
       case "agent_message_chunk":
@@ -113,7 +141,9 @@ export function createTurnCollector(emit: TurnEventSink | undefined, options: Co
   };
   return {
     onUpdate(update) {
-      if (!done) route(update);
+      if (done) return;
+      if (RECEIPT_KINDS.has(update.sessionUpdate)) receipt();
+      route(update);
     },
     announce(toolCall) {
       if (!done) tools.announce(toolCall);
@@ -121,6 +151,7 @@ export function createTurnCollector(emit: TurnEventSink | undefined, options: Co
     finish,
     settle(response) {
       finish();
+      receipt();
       if (spend === undefined) {
         spend = turnSpend(response, meter);
         send(usageEvent(spend));

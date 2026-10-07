@@ -44,6 +44,7 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 10));
 async function open(
   script: FakeScript,
   tools: EmbedderTool[] = [],
+  instructions?: string,
 ): Promise<{ fake: InMemoryAgent; session: AgentSession }> {
   const fake = inMemoryAgent({ ...RESUMABLE, ...script });
   _acpBackendDeps.launch = fake.launch;
@@ -59,6 +60,7 @@ async function open(
     tools,
     transcriptStore: createMemoryTranscriptStore(),
     sessionId: "s-1",
+    ...(instructions === undefined ? {} : { instructions }),
   });
   sessions.push(session);
   return { fake, session };
@@ -184,5 +186,59 @@ describe("cancel or close while reconnecting (Review Focus 2)", () => {
     expect(endOf(await rest(iterator)).status).toBe("cancelled");
     // The dead process's kill (a no-op on a real one) and the half-started one's.
     expect(fake.kills()).toBe(2);
+  });
+});
+
+describe("instructions survive an agent that dies before it has the prompt (#2364)", () => {
+  const promptTexts = (fake: InMemoryAgent) =>
+    fake.callsTo("session/prompt").map((p) => (p as { prompt: { text: string }[] }).prompt[0]?.text);
+  const relaunch = { turns: [{ steps: [text("back")] }] };
+
+  /** Pulls events until one of `type` arrives. */
+  async function until(iterator: AsyncIterator<SessionEvent>, type: SessionEvent["type"]): Promise<void> {
+    for (let next = await iterator.next(); next.done !== true; next = await iterator.next()) {
+      if (next.value.type === type) return;
+    }
+  }
+
+  test("dies before any turn content: the instructions go out again after the reconnect", async () => {
+    const { fake, session } = await open({ turns: [{ steps: [{ kind: "hang" }] }], relaunch }, [], "Be brief.");
+    const iterator = await startTurn(session, () => fake.callsTo("session/prompt").length === 1);
+    fake.crash();
+    await rest(iterator);
+    await driveTurn(session, "two");
+    expect(promptTexts(fake)).toEqual(["Be brief.\n\ngo", "Be brief.\n\ntwo"]);
+  });
+
+  test("a session-level update before the death is not receipt (Review Focus 1)", async () => {
+    const commands: FakeStep = {
+      kind: "update",
+      update: { sessionUpdate: "available_commands_update", availableCommands: [] },
+    };
+    const { fake, session } = await open(
+      { turns: [{ steps: [commands, { kind: "hang" }] }], relaunch },
+      [],
+      "Be brief.",
+    );
+    const iterator = await startTurn(session, () => fake.callsTo("session/prompt").length === 1);
+    await tick();
+    fake.crash();
+    await rest(iterator);
+    await driveTurn(session, "two");
+    expect(promptTexts(fake)[1]).toBe("Be brief.\n\ntwo");
+  });
+
+  test("dies after streaming turn content: no second copy", async () => {
+    const call: FakeStep = {
+      kind: "update",
+      update: { sessionUpdate: "tool_call", toolCallId: "t1", title: "Read", status: "in_progress" },
+    };
+    const { fake, session } = await open({ turns: [{ steps: [call, { kind: "hang" }] }], relaunch }, [], "Be brief.");
+    const iterator = session.send("go")[Symbol.asyncIterator]();
+    await until(iterator, "tool_call");
+    fake.crash();
+    await rest(iterator);
+    await driveTurn(session, "two");
+    expect(promptTexts(fake)[1]).toBe("two");
   });
 });
