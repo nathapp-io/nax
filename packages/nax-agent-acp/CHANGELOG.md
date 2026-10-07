@@ -3,7 +3,7 @@
 All notable changes to `@nathapp/nax-agent-acp` are recorded here. Versions move in
 step with `@nathapp/nax-agent`.
 
-## [Unreleased]
+## [0.3.1] - 2026-10-07
 
 ### Added
 

@@ -4,7 +4,7 @@ All notable changes to `@nathapp/nax-agent` are recorded here. The format follow
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). While the version is `0.x`, a minor
 release may change the public API.
 
-## [Unreleased]
+## [0.3.1] - 2026-10-07
 
 ### Added
 

@@ -1,6 +1,6 @@
 {
   "name": "@nathapp/nax-agent",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "description": "nax's native coding agent: session contract, native loop, tools, permissions, sandbox, command-safety.",
   "type": "module",
