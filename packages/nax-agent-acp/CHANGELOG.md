@@ -3,6 +3,12 @@
 All notable changes to `@nathapp/nax-agent-acp` are recorded here. Versions move in
 step with `@nathapp/nax-agent`.
 
+## [Unreleased]
+
+### Fixed
+
+- An errored or cancelled turn's `turn_end` carries the usage, cost and `costSource` the turn had already reported, instead of zero (#2367). A cancelled turn whose agent answers within the grace period emits its `usage` event before `turn_end`. Needs `@nathapp/nax-agent` 0.3.1.
+
 ## [0.3.0] - 2026-10-06
 
 - Package scaffold: `./client` and `./server` entries, build, gates and release wiring.
