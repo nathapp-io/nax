@@ -28,6 +28,7 @@ describe("agentsListCommand (US-005 AC8: listing driven by ACP_ADAPTER_NAMES)", 
   let originalLog: typeof console.log;
   let origGetAgentVersion: typeof _cliAgentsDeps.getAgentVersion;
   let origWhich: typeof _acpAdapterDeps.which;
+  let origLaunchKind: typeof _acpSdkDeps.launchCandidateKind;
 
   beforeEach(() => {
     captured = [];
@@ -38,17 +39,22 @@ describe("agentsListCommand (US-005 AC8: listing driven by ACP_ADAPTER_NAMES)", 
 
     origGetAgentVersion = _cliAgentsDeps.getAgentVersion;
     origWhich = _acpAdapterDeps.which;
+    origLaunchKind = _acpSdkDeps.launchCandidateKind;
 
     // Mock getAgentVersion to return immediately
     _cliAgentsDeps.getAgentVersion = mock(async () => "1.0.0");
-    // Pretend "claude" resolves; every other binary does not.
+    // Pretend only "claude" is launchable, on both transports: which() is the
+    // acpx probe, launchCandidateKind the sdk one (the default since S4b-4).
+    // Stubbing the sdk probe keeps the status column off the machine's PATH.
     _acpAdapterDeps.which = mock((binary: string) => (binary === "claude" ? "/usr/bin/claude" : null));
+    _acpSdkDeps.launchCandidateKind = mock((agent: string) => (agent === "claude" ? "local" : undefined));
   });
 
   afterEach(() => {
     console.log = originalLog;
     _cliAgentsDeps.getAgentVersion = origGetAgentVersion;
     _acpAdapterDeps.which = origWhich;
+    _acpSdkDeps.launchCandidateKind = origLaunchKind;
   });
 
   test("US-005 AC8: output contains no row for 'aider' (adapterless registry name) and no row whose display name is 'ACP Agent' (DEFAULT_ENTRY fallback)", async () => {
@@ -71,12 +77,15 @@ describe("agentsListCommand (US-005 AC8: listing driven by ACP_ADAPTER_NAMES)", 
     const flat = captured.map((entry) => entry.args.map((a) => (typeof a === "string" ? a : "")).join(" ")).join("\n");
 
     // Every name in ACP_ADAPTER_NAMES (claude, codex, gemini, opencode, pi)
-    // must appear in the listing. The mock resolves only "claude" so only
+    // must appear in the listing. The mocks resolve only "claude" so only
     // claude is "installed"; the others must still appear as rows (with
     // status "unavailable").
     for (const name of ACP_ADAPTER_NAMES) {
       expect(flat).toContain(name);
     }
+    const rows = flat.split("\n");
+    expect(rows.find((line) => line.includes("Claude Code (ACP)"))).toContain("installed");
+    expect(rows.find((line) => line.includes("OpenAI Codex (ACP)"))).toContain("unavailable");
   });
 
   test("US-005 AC8: KNOWN_AGENT_NAMES invariant preserved — registry still contains 'aider' (AC9 cross-check)", () => {

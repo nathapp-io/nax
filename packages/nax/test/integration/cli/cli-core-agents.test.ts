@@ -9,6 +9,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, tes
 import { rm } from "node:fs/promises";
 import { makeTempDir } from "@test/helpers";
 import { _acpAdapterDeps } from "@/agents/acp/adapter";
+import { _acpSdkDeps } from "@/agents/acp-sdk";
 import { _cliAgentsDeps, agentsListCommand } from "@/cli/agents";
 import { DEFAULT_CONFIG } from "@/config";
 
@@ -26,6 +27,7 @@ describe("agentsListCommand", () => {
 
   let origGetAgentVersion: typeof _cliAgentsDeps.getAgentVersion;
   let origWhich: typeof _acpAdapterDeps.which;
+  let origLaunchKind: typeof _acpSdkDeps.launchCandidateKind;
 
   beforeEach(() => {
     origGetAgentVersion = _cliAgentsDeps.getAgentVersion;
@@ -34,11 +36,15 @@ describe("agentsListCommand", () => {
     _cliAgentsDeps.getAgentVersion = async () => "1.0.0";
     // Mock which to report "claude" as installed, others as not found
     _acpAdapterDeps.which = mock((binary: string) => (binary === "claude" ? "/usr/bin/claude" : null));
+    // The sdk transport (default since S4b-4) asks launchCandidateKind, not which.
+    origLaunchKind = _acpSdkDeps.launchCandidateKind;
+    _acpSdkDeps.launchCandidateKind = mock((agent: string) => (agent === "claude" ? "local" : undefined));
   });
 
   afterEach(() => {
     _cliAgentsDeps.getAgentVersion = origGetAgentVersion;
     _acpAdapterDeps.which = origWhich;
+    _acpSdkDeps.launchCandidateKind = origLaunchKind;
   });
 
   test("should display agents table with headers", async () => {
@@ -148,6 +154,9 @@ describe("agentsListCommand", () => {
 
       // Should show status like "installed" or "unavailable"
       expect(output.toLowerCase()).toMatch(/installed|unavailable|available/);
+      const rows = output.split("\n");
+      expect(rows.find((line) => line.includes("Claude Code (ACP)"))).toContain("installed");
+      expect(rows.find((line) => line.includes("OpenAI Codex (ACP)"))).toContain("unavailable");
     } finally {
       console.log = originalLog;
     }
