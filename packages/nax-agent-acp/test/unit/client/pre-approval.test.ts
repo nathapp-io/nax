@@ -1,10 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import {
-  claudeSessionMeta,
-  mcpToolRule,
-  READ_ONLY_DISALLOWED_TOOLS,
-  TOOL_HOST_SERVER_NAME,
-} from "#src/client/pre-approval";
+import { readOnlyFor } from "#src/client/capabilities";
+import { claudeSessionMeta, mcpToolRule, TOOL_HOST_SERVER_NAME } from "#src/client/pre-approval";
 import { registryEntry } from "#src/client/registry";
 
 describe("pre-approval (spec R12, §6.6; D4-a)", () => {
@@ -14,40 +10,47 @@ describe("pre-approval (spec R12, §6.6; D4-a)", () => {
   });
 
   test("claude: _meta.claudeCode.options.allowedTools, one rule per tool, nothing else", () => {
-    expect(claudeSessionMeta(registryEntry("claude")?.preApproval, ["lookup", "fetch-page"], "full")).toEqual({
+    expect(claudeSessionMeta(registryEntry("claude")?.preApproval, ["lookup", "fetch-page"], undefined)).toEqual({
       claudeCode: { options: { allowedTools: ["mcp__nax__lookup", "mcp__nax__fetch-page"] } },
     });
   });
 });
 
-// #2365: under plan mode Claude asks to leave it with ExitPlanMode; the adapter turns
-// that reject into an interrupt, so the turn ended ACP_STOP_CANCELLED.
-describe("claude session _meta by profile (#2365)", () => {
-  const claude = registryEntry("claude")?.preApproval;
+// #2366: none/read on Claude are default mode with the write tools removed and no settings files.
+describe("claude session _meta by profile (#2366)", () => {
+  const claude = registryEntry("claude");
+  const READ_ONLY_OPTIONS = {
+    disallowedTools: ["Write", "Edit", "MultiEdit", "NotebookEdit", "EnterPlanMode"],
+    settingSources: [],
+    allowDangerouslySkipPermissions: false,
+  };
 
-  test("none and read disallow ExitPlanMode, with or without tools", () => {
-    expect(READ_ONLY_DISALLOWED_TOOLS).toEqual(["ExitPlanMode"]);
+  test("none and read: the removed tools and the settings lock, with or without tools", () => {
     for (const profile of ["none", "read"] as const) {
-      expect(claudeSessionMeta(claude, [], profile)).toEqual({
-        claudeCode: { options: { disallowedTools: ["ExitPlanMode"] } },
+      const readOnly = readOnlyFor(profile, claude);
+      expect(claudeSessionMeta(claude?.preApproval, [], readOnly)).toEqual({
+        claudeCode: { options: READ_ONLY_OPTIONS },
       });
-      expect(claudeSessionMeta(claude, ["lookup"], profile)).toEqual({
-        claudeCode: { options: { allowedTools: ["mcp__nax__lookup"], disallowedTools: ["ExitPlanMode"] } },
+      expect(claudeSessionMeta(claude?.preApproval, ["lookup"], readOnly)).toEqual({
+        claudeCode: { options: { allowedTools: ["mcp__nax__lookup"], ...READ_ONLY_OPTIONS } },
       });
     }
   });
 
   test("ask and full: only the tool rules, and nothing without tools", () => {
     for (const profile of ["ask", "full"] as const) {
-      expect(claudeSessionMeta(claude, ["lookup"], profile)).toEqual({
+      const readOnly = readOnlyFor(profile, claude);
+      expect(readOnly).toBeUndefined();
+      expect(claudeSessionMeta(claude?.preApproval, ["lookup"], readOnly)).toEqual({
         claudeCode: { options: { allowedTools: ["mcp__nax__lookup"] } },
       });
-      expect(claudeSessionMeta(claude, [], profile)).toBeUndefined();
+      expect(claudeSessionMeta(claude?.preApproval, [], readOnly)).toBeUndefined();
     }
   });
 
   test("an agent that is not Claude gets no _meta under any profile", () => {
-    expect(claudeSessionMeta(registryEntry("codex")?.preApproval, ["lookup"], "read")).toBeUndefined();
-    expect(claudeSessionMeta(undefined, [], "none")).toBeUndefined();
+    const codex = registryEntry("codex");
+    expect(claudeSessionMeta(codex?.preApproval, ["lookup"], readOnlyFor("read", codex))).toBeUndefined();
+    expect(claudeSessionMeta(undefined, [], undefined)).toBeUndefined();
   });
 });

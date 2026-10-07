@@ -56,6 +56,17 @@ async function openWith(script: FakeScript, extra: Partial<AcpBackendOptions> = 
   return { fake, ctx, opened };
 }
 
+// #2366: claude-agent-acp fingerprints _meta.claudeCode.options on restore.
+const READ_META = {
+  claudeCode: {
+    options: {
+      disallowedTools: ["Write", "Edit", "MultiEdit", "NotebookEdit", "EnterPlanMode"],
+      settingSources: [],
+      allowDangerouslySkipPermissions: false,
+    },
+  },
+};
+
 describe("openAcpSession: the happy path (spec §6.3 step 1)", () => {
   test("launches the explicit command in workdir with the resolved env, then initialize, session/new, mode", async () => {
     const { fake, ctx, opened } = await openWith(CLAUDE_SCRIPT);
@@ -337,10 +348,7 @@ describe("openAcpSession: restoring a stored session (spec §6.9, S4-6)", () => 
     expect(fake.callsTo("session/load")).toEqual([{ sessionId: "fake-session-1", cwd: dir, mcpServers: [] }]);
   });
 
-  // #2365: claude-agent-acp fingerprints _meta.claudeCode.options on restore.
-  const READ_META = { claudeCode: { options: { disallowedTools: ["ExitPlanMode"] } } };
-
-  test("read: session/resume carries the ExitPlanMode lock", async () => {
+  test("read: session/resume carries the read-only _meta and resets the mode to default", async () => {
     const { fake, opened } = restoreWith(
       { capabilities: { loadSession: true, sessionCapabilities: { resume: {} } } },
       {},
@@ -350,13 +358,19 @@ describe("openAcpSession: restoring a stored session (spec §6.9, S4-6)", () => 
     expect(fake.callsTo("session/resume")).toEqual([
       { sessionId: "fake-session-1", cwd: dir, mcpServers: [], _meta: READ_META },
     ]);
+    expect(fake.callsTo("session/set_config_option")).toEqual([
+      { sessionId: "fake-session-1", configId: "mode", value: "default" },
+    ]);
   });
 
-  test("read: session/load carries the ExitPlanMode lock", async () => {
+  test("read: session/load carries the read-only _meta and resets the mode to default", async () => {
     const { fake, opened } = restoreWith({ capabilities: { loadSession: true } }, {}, "read");
     await opened;
     expect(fake.callsTo("session/load")).toEqual([
       { sessionId: "fake-session-1", cwd: dir, mcpServers: [], _meta: READ_META },
+    ]);
+    expect(fake.callsTo("session/set_config_option")).toEqual([
+      { sessionId: "fake-session-1", configId: "mode", value: "default" },
     ]);
   });
 
@@ -414,13 +428,14 @@ describe("openAcpSession: restoring a stored session (spec §6.9, S4-6)", () => 
   });
 });
 
-describe("openAcpSession: plan mode cannot be left (#2365)", () => {
-  test("read without tools: session/new disallows ExitPlanMode", async () => {
+describe("openAcpSession: read-only without plan mode (#2366)", () => {
+  test("read without tools: session/new removes the write tools and loads no settings; mode default", async () => {
     const fake = inMemoryAgent(CLAUDE_SCRIPT);
     const ctx = openContext(dir, { profile: "read" });
     await openAcpSession(options(), ctx, createInboundRouter(async (r) => rejectLocally(r)).handlers, fake.launch);
-    expect(fake.callsTo("session/new")).toEqual([
-      { cwd: dir, mcpServers: [], _meta: { claudeCode: { options: { disallowedTools: ["ExitPlanMode"] } } } },
+    expect(fake.callsTo("session/new")).toEqual([{ cwd: dir, mcpServers: [], _meta: READ_META }]);
+    expect(fake.callsTo("session/set_config_option")).toEqual([
+      { sessionId: "fake-session-1", configId: "mode", value: "default" },
     ]);
   });
 });

@@ -12,14 +12,18 @@ describe("ACP agent registry (S4 spec §6.10)", () => {
     expect([...ACP_AGENT_NAMES]).toEqual(["claude", "codex", "gemini", "opencode", "pi"]);
   });
 
-  test("claude: local adapter first, pinned npx fallback, plan/default modes, pre-approval, auth env", () => {
+  test("claude: local adapter first, pinned npx fallback, read-only enforcement, default mode, pre-approval, auth env", () => {
     expect(registryEntry("claude")).toEqual({
       name: "claude",
       launch: [
         { command: "claude-agent-acp", args: [] },
         { command: "npx", args: ["-y", "@agentclientprotocol/claude-agent-acp@~0.85.1"] },
       ],
-      readOnlyMode: { configId: "mode", value: "plan" },
+      readOnly: {
+        mode: { configId: "mode", value: "default" },
+        disallowedTools: ["Write", "Edit", "MultiEdit", "NotebookEdit", "EnterPlanMode"],
+        sessionOptions: { settingSources: [], allowDangerouslySkipPermissions: false },
+      },
       defaultMode: { configId: "mode", value: "default" },
       preApproval: "claudeCode.allowedTools",
       authEnv: ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"],
@@ -45,11 +49,11 @@ describe("ACP agent registry (S4 spec §6.10)", () => {
       ],
       [],
     ],
-  ])("%s: launch candidates and auth env; no read-only mode, no pre-approval", (name, launch, authEnv) => {
+  ])("%s: launch candidates and auth env; no read-only enforcement, no pre-approval", (name, launch, authEnv) => {
     expect(registryEntry(name)).toEqual({
       name,
       launch,
-      readOnlyMode: undefined,
+      readOnly: undefined,
       defaultMode: undefined,
       preApproval: undefined,
       authEnv,
@@ -73,8 +77,19 @@ describe("ACP agent registry (S4 spec §6.10)", () => {
     expect(Object.isFrozen(entry)).toBe(true);
     expect(Object.isFrozen(entry?.launch)).toBe(true);
     expect(Object.isFrozen(entry?.launch[1]?.args)).toBe(true);
-    expect(Object.isFrozen(entry?.readOnlyMode)).toBe(true);
+    expect(Object.isFrozen(entry?.readOnly)).toBe(true);
+    expect(Object.isFrozen(entry?.readOnly?.mode)).toBe(true);
+    expect(Object.isFrozen(entry?.readOnly?.disallowedTools)).toBe(true);
+    expect(Object.isFrozen(entry?.readOnly?.sessionOptions)).toBe(true);
+    expect(Object.isFrozen(entry?.readOnly?.sessionOptions.settingSources)).toBe(true);
     expect(Object.isFrozen(entry?.authEnv)).toBe(true);
     expect(Object.isFrozen(ACP_AGENT_NAMES)).toBe(true);
+  });
+
+  test("only an agent with a pre-approval channel declares read-only enforcement", () => {
+    for (const name of ACP_AGENT_NAMES) {
+      const entry = registryEntry(name);
+      if (entry?.readOnly !== undefined) expect(entry.preApproval).toBeDefined();
+    }
   });
 });

@@ -112,8 +112,7 @@ describe("MCP over the host", () => {
     try {
       const listed = await client.listTools();
       expect(listed.tools.map((t) => t.name)).toEqual(["echo"]);
-      // #2365: the hint survives the MCP server, so Claude's plan mode sees it.
-      expect(listed.tools[0]?.annotations).toEqual({ readOnlyHint: true });
+      expect(listed.tools[0]?.annotations).toBeUndefined();
       expect(await client.callTool({ name: "echo", arguments: { text: "hi" } })).toMatchObject({
         content: [{ type: "text", text: '{"text":"hi"}' }],
       });
