@@ -12,6 +12,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeNaxConfig } from "@test/helpers";
 import { _acpAdapterDeps, AcpAgentAdapter } from "@/agents/acp/adapter";
+import { _acpSdkDeps } from "@/agents/acp-sdk";
 import { _registryTestAdapters, checkAgentHealth, createAgentRegistry, getInstalledAgents } from "@/agents/registry";
 import type { NaxConfig } from "@/config/schema";
 import { DEFAULT_CONFIG } from "@/config/schema";
@@ -21,6 +22,9 @@ import { logActiveProtocol } from "@/execution/lifecycle/run-initialization";
 // createAgentRegistry — protocol selection
 // ─────────────────────────────────────────────────────────────────────────────
 
+// acpx transport pinned until S4b-5 deletes it: these describe acpx's registry
+// routing and its `which` PATH probe; the sdk default is covered by
+// test/unit/agents/registry-native.test.ts.
 describe("createAgentRegistry — protocol selection", () => {
   const origWhich = _acpAdapterDeps.which;
 
@@ -34,25 +38,25 @@ describe("createAgentRegistry — protocol selection", () => {
   });
 
   test("returns AcpAgentAdapter for 'claude'", () => {
-    const registry = createAgentRegistry(makeNaxConfig({ agent: { protocol: "acp" } }));
+    const registry = createAgentRegistry(makeNaxConfig({ agent: { protocol: "acp", acp: { transport: "acpx" } } }));
     const agent = registry.getAgent("claude");
     expect(agent).toBeInstanceOf(AcpAgentAdapter);
   });
 
   test("AcpAgentAdapter name is 'claude' when requested by name", () => {
-    const registry = createAgentRegistry(makeNaxConfig({ agent: { protocol: "acp" } }));
+    const registry = createAgentRegistry(makeNaxConfig({ agent: { protocol: "acp", acp: { transport: "acpx" } } }));
     const agent = registry.getAgent("claude");
     expect(agent?.name).toBe("claude");
   });
 
-  test("returns AcpAgentAdapter for 'claude' when agent config is unset (default acp)", () => {
-    const registry = createAgentRegistry(makeNaxConfig());
+  test("returns AcpAgentAdapter for 'claude' when only the transport is set (default protocol)", () => {
+    const registry = createAgentRegistry(makeNaxConfig({ agent: { acp: { transport: "acpx" } } }));
     const agent = registry.getAgent("claude");
     expect(agent).toBeInstanceOf(AcpAgentAdapter);
   });
 
   test("returns undefined for unknown agent name", () => {
-    const registry = createAgentRegistry(makeNaxConfig({ agent: { protocol: "acp" } }));
+    const registry = createAgentRegistry(makeNaxConfig({ agent: { protocol: "acp", acp: { transport: "acpx" } } }));
     expect(registry.getAgent("unknown-agent-xyz")).toBeUndefined();
   });
 
@@ -79,14 +83,14 @@ describe("createAgentRegistry — protocol selection", () => {
 
 describe("createAgentRegistry — instance reuse", () => {
   test("returns the same AcpAgentAdapter instance on repeated getAgent calls", () => {
-    const registry = createAgentRegistry(makeNaxConfig({ agent: { protocol: "acp" } }));
+    const registry = createAgentRegistry(makeNaxConfig({ agent: { protocol: "acp", acp: { transport: "acpx" } } }));
     const first = registry.getAgent("claude");
     const second = registry.getAgent("claude");
     expect(first).toBe(second);
   });
 
   test("creates distinct AcpAgentAdapter instances for different agent names", () => {
-    const registry = createAgentRegistry(makeNaxConfig({ agent: { protocol: "acp" } }));
+    const registry = createAgentRegistry(makeNaxConfig({ agent: { protocol: "acp", acp: { transport: "acpx" } } }));
     const claude = registry.getAgent("claude");
     const codex = registry.getAgent("codex");
     expect(claude).toBeInstanceOf(AcpAgentAdapter);
@@ -95,8 +99,8 @@ describe("createAgentRegistry — instance reuse", () => {
   });
 
   test("separate registry instances do not share AcpAgentAdapter instances", () => {
-    const r1 = createAgentRegistry(makeNaxConfig({ agent: { protocol: "acp" } }));
-    const r2 = createAgentRegistry(makeNaxConfig({ agent: { protocol: "acp" } }));
+    const r1 = createAgentRegistry(makeNaxConfig({ agent: { protocol: "acp", acp: { transport: "acpx" } } }));
+    const r2 = createAgentRegistry(makeNaxConfig({ agent: { protocol: "acp", acp: { transport: "acpx" } } }));
     expect(r1.getAgent("claude")).not.toBe(r2.getAgent("claude"));
   });
 });
@@ -107,7 +111,7 @@ describe("createAgentRegistry — instance reuse", () => {
 
 describe("Config schema — AgentConfig", () => {
   test("NaxConfig accepts agent.protocol: 'acp'", () => {
-    const config: NaxConfig = makeNaxConfig({ agent: { protocol: "acp" } });
+    const config: NaxConfig = makeNaxConfig({ agent: { protocol: "acp", acp: { transport: "acpx" } } });
     expect(config.agent?.protocol).toBe("acp");
   });
 
@@ -135,7 +139,7 @@ describe("createAgentRegistry — checkAgentHealth()", () => {
 
   test("returns health entries for all known agents", async () => {
     _acpAdapterDeps.which = mock((_name: string) => "/usr/local/bin/claude");
-    const registry = createAgentRegistry(makeNaxConfig({ agent: { protocol: "acp" } }));
+    const registry = createAgentRegistry(makeNaxConfig({ agent: { protocol: "acp", acp: { transport: "acpx" } } }));
     const health = await registry.checkAgentHealth();
     expect(Array.isArray(health)).toBe(true);
     expect(health.length).toBeGreaterThan(0);
@@ -143,7 +147,7 @@ describe("createAgentRegistry — checkAgentHealth()", () => {
 
   test("each health entry has name, displayName, and installed fields", async () => {
     _acpAdapterDeps.which = mock((_name: string) => "/usr/local/bin/claude");
-    const registry = createAgentRegistry(makeNaxConfig({ agent: { protocol: "acp" } }));
+    const registry = createAgentRegistry(makeNaxConfig({ agent: { protocol: "acp", acp: { transport: "acpx" } } }));
     const health = await registry.checkAgentHealth();
     for (const entry of health) {
       expect(typeof entry.name).toBe("string");
@@ -154,7 +158,7 @@ describe("createAgentRegistry — checkAgentHealth()", () => {
 
   test("health entry installed is true when binary is on PATH", async () => {
     _acpAdapterDeps.which = mock((_name: string) => "/usr/local/bin/claude");
-    const registry = createAgentRegistry(makeNaxConfig({ agent: { protocol: "acp" } }));
+    const registry = createAgentRegistry(makeNaxConfig({ agent: { protocol: "acp", acp: { transport: "acpx" } } }));
     const health = await registry.checkAgentHealth();
     const claudeEntry = health.find((e) => e.name === "claude");
     expect(claudeEntry).toBeDefined();
@@ -163,7 +167,7 @@ describe("createAgentRegistry — checkAgentHealth()", () => {
 
   test("health entry installed is false when binary is not on PATH", async () => {
     _acpAdapterDeps.which = mock((_name: string) => null);
-    const registry = createAgentRegistry(makeNaxConfig({ agent: { protocol: "acp" } }));
+    const registry = createAgentRegistry(makeNaxConfig({ agent: { protocol: "acp", acp: { transport: "acpx" } } }));
     const health = await registry.checkAgentHealth();
     const claudeEntry = health.find((e) => e.name === "claude");
     expect(claudeEntry).toBeDefined();
@@ -181,6 +185,15 @@ describe("createAgentRegistry — checkAgentHealth()", () => {
 
 describe("module-level getInstalledAgents() / checkAgentHealth() (BUG-19)", () => {
   const origWhich = _acpAdapterDeps.which;
+  const origLaunchKind = _acpSdkDeps.launchCandidateKind;
+
+  // The module-level functions build adapters on the default transport (sdk
+  // since S4b-4), whose installed check asks launchCandidateKind, not which.
+  // Stub both so the result never depends on what is on this machine's PATH.
+  function onPath(found: boolean): void {
+    _acpAdapterDeps.which = mock((_name: string) => (found ? "/usr/local/bin/claude" : null));
+    _acpSdkDeps.launchCandidateKind = mock(() => (found ? "local" : undefined));
+  }
 
   beforeEach(() => {
     // _registryTestAdapters is module-global state shared across test
@@ -191,28 +204,29 @@ describe("module-level getInstalledAgents() / checkAgentHealth() (BUG-19)", () =
 
   afterEach(() => {
     _acpAdapterDeps.which = origWhich;
+    _acpSdkDeps.launchCandidateKind = origLaunchKind;
     _registryTestAdapters.clear();
     mock.restore();
   });
 
   test("getInstalledAgents returns installed adapters instead of an unconditional []", async () => {
-    _acpAdapterDeps.which = mock((_name: string) => "/usr/local/bin/claude");
+    onPath(true);
     const installed = await getInstalledAgents();
     expect(installed.length).toBeGreaterThan(0);
     expect(installed.some((a) => a.name === "claude")).toBe(true);
   });
 
-  test("getInstalledAgents returns no acpx agents when nothing is on PATH", async () => {
-    _acpAdapterDeps.which = mock((_name: string) => null);
+  test("getInstalledAgents returns no ACP agents when no launcher is available", async () => {
+    onPath(false);
     const installed = await getInstalledAgents();
     // Native is exempt: with no binary, it counts as installed whenever its
     // client resolves (ADR-027 section 3 / Open Question 4). What BUG-19's
-    // unconditional [] used to fake is the acpx set staying out.
+    // unconditional [] used to fake is the ACP set staying out.
     expect(installed.filter((a) => a.name !== "native")).toEqual([]);
   });
 
   test("checkAgentHealth reflects real installed status instead of an unconditional []", async () => {
-    _acpAdapterDeps.which = mock((_name: string) => "/usr/local/bin/claude");
+    onPath(true);
     const health = await checkAgentHealth();
     expect(health.length).toBeGreaterThan(0);
     const claudeEntry = health.find((e) => e.name === "claude");

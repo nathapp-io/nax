@@ -79,7 +79,7 @@ export interface IdleWatchdogConfig {
 
 /** ACP-specific agent configuration */
 export interface AgentAcpConfig {
-  /** How ACP agents are driven: "acpx" (default) or "sdk" (S4b development key). */
+  /** How ACP agents are driven: "sdk" (default since S4b-4) or "acpx" (S4b development key). */
   transport?: AcpTransport;
   /** Retries for transient prompt failures (default: 0, opt-in) */
   promptRetries?: number;

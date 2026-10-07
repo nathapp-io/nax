@@ -22,6 +22,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { _clientDeps } from "@nathapp/nax-agent/internal";
 import { _acpAdapterDeps } from "../src/agents/acp/adapter";
+import { _acpSdkDeps } from "../src/agents/acp-sdk/session";
 import { configureNaxCredentials } from "../src/config";
 import { _notifyDeps } from "../src/finish/notify";
 import { _nativeCredentialDeps } from "../src/precheck/checks-native-credentials";
@@ -100,6 +101,21 @@ _acpAdapterDeps.createClient = () => {
       "Add to your describe block:\n" +
       "  beforeEach(() => { _acpAdapterDeps.createClient = mock(() => makeClient(makeSession())); })\n" +
       "  afterEach(() => { _acpAdapterDeps.createClient = <saved original>; mock.restore(); })",
+  );
+};
+
+// ─── ACP sdk spawn sentinel (S4b-4) ───────────────────────────────────────────
+// The sdk transport is the default from S4b-4. A test that reaches
+// _acpSdkDeps.acpBackend without replacing it would spawn a real ACP agent
+// (the local launcher or npx). Fail fast instead. sdk tests replace this dep
+// with fakeAcpBackend (test/helpers/acp-fake-agent) or a scripted backend.
+_acpSdkDeps.acpBackend = () => {
+  throw new Error(
+    "[test-preload] _acpSdkDeps.acpBackend called without a mock — " +
+      "this would spawn a real ACP agent process. " +
+      "Replace it in your describe block:\n" +
+      "  beforeEach(() => { _acpSdkDeps.acpBackend = (opts) => fakeAcpBackend(...); })\n" +
+      "  afterEach(() => { _acpSdkDeps.acpBackend = <saved original>; })",
   );
 };
 

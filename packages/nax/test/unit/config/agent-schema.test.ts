@@ -99,8 +99,13 @@ describe("AgentConfigSchema", () => {
     expect(() => NaxConfigSchema.parse({ agent: { acp: { promptRetries: 6 } } })).toThrow();
   });
 
-  test("agent.acp.transport defaults to acpx", () => {
+  test("agent.acp.transport defaults to sdk (S4b-4)", () => {
     const result = NaxConfigSchema.parse({});
+    expect(result.agent?.acp?.transport).toBe("sdk");
+  });
+
+  test("agent.acp.transport still accepts acpx until S4b-5", () => {
+    const result = NaxConfigSchema.parse({ agent: { acp: { transport: "acpx" } } });
     expect(result.agent?.acp?.transport).toBe("acpx");
   });
 
