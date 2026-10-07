@@ -42,11 +42,11 @@
 | D2-a | **Model-alias probe (spec §6.7, S4b-0 Ruling T1-3): no mapping table.** Run 2026-10-07 while writing this plan, unbilled: `initialize` + `session/new` + three `session/set_config_option` calls against `@agentclientprotocol/claude-agent-acp@0.85.1` on the maintainer's account, no prompt. The `model` option (category `model`) offered `default, sonnet, haiku, opus, fable`, and set to `haiku`, `sonnet` and `opus` each succeeded. So nax's Claude tier defaults (`haiku`/`sonnet`/`opus`, `config/agent-defaults.ts:30`) match verbatim; `agents/model-effort.ts` is not created. The effort option is `effort` (category `thought_level`), values `default, low, medium, high, xhigh, max`; it is absent while `haiku` is selected (S4b-3 skips effort with a warning there, as acpx does). Probe script: maintainer scratchpad `probe/probe.mjs`. |
 | D2-b | **A configured model id that the agent does not offer verbatim fails the open** with `AGENT_SESSION_CAPABILITY_UNSUPPORTED` (`context.capability: "model"`), because nax-agent-acp matches the value exactly (`open.ts` `applyModel`). acpx passed `--model` through and the adapter resolved it fuzzily. This is a behaviour change on the `sdk` transport; Task 13 adds it to spec §11 as item 8. |
 | D2-c | **Run abort throws.** A turn aborted by the run's `opts.signal` (or by the session closing) throws `SessionTurnError{ cancelled: true, retryable: false }` with `fail-aborted`, as spec §7.1 says. acpx instead returned a zero-output `TurnResult` from that path (`adapter-send-turn.ts` `state.aborted`). S4b-3's parity tests must confirm the spec row or amend it before the flip. |
-| D2-d | **S4b-2 / S4b-3 split.** S4b-2 ships the adapter's open, close, turn loop, stream bridge, ask port, profile map and pricing (spec §10). `complete()` throws `ACP_SDK_COMPLETE_UNAVAILABLE` until S4b-3. `failure-map.ts` carries only the cancel-cause rows plus a `fail-unknown` fallback; S4b-3 adds the error-code rows. Not in S4b-2: `promptRetries`, `initializeTimeoutMs` / `cancelGraceMs`, tool-audit writes, effort, and `onProcess` PID callbacks. The key is a development key, documented as incomplete. |
+| D2-d | **S4b-2 / S4b-3 split.** S4b-2 ships the adapter's open, close, turn loop, stream bridge, ask port, profile map and pricing (spec §10). `complete()` throws `ACP_SDK_COMPLETE_UNAVAILABLE` until S4b-3. `failure-map.ts` carries only the cancel-cause rows plus a `fail-adapter-error` fallback (availability, not retryable), which is what `session-run-hop.ts:206` synthesizes for an acpx `SessionTurnError` today, so retry and swap policy is unchanged until S4b-3 adds the error-code rows. `onProcess` PID callbacks ARE in S4b-2 (plan review M1): a forced close must kill the agent's process group. Not in S4b-2: `promptRetries`, `initializeTimeoutMs` / `cancelGraceMs`, tool-audit writes, effort. Known parity gap for S4b-3's parity tests: a live agent that answers a prompt with "session not found" surfaces as `AGENT_SESSION_TURN_FAILED` and is not recovered (only a failed reconnect yields `AGENT_SESSION_NOT_FOUND`); acpx recovered its exit-code-4 case. The key is a development key, documented as incomplete. |
 | D2-e | **Adapter tests use nax-agent-acp's fake ACP agent as a subprocess, reached by file path** (`test/helpers/acp-fake-agent/index.ts`), not by import. nax may import only `./client`. The fake runs through the backend's `command` override on the registered name `claude`, so the Claude registry entry (modes, auth env) still applies. |
 | D2-f | `AcpSdkAgentAdapter.binary` is the agent's own CLI name (`claude`, `codex`, ...), used only for display and the bounded `--version` probe in `nax agents`. `isInstalled()` is `isAgentLaunchable()` (spec §6.8); the `npx`-only precheck warning is S4b-3. |
-| D2-g | **The stream bridge emits `agent.call_ended` with `"success"` or `"error"` only, as acpx does** (a cancel is `"error"`, `spawn-client-session.ts:319`). `agent.process_update` is emitted only when a pid is known, which S4b-3's `onProcess` wiring supplies. |
-| D2-h | **Stream run identifiers come from `opts.toolAudit.header`** (`runId`, `storyId`). It is the only place `OpenSessionOpts` carries them. `runId` is `""` when absent; acpx passed `undefined`. |
+| D2-g | **The stream bridge emits `agent.call_ended` with `"success"` or `"error"` only, as acpx does** (a cancel is `"error"`, `spawn-client-session.ts:319`). `agent.process_update` carries the live pid from the backend's `onProcess` hook; it is skipped only while no process is known. |
+| D2-h | **Stream run identifiers come from `opts.toolAudit.header`** (`runId`, `storyId`). It is the only place `OpenSessionOpts` carries them. `runId` is `""` when absent; acpx passed `undefined`, and the runtime fills an empty `runId` (`runtime/index.ts:404`). Only the dispatch hop sets `toolAudit`, and only when `codingToolRoot` is set; `runtime/session-run-hop.ts:92`, `SessionManager.runInSession` and `session-keeper.ts:96` open without it, as acpx sessions had no identifiers either. S4b-3's audit sink needs the directory on those paths too. |
 | D2-i | `profile-map.ts` maps the mode only. The per-agent fail-closed rule stays in the backend (`AGENT_SESSION_CAPABILITY_UNSUPPORTED` for `read` on codex/opencode/gemini/pi), so the map can never widen a profile to make an open succeed. |
 | D2-j | **The crash-leftover match is delegated to the backend.** The adapter loads the session's transcript document and passes it as `resume`. The backend's `storedSessionOf` already rejects a backend, agent or cwd mismatch before anything is spawned. On `AGENT_SESSION_BACKEND_MISMATCH`, `AGENT_SESSION_INVALID_OPTIONS`, `AGENT_SESSION_NOT_FOUND` or `TRANSCRIPT_CORRUPT` the adapter deletes the document and opens fresh. This includes a native transcript under the same name (an agent swap, nax#1722). |
 | D2-k | The ask port's `recordAutoDecision` logs a denial at debug only in S4b-2; S4b-3 adds the `denied` tool-audit row with the audit sink. A pending ACP question emits `agent.awaiting_human` at once and every 30 s (`AWAITING_HUMAN_BEAT_MS`); the idle timeout is 900 s. |
@@ -57,7 +57,7 @@
 
 ## Review Focus
 
-1. **Close or run abort during a running prompt.** Expect no orphaned agent process, `SessionTurnError{ cancelled: true }` with `fail-aborted`, and the spend so far on the error. Tested in Task 9 (scripted backend) and Task 10 (real subprocess, `closeSession` mid-turn).
+1. **Close or run abort during a running prompt.** Expect no orphaned agent process, `SessionTurnError{ cancelled: true }` with `fail-aborted`, and the spend so far on the error. Tested in Task 8 (forced close kills the process group), Task 9 (scripted backend) and Task 10 (real subprocess, `closeSession` mid-turn).
 2. **A native transcript under the same session name** (agent swap native -> claude). Expect the document to be discarded and a fresh ACP session opened, never a crash. Tested in Task 8 (`doc without backend field`).
 3. **A configured model the agent does not offer verbatim** (for example `claude-sonnet-4-5`). Expect the open to reject with `AGENT_SESSION_CAPABILITY_UNSUPPORTED`, no session left in the adapter's live map, and the agent process gone. Tested in Task 10.
 4. **A pending ACP question.** Expect the awaiting-human beat to stop when the reply settles (no timer left running) and the question to consume the shared budget. Tested in Task 6.
@@ -719,10 +719,10 @@ describe("classifyTurnFailure (S4b spec §7.1, cancel rows)", () => {
     expect(classifyTurnFailure(new Error("x"), new DOMException("aborted")).adapterFailure.outcome).toBe("fail-aborted");
   });
 
-  test("no abort: fail-unknown carrying the error's message (S4b-3 adds the code rows)", () => {
+  test("no abort: fail-adapter-error carrying the error's message, as acpx today (S4b-3 adds the code rows)", () => {
     const failure = classifyTurnFailure(new Error("agent exploded"), undefined);
     expect(failure).toMatchObject({ cancelled: false, retryable: false, message: "agent exploded" });
-    expect(failure.adapterFailure).toMatchObject({ outcome: "fail-unknown", retriable: false });
+    expect(failure.adapterFailure).toMatchObject({ category: "availability", outcome: "fail-adapter-error", retriable: false });
   });
 
   test("the message is capped at 500 characters", () => {
@@ -832,7 +832,8 @@ export function failedSpendFields(
  * reason. Every abort uses a fresh reason object, because the backend attaches
  * the failed prompt's spend to the reason it throws (attachTurnSpend keys on it).
  *
- * S4b-2 carries the cancel rows and a fail-unknown fallback (D2-d); S4b-3 adds
+ * S4b-2 carries the cancel rows and a fail-adapter-error fallback, the outcome
+ * session-run-hop.ts synthesizes for an acpx SessionTurnError today (D2-d); S4b-3 adds
  * the rows keyed by the backend's error codes. A deadline expiry is not a
  * failure: the loop returns TurnResult{ timedOut: true } (§6.2 step 2).
  */
@@ -907,7 +908,7 @@ export function classifyTurnFailure(err: unknown, cause: unknown): TurnFailure {
     return failure("fail-aborted", "The turn was aborted", { cancelled: true, retryable: false });
   }
   const message = capped(err instanceof Error ? err.message : String(err));
-  return failure("fail-unknown", message, { cancelled: false, retryable: false });
+  return failure("fail-adapter-error", message, { cancelled: false, retryable: false });
 }
 
 export function turnFailureError(failed: TurnFailure, spend: Spend, rateCard: RateCard): SessionTurnError {
@@ -1322,6 +1323,7 @@ describe("createTurnSlot", () => {
 // test/unit/agents/acp-sdk/ask-port.test.ts
 import { describe, expect, test } from "bun:test";
 import type { AdapterInteraction, InteractionHandler } from "@nathapp/nax-agent";
+import { waitForCondition } from "@test/helpers";
 import { createAskPort } from "@/agents/acp-sdk/ask-port";
 import type { CallBridge } from "@/agents/acp-sdk/stream-bridge";
 import { createTurnSlot, type RunningTurn, type TurnSlot } from "@/agents/acp-sdk/turn-slot";
@@ -1363,8 +1365,6 @@ function harness(handler: InteractionHandler, budget = 5): Harness {
   slot.set(turn);
   return { slot, beats: () => beats, exchanges, controller };
 }
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 describe("createAskPort (S4b spec §6.3)", () => {
   test("askQuestion routes to the interaction handler as a question and records the exchange", async () => {
@@ -1413,13 +1413,12 @@ describe("createAskPort (S4b spec §6.3)", () => {
         }),
     });
     const pending = createAskPort(h.slot, 10).askQuestion("q?");
-    await sleep(45);
-    expect(h.beats()).toBeGreaterThanOrEqual(3);
+    await waitForCondition(() => h.beats() >= 3);
     release("done");
     expect(await pending).toBe("done");
     const settled = h.beats();
-    await sleep(40);
-    expect(h.beats()).toBe(settled);
+    // Polls for a further beat; none may come once the reply settled.
+    await expect(waitForCondition(() => h.beats() > settled, 60)).rejects.toThrow();
   });
 
   test("the turn's abort, or the caller's extra signal, ends the wait with null", async () => {
@@ -1604,7 +1603,7 @@ git commit -m "feat(agents): acp-sdk turn slot and ask port (S4b-2)"
 
 **Interfaces:**
 - Consumes: `acpProfileFor` (Task 3), `TurnSlot` (Task 6).
-- Produces: `backendEnv(modelEnv?: Readonly<Record<string, string>>): Record<string, string>`, `backendOptions(agent: AcpAgentName, opts: OpenSessionOpts): AcpBackendOptions`, `transcriptStoreFor(dir: string | undefined): TranscriptStore`, `OpenContextInput { name; opts; store; resume: TranscriptDoc | undefined; asks; slot; openSignal }`, `openContext(input: OpenContextInput): BackendOpenContext`.
+- Produces: `backendEnv(modelEnv?: Readonly<Record<string, string>>): Record<string, string>`, `backendOptions(agent: AcpAgentName, opts: OpenSessionOpts, onProcess?: AcpProcessHooks): AcpBackendOptions`, `transcriptStoreFor(dir: string | undefined): TranscriptStore`, `OpenContextInput { name; opts; store; resume: TranscriptDoc | undefined; asks; slot; openSignal }`, `openContext(input: OpenContextInput): BackendOpenContext`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1660,6 +1659,12 @@ describe("backendOptions", () => {
     const options = backendOptions("claude", OPTS);
     expect(options).toMatchObject({ agent: "claude", allowUnsandboxed: true, model: "sonnet", inheritEnv: false });
     expect(options.env?.ANTHROPIC_BASE_URL).toBe("https://proxy.example");
+  });
+
+  test("process hooks are passed through when given", () => {
+    const hooks = { spawned: () => {}, exited: () => {} };
+    expect(backendOptions("claude", OPTS, hooks).onProcess).toBe(hooks);
+    expect(backendOptions("claude", OPTS)).not.toHaveProperty("onProcess");
   });
 
   test("an empty model id sets no model option", () => {
@@ -1753,7 +1758,7 @@ import {
   type TranscriptDoc,
   type TranscriptStore,
 } from "@nathapp/nax-agent";
-import type { AcpAgentName, AcpBackendOptions } from "@nathapp/nax-agent-acp/client";
+import type { AcpAgentName, AcpBackendOptions, AcpProcessHooks } from "@nathapp/nax-agent-acp/client";
 import { buildAllowedEnv } from "../shared/env";
 import { acpProfileFor } from "./profile-map";
 import type { TurnSlot } from "./turn-slot";
@@ -1772,7 +1777,11 @@ export function backendEnv(modelEnv?: Readonly<Record<string, string>>): Record<
   );
 }
 
-export function backendOptions(agent: AcpAgentName, opts: OpenSessionOpts): AcpBackendOptions {
+export function backendOptions(
+  agent: AcpAgentName,
+  opts: OpenSessionOpts,
+  onProcess?: AcpProcessHooks,
+): AcpBackendOptions {
   const { model } = parseModelSpec(opts.modelDef.model);
   return {
     agent,
@@ -1780,6 +1789,7 @@ export function backendOptions(agent: AcpAgentName, opts: OpenSessionOpts): AcpB
     ...(model === "" ? {} : { model }),
     env: backendEnv(opts.modelDef.env),
     inheritEnv: false,
+    ...(onProcess === undefined ? {} : { onProcess }),
   };
 }
 
@@ -1854,12 +1864,14 @@ git commit -m "feat(agents): acp-sdk open context, backend options and agent env
 - Consumes: Tasks 5-7.
 - Produces (`session.ts`):
   - `_acpSdkDeps: { acpBackend(options: AcpBackendOptions): SessionBackend; isAgentLaunchable(agent: AcpAgentName): boolean; resolveRateCard(modelId: string): Promise<RateCard>; cwdExists(dir: string): Promise<boolean> }`
-  - `AcpSdkSession { name; agent; opts; handle: SessionHandle; store; slot; asks; closer: AbortController; rateCard; stream: StreamContext; opened: OpenedBackend (mutable); turnInFlight: boolean (mutable); unlinkRun: () => void }`
+  - `ProcessTracker { pid: number | undefined }`
+  - `AcpSdkSession { name; agent; opts; handle: SessionHandle; store; slot; asks; closer: AbortController; process: ProcessTracker; rateCard; stream: StreamContext; opened: OpenedBackend (mutable); running: Promise<void> | undefined (mutable, the settled turn loop); unlinkRun: () => void }`
+  - `ShutdownOptions { waitMs: number; force?: boolean; signal?: AbortSignal }`
   - `createSession(name: string, agent: AcpAgentName, opts: OpenSessionOpts): Promise<AcpSdkSession>`
-  - `shutdownSession(session: AcpSdkSession, waitMs: number, signal?: AbortSignal): Promise<void>`
+  - `shutdownSession(session: AcpSdkSession, options: ShutdownOptions): Promise<void>`
   - `reopenFresh(session: AcpSdkSession): Promise<void>`
   - `closeDeadlineMs(opts: OpenSessionOpts): number`
-- Produces (test helper, imported as `@test/helpers/acp-fake-agent`): `FAKE_ACP_AGENT_MAIN`, `fakeAcpBackend(script, recordPath)`, `readFakeRecords(path)`, `fakeMethods(path)`, `fakeStartPids(path)`, `waitUntil(predicate, timeoutMs?)`, `ScriptedTurn`, `scriptedOpened(turns)`, `replyTurn(output, spend?)`, `hangTurn(spend?)`, `failTurn(err, spend?)`.
+- Produces (test helper, imported as `@test/helpers/acp-fake-agent`): `FAKE_ACP_AGENT_MAIN`, `fakeAcpBackend(script, recordPath)`, `readFakeRecords(path)`, `fakeMethods(path)`, `fakeStartPids(path)`, `ScriptedTurn`, `scriptedOpened(turns)`, `replyTurn(output, spend?)`, `hangTurn(spend?)`, `failTurn(err, spend?)`.
 
 - [ ] **Step 1: Write the test helper**
 
@@ -1962,14 +1974,6 @@ export function fakeStartPids(path: string): number[] {
         ? params.pid
         : -1;
     });
-}
-
-export async function waitUntil(predicate: () => boolean, timeoutMs = 5_000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (!predicate()) {
-    if (Date.now() > deadline) throw new Error("waitUntil: condition not met in time");
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
 }
 
 export type ScriptedTurn = (prompt: string, opts: SendTurnOpts) => Promise<TurnResult>;
@@ -2077,8 +2081,8 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createFileTranscriptStore, isProcessAlive, type OpenSessionOpts } from "@nathapp/nax-agent";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { fakeAcpBackend, fakeMethods, fakeStartPids, waitUntil } from "@test/helpers/acp-fake-agent";
+import { cleanupTempDir, makeTempDir, waitForCondition } from "@test/helpers";
+import { fakeAcpBackend, fakeMethods, fakeStartPids } from "@test/helpers/acp-fake-agent";
 import { _acpSdkDeps, createSession, reopenFresh, shutdownSession } from "@/agents/acp-sdk/session";
 import { FALLBACK_RATES } from "@/agents/cost";
 
@@ -2131,7 +2135,7 @@ describe("createSession (spec §6.1)", () => {
     expect(fakeMethods(record)).toContain("session/new");
     expect(fakeMethods(record)).toContain("session/set_config_option");
     expect(await createFileTranscriptStore(transcripts).load("nax-s1")).toMatchObject({ backend: "acp:claude" });
-    await shutdownSession(session, 2_000);
+    await shutdownSession(session, { waitMs: 2_000 });
   }, 20_000);
 
   test("a matching crash-leftover document is resumed, not recreated", async () => {
@@ -2145,7 +2149,7 @@ describe("createSession (spec §6.1)", () => {
     const session = await createSession("nax-s2", "claude", opts());
     expect(fakeMethods(record)).toContain("session/resume");
     expect(fakeMethods(record)).not.toContain("session/new");
-    await shutdownSession(session, 2_000);
+    await shutdownSession(session, { waitMs: 2_000 });
   }, 20_000);
 
   test("a leftover for another agent is discarded and the session opens fresh (D2-j)", async () => {
@@ -2159,7 +2163,7 @@ describe("createSession (spec §6.1)", () => {
     const session = await createSession("nax-s3", "claude", opts());
     expect(fakeMethods(record)).toContain("session/new");
     expect(fakeMethods(record)).not.toContain("session/resume");
-    await shutdownSession(session, 2_000);
+    await shutdownSession(session, { waitMs: 2_000 });
   }, 20_000);
 
   test("a native transcript under the same name is discarded (Review Focus 2)", async () => {
@@ -2168,7 +2172,7 @@ describe("createSession (spec §6.1)", () => {
     const session = await createSession("nax-s4", "claude", opts());
     expect(fakeMethods(record)).toContain("session/new");
     expect(await createFileTranscriptStore(transcripts).load("nax-s4")).toMatchObject({ backend: "acp:claude" });
-    await shutdownSession(session, 2_000);
+    await shutdownSession(session, { waitMs: 2_000 });
   }, 20_000);
 
   test("a leftover the agent no longer knows is discarded after NOT_FOUND", async () => {
@@ -2182,7 +2186,7 @@ describe("createSession (spec §6.1)", () => {
     const session = await createSession("nax-s5", "claude", opts());
     expect(fakeMethods(record)).toEqual(expect.arrayContaining(["session/resume", "session/new"]));
     expect(session.handle.protocolIds?.sessionId).toBe("fake-session-1");
-    await shutdownSession(session, 2_000);
+    await shutdownSession(session, { waitMs: 2_000 });
   }, 20_000);
 
   test("an unreadable leftover is discarded", async () => {
@@ -2191,7 +2195,7 @@ describe("createSession (spec §6.1)", () => {
     writeFileSync(join(transcripts, "nax-s6.transcript.json"), "{ not json", "utf8");
     const session = await createSession("nax-s6", "claude", opts());
     expect(fakeMethods(record)).toContain("session/new");
-    await shutdownSession(session, 2_000);
+    await shutdownSession(session, { waitMs: 2_000 });
   }, 20_000);
 
   test("an open failure that is not a leftover problem propagates", async () => {
@@ -2207,10 +2211,27 @@ describe("shutdownSession and reopenFresh", () => {
     useFake();
     const session = await createSession("nax-c1", "claude", opts());
     const [pid] = fakeStartPids(record);
-    await shutdownSession(session, 2_000);
+    await shutdownSession(session, { waitMs: 2_000 });
     expect(session.closer.signal.aborted).toBe(true);
-    await waitUntil(() => pid !== undefined && !isProcessAlive(pid));
+    await waitForCondition(() => pid !== undefined && !isProcessAlive(pid), 5_000);
     expect(await createFileTranscriptStore(transcripts).load("nax-c1")).toBeNull();
+  }, 20_000);
+
+  test("pid hooks feed nax's registry; a forced close kills the process group at once (review M1)", async () => {
+    useFake();
+    const spawned: number[] = [];
+    const exited: number[] = [];
+    const session = await createSession(
+      "nax-c3",
+      "claude",
+      opts({ onPidSpawned: (pid) => spawned.push(pid), onPidExited: (pid) => exited.push(pid) }),
+    );
+    const [pid] = fakeStartPids(record);
+    expect(spawned).toEqual([pid ?? -1]);
+    expect(session.process.pid).toBe(pid);
+    await shutdownSession(session, { waitMs: 2_000, force: true });
+    await waitForCondition(() => pid !== undefined && !isProcessAlive(pid), 5_000);
+    await waitForCondition(() => exited.includes(pid ?? -1), 5_000);
   }, 20_000);
 
   test("reopenFresh closes the old process and opens a new session without resume (D2-l)", async () => {
@@ -2222,7 +2243,7 @@ describe("shutdownSession and reopenFresh", () => {
     expect(fakeStartPids(record)).toHaveLength(2);
     expect(fakeMethods(record).filter((m) => m === "session/new")).toHaveLength(2);
     expect(fakeMethods(record)).not.toContain("session/resume");
-    await shutdownSession(session, 2_000);
+    await shutdownSession(session, { waitMs: 2_000 });
   }, 20_000);
 });
 ```
@@ -2258,9 +2279,11 @@ import type {
   TranscriptDoc,
   TranscriptStore,
 } from "@nathapp/nax-agent";
+import { killProcessGroup } from "@nathapp/nax-agent";
 import {
   type AcpAgentName,
   type AcpBackendOptions,
+  type AcpProcessHooks,
   acpBackend,
   isAgentLaunchable,
 } from "@nathapp/nax-agent-acp/client";
@@ -2300,6 +2323,11 @@ export const _acpSdkDeps = {
   },
 };
 
+/** The live agent process, kept current by the backend's onProcess hooks (a reconnect's process included). */
+export interface ProcessTracker {
+  pid: number | undefined;
+}
+
 export interface AcpSdkSession {
   readonly name: string;
   readonly agent: AcpAgentName;
@@ -2310,16 +2338,18 @@ export interface AcpSdkSession {
   readonly asks: SessionAskPort;
   /** Aborted when the session starts closing: the backend's openSignal, and an abort for a running prompt. */
   readonly closer: AbortController;
+  readonly process: ProcessTracker;
   readonly rateCard: RateCard;
   readonly stream: StreamContext;
   /** Replaced by mid-turn NO_SESSION recovery (§6.2 step 3.5); the nax handle never changes. */
   opened: OpenedBackend;
-  turnInFlight: boolean;
+  /** The running turn loop, settled (never rejects); undefined between turns. Close waits for it. */
+  running: Promise<void> | undefined;
   /** Detaches the run signal from `closer`. */
   readonly unlinkRun: () => void;
 }
 
-type OpenBase = Pick<AcpSdkSession, "name" | "agent" | "opts" | "store" | "slot" | "asks" | "closer">;
+type OpenBase = Pick<AcpSdkSession, "name" | "agent" | "opts" | "store" | "slot" | "asks" | "closer" | "process">;
 
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -2338,8 +2368,27 @@ async function discard(store: TranscriptStore, name: string): Promise<void> {
   });
 }
 
+/** onProcess (spec §8): remembers the live pid and feeds nax's pid registry, every process of the session. */
+function processHooks(base: OpenBase): AcpProcessHooks {
+  return {
+    spawned: (pid) => {
+      base.process.pid = pid;
+      base.opts.onPidSpawned?.(pid);
+    },
+    exited: (pid) => {
+      if (base.process.pid === pid) base.process.pid = undefined;
+      base.opts.onPidExited?.(pid);
+    },
+  };
+}
+
+/** Kills the agent's process group now. The backend spawns it detached, so it would outlive nax otherwise. */
+function killAgent(process: ProcessTracker): void {
+  if (process.pid !== undefined) killProcessGroup(process.pid, "SIGKILL");
+}
+
 async function openBackend(base: OpenBase, resume: TranscriptDoc | undefined): Promise<OpenedBackend> {
-  const backend = _acpSdkDeps.acpBackend(backendOptions(base.agent, base.opts));
+  const backend = _acpSdkDeps.acpBackend(backendOptions(base.agent, base.opts, processHooks(base)));
   return backend.open(
     openContext({
       name: base.name,
@@ -2400,7 +2449,7 @@ function linkRunSignal(signal: AbortSignal | undefined, closer: AbortController)
   return () => signal.removeEventListener("abort", onAbort);
 }
 
-function streamContextOf(name: string, opts: OpenSessionOpts): StreamContext {
+function streamContextOf(name: string, opts: OpenSessionOpts, process: ProcessTracker): StreamContext {
   const header = opts.toolAudit?.header;
   return {
     emit: opts.onStreamActivity,
@@ -2410,7 +2459,7 @@ function streamContextOf(name: string, opts: OpenSessionOpts): StreamContext {
     storyId: header?.storyId,
     model: opts.modelDef.model,
     timeoutSeconds: opts.timeoutSeconds,
-    pid: () => undefined,
+    pid: () => process.pid,
   };
 }
 
@@ -2426,6 +2475,7 @@ export async function createSession(name: string, agent: AcpAgentName, opts: Ope
     slot,
     asks: createAskPort(slot),
     closer,
+    process: { pid: undefined },
   };
   try {
     const rateCard = await _acpSdkDeps.resolveRateCard(opts.modelDef.model);
@@ -2438,7 +2488,15 @@ export async function createSession(name: string, agent: AcpAgentName, opts: Ope
       modelDef: opts.modelDef,
       ...(opts.modelTier === undefined ? {} : { modelTier: opts.modelTier }),
     });
-    return { ...base, handle, rateCard, stream: streamContextOf(name, opts), opened, turnInFlight: false, unlinkRun };
+    return {
+      ...base,
+      handle,
+      rateCard,
+      stream: streamContextOf(name, opts, base.process),
+      opened,
+      running: undefined,
+      unlinkRun,
+    };
   } catch (err) {
     unlinkRun();
     throw err;
@@ -2452,7 +2510,7 @@ export function closeDeadlineMs(opts: OpenSessionOpts): number {
 /**
  * Waits for `work` up to `waitMs` (or until `signal` aborts). setTimeout, not
  * Bun.sleep: the timer is cleared as soon as either settles. A close that
- * outlives the wait keeps running; the backend kills the process group itself.
+ * outlives the wait keeps running; the caller kills the process group (killAgent).
  */
 async function settleWithin(work: Promise<void>, waitMs: number, signal?: AbortSignal): Promise<"done" | "cut"> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -2477,24 +2535,40 @@ async function settleWithin(work: Promise<void>, waitMs: number, signal?: AbortS
   }
 }
 
-/** Spec §6.1 close: abort a running prompt, close bounded by the teardown deadline, delete the document. */
-export async function shutdownSession(session: AcpSdkSession, waitMs: number, signal?: AbortSignal): Promise<void> {
+export interface ShutdownOptions {
+  /** The teardown bound (`trackedSpawnDeadlineMs`). */
+  readonly waitMs: number;
+  /** Skips the cancel grace, not the kill (spec §6.1): the process group is killed first. */
+  readonly force?: boolean;
+  readonly signal?: AbortSignal;
+}
+
+/**
+ * Spec §6.1 close: abort a running prompt, close bounded by the teardown
+ * deadline (past it, kill the process group), wait for the turn loop so the
+ * backend's last baseline save lands first, then delete the document.
+ */
+export async function shutdownSession(session: AcpSdkSession, options: ShutdownOptions): Promise<void> {
   session.closer.abort();
   session.unlinkRun();
-  const outcome = await settleWithin(session.opened.close(), waitMs, signal);
+  if (options.force === true) killAgent(session.process);
+  const outcome = await settleWithin(session.opened.close(), options.waitMs, options.signal);
   if (outcome === "cut") {
-    getSafeLogger()?.warn(STAGE, "The ACP agent did not close within the teardown deadline", {
+    getSafeLogger()?.warn(STAGE, "The ACP agent did not close within the teardown deadline; killing it", {
       sessionName: session.name,
-      waitMs,
+      waitMs: options.waitMs,
     });
+    killAgent(session.process);
   }
+  // The backend's sendTurn saves the cost baseline in its finally; let it land before the delete.
+  if (session.running !== undefined) await settleWithin(session.running, options.waitMs);
   // S4b-3: flush the tool-audit sink here, before the document goes.
   await discard(session.store, session.name);
 }
 
 /** Mid-turn NO_SESSION recovery (§6.2 step 3.5): a fresh session under the same name, never a resume (D2-l). */
 export async function reopenFresh(session: AcpSdkSession): Promise<void> {
-  await settleWithin(session.opened.close(), closeDeadlineMs(session.opts));
+  if ((await settleWithin(session.opened.close(), closeDeadlineMs(session.opts))) === "cut") killAgent(session.process);
   await discard(session.store, session.name);
   session.opened = await openBackend(session, undefined);
 }
@@ -2539,6 +2613,7 @@ import {
   type OpenSessionOpts,
   SessionTurnError,
 } from "@nathapp/nax-agent";
+import { waitForCondition } from "@test/helpers";
 import { failTurn, hangTurn, replyTurn, scriptedOpened } from "@test/helpers/acp-fake-agent";
 import { createAskPort } from "@/agents/acp-sdk/ask-port";
 import { _acpSdkDeps, type AcpSdkSession } from "@/agents/acp-sdk/session";
@@ -2590,8 +2665,9 @@ function build(opened: OpenedBackend, overrides: Partial<OpenSessionOpts> = {}):
       timeoutSeconds: 60,
       pid: () => undefined,
     },
+    process: { pid: undefined },
     opened,
-    turnInFlight: false,
+    running: undefined,
     unlinkRun: () => {},
   };
   return { session, events, cancels };
@@ -2696,7 +2772,7 @@ describe("runTurnLoop: deadline, cancel and abort (spec §6.2, §7.1)", () => {
     const script = scriptedOpened([hangTurn()]);
     const built = build(script.opened);
     const pending = runTurnLoop(built.session, "p", { interactionHandler: NONE });
-    while (built.cancels.length === 0) await new Promise((resolve) => setTimeout(resolve, 5));
+    await waitForCondition(() => built.cancels.length > 0);
     await built.cancels[0]?.();
     const err = await pending.catch((e: unknown) => e);
     expect(err).toBeInstanceOf(SessionTurnError);
@@ -2710,7 +2786,7 @@ describe("runTurnLoop: deadline, cancel and abort (spec §6.2, §7.1)", () => {
     const { session } = build(script.opened);
     const run = new AbortController();
     const pending = runTurnLoop(session, "p", { interactionHandler: NONE, signal: run.signal });
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await waitForCondition(() => script.prompts.length === 1);
     run.abort("shutdown");
     await expect(pending).rejects.toMatchObject({ cancelled: true, retryable: false });
   });
@@ -2719,7 +2795,7 @@ describe("runTurnLoop: deadline, cancel and abort (spec §6.2, §7.1)", () => {
     const script = scriptedOpened([hangTurn()]);
     const { session } = build(script.opened);
     const pending = runTurnLoop(session, "p", { interactionHandler: NONE });
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await waitForCondition(() => script.prompts.length === 1);
     session.closer.abort();
     const err = await pending.catch((e: unknown) => e);
     expect((err as SessionTurnError).adapterFailure?.outcome).toBe("fail-aborted");
@@ -2758,7 +2834,7 @@ describe("runTurnLoop: failures", () => {
     await expect(runTurnLoop(session, "p", { interactionHandler: NONE })).rejects.toBeInstanceOf(SessionTurnError);
   });
 
-  test("any other failure throws SessionTurnError fail-unknown with the summed spend", async () => {
+  test("any other failure throws SessionTurnError fail-adapter-error with the summed spend", async () => {
     const script = scriptedOpened([
       replyTurn('<nax_tool_call name="t">{}</nax_tool_call>'),
       failTurn(new Error("agent exploded")),
@@ -2767,7 +2843,7 @@ describe("runTurnLoop: failures", () => {
     const err = await runTurnLoop(session, "p", { interactionHandler: answering("r") }).catch((e: unknown) => e);
     expect(err).toMatchObject({ cancelled: false, retryable: false, message: "agent exploded" });
     expect((err as SessionTurnError).tokenUsage?.inputTokens).toBe(20);
-    expect((err as SessionTurnError).adapterFailure?.outcome).toBe("fail-unknown");
+    expect((err as SessionTurnError).adapterFailure?.outcome).toBe("fail-adapter-error");
   });
 
   test("a second concurrent turn on the session is refused", async () => {
@@ -2930,21 +3006,23 @@ async function runIteration(loop: Loop): Promise<IterationOutcome> {
     unlink();
     throw failed(loop, undefined, controller.signal.reason);
   }
+  // armDeadline and startCall cannot throw; everything that can is inside the try, so the
+  // finally always clears the timer, the abort links and the slot, and call_ended is emitted.
   const timer = armDeadline(controller, loop.deadline.remainingMs());
   const call = startCall(session.stream);
   const turnId = opts.turnId ?? randomUUID();
-  session.opts.onActiveCall?.(call.callId, async () => controller.abort(new WatchdogCancel()));
-  session.slot.set({
-    signal: controller.signal,
-    turnId,
-    interactionHandler: opts.interactionHandler,
-    call,
-    consumeInteraction: () => consumeInteraction(loop),
-    recordExchange: (question, reply) => {
-      state.interactions.push({ turnIndex: state.turnCount, question, reply });
-    },
-  });
   try {
+    session.opts.onActiveCall?.(call.callId, async () => controller.abort(new WatchdogCancel()));
+    session.slot.set({
+      signal: controller.signal,
+      turnId,
+      interactionHandler: opts.interactionHandler,
+      call,
+      consumeInteraction: () => consumeInteraction(loop),
+      recordExchange: (question, reply) => {
+        state.interactions.push({ turnIndex: state.turnCount, question, reply });
+      },
+    });
     const result = await session.opened.adapter.sendTurn(session.opened.handle, state.currentPrompt, {
       ...session.opened.turnOpts(),
       signal: controller.signal,
@@ -3032,32 +3110,37 @@ async function runLoop(loop: Loop): Promise<TurnResult> {
 }
 
 export async function runTurnLoop(session: AcpSdkSession, prompt: string, opts: SendTurnOpts): Promise<TurnResult> {
-  if (session.turnInFlight) {
+  if (session.running !== undefined) {
     throw new NaxError(`ACP session "${session.name}" already has a turn in flight`, "ACP_SDK_TURN_IN_FLIGHT", {
       stage: STAGE,
       sessionName: session.name,
     });
   }
-  session.turnInFlight = true;
+  const run = runLoop({
+    session,
+    opts,
+    max: opts.maxInteractions ?? DEFAULT_MAX_INTERACTIONS,
+    deadline: createTurnDeadline(session.opts.timeoutSeconds),
+    state: {
+      turnCount: 0,
+      asked: 0,
+      spend: NO_SPEND,
+      output: "",
+      currentPrompt: prompt,
+      recovered: false,
+      timedOut: false,
+      interactions: [],
+    },
+  });
+  // shutdownSession waits on this, so the backend's last baseline save lands before the delete.
+  session.running = run.then(
+    () => undefined,
+    () => undefined,
+  );
   try {
-    return await runLoop({
-      session,
-      opts,
-      max: opts.maxInteractions ?? DEFAULT_MAX_INTERACTIONS,
-      deadline: createTurnDeadline(session.opts.timeoutSeconds),
-      state: {
-        turnCount: 0,
-        asked: 0,
-        spend: NO_SPEND,
-        output: "",
-        currentPrompt: prompt,
-        recovered: false,
-        timedOut: false,
-        interactions: [],
-      },
-    });
+    return await run;
   } finally {
-    session.turnInFlight = false;
+    session.running = undefined;
   }
 }
 ```
@@ -3103,8 +3186,8 @@ import {
   type OpenSessionOpts,
   SessionTurnError,
 } from "@nathapp/nax-agent";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { fakeAcpBackend, fakeMethods, fakeStartPids, waitUntil } from "@test/helpers/acp-fake-agent";
+import { cleanupTempDir, makeTempDir, waitForCondition } from "@test/helpers";
+import { fakeAcpBackend, fakeMethods, fakeStartPids } from "@test/helpers/acp-fake-agent";
 import { _acpSdkDeps, AcpSdkAgentAdapter } from "@/agents/acp-sdk";
 import { FALLBACK_RATES } from "@/agents/cost";
 
@@ -3172,7 +3255,7 @@ describe("AcpSdkAgentAdapter over a real agent process", () => {
 
     const [pid] = fakeStartPids(record);
     await adapter.closeSession(handle);
-    await waitUntil(() => pid !== undefined && !isProcessAlive(pid));
+    await waitForCondition(() => pid !== undefined && !isProcessAlive(pid), 5_000);
     await expect(
       adapter.sendTurn(handle, "again", { interactionHandler: NO_OP_INTERACTION_HANDLER }),
     ).rejects.toMatchObject({ code: "ACP_SDK_SESSION_NOT_OPEN" });
@@ -3183,14 +3266,14 @@ describe("AcpSdkAgentAdapter over a real agent process", () => {
     const adapter = new AcpSdkAgentAdapter("claude");
     const handle = await adapter.openSession("nax-a2", opts());
     const pending = adapter.sendTurn(handle, "long", { interactionHandler: NO_OP_INTERACTION_HANDLER });
-    await waitUntil(() => fakeMethods(record).includes("session/prompt"));
+    await waitForCondition(() => fakeMethods(record).includes("session/prompt"), 5_000);
     await adapter.closeSession(handle);
     const err = await pending.catch((e: unknown) => e);
     if (!(err instanceof SessionTurnError)) throw err;
     expect(err.cancelled).toBe(true);
     expect(err.adapterFailure?.outcome).toBe("fail-aborted");
     const [pid] = fakeStartPids(record);
-    await waitUntil(() => pid !== undefined && !isProcessAlive(pid));
+    await waitForCondition(() => pid !== undefined && !isProcessAlive(pid), 5_000);
   }, 30_000);
 
   test("a model the agent does not offer fails the open and leaves nothing (Review Focus 3)", async () => {
@@ -3203,7 +3286,7 @@ describe("AcpSdkAgentAdapter over a real agent process", () => {
       adapter.sendTurn({ id: "nax-a3", agentName: "claude" }, "x", { interactionHandler: NO_OP_INTERACTION_HANDLER }),
     ).rejects.toMatchObject({ code: "ACP_SDK_SESSION_NOT_OPEN" });
     const [pid] = fakeStartPids(record);
-    await waitUntil(() => pid !== undefined && !isProcessAlive(pid));
+    await waitForCondition(() => pid !== undefined && !isProcessAlive(pid), 5_000);
   }, 30_000);
 
   test("closePhysicalSession closes a live handle and ignores an unknown one", async () => {
@@ -3213,7 +3296,7 @@ describe("AcpSdkAgentAdapter over a real agent process", () => {
     await adapter.closePhysicalSession("not-open", dir);
     await adapter.closePhysicalSession("nax-a4", dir, { force: true });
     const [pid] = fakeStartPids(record);
-    await waitUntil(() => pid !== undefined && !isProcessAlive(pid));
+    await waitForCondition(() => pid !== undefined && !isProcessAlive(pid), 5_000);
   }, 30_000);
 
   test("re-opening a live name closes the old session first", async () => {
@@ -3222,7 +3305,7 @@ describe("AcpSdkAgentAdapter over a real agent process", () => {
     await adapter.openSession("nax-a5", opts());
     const handle = await adapter.openSession("nax-a5", opts());
     const [firstPid] = fakeStartPids(record);
-    await waitUntil(() => firstPid !== undefined && !isProcessAlive(firstPid));
+    await waitForCondition(() => firstPid !== undefined && !isProcessAlive(firstPid), 5_000);
     await adapter.closeSession(handle);
   }, 30_000);
 });
@@ -3297,7 +3380,7 @@ Expected: FAIL (module not found).
  * reuse a session, which SessionManager owns (§6.1).
  *
  * S4b-2 scope (D2-d): complete() lands in S4b-3, with promptRetries, the backend
- * deadline options, tool audit, effort and PID callbacks.
+ * deadline options, tool audit and effort.
  */
 import type { OpenSessionOpts, ProtocolIds } from "@nathapp/nax-agent";
 import { NaxError } from "@/errors";
@@ -3408,7 +3491,7 @@ export class AcpSdkAgentAdapter implements AgentAdapter {
     const session = this.live.get(handle.id);
     if (session === undefined) return;
     this.live.delete(handle.id);
-    await shutdownSession(session, closeDeadlineMs(session.opts));
+    await shutdownSession(session, { waitMs: closeDeadlineMs(session.opts) });
   }
 
   /** Closes a session this adapter opened; any other handle is a no-op (spec §11 item 6). */
@@ -3423,7 +3506,11 @@ export class AcpSdkAgentAdapter implements AgentAdapter {
       return;
     }
     this.live.delete(handle);
-    await shutdownSession(session, options?.force === true ? 0 : closeDeadlineMs(session.opts), options?.signal);
+    await shutdownSession(session, {
+      waitMs: closeDeadlineMs(session.opts),
+      force: options?.force === true,
+      ...(options?.signal === undefined ? {} : { signal: options.signal }),
+    });
   }
 
   private requireEntry(sessionName: string): AcpSdkEntry {
@@ -3913,7 +4000,7 @@ export function openSessionExtras(
 `src/session/manager.ts`:
 - in the `./manager-deps` import, drop `deriveNativeTranscriptDir,` (no other use in the file; confirm with `grep -n deriveNativeTranscriptDir src/session/manager.ts`);
 - add `import { openSessionExtras } from "./open-session-extras";` after `import { DEFAULT_ORPHAN_TTL_MS, sweepOrphansImpl } from "./manager-sweep";`;
-- replace the five lines
+- replace the six lines
 
 ```typescript
       // Finding 1: callers never supplied transcriptDir, so derive it here — the one place ADR-028 §3
@@ -3957,7 +4044,7 @@ Run: `timeout 60 bun test test/unit/session/ test/unit/operations/ --timeout=200
 Expected: PASS.
 
 Run: `bun run check:file-sizes`
-Expected: pass. `manager.ts` shrank by three lines. If the gate asks for the grandfathered entry to be lowered, run `bun run check:file-sizes:update` and paste the baseline diff in the commit body.
+Expected: pass. `manager.ts` shrank by four lines. If the gate asks for the grandfathered entry to be lowered, run `bun run check:file-sizes:update` and paste the baseline diff in the commit body.
 
 - [ ] **Step 5: Commit**
 
@@ -4001,7 +4088,7 @@ From `packages/nax`:
 
 ```bash
 bun run build
-grep -c "ACP_SDK_COMPLETE_UNAVAILABLE" dist/nax.js
+grep -c "claude-agent-acp" dist/nax.js
 bun dist/nax.js agents -d .
 SMOKE="$(mktemp -d)"
 mkdir -p "$SMOKE/.nax"
@@ -4011,7 +4098,7 @@ rm -rf "$SMOKE"
 ```
 
 Expected:
-- the `grep` count is at least 1, so nax-agent-acp is in the bundle;
+- the `grep` count is at least 1: that string lives only in nax-agent-acp's registry, so the package is in the bundle;
 - both `agents` runs print the "Available Agents" table with the five ACP rows (`Claude Code (ACP)` ... `Pi Coding Agent (ACP)`) and no "ACP Agent" row;
 - on the second run, a row is "installed" when that agent's ACP launcher or `npx` resolves (with `npx` on PATH, claude, codex and pi show installed).
 
