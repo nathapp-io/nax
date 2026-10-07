@@ -1,13 +1,12 @@
 /**
- * ACP output helpers — context tool parsing, response extraction, and
- * interaction handler wiring. Extracted from adapter.ts.
+ * ACP output helpers — acpx response extraction and token/cost assembly.
+ * Extracted from adapter.ts; the shared parts moved to agents/ in S4b-1.
  */
 
-import type { ToolDescriptor } from "@/context/engine";
 import type { ITokenUsageMapper, RateCard, TokenUsage } from "../cost";
 import { priceCall } from "../cost";
 import { assembleTurnResult } from "../turn";
-import type { AgentRunOptions, InteractionExchange, TurnResult } from "../types";
+import type { InteractionExchange, TurnResult } from "../types";
 import type { AcpSessionResponse } from "./adapter-session-types";
 import type { SessionTokenUsage } from "./wire-types";
 
@@ -23,115 +22,6 @@ export function extractOutput(response: { messages: Array<{ role: string; conten
     .join("\n")
     .trim();
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Context tool helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Render a pull tool's JSON Schema as an agent-readable argument list.
- *
- * The descriptors have always carried a full `inputSchema`, but the preamble
- * used to advertise only name + description — so an agent was told
- * `query_neighbor` exists and never told it needs `filePath`. It had to guess
- * the payload, and a guessed `{}` produced an empty result. Rendering the
- * schema is what closes that gap.
- *
- * Kept tolerant of a partial schema (no `properties`, no `required`, a
- * type-less property): a descriptor that omits a field degrades to a coarser
- * line rather than throwing inside prompt assembly.
- */
-/**
- * Build a concrete call payload for the first advertised tool.
- *
- * The preamble used to show a fixed `{"key":"value"}`, which named no real
- * argument — so an agent had to infer the key, and a wrong guess reached the
- * handler as a missing argument. Deriving the example from the descriptor's
- * own schema means the one worked example is always a valid call.
- *
- * Placeholders are typed rather than invented (`"<string>"`, not a fabricated
- * path) so the example can never be mistaken for a real value to send back.
- */
-function renderCallExample(tool: ToolDescriptor): string {
-  const properties = tool.inputSchema.properties;
-  if (typeof properties !== "object" || properties === null) return "{}";
-
-  const entries = Object.entries(properties as Record<string, unknown>);
-  const required = new Set(
-    Array.isArray(tool.inputSchema.required)
-      ? tool.inputSchema.required.filter((name): name is string => typeof name === "string")
-      : [],
-  );
-
-  // Required arguments make the example a valid call; when none are declared,
-  // the first optional one still shows the payload shape.
-  const shown = entries.filter(([name]) => required.has(name));
-  const chosen = shown.length > 0 ? shown : entries.slice(0, 1);
-  if (chosen.length === 0) return "{}";
-
-  const fields = chosen.map(([name, raw]) => {
-    const spec = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
-    const type = typeof spec.type === "string" ? spec.type : "any";
-    const placeholder = type === "number" ? "1" : type === "boolean" ? "true" : `"<${type}>"`;
-    return `"${name}": ${placeholder}`;
-  });
-
-  return `{${fields.join(", ")}}`;
-}
-
-function renderToolArguments(inputSchema: Record<string, unknown>): string {
-  const properties = inputSchema.properties;
-  if (typeof properties !== "object" || properties === null) return "";
-
-  const required = new Set(
-    Array.isArray(inputSchema.required) ? inputSchema.required.filter((name) => typeof name === "string") : [],
-  );
-
-  const lines = Object.entries(properties as Record<string, unknown>).map(([name, raw]) => {
-    const spec = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
-    const type = typeof spec.type === "string" ? spec.type : "any";
-    const necessity = required.has(name) ? "required" : "optional";
-    const description = typeof spec.description === "string" ? `: ${spec.description}` : "";
-    return `  - ${name} (${type}, ${necessity})${description}`;
-  });
-
-  return lines.length > 0 ? `\n  Arguments:\n${lines.join("\n")}` : "";
-}
-
-export function buildContextToolPreamble(options: AgentRunOptions): string {
-  const tools = options.contextPullTools;
-  if (!tools || tools.length === 0 || !options.contextToolRuntime) {
-    return options.prompt;
-  }
-
-  const toolList = tools
-    .map(
-      (tool) =>
-        `- ${tool.name}: ${tool.description} (max ${tool.maxCallsPerSession} calls/session)` +
-        renderToolArguments(tool.inputSchema),
-    )
-    .join("\n");
-
-  const example = tools[0];
-  const exampleCall = example
-    ? `<nax_tool_call name="${example.name}">\n${renderCallExample(example)}\n</nax_tool_call>`
-    : "";
-
-  return `${options.prompt}
-
-## Context Pull Tools
-When you need more repo context, you may request one tool call by replying with exactly:
-${exampleCall}
-
-Pass the arguments listed for the tool you are calling.
-
-Available tools:
-${toolList}
-
-After you receive a <nax_tool_result ...> block, continue the task normally.`;
-}
-
-export { buildRunInteractionHandler } from "../run-interaction-handler";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Turn result assembly (US-001)

@@ -47,12 +47,7 @@ export {
   runSessionPrompt,
 } from "./adapter-lifecycle";
 export type { BuildTurnResultInput } from "./adapter-output";
-export {
-  buildContextToolPreamble,
-  buildRunInteractionHandler,
-  buildTurnResult,
-  deriveTokenUsage,
-} from "./adapter-output";
+export { buildTurnResult, deriveTokenUsage } from "./adapter-output";
 export type { AcpClient, AcpSession, AcpSessionResponse } from "./adapter-session-types";
 
 // ─────────────────────────────────────────────────────────────────────────────

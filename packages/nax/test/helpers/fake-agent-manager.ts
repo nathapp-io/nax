@@ -1,7 +1,8 @@
 import { NO_OP_INTERACTION_HANDLER } from "@nathapp/nax-agent";
-import { buildContextToolPreamble, buildRunInteractionHandler } from "@/agents/acp/adapter";
 import type { IAgentManager } from "@/agents/manager-types";
+import { buildRunInteractionHandler } from "@/agents/run-interaction-handler";
 import { toSessionModel } from "@/agents/session-model-mapping";
+import { buildContextToolPreamble } from "@/agents/tool-preamble";
 import type { AgentAdapter, AgentResult, CompleteOptions, ResolvedCompleteOptions } from "@/agents/types";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config";
