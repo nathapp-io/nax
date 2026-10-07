@@ -11,6 +11,7 @@ step with `@nathapp/nax-agent`.
 - `effort` option: sets the agent's reasoning effort after the model; skipped with a warning when not offered.
 - `onProcess` option (`AcpProcessHooks`): `spawned(pid)` and `exited(pid)` for every agent process, including after a reconnect.
 - `tool_result` events carry `resultBytes`: the UTF-8 byte length of the full result before the preview cap (0 for a call the turn never answered).
+- `isAgentLaunchable` and `launchCandidateKind`: whether a registered agent's launcher resolves on PATH, and whether only the npx fallback does.
 
 ### Fixed
 

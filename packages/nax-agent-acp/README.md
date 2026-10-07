@@ -52,6 +52,14 @@ What to know:
 - **A crash between `session/new` and the first save** loses the agent's session
   id. The next `createAgentSession` with the same id starts fresh.
 
+## Is the agent installed?
+
+`isAgentLaunchable(agent, env?)` is true when one of the agent's registry launch
+candidates resolves on `PATH`, using the same resolution the backend uses at spawn.
+`launchCandidateKind(agent, env?)` says which: `"local"` for the agent's own launcher,
+`"npx"` when only the npx fallback resolves (the first open then downloads the
+launcher), or `undefined`.
+
 ## Resume and reconnect
 
 ```ts
