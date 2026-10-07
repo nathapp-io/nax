@@ -35,6 +35,15 @@ export function discoverCheckScripts(root: string): string[] {
   return readdirSync(dir).filter((name) => name.startsWith("check-") && (name.endsWith(".ts") || name.endsWith(".sh")));
 }
 
+/** Every workspace package that has a scripts/ directory, so a gate added to any package is policed, not just nax and repo-tooling (#2323). */
+function workspacePackageRoots(repoRoot: string): string[] {
+  const packagesDir = join(repoRoot, "packages");
+  if (!existsSync(packagesDir)) return [];
+  return readdirSync(packagesDir)
+    .map((entry) => join(packagesDir, entry))
+    .filter((dir) => existsSync(join(dir, "scripts")));
+}
+
 export interface CiEntryPoints {
   /** package.json script names CI invokes, e.g. "lint", "check:all". */
   scriptNames: string[];
@@ -186,8 +195,6 @@ export function findUnreachableCheckScripts(inputs: UnreachableInputs): string[]
   return inputs.checkScripts.filter((name) => !reachable.has(name)).sort(byCodePoint);
 }
 
-const TOOLING_DIR = join("packages", "repo-tooling");
-
 function readScripts(dir: string): Record<string, string> {
   const file = join(dir, "package.json");
   if (!existsSync(file)) return {};
@@ -227,7 +234,7 @@ function collectReachablePaths(packageRoot: string, scriptNames: string[], direc
 }
 
 /** Resolves every input from the repo on disk, then applies the rule.
- *  The checked scripts are `packageRoot/scripts` plus repo-tooling's (S2-0).
+ * The checked scripts are every workspace package's `scripts/` (#2323).
  *  CI run commands are resolved only against the package in that job/step's
  *  working directory, and scripts are compared by resolved path. */
 export function findUnreachableCheckScriptsInRepo(packageRoot: string, repoRoot: string): string[] {
@@ -255,9 +262,8 @@ export function findUnreachableCheckScriptsInRepo(packageRoot: string, repoRoot:
     for (const file of collectReachablePaths(cwdPackage, scriptNames, directPaths)) reached.add(file);
   }
 
-  const checkScripts = [packageRoot, join(repoRoot, TOOLING_DIR)].flatMap((root) =>
-    discoverCheckScripts(root).map((name) => join(root, "scripts", name)),
-  );
+  const roots = [...new Set([resolve(packageRoot), ...workspacePackageRoots(repoRoot).map((dir) => resolve(dir))])];
+  const checkScripts = roots.flatMap((root) => discoverCheckScripts(root).map((name) => join(root, "scripts", name)));
   const basenameCounts = new Map<string, number>();
   for (const file of checkScripts) {
     const name = file.slice(file.lastIndexOf(sep) + 1);
@@ -283,10 +289,9 @@ function main() {
     process.exit(1);
   }
 
-  const total = [packageRoot, join(findRepoRoot(packageRoot), TOOLING_DIR)].reduce(
-    (count, root) => count + discoverCheckScripts(root).length,
-    0,
-  );
+  const repoRoot = findRepoRoot(packageRoot);
+  const roots = [...new Set([resolve(packageRoot), ...workspacePackageRoots(repoRoot).map((dir) => resolve(dir))])];
+  const total = roots.reduce((count, root) => count + discoverCheckScripts(root).length, 0);
   console.log(`OK: all ${total} check scripts are reachable from CI`);
 }
 

@@ -102,6 +102,27 @@ describe("check-package-boundaries", () => {
     expect(whys()).toEqual(["packages/nax-agent/src/bad.ts ../../nax/src/config relative import leaves the package"]);
   });
 
+  test("nax-agent src/ may not import itself by package name", () => {
+    workspace();
+    write("packages/nax-agent/src/drift.ts", 'import { x } from "@nathapp/nax-agent/internal";\n');
+    const violations = findBoundaryViolations(root);
+    expect(violations).toContainEqual(
+      expect.objectContaining({
+        file: expect.stringContaining("src/drift.ts"),
+        why: expect.stringContaining("self-import"),
+      }),
+    );
+  });
+
+  test("nax-agent test/ may import the public entry by name (the packaging tests)", () => {
+    workspace();
+    write(
+      "packages/nax-agent/test/unit/surface.test.ts",
+      'import * as pub from "@nathapp/nax-agent";\nimport * as internal from "@nathapp/nax-agent/internal";\n',
+    );
+    expect(findBoundaryViolations(root)).toEqual([]);
+  });
+
   test("an explicit .ts relative path is judged by where it lands, not by its extension", () => {
     workspace();
     write(

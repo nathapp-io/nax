@@ -80,16 +80,20 @@
   },
   "overrides": [
     {
-      "includes": [
-        "src/**"
-      ],
+      "includes": ["src/**", "!src/cli/**", "!src/commands/**", "!src/config/loader.ts"],
       "plugins": [
         "../nax/biome-plugins/no-process-cwd.grit"
       ]
     },
     {
       "includes": [
-        "scripts/**"
+        "bin/**",
+        "scripts/**",
+        "src/cli/**",
+        "src/commands/**",
+        "src/precheck/index.ts",
+        "src/execution/lifecycle/headless-formatter.ts",
+        "src/logger/logger.ts"
       ],
       "linter": {
         "rules": {

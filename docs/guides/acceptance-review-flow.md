@@ -76,7 +76,6 @@ PRD loaded (stories with acceptance criteria)
 - `src/pipeline/stages/acceptance-setup.ts` — pipeline stage entry
 - `src/acceptance/generator.ts` — test code generation
 - `src/acceptance/refinement.ts` — AC refinement (raw → testable)
-- `src/acceptance/templates/` — strategy-specific templates
 - `src/acceptance/test-path.ts` — path resolution
 
 **Flow:**

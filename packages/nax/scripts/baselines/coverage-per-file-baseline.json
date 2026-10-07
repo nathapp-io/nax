@@ -1,7 +1,7 @@
 {
-  "updatedAt": "2026-09-21T15:19:25.903Z",
+  "updatedAt": "2026-10-06T17:56:22.679Z",
   "byFile": {
-    "src/execution/feature-lock.ts": 0.7273,
-    "src/execution/lock.ts": 0.7442
+    "src/commands/detect.ts": 0.3554,
+    "src/execution/feature-lock.ts": 0.7662
   }
 }

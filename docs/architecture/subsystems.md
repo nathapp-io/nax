@@ -256,18 +256,6 @@ Skips strict file isolation for performance. Test-writer may add src/ stubs; imp
 - **Fix execution** (`acceptanceFixSourceOp` / `acceptanceFixTestOp`): driven by `runFixCycle` from the acceptance retry loop (`src/execution/lifecycle/acceptance-loop.ts`), which also regenerates the test file when failures look test-level
 - **Hardening** (`hardening.ts`): non-blocking pass that tests plan-suggested criteria after acceptance passes and promotes the passing ones
 
-### Templates
-
-`src/acceptance/templates/`:
-
-| Template | File | Use case |
-|:---------|:-----|:---------|
-| Unit | `unit.ts` | Pure function testing |
-| Component | `component.ts` | React Testing Library |
-| E2E | `e2e.ts` | Playwright browser tests |
-| CLI | `cli.ts` | Command-line tool testing |
-| Snapshot | `snapshot.ts` | Output stability |
-
 ### RED Gate
 
 The `acceptanceSetupStage` generates tests and verifies they fail (RED) before implementation. This ensures tests are meaningful — they don't accidentally pass without the feature being implemented.

@@ -290,6 +290,33 @@ describe("findUnreachableCheckScriptsInRepo across workspace packages", () => {
 
     expect(findUnreachableCheckScriptsInRepo(join(repo, "packages", "nax"), repo)).toEqual(["check-nax.ts"]);
   });
+
+  test("a third package's gate reached through its own CI job is not reported", () => {
+    repo = makeTempDir("gate-reach-third-ok-");
+    file(
+      ".github/workflows/ci.yml",
+      "jobs:\n  nax:\n    defaults:\n      run:\n        working-directory: packages/nax\n    steps:\n      - run: bun run build\n  nax-ai:\n    defaults:\n      run:\n        working-directory: packages/nax-ai\n    steps:\n      - run: bun run check:all\n",
+    );
+    file("packages/nax/package.json", JSON.stringify({ scripts: { build: "echo ok" } }));
+    file(
+      "packages/nax-ai/package.json",
+      JSON.stringify({ scripts: { "check:all": "bun run lint", lint: "bun run scripts/check-pi.ts" } }),
+    );
+    file("packages/nax-ai/scripts/check-pi.ts", "");
+    expect(findUnreachableCheckScriptsInRepo(join(repo, "packages", "nax"), repo)).toEqual([]);
+  });
+
+  test("a third package's gate no job reaches is reported", () => {
+    repo = makeTempDir("gate-reach-third-orphan-");
+    file(
+      ".github/workflows/ci.yml",
+      "jobs:\n  nax:\n    defaults:\n      run:\n        working-directory: packages/nax\n    steps:\n      - run: bun run build\n",
+    );
+    file("packages/nax/package.json", JSON.stringify({ scripts: { build: "echo ok" } }));
+    file("packages/nax-ai/package.json", JSON.stringify({ scripts: { lint: "echo lint only" } }));
+    file("packages/nax-ai/scripts/check-pi.ts", "");
+    expect(findUnreachableCheckScriptsInRepo(join(repo, "packages", "nax"), repo)).toEqual(["check-pi.ts"]);
+  });
 });
 
 describe("the nax repo itself", () => {

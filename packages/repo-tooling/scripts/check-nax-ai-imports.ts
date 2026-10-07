@@ -2,7 +2,8 @@
 
 /**
  * Fails if @nathapp/nax-ai is imported outside the allow-listed sites of the
- * package being scanned (read from its package.json name):
+ * package being scanned (read from its package.json name).
+ * Default-deny: a package with no allow-list entry fails the gate (#2323).
  * - packages/nax: src/agents/catalog/ only. nax reaches the R3 usage and rate
  *   types through @nathapp/nax-agent's re-export (S1 spec section 7).
  * - packages/nax-agent: src/native/ and the R3 re-export src/cost/standard-types.ts.
@@ -32,10 +33,23 @@ const NAX_AGENT: AllowList = {
   files: [join("src", "cost", "standard-types.ts")],
 };
 
+/**
+ * The scanned package's allow-list. Default-deny, like the RULES map in
+ * check-package-boundaries.ts: a package (or a tree with no readable package
+ * name) with no entry fails the gate instead of silently inheriting nax's
+ * rule — a fourth package would otherwise be policed by a rule written for a
+ * different dependency layout (#2323 item 3).
+ */
 async function allowListFor(root: string): Promise<AllowList> {
   const pkg = Bun.file(join(root, "package.json"));
   const name = (await pkg.exists()) ? ((await pkg.json()) as { name?: string }).name : undefined;
-  return name === "@nathapp/nax-agent" ? NAX_AGENT : NAX;
+  if (name === "@nathapp/nax-agent") return NAX_AGENT;
+  if (name === "@nathapp/nax") return NAX;
+  console.error(
+    `check-nax-ai-imports: no nax-ai allow-list for package ${name ?? "(package.json missing or has no name)"} — ` +
+      "the gate refuses to fall back to nax's rule. Add the package to allowListFor.",
+  );
+  process.exit(1);
 }
 
 const ALLOWED = await allowListFor(ROOT);

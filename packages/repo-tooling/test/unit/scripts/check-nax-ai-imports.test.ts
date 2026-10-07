@@ -48,6 +48,7 @@ describe("check-nax-ai-imports", () => {
 
   test("fails when nax-ai is imported from outside that directory", () => {
     const root = tree({
+      "package.json": JSON.stringify({ name: "@nathapp/nax" }),
       "src/agents/manager.ts": 'import { createClient } from "@nathapp/nax-ai";\n',
     });
     const { code, out } = runGate(root);
@@ -58,6 +59,7 @@ describe("check-nax-ai-imports", () => {
 
   test("ignores the import name inside a comment", () => {
     const root = tree({
+      "package.json": JSON.stringify({ name: "@nathapp/nax" }),
       "src/agents/manager.ts": "// see @nathapp/nax-ai for the client\nexport const x = 1;\n",
     });
     const { code } = runGate(root);
@@ -71,6 +73,7 @@ describe("check-nax-ai-imports", () => {
   // own import would silently fail the gate.
   test("passes when nax-ai is imported only from src/agents/catalog", () => {
     const root = tree({
+      "package.json": JSON.stringify({ name: "@nathapp/nax" }),
       "src/agents/catalog/lookup.ts": 'import { defaultProviders } from "@nathapp/nax-ai";\n',
       "src/agents/registry.ts": 'import { CatalogLookup } from "./catalog";\n',
     });
@@ -82,6 +85,7 @@ describe("check-nax-ai-imports", () => {
 
   test("nax: src/agents/native is no longer an allowed site, since the native agent moved to nax-agent", () => {
     const root = tree({
+      "package.json": JSON.stringify({ name: "@nathapp/nax" }),
       "src/agents/native/client.ts": 'import { createClient } from "@nathapp/nax-ai";\n',
       "src/agents/catalog/lookup.ts": 'import { defaultProviders } from "@nathapp/nax-ai";\n',
     });
@@ -126,5 +130,26 @@ describe("check-nax-ai-imports", () => {
     rmSync(root, { recursive: true, force: true });
     expect(code).toBe(0);
     expect(out).toContain("clean");
+  });
+
+  // Default-deny, like the RULES map in check-package-boundaries.ts: a package
+  // with no rule must fail the gate, not inherit nax's allow-list (#2323 item 3).
+  test("fails closed for a package with no allow-list rule", () => {
+    const root = tree({
+      "package.json": JSON.stringify({ name: "@nathapp/nax-repo-tooling" }),
+      "src/index.ts": "export const x = 1;\n",
+    });
+    const { code, out } = runGate(root);
+    rmSync(root, { recursive: true, force: true });
+    expect(code).not.toBe(0);
+    expect(out).toContain("no nax-ai allow-list");
+  });
+
+  test("fails closed when the tree has no package.json", () => {
+    const root = tree({ "src/index.ts": "export const x = 1;\n" });
+    const { code, out } = runGate(root);
+    rmSync(root, { recursive: true, force: true });
+    expect(code).not.toBe(0);
+    expect(out).toContain("no nax-ai allow-list");
   });
 });

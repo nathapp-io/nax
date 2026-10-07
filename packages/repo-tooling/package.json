@@ -15,7 +15,9 @@
     "lint": "bun x biome check --error-on-warnings --diagnostic-level=warn scripts/ test/",
     "lint:fix": "bun x biome check --write scripts/ test/",
     "test": "bun test ./test/unit/ --timeout=60000",
-    "check:all": "bun run --silent lint"
+    "check:complexity": "bun scripts/check-complexity.ts",
+    "check:complexity:update": "bun scripts/check-complexity.ts --update-baseline",
+    "check:all": "bun run --silent lint && bun run --silent check:complexity"
   },
   "dependencies": {
     "typescript": "7.0.2"
