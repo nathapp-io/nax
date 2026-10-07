@@ -22,6 +22,12 @@ export type AcpAgentSpec =
   | AcpAgentName
   | { readonly name: string; readonly command: string; readonly args?: readonly string[] };
 
+/** Called for every agent process the backend spawns, including a reconnect's (S4b spec §8). Errors are logged and ignored. */
+export interface AcpProcessHooks {
+  spawned?(pid: number): void;
+  exited?(pid: number): void;
+}
+
 export interface AcpBackendOptions {
   readonly agent: AcpAgentSpec;
   /** Required: the agent process runs on the host, unsandboxed (R7). */
@@ -39,6 +45,8 @@ export interface AcpBackendOptions {
   readonly args?: readonly string[];
   readonly cancelGraceMs?: number;
   readonly initializeTimeoutMs?: number;
+  /** Called with the pid of every agent process, including after a reconnect. Not called when the spawn fails. */
+  readonly onProcess?: AcpProcessHooks;
 }
 
 export type AcpLaunch =
@@ -59,6 +67,7 @@ export interface ResolvedAcpOptions {
   readonly secrets: readonly string[];
   readonly cancelGraceMs: number;
   readonly initializeTimeoutMs: number;
+  readonly onProcess: AcpProcessHooks | undefined;
 }
 
 const noNul = (value: string): boolean => !value.includes("\u0000");
@@ -113,7 +122,17 @@ function launchOf(data: ParsedOptions, entry: AgentRegistryEntry | undefined): A
   return { kind: "registry", candidates: entry?.launch ?? [] };
 }
 
-function resolved(data: ParsedOptions, source: Readonly<Record<string, string | undefined>>): ResolvedAcpOptions {
+function isProcessHooks(value: unknown): value is AcpProcessHooks {
+  if (!isRecord(value)) return false;
+  const fnOrAbsent = (v: unknown) => v === undefined || typeof v === "function";
+  return fnOrAbsent(value.spawned) && fnOrAbsent(value.exited);
+}
+
+function resolved(
+  data: ParsedOptions,
+  source: Readonly<Record<string, string | undefined>>,
+  onProcess: AcpProcessHooks | undefined,
+): ResolvedAcpOptions {
   const agentName = typeof data.agent === "string" ? data.agent : data.agent.name;
   const entry = typeof data.agent === "string" ? registryEntry(data.agent) : undefined;
   const env = buildAgentEnv({
@@ -133,6 +152,7 @@ function resolved(data: ParsedOptions, source: Readonly<Record<string, string | 
     secrets: Object.freeze([...secretValues(env)]),
     cancelGraceMs: data.cancelGraceMs ?? DEFAULT_CANCEL_GRACE_MS,
     initializeTimeoutMs: data.initializeTimeoutMs ?? DEFAULT_INITIALIZE_TIMEOUT_MS,
+    onProcess,
   });
 }
 
@@ -147,7 +167,16 @@ export function resolveAcpOptions(
       { path: "allowUnsandboxed" },
     );
   }
-  const parsed = SCHEMA.safeParse(input);
+  // Functions are checked by hand: the zod schema validates plain data only.
+  const { onProcess, ...rest } = input;
+  if (onProcess !== undefined && !isProcessHooks(onProcess)) {
+    throw new AgentSessionError(
+      "Invalid acpBackend options: onProcess: spawned and exited must be functions",
+      "AGENT_SESSION_INVALID_OPTIONS",
+      { path: "onProcess" },
+    );
+  }
+  const parsed = SCHEMA.safeParse(rest);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
     const path = issue === undefined ? "" : issue.path.map(String).join(".");
@@ -157,5 +186,5 @@ export function resolveAcpOptions(
       { path },
     );
   }
-  return resolved(parsed.data, source);
+  return resolved(parsed.data, source, onProcess);
 }

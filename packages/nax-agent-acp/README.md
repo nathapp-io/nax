@@ -37,6 +37,8 @@ What to know:
   after the profile's mode: the model only when the agent offers it (else
   `AGENT_SESSION_CAPABILITY_UNSUPPORTED`), the effort through the agent's `thought_level`
   option (or its known effort option) and skipped with a warning when the value is not offered.
+- **Agent processes.** `onProcess: { spawned(pid), exited(pid) }` is called for every agent
+  process, including a reconnect's; not when the spawn fails. A throwing hook is logged and ignored.
 - **Rate limits.** A prompt the agent rejects with structured `data.errorKind: "rate_limit"`
   (as Claude's adapter does) ends `AGENT_SESSION_RATE_LIMITED`. It is read from structured error
   data only, never from message text; Claude's adapter sends no retry-after.

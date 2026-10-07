@@ -19,7 +19,10 @@ export interface InMemoryAgent {
   crash(code?: number): void;
 }
 
-export function inMemoryAgent(script: FakeScript = {}): InMemoryAgent {
+export function inMemoryAgent(
+  script: FakeScript = {},
+  extra: { readonly pids?: readonly number[] } = {},
+): InMemoryAgent {
   const calls: FakeRecord[] = [];
   const requests: LaunchRequest[] = [];
   const counts = { kills: 0, terminations: 0 };
@@ -41,7 +44,7 @@ export function inMemoryAgent(script: FakeScript = {}): InMemoryAgent {
     });
     const launched: LaunchedAgent = {
       target: { kind: "app", agent: app },
-      pid: undefined,
+      pid: extra.pids?.[requests.length - 1],
       stderr: createStderrTail(),
       exited,
       whenGone: (waitMs) =>

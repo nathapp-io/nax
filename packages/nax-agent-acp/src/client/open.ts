@@ -39,7 +39,7 @@ import {
   rpcErrorOf,
 } from "#src/client/errors";
 import { agentGoneError, type LaunchedAgent, type LaunchFn, pickCandidate } from "#src/client/launch";
-import type { ResolvedAcpOptions } from "#src/client/options";
+import type { AcpProcessHooks, ResolvedAcpOptions } from "#src/client/options";
 import { claudeSessionMeta } from "#src/client/pre-approval";
 import { race } from "#src/client/race";
 import type { LaunchCandidate } from "#src/client/registry";
@@ -105,6 +105,7 @@ export async function openAcpSession(
   if (ctx.openSignal.aborted) throw closedDuringOpen(ctx.sessionId);
   const candidate = chooseLaunch(options);
   const launched = launch({ command: candidate.command, args: candidate.args, cwd: ctx.workdir, env: options.env });
+  watchProcess(options.onProcess, launched);
   const link = openConnection(launched.target, handlers);
   void launched.exited.then(() =>
     link.close(new NaxError("The ACP agent process exited", "ACP_AGENT_EXITED", { stage: "acp" })),
@@ -116,6 +117,23 @@ export async function openAcpSession(
     link.close();
     throw err;
   }
+}
+
+/** S4b spec §8: report the agent process to the embedder; a throwing hook is logged, never propagated. */
+function watchProcess(hooks: AcpProcessHooks | undefined, launched: LaunchedAgent): void {
+  const pid = launched.pid;
+  if (hooks === undefined || pid === undefined) return;
+  const call = (name: "spawned" | "exited"): void => {
+    try {
+      hooks[name]?.(pid);
+    } catch (err) {
+      getLogger().warn("acp", `onProcess.${name} threw; ignored`, {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
+  call("spawned");
+  void launched.exited.then(() => call("exited"));
 }
 
 async function step<T>(o: Opening, label: string, request: Promise<T>): Promise<T> {

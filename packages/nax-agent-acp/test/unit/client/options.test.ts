@@ -123,3 +123,23 @@ describe("resolveAcpOptions: effort (S4b spec §8)", () => {
     });
   });
 });
+
+describe("resolveAcpOptions: onProcess (S4b spec §8)", () => {
+  test("hooks are kept by reference; absent by default", () => {
+    const hooks = { spawned: () => {}, exited: () => {} };
+    expect(resolveAcpOptions({ agent: "claude", allowUnsandboxed: true }, SOURCE).onProcess).toBeUndefined();
+    expect(resolveAcpOptions({ agent: "claude", allowUnsandboxed: true, onProcess: hooks }, SOURCE).onProcess).toBe(
+      hooks,
+    );
+  });
+
+  test.each<[unknown]>([[{ spawned: 1 }], ["x"], [{ exited: "no" }], [null]])(
+    "onProcess %p is AGENT_SESSION_INVALID_OPTIONS",
+    (onProcess) => {
+      expect(invalid({ agent: "claude", allowUnsandboxed: true, onProcess })).toEqual({
+        code: "AGENT_SESSION_INVALID_OPTIONS",
+        path: "onProcess",
+      });
+    },
+  );
+});

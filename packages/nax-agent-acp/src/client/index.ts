@@ -10,5 +10,5 @@
  */
 export { acpBackend } from "#src/client/backend";
 export { ACP_STOP_CODES, type AcpStopCode } from "#src/client/errors";
-export type { AcpAgentSpec, AcpBackendOptions } from "#src/client/options";
+export type { AcpAgentSpec, AcpBackendOptions, AcpProcessHooks } from "#src/client/options";
 export type { AcpAgentName } from "#src/client/registry";

@@ -9,6 +9,7 @@ import {
 import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
 import { waitForCondition } from "@nathapp/nax-test-kit/bun/timeout";
 import { _acpBackendDeps, acpBackend } from "#src/client/backend";
+import type { AcpProcessHooks } from "#src/client/options";
 import { CLAUDE_CONFIG_OPTIONS, type FakeScript, type FakeStep } from "#test/fixtures/fake-agent/script";
 import { type InMemoryAgent, inMemoryAgent } from "#test/helpers/in-memory-launch";
 import { driveTurn, endOf } from "#test/helpers/session-events";
@@ -45,8 +46,9 @@ async function open(
   script: FakeScript,
   tools: EmbedderTool[] = [],
   instructions?: string,
+  process: { readonly onProcess?: AcpProcessHooks; readonly pids?: readonly number[] } = {},
 ): Promise<{ fake: InMemoryAgent; session: AgentSession }> {
-  const fake = inMemoryAgent({ ...RESUMABLE, ...script });
+  const fake = inMemoryAgent({ ...RESUMABLE, ...script }, process.pids === undefined ? {} : { pids: process.pids });
   _acpBackendDeps.launch = fake.launch;
   const session = await createAgentSession({
     backend: acpBackend({
@@ -54,6 +56,7 @@ async function open(
       allowUnsandboxed: true,
       command: "fake-claude",
       initializeTimeoutMs: 30_000,
+      ...(process.onProcess === undefined ? {} : { onProcess: process.onProcess }),
     }),
     profile: "full",
     workdir,
@@ -90,6 +93,23 @@ describe("reconnect after a crash (spec §6.3 step 5, S4-6 D6-g)", () => {
     expect(fake.requests).toHaveLength(2);
     expect(fake.callsTo("session/resume")).toEqual([{ sessionId: "fake-session-1", cwd: workdir, mcpServers: [] }]);
     expect(session.backend.capabilities).toMatchObject({ restoredWith: "resume" });
+  });
+
+  test("S4b: onProcess fires for the reconnect's new process too", async () => {
+    const seen: string[] = [];
+    const onProcess = {
+      spawned: (pid: number) => seen.push(`spawned ${pid}`),
+      exited: (pid: number) => seen.push(`exited ${pid}`),
+    };
+    const { fake, session } = await open({ relaunch: { turns: [{ steps: [text("back")] }] } }, [], undefined, {
+      onProcess,
+      pids: [11, 12],
+    });
+    await driveTurn(session, "one");
+    fake.crash();
+    await waitForCondition(() => seen.includes("exited 11"), 2_000);
+    await driveTurn(session, "two");
+    expect(seen).toEqual(["spawned 11", "exited 11", "spawned 12"]);
   });
 
   test("a crash mid-turn errors that turn; the next one reconnects", async () => {

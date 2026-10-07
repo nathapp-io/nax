@@ -6,6 +6,7 @@ ACP_STOP_CODES
 type AcpAgentName
 type AcpAgentSpec
 type AcpBackendOptions
+type AcpProcessHooks
 type AcpStopCode
 acpBackend
 

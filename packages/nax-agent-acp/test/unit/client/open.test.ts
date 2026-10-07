@@ -45,8 +45,13 @@ function options(extra: Partial<AcpBackendOptions> = {}) {
   );
 }
 
-async function openWith(script: FakeScript, extra: Partial<AcpBackendOptions> = {}, store?: TranscriptStore) {
-  const fake = inMemoryAgent(script);
+async function openWith(
+  script: FakeScript,
+  extra: Partial<AcpBackendOptions> = {},
+  store?: TranscriptStore,
+  pids?: readonly number[],
+) {
+  const fake = inMemoryAgent(script, pids === undefined ? {} : { pids });
   const ctx = openContext(dir, store === undefined ? {} : { transcriptStore: store });
   const opened = openAcpSession(
     options(extra),
@@ -499,5 +504,47 @@ describe("openAcpSession: effort (S4b spec §8)", () => {
     const err = sessionError(await rejection(opened));
     expect(err.context).toMatchObject({ capability: "model" });
     expect(configIdsOf(fake.callsTo("session/set_config_option"))).toEqual(["mode"]);
+  });
+});
+
+describe("openAcpSession: onProcess (S4b spec §8)", () => {
+  test("spawned fires with the pid; exited fires when the process ends", async () => {
+    const seen: string[] = [];
+    const hooks = {
+      spawned: (pid: number) => seen.push(`spawned ${pid}`),
+      exited: (pid: number) => seen.push(`exited ${pid}`),
+    };
+    const { fake, opened } = await openWith(CLAUDE_SCRIPT, { onProcess: hooks }, undefined, [4242]);
+    const acp = await opened;
+    expect(seen).toEqual(["spawned 4242"]);
+    fake.crash();
+    await acp.launched.exited;
+    expect(seen).toEqual(["spawned 4242", "exited 4242"]);
+  });
+
+  test("Review Focus 3: no pid (spawn failed) means no hook calls", async () => {
+    const seen: string[] = [];
+    const hooks = { spawned: () => seen.push("spawned"), exited: () => seen.push("exited") };
+    const { fake, opened } = await openWith(CLAUDE_SCRIPT, { onProcess: hooks });
+    const acp = await opened;
+    fake.crash();
+    await acp.launched.exited;
+    expect(seen).toEqual([]);
+  });
+
+  test("Review Focus 2: a throwing hook does not fail the open or the exit", async () => {
+    const hooks = {
+      spawned: () => {
+        throw new Error("embedder bug");
+      },
+      exited: () => {
+        throw new Error("embedder bug");
+      },
+    };
+    const { fake, opened } = await openWith(CLAUDE_SCRIPT, { onProcess: hooks }, undefined, [7]);
+    const acp = await opened;
+    expect(acp.agentSessionId).toBe("fake-session-1");
+    fake.crash();
+    await acp.launched.exited;
   });
 });

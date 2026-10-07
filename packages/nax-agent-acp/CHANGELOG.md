@@ -9,6 +9,7 @@ step with `@nathapp/nax-agent`.
 
 - A rate-limited prompt (structured `data.errorKind: "rate_limit"`, as Claude's adapter sends) is `AGENT_SESSION_RATE_LIMITED`, classified from structured error data only. Needs `@nathapp/nax-agent` 0.3.1.
 - `effort` option: sets the agent's reasoning effort after the model; skipped with a warning when not offered.
+- `onProcess` option (`AcpProcessHooks`): `spawned(pid)` and `exited(pid)` for every agent process, including after a reconnect.
 
 ### Fixed
 
