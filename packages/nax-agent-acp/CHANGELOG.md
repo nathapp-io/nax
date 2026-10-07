@@ -5,6 +5,10 @@ step with `@nathapp/nax-agent`.
 
 ## [Unreleased]
 
+### Added
+
+- A rate-limited prompt (structured `data.errorKind: "rate_limit"`, as Claude's adapter sends) is `AGENT_SESSION_RATE_LIMITED`, classified from structured error data only. Needs `@nathapp/nax-agent` 0.3.1.
+
 ### Fixed
 
 - An errored or cancelled turn's `turn_end` carries the usage, cost and `costSource` the turn had already reported, instead of zero (#2367). A cancelled turn whose agent answers within the grace period emits its `usage` event before `turn_end`. A turn that ends with no prompt response (killed after the grace, agent gone, or a JSON-RPC error) reports cost 0 with `costSource: "unpriced"`; any reading it saw is billed to the next priced turn. Needs `@nathapp/nax-agent` 0.3.1.

@@ -12,6 +12,7 @@ release may change the public API.
 - `OpenSessionOpts.toolAudit` (optional `{ dir, header }`): where an ACP session writes its tool-audit ledger. Native ignores it.
 - `resultBytes` (optional) on the `tool_result` turn event: the UTF-8 byte length of the full result before the preview cap.
 - `ToolAuditHeader` is exported from the package entry.
+- `AGENT_SESSION_RATE_LIMITED` error code (a backend's rate-limited turn).
 
 ### Fixed
 

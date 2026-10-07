@@ -33,6 +33,9 @@ What to know:
 - **Instructions** are prepended to the first prompt only; ACP has no system prompt.
 - **Stop reasons.** A turn that stops for anything but `end_turn` ends `errored` with
   an `ACP_STOP_*` code (`ACP_STOP_CODES`).
+- **Rate limits.** A prompt the agent rejects with structured `data.errorKind: "rate_limit"`
+  (as Claude's adapter does) ends `AGENT_SESSION_RATE_LIMITED`. It is read from structured error
+  data only, never from message text; Claude's adapter sends no retry-after.
 - **Usage.** Each turn ends with one `usage` event: the tokens the agent reports for
   the turn, and the cost it reports (`costSource: "reported"`). An agent that reports
   no cost gives `costUsd: 0` with `costSource: "unpriced"`. Never sum `unpriced`
