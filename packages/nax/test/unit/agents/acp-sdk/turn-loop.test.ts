@@ -239,7 +239,7 @@ describe("runTurnLoop: failures", () => {
     await expect(runTurnLoop(session, "p", { interactionHandler: NONE })).rejects.toBeInstanceOf(SessionTurnError);
   });
 
-  test("any other failure throws SessionTurnError fail-adapter-error with the summed spend", async () => {
+  test("any other failure throws SessionTurnError with the summed spend (fail-unknown for a plain Error, D3-e)", async () => {
     const script = scriptedOpened([
       replyTurn('<nax_tool_call name="t">{}</nax_tool_call>'),
       failTurn(new Error("agent exploded")),
@@ -249,7 +249,7 @@ describe("runTurnLoop: failures", () => {
     if (!(err instanceof SessionTurnError)) throw err;
     expect(err).toMatchObject({ cancelled: false, retryable: false, message: "agent exploded" });
     expect(err.tokenUsage?.inputTokens).toBe(20);
-    expect(err.adapterFailure?.outcome).toBe("fail-adapter-error");
+    expect(err.adapterFailure?.outcome).toBe("fail-unknown");
   });
 
   test("a second concurrent turn on the session is refused", async () => {
