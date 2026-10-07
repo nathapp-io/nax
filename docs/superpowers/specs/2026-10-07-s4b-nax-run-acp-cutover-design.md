@@ -302,6 +302,12 @@ The loop is the `adapter-send-turn.ts` loop with the transport swapped. Concrete
 - `model` goes to `acpBackend({ model })`.
   - The backend requires an exact match with an offered config value (`open.ts`, `modelOptionId`).
   - Probed 2026-10-07 against claude-agent-acp 0.85.1: offered `default, sonnet, haiku, opus, fable`; nax's tier defaults match verbatim; no mapping table.
+  - S4b-3 probe (D2-b, 2026-10-07), against the maintainer's `~/.nax/config.json` (effort suffixes stripped); every configured id is offered verbatim, no `[FAIL]`:
+    - claude offers `default, sonnet, haiku, opus, fable`; configured `haiku`, `sonnet` — offered.
+    - codex offers `gpt-6.1-sol, gpt-6-astra, gpt-6-sol, gpt-6-luna, gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna`; configured `gpt-6-luna`, `gpt-6-sol` — offered.
+    - opencode offers a 50-id list (the refusal caps at 50) including `minimax/MiniMax-M2.7`, `minimax/MiniMax-M3`; configured both — offered.
+    - pi offers a 50-id list including `minimax/MiniMax-M2.7`, `minimax/MiniMax-M3`, `opencode-go/deepseek-v4-flash`; configured all three — offered.
+    - A model refusal now lists the offered ids (nax-agent-acp `[Unreleased]`).
 - The effort suffix goes to the new `effort` option (§8).
   - That option sets the thought-level config option, falling back to `EFFORT_OPTION_BY_AGENT`.
   - When the agent doesn't offer it, effort is skipped with a warning, as today.
