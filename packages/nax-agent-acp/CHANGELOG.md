@@ -3,6 +3,12 @@
 All notable changes to `@nathapp/nax-agent-acp` are recorded here. Versions move in
 step with `@nathapp/nax-agent`.
 
+## [Unreleased]
+
+### Changed
+
+- A model the agent does not offer verbatim still fails the open with `AGENT_SESSION_CAPABILITY_UNSUPPORTED`; the error now lists the model ids the agent does offer (message and `context.offered`, at most 50, cleaned like other agent text).
+
 ## [0.3.1] - 2026-10-07
 
 ### Added
