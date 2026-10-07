@@ -7,8 +7,9 @@
  * - a <nax_tool_call> or a trailing question goes to the interaction handler
  *   (5-minute reply race) and the reply is the next prompt; the agent's own ACP
  *   questions (ask-port.ts) draw on the same maxInteractions budget;
- * - AGENT_SESSION_NOT_FOUND re-opens the session fresh once and resends, the
- *   dead attempt uncounted (acpx exit code 4);
+ * - the agent no longer knowing the session (AGENT_SESSION_NOT_FOUND, or a
+ *   prompt-time TURN_FAILED not-found, D3-f) re-opens the session fresh once
+ *   and resends, the dead attempt uncounted (acpx exit code 4);
  * - one TurnResult for the loop: last output, summed spend, round trips.
  * Any other failure throws SessionTurnError with the spend of every prompt
  * (BUG-57). promptRetries is S4b-3.
@@ -27,7 +28,14 @@ import {
 } from "../interaction";
 import { assembleTurnResult, warnWallClockTimeout } from "../turn";
 import type { TurnResult } from "../types";
-import { classifyTurnFailure, RunAborted, TurnDeadlineExpired, turnFailureError, WatchdogCancel } from "./failure-map";
+import {
+  classifyTurnFailure,
+  isSessionGone,
+  RunAborted,
+  TurnDeadlineExpired,
+  turnFailureError,
+  WatchdogCancel,
+} from "./failure-map";
 import { addSpend, NO_SPEND, type Spend, spendOfError, spendOfResult } from "./pricing";
 import { type AcpSdkSession, reopenFresh } from "./session";
 import { startCall } from "./stream-bridge";
@@ -71,10 +79,6 @@ function failed(loop: Loop, err: unknown, cause: unknown): Error {
   return turnFailureError(classifyTurnFailure(err, cause), loop.state.spend, loop.session.rateCard);
 }
 
-function isSessionNotFound(err: unknown): boolean {
-  return err instanceof NaxError && err.code === "AGENT_SESSION_NOT_FOUND";
-}
-
 function consumeInteraction(loop: Loop): boolean {
   if (used(loop.state) >= loop.max) return false;
   loop.state.asked++;
@@ -109,7 +113,7 @@ function armDeadline(
 
 async function afterFailure(loop: Loop, err: unknown, cause: unknown): Promise<IterationOutcome> {
   if (cause instanceof TurnDeadlineExpired) return { kind: "timed-out" };
-  if (cause !== undefined || !isSessionNotFound(err) || loop.state.recovered) throw failed(loop, err, cause);
+  if (cause !== undefined || !isSessionGone(err) || loop.state.recovered) throw failed(loop, err, cause);
   loop.state.recovered = true;
   getSafeLogger()?.info(STAGE, "ACP session not found mid-turn; re-opening it fresh", {
     sessionName: loop.session.name,

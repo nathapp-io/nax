@@ -6,6 +6,7 @@ import {
   type AgentStreamEvent,
   createMemoryTranscriptStore,
   type InteractionHandler,
+  NaxError,
   type OpenedBackend,
   type OpenSessionOpts,
   SessionTurnError,
@@ -237,6 +238,20 @@ describe("runTurnLoop: failures", () => {
     _acpSdkDeps.acpBackend = () => ({ kind: "acp:claude", open: async () => second.opened });
     const { session } = build(first.opened);
     await expect(runTurnLoop(session, "p", { interactionHandler: NONE })).rejects.toBeInstanceOf(SessionTurnError);
+  });
+
+  test("a prompt-time not-found (TURN_FAILED, rpcCode -32002) re-opens fresh once (D3-f, acpx exit code 4)", async () => {
+    const gone = new NaxError("The ACP prompt failed: Resource not found", "AGENT_SESSION_TURN_FAILED", {
+      stage: "acp",
+      rpcCode: -32002,
+    });
+    const first = scriptedOpened([failTurn(gone)]);
+    const second = scriptedOpened([replyTurn("recovered")]);
+    _acpSdkDeps.acpBackend = () => ({ kind: "acp:claude", open: async () => second.opened });
+    const { session } = build(first.opened);
+    const result = await runTurnLoop(session, "p", { interactionHandler: NONE });
+    expect(result).toMatchObject({ output: "recovered", internalRoundTrips: 1 });
+    expect(second.prompts).toEqual(["p"]);
   });
 
   test("any other failure throws SessionTurnError with the summed spend (fail-unknown for a plain Error, D3-e)", async () => {
