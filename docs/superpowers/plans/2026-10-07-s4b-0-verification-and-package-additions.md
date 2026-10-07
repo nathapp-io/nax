@@ -108,7 +108,7 @@ grep -n "in_progress" packages/nax-agent-acp/src/client/tool-events.ts
 Answer: while a tool call is open (a `tool_call_update` was seen, no completion yet), which timeout does the watchdog use, and is it measured from the last activity of any kind? The defaults are `idleTimeoutSeconds` 900 and `toolCallOnlyIdleTimeoutSeconds` 1800.
 - The new backend emits `tool_call` when a call starts and `tool_result` when it ends, nothing in between.
 - If the watchdog applies the 1800 s timeout while a call is open, record "tolerated, no tool-progress event needed".
-- If it applies the 900 s timeout, record "needs a tool-progress event". The S4b-2 plan then adds the additive event (spec §8 last row) before the bridge is built.
+- If it applies the 900 s timeout, record "needs a tool-progress event" and STOP. The event is a spec §8 package addition that ships in this release, so add a task between Task 7 and Task 8: emit an optional `tool_progress` TurnEvent from `tool-events.ts` on `in_progress` updates, at most one per call per 30 s, optional in nax-agent's `TurnEvent` union. Get that task reviewed before continuing.
 
 - [ ] **Step 6: (g) nax's Claude model strings against the values `claude-agent-acp` offers**
 
