@@ -102,7 +102,7 @@ Expected: FAIL. The real `acpBackend` returns a backend object without throwing,
 In `packages/nax/test/preload.ts`, add the import next to the existing `_acpAdapterDeps` import:
 
 ```typescript
-import { _acpSdkDeps } from "../src/agents/acp-sdk";
+import { _acpSdkDeps } from "../src/agents/acp-sdk/session";
 ```
 
 and, directly after the acpx sentinel block:
@@ -132,7 +132,7 @@ Expected: PASS.
 - [ ] **Step 5: Run the full nax suite on the acpx default**
 
 Run (from `packages/nax`): `bun run test`
-Expected: green, same pass count as main plus 1. A failure here means a test already reached the real sdk backend while acpx was the default: fix that test by replacing `_acpSdkDeps.acpBackend` with `fakeAcpBackend` (it was a latent real spawn), and list it in the PR body.
+Expected: green; pass count = main's count plus the new sentinel test. A failure here means a test already reached the real sdk backend while acpx was the default: fix that test by replacing `_acpSdkDeps.acpBackend` with `fakeAcpBackend` (it was a latent real spawn), and list it in the PR body.
 
 - [ ] **Step 6: Gates and commit**
 
@@ -279,17 +279,23 @@ Expected: PASS.
 - [ ] **Step 5: Run the full nax suite and triage**
 
 Run (from `packages/nax`): `bun run test`
-Expected: some failures. Fix each by the D4-e rule, and only by that rule. Likely candidates, read before running so the triage is quick:
-- `test/unit/cli/agents-list.test.ts`: the AC8 listing tests stub `_acpAdapterDeps.which`; the default listing now uses `AcpSdkAgentAdapter`. Rule 1: stub `_acpSdkDeps.launchCandidateKind` the way the "S4b-2: transport sdk lists the same agents" test does, and assert the same rows.
-- `test/integration/cli/cli-core-agents.test.ts:101` "marks an acpx default agent": rule 2 if it is about the acpx row rendering; rule 1 if it is about default-agent marking (then its sdk twin in `cli-core-agents-sdk.test.ts` may already cover it, in which case pin acpx).
-- `test/unit/agents/version-detection.test.ts`, `test/unit/agents/phase4-registry-cleanup.test.ts`, `test/unit/agents/manager*.test.ts`, `test/unit/execution/runner-agent-manager.test.ts`, `test/unit/bakeoff/coordinator.test.ts`, `test/unit/bakeoff/run-action.test.ts`, `test/integration/bakeoff/coordinator-worktree-isolation.test.ts`: any that build a registry from a config without a transport and then mock acpx deps are rule 2.
-- `test/integration/agents/fail-stale-watchdog.test.ts` constructs `AcpAgentAdapter` directly and is unaffected.
+Expected: some failures. Fix each by the D4-e rule, and only by that rule. Do not edit a test that still passes. Known failures (plan review, read from the code):
+- `test/unit/agents/acp/registry.test.ts`:
+  - `:37-40`, `:48-52`, `:90-95` assert `toBeInstanceOf(AcpAgentAdapter)` on a default or `protocol: "acp"` config. Rule 2: add `acp: { transport: "acpx" }` to the config's `agent` block.
+  - `:146-169` ("installed true/false when binary is on PATH") and `:190-215` (`getInstalledAgents` / `checkAgentHealth` with `_acpAdapterDeps.which` mocked to null) depend on acpx's `which`; the sdk adapter asks `launchCandidateKind`, which finds the `npx` fallback. Rule 2 (pin acpx): these tests are about acpx's PATH probe.
+- `test/unit/agents/manager-dispatch-emission.test.ts:269-290` ("completeAs emits exactly one complete event") and `test/unit/agents/manager.test.ts:236-330` ("middleware envelope") build `new AgentManager(DEFAULT_CONFIG)` and mock only `_acpAdapterDeps.createClient`; after the flip `runAs("claude")` / `completeAs("claude")` hit the Task 1 sentinel. Rule 2: build the manager from `{ ...DEFAULT_CONFIG, agent: { ...DEFAULT_CONFIG.agent, acp: { ...DEFAULT_CONFIG.agent?.acp, transport: "acpx" } } }`. Several calls there end in `.catch(() => {})`, so also check each pinned test asserts on the mocked client being called; a test that "passes" by swallowing the sentinel error is a fail.
+- Expected to keep passing (do not touch): `test/unit/cli/agents-list.test.ts:55-87` (names only, no status), `test/integration/cli/cli-core-agents.test.ts` (accepts `installed|unavailable`), `test/unit/agents/phase4-registry-cleanup.test.ts:29-55`, `test/unit/agents/version-detection.test.ts` (own deps). The CLI listing tests become `npx`-dependent underneath without failing; note this in the PR body, no change.
+- Any other failure: classify by D4-e and list it in the PR body.
+
+To catch swallowed sentinel errors, after the suite is green run:
+`RTK_DISABLED=1 bun run test 2>&1 | grep -c "_acpSdkDeps.acpBackend called without a mock"`
+Expected: `0`. (Console output is silenced by preload, so a non-zero count only appears through failure messages; if it is non-zero, find and pin those tests.)
 
 Re-run until green. Expected final: 0 fail; pass count = Task 1's count + the tests added in Step 1.
 
 - [ ] **Step 6: Run the suite again with the launcher present (Review Focus 1)**
 
-Only after D4-b's global install is approved (it can be done at the Task 4 approval; if it is not yet installed, run this step after Task 4 Step 2 and before Task 5):
+GATE: this step must be done before Task 4 Step 4 (the launch) and before Task 5. If the launcher is not installed yet, do it right after Task 4 Step 2's approval:
 
 Run (from `packages/nax`): `command -v claude-agent-acp && bun run test`
 Expected: green with the same counts as Step 5. A test whose result changes with the launcher on PATH is unstubbed: stub `_acpSdkDeps.launchCandidateKind` in it.
@@ -333,10 +339,11 @@ Expected: the five ACP rows (`Claude Code (ACP)`, codex, opencode, gemini, pi) p
 - [ ] **Step 3: `nax config` shows the default**
 
 ```bash
-bun <repo>/packages/nax/dist/nax.js config | grep -n -A1 "transport"
+bun <repo>/packages/nax/dist/nax.js config | grep -n "transport"
+bun <repo>/packages/nax/dist/nax.js config --explain | grep -n -A2 "agent.acp.transport"
 ```
 
-Expected: `agent.acp.transport` resolves to `"sdk"`, and the description reads "'sdk' (default)".
+Expected: the first shows `transport` resolving to `"sdk"`; the second shows the description containing `'sdk' (default)` (descriptions print only with `--explain`, `src/cli/config-display.ts:94`).
 
 Record both outputs for the PR body. No commit.
 
@@ -355,7 +362,7 @@ Record both outputs for the PR body. No commit.
 ```bash
 command -v acpx && echo "FAIL: acpx on PATH" || echo "ok: no acpx"
 command -v claude-agent-acp || echo "launcher not installed (D4-b)"
-pgrep -fl "claude-agent-acp|@agentclientprotocol/claude-agent-acp" > /private/tmp/s4b-4-procs-before.txt; cat /private/tmp/s4b-4-procs-before.txt
+ps -axo pid=,pgid=,command= | grep -E "claude-agent-acp|claude-code|@anthropic-ai/claude" | grep -v grep | awk '{print $1}' | sort > /private/tmp/s4b-4-pids-before.txt; wc -l < /private/tmp/s4b-4-pids-before.txt
 git -C <repo> rev-parse HEAD
 ```
 
@@ -379,7 +386,17 @@ git -C "$SEED" show 9ceea8d39:.nax/features/s1-smoke/spec.md  > "$D/.nax/feature
 python3 -c "import json;p=json.load(open('$D/.nax/features/s1-smoke/prd.json'));print([(s['id'],s['status'],len(s['acceptanceCriteria'])) for s in p['userStories']])"
 ```
 
-Expected: `[('US-001', 'pending', 5)]`. If the seed clone is gone, rebuild the PRD from the newest `~/.nax/nax-s4-6-smoke/prompt-audit/s1-smoke/*implementer-run-t01.txt` "# Story Context" (maintainer memory "S1 smoke fixture recovery").
+Expected: `[('US-001', 'pending', 5)]`.
+
+Install and build the clone (a fresh clone has no `node_modules`; the run's quality commands and the workspace packages need them):
+
+```bash
+cd "$D" && bun install --frozen-lockfile && bun run build
+```
+
+Expected: both exit 0 (`bun run build` builds every workspace package in dependency order, so `@nathapp/nax-agent-acp` resolves from source/dist the same way it does in the main checkout).
+
+If the seed clone is gone, rebuild the PRD from the newest `~/.nax/nax-s4-6-smoke/prompt-audit/s1-smoke/*implementer-run-t01.txt` "# Story Context" (maintainer memory "S1 smoke fixture recovery").
 
 Edit `$D/.nax/config.json` (the repo's own config, as the S4-5/S4-6 smokes did) with exactly these changes:
 - `"name": "nax-s4b-4-smoke"`
@@ -435,8 +452,11 @@ for f in sorted(glob.glob(os.path.expanduser("~/.nax/nax-s4b-4-smoke/tool-audit/
     errs = [c for c in calls if c.get("outcome") != "ok"]
     print(d.get("sessionRole"), "calls:", len(calls), "non-ok:", [(c.get("tool"), c.get("outcome")) for c in errs])
 PY
-sleep 10; pgrep -fl "claude-agent-acp|@agentclientprotocol/claude-agent-acp" > /private/tmp/s4b-4-procs-after.txt; diff /private/tmp/s4b-4-procs-before.txt /private/tmp/s4b-4-procs-after.txt && echo "ok: no leftover agent process"
-git -C "$D" log --oneline -5; git -C "$D" show --stat HEAD~2 | head -20
+sleep 10
+ps -axo pid=,pgid=,command= | grep -E "claude-agent-acp|claude-code|@anthropic-ai/claude" | grep -v grep | awk '{print $1}' | sort > /private/tmp/s4b-4-pids-after.txt
+NEW=$(comm -13 /private/tmp/s4b-4-pids-before.txt /private/tmp/s4b-4-pids-after.txt)
+[ -z "$NEW" ] && echo "ok: no leftover agent process" || ps -o pid,pgid,ppid,lstart,command -p $(echo $NEW | tr ' ' ',')
+git -C "$D" log --stat --oneline "$HEAD_SHA"..HEAD
 ```
 
 (Rows without `turnId` are one-shot `complete()` calls: the S4-6 ledger shows this shape for the acceptance one-shot, `sessionRole: "auto"`. Tool-audit files are `{ schemaVersion, runId, featureName, storyId, sessionRole, sessionName, calls: ToolCallRecord[] }`, as in `~/.nax/nax-s4-6-smoke/tool-audit/`.)
@@ -446,8 +466,12 @@ Pass when (spec §9 plus the S1 recipe):
 - 1/1 story passed with its 5 ACs; summary "Completed: 1".
 - Every `agentName: "claude"` cost row has both `estimatedCostUsd` and `exactCostUsd` (missing = 0).
 - `tool-audit/s1-smoke/` has files for this run's Claude sessions and the implementer file has at least one entry in `calls` (ACP rows; acpx wrote none).
-- No `claude-agent-acp` process remains (diff empty).
+- No launcher or Claude CLI process started during the run remains (only PIDs absent from the before-snapshot count, so other sessions on the machine do not false-positive; check `lstart` of any hit falls inside the run window).
 - The pre-run auto-commit's parent is `HEAD_SHA` and it changes only `.nax/config.json` and `.nax/features/s1-smoke/`.
+
+If a Claude row lacks `exactCostUsd` (`src/agents/acp-sdk/complete.ts:63` omits it when the backend reports none): STOP and report to the maintainer with the row. Spec §9 requires both fields; do not relax the criterion or patch pricing without a ruling.
+
+The `complete()` latency list is the rows without `turnId`; a one-shot that ran as a session (acceptance-gen carries a `turnId`) is a turn, not a `complete()`, and is not in that list.
 
 Record: cost, duration, the `complete()` latency list, the cost-row table, the tool-audit counts and any tool errors with an explanation (the known S1 ones: stale-context ENOENT reads, the TDD red step, the `:!__tests__/` pathspec).
 
