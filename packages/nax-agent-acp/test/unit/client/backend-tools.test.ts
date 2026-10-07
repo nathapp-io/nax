@@ -154,11 +154,11 @@ describe("approval never (spec §6.6)", () => {
     expect(endOf(events).status).toBe("completed");
   });
 
-  test("read: plan mode, and the tool still runs without any approval event", async () => {
+  test("read: default mode, and the tool still runs without any approval event", async () => {
     const ran: Ran[] = [];
     const o = await open("read", [call()], [lookupTool("never", ran)]);
     expect(o.fake.callsTo("session/set_config_option")).toEqual([
-      { sessionId: "fake-session-1", configId: "mode", value: "plan" },
+      { sessionId: "fake-session-1", configId: "mode", value: "default" },
     ]);
     const events = await driveTurn(o.session, "x");
     expect(ran).toHaveLength(1);

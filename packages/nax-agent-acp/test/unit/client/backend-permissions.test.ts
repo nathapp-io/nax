@@ -88,10 +88,10 @@ const find = (events: readonly SessionEvent[], type: SessionEvent["type"]) => ev
 const approvals = (events: readonly SessionEvent[]) => events.filter((e) => e.type.startsWith("approval_"));
 
 describe("profiles none and read (spec §6.4)", () => {
-  test("read: plan mode; every request rejected with a profile decision", async () => {
+  test("read: default mode; every request rejected with a profile decision", async () => {
     const o = await open("read", [EDIT, { kind: "text", text: "done" }]);
     expect(o.fake.callsTo("session/set_config_option")).toEqual([
-      { sessionId: "fake-session-1", configId: "mode", value: "plan" },
+      { sessionId: "fake-session-1", configId: "mode", value: "default" },
     ]);
     const events = await driveTurn(o.session, "edit it");
     expect(answers(o)).toEqual([{ outcome: "selected", optionId: "opt-reject_once" }]);
@@ -116,7 +116,7 @@ describe("profiles none and read (spec §6.4)", () => {
     expect(endOf(events).status).toBe("completed");
   });
 
-  test("none, no workdir: plan mode in a scratch root; leaving plan mode (switch_mode) is rejected", async () => {
+  test("none, no workdir: default mode in a scratch root; a switch_mode request is rejected", async () => {
     const o = await open("none", [
       {
         kind: "permission",
@@ -126,7 +126,7 @@ describe("profiles none and read (spec §6.4)", () => {
     ]);
     expect(typeof o.fake.requests[0]?.cwd).toBe("string");
     expect(o.fake.callsTo("session/set_config_option")).toEqual([
-      { sessionId: "fake-session-1", configId: "mode", value: "plan" },
+      { sessionId: "fake-session-1", configId: "mode", value: "default" },
     ]);
     await driveTurn(o.session, "plan only");
     expect(answers(o)).toEqual([{ outcome: "selected", optionId: "opt-reject_once" }]);

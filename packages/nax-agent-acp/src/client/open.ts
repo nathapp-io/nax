@@ -19,6 +19,7 @@ import {
   modeFor,
   modelOptionId,
   offersValue,
+  readOnlyFor,
   unmetRequirement,
 } from "#src/client/capabilities";
 import { type AcpLink, type InboundHandlers, openConnection } from "#src/client/connection";
@@ -185,7 +186,7 @@ async function sessionSetup(o: Opening): Promise<SessionSetup> {
   const meta = claudeSessionMeta(
     kind,
     o.ctx.tools.map((tool) => tool.name),
-    o.ctx.profile,
+    readOnlyFor(o.ctx.profile, o.options.entry),
   );
   if (o.host === undefined) return meta === undefined ? { mcpServers: [] } : { mcpServers: [], _meta: { ...meta } };
   if (meta === undefined) throw capabilityUnsupported("tools", "the agent has no way to pre-approve embedder tools");

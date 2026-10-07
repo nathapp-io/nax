@@ -335,6 +335,7 @@ export {
   type TrackedSpawnDeadlineOptions,
   type TurnResult,
 } from "#src/session/session-types";
+export { attachTurnSpend, type FailedTurnSpend, readTurnSpend } from "#src/session/turn-spend";
 export type {
   JSONSchema,
   ToolDescriptor,

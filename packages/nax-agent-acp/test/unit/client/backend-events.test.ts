@@ -162,20 +162,45 @@ describe("tool calls and usage end to end (spec §6.7; D5-a to D5-f, D5-h)", () 
     expect(third?.type === "usage" ? third.costUsd : -1).toBeCloseTo(0.03, 10);
   });
 
-  test("a stop reason other than end_turn still emits its usage event; turn_end usage stays zero (D5-h)", async () => {
+  test("a stop reason other than end_turn: the usage event and turn_end carry the same spend (#2367)", async () => {
     const o = await open([
       {
-        steps: [{ kind: "text", text: "x" }],
+        steps: [usd(0.0133), { kind: "text", text: "x" }],
         stopReason: "max_tokens",
         usage: { totalTokens: 9, inputTokens: 4, outputTokens: 5 },
       },
     ]);
     const events = await driveTurn(o.session, "go");
-    expect(find(events, "usage")).toMatchObject({ inputTokens: 4, outputTokens: 5 });
+    expect(find(events, "usage")).toMatchObject({ inputTokens: 4, outputTokens: 5, costUsd: 0.0133 });
     expect(endOf(events)).toMatchObject({
       status: "errored",
       error: { code: "ACP_STOP_MAX_TOKENS" },
-      usage: { inputTokens: 0, outputTokens: 0 },
+      usage: { inputTokens: 4, outputTokens: 5 },
+      costUsd: 0.0133,
+      costSource: "reported",
+    });
+  });
+
+  test("a cancelled stop reason keeps its cost; the next turn is billed only its own delta (#2367)", async () => {
+    const o = await open([
+      { steps: [usd(0.0133), { kind: "text", text: "x" }], stopReason: "cancelled" },
+      { steps: [usd(0.02), { kind: "text", text: "y" }] },
+    ]);
+    expect(endOf(await driveTurn(o.session, "one"))).toMatchObject({
+      status: "errored",
+      error: { code: "ACP_STOP_CANCELLED" },
+      costUsd: 0.0133,
+      costSource: "reported",
+    });
+    expect(endOf(await driveTurn(o.session, "two")).costUsd).toBeCloseTo(0.0067, 10);
+  });
+
+  test("an unpriced agent's failed turn reports costSource unpriced (#2367)", async () => {
+    const o = await open([{ steps: [{ kind: "text", text: "x" }], stopReason: "refusal" }]);
+    expect(endOf(await driveTurn(o.session, "go"))).toMatchObject({
+      status: "errored",
+      costUsd: 0,
+      costSource: "unpriced",
     });
   });
 
@@ -204,7 +229,7 @@ describe("tool calls and usage end to end (spec §6.7; D5-a to D5-f, D5-h)", () 
     });
   });
 
-  test("a cancelled turn answers its running call and emits no usage event", async () => {
+  test("cancel answered inside the grace: the running call is answered, then usage, then turn_end with the cost (#2367)", async () => {
     const o = await open([
       {
         steps: [
@@ -215,16 +240,45 @@ describe("tool calls and usage end to end (spec §6.7; D5-a to D5-f, D5-h)", () 
             title: "Bash",
             status: "in_progress",
           }),
-          { kind: "waitForCancel" },
+          { kind: "awaitCancel" },
+          usd(0.01),
         ],
+        stopReason: "cancelled",
       },
     ]);
     const events = await driveTurn(o.session, "go", (event) => {
       if (event.type === "tool_call") o.session.cancel();
     });
-    expect(endOf(events).status).toBe("cancelled");
+    expect(types(events).slice(-3)).toEqual(["tool_result", "usage", "turn_end"]);
     expect(find(events, "tool_result")).toMatchObject({ callId: "toolu_3", isError: true });
+    expect(endOf(events)).toMatchObject({ status: "cancelled", costUsd: 0.01, costSource: "reported" });
+  });
+
+  test("cancel answered end_turn inside the grace: still cancelled, still priced (Review Focus 2)", async () => {
+    const o = await open([{ steps: [{ kind: "awaitCancel" }, usd(0.02)], stopReason: "end_turn" }]);
+    const events = await driveTurn(o.session, "go", (event) => {
+      if (event.type === "turn_start") o.session.cancel();
+    });
+    expect(endOf(events)).toMatchObject({ status: "cancelled", costUsd: 0.02, costSource: "reported" });
+  });
+
+  test("cancel not answered inside the grace: no usage event, unpriced (spec §3.3)", async () => {
+    const call = update({ sessionUpdate: "tool_call", toolCallId: "toolu_4", title: "Bash", status: "in_progress" });
+    const o = await open([{ steps: [usd(0.01), call, { kind: "hang" }] }], { backend: { cancelGraceMs: 50 } });
+    const events = await driveTurn(o.session, "one", (event) => {
+      if (event.type === "tool_call") o.session.cancel();
+    });
     expect(find(events, "usage")).toBeUndefined();
+    expect(endOf(events)).toMatchObject({ status: "cancelled", costUsd: 0, costSource: "unpriced" });
+  });
+
+  test("a JSON-RPC error on the prompt: turn_end says unpriced, not just zero (Review Focus 3)", async () => {
+    const o = await open([{ steps: [usd(0.01), { kind: "fail", failure: { code: -32603, message: "boom" } }] }]);
+    expect(endOf(await driveTurn(o.session, "go"))).toMatchObject({
+      status: "errored",
+      costUsd: 0,
+      costSource: "unpriced",
+    });
   });
 });
 

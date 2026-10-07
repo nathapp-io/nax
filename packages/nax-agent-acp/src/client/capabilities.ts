@@ -7,7 +7,7 @@
  */
 import type { InitializeResponse, SessionConfigOption } from "@agentclientprotocol/sdk";
 import type { AgentSessionProfile } from "@nathapp/nax-agent";
-import type { AgentRegistryEntry, ModeSetting } from "#src/client/registry";
+import type { AgentRegistryEntry, ModeSetting, ReadOnlyEnforcement } from "#src/client/registry";
 
 const LABEL_MAX_CHARS = 200;
 
@@ -19,7 +19,7 @@ export type CapabilityRecord = {
   readonly resume: boolean;
   readonly close: boolean;
   readonly mcpHttp: boolean;
-  /** The registry has a read-only mode for profiles none/read. */
+  /** The registry can enforce profiles none/read on this agent. */
   readonly readOnlyMode: boolean;
   /** The registry knows how to pre-approve embedder tools at the adapter (R12). */
   readonly preApproval: boolean;
@@ -62,17 +62,19 @@ export function buildCapabilityRecord(
     resume: isObject(caps.sessionCapabilities?.resume),
     close: isObject(caps.sessionCapabilities?.close),
     mcpHttp: caps.mcpCapabilities?.http === true,
-    readOnlyMode: entry?.readOnlyMode !== undefined,
+    readOnlyMode: entry?.readOnly !== undefined,
     preApproval: entry?.preApproval !== undefined,
   });
 }
 
+const isReadOnlyProfile = (profile: AgentSessionProfile): boolean => profile === "none" || profile === "read";
+
 /** The first requirement this agent cannot meet, or undefined. The model is checked after session/new. */
 export function unmetRequirement(record: CapabilityRecord, req: Requirements): UnmetRequirement | undefined {
-  if ((req.profile === "none" || req.profile === "read") && !record.readOnlyMode) {
+  if (isReadOnlyProfile(req.profile) && !record.readOnlyMode) {
     return {
       capability: "profile",
-      reason: `profile "${req.profile}" needs a read-only agent mode; this agent has none`,
+      reason: `profile "${req.profile}" needs read-only enforcement; this agent has none`,
     };
   }
   if (req.toolCount > 0 && !(record.mcpHttp && record.preApproval)) {
@@ -99,7 +101,15 @@ export function modelOptionId(options: readonly SessionConfigOption[], model: st
   return options.find((option) => option.category === "model" && selectValues(option).includes(model))?.id;
 }
 
-/** The mode a profile selects (§6.4 layer 1): read-only for none/read, the default mode otherwise. */
+/** The read-only enforcement a profile uses: the entry's for none/read, none otherwise. */
+export function readOnlyFor(
+  profile: AgentSessionProfile,
+  entry: AgentRegistryEntry | undefined,
+): ReadOnlyEnforcement | undefined {
+  return isReadOnlyProfile(profile) ? entry?.readOnly : undefined;
+}
+
+/** The mode a profile selects (§6.4 layer 1): the read-only entry's for none/read, the default mode otherwise. */
 export function modeFor(profile: AgentSessionProfile, entry: AgentRegistryEntry | undefined): ModeSetting | undefined {
-  return profile === "none" || profile === "read" ? entry?.readOnlyMode : entry?.defaultMode;
+  return isReadOnlyProfile(profile) ? entry?.readOnly?.mode : entry?.defaultMode;
 }

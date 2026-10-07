@@ -4,6 +4,16 @@ All notable changes to `@nathapp/nax-agent` are recorded here. The format follow
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). While the version is `0.x`, a minor
 release may change the public API.
 
+## [Unreleased]
+
+### Added
+
+- `attachTurnSpend(err, spend)` and `readTurnSpend(err)`, with the `FailedTurnSpend` type: a backend attaches the spend a failed turn had already incurred to the error it throws, and the turn's `turn_end` reports it (#2367).
+
+### Fixed
+
+- `turn_end` of an errored, cancelled or timed-out turn carries `costSource` when the failed turn's spend says how it was priced (#2367).
+
 ## [0.3.0] - 2026-10-06
 
 The backend seam for S4. Breaking: `createAgentSession` takes a `SessionBackend`. nax behaviour unchanged.

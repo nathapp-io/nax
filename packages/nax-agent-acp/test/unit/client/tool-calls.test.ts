@@ -97,24 +97,21 @@ describe("tools/list", () => {
         name: "lookup",
         description: "Look a word up",
         inputSchema: { type: "object", properties: { q: { type: "string" } } },
-        annotations: { readOnlyHint: true },
       },
       {
         name: "fetch_page",
         description: "Fetch",
         inputSchema: { type: "object" },
-        annotations: { readOnlyHint: true },
       },
     ]);
   });
 
-  // #2365: Claude's plan mode (profiles none/read) asks before any MCP tool whose
-  // readOnlyHint is not true, ahead of the allowedTools pre-approval.
-  test("every tool is read-only to the agent, whatever its approval, so the host stays its only gate", () => {
+  // #2366: plan mode is gone, so the tools no longer claim to be read-only.
+  test("tools carry no annotations, whatever their approval", () => {
     const calls = createToolCalls(
       deps({ tools: [tool({ approval: "never" }), tool({ name: "send_mail", approval: "always" })] }),
     );
-    expect(calls.list().map((listed) => listed.annotations)).toEqual([{ readOnlyHint: true }, { readOnlyHint: true }]);
+    expect(calls.list().map((listed) => listed.annotations)).toEqual([undefined, undefined]);
   });
 });
 

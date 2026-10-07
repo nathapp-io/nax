@@ -6,6 +6,7 @@ import {
   modeFor,
   modelOptionId,
   offersValue,
+  readOnlyFor,
   selectValues,
   unmetRequirement,
 } from "#src/client/capabilities";
@@ -149,11 +150,14 @@ describe("config options", () => {
     expect(modelOptionId(OPTIONS, "opus")).toBeUndefined();
   });
 
-  test("modeFor: read-only for none/read, default for ask/full, nothing for custom agents", () => {
-    expect(modeFor("read", CLAUDE)).toEqual({ configId: "mode", value: "plan" });
-    expect(modeFor("none", CLAUDE)).toEqual({ configId: "mode", value: "plan" });
+  test("modeFor and readOnlyFor: default mode for every Claude profile; nothing for agents without enforcement", () => {
+    expect(modeFor("read", CLAUDE)).toEqual({ configId: "mode", value: "default" });
+    expect(modeFor("none", CLAUDE)).toEqual({ configId: "mode", value: "default" });
     expect(modeFor("full", CLAUDE)).toEqual({ configId: "mode", value: "default" });
+    expect(readOnlyFor("read", CLAUDE)).toBe(CLAUDE?.readOnly);
+    expect(readOnlyFor("ask", CLAUDE)).toBeUndefined();
     expect(modeFor("ask", registryEntry("codex"))).toBeUndefined();
+    expect(readOnlyFor("none", registryEntry("codex"))).toBeUndefined();
     expect(modeFor("full", undefined)).toBeUndefined();
   });
 });

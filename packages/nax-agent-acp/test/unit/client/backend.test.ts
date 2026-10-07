@@ -152,6 +152,21 @@ describe("acpBackend: a text-only full session end to end (spec §10 S4-2)", () 
     await o.session.close();
   });
 
+  test("a JSON-RPC error on the first prompt is not receipt: the next prompt carries the instructions (#2364, F7)", async () => {
+    const o = await open(
+      { turns: [{ steps: [{ kind: "fail", failure: { code: -32603, message: "boom" } }] }, { steps: [] }] },
+      {},
+      { instructions: "Be brief." },
+    );
+    await drain(o.session.send("first"));
+    await drain(o.session.send("second"));
+    expect(o.fake.callsTo("session/prompt")).toEqual([
+      { sessionId: "fake-session-1", prompt: [{ type: "text", text: "Be brief.\n\nfirst" }] },
+      { sessionId: "fake-session-1", prompt: [{ type: "text", text: "Be brief.\n\nsecond" }] },
+    ]);
+    await o.session.close();
+  });
+
   test("the initial document records the agent session", async () => {
     const o = await open();
     expect(await o.store.load("s-1")).toMatchObject({

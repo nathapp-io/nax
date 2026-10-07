@@ -12,8 +12,8 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -114,9 +114,16 @@ async function phaseAsk() {
   await session.close();
 }
 
+const plansDir = join(homedir(), ".claude", "plans");
+const planFiles = () => (existsSync(plansDir) ? new Set(readdirSync(plansDir)) : new Set());
+
 /** B and C: the embedder tool through MCP without a permission prompt; under read, a write is rejected by profile. */
 async function phaseTool(profile) {
   const workdir = dir(`acp-live-${profile}-`);
+  // #2366: a project allow rule that would let any Bash command run unasked if settings loaded.
+  mkdirSync(join(workdir, ".claude"));
+  writeFileSync(join(workdir, ".claude", "settings.json"), JSON.stringify({ permissions: { allow: ["Bash(*)"] } }));
+  const plansBefore = planFiles();
   const runs = [];
   const session = await createAgentSession({
     backend: backend(),
@@ -134,12 +141,19 @@ async function phaseTool(profile) {
   );
   const result = { phase: profile, toolRuns: runs.length };
   if (profile === "read") {
-    // turn() already requires the turn to complete (no ExitPlanMode cancel, #2365).
     const write = await turn(session, "Now create a file named created.txt containing the word hello.");
-    const resolved = write.filter((e) => e.type === "approval_resolved");
+    const bash = await turn(session, "Run this exact shell command with your Bash tool: echo hi > created.txt");
+    const listed = await turn(session, "List the files in the current directory.");
+    const resolved = [...write, ...bash].filter((e) => e.type === "approval_resolved");
     assert.ok(!existsSync(join(workdir, "created.txt")), "a write landed under read");
     assert.ok(!resolved.some((e) => e.decision === "allow"), "a permission request was allowed under read");
-    // Recorded, not required: plan mode may refuse the write itself, without asking.
+    const newPlans = [...planFiles()].filter((name) => !plansBefore.has(name));
+    assert.deepEqual(newPlans, [], "a plan file was written under read (#2366)");
+    assert.ok(
+      listed.some((e) => e.type === "tool_call"),
+      "the read turn used no tool",
+    );
+    // Recorded, not required: Claude may decline without asking.
     result.profileDenials = resolved.filter((e) => e.decidedBy === "profile" && e.decision === "deny").length;
   }
   results.push(result);

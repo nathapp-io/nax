@@ -1,14 +1,20 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
+  type AgentSession,
   type AgentSessionAdapter,
+  attachTurnSpend,
   type BackendOpenContext,
   createAgentSession,
   nativeBackend,
   type OpenedBackend,
   resumeAgentSession,
+  type SendTurnOpts,
   type SessionBackend,
+  type SessionEvent,
 } from "@nathapp/nax-agent";
+import { NaxError } from "#src/infra/nax-error";
 import { createMemoryTranscriptStore } from "#src/native/session/memory-transcript-store";
+import { _agentSessionDeps } from "#src/session/agent-session-deps";
 import { collect, MODEL, resetScriptedProvider, turnEndOf } from "#test/helpers/agent-session";
 import { assertNaxError } from "#test/helpers/index";
 
@@ -171,5 +177,129 @@ describe("agent session: backend seam", () => {
       "AGENT_SESSION_BACKEND_MISMATCH",
     );
     expect(state.opened).toEqual([]);
+  });
+});
+
+const FAILED_SPEND = {
+  tokenUsage: { inputTokens: 4, outputTokens: 5 },
+  costUsd: 0.0133,
+  costSource: "reported",
+} as const;
+
+/** A backend whose sendTurn runs `turn`; everything else is inert. */
+function turnBackend(turn: (opts: SendTurnOpts) => Promise<never>): SessionBackend {
+  return {
+    kind: "acp:fake",
+    async open() {
+      const handle = { id: "h", agentName: "stub" };
+      return {
+        adapter: {
+          openSession: async () => handle,
+          sendTurn: (_h, _m, opts) => turn(opts),
+          closeSession: async () => {},
+        },
+        handle,
+        info: { kind: "acp:fake", capabilities: {} },
+        turnOpts: () => ({ interactionHandler: { onInteraction: async () => null } }),
+        close: async () => {},
+      };
+    },
+  };
+}
+
+const withSpend = (message: string): Error => {
+  const err = new Error(message);
+  attachTurnSpend(err, FAILED_SPEND);
+  return err;
+};
+
+/** Resolves once the turn signal aborts; at once when cancel() already aborted it. */
+const abortOf = (opts: SendTurnOpts): Promise<void> =>
+  new Promise((resolve) => {
+    if (opts.signal?.aborted === true) resolve();
+    else opts.signal?.addEventListener("abort", () => resolve(), { once: true });
+  });
+
+async function sessionOn(
+  turn: (opts: SendTurnOpts) => Promise<never>,
+  turnTimeoutSeconds?: number,
+): Promise<AgentSession> {
+  return createAgentSession({
+    backend: turnBackend(turn),
+    profile: "none",
+    transcriptStore: createMemoryTranscriptStore(),
+    ...(turnTimeoutSeconds === undefined ? {} : { turnTimeoutSeconds }),
+  });
+}
+
+describe("turn_end keeps a failed turn's attached spend (#2367)", () => {
+  const realSetTimeout = _agentSessionDeps.setTimeout;
+  afterEach(() => {
+    _agentSessionDeps.setTimeout = realSetTimeout;
+  });
+
+  test("errored: usage, cost and costSource come from the attached spend; the error code is kept", async () => {
+    const session = await sessionOn(async () => {
+      const err = new NaxError("stopped", "ACP_STOP_CANCELLED", { stage: "acp" });
+      attachTurnSpend(err, FAILED_SPEND);
+      throw err;
+    });
+    expect(turnEndOf(await collect(session.send("go")))).toMatchObject({
+      status: "errored",
+      error: { code: "ACP_STOP_CANCELLED" },
+      usage: { inputTokens: 4, outputTokens: 5 },
+      costUsd: 0.0133,
+      costSource: "reported",
+    });
+    await session.close();
+  });
+
+  test("cancelled: the spend survives a cancel", async () => {
+    const session = await sessionOn(async (opts) => {
+      await abortOf(opts);
+      throw withSpend("aborted");
+    });
+    const events: SessionEvent[] = [];
+    for await (const event of session.send("go")) {
+      events.push(event);
+      if (event.type === "turn_start") session.cancel();
+    }
+    expect(turnEndOf(events)).toMatchObject({ status: "cancelled", costUsd: 0.0133, costSource: "reported" });
+    await session.close();
+  });
+
+  test("timed_out: the spend survives the turn deadline", async () => {
+    _agentSessionDeps.setTimeout = (fn: () => void) => realSetTimeout(fn, 5);
+    const session = await sessionOn(async (opts) => {
+      await abortOf(opts);
+      throw withSpend("deadline");
+    }, 1);
+    expect(turnEndOf(await collect(session.send("go")))).toMatchObject({
+      status: "timed_out",
+      usage: { inputTokens: 4, outputTokens: 5 },
+      costUsd: 0.0133,
+      costSource: "reported",
+    });
+    await session.close();
+  });
+
+  test("an unpriced failed turn says so", async () => {
+    const session = await sessionOn(async () => {
+      const err = new Error("x");
+      attachTurnSpend(err, { tokenUsage: { inputTokens: 0, outputTokens: 0 }, costUsd: 0, costSource: "unpriced" });
+      throw err;
+    });
+    expect(turnEndOf(await collect(session.send("go")))).toMatchObject({ costUsd: 0, costSource: "unpriced" });
+    await session.close();
+  });
+
+  test("no attached spend: zero usage and no costSource, as before", async () => {
+    const session = await sessionOn(async () => {
+      throw new Error("plain");
+    });
+    const end = turnEndOf(await collect(session.send("go")));
+    expect(end).toMatchObject({ status: "errored", costUsd: 0, usage: { inputTokens: 0, outputTokens: 0 } });
+    expect("costSource" in end).toBe(false);
+    await session.close();
   });
 });
