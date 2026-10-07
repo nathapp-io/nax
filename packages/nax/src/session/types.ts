@@ -7,7 +7,7 @@
  * See: docs/specs/SPEC-session-manager-integration.md
  */
 
-import type { ProtocolIds } from "@nathapp/nax-agent";
+import type { OpenSessionOpts, ProtocolIds } from "@nathapp/nax-agent";
 import type { LoopHandlerSet } from "@nathapp/nax-agent/internal";
 import type { ToolDescriptor } from "../context/engine";
 import type { SessionRole } from "../runtime/session-role";
@@ -174,7 +174,8 @@ export interface OpenSessionRequest {
   onSessionEstablished?: (protocolIds: ProtocolIds, sessionName: string) => void;
   /**
    * Native: directory the session's transcript file lives in. Forwarded to
-   * the adapter's openSession — see OpenSessionOpts.transcriptDir. ACP ignores it.
+   * the adapter's openSession — see OpenSessionOpts.transcriptDir. The ACP SDK
+   * transport keeps its crash-leftover record there.
    * When omitted, SessionManager derives one from its runtime-injected
    * transcript root (`configureRuntime`'s `transcriptRoot`) + `featureName`
    * (ADR-028 section 3) — never from the project tree.
@@ -182,9 +183,16 @@ export interface OpenSessionRequest {
   transcriptDir?: string;
   /**
    * Native: identity that owns the session's transcript, forwarded to the
-   * adapter's openSession — see OpenSessionOpts.transcriptOwner. ACP ignores it.
+   * adapter's openSession — see OpenSessionOpts.transcriptOwner. acpx ignores it.
    */
   transcriptOwner?: string;
+  /**
+   * The tool-audit ledger location and header for this session (S4b spec §7.4),
+   * resolved by the dispatch hop the way native's coding-tool support resolves
+   * it. Forwarded to the adapter's openSession; the ACP SDK transport reads its
+   * stream run identifiers from the header.
+   */
+  toolAudit?: OpenSessionOpts["toolAudit"];
 }
 
 /**

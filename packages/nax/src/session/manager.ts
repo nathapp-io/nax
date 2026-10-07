@@ -23,15 +23,11 @@ import {
   LOOP_HANDLERS_NATIVE_ONLY_MESSAGE,
   shouldLogNativeOnlyScope,
 } from "./loop-handler-forwarding";
-import {
-  _sessionManagerDeps,
-  deriveNativeTranscriptDir,
-  persistDescriptor,
-  resolveProjectDirFromScratchDir,
-} from "./manager-deps";
+import { _sessionManagerDeps, persistDescriptor, resolveProjectDirFromScratchDir } from "./manager-deps";
 import { DEFAULT_ORPHAN_TTL_MS, sweepOrphansImpl } from "./manager-sweep";
 import { selectModel } from "./model-selection";
 import { formatSessionName } from "./naming";
+import { openSessionExtras } from "./open-session-extras";
 import { selectNativeTurnConfig } from "./turn-config-selection";
 import type {
   CreateSessionOptions,
@@ -459,12 +455,8 @@ export class SessionManager implements ISessionManager {
       resume,
       onActiveCall: this._watchdogCancels.buildOnActiveCall(name, this._watchdogControllerRegistry),
       onStreamActivity: this._onStreamActivity,
-      // Finding 1: callers never supplied transcriptDir, so derive it here — the one place ADR-028 §3
-      // documents. An explicit caller value wins. transcriptOwner is nax#1877's ownership key.
-      transcriptDir:
-        opts.transcriptDir ??
-        deriveNativeTranscriptDir({ featureName: opts.featureName, transcriptRoot: this._transcriptRoot }),
-      ...(opts.transcriptOwner !== undefined ? { transcriptOwner: opts.transcriptOwner } : {}),
+      // ADR-028 §3 transcriptDir derivation, nax#1877 owner, S4b toolAudit (open-session-extras.ts).
+      ...openSessionExtras(opts, this._transcriptRoot),
       ...trackedSpawnDeadlines(this._config), // #1583
     });
     this._liveHandles.set(name, handle);

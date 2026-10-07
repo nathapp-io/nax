@@ -21,7 +21,11 @@
  *   from build-hop-callback.ts (that would cycle).
  */
 
-import { resolveCodingToolSupport } from "../agents/coding-tool-support-resolve";
+import {
+  buildLedgerHeader,
+  resolveCodingToolSupport,
+  resolveDispatchAuditDir,
+} from "../agents/coding-tool-support-resolve";
 import type { HopKind } from "../agents/manager-types";
 import { buildRunInteractionHandler } from "../agents/run-interaction-handler";
 import { applyDiffAccessForAgentProtocol, promptWithToolPreamble } from "../agents/tool-preamble";
@@ -378,6 +382,15 @@ export function prepareHopSession(input: HopInvocation): HopSession {
   const pinnedModelDef =
     ctx.pinnedModelAgent === undefined || ctx.pinnedModelAgent === agentName ? resolvedRunOptions.modelDef : undefined;
 
+  // S4b spec §7.4: the same ledger location and header native's coding-tool support resolves.
+  const auditDir = resolveDispatchAuditDir(
+    resolvedRunOptions.codingToolRoot,
+    resolvedRunOptions.outputDir,
+    resolvedRunOptions.featureName,
+  );
+  const toolAudit =
+    auditDir === undefined ? undefined : { dir: auditDir, header: buildLedgerHeader(resolvedRunOptions) };
+
   // Identical across every non-reuse branch (stale-retry fallback, primary,
   // swap) — each branch resolves `endpoint` first, then opens with it.
   const openSessionRequest = (
@@ -399,6 +412,7 @@ export function prepareHopSession(input: HopInvocation): HopSession {
     featureName: ctx.featureName,
     storyId: ctx.story.id,
     ...(transcriptOwner !== undefined ? { transcriptOwner } : {}),
+    ...(toolAudit !== undefined ? { toolAudit } : {}),
     signal: resolvedRunOptions.abortSignal,
   });
 
