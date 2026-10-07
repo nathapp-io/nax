@@ -33,14 +33,11 @@ import { getSafeLogger } from "@/logger";
 import { cancellableDelay } from "@/utils/bun-deps";
 import { type RateCard, resolveRateCard } from "../cost";
 import { createAskPort } from "./ask-port";
-import { backendOptions, openContext, transcriptStoreFor } from "./open-context";
+import { backendOptions, DEFAULT_CLOSE_DEADLINE_MS, openContext, transcriptStoreFor } from "./open-context";
 import type { StreamContext } from "./stream-bridge";
 import { createTurnSlot, type TurnSlot } from "./turn-slot";
 
 const STAGE = "acp-sdk";
-
-/** `agent.acp.trackedSpawnDeadlineMs`'s schema default, used only when the opener passes none. */
-const DEFAULT_CLOSE_DEADLINE_MS = 10_000;
 
 /** A leftover the backend cannot restore: deleted, then the session opens fresh (D2-j). */
 const DISCARD_CODES: ReadonlySet<string> = new Set([

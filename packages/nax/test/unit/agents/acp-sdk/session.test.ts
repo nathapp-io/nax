@@ -133,6 +133,15 @@ describe("createSession (spec §6.1)", () => {
     await expect(createSession("nax-s8", "claude", opts({ signal: runSignal.signal }))).rejects.toThrow();
     expect(await createFileTranscriptStore(transcripts).load("nax-s8")).toBeNull();
   }, 20_000);
+
+  test("the startup deadline bounds initialize: a hung agent fails the open BACKEND_UNAVAILABLE (§7.2)", async () => {
+    useFake({ hangInitialize: true });
+    await expect(
+      createSession("nax-start", "claude", opts({ trackedSpawnStartupDeadlineMs: 50 })),
+    ).rejects.toMatchObject({
+      code: "AGENT_SESSION_BACKEND_UNAVAILABLE",
+    });
+  }, 20_000);
 });
 
 describe("shutdownSession and reopenFresh", () => {
