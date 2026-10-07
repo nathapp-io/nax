@@ -9,6 +9,9 @@ release may change the public API.
 ### Added
 
 - `attachTurnSpend(err, spend)` and `readTurnSpend(err)`, with the `FailedTurnSpend` type: a backend attaches the spend a failed turn had already incurred to the error it throws, and the turn's `turn_end` reports it (#2367).
+- `OpenSessionOpts.toolAudit` (optional `{ dir, header }`): where an ACP session writes its tool-audit ledger. Native ignores it.
+- `resultBytes` (optional) on the `tool_result` turn event: the UTF-8 byte length of the full result before the preview cap.
+- `ToolAuditHeader` is exported from the package entry.
 
 ### Fixed
 

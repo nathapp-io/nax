@@ -26,7 +26,14 @@ export type TurnEvent =
   | { readonly type: "thinking_delta"; readonly round: number; readonly text: string }
   | { readonly type: "stream_reset"; readonly round: number; readonly attempt: number }
   | { readonly type: "tool_call"; readonly callId: string; readonly name: string; readonly input: unknown }
-  | { readonly type: "tool_result"; readonly callId: string; readonly isError: boolean; readonly preview: string }
+  | {
+      readonly type: "tool_result";
+      readonly callId: string;
+      readonly isError: boolean;
+      readonly preview: string;
+      /** UTF-8 byte length of the full result before the preview cap (S4b spec 7.4). Absent when unknown. */
+      readonly resultBytes?: number;
+    }
   | {
       readonly type: "usage";
       readonly round: number;

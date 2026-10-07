@@ -440,6 +440,7 @@ export {
   spillRelativePath,
   substituteCommand,
   substituteCommandSpec,
+  type ToolAuditHeader,
   type ToolAuditSink,
   type ToolCallContext,
   type ToolCallRecord,
