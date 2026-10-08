@@ -106,7 +106,7 @@ function sender(ctx: StreamContext): (event: AgentStreamEvent) => void {
     try {
       ctx.emit(event);
     } catch (err) {
-      getSafeLogger()?.debug("acp-sdk", "A stream listener threw; the turn continues", {
+      getSafeLogger()?.debug("acp", "A stream listener threw; the turn continues", {
         sessionName: ctx.sessionName,
         error: err instanceof Error ? err.message : String(err),
       });

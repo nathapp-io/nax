@@ -9,24 +9,24 @@ import {
 } from "@nathapp/nax-agent";
 import { cleanupTempDir, makeTempDir, waitForCondition } from "@test/helpers";
 import { fakeAcpBackend, fakeMethods, fakeStartPids } from "@test/helpers/acp-fake-agent";
-import { _acpSdkDeps, createSession, reopenFresh, shutdownSession } from "@/agents/acp-sdk/session";
-import { runTurnLoop } from "@/agents/acp-sdk/turn-loop";
+import { _acpDeps, createSession, reopenFresh, shutdownSession } from "@/agents/acp/session";
+import { runTurnLoop } from "@/agents/acp/turn-loop";
 import { FALLBACK_RATES } from "@/agents/cost";
 
-const REAL = { ..._acpSdkDeps };
+const REAL = { ..._acpDeps };
 let dir = "";
 let record = "";
 let transcripts = "";
 
 beforeEach(() => {
-  dir = makeTempDir("acp-sdk-session-");
+  dir = makeTempDir("acp-session-");
   record = join(dir, "record.jsonl");
   transcripts = join(dir, "sessions");
-  _acpSdkDeps.resolveRateCard = async () => ({ rates: FALLBACK_RATES, source: "fallback-rates" });
+  _acpDeps.resolveRateCard = async () => ({ rates: FALLBACK_RATES, source: "fallback-rates" });
 });
 
 afterEach(() => {
-  Object.assign(_acpSdkDeps, REAL);
+  Object.assign(_acpDeps, REAL);
   cleanupTempDir(dir);
 });
 
@@ -44,7 +44,7 @@ function opts(overrides: Partial<OpenSessionOpts> = {}): OpenSessionOpts {
 }
 
 function useFake(script: Record<string, unknown> = {}): void {
-  _acpSdkDeps.acpBackend = fakeAcpBackend(script, record);
+  _acpDeps.acpBackend = fakeAcpBackend(script, record);
 }
 
 const RESUMABLE = { capabilities: { sessionCapabilities: { resume: {} } } };

@@ -8,7 +8,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import { rm } from "node:fs/promises";
 import { makeTempDir } from "@test/helpers";
-import { _acpSdkDeps } from "@/agents/acp-sdk";
+import { _acpDeps } from "@/agents/acp";
 import { _cliAgentsDeps, agentsListCommand } from "@/cli/agents";
 import { DEFAULT_CONFIG } from "@/config";
 
@@ -25,20 +25,20 @@ describe("agentsListCommand", () => {
   });
 
   let origGetAgentVersion: typeof _cliAgentsDeps.getAgentVersion;
-  let origLaunchKind: typeof _acpSdkDeps.launchCandidateKind;
+  let origLaunchKind: typeof _acpDeps.launchCandidateKind;
 
   beforeEach(() => {
     origGetAgentVersion = _cliAgentsDeps.getAgentVersion;
     // Mock getAgentVersion to return a version immediately
     _cliAgentsDeps.getAgentVersion = async () => "1.0.0";
     // Report only "claude" as having an ACP launcher.
-    origLaunchKind = _acpSdkDeps.launchCandidateKind;
-    _acpSdkDeps.launchCandidateKind = mock((agent: string) => (agent === "claude" ? "local" : undefined));
+    origLaunchKind = _acpDeps.launchCandidateKind;
+    _acpDeps.launchCandidateKind = mock((agent: string) => (agent === "claude" ? "local" : undefined));
   });
 
   afterEach(() => {
     _cliAgentsDeps.getAgentVersion = origGetAgentVersion;
-    _acpSdkDeps.launchCandidateKind = origLaunchKind;
+    _acpDeps.launchCandidateKind = origLaunchKind;
   });
 
   test("should display agents table with headers", async () => {
@@ -171,5 +171,26 @@ describe("agentsListCommand", () => {
     } finally {
       console.log = originalLog;
     }
+  });
+
+  async function listOutput(config: typeof DEFAULT_CONFIG): Promise<string> {
+    const originalLog = console.log;
+    let output = "";
+    console.log = (message: string) => {
+      output += `${message}\n`;
+    };
+    try {
+      await agentsListCommand(config, testDir);
+      return output;
+    } finally {
+      console.log = originalLog;
+    }
+  }
+  test("claude shows installed through its ACP launcher; the others do not", async () => {
+    const output = await listOutput(DEFAULT_CONFIG);
+    const claudeLine = output.split("\n").find((line) => /claude/i.test(line)) ?? "";
+    expect(claudeLine.toLowerCase()).toContain("installed");
+    const codexLine = output.split("\n").find((line) => /codex/i.test(line)) ?? "";
+    expect(codexLine.toLowerCase()).not.toMatch(/\binstalled\b/);
   });
 });

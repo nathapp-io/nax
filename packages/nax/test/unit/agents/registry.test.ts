@@ -1,31 +1,31 @@
 /**
  * Registry routing, instance reuse, health and the BUG-19 module-level
  * functions (salvaged from the acpx-era ACP-003 suite in S4b-5). Installed-ness
- * of ACP agents comes from _acpSdkDeps.launchCandidateKind; never the real PATH.
+ * of ACP agents comes from _acpDeps.launchCandidateKind; never the real PATH.
  */
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeNaxConfig } from "@test/helpers";
-import { _acpSdkDeps, AcpSdkAgentAdapter } from "@/agents/acp-sdk";
+import { _acpDeps, AcpAgentAdapter } from "@/agents/acp";
 import { _registryTestAdapters, checkAgentHealth, createAgentRegistry, getInstalledAgents } from "@/agents/registry";
 import type { NaxConfig } from "@/config/schema";
 import { DEFAULT_CONFIG } from "@/config/schema";
 import { logActiveProtocol } from "@/execution/lifecycle/run-initialization";
 
-const origLaunchKind = _acpSdkDeps.launchCandidateKind;
+const origLaunchKind = _acpDeps.launchCandidateKind;
 
 function launcherFound(found: boolean): void {
-  _acpSdkDeps.launchCandidateKind = mock(() => (found ? "local" : undefined));
+  _acpDeps.launchCandidateKind = mock(() => (found ? "local" : undefined));
 }
 
 afterEach(() => {
-  _acpSdkDeps.launchCandidateKind = origLaunchKind;
+  _acpDeps.launchCandidateKind = origLaunchKind;
   mock.restore();
 });
 
 describe("createAgentRegistry — protocol selection", () => {
   test("returns the ACP adapter for 'claude', named 'claude'", () => {
     const agent = createAgentRegistry(makeNaxConfig({ agent: { protocol: "acp" } })).getAgent("claude");
-    expect(agent).toBeInstanceOf(AcpSdkAgentAdapter);
+    expect(agent).toBeInstanceOf(AcpAgentAdapter);
     expect(agent?.name).toBe("claude");
   });
 

@@ -11,7 +11,7 @@ import { NATIVE_AGENT } from "@nathapp/nax-agent";
 import { DEFAULT_AGENT_PROTOCOL } from "@/config";
 import type { AgentManagerConfig } from "@/config/selectors";
 import { getLogger } from "../logger";
-import { AcpSdkAgentAdapter } from "./acp-sdk";
+import { AcpAgentAdapter } from "./acp";
 import { NativeAgentAdapter } from "./native-agent";
 import type { AgentAdapter } from "./types";
 
@@ -36,7 +36,7 @@ export function getAllAgentNames(): string[] {
 
 /** The adapter for a non-native agent (S4b spec §5.3). */
 export function acpAdapterFor(name: string): AgentAdapter {
-  return new AcpSdkAgentAdapter(name);
+  return new AcpAgentAdapter(name);
 }
 
 /**

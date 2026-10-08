@@ -8,7 +8,7 @@ import {
 } from "@test/helpers";
 import { replyTurn, scriptedOpened } from "@test/helpers/acp-fake-agent";
 import type { AgentResult, AgentRunOptions, AgentRunOutcome, AgentRunRequest, HopKind } from "@/agents";
-import { _acpSdkDeps } from "@/agents/acp-sdk";
+import { _acpDeps } from "@/agents/acp";
 import { FALLBACK_RATES, type PricingRates } from "@/agents/cost";
 import { _agentManagerDeps, AgentManager } from "@/agents/manager";
 import { buildCompleteEvent, buildSessionTurnEvent } from "@/agents/manager-dispatch";
@@ -234,15 +234,15 @@ describe("AgentManager.nextCandidate (Phase 4)", () => {
 });
 
 describe("AgentManager — middleware envelope", () => {
-  const REAL_SDK = { ..._acpSdkDeps };
+  const REAL_SDK = { ..._acpDeps };
   beforeEach(() => {
-    _acpSdkDeps.resolveRateCard = () => Promise.resolve({ rates: FALLBACK_RATES, source: "fallback-rates" });
-    _acpSdkDeps.cwdExists = async () => true;
+    _acpDeps.resolveRateCard = () => Promise.resolve({ rates: FALLBACK_RATES, source: "fallback-rates" });
+    _acpDeps.cwdExists = async () => true;
     const script = scriptedOpened([replyTurn("ok")]);
-    _acpSdkDeps.acpBackend = () => ({ kind: "acp:claude", open: async () => script.opened });
+    _acpDeps.acpBackend = () => ({ kind: "acp:claude", open: async () => script.opened });
   });
   afterEach(() => {
-    Object.assign(_acpSdkDeps, REAL_SDK);
+    Object.assign(_acpDeps, REAL_SDK);
     mock.restore();
   });
 

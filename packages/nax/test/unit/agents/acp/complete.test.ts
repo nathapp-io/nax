@@ -1,4 +1,4 @@
-// test/unit/agents/acp-sdk/complete.test.ts
+// test/unit/agents/acp/complete.test.ts
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { AgentSessionError, isProcessAlive, NaxError } from "@nathapp/nax-agent";
@@ -11,20 +11,20 @@ import {
   replyTurn,
   scriptedOpened,
 } from "@test/helpers/acp-fake-agent";
-import { _acpSdkDeps, AcpSdkAgentAdapter } from "@/agents/acp-sdk";
+import { _acpDeps, AcpAgentAdapter } from "@/agents/acp";
 import { FALLBACK_RATES } from "@/agents/cost";
 import { CompleteError, type ResolvedCompleteOptions, SessionFailureError, SessionTurnError } from "@/agents/types";
 
-const REAL = { ..._acpSdkDeps };
+const REAL = { ..._acpDeps };
 let dir: string;
 
 beforeEach(() => {
-  dir = makeTempDir("acp-sdk-complete-");
-  _acpSdkDeps.resolveRateCard = async () => ({ rates: FALLBACK_RATES, source: "fallback-rates" });
-  _acpSdkDeps.cwdExists = async () => true;
+  dir = makeTempDir("acp-complete-");
+  _acpDeps.resolveRateCard = async () => ({ rates: FALLBACK_RATES, source: "fallback-rates" });
+  _acpDeps.cwdExists = async () => true;
 });
 afterEach(() => {
-  Object.assign(_acpSdkDeps, REAL);
+  Object.assign(_acpDeps, REAL);
   cleanupTempDir(dir);
 });
 
@@ -39,14 +39,14 @@ function options(overrides: Partial<ResolvedCompleteOptions> = {}): ResolvedComp
 
 function scripted(...turns: Parameters<typeof scriptedOpened>[0]) {
   const script = scriptedOpened(turns);
-  _acpSdkDeps.acpBackend = () => ({ kind: "acp:claude", open: async () => script.opened });
+  _acpDeps.acpBackend = () => ({ kind: "acp:claude", open: async () => script.opened });
   return script;
 }
 
-describe("AcpSdkAgentAdapter.complete() (spec §6.6)", () => {
+describe("AcpAgentAdapter.complete() (spec §6.6)", () => {
   test("returns trimmed output with tokens, card estimate, reported exact cost and rates", async () => {
     const script = scripted(replyTurn("  the answer \n"));
-    const result = await new AcpSdkAgentAdapter("claude").complete("q", options());
+    const result = await new AcpAgentAdapter("claude").complete("q", options());
     expect(result).toMatchObject({
       output: "the answer",
       tokenUsage: { inputTokens: 10, outputTokens: 5 },
@@ -61,21 +61,19 @@ describe("AcpSdkAgentAdapter.complete() (spec §6.6)", () => {
 
   test("one prompt only: a trailing question in the output does not start an interaction", async () => {
     const script = scripted(replyTurn("Which file should I edit?"), replyTurn("never"));
-    const result = await new AcpSdkAgentAdapter("claude").complete("q", options());
+    const result = await new AcpAgentAdapter("claude").complete("q", options());
     expect(result.output).toBe("Which file should I edit?");
     expect(script.prompts).toEqual(["q"]);
   });
 
   test("blank output throws CompleteError, as acpx", async () => {
     scripted(replyTurn("   "));
-    await expect(new AcpSdkAgentAdapter("claude").complete("q", options())).rejects.toBeInstanceOf(CompleteError);
+    await expect(new AcpAgentAdapter("claude").complete("q", options())).rejects.toBeInstanceOf(CompleteError);
   });
 
   test("the timeout throws AGENT_TIMEOUT and closes the session", async () => {
     const script = scripted(hangTurn());
-    const err = await new AcpSdkAgentAdapter("claude")
-      .complete("q", options({ timeoutMs: 50 }))
-      .catch((e: unknown) => e);
+    const err = await new AcpAgentAdapter("claude").complete("q", options({ timeoutMs: 50 })).catch((e: unknown) => e);
     if (!(err instanceof NaxError)) throw err;
     expect(err.code).toBe("AGENT_TIMEOUT");
     expect(script.closeCount()).toBe(1);
@@ -85,7 +83,7 @@ describe("AcpSdkAgentAdapter.complete() (spec §6.6)", () => {
     scripted(hangTurn());
     const run = new AbortController();
     const cancels: Array<() => Promise<void>> = [];
-    const pending = new AcpSdkAgentAdapter("claude").complete(
+    const pending = new AcpAgentAdapter("claude").complete(
       "q",
       options({ signal: run.signal, onActiveCall: (_id, cancel) => cancels.push(cancel) }),
     );
@@ -97,25 +95,25 @@ describe("AcpSdkAgentAdapter.complete() (spec §6.6)", () => {
   });
 
   test("an open-time failure is thrown pre-classified (SessionFailureError, D3-a)", async () => {
-    _acpSdkDeps.acpBackend = () => ({
+    _acpDeps.acpBackend = () => ({
       kind: "acp:claude",
       open: async () => {
         throw new AgentSessionError("login", "AGENT_SESSION_AUTH_REQUIRED");
       },
     });
-    const err = await new AcpSdkAgentAdapter("claude").complete("q", options()).catch((e: unknown) => e);
+    const err = await new AcpAgentAdapter("claude").complete("q", options()).catch((e: unknown) => e);
     if (!(err instanceof SessionFailureError)) throw err;
     expect(err.adapterFailure).toMatchObject({ outcome: "fail-auth", category: "availability" });
   });
 
   test("a model refusal at open is fail-adapter-error / quality (D2-b through complete())", async () => {
-    _acpSdkDeps.acpBackend = () => ({
+    _acpDeps.acpBackend = () => ({
       kind: "acp:claude",
       open: async () => {
         throw new AgentSessionError("no model", "AGENT_SESSION_CAPABILITY_UNSUPPORTED", { capability: "model" });
       },
     });
-    const err = await new AcpSdkAgentAdapter("claude").complete("q", options()).catch((e: unknown) => e);
+    const err = await new AcpAgentAdapter("claude").complete("q", options()).catch((e: unknown) => e);
     if (!(err instanceof SessionFailureError)) throw err;
     expect(err.adapterFailure).toMatchObject({ outcome: "fail-adapter-error", category: "quality" });
   });
@@ -123,7 +121,7 @@ describe("AcpSdkAgentAdapter.complete() (spec §6.6)", () => {
   test("a watchdog cancel returns cancelled with the burned tokens priced, no adapterFailure (BUG-57)", async () => {
     scripted(hangTurn({ inputTokens: 7, outputTokens: 2, costUsd: 0.004 }));
     const cancels: Array<() => Promise<void>> = [];
-    const pending = new AcpSdkAgentAdapter("claude").complete(
+    const pending = new AcpAgentAdapter("claude").complete(
       "q",
       options({ onActiveCall: (_id, cancel) => cancels.push(cancel) }),
     );
@@ -137,16 +135,16 @@ describe("AcpSdkAgentAdapter.complete() (spec §6.6)", () => {
 
   test("any other failure is thrown pre-classified", async () => {
     scripted(failTurn(new AgentSessionError("login", "AGENT_SESSION_AUTH_REQUIRED")));
-    const err = await new AcpSdkAgentAdapter("claude").complete("q", options()).catch((e: unknown) => e);
+    const err = await new AcpAgentAdapter("claude").complete("q", options()).catch((e: unknown) => e);
     if (!(err instanceof SessionTurnError)) throw err;
     expect(err.adapterFailure).toMatchObject({ outcome: "fail-auth", category: "availability" });
   });
 
   test("promptRetries applies to complete()", async () => {
-    _acpSdkDeps.delay = async () => {};
+    _acpDeps.delay = async () => {};
     const transient = new NaxError("x", "AGENT_SESSION_TURN_FAILED", { rpcCode: -32603 });
     const script = scripted(failTurn(transient), replyTurn("ok"));
-    const result = await new AcpSdkAgentAdapter("claude").complete("q", options({ promptRetries: 1 }));
+    const result = await new AcpAgentAdapter("claude").complete("q", options({ promptRetries: 1 }));
     expect(result.output).toBe("ok");
     expect(script.prompts).toEqual(["q", "q"]);
   });
@@ -154,14 +152,14 @@ describe("AcpSdkAgentAdapter.complete() (spec §6.6)", () => {
   test("the session is named from sessionName, else computeAcpHandle", async () => {
     const opened: string[] = [];
     const script = scriptedOpened([replyTurn("x")]);
-    _acpSdkDeps.acpBackend = () => ({
+    _acpDeps.acpBackend = () => ({
       kind: "acp:claude",
       open: async (ctx) => {
         opened.push(ctx.sessionId);
         return script.opened;
       },
     });
-    const adapter = new AcpSdkAgentAdapter("claude");
+    const adapter = new AcpAgentAdapter("claude");
     await adapter.complete("q", options({ sessionName: "nax-explicit" }));
     await adapter.complete("q", options({ featureName: "feat", storyId: "US-1" }));
     expect(opened[0]).toBe("nax-explicit");
@@ -171,14 +169,14 @@ describe("AcpSdkAgentAdapter.complete() (spec §6.6)", () => {
   test("the profile comes from resolvedPermissions, as sessions (B3)", async () => {
     const profiles: string[] = [];
     const script = scriptedOpened([replyTurn("x")]);
-    _acpSdkDeps.acpBackend = () => ({
+    _acpDeps.acpBackend = () => ({
       kind: "acp:claude",
       open: async (ctx) => {
         profiles.push(ctx.profile);
         return script.opened;
       },
     });
-    await new AcpSdkAgentAdapter("claude").complete(
+    await new AcpAgentAdapter("claude").complete(
       "q",
       options({ resolvedPermissions: { mode: "approve-reads", bashApproval: "raw" } }),
     );
@@ -187,9 +185,9 @@ describe("AcpSdkAgentAdapter.complete() (spec §6.6)", () => {
 
   test("a hung complete() times out and leaves no agent process (Review Focus 4)", async () => {
     const record = join(dir, "record.jsonl");
-    _acpSdkDeps.acpBackend = fakeAcpBackend({ turns: [{ steps: [{ kind: "hang" }] }] }, record);
+    _acpDeps.acpBackend = fakeAcpBackend({ turns: [{ steps: [{ kind: "hang" }] }] }, record);
     // The fake's "hang" ignores session/cancel, so the close waits out cancelGraceMs: keep it short.
-    const err = await new AcpSdkAgentAdapter("claude")
+    const err = await new AcpAgentAdapter("claude")
       .complete("q", options({ timeoutMs: 300, trackedSpawnDeadlineMs: 500 }))
       .catch((e: unknown) => e);
     if (!(err instanceof NaxError)) throw err;

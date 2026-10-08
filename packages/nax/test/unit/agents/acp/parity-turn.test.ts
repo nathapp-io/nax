@@ -1,4 +1,4 @@
-// test/unit/agents/acp-sdk/parity-turn.test.ts
+// test/unit/agents/acp/parity-turn.test.ts
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import {
   type AdapterInteraction,
@@ -13,22 +13,22 @@ import {
 } from "@nathapp/nax-agent";
 import { waitForCondition } from "@test/helpers";
 import { failTurn, hangTurn, replyTurn, scriptedOpened } from "@test/helpers/acp-fake-agent";
-import { createAskPort } from "@/agents/acp-sdk/ask-port";
-import { _acpSdkDeps, type AcpSdkSession } from "@/agents/acp-sdk/session";
-import { createAuditRecorder } from "@/agents/acp-sdk/tool-audit";
-import { runTurnLoop } from "@/agents/acp-sdk/turn-loop";
-import { createTurnSlot } from "@/agents/acp-sdk/turn-slot";
+import { createAskPort } from "@/agents/acp/ask-port";
+import { _acpDeps, type AcpSession } from "@/agents/acp/session";
+import { createAuditRecorder } from "@/agents/acp/tool-audit";
+import { runTurnLoop } from "@/agents/acp/turn-loop";
+import { createTurnSlot } from "@/agents/acp/turn-slot";
 import { FALLBACK_RATES } from "@/agents/cost";
 import { failurePolicyFor } from "@/agents/retry/failure-policy";
 import { getLogger, initLogger, resetLogger } from "@/logger";
 
-const REAL = { ..._acpSdkDeps };
+const REAL = { ..._acpDeps };
 afterEach(() => {
-  Object.assign(_acpSdkDeps, REAL);
+  Object.assign(_acpDeps, REAL);
 });
 
 interface Built {
-  readonly session: AcpSdkSession;
+  readonly session: AcpSession;
   readonly events: AgentStreamEvent[];
   readonly cancels: Array<() => Promise<void>>;
 }
@@ -48,7 +48,7 @@ function build(opened: OpenedBackend, overrides: Partial<OpenSessionOpts> = {}):
     },
     ...overrides,
   };
-  const session: AcpSdkSession = {
+  const session: AcpSession = {
     name: "nax-loop",
     agent: "claude",
     opts,
@@ -171,7 +171,7 @@ describe("sendTurn parity with acpx (spec §9)", () => {
 
   test("a failed NOT_FOUND re-open surfaces the dead turn's error (adapter-send-turn-edges)", async () => {
     const first = scriptedOpened([failTurn(new AgentSessionError("gone", "AGENT_SESSION_NOT_FOUND"))]);
-    _acpSdkDeps.acpBackend = () => ({
+    _acpDeps.acpBackend = () => ({
       kind: "acp:claude",
       open: async () => {
         throw new Error("cannot reopen");

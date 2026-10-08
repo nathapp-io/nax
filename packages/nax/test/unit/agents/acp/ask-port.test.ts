@@ -1,10 +1,10 @@
-// test/unit/agents/acp-sdk/ask-port.test.ts
+// test/unit/agents/acp/ask-port.test.ts
 import { describe, expect, test } from "bun:test";
 import type { AdapterInteraction, InteractionHandler } from "@nathapp/nax-agent";
 import { waitForCondition } from "@test/helpers";
-import { createAskPort } from "@/agents/acp-sdk/ask-port";
-import type { CallBridge } from "@/agents/acp-sdk/stream-bridge";
-import { createTurnSlot, type RunningTurn, type TurnSlot } from "@/agents/acp-sdk/turn-slot";
+import { createAskPort } from "@/agents/acp/ask-port";
+import type { CallBridge } from "@/agents/acp/stream-bridge";
+import { createTurnSlot, type RunningTurn, type TurnSlot } from "@/agents/acp/turn-slot";
 
 interface Harness {
   readonly slot: TurnSlot;

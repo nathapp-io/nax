@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { acpProfileFor } from "@/agents/acp-sdk/profile-map";
+import { acpProfileFor } from "@/agents/acp/profile-map";
 
 describe("acpProfileFor (S4b spec §6.4)", () => {
   test("approve-all maps to full", () => {

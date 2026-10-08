@@ -1,5 +1,5 @@
 /**
- * AcpSdkAgentAdapter: nax's AgentAdapter over @nathapp/nax-agent-acp (S4b spec
+ * AcpAgentAdapter: nax's AgentAdapter over @nathapp/nax-agent-acp (S4b spec
  * §5.1). It drives the backend's S1 adapter itself (D24, B6) with nax's turn
  * loop around it. The live map routes
  * turns and closes from a nax handle id to its session; it is never used to
@@ -23,11 +23,11 @@ import type {
   TurnResult,
 } from "../types";
 import { runComplete } from "./complete";
-import { type AcpSdkEntry, acpSdkEntry, UNSUPPORTED_ENTRY } from "./entries";
-import { _acpSdkDeps, type AcpSdkSession, closeDeadlineMs, createSession, shutdownSession } from "./session";
+import { type AcpEntry, acpEntry, UNSUPPORTED_ENTRY } from "./entries";
+import { _acpDeps, type AcpSession, closeDeadlineMs, createSession, shutdownSession } from "./session";
 import { runTurnLoop } from "./turn-loop";
 
-const STAGE = "acp-sdk";
+const STAGE = "acp";
 
 function notifyEstablished(opts: OpenSessionOpts, protocolIds: ProtocolIds | undefined, name: string): void {
   if (opts.onSessionEstablished === undefined || protocolIds === undefined) return;
@@ -41,17 +41,17 @@ function notifyEstablished(opts: OpenSessionOpts, protocolIds: ProtocolIds | und
   }
 }
 
-export class AcpSdkAgentAdapter implements AgentAdapter {
+export class AcpAgentAdapter implements AgentAdapter {
   readonly name: string;
   readonly displayName: string;
   /** The agent's own CLI, for display and `nax agents`' version probe (D2-f). */
   readonly binary: string;
   readonly capabilities: AgentCapabilities;
-  private readonly entry: AcpSdkEntry | undefined;
-  private readonly live = new Map<string, AcpSdkSession>();
+  private readonly entry: AcpEntry | undefined;
+  private readonly live = new Map<string, AcpSession>();
 
   constructor(agentName: string) {
-    this.entry = acpSdkEntry(agentName);
+    this.entry = acpEntry(agentName);
     const shown = this.entry ?? UNSUPPORTED_ENTRY;
     this.name = agentName;
     this.displayName = shown.displayName;
@@ -65,12 +65,12 @@ export class AcpSdkAgentAdapter implements AgentAdapter {
 
   /** True when nax-agent-acp finds a launch candidate for the agent, the npx fallback included (spec §6.8). */
   async isInstalled(): Promise<boolean> {
-    return this.entry !== undefined && _acpSdkDeps.launchCandidateKind(this.entry.agent) !== undefined;
+    return this.entry !== undefined && _acpDeps.launchCandidateKind(this.entry.agent) !== undefined;
   }
 
   /** Spec §6.8, D3-k: the run's install check warns when only the npx fallback resolves. */
   launchNote(): string | undefined {
-    if (this.entry === undefined || _acpSdkDeps.launchCandidateKind(this.entry.agent) !== "npx") return undefined;
+    if (this.entry === undefined || _acpDeps.launchCandidateKind(this.entry.agent) !== "npx") return undefined;
     return `Only the npx fallback can launch ACP agent "${this.name}"; the first run downloads it inside the startup deadline`;
   }
 
@@ -142,7 +142,7 @@ export class AcpSdkAgentAdapter implements AgentAdapter {
     });
   }
 
-  private requireEntry(sessionName: string): AcpSdkEntry {
+  private requireEntry(sessionName: string): AcpEntry {
     if (this.entry !== undefined) return this.entry;
     throw new NaxError(
       `Agent "${this.name}" has no ACP launcher, so it cannot run as an ACP agent`,
@@ -152,15 +152,15 @@ export class AcpSdkAgentAdapter implements AgentAdapter {
   }
 
   private async requireWorkdir(sessionName: string, workdir: string): Promise<void> {
-    if (await _acpSdkDeps.cwdExists(workdir)) return;
+    if (await _acpDeps.cwdExists(workdir)) return;
     throw new NaxError(
-      `[acp-sdk] Session cwd does not exist: ${workdir} — cannot start agent "${this.name}". If this is a new package for the feature, ensure its directory is created before the run.`,
+      `[acp] Session cwd does not exist: ${workdir} — cannot start agent "${this.name}". If this is a new package for the feature, ensure its directory is created before the run.`,
       "SESSION_CWD_MISSING",
       { stage: "open-session", agentName: this.name, cwd: workdir, sessionName },
     );
   }
 
-  private sessionFor(id: string): AcpSdkSession {
+  private sessionFor(id: string): AcpSession {
     const session = this.live.get(id);
     if (session !== undefined) return session;
     throw new NaxError(`No open ACP session "${id}" on this adapter`, "ACP_SDK_SESSION_NOT_OPEN", {

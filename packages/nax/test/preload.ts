@@ -4,7 +4,7 @@
  * Redirects global nax state into a temp directory so tests never write to the
  * real ~/.nax, while still starting from a deterministic clean environment.
  *
- * Also installs a sentinel on _acpSdkDeps.acpBackend that throws if called
+ * Also installs a sentinel on _acpDeps.acpBackend that throws if called
  * without a test-level mock, so no test spawns a real ACP agent process. Tests
  * that open a session replace the dep (fakeAcpBackend or a scripted backend).
  *
@@ -20,7 +20,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { _clientDeps } from "@nathapp/nax-agent/internal";
-import { _acpSdkDeps } from "../src/agents/acp-sdk/session";
+import { _acpDeps } from "../src/agents/acp/session";
 import { configureNaxCredentials } from "../src/config";
 import { _notifyDeps } from "../src/finish/notify";
 import { _nativeCredentialDeps } from "../src/precheck/checks-native-credentials";
@@ -89,16 +89,16 @@ console.error = () => {};
 
 // ─── ACP spawn sentinel ───────────────────────────────────────────
 // ACP agents run through nax-agent-acp. A test that reaches
-// _acpSdkDeps.acpBackend without replacing it would spawn a real ACP agent
+// _acpDeps.acpBackend without replacing it would spawn a real ACP agent
 // (the local launcher or npx). Fail fast instead. sdk tests replace this dep
 // with fakeAcpBackend (test/helpers/acp-fake-agent) or a scripted backend.
-_acpSdkDeps.acpBackend = () => {
+_acpDeps.acpBackend = () => {
   throw new Error(
-    "[test-preload] _acpSdkDeps.acpBackend called without a mock — " +
+    "[test-preload] _acpDeps.acpBackend called without a mock — " +
       "this would spawn a real ACP agent process. " +
       "Replace it in your describe block:\n" +
-      "  beforeEach(() => { _acpSdkDeps.acpBackend = (opts) => fakeAcpBackend(...); })\n" +
-      "  afterEach(() => { _acpSdkDeps.acpBackend = <saved original>; })",
+      "  beforeEach(() => { _acpDeps.acpBackend = (opts) => fakeAcpBackend(...); })\n" +
+      "  afterEach(() => { _acpDeps.acpBackend = <saved original>; })",
   );
 };
 

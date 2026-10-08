@@ -24,10 +24,10 @@ import {
   type TurnResult,
 } from "../types";
 import { classifyTurnFailure, RunAborted } from "./failure-map";
-import { type AcpSdkSession, closeDeadlineMs, createSession, shutdownSession } from "./session";
+import { type AcpSession, closeDeadlineMs, createSession, shutdownSession } from "./session";
 import { runTurnLoop } from "./turn-loop";
 
-const STAGE = "acp-sdk";
+const STAGE = "acp";
 /** acpx's complete() default (adapter-complete-flow.ts). */
 export const DEFAULT_COMPLETE_TIMEOUT_MS = 120_000;
 const MS_PER_SECOND = 1_000;
@@ -118,7 +118,7 @@ export async function runComplete(
 }
 
 /** Opens the throwaway session; an open failure is classified like a turn's (§7.1) and thrown pre-classified (D3-a). */
-async function openClassified(name: string, agent: AcpAgentName, opts: OpenSessionOpts): Promise<AcpSdkSession> {
+async function openClassified(name: string, agent: AcpAgentName, opts: OpenSessionOpts): Promise<AcpSession> {
   try {
     return await createSession(name, agent, opts);
   } catch (err) {

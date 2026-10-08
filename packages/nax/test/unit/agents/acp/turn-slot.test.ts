@@ -1,8 +1,8 @@
-// test/unit/agents/acp-sdk/turn-slot.test.ts
+// test/unit/agents/acp/turn-slot.test.ts
 import { describe, expect, test } from "bun:test";
 import { NO_OP_INTERACTION_HANDLER } from "@nathapp/nax-agent";
-import { startCall } from "@/agents/acp-sdk/stream-bridge";
-import { createTurnSlot } from "@/agents/acp-sdk/turn-slot";
+import { startCall } from "@/agents/acp/stream-bridge";
+import { createTurnSlot } from "@/agents/acp/turn-slot";
 
 describe("createTurnSlot", () => {
   test("between turns: no turn, an unaborted signal, no turn id", () => {

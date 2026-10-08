@@ -7,14 +7,14 @@
  */
 import type { ResolvedPermissions } from "@/config/permissions";
 
-export type AcpSdkProfile = "full" | "read";
+export type AcpProfile = "full" | "read";
 
-const PROFILE_BY_MODE: Readonly<Record<ResolvedPermissions["mode"], AcpSdkProfile>> = Object.freeze({
+const PROFILE_BY_MODE: Readonly<Record<ResolvedPermissions["mode"], AcpProfile>> = Object.freeze({
   "approve-all": "full", // nax-permission-mode-allow: consumer, maps the resolved mode to an ACP profile
   "approve-reads": "read", // nax-permission-mode-allow: consumer, maps the resolved mode to an ACP profile
   default: "read",
 });
 
-export function acpProfileFor(mode: ResolvedPermissions["mode"]): AcpSdkProfile {
+export function acpProfileFor(mode: ResolvedPermissions["mode"]): AcpProfile {
   return PROFILE_BY_MODE[mode];
 }

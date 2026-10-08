@@ -39,7 +39,7 @@ import type { StreamContext } from "./stream-bridge";
 import { type AuditRecorder, createAuditRecorder } from "./tool-audit";
 import { createTurnSlot, type TurnSlot } from "./turn-slot";
 
-const STAGE = "acp-sdk";
+const STAGE = "acp";
 
 /** A leftover the backend cannot restore: deleted, then the session opens fresh (D2-j). */
 const DISCARD_CODES: ReadonlySet<string> = new Set([
@@ -50,7 +50,7 @@ const DISCARD_CODES: ReadonlySet<string> = new Set([
 ]);
 
 /** Test seam. Production always uses the package functions. */
-export const _acpSdkDeps = {
+export const _acpDeps = {
   acpBackend: (options: AcpBackendOptions): SessionBackend => acpBackend(options),
   launchCandidateKind: (agent: AcpAgentName): LaunchCandidateKind | undefined => launchCandidateKind(agent),
   resolveRateCard: (modelId: string): Promise<RateCard> => resolveRateCard(modelId),
@@ -71,7 +71,7 @@ export interface ProcessTracker {
   pid: number | undefined;
 }
 
-export interface AcpSdkSession {
+export interface AcpSession {
   readonly name: string;
   readonly agent: AcpAgentName;
   readonly opts: OpenSessionOpts;
@@ -94,7 +94,7 @@ export interface AcpSdkSession {
 }
 
 type OpenBase = Pick<
-  AcpSdkSession,
+  AcpSession,
   "name" | "agent" | "opts" | "store" | "slot" | "asks" | "audit" | "closer" | "process"
 >;
 
@@ -135,7 +135,7 @@ function killAgent(process: ProcessTracker): void {
 }
 
 async function openBackend(base: OpenBase, resume: TranscriptDoc | undefined): Promise<OpenedBackend> {
-  const backend = _acpSdkDeps.acpBackend(backendOptions(base.agent, base.opts, processHooks(base)));
+  const backend = _acpDeps.acpBackend(backendOptions(base.agent, base.opts, processHooks(base)));
   return backend.open(
     openContext({
       name: base.name,
@@ -216,7 +216,7 @@ function streamContextOf(
   };
 }
 
-export async function createSession(name: string, agent: AcpAgentName, opts: OpenSessionOpts): Promise<AcpSdkSession> {
+export async function createSession(name: string, agent: AcpAgentName, opts: OpenSessionOpts): Promise<AcpSession> {
   const slot = createTurnSlot();
   const closer = new AbortController();
   const unlinkRun = linkRunSignal(opts.signal, closer);
@@ -233,7 +233,7 @@ export async function createSession(name: string, agent: AcpAgentName, opts: Ope
     process: { pid: undefined },
   };
   try {
-    const rateCard = await _acpSdkDeps.resolveRateCard(opts.modelDef.model);
+    const rateCard = await _acpDeps.resolveRateCard(opts.modelDef.model);
     const opened = await openWithLeftover(base);
     const protocolIds = await protocolIdsOf(base.store, name);
     const handle: SessionHandle = Object.freeze({
@@ -303,7 +303,7 @@ export interface ShutdownOptions {
  * deadline (past it, kill the process group), wait for the turn loop so the
  * backend's last baseline save lands first, then delete the document.
  */
-export async function shutdownSession(session: AcpSdkSession, options: ShutdownOptions): Promise<void> {
+export async function shutdownSession(session: AcpSession, options: ShutdownOptions): Promise<void> {
   session.closer.abort();
   session.unlinkRun();
   if (options.force === true) killAgent(session.process);
@@ -327,7 +327,7 @@ export async function shutdownSession(session: AcpSdkSession, options: ShutdownO
 }
 
 /** Mid-turn NO_SESSION recovery (§6.2 step 3.5): a fresh session under the same name, never a resume (D2-l). */
-export async function reopenFresh(session: AcpSdkSession): Promise<void> {
+export async function reopenFresh(session: AcpSession): Promise<void> {
   if ((await settleWithin(session.opened.close(), closeDeadlineMs(session.opts))) === "cut") killAgent(session.process);
   await discard(session.store, session.name);
   session.opened = await openBackend(session, undefined);

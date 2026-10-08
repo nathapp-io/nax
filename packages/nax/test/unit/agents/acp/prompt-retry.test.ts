@@ -1,7 +1,7 @@
-// test/unit/agents/acp-sdk/prompt-retry.test.ts
+// test/unit/agents/acp/prompt-retry.test.ts
 import { describe, expect, test } from "bun:test";
 import { AgentSessionError, NaxError } from "@nathapp/nax-agent";
-import { isRetryablePromptError, promptRetryDelayMs } from "@/agents/acp-sdk/prompt-retry";
+import { isRetryablePromptError, promptRetryDelayMs } from "@/agents/acp/prompt-retry";
 
 describe("isRetryablePromptError (S4b-0 Ruling T1-1, acpx 0.19.4)", () => {
   test.each([

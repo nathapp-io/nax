@@ -1,13 +1,12 @@
 /**
- * The idle watchdog against the sdk transport's complete() (S4b spec §9):
- * AC9 and AC7 of fail-stale-watchdog.test.ts, with the backend scripted in
- * memory (scriptedOpened) instead of a mock acpx client.
+ * The idle watchdog against the ACP adapter's complete() (S4b spec §9), with
+ * the backend scripted in memory (scriptedOpened).
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { TurnEvent } from "@nathapp/nax-agent";
 import { makeFakeClock, makeNaxConfig, waitForCondition } from "@test/helpers";
 import { hangTurn, type ScriptedTurn, scriptedOpened } from "@test/helpers/acp-fake-agent";
-import { _acpSdkDeps, AcpSdkAgentAdapter } from "@/agents/acp-sdk";
+import { _acpDeps, AcpAgentAdapter } from "@/agents/acp";
 import { FALLBACK_RATES } from "@/agents/cost";
 import { _idleWatchdogDeps, AgentStreamEventBus, attachAgentIdleWatchdog } from "@/runtime";
 
@@ -36,7 +35,7 @@ function makeWatchdogConfig(
   });
 }
 
-const REAL_SDK = { ..._acpSdkDeps };
+const REAL_SDK = { ..._acpDeps };
 const REAL_WATCHDOG = { ..._idleWatchdogDeps };
 let clock: ReturnType<typeof makeFakeClock>;
 
@@ -45,14 +44,14 @@ beforeEach(() => {
   _idleWatchdogDeps.setTimeout = clock.setTimeout as typeof _idleWatchdogDeps.setTimeout;
   _idleWatchdogDeps.clearTimeout = clock.clearTimeout as typeof _idleWatchdogDeps.clearTimeout;
   _idleWatchdogDeps.now = clock.now;
-  _acpSdkDeps.resolveRateCard = () => Promise.resolve({ rates: FALLBACK_RATES, source: "fallback-rates" });
-  _acpSdkDeps.cwdExists = async () => true;
+  _acpDeps.resolveRateCard = () => Promise.resolve({ rates: FALLBACK_RATES, source: "fallback-rates" });
+  _acpDeps.cwdExists = async () => true;
   const script = scriptedOpened([hangTurn()]);
-  _acpSdkDeps.acpBackend = () => ({ kind: "acp:claude", open: async () => script.opened });
+  _acpDeps.acpBackend = () => ({ kind: "acp:claude", open: async () => script.opened });
 });
 
 afterEach(() => {
-  Object.assign(_acpSdkDeps, REAL_SDK);
+  Object.assign(_acpDeps, REAL_SDK);
   Object.assign(_idleWatchdogDeps, REAL_WATCHDOG);
 });
 
@@ -104,17 +103,17 @@ function activeTurn(event: TurnEvent, intervalMs: number, durationMs: number): S
 
 function scriptBackend(turn: ScriptedTurn): void {
   const script = scriptedOpened([turn]);
-  _acpSdkDeps.acpBackend = () => ({ kind: "acp:claude", open: async () => script.opened });
+  _acpDeps.acpBackend = () => ({ kind: "acp:claude", open: async () => script.opened });
 }
 
-describe("Idle watchdog stale cancellation (sdk transport)", () => {
+describe("Idle watchdog stale cancellation (ACP)", () => {
   test("AC9: a hanging prompt surfaces cancelled:true before the wall-clock timeout", async () => {
     const IDLE_TIMEOUT_MS = 80;
     const bus = new AgentStreamEventBus();
     const registry = new Map<string, () => Promise<void>>();
     const detach = attachAgentIdleWatchdog(bus, registry, makeWatchdogConfig(IDLE_TIMEOUT_MS));
     try {
-      const pending = new AcpSdkAgentAdapter("claude").complete("p", completeOptions(registry, bus, 5_000));
+      const pending = new AcpAgentAdapter("claude").complete("p", completeOptions(registry, bus, 5_000));
       // createSession does real async work before call_started; wait until the call is registered.
       await waitForCondition(() => registry.size > 0);
       await clock.advance(0);
@@ -133,7 +132,7 @@ describe("Idle watchdog stale cancellation (sdk transport)", () => {
     const registry = new Map<string, () => Promise<void>>();
     const detach = attachAgentIdleWatchdog(bus, registry, makeWatchdogConfig(IDLE_TIMEOUT_MS));
     try {
-      const pending = new AcpSdkAgentAdapter("claude").complete("p", completeOptions(registry, bus, 5_000));
+      const pending = new AcpAgentAdapter("claude").complete("p", completeOptions(registry, bus, 5_000));
       // createSession does real async work before call_started; wait until the call is registered.
       await waitForCondition(() => registry.size > 0);
       await clock.advance(0);
@@ -155,7 +154,7 @@ describe("Idle watchdog stale cancellation (sdk transport)", () => {
     const registry = new Map<string, () => Promise<void>>();
     const detach = attachAgentIdleWatchdog(bus, registry, makeWatchdogConfig(IDLE_TIMEOUT_MS));
     try {
-      const pending = new AcpSdkAgentAdapter("claude").complete("p", completeOptions(registry, bus, 5_000));
+      const pending = new AcpAgentAdapter("claude").complete("p", completeOptions(registry, bus, 5_000));
       await waitForCondition(() => registry.size > 0);
       await clock.advance(0);
       await clock.advance(300);
@@ -184,7 +183,7 @@ describe("Idle watchdog stale cancellation (sdk transport)", () => {
       makeWatchdogConfig(IDLE_TIMEOUT_MS, ["message_update", "thinking_update", "usage_update"]),
     );
     try {
-      const pending = new AcpSdkAgentAdapter("claude").complete("p", completeOptions(registry, bus, 5_000));
+      const pending = new AcpAgentAdapter("claude").complete("p", completeOptions(registry, bus, 5_000));
       await waitForCondition(() => registry.size > 0);
       await clock.advance(0);
       await clock.advance(300);
@@ -221,7 +220,7 @@ describe("Idle watchdog stale cancellation (sdk transport)", () => {
       ),
     );
     try {
-      const pending = new AcpSdkAgentAdapter("claude").complete("p", completeOptions(registry, bus, 5_000));
+      const pending = new AcpAgentAdapter("claude").complete("p", completeOptions(registry, bus, 5_000));
       await waitForCondition(() => registry.size > 0);
       await clock.advance(0);
       await clock.advance(200);
@@ -240,7 +239,7 @@ describe("Idle watchdog stale cancellation (sdk transport)", () => {
     const registry = new Map<string, () => Promise<void>>();
     const detach = attachAgentIdleWatchdog(bus, registry, makeWatchdogConfig(SHORT_IDLE_TIMEOUT_MS));
     try {
-      const pending = new AcpSdkAgentAdapter("claude").complete(
+      const pending = new AcpAgentAdapter("claude").complete(
         "p",
         completeOptions(registry, bus, WALL_CLOCK_TIMEOUT_MS),
       );

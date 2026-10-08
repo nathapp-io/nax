@@ -1,15 +1,15 @@
-// test/unit/agents/acp-sdk/tool-audit.test.ts
+// test/unit/agents/acp/tool-audit.test.ts
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { createAuditRecorder } from "@/agents/acp-sdk/tool-audit";
+import { createAuditRecorder } from "@/agents/acp/tool-audit";
 
 const AT = new Date("2026-10-07T00:00:00.000Z");
 let dir: string;
 
 beforeEach(() => {
-  dir = makeTempDir("acp-sdk-audit-");
+  dir = makeTempDir("acp-audit-");
 });
 afterEach(() => cleanupTempDir(dir));
 

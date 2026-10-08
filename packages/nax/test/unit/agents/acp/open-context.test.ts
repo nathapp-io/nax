@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createMemoryTranscriptStore, type OpenSessionOpts } from "@nathapp/nax-agent";
-import { createAskPort } from "@/agents/acp-sdk/ask-port";
+import { createAskPort } from "@/agents/acp/ask-port";
 import {
   backendEnv,
   backendOptions,
@@ -8,8 +8,8 @@ import {
   DEFAULT_STARTUP_DEADLINE_MS,
   openContext,
   transcriptStoreFor,
-} from "@/agents/acp-sdk/open-context";
-import { createTurnSlot } from "@/agents/acp-sdk/turn-slot";
+} from "@/agents/acp/open-context";
+import { createTurnSlot } from "@/agents/acp/turn-slot";
 
 const OPTS: OpenSessionOpts = {
   agentName: "claude",

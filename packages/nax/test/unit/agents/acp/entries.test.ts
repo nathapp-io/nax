@@ -1,21 +1,21 @@
 import { describe, expect, test } from "bun:test";
-import { ACP_SDK_AGENT_NAMES, acpSdkEntry, UNSUPPORTED_ENTRY } from "@/agents/acp-sdk/entries";
+import { ACP_AGENT_NAMES, acpEntry, UNSUPPORTED_ENTRY } from "@/agents/acp/entries";
 
-describe("acp-sdk entries", () => {
+describe("acp entries", () => {
   test("lists the agents that have an ACP launcher (no aider)", () => {
-    expect([...ACP_SDK_AGENT_NAMES].sort()).toEqual(["claude", "codex", "gemini", "opencode", "pi"]);
+    expect([...ACP_AGENT_NAMES].sort()).toEqual(["claude", "codex", "gemini", "opencode", "pi"]);
   });
 
   test("each entry launches the nax-agent-acp agent of its own name", () => {
-    for (const name of ACP_SDK_AGENT_NAMES) {
-      const entry = acpSdkEntry(name);
+    for (const name of ACP_AGENT_NAMES) {
+      const entry = acpEntry(name);
       expect(entry === undefined || entry.agent === name).toBe(true);
     }
   });
 
   test("aider and unknown names have no entry", () => {
-    expect(acpSdkEntry("aider")).toBeUndefined();
-    expect(acpSdkEntry("toString")).toBeUndefined();
+    expect(acpEntry("aider")).toBeUndefined();
+    expect(acpEntry("toString")).toBeUndefined();
   });
 
   test("the unsupported row is the generic ACP Agent display", () => {

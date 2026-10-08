@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { AgentStreamEvent } from "@nathapp/nax-agent";
-import { type StreamContext, startCall } from "@/agents/acp-sdk/stream-bridge";
+import { type StreamContext, startCall } from "@/agents/acp/stream-bridge";
 
 function context(events: AgentStreamEvent[], pid?: number): StreamContext {
   return {

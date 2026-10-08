@@ -12,7 +12,7 @@ import { awaitInteractionReply } from "../interaction";
 import type { AuditRecorder } from "./tool-audit";
 import type { RunningTurn, TurnSlot } from "./turn-slot";
 
-const STAGE = "acp-sdk";
+const STAGE = "acp";
 
 /** How often a pending ACP question tells the idle watchdog the turn waits on a person (900 s idle default). */
 export const AWAITING_HUMAN_BEAT_MS = 30_000;

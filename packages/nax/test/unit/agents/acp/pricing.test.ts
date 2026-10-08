@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { attachTurnSpend } from "@nathapp/nax-agent";
-import { addSpend, failedSpendFields, NO_SPEND, spendOfError, spendOfResult } from "@/agents/acp-sdk/pricing";
+import { addSpend, failedSpendFields, NO_SPEND, spendOfError, spendOfResult } from "@/agents/acp/pricing";
 import { FALLBACK_RATES } from "@/agents/cost";
 
 const CARD = { rates: FALLBACK_RATES, source: "fallback-rates" } as const;
 
-describe("acp-sdk pricing (S4b spec §7.3)", () => {
+describe("acp pricing (S4b spec §7.3)", () => {
   test("a reported cost becomes exactCostUsd", () => {
     const spend = spendOfResult({
       tokenUsage: { inputTokens: 10, outputTokens: 5 },

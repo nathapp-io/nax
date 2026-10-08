@@ -9,21 +9,21 @@ import {
 } from "@nathapp/nax-agent";
 import { cleanupTempDir, makeTempDir, waitForCondition } from "@test/helpers";
 import { fakeAcpBackend, fakeMethods, fakeStartPids } from "@test/helpers/acp-fake-agent";
-import { _acpSdkDeps, AcpSdkAgentAdapter } from "@/agents/acp-sdk";
+import { _acpDeps, AcpAgentAdapter } from "@/agents/acp";
 import { FALLBACK_RATES } from "@/agents/cost";
 
-const REAL = { ..._acpSdkDeps };
+const REAL = { ..._acpDeps };
 let dir = "";
 let record = "";
 
 beforeEach(() => {
-  dir = makeTempDir("acp-sdk-adapter-");
+  dir = makeTempDir("acp-adapter-");
   record = join(dir, "record.jsonl");
-  _acpSdkDeps.resolveRateCard = async () => ({ rates: FALLBACK_RATES, source: "fallback-rates" });
+  _acpDeps.resolveRateCard = async () => ({ rates: FALLBACK_RATES, source: "fallback-rates" });
 });
 
 afterEach(() => {
-  Object.assign(_acpSdkDeps, REAL);
+  Object.assign(_acpDeps, REAL);
   cleanupTempDir(dir);
 });
 
@@ -51,10 +51,10 @@ const PONG_TURN = {
   usage: { inputTokens: 12, outputTokens: 3, totalTokens: 15 },
 };
 
-describe("AcpSdkAgentAdapter over a real agent process", () => {
+describe("AcpAgentAdapter over a real agent process", () => {
   test("open, one turn, close: output, spend, stream events, no process left", async () => {
-    _acpSdkDeps.acpBackend = fakeAcpBackend({ turns: [PONG_TURN] }, record);
-    const adapter = new AcpSdkAgentAdapter("claude");
+    _acpDeps.acpBackend = fakeAcpBackend({ turns: [PONG_TURN] }, record);
+    const adapter = new AcpAgentAdapter("claude");
     const events: AgentStreamEvent[] = [];
     const established: string[] = [];
     const handle = await adapter.openSession(
@@ -83,8 +83,8 @@ describe("AcpSdkAgentAdapter over a real agent process", () => {
   }, 30_000);
 
   test("closeSession during a running prompt ends the turn as fail-aborted (Review Focus 1)", async () => {
-    _acpSdkDeps.acpBackend = fakeAcpBackend({ turns: [{ steps: [{ kind: "waitForCancel" }] }] }, record);
-    const adapter = new AcpSdkAgentAdapter("claude");
+    _acpDeps.acpBackend = fakeAcpBackend({ turns: [{ steps: [{ kind: "waitForCancel" }] }] }, record);
+    const adapter = new AcpAgentAdapter("claude");
     const handle = await adapter.openSession("nax-a2", opts());
     const pending = adapter.sendTurn(handle, "long", { interactionHandler: NO_OP_INTERACTION_HANDLER });
     // Attach the handler before the close: the turn rejects while closeSession's
@@ -102,8 +102,8 @@ describe("AcpSdkAgentAdapter over a real agent process", () => {
   }, 30_000);
 
   test("a model the agent does not offer fails the open and leaves nothing (Review Focus 3)", async () => {
-    _acpSdkDeps.acpBackend = fakeAcpBackend({}, record);
-    const adapter = new AcpSdkAgentAdapter("claude");
+    _acpDeps.acpBackend = fakeAcpBackend({}, record);
+    const adapter = new AcpAgentAdapter("claude");
     await expect(
       adapter.openSession("nax-a3", opts({ modelDef: { provider: "anthropic", model: "claude-sonnet-4-5" } })),
     ).rejects.toMatchObject({ code: "AGENT_SESSION_CAPABILITY_UNSUPPORTED" });
@@ -115,8 +115,8 @@ describe("AcpSdkAgentAdapter over a real agent process", () => {
   }, 30_000);
 
   test("closePhysicalSession closes a live handle and ignores an unknown one", async () => {
-    _acpSdkDeps.acpBackend = fakeAcpBackend({}, record);
-    const adapter = new AcpSdkAgentAdapter("claude");
+    _acpDeps.acpBackend = fakeAcpBackend({}, record);
+    const adapter = new AcpAgentAdapter("claude");
     await adapter.openSession("nax-a4", opts());
     await adapter.closePhysicalSession("not-open", dir);
     await adapter.closePhysicalSession("nax-a4", dir, { force: true });
@@ -125,8 +125,8 @@ describe("AcpSdkAgentAdapter over a real agent process", () => {
   }, 30_000);
 
   test("re-opening a live name closes the old session first", async () => {
-    _acpSdkDeps.acpBackend = fakeAcpBackend({}, record);
-    const adapter = new AcpSdkAgentAdapter("claude");
+    _acpDeps.acpBackend = fakeAcpBackend({}, record);
+    const adapter = new AcpAgentAdapter("claude");
     await adapter.openSession("nax-a5", opts());
     const handle = await adapter.openSession("nax-a5", opts());
     const [firstPid] = fakeStartPids(record);
@@ -135,7 +135,7 @@ describe("AcpSdkAgentAdapter over a real agent process", () => {
   }, 30_000);
 
   test("onPidSpawned/onPidExited fire for the first process and for the reconnect's process", async () => {
-    _acpSdkDeps.acpBackend = fakeAcpBackend(
+    _acpDeps.acpBackend = fakeAcpBackend(
       {
         capabilities: { sessionCapabilities: { resume: {} } },
         turns: [
@@ -152,7 +152,7 @@ describe("AcpSdkAgentAdapter over a real agent process", () => {
     );
     const spawned: number[] = [];
     const exited: number[] = [];
-    const adapter = new AcpSdkAgentAdapter("claude");
+    const adapter = new AcpAgentAdapter("claude");
     const handle = await adapter.openSession("nax-pids", {
       ...opts(),
       onPidSpawned: (pid) => spawned.push(pid),
@@ -168,25 +168,25 @@ describe("AcpSdkAgentAdapter over a real agent process", () => {
   }, 30_000);
 });
 
-describe("AcpSdkAgentAdapter without a process", () => {
+describe("AcpAgentAdapter without a process", () => {
   test("a missing workdir fails SESSION_CWD_MISSING before any spawn", async () => {
-    _acpSdkDeps.acpBackend = fakeAcpBackend({}, record);
+    _acpDeps.acpBackend = fakeAcpBackend({}, record);
     await expect(
-      new AcpSdkAgentAdapter("claude").openSession("nax-b1", opts({ workdir: join(dir, "missing") })),
+      new AcpAgentAdapter("claude").openSession("nax-b1", opts({ workdir: join(dir, "missing") })),
     ).rejects.toMatchObject({ code: "SESSION_CWD_MISSING" });
     expect(fakeStartPids(record)).toEqual([]);
   });
 
   test("an aborted run signal fails before any spawn", async () => {
-    _acpSdkDeps.acpBackend = fakeAcpBackend({}, record);
+    _acpDeps.acpBackend = fakeAcpBackend({}, record);
     await expect(
-      new AcpSdkAgentAdapter("claude").openSession("nax-b2", opts({ signal: AbortSignal.abort("stop") })),
+      new AcpAgentAdapter("claude").openSession("nax-b2", opts({ signal: AbortSignal.abort("stop") })),
     ).rejects.toThrow();
     expect(fakeStartPids(record)).toEqual([]);
   });
 
   test("aider has no ACP launcher: it lists, never opens (spec §11 item 2)", async () => {
-    const adapter = new AcpSdkAgentAdapter("aider");
+    const adapter = new AcpAgentAdapter("aider");
     expect(adapter.displayName).toBe("ACP Agent");
     expect(await adapter.isInstalled()).toBe(false);
     await expect(adapter.openSession("nax-b3", opts({ agentName: "aider" }))).rejects.toMatchObject({
@@ -200,26 +200,26 @@ describe("AcpSdkAgentAdapter without a process", () => {
       ["npx", true],
       [undefined, false],
     ] as const)("launch candidate %p -> installed %p", async (kind, installed) => {
-      _acpSdkDeps.launchCandidateKind = () => kind;
-      expect(await new AcpSdkAgentAdapter("claude").isInstalled()).toBe(installed);
+      _acpDeps.launchCandidateKind = () => kind;
+      expect(await new AcpAgentAdapter("claude").isInstalled()).toBe(installed);
     });
 
     test("an npx-only launcher has a launch note; a local one has none", () => {
-      _acpSdkDeps.launchCandidateKind = () => "npx";
-      expect(new AcpSdkAgentAdapter("claude").launchNote()).toContain("npx");
-      _acpSdkDeps.launchCandidateKind = () => "local";
-      expect(new AcpSdkAgentAdapter("claude").launchNote()).toBeUndefined();
+      _acpDeps.launchCandidateKind = () => "npx";
+      expect(new AcpAgentAdapter("claude").launchNote()).toContain("npx");
+      _acpDeps.launchCandidateKind = () => "local";
+      expect(new AcpAgentAdapter("claude").launchNote()).toBeUndefined();
     });
 
     test("aider has no launcher and no note", async () => {
-      const adapter = new AcpSdkAgentAdapter("aider");
+      const adapter = new AcpAgentAdapter("aider");
       expect(await adapter.isInstalled()).toBe(false);
       expect(adapter.launchNote()).toBeUndefined();
     });
   });
 
   test("identity rows match the entries", () => {
-    const adapter = new AcpSdkAgentAdapter("claude");
+    const adapter = new AcpAgentAdapter("claude");
     expect(adapter).toMatchObject({ name: "claude", displayName: "Claude Code (ACP)", binary: "claude" });
     expect(adapter.capabilities.supportedTiers).toEqual(["fast", "balanced", "powerful"]);
     expect(adapter.buildCommand()).toEqual(["acp", "claude"]);
@@ -227,6 +227,6 @@ describe("AcpSdkAgentAdapter without a process", () => {
   });
 
   test("closeSession on an unknown handle is a no-op", async () => {
-    await new AcpSdkAgentAdapter("claude").closeSession({ id: "never", agentName: "claude" });
+    await new AcpAgentAdapter("claude").closeSession({ id: "never", agentName: "claude" });
   });
 });

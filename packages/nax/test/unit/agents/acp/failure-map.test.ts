@@ -7,7 +7,7 @@ import {
   TurnDeadlineExpired,
   turnFailureError,
   WatchdogCancel,
-} from "@/agents/acp-sdk/failure-map";
+} from "@/agents/acp/failure-map";
 import { FALLBACK_RATES } from "@/agents/cost";
 
 const CARD = { rates: FALLBACK_RATES, source: "fallback-rates" } as const;

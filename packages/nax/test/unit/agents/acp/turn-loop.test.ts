@@ -1,4 +1,4 @@
-// test/unit/agents/acp-sdk/turn-loop.test.ts
+// test/unit/agents/acp/turn-loop.test.ts
 import { afterEach, describe, expect, test } from "bun:test";
 import {
   type AdapterInteraction,
@@ -14,20 +14,20 @@ import {
 } from "@nathapp/nax-agent";
 import { waitForCondition } from "@test/helpers";
 import { failTurn, hangTurn, replyTurn, type ScriptedTurn, scriptedOpened } from "@test/helpers/acp-fake-agent";
-import { createAskPort } from "@/agents/acp-sdk/ask-port";
-import { _acpSdkDeps, type AcpSdkSession } from "@/agents/acp-sdk/session";
-import { createAuditRecorder } from "@/agents/acp-sdk/tool-audit";
-import { runTurnLoop } from "@/agents/acp-sdk/turn-loop";
-import { createTurnSlot } from "@/agents/acp-sdk/turn-slot";
+import { createAskPort } from "@/agents/acp/ask-port";
+import { _acpDeps, type AcpSession } from "@/agents/acp/session";
+import { createAuditRecorder } from "@/agents/acp/tool-audit";
+import { runTurnLoop } from "@/agents/acp/turn-loop";
+import { createTurnSlot } from "@/agents/acp/turn-slot";
 import { FALLBACK_RATES } from "@/agents/cost";
 
-const REAL = { ..._acpSdkDeps };
+const REAL = { ..._acpDeps };
 afterEach(() => {
-  Object.assign(_acpSdkDeps, REAL);
+  Object.assign(_acpDeps, REAL);
 });
 
 interface Built {
-  readonly session: AcpSdkSession;
+  readonly session: AcpSession;
   readonly events: AgentStreamEvent[];
   readonly cancels: Array<() => Promise<void>>;
 }
@@ -47,7 +47,7 @@ function build(opened: OpenedBackend, overrides: Partial<OpenSessionOpts> = {}):
     },
     ...overrides,
   };
-  const session: AcpSdkSession = {
+  const session: AcpSession = {
     name: "nax-loop",
     agent: "claude",
     opts,
@@ -224,7 +224,7 @@ describe("runTurnLoop: failures", () => {
   test("AGENT_SESSION_NOT_FOUND re-opens fresh once and resends; the dead attempt is not counted", async () => {
     const first = scriptedOpened([failTurn(new AgentSessionError("gone", "AGENT_SESSION_NOT_FOUND"))]);
     const second = scriptedOpened([replyTurn("recovered")]);
-    _acpSdkDeps.acpBackend = () => ({ kind: "acp:claude", open: async () => second.opened });
+    _acpDeps.acpBackend = () => ({ kind: "acp:claude", open: async () => second.opened });
     const { session } = build(first.opened);
     const result = await runTurnLoop(session, "p", { interactionHandler: NONE });
     expect(result).toMatchObject({ output: "recovered", internalRoundTrips: 1 });
@@ -238,7 +238,7 @@ describe("runTurnLoop: failures", () => {
     const notFound = () => failTurn(new AgentSessionError("gone", "AGENT_SESSION_NOT_FOUND"));
     const first = scriptedOpened([notFound()]);
     const second = scriptedOpened([notFound()]);
-    _acpSdkDeps.acpBackend = () => ({ kind: "acp:claude", open: async () => second.opened });
+    _acpDeps.acpBackend = () => ({ kind: "acp:claude", open: async () => second.opened });
     const { session } = build(first.opened);
     await expect(runTurnLoop(session, "p", { interactionHandler: NONE })).rejects.toBeInstanceOf(SessionTurnError);
   });
@@ -250,7 +250,7 @@ describe("runTurnLoop: failures", () => {
     });
     const first = scriptedOpened([failTurn(gone)]);
     const second = scriptedOpened([replyTurn("recovered")]);
-    _acpSdkDeps.acpBackend = () => ({ kind: "acp:claude", open: async () => second.opened });
+    _acpDeps.acpBackend = () => ({ kind: "acp:claude", open: async () => second.opened });
     const { session } = build(first.opened);
     const result = await runTurnLoop(session, "p", { interactionHandler: NONE });
     expect(result).toMatchObject({ output: "recovered", internalRoundTrips: 1 });
@@ -287,7 +287,7 @@ describe("runTurnLoop: promptRetries (spec §7.2, T1-1)", () => {
 
   function recordDelays(): number[] {
     const waits: number[] = [];
-    _acpSdkDeps.delay = async (ms) => {
+    _acpDeps.delay = async (ms) => {
       waits.push(ms);
     };
     return waits;
@@ -355,7 +355,7 @@ describe("runTurnLoop: promptRetries (spec §7.2, T1-1)", () => {
 
   test("an abort during the backoff ends the turn, no resend (Review Focus 2)", async () => {
     const run = new AbortController();
-    _acpSdkDeps.delay = (_ms, signal) =>
+    _acpDeps.delay = (_ms, signal) =>
       new Promise((_resolve, reject) => {
         signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
         run.abort("shutdown");
@@ -375,7 +375,7 @@ describe("runTurnLoop: promptRetries (spec §7.2, T1-1)", () => {
     const gone = new NaxError("Session not found", "AGENT_SESSION_TURN_FAILED", { stage: "acp", rpcCode: -32603 });
     const first = scriptedOpened([failTurn(gone)]);
     const second = scriptedOpened([replyTurn("recovered")]);
-    _acpSdkDeps.acpBackend = () => ({ kind: "acp:claude", open: async () => second.opened });
+    _acpDeps.acpBackend = () => ({ kind: "acp:claude", open: async () => second.opened });
     const { session } = build(first.opened, { promptRetries: 3 });
     const result = await runTurnLoop(session, "p", { interactionHandler: NONE });
     expect(result.output).toBe("recovered");

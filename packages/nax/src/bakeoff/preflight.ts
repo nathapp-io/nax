@@ -7,7 +7,7 @@
 
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { acpAdapterFor } from "../agents";
-import { ACP_SDK_AGENT_NAMES } from "../agents/acp-sdk";
+import { ACP_AGENT_NAMES } from "../agents/acp";
 import { deepMergeConfig, type NaxConfig } from "../config";
 import { loadProfile } from "../config/profile";
 import { NaxError } from "../errors";
@@ -60,7 +60,7 @@ export interface PreflightCallableDeps {
  */
 export const _preflightDeps: PreflightDeps = {
   isInstalled: (agentName: string) => acpAdapterFor(agentName).isInstalled(),
-  hasAcpAdapterEntry: (name: string) => ACP_SDK_AGENT_NAMES.has(name),
+  hasAcpAdapterEntry: (name: string) => ACP_AGENT_NAMES.has(name),
   loadProfile: (profileName: string, projectRoot: string) => loadProfile(profileName, projectRoot),
 };
 

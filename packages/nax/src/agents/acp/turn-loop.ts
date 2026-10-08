@@ -38,10 +38,10 @@ import {
 } from "./failure-map";
 import { addSpend, NO_SPEND, type Spend, spendOfError, spendOfResult } from "./pricing";
 import { isRetryablePromptError, promptRetryDelayMs } from "./prompt-retry";
-import { _acpSdkDeps, type AcpSdkSession, reopenFresh } from "./session";
+import { _acpDeps, type AcpSession, reopenFresh } from "./session";
 import { type CallBridge, startCall } from "./stream-bridge";
 
-const STAGE = "acp-sdk";
+const STAGE = "acp";
 const DEFAULT_MAX_INTERACTIONS = 10;
 
 type Deadline = ReturnType<typeof createTurnDeadline>;
@@ -60,7 +60,7 @@ interface LoopState {
 }
 
 interface Loop {
-  readonly session: AcpSdkSession;
+  readonly session: AcpSession;
   readonly opts: SendTurnOpts;
   readonly max: number;
   readonly deadline: Deadline;
@@ -132,7 +132,7 @@ async function afterFailure(loop: Loop, err: unknown, cause: unknown): Promise<I
   return { kind: "reopened" };
 }
 
-type BackendResult = Awaited<ReturnType<AcpSdkSession["opened"]["adapter"]["sendTurn"]>>;
+type BackendResult = Awaited<ReturnType<AcpSession["opened"]["adapter"]["sendTurn"]>>;
 
 interface Attempt {
   readonly controller: AbortController;
@@ -140,7 +140,7 @@ interface Attempt {
   readonly turnId: string;
 }
 
-function sendOnce(session: AcpSdkSession, prompt: string, attempt: Attempt): Promise<BackendResult> {
+function sendOnce(session: AcpSession, prompt: string, attempt: Attempt): Promise<BackendResult> {
   return session.opened.adapter.sendTurn(session.opened.handle, prompt, {
     ...session.opened.turnOpts(),
     signal: attempt.controller.signal,
@@ -167,7 +167,7 @@ async function sendWithRetries(loop: Loop, attempt: Attempt): Promise<BackendRes
         retry: retryIndex + 1,
         of: retries,
       });
-      await _acpSdkDeps.delay(promptRetryDelayMs(retryIndex), attempt.controller.signal);
+      await _acpDeps.delay(promptRetryDelayMs(retryIndex), attempt.controller.signal);
     }
   }
   return sendOnce(loop.session, loop.state.currentPrompt, attempt);
@@ -286,7 +286,7 @@ async function runLoop(loop: Loop): Promise<TurnResult> {
   });
 }
 
-export async function runTurnLoop(session: AcpSdkSession, prompt: string, opts: SendTurnOpts): Promise<TurnResult> {
+export async function runTurnLoop(session: AcpSession, prompt: string, opts: SendTurnOpts): Promise<TurnResult> {
   if (session.running !== undefined) {
     throw new NaxError(`ACP session "${session.name}" already has a turn in flight`, "ACP_SDK_TURN_IN_FLIGHT", {
       stage: STAGE,

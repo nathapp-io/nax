@@ -8,7 +8,7 @@
 import type { AcpAgentName } from "@nathapp/nax-agent-acp/client";
 import type { ModelTier } from "@/config/schema";
 
-export interface AcpSdkEntry {
+export interface AcpEntry {
   /** The nax-agent-acp registry name the backend launches. */
   readonly agent: AcpAgentName;
   /** The agent's own CLI. Not what is launched. */
@@ -18,7 +18,7 @@ export interface AcpSdkEntry {
   readonly maxContextTokens: number;
 }
 
-const ENTRIES: Readonly<Record<string, AcpSdkEntry>> = Object.freeze({
+const ENTRIES: Readonly<Record<string, AcpEntry>> = Object.freeze({
   claude: {
     agent: "claude",
     binary: "claude",
@@ -57,14 +57,14 @@ const ENTRIES: Readonly<Record<string, AcpSdkEntry>> = Object.freeze({
 });
 
 /** The names `nax agents` lists and the bake-off accepts (the acpx `ACP_ADAPTER_NAMES` set). */
-export const ACP_SDK_AGENT_NAMES: ReadonlySet<string> = new Set(Object.keys(ENTRIES));
+export const ACP_AGENT_NAMES: ReadonlySet<string> = new Set(Object.keys(ENTRIES));
 
-export function acpSdkEntry(agentName: string): AcpSdkEntry | undefined {
+export function acpEntry(agentName: string): AcpEntry | undefined {
   return Object.hasOwn(ENTRIES, agentName) ? ENTRIES[agentName] : undefined;
 }
 
 /** A known nax agent name with no ACP launcher (aider): it lists, but never opens (spec §11 item 2). */
-export const UNSUPPORTED_ENTRY: Omit<AcpSdkEntry, "agent"> = Object.freeze({
+export const UNSUPPORTED_ENTRY: Omit<AcpEntry, "agent"> = Object.freeze({
   binary: "",
   displayName: "ACP Agent",
   supportedTiers: ["balanced"],
