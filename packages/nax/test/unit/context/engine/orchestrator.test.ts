@@ -540,6 +540,35 @@ describe("US-001 — ContextOrchestrator budget arithmetic", () => {
     expect(bundle.pushMarkdown).not.toContain("Prior Stage Summary");
   });
 
+  test("a boosted plan digest is carried once: one copy in the prompt, one count in usedTokens", async () => {
+    const digest = "Plan digest: edit src/a.ts, then wire it into src/b.ts.";
+    const orch = new ContextOrchestrator([
+      makeProvider("p1", makeChunkResult({ id: "c:1", tokens: 300, content: "alpha content" })),
+    ]);
+    const bundle = await orch.assemble({ ...BASE_REQUEST, priorStageDigest: digest, planDigestBoost: 1.5 });
+
+    // The digest competes as a packed chunk (AC-51) ...
+    expect(bundle.manifest.includedChunks.some((id) => id.startsWith("plan-digest:"))).toBe(true);
+    // ... so it must not ALSO be prepended as the legacy preamble.
+    expect(bundle.pushMarkdown).not.toContain("## Prior Stage Summary");
+    expect(bundle.pushMarkdown.split(digest).length - 1).toBe(1);
+    // usedTokens is exactly the packed chunks (the digest chunk included), with no second digest count.
+    const tokenMap = bundle.manifest.chunkTokens ?? {};
+    const includedSum = bundle.manifest.includedChunks.reduce((sum, id) => sum + (tokenMap[id] ?? 0), 0);
+    expect(bundle.manifest.usedTokens).toBe(includedSum);
+  });
+
+  test("an unboosted prior-stage digest keeps the legacy preamble", async () => {
+    const digest = "Prior stage found X.";
+    const orch = new ContextOrchestrator([
+      makeProvider("p1", makeChunkResult({ id: "c:1", tokens: 300, content: "alpha content" })),
+    ]);
+    const bundle = await orch.assemble({ ...BASE_REQUEST, priorStageDigest: digest, planDigestBoost: 1.0 });
+
+    expect(bundle.pushMarkdown).toContain("## Prior Stage Summary");
+    expect(bundle.manifest.includedChunks.some((id) => id.startsWith("plan-digest:"))).toBe(false);
+  });
+
   test("AC-7: rendered markdown estimated token count does not exceed request.budgetTokens when no floor overflows", async () => {
     // Small chunks with no floor overage: rendered push markdown must fit within
     // the stage budget (the digest reserve is subtracted before packing, and

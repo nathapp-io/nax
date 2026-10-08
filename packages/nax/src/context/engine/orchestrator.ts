@@ -241,7 +241,11 @@ export class ContextOrchestrator {
       request.availableBudgetTokens ?? Number.POSITIVE_INFINITY,
     );
     const trimmedPriorDigest = request.priorStageDigest?.trim();
-    const priorDigestTokens = trimmedPriorDigest ? Math.ceil(trimmedPriorDigest.length / 4) : 0;
+    // AC-51: a boosted digest travels as a packed `plan-digest` chunk, which pays for itself
+    // inside the packer; the preamble, its up-front reserve and its manifest count are the
+    // OTHER carrier and must all be off, or the digest is rendered and billed twice.
+    const digestAsChunk = Boolean(request.priorStageDigest) && (request.planDigestBoost ?? 1.0) > 1.0;
+    const priorDigestTokens = trimmedPriorDigest && !digestAsChunk ? Math.ceil(trimmedPriorDigest.length / 4) : 0;
     let effectiveBudgetTokens = Math.max(
       0,
       stageCeiling - DIGEST_RESERVE_TOKENS - priorDigestTokens - FIXED_RENDER_OVERHEAD_TOKENS,
@@ -357,7 +361,7 @@ export class ContextOrchestrator {
     // Amendment B AC-51: inject plan digest as a boosted RawChunk when planDigestBoost > 1.
     // This replaces raw "## Prior Stage Summary" markdown rendering for single-session modes,
     // making the digest compete in scoring/packing and appear in manifest.includedChunks.
-    if (request.priorStageDigest && (request.planDigestBoost ?? 1.0) > 1.0) {
+    if (digestAsChunk && request.priorStageDigest) {
       const boost = request.planDigestBoost ?? 1.0;
       const hash = createHash("sha256").update(request.priorStageDigest).digest("hex").slice(0, 8);
       const tokens = Math.ceil(request.priorStageDigest.length / 4);
@@ -445,7 +449,7 @@ export class ContextOrchestrator {
     }
 
     // Step 8: render for the requested agent, preserving legacy markdown when absent.
-    const renderOptions = { priorStageDigest: request.priorStageDigest };
+    const renderOptions = { priorStageDigest: digestAsChunk ? undefined : request.priorStageDigest };
     const pushMarkdown =
       request.agentId !== undefined
         ? renderForAgent(packed, request.agentId, renderOptions)
@@ -476,7 +480,7 @@ export class ContextOrchestrator {
 
     const manifest = buildManifest({
       requestId,
-      request,
+      request: digestAsChunk ? { ...request, priorStageDigest: undefined } : request,
       packed,
       usedTokens,
       digestTokens: dTokens,
