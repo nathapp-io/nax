@@ -127,7 +127,7 @@ export function replaceInCommandSpec(
   return template.replace(/\{\{FILE\}\}|\{\{file\}\}|\{\{files\}\}/g, () => absFile);
 ```
 
-Pin it in `packages/nax/test/unit/finish/gates-acceptance.test.ts` (the existing test file for `finish/gates/acceptance.ts`; add `buildAcceptanceCommand` to its `@/finish/gates/acceptance` import if it is not imported yet):
+Pin it in `packages/nax/test/unit/finish/gates-acceptance.test.ts` (the existing test file for `finish/gates/acceptance.ts`; add a NEW import line `import { buildAcceptanceCommand } from "@/finish/gates/acceptance";` — the file imports from the `@/finish` barrel, which does not export it):
 
 ```ts
   test("buildAcceptanceCommand inserts a $-containing path verbatim", () => {

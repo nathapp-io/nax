@@ -161,6 +161,9 @@ In `pi-client.test.ts`, inside `describe("createPiProtocol error path", ...)`, a
     const events: ProtocolEvent[] = [];
     for await (const event of createPiProtocol("openai-completions", createPiDeps({}, stubStream().streamSimple)).stream({
       ...BASE,
+      // BASE's "deepseek-chat" is not in the real pi-ai catalog (resolveModel would throw before
+      // the header check); "gpt-5.5" resolves via the global first-match fallback (pi-protocols.test.ts:55).
+      model: "gpt-5.5",
       headers: { "x-a": "a\nb" },
     })) {
       events.push(event);
