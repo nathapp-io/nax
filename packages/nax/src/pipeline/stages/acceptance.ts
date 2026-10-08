@@ -29,7 +29,7 @@
  */
 
 import type { HardeningContext } from "@/acceptance";
-import { buildAcceptanceRunCommand, resolveAcceptanceFeatureTestPath } from "@/acceptance";
+import { buildAcceptanceRunCommand, createOverrideLookup, resolveAcceptanceFeatureTestPath } from "@/acceptance";
 import type { Finding } from "@/findings";
 import { acFailureToFinding, acSentinelToFinding } from "@/findings";
 import { getLogger } from "@/logger";
@@ -249,6 +249,20 @@ export const acceptanceStage: PipelineStage = {
       acsByPackageDir.set(pkgDir, (acsByPackageDir.get(pkgDir) ?? 0) + s.acceptanceCriteria.length);
     }
 
+    // #10: `<pkg>::AC-N` keys; a bare AC-N only where it is unambiguous.
+    const overrideLookup = createOverrideLookup({
+      overrides: ctx.prd.acceptanceOverrides,
+      workdir: ctx.workdir,
+      acCountByPackageDir: acsByPackageDir,
+      multiPackage: testGroups.length > 1,
+      onIgnoredBareKey: (acId) =>
+        logger.warn("acceptance", "Bare acceptance override ignored: several packages define this AC id", {
+          storyId: ctx.story.id,
+          acId,
+          hint: `scope it to one package: "<package>::${acId}"`,
+        }),
+    });
+
     // Collect combined results across all packages
     const allFailedACs: string[] = [];
     // BUG-12: each package numbers its acceptance criteria AC-1..N independently, so
@@ -346,15 +360,15 @@ export const acceptanceStage: PipelineStage = {
       const { failedACs, taggedFailureCount } = parseTestFailuresDetailed(output);
 
       // Check for overridden ACs (skip those)
-      const overrides = ctx.prd.acceptanceOverrides ?? {};
-      const actualFailures = failedACs.filter((acId) => !overrides[acId]);
-      const overriddenFailures = failedACs.filter((acId) => overrides[acId]);
+      const reasonFor = (acId: string) => overrideLookup.reasonFor(packageDir, acId);
+      const actualFailures = failedACs.filter((acId) => !reasonFor(acId));
+      const overriddenFailures = failedACs.filter((acId) => reasonFor(acId));
 
       if (overriddenFailures.length > 0) {
         logger.warn("acceptance", "Skipped failures (overridden)", {
           storyId: ctx.story.id,
           overriddenFailures,
-          overrides: overriddenFailures.map((acId) => ({ acId, reason: overrides[acId] })),
+          overrides: overriddenFailures.map((acId) => ({ acId, reason: reasonFor(acId) })),
         });
       }
 
