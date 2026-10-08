@@ -82,6 +82,24 @@ describe("importPiCredentials", () => {
       code: "AUTH_IMPORT_SOURCE_MISSING",
     });
   });
+
+  test.each(["null", "[]", '"a string"', "42"])(
+    "reports a file whose JSON is not a provider map (%s) with AUTH_IMPORT_SOURCE_UNREADABLE",
+    async (body) => {
+      writeFileSync(piPath, body);
+      await expect(importPiCredentials({ from: piPath })).rejects.toMatchObject({
+        code: "AUTH_IMPORT_SOURCE_UNREADABLE",
+      });
+    },
+  );
+
+  test("a null provider entry is unsupported, not a crash", async () => {
+    writeFileSync(piPath, JSON.stringify({ broken: null, "opencode-go": { type: "api_key", key: "sk-1" } }));
+    expect(await importPiCredentials({ from: piPath })).toEqual([
+      { providerId: "broken", status: "unsupported" },
+      { providerId: "opencode-go", status: "imported" },
+    ]);
+  });
 });
 
 describe("listStoredProviders", () => {
