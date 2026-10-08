@@ -1,17 +1,21 @@
 import { describe, expect, test } from "bun:test";
 import type { SessionEvent, SessionEventBody } from "@nathapp/nax-agent";
 import type { ReadOldText } from "#src/server/translate/diff";
-import { createEventTranslator } from "#src/server/translate/events";
+import { createEventTranslator, type EventTranslatorDeps } from "#src/server/translate/events";
 
 const BASE = { sessionId: "s1", turnId: "t1", at: "2026-10-08T00:00:00.000Z", metadata: {} };
 const ev = (body: SessionEventBody): SessionEvent => ({ ...BASE, ...body });
 const noOld: ReadOldText = async () => ({ kind: "missing" });
 
-function translator(contextWindow?: number) {
+const ALL_UPDATES = { notices: true, compaction: true };
+
+function translator(contextWindow?: number, extra: Partial<EventTranslatorDeps> = {}) {
   return createEventTranslator({
     cwd: "/repo",
     readOldText: noOld,
+    clientUpdates: ALL_UPDATES,
     ...(contextWindow !== undefined ? { contextWindow } : {}),
+    ...extra,
   });
 }
 
@@ -213,5 +217,52 @@ describe("events the session handles", () => {
     { type: "turn_end", status: "completed", output: "", usage: { inputTokens: 0, outputTokens: 0 }, costUsd: 0 },
   ])("$type translates to nothing", async (body) => {
     expect(await translator().translate(ev(body))).toEqual([]);
+  });
+});
+
+describe("client capability gating (review fix)", () => {
+  test("without the notices capability, stream_reset becomes agent message text", async () => {
+    const t = translator(undefined, { clientUpdates: { notices: false, compaction: true } });
+    expect(await t.translate(ev({ type: "stream_reset", round: 1, attempt: 2 }))).toEqual([
+      {
+        sessionUpdate: "agent_message_chunk",
+        content: {
+          type: "text",
+          text: "\n\nResponse restarted: The model stream was retried (attempt 2); text above may repeat.\n\n",
+        },
+      },
+    ]);
+  });
+
+  test("without the compaction capability, compaction sends nothing", async () => {
+    const t = translator(undefined, { clientUpdates: { notices: true, compaction: false } });
+    expect(await t.translate(ev({ type: "compaction", reason: "overflow" }))).toEqual([]);
+  });
+});
+
+describe("cumulative session cost (review fix)", () => {
+  const round = (costUsd: number, costSource?: "computed" | "unpriced") =>
+    ev({ type: "usage", round: 1, inputTokens: 1, outputTokens: 1, costUsd, ...(costSource ? { costSource } : {}) });
+
+  test("cost.amount is the running session total, starting from the prior cost", async () => {
+    const t = translator(1000, { priorCostUsd: 1 });
+    await t.translate(round(0.25));
+    const [second] = await t.translate(round(0.5));
+    expect(second).toMatchObject({ sessionUpdate: "usage_update", cost: { amount: 1.75, currency: "USD" } });
+    expect(t.costUsd()).toBe(1.75);
+  });
+
+  test("an unpriced round adds nothing and reports no cost", async () => {
+    const t = translator(1000);
+    await t.translate(round(0.25));
+    const [unpriced] = await t.translate(round(0, "unpriced"));
+    expect(unpriced).toMatchObject({ cost: null });
+    expect(t.costUsd()).toBe(0.25);
+  });
+
+  test("the total accrues even when no usage_update is sent (unknown window)", async () => {
+    const t = translator();
+    await t.translate(round(0.25));
+    expect(t.costUsd()).toBe(0.25);
   });
 });

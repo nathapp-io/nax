@@ -42,19 +42,19 @@ describe("toAcpUsage", () => {
 
 describe("promptOutcome (spec §4.4)", () => {
   test("completed -> end_turn, cancelled -> cancelled, no notices", () => {
-    expect(promptOutcome(end("completed"), 60)).toEqual({
+    expect(promptOutcome(end("completed"), 60, true)).toEqual({
       kind: "response",
       response: { stopReason: "end_turn", usage: toAcpUsage(USAGE) },
       notices: [],
     });
-    expect(promptOutcome(end("cancelled"), 60)).toMatchObject({
+    expect(promptOutcome(end("cancelled"), 60, true)).toMatchObject({
       kind: "response",
       response: { stopReason: "cancelled" },
     });
   });
 
   test("timed_out -> max_turn_requests with a warning naming the limit", () => {
-    expect(promptOutcome(end("timed_out"), 3600)).toEqual({
+    expect(promptOutcome(end("timed_out"), 3600, true)).toEqual({
       kind: "response",
       response: { stopReason: "max_turn_requests", usage: toAcpUsage(USAGE) },
       notices: [
@@ -69,7 +69,7 @@ describe("promptOutcome (spec §4.4)", () => {
   });
 
   test("errored -> internal error carrying the turn's code and message", () => {
-    const outcome = promptOutcome(end("errored", { code: "PROVIDER_FAILED", message: "upstream 500" }), 60);
+    const outcome = promptOutcome(end("errored", { code: "PROVIDER_FAILED", message: "upstream 500" }), 60, true);
     expect(outcome.kind).toBe("error");
     const error = outcome.kind === "error" ? outcome.error : undefined;
     expect(error).toBeInstanceOf(RequestError);
@@ -78,15 +78,27 @@ describe("promptOutcome (spec §4.4)", () => {
   });
 
   test("errored without detail and interrupted still produce an internal error", () => {
-    const noDetail = promptOutcome(end("errored"), 60);
+    const noDetail = promptOutcome(end("errored"), 60, true);
     expect(noDetail.kind === "error" ? noDetail.error.data : undefined).toEqual({
       code: "AGENT_TURN_ERRORED",
       message: "The turn failed",
     });
-    const interrupted = promptOutcome(end("interrupted"), 60);
+    const interrupted = promptOutcome(end("interrupted"), 60, true);
     expect(interrupted.kind === "error" ? interrupted.error.data : undefined).toEqual({
       code: "AGENT_TURN_INTERRUPTED",
       message: "The turn was interrupted",
     });
+  });
+});
+
+describe("promptOutcome without the notices capability (review fix)", () => {
+  test("the timeout warning is agent message text", () => {
+    const outcome = promptOutcome(end("timed_out"), 60, false);
+    expect(outcome.kind === "response" ? outcome.notices : undefined).toEqual([
+      {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "\n\nTurn timed out: The turn reached its 60s time limit and was stopped.\n\n" },
+      },
+    ]);
   });
 });

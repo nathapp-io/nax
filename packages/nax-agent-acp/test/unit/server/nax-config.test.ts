@@ -66,6 +66,12 @@ describe("loadNaxConfig", () => {
     expect(loaded.warning).toContain(PATH);
   });
 
+  test("the invalid-JSON warning never echoes the file's content (review fix)", async () => {
+    const loaded = await loadNaxConfig("/cfg", reader({ [PATH]: '{"headers": {"x": "sk-live-SECRET-123"' }));
+    expect(loaded.warning).toContain("invalid JSON");
+    expect(loaded.warning).not.toContain("SECRET");
+  });
+
   test("an invalid section in the subset falls back to the defaults with a warning", async () => {
     const config = { agentServer: { defaultMode: "yolo" }, models: { native: { fast: "a/b" } } };
     const loaded = await loadNaxConfig("/cfg", reader({ [PATH]: JSON.stringify(config) }));

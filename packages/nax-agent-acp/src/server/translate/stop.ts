@@ -5,7 +5,7 @@
  */
 import { type PromptResponse, RequestError, type SessionUpdate, type Usage } from "@agentclientprotocol/sdk";
 import type { SessionEvent, TokenUsage } from "@nathapp/nax-agent";
-import { notice } from "#src/server/translate/notice";
+import { announce } from "#src/server/translate/notice";
 
 export type TurnEndEvent = Extract<SessionEvent, { type: "turn_end" }>;
 
@@ -29,7 +29,8 @@ function failure(code: string, message: string): PromptOutcome {
   return { kind: "error", error: RequestError.internalError({ code, message }, message) };
 }
 
-export function promptOutcome(end: TurnEndEvent, turnTimeoutSeconds: number): PromptOutcome {
+/** `notices`: whether the client advertised `session.notices` (else warnings become agent text). */
+export function promptOutcome(end: TurnEndEvent, turnTimeoutSeconds: number, notices: boolean): PromptOutcome {
   const usage = toAcpUsage(end.usage);
   switch (end.status) {
     case "completed":
@@ -41,7 +42,8 @@ export function promptOutcome(end: TurnEndEvent, turnTimeoutSeconds: number): Pr
         kind: "response",
         response: { stopReason: "max_turn_requests", usage },
         notices: [
-          notice(
+          announce(
+            notices,
             "warning",
             "Turn timed out",
             `The turn reached its ${turnTimeoutSeconds}s time limit and was stopped.`,

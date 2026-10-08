@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
 import {
@@ -43,6 +43,28 @@ describe("toolDiff", () => {
     });
   });
 
+  test("Write old text is masked like live input (review fix)", async () => {
+    const secret = "ghp_0123456789abcdefghijklmnopqrstuvwxyzAB";
+    const diff = await toolDiff(
+      "Write",
+      { path: "a", content: "n" },
+      "/r",
+      fixed({ kind: "text", text: `T=${secret}` }),
+    );
+    expect(diff?.oldText).toBeString();
+    expect(diff?.oldText).not.toContain(secret);
+  });
+
+  test("Write passes the session cwd to the reader as the workspace root", async () => {
+    const roots: string[] = [];
+    const reader: ReadOldText = async (_path, root) => {
+      roots.push(root);
+      return { kind: "missing" };
+    };
+    await toolDiff("Write", { path: "a", content: "n" }, "/r", reader);
+    expect(roots).toEqual(["/r"]);
+  });
+
   test("Write over an existing file carries the current content as old text", async () => {
     expect(
       await toolDiff("Write", { path: "a.ts", content: "new" }, "/r", fixed({ kind: "text", text: "old" })),
@@ -58,15 +80,18 @@ describe("toolDiff", () => {
     });
   });
 
-  test.each(["too-large", "unreadable"] as const)("Write with %s old text marks the omission", async (kind) => {
-    expect(await toolDiff("Write", { path: "a.ts", content: "new" }, "/r", fixed({ kind }))).toEqual({
-      type: "diff",
-      path: "/r/a.ts",
-      oldText: null,
-      newText: "new",
-      _meta: { naxAgent: { oldTextOmitted: kind } },
-    });
-  });
+  test.each(["too-large", "unreadable", "outside-workspace"] as const)(
+    "Write with %s old text marks the omission",
+    async (kind) => {
+      expect(await toolDiff("Write", { path: "a.ts", content: "new" }, "/r", fixed({ kind }))).toEqual({
+        type: "diff",
+        path: "/r/a.ts",
+        oldText: null,
+        newText: "new",
+        _meta: { naxAgent: { oldTextOmitted: kind } },
+      });
+    },
+  );
 
   test("no diff for other tools or a Write without content", async () => {
     const reader = fixed({ kind: "missing" });
@@ -83,10 +108,26 @@ describe("fsReadOldText", () => {
       writeFileSync(join(dir, "big.txt"), "x".repeat(WRITE_DIFF_OLD_MAX_BYTES + 1));
       mkdirSync(join(dir, "sub"));
       const read = fsReadOldText();
-      expect(await read(join(dir, "small.txt"))).toEqual({ kind: "text", text: "hello" });
-      expect(await read(join(dir, "absent.txt"))).toEqual({ kind: "missing" });
-      expect(await read(join(dir, "sub"))).toEqual({ kind: "unreadable" });
-      expect(await read(join(dir, "big.txt"))).toEqual({ kind: "too-large" });
+      expect(await read(join(dir, "small.txt"), dir)).toEqual({ kind: "text", text: "hello" });
+      expect(await read(join(dir, "absent.txt"), dir)).toEqual({ kind: "missing" });
+      expect(await read(join(dir, "sub"), dir)).toEqual({ kind: "unreadable" });
+      expect(await read(join(dir, "big.txt"), dir)).toEqual({ kind: "too-large" });
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  test("a file outside the workspace, directly or through a symlink, is never read (review fix)", async () => {
+    const dir = makeTempDir("acp-diff-ws-");
+    try {
+      const root = join(dir, "repo");
+      mkdirSync(root);
+      writeFileSync(join(dir, "secret.txt"), "outside");
+      symlinkSync(join(dir, "secret.txt"), join(root, "link.txt"));
+      const read = fsReadOldText();
+      expect(await read(join(dir, "secret.txt"), root)).toEqual({ kind: "outside-workspace" });
+      expect(await read(join(root, "link.txt"), root)).toEqual({ kind: "outside-workspace" });
+      expect(await read(join(root, "..", "secret.txt"), root)).toEqual({ kind: "outside-workspace" });
     } finally {
       cleanupTempDir(dir);
     }
@@ -94,11 +135,12 @@ describe("fsReadOldText", () => {
 
   test("an error other than ENOENT is unreadable", async () => {
     const read = fsReadOldText({
+      realpath: async (path) => path,
       stat: async () => {
         throw Object.assign(new Error("EACCES"), { code: "EACCES" });
       },
       readFile: async () => "",
     });
-    expect(await read("/x")).toEqual({ kind: "unreadable" });
+    expect(await read("/r/x", "/r")).toEqual({ kind: "unreadable" });
   });
 });

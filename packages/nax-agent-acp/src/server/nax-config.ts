@@ -146,8 +146,9 @@ export async function loadNaxConfig(configDir: string, readFile: ReadTextFile): 
   let json: unknown;
   try {
     json = JSON.parse(text);
-  } catch (error) {
-    return fallback(path, `invalid JSON (${message(error)})`);
+  } catch {
+    // Not the parser's message: on Node it quotes the offending text, which may hold a key.
+    return fallback(path, "invalid JSON");
   }
   const parsed = SubsetSchema.safeParse(json);
   if (!parsed.success) {
