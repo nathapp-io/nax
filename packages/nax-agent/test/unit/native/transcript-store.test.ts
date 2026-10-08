@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { TranscriptDoc } from "@nathapp/nax-agent";
 import type { ConversationMessage } from "@nathapp/nax-ai";
+import { _atomicWriteDeps } from "#src/internal/atomic-write";
 import {
   _resetTranscriptTruncationWarningForTests,
   createFileTranscriptStore,
@@ -107,6 +108,23 @@ describe("transcript store", () => {
   test("a corrupt transcript throws rather than silently starting over", async () => {
     await writeFile(transcriptPath(dir, "sess-a"), "{not json", "utf8");
     await expect(loadTranscript(dir, "sess-a")).rejects.toThrow();
+  });
+
+  test("a save that dies mid-write leaves the previous transcript loadable", async () => {
+    await saveTranscript(dir, "sess-a", msgs);
+    const realWrite = _atomicWriteDeps.writeFile;
+    _atomicWriteDeps.writeFile = async (target, content, options) => {
+      await realWrite(target, content.slice(0, 10), options);
+      throw new Error("killed");
+    };
+    try {
+      await expect(saveTranscript(dir, "sess-a", [...msgs, { role: "user", content: "more" }])).rejects.toThrow(
+        "killed",
+      );
+    } finally {
+      _atomicWriteDeps.writeFile = realWrite;
+    }
+    expect(await loadTranscript(dir, "sess-a")).toEqual(msgs);
   });
 });
 

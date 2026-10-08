@@ -696,6 +696,7 @@ _agentOutputEnvDeps
 _agentSessionDeps
 _approvalsTaintDeps
 _argvExecDeps
+_atomicWriteDeps
 _authDeps
 _bashToolDeps
 _clientDeps
@@ -976,5 +977,6 @@ withFileLock
 withPathFileLock
 wrapExternalHandler
 writeApprovalsFile
+writeFileAtomic
 writeSpill
 writeTool
