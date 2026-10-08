@@ -160,7 +160,12 @@ export type {
   TransformContextPatch,
   TransformContextPayload,
 } from "#src/native/session/loop-events/types";
-export { TOOL_CALL_INPUT_BYTES, TOOL_RESULT_PREVIEW_BYTES } from "#src/native/session/turn-event-emitter";
+export {
+  displayToolInput,
+  TOOL_CALL_INPUT_BYTES,
+  TOOL_RESULT_PREVIEW_BYTES,
+  toolResultPreview,
+} from "#src/native/session/turn-event-emitter";
 export {
   type ApprovalAuditRow,
   type ApprovalEntry,

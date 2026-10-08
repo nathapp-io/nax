@@ -73,7 +73,8 @@ export function usageEvent(round: number, usage: TokenUsage, costUsd: number): T
   };
 }
 
-function cappedInput(input: unknown): unknown {
+/** The masking and cap live `tool_call.input` gets; exported for ACP replay (S5-1). */
+export function displayToolInput(input: unknown): unknown {
   const redacted = redactSecrets(capStrings(input, REDACTION_SCAN_BYTES));
   let json: string;
   try {
@@ -85,7 +86,8 @@ function cappedInput(input: unknown): unknown {
   return { truncated: true, preview: cutToByteCap(json, TOOL_CALL_INPUT_BYTES) };
 }
 
-function previewOf(content: string): string {
+/** The masking and cap live `tool_result.preview` gets; exported for ACP replay (S5-1). */
+export function toolResultPreview(content: string): string {
   return cutToByteCap(redactSecrets(cutToByteCap(content, REDACTION_SCAN_BYTES)), TOOL_RESULT_PREVIEW_BYTES);
 }
 
@@ -132,7 +134,7 @@ export function createTurnEventEmitter(sink: TurnEventSink | undefined): TurnEve
       // Capped BEFORE the count moves: a throwing input (a hostile getter or
       // proxy) must not leave an outstanding call the matching toolResult then
       // answers with no preceding tool_call.
-      const input = cappedInput(recordedInput ?? call.input);
+      const input = displayToolInput(recordedInput ?? call.input);
       outstanding.set(call.id, (outstanding.get(call.id) ?? 0) + 1);
       emit({ type: "tool_call", callId: call.id, name: call.name, input });
     },
@@ -145,7 +147,7 @@ export function createTurnEventEmitter(sink: TurnEventSink | undefined): TurnEve
         type: "tool_result",
         callId: result.toolCallId,
         isError: result.isError === true,
-        preview: previewOf(result.content),
+        preview: toolResultPreview(result.content),
       });
     },
     flushUnanswered() {
