@@ -29,7 +29,8 @@
  * Enumerating every simple cycle instead is not an option: `src/`'s largest
  * component has 94 modules, and the number of simple cycles in a component
  * that size is astronomically large. Tarjan's strongly-connected-components
- * algorithm gives the complete answer in linear time — a module is in a cycle
+ * algorithm gives the complete answer in linear time, side-effect imports
+ * included — a module is in a cycle
  * exactly when its component has more than one member, or it imports itself —
  * and counting members means adding a module to an existing component moves
  * the number, which is the case the old check missed.
@@ -74,6 +75,13 @@ const RESOLVE_SUFFIXES = ["/index.ts", ".ts", ".tsx"] as const;
  * apostrophe that was holding the false match back.
  */
 const STATIC_IMPORT_RE = /^[ \t]*((?:import|export)\s+(?:type\s+)?[A-Za-z0-9_$*,{}\s]*?)from\s+["']([^"']+)["']/gm;
+
+/**
+ * `import "./x";` — a side-effect import has no `from`, but it is a value edge: the
+ * module runs at init and takes part in ESM initialisation order (#32). Same `^`+`m`
+ * anchoring as STATIC_IMPORT_RE, so only a statement at line start matches.
+ */
+const SIDE_EFFECT_IMPORT_RE = /^[ \t]*import\s+["']([^"']+)["']/gm;
 
 export interface CyclicModule {
   /** Repo-relative path of a module that participates in a runtime cycle. */
@@ -228,6 +236,10 @@ export function buildImportGraph(rootDir: string): Map<string, string[]> {
       const spec = match[2];
       if (!spec) continue;
       const target = resolveSpecifier(rootDir, file, spec);
+      if (target) deps.push(target);
+    }
+    for (const match of content.matchAll(SIDE_EFFECT_IMPORT_RE)) {
+      const target = match[1] ? resolveSpecifier(rootDir, file, match[1]) : null;
       if (target) deps.push(target);
     }
     graph.set(file, deps);

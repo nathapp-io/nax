@@ -173,6 +173,21 @@ describe("buildImportGraph", () => {
     const graph = buildImportGraph(root);
     expect(graph.get(join(root, "src/a/leaf.ts"))).toEqual([join(root, "src/a/other.ts")]);
   });
+
+  test("records a side-effect import as a value edge", () => {
+    write(root, "src/a/leaf.ts", 'import "./other";\nexport const a = 1;\n');
+    write(root, "src/a/other.ts", "export const b = 1;\n");
+
+    const graph = buildImportGraph(root);
+    expect(graph.get(join(root, "src/a/leaf.ts"))).toEqual([join(root, "src/a/other.ts")]);
+  });
+
+  test("ignores a side-effect import of a bare package specifier", () => {
+    write(root, "src/a/leaf.ts", 'import "testing";\nexport const a = 1;\n');
+
+    const graph = buildImportGraph(root);
+    expect(graph.get(join(root, "src/a/leaf.ts"))).toEqual([]);
+  });
 });
 
 describe("stripComments", () => {
@@ -277,6 +292,12 @@ describe("findCyclicModules", () => {
       expect(m.cycle[0]).toBe(m.file);
       expect(m.cycle.length).toBeGreaterThan(1);
     }
+  });
+
+  test("reports a runtime cycle made only of side-effect imports", () => {
+    write(root, "src/a/one.ts", 'import "./two";\nexport const one = 1;\n');
+    write(root, "src/a/two.ts", 'import "./one";\nexport const two = 2;\n');
+    expect(files(root)).toEqual(["src/a/one.ts", "src/a/two.ts"]);
   });
 });
 
