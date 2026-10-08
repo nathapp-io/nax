@@ -29,6 +29,22 @@ const result = await client.complete(model, { messages: [{ role: "user", content
 
 While the API is unstable, `latest` and `next` both point at the current 0.x release, so `npm install @nathapp/nax-ai` and `npm install @nathapp/nax-ai@next` are equivalent. Canary builds are published to `canary` and are not covered by either.
 
+### Pi 1.1 catalog migration
+
+The bundled catalog now comes from `@earendil-works/pi-ai@1.1.0`. Azure's
+provider id is `azure`: replace `azure-openai-responses` in provider selections,
+model references, provider overrides, and credential-store keys. The protocol
+id `azure-openai-responses` and the `AZURE_OPENAI_*` environment variables are
+unchanged. Rename locally stored Azure credentials to the new provider key
+before using them.
+
+The refreshed catalog changes pricing, context windows, output limits, and
+thinking capabilities. On `opencode-go`, `qwen3.7-plus` and `qwen3.8-max` now
+use `anthropic-messages`; review any overrides that pin their old protocol.
+Only chat models and providers with chat models are exposed. Image generation,
+classifiers, and the new `openai` ChatGPT OAuth flow are outside this client's
+current API; permitted OAuth flows remain `openai-codex` and `openrouter`.
+
 ### Provider overrides
 
 The bundled catalog comes from pi-ai and is a snapshot: it can carry stale pricing, and it will not know a model your provider added last week. `providerOverrides` amends it — per provider, and only with declaration data.
@@ -72,7 +88,13 @@ const client = createClient({
 
 **Two rules that throw rather than warn.** A model's own `provider` field must equal the override's `provider` (otherwise the request would be signed against a provider you never named), and a model the base catalog does not carry must be declared on both sides.
 
-**Fields you do not state are inherited from a sibling.** `ResolvedModel` is narrower than the wire's model, so `name`, `baseUrl`, `input` and the provider compatibility settings come from another model of the same provider on the same protocol — preferring one that supports your declared thinking levels, and preferring this model's own bundled entry when the catalog already carries that id. State `maxTokens` and `thinkingLevelMap` explicitly when they matter: an inherited ceiling is a silent truncation, and an inherited thinking map can mark a level you declared unsupported.
+**Fields you do not state are inherited from a sibling.** `ResolvedModel` is narrower than the wire's model, so `name`, `baseUrl`, `input` and the provider compatibility settings come from another model of the same provider on the same protocol — preferring one that supports all your declared thinking levels, including `off`, and preferring this model's own bundled entry when the catalog already carries that id. When no sibling supports all declared levels, the largest sibling supplies the compatibility settings and undeclared thinking levels are disabled in a derived map. State `maxTokens` and `thinkingLevelMap` explicitly when they matter: an inherited ceiling is a silent truncation, and an inherited thinking map can mark a level you declared unsupported.
+
+The fallback preserves the template's `off` mapping. If that mapping is
+`null`, Pi may clamp an `off` request to a supported reasoning level. The same
+applies when amending a bundled model whose own entry does not support `off`.
+Use an explicit, provider-verified `thinkingLevelMap` when the inherited map
+does not describe your model.
 
 ### Pinning an OpenRouter endpoint
 

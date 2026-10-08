@@ -479,8 +479,8 @@ function toPiCost(pricing: Pricing): Model<Api>["cost"] {
  * `thinkingLevelMap` (and `compat.thinkingFormat`) from whichever template is
  * picked. So when `thinkingLevels` is given, candidates are first restricted
  * to those pi's own `getSupportedThinkingLevels` says cover every declared
- * level ("off" is excluded from the coverage check: every model accepts not
- * thinking, so it says nothing about which sibling to prefer). The size rule
+ * level, including "off": a model whose map marks it unsupported can turn
+ * a non-thinking request into paid reasoning. The size rule
  * remains the tie-break among compatible candidates, and the whole rule when
  * no candidate is compatible — so the pick stays a total order that cannot
  * move when the catalog is merely reordered, compatible or not.
@@ -506,7 +506,7 @@ export function pickTemplate(
   const candidates = models.filter((candidate) => candidate.api === protocol);
   if (candidates.length === 0) return undefined;
 
-  const required = (thinkingLevels ?? []).filter((level) => level !== "off");
+  const required = thinkingLevels ?? [];
   if (required.length > 0) {
     const compatible = candidates.filter((candidate) => isThinkingCompatible(candidate, required));
     if (compatible.length > 0) return bestBySize(compatible);
@@ -515,7 +515,7 @@ export function pickTemplate(
   return bestBySize(candidates);
 }
 
-/** Whether every one of `required` (already stripped of "off") is pi-supported on `candidate`. */
+/** Whether every declared level, including "off", is pi-supported on `candidate`. */
 function isThinkingCompatible(candidate: Model<Api>, required: readonly ThinkingLevel[]): boolean {
   const supported = new Set(getSupportedThinkingLevels(candidate));
   return required.every((level) => supported.has(level));
@@ -561,7 +561,7 @@ function isBetterTemplate(candidate: Model<Api>, best: Model<Api>): boolean {
  * 1. `model.thinkingLevelMap` is explicit: it always wins, over both the
  *    template's map and anything this function would derive.
  * 2. Otherwise, when the picked template covers every declared level
- *    (excluding "off"), its map is inherited as-is via `...template` below —
+ *    (including "off"), its map is inherited as-is via `...template` below —
  *    it already translates each declared level correctly.
  * 3. Otherwise (no compatible sibling exists on this provider/api, so the
  *    template is the best available by size alone), a map is derived from
@@ -584,10 +584,9 @@ function synthesiseModel(base: PiProvider, model: ResolvedModel): Model<Api> {
     );
   }
 
-  const requiredLevels = model.thinkingLevels.filter((level) => level !== "off");
   const thinkingLevelMap =
     model.thinkingLevelMap ??
-    (isThinkingCompatible(template, requiredLevels) ? undefined : deriveThinkingLevelMap(model, template));
+    (isThinkingCompatible(template, model.thinkingLevels) ? undefined : deriveThinkingLevelMap(model, template));
 
   return {
     ...template,
@@ -837,7 +836,7 @@ export function createPiDeps(
   return {
     resolveModel: async (modelId, provider) => {
       // pi-ai serves one model id from many providers (e.g. gpt-5.4 under
-      // azure-openai-responses, openai and openai-codex), so when the client
+      // azure, openai and openai-codex), so when the client
       // supplies the owning provider the search is scoped to it. Without a
       // provider — protocol-direct callers and existing tests — the global
       // catalog's first match stays as the documented fallback.

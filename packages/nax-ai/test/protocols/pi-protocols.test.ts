@@ -42,8 +42,8 @@ describe("createPiDeps model resolution", () => {
   });
 
   it("resolves the same id under a different provider", async () => {
-    const model = await createPiDeps().resolveModel("gpt-5.5", "azure-openai-responses");
-    expect(model.provider).toBe("azure-openai-responses");
+    const model = await createPiDeps().resolveModel("gpt-5.5", "azure");
+    expect(model.provider).toBe("azure");
   });
 
   it("throws naming both the model and the provider for an unknown pairing", async () => {
