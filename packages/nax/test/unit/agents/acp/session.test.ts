@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { chmodSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   createFileTranscriptStore,
@@ -9,6 +9,8 @@ import {
 } from "@nathapp/nax-agent";
 import { cleanupTempDir, makeTempDir, waitForCondition } from "@test/helpers";
 import { fakeAcpBackend, fakeMethods, fakeStartPids } from "@test/helpers/acp-fake-agent";
+import { discardAcpSessionLeftover } from "@/agents/acp";
+import { transcriptStoreFor } from "@/agents/acp/open-context";
 import { _acpDeps, createSession, reopenFresh, shutdownSession } from "@/agents/acp/session";
 import { runTurnLoop } from "@/agents/acp/turn-loop";
 import { FALLBACK_RATES } from "@/agents/cost";
@@ -279,4 +281,33 @@ describe("shutdownSession and reopenFresh", () => {
     ).calls;
     expect(calls.map((c) => c.outcome)).toEqual(["denied"]);
   }, 20_000);
+});
+
+describe("discardAcpSessionLeftover (BUG-122 rectification, S4b-5)", () => {
+  let leftoverDir: string;
+  beforeEach(() => {
+    leftoverDir = makeTempDir("acp-leftover-");
+  });
+  afterEach(() => cleanupTempDir(leftoverDir));
+
+  test("deletes the named session's transcript document so the next open is fresh", async () => {
+    const store = transcriptStoreFor(leftoverDir);
+    await store.markTurn("nax-abc-feat-US-001-main", { turnId: "t1", state: "ended" });
+    expect(await store.load("nax-abc-feat-US-001-main")).not.toBeNull();
+    await discardAcpSessionLeftover(leftoverDir, "nax-abc-feat-US-001-main");
+    expect(await store.load("nax-abc-feat-US-001-main")).toBeNull();
+  });
+
+  test("leaves other sessions' documents alone", async () => {
+    const store = transcriptStoreFor(leftoverDir);
+    await store.markTurn("keep-me", { turnId: "t1", state: "ended" });
+    await discardAcpSessionLeftover(leftoverDir, "drop-me");
+    expect(await store.load("keep-me")).not.toBeNull();
+  });
+
+  test("is a no-op when the directory cannot be derived or does not exist", async () => {
+    await discardAcpSessionLeftover(undefined, "x");
+    await discardAcpSessionLeftover(join(leftoverDir, "missing", "sessions"), "x");
+    expect(existsSync(join(leftoverDir, "missing"))).toBe(false);
+  });
 });

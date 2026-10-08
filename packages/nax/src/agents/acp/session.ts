@@ -115,6 +115,25 @@ async function discard(store: TranscriptStore, name: string): Promise<void> {
   });
 }
 
+/**
+ * Deletes `name`'s crash-leftover transcript document under `transcriptDir`,
+ * so the next open of that name starts fresh instead of resuming it (§6.1).
+ * Merge-conflict rectification calls this for the rectified story's session
+ * (BUG-122). Best-effort: a missing directory or document is a no-op and a
+ * store error is logged, never thrown.
+ */
+export async function discardAcpSessionLeftover(transcriptDir: string | undefined, name: string): Promise<void> {
+  if (transcriptDir === undefined) return;
+  try {
+    await discard(transcriptStoreFor(transcriptDir), name);
+  } catch (err) {
+    getSafeLogger()?.warn(STAGE, "Could not discard a stale ACP session transcript", {
+      sessionName: name,
+      error: errorText(err),
+    });
+  }
+}
+
 /** onProcess (spec §8): remembers the live pid and feeds nax's pid registry, every process of the session. */
 function processHooks(base: OpenBase): AcpProcessHooks {
   return {
