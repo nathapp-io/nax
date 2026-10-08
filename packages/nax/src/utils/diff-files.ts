@@ -10,6 +10,10 @@
  * `diff.noprefix=true` / `--no-prefix`. Skips `+++ /dev/null` (deletion-only
  * side has no `b/` path). Dedupes across hunks. Handles CRLF line endings.
  * Returns an empty set/map for empty input.
+ *
+ * Inside a hunk body (the old/new line counts its `@@` header announces) every
+ * line is content, so an added line that reads `++ b/<path>` is never mistaken
+ * for a header (#30).
  */
 
 const HEADER_PREFIX = "+++ b/";
@@ -51,17 +55,57 @@ export interface LineRange {
   readonly end: number;
 }
 
+type DiffEvent =
+  | { readonly kind: "header"; readonly path: string | null }
+  | { readonly kind: "hunk"; readonly start: number; readonly count: number };
+
+/** Old/new line counts a hunk-body line consumes, or null when the line ends the body. */
+function bodyLineCost(line: string): { readonly old: number; readonly new: number } | null {
+  // "" covers a context line whose single leading space was stripped by a tool.
+  if (line === "" || line.startsWith(" ")) return { old: 1, new: 1 };
+  if (line.startsWith("-")) return { old: 1, new: 0 };
+  if (line.startsWith("+")) return { old: 0, new: 1 };
+  if (line.startsWith("\\")) return { old: 0, new: 0 }; // "\ No newline at end of file"
+  return null;
+}
+
+/** Headers and hunks in order, with hunk-body lines consumed by count so content is never a header. */
+function* scanDiff(diff: string): Generator<DiffEvent> {
+  let oldLeft = 0;
+  let newLeft = 0;
+  let prevWasMinusHeader = false;
+  for (const rawLine of diff.split(/\r?\n/)) {
+    if (oldLeft > 0 || newLeft > 0) {
+      const cost = bodyLineCost(rawLine);
+      if (cost !== null) {
+        oldLeft = Math.max(0, oldLeft - cost.old);
+        newLeft = Math.max(0, newLeft - cost.new);
+        continue;
+      }
+      // A line no hunk body can hold (e.g. "diff --git"): the counts over-stated the body.
+      oldLeft = 0;
+      newLeft = 0;
+    }
+    const wasMinusHeader = prevWasMinusHeader;
+    prevWasMinusHeader = isMinusHeader(rawLine);
+    if (rawLine.startsWith(HEADER_PREFIX_NOPREFIX)) {
+      const path = parseHeaderPath(rawLine, wasMinusHeader);
+      if (path !== null || rawLine.startsWith(HEADER_PREFIX) || wasMinusHeader) yield { kind: "header", path };
+      continue;
+    }
+    const match = HUNK_REGEX.exec(rawLine);
+    if (!match) continue;
+    oldLeft = match[2] === undefined ? 1 : Number(match[2]);
+    newLeft = match[4] === undefined ? 1 : Number(match[4]);
+    yield { kind: "hunk", start: Number(match[3]), count: newLeft };
+  }
+}
+
 export function extractDiffFiles(diff: string): Set<string> {
   const files = new Set<string>();
   if (!diff) return files;
-
-  let prevWasMinusHeader = false;
-  for (const rawLine of diff.split(/\r?\n/)) {
-    if (rawLine.startsWith(HEADER_PREFIX_NOPREFIX)) {
-      const path = parseHeaderPath(rawLine, prevWasMinusHeader);
-      if (path) files.add(path);
-    }
-    prevWasMinusHeader = isMinusHeader(rawLine);
+  for (const event of scanDiff(diff)) {
+    if (event.kind === "header" && event.path) files.add(event.path);
   }
   return files;
 }
@@ -69,35 +113,15 @@ export function extractDiffFiles(diff: string): Set<string> {
 export function extractDiffLineRanges(diff: string): Map<string, LineRange[]> {
   const ranges = new Map<string, LineRange[]>();
   if (!diff) return ranges;
-
   let currentPath: string | null = null;
-  let prevWasMinusHeader = false;
-
-  for (const rawLine of diff.split(/\r?\n/)) {
-    const wasMinusHeader = prevWasMinusHeader;
-    prevWasMinusHeader = isMinusHeader(rawLine);
-
-    if (rawLine.startsWith(HEADER_PREFIX_NOPREFIX)) {
-      const path = parseHeaderPath(rawLine, wasMinusHeader);
-      // A `+++`-shaped line that is NOT a header (added content beginning
-      // `++ `) must not clear the file we are currently collecting hunks for.
-      if (path !== null || rawLine.startsWith(HEADER_PREFIX) || wasMinusHeader) currentPath = path;
+  for (const event of scanDiff(diff)) {
+    if (event.kind === "header") {
+      currentPath = event.path;
       continue;
     }
-
-    if (!currentPath) continue;
-
-    const match = HUNK_REGEX.exec(rawLine);
-    if (!match) continue;
-
-    const newStart = Number(match[3]);
-    const newCount = match[4] === undefined ? 1 : Number(match[4]);
-    if (newCount <= 0) continue;
-
+    if (!currentPath || event.count <= 0) continue;
     const entry = ranges.get(currentPath) ?? [];
-    entry.push({ start: newStart, end: newStart + newCount - 1 });
-    ranges.set(currentPath, entry);
+    ranges.set(currentPath, [...entry, { start: event.start, end: event.start + event.count - 1 }]);
   }
-
   return ranges;
 }
