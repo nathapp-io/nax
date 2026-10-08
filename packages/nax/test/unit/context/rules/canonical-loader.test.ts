@@ -15,6 +15,7 @@ import {
   lintForNeutrality,
   loadCanonicalRules,
   NeutralityLintError,
+  RulesFrontmatterLintError,
 } from "@/context/rules/canonical-loader";
 import { NaxError } from "@/errors";
 
@@ -300,6 +301,42 @@ ${"C".repeat(800)}`,
     });
     const rules = await loadCanonicalRules("/project", { budgetTokens: 200 });
     expect(rules).toHaveLength(3);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #2387: onInvalidFrontmatter — strict loading for lint gates
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("loadCanonicalRules — onInvalidFrontmatter (#2387)", () => {
+  test('"throw" rejects with RulesFrontmatterLintError naming every invalid file, and does not return a partial corpus', async () => {
+    setupFiles({
+      "/project/.nax/rules/bad.md": '---\npriority: 50\npaths:\n  - "src/**\n# Unterminated frontmatter',
+      "/project/.nax/rules/bad2.md": ["---", "priority: 10", "scope: everywhere", "---", "", "Body."].join("\n"),
+      "/project/.nax/rules/good.md": "## Good\n\nContent.",
+    });
+    let threw: unknown;
+    try {
+      await loadCanonicalRules("/project", { onInvalidFrontmatter: "throw" });
+    } catch (e) {
+      threw = e;
+    }
+    assertCaughtInstanceOf(threw, RulesFrontmatterLintError, "strict load rejection");
+    expect(threw.code).toBe("RULES_FRONTMATTER_LINT_FAILED");
+    expect(threw.issues.map((i) => i.file).sort()).toEqual([
+      "/project/.nax/rules/bad.md",
+      "/project/.nax/rules/bad2.md",
+    ]);
+  });
+
+  test('"skip" (default) still drops invalid files, warns, and returns the valid ones', async () => {
+    setupFiles({
+      "/project/.nax/rules/bad.md": "---\nunknown-key: true\n---\nBody.",
+      "/project/.nax/rules/good.md": "## Good\n\nContent.",
+    });
+    const rules = await loadCanonicalRules("/project");
+    expect(rules).toHaveLength(1);
+    expect(rules[0]?.fileName).toBe("good.md");
   });
 });
 

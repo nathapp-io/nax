@@ -129,4 +129,28 @@ describe("runPrecheck canonical-rules-lint blocker", () => {
     expect(blocker).toBeDefined();
     expect(blocker?.passed).toBe(false);
   });
+
+  // #2387: the run-time loader silently drops files with invalid frontmatter,
+  // so precheck must opt into strict loading or the run starts with rules nax
+  // will ignore.
+  test("adds canonical-rules-lint as Tier 1 blocker when a rule file has invalid frontmatter", async () => {
+    const rulesDir = join(testDir, ".nax", "rules");
+    mkdirSync(rulesDir, { recursive: true });
+    writeFileSync(
+      join(rulesDir, "broken.md"),
+      ["---", "priority: 50", "paths:", '  - "src/**', "# Unterminated frontmatter (no closing ---)"].join("\n"),
+    );
+
+    const config = createMockConfig(testDir);
+    const prd = createMockPRD();
+
+    const { output, exitCode } = await runPrecheck(config, prd, { workdir: testDir, format: "json", silent: true });
+
+    const blocker = output.blockers.find((check) => check.name === "canonical-rules-lint");
+    expect(blocker).toBeDefined();
+    expect(blocker?.passed).toBe(false);
+    expect(blocker?.message).toContain("broken.md");
+    expect(output.passed).toBe(false);
+    expect(exitCode).toBe(1);
+  });
 });

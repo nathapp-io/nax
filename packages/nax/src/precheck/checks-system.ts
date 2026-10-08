@@ -5,7 +5,7 @@
 import { existsSync, statSync } from "node:fs";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { PrecheckConfig } from "../config/selectors";
-import { loadCanonicalRules, NeutralityLintError } from "../context/rules/canonical-loader";
+import { loadCanonicalRules, NeutralityLintError, RulesFrontmatterLintError } from "../context/rules/canonical-loader";
 import type { Check } from "./types";
 
 function discoverCanonicalRuleRoots(workdir: string): string[] {
@@ -123,7 +123,10 @@ export async function checkCanonicalRulesLint(workdir: string): Promise<Check> {
 
   try {
     for (const root of roots) {
-      const rules = await _checkCanonicalRulesDeps.loadCanonicalRules(root);
+      // Strict load: the run-time loader silently drops files with invalid
+      // frontmatter, so precheck would otherwise pass a broken store and let
+      // the run start with rules nax will ignore (#2387).
+      const rules = await _checkCanonicalRulesDeps.loadCanonicalRules(root, { onInvalidFrontmatter: "throw" });
       ruleCount += rules.length;
     }
   } catch (err) {
@@ -135,6 +138,17 @@ export async function checkCanonicalRulesLint(workdir: string): Promise<Check> {
         tier: "blocker",
         passed: false,
         message: `Canonical rules lint failed (${err.violations.length} violation(s)): ${detail}`,
+      };
+    }
+
+    if (err instanceof RulesFrontmatterLintError) {
+      const first = err.issues[0];
+      const detail = first ? `${first.file}: ${first.message}` : "unknown location";
+      return {
+        name: "canonical-rules-lint",
+        tier: "blocker",
+        passed: false,
+        message: `Canonical rules lint failed (${err.issues.length} file(s) with invalid frontmatter): ${detail}`,
       };
     }
 
