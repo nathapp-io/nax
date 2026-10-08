@@ -457,8 +457,8 @@ function collectRectify(context: CuratorPostRunContext, entry: JsonRecord, data:
     ts: stringValue(entry.timestamp ?? entry.ts, now()),
     kind: "rectify-cycle",
     payload: {
-      iteration: numberValue(data.attempt ?? data.rectifyAttempt ?? data.iteration, 1),
-      status: stringValue(data.status, "started") as "started" | "failed" | "passed",
+      iteration: numberValue(data.iterationCount, 1),
+      status: data.exitReason === "resolved" ? "passed" : "failed",
     },
   };
 }
@@ -568,7 +568,7 @@ async function collectFromRunJsonl(context: CuratorPostRunContext): Promise<Obse
         observations.push(collectPullCall(context, entry, data));
       } else if (stage === "acceptance" && message === "verdict") {
         observations.push(collectAcceptanceVerdict(context, entry, data));
-      } else if (stage === "rectify" && message === "Starting rectification loop") {
+      } else if (stage === "story-orchestrator" && typeof data.iterationCount === "number") {
         observations.push(collectRectify(context, entry, data));
       } else if (stage === "escalation" && message.includes("Escalating")) {
         observations.push(collectEscalation(context, entry, data));
