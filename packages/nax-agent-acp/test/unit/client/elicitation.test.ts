@@ -298,3 +298,48 @@ describe("answerElicitation: signal and hygiene (D5-i, D5-j)", () => {
     expect(notes).toEqual(["declined: token [REDACTED]"]);
   });
 });
+
+describe("answerElicitation: required selects with a companion (#19 ruling)", () => {
+  const AUTH = {
+    type: "string",
+    title: "Auth",
+    oneOf: [
+      { const: "OAuth", title: "OAuth" },
+      { const: "API key", title: "API key" },
+    ],
+  };
+  const CACHE = {
+    type: "array",
+    title: "Cache",
+    items: { anyOf: [{ const: "Redis", title: "Redis" }] },
+  };
+
+  test("a required single-select does not offer a free-text answer, and declines one", async () => {
+    const request = form({ auth: AUTH, auth_custom: { type: "string" } }, { required: ["auth"] });
+    const { response, questions, notes } = await answer(request, ["mTLS"]);
+    expect(questions[0]?.split("\n").at(-1)).toBe("Reply with one number or choice.");
+    expect(response).toEqual({ action: "decline" });
+    expect(notes).toEqual([NO_MATCH_NOTE]);
+  });
+
+  test("a required single-select still accepts a named choice", async () => {
+    const request = form({ auth: AUTH, auth_custom: { type: "string" } }, { required: ["auth"] });
+    expect((await answer(request, ["2"])).response).toEqual({ action: "accept", content: { auth: "API key" } });
+  });
+
+  test("a required multi-select offers free text only beside a choice", async () => {
+    const request = form({ cache: CACHE, cache_custom: { type: "string" } }, { required: ["cache"] });
+    const { response, questions } = await answer(request, ["1, Hazelcast"]);
+    expect(questions[0]?.split("\n").at(-1)).toBe(
+      "Reply with numbers or choices, separated by commas; you may add your own after at least one choice.",
+    );
+    expect(response).toEqual({ action: "accept", content: { cache: ["Redis"], cache_custom: "Hazelcast" } });
+  });
+
+  test("a required multi-select declines free text with no choice", async () => {
+    const request = form({ cache: CACHE, cache_custom: { type: "string" } }, { required: ["cache"] });
+    const { response, notes } = await answer(request, ["Hazelcast"]);
+    expect(response).toEqual({ action: "decline" });
+    expect(notes).toEqual([NO_MATCH_NOTE]);
+  });
+});

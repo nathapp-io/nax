@@ -597,3 +597,39 @@ describe("formatFailingTestsList — baseline disposition tags (US-003)", () => 
     }
   });
 });
+
+// ─── #27: {{files}} substitution is literal, not a $-expanding RegExp replacement ─
+
+describe("failingTestRectification — per-file scoped commands", () => {
+  test("substitutes every {{files}} with the path verbatim, $ characters included", () => {
+    const finding: Finding = {
+      source: "test-runner",
+      severity: "error",
+      category: "failed-test",
+      rule: "should work",
+      file: "test/unit/a$$b.test.ts",
+      message: "AssertionError",
+    };
+    const prompt = RectifierPromptBuilder.failingTestRectification([finding], TDD_STORY, {
+      testCommand: "bun test",
+      testScopedTemplate: "bun test {{files}} && echo {{files}}",
+    });
+    expect(prompt).toContain("bun test test/unit/a$$b.test.ts && echo test/unit/a$$b.test.ts");
+  });
+});
+
+describe("RectifierPromptBuilder.escalated — per-file scoped commands", () => {
+  test("substitutes {{files}} with the path verbatim", () => {
+    const prompt = RectifierPromptBuilder.escalated(
+      [{ file: "test/unit/a$$b.test.ts", testName: "works", error: "AssertionError" }],
+      TDD_STORY,
+      2,
+      "fast",
+      "powerful",
+      undefined,
+      "bun test",
+      "bun test {{files}}",
+    );
+    expect(prompt).toContain("bun test test/unit/a$$b.test.ts");
+  });
+});

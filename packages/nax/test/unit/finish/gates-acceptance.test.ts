@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import type { AcceptanceGroupResult } from "@/cli";
 import type { FinishPhaseState } from "@/finish";
 import { _acceptanceGateDeps, routeAcceptance, runAcceptanceGate } from "@/finish";
+import { buildAcceptanceCommand } from "@/finish/gates/acceptance";
 
 const originalRun = _acceptanceGateDeps.run;
 afterEach(() => {
@@ -224,5 +225,18 @@ describe("runAcceptanceGate", () => {
     };
     await runAcceptanceGate("/repo", [group()], { timeoutMs: 1234 });
     expect(seen).toEqual([1234]);
+  });
+});
+
+describe("buildAcceptanceCommand", () => {
+  test("buildAcceptanceCommand inserts a $-containing path verbatim", () => {
+    const command = buildAcceptanceCommand("/repo", {
+      packageDir: "pkg",
+      testPath: "pkg/a$$b.acceptance.test.ts",
+      exists: true,
+      command: "bun test {{FILE}}",
+      cwd: "pkg",
+    });
+    expect(command).toContain("a$$b.acceptance.test.ts");
   });
 });
