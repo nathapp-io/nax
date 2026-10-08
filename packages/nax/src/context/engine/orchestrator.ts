@@ -151,7 +151,10 @@ export async function fetchWithTimeout(
   // Wrap the fetch so that if the abort fires synchronously inside abort(),
   // we map it to a "timed out" rejection rather than letting the raw "aborted"
   // error win the race against the timeout rejection.
-  const fetchPromise = provider.fetch(request, controller.signal).then(
+  //
+  // The async wrapper turns a SYNCHRONOUS throw from a plugin provider into a rejection that
+  // reaches the race below, so the finally always clears the timer (#22).
+  const fetchPromise = (async () => provider.fetch(request, controller.signal))().then(
     (result) => result,
     (err) => {
       if (timedOut) {
