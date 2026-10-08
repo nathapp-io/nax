@@ -28,6 +28,8 @@ export {
 export type { HardeningContext, HardeningResult } from "./hardening";
 export { runHardeningPass } from "./hardening";
 export { isStubTestContent } from "./heuristics";
+export type { OverrideLookup, OverrideLookupOptions } from "./override-keys";
+export { createOverrideLookup, OVERRIDE_SCOPE_SEPARATOR, scopedOverrideKey } from "./override-keys";
 export { parseRefinementResponse, refinementWouldFallback } from "./refinement";
 export {
   _groupDeps,
