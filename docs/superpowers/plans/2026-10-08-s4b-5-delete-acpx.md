@@ -23,6 +23,7 @@
 - Never bare `bun test`, never `bun run nax`. Package commands run from `packages/nax`. A single file runs as `bun test <path> --timeout=30000` from `packages/nax`.
 - Push, PR, merge, release tag: each needs maintainer approval at that moment. No billed run in this slice.
 - No emojis in code, comments or docs. Conventional commits.
+- Every commit leaves `check:all` green, so each task's commit step starts with `bun run lint:fix && bun run lint:biome` (from `packages/nax`). The plan's code blocks are not pre-formatted, and biome's organize-imports reorders imports after renames.
 
 ## Decisions
 
@@ -33,6 +34,7 @@
   - Why it is needed: BUG-122 closes the failed run's session so the re-run opens fresh. On the sdk transport, nothing lives outside nax to close. A cleanly closed session has already deleted its transcript document. The only stale state is a crash-leftover document under the same session name, and the sdk open path resumes it (spec §6.1). That is the same "continue the failed conversation" the eviction exists to prevent.
   - What the replacement does: it deletes that document. The directory is `deriveNativeTranscriptDir({ featureName: prd.feature, transcriptRoot: runtime.outputDir })`, the same derivation `SessionManager` feeds the adapter (`run-setup-init.ts:105`, `open-session-extras.ts:38`), so it is the logic kept on the new transport (B7).
   - Contract: best-effort, never throws, a no-op when the directory cannot be derived.
+  - Scope: `formatSessionName` + `deriveNativeTranscriptDir` is also the native adapter's transcript key, so the discard removes the rectified story's main-role transcript whichever agent ran it. That is intended: rectification re-runs the story fresh in a new worktree, and a native leftover would be resumed just the same.
   - Cleanup: `evictStaleSessions` has no caller and is deleted.
 - **D5-e. `ACPX_` leaves the env allowlist.** No agent process reads `ACPX_*` once acpx is gone. This is behaviour change 15 (Task 7 adds it to spec §11).
 - **D5-f. Strings.**
@@ -67,7 +69,7 @@
 | `src/config/{agent-defaults,schemas-infra,schemas,index,runtime-types-agent}.ts`, `src/cli/config-descriptions.ts` | delete the key, `AcpTransport`, `DEFAULT_ACP_TRANSPORT` | 2 |
 | `src/agents/registry.ts`, `src/agents/index.ts`, `src/cli/agents.ts`, `src/bakeoff/{preflight,coordinator}.ts` | single transport | 2 |
 | `src/agents/acp/` (24 files) | delete | 2 |
-| `test/unit/agents/acp/` (22 files), `test/unit/agents/adapter-cleanup.test.ts`, `test/integration/agents/fail-stale-watchdog.test.ts` | delete | 2 |
+| `test/unit/agents/acp/` (26 files), `test/unit/agents/adapter-cleanup.test.ts`, `test/integration/agents/fail-stale-watchdog.test.ts` | delete | 2 |
 | `test/unit/agents/registry.test.ts` | new: the transport-free cases salvaged from `test/unit/agents/acp/registry.test.ts` | 2 |
 | `test/preload.ts` | delete the acpx sentinel | 2 |
 | Tests pinning or comparing acpx (`agent-schema`, `registry-native`, `bakeoff/preflight`, `cli/agents-list`, `cli-core-agents{,-sdk}`, `acp-sdk/entries`, `config-descriptions`) | rewrite to sdk-only | 2 |
@@ -97,11 +99,10 @@ These tests use the acpx client only as a stand-in agent, plus four watchdog cas
 
 - [ ] **Step 1: Add the four ported watchdog cases**
 
-In `fail-stale-watchdog-sdk.test.ts`, add these imports to the existing import lines:
+In `fail-stale-watchdog-sdk.test.ts`, extend the existing `import { hangTurn, scriptedOpened } from "@test/helpers/acp-fake-agent";` line to `import { hangTurn, type ScriptedTurn, scriptedOpened } from "@test/helpers/acp-fake-agent";` and add:
 
 ```ts
 import type { TurnEvent } from "@nathapp/nax-agent";
-import { hangTurn, type ScriptedTurn, scriptedOpened } from "@test/helpers/acp-fake-agent";
 ```
 
 Below `completeOptions`, add the active-turn script and a driver:
@@ -235,7 +236,6 @@ Inside the existing `describe("Idle watchdog stale cancellation (sdk transport)"
     const bus = new AgentStreamEventBus();
     const registry = new Map<string, () => Promise<void>>();
     const detach = attachAgentIdleWatchdog(bus, registry, makeWatchdogConfig(SHORT_IDLE_TIMEOUT_MS));
-    const startMs = clock.now();
     try {
       const pending = new AcpSdkAgentAdapter("claude").complete(
         "p",
@@ -245,8 +245,9 @@ Inside the existing `describe("Idle watchdog stale cancellation (sdk transport)"
       await clock.advance(0);
       await clock.advance(SHORT_IDLE_TIMEOUT_MS * 2);
       const result = await pending;
+      // Only the configured 60ms idle timeout can cancel by t=120ms: the virtual
+      // clock never reaches the wall-clock budget, so cancelled proves the config.
       expect(result.cancelled).toBe(true);
-      expect(clock.now() - startMs).toBeLessThan(WALL_CLOCK_TIMEOUT_MS / 2);
     } finally {
       detach();
     }
@@ -313,9 +314,11 @@ Expected: all pass. If one fails, check that every `_acpSdkDeps` field the path 
 - [ ] **Step 6: Confirm no stray acpx-client consumer remains outside the doomed files**
 
 Run: `grep -rlnE "_acpAdapterDeps|acp/adapter\.test" test | grep -vE "^test/unit/agents/acp/|adapter-cleanup|fail-stale-watchdog\.test" | sort`
-Expected exactly: `test/integration/cli/cli-core-agents.test.ts`, `test/preload.ts`, `test/unit/cli/agents-list.test.ts`, `test/unit/agents/registry-native.test.ts`. Task 2 rewrites those four. Any other file is a new consumer: move it the same way as Step 3 before continuing.
+Expected exactly: `test/integration/cli/cli-core-agents.test.ts`, `test/preload.ts`, `test/unit/cli/agents-list.test.ts`. Task 2 rewrites those three (and `registry-native.test.ts`, which imports `@/agents/acp/adapter` without these symbols). Any other file is a new consumer: move it the same way as Step 3 before continuing.
 
 - [ ] **Step 7: Commit**
+
+Run `bun run lint:fix && bun run lint:biome` from `packages/nax` first; expected clean.
 
 ```bash
 git add packages/nax/test/integration/agents/fail-stale-watchdog-sdk.test.ts packages/nax/test/unit/agents/manager.test.ts packages/nax/test/unit/agents/manager-dispatch-emission.test.ts
@@ -387,10 +390,27 @@ describe("_applyRemovedAcpTransportShim — agent.acp.transport removed with acp
 });
 ```
 
+Inside the existing `describe("loadConfig — legacy key deprecation shim", ...)` block (it owns `tempDir`, `writeProjectConfig` and `captureLoadWarnings`), add the end-to-end case for Review Focus 1:
+
+```ts
+  test("S4b-5: a project config pinning agent.acp.transport loads, warns once, and drops the key", async () => {
+    await writeProjectConfig({ agent: { acp: { transport: "acpx", promptRetries: 1 } } });
+
+    let config: Awaited<ReturnType<typeof loadConfig>> | undefined;
+    const captured = await captureLoadWarnings(async () => {
+      config = await loadConfig(tempDir);
+    });
+
+    expect(captured.filter((m) => m.includes("agent.acp.transport"))).toHaveLength(1);
+    expect(config?.agent?.acp).not.toHaveProperty("transport");
+    expect(config?.agent?.acp?.promptRetries).toBe(1);
+  });
+```
+
 - [ ] **Step 2: Run them to verify they fail**
 
 Run: `bun test test/unit/config/loader-legacy-shim.test.ts --timeout=30000`
-Expected: FAIL, `_applyRemovedAcpTransportShim` is not exported.
+Expected: FAIL, `_applyRemovedAcpTransportShim` is not exported (the end-to-end case fails on the warning count, since zod strips the key silently today).
 
 - [ ] **Step 3: Implement the shim and wire it into the chain**
 
@@ -519,6 +539,8 @@ In `createAgentRegistry`:
 - Delete `contestantTransport` (lines 78-83).
 - Delete the `baseTransport` parameter from `validateContestants`.
 - Inside it, call `isInstalled(agentName)` where it called `isInstalled(agentName, contestantTransport(...))`.
+
+`src/agents/acp-sdk/adapter.ts`: header line 3 drops ", selected by agent.acp.transport = \"sdk\"" (it reads "§5.1). It drives the backend's S1"); the line-148 message becomes `` `Agent "${this.name}" has no ACP launcher, so it cannot run as an ACP agent` ``. Update the assertion on that message in `test/unit/agents/acp-sdk/adapter.test.ts` (find it with `grep -n "cannot run on" test/unit/agents/acp-sdk/adapter.test.ts`) to `so it cannot run as an ACP agent`.
 
 `src/bakeoff/coordinator.ts`: drop the `DEFAULT_ACP_TRANSPORT` import and the `options.config.agent?.acp?.transport ?? DEFAULT_ACP_TRANSPORT,` argument (line 85).
 
@@ -703,31 +725,20 @@ Then make these edits:
   - The test that read "resolves via which()" becomes "has an ACP launcher". It is stubbed by the existing `launchCandidateKind` mock.
 - `test/integration/cli/cli-core-agents.test.ts`: delete the `_acpAdapterDeps` import, `origWhich` and its two assignments. Rename the test "marks an acpx default agent, and omits native under protocol acp" to "marks an ACP default agent, and omits native under protocol acp".
 - `test/integration/cli/cli-core-agents-sdk.test.ts`:
+  - Change `const SDK_CONFIG = makeNaxConfig({ agent: { acp: { transport: "sdk" } } });` (line 12) to `const SDK_CONFIG = makeNaxConfig();`. The `transport` field no longer exists on the config type, so the old literal is a typecheck error.
   - Delete the test "lists the same agents as the acpx transport".
   - Change the header comment to "`nax agents` on the ACP transport (S4b spec §9): install status comes from each agent's ACP launcher."
-- `test/unit/agents/acp-sdk/entries.test.ts`: replace the file. It drops the parity-with-acpx comparisons and keeps the row values as literal expectations:
+- `test/unit/agents/acp-sdk/entries.test.ts`: edit, do not replace. It has tests that stay (each entry launches the agent of its own name; `aider` and `toString` have no entry; the `UNSUPPORTED_ENTRY` display).
+  - Delete the imports of `ACP_ADAPTER_NAMES` (from `@/agents/acp`) and `resolveRegistryEntry` (from `@/agents/acp/agent-entries`).
+  - Replace the test "covers the same agent names as the acpx adapter" with a literal expectation. Read the sorted name list from `src/agents/acp-sdk/entries.ts` first; at main `d79057cfa` it is the five below:
 
 ```ts
-import { describe, expect, test } from "bun:test";
-import { ACP_SDK_AGENT_NAMES, acpSdkEntry } from "@/agents/acp-sdk";
-
-describe("ACP agent entries", () => {
   test("lists the agents that have an ACP launcher (no aider)", () => {
     expect([...ACP_SDK_AGENT_NAMES].sort()).toEqual(["claude", "codex", "gemini", "opencode", "pi"]);
   });
-
-  test("every listed agent has a display name, tiers and a context size", () => {
-    for (const name of ACP_SDK_AGENT_NAMES) {
-      const entry = acpSdkEntry(name);
-      expect(entry.displayName.length).toBeGreaterThan(0);
-      expect(entry.supportedTiers.length).toBeGreaterThan(0);
-      expect(entry.maxContextTokens).toBeGreaterThan(0);
-    }
-  });
-});
 ```
 
-  Before writing it, read `src/agents/acp-sdk/entries.ts` and match the real field names and the `acpSdkEntry` signature. If the name list differs from the five above, the source is the truth: use its sorted list.
+  - Delete the test "display name, tiers and context match the acpx rows (parity)". The surviving tests already pin the rows that matter.
 
 - [ ] **Step 8: Typecheck and grep for stragglers**
 
@@ -751,6 +762,8 @@ Run: `bun run check:complexity:update && bun run check:file-sizes:update && bun 
 Expected: the entries for `src/agents/acp/*` and `test/unit/agents/acp/*` disappear. No other entry changes. Check this with `git diff scripts/baselines`. If another entry changes, revert that hunk and report it.
 
 - [ ] **Step 11: Commit**
+
+Run `bun run lint:fix && bun run lint:biome` from `packages/nax` first; expected clean.
 
 ```bash
 git add -A packages/nax/src packages/nax/test packages/nax/scripts/baselines
@@ -780,6 +793,8 @@ agent.acp.transport is dropped with a warning (compat shim)."
 
 ```bash
 cd packages/nax
+# Task 2 must have left no leftovers (e.g. .DS_Store), or git mv nests the folder as acp/acp-sdk.
+test ! -e src/agents/acp && test ! -e test/unit/agents/acp || { echo "target dir exists; remove leftovers first"; exit 1; }
 git mv src/agents/acp-sdk src/agents/acp
 git mv test/unit/agents/acp-sdk test/unit/agents/acp
 git mv test/integration/agents/fail-stale-watchdog-sdk.test.ts test/integration/agents/fail-stale-watchdog.test.ts
@@ -803,14 +818,16 @@ perl -pi -e '
   s/\bACP_SDK_AGENT_NAMES\b/ACP_AGENT_NAMES/g;
   s/\bacpSdkEntry\b/acpEntry/g;
 ' $files
-grep -rl '"acp-sdk"' src/agents/acp | xargs perl -pi -e 's/"acp-sdk"/"acp"/g'
+# Remaining bare "acp-sdk" strings: the log stage, the "[acp-sdk]" message prefix,
+# makeTempDir("acp-sdk-...") prefixes and describe titles. None is a path any more.
+grep -rlE "acp-sdk" src/agents/acp test | xargs perl -pi -e 's/\bacp-sdk\b/acp/g'
 ```
 
 `ACP_SDK_SESSION_NOT_OPEN` and `ACP_SDK_TURN_IN_FLIGHT` are untouched by these patterns (D5-b). Confirm: `grep -rn "ACP_SDK_" src | grep -v "ACP_SDK_SESSION_NOT_OPEN\|ACP_SDK_TURN_IN_FLIGHT"` returns nothing.
 
 - [ ] **Step 3: Fold the `cli-core-agents` sdk file into the main one**
 
-Move the single remaining test of `test/integration/cli/cli-core-agents-sdk.test.ts` ("claude shows installed through its ACP launcher; the others do not") into `cli-core-agents.test.ts`'s `describe("agentsListCommand", ...)`, reusing that file's existing `launchCandidateKind` stub (claude found, the others not). Then delete the sdk file: `git rm -q test/integration/cli/cli-core-agents-sdk.test.ts`.
+Move the single remaining test of `test/integration/cli/cli-core-agents-sdk.test.ts` ("claude shows installed through its ACP launcher; the others do not") into `cli-core-agents.test.ts`'s `describe("agentsListCommand", ...)`, reusing that file's existing `launchCandidateKind` stub (claude found, the others not) and its default `makeNaxConfig()` (the sdk file's `SDK_CONFIG` was already `makeNaxConfig()` after Task 2). Then delete the sdk file: `git rm -q test/integration/cli/cli-core-agents-sdk.test.ts`.
 
 In the moved `test/integration/agents/fail-stale-watchdog.test.ts`, change the describe title to `"Idle watchdog stale cancellation (ACP)"`. Change the header comment's last clause to "with the backend scripted in memory (scriptedOpened)."
 
@@ -833,7 +850,7 @@ Run: `bun run check:adapter-no-config-import && bun run check:import-cycles && b
 Expected: all OK.
 
 Run: `grep -rn "acp-sdk\|AcpSdk\|_acpSdkDeps\|ACP_SDK_AGENT_NAMES" src test scripts`
-Expected: no output. A remaining hit is a doc-comment mention. Reword it to "ACP" or the new path.
+Expected: no output. The step 2 replacements cover paths, symbols and bare strings (including the user-visible `[acp-sdk] Session cwd does not exist` prefix at `adapter.ts:157`, now `[acp]`). Any hit left is in `scripts/`: reword it by hand.
 
 - [ ] **Step 6: Ratchet the baselines for the renamed paths**
 
@@ -841,6 +858,8 @@ Run: `bun run check:complexity:update && bun run check:file-sizes:update && bun 
 Expected: only renames of `acp-sdk` paths to `acp` paths, with values unchanged. Check `git diff scripts/baselines`. A changed value means the move changed a file, so stop and report.
 
 - [ ] **Step 7: Commit**
+
+Run `bun run lint:fix && bun run lint:biome` from `packages/nax` first; expected clean.
 
 ```bash
 git add -A packages/nax/src packages/nax/test packages/nax/scripts
@@ -855,7 +874,7 @@ git commit -m "refactor(nax): S4b-5 rename agents/acp-sdk to agents/acp and drop
 - Modify: `packages/nax/src/agents/errors/parse-agent-error.ts` (lines 1-25 doc, 100-150, 165-170, 293-332, 352-382, 399-427)
 - Test: `packages/nax/test/unit/agents/errors/parse-agent-error.test.ts`
 - Modify: `packages/nax/src/agents/shared/env.ts:6,33`
-- Test: the existing `buildAllowedEnv` test. Find it with `grep -rln "buildAllowedEnv" test/unit`.
+- Test: `packages/nax/test/unit/agents/shared/env.test.ts:56-60`
 
 **Interfaces:**
 - Consumes: none new.
@@ -910,26 +929,19 @@ describe("S4b-5: structured provider signals still classify", () => {
 });
 ```
 
-In the `buildAllowedEnv` test file, add:
+In `test/unit/agents/shared/env.test.ts`, replace the test `"includes ACPX_* prefix vars"` (lines 56-60) with its negation. The file's existing env save/restore (its `beforeEach`/`afterEach`, which the neighbouring `NAX_*` test relies on) covers the variable:
 
 ```ts
-  test("S4b-5: ACPX_* vars are no longer passed through", () => {
-    const saved = process.env.ACPX_SESSION_DIR;
-    process.env.ACPX_SESSION_DIR = "/tmp/x";
-    try {
-      expect(buildAllowedEnv()).not.toHaveProperty("ACPX_SESSION_DIR");
-    } finally {
-      if (saved === undefined) delete process.env.ACPX_SESSION_DIR;
-      else process.env.ACPX_SESSION_DIR = saved;
-    }
+  test("S4b-5: ACPX_* prefix vars are no longer passed through", () => {
+    process.env.ACPX_TIMEOUT = "30000";
+    const env = buildAllowedEnv();
+    expect(env).not.toHaveProperty("ACPX_TIMEOUT");
   });
 ```
 
-Use the file's own env-isolation helper instead of the inline save and restore if it has one.
-
 - [ ] **Step 2: Run to verify the new acpx cases fail**
 
-Run: `bun test test/unit/agents/errors/parse-agent-error.test.ts <buildAllowedEnv test path> --timeout=30000`
+Run: `bun test test/unit/agents/errors/parse-agent-error.test.ts test/unit/agents/shared/env.test.ts --timeout=30000`
 Expected: the five "-> unknown" cases FAIL (they still classify) and the `ACPX_` test FAILS. The "still classify" cases PASS already. They are the guard for Step 3.
 
 - [ ] **Step 3: Remove the acpx branches**
@@ -951,8 +963,7 @@ In `parse-agent-error.ts`:
 
 In `src/agents/shared/env.ts`:
 - Delete `"ACPX_",` from `ALLOWED_PREFIXES`.
-- Change header line 6 `- SpawnAcpClient (src/agents/acp/spawn-client.ts)` to `- AcpAgentAdapter (src/agents/acp/adapter.ts) via buildAllowedEnv`.
-- Before saving, check that the adapter really calls `buildAllowedEnv`: `grep -n buildAllowedEnv src/agents/acp/*.ts`. If it does not, delete that bullet instead.
+- Change header line 6 `- SpawnAcpClient (src/agents/acp/spawn-client.ts)` to `- the ACP adapter's launch env (src/agents/acp/open-context.ts, backendEnv)`.
 
 - [ ] **Step 4: Run the tests**
 
@@ -963,6 +974,8 @@ Run: `bun test test/unit/agents --timeout=30000`
 Expected: PASS. `complete-exception-classifier` tests and failure-map tests depend on `parseAgentError`. A failure there whose input is an acpx shape gets its expectation updated to `unknown`, with the comment `// S4b-5: acpx-only shape`. A failure on any other input means a non-acpx path was removed, so stop and restore that path.
 
 - [ ] **Step 5: Commit**
+
+Run `bun run lint:fix && bun run lint:biome` from `packages/nax` first; expected clean.
 
 ```bash
 git add packages/nax/src/agents/errors/parse-agent-error.ts packages/nax/src/agents/shared/env.ts packages/nax/test/unit
@@ -986,51 +999,45 @@ git commit -m "refactor(nax): S4b-5 drop acpx-only error-classification branches
   - `pipelineContextBase.runtime.outputDir: string` (`NaxRuntime`, `src/runtime/index.ts:155`).
 - Produces:
   - `export async function discardAcpSessionLeftover(transcriptDir: string | undefined, name: string): Promise<void>` from `@/agents/acp`. It never rejects.
-  - `_mergeRectifyDeps = { discardStaleSession: discardAcpSessionLeftover }`.
+  - `_mergeRectifyDeps.discardStaleSession: (transcriptDir: string | undefined, name: string) => Promise<void>` (lazy-imports `discardAcpSessionLeftover`).
   - `closeStaleAcpSession` and `evictStaleSessions` are deleted.
 
 - [ ] **Step 1: Write the failing tests**
 
-In `test/unit/agents/acp/session.test.ts`, add (merge the imports into the existing import lines):
+In `test/unit/agents/acp/session.test.ts`, add the case below. The file already imports `readdirSync`, `makeTempDir` and `cleanupTempDir` and declares a top-level `dir`; add only the missing imports (`existsSync` from `node:fs`, `join` from `node:path` if absent, `discardAcpSessionLeftover` from `@/agents/acp`, `transcriptStoreFor` from `@/agents/acp/open-context`), and use a name that does not shadow the top-level `dir`:
 
 ```ts
-import { mkdirSync, writeFileSync, existsSync, readdirSync } from "node:fs";
-import { join } from "node:path";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { discardAcpSessionLeftover } from "@/agents/acp";
-import { transcriptStoreFor } from "@/agents/acp/open-context";
-
 describe("discardAcpSessionLeftover (BUG-122 rectification, S4b-5)", () => {
-  let dir: string;
+  let leftoverDir: string;
   beforeEach(() => {
-    dir = makeTempDir("acp-leftover-");
+    leftoverDir = makeTempDir("acp-leftover-");
   });
-  afterEach(() => cleanupTempDir(dir));
+  afterEach(() => cleanupTempDir(leftoverDir));
 
   test("deletes the named session's transcript document so the next open is fresh", async () => {
-    const store = transcriptStoreFor(dir);
-    await store.markTurn("nax-abc-feat-US-001-main", { turn: 1 } as never);
+    const store = transcriptStoreFor(leftoverDir);
+    await store.markTurn("nax-abc-feat-US-001-main", { turnId: "t1", state: "ended" });
     expect(await store.load("nax-abc-feat-US-001-main")).not.toBeNull();
-    await discardAcpSessionLeftover(dir, "nax-abc-feat-US-001-main");
+    await discardAcpSessionLeftover(leftoverDir, "nax-abc-feat-US-001-main");
     expect(await store.load("nax-abc-feat-US-001-main")).toBeNull();
   });
 
   test("leaves other sessions' documents alone", async () => {
-    const store = transcriptStoreFor(dir);
-    await store.markTurn("keep-me", { turn: 1 } as never);
-    await discardAcpSessionLeftover(dir, "drop-me");
+    const store = transcriptStoreFor(leftoverDir);
+    await store.markTurn("keep-me", { turnId: "t1", state: "ended" });
+    await discardAcpSessionLeftover(leftoverDir, "drop-me");
     expect(await store.load("keep-me")).not.toBeNull();
   });
 
   test("is a no-op when the directory cannot be derived or does not exist", async () => {
     await discardAcpSessionLeftover(undefined, "x");
-    await discardAcpSessionLeftover(join(dir, "missing", "sessions"), "x");
-    expect(existsSync(join(dir, "missing"))).toBe(false);
+    await discardAcpSessionLeftover(join(leftoverDir, "missing", "sessions"), "x");
+    expect(existsSync(join(leftoverDir, "missing"))).toBe(false);
   });
 });
 ```
 
-`as never` stands in for the `TurnMarker` shape. Before writing, replace it with a real `TurnMarker` literal: read the type in `packages/nax-agent/src/native/session/transcript-types.ts`. The `check:test-as-unknown-as` / escape-hatch gates reject casts. The leftover-document fixture can also come from the existing `session.test.ts` crash-leftover tests, which already write one. Reuse their helper if present. In that case drop the unused `mkdirSync`/`writeFileSync`/`readdirSync` imports.
+`{ turnId, state }` is the `TurnMarker` shape (`packages/nax-agent/src/native/session/transcript-types.ts:11`). No cast: the escape-hatch gates reject them.
 
 In `test/unit/execution/merge-conflict-rectify.test.ts`:
 - Remove `closeStaleAcpSession` from the import.
@@ -1137,12 +1144,18 @@ In `src/execution/merge-conflict-rectify.ts`:
 - Add:
 
 ```ts
-import { discardAcpSessionLeftover } from "../agents/acp";
 import { deriveNativeTranscriptDir } from "../session/manager-deps";
 
-/** Injectable deps for the stale-session discard (BUG-122). */
+/**
+ * Injectable deps for the stale-session discard (BUG-122). The ACP module is
+ * imported lazily, like this file's other heavy imports, to keep execution/
+ * out of the agents/acp import graph.
+ */
 export const _mergeRectifyDeps = {
-  discardStaleSession: discardAcpSessionLeftover,
+  discardStaleSession: async (transcriptDir: string | undefined, name: string): Promise<void> => {
+    const { discardAcpSessionLeftover } = await import("../agents/acp");
+    await discardAcpSessionLeftover(transcriptDir, name);
+  },
 };
 ```
 
@@ -1175,9 +1188,11 @@ Run: `bun test test/unit/agents/acp/session.test.ts test/unit/execution/merge-co
 Expected: PASS.
 
 Run: `bun run typecheck && bun run check:import-cycles && bun run check:package-boundaries`
-Expected: clean. A new cycle through `execution -> agents/acp -> ... -> execution` means the static import must move inside the function as a dynamic `await import("../agents/acp")`, as `formatSessionName` already is. Keep `_mergeRectifyDeps.discardStaleSession` as a thin wrapper that does that import.
+Expected: clean. If `check:import-cycles` flags `session/manager-deps`, import `deriveNativeTranscriptDir` dynamically inside `rectifyConflictedStory` the same way.
 
 - [ ] **Step 5: Commit**
+
+Run `bun run lint:fix && bun run lint:biome` from `packages/nax` first; expected clean.
 
 ```bash
 git add packages/nax/src/agents/acp packages/nax/src/execution/merge-conflict-rectify.ts packages/nax/test/unit/agents/acp/session.test.ts packages/nax/test/unit/execution/merge-conflict-rectify.test.ts
@@ -1189,9 +1204,9 @@ git commit -m "fix(nax): S4b-5 rectification discards the crash-leftover ACP tra
 ### Task 6: User-facing strings and the acpx grep gate (D5-f)
 
 **Files:**
-- Modify: `src/config/schemas-protocol-gate.ts:67,86`, `src/config/unreferenced-agent-models.ts:83`, `src/precheck/checks-native-credentials.ts:59,74`, `src/cli/config-descriptions.ts:340`, `src/agents/acp/adapter.ts:3,148`
+- Modify: `src/config/schemas-protocol-gate.ts:67,86`, `src/config/unreferenced-agent-models.ts:83`, `src/precheck/checks-native-credentials.ts:59,74`, `src/cli/config-descriptions.ts:340`
 - Modify: the comment-only hits from `grep -rn -i acpx src` (Step 3)
-- Test: `test/unit/config/agent-protocol-gate.test.ts`, `test/unit/config/unreferenced-agent-models.test.ts`, `test/unit/precheck/checks-native-credentials.test.ts`, `test/unit/prompts/sections/hermetic.test.ts`, `test/unit/agents/acp/adapter.test.ts`
+- Test: `test/unit/config/agent-protocol-gate.test.ts`, `test/unit/config/unreferenced-agent-models.test.ts`, `test/unit/precheck/checks-native-credentials.test.ts`, `test/unit/prompts/sections/hermetic.test.ts`
 
 **Interfaces:**
 - Consumes: Tasks 2-5.
@@ -1208,19 +1223,17 @@ Change each expectation that reads one of the strings below to its new form:
 | `is an acpx agent. Use "hybrid" to run both.` | `is an ACP agent. Use "hybrid" to run both.` |
 | `Under agent.protocol "native" acpx agents cannot run` | `Under agent.protocol "native" ACP agents cannot run` |
 | `to use an acpx agent.` | `to use an ACP agent.` |
-| `it cannot run on agent.acp.transport "sdk"` | `so it cannot run as an ACP agent` |
 
 `hermetic.test.ts` uses `"acpx"` as arbitrary sample data for `externalBoundaries`. Leave it. It is test data, not a claim about nax.
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `bun test test/unit/config/agent-protocol-gate.test.ts test/unit/config/unreferenced-agent-models.test.ts test/unit/precheck/checks-native-credentials.test.ts test/unit/agents/acp/adapter.test.ts --timeout=30000`
+Run: `bun test test/unit/config/agent-protocol-gate.test.ts test/unit/config/unreferenced-agent-models.test.ts test/unit/precheck/checks-native-credentials.test.ts --timeout=30000`
 Expected: FAIL on the changed strings.
 
 - [ ] **Step 3: Change the strings, then sweep comments**
 
-- Apply the table above in the five source sites.
-- `src/agents/acp/adapter.ts:148` becomes `` `Agent "${this.name}" has no ACP launcher, so it cannot run as an ACP agent` ``. Its header line 3 becomes "§5.1). It drives the backend's S1".
+- Apply the table above in the four source sites.
 - `config-descriptions.ts:340`: the example becomes `['claude', 'gh', 'redis']`.
 
 Then run `grep -rn -i acpx src` and handle each hit:
@@ -1288,6 +1301,10 @@ Each spot gets the same message: every non-native agent runs over ACP through `@
   - Lines 330-341: describe the in-nax `promptRetries` loop from spec §7.2. Delete the "fires inside acpx" claims.
   - Delete line 364 (the acpx parser paragraph).
 
+Also reword acpx-as-current in: `docs/architecture/conventions.md:17,202`, `docs/architecture/design-patterns.md:114,129`, `docs/architecture/subsystems.md:1003`, `docs/guides/hermetic-tests.md:21`, `docs/guides/testing-rules.md:223,233`, `docs/guides/mcp-and-interception.md:41`, and in `packages/nax/scripts/check-op-tool-capability.ts:8,178` (message text) and `packages/nax/scripts/run-tests.ts:10,119,159` (comments: "agent processes"). ADRs, specs, plans and dated review docs (`docs/2026*.md`) are historical: leave them.
+
+Then run `grep -rni acpx docs/guides docs/architecture packages/nax/README.md packages/nax/scripts --include=*.md --include=*.ts`. Expected: only the `finish.autoFlow` migration note in `configuration.md` and the "Upgrading from acpx" paragraph.
+
 - [ ] **Step 2: Agent context and rules, then regenerate**
 
 - `.nax/mono/packages/nax/context.md:78`: `` | `src/agents/acp/` | ACP adapter over `@nathapp/nax-agent-acp` (one of two transports; see ADR-027) | ``.
@@ -1315,7 +1332,7 @@ In the spec:
 ```markdown
 15. **`ACPX_*` environment variables are no longer passed to agent processes** (S4b-5, D5-e).
 16. **`agent.acp.transport` is removed.** A config that still sets it loads with a warning and runs on the ACP SDK (S4b-5, D5-c).
-17. **Merge-conflict rectification discards the rectified story's crash-leftover ACP transcript** instead of running `acpx sessions close`, so the re-run opens fresh (BUG-122 on the new transport, S4b-5, D5-d).
+17. **Merge-conflict rectification discards the rectified story's main-role session transcript, whichever agent ran it,** instead of running `acpx sessions close`, so the re-run opens fresh (BUG-122 on the new transport, S4b-5, D5-d).
 ```
 
 - Append to the §10 S4b-5 row: "B2 deviation: v0.83.5 shipped the sdk default with acpx present; S4b-5 releases as 0.83.6 (D5-h)."
@@ -1325,7 +1342,7 @@ In `projects/nax/nax-agent-master-plan.md` (outside the repo, `subrina-coder` wo
 - [ ] **Step 4: Commit**
 
 ```bash
-git add packages/nax/README.md docs/guides docs/architecture .nax packages/nax/*.md .claude/rules docs/superpowers/specs/2026-10-07-s4b-nax-run-acp-cutover-design.md
+git add packages/nax/README.md packages/nax/scripts docs/guides docs/architecture .nax packages/nax/*.md .claude/rules docs/superpowers/specs/2026-10-07-s4b-nax-run-acp-cutover-design.md
 git commit -m "docs(nax): S4b-5 ACP launcher replaces acpx in install, config and architecture docs"
 ```
 
@@ -1377,7 +1394,8 @@ The body records:
 - the B2 deviation;
 - the "acpx mentions kept (historical)" list;
 - every deleted test file, each with its replacement or a reason it is not needed: plumbing (argv, parser, `sessions ensure`, which-probe, reasoning-effort `acpx set`) or transport comparison;
-- "no billed run (D5-i)".
+- "no billed run (D5-i)";
+- a note that removing `extractBracketedCodes` drops every `[CODE]`-style bracket token from `parseAgentError`, not just `ACPX_*` (no producer found in nax-ai, nax-agent or nax-agent-acp; the sdk path classifies through `failure-map`).
 
 - [ ] **Step 5: CI and merge (approval required)**
 
@@ -1399,6 +1417,7 @@ After the release PR merges: `git checkout main && git pull origin main && cd pa
 
 ```bash
 npm view @nathapp/nax@0.83.6 version gitHead
+mkdir -p "$TMPDIR/nax-0836"
 npm pack @nathapp/nax@0.83.6 --pack-destination "$TMPDIR/nax-0836" && tar -xzf "$TMPDIR"/nax-0836/nathapp-nax-0.83.6.tgz -C "$TMPDIR/nax-0836"
 grep -c "createSpawnAcpClient\|parseAcpxJsonLine" "$TMPDIR/nax-0836/package/dist/nax.js"
 ```
