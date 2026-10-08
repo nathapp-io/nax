@@ -167,7 +167,7 @@ function toPiMessages(messages: readonly ConversationMessage[], model: Model<Api
     // result. No match means the caller assembled an impossible conversation.
     const toolName = toolNames.get(message.toolCallId);
     if (toolName === undefined) {
-      throw new Error(
+      throw new ProtocolSetupError(
         `Tool result references tool call "${message.toolCallId}", which no earlier assistant message made.`,
       );
     }

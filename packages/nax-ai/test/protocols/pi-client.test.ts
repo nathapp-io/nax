@@ -1,5 +1,6 @@
 import type { Api, AssistantMessageEvent, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
+import { ProtocolSetupError } from "../../src/protocols/errors.ts";
 import {
   createPiDeps,
   createPiProtocol,
@@ -784,6 +785,27 @@ describe("createPiProtocol error path", () => {
       events.push(event);
     }
     expect(events.at(-1)).toMatchObject({ type: "error", error: { kind: "bad-request" } });
+  });
+
+  // Live instance of #20. toPiContext(req, model) is evaluated BEFORE the
+  // stream generator's try block (pi-client.ts:268 vs :273), so an orphan
+  // tool-result throws a raw status-less error out of the generator. As a plain
+  // Error, retryTransportFaults classified it "transport" and re-sent the
+  // impossible request; it is a request that cannot succeed, so it must reject
+  // as a setup error that the retry wrapper leaves alone.
+  it("an orphan tool-result rejects as a setup error, not a transport-kind error event", async () => {
+    const stream = createPiProtocol("openai-completions", fakePi([]).deps).stream({
+      ...BASE,
+      messages: [{ role: "tool-result", toolCallId: "ghost", content: "ok" }],
+    });
+
+    await expect(
+      (async () => {
+        for await (const _ of stream) {
+          // drain: the throw happens when toPiContext runs, before any event.
+        }
+      })(),
+    ).rejects.toBeInstanceOf(ProtocolSetupError);
   });
 });
 
