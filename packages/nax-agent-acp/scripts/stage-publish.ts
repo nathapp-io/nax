@@ -35,6 +35,7 @@ function main(): void {
   rmSync(OUT, { recursive: true, force: true });
   mkdirSync(OUT, { recursive: true });
   cpSync(join(PKG, "dist"), join(OUT, "dist"), { recursive: true });
+  cpSync(join(PKG, "bin"), join(OUT, "bin"), { recursive: true });
   for (const file of ["README.md", "CHANGELOG.md", "LICENSE"]) cpSync(join(PKG, file), join(OUT, file));
   writeFileSync(join(OUT, "package.json"), `${JSON.stringify(manifest, null, 2)}\n`);
   console.log(`staged ${OUT}`);

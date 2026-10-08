@@ -5,6 +5,10 @@ step with `@nathapp/nax-agent`.
 
 ## [Unreleased]
 
+### Added
+
+- `nax-agent` binary and the `./server` entry (`main`, `runCli`) (S5-0): an ACP server on stdio that reads `~/.nax` (models, auth, optional `agentServer` block), logs to stderr only, and answers `initialize`. Session methods arrive in later S5 slices.
+
 ### Changed
 
 - A model the agent does not offer verbatim still fails the open with `AGENT_SESSION_CAPABILITY_UNSUPPORTED`; the error now lists the model ids the agent does offer (message and `context.offered`, at most 50, cleaned like other agent text).
