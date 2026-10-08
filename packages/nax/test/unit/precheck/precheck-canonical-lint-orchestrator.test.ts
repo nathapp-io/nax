@@ -133,7 +133,7 @@ describe("runPrecheck canonical-rules-lint blocker", () => {
   // #2387: the run-time loader silently drops files with invalid frontmatter,
   // so precheck must opt into strict loading or the run starts with rules nax
   // will ignore.
-  test("adds canonical-rules-lint as Tier 1 blocker when a rule file has invalid frontmatter", async () => {
+  test("adds canonical-rules-lint as a Tier 1 blocker when a rule file has invalid frontmatter", async () => {
     const rulesDir = join(testDir, ".nax", "rules");
     mkdirSync(rulesDir, { recursive: true });
     writeFileSync(
