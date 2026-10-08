@@ -49,7 +49,7 @@ Frontmatter keys (all optional):
 | `stages` | string[] | none | Pipeline stages the rule applies to (e.g. `single-session`, `tdd-test-writer`, `review-semantic`). Rule loads only when `request.stage` is listed. Unknown stage names warn but do not reject the rule. |
 | `description` | string | none | Free-text label; not used for filtering. |
 
-Any other key rejects the file (`RULES_FRONTMATTER_INVALID`, logged as `Invalid rule frontmatter — skipping file`). Frontmatter preceded by a BOM, a blank line, or an HTML comment is warned about as *displaced*; an HTML-comment-displaced block is not honored. `nax rules lint` checks a store without running a story.
+Any other key rejects the file (`RULES_FRONTMATTER_INVALID`). At run time the file is logged as `Invalid rule frontmatter — skipping file` and dropped so one bad rule never aborts a run; `nax rules lint` instead loads strictly, reports every invalid file as an error, and exits non-zero (`RULES_LINT_FAILED`), and the run-start precheck blocks on it. Frontmatter preceded by a BOM, a blank line, or an HTML comment is warned about as *displaced*; an HTML-comment-displaced block is not honored. `nax rules lint` checks a store without running a story.
 
 Body must pass the neutrality linter — see below.
 

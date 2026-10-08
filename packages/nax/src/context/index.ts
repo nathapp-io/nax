@@ -50,6 +50,8 @@ export {
   DEFAULT_CANONICAL_RULES_BUDGET_TOKENS,
   loadCanonicalRules,
   NeutralityLintError,
+  type RulesFrontmatterIssue,
+  RulesFrontmatterLintError,
 } from "./rules/canonical-loader";
 export type { SectionBudgetResult } from "./rules/rule-budget";
 export { applySectionBudget, priorityToRawScore } from "./rules/rule-budget";

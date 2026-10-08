@@ -11,7 +11,13 @@ import { statSync } from "node:fs";
 import { join } from "node:path";
 import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { globToRegex, normalizePath } from "../context/engine";
-import { CANONICAL_RULES_DIR, loadCanonicalRules } from "../context/rules/canonical-loader";
+import {
+  CANONICAL_RULES_DIR,
+  type CanonicalRule,
+  loadCanonicalRules,
+  type RulesFrontmatterIssue,
+  RulesFrontmatterLintError,
+} from "../context/rules/canonical-loader";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { discoverWorkspacePackages } from "../test-runners";
@@ -237,6 +243,115 @@ export interface RulesLintDeps {
   discoverWorkspacePackages: (workdir: string) => Promise<string[]>;
 }
 
+type RootLoadResult =
+  | { kind: "loaded"; rules: CanonicalRule[] }
+  | { kind: "frontmatter-errors"; issues: RulesFrontmatterIssue[] }
+  | { kind: "failed"; cause: unknown };
+
+/**
+ * Load one rule root under the strict frontmatter policy. `rules lint` is the
+ * whole reason `"throw"` exists: the run-time loader silently drops files it
+ * cannot parse, so without this a broken rule would be invisible and lint would
+ * pass a subset (#2387). Loader failures unrelated to frontmatter are returned
+ * as `"failed"` so the caller can keep isolating roots.
+ */
+async function loadRootForLint(root: string, deps: RulesLintDeps): Promise<RootLoadResult> {
+  try {
+    const rules = await deps.loadCanonicalRules(root, { onInvalidFrontmatter: "throw" });
+    return { kind: "loaded", rules };
+  } catch (err) {
+    if (err instanceof RulesFrontmatterLintError) return { kind: "frontmatter-errors", issues: err.issues };
+    return { kind: "failed", cause: err };
+  }
+}
+
+/** Emit one lint error per invalid-frontmatter file. */
+function reportFrontmatterIssues(
+  issues: RulesFrontmatterIssue[],
+  root: string,
+  logger: ReturnType<RulesLintDeps["getLogger"]>,
+): void {
+  for (const issue of issues) {
+    logger.error("rules-lint", "Canonical rule frontmatter is invalid — nax will ignore this file at run time", {
+      file: issue.file,
+      error: issue.message,
+      root,
+      code: "INVALID_FRONTMATTER",
+    });
+  }
+}
+
+/**
+ * Lint every loaded rule for one root: re-emit parser warnings, flag dead
+ * `appliesTo` globs, and warn on inert `paths:` in single-package repos.
+ * Returns the number of warnings emitted.
+ */
+function lintRulesForRoot(
+  rules: CanonicalRule[],
+  root: string,
+  isSinglePackageRepo: boolean,
+  deps: RulesLintDeps,
+  logger: ReturnType<RulesLintDeps["getLogger"]>,
+): number {
+  let warningCount = 0;
+  for (const rule of rules) {
+    // Re-emit parser/loader warnings (unrecognised stages, displaced frontmatter)
+    // through the lint command's own logger so `nax rules lint` is observable
+    // as a standalone CLI invocation, independent of the loader's runtime logger.
+    for (const warning of rule.warnings ?? []) {
+      warningCount++;
+      logger.warn("rules-lint", `Rule frontmatter warning: ${warning}`, {
+        file: rule.path ?? rule.fileName,
+        root,
+      });
+    }
+    for (const pattern of rule.appliesTo ?? []) {
+      const globResult = deps.globHasMatch(pattern, root);
+      if (globResult === "match") continue;
+      warningCount++;
+      if (globResult === "unknown") {
+        // #1471: cap-exhaustion is NOT evidence of a dead glob — it means
+        // the scan gave up before finishing. Never fold this into the
+        // dead-glob assertion below; that collapse is the bug this
+        // tri-state exists to prevent.
+        logger.warn("rules-lint", "Canonical rule appliesTo glob could not be verified within the dead-glob scan cap", {
+          file: rule.path ?? rule.fileName,
+          pattern,
+          root,
+          code: "GLOB_SCAN_UNKNOWN",
+        });
+        continue;
+      }
+      logger.warn("rules-lint", "Canonical rule appliesTo glob matches no files in the linted repository", {
+        file: rule.path ?? rule.fileName,
+        pattern,
+        root,
+      });
+    }
+    // US-002: warn when a rule declares `paths:` in a single-package repo.
+    // nax's `paths:` is package scope (matched against the story's package
+    // dir), so in a single-package repo it always short-circuits to true
+    // and the scoping never narrows the rule's reach. The alternative for
+    // FILE globs is `appliesTo:` — which is what the migration translation
+    // produces from Claude's `paths:` frontmatter.
+    if (isSinglePackageRepo && rule.paths && rule.paths.length > 0) {
+      warningCount++;
+      logger.warn(
+        "rules-lint",
+        "Canonical rule declares paths: but the repository has no workspace packages — paths: is inert in single-package repos. Use appliesTo: for file globs.",
+        {
+          file: join(root, CANONICAL_RULES_DIR, rule.path ?? rule.fileName),
+          code: "INERT_PATHS",
+          paths: rule.paths,
+          root,
+          warningCount,
+        },
+      );
+    }
+  }
+  return warningCount;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Command
 // ─────────────────────────────────────────────────────────────────────────────
@@ -260,79 +375,34 @@ export async function rulesLintCommand(options: RulesLintOptions, deps: RulesLin
 
   let totalRuleFiles = 0;
   let warningCount = 0;
+  const frontmatterIssues: RulesFrontmatterIssue[] = [];
   const failedRoots: Array<{ root: string; cause: unknown }> = [];
   for (const root of roots) {
-    let rules: Awaited<ReturnType<typeof deps.loadCanonicalRules>>;
-    try {
-      rules = await deps.loadCanonicalRules(root);
-    } catch (err) {
+    const load = await loadRootForLint(root, deps);
+    if (load.kind === "failed") {
       // Per-root isolation: a loader failure on one root must not abort the
       // remaining roots. The aggregate rejection below names every failed root
       // so the operator sees the full set, not just the first one.
-      failedRoots.push({ root, cause: err });
+      failedRoots.push({ root, cause: load.cause });
       continue;
     }
-    totalRuleFiles += rules.length;
-    for (const rule of rules) {
-      // Re-emit parser/loader warnings (unrecognised stages, displaced frontmatter)
-      // through the lint command's own logger so `nax rules lint` is observable
-      // as a standalone CLI invocation, independent of the loader's runtime logger.
-      for (const warning of rule.warnings ?? []) {
-        warningCount++;
-        logger.warn("rules-lint", `Rule frontmatter warning: ${warning}`, {
-          file: rule.path ?? rule.fileName,
-          root,
-        });
-      }
-      for (const pattern of rule.appliesTo ?? []) {
-        const globResult = deps.globHasMatch(pattern, root);
-        if (globResult === "match") continue;
-        warningCount++;
-        if (globResult === "unknown") {
-          // #1471: cap-exhaustion is NOT evidence of a dead glob — it means
-          // the scan gave up before finishing. Never fold this into the
-          // dead-glob assertion below; that collapse is the bug this
-          // tri-state exists to prevent.
-          logger.warn(
-            "rules-lint",
-            "Canonical rule appliesTo glob could not be verified within the dead-glob scan cap",
-            { file: rule.path ?? rule.fileName, pattern, root, code: "GLOB_SCAN_UNKNOWN" },
-          );
-          continue;
-        }
-        logger.warn("rules-lint", "Canonical rule appliesTo glob matches no files in the linted repository", {
-          file: rule.path ?? rule.fileName,
-          pattern,
-          root,
-        });
-      }
-      // US-002: warn when a rule declares `paths:` in a single-package repo.
-      // nax's `paths:` is package scope (matched against the story's package
-      // dir), so in a single-package repo it always short-circuits to true
-      // and the scoping never narrows the rule's reach. The alternative for
-      // FILE globs is `appliesTo:` — which is what the migration translation
-      // produces from Claude's `paths:` frontmatter.
-      if (isSinglePackageRepo && rule.paths && rule.paths.length > 0) {
-        warningCount++;
-        logger.warn(
-          "rules-lint",
-          "Canonical rule declares paths: but the repository has no workspace packages — paths: is inert in single-package repos. Use appliesTo: for file globs.",
-          {
-            file: join(root, CANONICAL_RULES_DIR, rule.path ?? rule.fileName),
-            code: "INERT_PATHS",
-            paths: rule.paths,
-            root,
-            warningCount,
-          },
-        );
-      }
+    if (load.kind === "frontmatter-errors") {
+      // Report each offending file and keep going, so a second root's problems
+      // are surfaced too. The aggregate rejection below turns these into a
+      // non-zero exit.
+      reportFrontmatterIssues(load.issues, root, logger);
+      frontmatterIssues.push(...load.issues);
+      continue;
     }
+    const rules = load.rules;
+    totalRuleFiles += rules.length;
+    warningCount += lintRulesForRoot(rules, root, isSinglePackageRepo, deps, logger);
   }
 
   // Empty canonical store: the operator gets a clean [OK] pass today, which
   // hides the fact that no source-of-truth rules are being linted at all.
   // Surface it as a logger warning so the trailing summary reports [WARN].
-  if (totalRuleFiles === 0 && failedRoots.length === 0) {
+  if (totalRuleFiles === 0 && failedRoots.length === 0 && frontmatterIssues.length === 0) {
     warningCount++;
     logger.warn(
       "rules-lint",
@@ -355,6 +425,20 @@ export async function rulesLintCommand(options: RulesLintOptions, deps: RulesLin
         // error chain". Iterating callers can drill in with each `causes[i]`.
         causes: failedRoots.map((f) => f.cause),
       },
+    );
+  }
+
+  // #2387: invalid frontmatter is a hard lint failure, not a warning. Without
+  // this the loader's silent skip makes a broken rule file pass `rules lint`
+  // (and any CI/fleet gate built on it) while nax ignores it at run time.
+  if (frontmatterIssues.length > 0) {
+    throw new NaxError(
+      `Canonical rules lint failed: ${frontmatterIssues.length} rule file(s) have invalid frontmatter. nax ignores these at run time; fix them so the rules actually load.`,
+      "RULES_LINT_FAILED",
+      // Carry the structured per-file issues so a programmatic consumer (e.g.
+      // a fleet runner gating on lint) can enumerate the offending files
+      // without scraping logs — mirrors RULES_LINT_ROOT_FAILED's `causes`.
+      { stage: "rules-lint", errorCount: frontmatterIssues.length, issues: frontmatterIssues },
     );
   }
 

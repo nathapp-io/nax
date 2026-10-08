@@ -10,15 +10,19 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
 import type { LogCall } from "@test/helpers";
-import { assertNaxError, makeLogger } from "@test/helpers";
+import { assertNaxError, cleanupTempDir, makeLogger, makeTempDir } from "@test/helpers";
 import {
   _rulesCLIDeps,
   _rulesLintDeps,
   rulesExportCommand,
   rulesLintCommandDirect as rulesLintCommandFromLint,
 } from "@/cli";
+import { loadCanonicalRules as loadCanonicalRulesImpl } from "@/context/engine";
 import type { CanonicalRule } from "@/context/rules/canonical-loader";
+import { RulesFrontmatterLintError } from "@/context/rules/canonical-loader";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dep injection helpers
@@ -626,5 +630,145 @@ describe("rules export (claude) — scope becomes a file glob, description in fr
       expect(out.startsWith("---")).toBe(false);
       expect(out).toContain("Body.");
     });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #2387: invalid frontmatter is a hard lint failure, not a silent skip
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("#2387 rulesLintCommand — invalid frontmatter is a hard failure", () => {
+  test("logs one error per invalid file and rejects with RULES_LINT_FAILED", async () => {
+    _rulesLintDeps.globCanonicalRuleFiles = () => [];
+    _rulesLintDeps.loadCanonicalRules = async () => {
+      throw new RulesFrontmatterLintError([
+        { file: "/project/.nax/rules/broken.md", message: "Canonical rule frontmatter is missing closing '---'" },
+      ]);
+    };
+    _rulesLintDeps.discoverWorkspacePackages = async () => [];
+
+    const calls = captureLogger();
+    const stdout = captureStdout();
+
+    let caught: unknown;
+    try {
+      await rulesLintCommandFromLint({ dir: "/project" });
+    } catch (err) {
+      caught = err;
+    } finally {
+      stdout.restore();
+    }
+
+    const errLog = calls.find((c) => c.level === "error" && c.data?.code === "INVALID_FRONTMATTER");
+    expect(errLog).toBeDefined();
+    expect(errLog?.data?.file).toBe("/project/.nax/rules/broken.md");
+
+    assertNaxError(caught, "rulesLintCommand rejection");
+    expect(caught.code).toBe("RULES_LINT_FAILED");
+    expect(caught.message).toContain("1");
+  });
+
+  test("reports each invalid file and carries the structured issues on the thrown error", async () => {
+    const issues = [
+      { file: "/project/.nax/rules/a.md", message: "missing closing '---'" },
+      { file: "/project/.nax/rules/b.md", message: "frontmatter.priority must be a number" },
+    ];
+    _rulesLintDeps.globCanonicalRuleFiles = () => [];
+    _rulesLintDeps.loadCanonicalRules = async () => {
+      throw new RulesFrontmatterLintError(issues);
+    };
+    _rulesLintDeps.discoverWorkspacePackages = async () => [];
+
+    const calls = captureLogger();
+    const stdout = captureStdout();
+
+    let caught: unknown;
+    try {
+      await rulesLintCommandFromLint({ dir: "/project" });
+    } catch (err) {
+      caught = err;
+    } finally {
+      stdout.restore();
+    }
+
+    const errLogs = calls.filter((c) => c.level === "error" && c.data?.code === "INVALID_FRONTMATTER");
+    expect(errLogs).toHaveLength(2);
+    expect(errLogs.map((c) => c.data?.file)).toEqual(["/project/.nax/rules/a.md", "/project/.nax/rules/b.md"]);
+
+    assertNaxError(caught, "rulesLintCommand rejection");
+    expect(caught.code).toBe("RULES_LINT_FAILED");
+    expect(caught.context?.errorCount).toBe(2);
+    expect(caught.context?.issues).toEqual(issues);
+  });
+
+  test("still lints the second root when the first root has invalid frontmatter, then rejects", async () => {
+    _rulesLintDeps.globCanonicalRuleFiles = () => [".nax/rules/root.md", "packages/api/.nax/rules/api.md"];
+    _rulesLintDeps.loadCanonicalRules = async (root: string) => {
+      if (root === "/project") {
+        throw new RulesFrontmatterLintError([
+          { file: "/project/.nax/rules/broken.md", message: "Canonical rule frontmatter is missing closing '---'" },
+        ]);
+      }
+      return [makeRule({ path: "api.md", fileName: "api.md", warnings: ["second-root-only warning"] })];
+    };
+    _rulesLintDeps.globHasMatch = () => "match";
+    _rulesLintDeps.discoverWorkspacePackages = async () => ["packages/api"];
+
+    const calls = captureLogger();
+    const stdout = captureStdout();
+
+    let caught: unknown;
+    try {
+      await rulesLintCommandFromLint({ dir: "/project" });
+    } catch (err) {
+      caught = err;
+    } finally {
+      stdout.restore();
+    }
+
+    const secondRootWarn = calls.find((c) => c.level === "warn" && /second-root-only warning/.test(c.message));
+    expect(secondRootWarn).toBeDefined();
+    assertNaxError(caught, "rulesLintCommand rejection");
+    expect(caught.code).toBe("RULES_LINT_FAILED");
+  });
+
+  // End-to-end against the real loader: the exact repro from the issue — an
+  // unterminated frontmatter block in a real `.nax/rules/*.md` file.
+  test("end-to-end: a real rule file with unterminated frontmatter fails the lint", async () => {
+    const dir = makeTempDir("nax-rules-lint-frontmatter-");
+    try {
+      const rulesDir = join(dir, ".nax", "rules");
+      await mkdir(rulesDir, { recursive: true });
+      await Bun.write(
+        join(rulesDir, "broken.md"),
+        ["---", "priority: 50", "paths:", '  - "src/**', "# Broken rule (unterminated frontmatter)"].join("\n"),
+      );
+
+      _rulesLintDeps.globCanonicalRuleFiles = () => [".nax/rules/broken.md"];
+      _rulesLintDeps.loadCanonicalRules = loadCanonicalRulesImpl;
+      _rulesLintDeps.globHasMatch = () => "match";
+      _rulesLintDeps.discoverWorkspacePackages = async () => [];
+
+      const calls = captureLogger();
+      const stdout = captureStdout();
+
+      let caught: unknown;
+      try {
+        await rulesLintCommandFromLint({ dir });
+      } catch (err) {
+        caught = err;
+      } finally {
+        stdout.restore();
+      }
+
+      const errLog = calls.find((c) => c.level === "error" && c.data?.code === "INVALID_FRONTMATTER");
+      expect(errLog).toBeDefined();
+      expect(String(errLog?.data?.file)).toContain("broken.md");
+
+      assertNaxError(caught, "rulesLintCommand rejection");
+      expect(caught.code).toBe("RULES_LINT_FAILED");
+    } finally {
+      cleanupTempDir(dir);
+    }
   });
 });

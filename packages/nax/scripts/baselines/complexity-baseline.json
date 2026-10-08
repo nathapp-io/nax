@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-10-08T02:19:17.860Z",
+  "updatedAt": "2026-10-08T03:16:49.375Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": { "collectStats": 27 },
@@ -30,7 +30,6 @@
     "src/cli/init.ts": { "initProject": 23 },
     "src/cli/plan-decompose.ts": { "planDecomposeCommand": 26 },
     "src/cli/prompts-main.ts": { "promptsCommand": 22 },
-    "src/cli/rules-lint.ts": { "rulesLintCommand": 37 },
     "src/cli/status-features.ts": { "displayAllFeatures": 37 },
     "src/commands/common.ts": { "resolveProject": 22 },
     "src/commands/curator.ts": { "curatorCommit": 46, "parseCheckedProposals": 27 },
@@ -60,7 +59,7 @@
     "src/context/engine/stage-assembler.ts": { "assembleForStage": 32 },
     "src/context/feature-context-filter.ts": { "filterContextByRole": 22 },
     "src/context/greenfield.ts": { "walkFiles": 21 },
-    "src/context/rules/canonical-loader/index.ts": { "loadCanonicalRules": 29 },
+    "src/context/rules/canonical-loader/index.ts": { "loadCanonicalRules": 27 },
     "src/context/test-scanner/index.ts": { "scanTestFiles": 29 },
     "src/execution/build-plan-for-strategy.ts": { "buildPlanForStrategy": 56 },
     "src/execution/checkpoint/reader.ts": { "loadCheckpoints": 22 },

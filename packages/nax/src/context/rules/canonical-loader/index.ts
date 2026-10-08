@@ -251,11 +251,66 @@ export class NeutralityLintError extends NaxError {
   }
 }
 
+/** One file whose frontmatter failed to parse, as surfaced by strict loading. */
+export interface RulesFrontmatterIssue {
+  file: string;
+  message: string;
+}
+
+/**
+ * Thrown by `loadCanonicalRules` under `onInvalidFrontmatter: "throw"` when one
+ * or more rule files have unparseable/invalid frontmatter. The run-time loader
+ * (`"skip"`, the default) drops such files with a warning; a lint gate
+ * (`nax rules lint`, precheck) opts into this rejection so a broken file cannot
+ * pass as a clean subset. Every offending file is collected before throwing.
+ */
+export class RulesFrontmatterLintError extends NaxError {
+  readonly issues: RulesFrontmatterIssue[];
+
+  constructor(issues: RulesFrontmatterIssue[]) {
+    const summary = issues.map((i) => `  ${i.file}: ${i.message}`).join("\n");
+    super(`Canonical rules frontmatter lint failed:\n${summary}`, "RULES_FRONTMATTER_LINT_FAILED", {
+      stage: "canonical-loader",
+      issueCount: issues.length,
+    });
+    this.issues = issues;
+  }
+}
+
 // RulesFrontmatterError, CanonicalRule, ParsedFrontmatter, and parseFrontmatter
 // are re-exported from ./rules-frontmatter.ts
 
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
+}
+
+/**
+ * Handle a frontmatter parse failure for one file during canonical loading.
+ *
+ * Always warns for run-time visibility. Under `onInvalidFrontmatter: "throw"`
+ * it records the file so `loadCanonicalRules` can reject with the complete set
+ * (see #2387); otherwise the file is simply dropped. Any error that is not a
+ * `RulesFrontmatterError` is rethrown unchanged — only a frontmatter parse
+ * failure is a skip/collect case.
+ */
+function handleFrontmatterFailure(
+  err: unknown,
+  filePath: string,
+  onInvalidFrontmatter: LoadCanonicalRulesOptions["onInvalidFrontmatter"],
+  issues: RulesFrontmatterIssue[],
+  logger: ReturnType<typeof getLogger>,
+): void {
+  if (!(err instanceof RulesFrontmatterError)) throw err;
+  logger.warn(
+    "canonical-loader",
+    onInvalidFrontmatter === "throw"
+      ? "Invalid rule frontmatter — load will fail"
+      : "Invalid rule frontmatter — skipping file",
+    { file: filePath, error: err.message },
+  );
+  if (onInvalidFrontmatter === "throw") {
+    issues.push({ file: filePath, message: err.message });
+  }
 }
 
 export interface CanonicalRulesBudgetResult {
@@ -356,6 +411,14 @@ export interface LoadCanonicalRulesOptions {
   budgetTokens?: number;
   /** Enforce `budgetTokens` via contiguous-tail truncation. Default false (soft/reporting-only). */
   enforce?: boolean;
+  /**
+   * Invalid-frontmatter policy. `"skip"` (default) logs a warning and drops the
+   * file — the run-time behavior `nax run` depends on, so a single broken rule
+   * never aborts a run. `"throw"` collects every file whose frontmatter fails to
+   * parse and rejects with `RulesFrontmatterLintError` after the scan, so a lint
+   * gate can fail loudly instead of silently linting a subset.
+   */
+  onInvalidFrontmatter?: "skip" | "throw";
 }
 
 /**
@@ -392,6 +455,7 @@ export async function loadCanonicalRules(
 
   const rules: CanonicalRule[] = [];
   const allViolations: NeutralityViolation[] = [];
+  const frontmatterIssues: RulesFrontmatterIssue[] = [];
 
   for (const filePath of filePaths) {
     const normalizedPath = filePath.replaceAll("\\", "/");
@@ -416,14 +480,8 @@ export async function loadCanonicalRules(
     try {
       parsed = parseFrontmatter(content, filePath);
     } catch (err) {
-      if (err instanceof RulesFrontmatterError) {
-        logger.warn("canonical-loader", "Invalid rule frontmatter — skipping file", {
-          file: filePath,
-          error: err.message,
-        });
-        continue;
-      }
-      throw err;
+      handleFrontmatterFailure(err, filePath, options.onInvalidFrontmatter, frontmatterIssues, logger);
+      continue;
     }
     if (!parsed.content) continue;
 
@@ -451,6 +509,10 @@ export async function loadCanonicalRules(
       ...(parsed.description && { description: parsed.description }),
       ...(parsed.warnings.length > 0 && { warnings: parsed.warnings }),
     });
+  }
+
+  if (frontmatterIssues.length > 0) {
+    throw new RulesFrontmatterLintError(frontmatterIssues);
   }
 
   if (allViolations.length > 0) {
