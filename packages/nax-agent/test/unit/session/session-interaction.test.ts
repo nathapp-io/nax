@@ -286,6 +286,22 @@ describe("createSessionInteractionHandler", () => {
     expect((await thrown(pending)).message).toContain("abandoned");
   });
 
+  test("a built-in tool that ignores its signal is abandoned when the turn aborts", async () => {
+    const h = harness({ kind: "ok", content: "" });
+    const deps: SessionInteractionDeps = {
+      ...h.deps,
+      runtime: { advertised: () => [], callTool: () => new Promise(() => {}) },
+    };
+    const controller = new AbortController();
+    const pending = createSessionInteractionHandler(deps).onInteraction({
+      ...codingTool("Read"),
+      signal: controller.signal,
+    });
+    controller.abort();
+    expect((await thrown(pending)).message).toContain("abandoned");
+    expect(h.slot.callId).toBeUndefined();
+  });
+
   test("a describe summary is redacted and capped", async () => {
     const { tool } = embedder({
       approval: "always",
