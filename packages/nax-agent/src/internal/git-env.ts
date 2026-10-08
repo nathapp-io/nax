@@ -80,16 +80,24 @@ const SUBMODULE_DIRTY_CHECK_VERBS: ReadonlySet<string> = new Set(["status", "dif
 const GLOBAL_OPTIONS_WITH_VALUE: ReadonlySet<string> = new Set(["-C", "-c"]);
 export const IGNORE_DIRTY_SUBMODULES_FLAG = "--ignore-submodules=dirty";
 
+/** `git` or a path ending in `/git`: the program, as opposed to a wrapper in front of it. */
+function isGitProgram(token: string | undefined): boolean {
+  return token === "git" || (token?.endsWith("/git") ?? false);
+}
+
 /**
- * `argv` (argv[0] is the git program) with `--ignore-submodules=dirty` placed
- * right after a `status` / `diff` subcommand. Unlike the config key, the flag
- * overrides a `submodule.<name>.ignore` from `.gitmodules`. A later explicit
+ * `argv` (argv[0] is the git program, or an interceptor token followed by it)
+ * with `--ignore-submodules=dirty` placed right after a `status` / `diff`
+ * subcommand. Unlike the config key, the flag overrides a
+ * `submodule.<name>.ignore` from `.gitmodules`. A later explicit
  * `--ignore-submodules` in `argv` still wins (git takes the last), which the
  * agent-facing git tool cannot supply: it refuses every `-`-leading element.
  */
 export function hardenedGitArgv(argv: readonly string[]): string[] {
   const out = [...argv];
-  let i = 1;
+  // A command interceptor may add exactly ONE leading token (validateRewrite), so a
+  // rewritten argv is `<provider> git <verb> ...`: the walk starts after the git program.
+  let i = !isGitProgram(out[0]) && isGitProgram(out[1]) ? 2 : 1;
   while (i < out.length && (out[i] as string).startsWith("-")) {
     i += GLOBAL_OPTIONS_WITH_VALUE.has(out[i] as string) ? 2 : 1;
   }
