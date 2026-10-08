@@ -5,7 +5,7 @@
  */
 import { resolve } from "node:path";
 import type { ToolCallLocation, ToolKind } from "@agentclientprotocol/sdk";
-import { isRecord, stripControl } from "#src/client/text";
+import { isRecord, stripControl, stripInvisible } from "#src/client/text";
 
 export const TITLE_DETAIL_MAX = 60;
 
@@ -38,9 +38,10 @@ export function inputString(input: unknown, key: string): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+/** One line, no control or invisible (format, bidi) characters, cut by code point. */
 function oneLine(text: string): string {
-  const flat = stripControl(text).replace(/\s+/g, " ").trim();
-  return flat.length > TITLE_DETAIL_MAX ? `${flat.slice(0, TITLE_DETAIL_MAX - 3)}...` : flat;
+  const points = Array.from(stripInvisible(stripControl(text)).replace(/\s+/g, " ").trim());
+  return points.length > TITLE_DETAIL_MAX ? `${points.slice(0, TITLE_DETAIL_MAX - 3).join("")}...` : points.join("");
 }
 
 export function toolTitle(name: string, input: unknown): string {

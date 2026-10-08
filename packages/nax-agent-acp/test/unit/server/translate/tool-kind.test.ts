@@ -50,6 +50,18 @@ describe("toolTitle", () => {
   });
 });
 
+describe("toolTitle hygiene", () => {
+  test("drops invisible and bidi-control characters", () => {
+    expect(toolTitle("Bash", { command: "ls\u200b \u202egnp.exe" })).toBe("Bash: ls gnp.exe");
+  });
+
+  test("truncates by code point, never splitting a surrogate pair", () => {
+    const detail = toolTitle("Bash", { command: `${"a".repeat(56)}\u{1F600}${"b".repeat(10)}` }).slice("Bash: ".length);
+    expect(detail).toBe(`${"a".repeat(56)}\u{1F600}...`);
+    expect(detail.isWellFormed()).toBe(true);
+  });
+});
+
 describe("toolLocations", () => {
   test("resolves the path of Read, Write, Edit and Delete against the session cwd", () => {
     expect(toolLocations("Read", { path: "src/a.ts" }, "/repo")).toEqual([{ path: "/repo/src/a.ts" }]);
