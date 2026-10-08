@@ -123,5 +123,5 @@ Run this for every bundle after its last task:
 | I | `fix/review-i-cost-telemetry` | [#2397](https://github.com/nathapp-io/nax/pull/2397) | in progress |
 | E | `fix/review-e-nax-ai-errors` | [#2398](https://github.com/nathapp-io/nax/pull/2398) | in progress |
 | F | `fix/review-f-config-parsers` | [#2399](https://github.com/nathapp-io/nax/pull/2399) | in progress |
-| G | — | — | not started |
+| G | `fix/review-g-templates-elicitation` | [#2400](https://github.com/nathapp-io/nax/pull/2400) | in progress |
 | K | — | — | not started |
