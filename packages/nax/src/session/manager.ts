@@ -421,12 +421,9 @@ export class SessionManager implements ISessionManager {
     const liveHandle = this._liveHandles.get(name);
     const reuse = decideReuse(liveHandle, this._findByName(name), opts);
     if (liveHandle && reuse === "reuse") return liveHandle;
-    if (liveHandle && reuse === "close-then-reopen") {
-      // closeSession clears _busySessions for this name; openSession set that marker
-      // as its single-flight guard and still needs it for the rest of this open.
-      await this.closeSession(liveHandle);
-      this._busySessions.add(name);
-    } else if (liveHandle) this._liveHandles.delete(name);
+    // RACE-37: keep openSession's single-flight marker held across the close's await.
+    if (liveHandle && reuse === "close-then-reopen") await this.closeSession(liveHandle, true);
+    else if (liveHandle) this._liveHandles.delete(name);
 
     const adapter = this._getAdapter(opts.agentName);
     if (!adapter) {
@@ -508,7 +505,7 @@ export class SessionManager implements ISessionManager {
     return handle;
   }
 
-  async closeSession(handle: SessionHandle): Promise<void> {
+  async closeSession(handle: SessionHandle, keepOpenGuard = false): Promise<void> {
     const desc = this._findByName(handle.id);
     const adapter = this._getAdapter(handle.agentName);
     this._liveHandles.delete(handle.id);
@@ -529,7 +526,7 @@ export class SessionManager implements ISessionManager {
       this.transition(desc.id, "COMPLETED");
     }
 
-    this._busySessions.delete(handle.id);
+    if (!keepOpenGuard) this._busySessions.delete(handle.id);
     this._cancelledSessions.delete(handle.id);
     this._watchdogCancels.clear(handle.id);
   }

@@ -427,3 +427,37 @@ describe("SessionManager.bindHandle()", () => {
     expect(mgr.get(sess.id)?.lastActivityAt).not.toBe(before);
   });
 });
+
+describe("openSession() close-then-reopen — RACE-37 guard", () => {
+  test("the single-flight marker is not released until the reopen has finished", async () => {
+    const log: string[] = [];
+    const adapter = makeAgentAdapter({
+      openSession: mock(async (name: string, opts: OpenSessionOpts) => {
+        log.push(`adapter.open:${opts.agentName}`);
+        const handle: SessionHandle = { id: name, agentName: opts.agentName };
+        return handle;
+      }),
+      closeSession: mock(async () => {
+        log.push("adapter.close");
+      }),
+    });
+    const sm = new SessionManager({ getAdapter: () => adapter });
+    const name = "nax-race-guard";
+    await sm.openSession(name, makeOpenRequest({ agentName: "claude" }));
+
+    // Element access reaches the private guard set (see .claude/rules/test-ratchets.md).
+    const busy = sm["_busySessions"];
+    const realDelete = busy.delete.bind(busy);
+    busy.delete = (value: string) => {
+      log.push(`busy.delete:${value}`);
+      return realDelete(value);
+    };
+    log.length = 0;
+
+    // A different agent forces close-then-reopen (endpoint-identity.ts decideReuse).
+    await sm.openSession(name, makeOpenRequest({ agentName: "codex" }));
+
+    // The ONLY release is openSession's own finally, after the new adapter session exists.
+    expect(log).toEqual(["adapter.close", "adapter.open:codex", `busy.delete:${name}`]);
+  });
+});
