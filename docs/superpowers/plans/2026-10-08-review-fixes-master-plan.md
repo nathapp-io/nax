@@ -69,6 +69,7 @@ Same defect class as a reported finding, fixed in the same task. Each is called 
 | `test-runners/conventions.ts` `globsToPathspec` | The #2 root cause is generic: the suffix after the LAST `*` becomes the exclusion, so pytest's `test_*.py` / `tests/**/*.py` also become `:!*.py` (every Python file leaves review), not only Cargo's `src/**/*.rs`. | A / 2 |
 | `test-runners/resolver.ts` `resolveReviewExcludePatterns` | Every literal first glob segment becomes a whole-directory exclusion, so a colocated-test pattern (`src/**/*.test.ts`, e.g. a vitest include) excludes all of `src/` from review. | A / 2 |
 | `nax-agent` `internal/command-spec` `replaceInCommandSpec` | The #27 `$`-pattern expansion also hits the shared helper behind scoped-selection, scoped-lint and the mechanical lint/format fixes. | G / 1 |
+| `finish/gates/acceptance.ts:58` `buildAcceptanceCommand` | Same #27 `$` expansion (regex `replace` with a string replacement); found by the plan review. | G / 1 |
 | `context/rules/canonical-loader/index.ts:525` | The loader's own load sort uses `localeCompare` too (the report named it in passing under #21). | F / 3 |
 
 ## Closed without code
