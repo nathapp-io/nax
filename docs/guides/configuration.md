@@ -351,6 +351,7 @@ If `testScoped` is not configured, nax falls back to a heuristic that replaces t
 | `auto` | nax decides based on complexity and title/tags — security/public-api or `expert`→`three-session-tdd`, `complex`→`three-session-tdd-lite`, `simple`/`medium`→`tdd-simple` |
 | `strict` | Always use `three-session-tdd` (strictest — all stories) |
 | `lite` | Always use `three-session-tdd-lite` |
+| `simple` | Always use `tdd-simple` (one session writes the tests, then the code). `"tdd-simple"` is accepted as an alias |
 | `off` | No TDD — tests written after implementation (`test-after`) |
 
 ---

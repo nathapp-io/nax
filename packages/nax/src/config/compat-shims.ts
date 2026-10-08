@@ -529,6 +529,19 @@ export function _applyFinishAutoFlowShim(
 }
 
 /**
+ * @internal Normalise `tdd.strategy: "tdd-simple"` to `"simple"` (#6).
+ *
+ * `"simple"` routes every story to the `tdd-simple` test strategy, and that is the
+ * spelling users meet in prd.json and the docs, so both are accepted. No warning:
+ * the alias is supported, not deprecated. Returns a new object (immutable).
+ */
+export function _applyTddStrategyAliasShim(conf: Record<string, unknown>): Record<string, unknown> {
+  const tdd = conf.tdd as Record<string, unknown> | undefined;
+  if (!tdd || typeof tdd !== "object" || tdd.strategy !== "tdd-simple") return conf;
+  return { ...conf, tdd: { ...tdd, strategy: "simple" } };
+}
+
+/**
  * @internal Apply the full compat-shim chain (legacy key migrations + deprecation
  * mappings) to a single raw config layer, in the fixed order the migrations depend on.
  *
@@ -565,5 +578,6 @@ export function applyConfigCompatShims(
   out = _applyFinishAutoFlowShim(out, warn);
   out = _applyRemovedOptimizerKeysShim(out, warn);
   out = _applyRemovedCrossPackageDepthShim(out, warn);
+  out = _applyTddStrategyAliasShim(out);
   return out;
 }
