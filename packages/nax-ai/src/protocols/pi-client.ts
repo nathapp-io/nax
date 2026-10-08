@@ -362,6 +362,10 @@ export function createPiProtocol(name: string, deps: PiDeps): Protocol {
               const usage = toTokenUsage(event.error.usage);
               // A failed request that consumed tokens still bills for them.
               if (totalTokens(usage) > 0) yield { type: "usage", usage };
+              // pi-ai delivers the CALLER's abort as an error event ("Request was aborted"), not a
+              // throw; classifying that message would file it as a retryable transport fault (#5).
+              // Throw the abort instead — the catch below rethrows it untouched, like a raw abort.
+              if (req.signal?.aborted) throw req.signal.reason ?? new DOMException("Aborted", "AbortError");
               const upstreamMessage = event.error.errorMessage;
               yield {
                 type: "error",

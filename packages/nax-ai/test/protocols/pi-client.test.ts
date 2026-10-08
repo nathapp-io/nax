@@ -782,6 +782,33 @@ describe("createPiProtocol raw throw normalisation", () => {
 
     await expect(iterate()).rejects.toBe(abortError);
   });
+
+  it("rethrows the caller's abort when pi-ai reports it as an error event, keeping the billed usage", async () => {
+    const controller = new AbortController();
+    const abortError = new DOMException("Aborted", "AbortError");
+    controller.abort(abortError);
+    const deps = fakePiWithResponse([
+      {
+        type: "error",
+        reason: "aborted",
+        error: message({ stopReason: "aborted", errorMessage: "Request was aborted" }),
+      },
+    ] as AssistantMessageEvent[]);
+
+    const out: ProtocolEvent[] = [];
+    const iterate = async () => {
+      for await (const event of createPiProtocol("openai-completions", deps).stream({
+        ...BASE,
+        signal: controller.signal,
+      })) {
+        out.push(event);
+      }
+    };
+
+    await expect(iterate()).rejects.toBe(abortError);
+    // A failed request that consumed tokens still bills for them; the abort is not an error event.
+    expect(out.map((e) => e.type)).toEqual(["usage"]);
+  });
 });
 
 runProtocolConformance(
