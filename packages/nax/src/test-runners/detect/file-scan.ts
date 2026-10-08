@@ -64,39 +64,42 @@ const FILE_SCAN_GIT_TIMEOUT_MS = 4_000;
  */
 const FILE_SCAN_DRAIN_TIMEOUT_MS = 2_000;
 
-/** Common test-file suffix patterns to look for */
-const CANDIDATE_SUFFIXES = [
-  ".test.ts",
-  ".test.tsx",
-  ".test.js",
-  ".test.jsx",
-  ".spec.ts",
-  ".spec.tsx",
-  ".spec.js",
-  ".spec.jsx",
-  ".e2e-spec.ts",
-  ".e2e-spec.js",
-  "_test.go",
-  "_test.py",
-  "test_.py",
-] as const;
+/** A test-file naming convention the scan counts, and the glob it reports when it wins. */
+interface Candidate {
+  readonly glob: string;
+  readonly matches: (path: string) => boolean;
+}
 
-/** Map from suffix to glob pattern */
-const SUFFIX_TO_GLOB: Record<string, string> = {
-  ".test.ts": "**/*.test.ts",
-  ".test.tsx": "**/*.test.tsx",
-  ".test.js": "**/*.test.js",
-  ".test.jsx": "**/*.test.jsx",
-  ".spec.ts": "**/*.spec.ts",
-  ".spec.tsx": "**/*.spec.tsx",
-  ".spec.js": "**/*.spec.js",
-  ".spec.jsx": "**/*.spec.jsx",
-  ".e2e-spec.ts": "**/*.e2e-spec.ts",
-  ".e2e-spec.js": "**/*.e2e-spec.js",
-  "_test.go": "**/*_test.go",
-  "_test.py": "**/*_test.py",
-  "test_.py": "**/test_*.py",
-};
+const bySuffix = (suffix: string): Candidate => ({
+  glob: `**/*${suffix}`,
+  matches: (path) => path.endsWith(suffix),
+});
+
+/** pytest's default: the marker is a basename PREFIX, so a suffix test can never see it. */
+const byBasenamePrefix = (prefix: string, extension: string): Candidate => ({
+  glob: `**/${prefix}*${extension}`,
+  matches: (path) => {
+    const base = path.slice(path.lastIndexOf("/") + 1);
+    return base.startsWith(prefix) && base.endsWith(extension) && base.length > prefix.length + extension.length;
+  },
+});
+
+/** Common test-file conventions, in report order. */
+const CANDIDATES: readonly Candidate[] = [
+  bySuffix(".test.ts"),
+  bySuffix(".test.tsx"),
+  bySuffix(".test.js"),
+  bySuffix(".test.jsx"),
+  bySuffix(".spec.ts"),
+  bySuffix(".spec.tsx"),
+  bySuffix(".spec.js"),
+  bySuffix(".spec.jsx"),
+  bySuffix(".e2e-spec.ts"),
+  bySuffix(".e2e-spec.js"),
+  bySuffix("_test.go"),
+  bySuffix("_test.py"),
+  byBasenamePrefix("test_", ".py"),
+];
 
 /** Injectable deps for testability */
 export const _fileScanDeps = {
@@ -198,30 +201,11 @@ export async function detectFromFileScan(workdir: string): Promise<DetectionSour
 
   if (filtered.length === 0) return null;
 
-  const counts: Record<string, number> = {};
-  for (const suffix of CANDIDATE_SUFFIXES) {
-    counts[suffix] = 0;
-  }
-
-  for (const file of filtered) {
-    for (const suffix of CANDIDATE_SUFFIXES) {
-      if (file.endsWith(suffix)) {
-        counts[suffix] = (counts[suffix] ?? 0) + 1;
-      }
-    }
-  }
-
   const totalFiles = filtered.length;
-  const patterns: string[] = [];
-
-  for (const suffix of CANDIDATE_SUFFIXES) {
-    const count = counts[suffix] ?? 0;
-    if (count === 0) continue;
-    if (count >= MIN_COUNT_THRESHOLD || count / totalFiles >= MIN_FRACTION_THRESHOLD) {
-      const glob = SUFFIX_TO_GLOB[suffix];
-      if (glob) patterns.push(glob);
-    }
-  }
+  const patterns = CANDIDATES.filter((candidate) => {
+    const count = filtered.filter((file) => candidate.matches(file)).length;
+    return count > 0 && (count >= MIN_COUNT_THRESHOLD || count / totalFiles >= MIN_FRACTION_THRESHOLD);
+  }).map((candidate) => candidate.glob);
 
   if (patterns.length === 0) return null;
 

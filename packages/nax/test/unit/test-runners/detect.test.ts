@@ -422,6 +422,19 @@ describe("Tier 3 — file scan", () => {
     const result = await detectTestFilePatterns("/fake/workdir");
     expect(result.confidence).toBe("empty");
   });
+
+  test("detects pytest's test_*.py prefix convention in a flat layout", async () => {
+    _frameworkConfigDeps.readText = mock(async () => null);
+    _frameworkDefaultsDeps.readText = mock(async () => null);
+
+    const testFiles = Array.from({ length: 6 }, (_, i) => `pkg/test_module${i}.py`).join("\n");
+    const allFiles = `${testFiles}\npkg/module.py\npkg/latest_news.py\n`;
+    _fileScanDeps.spawn = makeSpawn(() => allFiles).spawn;
+
+    const result = await detectTestFilePatterns("/fake/workdir");
+    expect(result.sources[0]?.type).toBe("file-scan");
+    expect(result.patterns).toEqual(["**/test_*.py"]);
+  });
 });
 
 // ─── Tier 4: directory scan ───────────────────────────────────────────────────
