@@ -1,7 +1,7 @@
 /**
- * nax's turn loop on the ACP SDK transport (S4b spec §6.2): the acpx loop
- * (agents/acp/adapter-send-turn.ts) with the acpx prompt swapped for the
- * backend's single-prompt sendTurn. Kept from acpx:
+ * nax's turn loop on the ACP transport (S4b spec §6.2): the former acpx loop
+ * (adapter-send-turn.ts, deleted in S4b-5) with the acpx prompt swapped for the
+ * backend's single-prompt sendTurn. Kept from that loop:
  * - one deadline spans the loop; expiry aborts the prompt and returns
  *   TurnResult{ timedOut: true, output: "" } with the spend so far;
  * - a <nax_tool_call> or a trailing question goes to the interaction handler

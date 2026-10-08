@@ -94,8 +94,8 @@ export interface AgentAcpConfig {
 
 /**
  * Bounded retry for a transport/overloaded fault from the native turn loop
- * (nax#1870). The native counterpart to `agent.acp.promptRetries`: acpx's
- * spawned CLI process absorbs a transient provider stall internally before
+ * (nax#1870). The native counterpart to `agent.acp.promptRetries`: an ACP
+ * agent's spawned process absorbs a transient provider stall internally before
  * nax ever observes it, but native has no such process — nax is the harness
  * for it, and `packages/nax-agent/src/native/session/turn-retry.ts` is where it lives.
  */

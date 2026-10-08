@@ -335,7 +335,7 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "quality.testing": "Hermetic test enforcement — per-package overridable (ENH-010)",
   "quality.testing.hermetic":
     "Inject hermetic test requirement into prompts — never call real external services in tests (default: true)",
-  "quality.testing.externalBoundaries": "Project-specific CLI tools/clients to mock (e.g. ['claude', 'acpx', 'redis'])",
+  "quality.testing.externalBoundaries": "Project-specific CLI tools/clients to mock (e.g. ['claude', 'gh', 'redis'])",
   "quality.testing.mockGuidance": "Project-specific mocking guidance injected verbatim into the prompt",
 
   // MCP

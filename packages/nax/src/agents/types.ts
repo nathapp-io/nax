@@ -58,9 +58,9 @@ export interface AgentResult {
   tokenUsage?: TokenUsage;
   /** Process ID of the spawned agent (for cleanup on failure) */
   pid?: number;
-  /** Whether the failure was a session error (e.g. acpx exit code 4 — stale/locked session) */
+  /** Whether the failure was a session error (e.g. a stale/locked session) */
   sessionError?: boolean;
-  /** Whether acpx signalled the session error is retryable (e.g. QUEUE_DISCONNECTED_BEFORE_COMPLETION) */
+  /** Whether the agent signalled the session error is retryable (e.g. QUEUE_DISCONNECTED_BEFORE_COMPLETION) */
   sessionErrorRetryable?: boolean;
   /**
    * Protocol-specific session identifiers from the agent backend (Phase 1 plumbing).
@@ -328,14 +328,14 @@ export interface CompleteOptions extends TrackedSpawnDeadlineOptions {
   /** Maximum tokens for the response */
   maxTokens?: number;
   /**
-   * Resolved model definition — the adapter uses modelDef.model directly to set
-   * the --model flag on acpx. Set by callOp / completeAs callers before passing to the adapter.
+   * Resolved model definition — the adapter uses modelDef.model directly to
+   * select the agent's model. Set by callOp / completeAs callers before passing to the adapter.
    */
   modelDef: ModelDef;
   /**
    * Optional per-agent model resolver, consulted by `completeWithFallback` after
    * an agent swap (nax#1739). `modelDef` above is resolved for the PRIMARY agent
-   * only; dispatching it verbatim to a fallback agent sends acpx a `--model` the
+   * only; dispatching it verbatim to a fallback agent sends it a model the
    * new agent never advertised, which the ACP agent rejects outright.
    *
    * The manager cannot re-resolve on its own — `agentManagerConfigSelector` picks
@@ -362,7 +362,7 @@ export interface CompleteOptions extends TrackedSpawnDeadlineOptions {
   resolvedPermissions?: ResolvedPermissions;
   /**
    * Working directory for the completion call.
-   * Used by ACP adapter to set --cwd on the spawned acpx session.
+   * Used by the ACP adapter as the agent session's cwd.
    * CLI adapter uses this as the process cwd when spawning the agent binary.
    */
   workdir: string;
@@ -494,7 +494,7 @@ export class CompleteError extends Error {
   constructor(
     message: string,
     public readonly exitCode?: number,
-    /** True/false when the transport (acpx) classified the failure as retryable; undefined when unknown. */
+    /** True/false when the transport classified the failure as retryable; undefined when unknown. */
     public readonly retryable?: boolean,
   ) {
     super(message);

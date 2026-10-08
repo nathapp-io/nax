@@ -48,7 +48,7 @@ describe("agent.protocol gate", () => {
     expect(result.success).toBe(true);
   });
 
-  test("rejects an acpx model entry under protocol native", () => {
+  test("rejects an ACP model entry under protocol native", () => {
     const result = NaxConfigSchema.safeParse(
       config({
         agent: { protocol: "native", default: "native" },
@@ -56,6 +56,7 @@ describe("agent.protocol gate", () => {
       }),
     );
     expect(result.success).toBe(false);
+    expect(JSON.stringify(result.error?.issues)).toContain('\\"claude\\" is an ACP agent');
   });
 
   test("rejects protocol native when agent.default is not native", () => {

@@ -453,7 +453,7 @@ export async function acquireSessionHandle(
     return session.openFresh();
   }
 
-  // STALE-RETRY: reuse the existing live handle — no openSession, no acpx reconnect.
+  // STALE-RETRY: reuse the existing live handle — no openSession, no reconnect.
   // nax#2218: a CANCELLED warm handle is poisoned — sendPrompt's SESSION_CANCELLED
   // guard would kill the retry before reaching a model. Close it and reopen so the
   // "same-agent retry with fresh session" actually dispatches.

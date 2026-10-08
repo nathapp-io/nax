@@ -104,7 +104,7 @@ function armTeardownDeadline(exitCode: number): CancelDeadline {
  * exception, unhandled rejection).
  *
  * BUG-11: `freeze()` must run AFTER `onShutdown()` completes, not before.
- * `onShutdown` itself spawns new processes (e.g. `acpx sessions close`/`stop`)
+ * `onShutdown` itself spawns new processes (e.g. to close agent sessions)
  * — freezing the registry first meant `register()` silently dropped those
  * PIDs, so a hung `acpx stop` was never reachable by the `killAll()` sweep
  * that follows. Freezing here (after onShutdown, before killAll) preserves
@@ -297,7 +297,7 @@ export function installSignalHandlers(ctx: SignalHandlerContext): () => void {
   const sigintHandler = () => signalHandler("SIGINT");
   const sighupHandler = () => signalHandler("SIGHUP");
   // SIGPIPE: Bun (unlike Node.js) does not set SIG_IGN for SIGPIPE at startup.
-  // Writing to a broken pipe — e.g. acpx exits before nax writes its stdin —
+  // Writing to a broken pipe — e.g. an agent exits before nax writes its stdin —
   // would otherwise kill nax silently before any crash handler runs.
   const sigpipeHandler = () => {
     getSafeLogger()?.warn("crash-recovery", "Received SIGPIPE (subprocess exited before stdin write — suppressed)");

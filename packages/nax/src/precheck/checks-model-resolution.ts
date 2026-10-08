@@ -3,7 +3,7 @@
  *
  * One local catalog-backed walk over configured model references that:
  *   - blocks (Tier 1) an unresolved native id,
- *   - leaves ACP ids unverified for acpx's live dispatch validation,
+ *   - leaves ACP ids to the ACP backend's open-time check,
  *   - warns when a literal `{agent, model}` pin drops tier-configured pricing
  *     or contextWindow overrides that the literal route would have used.
  *
@@ -53,7 +53,7 @@ export interface ModelResolutionDeps {
  * `agent.native.catalogOverrides` through the same client the dispatch uses.
  * Tests swap both fields to drive specific resolution outcomes
  * without loading the bundled catalog. ACP ids are deliberately unverified:
- * acpx validates them against the live agent's advertised models at dispatch.
+ * the ACP backend checks them against the agent's advertised models at open.
  */
 export const _modelResolutionDeps: ModelResolutionDeps = {
   resolveNative: (provider, model, overrides) => resolveNativeId(provider, model, overrides),
@@ -77,7 +77,7 @@ export { collectConfiguredModelPins };
  * Dispatch rule: only the native agent uses the local resolver (production
  * wires it to nax-ai's bundled snapshot via `getNativeClient` in
  * `packages/nax-agent/src/native/client.ts`). ACP ids are left unverified
- * because acpx validates them against live agent capabilities at dispatch.
+ * because the ACP backend checks them against the agent's advertised models at open.
  * A native id the override-aware client cannot resolve is a blocker, because
  * that is exactly the failure mode behind `nax#1983`: an adversarial-review
  * parse error 22 minutes into a run for an id the resolver had no answer for.

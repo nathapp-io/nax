@@ -234,7 +234,7 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
 
   // Shutdown controller — fires on first fatal signal. Threaded into
   // AgentRunOptions.abortSignal so the ACP adapter's retry loop stops
-  // spawning fresh acpx processes during teardown (Issue 5).
+  // spawning fresh agent processes during teardown (Issue 5).
   const shutdownController = new AbortController();
 
   // NaxRuntime — single owner of agentManager + sessionManager for this run.
@@ -314,8 +314,8 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
         await sealApprovals?.();
       },
       onShutdown: async (abortSignal?: AbortSignal) => {
-        // force=true: signal-driven shutdown must hard-terminate daemons (acpx stop)
-        // regardless of session state to prevent orphaned acpx/claude/opencode processes.
+        // force=true: signal-driven shutdown must hard-terminate agent processes
+        // regardless of session state to prevent orphaned claude/opencode processes.
         await closeAllRunSessions(sessionManager, options.agentGetFn, { force: true, signal: abortSignal });
         // #2014: drain the run's ledgers on the signal path too. runtime.close()
         // is the only caller of costAggregator.drain() (plus the prompt/review

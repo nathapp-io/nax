@@ -20,7 +20,7 @@ export type InteractionReply = { kind: "answered"; answer: string } | { kind: "a
 export interface InteractionReplyContext {
   readonly interactionHandler: InteractionHandler;
   readonly signal?: AbortSignal;
-  /** Logger stage for the failure warning; the acpx loop passes "acp-adapter". */
+  /** Logger stage for the failure warning. */
   readonly stage: string;
   /** Test seam only; production callers omit it and get INTERACTION_TIMEOUT_MS. */
   readonly timeoutMs?: number;

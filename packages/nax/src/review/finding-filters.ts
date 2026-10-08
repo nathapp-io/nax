@@ -60,7 +60,7 @@ export function hasInspectionTrail(raw: Record<string, unknown> | null | undefin
  * response, said it could not read. Where coding tools were advertised the turn
  * reports which were actually invoked, so the claim can be checked.
  *
- * Where none were advertised there is nothing to check against — the acpx path,
+ * Where none were advertised there is nothing to check against — the ACP path,
  * whose tool use nax does not observe — so the self-report stands. That
  * fallback is deliberate: demanding evidence nobody can produce would re-prompt
  * every honest reviewer on that path.

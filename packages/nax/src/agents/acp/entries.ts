@@ -56,7 +56,7 @@ const ENTRIES: Readonly<Record<string, AcpEntry>> = Object.freeze({
   },
 });
 
-/** The names `nax agents` lists and the bake-off accepts (the acpx `ACP_ADAPTER_NAMES` set). */
+/** The names `nax agents` lists and the bake-off accepts. */
 export const ACP_AGENT_NAMES: ReadonlySet<string> = new Set(Object.keys(ENTRIES));
 
 export function acpEntry(agentName: string): AcpEntry | undefined {

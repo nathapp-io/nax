@@ -4,7 +4,7 @@
  * When a PRD story targets a package that does not exist yet (a new feature on
  * a brand-new package — e.g. `story.workdir = "packages/portfolio"`), nax
  * resolves the agent session's cwd to `join(repoRoot, story.workdir)` and hands
- * that path to acpx. `posix_spawn` cannot start a subprocess in a nonexistent
+ * that path to the agent launch. `posix_spawn` cannot start a subprocess in a nonexistent
  * cwd, so every session dies on launch: the implementer hard-fails
  * ("Failed to spawn agent command"), and the acceptance generator degrades
  * silently to a skeleton test. No run could ever bootstrap a new package.
@@ -45,7 +45,7 @@ export const _ensurePackageDirsDeps = {
  * that does not yet exist under the repo root. Idempotent: existing dirs are
  * left untouched. Stories without a workdir (root-scoped) are ignored.
  *
- * Directory existence (not file existence) is what matters because acpx needs a
+ * Directory existence (not file existence) is what matters because the agent needs a
  * real directory as cwd. Note `Bun.file(dir).exists()` returns false for
  * directories, so the default dep uses stat().isDirectory().
  *

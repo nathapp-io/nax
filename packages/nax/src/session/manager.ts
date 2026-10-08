@@ -398,7 +398,7 @@ export class SessionManager implements ISessionManager {
     // RACE-37: synchronous single-flight guard for the open path. Without
     // this, two concurrent openSession(name) calls both pass the
     // _liveHandles.get check, both await adapter.openSession (which
-    // spawns a real acpx process), and the loser overwrites the winner
+    // spawns a real agent process), and the loser overwrites the winner
     // in _liveHandles on the line below — orphaning the first physical
     // session until TTL/forceStop. Mirror the _busySessions pattern.
     if (this._busySessions.has(name)) {

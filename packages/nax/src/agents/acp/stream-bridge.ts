@@ -1,7 +1,7 @@
 /**
  * One backend prompt as the runtime stream bus sees it (S4b spec §6.2.1): the
- * same AgentStreamEvent sequence the acpx client emits per prompt
- * (spawn-client-session.ts), built from the backend's turn events. The idle
+ * same AgentStreamEvent sequence the former acpx client emitted per prompt,
+ * built from the backend's turn events. The idle
  * watchdog and in-flight usage read it through onStreamActivity.
  *
  * call_ended is "success" or "error" only, as acpx (D2-g). The stream is an

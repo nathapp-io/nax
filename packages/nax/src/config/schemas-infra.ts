@@ -348,8 +348,8 @@ const AgentAcpConfigSchema = z.object({
  * modest bounded retry (three attempts, jittered exponential backoff from
  * 2s: ~2s, ~4s) covers a meaningful share of transient stalls at a cost of
  * seconds, against the alternative of discarding a multi-minute session.
- * Unlike `promptRetries` (default 0, opt-in), this defaults ON: acpx already
- * has its own absorption layer to opt out of, native has none at all, so an
+ * Unlike `promptRetries` (default 0, opt-in), this defaults ON: an ACP agent's
+ * own process already has an absorption layer to opt out of, native has none at all, so an
  * inert default here would leave the fault this issue exists to fix
  * unhandled by default.
  */

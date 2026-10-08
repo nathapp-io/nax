@@ -152,7 +152,7 @@ export async function teardownRunSessions(input: { options: RunCompletionOptions
   // the `agentManager ? … : undefined` ternary this call used to carry were both
   // always taken. Removed with the test that pinned their false branch (#1514).
   //
-  // PERF-1: thread the run's abort signal through so a wedged acpx teardown
+  // PERF-1: thread the run's abort signal through so a wedged agent teardown
   // spawn can be cut short externally instead of only relying on the
   // per-call hard deadline inside trackedSpawn.
   await deps.closeAllRunSessions(options.sessionManager, (name: string) => options.agentManager.getAgent(name), {

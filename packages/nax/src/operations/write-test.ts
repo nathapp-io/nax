@@ -56,7 +56,7 @@ export const testWriterOp: RunOperation<TestWriterInput, TestWriterOutput, TddCo
   stage: "run",
   // warm + keepOpen: keep the test-writer session open after RED (when review or
   // rectification will run) so autofix-test-writer can resume the same ACP session.
-  // acpx `sessions ensure` only resumes a still-open session. Mirrors implement.ts.
+  // A closed ACP session is never resumed. Mirrors implement.ts.
   session: { role: "test-writer", lifetime: "warm" },
   config: tddConfigSelector,
   // Write/Edit for test files and compile-only stubs. `RunCommand` because step

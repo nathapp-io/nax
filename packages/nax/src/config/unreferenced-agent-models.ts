@@ -1,15 +1,15 @@
 /**
- * Unreferenced agent models — declared acpx model maps nothing dispatches to.
+ * Unreferenced agent models — declared ACP model maps nothing dispatches to.
  *
  * Under `agent.protocol: "hybrid"` both transports can run in one run, but
  * `agent.protocol` does not route: work nobody assigned runs on
- * `agent.default`, which is `native` by default. An acpx agent runs only where
+ * `agent.default`, which is `native` by default. An ACP agent runs only where
  * config or the PRD points at it — the default, an enabled fallback rung, any
  * `{agent, model}` / `{agent, tier}` pin (review, finish, acceptance, plan, TDD
  * session tiers, escalation rungs, complexity routes, routing profiles), or a
  * story's `routing.agent`.
  *
- * A user-declared `models.<acpx agent>` map that none of those reaches is dead
+ * A user-declared `models.<ACP agent>` map that none of those reaches is dead
  * config: before `native` became the default it was the map every run used, so
  * the user almost certainly means it to run. The built-in `models.claude` map
  * is present in every loaded config and is never reported.
@@ -55,7 +55,7 @@ function fallbackAgents(config: NaxConfig): string[] {
 }
 
 /**
- * The declared acpx agents whose model map nothing reaches.
+ * The declared ACP agents whose model map nothing reaches.
  *
  * @param storyAgents - `routing.agent` of the PRD's stories, which route per story.
  */
@@ -80,7 +80,7 @@ export function describeUnreferencedAgentModels(agents: readonly string[], confi
     `${maps} is declared but nothing dispatches to it: no agent.default, enabled fallback rung, pin, escalation rung, ` +
     `complexity route, routing profile or PRD story names ${agents.join(", ")}.`;
   if (config.agent?.protocol === "native") {
-    return `${head} Under agent.protocol "native" acpx agents cannot run; remove the map or use protocol "hybrid".`;
+    return `${head} Under agent.protocol "native" ACP agents cannot run; remove the map or use protocol "hybrid".`;
   }
   const defaultAgent = config.agent?.default ?? DEFAULT_AGENT_NAME;
   return (

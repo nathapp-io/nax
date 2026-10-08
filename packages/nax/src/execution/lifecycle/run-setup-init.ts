@@ -218,7 +218,7 @@ export async function initializeAfterLock(options: InitializeAfterLockOptions): 
 
     // Warn when any story was planned with an agent profile that has since been removed.
     warnProfileMismatch(prd, config, logger);
-    // Declared acpx model maps nothing reaches (the native default takes that work).
+    // Declared ACP model maps nothing reaches (the native default takes that work).
     warnUnreferencedAgentModels(prd, config, logger);
 
     let counts = initResult.storyCounts;

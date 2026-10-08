@@ -54,7 +54,7 @@ export interface QualityCommandOptions {
    * `RunCommand` coding tool (packages/nax-agent/src/tools/run-command.ts). Those records are
    * demoted to debug: they still reach the JSONL (the file sink writes every
    * level) but stay off the console, because a failing lint there is normal TDD
-   * red rather than a harness fault — and because on the acpx transport the
+   * red rather than a harness fault — and because on the ACP transport the
    * identical loop runs inside the spawned agent process, where nax never sees
    * it at all. Leaving them at info made the two transports produce wildly
    * different logs for the same work: one observed native run emitted 289
