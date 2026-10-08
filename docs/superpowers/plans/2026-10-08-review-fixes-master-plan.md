@@ -122,6 +122,6 @@ Run this for every bundle after its last task:
 | C | `fix/review-c-process-abort` | [#2396](https://github.com/nathapp-io/nax/pull/2396) | merged |
 | I | `fix/review-i-cost-telemetry` | [#2397](https://github.com/nathapp-io/nax/pull/2397) | in progress |
 | E | `fix/review-e-nax-ai-errors` | [#2398](https://github.com/nathapp-io/nax/pull/2398) | in progress |
-| F | — | — | not started |
+| F | `fix/review-f-config-parsers` | [#2399](https://github.com/nathapp-io/nax/pull/2399) | in progress |
 | G | — | — | not started |
 | K | — | — | not started |
