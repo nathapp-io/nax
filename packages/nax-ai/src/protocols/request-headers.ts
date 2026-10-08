@@ -13,6 +13,8 @@
  * package exists to hold. See session-id.ts for the full argument.
  */
 
+import { ProtocolSetupError } from "./errors.ts";
+
 /** RFC 9110 token: the characters a header name may legally use. */
 const HEADER_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 
@@ -38,10 +40,12 @@ const FORBIDDEN_IN_VALUE = /[\r\n\0]/;
  */
 function assertHeaderValue(name: string, value: unknown): asserts value is string {
   if (typeof value !== "string") {
-    throw new Error(`Invalid header value for ${JSON.stringify(name)}: expected a string, got ${typeof value}.`);
+    throw new ProtocolSetupError(
+      `Invalid header value for ${JSON.stringify(name)}: expected a string, got ${typeof value}.`,
+    );
   }
   if (FORBIDDEN_IN_VALUE.test(value)) {
-    throw new Error(`Invalid header value for ${JSON.stringify(name)}: it may not contain CR, LF or NUL.`);
+    throw new ProtocolSetupError(`Invalid header value for ${JSON.stringify(name)}: it may not contain CR, LF or NUL.`);
   }
 }
 
@@ -49,7 +53,7 @@ export function assertValidHeaders(headers: Readonly<Record<string, string | nul
   if (headers === undefined) return;
   for (const [name, value] of Object.entries(headers)) {
     if (!HEADER_NAME.test(name)) {
-      throw new Error(`Invalid header name ${JSON.stringify(name)}: expected an RFC 9110 token.`);
+      throw new ProtocolSetupError(`Invalid header name ${JSON.stringify(name)}: expected an RFC 9110 token.`);
     }
     assertHeaderValue(name, value);
   }

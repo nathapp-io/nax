@@ -33,7 +33,7 @@ import type { OpenRouterRouting, Pricing, ProviderOverride, ResolvedModel } from
 import type { CredentialStore, StopReason } from "../types.ts";
 import { toTokenUsage, totalTokens } from "../usage.ts";
 import { vendorAppHeaders } from "./client-app.ts";
-import { classifyProviderError, classifyThrown, parseRetryAfter } from "./errors.ts";
+import { classifyProviderError, classifyThrown, ProtocolSetupError, parseRetryAfter } from "./errors.ts";
 import type { PiProtocolOptions } from "./pi-protocols.ts";
 import { assertValidHeaders, assertValidSessionId, mergeRequestHeaders, withoutEmpty } from "./request-headers.ts";
 import { vendorSessionHeaders } from "./session-id.ts";
@@ -167,7 +167,7 @@ function toPiMessages(messages: readonly ConversationMessage[], model: Model<Api
     // result. No match means the caller assembled an impossible conversation.
     const toolName = toolNames.get(message.toolCallId);
     if (toolName === undefined) {
-      throw new Error(
+      throw new ProtocolSetupError(
         `Tool result references tool call "${message.toolCallId}", which no earlier assistant message made.`,
       );
     }
@@ -362,6 +362,10 @@ export function createPiProtocol(name: string, deps: PiDeps): Protocol {
               const usage = toTokenUsage(event.error.usage);
               // A failed request that consumed tokens still bills for them.
               if (totalTokens(usage) > 0) yield { type: "usage", usage };
+              // pi-ai delivers the CALLER's abort as an error event ("Request was aborted"), not a
+              // throw; classifying that message would file it as a retryable transport fault (#5).
+              // Throw the abort instead — the catch below rethrows it untouched, like a raw abort.
+              if (req.signal?.aborted) throw req.signal.reason ?? new DOMException("Aborted", "AbortError");
               const upstreamMessage = event.error.errorMessage;
               yield {
                 type: "error",
@@ -843,9 +847,9 @@ export function createPiDeps(
           : models.getModels().find((candidate) => candidate.id === modelId);
       if (found === undefined) {
         if (provider !== undefined) {
-          throw new Error(`Unknown model "${modelId}" for provider "${provider}" in the pi-ai catalog.`);
+          throw new ProtocolSetupError(`Unknown model "${modelId}" for provider "${provider}" in the pi-ai catalog.`);
         }
-        throw new Error(`Unknown model "${modelId}" in the pi-ai catalog.`);
+        throw new ProtocolSetupError(`Unknown model "${modelId}" in the pi-ai catalog.`);
       }
       return found;
     },

@@ -1,6 +1,14 @@
 import type { Api, AssistantMessageEvent, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
-import { createPiProtocol, pickTemplate, toPiContext, toPiOptions, toPiTool } from "../../src/protocols/pi-client.ts";
+import { ProtocolSetupError } from "../../src/protocols/errors.ts";
+import {
+  createPiDeps,
+  createPiProtocol,
+  pickTemplate,
+  toPiContext,
+  toPiOptions,
+  toPiTool,
+} from "../../src/protocols/pi-client.ts";
 import type { ProtocolEvent, ProtocolRequest } from "../../src/protocols/types.ts";
 import { runProtocolConformance } from "../support/conformance.ts";
 
@@ -42,6 +50,38 @@ export function fakePi(events: AssistantMessageEvent[]) {
 }
 
 const BASE: ProtocolRequest = { model: "deepseek-chat", messages: [{ role: "user", content: "hi" }] };
+
+/** Records the model pi-ai was handed, and ends the stream immediately. */
+function stubStream() {
+  const models: Model<Api>[] = [];
+  const streamSimple = (model: Model<Api>, _context: Context, _options?: SimpleStreamOptions) => {
+    models.push(model);
+    return (async function* (): AsyncGenerator<AssistantMessageEvent> {
+      yield {
+        type: "done",
+        reason: "stop",
+        message: {
+          role: "assistant",
+          content: [],
+          api: model.api,
+          provider: model.provider,
+          model: model.id,
+          usage: {
+            input: 1,
+            output: 1,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 2,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+          stopReason: "stop",
+          timestamp: 0,
+        },
+      } as AssistantMessageEvent;
+    })();
+  };
+  return { models, streamSimple };
+}
 
 describe("toPiContext", () => {
   it("puts system in systemPrompt, never in messages", () => {
@@ -729,6 +769,44 @@ describe("createPiProtocol error path", () => {
     expect(events.at(-1)).toMatchObject({ type: "error" });
     expect(events.some((e) => e.type === "done")).toBe(false);
   });
+
+  it("an invalid request header is a bad-request event, which the retry layer leaves alone", async () => {
+    const events: ProtocolEvent[] = [];
+    for await (const event of createPiProtocol(
+      "openai-completions",
+      createPiDeps({}, stubStream().streamSimple),
+    ).stream({
+      ...BASE,
+      // BASE's "deepseek-chat" is not in the real pi-ai catalog (resolveModel would throw before
+      // the header check); "gpt-5.5" resolves via the global first-match fallback (pi-protocols.test.ts:55).
+      model: "gpt-5.5",
+      headers: { "x-a": "a\nb" },
+    })) {
+      events.push(event);
+    }
+    expect(events.at(-1)).toMatchObject({ type: "error", error: { kind: "bad-request" } });
+  });
+
+  // Live instance of #20. toPiContext(req, model) is evaluated BEFORE the
+  // stream generator's try block (pi-client.ts:268 vs :273), so an orphan
+  // tool-result throws a raw status-less error out of the generator. As a plain
+  // Error, retryTransportFaults classified it "transport" and re-sent the
+  // impossible request; it is a request that cannot succeed, so it must reject
+  // as a setup error that the retry wrapper leaves alone.
+  it("an orphan tool-result rejects as a setup error, not a transport-kind error event", async () => {
+    const stream = createPiProtocol("openai-completions", fakePi([]).deps).stream({
+      ...BASE,
+      messages: [{ role: "tool-result", toolCallId: "ghost", content: "ok" }],
+    });
+
+    await expect(
+      (async () => {
+        for await (const _ of stream) {
+          // drain: the throw happens when toPiContext runs, before any event.
+        }
+      })(),
+    ).rejects.toBeInstanceOf(ProtocolSetupError);
+  });
 });
 
 /** A backend whose stream throws instead of yielding pi-ai's own "error" event
@@ -781,6 +859,33 @@ describe("createPiProtocol raw throw normalisation", () => {
     };
 
     await expect(iterate()).rejects.toBe(abortError);
+  });
+
+  it("rethrows the caller's abort when pi-ai reports it as an error event, keeping the billed usage", async () => {
+    const controller = new AbortController();
+    const abortError = new DOMException("Aborted", "AbortError");
+    controller.abort(abortError);
+    const deps = fakePiWithResponse([
+      {
+        type: "error",
+        reason: "aborted",
+        error: message({ stopReason: "aborted", errorMessage: "Request was aborted" }),
+      },
+    ] as AssistantMessageEvent[]);
+
+    const out: ProtocolEvent[] = [];
+    const iterate = async () => {
+      for await (const event of createPiProtocol("openai-completions", deps).stream({
+        ...BASE,
+        signal: controller.signal,
+      })) {
+        out.push(event);
+      }
+    };
+
+    await expect(iterate()).rejects.toBe(abortError);
+    // A failed request that consumed tokens still bills for them; the abort is not an error event.
+    expect(out.map((e) => e.type)).toEqual(["usage"]);
   });
 });
 

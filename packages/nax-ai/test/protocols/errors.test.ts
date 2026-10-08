@@ -3,6 +3,7 @@ import {
   classifyHttpError,
   classifyProviderError,
   classifyThrown,
+  ProtocolSetupError,
   parseRetryAfter,
 } from "../../src/protocols/errors.ts";
 
@@ -280,6 +281,11 @@ describe("classifyThrown", () => {
     expect(error.kind).toBe("transport");
     expect(error.message).toBe("connection reset");
     expect(error.cause).toBe("connection reset");
+  });
+
+  it("classifies a setup error as bad-request: a retry cannot change it", () => {
+    const cause = new ProtocolSetupError('Unknown model "x" in the pi-ai catalog.');
+    expect(classifyThrown(cause)).toEqual({ kind: "bad-request", message: cause.message, cause });
   });
 });
 

@@ -121,7 +121,7 @@ Run this for every bundle after its last task:
 | J | `fix/review-j-acceptance-overrides` | [#2395](https://github.com/nathapp-io/nax/pull/2395) | merged |
 | C | `fix/review-c-process-abort` | [#2396](https://github.com/nathapp-io/nax/pull/2396) | merged |
 | I | `fix/review-i-cost-telemetry` | [#2397](https://github.com/nathapp-io/nax/pull/2397) | in progress |
-| E | — | — | not started |
+| E | `fix/review-e-nax-ai-errors` | [#2398](https://github.com/nathapp-io/nax/pull/2398) | in progress |
 | F | — | — | not started |
 | G | — | — | not started |
 | K | — | — | not started |

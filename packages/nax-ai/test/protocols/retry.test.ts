@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ProtocolSetupError } from "../../src/protocols/errors.ts";
 import { retryTransportFaults } from "../../src/protocols/retry.ts";
 import type { ProtocolEvent } from "../../src/protocols/types.ts";
 
@@ -143,6 +144,25 @@ describe("retryTransportFaults", () => {
     );
     expect(calls).toBe(2);
     expect(events).toEqual([transportError("attempt 2")]);
+  });
+
+  it("does not retry a setup error thrown before any event", async () => {
+    let calls = 0;
+    const { sleep, calls: delays } = noopSleep();
+    const setup = new ProtocolSetupError('Unknown model "deepseek-chat-typo" for provider "deepseek".');
+    await expect(
+      collect(
+        retryTransportFaults(
+          () => {
+            calls += 1;
+            return throwingStream(setup);
+          },
+          { retries: 2, sleep },
+        ),
+      ),
+    ).rejects.toBe(setup);
+    expect(calls).toBe(1);
+    expect(delays).toEqual([]);
   });
 
   it("makes exactly one attempt when retries is 0", async () => {

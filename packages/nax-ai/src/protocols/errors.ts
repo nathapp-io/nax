@@ -233,6 +233,19 @@ function thrownHeaders(cause: unknown): Readonly<Record<string, string>> | undef
 }
 
 /**
+ * A request that cannot succeed as written: an unknown model, an invalid header
+ * or session id. Deterministic, so retrying only re-sends the same failure.
+ * `classifyThrown` maps it to `bad-request`, which the transport retry never
+ * touches (retry.ts: "nax-ai retries transport faults only").
+ */
+export class ProtocolSetupError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ProtocolSetupError";
+  }
+}
+
+/**
  * Normalises an arbitrary thrown value into a `ProtocolError`.
  *
  * A throw carrying an HTTP status is classified from it, exactly as an error
@@ -241,6 +254,9 @@ function thrownHeaders(cause: unknown): Readonly<Record<string, string>> | undef
  * `transport` handed it to this module's own retry instead -- against that
  * policy, and discarding the provider's recovery time on the way.
  *
+ * A `ProtocolSetupError` is `bad-request`: it names a request that cannot
+ * succeed.
+ *
  * A throw with NO status stays `transport`: that is the connection reset, DNS
  * failure and immediate socket error this function was written for, where
  * classifyHttpError(undefined) would return "unknown" and the fault genuinely
@@ -248,6 +264,7 @@ function thrownHeaders(cause: unknown): Readonly<Record<string, string>> | undef
  */
 export function classifyThrown(cause: unknown): ProtocolError {
   const message = cause instanceof Error ? cause.message : String(cause);
+  if (cause instanceof ProtocolSetupError) return { kind: "bad-request", message, cause };
   const status = thrownStatus(cause);
   if (status === undefined) return { kind: "transport", message, cause };
 
