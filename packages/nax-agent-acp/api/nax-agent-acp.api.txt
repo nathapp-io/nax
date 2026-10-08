@@ -14,3 +14,7 @@ isAgentLaunchable
 launchCandidateKind
 
 [./server]
+type MainDeps
+type ProcessLike
+main
+runCli

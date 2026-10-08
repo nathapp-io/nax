@@ -75,6 +75,10 @@ describe("buildStagedManifest", () => {
     expect(JSON.stringify(staged)).not.toContain("workspace:");
   });
 
+  test("ships the nax-agent bin", () => {
+    expect(staged.bin).toEqual({ "nax-agent": "./bin/nax-agent.js" });
+  });
+
   test("a workspace: protocol in dependencies is refused rather than shipped", () => {
     const leaky = { ...source, dependencies: { ...source.dependencies, "@nathapp/nax-agent": "workspace:*" } };
     expect(() => buildStagedManifest(leaky, opts)).toThrow(/workspace:/);
@@ -118,6 +122,10 @@ describe("staging inputs and repository", () => {
     } finally {
       cleanupTempDir(dir);
     }
+  });
+
+  test("the bin is a staging input", () => {
+    expect(STAGE_INPUTS).toContain("bin/nax-agent.js");
   });
 
   test("refuses to stage from a fork; allows local runs", () => {

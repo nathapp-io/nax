@@ -324,6 +324,7 @@ defaultTempRoots
 deleteTool
 denialHintLine
 detectTmpWrite
+displayToolInput
 editTool
 estimateCostUsd
 expandMcpRuleGrants
@@ -427,6 +428,7 @@ substituteCommand
 substituteCommandSpec
 taintApprovals
 toMechanical
+toolResultPreview
 truncateForModel
 truncationDirectionFor
 unregisterToolAuditSink

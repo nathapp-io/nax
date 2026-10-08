@@ -32,7 +32,7 @@ This repository is a Bun-workspace monorepo. Package-specific context lives in
 | `packages/nax` | `@nathapp/nax` | CLI orchestrator (Bun bundle, `dist/nax.js`) |
 | `packages/nax-ai` | `@nathapp/nax-ai` | Provider-agnostic LLM client (Node target, ESM-only, vitest) |
 | `packages/nax-agent` | `@nathapp/nax-agent` | Node library: session contract, loop, tools, permissions, sandbox; also bundled into nax (workspace private; npm uses staged manifest) |
-| `packages/nax-agent-acp` | `@nathapp/nax-agent-acp` | ACP backend for nax-agent sessions (`./client`; `./server` reserved); Node library, nax-agent peer, versioned in lockstep with nax-agent (workspace private; npm uses staged manifest) |
+| `packages/nax-agent-acp` | `@nathapp/nax-agent-acp` | ACP backend for nax-agent sessions (`./client`; `./server` = the `nax-agent` ACP server bin, S5); Node library, nax-agent peer, versioned in lockstep with nax-agent (workspace private; npm uses staged manifest) |
 | `packages/repo-tooling` | `@nathapp/nax-repo-tooling` | Check scripts shared by the packages (private; never published) |
 | `packages/test-kit` | `@nathapp/nax-test-kit` | Shared bun:test helpers (private; never published) |
 

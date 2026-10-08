@@ -58,6 +58,7 @@ function stageAcp(version: string): string {
   run("bun", ["run", "build"], PKG, 180_000);
   const out = temp("acp-stage-acp-");
   cpSync(join(PKG, "dist"), join(out, "dist"), { recursive: true });
+  cpSync(join(PKG, "bin"), join(out, "bin"), { recursive: true });
   for (const file of ["README.md", "CHANGELOG.md", "LICENSE"]) cpSync(join(PKG, file), join(out, file));
   const manifest = buildStagedManifest(readJson(join(PKG, "package.json")), {
     repository: REPOSITORY,
@@ -97,6 +98,11 @@ describe("the packed tarballs", () => {
     cpSync(join(PKG, "test/node/fixtures/packed-smoke.mjs"), join(consumer, "packed-smoke.mjs"));
     expect(run("node", ["packed-smoke.mjs"], consumer, 120_000)).toContain("packed smoke ok");
   }, 180_000);
+
+  test("the nax-agent bin starts under Node and answers initialize", () => {
+    cpSync(join(PKG, "test/node/fixtures/server-smoke.mjs"), join(consumer, "server-smoke.mjs"));
+    expect(run("node", ["server-smoke.mjs"], consumer, 60_000)).toContain("server smoke ok");
+  }, 120_000);
 
   test("typechecks for a skipLibCheck:false consumer; only third-party diagnostics are allowed", () => {
     writeFileSync(

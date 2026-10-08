@@ -7,8 +7,10 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { buildToolResult } from "#src/native/session/tool-result";
 import {
   createTurnEventEmitter,
+  displayToolInput,
   TOOL_CALL_INPUT_BYTES,
   TOOL_RESULT_PREVIEW_BYTES,
+  toolResultPreview,
   usageEvent,
 } from "#src/native/session/turn-event-emitter";
 import type { TurnEvent, TurnEventSink } from "#src/session/turn-event";
@@ -229,6 +231,30 @@ describe("usageEvent", () => {
       cacheRead: 0,
       cacheWrite: 7,
       costUsd: 0,
+    });
+  });
+});
+
+describe("displayToolInput / toolResultPreview (public, S5-1 M-7)", () => {
+  const secret = "ghp_0123456789abcdefghijklmnopqrstuvwxyzAB";
+
+  test("mask a secret-shaped value the way live events do", () => {
+    expect(JSON.stringify(displayToolInput({ path: ".env", content: `KEY=${secret}` }))).not.toContain(secret);
+    expect(toolResultPreview(`token: ${secret}`)).not.toContain(secret);
+  });
+
+  test("cap to the live limits", () => {
+    expect(Buffer.byteLength(toolResultPreview("x".repeat(TOOL_RESULT_PREVIEW_BYTES * 3)), "utf8")).toBeLessThanOrEqual(
+      TOOL_RESULT_PREVIEW_BYTES,
+    );
+    expect(displayToolInput({ content: "y".repeat(TOOL_CALL_INPUT_BYTES * 2) })).toMatchObject({ truncated: true });
+  });
+
+  test("pass ordinary input through unchanged", () => {
+    expect(displayToolInput({ path: "src/a.ts", old_string: "a", new_string: "b" })).toEqual({
+      path: "src/a.ts",
+      old_string: "a",
+      new_string: "b",
     });
   });
 });
