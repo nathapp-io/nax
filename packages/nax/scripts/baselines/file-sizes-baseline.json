@@ -1,9 +1,9 @@
 {
-  "updatedAt": "2026-10-08T02:19:17.975Z",
+  "updatedAt": "2026-10-08T07:55:21.120Z",
   "byFile": {
     "src/interaction/plugins/telegram.ts": 602,
     "src/prompts/builders/rectifier-builder.ts": 901,
-    "src/session/manager.ts": 664,
+    "src/session/manager.ts": 662,
     "test/unit/cli/plan.test.ts": 809,
     "test/unit/context/engine/providers/static-rules.test.ts": 837,
     "test/unit/execution/escalation/tier-escalation.test.ts": 1025,
