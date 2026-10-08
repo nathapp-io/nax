@@ -1,5 +1,6 @@
 /**
- * `@nathapp/nax-agent-acp/server`: reserved for the ACP server (S5).
- * Intentionally empty in S4.
+ * `@nathapp/nax-agent-acp/server`: the nax-agent ACP server (S5). `runCli(process)`
+ * is what the `nax-agent` bin runs; `main(deps)` runs it on any streams.
  */
-export {};
+export { type MainDeps, main } from "#src/server/main";
+export { type ProcessLike, runCli } from "#src/server/process-entry";

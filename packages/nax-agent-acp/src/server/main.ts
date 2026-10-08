@@ -57,7 +57,15 @@ async function serveAcp(flags: CliFlags, deps: MainDeps): Promise<number> {
   deps.onSignal(stop);
   deps.stdin.once("end", stop);
   logger.info("server", "nax-agent ACP server started", { configDir, sessionsDir: resolved.options.sessionsDir });
-  logger.debug("server", "resolved options", { ...resolved.options });
+  // Scalars only: catalog overrides can carry provider headers (API keys).
+  const { defaultModel, defaultMode, bashApproval, tiers, catalogOverrides } = resolved.options;
+  logger.debug("server", "resolved options", {
+    defaultModel,
+    defaultMode,
+    bashApproval,
+    tiers: tiers.map((t) => `${t.tier}=${t.model}`),
+    catalogOverrides: catalogOverrides.length,
+  });
   try {
     await connection.closed;
     return 0;

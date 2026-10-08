@@ -119,4 +119,17 @@ describe("main", () => {
     expect(await exit).toBe(0);
     expect(h.err()).toContain('"level":"debug"');
   });
+
+  test("the debug log of resolved options never carries catalog override headers", async () => {
+    const config = {
+      agent: { native: { catalogOverrides: [{ provider: "p", headers: { Authorization: "Bearer sekret-123" } }] } },
+    };
+    const h = harness([], { env: { NAX_AGENT_LOG: "debug" }, readFile: async () => JSON.stringify(config) });
+    const exit = main(h.deps);
+    await tick(10);
+    h.stdin.end();
+    expect(await exit).toBe(0);
+    expect(h.err()).toContain("resolved options");
+    expect(h.err()).not.toContain("sekret-123");
+  });
 });
