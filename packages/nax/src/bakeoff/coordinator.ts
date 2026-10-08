@@ -8,7 +8,7 @@
 
 import { join } from "node:path";
 import type { NaxConfig } from "../config";
-import { DEFAULT_ACP_TRANSPORT, featureDir } from "../config";
+import { featureDir } from "../config";
 import { assertPrdCommitted } from "../prd";
 import { WorktreeManager } from "../worktree/manager";
 import type { ContestantOptions } from "./contestant";
@@ -78,12 +78,7 @@ export async function runBakeoff(
   // failures are logged and swallowed inside the function itself.
   await reclaimStaleBakeoffBranches(options.projectRoot);
 
-  const { validAgents, errors, profileData } = await merged.validateContestants(
-    options.agents,
-    options.projectRoot,
-    undefined,
-    options.config.agent?.acp?.transport ?? DEFAULT_ACP_TRANSPORT,
-  );
+  const { validAgents, errors, profileData } = await merged.validateContestants(options.agents, options.projectRoot);
 
   const results: ContestantResult[] = [];
   for (const agent of validAgents) {

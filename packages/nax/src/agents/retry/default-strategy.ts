@@ -26,8 +26,8 @@ export const defaultRetryStrategy: RetryStrategy = {
     const af = failure as AdapterFailure;
     if (af.retriable === false) return { retry: false };
     if (!failurePolicyFor(af.outcome).terminalBackoff) return { retry: false };
-    // The provider's own recovery time beats a guess. Populated by acpx
-    // (parse-agent-error) and, since the native errors table takes the whole
+    // The provider's own recovery time beats a guess. Populated by
+    // parse-agent-error and, since the native errors table takes the whole
     // protocol error, by native too. The attempt cap is unchanged -- a long
     // retryAfter buys a longer wait, never an extra attempt.
     const retryAfterSeconds = af.retryAfterSeconds;

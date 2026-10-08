@@ -16,8 +16,6 @@ import {
   makePluginRegistry,
   makePRD,
   makeSessionManager,
-  makeSpawn,
-  makeSpawnResult,
   makeStory,
   makeTestContext,
 } from "@test/helpers";
@@ -25,10 +23,13 @@ import type { RectifyConflictedStoryOptions } from "@/execution/merge-conflict-r
 import {
   _mergeRectifyDeps,
   buildRectificationPipelineContext,
-  closeStaleAcpSession,
   rectifyConflictedStory,
   rectifyMergeFailure,
 } from "@/execution/merge-conflict-rectify";
+import { addSink, initLogger, resetLogger } from "@/logger";
+import { deriveNativeTranscriptDir } from "@/session/manager-deps";
+import { formatSessionName } from "@/session/naming";
+import { deriveStoryWorktreeId, storyWorktreePath } from "@/worktree";
 import { _worktreeManagerDeps } from "@/worktree/manager";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -258,67 +259,12 @@ describe("buildRectificationPipelineContext: the rectification re-run inherits t
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Bounded `acpx sessions close` (hang-path) — a wedged acpx must not leave
-// rectification pending. The eviction is best-effort (already swallows
-// errors); with a SIGKILL-after-timeout bound, a hung acpx still resolves.
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("closeStaleAcpSession — bounded `acpx sessions close` (hang-path)", () => {
-  let origTypedSpawn: typeof _mergeRectifyDeps.typedSpawn;
-  let origTimeoutMs: typeof _mergeRectifyDeps.timeoutMs;
-  let origKillProcessGroup: typeof _mergeRectifyDeps.killProcessGroup;
-  let killedPid: number | undefined;
-
-  beforeEach(() => {
-    origTypedSpawn = _mergeRectifyDeps.typedSpawn;
-    origTimeoutMs = _mergeRectifyDeps.timeoutMs;
-    origKillProcessGroup = _mergeRectifyDeps.killProcessGroup;
-    killedPid = undefined;
-  });
-
-  afterEach(() => {
-    _mergeRectifyDeps.typedSpawn = origTypedSpawn;
-    _mergeRectifyDeps.timeoutMs = origTimeoutMs;
-    _mergeRectifyDeps.killProcessGroup = origKillProcessGroup;
-  });
-
-  test("settles without raising when the `acpx sessions close` child never exits (AC-5)", async () => {
-    _mergeRectifyDeps.timeoutMs = 50;
-    // Adversarial: SIGKILL is sent but `proc.exited` stays pending — the
-    // implementation MUST settle from the deadline itself, not from the SIGKILL
-    // side-effect. `killResolvesExited` is intentionally FALSE so the timer,
-    // not the kill, drives the race resolution.
-    const proc = makeSpawnResult({ hang: true, pid: 3333 });
-    _mergeRectifyDeps.typedSpawn = makeSpawn(() => proc).spawn as typeof _mergeRectifyDeps.typedSpawn;
-    _mergeRectifyDeps.killProcessGroup = ((pid) => {
-      killedPid = pid;
-      // Intentionally NOT calling proc.kill() — the AC requires the eviction
-      // to settle (without raising) regardless of what the SIGKILL signal does
-      // to `proc.exited`. An implementation that awaits `proc.exited` after
-      // the kill would hang here.
-      return true;
-    }) as typeof _mergeRectifyDeps.killProcessGroup;
-
-    // Best-effort contract preserved: even on a wedged acpx the helper settles
-    // (never rejects) so the rectification pipeline can continue.
-    let threw = false;
-    try {
-      await closeStaleAcpSession("/tmp/worktree", "nax-deadbeef-feat-US-001-main");
-    } catch {
-      threw = true;
-    }
-    expect(threw).toBe(false);
-    expect(killedPid).toBe(3333);
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
 // US-003 AC-7 — rectification derives the worktree identity from its run's
 // feature. The pre-US-003 rectifier built `.nax-wt/<storyId>` by hand and
 // handed the raw story ID to `remove`/`create`/`mergeAll`.
 //
 // Both tests drive the real `rectifyConflictedStory`; the only stubs are the
-// two process boundaries (git, and the `acpx sessions close` eviction). The
+// two process boundaries (git, and the stale-session discard). The
 // PRD deliberately does not contain the story, so rectification stops after
 // the identity-bearing steps instead of running a real pipeline.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -331,16 +277,16 @@ describe("US-003 AC-7: rectification derives the worktree identity", () => {
   const WORKDIR = "/tmp/nax-us003-rectify";
 
   let savedGit: typeof _worktreeManagerDeps.gitWithTimeout;
-  let savedTypedSpawn: typeof _mergeRectifyDeps.typedSpawn;
+  let savedDiscard: typeof _mergeRectifyDeps.discardStaleSession;
 
   beforeEach(() => {
     savedGit = _worktreeManagerDeps.gitWithTimeout;
-    savedTypedSpawn = _mergeRectifyDeps.typedSpawn;
+    savedDiscard = _mergeRectifyDeps.discardStaleSession;
   });
 
   afterEach(() => {
     _worktreeManagerDeps.gitWithTimeout = savedGit;
-    _mergeRectifyDeps.typedSpawn = savedTypedSpawn;
+    _mergeRectifyDeps.discardStaleSession = savedDiscard;
   });
 
   /** Every git argv the rectifier issues, with every command succeeding. */
@@ -353,27 +299,11 @@ describe("US-003 AC-7: rectification derives the worktree identity", () => {
     return calls;
   }
 
-  /**
-   * A `typedSpawn` stand-in that records the eviction argv. Typed structurally
-   * (not cast) so the stub needs no assertion.
-   */
-  function stubAcpxSpawn(): string[][] {
-    const calls: string[][] = [];
-    const emptyStream = (): ReadableStream<Uint8Array> =>
-      new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.close();
-        },
-      });
-    _mergeRectifyDeps.typedSpawn = (cmd: string[]) => {
-      calls.push(cmd);
-      return {
-        stdout: emptyStream(),
-        stderr: emptyStream(),
-        exited: Promise.resolve(0),
-        pid: 4242,
-        kill: () => {},
-      };
+  /** Records each stale-session discard as [transcriptDir, sessionName]. */
+  function stubDiscard(): Array<[string | undefined, string]> {
+    const calls: Array<[string | undefined, string]> = [];
+    _mergeRectifyDeps.discardStaleSession = async (dir, name) => {
+      calls.push([dir, name]);
     };
     return calls;
   }
@@ -398,7 +328,7 @@ describe("US-003 AC-7: rectification derives the worktree identity", () => {
 
   test("AC-7: create() is asked for .nax-wt/story-f-US-001 on branch nax/story-f-US-001", async () => {
     const gitCalls = stubGit();
-    stubAcpxSpawn();
+    stubDiscard();
 
     await rectifyConflictedStory(makeOpts(FEATURE));
 
@@ -414,28 +344,62 @@ describe("US-003 AC-7: rectification derives the worktree identity", () => {
     expect(gitCalls.some((args) => args.some((a) => a.endsWith(join(".nax-wt", STORY_ID))))).toBe(false);
   });
 
-  test("AC-7: the rectification's worktreePath is the composed path, not the raw story directory", async () => {
+  test("AC-7: the stale-session discard names the composed worktree's session, under the run's transcript dir", async () => {
     stubGit();
-    const acpxCalls = stubAcpxSpawn();
+    const discards = stubDiscard();
+    const opts = makeOpts(FEATURE);
 
-    await rectifyConflictedStory(makeOpts(FEATURE));
+    await rectifyConflictedStory(opts);
 
-    // The stale-session eviction is the one place the rectifier hands its
-    // `worktreePath` to an observable boundary: `acpx --cwd <worktreePath> …`.
-    const eviction = acpxCalls.find((cmd) => cmd[0] === "acpx");
-    assertDefined(eviction, "acpx sessions close argv");
-    expect(eviction[1]).toBe("--cwd");
-    expect(eviction[2]?.endsWith(COMPOSED_TAIL)).toBe(true);
-    expect(eviction[2]?.endsWith(join(".nax-wt", STORY_ID))).toBe(false);
+    expect(discards).toHaveLength(1);
+    const [dir, name] = discards[0] ?? [undefined, ""];
+    const composedPath = storyWorktreePath(WORKDIR, deriveStoryWorktreeId(FEATURE, STORY_ID));
+    expect(composedPath.endsWith(COMPOSED_TAIL)).toBe(true);
+    expect(name).toBe(
+      formatSessionName({ workdir: composedPath, featureName: FEATURE, storyId: STORY_ID, role: "main" }),
+    );
+    expect(name).not.toBe(
+      formatSessionName({
+        workdir: join(WORKDIR, ".nax-wt", STORY_ID),
+        featureName: FEATURE,
+        storyId: STORY_ID,
+        role: "main",
+      }),
+    );
+    expect(dir).toBe(
+      deriveNativeTranscriptDir({ featureName: FEATURE, transcriptRoot: opts.pipelineContextBase.runtime.outputDir }),
+    );
+  });
+
+  test("a discard that throws does not fail rectification", async () => {
+    stubGit();
+    _mergeRectifyDeps.discardStaleSession = async () => {
+      throw new Error("boom");
+    };
+    const messages: string[] = [];
+    resetLogger();
+    initLogger({ level: "debug" });
+    const removeSink = addSink((entry) => messages.push(entry.message));
+    let result: Awaited<ReturnType<typeof rectifyConflictedStory>>;
+    try {
+      result = await rectifyConflictedStory(makeOpts(FEATURE));
+    } finally {
+      removeSink();
+      resetLogger();
+    }
+    // The PRD has no story, so rectification stops at the "story not found"
+    // exit after the discard, not in the outer catch ("Rectification failed").
+    expect(result).toMatchObject({ success: false, pipelineFailure: true });
+    expect(messages.some((m) => m.includes("Rectification failed"))).toBe(false);
   });
 
   test("AC-7 (boundary): the worktree directory follows the run's feature, so a different feature is a different path", async () => {
     const firstRun = stubGit();
-    stubAcpxSpawn();
+    stubDiscard();
     await rectifyConflictedStory(makeOpts("f"));
 
     const secondRun = stubGit();
-    stubAcpxSpawn();
+    stubDiscard();
     await rectifyConflictedStory(makeOpts("g"));
 
     // Same index base as the AC-7 assertion above: the recorded argv excludes

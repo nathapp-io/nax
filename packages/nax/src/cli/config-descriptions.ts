@@ -299,8 +299,6 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   agent: "Agent protocol configuration (ACP-003)",
   "agent.protocol": "Protocol for agent communication: 'acp' (default) | 'native' | 'hybrid'",
   "agent.acp": "ACP agent transport settings (claude, codex, opencode, gemini, pi)",
-  "agent.acp.transport":
-    "How ACP agents are driven: 'sdk' (default) uses @nathapp/nax-agent-acp in-process; 'acpx' shells out to the acpx CLI (S4b development key; S4b-5 removes acpx and this key)",
   "agent.native.instructionFileName":
     "Repository instruction filename (default: AGENTS.md). Custom Markdown basenames load without AGENTS/CLAUDE fallbacks.",
   "agent.native.catalogOverrides":
@@ -337,7 +335,7 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "quality.testing": "Hermetic test enforcement — per-package overridable (ENH-010)",
   "quality.testing.hermetic":
     "Inject hermetic test requirement into prompts — never call real external services in tests (default: true)",
-  "quality.testing.externalBoundaries": "Project-specific CLI tools/clients to mock (e.g. ['claude', 'acpx', 'redis'])",
+  "quality.testing.externalBoundaries": "Project-specific CLI tools/clients to mock (e.g. ['claude', 'gh', 'redis'])",
   "quality.testing.mockGuidance": "Project-specific mocking guidance injected verbatim into the prompt",
 
   // MCP

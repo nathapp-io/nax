@@ -1,32 +1,5 @@
 export type { AdapterInteractionResponse, InteractionHandler, ModelSpec } from "@nathapp/nax-agent";
 export { NO_OP_INTERACTION_HANDLER, parseModelSpec } from "@nathapp/nax-agent";
-export type {
-  AcpClient,
-  AcpClientOptions,
-  AcpLineActivity,
-  AcpParseState,
-  AcpSession,
-  AcpSessionResponse,
-  BuildTurnResultInput,
-} from "./acp";
-export {
-  _acpAdapterDeps,
-  _spawnClientDeps,
-  AcpAgentAdapter,
-  buildTurnResult,
-  createParseState,
-  createSpawnAcpClient,
-  finalizeParseState,
-  // @internal — test-reachability re-exports only, not part of the public
-  // `@/agents` surface. See src/agents/acp/stdout-line-reader.ts.
-  MAX_BUFFERED_LINE_BYTES,
-  parseAcpxJsonLine,
-  parseAcpxJsonOutput,
-  parseSessionIds,
-  readAndParseLines,
-  readStreamTail,
-  SpawnAcpClient,
-} from "./acp";
 export { classifyCompleteException } from "./complete-exception-classifier";
 export type { CostEstimate, ModelCostRates, TokenUsage, TokenUsageWithConfidence } from "./cost";
 export { formatCostWithConfidence, resolvePricingSource } from "./cost";

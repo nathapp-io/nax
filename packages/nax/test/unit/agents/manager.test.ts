@@ -6,9 +6,10 @@ import {
   makeContextBundle,
   makeNaxConfig,
 } from "@test/helpers";
+import { replyTurn, scriptedOpened } from "@test/helpers/acp-fake-agent";
 import type { AgentResult, AgentRunOptions, AgentRunOutcome, AgentRunRequest, HopKind } from "@/agents";
-import { _acpAdapterDeps } from "@/agents/acp/adapter";
-import type { PricingRates } from "@/agents/cost";
+import { _acpDeps } from "@/agents/acp";
+import { FALLBACK_RATES, type PricingRates } from "@/agents/cost";
 import { _agentManagerDeps, AgentManager } from "@/agents/manager";
 import { buildCompleteEvent, buildSessionTurnEvent } from "@/agents/manager-dispatch";
 import type { AgentRegistry } from "@/agents/registry";
@@ -21,7 +22,6 @@ import { NaxConfigSchema } from "@/config/schemas";
 import { agentManagerConfigSelector } from "@/config/selectors";
 import type { ContextBundle } from "@/context/engine";
 import { type AgentMiddleware, MiddlewareChain, type MiddlewareContext } from "@/runtime/agent-middleware";
-import { makeClient, makeSession } from "./acp/adapter.test";
 
 function makeRunOptions(overrides: Partial<AgentRunOptions> = {}): AgentRunOptions {
   return {
@@ -234,18 +234,20 @@ describe("AgentManager.nextCandidate (Phase 4)", () => {
 });
 
 describe("AgentManager — middleware envelope", () => {
-  const origCreateClient = _acpAdapterDeps.createClient;
+  const REAL_SDK = { ..._acpDeps };
   beforeEach(() => {
-    _acpAdapterDeps.createClient = mock(() => makeClient(makeSession()));
+    _acpDeps.resolveRateCard = () => Promise.resolve({ rates: FALLBACK_RATES, source: "fallback-rates" });
+    _acpDeps.cwdExists = async () => true;
+    const script = scriptedOpened([replyTurn("ok")]);
+    _acpDeps.acpBackend = () => ({ kind: "acp:claude", open: async () => script.opened });
   });
   afterEach(() => {
-    _acpAdapterDeps.createClient = origCreateClient;
+    Object.assign(_acpDeps, REAL_SDK);
     mock.restore();
   });
 
   function makeMiddlewareManager(mw?: AgentMiddleware): AgentManager {
-    // acpx transport pinned until S4b-5 deletes it: the mocked client above is acpx's.
-    return new AgentManager(makeNaxConfig({ agent: { acp: { transport: "acpx" } } }), undefined, {
+    return new AgentManager(makeNaxConfig(), undefined, {
       middleware: mw ? MiddlewareChain.from([mw]) : MiddlewareChain.empty(),
       runId: "r-test",
     });

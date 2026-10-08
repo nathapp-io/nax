@@ -75,7 +75,7 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator]
 | `src/verification/` | Test execution, smart runner, scoped runner (per-story verify via verifyScopedOp / fullSuiteGateOp) |
 | `src/metrics/` | StoryMetrics, aggregator, tracker |
 | `src/config/` | Config schema + layered loader (global → project) + permissions |
-| `src/agents/acp/` | ACP protocol adapter — unified, agent-agnostic via `acpx` (one of two transports; see ADR-027) |
+| `src/agents/acp/` | ACP adapter over `@nathapp/nax-agent-acp` (one of two transports; see ADR-027) |
 | `src/agents/catalog/` | nax-ai model-catalog boundary — returns nax-ai's `Pricing`; other code uses its `Pricing`/`TokenUsage` via `@nathapp/nax-agent` |
 | `src/agents/cost/` | Centralized cost calculation (pricing, token parsing) |
 | `src/agents/native-agent/` | nax's thin `NativeAgentAdapter` shell over `@nathapp/nax-agent`'s native session adapter |
@@ -132,7 +132,7 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator]
 
 ## Agent Adapter & LLM Calls
 
-- **Two transports, selected by agent name:** ACP via `acpx` for every named CLI
+- **Two transports, selected by agent name:** ACP via `@nathapp/nax-agent-acp` for every named CLI
   agent, and the in-process native path (`@nathapp/nax-ai`) for the `native`
   agent. `agent.protocol` (`acp` | `native` | `hybrid`, default `hybrid`; `agent.default`
   defaults to `native`) is a capability gate, not a router — it decides which are permitted. See ADR-027.

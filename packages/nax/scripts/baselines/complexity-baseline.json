@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-10-02T11:21:21.905Z",
+  "updatedAt": "2026-10-08T02:19:17.860Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": { "collectStats": 27 },
@@ -15,9 +15,6 @@
     "scripts/find-memory-leak.ts": { "worker": 23 },
     "scripts/generate-changelog.ts": { "main": 38, "rewriteBatch": 33 },
     "src/acceptance/hardening.ts": { "processPackageGroup": 27 },
-    "src/agents/acp/adapter-complete-flow.ts": { "=>": 29 },
-    "src/agents/acp/spawn-client-session.ts": { "prompt": 24 },
-    "src/agents/acp/stdout-line-reader.ts": { "=>": 32 },
     "src/agents/manager-run-fallback.ts": { "runWithFallback": 54 },
     "src/agents/manager.ts": { "completeWithFallback": 40 },
     "src/agents/retry/hop-retry-policy.ts": { "trySameAgentRetry": 45 },

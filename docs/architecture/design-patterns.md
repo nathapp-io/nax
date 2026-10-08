@@ -111,7 +111,7 @@ export interface AgentAdapter {
 }
 
 // ✅ Two production implementations, selected by agent name (ADR-027)
-export class AcpAgentAdapter implements AgentAdapter { ... }    // JSON-RPC over stdio via acpx
+export class AcpAgentAdapter implements AgentAdapter { ... }    // ACP over @nathapp/nax-agent-acp
 export class NativeAgentAdapter implements AgentAdapter { ... } // in-process over @nathapp/nax-ai
 ```
 
@@ -126,7 +126,7 @@ export class NativeAgentAdapter implements AgentAdapter { ... } // in-process ov
 
 #### Agent Protocol
 
-nax has two transports, selected by **agent name** (ADR-027): every named CLI agent (`claude`, `codex`, `opencode`, `gemini`, `aider`, `pi`) is driven over **ACP** (Agent Client Protocol) — JSON-RPC over stdio via [acpx](https://github.com/openclaw/acpx) — and the `native` agent runs in-process over `@nathapp/nax-ai`, with nax owning the conversation and tool loop (ADR-028/029). There is no CLI protocol mode.
+nax has two transports, selected by **agent name** (ADR-027): every named CLI agent (`claude`, `codex`, `opencode`, `gemini`, `aider`, `pi`) is driven over **ACP** (Agent Client Protocol) — JSON-RPC over stdio to each agent's ACP launcher, through `@nathapp/nax-agent-acp` — and the `native` agent runs in-process over `@nathapp/nax-ai`, with nax owning the conversation and tool loop (ADR-028/029). There is no CLI protocol mode.
 
 `agent.protocol` (`acp` | `native` | `hybrid`, default `hybrid`) is a capability gate deciding which transports are permitted, not a router. `agent.default` defaults to `native` (`src/config/agent-defaults.ts`).
 

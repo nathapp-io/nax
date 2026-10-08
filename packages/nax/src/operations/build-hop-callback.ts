@@ -78,7 +78,7 @@ export interface BuildHopCallbackContext {
    * nax#1722: a hop can now run on a DIFFERENT agent than the options were resolved for
    * (`resolveStartAgent` starts an operation on a fallback when the primary is already
    * unavailable). A pinned modelDef belongs to this agent alone; carried onto another it
-   * produces `acpx --model haiku ... codex`, which the ACP agent rejects outright
+   * sends codex the model `haiku`, which the ACP agent rejects outright
    * ("did not advertise that model"). Absent = trust the pin, the pre-#1722 behaviour.
    */
   pinnedModelAgent?: string;

@@ -11,7 +11,7 @@
  *  - `warnInertBashStages` — ADR-030 pre-flight: stages that declare the Bash
  *    tool while their resolved grants hold no `Bash` entry, so the tool is
  *    never offered and nothing can escalate.
- *  - `warnUnreferencedAgentModels` — a declared acpx model map that no
+ *  - `warnUnreferencedAgentModels` — a declared ACP model map that no
  *    default, rung, pin or PRD story reaches (the native default takes it).
  *  - `assertDefaultNativeCredentials` — not a warning: refuses the run when a
  *    provider the default native tier map uses has no credential. Lives here
@@ -143,7 +143,7 @@ export function warnInertBashStages(config: NaxConfig, logger: ReturnType<typeof
 }
 
 /**
- * Warn once when a user-declared acpx model map is reached by nothing — no
+ * Warn once when a user-declared ACP model map is reached by nothing — no
  * default, enabled fallback rung, pin, or story `routing.agent` — so it would
  * silently never run under the native default (ADR-027 2026-09-25 amendment).
  */

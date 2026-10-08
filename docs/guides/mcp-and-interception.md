@@ -38,7 +38,7 @@ A project left on `"protocol": "acp"` can carry a complete, valid `mcp` and
 validity is not activation — verify with the evidence checks below rather than assuming.
 
 > The built-in defaults are `"protocol": "hybrid"` / `"default": "native"`, so neither block is
-> gated off by the protocol out of the box; they go dormant only when a config switches to an acpx
+> gated off by the protocol out of the box; they go dormant only when a config switches to an ACP
 > agent. The interceptor itself still ships disabled (`commandInterceptor.enabled: false`).
 
 Second gate, for MCP only: `unrestricted` resolves every attached provider; `scoped`

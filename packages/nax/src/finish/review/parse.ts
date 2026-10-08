@@ -25,13 +25,13 @@ const HEADING = /^\s*#{1,6}\s*(TOUCHPOINTS|WALK|FINDINGS|DISPOSITIONS)\s*:?\s*$/
  * preceding narration did not itself end in a newline.
  *
  * The port dropped it, on the reasoning that `extractOutput`
- * (`src/agents/acp/adapter-output.ts`) joins assistant messages with `"\n"`,
+ * (the acpx-era `adapter-output.ts`, deleted in S4b-5) joins assistant messages with `"\n"`,
  * so every message boundary is already a newline boundary. That reasoning is
  * wrong, and a real run disproved it: the ACP wire path never produces more
  * than one assistant message per turn. `handleAcpEvent` accumulates every
  * `agent_message_chunk` into a single buffer with `state.text += text`
- * (`src/agents/acp/parser.ts`), and the session client wraps that one buffer
- * as one `{ role: "assistant" }` message (`src/agents/acp/spawn-client-session.ts`),
+ * (the acpx-era `parser.ts`), and the session client wraps that one buffer
+ * as one `{ role: "assistant" }` message (the acpx-era `spawn-client-session.ts`),
  * so `join("\n")` has nothing to join and chunk boundaries stay glued exactly
  * as they were under acpx. On a live finish run the quality reviewer's reply opened
  * `I have enough to write the report now.## TOUCHPOINTS`; the section was read

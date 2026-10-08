@@ -56,7 +56,7 @@ export function describeMissingNativeCredentials(missing: readonly MissingNative
   return (
     `The default native agent needs a credential for ${uses}, but none is stored or in the environment. ` +
     `Run ${logins}, set the provider's API key environment variable, point models.native at a provider you have ` +
-    `credentials for, or set agent.default "claude" to use an acpx agent.`
+    `credentials for, or set agent.default "claude" to use an ACP agent.`
   );
 }
 
@@ -71,7 +71,7 @@ export function describeMissingNativeCredentials(missing: readonly MissingNative
 function describeCredentialFault(error: NaxError): string {
   return (
     `The default native agent's credentials could not be read (${error.code}): ${error.message} ` +
-    `Fix the credential source, or set agent.default "claude" to use an acpx agent.`
+    `Fix the credential source, or set agent.default "claude" to use an ACP agent.`
   );
 }
 

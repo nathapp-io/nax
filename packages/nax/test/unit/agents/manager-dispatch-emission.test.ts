@@ -14,7 +14,9 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { type DeepPartial, makeAgentAdapter, makeContextBundle, makeNaxConfig } from "@test/helpers";
-import { _acpAdapterDeps } from "@/agents/acp/adapter";
+import { replyTurn, scriptedOpened } from "@test/helpers/acp-fake-agent";
+import { _acpDeps } from "@/agents/acp";
+import { FALLBACK_RATES } from "@/agents/cost";
 import { AgentManager } from "@/agents/manager";
 import { buildSessionTurnEvent } from "@/agents/manager-dispatch";
 import type { RunAsSessionOpts } from "@/agents/manager-types";
@@ -33,7 +35,6 @@ import type {
   SessionTurnDispatchEvent,
 } from "@/runtime/dispatch-events";
 import { DispatchEventBus } from "@/runtime/dispatch-events";
-import { makeClient, makeSession } from "./acp/adapter.test";
 
 // ─── Shared helpers ─────────────────────────────────────────────────────────
 
@@ -268,19 +269,21 @@ describe("runAsSession — dispatch emission", () => {
 // ─── completeAs ─────────────────────────────────────────────────────────────
 
 describe("completeAs — dispatch emission", () => {
-  const origCreateClient = _acpAdapterDeps.createClient;
+  const REAL_SDK = { ..._acpDeps };
   beforeEach(() => {
-    _acpAdapterDeps.createClient = mock(() => makeClient(makeSession()));
+    _acpDeps.resolveRateCard = () => Promise.resolve({ rates: FALLBACK_RATES, source: "fallback-rates" });
+    _acpDeps.cwdExists = async () => true;
+    const script = scriptedOpened([replyTurn("ok")]);
+    _acpDeps.acpBackend = () => ({ kind: "acp:claude", open: async () => script.opened });
   });
   afterEach(() => {
-    _acpAdapterDeps.createClient = origCreateClient;
+    Object.assign(_acpDeps, REAL_SDK);
     mock.restore();
   });
 
   test("emits exactly one complete event", async () => {
     const bus = new DispatchEventBus();
-    // acpx transport pinned until S4b-5 deletes it: the mocked client above is acpx's.
-    const config = makeNaxConfig({ agent: { acp: { transport: "acpx" } } });
+    const config = makeNaxConfig();
     const manager = new AgentManager(config, undefined, { dispatchEvents: bus });
 
     const received: CompleteDispatchEvent[] = [];

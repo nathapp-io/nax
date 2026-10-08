@@ -1,6 +1,6 @@
 ---
 title: Agents
-description: Configuring and using coding agents — the native agent and ACP agents via acpx
+description: Configuring and using coding agents — the native agent and ACP agents via @nathapp/nax-agent-acp
 ---
 
 ## Agents
@@ -8,7 +8,7 @@ description: Configuring and using coding agents — the native agent and ACP ag
 nax drives coding agents over two transports, selected by agent name ([ADR-027](../adr/ADR-027-adapter-protocol-split.md)):
 
 - **Native** (`native`, the default) — an in-process agent built on `@nathapp/nax-ai`. nax owns the conversation, the tool loop and every coding tool the model calls ([ADR-028](../adr/ADR-028-native-sessions-and-tool-loop.md)).
-- **ACP** — every other named agent, spawned through [acpx](https://github.com/openclaw/acpx) (Agent Client Protocol): a JSON-RPC protocol over stdio with persistent sessions, exact USD cost reporting and multi-turn continuity. The external agent brings its own tools.
+- **ACP** — every other named agent, launched through its own ACP launcher by `@nathapp/nax-agent-acp` (Agent Client Protocol: JSON-RPC over stdio) with persistent sessions, reported USD cost and multi-turn continuity. The external agent brings its own tools.
 
 `agent.protocol` (`acp` | `native` | `hybrid`, default `hybrid`) is a capability gate, not a router: it decides which of the two transports are permitted.
 
@@ -19,24 +19,23 @@ nax agents
 
 **Supported agents:**
 
-| Agent | Binary | Status |
-|:------|:-------|:-------|
-| Native (nax-ai) | — (in-process) | Stable (default) |
-| Claude Code | `claude` | Stable |
-| OpenCode | `opencode` | Stable |
-| Codex | `codex` | Stable |
-| Gemini CLI | `gemini` | Stable |
-| Pi Coding Agent | `pi` | Via the third-party `pi-acp` bridge |
-| Aider | `aider` | Known name; no dedicated ACP adapter entry (generic defaults) |
-| Any ACP-compatible agent | — | See [acpx docs](https://github.com/openclaw/acpx#agents) |
+| Agent | ACP launcher | Notes |
+|:------|:-------------|:------|
+| Native (nax-ai) | — (in-process) | Default. `agent.default: "native"` |
+| Claude Code | `claude-agent-acp` (or `npx @agentclientprotocol/claude-agent-acp`) | Set `agent.default: "claude"` |
+| OpenCode | `opencode acp` | Set `agent.default: "opencode"` |
+| Codex | `codex-acp` (or `npx @agentclientprotocol/codex-acp`) | Set `agent.default: "codex"` |
+| Gemini CLI | `gemini --acp` | Set `agent.default: "gemini"` |
+| Pi Coding Agent | `pi-acp` (or `npx pi-acp`) | Set `agent.default: "pi"` |
+| Aider | — | Known name with no ACP launcher; it fails at session open |
 
-Every agent except `native` runs as a persistent ACP session through acpx — nax sends prompts and receives structured JSON-RPC responses including token counts and exact USD cost per session.
+Every agent except `native` runs as a persistent ACP session — nax sends prompts and receives structured JSON-RPC responses including token counts and the reported USD cost per turn. A configured model id must be one the agent offers verbatim (for Claude: `default`, `sonnet`, `haiku`, `opus`, `fable`); any other id fails the session open with the list the agent does offer.
 
-> **Known issue — `acpx` ≤ 0.3.1:** The `--model` flag is not supported. Model selection via `execution.model` or per-package `model` overrides has no effect. As a temporary workaround, use the [nathapp-io/acpx](https://github.com/nathapp-io/acpx) fork which adds `--model` support. Upstream fix is tracked in [openclaw/acpx#49](https://github.com/openclaw/acpx/issues/49).
+**Upgrading from acpx (nax 0.83.6):** `acpx` is no longer used and can be uninstalled. Install the ACP launcher for each agent you run (table above). Remove `agent.acp.transport` from your config: it now has no effect and the config load warns about it. `ACPX_*` environment variables are no longer passed to agent processes.
 
 **Configuring the default agent and fallback chain (ADR-012):**
 
-The built-in default is `"protocol": "hybrid"` with `"default": "native"`. The example below opts into an acpx agent instead; under `"acp"`, `agent.default` must name an acpx agent, and under `"native"` it must be `"native"` (the config load rejects anything else). `"hybrid"` permits both, including a fallback map that crosses transports.
+The built-in default is `"protocol": "hybrid"` with `"default": "native"`. The example below opts into an ACP agent instead; under `"acp"`, `agent.default` must name an ACP agent, and under `"native"` it must be `"native"` (the config load rejects anything else). `"hybrid"` permits both, including a fallback map that crosses transports.
 
 ```json
 {
@@ -97,16 +96,17 @@ nax has four independent retry layers. Only one of them swaps the agent; the res
 | Layer | Trigger | Owner | Swaps agent? |
 |:------|:--------|:------|:-------------|
 | **Availability** | Auth (401), rate-limit (429), service down | `AgentManager` | Yes — walks `agent.fallback.map` |
-| **Transport** | Broken socket, `QUEUE_DISCONNECTED`, stale session | `AcpAgentAdapter` | No — same agent, new protocol session |
-| **Agent-internal** | A transient provider fault inside one call — stalled stream, 502/503 | acpx child process (ACP) / native turn loop (native) | No — same agent, same call re-issued |
+| **Transport** | Broken socket, agent crash, stale session | `AcpAgentAdapter` | No — same agent, new protocol session |
+| **Agent-internal** | A transient provider fault inside one call — stalled stream, 502/503 | ACP turn loop (`agent.acp.promptRetries`) / native turn loop (native) | No — same agent, same call re-issued |
 | **Payload** | JSON parse / schema mismatch on LLM reply | Caller (e.g. semantic / adversarial review) | No — same agent, re-ask |
 
-The agent-internal layer is one idea with two implementations, because the two
-transports put the agent in different places. On ACP, `agent.acp.promptRetries`
-becomes acpx's `--prompt-retries` and the retry happens inside the spawned
-claude / codex / opencode process, outside nax. On native there is no child
-process — nax *is* the agent — so `agent.native.transportRetry` does the same
-job inside the native turn loop (nax#1870). Neither is a `RetryStrategy`: this
+The agent-internal layer is one idea with two implementations. On ACP,
+`agent.acp.promptRetries` (default 0, opt-in) re-issues the prompt inside nax's
+ACP turn loop, only when the failed attempt produced no output, with backoff
+`min(1000 * 2^n, 10000)` ms; the agent process may also absorb transient faults
+on its own. On native there is no child process — nax *is* the agent — so
+`agent.native.transportRetry` does the same job inside the native turn loop
+(nax#1870). Neither is a `RetryStrategy`: this
 layer sits below the dispatch tiers, inside the execution of a single call.
 
 When the availability layer fires, `AgentManager.runWithFallback` iterates the

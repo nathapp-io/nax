@@ -77,10 +77,11 @@ describe("describeUnreferencedAgentModels", () => {
     expect(message).toContain('Set agent.default "claude"');
   });
 
-  test("under protocol native it does not suggest an acpx default the gate would reject", () => {
+  test("under protocol native it does not suggest an ACP default the gate would reject", () => {
     const config = makeNaxConfig({ agent: { protocol: "native", default: "native" } });
     const message = describeUnreferencedAgentModels(["claude"], config);
     expect(message).not.toContain('Set agent.default "claude"');
     expect(message).toContain('protocol "native"');
+    expect(message).toContain("ACP agents cannot run");
   });
 });

@@ -81,12 +81,12 @@ export interface SessionDescriptor {
   /** Story this session is executing (undefined for feature-level sessions) */
   storyId?: string;
   /**
-   * Protocol-level IDs from the acpx adapter.
+   * Protocol-level IDs from the adapter.
    * Populated after the first successful agent.run() or agent.complete() call.
    */
   protocolIds: ProtocolIds;
   /**
-   * ACP session handle (name) — the string passed to acpx as --session.
+   * ACP session handle (name) — nax's name for the session.
    * Format: nax-<hash8>-<feature>-<storyId>-<role>
    * Used by the adapter to resume the physical ACP session.
    */
@@ -188,7 +188,7 @@ export interface OpenSessionRequest {
   transcriptDir?: string;
   /**
    * Native: identity that owns the session's transcript, forwarded to the
-   * adapter's openSession — see OpenSessionOpts.transcriptOwner. acpx ignores it.
+   * adapter's openSession — see OpenSessionOpts.transcriptOwner. The ACP adapter ignores it.
    */
   transcriptOwner?: string;
   /**

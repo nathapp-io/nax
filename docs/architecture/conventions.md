@@ -14,7 +14,7 @@ src/
 ├── acceptance/       # Acceptance test generation, refinement, fix stories, templates
 │   └── templates/    # Test templates (unit, component, e2e, CLI, snapshot)
 ├── agents/           # Agent adapters — two transports: ACP (named CLI agents) and native (ADR-027)
-│   ├── acp/          # ACP adapter over acpx (adapter, adapter-lifecycle/-output/-complete-flow, spawn-client*, parser, interaction-bridge, parse-agent-error, token-mapper)
+│   ├── acp/          # ACP adapter over @nathapp/nax-agent-acp (adapter, session, open-context, turn-loop, stream-bridge, complete, failure-map, pricing, tool-audit)
 │   ├── catalog/      # nax-ai model-catalog boundary — returns nax-ai's `Pricing`; other code gets `Pricing`/`TokenUsage` via `cost/standard-types.ts`
 │   ├── cost/         # Centralized cost calculation (calculate, estimate, rate-card, token-mapper, types, standard-types)
 │   ├── native/       # In-process native agent over @nathapp/nax-ai (adapter, client, auth, models)
@@ -198,8 +198,7 @@ The `_deps` pattern is used extensively (200+ modules). Key examples by subsyste
 | | `src/tdd/cleanup.ts` | `_cleanupDeps` | `ps`, `Bun.sleep`, `process.kill` |
 | **Verification** | `src/verification/executor.ts` | `_executorDeps` | Shell test command execution |
 | | `src/verification/smart-runner.ts` | `_smartRunnerDeps` | Smart test file selection |
-| **Agents** | `src/agents/acp/adapter-lifecycle.ts` | `_acpAdapterDeps`, `_fallbackDeps` | ACP session management |
-| | `src/agents/acp/spawn-client-deps.ts` | `_spawnClientDeps` | acpx process spawning |
+| **Agents** | `src/agents/acp/session.ts` | `_acpDeps` | ACP backend launch, rate card, cwd probe, launcher lookup |
 | | `src/agents/native/client.ts` | `_clientDeps` | Native (nax-ai) client |
 | **Pipeline** | `src/pipeline/stages/routing.ts` | `_routingDeps` | Routing stage |
 | | `src/pipeline/stages/execution.ts` | `_executionDeps` | Execution stage |

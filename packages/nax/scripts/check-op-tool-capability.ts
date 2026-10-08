@@ -5,7 +5,7 @@
  *
  * Why this exists: `resolveDeclaredTools` is `op.tools ?? DEFAULT_CODING_TOOLS`
  * (`src/operations/types.ts`), so omitting the field yields a read-only set
- * rather than an error. On acpx that is inert -- the ACP agent brings its own
+ * rather than an error. On ACP that is inert -- the ACP agent brings its own
  * tools -- so the omission never surfaces there. On the native transport it
  * silently disables the op: a test-writer that cannot write, a verifier that
  * cannot run its own tests.
@@ -175,7 +175,7 @@ async function main(): Promise<void> {
     }
     console.error(`\nAdd a \`tools:\` declaration to the operation. Omitting it yields`);
     console.error(`DEFAULT_CODING_TOOLS (read-only), which disables the op on the native`);
-    console.error(`transport while leaving acpx unaffected -- so this never fails at runtime.`);
+    console.error(`transport while leaving ACP agents unaffected -- so this never fails at runtime.`);
     process.exit(1);
   }
 

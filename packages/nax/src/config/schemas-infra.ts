@@ -6,7 +6,7 @@
 
 import { DEFAULT_INSTRUCTION_FILE_NAME, isInstructionFileName } from "@nathapp/nax-agent/internal";
 import { z } from "zod";
-import { DEFAULT_ACP_TRANSPORT, DEFAULT_AGENT_NAME, DEFAULT_AGENT_PROTOCOL } from "./agent-defaults";
+import { DEFAULT_AGENT_NAME, DEFAULT_AGENT_PROTOCOL } from "./agent-defaults";
 import { ConfiguredModelSchema, ModelTierSchema, ProviderCatalogOverrideSchema } from "./schemas-model";
 
 export const PlanConfigSchema = z.object({
@@ -321,26 +321,19 @@ export const AgentSpinBreakerConfigSchema = z
   });
 
 const AgentAcpConfigSchema = z.object({
-  /**
-   * S4b development key: "sdk" (default since S4b-4) drives ACP agents through
-   * @nathapp/nax-agent-acp, "acpx" through the acpx CLI. S4b-5 deletes the
-   * key with acpx.
-   */
-  transport: z.enum(["acpx", "sdk"]).default(DEFAULT_ACP_TRANSPORT),
   promptRetries: z.number().int().min(0).max(5).default(0),
   /**
-   * trackedSpawn hard deadline (ms) for teardown ops — `sessions close`,
-   * `acpx stop`, `cancel`. Bounds a wedged acpx subprocess so run teardown
-   * can't hang indefinitely (PERF-1). Issue #1583: keep this tight — it must
-   * NOT be reused for startup ops (see trackedSpawnStartupDeadlineMs).
+   * Hard deadline (ms) for teardown: closing an ACP session and the cancel
+   * grace (capped by the backend). Keeps run teardown from hanging on a wedged
+   * agent process (PERF-1). Issue #1583: keep it tight; it must NOT be reused
+   * for startup (see trackedSpawnStartupDeadlineMs).
    */
   trackedSpawnDeadlineMs: z.number().int().positive().default(10_000),
   /**
-   * trackedSpawn hard deadline (ms) for startup ops — `sessions ensure`
-   * (createSession/loadSession) and applyReasoningEffort. Issue #1583:
-   * `sessions ensure` measured a real-world median of 8.15s, so this needs
-   * real headroom over that under concurrency — do not lower toward the
-   * teardown deadline.
+   * Hard deadline (ms) for startup: launching the agent and opening or
+   * restoring its ACP session. Issue #1583: session start measured a
+   * real-world median of 8.15s, so this needs real headroom under concurrency;
+   * do not lower it toward the teardown deadline.
    */
   trackedSpawnStartupDeadlineMs: z.number().int().positive().default(30_000),
 });
@@ -355,8 +348,8 @@ const AgentAcpConfigSchema = z.object({
  * modest bounded retry (three attempts, jittered exponential backoff from
  * 2s: ~2s, ~4s) covers a meaningful share of transient stalls at a cost of
  * seconds, against the alternative of discarding a multi-minute session.
- * Unlike `promptRetries` (default 0, opt-in), this defaults ON: acpx already
- * has its own absorption layer to opt out of, native has none at all, so an
+ * Unlike `promptRetries` (default 0, opt-in), this defaults ON: an ACP agent's
+ * own process already has an absorption layer to opt out of, native has none at all, so an
  * inert default here would leave the fault this issue exists to fix
  * unhandled by default.
  */
@@ -415,7 +408,6 @@ export const AgentConfigSchema = z.object({
     rebuildContext: true,
   }),
   acp: AgentAcpConfigSchema.default({
-    transport: DEFAULT_ACP_TRANSPORT,
     promptRetries: 0,
     trackedSpawnDeadlineMs: 10_000,
     trackedSpawnStartupDeadlineMs: 30_000,

@@ -5,7 +5,6 @@
  * to keep each file within the 600-line project limit.
  */
 
-import type { AcpTransport } from "./agent-defaults";
 import type { ProviderCatalogOverride } from "./schema-types";
 
 /** Generate command configuration */
@@ -79,8 +78,6 @@ export interface IdleWatchdogConfig {
 
 /** ACP-specific agent configuration */
 export interface AgentAcpConfig {
-  /** How ACP agents are driven: "sdk" (default since S4b-4) or "acpx" (S4b development key). */
-  transport?: AcpTransport;
   /** Retries for transient prompt failures (default: 0, opt-in) */
   promptRetries?: number;
   /**
@@ -97,8 +94,8 @@ export interface AgentAcpConfig {
 
 /**
  * Bounded retry for a transport/overloaded fault from the native turn loop
- * (nax#1870). The native counterpart to `agent.acp.promptRetries`: acpx's
- * spawned CLI process absorbs a transient provider stall internally before
+ * (nax#1870). The native counterpart to `agent.acp.promptRetries`: an ACP
+ * agent's spawned process absorbs a transient provider stall internally before
  * nax ever observes it, but native has no such process — nax is the harness
  * for it, and `packages/nax-agent/src/native/session/turn-retry.ts` is where it lives.
  */

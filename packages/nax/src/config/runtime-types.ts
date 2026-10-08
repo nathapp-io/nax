@@ -481,7 +481,7 @@ export interface TestingConfig {
    */
   hermetic: boolean;
   /**
-   * Project-specific external boundaries to mock (e.g. ["claude", "acpx", "redis", "grpc"]).
+   * Project-specific external boundaries to mock (e.g. ["claude", "gh", "redis", "grpc"]).
    * Injected into the hermetic requirement section so the AI knows which project tools to mock.
    */
   externalBoundaries?: string[];

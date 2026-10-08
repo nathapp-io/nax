@@ -35,7 +35,9 @@ describe("classifyCompleteException", () => {
   });
 
   test("classifies a model-not-available error message as quality/fail-adapter-error, non-retriable", () => {
-    const err = new Error('Cannot apply --model "bogus": the ACP agent did not advertise that model.');
+    const err = new Error(
+      "There's an issue with the selected model (bogus). It may not exist or you may not have access to it. Run --model to pick a different model.",
+    );
     const failure = classifyCompleteException(err);
     expect(failure.category).toBe("quality");
     expect(failure.outcome).toBe("fail-adapter-error");

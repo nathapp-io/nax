@@ -7,8 +7,8 @@
 
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { acpAdapterFor } from "../agents";
-import { ACP_SDK_AGENT_NAMES } from "../agents/acp-sdk";
-import { type AcpTransport, DEFAULT_ACP_TRANSPORT, deepMergeConfig, type NaxConfig } from "../config";
+import { ACP_AGENT_NAMES } from "../agents/acp";
+import { deepMergeConfig, type NaxConfig } from "../config";
 import { loadProfile } from "../config/profile";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
@@ -33,8 +33,8 @@ export interface ContestantValidationResult {
 }
 
 export interface PreflightDeps {
-  /** Takes the agent *name* and the contestant's ACP transport; asks that transport's adapter (S4b-2). */
-  isInstalled: (agentName: string, transport: AcpTransport) => boolean | Promise<boolean>;
+  /** Takes the agent *name*; asks its registry adapter. */
+  isInstalled: (agentName: string) => boolean | Promise<boolean>;
   hasAcpAdapterEntry: (name: string) => boolean;
   /** Resolves a `--compare` entry (a profile name) to its raw overlay data. */
   loadProfile: (profileName: string, projectRoot: string) => Promise<Record<string, unknown>>;
@@ -46,7 +46,7 @@ export interface PreflightDeps {
  * When omitted, the module-level `_preflightDeps` entries are consulted.
  */
 export interface PreflightCallableDeps {
-  isInstalled: (agentName: string, transport: AcpTransport) => boolean | Promise<boolean>;
+  isInstalled: (agentName: string) => boolean | Promise<boolean>;
   hasAcpAdapterEntry?: (name: string) => boolean;
   loadProfile?: (profileName: string, projectRoot: string) => Promise<Record<string, unknown>>;
 }
@@ -54,13 +54,13 @@ export interface PreflightCallableDeps {
 /**
  * Injectable dependencies. Tests override individual entries.
  *
- * `isInstalled` asks the registry's adapter for that transport (see
+ * `isInstalled` asks the registry's adapter (see
  * `acpAdapterFor` in `src/agents/registry.ts`), rather than assuming the agent
  * name and its PATH binary are the same string.
  */
 export const _preflightDeps: PreflightDeps = {
-  isInstalled: (agentName: string, transport: AcpTransport) => acpAdapterFor(agentName, transport).isInstalled(),
-  hasAcpAdapterEntry: (name: string) => ACP_SDK_AGENT_NAMES.has(name),
+  isInstalled: (agentName: string) => acpAdapterFor(agentName).isInstalled(),
+  hasAcpAdapterEntry: (name: string) => ACP_AGENT_NAMES.has(name),
   loadProfile: (profileName: string, projectRoot: string) => loadProfile(profileName, projectRoot),
 };
 
@@ -75,13 +75,6 @@ export function parseCompareList(input: string): string[] {
     .filter((s) => s.length > 0);
 }
 
-/** A contestant's ACP transport: its profile's `agent.acp.transport`, else the run's (D2-o). */
-function contestantTransport(profileData: Record<string, unknown>, base: AcpTransport): AcpTransport {
-  const agent = profileData.agent as { acp?: { transport?: unknown } } | undefined;
-  const transport = agent?.acp?.transport;
-  return transport === "acpx" || transport === "sdk" ? transport : base;
-}
-
 /**
  * Validate that every requested contestant (a profile name) resolves and
  * that its resolved agent is registered and installed. Returns both the
@@ -93,7 +86,6 @@ export async function validateContestants(
   names: string[],
   projectRoot: string,
   deps: PreflightCallableDeps = _preflightDeps,
-  baseTransport: AcpTransport = DEFAULT_ACP_TRANSPORT,
 ): Promise<ContestantValidationResult> {
   const hasAcpAdapterEntry = deps.hasAcpAdapterEntry ?? _preflightDeps.hasAcpAdapterEntry;
   const loadProfileFn = deps.loadProfile ?? _preflightDeps.loadProfile;
@@ -145,7 +137,7 @@ export async function validateContestants(
       continue;
     }
 
-    if (!(await deps.isInstalled(resolvedAgent, contestantTransport(resolvedProfileData, baseTransport)))) {
+    if (!(await deps.isInstalled(resolvedAgent))) {
       errors.push({
         agent: name,
         reason: "dnf-not-installed",

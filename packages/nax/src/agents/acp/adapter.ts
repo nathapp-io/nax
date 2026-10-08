@@ -1,240 +1,171 @@
 /**
- * ACP Agent Adapter — implements AgentAdapter interface via ACP session protocol.
+ * AcpAgentAdapter: nax's AgentAdapter over @nathapp/nax-agent-acp (S4b spec
+ * §5.1). It drives the backend's S1 adapter itself (D24, B6) with nax's turn
+ * loop around it. The live map routes
+ * turns and closes from a nax handle id to its session; it is never used to
+ * reuse a session, which SessionManager owns (§6.1).
  *
- * All methods use the createClient injectable as the transport layer.
- * Session lifecycle (naming, persistence, ensure/close) is handled by
- * thin wrapper functions on top of AcpClient/AcpSession.
- *
- * Session naming: nax-<gitRootHash8>-<feature>-<story>[-<role>]
- * Persistence: SessionManager disk-backed descriptors at .nax/features/<feature>/sessions/<id>/descriptor.json
- *
- * See: docs/specs/acp-session-mode.md
+ * complete() is a throwaway session (complete.ts, B3).
  */
-
-import type { ProtocolIds } from "@nathapp/nax-agent";
+import type { OpenSessionOpts, ProtocolIds } from "@nathapp/nax-agent";
+import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
-import type { ITokenUsageMapper } from "../cost";
-import { raceWithAbort, throwIfAborted } from "../turn";
+import { buildAllowedEnv } from "../shared/env";
+import { throwIfAborted } from "../turn";
 import type {
   AgentAdapter,
   AgentCapabilities,
   AgentRunOptions,
   CompleteResult,
-  OpenSessionOpts,
   ResolvedCompleteOptions,
   SendTurnOpts,
   SessionHandle,
   TurnResult,
 } from "../types";
-import { closePhysicalSession as closePhysicalSessionImpl } from "./adapter-close-physical";
-import { runCompleteFlow } from "./adapter-complete-flow";
-import { _acpAdapterDeps, AcpSessionHandleImpl, closeAcpSession, ensureAcpSession } from "./adapter-lifecycle";
-import { buildSendTurnFrame, initialSendTurnState, runTurnLoop, zeroCostAbortedResult } from "./adapter-send-turn";
-import { resolveRegistryEntry } from "./agent-entries";
-import { defaultAcpTokenUsageMapper } from "./token-mapper";
-import type { SessionTokenUsage } from "./wire-types";
+import { runComplete } from "./complete";
+import { type AcpEntry, acpEntry, UNSUPPORTED_ENTRY } from "./entries";
+import { _acpDeps, type AcpSession, closeDeadlineMs, createSession, shutdownSession } from "./session";
+import { runTurnLoop } from "./turn-loop";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Backward-compat re-exports (consumers import from this file via barrel)
-// ─────────────────────────────────────────────────────────────────────────────
+const STAGE = "acp";
 
-export {
-  _acpAdapterDeps,
-  _fallbackDeps,
-  AcpSessionHandleImpl,
-  closeAcpSession,
-  ensureAcpSession,
-  runSessionPrompt,
-} from "./adapter-lifecycle";
-export type { BuildTurnResultInput } from "./adapter-output";
-export { buildTurnResult, deriveTokenUsage } from "./adapter-output";
-export type { AcpClient, AcpSession, AcpSessionResponse } from "./adapter-session-types";
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Constants / agent registry
-// ─────────────────────────────────────────────────────────────────────────────
-
-export { ACP_ADAPTER_NAMES } from "./agent-entries";
-
-// ─────────────────────────────────────────────────────────────────────────────
-// AcpAgentAdapter
-// ─────────────────────────────────────────────────────────────────────────────
+function notifyEstablished(opts: OpenSessionOpts, protocolIds: ProtocolIds | undefined, name: string): void {
+  if (opts.onSessionEstablished === undefined || protocolIds === undefined) return;
+  try {
+    opts.onSessionEstablished(protocolIds, name);
+  } catch (err) {
+    getSafeLogger()?.warn(STAGE, "onSessionEstablished callback threw; continuing", {
+      sessionName: name,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
 
 export class AcpAgentAdapter implements AgentAdapter {
   readonly name: string;
   readonly displayName: string;
+  /** The agent's own CLI, for display and `nax agents`' version probe (D2-f). */
   readonly binary: string;
   readonly capabilities: AgentCapabilities;
-  private readonly _mapper: ITokenUsageMapper<SessionTokenUsage>;
+  private readonly entry: AcpEntry | undefined;
+  private readonly live = new Map<string, AcpSession>();
 
-  constructor(agentName: string, mapper: ITokenUsageMapper<SessionTokenUsage> = defaultAcpTokenUsageMapper) {
-    const entry = resolveRegistryEntry(agentName);
+  constructor(agentName: string) {
+    this.entry = acpEntry(agentName);
+    const shown = this.entry ?? UNSUPPORTED_ENTRY;
     this.name = agentName;
-    this.displayName = entry.displayName;
-    this.binary = entry.binary;
-    this._mapper = mapper;
+    this.displayName = shown.displayName;
+    this.binary = shown.binary;
     this.capabilities = {
-      supportedTiers: entry.supportedTiers,
-      maxContextTokens: entry.maxContextTokens,
+      supportedTiers: shown.supportedTiers,
+      maxContextTokens: shown.maxContextTokens,
       features: new Set<"tdd" | "review" | "refactor" | "batch">(["tdd", "review", "refactor"]),
     };
   }
 
+  /** True when nax-agent-acp finds a launch candidate for the agent, the npx fallback included (spec §6.8). */
   async isInstalled(): Promise<boolean> {
-    const path = _acpAdapterDeps.which(this.binary);
-    return path !== null;
+    return this.entry !== undefined && _acpDeps.launchCandidateKind(this.entry.agent) !== undefined;
   }
 
-  buildCommand(_options: AgentRunOptions): string[] {
-    // ACP adapter uses createClient, not direct CLI invocation.
-    // Return a descriptive command for logging/display purposes only.
-    return ["acpx", this.name, "session"];
+  /** Spec §6.8, D3-k: the run's install check warns when only the npx fallback resolves. */
+  launchNote(): string | undefined {
+    if (this.entry === undefined || _acpDeps.launchCandidateKind(this.entry.agent) !== "npx") return undefined;
+    return `Only the npx fallback can launch ACP agent "${this.name}"; the first run downloads it inside the startup deadline`;
   }
 
-  buildAllowedEnv(_options?: AgentRunOptions): Record<string, string | undefined> {
-    // createClient manages its own env; no separate env building needed.
-    return {};
+  /** Display only: the backend resolves the launch command per session. */
+  buildCommand(): string[] {
+    return ["acp", this.name];
+  }
+
+  buildAllowedEnv(options?: AgentRunOptions): Record<string, string | undefined> {
+    return buildAllowedEnv(options?.modelDef.env === undefined ? undefined : { modelEnv: options.modelDef.env });
   }
 
   async complete(prompt: string, options: ResolvedCompleteOptions): Promise<CompleteResult> {
-    // US-002: resolve the rate card ONCE per complete() call. Both the success
-    // and the cancelled-but-billable path price from it, and its `source`
-    // becomes CompleteResult.pricingSource. The flow itself lives in
-    // `adapter-complete-flow.ts` (file-size split, see project conventions).
-    const rateCard = await _acpAdapterDeps.resolveRateCard(options.modelDef.model);
-    return runCompleteFlow({
-      adapter: this,
-      prompt,
-      options,
-      mapper: this._mapper,
-      rateCard,
-      createClient: _acpAdapterDeps.createClient,
-    });
-  }
-
-  async closePhysicalSession(
-    handle: string,
-    workdir: string,
-    options?: { force?: boolean; signal?: AbortSignal },
-  ): Promise<void> {
-    return closePhysicalSessionImpl(this.name, handle, workdir, options);
+    const entry = this.requireEntry(options.sessionName ?? "complete");
+    throwIfAborted(options.signal, "Run aborted — shutdown in progress");
+    await this.requireWorkdir(options.sessionName ?? "complete", options.workdir);
+    return runComplete(this.name, entry.agent, prompt, options);
   }
 
   async openSession(name: string, opts: OpenSessionOpts): Promise<SessionHandle> {
-    // opts.resume is a hint — the ACP adapter always attempts loadSession first
-    // via ensureAcpSession, so it is inherently self-resuming regardless of this flag.
-    const {
-      agentName,
-      workdir,
-      resolvedPermissions,
-      modelDef,
-      timeoutSeconds,
-      promptRetries,
-      onSessionEstablished,
-      onPidSpawned,
-      onPidExited,
-    } = opts;
-    const { signal } = opts;
-
-    throwIfAborted(signal, "Run aborted — shutdown in progress");
-
-    // US-002: resolve the rate card ONCE here. The handle carries it, so every
-    // sendTurn on this session reuses it rather than re-resolving per turn.
-    const rateCard = await _acpAdapterDeps.resolveRateCard(modelDef.model);
-
-    const cmdStr = `acpx --model ${modelDef.model} ${agentName}`;
-    const client = _acpAdapterDeps.createClient(
-      cmdStr,
-      workdir,
-      timeoutSeconds,
-      onPidSpawned,
-      promptRetries,
-      onPidExited,
-      {
-        onStreamActivity: opts.onStreamActivity,
-        onActiveCall: opts.onActiveCall,
-        trackedSpawnDeadlineMs: opts.trackedSpawnDeadlineMs,
-        trackedSpawnStartupDeadlineMs: opts.trackedSpawnStartupDeadlineMs,
-        env: modelDef.env,
-      },
-    );
-    let session: import("./adapter-session-types").AcpSession | undefined;
-
-    try {
-      await raceWithAbort(client.start(), signal, "Run aborted — shutdown in progress");
-
-      const permissionMode = resolvedPermissions.mode;
-      getSafeLogger()?.info("acp-adapter", "Permission mode resolved", {
-        permission: permissionMode,
-        stage: "open-session",
-      });
-
-      const ensured = await raceWithAbort(
-        ensureAcpSession(client, name, agentName, permissionMode),
-        signal,
-        "Run aborted — shutdown in progress",
-      );
-      session = ensured.session;
-
-      const protocolIds: ProtocolIds = {
-        recordId: (session as { recordId?: string }).recordId ?? null,
-        sessionId: (session as { id?: string }).id ?? null,
-      };
-
-      if (onSessionEstablished) {
-        try {
-          onSessionEstablished(protocolIds, name);
-        } catch (err) {
-          getSafeLogger()?.warn("acp-adapter", "onSessionEstablished callback threw — continuing", {
-            sessionName: name,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }
-      }
-
-      throwIfAborted(signal, "Run aborted — shutdown in progress");
-
-      return new AcpSessionHandleImpl({
-        id: name,
-        agentName,
-        protocolIds,
-        client,
-        session,
+    const entry = this.requireEntry(name);
+    throwIfAborted(opts.signal, "Run aborted — shutdown in progress");
+    await this.requireWorkdir(name, opts.workdir);
+    const stale = this.live.get(name);
+    if (stale !== undefined) {
+      getSafeLogger()?.warn(STAGE, "An ACP session of this name was still open; closing it before opening fresh", {
         sessionName: name,
-        resumed: ensured.resumed,
-        timeoutSeconds,
-        modelDef,
-        modelTier: opts.modelTier,
-        rateCard,
-        permissionMode: resolvedPermissions.mode,
       });
-    } catch (error) {
-      if (session) {
-        await closeAcpSession(session).catch(() => {});
-      }
-      await client.close().catch(() => {});
-      throw error;
+      await this.closeSession(stale.handle);
     }
+    getSafeLogger()?.info(STAGE, "Opening ACP session", {
+      sessionName: name,
+      agent: entry.agent,
+      permission: opts.resolvedPermissions.mode,
+    });
+    const session = await createSession(name, entry.agent, opts);
+    this.live.set(name, session);
+    notifyEstablished(opts, session.handle.protocolIds, name);
+    return session.handle;
   }
 
   async sendTurn(handle: SessionHandle, prompt: string, opts: SendTurnOpts): Promise<TurnResult> {
-    const impl = handle as AcpSessionHandleImpl;
-    // US-002: the card was resolved once at openSession — a turn reads it off
-    // the handle and never re-resolves. The turn loop itself lives in
-    // `adapter-send-turn.ts` (complexity split); this method sequences it.
-    const frame = buildSendTurnFrame({ impl, mapper: this._mapper, opts });
-    if (frame.opts.signal?.aborted) {
-      return zeroCostAbortedResult(frame);
-    }
-    return runTurnLoop(frame, initialSendTurnState(prompt));
+    return runTurnLoop(this.sessionFor(handle.id), prompt, opts);
   }
 
   async closeSession(handle: SessionHandle): Promise<void> {
-    const impl = handle as AcpSessionHandleImpl;
-    try {
-      await closeAcpSession(impl._session);
-    } finally {
-      await impl._client.close().catch(() => {});
+    const session = this.live.get(handle.id);
+    if (session === undefined) return;
+    this.live.delete(handle.id);
+    await shutdownSession(session, { waitMs: closeDeadlineMs(session.opts) });
+  }
+
+  /** Closes a session this adapter opened; any other handle is a no-op (spec §11 item 6). */
+  async closePhysicalSession(
+    handle: string,
+    _workdir: string,
+    options?: { force?: boolean; signal?: AbortSignal },
+  ): Promise<void> {
+    const session = this.live.get(handle);
+    if (session === undefined) {
+      getSafeLogger()?.debug(STAGE, "No live ACP session for this handle; nothing to close", { sessionName: handle });
+      return;
     }
+    this.live.delete(handle);
+    await shutdownSession(session, {
+      waitMs: closeDeadlineMs(session.opts),
+      force: options?.force === true,
+      ...(options?.signal === undefined ? {} : { signal: options.signal }),
+    });
+  }
+
+  private requireEntry(sessionName: string): AcpEntry {
+    if (this.entry !== undefined) return this.entry;
+    throw new NaxError(
+      `Agent "${this.name}" has no ACP launcher, so it cannot run as an ACP agent`,
+      "ACP_AGENT_UNSUPPORTED",
+      { stage: STAGE, agentName: this.name, sessionName },
+    );
+  }
+
+  private async requireWorkdir(sessionName: string, workdir: string): Promise<void> {
+    if (await _acpDeps.cwdExists(workdir)) return;
+    throw new NaxError(
+      `[acp] Session cwd does not exist: ${workdir} — cannot start agent "${this.name}". If this is a new package for the feature, ensure its directory is created before the run.`,
+      "SESSION_CWD_MISSING",
+      { stage: "open-session", agentName: this.name, cwd: workdir, sessionName },
+    );
+  }
+
+  private sessionFor(id: string): AcpSession {
+    const session = this.live.get(id);
+    if (session !== undefined) return session;
+    throw new NaxError(`No open ACP session "${id}" on this adapter`, "ACP_SDK_SESSION_NOT_OPEN", {
+      stage: STAGE,
+      sessionName: id,
+    });
   }
 }

@@ -2,7 +2,7 @@ import type { AgentError, CompleteError, CompleteResult } from "../types";
 
 /**
  * Classify a `CompleteError` that already carries a transport-level retryable
- * verdict (set by the acp adapter when acpx's stop-reason-error response included
+ * verdict (set by an adapter when the agent's error response included
  * `retryable`). Returning `null` means the caller should fall back to
  * `parseAgentError(error.message)`'s stderr-pattern classification instead.
  *
@@ -18,7 +18,7 @@ export function classifyCompleteError(
   pricingSource?: CompleteResult["pricingSource"],
 ): CompleteResult | null {
   if (error.retryable === undefined) return null;
-  // Transport (acpx) already classified this stop-reason-error turn as
+  // The transport already classified this stop-reason-error turn as
   // retryable or not — preserve that instead of falling through to the
   // stderr-pattern-matching classifier, which has nothing to match on
   // for this constant message and would misreport it as "unknown".
@@ -101,11 +101,10 @@ export function classifyParsedAgentError(
  * Parse structured adapter error output to identify agent error type.
  *
  * Classification intentionally uses machine-readable signals only:
- * - Root JSON object fields (type/status/statusCode/code/acpxCode/detailCode)
+ * - Root JSON object fields (type/status/statusCode/code/detailCode)
  * - Nested Anthropic-style error shape: `{"type":"error","error":{"type":"authentication_error"}}`
- * - Embedded JSON objects within a larger free-text message (acpx wraps vendor
- *   errors in a human-readable prefix — #592)
- * - bracketed code suffixes (e.g. "[ACPX_RATE_LIMIT/TOO_MANY_REQUESTS]")
+ * - Embedded JSON objects within a larger free-text message (launchers wrap
+ *   vendor errors in a human-readable prefix — #592)
  * - explicit key=value codes (e.g. "statusCode=429")
  *
  * Free-text phrase inference is intentionally not supported — we only match
@@ -124,7 +123,7 @@ export function parseAgentError(stderr: string): AgentError {
   }
 
   // 2. If the whole string isn't JSON, look for embedded JSON objects (#592).
-  //    Acpx wraps vendor errors like:
+  //    Vendors and agent launchers may wrap provider errors in a human-readable prefix, like:
   //      `Internal error: Failed to authenticate. API Error: 401 {"type":"error","error":{"type":"authentication_error",...}}`
   //    The embedded object is the authoritative classifier.
   if (!parsedJson) {
@@ -134,17 +133,12 @@ export function parseAgentError(stderr: string): AgentError {
     }
   }
 
-  const bracketed = extractBracketedCodes(stderr);
-  const fromBracketed = classifyFromCodeTokens(bracketed);
-  if (fromBracketed) return fromBracketed;
-
   const fromKeyValue = classifyFromCodeTokens(extractKeyValueCodes(stderr));
   if (fromKeyValue) return fromKeyValue;
 
-  // 3. acpx 0.6.1: flat-string model-not-available (Claude Code path).
+  // 3. Claude Code's flat-string model rejection (no machine-readable code).
   //    Claude accepts unknown models at session/new but rejects at prompt time
-  //    via a plain error string with no machine-readable code — only this
-  //    specific acpx-controlled message can be matched.
+  //    via a plain error string.
   const flatModel = classifyModelErrorMessage(stderr);
   if (flatModel) return flatModel;
 
@@ -162,9 +156,7 @@ function classifyJsonPayload(payload: Record<string, unknown>): AgentError | nul
   const nested = classifyNestedAnthropicError(payload);
   if (nested) return nested;
 
-  // acpx 0.6.1: model-not-available from JSON-RPC error envelope.
-  // The error.message is checked for stable acpx strings before the generic
-  // code-token path, which would only see the too-broad "RUNTIME" acpxCode.
+  // Model-not-available carried in a JSON-RPC error envelope's message.
   const jsonRpcModel = classifyJsonRpcModelError(payload);
   if (jsonRpcModel) return jsonRpcModel;
 
@@ -290,13 +282,8 @@ function parseJsonObject(stderr: string): Record<string, unknown> | null {
 }
 
 /**
- * Detect model-not-available from a JSON-RPC error envelope.
- *
- * acpx 0.6.1 throws RequestedModelUnsupportedError (src/acp/model-support.ts)
- * which is serialised to a JSON-RPC -32603 with these stable message prefixes:
- *   "Cannot apply --model \"...\": the ACP agent did not advertise that model."
- *   "Cannot apply --model \"...\": the ACP agent did not advertise model support."
- * The acpxCode is "RUNTIME" (too generic) so we check the message instead.
+ * Detect model-not-available from a JSON-RPC error envelope whose
+ * `error.message` carries Claude Code's model rejection text.
  */
 function classifyJsonRpcModelError(payload: Record<string, unknown>): AgentError | null {
   const errObj = payload.error;
@@ -307,23 +294,11 @@ function classifyJsonRpcModelError(payload: Record<string, unknown>): AgentError
 }
 
 /**
- * Shared check for acpx model-support.ts and Claude Code error strings.
- *
- * Used both by the JSON-RPC envelope path (checking error.message) and the
- * flat-string path (checking the raw input directly).
- *
- * Pattern 1 — acpx src/acp/model-support.ts (assertRequestedModelSupported):
- *   stable prefixes from two throw sites in that file.
- * Pattern 2 — Claude Code prompt rejection: no machine-readable codes;
- *   two co-occurring substrings narrow the match to avoid false positives.
+ * Claude Code's prompt-time model rejection. It has no machine-readable code,
+ * so two co-occurring substrings narrow the match to avoid false positives.
+ * Used by the JSON-RPC envelope path (error.message) and the flat-string path.
  */
 function classifyModelErrorMessage(message: string): AgentError | null {
-  // acpx src/acp/model-support.ts (assertRequestedModelSupported) — stable prefixes.
-  if (message.startsWith("Cannot apply --model") || message.startsWith("Cannot replay saved model")) {
-    return { type: "model-not-available" };
-  }
-  // Claude Code prompt rejection — no machine-readable code; two co-occurring
-  // substrings narrow the match to avoid false positives.
   if (message.includes("There's an issue with the selected model") && message.includes("Run --model")) {
     return { type: "model-not-available" };
   }
@@ -351,8 +326,8 @@ function classifyDirectType(payload: Record<string, unknown>): AgentError | null
  * Collect classification code tokens from a JSON payload (ENH-1).
  *
  * Reads top-level code-like fields AND walks `error`/`data` sub-objects so a
- * JSON-RPC envelope whose classification lives in `error.data.acpxCode`
- * (e.g. acpx RATE_LIMIT / QUOTA_EXCEEDED) is seen even when the whole string
+ * JSON-RPC envelope whose classification lives in `error.data.detailCode`
+ * (e.g. RATE_LIMIT / QUOTA_EXCEEDED) is seen even when the whole string
  * parses as JSON — the embedded-JSON scan only runs on free text, and the
  * key-value regex cannot match JSON-quoted values.
  */
@@ -371,15 +346,7 @@ function extractJsonCodeTokens(payload: Record<string, unknown>): string[] {
   const MAX_WALK_DEPTH = 8;
   const walk = (obj: Record<string, unknown>, depth: number): void => {
     if (depth > MAX_WALK_DEPTH) return;
-    const candidates = [
-      obj.code,
-      obj.status,
-      obj.statusCode,
-      obj.httpStatus,
-      obj.errorCode,
-      obj.acpxCode,
-      obj.detailCode,
-    ];
+    const candidates = [obj.code, obj.status, obj.statusCode, obj.httpStatus, obj.errorCode, obj.detailCode];
     for (const candidate of candidates) pushToken(candidate);
 
     // Recurse one level through the JSON-RPC envelope shape
@@ -396,24 +363,11 @@ function extractJsonCodeTokens(payload: Record<string, unknown>): string[] {
   return tokens;
 }
 
-function extractBracketedCodes(stderr: string): string[] {
-  const tokens: string[] = [];
-  const matches = stderr.match(/\[([A-Z0-9_/-]+)\]/g) ?? [];
-  for (const entry of matches) {
-    const inner = entry.slice(1, -1);
-    for (const token of inner.split("/")) {
-      const trimmed = token.trim();
-      if (trimmed) tokens.push(trimmed);
-    }
-  }
-  return tokens;
-}
-
 function extractKeyValueCodes(stderr: string): string[] {
   const tokens: string[] = [];
   const patterns = [
     /(?:status|statusCode|httpStatus|code)\s*[:=]\s*(\d{3})/g,
-    /(?:acpxCode|detailCode|errorCode)\s*[:=]\s*([A-Z0-9_]+)/g,
+    /(?:detailCode|errorCode)\s*[:=]\s*([A-Z0-9_]+)/g,
   ];
 
   for (const pattern of patterns) {

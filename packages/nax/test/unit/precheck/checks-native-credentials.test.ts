@@ -31,6 +31,7 @@ describe("checkNativeCredentials", () => {
     expect(check.message).toContain("anthropic");
     expect(check.message).toContain("nax auth login anthropic");
     expect(check.message).toContain('agent.default "claude"');
+    expect(check.message).toContain("to use an ACP agent");
   });
 
   test("passes when every provider has a credential", async () => {

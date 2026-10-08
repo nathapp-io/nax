@@ -143,7 +143,7 @@ export const llmRoutingConfigSelector = pickSelector(
 // (Telegram escalation credentials) and `quality` (the gate commands the flow
 // re-runs at the repo root).
 // `agent` is in the slice so nax-finish can default the flow's agent to the one
-// the run itself used, instead of letting acpx fall back to its own default.
+// the run itself used, instead of letting the ACP agent fall back to its own default.
 // `execution` supplies the per-step LLM timeout the finish ops fall back to when
 // `finish.timeouts.stepMs` is unset (its default), matching how the acceptance
 // ops resolve `execution.sessionTimeoutSeconds`.

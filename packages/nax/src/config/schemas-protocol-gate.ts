@@ -64,7 +64,7 @@ export function validateProtocolGate(data: ProtocolGateInput, ctx: z.RefinementC
       code: "custom",
       path: ["agent", "default"],
       message:
-        'agent.protocol "acp" cannot reach agent.default "native", which is also the built-in default when agent.default is unset. Set agent.default to an acpx agent such as "claude", or use agent.protocol "hybrid".',
+        'agent.protocol "acp" cannot reach agent.default "native", which is also the built-in default when agent.default is unset. Set agent.default to an ACP agent such as "claude", or use agent.protocol "hybrid".',
     });
   }
 
@@ -83,7 +83,7 @@ export function validateProtocolGate(data: ProtocolGateInput, ctx: z.RefinementC
       ctx.addIssue({
         code: "custom",
         path: ["models", agent],
-        message: `agent.protocol "native" permits only models.native; "${agent}" is an acpx agent. Use "hybrid" to run both.`,
+        message: `agent.protocol "native" permits only models.native; "${agent}" is an ACP agent. Use "hybrid" to run both.`,
       });
     }
     if ((data.agent?.default ?? DEFAULT_AGENT) !== NATIVE) {

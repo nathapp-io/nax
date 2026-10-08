@@ -1,584 +1,232 @@
-/**
- * Tests for AcpAgentAdapter — ACP-002
- *
- * Covers:
- * - AgentAdapter interface compliance (name, binary, displayName, capabilities)
- * - isInstalled() checks binary on PATH via _acpAdapterDeps.which
- * - buildCommand() returns ACP command array for dry-run display
- * - complete() works in one-shot mode and returns trimmed text
- * - All AcpClient interactions mockable via injectable _deps pattern
- */
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { join } from "node:path";
+import {
+  type AgentStreamEvent,
+  isProcessAlive,
+  NO_OP_INTERACTION_HANDLER,
+  type OpenSessionOpts,
+  SessionTurnError,
+} from "@nathapp/nax-agent";
+import { cleanupTempDir, makeTempDir, waitForCondition } from "@test/helpers";
+import { fakeAcpBackend, fakeMethods, fakeStartPids } from "@test/helpers/acp-fake-agent";
+import { _acpDeps, AcpAgentAdapter } from "@/agents/acp";
+import { FALLBACK_RATES } from "@/agents/cost";
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { randomUUID } from "node:crypto";
-import { assertCaughtInstanceOf } from "@test/helpers";
-import { _acpAdapterDeps, AcpAgentAdapter } from "@/agents/acp/adapter";
-import type { AgentRunOptions } from "@/agents/types";
-import { CompleteError } from "@/agents/types";
-import { DEFAULT_CONFIG } from "@/config";
+const REAL = { ..._acpDeps };
+let dir = "";
+let record = "";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ACP mock types — mirror expected acpx interfaces for test isolation
-//
-// These are exported because manager.test.ts, manager-dispatch-emission.test.ts
-// and adapter-phase-a.test.ts import makeClient/makeSession from here. They
-// belong in _test-helpers.ts, but moving them changes which module first
-// initialises @/agents/acp and breaks 22 tests, so the move is deferred to the
-// per-file drain rather than done in a lint-prep commit (#1514 phase 3c).
-// ─────────────────────────────────────────────────────────────────────────────
+beforeEach(() => {
+  dir = makeTempDir("acp-adapter-");
+  record = join(dir, "record.jsonl");
+  _acpDeps.resolveRateCard = async () => ({ rates: FALLBACK_RATES, source: "fallback-rates" });
+});
 
-// biome-ignore lint/suspicious/noExportsInTest: shared by three sibling test files; see note above
-export interface AcpSessionResponse {
-  messages: Array<{ role: string; content: string }>;
-  stopReason: "end_turn" | "cancelled" | "error" | string;
-  cumulative_token_usage?: { input_tokens: number; output_tokens: number };
-  exactCostUsd?: number;
-  retryable?: boolean;
-  error?: string;
-  cancelled?: boolean;
-}
+afterEach(() => {
+  Object.assign(_acpDeps, REAL);
+  cleanupTempDir(dir);
+});
 
-// biome-ignore lint/suspicious/noExportsInTest: shared by three sibling test files; see note above
-export interface MockAcpSession {
-  prompt(text: string): Promise<AcpSessionResponse>;
-  close(opts?: { forceTerminate?: boolean }): Promise<void>;
-  cancelActivePrompt(): Promise<void>;
-}
-
-// biome-ignore lint/suspicious/noExportsInTest: shared by three sibling test files; see note above
-export interface MockAcpClient {
-  start(): Promise<void>;
-  createSession(opts: { agentName: string; permissionMode: string }): Promise<MockAcpSession>;
-  loadSession?: (name: string, agentName: string, permissionMode: string) => Promise<MockAcpSession | null>;
-  close(): Promise<void>;
-  cancelActivePrompt(): Promise<void>;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Shared helpers — also used by adapter-run.test.ts
-// ─────────────────────────────────────────────────────────────────────────────
-
-// biome-ignore lint/suspicious/noExportsInTest: shared by three sibling test files; see note above
-export function makeSession(
-  overrides: {
-    promptFn?: (text: string) => Promise<AcpSessionResponse>;
-    closeFn?: (opts?: { forceTerminate?: boolean }) => Promise<void>;
-    cancelFn?: () => Promise<void>;
-  } = {},
-): MockAcpSession {
+function opts(overrides: Partial<OpenSessionOpts> = {}): OpenSessionOpts {
   return {
-    prompt:
-      overrides.promptFn ??
-      (async (_: string) => ({
-        messages: [{ role: "assistant", content: "Task completed successfully." }],
-        stopReason: "end_turn",
-        cumulative_token_usage: { input_tokens: 100, output_tokens: 50 },
-      })),
-    close: overrides.closeFn ?? (async () => {}),
-    cancelActivePrompt: overrides.cancelFn ?? (async () => {}),
-  };
-}
-
-// biome-ignore lint/suspicious/noExportsInTest: shared by three sibling test files; see note above
-export function makeClient(
-  session: MockAcpSession,
-  overrides: {
-    startFn?: () => Promise<void>;
-    createSessionFn?: (opts: {
-      agentName: string;
-      permissionMode: string;
-      sessionName?: string;
-    }) => Promise<MockAcpSession>;
-    loadSessionFn?: (name: string, agentName: string, permissionMode: string) => Promise<MockAcpSession | null>;
-  } = {},
-): MockAcpClient {
-  return {
-    start: overrides.startFn ?? (async () => {}),
-    createSession: overrides.createSessionFn ?? (async (_opts) => session),
-    loadSession: overrides.loadSessionFn,
-    close: async () => {},
-    cancelActivePrompt: async () => {},
-  };
-}
-
-const ACP_WORKDIR = `/tmp/nax-acp-test-${randomUUID()}`;
-
-/** Default CompleteOptions with required primitives for unit tests. */
-function makeCompleteOptions(
-  overrides: Record<string, unknown> = {},
-): import("@/agents/types").ResolvedCompleteOptions {
-  return {
-    modelDef: { provider: "anthropic", model: "claude-sonnet-4-5", env: {} },
-    workdir: ACP_WORKDIR,
-    resolvedPermissions: { mode: "approve-reads" as const },
-    ...overrides,
-  } as import("@/agents/types").ResolvedCompleteOptions;
-}
-
-// biome-ignore lint/suspicious/noExportsInTest: shared by three sibling test files; see note above
-export function makeRunOptions(overrides: Partial<AgentRunOptions> = {}): AgentRunOptions {
-  return {
-    workdir: ACP_WORKDIR,
-    prompt: "Write a hello world function",
-    modelTier: "balanced",
-    modelDef: { provider: "anthropic", model: "claude-sonnet-4-5", env: {} },
+    agentName: "claude",
+    workdir: dir,
+    resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
+    modelDef: { provider: "anthropic", model: "sonnet" },
     timeoutSeconds: 60,
+    transcriptDir: join(dir, "sessions"),
+    trackedSpawnDeadlineMs: 2_000,
     ...overrides,
-    config: overrides.config ?? DEFAULT_CONFIG,
   };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Interface compliance
-// ─────────────────────────────────────────────────────────────────────────────
+const PONG_TURN = {
+  steps: [
+    {
+      kind: "update",
+      update: { sessionUpdate: "usage_update", used: 100, size: 200_000, cost: { amount: 0.02, currency: "USD" } },
+    },
+    { kind: "text", text: "pong" },
+  ],
+  usage: { inputTokens: 12, outputTokens: 3, totalTokens: 15 },
+};
 
-describe("AcpAgentAdapter interface compliance", () => {
-  let adapter: AcpAgentAdapter;
-
-  beforeEach(() => {
-    adapter = new AcpAgentAdapter("claude");
-  });
-
-  test("name is set from constructor agentName", () => {
-    expect(adapter.name).toBe("claude");
-  });
-
-  test("capabilities.supportedTiers is a non-empty array", () => {
-    expect(Array.isArray(adapter.capabilities.supportedTiers)).toBe(true);
-    expect(adapter.capabilities.supportedTiers.length).toBeGreaterThan(0);
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// isInstalled()
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("isInstalled()", () => {
-  const origWhich = _acpAdapterDeps.which;
-
-  afterEach(() => {
-    _acpAdapterDeps.which = origWhich;
-    mock.restore();
-  });
-
-  test("returns true when binary is found on PATH", async () => {
-    _acpAdapterDeps.which = mock((_name: string) => "/usr/local/bin/claude");
-    expect(await new AcpAgentAdapter("claude").isInstalled()).toBe(true);
-  });
-
-  test("returns false when binary is not found on PATH", async () => {
-    _acpAdapterDeps.which = mock((_name: string) => null);
-    expect(await new AcpAgentAdapter("claude").isInstalled()).toBe(false);
-  });
-
-  test("checks a binary name derived from the agent name", async () => {
-    const checked: string[] = [];
-    _acpAdapterDeps.which = mock((name: string) => {
-      checked.push(name);
-      return `/bin/${name}`;
-    });
-    await new AcpAgentAdapter("claude").isInstalled();
-    expect(checked.length).toBeGreaterThan(0);
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// buildCommand()
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("buildCommand()", () => {});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// complete()
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("complete()", () => {
-  const origCreateClient = _acpAdapterDeps.createClient;
-  const origSleep = _acpAdapterDeps.sleep;
-
-  beforeEach(() => {
-    _acpAdapterDeps.sleep = mock(async (_ms: number) => {});
-  });
-
-  afterEach(() => {
-    _acpAdapterDeps.createClient = origCreateClient;
-    _acpAdapterDeps.sleep = origSleep;
-    mock.restore();
-  });
-
-  test("returns trimmed assistant message text", async () => {
-    const session = makeSession({
-      promptFn: async (_: string) => ({
-        messages: [{ role: "assistant", content: "  The answer is 42.  \n" }],
-        stopReason: "end_turn",
-        cumulative_token_usage: { input_tokens: 10, output_tokens: 5 },
+describe("AcpAgentAdapter over a real agent process", () => {
+  test("open, one turn, close: output, spend, stream events, no process left", async () => {
+    _acpDeps.acpBackend = fakeAcpBackend({ turns: [PONG_TURN] }, record);
+    const adapter = new AcpAgentAdapter("claude");
+    const events: AgentStreamEvent[] = [];
+    const established: string[] = [];
+    const handle = await adapter.openSession(
+      "nax-a1",
+      opts({
+        onStreamActivity: (e) => events.push(e),
+        onSessionEstablished: (ids, name) => established.push(`${name}:${ids.sessionId}`),
       }),
-    });
-    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
-
-    const result = await new AcpAgentAdapter("claude").complete("What is the answer?", makeCompleteOptions());
-    expect(result.output).toBe("The answer is 42.");
-  });
-
-  test("sends the provided prompt to the ACP session", async () => {
-    let received = "";
-    const session = makeSession({
-      promptFn: async (text: string) => {
-        received = text;
-        return {
-          messages: [{ role: "assistant", content: "Done." }],
-          stopReason: "end_turn",
-          cumulative_token_usage: { input_tokens: 10, output_tokens: 5 },
-        };
-      },
-    });
-    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
-
-    await new AcpAgentAdapter("claude").complete("Explain recursion", makeCompleteOptions());
-    expect(received).toBe("Explain recursion");
-  });
-
-  test("throws CompleteError when stopReason is error", async () => {
-    const session = makeSession({
-      promptFn: async (_: string) => ({ messages: [], stopReason: "error" }),
-    });
-    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
-
-    await expect(new AcpAgentAdapter("claude").complete("Hello", makeCompleteOptions())).rejects.toBeInstanceOf(
-      CompleteError,
     );
-  });
+    expect(handle).toMatchObject({ id: "nax-a1", agentName: "claude" });
+    expect(established).toEqual(["nax-a1:fake-session-1"]);
 
-  // BUG-1: the CompleteError built for a stop-reason-error response must carry the
-  // parsed error text (surfaced via response.error) instead of a generic message,
-  // and preserve the real retryable flag acpx reported.
-  test("CompleteError built from a stop-reason-error response carries the parsed error text (BUG-1)", async () => {
-    const session = makeSession({
-      promptFn: async (_: string) => ({
-        messages: [],
-        stopReason: "error",
-        error: "QUEUE_DISCONNECTED_BEFORE_COMPLETION: queue disconnected",
-        retryable: true,
-      }),
-    });
-    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
-
-    // retryable:true is classifiable, so complete() returns a degraded result
-    // instead of throwing — assert the message text made it into the output/adapterFailure.
-    const result = await new AcpAgentAdapter("claude").complete("Hello", makeCompleteOptions());
-    expect(result.adapterFailure?.retriable).toBe(true);
-    expect(result.output).toContain("QUEUE_DISCONNECTED_BEFORE_COMPLETION: queue disconnected");
-  });
-
-  test("CompleteError message includes the parsed error text when retryable is unknown (BUG-1)", async () => {
-    const session = makeSession({
-      promptFn: async (_: string) => ({
-        messages: [],
-        stopReason: "error",
-        error: "acpx internal fault: session lost",
-      }),
-    });
-    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
-
-    await expect(new AcpAgentAdapter("claude").complete("Hello", makeCompleteOptions())).rejects.toThrow(
-      /acpx internal fault: session lost/,
+    const result = await adapter.sendTurn(handle, "ping", { interactionHandler: NO_OP_INTERACTION_HANDLER });
+    expect(result).toMatchObject({ output: "pong", tokenUsage: { inputTokens: 12, outputTokens: 3 } });
+    expect(result.exactCostUsd).toBeCloseTo(0.02);
+    expect(events.map((e) => e.kind)).toEqual(
+      expect.arrayContaining(["agent.call_started", "agent.message_update", "agent.call_ended"]),
     );
-  });
 
-  test("throws CompleteError when assistant output is blank", async () => {
-    const session = makeSession({
-      promptFn: async (_: string) => ({
-        messages: [{ role: "assistant", content: "   " }],
-        stopReason: "end_turn",
-        cumulative_token_usage: { input_tokens: 10, output_tokens: 0 },
-      }),
-    });
-    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
-
-    await expect(new AcpAgentAdapter("claude").complete("Hello", makeCompleteOptions())).rejects.toBeInstanceOf(
-      CompleteError,
-    );
-  });
-
-  test("closes the session after one-shot completion", async () => {
-    let closeCalled = false;
-    const session = makeSession({
-      closeFn: async () => {
-        closeCalled = true;
-      },
-    });
-    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
-
-    await new AcpAgentAdapter("claude").complete("Quick question", makeCompleteOptions());
-    expect(closeCalled).toBe(true);
-  });
-
-  test("times out and throws if session.prompt() hangs beyond timeoutMs", async () => {
-    const session = makeSession({
-      promptFn: () => new Promise<never>(() => {}), // hangs forever
-    });
-    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
-
+    const [pid] = fakeStartPids(record);
+    await adapter.closeSession(handle);
+    await waitForCondition(() => pid !== undefined && !isProcessAlive(pid), 5_000);
     await expect(
-      new AcpAgentAdapter("claude").complete("Hang?", makeCompleteOptions({ timeoutMs: 50 })),
-    ).rejects.toThrow(/timed out/i);
-  });
+      adapter.sendTurn(handle, "again", { interactionHandler: NO_OP_INTERACTION_HANDLER }),
+    ).rejects.toMatchObject({ code: "ACP_SDK_SESSION_NOT_OPEN" });
+  }, 30_000);
 
-  test("returns adapterFailure for rate-limit error instead of throwing", async () => {
-    const session = makeSession({
-      promptFn: async (_: string) => {
-        throw new Error('{"statusCode":429}');
+  test("closeSession during a running prompt ends the turn as fail-aborted (Review Focus 1)", async () => {
+    _acpDeps.acpBackend = fakeAcpBackend({ turns: [{ steps: [{ kind: "waitForCancel" }] }] }, record);
+    const adapter = new AcpAgentAdapter("claude");
+    const handle = await adapter.openSession("nax-a2", opts());
+    const pending = adapter.sendTurn(handle, "long", { interactionHandler: NO_OP_INTERACTION_HANDLER });
+    // Attach the handler before the close: the turn rejects while closeSession's
+    // I/O runs, and Bun fails the test if the rejection sits unhandled across a
+    // macrotask boundary.
+    const caught = pending.catch((e: unknown) => e);
+    await waitForCondition(() => fakeMethods(record).includes("session/prompt"), 5_000);
+    await adapter.closeSession(handle);
+    const err = await caught;
+    if (!(err instanceof SessionTurnError)) throw err;
+    expect(err.cancelled).toBe(true);
+    expect(err.adapterFailure?.outcome).toBe("fail-aborted");
+    const [pid] = fakeStartPids(record);
+    await waitForCondition(() => pid !== undefined && !isProcessAlive(pid), 5_000);
+  }, 30_000);
+
+  test("a model the agent does not offer fails the open and leaves nothing (Review Focus 3)", async () => {
+    _acpDeps.acpBackend = fakeAcpBackend({}, record);
+    const adapter = new AcpAgentAdapter("claude");
+    await expect(
+      adapter.openSession("nax-a3", opts({ modelDef: { provider: "anthropic", model: "claude-sonnet-4-5" } })),
+    ).rejects.toMatchObject({ code: "AGENT_SESSION_CAPABILITY_UNSUPPORTED" });
+    await expect(
+      adapter.sendTurn({ id: "nax-a3", agentName: "claude" }, "x", { interactionHandler: NO_OP_INTERACTION_HANDLER }),
+    ).rejects.toMatchObject({ code: "ACP_SDK_SESSION_NOT_OPEN" });
+    const [pid] = fakeStartPids(record);
+    await waitForCondition(() => pid !== undefined && !isProcessAlive(pid), 5_000);
+  }, 30_000);
+
+  test("closePhysicalSession closes a live handle and ignores an unknown one", async () => {
+    _acpDeps.acpBackend = fakeAcpBackend({}, record);
+    const adapter = new AcpAgentAdapter("claude");
+    await adapter.openSession("nax-a4", opts());
+    await adapter.closePhysicalSession("not-open", dir);
+    await adapter.closePhysicalSession("nax-a4", dir, { force: true });
+    const [pid] = fakeStartPids(record);
+    await waitForCondition(() => pid !== undefined && !isProcessAlive(pid), 5_000);
+  }, 30_000);
+
+  test("re-opening a live name closes the old session first", async () => {
+    _acpDeps.acpBackend = fakeAcpBackend({}, record);
+    const adapter = new AcpAgentAdapter("claude");
+    await adapter.openSession("nax-a5", opts());
+    const handle = await adapter.openSession("nax-a5", opts());
+    const [firstPid] = fakeStartPids(record);
+    await waitForCondition(() => firstPid !== undefined && !isProcessAlive(firstPid), 5_000);
+    await adapter.closeSession(handle);
+  }, 30_000);
+
+  test("onPidSpawned/onPidExited fire for the first process and for the reconnect's process", async () => {
+    _acpDeps.acpBackend = fakeAcpBackend(
+      {
+        capabilities: { sessionCapabilities: { resume: {} } },
+        turns: [
+          {
+            steps: [
+              { kind: "text", text: "partial" },
+              { kind: "exit", code: 7 },
+            ],
+          },
+        ],
+        relaunch: { turns: [{ steps: [{ kind: "text", text: "back" }] }] },
       },
-    });
-    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
-
-    const result = await new AcpAgentAdapter("claude").complete("Rate limited", makeCompleteOptions());
-    expect(result.adapterFailure).toBeDefined();
-    expect(result.adapterFailure?.outcome).toBe("fail-rate-limit");
-    expect(result.adapterFailure?.category).toBe("availability");
-    expect(result.adapterFailure?.retriable).toBe(true);
-  });
-
-  test("still throws for unknown (non-classifiable) errors", async () => {
-    const session = makeSession({
-      promptFn: async (_: string) => {
-        throw new Error("unexpected internal error");
-      },
-    });
-    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
-
-    await expect(new AcpAgentAdapter("claude").complete("Unknown fail", makeCompleteOptions())).rejects.toThrow(
-      /unexpected internal error/,
+      record,
     );
-  });
-
-  // SIGINT-orphan fix — see docs/findings/2026-04-29-sigint-cleanup-rectification-and-adversarial-loops.md
-  test("forwards onPidSpawned from CompleteOptions to createClient", async () => {
-    let capturedOnPidSpawned: ((pid: number) => void) | undefined;
-    const session = makeSession();
-    _acpAdapterDeps.createClient = mock(
-      (_cmd: string, _cwd: string, _timeout?: number, onPidSpawned?: (pid: number) => void) => {
-        capturedOnPidSpawned = onPidSpawned;
-        return makeClient(session);
-      },
-    );
-
-    const tracker = mock((_pid: number) => {});
-    await new AcpAgentAdapter("claude").complete("track-me", makeCompleteOptions({ onPidSpawned: tracker }));
-    expect(capturedOnPidSpawned).toBe(tracker);
-  });
-
-  // BUG-15: modelDef.env (config.models.<agent>.<tier>.env) was accepted by
-  // the schema but never forwarded to createClient — a per-model API
-  // key/base URL override was silently dropped.
-  test("forwards modelDef.env to createClient's AcpClientOptions", async () => {
-    let capturedEnv: Record<string, string> | undefined;
-    const session = makeSession();
-    _acpAdapterDeps.createClient = mock(
-      (
-        _cmd: string,
-        _cwd: string,
-        _timeout?: number,
-        _onPidSpawned?: (pid: number) => void,
-        _promptRetries?: number,
-        _onPidExited?: (pid: number) => void,
-        opts?: { env?: Record<string, string> },
-      ) => {
-        capturedEnv = opts?.env;
-        return makeClient(session);
-      },
-    );
-
-    await new AcpAgentAdapter("claude").complete(
-      "model-env-test",
-      makeCompleteOptions({
-        modelDef: { provider: "anthropic", model: "claude-sonnet-4-5", env: { ANTHROPIC_BASE_URL: "https://custom" } },
-      }),
-    );
-    expect(capturedEnv).toEqual({ ANTHROPIC_BASE_URL: "https://custom" });
-  });
-
-  test("force-terminates the session on successful completion (kills queue-owner)", async () => {
-    let capturedCloseOpts: { forceTerminate?: boolean } | undefined;
-    const session = makeSession({
-      closeFn: async (opts) => {
-        capturedCloseOpts = opts;
-      },
+    const spawned: number[] = [];
+    const exited: number[] = [];
+    const adapter = new AcpAgentAdapter("claude");
+    const handle = await adapter.openSession("nax-pids", {
+      ...opts(),
+      onPidSpawned: (pid) => spawned.push(pid),
+      onPidExited: (pid) => exited.push(pid),
     });
-    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
-
-    await new AcpAgentAdapter("claude").complete("hello", makeCompleteOptions());
-    expect(capturedCloseOpts?.forceTerminate).toBe(true);
-  });
-
-  test("force-terminates the session on error path as well", async () => {
-    let capturedCloseOpts: { forceTerminate?: boolean } | undefined;
-    const session = makeSession({
-      promptFn: async (_: string) => ({ messages: [], stopReason: "error" }),
-      closeFn: async (opts) => {
-        capturedCloseOpts = opts;
-      },
-    });
-    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
-
-    await expect(new AcpAgentAdapter("claude").complete("fail", makeCompleteOptions())).rejects.toBeInstanceOf(
-      CompleteError,
-    );
-    expect(capturedCloseOpts?.forceTerminate).toBe(true);
-  });
-
-  // BUG-57: a mid-flight cancel (cancelActivePrompt()) must not drop tokens
-  // already burned before the cancel — the cancelled-path return previously
-  // hardcoded { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0
-  // unconditionally, discarding response.cumulative_token_usage entirely.
-  test("cancelled path carries through tokens already burned before the cancel (BUG-57)", async () => {
-    const session = makeSession({
-      promptFn: async (_: string) => ({
-        messages: [],
-        stopReason: "error",
-        cancelled: true,
-        cumulative_token_usage: { input_tokens: 500, output_tokens: 200 },
-      }),
-    });
-    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
-
-    const result = await new AcpAgentAdapter("claude").complete("Hello", makeCompleteOptions());
-    expect(result.cancelled).toBe(true);
-    expect(result.tokenUsage.inputTokens).toBe(500);
-    expect(result.tokenUsage.outputTokens).toBe(200);
-    expect(result.estimatedCostUsd).toBeGreaterThan(0);
-  });
-
-  test("cancelled path with no usage reported still returns zero (not a regression)", async () => {
-    const session = makeSession({
-      promptFn: async (_: string) => ({ messages: [], stopReason: "error", cancelled: true }),
-    });
-    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
-
-    const result = await new AcpAgentAdapter("claude").complete("Hello", makeCompleteOptions());
-    expect(result.cancelled).toBe(true);
-    expect(result.tokenUsage.inputTokens).toBe(0);
-    expect(result.tokenUsage.outputTokens).toBe(0);
-    expect(result.estimatedCostUsd).toBe(0);
-  });
-
-  // LOW: parity with spawn-client.ts, which truncates parsed error text with
-  // .slice(0, 500) at every sibling site — the CompleteError message built
-  // here was previously unbounded.
-  test("CompleteError message truncates an oversized parsed error text to 500 chars", async () => {
-    const hugeError = "x".repeat(2000);
-    const session = makeSession({
-      promptFn: async (_: string) => ({ messages: [], stopReason: "error", error: hugeError, retryable: undefined }),
-    });
-    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
-
-    try {
-      await new AcpAgentAdapter("claude").complete("Hello", makeCompleteOptions());
-      throw new Error("expected complete() to throw");
-    } catch (err) {
-      assertCaughtInstanceOf(err, CompleteError, "complete() rejection");
-      // Message = "complete() failed: stop reason is error: " + truncated(500) text
-      expect(err.message.length).toBeLessThan(560);
-    }
-  });
+    await adapter.sendTurn(handle, "x", { interactionHandler: NO_OP_INTERACTION_HANDLER }).catch(() => undefined);
+    const result = await adapter.sendTurn(handle, "y", { interactionHandler: NO_OP_INTERACTION_HANDLER });
+    expect(result.output).toBe("back");
+    await adapter.closeSession(handle);
+    expect(new Set(spawned).size).toBe(2);
+    expect(spawned).toEqual(fakeStartPids(record));
+    await waitForCondition(() => exited.length === 2, 5_000);
+  }, 30_000);
 });
 
-// complete() — primitive model resolution (modelDef)
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("complete() — modelDef primitive consumption", () => {
-  const origCreateClient = _acpAdapterDeps.createClient;
-  const origSleep = _acpAdapterDeps.sleep;
-
-  beforeEach(() => {
-    _acpAdapterDeps.sleep = mock(async (_ms: number) => {});
+describe("AcpAgentAdapter without a process", () => {
+  test("a missing workdir fails SESSION_CWD_MISSING before any spawn", async () => {
+    _acpDeps.acpBackend = fakeAcpBackend({}, record);
+    await expect(
+      new AcpAgentAdapter("claude").openSession("nax-b1", opts({ workdir: join(dir, "missing") })),
+    ).rejects.toMatchObject({ code: "SESSION_CWD_MISSING" });
+    expect(fakeStartPids(record)).toEqual([]);
   });
 
-  afterEach(() => {
-    _acpAdapterDeps.createClient = origCreateClient;
-    _acpAdapterDeps.sleep = origSleep;
-    mock.restore();
+  test("an aborted run signal fails before any spawn", async () => {
+    _acpDeps.acpBackend = fakeAcpBackend({}, record);
+    await expect(
+      new AcpAgentAdapter("claude").openSession("nax-b2", opts({ signal: AbortSignal.abort("stop") })),
+    ).rejects.toThrow();
+    expect(fakeStartPids(record)).toEqual([]);
   });
 
-  function makePassClient() {
-    return makeClient(makeSession());
-  }
+  test("aider has no ACP launcher: it lists, never opens (spec §11 item 2)", async () => {
+    const adapter = new AcpAgentAdapter("aider");
+    expect(adapter.displayName).toBe("ACP Agent");
+    expect(await adapter.isInstalled()).toBe(false);
+    await expect(adapter.openSession("nax-b3", opts({ agentName: "aider" }))).rejects.toMatchObject({
+      code: "ACP_AGENT_UNSUPPORTED",
+    });
+  });
 
-  test("uses modelDef.model from options for the acpx command", async () => {
-    let capturedCmd = "";
-    _acpAdapterDeps.createClient = mock((cmd: string) => {
-      capturedCmd = cmd;
-      return makePassClient();
+  describe("isInstalled and launchNote (spec §6.8, D3-k)", () => {
+    test.each([
+      ["local", true],
+      ["npx", true],
+      [undefined, false],
+    ] as const)("launch candidate %p -> installed %p", async (kind, installed) => {
+      _acpDeps.launchCandidateKind = () => kind;
+      expect(await new AcpAgentAdapter("claude").isInstalled()).toBe(installed);
     });
 
-    await new AcpAgentAdapter("claude").complete(
-      "test",
-      makeCompleteOptions({
-        modelDef: { provider: "anthropic", model: "claude-haiku-4-5-20250514", env: {} },
-      }),
-    );
-    expect(capturedCmd).toContain("--model claude-haiku-4-5-20250514");
-  });
-
-  test("uses resolvedPermissions.mode for the session permissionMode", async () => {
-    let capturedPermissionMode = "";
-    const _session = makeSession();
-    const client = makePassClient();
-    _acpAdapterDeps.createClient = mock((_cmd: string) => {
-      const origCreate = client.createSession.bind(client);
-      client.createSession = mock(async (opts: { agentName: string; permissionMode: string }) => {
-        capturedPermissionMode = opts.permissionMode;
-        return origCreate(opts);
-      });
-      return client;
+    test("an npx-only launcher has a launch note; a local one has none", () => {
+      _acpDeps.launchCandidateKind = () => "npx";
+      expect(new AcpAgentAdapter("claude").launchNote()).toContain("npx");
+      _acpDeps.launchCandidateKind = () => "local";
+      expect(new AcpAgentAdapter("claude").launchNote()).toBeUndefined();
     });
 
-    await new AcpAgentAdapter("claude").complete(
-      "test",
-      makeCompleteOptions({
-        resolvedPermissions: { mode: "approve-all" as const },
-      }),
-    );
-    expect(capturedPermissionMode).toBe("approve-all");
-  });
-
-  test("uses promptRetries from options for createClient", async () => {
-    let capturedRetries: number | undefined;
-    _acpAdapterDeps.createClient = mock(
-      (_cmd: string, _cwd: string, _timeout?: number, _onPid?: unknown, promptRetries?: number) => {
-        capturedRetries = promptRetries;
-        return makePassClient();
-      },
-    );
-
-    await new AcpAgentAdapter("claude").complete("test", makeCompleteOptions({ promptRetries: 5 }));
-    expect(capturedRetries).toBe(5);
-  });
-
-  test("model string from modelDef flows into the acpx command string", async () => {
-    let capturedCmd = "";
-    _acpAdapterDeps.createClient = mock((cmd: string) => {
-      capturedCmd = cmd;
-      return makePassClient();
+    test("aider has no launcher and no note", async () => {
+      const adapter = new AcpAgentAdapter("aider");
+      expect(await adapter.isInstalled()).toBe(false);
+      expect(adapter.launchNote()).toBeUndefined();
     });
-
-    await new AcpAgentAdapter("claude").complete(
-      "test",
-      makeCompleteOptions({
-        modelDef: { provider: "anthropic", model: "claude-default", env: {} },
-      }),
-    );
-    expect(capturedCmd).toContain("--model claude-default");
   });
-});
 
-// ─────────────────────────────────────────────────────────────────────────────
-// _acpAdapterDeps — injectable dependency surface
-// ─────────────────────────────────────────────────────────────────────────────
+  test("identity rows match the entries", () => {
+    const adapter = new AcpAgentAdapter("claude");
+    expect(adapter).toMatchObject({ name: "claude", displayName: "Claude Code (ACP)", binary: "claude" });
+    expect(adapter.capabilities.supportedTiers).toEqual(["fast", "balanced", "powerful"]);
+    expect(adapter.buildCommand()).toEqual(["acp", "claude"]);
+    expect(adapter.buildAllowedEnv().HOME).toBeDefined();
+  });
 
-describe("_acpAdapterDeps", () => {
-  test("is exported from the module", () => {
-    expect(_acpAdapterDeps).toBeDefined();
-    expect(typeof _acpAdapterDeps).toBe("object");
+  test("closeSession on an unknown handle is a no-op", async () => {
+    await new AcpAgentAdapter("claude").closeSession({ id: "never", agentName: "claude" });
   });
 });

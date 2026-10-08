@@ -172,7 +172,7 @@ For full flag details, see the [CLI Reference](docs/guides/cli-reference.md).
 
 `execution.commandInterceptor` rewrites the `Git` tool's argv through `rtk` so `log` and `diff` output reaches the model compressed. It is confined to the Git site: user-authored `quality.commands` and `acceptance.command` are never wrapped. It fails open — if the `rtk` binary is missing the call runs as plain git.
 
-**Both features are native-agent only.** An ACP agent (`claude`, `codex`, `opencode`, `gemini`) brings its own tools, so nax's `Git` tool is never invoked and no MCP tool is advertised. A project on `"protocol": "acp"` can hold a complete, valid config for both and get zero effect, with no error. The built-in defaults (`agent.protocol: "hybrid"`, `agent.default: "native"`) let both take effect once configured (the interceptor itself is off by default); a config that switches to an acpx agent does not.
+**Both features are native-agent only.** An ACP agent (`claude`, `codex`, `opencode`, `gemini`) brings its own tools, so nax's `Git` tool is never invoked and no MCP tool is advertised. A project on `"protocol": "acp"` can hold a complete, valid config for both and get zero effect, with no error. The built-in defaults (`agent.protocol: "hybrid"`, `agent.default: "native"`) let both take effect once configured (the interceptor itself is off by default); a config that switches to an ACP agent does not.
 
 See [MCP & Command Interception](docs/guides/mcp-and-interception.md) for setup, verification and troubleshooting, and the [Configuration Guide](docs/guides/configuration.md) for the full schema.
 
@@ -258,18 +258,17 @@ See [Plugin System](docs/architecture/subsystems.md#23-plugin-system).
 
 ## Agents
 
-The default agent is `native`: nax drives the model in-process over `@nathapp/nax-ai` (no CLI binary), using the built-in `models.native` Anthropic tier map, so it needs Anthropic credentials (`nax auth` or the provider's environment variable) unless you override the map. Every other agent is reached via [ACP](https://github.com/openclaw/acpx) (Agent Client Protocol) — a JSON-RPC protocol that provides persistent sessions, exact token/cost reporting, and multi-turn session continuity.
+The default agent is `native`: nax drives the model in-process over `@nathapp/nax-ai` (no CLI binary), using the built-in `models.native` Anthropic tier map, so it needs Anthropic credentials (`nax auth` or the provider's environment variable) unless you override the map. Every other agent is reached over ACP (Agent Client Protocol) through `@nathapp/nax-agent-acp`, which launches the agent's own ACP launcher and talks JSON-RPC over stdio: persistent sessions, reported token/cost usage, and multi-turn session continuity. Install the launcher for each ACP agent you use; where an `npx` fallback exists, the first run downloads it and `nax precheck` warns.
 
-| Agent | Binary | Notes |
-|:------|:-------|:------|
+| Agent | ACP launcher | Notes |
+|:------|:-------------|:------|
 | Native (nax-ai) | — (in-process) | Default. `agent.default: "native"` |
-| Claude Code | `claude` | Set `agent.default: "claude"` |
-| OpenCode | `opencode` | Set `agent.default: "opencode"` |
-| Codex | `codex` | Set `agent.default: "codex"` |
-| Gemini CLI | `gemini` | Set `agent.default: "gemini"` |
-| Pi Coding Agent | `pi` | Set `agent.default: "pi"` (via the pi-acp bridge) |
-| Aider | `aider` | Known name with no dedicated ACP adapter entry (generic defaults) |
-| Any ACP-compatible | — | See [acpx agent docs](https://github.com/openclaw/acpx#agents) |
+| Claude Code | `claude-agent-acp` (or `npx @agentclientprotocol/claude-agent-acp`) | Set `agent.default: "claude"` |
+| OpenCode | `opencode acp` | Set `agent.default: "opencode"` |
+| Codex | `codex-acp` (or `npx @agentclientprotocol/codex-acp`) | Set `agent.default: "codex"` |
+| Gemini CLI | `gemini --acp` | Set `agent.default: "gemini"` |
+| Pi Coding Agent | `pi-acp` (or `npx pi-acp`) | Set `agent.default: "pi"` |
+| Aider | — | Known name with no ACP launcher; it fails at session open |
 
 See [Agents Guide](docs/guides/agents.md) and the [Context Engine Guide](docs/guides/context-engine.md) for agent-portable context configuration.
 
@@ -294,7 +293,7 @@ See the [Troubleshooting Guide](docs/guides/troubleshooting.md) for more.
 
 nax is inspired by [Relentless](https://github.com/ArvorCo/Relentless) — the same "keep trying until done" philosophy, applied to AI agent orchestration.
 
-ACP support is powered by [acpx](https://github.com/openclaw/acpx) from the [OpenClaw](https://github.com/openclaw/openclaw) project.
+ACP support is powered by `@nathapp/nax-agent-acp` over the Agent Client Protocol (`@agentclientprotocol/sdk`).
 
 ## License
 

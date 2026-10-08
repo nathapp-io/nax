@@ -147,7 +147,7 @@ export function trySameAgentRetry(
     }
   }
 
-  // adapter-error lane: acpx session errors, and (nax#1884) a stalled provider
+  // adapter-error lane: ACP session errors, and (nax#1884) a stalled provider
   // stream, which classifies fail-service-down since nax#1869. Before that fix
   // the same fault synthesised fail-adapter-error and got these retries; the
   // classification got more accurate and the retry was lost.

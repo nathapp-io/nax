@@ -98,7 +98,7 @@ function buildCompleteOptions<I, O, C>(params: CompleteDispatchParams<I, O, C>):
     modelDef: dispatchModelDef,
     // nax#1739: `resolved.modelDef` belongs to `dispatchAgent`. When
     // completeWithFallback swaps agents it must dispatch the NEW agent's model,
-    // or acpx receives a `--model` that agent never advertised. Mirrors the
+    // or the agent receives a model it never advertised. Mirrors the
     // run() path's pinnedModelAgent semantics (build-hop-callback.ts): a
     // caller-pinned `{ agent, model }` survives for its own agent, and any
     // other agent re-resolves from its own tier map.

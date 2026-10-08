@@ -399,7 +399,7 @@ export function buildCompleteCallPreamble(input: {
  * Resolve the CompleteOptions for one hop of `completeWithFallback`.
  *
  * nax#1739: `options.modelDef` was resolved by the caller for the PRIMARY agent.
- * Reusing it after a swap dispatches `acpx --model <primary's model> <new agent>`,
+ * Reusing it after a swap sends the new agent the primary's model,
  * which the ACP agent rejects — it never advertised that model. The manager cannot
  * re-resolve on its own (`agentManagerConfigSelector` picks no `models` slice), so
  * the caller injects `modelDefFor` and this reads it.

@@ -11,20 +11,10 @@
 
 export type AgentProtocol = "acp" | "native" | "hybrid";
 
-/** The native agent runs by default, with the acpx agents still reachable. */
+/** The native agent runs by default, with the ACP agents still reachable. */
 export const DEFAULT_AGENT_PROTOCOL: AgentProtocol = "hybrid";
 
 export const DEFAULT_AGENT_NAME = "native";
-
-/**
- * How `nax run` drives ACP agents (S4b spec §5.3): through
- * `@nathapp/nax-agent-acp` ("sdk", the default since S4b-4), or through the
- * `acpx` CLI. A development key while both transports exist: S4b-5 deletes
- * the key with acpx.
- */
-export type AcpTransport = "acpx" | "sdk";
-
-export const DEFAULT_ACP_TRANSPORT: AcpTransport = "sdk";
 
 /** The agent name that routes to the in-process native adapter (defined in the move set). */
 export { NATIVE_AGENT_NAME } from "@nathapp/nax-agent/internal";
