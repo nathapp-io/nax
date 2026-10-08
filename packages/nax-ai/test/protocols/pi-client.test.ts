@@ -1,6 +1,13 @@
 import type { Api, AssistantMessageEvent, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
-import { createPiProtocol, pickTemplate, toPiContext, toPiOptions, toPiTool } from "../../src/protocols/pi-client.ts";
+import {
+  createPiDeps,
+  createPiProtocol,
+  pickTemplate,
+  toPiContext,
+  toPiOptions,
+  toPiTool,
+} from "../../src/protocols/pi-client.ts";
 import type { ProtocolEvent, ProtocolRequest } from "../../src/protocols/types.ts";
 import { runProtocolConformance } from "../support/conformance.ts";
 
@@ -42,6 +49,38 @@ export function fakePi(events: AssistantMessageEvent[]) {
 }
 
 const BASE: ProtocolRequest = { model: "deepseek-chat", messages: [{ role: "user", content: "hi" }] };
+
+/** Records the model pi-ai was handed, and ends the stream immediately. */
+function stubStream() {
+  const models: Model<Api>[] = [];
+  const streamSimple = (model: Model<Api>, _context: Context, _options?: SimpleStreamOptions) => {
+    models.push(model);
+    return (async function* (): AsyncGenerator<AssistantMessageEvent> {
+      yield {
+        type: "done",
+        reason: "stop",
+        message: {
+          role: "assistant",
+          content: [],
+          api: model.api,
+          provider: model.provider,
+          model: model.id,
+          usage: {
+            input: 1,
+            output: 1,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 2,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+          stopReason: "stop",
+          timestamp: 0,
+        },
+      } as AssistantMessageEvent;
+    })();
+  };
+  return { models, streamSimple };
+}
 
 describe("toPiContext", () => {
   it("puts system in systemPrompt, never in messages", () => {
@@ -728,6 +767,23 @@ describe("createPiProtocol error path", () => {
 
     expect(events.at(-1)).toMatchObject({ type: "error" });
     expect(events.some((e) => e.type === "done")).toBe(false);
+  });
+
+  it("an invalid request header is a bad-request event, which the retry layer leaves alone", async () => {
+    const events: ProtocolEvent[] = [];
+    for await (const event of createPiProtocol(
+      "openai-completions",
+      createPiDeps({}, stubStream().streamSimple),
+    ).stream({
+      ...BASE,
+      // BASE's "deepseek-chat" is not in the real pi-ai catalog (resolveModel would throw before
+      // the header check); "gpt-5.5" resolves via the global first-match fallback (pi-protocols.test.ts:55).
+      model: "gpt-5.5",
+      headers: { "x-a": "a\nb" },
+    })) {
+      events.push(event);
+    }
+    expect(events.at(-1)).toMatchObject({ type: "error", error: { kind: "bad-request" } });
   });
 });
 

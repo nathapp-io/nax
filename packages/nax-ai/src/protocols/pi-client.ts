@@ -33,7 +33,7 @@ import type { OpenRouterRouting, Pricing, ProviderOverride, ResolvedModel } from
 import type { CredentialStore, StopReason } from "../types.ts";
 import { toTokenUsage, totalTokens } from "../usage.ts";
 import { vendorAppHeaders } from "./client-app.ts";
-import { classifyProviderError, classifyThrown, parseRetryAfter } from "./errors.ts";
+import { classifyProviderError, classifyThrown, ProtocolSetupError, parseRetryAfter } from "./errors.ts";
 import type { PiProtocolOptions } from "./pi-protocols.ts";
 import { assertValidHeaders, assertValidSessionId, mergeRequestHeaders, withoutEmpty } from "./request-headers.ts";
 import { vendorSessionHeaders } from "./session-id.ts";
@@ -847,9 +847,9 @@ export function createPiDeps(
           : models.getModels().find((candidate) => candidate.id === modelId);
       if (found === undefined) {
         if (provider !== undefined) {
-          throw new Error(`Unknown model "${modelId}" for provider "${provider}" in the pi-ai catalog.`);
+          throw new ProtocolSetupError(`Unknown model "${modelId}" for provider "${provider}" in the pi-ai catalog.`);
         }
-        throw new Error(`Unknown model "${modelId}" in the pi-ai catalog.`);
+        throw new ProtocolSetupError(`Unknown model "${modelId}" in the pi-ai catalog.`);
       }
       return found;
     },

@@ -1,5 +1,6 @@
 import type { AssistantMessageEvent, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
+import { ProtocolSetupError } from "../../src/protocols/errors.ts";
 import { createPiDeps } from "../../src/protocols/pi-client.ts";
 import { PI_PROTOCOL_NAMES, type PiProtocolOptions, piProtocols } from "../../src/protocols/pi-protocols.ts";
 import { createRegistry } from "../../src/protocols/registry.ts";
@@ -49,6 +50,10 @@ describe("createPiDeps model resolution", () => {
     await expect(createPiDeps().resolveModel("gpt-5.5", "deepseek")).rejects.toThrow(
       'Unknown model "gpt-5.5" for provider "deepseek" in the pi-ai catalog.',
     );
+  });
+
+  it("throws the unknown pairing as a setup error, which the retry layer leaves alone", async () => {
+    await expect(createPiDeps().resolveModel("gpt-5.5", "deepseek")).rejects.toBeInstanceOf(ProtocolSetupError);
   });
 
   it("keeps the global first-match fallback when no provider is given", async () => {
