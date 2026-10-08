@@ -461,6 +461,7 @@ export class SessionManager implements ISessionManager {
     const protocolIds = handle.protocolIds ?? NULL_PROTOCOL_IDS;
 
     if (!existingDescriptor) {
+      this._cancelledSessions.delete(name); // a predecessor deleted by closeStory may have left it (#24)
       const created = this.create({
         role: opts.role ?? "main",
         agent: opts.agentName,

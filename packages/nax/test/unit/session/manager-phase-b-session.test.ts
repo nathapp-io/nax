@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { assertDefined, makeAgentAdapter, makeNaxConfig } from "@test/helpers";
+import { assertDefined, makeAgentAdapter, makeNaxConfig, makeTurnResult } from "@test/helpers";
 import type { OpenSessionOpts, SessionHandle } from "@/agents/types";
 import { NaxError } from "@/errors";
 import { _sessionManagerDeps, SessionManager } from "@/session/manager";
@@ -459,5 +459,40 @@ describe("openSession() close-then-reopen — RACE-37 guard", () => {
 
     // The ONLY release is openSession's own finally, after the new adapter session exists.
     expect(log).toEqual(["adapter.close", "adapter.open:codex", `busy.delete:${name}`]);
+  });
+
+  test("a session reopened after closeStory is not born cancelled by its predecessor's abort", async () => {
+    const controller = new AbortController();
+    let releaseTurn: () => void = () => {};
+    const turnGate = new Promise<void>((resolve) => {
+      releaseTurn = resolve;
+    });
+    let turns = 0;
+    const adapter = makeAgentAdapter({
+      openSession: mock(async (name: string) => {
+        const handle: SessionHandle = { id: name, agentName: "claude" };
+        return handle;
+      }),
+      sendTurn: mock(async () => {
+        turns += 1;
+        if (turns === 1) {
+          await turnGate;
+          controller.abort();
+          throw new Error("aborted");
+        }
+        return makeTurnResult({ output: "ok" });
+      }),
+    });
+    const sm = new SessionManager({ getAdapter: () => adapter });
+    const request = makeOpenRequest({ storyId: "US-1" });
+    const first = await sm.openSession("nax-stale-cancel", request);
+
+    const inFlight = sm.sendPrompt(first, "work", { signal: controller.signal });
+    sm.closeStory("US-1"); // run teardown removes the descriptor while the turn is in flight
+    releaseTurn();
+    await expect(inFlight).rejects.toThrow("aborted");
+
+    const reopened = await sm.openSession("nax-stale-cancel", request);
+    await expect(sm.sendPrompt(reopened, "next")).resolves.toMatchObject({ output: "ok" });
   });
 });
