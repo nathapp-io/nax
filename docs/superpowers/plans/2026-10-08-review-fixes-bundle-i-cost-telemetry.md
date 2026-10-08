@@ -359,7 +359,7 @@ describe("resolveFinalDispatch", () => {
 });
 ```
 
-Delete the old `describe("resolveFinalDispatch", ...)` block from `fallback-tier-targets.test.ts`, and drop `resolveFinalDispatch` from its `@/agents/manager-dispatch` import if nothing else there uses it.
+Delete the old `describe("resolveFinalDispatch", ...)` block from `fallback-tier-targets.test.ts`. That leaves two imports unused there, and biome flags both: drop `resolveFinalDispatch` from the `@/agents/manager-dispatch` import (keep `resolveHopCompleteOptions`), and drop `AgentFallbackRecord` from the `@/agents/manager-types` import (its only use was inside the moved block; keep `HopKind`). `ResolvedCompleteOptions` is still used elsewhere in that file — keep it.
 
 - [ ] **Step 2: Run it to verify it fails**
 

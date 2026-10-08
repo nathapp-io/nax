@@ -185,6 +185,7 @@ import {
   makeNaxConfig,
   makePRD,
   makeSessionManager,
+  makeSpawn,
   makeStory,
 } from "@test/helpers";
 import { _hardeningDeps, type HardeningContext, runHardeningPass } from "@/acceptance/hardening";
@@ -212,43 +213,34 @@ afterEach(() => {
 });
 
 describe("runHardeningPass — post-exit drain", () => {
-  test("finishes when the runner has exited but an orphan still holds stdout open", async () => {
+  test("settles when the runner has exited but an orphan still holds stdout open", async () => {
     _hardeningDeps.drainTimeoutMs = 20;
-    _hardeningDeps.spawn = mock(
-      () =>
-        ({
-          exited: Promise.resolve(0),
-          // Never closes: the escaped daemon still has the write end.
-          stdout: new ReadableStream({ start() {} }),
-          stderr: new ReadableStream({
-            start(ctrl) {
-              ctrl.close();
-            },
-          }),
-        }) as ReturnType<typeof Bun.spawn>,
-    );
+    // exitCode 0 with a stdout that never closes: the escaped daemon still has the write end.
+    // `stdoutStall` (test-kit FakeProcSpec) gives that stream without a cast.
+    _hardeningDeps.spawn = makeSpawn(() => ({ exitCode: 0, stdoutStall: true })).spawn;
     const story = makeStory({ suggestedCriteria: ["edge case"], status: "passed", passes: true, attempts: 1 });
-    const agentManager = makeMockAgentManager();
     const ctx: HardeningContext = {
       prd: makePRD({ userStories: [story] }),
       prdPath: "/tmp/prd.json",
       featureDir: "/tmp/features/test",
       workdir: "/tmp/workdir",
       config: CONFIG,
-      agentManager,
+      agentManager: makeMockAgentManager(),
       sessionManager: makeSessionManager(),
       runtime: makeMockRuntime({ agentManager: makeMockAgentManager(), config: CONFIG }),
       abortSignal: new AbortController().signal,
     };
 
-    // Completes (inconclusive: no parseable AC output) instead of hanging the test's 5 s timeout.
+    // Before the fix this hangs past the 5 s per-test timeout. After it, exit 0 with no
+    // failing AC is a pass, so the suggested criterion is promoted (same path as the
+    // "promotes passing suggested criteria" test in hardening.test.ts).
     const result = await runHardeningPass(ctx);
-    expect(result.promoted).toEqual([]);
+    expect(result.promoted).toEqual(["edge case"]);
   });
 });
 ```
 
-(The `as ReturnType<typeof Bun.spawn>` / `as typeof _hardeningDeps.callOp` casts copy `hardening.test.ts:71, 113` exactly, so they are existing, counted patterns. If `check:test-escape-hatches` reports a `looseCast` increase for this new file, move the two stubs into helper functions in the style of `passingSpawn()` and accept the count — the ratchet is per-match and the PR body must mention it — or ask the reviewer.)
+(The `as typeof _hardeningDeps.callOp` cast copies `hardening.test.ts:113`'s `mockCallOp` exactly. If `check:test-escape-hatches` reports a `looseCast` increase for this new file, move the callOp stub into a helper typed with the deps' function type instead of casting.)
 
 - [ ] **Step 2: Run them to verify they fail**
 

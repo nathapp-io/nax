@@ -171,10 +171,17 @@ export async function writeFileAtomic(path: string, content: string, options: { 
 }
 ```
 
-In `packages/nax-agent/src/internal.ts`, add next to the other `#src/internal/*` re-exports (e.g. after `export * from "#src/internal/path-file-lock";`):
+In `packages/nax-agent/src/internal.ts`, add the re-export in its ALPHABETICAL slot among the `#src/internal/*` lines (the list is sorted; it goes right after the `argv-exec` line):
 
 ```ts
 export * from "#src/internal/atomic-write";
+```
+
+This adds `_atomicWriteDeps` and `writeFileAtomic` to the package's `/internal` surface, which is snapshotted: `test/unit/packaging/public-surface.test.ts` compares `Object.keys(internal)` with `packages/nax-agent/api/nax-agent.api.txt`, and `check:api` gates it. Regenerate the snapshot from `packages/nax-agent`:
+
+```bash
+bun run api:update
+git diff api/nax-agent.api.txt   # expect exactly two added names: _atomicWriteDeps, writeFileAtomic
 ```
 
 In `transcript-store.ts`, drop `writeFile` from the `node:fs/promises` import, add `import { writeFileAtomic } from "#src/internal/atomic-write";`, and change `writeTranscriptDoc`:
@@ -189,13 +196,13 @@ async function writeTranscriptDoc(dir: string, sessionName: string, doc: Transcr
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `timeout 30 bun test test/unit/internal/ test/unit/native/ --timeout=5000`
-Expected: PASS. `pruneRetainedTranscripts` filters names ending in `.json`, so a leftover `*.tmp` from a killed process is never counted or deleted by it.
+Run: `timeout 30 bun test test/unit/internal/ test/unit/native/ test/unit/packaging/ --timeout=5000`
+Expected: PASS (the packaging suite proves the snapshot matches). `pruneRetainedTranscripts` filters names ending in `.json`, so a leftover `*.tmp` from a killed process is never counted or deleted by it.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/nax-agent/src/internal/atomic-write.ts packages/nax-agent/src/internal.ts packages/nax-agent/src/native/session/transcript-store.ts packages/nax-agent/test/unit/internal/atomic-write.test.ts packages/nax-agent/test/unit/native/transcript-store.test.ts
+git add packages/nax-agent/src/internal/atomic-write.ts packages/nax-agent/src/internal.ts packages/nax-agent/api/nax-agent.api.txt packages/nax-agent/src/native/session/transcript-store.ts packages/nax-agent/test/unit/internal/atomic-write.test.ts packages/nax-agent/test/unit/native/transcript-store.test.ts
 git commit -m "fix(native): write session transcripts atomically (review #3)"
 ```
 
@@ -309,7 +316,10 @@ Append inside `describe("approvals store", ...)`:
     const dir = makeTempDir("approvals-");
     const path = join(dir, "approvals.json");
     await appendApproval(path, entry("first"));
-    chmodSync(path, 0o000);
+    // Write-only: the READ fails with EACCES while a write would still succeed, so the old
+    // code (read failure -> empty store -> write) clobbers the store. 0o000 would make the
+    // old write fail too and the test would pass before the fix.
+    chmodSync(path, 0o200);
     try {
       await expect(appendApproval(path, entry("second"))).rejects.toThrow();
     } finally {
@@ -320,7 +330,7 @@ Append inside `describe("approvals store", ...)`:
   });
 ```
 
-(Tests may use `Bun.file` — `check:no-bun-apis` scans `src/` only. If the chmod test is skipped on a root CI runner, wrap it in `test.skipIf(process.getuid?.() === 0)` instead of `test` — root can read a 0000 file.)
+(Tests may use `Bun.file` — `check:no-bun-apis` scans `src/` only. If the chmod test is skipped on a root CI runner, wrap it in `test.skipIf(process.getuid?.() === 0)` instead of `test` — root ignores file modes.)
 
 - [ ] **Step 2: Run them to verify they fail**
 

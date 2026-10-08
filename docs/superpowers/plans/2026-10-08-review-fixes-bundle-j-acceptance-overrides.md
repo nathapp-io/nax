@@ -21,7 +21,7 @@
 
 ## Global Constraints
 
-See the master plan. `packages/nax/src/pipeline/stages/acceptance.ts` is 583 lines (cap 600, budget +17); this bundle adds about +9. Run `wc -l` after Task 2.
+See the master plan. `packages/nax/src/pipeline/stages/acceptance.ts` is 583 lines (cap 600, budget +17); this bundle adds about +13 (the lookup block), landing near 596 — little room if biome reflows, so keep the block exactly as written and run `wc -l` after Task 2. `execute()` in that file is in `scripts/baselines/complexity-baseline.json`; removing the `?? {}` may LOWER its cognitive score, and the complexity gate requires a baselined function that improved to be lowered: if `bun run check:complexity` says so, run `bun run ../repo-tooling/scripts/check-complexity.ts --update-baseline` from `packages/nax` (only after `check:all` is otherwise green) and commit the baseline change with Task 2.
 
 ## Review Focus
 

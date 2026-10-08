@@ -145,8 +145,10 @@ and add `out = _applyTddStrategyAliasShim(out);` as the last step of `applyConfi
 `cli/config-descriptions.ts:173`:
 
 ```ts
-  "tdd.strategy": 'TDD strategy: auto | strict | lite | simple | off ("tdd-simple" is accepted for simple)',
+  "tdd.strategy": 'TDD strategy: auto | strict | lite | off | simple ("tdd-simple" is accepted for simple)',
 ```
+
+(`simple` goes LAST on purpose: `test/integration/cli/cli-config-command.test.ts:194` asserts the substring `# TDD strategy: auto | strict | lite | off`, which this wording keeps.)
 
 `docs/guides/configuration.md`, in the **TDD strategy options** table, add a row after `lite`:
 
@@ -156,8 +158,8 @@ and add `out = _applyTddStrategyAliasShim(out);` as the last step of `applyConfi
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `timeout 60 bun test test/unit/config/ test/unit/routing/ test/unit/cli/ --timeout=5000`
-Expected: PASS. If a `config-descriptions` snapshot test pins the old description text, update it.
+Run: `timeout 60 bun test test/unit/config/ test/unit/routing/ test/unit/cli/ test/integration/cli/cli-config-command.test.ts --timeout=15000`
+Expected: PASS, including the integration assertion on the description substring.
 
 - [ ] **Step 5: Commit**
 
@@ -460,6 +462,9 @@ describe("hunk bodies are content, never headers", () => {
     "--- removed line that looks like a header",
     "+tail",
     "+more",
+    "@@ -20 +22 @@",
+    "-a",
+    "+b",
     "diff --git a/src/next.ts b/src/next.ts",
     "--- a/src/next.ts",
     "+++ b/src/next.ts",
@@ -476,7 +481,13 @@ describe("hunk bodies are content, never headers", () => {
   test("its hunk's lines stay attributed to the real file", () => {
     expect(extractDiffLineRanges(diff)).toEqual(
       new Map([
-        ["src/real.ts", [{ start: 1, end: 4 }]],
+        [
+          "src/real.ts",
+          [
+            { start: 1, end: 4 },
+            { start: 22, end: 22 },
+          ],
+        ],
         ["src/next.ts", [{ start: 10, end: 10 }]],
       ]),
     );
@@ -484,12 +495,12 @@ describe("hunk bodies are content, never headers", () => {
 });
 ```
 
-(The first hunk is `-1,2 +1,4`: old side = ` keep` + the removed line = 2; new side = ` keep` + three added lines = 4.)
+(The first hunk is `-1,2 +1,4`: old side = ` keep` + the removed line = 2; new side = ` keep` + three added lines = 4. The SECOND `real.ts` hunk is what makes the ranges test RED: before the fix the phantom header re-targets it to `src/phantom.ts`.)
 
 - [ ] **Step 2: Run them to verify they fail**
 
 Run: `timeout 30 bun test test/unit/utils/diff-files.test.ts --timeout=5000`
-Expected: FAIL — `src/phantom.ts` appears in the file set, and the ranges map is keyed wrong.
+Expected: FAIL — `src/phantom.ts` appears in the file set, and the ranges map files the `+22` hunk under `src/phantom.ts` instead of `src/real.ts`.
 
 - [ ] **Step 3: Implement**
 

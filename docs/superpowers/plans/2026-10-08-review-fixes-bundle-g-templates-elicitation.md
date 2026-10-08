@@ -22,6 +22,7 @@ See the master plan. **`packages/nax/src/prompts/builders/rectifier-builder.ts` 
 - Test: `packages/nax-agent/test/unit/internal/command-spec.test.ts`
 - Modify: `packages/nax/src/prompts/builders/rectifier-builder-helpers.ts:580` (Task 1)
 - Modify: `packages/nax/src/prompts/builders/rectifier-builder.ts:525` (Task 1)
+- Modify: `packages/nax/src/finish/gates/acceptance.ts:58` (Task 1 — same defect, found by the plan review)
 - Test: `packages/nax/test/unit/prompts/builders/rectifier-builder-helpers.test.ts` (599 lines)
 - Modify: `packages/nax-agent-acp/src/client/elicitation.ts:1-19, 145-151` (Task 2)
 - Test: `packages/nax-agent-acp/test/unit/client/elicitation.test.ts` (300 lines)
@@ -120,6 +121,29 @@ export function replaceInCommandSpec(
           ? testScopedTemplate.replaceAll("{{files}}", () => file)
 ```
 
+`finish/gates/acceptance.ts:58` (`buildAcceptanceCommand`) has the same `$` expansion with a shell-quoted absolute path — same-line replacement:
+
+```ts
+  return template.replace(/\{\{FILE\}\}|\{\{file\}\}|\{\{files\}\}/g, () => absFile);
+```
+
+Pin it in `packages/nax/test/unit/finish/gates-acceptance.test.ts` (the existing test file for `finish/gates/acceptance.ts`; add `buildAcceptanceCommand` to its `@/finish/gates/acceptance` import if it is not imported yet):
+
+```ts
+  test("buildAcceptanceCommand inserts a $-containing path verbatim", () => {
+    const command = buildAcceptanceCommand("/repo", {
+      packageDir: "pkg",
+      testPath: "pkg/a$$b.acceptance.test.ts",
+      exists: true,
+      command: "bun test {{FILE}}",
+      cwd: "pkg",
+    });
+    expect(command).toContain("a$$b.acceptance.test.ts");
+  });
+```
+
+(`AcceptanceGroupResult` fields: `packageDir`, `testPath`, `exists`, `command?`, `cwd`, `language?` — `cli/features-acceptance.ts:19-34`.)
+
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run (from `packages/nax-agent`): `timeout 30 bun test test/unit/internal/ --timeout=5000`
@@ -129,7 +153,7 @@ Expected: PASS. `wc -l src/prompts/builders/rectifier-builder.ts` — exactly 90
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/nax-agent/src/internal/command-spec/index.ts packages/nax-agent/test/unit/internal/command-spec.test.ts packages/nax/src/prompts/builders/rectifier-builder-helpers.ts packages/nax/src/prompts/builders/rectifier-builder.ts packages/nax/test/unit/prompts/builders/rectifier-builder-helpers.test.ts
+git add packages/nax-agent/src/internal/command-spec/index.ts packages/nax-agent/test/unit/internal/command-spec.test.ts packages/nax/src/prompts/builders/rectifier-builder-helpers.ts packages/nax/src/prompts/builders/rectifier-builder.ts packages/nax/test/unit/prompts/builders/rectifier-builder-helpers.test.ts packages/nax/src/finish/gates/acceptance.ts packages/nax/test/unit/finish/gates-acceptance.test.ts
 git commit -m "fix(prompts): substitute {{files}} verbatim, every occurrence (review #27)"
 ```
 

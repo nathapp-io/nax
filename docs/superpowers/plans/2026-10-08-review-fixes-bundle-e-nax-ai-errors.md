@@ -154,6 +154,23 @@ In `retry.test.ts`, add `import { ProtocolSetupError } from "../../src/protocols
   });
 ```
 
+In `pi-client.test.ts`, inside `describe("createPiProtocol error path", ...)`, add a case pinning the header path (an invalid header is detected inside the stream, so it becomes an error EVENT):
+
+```ts
+  it("an invalid request header is a bad-request event, which the retry layer leaves alone", async () => {
+    const events: ProtocolEvent[] = [];
+    for await (const event of createPiProtocol("openai-completions", createPiDeps({}, stubStream().streamSimple)).stream({
+      ...BASE,
+      headers: { "x-a": "a\nb" },
+    })) {
+      events.push(event);
+    }
+    expect(events.at(-1)).toMatchObject({ type: "error", error: { kind: "bad-request" } });
+  });
+```
+
+(Copy the `stubStream()` helper from `pi-client-overrides.test.ts:47` into this file — test helpers are file-local there — and add `createPiDeps` to the `../../src/protocols/pi-client.ts` import. `ProtocolRequest.headers` is `Readonly<Record<string, string>>`, `src/protocols/types.ts:180`. Before the fix this event's kind is `transport`.)
+
 In `pi-protocols.test.ts`, add `import { ProtocolSetupError } from "../../src/protocols/errors.ts";` above the `pi-client.ts` import and, next to `"throws naming both the model and the provider for an unknown pairing"`, add:
 
 ```ts
