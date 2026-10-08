@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { gitSpawnEnv, gitWithTimeout, hardenedGitArgv, hardenedGitEnv } from "@nathapp/nax-agent/internal";
-import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
+import { _gitDeps, gitSpawnEnv, gitWithTimeout, hardenedGitArgv, hardenedGitEnv } from "@nathapp/nax-agent/internal";
+import { cleanupTempDir, makeSpawn, makeTempDir, withDepsRestore } from "#test/helpers/index";
 
 describe("hardenedGitEnv", () => {
   test("adds the hardened entries from index 0 when none are set", () => {
@@ -72,6 +72,30 @@ describe("hardenedGitArgv", () => {
     hardenedGitArgv(argv);
     expect(argv).toEqual(["git", "status"]);
   });
+
+  test.each([
+    [
+      ["rtk", "git", "status", "--porcelain"],
+      ["rtk", "git", "status", "--ignore-submodules=dirty", "--porcelain"],
+    ],
+    [
+      ["rtk", "git", "-C", "/r", "diff", "HEAD"],
+      ["rtk", "git", "-C", "/r", "diff", "--ignore-submodules=dirty", "HEAD"],
+    ],
+    [
+      ["/usr/bin/git", "diff"],
+      ["/usr/bin/git", "diff", "--ignore-submodules=dirty"],
+    ],
+  ])("finds the subcommand behind an interceptor's leading token: %j", (argv, expected) => {
+    expect(hardenedGitArgv(argv)).toEqual(expected);
+  });
+
+  test.each([[["rtk", "git", "log"]], [["git", "git", "status"]]])(
+    "a wrapped argv with no dirty-check subcommand is left alone: %j",
+    (argv) => {
+      expect(hardenedGitArgv(argv)).toEqual(argv);
+    },
+  );
 });
 
 describe("gitSpawnEnv", () => {
@@ -116,5 +140,23 @@ describe("gitWithTimeout: #2198 fsmonitor hardening", () => {
     const r = await gitWithTimeout(["status", "--porcelain"], dir);
     expect(r.exitCode).toBe(0);
     expect(await Bun.file(marker).exists()).toBe(false);
+  });
+});
+
+describe("gitWithTimeout: an interceptor-rewritten argv keeps the #2210 flag", () => {
+  withDepsRestore(_gitDeps);
+
+  test("the spawned argv carries --ignore-submodules=dirty after the wrapped subcommand", async () => {
+    const stub = makeSpawn(() => "");
+    _gitDeps.spawn = stub.spawn;
+
+    await gitWithTimeout(["status", "--porcelain"], process.cwd(), undefined, undefined, [
+      "rtk",
+      "git",
+      "status",
+      "--porcelain",
+    ]);
+
+    expect(stub.calls[0]?.cmd).toEqual(["rtk", "git", "status", "--ignore-submodules=dirty", "--porcelain"]);
   });
 });
