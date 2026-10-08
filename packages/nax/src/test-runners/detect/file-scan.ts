@@ -1,10 +1,11 @@
 /**
  * Tier 3 — File System Scan
  *
- * Walks `git ls-files` output, buckets files by common test-file suffix,
- * and emits globs for suffixes meeting a count threshold.
+ * Walks `git ls-files` output, counts files against a table of candidate
+ * test-file matchers (a basename suffix, or a basename prefix such as pytest's
+ * `test_*.py`), and emits the glob of each candidate meeting a count threshold.
  *
- * Threshold: ≥5 files with the suffix OR ≥10% of total files.
+ * Threshold: a candidate reports when ≥5 files match OR ≥10% of total files.
  * Excluded: node_modules/, dist/, build/, .nax/, coverage/, .git/
  */
 
@@ -40,9 +41,9 @@ function raceWithDeadline<T>(p: Promise<T>, deadlineMs: number): Promise<T | typ
 /** Directories excluded from file scan */
 const EXCLUDED_DIR_PREFIXES = ["node_modules/", "dist/", "build/", ".nax/", "coverage/", ".git/"];
 
-/** Min file count to consider a suffix as a test-file indicator */
+/** Min file count to consider a candidate a test-file indicator */
 const MIN_COUNT_THRESHOLD = 5;
-/** Min fraction of all files to consider a suffix as a test-file indicator */
+/** Min fraction of all files to consider a candidate a test-file indicator */
 const MIN_FRACTION_THRESHOLD = 0.1;
 
 /**
@@ -64,39 +65,42 @@ const FILE_SCAN_GIT_TIMEOUT_MS = 4_000;
  */
 const FILE_SCAN_DRAIN_TIMEOUT_MS = 2_000;
 
-/** Common test-file suffix patterns to look for */
-const CANDIDATE_SUFFIXES = [
-  ".test.ts",
-  ".test.tsx",
-  ".test.js",
-  ".test.jsx",
-  ".spec.ts",
-  ".spec.tsx",
-  ".spec.js",
-  ".spec.jsx",
-  ".e2e-spec.ts",
-  ".e2e-spec.js",
-  "_test.go",
-  "_test.py",
-  "test_.py",
-] as const;
+/** A test-file naming convention the scan counts, and the glob it reports when it wins. */
+interface Candidate {
+  readonly glob: string;
+  readonly matches: (path: string) => boolean;
+}
 
-/** Map from suffix to glob pattern */
-const SUFFIX_TO_GLOB: Record<string, string> = {
-  ".test.ts": "**/*.test.ts",
-  ".test.tsx": "**/*.test.tsx",
-  ".test.js": "**/*.test.js",
-  ".test.jsx": "**/*.test.jsx",
-  ".spec.ts": "**/*.spec.ts",
-  ".spec.tsx": "**/*.spec.tsx",
-  ".spec.js": "**/*.spec.js",
-  ".spec.jsx": "**/*.spec.jsx",
-  ".e2e-spec.ts": "**/*.e2e-spec.ts",
-  ".e2e-spec.js": "**/*.e2e-spec.js",
-  "_test.go": "**/*_test.go",
-  "_test.py": "**/*_test.py",
-  "test_.py": "**/test_*.py",
-};
+const bySuffix = (suffix: string): Candidate => ({
+  glob: `**/*${suffix}`,
+  matches: (path) => path.endsWith(suffix),
+});
+
+/** pytest's default: the marker is a basename PREFIX, so a suffix test can never see it. */
+const byBasenamePrefix = (prefix: string, extension: string): Candidate => ({
+  glob: `**/${prefix}*${extension}`,
+  matches: (path) => {
+    const base = path.slice(path.lastIndexOf("/") + 1);
+    return base.startsWith(prefix) && base.endsWith(extension) && base.length > prefix.length + extension.length;
+  },
+});
+
+/** Common test-file conventions, in report order. */
+const CANDIDATES: readonly Candidate[] = [
+  bySuffix(".test.ts"),
+  bySuffix(".test.tsx"),
+  bySuffix(".test.js"),
+  bySuffix(".test.jsx"),
+  bySuffix(".spec.ts"),
+  bySuffix(".spec.tsx"),
+  bySuffix(".spec.js"),
+  bySuffix(".spec.jsx"),
+  bySuffix(".e2e-spec.ts"),
+  bySuffix(".e2e-spec.js"),
+  bySuffix("_test.go"),
+  bySuffix("_test.py"),
+  byBasenamePrefix("test_", ".py"),
+];
 
 /** Injectable deps for testability */
 export const _fileScanDeps = {
@@ -189,8 +193,8 @@ function isExcluded(path: string): boolean {
 }
 
 /**
- * Scan git-tracked files and detect test-file patterns by suffix frequency.
- * Returns null when no patterns meet the threshold.
+ * Scan git-tracked files and detect test-file patterns by candidate-match frequency.
+ * Returns null when no candidates meet the threshold.
  */
 export async function detectFromFileScan(workdir: string): Promise<DetectionSource | null> {
   const files = await gitLsFiles(workdir);
@@ -198,30 +202,11 @@ export async function detectFromFileScan(workdir: string): Promise<DetectionSour
 
   if (filtered.length === 0) return null;
 
-  const counts: Record<string, number> = {};
-  for (const suffix of CANDIDATE_SUFFIXES) {
-    counts[suffix] = 0;
-  }
-
-  for (const file of filtered) {
-    for (const suffix of CANDIDATE_SUFFIXES) {
-      if (file.endsWith(suffix)) {
-        counts[suffix] = (counts[suffix] ?? 0) + 1;
-      }
-    }
-  }
-
   const totalFiles = filtered.length;
-  const patterns: string[] = [];
-
-  for (const suffix of CANDIDATE_SUFFIXES) {
-    const count = counts[suffix] ?? 0;
-    if (count === 0) continue;
-    if (count >= MIN_COUNT_THRESHOLD || count / totalFiles >= MIN_FRACTION_THRESHOLD) {
-      const glob = SUFFIX_TO_GLOB[suffix];
-      if (glob) patterns.push(glob);
-    }
-  }
+  const patterns = CANDIDATES.filter((candidate) => {
+    const count = filtered.filter((file) => candidate.matches(file)).length;
+    return count > 0 && (count >= MIN_COUNT_THRESHOLD || count / totalFiles >= MIN_FRACTION_THRESHOLD);
+  }).map((candidate) => candidate.glob);
 
   if (patterns.length === 0) return null;
 

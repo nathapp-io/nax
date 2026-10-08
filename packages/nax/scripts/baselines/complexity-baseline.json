@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-10-08T03:16:49.375Z",
+  "updatedAt": "2026-10-08T06:15:24.971Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": { "collectStats": 27 },
@@ -47,7 +47,7 @@
     "src/context/engine/effectiveness.ts": { "readGitPath": 45 },
     "src/context/engine/handlers/query-scratch.ts": { "renderScratchEntry": 22 },
     "src/context/engine/manifest-builder.ts": { "buildManifest": 22 },
-    "src/context/engine/orchestrator.ts": { "assemble": 26 },
+    "src/context/engine/orchestrator.ts": { "assemble": 25 },
     "src/context/engine/pollution.ts": { "computePollutionMetrics": 21 },
     "src/context/engine/provider-weights.ts": { "deriveProviderWeights": 29 },
     "src/context/engine/providers/prior-run-failure.ts": { "aggregatePriorFailures": 32 },

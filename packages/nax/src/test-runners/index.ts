@@ -22,6 +22,7 @@ export {
   DEFAULT_TEST_FILE_PATTERNS,
   DEFAULT_TS_DERIVE_SUFFIXES,
   extractTestDirs,
+  extractWholeTestDirs,
   globsToPathspec,
   globsToTestRegex,
   isTestFileByPatterns,

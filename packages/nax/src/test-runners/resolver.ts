@@ -21,7 +21,13 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { TestPatternConfig } from "../config/selectors";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
-import { DEFAULT_TEST_FILE_PATTERNS, extractTestDirs, globsToPathspec, globsToTestRegex } from "./conventions";
+import {
+  DEFAULT_TEST_FILE_PATTERNS,
+  extractTestDirs,
+  extractWholeTestDirs,
+  globsToPathspec,
+  globsToTestRegex,
+} from "./conventions";
 import type { DetectionResult } from "./detect";
 import { detectTestFilePatterns } from "./detect";
 
@@ -232,9 +238,10 @@ export function resolveReviewExcludePatterns(
 
   const result = new Set<string>();
 
-  // 1. Project's resolved test patterns (from user config / detection)
+  // 1. Project's resolved test patterns (from user config / detection).
+  //    Only directories that hold nothing but tests: `src/**/*.test.ts` must not exclude `src/`.
   for (const p of resolved.pathspec) result.add(p);
-  for (const d of resolved.testDirs) result.add(`:!${d}/`);
+  for (const d of extractWholeTestDirs(resolved.globs)) result.add(`:!${d}/`);
 
   // 2. Well-known test dirs/suffixes — always excluded to prevent regression
   //    vs. current hardcoded default and to handle polyglot repos.

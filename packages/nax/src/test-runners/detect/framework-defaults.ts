@@ -131,11 +131,15 @@ async function detectFromGoMod(workdir: string): Promise<DetectionSource | null>
 
 /**
  * Detect Rust projects from Cargo.toml presence.
+ *
+ * Only `tests/` is a file-level test location in Rust. Unit tests live inline in
+ * `src/*.rs` (`#[cfg(test)] mod tests`), so `src/**\/*.rs` would classify every
+ * implementation file as a test and hide it from review.
  */
 async function detectFromCargoToml(workdir: string): Promise<DetectionSource | null> {
   const path = `${workdir}/Cargo.toml`;
   if (!(await _frameworkDefaultsDeps.fileExists(path))) return null;
-  return { type: "manifest", framework: "rust", path, patterns: ["tests/**/*.rs", "src/**/*.rs"] };
+  return { type: "manifest", framework: "rust", path, patterns: ["tests/**/*.rs"] };
 }
 
 /**

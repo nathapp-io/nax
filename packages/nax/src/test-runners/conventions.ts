@@ -133,35 +133,49 @@ export function isTestFileByPatterns(filePath: string, patterns: readonly string
   return regexes.some((re) => re.test(filePath));
 }
 
+/** A filename glob's suffix that names only an extension (`.py`, `.rs`): it marks a language, not a test. */
+const BARE_EXTENSION = /^\.[A-Za-z0-9]+$/;
+
 /**
  * Convert a list of glob patterns to git pathspec exclusions.
  *
- * Extracts the last meaningful path segment (suffix) from each glob and
- * prepends `:!` to form a git pathspec exclusion. Patterns with no
- * extractable suffix or with only wildcard suffixes are skipped.
- * Duplicate exclusions are de-duplicated by source.
+ * Looks at the LAST path segment (the filename glob):
+ * - no `*` → skipped (it names a literal file, not a family).
+ * - starts with `*` → the text after the last `*` is a suffix. A bare
+ *   extension (`.py`, `.rs`) marks a language, not a test, so it is skipped;
+ *   otherwise emit `:!*<suffix>` (e.g. `*.test.ts`, `*_test.go`).
+ * - has a literal prefix before its first `*` (`test_*.py`) → emit both
+ *   `:!<segment>` and `:!*\/<segment>` so the marker matches at root and any
+ *   depth (in git's default pathspec matching `*` crosses `/`).
+ *
+ * Duplicate exclusions are de-duplicated.
  *
  * @example
  * globsToPathspec(["test\/**\/*.test.ts", "**\/*.spec.ts"])
  * // → [":!*.test.ts", ":!*.spec.ts"]
  *
  * @example
- * globsToPathspec(["**\/*_test.go"])
- * // → [":!*_test.go"]
+ * globsToPathspec(["test_*.py"])
+ * // → [":!test_*.py", ":!*\/test_*.py"]
  */
 export function globsToPathspec(patterns: readonly string[]): string[] {
   const result: string[] = [];
-  const seen = new Set<string>();
+  const add = (pathspec: string): void => {
+    if (!result.includes(pathspec)) result.push(pathspec);
+  };
   for (const pattern of patterns) {
-    const lastStar = pattern.lastIndexOf("*");
-    if (lastStar === -1) continue;
-    const suffix = pattern.slice(lastStar + 1);
-    if (suffix.length === 0) continue;
-    const pathspec = `:!*${suffix}`;
-    if (!seen.has(pathspec)) {
-      result.push(pathspec);
-      seen.add(pathspec);
+    const segment = pattern.slice(pattern.lastIndexOf("/") + 1);
+    const firstStar = segment.indexOf("*");
+    if (firstStar === -1) continue;
+    if (firstStar > 0) {
+      // `test_*.py`: the marker is a PREFIX, so the suffix alone would match every `.py`.
+      add(`:!${segment}`);
+      add(`:!*/${segment}`);
+      continue;
     }
+    const suffix = segment.slice(segment.lastIndexOf("*") + 1);
+    if (suffix.length === 0 || BARE_EXTENSION.test(suffix)) continue;
+    add(`:!*${suffix}`);
   }
   return result;
 }
@@ -188,6 +202,28 @@ export function extractTestDirs(globs: readonly string[]): string[] {
     if (firstSegment && !firstSegment.includes("*") && firstSegment.length > 0) {
       dirs.add(firstSegment);
     }
+  }
+  return [...dirs];
+}
+
+/**
+ * Leading directories whose glob covers EVERY file under them (`tests/**\/*.py`, `spec/**`),
+ * so excluding the whole directory from review loses no implementation code.
+ *
+ * Narrower than {@link extractTestDirs}: `src/**\/*.test.ts` declares where tests live
+ * (smart-runner and the test scanner probe it) but `src/` itself is implementation, so it
+ * must never become a `:!src/` review exclusion.
+ */
+export function extractWholeTestDirs(globs: readonly string[]): string[] {
+  const dirs = new Set<string>();
+  for (const glob of globs) {
+    const segments = glob.split("/");
+    const first = segments[0];
+    if (!first || first.includes("*") || segments.length < 2) continue;
+    const filename = segments[segments.length - 1] ?? "";
+    const coversEverything =
+      filename === "*" || filename === "**" || (filename.startsWith("*") && BARE_EXTENSION.test(filename.slice(1)));
+    if (coversEverything) dirs.add(first);
   }
   return [...dirs];
 }

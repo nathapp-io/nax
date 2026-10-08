@@ -364,6 +364,17 @@ describe("Tier 2 — framework defaults from manifests", () => {
     expect(result.sources[0]?.type).toBe("manifest");
   });
 
+  test("detects Rust from Cargo.toml and claims only the integration-test directory", async () => {
+    _frameworkConfigDeps.readText = mock(async () => null);
+    _frameworkDefaultsDeps.readText = mock(async () => null);
+    _frameworkDefaultsDeps.fileExists = mock(async (path: string) => path.endsWith("Cargo.toml"));
+    _fileScanDeps.spawn = makeSpawn(() => "").spawn;
+
+    const result = await detectTestFilePatterns("/fake/workdir");
+    expect(result.confidence).toBe("medium");
+    expect(result.patterns).toEqual(["tests/**/*.rs"]);
+  });
+
   test("polyglot project (TS + Go) merges patterns from both", async () => {
     _frameworkConfigDeps.readText = mock(async () => null);
     _frameworkDefaultsDeps.readText = mock(async (path: string) => {
@@ -410,6 +421,19 @@ describe("Tier 3 — file scan", () => {
 
     const result = await detectTestFilePatterns("/fake/workdir");
     expect(result.confidence).toBe("empty");
+  });
+
+  test("detects pytest's test_*.py prefix convention in a flat layout", async () => {
+    _frameworkConfigDeps.readText = mock(async () => null);
+    _frameworkDefaultsDeps.readText = mock(async () => null);
+
+    const testFiles = Array.from({ length: 6 }, (_, i) => `pkg/test_module${i}.py`).join("\n");
+    const allFiles = `${testFiles}\npkg/module.py\npkg/latest_news.py\n`;
+    _fileScanDeps.spawn = makeSpawn(() => allFiles).spawn;
+
+    const result = await detectTestFilePatterns("/fake/workdir");
+    expect(result.sources[0]?.type).toBe("file-scan");
+    expect(result.patterns).toEqual(["**/test_*.py"]);
   });
 });
 
