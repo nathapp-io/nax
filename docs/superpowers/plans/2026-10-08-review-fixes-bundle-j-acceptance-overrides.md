@@ -514,4 +514,4 @@ git commit -m "feat(cli): nax accept takes <package>::AC-N overrides (review #10
 
 ## Bundle wrap-up
 
-Run the master plan's **Per-bundle PR checklist** with scope `acceptance`. In the PR body, state the bare-key rule and the planner's refinement ("defines", not "failing") from the master plan so the maintainer can confirm it.
+Run the master plan's **Per-bundle PR checklist** with scope `acceptance`. In the PR body, state the bare-key rule ("defines", confirmed by the maintainer 2026-10-08).
