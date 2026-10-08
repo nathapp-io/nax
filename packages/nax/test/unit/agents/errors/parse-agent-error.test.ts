@@ -21,13 +21,6 @@ describe("parseAgentError", () => {
     expect(parseAgentError(input).type).toBe(type);
   });
 
-  test.each([
-    ["rate-limit", "acpx session failed [ACPX_RATE_LIMIT/TOO_MANY_REQUESTS]"],
-    ["auth", "acpx auth failed [AUTH_FAILED/PERMISSION_DENIED]"],
-  ] as const)("detects %s from bracketed acpx codes", (type, input) => {
-    expect(parseAgentError(input).type).toBe(type);
-  });
-
   test("detects structured key-value status codes", () => {
     const rateLimit = parseAgentError("statusCode=429");
     const auth = parseAgentError("code=403");
@@ -47,7 +40,7 @@ describe("parseAgentError", () => {
     expect(parseAgentError("something went wrong").type).toBe("unknown");
   });
 
-  // #592: acpx wraps vendor errors in a human-readable prefix. The embedded
+  // #592: launchers wrap vendor errors in a human-readable prefix. The embedded
   // JSON envelope must still classify cleanly so AgentManager.shouldSwap fires.
   describe("#592 — embedded Anthropic error envelope", () => {
     test("detects auth from embedded Anthropic authentication_error envelope", () => {
@@ -102,24 +95,8 @@ describe("parseAgentError", () => {
     });
   });
 
-  // acpx 0.6.1 strict --model validation (two signal paths)
   describe("model-not-available errors", () => {
-    // Codex-style: acpx rejects the model at sessions ensure time and emits a
-    // JSON-RPC error on stdout. After the spawn-client fix, the error message
-    // embeds that JSON. Message prefix is stable — from acpx model-support.ts.
     test.each([
-      [
-        "embedded JSON-RPC error (Codex ensure path)",
-        '[acp-adapter] Failed to create session: {"jsonrpc":"2.0","id":null,"error":{"code":-32603,' +
-          '"message":"Cannot apply --model \\"bad-model-xyz\\": the ACP agent did not advertise that model.' +
-          ' Available models: gpt-5.5/low, gpt-5.5/medium.","data":{"acpxCode":"RUNTIME","origin":"cli","sessionId":"unknown"}}}',
-      ],
-      [
-        "advertise-model-support variant (Codex no ACP models)",
-        '[acp-adapter] Failed to create session: {"jsonrpc":"2.0","id":null,"error":{"code":-32603,' +
-          '"message":"Cannot apply --model \\"sonnet\\": the ACP agent did not advertise model support.",' +
-          '"data":{"acpxCode":"RUNTIME","origin":"cli","sessionId":"unknown"}}}',
-      ],
       // Claude-style: Claude Code accepts the model at session/new but rejects it
       // when the prompt is sent. The error arrives as a flat string (no JSON).
       [
@@ -127,17 +104,13 @@ describe("parseAgentError", () => {
         "Internal error: There's an issue with the selected model (bad-model-xyz)." +
           " It may not exist or you may not have access to it. Run --model to pick a different model.",
       ],
-      [
-        "replay-saved-model variant",
-        'Cannot replay saved model "claude-sonnet-4-5": the ACP agent did not advertise that model.',
-      ],
     ])("detects model-not-available from %s", (_label, input) => {
       expect(parseAgentError(input).type).toBe("model-not-available");
     });
 
     test("model-not-available has no retryAfterSeconds", () => {
       const result = parseAgentError(
-        'Cannot apply --model "x": the ACP agent did not advertise that model. Available models: none advertised.',
+        "There's an issue with the selected model (x). It may not exist or you may not have access to it. Run --model to pick a different model.",
       );
       expect(result.type).toBe("model-not-available");
       expect((result as { retryAfterSeconds?: number }).retryAfterSeconds).toBeUndefined();
@@ -145,9 +118,9 @@ describe("parseAgentError", () => {
 
     test.each([
       [
-        "generic RUNTIME acpxCode",
+        "generic RUNTIME detailCode",
         // RUNTIME is used for many errors — must not classify without the message prefix.
-        '{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"Some other runtime error","data":{"acpxCode":"RUNTIME","origin":"cli"}}}',
+        '{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"Some other runtime error","data":{"detailCode":"RUNTIME","origin":"cli"}}}',
       ],
       ["invalid_request_error Anthropic envelope", 'boom {"type":"error","error":{"type":"invalid_request_error"}}'],
     ])("does not classify %s as model-not-available", (_label, input) => {
@@ -156,28 +129,28 @@ describe("parseAgentError", () => {
   });
 
   // ENH-1: JSON-RPC error envelopes carry the classification code in
-  // error.data.acpxCode, not at the top level. A pure-JSON envelope (whole
+  // error.data.detailCode, not at the top level. A pure-JSON envelope (whole
   // string parses as JSON) never reaches the embedded-JSON scan, and the
   // key-value regex defeats JSON-quoted codes — so the nested object must be
   // walked explicitly.
   describe("ENH-1 — nested error.data codes", () => {
-    test("detects rate-limit from error.data.acpxCode in a pure-JSON envelope", () => {
+    test("detects rate-limit from error.data.detailCode in a pure-JSON envelope", () => {
       const stderr =
-        '{"jsonrpc":"2.0","id":null,"error":{"code":-32000,"message":"rate limited","data":{"acpxCode":"RATE_LIMIT","origin":"cli"}}}';
+        '{"jsonrpc":"2.0","id":null,"error":{"code":-32000,"message":"rate limited","data":{"detailCode":"RATE_LIMIT","origin":"cli"}}}';
       const result = parseAgentError(stderr);
       expect(result.type).toBe("rate-limit");
     });
 
-    test("detects auth from error.data.acpxCode in a pure-JSON envelope", () => {
+    test("detects auth from error.data.detailCode in a pure-JSON envelope", () => {
       const stderr =
-        '{"jsonrpc":"2.0","id":null,"error":{"code":-32001,"message":"auth failed","data":{"acpxCode":"AUTH_FAILED"}}}';
+        '{"jsonrpc":"2.0","id":null,"error":{"code":-32001,"message":"auth failed","data":{"detailCode":"AUTH_FAILED"}}}';
       const result = parseAgentError(stderr);
       expect(result.type).toBe("auth");
     });
 
     test("walks nested error.data when the envelope is embedded in free text", () => {
       const stderr =
-        'probe failed: {"jsonrpc":"2.0","id":null,"error":{"code":-32000,"message":"quota","data":{"acpxCode":"QUOTA_EXCEEDED","retryAfterSeconds":30}}}';
+        'probe failed: {"jsonrpc":"2.0","id":null,"error":{"code":-32000,"message":"quota","data":{"detailCode":"QUOTA_EXCEEDED","retryAfterSeconds":30}}}';
       const result = parseAgentError(stderr);
       expect(result.type).toBe("rate-limit");
       expect(result.retryAfterSeconds).toBe(30);
@@ -185,9 +158,47 @@ describe("parseAgentError", () => {
 
     test("leaves unknown when error.data has no classifiable code", () => {
       const stderr =
-        '{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"some error","data":{"acpxCode":"RUNTIME"}}}';
+        '{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"some error","data":{"detailCode":"RUNTIME"}}}';
       expect(parseAgentError(stderr).type).toBe("unknown");
     });
+  });
+});
+
+describe("S4b-5: acpx-only shapes no longer classify", () => {
+  test.each([
+    ["bracketed acpx code", "acpx session failed [ACPX_RATE_LIMIT/TOO_MANY_REQUESTS]"],
+    ["acpx model-support prefix", 'Cannot apply --model "x": the ACP agent did not advertise that model.'],
+    ["acpx replay prefix", 'Cannot replay saved model "x"'],
+    ["acpxCode JSON field", '{"error":{"code":-32603,"data":{"acpxCode":"RATE_LIMIT"}}}'],
+    ["acpxCode key=value", "prompt failed acpxCode=RATE_LIMIT"],
+  ])("%s -> unknown", (_label, input) => {
+    expect(parseAgentError(input).type).toBe("unknown");
+  });
+});
+
+describe("S4b-5: structured provider signals still classify", () => {
+  test.each([
+    ["whole Anthropic envelope", '{"type":"error","error":{"type":"authentication_error","message":"x"}}', "auth"],
+    [
+      "embedded Anthropic envelope",
+      'Internal error: API Error: 429 {"type":"error","error":{"type":"rate_limit_error","message":"x"}}',
+      "rate-limit",
+    ],
+    ["JSON-RPC detailCode", '{"error":{"code":-32603,"data":{"detailCode":"RATE_LIMIT"}}}', "rate-limit"],
+    ["key=value status", "request failed statusCode=429", "rate-limit"],
+    ["key=value errorCode", "request failed errorCode=AUTH_FAILED", "auth"],
+    [
+      "Claude selected-model text",
+      "There's an issue with the selected model (x). Run --model to pick a different model.",
+      "model-not-available",
+    ],
+    [
+      "Claude selected-model text inside a JSON-RPC envelope",
+      '{"error":{"code":-32603,"message":"There\'s an issue with the selected model (x). Run --model to pick one."}}',
+      "model-not-available",
+    ],
+  ] as const)("%s", (_label, input, type) => {
+    expect(parseAgentError(input).type).toBe(type);
   });
 });
 

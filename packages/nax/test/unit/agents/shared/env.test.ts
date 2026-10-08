@@ -53,10 +53,10 @@ describe("buildAllowedEnv (shared)", () => {
     expect(env.NAX_SKIP_PRECHECK).toBe("1");
   });
 
-  test("includes ACPX_* prefix vars", () => {
+  test("S4b-5: ACPX_* prefix vars are no longer passed through", () => {
     process.env.ACPX_TIMEOUT = "30000";
     const env = buildAllowedEnv();
-    expect(env.ACPX_TIMEOUT).toBe("30000");
+    expect(env).not.toHaveProperty("ACPX_TIMEOUT");
   });
 
   test("includes ANTHROPIC_* prefix vars (beyond API key)", () => {

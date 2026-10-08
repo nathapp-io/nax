@@ -3,7 +3,7 @@
  *
  * Single canonical implementation used by both:
  * - ClaudeCodeAdapter (src/agents/claude/execution.ts)
- * - SpawnAcpClient (src/agents/acp/spawn-client.ts)
+ * - the ACP adapter's launch env (src/agents/acp/open-context.ts, backendEnv)
  *
  * When adding new env var prefixes or API key vars, update ONLY this file.
  */
@@ -30,7 +30,6 @@ const ALLOWED_PREFIXES = [
   "NAX_",
   "CLAW_",
   "TURBO_",
-  "ACPX_",
   "CODEX_",
   "GEMINI_",
   "ANTHROPIC_",
