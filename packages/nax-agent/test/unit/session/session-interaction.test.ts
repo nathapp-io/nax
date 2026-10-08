@@ -190,15 +190,18 @@ describe("createSessionInteractionHandler", () => {
     expect(err.message).toContain('Unknown tool "mystery"');
   });
 
-  test("a built-in tool runs through the runtime with its call context, inside the current-call slot", async () => {
+  test("a built-in tool runs through the runtime with its call context and the resolved turn signal", async () => {
     const h = harness({ kind: "ok", content: "file body" });
     const answer = await createSessionInteractionHandler(h.deps).onInteraction(codingTool("Read", { path: "a.ts" }));
     expect(answer).toEqual({ answer: "file body" });
-    expect(h.runtimeCalls[0]).toEqual({
+    expect(h.runtimeCalls[0]).toMatchObject({
       name: "Read",
       context: { turnId: "turn-1", roundTrips: 2, toolCallId: "call-1", deferModelTruncation: true },
       callIdDuring: "call-1",
     });
+    // The request carried no signal, so the resolved turn signal is forwarded
+    // to the tool (the pre-fix code dropped it and the tool saw none).
+    expect(h.runtimeCalls[0]?.context?.signal).toBe(h.deps.turnSignal());
     expect(h.slot.callId).toBeUndefined();
   });
 
@@ -299,6 +302,32 @@ describe("createSessionInteractionHandler", () => {
     });
     controller.abort();
     expect((await thrown(pending)).message).toContain("abandoned");
+    expect(h.slot.callId).toBeUndefined();
+  });
+
+  test("a pre-aborted signal abandons the call without ever invoking the tool", async () => {
+    let called = false;
+    const h = harness({ kind: "ok", content: "" });
+    const deps: SessionInteractionDeps = {
+      ...h.deps,
+      runtime: {
+        advertised: () => [],
+        async callTool() {
+          called = true;
+          return { kind: "ok", content: "" };
+        },
+      },
+    };
+    const controller = new AbortController();
+    controller.abort();
+    const err = await thrown(
+      createSessionInteractionHandler(deps).onInteraction({
+        ...codingTool("Read"),
+        signal: controller.signal,
+      }),
+    );
+    expect(err.message).toContain("abandoned");
+    expect(called).toBe(false);
     expect(h.slot.callId).toBeUndefined();
   });
 

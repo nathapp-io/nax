@@ -178,7 +178,7 @@ async function runCodingTool(
     const outcome = signal.aborted
       ? abandoned
       : await raceAbort(
-          deps.runtime.callTool(request.name, request.input ?? {}, toolCallContext(request)),
+          deps.runtime.callTool(request.name, request.input ?? {}, { ...toolCallContext(request), signal }),
           signal,
           () => abandoned,
         );
