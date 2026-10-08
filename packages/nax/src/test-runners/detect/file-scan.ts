@@ -1,10 +1,11 @@
 /**
  * Tier 3 — File System Scan
  *
- * Walks `git ls-files` output, buckets files by common test-file suffix,
- * and emits globs for suffixes meeting a count threshold.
+ * Walks `git ls-files` output, counts files against a table of candidate
+ * test-file matchers (a basename suffix, or a basename prefix such as pytest's
+ * `test_*.py`), and emits the glob of each candidate meeting a count threshold.
  *
- * Threshold: ≥5 files with the suffix OR ≥10% of total files.
+ * Threshold: a candidate reports when ≥5 files match OR ≥10% of total files.
  * Excluded: node_modules/, dist/, build/, .nax/, coverage/, .git/
  */
 
@@ -40,9 +41,9 @@ function raceWithDeadline<T>(p: Promise<T>, deadlineMs: number): Promise<T | typ
 /** Directories excluded from file scan */
 const EXCLUDED_DIR_PREFIXES = ["node_modules/", "dist/", "build/", ".nax/", "coverage/", ".git/"];
 
-/** Min file count to consider a suffix as a test-file indicator */
+/** Min file count to consider a candidate a test-file indicator */
 const MIN_COUNT_THRESHOLD = 5;
-/** Min fraction of all files to consider a suffix as a test-file indicator */
+/** Min fraction of all files to consider a candidate a test-file indicator */
 const MIN_FRACTION_THRESHOLD = 0.1;
 
 /**
@@ -192,8 +193,8 @@ function isExcluded(path: string): boolean {
 }
 
 /**
- * Scan git-tracked files and detect test-file patterns by suffix frequency.
- * Returns null when no patterns meet the threshold.
+ * Scan git-tracked files and detect test-file patterns by candidate-match frequency.
+ * Returns null when no candidates meet the threshold.
  */
 export async function detectFromFileScan(workdir: string): Promise<DetectionSource | null> {
   const files = await gitLsFiles(workdir);
