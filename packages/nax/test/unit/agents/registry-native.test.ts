@@ -11,7 +11,6 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { _clientDeps, _resetNativeClient } from "@nathapp/nax-agent/internal";
 import type { Client } from "@nathapp/nax-ai";
 import { makeNaxConfig } from "@test/helpers";
-import { AcpAgentAdapter } from "@/agents/acp/adapter";
 import { AcpSdkAgentAdapter } from "@/agents/acp-sdk";
 import { NativeAgentAdapter } from "@/agents/native-agent";
 import { acpAdapterFor, createAgentRegistry, getAllAgents, KNOWN_AGENT_NAMES } from "@/agents/registry";
@@ -72,20 +71,18 @@ describe("registry discrimination", () => {
   });
 });
 
-describe("ACP transport routing (S4b spec §5.3)", () => {
-  test("acpAdapterFor picks the adapter by transport", () => {
-    expect(acpAdapterFor("claude", "acpx")).toBeInstanceOf(AcpAgentAdapter);
-    expect(acpAdapterFor("claude", "sdk")).toBeInstanceOf(AcpSdkAgentAdapter);
+describe("ACP routing (S4b spec §5.3)", () => {
+  test("acpAdapterFor returns the ACP adapter", () => {
+    expect(acpAdapterFor("claude")).toBeInstanceOf(AcpSdkAgentAdapter);
   });
 
-  test("createAgentRegistry routes ACP agents by agent.acp.transport, native unchanged", () => {
-    const acpx = createAgentRegistry(makeNaxConfig({ agent: { acp: { transport: "acpx" } } }));
-    expect(acpx.getAgent("claude")).toBeInstanceOf(AcpAgentAdapter);
-    expect(acpx.getAgent("native")).toBeInstanceOf(NativeAgentAdapter);
-    expect(createAgentRegistry(makeNaxConfig({})).getAgent("claude")).toBeInstanceOf(AcpSdkAgentAdapter);
+  test("createAgentRegistry routes ACP agents to the ACP adapter, native unchanged", () => {
+    const registry = createAgentRegistry(makeNaxConfig({}));
+    expect(registry.getAgent("claude")).toBeInstanceOf(AcpSdkAgentAdapter);
+    expect(registry.getAgent("native")).toBeInstanceOf(NativeAgentAdapter);
   });
 
-  test("the config-less listings use the default transport, sdk since S4b-4 (D2-n)", () => {
+  test("the config-less listings use the ACP adapter (D2-n)", () => {
     expect(getAllAgents().find((a) => a.name === "claude")).toBeInstanceOf(AcpSdkAgentAdapter);
   });
 });

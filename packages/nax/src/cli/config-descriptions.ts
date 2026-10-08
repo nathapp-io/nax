@@ -299,8 +299,6 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   agent: "Agent protocol configuration (ACP-003)",
   "agent.protocol": "Protocol for agent communication: 'acp' (default) | 'native' | 'hybrid'",
   "agent.acp": "ACP agent transport settings (claude, codex, opencode, gemini, pi)",
-  "agent.acp.transport":
-    "How ACP agents are driven: 'sdk' (default) uses @nathapp/nax-agent-acp in-process; 'acpx' shells out to the acpx CLI (S4b development key; S4b-5 removes acpx and this key)",
   "agent.native.instructionFileName":
     "Repository instruction filename (default: AGENTS.md). Custom Markdown basenames load without AGENTS/CLAUDE fallbacks.",
   "agent.native.catalogOverrides":

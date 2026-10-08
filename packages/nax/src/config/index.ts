@@ -1,8 +1,6 @@
 export type { BashApprovalMode, SandboxConfig } from "@nathapp/nax-agent/internal";
 export { DEFAULT_SANDBOX_CONFIG, resolveBashApproval } from "@nathapp/nax-agent/internal";
 export {
-  type AcpTransport,
-  DEFAULT_ACP_TRANSPORT,
   DEFAULT_AGENT_NAME,
   DEFAULT_AGENT_PROTOCOL,
   isBuiltInModelMap,

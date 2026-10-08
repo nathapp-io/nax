@@ -16,6 +16,7 @@ import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import {
   _applyLegacyReviewExecutionShim,
+  _applyRemovedAcpTransportShim,
   _applyRemovedRoutingKeysShim,
   _applyRemovedWorktreeInheritShim,
 } from "@/config/compat-shims";
@@ -115,6 +116,39 @@ describe("_applyRemovedWorktreeInheritShim — worktreeDependencies mode removed
     _applyRemovedWorktreeInheritShim(conf, () => {});
 
     expect(conf.execution.worktreeDependencies.mode).toBe("inherit");
+  });
+});
+
+describe("_applyRemovedAcpTransportShim — agent.acp.transport removed with acpx (S4b-5)", () => {
+  test("drops transport 'acpx', keeps the other acp keys, and warns that acpx is gone", () => {
+    const warnings: string[] = [];
+    const conf = { agent: { acp: { transport: "acpx", promptRetries: 2 } } };
+    const result = _applyRemovedAcpTransportShim(conf, (msg) => warnings.push(msg));
+    expect(result).toEqual({ agent: { acp: { promptRetries: 2 } } });
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("agent.acp.transport");
+    expect(warnings[0]).toContain("acpx");
+  });
+
+  test("drops transport 'sdk' with a warning that the key is no longer read", () => {
+    const warnings: string[] = [];
+    const result = _applyRemovedAcpTransportShim({ agent: { acp: { transport: "sdk" } } }, (msg) => warnings.push(msg));
+    expect(result).toEqual({ agent: { acp: {} } });
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("agent.acp.transport");
+  });
+
+  test("returns the input unchanged and silent when the key is absent", () => {
+    const warnings: string[] = [];
+    const conf = { agent: { acp: { promptRetries: 1 } } };
+    expect(_applyRemovedAcpTransportShim(conf, (msg) => warnings.push(msg))).toBe(conf);
+    expect(warnings).toEqual([]);
+  });
+
+  test("does not mutate its input", () => {
+    const conf = { agent: { acp: { transport: "acpx" } } };
+    _applyRemovedAcpTransportShim(conf, () => {});
+    expect(conf.agent.acp.transport).toBe("acpx");
   });
 });
 
@@ -555,6 +589,19 @@ describe("loadConfig — legacy key deprecation shim", () => {
 
     const config = await loadConfig(tempDir);
     expect(config.execution.worktreeDependencies.mode).toBe("off");
+  });
+
+  test("S4b-5: a project config pinning agent.acp.transport loads, warns once, and drops the key", async () => {
+    await writeProjectConfig({ agent: { acp: { transport: "acpx", promptRetries: 1 } } });
+
+    let config: Awaited<ReturnType<typeof loadConfig>> | undefined;
+    const captured = await captureLoadWarnings(async () => {
+      config = await loadConfig(tempDir);
+    });
+
+    expect(captured.filter((m) => m.includes("agent.acp.transport"))).toHaveLength(1);
+    expect(config?.agent?.acp).not.toHaveProperty("transport");
+    expect(config?.agent?.acp?.promptRetries).toBe(1);
   });
 });
 

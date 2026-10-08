@@ -11,12 +11,7 @@ import {
   DEFAULT_SANDBOX_CONFIG,
 } from "@nathapp/nax-agent/internal";
 import { z } from "zod";
-import {
-  DEFAULT_ACP_TRANSPORT,
-  DEFAULT_AGENT_NAME,
-  DEFAULT_AGENT_PROTOCOL,
-  DEFAULT_MODEL_MAPS,
-} from "./agent-defaults";
+import { DEFAULT_AGENT_NAME, DEFAULT_AGENT_PROTOCOL, DEFAULT_MODEL_MAPS } from "./agent-defaults";
 import { MODEL_SHORTHAND_TIERS, resolveTierMembership } from "./schema-types";
 import { AuthConfigSchema } from "./schemas-auth";
 import { ContextConfigSchema } from "./schemas-context";
@@ -356,7 +351,6 @@ export const NaxConfigSchema = z
       usageAudit: { enabled: false },
       fallback: { enabled: false, map: {}, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: true },
       acp: {
-        transport: DEFAULT_ACP_TRANSPORT,
         promptRetries: 0,
         trackedSpawnDeadlineMs: 10_000,
         trackedSpawnStartupDeadlineMs: 30_000,

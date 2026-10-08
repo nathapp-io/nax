@@ -160,11 +160,11 @@ describe("validateContestants", () => {
     ).rejects.toThrow(boom);
   });
 
-  // S4b-2: the brief's transport-routing tests drive validateContestants with
-  // only `isInstalled`, so loadProfile falls back to the real
+  // The isInstalled routing tests drive validateContestants with only
+  // `isInstalled`, so loadProfile falls back to the real
   // _preflightDeps.loadProfile against projectRoot — which needs the profile
   // fixture ("cross-agent-pi" → agent "pi") materialised on disk.
-  describe("S4b-2 transport routing", () => {
+  describe("isInstalled routing", () => {
     const profileDir = join(projectRoot, ".nax", "profiles");
 
     beforeAll(() => {
@@ -176,47 +176,32 @@ describe("validateContestants", () => {
       rmSync(projectRoot, { recursive: true, force: true });
     });
 
-    it("isInstalled is asked with the contestant's transport", async () => {
-      const seen: string[] = [];
-      await validateContestants(
-        ["cross-agent-pi"],
-        projectRoot,
-        {
-          isInstalled: (agent, transport) => {
-            seen.push(`${agent}:${transport}`);
-            return true;
-          },
-        },
-        "sdk",
-      );
-      expect(seen).toEqual(["pi:sdk"]);
-    });
-
-    it("with no baseTransport, a contestant gets the sdk default (S4b-4)", async () => {
+    it("isInstalled is asked with the contestant's resolved agent", async () => {
       const seen: string[] = [];
       await validateContestants(["cross-agent-pi"], projectRoot, {
-        isInstalled: (agent, transport) => {
-          seen.push(`${agent}:${transport}`);
+        isInstalled: (agent) => {
+          seen.push(agent);
           return true;
         },
       });
-      expect(seen).toEqual(["pi:sdk"]);
+      expect(seen).toEqual(["pi"]);
     });
 
-    it("a profile's agent.acp.transport acpx still wins over the sdk default", async () => {
+    it("a profile that still sets agent.acp.transport validates on the only transport (S4b-5)", async () => {
       writeFileSync(
-        join(profileDir, "cross-agent-pi-acpx.json"),
+        join(profileDir, "legacy-transport.json"),
         JSON.stringify({ agent: { default: "pi", acp: { transport: "acpx" } } }),
         "utf8",
       );
       const seen: string[] = [];
-      await validateContestants(["cross-agent-pi-acpx"], projectRoot, {
-        isInstalled: (agent, transport) => {
-          seen.push(`${agent}:${transport}`);
+      const result = await validateContestants(["legacy-transport"], projectRoot, {
+        isInstalled: (name) => {
+          seen.push(name);
           return true;
         },
       });
-      expect(seen).toEqual(["pi:acpx"]);
+      expect(seen).toEqual(["pi"]);
+      expect(result.errors).toEqual([]);
     });
 
     it("an async isInstalled answer is honoured", async () => {

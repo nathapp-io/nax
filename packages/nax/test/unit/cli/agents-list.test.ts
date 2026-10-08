@@ -1,21 +1,17 @@
 /**
  * Tests for src/cli/agents.ts (US-005 AC8)
  *
- * The agents list must be driven by ACP_ADAPTER_NAMES (the agents that have a
- * real ACP adapter entry) rather than KNOWN_AGENT_NAMES — the registry is
+ * The agents list must be driven by ACP_SDK_AGENT_NAMES (the agents that have
+ * an ACP launcher) rather than KNOWN_AGENT_NAMES — the registry is
  * intentionally broader (it also serves context generation and precheck
- * loops). Adapterless names like `aider` must not appear in the listing,
- * and an adapter whose name resolves via `DEFAULT_ENTRY` (which is what
- * `new AcpAgentAdapter(name)` falls back to for unknown names) must not
- * appear either.
+ * loops). Adapterless names like `aider` must not appear in the listing, and
+ * no row may carry the generic "ACP Agent" display name.
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeNaxConfig } from "@test/helpers";
 import { KNOWN_AGENT_NAMES } from "@/agents";
-import { ACP_ADAPTER_NAMES } from "@/agents/acp";
-import { _acpAdapterDeps } from "@/agents/acp/adapter";
-import { _acpSdkDeps } from "@/agents/acp-sdk";
+import { _acpSdkDeps, ACP_SDK_AGENT_NAMES } from "@/agents/acp-sdk";
 import { _cliAgentsDeps, agentsListCommand } from "@/cli/agents";
 import { DEFAULT_CONFIG } from "@/config";
 
@@ -23,11 +19,10 @@ interface CapturedLog {
   args: unknown[];
 }
 
-describe("agentsListCommand (US-005 AC8: listing driven by ACP_ADAPTER_NAMES)", () => {
+describe("agentsListCommand (US-005 AC8: listing driven by ACP_SDK_AGENT_NAMES)", () => {
   let captured: CapturedLog[];
   let originalLog: typeof console.log;
   let origGetAgentVersion: typeof _cliAgentsDeps.getAgentVersion;
-  let origWhich: typeof _acpAdapterDeps.which;
   let origLaunchKind: typeof _acpSdkDeps.launchCandidateKind;
 
   beforeEach(() => {
@@ -38,22 +33,18 @@ describe("agentsListCommand (US-005 AC8: listing driven by ACP_ADAPTER_NAMES)", 
     };
 
     origGetAgentVersion = _cliAgentsDeps.getAgentVersion;
-    origWhich = _acpAdapterDeps.which;
     origLaunchKind = _acpSdkDeps.launchCandidateKind;
 
     // Mock getAgentVersion to return immediately
     _cliAgentsDeps.getAgentVersion = mock(async () => "1.0.0");
-    // Pretend only "claude" is launchable, on both transports: which() is the
-    // acpx probe, launchCandidateKind the sdk one (the default since S4b-4).
-    // Stubbing the sdk probe keeps the status column off the machine's PATH.
-    _acpAdapterDeps.which = mock((binary: string) => (binary === "claude" ? "/usr/bin/claude" : null));
+    // Pretend only "claude" is launchable. Stubbing the launcher probe keeps
+    // the status column off the machine's PATH.
     _acpSdkDeps.launchCandidateKind = mock((agent: string) => (agent === "claude" ? "local" : undefined));
   });
 
   afterEach(() => {
     console.log = originalLog;
     _cliAgentsDeps.getAgentVersion = origGetAgentVersion;
-    _acpAdapterDeps.which = origWhich;
     _acpSdkDeps.launchCandidateKind = origLaunchKind;
   });
 
@@ -63,24 +54,24 @@ describe("agentsListCommand (US-005 AC8: listing driven by ACP_ADAPTER_NAMES)", 
 
     const flat = captured.map((entry) => entry.args.map((a) => (typeof a === "string" ? a : "")).join(" ")).join("\n");
 
-    // 'aider' is in KNOWN_AGENT_NAMES but NOT in ACP_ADAPTER_NAMES — the
+    // 'aider' is in KNOWN_AGENT_NAMES but NOT in ACP_SDK_AGENT_NAMES — the
     // listing must not render a row for it. Also, no row may carry the
     // DEFAULT_ENTRY display name ("ACP Agent").
     expect(flat).not.toContain("aider");
     expect(flat).not.toContain("ACP Agent");
   });
 
-  test("US-005 AC8: output contains rows for every name in ACP_ADAPTER_NAMES that resolves via which()", async () => {
+  test("US-005 AC8: output contains rows for every name in ACP_SDK_AGENT_NAMES, installed when it has an ACP launcher", async () => {
     const config = DEFAULT_CONFIG;
     await agentsListCommand(config, "/tmp/workdir");
 
     const flat = captured.map((entry) => entry.args.map((a) => (typeof a === "string" ? a : "")).join(" ")).join("\n");
 
-    // Every name in ACP_ADAPTER_NAMES (claude, codex, gemini, opencode, pi)
+    // Every name in ACP_SDK_AGENT_NAMES (claude, codex, gemini, opencode, pi)
     // must appear in the listing. The mocks resolve only "claude" so only
     // claude is "installed"; the others must still appear as rows (with
     // status "unavailable").
-    for (const name of ACP_ADAPTER_NAMES) {
+    for (const name of ACP_SDK_AGENT_NAMES) {
       expect(flat).toContain(name);
     }
     const rows = flat.split("\n");
@@ -93,24 +84,5 @@ describe("agentsListCommand (US-005 AC8: listing driven by ACP_ADAPTER_NAMES)", 
     // registry still names it (so context-generation and precheck loops
     // that walk KNOWN_AGENT_NAMES keep working).
     expect(KNOWN_AGENT_NAMES).toContain("aider");
-  });
-
-  test("S4b-2: transport sdk lists the same agents through the SDK adapter", async () => {
-    const original = _acpSdkDeps.launchCandidateKind;
-    _acpSdkDeps.launchCandidateKind = (agent) => (agent === "claude" ? "local" : undefined);
-    try {
-      const config = makeNaxConfig({ agent: { default: "claude", acp: { transport: "sdk" } } });
-      await agentsListCommand(config, "/tmp/workdir");
-      const flat = captured
-        .map((entry) => entry.args.map((a) => (typeof a === "string" ? a : "")).join(" "))
-        .join("\n");
-      const claudeRow = flat.split("\n").find((line) => line.includes("Claude Code (ACP)"));
-      expect(claudeRow).toContain("installed");
-      const codexRow = flat.split("\n").find((line) => line.includes("OpenAI Codex (ACP)"));
-      expect(codexRow).toContain("unavailable");
-      expect(flat).not.toContain("ACP Agent");
-    } finally {
-      _acpSdkDeps.launchCandidateKind = original;
-    }
   });
 });

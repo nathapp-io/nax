@@ -4,10 +4,9 @@
  * Redirects global nax state into a temp directory so tests never write to the
  * real ~/.nax, while still starting from a deterministic clean environment.
  *
- * Also installs a sentinel on _acpAdapterDeps.createClient that throws if
- * called without a test-level mock, preventing accidental real acpx session
- * leaks. To allow real spawns (rare), override the dep in your describe block:
- *   _acpAdapterDeps.createClient = mock(() => makeClient(makeSession()));
+ * Also installs a sentinel on _acpSdkDeps.acpBackend that throws if called
+ * without a test-level mock, so no test spawns a real ACP agent process. Tests
+ * that open a session replace the dep (fakeAcpBackend or a scripted backend).
  *
  * Same idea for _clientDeps.build (the native/nax-ai client): unmocked, it
  * builds a real client that gets memoised in client.ts's module-level cache
@@ -21,7 +20,6 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { _clientDeps } from "@nathapp/nax-agent/internal";
-import { _acpAdapterDeps } from "../src/agents/acp/adapter";
 import { _acpSdkDeps } from "../src/agents/acp-sdk/session";
 import { configureNaxCredentials } from "../src/config";
 import { _notifyDeps } from "../src/finish/notify";
@@ -89,23 +87,8 @@ console.log = () => {};
 console.warn = () => {};
 console.error = () => {};
 
-// ─── ACP spawn sentinel ───────────────────────────────────────────────────────
-// Blocks real acpx sessions from being created in tests. Any test that calls
-// code leading to _acpAdapterDeps.createClient without first mocking it will
-// fail fast with a clear message instead of leaking into the acpx session
-// registry. To opt in to a real client, replace this dep in beforeEach/afterEach.
-_acpAdapterDeps.createClient = () => {
-  throw new Error(
-    "[test-preload] _acpAdapterDeps.createClient called without a mock — " +
-      "this would spawn a real acpx session and pollute the session registry. " +
-      "Add to your describe block:\n" +
-      "  beforeEach(() => { _acpAdapterDeps.createClient = mock(() => makeClient(makeSession())); })\n" +
-      "  afterEach(() => { _acpAdapterDeps.createClient = <saved original>; mock.restore(); })",
-  );
-};
-
-// ─── ACP sdk spawn sentinel (S4b-4) ───────────────────────────────────────────
-// The sdk transport is the default from S4b-4. A test that reaches
+// ─── ACP spawn sentinel ───────────────────────────────────────────
+// ACP agents run through nax-agent-acp. A test that reaches
 // _acpSdkDeps.acpBackend without replacing it would spawn a real ACP agent
 // (the local launcher or npx). Fail fast instead. sdk tests replace this dep
 // with fakeAcpBackend (test/helpers/acp-fake-agent) or a scripted backend.

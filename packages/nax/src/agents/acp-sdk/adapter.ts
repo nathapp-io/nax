@@ -1,7 +1,7 @@
 /**
  * AcpSdkAgentAdapter: nax's AgentAdapter over @nathapp/nax-agent-acp (S4b spec
- * §5.1), selected by agent.acp.transport = "sdk". It drives the backend's S1
- * adapter itself (D24, B6) with nax's turn loop around it. The live map routes
+ * §5.1). It drives the backend's S1 adapter itself (D24, B6) with nax's turn
+ * loop around it. The live map routes
  * turns and closes from a nax handle id to its session; it is never used to
  * reuse a session, which SessionManager owns (§6.1).
  *
@@ -145,7 +145,7 @@ export class AcpSdkAgentAdapter implements AgentAdapter {
   private requireEntry(sessionName: string): AcpSdkEntry {
     if (this.entry !== undefined) return this.entry;
     throw new NaxError(
-      `Agent "${this.name}" has no ACP launcher; it cannot run on agent.acp.transport "sdk"`,
+      `Agent "${this.name}" has no ACP launcher, so it cannot run as an ACP agent`,
       "ACP_AGENT_UNSUPPORTED",
       { stage: STAGE, agentName: this.name, sessionName },
     );

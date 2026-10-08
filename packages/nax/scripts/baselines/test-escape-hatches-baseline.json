@@ -1,10 +1,10 @@
 {
   "counts": {
     "tsSuppress": 0,
-    "ratchetAllow": 26,
-    "looseCast": 1460
+    "ratchetAllow": 21,
+    "looseCast": 1450
   },
-  "updatedAt": "2026-10-03T02:39:25.551Z",
+  "updatedAt": "2026-10-08T02:19:18.102Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": {
       "looseCast": 5
@@ -688,26 +688,8 @@
     "test/unit/agents/manager-swap-loop.test.ts": {
       "looseCast": 1
     },
-    "test/unit/agents/acp/adapter-lifecycle.test.ts": {
-      "looseCast": 1
-    },
     "test/unit/agents/errors/parse-agent-error.test.ts": {
       "looseCast": 1
-    },
-    "test/unit/agents/acp/parser.test.ts": {
-      "looseCast": 1
-    },
-    "test/unit/agents/acp/token-mapper.test.ts": {
-      "ratchetAllow": 5
-    },
-    "test/unit/agents/acp/spawn-client-reasoning-effort.test.ts": {
-      "looseCast": 1
-    },
-    "test/unit/agents/acp/interaction-bridge-detection.test.ts": {
-      "looseCast": 1
-    },
-    "test/unit/agents/acp/adapter-phase-a.test.ts": {
-      "looseCast": 6
     },
     "test/unit/agents/retry/parse-retry.test.ts": {
       "looseCast": 2

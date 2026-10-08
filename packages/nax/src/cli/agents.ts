@@ -9,7 +9,7 @@ import { acpAdapterFor, resolveDefaultAgent } from "../agents";
 import { ACP_SDK_AGENT_NAMES } from "../agents/acp-sdk";
 import { NativeAgentAdapter } from "../agents/native-agent";
 import { getAgentVersion } from "../agents/shared/version-detection";
-import { DEFAULT_ACP_TRANSPORT, DEFAULT_AGENT_PROTOCOL } from "../config";
+import { DEFAULT_AGENT_PROTOCOL } from "../config";
 import type { NaxConfig } from "../config/schema";
 
 /**
@@ -24,7 +24,7 @@ export const _cliAgentsDeps = { getAgentVersion };
  * List all agents with status, version, and capabilities.
  *
  * The listing is driven by `ACP_SDK_AGENT_NAMES` (the agents with an ACP
- * launcher; the same set as acpx's `ACP_ADAPTER_NAMES`) rather than the broader
+ * launcher) rather than the broader
  * `KNOWN_AGENT_NAMES` registry, which intentionally also serves context
  * generation and config/precheck loops — adapterless names like `aider` must
  * not appear here, and an adapterless name would fall back to
@@ -39,8 +39,7 @@ export async function agentsListCommand(config: NaxConfig, _workdir: string): Pr
   // Create ACP adapters only for names that have a real ACP entry, and only
   // when the protocol can reach them: under "native" they cannot run.
   const acpReachable = (config.agent?.protocol ?? DEFAULT_AGENT_PROTOCOL) !== "native";
-  const transport = config.agent?.acp?.transport ?? DEFAULT_ACP_TRANSPORT;
-  const adapters = acpReachable ? Array.from(ACP_SDK_AGENT_NAMES).map((name) => acpAdapterFor(name, transport)) : [];
+  const adapters = acpReachable ? Array.from(ACP_SDK_AGENT_NAMES).map((name) => acpAdapterFor(name)) : [];
   const defaultAgent = resolveDefaultAgent(config);
   const acpVersions = await Promise.all(
     adapters.map(async (agent) => ({

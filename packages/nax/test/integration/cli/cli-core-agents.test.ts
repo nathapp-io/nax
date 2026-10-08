@@ -8,7 +8,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import { rm } from "node:fs/promises";
 import { makeTempDir } from "@test/helpers";
-import { _acpAdapterDeps } from "@/agents/acp/adapter";
 import { _acpSdkDeps } from "@/agents/acp-sdk";
 import { _cliAgentsDeps, agentsListCommand } from "@/cli/agents";
 import { DEFAULT_CONFIG } from "@/config";
@@ -26,24 +25,19 @@ describe("agentsListCommand", () => {
   });
 
   let origGetAgentVersion: typeof _cliAgentsDeps.getAgentVersion;
-  let origWhich: typeof _acpAdapterDeps.which;
   let origLaunchKind: typeof _acpSdkDeps.launchCandidateKind;
 
   beforeEach(() => {
     origGetAgentVersion = _cliAgentsDeps.getAgentVersion;
-    origWhich = _acpAdapterDeps.which;
     // Mock getAgentVersion to return a version immediately
     _cliAgentsDeps.getAgentVersion = async () => "1.0.0";
-    // Mock which to report "claude" as installed, others as not found
-    _acpAdapterDeps.which = mock((binary: string) => (binary === "claude" ? "/usr/bin/claude" : null));
-    // The sdk transport (default since S4b-4) asks launchCandidateKind, not which.
+    // Report only "claude" as having an ACP launcher.
     origLaunchKind = _acpSdkDeps.launchCandidateKind;
     _acpSdkDeps.launchCandidateKind = mock((agent: string) => (agent === "claude" ? "local" : undefined));
   });
 
   afterEach(() => {
     _cliAgentsDeps.getAgentVersion = origGetAgentVersion;
-    _acpAdapterDeps.which = origWhich;
     _acpSdkDeps.launchCandidateKind = origLaunchKind;
   });
 
@@ -104,7 +98,7 @@ describe("agentsListCommand", () => {
     }
   });
 
-  test("marks an acpx default agent, and omits native under protocol acp", async () => {
+  test("marks an ACP default agent, and omits native under protocol acp", async () => {
     const originalLog = console.log;
     let output = "";
     console.log = (message: string) => {

@@ -228,6 +228,32 @@ export function _applyRemovedWorktreeInheritShim(
   };
 }
 
+/**
+ * @internal S4b-5: `agent.acp.transport` was removed with the acpx transport.
+ * ACP agents always run through @nathapp/nax-agent-acp. The key is dropped,
+ * whatever its value, so a pinned "acpx" is reported rather than silently
+ * stripped by the (non-strict) acp schema.
+ * Returns a new object (immutable -- does not mutate the input).
+ */
+export function _applyRemovedAcpTransportShim(
+  conf: Record<string, unknown>,
+  warn: (msg: string) => void = defaultConfigWarn,
+): Record<string, unknown> {
+  const agent = conf.agent as Record<string, unknown> | undefined;
+  const acp = agent?.acp as Record<string, unknown> | undefined;
+  if (acp === undefined || !Object.hasOwn(acp, "transport")) return conf;
+
+  const { transport, ...rest } = acp;
+  warn(
+    transport === "acpx"
+      ? 'agent.acp.transport "acpx" was removed: the acpx CLI transport no longer exists, and ACP agents run through ' +
+          "@nathapp/nax-agent-acp (each agent's ACP launcher must be installed). Remove the key from your config."
+      : "agent.acp.transport was removed and has no effect: ACP agents always run through @nathapp/nax-agent-acp. " +
+          "Remove the key from your config.",
+  );
+  return { ...conf, agent: { ...agent, acp: rest } };
+}
+
 /** @internal Backward compat: map deprecated routing.llm.batchMode to routing.llm.mode.
  * Returns a new object (immutable -- does not mutate the input). */
 function applyBatchModeCompat(
@@ -535,6 +561,7 @@ export function applyConfigCompatShims(
   out = _applyRemovedRoutingKeysShim(out, warn);
   out = _applyLegacyReviewExecutionShim(out, warn);
   out = _applyRemovedWorktreeInheritShim(out, warn);
+  out = _applyRemovedAcpTransportShim(out, warn);
   out = _applyFinishAutoFlowShim(out, warn);
   out = _applyRemovedOptimizerKeysShim(out, warn);
   out = _applyRemovedCrossPackageDepthShim(out, warn);

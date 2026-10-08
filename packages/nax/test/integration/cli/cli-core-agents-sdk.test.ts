@@ -1,6 +1,6 @@
 /**
- * `nax agents` with agent.acp.transport "sdk" (S4b spec §9): install status comes
- * from the ACP launcher (launchCandidateKind), not from `which acpx`.
+ * `nax agents` on the ACP transport (S4b spec §9): install status comes from
+ * each agent's ACP launcher.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { rm } from "node:fs/promises";
@@ -9,7 +9,7 @@ import { _acpSdkDeps } from "@/agents/acp-sdk";
 import { _cliAgentsDeps, agentsListCommand } from "@/cli/agents";
 import type { NaxConfig } from "@/config";
 
-const SDK_CONFIG: NaxConfig = makeNaxConfig({ agent: { acp: { transport: "sdk" } } });
+const SDK_CONFIG: NaxConfig = makeNaxConfig();
 
 describe("agentsListCommand on the sdk transport", () => {
   let testDir: string;
@@ -52,10 +52,5 @@ describe("agentsListCommand on the sdk transport", () => {
     expect(claudeLine.toLowerCase()).toContain("installed");
     const codexLine = output.split("\n").find((line) => /codex/i.test(line)) ?? "";
     expect(codexLine.toLowerCase()).not.toMatch(/\binstalled\b/);
-  });
-
-  test("lists the same agents as the acpx transport", async () => {
-    const output = await listOutput(SDK_CONFIG);
-    for (const name of ["claude", "codex", "opencode", "gemini", "pi"]) expect(output.toLowerCase()).toContain(name);
   });
 });
