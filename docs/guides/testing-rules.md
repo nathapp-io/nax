@@ -220,7 +220,7 @@ Tests must never reach real external systems. Mock all I/O boundaries:
 | `Bun.spawn` / `execSync` | Use `_deps` injection |
 | HTTP / gRPC | Mock the client or use a test server |
 | File system outside temp dir | Use `mkdtemp` or `/tmp/nax-test-*` |
-| Claude / acpx CLI | Guard with `process.env.CI ? test.skip : test` |
+| Claude / agent CLIs | Guard with `process.env.CI ? test.skip : test` |
 | Database / cache | Use in-memory mock (e.g. `ioredis-mock`) |
 
 Project-level hermetic config lives in `.nax/config.json`:
@@ -230,7 +230,7 @@ Project-level hermetic config lives in `.nax/config.json`:
   "quality": {
     "testing": {
       "hermetic": true,
-      "externalBoundaries": ["claude", "acpx"],
+      "externalBoundaries": ["claude", "gh"],
       "mockGuidance": "Use injectable _deps for CLI spawning"
     }
   }

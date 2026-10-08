@@ -32,7 +32,7 @@ stages:
 
 # Testing Commands — Mandatory `timeout` Wrapper
 
-> nax tests run on Bun. Bun's JSC runtime occasionally SIGABRTs under sustained load (`std::span ... Assertion '__idx < size()' failed`) and individual test files can hang. Bare `bun test` has no wall-clock cap, so a hang blocks the agent until its outer shell timeout fires — by which time grandchild processes (acpx, subshells) may have leaked.
+> nax tests run on Bun. Bun's JSC runtime occasionally SIGABRTs under sustained load (`std::span ... Assertion '__idx < size()' failed`) and individual test files can hang. Bare `bun test` has no wall-clock cap, so a hang blocks the agent until its outer shell timeout fires — by which time grandchild processes (agent processes, subshells) may have leaked.
 
 Nothing enforces this automatically — it is on you to wrap every scoped run. A tool hook used to block bare `bun test`, but it only ever applied to interactive sessions, never to nax's own runs, so the guarantee was never real where it mattered.
 

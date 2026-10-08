@@ -7,7 +7,7 @@
  *     (`std::span ... Assertion '__idx < size()' failed`). That abort is
  *     a known Bun bug — not something nax tests can prevent.
  *   - When a `bun test` invocation hangs or crashes, child processes the
- *     tests spawned (acpx, shells, etc.) can survive the parent.
+ *     tests spawned (agent processes, shells, etc.) can survive the parent.
  *   - When the agent retries `bun run test` on hang, those leaked
  *     children accumulate across retries.
  *
@@ -116,7 +116,7 @@ async function runPhase(phase: Phase): Promise<number> {
   process.stdout.write(`\n── ${phase.name} (${phase.dir}, cap ${phase.phaseTimeoutMs / 1000}s) ──\n`);
 
   // `detached: true` makes bun test the leader of its own process group so
-  // `process.kill(-pid, SIGTERM)` reaches every descendant (acpx, subshells).
+  // `process.kill(-pid, SIGTERM)` reaches every descendant (agent processes, subshells).
   const child = Bun.spawn(["bun", ...args], {
     stdio: OUTPUT_CONTROLLER.stdio,
     // biome-ignore lint/suspicious/noExplicitAny: Bun typings lag behind
@@ -156,7 +156,7 @@ async function runPhase(phase: Phase): Promise<number> {
   process.off("SIGINT", onSigint);
   process.off("SIGTERM", onSigterm);
 
-  // Leader exited — but descendants spawned by tests (acpx, agent procs) may
+  // Leader exited — but descendants spawned by tests (agent procs, shells) may
   // have outlived it, especially on Bun panics (segfault, JSC assertion).
   // `null` or non-zero exit signals abnormal termination; always sweep the
   // group as a safety net to prevent orphan accumulation across phases.

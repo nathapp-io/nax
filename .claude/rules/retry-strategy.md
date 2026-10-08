@@ -28,7 +28,7 @@ re-dispatch a call. It does not govern **agent-internal** retry, which re-issues
 a single call from inside the agent's own execution of it, below any dispatch
 decision, and has never been a `RetryStrategy`:
 
-- **ACP** — `agent.acp.promptRetries` is passed to acpx as `--prompt-retries`.
+- **ACP** — `agent.acp.promptRetries` re-issues the prompt inside nax's ACP turn loop, only when the failed attempt produced no output.
   The retry runs inside the spawned claude / codex / opencode process, outside
   nax entirely.
 - **Native** — there is no child process; nax is the agent. The same layer

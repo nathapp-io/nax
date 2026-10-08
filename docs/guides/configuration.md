@@ -103,7 +103,7 @@ The `agent` block is the canonical source of truth for agent selection and avail
 
 | Key | Default | Description |
 |:----|:--------|:------------|
-| `agent.protocol` | `"hybrid"` | Transport protocol — `"acp"` (spawns an agent CLI via acpx), `"native"` (nax drives the model directly), or `"hybrid"` (both). A capability gate, not a router. `"acp"` requires `agent.default` to name an acpx agent such as `"claude"`. |
+| `agent.protocol` | `"hybrid"` | Transport protocol — `"acp"` (ACP agents via `@nathapp/nax-agent-acp`), `"native"` (nax drives the model directly), or `"hybrid"` (both). A capability gate, not a router. `"acp"` requires `agent.default` to name an ACP agent such as `"claude"`. |
 | `agent.default` | `"native"` | Primary agent. The built-in `models.native` map (`anthropic/claude-haiku-4-5` / `claude-sonnet-5` / `claude-opus-5-5`) backs it, so the native agent needs Anthropic credentials unless you override the map. Read via `resolveDefaultAgent(config)` / `ctx.agentManager.getDefault()`. |
 | `agent.maxInteractionTurns` | `20` | Max turns per agent session. |
 | `agent.fallback.enabled` | `false` | Master switch for availability fallback (auth / rate-limit / service-down). |
@@ -113,7 +113,7 @@ The `agent` block is the canonical source of truth for agent selection and avail
 | `agent.fallback.onQualityFailure` | `false` | Also swap on review / verify reject, not just availability. Use with care — often masks real regressions. |
 | `agent.idleWatchdog` | `enabled: true`, `mode: "warn-then-cancel"`, `idleTimeoutSeconds: 900` | Cancels a session that stops producing activity (`mode`: `off`/`observe`/`warn-then-cancel`/`cancel`). |
 | `agent.spinBreaker` | `enabled: true`, `nudgeAfterRepeats: 25`, `stopAfterRepeats: 50` | Nudges, then stops, an agent repeating the same tool call. |
-| `agent.acp.promptRetries` | `0` | ACP only. Becomes acpx's `--prompt-retries`; the retry runs inside the spawned agent process. |
+| `agent.acp.promptRetries` | `0` | ACP only. Retries a prompt on a transient fault inside nax's ACP turn loop, only when the failed attempt produced no output; backoff `min(1000 * 2^n, 10000)` ms. |
 | `agent.native.transportRetry.maxAttempts` | `3` | Native only. Total attempts for one round trip when the provider stalls or reports itself overloaded. `1` disables retry. |
 | `agent.native.transportRetry.baseDelayMs` | `2000` | Native only. Equal-jitter exponential backoff base, capped by the turn's remaining budget. |
 | `agent.native.catalogOverrides` | `[]` | Native only. Explicit catalog entries for model ids newer than the bundled pi-ai snapshot. Provider-scoped; each entry is a **complete** record — `id`, `protocol`, `contextWindow`, optional `maxTokens`, `supportsTools`, `thinkingLevels`, and `pricing` in nax-ai's `input`/`output`/`cacheRead`/`cacheWrite` per-1M vocabulary. An entry may also carry provider-wide `baseUrl` and `headers` (nax#2019) — see the warning below. Applied below every pin route (tier entries, literal `{agent, model}` pins, fallback rungs). The client is built once per process, so keep one list. See [nax-ai surface](../architecture/nax-ai-surface.md#context-window). |

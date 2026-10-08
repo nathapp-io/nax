@@ -104,7 +104,7 @@ SessionManager ─► registry.ts ──(agent.acp.transport = "sdk")──► A
                                                      TurnResult | SessionTurnError (failure-map, pricing)
 ```
 
-The folder is `agents/acp-sdk/` while both transports exist. It is renamed to `agents/acp/` in S4b-5.
+The folder was `agents/acp-sdk/` while both transports existed; S4b-5 renamed it to `agents/acp/` and dropped the `Sdk` infix from its symbols (NaxError codes `ACP_SDK_*` kept).
 
 ## 5. Components
 
@@ -465,7 +465,7 @@ Each slice is one PR that leaves main green. Check gates that every slice must k
 | S4b-2 | nax's dependency on nax-agent-acp, the bundling and boundary changes (§8); the `agent.acp.transport` schema, its `config-descriptions` entry and `nax config` display; registry routing; `cli/agents.ts` and `bakeoff/preflight.ts` via the registry; `check-adapter-no-config-import.sh` scans `agents/acp-sdk/`; the adapter's open, close, turn loop, stream bridge, ask port, profile map and pricing; `SessionManager` filling `toolAudit`. | unit and adapter tests green behind the key; default still `acpx`; `bun run build` plus dist smoke green. |
 | S4b-3 | `complete()` and the classifier branch, `failure-map` in full, `promptRetries`, deadlines, tool audit, effort, PID callbacks, the `npx`-only precheck warning; the parity tests; integration tests on both transports. | the full §9 adapter, parity and integration suites green. |
 | S4b-4 | Billed Claude smoke on `sdk` (approval at launch); then flip the default to `sdk`. No release. | smoke passed; suite green with the new default. |
-| S4b-5 | Delete `agents/acp/`; rename `acp-sdk/` -> `acp/`; delete the transport key, the `ACPX_` env prefix, the acpx re-exports in `agents/index.ts` and the acpx-only `parseAgentError` branches; delete the plumbing tests; re-point `check-adapter-no-config-import.sh`; update the docs (install: the per-agent ACP launcher replaces `acpx`); release nax (approval). | suite, `typecheck` and `check:all` green; `grep -rn acpx packages/nax/src` returns nothing outside historical comments; release published. |
+| S4b-5 | Delete `agents/acp/`; rename `acp-sdk/` -> `acp/`; delete the transport key, the `ACPX_` env prefix, the acpx re-exports in `agents/index.ts` and the acpx-only `parseAgentError` branches; delete the plumbing tests; re-point `check-adapter-no-config-import.sh`; update the docs (install: the per-agent ACP launcher replaces `acpx`); release nax (approval). | suite, `typecheck` and `check:all` green; `grep -rn acpx packages/nax/src` returns nothing outside historical comments; release published. B2 deviation: v0.83.5 shipped the sdk default with acpx present; S4b-5 releases as 0.83.6 (D5-h). |
 
 ## 11. Behaviour changes (explicit)
 
@@ -483,6 +483,9 @@ Each slice is one PR that leaves main green. Check gates that every slice must k
 12. **Session open failures stay unclassified, as on acpx.** `session-run-hop.ts` opens the session outside its `try`; wiring open failures into the retry and swap policy is deferred (D3-l). `complete()` classifies its open failures (§6.6 item 5).
 13. **`complete()` session errors are `availability`** (`BACKEND_UNAVAILABLE`, `TURN_FAILED`, `CLOSED`), where acpx's `complete()` classified a crash as `quality/fail-adapter-error`; this can change swap versus escalate for complete-kind ops (D3-m).
 14. **A run abort during `complete()` throws `fail-aborted`.** acpx's `complete()` never observed the run signal; returning a cancelled result would be retried by the manager as `fail-stale` (D3-a).
+15. **`ACPX_*` environment variables are no longer passed to agent processes** (S4b-5, D5-e).
+16. **`agent.acp.transport` is removed.** A config that still sets it loads with a warning and runs on the ACP SDK (S4b-5, D5-c).
+17. **Merge-conflict rectification discards the rectified story's main-role session transcript, whichever agent ran it,** instead of running `acpx sessions close`, so the re-run opens fresh (BUG-122 on the new transport, S4b-5, D5-d).
 
 ## 12. Risks
 

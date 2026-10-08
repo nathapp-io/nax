@@ -1000,7 +1000,7 @@ SessionManager                               AgentAdapter (4 primitives)
 Owns:                                        Owns:
   - Stable descriptor ID (sess-<uuid>)         - openSession  / sendTurn /
   - State machine (7 states)                     closeSession  / complete
-  - Scratch directory                          - transport: acpx process (ACP) or
+  - Scratch directory                          - transport: nax-agent-acp (ACP) or
   - descriptor.json persistence                  transcript file + turn loop (native, §52)
                                                - inner interaction-bridge loop
   - Session naming (agent-agnostic)              (tool calls, permission prompts)

@@ -283,7 +283,7 @@ Two transports, selected by agent **name** (ADR-027): `createAgentRegistry` (`sr
 
 | Adapter / concern | Folder | Contents |
 |:--------|:-------|:------|
-| ACP protocol (every CLI agent, via acpx) | `acp/` | adapter (+ `adapter-lifecycle`, `adapter-output`, `adapter-complete-flow`, `adapter-close-physical`, `adapter-session-types`), spawn-client (+ `-process`, `-session`, `-deps`), parser, stdout-line-reader, interaction-bridge, parse-agent-error, token-mapper, reasoning-effort, session-ids, agent-entries, wire-types, types, index |
+| ACP protocol (every CLI agent, over `@nathapp/nax-agent-acp`) | `acp/` | adapter, session (open with the crash-leftover policy, close), open-context, profile-map, ask-port, turn-slot, turn-loop, stream-bridge (watchdog events, usage), tool-audit, pricing, failure-map, prompt-retry, complete (throwaway one-shot session), entries, index |
 | Native in-process path over `@nathapp/nax-ai` | `native/` | adapter, client (memoised nax-ai client), models (rate card, context window, catalog overrides), model-resolver, auth / credentials, errors, session-affinity, index |
 | Native session + tool loop (ADR-028/029) | `native/session/` | `turn-loop` (plus `turn-*` steps: tool batch, compaction, retry, ask-human, completion), `loop-events/` (before/after-tool event registry), `tool-result` (the single tool-result constructor), `transcript-store` (persisted conversation; a transcript written by another model or op invocation reads as a new conversation), compaction, nudge, truncation-handler |
 | nax-ai catalog boundary (non-native side) | `catalog/` | `lookupPricing()` — returns nax-ai's `Pricing` |
@@ -327,18 +327,18 @@ nax has three independent retry layers, each targeting a different failure class
 
 | Layer | Config | Triggers on | Behaviour |
 |:------|:-------|:------------|:----------|
-| Agent-internal retry | `agent.acp.promptRetries` (acpx, default `0`) / `agent.native.transportRetry` (native, default 3 attempts × 2000ms) | A transient provider fault inside one call — a stalled stream, a 502/503 | Re-issues that call, with backoff, before the dispatch layers ever see a failure |
+| Agent-internal retry | `agent.acp.promptRetries` (ACP, default `0`) / `agent.native.transportRetry` (native, default 3 attempts × 2000ms) | A transient provider fault inside one call — a stalled stream, a 502/503 | Re-issues that call, with backoff, before the dispatch layers ever see a failure |
 | Op / manager retry (nax) | `op.retry` per `Operation` + `defaultRetryStrategy` (`src/agents/retry/`) | Parse failures, rate limits, transient adapter errors | `RetryStrategy.shouldRetry()` decides; bounded by `MAX_COMPLETE_RETRY_ATTEMPTS` |
 | Tier escalation (nax) | `autoMode.escalation.*` (`tierOrder`, `escalateEntireBatch`) | Repeated rectification failures | Bumps model tier (fast → balanced → powerful) |
 
 **The first layer has one meaning and two implementations**, because the two transports put the agent in different places:
 
-- **ACP** — nax passes `--prompt-retries` to acpx, which spawns claude / codex / opencode. The retry happens inside that child process, on its own timeout, outside nax entirely. JSON output stays stable, and it is skipped once side effects have occurred.
+- **ACP** — nax's ACP turn loop (`src/agents/acp/turn-loop.ts`, `prompt-retry.ts`) re-issues the prompt up to `promptRetries` times with backoff `min(1000 * 2^n, 10000)` ms, and only when the failed attempt produced no turn event, so a retry never repeats side effects. The agent process may also absorb transient faults on its own.
 - **Native** — there is no child process; nax *is* the agent. The equivalent retry therefore lives in nax, in the native turn loop (`src/agents/native/session/turn-retry.ts`, nax#1870). It re-issues a single round trip on a `transport` or `overloaded` fault, with equal-jitter backoff capped by the turn's remaining budget.
 
 This is why neither one is a `RetryStrategy`: the op/manager tiers govern nax's **dispatch** — whether to re-dispatch a call — while this layer sits underneath both, inside the execution of a single call.
 
-**Key rule:** agent-internal retry is the cheapest layer — on ACP it fires inside acpx before nax sees a result, and on native it fires inside the turn loop before a round trip is abandoned. Tune it for transient-provider tolerance without overlapping the escalation logic. The failure classes are disjoint: in-call transients vs. quality failures vs. repeated quality failures.
+**Key rule:** agent-internal retry is the cheapest layer — on ACP it fires inside the turn loop before the call fails, and on native it fires inside the turn loop before a round trip is abandoned. Tune it for transient-provider tolerance without overlapping the escalation logic. The failure classes are disjoint: in-call transients vs. quality failures vs. repeated quality failures.
 
 ### Decompose Prompts
 
@@ -356,12 +356,9 @@ Both adapters price a call the same way: a `Pricing` rate card → `priceCall(us
 | ACP | `resolveRateCard(modelId)` (`cost/rate-card.ts`): alias file / provider inference → nax-ai catalog via `catalog/lookupPricing` | `catalog-rates`, else `fallback-rates` (`FALLBACK_RATES`, $3 / $15 per 1M, warned per id) |
 | Native | `buildRateCard(client.pricing(resolved), modelDef.pricing)` (`native/models.ts`) | `config-override` when `ModelDef.pricing` is set, else `catalog-rates` |
 
-ACP sessions may also emit exact USD cost over the wire. `buildTurnResult` (`acp/adapter-output.ts`) keeps the wire-reported `exactCostUsd` as an independent field (`undefined` when the wire never reported one); the cost middleware decides that `wire` wins over the card. The native path never sets `exactCostUsd`.
+ACP agents may also report the USD cost of each turn. `acp/pricing.ts` keeps that reported cost as an independent `exactCostUsd` field (`undefined` when the agent reported none) next to the rate-card `estimatedCostUsd`; the cost middleware decides that `wire` wins over the card. The native path never sets `exactCostUsd`.
 
-Wire token fields (`input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`) are mapped to the nax-internal **camelCase** `TokenUsage` by `AcpTokenUsageMapper` (`acp/token-mapper.ts`):
-- `inputTokens`, `outputTokens`, `cacheReadInputTokens`, `cacheCreationInputTokens`
-
-The parser (`acp/parser.ts`) handles both the JSON-RPC envelope format (acpx v0.3+) and legacy flat NDJSON for backward compatibility.
+Token usage arrives as `usage` turn events from `@nathapp/nax-agent-acp` (input, output and cache counts already in nax's camelCase `TokenUsage` shape); `acp/stream-bridge.ts` collects them per turn.
 
 ---
 

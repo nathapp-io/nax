@@ -18,7 +18,7 @@ Configured under `quality.testing` — supports **per-package override** in mono
   "quality": {
     "testing": {
       "hermetic": true,
-      "externalBoundaries": ["claude", "acpx", "redis", "grpc"],
+      "externalBoundaries": ["claude", "gh", "redis", "grpc"],
       "mockGuidance": "Use injectable deps for CLI spawning, ioredis-mock for Redis"
     }
   }

@@ -33,7 +33,7 @@ openai/gpt-5.6-terra       window=272000    {input:2, output:12, cacheRead:0.2, 
 anthropic/claude-sonnet-5  window=1000000   {input:2, output:10, cacheRead:0.2, cacheWrite:2.5}
 ```
 
-**Do not claim nax-ai has no cache rates.** It does, per model, and `cacheRead` is typically 10% of `input` — a real number. Both transports now read it: the native adapter directly, and the acpx path through `src/agents/catalog/` (`lookupPricing`, reached from `resolveRateCard` in `src/agents/cost/rate-card.ts`).
+**Do not claim nax-ai has no cache rates.** It does, per model, and `cacheRead` is typically 10% of `input` — a real number. Both transports now read it: the native adapter directly, and the ACP path through `src/agents/catalog/` (`lookupPricing`, reached from `resolveRateCard` in `src/agents/cost/rate-card.ts`).
 
 ### Tiers are real, and nax honours them
 
@@ -58,7 +58,7 @@ const { rates, source: pricingSource } = buildRateCard(catalog, handle.modelDef?
 const { costUsd, resolvedRates } = priceCall(usage, rates);
 ```
 
-With no config override, `buildRateCard` returns the catalog's nax-ai `Pricing` (`input` / `output` / `cacheRead` / `cacheWrite` and every tier, per 1M) and stamps `pricingSource: "catalog-rates"`. A `ModelDef.pricing` override replaces the card wholesale (`"config-override"`): it is converted on the way in — `toSessionModel` (`src/agents/session-model-mapping.ts`) runs `toPricing` once, filling an omitted cache rate from the input rate of the same level — and arrives as a standard `SessionModel.pricing` on both paths. `src/agents/catalog/` returns the catalog's `Pricing` directly for the acpx side. The resolved per-1M rates travel on the result as `rates`, so a recorded cost can be reproduced from its row.
+With no config override, `buildRateCard` returns the catalog's nax-ai `Pricing` (`input` / `output` / `cacheRead` / `cacheWrite` and every tier, per 1M) and stamps `pricingSource: "catalog-rates"`. A `ModelDef.pricing` override replaces the card wholesale (`"config-override"`): it is converted on the way in — `toSessionModel` (`src/agents/session-model-mapping.ts`) runs `toPricing` once, filling an omitted cache rate from the input rate of the same level — and arrives as a standard `SessionModel.pricing` on both paths. `src/agents/catalog/` returns the catalog's `Pricing` directly for the ACP side. The resolved per-1M rates travel on the result as `rates`, so a recorded cost can be reproduced from its row.
 
 ## Context window
 
