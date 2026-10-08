@@ -222,6 +222,8 @@ async function executeHook(
     return { success: false, output: "Empty command" };
   }
 
+  // detached: the hook leads its own process group, so the timeout's
+  // killProcessGroup(-pid) reaches every process it started (quality/runner.ts does the same).
   // nax-git-env-allow: not git: hook argv (hooks.*.command)
   const proc = Bun.spawn(argv, {
     cwd: workdir,
@@ -229,6 +231,7 @@ async function executeHook(
     stdout: "pipe",
     stderr: "pipe",
     env: buildAllowedEnv({ env }),
+    detached: true,
   });
 
   // Timeout handling. A single SIGTERM is not a deadline — a hook that traps or
