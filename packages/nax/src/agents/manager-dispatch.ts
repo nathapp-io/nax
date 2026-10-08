@@ -450,15 +450,16 @@ export function resolveHopCompleteOptions(
  * `modelTier`, so the cost row records the tier the dispatched model actually
  * ran at — `model` and `modelTier` must not disagree (nax#1739). `modelTier` is
  * inert for dispatch (never branched on), so this only fixes attribution.
+ * A literal `{ agent, model }` pin on `finalTarget` is passed through too, or the row names a model that never ran (#23).
  */
 export function resolveFinalDispatch(
   options: ResolvedCompleteOptions,
   primaryAgent: string,
-  fallbacks: readonly AgentFallbackRecord[],
-  finalTier?: string,
+  outcome: Pick<AgentCompleteOutcome, "fallbacks" | "finalTier" | "finalTarget">,
 ): { agentName: string; options: ResolvedCompleteOptions } {
+  const { fallbacks, finalTier, finalTarget } = outcome;
   const agentName = fallbacks.at(-1)?.newAgent ?? primaryAgent;
-  const hopOptions = resolveHopCompleteOptions(options, agentName, primaryAgent, finalTier);
+  const hopOptions = resolveHopCompleteOptions(options, agentName, primaryAgent, finalTier, finalTarget?.model);
   return { agentName, options: finalTier !== undefined ? { ...hopOptions, modelTier: finalTier } : hopOptions };
 }
 

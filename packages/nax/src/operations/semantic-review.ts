@@ -273,13 +273,14 @@ async function performSemanticReground(
 
   const costUsd = (turn.estimatedCostUsd ?? 0) + (secondTurn.estimatedCostUsd ?? 0);
   const dropCount = drops.length;
+  // Outcomes that keep the first turn's output still paid for the second turn (#25).
+  const keepFirstTurn = (outcome: "parse-failed" | "still-dropped"): TurnResult => ({
+    ...turn,
+    output: withRepromptMarker(turn.output, { dropCount, outcome, costUsd }),
+    estimatedCostUsd: costUsd,
+  });
 
-  if (!secondParsed) {
-    return {
-      ...turn,
-      output: withRepromptMarker(turn.output, { dropCount, outcome: "parse-failed", costUsd }),
-    };
-  }
+  if (!secondParsed) return keepFirstTurn("parse-failed");
 
   const { accepted: secondAccepted } = filterByAcGroundingMinimal(secondParsed.findings, acceptanceCriteria);
   const secondBlocking = secondAccepted.filter((f) => isBlockingSeverity(f.severity, threshold));
@@ -314,10 +315,7 @@ async function performSemanticReground(
   }
 
   // Second pass still claims failure but every blocking finding dropped again.
-  return {
-    ...turn,
-    output: withRepromptMarker(turn.output, { dropCount, outcome: "still-dropped", costUsd }),
-  };
+  return keepFirstTurn("still-dropped");
 }
 
 export const semanticReviewOp: RunOperationWithHooks<

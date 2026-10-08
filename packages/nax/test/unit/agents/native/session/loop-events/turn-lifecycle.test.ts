@@ -210,7 +210,7 @@ describe("native turn loop — before_turn and after_response", () => {
     expect(rejections).toHaveLength(2);
   });
 
-  test("after_response may rewrite text before it enters the array", async () => {
+  test("after_response rewrites the transcript and TurnResult.output together", async () => {
     const payloads: unknown[] = [];
     const registry = createLoopEventRegistry();
     registry.register("after_response", (p) => {
@@ -238,9 +238,9 @@ describe("native turn loop — before_turn and after_response", () => {
       { role: "user", content: "hi" },
       { role: "assistant", content: "patched" },
     ]);
-    // The result's output is the response the provider returned: the patch
-    // shapes the transcript message, not the response itself.
-    expect(result.output).toBe("raw reply");
+    // The transcript and TurnResult.output are BOTH authoritative and must
+    // agree (session/turn-event.ts): each carries the patched text.
+    expect(result.output).toBe("patched");
   });
 
   test("after_response CANNOT patch usage or costUsd", async () => {

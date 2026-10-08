@@ -596,3 +596,32 @@ describe("semanticReviewOp.hopBody — reground preconditions not met (AC7)", ()
     });
   });
 });
+
+describe("semanticReviewOp.hopBody — reground cost on first-turn-preserving outcomes", () => {
+  async function regroundCost(secondOutput: string): Promise<number | undefined> {
+    let cost: number | undefined;
+    await withTempDir(async (workdir) => {
+      mkdirSync(join(workdir, "src"), { recursive: true });
+      writeFileSync(join(workdir, "src", "auth.ts"), "function login(u, p) { return db.rawQuery(u + p); }\n");
+      const first = JSON.stringify({ passed: false, findings: [makeDroppedFinding("error")] });
+      const result = await runHopBody("initial", {
+        sendWithParseRetry: mock(async () => makeTurnResult({ output: first, estimatedCostUsd: 0.1 })),
+        send: mock(async () => makeTurnResult({ output: secondOutput, estimatedCostUsd: 0.2 })),
+        input: { workdir, story: STORY_WITH_AC, semanticConfig: { ...SEMANTIC_CONFIG_DEFAULT }, mode: "ref" },
+      } satisfies HopBodyContext<SemanticReviewInput>);
+      cost = result.estimatedCostUsd;
+    });
+    return cost;
+  }
+
+  test("parse-failed: both turns are billed", async () => {
+    expect(await regroundCost("not json at all")).toBeCloseTo(0.3, 10);
+  });
+
+  test("still-dropped: both turns are billed", async () => {
+    expect(await regroundCost(JSON.stringify({ passed: false, findings: [makeDroppedFinding("error")] }))).toBeCloseTo(
+      0.3,
+      10,
+    );
+  });
+});
