@@ -577,7 +577,7 @@ export function failingTestRectification(
       const perFileLines = failingFiles
         .map((file) => {
           const scopedCmd = opts.testScopedTemplate
-            ? opts.testScopedTemplate.replace("{{files}}", file)
+            ? opts.testScopedTemplate.replaceAll("{{files}}", () => file)
             : `${opts.testCommand} ${file}`;
           if (opts.testScopedTemplate && opts.fileScopeCommandName) {
             return `  ${wrapAffordance("run-test", { command: opts.fileScopeCommandName, files: file }, scopedCmd)}`;

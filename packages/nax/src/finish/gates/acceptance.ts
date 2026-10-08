@@ -55,7 +55,7 @@ function languageRunner(language: string | undefined): string {
 export function buildAcceptanceCommand(repoRoot: string, group: AcceptanceGroupResult): string {
   const absFile = shellQuote(`${repoRoot}/${group.testPath}`);
   const template = group.command ?? `${languageRunner(group.language)} {{FILE}}`;
-  return template.replace(/\{\{FILE\}\}|\{\{file\}\}|\{\{files\}\}/g, absFile);
+  return template.replace(/\{\{FILE\}\}|\{\{file\}\}|\{\{files\}\}/g, () => absFile);
 }
 
 /**

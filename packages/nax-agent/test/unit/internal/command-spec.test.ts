@@ -53,6 +53,12 @@ describe("replaceInCommandSpec", () => {
   test("replaces in every entry and keeps the list shape", () => {
     expect(replaceInCommandSpec(["X one", "two X"], "X", "y")).toEqual(["y one", "two y"]);
   });
+
+  test("inserts the replacement verbatim: $-patterns in a path are not expanded", () => {
+    expect(replaceInCommandSpec("bun test {{files}}", "{{files}}", "'a$$b.ts' '$&.ts' '$`x' \"$'y\"")).toBe(
+      "bun test 'a$$b.ts' '$&.ts' '$`x' \"$'y\"",
+    );
+  });
 });
 
 describe("renderCommandSpec", () => {

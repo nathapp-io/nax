@@ -522,7 +522,7 @@ Commit your fixes when done.${scopeConstraint}`;
     const testCommands = failingFiles
       .map((file) => {
         const scopedCmd = testScopedTemplate
-          ? testScopedTemplate.replace("{{files}}", file)
+          ? testScopedTemplate.replaceAll("{{files}}", () => file)
           : cmd
             ? `${cmd} ${file}`
             : file;

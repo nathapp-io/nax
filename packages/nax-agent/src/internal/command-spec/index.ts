@@ -37,7 +37,7 @@ export function replaceInCommandSpec(
   searchValue: string,
   replacement: string,
 ): QualityCommandSpec {
-  const replace = (command: string) => command.replaceAll(searchValue, replacement);
+  const replace = (command: string) => command.replaceAll(searchValue, () => replacement);
   return typeof spec === "string" ? replace(spec) : spec.map(replace);
 }
 
