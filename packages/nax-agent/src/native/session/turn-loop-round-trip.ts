@@ -210,7 +210,6 @@ async function runModelRoundTrip(
   }
   state.roundTrips += 1;
   params.usage.add(res.usage, res.costUsd, res.rates);
-  state.output = res.text;
 
   // nax#1852: the anchor is the whole prompt the provider charged for, not
   // just its uncached portion. Under prompt caching (which the round trip
@@ -256,6 +255,8 @@ async function runModelRoundTrip(
   // what it records: answering the ORIGINAL calls while recording patched
   // ones would desync the transcript from what actually executed.
   const assistantText = afterResponse.text ?? res.text;
+  // The recorded answer IS the patched one: transcript and TurnResult.output must agree (turn-event.ts).
+  state.output = assistantText;
   const assistantToolCalls: readonly ToolCall[] | undefined = afterResponse.toolCalls ?? res.toolCalls;
   const assistantThinking = afterResponse.thinking ?? res.thinking;
 
