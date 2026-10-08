@@ -170,7 +170,7 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   // TDD
   tdd: "Test-driven development configuration",
   "tdd.maxRetries": "Max retries per TDD session before escalating",
-  "tdd.strategy": "TDD strategy: auto | strict | lite | off",
+  "tdd.strategy": 'TDD strategy: auto | strict | lite | off | simple ("tdd-simple" is accepted for simple)',
   "tdd.sessionTiers": "Per-session model tier overrides",
   "tdd.sessionTiers.testWriter": "Model tier for test-writer session",
   "tdd.sessionTiers.implementer":

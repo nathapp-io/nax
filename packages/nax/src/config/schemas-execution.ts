@@ -490,7 +490,7 @@ export const QualityConfigSchema = z.object({
 
 export const TddConfigSchema = z.object({
   maxRetries: z.number().int().nonnegative(),
-  strategy: z.enum(["auto", "strict", "lite", "off"]).default("auto"),
+  strategy: z.enum(["auto", "strict", "lite", "simple", "off"]).default("auto"),
   sessionTiers: z
     .object({
       // ConfiguredModel = tier string ("fast") OR { agent, model } cross-agent pin.

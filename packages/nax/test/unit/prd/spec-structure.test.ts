@@ -247,6 +247,30 @@ describe("declaredStoryIds (US-002)", () => {
 
     expect(declaredStoryIds(spec.split("\n"))).toEqual(["US-001", "US-002"]);
   });
+
+  test("a deeper heading inside a grouped-path subsection keeps the skip on", () => {
+    const spec = `# SPEC: fixture
+
+## Stories
+
+### US-001 — Core
+
+### Modifies
+
+#### US-009
+
+- \`src/a.ts\` — touched
+
+#### Notes
+
+**US-010**
+
+### US-002 — API
+
+## Acceptance Criteria
+`;
+    expect(declaredStoryIds(spec.split("\n"))).toEqual(["US-001", "US-002"]);
+  });
 });
 
 describe("findSpecStructureViolations (US-002)", () => {

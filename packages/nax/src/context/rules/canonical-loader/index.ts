@@ -21,6 +21,7 @@
  */
 
 import { basename, join } from "node:path";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import { getLogger } from "@/logger";
 
@@ -522,7 +523,7 @@ export async function loadCanonicalRules(
   rules.sort(
     (a, b) =>
       (a.priority ?? FRONTMATTER_PRIORITY_DEFAULT) - (b.priority ?? FRONTMATTER_PRIORITY_DEFAULT) ||
-      (a.id ?? a.fileName).localeCompare(b.id ?? b.fileName),
+      byCodePoint(a.id ?? a.fileName, b.id ?? b.fileName), // CTX-5: code-point, not localeCompare
   );
 
   logger.debug("canonical-loader", "Scanned canonical rules store", {

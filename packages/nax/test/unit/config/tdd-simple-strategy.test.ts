@@ -11,7 +11,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { TddConfigSchema } from "@/config";
+import { _applyTddStrategyAliasShim } from "@/config/compat-shims";
 import { DEFAULT_CONFIG } from "@/config/defaults";
+import { _clearRootConfigCache, loadConfig } from "@/config/loader";
 import { initLogger, resetLogger } from "@/logger";
 import { determineTestStrategy } from "@/routing/classify";
 import { validateRoutingDecision } from "@/routing/strategies/llm";
@@ -88,5 +94,49 @@ describe("TS-001: LLM routing derives tdd-simple for simple stories", () => {
 
     const decision = validateRoutingDecision(parsed, DEFAULT_CONFIG, story);
     expect(decision.testStrategy as string).toBe("tdd-simple");
+  });
+});
+
+describe("tdd.strategy 'simple' and its 'tdd-simple' alias", () => {
+  test("the schema accepts 'simple'", () => {
+    expect(TddConfigSchema.parse({ maxRetries: 0, strategy: "simple" }).strategy).toBe("simple");
+  });
+
+  test("'simple' routes every story to tdd-simple, whatever its complexity", () => {
+    expect(determineTestStrategy("expert", "Auth login", "", [], "simple")).toBe("tdd-simple");
+  });
+
+  test("the alias shim rewrites 'tdd-simple' to 'simple' without touching other keys", () => {
+    const input = { tdd: { strategy: "tdd-simple", maxRetries: 2 }, other: 1 };
+    expect(_applyTddStrategyAliasShim(input)).toEqual({ tdd: { strategy: "simple", maxRetries: 2 }, other: 1 });
+    expect(input.tdd.strategy).toBe("tdd-simple"); // immutable
+  });
+
+  test("the alias shim leaves every other value alone", () => {
+    const input = { tdd: { strategy: "lite" } };
+    expect(_applyTddStrategyAliasShim(input)).toBe(input);
+  });
+
+  describe("end to end through loadConfig", () => {
+    let tempDir = "";
+    let originalGlobalDir: string | undefined;
+    beforeEach(() => {
+      _clearRootConfigCache();
+      tempDir = makeTempDir("nax-tdd-simple-alias-");
+      mkdirSync(join(tempDir, ".nax"), { recursive: true });
+      originalGlobalDir = process.env.NAX_GLOBAL_CONFIG_DIR;
+      process.env.NAX_GLOBAL_CONFIG_DIR = join(tempDir, ".global-nax");
+    });
+    afterEach(() => {
+      cleanupTempDir(tempDir);
+      if (originalGlobalDir === undefined) delete process.env.NAX_GLOBAL_CONFIG_DIR;
+      else process.env.NAX_GLOBAL_CONFIG_DIR = originalGlobalDir;
+    });
+
+    test.each(["simple", "tdd-simple"])("a project config with tdd.strategy '%s' loads as 'simple'", async (value) => {
+      await Bun.write(join(tempDir, ".nax", "config.json"), JSON.stringify({ tdd: { strategy: value } }));
+      const config = await loadConfig(tempDir);
+      expect(config.tdd.strategy).toBe("simple");
+    });
   });
 });

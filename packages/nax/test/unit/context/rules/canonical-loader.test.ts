@@ -265,6 +265,15 @@ Only for agent files.`,
     expect(rules[0]?.paths).toEqual(["packages/api/**"]);
   });
 
+  test("equal-priority rules load in code-point order (CTX-5), not locale order", async () => {
+    setupFiles({
+      "/project/.nax/rules/api.md": "Api rule.",
+      "/project/.nax/rules/Auth-Rules.md": "Auth rule.",
+    });
+    const rules = await loadCanonicalRules("/project");
+    expect(rules.map((r) => r.fileName)).toEqual(["Auth-Rules.md", "api.md"]);
+  });
+
   // BUG-03: loadCanonicalRules previously let a per-file RulesFrontmatterError
   // propagate and abort the entire corpus load. It now catches the error per file,
   // warns, and skips just that file — other valid rules still load.

@@ -306,3 +306,46 @@ describe("diff parsing — diff.noprefix output", () => {
     expect(extractDiffLineRanges(diff).size).toBe(0);
   });
 });
+
+describe("hunk bodies are content, never headers", () => {
+  const diff = [
+    "diff --git a/src/real.ts b/src/real.ts",
+    "--- a/src/real.ts",
+    "+++ b/src/real.ts",
+    "@@ -1,2 +1,4 @@",
+    " keep",
+    "+++ b/src/phantom.ts",
+    "--- removed line that looks like a header",
+    "+tail",
+    "+more",
+    "@@ -20 +22 @@",
+    "-a",
+    "+b",
+    "diff --git a/src/next.ts b/src/next.ts",
+    "--- a/src/next.ts",
+    "+++ b/src/next.ts",
+    "@@ -10 +10 @@",
+    "-x",
+    "+y",
+    "",
+  ].join("\n");
+
+  test("an added line reading '++ b/<path>' is not a file", () => {
+    expect(extractDiffFiles(diff)).toEqual(new Set(["src/real.ts", "src/next.ts"]));
+  });
+
+  test("its hunk's lines stay attributed to the real file", () => {
+    expect(extractDiffLineRanges(diff)).toEqual(
+      new Map([
+        [
+          "src/real.ts",
+          [
+            { start: 1, end: 4 },
+            { start: 22, end: 22 },
+          ],
+        ],
+        ["src/next.ts", [{ start: 10, end: 10 }]],
+      ]),
+    );
+  });
+});

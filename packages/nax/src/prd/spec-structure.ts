@@ -79,17 +79,23 @@ export type SpecStructureViolation =
 export function declaredStoryIds(lines: readonly string[]): string[] {
   const ids = new Set<string>();
   let inScope = false;
-  let inSkippedSubsection = false;
+  // Heading level of the grouped-path subsection being skipped; 0 = not skipping.
+  // Only a heading at that level or shallower ends it: `#### US-009` inside
+  // `### Modifies` is still Modifies content (#26).
+  let skipLevel = 0;
 
   for (const line of lines) {
     if (/^##\s/.test(line)) {
       inScope = /^##\s+(Stories|Acceptance Criteria)\b/i.test(line);
-      inSkippedSubsection = false;
+      skipLevel = 0;
       continue;
     }
     if (!inScope) continue;
-    if (/^#{3,6}\s/.test(line)) inSkippedSubsection = GROUPED_PATH_SUBSECTION.test(line);
-    if (inSkippedSubsection) continue;
+    const level = /^(#{3,6})\s/.exec(line)?.[1]?.length;
+    if (level !== undefined && (skipLevel === 0 || level <= skipLevel)) {
+      skipLevel = GROUPED_PATH_SUBSECTION.test(line) ? level : 0;
+    }
+    if (skipLevel > 0) continue;
 
     const heading = /^#{1,6}\s+(US-\d+)\b/i.exec(line);
     if (heading?.[1]) {

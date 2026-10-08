@@ -30,11 +30,13 @@ export interface StorySizeGateResult {
 }
 
 /**
- * Count bullet points in text (lines starting with -, *, •, or digit.)
+ * Count bullet points in text: lines whose first non-blank token is `-`, `*`, `•`
+ * or `N.` followed by whitespace (a markdown list item). Both branches are anchored,
+ * so "2.5 hours" or "v1.2" mid-line is not a bullet (#12), and `**bold**` / `---` are not items.
  */
 function countBulletPoints(text: string): number {
   const lines = text.split("\n");
-  const bulletPattern = /^\s*[-*•]|\d+\./;
+  const bulletPattern = /^\s*(?:[-*•]|\d+\.)\s/;
   return lines.filter((line) => bulletPattern.test(line)).length;
 }
 
