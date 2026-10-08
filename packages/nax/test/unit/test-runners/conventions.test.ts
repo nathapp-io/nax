@@ -8,6 +8,8 @@ import {
   DEFAULT_SEPARATED_TEST_DIRS,
   DEFAULT_TEST_FILE_PATTERNS,
   DEFAULT_TS_DERIVE_SUFFIXES,
+  extractWholeTestDirs,
+  globsToPathspec,
   globsToTestRegex,
   isTestFileByPatterns,
 } from "@/test-runners/conventions";
@@ -138,5 +140,47 @@ describe("isTestFileByPatterns", () => {
 
   test("returns false when patterns yield no usable regexes", () => {
     expect(isTestFileByPatterns("src/foo.test.ts", ["no-wildcard.ts"])).toBe(false);
+  });
+});
+
+describe("globsToPathspec", () => {
+  test.each([
+    [["test/**/*.test.ts"], [":!*.test.ts"]],
+    [["**/*_test.go"], [":!*_test.go"]],
+    [["*_test.py"], [":!*_test.py"]],
+    [["test_*.py"], [":!test_*.py", ":!*/test_*.py"]],
+    [["tests/**/test_*.py"], [":!test_*.py", ":!*/test_*.py"]],
+  ])("keeps a test-file marker: %j", (globs, expected) => {
+    expect(globsToPathspec(globs)).toEqual(expected);
+  });
+
+  test.each([[["tests/**/*.py"]], [["tests/**/*.rs"]], [["src/**/*.rs"]], [["test/**/*.ts"]], [["tests/**"]]])(
+    "never turns a bare extension into a language-wide exclusion: %j",
+    (globs) => {
+      expect(globsToPathspec(globs)).toEqual([]);
+    },
+  );
+
+  test("a polyglot pattern set excludes only test files", () => {
+    expect(
+      globsToPathspec([
+        "test/**/*.test.ts",
+        "test_*.py",
+        "*_test.py",
+        "tests/**/*.py",
+        "tests/**/*.rs",
+        "**/*_test.go",
+      ]),
+    ).toEqual([":!*.test.ts", ":!test_*.py", ":!*/test_*.py", ":!*_test.py", ":!*_test.go"]);
+  });
+});
+
+describe("extractWholeTestDirs", () => {
+  test("claims a directory only when every file under it is a test", () => {
+    expect(extractWholeTestDirs(["tests/**/*.py", "tests/**/*.rs", "spec/**"])).toEqual(["tests", "spec"]);
+  });
+
+  test("a marker-carrying pattern does not claim its directory", () => {
+    expect(extractWholeTestDirs(["src/**/*.test.ts", "test/**/*.test.ts", "**/*.spec.ts"])).toEqual([]);
   });
 });

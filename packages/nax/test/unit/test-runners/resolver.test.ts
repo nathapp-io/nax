@@ -408,4 +408,26 @@ describe("resolveReviewExcludePatterns", () => {
     const derived = resolveReviewExcludePatterns(undefined, resolved);
     expect(derived.length).toBe(new Set(derived).size);
   });
+
+  test("colocated test patterns never exclude the source directory itself", async () => {
+    const config = makeNaxConfig({
+      execution: {
+        smartTestRunner: {
+          enabled: true,
+          fallback: "import-grep",
+          maxScanFiles: 200,
+          testFilePatterns: ["src/**/*.test.ts", "tests/**/*.py", "test_*.py"],
+        },
+      },
+    });
+    const resolved = await resolveTestFilePatterns(config, WORKDIR);
+    const derived = resolveReviewExcludePatterns(undefined, resolved);
+
+    expect(derived).not.toContain(":!src/");
+    expect(derived).not.toContain(":!*.py");
+    expect(derived).toContain(":!*.test.ts");
+    expect(derived).toContain(":!tests/");
+    expect(derived).toContain(":!test_*.py");
+    expect(derived).toContain(":!*/test_*.py");
+  });
 });
