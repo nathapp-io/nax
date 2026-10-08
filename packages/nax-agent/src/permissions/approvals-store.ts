@@ -19,8 +19,10 @@
  * primitive that surface calls into.
  */
 import { createHash } from "node:crypto";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { NaxError } from "#src/infra/index";
+import { writeFileAtomic } from "#src/internal/atomic-write";
 import { withPathFileLock } from "#src/internal/path-file-lock";
 
 export interface ApprovalEntry {
@@ -197,11 +199,11 @@ export async function readApprovals(path: string): Promise<readonly ApprovalEntr
   return (await readApprovalsFile(path)).entries;
 }
 
-/** Serialize the whole store. Callers hold the path lock. */
+/** Serialize the whole store, atomically (#16): a torn store would lose every remembered approval. Callers hold the path lock. */
 export async function writeApprovalsFile(path: string, file: ApprovalsFile): Promise<void> {
   const body = file.taint === undefined ? { entries: file.entries } : { taint: file.taint, entries: file.entries };
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${JSON.stringify(body, null, 2)}\n`, "utf8");
+  await writeFileAtomic(path, `${JSON.stringify(body, null, 2)}\n`);
 }
 
 /**
@@ -213,12 +215,23 @@ export async function writeApprovalsFile(path: string, file: ApprovalsFile): Pro
  *
  * The taint marker is PRESERVED: a "remember" tapped during a forge-capable run
  * lands in a store that stays untrusted.
+ *
+ * An unparseable store is refused, never replaced (the removal path does the same).
  */
 export async function appendApproval(path: string, entry: ApprovalEntry): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   await withPathFileLock(path, async () => {
-    const existing = await readApprovalsFile(path);
-    await writeApprovalsFile(path, { taint: existing.taint, entries: [...existing.entries, entry] });
+    // Detailed read, not readApprovalsFile: that one reads failure AS empty (right for a
+    // lookup), and writing "empty + this entry" back would destroy the store (#16). A read
+    // error propagates; the caller logs it and still allows the approved call.
+    const read = await readApprovalsFileDetailed(path);
+    if (read.state === "unparseable") {
+      throw new NaxError("approvals.json could not be parsed; not rewriting it", "APPROVALS_STORE_UNPARSEABLE", {
+        stage: "permissions",
+        path,
+      });
+    }
+    await writeApprovalsFile(path, { taint: read.file.taint, entries: [...read.file.entries, entry] });
   });
 }
 
