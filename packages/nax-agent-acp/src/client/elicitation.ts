@@ -12,8 +12,10 @@
  * companion (Claude's AskUserQuestion "Other" box): not asked on its own; a reply
  * naming no choice becomes its value. Any other field type, a malformed or oversized
  * choice list, too many fields, or a non-form request declines the form unasked;
- * a reply naming no choice without a companion, or an empty reply to a required
- * field, declines after asking. Each decline is noted with noteQuestion. No reply
+ * a reply naming no choice without a companion, a reply naming no choice to a
+ * REQUIRED select (its companion only adds to a choice — filling it alone would
+ * omit the required key), or an empty reply to a required field, declines after
+ * asking. Each decline is noted with noteQuestion. No reply
  * (deadline, cancel, turn end, process exit) cancels. Question text is agent data:
  * control and invisible characters stripped, secrets scrubbed, capped.
  */
@@ -142,8 +144,20 @@ function parseForm(request: unknown): Parsed {
     : REFUSED;
 }
 
+/**
+ * The companion offer, only where a typed answer would be accepted: a required
+ * select must name a choice (filling only `<key>_custom` would omit the required
+ * key), so a required single-select gets no offer and a required multi-select
+ * gets one only beside a choice.
+ */
+function ownAnswerHint(field: Field): string {
+  if (field.companion === undefined) return "";
+  if (!field.required) return ", or type your own answer";
+  return field.kind === "multi" ? "; you may add your own after at least one choice" : "";
+}
+
 function instruction(field: Field): string {
-  const own = field.companion === undefined ? "" : ", or type your own answer";
+  const own = ownAnswerHint(field);
   const skip = field.required ? "" : " Leave empty to skip.";
   if (field.kind === "single") return `Reply with one number or choice${own}.${skip}`;
   if (field.kind === "multi") return `Reply with numbers or choices, separated by commas${own}.${skip}`;
