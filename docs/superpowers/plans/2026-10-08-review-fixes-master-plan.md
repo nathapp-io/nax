@@ -114,7 +114,7 @@ Run this for every bundle after its last task:
 
 | Bundle | Branch | PR | Status |
 |---|---|---|---|
-| A | — | — | not started |
+| A | `fix/review-a-detection-context` | [#2391](https://github.com/nathapp-io/nax/pull/2391) | in progress |
 | D | — | — | not started |
 | B | — | — | not started |
 | H | — | — | not started |
