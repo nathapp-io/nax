@@ -13,7 +13,7 @@ import { NaxError } from "#src/infra/nax-error";
 import { capStrings, redactSecrets } from "#src/internal/redact";
 import { askDenyReason } from "#src/tools/ask-request";
 import type { CodingTool } from "#src/tools/registry";
-import type { CodingToolRuntime, ToolCallContext } from "#src/tools/runtime";
+import type { CodingToolOutcome, CodingToolRuntime, ToolCallContext } from "#src/tools/runtime";
 import { cutToByteCap } from "#src/tools/truncate";
 import type { EmbedderTool, EmbedderToolContext, EmbedderToolResult } from "./agent-session-types.ts";
 import type { AdapterInteraction, AdapterInteractionResponse, InteractionHandler } from "./interaction-handler.ts";
@@ -95,9 +95,28 @@ function runSafely(tool: EmbedderTool, input: unknown, ctx: EmbedderToolContext)
 }
 
 /**
+ * Settle with `work`, or with `onAbort()` the moment `signal` aborts. The tool
+ * batch awaits interaction handlers with no abort race of its own, so a tool
+ * that ignores its signal would otherwise hang the turn (and `close()`, which
+ * awaits the turn). The abandoned work's late settlement is ignored.
+ */
+async function raceAbort<T>(work: Promise<T>, signal: AbortSignal, onAbort: () => T): Promise<T> {
+  let listener = (): void => {};
+  const aborted = new Promise<T>((resolve) => {
+    listener = () => resolve(onAbort());
+    signal.addEventListener("abort", listener, { once: true });
+  });
+  try {
+    return await Promise.race([work, aborted]);
+  } finally {
+    signal.removeEventListener("abort", listener);
+  }
+}
+
+/**
  * Runs the tool, but answers at once when the turn aborts: the batch awaits
  * this handler with no abort race of its own, so a run that ignores its signal
- * would otherwise hang the turn. The abandoned run's late settlement is ignored.
+ * would otherwise hang the turn. See `raceAbort`.
  */
 async function invoke(tool: EmbedderTool, input: unknown, ctx: EmbedderToolContext): Promise<EmbedderToolResult> {
   const abandoned: EmbedderToolResult = {
@@ -105,16 +124,7 @@ async function invoke(tool: EmbedderTool, input: unknown, ctx: EmbedderToolConte
     isError: true,
   };
   if (ctx.signal.aborted) return abandoned;
-  let onAbort = (): void => {};
-  const aborted = new Promise<EmbedderToolResult>((resolve) => {
-    onAbort = () => resolve(abandoned);
-    ctx.signal.addEventListener("abort", onAbort, { once: true });
-  });
-  try {
-    return await Promise.race([runSafely(tool, input, ctx), aborted]);
-  } finally {
-    ctx.signal.removeEventListener("abort", onAbort);
-  }
+  return raceAbort(runSafely(tool, input, ctx), ctx.signal, () => abandoned);
 }
 
 async function runEmbedderTool(
@@ -160,7 +170,18 @@ async function runCodingTool(
 ): Promise<AdapterInteractionResponse> {
   deps.setCurrentCallId(request.toolCallId);
   try {
-    const outcome = await deps.runtime.callTool(request.name, request.input ?? {}, toolCallContext(request));
+    const signal = request.signal ?? deps.turnSignal();
+    const abandoned: CodingToolOutcome = {
+      kind: "error",
+      content: `Tool "${request.name}" was abandoned: the turn ended.`,
+    };
+    const outcome = signal.aborted
+      ? abandoned
+      : await raceAbort(
+          deps.runtime.callTool(request.name, request.input ?? {}, { ...toolCallContext(request), signal }),
+          signal,
+          () => abandoned,
+        );
     if (outcome.kind === "denied") {
       return { answer: `Denied: ${outcome.reason}`, denied: { reason: outcome.reason, breach: outcome.breach } };
     }

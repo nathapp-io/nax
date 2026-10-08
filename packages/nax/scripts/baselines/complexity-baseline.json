@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-10-08T08:15:15.485Z",
+  "updatedAt": "2026-10-08T09:24:03.467Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": { "collectStats": 27 },
@@ -14,7 +14,7 @@
     "scripts/command-safety-eval.ts": { "main": 23 },
     "scripts/find-memory-leak.ts": { "worker": 23 },
     "scripts/generate-changelog.ts": { "main": 38, "rewriteBatch": 33 },
-    "src/acceptance/hardening.ts": { "processPackageGroup": 27 },
+    "src/acceptance/hardening.ts": { "processPackageGroup": 26 },
     "src/agents/manager-run-fallback.ts": { "runWithFallback": 54 },
     "src/agents/manager.ts": { "completeWithFallback": 40 },
     "src/agents/retry/hop-retry-policy.ts": { "trySameAgentRetry": 45 },

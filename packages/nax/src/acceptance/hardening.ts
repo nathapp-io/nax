@@ -18,6 +18,7 @@ import { detectLanguage as _detectLanguage } from "../project/detector";
 import type { DispatchContext } from "../runtime/dispatch-context";
 import { parseTestFailures } from "../test-runners/ac-parser";
 import { assertTrusted } from "../trust";
+import { drainWithin } from "../utils/drain-within";
 import { storyWorkdir } from "../utils/path-frame";
 import { buildAcceptanceRunCommand, generateSkeletonTests } from "./generator";
 import { resolveSuggestedPackageFeatureTestPath } from "./test-path";
@@ -58,9 +59,46 @@ export const _hardeningDeps = {
     await Bun.write(p, c);
   },
   detectLanguage: _detectLanguage as (dir: string) => Promise<string | undefined>,
+  // Post-exit window for the output drains (#29); tests shrink it.
+  drainTimeoutMs: 2_000,
 };
 
 // ─── Private helpers ─────────────────────────────────────────────────────────
+
+/** Handles for the test command's kill timers; `sigkillTimer` is armed only once SIGTERM has fired. */
+interface HardeningTimers {
+  readonly killTimer: ReturnType<typeof setTimeout>;
+  sigkillTimer: ReturnType<typeof setTimeout> | undefined;
+}
+
+/**
+ * Await the test command's exit, then drain its stdout/stderr within
+ * `_hardeningDeps.drainTimeoutMs`, always disarming both kill timers even when
+ * the exit wait rejects (spawn failure). The drains are started BEFORE the exit
+ * wait so a full pipe cannot deadlock it; their deadlines bound the drain only
+ * after the process has exited (#29).
+ */
+async function awaitExitAndDrain(
+  proc: Bun.Subprocess<"ignore", "pipe", "pipe">,
+  timers: HardeningTimers,
+): Promise<{ exitCode: number; output: string }> {
+  const stdoutDrain = new Response(proc.stdout).text().catch(() => "");
+  const stderrDrain = new Response(proc.stderr).text().catch(() => "");
+  let exitCode: number;
+  let output: string;
+  try {
+    exitCode = await proc.exited;
+    const [stdout, stderr] = await Promise.all([
+      drainWithin(stdoutDrain, _hardeningDeps.drainTimeoutMs),
+      drainWithin(stderrDrain, _hardeningDeps.drainTimeoutMs),
+    ]);
+    output = `${stdout}\n${stderr}`;
+  } finally {
+    clearTimeout(timers.killTimer);
+    if (timers.sigkillTimer) clearTimeout(timers.sigkillTimer);
+  }
+  return { exitCode, output };
+}
 
 /**
  * Process one package group: refine criteria, generate test file, run it,
@@ -194,31 +232,28 @@ async function processPackageGroup(
   // a hard wall-clock deadline with SIGTERM -> SIGKILL escalation so the run's
   // completion phase never wedges indefinitely.
   let exitedBeforeSigkill = false;
-  let sigkillTimer: ReturnType<typeof setTimeout> | undefined;
   proc.exited
     .then(() => {
       exitedBeforeSigkill = true;
     })
     .catch(() => {});
   const timeoutMs = config.acceptance?.timeoutMs ?? DEFAULT_HARDENING_TIMEOUT_MS;
-  const killTimer = setTimeout(() => {
-    killProcessGroup(proc.pid, "SIGTERM");
-    sigkillTimer = setTimeout(() => {
-      sigkillTimer = undefined;
-      if (!exitedBeforeSigkill) {
-        killProcessGroup(proc.pid, "SIGKILL");
-      }
-    }, HARDENING_SIGKILL_GRACE_PERIOD_MS);
-  }, timeoutMs);
+  const timers: HardeningTimers = {
+    killTimer: setTimeout(() => {
+      killProcessGroup(proc.pid, "SIGTERM");
+      timers.sigkillTimer = setTimeout(() => {
+        timers.sigkillTimer = undefined;
+        if (!exitedBeforeSigkill) {
+          killProcessGroup(proc.pid, "SIGKILL");
+        }
+      }, HARDENING_SIGKILL_GRACE_PERIOD_MS);
+    }, timeoutMs),
+    sigkillTimer: undefined,
+  };
 
-  const [exitCode, stdout, stderr] = await Promise.all([
-    proc.exited,
-    new Response(proc.stdout).text().catch(() => ""),
-    new Response(proc.stderr).text().catch(() => ""),
-  ]);
-  clearTimeout(killTimer);
-  if (sigkillTimer) clearTimeout(sigkillTimer);
-  const output = `${stdout}\n${stderr}`;
+  // `awaitExitAndDrain` starts the drains before the exit wait and disarms both
+  // timers in a finally, so a rejected exit wait cannot leave them armed.
+  const { exitCode, output } = await awaitExitAndDrain(proc, timers);
 
   // Parse results and promote/discard for this group
   const failedACs = parseTestFailures(output);
