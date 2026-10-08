@@ -44,14 +44,17 @@ export async function acceptCommand(options: AcceptOptions): Promise<void> {
   const logger = getLogger();
   const { feature, override, reason } = options;
 
-  // Validate AC ID format
-  if (!override.match(/^AC-\d+$/i)) {
-    logger.error("cli", "Invalid AC ID format", { override, expected: "AC-1, AC-2, etc." });
-    throw new NaxError("Invalid AC ID format", "INVALID_AC_ID", { override, expected: "AC-1, AC-2, etc." });
+  // `AC-N`, or `<package>::AC-N` to waive the criterion in one package of a monorepo (#10).
+  const expected = "AC-1, or <package>::AC-1 (package path relative to the repo root)";
+  const match = /^(?:(.+)::)?(AC-\d+)$/i.exec(override);
+  const pkg = match?.[1];
+  const ac = match?.[2];
+  if (!ac || pkg === "") {
+    logger.error("cli", "Invalid AC ID format", { override, expected });
+    throw new NaxError("Invalid AC ID format", "INVALID_AC_ID", { override, expected });
   }
-
-  // Normalize AC ID to uppercase
-  const acId = override.toUpperCase();
+  // Only the AC part is case-normalised; a package path is case-sensitive.
+  const acId = pkg === undefined ? ac.toUpperCase() : `${pkg}::${ac.toUpperCase()}`;
 
   // Find project directory
   const projectDirResult = findProjectDir(process.cwd());
