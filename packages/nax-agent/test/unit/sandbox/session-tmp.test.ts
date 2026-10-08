@@ -4,13 +4,14 @@
  * A flat `/tmp/nax-<runId>` root is hard to find and list, so runs now nest
  * under one `/tmp/nax` parent. That parent is shared, so it cannot be created
  * once and trusted: a `/tmp/nax` made by one OS user is not writable by
- * another. Instead the parent is re-resolved on every call from three host
+ * another. Instead the parent is re-resolved on every call from four host
  * facts the `_sessionTmpDeps` seam exposes — what `lstat("/tmp/nax")` reports,
- * whether `access` succeeds, and the uid. Absence is the ordinary shared-parent
- * case (the launcher's recursive mkdir creates it), and so is a real directory
- * the current user can write and search; anything else — a symlink, a
- * non-directory, a failed `access`, or an `lstat` error other than ENOENT —
- * falls back to `/tmp/nax-<uid>`.
+ * the uid that owns it, whether `access` succeeds, and the uid. Absence is the
+ * ordinary shared-parent case (the launcher's recursive mkdir creates it), and
+ * so is a real directory the current user owns and can write and search;
+ * anything else — a symlink, a non-directory, a foreign owner, a failed
+ * `access`, or an `lstat` error other than ENOENT — falls back to
+ * `/tmp/nax-<uid>`.
  *
  * Imported through the `@/sandbox` BARREL, not the leaf module: the story's
  * interface promises `runTmpRoot`, `sessionTmpDir` and `_sessionTmpDeps` are
@@ -160,5 +161,19 @@ describe("US-001 — run temp root resolution (src/sandbox/session-tmp)", () => 
     expect(sessionTmpDir("run-1", "US-001-implementer").startsWith(`${runTmpRoot("run-1")}/`)).toBe(true);
     // ...and a sibling run's root is never a prefix of it.
     expect(sessionTmpDir("run-2", "x").startsWith(`${runTmpRoot("run-1")}/`)).toBe(false);
+  });
+
+  test("falls back when /tmp/nax is owned by another user, even if it is writable", () => {
+    // A world-writable /tmp/nax another user created would let that user plant
+    // symlinks or read what sandboxed commands write via $TMPDIR.
+    stubSessionTmpDeps(_sessionTmpDeps, { parent: "directory", access: "ok", uid: 501, owner: 502 });
+
+    expect(runTmpRoot("run-1")).toBe("/tmp/nax-501/run-1");
+  });
+
+  test("keeps the shared parent when the current user owns it", () => {
+    stubSessionTmpDeps(_sessionTmpDeps, { parent: "directory", access: "ok", uid: 501, owner: 501 });
+
+    expect(runTmpRoot("run-1")).toBe("/tmp/nax/run-1");
   });
 });

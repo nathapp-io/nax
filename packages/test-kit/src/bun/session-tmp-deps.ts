@@ -1,11 +1,11 @@
 /**
  * Shared stub for the `_sessionTmpDeps` seam (`src/sandbox/session-tmp.ts`).
  *
- * US-001 resolves the run temp root's parent on every call from three host
- * facts: what `lstat("/tmp/nax")` reports, whether `access("/tmp/nax", …)`
- * succeeds, and the current uid. Every test that pins a resolved path has to
- * control all three at once, so that assignment lives here instead of being
- * copy-pasted per file.
+ * US-001 resolves the run temp root's parent on every call from four host
+ * facts: what `lstat("/tmp/nax")` reports, the uid that owns it, whether
+ * `access("/tmp/nax", …)` succeeds, and the current uid. Every test that pins a
+ * resolved path has to control all four at once, so that assignment lives here
+ * instead of being copy-pasted per file.
  *
  * The deps object is PASSED IN rather than imported. `test/helpers/index.ts` is
  * loaded by almost every suite, so a static import of a src export that does
@@ -15,7 +15,7 @@
 
 /** The three synchronous host calls `runTmpRoot` resolves its parent through. */
 export interface SessionTmpDepsLike {
-  lstat(path: string): { isDirectory(): boolean; isSymbolicLink(): boolean };
+  lstat(path: string): { isDirectory(): boolean; isSymbolicLink(): boolean; readonly uid: number };
   access(path: string, mode: number): void;
   uid(): number;
 }
@@ -37,6 +37,8 @@ export interface SessionTmpHostFacts {
   readonly access?: "ok" | "EACCES";
   /** What `uid()` returns. Defaults to `501` — a plain non-root user id. */
   readonly uid?: number;
+  /** The uid that owns `/tmp/nax`. Defaults to `uid` — the current user owns it. */
+  readonly owner?: number;
 }
 
 /** True for the errno members of {@link NaxParentKind}. */
@@ -59,12 +61,14 @@ export function stubSessionTmpDeps(deps: SessionTmpDepsLike, facts: SessionTmpHo
   const parent = facts.parent ?? "directory";
   const access = facts.access ?? "ok";
   const uid = facts.uid ?? 501;
+  const owner = facts.owner ?? uid;
 
   deps.lstat = (path) => {
     if (isFailure(parent)) throw errnoError(parent, "lstat", path);
     return {
       isDirectory: () => parent === "directory",
       isSymbolicLink: () => parent === "symlink",
+      uid: owner,
     };
   };
   deps.access = (path) => {

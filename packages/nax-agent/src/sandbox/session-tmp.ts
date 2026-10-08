@@ -12,9 +12,11 @@
  * The parent is `/tmp/nax`, one shared directory that is easier to find and
  * list than a flat `/tmp/nax-<runId>`. It is shared, so it cannot be created
  * once and trusted: a `/tmp/nax` made by one OS user is not writable by
- * another. The parent is therefore re-resolved on EVERY call from three host
- * facts the `_sessionTmpDeps` seam exposes, with no cache, and anything nax
- * cannot vouch for falls back to a per-user `/tmp/nax-<uid>`.
+ * another. The parent is therefore re-resolved on EVERY call from four host
+ * facts the `_sessionTmpDeps` seam exposes — including the uid that owns it,
+ * because a world-writable directory another user created is still theirs to
+ * plant symlinks in — with no cache, and anything nax cannot vouch for falls
+ * back to a per-user `/tmp/nax-<uid>`.
  *
  * The root is the literal `/tmp` (not `os.tmpdir()`): callers record and assert
  * this machine-stable location, and the OS inherits the rest.
@@ -42,15 +44,18 @@ export const _sessionTmpDeps = {
 };
 
 /**
- * True when `/tmp/nax` is a real directory the current user can write and
- * search. Absence is NOT this case: an absent parent is a usable shared parent
- * (the launcher creates it), and every other failure means the path is there in
- * a shape nax cannot vouch for.
+ * True when `/tmp/nax` is a real directory the current user OWNS and can write
+ * and search. Absence is NOT this case: an absent parent is a usable shared
+ * parent (the launcher creates it), and every other failure means the path is
+ * there in a shape nax cannot vouch for.
  */
 function isUsableSharedParent(): boolean {
   try {
     const stats = _sessionTmpDeps.lstat(SHARED_TMP_PARENT);
     if (!stats.isDirectory() || stats.isSymbolicLink()) return false;
+    // Writability is not trust: a 0777 /tmp/nax another user created lets that user
+    // pre-create the run directories or read what sandboxed commands write there.
+    if (stats.uid !== _sessionTmpDeps.uid()) return false;
   } catch (err) {
     // ENOENT is the one failure that means "create /tmp/nax".
     return (err as NodeJS.ErrnoException).code === "ENOENT";
