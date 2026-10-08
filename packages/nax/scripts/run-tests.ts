@@ -25,36 +25,20 @@
  *      on SIGINT, 134 on Bun panic / other signal, otherwise whatever
  *      `bun test` returned.
  *
- * Usage: `bun run scripts/run-tests.ts [--bail]`
+ * Usage: `bun run scripts/run-tests.ts [--bail] [--e2e]`
+ *   `--e2e` runs only `test/e2e/` (the `test:e2e` script).
  */
 
 import { createTestOutputController } from "./run-tests-output";
+import { type Phase, selectPhases } from "./run-tests-phases";
 
 const BAIL = process.argv.includes("--bail");
+const PHASES = selectPhases(process.argv);
 const OUTPUT_CONTROLLER = createTestOutputController({
   agentMode: process.env.AGENT === "1",
   stdout: process.stdout,
   stderr: process.stderr,
 });
-type Phase = {
-  name: string;
-  dir: string;
-  /** Per-test timeout passed to Bun. */
-  testTimeoutMs: number;
-  /** Wall-clock cap for the whole phase. */
-  phaseTimeoutMs: number;
-};
-
-const PHASES: Phase[] = [
-  // 240s, not 120s: the unit suite is ~21.7k tests across ~1.4k files, and a
-  // fully-passing run was observed at 123.7s wall on a loaded runner — killed
-  // by the old 120s budget with zero failing tests. The budget exists to bound
-  // hangs (per-test timeout stays 5s; the group reap still fires on overrun),
-  // so it must not sit at the suite's legitimate steady-state cost.
-  { name: "unit", dir: "test/unit/", testTimeoutMs: 5_000, phaseTimeoutMs: 240_000 },
-  { name: "integration", dir: "test/integration/", testTimeoutMs: 5_000, phaseTimeoutMs: 120_000 },
-  { name: "ui", dir: "test/ui/", testTimeoutMs: 5_000, phaseTimeoutMs: 30_000 },
-];
 const REAP_GRACE_MS = 5_000;
 const REAP_POLL_MS = 100;
 
