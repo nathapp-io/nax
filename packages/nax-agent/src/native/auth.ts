@@ -201,12 +201,19 @@ export async function importPiCredentials(options?: { from?: string; force?: boo
     });
   }
 
+  // JSON.parse accepts `null`, arrays and scalars; none of them is a provider map.
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new NaxError(`The file at ${path} is not a provider credential map.`, "AUTH_IMPORT_SOURCE_UNREADABLE", {
+      path,
+    });
+  }
+
   const store = naxCredentialStore();
   const outcomes: ImportOutcome[] = [];
 
   for (const providerId of Object.keys(parsed).sort()) {
     const entry = parsed[providerId];
-    const credential = entry === undefined ? undefined : fromPiEntry(entry);
+    const credential = typeof entry === "object" && entry !== null ? fromPiEntry(entry) : undefined;
     if (credential === undefined) {
       outcomes.push({ providerId, status: "unsupported" });
       continue;

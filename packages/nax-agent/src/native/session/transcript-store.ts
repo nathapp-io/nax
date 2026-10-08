@@ -7,10 +7,11 @@
  * none. See ADR-028 sections 2 and 3.
  */
 
-import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { ConversationMessage } from "@nathapp/nax-ai";
 import { getLogger, NaxError } from "#src/infra/index";
+import { writeFileAtomic } from "#src/internal/atomic-write";
 import { historyFromTranscript, type TranscriptIdentity, transcriptDocFor } from "./transcript-identity.ts";
 import type { TranscriptDoc, TranscriptStore, TurnMarker } from "./transcript-types.ts";
 
@@ -64,7 +65,8 @@ export async function readTranscriptDoc(dir: string, sessionName: string): Promi
 
 async function writeTranscriptDoc(dir: string, sessionName: string, doc: TranscriptDoc): Promise<void> {
   await mkdir(dir, { recursive: true });
-  await writeFile(transcriptPath(dir, sessionName), JSON.stringify(doc, null, 2), "utf8");
+  // Atomic (#3): a torn transcript is unrecoverable — every later load throws TRANSCRIPT_CORRUPT.
+  await writeFileAtomic(transcriptPath(dir, sessionName), JSON.stringify(doc, null, 2));
 }
 
 /**

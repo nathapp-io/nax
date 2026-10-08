@@ -94,6 +94,37 @@ describe("approvals store", () => {
     const commands = (await readApprovals(path)).map((e) => e.command).sort();
     expect(commands).toEqual(["cmd-a", "cmd-b"]);
   });
+
+  test("appending to an unparseable store refuses instead of replacing it", async () => {
+    const dir = makeTempDir("approvals-");
+    const path = join(dir, "approvals.json");
+    writeFileSync(path, '{ "entries": [ { "stage": "implementer", "comm');
+    await expect(appendApproval(path, entry("bun run test"))).rejects.toMatchObject({
+      code: "APPROVALS_STORE_UNPARSEABLE",
+    });
+    expect(await Bun.file(path).text()).toBe('{ "entries": [ { "stage": "implementer", "comm');
+    cleanupTempDir(dir);
+  });
+
+  test.skipIf(process.getuid?.() === 0)(
+    "appending to an unreadable store propagates the error instead of replacing it",
+    async () => {
+      const dir = makeTempDir("approvals-");
+      const path = join(dir, "approvals.json");
+      await appendApproval(path, entry("first"));
+      // Write-only: the READ fails with EACCES while a write would still succeed, so the old
+      // code (read failure -> empty store -> write) clobbers the store. 0o000 would make the
+      // old write fail too and the test would pass before the fix.
+      chmodSync(path, 0o200);
+      try {
+        await expect(appendApproval(path, entry("second"))).rejects.toThrow();
+      } finally {
+        chmodSync(path, 0o600);
+      }
+      expect((await readApprovals(path)).map((e) => e.command)).toEqual(["first"]);
+      cleanupTempDir(dir);
+    },
+  );
 });
 
 // --- US-001: derived approval ids and the detailed read --------------------
