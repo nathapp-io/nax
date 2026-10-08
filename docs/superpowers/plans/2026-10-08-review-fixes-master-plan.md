@@ -118,7 +118,7 @@ Run this for every bundle after its last task:
 | D | `fix/review-d-security` | [#2392](https://github.com/nathapp-io/nax/pull/2392) | in progress |
 | B | `fix/review-b-durable-writes` | [#2393](https://github.com/nathapp-io/nax/pull/2393) | in progress |
 | H | `fix/review-h-session-manager` | [#2394](https://github.com/nathapp-io/nax/pull/2394) | in progress |
-| J | — | — | not started |
+| J | `fix/review-j-acceptance-overrides` | [#2395](https://github.com/nathapp-io/nax/pull/2395) | in progress |
 | C | — | — | not started |
 | I | — | — | not started |
 | E | — | — | not started |
