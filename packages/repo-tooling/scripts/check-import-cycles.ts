@@ -225,24 +225,31 @@ export function resolveSpecifier(rootDir: string, fromFile: string, spec: string
   return null;
 }
 
+/** The file's value-import targets: `import ... from` (minus type-only) and side-effect imports. */
+function valueDeps(content: string, rootDir: string, file: string): string[] {
+  const deps: string[] = [];
+  for (const match of content.matchAll(STATIC_IMPORT_RE)) {
+    if (isTypeOnlyImport(match[1] ?? "")) continue;
+    const spec = match[2];
+    if (!spec) continue;
+    const target = resolveSpecifier(rootDir, file, spec);
+    if (target) deps.push(target);
+  }
+  for (const match of content.matchAll(SIDE_EFFECT_IMPORT_RE)) {
+    const spec = match[1];
+    if (!spec) continue;
+    const target = resolveSpecifier(rootDir, file, spec);
+    if (target) deps.push(target);
+  }
+  return deps;
+}
+
 /** Build the value-import graph of `src/`, keyed by absolute file path. */
 export function buildImportGraph(rootDir: string): Map<string, string[]> {
   const graph = new Map<string, string[]>();
   for (const file of walk(join(rootDir, SCAN_DIR))) {
     const content = stripComments(readFileSync(file, "utf8"));
-    const deps: string[] = [];
-    for (const match of content.matchAll(STATIC_IMPORT_RE)) {
-      if (isTypeOnlyImport(match[1] ?? "")) continue;
-      const spec = match[2];
-      if (!spec) continue;
-      const target = resolveSpecifier(rootDir, file, spec);
-      if (target) deps.push(target);
-    }
-    for (const match of content.matchAll(SIDE_EFFECT_IMPORT_RE)) {
-      const target = match[1] ? resolveSpecifier(rootDir, file, match[1]) : null;
-      if (target) deps.push(target);
-    }
-    graph.set(file, deps);
+    graph.set(file, valueDeps(content, rootDir, file));
   }
   return graph;
 }
