@@ -117,7 +117,7 @@ Run this for every bundle after its last task:
 | A | `fix/review-a-detection-context` | [#2391](https://github.com/nathapp-io/nax/pull/2391) | in progress |
 | D | `fix/review-d-security` | [#2392](https://github.com/nathapp-io/nax/pull/2392) | in progress |
 | B | `fix/review-b-durable-writes` | [#2393](https://github.com/nathapp-io/nax/pull/2393) | in progress |
-| H | — | — | not started |
+| H | `fix/review-h-session-manager` | [#2394](https://github.com/nathapp-io/nax/pull/2394) | in progress |
 | J | — | — | not started |
 | C | — | — | not started |
 | I | — | — | not started |
