@@ -255,7 +255,8 @@ jobs:
       - name: Notify Telegram
         if: steps.info.outputs.notify == 'true' && steps.pkg.outputs.name == '@nathapp/nax' && vars.TELEGRAM_CHAT_ID != ''
         run: |
-          NOTES=$(cat /tmp/release-notes.md | head -20)
+          # Written only when CHANGELOG.md has a section for this version (Extract release notes step).
+          NOTES=$(head -20 /tmp/release-notes.md 2>/dev/null || true)
           MSG="🚀 *nax ${{ steps.info.outputs.tag }} released*
 
           \`\`\`
