@@ -45,7 +45,7 @@ a real MCP client, and its `update` and `elicit` steps send any session update a
 elicitation). S4-6 added resume (`resume.ts`: stored-record check before spawning, `session/resume`
 else `session/load`, identity via the id Claude echoes) and one reconnect after the
 agent process dies (`backend.ts`: a new process, router and tool host token; the cost
-baseline is carried over and persisted as `acp.costUsd`). `./server` is reserved for S5.
+baseline is carried over and persisted as `acp.costUsd`). `./server` is the S5 ACP server (spec `docs/superpowers/specs/2026-10-08-s5-acp-server-design.md`), built in slices S5-0 to S5-5: `src/server/` holds the CLI, `~/.nax` subset reader, option resolution, stderr logger and stdio serving (S5-0) and `translate/` (S5-1, event -> ACP update mapping); the published `bin/nax-agent.js` only calls `runCli(process)` from `dist/`. stdout carries ACP frames only.
 The packed smoke (`test/node/pack-smoke.test.ts`) stages both packages at one version.
 The live Claude and initialize-only fixtures in `test/node/fixtures/` are
 maintainer-run and billed, and never run in CI.
