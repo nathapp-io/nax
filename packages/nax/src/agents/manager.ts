@@ -528,7 +528,7 @@ export class AgentManager implements IAgentManager {
         sessionName,
         prompt,
         response: outcome.result.output,
-        ...resolveFinalDispatch(augmented, agentName, outcome.fallbacks, outcome.finalTier),
+        ...resolveFinalDispatch(augmented, agentName, outcome),
         stage,
         resolvedPermissions,
         tokenUsage: outcome.result.tokenUsage,

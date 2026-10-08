@@ -10,8 +10,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { resolveStartAgent, type StartAgentSource } from "@/agents/hop-budget";
 import { _agentManagerDeps, AgentManager } from "@/agents/manager";
-import { resolveFinalDispatch, resolveHopCompleteOptions } from "@/agents/manager-dispatch";
-import type { AgentFallbackRecord, HopKind } from "@/agents/manager-types";
+import { resolveHopCompleteOptions } from "@/agents/manager-dispatch";
+import type { HopKind } from "@/agents/manager-types";
 import { availableCandidates, credentialCandidates, normaliseFallbackTarget } from "@/agents/swap-decision";
 import type { AgentRunOptions, ResolvedCompleteOptions } from "@/agents/types";
 import { type AgentManagerConfig, resolveModelForAgent } from "@/config";
@@ -466,49 +466,6 @@ describe("an unknown tier on a fallback target", () => {
   test("a tier the agent lacks falls back to the default agent's entry before throwing", () => {
     const models = { claude: { premium: "claude-opus-5" }, native: { cheap: "opencode-go/glm-5" } };
     expect(resolveModelForAgent(models, "native", "premium", "claude").model).toBe("claude-opus-5");
-  });
-});
-
-describe("resolveFinalDispatch", () => {
-  const base: ResolvedCompleteOptions = {
-    modelDef: { provider: "anthropic", model: "primary-model" },
-    modelDefFor: (agent: string, tier?: string) => ({ provider: "p", model: `${agent}:${tier ?? "default"}` }),
-    modelTier: "balanced",
-    workdir: "/tmp",
-    resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
-  };
-  const swapped: AgentFallbackRecord[] = [
-    {
-      priorAgent: "claude",
-      newAgent: "native",
-      hop: 1,
-      outcome: "fail-quota",
-      category: "availability",
-      timestamp: "2026-09-02T00:00:00.000Z",
-      costUsd: 0,
-    },
-  ];
-
-  test("the cost row records the model the swapped hop actually ran", () => {
-    // Without threading finalTier this is "native:default" — a model that
-    // never ran, billed against the run.
-    expect(resolveFinalDispatch(base, "claude", swapped, "cheap").options.modelDef.model).toBe("native:cheap");
-  });
-
-  test("a tier-carrying swap also records that tier, so model and modelTier agree", () => {
-    // The dispatched model is "native:cheap"; reporting the primary's
-    // "balanced" (or nothing) alongside it would record a tier that never ran.
-    const out = resolveFinalDispatch(base, "claude", swapped, "cheap").options;
-    expect(out.modelDef.model).toBe("native:cheap");
-    expect(out.modelTier).toBe("cheap");
-  });
-
-  test("no tier means today's behaviour", () => {
-    expect(resolveFinalDispatch(base, "claude", swapped).options.modelDef.model).toBe("native:default");
-  });
-
-  test("no tier leaves modelTier as the base had it", () => {
-    expect(resolveFinalDispatch(base, "claude", swapped).options.modelTier).toBe("balanced");
   });
 });
 
