@@ -21,6 +21,7 @@ import { getAgentProfile } from "./agent-profiles";
 import { renderForAgent } from "./agent-renderer";
 import { dedupeChunks } from "./dedupe";
 import { buildDigest, DIGEST_RESERVE_TOKENS, digestTokens } from "./digest";
+import { boostedDigestChunk, PLAN_DIGEST_PROVIDER_ID, resolveDigestCarrier } from "./digest-carrier";
 import { buildManifest } from "./manifest-builder";
 import { toContextChunk } from "./orchestrator-rebuild-helpers";
 import { FLOOR_KINDS, packChunks } from "./packing";
@@ -86,31 +87,13 @@ export const _orchestratorDeps = {
 type ProviderActivationSource = NonNullable<NonNullable<ContextManifest["providerResults"]>[number]["source"]>;
 type ProviderStatusEntry = NonNullable<ContextManifest["providerResults"]>[number];
 
-/**
- * The prior-stage digest has exactly one carrier: either a scored `plan-digest` chunk
- * (Amendment B AC-51) that pays for itself inside the packer, or the legacy rendered
- * preamble. `chunkDigest` is the digest string when it rides as a chunk (else undefined);
- * `manifestRequest` nulls the preamble field in that case so the manifest does not count
- * the digest a second time. Resolves the branchy decision away from `assemble`.
- */
-function planPriorDigestCarrier(request: ContextRequest): {
-  chunkDigest: string | undefined;
-  manifestRequest: ContextRequest;
-} {
-  const digestAsChunk = Boolean(request.priorStageDigest) && (request.planDigestBoost ?? 1.0) > 1.0;
-  return {
-    chunkDigest: digestAsChunk ? request.priorStageDigest : undefined,
-    manifestRequest: digestAsChunk ? { ...request, priorStageDigest: undefined } : request,
-  };
-}
-
 /** Append the `plan-digest` chunk and its provider-status entry; caller has narrowed `digest`. */
 function appendPlanDigestChunk(raw: RawChunk[], results: ProviderStatusEntry[], digest: string, boost: number): void {
   const hash = createHash("sha256").update(digest).digest("hex").slice(0, 8);
   const tokens = Math.ceil(digest.length / 4);
   raw.push({
-    id: `plan-digest:${hash}`,
-    providerId: "plan-digest",
+    id: `${PLAN_DIGEST_PROVIDER_ID}:${hash}`,
+    providerId: PLAN_DIGEST_PROVIDER_ID,
     kind: "session",
     scope: "session",
     role: ["all"],
@@ -119,7 +102,7 @@ function appendPlanDigestChunk(raw: RawChunk[], results: ProviderStatusEntry[], 
     rawScore: 0.9 * boost,
   });
   results.push({
-    providerId: "plan-digest",
+    providerId: PLAN_DIGEST_PROVIDER_ID,
     status: "ok",
     source: undefined,
     chunkCount: 1,
@@ -283,10 +266,10 @@ export class ContextOrchestrator {
       profileBudget,
       request.availableBudgetTokens ?? Number.POSITIVE_INFINITY,
     );
-    const priorCarrier = planPriorDigestCarrier(request);
+    const boostedDigest = boostedDigestChunk(request);
     const trimmedPriorDigest = request.priorStageDigest?.trim();
     const priorDigestTokens =
-      priorCarrier.chunkDigest === undefined && trimmedPriorDigest ? Math.ceil(trimmedPriorDigest.length / 4) : 0;
+      boostedDigest === undefined && trimmedPriorDigest ? Math.ceil(trimmedPriorDigest.length / 4) : 0;
     let effectiveBudgetTokens = Math.max(
       0,
       stageCeiling - DIGEST_RESERVE_TOKENS - priorDigestTokens - FIXED_RENDER_OVERHEAD_TOKENS,
@@ -401,8 +384,8 @@ export class ContextOrchestrator {
 
     // Amendment B AC-51: when the digest rides as a scored chunk, append it here so it
     // competes in scoring/packing and appears in manifest.includedChunks.
-    if (priorCarrier.chunkDigest !== undefined) {
-      appendPlanDigestChunk(allRaw, providerResults, priorCarrier.chunkDigest, request.planDigestBoost ?? 1.0);
+    if (boostedDigest !== undefined) {
+      appendPlanDigestChunk(allRaw, providerResults, boostedDigest, request.planDigestBoost ?? 1.0);
     }
 
     assertUniqueChunkIds(allRaw, request);
@@ -468,9 +451,14 @@ export class ContextOrchestrator {
       });
     }
 
+    // The boosted digest chunk can be evicted by the packer (budget/dedupe/
+    // below-min). Resolve the carrier AFTER packing so the digest still lands
+    // as the legacy preamble when its chunk did not survive — exactly once.
+    const digestCarrier = resolveDigestCarrier(request, boostedDigest, packed);
+
     // Step 8: render for the requested agent, preserving legacy markdown when absent.
     const renderOptions = {
-      priorStageDigest: priorCarrier.chunkDigest === undefined ? request.priorStageDigest : undefined,
+      priorStageDigest: digestCarrier.renderPriorDigest,
     };
     const pushMarkdown =
       request.agentId !== undefined
@@ -502,7 +490,7 @@ export class ContextOrchestrator {
 
     const manifest = buildManifest({
       requestId,
-      request: priorCarrier.manifestRequest,
+      request: digestCarrier.manifestRequest,
       packed,
       usedTokens,
       digestTokens: dTokens,

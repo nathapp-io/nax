@@ -531,13 +531,14 @@ describe("US-001 — ContextOrchestrator budget arithmetic", () => {
       makeProvider("p1", makeChunkResult({ id: "c:1", tokens: 500, content: "alpha content" })),
       makeProvider("p2", makeChunkResult({ id: "c:2", tokens: 500, content: "beta content" })),
     ]);
-    const bundle = await orch.assemble({ ...BASE_REQUEST, priorStageDigest: "  \n\t " });
+    const bundle = await orch.assemble({ ...BASE_REQUEST, priorStageDigest: "  \n\t ", planDigestBoost: 1.5 });
     const tokenMap = bundle.manifest.chunkTokens ?? {};
     const packedSum = Object.values(tokenMap).reduce((a, b) => a + b, 0);
     // Whitespace-only digest is not rendered — manifest.usedTokens = packedSum only.
     expect(bundle.manifest.usedTokens).toBe(packedSum);
     // The push markdown must not contain the prior-stage heading (renderChunks skips it).
     expect(bundle.pushMarkdown).not.toContain("Prior Stage Summary");
+    expect(bundle.manifest.includedChunks.some((id) => id.startsWith("plan-digest:"))).toBe(false);
   });
 
   test("a boosted plan digest is carried once: one copy in the prompt, one count in usedTokens", async () => {
@@ -556,6 +557,27 @@ describe("US-001 — ContextOrchestrator budget arithmetic", () => {
     const tokenMap = bundle.manifest.chunkTokens ?? {};
     const includedSum = bundle.manifest.includedChunks.reduce((sum, id) => sum + (tokenMap[id] ?? 0), 0);
     expect(bundle.manifest.usedTokens).toBe(includedSum);
+  });
+
+  test("a boosted plan digest evicted by packing falls back to the preamble exactly once", async () => {
+    const digest = `Plan digest: ${"x".repeat(1_000 - "Plan digest: ".length)}`;
+    const orch = new ContextOrchestrator([
+      makeProvider("p1", makeChunkResult({ id: "floor:1", kind: "static", tokens: 100, content: "rules content" })),
+      makeProvider("p2", makeChunkResult({ id: "c:1", kind: "session", tokens: 50, content: "alpha content" })),
+    ]);
+    const bundle = await orch.assemble({
+      ...BASE_REQUEST,
+      budgetTokens: 600,
+      priorStageDigest: digest,
+      planDigestBoost: 1.5,
+      providerIds: ["p1", "p2"],
+    });
+    const { includedChunks, chunkTokens = {} } = bundle.manifest;
+    expect(includedChunks.some((id) => id.startsWith("plan-digest:"))).toBe(false);
+    expect(bundle.pushMarkdown).toContain("## Prior Stage Summary");
+    expect(bundle.pushMarkdown.split(digest).length - 1).toBe(1);
+    const includedSum = includedChunks.reduce((sum, id) => sum + (chunkTokens[id] ?? 0), 0);
+    expect(bundle.manifest.usedTokens).toBe(includedSum + Math.ceil(digest.length / 4));
   });
 
   test("an unboosted prior-stage digest keeps the legacy preamble", async () => {
