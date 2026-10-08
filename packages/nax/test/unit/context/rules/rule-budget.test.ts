@@ -394,3 +394,22 @@ describe("priorityToRawScore", () => {
     expect(priorityToRawScore(5)).toBeGreaterThan(priorityToRawScore(55));
   });
 });
+
+describe("applySectionBudget — CTX-5 code-point owner order", () => {
+  test("equal-priority rules are walked in code-point order, not locale order", () => {
+    // Code point: "A" (65) < "a" (97), so "Auth-Rules" precedes "api". Locale collation puts "api" first.
+    const sections: RuleSection[] = [
+      makeSection({ ruleId: "api", rulePath: "api.md", slug: "api-only", ordinal: 0, tokens: 100, priority: 5 }),
+      makeSection({
+        ruleId: "Auth-Rules",
+        rulePath: "Auth-Rules.md",
+        slug: "auth-only",
+        ordinal: 0,
+        tokens: 100,
+        priority: 5,
+      }),
+    ];
+    const result = applySectionBudget(sections, 100);
+    expect(result.retainedSections.map((s) => s.ruleId)).toEqual(["Auth-Rules"]);
+  });
+});

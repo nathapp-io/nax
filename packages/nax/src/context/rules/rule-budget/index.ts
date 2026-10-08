@@ -47,6 +47,7 @@
  * See: docs/specs/SPEC-bounded-rules-floor.md §US-002
  */
 
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import type { RuleSection } from "../rule-sections";
 import { FRONTMATTER_PRIORITY_DEFAULT } from "../rules-frontmatter";
 
@@ -134,7 +135,7 @@ export function applySectionBudget(sections: RuleSection[], budgetTokens: number
   const sorted = [...sections].sort(
     (a, b) =>
       (a.priority ?? FRONTMATTER_PRIORITY_DEFAULT) - (b.priority ?? FRONTMATTER_PRIORITY_DEFAULT) ||
-      ownerIdentifier(a).localeCompare(ownerIdentifier(b)) ||
+      byCodePoint(ownerIdentifier(a), ownerIdentifier(b)) || // CTX-5: code-point, not localeCompare
       a.ordinal - b.ordinal,
   );
 
