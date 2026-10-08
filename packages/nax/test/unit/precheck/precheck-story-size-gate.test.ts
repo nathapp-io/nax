@@ -185,6 +185,31 @@ Requirements:
     expect(result.flaggedStories[0].signals.bulletPoints.value).toBeGreaterThan(5);
   });
 
+  test("counts only list items as bullets, never a number that happens to contain a dot", async () => {
+    const config = createMockConfig({
+      storySizeGate: makeStorySizeGateConfig({
+        enabled: true,
+        maxAcCount: 6,
+        maxDescriptionLength: 2000,
+        maxBulletPoints: 2,
+      }),
+    });
+    const description = [
+      "- a dash item",
+      "* a star item",
+      "1. a numbered item",
+      "Estimate: 2.5 hours, see section 2.3.",
+      "Ships with v1.2 over HTTP/1.1 on 2026.10.08.",
+      "**Bold lead-in** and --- a rule are not items either.",
+    ].join("\n");
+    const prd = createMockPRD([createMockStory({ id: "US-004", acceptanceCriteria: ["AC1"], description })]);
+
+    const result = await checkStorySizeGate(config, prd);
+
+    expect(result.flaggedStories).toHaveLength(1);
+    expect(result.flaggedStories[0]?.signals.bulletPoints.value).toBe(3);
+  });
+
   test("flags multiple stories when multiple exceed thresholds", async () => {
     const config = createMockConfig({
       storySizeGate: makeStorySizeGateConfig({
