@@ -18,6 +18,7 @@ import { detectLanguage as _detectLanguage } from "../project/detector";
 import type { DispatchContext } from "../runtime/dispatch-context";
 import { parseTestFailures } from "../test-runners/ac-parser";
 import { assertTrusted } from "../trust";
+import { drainWithin } from "../utils/drain-within";
 import { storyWorkdir } from "../utils/path-frame";
 import { buildAcceptanceRunCommand, generateSkeletonTests } from "./generator";
 import { resolveSuggestedPackageFeatureTestPath } from "./test-path";
@@ -58,6 +59,8 @@ export const _hardeningDeps = {
     await Bun.write(p, c);
   },
   detectLanguage: _detectLanguage as (dir: string) => Promise<string | undefined>,
+  // Post-exit window for the output drains (#29); tests shrink it.
+  drainTimeoutMs: 2_000,
 };
 
 // ─── Private helpers ─────────────────────────────────────────────────────────
@@ -211,10 +214,14 @@ async function processPackageGroup(
     }, HARDENING_SIGKILL_GRACE_PERIOD_MS);
   }, timeoutMs);
 
-  const [exitCode, stdout, stderr] = await Promise.all([
-    proc.exited,
-    new Response(proc.stdout).text().catch(() => ""),
-    new Response(proc.stderr).text().catch(() => ""),
+  // Drain concurrently with the exit wait (a full pipe would block the runner), but bound the
+  // drain once it HAS exited: an escaped daemon can hold the pipe open forever (#29).
+  const stdoutDrain = new Response(proc.stdout).text().catch(() => "");
+  const stderrDrain = new Response(proc.stderr).text().catch(() => "");
+  const exitCode = await proc.exited;
+  const [stdout, stderr] = await Promise.all([
+    drainWithin(stdoutDrain, _hardeningDeps.drainTimeoutMs),
+    drainWithin(stderrDrain, _hardeningDeps.drainTimeoutMs),
   ]);
   clearTimeout(killTimer);
   if (sigkillTimer) clearTimeout(sigkillTimer);
