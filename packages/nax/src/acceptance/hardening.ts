@@ -218,14 +218,22 @@ async function processPackageGroup(
   // drain once it HAS exited: an escaped daemon can hold the pipe open forever (#29).
   const stdoutDrain = new Response(proc.stdout).text().catch(() => "");
   const stderrDrain = new Response(proc.stderr).text().catch(() => "");
-  const exitCode = await proc.exited;
-  const [stdout, stderr] = await Promise.all([
-    drainWithin(stdoutDrain, _hardeningDeps.drainTimeoutMs),
-    drainWithin(stderrDrain, _hardeningDeps.drainTimeoutMs),
-  ]);
-  clearTimeout(killTimer);
-  if (sigkillTimer) clearTimeout(sigkillTimer);
-  const output = `${stdout}\n${stderr}`;
+  let exitCode: number;
+  let output: string;
+  // The timers are disarmed in a finally so a rejected exit wait (spawn failure)
+  // cannot leave the SIGTERM timer armed against a pid that has since been reaped
+  // or reused; a later fire would signal an unrelated process group.
+  try {
+    exitCode = await proc.exited;
+    const [stdout, stderr] = await Promise.all([
+      drainWithin(stdoutDrain, _hardeningDeps.drainTimeoutMs),
+      drainWithin(stderrDrain, _hardeningDeps.drainTimeoutMs),
+    ]);
+    output = `${stdout}\n${stderr}`;
+  } finally {
+    clearTimeout(killTimer);
+    if (sigkillTimer) clearTimeout(sigkillTimer);
+  }
 
   // Parse results and promote/discard for this group
   const failedACs = parseTestFailures(output);
