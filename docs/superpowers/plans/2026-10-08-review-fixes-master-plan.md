@@ -119,7 +119,7 @@ Run this for every bundle after its last task:
 | B | `fix/review-b-durable-writes` | [#2393](https://github.com/nathapp-io/nax/pull/2393) | in progress |
 | H | `fix/review-h-session-manager` | [#2394](https://github.com/nathapp-io/nax/pull/2394) | in progress |
 | J | `fix/review-j-acceptance-overrides` | [#2395](https://github.com/nathapp-io/nax/pull/2395) | in progress |
-| C | — | — | not started |
+| C | `fix/review-c-process-abort` | [#2396](https://github.com/nathapp-io/nax/pull/2396) | in progress |
 | I | — | — | not started |
 | E | — | — | not started |
 | F | — | — | not started |
