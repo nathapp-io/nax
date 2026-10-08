@@ -222,6 +222,14 @@ Override a failed acceptance criterion; the override and reason are stored in `p
 nax accept -f my-feature --override AC-2 -r "intentional: lazy expiry"
 ```
 
+In a monorepo each package numbers its criteria from AC-1, so scope the override to one package with `<package>::AC-N`, the package path relative to the repo root (`.` for the root package):
+
+```bash
+nax accept -f my-feature --override apps/api::AC-2 -r "intentional: lazy expiry"
+```
+
+A bare `AC-N` still works in a single-package project. In a multi-package run it applies only when exactly one package has an AC with that number; otherwise it is ignored and the run logs a warning.
+
 All three flags are required: `-f, --feature <name>`, `--override <ac-id>`, `-r, --reason <reason>`.
 
 ---

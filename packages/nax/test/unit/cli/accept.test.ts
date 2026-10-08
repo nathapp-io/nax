@@ -92,4 +92,24 @@ describe("acceptCommand", () => {
     const prd = await loadPRD(prdPath);
     expect(prd.acceptanceOverrides).toEqual({ "AC-1": "second reason" });
   });
+
+  test("accepts a package-scoped id and normalises only the AC part", async () => {
+    const naxDir = join(tempDir, ".nax");
+    mkdirSync(naxDir, { recursive: true });
+    writeFileSync(join(naxDir, "config.json"), JSON.stringify({ name: "test-project" }));
+    const prdPath = writePRD(naxDir, "scoped-feature");
+    process.chdir(tempDir);
+
+    await acceptCommand({ feature: "scoped-feature", override: "apps/api::ac-2", reason: "api only" });
+
+    const prd = await loadPRD(prdPath);
+    expect(prd.acceptanceOverrides).toEqual({ "apps/api::AC-2": "api only" });
+  });
+
+  test("rejects a scoped id with an empty package part", async () => {
+    process.chdir(tempDir);
+    await expect(acceptCommand({ feature: "f", override: "::AC-2", reason: "why" })).rejects.toThrow(
+      /Invalid AC ID format/,
+    );
+  });
 });

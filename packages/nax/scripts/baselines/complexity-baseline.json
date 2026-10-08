@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-10-08T06:15:24.971Z",
+  "updatedAt": "2026-10-08T08:15:15.485Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": { "collectStats": 27 },
@@ -106,7 +106,7 @@
     "src/operations/verify-scoped.ts": { "execute": 24 },
     "src/pipeline/runner.ts": { "runPipeline": 50 },
     "src/pipeline/stages/acceptance-setup.ts": { "runAcceptanceSetup": 54 },
-    "src/pipeline/stages/acceptance.ts": { "execute": 59 },
+    "src/pipeline/stages/acceptance.ts": { "execute": 58 },
     "src/pipeline/stages/completion.ts": { "execute": 39 },
     "src/pipeline/stages/context.ts": { "runV2Path": 56, "runV1Path": 33 },
     "src/pipeline/stages/execution.ts": { "execute": 32 },

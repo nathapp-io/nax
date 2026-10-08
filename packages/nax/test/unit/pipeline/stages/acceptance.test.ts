@@ -633,3 +633,67 @@ describe("acceptance verdict logger emit", () => {
     expect(verdicts[0]?.retries).toBe(0);
   });
 });
+
+describe("acceptance overrides in a multi-package run (review #10)", () => {
+  function twoPackageCtx(acceptanceOverrides: Record<string, string>): PipelineContext {
+    const stories = [
+      makeStory({
+        id: "US-001",
+        status: "passed",
+        passes: true,
+        attempts: 0,
+        workdir: "apps/api",
+        acceptanceCriteria: ["api one", "api two"],
+      }),
+      makeStory({
+        id: "US-002",
+        status: "passed",
+        passes: true,
+        attempts: 0,
+        workdir: "apps/web",
+        acceptanceCriteria: ["web one", "web two"],
+      }),
+    ];
+    const base = makeCtx();
+    return {
+      ...base,
+      prd: { ...base.prd, userStories: stories, acceptanceOverrides },
+      story: stories[0],
+      stories,
+      acceptanceTestPaths: [
+        { testPath: "/tmp/test-workdir/apps/api/.nax-acceptance.test.ts", packageDir: "/tmp/test-workdir/apps/api" },
+        { testPath: "/tmp/test-workdir/apps/web/.nax-acceptance.test.ts", packageDir: "/tmp/test-workdir/apps/web" },
+      ],
+    };
+  }
+
+  async function runBothFailingAc2(ctx: PipelineContext) {
+    const origSpawn = _executorDeps.spawn;
+    const origFile = Bun.file;
+    _executorDeps.spawn = makeSpawn(() => ({ stdout: "FAIL AC-2", exitCode: 1 })).spawn;
+    Object.assign(Bun, { file: fileStub });
+    try {
+      return await acceptanceStage.execute(ctx);
+    } finally {
+      _executorDeps.spawn = origSpawn;
+      Object.assign(Bun, { file: origFile });
+    }
+  }
+
+  test("a scoped override waives AC-2 in its package only", async () => {
+    const ctx = twoPackageCtx({ "apps/api::AC-2": "waived for api" });
+    const result = await runBothFailingAc2(ctx);
+    expect(result.action).toBe("fail");
+    expect(ctx.acceptanceFailures?.failedPackages?.map((p) => p.packageDir)).toEqual(["/tmp/test-workdir/apps/web"]);
+  });
+
+  test("an ambiguous bare override is ignored, so both packages still fail", async () => {
+    const ctx = twoPackageCtx({ "AC-2": "meant for one package" });
+    const result = await runBothFailingAc2(ctx);
+    expect(result.action).toBe("fail");
+    expect(ctx.acceptanceFailures?.failedPackages?.map((p) => p.packageDir)).toEqual([
+      "/tmp/test-workdir/apps/api",
+      "/tmp/test-workdir/apps/web",
+    ]);
+  });
+});
