@@ -4,6 +4,12 @@ All notable changes to `@nathapp/nax-agent` are recorded here. The format follow
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). While the version is `0.x`, a minor
 release may change the public API.
 
+## [Unreleased]
+
+### Fixed
+
+- Secret redaction now masks values under secret-named keys in JSON text (`{"apiKey": "..."}`, including JSON escaped inside a JSON string) and in env, dotenv, shell and YAML-style lines (`API_TOKEN=...`, `export KEY="..."`, `password: ...`, `Authorization: Bearer ...`), keeping the key and structure. This reaches `tool_result.preview`, `tool_call.input` and the run log. Usage counts (`tokens`, `max_tokens`) and references (`$VAR`, `process.env.X`) are left alone (#2346).
+
 ## [0.85.0] - 2026-10-09
 
 ### Added
