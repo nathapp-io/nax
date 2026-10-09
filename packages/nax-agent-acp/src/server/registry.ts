@@ -246,6 +246,16 @@ export function createSessionRegistry(deps: RegistryDeps): SessionRegistry {
         if (entry !== undefined) await closeEntry(sessionId, entry);
         throw error;
       }
+      if (closing) {
+        // Shutdown started while this create's metadata write was in flight (M-26).
+        // closeAll has already cleared the map and closed the entry (releasing its
+        // lock), but the write it raced landed after the clear; remove it so no
+        // phantom session survives shutdown, then refuse.
+        const raced = entries.get(sessionId);
+        if (raced !== undefined) await closeEntry(sessionId, raced);
+        await deps.storage.removeMeta(sessionId);
+        throw RequestError.internalError(undefined, SHUTTING_DOWN);
+      }
       if (input.mcpServers.length > 0)
         server.queueNotice(announce(port.features.updates.notices, "warning", MCP_NOTICE));
       deps.logger.info("session", "session opened", { sessionId, cwd: input.cwd, model, mode: meta.mode });

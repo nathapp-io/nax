@@ -9,7 +9,7 @@ import type { OpenSessionRequest } from "#src/server/open-session";
 import type { ServerOptions } from "#src/server/options";
 import { createSessionRegistry, SHUTTING_DOWN } from "#src/server/registry";
 import { TURN_TIMEOUT_SECONDS } from "#src/server/server-session";
-import { createSessionStorage } from "#src/server/storage";
+import { createSessionStorage, type SessionStorage } from "#src/server/storage";
 import { fakeAgentSession } from "#test/helpers/fake-agent-session";
 import { ALL_FEATURES, fakePort } from "#test/helpers/fake-client-port";
 import { recordingLogger } from "#test/helpers/recording-logger";
@@ -33,11 +33,15 @@ beforeEach(() => {
 });
 afterEach(() => cleanupTempDir(dir));
 
-function setup(open?: (request: OpenSessionRequest) => Promise<AgentSession>, features = ALL_FEATURES) {
+function setup(
+  open?: (request: OpenSessionRequest) => Promise<AgentSession>,
+  features = ALL_FEATURES,
+  storageOverride?: SessionStorage,
+) {
   const opened: OpenSessionRequest[] = [];
   const port = fakePort({ features });
   const { logger, lines } = recordingLogger();
-  const storage = createSessionStorage({ dir, pid: 1000, now: () => new Date(), logger });
+  const storage = storageOverride ?? createSessionStorage({ dir, pid: 1000, now: () => new Date(), logger });
   const registry = createSessionRegistry({
     options: OPTIONS,
     openSession: async (request) => {
@@ -157,5 +161,34 @@ describe("closeAll (spec §5.5)", () => {
     expect(refused instanceof RequestError ? refused.message : "").toContain(SHUTTING_DOWN);
     expect(late.closed()).toBe(true);
     await (await s.storage.acquireLock("s1"))();
+  });
+
+  test("a create whose metadata write is in flight when shutdown starts leaves no metadata and is refused (M-26)", async () => {
+    const real = createSessionStorage({ dir, pid: 1000, now: () => new Date(), logger: recordingLogger().logger });
+    let releaseWrite: () => void = () => {};
+    const writeGate = new Promise<void>((resolve) => {
+      releaseWrite = resolve;
+    });
+    let markStarted: () => void = () => {};
+    const writeStarted = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const gated: SessionStorage = {
+      ...real,
+      async writeMeta(meta) {
+        markStarted();
+        await writeGate;
+        await real.writeMeta(meta);
+      },
+    };
+    const s = setup(undefined, ALL_FEATURES, gated);
+    const pending = s.registry.create(s.input).catch((e: unknown) => e);
+    await writeStarted;
+    await s.registry.closeAll();
+    releaseWrite();
+    const refused = await pending;
+    expect(refused instanceof RequestError ? refused.message : "").toContain(SHUTTING_DOWN);
+    expect(await real.hasMeta("s1")).toBe(false);
+    await (await real.acquireLock("s1"))();
   });
 });
