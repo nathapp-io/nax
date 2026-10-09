@@ -3,13 +3,18 @@
  * the unit suite covers it without spawning a process. Exit codes: 0 clean stop,
  * 1 connection failure, 2 usage or option error.
  */
+import { randomUUID } from "node:crypto";
 import type { Readable, Writable } from "node:stream";
 import { configureCredentials, setAgentLogger } from "@nathapp/nax-agent";
 import { type CliFlags, parseCli, USAGE } from "#src/server/cli";
 import { buildAgentApp, serveStdio } from "#src/server/connection";
 import { stderrLogger } from "#src/server/logger";
 import { credentialsFor, loadNaxConfig, type ReadTextFile } from "#src/server/nax-config";
+import { catalogOverridesFrom, nativeOpenSession } from "#src/server/open-session";
 import { type Env, resolveConfigDir, resolveServerOptions } from "#src/server/options";
+import { createSessionRegistry } from "#src/server/registry";
+import { TURN_TIMEOUT_SECONDS } from "#src/server/server-session";
+import { fsReadOldText } from "#src/server/translate/diff";
 import { packageVersion } from "#src/server/version";
 
 export interface MainDeps {
@@ -52,7 +57,19 @@ async function serveAcp(flags: CliFlags, deps: MainDeps): Promise<number> {
     return 2;
   }
   configureCredentials(credentialsFor(configDir, deps.readFile));
-  const connection = serveStdio(buildAgentApp({ version: packageVersion() }), deps);
+  const registry = createSessionRegistry({
+    options: resolved.options,
+    openSession: nativeOpenSession({
+      sessionsDir: resolved.options.sessionsDir,
+      catalogOverrides: catalogOverridesFrom(resolved.options.catalogOverrides, logger),
+      turnTimeoutSeconds: TURN_TIMEOUT_SECONDS,
+    }),
+    newId: randomUUID,
+    readOldText: fsReadOldText(),
+    logger,
+    turnTimeoutSeconds: TURN_TIMEOUT_SECONDS,
+  });
+  const connection = serveStdio(buildAgentApp({ version: packageVersion(), registry, logger }), deps);
   const stop = (): void => connection.close();
   deps.onSignal(stop);
   deps.stdin.once("end", stop);
@@ -72,5 +89,8 @@ async function serveAcp(flags: CliFlags, deps: MainDeps): Promise<number> {
   } catch (error) {
     logger.error("server", "connection failed", { error: error instanceof Error ? error.message : String(error) });
     return 1;
+  } finally {
+    // S5-2 shutdown (M-16): no running turn outlives its client.
+    await registry.closeAll();
   }
 }
