@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { PassThrough } from "node:stream";
 import { setAgentLogger } from "@nathapp/nax-agent";
+import { waitForCondition } from "@nathapp/nax-test-kit/bun/timeout";
 import type { AuthPorts } from "#src/server/auth";
 import { type MainDeps, main } from "#src/server/main";
 import { packageVersion } from "#src/server/version";
@@ -109,6 +110,32 @@ describe("main", () => {
     expect(frames).toHaveLength(1);
     expect(frames[0]).toMatchObject({ id: 1, result: { agentInfo: { name: "nax-agent" } } });
     expect(h.err()).toContain("nax-agent ACP server started");
+  });
+
+  test("advertises terminal login methods when the client declares auth.terminal (S5-4)", async () => {
+    const config = { models: { native: { balanced: "anthropic/claude-sonnet-5-5" } } };
+    const h = harness([], { readFile: async () => JSON.stringify(config) });
+    const exit = main(h.deps);
+    h.stdin.write(
+      `${JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: { protocolVersion: 1, clientCapabilities: { auth: { terminal: true } } },
+      })}\n`,
+    );
+    await waitForCondition(() => h.out().includes('"id":1'));
+    h.stdin.end();
+    expect(await exit).toBe(0);
+    const frames = h
+      .out()
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    expect(frames).toHaveLength(1);
+    expect(frames[0].result.authMethods).toEqual([
+      { id: "login-anthropic", name: "Log in to anthropic", type: "terminal", args: ["login", "anthropic"] },
+    ]);
   });
 
   test("a signal stops the server with exit 0", async () => {

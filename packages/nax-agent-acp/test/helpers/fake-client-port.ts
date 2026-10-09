@@ -8,7 +8,11 @@ import {
   type PermissionAsk,
 } from "#src/server/client-port";
 
-export const ALL_FEATURES: ClientFeatures = { updates: { notices: true, compaction: true }, elicitation: true };
+export const ALL_FEATURES: ClientFeatures = {
+  updates: { notices: true, compaction: true },
+  elicitation: true,
+  terminalAuth: false,
+};
 
 /** A client that never answers. */
 export const NEVER = <T>(): Promise<T> => new Promise<T>(() => {});

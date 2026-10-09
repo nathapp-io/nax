@@ -124,7 +124,9 @@ describe("createQuestionBroker failures never escape (final review I-2)", () => 
 
 describe("createQuestionBroker without elicitation", () => {
   test("shows the question, then answers at once with the no-answer text", async () => {
-    const s = setup({ features: { updates: { notices: true, compaction: false }, elicitation: false } });
+    const s = setup({
+      features: { updates: { notices: true, compaction: false }, elicitation: false, terminalAuth: false },
+    });
     s.broker.ask(question("q1"));
     await s.broker.drain();
     expect(s.forms).toEqual([]);

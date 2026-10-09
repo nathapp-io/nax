@@ -7,6 +7,7 @@
 import { Readable, Writable } from "node:stream";
 import { type AgentApp, type AgentConnection, agent, ndJsonStream } from "@agentclientprotocol/sdk";
 import type { AgentLogger } from "@nathapp/nax-agent";
+import { NO_SERVER_AUTH, type ServerAuth } from "#src/server/auth";
 import { initializeResponse } from "#src/server/capabilities";
 import { type ClientFeatures, clientFeatures, clientPort, NO_CLIENT_FEATURES } from "#src/server/client-port";
 import { guard } from "#src/server/errors";
@@ -16,15 +17,18 @@ export interface AppDeps {
   readonly version: string;
   readonly registry: SessionRegistry;
   readonly logger: AgentLogger;
+  readonly auth?: ServerAuth;
 }
 
 export function buildAgentApp(deps: AppDeps): AgentApp {
+  const auth = deps.auth ?? NO_SERVER_AUTH;
   let features: ClientFeatures = NO_CLIENT_FEATURES;
   return agent({ name: "nax-agent" })
     .onRequest("initialize", (ctx) => {
       features = clientFeatures(ctx.params.clientCapabilities);
-      return initializeResponse(deps.version);
+      return initializeResponse(deps.version, features.terminalAuth ? auth.methods : []);
     })
+    .onRequest("authenticate", (ctx) => guard(deps.logger, () => auth.authenticate(ctx.params.methodId)))
     .onRequest("session/new", (ctx) =>
       guard(deps.logger, () =>
         deps.registry.create({

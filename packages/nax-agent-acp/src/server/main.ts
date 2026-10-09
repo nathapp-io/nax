@@ -6,7 +6,7 @@
 import { randomUUID } from "node:crypto";
 import type { Readable, Writable } from "node:stream";
 import { configureCredentials, createFileTranscriptStore, setAgentLogger } from "@nathapp/nax-agent";
-import { type AuthPorts, NAX_AGENT_AUTH } from "#src/server/auth";
+import { type AuthPorts, loadServerAuth, NAX_AGENT_AUTH } from "#src/server/auth";
 import { type CliCommand, type CliFlags, parseCli, USAGE } from "#src/server/cli";
 import { buildAgentApp, serveStdio } from "#src/server/connection";
 import { stderrLogger } from "#src/server/logger";
@@ -82,6 +82,13 @@ async function serveAcp(flags: CliFlags, deps: MainDeps): Promise<number> {
     return 2;
   }
   configureCredentials(credentialsFor(configDir, deps.readFile));
+  const overrides = catalogOverridesFrom(resolved.options.catalogOverrides, logger);
+  const auth = await loadServerAuth({
+    options: resolved.options,
+    overrides,
+    ports: deps.auth ?? NAX_AGENT_AUTH,
+    logger,
+  });
   const transcripts = createFileTranscriptStore(resolved.options.sessionsDir);
   const storage = createSessionStorage({
     dir: resolved.options.sessionsDir,
@@ -93,7 +100,7 @@ async function serveAcp(flags: CliFlags, deps: MainDeps): Promise<number> {
     options: resolved.options,
     openSession: nativeOpenSession({
       transcripts,
-      catalogOverrides: catalogOverridesFrom(resolved.options.catalogOverrides, logger),
+      catalogOverrides: overrides,
       turnTimeoutSeconds: TURN_TIMEOUT_SECONDS,
     }),
     storage,
@@ -103,8 +110,9 @@ async function serveAcp(flags: CliFlags, deps: MainDeps): Promise<number> {
     readOldText: fsReadOldText(),
     logger,
     turnTimeoutSeconds: TURN_TIMEOUT_SECONDS,
+    ensureCredentials: (model) => auth.ensureCredentials(model),
   });
-  const connection = serveStdio(buildAgentApp({ version: packageVersion(), registry, logger }), deps);
+  const connection = serveStdio(buildAgentApp({ version: packageVersion(), registry, logger, auth }), deps);
   const stop = (): void => connection.close();
   deps.onSignal(stop);
   deps.stdin.once("end", stop);
