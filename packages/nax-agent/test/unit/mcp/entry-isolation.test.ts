@@ -47,7 +47,8 @@ describe("entry isolation", () => {
   test("the ./mcp entry does reach the SDK (the walker sees it)", () => {
     // Guards against a walker that silently resolves nothing: after Task 2 the
     // mcp entry imports connect.ts, which imports the SDK.
-    const { files } = reach(join(SRC, "mcp/index.ts"));
-    expect(files.size).toBeGreaterThanOrEqual(3);
+    const { files, packages } = reach(join(SRC, "mcp/index.ts"));
+    expect(files.size).toBeGreaterThanOrEqual(4);
+    expect([...packages]).toContain("@modelcontextprotocol/sdk/client/index.js");
   });
 });

@@ -1006,6 +1006,7 @@ writeTool
 
 [./mcp]
 type ConnectMcpOptions
+DEFAULT_CLOSE_GRACE_MS
 McpCallError
 type McpCallOptions
 type McpCallResult
@@ -1013,4 +1014,5 @@ McpConnectError
 type McpConnection
 type McpToolInfo
 type McpTransportConfig
+connectMcp
 resultText
