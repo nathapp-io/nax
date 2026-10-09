@@ -2299,7 +2299,7 @@ SMOKE=$(mktemp -d /tmp/nax-agent-smoke-XXXX)
 "$SMOKE/node_modules/.bin/nax-agent" --version
 ```
 
-Expected: `0.3.1`, because the versions are still pre-bump. nax-ai 0.1.17 is installed from npm (`npm ls @nathapp/nax-ai` in `$SMOKE`).
+Expected: `0.84.0`, the version the lockstep PR set for every package, and the same 0.84.0 for nax-ai (`npm ls @nathapp/nax-ai` in `$SMOKE`).
 
 - [ ] **Step 3: acpx smoke (session, edit, reconnect, list)**
 

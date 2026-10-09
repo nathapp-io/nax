@@ -27,7 +27,6 @@ billed and need explicit approval **at launch**.
    `NAX_GLOBAL_CONFIG_DIR`). Its model defaults to `minimax/MiniMax-M2.7`;
    override it with `NAX_AGENT_LIVE_MODEL`. It must print `live chat smoke ok`.
    Record the model, the cost line and the commit.
-3. **`nax run` unchanged.** The billed S1-recipe smoke (see "Prepare the first
-   release" above) on a fresh fixture copy at the release candidate: same story
-   outcome, tool-audit keys and per-tool record shapes, cost-row schema, and a
-   `run.start` `naxCommit` equal to the candidate.
+3. **`nax run` unchanged.** The billed S1-recipe smoke on a fresh fixture copy at
+   the release candidate: same story outcome, tool-audit keys and per-tool record
+   shapes, cost-row schema, and a `run.start` `naxCommit` equal to the candidate.

@@ -6,7 +6,7 @@ Provider-agnostic LLM client: completions, streaming, tool calls, usage accounti
 > Pre-1.0 and API-unstable. Pin an exact version; do not use a caret range.
 >
 > ```
-> npm install @nathapp/nax-ai@next
+> npm install @nathapp/nax-ai@latest
 > ```
 
 ## Where to start
