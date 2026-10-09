@@ -1,4 +1,5 @@
 import type { Api, AssistantMessageEvent, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import { transformMessages } from "@earendil-works/pi-ai/api/transform-messages";
 import { describe, expect, it } from "vitest";
 import { ProtocolSetupError } from "../../src/protocols/errors.ts";
 import {
@@ -190,6 +191,83 @@ describe("toPiContext", () => {
     const block = message.content[0];
     expect(block).toMatchObject({ type: "thinking", thinking: "hmm" });
     expect("thinkingSignature" in (block ?? {})).toBe(false);
+  });
+
+  it("stamps an assistant message with the model that wrote it (another model's turn reads as foreign to pi-ai)", () => {
+    const context = toPiContext(
+      {
+        ...BASE,
+        messages: [
+          { role: "user", content: "hi" },
+          {
+            role: "assistant",
+            content: "hello",
+            thinking: [{ text: "pondering", signature: "sig-haiku" }],
+            origin: { provider: "anthropic", model: "claude-haiku-4-5" },
+          },
+          { role: "user", content: "again" },
+        ],
+      },
+      MODEL,
+    );
+    expect(context.messages[1]).toMatchObject({
+      role: "assistant",
+      provider: "anthropic",
+      model: "claude-haiku-4-5",
+      api: "openai-completions",
+    });
+  });
+
+  it("an origin naming the current model stamps exactly what no origin does (signatures stay replayable)", () => {
+    const withOrigin = (origin?: { provider: string; model: string }) =>
+      toPiContext(
+        {
+          ...BASE,
+          messages: [
+            { role: "user", content: "hi" },
+            {
+              role: "assistant",
+              content: "hello",
+              thinking: [{ text: "pondering", signature: "sig" }],
+              ...(origin !== undefined ? { origin } : {}),
+            },
+          ],
+        },
+        MODEL,
+      );
+    expect(withOrigin({ provider: "deepseek", model: "deepseek-chat" })).toEqual(withOrigin());
+  });
+
+  it("through pi-ai: another model's thinking becomes text without its signature; the current model's keeps it", () => {
+    const context = toPiContext(
+      {
+        ...BASE,
+        messages: [
+          { role: "user", content: "hi" },
+          {
+            role: "assistant",
+            content: "a",
+            thinking: [{ text: "haiku thought", signature: "sig-haiku" }],
+            origin: { provider: "anthropic", model: "claude-haiku-4-5" },
+          },
+          { role: "user", content: "and now" },
+          {
+            role: "assistant",
+            content: "b",
+            thinking: [{ text: "own thought", signature: "sig-own" }],
+            origin: { provider: "deepseek", model: "deepseek-chat" },
+          },
+          { role: "user", content: "next" },
+        ],
+      },
+      MODEL,
+    );
+    const sent = transformMessages(context.messages, MODEL);
+    const foreign = JSON.stringify(sent[1]);
+    const own = JSON.stringify(sent[3]);
+    expect(foreign).toContain("haiku thought");
+    expect(foreign).not.toContain("sig-haiku");
+    expect(own).toContain("sig-own");
   });
 });
 

@@ -152,9 +152,11 @@ function toPiMessages(messages: readonly ConversationMessage[], model: Model<Api
             arguments: (call.input ?? {}) as JsonObject,
           })),
         ],
+        // The author, not the current model: pi-ai's transformMessages compares
+        // provider/api/model to decide whether thinking signatures replay.
         api: model.api,
-        provider: model.provider,
-        model: model.id,
+        provider: message.origin?.provider ?? model.provider,
+        model: message.origin?.model ?? model.id,
         usage: NO_USAGE,
         stopReason: "stop",
         timestamp: NO_TIMESTAMP,
