@@ -23,6 +23,7 @@ async function pidOf(connection: McpConnection): Promise<number> {
 }
 
 function killQuietly(pid: number): void {
+  if (pid <= 0) return; // never signal a process group / an unknown pid
   try {
     process.kill(pid, "SIGKILL");
   } catch {
@@ -35,11 +36,14 @@ const settle = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 describe("connectMcp over stdio", () => {
   test("env is an overlay: PATH survives and configured vars arrive", async () => {
     const connection = await connectMcp(stdio([], { FIXTURE_VAR: "x1" }), OPTS);
+    let pid = -1;
     try {
+      pid = await pidOf(connection);
       expect((await connection.call("env", { name: "FIXTURE_VAR" }, CALL)).text).toBe("x1");
       expect((await connection.call("env", { name: "PATH" }, CALL)).text).not.toBe("<unset>");
     } finally {
-      await connection.close();
+      await connection.close().catch(() => undefined);
+      killQuietly(pid);
     }
   }, 20_000);
 
@@ -70,28 +74,47 @@ describe("connectMcp over stdio", () => {
   test("onClose fires once when the process exits unexpectedly, never on close()", async () => {
     const reasons: string[] = [];
     const connection = await connectMcp(stdio(), OPTS);
-    connection.onClose((reason) => reasons.push(reason));
-    await connection.call("crash", {}, CALL).catch(() => undefined);
-    for (let i = 0; i < 40 && reasons.length === 0; i += 1) await settle(25);
-    expect(reasons).toEqual(["the server process exited"]);
-    await connection.close();
-    expect(reasons).toHaveLength(1);
+    let pid = -1;
+    let other: McpConnection | undefined;
+    let otherPid = -1;
+    try {
+      pid = await pidOf(connection);
+      connection.onClose((reason) => reasons.push(reason));
+      await connection.call("crash", {}, CALL).catch(() => undefined);
+      for (let i = 0; i < 40 && reasons.length === 0; i += 1) await settle(25);
+      expect(reasons).toEqual(["the server process exited"]);
+      await connection.close();
+      expect(reasons).toHaveLength(1);
 
-    const other = await connectMcp(stdio(), OPTS);
-    const seen: string[] = [];
-    other.onClose((reason) => seen.push(reason));
-    await other.close();
-    expect(seen).toEqual([]);
+      other = await connectMcp(stdio(), OPTS);
+      otherPid = await pidOf(other);
+      const seen: string[] = [];
+      other.onClose((reason) => seen.push(reason));
+      await other.close();
+      expect(seen).toEqual([]);
+    } finally {
+      await connection.close().catch(() => undefined);
+      await other?.close().catch(() => undefined);
+      killQuietly(pid);
+      killQuietly(otherPid);
+    }
   }, 20_000);
 
   test("an exit before onClose is attached is reported to the late listener", async () => {
     const connection = await connectMcp(stdio(), OPTS);
-    await connection.call("crash", {}, CALL).catch(() => undefined);
-    await settle(300);
-    const reasons: string[] = [];
-    connection.onClose((reason) => reasons.push(reason));
-    expect(reasons).toEqual(["the server process exited"]);
-    await connection.close();
+    let pid = -1;
+    try {
+      pid = await pidOf(connection);
+      await connection.call("crash", {}, CALL).catch(() => undefined);
+      await settle(300);
+      const reasons: string[] = [];
+      connection.onClose((reason) => reasons.push(reason));
+      expect(reasons).toEqual(["the server process exited"]);
+      await connection.close();
+    } finally {
+      await connection.close().catch(() => undefined);
+      killQuietly(pid);
+    }
   }, 20_000);
 
   test("a server that exits at start fails with its stderr tail", async () => {

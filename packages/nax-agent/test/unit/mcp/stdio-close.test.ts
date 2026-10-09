@@ -5,6 +5,7 @@ import { waitForStdioExit } from "#src/mcp/stdio-close";
 
 /** Kills a pid that may already be gone; used in finally blocks so a failing test never leaks a child. */
 function killQuietly(pid: number): void {
+  if (pid <= 0) return; // never signal a process group / an unknown pid
   try {
     process.kill(pid, "SIGKILL");
   } catch {
@@ -12,14 +13,23 @@ function killQuietly(pid: number): void {
   }
 }
 
-/** A child that ignores SIGTERM, resolved only once its handler is installed. */
-function stubbornChild(): Promise<ChildProcess> {
+/** A child that ignores SIGTERM, resolved only once its handler is installed; kills and rejects if it never is. */
+function stubbornChild(timeoutMs = 5000): Promise<ChildProcess> {
   const child = spawn(
     process.execPath,
     ["-e", "process.on('SIGTERM',()=>{});setInterval(()=>{},1000);console.log('ready')"],
     { stdio: ["ignore", "pipe", "ignore"] },
   );
-  return new Promise((resolve) => child.stdout?.once("data", () => resolve(child)));
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      killQuietly(child.pid ?? -1);
+      reject(new Error("stubborn child never became ready"));
+    }, timeoutMs);
+    child.stdout?.once("data", () => {
+      clearTimeout(timer);
+      resolve(child);
+    });
+  });
 }
 
 describe("waitForStdioExit", () => {
@@ -50,8 +60,12 @@ describe("waitForStdioExit", () => {
   test("returns without killing when the pid is already gone", async () => {
     const child = spawn(process.execPath, ["-e", "0"], { stdio: "ignore" });
     const pid = child.pid ?? -1;
-    await new Promise((resolve) => child.on("exit", resolve));
-    await waitForStdioExit(pid, () => false, 300);
-    expect(isProcessAlive(pid)).toBe(false);
+    try {
+      await new Promise((resolve) => child.on("exit", resolve));
+      await waitForStdioExit(pid, () => false, 300);
+      expect(isProcessAlive(pid)).toBe(false);
+    } finally {
+      killQuietly(pid);
+    }
   });
 });
