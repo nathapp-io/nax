@@ -30,7 +30,6 @@ echo refreshed >> bun.lock`,
   shift
 done
 echo 'https://example.invalid/pr/1'`,
-  npm: `echo "${VERSION}"`,
 };
 
 export interface ReleaseCliFixture {
@@ -44,7 +43,7 @@ export interface ReleaseCliFixture {
   ) => { status: number | null; output: string; calls: string[] };
 }
 
-/** A temp git repo holding the four lockstep packages and a copy of the release command, with git/bun/gh/npm stubbed. */
+/** A temp git repo holding the four lockstep packages and a copy of the release command, with git/bun/gh stubbed. */
 export function makeReleaseCliFixture(): ReleaseCliFixture {
   const dir = makeTempDir("release-cli-");
   const tooling = join(dir, "packages/repo-tooling");

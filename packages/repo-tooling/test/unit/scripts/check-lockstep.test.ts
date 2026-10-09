@@ -61,6 +61,13 @@ describe("lockstepErrors", () => {
     expect(lockstepErrors(withVersion(manifests(), "0.84.1-canary.1"))).toEqual([]);
     expect(lockstepErrors(withVersion(manifests(), "bad")).join("\n")).toContain('invalid shared version "bad"');
   });
+
+  test("rejects a shared version the release workflow cannot tag", () => {
+    expect(lockstepErrors(withVersion(manifests(), "0.84.1-canary.1"))).toEqual([]);
+    expect(lockstepErrors(withVersion(manifests(), "0.84.1-rc.1")).join("\n")).toContain(
+      'invalid shared version "0.84.1-rc.1"',
+    );
+  });
 });
 
 describe("withVersion", () => {

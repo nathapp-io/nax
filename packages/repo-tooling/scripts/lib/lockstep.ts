@@ -35,7 +35,8 @@ export interface Manifest {
 /** Keyed by package dir, in LOCKSTEP_PACKAGES order. */
 export type Manifests = ReadonlyMap<string, Manifest>;
 
-const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$/;
+/** The version shapes the release workflow accepts: stable and canary only (release-version.ts RELEASABLE). */
+const RELEASABLE = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-canary\.[1-9]\d*)?$/;
 
 export function readManifests(root: string): Manifests {
   return new Map(
@@ -56,7 +57,7 @@ export function lockstepErrors(manifests: Manifests, expected?: string): string[
   const listed = [...manifests].map(([dir, m]) => `${dir}@${m.version}`).join(", ");
   const errors: string[] = [];
   if (versions.size !== 1) errors.push(`versions differ: ${listed} (bump every package in one PR)`);
-  if (!SEMVER.test(shared)) errors.push(`invalid shared version "${shared}"`);
+  if (!RELEASABLE.test(shared)) errors.push(`invalid shared version "${shared}"`);
   if (expected !== undefined && shared !== expected) errors.push(`shared version ${shared} != expected ${expected}`);
   for (const dir of NAX_AI_CONSUMERS) {
     const pin = manifests.get(dir)?.dependencies?.[NAX_AI];
