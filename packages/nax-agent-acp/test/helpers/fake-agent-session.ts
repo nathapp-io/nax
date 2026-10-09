@@ -32,6 +32,7 @@ export function turnEnd(status: TurnEnd["status"], extra: Partial<TurnEnd> = {})
 
 export interface FakeAgentSessionOptions {
   readonly closeFails?: boolean;
+  readonly lastTurn?: AgentSession["lastTurn"];
 }
 
 export interface FakeAgentSession {
@@ -92,7 +93,7 @@ export function fakeAgentSession(
   const session: AgentSession = {
     id,
     backend: { kind: "fake", capabilities: {} },
-    lastTurn: undefined,
+    lastTurn: options.lastTurn,
     send(message) {
       messages.push(message);
       return run(message);
