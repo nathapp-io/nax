@@ -30,6 +30,7 @@ describe("the server process", () => {
       child.stdin.write(frame(1, "initialize", { protocolVersion: 1 }));
       child.stdin.write(frame(2, "session/new", { cwd: configDir, mcpServers: [] }));
       child.stdin.write(frame(3, "no/such_method", {}));
+      child.stdin.write(frame(4, "session/prompt", { sessionId: "nope", prompt: [{ type: "text", text: "x" }] }));
       await new Promise((resolve) => setTimeout(resolve, 500));
       child.stdin.end();
       expect(await exited).toBe(0);
@@ -40,8 +41,10 @@ describe("the server process", () => {
       const frames = lines.map((l) => JSON.parse(l));
       expect(frames.every((f) => f.jsonrpc === "2.0")).toBe(true);
       expect(frames.find((f) => f.id === 1)?.result?.agentInfo?.name).toBe("nax-agent");
-      expect(frames.find((f) => f.id === 2)?.error?.code).toBe(-32601);
+      // No model configured in the empty config dir (S5-2): invalid_params.
+      expect(frames.find((f) => f.id === 2)?.error?.code).toBe(-32602);
       expect(frames.find((f) => f.id === 3)?.error?.code).toBe(-32601);
+      expect(frames.find((f) => f.id === 4)?.error?.code).toBe(-32002);
     } finally {
       cleanupTempDir(configDir);
     }

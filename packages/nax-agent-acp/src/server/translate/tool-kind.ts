@@ -39,7 +39,7 @@ export function inputString(input: unknown, key: string): string | undefined {
 }
 
 /** One line, no control or invisible (format, bidi) characters, cut by code point. */
-function oneLine(text: string): string {
+export function displayLine(text: string): string {
   const points = Array.from(stripInvisible(stripControl(text)).replace(/\s+/g, " ").trim());
   return points.length > TITLE_DETAIL_MAX ? `${points.slice(0, TITLE_DETAIL_MAX - 3).join("")}...` : points.join("");
 }
@@ -47,15 +47,16 @@ function oneLine(text: string): string {
 export function toolTitle(name: string, input: unknown): string {
   const kind = toolKind(name);
   const path = inputString(input, "path");
-  if (path !== undefined && (FILE_TOOLS.has(name) || name.startsWith("Scratchpad"))) return `${name} ${oneLine(path)}`;
+  if (path !== undefined && (FILE_TOOLS.has(name) || name.startsWith("Scratchpad")))
+    return `${name} ${displayLine(path)}`;
   const pattern = inputString(input, "pattern");
-  if (pattern !== undefined && kind === "search") return `${name} ${oneLine(pattern)}`;
+  if (pattern !== undefined && kind === "search") return `${name} ${displayLine(pattern)}`;
   const command = inputString(input, "command");
-  if (command !== undefined && kind === "execute") return `${name}: ${oneLine(command)}`;
+  if (command !== undefined && kind === "execute") return `${name}: ${displayLine(command)}`;
   const subcommand = inputString(input, "subcommand");
-  if (name === "Git" && subcommand !== undefined) return `Git ${oneLine(subcommand)}`;
+  if (name === "Git" && subcommand !== undefined) return `Git ${displayLine(subcommand)}`;
   const message = inputString(input, "message");
-  if (name === "GitCommit" && message !== undefined) return `GitCommit: ${oneLine(message.split("\n")[0] ?? "")}`;
+  if (name === "GitCommit" && message !== undefined) return `GitCommit: ${displayLine(message.split("\n")[0] ?? "")}`;
   return name;
 }
 

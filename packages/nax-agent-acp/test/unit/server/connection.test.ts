@@ -3,9 +3,32 @@ import { PassThrough } from "node:stream";
 import { client, PROTOCOL_VERSION, RequestError } from "@agentclientprotocol/sdk";
 import { initializeResponse } from "#src/server/capabilities";
 import { buildAgentApp, serveStdio } from "#src/server/connection";
+import { createSessionRegistry } from "#src/server/registry";
+import { TURN_TIMEOUT_SECONDS } from "#src/server/server-session";
+import { recordingLogger } from "#test/helpers/recording-logger";
 
-describe("initialize (S5-0 capabilities)", () => {
-  test("advertises only what S5-0 implements", () => {
+function appDeps() {
+  const { logger } = recordingLogger();
+  const registry = createSessionRegistry({
+    options: {
+      configDir: "/cfg",
+      sessionsDir: "/cfg/s",
+      defaultMode: "ask",
+      bashApproval: "gated",
+      tiers: [],
+      catalogOverrides: [],
+    },
+    openSession: async () => Promise.reject(new Error("unused")),
+    newId: () => "s1",
+    readOldText: async () => ({ kind: "missing" }),
+    logger,
+    turnTimeoutSeconds: TURN_TIMEOUT_SECONDS,
+  });
+  return { version: "9.9.9", registry, logger };
+}
+
+describe("initialize (S5-0/S5-2 capabilities)", () => {
+  test("advertises only what is implemented (S5-2 adds no flags, M-10)", () => {
     expect(initializeResponse("1.2.3")).toEqual({
       protocolVersion: PROTOCOL_VERSION,
       agentCapabilities: {
@@ -17,10 +40,12 @@ describe("initialize (S5-0 capabilities)", () => {
     });
   });
 
-  test("an in-process client gets the response; a session method is not found yet", async () => {
-    const result = await client({ name: "test" }).connectWith(buildAgentApp({ version: "9.9.9" }), async (agent) => {
+  test("an in-process client gets the response; session/load is not served yet", async () => {
+    const result = await client({ name: "test" }).connectWith(buildAgentApp(appDeps()), async (agent) => {
       const init = await agent.request("initialize", { protocolVersion: PROTOCOL_VERSION });
-      const failure = await agent.request("session/new", { cwd: "/tmp", mcpServers: [] }).catch((e: unknown) => e);
+      const failure = await agent
+        .request("session/load", { sessionId: "s", cwd: "/tmp", mcpServers: [] })
+        .catch((e: unknown) => e);
       return { init, failure };
     });
     expect(result.init.agentInfo?.version).toBe("9.9.9");
@@ -33,7 +58,7 @@ describe("serveStdio", () => {
   test("answers an initialize frame on stdout and closes when stdin ends", async () => {
     const stdin = new PassThrough();
     const stdout = new PassThrough();
-    const connection = serveStdio(buildAgentApp({ version: "9.9.9" }), { stdin, stdout });
+    const connection = serveStdio(buildAgentApp(appDeps()), { stdin, stdout });
     const line = new Promise<string>((resolve) =>
       stdout.once("data", (chunk: Buffer) => resolve(chunk.toString("utf8"))),
     );

@@ -1,0 +1,203 @@
+/**
+ * Approval round trips (S5 spec §4.3). A human approval becomes a
+ * `session/request_permission`, and the chosen option is passed to `answer()`.
+ * allow_always and reject_always are remembered for the session's life (M-12).
+ * Execute tools are keyed on the command plus its subcommand (`git status`,
+ * `npm test`) when the second word is a plain word, else on the command alone
+ * (`ls`, `ls -la`), so "always allow git status" never approves `git push`.
+ * Never remembered: no command; a first or second word that is not plain
+ * (quotes, escapes, globs, expansions, an environment assignment), which must
+ * not widen the key; a masked command (its visible words are not the real
+ * command); a wrapper or interpreter, whose first word says nothing about what
+ * runs. A remembered allow covers only a simple command: one with shell
+ * metacharacters (chaining, substitution, redirection) is asked again. A
+ * remembered reject applies to its key regardless. When S3 settles a request
+ * itself (timeout, cancel), the client request is aborted and a late reply is
+ * ignored. A failed client request is a deny (M-13).
+ */
+import type { PermissionOption, RequestPermissionResponse, ToolCallUpdate } from "@agentclientprotocol/sdk";
+import type { AgentLogger, AnswerReply, AnswerStatus, SessionEvent } from "@nathapp/nax-agent";
+import { stripControl, stripInvisible } from "#src/client/text";
+import { type ClientPort, untilAborted } from "#src/server/client-port";
+import { messageOf } from "#src/server/errors";
+import { displayLine, toolKind } from "#src/server/translate/tool-kind";
+
+export type Decision = "allow" | "deny";
+export type ApprovalEvent = Extract<SessionEvent, { type: "approval_requested" }>;
+export type Answer = (requestId: string, reply: AnswerReply) => AnswerStatus;
+
+export const PERMISSION_OPTIONS: readonly PermissionOption[] = [
+  { optionId: "allow_once", name: "Allow", kind: "allow_once" },
+  { optionId: "allow_always", name: "Always allow", kind: "allow_always" },
+  { optionId: "reject_once", name: "Reject", kind: "reject_once" },
+  { optionId: "reject_always", name: "Always reject", kind: "reject_always" },
+];
+
+export interface PermissionBroker {
+  /** Starts the round trip for one human approval; never blocks the caller. */
+  request(event: ApprovalEvent, toolCall: ToolCallUpdate | undefined): void;
+  /** S3 resolved the request itself: stop waiting for the client. */
+  settled(requestId: string): void;
+  /** Cancel or turn end: stop waiting on every open request. */
+  abortAll(): void;
+  /** Resolves when every round trip started so far has finished. */
+  drain(): Promise<void>;
+}
+
+export interface PermissionBrokerDeps {
+  readonly port: ClientPort;
+  readonly answer: Answer;
+  readonly memory: Map<string, Decision>;
+  readonly logger: AgentLogger;
+}
+
+interface Choice {
+  readonly decision: Decision;
+  readonly remember: boolean;
+}
+
+const DENY: Choice = { decision: "deny", remember: false };
+
+/** Chaining, pipes, substitution, subshells, redirection and line breaks. */
+const SHELL_METACHARACTERS = /[;&|`$()<>\n\r]/;
+
+/** First words that run another command or arbitrary code. */
+const WRAPPERS: ReadonlySet<string> = new Set([
+  "sh",
+  "bash",
+  "zsh",
+  "dash",
+  "ksh",
+  "fish",
+  "env",
+  "xargs",
+  "sudo",
+  "doas",
+  "su",
+  "command",
+  "builtin",
+  "eval",
+  "exec",
+  "source",
+  ".",
+  "nohup",
+  "time",
+  "timeout",
+  "nice",
+  "ionice",
+  "stdbuf",
+  "watch",
+  "find",
+  "node",
+  "bun",
+  "deno",
+  "npx",
+  "bunx",
+  "pnpx",
+  "python",
+  "python3",
+  "perl",
+  "ruby",
+  "php",
+  "uv",
+  "uvx",
+]);
+
+/** A plain command name or path: no quotes, escapes, globs or expansions the shell would rewrite. */
+const PLAIN_WORD = /^[A-Za-z0-9._/-]+$/;
+
+/** The masking prefix S3 puts in place of a secret in a shown command. */
+const MASK_MARKER = "[REDACTED";
+
+export function memoryKey(event: ApprovalEvent): string | undefined {
+  if (toolKind(event.tool) !== "execute") return event.tool;
+  const command = event.command ?? "";
+  if (command.includes(MASK_MARKER)) return undefined;
+  const [first = "", second] = command.trim().split(/\s+/);
+  if (!PLAIN_WORD.test(first)) return undefined;
+  const name = first.slice(first.lastIndexOf("/") + 1).toLowerCase();
+  if (name === "" || WRAPPERS.has(name)) return undefined;
+  if (second === undefined || second.startsWith("-")) return `${event.tool}:${first}`;
+  return PLAIN_WORD.test(second) ? `${event.tool}:${first} ${second}` : undefined;
+}
+
+/** Whether a remembered decision may answer this request without asking. */
+function memoryApplies(event: ApprovalEvent, decision: Decision): boolean {
+  if (decision === "deny" || toolKind(event.tool) !== "execute") return true;
+  return !SHELL_METACHARACTERS.test(event.command ?? "");
+}
+
+function choice(response: RequestPermissionResponse): Choice {
+  const { outcome } = response;
+  if (outcome.outcome !== "selected") return DENY;
+  switch (PERMISSION_OPTIONS.find((option) => option.optionId === outcome.optionId)?.kind) {
+    case "allow_once":
+      return { decision: "allow", remember: false };
+    case "allow_always":
+      return { decision: "allow", remember: true };
+    case "reject_always":
+      return { decision: "deny", remember: true };
+    default:
+      return DENY;
+  }
+}
+
+function fallbackToolCall(event: ApprovalEvent): ToolCallUpdate {
+  return {
+    toolCallId: event.callId ?? event.requestId,
+    title: displayLine(event.summary),
+    kind: toolKind(event.tool),
+    status: "pending",
+    ...(event.command !== undefined ? { rawInput: { command: stripInvisible(stripControl(event.command)) } } : {}),
+  };
+}
+
+export function createPermissionBroker(deps: PermissionBrokerDeps): PermissionBroker {
+  const open = new Map<string, AbortController>();
+  const running = new Set<Promise<void>>();
+
+  async function roundTrip(event: ApprovalEvent, toolCall: ToolCallUpdate, key: string | undefined): Promise<void> {
+    const controller = new AbortController();
+    open.set(event.requestId, controller);
+    let reply: Choice;
+    try {
+      const ask = { toolCall, options: PERMISSION_OPTIONS };
+      reply = choice(await untilAborted(deps.port.requestPermission(ask, controller.signal), controller.signal));
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      deps.logger.warn("permissions", "permission request failed; denying", { error: messageOf(error) });
+      reply = DENY;
+    } finally {
+      open.delete(event.requestId);
+    }
+    if (controller.signal.aborted) return;
+    if (reply.remember && key !== undefined) deps.memory.set(key, reply.decision);
+    deps.answer(event.requestId, { decision: reply.decision });
+  }
+
+  return {
+    request(event, toolCall) {
+      const key = memoryKey(event);
+      const remembered = key === undefined ? undefined : deps.memory.get(key);
+      if (remembered !== undefined && memoryApplies(event, remembered)) {
+        deps.answer(event.requestId, { decision: remembered });
+        return;
+      }
+      // Never rejects: a throwing answer() or logger must not become an unhandled rejection.
+      const trip = roundTrip(event, toolCall ?? fallbackToolCall(event), key).catch((error: unknown) => {
+        deps.logger.warn("permissions", "permission round trip failed", { error: messageOf(error) });
+      });
+      running.add(trip);
+      void trip.finally(() => running.delete(trip));
+    },
+    settled(requestId) {
+      open.get(requestId)?.abort();
+    },
+    abortAll() {
+      for (const controller of open.values()) controller.abort();
+    },
+    async drain() {
+      await Promise.all([...running]);
+    },
+  };
+}

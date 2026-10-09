@@ -105,4 +105,24 @@ describe("createSessionAskPort", () => {
     expect(await port.askQuestion("y")).toBeNull();
     expect(events).toEqual([]);
   });
+
+  test("auto-decisions and noted questions are marked unanswerable (S5-2 M-1)", () => {
+    const { events, port } = setup();
+    port.recordAutoDecision({ callId: "c3", tool: "Write", summary: "write b", reason: "profile full" }, "allow");
+    port.noteQuestion("FYI: the agent declined a form");
+    expect(events[0]).toMatchObject({ type: "approval_requested", answerable: false });
+    expect(events[1]).toMatchObject({ type: "approval_resolved", decidedBy: "profile" });
+    expect(events[2]).toMatchObject({ type: "question", answerable: false });
+  });
+
+  test("a real approval and a real question carry no answerable marker", async () => {
+    const { events, controller, port } = setup();
+    const approval = port.requestApproval({ tool: "Write", summary: "s", reason: "r" });
+    const question = port.askQuestion("Which env?");
+    const asks = events.filter((e) => e.type === "approval_requested" || e.type === "question");
+    expect(asks).toHaveLength(2);
+    expect(asks.every((e) => !("answerable" in e))).toBe(true);
+    controller.abort();
+    await Promise.all([approval, question]);
+  });
 });
