@@ -17,10 +17,10 @@
  * - packages/test-kit and packages/repo-tooling (private tooling) import no nax
  *   package; repo-tooling may use test-kit from its tests (a devDependency).
  * - packages/nax-agent-acp (S4 spec section 4) reaches nax-agent only through
- *   `@nathapp/nax-agent`, never `./internal` or a deep path, from src/ and test/
- *   alike. Its src/ imports only the ACP SDK root, the MCP SDK, zod and node:
- *   builtins. nax imports it only through `@nathapp/nax-agent-acp/client`
- *   (S4b-2); no other package imports it.
+ *   `@nathapp/nax-agent` or `@nathapp/nax-agent/mcp` (S5-5), never `./internal`
+ *   or a deep path, from src/ and test/ alike. Its src/ imports only the ACP SDK
+ *   root, the MCP SDK, zod and node: builtins. nax imports it only through
+ *   `@nathapp/nax-agent-acp/client` (S4b-2); no other package imports it.
  *
  * Scans src/, test/, bin/ and scripts/ of every package.
  *
@@ -184,7 +184,10 @@ function acpViolation(pkg: PackageInfo, file: string, spec: string): string | nu
   if (spec.startsWith(".")) return leavesPackage(pkg, file, spec) ? "relative import leaves the package" : null;
   const name = packageName(spec);
   if (name === pkg.name) return null;
-  if (name === AGENT) return spec === AGENT ? null : `only ${AGENT} (never ./internal or a deep path)`;
+  if (name === AGENT)
+    return spec === AGENT || spec === `${AGENT}/mcp`
+      ? null
+      : `only ${AGENT} or ${AGENT}/mcp (never ./internal or a deep path)`;
   if (name === "@nathapp/nax") return "imports nax";
   if (name === "@nathapp/nax-ai") return `imports nax-ai (reach it through ${AGENT})`;
   if (name === ACP_SDK && spec !== ACP_SDK) return `only the ${ACP_SDK} root`;

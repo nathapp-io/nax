@@ -64,6 +64,7 @@ afterAll(() => {
 describe("the packed tarball", () => {
   test("runs one tool round-trip, one native turn, the S3 chat round-trip and (on Linux) one sandboxed command", () => {
     cpSync(FIXTURE, join(consumer, "packed-smoke.mjs"));
+    cpSync(join(PKG, "test/node/fixtures/packed-mcp-server.mjs"), join(consumer, "packed-mcp-server.mjs"));
     expect(run("node", ["packed-smoke.mjs"], consumer, 120_000)).toContain("packed smoke ok");
   }, 180_000);
 
@@ -73,8 +74,11 @@ describe("the packed tarball", () => {
       [
         'import { NativeSessionAdapter, createAgentSession, getAgentRuntime, globTool, nodeRuntime, resumeAgentSession, setAgentRuntime, type SessionEvent } from "@nathapp/nax-agent";',
         'import { _clientDeps } from "@nathapp/nax-agent/internal";',
+        'import { connectMcp, type McpConnection } from "@nathapp/nax-agent/mcp";',
         "export type Event = SessionEvent;",
         "export const names = [typeof NativeSessionAdapter, typeof createAgentSession, typeof getAgentRuntime, typeof globTool, typeof nodeRuntime, typeof resumeAgentSession, typeof setAgentRuntime, typeof _clientDeps];",
+        "export type Mcp = McpConnection;",
+        "export const mcp = typeof connectMcp;",
         "",
       ].join("\n"),
     );
