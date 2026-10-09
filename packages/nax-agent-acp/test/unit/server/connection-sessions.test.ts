@@ -143,10 +143,11 @@ describe("session/new + session/prompt over a real SDK connection", () => {
     expect(result.text).toBe("hello");
   });
 
-  test("the session/new response carries no modes or config options yet (M-10)", async () => {
+  test("the session/new response carries modes and config options (S5-3)", async () => {
     const { agentApp } = app(() => []);
     const response = await connect(agentApp, (agent) => agent.request("session/new", { cwd: "/w", mcpServers: [] }));
-    expect(response).toEqual({ sessionId: "s1" });
+    expect(response).toMatchObject({ sessionId: "s1", modes: { currentModeId: "ask" } });
+    expect(response.configOptions?.map((o) => o.id)).toEqual(["model", "bashApproval"]);
   });
 
   test("a permission round trip through the client's handler", async () => {

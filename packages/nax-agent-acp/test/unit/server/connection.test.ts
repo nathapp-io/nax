@@ -40,24 +40,25 @@ function appDeps() {
   return { version: "9.9.9", registry, logger };
 }
 
-describe("initialize (S5-0/S5-2 capabilities)", () => {
-  test("advertises only what is implemented (S5-2 adds no flags, M-10)", () => {
+describe("initialize (S5-0/S5-3 capabilities)", () => {
+  test("advertises load, list, resume, close and delete (S5-3, M-10)", () => {
     expect(initializeResponse("1.2.3")).toEqual({
       protocolVersion: PROTOCOL_VERSION,
       agentCapabilities: {
-        loadSession: false,
+        loadSession: true,
         promptCapabilities: { image: false, audio: false, embeddedContext: true },
+        sessionCapabilities: { list: {}, resume: {}, close: {}, delete: {} },
       },
       authMethods: [],
       agentInfo: { name: "nax-agent", title: "nax-agent", version: "1.2.3" },
     });
   });
 
-  test("an in-process client gets the response; session/load is not served yet", async () => {
+  test("an in-process client gets the response; session/fork is not served yet", async () => {
     const result = await client({ name: "test" }).connectWith(buildAgentApp(appDeps()), async (agent) => {
       const init = await agent.request("initialize", { protocolVersion: PROTOCOL_VERSION });
       const failure = await agent
-        .request("session/load", { sessionId: "s", cwd: "/tmp", mcpServers: [] })
+        .request("session/fork", { sessionId: "s", cwd: "/tmp", mcpServers: [] })
         .catch((e: unknown) => e);
       return { init, failure };
     });

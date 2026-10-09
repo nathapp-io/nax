@@ -31,6 +31,7 @@ describe("the server process", () => {
       child.stdin.write(frame(2, "session/new", { cwd: configDir, mcpServers: [] }));
       child.stdin.write(frame(3, "no/such_method", {}));
       child.stdin.write(frame(4, "session/prompt", { sessionId: "nope", prompt: [{ type: "text", text: "x" }] }));
+      child.stdin.write(frame(5, "session/list", {}));
       await new Promise((resolve) => setTimeout(resolve, 500));
       child.stdin.end();
       expect(await exited).toBe(0);
@@ -45,6 +46,8 @@ describe("the server process", () => {
       expect(frames.find((f) => f.id === 2)?.error?.code).toBe(-32602);
       expect(frames.find((f) => f.id === 3)?.error?.code).toBe(-32601);
       expect(frames.find((f) => f.id === 4)?.error?.code).toBe(-32002);
+      // The config dir is empty, so the sessions dir does not exist (S5-3).
+      expect(frames.find((f) => f.id === 5)?.result).toEqual({ sessions: [] });
     } finally {
       cleanupTempDir(configDir);
     }
