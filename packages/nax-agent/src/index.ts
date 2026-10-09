@@ -84,6 +84,13 @@ export { isProcessAlive } from "#src/internal/process-alive";
 export { killProcessGroup } from "#src/internal/process-kill";
 export { capStrings, redactSecrets } from "#src/internal/redact";
 export { NaxError } from "#src/infra/nax-error";
+export {
+  createTerminalAuthInteraction,
+  PLAIN_STYLE,
+  PromptCancelledError,
+  type TerminalAuthOptions,
+  type TerminalStyle,
+} from "#src/terminal-auth/index";
 export type { CredentialSource } from "#src/native/credentials/session-source";
 export {
   AuthCancelledError,
@@ -104,6 +111,7 @@ export {
   type ImportOutcome,
   importPiCredentials,
   listStoredProviders,
+  loginProviderIds,
   MAX_RETAINED_TRANSCRIPTS,
   type MemoryTranscriptStore,
   NATIVE_AGENT,

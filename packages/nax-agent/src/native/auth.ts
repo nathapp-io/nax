@@ -236,6 +236,11 @@ export async function listStoredProviders(): Promise<StoredEntry[]> {
   return readStoredEntries();
 }
 
+/** The providers `runLogin` can log in to: nax-ai's default catalog (S5-4 M-33). */
+export async function loginProviderIds(): Promise<string[]> {
+  return _authDeps.providerIds();
+}
+
 /**
  * Removal, not revocation. pi has no revocation anywhere — its own types
  * define logout as deletion — so the provider-side token stays live until it

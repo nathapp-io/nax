@@ -4,6 +4,16 @@ All notable changes to `@nathapp/nax-agent` are recorded here. The format follow
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). While the version is `0.x`, a minor
 release may change the public API.
 
+## [Unreleased]
+
+### Added
+
+- `createTerminalAuthInteraction({ log, style?, openUrl? })`, `PromptCancelledError`, `TerminalStyle` and `PLAIN_STYLE`: the terminal login UI (hidden secret entry, arrow-key picker, browser handoff for OAuth), moved from the nax CLI so `nax-agent login` shares it (S5-4).
+- `loginProviderIds()`: the providers `runLogin` can log in to (S5-4).
+- `displayToolInput` and `toolResultPreview`: the live tool-display masking, for replaying stored transcripts (S5-1).
+- `answerable?: false` on the `approval_requested` and `question` session events, set for profile auto-decisions and noted questions (S5-2).
+- `carryHistoryAcrossModels` (`nativeBackend` option and `OpenSessionOpts`): keep a session's history across a model change; each assistant message records its origin model (S5-3).
+
 ## [0.3.1] - 2026-10-07
 
 ### Added

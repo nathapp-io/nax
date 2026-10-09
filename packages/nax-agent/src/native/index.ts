@@ -21,6 +21,7 @@ export {
   type ImportOutcome,
   importPiCredentials,
   listStoredProviders,
+  loginProviderIds,
   providersWithoutCredentials,
   removeStoredProvider,
   runLogin,
