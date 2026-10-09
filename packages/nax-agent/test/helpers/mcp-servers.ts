@@ -2,8 +2,12 @@
  * MCP fixture servers for the shared layer's tests. The in-memory server uses
  * the SDK's low-level Server so tests control raw tool schemas and pages.
  */
+
+import { randomUUID } from "node:crypto";
+import { createServer, type IncomingMessage } from "node:http";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { CallToolRequestSchema, type CallToolResult, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 
 export interface FixtureCtx {
@@ -61,4 +65,61 @@ export async function inMemoryServer(tools: readonly FixtureTool[], pageSize = 1
   });
   await server.connect(serverTransport);
   return { clientTransport, calls, server };
+}
+
+export interface HttpFixture {
+  readonly url: string;
+  /** Request headers, one entry per HTTP request received. */
+  readonly headers: Record<string, string>[];
+  readonly deletes: () => number;
+  close(): Promise<void>;
+}
+
+function flatHeaders(req: IncomingMessage): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(req.headers).map(([k, v]) => [k, Array.isArray(v) ? v.join(",") : (v ?? "")]),
+  );
+}
+
+/** A stateful streamable-HTTP MCP server with one `echo` tool. */
+export async function httpServer(): Promise<HttpFixture> {
+  const headers: Record<string, string>[] = [];
+  let deletes = 0;
+  const transports = new Map<string, StreamableHTTPServerTransport>();
+  const http = createServer(async (req, res) => {
+    headers.push(flatHeaders(req));
+    if (req.method === "DELETE") deletes += 1;
+    const id = req.headers["mcp-session-id"];
+    let transport = typeof id === "string" ? transports.get(id) : undefined;
+    if (transport === undefined) {
+      transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => randomUUID(),
+        onsessioninitialized: (sid) => {
+          if (transport !== undefined) transports.set(sid, transport);
+        },
+      });
+      const server = new Server({ name: "http-fixture", version: "1.0.0" }, { capabilities: { tools: {} } });
+      server.setRequestHandler(ListToolsRequestSchema, async () => ({
+        tools: [{ name: "echo", description: "echo", inputSchema: { type: "object", properties: {} } }],
+      }));
+      server.setRequestHandler(CallToolRequestSchema, async (request) => ({
+        content: [{ type: "text", text: JSON.stringify(request.params.arguments ?? {}) }],
+      }));
+      await server.connect(transport);
+    }
+    await transport.handleRequest(req, res);
+  });
+  await new Promise<void>((resolve) => http.listen(0, "127.0.0.1", resolve));
+  const address = http.address();
+  const port = typeof address === "object" && address !== null ? address.port : 0;
+  return {
+    url: `http://127.0.0.1:${port}/mcp`,
+    headers,
+    deletes: () => deletes,
+    async close() {
+      for (const t of transports.values()) await t.close().catch(() => undefined);
+      http.closeAllConnections(); // Bun: before close(), or close() hangs on an open request
+      await new Promise<void>((resolve) => http.close(() => resolve()));
+    },
+  };
 }
