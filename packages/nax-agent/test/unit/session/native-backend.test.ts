@@ -8,6 +8,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { BackendOpenContext } from "@nathapp/nax-agent";
+import { _clientDeps } from "#src/native/client";
 import { createMemoryTranscriptStore } from "#src/native/session/memory-transcript-store";
 import { NATIVE_BACKEND_KIND, nativeBackend } from "#src/session/native-backend";
 import { createPendingAskTable } from "#src/session/pending-asks";
@@ -95,5 +96,28 @@ describe("nativeBackend", () => {
     const names = (opened.turnOpts().codingTools ?? []).map((t) => t.name);
     expect(names.at(-1)).toBe("lookup");
     await opened.adapter.closeSession(opened.handle);
+  });
+
+  test("construction is validation-only: no credentials or catalog are touched, and bad compaction throws", () => {
+    const real = _clientDeps.build;
+    let builds = 0;
+    _clientDeps.build = async (...args) => {
+      builds += 1;
+      return real(...args);
+    };
+    try {
+      expect(() => nativeBackend({ model: "nosuch/unknown-model", compaction: { enabled: true } })).not.toThrow();
+      expect(builds).toBe(0);
+      let caught: unknown;
+      try {
+        nativeBackend({ model: "nosuch/unknown-model", compaction: { compactAtPercent: 10 } });
+      } catch (err) {
+        caught = err;
+      }
+      assertNaxError(caught);
+      expect(caught.code).toBe("AGENT_SESSION_INVALID_OPTIONS");
+    } finally {
+      _clientDeps.build = real;
+    }
   });
 });

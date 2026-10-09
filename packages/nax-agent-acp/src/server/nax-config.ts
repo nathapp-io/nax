@@ -146,8 +146,11 @@ const OPTIONS_PREFIX = /^Invalid agent session options: backend\./;
 /**
  * The server does not know the compaction rules: nax-agent owns the schema (it
  * is not importable from here). nativeBackend validates its options when it is
- * built and does no I/O, so building one is the check. The error text is the
- * schema's own message, which never echoes the offending value.
+ * built and does no I/O, so building one is the check. That is safe because
+ * construction is validation-only: it resolves no credentials and loads no
+ * catalog, and the probe model need not exist. nax-agent's native-backend test
+ * "construction is validation-only" guards this. The error text is the schema's
+ * own message, which never echoes the offending value.
  */
 function compactionFrom(execution: unknown): { compaction?: CompactionSettings; issue?: string } {
   if (!isPlainRecord(execution) || execution.compaction === undefined) return {};
@@ -172,7 +175,10 @@ function authFrom(auth: z.infer<typeof AuthSchema> | undefined): CredentialAuthC
 }
 
 function fallback(path: string, reason: string): LoadedNaxConfig {
-  return { config: EMPTY_NAX_CONFIG, warning: `ignoring ${path}: ${reason}; using built-in defaults` };
+  return {
+    config: EMPTY_NAX_CONFIG,
+    warning: `ignoring ${path}: ${reason}; using built-in defaults (model tiers, auth and agentServer from this file are ignored too)`,
+  };
 }
 
 export async function loadNaxConfig(configDir: string, readFile: ReadTextFile): Promise<LoadedNaxConfig> {

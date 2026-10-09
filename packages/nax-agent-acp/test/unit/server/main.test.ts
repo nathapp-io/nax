@@ -109,6 +109,7 @@ describe("main", () => {
     expect(await exit).toBe(0);
     expect(h.err()).toContain("execution.compaction");
     expect(h.err()).toContain("using built-in defaults");
+    expect(h.err()).toContain("model tiers, auth and agentServer from this file are ignored too");
     expect(h.out()).toBe("");
   });
 

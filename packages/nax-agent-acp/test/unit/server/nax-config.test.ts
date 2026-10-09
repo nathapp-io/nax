@@ -129,6 +129,7 @@ describe("loadNaxConfig", () => {
     const loaded = await loadNaxConfig("/cfg", reader({ [PATH]: JSON.stringify(config) }));
     expect(loaded.config).toEqual(EMPTY_NAX_CONFIG);
     expect(loaded.warning).toContain("agentServer.defaultMode");
+    expect(loaded.warning).toContain("(model tiers, auth and agentServer from this file are ignored too)");
   });
 
   test("auth source exec without exec is invalid, as in nax", async () => {

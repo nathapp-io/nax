@@ -89,6 +89,11 @@ describe("native backend compaction: proactive", () => {
     const events = await collect(session.send("next"));
 
     expect(eventsOf(events, "usage")).toHaveLength(1);
+    // The scripted round reports 5 in / 2 out and the summary call 7 in / 3 out; both are in the totals.
+    const end = turnEndOf(events);
+    expect(end.usage.inputTokens).toBe(12);
+    expect(end.usage.outputTokens).toBe(5);
+    expect(end.costUsd).toBeCloseTo((12 * 3 + 5 * 15) / 1_000_000, 9);
     const order = types(events);
     expect(order.indexOf("compaction")).toBeLessThan(order.indexOf("usage"));
     await session.close();
@@ -141,6 +146,51 @@ describe("native backend compaction: proactive", () => {
     expect(compactions(second)).toEqual([]);
     expect(compactions(third)).toEqual(["proactive"]);
     expect(turnEndOf(third).status).toBe("completed");
+    await session.close();
+  });
+});
+
+describe("native backend compaction: a turn that ends after compacting", () => {
+  async function storedAfter(id: string, round: Parameters<ReturnType<typeof installScriptedProvider>["push"]>[0]) {
+    const provider = installScriptedProvider({ contextWindow: 8000 });
+    provider.push(round);
+    provider.pushComplete("kept summary");
+    const store = await seeded(id, bigDoc(20_000));
+    const session = await resumeAgentSession(id, sessionOptions({ transcriptStore: store }));
+    return { provider, store, session };
+  }
+
+  function expectCompacted(doc: TranscriptDoc | null | undefined): void {
+    const text = (doc?.messages ?? []).map((m) => m.content).join("\n");
+    expect(text).toContain("kept summary");
+    expect(text).not.toContain("a".repeat(20_000));
+  }
+
+  test("a failing round trip still leaves the compacted history stored", async () => {
+    const { store, session } = await storedAfter("e-1", [
+      { type: "error", error: { kind: "bad-request", message: "rejected" } },
+    ]);
+    const events = await collect(session.send("next"));
+    expect(compactions(events)).toEqual(["proactive"]);
+    expect(turnEndOf(events).status).toBe("errored");
+    expectCompacted(await store.load("e-1"));
+    await session.close();
+  });
+
+  test("a cancelled round trip still leaves the compacted history stored", async () => {
+    const provider = installScriptedProvider({ contextWindow: 8000 });
+    provider.pushComplete("kept summary");
+    const store = await seeded("e-2", bigDoc(20_000));
+    const session = await resumeAgentSession("e-2", sessionOptions({ transcriptStore: store }));
+    provider.push(async function* cancelling() {
+      yield { type: "text-delta", text: "partial" } as const;
+      session.cancel();
+      throw new DOMException("aborted", "AbortError");
+    });
+    const events = await collect(session.send("next"));
+    expect(compactions(events)).toEqual(["proactive"]);
+    expect(turnEndOf(events).status).toBe("cancelled");
+    expectCompacted(await store.load("e-2"));
     await session.close();
   });
 });

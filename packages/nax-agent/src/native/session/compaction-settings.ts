@@ -15,9 +15,9 @@ export const DEFAULT_COMPACTION: ResolvedCompaction = { enabled: true, compactAt
 
 export const compactionSettingsSchema = z
   .object({
-    enabled: z.boolean().default(true),
-    compactAtPercent: z.number().int().min(50).max(99).default(90),
-    keepRecentPercent: z.number().int().min(5).max(79).default(30),
+    enabled: z.boolean().default(DEFAULT_COMPACTION.enabled),
+    compactAtPercent: z.number().int().min(50).max(99).default(DEFAULT_COMPACTION.compactAtPercent),
+    keepRecentPercent: z.number().int().min(5).max(79).default(DEFAULT_COMPACTION.keepRecentPercent),
   })
   .refine((c) => c.keepRecentPercent <= c.compactAtPercent - 20, {
     message: "keepRecentPercent must be at least 20 points below compactAtPercent",
