@@ -48,7 +48,6 @@
     "check:bash-dispatch-ask": "bun run scripts/check-bash-dispatch-ask.ts",
     "check:rules-drift": "bun scripts/quiet-run.ts bun run scripts/check-rules-drift.ts",
     "gen:review-prompts": "bun run scripts/generate-review-prompts.ts",
-    "release": "bun scripts/release.ts",
     "test": "AGENT=1 bun run scripts/run-tests.ts",
     "test:verbose": "bun run scripts/run-tests.ts",
     "test:bail": "AGENT=1 bun run scripts/run-tests.ts --bail",

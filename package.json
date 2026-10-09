@@ -8,8 +8,7 @@
     "lint": "bun run --filter '*' lint",
     "check:all": "bun run --filter '*' check:all",
     "test": "bun run --filter '*' test",
-    "release:nax": "bun run --cwd packages/nax release",
-    "release:nax-ai": "bun run --cwd packages/nax-ai release"
+    "release": "bun packages/repo-tooling/scripts/release.ts"
   },
   "devDependencies": {
     "typescript": "7.0.2"

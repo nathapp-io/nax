@@ -1,6 +1,13 @@
 import { describe, expect, test } from "bun:test";
-// biome-ignore lint/style/noRestrictedImports: release decisions are script helpers, outside the source surface
-import { bumpVersion, compareVersions, distTagsFor, updateChangelog } from "../../../scripts/lib/release-version.ts";
+import {
+  bumpVersion,
+  compareVersions,
+  distTagsFor,
+  NO_CHANGES,
+  nextSharedVersion,
+  stampChangelog,
+  updateChangelog,
+} from "#scripts/lib/release-version";
 
 describe("release version decisions", () => {
   test.each([
@@ -59,5 +66,51 @@ describe("release notes", () => {
     "## [Unreleased]\nNew\n## [Unreleased]\nOther\n",
   ])("refuses absent, empty or ambiguous notes", (text) => {
     expect(() => updateChangelog(text, "0.1.1", "2026-10-04")).toThrow();
+  });
+});
+
+describe("next shared version", () => {
+  test.each([
+    ["0.84.0", "patch", "0.84.1"],
+    ["0.84.0", "minor", "0.85.0"],
+    ["0.84.0", "canary", "0.84.1-canary.1"],
+    ["0.84.0", "0.90.0", "0.90.0"],
+  ])("%s %s becomes %s", (current, kind, expected) => expect(nextSharedVersion(current, kind)).toBe(expected));
+
+  test.each(["0.84.0", "0.83.9", "0.84.0-canary.1"])("refuses %s, which is not above 0.84.0", (kind) => {
+    expect(() => nextSharedVersion("0.84.0", kind)).toThrow(/above/);
+  });
+
+  test("refuses a prerelease the release workflow would not accept", () => {
+    expect(() => nextSharedVersion("0.84.0", "0.85.0-rc.1")).toThrow(/X\.Y\.Z-canary\.N/);
+  });
+});
+
+describe("lockstep release notes", () => {
+  const dated = `# Changelog\n\n## [0.84.1] - 2026-10-10\n\n${NO_CHANGES}\n\n## [0.84.0] - 2026-10-09\n\n- Old.\n`;
+
+  test("dates real Unreleased notes exactly like updateChangelog", () => {
+    const text = "# Changelog\n\n## [Unreleased]\n\n- New.\n\n## [0.84.0] - 2026-10-09\n\n- Old.\n";
+    expect(stampChangelog(text, "0.84.1", "2026-10-10")).toBe(updateChangelog(text, "0.84.1", "2026-10-10"));
+  });
+
+  test("an empty Unreleased heading becomes a dated no-changes entry", () => {
+    const text = "# Changelog\n\n## [Unreleased]\n\n## [0.84.0] - 2026-10-09\n\n- Old.\n";
+    expect(stampChangelog(text, "0.84.1", "2026-10-10")).toBe(dated);
+  });
+
+  test("no pending heading puts the entry above the newest release", () => {
+    expect(stampChangelog("# Changelog\n\n## [0.84.0] - 2026-10-09\n\n- Old.\n", "0.84.1", "2026-10-10")).toBe(dated);
+  });
+
+  test("a changelog with no releases gets the entry appended", () => {
+    expect(stampChangelog("# Changelog\n", "0.84.1", "2026-10-10")).toBe(
+      `# Changelog\n\n## [0.84.1] - 2026-10-10\n\n${NO_CHANGES}\n`,
+    );
+  });
+
+  test("refuses an already-dated version and ambiguous notes", () => {
+    expect(() => stampChangelog("## [0.84.1] - 2026-10-09\n\n- x\n", "0.84.1", "2026-10-10")).toThrow(/already/);
+    expect(() => stampChangelog("## [Unreleased]\nA\n## [Unreleased]\nB\n", "0.84.1", "2026-10-10")).toThrow();
   });
 });

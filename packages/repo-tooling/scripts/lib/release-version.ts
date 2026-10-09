@@ -5,6 +5,14 @@ interface Version {
   prerelease?: string;
 }
 
+/** The heading shape every changelog uses: `## [<version or Unreleased>]` with an optional ` - <date or Unreleased>`. */
+const HEADING = /^## \[([^\]]+)\](?: - ([^\n]+))?$/gm;
+
+/** The release workflow accepts stable and canary versions only (.github/workflows/release.yml, resolve job). */
+const RELEASABLE = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-canary\.[1-9]\d*)?$/;
+
+export const NO_CHANGES = "- No changes in this package. Released in lockstep with the other nax packages.";
+
 function parseVersion(version: string): Version {
   const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([a-zA-Z0-9]+(?:[.-][a-zA-Z0-9]+)*))?$/.exec(version);
   if (!match) throw new Error(`Invalid release version: ${version}`);
@@ -92,7 +100,7 @@ function compareIdentifier(l: string, r: string): number {
 export function updateChangelog(text: string, version: string, date: string): string {
   parseVersion(version);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error("Invalid release date");
-  const headings = [...text.matchAll(/^## \[([^\]]+)\](?: - ([^\n]+))?$/gm)];
+  const headings = [...text.matchAll(HEADING)];
   const target = headings.filter((heading) => heading[1] === version);
   const unreleased = headings.filter((heading) => heading[1] === "Unreleased");
   if (target.length > 1 || unreleased.length > 1 || (target.length > 0 && unreleased.length > 0)) {
@@ -108,4 +116,40 @@ export function updateChangelog(text: string, version: string, date: string): st
     throw new Error(`Empty changelog notes for ${version}`);
   }
   return `${text.slice(0, heading.index)}## [${version}] - ${date}${text.slice(start)}`;
+}
+
+/** The next lockstep version: releasable by the workflow and above the current shared version. */
+export function nextSharedVersion(current: string, kind: string): string {
+  const next = bumpVersion(current, kind);
+  if (!RELEASABLE.test(next)) throw new Error(`${next} is not releasable: use X.Y.Z or X.Y.Z-canary.N`);
+  if (compareVersions(next, current) <= 0) throw new Error(`${next} must be above the current version ${current}`);
+  return next;
+}
+
+/**
+ * Lockstep releases every package, so a package without notes still gets a dated
+ * "no changes" entry. Real notes go through updateChangelog, which keeps its
+ * ambiguity checks.
+ */
+export function stampChangelog(text: string, version: string, date: string): string {
+  const headings = [...text.matchAll(HEADING)];
+  if (headings.some((h) => h[1] === version && h[2] !== "Unreleased")) {
+    throw new Error(`Changelog already has a dated ${version} entry`);
+  }
+  const pending = headings.filter((h) => h[1] === "Unreleased" || h[1] === version);
+  if (pending.length > 1) return updateChangelog(text, version, date);
+  const heading = pending[0];
+  if (heading === undefined) return insertEntry(text, headings[0]?.index, version, date);
+  const end = headings.find((h) => h.index > heading.index)?.index;
+  if (text.slice(heading.index + heading[0].length, end ?? text.length).trim()) {
+    return updateChangelog(text, version, date);
+  }
+  const without = text.slice(0, heading.index) + text.slice(end ?? text.length);
+  return insertEntry(without, end === undefined ? undefined : heading.index, version, date);
+}
+
+function insertEntry(text: string, at: number | undefined, version: string, date: string): string {
+  const entry = `## [${version}] - ${date}\n\n${NO_CHANGES}\n`;
+  if (at === undefined) return `${text.trimEnd()}\n\n${entry}`;
+  return `${text.slice(0, at)}${entry}\n${text.slice(at)}`;
 }
