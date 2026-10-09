@@ -59,4 +59,30 @@ describe("nameTools", () => {
       expect(n.modelName).toContain("__");
     }
   });
+
+  test("a hashed name from a very long server part drops __ but stays a valid, built-in-distinct name", () => {
+    const server = "a".repeat(60);
+    const tool = "x".repeat(10);
+    const { named, dropped } = nameTools([{ server, tool }]);
+    expect(named).toHaveLength(1);
+    expect(dropped).toEqual([]);
+    const name = named[0]?.modelName ?? "";
+    expect(name).toBe(`${`${server}__${tool}`.slice(0, 55)}_${hash8(server, tool)}`);
+    expect(FACADE.test(name)).toBe(true);
+    expect(name.length).toBeLessThanOrEqual(64);
+    // The 55-char cut can drop `__`; built-ins are short and `__`-free, so the name is still distinct.
+    expect(["read", "write", "edit", "bash", "glob", "grep"]).not.toContain(name);
+  });
+
+  test("long-server pairs sharing a sanitised base stay distinct via the hash", () => {
+    const { named, dropped } = nameTools([
+      { server: `${"a".repeat(60)}.`, tool: "x".repeat(10) },
+      { server: `${"a".repeat(60)}_`, tool: "x".repeat(10) },
+    ]);
+    expect(named).toHaveLength(2);
+    expect(dropped).toEqual([]);
+    const names = named.map((n) => n.modelName);
+    expect(new Set(names).size).toBe(2);
+    for (const name of names) expect(FACADE.test(name)).toBe(true);
+  });
 });

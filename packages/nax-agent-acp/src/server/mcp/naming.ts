@@ -2,8 +2,12 @@
  * Model-facing MCP tool names (S5-5 spec §5.1): `<server>__<tool>`, each part
  * reduced to [A-Za-z0-9_-], a server part starting with a non-letter prefixed
  * `m`. Over 64 characters, or colliding with another tool's name, a name is cut
- * to 55 and given `_` + 8 hex chars of SHA-256 over `server\0tool`. Built-in
- * tool names contain no `__`, so they never collide.
+ * to 55 and given `_` + 8 hex chars of SHA-256 over `server\0tool`.
+ *
+ * The 55-char cut can drop the `__` separator when the sanitised server part is
+ * long, but every produced name still satisfies `^[A-Za-z][A-Za-z0-9_-]{0,63}$`
+ * and is unique, and built-in tool names are short and contain no `__`, so a
+ * produced name can never equal a built-in.
  */
 import { createHash } from "node:crypto";
 
