@@ -273,7 +273,7 @@ turn. Editors that support terminal auth then offer "Log in to <provider>", whic
 
 ### Zed
 
-In Zed's `settings.json`:
+In Zed's `settings.json` (`~/.config/zed/settings.json`; `zed: open settings` from the command palette):
 
 ```json
 {
@@ -287,6 +287,19 @@ In Zed's `settings.json`:
   }
 }
 ```
+
+Zed started from the Dock or Finder does not see your shell's `PATH`. If `node` comes from a version
+manager such as nvm, `nax-agent` fails to start there (its script runs `#!/usr/bin/env node`). Use
+absolute paths instead, from `which node` and the global install's `bin/nax-agent.js`:
+
+```json
+"command": "/Users/you/.nvm/versions/node/v22.22.2/bin/node",
+"args": ["/path/to/node_modules/@nathapp/nax-agent-acp/bin/nax-agent.js", "acp"]
+```
+
+A model must be configured before a thread can open (#2414): `models.native.balanced` in `~/.nax/config.json`, or
+`"env": { "NAX_AGENT_MODEL": "<provider>/<model>" }`. Without one the thread fails with
+`no model configured`, before the credential check runs, so no login prompt is offered.
 
 Open the agent panel and start a "nax-agent" thread.
 - **Modes:** `ask` (default) asks before each edit or command, `full` runs without asking, `read` is read-only, and `none` has no tools.

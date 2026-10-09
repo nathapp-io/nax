@@ -12,8 +12,8 @@ Run of `docs/superpowers/plans/2026-10-09-s5-4-auth-release.md` Task 8, on `main
 | 3 | acpx smoke: session, edit, reconnect, list | Pass (one lock nuance, not a defect) |
 | 4 | `auth_required` smoke (free) | Pass |
 | 4b | `nax-agent login` exits on its own | Pass (non-interactive + Ctrl+C paths) |
-| 5 | Zed walkthrough | **Not run — maintainer GUI** |
-| 6 | Record commit / model / cost / Zed checks | Partial — awaits Step 5 |
+| 5 | Zed walkthrough | Pass (6/6; one finding, #2414) |
+| 6 | Record commit / model / cost / Zed checks | Done (cost from the provider dashboard only) |
 
 Environment: `node v22.22.2`, `bun 1.4.2`, `acpx@0.19.4` via `npx`.
 
@@ -92,29 +92,49 @@ Run under `tmux` (real TTY). `--config-dir` pointed at a scratch dir, never `~/.
 keeping Node alive) does **not** reproduce; `bin/nax-agent.js` needs no change. Scratch dirs
 removed. **Pass** for the exit behaviour.
 
-## Step 5 — Zed walkthrough (REMAINING, maintainer)
+## Step 5 — Zed walkthrough (maintainer, 2026-10-09)
 
-Not run — requires the Zed GUI. The six checks (stream/thinking; edit diff + permission
-prompt + write; cancel mid-turn; switch mode/model with history kept; quit/reopen replay;
-empty-config login prompt + retry) are the maintainer's to perform. README wording fixes, if
-any, go in a small docs PR.
+Zed 1.23.2 on macOS, `@nathapp/nax-agent-acp@0.84.0` installed globally with bun, project
+`/tmp/nax-agent-work-qsas`, models `minimax/MiniMax-M3` and `minimax/MiniMax-M2.7`.
 
-## Step 6 — Record (PARTIAL)
+| # | Check | Result |
+|---|---|---|
+| 1 | Text and thinking stream into the thread | Pass |
+| 2 | `ask` mode: edit shows a diff and a permission prompt; Allow writes the file | Pass |
+| 3 | Stop mid-turn; the thread keeps working | Pass |
+| 4 | Switch model in the picker; earlier turns are remembered | Pass |
+| 5 | Quit Zed, reopen, open the thread from history; it replays | Pass |
+| 6 | Empty config: login prompt, `nax-agent login`, retry answers | Pass, with a finding |
 
-- Commit: `eeb09ebbe`
-- Model: `minimax/MiniMax-M3`
-- Billed turns: ~2 (one edit, one one-word answer); `sessions new` makes no model call.
+Setup notes, now in the package README:
+- Zed's live settings file is `~/.config/zed/settings.json`.
+- Zed started from the Dock does not see the shell `PATH`. With nvm-managed node, `"command":
+  "nax-agent"` cannot start; `command` must be the absolute `node` path and `args` the absolute
+  `bin/nax-agent.js` path plus `acp`.
+
+Check 6 ran with a second agent entry whose `env` set `NAX_AGENT_CONFIG_DIR` to an empty
+directory, so `~/.nax` was never moved. Zed's GUI environment held no provider API keys.
+
+**Finding (#2414).** With a truly empty config the thread fails with `invalid params: no model
+configured: set models.native.balanced or --model`. `session/new` resolves the model before the
+credential pre-flight, so a first-time user with no `~/.nax` never sees the login prompt. With
+`NAX_AGENT_MODEL=minimax/MiniMax-M3` added, Zed showed the login prompt; logging in stored a
+`0600` `credentials` file in that directory, and the retried thread answered ("hi" ->
+"Hi! How can I help you today?"). The test entry and directory were removed afterwards.
+
+## Step 6 — Record
+
+- Commit: `eeb09ebbe` (tag `v0.84.0`)
+- Models: `minimax/MiniMax-M3` (acpx smoke, Zed), `minimax/MiniMax-M2.7` (Zed)
+- Billed turns: ~2 in the acpx smoke; a handful of short Zed turns.
 - Cost: **not stored** in `*.transcript.json` (no usage/cost fields) — read it from the
   provider dashboard.
-- The six Zed checks cannot be recorded until Step 5 runs.
+- Zed checks: 6/6 pass (Step 5).
 
 ## Remaining
 
-1. Step 5 — the six Zed walkthrough checks (maintainer, GUI).
-2. Step 4b interactive completion — the OAuth flow was only exercised up to Ctrl+C; a real
+1. Step 4b interactive completion — the OAuth flow was only exercised up to Ctrl+C; a real
    browser sign-in was not completed (API-key path fully exercised).
-3. Step 6 — finish the record once Step 5 is done (commit, model, cost from the dashboard,
-   six Zed results) in the S5 row of `nax-agent-master-plan.md` (maintainer workspace).
+2. #2414 — a first-time user with no model configured gets no login prompt.
 
-Scratch dirs left in place for the Zed session: `/tmp/nax-agent-smoke-C50F`,
-`/tmp/nax-agent-work-qsas`.
+Scratch dirs `/tmp/nax-agent-smoke-C50F` and `/tmp/nax-agent-work-qsas` can be deleted.
