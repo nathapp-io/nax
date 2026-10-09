@@ -5,7 +5,14 @@
 import { join } from "node:path";
 import type { AgentSessionProfile } from "@nathapp/nax-agent";
 import type { CliFlags } from "#src/server/cli";
-import { BASH_APPROVALS, type BashApproval, MODES, type NaxConfigSubset, type TierModel } from "#src/server/nax-config";
+import {
+  BASH_APPROVALS,
+  type BashApproval,
+  type CompactionSettings,
+  MODES,
+  type NaxConfigSubset,
+  type TierModel,
+} from "#src/server/nax-config";
 
 export type Env = Readonly<Record<string, string | undefined>>;
 
@@ -20,6 +27,8 @@ export interface ServerOptions {
   readonly bashApproval: BashApproval;
   readonly tiers: readonly TierModel[];
   readonly catalogOverrides: readonly Readonly<Record<string, unknown>>[];
+  /** `execution.compaction` from config.json, passed to the native backend as given. */
+  readonly compaction?: CompactionSettings;
   readonly mcpConnectTimeoutSeconds: number;
 }
 
@@ -142,6 +151,7 @@ export function resolveServerOptions(input: {
       bashApproval: bash.value,
       tiers: file.tiers,
       catalogOverrides: file.catalogOverrides,
+      ...(file.compaction !== undefined ? { compaction: file.compaction } : {}),
       mcpConnectTimeoutSeconds: mcpTimeout.value,
     },
   };

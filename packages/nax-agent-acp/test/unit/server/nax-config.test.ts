@@ -66,6 +66,45 @@ describe("loadNaxConfig", () => {
     expect(loaded.warning).toContain("agentServer.mcpConnectTimeoutSeconds");
   });
 
+  test("reads execution.compaction as the raw object, leaving defaults to nax-agent", async () => {
+    const config = { execution: { compaction: { enabled: true, compactAtPercent: 80 }, maxIterations: 3 } };
+    const { config: loaded, warning } = await loadNaxConfig("/cfg", reader({ [PATH]: JSON.stringify(config) }));
+    expect(warning).toBeUndefined();
+    expect(loaded.compaction).toEqual({ enabled: true, compactAtPercent: 80 });
+  });
+
+  test("no execution.compaction leaves compaction unset, so nax-agent applies its defaults", async () => {
+    const config = { execution: { maxIterations: 3 }, models: { native: { fast: "a/b" } } };
+    const { config: loaded, warning } = await loadNaxConfig("/cfg", reader({ [PATH]: JSON.stringify(config) }));
+    expect(warning).toBeUndefined();
+    expect(loaded.compaction).toBeUndefined();
+    expect((await loadNaxConfig("/cfg", reader({}))).config.compaction).toBeUndefined();
+  });
+
+  test("an invalid execution.compaction falls back to the defaults with a warning, like any invalid section", async () => {
+    for (const compaction of [
+      { compactAtPercent: 10 },
+      { keepRecentPercent: 4 },
+      { enabled: "yes" },
+      { compactAtPercent: 50, keepRecentPercent: 60 },
+      "on",
+      null,
+      [1],
+    ]) {
+      const config = { execution: { compaction }, models: { native: { fast: "a/b" } } };
+      const loaded = await loadNaxConfig("/cfg", reader({ [PATH]: JSON.stringify(config) }));
+      expect(loaded.config).toEqual(EMPTY_NAX_CONFIG);
+      expect(loaded.warning).toContain(PATH);
+      expect(loaded.warning).toContain("execution.compaction");
+    }
+  });
+
+  test("the refine rule's message reaches the warning", async () => {
+    const config = { execution: { compaction: { compactAtPercent: 50, keepRecentPercent: 60 } } };
+    const loaded = await loadNaxConfig("/cfg", reader({ [PATH]: JSON.stringify(config) }));
+    expect(loaded.warning).toContain("keepRecentPercent must be at least 20 points below compactAtPercent");
+  });
+
   test("unrelated sections nax owns are ignored", async () => {
     const config = { review: { anything: true }, execution: 5, models: { native: { fast: "a/b" } } };
     const { config: loaded, warning } = await loadNaxConfig("/cfg", reader({ [PATH]: JSON.stringify(config) }));

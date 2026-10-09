@@ -129,6 +129,7 @@ async function serveAcp(flags: CliFlags, deps: MainDeps): Promise<number> {
       transcripts,
       catalogOverrides: overrides,
       turnTimeoutSeconds: TURN_TIMEOUT_SECONDS,
+      ...(resolved.options.compaction !== undefined ? { compaction: resolved.options.compaction } : {}),
     }),
     storage,
     transcripts,

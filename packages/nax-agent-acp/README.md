@@ -252,6 +252,7 @@ It reads `~/.nax/config.json`, the same file nax uses:
 - `models.native.balanced` is the default model. `fast`, `balanced` and `powerful` are the models offered in the editor.
 - `auth` controls where credentials come from.
 - An optional `agentServer` block sets `defaultMode`, `bashApproval` and `sessionsDir`.
+- `execution.compaction` (`enabled`, `compactAtPercent`, `keepRecentPercent`) is honoured, with the same meaning as in nax. Editor threads compact their history by default when it nears the model's context window, and a context overflow is compacted and retried once; set `{ "enabled": false }` to turn it off. A value nax would reject (for example `compactAtPercent` outside 50-99) is treated like any other invalid section: the server logs a warning to stderr and uses its built-in defaults. Changes need a restart.
 
 Flags (`--model`, `--mode`, `--bash-approval`, `--config-dir`, `--sessions-dir`) and `NAX_AGENT_<OPTION>`
 environment variables override the file. Sessions are stored under `~/.nax/.agent-server/sessions/`.

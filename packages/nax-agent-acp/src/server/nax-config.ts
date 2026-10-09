@@ -5,7 +5,13 @@
  * warning; the server still starts.
  */
 import { join } from "node:path";
-import type { AgentSessionProfile, CredentialAuthConfig, CredentialsConfig } from "@nathapp/nax-agent";
+import {
+  type AgentSessionProfile,
+  type CredentialAuthConfig,
+  type CredentialsConfig,
+  type NativeBackendOptions,
+  nativeBackend,
+} from "@nathapp/nax-agent";
 import { z } from "zod";
 
 export type ReadTextFile = (path: string, encoding: "utf8") => Promise<string>;
@@ -27,11 +33,16 @@ export interface AgentServerSection {
   readonly mcpConnectTimeoutSeconds?: number;
 }
 
+/** `execution.compaction` as nax-agent's native backend takes it; nax-agent validates and applies the defaults. */
+export type CompactionSettings = NonNullable<NativeBackendOptions["compaction"]>;
+
 export interface NaxConfigSubset {
   readonly tiers: readonly TierModel[];
   readonly catalogOverrides: readonly Readonly<Record<string, unknown>>[];
   readonly auth: CredentialAuthConfig;
   readonly agentServer: AgentServerSection;
+  /** The raw `execution.compaction` object; absent when the file sets none. */
+  readonly compaction?: CompactionSettings;
 }
 
 export interface LoadedNaxConfig {
@@ -73,6 +84,8 @@ const SubsetSchema = z.object({
     })
     .optional(),
   auth: AuthSchema.optional(),
+  // nax owns the rest of `execution`; only compaction is read, and only when it is there.
+  execution: z.unknown().optional(),
   agentServer: z
     .object({
       defaultMode: z.enum(MODES).optional(),
@@ -123,6 +136,32 @@ function tiersFrom(native: Readonly<Record<string, unknown>> | undefined): { tie
   return { tiers };
 }
 
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+const PROBE_MODEL = "openai/compaction-probe";
+const OPTIONS_PREFIX = /^Invalid agent session options: backend\./;
+
+/**
+ * The server does not know the compaction rules: nax-agent owns the schema (it
+ * is not importable from here). nativeBackend validates its options when it is
+ * built and does no I/O, so building one is the check. The error text is the
+ * schema's own message, which never echoes the offending value.
+ */
+function compactionFrom(execution: unknown): { compaction?: CompactionSettings; issue?: string } {
+  if (!isPlainRecord(execution) || execution.compaction === undefined) return {};
+  const raw = execution.compaction;
+  if (!isPlainRecord(raw)) return { issue: "execution.compaction: expected an object" };
+  const compaction: CompactionSettings = raw;
+  try {
+    nativeBackend({ model: PROBE_MODEL, compaction });
+  } catch (error) {
+    return { issue: message(error).replace(OPTIONS_PREFIX, "execution.") };
+  }
+  return { compaction };
+}
+
 function authFrom(auth: z.infer<typeof AuthSchema> | undefined): CredentialAuthConfig {
   if (auth === undefined) return DEFAULT_AUTH;
   return {
@@ -159,8 +198,11 @@ export async function loadNaxConfig(configDir: string, readFile: ReadTextFile): 
   }
   const { tiers, issue } = tiersFrom(parsed.data.models?.native);
   if (issue !== undefined) return fallback(path, issue);
+  const compacted = compactionFrom(parsed.data.execution);
+  if (compacted.issue !== undefined) return fallback(path, compacted.issue);
   return {
     config: {
+      ...(compacted.compaction !== undefined ? { compaction: compacted.compaction } : {}),
       tiers,
       catalogOverrides: parsed.data.agent?.native?.catalogOverrides ?? [],
       auth: authFrom(parsed.data.auth),
