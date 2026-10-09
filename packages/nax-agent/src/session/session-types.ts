@@ -206,6 +206,8 @@ export interface OpenSessionOpts extends TrackedSpawnDeadlineOptions {
    * NaxConfig. ACP ignores it; its loop is bounded by `maxInteractions`.
    */
   spinBreaker?: import("#src/infra/spin-breaker/index").ResolvedSpinBreakerSettings;
+  /** Native: keep history written by another model (S5-3). */
+  readonly carryHistoryAcrossModels?: boolean;
 }
 
 /** Options for sendTurn(). */

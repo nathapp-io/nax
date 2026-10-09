@@ -157,3 +157,28 @@ describe("runNativeTurn — assistant origin (S5-3 M-19)", () => {
     expect(file.messages[1]).not.toHaveProperty("origin");
   });
 });
+
+describe("runNativeTurn — carryHistoryAcrossModels (S5-3 M-19)", () => {
+  test("with the flag, a turn on another model keeps the conversation", async () => {
+    await turn(onModel("openai/model-a"), "first");
+    sessionState.carryHistoryAcrossModels.add(SESSION);
+    const sent = await turn(onModel("anthropic/model-b"), "second");
+    expect(sent[0]).toHaveLength(3);
+    expect(sent[0]?.[1]).toMatchObject({ role: "assistant", origin: { provider: "openai", model: "model-a" } });
+    const file: unknown = JSON.parse(await readFile(transcriptPath(dir, SESSION), "utf8"));
+    expect(file).toMatchObject({ model: "anthropic/model-b" });
+  });
+
+  test("with the flag, the other model's anchor is still not read", async () => {
+    await turn(onModel("openai/model-a"), "first");
+    sessionState.carryHistoryAcrossModels.add(SESSION);
+    const seen: (number | undefined)[] = [];
+    const registry = createLoopEventRegistry();
+    registry.register("transform_context", (p) => {
+      seen.push(p.anchorIndex);
+      return {};
+    });
+    await turn(onModel("anthropic/model-b"), "second", registry);
+    expect(seen[0]).toBeUndefined();
+  });
+});

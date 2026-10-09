@@ -25,7 +25,10 @@ export async function openRepositoryInstructions(
   if (doc === null || (doc.schemaVersion !== undefined && doc.schemaVersion !== 1) || !Array.isArray(doc.messages))
     return instructions;
   const ownerMatches = opts.transcriptOwner === undefined || doc?.owner === opts.transcriptOwner;
-  const modelMatches = doc?.model === undefined || doc.model === transcriptModelIdentity(opts.modelDef?.model);
+  const modelMatches =
+    opts.carryHistoryAcrossModels === true ||
+    doc?.model === undefined ||
+    doc.model === transcriptModelIdentity(opts.modelDef?.model);
   if (ownerMatches && modelMatches) {
     const directories = doc?.instructionDirectories;
     if (Array.isArray(directories)) {

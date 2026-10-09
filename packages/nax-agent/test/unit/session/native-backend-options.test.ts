@@ -64,6 +64,15 @@ describe("parseNativeBackendOptions", () => {
   test("a non-object input is invalid", () => {
     expect(code(() => parseNativeBackendOptions(undefined))).toBe("AGENT_SESSION_INVALID_OPTIONS");
   });
+
+  test("carryHistoryAcrossModels must be a boolean (S5-3)", () => {
+    expect(code(() => parseNativeBackendOptions({ model: "openai/x", carryHistoryAcrossModels: "yes" }))).toBe(
+      "AGENT_SESSION_INVALID_OPTIONS",
+    );
+    expect(parseNativeBackendOptions({ model: "openai/x", carryHistoryAcrossModels: true }).raw).toMatchObject({
+      carryHistoryAcrossModels: true,
+    });
+  });
 });
 
 describe("nativeProfileRules", () => {
