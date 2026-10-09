@@ -4,6 +4,8 @@
  * round-trip and one native session turn, then typecheck a consumer with
  * skipLibCheck:false. Only diagnostics under the installed package's dist/
  * fail; third-party ones are ignored (the S2-7 api-surface precedent).
+ * `@nathapp/nax-ai` is packed from the workspace at the shared lockstep
+ * version too, so the install resolves its pin locally instead of from npm.
  */
 import { cpSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -14,9 +16,11 @@ import { runSmokeCommand as run } from "./helpers/process";
 
 const PKG = fileURLToPath(new URL("../..", import.meta.url));
 const FIXTURE = join(PKG, "test/node/fixtures/packed-smoke.mjs");
+const AI_PKG = join(PKG, "../nax-ai");
 
 let consumer = "";
 let packDir = "";
+let aiPackDir = "";
 
 beforeAll(() => {
   run("bun", ["run", "build"], PKG);
@@ -25,11 +29,27 @@ beforeAll(() => {
   run("npm", ["pack", ".publish/", "--pack-destination", packDir], PKG);
   const tgz = readdirSync(packDir).find((f) => f.endsWith(".tgz"));
   if (tgz === undefined) throw new Error(`npm pack produced no tarball in ${packDir}`);
+  // The packed nax-agent pins @nathapp/nax-ai at the shared lockstep version,
+  // which is not on npm until the release runs; pack it from the workspace so
+  // the install resolves the pin locally instead of from the registry.
+  run("bun", ["run", "build"], AI_PKG);
+  aiPackDir = mkdtempSync(join(tmpdir(), "nax-ai-pack-"));
+  run("npm", ["pack", AI_PKG, "--pack-destination", aiPackDir, "--ignore-scripts"], PKG);
+  const aiTgz = readdirSync(aiPackDir).find((f) => f.endsWith(".tgz"));
+  if (aiTgz === undefined) throw new Error(`npm pack nax-ai produced no tarball in ${aiPackDir}`);
   consumer = mkdtempSync(join(tmpdir(), "nax-consumer-"));
   run("npm", ["init", "-y"], consumer);
   run(
     "npm",
-    ["install", "--no-audit", "--no-fund", join(packDir, tgz), "typescript@7.0.2", "@types/node@25.2.3"],
+    [
+      "install",
+      "--no-audit",
+      "--no-fund",
+      join(packDir, tgz),
+      join(aiPackDir, aiTgz),
+      "typescript@7.0.2",
+      "@types/node@25.2.3",
+    ],
     consumer,
     120_000,
   );
@@ -37,6 +57,7 @@ beforeAll(() => {
 
 afterAll(() => {
   if (packDir !== "") rmSync(packDir, { recursive: true, force: true });
+  if (aiPackDir !== "") rmSync(aiPackDir, { recursive: true, force: true });
   if (consumer !== "") rmSync(consumer, { recursive: true, force: true });
 });
 
