@@ -97,7 +97,8 @@ describe("login-first onboarding over the stdio server", () => {
 
   test("login writes the default model; the running server's next session/new then works", async () => {
     const config = memoryConfig();
-    const server = harness([], config);
+    // read mode: opening the session needs no OS sandbox (CI runners lack bwrap/socat/rg).
+    const server = harness(["--mode", "read"], config);
     const serving = main(server.deps);
     server.send(1, "initialize", { protocolVersion: 1 });
     await server.reply(1);
@@ -120,7 +121,7 @@ describe("login-first onboarding over the stdio server", () => {
   test("an explicit NAX_AGENT_MODEL wins over the config file", async () => {
     const config = memoryConfig();
     config.files.set(CONFIG_PATH, JSON.stringify({ models: { native: { balanced: "openai/gpt-x" } } }));
-    const h = harness([], config, { NAX_AGENT_MODEL: MODEL });
+    const h = harness(["--mode", "read"], config, { NAX_AGENT_MODEL: MODEL });
     const exit = main(h.deps);
     h.send(1, "initialize", { protocolVersion: 1 });
     await h.reply(1);
