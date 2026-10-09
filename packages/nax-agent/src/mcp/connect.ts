@@ -55,6 +55,9 @@ async function closeTransport(client: Client, handle: TransportHandle, graceMs: 
   const pid = handle.pid();
   if (handle.terminate !== undefined) await within(handle.terminate(), graceMs);
   const closed = client.close();
+  // The stdio path below waits on the process, not on this promise: attach a
+  // handler now so a transport close that later rejects is never unhandled.
+  void closed.catch(() => undefined);
   if (pid === null) return within(closed, graceMs);
   await waitForStdioExit(pid, () => life.exited, graceMs);
 }
