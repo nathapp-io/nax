@@ -56,6 +56,25 @@ describe("memoryKey (spec §4.3)", () => {
     expect(memoryKey(approval("r", "Bash", { command: "FOO=1 rm -rf build" }))).toBeUndefined();
   });
 
+  test("a masked command is never remembered: its visible words are not the real command", () => {
+    expect(memoryKey(approval("r", "Bash", { command: "[REDACTED:github] rm -rf build" }))).toBeUndefined();
+    expect(memoryKey(approval("r", "Bash", { command: "curl -H [REDACTED:bearer] https://x" }))).toBeUndefined();
+  });
+
+  test("a wrapper or interpreter is never remembered: its first word says nothing about what runs", () => {
+    for (const command of [
+      "bash -c 'rm -rf ~'",
+      "env X=1 rm x",
+      "xargs rm",
+      "sudo ls",
+      "find . -delete",
+      "node -e 1",
+    ]) {
+      expect(memoryKey(approval("r", "Bash", { command }))).toBeUndefined();
+    }
+    expect(memoryKey(approval("r", "Bash", { command: "/usr/bin/env rm x" }))).toBeUndefined();
+  });
+
   test("an execute tool with no command is never remembered (M-12)", () => {
     expect(memoryKey(approval("r", "Bash"))).toBeUndefined();
     expect(memoryKey(approval("r", "Bash", { command: "   " }))).toBeUndefined();
@@ -147,6 +166,16 @@ describe("createPermissionBroker", () => {
     expect(call?.title).toBe("run evil next line");
     expect(JSON.stringify(call?.rawInput)).not.toMatch(/\\u(0007|202e)/i);
     expect(call?.rawInput).toEqual({ command: "echo hi" });
+  });
+
+  test("always-allow on one masked command never answers another", async () => {
+    const s = setup({ permission: async () => select("allow_always") });
+    s.broker.request(approval("r1", "Bash", { command: "[REDACTED:github] echo hi" }), undefined);
+    await s.broker.drain();
+    s.broker.request(approval("r2", "Bash", { command: "[REDACTED:github] rm -rf ~" }), undefined);
+    await s.broker.drain();
+    expect(s.asks).toHaveLength(2);
+    expect(s.memory.size).toBe(0);
   });
 
   test("S3 settling first aborts the client request; a late reply is ignored", async () => {

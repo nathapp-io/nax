@@ -2,8 +2,10 @@
  * Approval round trips (S5 spec §4.3). A human approval becomes a
  * `session/request_permission`, and the chosen option is passed to `answer()`.
  * allow_always and reject_always are remembered for the session's life (M-12:
- * execute tools per first word of the command, never without one or after an
- * environment assignment). A remembered allow covers only a simple command: one
+ * execute tools per first word of the command). Never remembered: no command, a
+ * leading environment assignment, a masked command (its visible words are not
+ * the real command), or a wrapper or interpreter, whose first word says nothing
+ * about what runs. A remembered allow covers only a simple command: one
  * with shell metacharacters (chaining, substitution, redirection) is asked
  * again, so "always allow git" never approves `git status; rm -rf ~`. A
  * remembered reject applies by prefix regardless. When S3
@@ -56,10 +58,58 @@ const DENY: Choice = { decision: "deny", remember: false };
 /** Chaining, pipes, substitution, subshells, redirection and line breaks. */
 const SHELL_METACHARACTERS = /[;&|`$()<>\n\r]/;
 
+/** First words that run another command or arbitrary code. */
+const WRAPPERS: ReadonlySet<string> = new Set([
+  "sh",
+  "bash",
+  "zsh",
+  "dash",
+  "ksh",
+  "fish",
+  "env",
+  "xargs",
+  "sudo",
+  "doas",
+  "su",
+  "command",
+  "builtin",
+  "eval",
+  "exec",
+  "source",
+  ".",
+  "nohup",
+  "time",
+  "timeout",
+  "nice",
+  "ionice",
+  "stdbuf",
+  "watch",
+  "find",
+  "node",
+  "bun",
+  "deno",
+  "npx",
+  "bunx",
+  "pnpx",
+  "python",
+  "python3",
+  "perl",
+  "ruby",
+  "php",
+  "uv",
+  "uvx",
+]);
+
+/** The masking prefix S3 puts in place of a secret in a shown command. */
+const MASK_MARKER = "[REDACTED";
+
 export function memoryKey(event: ApprovalEvent): string | undefined {
   if (toolKind(event.tool) !== "execute") return event.tool;
-  const first = event.command?.trim().split(/\s+/)[0];
-  if (first === undefined || first === "" || first.includes("=")) return undefined;
+  const command = event.command ?? "";
+  if (command.includes(MASK_MARKER)) return undefined;
+  const first = command.trim().split(/\s+/)[0] ?? "";
+  const name = first.slice(first.lastIndexOf("/") + 1);
+  if (name === "" || first.includes("=") || WRAPPERS.has(name)) return undefined;
   return `${event.tool}:${first}`;
 }
 
