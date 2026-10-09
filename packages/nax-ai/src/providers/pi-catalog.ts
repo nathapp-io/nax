@@ -55,7 +55,9 @@ export async function defaultProviders(ids?: readonly string[]): Promise<RawProv
   );
   const { getSupportedThinkingLevels } = await import("@earendil-works/pi-ai");
 
-  const available = new Set<string>(getBuiltinProviders());
+  // Pi's catalog also contains image and classifier providers. This client
+  // exposes chat models only; a provider without any cannot serve a request.
+  const available = new Set<string>(getBuiltinProviders().filter((id) => getBuiltinModels(id).length > 0));
   const wanted = ids ?? [...available];
 
   const unknown = wanted.filter((id) => !available.has(id));

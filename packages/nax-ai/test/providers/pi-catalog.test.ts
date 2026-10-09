@@ -62,6 +62,16 @@ describe("piProviders", () => {
     expect(() => normaliseCatalog(providers)).not.toThrow();
   });
 
+  it("lists only providers with chat models, excluding classifier-only providers", async () => {
+    const providers = await piProviders();
+    expect(providers.every((provider) => provider.models.length > 0)).toBe(true);
+    expect(providers.map((provider) => provider.id)).not.toContain("typesafe");
+  });
+
+  it("rejects an explicitly requested classifier-only provider", async () => {
+    await expect(piProviders(["typesafe"])).rejects.toThrow(/typesafe/);
+  });
+
   it("still rejects a hand-declared prohibited flow", () => {
     expect(() =>
       normaliseCatalog([

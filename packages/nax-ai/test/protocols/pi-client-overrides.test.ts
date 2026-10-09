@@ -324,23 +324,11 @@ describe("provider overrides at the protocol seam", () => {
  * `ResolvedModel.thinkingLevelMap` and the thinking-aware `pickTemplate`
  * (issue #47).
  *
- * `opencode-go`'s real "openai-completions" siblings reproduce the reported
- * bug exactly: `kimi-k3` is the largest-context sibling on that api and its
- * map marks every level but "max" unsupported, while `deepseek-v4-flash` (a
- * touch smaller) maps "low"/"high"/"max" to themselves and carries
- * `compat.thinkingFormat: "deepseek"`. Pinning to those real ids is
- * deliberate, matching this file's existing style (`gpt-4`/`openai`) — a
- * synthetic fixture would not prove the fix against the catalog that
- * actually produced the bug report.
- *
- * Load-bearing since pi-ai 0.87.0, and worth re-checking on the next bump:
- * that release added `deepseek-v4.1-flash` to `opencode-go` with the SAME
- * `contextWindow` (1,000,000) as `deepseek-v4-flash`, so `pickTemplate` now
- * falls through to `isBetterTemplate`'s `id` tie-break. `deepseek-v4-flash`
- * wins only because "-" (0x2D) sorts before "." (0x2E). The newcomer carries
- * `thinkingLevelMap.off: null`, which makes pi clamp a request for "off" up
- * to "low" — so if an upstream rename ever flips that tie, "never invents an
- * 'off' value on the wire" is the test that will catch it.
+ * In pi-ai 1.1.0, `space-bunny` is a larger-context sibling that supports
+ * all positive thinking levels but marks "off" unsupported. Excluding "off"
+ * from template compatibility picked it over `deepseek-v4-flash` and turned
+ * a non-thinking request into reasoning_effort "low". These tests exercise
+ * the real catalog and wire builder to catch that regression on future bumps.
  */
 describe("thinkingLevelMap synthesis (issue #47)", () => {
   /**
@@ -369,7 +357,7 @@ describe("thinkingLevelMap synthesis (issue #47)", () => {
     thinkingLevels: ["off", "low", "high", "max"],
   };
 
-  it("templates the override off a level-compatible sibling, not the larger incompatible kimi-k3", async () => {
+  it("templates the override off a sibling supporting off as well as positive thinking levels", async () => {
     const deps = createPiDeps({ providerOverrides: [{ provider: "opencode-go", models: [OVERRIDE] }] });
     const model = await deps.resolveModel(OVERRIDE.id, "opencode-go");
 
@@ -400,7 +388,7 @@ describe("thinkingLevelMap synthesis (issue #47)", () => {
 
   it("prefers a level-compatible sibling over the larger-context incompatible one, falling back to size order otherwise", async () => {
     const compatible: ResolvedModel = { ...OVERRIDE, thinkingLevels: ["off", "low", "high", "max"] };
-    // No single "opencode-go" sibling supports both "high" and "xhigh"
+    // No single "opencode-go" sibling supports "off", "high" and "xhigh"
     // together in the real catalog (verified against the bundled snapshot),
     // so this forces the size-order fallback even under the new rule.
     const noCompatibleSibling: ResolvedModel = {
@@ -417,10 +405,9 @@ describe("thinkingLevelMap synthesis (issue #47)", () => {
     expect(compatModel.thinkingLevelMap).toMatchObject({ low: "low", high: "high", max: "max" });
 
     const fallbackModel = await deps.resolveModel(noCompatibleSibling.id, "opencode-go");
-    // kimi-k3 (contextWindow 1,048,576) is the size-order winner among
-    // opencode-go's openai-completions siblings; its map has no "xhigh" key,
-    // so an incompatible fallback derives one via identity rather than
-    // inheriting kimi-k3's stranger map wholesale.
+    // The size-order fallback is space-bunny, whose "off" is unsupported.
+    // Derivation keeps the override's declared levels instead of inheriting
+    // the sibling's positive levels wholesale.
     expect(fallbackModel.thinkingLevelMap).toMatchObject({ high: "high", xhigh: "xhigh" });
   });
 
@@ -434,12 +421,12 @@ describe("thinkingLevelMap synthesis (issue #47)", () => {
     const model = await deps.resolveModel(noCompatibleSibling.id, "opencode-go");
 
     expect(model.thinkingLevelMap).toMatchObject({
-      off: null, // kimi-k3's own "off" is null, so none is invented
+      off: null, // space-bunny's own "off" is null, so none is invented
       minimal: null, // undeclared levels map to null
       low: null,
       medium: null,
-      high: "high", // declared, template maps it to null, so identity
-      xhigh: "xhigh", // declared, template has no key at all, so identity
+      high: "high", // declared, retains the template's wire value
+      xhigh: "xhigh", // declared, retains the template's wire value
       max: null,
     });
   });

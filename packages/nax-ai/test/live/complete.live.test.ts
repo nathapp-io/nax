@@ -84,7 +84,7 @@ const TARGETS: readonly Target[] = [
     protocol: "openai-codex-responses",
     // openai-codex stopped bundling gpt-5.4-mini in pi-ai 0.87.0. The id is
     // NOT retired from the catalog — it still appears under openai,
-    // azure-openai-responses, github-copilot, cloudflare-ai-gateway, opencode
+    // azure, github-copilot, cloudflare-ai-gateway, opencode
     // and radius — so only this provider-scoped target had to move.
     // gpt-5.6-luna is the cheapest model openai-codex still bundles.
     model: "gpt-5.6-luna",
