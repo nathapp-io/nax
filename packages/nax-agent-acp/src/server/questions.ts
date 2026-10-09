@@ -55,6 +55,19 @@ function answerText(response: CreateElicitationResponse): string {
   return typeof value === "string" && value.trim() !== "" ? value : DECLINED_TEXT;
 }
 
+const MAX_TIMER_DELAY = 2_147_483_647;
+
+function armExpiry(expiresAt: string, now: () => number, onExpire: () => void): () => void {
+  let timer: ReturnType<typeof setTimeout>;
+  const arm = (): void => {
+    const delta = Date.parse(expiresAt) - now();
+    const remaining = delta > 0 ? delta : 0;
+    timer = remaining > MAX_TIMER_DELAY ? setTimeout(arm, MAX_TIMER_DELAY) : setTimeout(onExpire, remaining);
+  };
+  arm();
+  return () => clearTimeout(timer);
+}
+
 export function createQuestionBroker(deps: QuestionBrokerDeps): QuestionBroker {
   const now = deps.now ?? Date.now;
   const open = new Set<AbortController>();
@@ -64,7 +77,7 @@ export function createQuestionBroker(deps: QuestionBrokerDeps): QuestionBroker {
   async function elicit(event: QuestionEvent): Promise<void> {
     const controller = new AbortController();
     open.add(controller);
-    const expiry = setTimeout(() => controller.abort(), Math.max(0, Date.parse(event.expiresAt) - now()));
+    const clearExpiry = armExpiry(event.expiresAt, now, () => controller.abort());
     let text: string;
     try {
       text = answerText(
@@ -75,7 +88,7 @@ export function createQuestionBroker(deps: QuestionBrokerDeps): QuestionBroker {
       deps.logger.warn("questions", "elicitation failed; answering without the user", { error: messageOf(error) });
       text = NO_ANSWER_TEXT;
     } finally {
-      clearTimeout(expiry);
+      clearExpiry();
       open.delete(controller);
     }
     deps.answer(event.requestId, { text });
