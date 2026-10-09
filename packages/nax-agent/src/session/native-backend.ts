@@ -6,6 +6,7 @@
  */
 import { DEFAULT_SPIN_BREAKER_SETTINGS } from "#src/infra/spin-breaker/index";
 import { NATIVE_AGENT } from "#src/native/models";
+import { resolveCompaction } from "#src/native/session/compaction-settings";
 import { transcriptModelIdentity } from "#src/native/session/transcript-identity";
 import type { TranscriptDoc } from "#src/native/session/transcript-types";
 import type { TurnRetryConfig } from "#src/native/session/turn-retry";
@@ -101,6 +102,7 @@ async function openNative(resolved: ResolvedNativeOptions, ctx: BackendOpenConte
     resume: ctx.resume !== undefined,
     spinBreaker: DEFAULT_SPIN_BREAKER_SETTINGS,
     transportRetry: SESSION_TRANSPORT_RETRY,
+    compaction: resolveCompaction(raw.compaction),
     ...(raw.carryHistoryAcrossModels === true ? { carryHistoryAcrossModels: true } : {}),
     ...(ctx.instructions !== undefined && ctx.instructions !== "" ? { systemPrompt: ctx.instructions } : {}),
   });

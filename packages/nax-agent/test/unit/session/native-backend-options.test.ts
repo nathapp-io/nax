@@ -75,6 +75,53 @@ describe("parseNativeBackendOptions", () => {
   });
 });
 
+describe("parseNativeBackendOptions: compaction", () => {
+  function failure(compaction: unknown): { code: string | undefined; message: string; context: unknown } {
+    try {
+      parseNativeBackendOptions({ model: "openai/x", compaction });
+    } catch (err) {
+      assertNaxError(err);
+      return { code: err.code, message: err.message, context: err.context };
+    }
+    return { code: undefined, message: "", context: undefined };
+  }
+
+  test("accepts a partial or empty compaction object and keeps the caller's object", () => {
+    const compaction = { compactAtPercent: 80 };
+    expect(parseNativeBackendOptions({ model: "openai/x", compaction }).raw.compaction).toBe<unknown>(compaction);
+    expect(parseNativeBackendOptions({ model: "openai/x", compaction: {} }).provider).toBe("openai");
+    expect(parseNativeBackendOptions({ model: "openai/x", compaction: { enabled: false } }).provider).toBe("openai");
+  });
+
+  test("out-of-range, non-integer and mistyped values are INVALID_OPTIONS on backend.compaction", () => {
+    for (const compaction of [
+      { compactAtPercent: 49 },
+      { compactAtPercent: 100 },
+      { compactAtPercent: 75.5 },
+      { keepRecentPercent: 4, compactAtPercent: 90 },
+      { keepRecentPercent: 80 },
+      { enabled: "yes" },
+      null,
+      "on",
+    ]) {
+      const got = failure(compaction);
+      expect(got.code).toBe("AGENT_SESSION_INVALID_OPTIONS");
+      expect(got.message).toContain("backend.compaction");
+    }
+  });
+
+  test("a keepRecentPercent too close to compactAtPercent reports the 20-point rule", () => {
+    const got = failure({ compactAtPercent: 50, keepRecentPercent: 60 });
+    expect(got.code).toBe("AGENT_SESSION_INVALID_OPTIONS");
+    expect(got.message).toContain("keepRecentPercent must be at least 20 points below compactAtPercent");
+    expect(got.context).toMatchObject({ path: "backend.compaction" });
+  });
+
+  test("an unknown key inside compaction is ignored, as in execution.compaction", () => {
+    expect(failure({ enabled: true, extra: 1 }).code).toBeUndefined();
+  });
+});
+
 describe("nativeProfileRules", () => {
   const raw = { model: "openai/x" };
 
