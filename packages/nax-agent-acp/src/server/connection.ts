@@ -27,12 +27,12 @@ export function buildAgentApp(deps: AppDeps): AgentApp {
     })
     .onRequest("session/new", (ctx) =>
       guard(deps.logger, async () => {
-        const session = await deps.registry.create({
+        const created = await deps.registry.create({
           cwd: ctx.params.cwd,
           mcpServers: ctx.params.mcpServers,
           port: (sessionId) => clientPort(ctx.client, sessionId, features),
         });
-        return { sessionId: session.id };
+        return { sessionId: created.sessionId };
       }),
     )
     .onRequest("session/prompt", (ctx) =>

@@ -32,6 +32,7 @@ export function turnEnd(status: TurnEnd["status"], extra: Partial<TurnEnd> = {})
 
 export interface FakeAgentSessionOptions {
   readonly closeFails?: boolean;
+  readonly closeHangs?: boolean;
   readonly lastTurn?: AgentSession["lastTurn"];
 }
 
@@ -116,6 +117,7 @@ export function fakeAgentSession(
     async close() {
       isClosed = true;
       cancelTurn();
+      if (options.closeHangs === true) await new Promise<void>(() => {});
       if (options.closeFails === true) throw new Error("close failed");
     },
   };

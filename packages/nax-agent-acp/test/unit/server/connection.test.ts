@@ -1,11 +1,20 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { PassThrough } from "node:stream";
 import { client, PROTOCOL_VERSION, RequestError } from "@agentclientprotocol/sdk";
+import { createMemoryTranscriptStore } from "@nathapp/nax-agent";
+import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
 import { initializeResponse } from "#src/server/capabilities";
 import { buildAgentApp, serveStdio } from "#src/server/connection";
 import { createSessionRegistry } from "#src/server/registry";
 import { TURN_TIMEOUT_SECONDS } from "#src/server/server-session";
+import { createSessionStorage } from "#src/server/storage";
 import { recordingLogger } from "#test/helpers/recording-logger";
+
+let dir: string;
+beforeEach(() => {
+  dir = makeTempDir("acp-connection-");
+});
+afterEach(() => cleanupTempDir(dir));
 
 function appDeps() {
   const { logger } = recordingLogger();
@@ -19,10 +28,14 @@ function appDeps() {
       catalogOverrides: [],
     },
     openSession: async () => Promise.reject(new Error("unused")),
+    storage: createSessionStorage({ dir, pid: 1000, now: () => new Date(), logger, isAlive: () => false }),
+    transcripts: createMemoryTranscriptStore(),
     newId: () => "s1",
+    now: () => new Date(),
     readOldText: async () => ({ kind: "missing" }),
     logger,
     turnTimeoutSeconds: TURN_TIMEOUT_SECONDS,
+    shutdownWaitMs: 50,
   });
   return { version: "9.9.9", registry, logger };
 }
