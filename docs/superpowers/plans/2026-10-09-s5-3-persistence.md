@@ -27,6 +27,19 @@ A model switch keeps the conversation (user ruling 2026-10-09: history is carrie
 
 **Spec:** `docs/superpowers/specs/2026-10-08-s5-acp-server-design.md` §3.3, §5.1-§5.5, §7. §3.3 is amended by Task 8 for the history-carrying model switch. **Master plan:** `docs/superpowers/plans/2026-10-08-s5-acp-server-master-plan.md`. **Builds on:** S5-2, merged #2407 (`2b53acaa4`).
 
+## Handover (for the executing session)
+
+- **Branch:** `feat/s5-3-persistence`, off main `2b53acaa4` (S5-2 merged as #2407). This plan is the only change on it.
+- **Execution:** subagent-driven (user's choice). One implementer and one reviewer per task, in order 0 to 8, then one whole-branch review before the push.
+- **Order matters:**
+  - Task 0 ends with `bun run build` in `packages/nax-ai` (M-20); without it Tasks 1-8 cannot typecheck against `origin`.
+  - Tasks 1-2 are nax-agent.
+  - Tasks 3-8 are nax-agent-acp.
+- **Final plan review (2026-10-09, one read-only reviewer):**
+  - Fixes applied: C1 (nax-ai `dist/` rebuild), I1 (always send `config_option_update`; M-25 rewritten), I3 (Task 8 assertion), I4 (shutdown re-check after an in-flight open, with a test), I5 (an explicit interim step keeps the build green between Tasks 7 and 8).
+  - Minors folded in: M1 (pi-ai `transformMessages` end-to-end test), M2 (no `as never`), M3 (`running` cleared after turn bookkeeping), M4 (empty title stays null), M5 (full unit run in Task 1), M6 (spec §5.3/§7 rows), M7 (PR notes), M8 (close on replay failure), M9 (focus wording).
+- **Working agreements:** never launch `nax run`/`nax plan`; code review before push; at most two fix rounds per review.
+
 ## Global Constraints
 
 - Package commands run from the package directory. Never run bare `bun test` with no path; scope it as `timeout 60 bun test <path> --timeout=60000`.
@@ -70,19 +83,19 @@ Exact values from the spec:
 - **A session reopened that was never prompted** (new, close, load). It has no transcript document, and `resumeAgentSession` would throw `AGENT_SESSION_NOT_FOUND`. It must open fresh. Task 3 tests it.
 - **Two editor windows on one session**, or a crashed server's leftover lock. A live lock refuses with the pid. A dead pid's lock, or an unreadable lock, is taken over. Task 5 tests all three.
 - **A switch whose reopen fails** (bad model id, sandbox error). The session must still work on its old settings, the metadata must be unchanged, and the client must get the error. Task 6 and Task 7 test it.
-- **Shutdown while a turn hangs.** Every lock is released within the 5 s cap even when `close()` never resolves, so the next start can take the session. Task 7 tests it with a short cap.
+- **Shutdown while a session's close hangs.** Every lock is released within the 5 s cap even when `close()` never resolves, so the next start can take the session. Task 7 tests it with a short cap. An open still in flight when shutdown starts must not register afterwards (Task 7 tests it too).
 
 ## Decisions taken while planning
 
 | # | Decision | Why |
 |---|---|---|
 | M-19 | Model switch carries history for any model (user ruling 2026-10-09). The pieces: nax-ai assistant `ConversationMessage.origin?: { provider; model }`, recorded by the nax-agent loop and used by `toPiMessages` to stamp the message; nax-agent `NativeBackendOptions.carryHistoryAcrossModels`, which skips `checkResumeModel`, the loop's foreign-model history drop and the instruction-scope model check. The per-model compaction anchor (`sessionAnchorFor`) is NOT relaxed. | pi-ai already makes another model's history safe when each message says who wrote it. Today `toPiMessages` stamps every message with the current model, so a switch would send foreign thinking signatures. The anchor is tokenizer-specific, so it stays per model. |
-| M-20 | nax-ai's type change ships in this branch. It is released before nax-agent at S5-4 (nax-ai patch, then exact pins bumped in nax-agent and nax). | nax-agent links the workspace nax-ai (`packages/nax-agent/node_modules/@nathapp/nax-ai -> packages/nax-ai`), so the branch is self-consistent. A published nax-agent needs the published nax-ai. |
+| M-20 | nax-ai's type change ships in this branch. It is released before nax-agent at S5-4 (nax-ai patch, then exact pins bumped in nax-agent and nax). | nax-agent links the workspace nax-ai (`packages/nax-agent/node_modules/@nathapp/nax-ai -> packages/nax-ai`), but consumes its **built** `dist/` (exports point at `./dist/index.d.ts`, and `dist/` is gitignored). So `packages/nax-ai` must be rebuilt (`bun run build`, never committed) after Task 0 before anything in nax-agent or nax-agent-acp typechecks against `origin`. A published nax-agent needs the published nax-ai. |
 | M-21 | Reopen means resume when the transcript store has a document, and create when it does not. | `createAgentSession` writes nothing until the first turn, so a never-prompted session has no document to resume. |
 | M-22 | S5-2 fixes found while planning: `bashApproval` is passed to `nativeBackend` only for modes `ask` and `full`; option resolution requires `gated` for mode `ask` (it rejected only `raw`); `workdir` is omitted for mode `none`. | nax-agent rejects `bashApproval` for `none`/`read` (`--mode read` broke every `session/new`), and rejects `escalate` with `ask`. |
 | M-23 | Switching to mode `ask` coerces `bashApproval` to `gated` and reports it in a `config_option_update`. Setting `bashApproval` to non-`gated` while in `ask` is `invalid_params`. | A person choosing Ask expects it to work. The explicit bash change under Ask is the one that cannot. |
 | M-24 | On load and resume the stored `cwd` wins over the request's `cwd` (a difference is logged at debug). An already-open session's load replays from the store and keeps the open session. | The metadata records where the session's tools are rooted. |
-| M-25 | `config_option_update` is sent only to clients that declared `clientCapabilities.session.configOptions`. `current_mode_update` is always sent. Responses always carry `modes` and `configOptions`. | Matches the notices rule from S5-1. Response fields are harmless to clients that ignore them. |
+| M-25 | `config_option_update` and `current_mode_update` are always sent after a successful change. Responses always carry `modes` and `configOptions`. | Select options and `config_option_update` are stable ACP. `clientCapabilities.session.configOptions` only declares config-option *extensions* (boolean options), not the update, so gating on it would leave Zed and acpx with a stale picker (final plan review I1). |
 | M-26 | After `closeAll` starts, the registry refuses new opens (`internal_error` `server is shutting down`). The S5-2 deferred minor "create in flight during closeAll" is fixed here. | No session may open after the locks are released. |
 | M-27 | Mode and approval descriptions shown to users: <br>- `none` "Chat only: no workspace tools."<br>- `read` "Reads and searches the workspace; changes nothing."<br>- `ask` "Asks before every edit and command."<br>- `full` "Edits files and runs commands without asking, inside the sandbox."<br>- bash `gated` "Commands are checked against the rules; one the checks cannot judge is refused."<br>- `escalate` "Like gated, but a command the checks cannot judge asks you instead."<br>- `raw` "Commands run as written, without per-command checks (mode Full only)." | ADR-030's mode table, in user words. |
 
@@ -97,7 +110,7 @@ Exact values from the spec:
 | `src/server/session-config.ts` | Modes, config options, change validation (Task 4). |
 | `src/server/storage.ts` | Metadata, lock, list (Task 5). |
 | `src/server/server-session.ts` | `switchTo`, dynamic context window, `onTurnEnd` (Task 6). |
-| `src/server/registry.ts`, `client-port.ts` | File-backed registry: load, resume, list, close, delete, switch, shutdown (Task 7). |
+| `src/server/registry.ts` | File-backed registry: load, resume, list, close, delete, switch, shutdown (Task 7). |
 | `src/server/connection.ts`, `capabilities.ts`, `main.ts`, spec, context docs | Handlers, capabilities, wiring, docs (Task 8). |
 
 (`src/server/...` paths are under `packages/nax-agent-acp/`.)
@@ -165,7 +178,43 @@ Exact values from the spec:
   });
 ```
 
-- [ ] **Step 2: Run to verify they fail.** Run (from `packages/nax-ai`): `bun run test -- test/protocols/pi-client.test.ts`. Expected: FAIL. TypeScript-in-vitest accepts the unknown `origin` field, but the first test sees `provider: "deepseek"`.
+Add this end-to-end check through pi-ai's own transform, the code that decides what reaches the provider. nax-ai's pi-ai import gate scans `src/` only, so a test may import it. Add `import { transformMessages } from "@earendil-works/pi-ai/api/transform-messages";` to the file's imports, then append inside `describe("toPiContext", ...)`:
+
+```ts
+  it("through pi-ai: another model's thinking becomes text without its signature; the current model's keeps it", () => {
+    const context = toPiContext(
+      {
+        ...BASE,
+        messages: [
+          { role: "user", content: "hi" },
+          {
+            role: "assistant",
+            content: "a",
+            thinking: [{ text: "haiku thought", signature: "sig-haiku" }],
+            origin: { provider: "anthropic", model: "claude-haiku-4-5" },
+          },
+          { role: "user", content: "and now" },
+          {
+            role: "assistant",
+            content: "b",
+            thinking: [{ text: "own thought", signature: "sig-own" }],
+            origin: { provider: "deepseek", model: "deepseek-chat" },
+          },
+          { role: "user", content: "next" },
+        ],
+      },
+      MODEL,
+    );
+    const sent = transformMessages(context.messages, MODEL);
+    const foreign = JSON.stringify(sent[1]);
+    const own = JSON.stringify(sent[3]);
+    expect(foreign).toContain("haiku thought");
+    expect(foreign).not.toContain("sig-haiku");
+    expect(own).toContain("sig-own");
+  });
+```
+
+- [ ] **Step 2: Run to verify they fail.** Run (from `packages/nax-ai`): `bun run test -- test/protocols/pi-client.test.ts`. Expected: FAIL for the stamping test and the pi-ai test, because `origin` is ignored and the haiku message is stamped as the current model, so its signature is kept. The "origin naming the current model" test passes both before and after; it is the regression guard that the same-model stamp stays byte-identical.
 
 - [ ] **Step 3: Implement.** In `types.ts`, the assistant member becomes:
 
@@ -195,7 +244,7 @@ In `pi-client.ts` `toPiMessages`, replace the three stamp lines `api: model.api,
         model: message.origin?.model ?? model.id,
 ```
 
-- [ ] **Step 4: Run tests and gates** (from `packages/nax-ai`): `bun run typecheck && bun run lint && bun run test`. Expected: all PASS.
+- [ ] **Step 4: Run tests and gates, then rebuild** (from `packages/nax-ai`): `bun run typecheck && bun run lint && bun run test && bun run build`. Expected: all PASS. The build is required (M-20): nax-agent and nax-agent-acp typecheck against `packages/nax-ai/dist/`. Do not commit `dist/`; it is gitignored.
 
 - [ ] **Step 5: Commit**
 
@@ -212,6 +261,8 @@ git commit -m "feat(nax-ai): assistant messages record their origin model for sa
 - Modify: `packages/nax-agent/src/native/session/turn-loop-round-trip.ts` (the `state.messages.push({ role: "assistant", ... })` at ~line 266, inside `runModelRoundTrip`)
 - Modify: `packages/nax-agent/src/native/session/handle-invalid-tool-call.ts` (`rewriteToolCallInput`, ~line 131)
 - Test: `packages/nax-agent/test/unit/native/session/turn-loop-transcript-identity.test.ts`
+
+**Prerequisite:** `packages/nax-ai/dist/` rebuilt after Task 0 (`cd packages/nax-ai && bun run build`), or nax-agent will not see `origin` (M-20). If typecheck reports `origin` as an unknown property, rebuild; never cast.
 
 **Interfaces:**
 - Consumes: Task 0's `origin` field.
@@ -315,7 +366,7 @@ In `handle-invalid-tool-call.ts` `rewriteToolCallInput`, add to the rebuilt assi
       ...(lastAssistant.origin !== undefined ? { origin: lastAssistant.origin } : {}),
 ```
 
-- [ ] **Step 4: Run tests and gates.** From `packages/nax-agent`: `timeout 120 bun test ./test/unit/native/ --timeout=60000 && bun run typecheck && bun run check:all`. Expected: PASS. If `parseModelSpec` is not exported from `../models.ts`, import it from `#src/cost/model-spec`, where it is defined (`src/cost/model-spec.ts:33`).
+- [ ] **Step 4: Run tests and gates.** From `packages/nax-agent`: `timeout 300 bun test ./test/unit/ --timeout=60000 && bun run typecheck && bun run check:all`. Run the whole unit suite: persisted assistant messages now carry `origin` whenever the handle has a model, so an exact-shape assertion anywhere may need the field added (add it to the expectation; do not drop the origin). Expected: PASS. If `parseModelSpec` is not exported from `../models.ts`, import it from `#src/cost/model-spec`, where it is defined (`src/cost/model-spec.ts:33`).
 
 - [ ] **Step 5: Commit**
 
@@ -397,22 +448,22 @@ Append to `native-backend.test.ts`, beside the existing "a resume from a documen
     const opened = await backend.open(await ctx({ resume: { doc } }));
     await opened.close();
   });
+```
 
-  test("carryHistoryAcrossModels must be a boolean", () => {
-    let caught: unknown;
-    try {
-      nativeBackend({ model: MODEL, carryHistoryAcrossModels: "yes" as never });
-    } catch (err) {
-      caught = err;
-    }
-    assertNaxError(caught);
-    expect(caught.code).toBe("AGENT_SESSION_INVALID_OPTIONS");
+Append to `test/unit/session/native-backend-options.test.ts`. It takes `unknown`, so no cast is needed, and it already has a `code(fn)` helper returning the thrown error's code:
+
+```ts
+  test("carryHistoryAcrossModels must be a boolean (S5-3)", () => {
+    expect(code(() => parseNativeBackendOptions({ model: "openai/x", carryHistoryAcrossModels: "yes" }))).toBe(
+      "AGENT_SESSION_INVALID_OPTIONS",
+    );
+    expect(parseNativeBackendOptions({ model: "openai/x", carryHistoryAcrossModels: true }).raw).toMatchObject({
+      carryHistoryAcrossModels: true,
+    });
   });
 ```
 
-`as never` is banned by a biome plugin. Use the pattern the file already uses for a wrongly typed option: `grep -n "absentValue\|nullValue\|parseNativeBackendOptions" test/unit/session/native-backend-options.test.ts`. If the existing tests validate through `parseNativeBackendOptions(unknown)`, put the boolean test in `native-backend-options.test.ts` calling `parseNativeBackendOptions({ model: MODEL, carryHistoryAcrossModels: "yes" })`.
-
-- [ ] **Step 2: Run to verify they fail.** From `packages/nax-agent`: `timeout 60 bun test ./test/unit/native/session/turn-loop-transcript-identity.test.ts ./test/unit/session/native-backend.test.ts --timeout=60000`. Expected: FAIL. `carryHistoryAcrossModels` is not a property of the session state, and the option is rejected by the strict schema.
+- [ ] **Step 2: Run to verify they fail.** From `packages/nax-agent`: `timeout 60 bun test ./test/unit/native/session/turn-loop-transcript-identity.test.ts ./test/unit/session/native-backend.test.ts --timeout=60000`. Also run `./test/unit/session/native-backend-options.test.ts`. Expected: FAIL. `carryHistoryAcrossModels` is not a property of the session state, and the option is rejected by the strict schema.
 
 - [ ] **Step 3: Implement.**
 
@@ -1526,8 +1577,10 @@ and add to `ServerSession`:
       try {
         outcome = await runTurn(message);
       } finally {
-        running = false;
+        // Still "running" while the turn is recorded, so a switchTo cannot
+        // slip in and write metadata from before this turn's title/updatedAt.
         await reportTurnEnd(message);
+        running = false;
       }
 ```
 
@@ -1594,8 +1647,8 @@ git commit -m "feat(acp-server): ServerSession switches its S3 session and repor
 
 **Files:**
 - Rewrite: `packages/nax-agent-acp/src/server/registry.ts`
-- Modify: `packages/nax-agent-acp/src/server/client-port.ts`. `ClientFeatures` gains `configOptions`.
-- Modify: `packages/nax-agent-acp/test/helpers/fake-client-port.ts` (`ALL_FEATURES`), `test/unit/server/client-port.test.ts` (expected shapes)
+- Modify: `packages/nax-agent-acp/test/helpers/fake-agent-session.ts` (`closeHangs` option)
+- Modify (Step 5): `src/server/connection.ts`, `src/server/main.ts`, `test/unit/server/connection.test.ts`, `test/unit/server/connection-sessions.test.ts` (keep the build green until Task 8)
 - Rewrite: `packages/nax-agent-acp/test/unit/server/registry.test.ts`
 - Create: `packages/nax-agent-acp/test/unit/server/registry-switch.test.ts` (mode and config changes, shutdown)
 
@@ -1606,7 +1659,6 @@ git commit -m "feat(acp-server): ServerSession switches its S3 session and repor
   - Task 5: `SessionStorage`, `SessionMeta`.
   - Task 6: `createServerSession`, `ServerSession`, `SwitchTarget`.
   - `replayTranscript` (`#src/server/translate/replay`), `announce`.
-- Produces (`#src/server/client-port`): `ClientFeatures.configOptions: boolean`, read from `clientCapabilities.session.configOptions`. `NO_CLIENT_FEATURES.configOptions = false`.
 - Produces (`#src/server/registry`):
   - `NO_MODEL_MESSAGE`, `MCP_NOTICE` (unchanged), `INTERRUPTED_NOTICE = "The previous turn was interrupted"`, `SHUTDOWN_WAIT_MS = 5000`, `TITLE_MAX = 80`, `SHUTTING_DOWN = "server is shutting down"`.
   - `interface SessionState { readonly modes: SessionModeState; readonly configOptions: SessionConfigOption[] }`.
@@ -1625,7 +1677,7 @@ git commit -m "feat(acp-server): ServerSession switches its S3 session and repor
     - `closeAll(): Promise<void>`
   - `interface RegistryDeps { readonly options: ServerOptions; readonly openSession: OpenSession; readonly storage: SessionStorage; readonly transcripts: TranscriptStore; readonly newId: () => string; readonly now: () => Date; readonly readOldText: ReadOldText; readonly logger: AgentLogger; readonly turnTimeoutSeconds: number; readonly shutdownWaitMs?: number }`.
 
-- [ ] **Step 1: Client features.** Write the failing assertion first. In `client-port.test.ts`, extend the expected objects with `configOptions`: `false` in the empty case, and `true` for `{ session: { notices: {}, compaction: {}, configOptions: {} }, elicitation: { form: {} } }`. Then implement it in `clientFeatures` (`configOptions: present(caps?.session?.configOptions)`), in `NO_CLIENT_FEATURES` and in `ALL_FEATURES` (`configOptions: true`). Run `timeout 30 bun test ./test/unit/server/client-port.test.ts`: FAIL, then PASS after the change.
+- [ ] **Step 1: Check the inputs.** Tasks 3-6 are on the branch: `nativeOpenSession` returns `{ session, doc }`, `session-config.ts` and `storage.ts` exist, and `ServerSession.switchTo` exists. `ClientFeatures` is unchanged; `config_option_update` is always sent (M-25).
 
 - [ ] **Step 2: Write the failing registry tests.**
 
@@ -1895,7 +1947,8 @@ import { createSessionRegistry, SHUTTING_DOWN } from "#src/server/registry";
 import { TURN_TIMEOUT_SECONDS } from "#src/server/server-session";
 import { createSessionStorage } from "#src/server/storage";
 import { fakeAgentSession } from "#test/helpers/fake-agent-session";
-import { ALL_FEATURES, fakePort, NO_CONFIG_UPDATES } from "#test/helpers/fake-client-port";
+import { waitForCondition } from "@nathapp/nax-test-kit/bun/timeout";
+import { ALL_FEATURES, fakePort } from "#test/helpers/fake-client-port";
 import { recordingLogger } from "#test/helpers/recording-logger";
 
 const OPTIONS: ServerOptions = {
@@ -1992,11 +2045,11 @@ describe("set_config_option", () => {
     expect((await metaOf("s1")).model).toBe("anthropic/claude-haiku-4-5");
   });
 
-  test("no config_option_update for a client that did not declare configOptions (M-25)", async () => {
-    const s = setup(undefined, NO_CONFIG_UPDATES);
+  test("a config change always sends config_option_update (M-25)", async () => {
+    const s = setup();
     await s.registry.create(s.input);
     await s.registry.setConfigOption("s1", "bashApproval", "gated");
-    expect(s.port.updates.some((u) => u.sessionUpdate === "config_option_update")).toBe(false);
+    expect(s.port.updates).toContainEqual(expect.objectContaining({ sessionUpdate: "config_option_update" }));
   });
 
   test("an unchanged value does not reopen", async () => {
@@ -2018,16 +2071,30 @@ describe("closeAll (spec §5.5)", () => {
     const refused = await s.registry.create(s.input).catch((e: unknown) => e);
     expect(refused instanceof RequestError ? refused.message : "").toContain(SHUTTING_DOWN);
   });
+
+  test("an open in flight when shutdown starts is closed and refused, its lock released (M-26)", async () => {
+    let releaseOpen: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      releaseOpen = resolve;
+    });
+    const late = fakeAgentSession("s1", []);
+    const s = setup(async () => {
+      await gate;
+      return late.session;
+    });
+    const pending = s.registry.create(s.input).catch((e: unknown) => e);
+    await waitForCondition(() => s.opened.length > 0);
+    await s.registry.closeAll();
+    releaseOpen();
+    const refused = await pending;
+    expect(refused instanceof RequestError ? refused.message : "").toContain(SHUTTING_DOWN);
+    expect(late.closed()).toBe(true);
+    await (await s.storage.acquireLock("s1"))();
+  });
 });
 ```
 
 In `test/helpers/fake-agent-session.ts`, add `readonly closeHangs?: boolean;` to `FakeAgentSessionOptions`. In `close()`, after `cancelTurn();`, add `if (options.closeHangs === true) await new Promise<void>(() => {});`. This is a deliberately never-settling close for the shutdown cap test.
-
-In `test/helpers/fake-client-port.ts`, add:
-
-```ts
-export const NO_CONFIG_UPDATES: ClientFeatures = { ...ALL_FEATURES, configOptions: false };
-```
 
 - [ ] **Step 3: Run to verify they fail.** `timeout 60 bun test ./test/unit/server/registry.test.ts ./test/unit/server/registry-switch.test.ts --timeout=60000`. Expected: FAIL (`load`, `storage` dep and similar are missing).
 
@@ -2163,7 +2230,7 @@ export function createSessionRegistry(deps: RegistryDeps): SessionRegistry {
     if (entry === undefined) return;
     const meta: SessionMeta = {
       ...entry.meta,
-      title: entry.meta.title ?? titleOf(prompt),
+      title: entry.meta.title ?? (titleOf(prompt) || null),
       updatedAt: deps.now().toISOString(),
     };
     entries.set(sessionId, { ...entry, meta });
@@ -2195,6 +2262,12 @@ export function createSessionRegistry(deps: RegistryDeps): SessionRegistry {
         profile: settings.mode,
         bashApproval: settings.bashApproval,
       });
+      if (closing) {
+        // Shutdown started while this open was in flight: closeAll has already
+        // cleared the map, so nothing would close this session or its lock (M-26).
+        await opened.session.close().catch(() => undefined);
+        throw RequestError.internalError(undefined, SHUTTING_DOWN);
+      }
       const contextWindow = contextWindowFor(settings.model);
       const server = createServerSession({
         session: opened.session,
@@ -2241,9 +2314,16 @@ export function createSessionRegistry(deps: RegistryDeps): SessionRegistry {
     const port = input.port(sessionId);
     const { server, opened } = await openEntry(meta, port);
     if (replay) {
-      await replayTo(port, opened.doc?.messages ?? [], meta.cwd);
-      if (opened.session.lastTurn?.status === "interrupted") {
-        await port.update(announce(port.features.updates.notices, "warning", INTERRUPTED_NOTICE));
+      try {
+        await replayTo(port, opened.doc?.messages ?? [], meta.cwd);
+        if (opened.session.lastTurn?.status === "interrupted") {
+          await port.update(announce(port.features.updates.notices, "warning", INTERRUPTED_NOTICE));
+        }
+      } catch (error) {
+        // The client did not get its history: do not leave the session open and locked.
+        const entry = entries.get(sessionId);
+        if (entry !== undefined) await closeEntry(sessionId, entry);
+        throw error;
       }
     }
     if (input.mcpServers.length > 0) server.queueNotice(announce(port.features.updates.notices, "warning", MCP_NOTICE));
@@ -2263,7 +2343,6 @@ export function createSessionRegistry(deps: RegistryDeps): SessionRegistry {
   }
 
   async function announceConfig(entry: Entry, settings: SessionSettings): Promise<void> {
-    if (!entry.port.features.configOptions) return;
     await entry.port.update({ sessionUpdate: "config_option_update", configOptions: configOptions(settings, options.tiers) });
   }
 
@@ -2367,7 +2446,9 @@ Notes for the implementer:
 - If the file passes 600 lines or `check-complexity` flags a function, move `reopen`/`replayTo` into `src/server/registry-open.ts` as functions taking the registry's internals as parameters. Keep `registry.ts` as the public surface.
 - `stripControl`/`stripInvisible` come from `#src/client/text`, as `permissions.ts` already imports them.
 
-- [ ] **Step 5: Run tests and gates.** `timeout 120 bun test ./test/unit/server/ --timeout=60000 && bun x tsc --noEmit && bun run check:all`. Expected: PASS. `connection.ts` and `main.ts` still build against the old registry shape. They are updated in Task 8, so if typecheck fails only in those two files, make the minimal compile fix there in this task: construct storage and transcripts in `main.ts` as Task 8 Step 3 shows. In the same task, update the registry construction in `test/unit/server/connection.test.ts` and `test/unit/server/connection-sessions.test.ts` to the new `RegistryDeps`:
+- [ ] **Step 5: Run tests and gates.** `timeout 120 bun test ./test/unit/server/ --timeout=60000 && bun x tsc --noEmit && bun run check:all`. Expected: PASS. `connection.ts` and `main.ts` still build against the old registry shape. They are updated in Task 8. Keep the build green now with these exact interim changes:
+- In `connection.ts`, make the `session/new` handler `const created = await deps.registry.create({...}); return { sessionId: created.sessionId };`. Task 8 returns the full state and renames the S5-2 "no modes or config options yet" test, which keeps passing until then.
+- In `main.ts`, construct `storage` and `transcripts` and pass them to `createSessionRegistry`, exactly as Task 8 Step 3 shows. In the same task, update the registry construction in `test/unit/server/connection.test.ts` and `test/unit/server/connection-sessions.test.ts` to the new `RegistryDeps`:
 - `storage`: `createSessionStorage` over a `makeTempDir` directory, with `isAlive: () => false`;
 - `transcripts`: `createMemoryTranscriptStore()`;
 - `now`: `() => new Date()`;
@@ -2560,11 +2641,11 @@ describe("persistence methods over a real SDK connection (S5-3)", () => {
         });
         return { changed, kinds: updates.map((n) => n.update.sessionUpdate) };
       },
-      { session: { configOptions: {} } },
     );
     expect(result.kinds).toContain("current_mode_update");
     expect(result.kinds).toContain("config_option_update");
-    expect(result.changed).toMatchObject({ configOptions: [{ currentValue: "anthropic/claude-haiku-4-5" }] });
+    expect(result.changed.configOptions).toHaveLength(2);
+    expect(result.changed.configOptions[0]).toMatchObject({ id: "model", currentValue: "anthropic/claude-haiku-4-5" });
   });
 
   test("set_mode mid-turn is -32600; resume of an open session answers; delete then load is -32002", async () => {
@@ -2675,6 +2756,8 @@ Spec amendments (`docs/superpowers/specs/2026-10-08-s5-acp-server-design.md`):
 > S3 fixes the profile, model and `bashApproval` at session creation. A change between turns closes the `AgentSession` and reopens the same transcript with the new options: resume when the store holds a document, create when the session was never prompted. A model change keeps the conversation (amended 2026-10-09, S5-3, user ruling). nax-ai assistant messages record the model that wrote them, so pi-ai sends another model's thinking as text without its signature. nax-agent's `carryHistoryAcrossModels` lets the resume and the loop keep history written by another model; the per-model compaction anchor is not reused. A change while a turn is running is rejected (`invalid_request`, "turn in progress"). The metadata file is updated only after the reopen succeeds; on failure the old session is reopened with the old options and the error is returned.
 
 - §5.2: append to the capabilities list: "Mode `ask` requires `bashApproval: gated`. Switching to `ask` sets it, and a non-`gated` value under `ask` is refused (S5-3 M-23)."
+- §5.3, `session/set_config_option` row: replace "`bashApproval: raw` with mode `ask` -> `invalid_params` (S3 requires `gated` for `ask`)" with "`bashApproval` other than `gated` with mode `ask` -> `invalid_params` (S3 requires `gated` for `ask`); `session/set_mode` to `ask` sets `gated`".
+- §7, first table row: replace "`raw` with `ask`" with "a `bashApproval` other than `gated` with `ask`".
 
 Context: in `.nax/mono/packages/nax-agent-acp/context.md`, append to the S5 status sentence after the S5-2 clause:
 
@@ -2699,5 +2782,9 @@ git commit -m "feat(acp-server): S5-3 serve load/resume/list/close/delete/set_mo
 
 - [ ] **Step 6: Review, PR, follow-ups**
 - One whole-branch code review before pushing.
-- One PR, "feat(acp-server): S5-3 persistence and settings switch (history kept across models)", whose body lists M-19..M-27 and notes that nax-ai must be released before nax-agent at S5-4 (M-20).
+- One PR, "feat(acp-server): S5-3 persistence and settings switch (history kept across models)". Its body:
+  - lists M-19..M-27;
+  - notes that nax-ai must be released before nax-agent at S5-4 (M-20);
+  - notes the startup behaviour change from M-22: `agentServer.bashApproval: escalate` with the default mode `ask` is now refused at startup (exit 2) instead of failing every `session/new`;
+  - notes that `carryHistoryAcrossModels` is an opt-out of the nax#2150 "another model's history is a new conversation" rule, used only by the ACP server.
 - After merge, update the master-plan S5 row, then write the S5-4 plan (auth, README, live checks, release of nax-ai + nax-agent + nax-agent-acp).
