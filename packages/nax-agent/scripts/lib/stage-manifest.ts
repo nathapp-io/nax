@@ -8,8 +8,10 @@ import { join } from "node:path";
 export const STAGE_INPUTS = [
   "dist/index.js",
   "dist/internal.js",
+  "dist/mcp/index.js",
   "dist/index.d.ts",
   "dist/internal.d.ts",
+  "dist/mcp/index.d.ts",
   "README.md",
   "CHANGELOG.md",
   "LICENSE",
@@ -56,6 +58,7 @@ export function buildStagedManifest(source: Json, opts: StageManifestOptions): J
     exports: {
       ".": { types: "./dist/index.d.ts", import: "./dist/index.js" },
       "./internal": { types: "./dist/internal.d.ts", import: "./dist/internal.js" },
+      "./mcp": { types: "./dist/mcp/index.d.ts", import: "./dist/mcp/index.js" },
     },
     imports: { "#src/*": { types: "./dist/*.d.ts", default: "./dist/*.js" } },
     engines: { node: ">=22.19.0" },

@@ -1003,3 +1003,14 @@ writeApprovalsFile
 writeFileAtomic
 writeSpill
 writeTool
+
+[./mcp]
+type ConnectMcpOptions
+McpCallError
+type McpCallOptions
+type McpCallResult
+McpConnectError
+type McpConnection
+type McpToolInfo
+type McpTransportConfig
+resultText
