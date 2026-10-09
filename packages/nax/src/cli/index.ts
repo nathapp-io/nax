@@ -21,7 +21,6 @@ export {
   authLoginCommand,
   authRmCommand,
 } from "./auth";
-export { _authPromptDeps, PromptCancelledError, type PromptStdin, promptForLine, promptForSecret } from "./auth-prompt";
 export {
   type ConfigCommandOptions,
   type ConfigJsonOptions,

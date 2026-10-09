@@ -9,23 +9,24 @@
  * behaviour is testable and bin/nax.ts owns the process.
  */
 
-import type { AuthEvent, AuthInteraction, AuthMethod, AuthPrompt } from "@nathapp/nax-agent";
+import type { AuthInteraction, AuthMethod } from "@nathapp/nax-agent";
 import {
   AuthCancelledError,
   ambientShadows,
   authImportOutcomeLabel,
+  createTerminalAuthInteraction,
   importPiCredentials,
   listStoredProviders,
   naxCredentialStore,
+  PromptCancelledError,
   removeStoredProvider,
   runLogin,
   servedAuth,
+  type TerminalStyle,
 } from "@nathapp/nax-agent";
 import chalk from "chalk";
 import { readGlobalAuthConfig } from "@/config";
 import { type AuthListReport, collectAuthList, errorCode, renderAuthListJson, renderAuthListText } from "./auth-list";
-import { PromptCancelledError, promptForLine, promptForSecret, promptForSelect } from "./auth-prompt";
-import { openUrl } from "./open-url";
 
 export const _cliAuthDeps: {
   log: (text: string) => void;
@@ -37,71 +38,11 @@ export const _cliAuthDeps: {
   collectAuthList,
 };
 
-/** The terminal's side of a login. Secrets go through the non-echoing prompt. */
-function terminalInteraction(): AuthInteraction {
-  // notify() is synchronous and the flow fires auth-url immediately before
-  // racing a manual-code prompt against its callback server, so there is no
-  // window in which to await a keypress there. The URL is parked instead and
-  // spent by the next prompt's Enter-on-empty.
-  let pendingUrl: string | undefined;
+const CHALK_STYLE: TerminalStyle = { accent: chalk.cyan, dim: chalk.dim, bold: chalk.bold };
 
-  return {
-    prompt: async (prompt: AuthPrompt): Promise<string> => {
-      // Invert the default: echo only the known-safe, non-secret shapes, and
-      // treat anything this mirror doesn't recognise as a secret. AuthPrompt
-      // is a hand-maintained copy of nax-ai's LoginPrompt (auth-types.ts), so
-      // a future secret-bearing prompt type must not fall through to echo.
-      if (prompt.type === "manual-code") {
-        const url = pendingUrl;
-        if (url === undefined) return promptForLine(prompt.message);
-        // Consume it: a second Enter after the browser is already open should
-        // submit the empty buffer's rejection, not launch another window.
-        pendingUrl = undefined;
-        // The hint is its own line rather than a prefix on the flow's message:
-        // pi's already mentions the browser, and gluing them together reads
-        // "open your browser, or complete login in your browser, or ...".
-        _cliAuthDeps.log(chalk.dim("Press Enter to open it in your browser."));
-        return promptForLine(prompt.message, () => {
-          _cliAuthDeps.log(chalk.dim("Opening your browser..."));
-          openUrl(url);
-        });
-      }
-      if (prompt.type === "text") return promptForLine(prompt.message);
-      if (prompt.type === "select") {
-        // An arrow-key picker cannot return a value that is not on the list,
-        // so the old type-it-and-revalidate loop has nothing left to catch.
-        return promptForSelect(
-          prompt.message,
-          prompt.options.map((option) => ({ id: option.id, label: option.label })),
-        );
-      }
-      return promptForSecret(prompt.message);
-    },
-    notify: (event: AuthEvent): void => {
-      switch (event.type) {
-        case "auth-url":
-          _cliAuthDeps.log(`\n${chalk.bold("Open this URL to continue:")}\n  ${event.url}`);
-          // The flow's own instructions are dropped, not shown: pi says "A
-          // browser window should open", and nothing here has opened one yet.
-          // The next prompt says what actually happens.
-          pendingUrl = event.url;
-          return;
-        case "device-code":
-          _cliAuthDeps.log(`\nGo to ${event.verificationUri} and enter code ${chalk.bold(event.userCode)}`);
-          return;
-        case "info":
-          _cliAuthDeps.log(event.message);
-          for (const link of event.links ?? []) _cliAuthDeps.log(`  ${link.label ?? "Link"}: ${link.url}`);
-          return;
-        case "progress":
-          _cliAuthDeps.log(chalk.dim(event.message));
-          return;
-        default:
-        // An event type this mirror doesn't recognise: say nothing rather
-        // than logging `undefined` for a field this shape may not carry.
-      }
-    },
-  };
+/** The terminal's side of a login, from nax-agent (S5-4 M-28); log stays a seam. */
+function terminalInteraction(): AuthInteraction {
+  return createTerminalAuthInteraction({ log: (text) => _cliAuthDeps.log(text), style: CHALK_STYLE });
 }
 
 export async function authLoginCommand(providerId: string, method?: AuthMethod): Promise<number> {

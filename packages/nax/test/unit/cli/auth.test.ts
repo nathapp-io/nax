@@ -1,11 +1,16 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { _authDeps, _resetCredentialStore, naxCredentialStore } from "@nathapp/nax-agent/internal";
+import {
+  _authDeps,
+  _terminalPromptDeps as _authPromptDeps,
+  _openUrlDeps,
+  _resetCredentialStore,
+  naxCredentialStore,
+  type PromptStdin,
+} from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { _cliAuthDeps, authImportCommand, authListCommand, authLoginCommand, authRmCommand } from "@/cli/auth";
-import { _authPromptDeps, type PromptStdin } from "@/cli/auth-prompt";
-import { _openUrlDeps } from "@/cli/open-url";
 
 function makeFakeStdin(): { stdin: PromptStdin; emit: (event: string, chunk?: string) => void } {
   const listeners = new Map<string, ((chunk: string) => void)[]>();
