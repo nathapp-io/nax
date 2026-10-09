@@ -48,8 +48,21 @@ describe("memoryKey (spec §4.3)", () => {
     expect(memoryKey(approval("r", "Edit"))).toBe("Edit");
   });
 
-  test("tool plus the command's first word for execute tools", () => {
-    expect(memoryKey(approval("r", "Bash", { command: "  git push origin main" }))).toBe("Bash:git");
+  test("execute tools: the command plus its subcommand when the second word is a plain word", () => {
+    expect(memoryKey(approval("r", "Bash", { command: "  git push origin main" }))).toBe("Bash:git push");
+    expect(memoryKey(approval("r", "Bash", { command: "git status" }))).toBe("Bash:git status");
+    expect(memoryKey(approval("r", "Bash", { command: "npm test -- --watch" }))).toBe("Bash:npm test");
+  });
+
+  test("execute tools: the command alone when there is no subcommand or it starts with a flag", () => {
+    expect(memoryKey(approval("r", "Bash", { command: "ls" }))).toBe("Bash:ls");
+    expect(memoryKey(approval("r", "Bash", { command: "ls -la src" }))).toBe("Bash:ls");
+  });
+
+  test("a second word that is not plain is never remembered (it must not widen to the bare command)", () => {
+    for (const command of ["git 'push' --force", 'git "status"', "git pu*h", "git $CMD"]) {
+      expect(memoryKey(approval("r", "Bash", { command }))).toBeUndefined();
+    }
   });
 
   test("a leading environment assignment is never remembered", () => {
@@ -150,15 +163,27 @@ describe("createPermissionBroker", () => {
     expect(s.memory.get("Edit")).toBe("allow");
   });
 
-  test("reject_always on a bash prefix covers that prefix only", async () => {
+  test("reject_always on a subcommand covers that subcommand only", async () => {
     const s = setup({ permission: async () => select("reject_always") });
-    s.broker.request(approval("r1", "Bash", { command: "git status" }), undefined);
+    s.broker.request(approval("r1", "Bash", { command: "git push" }), undefined);
     await s.broker.drain();
-    s.broker.request(approval("r2", "Bash", { command: "git push" }), undefined);
-    s.broker.request(approval("r3", "Bash", { command: "ls -la" }), undefined);
+    s.broker.request(approval("r2", "Bash", { command: "git push --force origin main" }), undefined);
+    s.broker.request(approval("r3", "Bash", { command: "git status" }), undefined);
     await s.broker.drain();
     expect(s.asks).toHaveLength(2);
     expect(s.answers.find((a) => a.requestId === "r2")?.reply).toEqual({ decision: "deny" });
+  });
+
+  test("always-allow on git status never approves git push --force", async () => {
+    const s = setup({ permission: async () => select("allow_always") });
+    s.broker.request(approval("r1", "Bash", { command: "git status" }), undefined);
+    await s.broker.drain();
+    s.broker.request(approval("r2", "Bash", { command: "git status --short" }), undefined);
+    s.broker.request(approval("r3", "Bash", { command: "git push --force" }), undefined);
+    await s.broker.drain();
+    expect(s.asks).toHaveLength(2);
+    expect(s.asks[1]?.toolCall.rawInput).toEqual({ command: "git push --force" });
+    expect(s.answers.find((a) => a.requestId === "r2")?.reply).toEqual({ decision: "allow" });
   });
 
   test("a remembered allow never covers a compound command; a remembered reject does", async () => {
@@ -166,8 +191,8 @@ describe("createPermissionBroker", () => {
     allow.broker.request(approval("r1", "Bash", { command: "git status" }), undefined);
     await allow.broker.drain();
     allow.broker.request(approval("r2", "Bash", { command: "git status; rm -rf ~" }), undefined);
-    allow.broker.request(approval("r3", "Bash", { command: "git log $(cat secret)" }), undefined);
-    allow.broker.request(approval("r4", "Bash", { command: "git log --oneline" }), undefined);
+    allow.broker.request(approval("r3", "Bash", { command: "git status $(cat secret)" }), undefined);
+    allow.broker.request(approval("r4", "Bash", { command: "git status --short" }), undefined);
     await allow.broker.drain();
     expect(allow.asks).toHaveLength(3);
     expect(allow.answers.find((a) => a.requestId === "r4")?.reply).toEqual({ decision: "allow" });

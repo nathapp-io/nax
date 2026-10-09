@@ -1,17 +1,19 @@
 /**
  * Approval round trips (S5 spec §4.3). A human approval becomes a
  * `session/request_permission`, and the chosen option is passed to `answer()`.
- * allow_always and reject_always are remembered for the session's life (M-12:
- * execute tools per first word of the command). Never remembered: no command, a
- * first word that is not a plain name or path (quotes, escapes, globs, an
- * environment assignment), a masked command (its visible words are not
- * the real command), or a wrapper or interpreter, whose first word says nothing
- * about what runs. A remembered allow covers only a simple command: one
- * with shell metacharacters (chaining, substitution, redirection) is asked
- * again, so "always allow git" never approves `git status; rm -rf ~`. A
- * remembered reject applies by prefix regardless. When S3
- * settles a request itself (timeout, cancel), the client request is aborted and a
- * late reply is ignored. A failed client request is a deny (M-13).
+ * allow_always and reject_always are remembered for the session's life (M-12).
+ * Execute tools are keyed on the command plus its subcommand (`git status`,
+ * `npm test`) when the second word is a plain word, else on the command alone
+ * (`ls`, `ls -la`), so "always allow git status" never approves `git push`.
+ * Never remembered: no command; a first or second word that is not plain
+ * (quotes, escapes, globs, expansions, an environment assignment), which must
+ * not widen the key; a masked command (its visible words are not the real
+ * command); a wrapper or interpreter, whose first word says nothing about what
+ * runs. A remembered allow covers only a simple command: one with shell
+ * metacharacters (chaining, substitution, redirection) is asked again. A
+ * remembered reject applies to its key regardless. When S3 settles a request
+ * itself (timeout, cancel), the client request is aborted and a late reply is
+ * ignored. A failed client request is a deny (M-13).
  */
 import type { PermissionOption, RequestPermissionResponse, ToolCallUpdate } from "@agentclientprotocol/sdk";
 import type { AgentLogger, AnswerReply, AnswerStatus, SessionEvent } from "@nathapp/nax-agent";
@@ -111,11 +113,12 @@ export function memoryKey(event: ApprovalEvent): string | undefined {
   if (toolKind(event.tool) !== "execute") return event.tool;
   const command = event.command ?? "";
   if (command.includes(MASK_MARKER)) return undefined;
-  const first = command.trim().split(/\s+/)[0] ?? "";
+  const [first = "", second] = command.trim().split(/\s+/);
   if (!PLAIN_WORD.test(first)) return undefined;
   const name = first.slice(first.lastIndexOf("/") + 1).toLowerCase();
   if (name === "" || WRAPPERS.has(name)) return undefined;
-  return `${event.tool}:${first}`;
+  if (second === undefined || second.startsWith("-")) return `${event.tool}:${first}`;
+  return PLAIN_WORD.test(second) ? `${event.tool}:${first} ${second}` : undefined;
 }
 
 /** Whether a remembered decision may answer this request without asking. */
