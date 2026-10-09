@@ -100,5 +100,4 @@ start a real ACP adapter in the unit suite.
 
 ## Releases
 
-Versioned in lockstep with nax-agent and released by nax-agent's helper
-(`bun run release ...`, then `release tag`, then `release tag-acp`). See `RELEASING.md`.
+Versioned in lockstep with nax-agent, nax-ai and nax. Released from the repo root (`bun run release ...`, then `bun run release tag`). See the repo-root `RELEASING.md`.

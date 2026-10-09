@@ -166,7 +166,7 @@ Spec §10.3 calls for a job that runs **on a schedule and by manual dispatch, ne
 
 It is unbuilt: `.github/workflows/ci.yml` has no `schedule:` trigger and never invokes `test:live`, and no provider secrets or spend cap are configured. `test/live/` is the M3 **fixture recorder** (`describe("record fixtures from live providers")`), which is a different thing — it writes fixtures on demand rather than detecting drift on a schedule.
 
-**Naming caution.** This is unrelated to `bun run release canary` in `scripts/release.ts`, which produces an npm dist-tag prerelease (`0.1.1-canary.2`). Publishing a canary version does not satisfy this row. The row is named "drift detector" here for that reason.
+**Naming caution.** This is unrelated to `bun run release canary` from the repo root, which produces an npm dist-tag prerelease (`0.1.1-canary.2`). Publishing a canary version does not satisfy this row. The row is named "drift detector" here for that reason.
 
 Worth knowing before it is picked up: the tool round-trip this detector would assert has **never been proven against a live provider** — every tool-call test in the suite runs off recorded fixtures.
 

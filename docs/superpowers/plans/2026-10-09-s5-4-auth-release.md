@@ -2277,42 +2277,7 @@ Then run a whole-branch code review (one reviewer, read-only) before the push. A
 
 ### Task 7: Release nax-ai 0.1.17 (APPROVAL AT LAUNCH)
 
-Runs after the Task 1-6 PR is merged, on clean, up-to-date main. Every push of a tag needs the maintainer's explicit go-ahead at that moment.
-
-- [ ] **Step 1: Ask for approval** to cut nax-ai 0.1.17. It contains the pi-ai 1.1.0 upgrade (#2405), the review bundle E error classification (#2398) and the assistant `origin` field (#2409).
-
-- [ ] **Step 2: Bump with pins in one PR (M-35)**
-
-```bash
-cd packages/nax-ai
-bun run release --dry-run patch
-bun run release patch
-```
-
-The script opens a PR from `release/nax-ai-v0.1.17` that bumps only `packages/nax-ai/package.json`, then returns to main. From the repo root:
-
-```bash
-cd "$(git rev-parse --show-toplevel)"
-git switch release/nax-ai-v0.1.17
-# set "@nathapp/nax-ai": "0.1.17" in packages/nax/package.json and packages/nax-agent/package.json
-bun install
-(cd packages/nax && bun run check:nax-ai-pin)
-git add packages/nax/package.json packages/nax-agent/package.json bun.lock
-git commit -m "chore: pin @nathapp/nax-ai 0.1.17 in nax and nax-agent"
-git push
-```
-
-Expected: `check:nax-ai-pin` passes and the PR's CI is green. The maintainer merges it.
-
-- [ ] **Step 3: Tag (approval again, at launch)**
-
-```bash
-git switch main && git pull --ff-only
-cd packages/nax-ai && bun run release tag
-npm view @nathapp/nax-ai@0.1.17 version
-```
-
-Expected: `0.1.17` once the release workflow finishes.
+Superseded by lockstep versioning (docs/superpowers/plans/2026-10-09-lockstep-versioning.md). nax-ai is no longer released on its own; it ships at 0.84.0 with the other three packages.
 
 ---
 
@@ -2324,7 +2289,7 @@ All shell blocks in this task are **bash** (`bash` first if your shell is zsh): 
 
 - [ ] **Step 2: Build and install the packed tarballs**
 
-On main after Task 7, follow `packages/nax-agent-acp/RELEASING.md` "pack both at one version". In short, from the repo root:
+On main after the lockstep PR merges (all packages at 0.84.0, nothing published yet), follow `packages/nax-agent-acp/RELEASING.md` "pack both at one version". In short, from the repo root:
 
 ```bash
 SMOKE=$(mktemp -d /tmp/nax-agent-smoke-XXXX)
@@ -2417,35 +2382,4 @@ Fix README wording (Zed config key names) from what is observed, in a small docs
 
 ### Task 9: Release nax-agent and nax-agent-acp 0.4.0 (APPROVAL AT LAUNCH)
 
-- [ ] **Step 1: Ask for approval** to cut 0.4.0 (a minor bump, spec §9: a new binary).
-
-- [ ] **Step 2: Release PR**
-
-```bash
-cd packages/nax-agent
-bun run release --dry-run minor
-bun run release minor
-```
-
-Expected: one PR bumping both packages to 0.4.0 and dating both changelogs. The maintainer merges it.
-
-- [ ] **Step 3: Tag nax-agent, then nax-agent-acp (separate approvals at launch)**
-
-```bash
-git switch main && git pull --ff-only
-cd packages/nax-agent
-bun run release tag
-npm view @nathapp/nax-agent@0.4.0 version
-bun run release --dry-run tag-acp
-bun run release tag-acp
-npm view @nathapp/nax-agent-acp@0.4.0 version
-```
-
-- [ ] **Step 4: Post-release check**
-
-```bash
-T=$(mktemp -d) && cd "$T" && npm init -y >/dev/null && npm install @nathapp/nax-agent@0.4.0 @nathapp/nax-agent-acp@0.4.0
-./node_modules/.bin/nax-agent --version
-```
-
-Expected: `0.4.0`. Update the S5 row in `nax-agent-master-plan.md`: S5-4 done, 0.4.0 released, next S5-5 (design addendum first).
+Superseded: after Task 8 passes, the maintainer approves and runs `bun run release tag` for v0.84.0 (lockstep plan Task 5), which publishes all four packages.

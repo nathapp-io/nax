@@ -27,7 +27,7 @@ const model = await client.model("deepseek", "deepseek-v4-flash");
 const result = await client.complete(model, { messages: [{ role: "user", content: "hi" }] });
 ```
 
-While the API is unstable, `latest` and `next` both point at the current 0.x release, so `npm install @nathapp/nax-ai` and `npm install @nathapp/nax-ai@next` are equivalent. Canary builds are published to `canary` and are not covered by either.
+Stable releases are published to `latest` and canary builds to `canary`. The version moves in lockstep with the other nax packages, so a release may contain no nax-ai changes.
 
 ### Pi 1.1 catalog migration
 
