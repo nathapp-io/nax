@@ -31,7 +31,7 @@ describe("create (session/new)", () => {
     const created = await s.registry.create(s.input());
     expect(created.sessionId).toBe("id-1");
     expect(created.modes.currentModeId).toBe("ask");
-    expect(created.configOptions.map((o) => o.id)).toEqual(["model", "bashApproval"]);
+    expect(created.configOptions.map((o) => o.id)).toEqual(["mode", "model", "bashApproval"]);
     expect(s.opened[0]).toEqual({
       sessionId: "id-1",
       cwd: "/w",

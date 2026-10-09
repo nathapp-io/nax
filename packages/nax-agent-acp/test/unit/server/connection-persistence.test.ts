@@ -140,8 +140,8 @@ describe("persistence methods over a real SDK connection (S5-3)", () => {
     );
     expect(result.kinds).toContain("current_mode_update");
     expect(result.kinds).toContain("config_option_update");
-    expect(result.changed.configOptions).toHaveLength(2);
-    expect(result.changed.configOptions[0]).toMatchObject({ id: "model", currentValue: "anthropic/claude-haiku-4-5" });
+    expect(result.changed.configOptions).toHaveLength(3);
+    expect(result.changed.configOptions[1]).toMatchObject({ id: "model", currentValue: "anthropic/claude-haiku-4-5" });
   });
 
   test("set_mode mid-turn is -32600; resume of an open session answers; delete then load is -32002", async () => {

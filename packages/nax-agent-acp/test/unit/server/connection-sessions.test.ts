@@ -148,7 +148,7 @@ describe("session/new + session/prompt over a real SDK connection", () => {
     const { agentApp } = app(() => []);
     const response = await connect(agentApp, (agent) => agent.request("session/new", { cwd: "/w", mcpServers: [] }));
     expect(response).toMatchObject({ sessionId: "s1", modes: { currentModeId: "ask" } });
-    expect(response.configOptions?.map((o) => o.id)).toEqual(["model", "bashApproval"]);
+    expect(response.configOptions?.map((o) => o.id)).toEqual(["mode", "model", "bashApproval"]);
   });
 
   test("a permission round trip through the client's handler", async () => {

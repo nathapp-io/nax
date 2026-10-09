@@ -302,7 +302,7 @@ A model must be configured before a thread can open (#2414): `models.native.bala
 `no model configured`, before the credential check runs, so no login prompt is offered.
 
 Open the agent panel and start a "nax-agent" thread.
-- **Modes:** `ask` (default) asks before each edit or command, `full` runs without asking, `read` is read-only, and `none` has no tools.
+- **Modes:** the thread's mode picker (a session config option of category `mode`; `modes` and `session/set_mode` still work for other clients) switches between `ask` (default), which asks before each edit or command, `full`, which runs without asking, `read`, which is read-only, and `none`, which has no tools.
 - **Model:** switch it from the thread's model picker; the conversation is kept.
 - **Persistence:** threads are saved and can be reopened after a restart.
 

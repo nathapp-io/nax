@@ -41,6 +41,8 @@ export interface RegistrySetupExtra {
   readonly openGate?: Promise<void>;
   readonly failWriteMeta?: boolean;
   readonly failUpdates?: boolean;
+  /** Scripts for each opened session's turns; default: two short replies. */
+  readonly scripts?: readonly Script[];
 }
 
 export function setupRegistry(dir: string, options: ServerOptions = OPTIONS, extra: RegistrySetupExtra = {}) {
@@ -72,7 +74,7 @@ export function setupRegistry(dir: string, options: ServerOptions = OPTIONS, ext
       opened.push(request);
       if (extra.openGate !== undefined) await extra.openGate;
       if (extra.failOpens?.includes(opened.length) === true) throw new Error(`open ${opened.length} failed`);
-      const fake = fakeAgentSession(request.sessionId, [said("hi"), said("again")], {
+      const fake = fakeAgentSession(request.sessionId, extra.scripts ?? [said("hi"), said("again")], {
         ...(extra.lastTurn !== undefined ? { lastTurn: extra.lastTurn } : {}),
       });
       fakes.push(fake);

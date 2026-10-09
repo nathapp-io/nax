@@ -15,7 +15,10 @@ export function openNotice(notices: boolean, lines: readonly string[], scrub: Sc
 }
 
 export function modeNotice(notices: boolean, mode: AgentSessionProfile): SessionUpdate {
-  return announce(notices, "info", `MCP tools are off in ${mode} mode`, "Switch to ask or full to use them.");
+  const title = `MCP tools are off in ${mode} mode`;
+  // As an agent message the title and advice are one sentence.
+  if (!notices) return announce(false, "info", `${title}; switch to ask or full to use them.`);
+  return announce(true, "info", title, "Switch to ask or full to use them.");
 }
 
 export function disconnectNotice(notices: boolean, server: string, reason: string, scrub: Scrub): SessionUpdate {

@@ -293,6 +293,26 @@ export function createSessionRegistry(deps: RegistryDeps): SessionRegistry {
     });
   }
 
+  /**
+   * The one path for set_mode and set_config_option: reopen when anything changed,
+   * then announce. `current_mode_update` follows every set_mode and any mode
+   * change; `config_option_update` follows every change (M-25).
+   */
+  async function applySettings(
+    sessionId: string,
+    entry: Entry,
+    next: SessionSettings,
+    alwaysAnnounceMode: boolean,
+  ): Promise<void> {
+    const from = settingsOf(entry.meta);
+    const changed = !sameSettings(from, next);
+    if (changed) await switchTo(sessionId, entry, next);
+    if (alwaysAnnounceMode || next.mode !== from.mode) {
+      await entry.port.update({ sessionUpdate: "current_mode_update", currentModeId: next.mode });
+    }
+    if (changed) await announceConfig(entry, next);
+  }
+
   return {
     async create(input) {
       if (!isAbsolute(input.cwd)) throw invalidParams(`cwd must be an absolute path: ${input.cwd}`);
@@ -354,20 +374,13 @@ export function createSessionRegistry(deps: RegistryDeps): SessionRegistry {
     },
     async setMode(sessionId, modeId) {
       const entry = entryOf(sessionId);
-      const from = settingsOf(entry.meta);
-      const next = applyModeChange(from, modeId);
-      if (!sameSettings(from, next)) await switchTo(sessionId, entry, next);
-      await entry.port.update({ sessionUpdate: "current_mode_update", currentModeId: next.mode });
-      if (next.bashApproval !== from.bashApproval) await announceConfig(entry, next);
+      const next = applyModeChange(settingsOf(entry.meta), modeId);
+      await applySettings(sessionId, entry, next, true);
     },
     async setConfigOption(sessionId, configId, value) {
       const entry = entryOf(sessionId);
-      const from = settingsOf(entry.meta);
-      const next = applyConfigChange(from, configId, value, options.tiers);
-      if (!sameSettings(from, next)) {
-        await switchTo(sessionId, entry, next);
-        await announceConfig(entry, next);
-      }
+      const next = applyConfigChange(settingsOf(entry.meta), configId, value, options.tiers);
+      await applySettings(sessionId, entry, next, false);
       return configOptions(next, options.tiers);
     },
     async closeAll() {

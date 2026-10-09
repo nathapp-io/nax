@@ -6,6 +6,7 @@ import {
   applyModeChange,
   BASH_OPTION,
   configOptions,
+  MODE_OPTION,
   MODEL_OPTION,
   modeState,
   SESSION_MODES,
@@ -51,7 +52,14 @@ describe("modes (spec §5.2, M-27)", () => {
 
 describe("config options (spec §5.2, §5.3)", () => {
   test("model lists tiers (deduplicated by model) and bashApproval lists the three modes", () => {
-    const [model, bash] = configOptions(BASE, TIERS);
+    const [mode, model, bash] = configOptions(BASE, TIERS);
+    expect(mode).toMatchObject({
+      id: MODE_OPTION,
+      type: "select",
+      category: "mode",
+      currentValue: "full",
+      options: SESSION_MODES.map((m) => ({ value: m.id, name: m.name, description: m.description })),
+    });
     expect(model).toMatchObject({
       id: MODEL_OPTION,
       type: "select",
@@ -71,7 +79,7 @@ describe("config options (spec §5.2, §5.3)", () => {
   });
 
   test("a current model outside the tiers is listed too (set by --model)", () => {
-    const [model] = configOptions({ ...BASE, model: "openai/gpt-x" }, TIERS);
+    const model = configOptions({ ...BASE, model: "openai/gpt-x" }, TIERS)[1];
     expect(model?.type === "select" ? model.options.at(-1) : undefined).toEqual({
       value: "openai/gpt-x",
       name: "openai/gpt-x",
@@ -92,6 +100,15 @@ describe("config options (spec §5.2, §5.3)", () => {
     expect(rejects(() => applyConfigChange({ ...BASE, mode: "ask" }, BASH_OPTION, "raw", TIERS)).code).toBe(-32602);
     expect(applyConfigChange(BASE, BASH_OPTION, "escalate", TIERS).bashApproval).toBe("escalate");
     expect(rejects(() => applyConfigChange(BASE, BASH_OPTION, "loose", TIERS)).code).toBe(-32602);
+  });
+
+  test("a mode change goes through applyModeChange: ask coerces bash to gated; unknown is invalid_params", () => {
+    expect(applyConfigChange({ ...BASE, bashApproval: "raw" }, MODE_OPTION, "ask", TIERS)).toEqual({
+      ...BASE,
+      mode: "ask",
+      bashApproval: "gated",
+    });
+    expect(rejects(() => applyConfigChange(BASE, MODE_OPTION, "yolo", TIERS)).code).toBe(-32602);
   });
 
   test("an unknown option or a non-string value is invalid_params", () => {
