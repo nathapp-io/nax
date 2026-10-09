@@ -2418,7 +2418,7 @@ In `connection.test.ts`, update the capability pin to
 
 In `connection-sessions.test.ts`, the S5-2 test "the session/new response carries no modes or config options yet (M-10)" no longer holds. Rename it to "the session/new response carries modes and config options (S5-3)" and assert `expect(response).toMatchObject({ sessionId: "s1", modes: { currentModeId: "ask" } })` and `expect(response.configOptions?.map((o) => o.id)).toEqual(["model", "bashApproval"])`.
 
-Change its "not served yet" request to `agent.request("session/fork", { sessionId: "s", cwd: "/tmp", mcpServers: [] })`, which is still `-32601`. Update its `appDeps()` to the Task 7 `RegistryDeps`: `storage: createSessionStorage({ dir: "/nonexistent-acp-test", pid: 1, now: () => new Date(), logger })` and `transcripts: createMemoryTranscriptStore()`.
+In `connection.test.ts`, change the "not served yet" request to `agent.request("session/fork", { sessionId: "s", cwd: "/tmp", mcpServers: [] })`, which is still `-32601`. Update its `appDeps()` to the Task 7 `RegistryDeps`: `storage: createSessionStorage({ dir: "/nonexistent-acp-test", pid: 1, now: () => new Date(), logger })` and `transcripts: createMemoryTranscriptStore()`.
 
 `test/unit/server/connection-persistence.test.ts` drives the real SDK client:
 
