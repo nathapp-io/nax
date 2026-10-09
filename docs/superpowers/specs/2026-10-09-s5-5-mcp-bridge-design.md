@@ -27,7 +27,7 @@ Any ACP client that sends `mcpServers` on `session/new`, `session/load` or `sess
 | R5-5.2 | Transports | stdio and streamable HTTP. `initialize` advertises `mcpCapabilities: { http: true, sse: false }`. `sse` and `acp` entries are skipped with a notice. |
 | R5-5.3 | A server that cannot be reached at open | The session opens anyway; one notice names each failed server and the reason (secret-free); its tools are absent; nothing retries in the background. |
 | R5-5.4 | Where the code lives | Approach A: a bridge inside the ACP server, over a shareable MCP connection layer in nax-agent (`@nathapp/nax-agent/mcp`). The facade does not change. |
-| R5-5.5 | nax run's own MCP client | Out of scope. Moving `packages/nax/src/mcp/client.ts` onto the shared layer is a follow-up issue. |
+| R5-5.5 | nax run's own MCP client | Out of scope. Moving `packages/nax/src/mcp/client.ts` onto the shared layer is a follow-up issue (#2416). |
 
 Approaches rejected (R5-5.4):
 - **B: implement the facade's reserved `mcpServers` option in nax-agent.** Grows the facade's public API and options validation for a need only the ACP server has. The shared layer (§3.1) keeps that door open.
@@ -240,7 +240,7 @@ One plan document covers both slices; S5-5a and S5-5b are separate PRs.
 
 ## 10. Out of scope
 
-- nax run's MCP (`packages/nax/src/mcp/`), #2408 (global `mcp-lock.json`) and #2410: follow-up issue (R5-5.5).
+- nax run's MCP (`packages/nax/src/mcp/`), #2408 (global `mcp-lock.json`) and #2410: follow-up issue #2416 (R5-5.5).
 - `sse` and ACP-tunnelled (`acp`) MCP transports.
 - Reconnecting a dead server mid-session; honouring `tools/list_changed`.
 - MCP prompts, resources (as a browsable surface), sampling, roots and elicitation from MCP servers.
