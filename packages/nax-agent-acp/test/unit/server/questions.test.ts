@@ -103,6 +103,25 @@ describe("createQuestionBroker with elicitation (spec §4.3)", () => {
   });
 });
 
+describe("createQuestionBroker failures never escape (final review I-2)", () => {
+  test("an answer() that throws is logged and drain still resolves", async () => {
+    const fake = fakePort();
+    const { logger, lines } = recordingLogger();
+    const broker = createQuestionBroker({
+      port: fake.port,
+      deliver: (update) => fake.port.update(update),
+      answer: () => {
+        throw new Error("AGENT_SESSION_INVALID_ANSWER");
+      },
+      logger,
+      now: () => NOW,
+    });
+    broker.ask(question("q1"));
+    await broker.drain();
+    expect(lines.some((l) => l.level === "warn" && l.data?.error === "AGENT_SESSION_INVALID_ANSWER")).toBe(true);
+  });
+});
+
 describe("createQuestionBroker without elicitation", () => {
   test("shows the question, then answers at once with the no-answer text", async () => {
     const s = setup({ features: { updates: { notices: true, compaction: false }, elicitation: false } });

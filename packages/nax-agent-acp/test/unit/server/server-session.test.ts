@@ -226,6 +226,44 @@ describe("a broken client connection", () => {
   });
 });
 
+describe("a cancel or a dead client before the turn starts (final review I-1)", () => {
+  test("a client that fails on the queued notice never starts the S3 turn", async () => {
+    const s = setup([hello], { failUpdates: true });
+    s.session.queueNotice({ sessionUpdate: "notice", severity: "warning", title: "queued" });
+    expect((await failure(s.session.prompt(text("hi")))).code).toBe(-32603);
+    expect(s.fake.messages).toEqual([]);
+  });
+
+  test("a cancel while queued notices are delivered ends the prompt cancelled without a turn", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const fake = fakeAgentSession("s1", [hello]);
+    const { logger } = recordingLogger();
+    const session = createServerSession({
+      session: fake.session,
+      port: { ...fakePort().port, update: () => gate },
+      cwd: "/w",
+      readOldText: missing,
+      logger,
+      turnTimeoutSeconds: TURN_TIMEOUT_SECONDS,
+    });
+    session.queueNotice({ sessionUpdate: "notice", severity: "info", title: "queued" });
+    const pending = session.prompt(text("hi"));
+    session.cancel();
+    release();
+    expect((await pending).stopReason).toBe("cancelled");
+    expect(fake.messages).toEqual([]);
+  });
+
+  test("a cancel request does not leak into the next prompt", async () => {
+    const s = setup([hello]);
+    s.session.cancel();
+    expect((await s.session.prompt(text("hi"))).stopReason).toBe("end_turn");
+  });
+});
+
 describe("close", () => {
   test("closes the S3 session", async () => {
     const s = setup([]);

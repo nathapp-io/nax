@@ -41,6 +41,13 @@ export interface ServerSession {
   close(): Promise<void>;
 }
 
+/** The answer when a cancel arrived before the S3 turn started: nothing ran. */
+const CANCELLED_BEFORE_SEND: PromptOutcome = {
+  kind: "response",
+  response: { stopReason: "cancelled", usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 } },
+  notices: [],
+};
+
 interface Turn {
   readonly permissions: PermissionBroker;
   readonly questions: QuestionBroker;
@@ -113,6 +120,8 @@ export function createServerSession(deps: ServerSessionDeps): ServerSession {
   let queued: readonly SessionUpdate[] = [];
   let costUsd = 0;
   let running = false;
+  /** A cancel before send() claimed the S3 turn, where AgentSession.cancel() is a no-op. */
+  let cancelBeforeSend = false;
   let turn: Turn | undefined;
 
   function stopWaiting(): void {
@@ -147,7 +156,11 @@ export function createServerSession(deps: ServerSessionDeps): ServerSession {
       const pending = queued;
       queued = [];
       for (const update of pending) await delivery.deliver(update);
-      for await (const event of deps.session.send(message)) outcome = (await forwardEvent(event, ctx)) ?? outcome;
+      if (cancelBeforeSend) {
+        outcome = CANCELLED_BEFORE_SEND;
+      } else if (delivery.failure() === undefined) {
+        for await (const event of deps.session.send(message)) outcome = (await forwardEvent(event, ctx)) ?? outcome;
+      }
     } finally {
       current.permissions.abortAll();
       current.questions.abortAll();
@@ -174,6 +187,7 @@ export function createServerSession(deps: ServerSessionDeps): ServerSession {
       if (running) throw turnInProgress();
       const message = flattenPrompt(blocks);
       running = true;
+      cancelBeforeSend = false;
       let outcome: PromptOutcome | undefined;
       try {
         outcome = await runTurn(message);
@@ -185,6 +199,7 @@ export function createServerSession(deps: ServerSessionDeps): ServerSession {
       return outcome.response;
     },
     cancel() {
+      if (running) cancelBeforeSend = true;
       deps.session.cancel("cancelled by the client");
       stopWaiting();
     },

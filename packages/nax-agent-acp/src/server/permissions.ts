@@ -180,7 +180,10 @@ export function createPermissionBroker(deps: PermissionBrokerDeps): PermissionBr
         deps.answer(event.requestId, { decision: remembered });
         return;
       }
-      const trip = roundTrip(event, toolCall ?? fallbackToolCall(event), key);
+      // Never rejects: a throwing answer() or logger must not become an unhandled rejection.
+      const trip = roundTrip(event, toolCall ?? fallbackToolCall(event), key).catch((error: unknown) => {
+        deps.logger.warn("permissions", "permission round trip failed", { error: messageOf(error) });
+      });
       running.add(trip);
       void trip.finally(() => running.delete(trip));
     },

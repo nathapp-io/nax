@@ -96,7 +96,10 @@ export function createQuestionBroker(deps: QuestionBrokerDeps): QuestionBroker {
 
   return {
     ask(event) {
-      const work = handle(event);
+      // Never rejects: a throwing answer() or delivery must not become an unhandled rejection.
+      const work = handle(event).catch((error: unknown) => {
+        deps.logger.warn("questions", "question handling failed", { error: messageOf(error) });
+      });
       running.add(work);
       void work.finally(() => running.delete(work));
     },

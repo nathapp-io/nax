@@ -68,6 +68,14 @@ describe("toRequestError", () => {
     expect(error.message).toContain("log in");
   });
 
+  test("a secret in an unexpected error's message never reaches the client (final review I-3)", () => {
+    const { logger } = recordingLogger();
+    const secret = "sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJ";
+    const error = toRequestError(new Error(`401 Incorrect API key provided: ${secret}`), logger);
+    expect(error.message).toContain("401 Incorrect API key provided");
+    expect(error.message).not.toContain(secret);
+  });
+
   test("a non-Error throw is stringified", () => {
     const { logger } = recordingLogger();
     expect(toRequestError("plain", logger).message).toBe("Internal error: plain");

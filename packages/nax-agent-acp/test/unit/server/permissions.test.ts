@@ -88,6 +88,24 @@ describe("memoryKey (spec §4.3)", () => {
   });
 });
 
+describe("createPermissionBroker failures never escape (final review I-2)", () => {
+  test("an answer() that throws is logged and drain still resolves", async () => {
+    const fake = fakePort();
+    const { logger, lines } = recordingLogger();
+    const broker = createPermissionBroker({
+      port: fake.port,
+      answer: () => {
+        throw new Error("AGENT_SESSION_INVALID_ANSWER");
+      },
+      memory: new Map(),
+      logger,
+    });
+    broker.request(approval("r1", "Edit"), undefined);
+    await broker.drain();
+    expect(lines.some((l) => l.level === "warn" && l.data?.error === "AGENT_SESSION_INVALID_ANSWER")).toBe(true);
+  });
+});
+
 describe("createPermissionBroker", () => {
   test("asks the client with the tool call and the four options, then answers", async () => {
     const s = setup();
