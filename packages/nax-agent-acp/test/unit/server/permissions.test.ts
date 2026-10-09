@@ -75,6 +75,13 @@ describe("memoryKey (spec §4.3)", () => {
     expect(memoryKey(approval("r", "Bash", { command: "/usr/bin/env rm x" }))).toBeUndefined();
   });
 
+  test("a first word that is not a plain name is never remembered (quotes, escapes, globs, case)", () => {
+    for (const command of ["'bash' -c x", '"sh" x', "b\\ash -c x", "ba*h -c x", "BASH -c x", "$(which sh) x"]) {
+      expect(memoryKey(approval("r", "Bash", { command }))).toBeUndefined();
+    }
+    expect(memoryKey(approval("r", "Bash", { command: "./scripts/build.sh --fast" }))).toBe("Bash:./scripts/build.sh");
+  });
+
   test("an execute tool with no command is never remembered (M-12)", () => {
     expect(memoryKey(approval("r", "Bash"))).toBeUndefined();
     expect(memoryKey(approval("r", "Bash", { command: "   " }))).toBeUndefined();

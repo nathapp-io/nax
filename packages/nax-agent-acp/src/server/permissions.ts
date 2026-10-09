@@ -3,7 +3,8 @@
  * `session/request_permission`, and the chosen option is passed to `answer()`.
  * allow_always and reject_always are remembered for the session's life (M-12:
  * execute tools per first word of the command). Never remembered: no command, a
- * leading environment assignment, a masked command (its visible words are not
+ * first word that is not a plain name or path (quotes, escapes, globs, an
+ * environment assignment), a masked command (its visible words are not
  * the real command), or a wrapper or interpreter, whose first word says nothing
  * about what runs. A remembered allow covers only a simple command: one
  * with shell metacharacters (chaining, substitution, redirection) is asked
@@ -100,6 +101,9 @@ const WRAPPERS: ReadonlySet<string> = new Set([
   "uvx",
 ]);
 
+/** A plain command name or path: no quotes, escapes, globs or expansions the shell would rewrite. */
+const PLAIN_WORD = /^[A-Za-z0-9._/-]+$/;
+
 /** The masking prefix S3 puts in place of a secret in a shown command. */
 const MASK_MARKER = "[REDACTED";
 
@@ -108,8 +112,9 @@ export function memoryKey(event: ApprovalEvent): string | undefined {
   const command = event.command ?? "";
   if (command.includes(MASK_MARKER)) return undefined;
   const first = command.trim().split(/\s+/)[0] ?? "";
-  const name = first.slice(first.lastIndexOf("/") + 1);
-  if (name === "" || first.includes("=") || WRAPPERS.has(name)) return undefined;
+  if (!PLAIN_WORD.test(first)) return undefined;
+  const name = first.slice(first.lastIndexOf("/") + 1).toLowerCase();
+  if (name === "" || WRAPPERS.has(name)) return undefined;
   return `${event.tool}:${first}`;
 }
 
