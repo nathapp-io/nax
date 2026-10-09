@@ -53,6 +53,23 @@ describe("replayTranscript (spec §5.4)", () => {
     expect(updates[2]).toMatchObject({ toolCallId: "lost", status: "failed", content: [text(NO_RESULT_TEXT)] });
   });
 
+  test("titleFor names MCP calls on replay; unknown names fall back", () => {
+    const messages: TranscriptMessage[] = [
+      {
+        role: "assistant",
+        content: "",
+        toolCalls: [
+          { id: "m", name: "git__status", input: {} },
+          { id: "gone", name: "old__tool", input: {} },
+        ],
+      },
+      { role: "tool-result", toolCallId: "m", content: "clean" },
+      { role: "tool-result", toolCallId: "gone", content: "x" },
+    ];
+    const updates = replayTranscript(messages, "/repo", (name) => (name === "git__status" ? "git: status" : undefined));
+    expect(updates.map((u) => (u as { title?: string }).title)).toEqual(["git: status", "old__tool"]);
+  });
+
   test("empty user and assistant text are skipped", () => {
     expect(
       replayTranscript(

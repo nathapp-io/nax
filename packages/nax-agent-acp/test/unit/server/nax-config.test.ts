@@ -53,6 +53,19 @@ describe("loadNaxConfig", () => {
     expect(loaded.agentServer).toEqual({ defaultMode: "full", bashApproval: "escalate", sessionsDir: "/s" });
   });
 
+  test("reads agentServer.mcpConnectTimeoutSeconds", async () => {
+    const config = { agentServer: { mcpConnectTimeoutSeconds: 45 } };
+    const { config: loaded } = await loadNaxConfig("/cfg", reader({ [PATH]: JSON.stringify(config) }));
+    expect(loaded.agentServer).toEqual({ mcpConnectTimeoutSeconds: 45 });
+  });
+
+  test("an out-of-range connect timeout falls back to the defaults with a warning", async () => {
+    const config = { agentServer: { mcpConnectTimeoutSeconds: 500 } };
+    const loaded = await loadNaxConfig("/cfg", reader({ [PATH]: JSON.stringify(config) }));
+    expect(loaded.config).toEqual(EMPTY_NAX_CONFIG);
+    expect(loaded.warning).toContain("agentServer.mcpConnectTimeoutSeconds");
+  });
+
   test("unrelated sections nax owns are ignored", async () => {
     const config = { review: { anything: true }, execution: 5, models: { native: { fast: "a/b" } } };
     const { config: loaded, warning } = await loadNaxConfig("/cfg", reader({ [PATH]: JSON.stringify(config) }));

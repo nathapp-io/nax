@@ -31,6 +31,7 @@ const OPTIONS: ServerOptions = {
     { tier: "balanced", model: "anthropic/claude-sonnet-5-5" },
   ],
   catalogOverrides: [],
+  mcpConnectTimeoutSeconds: 30,
 };
 
 let dir: string;

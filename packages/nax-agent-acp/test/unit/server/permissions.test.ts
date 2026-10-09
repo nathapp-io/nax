@@ -163,6 +163,34 @@ describe("createPermissionBroker", () => {
     expect(s.memory.get("Edit")).toBe("allow");
   });
 
+  test("allow_always on an MCP tool is remembered for that tool only (S5-5 spec §5.5)", async () => {
+    const s = setup({ permission: async () => select("allow_always") });
+    s.broker.request(approval("r1", "git__status"), undefined);
+    await s.broker.drain();
+    s.broker.request(approval("r2", "git__status"), undefined);
+    await s.broker.drain();
+    expect(s.asks).toHaveLength(1);
+    s.broker.request(approval("r3", "git__log"), undefined);
+    await s.broker.drain();
+    expect(s.asks).toHaveLength(2);
+    expect(s.memory.get("git__status")).toBe("allow");
+    expect(s.answers.map((a) => a.reply)).toEqual([
+      { decision: "allow" },
+      { decision: "allow" },
+      { decision: "allow" },
+    ]);
+  });
+
+  test("reject_always on an MCP tool denies that tool without asking again", async () => {
+    const s = setup({ permission: async () => select("reject_always") });
+    s.broker.request(approval("r1", "git__push"), undefined);
+    await s.broker.drain();
+    s.broker.request(approval("r2", "git__push"), undefined);
+    await s.broker.drain();
+    expect(s.asks).toHaveLength(1);
+    expect(s.answers.map((a) => a.reply)).toEqual([{ decision: "deny" }, { decision: "deny" }]);
+  });
+
   test("reject_always on a subcommand covers that subcommand only", async () => {
     const s = setup({ permission: async () => select("reject_always") });
     s.broker.request(approval("r1", "Bash", { command: "git push" }), undefined);

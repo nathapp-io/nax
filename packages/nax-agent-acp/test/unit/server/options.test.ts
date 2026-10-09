@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import type { CliFlags } from "#src/server/cli";
 import { EMPTY_NAX_CONFIG, type NaxConfigSubset } from "#src/server/nax-config";
-import { resolveConfigDir, resolveServerOptions } from "#src/server/options";
+import { type Env, resolveConfigDir, resolveServerOptions } from "#src/server/options";
 
 const FILE: NaxConfigSubset = {
   ...EMPTY_NAX_CONFIG,
@@ -10,6 +11,23 @@ const FILE: NaxConfigSubset = {
   ],
   agentServer: { defaultMode: "full", bashApproval: "escalate", sessionsDir: "/file-sessions" },
 };
+
+function resolveWith(input: { flags?: CliFlags; env?: Env; config?: number }) {
+  return resolveServerOptions({
+    flags: input.flags ?? {},
+    env: input.env ?? {},
+    file: {
+      ...EMPTY_NAX_CONFIG,
+      agentServer: input.config === undefined ? {} : { mcpConnectTimeoutSeconds: input.config },
+    },
+    configDir: "/cfg",
+  });
+}
+
+function ok(result: ReturnType<typeof resolveWith>) {
+  if (!result.ok) throw new Error(result.message);
+  return result.options;
+}
 
 describe("resolveConfigDir", () => {
   test("flag > NAX_AGENT_CONFIG_DIR > NAX_GLOBAL_CONFIG_DIR > ~/.nax", () => {
@@ -32,6 +50,7 @@ describe("resolveServerOptions", () => {
         bashApproval: "gated",
         tiers: [],
         catalogOverrides: [],
+        mcpConnectTimeoutSeconds: 30,
       },
     });
   });
@@ -45,6 +64,7 @@ describe("resolveServerOptions", () => {
         defaultModel: "a/balanced",
         defaultMode: "full",
         bashApproval: "escalate",
+        mcpConnectTimeoutSeconds: 30,
       },
     });
   });
@@ -100,5 +120,28 @@ describe("resolveServerOptions", () => {
     const result = resolveServerOptions({ flags: {}, env: {}, file: EMPTY_NAX_CONFIG, configDir: "/c" });
     expect(result.ok).toBe(true);
     expect(result.ok ? result.options.defaultModel : "not-ok").toBeUndefined();
+  });
+});
+
+describe("mcpConnectTimeoutSeconds", () => {
+  test("defaults to 30", () => {
+    expect(ok(resolveWith({})).mcpConnectTimeoutSeconds).toBe(30);
+  });
+
+  test("flag > env > config", () => {
+    expect(
+      ok(resolveWith({ flags: { mcpConnectTimeout: "10" }, env: { NAX_AGENT_MCP_CONNECT_TIMEOUT: "20" }, config: 40 }))
+        .mcpConnectTimeoutSeconds,
+    ).toBe(10);
+    expect(ok(resolveWith({ env: { NAX_AGENT_MCP_CONNECT_TIMEOUT: "20" }, config: 40 })).mcpConnectTimeoutSeconds).toBe(
+      20,
+    );
+    expect(ok(resolveWith({ config: 40 })).mcpConnectTimeoutSeconds).toBe(40);
+  });
+
+  test.each(["0", "301", "1.5", "abc"])("rejects %s", (value) => {
+    const result = resolveWith({ flags: { mcpConnectTimeout: value } });
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.message).toContain("mcp connect timeout");
   });
 });

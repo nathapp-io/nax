@@ -10,6 +10,7 @@ import {
   type AgentSessionProfile,
   type CreateAgentSessionOptions,
   createAgentSession,
+  type EmbedderTool,
   type NativeBackendOptions,
   type NativeCatalogOverrides,
   nativeBackend,
@@ -26,6 +27,7 @@ export interface OpenSessionRequest {
   readonly model: string;
   readonly profile: AgentSessionProfile;
   readonly bashApproval: BashApproval;
+  readonly tools: readonly EmbedderTool[];
 }
 
 export interface OpenedSession {
@@ -93,6 +95,7 @@ export function nativeOpenSession(deps: NativeOpenDeps): OpenSession {
       sessionId: request.sessionId,
       profile: request.profile,
       ...(request.profile !== "none" ? { workdir: request.cwd } : {}),
+      ...(request.tools.length > 0 ? { tools: request.tools } : {}),
       transcriptStore: deps.transcripts,
       turnTimeoutSeconds: deps.turnTimeoutSeconds,
     };

@@ -109,6 +109,14 @@ describe("tool calls", () => {
     });
   });
 
+  test("an MCP tool call is titled `server: tool` via titleFor; built-ins keep their titles", async () => {
+    const t = translator(undefined, { titleFor: (name) => (name === "git__status" ? "git: status" : undefined) });
+    const [mcp] = await t.translate(ev({ type: "tool_call", callId: "c1", name: "git__status", input: {} }));
+    expect(mcp).toMatchObject({ sessionUpdate: "tool_call", title: "git: status", kind: "other" });
+    const [builtin] = await t.translate(ev({ type: "tool_call", callId: "c2", name: "Grep", input: { pattern: "x" } }));
+    expect(builtin).toMatchObject({ title: "Grep x", kind: "search" });
+  });
+
   test("toolCallFor returns the remembered call as pending, or undefined", async () => {
     const t = translator();
     await t.translate(ev({ type: "tool_call", callId: "c1", name: "Bash", input: { command: "rm -rf build" } }));

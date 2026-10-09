@@ -29,6 +29,7 @@ const OPTIONS: ServerOptions = {
   bashApproval: "gated",
   tiers: [],
   catalogOverrides: [],
+  mcpConnectTimeoutSeconds: 30,
 };
 
 let dir: string;

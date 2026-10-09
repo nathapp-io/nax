@@ -31,6 +31,8 @@ export interface ServerSessionDeps {
   readonly now?: () => number;
   /** After every prompt that reached send() (S5-3: title and updatedAt). A rejection is logged, never thrown. */
   readonly onTurnEnd?: (message: string) => Promise<void>;
+  /** S5-5 (wired in S5-5b Task 10): a display title for an MCP tool call's model name. */
+  readonly titleFor?: (name: string) => string | undefined;
 }
 
 /** The S3 session and context window to adopt on a switchTo (spec §3.3). */
@@ -159,6 +161,7 @@ export function createServerSession(deps: ServerSessionDeps): ServerSession {
       readOldText: deps.readOldText,
       clientUpdates: deps.port.features.updates,
       priorCostUsd: costUsd,
+      ...(deps.titleFor !== undefined ? { titleFor: deps.titleFor } : {}),
     });
     const current: Turn = {
       permissions: createPermissionBroker({ port: deps.port, answer, memory, logger: deps.logger }),

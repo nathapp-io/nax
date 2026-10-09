@@ -24,6 +24,7 @@ export interface AgentServerSection {
   readonly defaultMode?: AgentSessionProfile;
   readonly bashApproval?: BashApproval;
   readonly sessionsDir?: string;
+  readonly mcpConnectTimeoutSeconds?: number;
 }
 
 export interface NaxConfigSubset {
@@ -77,6 +78,7 @@ const SubsetSchema = z.object({
       defaultMode: z.enum(MODES).optional(),
       bashApproval: z.enum(BASH_APPROVALS).optional(),
       sessionsDir: z.string().min(1).optional(),
+      mcpConnectTimeoutSeconds: z.number().int().min(1).max(300).optional(),
     })
     .optional(),
 });

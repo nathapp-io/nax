@@ -9,6 +9,9 @@ import { BASH_APPROVALS, type BashApproval, MODES, type NaxConfigSubset, type Ti
 
 export type Env = Readonly<Record<string, string | undefined>>;
 
+/** S5-5b: the per-server MCP connect timeout, in seconds (1-300). */
+export const MCP_CONNECT_TIMEOUT_SECONDS = 30;
+
 export interface ServerOptions {
   readonly configDir: string;
   readonly sessionsDir: string;
@@ -17,6 +20,7 @@ export interface ServerOptions {
   readonly bashApproval: BashApproval;
   readonly tiers: readonly TierModel[];
   readonly catalogOverrides: readonly Readonly<Record<string, unknown>>[];
+  readonly mcpConnectTimeoutSeconds: number;
 }
 
 export type OptionsResult =
@@ -63,6 +67,16 @@ function pickEnum<T extends string>(
   };
 }
 
+function pickSeconds(chosen: Sourced | undefined, fallbackValue: number): Picked<number> {
+  if (chosen === undefined) return { ok: true, value: fallbackValue };
+  const value = Number(chosen.value);
+  if (Number.isInteger(value) && value >= 1 && value <= 300) return { ok: true, value };
+  return {
+    ok: false,
+    message: `invalid mcp connect timeout "${chosen.value}" (from ${chosen.source}); expected whole seconds 1-300`,
+  };
+}
+
 export function resolveServerOptions(input: {
   readonly flags: CliFlags;
   readonly env: Env;
@@ -98,6 +112,15 @@ export function resolveServerOptions(input: {
       message: `bash approval "${bash.value}" cannot be used with mode "ask"; ask requires gated`,
     };
   }
+  const mcpTimeout = pickSeconds(
+    firstSet(
+      from(flags.mcpConnectTimeout, "--mcp-connect-timeout"),
+      from(env.NAX_AGENT_MCP_CONNECT_TIMEOUT, "NAX_AGENT_MCP_CONNECT_TIMEOUT"),
+      from(file.agentServer.mcpConnectTimeoutSeconds?.toString(), "config.json agentServer.mcpConnectTimeoutSeconds"),
+    ),
+    MCP_CONNECT_TIMEOUT_SECONDS,
+  );
+  if (!mcpTimeout.ok) return mcpTimeout;
   const sessionsDir =
     firstSet(
       from(flags.sessionsDir, "--sessions-dir"),
@@ -119,6 +142,7 @@ export function resolveServerOptions(input: {
       bashApproval: bash.value,
       tiers: file.tiers,
       catalogOverrides: file.catalogOverrides,
+      mcpConnectTimeoutSeconds: mcpTimeout.value,
     },
   };
 }

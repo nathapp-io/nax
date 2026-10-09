@@ -30,6 +30,7 @@ const OPTIONS = {
     { tier: "powerful" as const, model: "anthropic/claude-opus-5-5" },
   ],
   catalogOverrides: [],
+  mcpConnectTimeoutSeconds: 30,
 };
 
 function ports(overrides: Partial<AuthPorts> = {}): AuthPorts {

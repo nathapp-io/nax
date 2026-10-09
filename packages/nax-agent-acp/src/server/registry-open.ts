@@ -24,10 +24,10 @@ export interface ReopenDeps {
   readonly openEntry: (
     meta: SessionMeta,
     port: ClientPort,
+    mcpServers: readonly unknown[],
   ) => Promise<{ readonly server: ServerSession; readonly opened: OpenedSession }>;
   readonly closeEntry: (sessionId: string, entry: Entry) => Promise<void>;
   readonly stateOf: (settings: SessionSettings) => SessionState;
-  readonly mcpNotice: string;
   readonly interruptedNotice: string;
 }
 
@@ -46,12 +46,13 @@ export function createReopen(deps: ReopenDeps): Reopener {
     port: ClientPort,
     messages: Parameters<typeof replayTranscript>[0],
     cwd: string,
+    titleFor?: (name: string) => string | undefined,
   ): Promise<void> {
-    for (const update of replayTranscript(messages, cwd)) await port.update(update);
+    for (const update of replayTranscript(messages, cwd, titleFor)) await port.update(update);
   }
 
-  async function replayOpened(port: ClientPort, opened: OpenedSession, cwd: string): Promise<void> {
-    await replayTo(port, opened.doc?.messages ?? [], cwd);
+  async function replayOpened(port: ClientPort, sessionId: string, opened: OpenedSession, cwd: string): Promise<void> {
+    await replayTo(port, opened.doc?.messages ?? [], cwd, (name) => deps.entries.get(sessionId)?.mcp.titleFor(name));
     if (opened.session.lastTurn?.status === "interrupted") {
       await port.update(announce(port.features.updates.notices, "warning", deps.interruptedNotice));
     }
@@ -59,10 +60,10 @@ export function createReopen(deps: ReopenDeps): Reopener {
 
   async function openAndReplay(sessionId: string, meta: SessionMeta, input: OpenInput, replay: boolean): Promise<void> {
     const port = input.port(sessionId);
-    const { server, opened } = await deps.openEntry(meta, port);
+    const { opened } = await deps.openEntry(meta, port, input.mcpServers);
     if (replay) {
       try {
-        await replayOpened(port, opened, meta.cwd);
+        await replayOpened(port, sessionId, opened, meta.cwd);
       } catch (error) {
         // The client did not get its history: do not leave the session open and locked.
         const entry = deps.entries.get(sessionId);
@@ -70,17 +71,17 @@ export function createReopen(deps: ReopenDeps): Reopener {
         throw error;
       }
     }
-    if (input.mcpServers.length > 0) {
-      server.queueNotice(announce(port.features.updates.notices, "warning", deps.mcpNotice));
-    }
   }
 
   return {
     async reopen(sessionId, input, replay) {
       const open = deps.entries.get(sessionId);
       if (open !== undefined) {
+        // An already-open session keeps its connection and ignores input.mcpServers (§4.4).
         if (replay) {
-          await replayTo(open.port, (await deps.transcripts.load(sessionId))?.messages ?? [], open.meta.cwd);
+          await replayTo(open.port, (await deps.transcripts.load(sessionId))?.messages ?? [], open.meta.cwd, (name) =>
+            open.mcp.titleFor(name),
+          );
         }
         return deps.stateOf(settingsOf(open.meta));
       }

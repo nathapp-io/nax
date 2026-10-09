@@ -12,11 +12,16 @@ import {
   type SessionConfigOption,
   type SessionModeState,
 } from "@agentclientprotocol/sdk";
-import type { AgentLogger, TranscriptStore } from "@nathapp/nax-agent";
+import type { AgentLogger, EmbedderTool, TranscriptStore } from "@nathapp/nax-agent";
 import { stripControl, stripInvisible } from "#src/client/text";
 import type { ClientPort } from "#src/server/client-port";
 import { invalidParams, messageOf, turnInProgress, unknownSession } from "#src/server/errors";
-import type { OpenSession } from "#src/server/open-session";
+import { type ConnectSessionMcp, connectNothing, type SessionMcp } from "#src/server/mcp/connect";
+import { disconnectNotice, modeNotice, openNotice } from "#src/server/mcp/notices";
+import { NO_SERVERS, type ParsedServers, parseMcpServers } from "#src/server/mcp/parse";
+import { mcpSecrets, scrubber } from "#src/server/mcp/secrets";
+import type { McpSessionTools } from "#src/server/mcp/session-tools";
+import type { OpenedSession, OpenSession } from "#src/server/open-session";
 import type { ServerOptions } from "#src/server/options";
 import { createReopen, settingsOf } from "#src/server/registry-open";
 import { createServerSession, type ServerSession, type SwitchTarget } from "#src/server/server-session";
@@ -30,10 +35,8 @@ import {
 } from "#src/server/session-config";
 import type { SessionMeta, SessionStorage } from "#src/server/storage";
 import type { ReadOldText } from "#src/server/translate/diff";
-import { announce } from "#src/server/translate/notice";
 
 export const NO_MODEL_MESSAGE = "no model configured: set models.native.balanced or --model";
-export const MCP_NOTICE = "MCP servers are not supported yet; ignored";
 export const INTERRUPTED_NOTICE = "The previous turn was interrupted";
 export const SHUTTING_DOWN = "server is shutting down";
 export const SHUTDOWN_WAIT_MS = 5000;
@@ -77,6 +80,8 @@ export interface RegistryDeps {
   readonly shutdownWaitMs?: number;
   /** S5-4 M-30: refuses (auth_required) when the model's provider has no credential. */
   readonly ensureCredentials?: (model: string) => Promise<void>;
+  /** S5-5: connects a session's client-supplied MCP servers. Default: connects nothing (plan M-38). */
+  readonly connectMcp?: ConnectSessionMcp;
 }
 
 export interface Entry {
@@ -84,6 +89,7 @@ export interface Entry {
   readonly port: ClientPort;
   readonly meta: SessionMeta;
   readonly release: () => Promise<void>;
+  readonly mcp: McpSessionTools;
 }
 
 /** One line, no control or invisible characters, at most TITLE_MAX code points. */
@@ -104,6 +110,8 @@ function waitAtMost(ms: number): { readonly done: Promise<"timeout">; cancel(): 
 export function createSessionRegistry(deps: RegistryDeps): SessionRegistry {
   const entries = new Map<string, Entry>();
   const { options } = deps;
+  const connectMcp = deps.connectMcp ?? connectNothing;
+  const shutdown = new AbortController();
   let closing = false;
 
   const contextWindowFor = (model: string): number | undefined =>
@@ -132,55 +140,111 @@ export function createSessionRegistry(deps: RegistryDeps): SessionRegistry {
     await deps.storage.writeMeta(meta);
   }
 
-  async function target(sessionId: string, cwd: string, settings: SessionSettings): Promise<SwitchTarget> {
+  async function target(
+    sessionId: string,
+    cwd: string,
+    settings: SessionSettings,
+    tools: readonly EmbedderTool[],
+  ): Promise<SwitchTarget> {
     const opened = await deps.openSession({
       sessionId,
       cwd,
       model: settings.model,
       profile: settings.mode,
       bashApproval: settings.bashApproval,
+      tools,
     });
     const contextWindow = contextWindowFor(settings.model);
     return { session: opened.session, ...(contextWindow !== undefined ? { contextWindow } : {}) };
   }
 
-  /** Takes the lock, opens the S3 session, registers it. The lock is released if anything fails. */
-  async function openEntry(meta: SessionMeta, port: ClientPort) {
+  function startMcp(parsed: ParsedServers, meta: SessionMeta, port: ClientPort): Promise<SessionMcp> {
+    // Built before connecting: a disconnect fired before connectMcp resolves must still be scrubbed.
+    const scrub = scrubber(mcpSecrets(parsed.servers));
+    return connectMcp({
+      parsed,
+      cwd: meta.cwd,
+      signal: shutdown.signal,
+      onDisconnect: (server, reason) => {
+        port.update(disconnectNotice(port.features.updates.notices, server, reason, scrub)).catch((error: unknown) => {
+          deps.logger.warn("session", "MCP disconnect notice failed", {
+            sessionId: meta.sessionId,
+            error: messageOf(error),
+          });
+        });
+      },
+    });
+  }
+
+  function queueMcpNotices(
+    server: ServerSession,
+    port: ClientPort,
+    mcp: SessionMcp,
+    mode: SessionSettings["mode"],
+  ): void {
+    const notices = port.features.updates.notices;
+    const open = openNotice(notices, mcp.noticeLines, mcp.scrub);
+    if (open !== undefined) server.queueNotice(open);
+    if (mcp.tools.connectedCount > 0 && !mcp.tools.offersTools(mode)) server.queueNotice(modeNotice(notices, mode));
+  }
+
+  /** Parses MCP servers, takes the lock, connects MCP, opens the S3 session, registers it. Everything is undone on failure. */
+  async function openEntry(meta: SessionMeta, port: ClientPort, mcpServers: readonly unknown[]) {
     if (closing) throw RequestError.internalError(undefined, SHUTTING_DOWN);
+    const parsed = mcpServers.length === 0 ? NO_SERVERS : parseMcpServers(mcpServers);
     await deps.ensureCredentials?.(meta.model);
     const release = await deps.storage.acquireLock(meta.sessionId);
+    let mcp: SessionMcp | undefined;
+    let opened: OpenedSession | undefined;
     try {
+      mcp = await startMcp(parsed, meta, port);
+      if (closing) throw RequestError.internalError(undefined, SHUTTING_DOWN); // shutdown during connect
       const settings = settingsOf(meta);
-      const opened = await deps.openSession({
+      opened = await deps.openSession({
         sessionId: meta.sessionId,
         cwd: meta.cwd,
         model: settings.model,
         profile: settings.mode,
         bashApproval: settings.bashApproval,
+        tools: mcp.tools.embedderTools(settings.mode),
       });
       if (closing) {
-        // Shutdown started while this open was in flight: closeAll has already
-        // cleared the map, so nothing would close this session or its lock (M-26).
+        // Shutdown started while this open was in flight (M-26).
         await opened.session.close().catch(() => undefined);
+        opened = undefined; // already closed; the catch must not close it twice
         throw RequestError.internalError(undefined, SHUTTING_DOWN);
       }
-      const contextWindow = contextWindowFor(settings.model);
-      const server = createServerSession({
-        session: opened.session,
-        port,
-        cwd: meta.cwd,
-        ...(contextWindow !== undefined ? { contextWindow } : {}),
-        readOldText: deps.readOldText,
-        logger: deps.logger,
-        turnTimeoutSeconds: deps.turnTimeoutSeconds,
-        onTurnEnd: (prompt) => recordTurn(meta.sessionId, prompt),
-      });
-      entries.set(meta.sessionId, { server, port, meta, release });
+      const server = createEntryServer(meta, port, opened, mcp.tools);
+      queueMcpNotices(server, port, mcp, settings.mode);
+      entries.set(meta.sessionId, { server, port, meta, release, mcp: mcp.tools });
       return { server, opened };
     } catch (error) {
+      // If the facade session opened but a later step threw, do not orphan it.
+      await opened?.session.close().catch(() => undefined);
+      await mcp?.tools.closeAll();
       await release();
-      throw error;
+      throw closing ? RequestError.internalError(undefined, SHUTTING_DOWN) : error;
     }
+  }
+
+  function createEntryServer(
+    meta: SessionMeta,
+    port: ClientPort,
+    opened: OpenedSession,
+    mcp: McpSessionTools,
+  ): ServerSession {
+    const contextWindow = contextWindowFor(meta.model);
+    return createServerSession({
+      session: opened.session,
+      port,
+      cwd: meta.cwd,
+      ...(contextWindow !== undefined ? { contextWindow } : {}),
+      readOldText: deps.readOldText,
+      logger: deps.logger,
+      turnTimeoutSeconds: deps.turnTimeoutSeconds,
+      onTurnEnd: (prompt) => recordTurn(meta.sessionId, prompt),
+      titleFor: (name) => mcp.titleFor(name),
+    });
   }
 
   async function closeEntry(sessionId: string, entry: Entry): Promise<void> {
@@ -188,6 +252,7 @@ export function createSessionRegistry(deps: RegistryDeps): SessionRegistry {
     try {
       await entry.server.close();
     } finally {
+      await entry.mcp.closeAll();
       await entry.release();
     }
   }
@@ -200,7 +265,6 @@ export function createSessionRegistry(deps: RegistryDeps): SessionRegistry {
     openEntry,
     closeEntry,
     stateOf,
-    mcpNotice: MCP_NOTICE,
     interruptedNotice: INTERRUPTED_NOTICE,
   }).reopen;
 
@@ -212,12 +276,14 @@ export function createSessionRegistry(deps: RegistryDeps): SessionRegistry {
     // Before the live session is closed, so a refused model changes nothing (final review I6).
     if (next.model !== from.model) await deps.ensureCredentials?.(next.model);
     await entry.server.switchTo(
-      () => target(sessionId, entry.meta.cwd, next),
-      () => target(sessionId, entry.meta.cwd, from),
+      () => target(sessionId, entry.meta.cwd, next, entry.mcp.embedderTools(next.mode)),
+      () => target(sessionId, entry.meta.cwd, from, entry.mcp.embedderTools(from.mode)),
     );
     const meta: SessionMeta = { ...entry.meta, mode: next.mode, model: next.model, bashApproval: next.bashApproval };
     entries.set(sessionId, { ...entry, meta });
     await deps.storage.writeMeta(meta);
+    if (next.mode !== from.mode && entry.mcp.connectedCount > 0 && !entry.mcp.offersTools(next.mode))
+      await entry.port.update(modeNotice(entry.port.features.updates.notices, next.mode));
   }
 
   async function announceConfig(entry: Entry, settings: SessionSettings): Promise<void> {
@@ -245,7 +311,7 @@ export function createSessionRegistry(deps: RegistryDeps): SessionRegistry {
         updatedAt: null,
       };
       const port = input.port(sessionId);
-      const { server } = await openEntry(meta, port);
+      await openEntry(meta, port, input.mcpServers);
       try {
         await deps.storage.writeMeta(meta);
       } catch (error) {
@@ -263,8 +329,6 @@ export function createSessionRegistry(deps: RegistryDeps): SessionRegistry {
         await deps.storage.removeMeta(sessionId);
         throw RequestError.internalError(undefined, SHUTTING_DOWN);
       }
-      if (input.mcpServers.length > 0)
-        server.queueNotice(announce(port.features.updates.notices, "warning", MCP_NOTICE));
       deps.logger.info("session", "session opened", { sessionId, cwd: input.cwd, model, mode: meta.mode });
       return { sessionId, ...stateOf(settingsOf(meta)) };
     },
@@ -308,6 +372,7 @@ export function createSessionRegistry(deps: RegistryDeps): SessionRegistry {
     },
     async closeAll() {
       closing = true;
+      shutdown.abort();
       const open = [...entries.entries()];
       entries.clear();
       const wait = deps.shutdownWaitMs ?? SHUTDOWN_WAIT_MS;
@@ -326,6 +391,7 @@ export function createSessionRegistry(deps: RegistryDeps): SessionRegistry {
           limit.cancel();
           if (outcome === "timeout")
             deps.logger.warn("session", "session did not close in time", { sessionId, waitMs: wait });
+          await entry.mcp.closeAll();
           await entry.release();
         }),
       );

@@ -6,11 +6,13 @@
 import { randomUUID } from "node:crypto";
 import type { Readable, Writable } from "node:stream";
 import { configureCredentials, createFileTranscriptStore, setAgentLogger } from "@nathapp/nax-agent";
+import { connectMcp } from "@nathapp/nax-agent/mcp";
 import { type AuthPorts, loadServerAuth, NAX_AGENT_AUTH } from "#src/server/auth";
 import { type CliCommand, type CliFlags, parseCli, USAGE } from "#src/server/cli";
 import { buildAgentApp, serveStdio } from "#src/server/connection";
 import { stderrLogger } from "#src/server/logger";
 import { runLoginCommand } from "#src/server/login";
+import { createMcpConnector } from "#src/server/mcp/connect";
 import { credentialsFor, loadNaxConfig, type ReadTextFile } from "#src/server/nax-config";
 import { catalogOverridesFrom, nativeOpenSession } from "#src/server/open-session";
 import { type Env, resolveConfigDir, resolveServerOptions } from "#src/server/options";
@@ -111,6 +113,11 @@ async function serveAcp(flags: CliFlags, deps: MainDeps): Promise<number> {
     logger,
     turnTimeoutSeconds: TURN_TIMEOUT_SECONDS,
     ensureCredentials: (model) => auth.ensureCredentials(model),
+    connectMcp: createMcpConnector({
+      connect: connectMcp,
+      timeoutMs: resolved.options.mcpConnectTimeoutSeconds * 1000,
+      clientVersion: packageVersion(),
+    }),
   });
   const connection = serveStdio(buildAgentApp({ version: packageVersion(), registry, logger, auth }), deps);
   const stop = (): void => connection.close();
@@ -118,13 +125,15 @@ async function serveAcp(flags: CliFlags, deps: MainDeps): Promise<number> {
   deps.stdin.once("end", stop);
   logger.info("server", "nax-agent ACP server started", { configDir, sessionsDir: resolved.options.sessionsDir });
   // Scalars only: catalog overrides can carry provider headers (API keys).
-  const { defaultModel, defaultMode, bashApproval, tiers, catalogOverrides } = resolved.options;
+  const { defaultModel, defaultMode, bashApproval, tiers, catalogOverrides, mcpConnectTimeoutSeconds } =
+    resolved.options;
   logger.debug("server", "resolved options", {
     defaultModel,
     defaultMode,
     bashApproval,
     tiers: tiers.map((t) => `${t.tier}=${t.model}`),
     catalogOverrides: catalogOverrides.length,
+    mcpConnectTimeoutSeconds,
   });
   try {
     await connection.closed;

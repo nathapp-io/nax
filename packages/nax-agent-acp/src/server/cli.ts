@@ -11,6 +11,7 @@ export interface CliFlags {
   readonly model?: string;
   readonly mode?: string;
   readonly bashApproval?: string;
+  readonly mcpConnectTimeout?: string;
 }
 
 export type CliCommand =
@@ -38,6 +39,7 @@ export const USAGE = [
   "  --model <provider/model[effort]>      default model for new sessions",
   "  --mode <none|read|ask|full>           default mode for new sessions (default ask)",
   "  --bash-approval <gated|escalate|raw>  default bash approval (default gated)",
+  "  --mcp-connect-timeout <seconds>       per-server MCP connect timeout, 1-300 (default 30)",
   "  --method <api-key|oauth>              login method (login only; default: ask)",
   "  --version                             print the version",
   "  --help                                print this help",
@@ -51,6 +53,7 @@ const OPTIONS = {
   model: { type: "string" },
   mode: { type: "string" },
   "bash-approval": { type: "string" },
+  "mcp-connect-timeout": { type: "string" },
   method: { type: "string" },
   version: { type: "boolean" },
   help: { type: "boolean" },
@@ -73,6 +76,7 @@ function flagsOf(values: ReturnType<typeof parse>["values"]): CliFlags {
     ...flag("model", values.model),
     ...flag("mode", values.mode),
     ...flag("bashApproval", values["bash-approval"]),
+    ...flag("mcpConnectTimeout", values["mcp-connect-timeout"]),
   };
 }
 

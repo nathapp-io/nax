@@ -23,6 +23,8 @@ export interface EventTranslatorDeps {
   readonly clientUpdates: ClientUpdates;
   /** The session's cost before this turn; `usage_update.cost` is the cumulative session cost. */
   readonly priorCostUsd?: number;
+  /** S5-5b: a display title for an MCP tool call's model name (e.g. `git__status` -> `git: status`). */
+  readonly titleFor?: (name: string) => string | undefined;
 }
 
 export interface EventTranslator {
@@ -110,7 +112,7 @@ export function createEventTranslator(deps: EventTranslatorDeps): EventTranslato
     const locations = toolLocations(call.name, call.input, deps.cwd);
     return {
       toolCallId,
-      title: toolTitle(call.name, call.input),
+      title: deps.titleFor?.(call.name) ?? toolTitle(call.name, call.input),
       kind: toolKind(call.name),
       rawInput: call.input,
       ...(locations !== undefined ? { locations } : {}),
