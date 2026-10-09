@@ -177,6 +177,28 @@ describe("loadServerAuth (M-33)", () => {
     expect(auth.methods.map((m) => m.id)).toEqual(["login-anthropic", "login-openai"]);
   });
 
+  test("with no model configured, every loginable provider but the overridden ones is offered", async () => {
+    const { logger } = recordingLogger();
+    const auth = await loadServerAuth({
+      options: { ...OPTIONS, tiers: [] },
+      overrides: [{ provider: "openrouter", models: [] }],
+      ports: ports({ loginProviderIds: async () => ["anthropic", "openrouter", "openai"] }),
+      logger,
+    });
+    expect(auth.methods.map((m) => m.id)).toEqual(["login-anthropic", "login-openai"]);
+    expect(auth.methods[0]).toMatchObject({ type: "terminal", args: ["login", "anthropic"] });
+  });
+
+  test("terminalAuthMethods takes providers directly, deduped against model providers", () => {
+    const methods = terminalAuthMethods({
+      models: ["anthropic/x"],
+      providers: ["anthropic", "openai", "unlisted"],
+      overridden: new Set(["openai"]),
+      loginProviders: ["anthropic", "openai"],
+    });
+    expect(methods.map((m) => m.id)).toEqual(["login-anthropic"]);
+  });
+
   test("a failing provider listing gives no methods and one warning", async () => {
     const { logger, lines } = recordingLogger();
     const auth = await loadServerAuth({

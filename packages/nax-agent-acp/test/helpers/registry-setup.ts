@@ -3,7 +3,7 @@ import { createMemoryTranscriptStore, type TranscriptStore } from "@nathapp/nax-
 import type { ConnectSessionMcp } from "#src/server/mcp/connect";
 import type { OpenSessionRequest } from "#src/server/open-session";
 import type { ServerOptions } from "#src/server/options";
-import { createSessionRegistry } from "#src/server/registry";
+import { createSessionRegistry, type ReloadedOptions } from "#src/server/registry";
 import { TURN_TIMEOUT_SECONDS } from "#src/server/server-session";
 import { createSessionStorage } from "#src/server/storage";
 import { type FakeAgentSession, fakeAgentSession, type Script, turnEnd } from "#test/helpers/fake-agent-session";
@@ -41,6 +41,11 @@ export interface RegistrySetupExtra {
   readonly openGate?: Promise<void>;
   readonly failWriteMeta?: boolean;
   readonly failUpdates?: boolean;
+  /** Scripts for each opened session's turns; default: two short replies. */
+  readonly scripts?: readonly Script[];
+  /** Re-resolves the options when session/new finds no model (onboarding). */
+  readonly reloadOptions?: () => Promise<ReloadedOptions>;
+  readonly ensureCredentials?: (model: string) => Promise<void>;
 }
 
 export function setupRegistry(dir: string, options: ServerOptions = OPTIONS, extra: RegistrySetupExtra = {}) {
@@ -72,7 +77,7 @@ export function setupRegistry(dir: string, options: ServerOptions = OPTIONS, ext
       opened.push(request);
       if (extra.openGate !== undefined) await extra.openGate;
       if (extra.failOpens?.includes(opened.length) === true) throw new Error(`open ${opened.length} failed`);
-      const fake = fakeAgentSession(request.sessionId, [said("hi"), said("again")], {
+      const fake = fakeAgentSession(request.sessionId, extra.scripts ?? [said("hi"), said("again")], {
         ...(extra.lastTurn !== undefined ? { lastTurn: extra.lastTurn } : {}),
       });
       fakes.push(fake);
@@ -90,6 +95,8 @@ export function setupRegistry(dir: string, options: ServerOptions = OPTIONS, ext
     turnTimeoutSeconds: TURN_TIMEOUT_SECONDS,
     shutdownWaitMs: 50,
     ...(extra.connectMcp !== undefined ? { connectMcp: extra.connectMcp } : {}),
+    ...(extra.reloadOptions !== undefined ? { reloadOptions: extra.reloadOptions } : {}),
+    ...(extra.ensureCredentials !== undefined ? { ensureCredentials: extra.ensureCredentials } : {}),
   });
   const input = (cwd = "/w", mcpServers: readonly unknown[] = []) => ({ cwd, mcpServers, port: () => port.port });
   return { registry, input, port, lines, storage, transcripts, opened, fakes, dir };

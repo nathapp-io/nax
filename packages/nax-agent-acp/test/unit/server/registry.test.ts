@@ -31,7 +31,7 @@ describe("create (session/new)", () => {
     const created = await s.registry.create(s.input());
     expect(created.sessionId).toBe("id-1");
     expect(created.modes.currentModeId).toBe("ask");
-    expect(created.configOptions.map((o) => o.id)).toEqual(["model", "bashApproval"]);
+    expect(created.configOptions.map((o) => o.id)).toEqual(["mode", "model", "bashApproval"]);
     expect(s.opened[0]).toEqual({
       sessionId: "id-1",
       cwd: "/w",
@@ -50,13 +50,21 @@ describe("create (session/new)", () => {
     expect(JSON.parse(await readFile(join(dir, "id-1.lock"), "utf8"))).toMatchObject({ pid: 1000 });
   });
 
-  test("a relative cwd and no model are invalid_params; nothing is written", async () => {
+  test("a relative cwd is invalid_params; nothing is written", async () => {
     const s = setup();
     expect((await failure(s.registry.create(s.input("w")))).code).toBe(-32602);
+    expect(await s.storage.hasMeta("id-1")).toBe(false);
+  });
+
+  test("no model is auth_required with the login steps; nothing is written", async () => {
     const { defaultModel: _unused, ...noModel } = OPTIONS;
     const n = setup(noModel);
-    expect((await failure(n.registry.create(n.input()))).message).toContain(NO_MODEL_MESSAGE);
-    expect(await s.storage.hasMeta("id-1")).toBe(false);
+    const error = await failure(n.registry.create(n.input()));
+    expect(error.code).toBe(-32000);
+    expect(error.message).toContain(NO_MODEL_MESSAGE);
+    expect(error.message).toContain("nax-agent login");
+    expect(await n.storage.hasMeta("id-1")).toBe(false);
+    expect(n.opened).toEqual([]);
   });
 
   test("the first prompt sets the title (80 chars, one line) and every prompt sets updatedAt", async () => {

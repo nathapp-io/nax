@@ -198,6 +198,7 @@ type ProtectedPathsPolicy
 type ProtocolIds
 type ProviderGrantEntry
 type ProviderKind
+type ProviderModel
 type ProviderTool
 QUESTION_IDS
 QUESTION_SET_VERSION
@@ -359,6 +360,7 @@ listCodingTools
 listCredentialFiles
 listGitGuardFiles
 listNaxEntries
+listProviderModels
 listStoredProviders
 loginProviderIds
 maskForPrompt
@@ -619,6 +621,7 @@ type ProtectedPathsPolicy
 type ProviderCatalogOverride
 type ProviderGrantEntry
 type ProviderKind
+type ProviderModel
 type ProviderTool
 type QualityCommandSpec
 READ_CEILING
@@ -868,6 +871,7 @@ listCodingTools
 listCredentialFiles
 listGitGuardFiles
 listNaxEntries
+listProviderModels
 listStoredProviders
 loadTranscript
 loginProviderIds

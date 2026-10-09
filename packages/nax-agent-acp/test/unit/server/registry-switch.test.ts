@@ -113,7 +113,7 @@ describe("set_config_option", () => {
     await s.registry.create(s.input);
     const options = await s.registry.setConfigOption("s1", "model", "anthropic/claude-haiku-4-5");
     expect(s.opened.at(-1)).toMatchObject({ model: "anthropic/claude-haiku-4-5" });
-    expect(options[0]).toMatchObject({ currentValue: "anthropic/claude-haiku-4-5" });
+    expect(options[1]).toMatchObject({ id: "model", currentValue: "anthropic/claude-haiku-4-5" });
     expect((await metaOf("s1")).model).toBe("anthropic/claude-haiku-4-5");
   });
 

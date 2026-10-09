@@ -39,6 +39,23 @@ describe("runLoginCommand", () => {
     expect(h.err).toEqual([]);
   });
 
+  test("offers the default model for the provider that signed in, after the result line", async () => {
+    const offered: string[] = [];
+    const h = deps({ offerModel: async (provider) => void offered.push(provider) });
+    expect(await runLoginCommand({ provider: "anthropic" }, h.deps)).toBe(0);
+    expect(offered).toEqual(["anthropic"]);
+  });
+
+  test("a failing offer is reported on stderr but the login still succeeded (exit 0)", async () => {
+    const h = deps({
+      offerModel: async () => {
+        throw new Error("disk full");
+      },
+    });
+    expect(await runLoginCommand({ provider: "anthropic" }, h.deps)).toBe(0);
+    expect(h.err.join("\n")).toContain("disk full");
+  });
+
   test("refuses at once without a TTY, never prompting (Review Focus 5)", async () => {
     const h = deps({ isTTY: false });
     expect(await runLoginCommand({ provider: "anthropic" }, h.deps)).toBe(1);

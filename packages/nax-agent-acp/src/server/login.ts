@@ -13,10 +13,20 @@ export interface LoginDeps {
   readonly out: (line: string) => void;
   readonly err: (line: string) => void;
   readonly auth: Pick<AuthPorts, "runLogin" | "interaction">;
+  /** After a successful login: offers to set a default model (#2414). A failure here never fails the login. */
+  readonly offerModel?: (provider: string) => Promise<void>;
 }
 
 function envName(provider: string): string {
   return `${provider.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_API_KEY`;
+}
+
+async function offerAfterLogin(provider: string, deps: LoginDeps): Promise<void> {
+  try {
+    await deps.offerModel?.(provider);
+  } catch (error) {
+    deps.err(`nax-agent: could not set a default model: ${redactSecrets(messageOf(error))}`);
+  }
 }
 
 export async function runLoginCommand(
@@ -33,6 +43,7 @@ export async function runLoginCommand(
   try {
     const result = await deps.auth.runLogin(input.provider, deps.auth.interaction(deps.out), input.method);
     deps.out(`Signed in to ${result.providerId} (method: ${result.method}, credential: ${result.kind})`);
+    await offerAfterLogin(result.providerId, deps);
     return 0;
   } catch (error) {
     if (error instanceof AuthCancelledError || error instanceof PromptCancelledError) return 130;

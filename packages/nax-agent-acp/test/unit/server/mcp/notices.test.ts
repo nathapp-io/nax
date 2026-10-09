@@ -28,6 +28,13 @@ describe("MCP notices", () => {
     });
   });
 
+  test("mode notice without notice support reads as one sentence", () => {
+    expect(modeNotice(false, "read")).toEqual({
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "\n\nMCP tools are off in read mode; switch to ask or full to use them.\n\n" },
+    });
+  });
+
   test("disconnect notice names the server, scrubbed", () => {
     expect(disconnectNotice(true, "git", "exit sekret-value", scrub)).toEqual({
       sessionUpdate: "notice",

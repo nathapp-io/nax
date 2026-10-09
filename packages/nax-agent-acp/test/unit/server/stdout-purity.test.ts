@@ -6,6 +6,7 @@ import { describe, expect, test } from "bun:test";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
+import { waitForCondition } from "@nathapp/nax-test-kit/bun/timeout";
 
 const ENTRY = fileURLToPath(new URL("../../fixtures/server/run.ts", import.meta.url));
 const PKG = fileURLToPath(new URL("../../..", import.meta.url));
@@ -32,7 +33,13 @@ describe("the server process", () => {
       child.stdin.write(frame(3, "no/such_method", {}));
       child.stdin.write(frame(4, "session/prompt", { sessionId: "nope", prompt: [{ type: "text", text: "x" }] }));
       child.stdin.write(frame(5, "session/list", {}));
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      // Wait for all five replies (session/new re-reads config first; slow under coverage).
+      const replies = () =>
+        Buffer.concat(out)
+          .toString("utf8")
+          .split("\n")
+          .filter((l) => l !== "").length;
+      await waitForCondition(() => replies() >= 5, 15_000);
       child.stdin.end();
       expect(await exited).toBe(0);
       const lines = Buffer.concat(out)
@@ -42,8 +49,8 @@ describe("the server process", () => {
       const frames = lines.map((l) => JSON.parse(l));
       expect(frames.every((f) => f.jsonrpc === "2.0")).toBe(true);
       expect(frames.find((f) => f.id === 1)?.result?.agentInfo?.name).toBe("nax-agent");
-      // No model configured in the empty config dir (S5-2): invalid_params.
-      expect(frames.find((f) => f.id === 2)?.error?.code).toBe(-32602);
+      // No model configured in the empty config dir (S5-2): auth_required (login first).
+      expect(frames.find((f) => f.id === 2)?.error?.code).toBe(-32000);
       expect(frames.find((f) => f.id === 3)?.error?.code).toBe(-32601);
       expect(frames.find((f) => f.id === 4)?.error?.code).toBe(-32002);
       // The config dir is empty, so the sessions dir does not exist (S5-3).

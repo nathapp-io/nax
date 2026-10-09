@@ -1,7 +1,8 @@
 /**
  * What an ACP session exposes about its settings (S5 spec §5.2, §5.3): the four
- * modes (S3 profiles), and two select config options, the model (the configured
- * tiers plus the current model) and the bash approval mode. Changes are
+ * modes (S3 profiles), and three select config options (mode, which editors
+ * render in place of `modes`; the model (the configured
+ * tiers plus the current model); and the bash approval mode). Changes are
  * validated here; applying them is the registry's close-and-reopen (§3.3).
  */
 import type { SessionConfigOption, SessionMode, SessionModeState } from "@agentclientprotocol/sdk";
@@ -15,6 +16,7 @@ export interface SessionSettings {
   readonly bashApproval: BashApproval;
 }
 
+export const MODE_OPTION = "mode";
 export const MODEL_OPTION = "model";
 export const BASH_OPTION = "bashApproval";
 
@@ -71,6 +73,14 @@ export function modelChoices(
 export function configOptions(settings: SessionSettings, tiers: readonly TierModel[]): SessionConfigOption[] {
   return [
     {
+      id: MODE_OPTION,
+      name: "Mode",
+      category: "mode",
+      type: "select",
+      currentValue: settings.mode,
+      options: SESSION_MODES.map((m) => ({ value: m.id, name: m.name, description: m.description ?? null })),
+    },
+    {
       id: MODEL_OPTION,
       name: "Model",
       category: "model",
@@ -102,6 +112,7 @@ export function applyConfigChange(
   tiers: readonly TierModel[],
 ): SessionSettings {
   if (typeof value !== "string") throw invalidParams(`config option "${configId}" takes a string value`);
+  if (configId === MODE_OPTION) return applyModeChange(settings, value);
   if (configId === MODEL_OPTION) {
     const valid = modelChoices(settings, tiers).map((choice) => choice.value);
     if (!valid.includes(value)) throw invalidParams(`unknown model "${value}"; valid models: ${valid.join(", ")}`);
