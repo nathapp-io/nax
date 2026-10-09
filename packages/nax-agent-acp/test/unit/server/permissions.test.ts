@@ -52,6 +52,10 @@ describe("memoryKey (spec §4.3)", () => {
     expect(memoryKey(approval("r", "Bash", { command: "  git push origin main" }))).toBe("Bash:git");
   });
 
+  test("a leading environment assignment is never remembered", () => {
+    expect(memoryKey(approval("r", "Bash", { command: "FOO=1 rm -rf build" }))).toBeUndefined();
+  });
+
   test("an execute tool with no command is never remembered (M-12)", () => {
     expect(memoryKey(approval("r", "Bash"))).toBeUndefined();
     expect(memoryKey(approval("r", "Bash", { command: "   " }))).toBeUndefined();
@@ -111,6 +115,38 @@ describe("createPermissionBroker", () => {
     await s.broker.drain();
     expect(s.asks).toHaveLength(2);
     expect(s.answers.find((a) => a.requestId === "r2")?.reply).toEqual({ decision: "deny" });
+  });
+
+  test("a remembered allow never covers a compound command; a remembered reject does", async () => {
+    const allow = setup({ permission: async () => select("allow_always") });
+    allow.broker.request(approval("r1", "Bash", { command: "git status" }), undefined);
+    await allow.broker.drain();
+    allow.broker.request(approval("r2", "Bash", { command: "git status; rm -rf ~" }), undefined);
+    allow.broker.request(approval("r3", "Bash", { command: "git log $(cat secret)" }), undefined);
+    allow.broker.request(approval("r4", "Bash", { command: "git log --oneline" }), undefined);
+    await allow.broker.drain();
+    expect(allow.asks).toHaveLength(3);
+    expect(allow.answers.find((a) => a.requestId === "r4")?.reply).toEqual({ decision: "allow" });
+    const reject = setup({ permission: async () => select("reject_always") });
+    reject.broker.request(approval("r1", "Bash", { command: "git push" }), undefined);
+    await reject.broker.drain();
+    reject.broker.request(approval("r2", "Bash", { command: "git push && echo done" }), undefined);
+    await reject.broker.drain();
+    expect(reject.asks).toHaveLength(1);
+    expect(reject.answers.find((a) => a.requestId === "r2")?.reply).toEqual({ decision: "deny" });
+  });
+
+  test("the fallback tool call shows no control or bidi characters", async () => {
+    const s = setup();
+    s.broker.request(
+      approval("r1", "Bash", { summary: "run\u202E evil\nnext line", command: "echo\u0007 hi\u202E" }),
+      undefined,
+    );
+    await s.broker.drain();
+    const call = s.asks[0]?.toolCall;
+    expect(call?.title).toBe("run evil next line");
+    expect(JSON.stringify(call?.rawInput)).not.toMatch(/\\u(0007|202e)/i);
+    expect(call?.rawInput).toEqual({ command: "echo hi" });
   });
 
   test("S3 settling first aborts the client request; a late reply is ignored", async () => {

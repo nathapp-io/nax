@@ -2,15 +2,20 @@
  * Approval round trips (S5 spec §4.3). A human approval becomes a
  * `session/request_permission`, and the chosen option is passed to `answer()`.
  * allow_always and reject_always are remembered for the session's life (M-12:
- * execute tools per first word of the command, never without one). When S3
+ * execute tools per first word of the command, never without one or after an
+ * environment assignment). A remembered allow covers only a simple command: one
+ * with shell metacharacters (chaining, substitution, redirection) is asked
+ * again, so "always allow git" never approves `git status; rm -rf ~`. A
+ * remembered reject applies by prefix regardless. When S3
  * settles a request itself (timeout, cancel), the client request is aborted and a
  * late reply is ignored. A failed client request is a deny (M-13).
  */
 import type { PermissionOption, RequestPermissionResponse, ToolCallUpdate } from "@agentclientprotocol/sdk";
 import type { AgentLogger, AnswerReply, AnswerStatus, SessionEvent } from "@nathapp/nax-agent";
+import { stripControl, stripInvisible } from "#src/client/text";
 import { type ClientPort, untilAborted } from "#src/server/client-port";
 import { messageOf } from "#src/server/errors";
-import { toolKind } from "#src/server/translate/tool-kind";
+import { displayLine, toolKind } from "#src/server/translate/tool-kind";
 
 export type Decision = "allow" | "deny";
 export type ApprovalEvent = Extract<SessionEvent, { type: "approval_requested" }>;
@@ -48,10 +53,20 @@ interface Choice {
 
 const DENY: Choice = { decision: "deny", remember: false };
 
+/** Chaining, pipes, substitution, subshells, redirection and line breaks. */
+const SHELL_METACHARACTERS = /[;&|`$()<>\n\r]/;
+
 export function memoryKey(event: ApprovalEvent): string | undefined {
   if (toolKind(event.tool) !== "execute") return event.tool;
   const first = event.command?.trim().split(/\s+/)[0];
-  return first === undefined || first === "" ? undefined : `${event.tool}:${first}`;
+  if (first === undefined || first === "" || first.includes("=")) return undefined;
+  return `${event.tool}:${first}`;
+}
+
+/** Whether a remembered decision may answer this request without asking. */
+function memoryApplies(event: ApprovalEvent, decision: Decision): boolean {
+  if (decision === "deny" || toolKind(event.tool) !== "execute") return true;
+  return !SHELL_METACHARACTERS.test(event.command ?? "");
 }
 
 function choice(response: RequestPermissionResponse): Choice {
@@ -72,10 +87,10 @@ function choice(response: RequestPermissionResponse): Choice {
 function fallbackToolCall(event: ApprovalEvent): ToolCallUpdate {
   return {
     toolCallId: event.callId ?? event.requestId,
-    title: event.summary,
+    title: displayLine(event.summary),
     kind: toolKind(event.tool),
     status: "pending",
-    ...(event.command !== undefined ? { rawInput: { command: event.command } } : {}),
+    ...(event.command !== undefined ? { rawInput: { command: stripInvisible(stripControl(event.command)) } } : {}),
   };
 }
 
@@ -106,7 +121,7 @@ export function createPermissionBroker(deps: PermissionBrokerDeps): PermissionBr
     request(event, toolCall) {
       const key = memoryKey(event);
       const remembered = key === undefined ? undefined : deps.memory.get(key);
-      if (remembered !== undefined) {
+      if (remembered !== undefined && memoryApplies(event, remembered)) {
         deps.answer(event.requestId, { decision: remembered });
         return;
       }
