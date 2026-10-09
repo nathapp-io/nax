@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, readdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type AuthInteraction, PromptCancelledError } from "@nathapp/nax-agent";
 import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
@@ -26,13 +26,21 @@ interface Run {
 }
 
 async function offer(
-  overrides: { isTTY?: boolean; pinned?: boolean; pick?: string | "cancel"; models?: ModelPorts } = {},
+  overrides: {
+    isTTY?: boolean;
+    pinned?: boolean;
+    pick?: string | "cancel";
+    models?: ModelPorts;
+    /** Runs while the user is picking (after the file was read, before the write). */
+    duringPick?: () => Promise<void>;
+  } = {},
 ): Promise<Run> {
   const out: string[] = [];
   const prompts: string[] = [];
   const interaction: AuthInteraction = {
     notify: () => undefined,
     prompt: async (prompt) => {
+      await overrides.duringPick?.();
       prompts.push(prompt.type === "select" ? prompt.options.map((o) => o.id).join(",") : prompt.type);
       if (overrides.pick === "cancel") throw new PromptCancelledError();
       return overrides.pick ?? "model:m-2";
@@ -148,5 +156,81 @@ describe("offerDefaultModel", () => {
       expect(run.out.join("\n")).toContain("models.native.balanced");
     }
     await expect(stat(path())).rejects.toThrow();
+  });
+});
+
+describe("the config writer", () => {
+  const leftovers = async () => (await readdir(dir)).filter((name) => name.endsWith(".tmp"));
+
+  test("a new file is 0600 and a created directory 0700, with no temp file left", async () => {
+    dir = join(dir, "fresh");
+    await offer();
+    expect((await stat(path())).mode & 0o777).toBe(0o600);
+    expect((await stat(dir)).mode & 0o777).toBe(0o700);
+    expect(await leftovers()).toEqual([]);
+  });
+
+  test("an existing 0644 file keeps its mode, and other keys keep their order", async () => {
+    await writeFile(path(), '{"zeta":1,"alpha":{"b":2,"a":1}}');
+    await chmod(path(), 0o644);
+    await offer();
+    expect((await stat(path())).mode & 0o777).toBe(0o644);
+    const text = await readFile(path(), "utf8");
+    expect(Object.keys(JSON.parse(text))).toEqual(["zeta", "alpha", "models"]);
+    expect(Object.keys(JSON.parse(text).alpha)).toEqual(["b", "a"]);
+    expect(text).toBe(`${JSON.stringify(JSON.parse(text), null, 2)}\n`);
+    expect(await leftovers()).toEqual([]);
+  });
+
+  test("a symlinked config.json updates its target and stays a symlink", async () => {
+    const real = join(dir, "real");
+    await mkdir(real);
+    await writeFile(join(real, "shared.json"), '{"keep":true}');
+    await symlink(join(real, "shared.json"), path());
+    await offer();
+    expect((await lstat(path())).isSymbolicLink()).toBe(true);
+    expect(JSON.parse(await readFile(join(real, "shared.json"), "utf8"))).toEqual({
+      keep: true,
+      models: { native: { balanced: "acme/m-2" } },
+    });
+    expect(await leftovers()).toEqual([]);
+    expect(await readdir(real)).toEqual(["shared.json"]);
+  });
+
+  test("a file changed between the read and the write is left alone, with the instruction", async () => {
+    await writeFile(path(), '{"a":1}');
+    const run = await offer({ duringPick: () => writeFile(path(), '{"a":2}') });
+    expect(await readFile(path(), "utf8")).toBe('{"a":2}');
+    expect(run.out.join("\n")).toContain("changed while picking; left unchanged");
+    expect(run.out.join("\n")).toContain("models.native.balanced");
+    expect(await leftovers()).toEqual([]);
+  });
+
+  test("a file created between the read and the write is also left alone", async () => {
+    const run = await offer({ duringPick: () => writeFile(path(), "{}") });
+    expect(await readFile(path(), "utf8")).toBe("{}");
+    expect(run.out.join("\n")).toContain("changed while picking");
+  });
+
+  test("a failed write removes its temp file and reports the error", async () => {
+    await writeFile(path(), "{}");
+    await rm(path());
+    await mkdir(path()); // config.json is a directory: the rename cannot replace it
+    await expect(NODE_CONFIG_WRITER(path(), "{}")).rejects.toThrow();
+    expect(await leftovers()).toEqual([]);
+  });
+});
+
+describe("a catalog failure", () => {
+  test("is named in one redacted line before the manual instruction", async () => {
+    const run = await offer({
+      models: {
+        listModels: async () => Promise.reject(new Error("catalog down sk-ant-api03-abcdefghijklmnopqrstuvwxyz")),
+      },
+    });
+    expect(run.out).toHaveLength(2);
+    expect(run.out[0]).toContain("Could not list acme models: catalog down");
+    expect(run.out[0]).not.toContain("abcdefghijklmnop");
+    expect(run.out[1]).toContain("models.native.balanced");
   });
 });

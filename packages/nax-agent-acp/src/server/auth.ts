@@ -47,11 +47,14 @@ export function providerOf(model: string): string | undefined {
 /** Terminal login methods (spec §6.3, M-33): loginable, non-override providers, in order. */
 export function terminalAuthMethods(input: {
   readonly models: readonly string[];
+  /** Providers named directly, after those of `models`. */
+  readonly providers?: readonly string[];
   readonly overridden: ReadonlySet<string>;
   readonly loginProviders: readonly string[];
 }): AcpAuthMethod[] {
   const loginable = new Set(input.loginProviders);
-  const providers = [...new Set(input.models.map(providerOf).filter((p): p is string => p !== undefined))].filter(
+  const named = [...input.models.map(providerOf), ...(input.providers ?? [])];
+  const providers = [...new Set(named.filter((p): p is string => p !== undefined))].filter(
     (p) => loginable.has(p) && !input.overridden.has(p),
   );
   return providers.map((p) => ({
@@ -130,12 +133,10 @@ export async function loadServerAuth(input: {
     });
   }
   // No model configured: a first-time user has nothing to derive a provider from, so every one is offered (#2414).
-  const models =
-    options.defaultModel === undefined
-      ? loginProviders.map((provider) => `${provider}/`)
-      : [...options.tiers.map((t) => t.model), options.defaultModel];
+  const noModel = options.defaultModel === undefined;
+  const models = noModel ? [] : [...options.tiers.map((t) => t.model), options.defaultModel];
   return createServerAuth({
-    methods: terminalAuthMethods({ models, overridden, loginProviders }),
+    methods: terminalAuthMethods({ models, providers: noModel ? loginProviders : [], overridden, loginProviders }),
     overridden,
     missing: (ids) => ports.providersWithoutCredentials(ids),
   });

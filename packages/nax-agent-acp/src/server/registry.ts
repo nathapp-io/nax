@@ -12,7 +12,7 @@ import {
   type SessionConfigOption,
   type SessionModeState,
 } from "@agentclientprotocol/sdk";
-import type { AgentLogger, EmbedderTool, TranscriptStore } from "@nathapp/nax-agent";
+import { type AgentLogger, type EmbedderTool, redactSecrets, type TranscriptStore } from "@nathapp/nax-agent";
 import { stripControl, stripInvisible } from "#src/client/text";
 import type { ClientPort } from "#src/server/client-port";
 import { authRequired, invalidParams, messageOf, turnInProgress, unknownSession } from "#src/server/errors";
@@ -36,11 +36,18 @@ import {
 import type { SessionMeta, SessionStorage } from "#src/server/storage";
 import type { ReadOldText } from "#src/server/translate/diff";
 
-export const NO_MODEL_MESSAGE = "no model configured; logging in also offers to set a default model";
+export const NO_MODEL_MESSAGE =
+  "no model configured: log in to pick one, or set models.native.balanced in config.json / NAX_AGENT_MODEL";
 export const INTERRUPTED_NOTICE = "The previous turn was interrupted";
 export const SHUTTING_DOWN = "server is shutting down";
 export const SHUTDOWN_WAIT_MS = 5000;
 export const TITLE_MAX = 80;
+
+/** What re-reading the options found: the options, or why there are none (a short, redacted reason). */
+export interface ReloadedOptions {
+  readonly options?: ServerOptions;
+  readonly problem?: string;
+}
 
 export interface SessionState {
   readonly modes: SessionModeState;
@@ -87,7 +94,7 @@ export interface RegistryDeps {
    * session/new when no model is configured, so a model written by `nax-agent login`
    * takes effect without restarting the server (#2414).
    */
-  readonly reloadOptions?: () => Promise<ServerOptions | undefined>;
+  readonly reloadOptions?: () => Promise<ReloadedOptions>;
 }
 
 export interface Entry {
@@ -321,11 +328,18 @@ export function createSessionRegistry(deps: RegistryDeps): SessionRegistry {
 
   /** The default model, re-read from the config when none was configured at startup. */
   async function reloadDefaultModel(): Promise<string> {
-    const fresh = await deps.reloadOptions?.().catch((error: unknown) => {
-      deps.logger.warn("config", "could not re-read the options", { error: messageOf(error) });
-      return undefined;
-    });
-    if (fresh?.defaultModel === undefined) throw authRequired(NO_MODEL_MESSAGE, {});
+    let problem: string | undefined;
+    let fresh: ServerOptions | undefined;
+    try {
+      ({ options: fresh, problem } = (await deps.reloadOptions?.()) ?? {});
+    } catch (error) {
+      problem = redactSecrets(messageOf(error));
+      deps.logger.warn("config", "could not re-read the options", { error: problem });
+    }
+    if (fresh?.defaultModel === undefined) {
+      const reason = problem === undefined ? "" : `; config.json could not be used: ${problem}`;
+      throw authRequired(`${NO_MODEL_MESSAGE}${reason}`, {});
+    }
     options = { ...options, defaultModel: fresh.defaultModel, tiers: fresh.tiers };
     return fresh.defaultModel;
   }

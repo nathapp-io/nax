@@ -131,6 +131,25 @@ describe("login-first onboarding over the stdio server", () => {
     expect(await exit).toBe(0);
   });
 
+  test("a config problem is logged and named in the auth_required message", async () => {
+    const config = memoryConfig();
+    config.files.set(CONFIG_PATH, "{ not json");
+    const h = harness([], config);
+    const exit = main(h.deps);
+    h.send(1, "initialize", { protocolVersion: 1 });
+    await h.reply(1);
+    h.send(2, "session/new", { cwd: dir, mcpServers: [] });
+    const created = await h.reply(2);
+    expect(created.error.code).toBe(-32000);
+    expect(created.error.message).toContain("config.json could not be used: ignoring");
+    expect(created.error.message).toContain("invalid JSON");
+    h.stdin.end();
+    expect(await exit).toBe(0);
+    // once at startup, once for the reload
+    expect(h.err().split("invalid JSON").length - 1).toBe(2);
+    expect(h.err()).not.toContain("not json");
+  });
+
   test("login does not offer a model when NAX_AGENT_MODEL is set", async () => {
     const config = memoryConfig();
     const login = harness(["login", "anthropic"], config, { NAX_AGENT_MODEL: MODEL });

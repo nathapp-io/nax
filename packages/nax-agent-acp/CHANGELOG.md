@@ -12,7 +12,7 @@ step with `@nathapp/nax-agent`.
 
 ### Changed
 
-- The read-mode MCP notice reads as one sentence when the client has no notice support (#2422).
+- The notice that MCP tools are off in `read` and `none` mode, also sent when the mode is switched, reads as one sentence when the client has no notice support (#2422).
 
 ## [0.84.0] - 2026-10-09
 

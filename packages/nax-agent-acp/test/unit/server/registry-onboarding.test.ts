@@ -31,7 +31,7 @@ describe("session/new without a configured model", () => {
     const s = setupRegistry(dir, NO_MODEL, {
       reloadOptions: async () => {
         reads += 1;
-        return written ? WITH_MODEL : NO_MODEL;
+        return { options: written ? WITH_MODEL : NO_MODEL };
       },
     });
     const first = await failure(s.registry.create(s.input()));
@@ -48,7 +48,7 @@ describe("session/new without a configured model", () => {
   test("the credential pre-flight then runs for the new model", async () => {
     const checked: string[] = [];
     const s = setupRegistry(dir, NO_MODEL, {
-      reloadOptions: async () => WITH_MODEL,
+      reloadOptions: async () => ({ options: WITH_MODEL }),
       ensureCredentials: async (model) => {
         checked.push(model);
       },
@@ -58,7 +58,7 @@ describe("session/new without a configured model", () => {
   });
 
   test("a reload that still finds no model is auth_required, and a failing reload is too", async () => {
-    const still = setupRegistry(dir, NO_MODEL, { reloadOptions: async () => NO_MODEL });
+    const still = setupRegistry(dir, NO_MODEL, { reloadOptions: async () => ({ options: NO_MODEL }) });
     expect((await failure(still.registry.create(still.input()))).code).toBe(-32000);
     const broken = setupRegistry(dir, NO_MODEL, {
       reloadOptions: async () => Promise.reject(new Error("unreadable")),
@@ -66,12 +66,38 @@ describe("session/new without a configured model", () => {
     expect((await failure(broken.registry.create(broken.input()))).code).toBe(-32000);
   });
 
+  test("a config problem found by the reload is named in the auth_required message", async () => {
+    const s = setupRegistry(dir, NO_MODEL, {
+      reloadOptions: async () => ({ problem: "ignoring /cfg/config.json: invalid JSON; using built-in defaults" }),
+    });
+    const error = await failure(s.registry.create(s.input()));
+    expect(error.code).toBe(-32000);
+    expect(error.message).toContain("config.json could not be used: ignoring /cfg/config.json: invalid JSON");
+  });
+
+  test("a throwing reload is logged as a warning and named in the message", async () => {
+    const s = setupRegistry(dir, NO_MODEL, {
+      reloadOptions: async () => Promise.reject(new Error("EACCES: permission denied")),
+    });
+    const error = await failure(s.registry.create(s.input()));
+    expect(error.message).toContain("config.json could not be used: EACCES");
+    expect(s.lines.some((l) => l.level === "warn" && l.message.includes("could not re-read"))).toBe(true);
+  });
+
+  test("the message without a config problem reads cleanly after the login hint wrapper", async () => {
+    const s = setupRegistry(dir, NO_MODEL);
+    const error = await failure(s.registry.create(s.input()));
+    expect(error.message).toContain(
+      "no model configured: log in to pick one, or set models.native.balanced in config.json / NAX_AGENT_MODEL. Log in with",
+    );
+  });
+
   test("a configured model is used as is; the options are not re-read", async () => {
     let reads = 0;
     const s = setupRegistry(dir, WITH_MODEL, {
       reloadOptions: async () => {
         reads += 1;
-        return undefined;
+        return {};
       },
     });
     await s.registry.create(s.input());

@@ -6,9 +6,16 @@
  * cannot merge into safely (malformed, or `models` of the wrong shape) is left
  * unchanged and the one-line instruction is printed instead.
  */
-import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { type AuthInteraction, listProviderModels, PromptCancelledError, type ProviderModel } from "@nathapp/nax-agent";
+import { mkdir, open, realpath, rename, rm, stat } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import {
+  type AuthInteraction,
+  listProviderModels,
+  PromptCancelledError,
+  type ProviderModel,
+  redactSecrets,
+} from "@nathapp/nax-agent";
+import { messageOf } from "#src/server/errors";
 import { loadNaxConfig, type ReadTextFile } from "#src/server/nax-config";
 
 export interface ModelPorts {
@@ -18,12 +25,47 @@ export interface ModelPorts {
 
 export const NAX_AGENT_MODELS: ModelPorts = { listModels: (provider) => listProviderModels(provider) };
 
-/** Writes `text` to `path`, creating the directory (0700) and, if absent, the file (0600). */
+/**
+ * Writes `text` to `path`, creating the directory (0700) and, if absent, the file (0600).
+ * Atomic: a temp file in the same directory (flag "wx", the existing file's mode), synced,
+ * then renamed over the target. A symlinked config.json keeps its link: the target is replaced.
+ */
 export type ConfigWriter = (path: string, text: string) => Promise<void>;
 
+function codeOf(error: unknown): string | undefined {
+  return typeof error === "object" && error !== null && "code" in error && typeof error.code === "string"
+    ? error.code
+    : undefined;
+}
+
+async function existingTarget(path: string): Promise<{ readonly target: string; readonly mode: number }> {
+  try {
+    const target = await realpath(path);
+    return { target, mode: (await stat(target)).mode & 0o777 };
+  } catch (error) {
+    if (codeOf(error) === "ENOENT") return { target: path, mode: 0o600 };
+    throw error;
+  }
+}
+
 export const NODE_CONFIG_WRITER: ConfigWriter = async (path, text) => {
-  await mkdir(join(path, ".."), { recursive: true, mode: 0o700 });
-  await writeFile(path, text, { mode: 0o600 });
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  const { target, mode } = await existingTarget(path);
+  const temp = `${target}.${process.pid}.tmp`;
+  try {
+    const handle = await open(temp, "wx", mode);
+    try {
+      await handle.chmod(mode); // the umask must not narrow an existing file's mode
+      await handle.writeFile(text);
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await rename(temp, target);
+  } catch (error) {
+    await rm(temp, { force: true });
+    throw error;
+  }
 };
 
 export type MergeResult =
@@ -84,8 +126,7 @@ async function readExisting(path: string, readFile: ReadTextFile): Promise<strin
   }
 }
 
-async function pickModel(input: OfferInput): Promise<string | undefined> {
-  const models = await input.models.listModels(input.provider).catch(() => []);
+async function pickModel(input: OfferInput, models: readonly ProviderModel[]): Promise<string | undefined> {
   if (models.length === 0) return undefined;
   try {
     const answer = await input.interaction.prompt({
@@ -107,6 +148,15 @@ async function pickModel(input: OfferInput): Promise<string | undefined> {
   }
 }
 
+async function listModels(input: OfferInput): Promise<readonly ProviderModel[]> {
+  try {
+    return await input.models.listModels(input.provider);
+  } catch (error) {
+    input.out(`Could not list ${input.provider} models: ${redactSecrets(messageOf(error))}`);
+    return [];
+  }
+}
+
 export async function offerDefaultModel(input: OfferInput): Promise<void> {
   if (input.pinned) return;
   const path = join(input.configDir, "config.json");
@@ -117,14 +167,21 @@ export async function offerDefaultModel(input: OfferInput): Promise<void> {
     input.out(instruction(input.provider, path));
     return;
   }
-  const model = input.isTTY ? await pickModel(input) : undefined;
+  const based = await readExisting(path, input.readFile);
+  const model = input.isTTY ? await pickModel(input, await listModels(input)) : undefined;
   if (model === undefined) {
     input.out(instruction(input.provider, path));
     return;
   }
-  const merged = mergeBalancedModel(await readExisting(path, input.readFile), model);
+  const merged = mergeBalancedModel(based, model);
   if (!merged.ok) {
     input.out(`${path} was left unchanged (${merged.reason}).`);
+    input.out(instruction(input.provider, path));
+    return;
+  }
+  // The pick can take a while; another writer may have changed the file meanwhile.
+  if ((await readExisting(path, input.readFile)) !== based) {
+    input.out(`${path} changed while picking; left unchanged.`);
     input.out(instruction(input.provider, path));
     return;
   }

@@ -5,7 +5,7 @@
  */
 import { randomUUID } from "node:crypto";
 import type { Readable, Writable } from "node:stream";
-import { configureCredentials, createFileTranscriptStore, setAgentLogger } from "@nathapp/nax-agent";
+import { configureCredentials, createFileTranscriptStore, redactSecrets, setAgentLogger } from "@nathapp/nax-agent";
 import { connectMcp } from "@nathapp/nax-agent/mcp";
 import { type AuthPorts, loadServerAuth, NAX_AGENT_AUTH } from "#src/server/auth";
 import { type CliCommand, type CliFlags, parseCli, USAGE } from "#src/server/cli";
@@ -141,7 +141,11 @@ async function serveAcp(flags: CliFlags, deps: MainDeps): Promise<number> {
     reloadOptions: async () => {
       const reloaded = await loadNaxConfig(configDir, deps.readFile);
       const again = resolveServerOptions({ flags, env: deps.env, file: reloaded.config, configDir });
-      return again.ok ? again.options : undefined;
+      const problem = reloaded.warning ?? (again.ok ? undefined : again.message);
+      if (problem === undefined) return again.ok ? { options: again.options } : {};
+      // Config paths and option names only, never file contents.
+      logger.warn("config", redactSecrets(problem));
+      return { ...(again.ok ? { options: again.options } : {}), problem: redactSecrets(problem) };
     },
     connectMcp: createMcpConnector({
       connect: connectMcp,

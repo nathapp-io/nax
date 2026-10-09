@@ -189,6 +189,16 @@ describe("loadServerAuth (M-33)", () => {
     expect(auth.methods[0]).toMatchObject({ type: "terminal", args: ["login", "anthropic"] });
   });
 
+  test("terminalAuthMethods takes providers directly, deduped against model providers", () => {
+    const methods = terminalAuthMethods({
+      models: ["anthropic/x"],
+      providers: ["anthropic", "openai", "unlisted"],
+      overridden: new Set(["openai"]),
+      loginProviders: ["anthropic", "openai"],
+    });
+    expect(methods.map((m) => m.id)).toEqual(["login-anthropic"]);
+  });
+
   test("a failing provider listing gives no methods and one warning", async () => {
     const { logger, lines } = recordingLogger();
     const auth = await loadServerAuth({
