@@ -15,7 +15,7 @@ import {
 import type { AgentLogger, EmbedderTool, TranscriptStore } from "@nathapp/nax-agent";
 import { stripControl, stripInvisible } from "#src/client/text";
 import type { ClientPort } from "#src/server/client-port";
-import { invalidParams, messageOf, turnInProgress, unknownSession } from "#src/server/errors";
+import { authRequired, invalidParams, messageOf, turnInProgress, unknownSession } from "#src/server/errors";
 import { type ConnectSessionMcp, connectNothing, type SessionMcp } from "#src/server/mcp/connect";
 import { disconnectNotice, modeNotice, openNotice } from "#src/server/mcp/notices";
 import { NO_SERVERS, type ParsedServers, parseMcpServers } from "#src/server/mcp/parse";
@@ -36,7 +36,7 @@ import {
 import type { SessionMeta, SessionStorage } from "#src/server/storage";
 import type { ReadOldText } from "#src/server/translate/diff";
 
-export const NO_MODEL_MESSAGE = "no model configured: set models.native.balanced or --model";
+export const NO_MODEL_MESSAGE = "no model configured; logging in also offers to set a default model";
 export const INTERRUPTED_NOTICE = "The previous turn was interrupted";
 export const SHUTTING_DOWN = "server is shutting down";
 export const SHUTDOWN_WAIT_MS = 5000;
@@ -82,6 +82,12 @@ export interface RegistryDeps {
   readonly ensureCredentials?: (model: string) => Promise<void>;
   /** S5-5: connects a session's client-supplied MCP servers. Default: connects nothing (plan M-38). */
   readonly connectMcp?: ConnectSessionMcp;
+  /**
+   * Re-resolves the options (flags and env still win over the config file). Called by
+   * session/new when no model is configured, so a model written by `nax-agent login`
+   * takes effect without restarting the server (#2414).
+   */
+  readonly reloadOptions?: () => Promise<ServerOptions | undefined>;
 }
 
 export interface Entry {
@@ -109,7 +115,7 @@ function waitAtMost(ms: number): { readonly done: Promise<"timeout">; cancel(): 
 
 export function createSessionRegistry(deps: RegistryDeps): SessionRegistry {
   const entries = new Map<string, Entry>();
-  const { options } = deps;
+  let options = deps.options;
   const connectMcp = deps.connectMcp ?? connectNothing;
   const shutdown = new AbortController();
   let closing = false;
@@ -313,11 +319,21 @@ export function createSessionRegistry(deps: RegistryDeps): SessionRegistry {
     if (changed) await announceConfig(entry, next);
   }
 
+  /** The default model, re-read from the config when none was configured at startup. */
+  async function reloadDefaultModel(): Promise<string> {
+    const fresh = await deps.reloadOptions?.().catch((error: unknown) => {
+      deps.logger.warn("config", "could not re-read the options", { error: messageOf(error) });
+      return undefined;
+    });
+    if (fresh?.defaultModel === undefined) throw authRequired(NO_MODEL_MESSAGE, {});
+    options = { ...options, defaultModel: fresh.defaultModel, tiers: fresh.tiers };
+    return fresh.defaultModel;
+  }
+
   return {
     async create(input) {
       if (!isAbsolute(input.cwd)) throw invalidParams(`cwd must be an absolute path: ${input.cwd}`);
-      const model = options.defaultModel;
-      if (model === undefined) throw invalidParams(NO_MODEL_MESSAGE);
+      const model = options.defaultModel ?? (await reloadDefaultModel());
       const sessionId = deps.newId();
       const meta: SessionMeta = {
         schemaVersion: 1,

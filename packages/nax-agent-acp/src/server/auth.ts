@@ -129,10 +129,11 @@ export async function loadServerAuth(input: {
       error: redactSecrets(messageOf(error)),
     });
   }
-  const models = [
-    ...options.tiers.map((t) => t.model),
-    ...(options.defaultModel !== undefined ? [options.defaultModel] : []),
-  ];
+  // No model configured: a first-time user has nothing to derive a provider from, so every one is offered (#2414).
+  const models =
+    options.defaultModel === undefined
+      ? loginProviders.map((provider) => `${provider}/`)
+      : [...options.tiers.map((t) => t.model), options.defaultModel];
   return createServerAuth({
     methods: terminalAuthMethods({ models, overridden, loginProviders }),
     overridden,

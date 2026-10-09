@@ -3,6 +3,17 @@
 All notable changes to `@nathapp/nax-agent-acp` are recorded here. Versions move in
 step with `@nathapp/nax-agent`.
 
+## [Unreleased]
+
+### Added
+
+- The mode is a session config option (category `mode`), so editors that render config options show a mode picker; `modes` and `session/set_mode` still work (#2422).
+- Login-first onboarding (#2414): with no model configured, `initialize` advertises terminal login for every loginable provider and `session/new` returns `auth_required`. `nax-agent login <provider>` then offers to write `models.native.balanced` into `config.json` from the provider's catalog models. A server with no model re-reads `config.json` on `session/new`, so the retry needs no restart.
+
+### Changed
+
+- The read-mode MCP notice reads as one sentence when the client has no notice support (#2422).
+
 ## [0.84.0] - 2026-10-09
 
 - Versioning: released in lockstep with `@nathapp/nax`, `@nathapp/nax-ai` and the other agent package at one shared version, starting at 0.84.0 (previously 0.3.x).

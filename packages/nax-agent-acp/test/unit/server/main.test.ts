@@ -41,6 +41,8 @@ function harness(argv: readonly string[], overrides: Partial<MainDeps> = {}): Ha
     homedir: "/home/u",
     isTTY: true,
     auth: fakeAuth(),
+    models: { listModels: async () => [] },
+    writeConfig: async () => undefined,
     stdin,
     stdout,
     writeErr: (text) => errText.push(text),
@@ -198,7 +200,7 @@ describe("main login (S5-4)", () => {
     });
     expect(await main(h.deps)).toBe(0);
     expect(seen).toEqual(["anthropic"]);
-    expect(h.out()).toBe("Signed in to anthropic (method: oauth, credential: oauth)\n");
+    expect(h.out()).toStartWith("Signed in to anthropic (method: oauth, credential: oauth)\n");
   });
 
   test("login without a TTY exits 1 and writes only to stderr", async () => {

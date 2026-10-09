@@ -297,9 +297,15 @@ absolute paths instead, from `which node` and the global install's `bin/nax-agen
 "args": ["/path/to/node_modules/@nathapp/nax-agent-acp/bin/nax-agent.js", "acp"]
 ```
 
-A model must be configured before a thread can open (#2414): `models.native.balanced` in `~/.nax/config.json`, or
-`"env": { "NAX_AGENT_MODEL": "<provider>/<model>" }`. Without one the thread fails with
-`no model configured`, before the credential check runs, so no login prompt is offered.
+First run with an empty `~/.nax` (no model configured): the thread fails with `auth_required`, and Zed offers
+"Log in to <provider>" for every provider that supports login. That runs `nax-agent login <provider>`; after
+the credential is stored it lists the provider's catalog models and writes your pick as
+`models.native.balanced` in `config.json` (in `--config-dir` / `NAX_AGENT_CONFIG_DIR` if set). The file is
+merged, never replaced, and created with mode 0600; the credentials file is not touched. Without a terminal,
+or when `config.json` is malformed, nothing is written and the command prints the line to add. Then retry in
+the editor: a server with no model re-reads `config.json` on the next new thread, so no restart is needed. A
+model set with `--model` or `"env": { "NAX_AGENT_MODEL": "<provider>/<model>" }` always wins over the file,
+and then login does not offer one.
 
 Open the agent panel and start a "nax-agent" thread.
 - **Modes:** the thread's mode picker (a session config option of category `mode`; `modes` and `session/set_mode` still work for other clients) switches between `ask` (default), which asks before each edit or command, `full`, which runs without asking, `read`, which is read-only, and `none`, which has no tools.

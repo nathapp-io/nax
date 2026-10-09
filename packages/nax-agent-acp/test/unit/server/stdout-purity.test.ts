@@ -42,8 +42,8 @@ describe("the server process", () => {
       const frames = lines.map((l) => JSON.parse(l));
       expect(frames.every((f) => f.jsonrpc === "2.0")).toBe(true);
       expect(frames.find((f) => f.id === 1)?.result?.agentInfo?.name).toBe("nax-agent");
-      // No model configured in the empty config dir (S5-2): invalid_params.
-      expect(frames.find((f) => f.id === 2)?.error?.code).toBe(-32602);
+      // No model configured in the empty config dir (S5-2): auth_required (login first).
+      expect(frames.find((f) => f.id === 2)?.error?.code).toBe(-32000);
       expect(frames.find((f) => f.id === 3)?.error?.code).toBe(-32601);
       expect(frames.find((f) => f.id === 4)?.error?.code).toBe(-32002);
       // The config dir is empty, so the sessions dir does not exist (S5-3).

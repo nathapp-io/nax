@@ -43,6 +43,9 @@ export interface RegistrySetupExtra {
   readonly failUpdates?: boolean;
   /** Scripts for each opened session's turns; default: two short replies. */
   readonly scripts?: readonly Script[];
+  /** Re-resolves the options when session/new finds no model (onboarding). */
+  readonly reloadOptions?: () => Promise<ServerOptions | undefined>;
+  readonly ensureCredentials?: (model: string) => Promise<void>;
 }
 
 export function setupRegistry(dir: string, options: ServerOptions = OPTIONS, extra: RegistrySetupExtra = {}) {
@@ -92,6 +95,8 @@ export function setupRegistry(dir: string, options: ServerOptions = OPTIONS, ext
     turnTimeoutSeconds: TURN_TIMEOUT_SECONDS,
     shutdownWaitMs: 50,
     ...(extra.connectMcp !== undefined ? { connectMcp: extra.connectMcp } : {}),
+    ...(extra.reloadOptions !== undefined ? { reloadOptions: extra.reloadOptions } : {}),
+    ...(extra.ensureCredentials !== undefined ? { ensureCredentials: extra.ensureCredentials } : {}),
   });
   const input = (cwd = "/w", mcpServers: readonly unknown[] = []) => ({ cwd, mcpServers, port: () => port.port });
   return { registry, input, port, lines, storage, transcripts, opened, fakes, dir };

@@ -10,6 +10,13 @@ import { connectMcp } from "@nathapp/nax-agent/mcp";
 import { type AuthPorts, loadServerAuth, NAX_AGENT_AUTH } from "#src/server/auth";
 import { type CliCommand, type CliFlags, parseCli, USAGE } from "#src/server/cli";
 import { buildAgentApp, serveStdio } from "#src/server/connection";
+import {
+  type ConfigWriter,
+  type ModelPorts,
+  NAX_AGENT_MODELS,
+  NODE_CONFIG_WRITER,
+  offerDefaultModel,
+} from "#src/server/default-model";
 import { stderrLogger } from "#src/server/logger";
 import { runLoginCommand } from "#src/server/login";
 import { createMcpConnector } from "#src/server/mcp/connect";
@@ -35,6 +42,10 @@ export interface MainDeps {
   readonly isTTY: boolean;
   /** nax-agent's auth API; tests inject a fake. Defaults to the real one. */
   readonly auth?: AuthPorts;
+  /** The catalog behind the default-model pick after login; tests inject a fake. */
+  readonly models?: ModelPorts;
+  /** Writes config.json after login; tests inject a fake. */
+  readonly writeConfig?: ConfigWriter;
 }
 
 export async function main(deps: MainDeps): Promise<number> {
@@ -61,13 +72,27 @@ async function login(command: Extract<CliCommand, { kind: "login" }>, deps: Main
   setAgentLogger(stderrLogger(deps.env.NAX_AGENT_LOG === "debug" ? "debug" : "warn", deps.writeErr));
   const configDir = resolveConfigDir(command.flags, deps.env, deps.homedir);
   configureCredentials(credentialsFor(configDir, deps.readFile));
+  const auth = deps.auth ?? NAX_AGENT_AUTH;
+  const pinned = [command.flags.model, deps.env.NAX_AGENT_MODEL].some((m) => m !== undefined && m !== "");
   return runLoginCommand(
     { provider: command.provider, ...(command.method !== undefined ? { method: command.method } : {}) },
     {
       isTTY: deps.isTTY,
       out: (line) => deps.stdout.write(`${line}\n`),
       err: (line) => deps.writeErr(`${line}\n`),
-      auth: deps.auth ?? NAX_AGENT_AUTH,
+      auth,
+      offerModel: (provider) =>
+        offerDefaultModel({
+          provider,
+          configDir,
+          isTTY: deps.isTTY,
+          pinned,
+          interaction: auth.interaction((line) => deps.stdout.write(`${line}\n`)),
+          out: (line) => deps.stdout.write(`${line}\n`),
+          models: deps.models ?? NAX_AGENT_MODELS,
+          readFile: deps.readFile,
+          write: deps.writeConfig ?? NODE_CONFIG_WRITER,
+        }),
     },
   );
 }
@@ -113,6 +138,11 @@ async function serveAcp(flags: CliFlags, deps: MainDeps): Promise<number> {
     logger,
     turnTimeoutSeconds: TURN_TIMEOUT_SECONDS,
     ensureCredentials: (model) => auth.ensureCredentials(model),
+    reloadOptions: async () => {
+      const reloaded = await loadNaxConfig(configDir, deps.readFile);
+      const again = resolveServerOptions({ flags, env: deps.env, file: reloaded.config, configDir });
+      return again.ok ? again.options : undefined;
+    },
     connectMcp: createMcpConnector({
       connect: connectMcp,
       timeoutMs: resolved.options.mcpConnectTimeoutSeconds * 1000,
