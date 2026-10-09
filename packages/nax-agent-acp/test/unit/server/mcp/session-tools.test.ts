@@ -103,6 +103,19 @@ describe("McpSessionTools", () => {
     expect(connection.calls).toHaveLength(0);
   });
 
+  test("a tool whose server is not connected is an error result and is not called", async () => {
+    const connection = fakeConnection(ok);
+    const tools = createMcpSessionTools({
+      servers: [{ name: "git", connection }],
+      tools: [{ ...TOOL, modelName: "other__status", server: "other" }],
+      scrub,
+      onDisconnect: () => {},
+    });
+    const result = await tools.embedderTools("full")[0]?.run({}, CTX);
+    expect(result).toEqual({ content: "MCP server `other` is not connected", isError: true });
+    expect(connection.calls).toHaveLength(0);
+  });
+
   test("titleFor maps model names to `server: tool`", () => {
     const { tools } = setup();
     expect(tools.titleFor("git__status")).toBe("git: status");

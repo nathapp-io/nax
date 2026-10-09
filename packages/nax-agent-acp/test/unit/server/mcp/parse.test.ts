@@ -71,6 +71,14 @@ describe("parseMcpServers", () => {
     expect(out.skipped).toEqual([`MCP server limit (${MCP_MAX_SERVERS}) reached; not started: \`s20\`, \`s21\``]);
   });
 
+  test("more than ten servers past the limit are listed only up to the cap", () => {
+    const many = Array.from({ length: MCP_MAX_SERVERS + 12 }, (_, i) => stdio(`s${i}`));
+    const [line = ""] = parseMcpServers(many).skipped;
+    expect(line.startsWith(`MCP server limit (${MCP_MAX_SERVERS}) reached; not started: `)).toBe(true);
+    expect(line).toMatch(/; and 2 more$/);
+    expect(line.split(", ")).toHaveLength(10);
+  });
+
   test("names are control-stripped in lines", () => {
     expect(parseMcpServers([stdio("a\u0007b", { command: "" })]).skipped).toEqual(["`ab`: empty command"]);
   });

@@ -8,6 +8,8 @@ import { stripControl, stripInvisible } from "#src/client/text";
 import { invalidParams } from "#src/server/errors";
 
 export const MCP_MAX_SERVERS = 20;
+/** Client-supplied lists in notices are shown at most this long, then `; and N more`. */
+export const NOTICE_LIST_MAX = 10;
 
 export type ParsedServer =
   | {
@@ -47,6 +49,14 @@ type Entry =
 
 export function displayName(name: string): string {
   return stripInvisible(stripControl(name)).replace(/\s+/g, " ").trim();
+}
+
+/** At most NOTICE_LIST_MAX items; when longer, the last item carries `; and N more`. */
+export function cappedItems(items: readonly string[]): string[] {
+  if (items.length <= NOTICE_LIST_MAX) return [...items];
+  const kept = items.slice(0, NOTICE_LIST_MAX);
+  const last = kept.length - 1;
+  return [...kept.slice(0, last), `${kept[last]}; and ${items.length - NOTICE_LIST_MAX} more`];
 }
 
 const record = (items: readonly { name: string; value: string }[]): Record<string, string> =>
@@ -120,6 +130,6 @@ export function parseMcpServers(raw: readonly unknown[]): ParsedServers {
     }
   }
   if (overLimit.length > 0)
-    skipped.push(`MCP server limit (${MCP_MAX_SERVERS}) reached; not started: ${overLimit.join(", ")}`);
+    skipped.push(`MCP server limit (${MCP_MAX_SERVERS}) reached; not started: ${cappedItems(overLimit).join(", ")}`);
   return { servers, skipped };
 }

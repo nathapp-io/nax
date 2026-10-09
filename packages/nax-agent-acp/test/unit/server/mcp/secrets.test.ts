@@ -26,6 +26,20 @@ describe("mcpSecrets", () => {
       expect(secrets).toContain(s);
     expect(secrets).not.toContain("production"); // MODE is not a secret-named key
   });
+
+  test("a url that cannot be parsed contributes no secrets", () => {
+    expect(mcpSecrets([{ kind: "http", name: "bad", url: "not a url", headers: {} }])).toEqual([]);
+  });
+
+  test("a url password with malformed percent-encoding is kept verbatim", () => {
+    const secrets = mcpSecrets([{ kind: "http", name: "bad", url: "https://u:%zzzzzzzz@h/x", headers: {} }]);
+    expect(secrets).toEqual(["%zzzzzzzz"]);
+  });
+
+  test("a url with no password still contributes its query values", () => {
+    const secrets = mcpSecrets([{ kind: "http", name: "q", url: "https://h/x?key=query-secret-3", headers: {} }]);
+    expect(secrets).toEqual(["query-secret-3"]);
+  });
 });
 
 describe("scrubber", () => {

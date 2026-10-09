@@ -19,6 +19,7 @@ import { invalidParams, messageOf, turnInProgress, unknownSession } from "#src/s
 import { type ConnectSessionMcp, connectNothing, type SessionMcp } from "#src/server/mcp/connect";
 import { disconnectNotice, modeNotice, openNotice } from "#src/server/mcp/notices";
 import { NO_SERVERS, type ParsedServers, parseMcpServers } from "#src/server/mcp/parse";
+import { mcpSecrets, scrubber } from "#src/server/mcp/secrets";
 import type { McpSessionTools } from "#src/server/mcp/session-tools";
 import type { OpenedSession, OpenSession } from "#src/server/open-session";
 import type { ServerOptions } from "#src/server/options";
@@ -158,7 +159,8 @@ export function createSessionRegistry(deps: RegistryDeps): SessionRegistry {
   }
 
   function startMcp(parsed: ParsedServers, meta: SessionMeta, port: ClientPort): Promise<SessionMcp> {
-    let scrub: (t: string) => string = (t) => t;
+    // Built before connecting: a disconnect fired before connectMcp resolves must still be scrubbed.
+    const scrub = scrubber(mcpSecrets(parsed.servers));
     return connectMcp({
       parsed,
       cwd: meta.cwd,
@@ -171,9 +173,6 @@ export function createSessionRegistry(deps: RegistryDeps): SessionRegistry {
           });
         });
       },
-    }).then((mcp) => {
-      scrub = mcp.scrub;
-      return mcp;
     });
   }
 
@@ -196,11 +195,12 @@ export function createSessionRegistry(deps: RegistryDeps): SessionRegistry {
     await deps.ensureCredentials?.(meta.model);
     const release = await deps.storage.acquireLock(meta.sessionId);
     let mcp: SessionMcp | undefined;
+    let opened: OpenedSession | undefined;
     try {
       mcp = await startMcp(parsed, meta, port);
       if (closing) throw RequestError.internalError(undefined, SHUTTING_DOWN); // shutdown during connect
       const settings = settingsOf(meta);
-      const opened = await deps.openSession({
+      opened = await deps.openSession({
         sessionId: meta.sessionId,
         cwd: meta.cwd,
         model: settings.model,
@@ -211,6 +211,7 @@ export function createSessionRegistry(deps: RegistryDeps): SessionRegistry {
       if (closing) {
         // Shutdown started while this open was in flight (M-26).
         await opened.session.close().catch(() => undefined);
+        opened = undefined; // already closed; the catch must not close it twice
         throw RequestError.internalError(undefined, SHUTTING_DOWN);
       }
       const server = createEntryServer(meta, port, opened, mcp.tools);
@@ -218,6 +219,8 @@ export function createSessionRegistry(deps: RegistryDeps): SessionRegistry {
       entries.set(meta.sessionId, { server, port, meta, release, mcp: mcp.tools });
       return { server, opened };
     } catch (error) {
+      // If the facade session opened but a later step threw, do not orphan it.
+      await opened?.session.close().catch(() => undefined);
       await mcp?.tools.closeAll();
       await release();
       throw closing ? RequestError.internalError(undefined, SHUTTING_DOWN) : error;

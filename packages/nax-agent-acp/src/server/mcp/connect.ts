@@ -7,8 +7,8 @@
  */
 import type { connectMcp, McpToolInfo } from "@nathapp/nax-agent/mcp";
 import { McpConnectError } from "@nathapp/nax-agent/mcp";
-import { nameTools, type ToolRef } from "#src/server/mcp/naming";
-import { displayName, type ParsedServer, type ParsedServers } from "#src/server/mcp/parse";
+import { type NamedTool, nameTools, type ToolRef } from "#src/server/mcp/naming";
+import { cappedItems, displayName, type ParsedServer, type ParsedServers } from "#src/server/mcp/parse";
 import { mcpSecrets, type Scrub, scrubber } from "#src/server/mcp/secrets";
 import {
   type BridgedTool,
@@ -20,7 +20,6 @@ import {
 import { shapeDescription, shapeSchema } from "#src/server/mcp/tool-shape";
 
 export const MCP_MAX_TOOLS = 200;
-const LIMIT_LIST_MAX = 10;
 
 export interface SessionMcp {
   readonly tools: McpSessionTools;
@@ -58,18 +57,21 @@ function failureLine(server: ParsedServer, error: unknown): string {
   return `\`${displayName(server.name)}\`: ${messageOf(error)}${tail}`;
 }
 
-interface Candidate extends ToolRef {
+export interface Candidate extends ToolRef {
   readonly info: McpToolInfo;
 }
 
 function collectTools(live: readonly LiveServer[], lines: string[]): Candidate[] {
   const kept: Candidate[] = [];
   const overLimit: string[] = [];
+  const schemaDropped: string[] = [];
   for (const server of live) {
     for (const info of server.connection.tools) {
       const shaped = shapeSchema(info.inputSchema);
       if (!shaped.ok) {
-        lines.push(`\`${displayName(server.name)}\`: tool \`${displayName(info.name)}\` dropped: ${shaped.reason}`);
+        schemaDropped.push(
+          `\`${displayName(server.name)}\`: tool \`${displayName(info.name)}\` dropped: ${shaped.reason}`,
+        );
       } else if (kept.length >= MCP_MAX_TOOLS) {
         overLimit.push(`\`${displayName(server.name)}\`: ${displayName(info.name)}`);
       } else {
@@ -77,18 +79,16 @@ function collectTools(live: readonly LiveServer[], lines: string[]): Candidate[]
       }
     }
   }
-  if (overLimit.length > 0) {
-    const shown = overLimit.slice(0, LIMIT_LIST_MAX).join("; ");
-    const more = overLimit.length > LIMIT_LIST_MAX ? `; and ${overLimit.length - LIMIT_LIST_MAX} more` : "";
-    lines.push(`MCP tool limit (${MCP_MAX_TOOLS}) reached; dropped ${overLimit.length} tools: ${shown}${more}`);
-  }
+  lines.push(...cappedItems(schemaDropped));
+  if (overLimit.length > 0)
+    lines.push(
+      `MCP tool limit (${MCP_MAX_TOOLS}) reached; dropped ${overLimit.length} tools: ${cappedItems(overLimit).join("; ")}`,
+    );
   return kept;
 }
 
-function bridged(candidates: readonly Candidate[], lines: string[]): BridgedTool[] {
-  const { named, dropped } = nameTools(candidates);
-  for (const ref of dropped)
-    lines.push(`\`${displayName(ref.server)}\`: tool \`${displayName(ref.tool)}\` dropped: duplicate name`);
+/** Names a candidate into what the model sees; candidates without matching info are skipped. */
+export function bridgeTools(candidates: readonly Candidate[], named: readonly NamedTool[]): BridgedTool[] {
   const infoOf = new Map(candidates.map((c) => [`${c.server}\0${c.tool}`, c.info]));
   return named.flatMap((n) => {
     const info = infoOf.get(`${n.server}\0${n.tool}`);
@@ -103,6 +103,16 @@ function bridged(candidates: readonly Candidate[], lines: string[]): BridgedTool
       },
     ];
   });
+}
+
+function bridged(candidates: readonly Candidate[], lines: string[]): BridgedTool[] {
+  const { named, dropped } = nameTools(candidates);
+  lines.push(
+    ...cappedItems(
+      dropped.map((ref) => `\`${displayName(ref.server)}\`: tool \`${displayName(ref.tool)}\` dropped: duplicate name`),
+    ),
+  );
+  return bridgeTools(candidates, named);
 }
 
 export function createMcpConnector(deps: McpConnectorDeps): ConnectSessionMcp {

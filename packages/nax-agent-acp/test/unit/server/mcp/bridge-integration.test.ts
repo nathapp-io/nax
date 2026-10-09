@@ -24,17 +24,18 @@ test("a real stdio server's tools reach the facade and run, with the env secret 
       closeGraceMs: 500,
     }),
   });
-  const { sessionId } = await s.registry.create(
-    s.input(process.cwd(), [
-      {
-        name: "echo",
-        command: process.execPath,
-        args: [ECHO],
-        env: [{ name: "API_TOKEN", value: "tok-secret-123456" }],
-      },
-    ]),
-  );
+  let sessionId: string | undefined;
   try {
+    ({ sessionId } = await s.registry.create(
+      s.input(process.cwd(), [
+        {
+          name: "echo",
+          command: process.execPath,
+          args: [ECHO],
+          env: [{ name: "API_TOKEN", value: "tok-secret-123456" }],
+        },
+      ]),
+    ));
     const tools = s.opened[0]?.tools ?? [];
     expect(tools.map((t) => `${t.name}:${t.approval}`)).toEqual(["echo__echo:always", "echo__secret:always"]);
     const ctx = { sessionId, toolCallId: "c1", signal: new AbortController().signal };
@@ -42,6 +43,6 @@ test("a real stdio server's tools reach the facade and run, with the env secret 
     const secret = await tools[1]?.run({}, ctx);
     expect(secret?.content).not.toContain("tok-secret-123456");
   } finally {
-    await s.registry.close(sessionId);
+    if (sessionId !== undefined) await s.registry.close(sessionId);
   }
 }, 30_000);

@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { McpConnectError, type McpConnection, type McpToolInfo, type McpTransportConfig } from "@nathapp/nax-agent/mcp";
-import { connectNothing, createMcpConnector, MCP_MAX_TOOLS } from "#src/server/mcp/connect";
+import {
+  bridgeTools,
+  type Candidate,
+  connectNothing,
+  createMcpConnector,
+  MCP_MAX_TOOLS,
+} from "#src/server/mcp/connect";
 import { parseMcpServers } from "#src/server/mcp/parse";
 
 function connection(tools: readonly McpToolInfo[], closed: string[] = [], name = ""): McpConnection {
@@ -121,6 +127,48 @@ describe("connectSessionMcp", () => {
       '`a`: tool `bad` dropped: input schema type must be "object"',
       `MCP tool limit (${MCP_MAX_TOOLS}) reached; dropped 2 tools: \`a\`: t200; \`b\`: late`,
     ]);
+  });
+
+  test("two tools of the same name collide: one is kept and one is dropped with a line", async () => {
+    const connector = createMcpConnector({
+      timeoutMs: 1000,
+      clientVersion: "1",
+      connect: async () => connection([tool("dup"), tool("dup")]),
+    });
+    const out = await connector({
+      parsed: parseMcpServers([stdio("a")]),
+      cwd: "/w",
+      signal,
+      onDisconnect: () => {},
+    });
+    expect(out.tools.embedderTools("full").map((t) => t.name)).toHaveLength(1);
+    expect(out.noticeLines).toEqual(["`a`: tool `dup` dropped: duplicate name"]);
+  });
+
+  test("more than ten rejected schemas are capped with an and-N-more suffix", async () => {
+    const badTools = Array.from({ length: 12 }, (_, i) => tool(`bad${i}`, { inputSchema: { type: "string" } }));
+    const connector = createMcpConnector({
+      timeoutMs: 1000,
+      clientVersion: "1",
+      connect: async () => connection(badTools),
+    });
+    const out = await connector({
+      parsed: parseMcpServers([stdio("a")]),
+      cwd: "/w",
+      signal,
+      onDisconnect: () => {},
+    });
+    expect(out.noticeLines).toHaveLength(10);
+    expect(out.noticeLines[9]).toBe('`a`: tool `bad9` dropped: input schema type must be "object"; and 2 more');
+  });
+
+  test("a named tool with no matching candidate info is skipped", () => {
+    const candidates: Candidate[] = [{ server: "a", tool: "t", info: tool("t") }];
+    const out = bridgeTools(candidates, [
+      { server: "a", tool: "t", modelName: "a__t" },
+      { server: "a", tool: "ghost", modelName: "a__ghost" },
+    ]);
+    expect(out.map((t) => t.tool)).toEqual(["t"]);
   });
 
   test("an aborted signal closes what connected and rejects", async () => {
