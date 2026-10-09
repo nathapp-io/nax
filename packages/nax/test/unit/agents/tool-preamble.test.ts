@@ -63,11 +63,13 @@ describe("promptWithToolPreamble", () => {
     // Post-move root === repoRoot, so the package identity can only come from
     // `codingToolWorkdirLabel`; both arms must carry it.
     const scoped = makeOptions({
-      codingToolRoot: "/repo",
+      codingToolRoot: "/worktrees/nax-feature",
       codingToolWorkdirLabel: "packages/api",
     });
     for (const agent of ["native", "claude"]) {
       const prompt = promptWithToolPreamble(agent, scoped);
+      expect(prompt).toContain("**Execution repository/worktree root:** `/worktrees/nax-feature`");
+      expect(prompt).toContain("whose `root_path` matches this exact root");
       expect(prompt).toContain("rooted at the repository root, NOT at your package");
       expect(prompt).toContain("Your story's package is `packages/api`");
       expect(prompt).toContain("`packages/api/src/index.ts`, never `src/index.ts`");

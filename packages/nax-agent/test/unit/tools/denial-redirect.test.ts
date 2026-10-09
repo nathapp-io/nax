@@ -29,6 +29,10 @@ describe("redirectForArgv", () => {
     expect(redirectForArgv(["git", "status", "--porcelain"], ALL, CMDS)).toContain("Git");
   });
 
+  test("points the fixed repository-root query at Git", () => {
+    expect(redirectForArgv(["git", "rev-parse", "--show-toplevel"], ALL, CMDS)).toContain("Git");
+  });
+
   test("points git rm and rm at Delete", () => {
     expect(redirectForArgv(["git", "rm", "a.ts"], ALL, CMDS)).toContain("Delete");
     expect(redirectForArgv(["rm", "a.ts"], ALL, CMDS)).toContain("Delete");
@@ -70,18 +74,29 @@ describe("one table answers both entry points", () => {
   // SECOND token (`rm a.ts` is Delete but `rm -r dir` is nothing; `git log` is
   // Git but `git add` is GitCommit), so they are shape-dependent by design and
   // are pinned separately below.
-  test.each(["ls", "find", "cat", "wc", "grep", "diff", "log", "show", "status", "blame", "add", "commit"])(
-    "verb slot and argv slot agree on %s",
-    (head) => {
-      const bare = redirectForVerb("RunCommand", head, AVAILABLE, CMDS);
-      const withArg = redirectForVerb("RunCommand", `${head} a.ts`, AVAILABLE, CMDS);
-      // Agreement alone passes vacuously if a row is deleted and both sides go
-      // undefined. This test carries the whole point of #1999, so it pins
-      // coverage too.
-      expect(toolNamed(bare)).toBeDefined();
-      expect(toolNamed(bare)).toEqual(toolNamed(withArg));
-    },
-  );
+  test.each([
+    "ls",
+    "find",
+    "cat",
+    "wc",
+    "grep",
+    "diff",
+    "log",
+    "show",
+    "status",
+    "blame",
+    "rev-parse",
+    "add",
+    "commit",
+  ])("verb slot and argv slot agree on %s", (head) => {
+    const bare = redirectForVerb("RunCommand", head, AVAILABLE, CMDS);
+    const withArg = redirectForVerb("RunCommand", `${head} a.ts`, AVAILABLE, CMDS);
+    // Agreement alone passes vacuously if a row is deleted and both sides go
+    // undefined. This test carries the whole point of #1999, so it pins
+    // coverage too.
+    expect(toolNamed(bare)).toBeDefined();
+    expect(toolNamed(bare)).toEqual(toolNamed(withArg));
+  });
 
   function toolNamed(redirect: string | undefined): string | undefined {
     if (redirect === undefined) return undefined;

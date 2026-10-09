@@ -14,9 +14,12 @@ describe("buildAgentScopeSection", () => {
   });
 
   test("roots a package story's tools at the repo root and spells paths repo-rooted", () => {
-    const out = buildAgentScopeSection("/repo", "packages/api");
+    const out = buildAgentScopeSection("/worktrees/fix-root-discovery", "packages/api");
     const expected = [
       "## Your file scope",
+      "",
+      "**Execution repository/worktree root:** `/worktrees/fix-root-discovery`",
+      "For code graph lookups, choose the `list_projects` entry whose `root_path` matches this exact root.",
       "",
       "Your file tools (Read, Write, Edit, Glob, Grep, Git) are rooted at the repository root, NOT at your package.",
       "Your story's package is `packages/api`. Spell every path repo-rooted from the repository root: write",
@@ -32,11 +35,21 @@ describe("buildAgentScopeSection", () => {
     const expected = [
       "## Your file scope",
       "",
+      "**Execution repository/worktree root:** `/repo`",
+      "For code graph lookups, choose the `list_projects` entry whose `root_path` matches this exact root.",
+      "",
       "Your file tools (Read, Write, Edit, Glob, Grep, Git) are rooted at the repository root.",
       "Every path you pass them is resolved from there.",
     ].join("\n");
     for (const label of [".", undefined, "   "] as const) {
       expect(buildAgentScopeSection("/repo", label)).toBe(expected);
     }
+  });
+
+  test("describes a worktree root when the story runs from that worktree", () => {
+    const out = buildAgentScopeSection("/worktrees/feature-branch", ".");
+
+    expect(out).toContain("**Execution repository/worktree root:** `/worktrees/feature-branch`");
+    expect(out).not.toContain("/repo");
   });
 });

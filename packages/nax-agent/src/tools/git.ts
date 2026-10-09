@@ -28,7 +28,7 @@ import { cutToByteCap, READ_CEILING } from "./truncate.ts";
  * Note what bounds these: the argv shape below, not the verb list. A read-only
  * verb still spans the whole repository unless its scope is stated.
  */
-export const GIT_READ_VERBS: readonly string[] = ["diff", "log", "show", "status", "blame"];
+export const GIT_READ_VERBS: readonly string[] = ["diff", "log", "show", "status", "blame", "rev-parse"];
 
 /**
  * Typed flag fields, and the verbs each one is valid on.
@@ -187,6 +187,18 @@ function looksLikeFlag(value: string): boolean {
   return value.startsWith("-");
 }
 
+function buildGitRootArgv(input: Record<string, unknown>): string[] | { error: string } {
+  const extraFields = Object.keys(input).filter((field) => field !== "subcommand");
+  if (extraFields.length > 0) {
+    return { error: `rev-parse accepts no additional fields (received: ${extraFields.join(", ")})` };
+  }
+  return ["rev-parse", "--show-toplevel"];
+}
+
+function defaultGitExcludes(subcommand: string, excludes: readonly string[]): readonly string[] {
+  return subcommand === "blame" ? [] : excludes;
+}
+
 /**
  * `defaultExcludes`: pathspecs appended to an unscoped call (the host's own
  * state, nax#2007); none by default.
@@ -198,6 +210,10 @@ export function buildGitArgv(
   const subcommand = input.subcommand;
   if (typeof subcommand !== "string" || !GIT_READ_VERBS.includes(subcommand)) {
     return { error: `subcommand must be one of: ${GIT_READ_VERBS.join(", ")}` };
+  }
+
+  if (subcommand === "rev-parse") {
+    return buildGitRootArgv(input);
   }
 
   const refs = Array.isArray(input.refs) ? input.refs : [];
@@ -310,7 +326,7 @@ export function buildGitArgv(
     // requested path would be a worse failure than the one being fixed.
     // `blame` is exempt because git rejects exclude pathspecs on it and exits
     // 128; do not "unify" it back in.
-    if (subcommand !== "blame") argv.push(...defaultExcludes);
+    argv.push(...defaultGitExcludes(subcommand, defaultExcludes));
     return argv;
   }
 
@@ -326,11 +342,15 @@ export function buildGitArgv(
 export const gitTool: CodingTool = {
   name: "Git",
   description:
-    "Run a read-only git command (diff, log, show, status, blame) in the repository. Supply refs and pathspecs as arrays, not as a command line. Command-line flags are not accepted in any field; use the nameOnly, diffFilter, oneline, fullMessage and maxCount fields instead.",
+    "Run a read-only git command (diff, log, show, status, blame, rev-parse) in the repository. rev-parse is fixed to `git rev-parse --show-toplevel` and accepts no other fields. Supply refs and pathspecs as arrays, not as a command line. Command-line flags are not accepted in any field; use the nameOnly, diffFilter, oneline, fullMessage and maxCount fields instead.",
   inputSchema: {
     type: "object",
     properties: {
-      subcommand: { type: "string", enum: [...GIT_READ_VERBS], description: "Read-only git subcommand" },
+      subcommand: {
+        type: "string",
+        enum: [...GIT_READ_VERBS],
+        description: "Read-only git subcommand; rev-parse is fixed to --show-toplevel",
+      },
       refs: { type: "array", items: { type: "string" }, description: "Refs, e.g. ['HEAD~1','HEAD']" },
       paths: { type: "array", items: { type: "string" }, description: "Pathspecs, relative to the permitted root" },
       nameOnly: {

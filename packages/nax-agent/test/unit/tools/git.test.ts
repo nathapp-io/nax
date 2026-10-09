@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
@@ -61,6 +61,23 @@ describe("buildGitArgv", () => {
   test("rejects a subcommand outside the read-only verb list", () => {
     const built = buildGitArgv({ subcommand: "commit" });
     expect("error" in built).toBe(true);
+  });
+
+  test("maps rev-parse to only the fixed repository-root query", () => {
+    expect(argvOf({ subcommand: "rev-parse" })).toEqual(["rev-parse", "--show-toplevel"]);
+  });
+
+  test.each([
+    { refs: ["HEAD"] },
+    { paths: ["src"] },
+    { nameOnly: true },
+    { diffFilter: "A" },
+    { oneline: true },
+    { fullMessage: true },
+    { maxCount: 1 },
+    { options: ["--git-dir=/tmp/other"] },
+  ])("rejects extra arguments for rev-parse: %o", (extra) => {
+    expect("error" in buildGitArgv({ subcommand: "rev-parse", ...extra })).toBe(true);
   });
 
   test("rejects a ref that looks like a flag", () => {
@@ -333,6 +350,11 @@ describe("gitTool", () => {
     expect(gitTool.scope.arrayPathFields).toEqual(["paths"]);
     expect(gitTool.scope.refPathFields).toEqual(["refs"]);
   });
+
+  test("advertises the fixed root query to read-only Git grants", () => {
+    expect(gitTool.scope.allowedVerbs).toContain("rev-parse");
+    expect(GIT_READ_VERBS).toContain("rev-parse");
+  });
 });
 
 /**
@@ -372,6 +394,19 @@ describe("gitTool — the permitted root bounds the repository view", () => {
     await run(["commit", "-q", "-m", "seed"]).exited;
     return { repo, root: join(repo, "inside", "sub") };
   }
+
+  test("returns the absolute execution repository root", async () => {
+    const { repo } = await makeRepo();
+    const rt = createCodingToolRuntime({
+      policy: compileToolPolicy([{ tool: "Git", patterns: ["rev-parse"] }], repo),
+      protectedPaths: testProtectedPaths(),
+    });
+
+    const result = await rt.callTool("Git", { subcommand: "rev-parse" });
+
+    expect(result.kind).toBe("ok");
+    expect(contentOf(result)).toBe(realpathSync(repo));
+  });
 
   test("a colon-less ref cannot address a path outside the root", async () => {
     const { root } = await makeRepo();

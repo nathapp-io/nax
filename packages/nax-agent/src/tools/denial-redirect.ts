@@ -20,7 +20,7 @@
  * no redirect (nax#1999). A single table cannot drift against itself.
  */
 
-const GIT_READ_VERBS = new Set(["diff", "log", "show", "status", "blame"]);
+const GIT_READ_VERBS = new Set(["diff", "log", "show", "status", "blame", "rev-parse"]);
 
 /**
  * Git verbs that stage or record a commit. Deliberately NOT every write verb:
