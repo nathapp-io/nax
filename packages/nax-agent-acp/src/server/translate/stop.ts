@@ -1,10 +1,12 @@
 /**
  * A turn's end as the answer to `session/prompt` (S5 spec §4.4). `errored` is a
- * JSON-RPC error so editors show a failure, not a normal stop; `interrupted` only
- * occurs after a resume and is reported the same way if it ever reaches here.
+ * JSON-RPC error so editors show a failure, not a normal stop; a credential
+ * failure is `auth_required` (S5-4 M-32). `interrupted` only occurs after a
+ * resume and is reported the same way if it ever reaches here.
  */
 import { type PromptResponse, RequestError, type SessionUpdate, type Usage } from "@agentclientprotocol/sdk";
 import type { SessionEvent, TokenUsage } from "@nathapp/nax-agent";
+import { authRequired, isAuthFailureCode } from "#src/server/errors";
 import { announce } from "#src/server/translate/notice";
 
 export type TurnEndEvent = Extract<SessionEvent, { type: "turn_end" }>;
@@ -26,6 +28,7 @@ export function toAcpUsage(usage: TokenUsage): Usage {
 }
 
 function failure(code: string, message: string): PromptOutcome {
+  if (isAuthFailureCode(code)) return { kind: "error", error: authRequired(message, { code, message }) };
   return { kind: "error", error: RequestError.internalError({ code, message }, message) };
 }
 

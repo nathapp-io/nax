@@ -1,9 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { RequestError } from "@agentclientprotocol/sdk";
-import { AgentSessionError } from "@nathapp/nax-agent";
+import { AgentSessionError, NaxError } from "@nathapp/nax-agent";
 import {
+  authRequired,
   guard,
   invalidParams,
+  isAuthFailureCode,
+  loginHint,
   TURN_IN_PROGRESS,
   toRequestError,
   turnInProgress,
@@ -91,5 +94,52 @@ describe("guard", () => {
     }).catch((e: unknown) => e);
     expect(caught).toBeInstanceOf(RequestError);
     expect(caught instanceof RequestError ? caught.code : 0).toBe(-32600);
+  });
+});
+
+describe("credential failures (S5-4 M-32)", () => {
+  test("fail-auth and the credential-store codes are auth failures; others are not", () => {
+    for (const code of [
+      "fail-auth",
+      "CREDENTIAL_HELPER_FAILED",
+      "CREDENTIAL_HELPER_INVALID",
+      "CREDENTIAL_CHANGED",
+      "CREDENTIAL_FILE_UNREADABLE",
+      "CREDENTIALS_NOT_CONFIGURED",
+    ]) {
+      expect(isAuthFailureCode(code)).toBe(true);
+    }
+    expect(isAuthFailureCode("fail-rate-limit")).toBe(false);
+    expect(isAuthFailureCode("AGENT_SESSION_TURN_FAILED")).toBe(false);
+  });
+
+  test("authRequired is -32000 with the login hint and the data", () => {
+    const error = authRequired('no credentials for provider "anthropic"', { provider: "anthropic" });
+    expect(error.code).toBe(-32000);
+    expect(error.message).toContain('no credentials for provider "anthropic"');
+    expect(error.message).toContain(loginHint("anthropic"));
+    expect(error.data).toEqual({ provider: "anthropic" });
+  });
+
+  test("a message ending in a full stop gets exactly one", () => {
+    expect(authRequired("Credential authentication failed.", {}).message).not.toContain("..");
+  });
+
+  test("loginHint names both commands", () => {
+    expect(loginHint("anthropic")).toBe(
+      "Log in with `nax-agent login anthropic` (or `nax auth login anthropic`), then retry.",
+    );
+    expect(loginHint()).toBe("Log in with `nax-agent login <provider>` (or `nax auth login <provider>`), then retry.");
+  });
+
+  test("toRequestError maps a credential NaxError to auth_required, redacted", () => {
+    const { logger } = recordingLogger();
+    const mapped = toRequestError(
+      new NaxError("helper printed sk-ant-api03-abcdefghijklmnopqrstuvwxyz", "CREDENTIAL_HELPER_FAILED"),
+      logger,
+    );
+    expect(mapped.code).toBe(-32000);
+    expect(mapped.message).not.toContain("abcdefghijklmnop");
+    expect(mapped.data).toEqual({ code: "CREDENTIAL_HELPER_FAILED" });
   });
 });
