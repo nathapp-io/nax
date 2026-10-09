@@ -29,7 +29,13 @@ import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { createPiAuthResolver, toPiCredentialStore } from "../auth/pi-auth.ts";
 import type { AuthResolver } from "../auth/resolver.ts";
 import { assertOverrideModelProvider, assertOverrideModelRouting } from "../providers/override-model.ts";
-import type { OpenRouterRouting, Pricing, ProviderOverride, ResolvedModel } from "../providers/types.ts";
+import type {
+  OpenRouterRouting,
+  PercentileTarget,
+  Pricing,
+  ProviderOverride,
+  ResolvedModel,
+} from "../providers/types.ts";
 import type { CredentialStore, StopReason } from "../types.ts";
 import { toTokenUsage, totalTokens } from "../usage.ts";
 import { vendorAppHeaders } from "./client-app.ts";
@@ -639,7 +645,18 @@ function toPiOpenRouterRouting(routing: OpenRouterRouting) {
     ...(routing.ignore !== undefined ? { ignore: [...routing.ignore] } : {}),
     ...(routing.quantizations !== undefined ? { quantizations: [...routing.quantizations] } : {}),
     ...(routing.sort !== undefined ? { sort: routing.sort } : {}),
+    ...(routing.preferred_min_throughput !== undefined
+      ? { preferred_min_throughput: copyTarget(routing.preferred_min_throughput) }
+      : {}),
+    ...(routing.preferred_max_latency !== undefined
+      ? { preferred_max_latency: copyTarget(routing.preferred_max_latency) }
+      : {}),
   };
+}
+
+/** Copies a percentile object so pi never holds the caller's readonly reference. */
+function copyTarget(target: PercentileTarget): PercentileTarget {
+  return typeof target === "number" ? target : { ...target };
 }
 
 /**

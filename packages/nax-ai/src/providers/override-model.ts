@@ -72,6 +72,8 @@ export function assertOverrideModelRouting(model: ResolvedModel): void {
     routing.ignore,
     routing.quantizations,
     routing.sort,
+    routing.preferred_min_throughput,
+    routing.preferred_max_latency,
   ].some((value) => value !== undefined);
   if (!hasPreference) {
     throw new Error(

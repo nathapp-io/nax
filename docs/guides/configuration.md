@@ -230,6 +230,9 @@ Three things about routing declarations that are easy to miss:
   comparisons should keep routing fixed across arms. A/B-comparing models
   should pin `quantizations` to remove that axis entirely.
 
+For the full list of routing keys, including throughput and latency targets, see
+[OpenRouter routing](openrouter-routing.md).
+
 An empty `openRouterRouting: {}` is rejected at config load — the protocol
 check is truthiness, not emptiness, and a `provider: {}` body would reach
 the wire as a request field that says nothing. Omit the key to leave routing

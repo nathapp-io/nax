@@ -349,6 +349,43 @@ describe("normaliseCatalog", () => {
     });
   });
 
+  it("accepts a routing declaration whose only preference is a throughput or latency target", () => {
+    // Emptiness is "no preference at all", so a single latency or throughput
+    // preference must pass the same check the other keys pass.
+    const catalog = normaliseCatalog(
+      [
+        {
+          id: "openrouter",
+          baseUrl: "https://openrouter.ai/api/v1",
+          auth: { kind: "api-key" },
+          defaultProtocol: "openai-completions",
+          models: [],
+        },
+      ],
+      [
+        {
+          provider: "openrouter",
+          models: [
+            {
+              id: "deepseek/deepseek-v4-flash",
+              provider: "openrouter",
+              protocol: "openai-completions",
+              pricing: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+              contextWindow: 128000,
+              supportsTools: true,
+              thinkingLevels: [],
+              openRouterRouting: { preferred_max_latency: { p90: 3 } },
+            },
+          ],
+        },
+      ],
+    );
+
+    expect(catalog.model("openrouter", "deepseek/deepseek-v4-flash")?.openRouterRouting).toEqual({
+      preferred_max_latency: { p90: 3 },
+    });
+  });
+
   /**
    * pi applies `compat.openRouterRouting` in dist/api/openai-completions.js
    * only — anthropic-messages has zero occurrences of it, and OpenRouter

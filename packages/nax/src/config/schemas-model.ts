@@ -51,6 +51,24 @@ export const CatalogPricingSchema = z
   .strict();
 
 /**
+ * A throughput floor or latency ceiling: one positive number (applies to p50)
+ * or per-percentile positive cutoffs. An empty percentile object is refused
+ * for the same reason as an empty routing block: it would reach the wire as
+ * a stated preference that says nothing.
+ */
+const PercentileCutoffSchema = z
+  .object({
+    p50: z.number().positive().optional(),
+    p75: z.number().positive().optional(),
+    p90: z.number().positive().optional(),
+    p99: z.number().positive().optional(),
+  })
+  .strict()
+  .refine((v) => Object.keys(v).length > 0, { message: "a percentile cutoff object must not be empty" });
+
+const PercentileTargetSchema = z.union([z.number().positive(), PercentileCutoffSchema]);
+
+/**
  * nax#2191: mirror of nax-ai 0.1.15's `OpenRouterRouting`. Keys stay
  * snake_case because they are the wire field names and pass through
  * unmapped. `.strict()` so a casing typo (`quantizaton`) is a load error,
@@ -75,6 +93,8 @@ export const OpenRouterRoutingSchema = z
     ignore: z.array(z.string().min(1)).optional(),
     quantizations: z.array(z.string().min(1)).optional(),
     sort: z.enum(["price", "throughput", "latency"]).optional(),
+    preferred_min_throughput: PercentileTargetSchema.optional(),
+    preferred_max_latency: PercentileTargetSchema.optional(),
   })
   .strict()
   .refine((v) => Object.keys(v).length > 0, {
