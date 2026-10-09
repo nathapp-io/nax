@@ -12,7 +12,7 @@
 
 **Architecture:**
 - **Shared terminal login UI.** The terminal login UI moves from the nax CLI into `@nathapp/nax-agent` as `createTerminalAuthInteraction` (user ruling 2026-10-09). `nax auth login` and `nax-agent login` then share one implementation of hidden secret entry, the arrow-key picker and the browser handoff.
-- **Server auth module.** The ACP server gets one auth module (`src/server/auth.ts`). It advertises one terminal login method per configured provider and answers `authenticate`. It also checks the session model's provider before every open, so `session/new` fails `auth_required` before a billed call.
+- **Server auth module.** The ACP server gets one auth module (`src/server/auth.ts`). It advertises one terminal login method per configured provider and answers `authenticate`. The session registry checks the session model's provider before every open and before a model switch closes the live session, so `session/new` fails `auth_required` before a billed call.
 - **Turn failures.** A turn that fails on credentials maps to `auth_required` (`src/server/errors.ts`).
 - **Release.** After the PR merges, the release runs in order: nax-ai, the live checks, then both agent packages.
 
@@ -28,6 +28,9 @@
   - Tasks 3-6 are nax-agent-acp.
   - Tasks 1-6 make one PR. Code review before push.
   - Tasks 7-9 run after that PR merges, on main. Each needs maintainer approval **at launch**.
+- **Final plan review (2026-10-09, one read-only reviewer):**
+  - Fixes applied: C1 (acpx needs `sessions new` before a prompt; Task 8 and README), I1 (`applyEdit` keeps `read` under the complexity limit), I2 (stop test uses the file's `end()` helper), I3 (Task 7 runs from the repo root), I4 (Task 8 shell is bash with arrays), I5 (Task 8 checks that `login` exits on its own, with a fix if not), I6 (credential check moved into the registry, before a switch closes the session), I7 (spec §6.3 method bullet amended).
+  - Minors folded in: M1 (API snapshot wording), M2 (process fake lives in `process-entry.test.ts`), M3 (exact `parseCli` replacement range), M4 (lazy `process.stdin`), M5 (login logs at `warn`), M7 (no double full stop), M8 (`windowsHide`), M9 (tarball glob), M10 (reconnect step in the smoke), M11 (changelog wording), M12 (no nax coverage run between Tasks 1 and 2). M6 accepted as is (M-36).
 - **Working agreements:**
   - Never launch `nax run` or `nax plan`.
   - At most two fix rounds per review.
@@ -71,11 +74,12 @@ Exact values from the spec and the SDK:
 |---|---|---|
 | M-28 | The terminal login UI moves from `packages/nax/src/cli/{auth-prompt,open-url}.ts` and `terminalInteraction()` into `@nathapp/nax-agent` (`src/terminal-auth/`). It is exported as `createTerminalAuthInteraction({ log, style?, openUrl? })` plus `PromptCancelledError`, `TerminalStyle` and `PLAIN_STYLE`; the prompt seams are exported from `/internal`. nax passes chalk styles; behaviour is unchanged. | User ruling 2026-10-09: one implementation of the raw-mode, no-echo and Ctrl+D handling. nax-agent-acp cannot depend on nax (spec R5). |
 | M-29 | `authenticate` and the open check count a provider as authenticated when a credential is stored OR ambient (`providersWithoutCredentials`), not stored only (spec §6.3 said `listStoredProviders`). | A turn uses an environment key. Refusing it would block a working setup. |
-| M-30 | Every open (new, load, resume, and the reopen behind a mode or model switch) first checks the session model's provider. It is skipped for catalog-override providers and for ids without a `provider/` prefix. A missing credential gives `auth_required` naming `nax-agent login <provider>`. | Editors (Zed) offer the advertised login when `session/new` fails `auth_required`, and nothing is billed. |
+| M-30 | The registry checks the session model's provider in two places: at the top of `openEntry` (new, load, resume; before the lock is taken), and in `switchTo` before the live session is closed, when the model changes. It is skipped for catalog-override providers and for ids without a `provider/` prefix. A missing credential gives `auth_required` naming `nax-agent login <provider>`. The check is a `RegistryDeps.ensureCredentials` dependency; `nativeOpenSession` is unchanged. | Editors (Zed) offer the advertised login when `session/new` fails `auth_required`, and nothing is billed. Checking before `switchTo` closes the agent means a refused model leaves the old session open and untouched (final review I6). |
 | M-31 | `authenticate` is served even though SDK 1.7.0 says clients must not send terminal methods to it. It is lenient: a known id is checked as M-29; an unknown id gives `invalid_params` listing the advertised ids. | Older clients send it, and the cost is one function. |
 | M-32 | Codes treated as credential failures: `fail-auth` (nax-agent's adapter outcome for HTTP 401/403 and for credential-store faults) and the `NaxError` codes `CREDENTIAL_HELPER_FAILED`, `CREDENTIAL_HELPER_INVALID`, `CREDENTIAL_CHANGED`, `CREDENTIAL_FILE_UNREADABLE`, `CREDENTIALS_NOT_CONFIGURED`. An `errored` turn with one of them answers `session/prompt` with `auth_required` instead of `internal_error`. | `turn_end.error.code` is the adapter outcome (`errorOf` in `agent-session-turn.ts`); `toAdapterFailure` folds credential-store faults into `fail-auth`. |
 | M-33 | Login methods come from: the tier models, plus the default model, minus catalog-override providers. They are intersected with the new nax-agent export `loginProviderIds()` (nax-ai's default catalog), deduplicated in order of appearance, and computed once at startup. A failure to list gives no methods plus one warning. | Only providers that `runLogin` can serve are offered. |
 | M-34 | `login` accepts `--method api-key\|oauth` (forwarded, as with `nax auth login --method`) and `--config-dir`. Other server flags are accepted and ignored with `login`; a leading `acp` is accepted. `--method` without `login` is a usage error. | The editor reuses the server invocation (Review Focus 1). |
+| M-36 | A turn-time `auth_required` names `<provider>` generically: `promptOutcome` does not know the session's model, and threading it through is not worth a signature change. The open check already names the concrete provider. | Final review M6, accepted as is. |
 | M-35 | Release order: nax-ai 0.1.17, with the nax and nax-agent pins bumped in the same PR (`check:nax-ai-pin`), then the live acpx smoke on packed tarballs, then the Zed walkthrough, then nax-agent and nax-agent-acp 0.4.0. nax is not released. | nax-agent 0.4.0 needs nax-ai's `origin` field (S5-3). The pin gate requires that one PR moves version and pins together. |
 
 ## File Structure
@@ -106,7 +110,7 @@ packages/nax-agent-acp/
   src/server/client-port.ts          + terminalAuth feature
   src/server/capabilities.ts         initializeResponse(version, authMethods)
   src/server/connection.ts           authMethods on initialize, authenticate handler
-  src/server/open-session.ts         + ensureCredentials
+  src/server/registry.ts             + ensureCredentials dep (openEntry, switchTo)
   src/server/main.ts, process-entry.ts   login dispatch, auth wiring, isTTY
   README.md                          ACP server section
 ```
@@ -156,6 +160,7 @@ import {
 
 - Rename every `_authPromptDeps` to `_terminalPromptDeps`.
 - Every `promptForLine(message, hook)` call keeps that shape: the signature below keeps `onEmptySubmit` as the second parameter.
+- `_origStdin` now holds `undefined` (the lazy default); restoring it in `afterEach` is still correct.
 
 Then append:
 
@@ -339,10 +344,10 @@ Expected: FAIL, cannot resolve `#src/terminal-auth/prompt`.
 
 - [ ] **Step 4: Write `src/terminal-auth/prompt.ts`**
 
-This is the nax `auth-prompt.ts` with three changes:
+This is the nax `auth-prompt.ts` with four changes:
 - chalk is replaced by `TerminalStyle`;
-- the seam is renamed `_terminalPromptDeps`;
-- `read`'s per-character handler is split into `keyAction`, because the original arrow scored 32 against the limit of 20.
+- the seam is renamed `_terminalPromptDeps`, and its `stdin` resolves to `process.stdin` lazily (final review M4);
+- `read`'s per-character handler is split into `keyAction` and `applyEdit`, because the original arrow scored 32 against the limit of 20. The reviewer measured this shape at 14 or lower for every function (final review I1).
 
 ```ts
 /**
@@ -393,13 +398,22 @@ export class PromptCancelledError extends Error {
   }
 }
 
+/**
+ * Test seam. `stdin` is unset by default and resolved to `process.stdin` only
+ * when a prompt runs: this module is reachable from the public barrel, and
+ * touching `process.stdin` at import would open it for every consumer.
+ */
 export const _terminalPromptDeps: {
-  stdin: PromptStdin;
+  stdin: PromptStdin | undefined;
   write: (text: string) => boolean;
 } = {
-  stdin: process.stdin as unknown as PromptStdin,
+  stdin: undefined,
   write: (text: string) => process.stdout.write(text),
 };
+
+function stdinOf(): PromptStdin {
+  return _terminalPromptDeps.stdin ?? (process.stdin as unknown as PromptStdin);
+}
 
 type KeyAction =
   | { readonly kind: "cancel" }
@@ -418,6 +432,26 @@ function keyAction(char: string, bufferEmpty: boolean, hasEmptyHook: boolean): K
   return { kind: "append" };
 }
 
+/** Applies a non-terminal key to the buffer; echoes when the prompt is visible. */
+function applyEdit(
+  action: KeyAction,
+  char: string,
+  buffer: string,
+  echo: boolean,
+  onEmptySubmit: (() => void) | undefined,
+): string {
+  if (action.kind === "empty-submit") {
+    onEmptySubmit?.();
+    return buffer;
+  }
+  if (action.kind === "erase") {
+    if (echo) _terminalPromptDeps.write("\b \b");
+    return buffer.slice(0, -1);
+  }
+  if (echo) _terminalPromptDeps.write(char);
+  return buffer + char;
+}
+
 /**
  * `onEmptySubmit` turns Enter-on-an-empty-buffer into an action rather than a
  * submission. An empty answer is meaningless for the prompts that use it (a
@@ -425,7 +459,7 @@ function keyAction(char: string, bufferEmpty: boolean, hasEmptyHook: boolean): K
  * single stdin reader.
  */
 function read(message: string, echo: boolean, onEmptySubmit: (() => void) | undefined, style: TerminalStyle) {
-  const { stdin } = _terminalPromptDeps;
+  const stdin = stdinOf();
   if (stdin.isTTY !== true) return Promise.reject(new PromptCancelledError());
   _terminalPromptDeps.write(`${style.accent("?")} ${message} `);
 
@@ -461,14 +495,7 @@ function read(message: string, echo: boolean, onEmptySubmit: (() => void) | unde
           resolve(buffer);
           return;
         }
-        if (action.kind === "empty-submit") onEmptySubmit?.();
-        else if (action.kind === "erase") {
-          buffer = buffer.slice(0, -1);
-          if (echo) _terminalPromptDeps.write("\b \b");
-        } else {
-          buffer += char;
-          if (echo) _terminalPromptDeps.write(char);
-        }
+        buffer = applyEdit(action, char, buffer, echo, onEmptySubmit);
       }
     };
 
@@ -510,7 +537,7 @@ export function promptForSelect(
   choices: readonly SelectChoice[],
   style: TerminalStyle = PLAIN_STYLE,
 ): Promise<string> {
-  const { stdin } = _terminalPromptDeps;
+  const stdin = stdinOf();
   if (stdin.isTTY !== true) return Promise.reject(new PromptCancelledError());
   // Never silently pick for the user: an empty list is a caller bug.
   if (choices.length === 0) return Promise.reject(new PromptCancelledError());
@@ -602,7 +629,7 @@ import { type ChildProcess, spawn } from "node:child_process";
 export function spawnDetached(command: readonly string[]): ChildProcess {
   const [file, ...args] = command;
   // nax-git-env-allow: not git: browser opener argv
-  const child = spawn(file ?? "", args, { stdio: "ignore", detached: true });
+  const child = spawn(file ?? "", args, { stdio: "ignore", detached: true, windowsHide: true });
   child.on("error", () => {
     // The URL is already on screen; a missing opener is not news.
   });
@@ -802,7 +829,7 @@ timeout 900 bun test ./test/unit/ --timeout=60000
 bun run test:coverage
 ```
 
-Expected: all PASS. If `check-complexity` names `read`'s `onData`, move the `append`/`erase` branch into a helper `applyKey(action, char)` returning the new buffer; never baseline it.
+Expected: all PASS, including `check-complexity` (never add a baseline entry). The API snapshot diff shows the new names.
 
 - [ ] **Step 10: Changelog**
 
@@ -817,7 +844,7 @@ Add to the top of `packages/nax-agent/CHANGELOG.md`, under the intro paragraph. 
 - `loginProviderIds()`: the providers `runLogin` can log in to (S5-4).
 - `displayToolInput` and `toolResultPreview`: the live tool-display masking, for replaying stored transcripts (S5-1).
 - `answerable?: false` on the `approval_requested` and `question` session events, set for profile auto-decisions and noted questions (S5-2).
-- `carryHistoryAcrossModels` (native backend option): keep a session's history across a model change; each assistant message records its origin model (S5-3).
+- `carryHistoryAcrossModels` (`nativeBackend` option and `OpenSessionOpts`): keep a session's history across a model change; each assistant message records its origin model (S5-3).
 ```
 
 - [ ] **Step 11: Commit**
@@ -827,7 +854,7 @@ git add packages/nax-agent packages/nax/test/unit/cli
 git commit -m "feat(nax-agent): shared terminal login UI and loginProviderIds"
 ```
 
-nax's own `src/cli/auth-prompt.ts` and `open-url.ts` stay until Task 2; only their tests moved, so nax's suite stays green between the two commits.
+nax's own `src/cli/auth-prompt.ts` and `open-url.ts` stay until Task 2; only their tests moved, so nax's unit suite stays green between the two commits. Do not run nax's coverage between Tasks 1 and 2: those two files are untested until Task 2 deletes them.
 
 ---
 
@@ -908,7 +935,7 @@ git commit -m "refactor(nax): auth login uses nax-agent's terminal login UI"
 ### Task 3: `nax-agent login <provider>`
 
 **Files:**
-- Modify: `packages/nax-agent-acp/src/server/cli.ts`, `src/server/main.ts`, `src/server/process-entry.ts`
+- Modify: `packages/nax-agent-acp/src/server/cli.ts`, `src/server/main.ts`, `src/server/process-entry.ts`, `src/server/logger.ts`
 - Create: `packages/nax-agent-acp/src/server/login.ts`, `src/server/auth.ts` (the `AuthPorts` part only; Task 4 adds the rest)
 - Test: `test/unit/server/cli.test.ts`, `test/unit/server/login.test.ts` (new), `test/unit/server/main.test.ts`, `test/unit/server/process-entry.test.ts`, `test/unit/server/auth.test.ts` (new)
 
@@ -1005,7 +1032,7 @@ export const USAGE = [
 
 Add `method: { type: "string" },` to `OPTIONS`.
 
-Replace the body of `parseCli` after the `version` check:
+Add these helpers above `parseCli`:
 
 ```ts
 const LOGIN_METHODS: readonly AuthMethod[] = ["api-key", "oauth"];
@@ -1034,7 +1061,7 @@ function loginCommand(words: readonly string[], method: string | undefined, flag
 }
 ```
 
-and in `parseCli`:
+In `parseCli`, replace everything from `const { values, positionals } = parsed;` to the end of the function with:
 
 ```ts
   const { values, positionals } = parsed;
@@ -1302,7 +1329,8 @@ In `src/server/main.ts`:
 
 ```ts
 async function login(command: Extract<CliCommand, { kind: "login" }>, deps: MainDeps): Promise<number> {
-  setAgentLogger(stderrLogger(deps.env.NAX_AGENT_LOG === "debug" ? "debug" : "info", deps.writeErr));
+  // warn, not info: info lines would land in the middle of the interactive prompts.
+  setAgentLogger(stderrLogger(deps.env.NAX_AGENT_LOG === "debug" ? "debug" : "warn", deps.writeErr));
   const configDir = resolveConfigDir(command.flags, deps.env, deps.homedir);
   configureCredentials(credentialsFor(configDir, deps.readFile));
   return runLoginCommand(
@@ -1319,10 +1347,31 @@ async function login(command: Extract<CliCommand, { kind: "login" }>, deps: Main
 
   Change the `cli` import to `import { type CliCommand, type CliFlags, parseCli, USAGE } from "#src/server/cli";`.
 
+- In `src/server/logger.ts`, widen `export type LogLevel = "info" | "debug";` to `"warn" | "info" | "debug"` (the `RANK` table already has `warn`). In `test/unit/server/logger.test.ts`, widen `capture`'s parameter the same way and add:
+
+```ts
+  test("warn drops info and debug", () => {
+    const warn = capture("warn");
+    warn.logger.info("s", "hidden");
+    warn.logger.debug("s", "hidden");
+    warn.logger.warn("s", "shown");
+    expect(warn.lines).toHaveLength(1);
+  });
+```
+
 - In `src/server/process-entry.ts`:
   - Add `isTTY?: boolean` to `ProcessLike.stdin`'s type: change `readonly stdin: Readable;` to `readonly stdin: Readable & { readonly isTTY?: boolean };`.
   - In `mainDepsFrom`, add `isTTY: proc.stdin.isTTY === true,`.
-  - In `test/unit/server/process-entry.test.ts`, add an assertion that `mainDepsFrom(fake).isTTY` is `false` for a fake process whose stdin has no `isTTY`, and `true` when the fake's stdin sets `isTTY: true`. Extend `test/helpers/fake-process.ts` if needed with an optional `isTTY` parameter.
+  - In `test/unit/server/process-entry.test.ts`, extend its local `fakeProcess(argv)` helper with an optional `isTTY?: boolean` parameter: `stdin: isTTY === undefined ? new PassThrough() : Object.assign(new PassThrough(), { isTTY })`. (`test/helpers/fake-process.ts` is the fake ACP agent subprocess, not this.) Add:
+
+```ts
+  test("isTTY mirrors stdin.isTTY (S5-4)", () => {
+    expect(mainDepsFrom(fakeProcess([]).proc).isTTY).toBe(false);
+    expect(mainDepsFrom(fakeProcess([], true).proc).isTTY).toBe(true);
+  });
+```
+
+    Adjust `.proc` to whatever name `fakeProcess` returns the `ProcessLike` under in that file.
 
 - [ ] **Step 7: Run and commit**
 
@@ -1342,7 +1391,7 @@ Expected: PASS. `main.test.ts`'s existing tests pass with the added `isTTY`/`aut
 
 **Files:**
 - Modify: `packages/nax-agent-acp/src/server/auth.ts`, `src/server/errors.ts`, `src/server/translate/stop.ts`
-- Test: `test/unit/server/auth.test.ts`, `test/unit/server/errors.test.ts`, `test/unit/server/translate/stop.test.ts` (or wherever `promptOutcome` is tested: `rg -l promptOutcome test`)
+- Test: `test/unit/server/auth.test.ts`, `test/unit/server/errors.test.ts`, `test/unit/server/translate/stop.test.ts`
 
 **Interfaces:**
 - Consumes: `AuthPorts` (Task 3); `ServerOptions` from `#src/server/options`; `NativeCatalogOverrides`, `NaxError`, `AgentLogger` from `@nathapp/nax-agent`; `AuthMethod as AcpAuthMethod`, `AuthenticateResponse`, `RequestError` from the SDK.
@@ -1380,6 +1429,10 @@ describe("credential failures (S5-4 M-32)", () => {
     expect(error.message).toContain('no credentials for provider "anthropic"');
     expect(error.message).toContain(loginHint("anthropic"));
     expect(error.data).toEqual({ provider: "anthropic" });
+  });
+
+  test("a message ending in a full stop gets exactly one", () => {
+    expect(authRequired("Credential authentication failed.", {}).message).not.toContain("..");
   });
 
   test("loginHint names both commands", () => {
@@ -1433,7 +1486,8 @@ export function loginHint(provider?: string): string {
 /** `auth_required` (-32000): editors offer the advertised login methods on it (spec §6.3). */
 export function authRequired(message: string, data: Readonly<Record<string, unknown>>): RequestError {
   const provider = typeof data.provider === "string" ? data.provider : undefined;
-  return RequestError.authRequired(data, `${message}. ${loginHint(provider)}`);
+  // A redacted NaxError message may already end in "."; never print "..".
+  return RequestError.authRequired(data, `${message.replace(/\.+$/, "")}. ${loginHint(provider)}`);
 }
 ```
 
@@ -1449,23 +1503,12 @@ Run the errors tests. Expected: PASS.
 
 - [ ] **Step 3: Failing turn-end mapping test**
 
-Find the `promptOutcome` test file (`rg -l "promptOutcome" packages/nax-agent-acp/test`) and append:
+Append to `test/unit/server/translate/stop.test.ts`:
 
 ```ts
 describe("errored on credentials (S5-4 M-32)", () => {
   test("fail-auth answers auth_required with the code and message", () => {
-    const outcome = promptOutcome(
-      {
-        type: "turn_end",
-        status: "errored",
-        output: "",
-        usage: { inputTokens: 0, outputTokens: 0 },
-        costUsd: 0,
-        error: { code: "fail-auth", message: "401 invalid x-api-key" },
-      },
-      3600,
-      true,
-    );
+    const outcome = promptOutcome(end("errored", { code: "fail-auth", message: "401 invalid x-api-key" }), 3600, true);
     expect(outcome.kind).toBe("error");
     if (outcome.kind !== "error") return;
     expect(outcome.error.code).toBe(-32000);
@@ -1474,24 +1517,15 @@ describe("errored on credentials (S5-4 M-32)", () => {
   });
 
   test("any other errored code stays internal_error", () => {
-    const outcome = promptOutcome(
-      {
-        type: "turn_end",
-        status: "errored",
-        output: "",
-        usage: { inputTokens: 0, outputTokens: 0 },
-        costUsd: 0,
-        error: { code: "fail-service-down", message: "503" },
-      },
-      3600,
-      true,
-    );
+    const outcome = promptOutcome(end("errored", { code: "fail-service-down", message: "503" }), 3600, true);
     expect(outcome.kind === "error" ? outcome.error.code : 0).toBe(-32603);
   });
 });
 ```
 
-If the file builds `turn_end` events through a helper (for example `#test/helpers/session-events`), use that helper instead of the literal: the `turn_end` type may carry more required fields. Run it. Expected: FAIL on the first test (code is -32603).
+`end(status, error?)` is the existing helper at the top of that file; it fills `sessionId`, `turnId`, `at` and `metadata`.
+
+Run it. Expected: FAIL on the first test (code is -32603).
 
 - [ ] **Step 4: Implement in `stop.ts`**
 
@@ -1810,8 +1844,9 @@ git commit -m "feat(acp-server): login methods, authenticate, credential check a
 ### Task 5: Wire auth into initialize, authenticate, opens and main
 
 **Files:**
-- Modify: `packages/nax-agent-acp/src/server/client-port.ts`, `src/server/capabilities.ts`, `src/server/connection.ts`, `src/server/open-session.ts`, `src/server/main.ts`
-- Modify tests: `test/helpers/fake-client-port.ts`, `test/unit/server/client-port.test.ts`, `test/unit/server/questions.test.ts:127`, `test/unit/server/connection.test.ts`, `test/unit/server/open-session.test.ts`, `test/unit/server/main.test.ts`
+- Modify: `packages/nax-agent-acp/src/server/client-port.ts`, `src/server/capabilities.ts`, `src/server/connection.ts`, `src/server/registry.ts`, `src/server/main.ts`
+- Modify tests: `test/helpers/fake-client-port.ts`, `test/unit/server/client-port.test.ts`, `test/unit/server/questions.test.ts:127`, `test/unit/server/connection.test.ts`, `test/unit/server/main.test.ts`
+- Create test: `test/unit/server/registry-credentials.test.ts`
 
 **Interfaces:**
 - Consumes: `ServerAuth`, `NO_SERVER_AUTH`, `loadServerAuth`, `NAX_AGENT_AUTH` (Tasks 3-4).
@@ -1819,7 +1854,7 @@ git commit -m "feat(acp-server): login methods, authenticate, credential check a
   - `ClientFeatures.terminalAuth: boolean`.
   - `initializeResponse(version: string, authMethods: readonly AcpAuthMethod[] = []): InitializeResponse`.
   - `AppDeps.auth?: ServerAuth`.
-  - `NativeOpenDeps.ensureCredentials?: (model: string) => Promise<void>`.
+  - `RegistryDeps.ensureCredentials?: (model: string) => Promise<void>` (M-30).
 
 - [ ] **Step 1: Failing tests**
 
@@ -1875,10 +1910,7 @@ describe("auth on the wire (S5-4)", () => {
         ...deps,
         registry: createSessionRegistry({
           ...registryDeps(),
-          openSession: async () => {
-            await auth.ensureCredentials("anthropic/claude-sonnet-5-5");
-            throw new Error("unreachable");
-          },
+          ensureCredentials: (model) => auth.ensureCredentials(model),
         }),
         auth,
       }),
@@ -1894,46 +1926,108 @@ describe("auth on the wire (S5-4)", () => {
 
 For the last test, refactor `appDeps()` so its `createSessionRegistry` argument comes from a `registryDeps()` function in the same file, and `appDeps()` calls `createSessionRegistry(registryDeps())`. The registry must have a default model, so add `defaultModel: "anthropic/claude-sonnet-5-5"` to its `options`.
 
-`open-session.test.ts`:
+`test/unit/server/registry-credentials.test.ts` (new; copy the `OPTIONS`, temp-dir `beforeEach`/`afterEach` and `setup` shape from `test/unit/server/registry-switch.test.ts`, adding an `ensureCredentials` parameter that is passed to `createSessionRegistry`):
 
 ```ts
-describe("credential check before opening (M-30)", () => {
-  test("ensureCredentials runs with the request's model before create", async () => {
-    const r = recorder();
-    const checked: string[] = [];
-    const open = nativeOpenSession({
-      transcripts: createMemoryTranscriptStore(),
-      catalogOverrides: [],
-      turnTimeoutSeconds: 3600,
-      create: r.create,
-      resume: r.resume,
-      backend: r.backend,
-      ensureCredentials: async (model) => {
-        checked.push(model);
-      },
-    });
-    await open(REQUEST);
-    expect(checked).toEqual([REQUEST.model]);
-    expect(r.created).toHaveLength(1);
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { RequestError } from "@agentclientprotocol/sdk";
+import { createMemoryTranscriptStore } from "@nathapp/nax-agent";
+import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
+import { authRequired } from "#src/server/errors";
+import type { OpenSessionRequest } from "#src/server/open-session";
+import type { ServerOptions } from "#src/server/options";
+import { createSessionRegistry } from "#src/server/registry";
+import { TURN_TIMEOUT_SECONDS } from "#src/server/server-session";
+import { createSessionStorage } from "#src/server/storage";
+import { fakeAgentSession } from "#test/helpers/fake-agent-session";
+import { fakePort } from "#test/helpers/fake-client-port";
+import { recordingLogger } from "#test/helpers/recording-logger";
+
+const OPTIONS: ServerOptions = {
+  configDir: "/cfg",
+  sessionsDir: "/unused",
+  defaultModel: "anthropic/claude-sonnet-5-5",
+  defaultMode: "full",
+  bashApproval: "escalate",
+  tiers: [
+    { tier: "fast", model: "openai/gpt-x" },
+    { tier: "balanced", model: "anthropic/claude-sonnet-5-5" },
+  ],
+  catalogOverrides: [],
+};
+
+let dir: string;
+beforeEach(() => {
+  dir = makeTempDir("acp-registry-credentials-");
+});
+afterEach(() => cleanupTempDir(dir));
+
+/** `refused`: providers whose models the check refuses. */
+function setup(refused: readonly string[]) {
+  const opened: OpenSessionRequest[] = [];
+  const closed: string[] = [];
+  const checked: string[] = [];
+  const port = fakePort();
+  const { logger } = recordingLogger();
+  const registry = createSessionRegistry({
+    options: OPTIONS,
+    openSession: async (request) => {
+      opened.push(request);
+      const fake = fakeAgentSession(request.sessionId, []);
+      return {
+        session: { ...fake.session, close: async () => void closed.push(request.model) },
+        doc: null,
+      };
+    },
+    storage: createSessionStorage({ dir, pid: 1000, now: () => new Date(), logger, isAlive: () => false }),
+    transcripts: createMemoryTranscriptStore(),
+    newId: () => "s1",
+    now: () => new Date("2026-10-09T01:00:00.000Z"),
+    readOldText: async () => ({ kind: "missing" }),
+    logger,
+    turnTimeoutSeconds: TURN_TIMEOUT_SECONDS,
+    shutdownWaitMs: 50,
+    ensureCredentials: async (model) => {
+      checked.push(model);
+      const provider = model.slice(0, model.indexOf("/"));
+      if (refused.includes(provider)) throw authRequired(`no credentials for provider "${provider}"`, { provider });
+    },
+  });
+  return { registry, opened, closed, checked, input: { cwd: "/w", mcpServers: [], port: () => port.port } };
+}
+
+const codeOf = (e: unknown): number => (e instanceof RequestError ? e.code : 0);
+
+describe("credential check (M-30)", () => {
+  test("session/new is refused before the lock and before any open", async () => {
+    const s = setup(["anthropic"]);
+    expect(codeOf(await s.registry.create(s.input).catch((e: unknown) => e))).toBe(-32000);
+    expect(s.opened).toEqual([]);
+    expect(await readFile(join(dir, "s1.lock"), "utf8").catch(() => "none")).toBe("none");
   });
 
-  test("a refused check opens nothing", async () => {
-    const r = recorder();
-    const open = nativeOpenSession({
-      transcripts: createMemoryTranscriptStore(),
-      catalogOverrides: [],
-      turnTimeoutSeconds: 3600,
-      create: r.create,
-      resume: r.resume,
-      backend: r.backend,
-      ensureCredentials: async () => Promise.reject(new Error("auth")),
-    });
-    expect(await open(REQUEST).catch((e: unknown) => (e instanceof Error ? e.message : ""))).toBe("auth");
-    expect(r.created).toEqual([]);
-    expect(r.backendCalls).toEqual([]);
+  test("a model switch to a refused provider leaves the live session open and unchanged (final review I6)", async () => {
+    const s = setup(["openai"]);
+    await s.registry.create(s.input);
+    const error = await s.registry.setConfigOption("s1", "model", "openai/gpt-x").catch((e: unknown) => e);
+    expect(codeOf(error)).toBe(-32000);
+    expect(s.closed).toEqual([]);
+    expect(s.opened).toHaveLength(1);
+    expect(s.checked).toEqual(["anthropic/claude-sonnet-5-5", "openai/gpt-x"]);
+  });
+
+  test("a mode change does not re-check an unchanged model", async () => {
+    const s = setup([]);
+    await s.registry.create(s.input);
+    await s.registry.setMode("s1", "read");
+    expect(s.checked).toEqual(["anthropic/claude-sonnet-5-5"]);
   });
 });
 ```
+
+If `fakePort()` requires arguments, or `fakeAgentSession(...).session` is not spreadable (a class instance), mirror how `registry-switch.test.ts` builds them and record closes with a wrapper object that delegates every `AgentSession` member. Do not use casts.
 
 `main.test.ts`: the existing "serves initialize" test sends an `initialize` frame. Add a sibling that sends `clientCapabilities: { auth: { terminal: true } }` with the harness's `readFile` returning a config `{"models":{"native":{"balanced":"anthropic/claude-sonnet-5-5"}}}` for `<homedir>/.nax/config.json`, and `fakeAuth()` (logins: `["anthropic"]`). Assert that the `initialize` result frame's `authMethods` is `[{ id: "login-anthropic", name: "Log in to anthropic", type: "terminal", args: ["login", "anthropic"] }]`. Copy the frame-reading code from the existing "serves initialize" test in that file.
 
@@ -1976,14 +2070,25 @@ and add `terminalAuth: caps?.auth?.terminal === true,` in `clientFeatures`.
     .onRequest("authenticate", (ctx) => guard(deps.logger, () => auth.authenticate(ctx.params.methodId)))
 ```
 
-`open-session.ts`: add to `NativeOpenDeps`:
+`registry.ts`:
+- Add to `RegistryDeps`:
 
 ```ts
   /** S5-4 M-30: refuses (auth_required) when the model's provider has no credential. */
   readonly ensureCredentials?: (model: string) => Promise<void>;
 ```
 
-and make it the first line of the returned function: `await deps.ensureCredentials?.(request.model);`.
+- In `openEntry`, after the `closing` check and before `acquireLock`: `await deps.ensureCredentials?.(meta.model);` (`SessionMeta.model`, `storage.ts`).
+- In `switchTo`, before `entry.server.switchTo(...)`:
+
+```ts
+    // A busy session answers "turn in progress" first, as ServerSession.switchTo would.
+    if (entry.server.running) throw turnInProgress();
+    // Before the live session is closed, so a refused model changes nothing (final review I6).
+    if (next.model !== from.model) await deps.ensureCredentials?.(next.model);
+```
+
+  Add `turnInProgress` to the existing `#src/server/errors` import in `registry.ts`. `setMode` and `setConfigOption` reach `switchTo` only when the settings changed, so an unchanged model is never re-checked.
 
 `main.ts` `serveAcp`, replacing the inline `catalogOverridesFrom(...)`:
 
@@ -1992,7 +2097,7 @@ and make it the first line of the returned function: `await deps.ensureCredentia
   const auth = await loadServerAuth({ options: resolved.options, overrides, ports: deps.auth ?? NAX_AGENT_AUTH, logger });
 ```
 
-Pass `catalogOverrides: overrides` and `ensureCredentials: (model) => auth.ensureCredentials(model)` to `nativeOpenSession`, and `auth` to `buildAgentApp({ version: packageVersion(), registry, logger, auth })`. Import `loadServerAuth` from `#src/server/auth`.
+Pass `catalogOverrides: overrides` to `nativeOpenSession`, `ensureCredentials: (model) => auth.ensureCredentials(model)` to `createSessionRegistry`, and `auth` to `buildAgentApp({ version: packageVersion(), registry, logger, auth })`. Import `loadServerAuth` from `#src/server/auth`.
 
 - [ ] **Step 3: Run the package gates**
 
@@ -2005,7 +2110,7 @@ bun run test:node
 bun run api:update
 ```
 
-Expected: all PASS. The API snapshot diff shows `MainDeps.isTTY` and `MainDeps.auth` (`AuthPorts`).
+Expected: all PASS. `api/nax-agent-acp.api.txt` lists export names only, so `api:update` should produce no diff here (`MainDeps` is already listed); commit it if it does.
 
 - [ ] **Step 4: Commit**
 
@@ -2098,10 +2203,15 @@ Add an agent to `~/.acpx/config.json`:
 ```
 
 ```sh
-acpx --approve-all nax-agent "add a test for parseCli"   # persistent session for this directory
-acpx nax-agent "now run it"                             # continues the same session
-acpx nax-agent sessions                                 # list sessions
+acpx nax-agent sessions new                              # once per directory: creates the session
+acpx --approve-all nax-agent "add a test for parseCli"   # prompts the session
+acpx nax-agent "now run it"                              # continues the same session
+acpx nax-agent sessions                                  # list sessions
+acpx nax-agent exec "what does this repo do"             # one-shot, no saved session
 ```
+
+acpx refuses a prompt until `sessions new` has created a session for the directory. A missing credential
+shows up at `sessions new` as an authentication-required error.
 
 Questions from the agent need a client with form elicitation. A client without it (acpx) gets a notice,
 and the agent is told to proceed on its best judgement.
@@ -2129,11 +2239,12 @@ In `packages/nax-agent-acp/CHANGELOG.md`, replace the `## [Unreleased]` `### Add
 
 In `docs/superpowers/specs/2026-10-08-s5-acp-server-design.md`:
 - §6.1, `login` row: change the behaviour cell to "Interactive login on the terminal via `runLogin(provider, createTerminalAuthInteraction(...))`. Writes to the `~/.nax` credential store. `--method api-key|oauth` is forwarded. A leading `acp` and the server flags are accepted and ignored, because an editor's terminal auth appends `login <provider>` to the server invocation (amended 2026-10-09, S5-4 M-34). Exit 0 signed in, 1 failure or no TTY, 130 cancelled."
+- §6.3, first bullet ("Terminal auth methods"): change "appears in the configured tier models" to "appears in the configured tier models or is the default model's provider, excluding catalog-override providers; the supported set is nax-agent's `loginProviderIds()` (amended 2026-10-09, S5-4 M-33)".
 - §6.3: replace the three bullets after "Terminal auth methods" with:
 
 ```md
 - **`authenticate(methodId)`** checks the provider of an advertised method. It succeeds when a credential is stored or ambient (`providersWithoutCredentials`), and otherwise gives `auth_required`. An unknown id gives `invalid_params`. SDK 1.7.0 tells clients not to send terminal methods to `authenticate`; it is served for clients that do (amended 2026-10-09, S5-4 M-29, M-31).
-- **Credential check on open.** `session/new`, `load`, `resume` and the reopen behind a mode or model change first check the session model's provider (skipped for catalog-override providers and ids without a provider prefix). A missing credential gives `auth_required` before any billed call, naming `nax-agent login <provider>` (S5-4 M-30).
+- **Credential check on open.** `session/new`, `load` and `resume` first check the session model's provider, and a model change checks the new model before the live session is closed (skipped for catalog-override providers and ids without a provider prefix). A missing credential gives `auth_required` before any billed call, naming `nax-agent login <provider>`; a refused model change leaves the session unchanged (S5-4 M-30).
 - **No agent-type auth in v1** (driving OAuth or key entry over elicitation; editor support is uneven).
 - A turn that fails with `fail-auth` (HTTP 401/403 or a credential-store fault) or a `CREDENTIAL_*` code maps to `auth_required`, so editors start their login flow. The message names `nax-agent login <provider>` and `nax auth login` for clients without terminal auth (S5-4 M-32).
 - The terminal login UI is nax-agent's `createTerminalAuthInteraction`, shared with `nax auth login` (S5-4 M-28).
@@ -2178,10 +2289,11 @@ bun run release --dry-run patch
 bun run release patch
 ```
 
-The script opens a PR from its release branch that bumps only `packages/nax-ai/package.json`. On that branch:
+The script opens a PR from `release/nax-ai-v0.1.17` that bumps only `packages/nax-ai/package.json`, then returns to main. From the repo root:
 
 ```bash
-git switch <release branch printed by the script>
+cd "$(git rev-parse --show-toplevel)"
+git switch release/nax-ai-v0.1.17
 # set "@nathapp/nax-ai": "0.1.17" in packages/nax/package.json and packages/nax-agent/package.json
 bun install
 (cd packages/nax && bun run check:nax-ai-pin)
@@ -2208,6 +2320,8 @@ Expected: `0.1.17` once the release workflow finishes.
 
 - [ ] **Step 1: Ask for approval** for the billed acpx smoke. It is about 3 short prompts on the configured `balanced` model.
 
+All shell blocks in this task are **bash** (`bash` first if your shell is zsh): they use arrays.
+
 - [ ] **Step 2: Build and install the packed tarballs**
 
 On main after Task 7, follow `packages/nax-agent-acp/RELEASING.md` "pack both at one version". In short, from the repo root:
@@ -2216,41 +2330,74 @@ On main after Task 7, follow `packages/nax-agent-acp/RELEASING.md` "pack both at
 SMOKE=$(mktemp -d /tmp/nax-agent-smoke-XXXX)
 (cd packages/nax-agent && bun run build && bun run stage-publish && npm pack ./.publish --pack-destination "$SMOKE")
 (cd packages/nax-agent-acp && bun run build && bun run stage-publish && npm pack ./.publish --pack-destination "$SMOKE")
-(cd "$SMOKE" && npm init -y >/dev/null && npm install ./nathapp-nax-agent-*.tgz ./nathapp-nax-agent-acp-*.tgz)
+(cd "$SMOKE" && npm init -y >/dev/null && npm install ./nathapp-nax-agent-[0-9]*.tgz ./nathapp-nax-agent-acp-*.tgz)
 "$SMOKE/node_modules/.bin/nax-agent" --version
 ```
 
 Expected: `0.3.1`, because the versions are still pre-bump. nax-ai 0.1.17 is installed from npm (`npm ls @nathapp/nax-ai` in `$SMOKE`).
 
-- [ ] **Step 3: acpx smoke**
+- [ ] **Step 3: acpx smoke (session, edit, reconnect, list)**
 
 ```bash
 WORK=$(mktemp -d /tmp/nax-agent-work-XXXX) && git -C "$WORK" init -q && echo "# smoke" > "$WORK/README.md"
 export NAX_AGENT_SESSIONS_DIR="$SMOKE/sessions"
-ACPX="npx -y acpx@0.19.4 --cwd $WORK"
 BIN="$SMOKE/node_modules/.bin/nax-agent"
-$ACPX --approve-all --agent "$BIN acp" "Create hello.txt containing exactly: hi"
+ACPX=(npx -y acpx@0.19.4 --cwd "$WORK")
+AGENT=(--agent "$BIN acp")            # identical string every call: acpx keys sessions by agent command
+"${ACPX[@]}" "${AGENT[@]}" sessions new
+"${ACPX[@]}" --approve-all --ttl 1 "${AGENT[@]}" "Create hello.txt containing exactly: hi"
 cat "$WORK/hello.txt"
-$ACPX --agent "$BIN acp" "What does hello.txt contain? Answer in one word."
+sleep 5                               # past --ttl 1: acpx's queue owner and the agent process exit
+pgrep -f "$BIN" || echo "no agent process"
+"${ACPX[@]}" "${AGENT[@]}" "What does hello.txt contain? Answer in one word."
+"${ACPX[@]}" "${AGENT[@]}" sessions
 ls "$NAX_AGENT_SESSIONS_DIR"
 ```
 
 Expected:
 - `hello.txt` holds `hi`.
-- The second answer says `hi`, so the session was continued.
+- `no agent process` before the second prompt. The second prompt then starts a fresh agent process, which must reopen the stored session (`session/load` or `session/resume`, spec §8 "reconnect, load"), and it answers `hi`.
+- `sessions` lists one session.
 - `$NAX_AGENT_SESSIONS_DIR` holds one `*.session.json` and one `*.transcript.json`, with no `.lock` left behind.
 
-If acpx with `--agent` does not keep a session between calls, add a temporary `"nax-agent-smoke": { "argv": ["<BIN>", "acp"] }` entry to `~/.acpx/config.json`. Ask before editing that file, rerun with `acpx nax-agent-smoke ...`, and remove the entry afterwards.
+If acpx rejects the flag order, put `--agent` before the global flags, as `npx -y acpx@0.19.4 --help` shows.
 
 - [ ] **Step 4: auth_required smoke (free, no model call)**
 
 ```bash
+env | grep -i anthropic               # unset anything that would serve anthropic in this shell
 EMPTY=$(mktemp -d /tmp/nax-agent-noauth-XXXX)
+WORK2=$(mktemp -d /tmp/nax-agent-work2-XXXX)
 env -u ANTHROPIC_API_KEY NAX_AGENT_CONFIG_DIR="$EMPTY" \
-  npx -y acpx@0.19.4 --cwd "$WORK" --agent "$BIN acp --model anthropic/claude-sonnet-5-5" "hi" ; echo "exit=$?"
+  npx -y acpx@0.19.4 --cwd "$WORK2" --agent "$BIN acp --model anthropic/claude-sonnet-5-5" sessions new ; echo "exit=$?"
 ```
 
-Expected: acpx reports an authentication-required error mentioning `nax-agent login anthropic`, and no tokens are spent. Unset any other variable that serves anthropic in this shell first: `env | grep -i anthropic`.
+Expected: acpx reports an authentication-required error (acpx maps code -32000 with "Authentication required" to `AUTH_REQUIRED`) mentioning `nax-agent login anthropic`. No tokens are spent: `sessions new` is what calls `session/new`.
+
+- [ ] **Step 4b: `nax-agent login` exits on its own (final review I5)**
+
+In an interactive terminal (approval: this writes a real credential to a scratch config dir, not `~/.nax`):
+
+```bash
+SCRATCH=$(mktemp -d /tmp/nax-agent-login-XXXX)
+time "$BIN" login openrouter --config-dir "$SCRATCH"            # pick oauth, complete it in the browser
+time "$BIN" login anthropic --method api-key --config-dir "$SCRATCH"   # paste any key; Ctrl+C is fine too
+rm -rf "$SCRATCH"
+```
+
+Expected: each command returns to the prompt right after "Signed in ..." (or exit 130 on Ctrl+C), with no hang. If one lingers, open handles from the login flow are keeping Node alive. Fix it before Task 9 in a small PR: change `bin/nax-agent.js` to
+
+```js
+#!/usr/bin/env node
+import { runCli } from "../dist/server/index.js";
+
+const code = await runCli(process);
+// login can leave the OAuth flow's handles open; the server path keeps exitCode so stdout frames flush.
+if (process.argv.slice(2).includes("login")) process.exit(code);
+process.exitCode = code;
+```
+
+and re-run this step.
 
 - [ ] **Step 5: Zed walkthrough (maintainer-driven)**
 
