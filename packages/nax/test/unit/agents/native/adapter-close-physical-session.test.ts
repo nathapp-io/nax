@@ -70,6 +70,7 @@ describe("native closePhysicalSession — run teardown reaches the session maps"
     // RUNNING and every map keeps its entry. The per-turn entries `open` does
     // not set are added here so the test covers all twelve, not only the five
     // the open path happens to populate.
+    state.carryHistoryAcrossModels.add(name);
     state.failed.add(name);
     state.lastUsage.set(name, { promptTokens: 10, anchorIndex: 0 });
     state.systemPrompts.set(name, "close-test prompt");
