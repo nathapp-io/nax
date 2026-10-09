@@ -164,8 +164,10 @@ describe("createTurnEventEmitter", () => {
     emitter.toolCall({ id: "c1", name: "Write", input: { path: "cfg", content } }, undefined);
     const call = events[0];
     if (call?.type !== "tool_call") throw new Error("expected a tool_call");
-    expect(JSON.stringify(call.input)).not.toContain("plainvalue");
-    expect(call.input).toHaveProperty("path", "cfg");
+    expect(call.input).toEqual({
+      path: "cfg",
+      content: '{"client_secret": "[REDACTED]"}\nexport OPENAI_API_KEY="[REDACTED]"\n',
+    });
   });
 
   test("redaction scans a bounded prefix of a very large result", () => {

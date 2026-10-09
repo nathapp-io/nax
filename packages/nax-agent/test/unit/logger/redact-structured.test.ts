@@ -11,7 +11,6 @@ describe("redactSecrets: JSON-shaped text", () => {
     ['{"password":"x"}', '{"password":"[REDACTED]"}'],
     ['{"Authorization": "Bearer abc"}', '{"Authorization": "[REDACTED]"}'],
     ['{"a":{"b":[{"dbPassword":"hunter2"}]}}', '{"a":{"b":[{"dbPassword":"[REDACTED]"}]}}'],
-    ['{"DATABASE_URL": "postgres://h/db"}', '{"DATABASE_URL": "[REDACTED]"}'],
     ['{"token": "t0k3n", "name": "svc"}', '{"token": "[REDACTED]", "name": "svc"}'],
   ])("masks the value, keeps key and structure: %s", (input, expected) => {
     expect(mask(input)).toBe(expected);
@@ -43,6 +42,32 @@ describe("redactSecrets: JSON-shaped text", () => {
   });
 });
 
+describe("redactSecrets: single-quoted keys", () => {
+  test.each([
+    ["{'apiKey': 'v1'}", "{'apiKey': '[REDACTED]'}"],
+    ["{'password': 'v1'}", "{'password': '[REDACTED]'}"],
+    ["{'password':'v1', 'user': 'bob'}", "{'password':'[REDACTED]', 'user': 'bob'}"],
+    ["{'token': \"it's\"}", "{'token': \"[REDACTED]\"}"],
+  ])("masks %s", (input, expected) => {
+    expect(mask(input)).toBe(expected);
+  });
+});
+
+describe("redactSecrets: long values", () => {
+  test("an unquoted value past 4096 characters leaves no tail", () => {
+    const out = mask(`API_KEY=${"a".repeat(5000)}ZZTAIL`);
+    expect(out).toBe("API_KEY=[REDACTED]");
+  });
+  test("a double-quoted value past 4096 characters leaves no tail", () => {
+    const out = mask(`password="${"a".repeat(5000)}ZZTAIL"`);
+    expect(out).toBe('password="[REDACTED]"');
+  });
+  test("a single-quoted and a JSON value past 4096 characters leave no tail", () => {
+    expect(mask(`SECRET='${"a".repeat(5000)}ZZTAIL'`)).toBe("SECRET='[REDACTED]'");
+    expect(mask(`{"password": "${"a".repeat(5000)}ZZTAIL"}`)).toBe('{"password": "[REDACTED]"}');
+  });
+});
+
 describe("redactSecrets: env- and YAML-shaped text", () => {
   test.each([
     ["API_TOKEN=abc", "API_TOKEN=[REDACTED]"],
@@ -54,7 +79,13 @@ describe("redactSecrets: env- and YAML-shaped text", () => {
     ["Authorization: Bearer abc123def456ghi789", "Authorization: [REDACTED]"],
     ["Authorization: Basic abc", "Authorization: [REDACTED]"],
     ['password = "hunter2"', 'password = "[REDACTED]"'],
-    ["DATABASE_URL=redis-host-only", "DATABASE_URL=[REDACTED]"],
+    ["api_key = abc123xyz", "api_key = [REDACTED]"],
+    ["apikey : abc123xyz", "apikey : [REDACTED]"],
+    ["X-API-KEY : abc", "X-API-KEY : [REDACTED]"],
+    ["API_KEY =abc", "API_KEY =[REDACTED]"],
+    ["password = hunter2", "password = [REDACTED]"],
+    ["aws_secret_access_key = wJalrXUtnFEMI", "aws_secret_access_key = [REDACTED]"],
+    ["Authorization : Bearer x", "Authorization : [REDACTED]"],
   ])("masks the value, keeps the key: %s", (input, expected) => {
     expect(mask(input)).toBe(expected);
   });
@@ -96,6 +127,12 @@ describe("redactSecrets: values that are not secrets", () => {
     "keyboard=us",
     "author: bob",
     "sessionName=my-session storyId: story-1",
+    "const token = await getToken()",
+    "token = process.env.X",
+    "secret = loadSecret(name)",
+    "avatar_url: https://x/y.png",
+    "BASE_URL=http://localhost:3000",
+    '{"html_url": "https://github.com/a/b"}',
     "API_TOKEN=$API_TOKEN",
     "API_TOKEN=$\u007BAPI_TOKEN}",
     "const apiKey = process.env.OPENAI_API_KEY",
@@ -114,6 +151,12 @@ describe("redactSecrets: values that are not secrets", () => {
     });
     expect(out.message).toBe("sessionName=nax-feat-us-001 storyId=US-001 author=bob");
     expect(out.data?.note).toBe("sessionId: abc max_tokens=10");
+  });
+
+  test("credentials inside a connection URL are still masked by the userinfo pattern", () => {
+    const out = mask("DATABASE_URL=postgres://u:p@h/db");
+    expect(out).not.toContain(":p@");
+    expect(out).toContain("[REDACTED]");
   });
 
   test("is idempotent", () => {
