@@ -93,6 +93,13 @@ describe("main", () => {
     expect(h.out()).toBe("");
   });
 
+  test("an invalid --mcp-connect-timeout exits 2 before serving", async () => {
+    const h = harness(["--mcp-connect-timeout", "0"]);
+    expect(await main(h.deps)).toBe(2);
+    expect(h.err()).toContain("invalid mcp connect timeout");
+    expect(h.out()).toBe("");
+  });
+
   test("serves initialize and exits 0 when stdin ends; logs only to stderr", async () => {
     const h = harness([]);
     const exit = main(h.deps);

@@ -21,6 +21,7 @@ export const OPTIONS: ServerOptions = {
     { tier: "balanced", model: "anthropic/claude-sonnet-5-5", contextWindow: 200_000 },
   ],
   catalogOverrides: [],
+  mcpConnectTimeoutSeconds: 30,
 };
 
 export const said = (words: string): Script =>

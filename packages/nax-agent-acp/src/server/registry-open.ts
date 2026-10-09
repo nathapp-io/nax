@@ -46,12 +46,13 @@ export function createReopen(deps: ReopenDeps): Reopener {
     port: ClientPort,
     messages: Parameters<typeof replayTranscript>[0],
     cwd: string,
+    titleFor?: (name: string) => string | undefined,
   ): Promise<void> {
-    for (const update of replayTranscript(messages, cwd)) await port.update(update);
+    for (const update of replayTranscript(messages, cwd, titleFor)) await port.update(update);
   }
 
-  async function replayOpened(port: ClientPort, opened: OpenedSession, cwd: string): Promise<void> {
-    await replayTo(port, opened.doc?.messages ?? [], cwd);
+  async function replayOpened(port: ClientPort, sessionId: string, opened: OpenedSession, cwd: string): Promise<void> {
+    await replayTo(port, opened.doc?.messages ?? [], cwd, (name) => deps.entries.get(sessionId)?.mcp.titleFor(name));
     if (opened.session.lastTurn?.status === "interrupted") {
       await port.update(announce(port.features.updates.notices, "warning", deps.interruptedNotice));
     }
@@ -62,7 +63,7 @@ export function createReopen(deps: ReopenDeps): Reopener {
     const { opened } = await deps.openEntry(meta, port, input.mcpServers);
     if (replay) {
       try {
-        await replayOpened(port, opened, meta.cwd);
+        await replayOpened(port, sessionId, opened, meta.cwd);
       } catch (error) {
         // The client did not get its history: do not leave the session open and locked.
         const entry = deps.entries.get(sessionId);
@@ -78,7 +79,9 @@ export function createReopen(deps: ReopenDeps): Reopener {
       if (open !== undefined) {
         // An already-open session keeps its connection and ignores input.mcpServers (§4.4).
         if (replay) {
-          await replayTo(open.port, (await deps.transcripts.load(sessionId))?.messages ?? [], open.meta.cwd);
+          await replayTo(open.port, (await deps.transcripts.load(sessionId))?.messages ?? [], open.meta.cwd, (name) =>
+            open.mcp.titleFor(name),
+          );
         }
         return deps.stateOf(settingsOf(open.meta));
       }

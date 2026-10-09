@@ -22,7 +22,12 @@ interface StoredResult {
 type AssistantMessage = Extract<TranscriptMessage, { role: "assistant" }>;
 type StoredCall = NonNullable<AssistantMessage["toolCalls"]>[number];
 
-function replayCall(call: StoredCall, result: StoredResult | undefined, cwd: string): SessionUpdate {
+function replayCall(
+  call: StoredCall,
+  result: StoredResult | undefined,
+  cwd: string,
+  titleFor?: (name: string) => string | undefined,
+): SessionUpdate {
   const input = displayToolInput(call.input);
   const diff = call.name === "Edit" ? editDiff(input, cwd) : undefined;
   const locations = toolLocations(call.name, input, cwd);
@@ -30,7 +35,7 @@ function replayCall(call: StoredCall, result: StoredResult | undefined, cwd: str
   return {
     sessionUpdate: "tool_call",
     toolCallId: call.id,
-    title: toolTitle(call.name, input),
+    title: titleFor?.(call.name) ?? toolTitle(call.name, input),
     kind: toolKind(call.name),
     status: result === undefined || result.isError ? "failed" : "completed",
     rawInput: input,
@@ -43,6 +48,7 @@ function replayMessage(
   message: TranscriptMessage,
   results: ReadonlyMap<string, StoredResult>,
   cwd: string,
+  titleFor?: (name: string) => string | undefined,
 ): SessionUpdate[] {
   switch (message.role) {
     case "user":
@@ -64,18 +70,22 @@ function replayMessage(
         message.content === ""
           ? []
           : [{ sessionUpdate: "agent_message_chunk", content: { type: "text", text: message.content } }];
-      const calls = (message.toolCalls ?? []).map((call) => replayCall(call, results.get(call.id), cwd));
+      const calls = (message.toolCalls ?? []).map((call) => replayCall(call, results.get(call.id), cwd, titleFor));
       return [...thoughts, ...said, ...calls];
     }
   }
 }
 
-export function replayTranscript(messages: readonly TranscriptMessage[], cwd: string): readonly SessionUpdate[] {
+export function replayTranscript(
+  messages: readonly TranscriptMessage[],
+  cwd: string,
+  titleFor?: (name: string) => string | undefined,
+): readonly SessionUpdate[] {
   const results = new Map<string, StoredResult>();
   for (const message of messages) {
     if (message.role === "tool-result") {
       results.set(message.toolCallId, { content: message.content, isError: message.isError === true });
     }
   }
-  return messages.flatMap((message) => replayMessage(message, results, cwd));
+  return messages.flatMap((message) => replayMessage(message, results, cwd, titleFor));
 }

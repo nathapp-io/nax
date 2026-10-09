@@ -28,6 +28,7 @@ function registryDeps(): RegistryDeps {
       bashApproval: "gated",
       tiers: [],
       catalogOverrides: [],
+      mcpConnectTimeoutSeconds: 30,
     },
     openSession: async () => Promise.reject(new Error("unused")),
     storage: createSessionStorage({ dir, pid: 1000, now: () => new Date(), logger, isAlive: () => false }),
@@ -54,10 +55,15 @@ describe("initialize (S5-0/S5-3 capabilities)", () => {
         loadSession: true,
         promptCapabilities: { image: false, audio: false, embeddedContext: true },
         sessionCapabilities: { list: {}, resume: {}, close: {}, delete: {} },
+        mcpCapabilities: { http: true, sse: false },
       },
       authMethods: [],
       agentInfo: { name: "nax-agent", title: "nax-agent", version: "1.2.3" },
     });
+  });
+
+  test("advertises MCP over stdio and http, not sse", () => {
+    expect(initializeResponse("1.0.0").agentCapabilities?.mcpCapabilities).toEqual({ http: true, sse: false });
   });
 
   test("an in-process client gets the response; session/fork is not served yet", async () => {

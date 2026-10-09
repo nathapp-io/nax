@@ -48,6 +48,13 @@ describe("parseCli", () => {
     expect(parseCli(["--model"])).toMatchObject({ kind: "usage-error" });
   });
 
+  test("--mcp-connect-timeout is a flag", () => {
+    expect(parseCli(["acp", "--mcp-connect-timeout", "45"])).toEqual({
+      kind: "acp",
+      flags: { mcpConnectTimeout: "45" },
+    });
+  });
+
   test("USAGE names every option and the env prefix", () => {
     for (const option of ["--config-dir", "--sessions-dir", "--model", "--mode", "--bash-approval", "--version"]) {
       expect(USAGE).toContain(option);

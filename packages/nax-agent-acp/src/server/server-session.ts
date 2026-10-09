@@ -161,6 +161,7 @@ export function createServerSession(deps: ServerSessionDeps): ServerSession {
       readOldText: deps.readOldText,
       clientUpdates: deps.port.features.updates,
       priorCostUsd: costUsd,
+      ...(deps.titleFor !== undefined ? { titleFor: deps.titleFor } : {}),
     });
     const current: Turn = {
       permissions: createPermissionBroker({ port: deps.port, answer, memory, logger: deps.logger }),
