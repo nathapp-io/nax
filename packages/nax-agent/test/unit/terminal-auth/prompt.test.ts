@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
-  _authPromptDeps,
+  _terminalPromptDeps,
   PromptCancelledError,
   type PromptStdin,
   promptForLine,
   promptForSecret,
   promptForSelect,
-} from "@/cli/auth-prompt";
+} from "#src/terminal-auth/prompt";
 
 const ETX = "\u0003";
 const EOT = "\u0004";
@@ -41,26 +41,26 @@ function makeStdin() {
 }
 
 let written: string[];
-const _origWrite = _authPromptDeps.write;
-const _origStdin = _authPromptDeps.stdin;
+const _origWrite = _terminalPromptDeps.write;
+const _origStdin = _terminalPromptDeps.stdin;
 
 beforeEach(() => {
   written = [];
-  _authPromptDeps.write = (text: string) => {
+  _terminalPromptDeps.write = (text: string) => {
     written.push(text);
     return true;
   };
 });
 
 afterEach(() => {
-  _authPromptDeps.write = _origWrite;
-  _authPromptDeps.stdin = _origStdin;
+  _terminalPromptDeps.write = _origWrite;
+  _terminalPromptDeps.stdin = _origStdin;
 });
 
 describe("promptForSecret", () => {
   test("returns the typed value and never echoes it", async () => {
     const h = makeStdin();
-    _authPromptDeps.stdin = h.stdin;
+    _terminalPromptDeps.stdin = h.stdin;
 
     const pending = promptForSecret("API key:");
     h.emit("data", "s");
@@ -76,7 +76,7 @@ describe("promptForSecret", () => {
 
   test("restores raw mode exactly once, on the submit path", async () => {
     const h = makeStdin();
-    _authPromptDeps.stdin = h.stdin;
+    _terminalPromptDeps.stdin = h.stdin;
 
     const pending = promptForSecret("API key:");
     h.emit("data", "x");
@@ -89,7 +89,7 @@ describe("promptForSecret", () => {
 
   test("rejects on Ctrl+C", async () => {
     const h = makeStdin();
-    _authPromptDeps.stdin = h.stdin;
+    _terminalPromptDeps.stdin = h.stdin;
 
     const pending = promptForSecret("API key:");
     h.emit("data", ETX);
@@ -100,7 +100,7 @@ describe("promptForSecret", () => {
 
   test("rejects on Ctrl+D rather than submitting a partial secret", async () => {
     const h = makeStdin();
-    _authPromptDeps.stdin = h.stdin;
+    _terminalPromptDeps.stdin = h.stdin;
 
     const pending = promptForSecret("API key:");
     h.emit("data", "s");
@@ -111,7 +111,7 @@ describe("promptForSecret", () => {
 
   test("rejects rather than hanging when the stream ends", async () => {
     const h = makeStdin();
-    _authPromptDeps.stdin = h.stdin;
+    _terminalPromptDeps.stdin = h.stdin;
 
     const pending = promptForSecret("API key:");
     h.emit("end");
@@ -122,7 +122,7 @@ describe("promptForSecret", () => {
 
   test("rejects rather than hanging when the stream errors", async () => {
     const h = makeStdin();
-    _authPromptDeps.stdin = h.stdin;
+    _terminalPromptDeps.stdin = h.stdin;
 
     const pending = promptForSecret("API key:");
     h.emit("error");
@@ -132,7 +132,7 @@ describe("promptForSecret", () => {
 
   test("handles backspace without echoing", async () => {
     const h = makeStdin();
-    _authPromptDeps.stdin = h.stdin;
+    _terminalPromptDeps.stdin = h.stdin;
 
     const pending = promptForSecret("API key:");
     h.emit("data", "a");
@@ -146,7 +146,7 @@ describe("promptForSecret", () => {
   test("rejects without touching raw mode when stdin is not a TTY", async () => {
     const h = makeStdin();
     h.stdin.isTTY = false;
-    _authPromptDeps.stdin = h.stdin;
+    _terminalPromptDeps.stdin = h.stdin;
 
     await expect(promptForSecret("API key:")).rejects.toBeInstanceOf(PromptCancelledError);
     expect(h.rawModeCalls).toEqual([]);
@@ -159,7 +159,7 @@ const ARROW_DOWN = "\u001b[B";
 describe("promptForLine onEmptySubmit", () => {
   test("Enter on an empty buffer runs the hook and keeps reading", async () => {
     const h = makeStdin();
-    _authPromptDeps.stdin = h.stdin;
+    _terminalPromptDeps.stdin = h.stdin;
     let hits = 0;
 
     const pending = promptForLine("Paste the code:", () => {
@@ -177,7 +177,7 @@ describe("promptForLine onEmptySubmit", () => {
 
   test("Enter on a non-empty buffer submits rather than firing the hook", async () => {
     const h = makeStdin();
-    _authPromptDeps.stdin = h.stdin;
+    _terminalPromptDeps.stdin = h.stdin;
     let hits = 0;
 
     const pending = promptForLine("Paste the code:", () => {
@@ -192,7 +192,7 @@ describe("promptForLine onEmptySubmit", () => {
 
   test("without a hook an empty Enter still submits", async () => {
     const h = makeStdin();
-    _authPromptDeps.stdin = h.stdin;
+    _terminalPromptDeps.stdin = h.stdin;
     const pending = promptForLine("Paste the code:");
     h.emit("data", CR);
     expect(await pending).toBe("");
@@ -207,7 +207,7 @@ describe("promptForSelect", () => {
 
   test("Enter picks the first option", async () => {
     const h = makeStdin();
-    _authPromptDeps.stdin = h.stdin;
+    _terminalPromptDeps.stdin = h.stdin;
     const pending = promptForSelect("How?", choices);
     h.emit("data", CR);
     expect(await pending).toBe("browser");
@@ -215,7 +215,7 @@ describe("promptForSelect", () => {
 
   test("arrow down moves the highlight before committing", async () => {
     const h = makeStdin();
-    _authPromptDeps.stdin = h.stdin;
+    _terminalPromptDeps.stdin = h.stdin;
     const pending = promptForSelect("How?", choices);
     h.emit("data", ARROW_DOWN);
     h.emit("data", CR);
@@ -224,7 +224,7 @@ describe("promptForSelect", () => {
 
   test("arrow up from the first option wraps to the last", async () => {
     const h = makeStdin();
-    _authPromptDeps.stdin = h.stdin;
+    _terminalPromptDeps.stdin = h.stdin;
     const pending = promptForSelect("How?", choices);
     h.emit("data", ARROW_UP);
     h.emit("data", CR);
@@ -233,7 +233,7 @@ describe("promptForSelect", () => {
 
   test("cannot return a value that is not one of the options", async () => {
     const h = makeStdin();
-    _authPromptDeps.stdin = h.stdin;
+    _terminalPromptDeps.stdin = h.stdin;
     const pending = promptForSelect("How?", choices);
     h.emit("data", "nonsense");
     h.emit("data", CR);
@@ -242,7 +242,7 @@ describe("promptForSelect", () => {
 
   test("Ctrl+C cancels and restores the terminal", async () => {
     const h = makeStdin();
-    _authPromptDeps.stdin = h.stdin;
+    _terminalPromptDeps.stdin = h.stdin;
     const pending = promptForSelect("How?", choices);
     h.emit("data", ETX);
     await expect(pending).rejects.toBeInstanceOf(PromptCancelledError);
@@ -251,7 +251,7 @@ describe("promptForSelect", () => {
 
   test("Ctrl+D cancels rather than committing the highlighted row", async () => {
     const h = makeStdin();
-    _authPromptDeps.stdin = h.stdin;
+    _terminalPromptDeps.stdin = h.stdin;
     const pending = promptForSelect("How?", choices);
     h.emit("data", EOT);
     await expect(pending).rejects.toBeInstanceOf(PromptCancelledError);
@@ -259,7 +259,7 @@ describe("promptForSelect", () => {
 
   test("a closed stream cancels", async () => {
     const h = makeStdin();
-    _authPromptDeps.stdin = h.stdin;
+    _terminalPromptDeps.stdin = h.stdin;
     const pending = promptForSelect("How?", choices);
     h.emit("end");
     await expect(pending).rejects.toBeInstanceOf(PromptCancelledError);
@@ -268,22 +268,44 @@ describe("promptForSelect", () => {
   test("rejects when stdin is not a TTY", async () => {
     const h = makeStdin();
     (h.stdin as { isTTY?: boolean }).isTTY = false;
-    _authPromptDeps.stdin = h.stdin;
+    _terminalPromptDeps.stdin = h.stdin;
     await expect(promptForSelect("How?", choices)).rejects.toBeInstanceOf(PromptCancelledError);
   });
 
   test("rejects an empty option list rather than picking for the user", async () => {
     const h = makeStdin();
-    _authPromptDeps.stdin = h.stdin;
+    _terminalPromptDeps.stdin = h.stdin;
     await expect(promptForSelect("How?", [])).rejects.toBeInstanceOf(PromptCancelledError);
   });
 
   test("removes its listeners once settled", async () => {
     const h = makeStdin();
-    _authPromptDeps.stdin = h.stdin;
+    _terminalPromptDeps.stdin = h.stdin;
     const pending = promptForSelect("How?", choices);
     h.emit("data", CR);
     await pending;
     expect(h.listenerCount("data")).toBe(0);
+  });
+});
+
+describe("style", () => {
+  test("the accent wraps the question mark and the active row", async () => {
+    const h = makeStdin();
+    _terminalPromptDeps.stdin = h.stdin;
+    const style = { accent: (t: string) => `<${t}>`, dim: (t: string) => t, bold: (t: string) => t };
+    const pending = promptForSelect("Pick:", [{ id: "a", label: "A" }], style);
+    h.emit("data", CR);
+    expect(await pending).toBe("a");
+    expect(written.join("")).toContain("<?> Pick:");
+    expect(written.join("")).toContain("<>> <A>");
+  });
+
+  test("without a style nothing is decorated", async () => {
+    const h = makeStdin();
+    _terminalPromptDeps.stdin = h.stdin;
+    const pending = promptForSecret("Key:");
+    h.emit("data", `k${CR}`);
+    expect(await pending).toBe("k");
+    expect(written.join("")).toContain("? Key: ");
   });
 });

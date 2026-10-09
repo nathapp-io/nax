@@ -11,7 +11,7 @@ import type { Env } from "#src/server/options";
 export interface ProcessLike {
   readonly argv: readonly string[];
   readonly env: Env;
-  readonly stdin: Readable;
+  readonly stdin: Readable & { readonly isTTY?: boolean };
   readonly stdout: Writable;
   readonly stderr: Writable;
   once(event: "SIGINT" | "SIGTERM", listener: () => void): unknown;
@@ -32,6 +32,7 @@ export function mainDepsFrom(proc: ProcessLike): MainDeps {
       proc.once("SIGINT", handler);
       proc.once("SIGTERM", handler);
     },
+    isTTY: proc.stdin.isTTY === true,
   };
 }
 

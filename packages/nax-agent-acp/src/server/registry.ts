@@ -15,7 +15,7 @@ import {
 import type { AgentLogger, TranscriptStore } from "@nathapp/nax-agent";
 import { stripControl, stripInvisible } from "#src/client/text";
 import type { ClientPort } from "#src/server/client-port";
-import { invalidParams, messageOf, unknownSession } from "#src/server/errors";
+import { invalidParams, messageOf, turnInProgress, unknownSession } from "#src/server/errors";
 import type { OpenSession } from "#src/server/open-session";
 import type { ServerOptions } from "#src/server/options";
 import { createReopen, settingsOf } from "#src/server/registry-open";
@@ -75,6 +75,8 @@ export interface RegistryDeps {
   readonly logger: AgentLogger;
   readonly turnTimeoutSeconds: number;
   readonly shutdownWaitMs?: number;
+  /** S5-4 M-30: refuses (auth_required) when the model's provider has no credential. */
+  readonly ensureCredentials?: (model: string) => Promise<void>;
 }
 
 export interface Entry {
@@ -145,6 +147,7 @@ export function createSessionRegistry(deps: RegistryDeps): SessionRegistry {
   /** Takes the lock, opens the S3 session, registers it. The lock is released if anything fails. */
   async function openEntry(meta: SessionMeta, port: ClientPort) {
     if (closing) throw RequestError.internalError(undefined, SHUTTING_DOWN);
+    await deps.ensureCredentials?.(meta.model);
     const release = await deps.storage.acquireLock(meta.sessionId);
     try {
       const settings = settingsOf(meta);
@@ -204,6 +207,10 @@ export function createSessionRegistry(deps: RegistryDeps): SessionRegistry {
   /** Close-and-reopen with `next` (§3.3). Metadata is written only after the reopen succeeds. */
   async function switchTo(sessionId: string, entry: Entry, next: SessionSettings): Promise<void> {
     const from = settingsOf(entry.meta);
+    // A busy session answers "turn in progress" first, as ServerSession.switchTo would.
+    if (entry.server.running) throw turnInProgress();
+    // Before the live session is closed, so a refused model changes nothing (final review I6).
+    if (next.model !== from.model) await deps.ensureCredentials?.(next.model);
     await entry.server.switchTo(
       () => target(sessionId, entry.meta.cwd, next),
       () => target(sessionId, entry.meta.cwd, from),

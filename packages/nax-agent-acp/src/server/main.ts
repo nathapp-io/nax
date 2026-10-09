@@ -6,9 +6,11 @@
 import { randomUUID } from "node:crypto";
 import type { Readable, Writable } from "node:stream";
 import { configureCredentials, createFileTranscriptStore, setAgentLogger } from "@nathapp/nax-agent";
-import { type CliFlags, parseCli, USAGE } from "#src/server/cli";
+import { type AuthPorts, loadServerAuth, NAX_AGENT_AUTH } from "#src/server/auth";
+import { type CliCommand, type CliFlags, parseCli, USAGE } from "#src/server/cli";
 import { buildAgentApp, serveStdio } from "#src/server/connection";
 import { stderrLogger } from "#src/server/logger";
+import { runLoginCommand } from "#src/server/login";
 import { credentialsFor, loadNaxConfig, type ReadTextFile } from "#src/server/nax-config";
 import { catalogOverridesFrom, nativeOpenSession } from "#src/server/open-session";
 import { type Env, resolveConfigDir, resolveServerOptions } from "#src/server/options";
@@ -27,6 +29,10 @@ export interface MainDeps {
   readonly writeErr: (text: string) => void;
   readonly readFile: ReadTextFile;
   readonly onSignal: (handler: () => void) => void;
+  /** stdin is an interactive terminal (login needs one). */
+  readonly isTTY: boolean;
+  /** nax-agent's auth API; tests inject a fake. Defaults to the real one. */
+  readonly auth?: AuthPorts;
 }
 
 export async function main(deps: MainDeps): Promise<number> {
@@ -41,9 +47,27 @@ export async function main(deps: MainDeps): Promise<number> {
     case "usage-error":
       deps.writeErr(`nax-agent: ${command.message}\n\n${USAGE}\n`);
       return 2;
+    case "login":
+      return login(command, deps);
     case "acp":
       return serveAcp(command.flags, deps);
   }
+}
+
+async function login(command: Extract<CliCommand, { kind: "login" }>, deps: MainDeps): Promise<number> {
+  // warn, not info: info lines would land in the middle of the interactive prompts.
+  setAgentLogger(stderrLogger(deps.env.NAX_AGENT_LOG === "debug" ? "debug" : "warn", deps.writeErr));
+  const configDir = resolveConfigDir(command.flags, deps.env, deps.homedir);
+  configureCredentials(credentialsFor(configDir, deps.readFile));
+  return runLoginCommand(
+    { provider: command.provider, ...(command.method !== undefined ? { method: command.method } : {}) },
+    {
+      isTTY: deps.isTTY,
+      out: (line) => deps.stdout.write(`${line}\n`),
+      err: (line) => deps.writeErr(`${line}\n`),
+      auth: deps.auth ?? NAX_AGENT_AUTH,
+    },
+  );
 }
 
 async function serveAcp(flags: CliFlags, deps: MainDeps): Promise<number> {
@@ -58,6 +82,13 @@ async function serveAcp(flags: CliFlags, deps: MainDeps): Promise<number> {
     return 2;
   }
   configureCredentials(credentialsFor(configDir, deps.readFile));
+  const overrides = catalogOverridesFrom(resolved.options.catalogOverrides, logger);
+  const auth = await loadServerAuth({
+    options: resolved.options,
+    overrides,
+    ports: deps.auth ?? NAX_AGENT_AUTH,
+    logger,
+  });
   const transcripts = createFileTranscriptStore(resolved.options.sessionsDir);
   const storage = createSessionStorage({
     dir: resolved.options.sessionsDir,
@@ -69,7 +100,7 @@ async function serveAcp(flags: CliFlags, deps: MainDeps): Promise<number> {
     options: resolved.options,
     openSession: nativeOpenSession({
       transcripts,
-      catalogOverrides: catalogOverridesFrom(resolved.options.catalogOverrides, logger),
+      catalogOverrides: overrides,
       turnTimeoutSeconds: TURN_TIMEOUT_SECONDS,
     }),
     storage,
@@ -79,8 +110,9 @@ async function serveAcp(flags: CliFlags, deps: MainDeps): Promise<number> {
     readOldText: fsReadOldText(),
     logger,
     turnTimeoutSeconds: TURN_TIMEOUT_SECONDS,
+    ensureCredentials: (model) => auth.ensureCredentials(model),
   });
-  const connection = serveStdio(buildAgentApp({ version: packageVersion(), registry, logger }), deps);
+  const connection = serveStdio(buildAgentApp({ version: packageVersion(), registry, logger, auth }), deps);
   const stop = (): void => connection.close();
   deps.onSignal(stop);
   deps.stdin.once("end", stop);

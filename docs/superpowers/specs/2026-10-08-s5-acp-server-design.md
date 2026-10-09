@@ -209,7 +209,7 @@ On stdin end, SIGINT or SIGTERM: cancel every running turn, wait up to 5 s per s
 | Invocation | Behaviour |
 |---|---|
 | `nax-agent` / `nax-agent acp` | ACP server on stdio. |
-| `nax-agent login <provider>` | Interactive login on the terminal via `runLogin(provider, interaction)`; writes to the `~/.nax` credential store. |
+| `nax-agent login <provider>` | Interactive login on the terminal via `runLogin(provider, createTerminalAuthInteraction(...))`. Writes to the `~/.nax` credential store. `--method api-key|oauth` is forwarded. A leading `acp` and the server flags are accepted and ignored, because an editor's terminal auth appends `login <provider>` to the server invocation (amended 2026-10-09, S5-4 M-34). Exit 0 signed in, 1 failure or no TTY, 130 cancelled. |
 | `nax-agent --version` | Prints the package version. |
 
 Flags (each also settable as `NAX_AGENT_<FLAG>` in SCREAMING_SNAKE, since editors often set only env): `--config-dir` (default `~/.nax`), `--sessions-dir`, `--model`, `--mode`, `--bash-approval`. Precedence: flag > env > `~/.nax/config.json` > built-in default.
@@ -229,10 +229,12 @@ The new `agentServer` block needs no change in nax: nax's root config schema use
 
 ### 6.3 Auth
 
-- **Terminal auth methods** are advertised only when the client's `initialize` declares `clientCapabilities.auth.terminal: true`: one method per provider that both `runLogin` supports and appears in the configured tier models, `{ id: "login-<provider>", name: "Log in to <provider>", type: "terminal", args: ["login", "<provider>"] }`.
-- **`authenticate(methodId)`** checks the credential store (`listStoredProviders`) for that provider: present -> success; absent -> `auth_required`.
+- **Terminal auth methods** are advertised only when the client's `initialize` declares `clientCapabilities.auth.terminal: true`: one method per provider that both `runLogin` supports and appears in the configured tier models or is the default model's provider, excluding catalog-override providers; the supported set is nax-agent's `loginProviderIds()` (amended 2026-10-09, S5-4 M-33), `{ id: "login-<provider>", name: "Log in to <provider>", type: "terminal", args: ["login", "<provider>"] }`.
+- **`authenticate(methodId)`** checks the provider of an advertised method. It succeeds when a credential is stored or ambient (`providersWithoutCredentials`), and otherwise gives `auth_required`. An unknown id gives `invalid_params`. SDK 1.7.0 tells clients not to send terminal methods to `authenticate`; it is served for clients that do (amended 2026-10-09, S5-4 M-29, M-31).
+- **Credential check on open.** `session/new`, `load` and `resume` first check the session model's provider, and a model change checks the new model before the live session is closed (skipped for catalog-override providers and ids without a provider prefix). A missing credential gives `auth_required` before any billed call, naming `nax-agent login <provider>`; a refused model change leaves the session unchanged (S5-4 M-30).
 - **No agent-type auth in v1** (driving OAuth or key entry over elicitation; editor support is uneven).
-- A prompt that fails with `CREDENTIALS_NOT_CONFIGURED` or a provider authentication error maps to `auth_required`, so editors start their login flow. The error message names `nax-agent login <provider>` and `nax auth login` for clients without terminal auth.
+- A turn that fails with `fail-auth` (HTTP 401/403 or a credential-store fault) or a `CREDENTIAL_*` code maps to `auth_required`, so editors start their login flow. The message names `nax-agent login <provider>` and `nax auth login` for clients without terminal auth (S5-4 M-32).
+- The terminal login UI is nax-agent's `createTerminalAuthInteraction`, shared with `nax auth login` (S5-4 M-28).
 
 ### 6.4 Logging
 

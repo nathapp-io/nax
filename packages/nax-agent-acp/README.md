@@ -4,10 +4,9 @@ ACP (Agent Client Protocol) backend for `@nathapp/nax-agent` sessions. It lets t
 nax-agent session API (`createAgentSession`, `send()`, `answer()`, `cancel()`, `close()`)
 drive external coding agents such as Claude Code over ACP.
 
-**Status: pre-release (0.3.0, not yet published).** `acpBackend()` serves sessions
-under all four profiles, with thinking, tool and usage events, questions from the
-agent, embedder tools on Claude, resume across processes and reconnect after a
-crash. `./server` is reserved for a later ACP server.
+**Status: 0.4.0.** `./client`: `acpBackend()` drives external ACP agents (Claude Code and others) as
+nax-agent sessions. `./server` and the `nax-agent` binary: nax-agent's own native coding agent as an
+ACP server for editors (Zed) and headless clients (acpx). See "The nax-agent ACP server" below.
 
 ```ts
 import { createAgentSession, createMemoryTranscriptStore } from "@nathapp/nax-agent";
@@ -238,3 +237,86 @@ and `read` forms are not offered, and one that arrives anyway is declined.
   and later fields are not asked. `answer()` on that question returns `"cancelled"`.
 - **Question text comes from the agent.** Control characters are stripped, your
   secrets scrubbed, and it is capped at 4 KiB.
+
+## The nax-agent ACP server
+
+`nax-agent` is an ACP server on stdio. It runs nax-agent's native coding agent: tools run locally
+under nax-agent's profiles and sandbox, and edits reach the editor as diffs.
+
+```sh
+npm install -g @nathapp/nax-agent @nathapp/nax-agent-acp
+nax-agent --version
+```
+
+It reads `~/.nax/config.json`, the same file nax uses:
+- `models.native.balanced` is the default model. `fast`, `balanced` and `powerful` are the models offered in the editor.
+- `auth` controls where credentials come from.
+- An optional `agentServer` block sets `defaultMode`, `bashApproval` and `sessionsDir`.
+
+Flags (`--model`, `--mode`, `--bash-approval`, `--config-dir`, `--sessions-dir`) and `NAX_AGENT_<OPTION>`
+environment variables override the file. Sessions are stored under `~/.nax/.agent-server/sessions/`.
+
+### Credentials
+
+Log in once on a terminal. The credential lands in `~/.nax`, shared with `nax auth login`:
+
+```sh
+nax-agent login anthropic            # asks for a method; --method api-key|oauth to choose
+```
+
+A provider's environment variable (for example `ANTHROPIC_API_KEY`) also works when nothing is stored.
+
+Before opening a session, the server checks for a credential for the session model's provider. A missing
+one fails the request with `auth_required` before anything is billed, and so does a rejected one during a
+turn. Editors that support terminal auth then offer "Log in to <provider>", which runs
+`nax-agent login <provider>` in a terminal.
+
+### Zed
+
+In Zed's `settings.json`:
+
+```json
+{
+  "agent_servers": {
+    "nax-agent": {
+      "type": "custom",
+      "command": "nax-agent",
+      "args": ["acp"],
+      "env": {}
+    }
+  }
+}
+```
+
+Open the agent panel and start a "nax-agent" thread.
+- **Modes:** `ask` (default) asks before each edit or command, `full` runs without asking, `read` is read-only, and `none` has no tools.
+- **Model:** switch it from the thread's model picker; the conversation is kept.
+- **Persistence:** threads are saved and can be reopened after a restart.
+
+### acpx (headless)
+
+Add an agent to `~/.acpx/config.json`:
+
+```json
+{ "agents": { "nax-agent": { "argv": ["nax-agent", "acp"] } } }
+```
+
+```sh
+acpx nax-agent sessions new                              # once per directory: creates the session
+acpx --approve-all nax-agent "add a test for parseCli"   # prompts the session
+acpx nax-agent "now run it"                              # continues the same session
+acpx nax-agent sessions                                  # list sessions
+acpx nax-agent exec "what does this repo do"             # one-shot, no saved session
+```
+
+acpx refuses a prompt until `sessions new` has created a session for the directory. A missing credential
+shows up at `sessions new` as an authentication-required error.
+
+Questions from the agent need a client with form elicitation. A client without it (acpx) gets a notice,
+and the agent is told to proceed on its best judgement.
+
+### Not supported yet
+
+- MCP servers sent by the client are ignored, with a notice.
+- No image or audio prompts.
+- No logout or provider management over ACP. Use `nax auth list` / `nax auth rm`.

@@ -55,3 +55,41 @@ describe("parseCli", () => {
     expect(USAGE).toContain("NAX_AGENT_");
   });
 });
+
+describe("login (S5-4)", () => {
+  test("login <provider>", () => {
+    expect(parseCli(["login", "anthropic"])).toEqual({ kind: "login", provider: "anthropic", flags: {} });
+  });
+
+  test("the editor appends login to its server invocation (Review Focus 1, M-34)", () => {
+    expect(parseCli(["acp", "--model", "x/y", "login", "anthropic"])).toEqual({
+      kind: "login",
+      provider: "anthropic",
+      flags: { model: "x/y" },
+    });
+  });
+
+  test("--method is forwarded when valid", () => {
+    expect(parseCli(["login", "openrouter", "--method", "oauth"])).toMatchObject({ method: "oauth" });
+    expect(parseCli(["login", "openrouter", "--method", "sso"])).toEqual({
+      kind: "usage-error",
+      message: 'invalid --method "sso"; expected api-key or oauth',
+    });
+  });
+
+  test("login needs exactly one provider", () => {
+    expect(parseCli(["login"]).kind).toBe("usage-error");
+    expect(parseCli(["login", "a", "b"]).kind).toBe("usage-error");
+  });
+
+  test("--method without login is a usage error", () => {
+    expect(parseCli(["--method", "oauth"])).toEqual({
+      kind: "usage-error",
+      message: "--method is only valid with login",
+    });
+  });
+
+  test("unknown words still report the whole command", () => {
+    expect(parseCli(["serve"])).toEqual({ kind: "usage-error", message: "unknown command: serve" });
+  });
+});

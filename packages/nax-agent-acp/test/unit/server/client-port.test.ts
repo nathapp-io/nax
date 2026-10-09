@@ -8,11 +8,20 @@ describe("clientFeatures", () => {
   });
 
   test("reads session.notices, session.compaction and elicitation.form", () => {
-    expect(clientFeatures({ session: { notices: {}, compaction: {} }, elicitation: { form: {} } })).toEqual({
+    expect(
+      clientFeatures({ session: { notices: {}, compaction: {} }, elicitation: { form: {} }, auth: { terminal: true } }),
+    ).toEqual({
       updates: { notices: true, compaction: true },
       elicitation: true,
+      terminalAuth: true,
     });
     expect(clientFeatures({ elicitation: { url: {} } }).elicitation).toBe(false);
+  });
+
+  test("terminal auth only when declared true", () => {
+    expect(clientFeatures({ auth: { terminal: true } }).terminalAuth).toBe(true);
+    expect(clientFeatures({ auth: { terminal: false } }).terminalAuth).toBe(false);
+    expect(clientFeatures({}).terminalAuth).toBe(false);
   });
 });
 

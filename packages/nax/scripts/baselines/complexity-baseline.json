@@ -22,7 +22,6 @@
     "src/agents/run-interaction-handler.ts": { "onInteraction": 52 },
     "src/agents/shared/decompose.ts": { "=>": 32 },
     "src/cli/approvals.ts": { "approvalsRmCommand": 39 },
-    "src/cli/auth-prompt.ts": { "=>": 32 },
     "src/cli/config-display.ts": { "displayConfigWithDescriptions": 46, "configCommand": 22 },
     "src/cli/context-fragments.ts": { "listDependentStoryIds": 22 },
     "src/cli/context.ts": { "formatContextInspect": 35 },

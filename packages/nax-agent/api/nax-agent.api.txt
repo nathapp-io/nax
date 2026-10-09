@@ -183,6 +183,7 @@ type OpenSessionOpts
 type OpenedBackend
 type OwnedBashCandidate
 type OwnedPathsPolicy
+PLAIN_STYLE
 PROVIDER_ID_RE
 type PatchOf
 type PayloadOf
@@ -192,6 +193,7 @@ type Pricing
 type PricingRates
 type PricingTier
 type ProbeResult
+PromptCancelledError
 type ProtectedPathsPolicy
 type ProtocolIds
 type ProviderGrantEntry
@@ -247,6 +249,8 @@ type SystemOneQuestion
 type SystemOneRequest
 TOOL_CALL_INPUT_BYTES
 TOOL_RESULT_PREVIEW_BYTES
+type TerminalAuthOptions
+type TerminalStyle
 type TokenUsage
 type ToolAuditHeader
 type ToolAuditSink
@@ -316,6 +320,7 @@ createRunCommandTool
 createSrtBackend
 createStderrTail
 createSystemOneClient
+createTerminalAuthInteraction
 createToolAuditSink
 createTurnDeadline
 credentialFilePath
@@ -355,6 +360,7 @@ listCredentialFiles
 listGitGuardFiles
 listNaxEntries
 listStoredProviders
+loginProviderIds
 maskForPrompt
 mcpRuleAdmits
 namespacedToolName
@@ -599,6 +605,7 @@ type NormalizeResult
 type OpenRouterRouting
 type OwnedBashCandidate
 type OwnedPathsPolicy
+PLAIN_STYLE
 PROVIDER_ID_RE
 type PatchOf
 type PathFileLockOptions
@@ -606,6 +613,8 @@ type PayloadOf
 type PolicyVerdict
 type PrepareApprovalsStoreOptions
 type ProbeResult
+PromptCancelledError
+type PromptStdin
 type ProtectedPathsPolicy
 type ProviderCatalogOverride
 type ProviderGrantEntry
@@ -645,6 +654,7 @@ type SandboxState
 type SandboxWrapRequest
 type SecretSpan
 type SecretValuePattern
+type SelectChoice
 type SessionAnchor
 type SessionTranscript
 type ShellInterceptOutcome
@@ -661,6 +671,8 @@ type StreamDelta
 type StreamDeltaSink
 THINKING_LEVELS
 TOOL_AUDIT_SCHEMA_VERSION
+type TerminalAuthOptions
+type TerminalStyle
 type ThinkingLevel
 type ToolAuditHeader
 type ToolAuditSink
@@ -713,6 +725,7 @@ _globDeps
 _grepDeps
 _instructionAccessDeps
 _launcherDeps
+_openUrlDeps
 _policyInputDeps
 _probeDeps
 _repositoryInstructionDeps
@@ -730,6 +743,7 @@ _sessionTmpDeps
 _spillDeps
 _srtBackendDeps
 _systemOneClientDeps
+_terminalPromptDeps
 abortableSleep
 adaptProviderTool
 advertisedSchemaBytes
@@ -790,6 +804,7 @@ createNoOpToolAuditSink
 createRunCommandTool
 createSpinBreaker
 createSrtBackend
+createTerminalAuthInteraction
 createToolAuditSink
 createTurnAccumulator
 credentialFaultCode
@@ -855,6 +870,7 @@ listGitGuardFiles
 listNaxEntries
 listStoredProviders
 loadTranscript
+loginProviderIds
 markNativeTurnOutcome
 maskForPrompt
 mcpRuleAdmits
@@ -868,6 +884,7 @@ normalizeCommandSpec
 normalizeExec
 normalizeManagerBinary
 openNativeSession
+openUrl
 parseGitlinks
 parseModelSpec
 parseNativeModel
@@ -880,6 +897,9 @@ prepareApprovalsStore
 prepareCompaction
 probeSandbox
 probeSandboxOnce
+promptForLine
+promptForSecret
+promptForSelect
 providerAttachesTo
 providersWithoutCredentials
 pruneRetainedTranscripts
@@ -945,6 +965,7 @@ sessionTranscriptFor
 setAgentLogger
 shellQuoteArg
 shouldCompact
+spawnDetached
 spillRelativePath
 spinTerminalNotice
 strayCommonDirTripwire

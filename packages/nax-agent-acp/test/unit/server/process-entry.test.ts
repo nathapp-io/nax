@@ -4,14 +4,14 @@ import { setAgentLogger } from "@nathapp/nax-agent";
 import { mainDepsFrom, type ProcessLike, runCli } from "#src/server/process-entry";
 import { packageVersion } from "#src/server/version";
 
-function fakeProcess(argv: readonly string[]) {
+function fakeProcess(argv: readonly string[], isTTY?: boolean) {
   const stdout = new PassThrough();
   const stderr = new PassThrough();
   const listeners: Array<{ event: string; listener: () => void }> = [];
   const proc: ProcessLike = {
     argv: ["node", "nax-agent", ...argv],
     env: { NAX_AGENT_CONFIG_DIR: "/nonexistent-nax-agent-config" },
-    stdin: new PassThrough(),
+    stdin: isTTY === undefined ? new PassThrough() : Object.assign(new PassThrough(), { isTTY }),
     stdout,
     stderr,
     once: (event, listener) => {
@@ -44,6 +44,11 @@ describe("mainDepsFrom", () => {
     expect(await deps.readFile(new URL("../../../package.json", import.meta.url).pathname, "utf8")).toContain(
       "@nathapp/nax-agent-acp",
     );
+  });
+
+  test("isTTY mirrors stdin.isTTY (S5-4)", () => {
+    expect(mainDepsFrom(fakeProcess([]).proc).isTTY).toBe(false);
+    expect(mainDepsFrom(fakeProcess([], true).proc).isTTY).toBe(true);
   });
 });
 

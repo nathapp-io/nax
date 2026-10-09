@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { _openUrlDeps, openUrl } from "@/cli/open-url";
+import { once } from "node:events";
+import { _openUrlDeps, openUrl, spawnDetached } from "#src/terminal-auth/open-url";
 
 const realSpawn = _openUrlDeps.spawn;
 const realPlatform = _openUrlDeps.platform;
@@ -49,5 +50,13 @@ describe("openUrl", () => {
       throw new Error("no opener");
     };
     expect(() => openUrl("https://example.test/a")).not.toThrow();
+  });
+});
+
+describe("spawnDetached", () => {
+  test("a missing opener reports asynchronously and never throws (Review Focus 2)", async () => {
+    const child = spawnDetached(["nax-agent-no-such-opener-7f3a", "https://example.test/a"]);
+    const [error] = await once(child, "error");
+    expect(error).toBeInstanceOf(Error);
   });
 });

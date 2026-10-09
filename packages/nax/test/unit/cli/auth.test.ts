@@ -1,11 +1,16 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { _authDeps, _resetCredentialStore, naxCredentialStore } from "@nathapp/nax-agent/internal";
+import {
+  _authDeps,
+  _terminalPromptDeps as _authPromptDeps,
+  _openUrlDeps,
+  _resetCredentialStore,
+  naxCredentialStore,
+  type PromptStdin,
+} from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { _cliAuthDeps, authImportCommand, authListCommand, authLoginCommand, authRmCommand } from "@/cli/auth";
-import { _authPromptDeps, type PromptStdin } from "@/cli/auth-prompt";
-import { _openUrlDeps } from "@/cli/open-url";
 
 function makeFakeStdin(): { stdin: PromptStdin; emit: (event: string, chunk?: string) => void } {
   const listeners = new Map<string, ((chunk: string) => void)[]>();
@@ -43,6 +48,8 @@ const realPromptStdin = _authPromptDeps.stdin;
 const realPromptWrite = _authPromptDeps.write;
 const realLog = _cliAuthDeps.log;
 const realIsTTY = _cliAuthDeps.isTTY;
+const realOpenUrlSpawn = _openUrlDeps.spawn;
+const realOpenUrlPlatform = _openUrlDeps.platform;
 const originalGlobalDir = process.env.NAX_GLOBAL_CONFIG_DIR;
 
 /** Tracked so afterEach can clean up every source temp dir a test creates. */
@@ -75,6 +82,8 @@ afterEach(() => {
   _authPromptDeps.write = realPromptWrite;
   _cliAuthDeps.log = realLog;
   _cliAuthDeps.isTTY = realIsTTY;
+  _openUrlDeps.spawn = realOpenUrlSpawn;
+  _openUrlDeps.platform = realOpenUrlPlatform;
   process.env.NAX_GLOBAL_CONFIG_DIR = originalGlobalDir;
   _resetCredentialStore();
   cleanupTempDir(dir);

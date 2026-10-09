@@ -44,6 +44,7 @@
 | M-5 | Config-dir precedence: `--config-dir` > `NAX_AGENT_CONFIG_DIR` > `NAX_GLOBAL_CONFIG_DIR` (nax's own override) > `~/.nax`. | The same credential store is found whichever way nax was pointed. |
 | M-7 | S5-1 exports nax-agent's private live tool-display masking (`cappedInput` -> `displayToolInput`, `previewOf` -> `toolResultPreview`) so transcript replay masks and caps stored inputs and results exactly like live events. No behaviour change in nax-agent. | Transcripts hold raw tool inputs and full results; replaying them unmasked would show the editor more than the live turn did. |
 | M-6 | Slice plans are written just in time: S5-0 and S5-1 now (independent of each other), S5-2..S5-5 after their predecessors merge. | Later slices build on code the earlier slices write; planning them now would plan against guesses. |
+| M-28..M-35 | S5-4 decisions (terminal UI moved to nax-agent, stored-or-ambient credentials, open check, lenient `authenticate`, credential failure codes, login provider set, login CLI shape, release order): see `2026-10-09-s5-4-auth-release.md`. | Recorded with the slice plan. |
 
 ## Slices
 
@@ -53,7 +54,7 @@
 | S5-1 | `2026-10-08-s5-1-translator.md` | main | `src/server/translate/`: tool kinds, titles, locations, diffs, the event translator, stop reasons, usage, transcript replay. Pure apart from an injected file reader. |
 | S5-2 | to write after S5-0 and S5-1 merge | S5-0, S5-1 | M-1 in nax-agent; `ServerSession` and an in-memory registry; `session/new`, `prompt`, `cancel`; permissions with per-session always-memory; elicitation and the canned-answer fallback; error mapping (spec §7); MCP notice; capability flags for what lands. |
 | S5-3 | after S5-2 | S5-2 | Storage (metadata, lock, list scan); `load` with replay, `resume`, `list`, `close`, `delete`, `set_mode`, `set_config_option` via close-and-resume; shutdown (spec §5.5); `loadSession` and `sessionCapabilities`. |
-| S5-4 | after S5-3 | S5-3 | `nax-agent login <provider>`; terminal `authMethods`; `authenticate`; `auth_required` mapping; README (Zed, acpx); live acpx smoke and Zed walkthrough (approval); release 0.4.0 (approval). |
+| S5-4 | `2026-10-09-s5-4-auth-release.md` | S5-3 | `nax-agent login <provider>`; terminal `authMethods`; `authenticate`; `auth_required` mapping; README (Zed, acpx); live acpx smoke and Zed walkthrough (approval); release 0.4.0 (approval). |
 | S5-5 | after S5-4, with a design addendum first | S5-4 | MCP bridge for client `mcpServers`. |
 
 ## File map (end state of S5-0..S5-4)

@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _authDeps, AuthCancelledError, runLogin } from "#src/native/auth";
+import { _authDeps, AuthCancelledError, loginProviderIds, runLogin } from "#src/native/auth";
 import type { AuthInteraction } from "#src/native/auth-types";
 import { _resetCredentialStore } from "#src/native/credentials/index";
 import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
 
 const realLogin = _authDeps.login;
+const realProviderIds = _authDeps.providerIds;
 const originalGlobalDir = process.env.NAX_GLOBAL_CONFIG_DIR;
 
 const silent: AuthInteraction = { prompt: async () => "", notify: () => undefined };
@@ -19,6 +20,7 @@ beforeEach(() => {
 
 afterEach(() => {
   _authDeps.login = realLogin;
+  _authDeps.providerIds = realProviderIds;
   process.env.NAX_GLOBAL_CONFIG_DIR = originalGlobalDir;
   _resetCredentialStore();
   cleanupTempDir(dir);
@@ -124,5 +126,12 @@ describe("runLogin", () => {
       throw new Error("the provider said no");
     });
     await expect(runLogin("openrouter", silent)).rejects.toMatchObject({ code: "AUTH_LOGIN_FAILED" });
+  });
+});
+
+describe("loginProviderIds", () => {
+  test("lists the providers runLogin can serve, as nax-ai's default catalog names them", async () => {
+    _authDeps.providerIds = async () => ["anthropic", "openrouter"];
+    expect(await loginProviderIds()).toEqual(["anthropic", "openrouter"]);
   });
 });

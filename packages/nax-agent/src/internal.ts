@@ -84,6 +84,7 @@ export * from "#src/permissions/index";
 export * from "#src/sandbox/index";
 export * as policyInputsModule from "#src/sandbox/policy-inputs";
 export * from "#src/session/agent-session-deps";
+export * from "#src/terminal-auth/index";
 export * from "#src/tools/credential-read-deny";
 export * from "#src/tools/git";
 export * from "#src/tools/git-commit";

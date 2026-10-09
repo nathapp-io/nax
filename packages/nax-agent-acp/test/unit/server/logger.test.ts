@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { stderrLogger } from "#src/server/logger";
 
-function capture(level: "info" | "debug") {
+function capture(level: "warn" | "info" | "debug") {
   const lines: string[] = [];
   return { logger: stderrLogger(level, (text) => lines.push(text)), lines };
 }
@@ -24,6 +24,14 @@ describe("stderrLogger", () => {
     debug.logger.debug("s", "shown");
     debug.logger.info("s", "shown");
     expect(debug.lines).toHaveLength(2);
+  });
+
+  test("warn drops info and debug", () => {
+    const warn = capture("warn");
+    warn.logger.info("s", "hidden");
+    warn.logger.debug("s", "hidden");
+    warn.logger.warn("s", "shown");
+    expect(warn.lines).toHaveLength(1);
   });
 
   test("unserialisable data never throws; the message still lands", () => {

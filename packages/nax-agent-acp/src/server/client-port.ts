@@ -21,11 +21,14 @@ export interface ClientFeatures {
   readonly updates: ClientUpdates;
   /** The client declared form elicitation (`clientCapabilities.elicitation.form`). */
   readonly elicitation: boolean;
+  /** The client runs terminal auth methods (`clientCapabilities.auth.terminal: true`, S5-4). */
+  readonly terminalAuth: boolean;
 }
 
 export const NO_CLIENT_FEATURES: ClientFeatures = {
   updates: { notices: false, compaction: false },
   elicitation: false,
+  terminalAuth: false,
 };
 
 const present = (value: unknown): boolean => value !== undefined && value !== null;
@@ -34,6 +37,7 @@ export function clientFeatures(caps: ClientCapabilities | undefined): ClientFeat
   return {
     updates: { notices: present(caps?.session?.notices), compaction: present(caps?.session?.compaction) },
     elicitation: present(caps?.elicitation?.form),
+    terminalAuth: caps?.auth?.terminal === true,
   };
 }
 

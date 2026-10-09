@@ -102,3 +102,19 @@ describe("promptOutcome without the notices capability (review fix)", () => {
     ]);
   });
 });
+
+describe("errored on credentials (S5-4 M-32)", () => {
+  test("fail-auth answers auth_required with the code and message", () => {
+    const outcome = promptOutcome(end("errored", { code: "fail-auth", message: "401 invalid x-api-key" }), 3600, true);
+    expect(outcome.kind).toBe("error");
+    if (outcome.kind !== "error") return;
+    expect(outcome.error.code).toBe(-32000);
+    expect(outcome.error.data).toEqual({ code: "fail-auth", message: "401 invalid x-api-key" });
+    expect(outcome.error.message).toContain("nax-agent login <provider>");
+  });
+
+  test("any other errored code stays internal_error", () => {
+    const outcome = promptOutcome(end("errored", { code: "fail-service-down", message: "503" }), 3600, true);
+    expect(outcome.kind === "error" ? outcome.error.code : 0).toBe(-32603);
+  });
+});
