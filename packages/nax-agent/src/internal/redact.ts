@@ -7,6 +7,7 @@
  *  2. Pattern-based: free-text strings (in values that did NOT trigger layer 1)
  *     are scanned for token-shaped substrings (API keys, PATs, etc.).
  */
+import { redactStructured } from "#src/internal/redact-structured";
 
 // TOKEN(?!s\b) prevents matching plural metric keys like "tokens", "inputTokens",
 // "totalTokens" (which are counts, not credentials) while still matching "token",
@@ -109,13 +110,21 @@ export const SECRET_VALUE_PATTERNS: readonly SecretValuePattern[] = [
 
 const REDACTED = "[REDACTED]";
 
+/**
+ * Kinds that `redactStructured` supersedes for text redaction. They consume
+ * the key (`API_TOKEN=abc` -> `API_[REDACTED]`); the structured pass masks only
+ * the value. They stay in `SECRET_VALUE_PATTERNS` for the shell-span masker.
+ */
+const STRUCTURED_KINDS = new Set(["assignment", "api-key-header"]);
+
 function redactString(value: string): string {
   let out = value;
-  for (const { re } of SECRET_VALUE_PATTERNS) {
+  for (const { kind, re } of SECRET_VALUE_PATTERNS) {
+    if (STRUCTURED_KINDS.has(kind)) continue;
     re.lastIndex = 0;
     out = out.replace(re, REDACTED);
   }
-  return out;
+  return redactStructured(out);
 }
 
 /**

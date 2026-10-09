@@ -139,13 +139,33 @@ describe("createTurnEventEmitter", () => {
     expect(Buffer.byteLength(String(preview), "utf8")).toBeLessThanOrEqual(TOOL_CALL_INPUT_BYTES);
   });
 
-  test("known gap (best-effort redaction): a JSON credential file's text is not masked", () => {
-    // Pinned so widening SECRET_VALUE_PATTERNS later is a deliberate, visible change.
+  test("a JSON credential file's text is masked, keeping its structure", () => {
     const { events, sink } = collector();
     const emitter = createTurnEventEmitter(sink);
     emitter.toolCall(readCall("c1"), undefined);
     emitter.toolResult(buildToolResult({ toolCallId: "c1", content: '{"client_secret": "plainvalue123"}' }));
-    expect(events[1]).toHaveProperty("preview", '{"client_secret": "plainvalue123"}');
+    expect(events[1]).toHaveProperty("preview", '{"client_secret": "[REDACTED]"}');
+  });
+
+  test("a dotenv file's text is masked in the preview, other lines kept", () => {
+    const { events, sink } = collector();
+    const emitter = createTurnEventEmitter(sink);
+    emitter.toolCall(readCall("c1"), undefined);
+    emitter.toolResult(
+      buildToolResult({ toolCallId: "c1", content: "PATH=/usr/bin\nAPI_TOKEN=abc123\nmax_tokens=4096\n" }),
+    );
+    expect(events[1]).toHaveProperty("preview", "PATH=/usr/bin\nAPI_TOKEN=[REDACTED]\nmax_tokens=4096\n");
+  });
+
+  test("JSON and env text inside a tool_call.input string is masked", () => {
+    const { events, sink } = collector();
+    const emitter = createTurnEventEmitter(sink);
+    const content = '{"client_secret": "plainvalue123"}\nexport OPENAI_API_KEY="plainvalue456"\n';
+    emitter.toolCall({ id: "c1", name: "Write", input: { path: "cfg", content } }, undefined);
+    const call = events[0];
+    if (call?.type !== "tool_call") throw new Error("expected a tool_call");
+    expect(JSON.stringify(call.input)).not.toContain("plainvalue");
+    expect(call.input).toHaveProperty("path", "cfg");
   });
 
   test("redaction scans a bounded prefix of a very large result", () => {
