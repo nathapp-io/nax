@@ -46,6 +46,7 @@ describe("buildStagedManifest", () => {
       exports: {
         ".": { types: "./dist/index.d.ts", import: "./dist/index.js" },
         "./internal": { types: "./dist/internal.d.ts", import: "./dist/internal.js" },
+        "./mcp": { types: "./dist/mcp/index.d.ts", import: "./dist/mcp/index.js" },
       },
       imports: { "#src/*": { types: "./dist/*.d.ts", default: "./dist/*.js" } },
       engines: { node: ">=22.19.0" },
@@ -64,10 +65,19 @@ describe("buildStagedManifest", () => {
   test("every types target the manifest advertises is a staging input", () => {
     const text = JSON.stringify(buildStagedManifest(source, OPTS));
     const inputs: readonly string[] = STAGE_INPUTS;
-    for (const target of ["dist/index.d.ts", "dist/internal.d.ts"]) {
+    for (const target of ["dist/index.d.ts", "dist/internal.d.ts", "dist/mcp/index.d.ts"]) {
       expect(text).toContain(`"types":"./${target}"`);
       expect(inputs.includes(target)).toBe(true);
     }
+  });
+
+  test("maps the ./mcp subpath to dist", () => {
+    const staged = buildStagedManifest(source, OPTS);
+    expect(staged.exports).toEqual({
+      ".": { types: "./dist/index.d.ts", import: "./dist/index.js" },
+      "./internal": { types: "./dist/internal.d.ts", import: "./dist/internal.js" },
+      "./mcp": { types: "./dist/mcp/index.d.ts", import: "./dist/mcp/index.js" },
+    });
   });
 });
 

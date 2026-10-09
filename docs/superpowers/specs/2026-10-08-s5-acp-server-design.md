@@ -26,7 +26,7 @@ Ship a `nax-agent` binary that speaks the Agent Client Protocol (ACP) over stdio
 | R4 | Credentials and config | Reuse `~/.nax` (same credential store as `nax auth login`), AND advertise ACP `authMethods` so an editor can start a login. |
 | R5 | Packaging | `nax-agent` bin in `@nathapp/nax-agent-acp`; implementation behind the reserved `./server` export. No dependency on the nax CLI package. |
 | R6 | Persistence | File-backed sessions; `session/load`, `session/list`, `session/resume`, `session/close`, `session/delete` supported. |
-| R7 | Client-supplied `mcpServers` | Ignored with a notice in v1; bridged in a later, final S5 slice (S5-5). |
+| R7 | Client-supplied `mcpServers` | Ignored with a notice in v1; bridged in a later, final S5 slice (S5-5). **Superseded for S5-5 by `2026-10-09-s5-5-mcp-bridge-design.md`.** |
 
 Approach chosen: a **thin adapter over the S3 facade**. Rejected: bridging below the facade at the `SessionBackend` level (duplicates S3's approval, transcript, and resume logic); a hand-rolled JSON-RPC transport (D25 settled the official SDK).
 
@@ -276,7 +276,7 @@ One PR per slice, each off main.
 | S5-2 | Session core, in-memory sessions: `new`, `prompt`, `cancel`, permissions with session memory, elicitation, stop reasons, errors. |
 | S5-3 | Persistence: metadata, lock, `load` with replay, `resume`, `list`, `close`, `delete`, `set_mode`, `set_config_option`. |
 | S5-4 | Auth: `login` subcommand, terminal `authMethods`, `authenticate`, `auth_required` mapping. README section (Zed and acpx setup). Live acpx smoke and Zed walkthrough (approval). Release 0.4.0 of both agent packages (approval). |
-| S5-5 | MCP bridge: connect client `mcpServers` (stdio, http) via `@modelcontextprotocol/sdk` and expose their tools as `EmbedderTool`s under the session profile's approval rules. Needs a short design addendum before planning. |
+| S5-5 | MCP bridge: connect client `mcpServers` (stdio, http) via `@modelcontextprotocol/sdk` and expose their tools as `EmbedderTool`s under the session profile's approval rules. Design addendum: `2026-10-09-s5-5-mcp-bridge-design.md` (shared layer in `@nathapp/nax-agent/mcp` + bridge; slices S5-5a, S5-5b). |
 
 S5-0 to S5-4 deliver v1 without MCP.
 

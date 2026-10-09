@@ -23,6 +23,7 @@ import {
   DEFAULT_SANDBOX_CONFIG,
   resolveSessionSandbox,
 } from "@nathapp/nax-agent/internal";
+import { connectMcp } from "@nathapp/nax-agent/mcp";
 
 assert.equal(process.versions.bun, undefined, "the packed smoke must run on native Node");
 
@@ -268,5 +269,26 @@ assert.equal(endOf(after).output, "resumed");
 const history = requests.at(-1).messages;
 assert.deepEqual(history[0], { role: "user", content: "find c1" }, "resume lost the history");
 await resumed.close();
+
+// 5. One MCP round-trip through the packed ./mcp subpath: connect to the
+//    stdio server fixture, list it once, call one tool.
+{
+  const server = new URL("./packed-mcp-server.mjs", import.meta.url).pathname;
+  const connection = await connectMcp(
+    { kind: "stdio", command: process.execPath, args: [server], env: {}, cwd: process.cwd() },
+    { signal: new AbortController().signal, timeoutMs: 20_000, clientInfo: { name: "smoke", version: "0" } },
+  );
+  assert.deepEqual(
+    connection.tools.map((t) => t.name),
+    ["ping"],
+  );
+  const result = await connection.call(
+    "ping",
+    {},
+    { signal: new AbortController().signal, timeoutMs: 10_000, maxBytes: 1000 },
+  );
+  assert.equal(result.text, "pong");
+  await connection.close();
+}
 
 console.log("packed smoke ok");

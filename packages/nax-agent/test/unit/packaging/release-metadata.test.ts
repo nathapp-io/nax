@@ -13,10 +13,15 @@ test("release staging carries a real release version and preserves dependency pi
   expect(staged.version).toBe(source.version);
   expect(staged.dependencies).toEqual(source.dependencies);
   expect(source.private).toBe(true);
-  expect(source.exports).toEqual({ ".": "./src/index.ts", "./internal": "./src/internal.ts" });
+  expect(source.exports).toEqual({
+    ".": "./src/index.ts",
+    "./internal": "./src/internal.ts",
+    "./mcp": "./src/mcp/index.ts",
+  });
   expect(staged.exports).toEqual({
     ".": { types: "./dist/index.d.ts", import: "./dist/index.js" },
     "./internal": { types: "./dist/internal.d.ts", import: "./dist/internal.js" },
+    "./mcp": { types: "./dist/mcp/index.d.ts", import: "./dist/mcp/index.js" },
   });
   expect(staged.engines).toEqual({ node: ">=22.19.0" });
   expect(staged.publishConfig).toMatchObject({ provenance: true, tag: "latest" });

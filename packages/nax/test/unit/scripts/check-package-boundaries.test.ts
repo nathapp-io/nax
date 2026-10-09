@@ -304,12 +304,18 @@ describe("nax-agent-acp", () => {
     );
     write("packages/nax-agent-acp/test/unit/bad.test.ts", 'import { s } from "@nathapp/nax-agent/internal";\n');
     expect(whys()).toEqual([
-      "packages/nax-agent-acp/src/bad.ts @nathapp/nax-agent/internal only @nathapp/nax-agent (never ./internal or a deep path)",
-      "packages/nax-agent-acp/src/bad.ts @nathapp/nax-agent/internal only @nathapp/nax-agent (never ./internal or a deep path)",
-      "packages/nax-agent-acp/src/bad.ts @nathapp/nax-agent/internal only @nathapp/nax-agent (never ./internal or a deep path)",
-      "packages/nax-agent-acp/src/bad.ts @nathapp/nax-agent/src/index.ts only @nathapp/nax-agent (never ./internal or a deep path)",
-      "packages/nax-agent-acp/test/unit/bad.test.ts @nathapp/nax-agent/internal only @nathapp/nax-agent (never ./internal or a deep path)",
+      "packages/nax-agent-acp/src/bad.ts @nathapp/nax-agent/internal only @nathapp/nax-agent or @nathapp/nax-agent/mcp (never ./internal or a deep path)",
+      "packages/nax-agent-acp/src/bad.ts @nathapp/nax-agent/internal only @nathapp/nax-agent or @nathapp/nax-agent/mcp (never ./internal or a deep path)",
+      "packages/nax-agent-acp/src/bad.ts @nathapp/nax-agent/internal only @nathapp/nax-agent or @nathapp/nax-agent/mcp (never ./internal or a deep path)",
+      "packages/nax-agent-acp/src/bad.ts @nathapp/nax-agent/src/index.ts only @nathapp/nax-agent or @nathapp/nax-agent/mcp (never ./internal or a deep path)",
+      "packages/nax-agent-acp/test/unit/bad.test.ts @nathapp/nax-agent/internal only @nathapp/nax-agent or @nathapp/nax-agent/mcp (never ./internal or a deep path)",
     ]);
+  });
+
+  test("acp may reach nax-agent through the ./mcp subpath (S5-5)", () => {
+    acp();
+    write("packages/nax-agent-acp/src/mcp-ok.ts", 'import { connectMcp } from "@nathapp/nax-agent/mcp";\n');
+    expect(whys()).toEqual([]);
   });
 
   test("acp src/ may import only the SDK root, the MCP SDK, zod and node builtins", () => {

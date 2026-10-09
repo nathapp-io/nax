@@ -98,6 +98,7 @@ src/
 ├── infra/              # NaxError, the logger slot, credential config, the spin breaker
 ├── internal/           # below-the-line helpers: git, locks, argv exec, redaction, command-spec
 ├── runtime/            # the runtime slot: AgentRuntime contract, Node default, which
+├── mcp/                # shared MCP connection layer behind `./mcp`; never imported from the root entry; S5-5
 ├── index.ts            # the `.` entry
 └── internal.ts         # the `./internal` entry
 ```

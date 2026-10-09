@@ -16,6 +16,7 @@ Requires **Node.js >= 22.19.0**. The package is ESM only and ships no Bun code: 
 
 - **`@nathapp/nax-agent`** is the supported entry. Every export is named, and none starts with `_`. Its exact names are pinned in [`api/nax-agent.api.txt`](api/nax-agent.api.txt), which CI compares with the built declarations.
 - **`@nathapp/nax-agent/internal`** is **nax-only and outside semver.** nax bundles this package and reaches below the public entry for shared helpers, `NaxError`, deep modules and the `_*Deps` test seams. Names, shapes and behaviour there can change in any release, patch included, and a change there is not a breaking change. Do not import it from another project.
+- **`@nathapp/nax-agent/mcp`** — the shared MCP connection layer; see below.
 
 ## Process-wide slots
 
@@ -96,6 +97,32 @@ Profiles set what a session may do:
 - **Credentials.** A session's `credentials` (`memory` or `exec`) and `catalogOverrides` give it its own client. Without them it uses the process-wide `configureCredentials` slot.
 - **History and restarts.** The store holds one document per session, saved at the end of every turn. `close()` keeps it. After a restart, `resumeAgentSession(sessionId, options)` reopens it with the same options you created it with; pass `instructions` and `tools` again, since they are not stored. If the process died mid-turn, `session.lastTurn` is `{ turnId, status: "interrupted" }`, and that turn's message is not in history. A resume with a different model throws `AGENT_SESSION_MODEL_MISMATCH`; a different reasoning effort (`[high]`) is the same model. Resuming with a different backend kind throws `AGENT_SESSION_BACKEND_MISMATCH`; a stored document with no `backend` field is native. Do not open one session id twice at once: the store has no lock.
 - **Errors.** Every error is an `AgentSessionError` with a code `AGENT_SESSION_*`: `INVALID_OPTIONS`, `EXISTS`, `BUSY`, `CLOSED`, `INVALID_ANSWER`, `NOT_FOUND`, `SCHEMA_UNSUPPORTED`, `MODEL_MISMATCH`, `SANDBOX_UNAVAILABLE`, `TOOL_NAME_RESERVED`, `BACKEND_UNAVAILABLE`, `AUTH_REQUIRED`, `CAPABILITY_UNSUPPORTED` or `BACKEND_MISMATCH`. A stored document that cannot be read is a `NaxError` with `TRANSCRIPT_CORRUPT`.
+
+## MCP connections (`@nathapp/nax-agent/mcp`)
+
+A small MCP client for embedders that bridge MCP servers into their own tools.
+The root entry never loads it.
+
+```ts
+import { connectMcp } from "@nathapp/nax-agent/mcp";
+
+const connection = await connectMcp(
+  { kind: "stdio", command: "my-mcp-server", args: [], env: { API_KEY: "..." }, cwd: "/repo" },
+  { signal, timeoutMs: 30_000, clientInfo: { name: "my-app", version: "1.0.0" } },
+);
+connection.tools;                                   // listed once, every page
+await connection.call("search", { q: "x" }, { signal, timeoutMs: 600_000, maxBytes: 1_048_576 });
+await connection.close();                           // waits for the process; SIGKILL after 3 s
+```
+
+- Transports: `stdio` and streamable `http` (with `headers`). SSE is not supported.
+- `env` is laid over the default environment, so `PATH` is kept. Server stderr is
+  never inherited; its last 512 bytes are attached to a connect failure.
+- A server-side tool error is a result with `isError: true`; protocol errors,
+  timeouts, aborts and closed connections throw `McpCallError`.
+- `onClose` reports a stdio server that exits on its own; HTTP has no such signal.
+- The facade (`createAgentSession`) has no `mcpServers` option: wrap MCP tools as
+  `EmbedderTool`s yourself.
 
 ## Status and roadmap
 

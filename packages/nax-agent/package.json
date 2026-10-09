@@ -6,7 +6,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./internal": "./src/internal.ts"
+    "./internal": "./src/internal.ts",
+    "./mcp": "./src/mcp/index.ts"
   },
   "imports": {
     "#src/*": "./src/*.ts",
@@ -35,6 +36,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sandbox-runtime": "0.0.77",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@nathapp/nax-ai": "0.84.0",
     "zod": "^4.3.6"
   },
