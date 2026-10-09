@@ -111,6 +111,8 @@ export type SessionEventBody =
       readonly command?: string;
       readonly reason: string;
       readonly expiresAt: string;
+      /** `false`: decided already (by the profile); informational. Absent: a person's answer is awaited. */
+      readonly answerable?: false;
     }
   | {
       readonly type: "approval_resolved";
@@ -118,7 +120,14 @@ export type SessionEventBody =
       readonly decision: "allow" | "deny";
       readonly decidedBy: ApprovalDecidedBy;
     }
-  | { readonly type: "question"; readonly requestId: string; readonly text: string; readonly expiresAt: string }
+  | {
+      readonly type: "question";
+      readonly requestId: string;
+      readonly text: string;
+      readonly expiresAt: string;
+      /** `false`: informational (`noteQuestion`); `answer()` on it does nothing. Absent: an answer is awaited. */
+      readonly answerable?: false;
+    }
   | {
       readonly type: "usage";
       readonly round: number;

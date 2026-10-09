@@ -51,6 +51,7 @@ export function createSessionAskPort(deps: SessionAskPortDeps): SessionAskPort {
         summary: req.summary,
         reason: req.reason,
         expiresAt: now(),
+        answerable: false,
       });
       deps.emit({ type: "approval_resolved", requestId, decision, decidedBy: "profile" });
     },
@@ -66,7 +67,7 @@ export function createSessionAskPort(deps: SessionAskPortDeps): SessionAskPort {
     noteQuestion(text) {
       if (deps.turn() === undefined) return;
       const { requestId } = deps.table.issue("question", ALREADY_ABORTED);
-      deps.emit({ type: "question", requestId, text, expiresAt: now() });
+      deps.emit({ type: "question", requestId, text, expiresAt: now(), answerable: false });
     },
   };
 }
