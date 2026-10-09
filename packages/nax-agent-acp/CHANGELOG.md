@@ -7,7 +7,11 @@ step with `@nathapp/nax-agent`.
 
 ### Added
 
-- `nax-agent` binary and the `./server` entry (`main`, `runCli`) (S5-0): an ACP server on stdio that reads `~/.nax` (models, auth, optional `agentServer` block), logs to stderr only, and answers `initialize`. Session methods arrive in later S5 slices.
+- `nax-agent` binary and the `./server` entry (`main`, `runCli`): an ACP server on stdio over nax-agent's native agent. It reads `~/.nax` (models, auth, optional `agentServer` block) and logs to stderr only (S5-0).
+- Streamed text, thinking, tool calls with diffs, usage and compaction updates; transcript replay (S5-1).
+- `session/new`, `session/prompt`, `session/cancel`; permission requests with per-session always-allow (keyed on command and subcommand); questions via form elicitation, or a canned answer for clients without it (S5-2).
+- File-backed sessions: `session/load` (with replay), `resume`, `list`, `close`, `delete`, `set_mode`, `set_config_option` (model, bash approval). A model switch keeps the conversation (S5-3).
+- `nax-agent login <provider>`, terminal `authMethods` for clients that declare `auth.terminal`, `authenticate`, and `auth_required` for missing or rejected credentials, checked before a session opens (S5-4).
 
 ### Changed
 
