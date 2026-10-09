@@ -137,3 +137,23 @@ describe("runNativeTurn — the persisted anchor is per model (P3 spec 8.3(d))",
     expect(await firstAnchorSeen(onModel("openai/model-a"))).toBe(5);
   });
 });
+
+describe("runNativeTurn — assistant origin (S5-3 M-19)", () => {
+  test("the saved assistant message records the provider and model that wrote it, effort stripped", async () => {
+    await turn(onModel("openai/model-a[high]"), "first");
+    const file = JSON.parse(await readFile(transcriptPath(dir, SESSION), "utf8")) as { messages: unknown[] };
+    expect(file.messages[1]).toMatchObject({ role: "assistant", origin: { provider: "openai", model: "model-a" } });
+  });
+
+  test("the request replays the earlier assistant message with its origin", async () => {
+    await turn(onModel("openai/model-a"), "first");
+    const sent = await turn(onModel("openai/model-a"), "second");
+    expect(sent[0]?.[1]).toMatchObject({ role: "assistant", origin: { provider: "openai", model: "model-a" } });
+  });
+
+  test("a handle with no model records no origin", async () => {
+    await turn(onModel(), "first");
+    const file = JSON.parse(await readFile(transcriptPath(dir, SESSION), "utf8")) as { messages: unknown[] };
+    expect(file.messages[1]).not.toHaveProperty("origin");
+  });
+});
