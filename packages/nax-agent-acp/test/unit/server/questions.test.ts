@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, jest, test } from "bun:test";
 import type { CreateElicitationResponse } from "@agentclientprotocol/sdk";
 import type { AnswerReply } from "@nathapp/nax-agent";
 import {
@@ -162,5 +162,72 @@ describe("an unanswerable question (M-1)", () => {
       severity: "info",
       description: "declined: pick a file",
     });
+  });
+});
+
+const MAX_TIMER_DELAY = 2_147_483_647;
+
+function brokerAt(clock: { now: number }, options: FakePortOptions) {
+  const fake = fakePort(options);
+  const { logger } = recordingLogger();
+  const answers: string[] = [];
+  const broker = createQuestionBroker({
+    port: fake.port,
+    deliver: (update) => fake.port.update(update),
+    answer: (requestId) => {
+      answers.push(requestId);
+      return "accepted";
+    },
+    logger,
+    now: () => clock.now,
+  });
+  return { ...fake, answers, broker };
+}
+
+describe("createQuestionBroker with a far-future expiresAt", () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  test("does not abort before expiresAt and aborts once it is reached", async () => {
+    jest.useFakeTimers();
+    const clock = { now: NOW };
+    const s = brokerAt(clock, { features: ALL_FEATURES, elicit: NEVER });
+    s.broker.ask(question("q1", { expiresAt: new Date(NOW + 2 * MAX_TIMER_DELAY + 5_000).toISOString() }));
+    await Promise.resolve();
+
+    for (const step of [MAX_TIMER_DELAY, MAX_TIMER_DELAY, 4_999]) {
+      clock.now += step;
+      jest.advanceTimersByTime(step);
+      expect(s.signals[0]?.aborted).toBe(false);
+    }
+
+    clock.now += 1;
+    jest.advanceTimersByTime(1);
+    expect(s.signals[0]?.aborted).toBe(true);
+    await s.broker.drain();
+    expect(s.answers).toEqual([]);
+  });
+
+  test("an invalid expiresAt still aborts as soon as the timer runs", async () => {
+    jest.useFakeTimers();
+    const s = brokerAt({ now: NOW }, { features: ALL_FEATURES, elicit: NEVER });
+    s.broker.ask(question("q1", { expiresAt: "not a date" }));
+    await Promise.resolve();
+    jest.advanceTimersByTime(1);
+    await s.broker.drain();
+    expect(s.signals[0]?.aborted).toBe(true);
+    expect(s.answers).toEqual([]);
+  });
+
+  test("abortAll clears the pending timer so nothing fires afterwards", async () => {
+    jest.useFakeTimers();
+    const clock = { now: NOW };
+    const s = brokerAt(clock, { features: ALL_FEATURES, elicit: NEVER });
+    s.broker.ask(question("q1", { expiresAt: new Date(NOW + 2 * MAX_TIMER_DELAY).toISOString() }));
+    await Promise.resolve();
+    s.broker.abortAll();
+    await s.broker.drain();
+    expect(jest.getTimerCount()).toBe(0);
   });
 });
