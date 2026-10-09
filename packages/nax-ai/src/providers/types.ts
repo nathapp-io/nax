@@ -65,10 +65,9 @@ export type ProviderAuth =
  * `thinkingLevelMap` do. So carrying it on `ProviderOverride.models` does not
  * cross the "declaration only" line in `ProviderOverride`'s docstring below.
  *
- * Narrower than pi's own type: `max_price`, `preferred_min_throughput`,
- * `preferred_max_latency` and `enforce_distillable_text` are omitted because
- * nothing needs them yet and every field here is tested. Widening later is
- * source-compatible; narrowing is not.
+ * Narrower than pi's own type: `max_price` and `enforce_distillable_text` are
+ * omitted because nothing needs them yet and every field here is tested.
+ * Widening later is source-compatible; narrowing is not.
  */
 export interface OpenRouterRouting {
   /** Whether backup providers may serve the request. Upstream default: true. */
@@ -93,7 +92,21 @@ export interface OpenRouterRouting {
   readonly quantizations?: readonly string[];
   /** Routing strategy. Omitted means OpenRouter's own default ordering. */
   readonly sort?: "price" | "throughput" | "latency";
+  /** Minimum tokens/second: a number (p50) or per-percentile floors. */
+  readonly preferred_min_throughput?: PercentileTarget;
+  /** Maximum latency in seconds: a number (p50) or per-percentile ceilings. */
+  readonly preferred_max_latency?: PercentileTarget;
 }
+
+/** A latency or throughput target: one number (applies to p50) or per-percentile cutoffs. */
+export type PercentileTarget =
+  | number
+  | {
+      readonly p50?: number;
+      readonly p75?: number;
+      readonly p90?: number;
+      readonly p99?: number;
+    };
 
 export interface ResolvedProvider {
   readonly id: string;

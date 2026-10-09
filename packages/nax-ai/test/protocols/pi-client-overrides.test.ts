@@ -516,6 +516,21 @@ describe("openRouterRouting (issue #43)", () => {
     });
   });
 
+  it("sends the throughput and latency preferences as provider fields", async () => {
+    // Upstream pi-ai 1.1.0 documents both as number-or-percentile-object.
+    // Forwarded verbatim, so the wire shape is the declared shape.
+    const routed: ResolvedModel = {
+      ...PINNED,
+      openRouterRouting: { preferred_min_throughput: { p90: 40 }, preferred_max_latency: 2.5 },
+    };
+    const deps = createPiDeps({ providerOverrides: [{ provider: "openrouter", models: [routed] }] });
+    const model = await deps.resolveModel(routed.id, "openrouter");
+
+    await expect(wirePayload(model, "off")).resolves.toMatchObject({
+      provider: { preferred_min_throughput: { p90: 40 }, preferred_max_latency: 2.5 },
+    });
+  });
+
   it("sends no provider field for a model that declares no routing", async () => {
     // The control. Without it, a change that unconditionally set `provider`
     // would pass the test above while pinning every model in the catalog.

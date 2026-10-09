@@ -223,6 +223,10 @@ describe("agent.native.catalogOverrides", () => {
       ["sort: price", { sort: "price" }],
       ["sort: throughput", { sort: "throughput" }],
       ["sort: latency", { sort: "latency" }],
+      ["preferred_min_throughput: number", { preferred_min_throughput: 40 }],
+      ["preferred_min_throughput: percentile object", { preferred_min_throughput: { p90: 40 } }],
+      ["preferred_max_latency: number", { preferred_max_latency: 2.5 }],
+      ["preferred_max_latency: percentile object", { preferred_max_latency: { p50: 1, p99: 5 } }],
     ])("accepts %s", (_label, openRouterRouting) => {
       // Mirrors nax-ai's OpenRouterRouting shape verbatim (snake_case on
       // purpose — the keys are wire field names and pass through unmapped).
@@ -253,6 +257,11 @@ describe("agent.native.catalogOverrides", () => {
       ["a bad data_collection value", { data_collection: "opt-out" }],
       ["a non-string array element", { quantizations: [42] }],
       ["an empty array element string", { quantizations: [""] }],
+      ["an unknown percentile key", { preferred_min_throughput: { p95: 40 } }],
+      ["a zero throughput floor", { preferred_min_throughput: 0 }],
+      ["a string latency ceiling", { preferred_max_latency: "2s" }],
+      ["a negative latency ceiling", { preferred_max_latency: -1 }],
+      ["an empty percentile object", { preferred_min_throughput: {} }],
     ])("rejects %s", (_label, openRouterRouting) => {
       // .strict() so a casing typo (quantizaton) is a load error, not a
       // stripped key — same trap as pricing.tiers (#1847) and contextWindow

@@ -55,6 +55,8 @@ export interface OpenRouterRouting {
   ignore?: readonly string[];
   quantizations?: readonly string[];
   sort?: "price" | "throughput" | "latency";
+  preferred_min_throughput?: number | { p50?: number; p75?: number; p90?: number; p99?: number };
+  preferred_max_latency?: number | { p50?: number; p75?: number; p90?: number; p99?: number };
 }
 
 /**
