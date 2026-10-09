@@ -3,7 +3,12 @@
  * Extracted from schemas.ts to stay within the 600-line file limit.
  */
 
-import { BashApprovalModeSchema, DEFAULT_BASH_APPROVAL_MODE, SandboxConfigSchema } from "@nathapp/nax-agent/internal";
+import {
+  BashApprovalModeSchema,
+  compactionSettingsSchema,
+  DEFAULT_BASH_APPROVAL_MODE,
+  SandboxConfigSchema,
+} from "@nathapp/nax-agent/internal";
 import { z } from "zod";
 import { CommandSafetyConfigSchema } from "./schemas-command-safety";
 import { ConfiguredModelSchema, ModelTierSchema, TierConfigSchema } from "./schemas-model";
@@ -266,16 +271,7 @@ export const ExecutionConfigSchema = z.object({
    * absolute reserve is negative on the smallest windows — compaction would
    * fire every round trip and shrink nothing.
    */
-  compaction: z
-    .object({
-      enabled: z.boolean().default(true),
-      compactAtPercent: z.number().int().min(50).max(99).default(90),
-      keepRecentPercent: z.number().int().min(5).max(79).default(30),
-    })
-    .refine((c) => c.keepRecentPercent <= c.compactAtPercent - 20, {
-      message: "keepRecentPercent must be at least 20 points below compactAtPercent",
-    })
-    .default({ enabled: true, compactAtPercent: 90, keepRecentPercent: 30 }),
+  compaction: compactionSettingsSchema,
   lintCommand: z.string().nullable().optional(),
   typecheckCommand: z.string().nullable().optional(),
   permissionProfile: z.enum(["unrestricted", "safe", "scoped"]).default("unrestricted"),
