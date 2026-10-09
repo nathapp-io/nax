@@ -14,9 +14,11 @@ describe("buildAgentScopeSection", () => {
   });
 
   test("roots a package story's tools at the repo root and spells paths repo-rooted", () => {
-    const out = buildAgentScopeSection("/repo", "packages/api");
+    const out = buildAgentScopeSection("/worktrees/fix-root-discovery", "packages/api");
     const expected = [
       "## Your file scope",
+      "",
+      "**Execution repository/worktree root:** `/worktrees/fix-root-discovery`",
       "",
       "Your file tools (Read, Write, Edit, Glob, Grep, Git) are rooted at the repository root, NOT at your package.",
       "Your story's package is `packages/api`. Spell every path repo-rooted from the repository root: write",
@@ -26,17 +28,30 @@ describe("buildAgentScopeSection", () => {
       "You can read and, per your write authorization, edit files outside your package if a task genuinely requires it — say so rather than guessing at another package's contents from its name alone.",
     ].join("\n");
     expect(out).toBe(expected);
+    expect(out).not.toContain("list_projects");
+    expect(out).not.toContain("root_path");
   });
 
   test("treats a repo-root story as having no package distinction", () => {
     const expected = [
       "## Your file scope",
       "",
+      "**Execution repository/worktree root:** `/repo`",
+      "",
       "Your file tools (Read, Write, Edit, Glob, Grep, Git) are rooted at the repository root.",
       "Every path you pass them is resolved from there.",
     ].join("\n");
     for (const label of [".", undefined, "   "] as const) {
       expect(buildAgentScopeSection("/repo", label)).toBe(expected);
+      expect(buildAgentScopeSection("/repo", label)).not.toContain("list_projects");
+      expect(buildAgentScopeSection("/repo", label)).not.toContain("root_path");
     }
+  });
+
+  test("describes a worktree root when the story runs from that worktree", () => {
+    const out = buildAgentScopeSection("/worktrees/feature-branch", ".");
+
+    expect(out).toContain("**Execution repository/worktree root:** `/worktrees/feature-branch`");
+    expect(out).not.toContain("/repo");
   });
 });

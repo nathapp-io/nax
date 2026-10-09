@@ -24,6 +24,8 @@ export function buildAgentScopeSection(root: string | undefined, workdirLabel: s
     return [
       "## Your file scope",
       "",
+      `**Execution repository/worktree root:** \`${root}\``,
+      "",
       "Your file tools (Read, Write, Edit, Glob, Grep, Git) are rooted at the repository root.",
       "Every path you pass them is resolved from there.",
     ].join("\n");
@@ -31,6 +33,8 @@ export function buildAgentScopeSection(root: string | undefined, workdirLabel: s
 
   return [
     "## Your file scope",
+    "",
+    `**Execution repository/worktree root:** \`${root}\``,
     "",
     "Your file tools (Read, Write, Edit, Glob, Grep, Git) are rooted at the repository root, NOT at your package.",
     `Your story's package is \`${workdirLabel}\`. Spell every path repo-rooted from the repository root: write`,

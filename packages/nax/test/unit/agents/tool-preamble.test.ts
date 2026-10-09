@@ -63,14 +63,29 @@ describe("promptWithToolPreamble", () => {
     // Post-move root === repoRoot, so the package identity can only come from
     // `codingToolWorkdirLabel`; both arms must carry it.
     const scoped = makeOptions({
-      codingToolRoot: "/repo",
+      codingToolRoot: "/worktrees/nax-feature",
       codingToolWorkdirLabel: "packages/api",
     });
     for (const agent of ["native", "claude"]) {
       const prompt = promptWithToolPreamble(agent, scoped);
+      expect(prompt).toContain("**Execution repository/worktree root:** `/worktrees/nax-feature`");
+      expect(prompt).not.toContain("list_projects");
+      expect(prompt).not.toContain("root_path");
       expect(prompt).toContain("rooted at the repository root, NOT at your package");
       expect(prompt).toContain("Your story's package is `packages/api`");
       expect(prompt).toContain("`packages/api/src/index.ts`, never `src/index.ts`");
+    }
+
+    const repoRootStory = makeOptions({
+      codingToolRoot: "/worktrees/nax-root-story",
+      codingToolWorkdirLabel: ".",
+    });
+    for (const agent of ["native", "claude"]) {
+      const prompt = promptWithToolPreamble(agent, repoRootStory);
+      expect(prompt).toContain("**Execution repository/worktree root:** `/worktrees/nax-root-story`");
+      expect(prompt).toContain("Every path you pass them is resolved from there.");
+      expect(prompt).not.toContain("list_projects");
+      expect(prompt).not.toContain("root_path");
     }
   });
 });
