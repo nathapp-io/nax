@@ -6,6 +6,8 @@
  * a clean Node project, runs the fake-agent chat and resume there, then
  * typechecks a consumer with skipLibCheck:false. Only diagnostics under the
  * installed nax-agent-acp's dist/ fail; third-party ones are ignored.
+ * nax-ai is packed from the workspace at the shared version too, so the install
+ * resolves nax-agent's pin locally instead of from the registry.
  */
 import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -18,6 +20,7 @@ import { buildStagedManifest } from "../../scripts/lib/stage-manifest.ts";
 
 const PKG = fileURLToPath(new URL("../..", import.meta.url));
 const AGENT_PKG = join(PKG, "../nax-agent");
+const AI_PKG = join(PKG, "../nax-ai");
 const REPOSITORY = "git+https://github.com/nathapp-io/nax.git";
 
 const temps: string[] = [];
@@ -36,7 +39,7 @@ function readJson(path: string): Record<string, unknown> {
 /** npm pack `dir` into a fresh directory; the tarball's path. */
 function pack(dir: string): string {
   const into = temp("acp-pack-");
-  run("npm", ["pack", dir, "--pack-destination", into], PKG, 60_000);
+  run("npm", ["pack", dir, "--pack-destination", into, "--ignore-scripts"], PKG, 60_000);
   const tgz = readdirSync(into).find((f) => f.endsWith(".tgz"));
   if (tgz === undefined) throw new Error(`npm pack produced no tarball in ${into}`);
   return join(into, tgz);
@@ -73,6 +76,10 @@ beforeAll(() => {
   const version = String(readJson(join(PKG, "package.json")).version);
   const agentTgz = pack(stageAgent(version));
   const acpTgz = pack(stageAcp(version));
+  // nax-agent pins @nathapp/nax-ai at the shared lockstep version, unpublished
+  // until the release runs; pack it from the workspace so the install resolves locally.
+  run("bun", ["run", "build"], AI_PKG, 180_000);
+  const aiTgz = pack(AI_PKG);
   consumer = temp("acp-consumer-");
   run("npm", ["init", "-y"], consumer);
   // npm init -y leaves no "type", so Node 24 loads the fake agent's .ts entry with the CommonJS loader and fails.
@@ -82,7 +89,7 @@ beforeAll(() => {
   );
   run(
     "npm",
-    ["install", "--no-audit", "--no-fund", agentTgz, acpTgz, "typescript@7.0.2", "@types/node@25.2.3"],
+    ["install", "--no-audit", "--no-fund", agentTgz, aiTgz, acpTgz, "typescript@7.0.2", "@types/node@25.2.3"],
     consumer,
     240_000,
   );

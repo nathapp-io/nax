@@ -10,12 +10,10 @@ The workspace manifest remains `private: true` and resolves `.ts` source. The np
 library uses the generated `.publish/` manifest pointing at Node ESM `dist/`.
 nax keeps a workspace devDependency and bundles the same source; its
 `bun run check:bundle-externals` asserts the agent is inlined into `dist/nax.js`.
-Release preparation and publication follow `packages/nax-agent/RELEASING.md`:
-manual 0.1.0 publish with maintainer OTP/2FA, then trusted-publisher setup;
-subsequent `nax-agent-vX.Y.Z` tags publish through OIDC with provenance.
+Releases are lockstep with the other published nax packages (repo-root `RELEASING.md`); tags publish through OIDC with provenance.
 
 `@nathapp/nax-agent-acp` peers on this package at the same version (S4 R10): the
-release helper bumps both, and `release tag-acp` publishes it after this package.
+lockstep release bumps both, and the release workflow publishes it after this package.
 Its only allowed import of nax-agent is the public entry `.`, so any symbol the ACP
 backend needs must be exported from `.`, never `./internal`.
 
@@ -41,9 +39,6 @@ backend needs must be exported from `.`, never `./internal`.
 | `bun run build` | `tsc -p tsconfig.build.json`: Node ESM `dist/`; fails on an extensionless relative import |
 | `bun run stage-publish` | Generate `.publish/` from the built `dist/` and documentation; workspace exports remain source-pointing |
 | `bun run test:node` | Real-Node vitest contracts plus packed-tarball/consumer smoke |
-| `bun run release --dry-run patch` | Preview release version and tag without mutations |
-| `bun run release patch` | Confirmed PR-first package/changelog/lockfile release preparation |
-| `bun run release tag` | Separate confirmation on clean main before tag push and release workflow |
 | `bun run check:api` | Build, read the exports of `.` and `./internal` from the declarations, diff against `api/nax-agent.api.txt`; fails if `.` exports a `_` name |
 | `bun run api:update` | Rewrite `api/nax-agent.api.txt` after an intended surface change (refuses a `_` name on `.`) |
 | `bun run check:all` | Biome plus every repo gate (`lint`) |

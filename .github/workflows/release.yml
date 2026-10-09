@@ -1,271 +1,175 @@
 name: Release
 
+# One tag publishes every nax package at the shared lockstep version, in
+# dependency order: nax-ai -> nax-agent -> nax-agent-acp -> nax. See RELEASING.md.
 on:
   push:
     tags:
       - "v*.*.*"
       - "v*.*.*-canary.*"
-      - "nax-ai-v*.*.*"
-      - "nax-ai-v*.*.*-canary.*"
-      - "nax-agent-v*.*.*"
-      - "nax-agent-v*.*.*-canary.*"
-      - "nax-agent-acp-v*.*.*"
-      - "nax-agent-acp-v*.*.*-canary.*"
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to re-publish (e.g. v0.51.0)"
+        description: "Tag to re-publish (e.g. v0.84.0); packages already on npm are skipped"
         required: true
         type: string
 
 permissions:
-  contents: write # needed for GitHub Release creation
-  id-token: write # needed for npm OIDC trusted publishing
+  contents: write # GitHub Release creation
+  id-token: write # npm OIDC trusted publishing
 
 jobs:
-  release:
+  resolve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tag: ${{ steps.info.outputs.tag }}
+      version: ${{ steps.info.outputs.version }}
+      npm_tag: ${{ steps.info.outputs.npm_tag }}
+      prerelease: ${{ steps.info.outputs.prerelease }}
+      notify: ${{ steps.info.outputs.notify }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: refs/tags/${{ github.event.inputs.tag || github.ref_name }}
+
+      - name: Set release info
+        id: info
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          V="${TAG#v}"
+          if [ "$V" = "$TAG" ] || ! [[ "$V" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-canary\.[1-9][0-9]*)?$ ]]; then
+            echo "::error::Invalid release tag $TAG (expected vX.Y.Z or vX.Y.Z-canary.N)"
+            exit 1
+          fi
+          if [[ "$V" == *-canary.* ]]; then
+            printf 'tag=%s\nversion=%s\nnpm_tag=canary\nprerelease=true\nnotify=false\n' "$TAG" "$V" >> "$GITHUB_OUTPUT"
+          else
+            printf 'tag=%s\nversion=%s\nnpm_tag=latest\nprerelease=false\nnotify=true\n' "$TAG" "$V" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.0"
+
+      - name: Packages share the tag's version
+        env:
+          VERSION: ${{ steps.info.outputs.version }}
+        run: bun packages/repo-tooling/scripts/check-lockstep.ts --expect="$VERSION"
+
+  nax-ai:
+    needs: [resolve]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: npm
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: refs/tags/${{ github.event.inputs.tag || github.ref_name }}
-          fetch-depth: 0 # full history for changelog extraction
-
-      - name: Resolve package
-        id: pkg
-        env:
-          TAG: ${{ github.event.inputs.tag || github.ref_name }}
-        run: |
-          case "$TAG" in
-            nax-agent-acp-v*) V="${TAG#nax-agent-acp-v}"; echo "dir=packages/nax-agent-acp" >> "$GITHUB_OUTPUT"; echo "name=@nathapp/nax-agent-acp" >> "$GITHUB_OUTPUT" ;;
-            nax-agent-v*) V="${TAG#nax-agent-v}"; echo "dir=packages/nax-agent" >> "$GITHUB_OUTPUT"; echo "name=@nathapp/nax-agent" >> "$GITHUB_OUTPUT" ;;
-            nax-ai-v*) V="${TAG#nax-ai-v}"; echo "dir=packages/nax-ai" >> "$GITHUB_OUTPUT"; echo "name=@nathapp/nax-ai" >> "$GITHUB_OUTPUT" ;;
-            v*)        V="${TAG#v}";        echo "dir=packages/nax" >> "$GITHUB_OUTPUT";    echo "name=@nathapp/nax" >> "$GITHUB_OUTPUT" ;;
-            *) echo "Unrecognised tag $TAG"; exit 1 ;;
-          esac
-          if ! [[ "$V" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[a-zA-Z0-9]+([.-][a-zA-Z0-9]+)*)?$ ]]; then
-            echo "::error::Invalid release version in tag $TAG"; exit 1
-          fi
-          echo "version=$V" >> "$GITHUB_OUTPUT"
-
-      - uses: oven-sh/setup-bun@v2
+          ref: refs/tags/${{ needs.resolve.outputs.tag }}
+      - uses: ./.github/actions/publish-package
         with:
-          bun-version: "1.4.0"
+          name: "@nathapp/nax-ai"
+          dir: packages/nax-ai
+          version: ${{ needs.resolve.outputs.version }}
+          npm_tag: ${{ needs.resolve.outputs.npm_tag }}
 
-      - uses: actions/setup-node@v5
+  nax-agent:
+    needs: [resolve, nax-ai]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: npm
+    steps:
+      - uses: actions/checkout@v5
         with:
-          node-version: "24"
-          registry-url: "https://registry.npmjs.org"
+          ref: refs/tags/${{ needs.resolve.outputs.tag }}
+      - uses: ./.github/actions/publish-package
+        with:
+          name: "@nathapp/nax-agent"
+          dir: packages/nax-agent
+          version: ${{ needs.resolve.outputs.version }}
+          npm_tag: ${{ needs.resolve.outputs.npm_tag }}
 
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
+  nax-agent-acp:
+    needs: [resolve, nax-agent]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: npm
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: refs/tags/${{ needs.resolve.outputs.tag }}
+      - uses: ./.github/actions/publish-package
+        with:
+          name: "@nathapp/nax-agent-acp"
+          dir: packages/nax-agent-acp
+          version: ${{ needs.resolve.outputs.version }}
+          npm_tag: ${{ needs.resolve.outputs.npm_tag }}
 
-      - name: Validate npm version
-        run: |
-          NPM_VERSION="$(npm --version)" node -e '
-            const v = process.env.NPM_VERSION;
-            const parts = /^([0-9]+)\.([0-9]+)\.([0-9]+)$/.exec(v || "");
-            if (!parts || Number(parts[1]) < 11 || (Number(parts[1]) === 11 && (Number(parts[2]) < 5 || (Number(parts[2]) === 5 && Number(parts[3]) < 1)))) {
-              throw new Error("Trusted publishing requires npm >=11.5.1; found " + v);
-            }
-          '
+  nax:
+    needs: [resolve, nax-agent-acp]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: npm
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: refs/tags/${{ needs.resolve.outputs.tag }}
+      - uses: ./.github/actions/publish-package
+        with:
+          name: "@nathapp/nax"
+          dir: packages/nax
+          version: ${{ needs.resolve.outputs.version }}
+          npm_tag: ${{ needs.resolve.outputs.npm_tag }}
 
-      - name: Enable the OS sandbox (bubblewrap)
-        if: steps.pkg.outputs.name == '@nathapp/nax-agent'
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq bubblewrap socat ripgrep
-          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+  github-release:
+    needs: [resolve, nax]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: refs/tags/${{ needs.resolve.outputs.tag }}
 
-      # Validate tag matches package.json version (the package tag prefix
-      # is stripped by the Resolve package step, so all packages compare the
-      # bare version against their own package.json)
-      - name: Validate version
-        run: |
-          PKG_VERSION="$(node -p "require('./package.json').version")"
-          if [ "$VERSION" != "$PKG_VERSION" ]; then
-            echo "❌ Version $VERSION does not match package.json version $PKG_VERSION"
-            exit 1
-          fi
-          echo "✅ Version match: $VERSION"
-        working-directory: ${{ steps.pkg.outputs.dir }}
-        env:
-          VERSION: ${{ steps.pkg.outputs.version }}
-
-      - name: Pre-publish checks
-        working-directory: ${{ steps.pkg.outputs.dir }}
-        env:
-          NAME: ${{ steps.pkg.outputs.name }}
-        run: |
-          if [ "$NAME" = "@nathapp/nax-agent" ] || [ "$NAME" = "@nathapp/nax-agent-acp" ]; then
-            bun run check:all
-            bun run typecheck
-            bun run build
-            bun run check:api
-            bun run test:coverage
-            bun run test:node
-            bun run stage-publish
-          elif [ "$NAME" = "@nathapp/nax-ai" ]; then
-            bun run lint && bun run typecheck && bun x vitest --run && bun run build
-          else
-            bun run build
-          fi
-
-      # Determine tag and release type
-      - name: Set release info
-        id: info
-        env:
-          TAG: ${{ github.event.inputs.tag || github.ref_name }}
-          NAME: ${{ steps.pkg.outputs.name }}
-          VERSION: ${{ steps.pkg.outputs.version }}
-        run: |
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
-          if [ "$NAME" = "@nathapp/nax-ai" ] || [ "$NAME" = "@nathapp/nax-agent" ] || [ "$NAME" = "@nathapp/nax-agent-acp" ]; then
-            # Library release rule: canary → canary dist-tag; otherwise latest,
-            # with 0.x marked prerelease. Never notifies Telegram.
-            if [[ "$TAG" == *"-canary."* ]]; then
-              echo "npm_tag=canary" >> "$GITHUB_OUTPUT"
-              echo "prerelease=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "npm_tag=latest" >> "$GITHUB_OUTPUT"
-              if [[ "$VERSION" == 0.* ]]; then
-                echo "prerelease=true" >> "$GITHUB_OUTPUT"
-              else
-                echo "prerelease=false" >> "$GITHUB_OUTPUT"
-              fi
-            fi
-            echo "notify=false" >> "$GITHUB_OUTPUT"
-          else
-            if [[ "$TAG" == *"-canary."* ]]; then
-              echo "npm_tag=canary" >> "$GITHUB_OUTPUT"
-              echo "prerelease=true" >> "$GITHUB_OUTPUT"
-              echo "notify=false" >> "$GITHUB_OUTPUT"
-            else
-              echo "npm_tag=latest" >> "$GITHUB_OUTPUT"
-              echo "prerelease=false" >> "$GITHUB_OUTPUT"
-              echo "notify=true" >> "$GITHUB_OUTPUT"
-            fi
-          fi
-
-      # nax pins @nathapp/nax-ai in its dependencies, so a nax release is only
-      # installable if the pinned nax-ai version is already on npm.
-      - name: nax-ai pin is published
-        if: steps.pkg.outputs.name == '@nathapp/nax' || steps.pkg.outputs.name == '@nathapp/nax-agent'
-        working-directory: ${{ steps.pkg.outputs.dir }}
-        run: |
-          PIN=$(node -p "require('./package.json').dependencies['@nathapp/nax-ai']")
-          npm view "@nathapp/nax-ai@$PIN" version || { echo "::error::@nathapp/nax-ai@$PIN is not on npm; release nax-ai first"; exit 1; }
-
-      # nax-agent-acp peers on @nathapp/nax-agent at the same version (R10), so an acp
-      # release is only installable once that nax-agent version is on npm.
-      - name: nax-agent peer is published
-        if: steps.pkg.outputs.name == '@nathapp/nax-agent-acp'
-        working-directory: ${{ steps.pkg.outputs.dir }}
-        run: |
-          RANGE=$(node -p "require('./.publish/package.json').peerDependencies?.['@nathapp/nax-agent'] ?? ''")
-          PEER="${RANGE#^}"
-          if [ -z "$PEER" ] || [ "$PEER" = "$RANGE" ]; then echo "::error::staged manifest has no ^X.Y.Z @nathapp/nax-agent peer range"; exit 1; fi
-          OUT=$(npm view "@nathapp/nax-agent@$PEER" version) || { echo "::error::@nathapp/nax-agent@$PEER is not on npm; release nax-agent first"; exit 1; }
-          if [ -z "$OUT" ]; then echo "::error::@nathapp/nax-agent@$PEER is not on npm; release nax-agent first"; exit 1; fi
-
-      # Publish to npm (trusted publishing via OIDC — no token needed)
-      - name: Publish to npm
-        run: |
-          if [ "$NAME" = "@nathapp/nax-agent" ] || [ "$NAME" = "@nathapp/nax-agent-acp" ]; then
-            # Each package's first version was published manually (D23); its tag only verifies it.
-            if [ "$NAME" = "@nathapp/nax-agent" ]; then BOOTSTRAP=0.1.0; else BOOTSTRAP=0.3.0; fi
-            if [ "$VERSION" = "$BOOTSTRAP" ]; then
-              if REGISTRY_RESULT=$(npm view "$NAME@$BOOTSTRAP" version --json); then
-                bun ../repo-tooling/scripts/verify-bootstrap.ts --package=. --version="$BOOTSTRAP"
-                exit 0
-              else
-                REGISTRY_RESULT="$REGISTRY_RESULT" node -e '
-                  const result = JSON.parse(process.env.REGISTRY_RESULT || "{}");
-                  if (result.error?.code !== "E404") throw new Error("bootstrap registry check failed: " + JSON.stringify(result));
-                '
-                # Trusted publishing cannot create a package: the acp first version must already exist.
-                if [ "$NAME" = "@nathapp/nax-agent-acp" ]; then
-                  echo "::error::@nathapp/nax-agent-acp@$BOOTSTRAP is not on npm; publish it manually first (packages/nax-agent-acp/RELEASING.md)"
-                  exit 1
-                fi
-              fi
-            fi
-            # publishConfig.tag also needs the canary value; do not rely on flag precedence.
-            node -e '
-              const fs = require("node:fs");
-              const path = "./.publish/package.json";
-              const pkg = JSON.parse(fs.readFileSync(path, "utf8"));
-              pkg.publishConfig.tag = process.env.NPM_TAG;
-              fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + "\n");
-            '
-            npm publish ./.publish/ --access public --tag "$NPM_TAG" --provenance
-          else
-            npm publish --access public --tag "$NPM_TAG" --provenance
-          fi
-        working-directory: ${{ steps.pkg.outputs.dir }}
-        env:
-          NAME: ${{ steps.pkg.outputs.name }}
-          VERSION: ${{ steps.pkg.outputs.version }}
-          NPM_TAG: ${{ steps.info.outputs.npm_tag }}
-          NPM_CONFIG_PROVENANCE: "true"
-
-      # Extract release notes from CHANGELOG.md (optional — falls back to GitHub auto-generate)
+      # nax-agent and nax-agent-acp keep per-release changelogs; nax and nax-ai rely on generated notes.
       - name: Extract release notes
-        id: notes
-        working-directory: ${{ steps.pkg.outputs.dir }}
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
         run: |
-          VERSION="${{ steps.info.outputs.version }}"
-          # Extract section between ## [$VERSION] and next ## [
-          NOTES=$(awk "/^## \[${VERSION}\]/{found=1; next} /^## \[/{if(found) exit} found{print}" CHANGELOG.md 2>/dev/null || true)
+          NOTES_FILE="$RUNNER_TEMP/release-notes.md"
+          : > "$NOTES_FILE"
+          for PKG in nax-agent nax-agent-acp; do
+            NOTES=$(awk -v v="$VERSION" 'index($0, "## [" v "]") == 1 { found = 1; next } /^## \[/ { if (found) exit } found { print }' "packages/$PKG/CHANGELOG.md" 2>/dev/null || true)
+            if [ -n "$(printf '%s' "$NOTES" | tr -d '[:space:]')" ]; then
+              printf '## @nathapp/%s\n%s\n\n' "$PKG" "$NOTES" >> "$NOTES_FILE"
+            fi
+          done
 
-          if [ -n "$NOTES" ]; then
-            echo "$NOTES" > /tmp/release-notes.md
-            echo "has_notes=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_notes=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      # Create GitHub Release
-      # When CHANGELOG has an entry: use it as the body.
-      # When no entry: omit body_path so generate_release_notes auto-builds from PR titles.
-      - name: Create GitHub Release (with changelog notes)
-        if: steps.notes.outputs.has_notes == 'true'
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.info.outputs.tag }}
-          name: ${{ steps.info.outputs.tag }}
-          body_path: /tmp/release-notes.md
-          prerelease: ${{ steps.info.outputs.prerelease }}
-
-      - name: Create GitHub Release (auto-generated notes)
-        if: steps.notes.outputs.has_notes != 'true'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.info.outputs.tag }}
-          name: ${{ steps.info.outputs.tag }}
-          prerelease: ${{ steps.info.outputs.prerelease }}
+          tag_name: ${{ needs.resolve.outputs.tag }}
+          name: ${{ needs.resolve.outputs.tag }}
+          body_path: ${{ runner.temp }}/release-notes.md
+          prerelease: ${{ needs.resolve.outputs.prerelease }}
           generate_release_notes: true
 
-      # Telegram notification (stable only)
       - name: Notify Telegram
-        if: steps.info.outputs.notify == 'true' && steps.pkg.outputs.name == '@nathapp/nax' && vars.TELEGRAM_CHAT_ID != ''
+        if: needs.resolve.outputs.notify == 'true' && vars.TELEGRAM_CHAT_ID != ''
+        env:
+          TAG: ${{ needs.resolve.outputs.tag }}
+          CHAT_ID: ${{ vars.TELEGRAM_CHAT_ID }}
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         run: |
-          # Written only when CHANGELOG.md has a section for this version (Extract release notes step).
-          NOTES=$(head -20 /tmp/release-notes.md 2>/dev/null || true)
-          MSG="🚀 *nax ${{ steps.info.outputs.tag }} released*
+          NOTES=$(head -20 "$RUNNER_TEMP/release-notes.md" 2>/dev/null || true)
+          MSG="*nax ${TAG} released*
 
           \`\`\`
           npm install -g @nathapp/nax
           \`\`\`
 
           ${NOTES}"
-
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            -d chat_id="${{ vars.TELEGRAM_CHAT_ID }}" \
+          curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            -d chat_id="${CHAT_ID}" \
             -d parse_mode="Markdown" \
             -d text="$MSG" || true

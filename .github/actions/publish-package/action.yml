@@ -1,0 +1,175 @@
+name: Publish one nax package
+description: >-
+  Runs one lockstep package's gates and publishes it to npm with provenance.
+  A version already on npm is skipped, so a failed release is resumed by re-running it.
+inputs:
+  name:
+    description: npm package name, e.g. "@nathapp/nax-ai"
+    required: true
+  dir:
+    description: package directory, e.g. packages/nax-ai
+    required: true
+  version:
+    description: the shared release version (the tag without its leading v)
+    required: true
+  npm_tag:
+    description: npm dist-tag, latest or canary
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: "1.4.0"
+
+    - uses: actions/setup-node@v5
+      with:
+        node-version: "24"
+        registry-url: "https://registry.npmjs.org"
+
+    - name: Install dependencies
+      shell: bash
+      run: bun install --frozen-lockfile
+
+    - name: Validate npm version
+      shell: bash
+      run: |
+        NPM_VERSION="$(npm --version)" node -e '
+          const v = process.env.NPM_VERSION;
+          const parts = /^([0-9]+)\.([0-9]+)\.([0-9]+)$/.exec(v || "");
+          if (!parts || Number(parts[1]) < 11 || (Number(parts[1]) === 11 && (Number(parts[2]) < 5 || (Number(parts[2]) === 5 && Number(parts[3]) < 1)))) {
+            throw new Error("Trusted publishing requires npm >=11.5.1; found " + v);
+          }
+        '
+
+    - name: Validate version
+      shell: bash
+      working-directory: ${{ inputs.dir }}
+      env:
+        VERSION: ${{ inputs.version }}
+      run: |
+        PKG_VERSION="$(node -p "require('./package.json').version")"
+        if [ "$VERSION" != "$PKG_VERSION" ]; then
+          echo "::error::Version $VERSION does not match package.json version $PKG_VERSION"
+          exit 1
+        fi
+
+    - name: Already on npm
+      id: published
+      shell: bash
+      env:
+        NAME: ${{ inputs.name }}
+        VERSION: ${{ inputs.version }}
+      run: |
+        if OUT=$(npm view "$NAME@$VERSION" version --json 2>/dev/null); then
+          if [ "$OUT" = "\"$VERSION\"" ]; then
+            echo "$NAME@$VERSION is already on npm; skipping"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+          exit 0
+        fi
+        CODE=$(OUT="$OUT" node -e 'try { console.log(JSON.parse(process.env.OUT).error.code ?? "") } catch { console.log("") }')
+        if [ "$CODE" = "E404" ]; then
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        echo "::error::npm view $NAME@$VERSION failed: $OUT"
+        exit 1
+
+    - name: Enable the OS sandbox (bubblewrap)
+      if: steps.published.outputs.skip != 'true' && inputs.name == '@nathapp/nax-agent'
+      shell: bash
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq bubblewrap socat ripgrep
+        sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+
+    - name: Pre-publish checks
+      if: steps.published.outputs.skip != 'true'
+      shell: bash
+      working-directory: ${{ inputs.dir }}
+      env:
+        NAME: ${{ inputs.name }}
+      run: |
+        case "$NAME" in
+          @nathapp/nax-agent|@nathapp/nax-agent-acp)
+            bun run check:all
+            bun run typecheck
+            bun run build
+            bun run check:api
+            bun run test:coverage
+            bun run test:node
+            bun run stage-publish
+            ;;
+          @nathapp/nax-ai)
+            bun run lint && bun run typecheck && bun x vitest --run && bun run build
+            ;;
+          *)
+            bun run build
+            ;;
+        esac
+
+    # The previous job published the dependency seconds ago; the registry can lag.
+    - name: Dependencies are on npm
+      if: steps.published.outputs.skip != 'true'
+      shell: bash
+      working-directory: ${{ inputs.dir }}
+      env:
+        NAME: ${{ inputs.name }}
+      run: |
+        case "$NAME" in
+          @nathapp/nax|@nathapp/nax-agent)
+            DEP="@nathapp/nax-ai@$(node -p "require('./package.json').dependencies['@nathapp/nax-ai']")"
+            ;;
+          @nathapp/nax-agent-acp)
+            RANGE=$(node -p "require('./.publish/package.json').peerDependencies?.['@nathapp/nax-agent'] ?? ''")
+            PEER="${RANGE#^}"
+            if [ -z "$PEER" ] || [ "$PEER" = "$RANGE" ]; then
+              echo "::error::staged manifest has no ^X.Y.Z @nathapp/nax-agent peer range"
+              exit 1
+            fi
+            DEP="@nathapp/nax-agent@$PEER"
+            ;;
+          *)
+            exit 0
+            ;;
+        esac
+        for _ in 1 2 3 4 5 6 7 8; do
+          if [ -n "$(npm view "$DEP" version 2>/dev/null || true)" ]; then
+            echo "$DEP is on npm"
+            exit 0
+          fi
+          sleep "${RETRY_DELAY:-15}"
+        done
+        echo "::error::$DEP is not on npm"
+        exit 1
+
+    # Trusted publishing over OIDC: no token. npm matches this job's workflow
+    # file (release.yml) and environment (npm) against each package's settings.
+    - name: Publish to npm
+      if: steps.published.outputs.skip != 'true'
+      shell: bash
+      working-directory: ${{ inputs.dir }}
+      env:
+        NAME: ${{ inputs.name }}
+        NPM_TAG: ${{ inputs.npm_tag }}
+        NPM_CONFIG_PROVENANCE: "true"
+      run: |
+        case "$NAME" in
+          @nathapp/nax-agent|@nathapp/nax-agent-acp)
+            # publishConfig.tag also needs the canary value; do not rely on flag precedence.
+            node -e '
+              const fs = require("node:fs");
+              const path = "./.publish/package.json";
+              const pkg = JSON.parse(fs.readFileSync(path, "utf8"));
+              pkg.publishConfig = { ...pkg.publishConfig, tag: process.env.NPM_TAG };
+              fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + "\n");
+            '
+            npm publish ./.publish/ --access public --tag "$NPM_TAG" --provenance
+            ;;
+          *)
+            npm publish --access public --tag "$NPM_TAG" --provenance
+            ;;
+        esac
