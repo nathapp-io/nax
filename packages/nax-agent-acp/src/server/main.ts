@@ -5,7 +5,7 @@
  */
 import { randomUUID } from "node:crypto";
 import type { Readable, Writable } from "node:stream";
-import { configureCredentials, setAgentLogger } from "@nathapp/nax-agent";
+import { configureCredentials, createFileTranscriptStore, setAgentLogger } from "@nathapp/nax-agent";
 import { type CliFlags, parseCli, USAGE } from "#src/server/cli";
 import { buildAgentApp, serveStdio } from "#src/server/connection";
 import { stderrLogger } from "#src/server/logger";
@@ -60,7 +60,7 @@ async function serveAcp(flags: CliFlags, deps: MainDeps): Promise<number> {
   const registry = createSessionRegistry({
     options: resolved.options,
     openSession: nativeOpenSession({
-      sessionsDir: resolved.options.sessionsDir,
+      transcripts: createFileTranscriptStore(resolved.options.sessionsDir),
       catalogOverrides: catalogOverridesFrom(resolved.options.catalogOverrides, logger),
       turnTimeoutSeconds: TURN_TIMEOUT_SECONDS,
     }),

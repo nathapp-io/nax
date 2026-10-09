@@ -50,13 +50,15 @@ export function createSessionRegistry(deps: RegistryDeps): SessionRegistry {
       const model = options.defaultModel;
       if (model === undefined) throw invalidParams(NO_MODEL_MESSAGE);
       const sessionId = deps.newId();
-      const agentSession = await deps.openSession({
-        sessionId,
-        cwd: input.cwd,
-        model,
-        profile: options.defaultMode,
-        bashApproval: options.bashApproval,
-      });
+      const agentSession = (
+        await deps.openSession({
+          sessionId,
+          cwd: input.cwd,
+          model,
+          profile: options.defaultMode,
+          bashApproval: options.bashApproval,
+        })
+      ).session;
       const port = input.port(sessionId);
       const contextWindow = options.tiers.find((tier) => tier.model === model)?.contextWindow;
       const session = createServerSession({

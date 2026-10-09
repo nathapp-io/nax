@@ -1,8 +1,8 @@
 /**
  * Opens the S3 session behind an ACP session (S5 spec §5.3 session/new): the
- * native backend with the session's model and bash approval, and a file
- * transcript store in the sessions directory (S5-2 M-9). The facade factories
- * are injectable for tests.
+ * native backend with the session's model and bash approval, and a transcript
+ * store, resuming a stored session or creating a new one (S5-3 M-21). The
+ * facade factories are injectable for tests.
  */
 import {
   type AgentLogger,
@@ -10,11 +10,12 @@ import {
   type AgentSessionProfile,
   type CreateAgentSessionOptions,
   createAgentSession,
-  createFileTranscriptStore,
   type NativeBackendOptions,
   type NativeCatalogOverrides,
   nativeBackend,
+  resumeAgentSession,
   type SessionBackend,
+  type TranscriptDoc,
   type TranscriptStore,
 } from "@nathapp/nax-agent";
 import type { BashApproval } from "#src/server/nax-config";
@@ -27,7 +28,13 @@ export interface OpenSessionRequest {
   readonly bashApproval: BashApproval;
 }
 
-export type OpenSession = (request: OpenSessionRequest) => Promise<AgentSession>;
+export interface OpenedSession {
+  readonly session: AgentSession;
+  /** The stored document read before opening; null for a session never prompted. */
+  readonly doc: TranscriptDoc | null;
+}
+
+export type OpenSession = (request: OpenSessionRequest) => Promise<OpenedSession>;
 
 type CatalogOverride = NativeCatalogOverrides[number];
 
@@ -54,29 +61,42 @@ export function catalogOverridesFrom(raw: readonly unknown[], logger: AgentLogge
 }
 
 export interface NativeOpenDeps {
-  readonly sessionsDir: string;
+  readonly transcripts: TranscriptStore;
   readonly catalogOverrides: NativeCatalogOverrides;
   readonly turnTimeoutSeconds: number;
   readonly create?: (options: CreateAgentSessionOptions) => Promise<AgentSession>;
+  readonly resume?: (sessionId: string, options: CreateAgentSessionOptions) => Promise<AgentSession>;
   readonly backend?: (options: NativeBackendOptions) => SessionBackend;
-  readonly store?: (dir: string) => TranscriptStore;
 }
 
+/** nax-agent accepts bashApproval only where Bash is offered (M-22). */
+const TOOL_PROFILES: ReadonlySet<AgentSessionProfile> = new Set(["ask", "full"]);
+
+/**
+ * Resume when the store holds the session's document, create when it does not:
+ * a session never prompted has none (M-21). History is kept across a model
+ * change (M-19).
+ */
 export function nativeOpenSession(deps: NativeOpenDeps): OpenSession {
   const create = deps.create ?? createAgentSession;
+  const resume = deps.resume ?? resumeAgentSession;
   const backend = deps.backend ?? nativeBackend;
-  const store = deps.store ?? createFileTranscriptStore;
-  return async (request) =>
-    create({
+  return async (request) => {
+    const doc = await deps.transcripts.load(request.sessionId);
+    const options: CreateAgentSessionOptions = {
       backend: backend({
         model: request.model,
-        bashApproval: request.bashApproval,
+        carryHistoryAcrossModels: true,
+        ...(TOOL_PROFILES.has(request.profile) ? { bashApproval: request.bashApproval } : {}),
         ...(deps.catalogOverrides.length > 0 ? { catalogOverrides: deps.catalogOverrides } : {}),
       }),
       sessionId: request.sessionId,
       profile: request.profile,
-      workdir: request.cwd,
-      transcriptStore: store(deps.sessionsDir),
+      ...(request.profile !== "none" ? { workdir: request.cwd } : {}),
+      transcriptStore: deps.transcripts,
       turnTimeoutSeconds: deps.turnTimeoutSeconds,
-    });
+    };
+    const session = doc === null ? await create(options) : await resume(request.sessionId, options);
+    return { session, doc };
+  };
 }

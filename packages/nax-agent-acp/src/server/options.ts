@@ -92,8 +92,11 @@ export function resolveServerOptions(input: {
     "gated",
   );
   if (!bash.ok) return bash;
-  if (mode.value === "ask" && bash.value === "raw") {
-    return { ok: false, message: 'bash approval "raw" cannot be used with mode "ask"; use gated or escalate' };
+  if (mode.value === "ask" && bash.value !== "gated") {
+    return {
+      ok: false,
+      message: `bash approval "${bash.value}" cannot be used with mode "ask"; ask requires gated`,
+    };
   }
   const sessionsDir =
     firstSet(

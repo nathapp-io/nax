@@ -85,10 +85,15 @@ describe("resolveServerOptions", () => {
     });
   });
 
-  test("mode ask with raw bash approval is refused up front", () => {
-    expect(
-      resolveServerOptions({ flags: { mode: "ask", bashApproval: "raw" }, env: {}, file: FILE, configDir: "/c" }),
-    ).toEqual({ ok: false, message: 'bash approval "raw" cannot be used with mode "ask"; use gated or escalate' });
+  test("mode ask requires gated bash approval (raw and escalate are refused up front)", () => {
+    for (const bashApproval of ["raw", "escalate"]) {
+      expect(
+        resolveServerOptions({ flags: { mode: "ask", bashApproval }, env: {}, file: FILE, configDir: "/c" }),
+      ).toEqual({
+        ok: false,
+        message: `bash approval "${bashApproval}" cannot be used with mode "ask"; ask requires gated`,
+      });
+    }
   });
 
   test("no default model at all is allowed at startup (session/new reports it)", () => {

@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { RequestError } from "@agentclientprotocol/sdk";
-import type { AgentSession } from "@nathapp/nax-agent";
-import type { OpenSessionRequest } from "#src/server/open-session";
+import type { OpenedSession, OpenSessionRequest } from "#src/server/open-session";
 import type { ServerOptions } from "#src/server/options";
 import { createSessionRegistry, MCP_NOTICE, NO_MODEL_MESSAGE } from "#src/server/registry";
 import { TURN_TIMEOUT_SECONDS } from "#src/server/server-session";
@@ -24,7 +23,7 @@ const usageTurn: Script = async function* () {
   yield turnEnd("completed");
 };
 
-function setup(options: ServerOptions = OPTIONS, opener?: (request: OpenSessionRequest) => Promise<AgentSession>) {
+function setup(options: ServerOptions = OPTIONS, opener?: (request: OpenSessionRequest) => Promise<OpenedSession>) {
   const opened: OpenSessionRequest[] = [];
   const fakes: FakeAgentSession[] = [];
   const port = fakePort();
@@ -38,7 +37,7 @@ function setup(options: ServerOptions = OPTIONS, opener?: (request: OpenSessionR
         opened.push(request);
         const fake = fakeAgentSession(request.sessionId, [usageTurn], { closeFails: fakes.length === 0 });
         fakes.push(fake);
-        return fake.session;
+        return { session: fake.session, doc: null };
       }),
     newId: () => {
       next += 1;

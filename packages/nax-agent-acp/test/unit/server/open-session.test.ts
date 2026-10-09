@@ -35,75 +35,98 @@ describe("catalogOverridesFrom (M-17)", () => {
   });
 });
 
-describe("nativeOpenSession", () => {
-  test("opens the native backend with the request, a file store in the sessions dir and the turn limit", async () => {
-    const backendCalls: NativeBackendOptions[] = [];
-    const storeDirs: string[] = [];
-    const created: CreateAgentSessionOptions[] = [];
-    const stubBackend = unusedBackend();
-    const open = nativeOpenSession({
-      sessionsDir: "/cfg/.agent-server/sessions",
-      catalogOverrides: [{ provider: "minimax", models: [] }],
-      turnTimeoutSeconds: 3600,
-      backend: (options) => {
-        backendCalls.push(options);
-        return stubBackend;
-      },
-      store: (dir) => {
-        storeDirs.push(dir);
-        return createMemoryTranscriptStore();
-      },
-      create: async (options): Promise<AgentSession> => {
-        created.push(options);
-        return fakeAgentSession(options.sessionId ?? "x", []).session;
-      },
-    });
-    const session = await open({
-      sessionId: "s-1",
-      cwd: "/w",
-      model: "anthropic/claude-sonnet-5-5",
-      profile: "ask",
-      bashApproval: "gated",
-    });
-    expect(session.id).toBe("s-1");
-    expect(backendCalls).toEqual([
-      {
-        model: "anthropic/claude-sonnet-5-5",
-        bashApproval: "gated",
-        catalogOverrides: [{ provider: "minimax", models: [] }],
-      },
+function recorder() {
+  const backendCalls: NativeBackendOptions[] = [];
+  const created: CreateAgentSessionOptions[] = [];
+  const resumed: { id: string; options: CreateAgentSessionOptions }[] = [];
+  const backend = (options: NativeBackendOptions): SessionBackend => {
+    backendCalls.push(options);
+    return unusedBackend();
+  };
+  const create = async (options: CreateAgentSessionOptions): Promise<AgentSession> => {
+    created.push(options);
+    return fakeAgentSession(options.sessionId ?? "x", []).session;
+  };
+  const resume = async (id: string, options: CreateAgentSessionOptions): Promise<AgentSession> => {
+    resumed.push({ id, options });
+    return fakeAgentSession(id, []).session;
+  };
+  return { backendCalls, created, resumed, backend, create, resume };
+}
+
+const REQUEST = {
+  sessionId: "s-1",
+  cwd: "/w",
+  model: "anthropic/claude-sonnet-5-5",
+  profile: "ask" as const,
+  bashApproval: "gated" as const,
+};
+
+describe("nativeOpenSession (S5-3 M-21, M-22)", () => {
+  test("no stored document: creates, with carryHistoryAcrossModels and the turn limit", async () => {
+    const r = recorder();
+    const transcripts = createMemoryTranscriptStore();
+    const open = nativeOpenSession({ transcripts, catalogOverrides: [], turnTimeoutSeconds: 3600, ...r });
+    const opened = await open(REQUEST);
+    expect(opened.doc).toBeNull();
+    expect(opened.session.id).toBe("s-1");
+    expect(r.resumed).toEqual([]);
+    expect(r.backendCalls).toEqual([
+      { model: "anthropic/claude-sonnet-5-5", carryHistoryAcrossModels: true, bashApproval: "gated" },
     ]);
-    expect(storeDirs).toEqual(["/cfg/.agent-server/sessions"]);
-    expect(created[0]).toMatchObject({
-      backend: stubBackend,
+    expect(r.created[0]).toMatchObject({
       sessionId: "s-1",
       profile: "ask",
       workdir: "/w",
+      transcriptStore: transcripts,
       turnTimeoutSeconds: 3600,
     });
   });
 
-  test("omits catalogOverrides when there are none", async () => {
-    const backendCalls: NativeBackendOptions[] = [];
+  test("a stored document: resumes that session and returns the document", async () => {
+    const r = recorder();
+    const transcripts = createMemoryTranscriptStore();
+    await transcripts.save("s-1", { savedAt: "2026-10-09T00:00:00.000Z", messages: [{ role: "user", content: "hi" }] });
+    const open = nativeOpenSession({ transcripts, catalogOverrides: [], turnTimeoutSeconds: 3600, ...r });
+    const opened = await open(REQUEST);
+    expect(opened.doc?.messages).toEqual([{ role: "user", content: "hi" }]);
+    expect(r.created).toEqual([]);
+    expect(r.resumed[0]?.id).toBe("s-1");
+  });
+
+  test("modes none and read pass no bashApproval; none passes no workdir", async () => {
+    const r = recorder();
     const open = nativeOpenSession({
-      sessionsDir: "/s",
+      transcripts: createMemoryTranscriptStore(),
       catalogOverrides: [],
       turnTimeoutSeconds: 3600,
-      backend: (options) => {
-        backendCalls.push(options);
-        return unusedBackend();
-      },
-      store: () => createMemoryTranscriptStore(),
-      create: async (options) => fakeAgentSession(options.sessionId ?? "x", []).session,
+      ...r,
     });
-    await open({ sessionId: "s", cwd: "/w", model: "m/x", profile: "read", bashApproval: "gated" });
-    expect(backendCalls[0]).toEqual({ model: "m/x", bashApproval: "gated" });
+    await open({ ...REQUEST, profile: "read" });
+    await open({ ...REQUEST, sessionId: "s-2", profile: "none" });
+    expect(r.backendCalls.map((c) => "bashApproval" in c)).toEqual([false, false]);
+    expect(r.created[0]).toMatchObject({ workdir: "/w" });
+    expect(r.created[1]).not.toHaveProperty("workdir");
+  });
+
+  test("catalog overrides are passed only when there are some", async () => {
+    const r = recorder();
+    const open = nativeOpenSession({
+      transcripts: createMemoryTranscriptStore(),
+      catalogOverrides: [{ provider: "minimax", models: [] }],
+      turnTimeoutSeconds: 3600,
+      ...r,
+    });
+    await open(REQUEST);
+    expect(r.backendCalls[0]).toMatchObject({ catalogOverrides: [{ provider: "minimax", models: [] }] });
   });
 
   test("defaults to the real facade: an invalid model is rejected by nativeBackend", async () => {
-    const open = nativeOpenSession({ sessionsDir: "/s", catalogOverrides: [], turnTimeoutSeconds: 3600 });
-    await expect(
-      open({ sessionId: "s", cwd: "/w", model: "", profile: "read", bashApproval: "gated" }),
-    ).rejects.toMatchObject({ code: "AGENT_SESSION_INVALID_OPTIONS" });
+    const open = nativeOpenSession({
+      transcripts: createMemoryTranscriptStore(),
+      catalogOverrides: [],
+      turnTimeoutSeconds: 3600,
+    });
+    await expect(open({ ...REQUEST, model: "" })).rejects.toMatchObject({ code: "AGENT_SESSION_INVALID_OPTIONS" });
   });
 });

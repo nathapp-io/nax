@@ -9,9 +9,9 @@ import {
   RequestError,
   type SessionNotification,
 } from "@agentclientprotocol/sdk";
-import type { AgentSession } from "@nathapp/nax-agent";
 import { waitForCondition } from "@nathapp/nax-test-kit/bun/timeout";
 import { buildAgentApp } from "#src/server/connection";
+import type { OpenedSession } from "#src/server/open-session";
 import type { ServerOptions } from "#src/server/options";
 import { createSessionRegistry } from "#src/server/registry";
 import { TURN_TIMEOUT_SECONDS } from "#src/server/server-session";
@@ -28,13 +28,17 @@ const OPTIONS: ServerOptions = {
   catalogOverrides: [],
 };
 
-function app(scriptsFor: (sessionId: string) => readonly Script[], open?: () => Promise<AgentSession>) {
+function app(scriptsFor: (sessionId: string) => readonly Script[], open?: () => Promise<OpenedSession>) {
   const { logger, lines } = recordingLogger();
   let next = 0;
   const registry = createSessionRegistry({
     options: OPTIONS,
     openSession:
-      open ?? (async (request) => fakeAgentSession(request.sessionId, scriptsFor(request.sessionId)).session),
+      open ??
+      (async (request) => ({
+        session: fakeAgentSession(request.sessionId, scriptsFor(request.sessionId)).session,
+        doc: null,
+      })),
     newId: () => {
       next += 1;
       return `s${next}`;
