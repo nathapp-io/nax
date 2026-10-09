@@ -4,7 +4,7 @@
  */
 import type { AgentLogger } from "@nathapp/nax-agent";
 
-export type LogLevel = "info" | "debug";
+export type LogLevel = "warn" | "info" | "debug";
 
 type Severity = keyof AgentLogger;
 

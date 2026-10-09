@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { PassThrough } from "node:stream";
 import { setAgentLogger } from "@nathapp/nax-agent";
+import type { AuthPorts } from "#src/server/auth";
 import { type MainDeps, main } from "#src/server/main";
 import { packageVersion } from "#src/server/version";
 
@@ -10,6 +11,20 @@ interface Harness {
   readonly out: () => string;
   readonly err: () => string;
   readonly signal: () => void;
+}
+
+function fakeAuth(overrides: Partial<AuthPorts> = {}): AuthPorts {
+  return {
+    loginProviderIds: async () => ["anthropic"],
+    providersWithoutCredentials: async () => [],
+    runLogin: async (providerId, _interaction, method) => ({
+      providerId,
+      method: method ?? "api-key",
+      kind: "api-key",
+    }),
+    interaction: () => ({ prompt: async () => "", notify: () => undefined }),
+    ...overrides,
+  };
 }
 
 function harness(argv: readonly string[], overrides: Partial<MainDeps> = {}): Harness {
@@ -23,6 +38,8 @@ function harness(argv: readonly string[], overrides: Partial<MainDeps> = {}): Ha
     argv,
     env: {},
     homedir: "/home/u",
+    isTTY: true,
+    auth: fakeAuth(),
     stdin,
     stdout,
     writeErr: (text) => errText.push(text),
@@ -131,5 +148,29 @@ describe("main", () => {
     expect(await exit).toBe(0);
     expect(h.err()).toContain("resolved options");
     expect(h.err()).not.toContain("sekret-123");
+  });
+});
+
+describe("main login (S5-4)", () => {
+  test("login runs the login, prints the result on stdout and exits 0", async () => {
+    const seen: string[] = [];
+    const h = harness(["login", "anthropic"], {
+      auth: fakeAuth({
+        runLogin: async (providerId) => {
+          seen.push(providerId);
+          return { providerId, method: "oauth", kind: "oauth" };
+        },
+      }),
+    });
+    expect(await main(h.deps)).toBe(0);
+    expect(seen).toEqual(["anthropic"]);
+    expect(h.out()).toBe("Signed in to anthropic (method: oauth, credential: oauth)\n");
+  });
+
+  test("login without a TTY exits 1 and writes only to stderr", async () => {
+    const h = harness(["login", "anthropic"], { isTTY: false });
+    expect(await main(h.deps)).toBe(1);
+    expect(h.out()).toBe("");
+    expect(h.err()).toContain("needs an interactive terminal");
   });
 });
