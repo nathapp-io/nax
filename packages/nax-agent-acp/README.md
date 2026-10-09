@@ -328,8 +328,33 @@ shows up at `sessions new` as an authentication-required error.
 Questions from the agent need a client with form elicitation. A client without it (acpx) gets a notice,
 and the agent is told to proceed on its best judgement.
 
+### MCP servers
+
+Clients can pass MCP servers with `session/new`, `session/load` and `session/resume`
+(Zed passes its context servers). nax-agent connects them and offers their tools to the
+model as `<server>__<tool>`.
+
+- **Transports:** stdio and streamable HTTP. SSE and ACP-tunnelled servers are skipped with a notice.
+- **Approval:** `ask` asks before every MCP tool call ("Always allow" is remembered per tool
+  for the session); `full` runs them without asking; `read` and `none` do not offer them
+  (the servers stay connected, so switching back to `ask` or `full` brings the tools back).
+- **Startup:** servers connect in parallel when the session opens, each within
+  `--mcp-connect-timeout` seconds (default 30; `NAX_AGENT_MCP_CONNECT_TIMEOUT`,
+  `agentServer.mcpConnectTimeoutSeconds`). A server that fails is skipped; the session
+  opens anyway and a notice names it, with the end of its stderr.
+- **Limits:** 20 servers and 200 MCP tools per session. Tool schemas must be JSON objects of
+  type `object` within 32 KiB; a server whose schemas the model provider rejects can still
+  fail turns, so remove it.
+- **Not saved:** MCP servers are never written to the session files; a reopened session
+  connects to the servers the client sends at that time. A server that exits mid-session is
+  reported once; reopen the session to reconnect it.
+- **Large results:** the model sees at most 40 KB of a tool result; the full text is written
+  to the session's scratchpad.
+- **Secrets:** values of env vars whose names contain `KEY`, `TOKEN`, `SECRET` or `PASSWORD`
+  (any case), every HTTP header value and an HTTP URL's password and query values are scrubbed
+  from notices and tool results. Values shorter than 8 characters are not scrubbed by value.
+
 ### Not supported yet
 
-- MCP servers sent by the client are ignored, with a notice.
 - No image or audio prompts.
 - No logout or provider management over ACP. Use `nax auth list` / `nax auth rm`.
