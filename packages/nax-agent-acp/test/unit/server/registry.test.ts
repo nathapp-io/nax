@@ -2,35 +2,12 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { RequestError } from "@agentclientprotocol/sdk";
-import { createMemoryTranscriptStore, type TranscriptDoc, type TranscriptStore } from "@nathapp/nax-agent";
+import type { TranscriptDoc } from "@nathapp/nax-agent";
 import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
-import type { OpenSessionRequest } from "#src/server/open-session";
-import type { ServerOptions } from "#src/server/options";
-import { createSessionRegistry, INTERRUPTED_NOTICE, MCP_NOTICE, NO_MODEL_MESSAGE } from "#src/server/registry";
+import { createSessionRegistry, INTERRUPTED_NOTICE, NO_MODEL_MESSAGE } from "#src/server/registry";
 import { TURN_TIMEOUT_SECONDS } from "#src/server/server-session";
-import { createSessionStorage } from "#src/server/storage";
-import { type FakeAgentSession, fakeAgentSession, type Script, turnEnd } from "#test/helpers/fake-agent-session";
-import { ALL_FEATURES, fakePort } from "#test/helpers/fake-client-port";
 import { recordingLogger } from "#test/helpers/recording-logger";
-
-const OPTIONS: ServerOptions = {
-  configDir: "/cfg",
-  sessionsDir: "/unused",
-  defaultModel: "anthropic/claude-sonnet-5-5",
-  defaultMode: "ask",
-  bashApproval: "gated",
-  tiers: [
-    { tier: "fast", model: "anthropic/claude-haiku-4-5" },
-    { tier: "balanced", model: "anthropic/claude-sonnet-5-5", contextWindow: 200_000 },
-  ],
-  catalogOverrides: [],
-};
-
-const said = (words: string): Script =>
-  async function* () {
-    yield { type: "text_delta", round: 1, text: words };
-    yield turnEnd("completed");
-  };
+import { OPTIONS, type RegistrySetupExtra, setupRegistry } from "#test/helpers/registry-setup";
 
 let dir: string;
 beforeEach(() => {
@@ -38,56 +15,7 @@ beforeEach(() => {
 });
 afterEach(() => cleanupTempDir(dir));
 
-interface Setup {
-  readonly opened: OpenSessionRequest[];
-  readonly fakes: FakeAgentSession[];
-}
-
-function setup(
-  options: ServerOptions = OPTIONS,
-  extra: {
-    transcripts?: TranscriptStore;
-    isAlive?: (pid: number) => boolean;
-    lastTurn?: FakeAgentSession["session"]["lastTurn"];
-  } = {},
-) {
-  const record: Setup = { opened: [], fakes: [] };
-  const transcripts = extra.transcripts ?? createMemoryTranscriptStore();
-  const port = fakePort({ features: ALL_FEATURES });
-  const { logger, lines } = recordingLogger();
-  let next = 0;
-  const storage = createSessionStorage({
-    dir,
-    pid: 1000,
-    now: () => new Date("2026-10-09T00:00:00.000Z"),
-    logger,
-    isAlive: extra.isAlive ?? (() => false),
-  });
-  const registry = createSessionRegistry({
-    options,
-    openSession: async (request) => {
-      record.opened.push(request);
-      const fake = fakeAgentSession(request.sessionId, [said("hi"), said("again")], {
-        ...(extra.lastTurn !== undefined ? { lastTurn: extra.lastTurn } : {}),
-      });
-      record.fakes.push(fake);
-      return { session: fake.session, doc: await transcripts.load(request.sessionId) };
-    },
-    storage,
-    transcripts,
-    newId: () => {
-      next += 1;
-      return `id-${next}`;
-    },
-    now: () => new Date("2026-10-09T01:00:00.000Z"),
-    readOldText: async () => ({ kind: "missing" }),
-    logger,
-    turnTimeoutSeconds: TURN_TIMEOUT_SECONDS,
-    shutdownWaitMs: 50,
-  });
-  const input = (cwd = "/w", mcpServers: readonly unknown[] = []) => ({ cwd, mcpServers, port: () => port.port });
-  return { registry, input, port, lines, storage, transcripts, ...record };
-}
+const setup = (options = OPTIONS, extra: RegistrySetupExtra = {}) => setupRegistry(dir, options, extra);
 
 async function failure(promise: Promise<unknown>): Promise<RequestError> {
   const caught = await promise.catch((e: unknown) => e);
@@ -110,6 +38,7 @@ describe("create (session/new)", () => {
       model: "anthropic/claude-sonnet-5-5",
       profile: "ask",
       bashApproval: "gated",
+      tools: [],
     });
     expect(await metaOf("id-1")).toMatchObject({
       schemaVersion: 1,
@@ -142,11 +71,11 @@ describe("create (session/new)", () => {
     expect((await metaOf(sessionId)).title).toBe(meta.title);
   });
 
-  test("non-empty mcpServers queue the MCP notice for the first turn", async () => {
+  test("without a connector, mcpServers are ignored silently", async () => {
     const s = setup();
-    const { sessionId } = await s.registry.create(s.input("/w", [{ name: "fs" }]));
+    const { sessionId } = await s.registry.create(s.input("/w", [{ name: "fs", command: "srv" }]));
     await s.registry.get(sessionId).prompt([{ type: "text", text: "go" }]);
-    expect(JSON.stringify(s.port.updates[0])).toContain(MCP_NOTICE);
+    expect(s.port.updates.filter((u) => u.sessionUpdate === "notice")).toEqual([]);
   });
 
   test("a failed open releases the lock and writes no metadata", async () => {

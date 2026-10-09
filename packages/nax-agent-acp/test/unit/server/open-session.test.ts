@@ -3,6 +3,7 @@ import {
   type AgentSession,
   type CreateAgentSessionOptions,
   createMemoryTranscriptStore,
+  type EmbedderTool,
   type NativeBackendOptions,
   type SessionBackend,
 } from "@nathapp/nax-agent";
@@ -60,6 +61,7 @@ const REQUEST = {
   model: "anthropic/claude-sonnet-5-5",
   profile: "ask" as const,
   bashApproval: "gated" as const,
+  tools: [],
 };
 
 describe("nativeOpenSession (S5-3 M-21, M-22)", () => {
@@ -128,5 +130,28 @@ describe("nativeOpenSession (S5-3 M-21, M-22)", () => {
       turnTimeoutSeconds: 3600,
     });
     await expect(open({ ...REQUEST, model: "" })).rejects.toMatchObject({ code: "AGENT_SESSION_INVALID_OPTIONS" });
+  });
+
+  test("passes MCP tools to the facade only when there are some", async () => {
+    const r = recorder();
+    const open = nativeOpenSession({
+      transcripts: createMemoryTranscriptStore(),
+      catalogOverrides: [],
+      turnTimeoutSeconds: 60,
+      create: r.create,
+      resume: r.resume,
+      backend: r.backend,
+    });
+    const tool: EmbedderTool = {
+      name: "a__b",
+      description: "[a] b",
+      inputSchema: { type: "object", properties: {} },
+      approval: "always",
+      run: async () => ({ content: "" }),
+    };
+    await open({ sessionId: "s1", cwd: "/w", model: "m/x", profile: "ask", bashApproval: "gated", tools: [tool] });
+    await open({ sessionId: "s2", cwd: "/w", model: "m/x", profile: "ask", bashApproval: "gated", tools: [] });
+    expect(r.created[0]?.tools).toEqual([tool]);
+    expect(r.created[1] !== undefined && "tools" in r.created[1]).toBe(false);
   });
 });

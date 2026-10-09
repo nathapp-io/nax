@@ -24,10 +24,10 @@ export interface ReopenDeps {
   readonly openEntry: (
     meta: SessionMeta,
     port: ClientPort,
+    mcpServers: readonly unknown[],
   ) => Promise<{ readonly server: ServerSession; readonly opened: OpenedSession }>;
   readonly closeEntry: (sessionId: string, entry: Entry) => Promise<void>;
   readonly stateOf: (settings: SessionSettings) => SessionState;
-  readonly mcpNotice: string;
   readonly interruptedNotice: string;
 }
 
@@ -59,7 +59,7 @@ export function createReopen(deps: ReopenDeps): Reopener {
 
   async function openAndReplay(sessionId: string, meta: SessionMeta, input: OpenInput, replay: boolean): Promise<void> {
     const port = input.port(sessionId);
-    const { server, opened } = await deps.openEntry(meta, port);
+    const { opened } = await deps.openEntry(meta, port, input.mcpServers);
     if (replay) {
       try {
         await replayOpened(port, opened, meta.cwd);
@@ -70,15 +70,13 @@ export function createReopen(deps: ReopenDeps): Reopener {
         throw error;
       }
     }
-    if (input.mcpServers.length > 0) {
-      server.queueNotice(announce(port.features.updates.notices, "warning", deps.mcpNotice));
-    }
   }
 
   return {
     async reopen(sessionId, input, replay) {
       const open = deps.entries.get(sessionId);
       if (open !== undefined) {
+        // An already-open session keeps its connection and ignores input.mcpServers (§4.4).
         if (replay) {
           await replayTo(open.port, (await deps.transcripts.load(sessionId))?.messages ?? [], open.meta.cwd);
         }
