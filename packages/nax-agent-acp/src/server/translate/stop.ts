@@ -5,7 +5,7 @@
  * resume and is reported the same way if it ever reaches here.
  */
 import { type PromptResponse, RequestError, type SessionUpdate, type Usage } from "@agentclientprotocol/sdk";
-import type { SessionEvent, TokenUsage } from "@nathapp/nax-agent";
+import { redactSecrets, type SessionEvent, type TokenUsage } from "@nathapp/nax-agent";
 import { authRequired, isAuthFailureCode } from "#src/server/errors";
 import { announce } from "#src/server/translate/notice";
 
@@ -28,7 +28,7 @@ export function toAcpUsage(usage: TokenUsage): Usage {
 }
 
 function failure(code: string, message: string): PromptOutcome {
-  if (isAuthFailureCode(code)) return { kind: "error", error: authRequired(message, { code, message }) };
+  if (isAuthFailureCode(code)) return { kind: "error", error: authRequired(redactSecrets(message), { code, message }) };
   return { kind: "error", error: RequestError.internalError({ code, message }, message) };
 }
 

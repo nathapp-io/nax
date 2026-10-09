@@ -48,6 +48,8 @@ const realPromptStdin = _authPromptDeps.stdin;
 const realPromptWrite = _authPromptDeps.write;
 const realLog = _cliAuthDeps.log;
 const realIsTTY = _cliAuthDeps.isTTY;
+const realOpenUrlSpawn = _openUrlDeps.spawn;
+const realOpenUrlPlatform = _openUrlDeps.platform;
 const originalGlobalDir = process.env.NAX_GLOBAL_CONFIG_DIR;
 
 /** Tracked so afterEach can clean up every source temp dir a test creates. */
@@ -80,6 +82,8 @@ afterEach(() => {
   _authPromptDeps.write = realPromptWrite;
   _cliAuthDeps.log = realLog;
   _cliAuthDeps.isTTY = realIsTTY;
+  _openUrlDeps.spawn = realOpenUrlSpawn;
+  _openUrlDeps.platform = realOpenUrlPlatform;
   process.env.NAX_GLOBAL_CONFIG_DIR = originalGlobalDir;
   _resetCredentialStore();
   cleanupTempDir(dir);

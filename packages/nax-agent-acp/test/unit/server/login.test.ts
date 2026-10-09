@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { AuthCancelledError, type AuthInteraction, type AuthMethod, NaxError } from "@nathapp/nax-agent";
+import {
+  AuthCancelledError,
+  type AuthInteraction,
+  type AuthMethod,
+  NaxError,
+  PromptCancelledError,
+} from "@nathapp/nax-agent";
 import { type LoginDeps, runLoginCommand } from "#src/server/login";
 
 const silent: AuthInteraction = { prompt: async () => "", notify: () => undefined };
@@ -51,6 +57,18 @@ describe("runLoginCommand", () => {
     expect(await runLoginCommand({ provider: "anthropic" }, h.deps)).toBe(130);
     expect(h.err).toEqual([]);
     expect(h.out).toEqual([]);
+  });
+
+  test("a prompt cancel exits 130 with nothing on stderr", async () => {
+    const h = deps({
+      auth: {
+        interaction: () => silent,
+        runLogin: async () => Promise.reject(new PromptCancelledError()),
+      },
+    });
+    expect(await runLoginCommand({ provider: "anthropic" }, h.deps)).toBe(130);
+    expect(h.out).toEqual([]);
+    expect(h.err).toEqual([]);
   });
 
   test("a failure exits 1 with the message, secrets redacted", async () => {

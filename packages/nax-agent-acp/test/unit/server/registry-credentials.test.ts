@@ -77,6 +77,16 @@ describe("credential check (M-30)", () => {
     expect(await readFile(join(dir, "s1.lock"), "utf8").catch(() => "none")).toBe("none");
   });
 
+  test("a successful open does create the lock", async () => {
+    const s = setup([]);
+    await s.registry.create(s.input);
+    expect(
+      await readFile(join(dir, "s1.lock"), "utf8")
+        .then(() => true)
+        .catch(() => false),
+    ).toBe(true);
+  });
+
   test("a model switch to a refused provider leaves the live session open and unchanged (final review I6)", async () => {
     const s = setup(["openai"]);
     await s.registry.create(s.input);
