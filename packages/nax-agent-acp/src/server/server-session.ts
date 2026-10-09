@@ -29,6 +29,14 @@ export interface ServerSessionDeps {
   readonly logger: AgentLogger;
   readonly turnTimeoutSeconds: number;
   readonly now?: () => number;
+  /** After every prompt that reached send() (S5-3: title and updatedAt). A rejection is logged, never thrown. */
+  readonly onTurnEnd?: (message: string) => Promise<void>;
+}
+
+/** The S3 session and context window to adopt on a switchTo (spec §3.3). */
+export interface SwitchTarget {
+  readonly session: AgentSession;
+  readonly contextWindow?: number;
 }
 
 export interface ServerSession {
@@ -37,6 +45,8 @@ export interface ServerSession {
   /** Delivered as the first updates of the next turn (M-11). */
   queueNotice(update: SessionUpdate): void;
   prompt(blocks: readonly ContentBlock[]): Promise<PromptResponse>;
+  /** Close-and-reopen for a mode or config change (spec §3.3); `restore` reopens the old settings when `open` fails. */
+  switchTo(open: () => Promise<SwitchTarget>, restore: () => Promise<SwitchTarget>): Promise<void>;
   cancel(): void;
   close(): Promise<void>;
 }
@@ -78,7 +88,7 @@ interface Delivery {
 }
 
 /** Sends updates in order; on the first failure, cancels the turn and drops the rest. */
-function createDelivery(deps: ServerSessionDeps): Delivery {
+function createDelivery(deps: ServerSessionDeps, agentOf: () => AgentSession): Delivery {
   let broken: unknown;
   return {
     failure: () => broken,
@@ -92,7 +102,7 @@ function createDelivery(deps: ServerSessionDeps): Delivery {
           sessionId: deps.session.id,
           error: messageOf(error),
         });
-        deps.session.cancel("client connection failed");
+        agentOf().cancel("client connection failed");
       }
     },
   };
@@ -123,18 +133,29 @@ export function createServerSession(deps: ServerSessionDeps): ServerSession {
   /** A cancel before send() claimed the S3 turn, where AgentSession.cancel() is a no-op. */
   let cancelBeforeSend = false;
   let turn: Turn | undefined;
+  let agent: AgentSession = deps.session;
+  let contextWindow = deps.contextWindow;
 
   function stopWaiting(): void {
     turn?.permissions.abortAll();
     turn?.questions.abortAll();
   }
 
+  async function reportTurnEnd(message: string): Promise<void> {
+    if (deps.onTurnEnd === undefined) return;
+    try {
+      await deps.onTurnEnd(message);
+    } catch (error) {
+      deps.logger.warn("session", "turn bookkeeping failed", { sessionId: deps.session.id, error: messageOf(error) });
+    }
+  }
+
   async function runTurn(message: string): Promise<PromptOutcome | undefined> {
-    const delivery = createDelivery(deps);
-    const answer = deps.session.answer.bind(deps.session);
+    const delivery = createDelivery(deps, () => agent);
+    const answer = agent.answer.bind(agent);
     const translator = createEventTranslator({
       cwd: deps.cwd,
-      ...(deps.contextWindow !== undefined ? { contextWindow: deps.contextWindow } : {}),
+      ...(contextWindow !== undefined ? { contextWindow } : {}),
       readOldText: deps.readOldText,
       clientUpdates: deps.port.features.updates,
       priorCostUsd: costUsd,
@@ -159,7 +180,7 @@ export function createServerSession(deps: ServerSessionDeps): ServerSession {
       if (cancelBeforeSend) {
         outcome = CANCELLED_BEFORE_SEND;
       } else if (delivery.failure() === undefined) {
-        for await (const event of deps.session.send(message)) outcome = (await forwardEvent(event, ctx)) ?? outcome;
+        for await (const event of agent.send(message)) outcome = (await forwardEvent(event, ctx)) ?? outcome;
       }
     } finally {
       current.permissions.abortAll();
@@ -192,20 +213,50 @@ export function createServerSession(deps: ServerSessionDeps): ServerSession {
       try {
         outcome = await runTurn(message);
       } finally {
+        // Still "running" while the turn is recorded, so a switchTo cannot
+        // slip in and write metadata from before this turn's title/updatedAt.
+        await reportTurnEnd(message);
         running = false;
       }
       if (outcome === undefined) throw RequestError.internalError(undefined, "the turn ended without a turn_end event");
       if (outcome.kind === "error") throw outcome.error;
       return outcome.response;
     },
+    async switchTo(open, restore) {
+      if (running) throw turnInProgress();
+      running = true;
+      try {
+        stopWaiting();
+        await agent.close();
+        try {
+          const next = await open();
+          agent = next.session;
+          contextWindow = next.contextWindow;
+        } catch (error) {
+          try {
+            const back = await restore();
+            agent = back.session;
+            contextWindow = back.contextWindow;
+          } catch (restoreError) {
+            deps.logger.error("session", "could not reopen the session after a failed switch", {
+              sessionId: deps.session.id,
+              error: messageOf(restoreError),
+            });
+          }
+          throw error;
+        }
+      } finally {
+        running = false;
+      }
+    },
     cancel() {
       if (running) cancelBeforeSend = true;
-      deps.session.cancel("cancelled by the client");
+      agent.cancel("cancelled by the client");
       stopWaiting();
     },
     async close() {
       stopWaiting();
-      await deps.session.close();
+      await agent.close();
     },
   };
 }

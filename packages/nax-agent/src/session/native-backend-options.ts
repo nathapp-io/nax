@@ -24,6 +24,8 @@ export interface NativeBackendOptions {
   readonly hostPorts?: AgentSessionHostPorts;
   readonly bashApproval?: BashApprovalMode;
   readonly allowUnsandboxed?: boolean;
+  /** Keep a resumed or continued conversation when the model differs (ACP server model switch, S5-3). */
+  readonly carryHistoryAcrossModels?: boolean;
 }
 
 export interface ResolvedNativeOptions {
@@ -74,6 +76,7 @@ const OptionsSchema = z.strictObject({
     .optional(),
   bashApproval: z.enum(["raw", "gated", "escalate"]).optional(),
   allowUnsandboxed: z.boolean().optional(),
+  carryHistoryAcrossModels: z.boolean().optional(),
 });
 
 function invalid(message: string, context: Record<string, unknown> = {}): AgentSessionError {

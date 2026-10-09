@@ -52,7 +52,8 @@ function checkResumeModel(doc: TranscriptDoc, sessionId: string, model: string):
 
 async function openNative(resolved: ResolvedNativeOptions, ctx: BackendOpenContext): Promise<OpenedBackend> {
   const raw = resolved.raw;
-  if (ctx.resume !== undefined) checkResumeModel(ctx.resume.doc, ctx.sessionId, raw.model);
+  if (ctx.resume !== undefined && raw.carryHistoryAcrossModels !== true)
+    checkResumeModel(ctx.resume.doc, ctx.sessionId, raw.model);
   const { bashApproval, allowUnsandboxed } = nativeProfileRules(ctx.profile, raw);
   const protectedPaths = {
     ...defaultProtectedPaths(raw.credentials !== undefined),
@@ -100,6 +101,7 @@ async function openNative(resolved: ResolvedNativeOptions, ctx: BackendOpenConte
     resume: ctx.resume !== undefined,
     spinBreaker: DEFAULT_SPIN_BREAKER_SETTINGS,
     transportRetry: SESSION_TRANSPORT_RETRY,
+    ...(raw.carryHistoryAcrossModels === true ? { carryHistoryAcrossModels: true } : {}),
     ...(ctx.instructions !== undefined && ctx.instructions !== "" ? { systemPrompt: ctx.instructions } : {}),
   });
   const codingTools = [...support.tools, ...ctx.tools.map(embedderToolDescriptor)];

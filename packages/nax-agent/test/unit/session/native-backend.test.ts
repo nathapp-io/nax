@@ -76,6 +76,13 @@ describe("nativeBackend", () => {
     expect(caught.code).toBe("AGENT_SESSION_MODEL_MISMATCH");
   });
 
+  test("carryHistoryAcrossModels lets a resume read another model's document", async () => {
+    const backend = nativeBackend({ model: MODEL, carryHistoryAcrossModels: true });
+    const doc = { savedAt: new Date(0).toISOString(), messages: [], model: "anthropic/other" };
+    const opened = await backend.open(await ctx({ resume: { doc } }));
+    await opened.close();
+  });
+
   test("embedder tools are advertised after the built-ins", async () => {
     const tool = {
       name: "lookup",

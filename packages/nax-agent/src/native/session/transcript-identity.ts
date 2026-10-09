@@ -18,6 +18,8 @@ import type { TranscriptDoc } from "./transcript-types.ts";
 export interface TranscriptIdentity {
   readonly owner?: string;
   readonly model?: string;
+  /** Keep a document written by another model (S5-3); `model` still names the current one. */
+  readonly carryAcrossModels?: boolean;
 }
 
 /**
@@ -51,7 +53,7 @@ function isForeignTranscript(doc: TranscriptDoc, identity: TranscriptIdentity, s
     });
     return true;
   }
-  if (model !== undefined && doc.model !== undefined && doc.model !== model) {
+  if (identity.carryAcrossModels !== true && model !== undefined && doc.model !== undefined && doc.model !== model) {
     getLogger().debug("native-session", "Ignoring a transcript written by another model", {
       sessionName,
       storedModel: doc.model,

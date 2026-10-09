@@ -5,7 +5,7 @@
  */
 import { randomUUID } from "node:crypto";
 import type { Readable, Writable } from "node:stream";
-import { configureCredentials, setAgentLogger } from "@nathapp/nax-agent";
+import { configureCredentials, createFileTranscriptStore, setAgentLogger } from "@nathapp/nax-agent";
 import { type CliFlags, parseCli, USAGE } from "#src/server/cli";
 import { buildAgentApp, serveStdio } from "#src/server/connection";
 import { stderrLogger } from "#src/server/logger";
@@ -14,6 +14,7 @@ import { catalogOverridesFrom, nativeOpenSession } from "#src/server/open-sessio
 import { type Env, resolveConfigDir, resolveServerOptions } from "#src/server/options";
 import { createSessionRegistry } from "#src/server/registry";
 import { TURN_TIMEOUT_SECONDS } from "#src/server/server-session";
+import { createSessionStorage } from "#src/server/storage";
 import { fsReadOldText } from "#src/server/translate/diff";
 import { packageVersion } from "#src/server/version";
 
@@ -57,14 +58,24 @@ async function serveAcp(flags: CliFlags, deps: MainDeps): Promise<number> {
     return 2;
   }
   configureCredentials(credentialsFor(configDir, deps.readFile));
+  const transcripts = createFileTranscriptStore(resolved.options.sessionsDir);
+  const storage = createSessionStorage({
+    dir: resolved.options.sessionsDir,
+    pid: process.pid,
+    now: () => new Date(),
+    logger,
+  });
   const registry = createSessionRegistry({
     options: resolved.options,
     openSession: nativeOpenSession({
-      sessionsDir: resolved.options.sessionsDir,
+      transcripts,
       catalogOverrides: catalogOverridesFrom(resolved.options.catalogOverrides, logger),
       turnTimeoutSeconds: TURN_TIMEOUT_SECONDS,
     }),
+    storage,
+    transcripts,
     newId: randomUUID,
+    now: () => new Date(),
     readOldText: fsReadOldText(),
     logger,
     turnTimeoutSeconds: TURN_TIMEOUT_SECONDS,

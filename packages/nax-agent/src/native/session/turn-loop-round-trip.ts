@@ -37,6 +37,7 @@ import { inputClassTokens } from "#src/cost/core/index";
 import { getSafeLogger } from "#src/infra/index";
 import type { SpinBreaker } from "#src/infra/spin-breaker/index";
 import type { InteractionExchange, SendTurnOpts, SessionHandle } from "#src/session/session-types";
+import { parseModelSpec } from "../models.ts";
 import {
   estimateContextTokens,
   type TranscriptMessage as NativeTranscriptMessage,
@@ -163,6 +164,20 @@ async function maybeCompact(state: TurnLoopState, params: TurnRoundParams): Prom
 }
 
 /**
+ * The catalog provider and model that answer for this handle: the
+ * "provider/model[effort]" string, effort stripped, split on the first "/".
+ * The same pair parseNativeModel hands client.model(); undefined, never a
+ * throw, when there is no usable model.
+ */
+function originOf(raw: string | undefined): { readonly provider: string; readonly model: string } | undefined {
+  if (raw === undefined) return undefined;
+  const spec = parseModelSpec(raw).model;
+  const slash = spec.indexOf("/");
+  if (slash <= 0 || slash === spec.length - 1) return undefined;
+  return { provider: spec.slice(0, slash), model: spec.slice(slash + 1) };
+}
+
+/**
  * One model call and its bookkeeping: `completeWithRecovery`, the usage/anchor
  * updates, the activity beats, `after_response`, and pushing the settled
  * assistant message. Returns the tool calls the model asked for, if any —
@@ -262,11 +277,13 @@ async function runModelRoundTrip(
 
   // Thinking blocks are appended, not merely representable: Anthropic needs
   // the exact block back to continue a thinking conversation (ADR-028 s8).
+  const origin = originOf(handle.modelDef?.model);
   state.messages.push({
     role: "assistant",
     content: assistantText,
     ...(assistantToolCalls !== undefined ? { toolCalls: assistantToolCalls } : {}),
     ...(assistantThinking !== undefined ? { thinking: assistantThinking } : {}),
+    ...(origin !== undefined ? { origin } : {}),
   });
 
   if (assistantToolCalls === undefined || assistantToolCalls.length === 0) {

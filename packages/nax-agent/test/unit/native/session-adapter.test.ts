@@ -246,6 +246,7 @@ describe("NativeSessionAdapter closePhysicalSession -- run teardown reaches the 
     compaction: COMPACTION,
     transportRetry: { maxAttempts: 3, baseDelayMs: 2000 },
     spinBreaker: DEFAULT_SPIN_BREAKER_SETTINGS,
+    carryHistoryAcrossModels: true,
     systemPrompt: "s3-4 teardown",
   });
 

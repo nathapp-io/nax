@@ -125,6 +125,13 @@ export type ConversationMessage =
       readonly content: string;
       readonly toolCalls?: readonly ToolCall[];
       readonly thinking?: readonly ThinkingBlock[];
+      /**
+       * The catalog provider and model id that wrote this message, when known.
+       * Replay stamps it so pi-ai can tell another model's turn from the
+       * current model's: another model's thinking is sent as text without its
+       * signature. Absent means the current model.
+       */
+      readonly origin?: { readonly provider: string; readonly model: string };
     }
   | {
       readonly role: "tool-result";

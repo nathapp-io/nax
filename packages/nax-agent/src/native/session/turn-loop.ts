@@ -87,6 +87,7 @@ export async function runNativeTurn(
   const transcriptIdentity: TranscriptIdentity = {
     owner: deps.sessionState.transcriptOwners.get(handle.id),
     model: transcriptModelIdentity(handle.modelDef?.model),
+    ...(deps.sessionState.carryHistoryAcrossModels.has(handle.id) ? { carryAcrossModels: true } : {}),
   };
   let messages: NativeTranscriptMessage[] = [
     ...historyFromTranscript(await store.load(handle.id), transcriptIdentity, handle.id),

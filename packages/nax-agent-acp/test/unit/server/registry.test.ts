@@ -1,56 +1,92 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { RequestError } from "@agentclientprotocol/sdk";
-import type { AgentSession } from "@nathapp/nax-agent";
+import { createMemoryTranscriptStore, type TranscriptDoc, type TranscriptStore } from "@nathapp/nax-agent";
+import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
 import type { OpenSessionRequest } from "#src/server/open-session";
 import type { ServerOptions } from "#src/server/options";
-import { createSessionRegistry, MCP_NOTICE, NO_MODEL_MESSAGE } from "#src/server/registry";
+import { createSessionRegistry, INTERRUPTED_NOTICE, MCP_NOTICE, NO_MODEL_MESSAGE } from "#src/server/registry";
 import { TURN_TIMEOUT_SECONDS } from "#src/server/server-session";
+import { createSessionStorage } from "#src/server/storage";
 import { type FakeAgentSession, fakeAgentSession, type Script, turnEnd } from "#test/helpers/fake-agent-session";
-import { fakePort } from "#test/helpers/fake-client-port";
+import { ALL_FEATURES, fakePort } from "#test/helpers/fake-client-port";
 import { recordingLogger } from "#test/helpers/recording-logger";
 
 const OPTIONS: ServerOptions = {
   configDir: "/cfg",
-  sessionsDir: "/cfg/.agent-server/sessions",
+  sessionsDir: "/unused",
   defaultModel: "anthropic/claude-sonnet-5-5",
   defaultMode: "ask",
   bashApproval: "gated",
-  tiers: [{ tier: "balanced", model: "anthropic/claude-sonnet-5-5", contextWindow: 200_000 }],
+  tiers: [
+    { tier: "fast", model: "anthropic/claude-haiku-4-5" },
+    { tier: "balanced", model: "anthropic/claude-sonnet-5-5", contextWindow: 200_000 },
+  ],
   catalogOverrides: [],
 };
 
-const usageTurn: Script = async function* () {
-  yield { type: "usage", round: 1, inputTokens: 1, outputTokens: 1, costUsd: 0.1 };
-  yield turnEnd("completed");
-};
+const said = (words: string): Script =>
+  async function* () {
+    yield { type: "text_delta", round: 1, text: words };
+    yield turnEnd("completed");
+  };
 
-function setup(options: ServerOptions = OPTIONS, opener?: (request: OpenSessionRequest) => Promise<AgentSession>) {
-  const opened: OpenSessionRequest[] = [];
-  const fakes: FakeAgentSession[] = [];
-  const port = fakePort();
+let dir: string;
+beforeEach(() => {
+  dir = makeTempDir("acp-registry-");
+});
+afterEach(() => cleanupTempDir(dir));
+
+interface Setup {
+  readonly opened: OpenSessionRequest[];
+  readonly fakes: FakeAgentSession[];
+}
+
+function setup(
+  options: ServerOptions = OPTIONS,
+  extra: {
+    transcripts?: TranscriptStore;
+    isAlive?: (pid: number) => boolean;
+    lastTurn?: FakeAgentSession["session"]["lastTurn"];
+  } = {},
+) {
+  const record: Setup = { opened: [], fakes: [] };
+  const transcripts = extra.transcripts ?? createMemoryTranscriptStore();
+  const port = fakePort({ features: ALL_FEATURES });
   const { logger, lines } = recordingLogger();
   let next = 0;
+  const storage = createSessionStorage({
+    dir,
+    pid: 1000,
+    now: () => new Date("2026-10-09T00:00:00.000Z"),
+    logger,
+    isAlive: extra.isAlive ?? (() => false),
+  });
   const registry = createSessionRegistry({
     options,
-    openSession:
-      opener ??
-      (async (request) => {
-        opened.push(request);
-        const fake = fakeAgentSession(request.sessionId, [usageTurn], { closeFails: fakes.length === 0 });
-        fakes.push(fake);
-        return fake.session;
-      }),
+    openSession: async (request) => {
+      record.opened.push(request);
+      const fake = fakeAgentSession(request.sessionId, [said("hi"), said("again")], {
+        ...(extra.lastTurn !== undefined ? { lastTurn: extra.lastTurn } : {}),
+      });
+      record.fakes.push(fake);
+      return { session: fake.session, doc: await transcripts.load(request.sessionId) };
+    },
+    storage,
+    transcripts,
     newId: () => {
       next += 1;
       return `id-${next}`;
     },
+    now: () => new Date("2026-10-09T01:00:00.000Z"),
     readOldText: async () => ({ kind: "missing" }),
     logger,
     turnTimeoutSeconds: TURN_TIMEOUT_SECONDS,
+    shutdownWaitMs: 50,
   });
-  const create = (cwd = "/w", mcpServers: readonly unknown[] = []) =>
-    registry.create({ cwd, mcpServers, port: () => port.port });
-  return { registry, create, opened, fakes, port, lines };
+  const input = (cwd = "/w", mcpServers: readonly unknown[] = []) => ({ cwd, mcpServers, port: () => port.port });
+  return { registry, input, port, lines, storage, transcripts, ...record };
 }
 
 async function failure(promise: Promise<unknown>): Promise<RequestError> {
@@ -59,81 +95,178 @@ async function failure(promise: Promise<unknown>): Promise<RequestError> {
   throw new Error(`expected a RequestError, got ${String(caught)}`);
 }
 
-describe("createSessionRegistry.create (spec §5.3 session/new)", () => {
-  test("opens with the resolved defaults and registers the session", async () => {
+const metaOf = async (id: string) => JSON.parse(await readFile(join(dir, `${id}.session.json`), "utf8"));
+
+describe("create (session/new)", () => {
+  test("opens with the defaults, takes the lock, writes metadata, returns modes and config options", async () => {
     const s = setup();
-    const session = await s.create();
-    expect(session.id).toBe("id-1");
-    expect(s.opened).toEqual([
-      { sessionId: "id-1", cwd: "/w", model: "anthropic/claude-sonnet-5-5", profile: "ask", bashApproval: "gated" },
-    ]);
-    expect(s.registry.get("id-1")).toBe(session);
-    expect(s.registry.find("id-1")).toBe(session);
+    const created = await s.registry.create(s.input());
+    expect(created.sessionId).toBe("id-1");
+    expect(created.modes.currentModeId).toBe("ask");
+    expect(created.configOptions.map((o) => o.id)).toEqual(["model", "bashApproval"]);
+    expect(s.opened[0]).toEqual({
+      sessionId: "id-1",
+      cwd: "/w",
+      model: "anthropic/claude-sonnet-5-5",
+      profile: "ask",
+      bashApproval: "gated",
+    });
+    expect(await metaOf("id-1")).toMatchObject({
+      schemaVersion: 1,
+      cwd: "/w",
+      mode: "ask",
+      title: null,
+      updatedAt: null,
+    });
+    expect(JSON.parse(await readFile(join(dir, "id-1.lock"), "utf8"))).toMatchObject({ pid: 1000 });
   });
 
-  test("the context window comes from the tier entry for the model", async () => {
+  test("a relative cwd and no model are invalid_params; nothing is written", async () => {
     const s = setup();
-    const session = await s.create();
-    await session.prompt([{ type: "text", text: "go" }]);
-    expect(s.port.updates.find((u) => u.sessionUpdate === "usage_update")).toMatchObject({ size: 200_000 });
-  });
-
-  test("a model with no tier entry sends no usage_update", async () => {
-    const s = setup({ ...OPTIONS, tiers: [] });
-    const session = await s.create();
-    await session.prompt([{ type: "text", text: "go" }]);
-    expect(s.port.updates.some((u) => u.sessionUpdate === "usage_update")).toBe(false);
-  });
-
-  test("a relative cwd is invalid_params", async () => {
-    const s = setup();
-    const error = await failure(s.create("w"));
-    expect(error.code).toBe(-32602);
-    expect(s.opened).toEqual([]);
-  });
-
-  test("no model is invalid_params with the spec message", async () => {
+    expect((await failure(s.registry.create(s.input("w")))).code).toBe(-32602);
     const { defaultModel: _unused, ...noModel } = OPTIONS;
-    const s = setup(noModel);
-    const error = await failure(s.create());
-    expect(error.message).toContain(NO_MODEL_MESSAGE);
+    const n = setup(noModel);
+    expect((await failure(n.registry.create(n.input()))).message).toContain(NO_MODEL_MESSAGE);
+    expect(await s.storage.hasMeta("id-1")).toBe(false);
   });
 
-  test("non-empty mcpServers queue one notice for the first turn", async () => {
+  test("the first prompt sets the title (80 chars, one line) and every prompt sets updatedAt", async () => {
     const s = setup();
-    const session = await s.create("/w", [{ name: "fs", command: "mcp-fs", args: [], env: [] }]);
-    expect(s.port.updates).toEqual([]);
-    await session.prompt([{ type: "text", text: "go" }]);
+    const { sessionId } = await s.registry.create(s.input());
+    const long = `fix the\nparser ${"x".repeat(120)}`;
+    await s.registry.get(sessionId).prompt([{ type: "text", text: long }]);
+    const meta = await metaOf(sessionId);
+    expect(meta.title).toBe(`fix the parser ${"x".repeat(65)}`);
+    expect(meta.updatedAt).toBe("2026-10-09T01:00:00.000Z");
+    await s.registry.get(sessionId).prompt([{ type: "text", text: "second" }]);
+    expect((await metaOf(sessionId)).title).toBe(meta.title);
+  });
+
+  test("non-empty mcpServers queue the MCP notice for the first turn", async () => {
+    const s = setup();
+    const { sessionId } = await s.registry.create(s.input("/w", [{ name: "fs" }]));
+    await s.registry.get(sessionId).prompt([{ type: "text", text: "go" }]);
     expect(JSON.stringify(s.port.updates[0])).toContain(MCP_NOTICE);
   });
 
-  test("a failed open registers nothing and propagates", async () => {
-    const s = setup(OPTIONS, async () => Promise.reject(new Error("sandbox unavailable")));
-    await expect(s.create()).rejects.toThrow("sandbox unavailable");
-    expect(s.registry.find("id-1")).toBeUndefined();
+  test("a failed open releases the lock and writes no metadata", async () => {
+    const s = setup();
+    const broken = createSessionRegistry({
+      options: OPTIONS,
+      openSession: async () => Promise.reject(new Error("sandbox unavailable")),
+      storage: s.storage,
+      transcripts: s.transcripts,
+      newId: () => "x",
+      now: () => new Date(),
+      readOldText: async () => ({ kind: "missing" }),
+      logger: recordingLogger().logger,
+      turnTimeoutSeconds: TURN_TIMEOUT_SECONDS,
+    });
+    await expect(broken.create(s.input())).rejects.toThrow("sandbox unavailable");
+    expect(await s.storage.hasMeta("x")).toBe(false);
+    await (await s.storage.acquireLock("x"))();
   });
 });
 
-describe("lookup and shutdown", () => {
-  test("get on an unknown id is resource_not_found; find is undefined", () => {
+describe("load and resume (spec §5.3, §5.4)", () => {
+  async function stored(s: ReturnType<typeof setup>, doc?: TranscriptDoc): Promise<string> {
+    const { sessionId } = await s.registry.create(s.input());
+    await s.registry.setMode(sessionId, "full");
+    if (doc !== undefined) await s.transcripts.save(sessionId, doc);
+    await s.registry.close(sessionId);
+    return sessionId;
+  }
+
+  test("load restores the stored settings and replays the transcript before responding", async () => {
     const s = setup();
-    expect(s.registry.find("nope")).toBeUndefined();
-    let caught: unknown;
-    try {
-      s.registry.get("nope");
-    } catch (error) {
-      caught = error;
-    }
-    expect(caught instanceof RequestError ? caught.code : 0).toBe(-32002);
+    const id = await stored(s, {
+      savedAt: "x",
+      messages: [
+        { role: "user", content: "hello" },
+        { role: "assistant", content: "hi there" },
+      ],
+    });
+    s.port.updates.length = 0;
+    const state = await s.registry.load(id, s.input("/elsewhere"));
+    expect(state.modes.currentModeId).toBe("full");
+    expect(s.opened.at(-1)).toMatchObject({ sessionId: id, cwd: "/w", profile: "full" });
+    expect(s.port.updates.map((u) => u.sessionUpdate)).toEqual(["user_message_chunk", "agent_message_chunk"]);
   });
 
-  test("closeAll closes every session and forgets them, logging a failed close", async () => {
+  test("an interrupted last turn ends the replay with a warning", async () => {
+    const s = setup(OPTIONS, { lastTurn: { turnId: "t9", status: "interrupted" } });
+    const id = await stored(s, { savedAt: "x", messages: [{ role: "user", content: "hello" }] });
+    s.port.updates.length = 0;
+    await s.registry.load(id, s.input());
+    expect(s.port.updates.at(-1)).toMatchObject({
+      sessionUpdate: "notice",
+      severity: "warning",
+      title: INTERRUPTED_NOTICE,
+    });
+  });
+
+  test("resume reopens without replay; a never-prompted session reopens too", async () => {
     const s = setup();
-    await s.create();
-    await s.create();
-    await s.registry.closeAll();
-    expect(s.fakes.map((f) => f.closed())).toEqual([true, true]);
-    expect(s.registry.find("id-2")).toBeUndefined();
-    expect(s.lines.some((l) => l.level === "warn" && l.data?.error === "close failed")).toBe(true);
+    const id = await stored(s);
+    s.port.updates.length = 0;
+    const state = await s.registry.resume(id, s.input());
+    expect(state.modes.currentModeId).toBe("full");
+    expect(s.port.updates).toEqual([]);
+  });
+
+  test("an unknown id is resource_not_found; unreadable metadata is internal and the file is kept", async () => {
+    const s = setup();
+    expect((await failure(s.registry.load("nope", s.input()))).code).toBe(-32002);
+    await writeFile(join(dir, "bad.session.json"), "{");
+    await expect(s.registry.resume("bad", s.input())).rejects.toMatchObject({ code: "SESSION_META_UNREADABLE" });
+    expect(await readFile(join(dir, "bad.session.json"), "utf8")).toBe("{");
+  });
+
+  test("a session held by another live process is refused with the pid", async () => {
+    const s = setup(OPTIONS, { isAlive: (pid) => pid === 4242 });
+    const id = await stored(s);
+    await writeFile(join(dir, `${id}.lock`), JSON.stringify({ pid: 4242, startedAt: "x" }));
+    expect((await failure(s.registry.load(id, s.input()))).message).toContain("session in use by pid 4242");
+  });
+
+  test("loading an already-open session replays from the store and keeps the open session", async () => {
+    const s = setup();
+    const { sessionId } = await s.registry.create(s.input());
+    await s.transcripts.save(sessionId, { savedAt: "x", messages: [{ role: "user", content: "hello" }] });
+    const before = s.registry.get(sessionId);
+    s.port.updates.length = 0;
+    await s.registry.load(sessionId, s.input());
+    expect(s.registry.get(sessionId)).toBe(before);
+    expect(s.port.updates.map((u) => u.sessionUpdate)).toEqual(["user_message_chunk"]);
+  });
+});
+
+describe("list, close, delete", () => {
+  test("list returns stored sessions for the cwd", async () => {
+    const s = setup();
+    await s.registry.create(s.input());
+    await s.registry.create(s.input("/other"));
+    expect((await s.registry.list({ cwd: "/w" })).sessions.map((i) => i.sessionId)).toEqual(["id-1"]);
+  });
+
+  test("close cancels, closes, releases the lock and keeps the files; unknown is resource_not_found", async () => {
+    const s = setup();
+    const { sessionId } = await s.registry.create(s.input());
+    await s.registry.close(sessionId);
+    expect(s.fakes[0]?.closed()).toBe(true);
+    expect(s.registry.find(sessionId)).toBeUndefined();
+    expect(await s.storage.hasMeta(sessionId)).toBe(true);
+    await (await s.storage.acquireLock(sessionId))();
+    expect((await failure(s.registry.close(sessionId))).code).toBe(-32002);
+  });
+
+  test("delete closes an open session and removes metadata, lock and transcript", async () => {
+    const s = setup();
+    const { sessionId } = await s.registry.create(s.input());
+    await s.transcripts.save(sessionId, { savedAt: "x", messages: [] });
+    await s.registry.delete(sessionId);
+    expect(await s.storage.hasMeta(sessionId)).toBe(false);
+    expect(await s.transcripts.load(sessionId)).toBeNull();
+    expect((await failure(s.registry.delete(sessionId))).code).toBe(-32002);
   });
 });

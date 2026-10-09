@@ -26,14 +26,42 @@ export function buildAgentApp(deps: AppDeps): AgentApp {
       return initializeResponse(deps.version);
     })
     .onRequest("session/new", (ctx) =>
-      guard(deps.logger, async () => {
-        const session = await deps.registry.create({
+      guard(deps.logger, () =>
+        deps.registry.create({
           cwd: ctx.params.cwd,
           mcpServers: ctx.params.mcpServers,
           port: (sessionId) => clientPort(ctx.client, sessionId, features),
-        });
-        return { sessionId: session.id };
-      }),
+        }),
+      ),
+    )
+    .onRequest("session/load", (ctx) =>
+      guard(deps.logger, () =>
+        deps.registry.load(ctx.params.sessionId, {
+          cwd: ctx.params.cwd,
+          mcpServers: ctx.params.mcpServers,
+          port: (sessionId) => clientPort(ctx.client, sessionId, features),
+        }),
+      ),
+    )
+    .onRequest("session/resume", (ctx) =>
+      guard(deps.logger, () =>
+        deps.registry.resume(ctx.params.sessionId, {
+          cwd: ctx.params.cwd,
+          mcpServers: ctx.params.mcpServers ?? [],
+          port: (sessionId) => clientPort(ctx.client, sessionId, features),
+        }),
+      ),
+    )
+    .onRequest("session/list", (ctx) => guard(deps.logger, () => deps.registry.list(ctx.params)))
+    .onRequest("session/close", (ctx) => guard(deps.logger, () => deps.registry.close(ctx.params.sessionId)))
+    .onRequest("session/delete", (ctx) => guard(deps.logger, () => deps.registry.delete(ctx.params.sessionId)))
+    .onRequest("session/set_mode", (ctx) =>
+      guard(deps.logger, () => deps.registry.setMode(ctx.params.sessionId, ctx.params.modeId)),
+    )
+    .onRequest("session/set_config_option", (ctx) =>
+      guard(deps.logger, async () => ({
+        configOptions: await deps.registry.setConfigOption(ctx.params.sessionId, ctx.params.configId, ctx.params.value),
+      })),
     )
     .onRequest("session/prompt", (ctx) =>
       guard(deps.logger, () => deps.registry.get(ctx.params.sessionId).prompt(ctx.params.prompt)),

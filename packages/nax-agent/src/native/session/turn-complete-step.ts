@@ -138,8 +138,10 @@ export async function completeWithRecovery(args: CompleteStepArgs): Promise<Comp
     // caller's array, the one the turn-end transcript save persists — is returned untouched,
     // so the transcript stays the true record. `boundary` is this step's
     // overflow fact (`compacted`): true only on the post-compaction retry,
-    // where a prefix rewrite is free. A model change never reaches this step:
-    // the transcript store refuses another model's history (spec 8.3).
+    // where a prefix rewrite is free. A model change CAN reach this step under
+    // carryHistoryAcrossModels (S5-3): the transcript store no longer refuses
+    // another model's history, but the per-model compaction anchor is dropped
+    // on that mismatch, so applyHistoryPatch honours an undefined anchor.
     const transformed = await loopEvents.dispatch("transform_context", {
       messages: msgs,
       tools,

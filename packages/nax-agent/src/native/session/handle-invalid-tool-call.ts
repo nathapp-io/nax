@@ -142,6 +142,7 @@ export function rewriteToolCallInput(
       content: lastAssistant.content,
       toolCalls,
       ...(lastAssistant.thinking !== undefined ? { thinking: lastAssistant.thinking } : {}),
+      ...(lastAssistant.origin !== undefined ? { origin: lastAssistant.origin } : {}),
     },
     ...messages.slice(lastAssistantIndex + 1),
   ];

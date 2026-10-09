@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   type AgentApp,
   type ClientCapabilities,
@@ -9,12 +9,15 @@ import {
   RequestError,
   type SessionNotification,
 } from "@agentclientprotocol/sdk";
-import type { AgentSession } from "@nathapp/nax-agent";
+import { createMemoryTranscriptStore } from "@nathapp/nax-agent";
+import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
 import { waitForCondition } from "@nathapp/nax-test-kit/bun/timeout";
 import { buildAgentApp } from "#src/server/connection";
+import type { OpenedSession } from "#src/server/open-session";
 import type { ServerOptions } from "#src/server/options";
 import { createSessionRegistry } from "#src/server/registry";
 import { TURN_TIMEOUT_SECONDS } from "#src/server/server-session";
+import { createSessionStorage } from "#src/server/storage";
 import { FAR_EXPIRY, fakeAgentSession, type Script, turnEnd } from "#test/helpers/fake-agent-session";
 import { recordingLogger } from "#test/helpers/recording-logger";
 
@@ -28,20 +31,34 @@ const OPTIONS: ServerOptions = {
   catalogOverrides: [],
 };
 
-function app(scriptsFor: (sessionId: string) => readonly Script[], open?: () => Promise<AgentSession>) {
+let dir: string;
+beforeEach(() => {
+  dir = makeTempDir("acp-connection-sessions-");
+});
+afterEach(() => cleanupTempDir(dir));
+
+function app(scriptsFor: (sessionId: string) => readonly Script[], open?: () => Promise<OpenedSession>) {
   const { logger, lines } = recordingLogger();
   let next = 0;
   const registry = createSessionRegistry({
     options: OPTIONS,
     openSession:
-      open ?? (async (request) => fakeAgentSession(request.sessionId, scriptsFor(request.sessionId)).session),
+      open ??
+      (async (request) => ({
+        session: fakeAgentSession(request.sessionId, scriptsFor(request.sessionId)).session,
+        doc: null,
+      })),
+    storage: createSessionStorage({ dir, pid: 1000, now: () => new Date(), logger, isAlive: () => false }),
+    transcripts: createMemoryTranscriptStore(),
     newId: () => {
       next += 1;
       return `s${next}`;
     },
+    now: () => new Date(),
     readOldText: async () => ({ kind: "missing" }),
     logger,
     turnTimeoutSeconds: TURN_TIMEOUT_SECONDS,
+    shutdownWaitMs: 50,
   });
   return { agentApp: buildAgentApp({ version: "9.9.9", registry, logger }), lines };
 }
@@ -126,10 +143,11 @@ describe("session/new + session/prompt over a real SDK connection", () => {
     expect(result.text).toBe("hello");
   });
 
-  test("the session/new response carries no modes or config options yet (M-10)", async () => {
+  test("the session/new response carries modes and config options (S5-3)", async () => {
     const { agentApp } = app(() => []);
     const response = await connect(agentApp, (agent) => agent.request("session/new", { cwd: "/w", mcpServers: [] }));
-    expect(response).toEqual({ sessionId: "s1" });
+    expect(response).toMatchObject({ sessionId: "s1", modes: { currentModeId: "ask" } });
+    expect(response.configOptions?.map((o) => o.id)).toEqual(["model", "bashApproval"]);
   });
 
   test("a permission round trip through the client's handler", async () => {

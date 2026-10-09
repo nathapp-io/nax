@@ -115,6 +115,13 @@ export interface NativeSessionState {
    */
   readonly transcriptOwners: Map<string, string>;
 
+  /**
+   * Sessions that keep history written by another model (S5-3), set at open from
+   * `OpenSessionOpts.carryHistoryAcrossModels`. Same lifecycle as the maps above:
+   * set on open, cleared on close.
+   */
+  readonly carryHistoryAcrossModels: Set<string>;
+
   /** Session name -> resolved compaction settings. Same lifecycle as the maps above. */
   readonly compaction: Map<string, ResolvedCompaction>;
 
@@ -165,6 +172,7 @@ export function createNativeSessionState(): NativeSessionState {
     streamHooks: new Map(),
     failed: new Set(),
     transcriptOwners: new Map(),
+    carryHistoryAcrossModels: new Set(),
     compaction: new Map(),
     transportRetry: new Map(),
     spinBreakers: new Map(),
@@ -272,6 +280,8 @@ export async function openNativeSession(
   state.scratchpadRoots.set(name, opts.workdir);
   if (opts.transcriptOwner !== undefined) state.transcriptOwners.set(name, opts.transcriptOwner);
   else state.transcriptOwners.delete(name);
+  if (opts.carryHistoryAcrossModels === true) state.carryHistoryAcrossModels.add(name);
+  else state.carryHistoryAcrossModels.delete(name);
   recordSystemPrompt(state, name, opts.systemPrompt);
   const instructions = await openRepositoryInstructions(name, opts, store);
   state.repositoryInstructions.set(name, instructions);
@@ -326,6 +336,7 @@ export function clearNativeSessionState(state: NativeSessionState, sessionName: 
   state.timeouts.delete(sessionName);
   state.scratchpadRoots.delete(sessionName);
   state.transcriptOwners.delete(sessionName);
+  state.carryHistoryAcrossModels.delete(sessionName);
   state.streamHooks.delete(sessionName);
   state.failed.delete(sessionName);
   state.compaction.delete(sessionName);

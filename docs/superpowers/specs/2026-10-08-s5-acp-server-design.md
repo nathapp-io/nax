@@ -75,7 +75,7 @@ Source files stay under the repo's 600-line cap; tests under the 800-line cap.
 
 ### 3.3 Mode and model changes
 
-S3 fixes the profile, model, and `bashApproval` at session creation. A change between turns closes the `AgentSession` and calls `resumeAgentSession` on the same transcript with the new options. A change while a turn is running is rejected (`invalid_request`, "turn in progress"). The metadata file is updated only after the resume succeeds; on failure the old session is reopened with the old options and the error is returned.
+S3 fixes the profile, model and `bashApproval` at session creation. A change between turns closes the `AgentSession` and reopens the same transcript with the new options: resume when the store holds a document, create when the session was never prompted. A model change keeps the conversation (amended 2026-10-09, S5-3, user ruling). nax-ai assistant messages record the model that wrote them, so pi-ai sends another model's thinking as text without its signature. nax-agent's `carryHistoryAcrossModels` lets the resume and the loop keep history written by another model; the per-model compaction anchor is not reused. A change while a turn is running is rejected (`invalid_request`, "turn in progress"). The metadata file is updated only after the reopen succeeds; on failure the old session is reopened with the old options and the error is returned.
 
 ## 4. Event mapping
 
@@ -167,6 +167,7 @@ Default directory: `<configDir>/.agent-server/sessions/` (configDir defaults to 
 - `agentInfo: { name: "nax-agent", version }`
 - Modes: `none`, `read`, `ask`, `full` (names and one-line descriptions from the S3 profile docs), returned on `session/new` / `load` / `resume`.
 - Config options on `session/new` / `load` / `resume`: `model` (select, §6.2) and `bashApproval` (select: `gated`, `escalate`, `raw`).
+- Mode `ask` requires `bashApproval: gated`. Switching to `ask` sets it, and a non-`gated` value under `ask` is refused (S5-3 M-23).
 
 ### 5.3 Methods
 
@@ -179,7 +180,7 @@ Default directory: `<configDir>/.agent-server/sessions/` (configDir defaults to 
 | `session/close` | Cancel a running turn, `close()`, release the lock; files kept. Unknown id -> `resource_not_found`. |
 | `session/delete` | Close if open, then remove the three files. |
 | `session/set_mode` | §3.3; on success send `current_mode_update`. |
-| `session/set_config_option` | `model` or `bashApproval`; §3.3; on success send `config_option_update`. A model id not in the option list -> `invalid_params` listing the valid ids (strict, as D2-b). `bashApproval: raw` with mode `ask` -> `invalid_params` (S3 requires `gated` for `ask`). |
+| `session/set_config_option` | `model` or `bashApproval`; §3.3; on success send `config_option_update`. A model id not in the option list -> `invalid_params` listing the valid ids (strict, as D2-b). `bashApproval` other than `gated` with mode `ask` -> `invalid_params` (S3 requires `gated` for `ask`); `session/set_mode` to `ask` sets `gated`. |
 | `session/prompt` | §3.2. |
 | `session/cancel` | §4.3 (notification; no response). |
 
@@ -241,7 +242,7 @@ stderr only, through `setAgentLogger`; level `info`, `debug` with `NAX_AGENT_LOG
 
 | Situation | Error (SDK `RequestError`) |
 |---|---|
-| Relative `cwd`, unknown mode, unknown model, unsupported content block, `raw` with `ask` | `invalidParams`; model errors list valid ids |
+| Relative `cwd`, unknown mode, unknown model, unsupported content block, a `bashApproval` other than `gated` with `ask` | `invalidParams`; model errors list valid ids |
 | Unknown session id | `resourceNotFound` |
 | Prompt, mode or model change while a turn runs | `invalidRequest` "turn in progress" |
 | Live lock held by another process | `invalidRequest` "session in use by pid N" |
