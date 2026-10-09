@@ -6,6 +6,7 @@ import { describe, expect, test } from "bun:test";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
+import { waitForCondition } from "@nathapp/nax-test-kit/bun/timeout";
 
 const ENTRY = fileURLToPath(new URL("../../fixtures/server/run.ts", import.meta.url));
 const PKG = fileURLToPath(new URL("../../..", import.meta.url));
@@ -32,7 +33,13 @@ describe("the server process", () => {
       child.stdin.write(frame(3, "no/such_method", {}));
       child.stdin.write(frame(4, "session/prompt", { sessionId: "nope", prompt: [{ type: "text", text: "x" }] }));
       child.stdin.write(frame(5, "session/list", {}));
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      // Wait for all five replies (session/new re-reads config first; slow under coverage).
+      const replies = () =>
+        Buffer.concat(out)
+          .toString("utf8")
+          .split("\n")
+          .filter((l) => l !== "").length;
+      await waitForCondition(() => replies() >= 5, 15_000);
       child.stdin.end();
       expect(await exited).toBe(0);
       const lines = Buffer.concat(out)
