@@ -50,6 +50,7 @@ export {
   resolveNativeId,
 } from "./model-resolver.ts";
 export { NATIVE_AGENT } from "./models.ts";
+export { listProviderModels, type ProviderModel } from "./provider-models.ts";
 export { createMemoryTranscriptStore, type MemoryTranscriptStore } from "./session/memory-transcript-store.ts";
 export {
   createFileTranscriptStore,

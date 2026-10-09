@@ -4,6 +4,12 @@ All notable changes to `@nathapp/nax-agent` are recorded here. The format follow
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). While the version is `0.x`, a minor
 release may change the public API.
 
+## [Unreleased]
+
+### Added
+
+- `listProviderModels(providerId, catalogOverrides?)` and `ProviderModel`: the tool-capable models the catalog offers for one provider, as plain data (#2414).
+
 ## [0.84.0] - 2026-10-09
 
 - Versioning: released in lockstep with `@nathapp/nax`, `@nathapp/nax-ai` and the other agent package at one shared version, starting at 0.84.0 (previously 0.3.x).
