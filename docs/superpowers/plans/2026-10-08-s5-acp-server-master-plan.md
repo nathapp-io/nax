@@ -22,7 +22,7 @@
 - Test files: one `<module>.test.ts` per source module, or `<module>-<concern>.test.ts` splits; never ticket-named (`check:test-satellites`).
 - stdout of the server process carries ACP frames only; all logs go to stderr.
 - Biome format and lint are part of `check:all`; run `bun run lint:fix` before each commit.
-- `@nathapp/nax-agent` and `@nathapp/nax-agent-acp` share one version (lockstep). Release (S5-4) = both 0.3.1 -> 0.4.0, nax-agent first, maintainer approval at launch.
+- `@nathapp/nax-agent` and `@nathapp/nax-agent-acp` share one version (lockstep), now with `@nathapp/nax-ai` and `@nathapp/nax` too. Release (S5-4): lockstep v0.84.0 (all four packages), maintainer approval at launch.
 - Billed runs (live acpx smoke) and releases need explicit maintainer approval at launch.
 
 ## Review Focus
@@ -54,7 +54,7 @@
 | S5-1 | `2026-10-08-s5-1-translator.md` | main | `src/server/translate/`: tool kinds, titles, locations, diffs, the event translator, stop reasons, usage, transcript replay. Pure apart from an injected file reader. |
 | S5-2 | to write after S5-0 and S5-1 merge | S5-0, S5-1 | M-1 in nax-agent; `ServerSession` and an in-memory registry; `session/new`, `prompt`, `cancel`; permissions with per-session always-memory; elicitation and the canned-answer fallback; error mapping (spec §7); MCP notice; capability flags for what lands. |
 | S5-3 | after S5-2 | S5-2 | Storage (metadata, lock, list scan); `load` with replay, `resume`, `list`, `close`, `delete`, `set_mode`, `set_config_option` via close-and-resume; shutdown (spec §5.5); `loadSession` and `sessionCapabilities`. |
-| S5-4 | `2026-10-09-s5-4-auth-release.md` | S5-3 | `nax-agent login <provider>`; terminal `authMethods`; `authenticate`; `auth_required` mapping; README (Zed, acpx); live acpx smoke and Zed walkthrough (approval); release 0.4.0 (approval). |
+| S5-4 | `2026-10-09-s5-4-auth-release.md` | S5-3 | `nax-agent login <provider>`; terminal `authMethods`; `authenticate`; `auth_required` mapping; README (Zed, acpx); live acpx smoke and Zed walkthrough (approval); released as v0.84.0 (lockstep) — run https://github.com/nathapp-io/nax/actions/runs/37913888897, tag v0.84.0 at eeb09ebbe. |
 | S5-5 | after S5-4, with a design addendum first | S5-4 | MCP bridge for client `mcpServers`. |
 
 ## File map (end state of S5-0..S5-4)

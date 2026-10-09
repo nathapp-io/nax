@@ -2283,11 +2283,13 @@ Superseded by lockstep versioning (docs/superpowers/plans/2026-10-09-lockstep-ve
 
 ### Task 8: Live checks (APPROVAL AT LAUNCH; billed)
 
-- [ ] **Step 1: Ask for approval** for the billed acpx smoke. It is about 3 short prompts on the configured `balanced` model.
+> Status 2026-10-09 (on main `eeb09ebbe`, 0.84.0): Steps 2, 3, 4 and 4b pass. Step 5 (Zed walkthrough) and the Step 6 record remain. Full results: [`2026-10-09-s5-4-task8-live-checks.md`](2026-10-09-s5-4-task8-live-checks.md).
+
+- [x] **Step 1: Ask for approval** for the billed acpx smoke. It is about 3 short prompts on the configured `balanced` model.
 
 All shell blocks in this task are **bash** (`bash` first if your shell is zsh): they use arrays.
 
-- [ ] **Step 2: Build and install the packed tarballs**
+- [x] **Step 2: Build and install the packed tarballs**
 
 On main after the lockstep PR merges (all packages at 0.84.0, nothing published yet), follow `packages/nax-agent-acp/RELEASING.md` "pack both at one version". In short, from the repo root:
 
@@ -2301,7 +2303,7 @@ SMOKE=$(mktemp -d /tmp/nax-agent-smoke-XXXX)
 
 Expected: `0.84.0`, the version the lockstep PR set for every package, and the same 0.84.0 for nax-ai (`npm ls @nathapp/nax-ai` in `$SMOKE`).
 
-- [ ] **Step 3: acpx smoke (session, edit, reconnect, list)**
+- [x] **Step 3: acpx smoke (session, edit, reconnect, list)**
 
 ```bash
 WORK=$(mktemp -d /tmp/nax-agent-work-XXXX) && git -C "$WORK" init -q && echo "# smoke" > "$WORK/README.md"
@@ -2327,7 +2329,7 @@ Expected:
 
 If acpx rejects the flag order, put `--agent` before the global flags, as `npx -y acpx@0.19.4 --help` shows.
 
-- [ ] **Step 4: auth_required smoke (free, no model call)**
+- [x] **Step 4: auth_required smoke (free, no model call)**
 
 ```bash
 env | grep -i anthropic               # unset anything that would serve anthropic in this shell
@@ -2339,7 +2341,7 @@ env -u ANTHROPIC_API_KEY NAX_AGENT_CONFIG_DIR="$EMPTY" \
 
 Expected: acpx reports an authentication-required error (acpx maps code -32000 with "Authentication required" to `AUTH_REQUIRED`) mentioning `nax-agent login anthropic`. No tokens are spent: `sessions new` is what calls `session/new`.
 
-- [ ] **Step 4b: `nax-agent login` exits on its own (final review I5)**
+- [x] **Step 4b: `nax-agent login` exits on its own (final review I5)** — verified under tmux: `--method api-key` returns to the prompt right after "Signed in", OAuth `Ctrl+C` → exit 130, no lingering process either time. A full browser OAuth completion was not performed.
 
 In an interactive terminal (approval: this writes a real credential to a scratch config dir, not `~/.nax`):
 
@@ -2376,10 +2378,10 @@ Configure Zed with the README snippet, with `"command"` set to `$BIN`. The maint
 
 Fix README wording (Zed config key names) from what is observed, in a small docs PR before Task 9.
 
-- [ ] **Step 6: Record** the commit, model, total cost (from `$NAX_AGENT_SESSIONS_DIR` usage or provider dashboard) and the six Zed checks in the S5 row of `nax-agent-master-plan.md` (maintainer workspace).
+- [ ] **Step 6: Record** the commit, model, total cost (from `$NAX_AGENT_SESSIONS_DIR` usage or provider dashboard) and the six Zed checks in the S5 row of `nax-agent-master-plan.md` (maintainer workspace). Partial 2026-10-09: commit `eeb09ebbe`, model `minimax/MiniMax-M3` recorded; cost is not stored in the session artifacts (read the provider dashboard); the six Zed checks await Step 5.
 
 ---
 
 ### Task 9: Release nax-agent and nax-agent-acp 0.4.0 (APPROVAL AT LAUNCH)
 
-Superseded: after Task 8 passes, the maintainer approves and runs `bun run release tag` for v0.84.0 (lockstep plan Task 5), which publishes all four packages.
+Superseded: after Task 8 passes, the maintainer approves and runs `bun run release tag` for v0.84.0 (lockstep plan Task 5), which publishes all four packages. Done 2026-10-09: `v0.84.0` published for all four packages (release run 37913888897).
