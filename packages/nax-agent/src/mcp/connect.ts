@@ -142,6 +142,9 @@ function liveConnection(
   const { life } = state;
   return {
     kind: config.kind,
+    get pid() {
+      return handle.pid();
+    },
     tools,
     call(name, input, opts) {
       if (closing !== undefined || life.exited)

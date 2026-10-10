@@ -31,6 +31,8 @@ export interface McpCallOptions {
 
 export interface McpConnection {
   readonly kind: "stdio" | "http";
+  /** The stdio child process pid; null for HTTP. Read before close() — the SDK may clear it after. */
+  readonly pid: number | null;
   readonly tools: readonly McpToolInfo[];
   /** Server-side tool errors are `isError` results; transport failures throw McpCallError. */
   call(name: string, input: unknown, opts: McpCallOptions): Promise<McpCallResult>;

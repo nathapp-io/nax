@@ -47,6 +47,17 @@ describe("connectMcp over stdio", () => {
     }
   }, 20_000);
 
+  test("exposes the stdio child pid on the connection", async () => {
+    const connection = await connectMcp(stdio(), OPTS);
+    const pid = await pidOf(connection);
+    try {
+      expect(connection.pid).toBe(pid);
+    } finally {
+      await connection.close().catch(() => undefined);
+      killQuietly(pid);
+    }
+  }, 20_000);
+
   test("close() resolves only after the process is gone", async () => {
     const connection = await connectMcp(stdio(), OPTS);
     const pid = await pidOf(connection);
