@@ -40,6 +40,7 @@ export {
 } from "./profile";
 export { getProjectKey } from "./project-key";
 export { pinRootOnlyKeys, pinRootOnlyKeysRaw, ROOT_ONLY_EXECUTION_KEYS } from "./root-only-keys";
+export type { AdvisorCaller, AdvisorConfig } from "./runtime-types-advisor";
 export type {
   AuthConfig,
   AutoModeConfig,
@@ -85,6 +86,7 @@ export {
   resolveTierMembership,
   toPricing,
 } from "./schema";
+export { ADVISOR_DEFAULTS, isAdvisorCallerEnabled, resolveAdvisorConfig } from "./schemas-advisor";
 export type { CommandSafetyConfig } from "./schemas-command-safety";
 export { CommandSafetyConfigSchema } from "./schemas-command-safety";
 export {
@@ -128,6 +130,7 @@ export {
   acceptanceConfigSelector,
   acceptanceFixConfigSelector,
   acceptanceGenConfigSelector,
+  advisorConfigSelector,
   agentManagerConfigSelector,
   autofixConfigSelector,
   contextToolRuntimeConfigSelector,

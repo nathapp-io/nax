@@ -539,6 +539,8 @@ export interface NaxConfig {
   reporters?: import("./schemas-reporters").ReportersConfig;
   /** nax-finish autonomous finish flow settings */
   finish?: import("./runtime-types-finish").FinishConfig;
+  /** A1 advisor (rules on judgment calls instead of stopping the run) */
+  advisor?: import("./runtime-types-advisor").AdvisorConfig;
   /** External MCP servers the native agent may call tools on (client only) */
   mcp?: import("./runtime-types-mcp").McpConfig;
   /** Hooks configuration (v0.10) */

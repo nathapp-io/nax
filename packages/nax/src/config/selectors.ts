@@ -148,6 +148,7 @@ export const llmRoutingConfigSelector = pickSelector(
 // `finish.timeouts.stepMs` is unset (its default), matching how the acceptance
 // ops resolve `execution.sessionTimeoutSeconds`.
 export const finishConfigSelector = pickSelector("finish", "finish", "interaction", "quality", "agent", "execution");
+export const advisorConfigSelector = pickSelector("advisor", "advisor", "execution");
 
 // Derived config-slice types — co-located with each selector so consumers
 // import the type instead of re-deriving `ReturnType<typeof xSelector.select>`
@@ -189,3 +190,4 @@ export type NonBlockingFixConfig = z.infer<typeof NonBlockingFixConfigSchema>;
  */
 export type FixReviewConfig = z.infer<typeof FixReviewConfigSchema>;
 export type FinishConfig = ReturnType<typeof finishConfigSelector.select>;
+export type AdvisorConfigSlice = ReturnType<typeof advisorConfigSelector.select>;

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { makeNaxConfig } from "@test/helpers";
-import { pinRootOnlyKeys, pinRootOnlyKeysRaw } from "@/config";
+import { ADVISOR_DEFAULTS, pinRootOnlyKeys, pinRootOnlyKeysRaw } from "@/config";
 
 const root = makeNaxConfig({ execution: { bashApproval: "escalate", approvalTimeout: 120_000 } });
 
@@ -59,5 +59,21 @@ describe("pinRootOnlyKeysRaw — auth is global-only (US-001)", () => {
     const out = pinRootOnlyKeysRaw({}, authRoot, "packages/a", () => {});
 
     expect(out.auth).toEqual(authRoot.auth);
+  });
+});
+
+describe("advisor is root-only (A1)", () => {
+  test("typed pin replaces a package advisor block with root's", () => {
+    const rootCfg = makeNaxConfig({ advisor: { ...ADVISOR_DEFAULTS, enabled: true } });
+    const pkg = makeNaxConfig({ advisor: { ...ADVISOR_DEFAULTS, enabled: false } });
+    expect(pinRootOnlyKeys(pkg, rootCfg).advisor?.enabled).toBe(true);
+  });
+
+  test("raw pin warns once and keeps root's value", () => {
+    const rootCfg = makeNaxConfig({ advisor: { ...ADVISOR_DEFAULTS, enabled: true } });
+    const warnings: string[] = [];
+    const out = pinRootOnlyKeysRaw({ advisor: { enabled: false } }, rootCfg, "packages/a", (m) => warnings.push(m));
+    expect(isRecord(out.advisor) && out.advisor.enabled).toBe(true);
+    expect(warnings).toEqual(['advisor is root-only; the value set for package "packages/a" is ignored']);
   });
 });
