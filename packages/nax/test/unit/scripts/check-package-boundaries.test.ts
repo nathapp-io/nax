@@ -148,6 +148,24 @@ describe("check-package-boundaries", () => {
     expect(whys()).toHaveLength(4);
   });
 
+  test("nax may reach nax-agent through the ./mcp subpath (the S5-5a shared layer)", () => {
+    workspace();
+    write(
+      "packages/nax/src/mcp-ok.ts",
+      'import { connectMcp } from "@nathapp/nax-agent/mcp";\nimport type { McpTransportConfig } from "@nathapp/nax-agent/mcp";\n',
+    );
+    write("packages/nax/test/mcp-ok.test.ts", 'import { connectMcp } from "@nathapp/nax-agent/mcp";\n');
+    expect(findBoundaryViolations(root)).toEqual([]);
+  });
+
+  test("nax may not reach a deep path under @nathapp/nax-agent/mcp", () => {
+    workspace();
+    write("packages/nax/src/bad.ts", 'import { x } from "@nathapp/nax-agent/mcp/nope";\n');
+    expect(whys()).toEqual([
+      "packages/nax/src/bad.ts @nathapp/nax-agent/mcp/nope only @nathapp/nax-agent or @nathapp/nax-agent/internal or @nathapp/nax-agent/mcp",
+    ]);
+  });
+
   test("nax may import test-kit only from test/ and repo-tooling only from scripts/ and test/", () => {
     workspace();
     write(

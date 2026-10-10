@@ -9,9 +9,9 @@
  *   package, and itself from test/ only (the packaging tests import the public
  *   entry by name). Never `@nathapp/nax`, never a tsconfig alias (`@/`).
  * - packages/nax-ai imports neither @nathapp/nax nor @nathapp/nax-agent.
- * - packages/nax reaches nax-agent only through `@nathapp/nax-agent` or
- *   `@nathapp/nax-agent/internal`, and never a nax-agent test helper (S2-1
- *   removed that export). It may import test-kit only from test/ and
+ * - packages/nax reaches nax-agent only through `@nathapp/nax-agent`,
+ *   `@nathapp/nax-agent/internal` or `@nathapp/nax-agent/mcp` (S5-5a), and
+ *   never a nax-agent test helper (S2-1 removed that export). It may import test-kit only from test/ and
  *   repo-tooling only from scripts/ and test/. Never a relative path into
  *   another package.
  * - packages/test-kit and packages/repo-tooling (private tooling) import no nax
@@ -57,7 +57,7 @@ interface PackageInfo {
 const CODE = /\.(?:ts|tsx|mts|cts)$/;
 const SCAN_DIRS = ["src", "test", "bin", "scripts"];
 const AGENT = "@nathapp/nax-agent";
-const NAX_ALLOWED_AGENT_SPECS = new Set([AGENT, `${AGENT}/internal`]);
+const NAX_ALLOWED_AGENT_SPECS = new Set([AGENT, `${AGENT}/internal`, `${AGENT}/mcp`]);
 const TEST_KIT = "@nathapp/nax-test-kit";
 const REPO_TOOLING = "@nathapp/nax-repo-tooling";
 const ACP = "@nathapp/nax-agent-acp";
