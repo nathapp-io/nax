@@ -297,12 +297,20 @@ TASK: Diagnose whether the failure is due to a bug in the SOURCE CODE or a bug i
 FAILING TEST OUTPUT:
 ${p.truncatedOutput}
 
+${p.failedCriteriaSection ?? "FAILING ACCEPTANCE CRITERIA: (criterion text unavailable — judge from the test file and the output)"}
+
 ACCEPTANCE TEST FILE: ${p.acceptanceTestPath}
 
 (Use Read on the path above to inspect the test code if needed for diagnosis.)
 
 SOURCE FILES (auto-detected from imports, up to ${p.maxFileLines} lines each):
 ${p.sourceFilesSection}
+
+DECISION RULE:
+- Read the acceptance test file before deciding.
+- source_bug: the failing assertion checks behaviour the criterion text states, or that follows directly from it, and the source does not do it.
+- test_bug: the failing assertion depends on a name, literal, shape, file path, import path, fixture or setup step that the criterion text does not state.
+- both: only when different failing assertions fall on different sides of this rule.
 
 Respond with ONLY a JSON object in this exact format (no markdown, no extra text):
 ${responseSchema}`;
@@ -369,8 +377,18 @@ Respond with ONLY the fix description (no JSON, no markdown, just the descriptio
    * the full diagnosis prompt via buildDiagnosisPromptTemplate().
    */
   buildDiagnosisPrompt(p: DiagnosisPromptParams): string {
-    const MAX_TEST_OUTPUT_CHARS = 2000;
-    const truncatedOutput = p.testOutput.slice(0, MAX_TEST_OUTPUT_CHARS);
+    const formattedOutput = `${formatTestOutputForFix(p.testOutput)}\n\n${p.testOutput
+      .split("\n")
+      .filter((line) => !/^\s*\(pass\)/.test(line))
+      .join("\n")}`.replace(/^.*\(pass\).*$/gm, "");
+    const criteria = p.failedCriteria?.length
+      ? p.failedCriteria
+          .map(
+            (criterion) =>
+              `${criterion.acId} [${criterion.storyId}]: ${criterion.refined}${criterion.original !== criterion.refined ? `\n  Spec wording: ${criterion.original}` : ""}`,
+          )
+          .join("\n")
+      : undefined;
 
     const sourceFilesSection =
       p.sourceFiles.length > 0
@@ -378,7 +396,10 @@ Respond with ONLY the fix description (no JSON, no markdown, just the descriptio
         : "(No source files could be resolved from imports)";
 
     return this.buildDiagnosisPromptTemplate({
-      truncatedOutput,
+      truncatedOutput: formattedOutput,
+      failedCriteriaSection: criteria
+        ? `FAILING ACCEPTANCE CRITERIA (the behaviour each failing test is meant to check):\n${criteria}`
+        : undefined,
       acceptanceTestPath: p.acceptanceTestPath ?? "(path unavailable — inspect test output for file references)",
       sourceFilesSection,
       maxFileLines: MAX_FILE_LINES,

@@ -93,6 +93,7 @@ export async function resolveAcceptanceDiagnosis(opts: ResolveAcceptanceDiagnosi
       verdict: "source_bug",
       reasoning: "implement-only strategy — skipping diagnosis",
       confidence: 1.0,
+      path: "implement-only",
     };
   }
 
@@ -107,6 +108,7 @@ export async function resolveAcceptanceDiagnosis(opts: ResolveAcceptanceDiagnosi
       verdict: "test_bug",
       reasoning: `Test-level failure: ${failures.failedACs.length}/${totalACs} ACs failed (>80% threshold or AC-ERROR sentinel)`,
       confidence: 0.9,
+      path: "test-level",
     };
   }
 
@@ -116,7 +118,7 @@ export async function resolveAcceptanceDiagnosis(opts: ResolveAcceptanceDiagnosi
     packageDir: diagnosisOpts.workdir,
     testFilePath: diagnosisOpts.acceptanceTestPath,
   });
-  return await _diagnosisDeps.callOp(
+  const output = await _diagnosisDeps.callOp(
     fixCallCtx(ctx, diagnosisOpts.workdir, diagnosisOpts.config),
     acceptanceDiagnoseOp,
     {
@@ -127,6 +129,14 @@ export async function resolveAcceptanceDiagnosis(opts: ResolveAcceptanceDiagnosi
       failedCriteria: diagnosisOpts.failedCriteria,
     },
   );
+  return {
+    verdict: output.verdict,
+    reasoning: output.reasoning,
+    confidence: output.confidence,
+    findings: output.findings,
+    cost: output.cost,
+    path: output.fallback ? "fallback" : "llm",
+  };
 }
 
 // ─── helpers ────────────────────────────────────────────────────────────────

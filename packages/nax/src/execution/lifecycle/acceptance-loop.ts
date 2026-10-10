@@ -12,8 +12,12 @@
 import {
   type DiagnosisResult,
   findExistingAcceptanceTestPath as findExistingAcceptanceTestPathFromOptions,
+  groupStoryIdsForPackage,
   loadAcceptanceTestContent as loadAcceptanceTestContentModule,
+  loadRefinedCriteria,
+  resolveFailedCriteria,
 } from "@/acceptance";
+import type { FailedCriterion } from "@/acceptance/failed-criteria";
 import type { NaxConfig } from "@/config";
 import type { Finding, FixCycle, FixCycleResult } from "@/findings";
 import { acFailureToFinding, acSentinelToFinding, runFixCycle } from "@/findings";
@@ -262,6 +266,7 @@ export async function runAcceptanceFixCycle(
   fixTarget?: { packageDir: string; testPath: string },
   /** Declared `quality.commands.testScoped` key, set only when the fix prompt can safely name it (#1939). */
   scopedCommandName?: string,
+  _failedCriteria?: FailedCriterion[],
 ): Promise<FixCycleResult<Finding>> {
   const runtime = ctx.runtime;
   if (!runtime) {
@@ -502,6 +507,7 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
       ? await _acceptanceLoopDeps.loadAcceptanceTestContent(ctx.acceptanceTestPaths.map((p) => p.testPath))
       : [];
 
+    const refinedCriteria = await loadRefinedCriteria(ctx.featureDir);
     const remainingFindings: Finding[] = [];
     let totalInternalIterations = 0;
     for (const pkg of failedPkgs) {
@@ -516,6 +522,11 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
       const testFileContent = testEntries.find((entry) => entry.testPath === effectivePath)?.content ?? "";
 
       const pkgFailures = { failedACs: pkg.failedACs, testOutput: pkg.output };
+      const failedCriteria = resolveFailedCriteria({
+        refined: refinedCriteria,
+        groupStoryIds: groupStoryIdsForPackage(prd, ctx.workdir, pkg.packageDir),
+        failedACs: pkg.failedACs,
+      });
       const diagnosis = await resolveAcceptanceDiagnosis({
         ctx,
         failures: pkgFailures,
@@ -528,6 +539,7 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
           workdir: pkg.packageDir,
           config: packageConfig,
           storyId: firstStory?.id,
+          failedCriteria,
         },
       });
 
@@ -536,6 +548,8 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
         packageDir: pkg.packageDir,
         verdict: diagnosis.verdict,
         confidence: diagnosis.confidence,
+        path: diagnosis.path,
+        failedACs: pkg.failedACs,
         attempt: acceptanceRetries,
       });
 
@@ -548,6 +562,7 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
         testCommand,
         { packageDir: pkg.packageDir, testPath: effectivePath },
         scopedCommandName,
+        failedCriteria,
       );
       totalCost += cycleResult.costUsd ?? 0;
       totalInternalIterations += cycleResult.iterations.length;

@@ -1,6 +1,6 @@
+import type { FailedCriterion } from "../acceptance/failed-criteria";
 import { acceptanceConfigSelector } from "../config";
 import type { AcceptanceConfig } from "../config/selectors";
-import type { FailedCriterion } from "../acceptance/failed-criteria";
 import type { Finding } from "../findings";
 import { acceptanceDiagnoseRawArrayToFindings } from "../findings";
 import { AcceptancePromptBuilder } from "../prompts";
@@ -20,6 +20,7 @@ export interface AcceptanceDiagnoseOutput {
   reasoning: string;
   confidence: number;
   findings?: Finding[];
+  cost?: number;
   fallback?: true;
 }
 
@@ -44,6 +45,7 @@ export const acceptanceDiagnoseOp: RunOperation<AcceptanceDiagnoseInput, Accepta
       testFileContent: input.testFileContent,
       acceptanceTestPath: input.acceptanceTestPath,
       sourceFiles: input.sourceFiles,
+      failedCriteria: input.failedCriteria,
     });
     return {
       role: { id: "role", content: "", overridable: false },
