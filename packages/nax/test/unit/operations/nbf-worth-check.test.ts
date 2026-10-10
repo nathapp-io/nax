@@ -306,9 +306,6 @@ type WorthDeps = {
   collectDiff: (...args: unknown[]) => Promise<string | null>;
   collectDiffStat: (...args: unknown[]) => Promise<string>;
   loadPRD: (...args: unknown[]) => Promise<unknown>;
-  writeAudit: (...args: unknown[]) => Promise<void>;
-  now: () => number;
-  costTotal: (...args: unknown[]) => number;
 };
 
 const originalWorthDeps = Object.getOwnPropertyDescriptor(operations, "_nbfWorthCheckDeps")?.value;
@@ -343,10 +340,6 @@ afterEach(() => {
       collectDiff: async () => "+x",
       collectDiffStat: async () => "",
       loadPRD: async () => ({ userStories: [] }),
-      writeAudit: async () => undefined,
-      now: () => 0,
-      write: async () => undefined,
-      costTotal: () => 0,
     });
   }
 });

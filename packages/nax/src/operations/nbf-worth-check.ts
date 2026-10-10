@@ -8,7 +8,6 @@ import type { Finding } from "../findings";
 import { loadPRD, type UserStory } from "../prd";
 import { buildNbfWorthCheckPrompt } from "../prompts";
 import { collectDiff, collectDiffStat, resolveEffectiveRef, truncateDiff } from "../review/diff-utils";
-import { type NaxRuntime, totalSpendUsd } from "../runtime";
 import { tryParseLLMJson } from "../utils/llm-json";
 import { callOp } from "./call";
 import { _nbfWorthCheckAuditDeps, recordNbfWorthCheck } from "./nbf-worth-check-audit";
@@ -112,9 +111,6 @@ export const _nbfWorthCheckDeps = {
   collectDiff,
   collectDiffStat,
   loadPRD,
-  writeAudit: async (): Promise<void> => undefined,
-  now: (): number => Date.now(),
-  costTotal: (runtime: NaxRuntime): number => totalSpendUsd(runtime.costAggregator.snapshot()),
 };
 
 async function storyDiff(ctx: CallContext): Promise<string> {

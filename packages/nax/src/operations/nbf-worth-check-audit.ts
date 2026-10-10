@@ -66,7 +66,7 @@ function fileRecord(record: NbfWorthCheckRecord): NbfWorthCheckAuditFile {
       line,
       message,
     })),
-    verdicts: parsed ? record.result.verdicts : [],
+    verdicts: record.result?.parsed === true ? record.result.verdicts : [],
     durationMs: record.durationMs,
     costUsd: record.costUsd,
   };
