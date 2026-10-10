@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { AdviceDecision } from "@/advisor";
-import { formatDecisionsForPrompt } from "@/advisor";
+import { formatDecisionsForPrompt, summariseAdvisor } from "@/advisor";
 
 const d = (id: string, action: AdviceDecision["action"], over: Partial<AdviceDecision> = {}): AdviceDecision => ({
   id,
@@ -42,5 +42,17 @@ describe("formatDecisionsForPrompt", () => {
 
   test("empty when nothing was waived or superseded", () => {
     expect(formatDecisionsForPrompt([d("D-1", { type: "fix", instruction: "x" })])).toBe("");
+  });
+});
+
+describe("summariseAdvisor", () => {
+  test("counts decisions, flagged ones, and decisions per kind", () => {
+    expect(
+      summariseAdvisor([
+        d("D-1", { type: "fix", instruction: "x" }),
+        d("D-2", { type: "hold", reason: "y" }, { needsHumanConfirm: true, kind: "finish-approval" }),
+        d("D-3", { type: "waive", reason: "z" }),
+      ]),
+    ).toEqual({ decisions: 3, flagged: 1, byKind: { "finish-judgment": 2, "finish-approval": 1 } });
   });
 });

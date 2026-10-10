@@ -25,6 +25,7 @@ import { totalSpendUsd } from "@/runtime";
 import type { DispatchContext } from "@/runtime/dispatch-context";
 import { autoCommitIfDirty, gitWithTimeout } from "@/utils/git";
 import { storyPackageDir } from "@/utils/path-frame";
+import { recordAdvisorSummary } from "./advisor-summary";
 import { stopHeartbeat, writeExitSummary } from "./crash-recovery";
 import type { DeferredReviewResult } from "./deferred-review";
 import type { ExitReason } from "./executor-types";
@@ -469,6 +470,14 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
 
   // Finish mutates postRun in memory and can add successful or failed-dispatch
   // spend. Persist both status paths and return the same reconciled total.
+  // A1: advisor counts ride the same status write as finish (no-op when the advisor is off).
+  await recordAdvisorSummary({
+    config: options.config,
+    statusWriter: options.statusWriter,
+    repoRoot: options.workdir,
+    feature: options.feature,
+    outputDir: options.runtime?.outputDir,
+  });
   const finalTotal = await persistFinishStatus(options, reportedTotal);
 
   // Output run footer in headless mode

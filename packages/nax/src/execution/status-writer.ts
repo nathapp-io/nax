@@ -7,6 +7,7 @@
  */
 
 import { join } from "node:path";
+import type { AdvisorSummary } from "@/advisor/store";
 import type { NaxConfig } from "../config";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
@@ -79,6 +80,7 @@ export class StatusWriter {
   private _currentStory: RunStateSnapshot["currentStory"] = null;
   private _consecutiveWriteFailures = 0; // @design: BUG-2: Track consecutive write failures
   private _postRun: PostRunStatus | null = null;
+  private _advisor: AdvisorSummary | null = null;
 
   /**
    * Write mutex — serializes concurrent update() calls.
@@ -117,6 +119,11 @@ export class StatusWriter {
   }
 
   /** Update the current run status (running / completed / failed / stalled / crashed / precheck-failed) */
+  /** A1: advisor decision counts for the status file (set once, at run completion). */
+  setAdvisorSummary(summary: AdvisorSummary): void {
+    this._advisor = summary;
+  }
+
   setRunStatus(status: RunStateSnapshot["runStatus"]): void {
     this._runStatus = status;
   }
@@ -225,6 +232,9 @@ export class StatusWriter {
       startTimeMs: this.ctx.startTimeMs,
       currentStory: this._currentStory,
     };
+    if (this._advisor !== null) {
+      snapshot.advisor = this._advisor;
+    }
     if (this._postRun !== null) {
       snapshot.postRun = this._postRun;
     }
