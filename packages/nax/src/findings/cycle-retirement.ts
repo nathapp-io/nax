@@ -60,6 +60,8 @@ export interface DeclineLedger<F extends Finding> {
   /** Names of strategies retired with respect to `findings` — for the orphan-exit log. */
   // biome-ignore lint/suspicious/noExplicitAny: see above
   retiredNames(strategies: readonly FixStrategy<F, any, any, any>[], findings: readonly F[]): string[];
+  /** A1: the inverse of `recordDeclined` for these findings — the strategy may claim them again. */
+  clearDeclined(strategyName: string, findings: readonly F[]): void;
 }
 
 /**
@@ -89,6 +91,11 @@ export function createDeclineLedger<F extends Finding>(backing?: Map<string, Set
       declinedByStrategy.set(strategy.name, declined);
     },
     isRetiredFor,
+    clearDeclined(strategyName, findings) {
+      const declined = declinedByStrategy.get(strategyName);
+      if (!declined) return;
+      for (const f of findings) declined.delete(findingKey(f));
+    },
     retiredNames(strategies, findings) {
       return strategies.filter((s) => isRetiredFor(s, findings)).map((s) => s.name);
     },

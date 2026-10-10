@@ -39,6 +39,8 @@ export type {
   FixCycleResult,
   FixStrategy,
   FixStrategyWithExtractApplied,
+  GiveUpInput,
+  GiveUpResolution,
   Iteration,
   IterationOutcome,
   ValidateResult,

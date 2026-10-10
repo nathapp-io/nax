@@ -354,4 +354,32 @@ export interface FixCycle<F extends Finding> {
    * empty. Passed to strategy.appliesToVerdict when findings.length === 0.
    */
   verdict?: string;
+  /**
+   * A1: called when every strategy in a group gave up (UNRESOLVED) and no other
+   * claimant remains (after the #1654 fall-through), before the cycle exits
+   * `agent-gave-up`. `null` (or a throw) keeps that exit. A resolution replaces
+   * the working findings and un-declines the named strategies, and the loop
+   * continues; `exit` keeps the exit with the detail extended.
+   */
+  onGiveUp?: (input: GiveUpInput<F>) => Promise<GiveUpResolution<F> | null>;
+}
+
+/** What `onGiveUp` is told about a give-up. */
+export interface GiveUpInput<F extends Finding> {
+  readonly findings: readonly F[];
+  readonly gaveUp: readonly { strategyName: string; unresolvedDetail: string }[];
+  /** Attempts left per strategy name (per-strategy cap minus attempts so far). */
+  readonly attemptsLeft: Readonly<Record<string, number>>;
+  /** Attempts left under `config.maxAttemptsTotal`. */
+  readonly totalAttemptsLeft: number;
+}
+
+/** How `onGiveUp` resolved a give-up. */
+export interface GiveUpResolution<F extends Finding> {
+  /** Replacement working set (waived findings removed; retargeted ones carry a new fixTarget). */
+  readonly findings: F[];
+  /** Strategy names to un-decline for those findings. */
+  readonly reinstate: readonly string[];
+  /** Keep today's agent-gave-up exit; `detailSuffix` is appended to unresolvedDetail. */
+  readonly exit?: { detailSuffix: string };
 }
