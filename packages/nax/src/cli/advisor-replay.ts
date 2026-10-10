@@ -180,7 +180,15 @@ async function replayOne(
   return inWorktree(deps, opts.dir, r, async (wt) => {
     const warm = opts.memory === "warm";
     try {
-      const out = await deps.callOp({ ...base, packageDir: wt }, adviseOp, {
+      // The session runs in the worktree (an absolute packageDir is its exec root), never the live checkout;
+      // featureName: a native session derives its transcript dir from it and refuses to open without one.
+      const ctx = {
+        ...base,
+        packageDir: wt,
+        packageView: { ...base.packageView, packageDir: wt },
+        featureName: opts.feature,
+      };
+      const out = await deps.callOp(ctx, adviseOp, {
         question: r.question,
         specPath: r.context.specPath,
         prdText: await deps.readPrdText(wt, opts.feature),
