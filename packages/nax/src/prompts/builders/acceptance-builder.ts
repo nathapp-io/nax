@@ -10,6 +10,7 @@
  * Instantiation cost is negligible; builders are short-lived call-and-discard.
  */
 
+import type { FailedCriterion } from "@/acceptance/failed-criteria";
 import type { PRD } from "@/prd/types";
 import { wrapAffordance } from "@/prompts/sections";
 import { buildTestFrameworkHint } from "@/test-runners";
@@ -93,6 +94,7 @@ export interface DiagnosisPromptParams {
   testFileContent?: string;
   acceptanceTestPath?: string;
   sourceFiles: Array<{ path: string; content: string }>;
+  failedCriteria?: FailedCriterion[];
 }
 
 export interface RefinementPromptOptions {
@@ -124,6 +126,7 @@ export interface DiagnosisTemplateParams {
   acceptanceTestPath: string;
   sourceFilesSection: string;
   maxFileLines: number;
+  failedCriteriaSection?: string;
 }
 
 export interface SourceFixParams {

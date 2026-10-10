@@ -88,16 +88,23 @@ describe("acceptanceDiagnoseOp.parse()", () => {
     expect(result.reasoning).toBe("fn returns wrong value");
     expect(result.confidence).toBe(0.9);
   });
-  test("falls back to source_bug on malformed JSON", () => {
+  test("US-001 AC14: falls back to test_bug on malformed JSON", () => {
     const ctx = makeBuildCtx();
     const result = acceptanceDiagnoseOp.parse("could not diagnose", SAMPLE_INPUT, ctx);
-    expect(result.verdict).toBe("source_bug");
+    expect(result.verdict).toBe("test_bug");
     expect(result.confidence).toBe(0);
+    expect(result.fallback).toBe(true);
   });
-  test("falls back to source_bug on missing fields", () => {
+  test("US-001 AC14: falls back to test_bug on missing fields", () => {
     const ctx = makeBuildCtx();
     const result = acceptanceDiagnoseOp.parse(JSON.stringify({ verdict: "test_bug" }), SAMPLE_INPUT, ctx);
-    expect(result.verdict).toBe("source_bug");
+    expect(result.verdict).toBe("test_bug");
+    expect(result.fallback).toBe(true);
+  });
+  test("US-001 AC15: valid diagnosis has no fallback property", () => {
+    const ctx = makeBuildCtx();
+    const result = acceptanceDiagnoseOp.parse(JSON.stringify({ verdict: "source_bug", reasoning: "r", confidence: 0.8 }), SAMPLE_INPUT, ctx);
+    expect(result).not.toHaveProperty("fallback");
   });
   test("parses test_bug verdict", () => {
     const ctx = makeBuildCtx();

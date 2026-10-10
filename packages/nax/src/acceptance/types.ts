@@ -151,4 +151,5 @@ export interface DiagnosisResult {
   findings?: Finding[];
   /** LLM cost incurred for the diagnosis agent session */
   cost?: number;
+  path?: "implement-only" | "test-level" | "llm" | "fallback";
 }

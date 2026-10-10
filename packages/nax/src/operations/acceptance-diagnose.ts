@@ -1,5 +1,6 @@
 import { acceptanceConfigSelector } from "../config";
 import type { AcceptanceConfig } from "../config/selectors";
+import type { FailedCriterion } from "../acceptance/failed-criteria";
 import type { Finding } from "../findings";
 import { acceptanceDiagnoseRawArrayToFindings } from "../findings";
 import { AcceptancePromptBuilder } from "../prompts";
@@ -11,6 +12,7 @@ export interface AcceptanceDiagnoseInput {
   testFileContent: string;
   acceptanceTestPath?: string;
   sourceFiles: Array<{ path: string; content: string }>;
+  failedCriteria?: FailedCriterion[];
 }
 
 export interface AcceptanceDiagnoseOutput {
@@ -18,12 +20,14 @@ export interface AcceptanceDiagnoseOutput {
   reasoning: string;
   confidence: number;
   findings?: Finding[];
+  fallback?: true;
 }
 
 const FALLBACK: AcceptanceDiagnoseOutput = {
-  verdict: "source_bug",
-  reasoning: "diagnosis failed — falling back to source fix",
+  verdict: "test_bug",
+  reasoning: "diagnosis failed — falling back to test fix",
   confidence: 0,
+  fallback: true,
 };
 
 export const acceptanceDiagnoseOp: RunOperation<AcceptanceDiagnoseInput, AcceptanceDiagnoseOutput, AcceptanceConfig> = {

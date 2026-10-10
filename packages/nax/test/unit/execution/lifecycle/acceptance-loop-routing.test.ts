@@ -25,6 +25,7 @@ import type { AgentAdapter } from "@/agents/types";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import type { AcceptanceFixConfig, NaxConfig } from "@/config/schema";
 import { _diagnosisDeps } from "@/execution/lifecycle/acceptance-fix";
+import { _failedCriteriaDeps } from "@/acceptance/failed-criteria";
 import {
   _acceptanceFixCycleDeps,
   _acceptanceLoopDeps,
@@ -510,6 +511,69 @@ function makeCtx(): AcceptanceLoopContext {
     abortSignal: new AbortController().signal,
   };
 }
+
+describe("runAcceptanceLoop failed-criteria diagnosis (US-001)", () => {
+  test("US-001 AC21-22: forwards per-package failed criteria and logs diagnosis path", async () => {
+    const tempDir = makeTempDir("nax-failed-criteria-loop-");
+    const originalReadFile = _failedCriteriaDeps.readFile;
+    const originalCallOp = _diagnosisDeps.callOp;
+    const originalRunFixCycle = _acceptanceFixCycleDeps.runFixCycle;
+    const originalImport = _runAcceptanceTestsOnceDeps.importAcceptanceStage;
+    const originalLoadContent = _acceptanceLoopDeps.loadAcceptanceTestContent;
+    const calls: Array<{ input: { failedCriteria?: unknown } }> = [];
+    const logs: Array<{ message: string; data?: Record<string, unknown> }> = [];
+    resetLogger();
+    initLogger({ level: "info", headless: true, useChalk: false });
+    const unsubscribe = addSink((entry) => logs.push({ message: entry.message, data: entry.data }));
+    try {
+      _failedCriteriaDeps.readFile = async () => JSON.stringify([
+        { acId: "AC-1", original: "o1", refined: "r1", storyId: "US-001" },
+        { acId: "AC-2", original: "o2", refined: "r2", storyId: "US-002" },
+        { acId: "AC-3", original: "o3", refined: "o3", storyId: "US-002" },
+      ]);
+      let runs = 0;
+      _runAcceptanceTestsOnceDeps.importAcceptanceStage = stubStagesModule(async (ctx) => {
+        runs++;
+        if (runs > 1) return { action: "continue" };
+        ctx.acceptanceFailures = { failedACs: ["AC-2"], findings: [], testOutput: "failure", failedPackages: [{ testPath: "/repo/t.test.ts", packageDir: "/repo", output: "failure", failedACs: ["AC-2"] }] };
+        return { action: "fail", reason: "acceptance failure" };
+      });
+      _acceptanceLoopDeps.loadAcceptanceTestContent = async () => [];
+      _acceptanceFixCycleDeps.runFixCycle = async () => ({ iterations: [], finalFindings: [], exitReason: "resolved" });
+      _diagnosisDeps.callOp = async (_ctx, _op, input) => {
+        calls.push({ input });
+        return { verdict: "source_bug", reasoning: "diagnosed", confidence: 0.8 };
+      };
+      const ctx = makeCtx();
+      ctx.config = makeNaxConfig({ acceptance: { maxRetries: 1, fix: { strategy: "diagnose-first" } } });
+      ctx.prd = { ...makeRetryPrd(), userStories: [
+        { ...makeRetryPrd().userStories[0], id: "US-001", acceptanceCriteria: ["one"] },
+        { ...makeRetryPrd().userStories[0], id: "US-002", acceptanceCriteria: ["two", "three"] },
+      ] };
+      ctx.workdir = "/repo";
+      ctx.featureDir = tempDir;
+      ctx.acceptanceTestPaths = [{ testPath: "/repo/t.test.ts", packageDir: "/repo" }];
+      await runAcceptanceLoop(ctx);
+      const entry = logs.find((log) => log.message === "Diagnosis resolved");
+      expect({
+        failedCriteria: calls[0].input.failedCriteria,
+        diagnosisLog: { path: entry?.data?.path, failedACs: entry?.data?.failedACs },
+      }).toEqual({
+        failedCriteria: [{ acId: "AC-2", storyId: "US-002", original: "o2", refined: "r2" }],
+        diagnosisLog: { path: "llm", failedACs: ["AC-2"] },
+      });
+    } finally {
+      unsubscribe();
+      resetLogger();
+      _failedCriteriaDeps.readFile = originalReadFile;
+      _diagnosisDeps.callOp = originalCallOp;
+      _acceptanceFixCycleDeps.runFixCycle = originalRunFixCycle;
+      _runAcceptanceTestsOnceDeps.importAcceptanceStage = originalImport;
+      _acceptanceLoopDeps.loadAcceptanceTestContent = originalLoadContent;
+      cleanupTempDir(tempDir);
+    }
+  });
+});
 
 // ─── BUG-11: maxRetries means fix cycles — the boundary case (maxRetries:1) ───
 

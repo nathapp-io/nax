@@ -9,6 +9,7 @@
  */
 
 import { loadSourceFilesForDiagnosis } from "@/acceptance";
+import type { FailedCriterion } from "@/acceptance/failed-criteria";
 import type { DiagnosisResult } from "@/acceptance/types";
 import type { NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
@@ -51,6 +52,7 @@ export interface ResolveAcceptanceDiagnosisOptions {
     workdir: string;
     config?: NaxConfig;
     storyId?: string;
+    failedCriteria?: FailedCriterion[];
   };
 }
 
@@ -122,6 +124,7 @@ export async function resolveAcceptanceDiagnosis(opts: ResolveAcceptanceDiagnosi
       testFileContent: diagnosisOpts.testFileContent,
       acceptanceTestPath: diagnosisOpts.acceptanceTestPath,
       sourceFiles,
+      failedCriteria: diagnosisOpts.failedCriteria,
     },
   );
 }
