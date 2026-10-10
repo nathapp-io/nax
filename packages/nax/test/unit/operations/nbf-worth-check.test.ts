@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { makeMockCallContext, makeNaxConfig, makeStory, makeTestRuntime, opSelector } from "@test/helpers";
 import { reviewConfigSelector } from "@/config";
 import type { Finding } from "@/findings";
+import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import type { NbfWorthCheckOpInput } from "@/operations";
 import * as operations from "@/operations";
 import { buildNbfWorthCheckPrompt } from "@/prompts";
@@ -289,6 +290,16 @@ type WorthRequest = {
   readonly cfg: { readonly mode: "on" | "off" | "shadow"; readonly timeoutMs?: number } | undefined;
 };
 type WorthRunner = (request: WorthRequest) => Promise<Finding[]>;
+
+function capturedInput(value: unknown): NbfWorthCheckOpInput {
+  if (!isNbfWorthInput(value)) throw new Error("Worth-check input was not captured");
+  return value;
+}
+
+function isNbfWorthInput(value: unknown): value is NbfWorthCheckOpInput {
+  return typeof value === "object" && value !== null && "diff" in value && typeof value.diff === "string";
+}
+
 type WorthDeps = {
   callOp: (...args: unknown[]) => Promise<unknown>;
   resolveEffectiveRef: (...args: unknown[]) => Promise<string | undefined>;
@@ -301,6 +312,7 @@ type WorthDeps = {
 };
 
 const originalWorthDeps = Object.getOwnPropertyDescriptor(operations, "_nbfWorthCheckDeps")?.value;
+const originalAuditDeps = Object.getOwnPropertyDescriptor(operations, "_nbfWorthCheckAuditDeps")?.value;
 const originalRunner = Object.getOwnPropertyDescriptor(operations, "runNbfWorthCheck")?.value;
 const worthFunction = (value: unknown): value is WorthRunner => typeof value === "function";
 const worthDepsObject = (value: unknown): value is WorthDeps => typeof value === "object" && value !== null;
@@ -316,6 +328,14 @@ function runWorth(request: WorthRequest): Promise<Finding[]> {
 }
 
 afterEach(() => {
+  if (worthDepsObject(originalAuditDeps)) {
+    Object.assign(originalAuditDeps, {
+      write: async () => undefined,
+      now: () => Date.now(),
+      costTotal: () => 0,
+    });
+  }
+  resetLogger();
   if (worthDepsObject(originalWorthDeps)) {
     Object.assign(originalWorthDeps, {
       callOp: async () => ({ parsed: true, verdicts: [] }),
@@ -325,6 +345,7 @@ afterEach(() => {
       loadPRD: async () => ({ userStories: [] }),
       writeAudit: async () => undefined,
       now: () => 0,
+      write: async () => undefined,
       costTotal: () => 0,
     });
   }
@@ -332,7 +353,7 @@ afterEach(() => {
 
 describe("runNbfWorthCheck (US-003)", () => {
   const findings = [findingA, findingB];
-  const config = { mode: "on" as const };
+  const config: WorthRequest["cfg"] = { mode: "on" };
   const story = makeStory({
     id: "US-002",
     title: "Deliver orders",
@@ -456,7 +477,7 @@ describe("runNbfWorthCheck (US-003)", () => {
       return fixSkip;
     };
     await runWorth({ ctx: makeRunnerCtx(), findings, cfg: config });
-    expect((input as NbfWorthCheckOpInput).pendingStories).toEqual([
+    expect(capturedInput(input).pendingStories).toEqual([
       { id: "US-003", title: "Retry delivery", acceptanceCriteria: ["retries twice"] },
     ]);
   });
@@ -473,7 +494,7 @@ describe("runNbfWorthCheck (US-003)", () => {
       return fixSkip;
     };
     await runWorth({ ctx: makeRunnerCtx(), findings, cfg: config });
-    expect((input as NbfWorthCheckOpInput).pendingStories).toEqual([]);
+    expect(capturedInput(input).pendingStories).toEqual([]);
   });
 
   test("US-003 AC11: does not load a PRD without a feature directory", async () => {
@@ -498,7 +519,7 @@ describe("runNbfWorthCheck (US-003)", () => {
       return fixSkip;
     };
     await runWorth({ ctx: makeRunnerCtx(), findings, cfg: config });
-    expect((input as NbfWorthCheckOpInput).diff).toBe("+x");
+    expect(capturedInput(input).diff).toBe("+x");
   });
 
   test("US-003 AC13: uses an empty diff when no effective ref exists", async () => {
@@ -511,7 +532,7 @@ describe("runNbfWorthCheck (US-003)", () => {
       return fixSkip;
     };
     await runWorth({ ctx: makeRunnerCtx(), findings, cfg: config });
-    expect((input as NbfWorthCheckOpInput).diff).toBe("");
+    expect(capturedInput(input).diff).toBe("");
   });
 
   test("US-003 AC14: uses an empty diff when diff collection rejects", async () => {
@@ -526,7 +547,7 @@ describe("runNbfWorthCheck (US-003)", () => {
       return fixSkip;
     };
     await runWorth({ ctx: makeRunnerCtx(), findings, cfg: config });
-    expect((input as NbfWorthCheckOpInput).diff).toBe("");
+    expect(capturedInput(input).diff).toBe("");
   });
 
   test("US-003 AC15: returns the seed without dispatch when the story is absent", async () => {
@@ -551,6 +572,102 @@ describe("runNbfWorthCheck (US-003)", () => {
       return fixSkip;
     };
     await runWorth({ ctx: makeRunnerCtx(), findings, cfg: config });
-    expect((input as NbfWorthCheckOpInput).diff).toBe("");
+    expect(capturedInput(input).diff).toBe("");
+  });
+
+  test("US-004 AC1-3: logs ordered story context, verdict counts, and skipped finding details", async () => {
+    const deps = worthDeps();
+    if (!deps) return;
+    const entries: LogEntry[] = [];
+    resetLogger();
+    initLogger({ level: "info", headless: true, useChalk: false });
+    addSink((entry) => entries.push(entry));
+    deps.callOp = async () => fixSkip;
+    await runWorth({ ctx: makeRunnerCtx(), findings, cfg: config });
+    const entry = entries.find((item) => item.message === "worth-check verdicts");
+    expect(entry?.stage).toBe("nbf-worth-check");
+    expect(Object.keys(entry?.data ?? {}).slice(0, 2)).toEqual(["storyId", "packageDir"]);
+    expect(entry?.data).toMatchObject({ storyId: "US-002", packageDir: "/tmp/test", fix: 1, skip: 1 });
+    expect(entry?.data?.skipped).toEqual([{ file: "src/b.ts", line: 3, reason: "nit" }]);
+  });
+
+  test("US-004 AC4-6: logs all-skip and failed judgments", async () => {
+    const deps = worthDeps();
+    if (!deps) return;
+    const entries: LogEntry[] = [];
+    resetLogger();
+    initLogger({ level: "info", headless: true, useChalk: false });
+    addSink((entry) => entries.push(entry));
+    deps.callOp = async () => ({
+      parsed: true,
+      verdicts: [
+        { index: 1, verdict: "skip", reason: "r1" },
+        { index: 2, verdict: "skip", reason: "nit" },
+      ],
+    });
+    await runWorth({ ctx: makeRunnerCtx(), findings, cfg: config });
+    expect(entries.find((item) => item.message === "all advisory findings skipped — NBF not run")?.data?.skip).toBe(2);
+    deps.callOp = async () => {
+      throw new Error("boom");
+    };
+    await runWorth({ ctx: makeRunnerCtx(), findings, cfg: config });
+    expect(entries.find((item) => item.message === "worth-check failed — fixing all findings")?.data?.error).toBe(
+      "boom",
+    );
+    deps.callOp = async () => ({ parsed: false, unparsedPreview: "junk" });
+    await runWorth({ ctx: makeRunnerCtx(), findings, cfg: config });
+    expect(
+      entries.filter((item) => item.message === "worth-check failed — fixing all findings").at(-1)?.data?.error,
+    ).toBe("junk");
+  });
+
+  test("US-004 AC7-14: audits judged records, tolerates write failures, and uses unknown feature", async () => {
+    const deps = worthDeps();
+    if (!deps) return;
+    const entries: LogEntry[] = [];
+    resetLogger();
+    initLogger({ level: "info", headless: true, useChalk: false });
+    addSink((entry) => entries.push(entry));
+    let audit: { path: string; record: import("@/operations").NbfWorthCheckAuditFile } | undefined;
+    let writeCount = 0;
+    const costs = [0, 0.02];
+    const auditDeps = operations._nbfWorthCheckAuditDeps;
+    auditDeps.now = () => 1000;
+    auditDeps.costTotal = () => costs.shift() ?? 0.02;
+    auditDeps.write = async (path, record) => {
+      writeCount += 1;
+      audit = { path, record };
+    };
+    deps.callOp = async () => fixSkip;
+    const context = makeRunnerCtx();
+    await runWorth({ ctx: context, findings, cfg: config });
+    expect(audit?.path).toBe(`${context.runtime.outputDir}/nbf-worth-check/f/US-002-1000.json`);
+    expect(audit?.record.costUsd).toBe(0.02);
+    expect(audit?.record).toMatchObject({ mode: "on", parsed: true });
+    expect(audit?.record.verdicts).toHaveLength(2);
+    deps.callOp = async () => {
+      throw new Error("boom");
+    };
+    await runWorth({ ctx: context, findings, cfg: config });
+    expect(audit?.record).toMatchObject({ parsed: false, verdicts: [], unparsedPreview: "boom" });
+    deps.callOp = async () => fixSkip;
+    auditDeps.write = async () => {
+      throw new Error("disk");
+    };
+    expect(await runWorth({ ctx: context, findings, cfg: config })).toEqual([findingA]);
+    expect(entries.some((item) => item.message === "worth-check audit write failed" && item.level === "warn")).toBe(
+      true,
+    );
+    auditDeps.write = async (path, record) => {
+      audit = { path, record };
+    };
+    await runWorth({ ctx: context, findings, cfg: { mode: "shadow" } });
+    expect(audit?.record.mode).toBe("shadow");
+    expect(audit?.record.verdicts).toHaveLength(2);
+    await runWorth({ ctx: makeRunnerCtx({ featureName: undefined }), findings, cfg: { mode: "shadow" } });
+    expect(audit?.path).toContain("/nbf-worth-check/_unknown/");
+    const writesBeforeOff = writeCount;
+    await runWorth({ ctx: context, findings, cfg: { mode: "off" } });
+    expect(writeCount).toBe(writesBeforeOff);
   });
 });

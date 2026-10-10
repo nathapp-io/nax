@@ -11,6 +11,7 @@ import { collectDiff, collectDiffStat, resolveEffectiveRef, truncateDiff } from 
 import { type NaxRuntime, totalSpendUsd } from "../runtime";
 import { tryParseLLMJson } from "../utils/llm-json";
 import { callOp } from "./call";
+import { _nbfWorthCheckAuditDeps, recordNbfWorthCheck } from "./nbf-worth-check-audit";
 import type { CallContext, Operation, RunOperation } from "./types";
 
 export interface NbfWorthCheckPendingStory {
@@ -145,6 +146,10 @@ async function pendingFeatureStories(ctx: CallContext): Promise<NbfWorthCheckPen
 export async function runNbfWorthCheck(req: NbfWorthCheckRequest): Promise<Finding[]> {
   const seed = [...req.findings];
   if (!req.cfg || req.cfg.mode === "off" || !req.ctx.story || seed.length === 0) return seed;
+  const startedAt = _nbfWorthCheckAuditDeps.now();
+  const costBefore = _nbfWorthCheckAuditDeps.costTotal(req.ctx.runtime);
+  let result: NbfWorthCheckOpOutput | undefined;
+  let failure: string | undefined;
   try {
     const input: NbfWorthCheckOpInput = {
       story: req.ctx.story,
@@ -152,14 +157,39 @@ export async function runNbfWorthCheck(req: NbfWorthCheckRequest): Promise<Findi
       findings: seed,
       pendingStories: await pendingFeatureStories(req.ctx),
     };
-    const result = await _nbfWorthCheckDeps.callOp(req.ctx, nbfWorthCheckOp, input);
-    if (req.cfg.mode !== "on" || !isParsedWorthOutput(result)) return seed;
-    return seed.filter((_, index) =>
-      result.verdicts.some((verdict) => verdict.index === index + 1 && verdict.verdict === "fix"),
-    );
-  } catch {
-    return seed;
+    const output: unknown = await _nbfWorthCheckDeps.callOp(req.ctx, nbfWorthCheckOp, input);
+    result = isWorthOutput(output) ? output : { parsed: false, unparsedPreview: "unparseable worth-check reply" };
+  } catch (error) {
+    failure = error instanceof Error ? error.message : String(error);
   }
+  await recordNbfWorthCheck({
+    runtime: req.ctx.runtime,
+    storyId: req.ctx.story.id,
+    featureName: req.ctx.featureName,
+    packageDir: req.ctx.packageDir,
+    mode: req.cfg.mode,
+    findings: seed,
+    ...(result ? { result } : {}),
+    ...(failure !== undefined ? { error: failure } : {}),
+    durationMs: _nbfWorthCheckAuditDeps.now() - startedAt,
+    costUsd: _nbfWorthCheckAuditDeps.costTotal(req.ctx.runtime) - costBefore,
+  });
+  if (req.cfg.mode !== "on" || failure !== undefined || !result || !result.parsed) return seed;
+  return seed.filter((_, index) =>
+    result.verdicts.some((verdict) => verdict.index === index + 1 && verdict.verdict === "fix"),
+  );
+}
+
+function isWorthOutput(value: unknown): value is NbfWorthCheckOpOutput {
+  return (
+    isParsedWorthOutput(value) ||
+    (typeof value === "object" &&
+      value !== null &&
+      "parsed" in value &&
+      value.parsed === false &&
+      "unparsedPreview" in value &&
+      typeof value.unparsedPreview === "string")
+  );
 }
 
 function isParsedWorthOutput(value: unknown): value is Extract<NbfWorthCheckOpOutput, { parsed: true }> {
