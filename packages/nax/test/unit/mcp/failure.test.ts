@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import type { McpConnection as SharedConnection } from "@nathapp/nax-agent/mcp";
+import type { McpConnection } from "@nathapp/nax-agent/mcp";
 import { assertDefined } from "@test/helpers";
 import type { McpServerConfig } from "@/config";
 import { _mcpClientDeps } from "@/mcp/client";
@@ -17,7 +17,7 @@ const lock: McpLockFile = { version: 1, servers: { memory: { t: schemaHash(schem
 
 /** Fake of the SHARED connection at `_mcpClientDeps.connect`; `onCall` throws or hangs per test. */
 function sdk(behaviour: { onCall?: () => never | Promise<never> } = {}): void {
-  const connection: SharedConnection = {
+  const connection: McpConnection = {
     kind: "stdio",
     pid: 7,
     tools: [{ name: "t", description: "d", inputSchema: schema }],
@@ -44,7 +44,7 @@ const ctx = { root: "/w", resolvedPaths: [], maxBytes: 40_000, maxFileBytes: 1 }
 describe("US-006 failure behaviour", () => {
   test("a server whose command does not exist degrades: no tools, no throw", async () => {
     Object.assign(_mcpClientDeps, {
-      connect: async (): Promise<SharedConnection> => {
+      connect: async (): Promise<McpConnection> => {
         throw new Error("spawn ENOENT");
       },
     });
@@ -106,7 +106,7 @@ describe("US-006 failure behaviour", () => {
   test("a degraded server never prevents a healthy one from being advertised", async () => {
     let connects = 0;
     Object.assign(_mcpClientDeps, {
-      connect: async (): Promise<SharedConnection> => {
+      connect: async (): Promise<McpConnection> => {
         connects++;
         if (connects === 1) throw new Error("ENOENT");
         return {

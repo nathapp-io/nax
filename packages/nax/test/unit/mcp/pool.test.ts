@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import type { McpTransportConfig, McpConnection as SharedConnection } from "@nathapp/nax-agent/mcp";
+import type { McpConnection, McpTransportConfig } from "@nathapp/nax-agent/mcp";
 import { cleanupTempDir, makeTempDir, useUntrustedRegistry, withTimerSpy } from "@test/helpers";
 
 /** nax run only ever configures stdio servers; this is the variant the fakes receive. */
@@ -19,7 +19,7 @@ interface Spawn {
 }
 
 /** Fake of the SHARED connection handed back by `_mcpClientDeps.connect`; spawns are `connect(config)` calls. */
-function cannedConnection(pid: number, closes: number[]): SharedConnection {
+function cannedConnection(pid: number, closes: number[]): McpConnection {
   return {
     kind: "stdio",
     pid,
@@ -77,7 +77,7 @@ describe("createMcpPool — US-005 trust backstop", () => {
     project = makeTempDir();
     let connects = 0;
     Object.assign(_mcpClientDeps, {
-      connect: async (): Promise<SharedConnection> => {
+      connect: async (): Promise<McpConnection> => {
         connects++;
         throw new Error("must not be called");
       },

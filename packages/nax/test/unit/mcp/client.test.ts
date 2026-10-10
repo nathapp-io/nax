@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import type { ConnectMcpOptions, McpTransportConfig, McpConnection as SharedConnection } from "@nathapp/nax-agent/mcp";
+import type { ConnectMcpOptions, McpConnection, McpTransportConfig } from "@nathapp/nax-agent/mcp";
 import { _mcpClientDeps, connectMcpServer } from "@/mcp/client";
 
 const original = { ..._mcpClientDeps };
@@ -25,7 +25,7 @@ function fakeShared(
 } {
   const closed: string[] = [];
   const calls: { config: McpTransportConfig; opts: ConnectMcpOptions }[] = [];
-  const connection: SharedConnection = {
+  const connection: McpConnection = {
     kind: "stdio",
     pid: over.pid ?? 4242,
     tools: over.tools ?? [],

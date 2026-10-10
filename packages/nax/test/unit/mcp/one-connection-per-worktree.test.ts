@@ -15,7 +15,7 @@
  * `buildRunDispatchOptions`, so this test goes through it.
  */
 import { afterEach, describe, expect, test } from "bun:test";
-import type { McpTransportConfig, McpConnection as SharedConnection } from "@nathapp/nax-agent/mcp";
+import type { McpConnection, McpTransportConfig } from "@nathapp/nax-agent/mcp";
 import { makeMockRuntime, makeNaxConfig } from "@test/helpers";
 import { _codingToolSupportDeps, resolveCodingToolSupport } from "@/agents/coding-tool-support-resolve";
 import type { McpServerConfig } from "@/config";
@@ -35,7 +35,7 @@ function fakeMcpClient(): { transports: Transport[] } {
   const transports: Transport[] = [];
   let nextPid = 100;
   Object.assign(_mcpClientDeps, {
-    connect: async (config: Extract<McpTransportConfig, { kind: "stdio" }>): Promise<SharedConnection> => {
+    connect: async (config: Extract<McpTransportConfig, { kind: "stdio" }>): Promise<McpConnection> => {
       const pid = nextPid++;
       transports.push({ cwd: config.cwd, pid });
       return {
