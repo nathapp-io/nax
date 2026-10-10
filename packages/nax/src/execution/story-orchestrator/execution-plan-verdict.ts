@@ -119,6 +119,7 @@ export function buildStoryOrchestratorResult(
     });
   const totalCostUsd = Object.values(phaseCosts).reduce((sum, cost) => sum + cost, 0);
   const durationMs = Date.now() - startedAt;
+  const failedPhases = collectFailedPhases(ctx, phaseOutputs, { gateName, verifierPassedSsot, failedPhaseEntries });
 
   logStoryOrchestratorVerdict(ctx, {
     success,
@@ -129,9 +130,7 @@ export function buildStoryOrchestratorResult(
     missingRequiredReviewPhases,
     upstreamShortCircuited,
     shortCircuitPhase,
-    failedPhaseEntries,
-    gateName,
-    verifierPassedSsot,
+    failedPhases,
   });
 
   return {
@@ -143,7 +142,30 @@ export function buildStoryOrchestratorResult(
     ...rectResult,
     gateRegressedDuringRect,
     missingRequiredReviewPhases: missingRequiredReviewPhases.length > 0 ? missingRequiredReviewPhases : undefined,
+    ...(failedPhases.length > 0 && { failedPhases }),
   };
+}
+
+/**
+ * Phases the verdict counts as failed, in `phaseOutputs` order: every non-passing
+ * output (the gate excused under the verifier-SSOT carve-out), then review phases
+ * that never ran (Part A, #1666 — `failedPhaseEntries` already excludes those an
+ * upstream short-circuit skipped).
+ */
+function collectFailedPhases(
+  ctx: CallContext,
+  phaseOutputs: Record<string, unknown>,
+  opts: { gateName: string | undefined; verifierPassedSsot: boolean; failedPhaseEntries: readonly string[] },
+): string[] {
+  return [
+    ...Object.entries(phaseOutputs)
+      .filter(([name, output]) => {
+        if (opts.verifierPassedSsot && name === opts.gateName) return false;
+        return !phasePassed(name, output, ctx.storyId);
+      })
+      .map(([name]) => name),
+    ...opts.failedPhaseEntries.map((name) => `${name} (never ran)`),
+  ];
 }
 
 interface VerdictLogInputs {
@@ -155,9 +177,7 @@ interface VerdictLogInputs {
   missingRequiredReviewPhases: readonly string[];
   upstreamShortCircuited: boolean;
   shortCircuitPhase: string | undefined;
-  failedPhaseEntries: readonly string[];
-  gateName: string | undefined;
-  verifierPassedSsot: boolean;
+  failedPhases: readonly string[];
 }
 
 /** Single end-of-run summary log so anyone reading the JSONL can see the orchestrator's verdict without correlating per-phase lines. */
@@ -171,23 +191,10 @@ function logStoryOrchestratorVerdict(ctx: CallContext, inputs: VerdictLogInputs)
     missingRequiredReviewPhases,
     upstreamShortCircuited,
     shortCircuitPhase,
-    failedPhaseEntries,
-    gateName,
-    verifierPassedSsot,
+    failedPhases,
   } = inputs;
   const logger = getSafeLogger();
 
-  const failedPhases = [
-    ...Object.entries(phaseOutputs)
-      .filter(([name, output]) => {
-        if (verifierPassedSsot && name === gateName) return false;
-        return !phasePassed(name, output, ctx.storyId);
-      })
-      .map(([name]) => name),
-    // Part A (#1666): `failedPhaseEntries` excludes review phases skipped by an
-    // upstream short-circuit — see review-phase-report.ts.
-    ...failedPhaseEntries.map((name) => `${name} (never ran)`),
-  ];
   const summary: Record<string, unknown> = {
     storyId: ctx.storyId,
     success,

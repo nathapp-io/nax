@@ -6,6 +6,7 @@ import {
   runCanonicalLoop,
   runMechanicalOnlyResume,
   runPostRectificationResume,
+  settleProvisionalRectification,
 } from "./execution-plan-phases";
 import { buildStoryOrchestratorResult } from "./execution-plan-verdict";
 import { gateFailureKeys } from "./phase-eval";
@@ -76,15 +77,18 @@ export class ExecutionPlan {
       !!this.state.rectification &&
       !rectResult.terminalReviewRequired &&
       (!rectResult.rectificationExhausted || !!rectResult.liteScopeIncomplete);
-    if (resumeLoopEligible) {
-      await runPostRectificationResume(plan, tracking, preRectGateFailureKeys);
-    }
+    const resumeCompleted =
+      resumeLoopEligible && (await runPostRectificationResume(plan, tracking, preRectGateFailureKeys));
 
     if (this.state.rectification && rectResult.rectificationExhausted) {
       await runMechanicalOnlyResume(plan, tracking, rectResult);
     }
 
     await maybeRunNonBlockingFix(plan, tracking, rectResult, { gateName, preRectGateFailureKeys });
+
+    // #2406 — after the non-blocking fix, whose own rectification pass can write the
+    // provisional output again: the settle must be the last writer before the verdict.
+    if (resumeCompleted) settleProvisionalRectification(tracking.phaseOutputs, this.ctx.storyId);
 
     return buildStoryOrchestratorResult(plan, tracking, {
       gateName,

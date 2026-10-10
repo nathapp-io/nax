@@ -55,6 +55,9 @@ export function resolveStoryWorkdir(repoRoot: string, storyWorkdir?: string): st
   return resolved;
 }
 
+/** Pause reason when a failed TDD story has no failure category to route on. */
+export const TDD_REVIEW_PAUSE_REASON = "Three-session TDD requires review";
+
 /**
  * Determine the pipeline action for a failed TDD result, based on its failureCategory.
  *
@@ -80,7 +83,7 @@ export function routeTddFailure(
   // non-three-session review verdict) → fall back to the human-review pause.
   const pauseFallback: StageResult = {
     action: "pause",
-    reason: reviewReason || "Three-session TDD requires review",
+    reason: reviewReason || TDD_REVIEW_PAUSE_REASON,
   };
   if (failureCategory === undefined) {
     return pauseFallback;

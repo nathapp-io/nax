@@ -331,12 +331,16 @@ export async function runCanonicalLoop(
  * `run()`'s `resumeLoopEligible` — which is also the deciding line for
  * whether a still-missing required review phase is attributable to the
  * canonical loop's short-circuit, or to this resume loop's own halt (US-002).
+ *
+ * Returns true when the walk reached the end with every phase passing, false when
+ * it halted on a failure (#2406: only a completed walk may settle a provisional
+ * rectification outcome).
  */
 export async function runPostRectificationResume(
   plan: PlanParams,
   tracking: PhaseTracking,
   preRectGateFailureKeys: ReadonlySet<string>,
-): Promise<void> {
+): Promise<boolean> {
   const { ctx, state, isThreeSession } = plan;
   const { phaseCosts, phaseOutputs } = tracking;
   const logger = getSafeLogger();
@@ -394,7 +398,7 @@ export async function runPostRectificationResume(
           phase: name,
           source: "post-rectification-resume",
         });
-        break;
+        return false;
       }
       // `extraRevalidationKinds` puts the failed phase in revalidation even when the
       // fixing strategy excludes it (autofix-implementer never revalidates the
@@ -407,8 +411,33 @@ export async function runPostRectificationResume(
       source: "post-rectification-resume",
       secondRectifyUsed: resumeRectifyUsed,
     });
-    break;
+    return false;
   }
+  return true;
+}
+
+/**
+ * #2406 — settle a provisional rectification outcome once the post-rectification
+ * resume has run every remaining phase green. `runRectification` marks a
+ * validate-short-circuit exit with no remaining findings `provisional`: it handed
+ * the undecided phases to the resume, so its `success: false` was never a verdict.
+ * Left alone it lists `rectification` as the story's only failed phase and the
+ * story pauses with every gate green.
+ *
+ * Settles only when every OTHER phase output passes, so a provisional outcome can
+ * never mask a real failure (e.g. one a later non-blocking-fix pass left behind).
+ * `exitReason` is kept as the record of how the cycle ended; `settledBy` says why
+ * the outcome is nonetheless a success. Any non-provisional outcome is final.
+ */
+export function settleProvisionalRectification(phaseOutputs: Record<string, unknown>, storyId?: string): void {
+  const rect = phaseOutputs.rectification as { provisional?: boolean } | undefined;
+  if (rect?.provisional !== true) return;
+  const othersPassed = Object.entries(phaseOutputs).every(
+    ([name, output]) => name === "rectification" || phasePassed(name, output, storyId),
+  );
+  if (!othersPassed) return;
+  const { provisional: _settled, ...rest } = rect;
+  phaseOutputs.rectification = { ...rest, success: true, settledBy: "resume" };
 }
 
 /**

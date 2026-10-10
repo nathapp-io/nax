@@ -280,3 +280,33 @@ describe("decideStageAction — unknown-category fallbacks", () => {
     expect(result.reason).toContain("category=session-failure");
   });
 });
+
+describe("decideStageAction — uncategorised TDD pause names the failed phases (#2406)", () => {
+  test("the requires-review pause names the verdict's failed phases", async () => {
+    const ctx = makeTestContext({ interaction: undefined });
+    const planResult = makePlanResult({
+      success: false,
+      failedPhases: ["rectification", "semantic-review"],
+    });
+    const inspection = makeInspection({ failureCategory: undefined });
+    const opts = makeInspectionOpts({ tddMode: { isLite: false, rollbackEnabled: false } });
+
+    const result = await decideStageAction(ctx, planResult, inspection, opts);
+
+    expect(result).toEqual({
+      action: "pause",
+      reason: "Three-session TDD requires review (failed phases: rectification, semantic-review)",
+    });
+  });
+
+  test("keeps the bare reason when the verdict names no failed phase", async () => {
+    const ctx = makeTestContext({ interaction: undefined });
+    const planResult = makePlanResult({ success: false });
+    const inspection = makeInspection({ failureCategory: undefined });
+    const opts = makeInspectionOpts({ tddMode: { isLite: false, rollbackEnabled: false } });
+
+    const result = await decideStageAction(ctx, planResult, inspection, opts);
+
+    expect(result).toEqual({ action: "pause", reason: "Three-session TDD requires review" });
+  });
+});

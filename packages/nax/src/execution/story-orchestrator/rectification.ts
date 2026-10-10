@@ -520,6 +520,7 @@ export async function runRectification(
     iterationCount: priorRectifyIterations + cycleResult.iterations.length,
     exitReason: reportedExitReason,
     finalFindingsCount: cycleResult.finalFindings.length,
+    ...provisionalMarker(cycleResult.exitReason, cycleResult.finalFindings.length),
   };
 
   // Rectification cycle summary — one line so the JSONL records what happened
@@ -584,4 +585,15 @@ export async function runRectification(
   }
 
   return repoScoped;
+}
+
+/**
+ * #2406 — a validate-short-circuit with no remaining findings decides nothing: the
+ * resume loop runs the phases it skipped (`liteScopeIncomplete`). Its failure is
+ * provisional until `settleProvisionalRectification` sees that resume finish green.
+ * Keyed on the raw exit, not the reported one, which can rewrite this same exit to
+ * max-attempts-per-strategy.
+ */
+function provisionalMarker(exitReason: string, finalFindingsCount: number): { provisional?: true } {
+  return exitReason === "validate-short-circuit" && finalFindingsCount === 0 ? { provisional: true } : {};
 }
