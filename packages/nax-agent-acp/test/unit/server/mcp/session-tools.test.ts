@@ -15,6 +15,7 @@ function fakeConnection(answer: (name: string) => Promise<McpCallResult>): FakeC
   let closed = 0;
   return {
     kind: "stdio",
+    pid: null,
     tools: [],
     calls,
     call: async (name, input, opts) => {

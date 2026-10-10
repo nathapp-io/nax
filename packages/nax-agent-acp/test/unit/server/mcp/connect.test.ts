@@ -12,6 +12,7 @@ import { parseMcpServers } from "#src/server/mcp/parse";
 function connection(tools: readonly McpToolInfo[], closed: string[] = [], name = ""): McpConnection {
   return {
     kind: "stdio",
+    pid: null,
     tools,
     call: async () => ({ text: "", isError: false, bytesBeforeCap: 0 }),
     onClose: () => {},

@@ -19,6 +19,7 @@ afterEach(() => cleanupTempDir(dir));
 const connectGit: ConnectSessionMcp = async (input) => {
   const connection = {
     kind: "stdio" as const,
+    pid: null,
     tools: [],
     call: async () => ({ text: "ok", isError: false, bytesBeforeCap: 2 }),
     onClose: () => {},
