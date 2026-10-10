@@ -1,6 +1,6 @@
 # A1 — Advisor: rule on judgment calls instead of stopping the run
 
-**Status:** design rev 2 (spec-review round 1 applied), awaiting user review · **Date:** 2026-10-10 ·
+**Status:** design rev 2.1 (spec-review round 1 applied + plan-time amendments §12), awaiting user review · **Date:** 2026-10-10 ·
 **Baseline:** `main` @ `9611b61a4` (v0.85.1). All paths are under `packages/nax/` unless stated.
 **Arc:** autonomy & lean pipeline. A1 is the first of five sub-projects: A2 acceptance retro, A3 NBF
 triage, A4 finish as a branch review, A5 lean-workflow A/B. This spec covers A1 only.
@@ -93,7 +93,7 @@ decision), rules on these calls, and lets the run continue. Every ruling is:
 | Decide glue | `src/execution/uncategorised-advice.ts` | Caller 3 |
 | Context provider | `src/context/engine/providers/advisor-decisions.ts` | Story-stage prompts (§4.9) |
 | Config type | `src/config/runtime-types-advisor.ts` | `AdvisorConfig` (`runtime-types.ts` is at its size limit) |
-| CLI | `src/commands/advisor.ts` + `bin/nax.ts` | `nax advisor list \| replay \| label \| import-finish` |
+| CLI | `src/cli/advisor.ts` (`registerAdvisorCommand`) + `bin/nax.ts` | `nax advisor list \| replay \| label \| import-finish` |
 
 **Import direction:**
 - `src/advisor/service.ts` → `@/operations` (barrel).
@@ -286,7 +286,7 @@ the contradiction. Target `spec` (a spec section with no AC) is always allowed.
   headsUp: { sent: boolean, reason?: string } }
 ```
 
-**CLI** (`src/commands/advisor.ts`, registered in `bin/nax.ts`). Replays are billed; the command
+**CLI** (`src/cli/advisor.ts`, `registerAdvisorCommand(program)` in `bin/nax.ts`, following `src/cli/approvals.ts`). Replays are billed; the command
 prints that before running.
 - `nax advisor list [-f <feature>]` — the ledger, flagged first.
 - `nax advisor replay <decisionId> | -f <feature> [--model <ConfiguredModel>] [--memory stateless|warm] [--eval] [--json]`:
@@ -650,3 +650,37 @@ The spec review returned 3 blockers, 9 HIGH, 8 MEDIUM and some LOWs, all address
 | M7 | Seed = 11 judgment cases; gaps covered by menu tests |
 | M8 | Ratchets listed in §7 |
 | LOWs | `timeoutMs` used; `routeReview` opts parameter; flat `commands/advisor.ts`; warm close; budget window defined |
+
+## 12. Plan-time amendments (rev 2.1, 2026-10-10)
+
+Grounded while writing the implementation plan. Where this section and an earlier section disagree,
+**this section wins**.
+
+1. **No parse retry on `adviseOp` (§4.4).** It mirrors `fixReviewOp`, a verdict-only op whose
+   unparseable reply is a typed `{ ok: false }`. `makeParseRetryStrategy`'s `validate` is a static
+   predicate and cannot check the per-question menu, so a retry would only catch missing JSON. A
+   missing, invalid or off-menu reply is a fallback (§5), which is always safe. Removing the retry
+   also removes the `exhaustedFallback` requirement.
+2. **No `Finding.guidance` (§4.8 caller 2).** A ruling reaches the retried dispatch through
+   `AdvisorDecisionsProvider` on the `rectify` context stage: fix ops in the cycle assemble a bundle
+   per dispatch, and the ledger is written before the retry. Chunks use `kind: "feature"`, which is
+   always floor-included, so the budget can't drop them. This removes the field, the `findingKey`
+   carve-out, and the edits to the three rectifier renderers. A `GiveUpResolution` carries only
+   `findings`, `reinstate`, and `exit?`.
+3. **`escalate-tier` is always on the menu for callers 2 + 3.** The existing tier-escalation handler
+   already turns "no next tier" into its exhausted outcome, so the menu doesn't duplicate tier
+   resolution.
+4. **Caller 2's heads-up is queued, not sent.** The fix cycle has a `CallContext` but no interaction
+   channel. The runtime already holds run-scoped stores (`rectificationOscillations`), so add
+   `advisorHeadsUps: AdvisorHeadsUpQueue`. The give-up hook pushes flagged decisions onto it.
+   `decideStageAction` flushes the story's queue through `sendPostRunNotification` at stage end.
+   Caller 3 sends directly; finish callers use finish's Telegram sender.
+5. **`NaxConfig.advisor` is optional** (`advisor?: AdvisorConfig`, like `finish?`). Many tests build
+   `NaxConfig` literals, and a required field would break them all. Readers use
+   `resolveAdvisorConfig(config)`, which falls back to the schema-derived `ADVISOR_DEFAULTS`.
+6. **CLI location:** `src/cli/advisor.ts`, following `src/cli/approvals.ts` (§4.1 / §4.7 updated).
+7. **Supersede rule check (§4.3).** "Acceptance pins this AC" is decided by the feature's
+   `acceptance-meta.json`: acceptance is enabled for the story's package and the AC id appears in the
+   generated test's AC list. The plan's menu task reads it through the existing acceptance-meta
+   loader. When the file is unreadable, the rule treats the AC as pinned, so `supersede` is not
+   offered. This is the conservative choice.
