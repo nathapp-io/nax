@@ -3,8 +3,20 @@
   "status": "escalated",
   "escalationReason": "the right recovery strategy is a design call",
   "findings": [
-    { "severity": "HIGH", "title": "commit_reindex can lose data", "problem": "store/sqlite_vec.py:120 drops the sidecar before the stamp", "fix": "reorder", "judgment": true, "judgmentReason": "design call" },
-    { "severity": "LOW", "title": "store_name computed twice", "problem": "routers/rag.py:40 computes it twice", "fix": "compute once" }
+    {
+      "severity": "HIGH",
+      "title": "commit_reindex can lose data",
+      "problem": "store/sqlite_vec.py:120 drops the sidecar before the stamp",
+      "fix": "reorder",
+      "judgment": true,
+      "judgmentReason": "design call"
+    },
+    {
+      "severity": "LOW",
+      "title": "store_name computed twice",
+      "problem": "routers/rag.py:40 computes it twice",
+      "fix": "compute once"
+    }
   ],
   "rounds": [{ "ts": "t", "phase": "quality", "committed": false, "outcome": "escalated", "findings": 2, "attempt": 1 }]
 }
