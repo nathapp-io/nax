@@ -1,8 +1,10 @@
 /** Execution-time worth judgment and filtering for non-blocking-fix advisories. */
 
 import { join } from "node:path";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { NbfWorthCheckConfig } from "../config/selectors";
 import type { Finding } from "../findings";
+import { getSafeLogger } from "../logger";
 import { _nbfWorthCheckAuditDeps, recordNbfWorthCheck } from "../operations/nbf-worth-check-audit";
 import { truncateDiff } from "../review/diff-utils";
 
@@ -34,7 +36,12 @@ async function storyDiff(ctx: CallContext): Promise<string> {
       _nbfWorthCheckDeps.collectDiffStat(ctx.packageDir, ref),
     ]);
     return diff === null ? "" : truncateDiff(diff, stat);
-  } catch {
+  } catch (error) {
+    getSafeLogger()?.warn("nbf-worth-check", "worth-check diff unavailable — judging from the code", {
+      storyId: ctx.storyId,
+      packageDir: ctx.packageDir,
+      error: errorMessage(error),
+    });
     return "";
   }
 }
@@ -46,7 +53,12 @@ async function pendingFeatureStories(ctx: CallContext): Promise<NbfWorthCheckPen
     return prd.userStories
       .filter((story) => story.id !== ctx.story?.id && ["pending", "in-progress", "paused"].includes(story.status))
       .map(({ id, title, acceptanceCriteria }) => ({ id, title, acceptanceCriteria }));
-  } catch {
+  } catch (error) {
+    getSafeLogger()?.warn("nbf-worth-check", "worth-check pending stories unavailable — skipping coverage check", {
+      storyId: ctx.storyId,
+      packageDir: ctx.packageDir,
+      error: errorMessage(error),
+    });
     return [];
   }
 }
