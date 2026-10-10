@@ -58,7 +58,7 @@ export const acceptanceFixSourceOp: RunOperation<AcceptanceFixSourceInput, Accep
     };
   },
   parse(output, _input, _ctx) {
-    const unresolved = output.match(/^UNRESOLVED:\s*(.+)$/m)?.[1];
+    const unresolved = output.match(/^UNRESOLVED:\s*(.+)$/m)?.[1]?.trim();
     return unresolved === undefined ? { applied: true } : { applied: true, unresolved };
   },
 };

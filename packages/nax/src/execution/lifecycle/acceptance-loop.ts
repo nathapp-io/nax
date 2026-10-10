@@ -252,7 +252,7 @@ export async function runAcceptanceFixCycle(
   fixTarget?: { packageDir: string; testPath: string },
   /** Declared `quality.commands.testScoped` key, set only when the fix prompt can safely name it (#1939). */
   scopedCommandName?: string,
-  _failedCriteria?: FailedCriterion[],
+  failedCriteria?: FailedCriterion[],
 ): Promise<FixCycleResult<Finding>> {
   const runtime = ctx.runtime;
   if (!runtime) {
@@ -282,7 +282,7 @@ export async function runAcceptanceFixCycle(
           priorIterationsBlock: buildPriorIterationsBlock(priorIterations),
           acceptanceTestPath,
           scopedCommandName,
-          failedCriteria: _failedCriteria,
+          failedCriteria,
         }),
         beforeDispatch: sourceAttempt.beforeDispatch,
         extractApplied: async (output) => ({
