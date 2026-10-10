@@ -182,11 +182,10 @@ async function deliverHeadsUp(
   if (!configOf(actx).notify.headsUp) return { sent: false, reason: "heads-up-disabled" };
   const text = formatHeadsUp(decision, question);
   if (actx.headsUp) {
-    try {
-      return await actx.headsUp(text);
-    } catch (err) {
-      return { sent: false, reason: `delivery-failed: ${errorMessage(err)}` };
-    }
+    // Promise chain, not try/await: biome's useAwaitThenable misreads the function-typed field.
+    return actx
+      .headsUp(text)
+      .catch((err: unknown) => ({ sent: false, reason: `delivery-failed: ${errorMessage(err)}` }));
   }
   if (actx.queueHeadsUp && question.storyId) {
     actx.queueHeadsUp(question.storyId, text);
