@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { makeNaxConfig, makeStory, makeTestRuntime, opSelector } from "@test/helpers";
-import { buildNbfWorthCheckPrompt } from "@/prompts";
 import { reviewConfigSelector } from "@/config";
-import * as operations from "@/operations";
-import type { NbfWorthCheckOpInput } from "@/operations";
 import type { Finding } from "@/findings";
+import type { NbfWorthCheckOpInput } from "@/operations";
+import * as operations from "@/operations";
+import { buildNbfWorthCheckPrompt } from "@/prompts";
 
 const findingA: Finding = {
   source: "adversarial-review",
@@ -37,16 +37,27 @@ const baseInput: NbfWorthCheckOpInput = {
 };
 
 function makeCtx(worthCheck?: { mode: "on"; model?: "powerful"; timeoutMs?: number }) {
-  const config = makeNaxConfig(worthCheck === undefined ? {} : {
-    review: { nonBlockingFix: { worthCheck } },
-  });
+  const config = makeNaxConfig(
+    worthCheck === undefined
+      ? {}
+      : {
+          review: { nonBlockingFix: { worthCheck } },
+        },
+  );
   const packageView = makeTestRuntime({ config }).packages.repo();
   return { packageView, config: packageView.select(opSelector(reviewConfigSelector)) };
 }
 
 const ctx = makeCtx();
 type WorthOutput =
-  | { readonly parsed: true; readonly verdicts: readonly { readonly index: number; readonly verdict: "fix" | "skip"; readonly reason: string }[] }
+  | {
+      readonly parsed: true;
+      readonly verdicts: readonly {
+        readonly index: number;
+        readonly verdict: "fix" | "skip";
+        readonly reason: string;
+      }[];
+    }
   | { readonly parsed: false; readonly unparsedPreview: string };
 type ReplyParser = (output: string, findingCount: number) => WorthOutput;
 type WorthOperation = {
@@ -55,21 +66,31 @@ type WorthOperation = {
   readonly model: (input: NbfWorthCheckOpInput, context: ReturnType<typeof makeCtx>) => unknown;
   readonly timeoutMs: (input: NbfWorthCheckOpInput, context: ReturnType<typeof makeCtx>) => number;
   readonly parse: (output: string, input: NbfWorthCheckOpInput, context: ReturnType<typeof makeCtx>) => WorthOutput;
-  readonly build: (input: NbfWorthCheckOpInput, context: ReturnType<typeof makeCtx>) => { readonly task: { readonly content: string } };
+  readonly build: (
+    input: NbfWorthCheckOpInput,
+    context: ReturnType<typeof makeCtx>,
+  ) => { readonly task: { readonly content: string } };
 };
 
 function getParser(): ReplyParser {
   const parser: unknown = Object.getOwnPropertyDescriptor(operations, "parseNbfWorthReply")?.value;
+  const isReplyParser = (value: unknown): value is ReplyParser => typeof value === "function";
   expect(typeof parser).toBe("function");
-  if (typeof parser !== "function") throw new Error("parseNbfWorthReply export is unavailable");
+  if (!isReplyParser(parser)) throw new Error("parseNbfWorthReply export is unavailable");
   return parser;
 }
 
 function getWorthOp(): WorthOperation {
   const operation: unknown = Object.getOwnPropertyDescriptor(operations, "nbfWorthCheckOp")?.value;
   const isOperation = (value: unknown): value is WorthOperation =>
-    typeof value === "object" && value !== null && "session" in value && "tools" in value &&
-    "model" in value && "timeoutMs" in value && "parse" in value && "build" in value;
+    typeof value === "object" &&
+    value !== null &&
+    "session" in value &&
+    "tools" in value &&
+    "model" in value &&
+    "timeoutMs" in value &&
+    "parse" in value &&
+    "build" in value;
   expect(isOperation(operation)).toBe(true);
   if (!isOperation(operation)) throw new Error("nbfWorthCheckOp export is unavailable");
   return operation;
@@ -80,8 +101,12 @@ function parseNbfWorthReply(output: string, findingCount: number): WorthOutput {
 }
 
 const nbfWorthCheckOp: WorthOperation = {
-  get session() { return getWorthOp().session; },
-  get tools() { return getWorthOp().tools; },
+  get session() {
+    return getWorthOp().session;
+  },
+  get tools() {
+    return getWorthOp().tools;
+  },
   model: (input, context) => getWorthOp().model(input, context),
   timeoutMs: (input, context) => getWorthOp().timeoutMs(input, context),
   parse: (output, input, context) => getWorthOp().parse(output, input, context),
@@ -90,10 +115,12 @@ const nbfWorthCheckOp: WorthOperation = {
 
 describe("parseNbfWorthReply (US-002)", () => {
   test("US-002 AC1: normalizes valid verdicts into finding order", () => {
-    expect(parseNbfWorthReply(
-      '{"verdicts":[{"index":2,"verdict":"skip","reason":"stale comment"},{"index":1,"verdict":"fix","reason":"reachable"}]}',
-      2,
-    )).toEqual({
+    expect(
+      parseNbfWorthReply(
+        '{"verdicts":[{"index":2,"verdict":"skip","reason":"stale comment"},{"index":1,"verdict":"fix","reason":"reachable"}]}',
+        2,
+      ),
+    ).toEqual({
       parsed: true,
       verdicts: [
         { index: 1, verdict: "fix", reason: "reachable" },
@@ -113,14 +140,24 @@ describe("parseNbfWorthReply (US-002)", () => {
   });
 
   test("US-002 AC3: keeps the first valid duplicate index", () => {
-    expect(parseNbfWorthReply('{"verdicts":[{"index":1,"verdict":"skip","reason":"nit"},{"index":1,"verdict":"fix","reason":"r"}]}', 1)).toEqual({
+    expect(
+      parseNbfWorthReply(
+        '{"verdicts":[{"index":1,"verdict":"skip","reason":"nit"},{"index":1,"verdict":"fix","reason":"r"}]}',
+        1,
+      ),
+    ).toEqual({
       parsed: true,
       verdicts: [{ index: 1, verdict: "skip", reason: "nit" }],
     });
   });
 
   test("US-002 AC4: selects a duplicate before validating its verdict", () => {
-    expect(parseNbfWorthReply('{"verdicts":[{"index":1,"verdict":"maybe","reason":"r"},{"index":1,"verdict":"skip","reason":"nit"}]}', 1)).toEqual({
+    expect(
+      parseNbfWorthReply(
+        '{"verdicts":[{"index":1,"verdict":"maybe","reason":"r"},{"index":1,"verdict":"skip","reason":"nit"}]}',
+        1,
+      ),
+    ).toEqual({
       parsed: true,
       verdicts: [{ index: 1, verdict: "fix", reason: "(invalid verdict)" }],
     });
@@ -177,12 +214,20 @@ describe("nbfWorthCheckOp (US-002)", () => {
 
   test("US-002 AC14: defaults its model to balanced", () => {
     const currentCtx = makeCtx({ mode: "on" });
-    expect(typeof nbfWorthCheckOp.model === "function" ? nbfWorthCheckOp.model(baseInput, currentCtx) : nbfWorthCheckOp.model).toBe("balanced");
+    expect(
+      typeof nbfWorthCheckOp.model === "function"
+        ? nbfWorthCheckOp.model(baseInput, currentCtx)
+        : nbfWorthCheckOp.model,
+    ).toBe("balanced");
   });
 
   test("US-002 AC15: uses the configured worth-check model", () => {
     const currentCtx = makeCtx({ mode: "on", model: "powerful" });
-    expect(typeof nbfWorthCheckOp.model === "function" ? nbfWorthCheckOp.model(baseInput, currentCtx) : nbfWorthCheckOp.model).toBe("powerful");
+    expect(
+      typeof nbfWorthCheckOp.model === "function"
+        ? nbfWorthCheckOp.model(baseInput, currentCtx)
+        : nbfWorthCheckOp.model,
+    ).toBe("powerful");
   });
 
   test("US-002 AC16: uses the configured worth-check timeout", () => {
@@ -195,11 +240,9 @@ describe("nbfWorthCheckOp (US-002)", () => {
   });
 
   test("US-002 AC18: parser uses the input finding count", () => {
-    expect(nbfWorthCheckOp.parse(
-      '{"verdicts":[{"index":1,"verdict":"fix","reason":"reachable"}]}',
-      baseInput,
-      ctx,
-    )).toEqual({
+    expect(
+      nbfWorthCheckOp.parse('{"verdicts":[{"index":1,"verdict":"fix","reason":"reachable"}]}', baseInput, ctx),
+    ).toEqual({
       parsed: true,
       verdicts: [
         { index: 1, verdict: "fix", reason: "reachable" },
