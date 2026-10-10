@@ -61,6 +61,10 @@ type WorthOutput =
   | { readonly parsed: false; readonly unparsedPreview: string };
 type ReplyParser = (output: string, findingCount: number) => WorthOutput;
 type WorthOperation = {
+  readonly kind: unknown;
+  readonly name: unknown;
+  readonly stage: unknown;
+  readonly config: unknown;
   readonly session: unknown;
   readonly tools: unknown;
   readonly model: (input: NbfWorthCheckOpInput, context: ReturnType<typeof makeCtx>) => unknown;
@@ -85,6 +89,10 @@ function getWorthOp(): WorthOperation {
   const isOperation = (value: unknown): value is WorthOperation =>
     typeof value === "object" &&
     value !== null &&
+    "kind" in value &&
+    "name" in value &&
+    "stage" in value &&
+    "config" in value &&
     "session" in value &&
     "tools" in value &&
     "model" in value &&
@@ -101,6 +109,10 @@ function parseNbfWorthReply(output: string, findingCount: number): WorthOutput {
 }
 
 const nbfWorthCheckOp: WorthOperation = {
+  get kind() { return getWorthOp().kind; },
+  get name() { return getWorthOp().name; },
+  get stage() { return getWorthOp().stage; },
+  get config() { return getWorthOp().config; },
   get session() {
     return getWorthOp().session;
   },
@@ -204,6 +216,13 @@ describe("parseNbfWorthReply (US-002)", () => {
 });
 
 describe("nbfWorthCheckOp (US-002)", () => {
+  test("US-002 AC12: declares the review run operation with its review config selector", () => {
+    expect(nbfWorthCheckOp.kind).toBe("run");
+    expect(nbfWorthCheckOp.name).toBe("nbf-worth-check");
+    expect(nbfWorthCheckOp.stage).toBe("review");
+    expect(nbfWorthCheckOp.config).toBe(reviewConfigSelector);
+  });
+
   test("US-002 AC12: declares a fresh worth-check session", () => {
     expect(nbfWorthCheckOp.session).toEqual({ role: "nbf-worth-check", lifetime: "fresh" });
   });
