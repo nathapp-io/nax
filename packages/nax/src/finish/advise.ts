@@ -12,9 +12,9 @@
  * machine's loops and `doEscalate` as callbacks, so `machine.ts` grows only by
  * the two call sites.
  */
-import { relative } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 import { gitWithTimeout } from "@nathapp/nax-agent/internal";
-import type { AdviceResult, Advisor, QuestionDraft } from "@/advisor";
+import type { AdviceDecision, AdviceResult, Advisor, QuestionDraft } from "@/advisor";
 import { buildMenu, dedupeKeyFor, findReusable, ledgerPath, readDecisions } from "@/advisor";
 import type { RoutedReview } from "./route";
 import type { FinishPhaseState, FinishState } from "./state";
@@ -50,6 +50,8 @@ export interface FinishAdvisor {
 export interface FinishAdvisorDeps {
   advisor: Advisor;
   repoRoot: string;
+  /** Where audit artifacts live (outside the repo tree); reuse requires the prior decision's artifact. */
+  outputDir: string;
   feature: string;
   acceptanceEnabled: () => boolean;
   judgedEnabled: boolean;
@@ -78,13 +80,29 @@ function judgmentQuestion(deps: FinishAdvisorDeps, phase: "spec" | "quality", f:
   };
 }
 
+const BLOCKING = new Set(["HIGH", "CRITICAL"]);
+
+/**
+ * An earlier waive/supersede for the same finding, safe to reuse without a new call.
+ * Never for a blocking finding (it goes back to the advisor, which still sees the
+ * prior decision), and only when the decision's audit artifact exists outside the
+ * repo tree — a ledger line the advisor did not write is never trusted.
+ */
+async function reusablePrior(deps: FinishAdvisorDeps, f: Finding, key: string): Promise<AdviceDecision | undefined> {
+  if (BLOCKING.has(f.severity)) return undefined;
+  const prior = findReusable(await readDecisions(deps.repoRoot, deps.feature), key);
+  const ref = prior?.auditRef;
+  if (!prior || !ref || isAbsolute(ref) || ref.includes("..")) return undefined;
+  return (await Bun.file(join(deps.outputDir, ref)).exists()) ? prior : undefined;
+}
+
 async function judgeOne(
   deps: FinishAdvisorDeps,
   phase: "spec" | "quality",
   f: Finding,
 ): Promise<{ keep?: Finding; ref?: AdviceRef; hold?: string; fallback?: string }> {
   const question = judgmentQuestion(deps, phase, f);
-  const prior = findReusable(await readDecisions(deps.repoRoot, deps.feature), question.dedupeKey ?? "");
+  const prior = await reusablePrior(deps, f, question.dedupeKey ?? "");
   if (prior) {
     const reused = await deps.advisor.recordReuse(question, prior);
     return { ref: { decisionId: reused?.id ?? prior.id, optionId: prior.chosenOptionId, reused: true } };

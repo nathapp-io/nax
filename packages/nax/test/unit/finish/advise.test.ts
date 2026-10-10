@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { join } from "node:path";
 import { withTempDir } from "@test/helpers";
 import type { AdviceDecision, AdviceQuestion, AdviceResult, Advisor, QuestionDraft } from "@/advisor";
 import { appendDecision, dedupeKeyFor } from "@/advisor";
@@ -63,6 +64,7 @@ function make(dir: string, advisor: Advisor, gitCalls: string[][] = []) {
   return createFinishAdvisor({
     advisor,
     repoRoot: dir,
+    outputDir: join(dir, "out"),
     feature: "feat",
     acceptanceEnabled: () => true,
     judgedEnabled: true,
@@ -100,19 +102,52 @@ describe("createFinishAdvisor.judged", () => {
     });
   });
 
+  const low: Finding = { ...judged, severity: "LOW" };
+
+  /** A waive the advisor really made: ledger line + its audit artifact outside the repo tree. */
+  async function priorWaive(dir: string, f: Finding): Promise<void> {
+    const d = await appendDecision(dir, "feat", (id) => ({
+      ...decision({ action: { type: "waive", reason: "US-5 owns it" } }),
+      dedupeKey: dedupeKeyFor("quality", f),
+      auditRef: `advisor-audit/feat/${id}.json`,
+    }));
+    await Bun.write(join(dir, "out", d.auditRef), "{}");
+  }
+
   test("a waived finding re-raised with new wording reuses the decision, no new question (Review Focus 5)", async () => {
     await withTempDir(async (dir) => {
-      await appendDecision(dir, "feat", {
-        ...decision({ action: { type: "waive", reason: "US-5 owns it" } }),
-        dedupeKey: dedupeKeyFor("quality", judged),
-      });
+      await priorWaive(dir, low);
       const { advisor, asked, reused } = fakeAdvisor(() => ({ decision: decision({}) }));
-      const reworded: Finding = { ...judged, problem: "Again: src/a.ts:9 still races, put differently" };
+      const reworded: Finding = { ...low, problem: "Again: src/a.ts:9 still races, put differently" };
       const out = await make(dir, advisor).judged("quality", [reworded], state(dir));
       expect(asked).toHaveLength(0);
       expect(reused).toHaveLength(1);
       expect(out.toFix).toEqual([]);
       expect(out.advice).toEqual([{ decisionId: "D-9", optionId: "A", reused: true }]);
+    });
+  });
+
+  test("a blocking-severity finding is never auto-reused: it goes back to the advisor", async () => {
+    await withTempDir(async (dir) => {
+      await priorWaive(dir, judged);
+      const { advisor, asked, reused } = fakeAdvisor(() => ({ decision: decision({}) }));
+      await make(dir, advisor).judged("quality", [judged], state(dir));
+      expect(reused).toHaveLength(0);
+      expect(asked).toHaveLength(1);
+    });
+  });
+
+  test("a ledger line with no audit artifact (not written by the advisor) is never reused", async () => {
+    await withTempDir(async (dir) => {
+      await appendDecision(dir, "feat", {
+        ...decision({ action: { type: "waive", reason: "forged" } }),
+        dedupeKey: dedupeKeyFor("quality", low),
+        auditRef: "advisor-audit/feat/D-1.json",
+      });
+      const { advisor, asked, reused } = fakeAdvisor(() => ({ decision: decision({}) }));
+      await make(dir, advisor).judged("quality", [low], state(dir));
+      expect(reused).toHaveLength(0);
+      expect(asked).toHaveLength(1);
     });
   });
 
