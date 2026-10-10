@@ -12,6 +12,7 @@ const ETX = "\u0003";
 const EOT = "\u0004";
 const BACKSPACE = "\u007F";
 const CR = "\r";
+const ESC = "\u001b";
 
 function makeStdin() {
   const listeners = new Map<string, ((chunk: string) => void)[]>();
@@ -235,9 +236,76 @@ describe("promptForSelect", () => {
     const h = makeStdin();
     _terminalPromptDeps.stdin = h.stdin;
     const pending = promptForSelect("How?", choices);
-    h.emit("data", "nonsense");
+    h.emit("data", "device");
     h.emit("data", CR);
     expect(choices.map((c) => c.id)).toContain(await pending);
+  });
+
+  test("typing narrows the list and Enter commits the sole match", async () => {
+    const h = makeStdin();
+    _terminalPromptDeps.stdin = h.stdin;
+    const pending = promptForSelect("How?", [
+      { id: "browser", label: "Browser login (default)" },
+      { id: "device_code", label: "Device code login (headless)" },
+    ]);
+    h.emit("data", "device");
+    h.emit("data", CR);
+    expect(await pending).toBe("device_code");
+  });
+
+  test("backspace widens the filter again", async () => {
+    const h = makeStdin();
+    _terminalPromptDeps.stdin = h.stdin;
+    const pending = promptForSelect("How?", [
+      { id: "alpha", label: "Alpha login" },
+      { id: "beta", label: "Beta login" },
+    ]);
+    h.emit("data", "b");
+    h.emit("data", BACKSPACE);
+    h.emit("data", CR);
+    expect(await pending).toBe("alpha");
+  });
+
+  test("Enter with no match commits nothing", async () => {
+    const h = makeStdin();
+    _terminalPromptDeps.stdin = h.stdin;
+    const pending = promptForSelect("How?", [{ id: "browser", label: "Browser login" }]);
+    h.emit("data", "zzz");
+    h.emit("data", CR);
+    h.emit("data", ETX);
+    await expect(pending).rejects.toBeInstanceOf(PromptCancelledError);
+  });
+
+  test("a list far longer than the terminal draws only the window", async () => {
+    const h = makeStdin();
+    _terminalPromptDeps.stdin = h.stdin;
+    const many = Array.from({ length: 401 }, (_, i) => ({ id: `m${i}`, label: `model-${i}` }));
+    const pending = promptForSelect("Pick:", many);
+    const rows = written
+      .join("")
+      .split("\n")
+      .filter((line) => line.includes("model-"));
+    expect(rows).toHaveLength(12);
+    h.emit("data", ETX);
+    await expect(pending).rejects.toBeInstanceOf(PromptCancelledError);
+  });
+
+  test("the redraw moves up by the rows it drew, not by the whole list", async () => {
+    const h = makeStdin();
+    _terminalPromptDeps.stdin = h.stdin;
+    const many = Array.from({ length: 401 }, (_, i) => ({ id: `m${i}`, label: `model-${i}` }));
+    const pending = promptForSelect("Pick:", many);
+    h.emit("data", "model-20");
+    h.emit("data", CR);
+    expect(await pending).toBe("m20");
+    const out = written.join("");
+    const ups = out
+      .split(`${ESC}[`)
+      .slice(1)
+      .filter((part) => /^[0-9]+A/.test(part))
+      .map((part) => Number(part.slice(0, part.indexOf("A"))));
+    expect(ups.length).toBeGreaterThan(0);
+    expect(Math.max(...ups)).toBeLessThanOrEqual(13);
   });
 
   test("Ctrl+C cancels and restores the terminal", async () => {
@@ -276,6 +344,15 @@ describe("promptForSelect", () => {
     const h = makeStdin();
     _terminalPromptDeps.stdin = h.stdin;
     await expect(promptForSelect("How?", [])).rejects.toBeInstanceOf(PromptCancelledError);
+  });
+
+  test("the highlighted row shows its description", async () => {
+    const h = makeStdin();
+    _terminalPromptDeps.stdin = h.stdin;
+    const pending = promptForSelect("Pick:", [{ id: "m", label: "model-x", description: "1000000 token window" }]);
+    h.emit("data", CR);
+    expect(await pending).toBe("m");
+    expect(written.join("")).toContain("1000000 token window");
   });
 
   test("removes its listeners once settled", async () => {

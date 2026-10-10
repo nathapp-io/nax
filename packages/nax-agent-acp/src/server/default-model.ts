@@ -126,14 +126,19 @@ async function readExisting(path: string, readFile: ReadTextFile): Promise<strin
   }
 }
 
+/** The first screen is the useful one: largest context window first, then by id. */
+function byLargestWindow(models: readonly ProviderModel[]): readonly ProviderModel[] {
+  return [...models].sort((a, b) => b.contextWindow - a.contextWindow || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+
 async function pickModel(input: OfferInput, models: readonly ProviderModel[]): Promise<string | undefined> {
   if (models.length === 0) return undefined;
   try {
     const answer = await input.interaction.prompt({
       type: "select",
-      message: "Pick the default model for new threads (models.native.balanced)",
+      message: "Pick the default model for new threads (models.native.balanced) — type to filter",
       options: [
-        ...models.map((m) => ({
+        ...byLargestWindow(models).map((m) => ({
           id: `${MODEL_PREFIX}${m.id}`,
           label: m.id,
           description: `${m.contextWindow} token window`,

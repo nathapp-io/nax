@@ -51,7 +51,11 @@ export function createTerminalAuthInteraction(options: TerminalAuthOptions): Aut
       if (prompt.type === "select") {
         return promptForSelect(
           prompt.message,
-          prompt.options.map((option) => ({ id: option.id, label: option.label })),
+          prompt.options.map((option) => ({
+            id: option.id,
+            label: option.label,
+            ...(option.description !== undefined ? { description: option.description } : {}),
+          })),
           style,
         );
       }

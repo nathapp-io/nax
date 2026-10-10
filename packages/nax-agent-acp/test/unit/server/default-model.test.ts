@@ -23,6 +23,7 @@ const MODELS: ModelPorts = {
 interface Run {
   readonly out: string[];
   readonly prompts: string[];
+  readonly messages: string[];
 }
 
 async function offer(
@@ -37,10 +38,12 @@ async function offer(
 ): Promise<Run> {
   const out: string[] = [];
   const prompts: string[] = [];
+  const messages: string[] = [];
   const interaction: AuthInteraction = {
     notify: () => undefined,
     prompt: async (prompt) => {
       await overrides.duringPick?.();
+      messages.push(prompt.message);
       prompts.push(prompt.type === "select" ? prompt.options.map((o) => o.id).join(",") : prompt.type);
       if (overrides.pick === "cancel") throw new PromptCancelledError();
       return overrides.pick ?? "model:m-2";
@@ -57,7 +60,7 @@ async function offer(
     readFile: readText,
     write: NODE_CONFIG_WRITER,
   });
-  return { out, prompts };
+  return { out, prompts, messages };
 }
 
 describe("mergeBalancedModel", () => {
@@ -89,10 +92,28 @@ describe("mergeBalancedModel", () => {
 describe("offerDefaultModel", () => {
   test("the user picks a model: it is written as models.native.balanced in a new 0600 file", async () => {
     const run = await offer();
-    expect(run.prompts).toEqual(["model:m-1,model:m-2,skip"]);
+    expect(run.prompts).toEqual(["model:m-2,model:m-1,skip"]);
     expect(JSON.parse(await readFile(path(), "utf8"))).toEqual({ models: { native: { balanced: "acme/m-2" } } });
     expect((await stat(path())).mode & 0o777).toBe(0o600);
     expect(run.out.join("\n")).toContain("acme/m-2");
+  });
+
+  test("the picker puts the largest context windows first, so the first screen is usable", async () => {
+    const run = await offer({
+      models: {
+        listModels: async () => [
+          { id: "m-small", contextWindow: 32_000 },
+          { id: "m-big-b", contextWindow: 1_000_000 },
+          { id: "m-big-a", contextWindow: 1_000_000 },
+        ],
+      },
+    });
+    expect(run.prompts[0]).toBe("model:m-big-a,model:m-big-b,model:m-small,skip");
+  });
+
+  test("the picker says the list can be narrowed by typing", async () => {
+    const run = await offer();
+    expect(run.messages[0]).toContain("type to filter");
   });
 
   test("merges into an existing config.json without clobbering other keys", async () => {
