@@ -17,6 +17,7 @@ import { NaxError } from "@/errors";
 import type { AdviseOpOutput, CallContext } from "@/operations";
 import { adviseOp, callOp } from "@/operations";
 import { createRuntime, projectOutputDir } from "@/runtime";
+import { resolveFeatureSpec } from "./features-resolve";
 import { runTrustGate } from "./trust-gate";
 
 const GIT_TIMEOUT_MS = 60_000;
@@ -33,12 +34,14 @@ export interface AdvisorReplayOptions {
 
 export interface AdvisorReplayDeps {
   resolveOutputDir: (workdir: string) => Promise<string>;
-  buildCallContext: (dir: string) => Promise<{ ctx: CallContext; close: () => Promise<void> }>;
+  buildCallContext: (dir: string, feature: string) => Promise<{ ctx: CallContext; close: () => Promise<void> }>;
   callOp: <I, O, C>(ctx: CallContext, op: import("@/operations").Operation<I, O, C>, input: I) => Promise<O>;
   git: (args: string[], cwd: string) => Promise<{ stdout: string; exitCode: number }>;
   makeTempDir: () => Promise<string>;
   removeDir: (path: string) => Promise<void>;
   readPrdText: (worktree: string, feature: string) => Promise<string>;
+  /** The feature's spec at the replayed sha (inside the worktree), or "" when none resolves. */
+  resolveSpecPath: (worktree: string, feature: string) => Promise<string>;
   writeFile: (path: string, text: string) => Promise<void>;
   /** Replay loads the project's config and runs an agent in it — same gate as `nax run`. */
   trustGate: (dir: string) => Promise<void>;
@@ -52,9 +55,10 @@ export const _advisorReplayDeps: AdvisorReplayDeps = {
     const config = await loadConfig(workdir).catch(() => null);
     return projectOutputDir(config?.name?.trim() || basename(workdir), config?.outputDir);
   },
-  buildCallContext: async (dir) => {
+  buildCallContext: async (dir, feature) => {
     const config = await loadConfig(dir);
-    const rt = createRuntime(config, dir);
+    // featureName turns on the prompt auditor: a billed eval keeps its prompts on record.
+    const rt = createRuntime(config, dir, { featureName: feature });
     return {
       ctx: {
         runtime: rt,
@@ -79,6 +83,10 @@ export const _advisorReplayDeps: AdvisorReplayDeps = {
   removeDir: async (path) => {
     const { rm } = await import("node:fs/promises");
     await rm(path, { recursive: true, force: true });
+  },
+  resolveSpecPath: async (worktree, feature) => {
+    const r = await resolveFeatureSpec(feature, worktree).catch(() => null);
+    return r?.specSource ? join(worktree, r.specSource.path) : "";
   },
   readPrdText: async (worktree, feature) => {
     try {
@@ -180,17 +188,19 @@ async function replayOne(
   return inWorktree(deps, opts.dir, r, async (wt) => {
     const warm = opts.memory === "warm";
     try {
-      // The session runs in the worktree (an absolute packageDir is its exec root), never the live checkout;
+      // The session runs in the worktree, never the live checkout: the view's root is the worktree and
+      // packageDir stays the relative root-package key (an absolute one leaks into the prompt's scope text);
       // featureName: a native session derives its transcript dir from it and refuses to open without one.
       const ctx = {
         ...base,
         packageDir: wt,
-        packageView: { ...base.packageView, packageDir: wt },
+        packageView: { ...base.packageView, repoRoot: wt },
         featureName: opts.feature,
       };
       const out = await deps.callOp(ctx, adviseOp, {
         question: r.question,
-        specPath: r.context.specPath,
+        // Never the recorded path: a live finish records the main checkout's spec, an import records none.
+        specPath: await deps.resolveSpecPath(wt, opts.feature),
         prdText: await deps.readPrdText(wt, opts.feature),
         priorDecisions: r.context.priorDecisions,
         continuation: warm && opts.index > 0,
@@ -240,7 +250,7 @@ export async function runAdvisorReplay(
     return 2;
   }
   deps.logErr(`This replays ${records.length} advisor decision(s) with real, billed model calls.`);
-  const { ctx, close } = await deps.buildCallContext(opts.dir);
+  const { ctx, close } = await deps.buildCallContext(opts.dir, opts.feature);
   const rows: ReplayRow[] = [];
   try {
     for (const [index, r] of records.entries()) {

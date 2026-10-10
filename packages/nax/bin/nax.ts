@@ -952,8 +952,9 @@ registerApprovalsCommand(program);
 
 // ── advisor ───────────────────────────────────────────
 // replay dispatches real agent sessions; without a logger their failures are silent.
+// warn, not info: the logger writes stdout, which `replay --json` owns.
 registerAdvisorCommand(program).hook("preAction", (_group, action) => {
-  if (action.name() === "replay") initLogger({ level: "info", useChalk: true });
+  if (action.name() === "replay") initLogger({ level: "warn", useChalk: true });
 });
 
 // ── trust ─────────────────────────────────────────────
