@@ -246,6 +246,7 @@ describe("contextStage — written manifest reflects lower weight (AC8)", () => 
       "git-history",
       "test-coverage",
       "tool-diagnostics", // US-002: registered in PHASE_3_IMPLEMENTATION
+      "advisor-decisions", // A1: registered in PHASE_3_IMPLEMENTATION
     ];
     const emptyProviders: IContextProvider[] = emptyProviderIds.map((id) => ({
       id,

@@ -48,6 +48,10 @@ export interface FinishPhaseState {
    * attempt only.
    */
   reviewGaps?: string[];
+  /** A1: advisor rounds spent on judged findings. Optional: states and fixtures predating A1 read as 0. */
+  adviseRounds?: number;
+  /** A1: outcome of this phase's last recorded round (the approval precondition reads it). */
+  lastOutcome?: import("./types").FinishRoundOutcome;
 }
 
 export type FinishStatus = "running" | "opened" | "promoted" | "already-ready" | "escalated" | "nothing-to-finish";

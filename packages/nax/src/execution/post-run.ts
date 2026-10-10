@@ -40,6 +40,7 @@ import { failAndClose } from "./session-manager-runtime";
 import type { StoryOrchestratorResult } from "./story-orchestrator";
 import { deriveTddFailureCategory } from "./tdd-failure-category";
 import type { FailureCategory } from "./types";
+import { adviseUncategorised, flushAdvisorHeadsUps } from "./uncategorised-advice";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -81,6 +82,8 @@ export const _postRunDeps = {
   failAndClose,
   rollbackToRef,
   autoCommitIfDirty,
+  adviseUncategorised,
+  flushAdvisorHeadsUps,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -285,6 +288,7 @@ export async function decideStageAction(
   }
 
   const frame: DecideFrame = { ctx, planResult, inspection, opts, deps: _postRunDeps };
+  await _postRunDeps.flushAdvisorHeadsUps(ctx);
 
   // Rectification exhausted → three exits, or fall through to TDD rollback routing
   if (hasRectificationExhaustion(planResult)) {

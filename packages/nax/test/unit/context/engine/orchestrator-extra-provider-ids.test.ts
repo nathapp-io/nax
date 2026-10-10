@@ -57,6 +57,8 @@ describe("ContextOrchestrator — issue #662 extraProviderIds", () => {
     const orchestrator = new ContextOrchestrator([
       makeProvider("static-rules", async () => ({ chunks: [], pullTools: [] })),
       makeProvider("feature-context", async () => ({ chunks: [], pullTools: [] })),
+      // A1: review-semantic's stage config also lists advisor-decisions.
+      makeProvider("advisor-decisions", async () => ({ chunks: [], pullTools: [] })),
       makeProvider("my-symbol-graph", async () => {
         pluginFetches += 1;
         return makeChunk("my-symbol-graph");

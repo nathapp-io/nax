@@ -11,6 +11,17 @@
  * a deep relative import.
  */
 
+export {
+  type AdviceRef,
+  type ApprovalFacts,
+  applyJudgedAdvice,
+  buildFinishAdvisorForPhase,
+  createFinishAdvisor,
+  type FinishAdvisor,
+  type FinishAdvisorDeps,
+  type JudgedOutcome,
+  runApproval,
+} from "./advise";
 export type { AuditTarget, FinishLedgerEntry, WriteResultOptions } from "./audit";
 export {
   appendRound,
@@ -93,6 +104,7 @@ export {
 export type { ReviewOutcome, RoutedReview } from "./route";
 export {
   gateCommitRoute,
+  MAX_ADVISE_ROUNDS,
   MAX_FIX_ATTEMPTS,
   MAX_INCOMPLETE_ATTEMPTS,
   partitionTestFiles,

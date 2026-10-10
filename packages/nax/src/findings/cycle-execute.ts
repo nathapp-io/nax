@@ -22,7 +22,7 @@ import { recordIteration } from "./cycle-iteration-log";
 import type { CycleFrame, CycleLoopState, DispatchedIteration } from "./cycle-loop";
 import { buildHistory, finishExit } from "./cycle-loop";
 import { countStrategyAttempts, hasRemainingClaimant } from "./cycle-selection";
-import type { FixApplied, FixCycleResult, ValidateResult } from "./cycle-types";
+import type { FixApplied, FixCycleResult, GiveUpResolution, ValidateResult } from "./cycle-types";
 import type { Finding } from "./types";
 
 /** What the give-up phase wants the loop to do next. */
@@ -71,11 +71,11 @@ function normalizeValidateResult<F extends Finding>(r: F[] | ValidateResult<F>):
  *     equal to `findingsBefore`, which reported the sibling's fix as no
  *     progress and (via rectificationExhausted) rolled the working tree back.
  */
-export function handleGiveUps<F extends Finding>(
+export async function handleGiveUps<F extends Finding>(
   frame: CycleFrame<F>,
   state: CycleLoopState<F>,
   it: DispatchedIteration<F>,
-): GiveUpVerdict<F> {
+): Promise<GiveUpVerdict<F>> {
   const { cycle, logger, logCtx, now } = frame;
   const { group, findingsBefore, fixesApplied, startedAt } = it;
   const unresolvedFas = fixesApplied.filter((fa) => fa.unresolved);
@@ -143,11 +143,18 @@ export function handleGiveUps<F extends Finding>(
     return { action: "continue" };
   }
 
+  const advised = await consultGiveUpHook(frame, state, unresolvedFas, historyAfter);
+  if (advised.action === "continue") return advised;
+  const unresolvedDetail = advised.detailSuffix
+    ? `${firstUnresolved.unresolved} ${advised.detailSuffix}`
+    : (firstUnresolved.unresolved as string);
+  state.unresolvedDetail = unresolvedDetail;
+
   logger?.info("findings.cycle", "cycle exited — agent gave up", {
     ...logCtx,
     reason: "agent-gave-up",
     strategyName: firstUnresolved.strategyName,
-    unresolvedDetail: firstUnresolved.unresolved,
+    unresolvedDetail,
   });
   return {
     action: "exit",
@@ -155,10 +162,52 @@ export function handleGiveUps<F extends Finding>(
       iterations: cycle.iterations,
       finalFindings: cycle.findings,
       exitReason: "agent-gave-up",
-      unresolvedDetail: firstUnresolved.unresolved,
+      unresolvedDetail,
       costUsd: state.totalCostUsd,
     }),
   };
+}
+
+/**
+ * A1: give the caller's `onGiveUp` hook (if any) the chance to resolve a
+ * give-up the #1654 fall-through could not. A throw is logged and treated as
+ * "no resolution" — the cycle exits exactly as before.
+ */
+async function consultGiveUpHook<F extends Finding>(
+  frame: CycleFrame<F>,
+  state: CycleLoopState<F>,
+  unresolvedFas: readonly FixApplied[],
+  history: ReturnType<typeof buildHistory>,
+): Promise<{ action: "continue" } | { action: "exit"; detailSuffix?: string }> {
+  const { cycle, logger, logCtx } = frame;
+  if (!cycle.onGiveUp) return { action: "exit" };
+  const attemptsLeft = Object.fromEntries(
+    cycle.strategies.map((s) => [s.name, Math.max(0, s.maxAttempts - countStrategyAttempts(history, s.name))]),
+  );
+  let resolution: GiveUpResolution<F> | null = null;
+  try {
+    resolution = await cycle.onGiveUp({
+      findings: cycle.findings,
+      gaveUp: unresolvedFas.map((fa) => ({ strategyName: fa.strategyName, unresolvedDetail: fa.unresolved ?? "" })),
+      attemptsLeft,
+      totalAttemptsLeft: Math.max(0, cycle.config.maxAttemptsTotal - history.length),
+    });
+  } catch (err) {
+    logger?.warn("findings.cycle", "onGiveUp hook threw — exiting as agent-gave-up", {
+      ...logCtx,
+      error: errorMessage(err),
+    });
+  }
+  if (!resolution) return { action: "exit" };
+  if (resolution.exit) return { action: "exit", detailSuffix: resolution.exit.detailSuffix };
+  cycle.findings = resolution.findings;
+  for (const name of resolution.reinstate) state.declines.clearDeclined(name, resolution.findings);
+  logger?.info("findings.cycle", "give-up resolved by the caller — continuing", {
+    ...logCtx,
+    reinstated: [...resolution.reinstate],
+    findings: resolution.findings.length,
+  });
+  return { action: "continue" };
 }
 
 /**

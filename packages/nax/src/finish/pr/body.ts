@@ -12,6 +12,8 @@
  * behaviour (nax#1477, nax#1504, nax#1507) and must not drift.
  */
 
+import type { AdviceDecision } from "@/advisor";
+import { describeTarget } from "@/advisor";
 import type { BodySection } from "@/forge";
 import { mergeTemplate } from "@/forge";
 import type { Finding, FindingDisposition, FinishRound } from "../types";
@@ -122,10 +124,20 @@ const EMPTY_ROUND_NOTE: Record<string, string> = {
   escalated: "- _escalated for human review_",
   "review-skipped": "- _re-review skipped: this fix touched test files only_",
   incomplete: "- _review sent back: required evidence sections missing_",
+  advised: "- _advisor ruled on the judged findings; the phase re-reviews_",
 };
+
+/** A1: one line naming the advisor decisions a round applied, when it carries any. */
+function adviceLine(round: FinishRound): string | null {
+  if (!round.advice || round.advice.length === 0) return null;
+  const ids = round.advice.map((a) => (a.reused ? `${a.decisionId} (reused)` : a.decisionId)).join(", ");
+  return `- _advisor decisions: ${ids}_`;
+}
 
 function buildRoundBlock(round: FinishRound): string {
   const lines: string[] = [buildRoundHeading(round)];
+  const advice = adviceLine(round);
+  if (advice) lines.push(advice);
   if (round.findings.length === 0) {
     lines.push(EMPTY_ROUND_NOTE[round.outcome ?? ""] ?? "- _no findings_");
   } else {
@@ -138,6 +150,33 @@ function buildRoundBlock(round: FinishRound): string {
     }
   }
   return lines.join("\n");
+}
+
+const ADVISOR_TEXT_CAP = 300;
+
+/** Free text from the advisor goes into a PR body: one line, no HTML tags, capped. */
+function flat(text: string): string {
+  const one = text
+    .replace(/<[^>]*>/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return one.length > ADVISOR_TEXT_CAP ? `${one.slice(0, ADVISOR_TEXT_CAP)}…` : one;
+}
+
+/** A1: flagged decisions first, then the rest, then every supersede as an amendment to apply. Null when none. */
+function buildAdvisorSection(decisions: AdviceDecision[] | undefined): string | null {
+  if (!decisions || decisions.length === 0) return null;
+  const line = (d: AdviceDecision): string =>
+    `- **${flat(d.id)}**${d.needsHumanConfirm ? " (needs confirmation)" : ""} ${flat(d.storyId ?? "feature")} · ${d.action.type} — ${flat(d.rationale)}`;
+  const ordered = [...decisions.filter((d) => d.needsHumanConfirm), ...decisions.filter((d) => !d.needsHumanConfirm)];
+  const amendments = decisions.flatMap((d) =>
+    d.action.type === "supersede"
+      ? [`- ${flat(describeTarget(d.action.target))}: ${flat(d.action.newText)} (${flat(d.id)})`]
+      : [],
+  );
+  const parts = [ordered.map(line).join("\n")];
+  if (amendments.length > 0) parts.push(`### Spec amendments to apply\n${amendments.join("\n")}`);
+  return parts.join("\n\n");
 }
 
 function buildRoundsSection(rounds: FinishRound[]): string | null {
@@ -200,6 +239,7 @@ function buildBodySections(ctx: FinishPrContext): BodySection[] {
     { key: "stories", heading: "Stories", body: ctx.stories.length > 0 ? buildStoriesSection(ctx.stories) : null },
     { key: "verification", heading: "Verification", body: buildVerificationSection(ctx) },
     { key: "rounds", heading: "Review rounds", body: buildRoundsSection(ctx.rounds) },
+    { key: "advisor", heading: "Advisor decisions", body: buildAdvisorSection(ctx.advisorDecisions) },
     { key: "outOfScope", heading: "Out of scope", body: buildOutOfScopeSection(ctx.outOfScope) },
     { key: "footer", heading: "", body: buildFooter(ctx.run) },
   ];

@@ -133,7 +133,7 @@ export async function runFixCycle<F extends Finding>(
     };
 
     // ── Handle agent-gave-up ──────────────────────────────────────────────────
-    const gaveUp = handleGiveUps(frame, state, iteration);
+    const gaveUp = await handleGiveUps(frame, state, iteration);
     if (gaveUp.action === "exit") return gaveUp.result;
     if (gaveUp.action === "continue") continue;
 

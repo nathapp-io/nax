@@ -35,7 +35,9 @@ export type CanonicalSessionRole =
   | "finish-review-spec"
   | "finish-review-quality"
   | "finish-fix"
-  | "finish-narrative";
+  | "finish-narrative"
+  /** A1 — the advisor's read-only session. */
+  | "advisor";
 
 export type SessionRole = CanonicalSessionRole;
 
@@ -63,6 +65,7 @@ export const KNOWN_SESSION_ROLES: readonly CanonicalSessionRole[] = [
   "finish-review-quality",
   "finish-fix",
   "finish-narrative",
+  "advisor",
 ] as const;
 
 export function isSessionRole(s: string): s is SessionRole {

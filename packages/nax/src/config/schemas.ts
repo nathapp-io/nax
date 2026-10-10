@@ -13,6 +13,7 @@ import {
 import { z } from "zod";
 import { DEFAULT_AGENT_NAME, DEFAULT_AGENT_PROTOCOL, DEFAULT_MODEL_MAPS } from "./agent-defaults";
 import { MODEL_SHORTHAND_TIERS, resolveTierMembership } from "./schema-types";
+import { AdvisorConfigObjectSchema } from "./schemas-advisor";
 import { AuthConfigSchema } from "./schemas-auth";
 import { ContextConfigSchema } from "./schemas-context";
 import {
@@ -478,6 +479,8 @@ export const NaxConfigSchema = z
         rerun: "on-change",
         timeouts: { acceptanceMs: 600_000, gateMs: 900_000, flowMs: 5_400_000, stepMs: null },
       }),
+    // A1 advisor. `.prefault({})` so every nested default applies (Zod 4).
+    advisor: AdvisorConfigObjectSchema.prefault({}),
     // Derived, not hand-written — same reason as `context:` above: a literal
     // default here would shadow every inner `.default()` in McpConfigSchema.
     mcp: McpConfigSchema.default(() => McpConfigSchema.parse({})),

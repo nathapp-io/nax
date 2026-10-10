@@ -19,6 +19,7 @@
  */
 
 import { errorMessage } from "@nathapp/nax-agent/internal";
+import { formatDecisionsForPrompt, readTrustedDecisions } from "@/advisor";
 import type { ConfiguredModel } from "@/config";
 import type { ForgeDeps, ForgeKind } from "@/forge";
 import type { CallContext, FinishFixInput, FinishNarrativeInput, FinishReviewInput } from "@/operations";
@@ -65,6 +66,14 @@ export interface FinishOpsDeps {
 
 export const _finishOpsDeps: { callOp: typeof callOp } = { callOp };
 
+/** A1: waived / superseded advisor decisions for the review prompt. Never throws: no ledger reads as none. */
+async function loadDecisionNotes(state: FinishState, outputDir: string | undefined): Promise<string | undefined> {
+  if (!outputDir) return undefined;
+  const decisions = await readTrustedDecisions(state.workdir, state.feature, outputDir).catch(() => []);
+  const notes = formatDecisionsForPrompt(decisions);
+  return notes === "" ? undefined : notes;
+}
+
 /** The commit the promote path pushes before touching the forge (matches the flow, line 344). */
 const PROMOTE_MESSAGE = (feature: string): string => `fix(${feature}): nax-finish automated fixes`;
 
@@ -88,9 +97,10 @@ async function buildPrContentOrFallback(
   audit: AuditTarget,
   forgeKind: ForgeKind,
   prBody: FinishPrBodySettings | undefined,
+  outputDir: string | undefined,
 ): Promise<{ title: string; body: string }> {
   try {
-    const ctx = await loadFinishPrContext({ state, audit, forge: forgeKind, prBody });
+    const ctx = await loadFinishPrContext({ state, audit, forge: forgeKind, prBody, outputDir });
     return { title: buildFinishTitle(ctx), body: buildFinishBody(ctx) };
   } catch (err) {
     return {
@@ -102,6 +112,8 @@ async function buildPrContentOrFallback(
 
 export function createFinishOps(deps: FinishOpsDeps): FinishOps {
   const { callCtx, forge, forgeKind, audit, models, timeouts, prBody, preferTelegram, warn } = deps;
+  // A1: where advisor audit artifacts live. Undefined (a bare test context) ⇒ no decision is trusted or shown.
+  const advisorOutputDir: string | undefined = callCtx.runtime?.outputDir;
 
   const ops: FinishOps = {
     async review(phase: "spec" | "quality", req: ReviewRequest) {
@@ -115,6 +127,7 @@ export function createFinishOps(deps: FinishOpsDeps): FinishOps {
         since: phaseState.reviewSince,
         gaps: phaseState.reviewGaps,
         priorFindings: state.findings,
+        decisions: await loadDecisionNotes(state, advisorOutputDir),
         model: phase === "spec" ? models?.reviewSpec : models?.reviewQuality,
         timeoutMs: timeouts?.reviewMs,
       };
@@ -153,7 +166,13 @@ export function createFinishOps(deps: FinishOpsDeps): FinishOps {
       // producing its content is the same as to any failure opening it — skip.
       let content: { title: string; body: string };
       try {
-        const ctx = await loadFinishPrContext({ state, audit, forge: forgeKind, prBody });
+        const ctx = await loadFinishPrContext({
+          state,
+          audit,
+          forge: forgeKind,
+          prBody,
+          outputDir: advisorOutputDir,
+        });
         content = { title: buildFinishTitle(ctx), body: buildFinishBody(ctx) };
       } catch {
         return null;
@@ -178,7 +197,7 @@ export function createFinishOps(deps: FinishOpsDeps): FinishOps {
       const { committed } = await commitAndPush(state.workdir, state.branch, PROMOTE_MESSAGE(state.feature));
       if (committed) state.committedThisRun = true;
       if (forgeKind === null) return { status: "already-ready" };
-      const content = await buildPrContentOrFallback(state, audit, forgeKind, prBody);
+      const content = await buildPrContentOrFallback(state, audit, forgeKind, prBody, advisorOutputDir);
       return openOrPromotePr(
         {
           workdir: state.workdir,
@@ -258,6 +277,7 @@ export function createFinishOps(deps: FinishOpsDeps): FinishOps {
           audit,
           forge: forgeKind,
           prBody,
+          outputDir: advisorOutputDir,
           narrative: outcome.narrative,
           title: outcome.title,
         });

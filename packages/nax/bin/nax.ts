@@ -58,6 +58,7 @@ import {
   pluginsListCommand,
   promptsCommand,
   promptsInitCommand,
+  registerAdvisorCommand,
   registerApprovalsCommand,
   registerTrustCommand,
   rulesExportCommand,
@@ -948,6 +949,9 @@ sandboxCmd
 
 // ── approvals ─────────────────────────────────────────
 registerApprovalsCommand(program);
+
+// ── advisor ───────────────────────────────────────────
+registerAdvisorCommand(program);
 
 // ── trust ─────────────────────────────────────────────
 // Not gated by `runTrustGate`: managing trust is what the operator runs when

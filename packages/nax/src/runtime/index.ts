@@ -119,6 +119,7 @@ import type { RoutingDecision } from "../routing/decision";
 import type { ISessionManager } from "../session";
 import { SessionManager } from "../session";
 import { createQuarantineMemo, type QuarantineMemo } from "../verification/flake-triage";
+import { AdvisorHeadsUpQueue } from "./advisor-heads-up-queue";
 import { MiddlewareChain } from "./agent-middleware";
 import type { IAgentStreamEventBus } from "./agent-stream-events";
 import { AgentStreamEventBus } from "./agent-stream-events";
@@ -183,6 +184,8 @@ export interface NaxRuntime {
   readonly semanticIterations: Map<string, Iteration[]>;
   /** Run-scoped per-story rectification oscillation totals. */
   readonly rectificationOscillations: Map<string, number>;
+  /** A1: flagged advisor decisions from the fix cycle, flushed by decideStageAction. */
+  readonly advisorHeadsUps: AdvisorHeadsUpQueue;
   /**
    * Run-scoped cross-attempt review-finding recurrence store (#1666 Part C).
    * Keyed per (storyId, reviewer source) — see `recurrence-store.ts`. Distinct from
@@ -451,6 +454,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
   const adversarialIterations = new Map<string, Iteration[]>();
   const semanticIterations = new Map<string, Iteration[]>();
   const rectificationOscillations = new Map<string, number>();
+  const advisorHeadsUps = new AdvisorHeadsUpQueue();
   const reviewFindingRecurrences: ReviewRecurrenceStore = new Map();
   const agentFallbacks = new Map<string, AgentFallbackRecord[]>();
   const ladderSlots = new Map<string, import("../agents/ladder-slot").LadderSlot>();
@@ -490,6 +494,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     adversarialIterations,
     semanticIterations,
     rectificationOscillations,
+    advisorHeadsUps,
     reviewFindingRecurrences,
     agentFallbacks,
     ladderSlots,

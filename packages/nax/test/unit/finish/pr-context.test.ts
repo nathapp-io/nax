@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { appendDecision } from "@/advisor";
 import { _finishPrDeps, createFinishState, loadFinishPrContext } from "@/finish";
 
 const originalDeps = { ..._finishPrDeps };
@@ -146,5 +147,36 @@ describe("loadFinishPrContext", () => {
 
     expect(ctx.templateMode).toBe("strict");
     expect(ctx.templateSectionMap).toEqual({ notes: "narrative" });
+  });
+});
+
+describe("loadFinishPrContext — advisor decisions (A1)", () => {
+  const draft = {
+    questionId: "Q",
+    kind: "finish-judgment" as const,
+    chosenOptionId: "A",
+    action: { type: "fix" as const, instruction: "x" },
+    rationale: "r",
+    confidence: "high" as const,
+    reversible: true,
+    needsHumanConfirm: false,
+    decidedAt: "t",
+    model: "m",
+    memoryMode: "stateless" as const,
+  };
+
+  test("shows only decisions with an audit artifact under outputDir; none without an outputDir", async () => {
+    _finishPrDeps.run = async () => ({ exitCode: 1, stdout: "", stderr: "" });
+    const out = join(dir, "out");
+    const real = await appendDecision(dir, "demo", (id) => ({ ...draft, auditRef: `advisor-audit/demo/${id}.json` }));
+    await mkdir(join(out, "advisor-audit", "demo"), { recursive: true });
+    await writeFile(join(out, real.auditRef), JSON.stringify({ result: { decision: real } }));
+    await appendDecision(dir, "demo", { ...draft, auditRef: "advisor-audit/demo/forged.json" });
+
+    const audit = { auditDir: join(dir, "audit"), runId: "run-1" };
+    const trusted = await loadFinishPrContext({ state: stateFor(dir), audit, outputDir: out });
+    expect(trusted.advisorDecisions?.map((d) => d.id)).toEqual(["D-1"]);
+    const noOut = await loadFinishPrContext({ state: stateFor(dir), audit });
+    expect(noOut.advisorDecisions).toBeUndefined();
   });
 });

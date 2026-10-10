@@ -31,6 +31,11 @@ export interface CallOpStubOptions {
    * content (nax#1773).
    */
   onDispatch?: (op: { name: string; kind: string }, ctx: CallContext, input: unknown) => void;
+  /**
+   * Per-call value for non-deterministic ops, taking precedence over `fallback`.
+   * An `Error` it returns is thrown, so a test can script a failing dispatch.
+   */
+  next?: () => unknown;
 }
 
 /**
@@ -40,10 +45,12 @@ export interface CallOpStubOptions {
  * ```
  */
 export function makeCallOp(options: CallOpStubOptions = {}) {
-  const { fallback = DEFAULT_AGENT_ENVELOPE, onDispatch } = options;
+  const { fallback = DEFAULT_AGENT_ENVELOPE, onDispatch, next } = options;
   return async <I, O, C>(ctx: CallContext, op: Operation<I, O, C>, input: I): Promise<O> => {
     onDispatch?.(op, ctx, input);
     if (op.kind === "deterministic") return op.execute(input, ctx);
-    return fallback as unknown as O; // test-ratchet-allow: as-unknown-as
+    const value = next ? next() : fallback;
+    if (value instanceof Error) throw value;
+    return value as unknown as O; // test-ratchet-allow: as-unknown-as
   };
 }

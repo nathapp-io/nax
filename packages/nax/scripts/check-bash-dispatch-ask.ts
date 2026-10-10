@@ -95,6 +95,8 @@ export const ALLOWED_BARE_SITES: readonly AllowedBareSite[] = [
   { file: "src/plan/strategies/single.ts", fn: "execute", reason: "planInteractiveOp (Read/Glob/Grep/Write)" },
   { file: "src/plan/strategies/refine.ts", fn: "execute", reason: "planRefineOp (Read/Glob/Grep/Write)" },
   { file: "src/cli/setup.ts", fn: "buildCallContext", reason: "setupGenerateOp (read-only default tools)" },
+  { file: "src/cli/advisor-replay.ts", fn: "buildCallContext", reason: "adviseOp (Read/Glob/Grep)" },
+  { file: "src/execution/uncategorised-advice.ts", fn: "callContextFor", reason: "adviseOp (Read/Glob/Grep)" },
   { file: "src/cli/plan-decompose.ts", fn: "planDecomposeCommand", reason: "decomposeOp (complete-kind)" },
   {
     file: "src/acceptance/hardening.ts",

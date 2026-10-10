@@ -9,6 +9,7 @@
 
 import { rename, unlink } from "node:fs/promises";
 import { resolve } from "node:path";
+import type { AdvisorSummary } from "@/advisor/store";
 import { NaxError } from "../errors";
 import type { PRD } from "../prd";
 
@@ -218,6 +219,8 @@ export interface NaxStatusFile {
    * Omitted when `postRun` is absent.
    */
   gates?: GatesStatus;
+  /** A1: advisor decision counts; absent when the advisor is off. */
+  advisor?: AdvisorSummary;
 }
 
 // ============================================================================
@@ -313,6 +316,8 @@ export interface RunStateSnapshot {
   /** ISO 8601 last heartbeat timestamp (updated every 60s during execution) */
   lastHeartbeat?: string;
   /** Post-run phase statuses (optional) */
+  /** A1: advisor decision counts, set at run completion when the advisor is on. */
+  advisor?: AdvisorSummary;
   postRun?: PostRunStatus;
 }
 
@@ -358,6 +363,10 @@ export function buildStatusSnapshot(state: RunStateSnapshot): NaxStatusFile {
 
   if (state.parallel) {
     snapshot.parallel = state.parallel;
+  }
+
+  if (state.advisor) {
+    snapshot.advisor = state.advisor;
   }
 
   if (state.postRun) {

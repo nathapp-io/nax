@@ -1,0 +1,7 @@
+{
+  "feature": "feat",
+  "status": "escalated",
+  "escalationReason": "quality review never discharged its reading obligations: no `## TOUCHPOINTS` section",
+  "findings": [],
+  "rounds": [{ "ts": "t", "phase": "quality", "committed": false, "outcome": "escalated", "findings": 0, "attempt": 2 }]
+}

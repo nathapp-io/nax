@@ -5,6 +5,9 @@
  * per-package: a package's permissions map REPLACES root's, and a stage's
  * rules resolve through that map, so pinning a per-stage mode would change
  * which block a stage's allow/deny come from.
+ *
+ * A1: the whole `advisor` block is root-only too — the advisor rules on
+ * feature-level questions that can span packages (spec §4.13).
  */
 import type { NaxConfig } from "./schema";
 
@@ -14,10 +17,11 @@ const ROOT_ONLY = new Set<string>(ROOT_ONLY_EXECUTION_KEYS);
 
 /** Typed form, for callers holding a parsed config (runtime/packages.ts). Silent. */
 export function pinRootOnlyKeys(merged: NaxConfig, root: NaxConfig): NaxConfig {
-  const { auth: _packageAuth, ...rootOnlyMerged } = merged;
+  const { auth: _packageAuth, advisor: _packageAdvisor, ...rootOnlyMerged } = merged;
   return {
     ...rootOnlyMerged,
     ...(root.auth === undefined ? {} : { auth: root.auth }),
+    ...(root.advisor === undefined ? {} : { advisor: root.advisor }),
     execution: {
       ...merged.execution,
       bashApproval: root.execution.bashApproval,
@@ -39,7 +43,7 @@ export function pinRootOnlyKeysRaw(
   packageDir: string,
   onIgnored: (msg: string) => void,
 ): Record<string, unknown> {
-  const { auth: _packageAuth, ...rawWithoutAuth } = raw;
+  const { auth: _packageAuth, advisor: _packageAdvisor, ...rawWithoutAuth } = raw;
   const execution = isRecord(raw.execution) ? raw.execution : {};
   const rootExecution: Record<string, unknown> = { ...root.execution };
   for (const key of ROOT_ONLY_EXECUTION_KEYS) {
@@ -54,9 +58,13 @@ export function pinRootOnlyKeysRaw(
   if (Object.hasOwn(raw, "auth") && !Bun.deepEquals(raw.auth, root.auth)) {
     onIgnored(`auth is root-only; the value set for package "${packageDir}" is ignored`);
   }
+  if (Object.hasOwn(raw, "advisor") && !Bun.deepEquals(raw.advisor, root.advisor)) {
+    onIgnored(`advisor is root-only; the value set for package "${packageDir}" is ignored`);
+  }
   return {
     ...rawWithoutAuth,
     ...(root.auth === undefined ? {} : { auth: root.auth }),
+    ...(root.advisor === undefined ? {} : { advisor: root.advisor }),
     execution: { ...rest, ...pinned },
   };
 }

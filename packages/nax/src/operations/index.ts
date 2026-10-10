@@ -11,6 +11,7 @@ export type { AcceptanceRepairInput, AcceptanceRepairOutput } from "./acceptance
 export { acceptanceRepairOp } from "./acceptance-repair";
 export type { AdversarialReviewInput, AdversarialReviewOutput } from "./adversarial-review";
 export { adversarialReviewOp } from "./adversarial-review";
+export { type AdviseOpInput, type AdviseOpOutput, adviseOp, validateAdvisorReply } from "./advise";
 export type {
   ApplyTestEditDeclarationsOptions,
   DeclarationDiagnostic,

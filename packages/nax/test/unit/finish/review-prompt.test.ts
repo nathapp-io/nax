@@ -370,3 +370,16 @@ describe("buildReviewPrompt — diff range form", () => {
     expect(p).toContain(JSON.stringify(PRIOR, null, 2));
   });
 });
+
+describe("buildReviewPrompt — advisor decisions (A1)", () => {
+  test("includes the decisions block only when given", () => {
+    const withD = buildReviewPrompt("quality", {
+      base: "origin/main",
+      specPath: "s.md",
+      decisions: "- D-2 waived: Race — US-5 owns it",
+    });
+    expect(withD).toContain("Advisor decisions for this feature");
+    expect(withD).toContain("D-2 waived");
+    expect(buildReviewPrompt("quality", { base: "origin/main", specPath: "s.md" })).not.toContain("Advisor decisions");
+  });
+});

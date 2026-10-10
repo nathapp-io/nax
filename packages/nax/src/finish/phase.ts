@@ -14,6 +14,7 @@
  */
 
 import { errorMessage } from "@nathapp/nax-agent/internal";
+import type { NaxConfig } from "@/config";
 import { defaultForgeDeps, detectForge } from "@/forge";
 import { buildRunDispatchAskWiring, type DispatchAskWiring, type InteractionChain } from "@/interaction";
 import { getSafeLogger } from "@/logger";
@@ -21,6 +22,8 @@ import type { CallContext } from "@/operations";
 import { pipelineEventBus } from "@/pipeline";
 import type { NaxRuntime } from "@/runtime";
 import { totalSpendUsd } from "@/runtime";
+import type { FinishAdvisor } from "./advise";
+import { buildFinishAdvisorForPhase } from "./advise";
 import type { AuditTarget } from "./audit";
 import type { FinishSettings } from "./config";
 import { readFinishConfig } from "./config";
@@ -202,6 +205,34 @@ function phaseSignal(runSignal: AbortSignal, flowMs: number): { signal: AbortSig
   };
 }
 
+/** A1: the finish advisor, or undefined when no finish caller is enabled. Heads-up goes to Telegram when notify is on. */
+function advisorForPhase(a: {
+  ctx: FinishPhaseContext;
+  settings: { notify: { mode: string } };
+  runConfig: NaxConfig;
+  callCtx: CallContext;
+  specPath: string;
+}): FinishAdvisor | undefined {
+  const creds = a.settings.notify.mode !== "off" ? telegramCreds(a.ctx.config) : null;
+  return buildFinishAdvisorForPhase({
+    runConfig: a.runConfig,
+    callCtx: a.callCtx,
+    repoRoot: a.ctx.workdir,
+    outputDir: a.ctx.runtime.outputDir,
+    feature: a.ctx.feature,
+    runId: a.ctx.runId,
+    specPath: a.specPath,
+    ...(creds
+      ? {
+          headsUp: (text: string) =>
+            _finishPhaseDeps
+              .sendTelegramNotify(creds, text)
+              .then((sent) => (sent ? { sent } : { sent, reason: "telegram-failed" })),
+        }
+      : {}),
+  });
+}
+
 /**
  * Writes a `finish` status update, swallowing any throw from the writer.
  *
@@ -342,6 +373,7 @@ export async function runFinishPhase(ctx: FinishPhaseContext): Promise<FinishRes
       context,
       ops,
       audit,
+      advise: advisorForPhase({ ctx, settings, runConfig, callCtx, specPath: context.specPath }),
       signal,
       // The run's own signal, so the machine can tell a cancelled run (do not
       // push or post) from a `flowMs` deadline (do escalate) — `signal` above
