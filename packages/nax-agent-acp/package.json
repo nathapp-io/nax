@@ -35,7 +35,7 @@
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "~1.7.0",
-    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "zod": "^4.3.6"
   },
   "peerDependencies": {
@@ -49,7 +49,7 @@
     "@types/node": "25.2.3",
     "bun-types": "^1.3.9",
     "typescript": "7.0.2",
-    "vitest": "4.1.9"
+    "vitest": "4.1.11"
   },
   "license": "MIT",
   "author": "William Khoo",
