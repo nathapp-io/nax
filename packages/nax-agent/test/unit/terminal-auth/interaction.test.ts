@@ -81,6 +81,19 @@ describe("createTerminalAuthInteraction", () => {
     expect(await select).toBe("api-key");
   });
 
+  test("a select carries the option's description to the terminal", async () => {
+    const h = makeStdin();
+    _terminalPromptDeps.stdin = h.stdin;
+    const pending = interaction().prompt({
+      type: "select",
+      message: "Model:",
+      options: [{ id: "m", label: "model-x", description: "1000000 token window" }],
+    });
+    h.emit("data", CR);
+    expect(await pending).toBe("m");
+    expect(written.join("")).toContain("1000000 token window");
+  });
+
   test("Enter on an empty manual-code prompt opens the parked auth url once", async () => {
     const h = makeStdin();
     _terminalPromptDeps.stdin = h.stdin;

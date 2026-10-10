@@ -173,12 +173,117 @@ export function promptForLine(
 export interface SelectChoice {
   readonly id: string;
   readonly label: string;
+  readonly description?: string;
+}
+
+/** Rows drawn at once. A longer list is narrowed by typing, never printed whole. */
+const MAX_VISIBLE_ROWS = 12;
+
+/** Case-insensitive label match; an empty filter matches everything. */
+function matchedRows(choices: readonly SelectChoice[], filter: string): SelectChoice[] {
+  const needle = filter.toLowerCase();
+  return needle === "" ? [...choices] : choices.filter((c) => c.label.toLowerCase().includes(needle));
+}
+
+/** The first row index the window must show so that `active` is visible. */
+function windowStart(active: number, total: number): number {
+  return Math.min(active, Math.max(0, total - MAX_VISIBLE_ROWS));
+}
+
+interface SelectRun {
+  readonly choices: readonly SelectChoice[];
+  readonly style: TerminalStyle;
+  readonly stdin: PromptStdin;
+  readonly resolve: (id: string) => void;
+  readonly reject: () => void;
+  filter: string;
+  active: number;
+  drawn: number;
+  settled: boolean;
+  onData: (chunk: string) => void;
+  onEnd: () => void;
+}
+
+function drawSelectLine(run: SelectRun, text: string): void {
+  _terminalPromptDeps.write(`\r\u001b[2K${text}\n`);
+  run.drawn += 1;
+}
+
+function drawSelectRow(run: SelectRun, choice: SelectChoice, isActive: boolean): void {
+  const marker = isActive ? run.style.accent(">") : " ";
+  const label = isActive ? run.style.accent(choice.label) : choice.label;
+  const note = isActive && choice.description !== undefined ? ` ${run.style.dim(choice.description)}` : "";
+  drawSelectLine(run, `${marker} ${label}${note}`);
+}
+
+function renderSelect(run: SelectRun): void {
+  const rows = matchedRows(run.choices, run.filter);
+  if (run.active >= rows.length) run.active = 0;
+  const start = windowStart(run.active, rows.length);
+  if (run.drawn > 0) _terminalPromptDeps.write(`\u001b[${run.drawn}A`);
+  run.drawn = 0;
+  drawSelectLine(run, run.style.dim(run.filter));
+  for (const [i, choice] of rows.slice(start, start + MAX_VISIBLE_ROWS).entries()) {
+    drawSelectRow(run, choice, start + i === run.active);
+  }
+}
+
+function moveSelect(run: SelectRun, delta: number): void {
+  const rows = matchedRows(run.choices, run.filter);
+  if (rows.length > 0) run.active = (run.active + delta + rows.length) % rows.length;
+  renderSelect(run);
+}
+
+function cleanupSelect(run: SelectRun): void {
+  if (run.settled) return;
+  run.settled = true;
+  run.stdin.removeListener("data", run.onData);
+  run.stdin.removeListener("end", run.onEnd);
+  run.stdin.removeListener("error", run.onEnd);
+  run.stdin.setRawMode(false);
+  run.stdin.pause();
+}
+
+function endSelect(run: SelectRun): void {
+  cleanupSelect(run);
+  run.reject();
+}
+
+function handleSelectKey(run: SelectRun, chunk: string): void {
+  // Whole-chunk matching: an arrow key is a three-byte escape sequence.
+  if (chunk.includes(ETX) || chunk.includes(EOT)) {
+    endSelect(run);
+    return;
+  }
+  if (chunk.includes(ARROW_UP)) {
+    moveSelect(run, -1);
+    return;
+  }
+  if (chunk.includes(ARROW_DOWN)) {
+    moveSelect(run, 1);
+    return;
+  }
+  if (chunk.includes(CR) || chunk.includes(LF)) {
+    const rows = matchedRows(run.choices, run.filter);
+    if (rows.length === 0) return;
+    cleanupSelect(run);
+    // biome-ignore lint/style/noNonNullAssertion: active is held below rows.length by renderSelect and the guard above.
+    run.resolve(rows[run.active]!.id);
+    return;
+  }
+  run.filter = chunk.includes(BACKSPACE) ? run.filter.slice(0, -1) : run.filter + chunk;
+  run.active = 0;
+  renderSelect(run);
 }
 
 /**
  * Reads a choice with the arrow keys and returns the chosen option's id. The
- * option block is redrawn in place. Enter commits the highlighted row, so a
- * value that is not an option can never be returned.
+ * option block is redrawn in place, so a value that is not an option can never
+ * be returned. Typed characters narrow the block rather than answering it: a
+ * catalog-sized list is scrolled by filtering, not printed whole, and the redraw
+ * moves up only by the rows it drew — a block taller than the terminal cannot be
+ * repainted, because the cursor-up cannot cross the scrollback. Enter with no
+ * match commits nothing.
  */
 export function promptForSelect(
   message: string,
@@ -193,66 +298,25 @@ export function promptForSelect(
   _terminalPromptDeps.write(`${style.accent("?")} ${message}\n`);
 
   return new Promise<string>((resolve, reject) => {
-    let index = 0;
-    let settled = false;
-    let drawn = false;
-
-    const render = (): void => {
-      if (drawn) _terminalPromptDeps.write(`\u001b[${choices.length}A`);
-      drawn = true;
-      for (const [i, choice] of choices.entries()) {
-        const active = i === index;
-        const marker = active ? style.accent(">") : " ";
-        const label = active ? style.accent(choice.label) : choice.label;
-        _terminalPromptDeps.write(`\r\u001b[2K${marker} ${label}\n`);
-      }
+    const run: SelectRun = {
+      choices,
+      style,
+      stdin,
+      resolve,
+      reject: () => reject(new PromptCancelledError()),
+      onData: (chunk) => handleSelectKey(run, chunk),
+      onEnd: () => endSelect(run),
+      filter: "",
+      active: 0,
+      drawn: 0,
+      settled: false,
     };
-
-    const cleanup = (): void => {
-      if (settled) return;
-      settled = true;
-      stdin.removeListener("data", onData);
-      stdin.removeListener("end", onEnd);
-      stdin.removeListener("error", onEnd);
-      stdin.setRawMode(false);
-      stdin.pause();
-    };
-
-    const onEnd = (): void => {
-      cleanup();
-      reject(new PromptCancelledError());
-    };
-
-    const onData = (chunk: string): void => {
-      // Whole-chunk matching: an arrow key is a three-byte escape sequence.
-      if (chunk.includes(ETX) || chunk.includes(EOT)) {
-        onEnd();
-        return;
-      }
-      if (chunk.includes(ARROW_UP)) {
-        index = (index - 1 + choices.length) % choices.length;
-        render();
-        return;
-      }
-      if (chunk.includes(ARROW_DOWN)) {
-        index = (index + 1) % choices.length;
-        render();
-        return;
-      }
-      if (chunk.includes(CR) || chunk.includes(LF)) {
-        const chosen = choices[index];
-        cleanup();
-        // biome-ignore lint/style/noNonNullAssertion: index is held in range by the modulo above.
-        resolve(chosen!.id);
-      }
-    };
-
     stdin.setRawMode(true);
     stdin.resume();
     stdin.setEncoding("utf8");
-    stdin.on("data", onData);
-    stdin.once("end", onEnd);
-    stdin.once("error", onEnd);
-    render();
+    stdin.on("data", run.onData);
+    stdin.once("end", run.onEnd);
+    stdin.once("error", run.onEnd);
+    renderSelect(run);
   });
 }
