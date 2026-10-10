@@ -103,7 +103,11 @@ describe("acceptanceDiagnoseOp.parse()", () => {
   });
   test("US-001 AC15: valid diagnosis has no fallback property", () => {
     const ctx = makeBuildCtx();
-    const result = acceptanceDiagnoseOp.parse(JSON.stringify({ verdict: "source_bug", reasoning: "r", confidence: 0.8 }), SAMPLE_INPUT, ctx);
+    const result = acceptanceDiagnoseOp.parse(
+      JSON.stringify({ verdict: "source_bug", reasoning: "r", confidence: 0.8 }),
+      SAMPLE_INPUT,
+      ctx,
+    );
     expect(result).not.toHaveProperty("fallback");
   });
   test("parses test_bug verdict", () => {

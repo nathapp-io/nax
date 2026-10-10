@@ -84,24 +84,48 @@ afterEach(() => {
 
 describe("resolveAcceptanceDiagnosis() — US-001 path and criteria", () => {
   test("US-001 AC16: records implement-only fast-path provenance", async () => {
-    const result = await resolveAcceptanceDiagnosis({ ctx: makeAcceptanceCtx(), failures: { failedACs: ["AC-1"], testOutput: "fail" }, totalACs: 10, strategy: "implement-only", diagnosisOpts: makeDiagnosisOpts() });
+    const result = await resolveAcceptanceDiagnosis({
+      ctx: makeAcceptanceCtx(),
+      failures: { failedACs: ["AC-1"], testOutput: "fail" },
+      totalACs: 10,
+      strategy: "implement-only",
+      diagnosisOpts: makeDiagnosisOpts(),
+    });
     expect(result.path).toBe("implement-only");
   });
 
   test("US-001 AC17: records test-level fast-path provenance", async () => {
-    const result = await resolveAcceptanceDiagnosis({ ctx: makeAcceptanceCtx(), failures: { failedACs: Array.from({ length: 9 }, (_, i) => `AC-${i + 1}`), testOutput: "fail" }, totalACs: 10, strategy: "diagnose-first", diagnosisOpts: makeDiagnosisOpts() });
+    const result = await resolveAcceptanceDiagnosis({
+      ctx: makeAcceptanceCtx(),
+      failures: { failedACs: Array.from({ length: 9 }, (_, i) => `AC-${i + 1}`), testOutput: "fail" },
+      totalACs: 10,
+      strategy: "diagnose-first",
+      diagnosisOpts: makeDiagnosisOpts(),
+    });
     expect(result.path).toBe("test-level");
   });
 
   test("US-001 AC18: records fallback provenance returned by the diagnosis op", async () => {
     _diagnosisDeps.callOp = async () => ({ verdict: "test_bug", reasoning: "x", confidence: 0, fallback: true });
-    const result = await resolveAcceptanceDiagnosis({ ctx: makeAcceptanceCtx(true), failures: { failedACs: ["AC-1"], testOutput: "fail" }, totalACs: 10, strategy: "diagnose-first", diagnosisOpts: makeDiagnosisOpts() });
+    const result = await resolveAcceptanceDiagnosis({
+      ctx: makeAcceptanceCtx(true),
+      failures: { failedACs: ["AC-1"], testOutput: "fail" },
+      totalACs: 10,
+      strategy: "diagnose-first",
+      diagnosisOpts: makeDiagnosisOpts(),
+    });
     expect(result.path).toBe("fallback");
   });
 
   test("US-001 AC19: records LLM provenance for a normal diagnosis", async () => {
     _diagnosisDeps.callOp = async () => ({ verdict: "source_bug", reasoning: "x", confidence: 0.7 });
-    const result = await resolveAcceptanceDiagnosis({ ctx: makeAcceptanceCtx(true), failures: { failedACs: ["AC-1"], testOutput: "fail" }, totalACs: 10, strategy: "diagnose-first", diagnosisOpts: makeDiagnosisOpts() });
+    const result = await resolveAcceptanceDiagnosis({
+      ctx: makeAcceptanceCtx(true),
+      failures: { failedACs: ["AC-1"], testOutput: "fail" },
+      totalACs: 10,
+      strategy: "diagnose-first",
+      diagnosisOpts: makeDiagnosisOpts(),
+    });
     expect(result.path).toBe("llm");
   });
 
@@ -109,7 +133,13 @@ describe("resolveAcceptanceDiagnosis() — US-001 path and criteria", () => {
     const calls: Array<{ ctx: CallContext; op: unknown; input: AcceptanceDiagnoseInput }> = [];
     _diagnosisDeps.callOp = recordCallOp(calls);
     const failedCriteria = [{ acId: "AC-2", storyId: "US-002", original: "o2", refined: "r2" }];
-    await resolveAcceptanceDiagnosis({ ctx: makeAcceptanceCtx(true), failures: { failedACs: ["AC-2"], testOutput: "fail" }, totalACs: 10, strategy: "diagnose-first", diagnosisOpts: { ...makeDiagnosisOpts(), failedCriteria } });
+    await resolveAcceptanceDiagnosis({
+      ctx: makeAcceptanceCtx(true),
+      failures: { failedACs: ["AC-2"], testOutput: "fail" },
+      totalACs: 10,
+      strategy: "diagnose-first",
+      diagnosisOpts: { ...makeDiagnosisOpts(), failedCriteria },
+    });
     expect(calls[0].input.failedCriteria).toEqual(failedCriteria);
   });
 });
