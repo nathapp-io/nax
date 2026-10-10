@@ -679,8 +679,8 @@ Grounded while writing the implementation plan. Where this section and an earlie
    `NaxConfig` literals, and a required field would break them all. Readers use
    `resolveAdvisorConfig(config)`, which falls back to the schema-derived `ADVISOR_DEFAULTS`.
 6. **CLI location:** `src/cli/advisor.ts`, following `src/cli/approvals.ts` (§4.1 / §4.7 updated).
-7. **Supersede rule check (§4.3).** "Acceptance pins this AC" is decided by the feature's
-   `acceptance-meta.json`: acceptance is enabled for the story's package and the AC id appears in the
-   generated test's AC list. The plan's menu task reads it through the existing acceptance-meta
-   loader. When the file is unreadable, the rule treats the AC as pinned, so `supersede` is not
-   offered. This is the conservative choice.
+7. **Supersede rule check (§4.3), simplified.** A `supersede` with target `ac` is offered **only when
+   acceptance is disabled for the story's package** (`acceptance.enabled === false` in that package's
+   resolved config). Acceptance AC numbering is feature-wide (AC-1…AC-N over the refined list), so
+   mapping a story AC to an acceptance case would be heuristic. The conservative rule avoids it.
+   Target `spec` is unaffected. If A2 turns acceptance off by default, this opens up automatically.
