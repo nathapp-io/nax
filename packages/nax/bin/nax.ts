@@ -951,7 +951,11 @@ sandboxCmd
 registerApprovalsCommand(program);
 
 // ── advisor ───────────────────────────────────────────
-registerAdvisorCommand(program);
+// replay dispatches real agent sessions; without a logger their failures are silent.
+// warn, not info: the logger writes stdout, which `replay --json` owns.
+registerAdvisorCommand(program).hook("preAction", (_group, action) => {
+  if (action.name() === "replay") initLogger({ level: "warn", useChalk: true });
+});
 
 // ── trust ─────────────────────────────────────────────
 // Not gated by `runTrustGate`: managing trust is what the operator runs when

@@ -5,7 +5,7 @@ import type { AdviceAuditRecord } from "@/advisor";
 import { appendLabel, buildMenu, writeAdviceAudit } from "@/advisor";
 import { type AdvisorReplayDeps, runAdvisorReplay } from "@/cli/advisor-replay";
 import type { AdviseOpOutput } from "@/operations";
-import type { NaxRuntime } from "@/runtime";
+import { type NaxRuntime, storyExecRoot } from "@/runtime";
 
 const runtimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -67,17 +67,30 @@ function harness(outDir: string, replies: (AdviseOpOutput | Error)[], failGit?: 
   const err: string[] = [];
   const order: string[] = [];
   const writes: [string, string][] = [];
+  const contexts: [string, string][] = [];
+  const dispatched: { featureName?: string; packageDir: string; viewPackageDir: string; execRoot: string }[] = [];
+  const specPaths: unknown[] = [];
   let i = 0;
   let tmp = 0;
   const deps: AdvisorReplayDeps = {
     resolveOutputDir: async () => outDir,
-    buildCallContext: async () => {
+    buildCallContext: async (d, feature) => {
+      contexts.push([d, feature]);
       const ctx = makeMockCallContext();
       runtimes.push(ctx.runtime);
       return { ctx, close: async () => {} };
     },
     callOp: makeCallOp({
-      onDispatch: () => order.push("callOp"),
+      onDispatch: (_op, ctx, input) => {
+        order.push("callOp");
+        specPaths.push(typeof input === "object" && input !== null && "specPath" in input ? input.specPath : null);
+        dispatched.push({
+          featureName: ctx.featureName,
+          packageDir: ctx.packageDir,
+          viewPackageDir: ctx.packageView.packageDir,
+          execRoot: storyExecRoot(ctx.packageView),
+        });
+      },
       next: () => replies[i++],
     }),
     git: async (args) => {
@@ -91,6 +104,7 @@ function harness(outDir: string, replies: (AdviseOpOutput | Error)[], failGit?: 
     },
     removeDir: async () => {},
     readPrdText: async () => "{}",
+    resolveSpecPath: async (wt, feature) => `${wt}/.nax/features/${feature}/spec.md`,
     writeFile: async (path, text) => {
       writes.push([path, text]);
     },
@@ -101,7 +115,7 @@ function harness(outDir: string, replies: (AdviseOpOutput | Error)[], failGit?: 
     },
     now: () => "2026-10-10T00-00-00",
   };
-  return { deps, git, out, err, order, writes };
+  return { deps, git, out, err, order, writes, dispatched, contexts, specPaths };
 }
 
 describe("nax advisor replay", () => {
@@ -124,6 +138,23 @@ describe("nax advisor replay", () => {
       expect(h.writes[0]).toEqual(["/tmp/replay-patch-2/advisor-replay.patch", "diff --git a/x b/x\n"]);
       expect(h.git[1]).toEqual(["apply", "--whitespace=nowarn", "/tmp/replay-patch-2/advisor-replay.patch"]);
       expect(h.writes[1]?.[0]).toBe(join(outDir, "advisor-audit", "feat", "D-1.replay-2026-10-10T00-00-00.json"));
+    });
+  });
+
+  test("the advisor session runs in the replay worktree, with the feature for its transcript dir", async () => {
+    await withTempDir(async (dir) => {
+      const outDir = join(dir, "out");
+      await writeAdviceAudit(outDir, "feat", rec("D-1", "fix"));
+      const h = harness(outDir, [replyFor("A")]);
+      await runAdvisorReplay({ dir, feature: "feat", eval: false, json: false }, h.deps);
+      // The view keeps its relative root-package key: an absolute one becomes the prompt's scope label.
+      expect(h.dispatched).toEqual([
+        { featureName: "feat", packageDir: "/tmp/replay-x", viewPackageDir: "", execRoot: "/tmp/replay-x" },
+      ]);
+      // The runtime is built for the feature too, so the replay's prompts are audited.
+      expect(h.contexts).toEqual([[dir, "feat"]]);
+      // The spec is the one at the escalation sha, resolved inside the worktree, never the recorded path.
+      expect(h.specPaths).toEqual(["/tmp/replay-x/.nax/features/feat/spec.md"]);
     });
   });
 
