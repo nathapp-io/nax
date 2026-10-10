@@ -105,7 +105,16 @@ export const SECRET_VALUE_PATTERNS: readonly SecretValuePattern[] = [
   //   postgres://admin:s3cret@db.internal:5432/prod  →  "postgres://admin:s3cret@"
   //   redis://:hunter2@cache.internal:6379/0          →  "redis://:hunter2@"     (empty user)
   //   mongodb://root:mongoPwd@mongo.internal:27017    →  "mongodb://root:mongoPwd@"
-  { kind: "url-credentials", re: /\b[a-z][a-z0-9+.-]*:\/\/(?:[^/\s@]*:[^/\s@]+)@/gi },
+  // Issue #2428: the unbounded scheme run was O(n^2) on long runs of scheme
+  // chars that never reach "://" (e.g. "a-b-c-...") — every word-boundary
+  // start rescanned the whole run (~4 min for 1 MB on this synchronous
+  // logger path). The scheme length is bounded to 32 chars so each start
+  // position costs O(1); the lookbehind keeps `\b`'s semantics exactly (a
+  // start preceded by a word char is rejected, so "1-http://u:p@h" and
+  // "a-b-c://x:y@h" still match). The only behavioural change vs the old
+  // pattern is the intentional bound: a run longer than 32 scheme chars
+  // before "://" is left alone — no realistic scheme is that long.
+  { kind: "url-credentials", re: /(?<![a-z0-9_])[a-z][a-z0-9+.-]{0,31}:\/\/(?:[^/\s@]*:[^/\s@]+)@/gi },
 ];
 
 const REDACTED = "[REDACTED]";

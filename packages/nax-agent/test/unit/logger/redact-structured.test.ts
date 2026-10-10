@@ -159,6 +159,22 @@ describe("redactSecrets: values that are not secrets", () => {
     expect(out).toContain("[REDACTED]");
   });
 
+  // Issue #2428 pins for the url-credentials scheme match:
+  // The lookbehind must keep `\b`'s semantics — a scheme start preceded by a
+  // scheme char (not a word char) is still a match start.
+  test("still masks a scheme start preceded by a scheme char", () => {
+    expect(mask("1-http://u:p@h")).toBe("1-[REDACTED]h");
+    expect(mask("a-b-c://x:y@h")).toBe("[REDACTED]h");
+  });
+
+  // The 32-char scheme bound is intentional defence in depth: a longer run
+  // before "://" is left alone. Pinned so a future widening can't silently
+  // reintroduce the quadratic scan.
+  test("leaves a scheme run longer than the 32-char bound alone", () => {
+    const input = "z".repeat(33) + "http://u:p@h";
+    expect(mask(input)).toBe(input);
+  });
+
   test("is idempotent", () => {
     const once = mask('API_TOKEN=abc {"apiKey": "x"}');
     expect(mask(once)).toBe(once);
@@ -177,6 +193,11 @@ describe("redactSecrets: bounded cost", () => {
     ["separators and whitespace", `token${" ".repeat(MB)}=`],
     ["escape runs", `\\"secret\\"${"\\".repeat(MB)}`],
     ["key-shaped runs", "API_TOKEN_".repeat(MB / 10)],
+    // Issue #2428: the url-credentials scheme match was quadratic on long
+    // dash-separated runs that never reach "://" — every word-boundary start
+    // position rescanned the run. The scheme length is now bounded, so each
+    // start position costs O(1).
+    ["dash-separated run", "a-b-c-d-".repeat(MB / 8)],
   ];
 
   test.each(adversarial)("a 1 MB input completes quickly: %s", (_name, input) => {
