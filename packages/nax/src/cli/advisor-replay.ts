@@ -13,9 +13,11 @@ import type { AdviceAuditRecord, AdviceLabel } from "@/advisor";
 import { adviceAuditDir, readAdviceAudit, readLabels } from "@/advisor";
 import type { ConfiguredModel } from "@/config";
 import { featureDir, loadConfig } from "@/config";
+import { NaxError } from "@/errors";
 import type { AdviseOpOutput, CallContext } from "@/operations";
 import { adviseOp, callOp } from "@/operations";
 import { createRuntime, projectOutputDir } from "@/runtime";
+import { runTrustGate } from "./trust-gate";
 
 const GIT_TIMEOUT_MS = 60_000;
 
@@ -38,6 +40,8 @@ export interface AdvisorReplayDeps {
   removeDir: (path: string) => Promise<void>;
   readPrdText: (worktree: string, feature: string) => Promise<string>;
   writeFile: (path: string, text: string) => Promise<void>;
+  /** Replay loads the project's config and runs an agent in it — same gate as `nax run`. */
+  trustGate: (dir: string) => Promise<void>;
   log: (text: string) => void;
   logErr: (text: string) => void;
   now: () => string;
@@ -87,6 +91,7 @@ export const _advisorReplayDeps: AdvisorReplayDeps = {
   writeFile: async (path, text) => {
     await Bun.write(path, text);
   },
+  trustGate: runTrustGate,
   log: (text) => {
     console.log(text);
   },
@@ -120,6 +125,31 @@ async function loadRecords(auditDir: string, id?: string): Promise<AdviceAuditRe
   return Promise.all(names.sort().map((n) => readAdviceAudit(join(auditDir, n))));
 }
 
+async function gitOrThrow(deps: AdvisorReplayDeps, args: string[], cwd: string): Promise<void> {
+  const r = await deps.git(args, cwd);
+  if (r.exitCode !== 0) {
+    throw new NaxError(
+      `[advisor] git ${args.slice(0, 2).join(" ")} failed (exit ${r.exitCode})`,
+      "ADVISOR_REPLAY_GIT",
+      {
+        stage: "advisor",
+      },
+    );
+  }
+}
+
+/** Write the recorded patch OUTSIDE the worktree: a committed symlink there could redirect the write. */
+async function applyPatch(deps: AdvisorReplayDeps, wt: string, patch: string): Promise<void> {
+  const patchDir = await deps.makeTempDir();
+  try {
+    const patchPath = join(patchDir, "advisor-replay.patch");
+    await deps.writeFile(patchPath, patch);
+    await gitOrThrow(deps, ["apply", "--whitespace=nowarn", patchPath], wt);
+  } finally {
+    await deps.removeDir(patchDir);
+  }
+}
+
 async function inWorktree<T>(
   deps: AdvisorReplayDeps,
   repo: string,
@@ -127,12 +157,9 @@ async function inWorktree<T>(
   fn: (wt: string) => Promise<T>,
 ): Promise<T> {
   const wt = await deps.makeTempDir();
-  await deps.git(["worktree", "add", "--detach", wt, r.worktree.sha], repo);
   try {
-    if (r.worktree.patch) {
-      await deps.writeFile(join(wt, ".advisor-replay.patch"), r.worktree.patch);
-      await deps.git(["apply", "--whitespace=nowarn", ".advisor-replay.patch"], wt);
-    }
+    await gitOrThrow(deps, ["worktree", "add", "--detach", wt, r.worktree.sha], repo);
+    if (r.worktree.patch) await applyPatch(deps, wt, r.worktree.patch);
     if (r.worktree.patchTruncated) deps.logErr(`approximate: ${artifactId(r)} patch was truncated`);
     return await fn(wt);
   } finally {
@@ -149,6 +176,7 @@ async function replayOne(
 ): Promise<{ row: ReplayRow; out: AdviseOpOutput | null }> {
   const id = artifactId(r);
   const originalType = r.result.decision?.action.type ?? null;
+  const fail = (err: unknown) => ({ row: { id, originalType, replayType: null, error: errorMessage(err) }, out: null });
   return inWorktree(deps, opts.dir, r, async (wt) => {
     const warm = opts.memory === "warm";
     try {
@@ -166,7 +194,7 @@ async function replayOne(
     } catch (err) {
       return { row: { id, originalType, replayType: null, error: errorMessage(err) }, out: null };
     }
-  });
+  }).catch(fail);
 }
 
 interface Score {
@@ -195,6 +223,7 @@ export async function runAdvisorReplay(
   opts: AdvisorReplayOptions,
   deps: AdvisorReplayDeps = _advisorReplayDeps,
 ): Promise<number> {
+  await deps.trustGate(opts.dir);
   const outputDir = await deps.resolveOutputDir(opts.dir);
   const auditDir = adviceAuditDir(outputDir, opts.feature);
   const records = await loadRecords(auditDir, opts.id);

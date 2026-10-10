@@ -61,13 +61,14 @@ const replyFor = (optionId: string): AdviseOpOutput => ({
   },
 });
 
-function harness(outDir: string, replies: (AdviseOpOutput | Error)[]) {
+function harness(outDir: string, replies: (AdviseOpOutput | Error)[], failGit?: string) {
   const git: string[][] = [];
   const out: string[] = [];
   const err: string[] = [];
   const order: string[] = [];
   const writes: [string, string][] = [];
   let i = 0;
+  let tmp = 0;
   const deps: AdvisorReplayDeps = {
     resolveOutputDir: async () => outDir,
     buildCallContext: async () => {
@@ -84,9 +85,12 @@ function harness(outDir: string, replies: (AdviseOpOutput | Error)[]) {
     git: async (args) => {
       git.push(args);
       order.push(`git:${args[0]}:${args[1] ?? ""}`);
-      return { stdout: "", exitCode: 0 };
+      return { stdout: "", exitCode: failGit && args.join(" ").startsWith(failGit) ? 1 : 0 };
     },
-    makeTempDir: async () => "/tmp/replay-x",
+    makeTempDir: async () => (++tmp === 1 ? "/tmp/replay-x" : `/tmp/replay-patch-${tmp}`),
+    trustGate: async (d) => {
+      order.push(`trust:${d}`);
+    },
     removeDir: async () => {},
     readPrdText: async () => "{}",
     writeFile: async (path, text) => {
@@ -110,14 +114,17 @@ describe("nax advisor replay", () => {
       const h = harness(outDir, [replyFor("A")]);
       const code = await runAdvisorReplay({ dir, feature: "feat", eval: false, json: false }, h.deps);
       expect(code).toBe(0);
-      expect(h.order[0]).toBe("notice");
+      expect(h.order[0]).toBe(`trust:${dir}`);
+      expect(h.order[1]).toBe("notice");
       expect(h.git.map((a) => a.slice(0, 2).join(" "))).toEqual([
         "worktree add",
         "apply --whitespace=nowarn",
         "worktree remove",
       ]);
       expect(h.out.join("\n")).toContain("D-1  fix → fix  (same)");
-      expect(h.writes[0]).toEqual(["/tmp/replay-x/.advisor-replay.patch", "diff --git a/x b/x\n"]);
+      // The patch never lands inside the worktree (a committed symlink there could redirect the write).
+      expect(h.writes[0]).toEqual(["/tmp/replay-patch-2/advisor-replay.patch", "diff --git a/x b/x\n"]);
+      expect(h.git[1]).toEqual(["apply", "--whitespace=nowarn", "/tmp/replay-patch-2/advisor-replay.patch"]);
       expect(h.writes[1]?.[0]).toBe(join(outDir, "advisor-audit", "feat", "D-1.replay-2026-10-10T00-00-00.json"));
     });
   });
@@ -191,6 +198,36 @@ describe("nax advisor replay", () => {
       await runAdvisorReplay({ dir, feature: "feat", eval: true, json: false }, h.deps);
       expect(h.out.join("\n")).toContain("Q-X  (none) → fix");
       expect(h.out.join("\n")).toContain("agreement: 1/1");
+    });
+  });
+});
+
+describe("nax advisor replay — failure handling", () => {
+  test("a failed worktree add or patch apply is a replay error, not a silent replay of the wrong tree", async () => {
+    await withTempDir(async (dir) => {
+      const outDir = join(dir, "out");
+      await writeAdviceAudit(outDir, "feat", rec("D-1", "fix", "diff\n"));
+      for (const fail of ["worktree add", "apply"]) {
+        const h = harness(outDir, [replyFor("A")], fail);
+        await runAdvisorReplay({ dir, feature: "feat", eval: false, json: false }, h.deps);
+        expect(h.order).not.toContain("callOp");
+        expect(h.out.join("\n")).toContain("fallback:");
+      }
+    });
+  });
+
+  test("the trust gate refusing stops before any model call", async () => {
+    await withTempDir(async (dir) => {
+      const outDir = join(dir, "out");
+      await writeAdviceAudit(outDir, "feat", rec("D-1", "fix"));
+      const h = harness(outDir, [replyFor("A")]);
+      h.deps.trustGate = async () => {
+        throw new Error("untrusted");
+      };
+      await expect(runAdvisorReplay({ dir, feature: "feat", eval: false, json: false }, h.deps)).rejects.toThrow(
+        "untrusted",
+      );
+      expect(h.order).not.toContain("callOp");
     });
   });
 });
