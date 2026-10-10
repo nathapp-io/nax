@@ -28,7 +28,7 @@ import type { Finding } from "../findings/types";
 import { isTriggerEnabled } from "../interaction/triggers";
 import { getLogger } from "../logger";
 import { fullSuiteGateOp } from "../operations";
-import { routeTddFailure } from "../pipeline/stages/execution-helpers";
+import { routeTddFailure, TDD_REVIEW_PAUSE_REASON } from "../pipeline/stages/execution-helpers";
 import type { PipelineContext, StageResult } from "../pipeline/types";
 import { isBlockingSeverity } from "../review/severity";
 import { cleanupSessionOnFailure as cleanupSessionOnFailureImpl } from "./lifecycle/post-run-session-cleanup";
@@ -321,7 +321,23 @@ export async function routeTddFailureBranch(frame: DecideFrame): Promise<StageRe
     return { action: "pause", reason: `Human review needed: ${failureCategory ?? "unknown"}` };
   }
 
-  return routeTddFailure(failureCategory, isLiteMode, ctx);
+  return routeTddFailure(failureCategory, isLiteMode, ctx, uncategorisedPauseReason(frame));
+}
+
+/**
+ * #2406 — with no failure category, `routeTddFailure` pauses for human review. Name
+ * the phases whose output reported a failure so the pause points at the cause
+ * instead of a bare "requires review". Undefined keeps the default reason.
+ */
+function uncategorisedPauseReason(frame: DecideFrame): string | undefined {
+  if (frame.inspection.failureCategory !== undefined) return undefined;
+  const failed = Object.entries(frame.planResult.phaseOutputs)
+    .filter(([, output]) => {
+      const r = output as { success?: unknown; passed?: unknown } | null | undefined;
+      return r?.success === false || r?.passed === false;
+    })
+    .map(([name]) => name);
+  return failed.length > 0 ? `${TDD_REVIEW_PAUSE_REASON} (failed phases: ${failed.join(", ")})` : undefined;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -6,6 +6,7 @@ import {
   runCanonicalLoop,
   runMechanicalOnlyResume,
   runPostRectificationResume,
+  settleProvisionalRectification,
 } from "./execution-plan-phases";
 import { buildStoryOrchestratorResult } from "./execution-plan-verdict";
 import { gateFailureKeys } from "./phase-eval";
@@ -77,7 +78,8 @@ export class ExecutionPlan {
       !rectResult.terminalReviewRequired &&
       (!rectResult.rectificationExhausted || !!rectResult.liteScopeIncomplete);
     if (resumeLoopEligible) {
-      await runPostRectificationResume(plan, tracking, preRectGateFailureKeys);
+      const resumeCompleted = await runPostRectificationResume(plan, tracking, preRectGateFailureKeys);
+      if (resumeCompleted) settleProvisionalRectification(tracking.phaseOutputs);
     }
 
     if (this.state.rectification && rectResult.rectificationExhausted) {
