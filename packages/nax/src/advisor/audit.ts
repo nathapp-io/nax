@@ -85,12 +85,14 @@ export async function captureWorktreePatch(
 ): Promise<{ sha: string; patch: string; patchTruncated: boolean }> {
   const sha = (await _auditDeps.git(["rev-parse", "HEAD"], workdir)).stdout.trim();
   const tracked = (await _auditDeps.git(["diff", "HEAD"], workdir)).stdout;
-  const untrackedList = (await _auditDeps.git(["ls-files", "--others", "--exclude-standard"], workdir)).stdout
-    .split("\n")
-    .filter((l) => l.trim() !== "");
+  // NUL-separated and after `--`: an agent-created file named like an option
+  // (`--output=…`) must never be read as one by git.
+  const untrackedList = (await _auditDeps.git(["ls-files", "-z", "--others", "--exclude-standard"], workdir)).stdout
+    .split("\0")
+    .filter((l) => l !== "");
   const untracked: string[] = [];
   for (const f of untrackedList) {
-    untracked.push((await _auditDeps.git(["diff", "--no-index", "/dev/null", f], workdir)).stdout);
+    untracked.push((await _auditDeps.git(["diff", "--no-index", "--", "/dev/null", f], workdir)).stdout);
   }
   const full = [tracked, ...untracked].join("");
   return full.length > capBytes

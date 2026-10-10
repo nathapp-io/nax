@@ -49,9 +49,9 @@ function record(over: Partial<AdviceAuditRecord> = {}): AdviceAuditRecord {
 function stubGit(parts: { tracked: string; untracked: Record<string, string> }): void {
   _auditDeps.git = async (args) => {
     if (args[0] === "rev-parse") return { stdout: "sha123\n", exitCode: 0 };
-    if (args[0] === "ls-files") return { stdout: Object.keys(parts.untracked).join("\n"), exitCode: 0 };
+    if (args[0] === "ls-files") return { stdout: Object.keys(parts.untracked).join("\0"), exitCode: 0 };
     if (args[0] === "diff" && args[1] === "--no-index")
-      return { stdout: parts.untracked[args[3] ?? ""] ?? "", exitCode: 1 };
+      return { stdout: parts.untracked[args[4] ?? ""] ?? "", exitCode: 1 };
     if (args[0] === "diff") return { stdout: parts.tracked, exitCode: 0 };
     return { stdout: "", exitCode: 0 };
   };
@@ -90,6 +90,23 @@ describe("advisor audit", () => {
     const out = await captureWorktreePatch("/repo");
     expect(out.patch).toBe("TRACKED\nNEWFILE\n");
     expect(out.patchTruncated).toBe(false);
+  });
+
+  test("untracked paths can never be read as git options (NUL-split, after --)", async () => {
+    const calls: string[][] = [];
+    _auditDeps.git = async (args) => {
+      calls.push(args);
+      if (args[0] === "rev-parse") return { stdout: "s\n", exitCode: 0 };
+      if (args[0] === "ls-files") return { stdout: "--output=/tmp/pwn\0a b.ts\0", exitCode: 0 };
+      return { stdout: "", exitCode: 0 };
+    };
+    await captureWorktreePatch("/repo");
+    expect(calls.find((a) => a[0] === "ls-files")).toContain("-z");
+    const noIndex = calls.filter((a) => a[1] === "--no-index");
+    expect(noIndex.map((a) => a.slice(2))).toEqual([
+      ["--", "/dev/null", "--output=/tmp/pwn"],
+      ["--", "/dev/null", "a b.ts"],
+    ]);
   });
 
   test("labels append and read back in order", async () => {
