@@ -1,4 +1,9 @@
 // test/unit/execution/non-blocking-fix-wiring.test.ts
+// Intentional layout deviation from the feature spec: the execution runner lives in
+// src/execution/nbf-worth-check.ts, while its audit writer lives with the operations
+// in src/operations/nbf-worth-check-audit.ts. Runner, audit, and production wiring
+// coverage are consolidated in test/unit/operations/nbf-worth-check.test.ts and this
+// file respectively; separate story-orchestrator runner/audit test files add no seam.
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import {
   assertDefined,

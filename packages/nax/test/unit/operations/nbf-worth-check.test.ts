@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { makeMockCallContext, makeNaxConfig, makeStory, makeTestRuntime, opSelector } from "@test/helpers";
 import { reviewConfigSelector } from "@/config";
+import { runNbfWorthCheck } from "@/execution/nbf-worth-check";
 import type { Finding } from "@/findings";
 import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import type { NbfWorthCheckOpInput } from "@/operations";
@@ -284,12 +285,7 @@ describe("nbfWorthCheckOp (US-002)", () => {
   });
 });
 
-type WorthRequest = {
-  readonly ctx: ReturnType<typeof makeMockCallContext>;
-  readonly findings: readonly Finding[];
-  readonly cfg: { readonly mode: "on" | "off" | "shadow"; readonly timeoutMs?: number } | undefined;
-};
-type WorthRunner = (request: WorthRequest) => Promise<Finding[]>;
+type WorthRequest = Parameters<typeof runNbfWorthCheck>[0];
 
 function capturedInput(value: unknown): NbfWorthCheckOpInput {
   if (!isNbfWorthInput(value)) throw new Error("Worth-check input was not captured");
@@ -310,8 +306,6 @@ type WorthDeps = {
 
 const originalWorthDeps = Object.getOwnPropertyDescriptor(operations, "_nbfWorthCheckDeps")?.value;
 const originalAuditDeps = Object.getOwnPropertyDescriptor(operations, "_nbfWorthCheckAuditDeps")?.value;
-const originalRunner = Object.getOwnPropertyDescriptor(operations, "runNbfWorthCheck")?.value;
-const worthFunction = (value: unknown): value is WorthRunner => typeof value === "function";
 const worthDepsObject = (value: unknown): value is WorthDeps => typeof value === "object" && value !== null;
 
 function worthDeps(): WorthDeps | undefined {
@@ -320,8 +314,7 @@ function worthDeps(): WorthDeps | undefined {
 }
 
 function runWorth(request: WorthRequest): Promise<Finding[]> {
-  expect(worthFunction(originalRunner)).toBe(true);
-  return worthFunction(originalRunner) ? originalRunner(request) : Promise.resolve([...request.findings]);
+  return runNbfWorthCheck(request);
 }
 
 afterEach(() => {
@@ -346,7 +339,7 @@ afterEach(() => {
 
 describe("runNbfWorthCheck (US-003)", () => {
   const findings = [findingA, findingB];
-  const config: WorthRequest["cfg"] = { mode: "on" };
+  const config: WorthRequest["cfg"] = { mode: "on", timeoutMs: 300000 };
   const story = makeStory({
     id: "US-002",
     title: "Deliver orders",
@@ -433,7 +426,9 @@ describe("runNbfWorthCheck (US-003)", () => {
     const deps = worthDeps();
     if (!deps) return;
     deps.callOp = async () => ({ parsed: true, verdicts: [{ index: 1, verdict: "skip", reason: "nit" }] });
-    expect(await runWorth({ ctx: makeRunnerCtx(), findings, cfg: { mode: "shadow" } })).toEqual(findings);
+    expect(await runWorth({ ctx: makeRunnerCtx(), findings, cfg: { mode: "shadow", timeoutMs: 300000 } })).toEqual(
+      findings,
+    );
   });
 
   test("US-003 AC7: keeps the seed when worth-check dispatch rejects", async () => {
@@ -655,13 +650,17 @@ describe("runNbfWorthCheck (US-003)", () => {
       writeCount += 1;
       audit = { path, record };
     };
-    await runWorth({ ctx: context, findings, cfg: { mode: "shadow" } });
+    await runWorth({ ctx: context, findings, cfg: { mode: "shadow", timeoutMs: 300000 } });
     expect(audit?.record.mode).toBe("shadow");
     expect(audit?.record.verdicts).toHaveLength(2);
-    await runWorth({ ctx: makeRunnerCtx({ featureName: undefined }), findings, cfg: { mode: "shadow" } });
+    await runWorth({
+      ctx: makeRunnerCtx({ featureName: undefined }),
+      findings,
+      cfg: { mode: "shadow", timeoutMs: 300000 },
+    });
     expect(audit?.path).toContain("/nbf-worth-check/_unknown/");
     const writesBeforeOff = writeCount;
-    await runWorth({ ctx: context, findings, cfg: { mode: "off" } });
+    await runWorth({ ctx: context, findings, cfg: { mode: "off", timeoutMs: 300000 } });
     expect(writeCount).toBe(writesBeforeOff);
   });
 });
