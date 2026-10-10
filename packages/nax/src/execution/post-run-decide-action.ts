@@ -321,6 +321,10 @@ export async function routeTddFailureBranch(frame: DecideFrame): Promise<StageRe
     return { action: "pause", reason: `Human review needed: ${failureCategory ?? "unknown"}` };
   }
 
+  if (failureCategory === undefined) {
+    const advised = await deps.adviseUncategorised(frame, uncategorisedPauseReason(frame) ?? TDD_REVIEW_PAUSE_REASON);
+    if (advised) return advised;
+  }
   return routeTddFailure(failureCategory, isLiteMode, ctx, uncategorisedPauseReason(frame));
 }
 
