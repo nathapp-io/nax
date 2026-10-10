@@ -43,7 +43,7 @@
     "@types/node": "25.2.3",
     "@types/proper-lockfile": "4.1.4",
     "typescript": "7.0.2",
-    "vitest": "4.1.9"
+    "vitest": "4.1.11"
   },
   "keywords": [
     "llm",
