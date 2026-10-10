@@ -122,10 +122,20 @@ const EMPTY_ROUND_NOTE: Record<string, string> = {
   escalated: "- _escalated for human review_",
   "review-skipped": "- _re-review skipped: this fix touched test files only_",
   incomplete: "- _review sent back: required evidence sections missing_",
+  advised: "- _advisor ruled on the judged findings; the phase re-reviews_",
 };
+
+/** A1: one line naming the advisor decisions a round applied, when it carries any. */
+function adviceLine(round: FinishRound): string | null {
+  if (!round.advice || round.advice.length === 0) return null;
+  const ids = round.advice.map((a) => (a.reused ? `${a.decisionId} (reused)` : a.decisionId)).join(", ");
+  return `- _advisor decisions: ${ids}_`;
+}
 
 function buildRoundBlock(round: FinishRound): string {
   const lines: string[] = [buildRoundHeading(round)];
+  const advice = adviceLine(round);
+  if (advice) lines.push(advice);
   if (round.findings.length === 0) {
     lines.push(EMPTY_ROUND_NOTE[round.outcome ?? ""] ?? "- _no findings_");
   } else {

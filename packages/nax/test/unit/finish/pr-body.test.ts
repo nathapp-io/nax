@@ -239,6 +239,17 @@ describe("buildFinishBody — what an empty round actually means", () => {
     expect(body).not.toContain("- _no findings_");
   });
 
+  test("an advised round says the advisor ruled — not a pass (A1)", () => {
+    const body = buildFinishBody(
+      baseCtx({
+        rounds: [emptyRound({ outcome: "advised", advice: [{ decisionId: "D-3", optionId: "B", reused: false }] })],
+      }),
+    );
+    expect(body).toContain("advisor ruled");
+    expect(body).toContain("D-3");
+    expect(body).not.toContain("- _no findings_");
+  });
+
   test("an escalated review is not rendered as a pass", () => {
     const body = buildFinishBody(baseCtx({ rounds: [emptyRound({ outcome: "escalated" })] }));
     expect(body).toContain("escalated");

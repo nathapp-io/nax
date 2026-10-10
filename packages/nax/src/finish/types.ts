@@ -146,7 +146,10 @@ export type FinishRoundOutcome =
   /** The reviewer replied with findings but skipped a required audit section, so
    * the verdict was not acted on. Distinct from `unparseable`: there was a
    * readable verdict, it just had no evidence behind it. */
-  | "incomplete";
+  | "incomplete"
+  /** A1: the advisor ruled on every judged finding and nothing was left to fix;
+   * the phase re-reviews. Not an approval. */
+  | "advised";
 
 export interface FinishRound {
   ts: string;
@@ -183,6 +186,8 @@ export interface FinishRound {
   sha?: string;
   /** What the fixer did with each finding it was handed (spec/quality phases). */
   dispositions?: FindingDisposition[];
+  /** A1: advisor decisions applied in this round (absent when the advisor did not run). */
+  advice?: { decisionId: string; optionId: string; reused: boolean }[];
 }
 
 /**

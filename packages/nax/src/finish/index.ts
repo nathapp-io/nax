@@ -93,6 +93,7 @@ export {
 export type { ReviewOutcome, RoutedReview } from "./route";
 export {
   gateCommitRoute,
+  MAX_ADVISE_ROUNDS,
   MAX_FIX_ATTEMPTS,
   MAX_INCOMPLETE_ATTEMPTS,
   partitionTestFiles,

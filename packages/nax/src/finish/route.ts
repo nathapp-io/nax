@@ -22,7 +22,10 @@ export const MAX_FIX_ATTEMPTS = 3;
 /** Reviews sent back for missing evidence sections, per phase, before escalating. */
 export const MAX_INCOMPLETE_ATTEMPTS = 1;
 
-export type ReviewRoute = "clean" | "fix" | "escalate" | "incomplete";
+/** A1: advisor rounds on judged findings, per phase, before falling back to escalation. */
+export const MAX_ADVISE_ROUNDS = 2;
+
+export type ReviewRoute = "clean" | "fix" | "escalate" | "incomplete" | "advise";
 export type GateRoute = "proceed" | "fix" | "escalate";
 
 /** What a reviewer produced, after plan 3's op has parsed it. */
@@ -37,6 +40,8 @@ export interface RoutedReview {
   findings: Finding[];
   escalationReason?: string;
   gaps?: string[];
+  /** Route `advise` only: the judged subset of `findings` the advisor rules on. */
+  judged?: Finding[];
 }
 
 /**
@@ -49,35 +54,27 @@ export interface RoutedReview {
  *    no reprompt path any more (D2.2): a step that emitted nothing has no
  *    reply to quote back, so this escalates straight to a human without
  *    reading `outcome.findings` (there is none to read).
- * 2. A finding marked `judgment` escalates before the gap/count checks below
- *    — a reviewer can flag one finding as needing a human even while the rest
- *    of its reply is otherwise well-formed and under every cap.
- * 3. Unresolved `gaps` route `incomplete` while under the cap, then escalate.
- *    This runs before the "no findings" check: a reviewer that skipped its
- *    own evidence sections does not get to approve just because it also
- *    reported nothing wrong.
- * 4. Only past the gap check can zero findings mean `clean`.
+ * 2. Unresolved `gaps` route `incomplete` while under the cap, then escalate.
+ *    This runs before the judgment and "no findings" checks: a reviewer that
+ *    skipped its own evidence sections neither approves by reporting nothing
+ *    nor escalates as a judgment call — an unread review is not a judgment
+ *    (A1 spec §4.8; previously judgment ran first).
+ * 3. A finding marked `judgment` routes `advise` when the advisor is on and
+ *    under `MAX_ADVISE_ROUNDS`; otherwise it escalates before the count checks.
+ * 4. Only past the gap and judgment checks can zero findings mean `clean`.
  * 5. Findings under the fix-attempt cap route `fix`; at or past it, escalate.
  */
 export function routeReview(
   phase: "spec" | "quality",
   outcome: ReviewOutcome | undefined,
   st: FinishPhaseState,
+  opts?: { advise?: boolean },
 ): RoutedReview {
   if (!outcome) {
     return {
       route: "escalate",
       findings: [],
       escalationReason: `${phase} reviewer produced no verdict — the node emitted no output, so nothing reviewed this diff.`,
-    };
-  }
-
-  const judged = outcome.findings.find((f) => f.judgment);
-  if (judged) {
-    return {
-      route: "escalate",
-      findings: outcome.findings,
-      escalationReason: judged.judgmentReason ?? `Needs human judgment: ${judged.title}`,
     };
   }
 
@@ -90,6 +87,19 @@ export function routeReview(
       findings: outcome.findings,
       escalationReason: `${phase} review never discharged its reading obligations: ${outcome.gaps.join("; ")}`,
       gaps: outcome.gaps,
+    };
+  }
+
+  const judged = outcome.findings.filter((f) => f.judgment);
+  if (judged.length > 0) {
+    if (opts?.advise && (st.adviseRounds ?? 0) < MAX_ADVISE_ROUNDS) {
+      return { route: "advise", findings: outcome.findings, judged };
+    }
+    const first = judged[0] as Finding;
+    return {
+      route: "escalate",
+      findings: outcome.findings,
+      escalationReason: first.judgmentReason ?? `Needs human judgment: ${first.title}`,
     };
   }
 
