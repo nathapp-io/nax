@@ -32,10 +32,12 @@ Reply with only this JSON object, one entry per finding:
 
 function renderFinding(finding: Finding, index: number): string[] {
   const location = finding.file
-    ? `${finding.file}${finding.line === undefined ? "" : `:${finding.line}`}`
+    ? `${finding.file}${finding.line == null ? "" : `:${finding.line}`}`
     : "(no file)";
   const lines = [`${index + 1}. [${finding.severity}/${finding.category}] ${location} — ${finding.message}`];
-  if (finding.suggestion !== undefined) lines.push(`   Suggested fix: ${finding.suggestion}`);
+  if (finding.suggestion != null && finding.suggestion !== "") {
+    lines.push(`   Suggested fix: ${finding.suggestion}`);
+  }
   return lines;
 }
 
