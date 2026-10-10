@@ -10,7 +10,7 @@
     },
     "packages/nax": {
       "name": "@nathapp/nax",
-      "version": "0.85.1",
+      "version": "0.86.0",
       "bin": {
         "nax": "./dist/nax.js",
       },
@@ -18,7 +18,7 @@
         "@agentclientprotocol/sdk": "~1.7.0",
         "@anthropic-ai/sandbox-runtime": "0.0.77",
         "@modelcontextprotocol/sdk": "^1.32.1",
-        "@nathapp/nax-ai": "0.85.0",
+        "@nathapp/nax-ai": "0.86.0",
         "chalk": "^5.6.2",
         "commander": "^13.1.0",
         "ink": "^6.7.0",
@@ -42,11 +42,11 @@
     },
     "packages/nax-agent": {
       "name": "@nathapp/nax-agent",
-      "version": "0.85.1",
+      "version": "0.86.0",
       "dependencies": {
         "@anthropic-ai/sandbox-runtime": "0.0.77",
         "@modelcontextprotocol/sdk": "^1.32.1",
-        "@nathapp/nax-ai": "0.85.0",
+        "@nathapp/nax-ai": "0.86.0",
         "zod": "^4.3.6",
       },
       "devDependencies": {
@@ -61,7 +61,7 @@
     },
     "packages/nax-agent-acp": {
       "name": "@nathapp/nax-agent-acp",
-      "version": "0.85.1",
+      "version": "0.86.0",
       "dependencies": {
         "@agentclientprotocol/sdk": "~1.7.0",
         "@modelcontextprotocol/sdk": "^1.32.1",
@@ -83,7 +83,7 @@
     },
     "packages/nax-ai": {
       "name": "@nathapp/nax-ai",
-      "version": "0.85.1",
+      "version": "0.86.0",
       "dependencies": {
         "@earendil-works/pi-ai": "1.1.0",
         "proper-lockfile": "4.1.2",
