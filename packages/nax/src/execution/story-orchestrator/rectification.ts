@@ -1,8 +1,9 @@
 import type { Finding, FixCycle, FixCycleContext } from "@/findings";
 import { appendStoryFixIterations, getStoryFixState, mergeStoryFixDeclines, storyFixKey } from "@/findings";
 import { getSafeLogger } from "@/logger";
-import type { CallContext, Operation, RunOperation } from "@/operations";
+import type { CallContext } from "@/operations";
 import { countOscillationOutcomes, recordOscillations } from "../oscillation-store";
+import { giveUpHookFor } from "./give-up-advice";
 import { triageNbfGate } from "./nbf-flake-triage";
 import { withNoProgressBail } from "./no-progress-bail";
 import {
@@ -13,6 +14,7 @@ import {
   phasesToRevalidate,
   selectRegressedGateFindings,
 } from "./phase-eval";
+import { makeRectificationCallOp } from "./rectification-callop";
 import { deriveRepoScopedFixes } from "./repo-scoped-fix-record";
 import {
   collectPairedReviewFindings,
@@ -20,8 +22,8 @@ import {
   isRevalidationFailure,
   phasesForRevalidation,
 } from "./revalidation-reviews";
-import { _storyOrchestratorDeps, runPhase, withIncreasingFailuresBail } from "./run-phase";
-import type { AnySlot, InternalBuildState, InternalPhase, RectificationOverrides, RectificationResult } from "./types";
+import { _storyOrchestratorDeps, withIncreasingFailuresBail } from "./run-phase";
+import type { InternalBuildState, InternalPhase, RectificationOverrides, RectificationResult } from "./types";
 import { EXHAUSTED_EXIT_REASONS } from "./types";
 
 /** Inputs to `shouldSkipPhaseForRectification`. Options object — the convention caps positional params at three. */
@@ -325,23 +327,7 @@ export async function runRectification(
   // the final phaseOutputs success aggregation. The validate callback continues to write
   // gate/verifier re-run results into phaseOutputs so they ARE reflected in the final success.
   const fixOpPhaseOutputs: Record<string, unknown> = {};
-  const wrappedCallOp = async <I, O, C>(cycleCtx: FixCycleContext, op: Operation<I, O, C>, input: I): Promise<O> => {
-    // runFixCycle dispatches fixOps, which are Operation<I,O,C> (run or complete). The
-    // builder's runPhase wrapper only needs op.name + dispatch, so widening the cast is safe.
-    const slot: AnySlot = { op: op as unknown as RunOperation<unknown, unknown, unknown>, input };
-    // inRectification=true so a fix-cycle `implementer` requests the `rectify`
-    // context-engine stage (query_scratch) rather than `tdd-implementer` — see
-    // contextStageForOp's precedence rule (nax#1737 Phase B follow-up).
-    return (await runPhase(
-      cycleCtx,
-      slot,
-      phaseCosts,
-      fixOpPhaseOutputs,
-      overrides?.isThreeSession,
-      undefined,
-      true,
-    )) as O;
-  };
+  const wrappedCallOp = makeRectificationCallOp(phaseCosts, fixOpPhaseOutputs, overrides?.isThreeSession);
 
   const cycle: FixCycle<Finding> = {
     findings: [...initialFindings],
@@ -362,6 +348,7 @@ export async function runRectification(
       rectification.consecutiveNoProgressToBail ?? 3,
     ),
     config: { maxAttemptsTotal: overrides?.maxAttempts ?? rectification.maxAttempts, validatorRetries: 1 },
+    onGiveUp: giveUpHookFor(ctx, overrides, rectification.strategies, nbfPath),
     validate: async (_validateCtx, opts) => {
       if (ctx.runtime.signal?.aborted) return { findings: [], shortCircuited: false };
       // opts is required by the FixCycle.validate contract but guard defensively for
