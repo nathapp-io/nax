@@ -3,6 +3,13 @@
  */
 
 export { type AcceptOptions, acceptCommand } from "./accept";
+export {
+  _advisorCliDeps,
+  type AdvisorCliDeps,
+  advisorLabelCommand,
+  advisorListCommand,
+  registerAdvisorCommand,
+} from "./advisor";
 export { agentsListCommand } from "./agents";
 export {
   _approvalsCliDeps,
