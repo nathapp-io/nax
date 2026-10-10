@@ -102,9 +102,10 @@ export type {
   NbfWorthCheckOpInput,
   NbfWorthCheckOpOutput,
   NbfWorthCheckPendingStory,
+  NbfWorthCheckRequest,
   NbfWorthVerdict,
 } from "./nbf-worth-check";
-export { nbfWorthCheckOp, parseNbfWorthReply } from "./nbf-worth-check";
+export { _nbfWorthCheckDeps, nbfWorthCheckOp, parseNbfWorthReply, runNbfWorthCheck } from "./nbf-worth-check";
 export type { PlanInteractiveInput } from "./plan";
 export { _planInteractiveDeps, planInteractiveOp } from "./plan";
 export {

@@ -1,13 +1,17 @@
 /** Read-only worth-check operation for non-blocking-fix findings. */
 
+import { join } from "node:path";
 import { previewOutput, UNPARSED_PREVIEW_BYTES } from "../agents/retry/parse-retry";
 import { reviewConfigSelector } from "../config";
-import type { ReviewConfig } from "../config/selectors";
+import type { NbfWorthCheckConfig, ReviewConfig } from "../config/selectors";
 import type { Finding } from "../findings";
-import type { UserStory } from "../prd";
+import { loadPRD, type UserStory } from "../prd";
+import { collectDiff, collectDiffStat, resolveEffectiveRef, truncateDiff } from "../review/diff-utils";
+import { totalSpendUsd, type NaxRuntime } from "../runtime";
 import { buildNbfWorthCheckPrompt } from "../prompts";
 import { tryParseLLMJson } from "../utils/llm-json";
-import type { RunOperation } from "./types";
+import { callOp } from "./call";
+import type { CallContext, Operation, RunOperation } from "./types";
 
 export interface NbfWorthCheckPendingStory {
   readonly id: string;
@@ -94,3 +98,69 @@ export const nbfWorthCheckOp: RunOperation<NbfWorthCheckOpInput, NbfWorthCheckOp
   }),
   parse: (output, input) => parseNbfWorthReply(output, input.findings.length),
 };
+
+export interface NbfWorthCheckRequest {
+  readonly ctx: CallContext;
+  readonly findings: readonly Finding[];
+  readonly cfg: NbfWorthCheckConfig | undefined;
+}
+
+export const _nbfWorthCheckDeps = {
+  callOp: callOp as <I, O, C>(ctx: CallContext, op: Operation<I, O, C>, input: I) => Promise<O>,
+  resolveEffectiveRef,
+  collectDiff,
+  collectDiffStat,
+  loadPRD,
+  writeAudit: async (): Promise<void> => undefined,
+  now: (): number => Date.now(),
+  costTotal: (runtime: NaxRuntime): number => totalSpendUsd(runtime.costAggregator.snapshot()),
+};
+
+async function storyDiff(ctx: CallContext): Promise<string> {
+  try {
+    const ref = await _nbfWorthCheckDeps.resolveEffectiveRef(ctx.packageDir, ctx.story?.storyGitRef, ctx.storyId ?? "");
+    if (!ref) return "";
+    const [diff, stat] = await Promise.all([
+      _nbfWorthCheckDeps.collectDiff(ctx.packageDir, ref, []),
+      _nbfWorthCheckDeps.collectDiffStat(ctx.packageDir, ref),
+    ]);
+    return diff === null ? "" : truncateDiff(diff, stat);
+  } catch {
+    return "";
+  }
+}
+
+async function pendingFeatureStories(ctx: CallContext): Promise<NbfWorthCheckPendingStory[]> {
+  if (!ctx.featureDir) return [];
+  try {
+    const prd = await _nbfWorthCheckDeps.loadPRD(join(ctx.featureDir, "prd.json"));
+    return prd.userStories
+      .filter((story) => story.id !== ctx.story?.id && ["pending", "in-progress", "paused"].includes(story.status))
+      .map(({ id, title, acceptanceCriteria }) => ({ id, title, acceptanceCriteria }));
+  } catch {
+    return [];
+  }
+}
+
+export async function runNbfWorthCheck(req: NbfWorthCheckRequest): Promise<Finding[]> {
+  const seed = [...req.findings];
+  if (!req.cfg || req.cfg.mode === "off" || !req.ctx.story || seed.length === 0) return seed;
+  try {
+    const input: NbfWorthCheckOpInput = {
+      story: req.ctx.story,
+      diff: await storyDiff(req.ctx),
+      findings: seed,
+      pendingStories: await pendingFeatureStories(req.ctx),
+    };
+    const result = await _nbfWorthCheckDeps.callOp(req.ctx, nbfWorthCheckOp, input);
+    if (req.cfg.mode !== "on" || !isParsedWorthOutput(result)) return seed;
+    return seed.filter((_, index) => result.verdicts.some((verdict) => verdict.index === index + 1 && verdict.verdict === "fix"));
+  } catch {
+    return seed;
+  }
+}
+
+function isParsedWorthOutput(value: unknown): value is Extract<NbfWorthCheckOpOutput, { parsed: true }> {
+  return typeof value === "object" && value !== null && "parsed" in value && value.parsed === true &&
+    "verdicts" in value && Array.isArray(value.verdicts);
+}
