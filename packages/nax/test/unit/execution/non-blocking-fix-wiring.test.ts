@@ -17,6 +17,8 @@ import { _storyOrchestratorDeps, buildPlanForStrategy } from "@/execution";
 import type { NonBlockingFixArgs, NonBlockingFixDeps } from "@/execution/non-blocking-fix";
 import { actionableAdvisoryFindings, runNonBlockingFix, shouldRunNonBlockingFix } from "@/execution/non-blocking-fix";
 import type { Finding } from "@/findings";
+import { _nbfWorthCheckDeps } from "@/operations/nbf-worth-check";
+import { _nbfWorthCheckAuditDeps } from "@/operations/nbf-worth-check-audit";
 import type { NaxRuntime } from "@/runtime";
 import { _rollbackDeps } from "@/tdd";
 
@@ -95,7 +97,22 @@ describe("non-blocking-fix runtime wiring", () => {
           success: true,
           passed: true,
           advisoryFindings: [
-            { source: "adversarial-review", severity: "warning", category: "input", message: "advisory finding" },
+            {
+              source: "adversarial-review",
+              severity: "warning",
+              category: "input",
+              file: "src/a.ts",
+              line: 12,
+              message: "empty items still fires MARK_DELIVERING",
+            },
+            {
+              source: "adversarial-review",
+              severity: "info",
+              category: "convention",
+              file: "src/b.ts",
+              line: 3,
+              message: "stale header comment",
+            },
           ],
         };
       }
@@ -174,6 +191,72 @@ describe("non-blocking-fix runtime wiring", () => {
     expect(runNonBlockingFix).toHaveBeenCalledTimes(1);
     const deps = runNonBlockingFix.mock.calls[0]?.[1] as { measureSourceDiff?: unknown } | undefined;
     expect(typeof deps?.measureSourceDiff).toBe("function");
+  });
+
+  test("US-005 worth-check filters advisory findings before the NBF pass", async () => {
+    const originalCallOp = _nbfWorthCheckDeps.callOp;
+    const originalAuditWrite = _nbfWorthCheckAuditDeps.write;
+    const runNonBlockingFix = mock(async (args: NonBlockingFixArgs) => ({
+      ran: true,
+      kept: args.advisoryFindings.length > 0,
+      restored: false,
+    }));
+    _storyOrchestratorDeps.runNonBlockingFix = runNonBlockingFix;
+    _nbfWorthCheckDeps.callOp = mock(async () => ({
+      parsed: true as const,
+      verdicts: [
+        { index: 1, verdict: "fix" as const, reason: "r1" },
+        { index: 2, verdict: "skip" as const, reason: "nit" },
+      ],
+    })) as typeof _nbfWorthCheckDeps.callOp;
+    _nbfWorthCheckAuditDeps.write = async () => {};
+    try {
+      const config = makeNaxConfig({
+        quality: { autofix: { enabled: true } },
+        execution: { rectification: { enabled: true, maxAttemptsTotal: 2 } },
+        review: {
+          nonBlockingFix: {
+            enabled: true,
+            scope: "triage",
+            regressionAttempts: 1,
+            verifierGuard: true,
+            sourceDiffCap: { maxFiles: 10, maxLines: 500 },
+            sources: ["adversarial"],
+            worthCheck: { mode: "on" },
+          },
+          adversarial: {
+            model: "balanced",
+            diffMode: "ref",
+            rules: [],
+            timeoutMs: 600_000,
+            parallel: false,
+            maxConcurrentSessions: 2,
+          },
+        },
+      });
+      const story = makeStory({ id: "US-002", title: "Deliver orders", attempts: 1 });
+      runtime = makeTestRuntime({ config });
+      const ctx = makeMockCallContext({ runtime, story });
+      const adversarialConfig = config.review.adversarial;
+      assertDefined(adversarialConfig, "config.review.adversarial");
+      const inputs = makeMockPlanInputs({
+        story,
+        implementer: { story },
+        fullSuiteGate: { story, workdir: "/tmp/test" },
+        verifier: { story },
+        adversarialReview: { story, workdir: "/tmp/test", adversarialConfig, mode: adversarialConfig.diffMode },
+        rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false },
+      });
+      const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+      await plan.run();
+      expect(runNonBlockingFix).toHaveBeenCalledTimes(1);
+      expect(runNonBlockingFix.mock.calls[0]?.[0].advisoryFindings).toEqual([
+        expect.objectContaining({ message: "empty items still fires MARK_DELIVERING" }),
+      ]);
+    } finally {
+      _nbfWorthCheckDeps.callOp = originalCallOp;
+      _nbfWorthCheckAuditDeps.write = originalAuditWrite;
+    }
   });
 
   test("non-blocking fix is SKIPPED when every advisory finding requires no action (#1359)", async () => {
