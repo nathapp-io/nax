@@ -49,11 +49,16 @@ export function buildNbfWorthCheckPrompt(input: NbfWorthCheckPromptInput): strin
   if (pendingStories.length > 0) {
     sections.push(
       `## Pending stories in this feature\n${pendingStories
-        .map((pending) => `${pending.id}: ${pending.title}${pending.acceptanceCriteria.length > 0 ? `\n${pending.acceptanceCriteria.map((criterion) => `- ${criterion}`).join("\n")}` : ""}`)
+        .map(
+          (pending) =>
+            `${pending.id}: ${pending.title}${pending.acceptanceCriteria.length > 0 ? `\n${pending.acceptanceCriteria.map((criterion) => `- ${criterion}`).join("\n")}` : ""}`,
+        )
         .join("\n")}`,
     );
   }
-  sections.push(`## Story diff\n${diff === "" ? "(diff unavailable — judge from the code)" : `\`\`\`diff\n${diff}\n\`\`\``}`);
+  sections.push(
+    `## Story diff\n${diff === "" ? "(diff unavailable — judge from the code)" : `\`\`\`diff\n${diff}\n\`\`\``}`,
+  );
   sections.push(`## Findings\n${findings.flatMap(renderFinding).join("\n")}`);
   sections.push(RUBRIC, REPLY);
   return sections.join("\n\n");

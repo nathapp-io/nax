@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Finding } from "@/findings/types";
+import type { NbfWorthCheckPromptInput } from "@/prompts";
 import { makeStory } from "@test/helpers";
 import * as prompts from "@/prompts";
 
@@ -34,7 +35,7 @@ const baseInput = {
 };
 const candidateBuilder: unknown = Reflect.get(prompts, "buildNbfWorthCheckPrompt");
 
-function buildNbfWorthCheckPrompt(input: typeof baseInput): string {
+function buildNbfWorthCheckPrompt(input: NbfWorthCheckPromptInput): string {
   return typeof candidateBuilder === "function" ? candidateBuilder(input) : "";
 }
 
