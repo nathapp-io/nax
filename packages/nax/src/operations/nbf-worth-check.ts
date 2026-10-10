@@ -6,9 +6,9 @@ import { reviewConfigSelector } from "../config";
 import type { NbfWorthCheckConfig, ReviewConfig } from "../config/selectors";
 import type { Finding } from "../findings";
 import { loadPRD, type UserStory } from "../prd";
-import { collectDiff, collectDiffStat, resolveEffectiveRef, truncateDiff } from "../review/diff-utils";
-import { totalSpendUsd, type NaxRuntime } from "../runtime";
 import { buildNbfWorthCheckPrompt } from "../prompts";
+import { collectDiff, collectDiffStat, resolveEffectiveRef, truncateDiff } from "../review/diff-utils";
+import { type NaxRuntime, totalSpendUsd } from "../runtime";
 import { tryParseLLMJson } from "../utils/llm-json";
 import { callOp } from "./call";
 import type { CallContext, Operation, RunOperation } from "./types";
@@ -154,13 +154,21 @@ export async function runNbfWorthCheck(req: NbfWorthCheckRequest): Promise<Findi
     };
     const result = await _nbfWorthCheckDeps.callOp(req.ctx, nbfWorthCheckOp, input);
     if (req.cfg.mode !== "on" || !isParsedWorthOutput(result)) return seed;
-    return seed.filter((_, index) => result.verdicts.some((verdict) => verdict.index === index + 1 && verdict.verdict === "fix"));
+    return seed.filter((_, index) =>
+      result.verdicts.some((verdict) => verdict.index === index + 1 && verdict.verdict === "fix"),
+    );
   } catch {
     return seed;
   }
 }
 
 function isParsedWorthOutput(value: unknown): value is Extract<NbfWorthCheckOpOutput, { parsed: true }> {
-  return typeof value === "object" && value !== null && "parsed" in value && value.parsed === true &&
-    "verdicts" in value && Array.isArray(value.verdicts);
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "parsed" in value &&
+    value.parsed === true &&
+    "verdicts" in value &&
+    Array.isArray(value.verdicts)
+  );
 }

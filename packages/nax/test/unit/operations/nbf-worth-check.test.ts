@@ -342,7 +342,13 @@ describe("runNbfWorthCheck (US-003)", () => {
     attempts: 1,
   });
   const makeRunnerCtx = (overrides: Partial<ReturnType<typeof makeMockCallContext>> = {}) =>
-    makeMockCallContext({ story, storyId: "US-002", featureName: "f", featureDir: "/repo/.nax/features/f", ...overrides });
+    makeMockCallContext({
+      story,
+      storyId: "US-002",
+      featureName: "f",
+      featureDir: "/repo/.nax/features/f",
+      ...overrides,
+    });
   const fixSkip = {
     parsed: true,
     verdicts: [
@@ -355,7 +361,10 @@ describe("runNbfWorthCheck (US-003)", () => {
     const deps = worthDeps();
     if (!deps) return;
     let called = false;
-    deps.callOp = async () => { called = true; return fixSkip; };
+    deps.callOp = async () => {
+      called = true;
+      return fixSkip;
+    };
     expect(await runWorth({ ctx: makeRunnerCtx(), findings, cfg: undefined })).toEqual(findings);
     expect(called).toBe(false);
   });
@@ -364,8 +373,13 @@ describe("runNbfWorthCheck (US-003)", () => {
     const deps = worthDeps();
     if (!deps) return;
     let called = false;
-    deps.callOp = async () => { called = true; return fixSkip; };
-    expect(await runWorth({ ctx: makeRunnerCtx(), findings, cfg: { mode: "off", timeoutMs: 300000 } })).toEqual(findings);
+    deps.callOp = async () => {
+      called = true;
+      return fixSkip;
+    };
+    expect(await runWorth({ ctx: makeRunnerCtx(), findings, cfg: { mode: "off", timeoutMs: 300000 } })).toEqual(
+      findings,
+    );
     expect(called).toBe(false);
   });
 
@@ -373,7 +387,10 @@ describe("runNbfWorthCheck (US-003)", () => {
     const deps = worthDeps();
     if (!deps) return;
     let calledOp: unknown;
-    deps.callOp = async (ctx, op) => { calledOp = op; return fixSkip; };
+    deps.callOp = async (_ctx, op) => {
+      calledOp = op;
+      return fixSkip;
+    };
     await runWorth({ ctx: makeRunnerCtx(), findings, cfg: config });
     expect(calledOp).toBe(getWorthOp());
   });
@@ -388,9 +405,13 @@ describe("runNbfWorthCheck (US-003)", () => {
   test("US-003 AC5: returns no findings when every verdict is skip", async () => {
     const deps = worthDeps();
     if (!deps) return;
-    deps.callOp = async () => ({ parsed: true, verdicts: [
-      { index: 1, verdict: "skip", reason: "nit" }, { index: 2, verdict: "skip", reason: "nit" },
-    ] });
+    deps.callOp = async () => ({
+      parsed: true,
+      verdicts: [
+        { index: 1, verdict: "skip", reason: "nit" },
+        { index: 2, verdict: "skip", reason: "nit" },
+      ],
+    });
     expect(await runWorth({ ctx: makeRunnerCtx(), findings, cfg: config })).toEqual([]);
   });
 
@@ -404,7 +425,9 @@ describe("runNbfWorthCheck (US-003)", () => {
   test("US-003 AC7: keeps the seed when worth-check dispatch rejects", async () => {
     const deps = worthDeps();
     if (!deps) return;
-    deps.callOp = async () => { throw new Error("dispatch failed"); };
+    deps.callOp = async () => {
+      throw new Error("dispatch failed");
+    };
     expect(await runWorth({ ctx: makeRunnerCtx(), findings, cfg: config })).toEqual(findings);
   });
 
@@ -418,15 +441,20 @@ describe("runNbfWorthCheck (US-003)", () => {
   test("US-003 AC9: supplies only deliverable pending feature stories", async () => {
     const deps = worthDeps();
     if (!deps) return;
-    deps.loadPRD = async () => ({ userStories: [
-      story,
-      makeStory({ id: "US-001", status: "passed" }),
-      makeStory({ id: "US-003", title: "Retry delivery", acceptanceCriteria: ["retries twice"], status: "pending" }),
-      makeStory({ id: "US-004", status: "failed" }),
-      makeStory({ id: "US-005", status: "decomposed" }),
-    ] });
+    deps.loadPRD = async () => ({
+      userStories: [
+        story,
+        makeStory({ id: "US-001", status: "passed" }),
+        makeStory({ id: "US-003", title: "Retry delivery", acceptanceCriteria: ["retries twice"], status: "pending" }),
+        makeStory({ id: "US-004", status: "failed" }),
+        makeStory({ id: "US-005", status: "decomposed" }),
+      ],
+    });
     let input: unknown;
-    deps.callOp = async (_ctx, _op, opInput) => { input = opInput; return fixSkip; };
+    deps.callOp = async (_ctx, _op, opInput) => {
+      input = opInput;
+      return fixSkip;
+    };
     await runWorth({ ctx: makeRunnerCtx(), findings, cfg: config });
     expect((input as NbfWorthCheckOpInput).pendingStories).toEqual([
       { id: "US-003", title: "Retry delivery", acceptanceCriteria: ["retries twice"] },
@@ -436,9 +464,14 @@ describe("runNbfWorthCheck (US-003)", () => {
   test("US-003 AC10: continues with no pending stories when PRD loading rejects", async () => {
     const deps = worthDeps();
     if (!deps) return;
-    deps.loadPRD = async () => { throw new Error("PRD unavailable"); };
+    deps.loadPRD = async () => {
+      throw new Error("PRD unavailable");
+    };
     let input: unknown;
-    deps.callOp = async (_ctx, _op, opInput) => { input = opInput; return fixSkip; };
+    deps.callOp = async (_ctx, _op, opInput) => {
+      input = opInput;
+      return fixSkip;
+    };
     await runWorth({ ctx: makeRunnerCtx(), findings, cfg: config });
     expect((input as NbfWorthCheckOpInput).pendingStories).toEqual([]);
   });
@@ -447,7 +480,10 @@ describe("runNbfWorthCheck (US-003)", () => {
     const deps = worthDeps();
     if (!deps) return;
     let loaded = false;
-    deps.loadPRD = async () => { loaded = true; return { userStories: [] }; };
+    deps.loadPRD = async () => {
+      loaded = true;
+      return { userStories: [] };
+    };
     deps.callOp = async () => fixSkip;
     await runWorth({ ctx: makeRunnerCtx({ featureDir: undefined }), findings, cfg: config });
     expect(loaded).toBe(false);
@@ -457,7 +493,10 @@ describe("runNbfWorthCheck (US-003)", () => {
     const deps = worthDeps();
     if (!deps) return;
     let input: unknown;
-    deps.callOp = async (_ctx, _op, opInput) => { input = opInput; return fixSkip; };
+    deps.callOp = async (_ctx, _op, opInput) => {
+      input = opInput;
+      return fixSkip;
+    };
     await runWorth({ ctx: makeRunnerCtx(), findings, cfg: config });
     expect((input as NbfWorthCheckOpInput).diff).toBe("+x");
   });
@@ -467,7 +506,10 @@ describe("runNbfWorthCheck (US-003)", () => {
     if (!deps) return;
     deps.resolveEffectiveRef = async () => undefined;
     let input: unknown;
-    deps.callOp = async (_ctx, _op, opInput) => { input = opInput; return fixSkip; };
+    deps.callOp = async (_ctx, _op, opInput) => {
+      input = opInput;
+      return fixSkip;
+    };
     await runWorth({ ctx: makeRunnerCtx(), findings, cfg: config });
     expect((input as NbfWorthCheckOpInput).diff).toBe("");
   });
@@ -475,9 +517,14 @@ describe("runNbfWorthCheck (US-003)", () => {
   test("US-003 AC14: uses an empty diff when diff collection rejects", async () => {
     const deps = worthDeps();
     if (!deps) return;
-    deps.collectDiff = async () => { throw new Error("diff unavailable"); };
+    deps.collectDiff = async () => {
+      throw new Error("diff unavailable");
+    };
     let input: unknown;
-    deps.callOp = async (_ctx, _op, opInput) => { input = opInput; return fixSkip; };
+    deps.callOp = async (_ctx, _op, opInput) => {
+      input = opInput;
+      return fixSkip;
+    };
     await runWorth({ ctx: makeRunnerCtx(), findings, cfg: config });
     expect((input as NbfWorthCheckOpInput).diff).toBe("");
   });
@@ -486,7 +533,10 @@ describe("runNbfWorthCheck (US-003)", () => {
     const deps = worthDeps();
     if (!deps) return;
     let called = false;
-    deps.callOp = async () => { called = true; return fixSkip; };
+    deps.callOp = async () => {
+      called = true;
+      return fixSkip;
+    };
     expect(await runWorth({ ctx: makeRunnerCtx({ story: undefined }), findings, cfg: config })).toEqual(findings);
     expect(called).toBe(false);
   });
@@ -496,7 +546,10 @@ describe("runNbfWorthCheck (US-003)", () => {
     if (!deps) return;
     deps.collectDiff = async () => null;
     let input: unknown;
-    deps.callOp = async (_ctx, _op, opInput) => { input = opInput; return fixSkip; };
+    deps.callOp = async (_ctx, _op, opInput) => {
+      input = opInput;
+      return fixSkip;
+    };
     await runWorth({ ctx: makeRunnerCtx(), findings, cfg: config });
     expect((input as NbfWorthCheckOpInput).diff).toBe("");
   });
