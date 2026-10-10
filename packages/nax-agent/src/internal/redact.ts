@@ -26,6 +26,8 @@ const SECRET_KEY_PATTERN =
   /(SECRET|TOKEN(?!s\b)|API_?KEY|PASSWORD|PRIVATE_?KEY|ACCESS_?KEY|WEBHOOK|AUTHORIZATION|COOKIE|CREDENTIAL|PASSWD|(?:\w+)?_URL|\w+_URI|\w+_DSN|CONNECTION\s*STRING)/i;
 
 /**
+ * Matches must pass `acceptMatch`, when present, before masking: the URL scanner also
+ * consumes scheme-only runs to avoid rescanning them on failure.
  * Patterns are reset via `re.lastIndex = 0` before every call because they carry
  * the `/g` flag (required for `String.replace`). Resetting prevents the stale
  * `lastIndex` bug that skips matches on subsequent calls.
@@ -34,6 +36,8 @@ const SECRET_KEY_PATTERN =
 export interface SecretValuePattern {
   readonly kind: string;
   readonly re: RegExp;
+  /** Reject scanner-only matches that advance past a non-secret run. */
+  readonly acceptMatch?: (match: string) => boolean;
 }
 
 export const SECRET_VALUE_PATTERNS: readonly SecretValuePattern[] = [
@@ -105,16 +109,16 @@ export const SECRET_VALUE_PATTERNS: readonly SecretValuePattern[] = [
   //   postgres://admin:s3cret@db.internal:5432/prod  →  "postgres://admin:s3cret@"
   //   redis://:hunter2@cache.internal:6379/0          →  "redis://:hunter2@"     (empty user)
   //   mongodb://root:mongoPwd@mongo.internal:27017    →  "mongodb://root:mongoPwd@"
-  // Issue #2428: the unbounded scheme run was O(n^2) on long runs of scheme
-  // chars that never reach "://" (e.g. "a-b-c-...") — every word-boundary
-  // start rescanned the whole run (~4 min for 1 MB on this synchronous
-  // logger path). The scheme length is bounded to 32 chars so each start
-  // position costs O(1); the lookbehind keeps `\b`'s semantics exactly (a
-  // start preceded by a word char is rejected, so "1-http://u:p@h" and
-  // "a-b-c://x:y@h" still match). The only behavioural change vs the old
-  // pattern is the intentional bound: a run longer than 32 scheme chars
-  // before "://" is left alone — no realistic scheme is that long.
-  { kind: "url-credentials", re: /(?<![a-z0-9_])[a-z][a-z0-9+.-]{0,31}:\/\/(?:[^/\s@]*:[^/\s@]+)@/gi },
+  // Issue #2428: requiring the credential suffix made a failed scheme run
+  // rescan at every word boundary (quadratic on "a-b-c-..."). Consume the
+  // whole run even without credentials; acceptMatch leaves those
+  // non-secret matches visible. This preserves the original word boundary
+  // and supports arbitrary scheme lengths without rescanning the run.
+  {
+    kind: "url-credentials",
+    re: /\b[a-z][a-z0-9+.-]*(?::\/\/(?:[^/\s@]*:[^/\s@]+)@)?/gi,
+    acceptMatch: (match) => match.endsWith("@"),
+  },
 ];
 
 const REDACTED = "[REDACTED]";
@@ -128,10 +132,10 @@ const STRUCTURED_KINDS = new Set(["assignment", "api-key-header"]);
 
 function redactString(value: string): string {
   let out = value;
-  for (const { kind, re } of SECRET_VALUE_PATTERNS) {
+  for (const { kind, re, acceptMatch } of SECRET_VALUE_PATTERNS) {
     if (STRUCTURED_KINDS.has(kind)) continue;
     re.lastIndex = 0;
-    out = out.replace(re, REDACTED);
+    out = out.replace(re, (match) => (acceptMatch && !acceptMatch(match) ? match : REDACTED));
   }
   return redactStructured(out);
 }

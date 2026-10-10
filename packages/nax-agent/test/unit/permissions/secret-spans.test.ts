@@ -5,6 +5,24 @@ const SK = "sk-abcdefghijklmnop1234";
 const GHP = "ghp_abcdefghijklmnop1234";
 
 describe("maskForPrompt", () => {
+  test("masks URL credentials after a long scheme in prompts and audit rows", () => {
+    const text = `curl ${"a".repeat(33)}://alice:hunter2@db.internal`;
+    expect(maskForPrompt(text)).toEqual({
+      ok: true,
+      masked: "curl [REDACTED:url-credentials]db.internal",
+      count: 1,
+    });
+    expect(redactForRow(text)).toBe("curl [REDACTED:url-credentials]db.internal");
+  });
+
+  test("keeps scheme runs without credentials visible beside a credential URL", () => {
+    expect(maskForPrompt("curl a-b-c https://example.com http://u:p@h")).toEqual({
+      ok: true,
+      masked: "curl a-b-c https://example.com [REDACTED:url-credentials]h",
+      count: 1,
+    });
+  });
+
   test("masks an inert Bearer token with its kind", () => {
     const r = maskForPrompt("curl -H Authorization:Bearer abc123def456 https://x");
     expect(r).toEqual({ ok: true, masked: "curl -H Authorization:[REDACTED:bearer] https://x", count: 1 });

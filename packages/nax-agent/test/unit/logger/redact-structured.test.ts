@@ -167,12 +167,14 @@ describe("redactSecrets: values that are not secrets", () => {
     expect(mask("a-b-c://x:y@h")).toBe("[REDACTED]h");
   });
 
-  // The 32-char scheme bound is intentional defence in depth: a longer run
-  // before "://" is left alone. Pinned so a future widening can't silently
-  // reintroduce the quadratic scan.
-  test("leaves a scheme run longer than the 32-char bound alone", () => {
+  test("masks credentials after a scheme longer than 32 characters", () => {
     const input = "z".repeat(33) + "http://u:p@h";
-    expect(mask(input)).toBe(input);
+    expect(mask(input)).toBe("[REDACTED]h");
+    expect(redactEntry({ message: input }).message).toBe("[REDACTED]h");
+  });
+
+  test("preserves non-secret scheme runs beside credential URLs", () => {
+    expect(mask("a-b-c plain https://example.com http://u:p@h")).toBe("a-b-c plain https://example.com [REDACTED]h");
   });
 
   test("is idempotent", () => {
@@ -195,14 +197,21 @@ describe("redactSecrets: bounded cost", () => {
     ["key-shaped runs", "API_TOKEN_".repeat(MB / 10)],
     // Issue #2428: the url-credentials scheme match was quadratic on long
     // dash-separated runs that never reach "://" — every word-boundary start
-    // position rescanned the run. The scheme length is now bounded, so each
-    // start position costs O(1).
+    // position rescanned the run. The scanner now consumes failed scheme
+    // runs once without masking them.
     ["dash-separated run", "a-b-c-d-".repeat(MB / 8)],
   ];
 
   test.each(adversarial)("a 1 MB input completes quickly: %s", (_name, input) => {
     const start = performance.now();
     mask(input);
+    expect(performance.now() - start).toBeLessThan(2000);
+  });
+
+  test("a 1 MB scheme is masked without rescanning", () => {
+    const input = `${"a-b-c-d-".repeat(MB / 8)}http://u:p@h`;
+    const start = performance.now();
+    expect(mask(input)).toBe("[REDACTED]h");
     expect(performance.now() - start).toBeLessThan(2000);
   });
 });
