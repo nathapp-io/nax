@@ -129,14 +129,6 @@ describe("acceptanceFixSourceOp.parse()", () => {
     expect(parsed).not.toHaveProperty("unresolved");
   });
 
-  test("US-002 AC6: source-fix operation build receives the resolved failing criteria", () => {
-    const ctx = makeSourceCtx();
-    const failedCriteria = [{ acId: "AC-2", storyId: "US-002", original: "o2", refined: "r2" }];
-    const input = { ...SOURCE_INPUT, failedCriteria };
-    const prompt = acceptanceFixSourceOp.build(input, ctx).task.content;
-    expect(prompt).toContain("AC-2 [US-002]: r2");
-  });
-
   test("returns applied: true regardless of output (including empty)", () => {
     const ctx = makeSourceCtx();
     expect(acceptanceFixSourceOp.parse("Fix applied successfully.", SOURCE_INPUT, ctx).applied).toBe(true);

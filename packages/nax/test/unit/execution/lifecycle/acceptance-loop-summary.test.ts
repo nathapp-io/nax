@@ -6,7 +6,9 @@ import {
   makePluginRegistry,
   makeStatusWriter,
   makeStory,
+  opSelector,
 } from "@test/helpers";
+import { _failedCriteriaDeps } from "@/acceptance/failed-criteria";
 import { _diagnosisDeps } from "@/execution/lifecycle/acceptance-fix";
 import {
   _acceptanceFixCycleDeps,
@@ -15,10 +17,13 @@ import {
   type AcceptanceLoopContext,
   runAcceptanceLoop,
 } from "@/execution/lifecycle/acceptance-loop";
-import { _acceptanceAttemptDeps, attemptFileHooks } from "@/execution/lifecycle/acceptance-summary";
-import type { Finding } from "@/findings";
+import { _acceptanceAttemptDeps } from "@/execution/lifecycle/acceptance-summary";
+import type { Finding, FixCycleContext } from "@/findings";
+import { _cycleDeps } from "@/findings/cycle";
 import type { Iteration } from "@/findings/cycle-types";
 import { addSink, initLogger, resetLogger } from "@/logger";
+import { acceptanceFixSourceOp } from "@/operations";
+import type { Operation } from "@/operations/types";
 import * as pipelineStages from "@/pipeline/stages";
 import type { PipelineContext, StageResult } from "@/pipeline/types";
 
@@ -64,6 +69,8 @@ let originalDiagnosis: typeof _diagnosisDeps.callOp;
 let originalLoad: typeof _acceptanceLoopDeps.loadAcceptanceTestContent;
 let originalCaptureRef: typeof _acceptanceAttemptDeps.captureGitRef;
 let originalCaptureChanges: typeof _acceptanceAttemptDeps.captureWorkingTreeChanges;
+let originalCycleCallOp: typeof _cycleDeps.callOp;
+let originalCriteriaRead: typeof _failedCriteriaDeps.readFile;
 let unsubscribe: (() => void) | undefined;
 let entries: Array<{ message: string; data?: Record<string, unknown> }>;
 
@@ -74,6 +81,8 @@ beforeEach(() => {
   originalLoad = _acceptanceLoopDeps.loadAcceptanceTestContent;
   originalCaptureRef = _acceptanceAttemptDeps.captureGitRef;
   originalCaptureChanges = _acceptanceAttemptDeps.captureWorkingTreeChanges;
+  originalCycleCallOp = _cycleDeps.callOp;
+  originalCriteriaRead = _failedCriteriaDeps.readFile;
   entries = [];
   resetLogger();
   initLogger({ level: "info", headless: true, useChalk: false });
@@ -88,6 +97,8 @@ afterEach(() => {
   _acceptanceLoopDeps.loadAcceptanceTestContent = originalLoad;
   _acceptanceAttemptDeps.captureGitRef = originalCaptureRef;
   _acceptanceAttemptDeps.captureWorkingTreeChanges = originalCaptureChanges;
+  _cycleDeps.callOp = originalCycleCallOp;
+  _failedCriteriaDeps.readFile = originalCriteriaRead;
   resetLogger();
 });
 
@@ -116,25 +127,90 @@ function sourceFixIteration<F extends Finding = Finding>(unresolved?: string): I
 }
 
 describe("runAcceptanceLoop acceptance.summary (US-002)", () => {
-  test("AC7: source attempt file hooks report files changed since their captured ref", async () => {
-    _acceptanceAttemptDeps.captureGitRef = async () => "abc";
-    _acceptanceAttemptDeps.captureWorkingTreeChanges = async () => ["src/a.ts", "test/a.test.ts"];
-    const hooks = attemptFileHooks("/repo");
-    await hooks.beforeDispatch();
-    expect(await hooks.changedFiles()).toEqual(["src/a.ts", "test/a.test.ts"]);
+  async function runFixAttempt(
+    verdict: "source_bug" | "test_bug",
+    baseRef: string | undefined,
+    changed: string[],
+    options: { failedAC?: string; withRefinedCriteria?: boolean } = {},
+  ) {
+    const calls: Array<{ opName: string; input: unknown }> = [];
+    let capturedRef: string | undefined = "not-called";
+    _acceptanceAttemptDeps.captureGitRef = async () => baseRef;
+    _acceptanceAttemptDeps.captureWorkingTreeChanges = async (_dir, ref) => {
+      capturedRef = ref;
+      return changed;
+    };
+    _diagnosisDeps.callOp = async () => ({ verdict, reasoning: "diagnosed", confidence: 1, findings: [] });
+    if (options.withRefinedCriteria) {
+      _failedCriteriaDeps.readFile = async () =>
+        JSON.stringify([
+          { acId: "AC-1", original: "o1", refined: "r1", storyId: "US-001" },
+          { acId: "AC-2", original: "o2", refined: "r2", storyId: "US-002" },
+          { acId: "AC-3", original: "o3", refined: "o3", storyId: "US-002" },
+        ]);
+    }
+    _cycleDeps.callOp = async <I, O, C>(cycleCtx: FixCycleContext, op: Operation<I, O, C>, input: I): Promise<O> => {
+      calls.push({ opName: op.name, input });
+      if (op.kind !== "run") throw new Error("expected acceptance run operation");
+      return op.parse("fixed", input, {
+        packageView: cycleCtx.packageView,
+        config: cycleCtx.packageView.select(opSelector(op.config)),
+      });
+    };
+    let run = 0;
+    _runAcceptanceTestsOnceDeps.importAcceptanceStage = stubStages(async (ctx) => {
+      run++;
+      if (run > 1) return { action: "continue" };
+      ctx.acceptanceFailures = {
+        failedACs: [options.failedAC ?? "AC-1"],
+        findings: [],
+        testOutput: "failed",
+        failedPackages: [
+          {
+            testPath: "/repo/acceptance.test.ts",
+            packageDir: "/repo",
+            output: "failed",
+            failedACs: [options.failedAC ?? "AC-1"],
+          },
+        ],
+      };
+      return { action: "fail", reason: "failed" };
+    });
+    const ctx = context();
+    if (options.withRefinedCriteria) {
+      ctx.prd.userStories = [
+        makeStory({ id: "US-001", acceptanceCriteria: ["one"] }),
+        makeStory({ id: "US-002", acceptanceCriteria: ["two", "three"] }),
+      ];
+      ctx.featureDir = "/repo/.nax/features/f";
+    }
+    ctx.acceptanceTestPaths = [{ testPath: "/repo/acceptance.test.ts", packageDir: "/repo" }];
+    await runAcceptanceLoop(ctx);
+    return { calls, capturedRef };
+  }
+
+  test("AC6: runAcceptanceLoop dispatches source-fix with the resolved failed criterion", async () => {
+    const { calls } = await runFixAttempt("source_bug", "abc", [], {
+      failedAC: "AC-2",
+      withRefinedCriteria: true,
+    });
+    const sourceDispatch = calls.find((call) => call.opName === acceptanceFixSourceOp.name);
+    expect(sourceDispatch?.input).toMatchObject({
+      failedCriteria: [{ acId: "AC-2", storyId: "US-002", original: "o2", refined: "r2" }],
+    });
   });
 
-  test("AC8: test attempt file hooks pass an unavailable ref through and report no files", async () => {
-    let receivedRef: string | undefined = "unexpected";
-    _acceptanceAttemptDeps.captureGitRef = async () => undefined;
-    _acceptanceAttemptDeps.captureWorkingTreeChanges = async (_dir, ref) => {
-      receivedRef = ref;
-      return [];
-    };
-    const hooks = attemptFileHooks("/repo");
-    await hooks.beforeDispatch();
-    expect(await hooks.changedFiles()).toEqual([]);
-    expect(receivedRef).toBeUndefined();
+  test("AC7: a source-fix loop iteration logs changed files as fixTargetFiles", async () => {
+    await runFixAttempt("source_bug", "abc", ["src/a.ts", "test/a.test.ts"]);
+    const completed = entries.find((entry) => entry.message === "iteration completed");
+    expect(completed?.data?.fixTargetFiles).toEqual(["src/a.ts", "test/a.test.ts"]);
+  });
+
+  test("AC8: a test-fix loop iteration logs no target files when its ref is unavailable", async () => {
+    const { capturedRef } = await runFixAttempt("test_bug", undefined, []);
+    const completed = entries.find((entry) => entry.message === "iteration completed");
+    expect(completed?.data?.fixTargetFiles).toEqual([]);
+    expect(capturedRef).toBeUndefined();
   });
 
   test("AC10: an LLM source diagnosis and changed files are reflected in the aggregate summary", async () => {
@@ -157,7 +233,8 @@ describe("runAcceptanceLoop acceptance.summary (US-002)", () => {
       return { action: "fail", reason: "failed" };
     });
     await runAcceptanceLoop(context());
-    expect(summaries()[0]?.data).toMatchObject({
+    expect(summaries()).toHaveLength(1);
+    expect(summaries()[0].data).toMatchObject({
       diagnoses: { byPath: { llm: 1 } },
       sourceFixAttempts: 1,
       sourceFixFiles: { production: 1, test: 1 },
@@ -181,7 +258,8 @@ describe("runAcceptanceLoop acceptance.summary (US-002)", () => {
       return { action: "fail", reason: "failed" };
     });
     await runAcceptanceLoop(context());
-    expect(summaries()[0]?.data).toMatchObject({ outcome: "failed", sourceFixUnresolved: 1 });
+    expect(summaries()).toHaveLength(1);
+    expect(summaries()[0].data).toMatchObject({ outcome: "failed", sourceFixUnresolved: 1 });
   });
 
   test("AC9: passing on the first acceptance run emits one passed summary with no source fixes", async () => {
@@ -226,7 +304,8 @@ describe("runAcceptanceLoop acceptance.summary (US-002)", () => {
       makeStory({ id: "US-003", routing: { complexity: "simple", reasoning: "test", testStrategy: "no-test" } }),
     ];
     await runAcceptanceLoop(ctx);
-    expect(summaries()[0]?.data?.storyStrategies).toEqual({ "tdd-simple": 2, "no-test": 1 });
+    expect(summaries()).toHaveLength(1);
+    expect(summaries()[0].data?.storyStrategies).toEqual({ "tdd-simple": 2, "no-test": 1 });
   });
 
   test("AC15: zero retries emits one failed summary with the returned retry count", async () => {
