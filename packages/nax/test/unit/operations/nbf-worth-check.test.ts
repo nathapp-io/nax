@@ -659,6 +659,7 @@ describe("runNbfWorthCheck (US-003)", () => {
       true,
     );
     auditDeps.write = async (path, record) => {
+      writeCount += 1;
       audit = { path, record };
     };
     await runWorth({ ctx: context, findings, cfg: { mode: "shadow" } });
