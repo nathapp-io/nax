@@ -1,8 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { makeStory } from "@test/helpers";
 import type { Finding } from "@/findings/types";
-import type { NbfWorthCheckPromptInput } from "@/prompts";
-import * as prompts from "@/prompts";
+import { buildNbfWorthCheckPrompt } from "@/prompts";
 
 const findingA: Finding = {
   source: "adversarial-review",
@@ -33,12 +32,6 @@ const baseInput = {
   findings: [findingA, findingB],
   pendingStories: [],
 };
-const candidateBuilder: unknown = Reflect.get(prompts, "buildNbfWorthCheckPrompt");
-
-function buildNbfWorthCheckPrompt(input: NbfWorthCheckPromptInput): string {
-  return typeof candidateBuilder === "function" ? candidateBuilder(input) : "";
-}
-
 describe("buildNbfWorthCheckPrompt (US-001)", () => {
   test("US-001 AC1: renders the first finding with severity, category, and location", () => {
     expect(buildNbfWorthCheckPrompt(baseInput)).toContain(
