@@ -3,7 +3,7 @@
   "feature": "acceptance-diagnosis-fidelity",
   "branchName": "feat/acceptance-diagnosis-fidelity",
   "createdAt": "2026-10-10T00:00:00.000Z",
-  "updatedAt": "2026-10-10T11:24:44.647Z",
+  "updatedAt": "2026-10-10T11:57:28.774Z",
   "userStories": [
     {
       "id": "US-001",
@@ -113,8 +113,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -178,7 +178,10 @@
       "routing": {
         "complexity": "simple",
         "testStrategy": "tdd-simple",
-        "reasoning": "Additive constants and rendering in one section builder plus prompt-stage tests; standard pattern, not security-critical."
+        "reasoning": "Additive constants and rendering in one section builder plus prompt-stage tests; standard pattern, not security-critical.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
       },
       "contextFiles": [
         "packages/nax/src/prompts/sections/role-task.ts",
@@ -189,7 +192,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "953c2b5e608d23ab3e294965b2f2dc4c92b09d01"
     }
   ],
   "analysis": "Goal: give the acceptance diagnosis and source-fix session the failing criteria's text, a decision rule tied to it, and the structured failure summary; flip the parse fallback to test_bug; record changed files per fix attempt; emit one acceptance.summary per runAcceptanceLoop call; add edge-case/wiring rules to single-session prompts. All changes are deterministic prompt text, plumbing and logging - no new LLM call.\n\nKey files (all under packages/nax): src/prompts/builders/acceptance-builder.ts (buildDiagnosisPrompt ~:368 currently slices testOutput to 2000 chars; buildDiagnosisPromptTemplate ~:273; buildSourceFixPrompt ~:309; param types DiagnosisPromptParams :86, DiagnosisTemplateParams :122, SourceFixParams :129); src/prompts/builders/acceptance-builder-helpers.ts (formatTestOutputForFix, read-only); src/operations/acceptance-diagnose.ts (FALLBACK :23 is source_bug today); src/operations/acceptance-fix.ts (acceptanceFixSourceOp/parse); src/execution/lifecycle/acceptance-fix.ts (resolveAcceptanceDiagnosis with implement-only and >80% test-level fast paths); src/execution/lifecycle/acceptance-loop.ts (583 lines, check:file-sizes caps source at 600 raw lines; runAcceptanceFixCycle :255, runAcceptanceLoop :357); src/acceptance/types.ts (DiagnosisResult :143, RefinedCriterion :22); src/acceptance/test-path.ts (groupStoriesByPackage :132 - the grouping rule to mirror); src/pipeline/stages/acceptance-setup.ts (:349 builds criteriaList; per-package AC-k numbering); src/findings/cycle-types.ts and cycle-iteration-log.ts (:92 emits fixTargetFiles from extractApplied); src/findings/cycle-execute.ts (:81 handleGiveUps); src/operations/full-suite-rectify.ts (:118 _repoScopedFixDeps git-seam precedent); src/utils/git.ts (captureGitRef :34, captureWorkingTreeChanges :376 returns [] on falsy ref); src/test-runners/detector.ts (isTestFile :43); src/prompts/sections/role-task.ts (buildRoleTaskSection :29); src/pipeline/stages/prompt.ts (:73-105 single-session role dispatch).\n\nImpact/dependents: runAcceptanceFixCycle and _acceptanceFixCycleDeps move to a new acceptance-fix-cycle.ts and MUST remain importable from @/execution/lifecycle/acceptance-loop (re-export) because acceptance-loop-cycle.test.ts and acceptance-fix-scope.test.ts import them and must pass unchanged. runAcceptanceFixCycle gains failedCriteria as the 9th (last) positional param. DiagnosisResult gains optional path. The op output gains fallback?: true but resolveAcceptanceDiagnosis must never copy it into the DiagnosisResult (only verdict, reasoning, confidence, findings, cost are copied).\n\nExisting tests affected: test/unit/operations/acceptance-diagnose.test.ts ('falls back to source_bug on malformed JSON' and '...missing fields' must now assert test_bug + fallback true); test/unit/prompts/__snapshots__/acceptance-builder.test.ts.snap ('buildDiagnosisPromptTemplate() snapshot stability no verdicts' must be regenerated for the new template with the criteria-unavailable line and DECISION RULE block). Mirror test/unit/pipeline/stages/prompt-tdd-simple.test.ts for promptStage tests, acceptance-loop-routing.test.ts for inline log capture.\n\nRisks: (1) the numbering rule - a package group's criteria are refined entries whose storyId is in the group (file order), k-th = AC-k; the stored acId is global and must be ignored. (2) Each fix strategy needs its OWN attemptFileHooks call so captured refs are never shared. (3) acceptance.summary must be emitted exactly once on every exit path - implement as a thin wrapper with try/finally around the renamed inner function filling an accumulator. (4) sourceFixFiles classification uses isTestFile with default patterns. (5) Circular-import risk when adding exports to barrels (acceptance/index.ts) - prefer leaf imports. (6) Immutability: build new objects/arrays rather than mutate, except the accumulator which is the one deliberate mutable holder. (7) Rules text constants are normative and rendered verbatim.\n\nMigration/ordering: US-001 first (resolver, diagnosis, file split), US-002 depends on it (source-fix, telemetry), US-003 is independent. Seams: git is called only via _acceptanceAttemptDeps; refined JSON is read only via _failedCriteriaDeps.readFile.",
