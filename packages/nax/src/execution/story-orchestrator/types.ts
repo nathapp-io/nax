@@ -76,6 +76,12 @@ export interface StoryOrchestratorResult {
    * judgment (US-002 regression).
    */
   readonly missingRequiredReviewPhases?: readonly string[];
+  /**
+   * The verdict's failed phases, exactly as its summary log names them (verifier-SSOT
+   * carve-out applied, never-ran review phases suffixed). Undefined when none failed.
+   * #2406: the uncategorised "requires review" pause names these.
+   */
+  readonly failedPhases?: readonly string[];
   /** When rectification exited via agent-gave-up, the implementer's UNRESOLVED: reason text.
    *  Surfaced into the escalation reason so the next tier's priorErrors carries the diagnosis. */
   readonly unresolvedDetail?: string;

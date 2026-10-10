@@ -326,18 +326,13 @@ export async function routeTddFailureBranch(frame: DecideFrame): Promise<StageRe
 
 /**
  * #2406 — with no failure category, `routeTddFailure` pauses for human review. Name
- * the phases whose output reported a failure so the pause points at the cause
- * instead of a bare "requires review". Undefined keeps the default reason.
+ * the verdict's failed phases so the pause points at the cause instead of a bare
+ * "requires review". Undefined keeps the default reason.
  */
 function uncategorisedPauseReason(frame: DecideFrame): string | undefined {
-  if (frame.inspection.failureCategory !== undefined) return undefined;
-  const failed = Object.entries(frame.planResult.phaseOutputs)
-    .filter(([, output]) => {
-      const r = output as { success?: unknown; passed?: unknown } | null | undefined;
-      return r?.success === false || r?.passed === false;
-    })
-    .map(([name]) => name);
-  return failed.length > 0 ? `${TDD_REVIEW_PAUSE_REASON} (failed phases: ${failed.join(", ")})` : undefined;
+  const failed = frame.planResult.failedPhases;
+  if (frame.inspection.failureCategory !== undefined || !failed?.length) return undefined;
+  return `${TDD_REVIEW_PAUSE_REASON} (failed phases: ${failed.join(", ")})`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

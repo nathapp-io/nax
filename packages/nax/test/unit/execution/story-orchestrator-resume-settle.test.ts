@@ -20,6 +20,7 @@ import {
 } from "@test/helpers";
 import { pickSelector } from "@/config";
 import { _storyOrchestratorDeps, StoryOrchestratorBuilder } from "@/execution";
+import { settleProvisionalRectification } from "@/execution/story-orchestrator/execution-plan-phases";
 import type { Finding } from "@/findings";
 import type { CallContext, DeterministicOperation } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
@@ -153,6 +154,18 @@ describe("provisional rectification outcome (#2406)", () => {
     expect(rectificationOutput(result)?.success).toBe(false);
     expect(rectificationOutput(result)?.settledBy).toBeUndefined();
     expect(result.success).toBe(false);
+    expect(result.failedPhases).toEqual(expect.arrayContaining(["verifier", "rectification"]));
+  });
+
+  test("stays failed when the second pass itself short-circuits with no findings", async () => {
+    const { result, cycles } = await runShortCircuitScenario({
+      verifierResults: [{ success: false, findings: [VERIFIER_FINDING] }],
+      laterCycles: () => ({ iterations: [], finalFindings: [], exitReason: "validate-short-circuit", costUsd: 0 }),
+    });
+
+    expect(cycles).toBe(2);
+    expect(rectificationOutput(result)?.settledBy).toBeUndefined();
+    expect(result.success).toBe(false);
   });
 
   test("stays failed when the re-judged phase still fails after a resolved second pass", async () => {
@@ -164,5 +177,46 @@ describe("provisional rectification outcome (#2406)", () => {
     expect(cycles).toBe(2);
     expect(rectificationOutput(result)?.settledBy).toBeUndefined();
     expect(result.success).toBe(false);
+  });
+});
+
+describe("settleProvisionalRectification", () => {
+  test("leaves a non-provisional outcome untouched", () => {
+    const rectification = { success: false, exitReason: "max-attempts-per-strategy", finalFindingsCount: 0 };
+    const phaseOutputs: Record<string, unknown> = { verifier: { success: true }, rectification };
+
+    settleProvisionalRectification(phaseOutputs, "US-2406");
+
+    expect(phaseOutputs.rectification).toBe(rectification);
+  });
+
+  test("leaves a provisional outcome failed while another phase output fails", () => {
+    const rectification = { success: false, exitReason: "validate-short-circuit", provisional: true };
+    const phaseOutputs: Record<string, unknown> = {
+      verifier: { success: true },
+      "adversarial-review": { passed: false },
+      rectification,
+    };
+
+    settleProvisionalRectification(phaseOutputs, "US-2406");
+
+    expect(phaseOutputs.rectification).toBe(rectification);
+  });
+
+  test("settles a provisional outcome to success when every other phase passes", () => {
+    const phaseOutputs: Record<string, unknown> = {
+      verifier: { success: true },
+      "adversarial-review": { passed: true },
+      rectification: { success: false, exitReason: "validate-short-circuit", finalFindingsCount: 0, provisional: true },
+    };
+
+    settleProvisionalRectification(phaseOutputs, "US-2406");
+
+    expect(phaseOutputs.rectification).toEqual({
+      success: true,
+      exitReason: "validate-short-circuit",
+      finalFindingsCount: 0,
+      settledBy: "resume",
+    });
   });
 });

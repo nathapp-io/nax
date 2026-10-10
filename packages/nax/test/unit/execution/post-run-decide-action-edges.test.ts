@@ -282,16 +282,11 @@ describe("decideStageAction — unknown-category fallbacks", () => {
 });
 
 describe("decideStageAction — uncategorised TDD pause names the failed phases (#2406)", () => {
-  test("the requires-review pause lists every phase whose output failed", async () => {
+  test("the requires-review pause names the verdict's failed phases", async () => {
     const ctx = makeTestContext({ interaction: undefined });
     const planResult = makePlanResult({
       success: false,
-      phaseOutputs: {
-        verifier: { success: true },
-        "adversarial-review": { passed: true },
-        rectification: { success: false },
-        "semantic-review": { passed: false },
-      },
+      failedPhases: ["rectification", "semantic-review"],
     });
     const inspection = makeInspection({ failureCategory: undefined });
     const opts = makeInspectionOpts({ tddMode: { isLite: false, rollbackEnabled: false } });
@@ -304,7 +299,7 @@ describe("decideStageAction — uncategorised TDD pause names the failed phases 
     });
   });
 
-  test("keeps the bare reason when no phase output reports a failure", async () => {
+  test("keeps the bare reason when the verdict names no failed phase", async () => {
     const ctx = makeTestContext({ interaction: undefined });
     const planResult = makePlanResult({ success: false });
     const inspection = makeInspection({ failureCategory: undefined });

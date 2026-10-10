@@ -422,11 +422,20 @@ export async function runPostRectificationResume(
  * validate-short-circuit exit with no remaining findings `provisional`: it handed
  * the undecided phases to the resume, so its `success: false` was never a verdict.
  * Left alone it lists `rectification` as the story's only failed phase and the
- * story pauses with every gate green. Any other rectification outcome is final.
+ * story pauses with every gate green.
+ *
+ * Settles only when every OTHER phase output passes, so a provisional outcome can
+ * never mask a real failure (e.g. one a later non-blocking-fix pass left behind).
+ * `exitReason` is kept as the record of how the cycle ended; `settledBy` says why
+ * the outcome is nonetheless a success. Any non-provisional outcome is final.
  */
-export function settleProvisionalRectification(phaseOutputs: Record<string, unknown>): void {
-  const rect = phaseOutputs.rectification as { provisional?: boolean; finalFindingsCount?: number } | undefined;
-  if (rect?.provisional !== true || rect.finalFindingsCount !== 0) return;
+export function settleProvisionalRectification(phaseOutputs: Record<string, unknown>, storyId?: string): void {
+  const rect = phaseOutputs.rectification as { provisional?: boolean } | undefined;
+  if (rect?.provisional !== true) return;
+  const othersPassed = Object.entries(phaseOutputs).every(
+    ([name, output]) => name === "rectification" || phasePassed(name, output, storyId),
+  );
+  if (!othersPassed) return;
   const { provisional: _settled, ...rest } = rect;
   phaseOutputs.rectification = { ...rest, success: true, settledBy: "resume" };
 }
