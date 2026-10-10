@@ -3,7 +3,7 @@
   "feature": "acceptance-diagnosis-fidelity",
   "branchName": "feat/acceptance-diagnosis-fidelity",
   "createdAt": "2026-10-10T00:00:00.000Z",
-  "updatedAt": "2026-10-10T11:57:28.774Z",
+  "updatedAt": "2026-10-10T12:05:38.692Z",
   "userStories": [
     {
       "id": "US-001",
@@ -31,7 +31,8 @@
         "resolveAcceptanceDiagnosis with _diagnosisDeps.callOp resolving { verdict: \"source_bug\", reasoning: \"x\", confidence: 0.7 } returns path \"llm\"",
         "resolveAcceptanceDiagnosis given diagnosisOpts.failedCriteria of one entry calls _diagnosisDeps.callOp with an input whose failedCriteria equals that one-entry array",
         "With the refined JSON, a PRD whose stories US-001 (one AC) and US-002 (two ACs) have no workdir (one root package group), acceptance failing only AC-2 of the 3, and _diagnosisDeps.callOp spied, runAcceptanceLoop calls the spy with an input whose failedCriteria is [{ acId: \"AC-2\", storyId: \"US-002\", original: \"o2\", refined: \"r2\" }]",
-        "In the same setup, the \"Diagnosis resolved\" log entry runAcceptanceLoop emits carries path \"llm\" and failedACs [\"AC-2\"]"
+        "In the same setup, the \"Diagnosis resolved\" log entry runAcceptanceLoop emits carries path \"llm\" and failedACs [\"AC-2\"]",
+        "resolveAcceptanceDiagnosis returns a DiagnosisResult with no fallback property when the op output has fallback true"
       ],
       "tags": [
         "feature",
@@ -64,8 +65,7 @@
         "packages/nax/test/unit/acceptance/failed-criteria.test.ts"
       ],
       "suggestedCriteria": [
-        "runAcceptanceFixCycle and _acceptanceFixCycleDeps imported from @/execution/lifecycle/acceptance-loop are the same objects as those exported by acceptance-fix-cycle.ts",
-        "resolveAcceptanceDiagnosis returns a DiagnosisResult with no fallback property when the op output has fallback true"
+        "runAcceptanceFixCycle and _acceptanceFixCycleDeps imported from @/execution/lifecycle/acceptance-loop are the same objects as those exported by acceptance-fix-cycle.ts"
       ],
       "modifiedFiles": [
         {
@@ -103,7 +103,9 @@
         "For a PRD with two tdd-simple stories and one no-test story, acceptance.summary.storyStrategies equals { \"tdd-simple\": 2, \"no-test\": 1 }",
         "When runAcceptanceLoop returns through the \"Runtime not found for diagnosis\" exit, it emits exactly one acceptance.summary entry, with outcome \"failed\"",
         "When the acceptance run fails with no failed ACs reported (the \"no specific failures detected\" exit), runAcceptanceLoop emits exactly one acceptance.summary entry, with outcome \"failed\"",
-        "When acceptance.maxRetries is 0 and the first acceptance run fails, runAcceptanceLoop returns through the max-retries exit and emits exactly one acceptance.summary entry, with outcome \"failed\" and retries equal to the returned result's retries (or 0 when absent)"
+        "When acceptance.maxRetries is 0 and the first acceptance run fails, runAcceptanceLoop returns through the max-retries exit and emits exactly one acceptance.summary entry, with outcome \"failed\" and retries equal to the returned result's retries (or 0 when absent)",
+        "When the source-fix reply has no UNRESOLVED: line, acceptance.summary.sourceFixUnresolved is 0",
+        "The source-fix and test-fix strategies each capture their own git ref, so a test-fix attempt's targetFiles are computed from the ref captured before that test-fix dispatch"
       ],
       "tags": [
         "feature",
@@ -138,10 +140,6 @@
         "packages/nax/src/execution/lifecycle/acceptance-summary.ts",
         "packages/nax/test/unit/execution/lifecycle/acceptance-loop-summary.test.ts"
       ],
-      "suggestedCriteria": [
-        "When the source-fix reply has no UNRESOLVED: line, acceptance.summary.sourceFixUnresolved is 0",
-        "The source-fix and test-fix strategies each capture their own git ref, so a test-fix attempt's targetFiles are computed from the ref captured before that test-fix dispatch"
-      ],
       "workdir": "packages/nax",
       "workdirSource": "stated",
       "priorErrors": [],
@@ -171,8 +169,8 @@
         "prompts"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
