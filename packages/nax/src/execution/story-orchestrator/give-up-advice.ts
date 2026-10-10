@@ -13,6 +13,7 @@ import type { AdviceDecision, Advisor, AdvisorCallContext, MenuFacts } from "@/a
 import { buildMenu, countStoryRulings, createAdvisor, readDecisions } from "@/advisor";
 import { featureDir, isAdvisorCallerEnabled, resolveAdvisorConfig } from "@/config";
 import type { Finding, FixStrategy, GiveUpInput, GiveUpResolution } from "@/findings";
+import { compareSeverity } from "@/findings";
 import type { CallContext } from "@/operations";
 
 export const _giveUpAdviceDeps = {
@@ -31,6 +32,11 @@ export interface GiveUpHookArgs {
   strategies: readonly AnyStrategy[];
   isThreeSession: boolean;
   nbfPath: boolean;
+}
+
+/** The most severe finding decides the forced-confirm rule (a waive drops them all). */
+function worstSeverity(findings: readonly Finding[]): string | undefined {
+  return [...findings].sort((a, b) => compareSeverity(b.severity, a.severity))[0]?.severity;
 }
 
 function flip(f: Finding, to: "test" | "source"): Finding {
@@ -147,7 +153,7 @@ export function buildGiveUpHook(args: GiveUpHookArgs): Hook | undefined {
         ],
         options: buildMenu(facts),
       },
-      { findingSeverity: input.findings[0]?.severity },
+      { findingSeverity: worstSeverity(input.findings) },
     );
     return decision ? resolution(decision, args, input) : null;
   };

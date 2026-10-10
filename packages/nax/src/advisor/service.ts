@@ -21,7 +21,7 @@ import type { AdviceAuditRecord } from "./audit";
 import { captureWorktreePatch, writeAdviceAudit } from "./audit";
 import type { HeadsUpChannel } from "./heads-up";
 import { formatHeadsUp } from "./heads-up";
-import { appendDecision, readDecisions } from "./ledger";
+import { appendDecision, readTrustedDecisions } from "./ledger";
 import { forcedConfirm, toAction } from "./menus";
 import type { AdviceDecision, AdviceQuestion, AdviceResult, AdvisorReply } from "./types";
 
@@ -87,7 +87,8 @@ interface OpRun {
 }
 
 async function prepare(actx: AdvisorCallContext, draft: QuestionDraft): Promise<Asked> {
-  const priorDecisions = await readDecisions(actx.repoRoot, actx.feature);
+  // Only decisions the advisor itself wrote (audit artifact matches) inform the next one.
+  const priorDecisions = await readTrustedDecisions(actx.repoRoot, actx.feature, actx.outputDir);
   const worktree = await _advisorServiceDeps.captureWorktreePatch(actx.workdir);
   const question: AdviceQuestion = { ...draft, id: _advisorServiceDeps.newId(), askedAtSha: worktree.sha };
   const prdText = await _advisorServiceDeps.readPrdText(actx.repoRoot, actx.feature);
@@ -129,15 +130,21 @@ async function runOp(actx: AdvisorCallContext, asked: Asked): Promise<OpRun> {
     return first;
   }
   if (!entry.opened) return first;
-  // The warm session was lost or confused: rebuild it from the ledger and retry once.
+  // The warm session was lost or confused: rebuild it from the ledger and retry once,
+  // then fall back to one stateless call for this question (spec §4.5).
   entry.opened = false;
   const retry = await callOnce(actx, asked, false, true);
-  if (retry.out?.ok) entry.opened = true;
-  return retry;
+  if (retry.out?.ok) {
+    entry.opened = true;
+    return retry;
+  }
+  return callOnce(actx, asked, false, false);
 }
 
 function warmEntry(actx: AdvisorCallContext): { opened: boolean; tail: Promise<unknown> } {
-  const key = `${actx.runId}|${actx.feature}`;
+  // The agent session's own identity: run, feature, story (or feature-level) and workdir.
+  // A coarser key would send a brand-new session a "continuation" with no context.
+  const key = `${actx.runId}|${actx.feature}|${actx.callCtx.storyId ?? "_feature"}|${actx.workdir}`;
   const existing = warmSessions.get(key);
   if (existing) return existing;
   const created = { opened: false, tail: Promise.resolve() as Promise<unknown> };
@@ -263,6 +270,21 @@ async function decide(actx: AdvisorCallContext, asked: Asked, run: OpRun, severi
   }
 }
 
+/** Every failure — including one before the op runs (worktree snapshot, ledger read) — is a fallback, never a throw. */
+async function adviseSafely(actx: AdvisorCallContext, draft: QuestionDraft, severity?: string): Promise<AdviceResult> {
+  try {
+    return await adviseOnce(actx, draft, severity);
+  } catch (err) {
+    const fallbackReason = `advisor error: ${errorMessage(err)}`;
+    getSafeLogger()?.warn("advisor", "Advisor failed — caller keeps today's behaviour", {
+      storyId: draft.storyId ?? "_run",
+      kind: draft.kind,
+      reason: fallbackReason,
+    });
+    return { decision: null, fallbackReason };
+  }
+}
+
 function logOutcome(question: AdviceQuestion, result: AdviceResult): void {
   const logger = getSafeLogger();
   const base = { storyId: question.storyId ?? "_run", questionId: question.id, kind: question.kind };
@@ -319,7 +341,7 @@ async function recordReuseImpl(
 export function createAdvisor(actx: AdvisorCallContext): Advisor {
   return {
     advise(question, opts) {
-      const run = () => adviseOnce(actx, question, opts?.findingSeverity);
+      const run = () => adviseSafely(actx, question, opts?.findingSeverity);
       if (configOf(actx).memory !== "warm") return run();
       // Warm: serialise this feature's questions on one session.
       const entry = warmEntry(actx);

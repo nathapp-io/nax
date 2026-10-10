@@ -35,7 +35,12 @@ function parseLines(text: string, path: string): AdviceDecision[] {
   for (const line of text.split("\n")) {
     if (line.trim() === "") continue;
     try {
-      out.push(JSON.parse(line) as AdviceDecision);
+      const parsed: unknown = JSON.parse(line);
+      if (typeof parsed === "object" && parsed !== null && typeof (parsed as { id?: unknown }).id === "string") {
+        out.push(parsed as AdviceDecision);
+      } else {
+        getSafeLogger()?.warn("advisor", "Skipping a ledger line that is not a decision", { storyId: "_run", path });
+      }
     } catch {
       getSafeLogger()?.warn("advisor", "Skipping unreadable ledger line", { storyId: "_run", path });
     }
@@ -90,12 +95,26 @@ export async function readTrustedDecisions(
   outputDir: string,
 ): Promise<AdviceDecision[]> {
   const all = await readDecisions(repoRoot, feature);
-  const checks = await Promise.all(
-    all.map(async (d) => {
-      const ref = d.auditRef;
-      if (!ref || isAbsolute(ref) || ref.split(/[\\/]/).includes("..")) return false;
-      return Bun.file(join(outputDir, ref)).exists();
-    }),
-  );
+  const checks = await Promise.all(all.map((d) => auditMatches(d, outputDir)));
   return all.filter((_, i) => checks[i]);
+}
+
+/** The audit artifact exists AND records this very decision (id, action type, dedupe key, story). */
+async function auditMatches(d: AdviceDecision, outputDir: string): Promise<boolean> {
+  const ref = d.auditRef;
+  if (!ref || isAbsolute(ref) || ref.split(/[\\/]/).includes("..")) return false;
+  const text = await _ledgerDeps.readText(join(outputDir, ref)).catch(() => null);
+  if (text === null) return false;
+  try {
+    const rec = (JSON.parse(text) as { result?: { decision?: AdviceDecision | null } }).result?.decision;
+    return (
+      rec?.id === d.id &&
+      rec.action?.type === d.action?.type &&
+      rec.dedupeKey === d.dedupeKey &&
+      rec.storyId === d.storyId
+    );
+  } catch {
+    // An unreadable artifact proves nothing about the line: not trusted.
+    return false;
+  }
 }

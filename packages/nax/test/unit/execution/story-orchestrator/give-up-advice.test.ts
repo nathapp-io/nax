@@ -68,12 +68,14 @@ function setup(
   opts: { enabled?: boolean; maxRulings?: number } = {},
 ) {
   const asked: QuestionDraft[] = [];
+  const severities: (string | undefined)[] = [];
   const actxs: AdvisorCallContext[] = [];
   _giveUpAdviceDeps.createAdvisor = (actx) => {
     actxs.push(actx);
     const advisor: Advisor = {
-      advise: async (q) => {
+      advise: async (q, opts) => {
         asked.push(q);
+        severities.push(opts?.findingSeverity);
         return reply(q);
       },
       recordReuse: async () => null,
@@ -91,7 +93,7 @@ function setup(
   });
   const ctx = makeMockCallContext({ config, storyId: "US-1", featureName: "feat", packageDir: dir });
   runtimes.push(ctx.runtime);
-  return { ctx, asked, actxs };
+  return { ctx, asked, actxs, severities };
 }
 
 const decided = (action: AdviceAction, extra: Partial<AdviceDecision> = {}): AdviceResult => ({
@@ -229,6 +231,21 @@ describe("buildGiveUpHook", () => {
       await callHook({ ctx, strategies: [implementer], isThreeSession: true, nbfPath: false }, input());
       actxs[0]?.queueHeadsUp?.("US-1", "hello");
       expect(ctx.runtime.advisorHeadsUps.drain("US-1")).toEqual(["hello"]);
+    });
+  });
+});
+
+describe("buildGiveUpHook — severity for the forced-confirm rule", () => {
+  test("uses the most severe finding, not the first", async () => {
+    await withTempDir(async (dir) => {
+      const { ctx, severities } = setup(dir, () => ({ decision: null }));
+      const warn: Finding = { ...finding, severity: "warning" };
+      const crit: Finding = { ...finding, severity: "critical", message: "data loss" };
+      await callHook(
+        { ctx, strategies: [implementer], isThreeSession: true, nbfPath: false },
+        input({ findings: [warn, crit] }),
+      );
+      expect(severities).toEqual(["critical"]);
     });
   });
 });

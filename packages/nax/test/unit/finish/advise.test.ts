@@ -111,7 +111,7 @@ describe("createFinishAdvisor.judged", () => {
       dedupeKey: dedupeKeyFor("quality", f),
       auditRef: `advisor-audit/feat/${id}.json`,
     }));
-    await Bun.write(join(dir, "out", d.auditRef), "{}");
+    await Bun.write(join(dir, "out", d.auditRef), JSON.stringify({ result: { decision: d } }));
   }
 
   test("a waived finding re-raised with new wording reuses the decision, no new question (Review Focus 5)", async () => {

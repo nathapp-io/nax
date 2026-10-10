@@ -49,7 +49,7 @@ describe("recordAdvisorSummary", () => {
       const real = await appendDecision(dir, "feat", (id) =>
         draft({ needsHumanConfirm: true, auditRef: `advisor-audit/feat/${id}.json` }),
       );
-      await Bun.write(join(out, real.auditRef), "{}");
+      await Bun.write(join(out, real.auditRef), JSON.stringify({ result: { decision: real } }));
       await appendDecision(dir, "feat", draft({ auditRef: "advisor-audit/feat/forged.json" }));
       const w = writer();
       const config = makeNaxConfig({ advisor: { ...ADVISOR_DEFAULTS, enabled: true } });

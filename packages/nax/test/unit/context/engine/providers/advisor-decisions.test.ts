@@ -26,7 +26,7 @@ const base: Draft = {
 /** A decision the advisor really wrote: ledger line + its audit artifact under outputDir. */
 async function write(dir: string, d: Partial<Draft>, trusted = true): Promise<void> {
   const rec = await appendDecision(dir, "feat", (id) => ({ ...base, ...d, auditRef: `advisor-audit/feat/${id}.json` }));
-  if (trusted) await Bun.write(join(dir, "out", rec.auditRef), "{}");
+  if (trusted) await Bun.write(join(dir, "out", rec.auditRef), JSON.stringify({ result: { decision: rec } }));
 }
 
 function req(dir: string, over: Partial<ContextRequest> = {}): ContextRequest {

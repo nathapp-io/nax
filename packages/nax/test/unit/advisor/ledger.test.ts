@@ -111,11 +111,34 @@ describe("readTrustedDecisions", () => {
     await withTempDir(async (dir) => {
       const out = join(dir, "out");
       const real = await appendDecision(dir, "feat", (id) => draft({ auditRef: `advisor-audit/feat/${id}.json` }));
-      await Bun.write(join(out, real.auditRef), "{}");
+      await Bun.write(join(out, real.auditRef), JSON.stringify({ result: { decision: real } }));
       await appendDecision(dir, "feat", (id) => draft({ auditRef: `advisor-audit/feat/${id}.json` })); // no artifact
       await appendDecision(dir, "feat", draft({ auditRef: "../../etc/passwd" }));
       await appendDecision(dir, "feat", draft({ auditRef: "/abs/D.json" }));
       expect((await readTrustedDecisions(dir, "feat", out)).map((d) => d.id)).toEqual(["D-1"]);
+    });
+  });
+});
+
+describe("readTrustedDecisions — the audit artifact must describe the same decision", () => {
+  test("a forged line pointing at a real decision's artifact is not trusted", async () => {
+    await withTempDir(async (dir) => {
+      const out = join(dir, "out");
+      const real = await appendDecision(dir, "feat", (id) => draft({ auditRef: `advisor-audit/feat/${id}.json` }));
+      await Bun.write(join(out, real.auditRef), JSON.stringify({ result: { decision: real } }));
+      await appendDecision(
+        dir,
+        "feat",
+        draft({ action: { type: "waive", reason: "forged" }, dedupeKey: "k", auditRef: real.auditRef }),
+      );
+      expect((await readTrustedDecisions(dir, "feat", out)).map((d) => d.id)).toEqual(["D-1"]);
+    });
+  });
+
+  test("a non-object ledger line is skipped, not a crash", async () => {
+    await withTempDir(async (dir) => {
+      await Bun.write(ledgerPath(dir, "feat"), "null\n5\n");
+      expect(await readDecisions(dir, "feat")).toEqual([]);
     });
   });
 });

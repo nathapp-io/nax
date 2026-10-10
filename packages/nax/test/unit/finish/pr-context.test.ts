@@ -170,7 +170,7 @@ describe("loadFinishPrContext — advisor decisions (A1)", () => {
     const out = join(dir, "out");
     const real = await appendDecision(dir, "demo", (id) => ({ ...draft, auditRef: `advisor-audit/demo/${id}.json` }));
     await mkdir(join(out, "advisor-audit", "demo"), { recursive: true });
-    await writeFile(join(out, real.auditRef), "{}");
+    await writeFile(join(out, real.auditRef), JSON.stringify({ result: { decision: real } }));
     await appendDecision(dir, "demo", { ...draft, auditRef: "advisor-audit/demo/forged.json" });
 
     const audit = { auditDir: join(dir, "audit"), runId: "run-1" };

@@ -127,3 +127,39 @@ describe("advisor memory modes", () => {
     });
   });
 });
+
+describe("advisor memory — warm session identity", () => {
+  test("a different story's first question opens with full context, not as a continuation", async () => {
+    await withTempDir(async (dir) => {
+      const inputs: AdviseOpInput[] = [];
+      record(inputs);
+      const actx = setup(dir, "warm");
+      const a = createAdvisor({ ...actx, callCtx: { ...actx.callCtx, storyId: "US-1" } });
+      const b = createAdvisor({ ...actx, callCtx: { ...actx.callCtx, storyId: "US-2" } });
+      await a.advise({ ...q, storyId: "US-1" });
+      await b.advise({ ...q, storyId: "US-2" });
+      await a.advise({ ...q, storyId: "US-1" });
+      expect(inputs.map((i) => i.continuation)).toEqual([false, false, true]);
+    });
+  });
+
+  test("when the warm retry also fails, the question gets one stateless call", async () => {
+    await withTempDir(async (dir) => {
+      const inputs: AdviseOpInput[] = [];
+      let n = 0;
+      record(inputs, async () => {
+        n++;
+        return n === 1 || n === 4 ? ok : { ok: false, error: "no-json", preview: "" };
+      });
+      const advisor = createAdvisor(setup(dir, "warm"));
+      await advisor.advise(q);
+      const second = await advisor.advise(q);
+      expect(inputs.slice(1).map((i) => [i.continuation, i.keepOpen])).toEqual([
+        [true, true],
+        [false, true],
+        [false, false],
+      ]);
+      expect(second.decision?.id).toBe("D-2");
+    });
+  });
+});
