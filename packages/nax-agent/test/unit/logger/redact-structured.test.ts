@@ -159,6 +159,24 @@ describe("redactSecrets: values that are not secrets", () => {
     expect(out).toContain("[REDACTED]");
   });
 
+  // Issue #2428 pins for the url-credentials scheme match:
+  // The lookbehind must keep `\b`'s semantics — a scheme start preceded by a
+  // scheme char (not a word char) is still a match start.
+  test("still masks a scheme start preceded by a scheme char", () => {
+    expect(mask("1-http://u:p@h")).toBe("1-[REDACTED]h");
+    expect(mask("a-b-c://x:y@h")).toBe("[REDACTED]h");
+  });
+
+  test("masks credentials after a scheme longer than 32 characters", () => {
+    const input = "z".repeat(33) + "http://u:p@h";
+    expect(mask(input)).toBe("[REDACTED]h");
+    expect(redactEntry({ message: input }).message).toBe("[REDACTED]h");
+  });
+
+  test("preserves non-secret scheme runs beside credential URLs", () => {
+    expect(mask("a-b-c plain https://example.com http://u:p@h")).toBe("a-b-c plain https://example.com [REDACTED]h");
+  });
+
   test("is idempotent", () => {
     const once = mask('API_TOKEN=abc {"apiKey": "x"}');
     expect(mask(once)).toBe(once);
@@ -177,11 +195,23 @@ describe("redactSecrets: bounded cost", () => {
     ["separators and whitespace", `token${" ".repeat(MB)}=`],
     ["escape runs", `\\"secret\\"${"\\".repeat(MB)}`],
     ["key-shaped runs", "API_TOKEN_".repeat(MB / 10)],
+    // Issue #2428: the url-credentials scheme match was quadratic on long
+    // dash-separated runs that never reach "://" — every word-boundary start
+    // position rescanned the run. The scanner now consumes failed scheme
+    // runs once without masking them.
+    ["dash-separated run", "a-b-c-d-".repeat(MB / 8)],
   ];
 
   test.each(adversarial)("a 1 MB input completes quickly: %s", (_name, input) => {
     const start = performance.now();
     mask(input);
+    expect(performance.now() - start).toBeLessThan(2000);
+  });
+
+  test("a 1 MB scheme is masked without rescanning", () => {
+    const input = `${"a-b-c-d-".repeat(MB / 8)}http://u:p@h`;
+    const start = performance.now();
+    expect(mask(input)).toBe("[REDACTED]h");
     expect(performance.now() - start).toBeLessThan(2000);
   });
 });

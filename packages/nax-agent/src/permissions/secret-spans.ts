@@ -42,12 +42,14 @@ function referencesVariable(kind: string, match: string): boolean {
 }
 
 function rawSpans(text: string): readonly SecretSpan[] {
-  return SECRET_VALUE_PATTERNS.flatMap(({ kind, re }) => {
+  return SECRET_VALUE_PATTERNS.flatMap(({ kind, re, acceptMatch }) => {
     // A private copy: the shared /g regex carries lastIndex between callers.
     const scan = new RegExp(re.source, re.flags);
     const found: SecretSpan[] = [];
     for (let m = scan.exec(text); m !== null; m = scan.exec(text)) {
-      if (!referencesVariable(kind, m[0])) found.push({ start: m.index, end: m.index + m[0].length, kind });
+      if ((!acceptMatch || acceptMatch(m[0])) && !referencesVariable(kind, m[0])) {
+        found.push({ start: m.index, end: m.index + m[0].length, kind });
+      }
     }
     return found;
   });
