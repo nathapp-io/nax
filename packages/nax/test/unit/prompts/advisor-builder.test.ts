@@ -46,6 +46,15 @@ describe("buildAdvisorPrompt", () => {
     expect(p).toContain('"optionId"');
   });
 
+  test("supersede is limited to a spec that cannot stand; disagreeing with a spec choice is a hold", () => {
+    const p = buildAdvisorPrompt({ question, specPath: "s", prdText: "{}", priorDecisions: [], continuation: false });
+    // A go-live replay superseded a spec's stated trade-off to match drifted code (spec §9 unsafe class).
+    expect(p).toContain("even when the code's choice looks better");
+    expect(p).toContain("only when the spec cannot stand as written");
+    expect(p).toContain("choose hold");
+    expect(p).not.toContain("The spec wins unless its premise is wrong");
+  });
+
   test("a continuation turn sends only the new question, not the PRD or the policy again", () => {
     const p = buildAdvisorPrompt({
       question,
