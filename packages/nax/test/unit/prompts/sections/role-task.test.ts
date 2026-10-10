@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { applyProtocolRegions, PROTOCOL_REGION_MARKER_PREFIX } from "@/prompts/sections";
-import { buildRoleTaskSection } from "@/prompts/sections/role-task";
+import {
+  buildRoleTaskSection,
+  EDGE_CASE_RULE,
+  NO_TEST_AC_CHECK_RULE,
+  NO_TEST_WIRING_RULE,
+  WIRING_RULE,
+} from "@/prompts/sections/role-task";
 
 // ---------------------------------------------------------------------------
 // AC-1: implementer standard
@@ -409,6 +415,72 @@ describe("buildRoleTaskSection — test-writer RED state", () => {
       expect(text).not.toContain("is the expected RED state");
       expect(text).not.toContain("nax commits the files you changed");
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// US-003: single-session edge-case and wiring rules
+// ---------------------------------------------------------------------------
+
+describe("US-003: single-session prompt rules — exported constants", () => {
+  test("EDGE_CASE_RULE is the normative edge-case rule line (AC8)", () => {
+    expect(EDGE_CASE_RULE).toBe(
+      "- Edge cases: for every AC that names a limit, boundary, empty or zero input, malformed input, or an error it raises or returns, write a test for that case, not only the success path.",
+    );
+  });
+
+  test("WIRING_RULE is the normative wiring rule line", () => {
+    expect(WIRING_RULE).toBe(
+      "- Wiring: every function, class or module you add must be called from production code (the entry point the story names, or an existing production caller); code that only tests call is not done. When an AC names an entry point (route, command, event, scheduled job), at least one test enters through it.",
+    );
+  });
+
+  test("NO_TEST_AC_CHECK_RULE is the normative AC-check rule line (AC8)", () => {
+    expect(NO_TEST_AC_CHECK_RULE).toBe(
+      "- AC check: before committing, map every AC to the code that satisfies it and list the mapping in the commit body, one line per AC: AC-N: <file>#<symbol>.",
+    );
+  });
+
+  test("NO_TEST_WIRING_RULE is the normative no-test wiring rule line", () => {
+    expect(NO_TEST_WIRING_RULE).toBe(
+      "- Wiring: every function, class or module you add must be reachable from an existing production caller; do not leave code that nothing calls.",
+    );
+  });
+});
+
+describe("US-003: single-session prompt rules — rendering", () => {
+  test("AC1: tdd-simple includes EDGE_CASE_RULE", () => {
+    expect(buildRoleTaskSection("tdd-simple")).toContain(EDGE_CASE_RULE);
+  });
+
+  test("AC2: tdd-simple includes WIRING_RULE", () => {
+    expect(buildRoleTaskSection("tdd-simple")).toContain(WIRING_RULE);
+  });
+
+  test("AC3: batch includes both EDGE_CASE_RULE and WIRING_RULE", () => {
+    const result = buildRoleTaskSection("batch");
+    expect(result).toContain(EDGE_CASE_RULE);
+    expect(result).toContain(WIRING_RULE);
+  });
+
+  test("AC4: no-test includes NO_TEST_AC_CHECK_RULE and NO_TEST_WIRING_RULE", () => {
+    const result = buildRoleTaskSection("no-test");
+    expect(result).toContain(NO_TEST_AC_CHECK_RULE);
+    expect(result).toContain(NO_TEST_WIRING_RULE);
+  });
+
+  test("AC5: no-test does not include EDGE_CASE_RULE", () => {
+    expect(buildRoleTaskSection("no-test")).not.toContain(EDGE_CASE_RULE);
+  });
+
+  test("AC6: no-test still includes '- Do NOT create or modify test files'", () => {
+    expect(buildRoleTaskSection("no-test")).toContain("- Do NOT create or modify test files");
+  });
+
+  test("AC7: implementer standard includes neither EDGE_CASE_RULE nor WIRING_RULE", () => {
+    const result = buildRoleTaskSection("implementer", "standard");
+    expect(result).not.toContain(EDGE_CASE_RULE);
+    expect(result).not.toContain(WIRING_RULE);
   });
 });
 

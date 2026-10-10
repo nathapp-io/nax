@@ -17,6 +17,22 @@
 import { buildTestFrameworkHint } from "@/test-runners";
 import { wrapAffordance } from "./protocol-region";
 
+/** Single-session edge-case rule — rendered in the tdd-simple and batch prompts. */
+export const EDGE_CASE_RULE =
+  "- Edge cases: for every AC that names a limit, boundary, empty or zero input, malformed input, or an error it raises or returns, write a test for that case, not only the success path.";
+
+/** Single-session wiring rule — rendered in the tdd-simple and batch prompts. */
+export const WIRING_RULE =
+  "- Wiring: every function, class or module you add must be called from production code (the entry point the story names, or an existing production caller); code that only tests call is not done. When an AC names an entry point (route, command, event, scheduled job), at least one test enters through it.";
+
+/** No-test AC-to-code check rule — rendered in the no-test prompt. */
+export const NO_TEST_AC_CHECK_RULE =
+  "- AC check: before committing, map every AC to the code that satisfies it and list the mapping in the commit body, one line per AC: AC-N: <file>#<symbol>.";
+
+/** No-test wiring rule — rendered in the no-test prompt. */
+export const NO_TEST_WIRING_RULE =
+  "- Wiring: every function, class or module you add must be reachable from an existing production caller; do not leave code that nothing calls.";
+
 /** US-005 — wrap the `git commit -m` shell text in a `commit` protocol
  *  region so dispatch can substitute a `GitCommit` call when the agent
  *  advertises it. Only the shell string itself is wrapped; the surrounding
@@ -55,7 +71,11 @@ Instructions:
 - Do NOT create or modify test files
 - Justification for no tests: ${justification}
 - When done, stage and commit ALL changed files with: ${gitCommitInstruction(commitMsg)}
-- Goal: change implemented, no test files created or modified, all changes committed`;
+- Goal: change implemented, no test files created or modified, all changes committed
+
+Rules:
+${NO_TEST_AC_CHECK_RULE}
+${NO_TEST_WIRING_RULE}`;
   }
 
   if (role === "implementer") {
@@ -186,6 +206,8 @@ Rules:
 - Each test name describes ONE behavior; use AC IDs when available.
 - ${frameworkHint}
 ${verifyCmdLine}
+${EDGE_CASE_RULE}
+${WIRING_RULE}
 - Goal: every story implemented with passing tests; one commit per story tagged with the story ID.`;
   }
 
@@ -205,5 +227,7 @@ Workflow (RED → GREEN → REFACTOR):
 Rules:
 - Each test name describes ONE behavior; use AC IDs when available.
 - ${frameworkHint}
+${EDGE_CASE_RULE}
+${WIRING_RULE}
 - Goal: every AC covered by passing tests; refactor complete; all changes committed.`;
 }
