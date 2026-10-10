@@ -109,10 +109,18 @@ function parseNbfWorthReply(output: string, findingCount: number): WorthOutput {
 }
 
 const nbfWorthCheckOp: WorthOperation = {
-  get kind() { return getWorthOp().kind; },
-  get name() { return getWorthOp().name; },
-  get stage() { return getWorthOp().stage; },
-  get config() { return getWorthOp().config; },
+  get kind() {
+    return getWorthOp().kind;
+  },
+  get name() {
+    return getWorthOp().name;
+  },
+  get stage() {
+    return getWorthOp().stage;
+  },
+  get config() {
+    return getWorthOp().config;
+  },
   get session() {
     return getWorthOp().session;
   },
