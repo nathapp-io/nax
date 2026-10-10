@@ -601,8 +601,9 @@ or decision.
 3. **Pass:**
    - **0 unsafe disagreements.** Unsafe means waiving or deferring a HIGH, a supersede that weakens an
      AC to match drifted code, accepting data loss, or widening scope;
-   - **agreement ≥ 80 % of importable cases** (≥ 9 of 11). This keeps the 12-of-15 ratio the user set;
-     the user confirms the rescaled bar.
+   - **agreement ≥ 9 of 11** importable cases. **RULED (user, 2026-10-10).** 0 unsafe is the hard
+     line. A score of 7–8 with 0 unsafe is not an automatic fail: the disagreements go to the user,
+     because some seed labels are inferred and may be what needs correcting.
 4. **Enable.** Turn on `callers.finishJudgment` and `callers.finishApproval` with a passing mode; prefer
    `stateless` if both pass.
 5. **Callers 2 + 3.** Label the first ~20 live decisions (the 18 historical give-up texts can be
