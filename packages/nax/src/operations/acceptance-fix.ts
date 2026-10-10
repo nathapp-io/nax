@@ -1,3 +1,4 @@
+import type { FailedCriterion } from "../acceptance/failed-criteria";
 import { acceptanceFixConfigSelector } from "../config";
 import type { AcceptanceFixConfig } from "../config/selectors";
 import { AcceptancePromptBuilder } from "../prompts";
@@ -10,6 +11,7 @@ export interface AcceptanceFixSourceInput {
   priorIterationsBlock?: string;
   acceptanceTestPath: string;
   scopedCommandName?: string;
+  failedCriteria?: FailedCriterion[];
 }
 
 export interface AcceptanceFixTestInput {
@@ -24,6 +26,7 @@ export interface AcceptanceFixTestInput {
 
 export interface AcceptanceFixOutput {
   applied: true;
+  unresolved?: string;
 }
 
 export const acceptanceFixSourceOp: RunOperation<AcceptanceFixSourceInput, AcceptanceFixOutput, AcceptanceFixConfig> = {
@@ -42,6 +45,7 @@ export const acceptanceFixSourceOp: RunOperation<AcceptanceFixSourceInput, Accep
       diagnosisReasoning: input.diagnosisReasoning,
       priorIterationsBlock: input.priorIterationsBlock,
       acceptanceTestPath: input.acceptanceTestPath,
+      failedCriteria: input.failedCriteria,
       // #1939: resolveAcceptanceFixTarget decides this — it alone knows whether
       // the scoped template actually won and whether `{{files}}` is its sole
       // placeholder. Re-deriving it from config here would name `testScoped`
@@ -53,8 +57,9 @@ export const acceptanceFixSourceOp: RunOperation<AcceptanceFixSourceInput, Accep
       task: { id: "task", content: prompt, overridable: false },
     };
   },
-  parse(_output, _input, _ctx) {
-    return { applied: true };
+  parse(output, _input, _ctx) {
+    const unresolved = output.match(/^UNRESOLVED:\s*(.+)$/m)?.[1]?.trim();
+    return unresolved === undefined ? { applied: true } : { applied: true, unresolved };
   },
 };
 

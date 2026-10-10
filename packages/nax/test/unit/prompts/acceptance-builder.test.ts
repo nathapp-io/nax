@@ -153,6 +153,56 @@ describe("builder.buildGeneratorFromSpecPrompt()", () => {
 
 // ─── buildDiagnosisPromptTemplate ────────────────────────────────────────────
 
+describe("builder.buildDiagnosisPrompt() (US-001)", () => {
+  const criterion = { acId: "AC-2", storyId: "US-002", original: "o2", refined: "r2" };
+  const base = { testOutput: "(fail) AC-2", sourceFiles: [] };
+
+  test("US-001 AC8: renders refined criterion and differing spec wording", () => {
+    const prompt = builder.buildDiagnosisPrompt({ ...base, failedCriteria: [criterion] });
+    expect({
+      criterion: prompt.includes("AC-2 [US-002]: r2"),
+      specWording: prompt.includes("  Spec wording: o2"),
+    }).toEqual({ criterion: true, specWording: true });
+  });
+
+  test("US-001 AC9: omits spec wording when original equals refined", () => {
+    const prompt = builder.buildDiagnosisPrompt({
+      ...base,
+      failedCriteria: [{ ...criterion, acId: "AC-3", original: "o3", refined: "o3" }],
+    });
+    expect(prompt).not.toContain("Spec wording:");
+  });
+
+  test("US-001 AC10-11: renders unavailable fallback and decision rule", () => {
+    const prompt = builder.buildDiagnosisPrompt(base);
+    expect(prompt).toContain(
+      "FAILING ACCEPTANCE CRITERIA: (criterion text unavailable — judge from the test file and the output)",
+    );
+    const ruleIndex = prompt.indexOf("DECISION RULE:");
+    const testBugRule =
+      "- test_bug: the failing assertion depends on a name, literal, shape, file path, import path, fixture or setup step that the criterion text does not state.";
+    expect({ hasHeader: ruleIndex >= 0, ruleAfterHeader: prompt.indexOf(testBugRule) > ruleIndex }).toEqual({
+      hasHeader: true,
+      ruleAfterHeader: true,
+    });
+  });
+
+  test("US-001 AC12-13: formats output around failures rather than retaining leading passing lines", () => {
+    const testOutput = [
+      ...Array.from({ length: 100 }, () => "(pass) AC-1: ok [1ms]"),
+      "error: expected 2 got 3",
+      "(fail) AC-2: returns two [1ms]",
+      " 100 pass",
+      " 1 fail",
+    ].join("\n");
+    const prompt = builder.buildDiagnosisPrompt({ ...base, testOutput });
+    expect({
+      includesFailure: prompt.includes("expected 2 got 3"),
+      excludesPass: !prompt.includes("(pass) AC-1: ok"),
+    }).toEqual({ includesFailure: true, excludesPass: true });
+  });
+});
+
 describe("builder.buildDiagnosisPromptTemplate()", () => {
   const base = {
     truncatedOutput: "FAIL: AC-1 assertion error",
@@ -191,6 +241,27 @@ describe("builder.buildDiagnosisPromptTemplate()", () => {
 // ─── buildSourceFixPrompt ─────────────────────────────────────────────────────
 
 describe("builder.buildSourceFixPrompt()", () => {
+  test("US-002 AC1: renders refined failing criteria with story attribution", () => {
+    const prompt = builder.buildSourceFixPrompt({
+      testOutput: "failed",
+      acceptanceTestPath: "/acceptance.test.ts",
+      failedCriteria: [{ acId: "AC-2", storyId: "US-002", original: "o2", refined: "r2" }],
+    });
+    expect(prompt).toContain("FAILING ACCEPTANCE CRITERIA:\nAC-2 [US-002]: r2");
+  });
+
+  test("US-002 AC2: includes the exact source-fix no-shim rules", () => {
+    const prompt = builder.buildSourceFixPrompt({ testOutput: "failed", acceptanceTestPath: "/acceptance.test.ts" });
+    expect(prompt).toContain("SOURCE-FIX RULES:");
+    expect(prompt).toContain(
+      "- If the failing assertion needs something the criteria do not state, make no edit and reply with one line: UNRESOLVED: <AC id> — the test asserts <what> that the criterion does not state.",
+    );
+  });
+
+  test("US-002 AC3: states that criterion text is unavailable when none are supplied", () => {
+    const prompt = builder.buildSourceFixPrompt({ testOutput: "failed", acceptanceTestPath: "/acceptance.test.ts" });
+    expect(prompt).toContain("FAILING ACCEPTANCE CRITERIA: (criterion text unavailable)");
+  });
   const base = {
     testOutput: "  Error: Cannot read property\n(fail) AC-1: null pointer [2ms]\n\n 0 pass\n 1 fail",
     diagnosisReasoning: "Source file has uninitialized field",

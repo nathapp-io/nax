@@ -1,0 +1,16 @@
+{
+  "generatedAt": "2026-10-10T10:41:22.796Z",
+  "acFingerprint": "sha256:36598e223da07bd49de226eb783a227c222db45fb6d907cdb9e6ecc6ee4a1f58",
+  "layoutFingerprint": "sha256:b56f8308bcb5a10008ea1b72f42362a21e8e8f7140b79dd388328f70ae7ea320",
+  "storyCount": 3,
+  "acCount": 48,
+  "generator": "nax",
+  "coverage": [
+    {
+      "testPath": "packages/nax/.nax/features/acceptance-diagnosis-fidelity/.nax-acceptance.test.ts",
+      "expected": 48,
+      "found": 48,
+      "missing": []
+    }
+  ]
+}

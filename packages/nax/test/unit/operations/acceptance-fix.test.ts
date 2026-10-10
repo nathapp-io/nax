@@ -113,6 +113,22 @@ describe("acceptanceFixSourceOp.build()", () => {
 });
 
 describe("acceptanceFixSourceOp.parse()", () => {
+  test("US-002 AC4: returns the unresolved reason signalled by the source fixer", () => {
+    const ctx = makeSourceCtx();
+    const parsed = acceptanceFixSourceOp.parse(
+      "Looked at it.\nUNRESOLVED: AC-2 — the test asserts createClient that the criterion does not state",
+      SOURCE_INPUT,
+      ctx,
+    );
+    expect(parsed.unresolved).toBe("AC-2 — the test asserts createClient that the criterion does not state");
+  });
+
+  test("US-002 AC5: omits unresolved when the source fixer does not give up", () => {
+    const ctx = makeSourceCtx();
+    const parsed = acceptanceFixSourceOp.parse("fixed the bug", SOURCE_INPUT, ctx);
+    expect(parsed).not.toHaveProperty("unresolved");
+  });
+
   test("returns applied: true regardless of output (including empty)", () => {
     const ctx = makeSourceCtx();
     expect(acceptanceFixSourceOp.parse("Fix applied successfully.", SOURCE_INPUT, ctx).applied).toBe(true);

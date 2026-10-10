@@ -15,6 +15,13 @@ export {
 } from "./coverage";
 export type { AcceptanceExecution } from "./execution-description";
 export { _acceptanceExecutionDeps, resolveAcceptanceExecution } from "./execution-description";
+export type { FailedCriterion, RefinedCriterionRecord } from "./failed-criteria";
+export {
+  _failedCriteriaDeps,
+  groupStoryIdsForPackage,
+  loadRefinedCriteria,
+  resolveFailedCriteria,
+} from "./failed-criteria";
 export { loadSourceFilesForDiagnosis } from "./fix-diagnosis";
 export {
   acceptanceTestFilename,

@@ -16,6 +16,7 @@ import { assertDefined, makeNaxConfig, makeTestContext } from "@test/helpers";
 import { promptStage } from "@/pipeline/stages/prompt";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd";
+import { EDGE_CASE_RULE, NO_TEST_AC_CHECK_RULE, WIRING_RULE } from "@/prompts/sections/role-task";
 
 const WORKDIR = `/tmp/nax-test-prompt-${randomUUID()}`;
 
@@ -180,6 +181,39 @@ describe("promptStage.execute() — test-after strategy (unified with tdd-simple
     const ctx = makeCtx("test-after");
     await promptStage.execute(ctx);
     expect(ctx.prompt).toMatch(/RED\s*[—-]/);
+  });
+});
+
+describe("US-003: promptStage.execute() — single-session prompt rules", () => {
+  test("AC9: test-after single-story prompt includes WIRING_RULE", async () => {
+    const ctx = makeCtx("test-after");
+    await promptStage.execute(ctx);
+    expect(ctx.prompt).toContain(WIRING_RULE);
+  });
+
+  test("AC10: no-test single-story prompt with noTestJustification includes NO_TEST_AC_CHECK_RULE", async () => {
+    const story: UserStory = {
+      ...makeStory(),
+      routing: {
+        complexity: "simple",
+        modelTier: "fast",
+        testStrategy: "no-test",
+        noTestJustification: "Pure style change",
+        reasoning: "",
+      },
+    };
+    const ctx = makeCtx("no-test", { story });
+    ctx.stories = [story];
+    await promptStage.execute(ctx);
+    expect(ctx.prompt).toContain(NO_TEST_AC_CHECK_RULE);
+  });
+
+  test("AC11: batch of two stories prompt includes EDGE_CASE_RULE", async () => {
+    const storyOne = makeStory();
+    const storyTwo = { ...makeStory(), id: "US-002", title: "Add logout button" };
+    const ctx = makeCtx("tdd-simple", { stories: [storyOne, storyTwo] });
+    await promptStage.execute(ctx);
+    expect(ctx.prompt).toContain(EDGE_CASE_RULE);
   });
 });
 

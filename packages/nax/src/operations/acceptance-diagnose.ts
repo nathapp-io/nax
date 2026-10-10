@@ -1,3 +1,4 @@
+import type { FailedCriterion } from "../acceptance/failed-criteria";
 import { acceptanceConfigSelector } from "../config";
 import type { AcceptanceConfig } from "../config/selectors";
 import type { Finding } from "../findings";
@@ -11,6 +12,7 @@ export interface AcceptanceDiagnoseInput {
   testFileContent: string;
   acceptanceTestPath?: string;
   sourceFiles: Array<{ path: string; content: string }>;
+  failedCriteria?: FailedCriterion[];
 }
 
 export interface AcceptanceDiagnoseOutput {
@@ -18,12 +20,15 @@ export interface AcceptanceDiagnoseOutput {
   reasoning: string;
   confidence: number;
   findings?: Finding[];
+  cost?: number;
+  fallback?: true;
 }
 
 const FALLBACK: AcceptanceDiagnoseOutput = {
-  verdict: "source_bug",
-  reasoning: "diagnosis failed — falling back to source fix",
+  verdict: "test_bug",
+  reasoning: "diagnosis failed — falling back to test fix",
   confidence: 0,
+  fallback: true,
 };
 
 export const acceptanceDiagnoseOp: RunOperation<AcceptanceDiagnoseInput, AcceptanceDiagnoseOutput, AcceptanceConfig> = {
@@ -40,6 +45,7 @@ export const acceptanceDiagnoseOp: RunOperation<AcceptanceDiagnoseInput, Accepta
       testFileContent: input.testFileContent,
       acceptanceTestPath: input.acceptanceTestPath,
       sourceFiles: input.sourceFiles,
+      failedCriteria: input.failedCriteria,
     });
     return {
       role: { id: "role", content: "", overridable: false },

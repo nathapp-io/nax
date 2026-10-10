@@ -10,6 +10,7 @@
  * Instantiation cost is negligible; builders are short-lived call-and-discard.
  */
 
+import type { FailedCriterion } from "@/acceptance/failed-criteria";
 import type { PRD } from "@/prd/types";
 import { wrapAffordance } from "@/prompts/sections";
 import { buildTestFrameworkHint } from "@/test-runners";
@@ -93,6 +94,7 @@ export interface DiagnosisPromptParams {
   testFileContent?: string;
   acceptanceTestPath?: string;
   sourceFiles: Array<{ path: string; content: string }>;
+  failedCriteria?: FailedCriterion[];
 }
 
 export interface RefinementPromptOptions {
@@ -124,6 +126,7 @@ export interface DiagnosisTemplateParams {
   acceptanceTestPath: string;
   sourceFilesSection: string;
   maxFileLines: number;
+  failedCriteriaSection?: string;
 }
 
 export interface SourceFixParams {
@@ -134,6 +137,7 @@ export interface SourceFixParams {
   acceptanceTestPath: string;
   /** Declared `quality.commands.testScoped` key (#1939) — see buildTestRerunLine. */
   scopedCommandName?: string;
+  failedCriteria?: FailedCriterion[];
 }
 
 export interface TestFixParams {
@@ -294,12 +298,20 @@ TASK: Diagnose whether the failure is due to a bug in the SOURCE CODE or a bug i
 FAILING TEST OUTPUT:
 ${p.truncatedOutput}
 
+${p.failedCriteriaSection ?? "FAILING ACCEPTANCE CRITERIA: (criterion text unavailable — judge from the test file and the output)"}
+
 ACCEPTANCE TEST FILE: ${p.acceptanceTestPath}
 
 (Use Read on the path above to inspect the test code if needed for diagnosis.)
 
 SOURCE FILES (auto-detected from imports, up to ${p.maxFileLines} lines each):
 ${p.sourceFilesSection}
+
+DECISION RULE:
+- Read the acceptance test file before deciding.
+- source_bug: the failing assertion checks behaviour the criterion text states, or that follows directly from it, and the source does not do it.
+- test_bug: the failing assertion depends on a name, literal, shape, file path, import path, fixture or setup step that the criterion text does not state.
+- both: only when different failing assertions fall on different sides of this rule.
 
 Respond with ONLY a JSON object in this exact format (no markdown, no extra text):
 ${responseSchema}`;
@@ -310,6 +322,11 @@ ${responseSchema}`;
     let prompt = "ACCEPTANCE TEST FAILURE — fix the source implementation.\n\n";
     if (p.testCommand) prompt += `Test framework: ${buildTestFrameworkHint(p.testCommand)}\n\n`;
     prompt += `TEST OUTPUT:\n${formatTestOutputForFix(p.testOutput)}\n\n`;
+    const criteria = p.failedCriteria ?? [];
+    prompt += criteria.length
+      ? `FAILING ACCEPTANCE CRITERIA:\n${criteria.map((criterion) => `${criterion.acId} [${criterion.storyId}]: ${criterion.refined}${criterion.original !== criterion.refined ? `\n  Spec wording: ${criterion.original}` : ""}`).join("\n")}\n\n`
+      : "FAILING ACCEPTANCE CRITERIA: (criterion text unavailable)\n\n";
+    prompt += `SOURCE-FIX RULES:\n- Change source only to deliver behaviour the criteria above state.\n- Do not add aliases, wrapper exports, alternate parameter shapes, symlinks, test-only hooks or config shims whose only purpose is to satisfy this test.\n- If the failing assertion needs something the criteria do not state, make no edit and reply with one line: UNRESOLVED: <AC id> — the test asserts <what> that the criterion does not state.\n\n`;
     if (p.diagnosisReasoning) prompt += `DIAGNOSIS:\n${p.diagnosisReasoning}\n\n`;
     if (p.priorIterationsBlock) prompt += p.priorIterationsBlock;
     prompt += `ACCEPTANCE TEST FILE: ${p.acceptanceTestPath}\n\n`;
@@ -366,8 +383,18 @@ Respond with ONLY the fix description (no JSON, no markdown, just the descriptio
    * the full diagnosis prompt via buildDiagnosisPromptTemplate().
    */
   buildDiagnosisPrompt(p: DiagnosisPromptParams): string {
-    const MAX_TEST_OUTPUT_CHARS = 2000;
-    const truncatedOutput = p.testOutput.slice(0, MAX_TEST_OUTPUT_CHARS);
+    const formattedOutput = `${formatTestOutputForFix(p.testOutput)}\n\n${p.testOutput
+      .split("\n")
+      .filter((line) => !/^\s*\(pass\)/.test(line))
+      .join("\n")}`.replace(/^.*\(pass\).*$/gm, "");
+    const criteria = p.failedCriteria?.length
+      ? p.failedCriteria
+          .map(
+            (criterion) =>
+              `${criterion.acId} [${criterion.storyId}]: ${criterion.refined}${criterion.original !== criterion.refined ? `\n  Spec wording: ${criterion.original}` : ""}`,
+          )
+          .join("\n")
+      : undefined;
 
     const sourceFilesSection =
       p.sourceFiles.length > 0
@@ -375,7 +402,10 @@ Respond with ONLY the fix description (no JSON, no markdown, just the descriptio
         : "(No source files could be resolved from imports)";
 
     return this.buildDiagnosisPromptTemplate({
-      truncatedOutput,
+      truncatedOutput: formattedOutput,
+      failedCriteriaSection: criteria
+        ? `FAILING ACCEPTANCE CRITERIA (the behaviour each failing test is meant to check):\n${criteria}`
+        : undefined,
       acceptanceTestPath: p.acceptanceTestPath ?? "(path unavailable — inspect test output for file references)",
       sourceFilesSection,
       maxFileLines: MAX_FILE_LINES,

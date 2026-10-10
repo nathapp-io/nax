@@ -1,0 +1,212 @@
+{
+  "project": "nax-monorepo",
+  "feature": "acceptance-diagnosis-fidelity",
+  "branchName": "feat/acceptance-diagnosis-fidelity",
+  "createdAt": "2026-10-10T00:00:00.000Z",
+  "updatedAt": "2026-10-10T12:05:38.692Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Failing-criteria resolver and diagnosis fidelity",
+      "description": "**Goal** — Give the acceptance diagnosis the text of the failing acceptance criteria, a decision rule tied to that text and the formatted failure output, make the parse fallback `test_bug`, and record which path produced each verdict.\n\n**Motivation** — The diagnosis decides source bug vs test bug without seeing the criterion, reads only the first 2,000 characters of raw output (runner failures print at the end), and falls back to `source_bug` on a parse failure, which routes to the session that edits production code; 11 of 17 source-fix sessions in the A2 retro bent production code to fit a generated test.\n\n**Approach** —\n1. Failing-criteria resolver. `loadRefinedCriteria(featureDir)` reads `<featureDir>/acceptance-refined.json`, the file `acceptance-setup` writes. `resolveFailedCriteria` maps failing `AC-N` ids to criterion text using the generator's numbering. A package group's criteria are the refined entries whose `storyId` belongs to that group, in file order, and the k-th entry (1-based) is `AC-k`. That is the numbering `acceptance-setup` used to build the group's `criteriaList` (`packages/nax/src/pipeline/stages/acceptance-setup.ts:349`). A package group's story ids are the stories that `isInAcceptanceScope` admits and whose `path.join(workdir, storyWorkdir(story))` equals the failing package's `packageDir`. This is the grouping rule of `groupStoriesByPackage` (`packages/nax/src/acceptance/test-path.ts:132`).\n2. Diagnosis prompt. It renders the failing criteria, shows the test output through `formatTestOutputForFix`, and states the decision rule. The test file stays a path-only reference (#914). The parse fallback becomes `test_bug`, and the diagnosis records which path produced its verdict.\n3. File split. `acceptance-loop.ts` is 583 lines and `check:file-sizes` caps source files at 600 raw lines. First move `runAcceptanceFixCycle` and `_acceptanceFixCycleDeps` (about 80 lines) out to `packages/nax/src/execution/lifecycle/acceptance-fix-cycle.ts`, unchanged in behaviour; `acceptance-loop.ts` re-exports both so existing imports and stubs keep working.\n\nPrompt text (normative, rendered verbatim).\n\nDiagnosis criteria section, inserted after the `FAILING TEST OUTPUT` block. With one or more resolved criteria:\n```\nFAILING ACCEPTANCE CRITERIA (the behaviour each failing test is meant to check):\nAC-3 [US-002]: <refined text>\n  Spec wording: <original text>\n```\nThe `Spec wording:` line appears only when `original` differs from `refined`. With no resolved criteria:\n```\nFAILING ACCEPTANCE CRITERIA: (criterion text unavailable — judge from the test file and the output)\n```\nDiagnosis decision rule, inserted before the response schema:\n```\nDECISION RULE:\n- Read the acceptance test file before deciding.\n- source_bug: the failing assertion checks behaviour the criterion text states, or that follows directly from it, and the source does not do it.\n- test_bug: the failing assertion depends on a name, literal, shape, file path, import path, fixture or setup step that the criterion text does not state.\n- both: only when different failing assertions fall on different sides of this rule.\n```\n\nIntegration (symbols changed; baseline only locates code, it is never the interface to implement):\n- `AcceptancePromptBuilder.buildDiagnosisPrompt` / `DiagnosisPromptParams` (`acceptance-builder.ts:368`, `:86`): baseline `testOutput.slice(0, 2000)`; params `{ testOutput; testFileContent?; acceptanceTestPath?; sourceFiles }`. Target: params gain `failedCriteria?: FailedCriterion[]`. The output goes through `formatTestOutputForFix(p.testOutput)`. The criteria section is built from `failedCriteria`.\n- `AcceptancePromptBuilder.buildDiagnosisPromptTemplate` / `DiagnosisTemplateParams` (`:273`, `:122`): baseline `{ truncatedOutput; acceptanceTestPath; sourceFilesSection; maxFileLines }`. Target: gains `failedCriteriaSection?: string`. When absent, the template renders the \"criterion text unavailable\" line. It renders the DECISION RULE block before the schema.\n- `acceptanceDiagnoseOp` / `AcceptanceDiagnoseInput` / `AcceptanceDiagnoseOutput` / `FALLBACK` (`packages/nax/src/operations/acceptance-diagnose.ts`): input gains `failedCriteria?: FailedCriterion[]`, passed to `buildDiagnosisPrompt`. Output gains `fallback?: true`. `FALLBACK` is `{ verdict: \"test_bug\", reasoning: \"diagnosis failed — falling back to test fix\", confidence: 0, fallback: true }`.\n- `DiagnosisResult` (`packages/nax/src/acceptance/types.ts:143`): gains `path?: \"implement-only\" | \"test-level\" | \"llm\" | \"fallback\"`.\n- `resolveAcceptanceDiagnosis` / `ResolveAcceptanceDiagnosisOptions` (`packages/nax/src/execution/lifecycle/acceptance-fix.ts`): `diagnosisOpts` gains `failedCriteria?: FailedCriterion[]`, forwarded in the op input. Only `verdict`, `reasoning`, `confidence`, `findings` and `cost` are copied from the op output, never `fallback`. The result carries `path`: `\"implement-only\"` and `\"test-level\"` on the two fast paths, `\"fallback\"` when the op output has `fallback: true`, otherwise `\"llm\"`.\n- `runAcceptanceLoop` / `runAcceptanceFixCycle` (`acceptance-loop.ts:357`, `:255`): per failing package, the loop resolves `failedCriteria` with `_failedCriteriaDeps.loadRefinedCriteria(ctx.featureDir)` and `resolveFailedCriteria`, and passes them to `resolveAcceptanceDiagnosis` and `runAcceptanceFixCycle`. The \"Diagnosis resolved\" log gains `path` and `failedACs`. `runAcceptanceFixCycle` gains a `failedCriteria` parameter, appended last (9th) so existing positional callers keep working.\n\n**Scope** — In: the resolver module, diagnosis prompt/template, diagnose op fallback, `path` on DiagnosisResult, forwarding `failedCriteria` through the loop to diagnosis and (as a parameter only) to `runAcceptanceFixCycle`, the file split with re-export, and the \"Diagnosis resolved\" log fields. Out: the source-fix prompt, `acceptanceFixSourceOp` parse, fix-attempt file recording and `acceptance.summary` (all US-002); single-session prompt rules (US-003). Feature-level: no change to the implement-only or >80% test-level fast paths beyond recording `path`; no test-file body in the prompt; the resolver follows the generator's per-package numbering and ignores the stored `acId` (no reconciliation with the global numbering).\n\n**Interface**\n```ts\n// src/acceptance/failed-criteria.ts\nexport interface RefinedCriterionRecord { acId: string; original: string; refined: string; storyId: string }\nexport interface FailedCriterion { acId: string; storyId: string; original: string; refined: string }\n\nexport const _failedCriteriaDeps = { readFile: (p: string) => Bun.file(p).text() };\n\n/** Reads <featureDir>/acceptance-refined.json. Returns [] when featureDir is undefined, the file is missing or unreadable, or its content is not an array of records. Never throws. */\nexport async function loadRefinedCriteria(featureDir: string | undefined): Promise<RefinedCriterionRecord[]>;\n\n/** Filters `refined` to entries whose storyId is in groupStoryIds (file order), numbers them AC-1..AC-n, and returns the entries whose number is in failedACs, in failedACs order. Ids not found (including \"AC-ERROR\") are skipped. */\nexport function resolveFailedCriteria(args: {\n  refined: readonly RefinedCriterionRecord[];\n  groupStoryIds: ReadonlySet<string>;\n  failedACs: readonly string[];\n}): FailedCriterion[];\n\n/** Story ids of the acceptance group whose packageDir equals `packageDir` (groupStoriesByPackage's rule). Compares path.resolve(workdir, storyWorkdir(story)) with path.resolve(packageDir). */\nexport function groupStoryIdsForPackage(prd: PRD, workdir: string, packageDir: string): Set<string>;\n```\nAll four symbols, plus the two types, are re-exported from `packages/nax/src/acceptance/index.ts`.\n\nFailure handling: `acceptance-refined.json` missing, unreadable or not a JSON array -> `loadRefinedCriteria` returns `[]`, prompts render the \"criterion text unavailable\" form, no throw. A failing AC id with no mapped criterion (including `AC-ERROR`) is skipped; the remaining ids still resolve. Diagnosis reply unparseable or missing `verdict` / `reasoning` / `confidence` -> `FALLBACK`: verdict `test_bug`, confidence 0, `fallback: true`; diagnosis `path` is `\"fallback\"`.\n\nTest maintenance: in `packages/nax/test/unit/operations/acceptance-diagnose.test.ts` the tests \"falls back to source_bug on malformed JSON\" and \"falls back to source_bug on missing fields\" now assert verdict `test_bug` with `fallback: true`; regenerate the snapshot \"buildDiagnosisPromptTemplate() snapshot stability no verdicts\" in `packages/nax/test/unit/prompts/__snapshots__/acceptance-builder.test.ts.snap`. Acceptance-loop tests run `runAcceptanceLoop` with the real `runFixCycle`, stub the diagnosis via `_diagnosisDeps.callOp`, fix-op dispatch via `_cycleDeps.callOp` (from `@/findings`), acceptance runs via `_runAcceptanceTestsOnceDeps`, `_acceptanceFixScopeDeps.buildRunDispatchAskWiring`, the advisor disabled in the test config, and capture logs inline as in `acceptance-loop-routing.test.ts` (`resetLogger(); initLogger({ level: \"info\", headless: true, useChalk: false }); addSink(entry => ...)`). \"The refined JSON\" means `_failedCriteriaDeps.readFile` returns `[{\"acId\":\"AC-1\",\"original\":\"o1\",\"refined\":\"r1\",\"storyId\":\"US-001\"},{\"acId\":\"AC-2\",\"original\":\"o2\",\"refined\":\"r2\",\"storyId\":\"US-002\"},{\"acId\":\"AC-3\",\"original\":\"o3\",\"refined\":\"o3\",\"storyId\":\"US-002\"}]`.\n\nVerification note: `bun run check:file-sizes` stays green, so `acceptance-loop.ts` is at most 600 lines after the move. `runAcceptanceFixCycle` and `_acceptanceFixCycleDeps` stay importable from `@/execution/lifecycle/acceptance-loop`, which the existing `acceptance-loop-cycle.test.ts` and `acceptance-fix-scope.test.ts` confirm by compiling and passing unchanged.",
+      "acceptanceCriteria": [
+        "resolveFailedCriteria given the three refined records (US-001 \"o1\"/\"r1\", US-002 \"o2\"/\"r2\", US-002 \"o3\"/\"o3\"), groupStoryIds {\"US-001\",\"US-002\"} and failedACs [\"AC-2\"] returns [{ acId: \"AC-2\", storyId: \"US-002\", original: \"o2\", refined: \"r2\" }]",
+        "resolveFailedCriteria given the same records, groupStoryIds {\"US-002\"} and failedACs [\"AC-1\"] returns the record whose refined is \"r2\" with acId \"AC-1\" (numbering restarts within the group)",
+        "resolveFailedCriteria given failedACs [\"AC-ERROR\", \"AC-9\", \"AC-1\"] and groupStoryIds {\"US-001\",\"US-002\"} returns exactly one entry, with acId \"AC-1\"",
+        "loadRefinedCriteria(undefined) resolves []",
+        "With _failedCriteriaDeps.readFile rejecting with an error, loadRefinedCriteria(\"/f\") resolves []",
+        "With _failedCriteriaDeps.readFile resolving \"{\\\"not\\\":\\\"an array\\\"}\", loadRefinedCriteria(\"/f\") resolves []",
+        "groupStoryIdsForPackage for a PRD with US-001 (no workdir) and US-002 (workdir apps/api), workdir \"/repo/\" (trailing slash) and packageDir \"/repo/apps/api\" returns a set containing only \"US-002\"",
+        "buildDiagnosisPrompt with failedCriteria [{ acId: \"AC-2\", storyId: \"US-002\", original: \"o2\", refined: \"r2\" }] returns text that includes the line \"AC-2 [US-002]: r2\" and the line \"  Spec wording: o2\"",
+        "buildDiagnosisPrompt with failedCriteria [{ acId: \"AC-3\", storyId: \"US-002\", original: \"o3\", refined: \"o3\" }] returns text with no \"Spec wording:\" line",
+        "buildDiagnosisPrompt with no failedCriteria returns text that includes \"FAILING ACCEPTANCE CRITERIA: (criterion text unavailable — judge from the test file and the output)\"",
+        "buildDiagnosisPrompt returns text that includes the line \"DECISION RULE:\" and, after it, the line \"- test_bug: the failing assertion depends on a name, literal, shape, file path, import path, fixture or setup step that the criterion text does not state.\"",
+        "buildDiagnosisPrompt given a bun-format testOutput of 100 lines \"(pass) AC-1: ok [1ms]\", then the line \"error: expected 2 got 3\", then the line \"(fail) AC-2: returns two [1ms]\", then the footer lines \" 100 pass\" and \" 1 fail\", returns text that includes \"expected 2 got 3\"",
+        "For the same testOutput input, buildDiagnosisPrompt returns text that does not include \"(pass) AC-1: ok\"",
+        "acceptanceDiagnoseOp.parse(\"could not diagnose\", input, ctx) returns verdict \"test_bug\", confidence 0 and fallback true",
+        "acceptanceDiagnoseOp.parse given valid JSON {\"verdict\":\"source_bug\",\"reasoning\":\"r\",\"confidence\":0.8} returns an output with no fallback property",
+        "resolveAcceptanceDiagnosis with strategy \"implement-only\" returns path \"implement-only\"",
+        "resolveAcceptanceDiagnosis where 9 of 10 ACs failed returns path \"test-level\"",
+        "resolveAcceptanceDiagnosis with _diagnosisDeps.callOp resolving { verdict: \"test_bug\", reasoning: \"x\", confidence: 0, fallback: true } returns path \"fallback\"",
+        "resolveAcceptanceDiagnosis with _diagnosisDeps.callOp resolving { verdict: \"source_bug\", reasoning: \"x\", confidence: 0.7 } returns path \"llm\"",
+        "resolveAcceptanceDiagnosis given diagnosisOpts.failedCriteria of one entry calls _diagnosisDeps.callOp with an input whose failedCriteria equals that one-entry array",
+        "With the refined JSON, a PRD whose stories US-001 (one AC) and US-002 (two ACs) have no workdir (one root package group), acceptance failing only AC-2 of the 3, and _diagnosisDeps.callOp spied, runAcceptanceLoop calls the spy with an input whose failedCriteria is [{ acId: \"AC-2\", storyId: \"US-002\", original: \"o2\", refined: \"r2\" }]",
+        "In the same setup, the \"Diagnosis resolved\" log entry runAcceptanceLoop emits carries path \"llm\" and failedACs [\"AC-2\"]",
+        "resolveAcceptanceDiagnosis returns a DiagnosisResult with no fallback property when the op output has fallback true"
+      ],
+      "tags": [
+        "feature",
+        "acceptance",
+        "prompts"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Complex because it adds a new resolver module and threads failedCriteria through five modules (prompt builder, diagnose op, resolveAcceptanceDiagnosis, loop, fix cycle) while moving code out of acceptance-loop.ts under a re-export contract; three-session-tdd-lite fits since it is not security-critical.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/prompts/builders/acceptance-builder.ts",
+        "packages/nax/src/operations/acceptance-diagnose.ts",
+        "packages/nax/src/execution/lifecycle/acceptance-fix.ts",
+        "packages/nax/src/execution/lifecycle/acceptance-loop.ts",
+        "packages/nax/src/acceptance/test-path.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/acceptance/failed-criteria.ts",
+        "packages/nax/src/execution/lifecycle/acceptance-fix-cycle.ts",
+        "packages/nax/test/unit/acceptance/failed-criteria.test.ts"
+      ],
+      "suggestedCriteria": [
+        "runAcceptanceFixCycle and _acceptanceFixCycleDeps imported from @/execution/lifecycle/acceptance-loop are the same objects as those exported by acceptance-fix-cycle.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/operations/acceptance-diagnose.test.ts",
+          "reason": "the tests \"falls back to source_bug on malformed JSON\" and \"falls back to source_bug on missing fields\" assert verdict `source_bug`; the fallback is now `test_bug` with `fallback: true`, so they assert verdict `test_bug` instead."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/__snapshots__/acceptance-builder.test.ts.snap",
+          "reason": "the snapshot \"buildDiagnosisPromptTemplate() snapshot stability no verdicts\" pins the old template; the template now renders the criteria-unavailable line and the DECISION RULE block, so the snapshot is regenerated to the new template text."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "688326d3017d93625d8531cb0ed9604aa5ad4601"
+    },
+    {
+      "id": "US-002",
+      "title": "Source-fix criteria, fix-attempt files and acceptance.summary",
+      "description": "**Goal** — Give the source-fix prompt the failing criteria and a no-shim rule, record the files each source-fix and test-fix attempt changed, and emit exactly one `acceptance.summary` log event per `runAcceptanceLoop` call.\n\n**Motivation** — The source-fix session bent production code to fit generated tests (11 of 17 sessions in the A2 retro) and its `findings.cycle` \"iteration completed\" lines carried no `fixTargetFiles`, forcing hand-matching against tool-audit files; the next acceptance decision must be readable from run logs.\n\n**Approach** — The source-fix prompt renders the same failing criteria and the no-shim rule. Both acceptance fix strategies snapshot a git ref before each dispatch and report the files changed since then. `runAcceptanceLoop` logs one `acceptance.summary` per call. Strategy edits land in `packages/nax/src/execution/lifecycle/acceptance-fix-cycle.ts` (created by US-001); the summary and fix-attempt logic lives in a new file `packages/nax/src/execution/lifecycle/acceptance-summary.ts`.\n\nSource-fix prompt (normative, rendered verbatim). This text follows the `TEST OUTPUT` block. The criteria lines render exactly as in the diagnosis section (`AC-3 [US-002]: <refined text>` with an optional `  Spec wording: <original text>` line when `original` differs from `refined`), under the header `FAILING ACCEPTANCE CRITERIA:`, or the header followed by ` (criterion text unavailable)` when none resolved. Then:\n```\nSOURCE-FIX RULES:\n- Change source only to deliver behaviour the criteria above state.\n- Do not add aliases, wrapper exports, alternate parameter shapes, symlinks, test-only hooks or config shims whose only purpose is to satisfy this test.\n- If the failing assertion needs something the criteria do not state, make no edit and reply with one line: UNRESOLVED: <AC id> — the test asserts <what> that the criterion does not state.\n```\n\n`acceptance.summary` event. `runAcceptanceLoop` emits `logger.info(\"acceptance\", \"acceptance.summary\", data)` exactly once per call, on every exit path. It does this by becoming a thin wrapper: the current body moves to an inner function, and the wrapper emits the summary in a `finally` block from an accumulator that the inner function fills. Counts aggregate over the whole call, across every failing package. `data`:\n```ts\n{\n  storyId: string | undefined;            // first PRD story, as other acceptance logs\n  outcome: \"passed\" | \"failed\";\n  retries: number;                         // the returned AcceptanceLoopResult.retries, or 0 when absent\n  diagnoses: {\n    byVerdict: { source_bug: number; test_bug: number; both: number };\n    byPath: { \"implement-only\": number; \"test-level\": number; llm: number; fallback: number };\n  };\n  sourceFixAttempts: number;               // fixesApplied entries with strategyName \"acceptance-source-fix\"\n  testFixAttempts: number;                 // fixesApplied entries with strategyName \"acceptance-test-fix\"\n  sourceFixUnresolved: number;             // source-fix fixesApplied entries carrying an unresolved reason\n  sourceFixFiles: { production: number; test: number }; // unique targetFiles across all source-fix attempts in the call, split by isTestFile(path) with default patterns (intended: the project-agnostic classifier)\n  storyStrategies: Record<string, number>; // count of PRD stories that isInAcceptanceScope admits, per routing.testStrategy; a story without one counts under \"unset\"\n}\n```\n\nIntegration (symbols changed):\n- `AcceptancePromptBuilder.buildSourceFixPrompt` / `SourceFixParams` (`acceptance-builder.ts:309`, `:129`): params gain `failedCriteria?: FailedCriterion[]`. The prompt renders the criteria lines and the SOURCE-FIX RULES block after `TEST OUTPUT`.\n- `acceptanceFixSourceOp` / `AcceptanceFixSourceInput` / `AcceptanceFixOutput` (`packages/nax/src/operations/acceptance-fix.ts`): input gains `failedCriteria?: FailedCriterion[]`. `parse` returns `{ applied: true, unresolved?: string }`. When a reply line matches `^UNRESOLVED:\\s*(.+)$` (multiline), `unresolved` is the captured text after the prefix, as `autofix-implementer.ts` does.\n- `runAcceptanceLoop` / `runAcceptanceFixCycle`: each strategy makes its own `attemptFileHooks(fixTarget.packageDir ?? ctx.workdir)` call, so the two never share a captured ref. It uses that call's `beforeDispatch` and composes its own `extractApplied` over that call's `changedFiles`. `extractApplied` returns `{ targetFiles }`, and for source-fix also `unresolved: output.unresolved`. The loop emits `acceptance.summary` once per call. The `failedCriteria` argument (9th parameter, added in US-001) reaches the source-fix op input.\n- Read-only collaborators: `captureGitRef(workdir): Promise<string | undefined>` (`packages/nax/src/utils/git.ts:34`); `captureWorkingTreeChanges(workdir, baseRef, scopePrefix?): Promise<string[]>` (`:376`, returns `[]` when `baseRef` is falsy); `isTestFile(filePath, patterns?)` (`packages/nax/src/test-runners/detector.ts:43`); `FixStrategy.beforeDispatch` / `extractApplied` and the `findings.cycle` \"iteration completed\" log, which emits `fixTargetFiles` (`packages/nax/src/findings/cycle-types.ts`, `cycle-iteration-log.ts:92`).\n\n**Scope** — In: source-fix prompt criteria and rules, `UNRESOLVED:` parsing, `acceptance-summary.ts`, per-strategy attempt file hooks, the `runAcceptanceLoop` wrapper and `acceptance.summary`. Out: the resolver, diagnosis prompt, diagnose fallback and `path` field (US-001, already in place); single-session prompt rules (US-003). Feature-level: the acceptance test-fix prompt is unchanged; source-fix rules are not enforced in code; already-untracked files are not excluded from `targetFiles`.\n\n**Interface**\n```ts\n// packages/nax/src/execution/lifecycle/acceptance-summary.ts\nexport const _acceptanceAttemptDeps = { captureGitRef, captureWorkingTreeChanges };\n\nexport interface AcceptanceSummaryAccumulator { /* diagnoses by verdict and path, fix-attempt records */ }\nexport function createAcceptanceSummaryAccumulator(): AcceptanceSummaryAccumulator;\nexport function recordDiagnosis(acc: AcceptanceSummaryAccumulator, d: DiagnosisResult): void;\nexport function recordFixIterations(acc: AcceptanceSummaryAccumulator, iterations: readonly Iteration[]): void;\nexport function emitAcceptanceSummary(acc: AcceptanceSummaryAccumulator, args: { prd: PRD; outcome: \"passed\" | \"failed\"; retries: number; storyId?: string }): void;\n\n/** beforeDispatch/extractApplied pair for one acceptance fix strategy. The captured ref lives in this closure. */\nexport function attemptFileHooks(dir: string): {\n  beforeDispatch: () => Promise<void>;\n  changedFiles: () => Promise<string[]>;\n};\n```\nBoth acceptance fix strategies call git through `_acceptanceAttemptDeps`, following the `_repoScopedFixDeps` precedent in `src/operations/full-suite-rectify.ts:118`.\n\nFailure handling: `captureGitRef` returns `undefined` before a fix attempt -> that attempt's `targetFiles` is `[]`. Source-fix reply has an `UNRESOLVED:` line -> `unresolved` carries the text after the prefix; the existing give-up handling applies (`handleGiveUps`, `src/findings/cycle-execute.ts:81`): when every strategy that ran gave up, the cycle exits `agent-gave-up`, and the loop's final acceptance check decides the outcome. Source-fix reply has no `UNRESOLVED:` line -> `unresolved` is absent; the cycle proceeds to validation as today.\n\nTest setup for acceptance-loop ACs: run `runAcceptanceLoop` with the real `runFixCycle`; stub the diagnosis through `_diagnosisDeps.callOp`; fix-op dispatch through `_cycleDeps.callOp` (from `@/findings`), which returns already-parsed op output such as `{ applied: true }` or `{ applied: true, unresolved: \"...\" }`; acceptance runs through `_runAcceptanceTestsOnceDeps`; `_acceptanceFixScopeDeps.buildRunDispatchAskWiring`; git through `_acceptanceAttemptDeps` with `captureGitRef` resolving \"abc\" and `captureWorkingTreeChanges` resolving `[]` unless an AC says otherwise. The advisor is disabled in the test config. Logs are captured inline as in `acceptance-loop-routing.test.ts`. \"The refined JSON\" means `_failedCriteriaDeps.readFile` returns `[{\"acId\":\"AC-1\",\"original\":\"o1\",\"refined\":\"r1\",\"storyId\":\"US-001\"},{\"acId\":\"AC-2\",\"original\":\"o2\",\"refined\":\"r2\",\"storyId\":\"US-002\"},{\"acId\":\"AC-3\",\"original\":\"o3\",\"refined\":\"o3\",\"storyId\":\"US-002\"}]`. The new test file is `packages/nax/test/unit/execution/lifecycle/acceptance-loop-summary.test.ts`. Keep `acceptance-loop.ts` at most 600 raw lines.",
+      "acceptanceCriteria": [
+        "buildSourceFixPrompt with failedCriteria [{ acId: \"AC-2\", storyId: \"US-002\", original: \"o2\", refined: \"r2\" }] returns text that includes \"FAILING ACCEPTANCE CRITERIA:\" followed by the line \"AC-2 [US-002]: r2\"",
+        "buildSourceFixPrompt returns text that includes the line \"SOURCE-FIX RULES:\" and the line \"- If the failing assertion needs something the criteria do not state, make no edit and reply with one line: UNRESOLVED: <AC id> — the test asserts <what> that the criterion does not state.\"",
+        "buildSourceFixPrompt with no failedCriteria returns text that includes \"FAILING ACCEPTANCE CRITERIA: (criterion text unavailable)\"",
+        "acceptanceFixSourceOp.parse(\"Looked at it.\\nUNRESOLVED: AC-2 — the test asserts createClient that the criterion does not state\", input, ctx) returns unresolved equal to \"AC-2 — the test asserts createClient that the criterion does not state\"",
+        "acceptanceFixSourceOp.parse(\"fixed the bug\", input, ctx) returns an output with no unresolved property",
+        "With the refined JSON, acceptance failing AC-2, the diagnosis stubbed to source_bug, and the source-fix op dispatch spied, runAcceptanceLoop dispatches the source-fix op with an input whose failedCriteria is [{ acId: \"AC-2\", storyId: \"US-002\", original: \"o2\", refined: \"r2\" }]",
+        "With _acceptanceAttemptDeps.captureGitRef resolving \"abc\" and _acceptanceAttemptDeps.captureWorkingTreeChanges resolving [\"src/a.ts\", \"test/a.test.ts\"], one source-fix attempt in runAcceptanceLoop yields an \"iteration completed\" log entry whose fixTargetFiles is [\"src/a.ts\", \"test/a.test.ts\"]",
+        "With _acceptanceAttemptDeps.captureGitRef resolving undefined, one test-fix attempt yields an \"iteration completed\" log entry whose fixTargetFiles equals [], and _acceptanceAttemptDeps.captureWorkingTreeChanges is called with undefined as its ref",
+        "When acceptance passes on its first run, runAcceptanceLoop emits exactly one acceptance.summary entry, with outcome \"passed\", sourceFixAttempts 0 and diagnoses.byVerdict.source_bug 0",
+        "When acceptance fails, the diagnosis returns source_bug via the LLM path, one source-fix attempt changes [\"src/a.ts\", \"test/a.test.ts\"], and the rerun passes, acceptance.summary has diagnoses.byPath.llm 1, sourceFixAttempts 1 and sourceFixFiles { production: 1, test: 1 }",
+        "When the diagnosis returns source_bug, the _cycleDeps.callOp stub returns { applied: true, unresolved: \"AC-2 — not stated\" } for the source-fix op, and the final acceptance check still fails, runAcceptanceLoop emits exactly one acceptance.summary entry, with outcome \"failed\" and sourceFixUnresolved 1",
+        "For a PRD with two tdd-simple stories and one no-test story, acceptance.summary.storyStrategies equals { \"tdd-simple\": 2, \"no-test\": 1 }",
+        "When runAcceptanceLoop returns through the \"Runtime not found for diagnosis\" exit, it emits exactly one acceptance.summary entry, with outcome \"failed\"",
+        "When the acceptance run fails with no failed ACs reported (the \"no specific failures detected\" exit), runAcceptanceLoop emits exactly one acceptance.summary entry, with outcome \"failed\"",
+        "When acceptance.maxRetries is 0 and the first acceptance run fails, runAcceptanceLoop returns through the max-retries exit and emits exactly one acceptance.summary entry, with outcome \"failed\" and retries equal to the returned result's retries (or 0 when absent)",
+        "When the source-fix reply has no UNRESOLVED: line, acceptance.summary.sourceFixUnresolved is 0",
+        "The source-fix and test-fix strategies each capture their own git ref, so a test-fix attempt's targetFiles are computed from the ref captured before that test-fix dispatch"
+      ],
+      "tags": [
+        "feature",
+        "acceptance",
+        "telemetry"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Complex because the exactly-once acceptance.summary wrapper must cover every runAcceptanceLoop exit path and spans a new summary module, both fix strategies, the prompt builder and the source-fix op parse; three-session-tdd-lite fits since it is not security-critical.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/execution/lifecycle/acceptance-loop.ts",
+        "packages/nax/src/execution/lifecycle/acceptance-fix-cycle.ts",
+        "packages/nax/src/operations/acceptance-fix.ts",
+        "packages/nax/src/prompts/builders/acceptance-builder.ts",
+        "packages/nax/src/findings/cycle-types.ts",
+        "packages/nax/src/acceptance/failed-criteria.ts",
+        "packages/nax/src/operations/full-suite-rectify.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/execution/lifecycle/acceptance-summary.ts",
+        "packages/nax/test/unit/execution/lifecycle/acceptance-loop-summary.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "5263fb51ab5bd0bf50e7a9f5a48484b60f36fb68"
+    },
+    {
+      "id": "US-003",
+      "title": "Single-session prompt rules",
+      "description": "**Goal** — Add edge-case and wiring rules to the `tdd-simple` and `batch` single-session prompts, and an AC-to-code check plus wiring rule to the `no-test` prompt.\n\n**Motivation** — Single-session stories (`tdd-simple`, `test-after`, `batch`, `no-test`) get no acceptance-source-fix alternative; coverage of edge cases and production wiring improves through the prompt instead (ruling A2-R2).\n\n**Approach** — Rule lines are added to `buildRoleTaskSection` (`packages/nax/src/prompts/sections/role-task.ts:29`) for `tdd-simple`, `batch` and `no-test`; other roles are unchanged. The `tdd-simple` prompt is also used by `test-after`. `promptStage` single-session dispatch (no-test role, else tdd-simple; batch role for batches) is at `packages/nax/src/pipeline/stages/prompt.ts:73-105` (read-only).\n\nEach rule is rendered as one line in the role's `Rules:` list:\n- `EDGE_CASE_RULE`: `- Edge cases: for every AC that names a limit, boundary, empty or zero input, malformed input, or an error it raises or returns, write a test for that case, not only the success path.`\n- `WIRING_RULE`: `- Wiring: every function, class or module you add must be called from production code (the entry point the story names, or an existing production caller); code that only tests call is not done. When an AC names an entry point (route, command, event, scheduled job), at least one test enters through it.`\n- `NO_TEST_AC_CHECK_RULE`: `- AC check: before committing, map every AC to the code that satisfies it and list the mapping in the commit body, one line per AC: AC-N: <file>#<symbol>.`\n- `NO_TEST_WIRING_RULE`: `- Wiring: every function, class or module you add must be reachable from an existing production caller; do not leave code that nothing calls.`\n\n`tdd-simple` and `batch` get `EDGE_CASE_RULE` and `WIRING_RULE`. `no-test` gets a `Rules:` list holding `NO_TEST_AC_CHECK_RULE` and `NO_TEST_WIRING_RULE`, placed after its existing `Instructions:` list. The four constants are exported from `packages/nax/src/prompts/sections/role-task.ts`.\n\n**Scope** — In: the four exported constants and their rendering in `buildRoleTaskSection` for `tdd-simple`, `batch`, `no-test`. Out: the acceptance diagnosis, source-fix and `acceptance.summary` work (US-001, US-002). Feature-level: the three-session test-writer, implementer and verifier prompts are unchanged.\n\n**Interface**\n```ts\n// packages/nax/src/prompts/sections/role-task.ts\nexport const EDGE_CASE_RULE: string;\nexport const WIRING_RULE: string;\nexport const NO_TEST_AC_CHECK_RULE: string;\nexport const NO_TEST_WIRING_RULE: string;\n```\nThe values are exactly the strings above. Integration tests mirror the harness in `packages/nax/test/unit/pipeline/stages/prompt-tdd-simple.test.ts`.",
+      "acceptanceCriteria": [
+        "buildRoleTaskSection(\"tdd-simple\") returns text that includes EDGE_CASE_RULE exactly as exported from packages/nax/src/prompts/sections/role-task.ts",
+        "buildRoleTaskSection(\"tdd-simple\") returns text that includes WIRING_RULE",
+        "buildRoleTaskSection(\"batch\") returns text that includes both EDGE_CASE_RULE and WIRING_RULE",
+        "buildRoleTaskSection(\"no-test\") returns text that includes NO_TEST_AC_CHECK_RULE and NO_TEST_WIRING_RULE",
+        "buildRoleTaskSection(\"no-test\") returns text that does not include EDGE_CASE_RULE (no-test stories write no tests)",
+        "buildRoleTaskSection(\"no-test\") still includes the line \"- Do NOT create or modify test files\"",
+        "buildRoleTaskSection(\"implementer\", \"standard\") returns text that includes neither EDGE_CASE_RULE nor WIRING_RULE",
+        "EDGE_CASE_RULE equals the EDGE_CASE_RULE string given in the normative rule lines, and NO_TEST_AC_CHECK_RULE equals the string given there",
+        "promptStage.execute for a single story whose routing.testStrategy is \"test-after\" sets ctx.prompt to text that includes WIRING_RULE",
+        "promptStage.execute for a single story whose routing.testStrategy is \"no-test\" and that has a noTestJustification sets ctx.prompt to text that includes NO_TEST_AC_CHECK_RULE",
+        "promptStage.execute for a batch of two stories sets ctx.prompt to text that includes EDGE_CASE_RULE"
+      ],
+      "tags": [
+        "feature",
+        "prompts"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Additive constants and rendering in one section builder plus prompt-stage tests; standard pattern, not security-critical.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
+      },
+      "contextFiles": [
+        "packages/nax/src/prompts/sections/role-task.ts",
+        "packages/nax/src/pipeline/stages/prompt.ts",
+        "packages/nax/test/unit/pipeline/stages/prompt-tdd-simple.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "953c2b5e608d23ab3e294965b2f2dc4c92b09d01"
+    }
+  ],
+  "analysis": "Goal: give the acceptance diagnosis and source-fix session the failing criteria's text, a decision rule tied to it, and the structured failure summary; flip the parse fallback to test_bug; record changed files per fix attempt; emit one acceptance.summary per runAcceptanceLoop call; add edge-case/wiring rules to single-session prompts. All changes are deterministic prompt text, plumbing and logging - no new LLM call.\n\nKey files (all under packages/nax): src/prompts/builders/acceptance-builder.ts (buildDiagnosisPrompt ~:368 currently slices testOutput to 2000 chars; buildDiagnosisPromptTemplate ~:273; buildSourceFixPrompt ~:309; param types DiagnosisPromptParams :86, DiagnosisTemplateParams :122, SourceFixParams :129); src/prompts/builders/acceptance-builder-helpers.ts (formatTestOutputForFix, read-only); src/operations/acceptance-diagnose.ts (FALLBACK :23 is source_bug today); src/operations/acceptance-fix.ts (acceptanceFixSourceOp/parse); src/execution/lifecycle/acceptance-fix.ts (resolveAcceptanceDiagnosis with implement-only and >80% test-level fast paths); src/execution/lifecycle/acceptance-loop.ts (583 lines, check:file-sizes caps source at 600 raw lines; runAcceptanceFixCycle :255, runAcceptanceLoop :357); src/acceptance/types.ts (DiagnosisResult :143, RefinedCriterion :22); src/acceptance/test-path.ts (groupStoriesByPackage :132 - the grouping rule to mirror); src/pipeline/stages/acceptance-setup.ts (:349 builds criteriaList; per-package AC-k numbering); src/findings/cycle-types.ts and cycle-iteration-log.ts (:92 emits fixTargetFiles from extractApplied); src/findings/cycle-execute.ts (:81 handleGiveUps); src/operations/full-suite-rectify.ts (:118 _repoScopedFixDeps git-seam precedent); src/utils/git.ts (captureGitRef :34, captureWorkingTreeChanges :376 returns [] on falsy ref); src/test-runners/detector.ts (isTestFile :43); src/prompts/sections/role-task.ts (buildRoleTaskSection :29); src/pipeline/stages/prompt.ts (:73-105 single-session role dispatch).\n\nImpact/dependents: runAcceptanceFixCycle and _acceptanceFixCycleDeps move to a new acceptance-fix-cycle.ts and MUST remain importable from @/execution/lifecycle/acceptance-loop (re-export) because acceptance-loop-cycle.test.ts and acceptance-fix-scope.test.ts import them and must pass unchanged. runAcceptanceFixCycle gains failedCriteria as the 9th (last) positional param. DiagnosisResult gains optional path. The op output gains fallback?: true but resolveAcceptanceDiagnosis must never copy it into the DiagnosisResult (only verdict, reasoning, confidence, findings, cost are copied).\n\nExisting tests affected: test/unit/operations/acceptance-diagnose.test.ts ('falls back to source_bug on malformed JSON' and '...missing fields' must now assert test_bug + fallback true); test/unit/prompts/__snapshots__/acceptance-builder.test.ts.snap ('buildDiagnosisPromptTemplate() snapshot stability no verdicts' must be regenerated for the new template with the criteria-unavailable line and DECISION RULE block). Mirror test/unit/pipeline/stages/prompt-tdd-simple.test.ts for promptStage tests, acceptance-loop-routing.test.ts for inline log capture.\n\nRisks: (1) the numbering rule - a package group's criteria are refined entries whose storyId is in the group (file order), k-th = AC-k; the stored acId is global and must be ignored. (2) Each fix strategy needs its OWN attemptFileHooks call so captured refs are never shared. (3) acceptance.summary must be emitted exactly once on every exit path - implement as a thin wrapper with try/finally around the renamed inner function filling an accumulator. (4) sourceFixFiles classification uses isTestFile with default patterns. (5) Circular-import risk when adding exports to barrels (acceptance/index.ts) - prefer leaf imports. (6) Immutability: build new objects/arrays rather than mutate, except the accumulator which is the one deliberate mutable holder. (7) Rules text constants are normative and rendered verbatim.\n\nMigration/ordering: US-001 first (resolver, diagnosis, file split), US-002 depends on it (source-fix, telemetry), US-003 is independent. Seams: git is called only via _acceptanceAttemptDeps; refined JSON is read only via _failedCriteriaDeps.readFile.",
+  "outOfScope": [
+    "A per-story or per-test-strategy switch for acceptance; acceptance stays a feature-level setting (ruling A2-R2).",
+    "A separate switch that disables source-fix while acceptance stays on (ruling A2-R1).",
+    "Capping source-fix rounds that make no edit (ruling A2-R3 left it unpursued).",
+    "Changing the `implement-only` fast path or the >80% test-level fast path in `resolveAcceptanceDiagnosis`; only their recorded `path` is new.",
+    "Embedding the acceptance test file body in the diagnosis or source-fix prompt; the path-only reference from #914 stays.",
+    "Reconciling the global `acId` numbering written into `acceptance-refined.json` with the per-package numbering the generator uses in multi-package features; the resolver follows the generator's per-package numbering and ignores the stored `acId`.",
+    "Attributing acceptance cost or time per role in `metrics.json`; the cost ledger already records `stage` and `sessionRole` per session.",
+    "Excluding files that were already untracked before a fix attempt from that attempt's `targetFiles`.",
+    "Enforcing the source-fix rules in code (for example rejecting a diff that adds an alias); they are prompt rules, and `acceptance.summary` measures their effect.",
+    "Changing the three-session test-writer, implementer or verifier prompts.",
+    "Changing the acceptance test-fix prompt."
+  ],
+  "routingProfile": "native-ds+cc-plan"
+}
