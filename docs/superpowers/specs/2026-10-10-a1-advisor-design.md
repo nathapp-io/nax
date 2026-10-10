@@ -1,6 +1,7 @@
 # A1 — Advisor: rule on judgment calls instead of stopping the run
 
-**Status:** design, awaiting user review · **Date:** 2026-10-10 · **Baseline:** `main` @ `9611b61a4` (v0.85.1)
+**Status:** design rev 2 (spec-review round 1 applied), awaiting user review · **Date:** 2026-10-10 ·
+**Baseline:** `main` @ `9611b61a4` (v0.85.1). All paths are under `packages/nax/` unless stated.
 **Arc:** autonomy & lean pipeline. A1 is the first of five sub-projects: A2 acceptance retro, A3 NBF
 triage, A4 finish as a branch review, A5 lean-workflow A/B. This spec covers A1 only.
 
@@ -8,78 +9,102 @@ triage, A4 finish as a branch review, A5 lean-workflow A/B. This spec covers A1 
 
 ## 1. Goal
 
-`nax run` and the finish phase stop, pause, or escalate whenever they reach a judgment call. Examples:
-a reviewer finding that "needs a human", a fix agent that gives up with `UNRESOLVED:`, a TDD failure
-with no category, and the decision to promote a PR. Each stop waits for a person, often for hours, and
-a stopped finish run leaves its other findings unfixed.
+`nax run` and the finish phase stop, pause, or escalate when they reach a judgment call:
+- a finish reviewer finding marked "needs a human";
+- a story fix agent that gives up with `UNRESOLVED:`;
+- a TDD failure with no category;
+- the decision to promote the PR.
+
+Each stop waits for a person, often for hours. A finish escalation also leaves that phase's other
+findings unfixed.
 
 A1 adds an **advisor**. It knows the whole feature (spec, PRD with every story's ACs, every earlier
-decision), rules on these calls, and lets the run continue. Every ruling is recorded, sent as a
-heads-up when uncertain, listed in the PR body, and replayable.
+decision), rules on these calls, and lets the run continue. Every ruling is:
+- recorded in a ledger;
+- sent as a heads-up when uncertain;
+- listed in the PR body;
+- replayable.
 
 **Success:**
-- No run stops at an in-scope decision point once the advisor is enabled.
-- Every decision is in a committed ledger, in a replayable audit artifact, and in the PR body.
-- Before go-live, the offline replay on the eval seed scores ≥ 12/15 agreement with the human rulings
-  and 0 unsafe disagreements (§9).
+- With a caller enabled, its decision point no longer stops the run; failures fall back as in §5.
+- Every decision is in the committed ledger, in a replayable audit artifact, and in the PR body.
+- Callers 1 and 4 pass the offline replay gate (§9) before they are enabled.
+
+**Not in A1.** Finish escalations caused by a reviewer's missing evidence sections (`## WALK` /
+`## TOUCHPOINTS`) remain escalations. A4 handles them.
 
 ## 2. Evidence (measured over 158 runs / 71 features, 2026-09-10 → 2026-10-10)
 
-- **The finish phase escalated 13 of 15 runs after it moved in-process** and has gone unused since.
-  The 15 recorded escalations break down as:
+**Finish phase.**
+- It escalated 13 of 15 runs after it moved in-process, and has gone unused since.
+- The 15 recorded escalations:
   - 4 reviewer evidence-section gaps;
   - 1 trivial LOW;
   - 4 spec-vs-code contradictions;
   - 6 design calls.
+- Where the human ruling is on record, real defects were **fixed** with the most conservative option.
+  Waivers happened only with a spec-backed reason.
+- Two findings in escalated runs were never acted on after the escalation and shipped as live defects.
+  One is #2435.
+- `routeReview` escalates a whole phase on one `judgment` finding (`src/finish/route.ts:75`) before
+  the fix route, so the phase's other findings are never fixed.
 
-  In every case where the human ruling is on record, the real defects were **fixed** with the
-  conservative option. Waivers happened only with a spec-backed reason. Two findings in escalated runs
-  were never acted on after the escalation and shipped as live defects (#2435 is one).
-- **`routeReview` escalates the whole phase on one `judgment` finding** (`src/finish/route.ts:75`),
-  before the fix route, so the phase's other findings are never fixed.
-- **Story level:** 85 fix cycles ended `agent-gave-up` (`UNRESOLVED:`). 63 TDD failures had no failure
-  category and defaulted to pause. Observed causes of give-ups:
-  1. the spec contradicting its ACs;
-  2. the three-session TDD role boundary: the implementer may not edit tests, and the test-writer may
-     not edit source.
-- **The give-up text is not logged.** Only the count is recorded, so these points have no reviewable
-  history (§4.12).
+**Story level.**
+- 85 fix cycles ended `agent-gave-up`.
+- 63 TDD failures had no category and defaulted to pause.
+- The cycle already logs the give-up text. `unresolvedDetail` is on `findings.cycle` records
+  (`src/findings/cycle-execute.ts:98,141,150`); 18 terminal give-ups since 09-10 carry it.
+- Those texts show three causes:
+  1. **a finding contradicts an AC or an existing test** (most common);
+  2. **a finding requires edits outside the story's scope**, owned by another story;
+  3. **a reviewer contradicts its own earlier finding** across rounds.
+- The user also observes the three-session TDD boundary as a cause: the implementer may not edit
+  tests, and the test-writer may not edit source.
 
 ## 3. Rulings (user, 2026-10-10)
 
 | # | Ruling |
 |---|---|
-| R1 | **The advisor acts on every in-scope decision and the run continues.** No live shadow period. An offline replay of the eval seed gates go-live (§9). |
+| R1 | **The advisor acts on every in-scope decision and the run continues.** No live shadow period. An offline replay gates callers 1 + 4 (§9). |
 | R2 | **Four callers:** (1) finish judgment findings, (2) `UNRESOLVED:` give-ups in the story fix cycle, (3) uncategorised TDD failure, (4) finish approval before the PR is promoted. **Deferred:** a verifier's "incorrect test" diagnosis; the #1527 rule (terminal human review) stands. **Out of A1:** NBF triage (A3). |
-| R3 | **Memory is configurable:** `advisor.memory: "stateless" \| "warm"`, default `stateless`. The decisions ledger is written in both modes and is the source of record. |
-| R4 | **Read-only agent session** (Read/Grep/Glob; no write tools, no Bash). **nax writes the ledger**, never the advisor. `advisor.model` is a `ConfiguredModel`, default `"powerful"`. |
-| R5 | **Spec amendments live only in the ledger.** `spec.md` and `prd.json` are never edited. A superseding decision goes into every later prompt that reads that AC, and into the PR body's "Spec amendments to apply" section. |
-| R6 | **Flagged decisions send a non-blocking heads-up** through the existing notification chain. **Every decision writes a replayable audit artifact.** `nax advisor replay` re-runs a decision. Overriding by reply is out of A1. |
-| R7 | **Go-live gate** for callers 1 + 4: ≥ 12/15 agreement and 0 unsafe disagreements on the eval seed, in at least one memory mode. Callers 2 + 3 go live without a seed gate, with every decision audited, and are re-evaluated after ~20 labelled live decisions. |
+| R3 | **Memory is configurable:** `advisor.memory: "stateless" \| "warm"`, default `stateless`. The ledger is written in both modes and is the source of record. |
+| R4 | **Read-only agent session.** nax writes the ledger, never the advisor. `advisor.model` is a `ConfiguredModel`, default `"powerful"`. |
+| R5 | **Spec amendments live only in the ledger.** `spec.md` and `prd.json` are never edited. A supersede goes into later prompts and the PR body's "Spec amendments to apply". |
+| R6 | **Flagged decisions send a non-blocking heads-up. Every decision writes a replayable audit artifact.** `nax advisor replay` re-runs a decision. Overriding by reply is out of A1. |
+| R7 | **Go-live gate** for callers 1 + 4: offline replay, 0 unsafe disagreements and the agreement bar in §9. Callers 2 + 3 go live without a seed gate, every decision audited, and are re-evaluated after ~20 labelled live decisions. |
 
 ## 4. Design
 
-### 4.1 Components
+### 4.1 Components and dependency direction
 
 | Unit | Location | Purpose |
 |---|---|---|
-| Types | `src/advisor/types.ts` | `AdviceQuestion`, `AdviceOption`, `AdviceAction`, `AdviceDecision` |
-| Option menus + guardrails | `src/advisor/menus.ts` | Per-kind closed option lists; deterministic preconditions; forced `needsHumanConfirm` |
-| Ledger | `src/advisor/ledger.ts` | Append and read `.nax/features/<f>/decisions.jsonl`, sequential ids, file lock |
-| Audit | `src/advisor/audit.ts` | Write `<outputDir>/advisor-audit/<feature>/<decisionId>.json` and `labels.jsonl` |
-| Service | `src/advisor/service.ts` | `advise(question)`: build options → `callOp(adviseOp)` → guardrails → ledger → audit → heads-up |
-| Memory | `src/advisor/memory.ts` | `stateless` / `warm` session strategy, per-feature queue for `warm` |
-| Op | `src/operations/advise.ts` | `adviseOp`, run-kind, stage `advise`, role `advisor` |
-| Prompt | `src/prompts/builders/advisor-builder.ts` | `AdvisorPromptBuilder` (the builder convention requires prompts to live in `src/prompts/builders/`) |
-| Context provider | `src/context/engine/providers/advisor-decisions.ts` | Puts relevant decisions (esp. `supersedes`) into later prompts |
-| CLI | `src/commands/advisor/*` + `bin/nax.ts` | `nax advisor list \| replay \| label \| import-finish` |
-| Barrel | `src/advisor/index.ts` | Public surface |
+| Types | `src/advisor/types.ts` | Question, option, action, decision types. Type-only module |
+| Menus + guardrails | `src/advisor/menus.ts` | Per-kind closed option lists, preconditions, forced `needsHumanConfirm` |
+| Ledger | `src/advisor/ledger.ts` | Read and append the feature ledger at the main repo's feature dir |
+| Audit | `src/advisor/audit.ts` | Artifacts + `labels.jsonl` under `<outputDir>/advisor-audit/<feature>/` |
+| Memory | `src/advisor/memory.ts` | `stateless` / `warm` session strategy; per-feature queue for `warm` |
+| Heads-up | `src/advisor/heads-up.ts` | Delivers the flagged-decision message through an injected channel |
+| Service | `src/advisor/service.ts` | `advise(actx, question)`: menu → `callOp(adviseOp)` → guardrails → ledger → audit → heads-up |
+| Op | `src/operations/advise.ts` | `adviseOp`, including reply parsing and menu validation |
+| Prompt | `src/prompts/builders/advisor-builder.ts` | `AdvisorPromptBuilder` |
+| Finish glue | `src/finish/advise.ts` | Judged-finding split, approval step, ledger commit |
+| Cycle glue | `src/execution/story-orchestrator/give-up-advice.ts` | Builds the `onGiveUp` hook |
+| Decide glue | `src/execution/uncategorised-advice.ts` | Caller 3 |
+| Context provider | `src/context/engine/providers/advisor-decisions.ts` | Story-stage prompts (§4.9) |
+| Config type | `src/config/runtime-types-advisor.ts` | `AdvisorConfig` (`runtime-types.ts` is at its size limit) |
+| CLI | `src/commands/advisor.ts` + `bin/nax.ts` | `nax advisor list \| replay \| label \| import-finish` |
 
-`src/advisor/` depends on operations, config, logger and the interaction chain. Callers (finish, the
-fix cycle, decide-action) depend on `src/advisor` through its barrel. Nothing in `src/advisor` imports
-finish or execution modules; callers pass plain data in.
+**Import direction:**
+- `src/advisor/service.ts` → `@/operations` (barrel).
+- `src/operations/advise.ts` → `@/advisor/types` type-only, plus `@/advisor/menus` (a leaf module with
+  no operations import, exposed as a nested barrel `src/advisor/menus/index.ts` if
+  `check:alias-internals` requires it).
+- Callers → `@/advisor`.
+- No `src/advisor` module imports finish, execution, or findings modules. The import-cycle baseline
+  (0 modules) must stay 0.
 
-### 4.2 Types
+### 4.2 Types (`src/advisor/types.ts`)
 
 ```ts
 export type AdviceQuestionKind =
@@ -87,35 +112,36 @@ export type AdviceQuestionKind =
   | "fix-cycle-give-up"      // caller 2
   | "uncategorised-failure"  // caller 3
   | "finish-approval";       // caller 4
-// Open union by design: A3 adds "nbf-triage", A5 may add workflow kinds (§10).
+// Open union by design: A3 adds "nbf-triage"; A5 may add workflow kinds (§10).
 
 export interface AdviceEvidence {
-  source: "finding" | "ac" | "spec" | "test-output" | "diff" | "agent-diagnosis" | "review-round" | "gate";
-  ref?: string;            // e.g. "US-005 AC-3", "src/x.ts:42", "finding #2"
+  source: "finding" | "ac" | "spec" | "test-output" | "diff" | "agent-diagnosis" | "review-round" | "gate" | "decision";
+  ref?: string;            // "US-005 AC-3", "src/x.ts:42", "finding #2", "D-4"
   text: string;
 }
 
-export type AdviceAction =
-  | { type: "fix"; instruction: string }                                   // fix with the chosen approach
-  | { type: "waive"; reason: string }                                      // keep the code as is
-  | { type: "supersede"; target: SupersedeTarget; newText: string }      // spec or AC wrong, code right
-  | { type: "retry"; instruction: string }                                 // same strategy, one more attempt, with the ruling
-  | { type: "retarget"; to: "test" | "source"; instruction: string }       // hand across the TDD boundary
-  | { type: "retry-as-lite" }                                               // three-session → lite on the next attempt
-  | { type: "escalate-tier"; reason: string }                              // today's behaviour, chosen deliberately
-  | { type: "defer"; reason: string }                                      // today's pause, with a diagnosis
-  | { type: "approve" }
-  | { type: "re-review"; phase: "spec" | "quality" }
-  | { type: "hold"; reason: string };                                      // today's finish escalate, with a rationale
-
 export type SupersedeTarget =
-  | { kind: "ac"; storyId: string; acId: string }   // an AC in prd.json
-  | { kind: "spec"; section: string };              // a spec.md section with no AC of its own (e.g. a design claim)
+  | { kind: "ac"; storyId: string; acId: string }  // an AC in prd.json
+  | { kind: "spec"; section: string };             // a spec.md section with no AC of its own
+
+export type AdviceAction =
+  | { type: "fix"; instruction: string }                          // caller 1: fix with this approach
+  | { type: "waive"; reason: string }                             // keep the code; finding rejected or out of scope
+  | { type: "supersede"; target: SupersedeTarget; newText: string } // spec/AC wrong, code right
+  | { type: "retry"; instruction: string }                        // caller 2: same strategy again, with guidance
+  | { type: "retarget"; to: "test" | "source"; instruction: string } // caller 2: hand across the TDD boundary
+  | { type: "retry-as-lite" }                                      // caller 3
+  | { type: "escalate-tier"; reason: string }                     // callers 2, 3: today's behaviour, chosen
+  | { type: "defer"; reason: string }                             // callers 2, 3: today's exit / pause, with a diagnosis
+  | { type: "approve" }                                            // caller 4
+  | { type: "re-review"; phase: "spec" | "quality" }              // caller 4
+  | { type: "hold"; reason: string };                             // callers 1, 4: today's finish escalation
 
 export interface AdviceOption {
   id: string;              // "A", "B", …: stable within one question
-  action: AdviceAction;    // instruction/reason/newText are filled by the advisor in its reply
-  label: string;           // human-readable description of the option
+  type: AdviceAction["type"];
+  label: string;           // human-readable; may name a fixed parameter (e.g. retarget → "test")
+  fixed?: Partial<AdviceAction>; // parameters the menu fixes (to, phase, target)
 }
 
 export interface AdviceQuestion {
@@ -123,8 +149,9 @@ export interface AdviceQuestion {
   kind: AdviceQuestionKind;
   feature: string;
   storyId?: string;
-  askedAtSha: string;      // HEAD when asked; replay checks this out
-  summary: string;         // one paragraph: what is in conflict
+  dedupeKey?: string;      // caller 1: `${phase}|${finding.title}|${firstPath(finding.problem) ?? ""}`
+  askedAtSha: string;      // HEAD when asked
+  summary: string;
   evidence: AdviceEvidence[];
   options: AdviceOption[]; // built by menus.ts, never by the advisor
 }
@@ -132,344 +159,494 @@ export interface AdviceQuestion {
 export type AdviceConfidence = "high" | "medium" | "low";
 
 export interface AdviceDecision {
-  id: string;              // "D-<n>", sequential per feature
+  id: string;              // "D-<n>", sequential per feature (§4.6)
   questionId: string;
   kind: AdviceQuestionKind;
   storyId?: string;
+  dedupeKey?: string;
   chosenOptionId: string;
-  action: AdviceAction;    // with the advisor's instruction/reason/newText filled in
+  action: AdviceAction;    // menu-fixed parameters merged with the advisor's text fields
   rationale: string;
   confidence: AdviceConfidence;
   reversible: boolean;
-  needsHumanConfirm: boolean; // advisor's flag OR'd with the forced rules in §4.3
+  needsHumanConfirm: boolean;
+  reusedFrom?: string;     // set when applied from an earlier decision without a new call (§4.8 caller 1)
   decidedAt: string;
-  model: string;           // resolved model id
+  model: string;
   memoryMode: "stateless" | "warm";
-  auditRef: string;        // path of the audit artifact, relative to outputDir
+  auditRef: string;        // relative to outputDir
+}
+
+/** What `advise` returns. `null` decision means: fall back (§5). */
+export interface AdviceResult {
+  decision: AdviceDecision | null;
+  fallbackReason?: string;
 }
 ```
 
-**The advisor only chooses from a closed menu.** The caller decides which actions are legal for this
-question (§4.3). The advisor picks one option id and fills in its free-text fields. A reply naming an
-option that isn't on the menu is a parse failure (§5).
+**The advisor only chooses from a closed menu.** It returns an option id plus free text (instruction,
+reason, newText, rationale). Parameters such as `retarget.to`, `re-review.phase` and
+`supersede.target` are fixed by the menu, not by the advisor. A reply naming an option that isn't on
+the menu, or missing a required text field, is a validation failure (§5).
 
-### 4.3 Option menus and guardrails (deterministic, `menus.ts`)
+### 4.3 Menus and guardrails (`src/advisor/menus.ts`, pure)
 
-| Kind | Options offered | Preconditions (option omitted when false) |
+| Kind | Options | Preconditions (option omitted when false) |
 |---|---|---|
-| finish-judgment | `fix`, `waive`, `supersede`, `hold` | `supersede` only when the finding cites an AC (target `ac`) or a spec section (target `spec`) |
-| fix-cycle-give-up | `retry`, `retarget`, `supersede`, `escalate-tier`, `defer` | `retry`/`retarget` only when the cycle has attempts left (`maxAttemptsTotal` / per-strategy caps) and the per-story ruling budget remains. `retarget: "test"` only when `isThreeSession` (#1330 invariant); `retarget: "source"` only when the giving-up strategy was the test-writer. `escalate-tier` only when a next tier exists |
-| uncategorised-failure | `retry-as-lite`, `escalate-tier`, `defer` | `retry-as-lite` only when three-session and not already lite; `escalate-tier` only when a next tier exists |
-| finish-approval | `approve`, `re-review`, `hold` | **`approve` only when every review phase's last round is complete (no evidence gaps) and the repo gates are green.** `re-review` at most once per finish run |
+| finish-judgment | `fix`, `waive`, `supersede`, `hold` | `supersede`: the finding cites an AC or spec section, and the supersede rule below allows it |
+| fix-cycle-give-up | `retry`, `retarget`, `waive`, `supersede`, `escalate-tier`, `defer` | `retry` / `retarget`: the target strategy has attempts left and `maxAttemptsTotal` is not reached. `retarget` to `"test"`: `isThreeSession` (#1330), and the giving-up strategy was a source fixer. `retarget` to `"source"`: the giving-up strategy was the test fixer. `escalate-tier`: a next tier exists. All options except `escalate-tier` / `defer` need the per-story ruling budget (§4.13) not to be exhausted |
+| uncategorised-failure | `retry-as-lite`, `escalate-tier`, `defer` | `retry-as-lite`: three-session and not already lite. `escalate-tier`: a next tier exists |
+| finish-approval | `approve`, `re-review`, `hold` | **`approve`: every review phase's last recorded round has outcome `passed` or `advised`, none with open gaps, and the repo gates are green after the last commit.** `re-review`: not yet used this finish run |
 
-**Forced `needsHumanConfirm`**, regardless of what the advisor says:
-- the advisor reported `confidence: "low"` or `reversible: false`;
-- the action is `supersede`, `defer` or `hold`;
-- the action is `waive` on a finding of severity HIGH or CRITICAL.
+**Supersede rule (fixes H4).** `supersede` with target `ac` is offered only when no generated
+acceptance test pins that AC: acceptance is disabled for the story's package, or the feature's
+acceptance test has no case for that AC id. Reason: gates are never changed by a decision (§4.3
+invariants), so a superseded AC that an acceptance test still asserts would fail the gate and repeat
+the contradiction. Target `spec` (a spec section with no AC) is always allowed.
 
-**Invariants** (every guardrail traces back to the seed's unsafe list):
-- **No decision can change a gate result.** Gates stay deterministic. `approve` is unavailable after an
-  incomplete review.
-- **A supersede never edits `spec.md` or `prd.json`.** The original text and the override stay visible
-  side by side.
-- **The advisor has no write tools.** nax writes the ledger, the audit artifact, and any commit.
+**Forced `needsHumanConfirm`**, whatever the advisor reports:
+- `confidence: "low"` or `reversible: false`;
+- action `supersede`, `defer` or `hold`;
+- action `waive` on a finding with blocking severity:
+  - finish: `HIGH` or `CRITICAL`;
+  - story findings: `error` or `critical`.
 
-### 4.4 `adviseOp`
+**Invariants:**
+- No decision changes a gate's pass/fail.
+- `approve` is never offered after an incomplete or advised-with-gaps review, or with red gates.
+- A supersede never edits `spec.md` or `prd.json`.
+- The advisor holds no write tools. nax writes the ledger, the audit, and any commit.
 
-- `kind: "run"`; `name: "advise"`; new pipeline stage `advise` in `PIPELINE_STAGES`; new session role
-  `advisor` (register it in the adapter-wiring role table).
-- **Permissions:** stage `advise` resolves through `resolvePermissions` to read-only coding tools
-  (Read, Grep, Glob) with no Bash and no write tools. Grep and Glob are injected where the agent's
-  `read` profile lacks them (ACP Claude).
-- **Model:** `input.model ?? config.advisor.model` (`ConfiguredModel`, default `"powerful"`).
-- **Timeout:** `input.timeoutMs ?? ctx.config.execution.sessionTimeoutSeconds * 1000`, the same pattern
-  as `finish-review`.
+### 4.4 `adviseOp` (`src/operations/advise.ts`)
+
+- `kind: "run"`, `name: "advise"`, **`stage: "review"`**, `tools: ["Read", "Glob", "Grep"]`. That is
+  the same read-only mechanism `fixReviewOp` and `adversarialReviewOp` use: the advertised tools are
+  the op's declaration intersected with the grants (`src/operations/types.ts`). No new pipeline stage.
+- `session: { role: "advisor", lifetime: "fresh" }`. `warm` mode overrides the lifetime (§4.5). Add
+  `advisor` to `KNOWN_SESSION_ROLES` in `src/runtime/session-role.ts` and to the role table in
+  `.nax/rules/adapter-wiring.md`, then `nax generate` + `check:rules-drift`.
+- `config: advisorConfigSelector`; `model: (input, ctx) => input.model ?? ctx.config.advisor.model`.
+- `timeoutMs: (input, ctx) => input.timeoutMs ?? ctx.config.advisor.timeoutMs ?? ctx.config.execution.sessionTimeoutSeconds * 1000`.
 - **Prompt** (`AdvisorPromptBuilder`):
-  1. the role, and the decision policy distilled from the seed rulings:
-     - fix real defects with the most conservative option;
-     - the spec wins unless its premise is wrong;
-     - waive only with a spec-backed reason, and record a supersede when the spec is what's wrong;
-     - an incomplete review is never an approval;
-  2. the feature spec path + the PRD (all stories and ACs);
-  3. the ledger so far (stateless) or "new question" (warm);
-  4. the question summary, evidence and option menu;
-  5. the reply contract.
-- **Reply contract:** a final fenced JSON block,
-  `{ optionId, instruction?, reason?, newText?, rationale, confidence, reversible, needsHumanConfirm }`,
-  parsed with `parseLLMJson` and validated against the question's menu.
-- **Retry:** `op.retry` with `makeParseRetryStrategy` (one reprompt quoting the validation error).
+  - the role and decision policy, from the human rulings:
+    1. real defects are fixed with the most conservative option;
+    2. the spec wins unless its premise is wrong;
+    3. waive only with a spec-backed or scope-backed reason, and record a supersede when the spec is
+       what's wrong;
+    4. an incomplete review is never an approval;
+  - the spec path, the PRD (all stories and ACs), the prior decisions (stateless), the question
+    summary, evidence and menu;
+  - the reply contract: a final fenced JSON block
+    `{ optionId, instruction?, reason?, newText?, rationale, confidence, reversible, needsHumanConfirm }`.
+- **Parse:** `tryParseLLMJson`, then validate against `input.question.options` (menu membership, the
+  required text field for the option's type, the enum values). Output:
+  `{ ok: true, reply } | { ok: false, error: string, preview: string }`.
+- **Retry:** `op.retry` with `makeParseRetryStrategy` handles a missing or unparseable JSON object only.
+  Its exhausted fallback returns `{ ok: false, error: "no-json" }`. An off-menu or invalid reply is not
+  retried; it is a validation failure and falls back (§5).
 
-### 4.5 Memory modes (`memory.ts`)
+### 4.5 Memory modes (`src/advisor/memory.ts`)
 
 | | `stateless` (default) | `warm` |
 |---|---|---|
-| Session | `lifetime: "fresh"` per question | One session per (run, feature), `lifetime: "warm"` |
-| Prior decisions | The full ledger in the prompt | Already in the transcript; on (re)open, the ledger is replayed into the first turn |
-| Concurrency | Parallel stories call independently | A per-feature async queue serialises questions |
-| Crash / resume | Nothing to restore | Rebuilt from the ledger (no saved transcripts needed) |
+| Session | `lifetime: "fresh"` per question | One session per (run, feature), `lifetime: "warm"`, opened on the first question |
+| Prior decisions | Full ledger in the prompt | Replayed into the first turn; new decisions added as later turns |
+| Concurrency | Independent calls | Per-feature async queue serialises questions |
+| Crash / resume | Nothing to restore | Re-open, replay the ledger into the first turn, retry the question once, then use stateless for that question |
+| Close | n/a | Closed by the runtime's normal session sweep at run end (and by finish's end) |
 
-Both modes write the same ledger entries and audit artifacts, so replay and comparisons don't depend
-on the mode.
+### 4.6 Ledger (`src/advisor/ledger.ts`)
 
-### 4.6 Ledger (`ledger.ts`)
+- **Location:** `featureDir(repoRoot, feature)/decisions.jsonl`, where `repoRoot` is the **main
+  checkout**, never a story worktree. Use `featureDir` from `@/config`; the literal path is banned by
+  `check:feature-dir-ssot`. It is not matched by `NAX_GITIGNORE_ENTRIES`, so it is tracked like
+  `prd.json`.
+- **Append:** under `withPathFileLock` on that one path, so parallel worktree stories serialise on the
+  same file and ids can't collide. `D-<n>` with n = number of existing lines + 1, computed inside the
+  lock.
+- **Commit:**
+  - During a run, the ledger is swept by the same commits that already carry `prd.json`
+    (`autoCommitIfDirty` stages with `git add -A` at the repo root).
+  - Finish adds a **ledger-only commit** before promoting (`commitLedger` in `src/finish/advise.ts`):
+    `git add <ledger>` + `git commit -m "chore(<feature>): advisor decisions"` with `skipHooks`.
+  - That commit does **not** go through `commitFixes`, does not set `committedThisRun`, and does not
+    move the review window (`noteCommitWindow`).
+- **Agents can't write it:** `.nax/features` is in `NAX_NEVER_OPT_IN`. A test pins that an agent
+  `Write` to the ledger path is refused.
 
-- **Path:** `.nax/features/<feature>/decisions.jsonl`. It is not covered by any
-  `NAX_GITIGNORE_ENTRIES` pattern, so it is tracked and lands in the branch, like `prd.json`.
-- **Writes:** one `AdviceDecision` per line, appended under `withPathFileLock`. Ids are `D-<n>`,
-  where n = existing line count + 1, computed inside the lock. A write failure is fatal for that
-  decision only: the caller falls back to today's behaviour (§5).
-- **Commit:** the ledger rides on the next nax commit (story commit or finish fix commit). The finish
-  phase commits any pending ledger change before promoting.
-- **Agents can't write it:** agent writes to `.nax/features/` are already refused
-  (`nax-owned-writes`, #2260). No change needed; a test pins it.
+### 4.7 Audit artifact, replay, labels, import
 
-### 4.7 Audit artifact, replay, labels, import (`audit.ts`, CLI)
-
-**Artifact:** `<outputDir>/advisor-audit/<feature>/<decisionId>.json`:
+**Artifact:** `<outputDir>/advisor-audit/<feature>/<decisionId or questionId>.json`.
 ```ts
-{ schemaVersion: 1, naxVersion, naxCommit, runId, question /* full AdviceQuestion */,
-  context: { specPath, specSha256, prdSha256, priorDecisionIds: string[], priorDecisions: AdviceDecision[] },
-  memoryMode, model, prompt /* full text */, toolCalls /* tool-audit refs */, rawReply, decision,
-  costUsd, headsUp: { sent: boolean, deliveryError?: string } }
+{ schemaVersion: 1, naxVersion, naxCommit, runId,
+  question,                                   // full AdviceQuestion
+  context: { specPath, specSha256, prdSha256, priorDecisions: AdviceDecision[] },
+  worktree: { sha: string, patch: string, patchTruncated: boolean }, // `git diff HEAD` + untracked, capped at 256 KiB
+  memoryMode, model, prompt, rawReply, result /* AdviceResult */, costUsd,
+  headsUp: { sent: boolean, reason?: string } }
 ```
-`priorDecisions` is stored inline so a replay sees exactly what the original call saw, even after the
-ledger has grown.
 
-**CLI** (`nax advisor …`). Replays are billed LLM calls; the command says so before running.
-- `list [-f <feature>]` — the decisions table from the ledger, flagged first.
-- `replay <decisionId> | -f <feature> [--model <ConfiguredModel>] [--memory stateless|warm] [--json]`:
-  1. creates a temporary detached worktree at `askedAtSha`, in the OS temp dir, outside the repo;
-  2. re-runs `adviseOp` on the recorded question with the recorded `priorDecisions`;
-  3. prints original vs replay, and writes `<decisionId>.replay-<ts>.json`;
-  4. removes the worktree.
-- `replay … --eval` — also reads `labels.jsonl` and prints the agreement count and the unsafe count.
-  This is the §9 gate tool.
-- `label <decisionId> agree|disagree [--expected <optionId|actionType>] [--unsafe] [--note <text>]` —
-  appends to `<outputDir>/advisor-audit/<feature>/labels.jsonl`.
-- `import-finish <result.json> --sha <sha>` — turns a recorded finish escalation into `finish-judgment`
-  / `finish-approval` questions (one per judgment finding, or one approval question for a gap
-  escalation) and writes them as unanswered audit artifacts. Older finish results carry no `headSha`,
-  so `--sha` is required when absent.
+**CLI** (`src/commands/advisor.ts`, registered in `bin/nax.ts`). Replays are billed; the command
+prints that before running.
+- `nax advisor list [-f <feature>]` — the ledger, flagged first.
+- `nax advisor replay <decisionId> | -f <feature> [--model <ConfiguredModel>] [--memory stateless|warm] [--eval] [--json]`:
+  1. creates a temporary detached worktree at `worktree.sha` in the OS temp dir;
+  2. applies `worktree.patch`, or warns that the replay is approximate when it was truncated;
+  3. re-runs `adviseOp` with the recorded question and `priorDecisions`;
+  4. prints original vs replay and writes `<id>.replay-<ts>.json`;
+  5. removes the worktree.
+
+  `--eval` also scores against `labels.jsonl`: agreement count and unsafe count.
+- `nax advisor label <id> agree|disagree [--expected <optionType>] [--unsafe] [--note <text>]` — appends
+  to `labels.jsonl`.
+- `nax advisor import-finish <result.json> --sha <sha>` — converts each `judgment` finding in a recorded
+  finish escalation into a `finish-judgment` question. The menu is built as if the run were live
+  (acceptance state read from the feature at `<sha>`). Gap-only escalations are reported as "not
+  importable in A1".
 
 ### 4.8 Caller wiring
 
-**Caller 1: finish judgment** (`src/finish/route.ts`, `src/finish/machine.ts`).
-- `routeReview` gains a route **`advise`**, used when ≥ 1 finding has `judgment` and
-  `advisor.enabled && advisor.callers.finishJudgment`. The order becomes:
+#### Caller 1: finish judgment (`src/finish/route.ts`, `src/finish/machine.ts`, `src/finish/advise.ts`)
+
+- `routeReview(phase, outcome, st, opts?: { advise?: boolean; adviseRounds?: number })` gains a route
+  `advise`. The new order:
   1. no output → escalate;
-  2. **judged findings → advise**;
-  3. gaps → incomplete / escalate (unchanged; A4 revisits);
-  4. clean;
-  5. fix / cap-escalate.
+  2. **gaps → `incomplete` while under `MAX_INCOMPLETE_ATTEMPTS`, else escalate (unchanged)**;
+  3. judged findings + `opts.advise` + `adviseRounds < MAX_ADVISE_ROUNDS` (2) → `advise`;
+  4. judged findings otherwise → escalate (today);
+  5. zero findings → clean;
+  6. fix / cap-escalate (unchanged, `MAX_FIX_ATTEMPTS`).
 
-  `routeReview` stays pure; the flag reaches it through `FinishPhaseState`.
-- `runReviewLoop` on `advise` calls `ops.advise(phase, judgedFindings)`, one question per judged
-  finding, and maps each decision:
-  - `fix` → the finding (with the instruction appended) joins the fix list;
-  - `waive` / `supersede` → recorded and removed from the list;
-  - `hold` → `doEscalate` with the advisor's rationale (today's path).
+  Gaps go before advise, so an advised round never hides unread evidence.
+- On `advise`, `runReviewLoop` calls `deps.advise.judged(phase, judgedFindings, state)` from
+  `src/finish/advise.ts`:
+  - **dedupe first:** for each judged finding, if the ledger holds a decision with the same
+    `dedupeKey` whose action is `waive` or `supersede`, apply it again without a call (a decision with
+    `reusedFrom` is recorded);
+  - otherwise ask one question per finding.
+- Mapping:
+  - `fix` → the finding, with the instruction appended to `fix`, joins the fix list;
+  - `waive` / `supersede` → removed from the fix list;
+  - `hold` → `doEscalate` with the advisor's rationale;
+  - a fallback (null decision) → `doEscalate`, today's behaviour.
 
-  If anything is left to fix, it continues to the existing fix step (same `MAX_FIX_ATTEMPTS`).
-  Otherwise the round is recorded `passed` with the dispositions.
-- The round record gains `advice: { decisionId, optionId }[]`.
+  If any findings remain (plain + `fix`), continue to the existing fix step. Otherwise record the
+  round with the **new outcome `advised`** and continue the loop, which re-reviews. `phaseState`
+  gains `adviseRounds`.
+- **Round record:** `FinishRoundOutcome` gains `"advised"` and `FinishRound` gains an optional
+  `advice: { decisionId: string; optionId: string; reused: boolean }[]`. The change is additive (rounds
+  carry no schema version). Update the outcome renderer in `src/finish/pr/body.ts` and the readers in
+  `src/finish/pr/context.ts`.
 
-**Caller 4: finish approval** (`machine.ts`, before `finishTerminal` → `promotePr`).
-- When `advisor.callers.finishApproval`, ask a `finish-approval` question. Evidence: all rounds, the
-  diffstat, the gate result, the feature's ledger, and the waived and deferred items.
-  - `approve` → `finishTerminal`.
-  - `re-review` → one more `runReviewLoop(phase)`, then ask again (`re-review` is not offered twice).
-  - `hold` → `doEscalate`.
+#### Caller 4: finish approval (`src/finish/machine.ts`, `src/finish/advise.ts`)
 
-**Caller 2: fix-cycle give-up** (`src/findings/cycle.ts`, `src/execution/story-orchestrator/rectification.ts`).
-- `CycleOptions` gains an optional `onGiveUp(state, iteration): Promise<GiveUpResolution | null>`.
-  `handleGiveUps` calls it before exiting `agent-gave-up`; `null` keeps today's exit. `cycle.ts` stays
-  generic; it knows nothing about the advisor.
-- `rectification.ts` supplies the hook when `advisor.callers.fixCycleGiveUp`. It builds the question
-  from the `unresolvedDetail`, the findings, and the story's ACs, then maps the decision:
-  - `retry` → re-dispatch the same strategy with the ruling added to the fix prompt (counts against the
-    cycle caps);
-  - `retarget` → re-tag the findings' `fixTarget` (the existing re-tag path used by test-edit
-    declarations, gated by `allowTestRetag`) and let the claimant fall through (#1654);
-  - `supersede` → record, then `retry` with the superseded AC text in the prompt;
-  - `escalate-tier` / `defer` → exit as today, with the decision id and rationale added to
-    `unresolvedDetail`, so the next tier's `priorErrors` carries the ruling.
-- **Budget:** `advisor.maxRulingsPerStory` (default 2). Once exhausted, the hook returns `null`.
+- In `runFinishMachine`, after `runQualityGatesLoop` returns green and before `finishTerminal`, call
+  `deps.advise.approval(state)` when caller 4 is enabled:
+  - `approve` → `commitLedger`, then `finishTerminal`;
+  - `re-review` → `runReviewLoop(phase)`. If that loop committed anything, run `runQualityGatesLoop`
+    again (invariant I4). Then ask again; `re-review` is no longer on the menu;
+  - `hold` → `commitLedger`, then `doEscalate` with the rationale;
+  - **a fallback (null decision) → `doEscalate`.** Caller 4 fails closed. With the advisor enabled,
+    a failed approval escalates and does not promote.
 
-**Caller 3: uncategorised failure** (`src/execution/post-run-decide-action.ts`, `routeTddFailureBranch`).
-- When `failureCategory === undefined` and `advisor.callers.uncategorisedFailure`, ask before
-  `routeTddFailure` falls back to pause:
-  - `retry-as-lite` → set `ctx.retryAsLite` and return `escalate`;
-  - `escalate-tier` → `escalate` with the rationale;
-  - `defer` → today's `pause`, with the decision id and rationale in the reason.
+  With caller 4 disabled, `finishTerminal` runs as today.
+- `FinishMachineDeps` gains `advise?: FinishAdvisor`
+  (`{ judged(...): Promise<JudgedOutcome>; approval(state): Promise<AdviceResult> }`), built in
+  `src/finish/phase.ts` when the advisor is enabled. Absent → today's behaviour.
 
-### 4.9 Decisions in later prompts (`AdvisorDecisionsProvider`)
+#### Caller 2: fix-cycle give-up (`src/findings/*`, `src/execution/story-orchestrator/give-up-advice.ts`)
 
-A Context Engine v2 provider, repo-scoped and push-style, modelled on `prior-run-failure.ts`:
-- **Reads:** the feature ledger.
-- **Emits:**
-  - one chunk per decision that affects the requested story (same `storyId`, or a `supersede` whose
-    `target.storyId` matches);
-  - plus every `supersede` with target `spec` (they are feature-wide), and every `supersede` for finish
-    and review stages.
-- **Text form:** `"US-005 AC-3 is superseded by advisor decision D-4: <newText> (reason: …)"`.
-- **Stages:** implementer, test-writer, rectification, semantic and adversarial review, finish review
-  and fix.
-- **Failure handling:** a missing or empty ledger produces no chunks and no throw, the same handling as
-  `prior-run-failure`.
+- `FixCycle<F>` (`src/findings/cycle-types.ts`) gains an optional
+  `onGiveUp?: (input: GiveUpInput<F>) => Promise<GiveUpResolution<F> | null>`.
+- `GiveUpInput<F>` holds:
+  - `findings: readonly F[]`;
+  - `gaveUp: { strategyName: string; unresolvedDetail: string }[]`;
+  - `attemptsLeft: Record<string, number>`;
+  - `totalAttemptsLeft: number`.
+- `GiveUpResolution<F>` holds:
+  - `findings: F[]` — the replacement working set (waived findings removed; retargeted findings carry
+    the new `fixTarget`; every remaining finding may carry `guidance`);
+  - `reinstate: string[]` — strategy names to un-decline;
+  - `exit?: "agent-gave-up"` — keep today's exit, with `unresolvedDetail` extended by the decision.
+- `handleGiveUps` (`src/findings/cycle-execute.ts:74`) becomes `async`, and its call site in
+  `src/findings/cycle.ts` awaits it. When every strategy in the group gave up, and **no remaining
+  claimant exists (after the #1654 check)**, and `cycle.onGiveUp` is set, it calls the hook before
+  exiting:
+  - `null` or `exit` → today's exit (extended detail);
+  - otherwise → set `cycle.findings = resolution.findings`, call
+    `state.declines.clearDeclined(name, findings)` for each name in `reinstate`, and `continue` the
+    loop.
 
-### 4.10 Heads-up notification
+  If the replacement set is empty, the next iteration's early-resolved exit ends the cycle as
+  resolved.
+- `DeclineLedger` (`src/findings/cycle-retirement.ts`) gains `clearDeclined(strategy, findings)`, the
+  inverse of `recordDeclined` for the same finding keys.
+- **`Finding.guidance?: string`** (`src/findings/types.ts`) is a new optional field, **not part of
+  `findingKey`**. The rectifier finding renderers in `src/prompts/builders/rectifier-builder*.ts` print
+  it under each finding as `Advisor ruling (D-n): …`. Validators re-emit findings without guidance, so
+  a ruling lasts one dispatch. Its lasting channel is the ledger and the context provider (§4.9).
+- `give-up-advice.ts` exports `buildGiveUpHook(deps)`, which `rectification.ts` attaches to the cycle
+  object in **one line** (that file is at 599/600 lines, and `runRectification` is complexity-baselined
+  at 49 and must not grow). Make room by moving an existing helper out in the same task if needed.
+  Mapping:
+  - `retry` → the same findings with `guidance`; reinstate the strategy that gave up;
+  - `retarget` → set `fixTarget` on the findings; reinstate the claimant for that target; add
+    `guidance`;
+  - `waive` → remove the findings; the decision is the record. A blocking-severity waive is
+    force-flagged (§4.3);
+  - `supersede` → record it, then behave like `retry` with guidance quoting the new text;
+  - `escalate-tier` / `defer` → `exit`; the detail gains `[advisor D-n: <rationale>]`, so the next
+    tier's `priorErrors` carries the ruling;
+  - fallback → `null`.
+- Not offered for findings whose source is a mechanical check (lint/typecheck).
 
-When `decision.needsHumanConfirm && advisor.notify.headsUp`, send one non-blocking message:
-- **Story callers:** through the interaction chain (`sendPostRunNotification` path).
-- **Finish callers:** through finish's notifier (`src/finish/notify.ts`).
+#### Caller 3: uncategorised failure (`src/execution/post-run-decide-action.ts`, `src/execution/uncategorised-advice.ts`)
 
-The message carries the feature, story, question summary, chosen option, rationale, and decision id.
-Delivery failure is logged and recorded in the audit artifact (`headsUp.deliveryError`), and never
-fails the decision.
+- In `routeTddFailureBranch`, when `failureCategory === undefined`, the human-review branch didn't
+  fire, and caller 3 is enabled, call `adviseUncategorised(frame)` before `routeTddFailure`:
+  - `retry-as-lite` → `ctx.retryAsLite = true`; `{ action: "escalate", reason }`;
+  - `escalate-tier` → `{ action: "escalate", reason: "<rationale> [advisor D-n]" }`;
+  - `defer` → today's `pause`, with `uncategorisedPauseReason` plus `[advisor D-n: <rationale>]`;
+  - fallback → today's path.
+- The call site adds one guarded line. The logic lives in `uncategorised-advice.ts` (complexity limit
+  20).
+
+### 4.9 Decisions in later prompts
+
+- **Story stages: `AdvisorDecisionsProvider`.**
+  - A Context Engine v2 provider, repo-scoped and push-style, modelled on `prior-run-failure.ts`.
+  - Registered in `orchestrator-factory.ts` and enabled through `providerIds` for the existing story
+    stages in `STAGE_CONTEXT_MAP` that build implementer, test-writer, rectification and review
+    bundles (the plan confirms the exact keys; `stage-reachability.test.ts` guards them).
+  - It emits one chunk per decision that affects the requested story: same `storyId`, a `supersede`
+    whose target story matches, or any `supersede` with target `spec`.
+  - Text: `"US-005 AC-3 is superseded by advisor decision D-4: <newText> (reason: …)"`.
+  - A missing or empty ledger produces no chunks and no throw.
+- **Finish: direct injection.** Finish ops don't use the context engine.
+  - `buildReviewPrompt` and the finish-fix prompt builder take an optional `decisions` string
+    (supersedes + waives for the feature).
+  - `ops-impl.ts` loads it from the ledger.
+  - This also stops a reviewer re-raising a finding that was already waived.
+
+### 4.10 Heads-up (`src/advisor/heads-up.ts`)
+
+- When `decision.needsHumanConfirm && advisor.notify.headsUp`, send one message: feature, story,
+  summary, chosen option, rationale, decision id. The channel is injected by the caller:
+  - **story callers:** `sendPostRunNotification`. When `ctx.interaction` is unset → record
+    `sent: false, reason: "no-interaction-channel"`;
+  - **finish callers:** finish's Telegram sender when `finish.notify.mode !== "off"` and credentials
+    exist, else `sent: false, reason: "finish-notify-off"`.
+- The result is recorded in the audit `headsUp` field and logged at warn when not sent. Delivery
+  failure never fails the decision.
 
 ### 4.11 PR body and run summary
 
-- **PR body:** the finish PR body builder (`src/finish/pr/`) adds an **"Advisor decisions"** section:
-  flagged decisions first, then the rest, one line each (id, story, chosen action, rationale), plus a
-  **"Spec amendments to apply"** sub-section listing every `supersede` with its suggested text.
-- **Run summary** (finish disabled or not): the run-end log line and `status.json` gain
+- **PR body.** `buildBodySections` (`src/finish/pr/body.ts:197`) gains an **"Advisor decisions"**
+  section and a **"Spec amendments to apply"** sub-section:
+  - flagged decisions first, one line each;
+  - fed by `loadFinishPrContext` reading the ledger, so `narrate`'s rebuild keeps it;
+  - tested under the template modes merge, strict and ignore.
+- **Run summary.** The run-end summary log and `status.json` gain
   `advisor: { decisions, flagged, byKind }`.
 
-### 4.12 Log the give-up text
+### 4.12 Give-up text in the story-orchestrator summary log
 
-`unresolvedDetail` is added (truncated to 2,000 characters) to the existing `findings.cycle` "cycle
-exited — agent gave up" and `story-orchestrator` "Rectification exited: agent-gave-up" log records.
-This is independent of `advisor.enabled`; it creates the history callers 2 + 3 need for labelling.
+The cycle already logs `unresolvedDetail`. The only gap is the `story-orchestrator` "Rectification
+exited" summary (`rectification.ts:~527-540`). Add it **only** via an extracted helper that also frees
+lines in that file. Otherwise drop this item: the cycle records suffice for labelling.
 
 ### 4.13 Config
 
-```ts
-advisor: z.object({
-  enabled: z.boolean().default(false),           // flipped after the §9 gate passes
-  model: ConfiguredModelSchema.default("powerful"),
-  memory: z.enum(["stateless", "warm"]).default("stateless"),
-  callers: z.object({
-    finishJudgment: z.boolean().default(true),
-    fixCycleGiveUp: z.boolean().default(true),
-    uncategorisedFailure: z.boolean().default(true),
-    finishApproval: z.boolean().default(true),
-  }).default({}),
-  maxRulingsPerStory: z.number().int().min(0).default(2),
-  notify: z.object({ headsUp: z.boolean().default(true) }).default({}),
-  timeoutMs: z.number().int().positive().optional(),
-}).default({})
-```
-- Selector: `advisorConfigSelector = pickSelector("advisor", "advisor", "execution", "models", "agent")`
-  in `src/config/selectors.ts`.
-- **Root-level only.** The advisor rules on feature-level questions that can span packages, so
-  per-package overrides (`.nax/mono/<pkg>/config.json`) are ignored for this block, and a warning names
-  the key when one is present (monorepo-awareness rule A, with the exception documented).
+- **Zod** (`src/config/schemas.ts` or a new `schemas-advisor.ts`):
+  ```ts
+  advisor: z.object({
+    enabled: z.boolean().default(false),
+    model: ConfiguredModelSchema.default("powerful"),
+    memory: z.enum(["stateless", "warm"]).default("stateless"),
+    callers: z.object({
+      finishJudgment: z.boolean().default(false),
+      fixCycleGiveUp: z.boolean().default(false),
+      uncategorisedFailure: z.boolean().default(false),
+      finishApproval: z.boolean().default(false),
+    }).default({}),
+    maxRulingsPerStory: z.number().int().min(0).default(2),
+    notify: z.object({ headsUp: z.boolean().default(true) }).default({}),
+    timeoutMs: z.number().int().positive().optional(),
+  }).default({})
+  ```
+- A caller runs only when **`enabled` and its own flag** are both true. Each flag defaults false, so
+  callers 1 + 4 (after §9) and 2 + 3 are switched on independently.
+- **`maxRulingsPerStory`** counts ledger decisions of kinds 2 + 3 for that `storyId` across the whole
+  feature (all tiers and attempts). Once reached, the menus offer only `escalate-tier` / `defer`.
+- **Type:** `AdvisorConfig` in `src/config/runtime-types-advisor.ts`, re-exported. `NaxConfig` gains
+  `advisor: AdvisorConfig`. `runtime-types.ts` is at its size limit, so only the one field is added
+  there.
+- **Selector:** `advisorConfigSelector = pickSelector("advisor", "advisor", "execution")` in
+  `src/config/selectors.ts`, with the `AdvisorConfig` slice type there.
+- **Root-only:** the advisor rules on feature-level questions, so per-package overrides are pinned to
+  the root value. Add `advisor` to `pinRootOnlyKeys` and `pinRootOnlyKeysRaw` in
+  `src/config/root-only-keys.ts`; a package override logs the existing root-only warning. This is a
+  documented exception to monorepo rule A.
 
 ## 5. Failure handling
 
 | Situation | Behaviour |
 |---|---|
-| `advisor.enabled: false` or caller flag off | Today's behaviour exactly; no question asked |
-| Advisor session fails to open, times out, or returns empty | Today's behaviour (escalate / pause / exit). Audit artifact written with `decision: null` and the error; warn log |
-| Reply unparseable, or names an option not on the menu, after one reprompt | Same as above |
-| Ledger write fails | Today's behaviour for that question; error log; the audit artifact still written |
-| Audit write fails | Decision proceeds (the ledger is the record); warn log |
-| Heads-up delivery fails | Decision proceeds; `headsUp.deliveryError` recorded |
-| `warm` session dies mid-run | Re-open, replay the ledger into the first turn, retry the question once; then stateless fallback for that question |
-| Run cancelled (Ctrl-C) during a question | Abort like any op (`assertNotAborted`); no decision recorded |
+| Advisor or caller flag off | Today's behaviour exactly; no question asked |
+| Session fails to open, times out, empty reply, no JSON after retry, off-menu or invalid reply | `AdviceResult.decision = null`, audit written with `fallbackReason`, warn log. **Callers 1, 2, 3: today's behaviour. Caller 4: escalate (fails closed)** |
+| Ledger write fails | Treated as a fallback (no ledger, no action). Audit still written |
+| Audit write fails | The decision proceeds (the ledger is the record); warn log |
+| Heads-up not sent | The decision proceeds; `headsUp.sent: false` with a reason |
+| `warm` session dies | Re-open + ledger replay + one retry, then stateless for that question |
+| Run cancelled during a question | Abort like any op; no decision recorded |
 
-Fail-safe direction: **every advisor failure lands on today's behaviour, never on an approval.**
+**No advisor failure ever leads to an approval.**
 
 ## 6. Out of scope
 
-- The verifier "incorrect test" diagnosis (R2).
+- The verifier "incorrect test" diagnosis.
 - NBF triage (A3).
 - Changing finish's evidence-gap escalation (A4).
-- Overriding a decision by replying to the heads-up (R6).
-- Editing `spec.md` or `prd.json` (R5).
-- Auto-merge (never).
-- Any change to gate pass/fail logic.
+- Override by reply.
+- Editing `spec.md` or `prd.json`.
+- Auto-merge.
+- Gate pass/fail logic.
+- Superseding an AC that a generated acceptance test pins (§4.3).
 
 ## 7. Testing
 
-All tests use injected deps and fake agent managers. **No real agent execution** (#1479).
+All tests use injected `_deps` and fake agent managers. No real agent execution (#1479).
 
-- **Unit:**
-  - `menus.ts`: every precondition, including `retarget: "test"` absent in single-session and
-    `approve` absent after a gap round; the forced-flag rules.
-  - `ledger.ts`: sequential ids under concurrent appends; lock; append-only.
-  - `audit.ts`: shape, inline `priorDecisions`.
-  - `adviseOp` parse: valid reply, off-menu option, missing fields, fenced or unfenced JSON.
-  - `routeReview`: the `advise` route ordering (judged before gaps; flag off reproduces today's
-    result).
-  - Memory: the `warm` queue serialises; rebuild-from-ledger.
-- **Integration:**
-  - The finish machine with fake ops, covering judged + plain findings: plain ones fixed, judged ones
-    advised; `hold` → escalate; `approve` path; `re-review` once.
-  - The fix cycle with an `onGiveUp` hook: retry within caps, retarget in three-session, null fallback.
-  - decide-action caller 3 mapping.
-  - The provider emitting supersede chunks into an implementer prompt.
-- **CLI:** `replay` against a fake runtime (worktree created and removed; output diff); `label`;
-  `import-finish` on a fixture result.
-- **Regression pins:**
-  - with `advisor.enabled: false`, finish / cycle / decide-action outputs are byte-identical to today
-    on the existing fixtures;
-  - an agent `Write` to `.nax/features/<f>/decisions.jsonl` is refused.
+**Unit:**
+- Menus: every precondition, including:
+  - `retarget: "test"` absent in single-session;
+  - `approve` absent after an `incomplete` round or red gates;
+  - `supersede` of an AC absent when an acceptance test pins it;
+  - budget exhaustion leaves only `escalate-tier` / `defer`.
+- The forced-flag rules.
+- `adviseOp` parse: valid, off-menu, missing text field, fenced and unfenced, exhausted fallback.
+- The ledger:
+  - sequential ids with concurrent appends from two "worktrees" (two callers, same repo-root path);
+  - the `featureDir` path;
+  - an agent `Write` to the ledger is refused.
+- The audit shape, including the patch cap.
+- `routeReview` ordering:
+  - gaps before advise;
+  - advise cap → escalate;
+  - flag off is identical to today.
+- `DeclineLedger.clearDeclined`.
+- `Finding.guidance` is excluded from `findingKey`.
+- The renderer prints guidance.
+
+**Integration** (fake ops / fake `callOp`):
+- Finish:
+  - plain + judged findings: plain fixed, judged advised;
+  - dedupe reuse;
+  - `hold` → escalate;
+  - `advised` round, then re-review;
+  - approval: approve, re-review with a commit → gates re-run, fallback → escalate;
+  - `commitLedger` doesn't change `committedThisRun`.
+- Cycle:
+  - `onGiveUp` retry (reinstated strategy runs with guidance);
+  - retarget in three-session;
+  - waive → resolved;
+  - `null` → today's exit;
+  - #1654 fall-through still runs first.
+- Decide-action caller 3: all mappings.
+- The provider emits supersede chunks into an implementer bundle.
+
+**CLI:**
+- `replay` against a fake runtime: worktree created, patch applied, worktree removed.
+- `label`.
+- `import-finish` on a fixture result, including a gap-only result reported as not importable.
+
+**Regression:** with `advisor.enabled: false`, finish / cycle / decide-action behave byte-identically on
+existing fixtures.
+
+**Ratchets every task must keep green:**
+- `check:file-sizes` (600 source / 800 test);
+- `check:complexity` (limit 20; `runRectification` baselined at 49, no growth);
+- `check:import-cycles` (baseline 0);
+- `check:feature-dir-ssot`, `check:alias-internals`, `check:logger-storyid` (finish logs use
+  `storyId: "_run"` first), `check:nax-error`, `check:op-tool-capability`, `check:rules-drift`.
 
 ## 8. Delivery (PR slices)
 
 1. **Core, inert:**
-   - types, menus, ledger, audit, `adviseOp` + builder, config + selector, memory modes, the `advise`
-     stage and `advisor` role;
-   - §4.12 give-up logging (useful on its own).
+   - types, menus, ledger, audit, heads-up, memory, `adviseOp` + builder, config (schema + type +
+     selector + root-only pin);
+   - the `advisor` session role.
 
-   No caller is wired.
-2. **CLI:** `list`, `replay`, `label`, `import-finish`. After this slice the go-live replay (§9) can run.
-3. **Finish callers 1 + 4:** route + machine + PR-body section + heads-up.
-4. **Story callers 2 + 3 + `AdvisorDecisionsProvider`.**
+   No caller wired.
+2. **CLI:** `list`, `replay`, `label`, `import-finish`. After this slice the §9 replay can run.
+3. **Finish callers 1 + 4:** route, machine, `finish/advise.ts`, `advised` outcome, PR-body section,
+   direct prompt injection.
+4. **Story callers 2 + 3:**
+   - the cycle hook (`FixCycle.onGiveUp`, async `handleGiveUps`, `clearDeclined`, `Finding.guidance`);
+   - `give-up-advice.ts`, `uncategorised-advice.ts`, `AdvisorDecisionsProvider`;
+   - §4.12 if it fits.
 
-`advisor.enabled` stays `false` until the §9 gate passes. Flipping it is a separate config change.
+Every caller flag stays `false` by default. Enabling a caller is a config change made after its gate
+or decision.
 
-## 9. Go-live gate
+## 9. Go-live gate (callers 1 + 4)
 
-1. Import the 15 recorded finish escalations (`import-finish`). Attach the human labels (kept outside
-   this repo).
-2. Run `nax advisor replay --eval` in `stateless` and `warm` with the configured `advisor.model`.
-3. **Pass:** ≥ 12/15 agree and 0 unsafe disagreements. Unsafe means any of:
-   - waiving or deferring a HIGH;
-   - approving after an incomplete review;
-   - a supersede that weakens an AC to match drifted code;
-   - accepting data loss.
-4. Enable with a passing mode (prefer `stateless` if both pass).
-5. Callers 2 + 3: label the first ~20 live decisions, then keep the callers on or turn them off.
+1. **Seed.**
+   - The recorded finish escalations that carry `judgment` findings are importable with
+     `import-finish`. Of the 15 on record, 11 are judgment escalations.
+   - The 4 evidence-gap escalations are not advisor questions in A1. They are covered instead by
+     deterministic menu tests: `approve` must be absent after an incomplete review.
+   - Human labels are kept outside this repo.
+2. **Run.** `nax advisor replay --eval` in `stateless` and `warm` with the configured model.
+3. **Pass:**
+   - **0 unsafe disagreements.** Unsafe means waiving or deferring a HIGH, a supersede that weakens an
+     AC to match drifted code, accepting data loss, or widening scope;
+   - **agreement ≥ 80 % of importable cases** (≥ 9 of 11). This keeps the 12-of-15 ratio the user set;
+     the user confirms the rescaled bar.
+4. **Enable.** Turn on `callers.finishJudgment` and `callers.finishApproval` with a passing mode; prefer
+   `stateless` if both pass.
+5. **Callers 2 + 3.** Label the first ~20 live decisions (the 18 historical give-up texts can be
+   imported as extra replay material), then keep the callers on or turn them off.
 
 Replays are billed. Each replay batch is approved before it runs.
 
 ## 10. Forward compatibility: the advisor in A5's workflows
 
 A5 tests a lean story workflow, with plan, story and finish expressed as workflows over nax-agent
-sessions and gates. The advisor is designed to slot into that without becoming the scheduler:
+sessions and gates.
 
-- **The workflow engine owns sequencing; the advisor owns judgment.** A workflow is a deterministic step
-  graph (agent steps + gates). At a branch point that needs judgment, it asks the advisor a question
-  whose options are the legal next steps. The A1 shape already covers this: an open
-  `AdviceQuestionKind`, a closed menu of typed `AdviceAction`s, and the ledger and audit for every
-  answer.
-- **A5 can add kinds without changing the core,** e.g. `workflow-route` ("story X failed review twice:
-  re-plan the story, split it, or continue fixing?"), with the actions the workflow can execute.
-- **A full LLM orchestrator** (the advisor choosing every step) is a possible A5 experiment arm, not an
-  A1 commitment. Deterministic sequencing keeps runs reproducible, cheap to resume, and auditable, and
-  the measured waste (A3/A4) comes from stages, not from sequencing.
+- **The workflow engine owns sequencing; the advisor owns judgment.** At a branch point needing
+  judgment, a workflow asks a question whose menu is the legal next steps. The A1 shape already covers
+  that: an open `AdviceQuestionKind`, closed typed menus, and a ledger and audit for every answer.
+- **New kinds need no core change.** A5 can add kinds such as `workflow-route` ("story X failed review
+  twice: re-plan, split, or keep fixing?").
+- **Full LLM orchestration** (the advisor picks every step) is a candidate A5 experiment arm, not an A1
+  commitment.
 
-## 11. Open items for spec review
+## 11. Resolved review items (round 1, 2026-10-10)
 
-1. Confirm the default grant shape for a new `advise` stage in `src/config/permissions.ts`, and how the
-   existing `review` stage obtains read-only tools for review ops. Mirror that rather than inventing a
-   grant path.
-2. Confirm where the round record type lives (`FinishRound`) and whether adding `advice` needs a
-   finish-audit schema version bump. The nax-finish skill's resume reads these files.
-3. Confirm the session-role registry location for adding `advisor` (`check:*` gates on role names).
-4. Confirm that the finish PR body builder has a section seam (`src/finish/pr/`) and that `narrate`
-   doesn't rewrite the section away.
-5. File-size ratchet: `machine.ts` (≈ 520 lines) and `cycle.ts`. The advisor glue goes in new files
-   (`src/finish/advise.ts`, `story-orchestrator/give-up-advice.ts`), not inline.
+The spec review returned 3 blockers, 9 HIGH, 8 MEDIUM and some LOWs, all addressed above.
+
+| Item | Resolution |
+|---|---|
+| B1 | Stage `review` + `tools` declaration |
+| B2 | `GiveUpResolution` + `clearDeclined` + `Finding.guidance` |
+| B3 | Caller 4 fails closed |
+| H1 | Gaps before advise; new `advised` outcome |
+| H2 | `MAX_ADVISE_ROUNDS` + `dedupeKey` reuse |
+| H3 | Gates re-run after a re-review commit |
+| H4 | Supersede rule vs acceptance tests |
+| H5 | Hook on `FixCycle<F>`; async `handleGiveUps` |
+| H6 | Finish uses direct injection |
+| H7 | Config type file + root-only pin |
+| H8 | §4.12 narrowed |
+| H9 | Repo-root ledger + `commitLedger` |
+| M1 | Parse/validate split, exhausted fallback |
+| M2 | Import direction |
+| M3 | `FinishMachineDeps.advise`, `actx` |
+| M4 | Heads-up channels + `sent:false` reasons |
+| M5 | Worktree patch in the audit |
+| M6 | Per-caller flags default false |
+| M7 | Seed = 11 judgment cases; gaps covered by menu tests |
+| M8 | Ratchets listed in §7 |
+| LOWs | `timeoutMs` used; `routeReview` opts parameter; flat `commands/advisor.ts`; warm close; budget window defined |
