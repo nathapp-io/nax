@@ -14,13 +14,7 @@ import type {
   FinishOps,
   FinishState,
 } from "@/finish";
-import {
-  _acceptanceGateDeps,
-  _finishGitDeps,
-  _qualityGateDeps,
-  createFinishState,
-  runFinishMachine,
-} from "@/finish";
+import { _acceptanceGateDeps, _finishGitDeps, _qualityGateDeps, createFinishState, runFinishMachine } from "@/finish";
 import type { QualityCommandOptions, QualityCommandResult } from "@/quality";
 
 const originalGit = _finishGitDeps.git;

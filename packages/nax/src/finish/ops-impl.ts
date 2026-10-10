@@ -19,6 +19,7 @@
  */
 
 import { errorMessage } from "@nathapp/nax-agent/internal";
+import { formatDecisionsForPrompt, readDecisions } from "@/advisor";
 import type { ConfiguredModel } from "@/config";
 import type { ForgeDeps, ForgeKind } from "@/forge";
 import type { CallContext, FinishFixInput, FinishNarrativeInput, FinishReviewInput } from "@/operations";
@@ -64,6 +65,12 @@ export interface FinishOpsDeps {
 }
 
 export const _finishOpsDeps: { callOp: typeof callOp } = { callOp };
+
+/** A1: waived / superseded advisor decisions for the review prompt. Never throws: no ledger reads as none. */
+async function loadDecisionNotes(state: FinishState): Promise<string | undefined> {
+  const notes = formatDecisionsForPrompt(await readDecisions(state.workdir, state.feature).catch(() => []));
+  return notes === "" ? undefined : notes;
+}
 
 /** The commit the promote path pushes before touching the forge (matches the flow, line 344). */
 const PROMOTE_MESSAGE = (feature: string): string => `fix(${feature}): nax-finish automated fixes`;
@@ -115,6 +122,7 @@ export function createFinishOps(deps: FinishOpsDeps): FinishOps {
         since: phaseState.reviewSince,
         gaps: phaseState.reviewGaps,
         priorFindings: state.findings,
+        decisions: await loadDecisionNotes(state),
         model: phase === "spec" ? models?.reviewSpec : models?.reviewQuality,
         timeoutMs: timeouts?.reviewMs,
       };

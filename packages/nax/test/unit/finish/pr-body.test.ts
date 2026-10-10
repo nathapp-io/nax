@@ -7,6 +7,7 @@
  * auto-PR-opened PRs read the same.
  */
 import { describe, expect, test } from "bun:test";
+import type { AdviceDecision } from "@/advisor";
 import type { Finding, FinishPrContext, FinishPrStory, FinishRound } from "@/finish";
 import { buildFinishBody, buildFinishTitle, resolveTitle } from "@/finish";
 
@@ -397,4 +398,53 @@ describe("buildFinishBody — What changed section (#1477)", () => {
     const body = buildFinishBody(baseCtx({ stories: [story()], narrative: "  \n " }));
     expect(body).not.toContain("## What changed");
   });
+});
+
+describe("buildFinishBody — Advisor decisions section (A1)", () => {
+  const dec = (id: string, needsHumanConfirm: boolean, action: AdviceDecision["action"]): AdviceDecision => ({
+    id,
+    questionId: "Q",
+    kind: "finish-judgment",
+    storyId: "US-2",
+    chosenOptionId: "A",
+    action,
+    rationale: `because ${id}`,
+    confidence: "high",
+    reversible: true,
+    needsHumanConfirm,
+    decidedAt: "t",
+    model: "m",
+    memoryMode: "stateless",
+    auditRef: "a",
+  });
+  const decisions = [
+    dec("D-1", false, { type: "fix", instruction: "x" }),
+    dec("D-2", true, {
+      type: "supersede",
+      target: { kind: "ac", storyId: "US-2", acId: "AC-3" },
+      newText: "returns 0",
+    }),
+  ];
+
+  test("flagged decisions first, then the rest, then the spec amendments", () => {
+    const body = buildFinishBody(baseCtx({ advisorDecisions: decisions }));
+    expect(body).toContain("Advisor decisions");
+    expect(body.indexOf("**D-2**")).toBeLessThan(body.indexOf("**D-1**"));
+    expect(body).toContain("(needs confirmation)");
+    expect(body).toContain("Spec amendments to apply");
+    expect(body).toContain("US-2 AC-3: returns 0");
+  });
+
+  test("absent when the advisor made no decisions", () => {
+    expect(buildFinishBody(baseCtx({}))).not.toContain("Advisor decisions");
+  });
+
+  for (const mode of ["merge", "strict", "ignore"] as const) {
+    test(`survives template mode ${mode}`, () => {
+      const body = buildFinishBody(
+        baseCtx({ advisorDecisions: decisions, template: "## Summary\n\n## Testing\n", templateMode: mode }),
+      );
+      expect(body).toContain("D-2");
+    });
+  }
 });

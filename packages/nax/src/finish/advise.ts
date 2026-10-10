@@ -14,8 +14,11 @@
  */
 import { isAbsolute, join, relative } from "node:path";
 import { gitWithTimeout } from "@nathapp/nax-agent/internal";
-import type { AdviceDecision, AdviceResult, Advisor, QuestionDraft } from "@/advisor";
-import { buildMenu, dedupeKeyFor, findReusable, ledgerPath, readDecisions } from "@/advisor";
+import type { AdviceDecision, AdviceResult, Advisor, HeadsUpChannel, QuestionDraft } from "@/advisor";
+import { buildMenu, createAdvisor, dedupeKeyFor, findReusable, ledgerPath, readDecisions } from "@/advisor";
+import type { NaxConfig } from "@/config";
+import { isAdvisorCallerEnabled } from "@/config";
+import type { CallContext } from "@/operations";
 import type { RoutedReview } from "./route";
 import type { FinishPhaseState, FinishState } from "./state";
 import type { Finding, FinishResult, FinishRound } from "./types";
@@ -157,6 +160,42 @@ export function createFinishAdvisor(deps: FinishAdvisorDeps): FinishAdvisor {
       );
     },
   };
+}
+
+/** Phase wiring: an advisor only when a finish caller is enabled (spec §4.13); `undefined` keeps today's behaviour. */
+export function buildFinishAdvisorForPhase(args: {
+  runConfig: NaxConfig;
+  callCtx: CallContext;
+  repoRoot: string;
+  outputDir: string;
+  feature: string;
+  runId: string;
+  specPath: string;
+  headsUp?: HeadsUpChannel;
+}): FinishAdvisor | undefined {
+  const judgedEnabled = isAdvisorCallerEnabled(args.runConfig, "finishJudgment");
+  const approvalEnabled = isAdvisorCallerEnabled(args.runConfig, "finishApproval");
+  if (!judgedEnabled && !approvalEnabled) return undefined;
+  const advisor = createAdvisor({
+    callCtx: args.callCtx,
+    repoRoot: args.repoRoot,
+    outputDir: args.outputDir,
+    feature: args.feature,
+    runId: args.runId,
+    specPath: args.specPath,
+    workdir: args.repoRoot,
+    ...(args.headsUp ? { headsUp: args.headsUp } : {}),
+  });
+  return createFinishAdvisor({
+    advisor,
+    repoRoot: args.repoRoot,
+    outputDir: args.outputDir,
+    feature: args.feature,
+    // Root config: the advisor is feature-level; enabled ⇒ no AC supersede on the menu (spec §12.7).
+    acceptanceEnabled: () => args.runConfig.acceptance?.enabled !== false,
+    judgedEnabled,
+    approvalEnabled,
+  });
 }
 
 // ── Machine-facing helpers ───────────────────────────────────────────────────

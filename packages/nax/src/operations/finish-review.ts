@@ -35,6 +35,8 @@ export interface FinishReviewInput {
   since?: string;
   priorFindings?: Finding[];
   gaps?: string[];
+  /** A1: waived / superseded advisor decisions, pre-formatted. */
+  decisions?: string;
   /** Reviewer selection, resolved by the caller from config (D3.6). */
   model?: ConfiguredModel;
   timeoutMs?: number;
@@ -141,6 +143,7 @@ export const finishReviewOp: RunOperationWithHooks<FinishReviewInput, FinishRevi
       since: input.since,
       priorFindings: input.priorFindings,
       gaps: input.gaps,
+      ...(input.decisions ? { decisions: input.decisions } : {}),
     });
     return {
       role: { id: "role", content: "", overridable: false },

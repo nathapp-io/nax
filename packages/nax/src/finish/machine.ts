@@ -52,7 +52,7 @@ export interface FinishMachineDeps {
   /** Injected so tests can assert round ordering deterministically. */
   now: () => string;
   /** A1 advisor (callers 1 + 4). Absent → today's behaviour exactly. */
-  advise?: FinishAdvisor;
+  advise?: FinishAdvisor | undefined;
   timeouts?: FinishTimeouts;
 }
 

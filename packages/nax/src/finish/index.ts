@@ -15,6 +15,7 @@ export {
   type AdviceRef,
   type ApprovalFacts,
   applyJudgedAdvice,
+  buildFinishAdvisorForPhase,
   createFinishAdvisor,
   type FinishAdvisor,
   type FinishAdvisorDeps,

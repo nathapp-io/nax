@@ -8,8 +8,11 @@
  * permissions error on a file most repos do not have is the failure this
  * policy exists to prevent.
  */
+
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import type { AdviceDecision } from "@/advisor";
+import { readDecisions } from "@/advisor";
 import { featureDir } from "@/config";
 import type { ForgeKind } from "@/forge";
 import { defaultForgeDeps, findPrTemplate } from "@/forge";
@@ -57,6 +60,8 @@ export interface FinishPrContext {
    */
   title: string;
   rounds: FinishRound[];
+  /** A1: the feature's advisor decisions (absent or empty when the advisor never ran). */
+  advisorDecisions?: AdviceDecision[];
   run: {
     durationMs?: number;
     storiesPassed?: number;
@@ -227,13 +232,14 @@ export async function loadFinishPrContext(args: LoadPrContextArgs): Promise<Fini
   // [US-004] The audit trail (`rounds`), the diffstat, and the spec summary
   // are independent of the PRD/status reads — fetching them in parallel keeps
   // the loader's wall clock at max(readRounds, readJson×2, diffstat, spec).
-  const [prd, status, rounds, stat, template, specSummary] = (await Promise.all([
+  const [prd, status, rounds, stat, template, specSummary, advisorDecisions] = (await Promise.all([
     readJson(join(featureDirPath, "prd.json")),
     readJson(join(featureDirPath, "status.json")),
     readRounds(args.audit),
     runDiffstat(args.state.workdir, args.state.base),
     loadTemplate(args.state.workdir, args.forge),
     readSpecSummary(args.state.specPath, _finishPrDeps.readText),
+    readDecisions(args.state.workdir, args.state.feature).catch(() => []),
   ])) as [
     PrdArtifact | undefined,
     StatusArtifact | undefined,
@@ -241,6 +247,7 @@ export async function loadFinishPrContext(args: LoadPrContextArgs): Promise<Fini
     DiffstatResult,
     string | undefined,
     string | null,
+    AdviceDecision[],
   ];
   return {
     feature: args.state.feature,
@@ -250,6 +257,7 @@ export async function loadFinishPrContext(args: LoadPrContextArgs): Promise<Fini
     regression: status?.postRun?.regression?.status,
     gatesRan: args.state.gatesRan ?? [],
     rounds,
+    ...(advisorDecisions.length > 0 ? { advisorDecisions } : {}),
     diffstat: stat.diffstat,
     artifactSummary: stat.artifactSummary,
     template,

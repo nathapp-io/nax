@@ -12,6 +12,8 @@
  * behaviour (nax#1477, nax#1504, nax#1507) and must not drift.
  */
 
+import type { AdviceDecision } from "@/advisor";
+import { describeTarget } from "@/advisor";
 import type { BodySection } from "@/forge";
 import { mergeTemplate } from "@/forge";
 import type { Finding, FindingDisposition, FinishRound } from "../types";
@@ -150,6 +152,20 @@ function buildRoundBlock(round: FinishRound): string {
   return lines.join("\n");
 }
 
+/** A1: flagged decisions first, then the rest, then every supersede as an amendment to apply. Null when none. */
+function buildAdvisorSection(decisions: AdviceDecision[] | undefined): string | null {
+  if (!decisions || decisions.length === 0) return null;
+  const line = (d: AdviceDecision): string =>
+    `- **${d.id}**${d.needsHumanConfirm ? " (needs confirmation)" : ""} ${d.storyId ?? "feature"} · ${d.action.type} — ${d.rationale}`;
+  const ordered = [...decisions.filter((d) => d.needsHumanConfirm), ...decisions.filter((d) => !d.needsHumanConfirm)];
+  const amendments = decisions.flatMap((d) =>
+    d.action.type === "supersede" ? [`- ${describeTarget(d.action.target)}: ${d.action.newText} (${d.id})`] : [],
+  );
+  const parts = [ordered.map(line).join("\n")];
+  if (amendments.length > 0) parts.push(`### Spec amendments to apply\n${amendments.join("\n")}`);
+  return parts.join("\n\n");
+}
+
 function buildRoundsSection(rounds: FinishRound[]): string | null {
   if (rounds.length === 0) return null;
   return rounds.map(buildRoundBlock).join("\n\n");
@@ -210,6 +226,7 @@ function buildBodySections(ctx: FinishPrContext): BodySection[] {
     { key: "stories", heading: "Stories", body: ctx.stories.length > 0 ? buildStoriesSection(ctx.stories) : null },
     { key: "verification", heading: "Verification", body: buildVerificationSection(ctx) },
     { key: "rounds", heading: "Review rounds", body: buildRoundsSection(ctx.rounds) },
+    { key: "advisor", heading: "Advisor decisions", body: buildAdvisorSection(ctx.advisorDecisions) },
     { key: "outOfScope", heading: "Out of scope", body: buildOutOfScopeSection(ctx.outOfScope) },
     { key: "footer", heading: "", body: buildFooter(ctx.run) },
   ];

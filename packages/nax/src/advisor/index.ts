@@ -14,6 +14,7 @@ export {
   writeAdviceAudit,
 } from "./audit";
 export { dedupeKeyFor } from "./dedupe";
+export { describeTarget, formatDecisionsForPrompt } from "./format";
 export { formatHeadsUp, type HeadsUpChannel } from "./heads-up";
 export {
   _ledgerDeps,

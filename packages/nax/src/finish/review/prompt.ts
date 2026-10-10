@@ -94,9 +94,16 @@ export function buildReviewPrompt(
     since?: string | null;
     priorFindings?: Finding[];
     gaps?: string[];
+    /** A1: waived / superseded advisor decisions for the feature (do not re-raise them). */
+    decisions?: string;
   },
 ): string {
   const dims = phase === "spec" ? SPEC_REVIEW_DIMENSIONS : QUALITY_REVIEW_DIMENSIONS;
+  const decisionsNotice = args.decisions
+    ? [
+        `## Advisor decisions for this feature (do not re-raise waived items; treat superseded text as the requirement)\n${args.decisions}`,
+      ]
+    : [];
   const gapNotice =
     args.gaps && args.gaps.length > 0
       ? [
@@ -112,6 +119,7 @@ export function buildReviewPrompt(
       phase === "spec" && args.specPath ? [`The spec/requirements source is: ${args.specPath}. Read it in full.`] : [];
     return [
       ...gapNotice,
+      ...decisionsNotice,
       `You are the ${phase.toUpperCase()} reviewer for a completed feature.`,
       ...specNotice,
       `Fetch and review the diff: \`git diff ${args.base}...HEAD\` (also \`--name-only\` for the file list).`,
@@ -143,7 +151,7 @@ export function buildReviewPrompt(
     CLASSIFIER,
     outputContract(phase),
   ];
-  return [...gapNotice, ...reReviewBody].join("\n\n");
+  return [...gapNotice, ...decisionsNotice, ...reReviewBody].join("\n\n");
 }
 
 /**
