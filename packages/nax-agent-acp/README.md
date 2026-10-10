@@ -4,7 +4,7 @@ ACP (Agent Client Protocol) backend for `@nathapp/nax-agent` sessions. It lets t
 nax-agent session API (`createAgentSession`, `send()`, `answer()`, `cancel()`, `close()`)
 drive external coding agents such as Claude Code over ACP.
 
-**Status: 0.4.0.** `./client`: `acpBackend()` drives external ACP agents (Claude Code and others) as
+**Status:** released in lockstep with `@nathapp/nax` (see CHANGELOG.md). `./client`: `acpBackend()` drives external ACP agents (Claude Code and others) as
 nax-agent sessions. `./server` and the `nax-agent` binary: nax-agent's own native coding agent as an
 ACP server for editors (Zed) and headless clients (acpx). See "The nax-agent ACP server" below.
 
