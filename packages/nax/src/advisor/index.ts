@@ -24,4 +24,11 @@ export {
   readDecisions,
 } from "./ledger";
 export { buildMenu, forcedConfirm, REQUIRED_TEXT_FIELD, toAction } from "./menus";
+export {
+  _advisorServiceDeps,
+  type Advisor,
+  type AdvisorCallContext,
+  createAdvisor,
+  type QuestionDraft,
+} from "./service";
 export type * from "./types";
