@@ -1,0 +1,313 @@
+{
+  "project": "nax-monorepo",
+  "feature": "nbf-worth-check",
+  "branchName": "feat/nbf-worth-check",
+  "createdAt": "2026-09-01T00:00:00.000Z",
+  "updatedAt": "2026-10-10T14:10:39.003Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Worth-check prompt builder, session role and config",
+      "description": "**Goal** — Add the normative worth-check prompt, fresh-session role registration and optional configuration without changing NBF defaults.\n\n**Motivation** — NBF fixes every actionable advisory finding a passing story's reviewers leave behind; some are stale comments, speculative hardening or work a later story already does.\n\n**Approach** — The builder renders these sections in this order. Text in quotes is rendered verbatim. 1. \"You are checking which code-review findings are worth fixing before this story merges. You do not fix anything. Read code with the tools if you need to check whether a path is reachable.\" 2. \"## Story\", then `<story.id>: <story.title>`, the story description, and each acceptance criterion as `- <text>`. 3. \"## Pending stories in this feature\", then one block per pending story: `<id>: <title>` followed by its criteria as `- <text>`. When there are no pending stories, this whole section, heading included, is omitted. 4. \"## Story diff\", then the diff in a fenced block. When the diff is empty, the line \"(diff unavailable — judge from the code)\" replaces the fenced block. 5. \"## Findings\", then one line per finding: `<n>. [<severity>/<category>] <file>:<line> — <message>`. `<file>:<line>` becomes `<file>` when `line` is absent, and `(no file)` when `file` is absent. When a finding has a `suggestion`, the next line is `   Suggested fix: <suggestion>`. 6. The rubric, verbatim:\n## How to judge\nAnswer \"fix\" when the finding describes, for the code as it is now:\n- wrong behaviour, a crash, data loss or a security problem that can actually happen; or\n- a test that cannot catch the bug it claims to cover; or\n- a break of a written project rule you can point to in the repo's rules or context files.\nAnswer \"skip\" when the finding:\n- only matters if the code changes later or is used in a way it is not used now; or\n- is only about comments, documentation, naming, log wording, exports or style, and no written rule requires it; or\n- is already covered by a pending story listed above (name the story in the reason).\nWhen you are unsure, answer \"fix\".\n7. The output contract, verbatim:\n## Reply\nReply with only this JSON object, one entry per finding:\n{\"verdicts\":[{\"index\":1,\"verdict\":\"fix\",\"reason\":\"<one line>\"}]}\n\n**Interface** — `buildNbfWorthCheckPrompt(input: NbfWorthCheckOpInput): string` in `src/prompts/builders/nbf-worth-check-builder.ts`, exported from `src/prompts`. `NbfWorthCheckConfigSchema = z.object({ mode: z.enum([\"off\", \"shadow\", \"on\"]).default(\"off\"), model: ConfiguredModelSchema.optional(), timeoutMs: z.number().int().positive().default(300_000) });` Inside `NonBlockingFixConfigSchema`: `worthCheck: NbfWorthCheckConfigSchema.optional()`. Export `type NbfWorthCheckConfig = z.infer<typeof NbfWorthCheckConfigSchema>` beside `NonBlockingFixConfig`. Add `\"nbf-worth-check\"` to `CanonicalSessionRole` and `KNOWN_SESSION_ROLES`. Input shape shared with US-002: `story: UserStory; diff: string; findings: readonly Finding[]; pendingStories: readonly { id: string; title: string; acceptanceCriteria: readonly string[] }[]`. Because the op file is created only in US-002, keep the builder input structurally compatible without a runtime import from that future module; US-002 can reference this builder's type or add a type-only shared declaration.\n\n**Fixtures** — A = `{ source: 'adversarial-review', severity: 'warning', category: 'input', file: 'src/a.ts', line: 12, message: 'empty items still fires MARK_DELIVERING' }`; B = `{ source: 'adversarial-review', severity: 'info', category: 'convention', file: 'src/b.ts', line: 3, message: 'stale header comment' }`; S = `makeStory({ id: 'US-002', title: 'Deliver orders', description: 'd', acceptanceCriteria: ['AC one'], status: 'in-progress', attempts: 1 })`; baseInput = `{ story: S, diff: '+x', findings: [A, B], pendingStories: [] }`.\n\n**Scope** — In: prompt builder, prompts barrel, schema/type, role, config tests. Out: op/parser (US-002), context gathering and filtering (US-003), logging/audit (US-004), NBF wiring (US-005); Updating the session-role table in `.nax/rules/adapter-wiring.md` for the new role.",
+      "acceptanceCriteria": [
+        "buildNbfWorthCheckPrompt(baseInput) includes the line `1. [warning/input] src/a.ts:12 — empty items still fires MARK_DELIVERING`.",
+        "buildNbfWorthCheckPrompt(baseInput) includes the line `2. [info/convention] src/b.ts:3 — stale header comment`.",
+        "buildNbfWorthCheckPrompt(baseInput) includes the line `US-002: Deliver orders`.",
+        "buildNbfWorthCheckPrompt(baseInput) includes the line `- AC one`.",
+        "buildNbfWorthCheckPrompt(baseInput) places `+x` after `## Story diff`.",
+        "buildNbfWorthCheckPrompt(baseInput) omits `## Pending stories in this feature` when pendingStories is [].",
+        "buildNbfWorthCheckPrompt with pendingStories [{ id: 'US-003', title: 'Retry delivery', acceptanceCriteria: ['retries twice'] }] includes the line `US-003: Retry delivery`.",
+        "buildNbfWorthCheckPrompt with that pending story places the line `- retries twice` after `## Pending stories in this feature`.",
+        "buildNbfWorthCheckPrompt with diff '' includes the line `(diff unavailable — judge from the code)`.",
+        "buildNbfWorthCheckPrompt with findings [{ ...A, line: undefined }] includes the line `1. [warning/input] src/a.ts — empty items still fires MARK_DELIVERING`.",
+        "buildNbfWorthCheckPrompt with findings [{ ...A, file: undefined, line: undefined }] includes the line `1. [warning/input] (no file) — empty items still fires MARK_DELIVERING`.",
+        "buildNbfWorthCheckPrompt with findings [{ ...A, suggestion: 'use parser.error' }] includes the line `   Suggested fix: use parser.error`.",
+        "buildNbfWorthCheckPrompt(baseInput) includes the line `When you are unsure, answer \"fix\".`.",
+        "buildNbfWorthCheckPrompt(baseInput) includes the line `{\"verdicts\":[{\"index\":1,\"verdict\":\"fix\",\"reason\":\"<one line>\"}]}`.",
+        "buildNbfWorthCheckPrompt(baseInput) orders `## Story`, `## Story diff`, `## Findings`, `## How to judge`, `## Reply` in that sequence.",
+        "isSessionRole('nbf-worth-check') returns true.",
+        "NonBlockingFixConfigSchema.parse({}).worthCheck is undefined.",
+        "NonBlockingFixConfigSchema.parse({ worthCheck: {} }).worthCheck equals { mode: 'off', timeoutMs: 300000 }.",
+        "NonBlockingFixConfigSchema.safeParse({ worthCheck: { mode: 'maybe' } }).success is false."
+      ],
+      "tags": [
+        "feature",
+        "prompt",
+        "config",
+        "session"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Existing prompt, Zod schema and session-role registry require additive edits in several files but follow established patterns; session-role changes require the security override."
+      },
+      "contextFiles": [
+        "packages/nax/src/prompts/builders/fix-review-builder.ts",
+        "packages/nax/src/runtime/session-role.ts",
+        "packages/nax/src/config/schemas-review.ts",
+        "packages/nax/src/findings/types.ts",
+        "packages/nax/test/unit/config/non-blocking-fix-config.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/prompts/builders/nbf-worth-check-builder.ts",
+        "packages/nax/test/unit/prompts/nbf-worth-check-builder.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/runtime/session-role.ts",
+          "reason": "add `\"nbf-worth-check\"` to `CanonicalSessionRole` and `KNOWN_SESSION_ROLES`."
+        },
+        {
+          "path": "packages/nax/src/prompts/index.ts",
+          "reason": "export `buildNbfWorthCheckPrompt` from the barrel, beside `buildFixReviewPrompt`."
+        },
+        {
+          "path": "packages/nax/src/config/schemas-review.ts",
+          "reason": "add `NbfWorthCheckConfigSchema` and the optional `worthCheck` field on `NonBlockingFixConfigSchema`."
+        },
+        {
+          "path": "packages/nax/src/config/selectors.ts",
+          "reason": "add `export type NbfWorthCheckConfig` beside `NonBlockingFixConfig`."
+        },
+        {
+          "path": "packages/nax/test/unit/config/non-blocking-fix-config.test.ts",
+          "reason": "append the `worthCheck` schema cases (the module's existing schema test file); no existing case changes."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-002",
+      "title": "Worth-check op and reply parser",
+      "description": "**Goal** — Add the read-only batched run operation and fail-open, per-finding reply normalizer.\n\n**Motivation** — The reviewer's severity is not a usable worth signal; judging worth needs a reader that sees the finding next to the code and the rest of the feature.\n\n**Approach** — The model replies with one JSON object: `{\"verdicts\":[{\"index\":1,\"verdict\":\"fix\",\"reason\":\"reachable: empty items still fires MARK_DELIVERING\"},{\"index\":2,\"verdict\":\"skip\",\"reason\":\"stale comment only\"}]}`. `index` is the 1-based position of the finding in the prompt's numbered list. The parser normalises the reply into exactly one verdict per input finding, in input order: An entry whose `index` is not an integer in `1..findings.length` is ignored. Entries that are not JSON objects are ignored. When two entries share an `index`, the first one is chosen before any other rule applies; later entries for that `index` are ignored even when the first is invalid. An entry whose `verdict` is neither `\"fix\"` nor `\"skip\"` counts as `fix`, with reason `\"(invalid verdict)\"`. A `skip` entry whose `reason` is missing or blank counts as `fix`, with reason `\"(skip without reason)\"`. A finding with no entry counts as `fix`, with reason `\"(no verdict returned)\"`. A reply with no JSON value, a JSON value that is not an object (an array or a primitive), or an object with no `verdicts` array, yields `{ parsed: false, unparsedPreview }`. The preview comes from `previewOutput(output, UNPARSED_PREVIEW_BYTES)` and is `\"(empty response)\"` when blank, as in `fixReviewOp`. There is no parse retry. `nbfWorthCheckOp` declares `name: \"nbf-worth-check\"`, `stage: \"review\"`, `session: { role: \"nbf-worth-check\", lifetime: \"fresh\" }`, `tools: [\"Read\", \"Glob\", \"Grep\"]`. Its `parse` delegates to `parseNbfWorthReply(output, input.findings.length)`. Mirror `fixReviewOp`: `kind: \"run\"`, `config: reviewConfigSelector`, `build` returning `{ role, task }` with `task.content` from `buildNbfWorthCheckPrompt(input)`. Model resolves via `ctx.config.review.nonBlockingFix?.worthCheck?.model ?? \"balanced\"`, timeout via `ctx.config.review.nonBlockingFix?.worthCheck?.timeoutMs ?? 300_000`.\n\n**Interface**\n```typescript\nexport interface NbfWorthCheckPendingStory {\n  readonly id: string;\n  readonly title: string;\n  readonly acceptanceCriteria: readonly string[];\n}\nexport interface NbfWorthCheckOpInput {\n  readonly story: UserStory;\n  /** Story diff, already truncated by the runner; \"\" when unavailable. */\n  readonly diff: string;\n  readonly findings: readonly Finding[];\n  readonly pendingStories: readonly NbfWorthCheckPendingStory[];\n}\nexport interface NbfWorthVerdict {\n  readonly index: number; // 1-based, matches the prompt's numbered list\n  readonly verdict: \"fix\" | \"skip\";\n  readonly reason: string;\n}\nexport type NbfWorthCheckOpOutput =\n  | { readonly parsed: true; readonly verdicts: readonly NbfWorthVerdict[] }\n  | { readonly parsed: false; readonly unparsedPreview: string };\nexport function parseNbfWorthReply(output: string, findingCount: number): NbfWorthCheckOpOutput;\nexport const nbfWorthCheckOp: RunOperation<NbfWorthCheckOpInput, NbfWorthCheckOpOutput, ReviewConfig>;\n```\n\n**Fixtures** — A = `{ source: 'adversarial-review', severity: 'warning', category: 'input', file: 'src/a.ts', line: 12, message: 'empty items still fires MARK_DELIVERING' }`; B = `{ source: 'adversarial-review', severity: 'info', category: 'convention', file: 'src/b.ts', line: 3, message: 'stale header comment' }`; baseInput = `{ story: makeStory({ id: 'US-002', title: 'Deliver orders', description: 'd', acceptanceCriteria: ['AC one'], status: 'in-progress', attempts: 1 }), diff: '+x', findings: [A, B], pendingStories: [] }`. For op resolver ACs, construct ctx.config via `makeNaxConfig({ review: { nonBlockingFix: <as stated> } })` and project through `reviewConfigSelector`.\n\n**Scope** — In: new operation/parser and operations barrel. Out: prompt implementation/schema/role (US-001), runtime runner (US-003), audit (US-004), NBF wiring (US-005); A parse retry for the worth-check reply; an unparseable reply falls back to fixing every finding.",
+      "acceptanceCriteria": [
+        "parseNbfWorthReply('{\"verdicts\":[{\"index\":2,\"verdict\":\"skip\",\"reason\":\"stale comment\"},{\"index\":1,\"verdict\":\"fix\",\"reason\":\"reachable\"}]}', 2) returns { parsed: true, verdicts: [{ index: 1, verdict: 'fix', reason: 'reachable' }, { index: 2, verdict: 'skip', reason: 'stale comment' }] }.",
+        "parseNbfWorthReply('{\"verdicts\":[{\"index\":5,\"verdict\":\"skip\",\"reason\":\"r\"}]}', 2) returns verdicts [{ index: 1, verdict: 'fix', reason: '(no verdict returned)' }, { index: 2, verdict: 'fix', reason: '(no verdict returned)' }].",
+        "parseNbfWorthReply('{\"verdicts\":[{\"index\":1,\"verdict\":\"skip\",\"reason\":\"nit\"},{\"index\":1,\"verdict\":\"fix\",\"reason\":\"r\"}]}', 1) returns verdicts [{ index: 1, verdict: 'skip', reason: 'nit' }].",
+        "parseNbfWorthReply('{\"verdicts\":[{\"index\":1,\"verdict\":\"maybe\",\"reason\":\"r\"},{\"index\":1,\"verdict\":\"skip\",\"reason\":\"nit\"}]}', 1) returns verdicts [{ index: 1, verdict: 'fix', reason: '(invalid verdict)' }], with the first entry chosen before validation.",
+        "parseNbfWorthReply('{\"verdicts\":[\"skip\",{\"index\":1,\"verdict\":\"skip\",\"reason\":\"nit\"}]}', 1) returns verdicts [{ index: 1, verdict: 'skip', reason: 'nit' }], ignoring the non-object entry.",
+        "parseNbfWorthReply('{\"verdicts\":[{\"index\":1,\"verdict\":\"skip\",\"reason\":\"  \"}]}', 1) returns verdicts [{ index: 1, verdict: 'fix', reason: '(skip without reason)' }].",
+        "parseNbfWorthReply('{\"verdicts\":[{\"index\":1,\"verdict\":\"maybe\",\"reason\":\"r\"}]}', 1) returns verdicts [{ index: 1, verdict: 'fix', reason: '(invalid verdict)' }].",
+        "parseNbfWorthReply('no json here', 1) returns parsed false with a non-empty unparsedPreview.",
+        "parseNbfWorthReply('', 1) returns { parsed: false, unparsedPreview: '(empty response)' }.",
+        "parseNbfWorthReply('{\"result\":\"ok\"}', 1) returns parsed false.",
+        "parseNbfWorthReply('[{\"index\":1,\"verdict\":\"skip\",\"reason\":\"r\"}]', 1) returns parsed false because the top-level JSON is an array.",
+        "nbfWorthCheckOp.session equals { role: 'nbf-worth-check', lifetime: 'fresh' }.",
+        "nbfWorthCheckOp.tools equals ['Read', 'Glob', 'Grep'].",
+        "nbfWorthCheckOp.model returns 'balanced' when ctx.config.review.nonBlockingFix is { worthCheck: { mode: 'on' } }.",
+        "nbfWorthCheckOp.model returns 'powerful' when ctx.config.review.nonBlockingFix is { worthCheck: { mode: 'on', model: 'powerful' } }.",
+        "nbfWorthCheckOp.timeoutMs returns 120000 when ctx.config.review.nonBlockingFix is { worthCheck: { mode: 'on', timeoutMs: 120000 } }.",
+        "nbfWorthCheckOp.timeoutMs returns 300000 when config has no review.nonBlockingFix.",
+        "nbfWorthCheckOp.parse('{\"verdicts\":[{\"index\":1,\"verdict\":\"fix\",\"reason\":\"reachable\"}]}', baseInput, ctx) returns verdicts [{ index: 1, verdict: 'fix', reason: 'reachable' }, { index: 2, verdict: 'fix', reason: '(no verdict returned)' }], using the base input's two findings.",
+        "nbfWorthCheckOp.build(baseInput, ctx).task.content equals buildNbfWorthCheckPrompt(baseInput)."
+      ],
+      "tags": [
+        "feature",
+        "operation",
+        "session",
+        "parser"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "A standard op and parser plus barrel wiring; declares a session role, invoking the session security override."
+      },
+      "contextFiles": [
+        "packages/nax/src/operations/fix-review.ts",
+        "packages/nax/test/unit/operations/fix-review.test.ts",
+        "packages/nax/src/prompts/builders/nbf-worth-check-builder.ts",
+        "packages/nax/src/config/schemas-review.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/operations/nbf-worth-check.ts",
+        "packages/nax/test/unit/operations/nbf-worth-check.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/operations/index.ts",
+          "reason": "export `nbfWorthCheckOp`, `parseNbfWorthReply` and the op's types from the barrel, beside `fixReviewOp`."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-003",
+      "title": "Worth-check runner",
+      "description": "**Goal** — Gather story, pending stories and diff once per eligible judged story, then fail open or apply the configured verdict mode.\n\n**Motivation** — A batched call per story keeps that judgment to one session per story.\n\n**Approach** — One run-kind op per story, batched over all of that story's seeded findings. The verdict is per finding. The op is read-only (`Read`, `Glob`, `Grep`), so it can open code to check whether a path is reachable. It does not use the advisor (`src/advisor/`), its ledger, or its menus. When `worthCheck` is absent or its `mode` is `\"off\"`, the seed is used unchanged and the op is not called. Otherwise the op is called. When the call throws or the reply is unparseable, the seed is used unchanged (fail-open). `mode: \"shadow\"`: the verdicts are logged and audited in US-004, and the seed is used unchanged. `mode: \"on\"`: only findings with verdict `fix` seed NBF. When no `fix` finding remains, NBF does not run for this story (the call-site guard is US-005). The runner gathers the op input: `story` is `ctx.story`. `diff` is `truncateDiff(collectDiff(ctx.packageDir, ref, []), collectDiffStat(ctx.packageDir, ref))`, where `ref = resolveEffectiveRef(ctx.packageDir, ctx.story.storyGitRef, storyId)`. It is `\"\"` when `ref` is undefined or `collectDiff` returns `null`. `pendingStories` is every PRD story whose `status` is `\"pending\"`, `\"in-progress\"` or `\"paused\"`, excluding the current story. Stories that are `failed`, `blocked`, `regression-failed` or `decomposed` will not deliver as written, so they are not offered as covering a finding. It is `[]` when `ctx.featureDir` is undefined or the PRD cannot be loaded. When `ctx.story` is undefined the runner returns the findings unchanged and does not call the op. If any of `resolveEffectiveRef`, `collectDiff` or `collectDiffStat` rejects, `diff` is `\"\"` and the call proceeds. It then calls `_nbfWorthCheckDeps.callOp(ctx, nbfWorthCheckOp, input)` and applies the mode. US-003 creates the runner without logging or audit.\n\n**Interface**\n```typescript\nexport interface NbfWorthCheckRequest {\n  readonly ctx: CallContext;\n  readonly findings: readonly Finding[];\n  readonly cfg: NbfWorthCheckConfig | undefined;\n}\n/** Returns the findings that seed NBF. Never throws. */\nexport async function runNbfWorthCheck(req: NbfWorthCheckRequest): Promise<Finding[]>;\nexport const _nbfWorthCheckDeps: {\n  callOp; resolveEffectiveRef; collectDiff; collectDiffStat; loadPRD; writeAudit; now; costTotal;\n};\n```\n\n**Fixtures** — A and B are advisory-review findings: A `{ severity: 'warning', category: 'input', file: 'src/a.ts', line: 12, message: 'empty items still fires MARK_DELIVERING' }`, B `{ severity: 'info', category: 'convention', file: 'src/b.ts', line: 3, message: 'stale header comment' }`, both `source: 'adversarial-review'`. S = `makeStory({ id: 'US-002', title: 'Deliver orders', description: 'd', acceptanceCriteria: ['AC one'], status: 'in-progress', attempts: 1 })`. ctx = `makeMockCallContext({ runtime, story: S, storyId: 'US-002', featureName: 'f', featureDir: '/repo/.nax/features/f' })`; packageDir is '/tmp/test'. Stub resolveEffectiveRef -> 'ref1', collectDiff -> '+x', collectDiffStat -> '', loadPRD -> stories S, US-001 passed, US-003 pending Retry delivery / ['retries twice'], US-004 failed, US-005 decomposed; callOp -> `{ parsed: true, verdicts: [{ index: 1, verdict: 'fix', reason: 'r1' }, { index: 2, verdict: 'skip', reason: 'nit' }] }` unless overridden. All-skip has two skip entries with reason 'nit'.\n\n**Scope** — In: gathering input, injectable dependencies, mode filtering, fallbacks. Out: schema/prompt (US-001), op/parser (US-002), log/audit recording (US-004), call-site NBF changes (US-005); A deterministic severity or category pre-filter on the NBF seed. Any change to `actionableAdvisoryFindings` or to how `acDropped` findings are treated (the #1801 hold); the worth-check only sees findings that already survived `deriveNbfSeed`. Routing the judgment through the advisor (`src/advisor/`), its `decisions.jsonl` ledger, its option menus or its heads-up notifications.",
+      "acceptanceCriteria": [
+        "runNbfWorthCheck with cfg undefined and findings [A, B] returns [A, B] without calling _nbfWorthCheckDeps.callOp.",
+        "runNbfWorthCheck with cfg { mode: 'off', timeoutMs: 300000 } and findings [A, B] returns [A, B] without calling _nbfWorthCheckDeps.callOp.",
+        "runNbfWorthCheck with cfg.mode 'on' and findings [A, B] calls _nbfWorthCheckDeps.callOp with nbfWorthCheckOp as its op.",
+        "runNbfWorthCheck with cfg.mode 'on', findings [A, B] and verdicts A-fix, B-skip returns [A].",
+        "runNbfWorthCheck with cfg.mode 'on', findings [A, B] and all-skip verdicts returns [].",
+        "runNbfWorthCheck with cfg.mode 'shadow' and findings [A, B] returns [A, B].",
+        "runNbfWorthCheck with cfg.mode 'on' and _nbfWorthCheckDeps.callOp rejecting returns [A, B].",
+        "runNbfWorthCheck with cfg.mode 'on' and callOp returning { parsed: false, unparsedPreview: 'junk' } returns [A, B].",
+        "When cfg.mode is 'on', callOp receives pendingStories [{ id: 'US-003', title: 'Retry delivery', acceptanceCriteria: ['retries twice'] }], excluding the current, passed, failed and decomposed stories.",
+        "When cfg.mode is 'on' and loadPRD rejects, callOp receives pendingStories [].",
+        "When cfg.mode is 'on' and ctx.featureDir is absent, runNbfWorthCheck never calls loadPRD.",
+        "When cfg.mode is 'on', callOp receives input.diff '+x'.",
+        "When cfg.mode is 'on' and resolveEffectiveRef resolves undefined, callOp receives input.diff ''.",
+        "When cfg.mode is 'on' and collectDiff rejects, callOp receives input.diff ''.",
+        "When cfg.mode is 'on' and ctx.story is absent, runNbfWorthCheck returns [A, B] without calling _nbfWorthCheckDeps.callOp.",
+        "When cfg.mode is 'on' and collectDiff returns null, callOp receives input.diff ''."
+      ],
+      "tags": [
+        "feature",
+        "execution",
+        "session",
+        "fail-open"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Coordinates git/PRD/operation dependencies, session call and fail-open filtering; direct session invocation triggers security override."
+      },
+      "contextFiles": [
+        "packages/nax/src/advisor/service.ts",
+        "packages/nax/src/review/diff-utils.ts",
+        "packages/nax/test/helpers/call-context.ts",
+        "packages/nax/src/operations/nbf-worth-check.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/execution/story-orchestrator/nbf-worth-check.ts",
+        "packages/nax/test/unit/execution/nbf-worth-check-runner.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-004",
+      "title": "Worth-check log and audit",
+      "description": "**Goal** — Emit a structured verdict/failure record and a best-effort per-story JSON audit for every judged story.\n\n**Motivation** — NBF consumes a quarter of story wall time and some findings are not worth fixing; judgment must be observable without disturbing an existing passing story.\n\n**Approach** — US-004 creates `nbf-worth-check-audit.ts`, exporting `recordNbfWorthCheck(record: NbfWorthCheckRecord): Promise<void>` (it emits the log lines of Log and audit and writes the audit file; it never throws), and adds one call to it in `runNbfWorthCheck` after every judged story (including failures). Every log below puts `storyId` first and `packageDir` (`ctx.packageDir`) second in its data. One `info` log per judged story, stage `\"nbf-worth-check\"`, message `\"worth-check verdicts\"`, data `{ storyId, packageDir, mode, fix, skip, skipped }`. `fix` and `skip` are counts. `skipped` is an array of `{ file, line, reason }` for each `skip` verdict. When the op throws or the reply is unparseable: one `warn` log, stage `\"nbf-worth-check\"`, message `\"worth-check failed — fixing all findings\"`, data `{ storyId, packageDir, error }`. For an unparseable reply, `error` is the unparsed preview. When `mode` is `\"on\"` and every verdict is `skip`: one `info` log, stage `\"nbf-worth-check\"`, message `\"all advisory findings skipped — NBF not run\"`, data `{ storyId, packageDir, skip }`. Audit file, one per judged story: `<runtime.outputDir>/nbf-worth-check/<featureName or \"_unknown\">/<storyId>-<epochMs>.json`. Fields: `storyId`, `featureName`, `mode`, `parsed`, `unparsedPreview` (only when `parsed` is false; when `callOp` threw it is the error message), `findings` (`[{ index, severity, category, file, line, message }]`), `verdicts` (`[]` when `callOp` threw or the reply was unparseable), `durationMs`, `costUsd`. `costUsd` is the change in `totalSpendUsd(runtime.costAggregator.snapshot())` across the call, the same measure `src/advisor/service.ts` uses. A failed write logs a `warn` (stage `\"nbf-worth-check\"`, message `\"worth-check audit write failed\"`) and never changes the returned findings. `_nbfWorthCheckAuditDeps.write`, `.now`, `.costTotal` are injectable for tests; the injectable write receives the audit path and record object (so tests can assert record fields), while its default implementation serializes JSON, creates the parent directory and uses Bun.write. Off/missing config and absent story do not judge, log or audit.\n\n**Interface** — `recordNbfWorthCheck(record: NbfWorthCheckRecord): Promise<void>`; runner still exports `runNbfWorthCheck(req: NbfWorthCheckRequest): Promise<Finding[]>`. Recording follows the call and never changes its filter decision.\n\n**Fixtures** — A and B are advisory-review findings: A `{ severity: 'warning', category: 'input', file: 'src/a.ts', line: 12, message: 'empty items still fires MARK_DELIVERING' }`, B `{ severity: 'info', category: 'convention', file: 'src/b.ts', line: 3, message: 'stale header comment' }`, both `source: 'adversarial-review'`. S = `makeStory({ id: 'US-002', title: 'Deliver orders', description: 'd', acceptanceCriteria: ['AC one'], status: 'in-progress', attempts: 1 })`. ctx = `makeMockCallContext({ runtime, story: S, storyId: 'US-002', featureName: 'f', featureDir: '/repo/.nax/features/f' })`, packageDir '/tmp/test'. Stub runner diff/ref/PRD as in US-003; callOp -> A-fix, B-skip with reasons 'r1'/'nit' unless overridden. Stub `_nbfWorthCheckAuditDeps.write` to resolve, `.now` to return 1000 and `.costTotal` to return 0 unless overridden. Capture logs via `resetLogger(); initLogger({ level: 'info', headless: true, useChalk: false }); addSink(entry => ...)`.\n\n**Scope** — In: recorder, write path and logging; add one recording call in runner. Out: op (US-002), runner input/filter decisions (US-003), NBF call-site (US-005); Routing the judgment through the advisor (`src/advisor/`), its `decisions.jsonl` ledger, its option menus or its heads-up notifications. Exact per-story cost attribution when stories run in parallel; `costUsd` is the run-total delta across the call, as in the advisor, and can include other stories' spend.",
+      "acceptanceCriteria": [
+        "When runNbfWorthCheck judges [A, B] in mode 'on', the info 'worth-check verdicts' log at stage 'nbf-worth-check' has data whose first keys are storyId 'US-002' and packageDir '/tmp/test'.",
+        "When runNbfWorthCheck judges A-fix, B-skip in mode 'on', the info 'worth-check verdicts' log data has fix 1 and skip 1.",
+        "When runNbfWorthCheck judges A-fix, B-skip in mode 'on', that log data.skipped equals [{ file: 'src/b.ts', line: 3, reason: 'nit' }].",
+        "When runNbfWorthCheck judges all-skip in mode 'on', it emits an info 'all advisory findings skipped — NBF not run' log with data.skip 2.",
+        "When callOp rejects with Error('boom') in mode 'on', runNbfWorthCheck emits a warn 'worth-check failed — fixing all findings' log with data.error 'boom'.",
+        "When callOp resolves { parsed: false, unparsedPreview: 'junk' } in mode 'on', runNbfWorthCheck emits a warn 'worth-check failed — fixing all findings' log with data.error 'junk'.",
+        "When runNbfWorthCheck judges in mode 'on' with now() returning 1000, _nbfWorthCheckAuditDeps.write is called once with path `<runtime.outputDir>/nbf-worth-check/f/US-002-1000.json`.",
+        "When costTotal returns 0 then 0.02 during a mode 'on' judgment, the record passed to _nbfWorthCheckAuditDeps.write has costUsd 0.02.",
+        "When callOp rejects with Error('boom') in mode 'on', the written audit record has parsed false, verdicts [] and unparsedPreview 'boom'.",
+        "When runNbfWorthCheck judges in mode 'shadow', the written audit record has mode 'shadow' and two verdicts.",
+        "When runNbfWorthCheck is called with mode 'off', _nbfWorthCheckAuditDeps.write is never called.",
+        "When _nbfWorthCheckAuditDeps.write rejects in mode 'on' with verdicts A-fix, B-skip, runNbfWorthCheck returns [A].",
+        "When _nbfWorthCheckAuditDeps.write rejects in mode 'on', runNbfWorthCheck emits a warn 'worth-check audit write failed' log.",
+        "When ctx.featureName is undefined during a judged story, _nbfWorthCheckAuditDeps.write receives a path whose feature directory segment is '_unknown'."
+      ],
+      "tags": [
+        "feature",
+        "audit",
+        "logging"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Adds one best-effort audit recorder and a runner call using established advisor audit, injected write/clock/cost and structured logger patterns; no session or access-control changes."
+      },
+      "contextFiles": [
+        "packages/nax/src/advisor/audit.ts",
+        "packages/nax/src/advisor/service.ts",
+        "packages/nax/src/execution/story-orchestrator/nbf-worth-check.ts",
+        "packages/nax/src/logger/index.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/execution/story-orchestrator/nbf-worth-check-audit.ts",
+        "packages/nax/test/unit/execution/nbf-worth-check-audit.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-005",
+      "title": "NBF worth-check wiring",
+      "description": "**Goal** — Insert the worth-check after the existing green NBF seed gate and use its output for the whole NBF pass.\n\n**Motivation** — Nothing decides worth today: deriveNbfSeed drops only non-actionable, acDropped and retired findings, and every remaining finding seeds the pass.\n\n**Approach** — The existing NBF gate runs first, unchanged. The worth-check runs only when NBF would run today: the story is green, a review ran, and `deriveNbfSeed` returned `shouldRun: true`. A red story or an empty seed never pays for a worth-check. When `worthCheck` is absent or its `mode` is `\"off\"`, the seed is used unchanged and the op is not called. Otherwise the op is called. When the call throws or the reply is unparseable, the seed is used unchanged (fail-open). `mode: \"shadow\"`: the verdicts are logged and audited, and the seed is used unchanged. `mode: \"on\"`: only findings with verdict `fix` seed NBF. When no `fix` finding remains, NBF does not run for this story. The filtered list replaces `seed.findings` at all three places `maybeRunNonBlockingFix` uses it today: `advisoryFindings`, `runRectify`'s `initialFindings`, and `buildNbfDeps({ findings })`. Target: after the existing `shouldRunNbf` check passes, `const findings = await runNbfWorthCheck({ ctx, findings: seed.findings, cfg: nbfCfg.worthCheck })`. When `findings` is empty, return without calling `runNonBlockingFix`. Otherwise pass `findings` at all three places. This file is at 576 of 600 lines, so the logic lives in the new runner and the call-site change is one awaited expression and one early-return `if`. Keep the original green/review gates and fix pass unchanged. Test through `buildPlanForStrategy(ctx, story, config, \"three-session-tdd\", inputs)` and `plan.run()`, stubbing adversarial advisory output, `_storyOrchestratorDeps.runNonBlockingFix`, `_nbfWorthCheckDeps` and `_nbfWorthCheckAuditDeps` to avoid real git/audit IO.\n\n**Interface** — `runNbfWorthCheck({ ctx, findings: seed.findings, cfg: nbfCfg.worthCheck }): Promise<Finding[]>` returns the only list used to seed NBF.\n\n**Fixtures** — A `{ source: 'adversarial-review', severity: 'warning', category: 'input', file: 'src/a.ts', line: 12, message: 'empty items still fires MARK_DELIVERING' }`, B `{ source: 'adversarial-review', severity: 'info', category: 'convention', file: 'src/b.ts', line: 3, message: 'stale header comment' }`; S = `makeStory({ id: 'US-002', title: 'Deliver orders', description: 'd', acceptanceCriteria: ['AC one'], status: 'in-progress', attempts: 1 })`. Stub `_storyOrchestratorDeps` as in `test/unit/execution/non-blocking-fix-wiring.test.ts` to make the story green; override adversarial review to return [A, B]. Use runner ctx with story S, storyId 'US-002', featureName 'f', featureDir '/repo/.nax/features/f', packageDir '/tmp/test'; stub worth-check git/PRD/op and audit deps, and capture logger sink. A-fix/B-skip output has parsed true and reasons 'r1'/'nit'; all-skip has two skip verdicts reason 'nit'.\n\n**Scope** — In: minimal NBF call-site wiring and integration test. Out: runner filtering logic (US-003), audit/log implementation (US-004); Any change to `actionableAdvisoryFindings` or to how `acDropped` findings are treated (the #1801 hold); the worth-check only sees findings that already survived `deriveNbfSeed`. Any change to the NBF fix pass itself: its strategies, gates, `sourceDiffCap`, fix review, snapshot and restore. A test that observes `runRectify`'s `initialFindings` or `buildNbfDeps`' `findings` directly; both receive the same local `findings` value whose use as `advisoryFindings` US-005 pins.",
+      "acceptanceCriteria": [
+        "When plan.run() has worthCheck { mode: 'on' } and callOp resolves A-fix, B-skip, _storyOrchestratorDeps.runNonBlockingFix is called once with advisoryFindings [A].",
+        "When plan.run() has worthCheck { mode: 'on' } and callOp resolves all-skip, _storyOrchestratorDeps.runNonBlockingFix is never called.",
+        "When plan.run() has worthCheck { mode: 'on' } and callOp resolves all-skip, an info entry with message 'all advisory findings skipped — NBF not run' is captured during plan.run().",
+        "When plan.run() has worthCheck { mode: 'shadow' } and callOp resolves all-skip, _storyOrchestratorDeps.runNonBlockingFix is called with advisoryFindings [A, B].",
+        "When plan.run() has no worthCheck key, _storyOrchestratorDeps.runNonBlockingFix is called with advisoryFindings [A, B], preserving today's seed.",
+        "When plan.run() has no worthCheck key, _nbfWorthCheckDeps.callOp is never called.",
+        "When plan.run() has worthCheck { mode: 'on' } but rectification is exhausted and the story is not green, _nbfWorthCheckDeps.callOp is never called."
+      ],
+      "tags": [
+        "feature",
+        "execution",
+        "integration"
+      ],
+      "dependencies": [
+        "US-004"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Existing NBF green gate remains intact; the additive call, empty-result guard and three replacements are confined to one orchestrator function plus its integration test, with no new session policy."
+      },
+      "contextFiles": [
+        "packages/nax/src/execution/story-orchestrator/execution-plan-phases.ts",
+        "packages/nax/test/unit/execution/non-blocking-fix-wiring.test.ts",
+        "packages/nax/src/execution/story-orchestrator/nbf-worth-check.ts",
+        "packages/nax/src/execution/story-orchestrator/nbf-worth-check-audit.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/execution/nbf-worth-check-wiring.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/execution/story-orchestrator/execution-plan-phases.ts",
+          "reason": "call `runNbfWorthCheck` in `maybeRunNonBlockingFix` and pass its result at the three `seed.findings` uses."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    }
+  ],
+  "analysis": "Existing enhancement within packages/nax, not a new service. packages/nax/src/execution/story-orchestrator/nbf-seed.ts:142-189 currently unions actionable reviewer advisories, deduplicates by file/line/message and gates on green phase outputs; do not change its actionRequired/acDropped/retirement filtering or any NBF strategy. packages/nax/src/execution/story-orchestrator/execution-plan-phases.ts:509-574 owns maybeRunNonBlockingFix: after storyCurrentlyGreen, review, rectification and seed.shouldRun gates, it passes seed.findings as advisoryFindings, runRectification initialFindings and buildNbfDeps findings; insert one awaited runNbfWorthCheck and an empty-result return after the existing gate, then use the same filtered local variable in all three positions. That file is 576 lines against a 600-line gate, so keep orchestration in new modules. packages/nax/src/config/schemas-review.ts:186-234 defines NonBlockingFixConfigSchema and :265-312 ReviewConfigSchema; add optional worthCheck with off/300000 defaults, leaving existing NBF fields and the optional parent untouched. packages/nax/src/config/selectors.ts:10-11 imports schema types and :180 exports NonBlockingFixConfig; add adjacent inferred NbfWorthCheckConfig. Existing config schema equality tests in packages/nax/test/unit/config/non-blocking-fix-config.test.ts:41-65 expect the old parsed shape: absent optional worthCheck must remain undefined and must not alter that shape. packages/nax/src/runtime/session-role.ts:14-72 is the union and runtime role allowlist; both need the new read-only role; no required write-tool role capability. packages/nax/src/prompts/builders/fix-review-builder.ts:107-143 shows story/findings prompt formatting; new builder under prompts/builders and export via packages/nax/src/prompts/index.ts:24-29, without adding a second prompt literal in the op. packages/nax/src/operations/fix-review.ts:16-76 provides run-operation shape, read-only tools, fresh session, reviewConfigSelector and tryParseLLMJson plus previewOutput fallback; new op exported beside it from packages/nax/src/operations/index.ts:68-69. Parser must reject non-object top levels including arrays, normalize duplicate indexes first-before-validation, fail open for invalid/missing/blank skip verdicts and not retry. packages/nax/src/operations/types.ts:40-78 gives optional ctx.story, storyId, featureName and featureDir, and :100-145 supplies typed operation interfaces; packages/nax/src/pipeline/stages/execution.ts:180-190 sets story, storyId, featureName and featureDir in production. packages/nax/src/prd/index.ts:83-117 loadPRD throws when missing/corrupt; catch and proceed with no pending stories. packages/nax/src/prd/types.ts:27-37 enumerates statuses: include pending/in-progress/paused only, excluding current. packages/nax/src/review/diff-utils.ts:128-190 provides collectDiff (nullable), collectDiffStat and :178 truncateDiff; git-ref resolution is there too; failure to get a diff must not block the verdict. packages/nax/src/advisor/service.ts:62 and :249-251 demonstrates totalSpendUsd(runtime.costAggregator.snapshot()) delta, which is run-total and can include parallel spend. packages/nax/src/advisor/audit.ts:40-78 shows injectable write with parent mkdir and Bun.write; audit write failures must never change return values. packages/nax/test/helpers/call-context.ts:10-29 provides makeMockCallContext; packages/nax/test/unit/operations/fix-review.test.ts:1-104 uses the projected op selector, and packages/nax/test/unit/execution/non-blocking-fix-wiring.test.ts:61-150 already exercises buildPlanForStrategy and stubs _storyOrchestratorDeps, the seam for integration tests. Add injectable _nbfWorthCheckDeps for op, PRD, diff, clock, write and cost, and _nbfWorthCheckAuditDeps for write/clock/cost as required by audit seam tests; restore stubs after each test. Read-only operation must declare Read/Glob/Grep, use canonical callOp and review selector, and keep prompts inside prompts/builders; existing permissions stay resolved by the operation/session machinery. Migration is opt-in: missing worthCheck or mode off never invokes op, logs or audits; shadow observes only, on filters, and errors fail open. No other packages change. Test with packages/nax bun:test, follow root docs/architecture/ARCHITECTURE.md:1-45 for _deps, error handling, typed interfaces and logging; do not edit generated agent instructions.",
+  "outOfScope": [
+    "Laya, Jev or any decision-proxy classifier as the judge or as a shadow judge; a probe found them not ready.",
+    "Routing the judgment through the advisor (`src/advisor/`), its `decisions.jsonl` ledger, its option menus or its heads-up notifications.",
+    "A deterministic severity or category pre-filter on the NBF seed.",
+    "A \"defer-to-finish\" verdict, carrying skipped findings into `nax finish`, the PR body, or the end-of-run advisory summary.",
+    "Any change to `actionableAdvisoryFindings` or to how `acDropped` findings are treated (the #1801 hold); the worth-check only sees findings that already survived `deriveNbfSeed`.",
+    "Any change to the NBF fix pass itself: its strategies, gates, `sourceDiffCap`, fix review, snapshot and restore.",
+    "A parse retry for the worth-check reply; an unparseable reply falls back to fixing every finding.",
+    "Exact per-story cost attribution when stories run in parallel; `costUsd` is the run-total delta across the call, as in the advisor, and can include other stories' spend.",
+    "Updating the session-role table in `.nax/rules/adapter-wiring.md` for the new role.",
+    "A test that observes `runRectify`'s `initialFindings` or `buildNbfDeps`' `findings` directly; both receive the same local `findings` value whose use as `advisoryFindings` US-005 pins."
+  ],
+  "routingProfile": "native-codex-muse"
+}
