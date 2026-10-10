@@ -3,7 +3,7 @@
   "feature": "nbf-worth-check",
   "branchName": "feat/nbf-worth-check",
   "createdAt": "2026-09-01T00:00:00.000Z",
-  "updatedAt": "2026-10-10T15:33:45.960Z",
+  "updatedAt": "2026-10-10T15:47:04.674Z",
   "userStories": [
     {
       "id": "US-001",
@@ -296,8 +296,8 @@
       "dependencies": [
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {

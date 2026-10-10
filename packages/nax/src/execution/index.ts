@@ -82,6 +82,8 @@ export {
   type StorySnapshot,
   synthesizeBackfillMetric,
 } from "./lifecycle";
+export type { NbfWorthCheckRequest } from "./nbf-worth-check";
+export { _nbfWorthCheckDeps, runNbfWorthCheck } from "./nbf-worth-check";
 export { _newPackageSetupDeps, markNewPackageDirs, maybeRunNewPackageSetup } from "./new-package-setup";
 export { runNonBlockingFix } from "./non-blocking-fix";
 export { type BreakerDecision, inspectOscillationBreaker } from "./oscillation-breaker";

@@ -21,9 +21,10 @@
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
-import { type CallContext, runNbfWorthCheck } from "@/operations";
+import type { CallContext } from "@/operations";
 import type { QuarantineMemo } from "@/verification";
 import { hydrateFromResumePlan } from "../checkpoint/resume-hydrate";
+import { runNbfWorthCheck } from "../nbf-worth-check";
 import { nonBlockingExcludePhases, nonBlockingExtraPhases } from "../non-blocking-fix";
 import { buildNbfDeps } from "./nbf-deps";
 import { deriveNbfSeed } from "./nbf-seed";
@@ -525,6 +526,7 @@ export async function maybeRunNonBlockingFix(
     !!nbfCfg &&
     storyCurrentlyGreen &&
     !!state.rectification &&
+    state.rectification.maxAttempts > 0 &&
     !!ctx.storyId &&
     (!!state.adversarialReview || !!state.semanticReview) &&
     seed.shouldRun;

@@ -1,16 +1,14 @@
 /** Read-only worth-check operation for non-blocking-fix findings. */
 
-import { join } from "node:path";
 import { previewOutput, UNPARSED_PREVIEW_BYTES } from "../agents/retry/parse-retry";
 import { reviewConfigSelector } from "../config";
-import type { NbfWorthCheckConfig, ReviewConfig } from "../config/selectors";
+import type { ReviewConfig } from "../config/selectors";
 import type { Finding } from "../findings";
 import { loadPRD, type UserStory } from "../prd";
 import { buildNbfWorthCheckPrompt } from "../prompts";
-import { collectDiff, collectDiffStat, resolveEffectiveRef, truncateDiff } from "../review/diff-utils";
+import { collectDiff, collectDiffStat, resolveEffectiveRef } from "../review/diff-utils";
 import { tryParseLLMJson } from "../utils/llm-json";
 import { callOp } from "./call";
-import { _nbfWorthCheckAuditDeps, recordNbfWorthCheck } from "./nbf-worth-check-audit";
 import type { CallContext, Operation, RunOperation } from "./types";
 
 export interface NbfWorthCheckPendingStory {
@@ -99,12 +97,6 @@ export const nbfWorthCheckOp: RunOperation<NbfWorthCheckOpInput, NbfWorthCheckOp
   parse: (output, input) => parseNbfWorthReply(output, input.findings.length),
 };
 
-export interface NbfWorthCheckRequest {
-  readonly ctx: CallContext;
-  readonly findings: readonly Finding[];
-  readonly cfg: NbfWorthCheckConfig | undefined;
-}
-
 export const _nbfWorthCheckDeps = {
   callOp: callOp as <I, O, C>(ctx: CallContext, op: Operation<I, O, C>, input: I) => Promise<O>,
   resolveEffectiveRef,
@@ -112,89 +104,3 @@ export const _nbfWorthCheckDeps = {
   collectDiffStat,
   loadPRD,
 };
-
-async function storyDiff(ctx: CallContext): Promise<string> {
-  try {
-    const ref = await _nbfWorthCheckDeps.resolveEffectiveRef(ctx.packageDir, ctx.story?.storyGitRef, ctx.storyId ?? "");
-    if (!ref) return "";
-    const [diff, stat] = await Promise.all([
-      _nbfWorthCheckDeps.collectDiff(ctx.packageDir, ref, []),
-      _nbfWorthCheckDeps.collectDiffStat(ctx.packageDir, ref),
-    ]);
-    return diff === null ? "" : truncateDiff(diff, stat);
-  } catch {
-    return "";
-  }
-}
-
-async function pendingFeatureStories(ctx: CallContext): Promise<NbfWorthCheckPendingStory[]> {
-  if (!ctx.featureDir) return [];
-  try {
-    const prd = await _nbfWorthCheckDeps.loadPRD(join(ctx.featureDir, "prd.json"));
-    return prd.userStories
-      .filter((story) => story.id !== ctx.story?.id && ["pending", "in-progress", "paused"].includes(story.status))
-      .map(({ id, title, acceptanceCriteria }) => ({ id, title, acceptanceCriteria }));
-  } catch {
-    return [];
-  }
-}
-
-export async function runNbfWorthCheck(req: NbfWorthCheckRequest): Promise<Finding[]> {
-  const seed = [...req.findings];
-  if (!req.cfg || req.cfg.mode === "off" || !req.ctx.story || seed.length === 0) return seed;
-  const startedAt = _nbfWorthCheckAuditDeps.now();
-  const costBefore = _nbfWorthCheckAuditDeps.costTotal(req.ctx.runtime);
-  let result: NbfWorthCheckOpOutput | undefined;
-  let failure: string | undefined;
-  try {
-    const input: NbfWorthCheckOpInput = {
-      story: req.ctx.story,
-      diff: await storyDiff(req.ctx),
-      findings: seed,
-      pendingStories: await pendingFeatureStories(req.ctx),
-    };
-    const output: unknown = await _nbfWorthCheckDeps.callOp(req.ctx, nbfWorthCheckOp, input);
-    result = isWorthOutput(output) ? output : { parsed: false, unparsedPreview: "unparseable worth-check reply" };
-  } catch (error) {
-    failure = error instanceof Error ? error.message : String(error);
-  }
-  await recordNbfWorthCheck({
-    runtime: req.ctx.runtime,
-    storyId: req.ctx.story.id,
-    featureName: req.ctx.featureName,
-    packageDir: req.ctx.packageDir,
-    mode: req.cfg.mode,
-    findings: seed,
-    ...(result ? { result } : {}),
-    ...(failure !== undefined ? { error: failure } : {}),
-    durationMs: _nbfWorthCheckAuditDeps.now() - startedAt,
-    costUsd: _nbfWorthCheckAuditDeps.costTotal(req.ctx.runtime) - costBefore,
-  });
-  if (req.cfg.mode !== "on" || failure !== undefined || !result || !result.parsed) return seed;
-  return seed.filter((_, index) =>
-    result.verdicts.some((verdict) => verdict.index === index + 1 && verdict.verdict === "fix"),
-  );
-}
-
-function isWorthOutput(value: unknown): value is NbfWorthCheckOpOutput {
-  return (
-    isParsedWorthOutput(value) ||
-    (typeof value === "object" &&
-      value !== null &&
-      "parsed" in value &&
-      value.parsed === false &&
-      "unparsedPreview" in value &&
-      typeof value.unparsedPreview === "string")
-  );
-}
-
-function isParsedWorthOutput(value: unknown): value is Extract<NbfWorthCheckOpOutput, { parsed: true }> {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "parsed" in value &&
-    value.parsed === true &&
-    "verdicts" in value &&
-    Array.isArray(value.verdicts)
-  );
-}
