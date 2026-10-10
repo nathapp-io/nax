@@ -19,11 +19,12 @@ export { fenceLangFor, formatTestOutputForFix } from "./builders/acceptance-buil
 export type { AdversarialReviewPromptOptions, TestInventory } from "./builders/adversarial-review-builder";
 // Adversarial review prompt builder — adversarial reviewer prompt construction.
 export { AdversarialReviewPromptBuilder } from "./builders/adversarial-review-builder";
+// Fix-review prompt builder — verdict-only review of a fix's own delta (ADR-033).
+export { type AdvisorPromptInput, buildAdvisorPrompt } from "./builders/advisor-builder";
 export type { DecomposePromptInput } from "./builders/decompose-builder";
 // Decompose prompt builder — prompt assembly for nax plan / decompose operations.
 export { buildDecomposePromptSync } from "./builders/decompose-builder";
 export type { FixReviewPromptInput } from "./builders/fix-review-builder";
-// Fix-review prompt builder — verdict-only review of a fix's own delta (ADR-033).
 export { buildFixReviewPrompt } from "./builders/fix-review-builder";
 export type { OneShotRole } from "./builders/one-shot-builder";
 // One-shot prompt builder — escape hatch for structurally trivial prompts.
