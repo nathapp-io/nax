@@ -15,7 +15,7 @@
 import { createHash } from "node:crypto";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { AdviceDecision } from "@/advisor/store";
-import { describeTarget, readTrustedDecisions } from "@/advisor/store";
+import { describeTarget, isPromptSafe, readTrustedDecisions } from "@/advisor/store";
 import { getLogger } from "@/logger";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 
@@ -62,7 +62,10 @@ export class AdvisorDecisionsProvider implements IContextProvider {
         request.featureId,
         request.outputDir,
       );
-      return { chunks: decisions.filter((d) => bearsOn(d, request.storyId)).map(toChunk), pullTools: [] };
+      return {
+        chunks: decisions.filter((d) => isPromptSafe(d) && bearsOn(d, request.storyId)).map(toChunk),
+        pullTools: [],
+      };
     } catch (err) {
       getLogger().warn("advisor-decisions", "Reading advisor decisions failed — no chunks", {
         storyId: request.storyId ?? "_run",

@@ -76,6 +76,16 @@ describe("AdvisorDecisionsProvider", () => {
     });
   });
 
+  test("a waive of a blocking finding is never handed to an agent as settled (same rule as the review prompt)", async () => {
+    await withTempDir(async (dir) => {
+      await write(dir, { action: { type: "waive", reason: "x" }, findingSeverity: "error" });
+      await write(dir, { action: { type: "waive", reason: "y" }, findingSeverity: "warning" });
+      const out = await texts(dir);
+      expect(out).toHaveLength(1);
+      expect(out[0]).toContain("D-2");
+    });
+  });
+
   test("an untrusted ledger line (no audit artifact) never reaches a prompt", async () => {
     await withTempDir(async (dir) => {
       await write(dir, {}, false);
