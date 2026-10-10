@@ -227,7 +227,8 @@
       "codebase-memory": {
         "command": "codebase-memory-mcp",
         "stages": [
-          "run"
+          "run",
+          "review"
         ],
         "allowedTools": [
           "search_graph",
