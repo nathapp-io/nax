@@ -15,6 +15,7 @@
  * `buildRunDispatchOptions`, so this test goes through it.
  */
 import { afterEach, describe, expect, test } from "bun:test";
+import type { McpConnection, McpTransportConfig } from "@nathapp/nax-agent/mcp";
 import { makeMockRuntime, makeNaxConfig } from "@test/helpers";
 import { _codingToolSupportDeps, resolveCodingToolSupport } from "@/agents/coding-tool-support-resolve";
 import type { McpServerConfig } from "@/config";
@@ -29,24 +30,23 @@ interface Transport {
   readonly pid: number;
 }
 
-/** Counts connects at the same seam pool.test.ts uses (src/mcp/client.ts:20). */
+/** Counts connects at the `_mcpClientDeps.connect` seam (src/mcp/client.ts), as pool.test.ts does. */
 function fakeMcpClient(): { transports: Transport[] } {
   const transports: Transport[] = [];
   let nextPid = 100;
   Object.assign(_mcpClientDeps, {
-    createTransport: (params: { cwd: string }) => {
+    connect: async (config: Extract<McpTransportConfig, { kind: "stdio" }>): Promise<McpConnection> => {
       const pid = nextPid++;
-      transports.push({ cwd: params.cwd, pid });
-      return { pid, close: async () => {} };
-    },
-    createClient: () => ({
-      connect: async () => {},
-      listTools: async () => ({
+      transports.push({ cwd: config.cwd, pid });
+      return {
+        kind: "stdio",
+        pid,
         tools: [{ name: "search_graph", description: "search", inputSchema: { type: "object" } }],
-      }),
-      callTool: async () => ({ content: [] }),
-      close: async () => {},
-    }),
+        call: async () => ({ text: "", isError: false, bytesBeforeCap: 0 }),
+        onClose: () => {},
+        close: async () => {},
+      };
+    },
   });
   return { transports };
 }

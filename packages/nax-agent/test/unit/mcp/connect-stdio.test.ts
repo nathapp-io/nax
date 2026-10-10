@@ -47,6 +47,17 @@ describe("connectMcp over stdio", () => {
     }
   }, 20_000);
 
+  test("exposes the stdio child pid on the connection", async () => {
+    const connection = await connectMcp(stdio(), OPTS);
+    const pid = await pidOf(connection);
+    try {
+      expect(connection.pid).toBe(pid);
+    } finally {
+      await connection.close().catch(() => undefined);
+      killQuietly(pid);
+    }
+  }, 20_000);
+
   test("close() resolves only after the process is gone", async () => {
     const connection = await connectMcp(stdio(), OPTS);
     const pid = await pidOf(connection);
@@ -128,5 +139,18 @@ describe("connectMcp over stdio", () => {
   test("a command that does not exist fails with McpConnectError", async () => {
     const config: McpTransportConfig = { kind: "stdio", command: "/nonexistent/mcp-bin", args: [], env: {}, cwd: "/" };
     await expect(connectMcp(config, OPTS)).rejects.toBeInstanceOf(McpConnectError);
+  }, 20_000);
+
+  test("a connect that fails after spawn closes the process before rejecting", async () => {
+    const error = await connectMcp(stdio(["--hang-tools-list"]), {
+      ...OPTS,
+      timeoutMs: 1000,
+      closeGraceMs: 500,
+    }).catch((e: unknown) => e);
+    assertCaughtInstanceOf(error, McpConnectError);
+    const pid = Number(/pid=(\d+)/.exec(error.stderrTail ?? "")?.[1]);
+    expect(pid).toBeGreaterThan(0);
+    for (let i = 0; i < 40 && isProcessAlive(pid); i += 1) await settle(50);
+    expect(isProcessAlive(pid)).toBe(false);
   }, 20_000);
 });
