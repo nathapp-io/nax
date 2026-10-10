@@ -1,6 +1,6 @@
 {
   "name": "@nathapp/nax-agent-acp",
-  "version": "0.85.1",
+  "version": "0.86.0",
   "private": true,
   "description": "ACP (Agent Client Protocol) backend for @nathapp/nax-agent sessions: drive Claude Code and other ACP agents through the nax-agent session API.",
   "type": "module",

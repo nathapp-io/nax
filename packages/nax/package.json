@@ -1,6 +1,6 @@
 {
   "name": "@nathapp/nax",
-  "version": "0.85.1",
+  "version": "0.86.0",
   "description": "AI Coding Agent Orchestrator — loops until done",
   "type": "module",
   "bin": {
@@ -87,7 +87,7 @@
     "@agentclientprotocol/sdk": "~1.7.0",
     "@anthropic-ai/sandbox-runtime": "0.0.77",
     "@modelcontextprotocol/sdk": "^1.32.1",
-    "@nathapp/nax-ai": "0.85.1",
+    "@nathapp/nax-ai": "0.86.0",
     "chalk": "^5.6.2",
     "commander": "^13.1.0",
     "ink": "^6.7.0",
