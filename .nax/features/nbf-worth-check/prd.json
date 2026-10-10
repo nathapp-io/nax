@@ -3,7 +3,7 @@
   "feature": "nbf-worth-check",
   "branchName": "feat/nbf-worth-check",
   "createdAt": "2026-09-01T00:00:00.000Z",
-  "updatedAt": "2026-10-10T14:40:18.805Z",
+  "updatedAt": "2026-10-10T15:00:43.367Z",
   "userStories": [
     {
       "id": "US-001",
@@ -123,8 +123,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -196,7 +196,10 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Coordinates git/PRD/operation dependencies, session call and fail-open filtering; direct session invocation triggers security override."
+        "reasoning": "Coordinates git/PRD/operation dependencies, session call and fail-open filtering; direct session invocation triggers security override.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/advisor/service.ts",
@@ -212,7 +215,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "7f0b92cdecd8fccce01680ce508707ef382ccebb"
     },
     {
       "id": "US-004",

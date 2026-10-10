@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test";
-import { makeNaxConfig, makeStory, makeTestRuntime, opSelector } from "@test/helpers";
+import { afterEach, describe, expect, test } from "bun:test";
+import { makeMockCallContext, makeNaxConfig, makeStory, makeTestRuntime, opSelector } from "@test/helpers";
 import { reviewConfigSelector } from "@/config";
 import type { Finding } from "@/findings";
 import type { NbfWorthCheckOpInput } from "@/operations";
@@ -280,5 +280,224 @@ describe("nbfWorthCheckOp (US-002)", () => {
 
   test("US-002 AC19: builds its task from the worth-check prompt builder", () => {
     expect(nbfWorthCheckOp.build(baseInput, ctx).task.content).toBe(buildNbfWorthCheckPrompt(baseInput));
+  });
+});
+
+type WorthRequest = {
+  readonly ctx: ReturnType<typeof makeMockCallContext>;
+  readonly findings: readonly Finding[];
+  readonly cfg: { readonly mode: "on" | "off" | "shadow"; readonly timeoutMs?: number } | undefined;
+};
+type WorthRunner = (request: WorthRequest) => Promise<Finding[]>;
+type WorthDeps = {
+  callOp: (...args: unknown[]) => Promise<unknown>;
+  resolveEffectiveRef: (...args: unknown[]) => Promise<string | undefined>;
+  collectDiff: (...args: unknown[]) => Promise<string | null>;
+  collectDiffStat: (...args: unknown[]) => Promise<string>;
+  loadPRD: (...args: unknown[]) => Promise<unknown>;
+  writeAudit: (...args: unknown[]) => Promise<void>;
+  now: () => number;
+  costTotal: (...args: unknown[]) => number;
+};
+
+const originalWorthDeps = Object.getOwnPropertyDescriptor(operations, "_nbfWorthCheckDeps")?.value;
+const originalRunner = Object.getOwnPropertyDescriptor(operations, "runNbfWorthCheck")?.value;
+const worthFunction = (value: unknown): value is WorthRunner => typeof value === "function";
+const worthDepsObject = (value: unknown): value is WorthDeps => typeof value === "object" && value !== null;
+
+function worthDeps(): WorthDeps | undefined {
+  expect(worthDepsObject(originalWorthDeps)).toBe(true);
+  return worthDepsObject(originalWorthDeps) ? originalWorthDeps : undefined;
+}
+
+function runWorth(request: WorthRequest): Promise<Finding[]> {
+  expect(worthFunction(originalRunner)).toBe(true);
+  return worthFunction(originalRunner) ? originalRunner(request) : Promise.resolve([...request.findings]);
+}
+
+afterEach(() => {
+  if (worthDepsObject(originalWorthDeps)) {
+    Object.assign(originalWorthDeps, {
+      callOp: async () => ({ parsed: true, verdicts: [] }),
+      resolveEffectiveRef: async () => "ref1",
+      collectDiff: async () => "+x",
+      collectDiffStat: async () => "",
+      loadPRD: async () => ({ userStories: [] }),
+      writeAudit: async () => undefined,
+      now: () => 0,
+      costTotal: () => 0,
+    });
+  }
+});
+
+describe("runNbfWorthCheck (US-003)", () => {
+  const findings = [findingA, findingB];
+  const config = { mode: "on" as const };
+  const story = makeStory({
+    id: "US-002",
+    title: "Deliver orders",
+    description: "d",
+    acceptanceCriteria: ["AC one"],
+    status: "in-progress",
+    attempts: 1,
+  });
+  const makeRunnerCtx = (overrides: Partial<ReturnType<typeof makeMockCallContext>> = {}) =>
+    makeMockCallContext({ story, storyId: "US-002", featureName: "f", featureDir: "/repo/.nax/features/f", ...overrides });
+  const fixSkip = {
+    parsed: true,
+    verdicts: [
+      { index: 1, verdict: "fix", reason: "r1" },
+      { index: 2, verdict: "skip", reason: "nit" },
+    ],
+  };
+
+  test("US-003 AC1: returns the seed unchanged when config is absent", async () => {
+    const deps = worthDeps();
+    if (!deps) return;
+    let called = false;
+    deps.callOp = async () => { called = true; return fixSkip; };
+    expect(await runWorth({ ctx: makeRunnerCtx(), findings, cfg: undefined })).toEqual(findings);
+    expect(called).toBe(false);
+  });
+
+  test("US-003 AC2: returns the seed unchanged when worth-check mode is off", async () => {
+    const deps = worthDeps();
+    if (!deps) return;
+    let called = false;
+    deps.callOp = async () => { called = true; return fixSkip; };
+    expect(await runWorth({ ctx: makeRunnerCtx(), findings, cfg: { mode: "off", timeoutMs: 300000 } })).toEqual(findings);
+    expect(called).toBe(false);
+  });
+
+  test("US-003 AC3: dispatches the worth-check operation in on mode", async () => {
+    const deps = worthDeps();
+    if (!deps) return;
+    let calledOp: unknown;
+    deps.callOp = async (ctx, op) => { calledOp = op; return fixSkip; };
+    await runWorth({ ctx: makeRunnerCtx(), findings, cfg: config });
+    expect(calledOp).toBe(getWorthOp());
+  });
+
+  test("US-003 AC4: retains only findings judged fix", async () => {
+    const deps = worthDeps();
+    if (!deps) return;
+    deps.callOp = async () => fixSkip;
+    expect(await runWorth({ ctx: makeRunnerCtx(), findings, cfg: config })).toEqual([findingA]);
+  });
+
+  test("US-003 AC5: returns no findings when every verdict is skip", async () => {
+    const deps = worthDeps();
+    if (!deps) return;
+    deps.callOp = async () => ({ parsed: true, verdicts: [
+      { index: 1, verdict: "skip", reason: "nit" }, { index: 2, verdict: "skip", reason: "nit" },
+    ] });
+    expect(await runWorth({ ctx: makeRunnerCtx(), findings, cfg: config })).toEqual([]);
+  });
+
+  test("US-003 AC6: shadow mode returns the original seed", async () => {
+    const deps = worthDeps();
+    if (!deps) return;
+    deps.callOp = async () => ({ parsed: true, verdicts: [{ index: 1, verdict: "skip", reason: "nit" }] });
+    expect(await runWorth({ ctx: makeRunnerCtx(), findings, cfg: { mode: "shadow" } })).toEqual(findings);
+  });
+
+  test("US-003 AC7: keeps the seed when worth-check dispatch rejects", async () => {
+    const deps = worthDeps();
+    if (!deps) return;
+    deps.callOp = async () => { throw new Error("dispatch failed"); };
+    expect(await runWorth({ ctx: makeRunnerCtx(), findings, cfg: config })).toEqual(findings);
+  });
+
+  test("US-003 AC8: keeps the seed when the reply is unparseable", async () => {
+    const deps = worthDeps();
+    if (!deps) return;
+    deps.callOp = async () => ({ parsed: false, unparsedPreview: "junk" });
+    expect(await runWorth({ ctx: makeRunnerCtx(), findings, cfg: config })).toEqual(findings);
+  });
+
+  test("US-003 AC9: supplies only deliverable pending feature stories", async () => {
+    const deps = worthDeps();
+    if (!deps) return;
+    deps.loadPRD = async () => ({ userStories: [
+      story,
+      makeStory({ id: "US-001", status: "passed" }),
+      makeStory({ id: "US-003", title: "Retry delivery", acceptanceCriteria: ["retries twice"], status: "pending" }),
+      makeStory({ id: "US-004", status: "failed" }),
+      makeStory({ id: "US-005", status: "decomposed" }),
+    ] });
+    let input: unknown;
+    deps.callOp = async (_ctx, _op, opInput) => { input = opInput; return fixSkip; };
+    await runWorth({ ctx: makeRunnerCtx(), findings, cfg: config });
+    expect((input as NbfWorthCheckOpInput).pendingStories).toEqual([
+      { id: "US-003", title: "Retry delivery", acceptanceCriteria: ["retries twice"] },
+    ]);
+  });
+
+  test("US-003 AC10: continues with no pending stories when PRD loading rejects", async () => {
+    const deps = worthDeps();
+    if (!deps) return;
+    deps.loadPRD = async () => { throw new Error("PRD unavailable"); };
+    let input: unknown;
+    deps.callOp = async (_ctx, _op, opInput) => { input = opInput; return fixSkip; };
+    await runWorth({ ctx: makeRunnerCtx(), findings, cfg: config });
+    expect((input as NbfWorthCheckOpInput).pendingStories).toEqual([]);
+  });
+
+  test("US-003 AC11: does not load a PRD without a feature directory", async () => {
+    const deps = worthDeps();
+    if (!deps) return;
+    let loaded = false;
+    deps.loadPRD = async () => { loaded = true; return { userStories: [] }; };
+    deps.callOp = async () => fixSkip;
+    await runWorth({ ctx: makeRunnerCtx({ featureDir: undefined }), findings, cfg: config });
+    expect(loaded).toBe(false);
+  });
+
+  test("US-003 AC12: gathers the story diff for the operation input", async () => {
+    const deps = worthDeps();
+    if (!deps) return;
+    let input: unknown;
+    deps.callOp = async (_ctx, _op, opInput) => { input = opInput; return fixSkip; };
+    await runWorth({ ctx: makeRunnerCtx(), findings, cfg: config });
+    expect((input as NbfWorthCheckOpInput).diff).toBe("+x");
+  });
+
+  test("US-003 AC13: uses an empty diff when no effective ref exists", async () => {
+    const deps = worthDeps();
+    if (!deps) return;
+    deps.resolveEffectiveRef = async () => undefined;
+    let input: unknown;
+    deps.callOp = async (_ctx, _op, opInput) => { input = opInput; return fixSkip; };
+    await runWorth({ ctx: makeRunnerCtx(), findings, cfg: config });
+    expect((input as NbfWorthCheckOpInput).diff).toBe("");
+  });
+
+  test("US-003 AC14: uses an empty diff when diff collection rejects", async () => {
+    const deps = worthDeps();
+    if (!deps) return;
+    deps.collectDiff = async () => { throw new Error("diff unavailable"); };
+    let input: unknown;
+    deps.callOp = async (_ctx, _op, opInput) => { input = opInput; return fixSkip; };
+    await runWorth({ ctx: makeRunnerCtx(), findings, cfg: config });
+    expect((input as NbfWorthCheckOpInput).diff).toBe("");
+  });
+
+  test("US-003 AC15: returns the seed without dispatch when the story is absent", async () => {
+    const deps = worthDeps();
+    if (!deps) return;
+    let called = false;
+    deps.callOp = async () => { called = true; return fixSkip; };
+    expect(await runWorth({ ctx: makeRunnerCtx({ story: undefined }), findings, cfg: config })).toEqual(findings);
+    expect(called).toBe(false);
+  });
+
+  test("US-003 AC16: uses an empty diff when diff collection returns null", async () => {
+    const deps = worthDeps();
+    if (!deps) return;
+    deps.collectDiff = async () => null;
+    let input: unknown;
+    deps.callOp = async (_ctx, _op, opInput) => { input = opInput; return fixSkip; };
+    await runWorth({ ctx: makeRunnerCtx(), findings, cfg: config });
+    expect((input as NbfWorthCheckOpInput).diff).toBe("");
   });
 });
