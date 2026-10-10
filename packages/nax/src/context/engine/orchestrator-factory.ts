@@ -9,6 +9,7 @@ import type { NaxConfig } from "@/config";
 import type { UserStory } from "@/prd";
 import { DEFAULT_CANONICAL_RULES_BUDGET_TOKENS } from "../rules/canonical-loader";
 import { ContextOrchestrator } from "./orchestrator";
+import { AdvisorDecisionsProvider } from "./providers/advisor-decisions";
 import { CodeNeighborProvider } from "./providers/code-neighbor";
 import { FeatureContextProviderV2 } from "./providers/feature-context";
 import { GitHistoryProvider } from "./providers/git-history";
@@ -77,6 +78,9 @@ export function createDefaultOrchestrator(
   // Returns empty chunks when no prior failure is recorded for request.storyId
   // (defensive read).
   providers.push(new PriorRunFailureProvider());
+  // A1: always registered so stage-config references to "advisor-decisions" resolve; empty
+  // unless the feature has trusted advisor decisions (see the provider header).
+  providers.push(new AdvisorDecisionsProvider());
   // US-004: LintConfigProvider is always registered so the rectify stage's
   // stage-config reference to "lint-config" resolves. It detects the lint
   // tool from <request.packageDir> via the public detectProjectProfile and

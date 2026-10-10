@@ -83,13 +83,19 @@ const PHASE_1_PROVIDERS = ["static-rules", "feature-context", "session-scratch"]
  * Phase 3 providers for tdd-test-writer — adds code neighbors so the
  * test writer can see sibling tests and related imports.
  */
-const PHASE_3_TDD_TEST_WRITER = [...PHASE_1_PROVIDERS, "code-neighbor"];
+const PHASE_3_TDD_TEST_WRITER = [...PHASE_1_PROVIDERS, "code-neighbor", "advisor-decisions"];
 
 /**
  * Phase 3 providers for tdd-implementer — adds git history
  * (recent commits on touched files), code neighbors, and test coverage.
  */
-const PHASE_3_TDD_IMPLEMENTER = [...PHASE_1_PROVIDERS, "git-history", "code-neighbor", "test-coverage"];
+const PHASE_3_TDD_IMPLEMENTER = [
+  ...PHASE_1_PROVIDERS,
+  "git-history",
+  "code-neighbor",
+  "test-coverage",
+  "advisor-decisions",
+];
 
 /**
  * Phase 3 providers for `context` plus the single-session execution strategy
@@ -103,7 +109,11 @@ const PHASE_3_IMPLEMENTATION = [
   "code-neighbor",
   "test-coverage",
   "tool-diagnostics",
+  "advisor-decisions",
 ];
+
+/** A1: reviewers also see advisor decisions, so a waived or superseded item is not re-raised. */
+const REVIEW_PROVIDERS = [...PHASE_0_PROVIDERS, "advisor-decisions"];
 
 /**
  * Phase 3 providers for rectify — code neighbors help the agent understand
@@ -116,7 +126,14 @@ const PHASE_3_IMPLEMENTATION = [
  * package's lint settings — distilling the most retry-loop-relevant fields
  * (e.g. biome indentWidth) — without re-discovering the linter.
  */
-const PHASE_3_RECTIFY = [...PHASE_1_PROVIDERS, "code-neighbor", "tool-diagnostics", "prior-run-failure", "lint-config"];
+const PHASE_3_RECTIFY = [
+  ...PHASE_1_PROVIDERS,
+  "code-neighbor",
+  "tool-diagnostics",
+  "prior-run-failure",
+  "lint-config",
+  "advisor-decisions",
+];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Stage map
@@ -202,7 +219,7 @@ export const STAGE_CONTEXT_MAP = {
   "review-semantic": {
     role: "reviewer",
     budgetTokens: 6_000,
-    providerIds: PHASE_0_PROVIDERS,
+    providerIds: REVIEW_PROVIDERS,
     pullToolNames: ["query_feature_context"],
   },
 
@@ -210,7 +227,7 @@ export const STAGE_CONTEXT_MAP = {
   "review-adversarial": {
     role: "reviewer",
     budgetTokens: 6_000,
-    providerIds: PHASE_0_PROVIDERS,
+    providerIds: REVIEW_PROVIDERS,
     pullToolNames: ["query_feature_context"],
   },
 
