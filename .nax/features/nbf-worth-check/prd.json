@@ -3,7 +3,7 @@
   "feature": "nbf-worth-check",
   "branchName": "feat/nbf-worth-check",
   "createdAt": "2026-09-01T00:00:00.000Z",
-  "updatedAt": "2026-10-10T15:15:12.735Z",
+  "updatedAt": "2026-10-10T15:33:45.960Z",
   "userStories": [
     {
       "id": "US-001",
@@ -246,8 +246,8 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -303,7 +303,10 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Existing NBF green gate remains intact; the additive call, empty-result guard and three replacements are confined to one orchestrator function plus its integration test, with no new session policy."
+        "reasoning": "Existing NBF green gate remains intact; the additive call, empty-result guard and three replacements are confined to one orchestrator function plus its integration test, with no new session policy.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/execution/story-orchestrator/execution-plan-phases.ts",
@@ -324,7 +327,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "b51609b7fc644b9d719678184f5b39dded117f84"
     }
   ],
   "analysis": "Existing enhancement within packages/nax, not a new service. packages/nax/src/execution/story-orchestrator/nbf-seed.ts:142-189 currently unions actionable reviewer advisories, deduplicates by file/line/message and gates on green phase outputs; do not change its actionRequired/acDropped/retirement filtering or any NBF strategy. packages/nax/src/execution/story-orchestrator/execution-plan-phases.ts:509-574 owns maybeRunNonBlockingFix: after storyCurrentlyGreen, review, rectification and seed.shouldRun gates, it passes seed.findings as advisoryFindings, runRectification initialFindings and buildNbfDeps findings; insert one awaited runNbfWorthCheck and an empty-result return after the existing gate, then use the same filtered local variable in all three positions. That file is 576 lines against a 600-line gate, so keep orchestration in new modules. packages/nax/src/config/schemas-review.ts:186-234 defines NonBlockingFixConfigSchema and :265-312 ReviewConfigSchema; add optional worthCheck with off/300000 defaults, leaving existing NBF fields and the optional parent untouched. packages/nax/src/config/selectors.ts:10-11 imports schema types and :180 exports NonBlockingFixConfig; add adjacent inferred NbfWorthCheckConfig. Existing config schema equality tests in packages/nax/test/unit/config/non-blocking-fix-config.test.ts:41-65 expect the old parsed shape: absent optional worthCheck must remain undefined and must not alter that shape. packages/nax/src/runtime/session-role.ts:14-72 is the union and runtime role allowlist; both need the new read-only role; no required write-tool role capability. packages/nax/src/prompts/builders/fix-review-builder.ts:107-143 shows story/findings prompt formatting; new builder under prompts/builders and export via packages/nax/src/prompts/index.ts:24-29, without adding a second prompt literal in the op. packages/nax/src/operations/fix-review.ts:16-76 provides run-operation shape, read-only tools, fresh session, reviewConfigSelector and tryParseLLMJson plus previewOutput fallback; new op exported beside it from packages/nax/src/operations/index.ts:68-69. Parser must reject non-object top levels including arrays, normalize duplicate indexes first-before-validation, fail open for invalid/missing/blank skip verdicts and not retry. packages/nax/src/operations/types.ts:40-78 gives optional ctx.story, storyId, featureName and featureDir, and :100-145 supplies typed operation interfaces; packages/nax/src/pipeline/stages/execution.ts:180-190 sets story, storyId, featureName and featureDir in production. packages/nax/src/prd/index.ts:83-117 loadPRD throws when missing/corrupt; catch and proceed with no pending stories. packages/nax/src/prd/types.ts:27-37 enumerates statuses: include pending/in-progress/paused only, excluding current. packages/nax/src/review/diff-utils.ts:128-190 provides collectDiff (nullable), collectDiffStat and :178 truncateDiff; git-ref resolution is there too; failure to get a diff must not block the verdict. packages/nax/src/advisor/service.ts:62 and :249-251 demonstrates totalSpendUsd(runtime.costAggregator.snapshot()) delta, which is run-total and can include parallel spend. packages/nax/src/advisor/audit.ts:40-78 shows injectable write with parent mkdir and Bun.write; audit write failures must never change return values. packages/nax/test/helpers/call-context.ts:10-29 provides makeMockCallContext; packages/nax/test/unit/operations/fix-review.test.ts:1-104 uses the projected op selector, and packages/nax/test/unit/execution/non-blocking-fix-wiring.test.ts:61-150 already exercises buildPlanForStrategy and stubs _storyOrchestratorDeps, the seam for integration tests. Add injectable _nbfWorthCheckDeps for op, PRD, diff, clock, write and cost, and _nbfWorthCheckAuditDeps for write/clock/cost as required by audit seam tests; restore stubs after each test. Read-only operation must declare Read/Glob/Grep, use canonical callOp and review selector, and keep prompts inside prompts/builders; existing permissions stay resolved by the operation/session machinery. Migration is opt-in: missing worthCheck or mode off never invokes op, logs or audits; shadow observes only, on filters, and errors fail open. No other packages change. Test with packages/nax bun:test, follow root docs/architecture/ARCHITECTURE.md:1-45 for _deps, error handling, typed interfaces and logging; do not edit generated agent instructions.",
