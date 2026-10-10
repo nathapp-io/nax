@@ -127,3 +127,10 @@ describe("knownSessionRole", () => {
     expect(knownSessionRole(undefined)).toBeUndefined();
   });
 });
+
+describe("advisor role (A1)", () => {
+  test("advisor is a known session role", () => {
+    expect(isSessionRole("advisor")).toBe(true);
+    expect(KNOWN_SESSION_ROLES).toContain("advisor");
+  });
+});
