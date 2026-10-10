@@ -3,7 +3,7 @@
   "feature": "nbf-worth-check",
   "branchName": "feat/nbf-worth-check",
   "createdAt": "2026-09-01T00:00:00.000Z",
-  "updatedAt": "2026-10-10T15:00:43.367Z",
+  "updatedAt": "2026-10-10T15:15:12.735Z",
   "userStories": [
     {
       "id": "US-001",
@@ -189,8 +189,8 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -253,7 +253,10 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Adds one best-effort audit recorder and a runner call using established advisor audit, injected write/clock/cost and structured logger patterns; no session or access-control changes."
+        "reasoning": "Adds one best-effort audit recorder and a runner call using established advisor audit, injected write/clock/cost and structured logger patterns; no session or access-control changes.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/advisor/audit.ts",
@@ -269,7 +272,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "990bd44e20367bba42afebca20534e5b67d2c8d8"
     },
     {
       "id": "US-005",
