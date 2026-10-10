@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { makeMockCallContext, withTempDir } from "@test/helpers";
-import type { AdviceAuditRecord, AdviceDecision } from "@/advisor";
+import { makeAdviceDecision, makeCallOp, makeMockCallContext, withTempDir } from "@test/helpers";
+import type { AdviceAuditRecord } from "@/advisor";
 import { appendLabel, buildMenu, writeAdviceAudit } from "@/advisor";
 import { type AdvisorReplayDeps, runAdvisorReplay } from "@/cli/advisor-replay";
 import type { AdviseOpOutput } from "@/operations";
@@ -17,10 +17,10 @@ const options = buildMenu({ kind: "finish-judgment", acceptanceEnabledForStory: 
 
 function rec(id: string, originalType: "fix" | "waive" | null, patch = ""): AdviceAuditRecord {
   const decision = originalType
-    ? ({
+    ? makeAdviceDecision({
         id,
         action: originalType === "fix" ? { type: "fix", instruction: "x" } : { type: "waive", reason: "y" },
-      } as AdviceDecision)
+      })
     : null;
   return {
     schemaVersion: 1,
@@ -76,12 +76,10 @@ function harness(outDir: string, replies: (AdviseOpOutput | Error)[], failGit?: 
       runtimes.push(ctx.runtime);
       return { ctx, close: async () => {} };
     },
-    callOp: (async () => {
-      order.push("callOp");
-      const r = replies[i++];
-      if (r instanceof Error) throw r;
-      return r;
-    }) as AdvisorReplayDeps["callOp"],
+    callOp: makeCallOp({
+      onDispatch: () => order.push("callOp"),
+      next: () => replies[i++],
+    }),
     git: async (args) => {
       git.push(args);
       order.push(`git:${args[0]}:${args[1] ?? ""}`);

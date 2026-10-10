@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import type { AdviceDecision, AdviceQuestion } from "@/advisor";
+import { makeAdviceDecision, makeAdviceQuestion } from "@test/helpers";
 import { AdvisorHeadsUpQueue, formatHeadsUp } from "@/advisor";
 
 describe("heads-up", () => {
   test("names the feature, story, question, choice, rationale and id", () => {
-    const q = {
+    const q = makeAdviceQuestion({
       id: "Q-1",
       kind: "fix-cycle-give-up",
       feature: "feat",
@@ -13,13 +13,14 @@ describe("heads-up", () => {
       askedAtSha: "s",
       evidence: [],
       options: [],
-    } as AdviceQuestion;
-    const d = {
+    });
+    const d = makeAdviceDecision({
       id: "D-4",
+      kind: "fix-cycle-give-up",
       action: { type: "waive", reason: "US-5 owns it" },
       rationale: "scope",
       confidence: "low",
-    } as unknown as AdviceDecision;
+    });
     const text = formatHeadsUp(d, q);
     for (const s of ["feat", "US-2", "AC1 vs finding", "waive", "scope", "D-4", "low"]) expect(text).toContain(s);
   });

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { withTempDir } from "@test/helpers";
-import type { AdviceDecision, AdviceQuestion, AdviceResult, Advisor, QuestionDraft } from "@/advisor";
+import type { AdviceDecision, AdviceResult, Advisor, QuestionDraft } from "@/advisor";
 import { appendDecision, dedupeKeyFor } from "@/advisor";
 import type { Finding, FinishState } from "@/finish";
 import { createFinishAdvisor, createFinishState } from "@/finish";
@@ -84,7 +84,7 @@ describe("createFinishAdvisor.judged", () => {
       expect(out.toFix).toHaveLength(1);
       expect(out.toFix[0]?.fix).toContain("Advisor ruling (D-1): take the account lock");
       expect(out.advice).toEqual([{ decisionId: "D-1", optionId: "A", reused: false }]);
-      expect((asked[0] as AdviceQuestion).dedupeKey).toBe("quality|Race|src/a.ts");
+      expect(asked[0]?.dedupeKey).toBe("quality|Race|src/a.ts");
     });
   });
 

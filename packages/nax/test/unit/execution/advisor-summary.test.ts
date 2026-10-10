@@ -66,7 +66,7 @@ describe("recordAdvisorSummary", () => {
 });
 
 describe("buildStatusSnapshot — advisor block", () => {
-  const base = {
+  const base: RunStateSnapshot = {
     runId: "r",
     feature: "f",
     startedAt: "t",
@@ -79,7 +79,7 @@ describe("buildStatusSnapshot — advisor block", () => {
     currentStory: null,
     iterations: 0,
     startTimeMs: Date.now(),
-  } as RunStateSnapshot;
+  };
 
   test("present when set, absent otherwise", () => {
     expect(buildStatusSnapshot(base).advisor).toBeUndefined();

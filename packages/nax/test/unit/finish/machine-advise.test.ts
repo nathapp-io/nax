@@ -214,7 +214,8 @@ function fakeFinishAdvisor(
     approvalEnabled: o.approvals !== undefined,
     async judged(_phase, judgedFindings) {
       trail.push("advise:judged");
-      const out = { toFix: [] as Finding[], advice: [{ decisionId: "D-1", optionId: "A", reused: false }] };
+      const toFix: Finding[] = [];
+      const out = { toFix, advice: [{ decisionId: "D-1", optionId: "A", reused: false }] };
       for (const f of judgedFindings) {
         const kind = o.judged?.(f) ?? "none";
         if (kind === "hold") return { ...out, hold: "needs a human" };

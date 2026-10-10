@@ -9,6 +9,7 @@
  */
 
 export { absentValue, nullValue } from "./absent";
+export { makeAdviceDecision, makeAdviceQuestion } from "./advice";
 export { type AgentManagerInternals, agentManagerInternals } from "./agent-manager-internals";
 export { makeAgentRegistry } from "./agent-registry";
 export { makeAgentResult } from "./agent-result";

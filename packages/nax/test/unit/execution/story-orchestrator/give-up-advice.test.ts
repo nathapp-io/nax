@@ -42,7 +42,17 @@ function strat(
   return {
     name,
     appliesTo: claims,
-    fixOp: {} as FixStrategy<Finding, unknown, unknown, unknown>["fixOp"],
+    fixOp: {
+      name: "noop-op",
+      kind: "complete",
+      stage: "verify",
+      config: [],
+      build: () => ({
+        role: { id: "role", content: "", overridable: false },
+        task: { id: "task", content: "", overridable: false },
+      }),
+      parse: () => null,
+    },
     buildInput: () => ({}),
     maxAttempts: 3,
     coRun: "exclusive",

@@ -7,6 +7,7 @@
  * auto-PR-opened PRs read the same.
  */
 import { describe, expect, test } from "bun:test";
+import { makeAdviceDecision } from "@test/helpers";
 import type { AdviceDecision } from "@/advisor";
 import type { Finding, FinishPrContext, FinishPrStory, FinishRound } from "@/finish";
 import { buildFinishBody, buildFinishTitle, resolveTitle } from "@/finish";
@@ -436,10 +437,10 @@ describe("buildFinishBody — Advisor decisions section (A1)", () => {
   });
 
   test("free text is flattened: no newlines, no HTML, capped", () => {
-    const evil = {
+    const evil = makeAdviceDecision({
       ...decisions[0],
-      rationale: "line1\n## Injected heading\n<img src=x onerror=1>" + "z".repeat(600),
-    } as AdviceDecision;
+      rationale: `line1\n## Injected heading\n<img src=x onerror=1>${"z".repeat(600)}`,
+    });
     const body = buildFinishBody(baseCtx({ advisorDecisions: [evil] }));
     expect(body).not.toContain("\n## Injected heading");
     expect(body).not.toContain("<img");

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { makeMockCallContext, makeNaxConfig, withTempDir } from "@test/helpers";
-import type { AdviceDecision, AdvisorCallContext, QuestionDraft } from "@/advisor";
+import { assertDefined, makeMockCallContext, makeNaxConfig, withTempDir } from "@test/helpers";
+import type { AdvisorCallContext, QuestionDraft } from "@/advisor";
 import { _advisorServiceDeps, appendDecision, buildMenu, createAdvisor, readDecisions } from "@/advisor";
 import { ADVISOR_DEFAULTS } from "@/config";
 import type { AdviseOpOutput } from "@/operations";
@@ -160,7 +160,8 @@ describe("advisor service", () => {
     await withTempDir(async (dir) => {
       const { inputs } = stubDeps(reply("B", { reason: "spec allows it" }));
       const advisor = createAdvisor(actx(dir));
-      const first = (await advisor.advise({ ...judgment, dedupeKey: "k" })).decision as AdviceDecision;
+      const first = (await advisor.advise({ ...judgment, dedupeKey: "k" })).decision;
+      assertDefined(first, "first decision");
       const reused = await advisor.recordReuse({ ...judgment, dedupeKey: "k" }, first);
       expect(inputs).toHaveLength(1);
       expect(reused?.reusedFrom).toBe("D-1");

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { withTempDir } from "@test/helpers";
-import type { AdviceAuditRecord, AdviceDecision } from "@/advisor";
+import { makeAdviceDecision, withTempDir } from "@test/helpers";
+import type { AdviceAuditRecord } from "@/advisor";
 import {
   _auditDeps,
   adviceAuditDir,
@@ -15,7 +15,7 @@ import {
 const original = { ..._auditDeps };
 afterEach(() => Object.assign(_auditDeps, original));
 
-const decision = { id: "D-3" } as AdviceDecision;
+const decision = makeAdviceDecision({ id: "D-3" });
 
 function record(over: Partial<AdviceAuditRecord> = {}): AdviceAuditRecord {
   return {
