@@ -160,6 +160,9 @@ function buildDraft(
     kind: asked.question.kind,
     ...(asked.question.storyId ? { storyId: asked.question.storyId } : {}),
     ...(asked.question.dedupeKey ? { dedupeKey: asked.question.dedupeKey } : {}),
+    ...((findingSeverity ?? asked.question.findingSeverity)
+      ? { findingSeverity: findingSeverity ?? asked.question.findingSeverity }
+      : {}),
     chosenOptionId: option.id,
     action,
     rationale: reply.rationale,

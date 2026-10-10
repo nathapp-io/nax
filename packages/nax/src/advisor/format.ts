@@ -11,11 +11,14 @@ function waivedSubject(d: AdviceDecision): string {
   return path ? `${title} (${path})` : title;
 }
 
+const BLOCKING = new Set(["HIGH", "CRITICAL", "error", "critical"]);
+
 /** Waive + supersede decisions, one line each — what a reviewer must not re-raise. Empty when none. */
 export function formatDecisionsForPrompt(decisions: readonly AdviceDecision[]): string {
   const lines: string[] = [];
   for (const d of decisions) {
-    if (d.action.type === "waive") lines.push(`- ${d.id} waived: ${waivedSubject(d)} — ${d.action.reason}`);
+    if (d.action.type === "waive" && !BLOCKING.has(d.findingSeverity ?? ""))
+      lines.push(`- ${d.id} waived: ${waivedSubject(d)} — ${d.action.reason}`);
     if (d.action.type === "supersede") {
       lines.push(`- ${d.id} superseded ${describeTarget(d.action.target)}: ${d.action.newText}`);
     }

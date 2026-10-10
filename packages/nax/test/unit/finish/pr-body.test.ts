@@ -435,6 +435,17 @@ describe("buildFinishBody — Advisor decisions section (A1)", () => {
     expect(body).toContain("US-2 AC-3: returns 0");
   });
 
+  test("free text is flattened: no newlines, no HTML, capped", () => {
+    const evil = {
+      ...decisions[0],
+      rationale: "line1\n## Injected heading\n<img src=x onerror=1>" + "z".repeat(600),
+    } as AdviceDecision;
+    const body = buildFinishBody(baseCtx({ advisorDecisions: [evil] }));
+    expect(body).not.toContain("\n## Injected heading");
+    expect(body).not.toContain("<img");
+    expect(body).toContain("…");
+  });
+
   test("absent when the advisor made no decisions", () => {
     expect(buildFinishBody(baseCtx({}))).not.toContain("Advisor decisions");
   });

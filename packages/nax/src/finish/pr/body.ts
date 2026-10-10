@@ -152,14 +152,27 @@ function buildRoundBlock(round: FinishRound): string {
   return lines.join("\n");
 }
 
+const ADVISOR_TEXT_CAP = 300;
+
+/** Free text from the advisor goes into a PR body: one line, no HTML tags, capped. */
+function flat(text: string): string {
+  const one = text
+    .replace(/<[^>]*>/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return one.length > ADVISOR_TEXT_CAP ? `${one.slice(0, ADVISOR_TEXT_CAP)}…` : one;
+}
+
 /** A1: flagged decisions first, then the rest, then every supersede as an amendment to apply. Null when none. */
 function buildAdvisorSection(decisions: AdviceDecision[] | undefined): string | null {
   if (!decisions || decisions.length === 0) return null;
   const line = (d: AdviceDecision): string =>
-    `- **${d.id}**${d.needsHumanConfirm ? " (needs confirmation)" : ""} ${d.storyId ?? "feature"} · ${d.action.type} — ${d.rationale}`;
+    `- **${flat(d.id)}**${d.needsHumanConfirm ? " (needs confirmation)" : ""} ${flat(d.storyId ?? "feature")} · ${d.action.type} — ${flat(d.rationale)}`;
   const ordered = [...decisions.filter((d) => d.needsHumanConfirm), ...decisions.filter((d) => !d.needsHumanConfirm)];
   const amendments = decisions.flatMap((d) =>
-    d.action.type === "supersede" ? [`- ${describeTarget(d.action.target)}: ${d.action.newText} (${d.id})`] : [],
+    d.action.type === "supersede"
+      ? [`- ${flat(describeTarget(d.action.target))}: ${flat(d.action.newText)} (${flat(d.id)})`]
+      : [],
   );
   const parts = [ordered.map(line).join("\n")];
   if (amendments.length > 0) parts.push(`### Spec amendments to apply\n${amendments.join("\n")}`);

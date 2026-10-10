@@ -12,10 +12,10 @@
  * machine's loops and `doEscalate` as callbacks, so `machine.ts` grows only by
  * the two call sites.
  */
-import { isAbsolute, join, relative } from "node:path";
+import { relative } from "node:path";
 import { gitWithTimeout } from "@nathapp/nax-agent/internal";
 import type { AdviceDecision, AdviceResult, Advisor, HeadsUpChannel, QuestionDraft } from "@/advisor";
-import { buildMenu, createAdvisor, dedupeKeyFor, findReusable, ledgerPath, readDecisions } from "@/advisor";
+import { buildMenu, createAdvisor, dedupeKeyFor, findReusable, ledgerPath, readTrustedDecisions } from "@/advisor";
 import type { NaxConfig } from "@/config";
 import { isAdvisorCallerEnabled } from "@/config";
 import type { CallContext } from "@/operations";
@@ -93,10 +93,7 @@ const BLOCKING = new Set(["HIGH", "CRITICAL"]);
  */
 async function reusablePrior(deps: FinishAdvisorDeps, f: Finding, key: string): Promise<AdviceDecision | undefined> {
   if (BLOCKING.has(f.severity)) return undefined;
-  const prior = findReusable(await readDecisions(deps.repoRoot, deps.feature), key);
-  const ref = prior?.auditRef;
-  if (!prior || !ref || isAbsolute(ref) || ref.includes("..")) return undefined;
-  return (await Bun.file(join(deps.outputDir, ref)).exists()) ? prior : undefined;
+  return findReusable(await readTrustedDecisions(deps.repoRoot, deps.feature, deps.outputDir), key);
 }
 
 async function judgeOne(

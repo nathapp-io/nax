@@ -24,6 +24,7 @@ export {
   findReusable,
   ledgerPath,
   readDecisions,
+  readTrustedDecisions,
 } from "./ledger";
 export { buildMenu, forcedConfirm, REQUIRED_TEXT_FIELD, toAction } from "./menus";
 export {

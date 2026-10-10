@@ -79,6 +79,8 @@ export interface AdviceDecision {
   reversible: boolean;
   needsHumanConfirm: boolean;
   reusedFrom?: string;
+  /** Severity of the finding the question was about (finish judgment / give-up), when known. */
+  findingSeverity?: string;
   decidedAt: string;
   model: string;
   memoryMode: "stateless" | "warm";

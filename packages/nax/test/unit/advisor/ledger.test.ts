@@ -2,7 +2,15 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { withTempDir } from "@test/helpers";
 import type { AdviceDecision } from "@/advisor";
-import { _ledgerDeps, appendDecision, countStoryRulings, findReusable, ledgerPath, readDecisions } from "@/advisor";
+import {
+  _ledgerDeps,
+  appendDecision,
+  countStoryRulings,
+  findReusable,
+  ledgerPath,
+  readDecisions,
+  readTrustedDecisions,
+} from "@/advisor";
 import { naxOwnedWriteRefusal } from "@/agents/nax-owned-writes";
 import { featureDir } from "@/config";
 
@@ -95,5 +103,19 @@ describe("ledger", () => {
     for (const tool of ["Write", "Edit", "Delete"]) {
       expect(naxOwnedWriteRefusal(tool, ".nax/features/feat/decisions.jsonl")).toBeString();
     }
+  });
+});
+
+describe("readTrustedDecisions", () => {
+  test("keeps only decisions whose audit artifact exists under outputDir", async () => {
+    await withTempDir(async (dir) => {
+      const out = join(dir, "out");
+      const real = await appendDecision(dir, "feat", (id) => draft({ auditRef: `advisor-audit/feat/${id}.json` }));
+      await Bun.write(join(out, real.auditRef), "{}");
+      await appendDecision(dir, "feat", (id) => draft({ auditRef: `advisor-audit/feat/${id}.json` })); // no artifact
+      await appendDecision(dir, "feat", draft({ auditRef: "../../etc/passwd" }));
+      await appendDecision(dir, "feat", draft({ auditRef: "/abs/D.json" }));
+      expect((await readTrustedDecisions(dir, "feat", out)).map((d) => d.id)).toEqual(["D-1"]);
+    });
   });
 });

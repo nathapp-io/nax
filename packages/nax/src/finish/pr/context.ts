@@ -12,7 +12,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { AdviceDecision } from "@/advisor";
-import { readDecisions } from "@/advisor";
+import { readTrustedDecisions } from "@/advisor";
 import { featureDir } from "@/config";
 import type { ForgeKind } from "@/forge";
 import { defaultForgeDeps, findPrTemplate } from "@/forge";
@@ -82,6 +82,8 @@ export interface LoadPrContextArgs {
   title?: string;
   /** `FinishPrBodySettings` from `../types` — do not redeclare the shape (D4.8). */
   prBody?: FinishPrBodySettings;
+  /** A1: where advisor audit artifacts live; without it no decision is trusted, so none is shown. */
+  outputDir?: string;
 }
 
 export const _finishPrDeps: {
@@ -239,7 +241,9 @@ export async function loadFinishPrContext(args: LoadPrContextArgs): Promise<Fini
     runDiffstat(args.state.workdir, args.state.base),
     loadTemplate(args.state.workdir, args.forge),
     readSpecSummary(args.state.specPath, _finishPrDeps.readText),
-    readDecisions(args.state.workdir, args.state.feature).catch(() => []),
+    args.outputDir
+      ? readTrustedDecisions(args.state.workdir, args.state.feature, args.outputDir).catch(() => [])
+      : Promise.resolve([]),
   ])) as [
     PrdArtifact | undefined,
     StatusArtifact | undefined,

@@ -31,6 +31,15 @@ describe("formatDecisionsForPrompt", () => {
     expect(text).toContain("D-3 superseded US-2 AC-3: returns 0");
   });
 
+  test("a waive of a blocking finding is never handed to the reviewer as settled", () => {
+    const text = formatDecisionsForPrompt([
+      d("D-4", { type: "waive", reason: "x" }, { findingSeverity: "HIGH" }),
+      d("D-5", { type: "waive", reason: "y" }, { findingSeverity: "LOW" }),
+    ]);
+    expect(text).not.toContain("D-4");
+    expect(text).toContain("D-5");
+  });
+
   test("empty when nothing was waived or superseded", () => {
     expect(formatDecisionsForPrompt([d("D-1", { type: "fix", instruction: "x" })])).toBe("");
   });

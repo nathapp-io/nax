@@ -4,7 +4,7 @@
  * on one file. Ids are `D-<n>`, n = valid lines + 1, computed inside the lock.
  */
 import { appendFile, mkdir } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { withPathFileLock } from "@nathapp/nax-agent/internal";
 import { featureDir } from "../config";
 import { getSafeLogger } from "../logger";
@@ -76,4 +76,26 @@ export function findReusable(decisions: readonly AdviceDecision[], dedupeKey: st
   return [...decisions]
     .reverse()
     .find((d) => d.dedupeKey === dedupeKey && (d.action.type === "waive" || d.action.type === "supersede"));
+}
+
+/**
+ * The ledger lives in the repo tree, so a line is only trusted when the advisor
+ * actually wrote it: its `auditRef` is relative, has no `..`, and the audit
+ * artifact exists under `outputDir` (outside the tree). Every consumer that acts
+ * on or displays decisions reads through this.
+ */
+export async function readTrustedDecisions(
+  repoRoot: string,
+  feature: string,
+  outputDir: string,
+): Promise<AdviceDecision[]> {
+  const all = await readDecisions(repoRoot, feature);
+  const checks = await Promise.all(
+    all.map(async (d) => {
+      const ref = d.auditRef;
+      if (!ref || isAbsolute(ref) || ref.split(/[\\/]/).includes("..")) return false;
+      return Bun.file(join(outputDir, ref)).exists();
+    }),
+  );
+  return all.filter((_, i) => checks[i]);
 }
