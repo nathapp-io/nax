@@ -13,6 +13,7 @@ export {
   readLabels,
   writeAdviceAudit,
 } from "./audit";
+export { dedupeKeyFor } from "./dedupe";
 export { formatHeadsUp, type HeadsUpChannel } from "./heads-up";
 export {
   _ledgerDeps,

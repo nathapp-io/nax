@@ -16,6 +16,7 @@ import type { AdviceDecision, AdviceLabel } from "@/advisor";
 import { appendLabel, readDecisions } from "@/advisor";
 import { featuresDir, loadConfig } from "@/config";
 import { projectOutputDir } from "@/runtime";
+import { _advisorImportDeps, type AdvisorImportDeps, runAdvisorImport } from "./advisor-import";
 import { _advisorReplayDeps, type AdvisorReplayDeps, runAdvisorReplay } from "./advisor-replay";
 
 export interface AdvisorCliDeps {
@@ -141,6 +142,7 @@ export function registerAdvisorCommand(
   program: Command,
   deps: AdvisorCliDeps = _advisorCliDeps,
   replayDeps: AdvisorReplayDeps = _advisorReplayDeps,
+  importDeps: AdvisorImportDeps = _advisorImportDeps,
 ): Command {
   const group = program.command("advisor").description("Inspect, label and replay advisor decisions");
   group
@@ -206,6 +208,21 @@ export function registerAdvisorCommand(
             replayDeps,
           );
         }),
+    );
+  group
+    .command("import-finish")
+    .description("Turn a recorded finish escalation into advisor questions (for the go-live replay)")
+    .argument("<result>", "Path to a finish-audit <runId>.result.json")
+    .requiredOption("--sha <sha>", "Commit the escalation was raised at")
+    .option("-d, --dir <path>", "Project directory", process.cwd())
+    .option("--all-findings", "Import every finding (results recorded before judgment flags)")
+    .action((result: string, o: { sha: string; dir: string; allFindings?: boolean }) =>
+      guarded(deps, () =>
+        runAdvisorImport(
+          { dir: o.dir, resultPath: result, sha: o.sha, allFindings: o.allFindings === true },
+          importDeps,
+        ),
+      ),
     );
   return group;
 }
