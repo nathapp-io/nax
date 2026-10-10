@@ -1,3 +1,4 @@
+import type { FailedCriterion } from "../acceptance/failed-criteria";
 import { acceptanceFixConfigSelector } from "../config";
 import type { AcceptanceFixConfig } from "../config/selectors";
 import { AcceptancePromptBuilder } from "../prompts";
@@ -10,6 +11,7 @@ export interface AcceptanceFixSourceInput {
   priorIterationsBlock?: string;
   acceptanceTestPath: string;
   scopedCommandName?: string;
+  failedCriteria?: FailedCriterion[];
 }
 
 export interface AcceptanceFixTestInput {
@@ -24,6 +26,7 @@ export interface AcceptanceFixTestInput {
 
 export interface AcceptanceFixOutput {
   applied: true;
+  unresolved?: string;
 }
 
 export const acceptanceFixSourceOp: RunOperation<AcceptanceFixSourceInput, AcceptanceFixOutput, AcceptanceFixConfig> = {

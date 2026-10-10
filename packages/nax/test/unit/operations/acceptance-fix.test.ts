@@ -113,6 +113,30 @@ describe("acceptanceFixSourceOp.build()", () => {
 });
 
 describe("acceptanceFixSourceOp.parse()", () => {
+  test("US-002 AC4: returns the unresolved reason signalled by the source fixer", () => {
+    const ctx = makeSourceCtx();
+    const parsed = acceptanceFixSourceOp.parse(
+      "Looked at it.\nUNRESOLVED: AC-2 — the test asserts createClient that the criterion does not state",
+      SOURCE_INPUT,
+      ctx,
+    );
+    expect(parsed.unresolved).toBe("AC-2 — the test asserts createClient that the criterion does not state");
+  });
+
+  test("US-002 AC5: omits unresolved when the source fixer does not give up", () => {
+    const ctx = makeSourceCtx();
+    const parsed = acceptanceFixSourceOp.parse("fixed the bug", SOURCE_INPUT, ctx);
+    expect(parsed).not.toHaveProperty("unresolved");
+  });
+
+  test("US-002 AC6: source-fix operation build receives the resolved failing criteria", () => {
+    const ctx = makeSourceCtx();
+    const failedCriteria = [{ acId: "AC-2", storyId: "US-002", original: "o2", refined: "r2" }];
+    const input = { ...SOURCE_INPUT, failedCriteria };
+    const prompt = acceptanceFixSourceOp.build(input, ctx).task.content;
+    expect(prompt).toContain("AC-2 [US-002]: r2");
+  });
+
   test("returns applied: true regardless of output (including empty)", () => {
     const ctx = makeSourceCtx();
     expect(acceptanceFixSourceOp.parse("Fix applied successfully.", SOURCE_INPUT, ctx).applied).toBe(true);

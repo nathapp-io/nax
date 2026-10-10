@@ -241,6 +241,25 @@ describe("builder.buildDiagnosisPromptTemplate()", () => {
 // ─── buildSourceFixPrompt ─────────────────────────────────────────────────────
 
 describe("builder.buildSourceFixPrompt()", () => {
+  test("US-002 AC1: renders refined failing criteria with story attribution", () => {
+    const prompt = builder.buildSourceFixPrompt({
+      testOutput: "failed",
+      acceptanceTestPath: "/acceptance.test.ts",
+      failedCriteria: [{ acId: "AC-2", storyId: "US-002", original: "o2", refined: "r2" }],
+    });
+    expect(prompt).toContain("FAILING ACCEPTANCE CRITERIA:\nAC-2 [US-002]: r2");
+  });
+
+  test("US-002 AC2: includes the exact source-fix no-shim rules", () => {
+    const prompt = builder.buildSourceFixPrompt({ testOutput: "failed", acceptanceTestPath: "/acceptance.test.ts" });
+    expect(prompt).toContain("SOURCE-FIX RULES:");
+    expect(prompt).toContain("- If the failing assertion needs something the criteria do not state, make no edit and reply with one line: UNRESOLVED: <AC id> — the test asserts <what> that the criterion does not state.");
+  });
+
+  test("US-002 AC3: states that criterion text is unavailable when none are supplied", () => {
+    const prompt = builder.buildSourceFixPrompt({ testOutput: "failed", acceptanceTestPath: "/acceptance.test.ts" });
+    expect(prompt).toContain("FAILING ACCEPTANCE CRITERIA: (criterion text unavailable)");
+  });
   const base = {
     testOutput: "  Error: Cannot read property\n(fail) AC-1: null pointer [2ms]\n\n 0 pass\n 1 fail",
     diagnosisReasoning: "Source file has uninitialized field",

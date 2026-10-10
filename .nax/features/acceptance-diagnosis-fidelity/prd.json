@@ -3,7 +3,7 @@
   "feature": "acceptance-diagnosis-fidelity",
   "branchName": "feat/acceptance-diagnosis-fidelity",
   "createdAt": "2026-10-10T00:00:00.000Z",
-  "updatedAt": "2026-10-10T10:41:23.150Z",
+  "updatedAt": "2026-10-10T11:24:44.647Z",
   "userStories": [
     {
       "id": "US-001",
@@ -39,8 +39,8 @@
         "prompts"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -120,7 +120,10 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Complex because the exactly-once acceptance.summary wrapper must cover every runAcceptanceLoop exit path and spans a new summary module, both fix strategies, the prompt builder and the source-fix op parse; three-session-tdd-lite fits since it is not security-critical."
+        "reasoning": "Complex because the exactly-once acceptance.summary wrapper must cover every runAcceptanceLoop exit path and spans a new summary module, both fix strategies, the prompt builder and the source-fix op parse; three-session-tdd-lite fits since it is not security-critical.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/execution/lifecycle/acceptance-loop.ts",
@@ -143,7 +146,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "5263fb51ab5bd0bf50e7a9f5a48484b60f36fb68"
     },
     {
       "id": "US-003",

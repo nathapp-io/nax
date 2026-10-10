@@ -137,6 +137,7 @@ export interface SourceFixParams {
   acceptanceTestPath: string;
   /** Declared `quality.commands.testScoped` key (#1939) — see buildTestRerunLine. */
   scopedCommandName?: string;
+  failedCriteria?: FailedCriterion[];
 }
 
 export interface TestFixParams {
