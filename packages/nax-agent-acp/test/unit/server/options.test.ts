@@ -40,6 +40,18 @@ describe("resolveConfigDir", () => {
 });
 
 describe("resolveServerOptions", () => {
+  test("carries the file's compaction settings into the options, and none when the file has none", () => {
+    const withIt = resolveServerOptions({
+      flags: {},
+      env: {},
+      file: { ...EMPTY_NAX_CONFIG, compaction: { enabled: false } },
+      configDir: "/cfg",
+    });
+    expect(withIt.ok && withIt.options.compaction).toEqual({ enabled: false });
+    const without = resolveServerOptions({ flags: {}, env: {}, file: EMPTY_NAX_CONFIG, configDir: "/cfg" });
+    expect(without.ok && "compaction" in without.options).toBe(false);
+  });
+
   test("built-in defaults when nothing is set", () => {
     expect(resolveServerOptions({ flags: {}, env: {}, file: EMPTY_NAX_CONFIG, configDir: "/cfg" })).toEqual({
       ok: true,

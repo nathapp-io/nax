@@ -19,7 +19,7 @@ import {
   type TranscriptDoc,
   type TranscriptStore,
 } from "@nathapp/nax-agent";
-import type { BashApproval } from "#src/server/nax-config";
+import type { BashApproval, CompactionSettings } from "#src/server/nax-config";
 
 export interface OpenSessionRequest {
   readonly sessionId: string;
@@ -66,6 +66,8 @@ export interface NativeOpenDeps {
   readonly transcripts: TranscriptStore;
   readonly catalogOverrides: NativeCatalogOverrides;
   readonly turnTimeoutSeconds: number;
+  /** `execution.compaction` from config.json; absent leaves nax-agent's defaults (on). */
+  readonly compaction?: CompactionSettings;
   readonly create?: (options: CreateAgentSessionOptions) => Promise<AgentSession>;
   readonly resume?: (sessionId: string, options: CreateAgentSessionOptions) => Promise<AgentSession>;
   readonly backend?: (options: NativeBackendOptions) => SessionBackend;
@@ -91,6 +93,7 @@ export function nativeOpenSession(deps: NativeOpenDeps): OpenSession {
         carryHistoryAcrossModels: true,
         ...(TOOL_PROFILES.has(request.profile) ? { bashApproval: request.bashApproval } : {}),
         ...(deps.catalogOverrides.length > 0 ? { catalogOverrides: deps.catalogOverrides } : {}),
+        ...(deps.compaction !== undefined ? { compaction: deps.compaction } : {}),
       }),
       sessionId: request.sessionId,
       profile: request.profile,

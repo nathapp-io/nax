@@ -6,6 +6,14 @@ release may change the public API.
 
 ## [Unreleased]
 
+### Added
+
+- `nativeBackend({ compaction })`: `{ enabled?, compactAtPercent?, keepRecentPercent? }`, validated with the same schema as nax's `execution.compaction` (integer percentages of the context window, 50-99 and 5-79, `keepRecentPercent` at least 20 points below `compactAtPercent`). An invalid value throws `AGENT_SESSION_INVALID_OPTIONS`. `compactionSettingsSchema`, `DEFAULT_COMPACTION` and `resolveCompaction` are on `./internal` for nax and the ACP server (#2427).
+
+### Changed
+
+- Behaviour change: conversational sessions (`createAgentSession`, `resumeAgentSession`) now compact their history by default, as `nax run` does. A history past `compactAtPercent` (default 90) of the window is summarised before the round trip, and a context-overflow error is compacted and retried once, so long chats no longer end `errored` at the window. Each compaction adds one billed summary call; it emits no `usage` event. The existing `compaction` event (`reason: "proactive" | "overflow"`) is now emitted on the session stream, and the stored transcript after the turn is the compacted history. Pass `compaction: { enabled: false }` to `nativeBackend` for the old behaviour (#2427).
+
 ### Fixed
 
 - Secret redaction now masks values under secret-named keys in JSON text (`{"apiKey": "..."}`, including JSON escaped inside a JSON string) and in env, dotenv, shell and YAML-style lines (`API_TOKEN=...`, `export KEY="..."`, `password: ...`, `Authorization: Bearer ...`), keeping the key and structure. This reaches `tool_result.preview`, `tool_call.input` and the run log. Usage counts (`tokens`, `max_tokens`) and references (`$VAR`, `process.env.X`) are left alone (#2346).

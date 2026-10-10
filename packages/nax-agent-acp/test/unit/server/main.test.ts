@@ -95,6 +95,24 @@ describe("main", () => {
     expect(h.out()).toBe("");
   });
 
+  test("an invalid execution.compaction in config.json warns on stderr and the server still starts", async () => {
+    const config = JSON.stringify({ execution: { compaction: { compactAtPercent: 10 } } });
+    const h = harness([], {
+      readFile: async (path) => {
+        if (path === "/home/u/.nax/config.json") return config;
+        throw Object.assign(new Error(`ENOENT: ${path}`), { code: "ENOENT" });
+      },
+    });
+    const exit = main(h.deps);
+    await tick(50);
+    h.stdin.end();
+    expect(await exit).toBe(0);
+    expect(h.err()).toContain("execution.compaction");
+    expect(h.err()).toContain("using built-in defaults");
+    expect(h.err()).toContain("model tiers, auth and agentServer from this file are ignored too");
+    expect(h.out()).toBe("");
+  });
+
   test("an invalid --mcp-connect-timeout exits 2 before serving", async () => {
     const h = harness(["--mcp-connect-timeout", "0"]);
     expect(await main(h.deps)).toBe(2);

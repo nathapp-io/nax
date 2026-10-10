@@ -9,6 +9,7 @@ import type { BashApprovalMode } from "#src/config/bash-approval";
 import type { NativeCatalogOverrides } from "#src/native/client";
 import type { CredentialSource } from "#src/native/credentials/session-source";
 import { parseNativeModel } from "#src/native/models";
+import { compactionSettingsSchema } from "#src/native/session/compaction-settings";
 import { isInstructionFileName } from "#src/native/session/instruction-file-name";
 import type { LoopHandlerSet } from "#src/native/session/loop-events/types";
 import { AgentSessionError } from "./agent-session-errors.ts";
@@ -26,6 +27,18 @@ export interface NativeBackendOptions {
   readonly allowUnsandboxed?: boolean;
   /** Keep a resumed or continued conversation when the model differs (ACP server model switch, S5-3). */
   readonly carryHistoryAcrossModels?: boolean;
+  /**
+   * Context compaction for the session's history. On by default: a history that
+   * crosses `compactAtPercent` of the model's window is summarised (one billed
+   * model call) and a context overflow is compacted and retried once. Percentages
+   * are of the window; `keepRecentPercent` must sit at least 20 points below
+   * `compactAtPercent`. `{ enabled: false }` turns it off.
+   */
+  readonly compaction?: {
+    readonly enabled?: boolean;
+    readonly compactAtPercent?: number;
+    readonly keepRecentPercent?: number;
+  };
 }
 
 export interface ResolvedNativeOptions {
@@ -77,6 +90,7 @@ const OptionsSchema = z.strictObject({
   bashApproval: z.enum(["raw", "gated", "escalate"]).optional(),
   allowUnsandboxed: z.boolean().optional(),
   carryHistoryAcrossModels: z.boolean().optional(),
+  compaction: compactionSettingsSchema.optional(),
 });
 
 function invalid(message: string, context: Record<string, unknown> = {}): AgentSessionError {

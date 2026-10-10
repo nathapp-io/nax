@@ -60,6 +60,11 @@ export * from "#src/native/model-resolver";
 export * from "#src/native/models";
 export * from "#src/native/provider-models";
 export * from "#src/native/session/compaction";
+export {
+  compactionSettingsSchema,
+  DEFAULT_COMPACTION,
+  resolveCompaction,
+} from "#src/native/session/compaction-settings";
 export { DEFAULT_INSTRUCTION_FILE_NAME, isInstructionFileName } from "#src/native/session/instruction-file-name";
 export * from "#src/native/session/loop-events/external-handler";
 export * from "#src/native/session/loop-events/index";

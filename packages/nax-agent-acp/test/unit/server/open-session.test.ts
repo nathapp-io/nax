@@ -123,6 +123,15 @@ describe("nativeOpenSession (S5-3 M-21, M-22)", () => {
     expect(r.backendCalls[0]).toMatchObject({ catalogOverrides: [{ provider: "minimax", models: [] }] });
   });
 
+  test("compaction settings from the config are passed to the backend as given; absent passes none", async () => {
+    const r = recorder();
+    const base = { transcripts: createMemoryTranscriptStore(), catalogOverrides: [], turnTimeoutSeconds: 3600, ...r };
+    await nativeOpenSession({ ...base, compaction: { compactAtPercent: 80 } })(REQUEST);
+    await nativeOpenSession(base)({ ...REQUEST, sessionId: "s-2" });
+    expect(r.backendCalls[0]).toMatchObject({ compaction: { compactAtPercent: 80 } });
+    expect(r.backendCalls[1]).not.toHaveProperty("compaction");
+  });
+
   test("defaults to the real facade: an invalid model is rejected by nativeBackend", async () => {
     const open = nativeOpenSession({
       transcripts: createMemoryTranscriptStore(),

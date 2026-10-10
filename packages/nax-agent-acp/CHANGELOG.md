@@ -3,6 +3,16 @@
 All notable changes to `@nathapp/nax-agent-acp` are recorded here. Versions move in
 step with `@nathapp/nax-agent`.
 
+## [Unreleased]
+
+### Added
+
+- The server honours `execution.compaction` from `~/.nax/config.json` and passes it to the native backend. An invalid value is handled like any other invalid section of the file: one warning on stderr and the built-in defaults (#2427).
+
+### Changed
+
+- Behaviour change, from `@nathapp/nax-agent`: editor threads now compact their history by default (see its changelog), so a long thread no longer ends `errored` at the context window. Each compaction adds one billed summary call. Set `execution.compaction.enabled` to `false` in `config.json` for the old behaviour (#2427).
+
 ## [0.85.0] - 2026-10-09
 
 ### Added

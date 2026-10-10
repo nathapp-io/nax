@@ -5,7 +5,7 @@
  * barrel, which nearly every suite loads.
  */
 import type { CreateAgentSessionOptions, NativeBackendOptions, SessionBackend, SessionEvent } from "@nathapp/nax-agent";
-import type { Client, ClientRequest, ProtocolEvent, ResolvedModel } from "@nathapp/nax-ai";
+import type { Client, ClientRequest, CompleteResult, ProtocolEvent, ResolvedModel } from "@nathapp/nax-ai";
 import { _clientDeps, _resetNativeClient } from "#src/native/client";
 import { createMemoryTranscriptStore } from "#src/native/session/memory-transcript-store";
 import { _agentSessionDeps } from "#src/session/agent-session-deps";
@@ -29,14 +29,19 @@ export type Round = readonly ProtocolEvent[] | ((req: ClientRequest) => AsyncIte
 
 export interface ScriptedProvider {
   readonly requests: ClientRequest[];
+  /** Requests that went through complete() -- the compaction summary call. */
+  readonly completeRequests: ClientRequest[];
+  /** Replies for complete() calls, in order. */
+  pushComplete(...texts: string[]): void;
   /** Replies, one per round-trip request, in order. */
   push(...rounds: Round[]): void;
 }
 
-export function textRound(text: string): ProtocolEvent[] {
+/** `inputTokens` is what the provider reports for the prompt: the anchor compaction measures from. */
+export function textRound(text: string, inputTokens = 5): ProtocolEvent[] {
   return [
     { type: "text-delta", text },
-    { type: "usage", usage: { inputTokens: 5, outputTokens: 2 } },
+    { type: "usage", usage: { inputTokens, outputTokens: 2 } },
     { type: "done", stopReason: "stop" },
   ];
 }
@@ -62,12 +67,21 @@ export function faultRound(text: string, kind: "transport" | "overloaded" = "tra
   };
 }
 
-export function installScriptedProvider(): ScriptedProvider {
+export interface ScriptedProviderOptions {
+  /** The model's context window; small values let a short history cross the compaction threshold. */
+  readonly contextWindow?: number;
+}
+
+export function installScriptedProvider(options: ScriptedProviderOptions = {}): ScriptedProvider {
   const requests: ClientRequest[] = [];
+  const completeRequests: ClientRequest[] = [];
   let queue: readonly Round[] = [];
+  let completeQueue: readonly string[] = [];
+  const resolved: ResolvedModel =
+    options.contextWindow === undefined ? RESOLVED : { ...RESOLVED, contextWindow: options.contextWindow };
   const client: Client = {
-    model: async () => RESOLVED,
-    listModels: async () => [RESOLVED],
+    model: async () => resolved,
+    listModels: async () => [resolved],
     pricing: () => RESOLVED.pricing,
     stream(_model, req) {
       requests.push(req);
@@ -79,8 +93,12 @@ export function installScriptedProvider(): ScriptedProvider {
         yield* round;
       })();
     },
-    complete: async () => {
-      throw new Error("round trips must stream");
+    complete: async (_model, req): Promise<CompleteResult> => {
+      completeRequests.push(req);
+      const [text, ...rest] = completeQueue;
+      completeQueue = rest;
+      if (text === undefined) throw new Error("round trips must stream");
+      return { text, usage: { inputTokens: 7, outputTokens: 3 }, stopReason: "stop" };
     },
     validate: () => {},
   };
@@ -88,6 +106,10 @@ export function installScriptedProvider(): ScriptedProvider {
   _clientDeps.build = async () => client;
   return {
     requests,
+    completeRequests,
+    pushComplete: (...texts) => {
+      completeQueue = [...completeQueue, ...texts];
+    },
     push: (...rounds) => {
       queue = [...queue, ...rounds];
     },
@@ -147,6 +169,7 @@ export function sessionOptions(extra: SessionTestOptions = {}): CreateAgentSessi
     hostPorts,
     bashApproval,
     allowUnsandboxed,
+    compaction,
     ...shared
   } = extra;
   return {
@@ -160,6 +183,7 @@ export function sessionOptions(extra: SessionTestOptions = {}): CreateAgentSessi
         ...(hostPorts !== undefined ? { hostPorts } : {}),
         ...(bashApproval !== undefined ? { bashApproval } : {}),
         ...(allowUnsandboxed !== undefined ? { allowUnsandboxed } : {}),
+        ...(compaction !== undefined ? { compaction } : {}),
       }),
     sessionId: shared.sessionId,
     profile: shared.profile ?? "none",
