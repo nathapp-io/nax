@@ -25,7 +25,7 @@
     "native": {
       "fast": "minimax/MiniMax-M2.7",
       "balanced": "minimax/MiniMax-M3",
-      "powerful": "opencode-go/deepseek-v4-flash-0731[high]"
+      "powerful": "opencode-go/deepseek-v4.1-flash[high]"
     }
   },
   "autoMode": {
