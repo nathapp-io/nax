@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import type { McpConnection as SharedConnection } from "@nathapp/nax-agent/mcp";
 import { assertDefined } from "@test/helpers";
 import type { McpServerConfig } from "@/config";
 import { _mcpClientDeps } from "@/mcp/client";
@@ -14,16 +15,17 @@ const schema = { type: "object" };
 const server: McpServerConfig = { command: "fake", args: [], env: {}, stages: ["*"], timeoutMs: 50, enabled: true };
 const lock: McpLockFile = { version: 1, servers: { memory: { t: schemaHash(schema) } } };
 
-function sdk(behaviour: { onCall?: () => unknown }) {
-  Object.assign(_mcpClientDeps, {
-    createTransport: () => ({ pid: 7, close: async () => {} }),
-    createClient: () => ({
-      connect: async () => {},
-      listTools: async () => ({ tools: [{ name: "t", description: "d", inputSchema: schema }] }),
-      callTool: async () => (behaviour.onCall ? behaviour.onCall() : { content: [{ type: "text", text: "ok" }] }),
-      close: async () => {},
-    }),
-  });
+/** Fake of the SHARED connection at `_mcpClientDeps.connect`; `onCall` throws or hangs per test. */
+function sdk(behaviour: { onCall?: () => never | Promise<never> } = {}): void {
+  const connection: SharedConnection = {
+    kind: "stdio",
+    pid: 7,
+    tools: [{ name: "t", description: "d", inputSchema: schema }],
+    call: async () => (behaviour.onCall ? behaviour.onCall() : { text: "ok", isError: false, bytesBeforeCap: 2 }),
+    onClose: () => {},
+    close: async () => {},
+  };
+  Object.assign(_mcpClientDeps, { connect: async () => connection });
 }
 
 function providerFor(pool: ReturnType<typeof createMcpPool>) {
@@ -42,13 +44,9 @@ const ctx = { root: "/w", resolvedPaths: [], maxBytes: 40_000, maxFileBytes: 1 }
 describe("US-006 failure behaviour", () => {
   test("a server whose command does not exist degrades: no tools, no throw", async () => {
     Object.assign(_mcpClientDeps, {
-      createTransport: () => ({ pid: null, close: async () => {} }),
-      createClient: () => ({
-        connect: async () => {
-          throw new Error("spawn ENOENT");
-        },
-        close: async () => {},
-      }),
+      connect: async (): Promise<SharedConnection> => {
+        throw new Error("spawn ENOENT");
+      },
     });
     const pool = createMcpPool({ servers: { memory: server }, retry: { maxAttempts: 1, baseDelayMs: 0 } });
     expect(await providerFor(pool).tools("/w")).toEqual([]);
@@ -108,16 +106,18 @@ describe("US-006 failure behaviour", () => {
   test("a degraded server never prevents a healthy one from being advertised", async () => {
     let connects = 0;
     Object.assign(_mcpClientDeps, {
-      createTransport: () => ({ pid: 7, close: async () => {} }),
-      createClient: () => ({
-        connect: async () => {
-          connects++;
-          if (connects === 1) throw new Error("ENOENT");
-        },
-        listTools: async () => ({ tools: [{ name: "t", description: "d", inputSchema: schema }] }),
-        callTool: async () => ({ content: [] }),
-        close: async () => {},
-      }),
+      connect: async (): Promise<SharedConnection> => {
+        connects++;
+        if (connects === 1) throw new Error("ENOENT");
+        return {
+          kind: "stdio",
+          pid: 7,
+          tools: [{ name: "t", description: "d", inputSchema: schema }],
+          call: async () => ({ text: "", isError: false, bytesBeforeCap: 0 }),
+          onClose: () => {},
+          close: async () => {},
+        };
+      },
     });
     const pool = createMcpPool({
       servers: { bad: { ...server }, memory: { ...server } },

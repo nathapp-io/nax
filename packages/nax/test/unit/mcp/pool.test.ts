@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import type { McpTransportConfig, McpConnection as SharedConnection } from "@nathapp/nax-agent/mcp";
 import { cleanupTempDir, makeTempDir, useUntrustedRegistry, withTimerSpy } from "@test/helpers";
+
+/** nax run only ever configures stdio servers; this is the variant the fakes receive. */
+type StdioConfig = Extract<McpTransportConfig, { kind: "stdio" }>;
+
 import type { McpServerConfig } from "@/config";
 import { _mcpClientDeps } from "@/mcp/client";
 import { createMcpPool } from "@/mcp/pool";
@@ -13,34 +18,38 @@ interface Spawn {
   pid: number;
 }
 
-function fakeSdk(opts: { failFirst?: number; gate?: Promise<void>; listToolsFails?: number } = {}) {
+/** Fake of the SHARED connection handed back by `_mcpClientDeps.connect`; spawns are `connect(config)` calls. */
+function cannedConnection(pid: number, closes: number[]): SharedConnection {
+  return {
+    kind: "stdio",
+    pid,
+    tools: [{ name: "t", description: "d", inputSchema: { type: "object" } }],
+    call: async (name: string) => ({ text: `ran ${name}`, isError: false, bytesBeforeCap: 0 }),
+    onClose: () => {},
+    close: async () => void closes.push(pid),
+  };
+}
+
+function fakeSdk(opts: { failFirst?: number; gate?: Promise<void> } = {}) {
   const spawns: Spawn[] = [];
   const closes: number[] = [];
   let attempts = 0;
-  let listToolsAttempts = 0;
   let nextPid = 100;
   Object.assign(_mcpClientDeps, {
-    createTransport: (params: { cwd: string }) => {
+    connect: async (config: StdioConfig) => {
+      attempts++;
+      // The spawn is recorded BEFORE the failure check, matching the real
+      // layer: the transport is constructed (process started), then the
+      // handshake may fail — a failed connect still started a subprocess.
       const pid = nextPid++;
-      spawns.push({ cwd: params.cwd, pid });
-      return { pid, close: async () => void closes.push(pid) };
+      spawns.push({ cwd: config.cwd, pid });
+      // A gate the test opens explicitly. A fixed sleep is banned in tests
+      // (.nax/rules/forbidden-patterns-tests.md): flaky under load, and
+      // additive on a suite Bun runs serially.
+      if (await opts.gate) await opts.gate;
+      if (opts.failFirst !== undefined && attempts <= opts.failFirst) throw new Error("ENOENT");
+      return cannedConnection(pid, closes);
     },
-    createClient: () => ({
-      connect: async () => {
-        attempts++;
-        // A gate the test opens explicitly. A fixed sleep is banned in tests
-        // (.nax/rules/forbidden-patterns-tests.md): flaky under load, and
-        // additive on a suite Bun runs serially.
-        if (await opts.gate) await opts.gate;
-        if (opts.failFirst !== undefined && attempts <= opts.failFirst) throw new Error("ENOENT");
-      },
-      listTools: async () => {
-        if (opts.listToolsFails !== undefined && listToolsAttempts++ < opts.listToolsFails) throw new Error("boom");
-        return { tools: [{ name: "t", description: "d", inputSchema: { type: "object" } }] };
-      },
-      callTool: async (p: { name: string }) => ({ content: [{ type: "text", text: `ran ${p.name}` }] }),
-      close: async () => {},
-    }),
   });
   return { spawns, closes, attemptCount: () => attempts };
 }
@@ -64,18 +73,18 @@ describe("createMcpPool — US-005 trust backstop", () => {
     });
   });
 
-  test("US-005 AC13: listTools refuses before creating a transport", async () => {
+  test("US-005 AC13: listTools refuses before connecting", async () => {
     project = makeTempDir();
-    let transports = 0;
+    let connects = 0;
     Object.assign(_mcpClientDeps, {
-      createTransport: () => {
-        transports++;
-        return { pid: 1, close: async () => {} };
+      connect: async (): Promise<SharedConnection> => {
+        connects++;
+        throw new Error("must not be called");
       },
     });
     const pool = createMcpPool({ servers });
     await expect(pool.listTools("memory", project)).rejects.toMatchObject({ code: "PROJECT_UNTRUSTED" });
-    expect(transports).toBe(0);
+    expect(connects).toBe(0);
   });
 
   test("US-005 AC14: call rejects when the project is untrusted", async () => {
@@ -219,8 +228,12 @@ describe("createMcpPool", () => {
     await pool.close();
   });
 
-  test("a tools/list failure after connect reaps the connection, so no orphan survives", async () => {
-    const sdk = fakeSdk({ listToolsFails: 1 });
+  test("a failed connect retries, registers only the surviving connection, leaves no orphan", async () => {
+    // tools/list now happens INSIDE the shared connect, so a mid-connect failure
+    // rejects `connectMcpServer` itself: the shared layer has already closed the
+    // half-open transport (pinned by nax-agent's connect tests) and the pool is
+    // handed no connection to reap — the retry starts a fresh subprocess.
+    const sdk = fakeSdk({ failFirst: 1 });
     const registered: number[] = [];
     const unregistered: number[] = [];
     const pool = createMcpPool({
@@ -233,10 +246,11 @@ describe("createMcpPool", () => {
     });
     expect((await pool.listTools("memory", "/w")).map((t) => t.name)).toEqual(["t"]);
     expect(sdk.spawns.length).toBe(2);
-    expect(sdk.closes.length).toBe(1);
-    expect(unregistered).toEqual(registered.slice(0, 1));
+    expect(sdk.closes.length).toBe(0);
+    expect(registered.length).toBe(1);
+    expect(unregistered).toEqual([]);
     await pool.close();
-    expect(sdk.closes.length).toBe(2);
+    expect(sdk.closes.length).toBe(1);
     expect(unregistered).toEqual(registered);
   });
 });
