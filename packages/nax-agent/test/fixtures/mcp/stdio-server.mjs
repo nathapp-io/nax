@@ -4,6 +4,7 @@
  *   --stderr <text>     write <text> to stderr at start
  *   --exit-at-start     exit(3) before answering anything (after the stderr text)
  *   --stubborn          ignore SIGTERM and stdin EOF (stays alive until SIGKILL)
+ *   --hang-tools-list   answer initialize but never answer tools/list; prints `pid=<pid>` to stderr at start
  * Tools: env(name) -> value of process.env[name]; pid() -> process.pid; crash() -> exit(1).
  */
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -26,17 +27,24 @@ if (flag("--stubborn")) {
 }
 
 const server = new Server({ name: "stdio-fixture", version: "1.0.0" }, { capabilities: { tools: {} } });
-server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: [
-    {
-      name: "env",
-      description: "read an env var",
-      inputSchema: { type: "object", properties: { name: { type: "string" } } },
-    },
-    { name: "pid", description: "the process id", inputSchema: { type: "object", properties: {} } },
-    { name: "crash", description: "exit(1)", inputSchema: { type: "object", properties: {} } },
-  ],
-}));
+const hangToolsList = flag("--hang-tools-list");
+if (hangToolsList) process.stderr.write(`pid=${process.pid}`);
+server.setRequestHandler(
+  ListToolsRequestSchema,
+  hangToolsList
+    ? () => new Promise(() => {})
+    : async () => ({
+        tools: [
+          {
+            name: "env",
+            description: "read an env var",
+            inputSchema: { type: "object", properties: { name: { type: "string" } } },
+          },
+          { name: "pid", description: "the process id", inputSchema: { type: "object", properties: {} } },
+          { name: "crash", description: "exit(1)", inputSchema: { type: "object", properties: {} } },
+        ],
+      }),
+);
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args = {} } = request.params;
   if (name === "crash") process.exit(1);

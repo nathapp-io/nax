@@ -140,4 +140,17 @@ describe("connectMcp over stdio", () => {
     const config: McpTransportConfig = { kind: "stdio", command: "/nonexistent/mcp-bin", args: [], env: {}, cwd: "/" };
     await expect(connectMcp(config, OPTS)).rejects.toBeInstanceOf(McpConnectError);
   }, 20_000);
+
+  test("a connect that fails after spawn closes the process before rejecting", async () => {
+    const error = await connectMcp(stdio(["--hang-tools-list"]), {
+      ...OPTS,
+      timeoutMs: 1000,
+      closeGraceMs: 500,
+    }).catch((e: unknown) => e);
+    assertCaughtInstanceOf(error, McpConnectError);
+    const pid = Number(/pid=(\d+)/.exec(error.stderrTail ?? "")?.[1]);
+    expect(pid).toBeGreaterThan(0);
+    for (let i = 0; i < 40 && isProcessAlive(pid); i += 1) await settle(50);
+    expect(isProcessAlive(pid)).toBe(false);
+  }, 20_000);
 });
