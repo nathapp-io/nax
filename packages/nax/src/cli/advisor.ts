@@ -16,6 +16,7 @@ import type { AdviceDecision, AdviceLabel } from "@/advisor";
 import { appendLabel, readDecisions } from "@/advisor";
 import { featuresDir, loadConfig } from "@/config";
 import { projectOutputDir } from "@/runtime";
+import { _advisorReplayDeps, type AdvisorReplayDeps, runAdvisorReplay } from "./advisor-replay";
 
 export interface AdvisorCliDeps {
   resolveOutputDir: (workdir: string) => Promise<string>;
@@ -136,7 +137,11 @@ async function guarded(deps: AdvisorCliDeps, body: () => Promise<number>): Promi
 }
 
 /** Register `nax advisor list|label` (replay and import-finish are added by their own modules). */
-export function registerAdvisorCommand(program: Command, deps: AdvisorCliDeps = _advisorCliDeps): Command {
+export function registerAdvisorCommand(
+  program: Command,
+  deps: AdvisorCliDeps = _advisorCliDeps,
+  replayDeps: AdvisorReplayDeps = _advisorReplayDeps,
+): Command {
   const group = program.command("advisor").description("Inspect, label and replay advisor decisions");
   group
     .command("list")
@@ -163,6 +168,44 @@ export function registerAdvisorCommand(program: Command, deps: AdvisorCliDeps = 
         verdict: string,
         o: { dir: string; feature: string; expected?: string; unsafeTypes?: string; note?: string },
       ) => guarded(deps, () => advisorLabelCommand({ ...o, id, verdict }, deps)),
+    );
+  group
+    .command("replay")
+    .description("Re-run recorded advisor questions (billed) and compare; --eval scores against labels")
+    .argument("[id]", "One decision/question id (default: every record of the feature)")
+    .requiredOption("-f, --feature <name>", "Feature name")
+    .option("-d, --dir <path>", "Project directory", process.cwd())
+    .option("--model <model>", "Tier name or agent:model to replay with")
+    .option("--memory <mode>", "stateless | warm", "stateless")
+    .option("--eval", "Score replays against labels.jsonl (exit 1 on any unsafe replay)")
+    .option("--json", "Emit JSON")
+    .action(
+      (
+        id: string | undefined,
+        o: { dir: string; feature: string; model?: string; memory: string; eval?: boolean; json?: boolean },
+      ) =>
+        guarded(deps, async () => {
+          if (
+            !FEATURE_PATTERN.test(o.feature) ||
+            (o.memory !== "stateless" && o.memory !== "warm") ||
+            (id && !ID_PATTERN.test(id))
+          ) {
+            deps.logErr("error: usage: nax advisor replay [id] -f <feature> [--memory stateless|warm]");
+            return 2;
+          }
+          return runAdvisorReplay(
+            {
+              dir: o.dir,
+              feature: o.feature,
+              id,
+              model: o.model,
+              memory: o.memory,
+              eval: o.eval === true,
+              json: o.json === true,
+            },
+            replayDeps,
+          );
+        }),
     );
   return group;
 }
