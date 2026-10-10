@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { makeStory } from "@test/helpers";
 import type { Finding } from "@/findings/types";
 import type { NbfWorthCheckPromptInput } from "@/prompts";
-import { makeStory } from "@test/helpers";
 import * as prompts from "@/prompts";
 
 const findingA: Finding = {
@@ -84,9 +84,7 @@ describe("buildNbfWorthCheckPrompt (US-001)", () => {
   });
 
   test("US-001 AC9: explains that an empty diff is unavailable", () => {
-    expect(buildNbfWorthCheckPrompt({ ...baseInput, diff: "" })).toContain(
-      "(diff unavailable — judge from the code)",
-    );
+    expect(buildNbfWorthCheckPrompt({ ...baseInput, diff: "" })).toContain("(diff unavailable — judge from the code)");
   });
 
   test("US-001 AC10: omits the line number when a finding has no line", () => {
@@ -102,12 +100,12 @@ describe("buildNbfWorthCheckPrompt (US-001)", () => {
   });
 
   test("US-001 AC12: renders an available suggested fix on the following line", () => {
-    expect(buildNbfWorthCheckPrompt({ ...baseInput, findings: [{ ...findingA, suggestion: "use parser.error" }] })).toContain(
-      "   Suggested fix: use parser.error",
-    );
+    expect(
+      buildNbfWorthCheckPrompt({ ...baseInput, findings: [{ ...findingA, suggestion: "use parser.error" }] }),
+    ).toContain("   Suggested fix: use parser.error");
   });
 
-  test('US-001 AC13: includes the rubric instruction to fix when unsure', () => {
+  test("US-001 AC13: includes the rubric instruction to fix when unsure", () => {
     expect(buildNbfWorthCheckPrompt(baseInput)).toContain('When you are unsure, answer "fix".');
   });
 
