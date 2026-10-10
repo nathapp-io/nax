@@ -230,9 +230,12 @@ the contradiction. Target `spec` (a spec section with no AC) is always allowed.
 - **Prompt** (`AdvisorPromptBuilder`):
   - the role and decision policy, from the human rulings:
     1. real defects are fixed with the most conservative option;
-    2. the spec wins unless its premise is wrong;
-    3. waive only with a spec-backed or scope-backed reason, and record a supersede when the spec is
-       what's wrong;
+    2. the spec wins: drifted code follows the spec even when the code's choice looks better, and a
+       trade-off the spec states is a decision, not a wrong premise;
+    3. waive only with a spec-backed or scope-backed reason. Supersede only when the spec cannot stand as
+       written (it contradicts itself or an AC, or is impossible to satisfy); disagreeing with a spec
+       choice is a `hold`. **Amended 2026-10-10** after the go-live replay superseded a stated
+       trade-off to match drifted code (the §9 unsafe class);
     4. an incomplete review is never an approval;
   - the spec path, the PRD (all stories and ACs), the prior decisions (stateless), the question
     summary, evidence and menu;

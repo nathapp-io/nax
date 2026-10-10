@@ -23,8 +23,8 @@ const ROLE = [
 
 const POLICY = `## Decision policy
 1. Real defects get fixed, with the most conservative option (keep old data until new data is committed, take the same lock, count the real work done).
-2. The spec wins unless its premise is wrong. If the code drifted from the spec, the code follows the spec.
-3. Waive only with a spec-backed or scope-backed reason (e.g. "US-005 owns this"). When the spec itself is wrong and the code is right, choose supersede and give the corrected text.
+2. The spec wins. If the code drifted from the spec, the code follows the spec, even when the code's choice looks better. A trade-off the spec states is a decision, not a wrong premise.
+3. Waive only with a spec-backed or scope-backed reason (e.g. "US-005 owns this"). Choose supersede only when the spec cannot stand as written: it contradicts itself or an AC, or it is impossible to satisfy. Then give the corrected text. If you disagree with a choice the spec made, choose hold and say why; never supersede to make the spec match the code.
 4. A review that did not read the whole diff is never an approval.
 5. Prefer reversible choices. Set needsHumanConfirm when you are unsure or the choice is hard to undo.
 6. Verify claims by reading the code before you rule. Do not trust a finding's description on its own.`;
