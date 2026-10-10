@@ -11,6 +11,16 @@
  * a deep relative import.
  */
 
+export {
+  type AdviceRef,
+  type ApprovalFacts,
+  applyJudgedAdvice,
+  createFinishAdvisor,
+  type FinishAdvisor,
+  type FinishAdvisorDeps,
+  type JudgedOutcome,
+  runApproval,
+} from "./advise";
 export type { AuditTarget, FinishLedgerEntry, WriteResultOptions } from "./audit";
 export {
   appendRound,

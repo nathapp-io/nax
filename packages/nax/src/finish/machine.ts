@@ -18,6 +18,8 @@
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
+import type { AdviceRef, FinishAdvisor } from "./advise";
+import { applyJudgedAdvice, runApproval } from "./advise";
 import { type AuditTarget, recordRound, type WriteResultOptions, writeResult } from "./audit";
 import { buildCommitRound, commitFixes, filesInCommit, headSha } from "./commit";
 import { buildFixCommitMessage } from "./commit-message";
@@ -25,6 +27,7 @@ import type { FinishContext } from "./context";
 import { runAcceptanceGate } from "./gates/acceptance";
 import { resolveGateCommands, runQualityGates } from "./gates/quality";
 import type { FinishOps } from "./ops";
+import type { RoutedReview } from "./route";
 import { gateCommitRoute, routeAcceptance, routeQualityGates, routeReview } from "./route";
 import type { FinishState } from "./state";
 import type { Finding, FinishResult, FinishTimeouts, QualityGateResult } from "./types";
@@ -48,6 +51,8 @@ export interface FinishMachineDeps {
   runSignal?: AbortSignal;
   /** Injected so tests can assert round ordering deterministically. */
   now: () => string;
+  /** A1 advisor (callers 1 + 4). Absent → today's behaviour exactly. */
+  advise?: FinishAdvisor;
   timeouts?: FinishTimeouts;
 }
 
@@ -294,87 +299,132 @@ async function maybeOpenDraftPr(state: FinishState, deps: FinishMachineDeps): Pr
   if (opened) state.prUrl = opened.url;
 }
 
+/** What one review-loop step decided: return a result, loop again, or fix these findings. */
+type ReviewStep =
+  | { kind: "return"; result: FinishResult | null }
+  | { kind: "continue" }
+  | { kind: "fix"; findings: Finding[]; advice: AdviceRef[] };
+
+/** The non-fix routes of one review: clean, incomplete, escalate, and (A1) advise. */
+async function routeReviewStep(
+  phase: ReviewPhase,
+  routed: RoutedReview,
+  state: FinishState,
+  deps: FinishMachineDeps,
+): Promise<ReviewStep> {
+  const { audit, now } = deps;
+  const phaseState = state.phases[phase];
+  if (routed.route === "clean") {
+    await recordRound(audit, state, phase, { ts: now(), phase, committed: false, outcome: "passed", findings: [] });
+    return { kind: "return", result: null };
+  }
+  if (routed.route === "incomplete") {
+    phaseState.incompleteAttempts += 1;
+    await recordRound(audit, state, phase, {
+      ts: now(),
+      phase,
+      committed: false,
+      outcome: "incomplete",
+      findings: routed.findings,
+    });
+    // Order matters: the clear at the top of the loop runs after ops.review has
+    // already been handed the state, so a gap set here survives exactly one review call.
+    phaseState.reviewGaps = routed.gaps ?? [];
+    return { kind: "continue" };
+  }
+  if (routed.route === "escalate") {
+    await recordRound(audit, state, phase, {
+      ts: now(),
+      phase,
+      committed: false,
+      outcome: "escalated",
+      findings: routed.findings,
+    });
+    const reason = routed.escalationReason ?? `${phase} review escalated.`;
+    return { kind: "return", result: await doEscalate(state, deps, reason, routed.findings) };
+  }
+  if (routed.route === "advise" && deps.advise) {
+    const advised = await applyJudgedAdvice({
+      phase,
+      routed,
+      phaseState,
+      state,
+      fa: deps.advise,
+      recordAdvised: (round) => recordRound(audit, state, phase, round),
+      escalate: (reason, findings) => doEscalate(state, deps, reason, findings),
+      now,
+    });
+    if (advised.result) return { kind: "return", result: advised.result };
+    if (advised.toFix.length === 0) return { kind: "continue" };
+    state.findings = advised.toFix;
+    return { kind: "fix", findings: advised.toFix, advice: advised.advice };
+  }
+  return { kind: "fix", findings: routed.findings, advice: [] };
+}
+
+/** Fix one phase's findings, commit, and record the round (carrying any A1 advice refs). */
+async function fixAndRecord(
+  phase: ReviewPhase,
+  findings: Finding[],
+  advice: AdviceRef[],
+  state: FinishState,
+  deps: FinishMachineDeps,
+): Promise<void> {
+  const { audit, now, ops } = deps;
+  assertNotAborted(deps);
+  const fixOutcome = await ops.fix(phase, { state, findings });
+  const message = buildFixCommitMessage(
+    phase,
+    state.feature,
+    { findings },
+    { workdir: state.workdir, dispositions: fixOutcome.dispositions },
+  );
+  const commit = await commitFixes(state.workdir, message, { skipHooks: true });
+  noteCommitWindow(state, commit.committed ? commit.shaBefore : null);
+  // #1674 part 3 — see `FinishState.committedThisRun`'s doc comment.
+  if (commit.committed) state.committedThisRun = true;
+  await recordRound(audit, state, phase, {
+    ...buildCommitRound({
+      phase,
+      committed: commit.committed,
+      route: "fix",
+      findings,
+      shaAfter: commit.shaAfter,
+      now: now(),
+      dispositions: fixOutcome.dispositions,
+    }),
+    ...(advice.length > 0 ? { advice } : {}),
+  });
+  state.phases[phase].fixAttempts += 1;
+}
+
 /** Steps 4 and 5: the spec / quality review-fix-reverify loop. */
 async function runReviewLoop(
   phase: ReviewPhase,
   state: FinishState,
   deps: FinishMachineDeps,
 ): Promise<FinishResult | null> {
-  const { audit, now, ops } = deps;
   const phaseState = state.phases[phase];
 
   for (;;) {
     assertNotAborted(deps);
-    const outcome = await ops.review(phase, { state });
+    const outcome = await deps.ops.review(phase, { state });
     phaseState.reviewAttempts += 1;
     // The window and the gap notice describe the attempt just consumed --
     // clear both before routing decides anything for this call.
     phaseState.reviewSince = undefined;
     phaseState.reviewGaps = undefined;
-    const routed = routeReview(phase, outcome, phaseState);
+    const routed = routeReview(phase, outcome, phaseState, { advise: deps.advise?.judgedEnabled === true });
     // Set as soon as routing decides -- state.findings documents "the current
     // phase's reviewer last reported" (./types), and a throw from any op past
     // this point (fix, the commit, or a later phase) must escalate with these
     // findings rather than the [] the outer catch would otherwise see.
     state.findings = routed.findings;
 
-    if (routed.route === "clean") {
-      await recordRound(audit, state, phase, { ts: now(), phase, committed: false, outcome: "passed", findings: [] });
-      return null;
-    }
-    if (routed.route === "incomplete") {
-      phaseState.incompleteAttempts += 1;
-      await recordRound(audit, state, phase, {
-        ts: now(),
-        phase,
-        committed: false,
-        outcome: "incomplete",
-        findings: routed.findings,
-      });
-      // Order matters: the clear above runs at the top of the next
-      // iteration after ops.review has already been handed the state, so a
-      // gap set here survives exactly one review call.
-      phaseState.reviewGaps = routed.gaps ?? [];
-      continue;
-    }
-    if (routed.route === "escalate") {
-      await recordRound(audit, state, phase, {
-        ts: now(),
-        phase,
-        committed: false,
-        outcome: "escalated",
-        findings: routed.findings,
-      });
-      return doEscalate(state, deps, routed.escalationReason ?? `${phase} review escalated.`, routed.findings);
-    }
-
-    assertNotAborted(deps);
-    const fixOutcome = await ops.fix(phase, { state, findings: routed.findings });
-    const message = buildFixCommitMessage(
-      phase,
-      state.feature,
-      { findings: routed.findings },
-      { workdir: state.workdir, dispositions: fixOutcome.dispositions },
-    );
-    const commit = await commitFixes(state.workdir, message, { skipHooks: true });
-    noteCommitWindow(state, commit.committed ? commit.shaBefore : null);
-    // #1674 part 3 — see `FinishState.committedThisRun`'s doc comment.
-    if (commit.committed) state.committedThisRun = true;
-    await recordRound(
-      audit,
-      state,
-      phase,
-      buildCommitRound({
-        phase,
-        committed: commit.committed,
-        route: "fix",
-        findings: routed.findings,
-        shaAfter: commit.shaAfter,
-        now: now(),
-        dispositions: fixOutcome.dispositions,
-      }),
-    );
-    phaseState.fixAttempts += 1;
+    const step = await routeReviewStep(phase, routed, state, deps);
+    if (step.kind === "return") return step.result;
+    if (step.kind === "continue") continue;
+    await fixAndRecord(phase, step.findings, step.advice, state, deps);
 
     if (phase === "spec") {
       // I8 — a spec fix can break the contract acceptance already proved works.
@@ -528,6 +578,17 @@ export async function runFinishMachine(state: FinishState, deps: FinishMachineDe
 
     const gates = await runQualityGatesLoop(state, deps);
     if (gates) return gates;
+
+    if (deps.advise?.approvalEnabled) {
+      const held = await runApproval({
+        state,
+        fa: deps.advise,
+        reviewAgain: (phase) => runReviewLoop(phase, state, deps),
+        gatesAgain: () => runQualityGatesLoop(state, deps),
+        escalate: (reason) => doEscalate(state, deps, reason, []),
+      });
+      if (held) return held;
+    }
 
     return await finishTerminal(state, deps);
   } catch (err) {

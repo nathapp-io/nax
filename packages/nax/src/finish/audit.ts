@@ -224,6 +224,8 @@ export async function recordRound(
   round: Omit<FinishRound, "attempt">,
 ): Promise<void> {
   state.phases[phase].rounds += 1;
+  // A1: the approval precondition reads the last outcome per phase.
+  if (round.outcome) state.phases[phase].lastOutcome = round.outcome;
   const attempt = state.phases[phase].rounds;
   await appendRound(t, { ...round, attempt });
 }
