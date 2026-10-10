@@ -253,7 +253,9 @@ describe("builder.buildSourceFixPrompt()", () => {
   test("US-002 AC2: includes the exact source-fix no-shim rules", () => {
     const prompt = builder.buildSourceFixPrompt({ testOutput: "failed", acceptanceTestPath: "/acceptance.test.ts" });
     expect(prompt).toContain("SOURCE-FIX RULES:");
-    expect(prompt).toContain("- If the failing assertion needs something the criteria do not state, make no edit and reply with one line: UNRESOLVED: <AC id> — the test asserts <what> that the criterion does not state.");
+    expect(prompt).toContain(
+      "- If the failing assertion needs something the criteria do not state, make no edit and reply with one line: UNRESOLVED: <AC id> — the test asserts <what> that the criterion does not state.",
+    );
   });
 
   test("US-002 AC3: states that criterion text is unavailable when none are supplied", () => {

@@ -322,6 +322,11 @@ ${responseSchema}`;
     let prompt = "ACCEPTANCE TEST FAILURE — fix the source implementation.\n\n";
     if (p.testCommand) prompt += `Test framework: ${buildTestFrameworkHint(p.testCommand)}\n\n`;
     prompt += `TEST OUTPUT:\n${formatTestOutputForFix(p.testOutput)}\n\n`;
+    const criteria = p.failedCriteria ?? [];
+    prompt += criteria.length
+      ? `FAILING ACCEPTANCE CRITERIA:\n${criteria.map((criterion) => `${criterion.acId} [${criterion.storyId}]: ${criterion.refined}${criterion.original !== criterion.refined ? `\n  Spec wording: ${criterion.original}` : ""}`).join("\n")}\n\n`
+      : "FAILING ACCEPTANCE CRITERIA: (criterion text unavailable)\n\n";
+    prompt += `SOURCE-FIX RULES:\n- Change source only to deliver behaviour the criteria above state.\n- Do not add aliases, wrapper exports, alternate parameter shapes, symlinks, test-only hooks or config shims whose only purpose is to satisfy this test.\n- If the failing assertion needs something the criteria do not state, make no edit and reply with one line: UNRESOLVED: <AC id> — the test asserts <what> that the criterion does not state.\n\n`;
     if (p.diagnosisReasoning) prompt += `DIAGNOSIS:\n${p.diagnosisReasoning}\n\n`;
     if (p.priorIterationsBlock) prompt += p.priorIterationsBlock;
     prompt += `ACCEPTANCE TEST FILE: ${p.acceptanceTestPath}\n\n`;

@@ -1,14 +1,4 @@
-/**
- * Acceptance Retry Loop
- *
- * Handles the acceptance testing retry loop after main execution completes:
- * 1. Runs acceptance validation
- * 2. Detects test-level failures (>80% fail or crash) and regenerates test (P1-D)
- * 3. Generates batched fix stories for implementation-level failures
- * 4. Executes fix stories through pipeline
- * 5. Retries until max retries or all tests pass
- */
-
+/** Acceptance validation, diagnosis, and per-package fix retry orchestration. */
 import {
   type DiagnosisResult,
   findExistingAcceptanceTestPath as findExistingAcceptanceTestPathFromOptions,
@@ -45,6 +35,13 @@ import {
   regenerateAcceptanceTest as regenerateAcceptanceTestFn,
   resolveAcceptanceFixTarget,
 } from "./acceptance-helpers";
+import {
+  attemptFileHooks,
+  createAcceptanceSummaryAccumulator,
+  emitAcceptanceSummary,
+  recordDiagnosis,
+  recordFixIterations,
+} from "./acceptance-summary";
 
 export {
   _regenerateDeps,
@@ -244,18 +241,7 @@ async function runAcceptanceTestsOnce(
   };
 }
 
-/**
- * Run the acceptance fix cycle using runFixCycle (ADR-022 phase 4).
- *
- * Two co-run-sequential strategies:
- *   - acceptance-source-fix: appliesTo fixTarget==="source", appliesToVerdict source_bug/both
- *   - acceptance-test-fix:   appliesTo fixTarget==="test",   appliesToVerdict test_bug/both
- *
- * Validate fn re-runs acceptance tests and converts failures to Finding[].
- * buildPriorIterationsBlock(priorIterations) replaced the hand-rolled previousFailure
- * string accumulator. Note: only acceptance-test-fix uses priorIterations — the source-fix
- * op type does not accept it, so source-fix prompts intentionally omit prior-attempt context.
- */
+/** Run the acceptance fix cycle with source-fix and test-fix strategies. */
 export async function runAcceptanceFixCycle(
   ctx: AcceptanceLoopContext,
   prd: PRD,
@@ -277,6 +263,8 @@ export async function runAcceptanceFixCycle(
   let currentFailedACs = initialFailures.failedACs;
 
   const storyId = prd.userStories[0]?.id ?? "unknown";
+  const sourceAttempt = attemptFileHooks(fixTarget?.packageDir ?? ctx.workdir);
+  const testAttempt = attemptFileHooks(fixTarget?.packageDir ?? ctx.workdir);
 
   const cycle: FixCycle<Finding> = {
     findings: findingsForDiagnosis(initialFailures.failedACs, initialFailures.testOutput, diagnosis),
@@ -294,6 +282,12 @@ export async function runAcceptanceFixCycle(
           priorIterationsBlock: buildPriorIterationsBlock(priorIterations),
           acceptanceTestPath,
           scopedCommandName,
+          failedCriteria: _failedCriteria,
+        }),
+        beforeDispatch: sourceAttempt.beforeDispatch,
+        extractApplied: async (output) => ({
+          targetFiles: await sourceAttempt.changedFiles(),
+          unresolved: output.unresolved,
         }),
         maxAttempts: 3,
         coRun: "co-run-sequential",
@@ -312,6 +306,8 @@ export async function runAcceptanceFixCycle(
           acceptanceTestPath,
           scopedCommandName,
         }),
+        beforeDispatch: testAttempt.beforeDispatch,
+        extractApplied: async () => ({ targetFiles: await testAttempt.changedFiles() }),
         maxAttempts: 3,
         coRun: "co-run-sequential",
       },
@@ -343,256 +339,261 @@ export async function runAcceptanceFixCycle(
   }
 }
 
-/**
- * Run the acceptance retry loop.
- *
- * Each outer iteration:
- *   1. Run acceptance tests → PASS → done / FAIL → collect per-package failures
- *   2. Stub guard (with stubRegenCount cap) → regen + continue
- *   3. Per-package fan-out (#1277): for each failed package, diagnose over that
- *      package's sliced output and run a fix cycle scoped to its packageDir,
- *      testPath, and command. Budget is PER-PACKAGE — each failed package gets
- *      its own maxRetries via runFixCycle's maxAttemptsTotal.
- *   4. Final full validation pass (all packages) → success only if it passes
- *      and no package-level findings remain.
- *
- * The outer loop owns the stub guard and the package fan-out. runFixCycle owns
- * per-package fix retry logic.
- */
-export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<AcceptanceLoopResult> {
-  const logger = getSafeLogger();
-  const maxRetries = ctx.config.acceptance.maxRetries;
-
-  let acceptanceRetries = 0;
-  let stubRegenCount = 0;
-  const prd = ctx.prd;
-  let totalCost = ctx.totalCost;
-  const iterations = ctx.iterations;
-  const storiesCompleted = ctx.storiesCompleted;
-  const prdDirty = false;
-
-  logger?.info("acceptance", "All stories complete, running acceptance validation");
-
-  const { acceptanceStage } = await _runAcceptanceTestsOnceDeps.importAcceptanceStage();
-
-  do {
-    // ── 1. Run acceptance ────────────────────────────────────────────────
-    // Stamp the attempt index onto a per-iteration copy so the stage's verdict
-    // reports a real retry count. Fix-cycle re-validations reuse this same copy
-    // and so stay attributed to the attempt that triggered them.
-    const attemptCtx: AcceptanceLoopContext = { ...ctx, acceptanceRetries };
-    const firstStory = prd.userStories[0];
-    const acceptanceContext = buildAcceptanceContext(attemptCtx, prd);
-    const acceptanceResult = await acceptanceStage.execute(acceptanceContext);
-
-    if (acceptanceResult.action === "continue") {
-      logger?.info("acceptance", "Acceptance validation passed!");
-      return buildResult(true, prd, totalCost, iterations, storiesCompleted, prdDirty);
-    }
-
-    if (acceptanceResult.action !== "fail") {
-      logger?.warn("acceptance", `Unexpected acceptance result: ${acceptanceResult.action}`);
-      return buildResult(false, prd, totalCost, iterations, storiesCompleted, prdDirty);
-    }
-
-    const failures = acceptanceContext.acceptanceFailures;
-    const skippedPackages =
-      (acceptanceResult as { skippedPackages?: string[] }).skippedPackages ?? failures?.missingTargets;
-    if (!failures || failures.failedACs.length === 0) {
-      logger?.error("acceptance", "Acceptance tests failed but no specific failures detected");
-      await fireHook(
-        ctx.hooks,
-        "on-pause",
-        hookCtx(ctx.feature, { reason: "Acceptance tests failed (no failures detected)", cost: totalCost }),
-        ctx.workdir,
-      );
-      return buildFailureResult(prd, totalCost, iterations, storiesCompleted, undefined, undefined, skippedPackages);
-    }
-
-    // ── 2. retries++ ─────────────────────────────────────────────────────
-    acceptanceRetries++;
-    logger?.warn("acceptance", `Acceptance retry ${acceptanceRetries}/${maxRetries}`, {
-      storyId: firstStory?.id,
-      failedACs: failures.failedACs,
+/** Run per-package acceptance validation, diagnosis and fix cycles. */
+async function runAcceptanceLoopWithSummary(ctx: AcceptanceLoopContext): Promise<AcceptanceLoopResult> {
+  const accumulator = createAcceptanceSummaryAccumulator();
+  let result: AcceptanceLoopResult | undefined;
+  try {
+    result = await acceptanceLoopImplementation.runAcceptanceLoop(ctx, accumulator);
+    return result;
+  } finally {
+    emitAcceptanceSummary(accumulator, {
+      prd: ctx.prd,
+      outcome: result?.success ? "passed" : "failed",
+      retries: result?.retries ?? 0,
+      storyId: ctx.prd.userStories[0]?.id,
     });
-
-    if (acceptanceRetries > maxRetries) {
-      logger?.error("acceptance", "Max acceptance retries reached", { storyId: firstStory?.id });
-      await fireHook(
-        ctx.hooks,
-        "on-pause",
-        hookCtx(ctx.feature, {
-          reason: `Acceptance validation failed after ${maxRetries} retries: ${failures.failedACs.join(", ")}`,
-          cost: totalCost,
-        }),
-        ctx.workdir,
-      );
-      return buildFailureResult(
-        prd,
-        totalCost,
-        iterations,
-        storiesCompleted,
-        failures.failedACs,
-        acceptanceRetries,
-        skippedPackages,
-      );
-    }
-
-    // ── 3. Stub guard (stubRegenCount capped at 2) ───────────────────────
-    if (ctx.featureDir) {
-      const existingStubPath = await findExistingAcceptanceTestPathFromOptions({
-        acceptanceTestPaths: ctx.acceptanceTestPaths,
-        featureDir: ctx.featureDir,
-        testPathConfig: ctx.config.acceptance.testPath,
-        language: ctx.config.project?.language,
-      });
-      if (existingStubPath && isStubTestFile(await Bun.file(existingStubPath).text())) {
-        if (stubRegenCount >= MAX_STUB_REGENS) {
-          logger?.error("acceptance", "Acceptance test generator cannot produce real tests — giving up", {
-            storyId: firstStory?.id,
-            stubRegenCount,
-          });
-          return buildFailureResult(
-            prd,
-            totalCost,
-            iterations,
-            storiesCompleted,
-            failures.failedACs,
-            acceptanceRetries,
-            skippedPackages,
-          );
-        }
-        stubRegenCount++;
-        logger?.warn("acceptance", "Stub test detected — full regen", {
-          storyId: firstStory?.id,
-          attempt: stubRegenCount,
-          maxStubRegens: MAX_STUB_REGENS,
-        });
-        await regenerateAcceptanceTestFn(existingStubPath, acceptanceContext);
-        continue; // back to acceptance test
-      }
-    }
-
-    // ── 4. Diagnose (fresh each iteration) ───────────────────────────────
-    // `isLegacyFixStory`, not `isInAcceptanceScope` — see that module on why
-    // this one total keeps counting decomposed parents.
-    const totalACs = prd.userStories.filter((s) => !isLegacyFixStory(s)).flatMap((s) => s.acceptanceCriteria).length;
-
-    if (!ctx.runtime) {
-      logger?.error("acceptance", "Runtime not found for diagnosis", { storyId: firstStory?.id });
-      return buildFailureResult(
-        prd,
-        totalCost,
-        iterations,
-        storiesCompleted,
-        failures.failedACs,
-        acceptanceRetries,
-        skippedPackages,
-      );
-    }
-
-    // ── 4+5. Per-package fan-out: diagnose + fix each failed package ──────
-    // #1277: one fix cycle per failed package, each scoped to its packageDir,
-    // testPath, command, and sliced output. Budget is per-package (each gets
-    // its own maxRetries). A final full validation pass catches cross-package
-    // regressions before declaring success.
-    const failedPkgs =
-      failures.failedPackages && failures.failedPackages.length > 0
-        ? failures.failedPackages
-        : [{ testPath: "", packageDir: ctx.workdir, output: failures.testOutput, failedACs: failures.failedACs }];
-
-    const strategy = ctx.config.acceptance.fix?.strategy ?? "diagnose-first";
-
-    const testEntries = ctx.acceptanceTestPaths
-      ? await _acceptanceLoopDeps.loadAcceptanceTestContent(ctx.acceptanceTestPaths.map((p) => p.testPath))
-      : [];
-
-    const refinedCriteria = await loadRefinedCriteria(ctx.featureDir);
-    const remainingFindings: Finding[] = [];
-    let totalInternalIterations = 0;
-    for (const pkg of failedPkgs) {
-      const packageView = ctx.runtime.packages.resolve(pkg.packageDir);
-      const packageConfig = packageView.hasOverride ? packageView.config : ctx.config;
-      const { acceptanceTestPath, testCommand, scopedCommandName } = resolveAcceptanceFixTarget(
-        ctx.acceptanceTestPaths,
-        pkg,
-        packageConfig,
-      );
-      const effectivePath = acceptanceTestPath || pkg.testPath || testEntries[0]?.testPath || "";
-      const testFileContent = testEntries.find((entry) => entry.testPath === effectivePath)?.content ?? "";
-
-      const pkgFailures = { failedACs: pkg.failedACs, testOutput: pkg.output };
-      const failedCriteria = resolveFailedCriteria({
-        refined: refinedCriteria,
-        groupStoryIds: groupStoryIdsForPackage(prd, ctx.workdir, pkg.packageDir),
-        failedACs: pkg.failedACs,
-      });
-      const diagnosis = await resolveAcceptanceDiagnosis({
-        ctx,
-        failures: pkgFailures,
-        totalACs,
-        strategy,
-        diagnosisOpts: {
-          testOutput: pkg.output,
-          testFileContent,
-          acceptanceTestPath: effectivePath,
-          workdir: pkg.packageDir,
-          config: packageConfig,
-          storyId: firstStory?.id,
-          failedCriteria,
-        },
-      });
-
-      logger?.info("acceptance.diagnosis", "Diagnosis resolved", {
-        storyId: firstStory?.id,
-        packageDir: pkg.packageDir,
-        verdict: diagnosis.verdict,
-        confidence: diagnosis.confidence,
-        path: diagnosis.path,
-        failedACs: pkg.failedACs,
-        attempt: acceptanceRetries,
-      });
-
-      const cycleResult = await runAcceptanceFixCycle(
-        attemptCtx,
-        prd,
-        pkgFailures,
-        diagnosis,
-        effectivePath,
-        testCommand,
-        { packageDir: pkg.packageDir, testPath: effectivePath },
-        scopedCommandName,
-        failedCriteria,
-      );
-      totalCost += cycleResult.costUsd ?? 0;
-      totalInternalIterations += cycleResult.iterations.length;
-      const pkgResolved = cycleResult.exitReason === "resolved" || cycleResult.finalFindings.length === 0;
-      if (!pkgResolved) remainingFindings.push(...cycleResult.finalFindings);
-    }
-
-    // ── Final full validation pass (all packages) — catches cross-package
-    //    regressions one isolated cycle could miss. ───────────────────────
-    const finalCheck = await runAcceptanceTestsOnce(attemptCtx, prd);
-    const success = finalCheck.passed && remainingFindings.length === 0;
-    const failureMessages = !success
-      ? finalCheck.failedACs.length > 0
-        ? finalCheck.failedACs
-        : remainingFindings.length > 0
-          ? remainingFindings.map((f) => f.message)
-          : ["acceptance validation failed (unknown cause)"]
-      : undefined;
-    return buildResult(
-      success,
-      prd,
-      totalCost,
-      iterations,
-      storiesCompleted,
-      prdDirty,
-      failureMessages,
-      acceptanceRetries + totalInternalIterations,
-      finalCheck.missingTargets,
-    );
-  } while (acceptanceRetries <= maxRetries);
-
-  return buildResult(false, prd, totalCost, iterations, storiesCompleted, prdDirty); // defensive fallback
+  }
 }
+
+const acceptanceLoopImplementation = {
+  async runAcceptanceLoop(
+    ctx: AcceptanceLoopContext,
+    accumulator: ReturnType<typeof createAcceptanceSummaryAccumulator>,
+  ): Promise<AcceptanceLoopResult> {
+    const logger = getSafeLogger();
+    const maxRetries = ctx.config.acceptance.maxRetries;
+
+    let acceptanceRetries = 0;
+    let stubRegenCount = 0;
+    const prd = ctx.prd;
+    let totalCost = ctx.totalCost;
+    const iterations = ctx.iterations;
+    const storiesCompleted = ctx.storiesCompleted;
+    const prdDirty = false;
+
+    logger?.info("acceptance", "All stories complete, running acceptance validation");
+
+    const { acceptanceStage } = await _runAcceptanceTestsOnceDeps.importAcceptanceStage();
+
+    do {
+      // ── 1. Run acceptance ────────────────────────────────────────────────
+      const attemptCtx: AcceptanceLoopContext = { ...ctx, acceptanceRetries };
+      const firstStory = prd.userStories[0];
+      const acceptanceContext = buildAcceptanceContext(attemptCtx, prd);
+      const acceptanceResult = await acceptanceStage.execute(acceptanceContext);
+
+      if (acceptanceResult.action === "continue") {
+        logger?.info("acceptance", "Acceptance validation passed!");
+        return buildResult(true, prd, totalCost, iterations, storiesCompleted, prdDirty);
+      }
+
+      if (acceptanceResult.action !== "fail") {
+        logger?.warn("acceptance", `Unexpected acceptance result: ${acceptanceResult.action}`);
+        return buildResult(false, prd, totalCost, iterations, storiesCompleted, prdDirty);
+      }
+
+      const failures = acceptanceContext.acceptanceFailures;
+      const skippedPackages =
+        (acceptanceResult as { skippedPackages?: string[] }).skippedPackages ?? failures?.missingTargets;
+      if (!failures || failures.failedACs.length === 0) {
+        logger?.error("acceptance", "Acceptance tests failed but no specific failures detected");
+        await fireHook(
+          ctx.hooks,
+          "on-pause",
+          hookCtx(ctx.feature, { reason: "Acceptance tests failed (no failures detected)", cost: totalCost }),
+          ctx.workdir,
+        );
+        return buildFailureResult(prd, totalCost, iterations, storiesCompleted, undefined, undefined, skippedPackages);
+      }
+
+      // ── 2. retries++ ─────────────────────────────────────────────────────
+      acceptanceRetries++;
+      logger?.warn("acceptance", `Acceptance retry ${acceptanceRetries}/${maxRetries}`, {
+        storyId: firstStory?.id,
+        failedACs: failures.failedACs,
+      });
+
+      if (acceptanceRetries > maxRetries) {
+        logger?.error("acceptance", "Max acceptance retries reached", { storyId: firstStory?.id });
+        await fireHook(
+          ctx.hooks,
+          "on-pause",
+          hookCtx(ctx.feature, {
+            reason: `Acceptance validation failed after ${maxRetries} retries: ${failures.failedACs.join(", ")}`,
+            cost: totalCost,
+          }),
+          ctx.workdir,
+        );
+        return buildFailureResult(
+          prd,
+          totalCost,
+          iterations,
+          storiesCompleted,
+          failures.failedACs,
+          acceptanceRetries,
+          skippedPackages,
+        );
+      }
+
+      // ── 3. Stub guard (stubRegenCount capped at 2) ───────────────────────
+      if (ctx.featureDir) {
+        const existingStubPath = await findExistingAcceptanceTestPathFromOptions({
+          acceptanceTestPaths: ctx.acceptanceTestPaths,
+          featureDir: ctx.featureDir,
+          testPathConfig: ctx.config.acceptance.testPath,
+          language: ctx.config.project?.language,
+        });
+        if (existingStubPath && isStubTestFile(await Bun.file(existingStubPath).text())) {
+          if (stubRegenCount >= MAX_STUB_REGENS) {
+            logger?.error("acceptance", "Acceptance test generator cannot produce real tests — giving up", {
+              storyId: firstStory?.id,
+              stubRegenCount,
+            });
+            return buildFailureResult(
+              prd,
+              totalCost,
+              iterations,
+              storiesCompleted,
+              failures.failedACs,
+              acceptanceRetries,
+              skippedPackages,
+            );
+          }
+          stubRegenCount++;
+          logger?.warn("acceptance", "Stub test detected — full regen", {
+            storyId: firstStory?.id,
+            attempt: stubRegenCount,
+            maxStubRegens: MAX_STUB_REGENS,
+          });
+          await regenerateAcceptanceTestFn(existingStubPath, acceptanceContext);
+          continue; // back to acceptance test
+        }
+      }
+
+      // ── 4. Diagnose (fresh each iteration) ───────────────────────────────
+      // `isLegacyFixStory`, not `isInAcceptanceScope` — see that module on why
+      // this one total keeps counting decomposed parents.
+      const totalACs = prd.userStories.filter((s) => !isLegacyFixStory(s)).flatMap((s) => s.acceptanceCriteria).length;
+
+      if (!ctx.runtime) {
+        logger?.error("acceptance", "Runtime not found for diagnosis", { storyId: firstStory?.id });
+        return buildFailureResult(
+          prd,
+          totalCost,
+          iterations,
+          storiesCompleted,
+          failures.failedACs,
+          acceptanceRetries,
+          skippedPackages,
+        );
+      }
+
+      // ── 4+5. Per-package fan-out: diagnose + fix each failed package ──────
+      // #1277: one fix cycle per failed package, each scoped to its packageDir,
+      // testPath, command, and sliced output. Budget is per-package (each gets
+      // its own maxRetries). A final full validation pass catches cross-package
+      // regressions before declaring success.
+      const failedPkgs =
+        failures.failedPackages && failures.failedPackages.length > 0
+          ? failures.failedPackages
+          : [{ testPath: "", packageDir: ctx.workdir, output: failures.testOutput, failedACs: failures.failedACs }];
+
+      const strategy = ctx.config.acceptance.fix?.strategy ?? "diagnose-first";
+
+      const testEntries = ctx.acceptanceTestPaths
+        ? await _acceptanceLoopDeps.loadAcceptanceTestContent(ctx.acceptanceTestPaths.map((p) => p.testPath))
+        : [];
+
+      const refinedCriteria = await loadRefinedCriteria(ctx.featureDir);
+      const remainingFindings: Finding[] = [];
+      let totalInternalIterations = 0;
+      for (const pkg of failedPkgs) {
+        const packageView = ctx.runtime.packages.resolve(pkg.packageDir);
+        const packageConfig = packageView.hasOverride ? packageView.config : ctx.config;
+        const { acceptanceTestPath, testCommand, scopedCommandName } = resolveAcceptanceFixTarget(
+          ctx.acceptanceTestPaths,
+          pkg,
+          packageConfig,
+        );
+        const effectivePath = acceptanceTestPath || pkg.testPath || testEntries[0]?.testPath || "";
+        const testFileContent = testEntries.find((entry) => entry.testPath === effectivePath)?.content ?? "";
+
+        const pkgFailures = { failedACs: pkg.failedACs, testOutput: pkg.output };
+        const failedCriteria = resolveFailedCriteria({
+          refined: refinedCriteria,
+          groupStoryIds: groupStoryIdsForPackage(prd, ctx.workdir, pkg.packageDir),
+          failedACs: pkg.failedACs,
+        });
+        const diagnosis = await resolveAcceptanceDiagnosis({
+          ctx,
+          failures: pkgFailures,
+          totalACs,
+          strategy,
+          diagnosisOpts: {
+            testOutput: pkg.output,
+            testFileContent,
+            acceptanceTestPath: effectivePath,
+            workdir: pkg.packageDir,
+            config: packageConfig,
+            storyId: firstStory?.id,
+            failedCriteria,
+          },
+        });
+
+        recordDiagnosis(accumulator, diagnosis);
+        logger?.info("acceptance.diagnosis", "Diagnosis resolved", {
+          storyId: firstStory?.id,
+          packageDir: pkg.packageDir,
+          verdict: diagnosis.verdict,
+          confidence: diagnosis.confidence,
+          path: diagnosis.path,
+          failedACs: pkg.failedACs,
+          attempt: acceptanceRetries,
+        });
+
+        const cycleResult = await runAcceptanceFixCycle(
+          attemptCtx,
+          prd,
+          pkgFailures,
+          diagnosis,
+          effectivePath,
+          testCommand,
+          { packageDir: pkg.packageDir, testPath: effectivePath },
+          scopedCommandName,
+          failedCriteria,
+        );
+        recordFixIterations(accumulator, cycleResult.iterations);
+        totalCost += cycleResult.costUsd ?? 0;
+        totalInternalIterations += cycleResult.iterations.length;
+        const pkgResolved = cycleResult.exitReason === "resolved" || cycleResult.finalFindings.length === 0;
+        if (!pkgResolved) remainingFindings.push(...cycleResult.finalFindings);
+      }
+
+      const finalCheck = await runAcceptanceTestsOnce(attemptCtx, prd);
+      const success = finalCheck.passed && remainingFindings.length === 0;
+      const failureMessages = !success
+        ? finalCheck.failedACs.length > 0
+          ? finalCheck.failedACs
+          : remainingFindings.length > 0
+            ? remainingFindings.map((f) => f.message)
+            : ["acceptance validation failed (unknown cause)"]
+        : undefined;
+      return buildResult(
+        success,
+        prd,
+        totalCost,
+        iterations,
+        storiesCompleted,
+        prdDirty,
+        failureMessages,
+        acceptanceRetries + totalInternalIterations,
+        finalCheck.missingTargets,
+      );
+    } while (acceptanceRetries <= maxRetries);
+
+    return buildResult(false, prd, totalCost, iterations, storiesCompleted, prdDirty); // defensive fallback
+  },
+};
+
+export const runAcceptanceLoop = runAcceptanceLoopWithSummary;
