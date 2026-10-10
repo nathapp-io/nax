@@ -57,6 +57,16 @@ describe("ledger", () => {
     });
   });
 
+  test("a draft builder receives the assigned id (so the line can reference its own audit file)", async () => {
+    await withTempDir(async (dir) => {
+      await appendDecision(dir, "feat", draft());
+      const d = await appendDecision(dir, "feat", (id) => draft({ auditRef: `advisor-audit/feat/${id}.json` }));
+      expect(d.id).toBe("D-2");
+      expect(d.auditRef).toBe("advisor-audit/feat/D-2.json");
+      expect((await readDecisions(dir, "feat"))[1]?.auditRef).toBe("advisor-audit/feat/D-2.json");
+    });
+  });
+
   test("an absent ledger reads as empty", async () => {
     await withTempDir(async (dir) => expect(await readDecisions(dir, "nope")).toEqual([]));
   });

@@ -49,15 +49,15 @@ export async function readDecisions(repoRoot: string, feature: string): Promise<
   return text === null ? [] : parseLines(text, path);
 }
 
-export async function appendDecision(
-  repoRoot: string,
-  feature: string,
-  draft: Omit<AdviceDecision, "id">,
-): Promise<AdviceDecision> {
+/** A draft, or a builder that receives the assigned id (so the line can name its own audit file). */
+export type DecisionDraft = Omit<AdviceDecision, "id"> | ((id: string) => Omit<AdviceDecision, "id">);
+
+export async function appendDecision(repoRoot: string, feature: string, draft: DecisionDraft): Promise<AdviceDecision> {
   const path = ledgerPath(repoRoot, feature);
   return _ledgerDeps.withLock(path, async () => {
     const existing = await readDecisions(repoRoot, feature);
-    const decision: AdviceDecision = { id: `D-${existing.length + 1}`, ...draft };
+    const id = `D-${existing.length + 1}`;
+    const decision: AdviceDecision = { ...(typeof draft === "function" ? draft(id) : draft), id };
     const text = (await _ledgerDeps.readText(path)) ?? "";
     // A crash mid-append can leave a partial last line without "\n"; start ours on a fresh line.
     const prefix = text.length > 0 && !text.endsWith("\n") ? "\n" : "";

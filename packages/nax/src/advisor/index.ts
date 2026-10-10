@@ -14,6 +14,14 @@ export {
   writeAdviceAudit,
 } from "./audit";
 export { formatHeadsUp, type HeadsUpChannel } from "./heads-up";
-export { _ledgerDeps, appendDecision, countStoryRulings, findReusable, ledgerPath, readDecisions } from "./ledger";
+export {
+  _ledgerDeps,
+  appendDecision,
+  countStoryRulings,
+  type DecisionDraft,
+  findReusable,
+  ledgerPath,
+  readDecisions,
+} from "./ledger";
 export { buildMenu, forcedConfirm, REQUIRED_TEXT_FIELD, toAction } from "./menus";
 export type * from "./types";
