@@ -315,12 +315,7 @@ export class TddPromptBuilder {
     // (6.71) .nax/ artifact immutability — always-on safety invariant for
     // code-touching roles (test-writer, implementer, verifier). Composed
     // alongside the guardrails block; not config-gated.
-    const naxArtifacts = buildNaxArtifactsSection(
-      this.role as GuardrailRole,
-      guardrailVariant,
-      guardrailIsolation,
-      configReadable ? { configReadable: true } : undefined,
-    );
+    const naxArtifacts = this.buildNaxArtifactsSection(guardrailVariant, guardrailIsolation, configReadable);
     if (naxArtifacts) acc.add(this.s("nax-artifacts", naxArtifacts));
 
     // (6.72) Scratchpad awareness — the artifacts section names
@@ -444,6 +439,15 @@ export class TddPromptBuilder {
       "Schema (minimal):\n" +
       `{"version":1,"approved":boolean,"tests":{"allPassing":boolean,"passCount":number,"failCount":number},"testModifications":{"detected":boolean,"files":[],"legitimate":boolean,"reasoning":"..."},"testFailureDiagnosis":null,"acceptanceCriteria":{"allMet":boolean,"criteria":[]},"quality":{"rating":"good"|"acceptable"|"poor","issues":[]},"fixes":[],"reasoning":"..."}`
     );
+  }
+
+  private buildNaxArtifactsSection(
+    variant: "standard" | "lite" | undefined,
+    isolation: "strict" | "lite" | undefined,
+    configReadable: boolean,
+  ): string {
+    const options = this.configRoot_ === undefined ? undefined : { configReadable };
+    return buildNaxArtifactsSection(this.role as GuardrailRole, variant, isolation, options);
   }
 
   private async isConfigReadable(): Promise<boolean> {
