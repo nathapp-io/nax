@@ -3,7 +3,7 @@
   "feature": "config-read-gate",
   "branchName": "feat/config-read-gate",
   "createdAt": "2026-10-11T00:00:00.000Z",
-  "updatedAt": "2026-10-11T14:41:20.081Z",
+  "updatedAt": "2026-10-11T14:59:03.801Z",
   "userStories": [
     {
       "id": "US-001",
@@ -38,8 +38,8 @@
         "config"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -102,7 +102,10 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Security-sensitive reporting of credential findings across precheck orchestration, command trust gate and CLI without leaking values."
+        "reasoning": "Security-sensitive reporting of credential findings across precheck orchestration, command trust gate and CLI without leaking values.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/precheck/index.ts",
@@ -123,7 +126,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "e048fda79ac583fb3f4ccf54ee7be876b579be09"
     },
     {
       "id": "US-003",
