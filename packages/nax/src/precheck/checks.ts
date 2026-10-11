@@ -23,6 +23,7 @@ export {
   checkTypecheckCommand,
   checkWorkingTreeClean,
 } from "./checks-blockers";
+export { _configSecretsCheckDeps, checkConfigSecrets } from "./checks-config-secrets";
 // Model-resolution precheck (US-1984) — lives in its own module so the
 // resolver seam (`_modelResolutionDeps`) can be injected without touching
 // checks-blockers, which is a stable Tier-1 barrel.

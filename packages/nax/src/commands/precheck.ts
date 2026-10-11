@@ -47,6 +47,7 @@ export async function precheckCommand(options: PrecheckOptions): Promise<void> {
     const config = await loadConfig(resolved.projectDir);
     const result = await runEnvironmentPrecheck(config, resolved.projectDir, { format });
     process.exit(result.passed ? EXIT_CODES.SUCCESS : EXIT_CODES.BLOCKER);
+    return;
   }
 
   // Get feature directory

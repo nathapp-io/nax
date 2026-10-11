@@ -14,6 +14,7 @@ export {
   curatorGc,
   curatorStatus,
 } from "./curator";
+export { _doctorDeps, doctorCommand } from "./doctor";
 export { type LogsOptions, logsCommand } from "./logs";
 export { type FollowLogsDeps, followLogs } from "./logs-formatter";
 export type { MigrateCandidate, MigrateOptions } from "./migrate";
