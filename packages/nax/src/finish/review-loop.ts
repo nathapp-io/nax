@@ -157,6 +157,7 @@ async function runOneRound(state: FinishState, deps: ReviewLoopDeps, limit: numb
     spec: () => ops.reviewSpec(state, inputs),
     quality: () => ops.reviewBranch(state, inputs),
   });
+  deps.assertNotAborted(); // a deadline during the lenses must not reach the advisor or a fix
   await recordLensRounds(state, deps, round);
   noteRound(state, round);
   const merged = mergeFindings(round.spec.findings, round.quality.findings);

@@ -206,3 +206,46 @@ describe("acceptance facts", () => {
     });
   });
 });
+
+describe("a fix session that throws counts as used and the loop continues", () => {
+  test("acceptance fix throws: the attempt is spent, review and gates still run", async () => {
+    await withTempDir(async (dir) => {
+      const { deps, trail, state } = makeMachineHarness({
+        auditDir: dir,
+        acceptanceExit: (call) => (call === 1 ? 1 : 0),
+        ops: {
+          fix: async (phase) => {
+            trail.push(`fix:${phase}`);
+            throw new Error("session died");
+          },
+        },
+      });
+      const result = await runFinishMachine(state, deps);
+      expect(state.phases.acceptance.fixAttempts).toBe(1);
+      expect(trail).toContain("review:spec");
+      expect(trail).toContain("quality-run:test");
+      expect(result.facts?.reviewsMissing).toEqual([]);
+      expect(result.outcome).toBe("ready");
+    });
+  });
+
+  test("gate fix throws: attempts are counted up to the cap, then a draft", async () => {
+    await withTempDir(async (dir) => {
+      const { deps, trail, state } = makeMachineHarness({
+        auditDir: dir,
+        qualityExit: () => 1,
+        ops: {
+          fix: async (phase) => {
+            trail.push(`fix:${phase}`);
+            throw new Error("session died");
+          },
+        },
+      });
+      const result = await runFinishMachine(state, deps);
+      expect(count(trail, "fix:gate")).toBe(3);
+      expect(state.phases.gate.fixAttempts).toBe(3);
+      expect(result.outcome).toBe("draft");
+      expect(result.reason).toContain("gates red: test");
+    });
+  });
+});

@@ -285,6 +285,44 @@ describe("runReviewLoop failures and advisor-off judgment", () => {
   });
 });
 
+describe("runReviewLoop deadline", () => {
+  test("an abort that lands during the lenses stops before the advisor is asked", async () => {
+    await withTempDir(async (dir) => {
+      stubGit({ dirty: false, head: 1 });
+      let aborted = false;
+      let judgedCalls = 0;
+      const advise: FinishAdvisor = {
+        judgedEnabled: true,
+        approvalEnabled: false,
+        judged: async () => {
+          judgedCalls += 1;
+          return { toFix: [], advice: [], unresolved: [] };
+        },
+        approval: async () => ({ action: "unavailable", rationale: "n/a" }),
+        commitLedger: async () => {},
+      };
+      const ops = makeFinishOps(
+        [],
+        { quality: [q("Design call", { judgment: true })] },
+        {
+          reviewSpec: async () => {
+            aborted = true;
+            return { findings: [], covered: [] };
+          },
+        },
+      );
+      const d = {
+        ...deps(ops, dir, advise),
+        assertNotAborted: () => {
+          if (aborted) throw new Error("aborted");
+        },
+      };
+      await expect(runReviewLoop(makeFinishState(), d)).rejects.toThrow("aborted");
+      expect(judgedCalls).toBe(0);
+    });
+  });
+});
+
 describe("runReviewLoop lens bookkeeping", () => {
   test("one lens missing: the other lens is still fixed and missingLenses records it", async () => {
     await withTempDir(async (dir) => {

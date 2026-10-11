@@ -62,7 +62,7 @@ async function runPreconditions(state: FinishState, deps: FinishMachineDeps): Pr
       skipReason: "already-finished",
       ...(context.prUrl ? { url: context.prUrl } : {}),
     };
-    await writeResult(deps.audit, result);
+    await safeWriteResult(deps, result);
     return result;
   }
   if (context.route === "nothing-to-finish") {
@@ -73,7 +73,7 @@ async function runPreconditions(state: FinishState, deps: FinishMachineDeps): Pr
       ...(context.skipReason ? { skipReason: context.skipReason } : {}),
       ...(context.prUrl ? { url: context.prUrl } : {}),
     };
-    await writeResult(deps.audit, result);
+    await safeWriteResult(deps, result);
     return result;
   }
   return null;
@@ -205,7 +205,7 @@ async function finalizeResult(
     ...(sha ? { headSha: sha } : {}),
     ...(url ? { url } : {}),
   };
-  await writeResult(deps.audit, result);
+  await safeWriteResult(deps, result);
   return result;
 }
 

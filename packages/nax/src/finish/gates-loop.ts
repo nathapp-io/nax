@@ -59,7 +59,18 @@ async function fixOnce(
   gates: QualityGateResult,
 ): Promise<{ committed: boolean; changed: boolean }> {
   assertNotAborted(deps);
-  const fixOutcome = await deps.ops.fix("gate", { state, failing: gates.failing, gateOutput: gates.output });
+  let fixOutcome: Awaited<ReturnType<FinishMachineDeps["ops"]["fix"]>>;
+  try {
+    fixOutcome = await deps.ops.fix("gate", { state, failing: gates.failing, gateOutput: gates.output });
+  } catch (err) {
+    assertNotAborted(deps); // a deadline or abort is not a failed fix
+    getSafeLogger()?.warn("finish", "Gate fix session failed; counted as used", {
+      storyId: "_run",
+      error: errorMessage(err),
+    });
+    state.phases.gate.fixAttempts += 1;
+    return { committed: false, changed: false };
+  }
   const message = buildFixCommitMessage(
     "gate",
     state.feature,

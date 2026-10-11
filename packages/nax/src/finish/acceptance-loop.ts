@@ -44,7 +44,18 @@ async function recordGateOutcome(state: FinishState, deps: FinishMachineDeps): P
 
 async function fixOnce(state: FinishState, deps: FinishMachineDeps, output: string): Promise<void> {
   assertNotAborted(deps);
-  const fixOutcome = await deps.ops.fix("acceptance", { state, acceptanceOutput: output });
+  let fixOutcome: Awaited<ReturnType<FinishMachineDeps["ops"]["fix"]>>;
+  try {
+    fixOutcome = await deps.ops.fix("acceptance", { state, acceptanceOutput: output });
+  } catch (err) {
+    assertNotAborted(deps); // a deadline or abort is not a failed fix
+    getSafeLogger()?.warn("finish", "Acceptance fix session failed; counted as used", {
+      storyId: "_run",
+      error: errorMessage(err),
+    });
+    state.phases.acceptance.fixAttempts += 1;
+    return;
+  }
   const message = buildFixCommitMessage(
     "acceptance",
     state.feature,

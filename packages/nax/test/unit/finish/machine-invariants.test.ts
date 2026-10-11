@@ -2,7 +2,9 @@
  * Invariants of `runFinishMachine` that hold whatever the stubs do: aborts and deadlines, a throw from any op
  * or runner, nothing-verified-is-not-a-pass, and the preconditions that stand the machine down.
  */
+
 import { afterEach, describe, expect, test } from "bun:test";
+import { join } from "node:path";
 import { makeFinishContext, makeMachineHarness, restoreFinishMachineStubs, withTempDir } from "@test/helpers";
 import type { Finding, FinishReviewOutput } from "@/finish";
 import { readLedger, runFinishMachine } from "@/finish";
@@ -153,6 +155,21 @@ describe("throws become a draft or a failure, never an escalation", () => {
       expect(result.reason).toBe('Failed to create PR/MR for "feat/x": gh: command not found');
       expect(trail).not.toContain("finalizeDraftPr");
       expect(await readLedger(deps.audit.auditDir)).toBeNull();
+    });
+  });
+});
+
+describe("a lost result file", () => {
+  test("a writeResult failure after finalize does not finalize twice and keeps the finalized outcome", async () => {
+    await withTempDir(async (dir) => {
+      const blocker = join(dir, "blocker");
+      await Bun.write(blocker, "not a directory");
+      const { deps, trail, state } = makeMachineHarness({ auditDir: join(blocker, "audit") });
+      const result = await runFinishMachine(state, deps);
+      expect(result.status).toBe("promoted");
+      expect(result.outcome).toBe("ready");
+      expect(trail.filter((t) => t === "promotePr")).toHaveLength(1);
+      expect(trail).not.toContain("finalizeDraftPr");
     });
   });
 });
