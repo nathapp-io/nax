@@ -93,6 +93,8 @@ export {
   TITLE_MAX_CHARS,
   TITLE_OPEN_TAG,
 } from "./pr-title";
+export type { ApprovalAction, Resolution } from "./resolve";
+export { approvalFacts, computeFacts, draftReason, isClean, resolve } from "./resolve";
 export {
   auditGaps,
   buildFixPrompt,
