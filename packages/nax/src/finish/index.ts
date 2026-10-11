@@ -107,6 +107,8 @@ export {
   WORKER_PROTOCOL_MECHANICS,
 } from "./review";
 export { isFinishReviewShape, MISSING_REVIEW, parseFinishReviewReply } from "./review-json";
+export type { ReviewRoundResult } from "./review-round";
+export { runReviewRound } from "./review-round";
 export type { ReviewOutcome, RoutedReview } from "./route";
 export {
   gateCommitRoute,
