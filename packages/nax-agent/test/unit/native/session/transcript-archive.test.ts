@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmod, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { redactSecrets } from "#src/internal/redact";
 import { createMemoryTranscriptStore } from "#src/native/session/memory-transcript-store";
 import {
   closeNativeSession,
@@ -18,12 +19,7 @@ async function tempDir(): Promise<string> {
   return dir;
 }
 afterEach(async () => {
-  await Promise.all(
-    dirs.splice(0).map(async (d) => {
-      await chmod(d, 0o755).catch(() => {});
-      await rm(d, { recursive: true, force: true });
-    }),
-  );
+  await Promise.all(dirs.splice(0).map((d) => rm(d, { recursive: true, force: true })));
 });
 
 const SECRET = "sk-abcdefghijklmnopqrstuvwxyz0123456789";
@@ -58,12 +54,10 @@ async function openWithLive(name: string, live: string, extra: Partial<OpenSessi
 const archived = async (dir: string) => (await readdir(dir)).filter((f) => f.startsWith("s.transcript.2"));
 
 describe("transcript archive on close", () => {
-  test("disabled: writes no archive and keeps today's close behaviour", async () => {
+  test("disabled: no archive option keeps today's close behaviour and deletes the live transcript", async () => {
     const live = await tempDir();
-    const archive = await tempDir();
     const { state, handle } = await openWithLive("s", live);
     await closeNativeSession(state, handle);
-    expect(await readdir(archive)).toEqual([]);
     expect(await readdir(live)).toEqual([]);
   });
 
@@ -76,8 +70,7 @@ describe("transcript archive on close", () => {
     expect(files).toHaveLength(1);
     expect(files[0]).toMatch(/^s\.transcript\..+\.json$/);
     const doc = JSON.parse(await readFile(join(archive, files[0] as string), "utf8"));
-    expect(doc.messages).toHaveLength(2);
-    expect(doc.messages[0]).toEqual(LIVE_DOC.messages[0]);
+    expect(doc.messages).toEqual(redactSecrets(LIVE_DOC).messages);
     expect(await readdir(live)).toEqual([]);
   });
 
@@ -101,6 +94,7 @@ describe("transcript archive on close", () => {
     const files = await archived(archive);
     const raw = await readFile(join(archive, files[0] as string), "utf8");
     expect(raw).not.toContain(SECRET);
+    expect(raw).toContain("[REDACTED]");
     expect(raw).toContain("tool_result");
   });
 
@@ -133,22 +127,35 @@ describe("transcript archive on close", () => {
   test("an unwritable archive dir does not change close semantics", async () => {
     const live = await tempDir();
     const parent = await tempDir();
-    await chmod(parent, 0o500);
+    // A regular file cannot hold a child directory, so mkdir fails with ENOTDIR
+    // even when running as root (unlike a chmod-based unwritable dir).
+    const filePath = join(parent, "not-a-dir");
+    await writeFile(filePath, "x");
     const { state, handle } = await openWithLive("s", live, {
-      transcriptArchive: { dir: join(parent, "nested", "out"), maxRetained: 5 },
+      transcriptArchive: { dir: join(filePath, "archive"), maxRetained: 5 },
     });
     await expect(closeNativeSession(state, handle)).resolves.toBeUndefined();
+    expect(await readdir(parent)).toEqual(["not-a-dir"]);
     expect(await readdir(live)).toEqual([]);
   });
 
   test("maxRetained 2 keeps only the two newest of three closes", async () => {
     const live = await tempDir();
     const archive = await tempDir();
+    const created: string[] = [];
     for (let i = 0; i < 3; i++) {
+      const before = await archived(archive);
       const { state, handle } = await openWithLive("s", live, { transcriptArchive: { dir: archive, maxRetained: 2 } });
       await closeNativeSession(state, handle);
+      const fresh = (await archived(archive)).filter((f) => !before.includes(f));
+      expect(fresh).toHaveLength(1);
+      created.push(fresh[0] as string);
+      // Stamps have 1 ms resolution; the pause keeps the three names distinct and mtimes ordered.
       await new Promise((r) => setTimeout(r, 15));
     }
-    expect(await archived(archive)).toHaveLength(2);
+    expect(new Set(created).size).toBe(3);
+    const kept = await archived(archive);
+    expect(kept.sort()).toEqual([created[1], created[2]].sort());
+    expect(kept).not.toContain(created[0]);
   });
 });
