@@ -128,6 +128,12 @@ describe("knownSessionRole", () => {
   });
 });
 
+describe("nbf-worth-check role (US-001)", () => {
+  test("US-001 AC16: isSessionRole accepts nbf-worth-check", () => {
+    expect(isSessionRole("nbf-worth-check")).toBe(true);
+  });
+});
+
 describe("advisor role (A1)", () => {
   test("advisor is a known session role", () => {
     expect(isSessionRole("advisor")).toBe(true);

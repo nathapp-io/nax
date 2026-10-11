@@ -1,0 +1,16 @@
+{
+  "generatedAt": "2026-10-10T14:22:51.572Z",
+  "acFingerprint": "sha256:2e0a69ce6ae61d5fe02741a75572021d27d827fd1960c79a40d4eebe6f583fb6",
+  "layoutFingerprint": "sha256:4076bb39b6a71d902cb67053a3a8088609b280e369c050ed7471a52fdbb8f0e6",
+  "storyCount": 5,
+  "acCount": 75,
+  "generator": "nax",
+  "coverage": [
+    {
+      "testPath": "packages/nax/.nax/features/nbf-worth-check/.nax-acceptance.test.ts",
+      "expected": 75,
+      "found": 75,
+      "missing": []
+    }
+  ]
+}

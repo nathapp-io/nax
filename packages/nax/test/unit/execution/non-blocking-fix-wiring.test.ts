@@ -1,4 +1,9 @@
 // test/unit/execution/non-blocking-fix-wiring.test.ts
+// Intentional layout deviation from the feature spec: the execution runner lives in
+// src/execution/nbf-worth-check.ts, while its audit writer lives with the operations
+// in src/operations/nbf-worth-check-audit.ts. Runner, audit, and production wiring
+// coverage are consolidated in test/unit/operations/nbf-worth-check.test.ts and this
+// file respectively; separate story-orchestrator runner/audit test files add no seam.
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import {
   assertDefined,
@@ -17,6 +22,9 @@ import { _storyOrchestratorDeps, buildPlanForStrategy } from "@/execution";
 import type { NonBlockingFixArgs, NonBlockingFixDeps } from "@/execution/non-blocking-fix";
 import { actionableAdvisoryFindings, runNonBlockingFix, shouldRunNonBlockingFix } from "@/execution/non-blocking-fix";
 import type { Finding } from "@/findings";
+import { addSink, initLogger, resetLogger } from "@/logger";
+import { _nbfWorthCheckDeps } from "@/operations/nbf-worth-check";
+import { _nbfWorthCheckAuditDeps } from "@/operations/nbf-worth-check-audit";
 import type { NaxRuntime } from "@/runtime";
 import { _rollbackDeps } from "@/tdd";
 
@@ -95,7 +103,22 @@ describe("non-blocking-fix runtime wiring", () => {
           success: true,
           passed: true,
           advisoryFindings: [
-            { source: "adversarial-review", severity: "warning", category: "input", message: "advisory finding" },
+            {
+              source: "adversarial-review",
+              severity: "warning",
+              category: "input",
+              file: "src/a.ts",
+              line: 12,
+              message: "empty items still fires MARK_DELIVERING",
+            },
+            {
+              source: "adversarial-review",
+              severity: "info",
+              category: "convention",
+              file: "src/b.ts",
+              line: 3,
+              message: "stale header comment",
+            },
           ],
         };
       }
@@ -120,6 +143,9 @@ describe("non-blocking-fix runtime wiring", () => {
   });
 
   test("story orchestrator routes non-blocking fix through injected runtime wiring with measureSourceDiff", async () => {
+    const originalWorthCall = _nbfWorthCheckDeps.callOp;
+    const worthCall = mock(async () => ({ parsed: true as const, verdicts: [] }));
+    _nbfWorthCheckDeps.callOp = worthCall as typeof _nbfWorthCheckDeps.callOp;
     const runNonBlockingFix = mock(async (_args: NonBlockingFixArgs, _overrides?: Partial<NonBlockingFixDeps>) => ({
       ran: true,
       kept: true,
@@ -174,6 +200,110 @@ describe("non-blocking-fix runtime wiring", () => {
     expect(runNonBlockingFix).toHaveBeenCalledTimes(1);
     const deps = runNonBlockingFix.mock.calls[0]?.[1] as { measureSourceDiff?: unknown } | undefined;
     expect(typeof deps?.measureSourceDiff).toBe("function");
+    expect(runNonBlockingFix.mock.calls[0]?.[0].advisoryFindings.map((finding) => finding.message)).toEqual([
+      "empty items still fires MARK_DELIVERING",
+      "stale header comment",
+    ]);
+    expect(worthCall).not.toHaveBeenCalled();
+    _nbfWorthCheckDeps.callOp = originalWorthCall;
+  });
+
+  test.each([
+    {
+      mode: "on" as const,
+      verdicts: [
+        { index: 1, verdict: "fix" as const, reason: "r1" },
+        { index: 2, verdict: "skip" as const, reason: "nit" },
+      ],
+      expected: ["empty items still fires MARK_DELIVERING"],
+    },
+    {
+      mode: "on" as const,
+      verdicts: [
+        { index: 1, verdict: "skip" as const, reason: "nit" },
+        { index: 2, verdict: "skip" as const, reason: "nit" },
+      ],
+      expected: [],
+    },
+    {
+      mode: "shadow" as const,
+      verdicts: [
+        { index: 1, verdict: "skip" as const, reason: "nit" },
+        { index: 2, verdict: "skip" as const, reason: "nit" },
+      ],
+      expected: ["empty items still fires MARK_DELIVERING", "stale header comment"],
+    },
+  ])("US-005 worth-check mode $mode routes the expected findings", async ({ mode, verdicts, expected }) => {
+    const originalCallOp = _nbfWorthCheckDeps.callOp;
+    const originalAuditWrite = _nbfWorthCheckAuditDeps.write;
+    const runNonBlockingFix = mock(async (args: NonBlockingFixArgs) => ({
+      ran: true,
+      kept: args.advisoryFindings.length > 0,
+      restored: false,
+    }));
+    _storyOrchestratorDeps.runNonBlockingFix = runNonBlockingFix;
+    const worthCall = mock(async () => ({ parsed: true as const, verdicts }));
+    _nbfWorthCheckDeps.callOp = worthCall as typeof _nbfWorthCheckDeps.callOp;
+    const entries: Array<{ message: string }> = [];
+    let removeSink: (() => void) | undefined;
+    _nbfWorthCheckAuditDeps.write = async () => {};
+    try {
+      const config = makeNaxConfig({
+        quality: { autofix: { enabled: true } },
+        execution: { rectification: { enabled: true, maxAttemptsTotal: 2 } },
+        review: {
+          nonBlockingFix: {
+            enabled: true,
+            scope: "triage",
+            regressionAttempts: 1,
+            verifierGuard: true,
+            sourceDiffCap: { maxFiles: 10, maxLines: 500 },
+            sources: ["adversarial"],
+            worthCheck: { mode },
+          },
+          adversarial: {
+            model: "balanced",
+            diffMode: "ref",
+            rules: [],
+            timeoutMs: 600_000,
+            parallel: false,
+            maxConcurrentSessions: 2,
+          },
+        },
+      });
+      const story = makeStory({ id: "US-002", title: "Deliver orders", attempts: 1 });
+      runtime = makeTestRuntime({ config });
+      initLogger({ level: "silent" });
+      removeSink = addSink((entry) => entries.push({ message: entry.message }));
+      const ctx = makeMockCallContext({ runtime, story });
+      const adversarialConfig = config.review.adversarial;
+      assertDefined(adversarialConfig, "config.review.adversarial");
+      const inputs = makeMockPlanInputs({
+        story,
+        implementer: { story },
+        fullSuiteGate: { story, workdir: "/tmp/test" },
+        verifier: { story },
+        adversarialReview: { story, workdir: "/tmp/test", adversarialConfig, mode: adversarialConfig.diffMode },
+        rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false },
+      });
+      const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+      await plan.run();
+      expect(worthCall).toHaveBeenCalledTimes(1);
+      if (expected.length === 0) {
+        expect(runNonBlockingFix).not.toHaveBeenCalled();
+        expect(entries.some(({ message }) => message === "all advisory findings skipped — NBF not run")).toBe(true);
+      } else {
+        expect(runNonBlockingFix).toHaveBeenCalledTimes(1);
+        expect(runNonBlockingFix.mock.calls[0]?.[0].advisoryFindings.map((finding) => finding.message)).toEqual([
+          ...expected,
+        ]);
+      }
+    } finally {
+      removeSink?.();
+      resetLogger();
+      _nbfWorthCheckDeps.callOp = originalCallOp;
+      _nbfWorthCheckAuditDeps.write = originalAuditWrite;
+    }
   });
 
   test("non-blocking fix is SKIPPED when every advisory finding requires no action (#1359)", async () => {
@@ -264,6 +394,11 @@ describe("non-blocking-fix runtime wiring", () => {
     // and the story escalated on the real failures. ADR-024 §5: nbf only acts on an
     // already-green (adversarial-passed) story; its restore-to-adversarial-passed floor is
     // meaningless when the entry state is red.
+    const originalWorthCall = _nbfWorthCheckDeps.callOp;
+    const originalAuditWrite = _nbfWorthCheckAuditDeps.write;
+    const worthCall = mock(async () => ({ parsed: true as const, verdicts: [] }));
+    _nbfWorthCheckDeps.callOp = worthCall as typeof _nbfWorthCheckDeps.callOp;
+    _nbfWorthCheckAuditDeps.write = async () => {};
     const runNonBlockingFix = mock(async () => ({ ran: true, kept: true, restored: false }));
     _storyOrchestratorDeps.runNonBlockingFix = runNonBlockingFix;
 
@@ -304,6 +439,7 @@ describe("non-blocking-fix runtime wiring", () => {
           verifierGuard: true,
           sourceDiffCap: { maxFiles: 10, maxLines: 500 },
           sources: ["adversarial"],
+          worthCheck: { mode: "on" },
         },
         adversarial: {
           model: "balanced",
@@ -338,6 +474,9 @@ describe("non-blocking-fix runtime wiring", () => {
     await plan.run();
 
     expect(runNonBlockingFix).not.toHaveBeenCalled();
+    expect(worthCall).not.toHaveBeenCalled();
+    _nbfWorthCheckDeps.callOp = originalWorthCall;
+    _nbfWorthCheckAuditDeps.write = originalAuditWrite;
   });
 
   test("non-blocking fix is SKIPPED when every advisory finding is stamped retired (#1966)", async () => {

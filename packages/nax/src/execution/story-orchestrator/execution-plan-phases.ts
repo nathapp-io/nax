@@ -24,6 +24,7 @@ import { getSafeLogger } from "@/logger";
 import type { CallContext } from "@/operations";
 import type { QuarantineMemo } from "@/verification";
 import { hydrateFromResumePlan } from "../checkpoint/resume-hydrate";
+import { runNbfWorthCheck } from "../nbf-worth-check";
 import { nonBlockingExcludePhases, nonBlockingExtraPhases } from "../non-blocking-fix";
 import { buildNbfDeps } from "./nbf-deps";
 import { deriveNbfSeed } from "./nbf-seed";
@@ -525,16 +526,20 @@ export async function maybeRunNonBlockingFix(
     !!nbfCfg &&
     storyCurrentlyGreen &&
     !!state.rectification &&
+    state.rectification.maxAttempts > 0 &&
     !!ctx.storyId &&
     (!!state.adversarialReview || !!state.semanticReview) &&
     seed.shouldRun;
   if (!shouldRunNbf || !nbfCfg) return;
 
+  const findings = await runNbfWorthCheck({ ctx, findings: seed.findings, cfg: nbfCfg.worthCheck });
+  if (findings.length === 0) return;
+
   await _storyOrchestratorDeps.runNonBlockingFix(
     {
       workdir: ctx.packageDir,
       storyId: ctx.storyId as string,
-      advisoryFindings: seed.findings,
+      advisoryFindings: findings,
       cfg: nbfCfg,
       phaseOutputs,
       phaseCosts,
@@ -543,7 +548,7 @@ export async function maybeRunNonBlockingFix(
       blockedWorktrees: ctx.runtime.dirtyWorktrees,
       runRectify: (maxAttempts, nbfFlakeTriage) =>
         runRectification(ctx, state, phaseCosts, phaseOutputs, {
-          initialFindings: seed.findings,
+          initialFindings: findings,
           nbfFlakeTriage,
           strategies: state.nonBlockingFixStrategies ?? [],
           excludePhaseKinds: nonBlockingExcludePhases(),
@@ -567,7 +572,7 @@ export async function maybeRunNonBlockingFix(
           quarantineMemo,
         }),
     },
-    buildNbfDeps({ ctx, findings: seed.findings }),
+    buildNbfDeps({ ctx, findings }),
   );
 }
 

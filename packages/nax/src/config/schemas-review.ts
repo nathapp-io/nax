@@ -166,6 +166,12 @@ export const AdversarialReviewConfigSchema = z.object({
   // `review.nonBlockingFix` by `migrateLegacyNonBlockingFix` in the config loader.
 });
 
+export const NbfWorthCheckConfigSchema = z.object({
+  mode: z.enum(["off", "shadow", "on"]).default("off"),
+  model: ConfiguredModelSchema.optional(),
+  timeoutMs: z.number().int().positive().default(300_000),
+});
+
 /**
  * ADR-024 — Non-blocking best-effort auto-fix over sub-threshold (warning/info)
  * review findings, run after the seeded reviewers pass. Never blocks the story;
@@ -231,6 +237,8 @@ export const NonBlockingFixConfigSchema = z.object({
       maxLines: z.number().int().min(0).default(500),
     })
     .default({ maxFiles: 10, maxLines: 500 }),
+  /** Optional worth-check judge configuration; absent preserves existing NBF behavior. */
+  worthCheck: NbfWorthCheckConfigSchema.optional(),
 });
 
 /**

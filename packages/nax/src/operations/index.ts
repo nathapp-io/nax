@@ -98,6 +98,15 @@ export {
 } from "./mechanical-lintfix-strategy";
 export type { MutationCheckDeps, MutationCheckInput, MutationCheckOutput } from "./mutation-check";
 export { _mutationCheckDeps, mutationCheckOp } from "./mutation-check";
+export type {
+  NbfWorthCheckOpInput,
+  NbfWorthCheckOpOutput,
+  NbfWorthCheckPendingStory,
+  NbfWorthVerdict,
+} from "./nbf-worth-check";
+export { _nbfWorthCheckDeps, nbfWorthCheckOp, parseNbfWorthReply } from "./nbf-worth-check";
+export type { NbfWorthCheckAuditFile, NbfWorthCheckRecord } from "./nbf-worth-check-audit";
+export { _nbfWorthCheckAuditDeps, recordNbfWorthCheck } from "./nbf-worth-check-audit";
 export type { PlanInteractiveInput } from "./plan";
 export { _planInteractiveDeps, planInteractiveOp } from "./plan";
 export {

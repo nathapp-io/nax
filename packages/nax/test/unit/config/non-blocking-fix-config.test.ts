@@ -105,6 +105,23 @@ describe("NonBlockingFixConfigSchema — defaults and validation (AC1, AC2)", ()
   });
 });
 
+describe("NonBlockingFixConfigSchema — worthCheck (US-001)", () => {
+  test("US-001 AC17: leaves worthCheck undefined when the optional block is absent", () => {
+    expect(NonBlockingFixConfigSchema.parse({}).worthCheck).toBeUndefined();
+  });
+
+  test("US-001 AC18: applies worth-check defaults when its config object is empty", () => {
+    expect(NonBlockingFixConfigSchema.parse({ worthCheck: {} }).worthCheck).toEqual({
+      mode: "off",
+      timeoutMs: 300_000,
+    });
+  });
+
+  test("US-001 AC19: rejects an unsupported worth-check mode", () => {
+    expect(NonBlockingFixConfigSchema.safeParse({ worthCheck: { mode: "maybe" } }).success).toBe(false);
+  });
+});
+
 describe("ReviewConfigSchema — nonBlockingFix is a top-level optional field (AC5, AC10)", () => {
   test("AC5: review.nonBlockingFix omitted — resolved slice is undefined and no nbf defaults are synthesised elsewhere", () => {
     const parsed = ReviewConfigSchema.parse({
