@@ -32,6 +32,8 @@ import {
   type ToolAuditSink,
   type ToolGrant,
   type ToolPatternNarrowing,
+  type ToolSurfaceDraft,
+  type ToolSurfaceRecord,
 } from "#src/tools/index";
 import type { OwnedPathsPolicy } from "#src/tools/owned-paths";
 import { resolveBashSupport } from "./coding-tool-bash.ts";
@@ -42,6 +44,17 @@ export interface CodingToolSupport {
   readonly runtime: CodingToolRuntime;
   readonly tools: readonly CodingTool[];
   readonly auditSink: ToolAuditSink;
+  /** The session's MCP tool surface (nax#2410 D4), stamped into the audit file at flush. */
+  readonly toolSurface?: ToolSurfaceRecord;
+  /**
+   * The policy-filtered provider-tool delivery for an ACP session (nax#2444 D4),
+   * attached by the nax resolver; the ACP adapter adapts `tools` to EmbedderTools.
+   */
+  readonly acpDelivery?: {
+    readonly tools: readonly CodingTool[];
+    readonly declaredTools: readonly string[];
+    readonly surface: ToolSurfaceDraft;
+  };
 }
 
 export function buildCodingToolSupport(args: {
@@ -99,6 +112,8 @@ export function buildCodingToolSupport(args: {
   /** `quality.shell` — the shell the Bash tool spawns. Defaults to /bin/sh. */
   shell?: string;
   auditDir?: string;
+  /** Stamped into the audit file at flush (nax#2410 D4); absent ⇒ no surface block. */
+  toolSurface?: ToolSurfaceRecord;
   sessionName?: string;
   header?: import("../tools/tool-audit.ts").ToolAuditHeader;
   callId?: string;
@@ -213,6 +228,7 @@ export function buildCodingToolSupport(args: {
           dir: args.auditDir,
           sessionName: args.sessionName ?? "unattached",
           ...(args.header ? { header: args.header } : {}),
+          ...(args.toolSurface !== undefined ? { toolSurface: args.toolSurface } : {}),
         })
       : createNoOpToolAuditSink();
   const runtime = createCodingToolRuntime({
@@ -280,7 +296,7 @@ export function buildCodingToolSupport(args: {
     });
   }
   if (tools.length === 0) return undefined;
-  return { runtime, tools, auditSink: sink };
+  return { runtime, tools, auditSink: sink, ...(args.toolSurface !== undefined ? { toolSurface: args.toolSurface } : {}) };
 }
 
 /**

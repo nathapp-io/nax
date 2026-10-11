@@ -39,6 +39,7 @@ import {
   UNIVERSAL_CODING_TOOLS,
 } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "@/logger";
+import { buildToolSurfaceDraft, filterAcpDelivery, finishToolSurface } from "@/agents/tool-surface";
 import { loadConfigForPackage, type NaxConfig, scanConfigSecrets } from "../config";
 import { toolAuditDir } from "../config/paths";
 import { type ResolvedPermissions, resolvePermissions } from "../config/permissions";
@@ -523,9 +524,34 @@ export async function resolveCodingToolSupport(
   const denyRules = [...denied.grants, ...expandMcpRuleGrants(denied.mcpPatterns, providerResult.entries)];
   const askRules = [...asked.grants, ...expandMcpRuleGrants(asked.mcpPatterns, providerResult.entries)];
   const launcher = await resolveDispatchLauncher(options, declared, sessionName);
-  return buildCodingToolSupport({
+  const stage = options.pipelineStage ?? "run";
+  // nax#2410 D4: the surface record rides the audit file; nax#2444 D4: the ACP
+  // delivery set is the deny/ask enforcement point (claude pre-approves what it
+  // is handed, so delivery is the last chance to withhold).
+  const providerSignal =
+    providerResult.entries.length > 0 ||
+    providerResult.skipped.length > 0 ||
+    providerResult.withheld.length > 0 ||
+    providerResult.failures.length > 0;
+  const delivery =
+    providerSignal && providerScopeHasProviders(resolved.providerScope)
+      ? filterAcpDelivery(providerResult, { deniedMcp: denied.mcpPatterns, askedMcp: asked.mcpPatterns })
+      : undefined;
+  const acpDraft = delivery
+    ? buildToolSurfaceDraft({
+        stage,
+        declaredTools: declaredWithProviders,
+        providerResult,
+        extraWithheld: delivery.withheldExtra,
+      })
+    : undefined;
+  const toolSurface =
+    providerSignal && providerScopeHasProviders(resolved.providerScope)
+      ? finishToolSurface(buildToolSurfaceDraft({ stage, declaredTools: declaredWithProviders, providerResult }), "native")
+      : undefined;
+  const support = await buildCodingToolSupport({
     root: options.codingToolRoot,
-    pipelineStage: options.pipelineStage ?? "run",
+    pipelineStage: stage,
     // No `repoRoot`: post single-frame redesign (PR2) it equals `root`, so
     // buildCodingToolSupport's `args.repoRoot ?? args.root` fallback supplies it.
     commandCwd,
@@ -557,5 +583,26 @@ export async function resolveCodingToolSupport(
       packageName,
       launcher,
     }),
+    ...(toolSurface !== undefined ? { toolSurface } : {}),
   });
+  if (support === undefined) return undefined;
+  if (acpDraft === undefined) return support;
+  return {
+    ...support,
+    ...(toolSurface !== undefined ? { toolSurface } : {}),
+    ...(delivery
+      ? {
+          acpDelivery: {
+            tools: delivery.tools,
+            declaredTools: declaredWithProviders,
+            surface: acpDraft,
+          },
+        }
+      : {}),
+  };
+}
+
+/** `providerScope !== "none"` — under `none` the resolver never touched the providers. */
+function providerScopeHasProviders(scope: string | undefined): boolean {
+  return (scope ?? "none") !== "none";
 }
