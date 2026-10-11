@@ -3,6 +3,10 @@ import type { TemplateMode } from "@/forge";
 export type { TemplateMode };
 
 export type Severity = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+
+/** Which finish review produced a finding (A4). */
+export type ReviewLens = "spec" | "quality";
+
 export interface Finding {
   severity: Severity;
   title: string;
@@ -18,6 +22,28 @@ export interface Finding {
   judgment?: boolean;
   /** Why this finding needs a human; the escalation reason when it escalates. */
   judgmentReason?: string;
+  /** A4: repo-relative path the finding is about, when it has one. */
+  file?: string;
+  /** A4: line in `file`, when the reviewer gave one. */
+  line?: number;
+  /**
+   * A4: the review that produced it. Set by finish from the producing op, never by the model.
+   * Optional only so pre-A4 `result.json` files still type-check when imported.
+   */
+  source?: ReviewLens;
+}
+
+/** What one A4 finish review op returns. */
+export interface FinishReviewOutput {
+  findings: Finding[];
+  /** Repo-relative paths the reviewer says it read. Telemetry only — never routed on. */
+  covered: string[];
+  /** Branch review only: conventional-commit PR title. */
+  title?: string;
+  /** Branch review only: the PR's "What changed" prose. */
+  summary?: string;
+  /** Set when the op produced no parseable verdict after its retry. */
+  missing?: true;
 }
 
 /** One external definition the reviewer says it opened before judging. */

@@ -101,6 +101,7 @@ export {
   WORKER_PROTOCOL,
   WORKER_PROTOCOL_MECHANICS,
 } from "./review";
+export { isFinishReviewShape, MISSING_REVIEW, parseFinishReviewReply } from "./review-json";
 export type { ReviewOutcome, RoutedReview } from "./route";
 export {
   gateCommitRoute,
@@ -120,9 +121,11 @@ export type {
   FindingDisposition,
   FinishPhase,
   FinishResult,
+  FinishReviewOutput,
   FinishRound,
   FinishTimeouts,
   QualityGateResult,
+  ReviewLens,
   ReviewReport,
   Touchpoint,
 } from "./types";
