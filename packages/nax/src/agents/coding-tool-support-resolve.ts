@@ -324,6 +324,8 @@ export async function resolveProviderContribution(
           tools: [],
           grants: [],
           failures: [] as readonly { providerId: string; reason: string }[],
+          skipped: [],
+          withheld: [],
           providerIdByTool: new Map<string, string>(),
           entries: [],
         };
