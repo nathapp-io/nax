@@ -150,6 +150,14 @@ export interface OpenSessionRequest {
   role?: SessionRole;
   /** Working directory for the session. */
   workdir: string;
+  /**
+   * ACP delivery (nax#2444 D3/D4): policy-filtered provider tools, the op's
+   * materialized declaration and the transport-less surface draft. Native
+   * adapters ignore all three.
+   */
+  providerTools?: readonly import("@nathapp/nax-agent").CodingTool[];
+  declaredTools?: readonly string[];
+  toolSurface?: import("@nathapp/nax-agent").ToolSurfaceDraft;
   /** Native repository instruction scope, independent of the file-tool execution root. */
   instructionDirectories?: readonly string[];
   instructionFileName?: string;

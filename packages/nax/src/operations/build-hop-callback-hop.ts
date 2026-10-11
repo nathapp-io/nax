@@ -27,6 +27,7 @@ import {
   resolveDispatchAuditDir,
 } from "../agents/coding-tool-support-resolve";
 import type { HopKind } from "../agents/manager-types";
+import type { CodingToolSupport } from "@nathapp/nax-agent/internal";
 import { buildRunInteractionHandler } from "../agents/run-interaction-handler";
 import { applyDiffAccessForAgentProtocol, promptWithToolPreamble } from "../agents/tool-preamble";
 import type { AgentResult, AgentRunOptions, SessionHandle, TurnResult } from "../agents/types";
@@ -361,7 +362,7 @@ export interface HopSession {
   openFresh: () => Promise<{ handle: SessionHandle; endpoint: HopEndpoint }>;
 }
 
-export function prepareHopSession(input: HopInvocation): HopSession {
+export function prepareHopSession(input: HopInvocation, codingSupport: CodingToolSupport | undefined): HopSession {
   const { ctx, agentName, resolvedRunOptions, stage } = input;
 
   const sessionName = ctx.sessionManager.nameFor({
@@ -415,6 +416,15 @@ export function prepareHopSession(input: HopInvocation): HopSession {
     storyId: ctx.story.id,
     ...(transcriptOwner !== undefined ? { transcriptOwner } : {}),
     ...(toolAudit !== undefined ? { toolAudit } : {}),
+    // nax#2444 D3/D4: policy-filtered provider tools, the declaration and the
+    // surface draft ride to the adapter; native ignores all three.
+    ...(codingSupport?.acpDelivery !== undefined
+      ? {
+          providerTools: codingSupport.acpDelivery.tools,
+          declaredTools: codingSupport.acpDelivery.declaredTools,
+          toolSurface: codingSupport.acpDelivery.surface,
+        }
+      : {}),
     signal: resolvedRunOptions.abortSignal,
   });
 

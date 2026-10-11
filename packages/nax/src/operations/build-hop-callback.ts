@@ -181,7 +181,7 @@ export function buildHopCallback(
     }
 
     // Session identity + the opener; openFresh returns the endpoint it resolved.
-    const session = prepareHopSession(input);
+    const session = prepareHopSession(input, tooling.tooling.codingSupport);
     // endpoint is undefined exactly when a stale-retry reused a warm handle.
     const acquired = await acquireSessionHandle(input, session);
     // nax#1722: record the descriptor handoff for any swap, sessionId or not.
