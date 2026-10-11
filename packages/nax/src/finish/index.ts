@@ -22,6 +22,8 @@ export {
   type FinishAdvisor,
   type FinishAdvisorDeps,
   type JudgedOutcome,
+  type JudgedResult,
+  judgeWithoutAdvisor,
   runApproval,
 } from "./advise";
 export type { AuditTarget, FinishLedgerEntry, WriteResultOptions } from "./audit";

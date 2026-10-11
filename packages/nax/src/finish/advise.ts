@@ -19,9 +19,11 @@ import { buildMenu, createAdvisor, dedupeKeyFor, findReusable, ledgerPath, readT
 import type { NaxConfig } from "@/config";
 import { isAdvisorCallerEnabled } from "@/config";
 import type { CallContext } from "@/operations";
+import type { Contradiction } from "./merge-findings";
+import { type ApprovalAction, type approvalFacts, draftReason } from "./resolve";
 import type { RoutedReview } from "./route";
 import type { FinishPhaseState, FinishState } from "./state";
-import type { Finding, FinishResult, FinishRound } from "./types";
+import type { Finding, FinishResult, FinishRound, ResolutionFacts } from "./types";
 
 const GIT_TIMEOUT_MS = 30_000;
 
@@ -42,9 +44,24 @@ export interface ApprovalFacts {
   reReviewUsed: boolean;
 }
 
+/** A4 result of judging a merged review round (replaces `JudgedOutcome` at Task 13). */
+export interface JudgedResult {
+  toFix: Finding[];
+  advice: AdviceRef[];
+  /** Hold, advisor unavailable, or (advisor off) judged findings: carried to resolution unfixed. */
+  unresolved: Finding[];
+}
+
 export interface FinishAdvisor {
   judgedEnabled: boolean;
   approvalEnabled: boolean;
+  /** A4: judge the merged round's judgment findings and contradictions. */
+  judgedMerged(findings: Finding[], contradictions: Contradiction[], state: FinishState): Promise<JudgedResult>;
+  /** A4: approve / re-review / hold from the resolution facts. */
+  approvalFromFacts(
+    facts: ResolutionFacts,
+    approval: ReturnType<typeof approvalFacts>,
+  ): Promise<{ action: ApprovalAction; rationale: string }>;
   judged(phase: "spec" | "quality", judged: Finding[], state: FinishState): Promise<JudgedOutcome>;
   approval(state: FinishState, facts: ApprovalFacts): Promise<AdviceResult>;
   commitLedger(state: FinishState): Promise<void>;
@@ -129,11 +146,132 @@ function approvalQuestion(deps: FinishAdvisorDeps, state: FinishState, facts: Ap
   };
 }
 
+const RANK = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 } as const;
+
+function contradictionQuestion(deps: FinishAdvisorDeps, c: Contradiction): QuestionDraft {
+  const where = `${c.spec.file}${c.spec.line ? `:${c.spec.line}` : ""}`;
+  const line = (label: string, f: Finding) => `${label}: ${f.title} — ${f.problem}\nSuggested fix: ${f.fix}`;
+  const sev = RANK[c.spec.severity] >= RANK[c.quality.severity] ? c.spec.severity : c.quality.severity;
+  return {
+    kind: "finish-judgment",
+    feature: deps.feature,
+    dedupeKey: dedupeKeyFor("spec", c.spec),
+    summary: `Spec and quality reviews disagree on ${where}`,
+    evidence: [
+      { source: "finding", text: line("Spec review", c.spec) },
+      { source: "finding", text: line("Quality review", c.quality) },
+    ],
+    options: buildMenu({
+      kind: "finish-judgment",
+      acceptanceEnabledForStory: deps.acceptanceEnabled(),
+      citesSpecSection: "spec",
+    }),
+    findingSeverity: sev,
+  };
+}
+
+/** The deterministic split for a contradiction nobody ruled on: spec is fixed, quality carried. */
+function specFirst(c: Contradiction): { toFix: Finding[]; unresolved: Finding[] } {
+  return { toFix: [c.spec], unresolved: [c.quality] };
+}
+
+async function judgeContradiction(
+  deps: FinishAdvisorDeps,
+  c: Contradiction,
+): Promise<{ ref?: AdviceRef; toFix: Finding[]; unresolved: Finding[] }> {
+  const { decision } = await deps.advisor.advise(contradictionQuestion(deps, c), {
+    findingSeverity: RANK[c.spec.severity] >= RANK[c.quality.severity] ? c.spec.severity : c.quality.severity,
+  });
+  if (!decision) return specFirst(c);
+  const ref: AdviceRef = { decisionId: decision.id, optionId: decision.chosenOptionId, reused: false };
+  const { action } = decision;
+  if (action.type === "fix") {
+    const fix = `${c.spec.fix}\n\nAdvisor ruling (${decision.id}): ${action.instruction}`;
+    return { ref, toFix: [{ ...c.spec, fix }], unresolved: [] };
+  }
+  if (action.type === "waive" || action.type === "supersede") return { ref, toFix: [], unresolved: [] };
+  return { ref, ...specFirst(c) };
+}
+
+/** Advisor off or the judged caller disabled: the deterministic fallback (spec §5 step 4). */
+export function judgeWithoutAdvisor(findings: Finding[], contradictions: Contradiction[]): JudgedResult {
+  return {
+    toFix: contradictions.map((c) => c.spec),
+    advice: [],
+    unresolved: [...findings, ...contradictions.map((c) => c.quality)],
+  };
+}
+
+const EXCERPT_LINES = 20;
+
+function gateLines(facts: ResolutionFacts): string {
+  return facts.gates
+    .map((g) => {
+      const head = `${g.name}: ${g.status}`;
+      if (g.status !== "red" || !g.excerpt) return head;
+      return `${head}\n${g.excerpt.split("\n").slice(0, EXCERPT_LINES).join("\n")}`;
+    })
+    .join("\n");
+}
+
+function approvalEvidence(facts: ResolutionFacts): { source: "review-round"; text: string }[] {
+  const pct = (n: number | null) => (n === null ? "n/a" : `${Math.round(n * 100)}%`);
+  const open = facts.findingsOpen.map(
+    (f) => `[${f.severity}] (${f.source ?? "quality"}) ${f.title} — ${f.file ?? "?"}${f.line ? `:${f.line}` : ""}`,
+  );
+  const texts = [
+    open.length > 0 ? open.join("\n") : "none",
+    `Acceptance: ${facts.acceptance}`,
+    gateLines(facts),
+    `Missing reviews: ${facts.reviewsMissing.length > 0 ? facts.reviewsMissing.join(", ") : "none"}`,
+    `Unreviewed fix commits: ${facts.unreviewedFixCommits.length > 0 ? facts.unreviewedFixCommits.join(", ") : "none"}`,
+    `Coverage: spec ${pct(facts.coverage.spec)}, quality ${pct(facts.coverage.quality)}`,
+  ];
+  return texts.map((text) => ({ source: "review-round", text }));
+}
+
+function approvalQuestionFromFacts(
+  deps: FinishAdvisorDeps,
+  facts: ResolutionFacts,
+  approval: ReturnType<typeof approvalFacts>,
+): QuestionDraft {
+  return {
+    kind: "finish-approval",
+    feature: deps.feature,
+    summary: `Approve the PR for ${deps.feature}? ${draftReason(facts)}`,
+    evidence: approvalEvidence(facts),
+    options: buildMenu({ kind: "finish-approval", ...approval, reReviewPhase: "quality" }),
+  };
+}
+
 export function createFinishAdvisor(deps: FinishAdvisorDeps): FinishAdvisor {
   const git = deps.git ?? ((args, cwd) => gitWithTimeout(args, cwd, GIT_TIMEOUT_MS));
   return {
     judgedEnabled: deps.judgedEnabled,
     approvalEnabled: deps.approvalEnabled,
+    async judgedMerged(findings, contradictions) {
+      const out: JudgedResult = { toFix: [], advice: [], unresolved: [] };
+      for (const f of findings) {
+        const r = await judgeOne(deps, f.source ?? "quality", f);
+        if (r.ref) out.advice.push(r.ref);
+        if (r.keep) out.toFix.push(r.keep);
+        else if (r.hold !== undefined || r.fallback !== undefined) out.unresolved.push(f);
+      }
+      for (const c of contradictions) {
+        const r = await judgeContradiction(deps, c);
+        if (r.ref) out.advice.push(r.ref);
+        out.toFix.push(...r.toFix);
+        out.unresolved.push(...r.unresolved);
+      }
+      return out;
+    },
+    async approvalFromFacts(facts, approval) {
+      const { decision, fallbackReason } = await deps.advisor.advise(approvalQuestionFromFacts(deps, facts, approval));
+      if (!decision) return { action: "unavailable", rationale: fallbackReason ?? "no decision" };
+      const type = decision.action.type;
+      const action = type === "approve" || type === "re-review" ? type : "hold";
+      return { action, rationale: decision.rationale };
+    },
     async judged(phase, judged) {
       const out: JudgedOutcome = { toFix: [], advice: [] };
       for (const f of judged) {

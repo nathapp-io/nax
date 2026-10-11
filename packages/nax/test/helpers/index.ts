@@ -44,6 +44,7 @@ export { fakeAgentManager } from "./fake-agent-manager";
 export type { FakeClock } from "./fake-clock";
 export { makeFakeClock } from "./fake-clock";
 export { makeFinding } from "./finding";
+export { CLEAN_REVIEW, makeFinishContext, makeFinishOps, makeFinishState } from "./finish-machine";
 export { makeFixCycleResult, makeIteration } from "./fix-cycle-result";
 export { waitForFile } from "./fs";
 export { type MockInteractionChain, makeInteractionChain } from "./interaction-chain";
