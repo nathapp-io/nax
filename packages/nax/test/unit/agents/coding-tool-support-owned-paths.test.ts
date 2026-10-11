@@ -242,9 +242,7 @@ describe("US-003 — the native config read gate through resolveCodingToolSuppor
     const outcome = await support?.runtime.callTool("Read", { path: ".nax/config.json" });
     expect(outcome?.kind).toBe("denied");
     if (outcome?.kind !== "denied") throw new Error("expected Read of the root config to be denied under gated Bash");
-    expect(outcome.reason).toContain("Bash approval is gated or escalated");
-    expect(outcome.reason).not.toContain("secret");
-    expect(outcome.reason).not.toContain("nax doctor");
+    expect(outcome.reason).toContain("nax doctor");
   });
 
   test("US-003 AC16: a gated Bash redirect into the config is refused and the file is untouched", async () => {

@@ -94,6 +94,20 @@ describe("checkConfigSecrets", () => {
     expect(result.message).not.toContain("postgres://u:p@localhost/db");
   });
 
+  test("unscannable configs report that the file could not be read or parsed", async () => {
+    _configSecretsCheckDeps.scanConfigSecrets = async () => ({
+      clean: false,
+      files: [],
+      findings: [{ file: ".nax/config.json", pointer: "", kind: "unscannable" }],
+    });
+
+    const result = await checkConfigSecrets(root);
+
+    expect(result.passed).toBe(false);
+    expect(result.message).toContain(".nax/config.json could not be read or parsed as JSON");
+    expect(result.message).not.toContain("Move the value");
+  });
+
   test("AC4: fails with a could-not-scan message when the scanner rejects", async () => {
     _configSecretsCheckDeps.scanConfigSecrets = async () => {
       throw new Error("EACCES: permission denied");

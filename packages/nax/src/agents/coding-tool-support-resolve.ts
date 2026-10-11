@@ -44,10 +44,7 @@ import { toolAuditDir } from "../config/paths";
 import { type ResolvedPermissions, resolvePermissions } from "../config/permissions";
 import { type QualityCommandSpec, runQualityCommand } from "../quality";
 import { packageOverrideKey, packageWorkdir } from "../runtime/packages";
-import {
-  createConfigReadGatePolicy,
-  NAX_CONFIG_SECRET_READ_DISABLED_REASON,
-} from "./config-read-gate";
+import { createConfigReadGatePolicy } from "./config-read-gate";
 import { resolvePackageName } from "./exec-package-name";
 import { naxOwnedPathsPolicy } from "./nax-owned-writes";
 import { naxProtectedPaths } from "./nax-protected-paths";
@@ -539,13 +536,7 @@ export async function resolveCodingToolSupport(
     runDeclaredCommand: _codingToolSupportDeps.runDeclaredCommand,
     interceptor: options.commandInterceptor,
     protectedPaths: _codingToolSupportDeps.protectedPaths(),
-    ownedPaths: createConfigReadGatePolicy(
-      _codingToolSupportDeps.ownedPaths,
-      configReadable,
-      configScanClean
-        ? "config reads are unavailable while Bash approval is gated or escalated"
-        : NAX_CONFIG_SECRET_READ_DISABLED_REASON,
-    ),
+    ownedPaths: createConfigReadGatePolicy(_codingToolSupportDeps.ownedPaths, configReadable),
     stripEnvVars: fields.stripEnvVars,
     sessionName,
     header,

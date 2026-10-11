@@ -80,7 +80,7 @@ export function naxWriteOptIns(root: string, allowWrite: readonly string[]): Rea
 }
 
 /** `.nax/config.json`, or `.nax/mono/<package...>/config.json`, as root-relative segments. */
-function isNaxConfigSegments(segments: readonly string[]): boolean {
+export function isNaxConfigSegments(segments: readonly string[]): boolean {
   if (segments[0] !== ".nax" || segments[segments.length - 1] !== "config.json") return false;
   return segments.length === 2 || (segments.length >= 4 && segments[1] === "mono");
 }

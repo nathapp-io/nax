@@ -10,7 +10,13 @@ export async function checkConfigSecrets(workdir: string): Promise<Check> {
     const scan = await _configSecretsCheckDeps.scanConfigSecrets(workdir);
     const message = scan.clean
       ? "No literal secrets found in nax config files"
-      : `Config secrets found: ${scan.findings.map(({ file, pointer, kind }) => `${file}${pointer} (${kind})`).join(", ")}. Move the value into an environment-variable reference or into the global ~/.nax/config.json (which agents cannot reach).`;
+      : scan.findings
+          .map(({ file, pointer, kind }) =>
+            kind === "unscannable"
+              ? `${file} could not be read or parsed as JSON.`
+              : `${file}${pointer} (${kind}). Move the value into an environment-variable reference or into the global ~/.nax/config.json (which agents cannot reach).`,
+          )
+          .join(" ");
     return { name: "config-secrets", tier: "warning", passed: scan.clean, message };
   } catch {
     return {

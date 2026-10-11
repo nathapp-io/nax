@@ -3,7 +3,6 @@ export { NO_OP_INTERACTION_HANDLER, parseModelSpec } from "@nathapp/nax-agent";
 export { classifyCompleteException } from "./complete-exception-classifier";
 export {
   createConfigReadGatePolicy,
-  NAX_CONFIG_READ_DISABLED_SUFFIX,
   NAX_CONFIG_READ_TOOLS,
   NAX_CONFIG_WRITE_REFUSAL,
 } from "./config-read-gate";
