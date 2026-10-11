@@ -58,6 +58,8 @@ export { _acceptanceGateDeps, runAcceptanceGate } from "./gates/acceptance";
 export { _qualityGateDeps, resolveGateCommands, runQualityGates } from "./gates/quality";
 export type { FinishMachineDeps } from "./machine";
 export { runFinishMachine } from "./machine";
+export type { Contradiction, MergedFindings } from "./merge-findings";
+export { mergeFindings } from "./merge-findings";
 export {
   _notifyDeps,
   buildEscalationMessage,
