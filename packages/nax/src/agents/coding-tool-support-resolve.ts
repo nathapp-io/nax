@@ -73,7 +73,7 @@ export type ResolveCodingToolSupportOptions = Pick<
   | "askResolver"
   | "commandShadow"
   | "abortSignal"
->;
+> & { bashApproval?: "raw" | "gated" };
 
 /** The args literal `resolveCodingToolSupport` ends up calling the sync seam with. */
 type ResolveSupportArgs = Parameters<typeof buildCodingToolSupport>[0];
@@ -464,7 +464,14 @@ export async function resolveCodingToolSupport(
   options: ResolveCodingToolSupportOptions,
 ): Promise<CodingToolSupport | undefined> {
   const declared = options.declaredTools ?? [];
-  const resolved = resolvePermissions(options.config, options.pipelineStage ?? "run");
+  const permissionConfig =
+    options.bashApproval === undefined
+      ? options.config
+      : {
+          ...options.config,
+          execution: { ...options.config?.execution, bashApproval: options.bashApproval },
+        };
+  const resolved = resolvePermissions(permissionConfig, options.pipelineStage ?? "run");
   // PR1 (single-frame redesign, #2066 residual): the declared-command map and
   // the quality-derived fields around it resolve from the STORY'S PACKAGE
   // config when one is known — see loadPackageEffectiveConfig.

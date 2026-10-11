@@ -122,6 +122,8 @@ export interface PrecheckOptions {
 export interface PrecheckResultWithCode {
   /** Precheck result */
   result: PrecheckResult;
+  /** Failed Tier 2 checks (non-blocking warnings), also available at result.warnings. */
+  warnings?: Check[];
   /** Exit code (0=success, 1=blocker, 2=invalid PRD) */
   exitCode: number;
   /** Output for display */
@@ -439,6 +441,7 @@ export async function runPrecheck(
 
   return {
     result: { blockers, warnings },
+    warnings,
     exitCode,
     output,
     flaggedStories,

@@ -3,7 +3,7 @@
   "feature": "config-read-gate",
   "branchName": "feat/config-read-gate",
   "createdAt": "2026-10-11T00:00:00.000Z",
-  "updatedAt": "2026-10-11T15:50:32.790Z",
+  "updatedAt": "2026-10-11T16:19:33.253Z",
   "userStories": [
     {
       "id": "US-001",
@@ -30,7 +30,9 @@
         "scanConfigSecrets(root) reports { file: \".nax/config.json\", pointer: \"\", kind: \"unscannable\" } when .nax/config.json holds not json.",
         "scanConfigSecrets(root) reports { file: \".nax/config.json\", pointer: \"\", kind: \"unscannable\" } when .nax/config.json holds the JSON string \"sk-abcdefghijklmnopqrstu\".",
         "scanConfigSecrets(root) still reports the token-shape finding of a valid .nax/mono/apps/api/config.json when .nax/config.json holds not json.",
-        "The JSON serialisation of the ConfigSecretScan returned for the \"Bearer abc12345xyz\" header config omits the string abc12345xyz."
+        "The JSON serialisation of the ConfigSecretScan returned for the \"Bearer abc12345xyz\" header config omits the string abc12345xyz.",
+        "scanConfigSecrets(root) reports one unscannable finding for an unreadable root config and still reports findings in readable mono configs.",
+        "scanConfigSecrets(root) returns lexicographically sorted files and file-grouped depth-first findings when root and multiple mono configs exist."
       ],
       "tags": [
         "feature",
@@ -58,10 +60,6 @@
       "expectedFiles": [
         "packages/nax/src/config/secret-scan.ts",
         "packages/nax/test/unit/config/secret-scan.test.ts"
-      ],
-      "suggestedCriteria": [
-        "scanConfigSecrets(root) reports one unscannable finding for an unreadable root config and still reports findings in readable mono configs.",
-        "scanConfigSecrets(root) returns lexicographically sorted files and file-grouped depth-first findings when root and multiple mono configs exist."
       ],
       "workdir": "packages/nax",
       "workdirSource": "stated",
@@ -259,8 +257,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {

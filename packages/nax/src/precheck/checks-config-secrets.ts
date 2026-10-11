@@ -17,7 +17,7 @@ export async function checkConfigSecrets(workdir: string): Promise<Check> {
       name: "config-secrets",
       tier: "warning",
       passed: false,
-      message: "Could not scan nax config files for secrets",
+      message: "Config could not scan nax config files for secrets",
     };
   }
 }
