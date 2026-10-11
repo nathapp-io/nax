@@ -41,6 +41,8 @@ export {
   shouldRunRectification,
   shouldRunReview,
 } from "./execution-gates";
+export type { FinishBranchReviewInput } from "./finish-branch-review";
+export { finishBranchReviewOp } from "./finish-branch-review";
 export type { FinishFixInput } from "./finish-fix";
 export { finishFixOp } from "./finish-fix";
 export type { FinishNarrativeInput, FinishNarrativeOutput } from "./finish-narrative";
@@ -58,6 +60,8 @@ export type { FinishReviewInput, FinishReviewOutput } from "./finish-review";
 // through `callOp`; their prompt assembly, parsing and gap auditing live with
 // the rest of finish in `src/finish/`.
 export { finishReviewOp } from "./finish-review";
+export type { FinishSpecReviewInput } from "./finish-spec-review";
+export { finishSpecReviewOp } from "./finish-spec-review";
 export type { FixReviewOpInput } from "./fix-review";
 export { fixReviewOp } from "./fix-review";
 export type {
