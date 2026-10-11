@@ -22,7 +22,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "prepare": "bun run build",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "bun check",
     "test": "vitest --run",
     "test:live": "vitest --run --config vitest.live.config.ts",
     "test:watch": "vitest",

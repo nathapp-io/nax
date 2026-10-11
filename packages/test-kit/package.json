@@ -9,7 +9,7 @@
     "./cases/*": "./src/cases/*.ts"
   },
   "scripts": {
-    "typecheck": "bun x tsc --noEmit",
+    "typecheck": "bun check",
     "lint": "bun x biome check --error-on-warnings --diagnostic-level=warn src/",
     "lint:fix": "bun x biome check --write src/",
     "check:all": "bun run --silent lint"

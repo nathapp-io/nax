@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "bun run bin/nax.ts",
     "build": "bun build bin/nax.ts --outdir dist --target bun --external \"@nathapp/nax-ai\" --external \"@anthropic-ai/sandbox-runtime\" --define \"GIT_COMMIT=\\\"$(git rev-parse --short HEAD)\\\"\"",
-    "typecheck": "bun x tsc --noEmit && bun x tsc --noEmit -p tsconfig.test.json",
+    "typecheck": "bun check && bun check -p tsconfig.test.json",
     "lint": "bun run lint:biome && bun run lint:checks",
     "lint:biome": "bun scripts/quiet-run.ts bun x biome check --error-on-warnings --diagnostic-level=warn src/ bin/ test/ scripts/",
     "lint:checks": "bun run check:no-real-global-nax && bun run check:feature-dir-ssot && bun run check:alias-internals && bun run check:import-cycles && bun run check:nax-error && bun run check:logger-storyid && bun run check:log-format-layering && bun run check:file-sizes && bun run check:complexity && bun run check:no-control-bytes && bun run check:nax-ai-imports && bun run check:sandbox-imports && bun run check:git-spawn-env && bun run check:bundle-externals && bun run check:op-tool-capability && bun run check:nax-artifacts-untracked && bun run check:story-workdir-access && bun run check:package-frame-derivation && bun run check:config-profile-threading && bun run check:dispatch-field-forwarding && bun run check:bash-dispatch-ask && bun run check:test-satellites && bun run check:lockstep && bun run check:package-boundaries && bun run check:usage-vocabulary",
