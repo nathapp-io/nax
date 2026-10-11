@@ -20,8 +20,8 @@ Add an opt-in `agent.transcriptAudit` config block. When it is enabled, every na
 const TranscriptAuditConfigSchema = z.object({
   /** When true, every native session transcript is archived on close. Default: false. */
   enabled: z.boolean().default(false),
-  /** Archive root. Absolute, or used as given. Defaults to <outputDir>/transcript-audit when absent. */
-  dir: z.string().optional(),
+  /** Archive root. Must be an absolute path. Defaults to <outputDir>/transcript-audit when absent. */
+  dir: z.string().refine(isAbsolute, "agent.transcriptAudit.dir must be an absolute path").optional(),
   /** Archived transcripts kept per feature directory, oldest pruned first. Default: 200. */
   maxRetained: z.number().int().min(1).default(200),
 });
@@ -84,19 +84,21 @@ The field is omitted when the block is disabled, when `featureName` is missing, 
 7. When the archive write throws (for example, the archive dir is not writable), close still completes, the live transcript is still deleted or retained, and no error propagates.
 8. With `maxRetained: 2`, three closes leave only the two newest archived files.
 9. `openSessionExtras` returns `transcriptArchive` with `dir = <transcriptRoot>/transcript-audit/<feature>` when enabled with no `dir`, uses `<dir>/<feature>` when `dir` is set, and omits the field when disabled or when `featureName` is missing.
-10. `nax config` shows `agent.transcriptAudit` with its description, and a package-level override of `enabled` merges like `usageAudit`.
+10. A relative `agent.transcriptAudit.dir` fails config validation. A relative path would otherwise resolve against the process cwd, and SessionManager has no workdir to anchor it, unlike `usageAudit`.
+11. `nax config` shows `agent.transcriptAudit` with its description, and a package-level override of `enabled` merges like `usageAudit`.
 
 ## Tests
 
 - `packages/nax-agent/test/unit/native/session/transcript-archive.test.ts`: AC 2-8 against `closeNativeSession`, using a temp dir and the file store, plus `createMemoryTranscriptStore` for AC 6.
 - `packages/nax/test/unit/session/open-session-extras.test.ts`: AC 9.
-- Config tests next to the existing `usageAudit` schema/merge tests: AC 1 defaults and AC 10.
+- Config tests next to the existing `usageAudit` schema/merge tests: AC 1 defaults, AC 10 and AC 11.
 
 Write the tests first. Run the repo's own test commands (see the nax root `package.json` / `check:all`), never bare `bun test`.
 
 ## Out of scope
 
 - ACP transcripts: they hold no message history.
+- Sessions opened outside SessionManager (the nax-agent facade, `session/native-backend.ts`, used by the ACP server): an embedder that wants an archive passes `transcriptArchive` itself.
 - Joining archived messages to usage-audit round trips (#2454).
 - Replay tooling (#2455).
 - Changing prompt-audit, tool-audit or usage-audit.
