@@ -59,6 +59,34 @@ Report only concrete, objective issues, not style preferences:
   each to the changed line and state the concrete cost (what breaks, or who is
   misled, later).`;
 
+/**
+ * The pre-A4 quality reviewer's recall procedure (`finish/review/references/`,
+ * deleted with the markdown contract in #2449). Every catch-rate case the old
+ * reviewer caught and A4 missed traced to these three steps, so they come back
+ * with the JSON contract kept as-is: the walk stays private and no WALK section
+ * is asked for.
+ */
+const BRANCH_PROCEDURE = `## Read the unchanged collaborators before judging
+Most real defects in a focused diff live on the boundary between the changed code and the
+*unchanged* code it calls into, which is not in the diff. List every symbol the changed code
+uses but does not define: callees, interface or polymorphic calls (every implementation, not
+one), new arguments passed to existing APIs, unchanged consumers of an output whose meaning
+changed. Read each definition with Read/Grep before concluding. A failure path matters as much
+as the happy path: what state does the store, file or table end in if a step throws halfway?
+Treat an untested cross-cutting claim as unverified, not satisfied.
+
+## Walk every changed function before you conclude
+Go through every function or method the diff adds or changes, in test files as well as
+production ones, and give each a private one-line verdict: earns its place, or a concern. Do
+this in your reasoning only; do not put the walk in the reply. A review that pattern-matches a
+few obvious smells and stops will under-report.
+
+## Confidence threshold
+Report a finding you are at least 60% confident is real, provided it is anchored to a changed
+line and names a concrete correctness or maintenance cost. Design problems rarely clear 80%;
+let them land as MEDIUM or LOW rather than dropping them. Still leave out pure formatting and
+taste with no stated cost. This floor applies to every item in the checklist below.`;
+
 function fileList(files: string[], base: string): string {
   return files.length > 0
     ? files.map((f) => `- ${f}`).join("\n")
@@ -116,6 +144,7 @@ export function buildFinishBranchReviewPrompt(input: FinishBranchReviewPromptInp
       "- Logic duplicated across stories, or duplicating an existing helper.",
       "- Inconsistent patterns between stories for the same kind of thing.",
     ].join("\n"),
+    BRANCH_PROCEDURE,
     QUALITY_CHECKLIST,
     ...(input.hints.length > 0
       ? [
