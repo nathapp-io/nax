@@ -1,7 +1,15 @@
 import { NaxError } from "../errors";
-import type { Finding, FinishPhase } from "./types";
+import type {
+  AcceptanceFact,
+  Finding,
+  FinishPhase,
+  FinishResolution,
+  FinishResultStatus,
+  GateFact,
+  ReviewLens,
+} from "./types";
 
-const FINISH_PHASES: readonly FinishPhase[] = ["acceptance", "spec", "quality", "gate"];
+const FINISH_PHASES: readonly FinishPhase[] = ["acceptance", "spec", "quality", "review", "gate"];
 
 /**
  * The finish run's whole mutable state, as plain JSON.
@@ -21,8 +29,6 @@ export interface FinishPhaseState {
   fixAttempts: number;
   /** Times this phase's reviewer has run. Zero for `acceptance` and `gate`. */
   reviewAttempts: number;
-  /** Times a review of this phase was sent back for missing evidence. Capped by MAX_INCOMPLETE_ATTEMPTS. */
-  incompleteAttempts: number;
   /**
    * Rounds recorded for this phase, and the value written to `FinishRound.attempt`.
    *
@@ -32,33 +38,38 @@ export interface FinishPhaseState {
    * reads 1, 1, 3, 4 and nothing downstream can order it (design F3).
    */
   rounds: number;
-  /**
-   * The commit this phase's next review diffs from — the `shaBefore` of the
-   * first commit that landed after its last verdict, not the latest one.
-   *
-   * The acceptance loop can commit between a spec fix and its re-review (I8),
-   * so a window anchored on the most recent commit would silently exclude the
-   * fix that triggered it. Unset means "no commit since the last verdict", and
-   * the reviewer reads the full branch diff.
-   */
-  reviewSince?: string;
-  /**
-   * Why this phase's last review was sent back, so the retry is told what it
-   * skipped. Cleared when a review runs, because it describes the previous
-   * attempt only.
-   */
-  reviewGaps?: string[];
   /** A1: advisor rounds spent on judged findings. Optional: states and fixtures predating A1 read as 0. */
   adviseRounds?: number;
   /** A1: outcome of this phase's last recorded round (the approval precondition reads it). */
   lastOutcome?: import("./types").FinishRoundOutcome;
 }
 
-export type FinishStatus = "running" | "opened" | "promoted" | "already-ready" | "escalated" | "nothing-to-finish";
+export type FinishStatus = "running" | FinishResultStatus;
+
+/** A4: the shared review/fix loop's record for one finish. */
+export interface ReviewLoopState {
+  /** Review rounds run this finish (both lenses = one round). Capped by MAX_REVIEW_ROUNDS. */
+  rounds: number;
+  /** Merged findings from the last round, before judgment. */
+  lastFindings: Finding[];
+  /** Lenses with no verdict in the last round. */
+  missingLenses: ReviewLens[];
+  /** Judged findings carried to resolution unfixed (hold, advisor off, fallback). */
+  unresolved: Finding[];
+  reReviewUsed: boolean;
+  /** True once a review fix round committed. Triggers the acceptance re-check. */
+  committedFixes: boolean;
+  /** HEAD the last completed review round saw. */
+  reviewedHead?: string;
+  /** Branch reviewer's last title / summary for the PR. */
+  title?: string;
+  summary?: string;
+  covered: Record<ReviewLens, string[]>;
+}
 
 export interface FinishState {
   /** Bumped when a field's meaning changes, so a resumed state is rejected rather than misread. */
-  version: 1;
+  version: 2;
   feature: string;
   workdir: string;
   branch: string;
@@ -81,7 +92,20 @@ export interface FinishState {
   gatesRan?: string[];
   /** Set once the draft PR is open (D7), so promote is idempotent. */
   prUrl?: string;
-  escalationReason?: string;
+  /** A4: why the finish ended as a draft or failed. */
+  reason?: string;
+  /** A4: the resolver's decision, read by the PR context. */
+  resolution?: FinishResolution;
+  /** A4: set immediately before a forge call, so a throw can be told apart from a loop failure. */
+  finalizing?: boolean;
+  /** A4: the shared review loop's record. */
+  review: ReviewLoopState;
+  /** A4: SHAs of fix commits no full review round has seen yet. */
+  unreviewedFixCommits: string[];
+  /** A4: acceptance as last verified. */
+  acceptanceFact?: AcceptanceFact;
+  /** A4: gate results as last run. */
+  gateFacts?: GateFact[];
   /**
    * True once any phase's fix loop produced a commit during this run.
    *
@@ -103,18 +127,30 @@ export interface FinishState {
 /** The caller-supplied identity fields of a fresh `FinishState`. */
 export type FinishStateInit = Pick<FinishState, "feature" | "workdir" | "branch" | "runId" | "base" | "specPath">;
 
-function zeroedPhaseState(): FinishPhaseState {
-  return { fixAttempts: 0, reviewAttempts: 0, incompleteAttempts: 0, rounds: 0 };
+function zeroedReview(): ReviewLoopState {
+  return {
+    rounds: 0,
+    lastFindings: [],
+    missingLenses: [],
+    unresolved: [],
+    reReviewUsed: false,
+    committedFixes: false,
+    covered: { spec: [], quality: [] },
+  };
 }
 
-/** Builds a fresh `FinishState`: all four phases zeroed, `status: "running"`, no findings. */
+function zeroedPhaseState(): FinishPhaseState {
+  return { fixAttempts: 0, reviewAttempts: 0, rounds: 0 };
+}
+
+/** Builds a fresh `FinishState`: all five phases zeroed, `status: "running"`, no findings. */
 export function createFinishState(init: FinishStateInit): FinishState {
   const phases = {} as Record<FinishPhase, FinishPhaseState>;
   for (const phase of FINISH_PHASES) {
     phases[phase] = zeroedPhaseState();
   }
   return {
-    version: 1,
+    version: 2,
     feature: init.feature,
     workdir: init.workdir,
     branch: init.branch,
@@ -125,6 +161,8 @@ export function createFinishState(init: FinishStateInit): FinishState {
     phases,
     findings: [],
     committedThisRun: false,
+    review: zeroedReview(),
+    unreviewedFixCommits: [],
   };
 }
 
@@ -138,7 +176,7 @@ export function serializeFinishState(state: FinishState): string {
  *
  * Throws `NaxError("FINISH_STATE_UNPARSEABLE")` when `text` is not valid JSON,
  * and `NaxError("FINISH_STATE_VERSION")` when the parsed payload's `version`
- * is not `1` — a resumed state with an unrecognised shape must be rejected
+ * is not `2` — a resumed state with an unrecognised shape must be rejected
  * rather than misread.
  */
 export function deserializeFinishState(text: string): FinishState {
@@ -153,7 +191,7 @@ export function deserializeFinishState(text: string): FinishState {
   }
 
   const version = (parsed as { version?: unknown })?.version;
-  if (version !== 1) {
+  if (version !== 2) {
     throw new NaxError(`Finish state has unsupported version: ${String(version)}`, "FINISH_STATE_VERSION", {
       stage: "finish",
       version,

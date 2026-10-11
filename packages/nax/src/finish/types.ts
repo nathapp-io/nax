@@ -108,8 +108,8 @@ export interface FinishTimeouts {
   acceptanceMs?: number;
   gateMs?: number;
 }
-/** The four fix-and-reverify loops, in graph order. */
-export type FinishPhase = "acceptance" | "spec" | "quality" | "gate";
+/** The fix-and-reverify loops, in order. `review` is the shared fix round for both review lenses. */
+export type FinishPhase = "acceptance" | "spec" | "quality" | "review" | "gate";
 
 /**
  * One completed fix round, appended to the audit trail as it happens.
@@ -147,7 +147,7 @@ export type FinishRoundOutcome =
    * rounds with this outcome and a reader must still be able to render them.
    */
   | "unparseable"
-  /** Handed off to a human — an explicit escalate, a cap, or a node that emitted nothing. */
+  /** Read-only history, no longer emitted: handed off to a human by an explicit escalate or a cap. */
   | "escalated"
   /**
    * This phase has no reviewer at all (`gate`, `acceptance`). Distinct from
@@ -169,10 +169,11 @@ export type FinishRoundOutcome =
    * what it meant when it was written.
    */
   | "review-skipped"
-  /** The reviewer replied with findings but skipped a required audit section, so
-   * the verdict was not acted on. Distinct from `unparseable`: there was a
-   * readable verdict, it just had no evidence behind it. */
+  /** Read-only history, no longer emitted: the reviewer replied with findings but
+   * skipped a required audit section, so the verdict was not acted on. */
   | "incomplete"
+  /** A4: a review lens produced no verdict after its retry. */
+  | "missing"
   /** A1: the advisor ruled on every judged finding and nothing was left to fix;
    * the phase re-reviews. Not an approval. */
   | "advised";
@@ -226,9 +227,56 @@ export interface FinishPrBodySettings {
   /** Normalised template heading → body-section key, layered over the defaults. */
   sectionMap?: Record<string, string>;
 }
+/** Result-level status. State adds `running` (see `FinishState.status`). */
+export type FinishResultStatus =
+  | "opened"
+  | "promoted"
+  | "already-ready"
+  | "draft"
+  | "local-only"
+  | "failed"
+  | "nothing-to-finish";
+
+/** Whether acceptance was verified green at the end of the finish. */
+export type AcceptanceFact = "green" | "red" | "unverified" | "not-configured";
+
+/** One quality gate's end-of-finish result. */
+export interface GateFact {
+  name: string;
+  status: "green" | "red";
+  excerpt?: string;
+}
+
+/** The end-of-run facts the resolver turns into `ready | draft`. Computed by the resolver (A4 Task 10). */
+export interface ResolutionFacts {
+  findingsOpen: Finding[];
+  acceptance: AcceptanceFact;
+  gates: GateFact[];
+  reviewsMissing: ReviewLens[];
+  unreviewedFixCommits: string[];
+  coverage: Record<ReviewLens, number | null>;
+  fixRounds: number;
+}
+
+/** What the resolver decided, kept on the state so the PR context can read it. */
+export interface FinishResolution {
+  outcome: "ready" | "draft";
+  reason?: string;
+  facts: ResolutionFacts;
+  acceptedResidue: Finding[];
+}
+
 export interface FinishResult {
   feature: string;
-  status: "opened" | "promoted" | "already-ready" | "escalated" | "nothing-to-finish";
+  status: FinishResultStatus;
+  /** A4: `ready | draft | failed`. No forge is a status (`local-only`), not an outcome. */
+  outcome?: "ready" | "draft" | "failed";
+  /** A4: why the outcome is not a clean `ready`, or why the finish failed. */
+  reason?: string;
+  /** A4: the facts behind the outcome. */
+  facts?: ResolutionFacts;
+  /** A4: judged findings accepted as residue on a ready PR. */
+  acceptedResidue?: Finding[];
   /**
    * HEAD sha at the moment this result was written — the finish ledger's key
    * (#1674 part 1, `./audit`'s `writeResult`). Set on every path that reaches
@@ -240,13 +288,7 @@ export interface FinishResult {
   /** The branch finish ran on — the ledger's other half of its key, alongside `headSha`. */
   branch?: string;
   url?: string;
-  escalationReason?: string;
-  /**
-   * The findings behind an escalation. Persisted because the reason alone is a
-   * bare count ("3 finding(s) after 3 fix attempts"), and on the Telegram
-   * channel the composed PR comment — the only other thing carrying them — is
-   * never posted. Without this the findings survived only in acpx's run bundle.
-   */
+  /** Open findings on a draft PR. */
   findings?: Finding[];
   /**
    * Set when the escalation could not be delivered to its channel (forge

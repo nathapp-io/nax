@@ -120,18 +120,23 @@ export {
   routeQualityGates,
   routeReview,
 } from "./route";
-export type { FinishPhaseState, FinishState, FinishStateInit, FinishStatus } from "./state";
+export type { FinishPhaseState, FinishState, FinishStateInit, FinishStatus, ReviewLoopState } from "./state";
 export { createFinishState, deserializeFinishState, serializeFinishState } from "./state";
 export type {
+  AcceptanceFact,
   AcceptanceGateResult,
   Finding,
   FindingDisposition,
   FinishPhase,
+  FinishResolution,
   FinishResult,
+  FinishResultStatus,
   FinishReviewOutput,
   FinishRound,
   FinishTimeouts,
+  GateFact,
   QualityGateResult,
+  ResolutionFacts,
   ReviewLens,
   ReviewReport,
   Touchpoint,
