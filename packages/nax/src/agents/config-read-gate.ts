@@ -1,4 +1,5 @@
 import type { OwnedBashCandidate, OwnedPathsPolicy } from "@nathapp/nax-agent";
+import { realOrRaw } from "@nathapp/nax-agent/internal";
 import { isNaxConfigFile, naxOwnedKind } from "./nax-owned-writes";
 
 export const NAX_CONFIG_READ_TOOLS: ReadonlySet<string> = new Set([
@@ -29,7 +30,7 @@ function isConfigRel(rel: string): boolean {
 function configCandidatesOnly(root: string, candidates: readonly OwnedBashCandidate[]): boolean {
   let foundConfig = false;
   for (const candidate of candidates) {
-    if (isNaxConfigFile(root, candidate.lexical)) {
+    if (isNaxConfigFile(root, realOrRaw(candidate.lexical))) {
       foundConfig = true;
       continue;
     }
@@ -44,9 +45,10 @@ export function createConfigReadGatePolicy(base: OwnedPathsPolicy, configReadabl
   return {
     ...base,
     configRefusal: (root, resolved) => {
-      if (!isNaxConfigFile(root, resolved)) return base.configRefusal(root, resolved);
+      const canonical = realOrRaw(resolved);
+      if (!isNaxConfigFile(root, canonical)) return base.configRefusal(root, resolved);
       if (configReadable) return undefined;
-      const refusal = base.configRefusal(root, resolved);
+      const refusal = base.configRefusal(root, canonical);
       return refusal === undefined ? undefined : `${refusal}${NAX_CONFIG_READ_DISABLED_SUFFIX}`;
     },
     writeRefusal: (tool, rel, ctx) => {

@@ -24,15 +24,38 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { OwnedBashCandidate } from "@nathapp/nax-agent";
+import { realOrRaw } from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { NAX_CONFIG_REFUSAL, naxOwnedPathsPolicy } from "@/agents/nax-owned-writes";
 
-const gateModule = () => import("@/agents/config-read-gate");
+type GateModule = typeof import("@/agents/config-read-gate");
+
+/**
+ * Loads the module under test.
+ *
+ * The module is the deliverable, so its absence must surface as a FAILED
+ * ASSERTION rather than a module-resolution crash: a crash proves only that a
+ * file is missing, never which AC the code fails, and the two are different
+ * signals for whoever implements this.
+ */
+async function gateModule(): Promise<GateModule> {
+  const mod = await import("@/agents/config-read-gate").catch(() => undefined);
+  expect(mod).toBeDefined();
+  if (mod === undefined) throw new Error("[test] @/agents/config-read-gate is missing");
+  return mod;
+}
 
 let root: string;
 
 beforeEach(() => {
-  root = makeTempDir("nax-config-read-gate-");
+  // Canonical, symlink-resolved paths are the PORT CONTRACT: `OwnedBashCandidate.lexical`
+  // is documented as "resolved lexically against one working directory, symlinks resolved
+  // (`realOrRaw`)" and `policy-bash-raw` builds every candidate as
+  // `realOrRaw(resolve(directory, candidate))`. A temp dir on macOS is `/tmp/...`, whose
+  // realpath is `/private/tmp/...`, so a fixture that hands the policy an unresolved root
+  // would assert behaviour the port never promises -- and would force the policy to
+  // canonicalize paths it was already given resolved.
+  root = realOrRaw(makeTempDir("nax-config-read-gate-"));
   mkdirSync(join(root, ".nax"), { recursive: true });
   writeFileSync(join(root, ".nax", "config.json"), "{}");
 });

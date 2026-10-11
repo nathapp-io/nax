@@ -290,6 +290,24 @@ describe("US-003 — the native config read gate through resolveCodingToolSuppor
     }
   });
 
+  test("US-003 AC19 (boundary): a dispatch with no tools and no providers never scans", async () => {
+    // The empty union returns before `buildCodingToolSupport` is reached, so
+    // there is no dispatch to gate and no reason to read anything off disk. A
+    // scan placed above that guard would fire on every no-op hop.
+    const original = _codingToolSupportDeps.scanConfigSecrets;
+    const calls: string[] = [];
+    _codingToolSupportDeps.scanConfigSecrets = async (dir: string) => {
+      calls.push(dir);
+      return { clean: true, files: [], findings: [] };
+    };
+    try {
+      expect(await supportFor({ declaredTools: [] })).toBeUndefined();
+      expect(calls).toEqual([]);
+    } finally {
+      _codingToolSupportDeps.scanConfigSecrets = original;
+    }
+  });
+
   test("US-003 AC20: a rejecting scan fails closed without rejecting the dispatch", async () => {
     const original = _codingToolSupportDeps.scanConfigSecrets;
     _codingToolSupportDeps.scanConfigSecrets = async () => {

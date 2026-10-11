@@ -3,7 +3,7 @@
   "feature": "config-read-gate",
   "branchName": "feat/config-read-gate",
   "createdAt": "2026-10-11T00:00:00.000Z",
-  "updatedAt": "2026-10-11T15:17:01.966Z",
+  "updatedAt": "2026-10-11T15:35:25.332Z",
   "userStories": [
     {
       "id": "US-001",
@@ -167,14 +167,23 @@
       "status": "pending",
       "passes": false,
       "attempts": 0,
-      "escalations": [],
+      "escalations": [
+        {
+          "fromTier": "balanced",
+          "toTier": "powerful",
+          "toAgent": "native",
+          "reason": "Rectification exhausted: AC9 requires changing the base owned-path policy and its pinned copy, which the story explicitly excludes.",
+          "timestamp": "2026-10-11T15:35:23.288Z"
+        }
+      ],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
         "reasoning": "A new owned-paths wrapper and dispatch integration span canonicalized path tools and Bash modes; strict test isolation is required for this access-control boundary.",
         "initialComplexity": "complex",
-        "modelTier": "balanced",
-        "initialModelTier": "balanced"
+        "modelTier": "powerful",
+        "initialModelTier": "balanced",
+        "agent": "native"
       },
       "contextFiles": [
         "packages/nax/src/agents/nax-owned-writes.ts",
@@ -195,10 +204,35 @@
       ],
       "workdir": "packages/nax",
       "workdirSource": "stated",
-      "priorErrors": [],
-      "priorFailures": [],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced: Rectification exhausted: AC9 requires changing the base owned-path policy and its pinned copy, which the story explicitly excludes."
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "balanced",
+          "stage": "escalation",
+          "summary": "Tier balanced [tests-failing]: Rectification exhausted: AC9 requires changing the base owned-path policy and its pinned copy, which the story explicitly excludes.",
+          "cost": 0.186278784,
+          "timestamp": "2026-10-11T15:35:23.288Z"
+        }
+      ],
       "storyPoints": 1,
-      "storyGitRef": "8248ff3789d88cee39e535c6bcf9a1e12304e7c0"
+      "storyGitRef": "8248ff3789d88cee39e535c6bcf9a1e12304e7c0",
+      "repoScopedFixes": [
+        {
+          "triggeringTests": [
+            "test/unit/agents/config-read-gate.test.ts::US-003 createConfigReadGatePolicy — configRefusal > US-003 AC2: a closed gate appends the read-disabled suffix, which names nax doctor",
+            "test/unit/agents/config-read-gate.test.ts::US-003 createConfigReadGatePolicy — configRefusal > US-003 AC3 (boundary): a closed gate still refuses the root config",
+            "test/unit/agents/config-read-gate.test.ts::US-003 createConfigReadGatePolicy — bashRefusal > US-003 AC9: a redirect INTO the config is refused exactly as the base policy refuses it"
+          ],
+          "filesChanged": [
+            "packages/nax/src/agents/config-read-gate.ts",
+            "packages/nax/src/agents/nax-owned-writes.ts"
+          ],
+          "findingsCleared": false
+        }
+      ]
     },
     {
       "id": "US-004",
