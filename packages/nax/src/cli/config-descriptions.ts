@@ -324,7 +324,7 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
     "Transcript audit — archive a redacted copy of every native session's transcript on close, clean or failed (nax#2453). The live transcript is deleted or retained exactly as before.",
   "agent.transcriptAudit.enabled": "Enable the native transcript archive (default: false)",
   "agent.transcriptAudit.dir":
-    "Archive root; each feature gets a subdirectory. Absolute path, used as given (default: <outputDir>/transcript-audit, i.e. ~/.nax/<project>/transcript-audit unless outputDir overrides it)",
+    "Archive root; each feature gets a subdirectory. Must be an absolute path, used as given (default: <outputDir>/transcript-audit, i.e. ~/.nax/<project>/transcript-audit unless outputDir overrides it)",
   "agent.transcriptAudit.maxRetained":
     "Archived transcripts kept per feature directory, oldest pruned first (default: 200)",
   "agent.spinBreaker": "Repetition breaker — ends a turn that repeats tool calls with no progress (nax#2013)",

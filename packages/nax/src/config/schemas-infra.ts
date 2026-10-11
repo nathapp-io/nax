@@ -4,6 +4,7 @@
  * Extracted from schemas.ts to stay within the 600-line file limit.
  */
 
+import { isAbsolute } from "node:path";
 import { DEFAULT_INSTRUCTION_FILE_NAME, isInstructionFileName } from "@nathapp/nax-agent/internal";
 import { z } from "zod";
 import { DEFAULT_AGENT_NAME, DEFAULT_AGENT_PROTOCOL } from "./agent-defaults";
@@ -213,8 +214,15 @@ const UsageAuditConfigSchema = z.object({
 const TranscriptAuditConfigSchema = z.object({
   /** When true, every native session transcript is archived on close. Default: false. */
   enabled: z.boolean().default(false),
-  /** Archive root. Absolute, or used as given. Defaults to <outputDir>/transcript-audit when absent. */
-  dir: z.string().optional(),
+  /**
+   * Archive root. Must be an absolute path: a relative one would resolve against
+   * the process cwd, and SessionManager has no workdir to anchor it (unlike
+   * usageAudit). Defaults to <outputDir>/transcript-audit when absent.
+   */
+  dir: z
+    .string()
+    .refine((d) => isAbsolute(d), "agent.transcriptAudit.dir must be an absolute path")
+    .optional(),
   /** Archived transcripts kept per feature directory, oldest pruned first. Default: 200. */
   maxRetained: z.number().int().min(1).default(200),
 });

@@ -86,6 +86,23 @@ describe("AgentConfigSchema", () => {
     expect(() => NaxConfigSchema.parse({ agent: { transcriptAudit: { maxRetained: 0 } } })).toThrow();
   });
 
+  // AC 10: a relative archive dir would resolve against the process cwd.
+  test("agent.transcriptAudit rejects a relative dir", () => {
+    const result = NaxConfigSchema.safeParse({
+      agent: { transcriptAudit: { enabled: true, dir: ".nax/transcript-audit" } },
+    });
+    expect(result.success).toBe(false);
+    expect(JSON.stringify(result.error?.issues)).toContain("agent.transcriptAudit.dir must be an absolute path");
+  });
+
+  test("agent.transcriptAudit accepts an absolute dir", () => {
+    const result = NaxConfigSchema.safeParse({
+      agent: { transcriptAudit: { enabled: true, dir: "/tmp/transcript-audit" } },
+    });
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.agent?.transcriptAudit?.dir).toBe("/tmp/transcript-audit");
+  });
+
   test("accepts a fully populated agent block", () => {
     const raw = {
       agent: {
