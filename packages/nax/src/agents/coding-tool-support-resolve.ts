@@ -39,11 +39,12 @@ import {
   UNIVERSAL_CODING_TOOLS,
 } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "@/logger";
-import { loadConfigForPackage, type NaxConfig } from "../config";
+import { loadConfigForPackage, type NaxConfig, scanConfigSecrets } from "../config";
 import { toolAuditDir } from "../config/paths";
 import { type ResolvedPermissions, resolvePermissions } from "../config/permissions";
 import { type QualityCommandSpec, runQualityCommand } from "../quality";
 import { packageOverrideKey, packageWorkdir } from "../runtime/packages";
+import { createConfigReadGatePolicy } from "./config-read-gate";
 import { resolvePackageName } from "./exec-package-name";
 import { naxOwnedPathsPolicy } from "./nax-owned-writes";
 import { naxProtectedPaths } from "./nax-protected-paths";
@@ -437,11 +438,13 @@ export const _codingToolSupportDeps: {
   protectedPaths: () => ProtectedPathsPolicy;
   /** S3-2 port: the paths nax owns the writes to; injected into the tools (and, from Task 4, the sandbox). */
   ownedPaths: OwnedPathsPolicy;
+  scanConfigSecrets: typeof scanConfigSecrets;
 } = {
   loadConfigForPackage,
   runDeclaredCommand: runQualityCommand,
   protectedPaths: naxProtectedPaths,
   ownedPaths: naxOwnedPathsPolicy,
+  scanConfigSecrets,
 };
 
 /**
@@ -499,6 +502,19 @@ export async function resolveCodingToolSupport(
   // names, yet appending the provider names above is exactly what makes it a
   // real op. An empty union is the only case that yields no support.
   if (declaredWithProviders.length === 0) return undefined;
+  let configScanClean = false;
+  if (root !== undefined && root.trim() !== "") {
+    try {
+      configScanClean = (await _codingToolSupportDeps.scanConfigSecrets(root)).clean;
+    } catch (err) {
+      getSafeLogger()?.warn("tools", "Config secret scan failed; config reads remain disabled", {
+        storyId: options.storyId ?? "_dispatch",
+        error: errorMessage(err),
+      });
+    }
+  }
+  const configReadable =
+    configScanClean && (resolved.bashApproval === "raw" || !declaredWithProviders.includes(BASH_TOOL_NAME));
   // Deny and ask bind under EVERY profile (spec R10), so Mcp deny/ask rules are
   // expanded even when providerScope is "all" — a deny must be able to withdraw
   // one tool from an otherwise fully-granted provider.
@@ -520,7 +536,7 @@ export async function resolveCodingToolSupport(
     runDeclaredCommand: _codingToolSupportDeps.runDeclaredCommand,
     interceptor: options.commandInterceptor,
     protectedPaths: _codingToolSupportDeps.protectedPaths(),
-    ownedPaths: _codingToolSupportDeps.ownedPaths,
+    ownedPaths: createConfigReadGatePolicy(_codingToolSupportDeps.ownedPaths, configReadable),
     stripEnvVars: fields.stripEnvVars,
     sessionName,
     header,
