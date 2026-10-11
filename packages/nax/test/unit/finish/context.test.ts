@@ -279,6 +279,40 @@ describe("loadFinishContext — ledger entry check (#1674 part 1)", () => {
     });
   });
 
+  test("a draft ledger entry at the same HEAD also routes to already-finished", async () => {
+    await withTempDir(async (dir) => {
+      const auditDir = join(dir, "finish-audit", "my-feature");
+      await Bun.write(
+        join(auditDir, "last.json"),
+        JSON.stringify({
+          branch: "feat/x",
+          headSha: "same-sha",
+          status: "draft",
+          prUrl: "https://example.com/pr/11",
+          runId: "run-0",
+          finishedAt: "2026-08-20T00:00:00.000Z",
+        }),
+      );
+      _finishContextDeps.git = async (args: string[]): Promise<GitResult> => {
+        if (args[0] === "remote" && args[1] === "show") return okGit("  HEAD branch: main\n");
+        if (args[0] === "rev-list") return okGit("2\n");
+        if (args[0] === "rev-parse" && args[1] === "HEAD") return okGit("same-sha\n");
+        if (args[0] === "rev-parse" && args[1] === "--verify") return okGit("abc123\n");
+        throw new Error(`unexpected git call: ${args.join(" ")}`);
+      };
+      _finishContextDeps.resolveFeatureSpec = async (): Promise<ResolveResult> => okResolve;
+
+      const ctx = await loadFinishContext("my-feature", "/repo", {
+        branch: "feat/x",
+        auditDir,
+        rerun: "on-change",
+      });
+
+      expect(ctx.route).toBe("already-finished");
+      expect(ctx.prUrl).toBe("https://example.com/pr/11");
+    });
+  });
+
   test("finish.rerun 'always' bypasses the ledger check entirely", async () => {
     await withTempDir(async (dir) => {
       const auditDir = join(dir, "finish-audit", "my-feature");

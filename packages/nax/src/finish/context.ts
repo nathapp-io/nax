@@ -21,7 +21,7 @@ import { resolveFeatureSpec } from "@/cli";
 import type { ForgeDeps, ForgeKind } from "@/forge";
 import { viewArgv } from "@/forge";
 import { gitWithTimeout } from "@/utils/git";
-import { readLedger } from "./audit";
+import { LEDGER_TERMINAL_STATUSES, readLedger } from "./audit";
 
 export const _finishContextDeps = {
   git: gitWithTimeout,
@@ -86,8 +86,6 @@ export interface LoadFinishContextOptions {
    */
   forge?: { kind: ForgeKind | null; deps: ForgeDeps };
 }
-
-const LEDGER_TERMINAL_STATUSES = new Set(["opened", "promoted", "already-ready", "escalated"]);
 
 /**
  * The entry check itself: does the ledger already cover this exact commit?

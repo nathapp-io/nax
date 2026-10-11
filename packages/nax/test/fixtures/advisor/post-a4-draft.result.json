@@ -1,0 +1,16 @@
+{
+  "feature": "feat",
+  "status": "draft",
+  "outcome": "draft",
+  "reason": "open findings",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "title": "commit_reindex can lose data",
+      "problem": "store/sqlite_vec.py:120 drops the sidecar",
+      "fix": "reorder",
+      "judgment": true
+    }
+  ],
+  "rounds": [{ "ts": "t", "phase": "review", "committed": false, "outcome": "fixed", "findings": 1, "attempt": 1 }]
+}

@@ -7,6 +7,7 @@ import type { FinishResult, FinishRound } from "@/finish";
 import {
   appendRound,
   createFinishState,
+  LEDGER_TERMINAL_STATUSES,
   ledgerPath,
   readLedger,
   readRounds,
@@ -291,5 +292,20 @@ describe("ledger — writeResult updates last.json for terminal statuses (#1674 
       expect(await Bun.file(resultPath(t)).exists()).toBe(true);
       expect(await readLedger(t.auditDir)).toBeNull();
     });
+  });
+
+  test.each(["draft", "local-only", "nothing-to-finish"] as const)("a '%s' result is ledgered", async (status) => {
+    await withTempDir(async (dir) => {
+      const t = { auditDir: join(dir, "finish-audit", "feat"), runId: "run-1" };
+      await writeResult(t, { feature: "feat", status, headSha: "sha-1", branch: "feat/x" });
+      expect(await readLedger(t.auditDir)).toMatchObject({ status, headSha: "sha-1", branch: "feat/x" });
+    });
+  });
+
+  test("LEDGER_TERMINAL_STATUSES is the one set, and keeps the pre-A4 'escalated' readable", () => {
+    expect([...LEDGER_TERMINAL_STATUSES].sort()).toEqual(
+      ["already-ready", "draft", "escalated", "local-only", "nothing-to-finish", "opened", "promoted"].sort(),
+    );
+    expect(LEDGER_TERMINAL_STATUSES.has("failed")).toBe(false);
   });
 });

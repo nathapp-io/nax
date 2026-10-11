@@ -157,7 +157,7 @@ function makeOptsWithRuntime(
 }
 
 describe("finish phase", () => {
-  test.each(["passed", "escalated", "skipped", "throw"])(
+  test.each(["passed", "draft", "skipped", "throw"])(
     "persists final status and spend after finish: %s",
     async (outcome) => {
       const dir = makeTempDir("finish-persistence-");
@@ -205,9 +205,16 @@ describe("finish phase", () => {
           costUsd: 0.0228,
         });
         writer.setPostRunPhase("finish", {
-          status: outcome === "passed" ? "passed" : outcome === "skipped" ? "skipped" : "failed",
-          ...(outcome === "escalated"
-            ? { result: "escalated", url: "https://github.com/o/r/pull/1", escalationReason: "Review blocked" }
+          status:
+            outcome === "passed"
+              ? "passed"
+              : outcome === "skipped"
+                ? "skipped"
+                : outcome === "draft"
+                  ? "draft"
+                  : "failed",
+          ...(outcome === "draft"
+            ? { result: "draft", outcome: "draft", url: "https://github.com/o/r/pull/1", reason: "Review blocked" }
             : {}),
         });
         if (outcome === "throw") throw new Error("finish failed after recording status");
@@ -226,14 +233,21 @@ describe("finish phase", () => {
         for (const statusPath of [join(dir, "status.json"), join(featureDir, "status.json")]) {
           const status = await Bun.file(statusPath).json();
           expect(status.postRun?.finish?.status).toBe(
-            outcome === "passed" ? "passed" : outcome === "skipped" ? "skipped" : "failed",
+            outcome === "passed"
+              ? "passed"
+              : outcome === "skipped"
+                ? "skipped"
+                : outcome === "draft"
+                  ? "draft"
+                  : "failed",
           );
           expect(status.cost.spent).toBeCloseTo(0.1573, 4);
           expect(status.run.status).toBe("completed");
-          if (outcome === "escalated") {
-            expect(status.postRun.finish.result).toBe("escalated");
+          if (outcome === "draft") {
+            expect(status.postRun.finish.result).toBe("draft");
+            expect(status.postRun.finish.outcome).toBe("draft");
             expect(status.postRun.finish.url).toBe("https://github.com/o/r/pull/1");
-            expect(status.postRun.finish.escalationReason).toBe("Review blocked");
+            expect(status.postRun.finish.reason).toBe("Review blocked");
           }
         }
         expect(result.reportedTotal).toBeCloseTo(0.1573, 4);

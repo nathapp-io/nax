@@ -6,11 +6,8 @@
  * `src/interaction/plugins/telegram.ts`: this is a fire-and-forget
  * notification, not an interactive request/response.
  *
- * Separate from `./escalate` deliberately. That module posts a comment
- * through the forge and takes `ForgeDeps`; this one takes a `fetch` and
- * knows nothing about a forge. `postEscalation`'s `preferTelegram` branch
- * returns `channel: "telegram"` without sending anything — this module is
- * what actually sends, called by the phase after it reads the result.
+ * Takes a `fetch` and knows nothing about a forge; the phase calls it after it
+ * reads the result.
  */
 
 type FetchFn = (input: string | Request | URL, init?: RequestInit) => Promise<Response>;
@@ -28,7 +25,7 @@ interface TerminalMessageOptions {
   url?: string;
 }
 
-/** Build a bounded plain-text terminal notification for non-escalation outcomes. */
+/** Build a bounded plain-text terminal notification for ready outcomes. */
 export function buildTerminalMessage(options: TerminalMessageOptions): string {
   const lines = [`nax-finish ${options.status} ${options.feature}`];
   if (options.detail) lines.push(options.detail);
@@ -40,26 +37,28 @@ export function buildTerminalMessage(options: TerminalMessageOptions): string {
 }
 
 /**
- * Compose the escalation message: the reason, then each finding by severity and
- * title.
+ * Compose the draft/failed message: the reason, then each finding by severity
+ * and title, then the PR link when there is one.
  *
- * The reason alone is a bare count ("3 finding(s) after 3 fix attempts"), which
- * left the human no way to judge urgency without opening acpx's run bundle. The
- * list is truncated to fit the Bot API limit and says how many it dropped.
+ * The reason alone is a bare count, which left the human no way to judge
+ * urgency without opening the PR. The list is truncated to fit the Bot API
+ * limit and says how many it dropped.
  */
-export function buildEscalationMessage(
+export function buildDraftMessage(
   feature: string,
   reason: string,
+  url: string | undefined,
   findings: { severity: string; title: string }[],
 ): string {
-  const head = `nax-finish escalated ${feature}: ${reason}`;
-  if (findings.length === 0) return head;
+  const urlLine = url ? `\n${url}` : "";
+  const head = `nax-finish draft ${feature}: ${reason}`;
+  if (findings.length === 0) return `${head}${urlLine}`;
 
   // Reserved up front for the worst case (every finding dropped), so adding a
   // line can never push the finished message past the limit.
   const footerReserve = `\n…and ${findings.length} more`.length;
   const lines: string[] = [];
-  let used = head.length;
+  let used = head.length + urlLine.length;
   for (const f of findings) {
     const title = f.title.length > MAX_FINDING_TITLE_CHARS ? `${f.title.slice(0, MAX_FINDING_TITLE_CHARS)}…` : f.title;
     const line = `\n- [${f.severity}] ${title}`;
@@ -68,7 +67,7 @@ export function buildEscalationMessage(
     used += line.length;
   }
   const omitted = findings.length - lines.length;
-  return `${head}${lines.join("")}${omitted > 0 ? `\n…and ${omitted} more` : ""}`;
+  return `${head}${lines.join("")}${omitted > 0 ? `\n…and ${omitted} more` : ""}${urlLine}`;
 }
 
 /** SEC-4: 5s client-side cap for the notify fetch. Matches the interaction

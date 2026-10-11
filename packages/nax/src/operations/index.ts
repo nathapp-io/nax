@@ -45,16 +45,6 @@ export type { FinishBranchReviewInput } from "./finish-branch-review";
 export { finishBranchReviewOp } from "./finish-branch-review";
 export type { FinishFixInput } from "./finish-fix";
 export { finishFixOp } from "./finish-fix";
-export type { FinishNarrativeInput, FinishNarrativeOutput } from "./finish-narrative";
-export {
-  buildNarrativePrompt,
-  finishNarrativeOp,
-  NARRATIVE_MAX_CHARS,
-  parseNarrative,
-  parseNarrativeNode,
-  readSpecSummary,
-  resolveNarrative,
-} from "./finish-narrative";
 export type { FinishReviewInput, FinishReviewOutput } from "./finish-review";
 // The native nax-finish operations. The finish state machine dispatches these
 // through `callOp`; their prompt assembly, parsing and gap auditing live with

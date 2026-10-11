@@ -6,9 +6,9 @@
  * live run context (audit target, forge kind, `CallContext`, config), drives
  * `runFinishMachine`, books the cost delta and notifies.
  *
- * Fail-open by contract. `runFinishMachine` already routes every internal
- * failure to `ops.escalate` (I7), so a throw reaching here means the phase
- * could not be *set up* — a context load that threw past its own catch, or a
+ * Fail-open by contract. `runFinishMachine` already turns every internal
+ * failure into a draft or failed result, so a throw reaching here means the
+ * phase could not be *set up* — a context load that threw past its own catch, or a
  * runtime field that was not there. Neither is a reason to fail a run whose
  * stories all passed, so this returns null and emits a failed phase instead.
  */
@@ -29,7 +29,7 @@ import type { FinishSettings } from "./config";
 import { readFinishConfig } from "./config";
 import { loadFinishContext } from "./context";
 import { runFinishMachine } from "./machine";
-import { buildEscalationMessage, buildTerminalMessage, sendTelegramNotify, telegramCreds } from "./notify";
+import { buildDraftMessage, buildTerminalMessage, sendTelegramNotify, telegramCreds } from "./notify";
 import { createFinishOps } from "./ops-impl";
 import { createFinishState } from "./state";
 import type { FinishResult } from "./types";
@@ -248,8 +248,49 @@ function writeFinishStatus(ctx: FinishPhaseContext, update: Record<string, unkno
   }
 }
 
+/** The machine stood down without doing real work (ledger hit or merged PR): reported as skipped, not passed. */
+function recordSkipped(ctx: FinishPhaseContext, result: FinishResult, reason: string): void {
+  // #1674 part 1 ("already-finished") and part 2 ("pr-merged"): a consumer of
+  // status.json can tell "nothing new to do" from "did the work and it passed".
+  getSafeLogger()?.info("finish", "Finish phase skipped", {
+    reason,
+    storyId: "_run",
+    feature: result.feature,
+    ...(result.url ? { url: result.url } : {}),
+  });
+  writeFinishStatus(ctx, {
+    status: "skipped",
+    reason,
+    lastRunAt: _finishPhaseDeps.now(),
+    ...(result.url ? { url: result.url } : {}),
+  });
+}
+
+/** Writes the terminal status entry and logs what the run produced. */
+function recordTerminal(ctx: FinishPhaseContext, result: FinishResult | null, passed: boolean): void {
+  if (result?.skipReason) {
+    recordSkipped(ctx, result, result.skipReason);
+    return;
+  }
+  writeFinishStatus(ctx, {
+    status: result?.status === "draft" ? "draft" : passed ? "passed" : "failed",
+    lastRunAt: _finishPhaseDeps.now(),
+    ...(result ? { result: result.status } : {}),
+    ...(result?.outcome ? { outcome: result.outcome } : {}),
+    ...(result?.reason ? { reason: result.reason } : {}),
+    ...(result?.url ? { url: result.url } : {}),
+    ...(result?.deliveryError ? { deliveryError: result.deliveryError } : {}),
+  });
+  if (result) logRunSummary(result);
+}
+
 export async function runFinishPhase(ctx: FinishPhaseContext): Promise<FinishResult | null> {
   const settings = readFinishConfig(ctx.config);
+  if (settings.deprecatedNarrative) {
+    getSafeLogger()?.warn("finish", "finish.narrative / finish.reviewers.narrative are deprecated and ignored (A4)", {
+      storyId: "_run",
+    });
+  }
   const skipReason = finishSkipReason({
     enabled: settings.enabled,
     branch: ctx.branch,
@@ -355,19 +396,8 @@ export async function runFinishPhase(ctx: FinishPhaseContext): Promise<FinishRes
       timeouts: {
         reviewMs: settings.timeouts.stepMs ?? undefined,
         fixMs: settings.timeouts.stepMs ?? undefined,
-        narrativeMs: settings.timeouts.stepMs ?? undefined,
       },
       prBody: settings.prBody,
-      // Telegram is the sole escalation channel only when it is enabled,
-      // actually credentialed, AND notifications are not switched off —
-      // `preferTelegram` suppresses the PR comment, and `notify()` below
-      // sends nothing when `notify.mode` is "off", so dropping any one of
-      // these three conjuncts delivers the escalation precisely nowhere.
-      // The acpx plugin this replaced tested all three together; the port
-      // originally kept only two.
-      preferTelegram:
-        settings.notify.mode !== "off" && settings.escalate.telegram && telegramCreds(ctx.config) !== null,
-      narrative: settings.narrative,
     });
     result = await _finishPhaseDeps.runFinishMachine(state, {
       context,
@@ -393,46 +423,11 @@ export async function runFinishPhase(ctx: FinishPhaseContext): Promise<FinishRes
   }
 
   const costUsd = _finishPhaseDeps.snapshotCost(ctx.runtime) - costBefore;
-  const passed = failure === undefined && result?.status !== "failed";
-  if (result?.skipReason) {
-    // The machine stood down without doing real work: the ledger already
-    // covers this exact HEAD (#1674 part 1, "already-finished") or the
-    // branch's PR is already merged (#1674 part 2, "pr-merged"). Reported
-    // distinctly from the ordinary "passed" path so a consumer of
-    // status.json can tell "this run did nothing because there was nothing
-    // new" from "this run did the work and it passed".
-    getSafeLogger()?.info("finish", "Finish phase skipped", {
-      reason: result.skipReason,
-      storyId: "_run",
-      feature: result.feature,
-      ...(result.url ? { url: result.url } : {}),
-    });
-    writeFinishStatus(ctx, {
-      status: "skipped",
-      reason: result.skipReason,
-      lastRunAt: _finishPhaseDeps.now(),
-      ...(result.url ? { url: result.url } : {}),
-    });
-  } else {
-    writeFinishStatus(ctx, {
-      status: passed ? "passed" : "failed",
-      lastRunAt: _finishPhaseDeps.now(),
-      ...(result ? { result: result.status } : {}),
-      ...(result?.url ? { url: result.url } : {}),
-      ...(result?.deliveryError ? { deliveryError: result.deliveryError } : {}),
-    });
-  }
-  // An escalation nobody received is the worst outcome this phase has: the run
-  // stopped for a human who was never told. The plugin this replaced logged it
-  // and failed its action; the phase cannot fail a run, so the log and the
-  // status entry above are the whole signal.
-  if (result?.deliveryError) {
-    getSafeLogger()?.warn("finish", "Finish escalated but the escalation was not delivered", {
-      storyId: "_run",
-      feature: result.feature,
-      error: result.deliveryError,
-    });
-  }
+  // Keyed on `outcome`, not `status`: a draft finalized onto a PR a human had
+  // already marked ready has status "already-ready" but outcome "draft".
+  const passed =
+    failure === undefined && result !== null && (result.outcome === "ready" || result.status === "nothing-to-finish");
+  recordTerminal(ctx, result, passed);
   if (failure) {
     // NOT carried on the event: `RunPhaseDetails`
     // (`src/plugins/extensions.ts:391-395`) is a closed union of four shapes
@@ -453,20 +448,41 @@ export async function runFinishPhase(ctx: FinishPhaseContext): Promise<FinishRes
   return result;
 }
 
+/** The one line a reader of the run log needs: where the PR is and why it is not clean. */
+function logRunSummary(result: FinishResult): void {
+  const log = getSafeLogger();
+  if (result.status === "failed") {
+    log?.info("finish", `failed: ${result.reason ?? "unknown"}`, { storyId: "_run", feature: result.feature });
+  } else if (result.status === "local-only") {
+    log?.info("finish", "local-only", { storyId: "_run", feature: result.feature });
+  } else if (result.url) {
+    const outcome = result.outcome ?? "ready";
+    log?.info("finish", `PR ${result.url} opened (${outcome}): ${result.reason ?? "clean"}`, {
+      storyId: "_run",
+      feature: result.feature,
+    });
+  }
+}
+
 /** Send the Telegram notification the configured mode calls for. Never throws. */
 async function notify(ctx: FinishPhaseContext, settings: FinishSettings, result: FinishResult): Promise<void> {
+  const needsHuman =
+    result.outcome === "draft" ||
+    result.outcome === "failed" ||
+    result.status === "draft" ||
+    result.status === "failed";
   if (settings.notify.mode === "off") return;
-  // A4 Task 14 reworks notifications; until then a draft or failed finish is the one that needs a human.
-  const needsHuman = result.status === "draft" || result.status === "failed";
-  if (settings.notify.mode === "escalation" && !needsHuman) return;
+  if (settings.notify.mode === "draft" && !needsHuman) return;
   const creds = telegramCreds(ctx.config);
   if (!creds) return;
   const text = needsHuman
-    ? buildEscalationMessage(result.feature, result.reason ?? "", result.findings ?? [])
+    ? buildDraftMessage(
+        result.feature,
+        result.status === "failed" ? `failed: ${result.reason ?? "unknown"}` : (result.reason ?? ""),
+        result.url,
+        result.findings ?? result.facts?.findingsOpen ?? [],
+      )
     : buildTerminalMessage({ feature: result.feature, status: result.status, url: result.url });
-  // The boolean matters: a `false` means Telegram rejected the message, and on
-  // an escalation Telegram is the ONLY channel (`preferTelegram` suppressed the
-  // PR comment). Discarding it turned a dropped page into silence.
   const delivered = await _finishPhaseDeps.sendTelegramNotify(creds, text);
   if (!delivered) {
     getSafeLogger()?.warn("finish", "Finish Telegram notification was not delivered", {

@@ -5,7 +5,8 @@ describe("readFinishConfig", () => {
   test("an absent finish block is disabled with schema defaults", () => {
     const s = readFinishConfig({});
     expect(s.enabled).toBe(false);
-    expect(s.narrative).toBe(true);
+    expect(s.deprecatedNarrative).toBe(false);
+    expect(s.notify.mode).toBe("draft");
     expect(s.timeouts).toEqual({ acceptanceMs: 600_000, gateMs: 900_000, flowMs: 5_400_000, stepMs: null });
     expect(s.prBody).toEqual({ template: "merge", sectionMap: {} });
     expect(s.models).toEqual({});
@@ -32,8 +33,26 @@ describe("readFinishConfig", () => {
     expect("reviewSpec" in s.models).toBe(false);
   });
 
-  test("narrative: false disables the narrative op", () => {
-    expect(readFinishConfig({ finish: { enabled: true, narrative: false } }).narrative).toBe(false);
+  test("narrative: false is flagged deprecated", () => {
+    expect(readFinishConfig({ finish: { enabled: true, narrative: false } }).deprecatedNarrative).toBe(true);
+  });
+
+  test("a reviewers.narrative model is flagged deprecated and not passed on", () => {
+    const s = readFinishConfig({ finish: { enabled: true, reviewers: { narrative: "fast" } } });
+    expect(s.deprecatedNarrative).toBe(true);
+    expect("narrative" in s.models).toBe(false);
+  });
+
+  test("the parsed defaults are not deprecated", () => {
+    const s = readFinishConfig({ finish: { enabled: true, narrative: true, reviewers: { narrative: null } } });
+    expect(s.deprecatedNarrative).toBe(false);
+  });
+
+  test("notify mode escalation reads as draft; draft, always and off read through", () => {
+    expect(readFinishConfig({ finish: { notify: { mode: "escalation" } } }).notify.mode).toBe("draft");
+    expect(readFinishConfig({ finish: { notify: { mode: "draft" } } }).notify.mode).toBe("draft");
+    expect(readFinishConfig({ finish: { notify: { mode: "always" } } }).notify.mode).toBe("always");
+    expect(readFinishConfig({ finish: { notify: { mode: "off" } } }).notify.mode).toBe("off");
   });
 
   test("an absent finish block defaults rerun to 'on-change'", () => {

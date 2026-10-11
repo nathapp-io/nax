@@ -25,6 +25,7 @@ export {
 export type { AuditTarget, FinishLedgerEntry, WriteResultOptions } from "./audit";
 export {
   appendRound,
+  LEDGER_TERMINAL_STATUSES,
   ledgerPath,
   readLedger,
   readRounds,
@@ -50,8 +51,6 @@ export type { FinishSettings } from "./config";
 export { readFinishConfig } from "./config";
 export type { FinishContext, LoadFinishContextOptions } from "./context";
 export { _finishContextDeps, loadFinishContext } from "./context";
-export type { EscalationOutcome } from "./escalate";
-export { buildEscalationComment, postEscalation } from "./escalate";
 export { _acceptanceGateDeps, runAcceptanceGate } from "./gates/acceptance";
 export { _qualityGateDeps, resolveGateCommands, runQualityGates } from "./gates/quality";
 export type { FinishMachineDeps } from "./machine";
@@ -60,7 +59,7 @@ export type { Contradiction, MergedFindings } from "./merge-findings";
 export { mergeFindings } from "./merge-findings";
 export {
   _notifyDeps,
-  buildEscalationMessage,
+  buildDraftMessage,
   buildTerminalMessage,
   isTelegramConfigured,
   sendTelegramNotify,

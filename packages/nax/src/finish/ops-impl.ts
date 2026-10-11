@@ -36,16 +36,10 @@ export interface FinishOpsDeps {
     reviewSpec?: ConfiguredModel;
     reviewQuality?: ConfiguredModel;
     fix?: ConfiguredModel;
-    narrative?: ConfiguredModel;
   };
-  timeouts?: { reviewMs?: number; fixMs?: number; narrativeMs?: number };
+  timeouts?: { reviewMs?: number; fixMs?: number };
   /** The existing `FinishPrBodySettings` from `./types` (D4.8). */
   prBody?: FinishPrBodySettings;
-  /** Pre-A4 only, no longer read (A4 Task 14 removes it with the escalation channel). */
-  preferTelegram?: boolean;
-  /** Pre-A4 only, no longer read (A4 Task 14 removes it with the narrative op). */
-  narrative?: boolean;
-  warn?: (message: string, details: Record<string, unknown>) => void;
 }
 
 export const _finishOpsDeps: { callOp: typeof callOp } = { callOp };

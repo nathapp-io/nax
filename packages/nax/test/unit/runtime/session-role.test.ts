@@ -49,17 +49,22 @@ describe("SessionRole", () => {
 });
 
 /**
- * Session role registration tests for the finish review/fix/narrative roles
+ * Session role registration tests for the finish review/fix roles
  * (Task 6 of the finish-review-ops plan).
  *
- * Verifies "finish-review-spec", "finish-review-quality", "finish-fix", and
- * "finish-narrative" are registered as CanonicalSessionRole members and can be
+ * Verifies "finish-review-spec", "finish-review-quality" and "finish-fix"
+ * are registered as CanonicalSessionRole members and can be
  * used with the session role type guards.
  */
 
-const FINISH_ROLES = ["finish-review-spec", "finish-review-quality", "finish-fix", "finish-narrative"] as const;
+const FINISH_ROLES = ["finish-review-spec", "finish-review-quality", "finish-fix"] as const;
 
 describe("KNOWN_SESSION_ROLES — finish role registration", () => {
+  test("'finish-narrative' was removed with the narrative op (A4)", () => {
+    expect(isSessionRole("finish-narrative")).toBe(false);
+    expect(KNOWN_SESSION_ROLES as readonly string[]).not.toContain("finish-narrative");
+  });
+
   for (const role of FINISH_ROLES) {
     test(`'${role}' is included in KNOWN_SESSION_ROLES array`, () => {
       expect(KNOWN_SESSION_ROLES).toContain(role);
@@ -75,7 +80,7 @@ describe("KNOWN_SESSION_ROLES — finish role registration", () => {
     });
   }
 
-  test("all four finish roles are mutually distinct", () => {
+  test("all three finish roles are mutually distinct", () => {
     expect(new Set(FINISH_ROLES).size).toBe(FINISH_ROLES.length);
   });
 
