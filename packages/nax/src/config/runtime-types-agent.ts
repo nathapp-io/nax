@@ -40,6 +40,16 @@ export interface UsageAuditConfig {
   dir?: string;
 }
 
+/** Transcript audit configuration — opt-in archive of native session transcripts on close (nax#2453). */
+export interface TranscriptAuditConfig {
+  /** When true, every native session transcript is archived (redacted) on close. */
+  enabled: boolean;
+  /** Archive root. Absolute, or used as given. Defaults to `<outputDir>/transcript-audit` when absent. */
+  dir?: string;
+  /** Archived transcripts kept per feature directory, oldest pruned first (default: 200). */
+  maxRetained: number;
+}
+
 /** Agent fallback configuration */
 export interface AgentFallbackConfig {
   /** Whether agent fallback is enabled (default: false) */
@@ -168,6 +178,7 @@ export interface AgentConfig {
   promptAudit?: PromptAuditConfig;
   /** Usage audit — write every agent round trip's usage to a file for auditing (nax#2045). */
   usageAudit?: UsageAuditConfig;
+  transcriptAudit?: TranscriptAuditConfig;
   /** Agent fallback configuration */
   fallback?: AgentFallbackConfig;
   /** ACP-specific settings */

@@ -94,6 +94,24 @@ describe("mergePackageConfig — agent section", () => {
     expect(result.agent?.usageAudit?.dir).toBe("/root/usage"); // root dir preserved
   });
 
+  test("deep-merges agent.transcriptAudit: override enabled only, dir and maxRetained from root (#2453)", () => {
+    const root = {
+      ...makeRoot(),
+      agent: {
+        protocol: "acp" as const,
+        maxInteractionTurns: 10,
+        promptAudit: { enabled: false },
+        transcriptAudit: { enabled: false, dir: "/root/transcripts", maxRetained: 50 },
+      },
+    };
+    const result = mergePackageConfig(root, {
+      agent: { transcriptAudit: { enabled: true } },
+    } as Partial<NaxConfig>);
+    expect(result.agent?.transcriptAudit?.enabled).toBe(true);
+    expect(result.agent?.transcriptAudit?.dir).toBe("/root/transcripts");
+    expect(result.agent?.transcriptAudit?.maxRetained).toBe(50);
+  });
+
   test("returns root.agent unchanged when packageOverride has no agent field", () => {
     const root = makeRoot();
     const result = mergePackageConfig(root, { quality: { commands: { test: "npm test" } } } as Partial<NaxConfig>);

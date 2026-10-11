@@ -97,6 +97,20 @@ describe("FIELD_DESCRIPTIONS agent.usageAudit (#2045)", () => {
   });
 });
 
+describe("FIELD_DESCRIPTIONS agent.transcriptAudit (#2453)", () => {
+  const KEYS = [
+    "agent.transcriptAudit",
+    "agent.transcriptAudit.enabled",
+    "agent.transcriptAudit.dir",
+    "agent.transcriptAudit.maxRetained",
+  ];
+
+  test.each(KEYS)("%s has a non-empty description", (key) => {
+    expect(typeof FIELD_DESCRIPTIONS[key]).toBe("string");
+    expect(FIELD_DESCRIPTIONS[key].length).toBeGreaterThan(0);
+  });
+});
+
 describe("FIELD_DESCRIPTIONS.execution.mutationCheck", () => {
   const KEYS = [
     "execution.mutationCheck",

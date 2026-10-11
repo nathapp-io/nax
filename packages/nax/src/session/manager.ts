@@ -453,7 +453,7 @@ export class SessionManager implements ISessionManager {
       onActiveCall: this._watchdogCancels.buildOnActiveCall(name, this._watchdogControllerRegistry),
       onStreamActivity: this._onStreamActivity,
       // ADR-028 §3 transcriptDir derivation, nax#1877 owner, S4b toolAudit (open-session-extras.ts).
-      ...openSessionExtras(opts, this._transcriptRoot),
+      ...openSessionExtras(opts, this._transcriptRoot, opts.config ?? this._config),
       ...trackedSpawnDeadlines(this._config), // #1583
     });
     this._liveHandles.set(name, handle);

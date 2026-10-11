@@ -72,6 +72,37 @@ describe("AgentConfigSchema", () => {
     expect(result.agent?.usageAudit?.dir).toBe(".nax/usage");
   });
 
+  // #2453: native transcript archive, opt-in like usageAudit.
+  test("agent.transcriptAudit defaults to disabled, no dir, 200 retained", () => {
+    const result = NaxConfigSchema.parse({});
+    expect(result.agent?.transcriptAudit?.enabled).toBe(false);
+    expect(result.agent?.transcriptAudit?.dir).toBeUndefined();
+    expect(result.agent?.transcriptAudit?.maxRetained).toBe(200);
+  });
+
+  test("agent.transcriptAudit fills defaults when supplied as an empty object and rejects maxRetained < 1", () => {
+    const result = NaxConfigSchema.parse({ agent: { transcriptAudit: {} } });
+    expect(result.agent?.transcriptAudit).toEqual({ enabled: false, maxRetained: 200 });
+    expect(() => NaxConfigSchema.parse({ agent: { transcriptAudit: { maxRetained: 0 } } })).toThrow();
+  });
+
+  // AC 10: a relative archive dir would resolve against the process cwd.
+  test("agent.transcriptAudit rejects a relative dir", () => {
+    const result = NaxConfigSchema.safeParse({
+      agent: { transcriptAudit: { enabled: true, dir: ".nax/transcript-audit" } },
+    });
+    expect(result.success).toBe(false);
+    expect(JSON.stringify(result.error?.issues)).toContain("agent.transcriptAudit.dir must be an absolute path");
+  });
+
+  test("agent.transcriptAudit accepts an absolute dir", () => {
+    const result = NaxConfigSchema.safeParse({
+      agent: { transcriptAudit: { enabled: true, dir: "/tmp/transcript-audit" } },
+    });
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.agent?.transcriptAudit?.dir).toBe("/tmp/transcript-audit");
+  });
+
   test("accepts a fully populated agent block", () => {
     const raw = {
       agent: {

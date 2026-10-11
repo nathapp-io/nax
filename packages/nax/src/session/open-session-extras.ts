@@ -7,7 +7,9 @@
  * ACP SDK transport keeps its crash-leftover record in transcriptDir and reads
  * its run identifiers and tool-audit ledger from toolAudit (S4b spec §7.4).
  */
+import { join } from "node:path";
 import type { OpenSessionOpts } from "@nathapp/nax-agent";
+import type { NaxConfig } from "../config";
 import { deriveNativeTranscriptDir } from "./manager-deps";
 import type { OpenSessionRequest } from "./types";
 
@@ -24,11 +26,13 @@ export function openSessionExtras(
     | "instructionDenyPaths"
   >,
   transcriptRoot: string | undefined,
+  config?: Pick<NaxConfig, "agent">,
 ): Pick<
   OpenSessionOpts,
   | "transcriptDir"
   | "transcriptOwner"
   | "toolAudit"
+  | "transcriptArchive"
   | "instructionDirectories"
   | "instructionFileName"
   | "instructionProtectedPaths"
@@ -38,6 +42,7 @@ export function openSessionExtras(
     transcriptDir: opts.transcriptDir ?? deriveNativeTranscriptDir({ featureName: opts.featureName, transcriptRoot }),
     ...(opts.transcriptOwner !== undefined ? { transcriptOwner: opts.transcriptOwner } : {}),
     ...(opts.toolAudit !== undefined ? { toolAudit: opts.toolAudit } : {}),
+    ...transcriptArchiveFor(opts.featureName, transcriptRoot, config),
     ...(opts.instructionDirectories !== undefined ? { instructionDirectories: opts.instructionDirectories } : {}),
     ...(opts.instructionFileName !== undefined ? { instructionFileName: opts.instructionFileName } : {}),
     ...(opts.instructionProtectedPaths !== undefined
@@ -45,4 +50,20 @@ export function openSessionExtras(
       : {}),
     ...(opts.instructionDenyPaths !== undefined ? { instructionDenyPaths: opts.instructionDenyPaths } : {}),
   };
+}
+
+/**
+ * The nax#2453 archive target: `<dir ?? <transcriptRoot>/transcript-audit>/<feature>`.
+ * Empty when auditing is off, the feature is unknown, or there is nowhere to write.
+ */
+function transcriptArchiveFor(
+  featureName: string | undefined,
+  transcriptRoot: string | undefined,
+  config: Pick<NaxConfig, "agent"> | undefined,
+): Pick<OpenSessionOpts, "transcriptArchive"> {
+  const audit = config?.agent?.transcriptAudit;
+  if (!audit?.enabled || !featureName) return {};
+  const root = audit.dir ?? (transcriptRoot === undefined ? undefined : join(transcriptRoot, "transcript-audit"));
+  if (root === undefined) return {};
+  return { transcriptArchive: { dir: join(root, featureName), maxRetained: audit.maxRetained ?? 200 } };
 }

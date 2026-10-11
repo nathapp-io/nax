@@ -748,6 +748,7 @@ _spillDeps
 _srtBackendDeps
 _systemOneClientDeps
 _terminalPromptDeps
+_transcriptArchiveDeps
 abortableSleep
 adaptProviderTool
 advertisedSchemaBytes
