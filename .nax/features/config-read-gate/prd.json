@@ -3,7 +3,7 @@
   "feature": "config-read-gate",
   "branchName": "feat/config-read-gate",
   "createdAt": "2026-10-11T00:00:00.000Z",
-  "updatedAt": "2026-10-11T15:35:25.332Z",
+  "updatedAt": "2026-10-11T15:50:32.790Z",
   "userStories": [
     {
       "id": "US-001",
@@ -164,8 +164,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [
         {
@@ -266,7 +266,10 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Three existing prompt modules need bounded option propagation and a scan seam; strict test isolation remains warranted because the hint advertises access to credential-bearing config."
+        "reasoning": "Three existing prompt modules need bounded option propagation and a scan seam; strict test isolation remains warranted because the hint advertises access to credential-bearing config.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/prompts/sections/nax-artifacts.ts",
@@ -280,7 +283,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "47acd35092d76f04817b6c19a9cce7f1bcba6612"
     }
   ],
   "analysis": "Existing Bun/TypeScript monorepo enhancement scoped to packages/nax; no nax-agent edits. Read docs/architecture/ARCHITECTURE.md:1-35 before coding; its index points to _deps, security and test conventions. The existing config barrel is packages/nax/src/config/index.ts:1-29; add the scanner export there. packages/nax/src/agents/nax-owned-writes.ts:82-116 defines the exact root and arbitrarily deep mono config path predicate; :166-177 separates queue/PRD from config; :300-336 defines NAX_CONFIG_REFUSAL and the owned policy. It is byte-pinned to a nax-agent fixture, so wrap it without changing it. packages/nax-agent/src/internal/redact.ts:137-153 already provides redactSecrets; consume its internal export, do not copy patterns or change nax-agent. Scanner should use repo-root-relative sorted POSIX paths, JSON-pointer escaping, recursive arrays/objects, reference stripping and value/key redaction comparisons; never return secret values. Missing config is clean, unreadable/malformed/non-object is unscannable and closes reads. packages/nax/src/precheck/index.ts:134-226 defines blocker/warning check functions; :253-310 runs environment checks and currently skips ordinary warnings after blockers; :312-445 runs full precheck and likewise skips ordinary warnings after blockers. Insert the config-only warning after each blocker phase, outside existing guarded warning blocks, without raising complexity baselines. Check shape is packages/nax/src/precheck/types.ts:11-25; check examples are packages/nax/src/precheck/checks-warnings.ts:1-33. packages/nax/src/commands/precheck.ts:36-92 has the light-mode config-loading and exit behavior; packages/nax/bin/nax.ts:1043-1066 registers the precheck command and calls runTrustGate before command invocation; packages/nax/src/commands/index.ts:25 exports precheck. Doctor should reuse this behavior, including config-load failure before the scan. packages/nax-agent/src/tools/owned-paths.ts:15-53 defines all port hooks; packages/nax-agent/src/tools/policy.ts:169-171 calls writeRefusal on symlink-canonicalized path tools, so a newly opened configRefusal must still explicitly refuse all non-read-only tool names. packages/nax/src/agents/coding-tool-support-resolve.ts:432-448 has injectable dependencies and :460-543 is the dispatch path: resolved permissions and unionDeclaredTools precede its early return, launcher creation and buildCodingToolSupport. Scan once per eligible dispatch, fail closed on rejection and when root is absent, allow only with clean scan and raw/absent Bash; do not wrap the sandbox launcher's own policy (:391-416). Existing characterization tests packages/nax/test/unit/agents/coding-tool-support-owned-paths.test.ts:91-142 assume clean config reads, Glob symlinks and Exec positional references are denied; revise their fixtures to literal-secret configs while retaining the refusal expectations. packages/nax/src/prompts/sections/nax-artifacts.ts:21-47 contains the baseline immutable artifact section; preserve exactly when flag absent. packages/nax/src/prompts/builders/tdd-builder.ts:130-151 defines withLoader, :194-335 constructs sections, :343-405 defines buildForRole; add independent repo-root state and fail-closed scan helper for the hint, not the package loader workdir. packages/nax/src/pipeline/stages/prompt.ts:75-109 builds both batch/single prompt chains; pipeline/types.ts:88-95 distinguishes ctx.projectDir from package ctx.workdir. Risk: accidentally exposing secret-bearing configs through path-naming Bash/Glob/symlinks or re-enabling writes; keep raw Bash redirects denied, gated/escalate Bash config reads closed, Git and future tools denied, sandbox write denies unchanged. Prompt scan depends on the root config existing, while the read gate requires the whole scanned set clean. All four stories are scoped to packages/nax. Binding story table explicitly lists dependencies as not stated for each story, so dependencies are [] even though the spec narrative says US-002/003/004 consume US-001; those consumers must be implemented after scanner availability, and contextFiles intentionally omit its currently nonexistent file where it is not an upstream dependency under the binding table. Add the scanner first in practice. No data migration, schema change, ACP behavior or global config read is needed.",
