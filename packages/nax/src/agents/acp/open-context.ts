@@ -97,7 +97,7 @@ export function openContext(input: OpenContextInput): BackendOpenContext {
   return {
     sessionId: name,
     workdir: opts.workdir,
-    profile: acpProfileFor(opts.resolvedPermissions.mode),
+    profile: acpProfileFor(opts.resolvedPermissions.mode, opts.declaredTools),
     instructions: undefined,
     tools: [],
     transcriptStore: input.store,
