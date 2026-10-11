@@ -15,7 +15,8 @@ export const NAX_CONFIG_WRITE_REFUSAL =
   "`quality.commands` and `acceptance.command` run through a shell without passing the permission gate, " +
   "so editing this file could run an ungated command on the next run.";
 
-export const NAX_CONFIG_READ_DISABLED_SUFFIX = " -- reads are disabled for this dispatch; run `nax doctor` for details.";
+export const NAX_CONFIG_READ_DISABLED_SUFFIX =
+  " -- reads are disabled for this dispatch; run `nax doctor` for details.";
 
 function configCandidatesOnly(root: string, candidates: readonly OwnedBashCandidate[]): boolean {
   let foundConfig = false;
@@ -31,10 +32,7 @@ function configCandidatesOnly(root: string, candidates: readonly OwnedBashCandid
 }
 
 /** Wrap the base owned-path policy with dispatch-specific config read access. */
-export function createConfigReadGatePolicy(
-  base: OwnedPathsPolicy,
-  configReadable: boolean,
-): OwnedPathsPolicy {
+export function createConfigReadGatePolicy(base: OwnedPathsPolicy, configReadable: boolean): OwnedPathsPolicy {
   return {
     ...base,
     configRefusal: (root, resolved) => {

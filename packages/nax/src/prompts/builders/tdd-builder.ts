@@ -455,7 +455,11 @@ export class TddPromptBuilder {
     try {
       const scan = await _tddPromptBuilderDeps.scanConfigSecrets(this.configRoot_);
       return scan.clean && scan.files.includes(".nax/config.json");
-    } catch {
+    } catch (err) {
+      getSafeLogger()?.warn("prompts", "Config secret scan failed; config reads stay closed", {
+        storyId: this.story_?.id ?? "_prompt",
+        error: errorMessage(err),
+      });
       return false;
     }
   }

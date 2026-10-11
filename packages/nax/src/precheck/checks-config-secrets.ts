@@ -1,4 +1,6 @@
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { scanConfigSecrets } from "../config";
+import { getSafeLogger } from "../logger";
 import type { Check } from "./types";
 
 /** Injectable scanner seam for the config-secret precheck. */
@@ -18,7 +20,11 @@ export async function checkConfigSecrets(workdir: string): Promise<Check> {
           )
           .join(" ");
     return { name: "config-secrets", tier: "warning", passed: scan.clean, message };
-  } catch {
+  } catch (err) {
+    getSafeLogger()?.warn("precheck", "Config secret scan failed; config reads stay closed", {
+      storyId: "_precheck",
+      error: errorMessage(err),
+    });
     return {
       name: "config-secrets",
       tier: "warning",

@@ -170,7 +170,7 @@ export async function checkConfigSecrets(workdir: string): Promise<Check>; // na
 export const _doctorDeps: { runTrustGate: typeof runTrustGate; precheckCommand: typeof precheckCommand };
 export async function doctorCommand(options: { dir: string; json?: boolean }): Promise<void>;
 
-// src/agents/nax-config-read-gate.ts
+// src/agents/config-read-gate.ts
 export const NAX_CONFIG_READ_TOOLS: ReadonlySet<string>; // Read, Grep, Glob, ScratchpadRead, ScratchpadList
 export const NAX_CONFIG_WRITE_REFUSAL: string;
 export const NAX_CONFIG_READ_DISABLED_SUFFIX: string;
@@ -266,8 +266,9 @@ paragraph:
 The project's declared commands (test, testScoped, lint, typecheck, build, ...) are in
 `.nax/config.json` under `quality.commands`. In a monorepo, `.nax/mono/<package>/config.json`
 overrides them per key for that package: a key set there wins, every other key comes from the
-root file. Read them with the `Read` tool. Do not modify either file; nax config cannot be changed
-from inside a run.
+root file. If config reads are available in this dispatch, read them with the `Read` tool; gated or
+escalated Bash dispatches may keep those reads closed. Do not modify either file; nax config cannot
+be changed from inside a run.
 ```
 
 The per-key wording matches `quality.commands` deep-merge semantics (`src/config/merge.ts:61`).
@@ -392,8 +393,8 @@ exceed the cap.
 - `packages/nax/test/integration/cli/cli-doctor.test.ts` — `nax doctor` CLI tests
 
 **US-003**
-- `packages/nax/src/agents/nax-config-read-gate.ts` — `createConfigReadGatePolicy` and its constants
-- `packages/nax/test/unit/agents/nax-config-read-gate.test.ts` — policy unit tests
+- `packages/nax/src/agents/config-read-gate.ts` — `createConfigReadGatePolicy` and its constants
+- `packages/nax/test/unit/agents/config-read-gate.test.ts` — policy unit tests
 
 ### Modifies
 
