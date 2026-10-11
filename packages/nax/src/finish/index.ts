@@ -11,6 +11,8 @@
  * a deep relative import.
  */
 
+export type { A3Hint } from "./a3-hints";
+export { _a3HintsDeps, readA3Hints } from "./a3-hints";
 export {
   type AdviceRef,
   type ApprovalFacts,
