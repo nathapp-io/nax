@@ -539,3 +539,38 @@ describe("buildFinishBody — Unresolved and coverage (A4)", () => {
     expect(body).toContain("- _no verdict from this review_");
   });
 });
+
+describe("buildFinishBody — Unresolved with a repo template (A4)", () => {
+  const template = "## Summary\n\n<!-- what -->\n\n## Testing\n\n- [ ] tests\n";
+  const draftUnresolved = {
+    reason: "1 open finding(s)",
+    findings: [finding({ title: "Real bug" })],
+    acceptance: "green" as const,
+    gates: [],
+    missing: [],
+    unreviewed: [],
+    accepted: [],
+  };
+
+  test.each(["merge", "strict"] as const)("%s mode renders Unresolved before the template sections", (mode) => {
+    const body = buildFinishBody(
+      baseCtx({ narrative: "Prose.", unresolved: draftUnresolved, template, templateMode: mode }),
+    );
+    expect(body.startsWith("## Unresolved")).toBe(true);
+    expect(body.indexOf("## Unresolved")).toBeLessThan(body.indexOf("## Summary"));
+    expect(body.match(/## Unresolved/g)).toHaveLength(1);
+  });
+
+  test("Unresolved stays after template frontmatter", () => {
+    const body = buildFinishBody(
+      baseCtx({
+        narrative: "Prose.",
+        unresolved: draftUnresolved,
+        template: `---\nname: x\n---\n${template}`,
+        templateMode: "merge",
+      }),
+    );
+    expect(body.startsWith("---")).toBe(true);
+    expect(body.indexOf("## Unresolved")).toBeLessThan(body.indexOf("## Summary"));
+  });
+});

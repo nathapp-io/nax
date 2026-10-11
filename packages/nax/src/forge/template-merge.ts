@@ -52,6 +52,12 @@ export interface BodySection {
   heading: string;
   /** Markdown body without its heading line. Callers omit empty sections. */
   body: string;
+  /**
+   * Render before the template's own sections (after any frontmatter) and never
+   * match it to a template heading. For content a reader must see first, such as
+   * why a PR is a draft, which would otherwise land below the template boilerplate.
+   */
+  leading?: boolean;
 }
 
 /**
@@ -204,6 +210,11 @@ function renderSections(sections: BodySection[]): string {
     .trim();
 }
 
+/** The non-empty sections that go before the template's own. */
+function leadingSections(sections: BodySection[]): BodySection[] {
+  return sections.filter((s) => s.leading && s.body.trim().length > 0);
+}
+
 export function mergeTemplate(
   template: string | null | undefined,
   sections: BodySection[],
@@ -223,11 +234,15 @@ export function mergeTemplate(
   // `"What does this MR do and why?"` — not by hand-normalising it first.
   const aliases = { ...DEFAULT_SECTION_ALIASES };
   for (const [heading, key] of Object.entries(opts.sectionMap ?? {})) aliases[normalizeHeading(heading)] = key;
-  const fillable = sections.filter((s) => s.heading.length > 0 && s.body.trim().length > 0);
+  const fillable = sections.filter((s) => !s.leading && s.heading.length > 0 && s.body.trim().length > 0);
   const consumed = new Set<string>();
   const parts: string[] = [];
 
   if (parsed.frontmatter.length > 0) parts.push(parsed.frontmatter);
+  for (const section of leadingSections(sections)) {
+    consumed.add(section.key);
+    parts.push(renderSection(section.heading, section.body.trim()));
+  }
   const preamble = cleanTemplateText(parsed.preamble);
   if (preamble.length > 0) parts.push(preamble);
 

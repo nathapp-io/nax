@@ -297,8 +297,8 @@ function buildFooter(run: FinishPrContext["run"]): string | null {
  * and last.
  */
 function buildBodySections(ctx: FinishPrContext): BodySection[] {
-  const candidates: { key: string; heading: string; body: string | null }[] = [
-    { key: "unresolved", heading: "Unresolved", body: buildUnresolvedSection(ctx) },
+  const candidates: { key: string; heading: string; body: string | null; leading?: boolean }[] = [
+    { key: "unresolved", heading: "Unresolved", body: buildUnresolvedSection(ctx), leading: true },
     { key: "narrative", heading: "What changed", body: buildNarrativeSection(ctx.narrative) },
     { key: "stories", heading: "Stories", body: ctx.stories.length > 0 ? buildStoriesSection(ctx.stories) : null },
     { key: "advisor", heading: "Advisor decisions", body: buildAdvisorSection(ctx.advisorDecisions) },
@@ -308,8 +308,8 @@ function buildBodySections(ctx: FinishPrContext): BodySection[] {
     { key: "footer", heading: "", body: buildFooter(ctx.run) },
   ];
   return candidates
-    .filter((c): c is { key: string; heading: string; body: string } => c.body !== null)
-    .map(({ key, heading, body }) => ({ key, heading, body }));
+    .filter((c): c is { key: string; heading: string; body: string; leading?: boolean } => c.body !== null)
+    .map(({ key, heading, body, leading }) => ({ key, heading, body, ...(leading ? { leading } : {}) }));
 }
 
 /**
