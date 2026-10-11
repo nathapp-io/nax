@@ -79,6 +79,7 @@ export { makeOptimizerResult } from "./optimizer-result";
 export { DEFAULT_TEST_ROUTING, makeTestContext, makeTestPRD, makeTestStory } from "./pipeline-context";
 export { makeMockPlanInputs, makeResolvedTestPatterns } from "./plan-inputs";
 export { type MockPluginRegistry, makePluginRegistry } from "./plugin-registry";
+export { expectRetryStrategy } from "./retry-strategy";
 export { makeAdversarialOutput, makeDiagnoseOutput, makeSemanticOutput } from "./review-outputs";
 export {
   type MockRuntimeOptions,

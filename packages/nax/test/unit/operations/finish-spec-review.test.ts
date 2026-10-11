@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeTestRuntime, opSelector } from "@test/helpers";
-import type { RetryStrategy } from "@/agents/retry";
+import { expectRetryStrategy, makeTestRuntime, opSelector } from "@test/helpers";
 import { ParseValidationError } from "@/agents/retry";
 import { finishSpecReviewOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
@@ -59,7 +58,7 @@ describe("finishSpecReviewOp", () => {
 });
 
 describe("finishSpecReviewOp exhausted retry", () => {
-  const strategy = finishSpecReviewOp.retry as RetryStrategy;
+  const strategy = expectRetryStrategy(finishSpecReviewOp.retry);
   const retryCtx = (lastOutput?: string) => ({
     site: "run" as const,
     agentName: "claude",
