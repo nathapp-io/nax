@@ -4,8 +4,8 @@
       "test": "bun run --cwd ../nax-ai build && bun run test",
       "typecheck": [
         "bun run --cwd ../nax-ai build",
-        "bun x tsc --noEmit",
-        "bun x tsc --noEmit -p tsconfig.test.json"
+        "bun check",
+        "bun check -p tsconfig.test.json"
       ],
       "lint": [
         "AGENT=1 bun run lint:biome",

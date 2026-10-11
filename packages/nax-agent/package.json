@@ -14,7 +14,7 @@
     "#test/*": "./test/*.ts"
   },
   "scripts": {
-    "typecheck": "bun x tsc --noEmit",
+    "typecheck": "bun check",
     "build": "bun x tsc -p tsconfig.build.json",
     "stage-publish": "bun scripts/stage-publish.ts",
     "check:api": "bun ../repo-tooling/scripts/check-api-snapshot.ts --package=.",
