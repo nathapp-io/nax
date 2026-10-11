@@ -380,7 +380,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     interactionChain: options.interactionChain,
   });
 
-  const { durationMs, runCompletedAt, finalCounts, reportedTotal, pluginGateFailed } = completionResult;
+  const { durationMs, runCompletedAt, finalCounts, reportedTotal, pluginGateFailed, mcpAdoption } = completionResult;
 
   // Write feature-level status (SFC-002).
   // Use reportedTotal (cost-aggregator-corrected) instead of the legacy
@@ -400,7 +400,10 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
           ? "completed"
           : "failed";
     options.statusWriter.setRunStatus(finalStatus);
-    await options.statusWriter.writeFeatureStatus(options.featureDir, reportedTotal, options.iterations);
+    await options.statusWriter.writeFeatureStatus(options.featureDir, reportedTotal, options.iterations, {
+      // nax#2410 D6: the per-server adoption block rides the feature status file.
+      ...(mcpAdoption !== undefined ? { mcpAdoption } : {}),
+    });
   }
 
   // §2.1 — surface non-blocking (sub-threshold) review findings accumulated this run.
@@ -478,7 +481,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     feature: options.feature,
     outputDir: options.runtime?.outputDir,
   });
-  const finalTotal = await persistFinishStatus(options, reportedTotal);
+  const finalTotal = await persistFinishStatus(options, reportedTotal, completionResult.mcpAdoption);
 
   // Output run footer in headless mode
   if (options.headless && options.formatterMode !== "json") {
@@ -521,11 +524,18 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
 }
 
 /** Persist finish's in-memory outcome and reconcile the run's final spend. */
-async function persistFinishStatus(options: RunnerCompletionOptions, reportedTotal: number): Promise<number> {
+async function persistFinishStatus(
+  options: RunnerCompletionOptions,
+  reportedTotal: number,
+  mcpAdoption: RunCompletionResult["mcpAdoption"],
+): Promise<number> {
   const finalTotal = options.runtime ? totalSpendUsd(options.runtime.costAggregator.snapshot()) : reportedTotal;
   await options.statusWriter.update(finalTotal, options.iterations);
   if (options.featureDir) {
-    await options.statusWriter.writeFeatureStatus(options.featureDir, finalTotal, options.iterations);
+    await options.statusWriter.writeFeatureStatus(options.featureDir, finalTotal, options.iterations, {
+      // nax#2410 D6: the adoption block survives the finish reconcile too.
+      ...(mcpAdoption !== undefined ? { mcpAdoption } : {}),
+    });
   }
   return finalTotal;
 }

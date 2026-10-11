@@ -32,6 +32,8 @@ import type { PRD } from "@/prd";
 import { countStories, isComplete, isStalled } from "@/prd";
 import { totalSpendUsd } from "@/runtime";
 import { purgeStaleScratch } from "@/session";
+import { toolAuditDir } from "@/config/paths";
+import { summarizeMcpAdoption, warnZeroAdoption, type McpAdoptionSummary } from "@/mcp/adoption";
 import type { closeAllRunSessions } from "../session-manager-runtime";
 import type { StatusWriter } from "../status-writer";
 import { applyBackfill } from "./backfill-story-metrics";
@@ -355,6 +357,29 @@ export function logRunCompletion(input: {
     durationMs,
     storyMetrics: storyMetricsSummary,
   });
+}
+
+/**
+ * The MCP adoption summary (run-completion phase 7.5, nax#2410 D6): aggregate
+ * the run's tool-audit files per configured server and warn on zero adoption.
+ * Undefined when no MCP server is configured — the status block is omitted.
+ */
+export async function summarizeMcpAdoptionPhase(input: {
+  options: RunCompletionOptions;
+  logger: Logger | undefined;
+}): Promise<McpAdoptionSummary | undefined> {
+  const servers = input.options.config.mcp?.servers ?? {};
+  const serverIds = Object.entries(servers)
+    .filter(([, server]) => server.enabled)
+    .map(([id]) => id);
+  if (serverIds.length === 0) return undefined;
+  const auditDir = toolAuditDir(
+    { root: input.options.workdir, outputDir: input.options.runtime.outputDir },
+    input.options.feature,
+  );
+  const summary = await summarizeMcpAdoption({ serverIds, auditDir });
+  warnZeroAdoption(summary, input.logger);
+  return summary;
 }
 
 /**

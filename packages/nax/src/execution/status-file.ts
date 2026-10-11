@@ -10,6 +10,7 @@
 import { rename, unlink } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { AdvisorSummary } from "@/advisor/store";
+import type { McpAdoptionSummary } from "@/mcp/adoption";
 import { NaxError } from "../errors";
 import type { FinishResult } from "../finish/types";
 import type { PRD } from "../prd";
@@ -224,6 +225,8 @@ export interface NaxStatusFile {
   gates?: GatesStatus;
   /** A1: advisor decision counts; absent when the advisor is off. */
   advisor?: AdvisorSummary;
+  /** nax#2410 D6: per-server MCP adoption; absent when MCP is unconfigured. */
+  mcpAdoption?: McpAdoptionSummary;
 }
 
 // ============================================================================
@@ -321,6 +324,8 @@ export interface RunStateSnapshot {
   /** Post-run phase statuses (optional) */
   /** A1: advisor decision counts, set at run completion when the advisor is on. */
   advisor?: AdvisorSummary;
+  /** nax#2410 D6: per-server MCP adoption summary, set at run completion when MCP is configured. */
+  mcpAdoption?: McpAdoptionSummary;
   postRun?: PostRunStatus;
 }
 
@@ -370,6 +375,10 @@ export function buildStatusSnapshot(state: RunStateSnapshot): NaxStatusFile {
 
   if (state.advisor) {
     snapshot.advisor = state.advisor;
+  }
+
+  if (state.mcpAdoption) {
+    snapshot.mcpAdoption = state.mcpAdoption;
   }
 
   if (state.postRun) {
