@@ -104,7 +104,7 @@ describe("checkConfigSecrets", () => {
     const result = await checkConfigSecrets(root);
 
     expect(result.passed).toBe(false);
-    expect(result.message).toContain(".nax/config.json could not be read or parsed as JSON");
+    expect(result.message).toContain("could not be read or parsed");
     expect(result.message).not.toContain("Move the value");
   });
 

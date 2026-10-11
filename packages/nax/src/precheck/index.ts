@@ -122,8 +122,6 @@ export interface PrecheckOptions {
 export interface PrecheckResultWithCode {
   /** Precheck result */
   result: PrecheckResult;
-  /** Warnings, also available directly for consumers that do not need the full result. */
-  warnings?: Check[];
   /** Exit code (0=success, 1=blocker, 2=invalid PRD) */
   exitCode: number;
   /** Output for display */
@@ -441,7 +439,6 @@ export async function runPrecheck(
 
   return {
     result: { blockers, warnings },
-    warnings,
     exitCode,
     output,
     flaggedStories,

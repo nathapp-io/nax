@@ -50,16 +50,22 @@ async function captureCommand(fn: () => Promise<void>): Promise<CapturedRun> {
 }
 
 /** Pull the pretty-printed JSON payload out of a command's console output. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function parseJsonLine(logs: string[]): Record<string, unknown> {
   const line = logs.find((entry) => entry.trimStart().startsWith("{"));
   assertDefined(line, "JSON precheck output line");
-  return JSON.parse(line) as Record<string, unknown>;
+  const payload: unknown = JSON.parse(line);
+  if (!isRecord(payload)) throw new Error("Expected a JSON object from precheck");
+  return payload;
 }
 
 function warningNames(payload: Record<string, unknown>): string[] {
   const warnings = payload.warnings;
   if (!Array.isArray(warnings)) return [];
-  return warnings.map((entry) => String((entry as { name?: unknown }).name ?? ""));
+  return warnings.flatMap((entry) => (isRecord(entry) && typeof entry.name === "string" ? [entry.name] : []));
 }
 
 describe("doctorCommand — dependency wiring", () => {
