@@ -74,6 +74,7 @@ export { _repositoryInstructionDeps } from "#src/native/session/repository-instr
 export * from "#src/native/session/session";
 export * as sessionModule from "#src/native/session/session";
 export * from "#src/native/session/tool-mapping";
+export { _transcriptArchiveDeps } from "#src/native/session/transcript-archive";
 export * from "#src/native/session/transcript-identity";
 export * from "#src/native/session/transcript-store";
 export * as transcriptStoreModule from "#src/native/session/transcript-store";

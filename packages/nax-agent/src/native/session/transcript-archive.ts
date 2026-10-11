@@ -18,6 +18,9 @@ import { redactSecrets } from "#src/internal/redact";
 import { pruneRetainedTranscripts } from "./transcript-store.ts";
 import type { TranscriptStore } from "./transcript-types.ts";
 
+/** Injectable clock for the archive stamp, so tests order archives without sleeping. */
+export const _transcriptArchiveDeps = { now: (): Date => new Date() };
+
 /** Where, and how many, archived transcripts are kept (the `OpenSessionOpts.transcriptArchive` shape). */
 export interface TranscriptArchive {
   readonly dir: string;
@@ -38,7 +41,7 @@ export async function archiveTranscript(
   try {
     const doc = await store.load(sessionId);
     if (doc === null) return;
-    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const stamp = _transcriptArchiveDeps.now().toISOString().replace(/[:.]/g, "-");
     await mkdir(archive.dir, { recursive: true });
     await writeFileAtomic(
       join(archive.dir, `${sessionId}.transcript.${stamp}.json`),

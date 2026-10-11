@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { redactSecrets } from "#src/internal/redact";
@@ -10,6 +10,7 @@ import {
   markNativeTurnOutcome,
   openNativeSession,
 } from "#src/native/session/session";
+import { _transcriptArchiveDeps } from "#src/native/session/transcript-archive";
 import type { OpenSessionOpts } from "#src/session/session-types";
 
 const dirs: string[] = [];
@@ -28,7 +29,7 @@ const LIVE_DOC = {
   savedAt: "2026-10-11T00:00:00.000Z",
   messages: [
     { role: "user", content: "hello" },
-    { role: "tool", content: [{ type: "tool_result", toolCallId: "t1", output: `key=${SECRET}` }] },
+    { role: "tool-result", toolCallId: "t1", content: `key=${SECRET}` },
   ],
 };
 
@@ -95,7 +96,7 @@ describe("transcript archive on close", () => {
     const raw = await readFile(join(archive, files[0] as string), "utf8");
     expect(raw).not.toContain(SECRET);
     expect(raw).toContain("[REDACTED]");
-    expect(raw).toContain("tool_result");
+    expect(raw).toContain('"toolCallId": "t1"');
   });
 
   test("retainOnClose writes no archive and keeps the live transcript", async () => {
@@ -142,16 +143,27 @@ describe("transcript archive on close", () => {
   test("maxRetained 2 keeps only the two newest of three closes", async () => {
     const live = await tempDir();
     const archive = await tempDir();
+    const origNow = _transcriptArchiveDeps.now;
     const created: string[] = [];
-    for (let i = 0; i < 3; i++) {
-      const before = await archived(archive);
-      const { state, handle } = await openWithLive("s", live, { transcriptArchive: { dir: archive, maxRetained: 2 } });
-      await closeNativeSession(state, handle);
-      const fresh = (await archived(archive)).filter((f) => !before.includes(f));
-      expect(fresh).toHaveLength(1);
-      created.push(fresh[0] as string);
-      // Stamps have 1 ms resolution; the pause keeps the three names distinct and mtimes ordered.
-      await new Promise((r) => setTimeout(r, 15));
+    try {
+      for (let i = 0; i < 3; i++) {
+        // Distinct stamps without sleeping: each close gets its own injected second.
+        _transcriptArchiveDeps.now = () => new Date(Date.UTC(2026, 9, 11, 0, 0, i));
+        const before = await archived(archive);
+        const { state, handle } = await openWithLive("s", live, {
+          transcriptArchive: { dir: archive, maxRetained: 2 },
+        });
+        await closeNativeSession(state, handle);
+        const fresh = (await archived(archive)).filter((f) => !before.includes(f));
+        expect(fresh).toHaveLength(1);
+        const name = fresh[0] as string;
+        created.push(name);
+        // Prune orders by mtime; pin an increasing past mtime so the order cannot tie.
+        const t = new Date(Date.UTC(2020, 0, 1, 0, 0, i));
+        await utimes(join(archive, name), t, t);
+      }
+    } finally {
+      _transcriptArchiveDeps.now = origNow;
     }
     expect(new Set(created).size).toBe(3);
     const kept = await archived(archive);
