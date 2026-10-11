@@ -107,6 +107,16 @@ the implementer and test-writer sessions ever see the tools — the reviewer, ve
 acceptance sessions do not, even though they do plenty of exploration. Measured on the
 `native-full-run` fixture: **3 of 18 sessions** had the tools available.
 
+Stage coverage is exact, not inherited: `run` does **not** cover `review`, `verify` or
+`rectification` — a server must list every stage that should see its tools (or `["*"]`).
+A stage-mismatched skip is visible in two places: a once-per-session debug line
+(`mcp [provider] <id> not attached`, with the session's stage and the server's stages)
+and the session's `toolSurface.skippedProviders` block in the tool-audit ledger.
+
+Stage-granted tools are visible to **every op in that stage** — including read-only ops
+whose sessions open with the `read` ACP profile. MCP filtering is stage-level by design;
+there is no per-op MCP scoping.
+
 ### `allowedTools` is a real cost lever
 
 Every attached hop pays the full advertised schema, whether or not a tool is ever called.
@@ -145,6 +155,45 @@ Three independent signals, in increasing strength:
 the tool-audit ledger for `codebase-memory__*` entries for that. The two are routinely
 different: a server can connect, advertise, charge the schema tax on every hop, and never
 be invoked once.
+
+### What each session was offered: `toolSurface`
+
+Every session that resolved provider tools stamps a `toolSurface` block into its
+tool-audit file (`tool-audit/<feature>/<runId>-<stamp>-<session>.json`), on both the
+native and ACP transports:
+
+```jsonc
+{
+  "toolSurface": {
+    "stage": "review",
+    "transport": "acp",          // "native" | "acp"
+    "profile": "read",           // ACP only: the narrowed session profile
+    "declaredTools": ["Read", "Glob", "Grep"],
+    "advertised": [{ "providerId": "codegraph", "names": ["search_graph"] }],
+    "withheld": [{ "providerId": "codegraph", "name": "write_graph", "reason": "not-admitted" }],
+    "skippedProviders": [{ "id": "runonly", "reason": "stage-mismatch", "stages": ["run"] }],
+    "failures": []
+  }
+}
+```
+
+- `advertised` is what the model actually saw; `withheld`/`skippedProviders`/`failures`
+  explain the rest. On ACP, an `mcp-pre-approval-unsupported` skip means the agent has
+  no pre-approval channel (claude only, today) and the session opened tool-less.
+- On the ACP path, a tool bound by an `Mcp(...)` **deny or ask rule is withheld at
+  delivery** (`reason: "denied"` / `"ask-ruled"`) — claude pre-approves what it is
+  handed, so delivery is the only point that rule could be enforced.
+- A session that resolves a surface but calls zero tools still writes its file: the
+  never-called session is exactly the case worth seeing.
+
+### End-of-run adoption summary
+
+Run completion aggregates the run's tool-audit files per configured server into the
+feature `status.json` (`mcpAdoption`): `sessionsOffered`, `sessionsCalled`,
+`totalCalls`. A server with `sessionsOffered > 0` and `totalCalls == 0` also logs a
+`[WARN]` (`mcp: <id> was offered to N session(s) and never called`) — that is the
+zero-adoption signal, and it is a property of the session population (wrong `stages`,
+wrong stage, or the model declining), not of the connection.
 
 ### Failure behaviour
 
@@ -340,10 +389,10 @@ them by `runId` or timestamp before comparing.
 | Symptom | Cause | Fix |
 |:---|:---|:---|
 | No `[provider] advertised` lines at all | Project dispatches to ACP | Set `agent.protocol: "hybrid"`, `agent.default: "native"` |
-| Server connects, zero tool calls | Model chose not to use it | Expected on small repos — `Grep` is cheaper there. Not a defect |
+| Server connects, zero tool calls | Model chose not to use it | Expected on small repos — `Grep` is cheaper there. Not a defect. The run's `mcpAdoption` status block and the end-of-run `[WARN]` make this visible per server |
 | Tools never grantable | No lockfile, or tool absent from it | Run `nax mcp lock`, commit the result |
 | Provider tools silently absent | `safe` profile, or `scoped` with no `Mcp(...)` rule naming them | Set `execution.permissionProfile: "unrestricted"`, or add the stage's `Mcp(...)` rule under `scoped` |
-| Server attaches to nothing | `stages: []`, or `stage:` typo | Set `stages` to real stage names or `["*"]` |
+| Server attaches to nothing | `stages: []`, or `stage:` typo | Set `stages` to real stage names or `["*"]` — and remember `run` ≠ `review`/`verify`/`rectification` |
 | `rtk interceptor state` shows `version: null` | Binary not found or probe failed | `which rtk`; confirm `rtk gain` works (name collision) |
 | No state line at all | Config block missing | Add `execution.commandInterceptor` |
 | `executed` is always `null` | Verb not in `git.verbs` | Add the verb, or accept that only `log`/`diff` are eligible |

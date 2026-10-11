@@ -879,7 +879,7 @@ The `mcp` block declares external MCP servers whose tools the `native` agent may
 |:----|:--------|:------------|
 | `servers.<id>` | — | Server id: lowercase `[a-z0-9][a-z0-9_-]*`, no `__` (it namespaces tool names) |
 | `command` / `args` / `env` | — / `[]` / `{}` | How to launch the server |
-| `stages` | `[]` | Pipeline stages it attaches to (`plan`, `run`, `setup`, `verify`, `review`, `rectification`, `regression`, `acceptance`, `complete`, or `"*"`) |
+| `stages` | `[]` | Pipeline stages it attaches to (`plan`, `run`, `setup`, `verify`, `review`, `rectification`, `regression`, `acceptance`, `complete`, or `"*"`). Exact, not inherited: a server is visible only in the stages listed, so `run` does not reach review/verify/rectification sessions |
 | `allowedTools` | unset | Unset = every locked tool is grantable |
 | `timeoutMs` | `60000` | Per-call ceiling |
 | `enabled` | `true` | Kill switch that does not invalidate the lock |
