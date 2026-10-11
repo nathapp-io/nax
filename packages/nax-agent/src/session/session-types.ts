@@ -176,6 +176,11 @@ export interface OpenSessionOpts extends TrackedSpawnDeadlineOptions {
    */
   retainOnClose?: boolean;
   /**
+   * Native: when set, closeNativeSession writes a redacted copy of the transcript
+   * here before deleting or retaining it. ACP ignores it.
+   */
+  transcriptArchive?: { readonly dir: string; readonly maxRetained: number };
+  /**
    * Native: the session's system prompt, sent as the request's top-level
    * `system` on every round trip (not on the compaction summary). The S3
    * facade sets it from `instructions`; nax leaves it unset. ACP ignores it.

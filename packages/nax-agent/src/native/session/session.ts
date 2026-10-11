@@ -18,6 +18,7 @@ import { instructionFileNameFor } from "./instruction-file-name.ts";
 import { openRepositoryInstructions } from "./instruction-session.ts";
 import { instructionTranscriptStore } from "./instruction-transcript.ts";
 import type { RepositoryInstructions } from "./repository-instructions.ts";
+import { archiveTranscript, type TranscriptArchive } from "./transcript-archive.ts";
 import { createFileTranscriptStore } from "./transcript-store.ts";
 import type { TranscriptStore } from "./transcript-types.ts";
 import type { TurnRetryConfig } from "./turn-retry.ts";
@@ -32,6 +33,8 @@ export interface NativeSessionStreamHooks {
 export interface SessionTranscript {
   readonly store: TranscriptStore;
   readonly retainOnClose: boolean;
+  /** When set, close writes a redacted copy here before deleting or retaining the live document (nax#2453). */
+  readonly transcriptArchive?: TranscriptArchive;
 }
 
 /**
@@ -275,6 +278,7 @@ export async function openNativeSession(
   state.transcripts.set(name, {
     store,
     retainOnClose: opts.retainOnClose === true,
+    transcriptArchive: opts.transcriptArchive,
   });
   state.timeouts.set(name, opts.timeoutSeconds);
   state.scratchpadRoots.set(name, opts.workdir);
@@ -288,6 +292,7 @@ export async function openNativeSession(
   state.transcripts.set(name, {
     store: instructionTranscriptStore(store, instructions),
     retainOnClose: opts.retainOnClose === true,
+    transcriptArchive: opts.transcriptArchive,
   });
   // `resume` is SessionManager's "this name already has a descriptor in this
   // process" signal, and it had no consumer on this transport (nax#1877) — a
@@ -366,6 +371,10 @@ export async function closeNativeSession(
   const treatAsFailed = failed ?? state.failed.has(handle.id);
   try {
     if (transcript !== undefined && !transcript.retainOnClose) {
+      // Archive first (nax#2453): best-effort, never throws, so the branch below is unchanged.
+      if (transcript.transcriptArchive !== undefined) {
+        await archiveTranscript(transcript.store, handle.id, transcript.transcriptArchive);
+      }
       // Retain for a human, out of reach of the next session of this name.
       if (treatAsFailed) await transcript.store.retainFailed(handle.id);
       else await transcript.store.delete(handle.id);
