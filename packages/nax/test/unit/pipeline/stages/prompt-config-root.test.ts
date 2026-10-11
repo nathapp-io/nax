@@ -65,6 +65,18 @@ describe("promptStage.execute — US-004 config-read hint", () => {
     });
   });
 
+  // Batch prompts use a separate PromptBuilder chain and must receive the same repo root.
+  test("batch prompts include the hint when projectDir holds a clean root config", async () => {
+    await withTempDir(async (root) => {
+      mkdirSync(join(root, "packages", "app"), { recursive: true });
+      writeConfig(root, ROOT_CONFIG, {});
+      const ctx = makeMonorepoCtx(root);
+      ctx.stories.push(makeStory({ id: "US-005" }));
+      await promptStage.execute(ctx);
+      expect(ctx.prompt).toContain(MONO_HINT);
+    });
+  });
+
   // AC8 boundary — the hint's scan reads projectDir, not the package workdir.
   test("AC8 boundary: omits the hint when only the package workdir holds a config", async () => {
     await withTempDir(async (root) => {
