@@ -236,6 +236,34 @@ export interface ToolAuditHeader {
 }
 
 /**
+ * Which MCP provider tools a session was OFFERED — the delivery-side twin of
+ * the per-call `calls` rows (#2410 gap 1). Present in the file body as
+ * `toolSurface` whenever a session's hop resolved provider tools, so
+ * "the model ignored the tool" can be told apart from "the tool was never
+ * advertised".
+ */
+export interface ToolSurfaceDraft {
+  /** The pipeline stage the session was resolved for. */
+  readonly stage: string;
+  /** The op's materialized declaration (what the profile/delivery decision saw). */
+  readonly declaredTools: readonly string[];
+  /** Provider tools actually offered: (providerId, local names) with content. */
+  readonly advertised: readonly { providerId: string; names: readonly string[] }[];
+  /** Provider tools resolved but not offered, with why. */
+  readonly withheld: readonly { providerId: string; name?: string; reason: string }[];
+  /** Providers skipped whole, with why. */
+  readonly skippedProviders: readonly { id: string; reason: string; stages?: readonly string[] }[];
+  /** Providers whose `tools()` rejected (same rows as `failures`). */
+  readonly failures: readonly { providerId: string; reason: string }[];
+}
+
+/** A draft stamped with the transport (and, on ACP, the narrowed profile). */
+export interface ToolSurfaceRecord extends ToolSurfaceDraft {
+  readonly transport: "native" | "acp";
+  readonly profile?: "full" | "read";
+}
+
+/**
  * Monotonic millisecond stamp for audit filenames.
  *
  * `Date.now()` alone is not enough: `flushOpenToolAuditSinks` writes every
@@ -257,6 +285,8 @@ export function createToolAuditSink(opts: {
   dir: string;
   sessionName: string;
   header?: ToolAuditHeader;
+  /** The session's MCP tool surface (#2410): present ⇒ the file is written even with zero calls. */
+  toolSurface?: ToolSurfaceRecord;
 }): RegisteredSink {
   const calls: ToolCallRecord[] = [];
   const runId = opts.header?.runId;
@@ -265,7 +295,10 @@ export function createToolAuditSink(opts: {
   let partialFlushed = false;
 
   const write = async (partial: boolean): Promise<void> => {
-    if (calls.length === 0) return;
+    // Zero calls normally means "nothing to audit" — but a surface with no
+    // calls is exactly the never-called session #2410 exists to expose, so it
+    // must still produce its file.
+    if (calls.length === 0 && opts.toolSurface === undefined) return;
     await mkdir(opts.dir, { recursive: true });
     const body = JSON.stringify(
       {
@@ -275,6 +308,7 @@ export function createToolAuditSink(opts: {
         // Additive and optional: absent on a normal flush, `true` only when the
         // shutdown path persisted a buffer its hop never closed.
         ...(partial ? { partial: true } : {}),
+        ...(opts.toolSurface !== undefined ? { toolSurface: opts.toolSurface } : {}),
         calls: redactRowStrings(calls),
       },
       null,

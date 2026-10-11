@@ -12,6 +12,7 @@ import {
   registerToolAuditSink,
   TOOL_AUDIT_SCHEMA_VERSION,
   type ToolCallRecord,
+  type ToolSurfaceRecord,
   unregisterToolAuditSink,
 } from "@nathapp/nax-agent/internal";
 import { assertDefined, cleanupTempDir, makeTempDir, withWarnSpy } from "#test/helpers/index";
@@ -67,6 +68,57 @@ describe("createToolAuditSink", () => {
     const dir = await mkdtemp(join(tmpdir(), "tool-audit-"));
     await createToolAuditSink({ dir, sessionName: "s3" }).flush();
     expect(await readdir(dir)).toHaveLength(0);
+  });
+
+  test("a surface with zero calls still writes the file (#2410: the never-called session is the point)", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "tool-audit-"));
+    const surface: ToolSurfaceRecord = {
+      stage: "review",
+      transport: "acp",
+      declaredTools: ["Read", "Glob", "Grep"],
+      advertised: [{ providerId: "codegraph", names: ["search_graph"] }],
+      withheld: [],
+      skippedProviders: [{ id: "runonly", reason: "stage-mismatch", stages: ["run"] }],
+      failures: [],
+      profile: "read",
+    };
+    const sink = createToolAuditSink({ dir, sessionName: "advisor", toolSurface: surface });
+    await sink.flush();
+    const files = await readdir(dir);
+    expect(files).toHaveLength(1);
+    const parsed = JSON.parse(await readFile(join(dir, files[0] as string), "utf8"));
+    expect(parsed.toolSurface).toEqual(surface);
+    expect(parsed.calls).toEqual([]);
+  });
+
+  test("calls and surface land in the same file", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "tool-audit-"));
+    const sink = createToolAuditSink({
+      dir,
+      sessionName: "impl",
+      toolSurface: {
+        stage: "run",
+        transport: "native",
+        declaredTools: ["Read", "Write"],
+        advertised: [{ providerId: "codegraph", names: ["search_graph"] }],
+        withheld: [{ providerId: "codegraph", name: "write_graph", reason: "denied" }],
+        skippedProviders: [],
+        failures: [],
+      },
+    });
+    sink.record({
+      tool: "codegraph__search_graph",
+      outcome: "ok",
+      input: { q: "x" },
+      resultBytes: 5,
+      provider: "codegraph",
+      at: "2026-10-11T00:00:00.000Z",
+    });
+    await sink.flush();
+    const parsed = JSON.parse(await readFile(join(dir, (await readdir(dir))[0] as string), "utf8"));
+    expect(parsed.toolSurface.transport).toBe("native");
+    expect(parsed.toolSurface.withheld).toEqual([{ providerId: "codegraph", name: "write_graph", reason: "denied" }]);
+    expect(parsed.calls).toHaveLength(1);
   });
 
   test("a denied row carries the reason", async () => {

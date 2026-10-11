@@ -266,6 +266,8 @@ type ToolProvider
 type ToolResult
 type ToolRunContext
 type ToolScope
+type ToolSurfaceDraft
+type ToolSurfaceRecord
 type TrackedSpawnDeadlineOptions
 type TranscriptAcpRecord
 type TranscriptDoc
@@ -691,6 +693,8 @@ type ToolResult
 type ToolResultMessage
 type ToolRunContext
 type ToolScope
+type ToolSurfaceDraft
+type ToolSurfaceRecord
 type TranscriptAcpRecord
 type TranscriptDoc
 type TranscriptIdentity

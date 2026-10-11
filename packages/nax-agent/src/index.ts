@@ -467,6 +467,8 @@ export {
   type ToolResult,
   type ToolRunContext,
   type ToolScope,
+  type ToolSurfaceDraft,
+  type ToolSurfaceRecord,
   type TruncateForModelOptions,
   type TruncationDirection,
   type TruncationResult,
