@@ -30,10 +30,515 @@
 ## Review Focus
 
 1. **A lens that returns non-JSON prose twice** — expected: that lens is `missing` for the round, the other lens's findings still get fixed, and the PR is draft with "spec review missing". Pinned in Task 4 (op exhausted fallback) and Task 13 (machine draft path).
-2. **The same issue raised by both lenses with different wording but the same file and line** — expected: flagged as a contradiction once, one advisor question, never two conflicting fixes. Pinned in Task 5.
+2. **The same issue raised by both lenses with different wording but the same file and line** — expected: flagged as a contradiction once, one advisor question, never two conflicting fixes. Pinned in Task 5 and A-10 (Task 11).
 3. **The forge CLI missing or unauthenticated at finalize** — expected: status `failed` with the CLI error as reason, notify fires, ledger not written. Pinned in Task 12.
 4. **`flowMs` deadline firing in the middle of a fix session** — expected: no further LLM calls, a draft PR is still finalized with reason `deadline` using a fresh signal. Pinned in Task 13.
 5. **A gate fix that commits production code after the third review round** — expected: the commit is listed under "Unreviewed fix commits" and the PR is draft, not ready. Pinned in Task 13.
+
+---
+
+## Amendments from the final plan review (2026-10-11) — AUTHORITATIVE
+
+Where a task's text below disagrees with this section, **this section wins**. Each task's implementer must read the amendments tagged with its task number.
+
+### A-1 Ordering and the `src/finish/index.ts` barrel (Tasks 8-15)
+
+Bun fails at link time when a barrel re-exports a name that no longer exists, so removing a runtime export early breaks every test that imports `@/finish`.
+
+- **Tasks 8-12 are additive at runtime.** They add new functions, types and methods alongside the old ones. They never delete a runtime export or a `src/finish/index.ts` / `src/operations/index.ts` entry. Type-only removals (fields on interfaces) are allowed because Bun strips types.
+- Concretely:
+  - **Task 11** adds `judgedMerged(findings, contradictions, state)` and `approvalFromFacts(facts, approval)` as new methods on `FinishAdvisor`, plus `judgeWithoutAdvisor`. The old `judged` / `approval` / `applyJudgedAdvice` / `runApproval` stay until Task 13. Everywhere later tasks say `advise.judged(...)` or `advise.approval(...)` with the new signatures, read `judgedMerged` / `approvalFromFacts`.
+  - **Task 12** adds `reviewSpec` / `reviewBranch` / `finalizeDraftPr` to `FinishOps` and `ops-impl` alongside `review` / `narrate` / `escalate`. `parseTitle` and the `TITLE_*` constants stay until Task 15.
+  - **Task 13** (the machine rewrite) deletes the old advisor and ops methods, `routeReview`, `MAX_INCOMPLETE_ATTEMPTS`, `applyJudgedAdvice`, `runApproval`, **and their `index.ts` entries, in the same commit**.
+  - **Task 14** removes the escalate and notify exports and their index entries.
+  - **Task 15** removes everything else.
+- **Expected red, between Task 8 and Task 13:** `bun run typecheck`, and `test/unit/finish/machine-*.test.ts`, `route*.test.ts`, `review-window.test.ts` (the old machine runs on the old state fields). Every other test, including each task's own new tests, must be green at that task's commit.
+- **Nothing is pushed before Task 16.** PR 2 is pushed only when the whole stack is green.
+
+### A-2 PRD stories and `prdPath` (Task 13)
+
+`loadFinishContext` does not read the PRD; only `pr/context.ts` does, via `featureDir(workdir, feature)/prd.json` and `storiesFrom`. Do not add fields to `FinishContext`. Instead, in `src/finish/review-inputs.ts` (new; `loadReviewInputs` moves here out of `machine.ts`):
+
+```ts
+export const _reviewInputsDeps = {
+  readText: (path: string): Promise<string | null> => Bun.file(path).text().catch(() => null),
+};
+
+export async function loadReviewInputs(state: FinishState, outputDir: string | undefined): Promise<ReviewInputs> {
+  const prdAbs = join(featureDir(state.workdir, state.feature), "prd.json");
+  const [changed, hints, prdText] = await Promise.all([
+    changedFiles(state.workdir, state.base),
+    outputDir ? readA3Hints(outputDir, state.feature) : Promise.resolve([]),
+    _reviewInputsDeps.readText(prdAbs),
+  ]);
+  return { changed, hints, stories: storiesFromText(prdText), prdPath: relative(state.workdir, prdAbs) };
+}
+```
+
+`storiesFromText(text)` parses JSON fail-open (returns `[]` on null or invalid input) and maps `userStories` to `{ id, title }`. If `pr/context.ts`'s `storiesFrom` can take the parsed object, export it from `pr/` and reuse it, dropping `acCount`. Test both: a valid PRD, and a missing PRD giving `[]`.
+
+### A-3 Second ledger set and status-file types (Task 14)
+
+- `src/finish/context.ts:90` has its own `LEDGER_TERMINAL_STATUSES`, which `checkLedger` reads. Make both sets identical by moving the set to `audit.ts` as an exported `LEDGER_TERMINAL_STATUSES` and importing it in `context.ts`. Members: `opened`, `promoted`, `already-ready`, `draft`, `local-only`, `nothing-to-finish`, plus `escalated` (so old ledgers still skip). Add a test that a ledgered `draft` at the same HEAD routes `already-finished`.
+- `src/execution/status-file.ts:42-55` `FinishPhaseStatus` changes:
+  - `status: PostRunPhaseStatus | "draft"`
+  - `result?` takes the new `FinishResult["status"]` union (import the type)
+  - add `outcome?: "ready" | "draft" | "failed"` and `reason?: string`
+  - keep `escalationReason?`, marked "pre-A4 only, never written"
+
+  Do **not** change the shared `PostRunPhaseStatus`.
+
+### A-4 Fail-closed fact defaults (Task 13)
+
+- In `resolveAndFinalize` and `recoverAfterThrow`, the defaults are `state.acceptanceFact ?? "unverified"` and `state.gateFacts ?? [{ name: "gates", status: "red", excerpt: "not run" }]`.
+- `runAcceptanceLoop` sets `state.acceptanceFact = "not-configured"` explicitly in its `acceptanceStatus === "disabled"` early return.
+- A lens is missing if `state.review.rounds === 0`: set `missingLenses = ["spec", "quality"]` before resolution in that case.
+- Skip gate zero (the acceptance re-run inside the gates loop) when `state.acceptanceFact` is already `red` or `unverified`, so a red acceptance does not burn three more gate-fix attempts.
+
+### A-5 Review-loop cap, unreviewed commits, acceptance re-check (Task 13)
+
+- **Unreviewed commits.** `state.unreviewedFixCommits` collects the SHA of every fix commit not yet seen by a full review round: acceptance re-check fixes, gate fixes, and a review fix made in the last allowed round.
+  - When a review round completes with **no missing lens**, set `state.unreviewedFixCommits = []` **before** that round's own fix commit. The round saw everything committed before it.
+  - Then, if that round's fix commit is the last round allowed, push its SHA.
+- **Findings at the cap.** At the cap, clear `lastFindings` **only when `commit.committed`**. A no-op fix (all findings rejected, or no diff) keeps them open, so resolution sees them.
+- **`reviewedHead`.** Delete the field. It is never read.
+
+Replace the Task 13 cap text with the rules above. Add these `review-loop.test.ts` cases (full bodies under A-10):
+- a cap-round no-op fix keeps findings open
+- a clean round after a gate-fix SHA clears `unreviewedFixCommits`
+
+### A-6 Throws and finalize (Task 13)
+
+`recoverAfterThrow(state, deps, err)`:
+
+1. `deps.runSignal?.aborted` → `failed` (`reason: "aborted"`). No forge call.
+2. `state.finalizing === true` means the throw came from `promotePr` / `finalizeDraftPr` → `failed` with that error. Add `finalizing?: boolean` to `FinishState` in Task 8. It is set immediately before the forge call.
+3. Otherwise (a deadline or any other throw), compute facts so far with the A-4 defaults, then `resolve` **without the advisor**, which always gives draft. Prefix the reason with `deadline` when `deps.signal?.aborted`, else `finish error: <message>`. Set `state.resolution`, then `finalizeDraftPr` (with `state.finalizing = true`). If that throws → `failed`.
+
+`resolve()` wraps the advisor call:
+
+```ts
+let decision: { action: ApprovalAction; rationale: string };
+try {
+  decision = await args.advise.approval(facts, approvalFacts(facts, args.reReviewUsed));
+} catch (err) {
+  decision = { action: "unavailable", rationale: `advisor error: ${String(err)}` };
+}
+```
+
+Add this to Task 10's tests: an advisor that throws gives `draft` with `"advisor: advisor error: …"`.
+
+### A-7 Narrative deprecation and notify default (Task 14)
+
+- After parsing, both narrative keys are always present, so check `deprecatedNarrative = finish.narrative === false || finish.reviewers.narrative != null`.
+- In `src/config/schemas.ts`, change the notify default in **both** places: the inner `.default("escalation")` and the outer finish object's `notify: { mode: "escalation" }`. Both become `"draft"`.
+- Remove `preferTelegram` from `FinishOpsDeps` and `phase.ts`. It only steered PR escalation comments, which no longer exist.
+
+### A-8 Missing tests from spec §11 (Tasks 4, 12, 14)
+
+- **Task 4, retry → missing.** For each op, add a test that drives `op.retry` to exhaustion and asserts `exhaustedFallback` returns `MISSING_REVIEW`. Model it on the `RetryStrategy` / `ParseValidationError` cases in `test/unit/operations/finish-review.test.ts`, before Task 15 deletes that file. Copy the harness shape, not the assertions.
+- **Task 12, concurrency.** In `ops-impl.test.ts`, stub `_finishOpsDeps.callOp` with a gate (as in Task 6's test). Call `Promise.all([ops.reviewSpec(s, i), ops.reviewBranch(s, i)])` and assert both calls started before either resolved, with `sessionOverride.role` values `finish-review-spec` and `finish-review-quality`. Per-role cost attribution comes from `callOp` + `sessionOverride.role`, which existing `callOp` tests cover. That is an accepted reduction from spec §4.5's fake-agent wording.
+- **Task 14, run summary.** `phase.ts` logs one info line `PR <url> opened (<outcome>): <reason or "clean">` (or `local-only` / `failed: <reason>`), with `storyId: "_run"` first. Test it with the logger sink pattern `nbf-worth-check.test.ts` uses (`addSink` / `initLogger`).
+
+### A-9 Smaller fixes
+
+- **Task 8:** `FinishRoundOutcome` keeps every existing member, `escalated` and `incomplete` included, as read-only history, and adds `"missing"`. `FinishState` gains these, all defined in Task 8, not Task 12:
+  - `resolution?: { outcome: "ready" | "draft"; reason?: string; facts: ResolutionFacts; acceptedResidue: Finding[] }`
+  - `reason?: string`
+  - `finalizing?: boolean`
+- **Task 8, outcome union:** `FinishResult.outcome` is `"ready" | "draft" | "failed"`. No forge is a **status** (`local-only`), not an outcome. A clean run with no forge has `status: "local-only"`, `outcome: "ready"`, and passes. This narrows spec §7.2's outcome union; the behaviour is as the spec intends.
+- **Task 12:** the PR context reads `state.resolution`. `LoadPrContextArgs` gets no new field. For the `--draft` create path, call `openPr(forge, { title, body, branch, draft: true }, deps, workdir)` from `src/forge/pr.ts:76-90`, not hand-built argv. `updatePrBody` swallows failures by design, so a failed body update on an existing draft still reports `draft`. Document that at the call site.
+- **Task 13, also touched:**
+  - `src/finish/commit.ts:176`: add `"review"` to `REVIEWED_PHASES`.
+  - `src/finish/commit-message.ts`: make `phaseLabel` / `reviewSubject` render `review` as "branch review", not "review review", and add a test.
+  - `src/finish/pr/body.ts`: add a `missing` entry to `EMPTY_ROUND_NOTE` (`"- _no verdict from this review_"`).
+- **Task 13, gate fixes:** a `tests-only` gate fix is treated like `changed`: one more review round if any remain, otherwise its SHA goes to `unreviewedFixCommits`.
+- **Task 14:**
+  - Add `status?: string` to `RecordedResult` in `advisor-import.ts`.
+  - Put the new phase cases in `test/unit/finish/phase-a4.test.ts`, because `phase.test.ts` is already 734 lines.
+- **Task 15:** `call-root-collapse.test.ts` only mentions the role string. Update or keep it according to the Step 1 grep.
+
+### A-10 Shared test fixture and written-out tests
+
+**Shared fixture (create in Task 11).** `baseContext` / `baseState` / `makeOps` are file-local today and must not be copy-pasted (`test-helpers.md`). Create `test/helpers/finish-machine.ts` and export it from `test/helpers/index.ts`:
+
+```ts
+import type { AcceptanceGroupResult } from "@/cli";
+import type { FinishContext, FinishOps, FinishReviewOutput, FinishState } from "@/finish";
+import { createFinishState } from "@/finish";
+
+export function makeFinishContext(overrides: Partial<FinishContext> = {}): FinishContext {
+  const group: AcceptanceGroupResult = { packageDir: "", testPath: "test/acceptance/feat.test.ts", exists: true, cwd: "" };
+  return {
+    base: "origin/main",
+    specPath: ".nax/features/feat/spec.md",
+    acceptanceStatus: "ok",
+    groups: [group],
+    testFileRegex: ["\\.test\\.ts$"],
+    commitsAhead: 3,
+    route: "proceed",
+    ...overrides,
+  };
+}
+
+export function makeFinishState(overrides: Partial<FinishState> = {}): FinishState {
+  const state = createFinishState({
+    feature: "feat",
+    workdir: "/repo",
+    branch: "feat/x",
+    runId: "run-1",
+    base: "origin/main",
+    specPath: ".nax/features/feat/spec.md",
+  });
+  return { ...state, ...overrides };
+}
+
+export const CLEAN_REVIEW: FinishReviewOutput = { findings: [], covered: [] };
+
+/** Scripted A4 ops: each review call shifts the next scripted output (default clean). Records a call trail. */
+export function makeFinishOps(
+  trail: string[],
+  script: { spec?: FinishReviewOutput[]; quality?: FinishReviewOutput[] } = {},
+  overrides: Partial<FinishOps> = {},
+): FinishOps {
+  const spec = [...(script.spec ?? [])];
+  const quality = [...(script.quality ?? [])];
+  return {
+    reviewSpec: async () => {
+      trail.push("review:spec");
+      return spec.shift() ?? CLEAN_REVIEW;
+    },
+    reviewBranch: async () => {
+      trail.push("review:quality");
+      return quality.shift() ?? CLEAN_REVIEW;
+    },
+    fix: async (phase) => {
+      trail.push(`fix:${phase}`);
+      return {};
+    },
+    openDraftPr: async () => {
+      trail.push("openDraftPr");
+      return { url: "https://x/pr/1" };
+    },
+    promotePr: async () => {
+      trail.push("promotePr");
+      return { status: "promoted", url: "https://x/pr/1" };
+    },
+    finalizeDraftPr: async () => {
+      trail.push("finalizeDraftPr");
+      return { status: "draft", url: "https://x/pr/1" };
+    },
+    ...overrides,
+  };
+}
+```
+
+Until Task 13 deletes them, `FinishOps` still has the old `review` / `narrate` / `escalate` members (A-1). In Tasks 11-12, `makeFinishOps` adds throwing stubs for them (`review: async () => { throw new Error("old review path called"); }`, and likewise for the others), and Task 13 removes those stubs. The old machine tests keep their own file-local helpers until Task 13 rewrites them onto this fixture.
+
+The `git` stub for review-loop and machine tests uses the existing `_finishGitDeps.git` seam:
+
+```ts
+// in each test file
+const originalGit = _finishGitDeps.git;
+afterEach(() => {
+  _finishGitDeps.git = originalGit;
+});
+/** HEAD advances on every commit; status is dirty after any fix call. */
+function stubGit(state: { dirty: boolean; head: number }) {
+  _finishGitDeps.git = async (args) => {
+    if (args[0] === "rev-parse") return { exitCode: 0, stdout: `sha${state.head}\n`, stderr: "" };
+    if (args[0] === "status") return { exitCode: 0, stdout: state.dirty ? " M a.ts\n" : "", stderr: "" };
+    if (args[0] === "commit") {
+      state.head += 1;
+      state.dirty = false;
+    }
+    if (args[0] === "diff" && args.includes("--cached")) return { exitCode: state.dirty ? 1 : 0, stdout: "", stderr: "" };
+    return { exitCode: 0, stdout: "", stderr: "" };
+  };
+}
+```
+
+Before relying on it, check `commitFixes` in `src/finish/commit.ts` (`gitlinkSafeAdd`, `hasStagedChanges`) for the exact git calls it makes, and adjust the stub so that a dirty tree commits and a clean tree does not. The fixer stub sets `git.dirty = true` to simulate an edit.
+
+**Task 13, `review-loop.test.ts` (the risky cases, in full):**
+
+```ts
+import { afterEach, describe, expect, test } from "bun:test";
+import { makeFinishOps, makeFinishState, withTempDir } from "@test/helpers";
+import { _finishGitDeps, MAX_REVIEW_ROUNDS, runReviewLoop } from "@/finish";
+import type { Finding, FinishReviewOutput, ReviewInputs } from "@/finish";
+
+const inputs: ReviewInputs = { changed: ["a.ts"], hints: [], stories: [], prdPath: ".nax/features/feat/prd.json" };
+const q = (title: string, extra: Partial<Finding> = {}): FinishReviewOutput => ({
+  findings: [{ severity: "MEDIUM", title, problem: "p", fix: "f", source: "quality", file: "a.ts", ...extra }],
+  covered: ["a.ts"],
+});
+// stubGit(...) from the fixture section, declared in this file
+
+function deps(ops: ReturnType<typeof makeFinishOps>, auditDir: string) {
+  return {
+    ops,
+    inputs,
+    audit: { auditDir, runId: "run-1" },
+    now: () => "t",
+    assertNotAborted: () => {},
+  };
+}
+
+describe("runReviewLoop cap", () => {
+  test("three rounds with findings: the round-3 fix SHA is unreviewed and its findings cleared", async () => {
+    await withTempDir(async (dir) => {
+      const git = { dirty: false, head: 1 };
+      stubGit(git);
+      const trail: string[] = [];
+      const ops = makeFinishOps(trail, { quality: [q("A"), q("B"), q("C")] }, {
+        fix: async (phase) => {
+          trail.push(`fix:${phase}`);
+          git.dirty = true;
+          return {};
+        },
+      });
+      const state = makeFinishState();
+      await runReviewLoop(state, deps(ops, dir));
+      expect(state.review.rounds).toBe(MAX_REVIEW_ROUNDS);
+      expect(trail.filter((t) => t === "fix:review")).toHaveLength(3);
+      expect(state.review.lastFindings).toEqual([]);
+      expect(state.unreviewedFixCommits).toEqual(["sha4"]);
+    });
+  });
+
+  test("a cap-round fix that commits nothing keeps the findings open", async () => {
+    await withTempDir(async (dir) => {
+      const git = { dirty: false, head: 1 };
+      stubGit(git);
+      const trail: string[] = [];
+      const ops = makeFinishOps(trail, { quality: [q("A"), q("B"), q("C")] }, {
+        fix: async () => {
+          if (git.head < 3) git.dirty = true; // rounds 1-2 edit, round 3 rejects everything
+          return {};
+        },
+      });
+      const state = makeFinishState();
+      await runReviewLoop(state, deps(ops, dir));
+      expect(state.review.lastFindings.map((f) => f.title)).toEqual(["C"]);
+      expect(state.unreviewedFixCommits).toEqual([]);
+    });
+  });
+});
+
+describe("runReviewLoop failures and advisor-off judgment", () => {
+  test("a fix session that throws counts the round and leaves findings open", async () => {
+    await withTempDir(async (dir) => {
+      stubGit({ dirty: false, head: 1 });
+      const trail: string[] = [];
+      const ops = makeFinishOps(trail, { quality: [q("A"), q("A")] }, {
+        fix: async () => {
+          throw new Error("session died");
+        },
+      });
+      const state = makeFinishState();
+      await runReviewLoop(state, deps(ops, dir));
+      expect(state.review.rounds).toBe(3);
+      expect(state.review.lastFindings.map((f) => f.title)).toEqual(["A"]);
+    });
+  });
+
+  test("contradiction with the advisor off: spec finding fixed, quality finding unresolved", async () => {
+    await withTempDir(async (dir) => {
+      const git = { dirty: false, head: 1 };
+      stubGit(git);
+      const fixed: Finding[][] = [];
+      const trail: string[] = [];
+      const spec: FinishReviewOutput = {
+        findings: [{ severity: "HIGH", title: "Must retry", problem: "p", fix: "add retry", source: "spec", file: "a.ts", line: 9 }],
+        covered: [],
+      };
+      const ops = makeFinishOps(trail, { spec: [spec], quality: [q("Retry is bad", { line: 9 })] }, {
+        fix: async (_phase, req) => {
+          fixed.push(req.findings ?? []);
+          git.dirty = true;
+          return {};
+        },
+      });
+      const state = makeFinishState();
+      await runReviewLoop(state, deps(ops, dir));
+      expect(fixed[0]?.map((f) => f.title)).toEqual(["Must retry"]);
+      expect(state.review.unresolved.map((f) => f.title)).toEqual(["Retry is bad"]);
+    });
+  });
+
+  test("a clean round after a gate-fix SHA clears unreviewedFixCommits", async () => {
+    await withTempDir(async (dir) => {
+      stubGit({ dirty: false, head: 5 });
+      const state = makeFinishState({ unreviewedFixCommits: ["sha4"] });
+      await runReviewLoop(state, deps(makeFinishOps([]), dir), 1);
+      expect(state.unreviewedFixCommits).toEqual([]);
+    });
+  });
+});
+```
+
+Exact SHA values depend on how many `commit` calls `commitFixes` makes. Derive them from the stub, and keep the assertion that the cap-round SHA is the one recorded.
+
+**Task 13, machine invariants (in full):**
+
+```ts
+test("run abort mid-review → failed 'aborted', no PR calls", async () => {
+  const run = new AbortController();
+  const trail: string[] = [];
+  const ops = makeFinishOps(trail, {}, {
+    reviewSpec: async () => {
+      run.abort();
+      throw new Error("aborted");
+    },
+  });
+  const result = await runFinishMachine(makeFinishState(), {
+    context: makeFinishContext({ acceptanceStatus: "disabled" }),
+    ops,
+    audit,
+    signal: run.signal,
+    runSignal: run.signal,
+    now: () => "t",
+  });
+  expect(result.status).toBe("failed");
+  expect(result.reason).toBe("aborted");
+  expect(trail).not.toContain("promotePr");
+  expect(trail).not.toContain("finalizeDraftPr");
+});
+
+test("flowMs deadline during a fix → no further LLM calls, draft with reason 'deadline'", async () => {
+  const phase = new AbortController();
+  const trail: string[] = [];
+  const ops = makeFinishOps(trail, { quality: [q("A")] }, {
+    fix: async () => {
+      trail.push("fix:review");
+      phase.abort();
+      throw new Error("deadline");
+    },
+  });
+  const result = await runFinishMachine(makeFinishState(), {
+    context: makeFinishContext({ acceptanceStatus: "disabled" }),
+    ops,
+    audit,
+    signal: phase.signal,
+    runSignal: new AbortController().signal,
+    now: () => "t",
+  });
+  expect(result.outcome).toBe("draft");
+  expect(result.reason?.startsWith("deadline")).toBe(true);
+  expect(trail.slice(trail.indexOf("fix:review") + 1)).toEqual(["finalizeDraftPr"]);
+});
+
+test("finalizeDraftPr throws → failed with that error", async () => {
+  const ops = makeFinishOps([], { quality: [q("A"), q("A"), q("A")] }, {
+    finalizeDraftPr: async () => {
+      throw new Error("gh: not authenticated");
+    },
+  });
+  const result = await runFinishMachine(makeFinishState(), {
+    context: makeFinishContext({ acceptanceStatus: "disabled" }),
+    ops,
+    audit,
+    now: () => "t",
+  });
+  expect(result.status).toBe("failed");
+  expect(result.reason).toContain("gh: not authenticated");
+});
+```
+
+(`audit` = a temp-dir `AuditTarget`, `q` as in `review-loop.test.ts`, and `_qualityGateDeps` stubbed green, as the current `machine-loops.test.ts` does.) For the deadline test the trail check needs the gates loop skipped after the abort: `assertNotAborted` throws at the next step, which routes to `recoverAfterThrow`.
+
+**Task 11, `advise.test.ts` (in full, using the file's existing `decision` / `fakeAdvisor` / `state` / `make`):**
+
+```ts
+test("hold on one finding does not stop the next", async () => {
+  await withTempDir(async (dir) => {
+    const replies = [
+      { decision: decision({ id: "D-1", action: { type: "hold", reason: "ask a human" } }) },
+      { decision: decision({ id: "D-2", action: { type: "fix", instruction: "do it" } }) },
+    ];
+    const { advisor } = fakeAdvisor(() => replies.shift() ?? { fallbackReason: "none" });
+    const j1 = { ...judged, title: "One", source: "spec" as const };
+    const j2 = { ...judged, title: "Two", source: "quality" as const };
+    const out = await make(dir, advisor).judgedMerged([j1, j2], [], state(dir));
+    expect(out.unresolved.map((f) => f.title)).toEqual(["One"]);
+    expect(out.toFix.map((f) => f.title)).toEqual(["Two"]);
+    expect(out.toFix[0]?.fix).toContain("Advisor ruling (D-2): do it");
+    expect(out.advice.map((a) => a.decisionId)).toEqual(["D-1", "D-2"]);
+  });
+});
+
+test("a contradiction is one question with both findings as evidence; fix → spec finding", async () => {
+  await withTempDir(async (dir) => {
+    const { advisor, asked } = fakeAdvisor(() => ({ decision: decision({ action: { type: "fix", instruction: "keep retry" } }) }));
+    const s = { severity: "LOW" as const, title: "S", problem: "sp", fix: "sf", source: "spec" as const, file: "a.ts", line: 2 };
+    const qf = { ...s, title: "Q", problem: "qp", source: "quality" as const, severity: "HIGH" as const };
+    const out = await make(dir, advisor).judgedMerged([], [{ spec: s, quality: qf }], state(dir));
+    expect(asked).toHaveLength(1);
+    expect(asked[0]?.summary).toBe("Spec and quality reviews disagree on a.ts:2");
+    expect(asked[0]?.evidence.map((e) => e.text.split(":")[0])).toEqual(["Spec review", "Quality review"]);
+    expect(asked[0]?.findingSeverity).toBe("HIGH");
+    expect(asked[0]?.dedupeKey).toBe(dedupeKeyFor("spec", s));
+    expect(out.toFix.map((f) => f.title)).toEqual(["S"]);
+    expect(out.unresolved).toEqual([]);
+  });
+});
+```
+
+Match the `hold` / `fix` action object shapes to `AdviceAction` in `src/advisor/types.ts` (`hold` carries `reason`), and match the fallback `AdviceResult` shape to what `advise()` returns when there is no decision.
+
+**Task 12, `keepDraft` (in full, inside `pr-open.test.ts`):**
+
+```ts
+function recordingDeps(view: { exitCode: number; stdout: string }) {
+  const calls: string[][] = [];
+  const deps = {
+    run: async (argv: string[]) => {
+      calls.push(argv);
+      if (argv.includes("view")) return { exitCode: view.exitCode, stdout: view.stdout, stderr: "" };
+      return { exitCode: 0, stdout: "https://x/pr/9\n", stderr: "" };
+    },
+  };
+  return { calls, deps };
+}
+
+const args = (forge: "github" | "gitlab") => ({
+  workdir: "/r",
+  branch: "feat/x",
+  title: "feat: x",
+  body: "b",
+  forge,
+  committedThisRun: true,
+  keepDraft: true,
+});
+
+test.each(["github", "gitlab"] as const)("%s: existing draft is updated and left draft", async (forge) => {
+  const viewJson = forge === "github" ? '{"isDraft":true,"url":"https://x/pr/9"}' : '{"draft":true,"web_url":"https://x/pr/9"}';
+  const { calls, deps } = recordingDeps({ exitCode: 0, stdout: viewJson });
+  const out = await openOrPromotePr(args(forge), deps);
+  expect(out.status).toBe("draft");
+  expect(calls.some((c) => c.includes("ready") || c.includes("--ready"))).toBe(false);
+  expect(calls.some((c) => c.includes("edit") || (c.includes("update") && c.includes("--title")))).toBe(true);
+});
+
+test.each(["github", "gitlab"] as const)("%s: no PR → created as a draft", async (forge) => {
+  const { calls, deps } = recordingDeps({ exitCode: 1, stdout: "" });
+  const out = await openOrPromotePr(args(forge), deps);
+  expect(out.status).toBe("draft");
+  expect(calls.some((c) => c.includes("create") && c.includes("--draft"))).toBe(true);
+});
+
+test("an already-ready PR is not demoted", async () => {
+  const { calls, deps } = recordingDeps({ exitCode: 0, stdout: '{"isDraft":false,"url":"https://x/pr/9"}' });
+  const out = await openOrPromotePr(args("github"), deps);
+  expect(out.status).toBe("already-ready");
+  expect(calls.some((c) => c.includes("ready"))).toBe(false);
+});
+```
+
+Match `viewJson` to what `parseView` (`pr/open.ts:34`) reads for each forge, and match `deps` to the `ForgeDeps` type (add the other members the existing `pr-open.test.ts` stub provides). `openPr` (used for the draft create) may check `hasOpenPr` first, through `deps.run`. Make the stub answer that call the same way the existing `openDraftFinishPr` tests do.
+
+The Task 14 table-driven bodies and the Task 12 body-section cases may be written by the implementer, from the case lists given.
 
 ---
 
@@ -44,7 +549,7 @@
 | File | Responsibility |
 |---|---|
 | `src/finish/types.ts` (modify) | `ReviewLens`, `Finding.file/line/source`, `FinishReviewOutput` |
-| `src/finish/review-json.ts` (create) | parse + validate a review op's JSON reply into `FinishReviewOutput` |
+| `src/finish/review-json/index.ts` (create, nested barrel) | parse + validate a review op's JSON reply into `FinishReviewOutput` |
 | `src/finish/a3-hints.ts` (create) | read A3 worth-check skip verdicts for a feature |
 | `src/finish/changed-files.ts` (create) | `git diff --name-only base...HEAD` |
 | `src/prompts/builders/finish-review-builder.ts` (create) | spec/branch review prompts, JSON retry prompts, grouped fix prompt |
@@ -83,7 +588,7 @@ Branch: `feat/a4-finish-rebuild` (exists, holds the spec). PR 1 is pushed from t
 
 **Files:**
 - Modify: `src/finish/types.ts` (the `Finding` interface, lines 5-21)
-- Create: `src/finish/review-json.ts`
+- Create: `src/finish/review-json/index.ts` (a nested barrel from day one: `src/operations` must import it as `@/finish/review-json` — importing the `@/finish` barrel from `src/operations` is a certain cycle, because `@/finish` exports `ops-impl`, which imports `@/operations`)
 - Modify: `src/finish/index.ts` (export the new symbols)
 - Test: `test/unit/finish/review-json.test.ts`
 
@@ -228,7 +733,7 @@ export interface FinishReviewOutput {
 - [ ] **Step 4: Write the parser**
 
 ```ts
-// src/finish/review-json.ts
+// src/finish/review-json/index.ts
 /**
  * A4: parse one finish review op's JSON reply (spec §4.1).
  *
@@ -238,7 +743,7 @@ export interface FinishReviewOutput {
  * fallback is `MISSING_REVIEW`.
  */
 import { tryParseLLMJson } from "@/utils/llm-json";
-import type { Finding, FinishReviewOutput, ReviewLens, Severity } from "./types";
+import type { Finding, FinishReviewOutput, ReviewLens, Severity } from "../types";
 
 const SEVERITIES: ReadonlySet<string> = new Set(["CRITICAL", "HIGH", "MEDIUM", "LOW"]);
 
@@ -297,7 +802,7 @@ Add to `src/finish/index.ts`:
 
 ```ts
 export type { FinishReviewOutput, ReviewLens } from "./types";
-export { isFinishReviewShape, MISSING_REVIEW, parseFinishReviewReply } from "./review-json";
+export { isFinishReviewShape, MISSING_REVIEW, parseFinishReviewReply } from "./review-json";  // resolves to review-json/index.ts
 ```
 
 - [ ] **Step 5: Run test to verify it passes**
@@ -313,7 +818,7 @@ Expected: PASS (all existing tests).
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/finish/types.ts src/finish/review-json.ts src/finish/index.ts test/unit/finish/review-json.test.ts
+git add src/finish/types.ts src/finish/review-json src/finish/index.ts test/unit/finish/review-json.test.ts
 git commit -m "feat(finish): A4 finding location/source and review JSON parser"
 ```
 
@@ -325,7 +830,7 @@ git commit -m "feat(finish): A4 finding location/source and review JSON parser"
 - Test: `test/unit/finish/a3-hints.test.ts`
 
 **Interfaces:**
-- Consumes: the `NbfWorthCheckAuditFile` JSON shape written by `src/operations/nbf-worth-check-audit.ts` — fields used: `mode` (`"on" | "shadow"`), `parsed` (boolean), `findings[] {index?, severity, category, file?, line?, message}`, `verdicts[] {index, verdict, reason}`. Before writing code, open `nbf-worth-check-audit.ts:20-40` and confirm these field names; if `findings[]` entries carry no `index`, the join key is the array position (`findings[verdict.index - 1]` when verdict indexes are 1-based as in the worth-check prompt's `{"index":1,…}` reply — confirm by reading `parseNbfWorthCheck` in `src/operations/nbf-worth-check.ts`). The test below assumes 1-based verdict indexes into the `findings` array; adjust both together if the source says otherwise.
+- Consumes: the `NbfWorthCheckAuditFile` JSON shape written by `src/operations/nbf-worth-check-audit.ts` — fields used: `mode` (`"on" | "shadow"`), `parsed` (boolean), `findings[] {index?, severity, category, file?, line?, message}`, `verdicts[] {index, verdict, reason}`. Verified: each audit `findings[]` entry carries a 1-based `index` (`nbf-worth-check-audit.ts`, `index: index + 1`); join `verdicts[i].index` to the finding with the same `index` field.
 - Produces:
   - `export interface A3Hint { file?: string; line?: number; severity: string; message: string; reason: string }`
   - `export async function readA3Hints(outputDir: string, feature: string): Promise<A3Hint[]>`
@@ -346,8 +851,8 @@ function record(mode: "on" | "shadow", parsed: boolean) {
     mode,
     parsed,
     findings: [
-      { severity: "info", category: "convention", file: "src/a.ts", line: 3, message: "stale comment" },
-      { severity: "warning", category: "input", file: "src/b.ts", message: "empty list" },
+      { index: 1, severity: "info", category: "convention", file: "src/a.ts", line: 3, message: "stale comment" },
+      { index: 2, severity: "warning", category: "input", file: "src/b.ts", message: "empty list" },
     ],
     verdicts: [
       { index: 1, verdict: "skip", reason: "only matters if code changes" },
@@ -451,6 +956,7 @@ export const _a3HintsDeps = {
 };
 
 interface AuditFinding {
+  index?: unknown;
   severity?: unknown;
   file?: unknown;
   line?: unknown;
@@ -465,7 +971,7 @@ function hintsFromRecord(raw: unknown): A3Hint[] {
   const out: A3Hint[] = [];
   for (const v of r.verdicts as { index?: unknown; verdict?: unknown; reason?: unknown }[]) {
     if (v.verdict !== "skip" || typeof v.index !== "number") continue;
-    const f = findings[v.index - 1];
+    const f = findings.find((x) => x.index === v.index);
     if (!f || typeof f.message !== "string") continue;
     out.push({
       ...(typeof f.file === "string" ? { file: f.file } : {}),
@@ -702,8 +1208,8 @@ const QUALITY_CHECKLIST = `## Clean-code checklist
 - Security (only where the diff touches it).
 - Type safety: unsafe casts, widened types, dropped narrowing.`;
 
-function fileList(files: string[]): string {
-  return files.length > 0 ? files.map((f) => `- ${f}`).join("\n") : "(could not list them — read `git diff BASE...HEAD`)";
+function fileList(files: string[], base: string): string {
+  return files.length > 0 ? files.map((f) => `- ${f}`).join("\n") : `(could not list them — read \`git diff ${base}...HEAD\`)`;
 }
 
 export interface FinishSpecReviewPromptInput {
@@ -718,7 +1224,7 @@ export function buildFinishSpecReviewPrompt(input: FinishSpecReviewPromptInput):
   return [
     "You are reviewing a finished feature branch against its spec, as a whole. You do not edit anything.",
     `## Inputs\n- Spec: \`${input.specPath}\`\n- PRD (stories and acceptance criteria): \`${input.prdPath}\`\n- Diff: \`git diff ${input.base}...HEAD\``,
-    `## Changed files\n${fileList(input.changedFiles).replace("BASE", input.base)}`,
+    `## Changed files\n${fileList(input.changedFiles, input.base)}`,
     ...(input.decisions ? [`## Decisions already made (do not raise these again)\n${input.decisions}`] : []),
     [
       "## What to look for",
@@ -749,7 +1255,7 @@ export function buildFinishBranchReviewPrompt(input: FinishBranchReviewPromptInp
   return [
     "You are reviewing a finished feature branch as a whole, across all of its stories. You do not edit anything.",
     `## Inputs\n- Diff: \`git diff ${input.base}...HEAD\`\n## Stories\n${stories}`,
-    `## Changed files\n${fileList(input.changedFiles).replace("BASE", input.base)}`,
+    `## Changed files\n${fileList(input.changedFiles, input.base)}`,
     [
       "## What to look for",
       "- New code that nothing in production reaches (not wired in, only called from tests).",
@@ -903,6 +1409,7 @@ describe("finishSpecReviewOp", () => {
     expect(finishSpecReviewOp.name).toBe("finish-spec-review");
     expect(finishSpecReviewOp.session.role).toBe("finish-review-spec");
     expect(finishSpecReviewOp.session.lifetime).toBe("fresh");
+    expect(finishSpecReviewOp.tools).toEqual(["Read", "Glob", "Grep", "Git"]);
   });
 
   test("build carries the spec, PRD and changed files", () => {
@@ -981,6 +1488,9 @@ export const finishSpecReviewOp: RunOperation<FinishSpecReviewInput, FinishRevie
   stage: "review",
   config: finishConfigSelector,
   session: { role: "finish-review-spec", lifetime: "fresh" },
+  // Read-only, plus Git: the prompt tells the reviewer to read `git diff base...HEAD`,
+  // and DEFAULT_CODING_TOOLS has no Git (same list as adversarial-review.ts).
+  tools: ["Read", "Glob", "Grep", "Git"],
   model: (input) => input.model,
   timeoutMs: (input, ctx) => input.timeoutMs ?? ctx.config.execution.sessionTimeoutSeconds * 1000,
   build(input) {
@@ -1004,9 +1514,9 @@ export const finishSpecReviewOp: RunOperation<FinishSpecReviewInput, FinishRevie
 };
 ```
 
-The `@/finish/review-json` value import is an internal path: `src/operations` must import from the barrel `@/finish` instead (`import { MISSING_REVIEW, parseFinishReviewReply } from "@/finish";`). Use the barrel. If `bun run check:import-cycles` then reports a new cycle (`@/finish` barrel → `@/operations` → `@/finish`), promote `review-json.ts` to its own nested barrel `src/finish/review-json/index.ts` and import `@/finish/review-json` (exact-match nested barrel, allowed by `check:alias-internals`), as `project-conventions.md` describes. Same for `@/finish/types` (type-only imports are fine as leaf paths).
+`@/finish/review-json` is a nested barrel (Task 1), an exact-match specifier allowed by `check:alias-internals`. Never import the `@/finish` barrel from `src/operations` (cycle). `@/finish/types` is a type-only leaf import, which is allowed.
 
-`src/operations/finish-branch-review.ts` is the same with: `FinishBranchReviewInput` (fields listed in Interfaces), `name: "finish-branch-review"`, `session: { role: "finish-review-quality", lifetime: "fresh" }`, `build` calls `buildFinishBranchReviewPrompt(input)`, every `"spec"` lens argument becomes `"quality"`, `reviewerKind: "finish-branch-review"`. Write it out in full.
+`src/operations/finish-branch-review.ts` is the same with: `FinishBranchReviewInput` (fields listed in Interfaces), `name: "finish-branch-review"`, `session: { role: "finish-review-quality", lifetime: "fresh" }`, `build` calls `buildFinishBranchReviewPrompt(input)`, every `"spec"` lens argument becomes `"quality"`, `reviewerKind: "finish-branch-review"`, same `tools`. Write it out in full.
 
 Add to `src/operations/index.ts` next to the finish ops:
 
