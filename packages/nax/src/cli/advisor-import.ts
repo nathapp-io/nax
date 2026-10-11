@@ -56,9 +56,16 @@ interface RecordedFinding {
 
 interface RecordedResult {
   feature: string;
+  /** Pre-A4 results record `escalated`; post-A4 ones record `draft`, `failed` or a ready status. */
+  status?: string;
   escalationReason?: string;
   findings?: RecordedFinding[];
   rounds?: { phase: string; outcome: string }[];
+}
+
+/** A4 stopped escalating; only a result recorded before that has an escalation to replay. */
+function isPreA4Escalation(r: RecordedResult): boolean {
+  return r.status === "escalated" || (r.rounds ?? []).some((x) => x.outcome === "escalated");
 }
 
 function escalatedPhase(r: RecordedResult): string {
@@ -118,6 +125,10 @@ export async function runAdvisorImport(
     return 2;
   }
   const result = JSON.parse(await Bun.file(opts.resultPath).text()) as RecordedResult;
+  if (!isPreA4Escalation(result)) {
+    deps.log(`skipped ${opts.resultPath}: not a pre-A4 escalation`);
+    return 0;
+  }
   const picked = (result.findings ?? []).filter((f) => opts.allFindings || f.judgment === true);
   if (picked.length === 0) {
     const gap = /reading obligations/i.test(result.escalationReason ?? "");

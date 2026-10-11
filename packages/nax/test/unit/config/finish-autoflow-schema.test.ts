@@ -7,11 +7,24 @@ describe("finish schema", () => {
     expect(c.finish.enabled).toBe(false);
     expect(c.finish.reviewers).toEqual({ spec: null, quality: null, narrative: null, fix: null });
     expect(c.finish.escalate.telegram).toBe(true);
-    expect(c.finish.notify.mode).toBe("escalation");
+    expect(c.finish.notify.mode).toBe("draft");
     // Every stage the phase awaits is capped — nothing defaults to unbounded.
     expect(c.finish.timeouts.acceptanceMs).toBeGreaterThan(0);
     expect(c.finish.timeouts.gateMs).toBeGreaterThan(0);
     expect(c.finish.timeouts.flowMs).toBeGreaterThan(0);
+  });
+
+  test("notify mode escalation is still accepted as the pre-A4 alias", () => {
+    const c = NaxConfigSchema.parse({ version: 1, finish: { notify: { mode: "escalation" } } });
+    expect(c.finish.notify.mode).toBe("escalation");
+  });
+
+  test("profiles with deprecated finish.narrative keys still parse", () => {
+    const c = NaxConfigSchema.safeParse({
+      version: 1,
+      finish: { narrative: false, reviewers: { narrative: "fast" } },
+    });
+    expect(c.success).toBe(true);
   });
 
   test("accepts timeout overrides and rejects non-positive budgets", () => {

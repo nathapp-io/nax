@@ -7,6 +7,7 @@ import type { FinishResult, FinishRound } from "@/finish";
 import {
   appendRound,
   createFinishState,
+  LEDGER_TERMINAL_STATUSES,
   ledgerPath,
   readLedger,
   readRounds,
@@ -202,24 +203,6 @@ describe("ledger — writeResult updates last.json for terminal statuses (#1674 
     });
   });
 
-  test("'escalated' also updates the ledger (a re-run must not re-page)", async () => {
-    await withTempDir(async (dir) => {
-      const t = { auditDir: join(dir, "finish-audit", "feat"), runId: "run-1" };
-      const result: FinishResult = {
-        feature: "feat",
-        status: "escalated",
-        headSha: "def456",
-        branch: "feat/x",
-        escalationReason: "needs a human",
-      };
-      await writeResult(t, result);
-
-      const ledger = await readLedger(t.auditDir);
-      expect(ledger?.status).toBe("escalated");
-      expect(ledger?.headSha).toBe("def456");
-    });
-  });
-
   test("'nothing-to-finish' (no headSha/branch) leaves the ledger untouched", async () => {
     await withTempDir(async (dir) => {
       const t = { auditDir: join(dir, "finish-audit", "feat"), runId: "run-1" };
@@ -294,35 +277,35 @@ describe("ledger — writeResult updates last.json for terminal statuses (#1674 
     });
   });
 
-  test("an 'escalated' result carrying deliveryError does not update the ledger (CRITICAL, post-#1675 review)", async () => {
+  test("a 'failed' result never updates the ledger: a re-run at the same HEAD must try again", async () => {
     await withTempDir(async (dir) => {
       const t = { auditDir: join(dir, "finish-audit", "feat"), runId: "run-1" };
       await writeResult(t, {
         feature: "feat",
-        status: "escalated",
+        status: "failed",
+        outcome: "failed",
+        reason: "gh: not authenticated",
         headSha: "sha-1",
         branch: "feat/x",
-        deliveryError: "no forge detected",
       });
 
+      expect(await Bun.file(resultPath(t)).exists()).toBe(true);
       expect(await readLedger(t.auditDir)).toBeNull();
     });
   });
 
-  test("an 'escalated' result with NO deliveryError (delivery succeeded) still updates the ledger", async () => {
+  test.each(["draft", "local-only", "nothing-to-finish"] as const)("a '%s' result is ledgered", async (status) => {
     await withTempDir(async (dir) => {
       const t = { auditDir: join(dir, "finish-audit", "feat"), runId: "run-1" };
-      await writeResult(t, {
-        feature: "feat",
-        status: "escalated",
-        headSha: "sha-1",
-        branch: "feat/x",
-        url: "https://example.com/pr/1",
-      });
-
-      const ledger = await readLedger(t.auditDir);
-      expect(ledger?.status).toBe("escalated");
-      expect(ledger?.prUrl).toBe("https://example.com/pr/1");
+      await writeResult(t, { feature: "feat", status, headSha: "sha-1", branch: "feat/x" });
+      expect(await readLedger(t.auditDir)).toMatchObject({ status, headSha: "sha-1", branch: "feat/x" });
     });
+  });
+
+  test("LEDGER_TERMINAL_STATUSES is the one set, and keeps the pre-A4 'escalated' readable", () => {
+    expect([...LEDGER_TERMINAL_STATUSES].sort()).toEqual(
+      ["already-ready", "draft", "escalated", "local-only", "nothing-to-finish", "opened", "promoted"].sort(),
+    );
+    expect(LEDGER_TERMINAL_STATUSES.has("failed")).toBe(false);
   });
 });

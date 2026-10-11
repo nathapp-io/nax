@@ -16,17 +16,17 @@ import type { FinishPrBodySettings } from "./types";
 
 export interface FinishSettings {
   enabled: boolean;
-  narrative: boolean;
+  /** True when a pre-A4 `finish.narrative` / `finish.reviewers.narrative` setting is present; it is ignored. */
+  deprecatedNarrative: boolean;
   prBody: FinishPrBodySettings;
   /** Exactly `FinishOpsDeps["models"]`: an absent key means "callOp's default". */
   models: {
     reviewSpec?: ConfiguredModel;
     reviewQuality?: ConfiguredModel;
     fix?: ConfiguredModel;
-    narrative?: ConfiguredModel;
   };
   escalate: { telegram: boolean };
-  notify: { mode: "escalation" | "always" | "off" };
+  notify: { mode: "draft" | "always" | "off" };
   /**
    * Cross-run idempotency (#1674 part 1). `on-change` (default) skips the
    * phase when the ledger's branch/HEAD already match a terminal outcome;
@@ -38,10 +38,10 @@ export interface FinishSettings {
 
 const DEFAULTS: Omit<FinishSettings, "models"> = {
   enabled: false,
-  narrative: true,
+  deprecatedNarrative: false,
   prBody: { template: "merge", sectionMap: {} },
   escalate: { telegram: true },
-  notify: { mode: "escalation" },
+  notify: { mode: "draft" },
   rerun: "on-change",
   timeouts: { acceptanceMs: 600_000, gateMs: 900_000, flowMs: 5_400_000, stepMs: null },
 };
@@ -52,7 +52,6 @@ function modelsOf(reviewers: Record<string, ConfiguredModel | null | undefined> 
     ["reviewSpec", "spec"],
     ["reviewQuality", "quality"],
     ["fix", "fix"],
-    ["narrative", "narrative"],
   ];
   const out: FinishSettings["models"] = {};
   for (const [target, source] of map) {
@@ -62,28 +61,36 @@ function modelsOf(reviewers: Record<string, ConfiguredModel | null | undefined> 
   return out;
 }
 
+/** `escalation` is the pre-A4 name for what is now `draft`. */
+function notifyMode(raw: "draft" | "escalation" | "always" | "off" | undefined): FinishSettings["notify"]["mode"] {
+  if (raw === undefined || raw === "escalation") return DEFAULTS.notify.mode;
+  return raw;
+}
+
 export function readFinishConfig(config: unknown): FinishSettings {
   const finish =
     config && typeof config === "object"
       ? (finishConfigSelector.select(config as NaxConfig)?.finish as
-          | (Partial<FinishSettings> & {
+          | (Partial<Omit<FinishSettings, "notify">> & {
+              narrative?: boolean;
               reviewers?: Record<string, ConfiguredModel | null>;
+              notify?: { mode?: "draft" | "escalation" | "always" | "off" };
             })
           | undefined)
       : undefined;
   if (!finish) return { ...DEFAULTS, models: {} };
   return {
     enabled: finish.enabled === true,
-    // `!== false` so an older config with no key still narrates, matching the
-    // schema default rather than silently opting out.
-    narrative: finish.narrative !== false,
+    // After parsing both keys are always present (true / null defaults), so
+    // "set" means a non-default value.
+    deprecatedNarrative: finish.narrative === false || finish.reviewers?.narrative != null,
     prBody: {
       template: finish.prBody?.template ?? DEFAULTS.prBody.template,
       sectionMap: finish.prBody?.sectionMap ?? DEFAULTS.prBody.sectionMap,
     },
     models: modelsOf(finish.reviewers),
     escalate: { telegram: finish.escalate?.telegram !== false },
-    notify: { mode: finish.notify?.mode ?? DEFAULTS.notify.mode },
+    notify: { mode: notifyMode(finish.notify?.mode) },
     rerun: finish.rerun ?? DEFAULTS.rerun,
     timeouts: {
       acceptanceMs: finish.timeouts?.acceptanceMs ?? DEFAULTS.timeouts.acceptanceMs,

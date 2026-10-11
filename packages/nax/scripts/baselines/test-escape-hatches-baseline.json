@@ -2,9 +2,9 @@
   "counts": {
     "tsSuppress": 0,
     "ratchetAllow": 21,
-    "looseCast": 1450
+    "looseCast": 1449
   },
-  "updatedAt": "2026-10-08T02:19:18.102Z",
+  "updatedAt": "2026-10-11T04:35:37.549Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": {
       "looseCast": 5
@@ -283,20 +283,11 @@
     "test/unit/finish/audit.test.ts": {
       "looseCast": 2
     },
-    "test/unit/finish/escalate.test.ts": {
-      "looseCast": 1
-    },
-    "test/unit/finish/review-prompt.test.ts": {
-      "looseCast": 1
-    },
     "test/unit/finish/state.test.ts": {
       "looseCast": 1
     },
     "test/unit/finish/pr-title.test.ts": {
       "ratchetAllow": 1
-    },
-    "test/unit/finish/machine-end-to-end.test.ts": {
-      "looseCast": 1
     },
     "test/unit/finish/phase.test.ts": {
       "looseCast": 2
@@ -553,9 +544,6 @@
     "test/unit/operations/plan-refine.test.ts": {
       "looseCast": 1
     },
-    "test/unit/operations/finish-narrative.test.ts": {
-      "ratchetAllow": 2
-    },
     "test/unit/operations/plan-interactive.test.ts": {
       "looseCast": 3
     },
@@ -585,9 +573,6 @@
     },
     "test/unit/operations/build-hop-callback-stale-retry.test.ts": {
       "looseCast": 3
-    },
-    "test/unit/operations/finish-review.test.ts": {
-      "looseCast": 1
     },
     "test/unit/operations/mutation-check-diff-scope.test.ts": {
       "looseCast": 4

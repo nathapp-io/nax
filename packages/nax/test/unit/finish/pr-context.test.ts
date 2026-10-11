@@ -180,3 +180,97 @@ describe("loadFinishPrContext — advisor decisions (A1)", () => {
     expect(noOut.advisorDecisions).toBeUndefined();
   });
 });
+
+describe("loadFinishPrContext — A4 review output and resolution", () => {
+  const audit = () => ({ auditDir: join(dir, "audit"), runId: "run-1" });
+  const open = {
+    severity: "HIGH" as const,
+    title: "Open",
+    problem: "p",
+    fix: "f",
+  };
+  const facts = {
+    findingsOpen: [open],
+    acceptance: "red" as const,
+    gates: [{ name: "lint", status: "red" as const, excerpt: "boom" }],
+    reviewsMissing: ["spec" as const],
+    unreviewedFixCommits: ["abc1234"],
+    coverage: { spec: null, quality: 0.5 },
+    fixRounds: 2,
+  };
+
+  test("narrative and title come from the branch reviewer on state.review", async () => {
+    _finishPrDeps.run = async () => ({ exitCode: 1, stdout: "", stderr: "" });
+    const state = stateFor(dir);
+    state.review.summary = "Reviewer prose.";
+    state.review.title = "fix: reviewer subject";
+    const ctx = await loadFinishPrContext({ state, audit: audit() });
+    expect(ctx.narrative).toBe("Reviewer prose.");
+    expect(ctx.title).toBe("fix: reviewer subject");
+  });
+
+  test("falls back to the spec summary and feat: <feature> when the reviewer gave neither", async () => {
+    _finishPrDeps.run = async () => ({ exitCode: 1, stdout: "", stderr: "" });
+    _finishPrDeps.readText = async (path: string) =>
+      path.endsWith("spec.md") ? "# Spec\n\n## Summary\n\nFrom the spec.\n" : null;
+    const ctx = await loadFinishPrContext({ state: stateFor(dir), audit: audit() });
+    expect(ctx.narrative).toBe("From the spec.");
+    expect(ctx.title).toBe("feat: demo");
+  });
+
+  test("a draft resolution becomes the unresolved block and coverage", async () => {
+    _finishPrDeps.run = async () => ({ exitCode: 1, stdout: "", stderr: "" });
+    const state = stateFor(dir);
+    state.resolution = { outcome: "draft", reason: "1 open finding(s)", facts, acceptedResidue: [] };
+    const ctx = await loadFinishPrContext({ state, audit: audit() });
+    expect(ctx.unresolved).toEqual({
+      reason: "1 open finding(s)",
+      findings: [open],
+      acceptance: "red",
+      gates: facts.gates,
+      missing: ["spec"],
+      unreviewed: ["abc1234"],
+      accepted: [],
+    });
+    expect(ctx.coverage).toEqual({ spec: null, quality: 0.5 });
+  });
+
+  test("a ready resolution with accepted residue still gets an unresolved block", async () => {
+    _finishPrDeps.run = async () => ({ exitCode: 1, stdout: "", stderr: "" });
+    const state = stateFor(dir);
+    state.resolution = {
+      outcome: "ready",
+      facts: {
+        ...facts,
+        findingsOpen: [],
+        acceptance: "green",
+        gates: [],
+        reviewsMissing: [],
+        unreviewedFixCommits: [],
+      },
+      acceptedResidue: [open],
+    };
+    const ctx = await loadFinishPrContext({ state, audit: audit() });
+    expect(ctx.unresolved?.accepted).toEqual([open]);
+  });
+
+  test("a clean ready resolution has coverage but no unresolved block", async () => {
+    _finishPrDeps.run = async () => ({ exitCode: 1, stdout: "", stderr: "" });
+    const state = stateFor(dir);
+    state.resolution = {
+      outcome: "ready",
+      facts: {
+        ...facts,
+        findingsOpen: [],
+        acceptance: "green",
+        gates: [],
+        reviewsMissing: [],
+        unreviewedFixCommits: [],
+      },
+      acceptedResidue: [],
+    };
+    const ctx = await loadFinishPrContext({ state, audit: audit() });
+    expect(ctx.unresolved).toBeUndefined();
+    expect(ctx.coverage).toEqual({ spec: null, quality: 0.5 });
+  });
+});

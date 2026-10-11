@@ -142,7 +142,7 @@ function proceedContext(): FinishContext {
 function makeCtx(opts?: {
   emit?: (e: PipelineEvent) => void;
   telegram?: boolean;
-  notifyMode?: "escalation" | "always" | "off";
+  notifyMode?: "draft" | "escalation" | "always" | "off";
 }): FinishPhaseContext {
   const unsubscribers: Array<() => void> = [];
   if (opts?.emit) {
@@ -153,7 +153,7 @@ function makeCtx(opts?: {
   const config = {
     finish: {
       enabled: true,
-      notify: { mode: opts?.notifyMode ?? "escalation" },
+      notify: { mode: opts?.notifyMode ?? "draft" },
     },
     ...(opts?.telegram ? { interaction: { plugin: "telegram", config: { botToken: "tok", chatId: "chat" } } } : {}),
   };
@@ -193,7 +193,7 @@ describe("runFinishPhase", () => {
       route: "proceed",
     });
     _finishPhaseDeps.detectForge = async () => null;
-    _finishPhaseDeps.runFinishMachine = async () => ({ feature: "f", status: "already-ready" });
+    _finishPhaseDeps.runFinishMachine = async () => ({ feature: "f", status: "already-ready", outcome: "ready" });
     const costReadings = [1.0, 1.25];
     _finishPhaseDeps.snapshotCost = () => costReadings.shift() ?? 0;
     try {
@@ -225,15 +225,15 @@ describe("runFinishPhase", () => {
     }
   });
 
-  test("an escalated result with telegram configured sends the escalation message", async () => {
+  test("a draft result with telegram configured sends the escalation message", async () => {
     const sent: string[] = [];
     const restore = { ..._finishPhaseDeps };
     _finishPhaseDeps.loadFinishContext = async () => proceedContext();
     _finishPhaseDeps.detectForge = async () => "github";
     _finishPhaseDeps.runFinishMachine = async () => ({
       feature: "f",
-      status: "escalated",
-      escalationReason: "needs a human",
+      status: "draft",
+      reason: "needs a human",
       findings: [{ severity: "HIGH", title: "t", problem: "p", fix: "x" }],
     });
     _finishPhaseDeps.sendTelegramNotify = async (_creds, text) => {
@@ -257,8 +257,8 @@ describe("runFinishPhase", () => {
     _finishPhaseDeps.detectForge = async () => "github";
     _finishPhaseDeps.runFinishMachine = async () => ({
       feature: "f",
-      status: "escalated",
-      escalationReason: "r",
+      status: "draft",
+      reason: "r",
       findings: [],
     });
     _finishPhaseDeps.sendTelegramNotify = async (_c, t) => {
@@ -325,7 +325,7 @@ describe("runFinishPhase", () => {
     const restore = { ..._finishPhaseDeps };
     _finishPhaseDeps.loadFinishContext = async () => proceedContext();
     _finishPhaseDeps.detectForge = async () => "github";
-    _finishPhaseDeps.runFinishMachine = async () => ({ feature: "f", status: "escalated", findings: [] });
+    _finishPhaseDeps.runFinishMachine = async () => ({ feature: "f", status: "draft", findings: [] });
     _finishPhaseDeps.sendTelegramNotify = async (_c, t) => {
       sent.push(t);
       return true;
@@ -337,86 +337,6 @@ describe("runFinishPhase", () => {
       Object.assign(_finishPhaseDeps, restore);
     }
   });
-});
-
-/**
- * Escalation delivery must reach exactly one channel.
- *
- * `preferTelegram` suppresses the PR/MR comment and makes Telegram the sole
- * channel; `notify()` sends nothing at all when `notify.mode` is "off". Both
- * true at once delivers the escalation nowhere, with no `deliveryError` to
- * show for it — which is what the acpx plugin's three-conjunct guard
- * (`notify.mode !== "off" && escalate.telegram && creds !== null`) prevented.
- */
-describe("escalation channel selection", () => {
-  function capturePreferTelegram(opts: {
-    telegram?: boolean;
-    notifyMode?: "escalation" | "always" | "off";
-  }): Promise<boolean | undefined> {
-    const restore = { ..._finishPhaseDeps };
-    let seen: boolean | undefined;
-    _finishPhaseDeps.loadFinishContext = async () => proceedContext();
-    _finishPhaseDeps.detectForge = async () => "github";
-    _finishPhaseDeps.createFinishOps = (deps) => {
-      seen = deps.preferTelegram;
-      return {
-        review: async () => ({ findings: [], gaps: [] }),
-        fix: async () => ({}),
-        openDraftPr: async () => null,
-        promotePr: async () => ({ status: "opened" as const }),
-        escalate: async () => ({}),
-      };
-    };
-    _finishPhaseDeps.runFinishMachine = async () => ({ feature: "f", status: "already-ready" });
-    return runFinishPhase(makeCtx(opts))
-      .then(() => seen)
-      .finally(() => Object.assign(_finishPhaseDeps, restore));
-  }
-
-  test("credentialed telegram is the sole channel under the default notify mode", async () => {
-    expect(await capturePreferTelegram({ telegram: true })).toBe(true);
-  });
-
-  test("notify.mode off must NOT suppress the PR comment", async () => {
-    // Otherwise: no comment (preferTelegram) and no Telegram (mode off) —
-    // the escalation is delivered nowhere and nothing records that.
-    expect(await capturePreferTelegram({ telegram: true, notifyMode: "off" })).toBe(false);
-  });
-});
-
-test("an undelivered escalation is surfaced on the finish status entry", async () => {
-  const restore = { ..._finishPhaseDeps };
-  const updates: Array<Record<string, unknown>> = [];
-  _finishPhaseDeps.loadFinishContext = async () => proceedContext();
-  _finishPhaseDeps.detectForge = async () => "github";
-  _finishPhaseDeps.runFinishMachine = async () => ({
-    feature: "f",
-    status: "escalated",
-    escalationReason: "needs a human",
-    deliveryError: "gh pr comment failed",
-  });
-  // This test's config carries no `interaction.plugin: "telegram"`, so
-  // `telegramCreds()` (src/finish/notify.ts) falls through to ambient
-  // NAX_TELEGRAM_TOKEN / TELEGRAM_BOT_TOKEN / NAX_TELEGRAM_CHAT_ID env vars.
-  // test/preload.ts scrubs those and sentinels the underlying fetch as a
-  // global safety net, but this test must not depend on that for its own
-  // hermeticity — mock the seam directly, like every sibling test above does.
-  _finishPhaseDeps.sendTelegramNotify = async () => false;
-  const ctx = {
-    ...makeCtx(),
-    statusWriter: {
-      setPostRunPhase: (_phase: "finish", update: Record<string, unknown>) => {
-        updates.push(update);
-      },
-    },
-  };
-  try {
-    await runFinishPhase(ctx);
-    const terminal = updates[updates.length - 1];
-    expect(terminal.deliveryError).toBe("gh pr comment failed");
-  } finally {
-    Object.assign(_finishPhaseDeps, restore);
-  }
 });
 
 describe("runFinishPhase — gate skip observability (#1671)", () => {

@@ -62,10 +62,14 @@ export function ledgerPath(auditDir: string): string {
 }
 
 /** The statuses a re-run at the same HEAD must not repeat (#1674 part 1). */
-const LEDGER_TERMINAL_STATUSES: ReadonlySet<FinishResult["status"]> = new Set([
+// `escalated` is pre-A4 history: it is read so an old ledger still skips, but no result carries it any more.
+export const LEDGER_TERMINAL_STATUSES: ReadonlySet<string> = new Set([
   "opened",
   "promoted",
   "already-ready",
+  "draft",
+  "local-only",
+  "nothing-to-finish",
   "escalated",
 ]);
 
@@ -80,29 +84,15 @@ const LEDGER_TERMINAL_STATUSES: ReadonlySet<FinishResult["status"]> = new Set([
  * record that this run happened at all, so that path keeps throwing.
  *
  * Silently a no-op when `result` carries no `headSha`/`branch` (a preflight
- * `nothing-to-finish` never reaches this) or its status is not one of the
- * four the ledger cares about.
+ * `nothing-to-finish` never reaches this) or its status is not one the ledger
+ * records. `failed` is never ledgered: a failed finish must be retried, not skipped.
  *
- * CRITICAL (post-#1674 review): an `escalated` result whose `deliveryError`
- * is set must never reach the ledger, even though its `status` is in
- * `LEDGER_TERMINAL_STATUSES`. `deliveryError` means the human was never
- * actually paged — a forge outage, an undetected forge, a Telegram failure,
- * or a run the user Ctrl-C'd mid-delivery (`machine.ts`'s aborted branch,
- * which sets a synthetic `deliveryError` for exactly this reason). Ledgering
- * an undelivered escalation as done would make `checkLedger`'s entry check
- * (`context.ts`) silently skip every later run at the same HEAD, losing the
- * page forever — the one false-positive direction that check's own doc
- * comment says must never happen. This check is the belt to
- * `writeResult`'s `ledger: false` opt-out's braces: the pre-delivery write
- * (`doEscalate`'s `base`, before `ops.escalate` is even attempted) already
- * skips the ledger via that opt-out, but a *delivery-attempted* result with
- * `deliveryError` reaches this function through the normal `ledger: true`
- * default, so it needs its own guard here too.
+ * A4: a `draft` is ledgered too. The PR already exists with its unresolved
+ * findings; re-running at the same HEAD could only repeat the side effects.
  */
 async function updateLedger(t: AuditTarget, result: FinishResult): Promise<void> {
   if (!result.headSha || !result.branch) return;
   if (!LEDGER_TERMINAL_STATUSES.has(result.status)) return;
-  if (result.status === "escalated" && result.deliveryError) return;
   const entry: FinishLedgerEntry = {
     branch: result.branch,
     headSha: result.headSha,
@@ -179,11 +169,10 @@ export interface WriteResultOptions {
   /**
    * Set `false` to skip the ledger update for this write. Default `true`.
    *
-   * Exists for `doEscalate`'s pre-delivery write (`machine.ts`, #1399): that
-   * write happens BEFORE `ops.escalate` is even attempted, purely so a
-   * killed process still leaves a `result.json` behind — at that point
-   * nothing is known yet about whether the escalation will actually reach a
-   * human, so ledgering it as a done `escalated` outcome would be a lie.
+   * For a write made before the outcome is final (for example a pre-delivery
+   * write kept so a killed process still leaves a `result.json` behind): at
+   * that point nothing is known yet about whether the result will reach a
+   * human, so ledgering it as a done outcome would be a lie.
    * The `result.json` write itself is unaffected by this option; only the
    * ledger side-effect is skipped.
    */

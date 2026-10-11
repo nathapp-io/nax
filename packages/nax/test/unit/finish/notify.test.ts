@@ -8,7 +8,14 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { _notifyDeps, isTelegramConfigured, sendTelegramNotify, telegramCreds } from "@/finish";
+import {
+  _notifyDeps,
+  buildDraftMessage,
+  isTelegramConfigured,
+  sendTelegramNotify,
+  TELEGRAM_MAX_MESSAGE_CHARS,
+  telegramCreds,
+} from "@/finish";
 
 const orig = _notifyDeps.fetch;
 
@@ -122,5 +129,28 @@ describe("isTelegramConfigured", () => {
       if (prevChatId === undefined) delete process.env.NAX_TELEGRAM_CHAT_ID;
       else process.env.NAX_TELEGRAM_CHAT_ID = prevChatId;
     }
+  });
+});
+
+describe("buildDraftMessage", () => {
+  test("names the feature and reason, lists findings by severity, ends with the PR url", () => {
+    const text = buildDraftMessage("feat", "gate red", "https://x/pr/1", [{ severity: "HIGH", title: "t" }]);
+    expect(text).toBe("nax-finish draft feat: gate red\n- [HIGH] t\nhttps://x/pr/1");
+  });
+
+  test("without findings or url it is the bare head", () => {
+    expect(buildDraftMessage("feat", "r", undefined, [])).toBe("nax-finish draft feat: r");
+    expect(buildDraftMessage("feat", "boom", undefined, [], "failed")).toBe("nax-finish failed feat: boom");
+  });
+
+  test("stays inside the Bot API limit and says how many findings it dropped", () => {
+    const findings = Array.from({ length: 200 }, (_, i) => ({
+      severity: "LOW",
+      title: `finding ${i} ${"x".repeat(100)}`,
+    }));
+    const text = buildDraftMessage("feat", "r", "https://x/pr/1", findings);
+    expect(text.length).toBeLessThanOrEqual(TELEGRAM_MAX_MESSAGE_CHARS);
+    expect(text).toMatch(/…and \d+ more/);
+    expect(text.endsWith("https://x/pr/1")).toBe(true);
   });
 });

@@ -11,6 +11,7 @@ import { rename, unlink } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { AdvisorSummary } from "@/advisor/store";
 import { NaxError } from "../errors";
+import type { FinishResult } from "../finish/types";
 import type { PRD } from "../prd";
 
 // ============================================================================
@@ -54,23 +55,25 @@ export interface RegressionPhaseStatus {
 
 /** Status of the native finish phase during post-run */
 export interface FinishPhaseStatus {
-  status: PostRunPhaseStatus;
+  /** `draft` (A4): the finish ended in a draft PR a human must look at. Not a pass. */
+  status: PostRunPhaseStatus | "draft";
   /** ISO 8601 timestamp of the last finish run */
   lastRunAt?: string;
   /** Terminal status the finish machine reached */
-  result?: "opened" | "promoted" | "already-ready" | "escalated" | "nothing-to-finish";
+  result?: FinishResult["status"];
+  /** A4: `ready | draft | failed`. */
+  outcome?: "ready" | "draft" | "failed";
   /** PR/MR the phase opened, promoted or commented on */
   url?: string;
-  /** Why finish stopped, when `result` is "escalated" */
+  /** Pre-A4 only, never written: why finish stopped when `result` was "escalated". */
   escalationReason?: string;
-  /** Set when an escalation could not be delivered to its channel. */
-  deliveryError?: string;
   /**
    * Why the phase was skipped without running — the failing gate clause
    * (#1671: "enabled" | "completed" | "failed" | "paused" | "branch"), the
    * ledger hit that stood it down (#1674 part 1: "already-finished") or the
-   * already-merged PR that did (#1674 part 2: "pr-merged"). Absent on every
-   * other status.
+   * already-merged PR that did (#1674 part 2: "pr-merged"). Also carries the
+   * draft reason or failure message when the finish ended `draft` or `failed`.
+   * Absent otherwise.
    */
   reason?: string;
 }

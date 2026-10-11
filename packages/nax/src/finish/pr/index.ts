@@ -7,4 +7,5 @@
 export { buildFinishBody, buildFinishTitle } from "./body";
 export type { FinishPrContext, FinishPrStory, LoadPrContextArgs } from "./context";
 export { _finishPrDeps, loadFinishPrContext } from "./context";
+export { NARRATIVE_MAX_CHARS, readSpecSummary, resolveNarrative } from "./narrative";
 export { openDraftFinishPr, openOrPromotePr, parseView, updatePrBody } from "./open";

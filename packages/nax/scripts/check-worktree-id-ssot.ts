@@ -112,7 +112,6 @@ const ALLOWED_FILES = new Set([
   "src/context/generators/windsurf.ts",
   "src/context/rules/canonical-loader/index.ts",
   "src/execution/story-context/index.ts",
-  "src/finish/review/prompts.gen.ts",
   "src/finish/route.ts",
   "src/interaction/plugins/webhook-serve-compat.ts",
   "src/interaction/plugins/webhook.ts",

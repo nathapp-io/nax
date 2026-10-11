@@ -55,7 +55,7 @@ describe("buildFinishTitle (US-002 AC1)", () => {
 
   test("renders the 'feat: <feature>' fallback that resolveTitle supplies", () => {
     // The floor is still the auto-PR plugin's shape, so a finish run whose
-    // narrative node never spoke reads the same as an auto-PR-opened one.
+    // branch review supplied no title reads the same as an auto-PR-opened one.
     expect(buildFinishTitle(baseCtx({ title: resolveTitle(undefined, "pipeline-run-outcome") }))).toBe(
       "feat: pipeline-run-outcome",
     );
@@ -122,14 +122,14 @@ describe("buildFinishBody — Verification block (US-002 AC4-AC7)", () => {
   });
 });
 
-describe("buildFinishBody — Review rounds (US-002 AC8-AC12)", () => {
+describe("buildFinishBody — Review (US-002 AC8-AC12)", () => {
   test("renders one heading per round naming phase and attempt", () => {
     const body = buildFinishBody(
       baseCtx({
         rounds: [committedRound({ phase: "spec", attempt: 1 }), committedRound({ phase: "quality", attempt: 2 })],
       }),
     );
-    expect(body).toContain("## Review rounds");
+    expect(body).toContain("## Review");
     expect(body).toContain("### spec attempt 1");
     expect(body).toContain("### quality attempt 2");
   });
@@ -195,9 +195,9 @@ describe("buildFinishBody — Review rounds (US-002 AC8-AC12)", () => {
     expect(body).not.toMatch(/### spec attempt 1 \([0-9a-f]{7}\)/);
   });
 
-  test("renders no Review rounds heading when rounds is empty", () => {
+  test("renders no Review heading when rounds is empty", () => {
     const body = buildFinishBody(baseCtx({ rounds: [] }));
-    expect(body).not.toContain("## Review rounds");
+    expect(body).not.toContain("## Review");
   });
 });
 
@@ -459,4 +459,118 @@ describe("buildFinishBody — Advisor decisions section (A1)", () => {
       expect(body).toContain("D-2");
     });
   }
+});
+
+describe("buildFinishBody — Unresolved and coverage (A4)", () => {
+  const unresolved = (over: Partial<NonNullable<FinishPrContext["unresolved"]>> = {}) => ({
+    reason: "",
+    findings: [],
+    acceptance: "green" as const,
+    gates: [],
+    missing: [],
+    unreviewed: [],
+    accepted: [],
+    ...over,
+  });
+
+  test("draft body puts Unresolved first with reason, findings, red gates, missing reviews, unreviewed commits", () => {
+    const body = buildFinishBody(
+      baseCtx({
+        narrative: "Prose.",
+        stories: [story()],
+        unresolved: unresolved({
+          reason: "2 open finding(s), spec review missing",
+          findings: [
+            finding({ severity: "LOW", title: "Nit", file: "b.ts" }),
+            finding({ severity: "HIGH", title: "Real bug", file: "a.ts", line: 4, source: "quality" }),
+          ],
+          acceptance: "red",
+          gates: [{ name: "lint", status: "red", excerpt: "a.ts:1 unused" }],
+          missing: ["spec"],
+          unreviewed: ["abcdef1234567"],
+        }),
+      }),
+    );
+    expect(body.startsWith("## Unresolved")).toBe(true);
+    expect(body.indexOf("## Unresolved")).toBeLessThan(body.indexOf("## What changed"));
+    expect(body).toContain("2 open finding(s), spec review missing");
+    expect(body.indexOf("Real bug")).toBeLessThan(body.indexOf("Nit"));
+    expect(body).toContain("a.ts:4");
+    expect(body).toContain("Acceptance: red");
+    expect(body).toContain("lint");
+    expect(body).toContain("a.ts:1 unused");
+    expect(body).toContain("spec review");
+    expect(body).toContain("abcdef1");
+    expect(body).not.toContain("abcdef1234567");
+  });
+
+  test("ready body with accepted residue renders 'Accepted by the advisor'", () => {
+    const body = buildFinishBody(
+      baseCtx({ unresolved: unresolved({ accepted: [finding({ title: "Waived thing", severity: "MEDIUM" })] }) }),
+    );
+    expect(body).toContain("## Unresolved");
+    expect(body).toContain("Accepted by the advisor");
+    expect(body).toContain("Waived thing");
+  });
+
+  test("ready body without residue has no Unresolved section", () => {
+    expect(buildFinishBody(baseCtx({ narrative: "Prose." }))).not.toContain("Unresolved");
+  });
+
+  test("Review section shows rounds and coverage percentages", () => {
+    const body = buildFinishBody(
+      baseCtx({
+        rounds: [committedRound({ phase: "review", sha: "abc1234def" })],
+        coverage: { spec: 0.8, quality: null },
+      }),
+    );
+    expect(body).toContain("## Review");
+    expect(body).toContain("- Coverage: spec 80%, quality n/a");
+    expect(body).toContain("### review attempt 1");
+  });
+
+  test("coverage alone renders the Review section", () => {
+    const body = buildFinishBody(baseCtx({ coverage: { spec: 1, quality: 0.5 } }));
+    expect(body).toContain("- Coverage: spec 100%, quality 50%");
+  });
+
+  test("a missing-verdict round says so", () => {
+    const body = buildFinishBody(baseCtx({ rounds: [committedRound({ committed: false, outcome: "missing" })] }));
+    expect(body).toContain("- _no verdict from this review_");
+  });
+});
+
+describe("buildFinishBody — Unresolved with a repo template (A4)", () => {
+  const template = "## Summary\n\n<!-- what -->\n\n## Testing\n\n- [ ] tests\n";
+  const draftUnresolved = {
+    reason: "1 open finding(s)",
+    findings: [finding({ title: "Real bug" })],
+    acceptance: "green" as const,
+    gates: [],
+    missing: [],
+    unreviewed: [],
+    accepted: [],
+  };
+
+  test.each(["merge", "strict"] as const)("%s mode renders Unresolved before the template sections", (mode) => {
+    const body = buildFinishBody(
+      baseCtx({ narrative: "Prose.", unresolved: draftUnresolved, template, templateMode: mode }),
+    );
+    expect(body.startsWith("## Unresolved")).toBe(true);
+    expect(body.indexOf("## Unresolved")).toBeLessThan(body.indexOf("## Summary"));
+    expect(body.match(/## Unresolved/g)).toHaveLength(1);
+  });
+
+  test("Unresolved stays after template frontmatter", () => {
+    const body = buildFinishBody(
+      baseCtx({
+        narrative: "Prose.",
+        unresolved: draftUnresolved,
+        template: `---\nname: x\n---\n${template}`,
+        templateMode: "merge",
+      }),
+    );
+    expect(body.startsWith("---")).toBe(true);
+    expect(body.indexOf("## Unresolved")).toBeLessThan(body.indexOf("## Summary"));
+  });
 });

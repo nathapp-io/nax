@@ -1,11 +1,11 @@
 /**
- * The PR title — sentinel, sanitiser, and the fallback chain.
+ * The PR title — sanitiser and the fallback chain.
  *
  * `buildFinishTitle` used to return `feat: <feature>` unconditionally, so every
  * finish-opened PR was titled with its feature slug: `feat: schema-drift-gate`
- * describes the run, not the change. The narrative node has already read the
+ * describes the run, not the change. The branch-review lens has already read the
  * whole diff by the time the body is amended, so a real conventional-commit
- * subject costs one extra sentinel in a prompt that was being sent anyway.
+ * subject costs one extra JSON field in a reply that was being sent anyway.
  *
  * No deterministic source can replace it. The spec's H1 is the slug in prose
  * (`# SPEC: Schema drift gate`), the PRD carries no feature-level title, and
@@ -13,10 +13,6 @@
  * why this is the one part of the PR metadata that is model-derived, and why
  * everything below assumes the model may return junk.
  */
-
-/** Sentinel wrapping the title. See `narrative-op.ts` for why a delimiter is required at all. */
-export const TITLE_OPEN_TAG = "<title>";
-export const TITLE_CLOSE_TAG = "</title>";
 
 /**
  * Longest title rendered onto a PR.
@@ -108,21 +104,6 @@ export function sanitizeTitle(raw: string | undefined): string | undefined {
   if (!subject) return undefined;
 
   return clamp(`${type}: ${subject}`);
-}
-
-/**
- * Extract the title from the narrative node's reply.
- *
- * Last opening tag wins, mirroring `parseNarrative` — a model that narrates the
- * tag before emitting it must not beat the real one.
- */
-export function parseTitle(text: string): string | undefined {
-  if (typeof text !== "string") return undefined;
-  const open = text.lastIndexOf(TITLE_OPEN_TAG);
-  if (open === -1) return undefined;
-  const from = open + TITLE_OPEN_TAG.length;
-  const close = text.indexOf(TITLE_CLOSE_TAG, from);
-  return sanitizeTitle(close === -1 ? text.slice(from) : text.slice(from, close));
 }
 
 /**

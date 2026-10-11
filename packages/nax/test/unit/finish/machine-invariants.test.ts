@@ -1,451 +1,264 @@
 /**
- * One named test per I1-I8 invariant from the Task 8 brief, each driving
- * `runFinishMachine` end to end with stub `FinishOps` and stubbed `_deps`
- * seams (`_finishGitDeps`, `_acceptanceGateDeps`, `_qualityGateDeps`) rather
- * than reaching into machine internals. Every assertion reads either the
- * returned `FinishResult`, the audit trail on disk (`readRounds`), or a call
- * trail recorded by the stubs themselves.
+ * Invariants of `runFinishMachine` that hold whatever the stubs do: aborts and deadlines, a throw from any op
+ * or runner, nothing-verified-is-not-a-pass, and the preconditions that stand the machine down.
  */
+
 import { afterEach, describe, expect, test } from "bun:test";
-import { withTempDir } from "@test/helpers";
-import type { AcceptanceGroupResult } from "@/cli";
-import type { NaxConfig } from "@/config";
-import { DEFAULT_CONFIG } from "@/config";
-import type {
-  AuditTarget,
-  Finding,
-  FinishContext,
-  FinishMachineDeps,
-  FinishOps,
-  FinishState,
-  ReviewOutcome,
-} from "@/finish";
-import {
-  _acceptanceGateDeps,
-  _finishGitDeps,
-  _qualityGateDeps,
-  createFinishState,
-  gateCommitRoute,
-  MAX_FIX_ATTEMPTS,
-  readRounds,
-  runFinishMachine,
-} from "@/finish";
-import type { QualityCommandOptions, QualityCommandResult } from "@/quality";
+import { join } from "node:path";
+import { makeFinishContext, makeMachineHarness, restoreFinishMachineStubs, withTempDir } from "@test/helpers";
+import type { Finding, FinishReviewOutput } from "@/finish";
+import { readLedger, runFinishMachine } from "@/finish";
 
-const originalGit = _finishGitDeps.git;
-const originalAcceptanceRun = _acceptanceGateDeps.run;
-const originalQuality = { ..._qualityGateDeps };
-afterEach(() => {
-  _finishGitDeps.git = originalGit;
-  _acceptanceGateDeps.run = originalAcceptanceRun;
-  _qualityGateDeps.run = originalQuality.run;
-  _qualityGateDeps.loadConfig = originalQuality.loadConfig;
-  _qualityGateDeps.loadPackageOverride = originalQuality.loadPackageOverride;
+afterEach(() => restoreFinishMachineStubs());
+
+const q = (title: string): FinishReviewOutput => ({
+  findings: [{ severity: "MEDIUM", title, problem: "p", fix: "f", source: "quality", file: "a.ts" } satisfies Finding],
+  covered: ["a.ts"],
 });
 
-const FINDING: Finding = { severity: "HIGH", title: "fix me", problem: "p", fix: "f" };
-
-function configWithCommands(commands: NaxConfig["quality"]["commands"]): NaxConfig {
-  return { ...DEFAULT_CONFIG, quality: { ...DEFAULT_CONFIG.quality, commands } };
-}
-
-function baseContext(overrides: Partial<FinishContext> = {}): FinishContext {
-  const group: AcceptanceGroupResult = {
-    packageDir: "",
-    testPath: "test/acceptance/feat.test.ts",
-    exists: true,
-    cwd: "",
-  };
-  return {
-    base: "origin/main",
-    specPath: ".nax/features/feat/spec.md",
-    acceptanceStatus: "ok",
-    groups: [group],
-    testFileRegex: ["\\.test\\.ts$"],
-    commitsAhead: 3,
-    route: "proceed",
-    ...overrides,
-  };
-}
-
-function baseState(overrides: Partial<FinishState> = {}): FinishState {
-  const state = createFinishState({
-    feature: "feat",
-    workdir: "/repo",
-    branch: "feat/x",
-    runId: "run-1",
-    base: "origin/main",
-    specPath: ".nax/features/feat/spec.md",
-  });
-  return { ...state, ...overrides };
-}
-
-function makeOps(trail: string[], overrides: Partial<FinishOps> = {}): FinishOps {
-  return {
-    review: async (phase) => {
-      trail.push(`review:${phase}`);
-      return { findings: [], gaps: [] };
-    },
-    fix: async (phase) => {
-      trail.push(`fix:${phase}`);
-      return {};
-    },
-    openDraftPr: async () => {
-      trail.push("openDraftPr");
-      return { url: "https://forge.example/pr/1" };
-    },
-    promotePr: async () => {
-      trail.push("promotePr");
-      return { status: "opened" as const };
-    },
-    escalate: async (_state, reason) => {
-      trail.push(`escalate:${reason}`);
-      return {};
-    },
-    ...overrides,
-  };
-}
-
-interface GitHandlers {
-  onCommit?: () => void;
-  filesInCommit?: string[];
-}
-
-function installGitStub(trail: string[], handlers: GitHandlers = {}): void {
-  let shaCounter = 0;
-  _finishGitDeps.git = async (args: string[]) => {
-    const cmd = args[0];
-    if (cmd === "rev-parse") {
-      shaCounter += 1;
-      return { stdout: `sha${shaCounter}`, stderr: "", exitCode: 0 };
-    }
-    if (cmd === "status") return { stdout: " M file.ts\n", stderr: "", exitCode: 0 };
-    // The staged check after add: only reached once status reported dirty.
-    if (cmd === "diff") return { stdout: "", stderr: "", exitCode: 1 };
-    if (cmd === "add") return { stdout: "", stderr: "", exitCode: 0 };
-    if (cmd === "commit") {
-      trail.push("commit");
-      handlers.onCommit?.();
-      return { stdout: "", stderr: "", exitCode: 0 };
-    }
-    if (cmd === "show")
-      return { stdout: (handlers.filesInCommit ?? ["src/prod.ts"]).join("\n"), stderr: "", exitCode: 0 };
-    if (cmd === "push") return { stdout: "", stderr: "", exitCode: 0 };
-    return { stdout: "", stderr: "", exitCode: 0 };
-  };
-}
-
-type GateRunFn = () => { exitCode: number; output?: string };
-
-function installAcceptanceGateStub(trail: string[], run?: GateRunFn): void {
-  const runFn: GateRunFn = run ?? (() => ({ exitCode: 0 }));
-  _acceptanceGateDeps.run = async () => {
-    trail.push("acceptance-run");
-    const r = runFn();
-    return {
-      commandName: "acceptance",
-      command: "bun test",
-      success: r.exitCode === 0,
-      exitCode: r.exitCode,
-      output: r.output ?? "acceptance output",
-      durationMs: 1,
-      timedOut: false,
-    };
-  };
-}
-
-function installQualityGateStub(
-  trail: string[],
-  opts: { commands?: NaxConfig["quality"]["commands"]; run?: GateRunFn } = {},
-): void {
-  const commands = opts.commands ?? { test: "true" };
-  _qualityGateDeps.loadConfig = async () => configWithCommands(commands);
-  _qualityGateDeps.loadPackageOverride = async () => null;
-  const runFn: GateRunFn = opts.run ?? (() => ({ exitCode: 0 }));
-  _qualityGateDeps.run = async (o: QualityCommandOptions): Promise<QualityCommandResult> => {
-    trail.push(`quality-run:${o.commandName}`);
-    const r = runFn();
-    return {
-      commandName: o.commandName,
-      command: o.command as string,
-      success: r.exitCode === 0,
-      exitCode: r.exitCode,
-      output: r.output ?? "gate output",
-      durationMs: 1,
-      timedOut: false,
-    };
-  };
-}
-
-interface MakeDepsOpts {
-  auditDir: string;
-  context?: Partial<FinishContext>;
-  ops?: Partial<FinishOps>;
-  signal?: AbortSignal;
-  git?: GitHandlers;
-  acceptanceRun?: () => { exitCode: number; output?: string };
-  qualityCommands?: NaxConfig["quality"]["commands"];
-  qualityRun?: () => { exitCode: number; output?: string };
-}
-
-function makeDeps(opts: MakeDepsOpts): { deps: FinishMachineDeps; trail: string[] } {
-  const trail: string[] = [];
-  installGitStub(trail, opts.git ?? {});
-  installAcceptanceGateStub(trail, opts.acceptanceRun);
-  installQualityGateStub(trail, { commands: opts.qualityCommands, run: opts.qualityRun });
-  const ops = makeOps(trail, opts.ops);
-  const audit: AuditTarget = { auditDir: opts.auditDir, runId: "run-1" };
-  let tick = 0;
-  const deps: FinishMachineDeps = {
-    context: baseContext(opts.context),
-    ops,
-    audit,
-    signal: opts.signal,
-    now: () => {
-      tick += 1;
-      return `2026-08-18T00:00:${String(tick).padStart(2, "0")}.000Z`;
-    },
-  };
-  return { deps, trail };
-}
-
-function assertFixImmediatelyFollowedByCommit(trail: string[]): void {
-  trail.forEach((entry, i) => {
-    if (entry.startsWith("fix:")) {
-      expect(trail[i + 1]).toBe("commit");
-    }
-  });
-}
-
-describe("I1 — nothing verified is not a pass (two distinct bugs)", () => {
-  test("empty acceptance groups escalate", async () => {
+describe("aborts and deadlines", () => {
+  test("run abort mid-review: failed 'aborted', neither promotePr nor finalizeDraftPr is called", async () => {
     await withTempDir(async (dir) => {
-      const { deps, trail } = makeDeps({ auditDir: dir, context: { groups: [] } });
-      const result = await runFinishMachine(baseState(), deps);
-      expect(result.status).toBe("escalated");
-      expect(result.escalationReason).toMatch(/nothing verified/i);
-      expect(trail.some((e) => e.startsWith("fix:"))).toBe(false);
-    });
-  });
-
-  test("no gate commands anywhere escalates", async () => {
-    await withTempDir(async (dir) => {
-      const { deps, trail } = makeDeps({ auditDir: dir, qualityCommands: {} });
-      const result = await runFinishMachine(baseState(), deps);
-      expect(result.status).toBe("escalated");
-      expect(result.escalationReason).toMatch(/no quality\.commands configured/i);
-      expect(trail.some((e) => e.startsWith("fix:gate"))).toBe(false);
-    });
-  });
-});
-
-test("I2 — every ops.fix call is followed by a commit before the next ops.review call", async () => {
-  await withTempDir(async (dir) => {
-    let qualityCalls = 0;
-    const { deps, trail } = makeDeps({
-      auditDir: dir,
-      ops: {
-        review: async (phase) => {
-          trail.push(`review:${phase}`);
-          if (phase !== "quality") return { findings: [], gaps: [] };
-          qualityCalls += 1;
-          return qualityCalls === 1 ? { findings: [FINDING], gaps: [] } : { findings: [], gaps: [] };
-        },
-      },
-    });
-    const result = await runFinishMachine(baseState(), deps);
-    expect(result.status).not.toBe("escalated");
-    assertFixImmediatelyFollowedByCommit(trail);
-    expect(trail.filter((e) => e === "commit").length).toBeGreaterThan(0);
-  });
-});
-
-describe("I3 — the fix-attempt cap comes from the loop, never from the model", () => {
-  test("a reviewer returning findings forever escalates after exactly MAX_FIX_ATTEMPTS fixes", async () => {
-    await withTempDir(async (dir) => {
-      const { deps, trail } = makeDeps({
+      const run = new AbortController();
+      const { deps, trail, state } = makeMachineHarness({
         auditDir: dir,
+        signal: run.signal,
+        runSignal: run.signal,
+        context: { acceptanceStatus: "disabled" },
         ops: {
-          review: async (phase) => {
-            trail.push(`review:${phase}`);
-            return phase === "quality" ? { findings: [FINDING], gaps: [] } : { findings: [], gaps: [] };
+          reviewSpec: async () => {
+            run.abort();
+            throw new Error("aborted");
           },
         },
       });
-      const result = await runFinishMachine(baseState(), deps);
-      expect(result.status).toBe("escalated");
-      expect(trail.filter((e) => e === "fix:quality").length).toBe(MAX_FIX_ATTEMPTS);
+      const result = await runFinishMachine(state, deps);
+      expect(result.status).toBe("failed");
+      expect(result.outcome).toBe("failed");
+      expect(result.reason).toBe("aborted");
+      expect(trail).not.toContain("promotePr");
+      expect(trail).not.toContain("finalizeDraftPr");
     });
   });
 
-  test("a reviewer claiming 'clean' out of band while still returning findings does not shorten the loop", async () => {
+  test("flowMs deadline during a fix session: no further LLM calls, finalizeDraftPr with reason 'deadline'", async () => {
     await withTempDir(async (dir) => {
-      const { deps, trail } = makeDeps({
+      const phase = new AbortController();
+      const { deps, trail, state } = makeMachineHarness({
         auditDir: dir,
+        signal: phase.signal,
+        runSignal: new AbortController().signal,
+        context: { acceptanceStatus: "disabled" },
+        script: { quality: [q("A")] },
         ops: {
-          review: async (phase) => {
-            trail.push(`review:${phase}`);
-            if (phase !== "quality") return { findings: [], gaps: [] };
-            // A misbehaving op stashing an extra field claiming "clean" —
-            // routeReview must derive the route only from findings/gaps.
-            // Assigned to a variable (not returned as a fresh literal) so the
-            // excess `route` property is accepted without widening the
-            // declared ReviewOutcome return type.
-            const outcomeWithExtraRoute: ReviewOutcome & { route: string } = {
-              findings: [FINDING],
-              gaps: [],
-              route: "clean",
-            };
-            return outcomeWithExtraRoute;
+          fix: async () => {
+            trail.push("fix:review");
+            phase.abort();
+            throw new Error("deadline");
           },
         },
       });
-      const result = await runFinishMachine(baseState(), deps);
-      expect(result.status).toBe("escalated");
-      expect(trail.filter((e) => e === "fix:quality").length).toBe(MAX_FIX_ATTEMPTS);
+      const result = await runFinishMachine(state, deps);
+      expect(result.outcome).toBe("draft");
+      expect(result.reason?.startsWith("deadline")).toBe(true);
+      expect(trail.slice(trail.indexOf("fix:review") + 1)).toEqual(["finalizeDraftPr"]);
+    });
+  });
+
+  test("a deadline that fires before any review leaves both lenses missing in the draft", async () => {
+    await withTempDir(async (dir) => {
+      const phase = new AbortController();
+      phase.abort();
+      const { deps, trail, state } = makeMachineHarness({
+        auditDir: dir,
+        signal: phase.signal,
+        runSignal: new AbortController().signal,
+      });
+      const result = await runFinishMachine(state, deps);
+      expect(result.outcome).toBe("draft");
+      expect(result.facts?.reviewsMissing).toEqual(["spec", "quality"]);
+      expect(trail).toEqual(["finalizeDraftPr"]);
     });
   });
 });
 
-describe("I4 — every committed gate fix re-enters quality review, test-only included (#1510)", () => {
-  test.each([
-    ["production code", ["src/prod.ts"], "changed"],
-    ["test files only", ["test/unit/foo.test.ts"], "tests-only"],
-  ] as const)("a gate fix committing %s re-enters ops.review('quality')", async (_label, files, expectedRoute) => {
+describe("throws become a draft or a failure, never an escalation", () => {
+  test("acceptance runner throws: acceptance red, the run continues to a draft", async () => {
     await withTempDir(async (dir) => {
-      let gateRunCount = 0;
-      const { deps, trail } = makeDeps({
+      const { deps, trail, state } = makeMachineHarness({ auditDir: dir, acceptanceThrows: "spawn failed" });
+      const result = await runFinishMachine(state, deps);
+      expect(state.acceptanceFact).toBe("red");
+      expect(trail).toContain("review:spec");
+      expect(trail).not.toContain("fix:acceptance");
+      expect(result.outcome).toBe("draft");
+      expect(result.reason).toContain("acceptance red");
+    });
+  });
+
+  test("gate runner throws: a red gate carrying the error, then a draft", async () => {
+    await withTempDir(async (dir) => {
+      const { deps, trail, state } = makeMachineHarness({ auditDir: dir, qualityThrows: "runner exploded" });
+      const result = await runFinishMachine(state, deps);
+      expect(result.outcome).toBe("draft");
+      expect(result.facts?.gates).toEqual([{ name: "gates", status: "red", excerpt: "runner exploded" }]);
+      expect(trail).not.toContain("fix:gate");
+    });
+  });
+
+  test("an op that throws outside a named recovery (openDraftPr) still ends in a draft with the error", async () => {
+    await withTempDir(async (dir) => {
+      const { deps, state } = makeMachineHarness({
         auditDir: dir,
-        git: { filesInCommit: [...files] },
-        qualityRun: () => {
-          gateRunCount += 1;
-          return { exitCode: gateRunCount === 1 ? 1 : 0 };
+        ops: {
+          openDraftPr: async () => {
+            throw new Error("forge hiccup");
+          },
         },
       });
-      const result = await runFinishMachine(baseState(), deps);
-      expect(result.status).not.toBe("escalated");
-      const fixIdx = trail.indexOf("fix:gate");
-      expect(fixIdx).toBeGreaterThanOrEqual(0);
-      expect(trail.slice(fixIdx).includes("review:quality")).toBe(true);
-      expect(gateCommitRoute(true, [...files], ["\\.test\\.ts$"])).toBe(expectedRoute);
+      const result = await runFinishMachine(state, deps);
+      expect(result.outcome).toBe("draft");
+      expect(result.reason).toContain("finish error: forge hiccup");
     });
   });
-});
 
-test("I5 — acceptance runs again inside the quality-gate step, before any repo gate command", async () => {
-  await withTempDir(async (dir) => {
-    const { deps, trail } = makeDeps({ auditDir: dir });
-    await runFinishMachine(baseState(), deps);
-    const acceptanceIndices = trail
-      .map((e, i) => ({ e, i }))
-      .filter((x) => x.e === "acceptance-run")
-      .map((x) => x.i);
-    const qualityIdx = trail.indexOf("quality-run:test");
-    // First acceptance-run is step 2; the second is gate zero, and must
-    // precede the repo gate command.
-    expect(acceptanceIndices.length).toBeGreaterThanOrEqual(2);
-    expect(acceptanceIndices[1]).toBeLessThan(qualityIdx);
-  });
-});
-
-test("I6 — a machine aborted after the first commit still leaves that round in the trail", async () => {
-  await withTempDir(async (dir) => {
-    const controller = new AbortController();
-    let firstReview = true;
-    const { deps } = makeDeps({
-      auditDir: dir,
-      signal: controller.signal,
-      git: { onCommit: () => controller.abort() },
-      ops: {
-        review: async (phase) => {
-          if (phase === "quality" && firstReview) {
-            firstReview = false;
-            return { findings: [FINDING], gaps: [] };
-          }
-          return { findings: [], gaps: [] };
-        },
-      },
-    });
-    const result = await runFinishMachine(baseState(), deps);
-    expect(result.status).toBe("escalated");
-    expect(result.escalationReason).toMatch(/abort/i);
-
-    const rounds = await readRounds(deps.audit);
-    const committedQuality = rounds.filter((r) => r.phase === "quality" && r.committed);
-    expect(committedQuality).toHaveLength(1);
-    expect(committedQuality[0]?.outcome).toBe("fixed");
-  });
-});
-
-describe("I7 — a throw from any op or gate-running function reaches ops.escalate", () => {
-  const targets: string[] = ["review", "fix", "openDraftPr", "promotePr", "acceptanceGate", "qualityGate"];
-
-  test.each(targets)("a throw from %s reaches ops.escalate via the single outer catch", async (target) => {
+  test("finalizeDraftPr throws: failed with that error", async () => {
     await withTempDir(async (dir) => {
-      const err = new Error(`boom from ${target}`);
-      const opsOverrides: Partial<FinishOps> = {};
-      let acceptanceRun: (() => { exitCode: number }) | undefined;
-      let qualityRun: (() => { exitCode: number }) | undefined;
+      const { deps, state } = makeMachineHarness({
+        auditDir: dir,
+        script: { quality: [q("A"), q("A"), q("A")] },
+        fixIsNoop: true,
+        ops: {
+          finalizeDraftPr: async () => {
+            throw new Error("gh: not authenticated");
+          },
+        },
+      });
+      const result = await runFinishMachine(state, deps);
+      expect(result.status).toBe("failed");
+      expect(result.reason).toContain("gh: not authenticated");
+    });
+  });
 
-      if (target === "review") {
-        opsOverrides.review = async () => {
-          throw err;
-        };
-      } else if (target === "fix") {
-        opsOverrides.review = async (phase) =>
-          phase === "spec" ? { findings: [FINDING], gaps: [] } : { findings: [], gaps: [] };
-        opsOverrides.fix = async () => {
-          throw err;
-        };
-      } else if (target === "openDraftPr") {
-        opsOverrides.openDraftPr = async () => {
-          throw err;
-        };
-      } else if (target === "promotePr") {
-        opsOverrides.promotePr = async () => {
-          throw err;
-        };
-      } else if (target === "acceptanceGate") {
-        acceptanceRun = () => {
-          throw err;
-        };
-      } else if (target === "qualityGate") {
-        qualityRun = () => {
-          throw err;
-        };
-      }
-
-      const { deps } = makeDeps({ auditDir: dir, ops: opsOverrides, acceptanceRun, qualityRun });
-      const result = await runFinishMachine(baseState(), deps);
-      expect(result.status).toBe("escalated");
-      expect(result.escalationReason).toContain(`boom from ${target}`);
+  test("promotePr create failure at finalize: failed with the CLI error as reason, ledger not written", async () => {
+    await withTempDir(async (dir) => {
+      const { deps, trail, state } = makeMachineHarness({
+        auditDir: dir,
+        ops: {
+          promotePr: async () => {
+            throw new Error('Failed to create PR/MR for "feat/x": gh: command not found');
+          },
+        },
+      });
+      const result = await runFinishMachine(state, deps);
+      expect(result.status).toBe("failed");
+      expect(result.outcome).toBe("failed");
+      expect(result.reason).toBe('Failed to create PR/MR for "feat/x": gh: command not found');
+      expect(trail).not.toContain("finalizeDraftPr");
+      expect(await readLedger(deps.audit.auditDir)).toBeNull();
     });
   });
 });
 
-test("I8 — a spec fix re-runs the acceptance gate before the spec re-review", async () => {
-  await withTempDir(async (dir) => {
-    let specCalls = 0;
-    const { deps, trail } = makeDeps({
-      auditDir: dir,
-      ops: {
-        review: async (phase) => {
-          trail.push(`review:${phase}`);
-          if (phase !== "spec") return { findings: [], gaps: [] };
-          specCalls += 1;
-          return specCalls === 1 ? { findings: [FINDING], gaps: [] } : { findings: [], gaps: [] };
-        },
-      },
+describe("a lost result file", () => {
+  test("a writeResult failure after finalize does not finalize twice and keeps the finalized outcome", async () => {
+    await withTempDir(async (dir) => {
+      const blocker = join(dir, "blocker");
+      await Bun.write(blocker, "not a directory");
+      const { deps, trail, state } = makeMachineHarness({ auditDir: join(blocker, "audit") });
+      const result = await runFinishMachine(state, deps);
+      expect(result.status).toBe("promoted");
+      expect(result.outcome).toBe("ready");
+      expect(trail.filter((t) => t === "promotePr")).toHaveLength(1);
+      expect(trail).not.toContain("finalizeDraftPr");
     });
-    const result = await runFinishMachine(baseState(), deps);
-    expect(result.status).not.toBe("escalated");
+  });
+});
 
-    const fixIdx = trail.indexOf("fix:spec");
-    expect(fixIdx).toBeGreaterThanOrEqual(0);
-    expect(trail[fixIdx + 1]).toBe("commit");
+describe("nothing verified is not a pass", () => {
+  test("empty acceptance groups: acceptance is unverified and the PR is a draft", async () => {
+    await withTempDir(async (dir) => {
+      const { deps, state } = makeMachineHarness({ auditDir: dir, context: { groups: [] } });
+      const result = await runFinishMachine(state, deps);
+      expect(state.acceptanceFact).toBe("unverified");
+      expect(result.outcome).toBe("draft");
+      expect(result.reason).toContain("acceptance unverified");
+    });
+  });
 
-    const afterCommit = trail.slice(fixIdx + 2);
-    expect(afterCommit[0]).toBe("acceptance-run");
-    expect(afterCommit.indexOf("review:spec")).toBeGreaterThan(afterCommit.indexOf("acceptance-run"));
+  test("no gate commands anywhere: the quality.commands gate is red and the PR is a draft", async () => {
+    await withTempDir(async (dir) => {
+      const { deps, trail, state } = makeMachineHarness({ auditDir: dir, qualityCommands: {} });
+      const result = await runFinishMachine(state, deps);
+      expect(result.outcome).toBe("draft");
+      expect(result.facts?.gates).toEqual([
+        { name: "quality.commands", status: "red", excerpt: "No quality.commands configured" },
+      ]);
+      expect(trail).not.toContain("fix:gate");
+    });
+  });
+});
+
+describe("every ops.fix is committed before the next review", () => {
+  test("fix, then commit, then the next review round", async () => {
+    await withTempDir(async (dir) => {
+      const { deps, trail, state } = makeMachineHarness({ auditDir: dir, script: { quality: [q("A")] } });
+      await runFinishMachine(state, deps);
+      const fix = trail.indexOf("fix:review");
+      expect(fix).toBeGreaterThan(-1);
+      expect(trail[fix + 1]).toBe("commit");
+      expect(trail.slice(fix + 2, fix + 4)).toEqual(["review:spec", "review:quality"]);
+    });
+  });
+});
+
+describe("preconditions", () => {
+  test("a context escalate route is failed with the reason, and no PR or forge call is made", async () => {
+    await withTempDir(async (dir) => {
+      const { deps, trail, state } = makeMachineHarness({
+        auditDir: dir,
+        context: { route: "escalate", reason: "the spec could not be resolved" },
+      });
+      const result = await runFinishMachine(state, deps);
+      expect(result.status).toBe("failed");
+      expect(result.outcome).toBe("failed");
+      expect(result.reason).toBe("the spec could not be resolved");
+      expect(trail).toEqual([]);
+    });
+  });
+
+  test("nothing-to-finish: never calls a reviewer, never opens a PR", async () => {
+    await withTempDir(async (dir) => {
+      const { deps, trail, state } = makeMachineHarness({ auditDir: dir, context: { route: "nothing-to-finish" } });
+      const result = await runFinishMachine(state, deps);
+      expect(result.status).toBe("nothing-to-finish");
+      expect(trail).toEqual([]);
+    });
+  });
+
+  test("merged-PR route: nothing-to-finish carrying skipReason and the PR url", async () => {
+    await withTempDir(async (dir) => {
+      const { deps, state } = makeMachineHarness({
+        auditDir: dir,
+        context: { route: "nothing-to-finish", skipReason: "pr-merged", prUrl: "https://x/pr/7" },
+      });
+      const result = await runFinishMachine(state, deps);
+      expect(result).toMatchObject({ status: "nothing-to-finish", skipReason: "pr-merged", url: "https://x/pr/7" });
+    });
+  });
+
+  test("already-finished: reports skipReason and never runs the machine", async () => {
+    await withTempDir(async (dir) => {
+      const { deps, trail, state } = makeMachineHarness({
+        auditDir: dir,
+        context: makeFinishContext({ route: "already-finished", prUrl: "https://x/pr/3" }),
+      });
+      const result = await runFinishMachine(state, deps);
+      expect(result).toMatchObject({
+        status: "nothing-to-finish",
+        skipReason: "already-finished",
+        url: "https://x/pr/3",
+      });
+      expect(trail).toEqual([]);
+    });
   });
 });

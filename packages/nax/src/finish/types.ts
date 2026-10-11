@@ -3,6 +3,10 @@ import type { TemplateMode } from "@/forge";
 export type { TemplateMode };
 
 export type Severity = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+
+/** Which finish review produced a finding (A4). */
+export type ReviewLens = "spec" | "quality";
+
 export interface Finding {
   severity: Severity;
   title: string;
@@ -18,28 +22,28 @@ export interface Finding {
   judgment?: boolean;
   /** Why this finding needs a human; the escalation reason when it escalates. */
   judgmentReason?: string;
+  /** A4: repo-relative path the finding is about, when it has one. */
+  file?: string;
+  /** A4: line in `file`, when the reviewer gave one. */
+  line?: number;
+  /**
+   * A4: the review that produced it. Set by finish from the producing op, never by the model.
+   * Optional only so pre-A4 `result.json` files still type-check when imported.
+   */
+  source?: ReviewLens;
 }
 
-/** One external definition the reviewer says it opened before judging. */
-export interface Touchpoint {
-  /** Repo-relative path, or the literal `none` sentinel. */
-  path: string;
-  /** Symbol or line after the final `:`, when the reviewer gave one. */
-  symbol?: string;
-  /** The reviewer's stated reason for opening it (or for there being none). */
-  note: string;
-}
-
-/** A reviewer reply, parsed. Sections are reported separately from their content
- * so an *absent* section is distinguishable from an *empty* one — only the first
- * is a reviewer that skipped the obligation. */
-export interface ReviewReport {
+/** What one A4 finish review op returns. */
+export interface FinishReviewOutput {
   findings: Finding[];
-  touchpoints: Touchpoint[];
-  walk: string[];
-  sawNoFindings: boolean;
-  sawTouchpointsSection: boolean;
-  sawWalkSection: boolean;
+  /** Repo-relative paths the reviewer says it read. Telemetry only — never routed on. */
+  covered: string[];
+  /** Branch review only: conventional-commit PR title. */
+  title?: string;
+  /** Branch review only: the PR's "What changed" prose. */
+  summary?: string;
+  /** Set when the op produced no parseable verdict after its retry. */
+  missing?: true;
 }
 
 /** What the fix node did with one finding it was handed. */
@@ -52,38 +56,13 @@ export interface FindingDisposition {
   /** Set by `commit_<phase>` when the cited evidence path does not exist. */
   evidenceMissing?: boolean;
 }
-export interface ReviewVerdict {
-  /**
-   * Neither `clean` nor `reprompt` is a model-produced route.
-   *
-   * `clean` — `parse` rewrites `proceed` with zero findings, so the graph can
-   * skip the fix node instead of prompting an agent to "apply fixes" for nothing.
-   *
-   * `reprompt` — `parse` could not read JSON out of the reply at all. Returning
-   * this rather than throwing is deliberate: a throw fails the acp node and kills
-   * the whole flow with no result file, bypassing the `escalate` sink that exists
-   * to report exactly this kind of dead end.
-   */
-  route: "proceed" | "escalate" | "clean";
-  findings: Finding[];
-  escalationReason?: string;
-  /** Touchpoints the reviewer listed; read by the audit gate in `routeReviewAndRecord`. */
-  touchpoints?: Touchpoint[];
-  /** The per-AC or per-function walk lines the reviewer emitted. */
-  walk?: string[];
-  /** Whether the section was present at all — absent and empty are different failures. */
-  sawTouchpointsSection?: boolean;
-  sawWalkSection?: boolean;
-  /** Set on a `fix_<phase>` output: what the fixer did with each finding it was handed. */
-  dispositions?: FindingDisposition[];
-}
 /** Wall-clock budgets, forwarded from `finish.timeouts` by `runFinishPhase`. */
 export interface FinishTimeouts {
   acceptanceMs?: number;
   gateMs?: number;
 }
-/** The four fix-and-reverify loops, in graph order. */
-export type FinishPhase = "acceptance" | "spec" | "quality" | "gate";
+/** The fix-and-reverify loops, in order. `review` is the shared fix round for both review lenses. */
+export type FinishPhase = "acceptance" | "spec" | "quality" | "review" | "gate";
 
 /**
  * One completed fix round, appended to the audit trail as it happens.
@@ -115,13 +94,12 @@ export type FinishRoundOutcome =
   /**
    * The reviewer replied, but no verdict could be read out of it.
    *
-   * Read-only history now: nothing in this module produces this outcome —
-   * `ReviewVerdict.route` no longer has a `reprompt` member (D2.2), so there is
-   * no live path that writes it. Retained because older audit trails hold
+   * Read-only history now: nothing in this module produces this outcome (the
+   * reprompt path is gone), so no live path writes it. Retained because older audit trails hold
    * rounds with this outcome and a reader must still be able to render them.
    */
   | "unparseable"
-  /** Handed off to a human — an explicit escalate, a cap, or a node that emitted nothing. */
+  /** Read-only history, no longer emitted: handed off to a human by an explicit escalate or a cap. */
   | "escalated"
   /**
    * This phase has no reviewer at all (`gate`, `acceptance`). Distinct from
@@ -143,10 +121,11 @@ export type FinishRoundOutcome =
    * what it meant when it was written.
    */
   | "review-skipped"
-  /** The reviewer replied with findings but skipped a required audit section, so
-   * the verdict was not acted on. Distinct from `unparseable`: there was a
-   * readable verdict, it just had no evidence behind it. */
+  /** Read-only history, no longer emitted: the reviewer replied with findings but
+   * skipped a required audit section, so the verdict was not acted on. */
   | "incomplete"
+  /** A4: a review lens produced no verdict after its retry. */
+  | "missing"
   /** A1: the advisor ruled on every judged finding and nothing was left to fix;
    * the phase re-reviews. Not an approval. */
   | "advised";
@@ -200,35 +179,69 @@ export interface FinishPrBodySettings {
   /** Normalised template heading → body-section key, layered over the defaults. */
   sectionMap?: Record<string, string>;
 }
+/** Result-level status. State adds `running` (see `FinishState.status`). */
+export type FinishResultStatus =
+  | "opened"
+  | "promoted"
+  | "already-ready"
+  | "draft"
+  | "local-only"
+  | "failed"
+  | "nothing-to-finish";
+
+/** Whether acceptance was verified green at the end of the finish. */
+export type AcceptanceFact = "green" | "red" | "unverified" | "not-configured";
+
+/** One quality gate's end-of-finish result. */
+export interface GateFact {
+  name: string;
+  status: "green" | "red";
+  excerpt?: string;
+}
+
+/** The end-of-run facts the resolver turns into `ready | draft`. Computed by the resolver (A4 Task 10). */
+export interface ResolutionFacts {
+  findingsOpen: Finding[];
+  acceptance: AcceptanceFact;
+  gates: GateFact[];
+  reviewsMissing: ReviewLens[];
+  unreviewedFixCommits: string[];
+  coverage: Record<ReviewLens, number | null>;
+  fixRounds: number;
+}
+
+/** What the resolver decided, kept on the state so the PR context can read it. */
+export interface FinishResolution {
+  outcome: "ready" | "draft";
+  reason?: string;
+  facts: ResolutionFacts;
+  acceptedResidue: Finding[];
+}
+
 export interface FinishResult {
   feature: string;
-  status: "opened" | "promoted" | "already-ready" | "escalated" | "nothing-to-finish";
+  status: FinishResultStatus;
+  /** A4: `ready | draft | failed`. No forge is a status (`local-only`), not an outcome. */
+  outcome?: "ready" | "draft" | "failed";
+  /** A4: why the outcome is not a clean `ready`, or why the finish failed. */
+  reason?: string;
+  /** A4: the facts behind the outcome. */
+  facts?: ResolutionFacts;
+  /** A4: judged findings accepted as residue on a ready PR. */
+  acceptedResidue?: Finding[];
   /**
    * HEAD sha at the moment this result was written — the finish ledger's key
    * (#1674 part 1, `./audit`'s `writeResult`). Set on every path that reaches
-   * a terminal outcome after the machine has actually run (`doEscalate`,
-   * `finishTerminal`); absent on a preflight `nothing-to-finish`, which never
+   * a terminal outcome after the machine has actually run (`finalizeResult`,
+   * `failedResult`); absent on a preflight `nothing-to-finish`, which never
    * gets far enough to have one worth recording.
    */
   headSha?: string;
   /** The branch finish ran on — the ledger's other half of its key, alongside `headSha`. */
   branch?: string;
   url?: string;
-  escalationReason?: string;
-  /**
-   * The findings behind an escalation. Persisted because the reason alone is a
-   * bare count ("3 finding(s) after 3 fix attempts"), and on the Telegram
-   * channel the composed PR comment — the only other thing carrying them — is
-   * never posted. Without this the findings survived only in acpx's run bundle.
-   */
+  /** Open findings on a draft PR. */
   findings?: Finding[];
-  /**
-   * Set when the escalation could not be delivered to its channel (forge
-   * comment failed, remote unrecognised). The result file is written before
-   * delivery is attempted, so an undelivered escalation is still reported
-   * rather than lost.
-   */
-  deliveryError?: string;
   /**
    * Every fix round the flow ran, on *all* terminal statuses — not just
    * escalations. A successful finish that took four rounds to get there is the

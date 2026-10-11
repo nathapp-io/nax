@@ -710,11 +710,19 @@ exclude: ["**/.nax-acceptance*"]
 ### Autonomous Finish (`finish`)
 
 After a **successful** run on a feature branch, nax can drive the whole finish
-ritual — acceptance gate, spec review, quality review, repo-root quality gates,
-PR — without a human in the terminal, as an in-process post-run phase (no
-subprocess, no external flow file). It auto-fixes what it can, and on anything
-needing human judgment it **stops and escalates** instead of guessing. It
-never merges.
+ritual as an in-process post-run phase (no subprocess, no external flow file).
+It runs the acceptance gate, opens a draft PR, then reviews the whole branch
+with two read-only JSON reviews in parallel (a spec lens and a branch-quality
+lens). Findings from both are merged and fixed in one shared loop, followed by
+an acceptance re-check and the repo-root quality gates. A pure resolver then
+turns the end-of-run facts into `ready` or `draft`, and the PR is finalized
+accordingly. The phase never escalates and never merges: it always ends with a
+PR, ready when everything is clean and draft (with an "Unresolved" section and a
+notification) when anything is left open.
+
+```
+draft PR -> acceptance -> review loop (spec || branch) -> acceptance re-check -> repo gates -> resolution -> finalize PR
+```
 
 **Opt-in — off by default:**
 
@@ -724,7 +732,7 @@ never merges.
     "enabled": true,
     "reviewers": { "spec": "balanced", "quality": "balanced" },
     "escalate": { "telegram": true },
-    "notify": { "mode": "escalation" },
+    "notify": { "mode": "draft" },
     "rerun": "on-change",
     "timeouts": { "acceptanceMs": 600000, "gateMs": 900000, "flowMs": 5400000 }
   }
@@ -734,37 +742,50 @@ never merges.
 | Key | Default | Meaning |
 |:---|:---|:---|
 | `enabled` | `false` | Master gate. Finish never fires unless this is true. |
-| `narrative` | `true` | Whether the phase spends an agent turn writing the PR body's "What changed" section. Disabled → the body carries the mechanical fallback (spec Summary) or no such section. |
 | `prBody.template` | `"merge"` | How the repo's own PR/MR template is honoured: `merge` fills matching headings and drops the rest, `strict` keeps unfillable headings empty, `ignore` skips the template entirely. |
-| `prBody.sectionMap` | `{}` | Template heading → body-section key overrides, layered over the defaults in `src/forge/template-merge.ts`. Known keys: `narrative`, `stories`, `verification`, `rounds`, `outOfScope`. |
-| `reviewers.spec` / `reviewers.quality` / `reviewers.narrative` / `reviewers.fix` | `null` | A model tier name (e.g. `"balanced"`) or `{ agent, model }` object, resolved the same way every other operation's model is. `null` falls through to the op's own default. |
-| `escalate.telegram` | `true` | Prefer Telegram for escalations when `interaction.plugin` is `telegram` (or `NAX_TELEGRAM_TOKEN` + `NAX_TELEGRAM_CHAT_ID` are set). With no credentials it falls back to a PR/MR comment. |
-| `notify.mode` | `"escalation"` | `escalation` preserves escalation-only reporting; `always` also reports clean outcomes and crashes; `off` disables Telegram and uses the escalation comment fallback. |
-| `rerun` | `"on-change"` | Cross-run idempotency. `on-change` skips the whole phase when the finish ledger's branch/HEAD already match a terminal outcome (opened/promoted/already-ready/escalated) from a previous run — a re-run on an unchanged branch costs one `git rev-parse`, not a repeat of every review and gate. `always` bypasses the ledger and re-runs the phase every time, matching pre-ledger behaviour. |
+| `prBody.sectionMap` | `{}` | Template heading → body-section key overrides, layered over the defaults in `src/forge/template-merge.ts`. Known keys: `narrative`, `stories`, `verification`, `rounds`, `outOfScope`, `unresolved`. |
+| `reviewers.spec` / `reviewers.quality` / `reviewers.fix` | `null` | `spec` drives the spec review, `quality` drives the branch review (which also supplies the PR title and summary). A model tier name (e.g. `"balanced"`) or `{ agent, model }` object, resolved the same way every other operation's model is. `null` falls through to the op's own default. |
+| `escalate.telegram` | `true` | Whether draft and failed results are sent to Telegram (subject to `notify.mode`). Telegram needs `interaction.plugin: "telegram"` or `NAX_TELEGRAM_TOKEN` + `NAX_TELEGRAM_CHAT_ID`; with no credentials, or with this set to `false`, nothing is sent and the PR itself (draft, with its Unresolved section) is the report. Clean outcomes reported by `notify.mode: "always"` are not affected. |
+| `notify.mode` | `"draft"` | `draft` notifies when the PR ends up draft or the phase fails; `always` also reports clean outcomes; `off` disables notifications. `escalation` is a deprecated alias for `draft`. |
+| `rerun` | `"on-change"` | Cross-run idempotency. `on-change` skips the whole phase when the finish ledger's branch/HEAD already match a terminal outcome (opened/promoted/already-ready/draft/local-only/nothing-to-finish) from a previous run — a re-run on an unchanged branch costs one `git rev-parse`, not a repeat of every review and gate. `always` bypasses the ledger and re-runs the phase every time, matching pre-ledger behaviour. |
 | `timeouts.acceptanceMs` | 10 min | Cap per acceptance-test group. |
 | `timeouts.gateMs` | 15 min | Cap per quality gate (build / typecheck / lint / test). |
 | `timeouts.flowMs` | 90 min | Whole-phase deadline, enforced as an `AbortSignal`. |
-| `timeouts.stepMs` | `null` | Cap per LLM op (one review, fix or narrative turn). `null` keeps the op's own default. |
+| `timeouts.stepMs` | `null` | Cap per LLM op (one review or fix turn). `null` keeps the op's own default. |
 
 **It runs only when** the run succeeded (no failed or paused stories, at least
 one completed), HEAD is not `main`/`master`, and `enabled` is true.
 
-**Requirements:** `quality.commands` must be configured — the phase runs those
-commands at the repo root as its final gate. With none configured it escalates
-rather than opening a PR, because a green gate that verified nothing is worse
-than no gate. `gh` or `glab` must be authenticated for the PR/MR step.
+**Requirements:** `quality.commands` should be configured, because the phase
+runs those commands at the repo root as its final gate. With none configured the
+gates cannot verify anything, so the resolver ends the run as a draft rather
+than a ready PR. `gh` or `glab` must be authenticated for the PR/MR step; a
+missing or unauthenticated forge CLI at finalize ends as `failed` with the CLI
+error as the reason.
+
+**Deprecated keys:** `finish.narrative` and `finish.reviewers.narrative` are
+still accepted but ignored (one deprecation warning is logged); the branch
+review now supplies the PR summary. `notify.mode: "escalation"` is accepted as
+an alias for `draft`.
 
 **What it does with what it finds:**
 
 | Outcome | Action |
 |:---|:---|
-| Everything green | Opens a **ready** PR/MR, or promotes the draft `autoPR` already opened. Never merges. |
-| Findings with a clear recommended fix | Applies them, re-runs acceptance / re-reviews, up to 3 attempts per phase. |
-| Spec conflicts, contradictions, design calls, or anything it can't get green | Commits and pushes what it fixed, then escalates via Telegram or a PR/MR comment. No ready PR. |
+| Everything green: no open findings, acceptance green or not configured, all gates green, no missing review, no unreviewed fix commits | Promotes the draft PR (or opens a **ready** PR/MR). Never merges. |
+| Findings with a clear recommended fix | Applies them in one shared loop (at most 3 review rounds), re-runs acceptance, then the gates. Acceptance and gate fixes are capped at 3 attempts each. |
+| Anything left open: unresolved findings, red or unverified acceptance or gates, a review that returned no verdict, fix commits made after the last review, or the `flowMs` deadline | Commits and pushes what it fixed, keeps the PR **draft**, writes an "Unresolved" section into the body and notifies per `notify.mode`. |
+| The feature has no PRD, or its PRD yields zero acceptance groups, while acceptance is enabled | Acceptance cannot be verified ("nothing ran is not a pass"), so the PR ends **draft** with acceptance reported as unverified. Disable acceptance for the feature if there is genuinely nothing to run. |
+| The `flowMs` deadline or an unexpected error interrupts the run | Still ends in a draft PR carrying the reason. Any half-finished edit in the working tree is committed without running git hooks and listed under "Unreviewed fix commits". |
 | Branch has no commits ahead of base | Reports `nothing-to-finish` and stops. |
-| Branch/HEAD already match a terminal outcome from a previous finish (`rerun: "on-change"`, the default) | Skips the phase entirely, logs it, and records `status: "skipped"` — see `rerun` above. |
+| Branch/HEAD already match a terminal outcome from a previous finish (`rerun: "on-change"`, the default) | Skips the phase entirely, logs it, and records `status: "skipped"` - see `rerun` above. |
 | The branch's PR/MR is already **merged** | Reports `nothing-to-finish` with `reason: "pr-merged"` and stops, rather than reviewing, committing onto a merged branch and rewriting the merged PR's body. |
-| The branch's PR/MR is **closed without being merged** | Escalates, and is the one escalation that does **not** commit and push first — nothing has run yet, and pushing to a closed PR's branch can recreate a head branch the forge deleted when the human closed it. Reopening the PR is not a decision the fix loop makes on its own. |
+| The branch's PR/MR is **closed without being merged** | Ends as `failed` before anything runs: it does not commit or push, because pushing to a closed PR's branch can recreate a head branch the forge deleted when the human closed it. Reopening the PR is not a decision the fix loop makes on its own. |
+
+A draft or deadline result **is** recorded in the finish ledger, so with
+`rerun: "on-change"` the phase will not run again at the same HEAD; push a new
+commit (or set `rerun: "always"`) to get another pass. A `failed` result is not
+ledgered and is retried on the next run.
 
 Both forge checks fail open: no PR yet, an unauthenticated or missing `gh` /
 `glab`, an undetected forge, a CLI that cannot be spawned, and any response

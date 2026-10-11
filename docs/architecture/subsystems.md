@@ -1454,7 +1454,7 @@ One descriptor wraps N adapter sessions across the lifetime of one story attempt
 | `semanticReviewOp` / `adversarialReviewOp` | run | Review phases |
 | `rectifyOp`, `implementerRectifyOp`, `testWriterRectifyOp`, `fullSuiteRectifyOp` | run | Fix strategies / rectification |
 | `mechanicalLintFixOp` / `mechanicalFormatFixOp` | deterministic | Mechanical fix strategies |
-| `finishReviewOp` / `finishFixOp` / `finishNarrativeOp` | run | Finish phase at run completion (`src/finish/`) |
+| `finishSpecReviewOp` / `finishBranchReviewOp` / `finishFixOp` | run | Finish phase at run completion (`src/finish/`): two read-only JSON branch reviews and one shared fix session |
 | `setupGenerateOp` | run | `nax setup` (LLM fill, `src/cli/setup-llm.ts`) |
 | gate / check ops (see above) | deterministic | Per-story orchestrator phases |
 

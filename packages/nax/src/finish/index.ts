@@ -11,20 +11,21 @@
  * a deep relative import.
  */
 
+export type { A3Hint } from "./a3-hints";
+export { _a3HintsDeps, readA3Hints } from "./a3-hints";
 export {
   type AdviceRef,
-  type ApprovalFacts,
-  applyJudgedAdvice,
   buildFinishAdvisorForPhase,
   createFinishAdvisor,
   type FinishAdvisor,
   type FinishAdvisorDeps,
-  type JudgedOutcome,
-  runApproval,
+  type JudgedResult,
+  judgeWithoutAdvisor,
 } from "./advise";
 export type { AuditTarget, FinishLedgerEntry, WriteResultOptions } from "./audit";
 export {
   appendRound,
+  LEDGER_TERMINAL_STATUSES,
   ledgerPath,
   readLedger,
   readRounds,
@@ -33,6 +34,7 @@ export {
   roundsPath,
   writeResult,
 } from "./audit";
+export { changedFiles } from "./changed-files";
 export {
   _finishGitDeps,
   buildCommitRound,
@@ -49,22 +51,22 @@ export type { FinishSettings } from "./config";
 export { readFinishConfig } from "./config";
 export type { FinishContext, LoadFinishContextOptions } from "./context";
 export { _finishContextDeps, loadFinishContext } from "./context";
-export type { EscalationOutcome } from "./escalate";
-export { buildEscalationComment, postEscalation } from "./escalate";
 export { _acceptanceGateDeps, runAcceptanceGate } from "./gates/acceptance";
 export { _qualityGateDeps, resolveGateCommands, runQualityGates } from "./gates/quality";
 export type { FinishMachineDeps } from "./machine";
 export { runFinishMachine } from "./machine";
+export type { Contradiction, MergedFindings } from "./merge-findings";
+export { mergeFindings } from "./merge-findings";
 export {
   _notifyDeps,
-  buildEscalationMessage,
+  buildDraftMessage,
   buildTerminalMessage,
   isTelegramConfigured,
   sendTelegramNotify,
   TELEGRAM_MAX_MESSAGE_CHARS,
   telegramCreds,
 } from "./notify";
-export type { FinishOps, FixOutcome, FixRequest, ReviewRequest } from "./ops";
+export type { FinishOps, FixOutcome, FixPhase, FixRequest, ReviewInputs } from "./ops";
 export type { FinishOpsDeps } from "./ops-impl";
 export { _finishOpsDeps, createFinishOps } from "./ops-impl";
 export type { FinishPhaseContext, FinishSkipReason } from "./phase";
@@ -81,48 +83,44 @@ export {
   updatePrBody,
 } from "./pr";
 export {
-  parseTitle,
   resolveTitle,
   sanitizeTitle,
-  TITLE_CLOSE_TAG,
   TITLE_MAX_CHARS,
-  TITLE_OPEN_TAG,
 } from "./pr-title";
+export type { ApprovalAction, Resolution } from "./resolve";
+export { approvalFacts, computeFacts, draftReason, isClean, resolve } from "./resolve";
+export { _reviewInputsDeps, loadReviewInputs, storiesFromText } from "./review-inputs";
+export { isFinishReviewShape, MISSING_REVIEW, parseFinishReviewReply } from "./review-json";
+export type { ReviewLoopDeps } from "./review-loop";
+export { MAX_ADVISE_ROUNDS, runReviewLoop } from "./review-loop";
+export type { ReviewRoundResult } from "./review-round";
+export { runReviewRound } from "./review-round";
 export {
-  auditGaps,
-  buildFixPrompt,
-  buildReviewPrompt,
-  FINDING_BLOCK_SHAPE,
-  parseDispositions,
-  parseReviewReport,
-  QUALITY_REVIEW_DIMENSIONS,
-  SPEC_REVIEW_DIMENSIONS,
-  validateDispositions,
-  WORKER_PROTOCOL,
-  WORKER_PROTOCOL_MECHANICS,
-} from "./review";
-export type { ReviewOutcome, RoutedReview } from "./route";
-export {
+  acceptanceFact,
   gateCommitRoute,
-  MAX_ADVISE_ROUNDS,
+  gateFacts,
   MAX_FIX_ATTEMPTS,
-  MAX_INCOMPLETE_ATTEMPTS,
+  MAX_REVIEW_ROUNDS,
   partitionTestFiles,
   routeAcceptance,
   routeQualityGates,
-  routeReview,
 } from "./route";
-export type { FinishPhaseState, FinishState, FinishStateInit, FinishStatus } from "./state";
+export type { FinishPhaseState, FinishState, FinishStateInit, FinishStatus, ReviewLoopState } from "./state";
 export { createFinishState, deserializeFinishState, serializeFinishState } from "./state";
 export type {
+  AcceptanceFact,
   AcceptanceGateResult,
   Finding,
   FindingDisposition,
   FinishPhase,
+  FinishResolution,
   FinishResult,
+  FinishResultStatus,
+  FinishReviewOutput,
   FinishRound,
   FinishTimeouts,
+  GateFact,
   QualityGateResult,
-  ReviewReport,
-  Touchpoint,
+  ResolutionFacts,
+  ReviewLens,
 } from "./types";

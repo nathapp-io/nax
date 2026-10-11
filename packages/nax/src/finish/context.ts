@@ -21,7 +21,7 @@ import { resolveFeatureSpec } from "@/cli";
 import type { ForgeDeps, ForgeKind } from "@/forge";
 import { viewArgv } from "@/forge";
 import { gitWithTimeout } from "@/utils/git";
-import { readLedger } from "./audit";
+import { LEDGER_TERMINAL_STATUSES, readLedger } from "./audit";
 
 export const _finishContextDeps = {
   git: gitWithTimeout,
@@ -45,17 +45,6 @@ export interface FinishContext {
    * Absent on every route that has no such PR.
    */
   prUrl?: string;
-  /**
-   * Set only by the closed-PR escalation below: `ops.escalate` must NOT run
-   * its usual `commitAndPush` for this one.
-   *
-   * That push is unconditional (`commit.ts`'s `commitAndPush` pushes whether
-   * or not anything was committed), and `git push --set-upstream` against a
-   * branch whose closed PR had its head branch auto-deleted RECREATES it —
-   * undoing the cleanup the human's close performed. Nothing has run at this
-   * point either, so there are no partial fixes the push could be carrying.
-   */
-  escalateWithoutPush?: boolean;
   /**
    * Why a `nothing-to-finish` route is a *skip* rather than a plain
    * zero-commits preflight. Only `"pr-merged"` (#1674 part 2) is set here —
@@ -86,8 +75,6 @@ export interface LoadFinishContextOptions {
    */
   forge?: { kind: ForgeKind | null; deps: ForgeDeps };
 }
-
-const LEDGER_TERMINAL_STATUSES = new Set(["opened", "promoted", "already-ready", "escalated"]);
 
 /**
  * The entry check itself: does the ledger already cover this exact commit?
@@ -352,7 +339,6 @@ export async function loadFinishContext(
         testFileRegex,
         commitsAhead: pre.commitsAhead,
         route: "escalate",
-        escalateWithoutPush: true,
         reason: `The PR/MR for "${ledgerOpts.branch}" is closed without being merged${pr.url ? ` (${pr.url})` : ""}, but the branch still has ${pre.commitsAhead} commit(s) ahead of "${base}". nax-finish will not reopen it or push to it — a human needs to decide whether this branch is still wanted.`,
         ...(pr.url ? { prUrl: pr.url } : {}),
       };

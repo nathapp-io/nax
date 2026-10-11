@@ -14,155 +14,60 @@
  * and persisting the resulting `FinishState`.
  */
 import type { FinishPhaseState } from "./state";
-import type { AcceptanceGateResult, Finding, QualityGateResult } from "./types";
+import type { AcceptanceFact, AcceptanceGateResult, GateFact, QualityGateResult } from "./types";
 
 /** Fix-and-reverify iterations tolerated per phase before escalating to a human. */
 export const MAX_FIX_ATTEMPTS = 3;
 
-/** Reviews sent back for missing evidence sections, per phase, before escalating. */
-export const MAX_INCOMPLETE_ATTEMPTS = 1;
+/** Review rounds per finish (both lenses = one round); `re-review` adds one more. */
+export const MAX_REVIEW_ROUNDS = 3;
 
-/** A1: advisor rounds on judged findings, per phase, before falling back to escalation. */
-export const MAX_ADVISE_ROUNDS = 2;
-
-export type ReviewRoute = "clean" | "fix" | "escalate" | "incomplete" | "advise";
-export type GateRoute = "proceed" | "fix" | "escalate";
-
-/** What a reviewer produced, after plan 3's op has parsed it. */
-export interface ReviewOutcome {
-  findings: Finding[];
-  /** Reading obligations the reviewer did not discharge; empty means it did. */
-  gaps: string[];
-}
-
-export interface RoutedReview {
-  route: ReviewRoute;
-  findings: Finding[];
-  escalationReason?: string;
-  gaps?: string[];
-  /** Route `advise` only: the judged subset of `findings` the advisor rules on. */
-  judged?: Finding[];
-}
+/** What a gate decided: run on, fix and re-run, or stop (the run still ends in a PR, never an escalation). */
+export type GateRoute = "proceed" | "fix" | "stop";
 
 /**
- * Turn a parsed review outcome into a deterministic route.
- *
- * Order matters and must not be reshuffled:
- *
- * 1. An absent `outcome` means the op returned nothing — the reviewer node
- *    never ran, or died before emitting. Neither is an approval, and there is
- *    no reprompt path any more (D2.2): a step that emitted nothing has no
- *    reply to quote back, so this escalates straight to a human without
- *    reading `outcome.findings` (there is none to read).
- * 2. Unresolved `gaps` route `incomplete` while under the cap, then escalate.
- *    This runs before the judgment and "no findings" checks: a reviewer that
- *    skipped its own evidence sections neither approves by reporting nothing
- *    nor escalates as a judgment call — an unread review is not a judgment
- *    (A1 spec §4.8; previously judgment ran first).
- * 3. A finding marked `judgment` routes `advise` when the advisor is on and
- *    under `MAX_ADVISE_ROUNDS`; otherwise it escalates before the count checks.
- * 4. Only past the gap and judgment checks can zero findings mean `clean`.
- * 5. Findings under the fix-attempt cap route `fix`; at or past it, escalate.
- */
-export function routeReview(
-  phase: "spec" | "quality",
-  outcome: ReviewOutcome | undefined,
-  st: FinishPhaseState,
-  opts?: { advise?: boolean },
-): RoutedReview {
-  if (!outcome) {
-    return {
-      route: "escalate",
-      findings: [],
-      escalationReason: `${phase} reviewer produced no verdict — the node emitted no output, so nothing reviewed this diff.`,
-    };
-  }
-
-  if (outcome.gaps.length > 0) {
-    if (st.incompleteAttempts < MAX_INCOMPLETE_ATTEMPTS) {
-      return { route: "incomplete", findings: outcome.findings, gaps: outcome.gaps };
-    }
-    return {
-      route: "escalate",
-      findings: outcome.findings,
-      escalationReason: `${phase} review never discharged its reading obligations: ${outcome.gaps.join("; ")}`,
-      gaps: outcome.gaps,
-    };
-  }
-
-  const judged = outcome.findings.filter((f) => f.judgment);
-  if (judged.length > 0) {
-    if (opts?.advise && (st.adviseRounds ?? 0) < MAX_ADVISE_ROUNDS) {
-      return { route: "advise", findings: outcome.findings, judged };
-    }
-    const first = judged[0] as Finding;
-    return {
-      route: "escalate",
-      findings: outcome.findings,
-      escalationReason: first.judgmentReason ?? `Needs human judgment: ${first.title}`,
-    };
-  }
-
-  if (outcome.findings.length === 0) {
-    return { route: "clean", findings: [] };
-  }
-
-  if (st.fixAttempts >= MAX_FIX_ATTEMPTS) {
-    return {
-      route: "escalate",
-      findings: outcome.findings,
-      escalationReason: `${phase} review still reporting ${outcome.findings.length} finding(s) after ${st.fixAttempts} fix attempts.`,
-    };
-  }
-  return { route: "fix", findings: outcome.findings };
-}
-
-/**
- * Route the acceptance gate, lifted out of `acceptanceGateNode` in
- * `flows/nax-finish/steps/gates.ts`. The `no-prd` / `disabled` pre-checks stay
- * out of scope here — those come from the feature resolution, not from an
- * `AcceptanceGateResult`, and belong to the caller that resolves the feature.
+ * What acceptance proved, as the end-of-run fact.
  *
  * "Nothing ran is not a pass": a passing result that ran zero groups, or that
- * left a group's test ungenerated, still escalates rather than proceeding.
+ * left a group's test ungenerated, is `unverified` and can never make a PR
+ * ready. A `disabled` status is the only way to `not-configured` — an empty
+ * group list under an enabled status means the contract was never located, and
+ * that fails closed.
+ */
+export function acceptanceFact(result: AcceptanceGateResult, acceptanceStatus: string): AcceptanceFact {
+  if (acceptanceStatus === "disabled") return "not-configured";
+  if (!result.passed) return "red";
+  return result.missing.length > 0 || result.ran === 0 ? "unverified" : "green";
+}
+
+/**
+ * Route the acceptance gate. `stop` replaces the old `escalate`: the cap was
+ * reached or the contract is unverified, and the run carries on to a draft.
  */
 export function routeAcceptance(
   result: AcceptanceGateResult,
   st: FinishPhaseState,
-): { route: GateRoute; reason?: string } {
-  if (result.passed) {
-    if (result.missing.length > 0) {
-      return {
-        route: "escalate",
-        reason: `Acceptance test never generated for: ${result.missing.join(", ")} — that package's contract is unverified.`,
-      };
-    }
-    if (result.ran === 0) {
-      return {
-        route: "escalate",
-        reason: "No acceptance test target resolved — nothing verified its contract.",
-      };
-    }
-    return { route: "proceed" };
+  acceptanceStatus = "ok",
+): { route: GateRoute; fact: AcceptanceFact; reason?: string } {
+  const fact = acceptanceFact(result, acceptanceStatus);
+  if (fact === "green" || fact === "not-configured") return { route: "proceed", fact };
+  if (fact === "unverified") {
+    const reason =
+      result.missing.length > 0
+        ? `Acceptance test never generated for: ${result.missing.join(", ")}.`
+        : "No acceptance test target resolved.";
+    return { route: "stop", fact, reason };
   }
   if (st.fixAttempts >= MAX_FIX_ATTEMPTS) {
-    return {
-      route: "escalate",
-      reason: `Acceptance tests still failing after ${st.fixAttempts} fix attempts.`,
-    };
+    return { route: "stop", fact, reason: `Acceptance tests still failing after ${st.fixAttempts} fix attempts.` };
   }
-  return { route: "fix" };
+  return { route: "fix", fact };
 }
 
 /**
- * Route the repo's quality gates, lifted out of `qualityGatesNode` in
- * `flows/nax-finish/steps/gates.ts`. The acceptance-reverify branch
- * (`reverifyAcceptance`) stays out of scope — that is running behaviour, not
- * routing, and belongs to the caller that re-runs the acceptance gate before
- * calling this.
- *
- * Nothing configured is not a pass: an empty `ran` list escalates rather than
- * asking an LLM fix node to invent the repo's build/test commands.
+ * Route the repo's quality gates. Nothing configured is not a pass: an empty
+ * `ran` list stops rather than asking an LLM fix node to invent the repo's
+ * build/test commands.
  */
 export function routeQualityGates(
   result: QualityGateResult,
@@ -173,17 +78,27 @@ export function routeQualityGates(
   }
   if (result.ran.length === 0) {
     return {
-      route: "escalate",
+      route: "stop",
       reason: "No quality.commands configured in .nax/config.json — nax-finish verified nothing.",
     };
   }
   if (st.fixAttempts >= MAX_FIX_ATTEMPTS) {
     return {
-      route: "escalate",
+      route: "stop",
       reason: `Quality gates still failing after ${st.fixAttempts} fix attempts (${result.failing.join(", ")}).`,
     };
   }
   return { route: "fix" };
+}
+
+/** One entry per gate that ran: red (with the runner output) when it failed, else green. */
+export function gateFacts(result: QualityGateResult): GateFact[] {
+  if (result.ran.length === 0) {
+    return [{ name: "quality.commands", status: "red", excerpt: "No quality.commands configured" }];
+  }
+  return result.ran.map((name) =>
+    result.failing.includes(name) ? { name, status: "red", excerpt: result.output } : { name, status: "green" },
+  );
 }
 
 /**

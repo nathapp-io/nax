@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-10-08T09:24:03.467Z",
+  "updatedAt": "2026-10-11T04:46:32.696Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": { "collectStats": 27 },
@@ -89,9 +89,6 @@
     "src/execution/tdd-failure-category.ts": { "deriveTddFailureCategory": 25 },
     "src/execution/unified-executor.ts": { "executeUnified": 39 },
     "src/finish/context.ts": { "loadFinishContext": 30 },
-    "src/finish/phase.ts": { "runFinishPhase": 31 },
-    "src/finish/review/audit-gaps.ts": { "auditGaps": 25 },
-    "src/finish/review/parse.ts": { "parseReviewReport": 29 },
     "src/interaction/plugins/telegram.ts": { "send": 21 },
     "src/log-format/formatter.ts": { "formatStoryComplete": 26, "formatDefault": 22 },
     "src/logger/logger.ts": { "log": 22 },

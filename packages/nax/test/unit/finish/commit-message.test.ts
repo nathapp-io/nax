@@ -52,6 +52,24 @@ describe("buildFixCommitMessage — subject line", () => {
   });
 });
 
+describe("buildFixCommitMessage — the shared review phase", () => {
+  test("renders as 'branch review', never 'review review'", () => {
+    const many = buildFixCommitMessage("review", "feat-x", {
+      findings: [finding({ severity: "LOW" }), finding({ severity: "HIGH" })],
+    });
+    expect(many.split("\n")[0]).toBe("fix(feat-x): address 2 branch review findings (worst: HIGH)");
+    expect(many).toContain("nax-finish: branch review fixes");
+    expect(many).not.toContain("review review");
+  });
+
+  test("a single finding still titles the subject, and the fallback names the branch review", () => {
+    expect(buildFixCommitMessage("review", "f", { findings: [finding()] }).split("\n")[0]).toBe(
+      "fix(f): market gate skip branch is unreachable",
+    );
+    expect(buildFixCommitMessage("review", "f", {}).split("\n")[0]).toBe("fix(f): apply branch review fixes");
+  });
+});
+
 describe("buildFixCommitMessage — body", () => {
   test("lists every finding with severity, title and prescribed fix", () => {
     const msg = buildFixCommitMessage("spec", "f", {

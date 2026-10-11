@@ -280,3 +280,18 @@ describe("mergeTemplate — degenerate inputs", () => {
     expect(mergeTemplate(TEMPLATE_BY_NAME.nax, sections())).toBe(baseline);
   });
 });
+
+describe("mergeTemplate leading sections", () => {
+  test("a leading section precedes template sections and is never matched to a heading", () => {
+    const out = mergeTemplate(
+      "## Summary\n\n## Notes\n",
+      [
+        { key: "narrative", heading: "What changed", body: "prose" },
+        { key: "unresolved", heading: "Unresolved", body: "why", leading: true },
+      ],
+      { sectionMap: { notes: "unresolved" } },
+    );
+    expect(out.startsWith("## Unresolved\n\nwhy")).toBe(true);
+    expect(out.match(/## Unresolved/g)).toHaveLength(1);
+  });
+});

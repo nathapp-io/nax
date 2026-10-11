@@ -44,6 +44,16 @@ export { fakeAgentManager } from "./fake-agent-manager";
 export type { FakeClock } from "./fake-clock";
 export { makeFakeClock } from "./fake-clock";
 export { makeFinding } from "./finding";
+export type { FinishGitModel, MachineHarness, MachineHarnessOpts } from "./finish-machine";
+export {
+  CLEAN_REVIEW,
+  installFinishGit,
+  makeFinishContext,
+  makeFinishOps,
+  makeFinishState,
+  makeMachineHarness,
+  restoreFinishMachineStubs,
+} from "./finish-machine";
 export { makeFixCycleResult, makeIteration } from "./fix-cycle-result";
 export { waitForFile } from "./fs";
 export { type MockInteractionChain, makeInteractionChain } from "./interaction-chain";
@@ -79,6 +89,7 @@ export { makeOptimizerResult } from "./optimizer-result";
 export { DEFAULT_TEST_ROUTING, makeTestContext, makeTestPRD, makeTestStory } from "./pipeline-context";
 export { makeMockPlanInputs, makeResolvedTestPatterns } from "./plan-inputs";
 export { type MockPluginRegistry, makePluginRegistry } from "./plugin-registry";
+export { expectRetryStrategy } from "./retry-strategy";
 export { makeAdversarialOutput, makeDiagnoseOutput, makeSemanticOutput } from "./review-outputs";
 export {
   type MockRuntimeOptions,

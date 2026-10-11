@@ -279,6 +279,40 @@ describe("loadFinishContext — ledger entry check (#1674 part 1)", () => {
     });
   });
 
+  test("a draft ledger entry at the same HEAD also routes to already-finished", async () => {
+    await withTempDir(async (dir) => {
+      const auditDir = join(dir, "finish-audit", "my-feature");
+      await Bun.write(
+        join(auditDir, "last.json"),
+        JSON.stringify({
+          branch: "feat/x",
+          headSha: "same-sha",
+          status: "draft",
+          prUrl: "https://example.com/pr/11",
+          runId: "run-0",
+          finishedAt: "2026-08-20T00:00:00.000Z",
+        }),
+      );
+      _finishContextDeps.git = async (args: string[]): Promise<GitResult> => {
+        if (args[0] === "remote" && args[1] === "show") return okGit("  HEAD branch: main\n");
+        if (args[0] === "rev-list") return okGit("2\n");
+        if (args[0] === "rev-parse" && args[1] === "HEAD") return okGit("same-sha\n");
+        if (args[0] === "rev-parse" && args[1] === "--verify") return okGit("abc123\n");
+        throw new Error(`unexpected git call: ${args.join(" ")}`);
+      };
+      _finishContextDeps.resolveFeatureSpec = async (): Promise<ResolveResult> => okResolve;
+
+      const ctx = await loadFinishContext("my-feature", "/repo", {
+        branch: "feat/x",
+        auditDir,
+        rerun: "on-change",
+      });
+
+      expect(ctx.route).toBe("already-finished");
+      expect(ctx.prUrl).toBe("https://example.com/pr/11");
+    });
+  });
+
   test("finish.rerun 'always' bypasses the ledger check entirely", async () => {
     await withTempDir(async (dir) => {
       const auditDir = join(dir, "finish-audit", "my-feature");
@@ -529,7 +563,7 @@ describe("loadFinishContext — merged/closed PR short-circuit (#1674 part 2)", 
     });
   }
 
-  test("the closed-unmerged route marks the escalation as one that must not push", async () => {
+  test("a closed-unmerged PR with commits ahead routes to escalate", async () => {
     _finishContextDeps.git = aheadGit;
     _finishContextDeps.resolveFeatureSpec = async (): Promise<ResolveResult> => okResolve;
     const { deps } = makeForge({ stdout: JSON.stringify({ state: "CLOSED", mergedAt: null }) });
@@ -537,17 +571,7 @@ describe("loadFinishContext — merged/closed PR short-circuit (#1674 part 2)", 
     const ctx = await loadFinishContext("my-feature", "/repo", ledgerOpts(deps));
 
     expect(ctx.route).toBe("escalate");
-    expect(ctx.escalateWithoutPush).toBe(true);
-  });
-
-  test("a merged PR does not set escalateWithoutPush — it never escalates at all", async () => {
-    _finishContextDeps.git = aheadGit;
-    _finishContextDeps.resolveFeatureSpec = async (): Promise<ResolveResult> => okResolve;
-    const { deps } = makeForge({ stdout: JSON.stringify({ state: "MERGED" }) });
-
-    const ctx = await loadFinishContext("my-feature", "/repo", ledgerOpts(deps));
-
-    expect(ctx.escalateWithoutPush).toBeUndefined();
+    expect(ctx.reason).toContain("closed without being merged");
   });
 
   test("fails open: a forge CLI that cannot be spawned proceeds instead of throwing", async () => {

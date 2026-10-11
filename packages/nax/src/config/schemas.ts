@@ -396,11 +396,7 @@ export const NaxConfigSchema = z
     finish: z
       .object({
         enabled: z.boolean().default(false),
-        /**
-         * Whether the phase spends an agent turn writing the PR body's
-         * "What changed" section. Disabled -> the body carries the
-         * mechanical fallback (spec Summary) or no such section at all.
-         */
+        /** Deprecated, ignored (A4): the PR body's "What changed" now comes from the branch review. */
         narrative: z.boolean().default(true),
         /**
          * How the repo's own PR/MR template is honoured.
@@ -421,8 +417,8 @@ export const NaxConfigSchema = z
              * Template heading -> body-section key, layered over the defaults
              * in `src/forge/template-merge.ts`. Matched case- and
              * punctuation-insensitively; an empty value suppresses a default
-             * alias. Known keys: `narrative`, `stories`, `verification`,
-             * `rounds`, `outOfScope`.
+             * alias. Known keys: `unresolved`, `narrative`, `stories`, `advisor`,
+             * `rounds`, `verification`, `outOfScope`.
              */
             sectionMap: z.record(z.string(), z.string()).default({}),
           })
@@ -436,14 +432,15 @@ export const NaxConfigSchema = z
           .object({
             spec: ConfiguredModelSchema.nullable().default(null),
             quality: ConfiguredModelSchema.nullable().default(null),
+            /** Deprecated, ignored (A4). */
             narrative: ConfiguredModelSchema.nullable().default(null),
             fix: ConfiguredModelSchema.nullable().default(null),
           })
           .default({ spec: null, quality: null, narrative: null, fix: null }),
         escalate: z.object({ telegram: z.boolean().default(true) }).default({ telegram: true }),
         notify: z
-          .object({ mode: z.enum(["escalation", "always", "off"]).default("escalation") })
-          .default({ mode: "escalation" }),
+          .object({ mode: z.enum(["draft", "escalation", "always", "off"]).default("draft") })
+          .default({ mode: "draft" }),
         /**
          * Cross-run idempotency (#1674 part 1). `on-change` (default) skips
          * the phase entirely when the ledger's `branch`/`headSha` match the
@@ -475,7 +472,7 @@ export const NaxConfigSchema = z
         prBody: { template: "merge", sectionMap: {} },
         reviewers: { spec: null, quality: null, narrative: null, fix: null },
         escalate: { telegram: true },
-        notify: { mode: "escalation" },
+        notify: { mode: "draft" },
         rerun: "on-change",
         timeouts: { acceptanceMs: 600_000, gateMs: 900_000, flowMs: 5_400_000, stepMs: null },
       }),

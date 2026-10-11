@@ -12,7 +12,6 @@ afterEach(() => {
 const zeroedState = (): FinishPhaseState => ({
   fixAttempts: 0,
   reviewAttempts: 0,
-  incompleteAttempts: 0,
   rounds: 0,
 });
 
@@ -176,7 +175,7 @@ describe("runAcceptanceGate", () => {
     expect(r.missing).toEqual([]);
   });
 
-  test("I1: an empty-groups pass is escalated by routeAcceptance, not by this gate", async () => {
+  test("I1: an empty-groups pass is stopped as unverified by routeAcceptance, not by this gate", async () => {
     _acceptanceGateDeps.run = async (opts) => ({
       commandName: opts.commandName,
       command: opts.command as string,
@@ -189,10 +188,10 @@ describe("runAcceptanceGate", () => {
     const r = await runAcceptanceGate("/repo", []);
     expect(r.passed).toBe(true);
     const routed = routeAcceptance(r, zeroedState());
-    expect(routed.route).toBe("escalate");
+    expect(routed.route).toBe("stop");
   });
 
-  test("routeAcceptance escalates a pass that still has a non-empty missing list", async () => {
+  test("routeAcceptance stops on a pass that still has a non-empty missing list", async () => {
     _acceptanceGateDeps.run = async (opts) => ({
       commandName: opts.commandName,
       command: opts.command as string,
@@ -206,7 +205,7 @@ describe("runAcceptanceGate", () => {
     expect(r.passed).toBe(true);
     expect(r.missing).toEqual(["apps/web"]);
     const routed = routeAcceptance(r, zeroedState());
-    expect(routed.route).toBe("escalate");
+    expect(routed.route).toBe("stop");
   });
 
   test("honours the configured timeoutMs", async () => {

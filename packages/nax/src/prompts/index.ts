@@ -24,6 +24,17 @@ export { type AdvisorPromptInput, buildAdvisorPrompt } from "./builders/advisor-
 export type { DecomposePromptInput } from "./builders/decompose-builder";
 // Decompose prompt builder — prompt assembly for nax plan / decompose operations.
 export { buildDecomposePromptSync } from "./builders/decompose-builder";
+export type {
+  FinishBranchReviewPromptInput,
+  FinishSpecReviewPromptInput,
+} from "./builders/finish-review-builder";
+export {
+  buildFinishBranchReviewPrompt,
+  buildFinishFixPrompt,
+  buildFinishReviewJsonRetry,
+  buildFinishReviewJsonRetryCondensed,
+  buildFinishSpecReviewPrompt,
+} from "./builders/finish-review-builder";
 export type { FixReviewPromptInput } from "./builders/fix-review-builder";
 export { buildFixReviewPrompt } from "./builders/fix-review-builder";
 export type { NbfWorthCheckPromptInput } from "./builders/nbf-worth-check-builder";

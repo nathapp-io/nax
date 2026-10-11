@@ -75,4 +75,38 @@ describe("nax advisor import-finish", () => {
       ).toBe(2);
     });
   });
+
+  test("a post-A4 draft result is skipped; a pre-A4 escalated result still imports", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(join(dir, "out"));
+      const resultPath = join(FIXTURES, "post-a4-draft.result.json");
+      const skipped = await runAdvisorImport({ dir, resultPath, sha: "abc", allFindings: true }, h.deps);
+      expect(skipped).toBe(0);
+      expect(h.out).toEqual([`skipped ${resultPath}: not a pre-A4 escalation`]);
+
+      const imported = await runAdvisorImport(
+        { dir, resultPath: join(FIXTURES, "judgment.result.json"), sha: "abc", allFindings: false },
+        h.deps,
+      );
+      expect(imported).toBe(0);
+      expect(h.out.join("\n")).toContain("imported 1 question(s)");
+    });
+  });
+
+  test("a result with an escalated round but no status is still pre-A4", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(join(dir, "out"));
+      const resultPath = join(dir, "r.json");
+      await Bun.write(
+        resultPath,
+        JSON.stringify({
+          feature: "feat",
+          findings: [{ severity: "HIGH", title: "t", problem: "p", judgment: true }],
+          rounds: [{ phase: "quality", outcome: "escalated" }],
+        }),
+      );
+      await runAdvisorImport({ dir, resultPath, sha: "abc", allFindings: false }, h.deps);
+      expect(h.out.join("\n")).toContain("imported 1 question(s)");
+    });
+  });
 });

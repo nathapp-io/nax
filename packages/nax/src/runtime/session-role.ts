@@ -35,7 +35,6 @@ export type CanonicalSessionRole =
   | "finish-review-spec"
   | "finish-review-quality"
   | "finish-fix"
-  | "finish-narrative"
   /** A1 — the advisor's read-only session. */
   | "advisor"
   /** US-001 — read-only NBF worth-check session. */
@@ -66,7 +65,6 @@ export const KNOWN_SESSION_ROLES: readonly CanonicalSessionRole[] = [
   "finish-review-spec",
   "finish-review-quality",
   "finish-fix",
-  "finish-narrative",
   "advisor",
   "nbf-worth-check",
 ] as const;

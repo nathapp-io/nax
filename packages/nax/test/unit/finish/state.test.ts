@@ -4,7 +4,7 @@ import { NaxError } from "@/errors";
 import type { FinishPhase } from "@/finish";
 import { createFinishState, deserializeFinishState, serializeFinishState } from "@/finish";
 
-const ALL_PHASES: FinishPhase[] = ["acceptance", "spec", "quality", "gate"];
+const ALL_PHASES: FinishPhase[] = ["acceptance", "spec", "quality", "review", "gate"];
 
 const BASE_INIT = {
   feature: "finish-core",
@@ -16,7 +16,7 @@ const BASE_INIT = {
 };
 
 describe("createFinishState", () => {
-  test("fresh state has all four phases present with every counter zero", () => {
+  test("fresh state has all five phases present with every counter zero", () => {
     const state = createFinishState(BASE_INIT);
 
     expect(state.status).toBe("running");
@@ -25,7 +25,6 @@ describe("createFinishState", () => {
       expect(state.phases[phase]).toEqual({
         fixAttempts: 0,
         reviewAttempts: 0,
-        incompleteAttempts: 0,
         rounds: 0,
       });
     }
@@ -41,9 +40,9 @@ describe("serializeFinishState / deserializeFinishState", () => {
     expect(roundTripped).toEqual(state);
   });
 
-  test("throws FINISH_STATE_VERSION on a payload with version other than 1", () => {
+  test("throws FINISH_STATE_VERSION on a payload with version other than 2", () => {
     const state = createFinishState(BASE_INIT);
-    const badPayload = JSON.stringify({ ...state, version: 2 });
+    const badPayload = JSON.stringify({ ...state, version: 3 });
 
     expect(() => deserializeFinishState(badPayload)).toThrow(NaxError);
     try {
@@ -87,5 +86,33 @@ describe("serializeFinishState / deserializeFinishState", () => {
     };
 
     walk(parsed);
+  });
+});
+
+describe("A4 finish state", () => {
+  test("createFinishState is version 2 with a zeroed review loop and five phases", () => {
+    const s = createFinishState(BASE_INIT);
+    expect(s.version).toBe(2);
+    expect(Object.keys(s.phases).sort()).toEqual(["acceptance", "gate", "quality", "review", "spec"]);
+    expect(s.review).toEqual({
+      rounds: 0,
+      lastFindings: [],
+      missingLenses: [],
+      unresolved: [],
+      reReviewUsed: false,
+      committedFixes: false,
+      covered: { spec: [], quality: [] },
+    });
+    expect(s.unreviewedFixCommits).toEqual([]);
+    expect(s).not.toHaveProperty("escalationReason");
+  });
+
+  test("a version 1 state is rejected", () => {
+    expect(() => deserializeFinishState('{"version":1}')).toThrow("unsupported version");
+  });
+
+  test("a version 2 state round-trips", () => {
+    const s = createFinishState(BASE_INIT);
+    expect(deserializeFinishState(serializeFinishState(s))).toEqual(s);
   });
 });

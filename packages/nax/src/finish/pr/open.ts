@@ -44,6 +44,53 @@ export function parseView(stdout: string, forge: ForgeKind): { isDraft: boolean;
   }
 }
 
+export interface OpenOrPromoteArgs {
+  workdir: string;
+  branch: string;
+  title: string;
+  body: string;
+  forge: ForgeKind;
+  committedThisRun: boolean;
+  /** A4: leave (or create) the PR as a draft instead of promoting it. */
+  keepDraft?: boolean;
+}
+
+/**
+ * The `keepDraft` path (A4 spec 7.1): update an existing PR's title and body
+ * without promoting it, or create the PR as a draft when the branch has none.
+ *
+ * A PR a human already marked ready is not demoted; `already-ready` is
+ * reported so the result does not claim a draft that does not exist.
+ */
+async function keepDraftPr(
+  args: OpenOrPromoteArgs,
+  view: { exitCode: number; stdout: string },
+  deps: ForgeDeps,
+): Promise<{ status: "draft" | "already-ready"; url?: string }> {
+  if (view.exitCode === 0) {
+    const { isDraft, url } = parseView(view.stdout, args.forge);
+    // `updatePrBody` swallows failures by design (the PR exists, so a failed
+    // metadata write must not discard that state): a failed update here still
+    // reports `draft`, and the stale body is only warned about.
+    await updatePrBody(args, deps);
+    return { status: isDraft ? "draft" : "already-ready", url };
+  }
+  const created = await openPr(
+    args.forge,
+    { title: args.title, body: args.body, branch: args.branch, draft: true },
+    deps,
+    args.workdir,
+  );
+  if (!created.success) {
+    throw new NaxError(
+      `Failed to create draft PR/MR for "${args.branch}": ${created.message}`,
+      "FINISH_PR_CREATE_FAILED",
+      { stage: "finish-pr", branch: args.branch },
+    );
+  }
+  return { status: "draft", url: created.url };
+}
+
 /**
  * Promote the finish's draft PR to ready, or create the PR when the branch
  * has none (the view command failed or the branch's PR/MR is already closed).
@@ -59,10 +106,23 @@ export function parseView(stdout: string, forge: ForgeKind): { isDraft: boolean;
  * squarely "this run produced something to describe".
  */
 export async function openOrPromotePr(
-  args: { workdir: string; branch: string; title: string; body: string; forge: ForgeKind; committedThisRun: boolean },
+  args: OpenOrPromoteArgs & { keepDraft: true },
   deps: ForgeDeps,
-): Promise<{ status: "opened" | "promoted" | "already-ready"; url?: string }> {
+): Promise<{ status: "draft" | "already-ready"; url?: string }>;
+export async function openOrPromotePr(
+  args: OpenOrPromoteArgs & { keepDraft?: false },
+  deps: ForgeDeps,
+): Promise<{ status: "opened" | "promoted" | "already-ready"; url?: string }>;
+export async function openOrPromotePr(
+  args: OpenOrPromoteArgs,
+  deps: ForgeDeps,
+): Promise<{ status: "opened" | "promoted" | "already-ready" | "draft"; url?: string }>;
+export async function openOrPromotePr(
+  args: OpenOrPromoteArgs,
+  deps: ForgeDeps,
+): Promise<{ status: "opened" | "promoted" | "already-ready" | "draft"; url?: string }> {
   const view = await deps.run(viewArgv(args.forge, args.branch, "isDraft,url"), { cwd: args.workdir });
+  if (args.keepDraft) return keepDraftPr(args, view, deps);
 
   if (view.exitCode !== 0) {
     const createCmd =

@@ -18,17 +18,19 @@ export interface FinishTimeoutsConfig {
 /** `finish` config block — the in-process post-run finish phase (opt-in, off by default) */
 export interface FinishConfig {
   enabled: boolean;
-  /** Whether the phase writes the PR body's "What changed" narrative */
+  /** Deprecated, ignored (A4) */
   narrative: boolean;
   prBody: { template: "merge" | "strict" | "ignore"; sectionMap: Record<string, string> };
   /** Per-step model selection; null falls through to callOp's default */
   reviewers: {
     spec: ConfiguredModel | null;
     quality: ConfiguredModel | null;
+    /** Deprecated, ignored (A4) */
     narrative: ConfiguredModel | null;
     fix: ConfiguredModel | null;
   };
   escalate: { telegram: boolean };
-  notify: { mode: "escalation" | "always" | "off" };
+  /** `escalation` is the pre-A4 alias of `draft`. */
+  notify: { mode: "draft" | "escalation" | "always" | "off" };
   timeouts: FinishTimeoutsConfig;
 }

@@ -1,369 +1,292 @@
-/** A1 — finish machine with the advisor wired (callers 1 + 4). Scaffolding copied from machine-loops.test.ts. */
+/**
+ * The advisor's two seats in `runFinishMachine` (A1 callers 1 + 4, as rebuilt by A4): ruling on judged findings
+ * inside the review loop, and approving, re-reviewing or holding from the end-of-run facts.
+ */
 import { afterEach, describe, expect, test } from "bun:test";
-import { withTempDir } from "@test/helpers";
-import type { AdviceDecision, AdviceResult } from "@/advisor";
-import type { AcceptanceGroupResult } from "@/cli";
-import type { NaxConfig } from "@/config";
-import { DEFAULT_CONFIG } from "@/config";
-import type {
-  AuditTarget,
-  Finding,
-  FinishAdvisor,
-  FinishContext,
-  FinishMachineDeps,
-  FinishOps,
-  FinishState,
-} from "@/finish";
-import { _acceptanceGateDeps, _finishGitDeps, _qualityGateDeps, createFinishState, runFinishMachine } from "@/finish";
-import type { QualityCommandOptions, QualityCommandResult } from "@/quality";
+import { makeMachineHarness, restoreFinishMachineStubs, withTempDir } from "@test/helpers";
+import type { ApprovalAction, Finding, FinishAdvisor, FinishReviewOutput, ResolutionFacts } from "@/finish";
+import { runFinishMachine } from "@/finish";
 
-const originalGit = _finishGitDeps.git;
-const originalAcceptanceRun = _acceptanceGateDeps.run;
-const originalQuality = { ..._qualityGateDeps };
-afterEach(() => {
-  _finishGitDeps.git = originalGit;
-  _acceptanceGateDeps.run = originalAcceptanceRun;
-  _qualityGateDeps.run = originalQuality.run;
-  _qualityGateDeps.loadConfig = originalQuality.loadConfig;
-  _qualityGateDeps.loadPackageOverride = originalQuality.loadPackageOverride;
-});
+afterEach(() => restoreFinishMachineStubs());
 
-const _FINDING: Finding = { severity: "HIGH", title: "fix me", problem: "p", fix: "f" };
-
-function configWithCommands(commands: NaxConfig["quality"]["commands"]): NaxConfig {
-  return { ...DEFAULT_CONFIG, quality: { ...DEFAULT_CONFIG.quality, commands } };
-}
-
-function baseContext(overrides: Partial<FinishContext> = {}): FinishContext {
-  const group: AcceptanceGroupResult = {
-    packageDir: "",
-    testPath: "test/acceptance/feat.test.ts",
-    exists: true,
-    cwd: "",
-  };
-  return {
-    base: "origin/main",
-    specPath: ".nax/features/feat/spec.md",
-    acceptanceStatus: "ok",
-    groups: [group],
-    testFileRegex: ["\\.test\\.ts$"],
-    commitsAhead: 3,
-    route: "proceed",
-    ...overrides,
-  };
-}
-
-function baseState(overrides: Partial<FinishState> = {}): FinishState {
-  const state = createFinishState({
-    feature: "feat",
-    workdir: "/repo",
-    branch: "feat/x",
-    runId: "run-1",
-    base: "origin/main",
-    specPath: ".nax/features/feat/spec.md",
-  });
-  return { ...state, ...overrides };
-}
-
-function makeOps(trail: string[], overrides: Partial<FinishOps> = {}): FinishOps {
-  return {
-    review: async (phase) => {
-      trail.push(`review:${phase}`);
-      return { findings: [], gaps: [] };
-    },
-    fix: async (phase) => {
-      trail.push(`fix:${phase}`);
-      return {};
-    },
-    openDraftPr: async () => {
-      trail.push("openDraftPr");
-      return { url: "https://forge.example/pr/1" };
-    },
-    promotePr: async () => {
-      trail.push("promotePr");
-      return { status: "opened" as const };
-    },
-    escalate: async (_state, reason) => {
-      trail.push(`escalate:${reason}`);
-      return {};
-    },
-    ...overrides,
-  };
-}
-
-function installGitStub(trail: string[]): void {
-  let shaCounter = 0;
-  _finishGitDeps.git = async (args: string[]) => {
-    const cmd = args[0];
-    if (cmd === "rev-parse") {
-      shaCounter += 1;
-      return { stdout: `sha${shaCounter}`, stderr: "", exitCode: 0 };
-    }
-    if (cmd === "status") return { stdout: " M file.ts\n", stderr: "", exitCode: 0 };
-    if (cmd === "add") return { stdout: "", stderr: "", exitCode: 0 };
-    if (cmd === "commit") {
-      trail.push("commit");
-      return { stdout: "", stderr: "", exitCode: 0 };
-    }
-    if (cmd === "show") return { stdout: "src/prod.ts\n", stderr: "", exitCode: 0 };
-    if (cmd === "push") return { stdout: "", stderr: "", exitCode: 0 };
-    return { stdout: "", stderr: "", exitCode: 0 };
-  };
-}
-
-function installAcceptanceGateStub(trail: string[], run?: () => { exitCode: number }): void {
-  const runFn = run ?? (() => ({ exitCode: 0 }));
-  _acceptanceGateDeps.run = async () => {
-    trail.push("acceptance-run");
-    const r = runFn();
-    return {
-      commandName: "acceptance",
-      command: "bun test",
-      success: r.exitCode === 0,
-      exitCode: r.exitCode,
-      output: "acceptance output",
-      durationMs: 1,
-      timedOut: false,
-    };
-  };
-}
-
-function installQualityGateStub(trail: string[], commands: NaxConfig["quality"]["commands"] = { test: "true" }): void {
-  _qualityGateDeps.loadConfig = async () => configWithCommands(commands);
-  _qualityGateDeps.loadPackageOverride = async () => null;
-  _qualityGateDeps.run = async (o: QualityCommandOptions): Promise<QualityCommandResult> => {
-    trail.push(`quality-run:${o.commandName}`);
-    return {
-      commandName: o.commandName,
-      command: o.command as string,
-      success: true,
-      exitCode: 0,
-      output: "ok",
-      durationMs: 1,
-      timedOut: false,
-    };
-  };
-}
-
-interface MakeDepsOpts {
-  auditDir: string;
-  context?: Partial<FinishContext>;
-  ops?: Partial<FinishOps>;
-  acceptanceRun?: () => { exitCode: number };
-  qualityCommands?: NaxConfig["quality"]["commands"];
-}
-
-function makeDeps(opts: MakeDepsOpts): { deps: FinishMachineDeps; trail: string[] } {
-  const trail: string[] = [];
-  installGitStub(trail);
-  installAcceptanceGateStub(trail, opts.acceptanceRun);
-  installQualityGateStub(trail, opts.qualityCommands);
-  const ops = makeOps(trail, opts.ops);
-  const audit: AuditTarget = { auditDir: opts.auditDir, runId: "run-1" };
-  let tick = 0;
-  const deps: FinishMachineDeps = {
-    context: baseContext(opts.context),
-    ops,
-    audit,
-    now: () => {
-      tick += 1;
-      return `2026-08-18T00:00:${String(tick).padStart(2, "0")}.000Z`;
-    },
-  };
-  return { deps, trail };
-}
-
-const judged: Finding = {
-  severity: "HIGH",
-  title: "judged",
+const finding = (title: string, extra: Partial<Finding> = {}): Finding => ({
+  severity: "MEDIUM",
+  title,
   problem: "p",
   fix: "f",
-  judgment: true,
-  judgmentReason: "design call",
-};
-const plain: Finding = { severity: "LOW", title: "plain", problem: "p2", fix: "f2" };
+  source: "quality",
+  file: "a.ts",
+  ...extra,
+});
+const q = (title: string, extra: Partial<Finding> = {}): FinishReviewOutput => ({
+  findings: [finding(title, extra)],
+  covered: ["a.ts"],
+});
 
-function dec(action: AdviceDecision["action"], id = "D-1"): AdviceResult {
-  return {
-    decision: {
-      id,
-      questionId: "Q",
-      kind: "finish-judgment",
-      chosenOptionId: "A",
-      action,
-      rationale: "advisor says so",
-      confidence: "high",
-      reversible: true,
-      needsHumanConfirm: false,
-      decidedAt: "t",
-      model: "m",
-      memoryMode: "stateless",
-      auditRef: "a",
-    },
-  };
+interface AdvisorLog {
+  approvals: ResolutionFacts[];
+  judgedCalls: Finding[][];
+  ledgerCommits: number;
 }
 
-/** A scripted FinishAdvisor: judged findings get `judgedAction`, approvals pop from `approvals`. */
-function fakeFinishAdvisor(
-  trail: string[],
-  o: { judged?: (f: Finding) => "fix" | "waive" | "hold" | "none"; approvals?: AdviceResult[] },
-): FinishAdvisor {
-  const approvals = [...(o.approvals ?? [])];
-  return {
-    judgedEnabled: o.judged !== undefined,
-    approvalEnabled: o.approvals !== undefined,
-    async judged(_phase, judgedFindings) {
-      trail.push("advise:judged");
-      const toFix: Finding[] = [];
-      const out = { toFix, advice: [{ decisionId: "D-1", optionId: "A", reused: false }] };
-      for (const f of judgedFindings) {
-        const kind = o.judged?.(f) ?? "none";
-        if (kind === "hold") return { ...out, hold: "needs a human" };
-        if (kind === "none") return { ...out, fallback: "no-json" };
-        if (kind === "fix") out.toFix.push({ ...f, fix: `${f.fix} + ruling` });
-      }
-      return out;
+function makeAdvisor(
+  actions: Array<{ action: ApprovalAction; rationale: string }>,
+  overrides: Partial<FinishAdvisor> = {},
+): { advisor: FinishAdvisor; log: AdvisorLog } {
+  const log: AdvisorLog = { approvals: [], judgedCalls: [], ledgerCommits: 0 };
+  const queue = [...actions];
+  const advisor: FinishAdvisor = {
+    judgedEnabled: false,
+    approvalEnabled: true,
+    judged: async (findings) => {
+      log.judgedCalls.push(findings);
+      return { toFix: [], advice: [], unresolved: findings };
     },
-    async approval() {
-      trail.push("advise:approval");
-      return approvals.shift() ?? { decision: null, fallbackReason: "script exhausted" };
+    approval: async (facts) => {
+      log.approvals.push(facts);
+      return queue.shift() ?? { action: "unavailable", rationale: "script exhausted" };
     },
-    async commitLedger() {
-      trail.push("commitLedger");
+    commitLedger: async () => {
+      log.ledgerCommits += 1;
     },
+    ...overrides,
   };
+  return { advisor, log };
 }
 
-/** A review op that reports `first` once, then clean. */
-function reviewOnce(trail: string[], phase: "spec" | "quality", first: Finding[]): Partial<FinishOps> {
-  let n = 0;
-  return {
-    review: async (p) => {
-      trail.push(`review:${p}`);
-      if (p === phase && n++ === 0) return { findings: first, gaps: [] };
-      return { findings: [], gaps: [] };
-    },
-  };
-}
+/** Quality findings that survive every round because the fixer commits nothing. */
+const STUCK = { quality: [q("A"), q("A"), q("A"), q("A")] };
 
-describe("finish machine — advisor (A1 callers 1 + 4)", () => {
-  test("plain + judged: the advisor rules fix → one fix round carrying both", async () => {
+describe("approval", () => {
+  test("approve with open findings: promotePr, outcome ready, the findings recorded as accepted residue", async () => {
     await withTempDir(async (dir) => {
-      const t: string[] = [];
-      const fixed: Finding[][] = [];
-      const { deps, trail } = makeDeps({
+      const { advisor, log } = makeAdvisor([{ action: "approve", rationale: "residue is cosmetic" }]);
+      const { deps, trail, state } = makeMachineHarness({
         auditDir: dir,
-        ops: {
-          ...reviewOnce(t, "quality", [plain, judged]),
-          fix: async (_p, req) => {
-            fixed.push(req.findings ?? []);
-            return {};
-          },
-        },
+        script: STUCK,
+        fixIsNoop: true,
+        advise: advisor,
       });
-      deps.advise = fakeFinishAdvisor(trail, { judged: () => "fix" });
-      const result = await runFinishMachine(baseState(), deps);
-      expect(result.status).toBe("opened");
-      expect(fixed[0]?.map((f) => f.title)).toEqual(["plain", "judged"]);
-      expect(fixed[0]?.[1]?.fix).toContain("+ ruling");
-    });
-  });
-
-  test("judged-only + waive: round advised, re-review clean, PR promoted", async () => {
-    await withTempDir(async (dir) => {
-      const t: string[] = [];
-      const { deps, trail } = makeDeps({ auditDir: dir, ops: reviewOnce(t, "quality", [judged]) });
-      deps.advise = fakeFinishAdvisor(trail, { judged: () => "waive" });
-      const state = baseState();
       const result = await runFinishMachine(state, deps);
-      expect(result.status).toBe("opened");
-      expect(t.filter((e) => e === "review:quality")).toHaveLength(2);
-      expect(state.phases.quality.adviseRounds).toBe(1);
+
+      expect(result.status).toBe("promoted");
+      expect(result.outcome).toBe("ready");
+      expect(result.acceptedResidue?.map((f) => f.title)).toEqual(["A"]);
+      expect(result.findings).toBeUndefined();
+      expect(trail).toContain("promotePr");
+      expect(trail).not.toContain("finalizeDraftPr");
+      expect(log.approvals).toHaveLength(1);
+      expect(log.ledgerCommits).toBe(1);
+      expect(state.resolution?.acceptedResidue).toHaveLength(1);
     });
   });
 
-  test("hold escalates with the advisor's rationale", async () => {
+  test("re-review: exactly one extra round, then resolve again", async () => {
     await withTempDir(async (dir) => {
-      const t: string[] = [];
-      const { deps, trail } = makeDeps({ auditDir: dir, ops: reviewOnce(t, "spec", [judged]) });
-      deps.advise = fakeFinishAdvisor(trail, { judged: () => "hold" });
-      const result = await runFinishMachine(baseState(), deps);
-      expect(result.status).toBe("escalated");
-      expect(result.escalationReason).toBe("advisor hold: needs a human");
-    });
-  });
-
-  test("advisor unavailable escalates with today's judgment reason", async () => {
-    await withTempDir(async (dir) => {
-      const t: string[] = [];
-      const { deps, trail } = makeDeps({ auditDir: dir, ops: reviewOnce(t, "spec", [judged]) });
-      deps.advise = fakeFinishAdvisor(trail, { judged: () => "none" });
-      const result = await runFinishMachine(baseState(), deps);
-      expect(result.status).toBe("escalated");
-      expect(result.escalationReason).toBe("design call (advisor unavailable: no-json)");
-    });
-  });
-
-  test("approval approve → ledger committed, PR promoted", async () => {
-    await withTempDir(async (dir) => {
-      const { deps, trail } = makeDeps({ auditDir: dir });
-      deps.advise = fakeFinishAdvisor(trail, { approvals: [dec({ type: "approve" })] });
-      const result = await runFinishMachine(baseState(), deps);
-      expect(result.status).toBe("opened");
-      expect(trail).toContain("advise:approval");
-      expect(trail).toContain("commitLedger");
-      expect(trail.indexOf("commitLedger")).toBeLessThan(trail.indexOf("promotePr"));
-    });
-  });
-
-  test("approval re-review with a fix commit re-runs the gates before asking again", async () => {
-    await withTempDir(async (dir) => {
-      const t: string[] = [];
-      let reviews = 0;
-      const { deps, trail } = makeDeps({
+      const { advisor, log } = makeAdvisor([
+        { action: "re-review", rationale: "look again" },
+        { action: "approve", rationale: "now fine" },
+      ]);
+      const { deps, trail, state } = makeMachineHarness({
         auditDir: dir,
-        ops: {
-          review: async (p) => {
-            t.push(`review:${p}`);
-            reviews += 1;
-            // spec, quality pass; the approval's re-review of quality finds one plain finding once.
-            return p === "quality" && reviews === 3 ? { findings: [plain], gaps: [] } : { findings: [], gaps: [] };
-          },
-        },
+        script: { quality: [q("A"), q("A"), q("A"), { findings: [], covered: ["a.ts"] }] },
+        fixIsNoop: true,
+        advise: advisor,
       });
-      deps.advise = fakeFinishAdvisor(trail, {
-        approvals: [dec({ type: "re-review", phase: "quality" }), dec({ type: "approve" }, "D-2")],
-      });
-      const result = await runFinishMachine(baseState(), deps);
-      expect(result.status).toBe("opened");
-      expect(trail.filter((e) => e === "advise:approval")).toHaveLength(2);
-      const approvals = trail
-        .map((e, i) => [e, i] as const)
-        .filter(([e]) => e === "advise:approval")
-        .map(([, i]) => i);
-      const gateRunsBetween = trail.slice(approvals[0], approvals[1]).filter((e) => e.startsWith("quality-run:"));
-      expect(gateRunsBetween.length).toBeGreaterThan(0);
+      const result = await runFinishMachine(state, deps);
+
+      expect(trail.filter((t) => t === "review:quality")).toHaveLength(4);
+      expect(state.review.rounds).toBe(4);
+      expect(state.review.reReviewUsed).toBe(true);
+      // the extra round came back clean, so the second resolve is clean and never reaches the advisor again
+      expect(log.approvals).toHaveLength(1);
+      expect(log.approvals[0]?.findingsOpen).toHaveLength(1);
+      expect(result.outcome).toBe("ready");
+      expect(result.acceptedResidue).toBeUndefined();
+      expect(log.ledgerCommits).toBe(1);
     });
   });
 
-  test("approval unavailable escalates and NEVER promotes (fails closed)", async () => {
+  test("a second re-review request is a draft, not a loop", async () => {
     await withTempDir(async (dir) => {
-      const { deps, trail } = makeDeps({ auditDir: dir });
-      deps.advise = fakeFinishAdvisor(trail, { approvals: [] });
-      const result = await runFinishMachine(baseState(), deps);
-      expect(result.status).toBe("escalated");
-      expect(result.escalationReason).toContain("advisor approval unavailable");
+      const { advisor, log } = makeAdvisor([
+        { action: "re-review", rationale: "again" },
+        { action: "re-review", rationale: "and again" },
+      ]);
+      const { deps, trail, state } = makeMachineHarness({
+        auditDir: dir,
+        script: STUCK,
+        fixIsNoop: true,
+        advise: advisor,
+      });
+      const result = await runFinishMachine(state, deps);
+      expect(trail.filter((t) => t === "review:quality")).toHaveLength(4);
+      expect(log.approvals).toHaveLength(2);
+      expect(result.outcome).toBe("draft");
+      expect(result.reason).toContain("advisor:");
+    });
+  });
+
+  test("a re-review round that commits a fix re-checks acceptance and the gates", async () => {
+    await withTempDir(async (dir) => {
+      const { advisor } = makeAdvisor([
+        { action: "re-review", rationale: "look again" },
+        { action: "approve", rationale: "fine" },
+      ]);
+      const { deps, trail, state } = makeMachineHarness({ auditDir: dir, script: STUCK, advise: advisor });
+      // rounds 1-3 fix and commit; the advisor then asks for a fourth, which commits too
+      const result = await runFinishMachine(state, deps);
+      const lastReview = trail.lastIndexOf("review:quality");
+      expect(trail.slice(lastReview + 1)).toEqual([
+        "fix:review",
+        "commit",
+        "acceptance-run", // the re-check of the re-review's fix
+        "acceptance-run", // gate zero
+        "quality-run:test",
+        "finalizeDraftPr", // the re-review's own fix is unreviewed, so an approve cannot make the PR ready
+      ]);
+      expect(result.outcome).toBe("draft");
+      expect(result.reason).toContain("approve rejected (phases incomplete)");
+    });
+  });
+
+  test("hold: draft with an 'advisor:' reason", async () => {
+    await withTempDir(async (dir) => {
+      const { advisor, log } = makeAdvisor([{ action: "hold", rationale: "needs a human call" }]);
+      const { deps, trail, state } = makeMachineHarness({
+        auditDir: dir,
+        script: STUCK,
+        fixIsNoop: true,
+        advise: advisor,
+      });
+      const result = await runFinishMachine(state, deps);
+      expect(result.outcome).toBe("draft");
+      expect(result.reason?.startsWith("advisor: needs a human call")).toBe(true);
+      expect(result.findings).toHaveLength(1);
+      expect(trail).toContain("finalizeDraftPr");
+      // the ledger the advisor wrote is committed even when it held
+      expect(log.ledgerCommits).toBe(1);
+    });
+  });
+
+  test("advisor unavailable: draft, never ready", async () => {
+    await withTempDir(async (dir) => {
+      const { advisor } = makeAdvisor([{ action: "unavailable", rationale: "no-json" }]);
+      const { deps, trail, state } = makeMachineHarness({
+        auditDir: dir,
+        script: STUCK,
+        fixIsNoop: true,
+        advise: advisor,
+      });
+      const result = await runFinishMachine(state, deps);
+      expect(result.outcome).toBe("draft");
+      expect(result.reason).toContain("advisor: no-json");
       expect(trail).not.toContain("promotePr");
     });
   });
 
-  test("no advisor: the trail is unchanged from today", async () => {
+  test("an advisor that throws is unavailable: draft with the error", async () => {
     await withTempDir(async (dir) => {
-      const a = makeDeps({ auditDir: dir });
-      await runFinishMachine(baseState(), a.deps);
-      expect(a.trail).not.toContain("advise:judged");
-      expect(a.trail).not.toContain("advise:approval");
-      expect(a.trail.filter((e) => e === "promotePr")).toHaveLength(1);
+      const { advisor } = makeAdvisor([], {
+        approval: async () => {
+          throw new Error("advisor session died");
+        },
+      });
+      const { deps, state } = makeMachineHarness({ auditDir: dir, script: STUCK, fixIsNoop: true, advise: advisor });
+      const result = await runFinishMachine(state, deps);
+      expect(result.outcome).toBe("draft");
+      expect(result.reason).toContain("advisor error: Error: advisor session died");
+    });
+  });
+
+  test("a clean run never calls the advisor's approval, and commits no ledger", async () => {
+    await withTempDir(async (dir) => {
+      const { advisor, log } = makeAdvisor([{ action: "approve", rationale: "unused" }]);
+      const { deps, trail, state } = makeMachineHarness({ auditDir: dir, advise: advisor });
+      const result = await runFinishMachine(state, deps);
+      expect(log.approvals).toHaveLength(0);
+      expect(log.ledgerCommits).toBe(0);
+      expect(result.outcome).toBe("ready");
+      expect(trail).toContain("promotePr");
+    });
+  });
+
+  test("approvalEnabled off: an approval-only advisor is not consulted and the draft stands", async () => {
+    await withTempDir(async (dir) => {
+      const { advisor, log } = makeAdvisor([{ action: "approve", rationale: "unused" }], { approvalEnabled: false });
+      const { deps, state } = makeMachineHarness({ auditDir: dir, script: STUCK, fixIsNoop: true, advise: advisor });
+      const result = await runFinishMachine(state, deps);
+      expect(log.approvals).toHaveLength(0);
+      expect(result.outcome).toBe("draft");
+    });
+  });
+});
+
+describe("judged findings", () => {
+  test("plain and judged together: the advisor's ruling is fixed in one round with the plain finding", async () => {
+    await withTempDir(async (dir) => {
+      const seen: Finding[][] = [];
+      const { advisor, log } = makeAdvisor([], {
+        judgedEnabled: true,
+        judged: async (findings) => ({
+          toFix: findings.map((f) => ({ ...f, fix: `${f.fix}\n\nAdvisor ruling (D-1): do it` })),
+          advice: [{ decisionId: "D-1", optionId: "A", reused: false }],
+          unresolved: [],
+        }),
+      });
+      const { deps, state } = makeMachineHarness({
+        auditDir: dir,
+        advise: advisor,
+        script: {
+          quality: [{ findings: [finding("Plain"), finding("Judged", { judgment: true, file: "b.ts" })], covered: [] }],
+        },
+        ops: {
+          fix: async (_phase, req) => {
+            seen.push(req.findings ?? []);
+            return {};
+          },
+        },
+      });
+      const result = await runFinishMachine(state, deps);
+      expect(seen).toHaveLength(1);
+      expect(seen[0]?.map((f) => f.title)).toEqual(["Plain", "Judged"]);
+      expect(seen[0]?.[1]?.fix).toContain("Advisor ruling (D-1)");
+      expect(log.approvals).toHaveLength(0);
+      expect(state.phases.review.adviseRounds).toBe(1);
+      expect(result.outcome).toBe("ready");
+      // the advisor wrote decisions this finish, so its ledger is committed before the PR is finalized
+      expect(log.ledgerCommits).toBe(1);
+    });
+  });
+
+  test("a judged finding the advisor holds stays open and keeps the PR a draft", async () => {
+    await withTempDir(async (dir) => {
+      const { advisor } = makeAdvisor([], {
+        judgedEnabled: true,
+        approvalEnabled: false,
+        judged: async (findings) => ({ toFix: [], advice: [], unresolved: findings }),
+      });
+      const { deps, trail, state } = makeMachineHarness({
+        auditDir: dir,
+        advise: advisor,
+        script: { quality: [q("Design call", { judgment: true })] },
+      });
+      const result = await runFinishMachine(state, deps);
+      expect(trail).not.toContain("fix:review");
+      expect(result.outcome).toBe("draft");
+      expect(result.findings?.map((f) => f.title)).toEqual(["Design call"]);
+    });
+  });
+
+  test("no advisor: a judged finding is unresolved, the trail has no advisor step", async () => {
+    await withTempDir(async (dir) => {
+      const { deps, trail, state } = makeMachineHarness({
+        auditDir: dir,
+        script: { quality: [q("Design call", { judgment: true })] },
+      });
+      const result = await runFinishMachine(state, deps);
+      expect(trail).not.toContain("fix:review");
+      expect(result.outcome).toBe("draft");
     });
   });
 });

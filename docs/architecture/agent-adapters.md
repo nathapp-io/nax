@@ -80,7 +80,7 @@ The stage rides on each `Operation.stage` (or `pipelineStage` on a direct manage
 | `setup` | `nax setup` config generation (`setupGenerateOp`) |
 | `verify` | `verifyScopedOp`, `fullSuiteGateOp` |
 | `rectification` | autofix / full-suite-rectify ops |
-| `complete` | `finishNarrativeOp`; the default for a `completeAs` call that passes no stage |
+| `complete` | one-shot `complete` ops; the default for a `completeAs` call that passes no stage |
 | `acceptance` | Acceptance generator / fix ops |
 | `regression` | Declared in the union; no op carries it today |
 | `review` | semantic / adversarial review ops, `rectifyOp` |

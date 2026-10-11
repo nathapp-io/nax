@@ -42,7 +42,7 @@ const FINDINGS: Finding[] = [
 ];
 
 const SPEC_INPUT: FinishFixInput = {
-  phase: "spec",
+  phase: "review",
   workdir: "/tmp/finish-fix-test",
   findings: FINDINGS,
 };
@@ -78,13 +78,31 @@ describe("finishFixOp.build()", () => {
     expect(result.task.content).not.toContain("[1]");
   });
 
-  test("spec phase numbers findings 1-based in the order given", () => {
+  test("review phase numbers findings 1-based in the order given", () => {
     const ctx = makeCtx();
     const result = finishFixOp.build(SPEC_INPUT, ctx);
     const idxOne = result.task.content.indexOf("[1] [HIGH] Missing null check");
     const idxTwo = result.task.content.indexOf("[2] [MEDIUM] Unused import");
     expect(idxOne).toBeGreaterThanOrEqual(0);
     expect(idxTwo).toBeGreaterThan(idxOne);
+  });
+});
+
+describe("finishFixOp.build() review grouping", () => {
+  test("review phase prompt groups findings by source", () => {
+    const built = finishFixOp.build(
+      {
+        phase: "review",
+        workdir: "/r",
+        findings: [
+          { severity: "LOW", title: "S", problem: "p", fix: "f", source: "spec" },
+          { severity: "LOW", title: "Q", problem: "p", fix: "f", source: "quality" },
+        ],
+      },
+      makeCtx(),
+    );
+    expect(built.task.content).toContain("## Spec findings");
+    expect(built.task.content).toContain("## Quality findings");
   });
 });
 

@@ -1,22 +1,23 @@
 /**
  * The phase-parameterised finish fix operation.
  *
- * One `RunOperation` drives all four fix phases (`gate`, `acceptance`,
- * `spec`, `quality`), since `buildFixPrompt` is already phase-agnostic (the
- * caller supplies `phase` on the input). Sibling of `finish-review-op.ts` —
- * same `session`/`config`/`model`/`timeoutMs` shape, same `build`
- * `ComposeInput` pattern — but simpler in two ways documented below.
+ * One `RunOperation` drives the acceptance, gate and review fix phases, since
+ * `buildFinishFixPrompt` is phase-agnostic (the caller supplies `phase` on the
+ * input). Shares the `session`/`config`/`model`/`timeoutMs` shape and the
+ * `build` `ComposeInput` pattern with the finish review ops, but is simpler in
+ * two ways documented below.
  */
 import type { ConfiguredModel } from "@/config";
 import { finishConfigSelector } from "@/config";
 import type { FinishConfig } from "@/config/selectors";
+import { parseDispositions, validateDispositions } from "@/finish/fix";
+import { buildFinishFixPrompt } from "@/prompts";
 import type { FixOutcome } from "../finish/ops";
-import { buildFixPrompt, parseDispositions, validateDispositions } from "../finish/review";
-import type { Finding, FinishPhase } from "../finish/types";
+import type { Finding } from "../finish/types";
 import type { RunOperationWithHooks } from "./types";
 
 export interface FinishFixInput {
-  phase: FinishPhase;
+  phase: "acceptance" | "gate" | "review";
   workdir: string;
   findings?: Finding[];
   failing?: string[];
@@ -34,7 +35,7 @@ export const finishFixOp: RunOperationWithHooks<FinishFixInput, FixOutcome, Fini
   config: finishConfigSelector,
   session: { role: "finish-fix", lifetime: "fresh" },
   // No GitCommit: the prompt explicitly forbids committing — "nax-finish
-  // commits and pushes your edits itself" (buildFixPrompt, finish/review/prompt.ts).
+  // commits and pushes your edits itself" (buildFinishFixPrompt, prompts/builders/finish-review-builder.ts).
   tools: ["Read", "Glob", "Grep", "Write", "Edit", "Delete", "Git", "RunCommand", "Exec", "Bash", "RequestCapability"],
   model: (input) => input.model,
   // `finish.timeouts.stepMs` when set, otherwise the run's own session timeout.
@@ -44,7 +45,7 @@ export const finishFixOp: RunOperationWithHooks<FinishFixInput, FixOutcome, Fini
   // here makes the bound explicit and matches the acceptance ops.
   timeoutMs: (input, ctx) => input.timeoutMs ?? ctx.config.execution.sessionTimeoutSeconds * 1000,
   build(input, _ctx) {
-    const content = buildFixPrompt(input.phase, {
+    const content = buildFinishFixPrompt(input.phase, {
       findings: input.findings,
       gateOutput: input.gateOutput,
       acceptanceOutput: input.acceptanceOutput,
