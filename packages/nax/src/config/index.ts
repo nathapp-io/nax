@@ -115,6 +115,8 @@ export {
   TierConfigSchema,
 } from "./schemas-model";
 export { AdversarialReviewConfigSchema, ReviewConfigSchema, SemanticReviewConfigSchema } from "./schemas-review";
+export { scanConfigSecrets } from "./secret-scan";
+export type { ConfigSecretFinding, ConfigSecretKind, ConfigSecretScan } from "./secret-scan";
 export type { ConfigSelector } from "./selector";
 export { pickSelector, reshapeSelector } from "./selector";
 export type {
