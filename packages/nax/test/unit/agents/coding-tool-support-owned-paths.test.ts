@@ -11,13 +11,21 @@
  * - The argv positional-path conflict surfaces as kind "error" (isError tool
  *   result from normalizeExec), not kind "denied".
  * - "RunCommand" joins declaredTools so the argv branch is reachable.
+ *
+ * US-003 (config read gate): reads of a nax config file are now admitted when
+ * the config-secret scan is clean and the dispatch's Bash runs in `raw`
+ * approval mode (or declares no Bash at all). The three cases that relied on
+ * the old blanket refusal -- Read of the root config, Glob through a symlink to
+ * it, and Exec's positional-path screen -- are re-pinned here against a config
+ * that HOLDS a literal secret, so the refusal they assert is the gate's, not a
+ * coincidence. Every write refusal is unchanged.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { _resetSandboxRegistryForTests, type CodingToolName } from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
-import { resolveCodingToolSupport } from "@/agents/coding-tool-support-resolve";
+import { _codingToolSupportDeps, resolveCodingToolSupport } from "@/agents/coding-tool-support-resolve";
 
 let root: string;
 beforeEach(() => {
@@ -33,6 +41,36 @@ afterEach(() => {
 });
 
 const DECLARED: readonly CodingToolName[] = ["Read", "Write", "Bash", "Glob", "Exec", "RunCommand"];
+
+/** The literal header the US-003 fixtures use to make the scan report a finding. */
+const LITERAL_HEADER = "Bearer abc12345xyz";
+
+/** US-003: a config that is NOT clean, so the read gate stays closed. */
+function dirtyRootConfig(): void {
+  writeFileSync(
+    join(root, ".nax", "config.json"),
+    JSON.stringify({ reporters: { webhook: { headers: { Authorization: LITERAL_HEADER } } } }),
+  );
+}
+
+function rootConfigContents(): string {
+  return readFileSync(join(root, ".nax", "config.json"), "utf8");
+}
+
+/** The dispatch under test, with only the fields a US-003 case varies. */
+async function supportFor(opts: { declaredTools: readonly CodingToolName[]; bashApproval?: "raw" | "gated" }) {
+  const execution: Record<string, unknown> = {
+    permissionProfile: "unrestricted",
+    sandbox: { enabled: false },
+    ...(opts.bashApproval !== undefined ? { bashApproval: opts.bashApproval } : {}),
+  };
+  return await resolveCodingToolSupport({
+    declaredTools: opts.declaredTools,
+    codingToolRoot: root,
+    pipelineStage: "run",
+    config: makeNaxConfig({ execution }),
+  });
+}
 
 async function denialFor(tool: string, input: Record<string, unknown>, bashApproval?: "raw"): Promise<string> {
   const support = await resolveCodingToolSupport({
@@ -88,8 +126,14 @@ describe("nax owned paths through resolveCodingToolSupport (S3-2 byte-identity p
     );
   });
 
-  test("Read of nax config is refused like a write", async () => {
-    expect(await denialFor("Read", { path: ".nax/config.json" })).toBe(CONFIG_REASON);
+  test("US-003: Read of a config holding a literal secret is refused with the read-disabled reason", async () => {
+    // US-003: this used to assert the blanket refusal on a CLEAN config. With
+    // reads open, a clean config is readable; the refusal that survives is the
+    // gate's, and it names `nax doctor` as the remedy.
+    dirtyRootConfig();
+    const reason = await denialFor("Read", { path: ".nax/config.json" });
+    expect(reason.startsWith(CONFIG_REASON)).toBe(true);
+    expect(reason).toContain("nax doctor");
   });
 
   test("raw Bash naming the queue file", async () => {
@@ -107,12 +151,13 @@ describe("nax owned paths through resolveCodingToolSupport (S3-2 byte-identity p
     );
   });
 
-  test("Glob does not list nax config (ToolRunContext.ownedPaths)", async () => {
+  test("US-003: Glob does not list a symlink to a config holding a literal secret", async () => {
     // Glob's node runtime never descends into a dot segment, so `.nax/` itself
     // is unlistable regardless of ownership; a symlink named without a dot
     // segment is the only spelling that reaches resolveWithin with a nax-owned
-    // target. A symlink to an ordinary file is listed; a symlink to nax config
-    // is discarded by resolveWithin's owned-config branch.
+    // target. A symlink to an ordinary file is listed; a symlink to a config
+    // the gate keeps closed is discarded by resolveWithin's owned-config branch.
+    dirtyRootConfig();
     writeFileSync(join(root, ".nax", "notes.json"), "{}");
     symlinkSync(".nax/notes.json", join(root, "plain.json"));
     symlinkSync(".nax/config.json", join(root, "naxcfg.json"));
@@ -122,12 +167,14 @@ describe("nax owned paths through resolveCodingToolSupport (S3-2 byte-identity p
     expect(refused).toContain("no matches");
   });
 
-  test("Exec refuses a positional path to nax config (ToolRunContext.ownedPaths)", async () => {
+  test("US-003: Exec refuses a positional path to a config holding a literal secret", async () => {
     // Exec is the identity of a RunCommand call carrying `argv` (no "Exec"
     // tool is registered), the positional-path screen fires only on
     // path-SHAPED tokens (`./`-prefixed counts; a bare `.nax/...` does not),
     // and the conflict from normalizeExec surfaces as an isError tool result:
-    // kind "error".
+    // kind "error". The error text is unchanged from the pre-US-003 assertion;
+    // only the fixture (a config the read gate keeps closed) moved.
+    dirtyRootConfig();
     const support = await resolveCodingToolSupport({
       declaredTools: DECLARED,
       codingToolRoot: root,
@@ -139,5 +186,124 @@ describe("nax owned paths through resolveCodingToolSupport (S3-2 byte-identity p
     expect(outcome.content).toContain(
       'argv contains a path-shaped argument "./.nax/config.json" that resolves outside the permitted root',
     );
+  });
+});
+
+/**
+ * US-003 — the config read gate, end to end through `resolveCodingToolSupport`.
+ *
+ * Reads open only when the config-secret scan is clean AND the dispatch's
+ * Bash either is not declared or runs in `raw` approval mode. Every write
+ * refusal is unchanged, and a rejected scan fails closed.
+ */
+describe("US-003 — the native config read gate through resolveCodingToolSupport", () => {
+  test("US-003 AC12: a clean config is readable when Bash runs in raw mode", async () => {
+    const support = await supportFor({ declaredTools: ["Read", "Bash"], bashApproval: "raw" });
+    const outcome = await support?.runtime.callTool("Read", { path: ".nax/config.json" });
+    expect(outcome?.kind).toBe("ok");
+    if (outcome?.kind !== "ok") throw new Error("expected Read of the root config to be admitted");
+    expect(outcome.content).toContain("{}");
+  });
+
+  test("US-003 AC12 (boundary): a clean config is readable when the dispatch declares no Bash at all", async () => {
+    // The gate opens for a dispatch that cannot run shell commands in the first
+    // place: with no Bash declared there is no ungated-shell route to guard.
+    const support = await supportFor({ declaredTools: ["Read"], bashApproval: "gated" });
+    const outcome = await support?.runtime.callTool("Read", { path: ".nax/config.json" });
+    expect(outcome?.kind).toBe("ok");
+  });
+
+  test("US-003 AC12 (boundary): a gated dispatch that DOES declare Bash keeps the read closed", async () => {
+    const support = await supportFor({ declaredTools: ["Read", "Bash"], bashApproval: "gated" });
+    const outcome = await support?.runtime.callTool("Read", { path: ".nax/config.json" });
+    expect(outcome?.kind).toBe("denied");
+  });
+
+  test("US-003 AC13: a config write is refused with the ungated-shell reason and leaves the file alone", async () => {
+    const support = await supportFor({ declaredTools: ["Write"] });
+    const outcome = await support?.runtime.callTool("Write", { path: ".nax/config.json", content: "x" });
+    expect(outcome?.kind).toBe("denied");
+    if (outcome?.kind !== "denied") throw new Error("expected Write to the config to be denied");
+    expect(outcome.reason).toContain("quality.commands");
+    expect(rootConfigContents()).toBe("{}");
+  });
+
+  test("US-003 AC14: a scratchpad symlink pointing at the config cannot overwrite it", async () => {
+    mkdirSync(join(root, ".nax", "scratchpad"), { recursive: true });
+    symlinkSync(join(root, ".nax", "config.json"), join(root, ".nax", "scratchpad", "config-link.json"));
+    const support = await supportFor({ declaredTools: ["ScratchpadWrite"] });
+    const outcome = await support?.runtime.callTool("ScratchpadWrite", { path: "config-link.json", content: "x" });
+    expect(outcome?.kind).toBe("denied");
+    expect(rootConfigContents()).toBe("{}");
+  });
+
+  test("US-003 AC15: a gated Bash dispatch keeps the config read closed and names nax doctor", async () => {
+    const support = await supportFor({ declaredTools: ["Bash", "Read"], bashApproval: "gated" });
+    const outcome = await support?.runtime.callTool("Read", { path: ".nax/config.json" });
+    expect(outcome?.kind).toBe("denied");
+    if (outcome?.kind !== "denied") throw new Error("expected Read of the root config to be denied under gated Bash");
+    expect(outcome.reason).toContain("nax doctor");
+  });
+
+  test("US-003 AC16: a gated Bash redirect into the config is refused and the file is untouched", async () => {
+    const support = await supportFor({ declaredTools: ["Bash"], bashApproval: "gated" });
+    const outcome = await support?.runtime.callTool("Bash", { command: "echo x > .nax/config.json" });
+    expect(outcome?.kind).toBe("denied");
+    expect(rootConfigContents()).toBe("{}");
+  });
+
+  test("US-003 AC17: a literal header value in the config closes the read and names nax doctor", async () => {
+    dirtyRootConfig();
+    const support = await supportFor({ declaredTools: ["Read"] });
+    const outcome = await support?.runtime.callTool("Read", { path: ".nax/config.json" });
+    expect(outcome?.kind).toBe("denied");
+    if (outcome?.kind !== "denied") throw new Error("expected Read of the dirty root config to be denied");
+    expect(outcome.reason).toContain("nax doctor");
+  });
+
+  test("US-003 AC18: a literal header value in a mono package config closes the root read", async () => {
+    const packageDir = join(root, ".nax", "mono", "apps", "api");
+    mkdirSync(packageDir, { recursive: true });
+    writeFileSync(
+      join(packageDir, "config.json"),
+      JSON.stringify({ reporters: { webhook: { headers: { Authorization: LITERAL_HEADER } } } }),
+    );
+    const support = await supportFor({ declaredTools: ["Read"] });
+    const outcome = await support?.runtime.callTool("Read", { path: ".nax/config.json" });
+    expect(outcome?.kind).toBe("denied");
+    if (outcome?.kind !== "denied") throw new Error("expected Read of the root config to be denied");
+    expect(outcome.reason).toContain("nax doctor");
+  });
+
+  test("US-003 AC19: the scan runs exactly once, on the dispatch root", async () => {
+    const original = _codingToolSupportDeps.scanConfigSecrets;
+    const calls: string[] = [];
+    _codingToolSupportDeps.scanConfigSecrets = async (dir: string) => {
+      calls.push(dir);
+      return { clean: true, files: [], findings: [] };
+    };
+    try {
+      await supportFor({ declaredTools: ["Read"] });
+      expect(calls).toEqual([root]);
+    } finally {
+      _codingToolSupportDeps.scanConfigSecrets = original;
+    }
+  });
+
+  test("US-003 AC20: a rejecting scan fails closed without rejecting the dispatch", async () => {
+    const original = _codingToolSupportDeps.scanConfigSecrets;
+    _codingToolSupportDeps.scanConfigSecrets = async () => {
+      throw new Error("scan failed");
+    };
+    try {
+      const support = await supportFor({ declaredTools: ["Read"] });
+      expect(support).toBeDefined();
+      const outcome = await support?.runtime.callTool("Read", { path: ".nax/config.json" });
+      expect(outcome?.kind).toBe("denied");
+      if (outcome?.kind !== "denied") throw new Error("expected Read of the root config to be denied");
+      expect(outcome.reason).toContain("nax doctor");
+    } finally {
+      _codingToolSupportDeps.scanConfigSecrets = original;
+    }
   });
 });

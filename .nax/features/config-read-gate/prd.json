@@ -3,7 +3,7 @@
   "feature": "config-read-gate",
   "branchName": "feat/config-read-gate",
   "createdAt": "2026-10-11T00:00:00.000Z",
-  "updatedAt": "2026-10-11T14:59:03.801Z",
+  "updatedAt": "2026-10-11T15:17:01.966Z",
   "userStories": [
     {
       "id": "US-001",
@@ -95,8 +95,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -171,7 +171,10 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "A new owned-paths wrapper and dispatch integration span canonicalized path tools and Bash modes; strict test isolation is required for this access-control boundary."
+        "reasoning": "A new owned-paths wrapper and dispatch integration span canonicalized path tools and Bash modes; strict test isolation is required for this access-control boundary.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/agents/nax-owned-writes.ts",
@@ -194,7 +197,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "8248ff3789d88cee39e535c6bcf9a1e12304e7c0"
     },
     {
       "id": "US-004",
