@@ -35,6 +35,7 @@ export {
   roundsPath,
   writeResult,
 } from "./audit";
+export { changedFiles } from "./changed-files";
 export {
   _finishGitDeps,
   buildCommitRound,
