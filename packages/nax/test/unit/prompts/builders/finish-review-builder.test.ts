@@ -42,6 +42,29 @@ describe("finish review prompts", () => {
     expect(p).not.toContain("## WALK");
   });
 
+  test("branch prompt restores the pre-A4 recall procedure: collaborators, private walk, confidence floor", () => {
+    const p = buildFinishBranchReviewPrompt({ base: "b", stories: [], changedFiles: ["src/a.ts"], hints: [] });
+    expect(p).toContain("## Read the unchanged collaborators before judging");
+    expect(p).toContain("## Walk every changed function before you conclude");
+    expect(p).toContain("## Confidence threshold");
+    expect(p).toContain("at least 60% confident");
+    expect(p).toContain("This floor applies to every item in the checklist below.");
+    // The floor must be read before the checklist it governs, and both before the reply contract.
+    expect(p.indexOf("## Confidence threshold")).toBeLessThan(p.indexOf("## Clean-code checklist"));
+    expect(p.indexOf("## Clean-code checklist")).toBeLessThan(p.indexOf("## Reply"));
+  });
+
+  test("spec prompt does not gain the branch-only procedure", () => {
+    const p = buildFinishSpecReviewPrompt({ base: "b", specPath: "s.md", prdPath: "p.json", changedFiles: [] });
+    for (const heading of [
+      "## Read the unchanged collaborators",
+      "## Walk every changed function",
+      "## Confidence threshold",
+    ]) {
+      expect(p).not.toContain(heading);
+    }
+  });
+
   test("branch prompt without hints has no hints section", () => {
     const p = buildFinishBranchReviewPrompt({ base: "b", stories: [], changedFiles: [], hints: [] });
     expect(p).not.toContain("Previously skipped");
