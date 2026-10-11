@@ -74,6 +74,7 @@ export const promptStage: PipelineStage = {
     if (isBatch) {
       const builder = PromptBuilder.for("batch")
         .withLoader(ctx.workdir, ctx.config)
+        .configRoot(ctx.projectDir)
         .stories(ctx.stories)
         .context(ctx.contextMarkdown)
         .v2FeatureContext(execBundle?.pushMarkdown)
@@ -90,6 +91,7 @@ export const promptStage: PipelineStage = {
       const role = ctx.routing.testStrategy === "no-test" ? ("no-test" as const) : ("tdd-simple" as const);
       const builder = PromptBuilder.for(role)
         .withLoader(ctx.workdir, ctx.config)
+        .configRoot(ctx.projectDir)
         .story(ctx.story)
         .context(ctx.contextMarkdown)
         .v2FeatureContext(execBundle?.pushMarkdown)
