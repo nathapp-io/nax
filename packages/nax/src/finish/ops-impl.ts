@@ -22,12 +22,26 @@ import { errorMessage } from "@nathapp/nax-agent/internal";
 import { formatDecisionsForPrompt, readTrustedDecisions } from "@/advisor";
 import type { ConfiguredModel } from "@/config";
 import type { ForgeDeps, ForgeKind } from "@/forge";
-import type { CallContext, FinishFixInput, FinishNarrativeInput, FinishReviewInput } from "@/operations";
-import { callOp, finishFixOp, finishNarrativeOp, finishReviewOp } from "@/operations";
+import type {
+  CallContext,
+  FinishBranchReviewInput,
+  FinishFixInput,
+  FinishNarrativeInput,
+  FinishReviewInput,
+  FinishSpecReviewInput,
+} from "@/operations";
+import {
+  callOp,
+  finishBranchReviewOp,
+  finishFixOp,
+  finishNarrativeOp,
+  finishReviewOp,
+  finishSpecReviewOp,
+} from "@/operations";
 import type { AuditTarget } from "./audit";
 import { commitAndPush } from "./commit";
 import { buildEscalationComment, postEscalation } from "./escalate";
-import type { FinishOps, FixRequest, ReviewRequest } from "./ops";
+import type { FinishOps, FixRequest, ReviewInputs, ReviewRequest } from "./ops";
 import {
   buildFinishBody,
   buildFinishTitle,
@@ -116,6 +130,39 @@ export function createFinishOps(deps: FinishOpsDeps): FinishOps {
   const advisorOutputDir: string | undefined = callCtx.runtime?.outputDir;
 
   const ops: FinishOps = {
+    async reviewSpec(state: FinishState, inputs: ReviewInputs) {
+      const input: FinishSpecReviewInput = {
+        base: state.base,
+        specPath: state.specPath,
+        prdPath: inputs.prdPath,
+        changedFiles: inputs.changed,
+        decisions: await loadDecisionNotes(state, advisorOutputDir),
+        model: models?.reviewSpec,
+        timeoutMs: timeouts?.reviewMs,
+      };
+      return _finishOpsDeps.callOp(
+        { ...callCtx, sessionOverride: { role: "finish-review-spec" } },
+        finishSpecReviewOp,
+        input,
+      );
+    },
+
+    async reviewBranch(state: FinishState, inputs: ReviewInputs) {
+      const input: FinishBranchReviewInput = {
+        base: state.base,
+        stories: inputs.stories,
+        changedFiles: inputs.changed,
+        hints: inputs.hints,
+        model: models?.reviewQuality,
+        timeoutMs: timeouts?.reviewMs,
+      };
+      return _finishOpsDeps.callOp(
+        { ...callCtx, sessionOverride: { role: "finish-review-quality" } },
+        finishBranchReviewOp,
+        input,
+      );
+    },
+
     async review(phase: "spec" | "quality", req: ReviewRequest) {
       const { state } = req;
       const phaseState = state.phases[phase];
@@ -196,7 +243,7 @@ export function createFinishOps(deps: FinishOpsDeps): FinishOps {
       // body write it earned.
       const { committed } = await commitAndPush(state.workdir, state.branch, PROMOTE_MESSAGE(state.feature));
       if (committed) state.committedThisRun = true;
-      if (forgeKind === null) return { status: "already-ready" };
+      if (forgeKind === null) return { status: "local-only" };
       const content = await buildPrContentOrFallback(state, audit, forgeKind, prBody, advisorOutputDir);
       return openOrPromotePr(
         {
@@ -209,6 +256,27 @@ export function createFinishOps(deps: FinishOpsDeps): FinishOps {
         },
         forge,
       );
+    },
+
+    async finalizeDraftPr(state: FinishState) {
+      const { committed } = await commitAndPush(state.workdir, state.branch, PROMOTE_MESSAGE(state.feature));
+      if (committed) state.committedThisRun = true;
+      if (forgeKind === null) return { status: "local-only" };
+      const content = await buildPrContentOrFallback(state, audit, forgeKind, prBody, advisorOutputDir);
+      const out = await openOrPromotePr(
+        {
+          workdir: state.workdir,
+          branch: state.branch,
+          title: content.title,
+          body: content.body,
+          forge: forgeKind,
+          committedThisRun: true,
+          keepDraft: true,
+        },
+        forge,
+      );
+      // A PR a human already marked ready is not demoted; report that honestly.
+      return { status: out.status === "already-ready" ? "already-ready" : "draft", url: out.url };
     },
 
     async escalate(state: FinishState, reason: string, findings: Finding[], options?: { push?: boolean }) {

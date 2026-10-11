@@ -16,7 +16,7 @@ import type { AdviceDecision } from "@/advisor";
 import { describeTarget } from "@/advisor";
 import type { BodySection } from "@/forge";
 import { mergeTemplate } from "@/forge";
-import type { Finding, FindingDisposition, FinishRound } from "../types";
+import type { Finding, FindingDisposition, FinishRound, GateFact } from "../types";
 import type { FinishPrContext, FinishPrStory } from "./context";
 
 const SECONDS_PER_MINUTE = 60;
@@ -125,6 +125,7 @@ const EMPTY_ROUND_NOTE: Record<string, string> = {
   "review-skipped": "- _re-review skipped: this fix touched test files only_",
   incomplete: "- _review sent back: required evidence sections missing_",
   advised: "- _advisor ruled on the judged findings; the phase re-reviews_",
+  missing: "- _no verdict from this review_",
 };
 
 /** A1: one line naming the advisor decisions a round applied, when it carries any. */
@@ -179,9 +180,71 @@ function buildAdvisorSection(decisions: AdviceDecision[] | undefined): string | 
   return parts.join("\n\n");
 }
 
-function buildRoundsSection(rounds: FinishRound[]): string | null {
-  if (rounds.length === 0) return null;
-  return rounds.map(buildRoundBlock).join("\n\n");
+function percent(value: number | null): string {
+  return value === null ? "n/a" : `${Math.round(value * 100)}%`;
+}
+
+function buildCoverageLine(coverage: FinishPrContext["coverage"]): string | null {
+  if (!coverage) return null;
+  return `- Coverage: spec ${percent(coverage.spec)}, quality ${percent(coverage.quality)}`;
+}
+
+function buildRoundsSection(ctx: FinishPrContext): string | null {
+  const coverage = buildCoverageLine(ctx.coverage);
+  if (ctx.rounds.length === 0) return coverage;
+  const blocks = ctx.rounds.map(buildRoundBlock).join("\n\n");
+  return coverage ? `${coverage}\n\n${blocks}` : blocks;
+}
+
+const SEVERITY_ORDER: Record<Finding["severity"], number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+
+function bySeverity(findings: Finding[]): Finding[] {
+  return [...findings].sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
+}
+
+function renderOpenFinding(finding: Finding): string {
+  const where = finding.file ? ` (${finding.file}${finding.line !== undefined ? `:${finding.line}` : ""})` : "";
+  return `${renderFinding(finding)}${where}`;
+}
+
+const EXCERPT_CAP = 200;
+
+/** One red gate: the name and, when the gate left one, a one-line excerpt. */
+function renderRedGate(gate: GateFact): string {
+  const excerpt = gate.excerpt ? ` — \`${flat(gate.excerpt).slice(0, EXCERPT_CAP)}\`` : "";
+  return `- Gate \`${gate.name}\` is red${excerpt}`;
+}
+
+/**
+ * A4: what stands between this PR and a clean ready, or what the advisor
+ * accepted on a ready one. Null when there is nothing to say, so a clean
+ * ready PR carries no "Unresolved" heading at all.
+ */
+function buildUnresolvedSection(ctx: FinishPrContext): string | null {
+  const u = ctx.unresolved;
+  if (!u) return null;
+  const block = (heading: string, items: string[]): string[] =>
+    items.length > 0 ? [`### ${heading}\n${items.join("\n")}`] : [];
+  const checks = [
+    ...(u.acceptance === "red" || u.acceptance === "unverified" ? [`- Acceptance: ${u.acceptance}`] : []),
+    ...u.gates.filter((g) => g.status === "red").map(renderRedGate),
+  ];
+  const shas = u.unreviewed.map((sha) => `\`${sha.slice(0, SHORT_SHA_LEN)}\``).join(", ");
+  const parts = [
+    ...(u.reason ? [`This PR is a draft: ${flat(u.reason)}`] : []),
+    ...block("Open findings", bySeverity(u.findings).map(renderOpenFinding)),
+    ...block("Verification failures", checks),
+    ...block(
+      "Missing reviews",
+      u.missing.map((lens) => `- The ${lens} review returned no verdict`),
+    ),
+    ...block(
+      "Unreviewed fix commits",
+      u.unreviewed.length > 0 ? [`- ${shas} — fixes no full review round has seen`] : [],
+    ),
+    ...block("Accepted by the advisor", bySeverity(u.accepted).map(renderOpenFinding)),
+  ];
+  return parts.length > 0 ? parts.join("\n\n") : null;
 }
 
 function renderFinding(finding: Finding): string {
@@ -235,11 +298,12 @@ function buildFooter(run: FinishPrContext["run"]): string | null {
  */
 function buildBodySections(ctx: FinishPrContext): BodySection[] {
   const candidates: { key: string; heading: string; body: string | null }[] = [
+    { key: "unresolved", heading: "Unresolved", body: buildUnresolvedSection(ctx) },
     { key: "narrative", heading: "What changed", body: buildNarrativeSection(ctx.narrative) },
     { key: "stories", heading: "Stories", body: ctx.stories.length > 0 ? buildStoriesSection(ctx.stories) : null },
-    { key: "verification", heading: "Verification", body: buildVerificationSection(ctx) },
-    { key: "rounds", heading: "Review rounds", body: buildRoundsSection(ctx.rounds) },
     { key: "advisor", heading: "Advisor decisions", body: buildAdvisorSection(ctx.advisorDecisions) },
+    { key: "rounds", heading: "Review", body: buildRoundsSection(ctx) },
+    { key: "verification", heading: "Verification", body: buildVerificationSection(ctx) },
     { key: "outOfScope", heading: "Out of scope", body: buildOutOfScopeSection(ctx.outOfScope) },
     { key: "footer", heading: "", body: buildFooter(ctx.run) },
   ];

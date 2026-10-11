@@ -6,9 +6,19 @@
  * treat every method as able to throw: its one try/catch is what makes
  * escalate reachable from every failure path (I7).
  */
+import type { A3Hint } from "./a3-hints";
 import type { ReviewOutcome } from "./route";
 import type { FinishState } from "./state";
-import type { Finding, FindingDisposition, FinishPhase } from "./types";
+import type { Finding, FindingDisposition, FinishPhase, FinishReviewOutput } from "./types";
+
+/** What the two A4 review lenses need beyond `FinishState`: the diff's file list, PRD stories, A3 hints. */
+export interface ReviewInputs {
+  changed: string[];
+  stories: { id: string; title: string }[];
+  hints: A3Hint[];
+  /** Repo-relative path of the feature's prd.json. */
+  prdPath: string;
+}
 
 /** What a reviewer needs to look at one phase's diff. Opaque beyond `state` on
  * purpose — every seam a reviewer prompt needs (base, specPath, branch) is
@@ -39,6 +49,10 @@ export interface FixOutcome {
 }
 
 export interface FinishOps {
+  /** A4: spec lens over the whole branch. Never throws on an unparseable reply (the op returns a missing verdict). */
+  reviewSpec(state: FinishState, inputs: ReviewInputs): Promise<FinishReviewOutput>;
+  /** A4: quality lens over the whole branch; also supplies the PR title and summary. */
+  reviewBranch(state: FinishState, inputs: ReviewInputs): Promise<FinishReviewOutput>;
   /** Run a reviewer. Returns undefined only if the op produced no output at all. */
   review(phase: "spec" | "quality", req: ReviewRequest): Promise<ReviewOutcome | undefined>;
   /** Apply fixes for one phase's findings. Dispositions arrive already validated (D2.7). */
@@ -46,7 +60,14 @@ export interface FinishOps {
   /** Open a draft PR after the acceptance gate first passes (D7). Idempotent via `hasOpenPr`. */
   openDraftPr(state: FinishState): Promise<{ url: string } | null>;
   /** Push, then promote the draft to ready. Returns the terminal status. */
-  promotePr(state: FinishState): Promise<{ status: "opened" | "promoted" | "already-ready"; url?: string }>;
+  promotePr(
+    state: FinishState,
+  ): Promise<{ status: "opened" | "promoted" | "already-ready" | "local-only"; url?: string }>;
+  /**
+   * A4: push, then keep the PR draft: update its title and body, or create it as a draft.
+   * `already-ready` when a human had already marked the PR ready (it is not demoted).
+   */
+  finalizeDraftPr(state: FinishState): Promise<{ status: "draft" | "already-ready" | "local-only"; url?: string }>;
   /** Improve the PR body prose. Optional; a run with narrative disabled omits it. */
   narrate?(state: FinishState): Promise<void>;
   /**

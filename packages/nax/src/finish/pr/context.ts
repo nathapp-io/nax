@@ -16,14 +16,22 @@ import { readTrustedDecisions } from "@/advisor";
 import { featureDir } from "@/config";
 import type { ForgeKind } from "@/forge";
 import { defaultForgeDeps, findPrTemplate } from "@/forge";
-import { readSpecSummary, resolveNarrative } from "@/operations";
 import type { AuditTarget } from "../audit";
 import { readRounds } from "../audit";
 import { resolveTitle } from "../pr-title";
 import type { FinishState } from "../state";
 // TemplateMode is re-exported by ../types from @/forge (Task 1, D4.8) --
 // import it from ../types like every other finish-side type, not from @/forge.
-import type { FinishPrBodySettings, FinishRound, TemplateMode } from "../types";
+import type {
+  AcceptanceFact,
+  Finding,
+  FinishPrBodySettings,
+  FinishRound,
+  GateFact,
+  ReviewLens,
+  TemplateMode,
+} from "../types";
+import { readSpecSummary, resolveNarrative } from "./narrative";
 
 /** One row in the Stories table. */
 export interface FinishPrStory {
@@ -60,6 +68,21 @@ export interface FinishPrContext {
    */
   title: string;
   rounds: FinishRound[];
+  /**
+   * A4: why the PR is a draft and what is still open, or the findings the advisor
+   * accepted on a ready PR. Absent on a clean ready PR.
+   */
+  unresolved?: {
+    reason: string;
+    findings: Finding[];
+    acceptance: AcceptanceFact;
+    gates: GateFact[];
+    missing: ReviewLens[];
+    unreviewed: string[];
+    accepted: Finding[];
+  };
+  /** A4: share of changed files each lens read, 0..1, or null when nothing changed. */
+  coverage?: Record<ReviewLens, number | null>;
   /** A1: the feature's advisor decisions (absent or empty when the advisor never ran). */
   advisorDecisions?: AdviceDecision[];
   run: {
@@ -229,6 +252,29 @@ async function loadTemplate(workdir: string, forge: ForgeKind | undefined): Prom
   }
 }
 
+/** A4: the resolver's decision, as the PR context's `unresolved` and `coverage` fields. */
+function fromResolution(resolution: FinishState["resolution"]): Pick<FinishPrContext, "unresolved" | "coverage"> {
+  if (!resolution) return {};
+  const { facts, acceptedResidue, outcome, reason } = resolution;
+  const needsBlock = outcome === "draft" || acceptedResidue.length > 0;
+  return {
+    coverage: facts.coverage,
+    ...(needsBlock
+      ? {
+          unresolved: {
+            reason: reason ?? "",
+            findings: facts.findingsOpen,
+            acceptance: facts.acceptance,
+            gates: facts.gates,
+            missing: facts.reviewsMissing,
+            unreviewed: facts.unreviewedFixCommits,
+            accepted: acceptedResidue,
+          },
+        }
+      : {}),
+  };
+}
+
 export async function loadFinishPrContext(args: LoadPrContextArgs): Promise<FinishPrContext> {
   const featureDirPath = featureDir(args.state.workdir, args.state.feature);
   // [US-004] The audit trail (`rounds`), the diffstat, and the spec summary
@@ -267,8 +313,9 @@ export async function loadFinishPrContext(args: LoadPrContextArgs): Promise<Fini
     template,
     ...(args.prBody?.template !== undefined ? { templateMode: args.prBody.template } : {}),
     ...(args.prBody?.sectionMap !== undefined ? { templateSectionMap: args.prBody.sectionMap } : {}),
-    narrative: resolveNarrative(args.narrative, specSummary),
-    title: resolveTitle(args.title, args.state.feature),
+    ...fromResolution(args.state.resolution),
+    narrative: resolveNarrative(args.narrative ?? args.state.review.summary, specSummary),
+    title: resolveTitle(args.title ?? args.state.review.title, args.state.feature),
     run: {
       durationMs: status?.durationMs,
       storiesPassed: status?.progress?.passed,

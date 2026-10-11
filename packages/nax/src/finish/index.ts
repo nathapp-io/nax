@@ -71,7 +71,7 @@ export {
   TELEGRAM_MAX_MESSAGE_CHARS,
   telegramCreds,
 } from "./notify";
-export type { FinishOps, FixOutcome, FixRequest, ReviewRequest } from "./ops";
+export type { FinishOps, FixOutcome, FixRequest, ReviewInputs, ReviewRequest } from "./ops";
 export type { FinishOpsDeps } from "./ops-impl";
 export { _finishOpsDeps, createFinishOps } from "./ops-impl";
 export type { FinishPhaseContext, FinishSkipReason } from "./phase";

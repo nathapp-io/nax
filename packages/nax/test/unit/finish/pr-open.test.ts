@@ -166,3 +166,56 @@ describe("updatePrBody", () => {
     await expect(updatePrBody(args, deps)).resolves.toBeUndefined();
   });
 });
+
+describe("openOrPromotePr keepDraft (A4)", () => {
+  const keepArgs = (forge: "github" | "gitlab") => ({ ...args, forge, keepDraft: true });
+
+  test.each(["github", "gitlab"] as const)("%s: existing draft is updated and left draft", async (forge) => {
+    const viewJson =
+      forge === "github" ? '{"isDraft":true,"url":"https://x/pr/9"}' : '{"draft":true,"web_url":"https://x/pr/9"}';
+    const { deps, calls } = depsFor((cmd) =>
+      cmd.includes("view") ? { exitCode: 0, stdout: viewJson } : { exitCode: 0, stdout: "" },
+    );
+    const out = await openOrPromotePr(keepArgs(forge), deps);
+    expect(out).toEqual({ status: "draft", url: "https://x/pr/9" });
+    expect(calls.some((c) => c.includes("ready") || c.includes("--ready"))).toBe(false);
+    expect(calls.some((c) => c.includes("--title") && (c.includes("edit") || c.includes("update")))).toBe(true);
+  });
+
+  test.each(["github", "gitlab"] as const)("%s: no PR is created as a draft", async (forge) => {
+    const { deps, calls } = depsFor((cmd) =>
+      cmd.includes("view") ? { exitCode: 1, stderr: "none" } : { exitCode: 0, stdout: "https://x/pr/9\n" },
+    );
+    const out = await openOrPromotePr(keepArgs(forge), deps);
+    expect(out).toEqual({ status: "draft", url: "https://x/pr/9" });
+    expect(calls.some((c) => c.includes("create") && c.includes("--draft"))).toBe(true);
+  });
+
+  test("a failed create throws FINISH_PR_CREATE_FAILED", async () => {
+    const { deps } = depsFor((cmd) =>
+      cmd.includes("view") ? { exitCode: 1 } : { exitCode: 1, stderr: "gh: not authenticated" },
+    );
+    await expect(openOrPromotePr(keepArgs("github"), deps)).rejects.toThrow(/not authenticated/);
+  });
+
+  test("an already-ready PR is not demoted: body updated, status already-ready", async () => {
+    const { deps, calls } = depsFor((cmd) =>
+      cmd.includes("view")
+        ? { exitCode: 0, stdout: '{"isDraft":false,"url":"https://x/pr/9"}' }
+        : { exitCode: 0, stdout: "" },
+    );
+    const out = await openOrPromotePr(keepArgs("github"), deps);
+    expect(out).toEqual({ status: "already-ready", url: "https://x/pr/9" });
+    expect(calls.some((c) => c.includes("ready"))).toBe(false);
+    expect(calls.some((c) => c.includes("edit"))).toBe(true);
+  });
+
+  test("a failed body update on an existing draft still reports draft", async () => {
+    const { deps } = depsFor((cmd) => {
+      if (cmd.includes("view")) return { exitCode: 0, stdout: '{"isDraft":true,"url":"https://x/pr/9"}' };
+      return { exitCode: 1, stderr: "edit refused" };
+    });
+    const out = await openOrPromotePr(keepArgs("github"), deps);
+    expect(out.status).toBe("draft");
+  });
+});
