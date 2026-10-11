@@ -1,0 +1,16 @@
+{
+  "generatedAt": "2026-10-11T14:41:19.123Z",
+  "acFingerprint": "sha256:f59b0099200032f3563b74e43ead89a4c22f578e8bddab4f1f857288ae05133b",
+  "layoutFingerprint": "sha256:75fbef29c38235a33f3c5453ef8d8db28163c2fe7d875cfbe05666c177aca225",
+  "storyCount": 4,
+  "acCount": 62,
+  "generator": "nax",
+  "coverage": [
+    {
+      "testPath": "packages/nax/.nax/features/config-read-gate/.nax-acceptance.test.ts",
+      "expected": 62,
+      "found": 62,
+      "missing": []
+    }
+  ]
+}
