@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
-import { makeTestRuntime, withInfoSpy } from "@test/helpers";
+import { makeFinishOps, makeTestRuntime, withInfoSpy } from "@test/helpers";
 import type { FinishContext, FinishPhaseContext } from "@/finish";
 import { _finishPhaseDeps, finishSkipReason, runFinishPhase, shouldRunFinish } from "@/finish";
 import { pipelineEventBus } from "@/pipeline";
@@ -225,15 +225,15 @@ describe("runFinishPhase", () => {
     }
   });
 
-  test("an escalated result with telegram configured sends the escalation message", async () => {
+  test("a draft result with telegram configured sends the escalation message", async () => {
     const sent: string[] = [];
     const restore = { ..._finishPhaseDeps };
     _finishPhaseDeps.loadFinishContext = async () => proceedContext();
     _finishPhaseDeps.detectForge = async () => "github";
     _finishPhaseDeps.runFinishMachine = async () => ({
       feature: "f",
-      status: "escalated",
-      escalationReason: "needs a human",
+      status: "draft",
+      reason: "needs a human",
       findings: [{ severity: "HIGH", title: "t", problem: "p", fix: "x" }],
     });
     _finishPhaseDeps.sendTelegramNotify = async (_creds, text) => {
@@ -257,8 +257,8 @@ describe("runFinishPhase", () => {
     _finishPhaseDeps.detectForge = async () => "github";
     _finishPhaseDeps.runFinishMachine = async () => ({
       feature: "f",
-      status: "escalated",
-      escalationReason: "r",
+      status: "draft",
+      reason: "r",
       findings: [],
     });
     _finishPhaseDeps.sendTelegramNotify = async (_c, t) => {
@@ -325,7 +325,7 @@ describe("runFinishPhase", () => {
     const restore = { ..._finishPhaseDeps };
     _finishPhaseDeps.loadFinishContext = async () => proceedContext();
     _finishPhaseDeps.detectForge = async () => "github";
-    _finishPhaseDeps.runFinishMachine = async () => ({ feature: "f", status: "escalated", findings: [] });
+    _finishPhaseDeps.runFinishMachine = async () => ({ feature: "f", status: "draft", findings: [] });
     _finishPhaseDeps.sendTelegramNotify = async (_c, t) => {
       sent.push(t);
       return true;
@@ -359,13 +359,7 @@ describe("escalation channel selection", () => {
     _finishPhaseDeps.detectForge = async () => "github";
     _finishPhaseDeps.createFinishOps = (deps) => {
       seen = deps.preferTelegram;
-      return {
-        review: async () => ({ findings: [], gaps: [] }),
-        fix: async () => ({}),
-        openDraftPr: async () => null,
-        promotePr: async () => ({ status: "opened" as const }),
-        escalate: async () => ({}),
-      };
+      return makeFinishOps([]);
     };
     _finishPhaseDeps.runFinishMachine = async () => ({ feature: "f", status: "already-ready" });
     return runFinishPhase(makeCtx(opts))
@@ -391,8 +385,8 @@ test("an undelivered escalation is surfaced on the finish status entry", async (
   _finishPhaseDeps.detectForge = async () => "github";
   _finishPhaseDeps.runFinishMachine = async () => ({
     feature: "f",
-    status: "escalated",
-    escalationReason: "needs a human",
+    status: "draft",
+    reason: "needs a human",
     deliveryError: "gh pr comment failed",
   });
   // This test's config carries no `interaction.plugin: "telegram"`, so

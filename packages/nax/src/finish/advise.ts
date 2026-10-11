@@ -1,50 +1,31 @@
 /**
- * A1 finish glue (spec §4.8 callers 1 + 4).
+ * A1 finish glue (spec §4.8 callers 1 + 4), as rebuilt by A4.
  *
- * - `judged`: the advisor rules on each judged finding (reusing an earlier
- *   waive/supersede for the same `dedupeKey` without a new call).
- * - `approval`: the advisor approves, asks for one re-review, or holds before
- *   the PR is promoted.
- * - `commitLedger`: a ledger-only commit — never `commitFixes`, so it moves
+ * - `judged`: the advisor rules on each judged finding and each spec-vs-quality
+ *   contradiction of a merged review round (reusing an earlier waive/supersede
+ *   for the same `dedupeKey` without a new call).
+ * - `approval`: from the end-of-run facts, the advisor approves, asks for one
+ *   re-review, or holds before the PR is finalized.
+ * - `commitLedger`: a ledger-only commit -- never `commitFixes`, so it moves
  *   neither `committedThisRun` nor the review window.
- *
- * The machine-facing helpers (`applyJudgedAdvice`, `runApproval`) take the
- * machine's loops and `doEscalate` as callbacks, so `machine.ts` grows only by
- * the two call sites.
  */
 import { relative } from "node:path";
 import { gitWithTimeout } from "@nathapp/nax-agent/internal";
-import type { AdviceDecision, AdviceResult, Advisor, HeadsUpChannel, QuestionDraft } from "@/advisor";
+import type { AdviceDecision, Advisor, HeadsUpChannel, QuestionDraft } from "@/advisor";
 import { buildMenu, createAdvisor, dedupeKeyFor, findReusable, ledgerPath, readTrustedDecisions } from "@/advisor";
 import type { NaxConfig } from "@/config";
 import { isAdvisorCallerEnabled } from "@/config";
 import type { CallContext } from "@/operations";
 import type { Contradiction } from "./merge-findings";
 import { type ApprovalAction, type approvalFacts, draftReason } from "./resolve";
-import type { RoutedReview } from "./route";
-import type { FinishPhaseState, FinishState } from "./state";
-import type { Finding, FinishResult, FinishRound, ResolutionFacts } from "./types";
+import type { FinishState } from "./state";
+import type { Finding, ResolutionFacts } from "./types";
 
 const GIT_TIMEOUT_MS = 30_000;
 
 export type AdviceRef = { decisionId: string; optionId: string; reused: boolean };
 
-export interface JudgedOutcome {
-  toFix: Finding[];
-  advice: AdviceRef[];
-  /** The advisor chose `hold`: escalate with this rationale. */
-  hold?: string;
-  /** The advisor was unavailable: escalate as today. */
-  fallback?: string;
-}
-
-export interface ApprovalFacts {
-  allPhasesComplete: boolean;
-  gatesGreen: boolean;
-  reReviewUsed: boolean;
-}
-
-/** A4 result of judging a merged review round (replaces `JudgedOutcome` at Task 13). */
+/** The result of judging a merged review round. */
 export interface JudgedResult {
   toFix: Finding[];
   advice: AdviceRef[];
@@ -55,15 +36,13 @@ export interface JudgedResult {
 export interface FinishAdvisor {
   judgedEnabled: boolean;
   approvalEnabled: boolean;
-  /** A4: judge the merged round's judgment findings and contradictions. */
-  judgedMerged(findings: Finding[], contradictions: Contradiction[], state: FinishState): Promise<JudgedResult>;
-  /** A4: approve / re-review / hold from the resolution facts. */
-  approvalFromFacts(
+  /** Judge the merged round's judgment findings and contradictions. */
+  judged(findings: Finding[], contradictions: Contradiction[], state: FinishState): Promise<JudgedResult>;
+  /** Approve / re-review / hold from the resolution facts. */
+  approval(
     facts: ResolutionFacts,
     approval: ReturnType<typeof approvalFacts>,
   ): Promise<{ action: ApprovalAction; rationale: string }>;
-  judged(phase: "spec" | "quality", judged: Finding[], state: FinishState): Promise<JudgedOutcome>;
-  approval(state: FinishState, facts: ApprovalFacts): Promise<AdviceResult>;
   commitLedger(state: FinishState): Promise<void>;
 }
 
@@ -131,19 +110,6 @@ async function judgeOne(
   if (action.type === "hold") return { ref, hold: decision.rationale };
   if (action.type !== "fix") return { ref };
   return { ref, keep: { ...f, fix: `${f.fix}\n\nAdvisor ruling (${decision.id}): ${action.instruction}` } };
-}
-
-function approvalQuestion(deps: FinishAdvisorDeps, state: FinishState, facts: ApprovalFacts): QuestionDraft {
-  const phases = (["spec", "quality"] as const).map(
-    (p) => `${p}: last round ${state.phases[p].lastOutcome ?? "unknown"}`,
-  );
-  return {
-    kind: "finish-approval",
-    feature: deps.feature,
-    summary: `Approve promoting the PR for ${deps.feature}? Repo gates are ${facts.gatesGreen ? "green" : "not green"}.`,
-    evidence: [{ source: "review-round", text: phases.join("\n") }],
-    options: buildMenu({ kind: "finish-approval", ...facts, reReviewPhase: "quality" }),
-  };
 }
 
 const RANK = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 } as const;
@@ -249,7 +215,7 @@ export function createFinishAdvisor(deps: FinishAdvisorDeps): FinishAdvisor {
   return {
     judgedEnabled: deps.judgedEnabled,
     approvalEnabled: deps.approvalEnabled,
-    async judgedMerged(findings, contradictions) {
+    async judged(findings, contradictions) {
       const out: JudgedResult = { toFix: [], advice: [], unresolved: [] };
       for (const f of findings) {
         const r = await judgeOne(deps, f.source ?? "quality", f);
@@ -265,25 +231,13 @@ export function createFinishAdvisor(deps: FinishAdvisorDeps): FinishAdvisor {
       }
       return out;
     },
-    async approvalFromFacts(facts, approval) {
+    async approval(facts, approval) {
       const { decision, fallbackReason } = await deps.advisor.advise(approvalQuestionFromFacts(deps, facts, approval));
       if (!decision) return { action: "unavailable", rationale: fallbackReason ?? "no decision" };
       const type = decision.action.type;
       const action = type === "approve" || type === "re-review" ? type : "hold";
       return { action, rationale: decision.rationale };
     },
-    async judged(phase, judged) {
-      const out: JudgedOutcome = { toFix: [], advice: [] };
-      for (const f of judged) {
-        const r = await judgeOne(deps, phase, f);
-        if (r.ref) out.advice.push(r.ref);
-        if (r.hold !== undefined) return { ...out, hold: r.hold };
-        if (r.fallback !== undefined) return { ...out, fallback: r.fallback };
-        if (r.keep) out.toFix.push(r.keep);
-      }
-      return out;
-    },
-    approval: (state, facts) => deps.advisor.advise(approvalQuestion(deps, state, facts)),
     async commitLedger(state) {
       const path = relative(state.workdir, ledgerPath(deps.repoRoot, deps.feature));
       await git(["add", "--", path], state.workdir);
@@ -331,92 +285,4 @@ export function buildFinishAdvisorForPhase(args: {
     judgedEnabled,
     approvalEnabled,
   });
-}
-
-// ── Machine-facing helpers ───────────────────────────────────────────────────
-
-export interface ApplyJudgedArgs {
-  phase: "spec" | "quality";
-  routed: RoutedReview;
-  phaseState: FinishPhaseState;
-  state: FinishState;
-  fa: FinishAdvisor;
-  recordAdvised: (round: Omit<FinishRound, "attempt">) => Promise<void>;
-  escalate: (reason: string, findings: Finding[]) => Promise<FinishResult>;
-  now: () => string;
-}
-
-/** Route `advise`: rule on the judged findings; `toFix` empty means the round was recorded `advised`. */
-export async function applyJudgedAdvice(
-  a: ApplyJudgedArgs,
-): Promise<{ result?: FinishResult; toFix: Finding[]; advice: AdviceRef[] }> {
-  a.phaseState.adviseRounds = (a.phaseState.adviseRounds ?? 0) + 1;
-  const judged = a.routed.judged ?? [];
-  const out = await a.fa.judged(a.phase, judged, a.state);
-  if (out.hold !== undefined) {
-    return { result: await a.escalate(`advisor hold: ${out.hold}`, a.routed.findings), toFix: [], advice: out.advice };
-  }
-  if (out.fallback !== undefined) {
-    const first = judged[0];
-    const reason = first?.judgmentReason ?? `Needs human judgment: ${first?.title ?? "unknown"}`;
-    return {
-      result: await a.escalate(`${reason} (advisor unavailable: ${out.fallback})`, a.routed.findings),
-      toFix: [],
-      advice: out.advice,
-    };
-  }
-  const toFix = [...a.routed.findings.filter((f) => !f.judgment), ...out.toFix];
-  if (toFix.length === 0) {
-    await a.recordAdvised({
-      ts: a.now(),
-      phase: a.phase,
-      committed: false,
-      outcome: "advised",
-      findings: a.routed.findings,
-      advice: out.advice,
-    });
-  }
-  return { toFix, advice: out.advice };
-}
-
-const COMPLETE_OUTCOMES = new Set(["passed", "advised"]);
-
-export interface RunApprovalArgs {
-  state: FinishState;
-  fa: FinishAdvisor;
-  reviewAgain: (phase: "spec" | "quality") => Promise<FinishResult | null>;
-  gatesAgain: () => Promise<FinishResult | null>;
-  escalate: (reason: string) => Promise<FinishResult>;
-}
-
-/** Caller 4: approve / one re-review / hold. Fails closed — any fallback escalates. */
-export async function runApproval(a: RunApprovalArgs): Promise<FinishResult | null> {
-  let reReviewUsed = false;
-  for (;;) {
-    const allPhasesComplete = (["spec", "quality"] as const).every((p) =>
-      COMPLETE_OUTCOMES.has(a.state.phases[p].lastOutcome ?? ""),
-    );
-    const { decision, fallbackReason } = await a.fa.approval(a.state, {
-      allPhasesComplete,
-      gatesGreen: true,
-      reReviewUsed,
-    });
-    if (!decision) return a.escalate(`advisor approval unavailable: ${fallbackReason ?? "no decision"}`);
-    if (decision.action.type === "approve") {
-      await a.fa.commitLedger(a.state);
-      return null;
-    }
-    if (decision.action.type !== "re-review" || reReviewUsed) {
-      await a.fa.commitLedger(a.state);
-      return a.escalate(`advisor hold: ${decision.rationale}`);
-    }
-    reReviewUsed = true;
-    const fixesBefore = a.state.phases[decision.action.phase].fixAttempts;
-    const reviewed = await a.reviewAgain(decision.action.phase);
-    if (reviewed) return reviewed;
-    if (a.state.phases[decision.action.phase].fixAttempts > fixesBefore) {
-      const gates = await a.gatesAgain();
-      if (gates) return gates;
-    }
-  }
 }

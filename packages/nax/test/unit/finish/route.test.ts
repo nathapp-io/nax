@@ -1,98 +1,20 @@
 import { describe, expect, test } from "bun:test";
-import type { AcceptanceGateResult, Finding, FinishPhaseState, QualityGateResult } from "@/finish";
+import type { AcceptanceGateResult, FinishPhaseState, QualityGateResult } from "@/finish";
 import {
+  acceptanceFact,
   gateCommitRoute,
+  gateFacts,
   MAX_FIX_ATTEMPTS,
-  MAX_INCOMPLETE_ATTEMPTS,
+  MAX_REVIEW_ROUNDS,
   partitionTestFiles,
   routeAcceptance,
   routeQualityGates,
-  routeReview,
 } from "@/finish";
-
-const FINDING: Finding = { severity: "HIGH", title: "t", problem: "p", fix: "f" };
 
 const zeroedState = (): FinishPhaseState => ({
   fixAttempts: 0,
   reviewAttempts: 0,
-  incompleteAttempts: 0,
   rounds: 0,
-});
-
-describe("routeReview", () => {
-  // Ported from test/unit/flows/nax-finish/verdict.test.ts's `routeReview`
-  // describe block. Every `reprompt` case is dropped (D2.2): there is no
-  // reprompt route any more, and `outcome` here is already parsed, so an
-  // unparseable reply is plan 3's problem, not this function's.
-
-  test("still routes clean when there are no findings", () => {
-    const r = routeReview("quality", { findings: [], gaps: [] }, zeroedState());
-    expect(r.route).toBe("clean");
-  });
-
-  test("still routes fix when there are findings under the cap", () => {
-    const r = routeReview("quality", { findings: [FINDING], gaps: [] }, zeroedState());
-    expect(r.route).toBe("fix");
-  });
-
-  test("still escalates when findings persist past the fix cap", () => {
-    const st = { ...zeroedState(), fixAttempts: MAX_FIX_ATTEMPTS };
-    const r = routeReview("quality", { findings: [FINDING], gaps: [] }, st);
-    expect(r.route).toBe("escalate");
-    expect(r.escalationReason).toContain("fix attempts");
-  });
-
-  // A reviewer that produced NO output at all is not an approval — there is
-  // no reprompt path here, because a step that emitted nothing has no reply
-  // to quote back. A human is the only remaining reader.
-  test("an absent outcome escalates and never reads findings", () => {
-    const r = routeReview("quality", undefined, zeroedState());
-    expect(r.route).toBe("escalate");
-    expect(r.escalationReason).toContain("no verdict");
-    expect(r.findings).toEqual([]);
-  });
-
-  test("a judgment-marked finding escalates, even with fixAttempts: 0", () => {
-    const judged: Finding = { ...FINDING, judgment: true, judgmentReason: "two valid designs, pick one" };
-    const r = routeReview("quality", { findings: [judged], gaps: [] }, zeroedState());
-    expect(r.route).toBe("escalate");
-    expect(r.escalationReason).toBe("two valid designs, pick one");
-  });
-
-  test("a judgment-marked finding with no reason falls back to a generic message naming the title", () => {
-    const judged: Finding = { ...FINDING, title: "Design call", judgment: true };
-    const r = routeReview("quality", { findings: [judged], gaps: [] }, zeroedState());
-    expect(r.route).toBe("escalate");
-    expect(r.escalationReason).toBe("Needs human judgment: Design call");
-  });
-
-  test("gaps under the incomplete cap route incomplete, not escalate", () => {
-    const r = routeReview("spec", { findings: [], gaps: ["never opened the caller"] }, zeroedState());
-    expect(r.route).toBe("incomplete");
-  });
-
-  test("gaps at the incomplete cap escalate with a phase-named reason", () => {
-    const st = { ...zeroedState(), incompleteAttempts: MAX_INCOMPLETE_ATTEMPTS };
-    const r = routeReview("spec", { findings: [], gaps: ["never opened the caller"] }, st);
-    expect(r.route).toBe("escalate");
-    expect(r.escalationReason).toBe("spec review never discharged its reading obligations: never opened the caller");
-  });
-
-  // A clean review (zero findings) with unresolved gaps must never read as
-  // `clean` — the gap check runs first, so a reviewer that skipped its
-  // evidence sections does not get to approve just because it also found
-  // nothing wrong.
-  test("a clean review with gaps routes incomplete, never clean", () => {
-    const r = routeReview("quality", { findings: [], gaps: ["skipped WALK section"] }, zeroedState());
-    expect(r.route).toBe("incomplete");
-    expect(r.route).not.toBe("clean");
-  });
-
-  test("a judgment finding takes priority over an under-cap fix route", () => {
-    const judged: Finding = { ...FINDING, judgment: true, judgmentReason: "needs a human" };
-    const r = routeReview("quality", { findings: [judged, FINDING], gaps: [] }, zeroedState());
-    expect(r.route).toBe("escalate");
-  });
 });
 
 describe("routeAcceptance", () => {
@@ -104,32 +26,56 @@ describe("routeAcceptance", () => {
     ...overrides,
   });
 
-  test("a passing run with nothing missing proceeds", () => {
+  test("a passing run with nothing missing proceeds green", () => {
     const r = routeAcceptance(passedResult(), zeroedState());
-    expect(r.route).toBe("proceed");
+    expect(r).toEqual({ route: "proceed", fact: "green" });
   });
 
-  test("a passing run with a missing acceptance target escalates", () => {
+  test("a passing run with a missing acceptance target stops unverified", () => {
     const r = routeAcceptance(passedResult({ missing: ["pkg-a"] }), zeroedState());
-    expect(r.route).toBe("escalate");
-    expect(r.reason).toBe("Acceptance test never generated for: pkg-a — that package's contract is unverified.");
+    expect(r.route).toBe("stop");
+    expect(r.fact).toBe("unverified");
+    expect(r.reason).toBe("Acceptance test never generated for: pkg-a.");
   });
 
-  test("a passing run that ran nothing at all escalates", () => {
+  test("a passing run that ran nothing at all stops unverified", () => {
     const r = routeAcceptance(passedResult({ ran: 0 }), zeroedState());
-    expect(r.route).toBe("escalate");
+    expect(r.route).toBe("stop");
+    expect(r.fact).toBe("unverified");
   });
 
-  test("a failing run under the fix cap routes fix", () => {
+  test("a failing run under the fix cap routes fix and is red", () => {
     const r = routeAcceptance(passedResult({ passed: false }), zeroedState());
-    expect(r.route).toBe("fix");
+    expect(r).toEqual({ route: "fix", fact: "red" });
   });
 
-  test("a failing run past the fix cap escalates with the byte-identical reason", () => {
+  test("a failing run past the fix cap stops red with the cap reason", () => {
     const st = { ...zeroedState(), fixAttempts: MAX_FIX_ATTEMPTS };
     const r = routeAcceptance(passedResult({ passed: false }), st);
-    expect(r.route).toBe("escalate");
+    expect(r.route).toBe("stop");
+    expect(r.fact).toBe("red");
     expect(r.reason).toBe(`Acceptance tests still failing after ${MAX_FIX_ATTEMPTS} fix attempts.`);
+  });
+});
+
+describe("acceptanceFact", () => {
+  const result = (over: Partial<AcceptanceGateResult> = {}): AcceptanceGateResult => ({
+    passed: true,
+    ran: 1,
+    missing: [],
+    output: "",
+    ...over,
+  });
+
+  test.each([
+    ["disabled status is not-configured, whatever ran", result({ ran: 0 }), "disabled", "not-configured"],
+    ["passed and ran is green", result(), "ok", "green"],
+    ["passed with a missing target is unverified", result({ missing: ["p"] }), "ok", "unverified"],
+    ["passed with nothing run is unverified", result({ ran: 0 }), "ok", "unverified"],
+    ["no-prd with nothing run is unverified, never a pass", result({ ran: 0 }), "no-prd", "unverified"],
+    ["failed is red", result({ passed: false }), "ok", "red"],
+  ] as const)("%s", (_name, input, status, expected) => {
+    expect(acceptanceFact(input, status)).toBe(expected);
   });
 });
 
@@ -147,9 +93,9 @@ describe("routeQualityGates", () => {
     expect(r.route).toBe("green");
   });
 
-  test("nothing configured escalates with the byte-identical reason", () => {
+  test("nothing configured stops with the byte-identical reason", () => {
     const r = routeQualityGates(passedResult({ passed: false, ran: [] }), zeroedState());
-    expect(r.route).toBe("escalate");
+    expect(r.route).toBe("stop");
     expect(r.reason).toBe("No quality.commands configured in .nax/config.json — nax-finish verified nothing.");
   });
 
@@ -158,11 +104,33 @@ describe("routeQualityGates", () => {
     expect(r.route).toBe("fix");
   });
 
-  test("a failing run past the fix cap escalates with the byte-identical reason", () => {
+  test("a failing run past the fix cap stops with the byte-identical reason", () => {
     const st = { ...zeroedState(), fixAttempts: MAX_FIX_ATTEMPTS };
     const r = routeQualityGates(passedResult({ passed: false, failing: ["test"] }), st);
-    expect(r.route).toBe("escalate");
+    expect(r.route).toBe("stop");
     expect(r.reason).toBe(`Quality gates still failing after ${MAX_FIX_ATTEMPTS} fix attempts (test).`);
+  });
+});
+
+describe("gateFacts", () => {
+  test("one entry per gate that ran: failing is red with the output, the rest green", () => {
+    const facts = gateFacts({ passed: false, ran: ["lint", "test"], failing: ["test"], output: "boom" });
+    expect(facts).toEqual([
+      { name: "lint", status: "green" },
+      { name: "test", status: "red", excerpt: "boom" },
+    ]);
+  });
+
+  test("nothing ran is one red quality.commands entry, even when the result says passed", () => {
+    expect(gateFacts({ passed: true, ran: [], failing: [], output: "" })).toEqual([
+      { name: "quality.commands", status: "red", excerpt: "No quality.commands configured" },
+    ]);
+  });
+});
+
+describe("MAX_REVIEW_ROUNDS", () => {
+  test("is three", () => {
+    expect(MAX_REVIEW_ROUNDS).toBe(3);
   });
 });
 

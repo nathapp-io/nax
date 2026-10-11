@@ -14,7 +14,6 @@ afterEach(() => {
 const zeroedState = (): FinishPhaseState => ({
   fixAttempts: 0,
   reviewAttempts: 0,
-  incompleteAttempts: 0,
   rounds: 0,
 });
 
@@ -139,10 +138,10 @@ describe("runQualityGates", () => {
     });
   });
 
-  test("routeQualityGates escalates when nothing ran (I1)", async () => {
+  test("routeQualityGates stops when nothing ran (I1)", async () => {
     const result = await runQualityGates("/repo", []);
     const routed = routeQualityGates(result, zeroedState());
-    expect(routed.route).toBe("escalate");
+    expect(routed.route).toBe("stop");
   });
 
   test("all four gates run even after the first one fails, and `failing` lists both red gates", async () => {

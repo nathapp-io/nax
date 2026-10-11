@@ -374,6 +374,7 @@ export async function runFinishPhase(ctx: FinishPhaseContext): Promise<FinishRes
       ops,
       audit,
       advise: advisorForPhase({ ctx, settings, runConfig, callCtx, specPath: context.specPath }),
+      outputDir: ctx.runtime.outputDir,
       signal,
       // The run's own signal, so the machine can tell a cancelled run (do not
       // push or post) from a `flowMs` deadline (do escalate) — `signal` above
@@ -392,7 +393,7 @@ export async function runFinishPhase(ctx: FinishPhaseContext): Promise<FinishRes
   }
 
   const costUsd = _finishPhaseDeps.snapshotCost(ctx.runtime) - costBefore;
-  const passed = failure === undefined && result?.status !== "escalated";
+  const passed = failure === undefined && result?.status !== "failed";
   if (result?.skipReason) {
     // The machine stood down without doing real work: the ledger already
     // covers this exact HEAD (#1674 part 1, "already-finished") or the
@@ -418,7 +419,6 @@ export async function runFinishPhase(ctx: FinishPhaseContext): Promise<FinishRes
       lastRunAt: _finishPhaseDeps.now(),
       ...(result ? { result: result.status } : {}),
       ...(result?.url ? { url: result.url } : {}),
-      ...(result?.escalationReason ? { escalationReason: result.escalationReason } : {}),
       ...(result?.deliveryError ? { deliveryError: result.deliveryError } : {}),
     });
   }
@@ -431,7 +431,6 @@ export async function runFinishPhase(ctx: FinishPhaseContext): Promise<FinishRes
       storyId: "_run",
       feature: result.feature,
       error: result.deliveryError,
-      escalationReason: result.escalationReason,
     });
   }
   if (failure) {
@@ -457,13 +456,14 @@ export async function runFinishPhase(ctx: FinishPhaseContext): Promise<FinishRes
 /** Send the Telegram notification the configured mode calls for. Never throws. */
 async function notify(ctx: FinishPhaseContext, settings: FinishSettings, result: FinishResult): Promise<void> {
   if (settings.notify.mode === "off") return;
-  if (settings.notify.mode === "escalation" && result.status !== "escalated") return;
+  // A4 Task 14 reworks notifications; until then a draft or failed finish is the one that needs a human.
+  const needsHuman = result.status === "draft" || result.status === "failed";
+  if (settings.notify.mode === "escalation" && !needsHuman) return;
   const creds = telegramCreds(ctx.config);
   if (!creds) return;
-  const text =
-    result.status === "escalated"
-      ? buildEscalationMessage(result.feature, result.escalationReason ?? "", result.findings ?? [])
-      : buildTerminalMessage({ feature: result.feature, status: result.status, url: result.url });
+  const text = needsHuman
+    ? buildEscalationMessage(result.feature, result.reason ?? "", result.findings ?? [])
+    : buildTerminalMessage({ feature: result.feature, status: result.status, url: result.url });
   // The boolean matters: a `false` means Telegram rejected the message, and on
   // an escalation Telegram is the ONLY channel (`preferTelegram` suppressed the
   // PR comment). Discarding it turned a dropped page into silence.

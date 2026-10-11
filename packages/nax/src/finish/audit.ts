@@ -62,12 +62,9 @@ export function ledgerPath(auditDir: string): string {
 }
 
 /** The statuses a re-run at the same HEAD must not repeat (#1674 part 1). */
-const LEDGER_TERMINAL_STATUSES: ReadonlySet<FinishResult["status"]> = new Set([
-  "opened",
-  "promoted",
-  "already-ready",
-  "escalated",
-]);
+// A4 Task 14 widens this set (draft, local-only) and moves it next to context.ts's copy. `escalated` is
+// pre-A4 history: no result carries it any more, so the set is typed by string until then.
+const LEDGER_TERMINAL_STATUSES: ReadonlySet<string> = new Set(["opened", "promoted", "already-ready", "escalated"]);
 
 /**
  * Update the ledger from a terminal result, if it qualifies.
@@ -102,7 +99,7 @@ const LEDGER_TERMINAL_STATUSES: ReadonlySet<FinishResult["status"]> = new Set([
 async function updateLedger(t: AuditTarget, result: FinishResult): Promise<void> {
   if (!result.headSha || !result.branch) return;
   if (!LEDGER_TERMINAL_STATUSES.has(result.status)) return;
-  if (result.status === "escalated" && result.deliveryError) return;
+  if (result.deliveryError) return;
   const entry: FinishLedgerEntry = {
     branch: result.branch,
     headSha: result.headSha,

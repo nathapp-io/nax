@@ -76,29 +76,15 @@ function make(dir: string, advisor: Advisor, gitCalls: string[][] = []) {
   });
 }
 
-describe("createFinishAdvisor.judged", () => {
+describe("createFinishAdvisor.judged: rulings and reuse", () => {
   test("a fix ruling keeps the finding with the ruling appended to its fix", async () => {
     await withTempDir(async (dir) => {
       const { advisor, asked } = fakeAdvisor(() => ({ decision: decision({}) }));
-      const out = await make(dir, advisor).judged("quality", [judged], state(dir));
+      const out = await make(dir, advisor).judged([judged], [], state(dir));
       expect(out.toFix).toHaveLength(1);
       expect(out.toFix[0]?.fix).toContain("Advisor ruling (D-1): take the account lock");
       expect(out.advice).toEqual([{ decisionId: "D-1", optionId: "A", reused: false }]);
       expect(asked[0]?.dedupeKey).toBe("quality|Race|src/a.ts");
-    });
-  });
-
-  test("waive and supersede drop the finding", async () => {
-    await withTempDir(async (dir) => {
-      for (const action of [
-        { type: "waive", reason: "spec allows it" },
-        { type: "supersede", target: { kind: "spec", section: "Design" }, newText: "x" },
-      ] as const) {
-        const { advisor } = fakeAdvisor(() => ({ decision: decision({ action, chosenOptionId: "B" }) }));
-        const out = await make(dir, advisor).judged("quality", [judged], state(dir));
-        expect(out.toFix).toEqual([]);
-        expect(out.hold).toBeUndefined();
-      }
     });
   });
 
@@ -119,7 +105,7 @@ describe("createFinishAdvisor.judged", () => {
       await priorWaive(dir, low);
       const { advisor, asked, reused } = fakeAdvisor(() => ({ decision: decision({}) }));
       const reworded: Finding = { ...low, problem: "Again: src/a.ts:9 still races, put differently" };
-      const out = await make(dir, advisor).judged("quality", [reworded], state(dir));
+      const out = await make(dir, advisor).judged([reworded], [], state(dir));
       expect(asked).toHaveLength(0);
       expect(reused).toHaveLength(1);
       expect(out.toFix).toEqual([]);
@@ -131,7 +117,7 @@ describe("createFinishAdvisor.judged", () => {
     await withTempDir(async (dir) => {
       await priorWaive(dir, judged);
       const { advisor, asked, reused } = fakeAdvisor(() => ({ decision: decision({}) }));
-      await make(dir, advisor).judged("quality", [judged], state(dir));
+      await make(dir, advisor).judged([judged], [], state(dir));
       expect(reused).toHaveLength(0);
       expect(asked).toHaveLength(1);
     });
@@ -145,20 +131,9 @@ describe("createFinishAdvisor.judged", () => {
         auditRef: "advisor-audit/feat/D-1.json",
       });
       const { advisor, asked, reused } = fakeAdvisor(() => ({ decision: decision({}) }));
-      await make(dir, advisor).judged("quality", [low], state(dir));
+      await make(dir, advisor).judged([low], [], state(dir));
       expect(reused).toHaveLength(0);
       expect(asked).toHaveLength(1);
-    });
-  });
-
-  test("hold and fallback short-circuit", async () => {
-    await withTempDir(async (dir) => {
-      const hold = fakeAdvisor(() => ({
-        decision: decision({ action: { type: "hold", reason: "product call" }, rationale: "needs a human" }),
-      }));
-      expect((await make(dir, hold.advisor).judged("spec", [judged], state(dir))).hold).toBe("needs a human");
-      const none = fakeAdvisor(() => ({ decision: null, fallbackReason: "no-json" }));
-      expect((await make(dir, none.advisor).judged("spec", [judged], state(dir))).fallback).toBe("no-json");
     });
   });
 });
@@ -178,7 +153,7 @@ describe("createFinishAdvisor.commitLedger", () => {
   });
 });
 
-describe("createFinishAdvisor.judgedMerged (A4)", () => {
+describe("createFinishAdvisor.judged: merged rounds", () => {
   test("hold on one finding does not stop the next", async () => {
     await withTempDir(async (dir) => {
       const replies = [
@@ -188,7 +163,7 @@ describe("createFinishAdvisor.judgedMerged (A4)", () => {
       const { advisor } = fakeAdvisor(() => replies.shift() ?? { decision: null, fallbackReason: "none" });
       const j1 = { ...judged, title: "One", source: "spec" as const };
       const j2 = { ...judged, title: "Two", source: "quality" as const };
-      const out = await make(dir, advisor).judgedMerged([j1, j2], [], state(dir));
+      const out = await make(dir, advisor).judged([j1, j2], [], state(dir));
       expect(out.unresolved.map((f) => f.title)).toEqual(["One"]);
       expect(out.toFix.map((f) => f.title)).toEqual(["Two"]);
       expect(out.toFix[0]?.fix).toContain("Advisor ruling (D-2): do it");
@@ -203,7 +178,7 @@ describe("createFinishAdvisor.judgedMerged (A4)", () => {
         { type: "supersede", target: { kind: "spec", section: "Design" }, newText: "x" },
       ] as const) {
         const { advisor } = fakeAdvisor(() => ({ decision: decision({ action, chosenOptionId: "B" }) }));
-        const out = await make(dir, advisor).judgedMerged([judged], [], state(dir));
+        const out = await make(dir, advisor).judged([judged], [], state(dir));
         expect(out.toFix).toEqual([]);
         expect(out.unresolved).toEqual([]);
         expect(out.advice).toHaveLength(1);
@@ -214,7 +189,7 @@ describe("createFinishAdvisor.judgedMerged (A4)", () => {
   test("advisor unavailable gives unresolved", async () => {
     await withTempDir(async (dir) => {
       const { advisor } = fakeAdvisor(() => ({ decision: null, fallbackReason: "no-json" }));
-      const out = await make(dir, advisor).judgedMerged([judged], [], state(dir));
+      const out = await make(dir, advisor).judged([judged], [], state(dir));
       expect(out).toEqual({ toFix: [], advice: [], unresolved: [judged] });
     });
   });
@@ -223,7 +198,7 @@ describe("createFinishAdvisor.judgedMerged (A4)", () => {
     await withTempDir(async (dir) => {
       const { advisor, asked } = fakeAdvisor(() => ({ decision: decision({}) }));
       const f = { ...judged, source: "spec" as const };
-      await make(dir, advisor).judgedMerged([f], [], state(dir));
+      await make(dir, advisor).judged([f], [], state(dir));
       expect(asked[0]?.dedupeKey).toBe(dedupeKeyFor("spec", f));
     });
   });
@@ -236,7 +211,7 @@ describe("createFinishAdvisor.judgedMerged (A4)", () => {
       const { advisor, asked } = fakeAdvisor(() => ({
         decision: decision({ action: { type: "fix", instruction: "keep retry" } }),
       }));
-      const out = await make(dir, advisor).judgedMerged([], [{ spec: s, quality: qf }], state(dir));
+      const out = await make(dir, advisor).judged([], [{ spec: s, quality: qf }], state(dir));
       expect(asked).toHaveLength(1);
       expect(asked[0]?.summary).toBe("Spec and quality reviews disagree on a.ts:2");
       expect(asked[0]?.evidence.map((e) => e.text.split(":")[0])).toEqual(["Spec review", "Quality review"]);
@@ -251,7 +226,7 @@ describe("createFinishAdvisor.judgedMerged (A4)", () => {
   test("contradiction waived drops both", async () => {
     await withTempDir(async (dir) => {
       const { advisor } = fakeAdvisor(() => ({ decision: decision({ action: { type: "waive", reason: "fine" } }) }));
-      const out = await make(dir, advisor).judgedMerged([], [{ spec: s, quality: qf }], state(dir));
+      const out = await make(dir, advisor).judged([], [{ spec: s, quality: qf }], state(dir));
       expect(out.toFix).toEqual([]);
       expect(out.unresolved).toEqual([]);
       expect(out.advice).toHaveLength(1);
@@ -266,7 +241,7 @@ describe("createFinishAdvisor.judgedMerged (A4)", () => {
       ];
       for (const reply of replies) {
         const { advisor } = fakeAdvisor(() => reply);
-        const out = await make(dir, advisor).judgedMerged([], [{ spec: s, quality: qf }], state(dir));
+        const out = await make(dir, advisor).judged([], [{ spec: s, quality: qf }], state(dir));
         expect(out.toFix).toEqual([s]);
         expect(out.unresolved).toEqual([qf]);
       }
@@ -283,7 +258,7 @@ describe("judgeWithoutAdvisor", () => {
   });
 });
 
-describe("createFinishAdvisor.approvalFromFacts (A4)", () => {
+describe("createFinishAdvisor.approval", () => {
   const facts: ResolutionFacts = {
     findingsOpen: [{ severity: "HIGH", title: "Leak", problem: "p", fix: "f", source: "spec", file: "a.ts", line: 7 }],
     acceptance: "red",
@@ -300,7 +275,7 @@ describe("createFinishAdvisor.approvalFromFacts (A4)", () => {
   test("question evidence lists open findings, acceptance, gates with excerpt, missing lenses, unreviewed commits, coverage", async () => {
     await withTempDir(async (dir) => {
       const { advisor, asked } = fakeAdvisor(() => ({ decision: decision({ action: { type: "approve" } }) }));
-      await make(dir, advisor).approvalFromFacts(facts, approvalFacts(facts, false));
+      await make(dir, advisor).approval(facts, approvalFacts(facts, false));
       const q = asked[0];
       assertDefined(q, "approval question");
       expect(q.kind).toBe("finish-approval");
@@ -328,7 +303,7 @@ describe("createFinishAdvisor.approvalFromFacts (A4)", () => {
         unreviewedFixCommits: [],
         gates: [],
       };
-      await make(dir, advisor).approvalFromFacts(clean, approvalFacts(clean, false));
+      await make(dir, advisor).approval(clean, approvalFacts(clean, false));
       const texts = asked[0]?.evidence.map((e) => e.text);
       expect(texts?.[0]).toBe("none");
       expect(texts?.[3]).toBe("Missing reviews: none");
@@ -344,7 +319,7 @@ describe("createFinishAdvisor.approvalFromFacts (A4)", () => {
   ] as const)("decision %j maps to %s", async (action, expected) => {
     await withTempDir(async (dir) => {
       const { advisor } = fakeAdvisor(() => ({ decision: decision({ action, rationale: "why" }) }));
-      const out = await make(dir, advisor).approvalFromFacts(facts, approvalFacts(facts, false));
+      const out = await make(dir, advisor).approval(facts, approvalFacts(facts, false));
       expect(out).toEqual({ action: expected, rationale: "why" });
     });
   });
@@ -352,7 +327,7 @@ describe("createFinishAdvisor.approvalFromFacts (A4)", () => {
   test("no decision gives unavailable with the fallback reason", async () => {
     await withTempDir(async (dir) => {
       const { advisor } = fakeAdvisor(() => ({ decision: null, fallbackReason: "no-json" }));
-      const out = await make(dir, advisor).approvalFromFacts(facts, approvalFacts(facts, false));
+      const out = await make(dir, advisor).approval(facts, approvalFacts(facts, false));
       expect(out).toEqual({ action: "unavailable", rationale: "no-json" });
     });
   });

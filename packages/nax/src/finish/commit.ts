@@ -173,7 +173,7 @@ export async function commitAndPush(repoRoot: string, branch: string, message: s
 }
 
 /** Phases that own a reviewer step; every other phase's round has nobody behind it. */
-const REVIEWED_PHASES: FinishPhase[] = ["spec", "quality"];
+const REVIEWED_PHASES: FinishPhase[] = ["spec", "quality", "review"];
 
 /**
  * What produced this round, given the successor the commit routed to.

@@ -149,9 +149,14 @@ function humanList(items: string[]): string {
   return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
 
+/** "spec review" / "quality review" / "branch review": the shared `review` fix round covers the whole branch. */
+function reviewNoun(phase: FinishPhase): string {
+  return phase === "review" ? "branch review" : `${phase} review`;
+}
+
 function reviewSubject(phase: FinishPhase, findings: Finding[]): string {
   if (findings.length === 1) return subjectCase(findings[0].title);
-  return `address ${findings.length} ${phase} review findings (worst: ${worstSeverity(findings)})`;
+  return `address ${findings.length} ${reviewNoun(phase)} findings (worst: ${worstSeverity(findings)})`;
 }
 
 function subjectFor(phase: FinishPhase, ctx: CommitMessageCtx): string {
@@ -161,7 +166,7 @@ function subjectFor(phase: FinishPhase, ctx: CommitMessageCtx): string {
   }
   if (phase === "acceptance") return "repair failing acceptance tests";
   const findings = findingsFor(ctx, phase);
-  return findings.length > 0 ? reviewSubject(phase, findings) : `apply ${phase} review fixes`;
+  return findings.length > 0 ? reviewSubject(phase, findings) : `apply ${reviewNoun(phase)} fixes`;
 }
 
 /**
@@ -219,7 +224,7 @@ function findingBody(f: Finding, index: number, dispositions: FindingDisposition
 
 /** Human-readable phase label for the attribution trailer. */
 function phaseLabel(phase: FinishPhase): string {
-  return phase === "gate" ? "quality gate" : phase === "acceptance" ? "acceptance" : `${phase} review`;
+  return phase === "gate" ? "quality gate" : phase === "acceptance" ? "acceptance" : reviewNoun(phase);
 }
 
 /**

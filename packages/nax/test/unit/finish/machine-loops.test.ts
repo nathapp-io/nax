@@ -1,350 +1,208 @@
 /**
- * Happy-path and edge-route coverage for `runFinishMachine`, complementing
- * `machine-invariants.test.ts`. These drive the same stub `FinishOps` /
- * `_deps` seams end to end and assert on the observable call trail and the
- * returned `FinishResult` — never on machine internals.
+ * The fix-and-reverify loops of `runFinishMachine`: acceptance re-check after a review fix, the gate fix's
+ * re-review, and what the facts say when a fix commit is never reviewed. They assert on the observable call
+ * trail and the returned `FinishResult`, never on machine internals.
  */
 import { afterEach, describe, expect, test } from "bun:test";
-import { withTempDir } from "@test/helpers";
-import type { AcceptanceGroupResult } from "@/cli";
-import type { NaxConfig } from "@/config";
-import { DEFAULT_CONFIG } from "@/config";
-import type { AuditTarget, Finding, FinishContext, FinishMachineDeps, FinishOps, FinishState } from "@/finish";
-import {
-  _acceptanceGateDeps,
-  _finishGitDeps,
-  _qualityGateDeps,
-  createFinishState,
-  MAX_INCOMPLETE_ATTEMPTS,
-  runFinishMachine,
-} from "@/finish";
-import type { QualityCommandOptions, QualityCommandResult } from "@/quality";
+import { makeMachineHarness, restoreFinishMachineStubs, withTempDir } from "@test/helpers";
+import type { Finding, FinishReviewOutput } from "@/finish";
+import { runFinishMachine } from "@/finish";
 
-const originalGit = _finishGitDeps.git;
-const originalAcceptanceRun = _acceptanceGateDeps.run;
-const originalQuality = { ..._qualityGateDeps };
-afterEach(() => {
-  _finishGitDeps.git = originalGit;
-  _acceptanceGateDeps.run = originalAcceptanceRun;
-  _qualityGateDeps.run = originalQuality.run;
-  _qualityGateDeps.loadConfig = originalQuality.loadConfig;
-  _qualityGateDeps.loadPackageOverride = originalQuality.loadPackageOverride;
+afterEach(() => restoreFinishMachineStubs());
+
+const q = (title: string): FinishReviewOutput => ({
+  findings: [{ severity: "MEDIUM", title, problem: "p", fix: "f", source: "quality", file: "a.ts" } satisfies Finding],
+  covered: ["a.ts"],
 });
 
-const _FINDING: Finding = { severity: "HIGH", title: "fix me", problem: "p", fix: "f" };
+const count = (trail: string[], entry: string): number => trail.filter((t) => t === entry).length;
 
-function configWithCommands(commands: NaxConfig["quality"]["commands"]): NaxConfig {
-  return { ...DEFAULT_CONFIG, quality: { ...DEFAULT_CONFIG.quality, commands } };
-}
-
-function baseContext(overrides: Partial<FinishContext> = {}): FinishContext {
-  const group: AcceptanceGroupResult = {
-    packageDir: "",
-    testPath: "test/acceptance/feat.test.ts",
-    exists: true,
-    cwd: "",
-  };
-  return {
-    base: "origin/main",
-    specPath: ".nax/features/feat/spec.md",
-    acceptanceStatus: "ok",
-    groups: [group],
-    testFileRegex: ["\\.test\\.ts$"],
-    commitsAhead: 3,
-    route: "proceed",
-    ...overrides,
-  };
-}
-
-function baseState(overrides: Partial<FinishState> = {}): FinishState {
-  const state = createFinishState({
-    feature: "feat",
-    workdir: "/repo",
-    branch: "feat/x",
-    runId: "run-1",
-    base: "origin/main",
-    specPath: ".nax/features/feat/spec.md",
-  });
-  return { ...state, ...overrides };
-}
-
-function makeOps(trail: string[], overrides: Partial<FinishOps> = {}): FinishOps {
-  return {
-    review: async (phase) => {
-      trail.push(`review:${phase}`);
-      return { findings: [], gaps: [] };
-    },
-    fix: async (phase) => {
-      trail.push(`fix:${phase}`);
-      return {};
-    },
-    openDraftPr: async () => {
-      trail.push("openDraftPr");
-      return { url: "https://forge.example/pr/1" };
-    },
-    promotePr: async () => {
-      trail.push("promotePr");
-      return { status: "opened" as const };
-    },
-    escalate: async (_state, reason) => {
-      trail.push(`escalate:${reason}`);
-      return {};
-    },
-    ...overrides,
-  };
-}
-
-function installGitStub(trail: string[]): void {
-  let shaCounter = 0;
-  _finishGitDeps.git = async (args: string[]) => {
-    const cmd = args[0];
-    if (cmd === "rev-parse") {
-      shaCounter += 1;
-      return { stdout: `sha${shaCounter}`, stderr: "", exitCode: 0 };
-    }
-    if (cmd === "status") return { stdout: " M file.ts\n", stderr: "", exitCode: 0 };
-    if (cmd === "add") return { stdout: "", stderr: "", exitCode: 0 };
-    if (cmd === "commit") {
-      trail.push("commit");
-      return { stdout: "", stderr: "", exitCode: 0 };
-    }
-    if (cmd === "show") return { stdout: "src/prod.ts\n", stderr: "", exitCode: 0 };
-    if (cmd === "push") return { stdout: "", stderr: "", exitCode: 0 };
-    return { stdout: "", stderr: "", exitCode: 0 };
-  };
-}
-
-function installAcceptanceGateStub(trail: string[], run?: () => { exitCode: number }): void {
-  const runFn = run ?? (() => ({ exitCode: 0 }));
-  _acceptanceGateDeps.run = async () => {
-    trail.push("acceptance-run");
-    const r = runFn();
-    return {
-      commandName: "acceptance",
-      command: "bun test",
-      success: r.exitCode === 0,
-      exitCode: r.exitCode,
-      output: "acceptance output",
-      durationMs: 1,
-      timedOut: false,
-    };
-  };
-}
-
-function installQualityGateStub(trail: string[], commands: NaxConfig["quality"]["commands"] = { test: "true" }): void {
-  _qualityGateDeps.loadConfig = async () => configWithCommands(commands);
-  _qualityGateDeps.loadPackageOverride = async () => null;
-  _qualityGateDeps.run = async (o: QualityCommandOptions): Promise<QualityCommandResult> => {
-    trail.push(`quality-run:${o.commandName}`);
-    return {
-      commandName: o.commandName,
-      command: o.command as string,
-      success: true,
-      exitCode: 0,
-      output: "ok",
-      durationMs: 1,
-      timedOut: false,
-    };
-  };
-}
-
-interface MakeDepsOpts {
-  auditDir: string;
-  context?: Partial<FinishContext>;
-  ops?: Partial<FinishOps>;
-  acceptanceRun?: () => { exitCode: number };
-  qualityCommands?: NaxConfig["quality"]["commands"];
-}
-
-function makeDeps(opts: MakeDepsOpts): { deps: FinishMachineDeps; trail: string[] } {
-  const trail: string[] = [];
-  installGitStub(trail);
-  installAcceptanceGateStub(trail, opts.acceptanceRun);
-  installQualityGateStub(trail, opts.qualityCommands);
-  const ops = makeOps(trail, opts.ops);
-  const audit: AuditTarget = { auditDir: opts.auditDir, runId: "run-1" };
-  let tick = 0;
-  const deps: FinishMachineDeps = {
-    context: baseContext(opts.context),
-    ops,
-    audit,
-    now: () => {
-      tick += 1;
-      return `2026-08-18T00:00:${String(tick).padStart(2, "0")}.000Z`;
-    },
-  };
-  return { deps, trail };
-}
-
-describe("machine-loops", () => {
-  test("happy path: opens a draft PR after acceptance, and promotes it at the end", async () => {
+describe("opening the draft PR", () => {
+  test("opens the draft once, after acceptance and before either reviewer", async () => {
     await withTempDir(async (dir) => {
-      const { deps, trail } = makeDeps({ auditDir: dir });
-      const state = baseState();
-      const result = await runFinishMachine(state, deps);
-
-      expect(result.status).toBe("opened");
-      expect(state.prUrl).toBe("https://forge.example/pr/1");
-      expect(trail.filter((e) => e === "openDraftPr")).toHaveLength(1);
-      expect(trail.filter((e) => e === "promotePr")).toHaveLength(1);
-      expect(trail.indexOf("openDraftPr")).toBeLessThan(trail.indexOf("promotePr"));
-      // Draft opens right after the first (only) successful acceptance pass,
-      // before either reviewer ever runs.
+      const { deps, trail, state } = makeMachineHarness({ auditDir: dir });
+      await runFinishMachine(state, deps);
+      expect(count(trail, "openDraftPr")).toBe(1);
+      expect(trail.indexOf("acceptance-run")).toBeLessThan(trail.indexOf("openDraftPr"));
       expect(trail.indexOf("openDraftPr")).toBeLessThan(trail.indexOf("review:spec"));
     });
   });
 
-  test("a terminal result carries headSha/branch for the ledger (#1674 part 1)", async () => {
+  test("a draft opened earlier (state.prUrl) is not opened again", async () => {
     await withTempDir(async (dir) => {
-      const { deps } = makeDeps({ auditDir: dir });
-      const state = baseState();
+      const { deps, trail, state } = makeMachineHarness({ auditDir: dir });
+      await runFinishMachine({ ...state, prUrl: "https://x/pr/9" }, deps);
+      expect(trail).not.toContain("openDraftPr");
+    });
+  });
+});
+
+describe("review fixes", () => {
+  test("a committed review fix re-checks acceptance once, after the last review and before the gates", async () => {
+    await withTempDir(async (dir) => {
+      const { deps, trail, state } = makeMachineHarness({ auditDir: dir, script: { quality: [q("A")] } });
       const result = await runFinishMachine(state, deps);
 
-      expect(result.branch).toBe("feat/x");
-      expect(result.headSha).toBeDefined();
-      expect(typeof result.headSha).toBe("string");
+      // initial, re-check, and gate zero
+      expect(count(trail, "acceptance-run")).toBe(3);
+      const lastReview = trail.lastIndexOf("review:quality");
+      expect(trail.slice(lastReview + 1)).toEqual([
+        "acceptance-run",
+        "acceptance-run",
+        "quality-run:test",
+        "promotePr",
+      ]);
+      expect(result.outcome).toBe("ready");
     });
   });
 
-  test("nothing-to-finish: never calls a reviewer, never opens a PR", async () => {
+  test("without a review fix acceptance is not re-checked between the reviews and the gates", async () => {
     await withTempDir(async (dir) => {
-      const { deps, trail } = makeDeps({ auditDir: dir, context: { route: "nothing-to-finish" } });
-      const state = baseState();
+      const { deps, trail, state } = makeMachineHarness({ auditDir: dir });
+      await runFinishMachine(state, deps);
+      expect(count(trail, "acceptance-run")).toBe(2);
+    });
+  });
+
+  test("a review fix that edits nothing does not trigger the acceptance re-check", async () => {
+    await withTempDir(async (dir) => {
+      const { deps, trail, state } = makeMachineHarness({
+        auditDir: dir,
+        script: { quality: [q("A")] },
+        fixIsNoop: true,
+      });
+      await runFinishMachine(state, deps);
+      expect(count(trail, "acceptance-run")).toBe(2);
+      expect(state.review.committedFixes).toBe(false);
+    });
+  });
+
+  test("an acceptance regression after a review fix is fixed within the remaining cap and left unreviewed", async () => {
+    await withTempDir(async (dir) => {
+      // runs: 1 initial ok, 2 re-check red, 3 re-check after the acceptance fix ok, 4 gate zero ok
+      const { deps, trail, state } = makeMachineHarness({
+        auditDir: dir,
+        script: { quality: [q("A")] },
+        acceptanceExit: (call) => (call === 2 ? 1 : 0),
+      });
+      const result = await runFinishMachine(state, deps);
+      expect(trail).toContain("fix:acceptance");
+      expect(result.outcome).toBe("draft");
+      expect(result.reason).toContain("unreviewed fix commit(s)");
+    });
+  });
+});
+
+describe("gate fixes", () => {
+  test("a gate fix that commits code, with review rounds left, buys exactly one more review round", async () => {
+    await withTempDir(async (dir) => {
+      const { deps, trail, state } = makeMachineHarness({ auditDir: dir, qualityExit: (call) => (call === 1 ? 1 : 0) });
       const result = await runFinishMachine(state, deps);
 
-      expect(result.status).toBe("nothing-to-finish");
-      expect(result.url).toBeUndefined();
-      // A plain zero-commits preflight carries neither marker — only the
-      // merged-PR short-circuit below does.
-      expect(result.skipReason).toBeUndefined();
-      expect(trail).toHaveLength(0);
+      expect(count(trail, "review:spec")).toBe(2);
+      expect(count(trail, "review:quality")).toBe(2);
+      expect(trail.indexOf("fix:gate")).toBeLessThan(trail.lastIndexOf("review:spec"));
+      expect(state.review.rounds).toBe(2);
+      expect(result.outcome).toBe("ready");
+      expect(result.facts?.unreviewedFixCommits).toEqual([]);
     });
   });
 
-  test("merged-PR route (#1674 part 2): nothing-to-finish carrying skipReason and the PR url", async () => {
+  test("a tests-only gate fix is reviewed like a code fix", async () => {
     await withTempDir(async (dir) => {
-      const { deps, trail } = makeDeps({
+      const { deps, trail, state } = makeMachineHarness({
         auditDir: dir,
-        context: { route: "nothing-to-finish", skipReason: "pr-merged", prUrl: "https://forge.example/pr/7" },
+        gitFiles: "test/unit/a.test.ts",
+        qualityExit: (call) => (call === 1 ? 1 : 0),
       });
-      const result = await runFinishMachine(baseState(), deps);
-
-      expect(result.status).toBe("nothing-to-finish");
-      expect(result.skipReason).toBe("pr-merged");
-      expect(result.url).toBe("https://forge.example/pr/7");
-      // Nothing ran: no reviewer, no fixer, no commit onto a merged branch.
-      expect(trail).toHaveLength(0);
+      await runFinishMachine(state, deps);
+      expect(count(trail, "review:quality")).toBe(2);
     });
   });
 
-  test("already-finished route (#1674 part 1 ledger hit): never calls a reviewer, reports skipReason", async () => {
+  test("a gate fix that commits nothing buys no review round", async () => {
     await withTempDir(async (dir) => {
-      const { deps, trail } = makeDeps({
+      const { deps, trail, state } = makeMachineHarness({
         auditDir: dir,
-        context: { route: "already-finished", prUrl: "https://forge.example/pr/5" },
+        fixIsNoop: true,
+        qualityExit: (call) => (call === 1 ? 1 : 0),
       });
-      const state = baseState();
+      await runFinishMachine(state, deps);
+      expect(count(trail, "fix:gate")).toBe(1);
+      expect(count(trail, "review:quality")).toBe(1);
+    });
+  });
+
+  test("a gate fix after the third review round is listed as an unreviewed commit and the PR is a draft", async () => {
+    await withTempDir(async (dir) => {
+      const { deps, trail, state } = makeMachineHarness({
+        auditDir: dir,
+        script: { quality: [q("A"), q("B"), q("C")] },
+        qualityExit: (call) => (call === 1 ? 1 : 0),
+      });
       const result = await runFinishMachine(state, deps);
 
-      expect(result.status).toBe("nothing-to-finish");
-      expect(result.skipReason).toBe("already-finished");
-      expect(result.url).toBe("https://forge.example/pr/5");
-      expect(trail).toHaveLength(0);
+      expect(state.review.rounds).toBe(3);
+      expect(count(trail, "review:quality")).toBe(3);
+      expect(result.outcome).toBe("draft");
+      // the round-3 review fix, the acceptance re-check does not commit, and the gate fix
+      expect(result.facts?.unreviewedFixCommits).toHaveLength(2);
+      expect(result.reason).toContain("2 unreviewed fix commit(s)");
+      expect(trail).toContain("finalizeDraftPr");
+      expect(trail).not.toContain("promotePr");
     });
   });
 
-  test("closed-PR escalate route (#1674 part 2) passes push:false through to ops.escalate", async () => {
+  test("gates that stay red after the fix cap stop the loop: three fixes, then a draft", async () => {
     await withTempDir(async (dir) => {
-      const seen: Array<{ push?: boolean } | undefined> = [];
-      const { deps } = makeDeps({
-        auditDir: dir,
-        context: { route: "escalate", escalateWithoutPush: true, reason: "the PR is closed" },
-        ops: {
-          escalate: async (_state, _reason, _findings, options) => {
-            seen.push(options);
-            return {};
-          },
-        },
-      });
-      const result = await runFinishMachine(baseState(), deps);
-
-      expect(result.status).toBe("escalated");
-      expect(seen).toEqual([{ push: false }]);
+      const { deps, trail, state } = makeMachineHarness({ auditDir: dir, qualityExit: () => 1 });
+      const result = await runFinishMachine(state, deps);
+      expect(count(trail, "fix:gate")).toBe(3);
+      expect(result.outcome).toBe("draft");
     });
   });
 
-  test("an ordinary escalate route leaves ops.escalate's push alone", async () => {
+  test("gate zero is skipped when acceptance is already red, so a red contract burns no gate-fix attempts", async () => {
     await withTempDir(async (dir) => {
-      const seen: Array<{ push?: boolean } | undefined> = [];
-      const { deps } = makeDeps({
-        auditDir: dir,
-        context: { route: "escalate", reason: "base ref not fetched locally" },
-        ops: {
-          escalate: async (_state, _reason, _findings, options) => {
-            seen.push(options);
-            return {};
-          },
-        },
-      });
-      await runFinishMachine(baseState(), deps);
+      const { deps, trail, state } = makeMachineHarness({ auditDir: dir, acceptanceExit: () => 1 });
+      const result = await runFinishMachine(state, deps);
+      // 1 initial + 3 acceptance fix re-runs; none from the gates loop
+      expect(count(trail, "acceptance-run")).toBe(4);
+      expect(count(trail, "fix:gate")).toBe(0);
+      expect(result.facts?.acceptance).toBe("red");
+      expect(result.outcome).toBe("draft");
+    });
+  });
+});
 
-      expect(seen).toEqual([undefined]);
+describe("acceptance facts", () => {
+  test("acceptance unverified (nothing ran): never ready, and no fix is attempted", async () => {
+    await withTempDir(async (dir) => {
+      const { deps, trail, state } = makeMachineHarness({ auditDir: dir, context: { groups: [] } });
+      const result = await runFinishMachine(state, deps);
+      expect(result.outcome).toBe("draft");
+      expect(result.reason).toContain("acceptance unverified");
+      expect(trail).not.toContain("fix:acceptance");
+      expect(trail).not.toContain("promotePr");
     });
   });
 
-  test("escalate route: escalates immediately, no reviewer, no PR", async () => {
+  test("disabled acceptance runs nothing, is not-configured, and the repo gates still run", async () => {
     await withTempDir(async (dir) => {
-      const { deps, trail } = makeDeps({
-        auditDir: dir,
-        context: { route: "escalate", reason: "base ref not fetched locally" },
-      });
-      const result = await runFinishMachine(baseState(), deps);
-
-      expect(result.status).toBe("escalated");
-      expect(result.escalationReason).toBe("base ref not fetched locally");
-      expect(trail.filter((e) => e.startsWith("review:") || e === "openDraftPr")).toHaveLength(0);
+      const { deps, trail, state } = makeMachineHarness({ auditDir: dir, context: { acceptanceStatus: "disabled" } });
+      const result = await runFinishMachine(state, deps);
+      expect(trail).not.toContain("acceptance-run");
+      expect(trail).toContain("quality-run:test");
+      expect(result.facts?.acceptance).toBe("not-configured");
+      expect(result.outcome).toBe("ready");
     });
   });
 
-  test("disabled acceptance status: skips both acceptance runs, still runs the repo gates", async () => {
+  test("the gate names that ran are recorded on state.gatesRan", async () => {
     await withTempDir(async (dir) => {
-      const { deps, trail } = makeDeps({ auditDir: dir, context: { acceptanceStatus: "disabled" } });
-      const result = await runFinishMachine(baseState(), deps);
-
-      expect(result.status).toBe("opened");
-      expect(trail.filter((e) => e === "acceptance-run")).toHaveLength(0);
-      expect(trail.filter((e) => e === "quality-run:test")).toHaveLength(1);
-    });
-  });
-
-  test("green gate pass records the gate names on state.gatesRan", async () => {
-    await withTempDir(async (dir) => {
-      const { deps } = makeDeps({ auditDir: dir });
-      const state = baseState();
+      const { deps, state } = makeMachineHarness({ auditDir: dir });
       await runFinishMachine(state, deps);
       expect(state.gatesRan).toEqual(["test"]);
-    });
-  });
-
-  test("incomplete route: re-reviews exactly once (MAX_INCOMPLETE_ATTEMPTS) then escalates", async () => {
-    await withTempDir(async (dir) => {
-      const { deps, trail } = makeDeps({
-        auditDir: dir,
-        ops: {
-          review: async (phase) => {
-            trail.push(`review:${phase}`);
-            if (phase !== "spec") return { findings: [], gaps: [] };
-            return { findings: [], gaps: ["never opened the touchpoint it cited"] };
-          },
-        },
-      });
-      const result = await runFinishMachine(baseState(), deps);
-
-      expect(result.status).toBe("escalated");
-      expect(result.escalationReason).toMatch(/reading obligations/i);
-      const specReviews = trail.filter((e) => e === "review:spec");
-      expect(specReviews).toHaveLength(MAX_INCOMPLETE_ATTEMPTS + 1);
-      expect(trail.some((e) => e === "fix:spec")).toBe(false);
     });
   });
 });

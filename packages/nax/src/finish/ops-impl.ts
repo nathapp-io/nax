@@ -3,55 +3,25 @@
  *
  * A factory rather than a module of free functions: every method needs the
  * same closed-over `CallContext`, forge deps and model selections, and the
- * machine's contract (`./ops`) is an object. Two of the contract's clauses are
- * load-bearing and are implemented here, not in the modules below:
- *
- * - `escalate` must not throw. Its whole body is wrapped, and a delivery
- *   failure is returned as `deliveryError` — `machine.ts`'s `doEscalate` is
- *   the only caller and it has no other way to record that the human was
- *   never told.
- * - `narrate` must not throw. The machine calls it *after* `promotePr`,
- *   inside its one try, so a throw rewrites an already-promoted green run to
- *   `escalated`.
- *
- * `review` and `fix` deliberately do neither: a reviewer or fixer that cannot
- * run is exactly the case the machine's catch exists for.
+ * machine's contract (`./ops`) is an object. `reviewSpec` / `reviewBranch` /
+ * `fix` deliberately do not catch: a reviewer or fixer that cannot run is
+ * exactly the case the machine's catch exists for. The forge-facing methods
+ * (`promotePr`, `finalizeDraftPr`) propagate a CLI failure too -- the machine
+ * reports it as a failed finish rather than a PR that was never written.
  */
 
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { formatDecisionsForPrompt, readTrustedDecisions } from "@/advisor";
 import type { ConfiguredModel } from "@/config";
 import type { ForgeDeps, ForgeKind } from "@/forge";
-import type {
-  CallContext,
-  FinishBranchReviewInput,
-  FinishFixInput,
-  FinishNarrativeInput,
-  FinishReviewInput,
-  FinishSpecReviewInput,
-} from "@/operations";
-import {
-  callOp,
-  finishBranchReviewOp,
-  finishFixOp,
-  finishNarrativeOp,
-  finishReviewOp,
-  finishSpecReviewOp,
-} from "@/operations";
+import type { CallContext, FinishBranchReviewInput, FinishFixInput, FinishSpecReviewInput } from "@/operations";
+import { callOp, finishBranchReviewOp, finishFixOp, finishSpecReviewOp } from "@/operations";
 import type { AuditTarget } from "./audit";
 import { commitAndPush } from "./commit";
-import { buildEscalationComment, postEscalation } from "./escalate";
-import type { FinishOps, FixRequest, ReviewInputs, ReviewRequest } from "./ops";
-import {
-  buildFinishBody,
-  buildFinishTitle,
-  loadFinishPrContext,
-  openDraftFinishPr,
-  openOrPromotePr,
-  updatePrBody,
-} from "./pr";
+import type { FinishOps, FixPhase, FixRequest, ReviewInputs } from "./ops";
+import { buildFinishBody, buildFinishTitle, loadFinishPrContext, openDraftFinishPr, openOrPromotePr } from "./pr";
 import type { FinishState } from "./state";
-import type { Finding, FinishPhase, FinishPrBodySettings } from "./types";
+import type { FinishPrBodySettings } from "./types";
 
 export interface FinishOpsDeps {
   /** The call context every LLM op runs under. Its `sessionOverride` is replaced per phase. */
@@ -71,9 +41,9 @@ export interface FinishOpsDeps {
   timeouts?: { reviewMs?: number; fixMs?: number; narrativeMs?: number };
   /** The existing `FinishPrBodySettings` from `./types` (D4.8). */
   prBody?: FinishPrBodySettings;
-  /** Telegram is the sole escalation channel when true. */
+  /** Pre-A4 only, no longer read (A4 Task 14 removes it with the escalation channel). */
   preferTelegram?: boolean;
-  /** Narrative is opt-out: when false, `narrate` is omitted from the returned object. */
+  /** Pre-A4 only, no longer read (A4 Task 14 removes it with the narrative op). */
   narrative?: boolean;
   warn?: (message: string, details: Record<string, unknown>) => void;
 }
@@ -90,10 +60,6 @@ async function loadDecisionNotes(state: FinishState, outputDir: string | undefin
 
 /** The commit the promote path pushes before touching the forge (matches the flow, line 344). */
 const PROMOTE_MESSAGE = (feature: string): string => `fix(${feature}): nax-finish automated fixes`;
-
-/** The commit the escalate path pushes so the escalation describes state a human can see (flow line 441). */
-const ESCALATION_PUSH_MESSAGE = (feature: string): string =>
-  `wip(${feature}): nax-finish partial fixes before escalation`;
 
 /**
  * Load the PR context and render it, falling back to a minimal title/body on
@@ -125,7 +91,7 @@ async function buildPrContentOrFallback(
 }
 
 export function createFinishOps(deps: FinishOpsDeps): FinishOps {
-  const { callCtx, forge, forgeKind, audit, models, timeouts, prBody, preferTelegram, warn } = deps;
+  const { callCtx, forge, forgeKind, audit, models, timeouts, prBody } = deps;
   // A1: where advisor audit artifacts live. Undefined (a bare test context) ⇒ no decision is trusted or shown.
   const advisorOutputDir: string | undefined = callCtx.runtime?.outputDir;
 
@@ -163,35 +129,10 @@ export function createFinishOps(deps: FinishOpsDeps): FinishOps {
       );
     },
 
-    async review(phase: "spec" | "quality", req: ReviewRequest) {
-      const { state } = req;
-      const phaseState = state.phases[phase];
-      const input: FinishReviewInput = {
-        phase,
-        base: state.base,
-        specPath: state.specPath,
-        workdir: state.workdir,
-        since: phaseState.reviewSince,
-        gaps: phaseState.reviewGaps,
-        priorFindings: state.findings,
-        decisions: await loadDecisionNotes(state, advisorOutputDir),
-        model: phase === "spec" ? models?.reviewSpec : models?.reviewQuality,
-        timeoutMs: timeouts?.reviewMs,
-      };
-      return _finishOpsDeps.callOp(
-        {
-          ...callCtx,
-          sessionOverride: { role: phase === "spec" ? "finish-review-spec" : "finish-review-quality" },
-        },
-        finishReviewOp,
-        input,
-      );
-    },
-
-    async fix(phase: FinishPhase, req: FixRequest) {
+    async fix(phase: FixPhase, req: FixRequest) {
       const { state, findings, failing, gateOutput, acceptanceOutput } = req;
       const input: FinishFixInput = {
-        phase: phase === "spec" || phase === "quality" ? "review" : phase,
+        phase,
         workdir: state.workdir,
         findings,
         failing,
@@ -278,92 +219,7 @@ export function createFinishOps(deps: FinishOpsDeps): FinishOps {
       // A PR a human already marked ready is not demoted; report that honestly.
       return { status: out.status === "already-ready" ? "already-ready" : "draft", url: out.url };
     },
-
-    async escalate(state: FinishState, reason: string, findings: Finding[], options?: { push?: boolean }) {
-      let pushError: string | undefined;
-      // `commitAndPush` pushes unconditionally — `commitFixes` reporting
-      // `committed: false` does not skip the `git push --set-upstream`. That
-      // is right for every escalation that follows a fix loop, and wrong for
-      // the closed-PR precondition escalation, which passes `push: false`:
-      // see `FinishOps.escalate`'s doc comment (`./ops`).
-      if (options?.push !== false) {
-        try {
-          await commitAndPush(state.workdir, state.branch, ESCALATION_PUSH_MESSAGE(state.feature));
-        } catch (err) {
-          pushError = errorMessage(err);
-        }
-      }
-      const syncNote = pushError ? `\n\n> Note: nax-finish could not push its partial fixes — ${pushError}` : "";
-      try {
-        if (forgeKind === null) {
-          // The push failure would otherwise be lost here — this is the one
-          // branch that never reaches `buildEscalationComment`, so it has to
-          // carry `pushError` itself rather than via `syncNote`.
-          return {
-            deliveryError: pushError
-              ? `no forge detected; partial fixes could not be pushed either: ${pushError}`
-              : "no forge detected",
-          };
-        }
-        const comment = buildEscalationComment(state.feature, reason, findings) + syncNote;
-        const outcome = await postEscalation(
-          { workdir: state.workdir, branch: state.branch, comment, forge: forgeKind, preferTelegram },
-          forge,
-        );
-        return outcome.url ? { url: outcome.url } : {};
-      } catch (err) {
-        return { deliveryError: errorMessage(err) };
-      }
-    },
   };
-
-  if (deps.narrative !== false) {
-    ops.narrate = async (state: FinishState) => {
-      try {
-        if (forgeKind === null) return;
-        // #1674 part 3 (H2): same rule as `openOrPromotePr` — an
-        // already-ready PR this run did not touch has nothing new to
-        // narrate, and rewriting its body here would destroy a human's
-        // edits exactly like the unconditional `updatePrBody` call this
-        // replaces did. `machine.ts` sets `state.status` from `promotePr`'s
-        // result before calling `narrate`, so this read sees this run's
-        // real outcome. Returning here also skips the narrative LLM call
-        // itself, not just the write — there is nothing worth spending on.
-        if (state.status === "already-ready" && !state.committedThisRun) return;
-        const input: FinishNarrativeInput = {
-          base: state.base,
-          model: models?.narrative,
-          timeoutMs: timeouts?.narrativeMs,
-        };
-        const outcome = await _finishOpsDeps.callOp(
-          { ...callCtx, sessionOverride: { role: "finish-narrative" } },
-          finishNarrativeOp,
-          input,
-        );
-        const ctx = await loadFinishPrContext({
-          state,
-          audit,
-          forge: forgeKind,
-          prBody,
-          outputDir: advisorOutputDir,
-          narrative: outcome.narrative,
-          title: outcome.title,
-        });
-        await updatePrBody(
-          {
-            workdir: state.workdir,
-            branch: state.branch,
-            title: buildFinishTitle(ctx),
-            body: buildFinishBody(ctx),
-            forge: forgeKind,
-          },
-          forge,
-        );
-      } catch (err) {
-        warn?.("nax-finish could not write the PR narrative", { error: err });
-      }
-    };
-  }
 
   return ops;
 }

@@ -9,7 +9,6 @@ import { makeSpawn, makeTestRuntime, opSelector, withDepsRestore, withTempDir } 
 import type { RetryStrategy } from "@/agents/retry";
 import { ParseValidationError } from "@/agents/retry";
 import type { Finding } from "@/finish";
-import { MAX_INCOMPLETE_ATTEMPTS, routeReview } from "@/finish";
 import type { FinishReviewInput } from "@/operations";
 import { finishReviewOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
@@ -207,8 +206,8 @@ describe("finishReviewOp.verify()", () => {
  * `callOp` returns a captured `exhaustedFallback` DIRECTLY (call.ts, the
  * `!rawOutput` branch) without running `runPostParse` — the only caller of
  * `op.verify`. `verify` is what fills `gaps` via `auditGaps`, so a fallback
- * carrying `gaps: []` reaches `routeReview` as `{findings: [], gaps: []}` and
- * routes **clean**: a review that never happened, recorded as a pass, and the
+ * carrying `gaps: []` would read as `{findings: [], gaps: []}`, i.e.
+ * **clean**: a review that never happened, recorded as a pass, and the
  * PR promoted on the strength of it. The fallback must therefore carry its own
  * gap rather than relying on a `verify` that will not run.
  */
@@ -232,21 +231,9 @@ describe("finishReviewOp exhausted-retry fallback", () => {
   test("the empty-output fallback cannot be routed as a clean review", () => {
     const fallback = exhausted(0);
     expect(fallback.findings).toEqual([]);
-    // The load-bearing assertion: non-empty gaps are what stop routeReview
-    // returning "clean" for a reviewer that produced nothing.
+    // The load-bearing assertion: non-empty gaps are what stop a reviewer that
+    // produced nothing from reading as clean.
     expect(fallback.gaps.length).toBeGreaterThan(0);
-  });
-
-  test("routeReview escalates rather than passing on that fallback", () => {
-    const fallback = exhausted(0);
-    // Second time around (incompleteAttempts at the cap) it must escalate, not approve.
-    const routed = routeReview("quality", fallback, {
-      rounds: 0,
-      reviewAttempts: 1,
-      fixAttempts: 0,
-      incompleteAttempts: MAX_INCOMPLETE_ATTEMPTS,
-    });
-    expect(routed.route).toBe("escalate");
   });
 
   test("an exhausted retry on non-empty output also carries the gap", () => {

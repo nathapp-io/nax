@@ -267,6 +267,7 @@ describe("buildCommitRound / commitRoundOutcome", () => {
   test("commitRoundOutcome: spec and quality phases produce 'fixed'", () => {
     expect(commitRoundOutcome("spec", "changed")).toBe("fixed");
     expect(commitRoundOutcome("quality", "changed")).toBe("fixed");
+    expect(commitRoundOutcome("review", "fix")).toBe("fixed");
   });
 
   test("commitRoundOutcome: gate and acceptance phases produce 'no-reviewer'", () => {

@@ -59,8 +59,6 @@ export interface ReviewLoopState {
   reReviewUsed: boolean;
   /** True once a review fix round committed. Triggers the acceptance re-check. */
   committedFixes: boolean;
-  /** HEAD the last completed review round saw. */
-  reviewedHead?: string;
   /** Branch reviewer's last title / summary for the PR. */
   title?: string;
   summary?: string;

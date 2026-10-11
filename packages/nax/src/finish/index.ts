@@ -15,16 +15,12 @@ export type { A3Hint } from "./a3-hints";
 export { _a3HintsDeps, readA3Hints } from "./a3-hints";
 export {
   type AdviceRef,
-  type ApprovalFacts,
-  applyJudgedAdvice,
   buildFinishAdvisorForPhase,
   createFinishAdvisor,
   type FinishAdvisor,
   type FinishAdvisorDeps,
-  type JudgedOutcome,
   type JudgedResult,
   judgeWithoutAdvisor,
-  runApproval,
 } from "./advise";
 export type { AuditTarget, FinishLedgerEntry, WriteResultOptions } from "./audit";
 export {
@@ -71,7 +67,7 @@ export {
   TELEGRAM_MAX_MESSAGE_CHARS,
   telegramCreds,
 } from "./notify";
-export type { FinishOps, FixOutcome, FixRequest, ReviewInputs, ReviewRequest } from "./ops";
+export type { FinishOps, FixOutcome, FixPhase, FixRequest, ReviewInputs } from "./ops";
 export type { FinishOpsDeps } from "./ops-impl";
 export { _finishOpsDeps, createFinishOps } from "./ops-impl";
 export type { FinishPhaseContext, FinishSkipReason } from "./phase";
@@ -110,19 +106,21 @@ export {
   WORKER_PROTOCOL,
   WORKER_PROTOCOL_MECHANICS,
 } from "./review";
+export { _reviewInputsDeps, loadReviewInputs, storiesFromText } from "./review-inputs";
 export { isFinishReviewShape, MISSING_REVIEW, parseFinishReviewReply } from "./review-json";
+export type { ReviewLoopDeps } from "./review-loop";
+export { MAX_ADVISE_ROUNDS, runReviewLoop } from "./review-loop";
 export type { ReviewRoundResult } from "./review-round";
 export { runReviewRound } from "./review-round";
-export type { ReviewOutcome, RoutedReview } from "./route";
 export {
+  acceptanceFact,
   gateCommitRoute,
-  MAX_ADVISE_ROUNDS,
+  gateFacts,
   MAX_FIX_ATTEMPTS,
-  MAX_INCOMPLETE_ATTEMPTS,
+  MAX_REVIEW_ROUNDS,
   partitionTestFiles,
   routeAcceptance,
   routeQualityGates,
-  routeReview,
 } from "./route";
 export type { FinishPhaseState, FinishState, FinishStateInit, FinishStatus, ReviewLoopState } from "./state";
 export { createFinishState, deserializeFinishState, serializeFinishState } from "./state";
