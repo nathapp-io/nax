@@ -311,7 +311,7 @@ export const NAX_CONFIG_REFUSAL =
  */
 function firstOwnedHit(root: string, candidates: readonly OwnedBashCandidate[]): NaxOwnedKind | undefined {
   for (const candidate of candidates) {
-    if (isNaxConfigFile(root, realOrRaw(candidate.lexical))) return "config";
+    if (isNaxConfigFile(root, candidate.lexical)) return "config";
     const kind = candidate.rel === null ? undefined : naxOwnedKind(candidate.rel);
     if (kind !== undefined) return kind;
   }
