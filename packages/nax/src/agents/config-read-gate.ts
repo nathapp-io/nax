@@ -11,12 +11,13 @@ export const NAX_CONFIG_READ_TOOLS: ReadonlySet<string> = new Set([
 ]);
 
 export const NAX_CONFIG_WRITE_REFUSAL =
-  "is nax configuration that only Read, Grep and Glob may open and no tool may modify. " +
+  "is nax configuration; access is refused read-only for non-mutating tools. " +
   "`quality.commands` and `acceptance.command` run through a shell without passing the permission gate, " +
   "so editing this file could run an ungated command on the next run.";
 
-export const NAX_CONFIG_READ_DISABLED_SUFFIX =
-  " -- reads are disabled because config contains a secret; run `nax doctor` for details.";
+export const NAX_CONFIG_READ_DISABLED_SUFFIX = " -- reads are disabled for this dispatch.";
+export const NAX_CONFIG_SECRET_READ_DISABLED_REASON =
+  "reads are disabled because config contains a secret; run `nax doctor` for details";
 
 function isConfigRel(rel: string): boolean {
   const segments = rel.split("/");
@@ -41,7 +42,11 @@ function configCandidatesOnly(root: string, candidates: readonly OwnedBashCandid
 }
 
 /** Wrap the base owned-path policy with dispatch-specific config read access. */
-export function createConfigReadGatePolicy(base: OwnedPathsPolicy, configReadable: boolean): OwnedPathsPolicy {
+export function createConfigReadGatePolicy(
+  base: OwnedPathsPolicy,
+  configReadable: boolean,
+  disabledReason?: string,
+): OwnedPathsPolicy {
   return {
     ...base,
     configRefusal: (root, resolved) => {
@@ -49,7 +54,8 @@ export function createConfigReadGatePolicy(base: OwnedPathsPolicy, configReadabl
       if (!isNaxConfigFile(root, canonical)) return base.configRefusal(root, resolved);
       if (configReadable) return undefined;
       const refusal = base.configRefusal(root, canonical);
-      return refusal === undefined ? undefined : `${refusal}${NAX_CONFIG_READ_DISABLED_SUFFIX}`;
+      const detail = disabledReason === undefined ? NAX_CONFIG_READ_DISABLED_SUFFIX : ` -- ${disabledReason}.`;
+      return refusal === undefined ? undefined : `${refusal}${detail}`;
     },
     writeRefusal: (tool, rel, ctx) => {
       if (!isConfigRel(rel)) return base.writeRefusal(tool, rel, ctx);

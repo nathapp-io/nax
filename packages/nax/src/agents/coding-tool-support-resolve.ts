@@ -44,7 +44,10 @@ import { toolAuditDir } from "../config/paths";
 import { type ResolvedPermissions, resolvePermissions } from "../config/permissions";
 import { type QualityCommandSpec, runQualityCommand } from "../quality";
 import { packageOverrideKey, packageWorkdir } from "../runtime/packages";
-import { createConfigReadGatePolicy } from "./config-read-gate";
+import {
+  createConfigReadGatePolicy,
+  NAX_CONFIG_SECRET_READ_DISABLED_REASON,
+} from "./config-read-gate";
 import { resolvePackageName } from "./exec-package-name";
 import { naxOwnedPathsPolicy } from "./nax-owned-writes";
 import { naxProtectedPaths } from "./nax-protected-paths";
@@ -73,7 +76,7 @@ export type ResolveCodingToolSupportOptions = Pick<
   | "askResolver"
   | "commandShadow"
   | "abortSignal"
-> & { bashApproval?: "raw" | "gated" };
+>;
 
 /** The args literal `resolveCodingToolSupport` ends up calling the sync seam with. */
 type ResolveSupportArgs = Parameters<typeof buildCodingToolSupport>[0];
@@ -464,14 +467,7 @@ export async function resolveCodingToolSupport(
   options: ResolveCodingToolSupportOptions,
 ): Promise<CodingToolSupport | undefined> {
   const declared = options.declaredTools ?? [];
-  const permissionConfig =
-    options.bashApproval === undefined
-      ? options.config
-      : {
-          ...options.config,
-          execution: { ...options.config?.execution, bashApproval: options.bashApproval },
-        };
-  const resolved = resolvePermissions(permissionConfig, options.pipelineStage ?? "run");
+  const resolved = resolvePermissions(options.config, options.pipelineStage ?? "run");
   // PR1 (single-frame redesign, #2066 residual): the declared-command map and
   // the quality-derived fields around it resolve from the STORY'S PACKAGE
   // config when one is known — see loadPackageEffectiveConfig.
@@ -543,7 +539,13 @@ export async function resolveCodingToolSupport(
     runDeclaredCommand: _codingToolSupportDeps.runDeclaredCommand,
     interceptor: options.commandInterceptor,
     protectedPaths: _codingToolSupportDeps.protectedPaths(),
-    ownedPaths: createConfigReadGatePolicy(_codingToolSupportDeps.ownedPaths, configReadable),
+    ownedPaths: createConfigReadGatePolicy(
+      _codingToolSupportDeps.ownedPaths,
+      configReadable,
+      configScanClean
+        ? "config reads are unavailable while Bash approval is gated or escalated"
+        : NAX_CONFIG_SECRET_READ_DISABLED_REASON,
+    ),
     stripEnvVars: fields.stripEnvVars,
     sessionName,
     header,

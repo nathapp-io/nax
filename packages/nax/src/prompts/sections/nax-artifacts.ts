@@ -49,6 +49,7 @@ need its contents, read it with the \`Read\` tool; shell commands that name it m
   return `${section}\n\nThe project's declared commands (test, testScoped, lint, typecheck, build, ...) are in
 \`.nax/config.json\` under \`quality.commands\`. In a monorepo, \`.nax/mono/<package>/config.json\`
 overrides them per key for that package: a key set there wins, every other key comes from the
-root file. Read them with the \`Read\` tool. Do not modify either file; nax config cannot be changed
-from inside a run.`;
+root file. If config reads are available in this dispatch, read them with the \`Read\` tool; gated or
+escalated Bash dispatches may keep those reads closed. Do not modify either file; nax config cannot
+be changed from inside a run.`;
 }

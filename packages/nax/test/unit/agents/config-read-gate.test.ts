@@ -90,13 +90,20 @@ describe("US-003 createConfigReadGatePolicy — configRefusal", () => {
     expect(policy.configRefusal(root, join(root, ".nax", "mono", "apps", "api", "config.json"))).toBeUndefined();
   });
 
-  test("US-003 AC2: a closed gate appends the read-disabled suffix, which names nax doctor", async () => {
-    const { NAX_CONFIG_READ_DISABLED_SUFFIX } = await gateModule();
+  test("US-003 AC2: a closed gate defaults to a dispatch-neutral read-disabled reason", async () => {
+    const { NAX_CONFIG_READ_DISABLED_SUFFIX, NAX_CONFIG_SECRET_READ_DISABLED_REASON, createConfigReadGatePolicy } =
+      await gateModule();
     const policy = await gate(false);
-    expect(policy.configRefusal(root, join(root, ".nax", "config.json"))).toBe(
-      `${NAX_CONFIG_REFUSAL}${NAX_CONFIG_READ_DISABLED_SUFFIX}`,
+    const refusal = policy.configRefusal(root, join(root, ".nax", "config.json"));
+    expect(refusal).toBe(`${NAX_CONFIG_REFUSAL}${NAX_CONFIG_READ_DISABLED_SUFFIX}`);
+    expect(refusal).not.toContain("secret");
+    expect(refusal).not.toContain("nax doctor");
+    const secretPolicy = createConfigReadGatePolicy(
+      naxOwnedPathsPolicy,
+      false,
+      NAX_CONFIG_SECRET_READ_DISABLED_REASON,
     );
-    expect(NAX_CONFIG_READ_DISABLED_SUFFIX).toContain("nax doctor");
+    expect(secretPolicy.configRefusal(root, join(root, ".nax", "config.json"))).toContain("nax doctor");
   });
 
   test("US-003 AC3: a closed gate leaves an ordinary source path alone", async () => {
