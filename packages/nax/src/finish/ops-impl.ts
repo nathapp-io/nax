@@ -144,7 +144,7 @@ export function createFinishOps(deps: FinishOpsDeps): FinishOps {
     async fix(phase: FinishPhase, req: FixRequest) {
       const { state, findings, failing, gateOutput, acceptanceOutput } = req;
       const input: FinishFixInput = {
-        phase,
+        phase: phase === "spec" || phase === "quality" ? "review" : phase,
         workdir: state.workdir,
         findings,
         failing,

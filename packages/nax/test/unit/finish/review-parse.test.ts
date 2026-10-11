@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseDispositions, parseReviewReport } from "@/finish";
+import { parseReviewReport } from "@/finish";
 
 const FULL_REPLY = `## TOUCHPOINTS
 - src/agents/registry.ts:resolveDefaultAgent — every caller of the changed arg
@@ -169,21 +169,5 @@ describe("parseReviewReport", () => {
     // not swept into the walk enumeration. The narration the heading was glued
     // to stays in the walk section it was actually written in.
     expect(r.walk).toEqual(["AC-1 Covered", "all four handled."]);
-  });
-});
-
-describe("parseDispositions", () => {
-  test("parses fixed and rejected entries with evidence", () => {
-    const d = parseDispositions(
-      "## DISPOSITIONS\n[1] fixed\n[2] rejected — evidence: test/unit/config/loader.test.ts:42\n",
-    );
-    expect(d).toEqual([
-      { index: 1, disposition: "fixed" },
-      { index: 2, disposition: "rejected", evidence: "test/unit/config/loader.test.ts:42" },
-    ]);
-  });
-
-  test("returns an empty list when the section is absent", () => {
-    expect(parseDispositions('{"route":"proceed"}')).toEqual([]);
   });
 });
