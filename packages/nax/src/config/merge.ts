@@ -11,6 +11,21 @@ import type { NaxConfig } from "./schema";
 
 type NativeConfig = NonNullable<NaxConfig["agent"]>["native"];
 
+type TranscriptAuditConfig = NonNullable<NonNullable<NaxConfig["agent"]>["transcriptAudit"]>;
+
+/** Field-wise like usageAudit (package wins, root fills the gaps); a helper to keep mergePackageConfig's complexity flat. */
+function mergeTranscriptAudit(
+  root: TranscriptAuditConfig | undefined,
+  override: TranscriptAuditConfig | undefined,
+): TranscriptAuditConfig {
+  const dir = override?.dir ?? root?.dir;
+  return {
+    enabled: override?.enabled ?? root?.enabled ?? false,
+    maxRetained: override?.maxRetained ?? root?.maxRetained ?? 200,
+    ...(dir !== undefined ? { dir } : {}),
+  };
+}
+
 /** A package's native field overrides must preserve unrelated root settings. */
 function mergeNativeConfig(root: NativeConfig, override: NativeConfig): NativeConfig {
   return override == null ? root : { ...root, ...override };
@@ -35,7 +50,7 @@ function mergeModels(rootModels: NaxConfig["models"], overrideModels: NaxConfig[
  * Merge a package-level partial config override into a root config.
  *
  * Mergeable sections:
- * - agent: protocol, maxInteractionTurns, promptAudit (deep), usageAudit (deep)
+ * - agent: protocol, maxInteractionTurns, promptAudit (deep), usageAudit (deep), transcriptAudit (deep)
  * - models: per-agent model tier mappings (deep)
  * - routing: strategy, llm (deep)
  * - execution: smartTestRunner, regressionGate (deep), flakeDetection (deep),
@@ -94,6 +109,7 @@ export function mergePackageConfig(root: NaxConfig, packageOverride: Partial<Nax
                   ? { dir: root.agent.usageAudit.dir }
                   : {}),
             },
+            transcriptAudit: mergeTranscriptAudit(root.agent?.transcriptAudit, packageOverride.agent.transcriptAudit),
           }
         : root.agent,
     models: packageOverride.models != null ? mergeModels(root.models, packageOverride.models) : root.models,

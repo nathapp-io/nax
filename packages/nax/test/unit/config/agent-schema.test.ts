@@ -72,6 +72,20 @@ describe("AgentConfigSchema", () => {
     expect(result.agent?.usageAudit?.dir).toBe(".nax/usage");
   });
 
+  // #2453: native transcript archive, opt-in like usageAudit.
+  test("agent.transcriptAudit defaults to disabled, no dir, 200 retained", () => {
+    const result = NaxConfigSchema.parse({});
+    expect(result.agent?.transcriptAudit?.enabled).toBe(false);
+    expect(result.agent?.transcriptAudit?.dir).toBeUndefined();
+    expect(result.agent?.transcriptAudit?.maxRetained).toBe(200);
+  });
+
+  test("agent.transcriptAudit fills defaults when supplied as an empty object and rejects maxRetained < 1", () => {
+    const result = NaxConfigSchema.parse({ agent: { transcriptAudit: {} } });
+    expect(result.agent?.transcriptAudit).toEqual({ enabled: false, maxRetained: 200 });
+    expect(() => NaxConfigSchema.parse({ agent: { transcriptAudit: { maxRetained: 0 } } })).toThrow();
+  });
+
   test("accepts a fully populated agent block", () => {
     const raw = {
       agent: {

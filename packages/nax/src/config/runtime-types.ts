@@ -576,6 +576,7 @@ export type {
   GenerateConfig,
   IdleWatchdogConfig,
   PromptAuditConfig,
+  TranscriptAuditConfig,
   UsageAuditConfig,
 } from "./runtime-types-agent";
 export type { CuratorConfig, CuratorRetentionConfig, CuratorThresholds } from "./runtime-types-curator";

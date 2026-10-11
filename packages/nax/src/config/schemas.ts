@@ -350,6 +350,7 @@ export const NaxConfigSchema = z
       maxInteractionTurns: 20,
       promptAudit: { enabled: false },
       usageAudit: { enabled: false },
+      transcriptAudit: { enabled: false, maxRetained: 200 },
       fallback: { enabled: false, map: {}, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: true },
       acp: {
         promptRetries: 0,

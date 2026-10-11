@@ -210,6 +210,15 @@ const UsageAuditConfigSchema = z.object({
   dir: z.string().optional(),
 });
 
+const TranscriptAuditConfigSchema = z.object({
+  /** When true, every native session transcript is archived on close. Default: false. */
+  enabled: z.boolean().default(false),
+  /** Archive root. Absolute, or used as given. Defaults to <outputDir>/transcript-audit when absent. */
+  dir: z.string().optional(),
+  /** Archived transcripts kept per feature directory, oldest pruned first. Default: 200. */
+  maxRetained: z.number().int().min(1).default(200),
+});
+
 // { agent, model } mirrors ConfiguredModelObjectSchema (schemas-model.ts): `model`
 // is a tier name or a literal "provider/model" id, discriminated at runtime by
 // resolveFallbackDispatchTarget (fallback-model-identity.ts) — the schema itself
@@ -400,6 +409,7 @@ export const AgentConfigSchema = z.object({
   maxInteractionTurns: z.number().int().min(1).max(100).default(20),
   promptAudit: PromptAuditConfigSchema.default({ enabled: false }),
   usageAudit: UsageAuditConfigSchema.default({ enabled: false }),
+  transcriptAudit: TranscriptAuditConfigSchema.default({ enabled: false, maxRetained: 200 }),
   fallback: AgentFallbackConfigSchema.default({
     enabled: false,
     map: {},

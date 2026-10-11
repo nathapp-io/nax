@@ -320,6 +320,13 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "agent.usageAudit.enabled": "Enable per-round-trip usage audit files (default: false)",
   "agent.usageAudit.dir":
     "Directory to write usage audit files into. Absolute path, or relative to workdir (default: <outputDir>/usage, i.e. ~/.nax/<project>/usage unless outputDir overrides it)",
+  "agent.transcriptAudit":
+    "Transcript audit — archive a redacted copy of every native session's transcript on close, clean or failed (nax#2453). The live transcript is deleted or retained exactly as before.",
+  "agent.transcriptAudit.enabled": "Enable the native transcript archive (default: false)",
+  "agent.transcriptAudit.dir":
+    "Archive root; each feature gets a subdirectory. Absolute path, used as given (default: <outputDir>/transcript-audit, i.e. ~/.nax/<project>/transcript-audit unless outputDir overrides it)",
+  "agent.transcriptAudit.maxRetained":
+    "Archived transcripts kept per feature directory, oldest pruned first (default: 200)",
   "agent.spinBreaker": "Repetition breaker — ends a turn that repeats tool calls with no progress (nax#2013)",
   "agent.spinBreaker.enabled": "Enable the repetition breaker (default: true)",
   "agent.spinBreaker.nudgeAfterRepeats": "Repeats since the last new call before the first in-band nudge (default: 25)",
