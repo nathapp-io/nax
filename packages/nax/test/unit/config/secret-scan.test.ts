@@ -9,8 +9,8 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { withTempDir } from "@test/helpers";
-import { scanConfigSecrets } from "@/config";
 import type { ConfigSecretFinding, ConfigSecretKind, ConfigSecretScan } from "@/config";
+import { scanConfigSecrets } from "@/config";
 
 /** Write a raw config fixture at a repo-root-relative posix path. */
 function writeConfig(root: string, rel: string, contents: string): void {
@@ -108,10 +108,10 @@ describe("scanConfigSecrets — literal headers", () => {
     });
   });
 
-  test("AC4: does not flag a Bearer header that references ${OPENROUTER_KEY}", async () => {
+  test("AC4: does not flag a Bearer header that references \u0024{OPENROUTER_KEY}", async () => {
     await withTempDir(async (root) => {
       writeJsonConfig(root, ROOT_CONFIG, {
-        reporters: { webhook: { headers: { Authorization: "Bearer ${OPENROUTER_KEY}" } } },
+        reporters: { webhook: { headers: { Authorization: "Bearer \u0024{OPENROUTER_KEY}" } } },
       });
 
       const scan = await scanConfigSecrets(root);
@@ -203,14 +203,12 @@ describe("scanConfigSecrets — literal headers", () => {
   test("flags a header value mixing a reference with a literal token as token-shape", async () => {
     await withTempDir(async (root) => {
       writeJsonConfig(root, ROOT_CONFIG, {
-        reporters: { webhook: { headers: { Authorization: "Bearer ${KEY} sk-abcdefghijklmnopqrstu" } } },
+        reporters: { webhook: { headers: { Authorization: "Bearer \u0024{KEY} sk-abcdefghijklmnopqrstu" } } },
       });
 
       const scan = await scanConfigSecrets(root);
 
-      expect(scan.findings).toEqual([
-        finding(ROOT_CONFIG, "/reporters/webhook/headers/Authorization", "token-shape"),
-      ]);
+      expect(scan.findings).toEqual([finding(ROOT_CONFIG, "/reporters/webhook/headers/Authorization", "token-shape")]);
     });
   });
 });
