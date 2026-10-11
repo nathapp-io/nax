@@ -173,7 +173,7 @@ export function createFinishOps(deps: FinishOpsDeps): FinishOps {
       // re-staging files — even when every fix loop above finished clean, so
       // `commitAndPush` here can commit real content that none of those three
       // sites ever saw. `state.committedThisRun` must reflect that BEFORE
-      // `openOrPromotePr` and `narrate` (both called below/after this) read
+      // `openOrPromotePr` (called below) reads
       // it, or a run that pushed a real commit still gets skipped for the
       // body write it earned.
       const { committed } = await commitAndPush(state.workdir, state.branch, PROMOTE_MESSAGE(state.feature));

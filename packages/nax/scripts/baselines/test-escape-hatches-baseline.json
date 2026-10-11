@@ -283,12 +283,6 @@
     "test/unit/finish/audit.test.ts": {
       "looseCast": 2
     },
-    "test/unit/finish/escalate.test.ts": {
-      "looseCast": 1
-    },
-    "test/unit/finish/review-prompt.test.ts": {
-      "looseCast": 1
-    },
     "test/unit/finish/state.test.ts": {
       "looseCast": 1
     },
@@ -550,9 +544,6 @@
     "test/unit/operations/plan-refine.test.ts": {
       "looseCast": 1
     },
-    "test/unit/operations/finish-narrative.test.ts": {
-      "ratchetAllow": 2
-    },
     "test/unit/operations/plan-interactive.test.ts": {
       "looseCast": 3
     },
@@ -582,9 +573,6 @@
     },
     "test/unit/operations/build-hop-callback-stale-retry.test.ts": {
       "looseCast": 3
-    },
-    "test/unit/operations/finish-review.test.ts": {
-      "looseCast": 1
     },
     "test/unit/operations/mutation-check-diff-scope.test.ts": {
       "looseCast": 4

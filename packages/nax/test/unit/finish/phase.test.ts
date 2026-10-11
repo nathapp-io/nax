@@ -339,41 +339,6 @@ describe("runFinishPhase", () => {
   });
 });
 
-test("an undelivered escalation is surfaced on the finish status entry", async () => {
-  const restore = { ..._finishPhaseDeps };
-  const updates: Array<Record<string, unknown>> = [];
-  _finishPhaseDeps.loadFinishContext = async () => proceedContext();
-  _finishPhaseDeps.detectForge = async () => "github";
-  _finishPhaseDeps.runFinishMachine = async () => ({
-    feature: "f",
-    status: "draft",
-    reason: "needs a human",
-    deliveryError: "gh pr comment failed",
-  });
-  // This test's config carries no `interaction.plugin: "telegram"`, so
-  // `telegramCreds()` (src/finish/notify.ts) falls through to ambient
-  // NAX_TELEGRAM_TOKEN / TELEGRAM_BOT_TOKEN / NAX_TELEGRAM_CHAT_ID env vars.
-  // test/preload.ts scrubs those and sentinels the underlying fetch as a
-  // global safety net, but this test must not depend on that for its own
-  // hermeticity — mock the seam directly, like every sibling test above does.
-  _finishPhaseDeps.sendTelegramNotify = async () => false;
-  const ctx = {
-    ...makeCtx(),
-    statusWriter: {
-      setPostRunPhase: (_phase: "finish", update: Record<string, unknown>) => {
-        updates.push(update);
-      },
-    },
-  };
-  try {
-    await runFinishPhase(ctx);
-    const terminal = updates[updates.length - 1];
-    expect(terminal.deliveryError).toBe("gh pr comment failed");
-  } finally {
-    Object.assign(_finishPhaseDeps, restore);
-  }
-});
-
 describe("runFinishPhase — gate skip observability (#1671)", () => {
   test("a failing clause (not disabled) logs the reason and records a skipped status entry", async () => {
     const updates: Array<Record<string, unknown>> = [];

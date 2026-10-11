@@ -83,28 +83,12 @@ export {
   updatePrBody,
 } from "./pr";
 export {
-  parseTitle,
   resolveTitle,
   sanitizeTitle,
-  TITLE_CLOSE_TAG,
   TITLE_MAX_CHARS,
-  TITLE_OPEN_TAG,
 } from "./pr-title";
 export type { ApprovalAction, Resolution } from "./resolve";
 export { approvalFacts, computeFacts, draftReason, isClean, resolve } from "./resolve";
-export {
-  auditGaps,
-  buildFixPrompt,
-  buildReviewPrompt,
-  FINDING_BLOCK_SHAPE,
-  parseDispositions,
-  parseReviewReport,
-  QUALITY_REVIEW_DIMENSIONS,
-  SPEC_REVIEW_DIMENSIONS,
-  validateDispositions,
-  WORKER_PROTOCOL,
-  WORKER_PROTOCOL_MECHANICS,
-} from "./review";
 export { _reviewInputsDeps, loadReviewInputs, storiesFromText } from "./review-inputs";
 export { isFinishReviewShape, MISSING_REVIEW, parseFinishReviewReply } from "./review-json";
 export type { ReviewLoopDeps } from "./review-loop";
@@ -139,6 +123,4 @@ export type {
   QualityGateResult,
   ResolutionFacts,
   ReviewLens,
-  ReviewReport,
-  Touchpoint,
 } from "./types";

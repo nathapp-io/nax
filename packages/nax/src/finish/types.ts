@@ -46,28 +46,6 @@ export interface FinishReviewOutput {
   missing?: true;
 }
 
-/** One external definition the reviewer says it opened before judging. */
-export interface Touchpoint {
-  /** Repo-relative path, or the literal `none` sentinel. */
-  path: string;
-  /** Symbol or line after the final `:`, when the reviewer gave one. */
-  symbol?: string;
-  /** The reviewer's stated reason for opening it (or for there being none). */
-  note: string;
-}
-
-/** A reviewer reply, parsed. Sections are reported separately from their content
- * so an *absent* section is distinguishable from an *empty* one — only the first
- * is a reviewer that skipped the obligation. */
-export interface ReviewReport {
-  findings: Finding[];
-  touchpoints: Touchpoint[];
-  walk: string[];
-  sawNoFindings: boolean;
-  sawTouchpointsSection: boolean;
-  sawWalkSection: boolean;
-}
-
 /** What the fix node did with one finding it was handed. */
 export interface FindingDisposition {
   /** 1-based index into the findings list the fix prompt numbered. */
@@ -77,31 +55,6 @@ export interface FindingDisposition {
   evidence?: string;
   /** Set by `commit_<phase>` when the cited evidence path does not exist. */
   evidenceMissing?: boolean;
-}
-export interface ReviewVerdict {
-  /**
-   * Neither `clean` nor `reprompt` is a model-produced route.
-   *
-   * `clean` — `parse` rewrites `proceed` with zero findings, so the graph can
-   * skip the fix node instead of prompting an agent to "apply fixes" for nothing.
-   *
-   * `reprompt` — `parse` could not read JSON out of the reply at all. Returning
-   * this rather than throwing is deliberate: a throw fails the acp node and kills
-   * the whole flow with no result file, bypassing the `escalate` sink that exists
-   * to report exactly this kind of dead end.
-   */
-  route: "proceed" | "escalate" | "clean";
-  findings: Finding[];
-  escalationReason?: string;
-  /** Touchpoints the reviewer listed; read by the audit gate in `routeReviewAndRecord`. */
-  touchpoints?: Touchpoint[];
-  /** The per-AC or per-function walk lines the reviewer emitted. */
-  walk?: string[];
-  /** Whether the section was present at all — absent and empty are different failures. */
-  sawTouchpointsSection?: boolean;
-  sawWalkSection?: boolean;
-  /** Set on a `fix_<phase>` output: what the fixer did with each finding it was handed. */
-  dispositions?: FindingDisposition[];
 }
 /** Wall-clock budgets, forwarded from `finish.timeouts` by `runFinishPhase`. */
 export interface FinishTimeouts {
@@ -290,13 +243,6 @@ export interface FinishResult {
   url?: string;
   /** Open findings on a draft PR. */
   findings?: Finding[];
-  /**
-   * Set when the escalation could not be delivered to its channel (forge
-   * comment failed, remote unrecognised). The result file is written before
-   * delivery is attempted, so an undelivered escalation is still reported
-   * rather than lost.
-   */
-  deliveryError?: string;
   /**
    * Every fix round the flow ran, on *all* terminal statuses — not just
    * escalations. A successful finish that took four rounds to get there is the

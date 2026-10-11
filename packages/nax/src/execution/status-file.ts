@@ -67,8 +67,6 @@ export interface FinishPhaseStatus {
   url?: string;
   /** Pre-A4 only, never written: why finish stopped when `result` was "escalated". */
   escalationReason?: string;
-  /** Set when an escalation could not be delivered to its channel. */
-  deliveryError?: string;
   /**
    * Why the phase was skipped without running — the failing gate clause
    * (#1671: "enabled" | "completed" | "failed" | "paused" | "branch"), the

@@ -64,7 +64,7 @@ export interface FinishPrContext {
   narrative?: string;
   /**
    * Resolved conventional-commit PR title. Always set — `resolveTitle` falls
-   * back to `feat: <feature>` when the narrative node produced nothing usable.
+   * back to `feat: <feature>` when the branch review produced nothing usable.
    */
   title: string;
   rounds: FinishRound[];
@@ -99,9 +99,9 @@ export interface LoadPrContextArgs {
   audit: AuditTarget;
   /** The repo's forge, for template discovery. Absent → no template section. */
   forge?: ForgeKind;
-  /** The narrative op's prose; falls back to the spec summary when absent. */
+  /** The branch review's summary prose; falls back to the spec summary when absent. */
   narrative?: string;
-  /** The narrative op's conventional-commit subject; falls back to `feat: <feature>`. */
+  /** The branch review's conventional-commit subject; falls back to `feat: <feature>`. */
   title?: string;
   /** `FinishPrBodySettings` from `../types` — do not redeclare the shape (D4.8). */
   prBody?: FinishPrBodySettings;

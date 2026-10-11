@@ -107,7 +107,7 @@ export interface FinishState {
   /**
    * True once any phase's fix loop produced a commit during this run.
    *
-   * The signal `openOrPromotePr` and `narrate` gate a PR title/body rewrite on
+   * The signal `openOrPromotePr` gates a PR title/body rewrite on
    * (#1674 part 3): a run that only re-verified an already-green branch has
    * nothing new to describe, and must leave a human's edited description
    * alone. Per-phase `fixAttempts` does not answer this — it increments every

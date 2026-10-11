@@ -7,7 +7,7 @@
  * live where a test can reach them.
  */
 import { describe, expect, test } from "bun:test";
-import { parseTitle, resolveTitle, sanitizeTitle, TITLE_MAX_CHARS } from "@/finish";
+import { resolveTitle, sanitizeTitle, TITLE_MAX_CHARS } from "@/finish";
 
 describe("sanitizeTitle", () => {
   test("keeps a well-formed conventional-commit subject unchanged", () => {
@@ -89,29 +89,6 @@ describe("sanitizeTitle", () => {
   test("returns undefined for a non-string, and never throws", () => {
     expect(sanitizeTitle(undefined)).toBeUndefined();
     expect(sanitizeTitle(42 as unknown as string)).toBeUndefined(); // test-ratchet-allow: as-unknown-as
-  });
-});
-
-describe("parseTitle", () => {
-  test("reads the sentinel out of a reply that also carries prose", () => {
-    const reply = "Let me look at the diff.\n<title>fix: repair the gate</title>\n<narrative>Prose.</narrative>";
-    expect(parseTitle(reply)).toBe("fix: repair the gate");
-  });
-
-  test("takes the last opening tag, so narrating the tag does not win", () => {
-    expect(parseTitle("I'll put it in <title> tags.\n<title>fix: real one</title>")).toBe("fix: real one");
-  });
-
-  test("recovers a title when the closing tag is missing", () => {
-    expect(parseTitle("<title>fix: repair the gate")).toBe("fix: repair the gate");
-  });
-
-  test("returns undefined when the sentinel is absent entirely", () => {
-    expect(parseTitle("fix: repair the gate")).toBeUndefined();
-  });
-
-  test("returns undefined for an empty sentinel", () => {
-    expect(parseTitle("<title>   </title>")).toBeUndefined();
   });
 });
 

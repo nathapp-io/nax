@@ -279,7 +279,6 @@ function recordTerminal(ctx: FinishPhaseContext, result: FinishResult | null, pa
     ...(result?.outcome ? { outcome: result.outcome } : {}),
     ...(result?.reason ? { reason: result.reason } : {}),
     ...(result?.url ? { url: result.url } : {}),
-    ...(result?.deliveryError ? { deliveryError: result.deliveryError } : {}),
   });
   if (result) logRunSummary(result);
 }
