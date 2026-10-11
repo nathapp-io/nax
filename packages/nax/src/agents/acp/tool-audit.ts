@@ -12,6 +12,7 @@ import {
   type ToolAuditHeader,
   type ToolAuditSink,
   type ToolCallRecord,
+  type ToolSurfaceRecord,
   type TurnEvent,
 } from "@nathapp/nax-agent";
 
@@ -45,11 +46,18 @@ export function createAuditRecorder(
   sessionName: string,
   target: ToolAuditTarget | undefined,
   now: () => Date = () => new Date(),
+  /** The finalized MCP tool surface (nax#2410 D4); stamped into the file at flush. */
+  surface?: ToolSurfaceRecord,
 ): AuditRecorder {
   const sink: ToolAuditSink =
     target === undefined
       ? createNoOpToolAuditSink()
-      : createToolAuditSink({ dir: target.dir, sessionName, header: target.header });
+      : createToolAuditSink({
+          dir: target.dir,
+          sessionName,
+          header: target.header,
+          ...(surface !== undefined ? { toolSurface: surface } : {}),
+        });
   const storyId = target?.header.storyId;
   const pending = new Map<string, Pending>();
 

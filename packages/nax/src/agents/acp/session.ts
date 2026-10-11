@@ -37,6 +37,8 @@ import { AWAITING_HUMAN_BEAT_MS, createAskPort } from "./ask-port";
 import { backendOptions, DEFAULT_CLOSE_DEADLINE_MS, openContext, transcriptStoreFor } from "./open-context";
 import type { StreamContext } from "./stream-bridge";
 import { type AuditRecorder, createAuditRecorder } from "./tool-audit";
+import { finalizeAcpSurface } from "./provider-embedder";
+import { acpProfileFor } from "./profile-map";
 import { createTurnSlot, type TurnSlot } from "./turn-slot";
 
 const STAGE = "acp";
@@ -158,6 +160,7 @@ async function openBackend(base: OpenBase, resume: TranscriptDoc | undefined): P
   return backend.open(
     openContext({
       name: base.name,
+      agent: base.agent,
       opts: base.opts,
       store: base.store,
       resume,
@@ -239,7 +242,11 @@ export async function createSession(name: string, agent: AcpAgentName, opts: Ope
   const slot = createTurnSlot();
   const closer = new AbortController();
   const unlinkRun = linkRunSignal(opts.signal, closer);
-  const audit = createAuditRecorder(name, opts.toolAudit);
+  // nax#2444 D3/D4: finalize once — the audit record and the open context agree
+  // on the same capability decision and surface (pure, so recomputed in openContext).
+  const profile = acpProfileFor(opts.resolvedPermissions.mode, opts.declaredTools);
+  const delivery = finalizeAcpSurface(agent, opts, profile);
+  const audit = createAuditRecorder(name, opts.toolAudit, () => new Date(), delivery.surface);
   const base: OpenBase = {
     name,
     agent,

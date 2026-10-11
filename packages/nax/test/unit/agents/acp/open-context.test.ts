@@ -120,6 +120,7 @@ describe("openContext (spec §6.1 step 2)", () => {
     const closer = new AbortController();
     const ctx = openContext({
       name: "nax-s",
+      agent: "claude",
       opts: OPTS,
       store,
       resume: undefined,
@@ -148,6 +149,7 @@ describe("openContext (spec §6.1 step 2)", () => {
     const doc = { savedAt: "2026-10-07T00:00:00Z", messages: [] };
     const ctx = openContext({
       name: "nax-s",
+      agent: "claude",
       opts: { ...OPTS, resolvedPermissions: { mode: "approve-reads", bashApproval: "raw" }, toolAudit: undefined },
       store: createMemoryTranscriptStore(),
       resume: doc,
@@ -158,6 +160,74 @@ describe("openContext (spec §6.1 step 2)", () => {
     expect(ctx.profile).toBe("read");
     expect(ctx.resume).toEqual({ doc });
     expect(ctx.metadata).toEqual({});
+  });
+});
+
+describe("openContext: provider-tool delivery (nax#2444)", () => {
+  const PROVIDER_TOOL: never = {
+    name: "context7__query-docs",
+    description: "d",
+    inputSchema: { type: "object", properties: {} },
+    approval: "never",
+    run: async () => ({ content: "ok" }),
+  } as never;
+
+  test("claude with provider tools: the context opens with them, profile narrowed by the declaration", () => {
+    const slot = createTurnSlot();
+    const ctx = openContext({
+      name: "nax-s",
+      agent: "claude",
+      opts: {
+        ...OPTS,
+        declaredTools: ["Read", "Glob", "Grep"],
+        providerTools: [PROVIDER_TOOL],
+        toolSurface: {
+          stage: "review",
+          declaredTools: ["Read", "Glob", "Grep"],
+          advertised: [{ providerId: "context7", names: ["query-docs"] }],
+          withheld: [],
+          skippedProviders: [],
+          failures: [],
+        },
+      },
+      store: createMemoryTranscriptStore(),
+      resume: undefined,
+      asks: createAskPort(slot),
+      slot,
+      openSignal: new AbortController().signal,
+    });
+    expect(ctx.tools.map((tool) => tool.name)).toEqual(["context7__query-docs"]);
+    expect(ctx.profile).toBe("read");
+  });
+
+  test("codex with provider tools: degrades to a tool-less open (Review Focus 4)", () => {
+    const slot = createTurnSlot();
+    const ctx = openContext({
+      name: "nax-s",
+      agent: "codex",
+      opts: { ...OPTS, providerTools: [PROVIDER_TOOL] },
+      store: createMemoryTranscriptStore(),
+      resume: undefined,
+      asks: createAskPort(slot),
+      slot,
+      openSignal: new AbortController().signal,
+    });
+    expect(ctx.tools).toEqual([]);
+  });
+
+  test("no provider tools: the historical B5 shape (tools empty)", () => {
+    const slot = createTurnSlot();
+    const ctx = openContext({
+      name: "nax-s",
+      agent: "claude",
+      opts: OPTS,
+      store: createMemoryTranscriptStore(),
+      resume: undefined,
+      asks: createAskPort(slot),
+      slot,
+      openSignal: new AbortController().signal,
+    });
+    expect(ctx.tools).toEqual([]);
   });
 });
 

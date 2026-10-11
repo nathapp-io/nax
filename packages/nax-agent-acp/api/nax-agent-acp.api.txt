@@ -8,10 +8,12 @@ type AcpAgentSpec
 type AcpBackendOptions
 type AcpProcessHooks
 type AcpStopCode
+type AgentRegistryEntry
 type LaunchCandidateKind
 acpBackend
 isAgentLaunchable
 launchCandidateKind
+registryEntry
 
 [./server]
 type MainDeps

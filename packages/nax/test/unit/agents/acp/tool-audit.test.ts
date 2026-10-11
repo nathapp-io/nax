@@ -85,4 +85,29 @@ describe("createAuditRecorder (spec §7.4, D3-j)", () => {
     await audit.flush();
     expect(readdirSync(dir)).toEqual([]);
   });
+
+  test("a surface with zero calls still writes the file with the toolSurface block (nax#2410)", async () => {
+    const audit = createAuditRecorder(
+      "nax-advisor",
+      { dir, header: { runId: "run-1", storyId: "US-1", sessionRole: "advisor" } },
+      () => AT,
+      {
+        stage: "review",
+        transport: "acp",
+        profile: "read",
+        declaredTools: ["Read", "Glob", "Grep"],
+        advertised: [{ providerId: "context7", names: ["query-docs"] }],
+        withheld: [],
+        skippedProviders: [],
+        failures: [],
+      },
+    );
+    await audit.flush();
+    const files = readdirSync(dir);
+    expect(files).toHaveLength(1);
+    const body = JSON.parse(readFileSync(join(dir, files[0] ?? ""), "utf8")) as { toolSurface?: { transport: string; profile?: string }; calls: unknown[] };
+    expect(body.toolSurface?.transport).toBe("acp");
+    expect(body.toolSurface?.profile).toBe("read");
+    expect(body.calls).toEqual([]);
+  });
 });

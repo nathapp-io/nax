@@ -1,0 +1,94 @@
+/**
+ * nax#2444 D1/D3: provider tools cross the ACP boundary as EmbedderTools, and
+ * only for agents whose registry entry declares a pre-approval channel
+ * (claudeCode.allowedTools). Delivery is the deny/ask enforcement point on
+ * that path, so the hop's already-filtered set is served as-is; everything
+ * here is pure and null-safe so the adapter stays testable without a process.
+ */
+import type { AcpAgentName } from "@nathapp/nax-agent-acp/client";
+import { registryEntry } from "@nathapp/nax-agent-acp/client";
+import type {
+  CodingTool,
+  EmbedderTool,
+  OpenSessionOpts,
+  ToolSurfaceDraft,
+  ToolSurfaceRecord,
+} from "@nathapp/nax-agent";
+import type { AcpProfile } from "./profile-map";
+import { finishToolSurface } from "../tool-surface";
+
+/**
+ * Per-call result cap for MCP results served over the loopback host. The host
+ * caps the REQUEST body at 1 MiB (`tool-host.ts`); results flow back through
+ * the MCP response, so this is the truncation ceiling applied per call.
+ */
+const ACP_MCP_RESULT_MAX_BYTES = 1_048_576;
+
+/** A provider tool the agent calls as `mcp__nax__<name>`, pre-approved at open. */
+export function toEmbedderTools(tools: readonly CodingTool[], workdir: string): EmbedderTool[] {
+  return tools.map((tool) => ({
+    name: tool.name,
+    description: tool.description,
+    inputSchema: tool.inputSchema,
+    // Policy-granted before they were advertised: no per-call approval.
+    approval: "never" as const,
+    run: async (input: unknown, ctx: { signal: AbortSignal }) => {
+      try {
+        const result = await tool.run((input ?? {}) as Record<string, unknown>, {
+          root: workdir,
+          resolvedPaths: [],
+          maxBytes: ACP_MCP_RESULT_MAX_BYTES,
+          maxFileBytes: ACP_MCP_RESULT_MAX_BYTES,
+          signal: ctx.signal,
+        });
+        return { content: result.content, ...(result.isError === true ? { isError: true } : {}) };
+      } catch (error) {
+        // A throw must reach the model as an MCP error result, never crash the turn.
+        return { content: error instanceof Error ? error.message : String(error), isError: true };
+      }
+    },
+  }));
+}
+
+/** The opts fields the delivery decision reads. */
+type DeliveryOpts = Pick<OpenSessionOpts, "providerTools" | "toolSurface" | "workdir">;
+
+/**
+ * The capability gate (D3): an agent without a pre-approval channel would fail
+ * its open if handed tools (`AGENT_SESSION_CAPABILITY_UNSUPPORTED`), so the
+ * tools are dropped instead and the skip recorded in the surface. Pure — the
+ * session and the open context may finalize independently and agree.
+ */
+export function finalizeAcpSurface(
+  agent: AcpAgentName,
+  opts: DeliveryOpts,
+  profile: AcpProfile,
+): { tools: readonly EmbedderTool[]; surface: ToolSurfaceRecord | undefined } {
+  const capable = registryCapable(agent);
+  if (opts.toolSurface === undefined) {
+    return { tools: capable ? toEmbedderTools(opts.providerTools ?? [], opts.workdir) : [], surface: undefined };
+  }
+  const draft: ToolSurfaceDraft = opts.toolSurface;
+  if (!capable) {
+    return {
+      tools: [],
+      surface: finishToolSurface(
+        {
+          ...draft,
+          advertised: [],
+          skippedProviders: [...draft.skippedProviders, { id: agent, reason: "mcp-pre-approval-unsupported" }],
+        },
+        "acp",
+        profile,
+      ),
+    };
+  }
+  return {
+    tools: toEmbedderTools(opts.providerTools ?? [], opts.workdir),
+    surface: finishToolSurface(draft, "acp", profile),
+  };
+}
+
+function registryCapable(agent: AcpAgentName): boolean {
+  return registryEntry(agent)?.preApproval !== undefined;
+}
