@@ -191,6 +191,8 @@ async function finalizeResult(
   if (reason) state.reason = reason;
   const out = await finalizePr(state, deps, decision);
   state.status = out.status;
+  // The PR path can add a commit to the facts (an unreviewed recovery commit).
+  const finalFacts = state.resolution?.facts ?? facts;
   const sha = await headSha(state.workdir);
   const url = out.url ?? state.prUrl;
   const result: FinishResult = {
@@ -198,9 +200,9 @@ async function finalizeResult(
     status: out.status,
     outcome: decision.outcome,
     ...(reason ? { reason } : {}),
-    facts,
+    facts: finalFacts,
     ...(acceptedResidue.length > 0 ? { acceptedResidue } : {}),
-    ...(decision.outcome === "draft" ? { findings: facts.findingsOpen } : {}),
+    ...(decision.outcome === "draft" ? { findings: finalFacts.findingsOpen } : {}),
     branch: state.branch,
     ...(sha ? { headSha: sha } : {}),
     ...(url ? { url } : {}),

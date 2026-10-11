@@ -44,6 +44,8 @@ export interface SyncOutcome {
   committed: boolean;
   /** True when the branch was pushed (always attempted, so the forge sees HEAD). */
   pushed: boolean;
+  /** HEAD after the commit, when the fixes produced one. */
+  sha?: string | null;
 }
 
 async function isDirty(repoRoot: string): Promise<boolean> {
@@ -153,8 +155,13 @@ export async function commitFixes(
  * branch may be ahead of its remote (nax's own run commits, or per-round
  * checkpoint commits), and the PR must reflect HEAD.
  */
-export async function commitAndPush(repoRoot: string, branch: string, message: string): Promise<SyncOutcome> {
-  const { committed } = await commitFixes(repoRoot, message);
+export async function commitAndPush(
+  repoRoot: string,
+  branch: string,
+  message: string,
+  opts: { skipHooks?: boolean } = {},
+): Promise<SyncOutcome> {
+  const { committed, shaAfter } = await commitFixes(repoRoot, message, opts);
 
   const push = await _finishGitDeps.git(["push", "--set-upstream", "origin", branch], repoRoot, PUSH_TIMEOUT_MS);
   if (push.exitCode !== 0) {
@@ -169,7 +176,7 @@ export async function commitAndPush(repoRoot: string, branch: string, message: s
       },
     );
   }
-  return { committed, pushed: true };
+  return { committed, pushed: true, ...(committed ? { sha: shaAfter } : {}) };
 }
 
 /** Phases that own a reviewer step; every other phase's round has nobody behind it. */

@@ -214,6 +214,32 @@ describe("runFinishPhase - notify modes (A4)", () => {
     expect(sent.length > 0).toBe(notified);
   });
 
+  test("a failed message reads as failed, not as a draft", async () => {
+    const result = results.failed;
+    assertDefined(result);
+    stubMachine(result);
+    await runFinishPhase(ctxFor({ notify: { mode: "draft" } }));
+    expect(sent[0]).toBe("nax-finish failed f: boom");
+  });
+
+  test("escalate.telegram false suppresses draft and failed messages", async () => {
+    for (const status of ["draft", "failed"]) {
+      const result = results[status];
+      assertDefined(result);
+      stubMachine(result);
+      await runFinishPhase(ctxFor({ notify: { mode: "always" }, escalate: { telegram: false } }));
+    }
+    expect(sent).toEqual([]);
+  });
+
+  test("escalate.telegram false does not silence a clean outcome under notify always", async () => {
+    const result = results.promoted;
+    assertDefined(result);
+    stubMachine(result);
+    await runFinishPhase(ctxFor({ notify: { mode: "always" }, escalate: { telegram: false } }));
+    expect(sent).toHaveLength(1);
+  });
+
   test("a draft message names the feature and reason", async () => {
     const result = results.draft;
     assertDefined(result);

@@ -46,17 +46,6 @@ export interface FinishContext {
    */
   prUrl?: string;
   /**
-   * Set only by the closed-PR escalation below: `ops.escalate` must NOT run
-   * its usual `commitAndPush` for this one.
-   *
-   * That push is unconditional (`commit.ts`'s `commitAndPush` pushes whether
-   * or not anything was committed), and `git push --set-upstream` against a
-   * branch whose closed PR had its head branch auto-deleted RECREATES it —
-   * undoing the cleanup the human's close performed. Nothing has run at this
-   * point either, so there are no partial fixes the push could be carrying.
-   */
-  escalateWithoutPush?: boolean;
-  /**
    * Why a `nothing-to-finish` route is a *skip* rather than a plain
    * zero-commits preflight. Only `"pr-merged"` (#1674 part 2) is set here —
    * the `already-finished` route carries its own reason in `route` itself,
@@ -350,7 +339,6 @@ export async function loadFinishContext(
         testFileRegex,
         commitsAhead: pre.commitsAhead,
         route: "escalate",
-        escalateWithoutPush: true,
         reason: `The PR/MR for "${ledgerOpts.branch}" is closed without being merged${pr.url ? ` (${pr.url})` : ""}, but the branch still has ${pre.commitsAhead} commit(s) ahead of "${base}". nax-finish will not reopen it or push to it — a human needs to decide whether this branch is still wanted.`,
         ...(pr.url ? { prUrl: pr.url } : {}),
       };

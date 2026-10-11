@@ -143,9 +143,10 @@ describe("approval", () => {
         "acceptance-run", // the re-check of the re-review's fix
         "acceptance-run", // gate zero
         "quality-run:test",
-        "promotePr",
+        "finalizeDraftPr", // the re-review's own fix is unreviewed, so an approve cannot make the PR ready
       ]);
-      expect(result.outcome).toBe("ready");
+      expect(result.outcome).toBe("draft");
+      expect(result.reason).toContain("approve rejected (phases incomplete)");
     });
   });
 

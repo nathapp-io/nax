@@ -71,8 +71,9 @@ export interface FinishPhaseStatus {
    * Why the phase was skipped without running — the failing gate clause
    * (#1671: "enabled" | "completed" | "failed" | "paused" | "branch"), the
    * ledger hit that stood it down (#1674 part 1: "already-finished") or the
-   * already-merged PR that did (#1674 part 2: "pr-merged"). Absent on every
-   * other status.
+   * already-merged PR that did (#1674 part 2: "pr-merged"). Also carries the
+   * draft reason or failure message when the finish ended `draft` or `failed`.
+   * Absent otherwise.
    */
   reason?: string;
 }

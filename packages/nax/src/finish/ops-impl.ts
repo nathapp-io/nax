@@ -55,6 +55,16 @@ async function loadDecisionNotes(state: FinishState, outputDir: string | undefin
 /** The commit the promote path pushes before touching the forge (matches the flow, line 344). */
 const PROMOTE_MESSAGE = (feature: string): string => `fix(${feature}): nax-finish automated fixes`;
 
+/** The minimal body used when rendering throws: keeps the draft reason and the open findings visible. */
+function fallbackBody(state: FinishState, error: string): string {
+  const lines = ["## Unresolved", ""];
+  const resolution = state.resolution;
+  if (resolution?.reason) lines.push(`Reason: ${resolution.reason}`);
+  for (const f of resolution?.facts.findingsOpen ?? []) lines.push(`- [${f.severity}] ${f.title}`);
+  lines.push("", `PR body could not be generated: ${error}`);
+  return lines.join("\n");
+}
+
 /**
  * Load the PR context and render it, falling back to a minimal title/body on
  * any failure rather than propagating.
@@ -77,11 +87,19 @@ async function buildPrContentOrFallback(
     const ctx = await loadFinishPrContext({ state, audit, forge: forgeKind, prBody, outputDir });
     return { title: buildFinishTitle(ctx), body: buildFinishBody(ctx) };
   } catch (err) {
-    return {
-      title: `fix(${state.feature}): nax-finish automated fixes`,
-      body: `PR body could not be generated: ${errorMessage(err)}`,
-    };
+    return { title: `feat: ${state.feature}`, body: fallbackBody(state, errorMessage(err)) };
   }
+}
+
+/** Add a commit nobody reviewed to the state and to the frozen resolution the PR body renders. */
+function recordUnreviewedCommit(state: FinishState, sha: string): void {
+  state.unreviewedFixCommits = [...state.unreviewedFixCommits, sha];
+  if (!state.resolution) return;
+  const { facts } = state.resolution;
+  state.resolution = {
+    ...state.resolution,
+    facts: { ...facts, unreviewedFixCommits: [...facts.unreviewedFixCommits, sha] },
+  };
 }
 
 export function createFinishOps(deps: FinishOpsDeps): FinishOps {
@@ -194,8 +212,16 @@ export function createFinishOps(deps: FinishOpsDeps): FinishOps {
     },
 
     async finalizeDraftPr(state: FinishState) {
-      const { committed } = await commitAndPush(state.workdir, state.branch, PROMOTE_MESSAGE(state.feature));
-      if (committed) state.committedThisRun = true;
+      // Hooks off: a draft must always land (a deadline can leave a killed fix
+      // session's half-edited tree here, which a pre-commit hook would reject).
+      // That commit never passed a review, so it is listed as unreviewed.
+      const { committed, sha } = await commitAndPush(state.workdir, state.branch, PROMOTE_MESSAGE(state.feature), {
+        skipHooks: true,
+      });
+      if (committed) {
+        state.committedThisRun = true;
+        if (sha) recordUnreviewedCommit(state, sha);
+      }
       if (forgeKind === null) return { status: "local-only" };
       const content = await buildPrContentOrFallback(state, audit, forgeKind, prBody, advisorOutputDir);
       const out = await openOrPromotePr(

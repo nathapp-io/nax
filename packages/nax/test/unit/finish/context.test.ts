@@ -563,7 +563,7 @@ describe("loadFinishContext — merged/closed PR short-circuit (#1674 part 2)", 
     });
   }
 
-  test("the closed-unmerged route marks the escalation as one that must not push", async () => {
+  test("a closed-unmerged PR with commits ahead routes to escalate", async () => {
     _finishContextDeps.git = aheadGit;
     _finishContextDeps.resolveFeatureSpec = async (): Promise<ResolveResult> => okResolve;
     const { deps } = makeForge({ stdout: JSON.stringify({ state: "CLOSED", mergedAt: null }) });
@@ -571,17 +571,7 @@ describe("loadFinishContext — merged/closed PR short-circuit (#1674 part 2)", 
     const ctx = await loadFinishContext("my-feature", "/repo", ledgerOpts(deps));
 
     expect(ctx.route).toBe("escalate");
-    expect(ctx.escalateWithoutPush).toBe(true);
-  });
-
-  test("a merged PR does not set escalateWithoutPush — it never escalates at all", async () => {
-    _finishContextDeps.git = aheadGit;
-    _finishContextDeps.resolveFeatureSpec = async (): Promise<ResolveResult> => okResolve;
-    const { deps } = makeForge({ stdout: JSON.stringify({ state: "MERGED" }) });
-
-    const ctx = await loadFinishContext("my-feature", "/repo", ledgerOpts(deps));
-
-    expect(ctx.escalateWithoutPush).toBeUndefined();
+    expect(ctx.reason).toContain("closed without being merged");
   });
 
   test("fails open: a forge CLI that cannot be spawned proceeds instead of throwing", async () => {

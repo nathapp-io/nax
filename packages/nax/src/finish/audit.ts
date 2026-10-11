@@ -169,11 +169,10 @@ export interface WriteResultOptions {
   /**
    * Set `false` to skip the ledger update for this write. Default `true`.
    *
-   * Exists for `doEscalate`'s pre-delivery write (`machine.ts`, #1399): that
-   * write happens BEFORE `ops.escalate` is even attempted, purely so a
-   * killed process still leaves a `result.json` behind — at that point
-   * nothing is known yet about whether the escalation will actually reach a
-   * human, so ledgering it as a done `escalated` outcome would be a lie.
+   * For a write made before the outcome is final (for example a pre-delivery
+   * write kept so a killed process still leaves a `result.json` behind): at
+   * that point nothing is known yet about whether the result will reach a
+   * human, so ledgering it as a done outcome would be a lie.
    * The `result.json` write itself is unaffected by this option; only the
    * ledger side-effect is skipped.
    */

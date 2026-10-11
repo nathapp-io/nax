@@ -94,9 +94,8 @@ export type FinishRoundOutcome =
   /**
    * The reviewer replied, but no verdict could be read out of it.
    *
-   * Read-only history now: nothing in this module produces this outcome —
-   * `ReviewVerdict.route` no longer has a `reprompt` member (D2.2), so there is
-   * no live path that writes it. Retained because older audit trails hold
+   * Read-only history now: nothing in this module produces this outcome (the
+   * reprompt path is gone), so no live path writes it. Retained because older audit trails hold
    * rounds with this outcome and a reader must still be able to render them.
    */
   | "unparseable"
@@ -233,8 +232,8 @@ export interface FinishResult {
   /**
    * HEAD sha at the moment this result was written — the finish ledger's key
    * (#1674 part 1, `./audit`'s `writeResult`). Set on every path that reaches
-   * a terminal outcome after the machine has actually run (`doEscalate`,
-   * `finishTerminal`); absent on a preflight `nothing-to-finish`, which never
+   * a terminal outcome after the machine has actually run (`finalizeResult`,
+   * `failedResult`); absent on a preflight `nothing-to-finish`, which never
    * gets far enough to have one worth recording.
    */
   headSha?: string;

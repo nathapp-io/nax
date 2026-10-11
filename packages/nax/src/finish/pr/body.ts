@@ -5,7 +5,7 @@
  * Pure on purpose. Every fact in a finish body — gate results, story counts,
  * diffstat, review rounds — is a string join over artifacts, which is what
  * keeps a finish PR greppable in history. The only model-authored fields
- * (`narrative`, `title`) arrive already resolved, each with a deterministic
+ * (`narrative`, `title`; both come from the branch review) arrive already resolved, each with a deterministic
  * fallback, so the body never waits on a reviewer.
  *
  * Ported from `flows/nax-finish/steps/pr-body.ts`; the rendering is settled
@@ -26,12 +26,12 @@ const MS_PER_SECOND = 1000;
 const SHORT_SHA_LEN = 7;
 
 /**
- * The PR title: the narrative node's conventional-commit subject when it
+ * The PR title: the branch reviewer's conventional-commit subject when it
  * produced one, else `feat: <feature>`.
  *
  * That fallback is what this returned unconditionally, and is still what
  * `buildTitle` in `src/plugins/builtin/auto-pr/pr-body.ts` opens with — so a
- * finish run that reaches `open_pr` before the narrative node has spoken still
+ * finish run whose branch review produced no title still
  * reads identically to an auto-PR-opened one in a list view. The two diverge
  * only once there is something better to say: `feat: schema-drift-gate` names
  * the run, not the change.

@@ -201,3 +201,85 @@ describe("finalizeDraftPr keeps the PR draft", () => {
     expect(forgeCalls.some((c) => c.includes("ready"))).toBe(false);
   });
 });
+
+/** A git stub for a dirty tree: HEAD moves on commit, and a commit without --no-verify is rejected by a hook. */
+function dirtyTreeGit(opts: { hookRejects: boolean }) {
+  const calls: string[][] = [];
+  let head = "head0";
+  _finishGitDeps.git = async (args: string[]) => {
+    calls.push(args);
+    if (args[0] === "status") return { exitCode: 0, stdout: " M src/a.ts\n", stderr: "" };
+    if (args[0] === "diff" && args.includes("--cached")) return { exitCode: 1, stdout: "", stderr: "" };
+    if (args[0] === "rev-parse") return { exitCode: 0, stdout: `${head}\n`, stderr: "" };
+    if (args[0] === "commit") {
+      if (opts.hookRejects && !args.includes("--no-verify")) return { exitCode: 1, stdout: "", stderr: "hook failed" };
+      head = "head1";
+    }
+    return { exitCode: 0, stdout: "", stderr: "" };
+  };
+  return calls;
+}
+
+const draftFacts = {
+  findingsOpen: [],
+  acceptance: "green" as const,
+  gates: [],
+  reviewsMissing: [],
+  unreviewedFixCommits: [],
+  coverage: { spec: null, quality: null },
+  fixRounds: 1,
+};
+
+describe("finalizeDraftPr recovery commit", () => {
+  test("commits a dirty tree with hooks skipped and lists the commit as unreviewed", async () => {
+    const { deps } = baseDeps((cmd) =>
+      cmd.includes("view") ? { exitCode: 1 } : { exitCode: 0, stdout: "https://x/pr/10\n" },
+    );
+    const calls = dirtyTreeGit({ hookRejects: false });
+    const state = freshState();
+    state.resolution = { outcome: "draft", reason: "deadline", facts: draftFacts, acceptedResidue: [] };
+    await createFinishOps(deps).finalizeDraftPr(state);
+    const commit = calls.find((c) => c[0] === "commit");
+    assertDefined(commit);
+    expect(commit).toContain("--no-verify");
+    expect(state.unreviewedFixCommits).toEqual(["head1"]);
+    expect(state.resolution.facts.unreviewedFixCommits).toEqual(["head1"]);
+  });
+
+  test("a pre-commit hook cannot turn the deadline draft into a throw", async () => {
+    const { deps } = baseDeps((cmd) =>
+      cmd.includes("view") ? { exitCode: 1 } : { exitCode: 0, stdout: "https://x/pr/10\n" },
+    );
+    dirtyTreeGit({ hookRejects: true });
+    const out = await createFinishOps(deps).finalizeDraftPr(freshState());
+    expect(out.status).toBe("draft");
+  });
+});
+
+describe("promotePr fallback content", () => {
+  test("a render failure keeps the feat title and the draft reason in the body", async () => {
+    const { deps, forgeCalls } = baseDeps((cmd) =>
+      cmd.includes("view") ? { exitCode: 1 } : { exitCode: 0, stdout: "https://x/pr/11\n" },
+    );
+    const state = freshState();
+    state.resolution = {
+      outcome: "draft",
+      reason: "1 open finding(s)",
+      facts: { ...draftFacts, findingsOpen: [{ severity: "HIGH", title: "Missing guard", problem: "p", fix: "f" }] },
+      acceptedResidue: [],
+    };
+    Object.defineProperty(state, "review", {
+      get() {
+        throw new Error("render boom");
+      },
+    });
+    await createFinishOps(deps).promotePr(state);
+    const create = forgeCalls.find((c) => c.includes("create"));
+    assertDefined(create);
+    expect(create[create.indexOf("--title") + 1]).toBe("feat: demo");
+    const body = create[create.indexOf("--body") + 1] ?? "";
+    expect(body).toContain("Reason: 1 open finding(s)");
+    expect(body).toContain("Missing guard");
+    expect(body).toContain("render boom");
+  });
+});

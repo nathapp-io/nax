@@ -140,6 +140,7 @@ describe("buildDraftMessage", () => {
 
   test("without findings or url it is the bare head", () => {
     expect(buildDraftMessage("feat", "r", undefined, [])).toBe("nax-finish draft feat: r");
+    expect(buildDraftMessage("feat", "boom", undefined, [], "failed")).toBe("nax-finish failed feat: boom");
   });
 
   test("stays inside the Bot API limit and says how many findings it dropped", () => {

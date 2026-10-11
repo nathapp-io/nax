@@ -48,7 +48,11 @@ export function isClean(f: ResolutionFacts): boolean {
 }
 
 export function approvalFacts(f: ResolutionFacts, reReviewUsed: boolean) {
-  return { allPhasesComplete: f.reviewsMissing.length === 0, gatesGreen: gatesGreen(f), reReviewUsed };
+  return {
+    allPhasesComplete: f.reviewsMissing.length === 0 && f.unreviewedFixCommits.length === 0,
+    gatesGreen: gatesGreen(f),
+    reReviewUsed,
+  };
 }
 
 export function draftReason(f: ResolutionFacts): string {
@@ -88,7 +92,16 @@ export async function resolve(args: {
   } catch (err) {
     decision = { action: "unavailable", rationale: `advisor error: ${String(err)}` };
   }
-  if (decision.action === "approve") return { outcome: "ready", acceptedResidue: facts.findingsOpen };
+  if (decision.action === "approve") {
+    // The menu only offers approve when the facts allow it, but the decision is
+    // re-checked here: a reply must never make a PR ready over unreviewed code.
+    const approval = approvalFacts(facts, args.reReviewUsed);
+    if (approval.allPhasesComplete && approval.gatesGreen) {
+      return { outcome: "ready", acceptedResidue: facts.findingsOpen };
+    }
+    const why = approval.gatesGreen ? "phases incomplete" : "gates not green";
+    return { outcome: "draft", reason: `advisor: approve rejected (${why}); ${draftReason(facts)}` };
+  }
   if (decision.action === "re-review" && !args.reReviewUsed) return { outcome: "re-review" };
   return { outcome: "draft", reason: `advisor: ${decision.rationale}; ${draftReason(facts)}` };
 }

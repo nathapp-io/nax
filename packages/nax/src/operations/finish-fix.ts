@@ -3,9 +3,9 @@
  *
  * One `RunOperation` drives the acceptance, gate and review fix phases, since
  * `buildFinishFixPrompt` is phase-agnostic (the caller supplies `phase` on the
- * input). Sibling of `finish-review-op.ts` —
- * same `session`/`config`/`model`/`timeoutMs` shape, same `build`
- * `ComposeInput` pattern — but simpler in two ways documented below.
+ * input). Shares the `session`/`config`/`model`/`timeoutMs` shape and the
+ * `build` `ComposeInput` pattern with the finish review ops, but is simpler in
+ * two ways documented below.
  */
 import type { ConfiguredModel } from "@/config";
 import { finishConfigSelector } from "@/config";

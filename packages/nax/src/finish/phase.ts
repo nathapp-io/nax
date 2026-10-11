@@ -472,14 +472,18 @@ async function notify(ctx: FinishPhaseContext, settings: FinishSettings, result:
     result.status === "failed";
   if (settings.notify.mode === "off") return;
   if (settings.notify.mode === "draft" && !needsHuman) return;
+  // `escalate.telegram` governs the draft and failed messages only (spec section 8).
+  if (needsHuman && !settings.escalate.telegram) return;
   const creds = telegramCreds(ctx.config);
   if (!creds) return;
+  const failed = result.status === "failed" || result.outcome === "failed";
   const text = needsHuman
     ? buildDraftMessage(
         result.feature,
-        result.status === "failed" ? `failed: ${result.reason ?? "unknown"}` : (result.reason ?? ""),
+        failed ? (result.reason ?? "unknown") : (result.reason ?? ""),
         result.url,
         result.findings ?? result.facts?.findingsOpen ?? [],
+        failed ? "failed" : "draft",
       )
     : buildTerminalMessage({ feature: result.feature, status: result.status, url: result.url });
   const delivered = await _finishPhaseDeps.sendTelegramNotify(creds, text);

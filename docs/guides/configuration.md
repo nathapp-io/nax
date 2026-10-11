@@ -745,9 +745,9 @@ draft PR -> acceptance -> review loop (spec || branch) -> acceptance re-check ->
 | `prBody.template` | `"merge"` | How the repo's own PR/MR template is honoured: `merge` fills matching headings and drops the rest, `strict` keeps unfillable headings empty, `ignore` skips the template entirely. |
 | `prBody.sectionMap` | `{}` | Template heading → body-section key overrides, layered over the defaults in `src/forge/template-merge.ts`. Known keys: `narrative`, `stories`, `verification`, `rounds`, `outOfScope`, `unresolved`. |
 | `reviewers.spec` / `reviewers.quality` / `reviewers.fix` | `null` | `spec` drives the spec review, `quality` drives the branch review (which also supplies the PR title and summary). A model tier name (e.g. `"balanced"`) or `{ agent, model }` object, resolved the same way every other operation's model is. `null` falls through to the op's own default. |
-| `escalate.telegram` | `true` | Prefer Telegram for draft and failed notifications when `interaction.plugin` is `telegram` (or `NAX_TELEGRAM_TOKEN` + `NAX_TELEGRAM_CHAT_ID` are set). With no credentials the PR itself (draft, with its Unresolved section) is the report. |
+| `escalate.telegram` | `true` | Whether draft and failed results are sent to Telegram (subject to `notify.mode`). Telegram needs `interaction.plugin: "telegram"` or `NAX_TELEGRAM_TOKEN` + `NAX_TELEGRAM_CHAT_ID`; with no credentials, or with this set to `false`, nothing is sent and the PR itself (draft, with its Unresolved section) is the report. Clean outcomes reported by `notify.mode: "always"` are not affected. |
 | `notify.mode` | `"draft"` | `draft` notifies when the PR ends up draft or the phase fails; `always` also reports clean outcomes; `off` disables notifications. `escalation` is a deprecated alias for `draft`. |
-| `rerun` | `"on-change"` | Cross-run idempotency. `on-change` skips the whole phase when the finish ledger's branch/HEAD already match a terminal outcome (opened/promoted/already-ready/draft/failed) from a previous run — a re-run on an unchanged branch costs one `git rev-parse`, not a repeat of every review and gate. `always` bypasses the ledger and re-runs the phase every time, matching pre-ledger behaviour. |
+| `rerun` | `"on-change"` | Cross-run idempotency. `on-change` skips the whole phase when the finish ledger's branch/HEAD already match a terminal outcome (opened/promoted/already-ready/draft/local-only/nothing-to-finish) from a previous run — a re-run on an unchanged branch costs one `git rev-parse`, not a repeat of every review and gate. `always` bypasses the ledger and re-runs the phase every time, matching pre-ledger behaviour. |
 | `timeouts.acceptanceMs` | 10 min | Cap per acceptance-test group. |
 | `timeouts.gateMs` | 15 min | Cap per quality gate (build / typecheck / lint / test). |
 | `timeouts.flowMs` | 90 min | Whole-phase deadline, enforced as an `AbortSignal`. |
@@ -775,10 +775,17 @@ an alias for `draft`.
 | Everything green: no open findings, acceptance green or not configured, all gates green, no missing review, no unreviewed fix commits | Promotes the draft PR (or opens a **ready** PR/MR). Never merges. |
 | Findings with a clear recommended fix | Applies them in one shared loop (at most 3 review rounds), re-runs acceptance, then the gates. Acceptance and gate fixes are capped at 3 attempts each. |
 | Anything left open: unresolved findings, red or unverified acceptance or gates, a review that returned no verdict, fix commits made after the last review, or the `flowMs` deadline | Commits and pushes what it fixed, keeps the PR **draft**, writes an "Unresolved" section into the body and notifies per `notify.mode`. |
+| The feature has no PRD, or its PRD yields zero acceptance groups, while acceptance is enabled | Acceptance cannot be verified ("nothing ran is not a pass"), so the PR ends **draft** with acceptance reported as unverified. Disable acceptance for the feature if there is genuinely nothing to run. |
+| The `flowMs` deadline or an unexpected error interrupts the run | Still ends in a draft PR carrying the reason. Any half-finished edit in the working tree is committed without running git hooks and listed under "Unreviewed fix commits". |
 | Branch has no commits ahead of base | Reports `nothing-to-finish` and stops. |
 | Branch/HEAD already match a terminal outcome from a previous finish (`rerun: "on-change"`, the default) | Skips the phase entirely, logs it, and records `status: "skipped"` - see `rerun` above. |
 | The branch's PR/MR is already **merged** | Reports `nothing-to-finish` with `reason: "pr-merged"` and stops, rather than reviewing, committing onto a merged branch and rewriting the merged PR's body. |
 | The branch's PR/MR is **closed without being merged** | Ends as `failed` before anything runs: it does not commit or push, because pushing to a closed PR's branch can recreate a head branch the forge deleted when the human closed it. Reopening the PR is not a decision the fix loop makes on its own. |
+
+A draft or deadline result **is** recorded in the finish ledger, so with
+`rerun: "on-change"` the phase will not run again at the same HEAD; push a new
+commit (or set `rerun: "always"`) to get another pass. A `failed` result is not
+ledgered and is retried on the next run.
 
 Both forge checks fail open: no PR yet, an unauthenticated or missing `gh` /
 `glab`, an undetected forge, a CLI that cannot be spawned, and any response

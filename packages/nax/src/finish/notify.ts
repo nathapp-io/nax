@@ -49,9 +49,10 @@ export function buildDraftMessage(
   reason: string,
   url: string | undefined,
   findings: { severity: string; title: string }[],
+  label: "draft" | "failed" = "draft",
 ): string {
   const urlLine = url ? `\n${url}` : "";
-  const head = `nax-finish draft ${feature}: ${reason}`;
+  const head = `nax-finish ${label} ${feature}: ${reason}`;
   if (findings.length === 0) return `${head}${urlLine}`;
 
   // Reserved up front for the worst case (every finding dropped), so adding a

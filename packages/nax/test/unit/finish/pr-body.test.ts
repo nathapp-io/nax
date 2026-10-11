@@ -55,7 +55,7 @@ describe("buildFinishTitle (US-002 AC1)", () => {
 
   test("renders the 'feat: <feature>' fallback that resolveTitle supplies", () => {
     // The floor is still the auto-PR plugin's shape, so a finish run whose
-    // narrative node never spoke reads the same as an auto-PR-opened one.
+    // branch review supplied no title reads the same as an auto-PR-opened one.
     expect(buildFinishTitle(baseCtx({ title: resolveTitle(undefined, "pipeline-run-outcome") }))).toBe(
       "feat: pipeline-run-outcome",
     );

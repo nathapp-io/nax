@@ -61,6 +61,10 @@ describe("isClean / approvalFacts / draftReason", () => {
     expect(isClean(f)).toBe(clean);
   });
 
+  test("approvalFacts treats unreviewed fix commits as an incomplete phase", () => {
+    expect(approvalFacts(facts({ unreviewedFixCommits: ["abc"] }), false).allPhasesComplete).toBe(false);
+  });
+
   test("approvalFacts maps missing lenses and gates", () => {
     expect(approvalFacts(facts({ reviewsMissing: ["quality"] }), false)).toEqual({
       allPhasesComplete: false,
@@ -120,6 +124,30 @@ describe("resolve", () => {
       reReviewUsed: false,
     });
     expect(out).toEqual({ outcome: "ready", acceptedResidue: [finding] });
+  });
+
+  test("approve with unreviewed fix commits is downgraded to draft", async () => {
+    const out = await resolve({
+      facts: facts({ unreviewedFixCommits: ["abc"] }),
+      advise: approve("approve"),
+      reReviewUsed: false,
+    });
+    expect(out).toEqual({
+      outcome: "draft",
+      reason: "advisor: approve rejected (phases incomplete); 1 unreviewed fix commit(s)",
+    });
+  });
+
+  test("approve with a red gate is downgraded to draft", async () => {
+    const out = await resolve({
+      facts: facts({ gates: [{ name: "lint", status: "red" }] }),
+      advise: approve("approve"),
+      reReviewUsed: false,
+    });
+    expect(out).toEqual({
+      outcome: "draft",
+      reason: "advisor: approve rejected (gates not green); gates red: lint",
+    });
   });
 
   test("re-review once, then draft", async () => {
