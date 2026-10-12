@@ -44,6 +44,8 @@ export interface CodingToolSupport {
   readonly runtime: CodingToolRuntime;
   readonly tools: readonly CodingTool[];
   readonly auditSink: ToolAuditSink;
+  /** The materialized declaration this support resolved from (nax#2444 D2) — set on every resolve. */
+  readonly declaredTools?: readonly CodingToolName[];
   /** The session's MCP tool surface (nax#2410 D4), stamped into the audit file at flush. */
   readonly toolSurface?: ToolSurfaceRecord;
   /**
@@ -52,7 +54,6 @@ export interface CodingToolSupport {
    */
   readonly acpDelivery?: {
     readonly tools: readonly CodingTool[];
-    readonly declaredTools: readonly string[];
     readonly surface: ToolSurfaceDraft;
   };
 }
@@ -292,6 +293,7 @@ export function buildCodingToolSupport(args: {
     runtime,
     tools,
     auditSink: sink,
+    declaredTools: args.declared,
     ...(args.toolSurface !== undefined ? { toolSurface: args.toolSurface } : {}),
   };
 }

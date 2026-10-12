@@ -120,7 +120,14 @@ describe("prepareHopSession: ACP provider-tool delivery (nax#2444)", () => {
     expect("transport" in (request?.toolSurface ?? {})).toBe(false);
   });
 
-  test("no providers: none of the delivery keys appear", async () => {
+  test("no providers: the declaration still rides the open request (D2 fires without MCP)", async () => {
+    const request = await openRequestFor({ codingToolRoot: root, outputDir: root, declaredTools: ["Read"] });
+    expect(request?.declaredTools).toContain("Read");
+    expect(request?.providerTools).toBeUndefined();
+    expect(request?.toolSurface).toBeUndefined();
+  });
+
+  test("no declaration and no providers: none of the delivery keys appear", async () => {
     const request = await openRequestFor({ codingToolRoot: root, outputDir: root });
     expect(request?.providerTools).toBeUndefined();
     expect(request?.declaredTools).toBeUndefined();

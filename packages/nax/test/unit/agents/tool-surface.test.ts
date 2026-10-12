@@ -64,17 +64,19 @@ describe("buildToolSurfaceDraft", () => {
     expect(draft.skippedProviders).toEqual([{ id: "*", reason: "provider-scope:none" }]);
   });
 
-  test("extra withheld (deny/ask-ruled) merges after the not-admitted rows", () => {
+  test("extra withheld (deny/ask-ruled) merges after the not-admitted rows and leaves advertised", () => {
     const draft = buildToolSurfaceDraft({
       stage: "review",
       declaredTools: [],
       providerResult: providerResult({
-        withheld: [{ providerId: "cg", localName: "a", reason: "not-admitted" }],
+        entries: [{ providerId: "cg", localNames: ["a", "b"] }],
+        withheld: [{ providerId: "cg", localName: "x", reason: "not-admitted" }],
       }),
       extraWithheld: [{ providerId: "cg", name: "b", reason: "denied" }],
     });
+    expect(draft.advertised).toEqual([{ providerId: "cg", names: ["a"] }]);
     expect(draft.withheld).toEqual([
-      { providerId: "cg", name: "a", reason: "not-admitted" },
+      { providerId: "cg", name: "x", reason: "not-admitted" },
       { providerId: "cg", name: "b", reason: "denied" },
     ]);
   });

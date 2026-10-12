@@ -59,6 +59,31 @@ describe("summarizeMcpAdoption", () => {
     }
   });
 
+  test("files from earlier runs do not mask this run's zero adoption", async () => {
+    const saved = { ..._mcpAdoptionDeps };
+    Object.assign(
+      _mcpAdoptionDeps,
+      fsWith({
+        "run-1-1-impl.json": {
+          sessionName: "impl",
+          toolSurface: { advertised: [{ providerId: "cg", names: ["search"] }] },
+          calls: [{ provider: "cg", tool: "cg__search" }],
+        },
+        "run-2-1-adv.json": {
+          sessionName: "adv",
+          toolSurface: { advertised: [{ providerId: "cg", names: ["search"] }] },
+          calls: [],
+        },
+      }),
+    );
+    try {
+      const summary = await summarizeMcpAdoption({ serverIds: ["cg"], auditDir: AUDIT_DIR, runId: "run-2" });
+      expect(summary.cg).toEqual({ sessionsOffered: 1, sessionsCalled: 0, totalCalls: 0 });
+    } finally {
+      Object.assign(_mcpAdoptionDeps, saved);
+    }
+  });
+
   test("a call row naming the tool without a provider field still counts", async () => {
     const saved = { ..._mcpAdoptionDeps };
     Object.assign(
@@ -100,6 +125,7 @@ describe("summarizeMcpAdoptionPhase (run-completion phase)", () => {
     feature: "feat",
     config: makeNaxConfig({ mcp: { servers } }),
     outputDir: "/out" as string | undefined,
+    runId: "run-2" as string | undefined,
   });
 
   test("no servers configured: undefined, nothing aggregated", async () => {
@@ -112,7 +138,7 @@ describe("summarizeMcpAdoptionPhase (run-completion phase)", () => {
     Object.assign(
       _mcpAdoptionDeps,
       fsWith({
-        "1-adv.json": {
+        "run-2-1-adv.json": {
           sessionName: "adv",
           toolSurface: { advertised: [{ providerId: "cg", names: ["search"] }] },
           calls: [],

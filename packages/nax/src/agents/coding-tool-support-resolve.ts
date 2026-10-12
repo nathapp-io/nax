@@ -325,7 +325,13 @@ export async function resolveProviderContribution(
           tools: [],
           grants: [],
           failures: [] as readonly { providerId: string; reason: string }[],
-          skipped: [],
+          // nax#2410 D4 (settled): a whole-layer permission skip is a surface
+          // row, so the artifact explains an empty `advertised`. Only when
+          // providers are configured — silence for a plain no-MCP run.
+          skipped:
+            (options.providers?.length ?? 0) > 0
+              ? [{ providerId: "*", reason: "provider-scope:none" as const, stages: [] }]
+              : [],
           withheld: [],
           providerIdByTool: new Map<string, string>(),
           entries: [],
@@ -571,5 +577,5 @@ export async function resolveCodingToolSupport(
     ...(surface.toolSurface !== undefined ? { toolSurface: surface.toolSurface } : {}),
   });
   if (support === undefined) return undefined;
-  return attachAcpDelivery(support, surface, declaredWithProviders);
+  return attachAcpDelivery(support, surface);
 }

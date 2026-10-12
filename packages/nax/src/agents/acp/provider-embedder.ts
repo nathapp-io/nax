@@ -19,9 +19,10 @@ import { finishToolSurface } from "../tool-surface";
 import type { AcpProfile } from "./profile-map";
 
 /**
- * Per-call result cap for MCP results served over the loopback host. The host
- * caps the REQUEST body at 1 MiB (`tool-host.ts`); results flow back through
- * the MCP response, so this is the truncation ceiling applied per call.
+ * Per-call budget handed to provider tools as `ToolRunContext.maxBytes` — the
+ * same advisory cap native callers pass. Honoring it is the TOOL's choice
+ * (external MCP tools decide), and the loopback host returns result content
+ * uncapped, so this bounds cooperative tools, not the transport.
  */
 const ACP_MCP_RESULT_MAX_BYTES = 1_048_576;
 

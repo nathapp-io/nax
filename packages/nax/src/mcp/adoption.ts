@@ -29,11 +29,14 @@ interface AuditFileBody {
   calls?: readonly { provider?: string; tool?: string }[];
 }
 
-async function readBodies(auditDir: string): Promise<AuditFileBody[]> {
+async function readBodies(auditDir: string, runId: string | undefined): Promise<AuditFileBody[]> {
   try {
     const files = await _mcpAdoptionDeps.readdir(auditDir);
+    // The tree appends across runs (tool-audit/<feature>/); without the runId
+    // filter one historical call would mask this run's zero adoption forever.
+    const current = runId === undefined ? files : files.filter((file) => file.startsWith(`${runId}-`));
     const bodies = await Promise.all(
-      files
+      current
         .filter((file) => file.endsWith(".json"))
         .map(async (file) => {
           try {
@@ -54,8 +57,10 @@ async function readBodies(auditDir: string): Promise<AuditFileBody[]> {
 export async function summarizeMcpAdoption(args: {
   serverIds: readonly string[];
   auditDir: string;
+  /** Scope the aggregation to one run's files (files are prefixed `<runId>-`). */
+  runId?: string;
 }): Promise<McpAdoptionSummary> {
-  const bodies = await readBodies(args.auditDir);
+  const bodies = await readBodies(args.auditDir, args.runId);
   const summary: Record<string, { sessionsOffered: number; sessionsCalled: number; totalCalls: number }> = {};
   for (const serverId of args.serverIds) {
     let sessionsOffered = 0;

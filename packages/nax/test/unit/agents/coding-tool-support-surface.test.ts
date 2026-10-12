@@ -84,7 +84,7 @@ describe("acpDelivery (D4 delivery filter)", () => {
       fakeProvider("context7", ["query-docs"]),
     ]);
     expect(support?.acpDelivery?.tools.map((tool) => tool.name)).toEqual(["context7__query-docs"]);
-    expect(support?.acpDelivery?.declaredTools).toContain("Read");
+    expect(support?.declaredTools).toContain("Read");
   });
 
   test("a deny-ruled tool is withheld from delivery and recorded", async () => {
@@ -109,12 +109,13 @@ describe("acpDelivery (D4 delivery filter)", () => {
     ]);
   });
 
-  test("safe profile (provider scope none) yields no delivery and no surface", async () => {
+  test("safe profile (provider scope none): no delivery, but the surface records the whole-layer skip", async () => {
     const support = await resolveWith(
       { permissionProfile: "safe", permissions: { run: { allow: ["Mcp(context7)"] } } },
       [fakeProvider("context7", ["query-docs"])],
     );
-    expect(support?.acpDelivery).toBeUndefined();
-    expect(support?.toolSurface).toBeUndefined();
+    expect(support?.acpDelivery?.tools).toEqual([]);
+    expect(support?.toolSurface?.advertised).toEqual([]);
+    expect(support?.toolSurface?.skippedProviders).toEqual([{ id: "*", reason: "provider-scope:none", stages: [] }]);
   });
 });

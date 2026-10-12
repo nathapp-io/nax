@@ -416,12 +416,13 @@ export function prepareHopSession(input: HopInvocation, codingSupport: CodingToo
     storyId: ctx.story.id,
     ...(transcriptOwner !== undefined ? { transcriptOwner } : {}),
     ...(toolAudit !== undefined ? { toolAudit } : {}),
-    // nax#2444 D3/D4: policy-filtered provider tools, the declaration and the
-    // surface draft ride to the adapter; native ignores all three.
+    // nax#2444 D2: the materialized declaration rides EVERY open, MCP or not —
+    // the ACP profile narrows by it. D3/D4: provider tools + surface ride only
+    // when provider tools resolved. Native ignores all three.
+    ...(codingSupport?.declaredTools !== undefined ? { declaredTools: codingSupport.declaredTools } : {}),
     ...(codingSupport?.acpDelivery !== undefined
       ? {
           providerTools: codingSupport.acpDelivery.tools,
-          declaredTools: codingSupport.acpDelivery.declaredTools,
           toolSurface: codingSupport.acpDelivery.surface,
         }
       : {}),

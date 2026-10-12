@@ -370,6 +370,7 @@ export async function summarizeMcpAdoptionPhase(input: {
   config: NaxConfig;
   /** The run output dir: the audit files' primary location (paths precedence). */
   outputDir: string | undefined;
+  runId: string | undefined;
   logger: Logger | undefined;
 }): Promise<McpAdoptionSummary | undefined> {
   const servers = input.config.mcp?.servers ?? {};
@@ -378,7 +379,7 @@ export async function summarizeMcpAdoptionPhase(input: {
     .map(([id]) => id);
   if (serverIds.length === 0) return undefined;
   const auditDir = toolAuditDir({ root: input.workdir, outputDir: input.outputDir }, input.feature);
-  const summary = await summarizeMcpAdoption({ serverIds, auditDir });
+  const summary = await summarizeMcpAdoption({ serverIds, auditDir, runId: input.runId });
   warnZeroAdoption(summary, input.logger);
   return summary;
 }

@@ -27,19 +27,28 @@ export interface ToolSurfaceDraftInput {
 }
 
 export function buildToolSurfaceDraft(input: ToolSurfaceDraftInput): ToolSurfaceDraft {
+  // A tool the delivery filter withheld (deny/ask-ruled) was never served on
+  // ACP, so it must not read as advertised (#2410: the record says what the
+  // model actually saw).
+  const extraWithheld = input.extraWithheld ?? [];
+  const notServed = new Set(extraWithheld.map((row) => `${row.providerId}__${row.name}`));
   return {
     stage: input.stage,
     declaredTools: [...input.declaredTools],
     advertised: input.providerResult.entries
       .filter((entry) => entry.localNames.length > 0)
-      .map((entry) => ({ providerId: entry.providerId, names: [...entry.localNames] })),
+      .map((entry) => ({
+        providerId: entry.providerId,
+        names: entry.localNames.filter((name) => !notServed.has(`${entry.providerId}__${name}`)),
+      }))
+      .filter((entry) => entry.names.length > 0),
     withheld: [
       ...input.providerResult.withheld.map((row) => ({
         providerId: row.providerId,
         name: row.localName,
         reason: row.reason,
       })),
-      ...(input.extraWithheld ?? []),
+      ...extraWithheld,
     ],
     skippedProviders: [
       ...input.providerResult.skipped.map((row) => ({
@@ -140,18 +149,13 @@ export function resolveProviderSurface(args: {
 }
 
 /** Attaches the ACP delivery fields to the resolved support; no draft means nothing to attach. */
-export function attachAcpDelivery(
-  support: CodingToolSupport,
-  surface: ProviderSurface,
-  declaredTools: readonly string[],
-): CodingToolSupport {
+export function attachAcpDelivery(support: CodingToolSupport, surface: ProviderSurface): CodingToolSupport {
   if (surface.acpDraft === undefined || surface.delivery === undefined) return support;
   return {
     ...support,
     ...(surface.toolSurface !== undefined ? { toolSurface: surface.toolSurface } : {}),
     acpDelivery: {
       tools: surface.delivery.tools,
-      declaredTools: declaredTools,
       surface: surface.acpDraft,
     },
   };

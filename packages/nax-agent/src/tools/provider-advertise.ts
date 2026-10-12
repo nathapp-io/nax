@@ -23,11 +23,13 @@ export interface ResolvedProviderTools {
   /**
    * Providers whose configured `stages` exclude this hop's stage, with the
    * stages they were configured for (#2410 gap 2: a misconfigured `stages`
-   * must be visible, not silent).
+   * must be visible, not silent). The scope-none arm contributes the
+   * whole-layer `provider-scope:none` row (permission profile `safe`, or a
+   * `rules` scope that resolved no providers).
    */
   readonly skipped: readonly {
     providerId: string;
-    reason: "stage-mismatch";
+    reason: "stage-mismatch" | "provider-scope:none";
     stages: readonly string[];
   }[];
   /** Sanitised tools a scoped stage's `admits` rejected (#2410 gap 1). */

@@ -204,6 +204,7 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
     feature,
     config,
     outputDir: options.runtime.outputDir,
+    runId,
     logger,
   });
 
