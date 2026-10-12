@@ -13,6 +13,8 @@ import { appendLedger } from "./ledger";
 import { workflowRunDir } from "./paths";
 import { buildStoryEnv } from "./stage-env";
 import { runStoryLoop } from "./story-loop";
+import { startTokenMeter } from "./tokens";
+import type { RoleTokens } from "./types";
 
 export const _workflowStageDeps = { buildWorkflowCallContext, buildStoryEnv, runStoryLoop, writeBrief };
 
@@ -31,24 +33,18 @@ export const workflowStage: PipelineStage = {
       );
     }
     const started = Date.now();
-    let costUsd = 0;
-    let inputTokens = 0;
-    let outputTokens = 0;
-    const unsubscribe =
-      ctx.runtime?.dispatchEvents?.onDispatch((event) => {
-        costUsd += event.exactCostUsd ?? event.estimatedCostUsd ?? 0;
-        inputTokens += event.tokenUsage?.inputTokens ?? 0;
-        outputTokens += event.tokenUsage?.outputTokens ?? 0;
-      }) ?? (() => {});
+    const meter = startTokenMeter(ctx.runtime?.dispatchEvents);
+    let storyEnv: Awaited<ReturnType<typeof _workflowStageDeps.buildStoryEnv>> | null = null;
     let dispose: (() => Promise<void>) | null = null;
     let closeOnError: ((reason: string) => Promise<void>) | null = null;
     try {
       const built = await _workflowStageDeps.buildWorkflowCallContext(ctx);
       dispose = built.dispose;
       const { callCtx } = built;
-      const storyEnv = await _workflowStageDeps.buildStoryEnv(ctx, callCtx);
-      const { sc, env } = storyEnv;
-      closeOnError = storyEnv.closeOnError;
+      const builtEnv = await _workflowStageDeps.buildStoryEnv(ctx, callCtx);
+      storyEnv = builtEnv;
+      const { sc, env } = builtEnv;
+      closeOnError = builtEnv.closeOnError;
       // A resumed story keeps its prior brief (copied into this run's dir); a missing one is rewritten.
       if (!env.resume || !(await Bun.file(sc.briefPath).exists())) await _workflowStageDeps.writeBrief(sc);
       const outcome = await _workflowStageDeps.runStoryLoop(env);
@@ -69,17 +65,19 @@ export const workflowStage: PipelineStage = {
       await appendLedgerSafe(ctx, `complete-gate-open (workflow error: ${errorMessage(err)})`);
       if (closeOnError) await closeOnError(errorMessage(err));
     } finally {
-      unsubscribe();
+      meter.stop();
+      if (storyEnv) await recordTokensSafe(storyEnv.env, meter.byRole(), ctx.story.id);
       if (dispose) await dispose();
     }
+    const totals = meter.totals();
     ctx.agentResult = {
       success: true,
-      estimatedCostUsd: costUsd,
+      estimatedCostUsd: totals.costUsd,
       rateLimited: false,
       output: "",
       exitCode: 0,
       durationMs: Date.now() - started,
-      tokenUsage: { inputTokens, outputTokens },
+      tokenUsage: { inputTokens: totals.inputTokens, outputTokens: totals.outputTokens },
     };
     return { action: "continue" };
   },
@@ -100,5 +98,18 @@ async function appendLedgerSafe(ctx: PipelineContext, text: string): Promise<voi
       storyId: ctx.story.id,
       error: errorMessage(err),
     });
+  }
+}
+
+/** Per-role tokens onto the story record (spec §9); best effort, like the ledger line. */
+async function recordTokensSafe(
+  env: { readonly sink: { update(patch: { tokensByRole: Readonly<Record<string, RoleTokens>> }): Promise<void> } },
+  byRole: Readonly<Record<string, RoleTokens>>,
+  storyId: string,
+): Promise<void> {
+  try {
+    await env.sink.update({ tokensByRole: byRole });
+  } catch (err) {
+    getLogger().debug("workflow", "Token totals not recorded", { storyId, error: errorMessage(err) });
   }
 }

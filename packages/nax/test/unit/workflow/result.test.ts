@@ -2,7 +2,15 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, utimes } from "node:fs/promises";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { loadPriorStoryRecord, newStoryRecord, readResult, upsertStoryRecord } from "@/workflow/result";
+import { newFeatureRecord } from "@/workflow/feature-record";
+import {
+  loadPriorStoryRecord,
+  newStoryRecord,
+  readResult,
+  runDirsNewestFirst,
+  upsertFeatureRecord,
+  upsertStoryRecord,
+} from "@/workflow/result";
 
 const dirs: string[] = [];
 afterEach(async () => {
@@ -54,5 +62,35 @@ describe("workflow result.json", () => {
     // The newest prior run finished the story: nothing to resume, even though an older run did not.
     expect(await loadPriorStoryRecord(feature, "run-now", "US-003")).toBeNull();
     expect(await loadPriorStoryRecord(feature, "run-now", "US-999")).toBeNull();
+  });
+});
+
+describe("feature record in result.json (P4-R1)", () => {
+  test("upsertFeatureRecord keeps the story records; upsertStoryRecord keeps the feature record", async () => {
+    const run = makeTempDir("wf-result-");
+    dirs.push(run);
+    await upsertStoryRecord(run, header("run-1"), newStoryRecord("US-001", 5, "t"));
+    const feature = newFeatureRecord({ now: "t", seed: "s0", minors: [] });
+    await upsertFeatureRecord(run, header("run-1"), feature);
+    expect((await readResult(run))?.stories["US-001"]).toBeDefined();
+    await upsertStoryRecord(run, header("run-1"), { ...newStoryRecord("US-001", 5, "t"), round: 2 });
+    const file = await readResult(run);
+    expect(file?.featureWorkflow?.seed).toBe("s0");
+    expect(file?.stories["US-001"]?.round).toBe(2);
+  });
+
+  test("runDirsNewestFirst orders run dirs by result.json mtime and skips dirs without one", async () => {
+    const feature = makeTempDir("wf-feature-");
+    dirs.push(feature);
+    for (const [name, secs] of [
+      ["run-a", 100],
+      ["run-b", 300],
+      ["run-c", 200],
+    ] as const) {
+      await upsertStoryRecord(join(feature, name), header(name), newStoryRecord("US-001", 5, "t"));
+      await utimes(join(feature, name, "result.json"), secs, secs);
+    }
+    await mkdir(join(feature, "not-a-run"), { recursive: true });
+    expect(await runDirsNewestFirst(feature)).toEqual(["run-b", "run-c", "run-a"].map((n) => join(feature, n)));
   });
 });
