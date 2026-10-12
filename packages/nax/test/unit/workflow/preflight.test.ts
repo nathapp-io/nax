@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import type { Advisor, BatchRequest, BatchResult } from "@/advisor";
-import { preflightPath, runPreflight } from "@/workflow/preflight";
+import { type PreflightFile, preflightPath, runPreflight } from "@/workflow/preflight";
 
 const dirs: string[] = [];
 afterEach(async () => {
@@ -100,7 +100,7 @@ describe("runPreflight", () => {
   test("existing valid preflight.json is reused: no advisor call, no ledger lines (resume)", async () => {
     const runDir = makeTempDir("wf-pf-");
     dirs.push(runDir);
-    const saved = { schemaVersion: 1, overlap: [], conflicts: [] };
+    const saved: PreflightFile = { schemaVersion: 1, overlap: [], conflicts: [] };
     await Bun.write(join(runDir, "preflight.json"), JSON.stringify(saved));
     const advisor = advisorReturning({ kind: "preflight", overlap: [], items: [] });
     const lines: string[] = [];
