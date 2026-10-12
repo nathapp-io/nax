@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Finding } from "@/finish";
-import { createFinishState, deserializeFinishState, serializeFinishState } from "@/finish/state";
 import { applyLedgerEvent, findingId, type LedgerEntry, type LedgerEvent, openFindings } from "@/finish/ledger";
+import { createFinishState, deserializeFinishState, serializeFinishState } from "@/finish/state";
 
 const f = (title: string): Finding => ({
   severity: "MEDIUM",
