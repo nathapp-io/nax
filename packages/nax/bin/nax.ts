@@ -83,6 +83,7 @@ import { resolveFeatureSpec } from "../src/cli/features-resolve";
 import { generateCommand } from "../src/cli/generate";
 import { registerStatusCommand } from "../src/cli/status-dispatch";
 import { detectCommand } from "../src/commands/detect";
+import { doctorCommand } from "../src/commands/doctor";
 import { logsCommand } from "../src/commands/logs";
 import { precheckCommand } from "../src/commands/precheck";
 import { registerReplayCommand } from "../src/commands/replay";
@@ -1059,6 +1060,21 @@ program
         json: options.json,
         light: options.light,
       });
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
+  });
+
+// ── doctor ───────────────────────────────────────────
+program
+  .command("doctor")
+  .description("Run light environment prechecks")
+  .option("-d, --dir <path>", "Project directory", process.cwd())
+  .option("--json", "Output machine-readable JSON", false)
+  .action(async (options) => {
+    try {
+      await doctorCommand({ dir: options.dir, json: options.json });
     } catch (err) {
       console.error(chalk.red(`Error: ${(err as Error).message}`));
       process.exit(1);

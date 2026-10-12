@@ -1,6 +1,11 @@
 export type { AdapterInteractionResponse, InteractionHandler, ModelSpec } from "@nathapp/nax-agent";
 export { NO_OP_INTERACTION_HANDLER, parseModelSpec } from "@nathapp/nax-agent";
 export { classifyCompleteException } from "./complete-exception-classifier";
+export {
+  createConfigReadGatePolicy,
+  NAX_CONFIG_READ_TOOLS,
+  NAX_CONFIG_WRITE_REFUSAL,
+} from "./config-read-gate";
 export type { CostEstimate, ModelCostRates, TokenUsage, TokenUsageWithConfidence } from "./cost";
 export { formatCostWithConfidence, resolvePricingSource } from "./cost";
 export { _agentManagerDeps, AgentManager } from "./manager";

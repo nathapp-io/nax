@@ -23,6 +23,7 @@
  */
 
 import { commandSpecIncludes, errorMessage, renderCommandSpec } from "@nathapp/nax-agent/internal";
+import { scanConfigSecrets } from "@/config";
 import type { PromptLoaderConfig } from "@/config/selectors";
 import type { NaxConfig } from "@/config/types";
 import { filterContextByRole, truncateToContextBudget } from "@/context";
@@ -53,6 +54,10 @@ import {
   buildVerdictSection,
 } from "../sections";
 
+export const _tddPromptBuilderDeps = {
+  scanConfigSecrets,
+};
+
 export class TddPromptBuilder {
   private readonly role: PromptRole;
   private readonly options: PromptOptions;
@@ -67,6 +72,7 @@ export class TddPromptBuilder {
   private overridePath_: string | undefined;
   private loaderWorkdir_: string | undefined;
   private loaderConfig_: PromptLoaderConfig | undefined;
+  private configRoot_: string | undefined;
   private testCommand_: string | undefined;
   /** US-004 — declared `quality.commands.testScoped` key (always `"testScoped"`).
    *  When set, the isolation section's test-filter rule is wrapped in a
@@ -157,6 +163,12 @@ export class TddPromptBuilder {
     return this;
   }
 
+  /** Set the repository root containing `.nax/` for config-read hint scanning. */
+  configRoot(dir: string): this {
+    this.configRoot_ = dir;
+    return this;
+  }
+
   hermeticConfig(
     config: { hermetic?: boolean; externalBoundaries?: string[]; mockGuidance?: string } | undefined,
   ): this {
@@ -202,6 +214,7 @@ export class TddPromptBuilder {
    * more than once on the same instance is safe and idempotent.
    */
   async build(): Promise<string> {
+    const configReadable = await this.isConfigReadable();
     const acc = new SectionAccumulator();
 
     // (1) Constitution
@@ -302,7 +315,7 @@ export class TddPromptBuilder {
     // (6.71) .nax/ artifact immutability — always-on safety invariant for
     // code-touching roles (test-writer, implementer, verifier). Composed
     // alongside the guardrails block; not config-gated.
-    const naxArtifacts = buildNaxArtifactsSection(this.role as GuardrailRole, guardrailVariant, guardrailIsolation);
+    const naxArtifacts = this.buildNaxArtifactsSection(guardrailVariant, guardrailIsolation, configReadable);
     if (naxArtifacts) acc.add(this.s("nax-artifacts", naxArtifacts));
 
     // (6.72) Scratchpad awareness — the artifacts section names
@@ -353,7 +366,7 @@ export class TddPromptBuilder {
       featureContextMarkdown?: string;
       contextBundle?: import("@/context/engine").ContextBundle;
       constitution?: string;
-      /** Repo root where `.nax/` lives — anchors the story baseline artifact read (US-004). */
+      /** Repo root where `.nax/` lives — anchors config hint scanning and the story baseline read (US-004). */
       root?: string;
       /** Feature id segmenting the baseline artifact tree (US-004). */
       featureId?: string;
@@ -366,7 +379,7 @@ export class TddPromptBuilder {
       role === "implementer" ? (opts.lite ? "lite" : "standard") : undefined;
     const isolation: "strict" | "lite" | undefined =
       role === "test-writer" ? (opts.lite ? "lite" : "strict") : undefined;
-    return TddPromptBuilder.for(role, { variant, isolation })
+    const builder = TddPromptBuilder.for(role, { variant, isolation })
       .withLoader(workdir, config)
       .story(story)
       .testBaseline(testBaseline)
@@ -386,8 +399,9 @@ export class TddPromptBuilder {
         // The SSOT lives at src/execution/lifecycle/acceptance-helpers.ts:89.
         commandSpecIncludes(config.quality?.commands?.testScoped, "{{files}}") ? "testScoped" : undefined,
       )
-      .hermeticConfig(config.quality?.testing)
-      .build();
+      .hermeticConfig(config.quality?.testing);
+    if (opts.root !== undefined) builder.configRoot(opts.root);
+    return builder.build();
   }
 
   /**
@@ -425,6 +439,29 @@ export class TddPromptBuilder {
       "Schema (minimal):\n" +
       `{"version":1,"approved":boolean,"tests":{"allPassing":boolean,"passCount":number,"failCount":number},"testModifications":{"detected":boolean,"files":[],"legitimate":boolean,"reasoning":"..."},"testFailureDiagnosis":null,"acceptanceCriteria":{"allMet":boolean,"criteria":[]},"quality":{"rating":"good"|"acceptable"|"poor","issues":[]},"fixes":[],"reasoning":"..."}`
     );
+  }
+
+  private buildNaxArtifactsSection(
+    variant: "standard" | "lite" | undefined,
+    isolation: "strict" | "lite" | undefined,
+    configReadable: boolean,
+  ): string {
+    const options = this.configRoot_ === undefined ? undefined : { configReadable };
+    return buildNaxArtifactsSection(this.role as GuardrailRole, variant, isolation, options);
+  }
+
+  private async isConfigReadable(): Promise<boolean> {
+    if (!this.configRoot_) return false;
+    try {
+      const scan = await _tddPromptBuilderDeps.scanConfigSecrets(this.configRoot_);
+      return scan.clean && scan.files.includes(".nax/config.json");
+    } catch (err) {
+      getSafeLogger()?.warn("prompts", "Config secret scan failed; config reads stay closed", {
+        storyId: this.story_?.id ?? "_prompt",
+        error: errorMessage(err),
+      });
+      return false;
+    }
   }
 
   /** Wrap a string-returning section builder into a PromptSection for the accumulator. */

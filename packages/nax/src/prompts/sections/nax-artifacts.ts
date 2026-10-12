@@ -25,9 +25,10 @@ export function buildNaxArtifactsSection(
   // Currently unused — all variants/isolation modes produce identical output per role.
   _variant?: "standard" | "lite",
   _isolation?: "strict" | "lite",
+  options?: { configReadable?: boolean },
 ): string {
   void role;
-  return `# .nax/ artifact immutability
+  const section = `# .nax/ artifact immutability
 
 Files under \`.nax/\` are nax's own artifacts (acceptance scaffolds, plan state, generated acceptance
 tests). They must NEVER be moved, renamed, or deleted — \`.nax/\` is a tool-managed directory and
@@ -44,4 +45,11 @@ freely. Every other path under \`.nax/\` stays off limits.
 nax updates \`.nax/features/<feature>/prd.json\` itself during a run, so it shows as modified in
 \`git status\` — do not diff or revert it: this story's criteria are already in this prompt, and if you
 need its contents, read it with the \`Read\` tool; shell commands that name it may be refused.`;
+  if (options?.configReadable !== true) return section;
+  return `${section}\n\nThe project's declared commands (test, testScoped, lint, typecheck, build, ...) are in
+\`.nax/config.json\` under \`quality.commands\`. In a monorepo, \`.nax/mono/<package>/config.json\`
+overrides them per key for that package: a key set there wins, every other key comes from the
+root file. If config reads are available in this dispatch, read them with the \`Read\` tool; gated or
+escalated Bash dispatches may keep those reads closed. Do not modify either file; nax config cannot
+be changed from inside a run.`;
 }

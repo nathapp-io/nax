@@ -47,6 +47,8 @@ export async function precheckCommand(options: PrecheckOptions): Promise<void> {
     const config = await loadConfig(resolved.projectDir);
     const result = await runEnvironmentPrecheck(config, resolved.projectDir, { format });
     process.exit(result.passed ? EXIT_CODES.SUCCESS : EXIT_CODES.BLOCKER);
+    // process.exit is stubbed in tests; return explicitly so light mode cannot fall through.
+    return;
   }
 
   // Get feature directory

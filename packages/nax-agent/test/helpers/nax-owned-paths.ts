@@ -80,7 +80,7 @@ export function naxWriteOptIns(root: string, allowWrite: readonly string[]): Rea
 }
 
 /** `.nax/config.json`, or `.nax/mono/<package...>/config.json`, as root-relative segments. */
-function isNaxConfigSegments(segments: readonly string[]): boolean {
+export function isNaxConfigSegments(segments: readonly string[]): boolean {
   if (segments[0] !== ".nax" || segments[segments.length - 1] !== "config.json") return false;
   return segments.length === 2 || (segments.length >= 4 && segments[1] === "mono");
 }
@@ -98,8 +98,9 @@ function isNaxConfigSegments(segments: readonly string[]): boolean {
  * ungated shell on the next run, routing around every `Bash(...)` rule, the
  * lexer's construct refusals and containment itself.
  *
- * Refused to EVERY tool, reads included -- this is the pre-existing behaviour
- * and it is deliberate.
+ * The base policy refuses every tool, reads included. The dispatch-specific
+ * wrapper in `src/agents/config-read-gate.ts` conditionally opens read-only
+ * access after a clean config-secret scan; writes remain refused.
  */
 export function isNaxConfigFile(root: string, resolved: string): boolean {
   const rel = relative(realOrRaw(root), resolved);
@@ -300,6 +301,8 @@ function naxStateRefusal(rel: string, optIns: ReadonlySet<string>): string | und
 
 /** `outOfRootReason`'s text for a nax config file (completes `path "x" <text>`). */
 export const NAX_CONFIG_REFUSAL =
+  // The base policy refuses reads too; config-read-gate.ts conditionally opens
+  // read-only tools after a clean secret scan. This text describes the base rule.
   "is one of nax's own config files, which every tool is refused regardless of grant -- " +
   "`quality.commands` and `acceptance.command` are run through a shell WITHOUT passing the " +
   "permission gate because a human wrote them, so editing this file is a route to running " +

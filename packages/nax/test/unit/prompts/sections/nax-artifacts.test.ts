@@ -151,6 +151,56 @@ describe("buildNaxArtifactsSection", () => {
     });
   });
 
+  // ─── US-004 — config-read hint for the project's declared commands ───
+  //
+  // The paragraph is appended only when the caller says the root config is
+  // readable. It points the agent at `.nax/config.json` (`quality.commands`)
+  // and at the per-package override file, so a command lookup is one `Read`
+  // instead of a refused read plus a guess.
+
+  describe("US-004 — config-read hint", () => {
+    // AC1
+    test("AC1: configReadable:true names the per-package mono config path", () => {
+      const result = buildNaxArtifactsSection("implementer", undefined, undefined, { configReadable: true });
+      expect(result).toContain(".nax/mono/<package>/config.json");
+    });
+
+    // AC1
+    test("AC1: configReadable:true names the quality.commands key", () => {
+      const result = buildNaxArtifactsSection("implementer", undefined, undefined, { configReadable: true });
+      expect(result).toContain("quality.commands");
+    });
+
+    // AC1 boundary — the hint is appended, it does not replace the baseline text.
+    test("AC1 boundary: configReadable:true keeps the baseline immutability text", () => {
+      const baseline = buildNaxArtifactsSection("implementer");
+      const hinted = buildNaxArtifactsSection("implementer", undefined, undefined, { configReadable: true });
+      expect(hinted).toContain("do not diff or revert it");
+      expect(hinted.length).toBeGreaterThan(baseline.length);
+    });
+
+    // AC2
+    test("AC2: omitting options returns the same string as configReadable:false", () => {
+      expect(buildNaxArtifactsSection("implementer")).toEqual(
+        buildNaxArtifactsSection("implementer", undefined, undefined, { configReadable: false }),
+      );
+    });
+
+    // AC2
+    test("AC2: the baseline text omits quality.commands", () => {
+      const result = buildNaxArtifactsSection("implementer");
+      expect(result).not.toContain("quality.commands");
+      expect(result).not.toContain(".nax/mono/<package>/config.json");
+    });
+
+    // AC2 boundary — an explicitly empty options object is "not true" too.
+    test("AC2 boundary: an empty options object returns the baseline text", () => {
+      expect(buildNaxArtifactsSection("implementer", undefined, undefined, {})).toEqual(
+        buildNaxArtifactsSection("implementer"),
+      );
+    });
+  });
+
   describe("purity", () => {
     test("returns same output for same inputs (test-writer)", () => {
       const a = buildNaxArtifactsSection("test-writer");

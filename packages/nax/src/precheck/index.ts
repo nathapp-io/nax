@@ -15,6 +15,7 @@ import type { PRD } from "../prd/types";
 
 export {
   _checkDiskSpaceDeps,
+  _configSecretsCheckDeps,
   _modelResolutionDeps,
   _nativeCredentialDeps,
   checkAgentCLI,
@@ -22,6 +23,7 @@ export {
   checkCanonicalRulesLint,
   checkClaudeCLI,
   checkClaudeMdExists,
+  checkConfigSecrets,
   checkDependenciesInstalled,
   checkDiskSpace,
   checkGitignoreCoversNax,
@@ -51,6 +53,7 @@ import {
   checkBuildCommandInReviewChecks,
   checkCanonicalRulesLint,
   checkClaudeMdExists,
+  checkConfigSecrets,
   checkDependenciesInstalled,
   checkDiskSpace,
   checkGitignoreCoversNax,
@@ -298,6 +301,8 @@ export async function runEnvironmentPrecheck(
     }
   }
 
+  await collectConfigSecretsCheck(workdir, { silent, format, passed, warnings });
+
   if (!silent && format === "json") {
     console.log(JSON.stringify({ passed: blockers.length === 0, blockers, warnings }, null, 2));
   }
@@ -397,6 +402,8 @@ export async function runPrecheck(
     }
   }
 
+  await collectConfigSecretsCheck(workdir, { silent, format, passed, warnings });
+
   // ─────────────────────────────────────────────────────────────────────────────
   // Output formatting
   // ─────────────────────────────────────────────────────────────────────────────
@@ -436,6 +443,15 @@ export async function runPrecheck(
     output,
     flaggedStories,
   };
+}
+
+async function collectConfigSecretsCheck(
+  workdir: string,
+  options: { silent: boolean; format: "human" | "json"; passed: Check[]; warnings: Check[] },
+): Promise<void> {
+  const check = await checkConfigSecrets(workdir);
+  if (!options.silent && options.format === "human") printCheckResult(check);
+  (check.passed ? options.passed : options.warnings).push(check);
 }
 
 /**
