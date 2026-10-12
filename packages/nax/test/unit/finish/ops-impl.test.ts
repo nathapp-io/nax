@@ -8,8 +8,10 @@
  */
 import { afterEach, describe, expect, test } from "bun:test";
 import { _finishGitDeps, _finishOpsDeps, createFinishOps, createFinishState } from "@/finish";
+import { STEP_TIMEOUT_MARGIN_MS } from "@/finish/step-signal";
 import type { ForgeDeps } from "@/forge";
 import type { CallContext } from "@/operations";
+import { HANDOFF_TURN_MS } from "@/operations";
 
 const originalOps = { ..._finishOpsDeps };
 const originalGit = _finishGitDeps.git;
@@ -150,6 +152,31 @@ describe("ops-impl", () => {
     const { deps } = baseDeps();
     await createFinishOps(deps).fix("review", { state, findings: [] });
     expect(seenPhase).toBe("review");
+  });
+
+  test("fix: hard signal is the run's, the interrupt and continuation pass through, timeoutMs adds the handoff turn and margin", async () => {
+    let seenCtx: CallContext | undefined;
+    let seenInput: Record<string, unknown> | undefined;
+    _finishOpsDeps.callOp = (async (ctx: CallContext, _op: unknown, input: Record<string, unknown>) => {
+      seenCtx = ctx;
+      seenInput = input;
+      return {};
+    }) as typeof _finishOpsDeps.callOp;
+    const { deps } = baseDeps();
+    const runSignal = new AbortController().signal;
+    const phaseSignal = new AbortController().signal;
+    const interrupt = new AbortController().signal;
+    const continuation = { note: { findings: [] }, files: ["a.ts"] };
+    await createFinishOps({
+      ...deps,
+      callCtx: { ...deps.callCtx, signal: phaseSignal },
+      runSignal,
+      timeouts: { fixMs: 7_000 },
+    }).fix("review", { state, findings: [], interrupt, continuation });
+    expect(seenCtx?.signal).toBe(runSignal);
+    expect(seenInput?.timeoutMs).toBe(7_000 + HANDOFF_TURN_MS + STEP_TIMEOUT_MARGIN_MS);
+    expect(seenInput?.interrupt).toBe(interrupt);
+    expect(seenInput?.continuation).toBe(continuation);
   });
 
   test("openDraftPr returns null rather than throwing when the forge cannot be spawned, per D4.5", async () => {

@@ -6,7 +6,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { makeMachineHarness, restoreFinishMachineStubs, withTempDir } from "@test/helpers";
 import type { Finding, FinishReviewOutput } from "@/finish";
-import { runFinishMachine } from "@/finish";
+import { MAX_FIX_ATTEMPTS, runFinishMachine } from "@/finish";
 
 afterEach(() => restoreFinishMachineStubs());
 
@@ -270,6 +270,51 @@ describe("a fix session that hits fixMs (finish A)", () => {
       expect(h.trail).toContain("restore");
       expect(h.state.stops[0]).toMatchObject({ kind: "fix", phase: "review" });
       expect(count(h.trail, "review:quality")).toBeGreaterThan(1);
+      expect(h.state.phases.review.fixAttempts).toBeGreaterThan(0);
+    });
+  });
+
+  test("a stopped gate fix counts as an attempt, so the loop ends at the attempt cap", async () => {
+    await withTempDir(async (dir) => {
+      const h = makeMachineHarness({
+        auditDir: dir,
+        context: { acceptanceStatus: "disabled" },
+        qualityExit: () => 1,
+        fixMs: 5,
+        ops: {
+          fix: async (phase, req) => {
+            h.trail.push(`fix:${phase}`);
+            await new Promise<void>((r) => req.interrupt?.addEventListener("abort", () => r(), { once: true }));
+            return { dispositions: [], interrupted: true };
+          },
+        },
+      });
+      const result = await runFinishMachine(h.state, h.deps);
+      expect(count(h.trail, "fix:gate")).toBe(MAX_FIX_ATTEMPTS);
+      expect(h.state.phases.gate.fixAttempts).toBe(MAX_FIX_ATTEMPTS);
+      expect(count(h.trail, "commit")).toBe(0);
+      expect(result.outcome).toBe("draft");
+    });
+  });
+
+  test("a phase deadline alone (no run abort) during a fix is a flow stop, not fix or run", async () => {
+    await withTempDir(async (dir) => {
+      const phase = new AbortController();
+      const h = makeMachineHarness({
+        auditDir: dir,
+        signal: phase.signal,
+        flowMs: 10_800_000,
+        context: { acceptanceStatus: "disabled" },
+        script: { quality: [q("x")] },
+        ops: {
+          fix: async () => {
+            phase.abort();
+            throw new Error("deadline");
+          },
+        },
+      });
+      await runFinishMachine(h.state, h.deps);
+      expect(h.state.stops[0]).toMatchObject({ kind: "flow", phase: "review", limitMs: 10_800_000 });
     });
   });
 });

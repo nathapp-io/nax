@@ -150,6 +150,7 @@ export async function runFixStep(
   try {
     outcome = await deps.ops.fix(phase, { ...req, state, ...(interrupt ? { interrupt } : {}) });
   } catch (error) {
+    // Any throw after the step limit fired is treated as a `fix` stop, whatever its message.
     const kind = stopKind(deps, limit) ?? "error";
     const handoff = await setAsideStep(state, deps, { phase, base, req, limit: kind });
     if (kind === "error") return { kind: "failed", error, handoff };

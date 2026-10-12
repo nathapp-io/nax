@@ -172,6 +172,7 @@ describe("runFixStep (finish A)", () => {
     expect(out.kind).toBe("failed");
     expect(model.dirty).toBe(false);
     expect(state.handoffs[0]?.limit).toBe("error");
+    expect(state.handoffs[0]?.hasNote).toBe(false);
     expect(state.pendingHandoff).toBeUndefined();
     expect(state.stops).toEqual([]);
   });
