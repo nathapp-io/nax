@@ -228,6 +228,8 @@ const draftFacts = {
   unreviewedFixCommits: [],
   coverage: { spec: null, quality: null },
   fixRounds: 1,
+  findings: [],
+  stops: [],
 };
 
 describe("finalizeDraftPr recovery commit", () => {

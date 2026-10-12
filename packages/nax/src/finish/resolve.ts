@@ -4,8 +4,9 @@
  * the run. Pure apart from the injected advisor call.
  */
 
+import { type LedgerEntry, openFindings } from "./ledger";
 import type { ReviewLoopState } from "./state";
-import type { AcceptanceFact, Finding, GateFact, ResolutionFacts, ReviewLens } from "./types";
+import type { AcceptanceFact, Finding, GateFact, ResolutionFacts, ReviewLens, Stop } from "./types";
 
 const LENSES: readonly ReviewLens[] = ["spec", "quality"];
 
@@ -21,10 +22,11 @@ export function computeFacts(args: {
   gates: GateFact[];
   unreviewedFixCommits: string[];
   changed: string[];
+  ledger: LedgerEntry[];
+  stops: Stop[];
 }): ResolutionFacts {
-  const findingsOpen = [...new Set([...args.review.lastFindings, ...args.review.unresolved])];
   return {
-    findingsOpen,
+    findingsOpen: openFindings(args.ledger),
     acceptance: args.acceptance,
     gates: args.gates,
     reviewsMissing: [...args.review.missingLenses],
@@ -34,6 +36,8 @@ export function computeFacts(args: {
       quality: coverageOf(args.review.covered.quality, args.changed),
     },
     fixRounds: args.review.rounds,
+    findings: [...args.ledger],
+    stops: [...args.stops],
   };
 }
 
@@ -55,10 +59,64 @@ export function approvalFacts(f: ResolutionFacts, reReviewUsed: boolean) {
   };
 }
 
+const SHORT_SHA = 7;
+
+function duration(ms: number): string {
+  return ms >= 3_600_000 && ms % 3_600_000 === 0 ? `${ms / 3_600_000} h` : `${Math.round(ms / 60_000)} min`;
+}
+
+function where(s: Stop): string {
+  const step = s.step ?? s.phase ?? "finish";
+  return s.round !== undefined && step === "review" ? `${step} round ${s.round}` : step;
+}
+
+function describeStop(s: Stop): string {
+  switch (s.kind) {
+    case "review":
+      return `review (${s.lens ?? "?"}) stopped at the ${duration(s.limitMs)} limit`;
+    case "flow":
+      return `finish time limit (${duration(s.limitMs)}) reached during ${where(s)}`;
+    case "run":
+      return `run cancelled during ${where(s)}`;
+    case "fix": {
+      const held = s.findings !== undefined ? `${s.findings} findings, ` : "";
+      return `fix session stopped at the ${duration(s.limitMs)} limit (${held}handoff-${s.handoff})`;
+    }
+  }
+}
+
+export function stopReason(stops: Stop[]): string | undefined {
+  const [first] = stops;
+  if (!first) return undefined;
+  const rest = stops.length - 1;
+  return rest > 0 ? `${describeStop(first)}; +${rest} more stop${rest > 1 ? "s" : ""}` : describeStop(first);
+}
+
+function countBy(entries: LedgerEntry[], label: (ref: string, n: number) => string): string[] {
+  const refs = [...new Set(entries.map((e) => e.ref ?? ""))];
+  return refs.map((ref) => label(ref, entries.filter((e) => (e.ref ?? "") === ref).length));
+}
+
+function findingParts(findings: LedgerEntry[], openCount: number): string[] {
+  if (findings.length === 0) return openCount > 0 ? [`${openCount} open finding(s)`] : [];
+  const open = findings.filter((e) => e.state === "open" || e.state === "rejected" || e.state === "unresolved");
+  return [
+    ...(open.length > 0 ? [`${open.length} open`] : []),
+    ...countBy(
+      findings.filter((e) => e.state === "fixed-unreviewed"),
+      (ref, n) => `${n} fixed in unreviewed commit ${ref.slice(0, SHORT_SHA)}`,
+    ),
+    ...countBy(
+      findings.filter((e) => e.state === "set-aside"),
+      (ref, n) => `${n} set aside (${ref})`,
+    ),
+  ];
+}
+
 export function draftReason(f: ResolutionFacts): string {
-  const parts: string[] = [];
-  if (f.findingsOpen.length > 0) parts.push(`${f.findingsOpen.length} open finding(s)`);
+  const parts = [...findingParts(f.findings, f.findingsOpen.length)];
   if (!acceptanceOk(f.acceptance)) parts.push(`acceptance ${f.acceptance}`);
+  if (f.gates.some((g) => g.status === "not-run")) parts.push("gates not run");
   const red = f.gates.filter((g) => g.status === "red").map((g) => g.name);
   if (red.length > 0) parts.push(`gates red: ${red.join(", ")}`);
   for (const lens of LENSES) if (f.reviewsMissing.includes(lens)) parts.push(`${lens} review missing`);

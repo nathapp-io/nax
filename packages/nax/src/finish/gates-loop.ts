@@ -107,6 +107,8 @@ async function fixOnce(
 }
 
 /** A gate runner that throws (not an abort) is one red gate carrying the error; a fix cannot help it. */
+const CRASHED_GATE = "gates (runner crashed)";
+
 async function runGatesOrCrash(
   state: FinishState,
   deps: FinishMachineDeps,
@@ -117,7 +119,7 @@ async function runGatesOrCrash(
     assertNotAborted(deps);
     getSafeLogger()?.warn("finish", "Quality gates could not run", { storyId: "_run", error: errorMessage(err) });
     const output = errorMessage(err);
-    return { gates: { passed: false, ran: ["gates"], failing: ["gates"], output }, crashed: true };
+    return { gates: { passed: false, ran: [CRASHED_GATE], failing: [CRASHED_GATE], output }, crashed: true };
   }
 }
 

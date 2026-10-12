@@ -61,6 +61,7 @@ describe("aborts and deadlines", () => {
       });
       const result = await runFinishMachine(state, deps);
       expect(result.outcome).toBe("draft");
+      expect(result.reason?.startsWith("finish time limit (3 h) reached during review")).toBe(true);
       expect(trail.slice(trail.indexOf("fix:review") + 1)).toEqual(["restore", "finalizeDraftPr"]);
     });
   });
@@ -100,7 +101,9 @@ describe("throws become a draft or a failure, never an escalation", () => {
       const { deps, trail, state } = makeMachineHarness({ auditDir: dir, qualityThrows: "runner exploded" });
       const result = await runFinishMachine(state, deps);
       expect(result.outcome).toBe("draft");
-      expect(result.facts?.gates).toEqual([{ name: "gates", status: "red", excerpt: "runner exploded" }]);
+      expect(result.facts?.gates).toEqual([
+        { name: "gates (runner crashed)", status: "red", excerpt: "runner exploded" },
+      ]);
       expect(trail).not.toContain("fix:gate");
     });
   });
@@ -259,6 +262,60 @@ describe("preconditions", () => {
         url: "https://x/pr/3",
       });
       expect(trail).toEqual([]);
+    });
+  });
+});
+
+describe("recovery path (finish A section 6)", () => {
+  test("a deadline after a completed review round reports non-null coverage (#2461)", async () => {
+    await withTempDir(async (dir) => {
+      const phase = new AbortController();
+      const h = makeMachineHarness({
+        auditDir: dir,
+        signal: phase.signal,
+        flowMs: 10_800_000,
+        context: { acceptanceStatus: "disabled" },
+        script: {
+          quality: [{ findings: [], covered: ["src/a.ts"] }],
+          spec: [{ findings: [], covered: ["src/a.ts"] }],
+        },
+        qualityExit: () => {
+          phase.abort();
+          return 1;
+        },
+      });
+      h.git.changedFiles = ["src/a.ts"];
+      const result = await runFinishMachine(h.state, h.deps);
+      expect(result.outcome).toBe("draft");
+      expect(result.facts?.coverage).toEqual({ spec: 1, quality: 1 });
+      expect(h.state.stops.map((x) => [x.kind, x.step, x.round])).toEqual([["flow", "gate", 1]]);
+      expect(result.reason?.startsWith("finish time limit (3 h) reached during gate")).toBe(true);
+    });
+  });
+
+  test("a review lens stopped at its limit prefixes the draft reason on the normal path", async () => {
+    await withTempDir(async (dir) => {
+      const h = makeMachineHarness({
+        auditDir: dir,
+        context: { acceptanceStatus: "disabled" },
+        script: { quality: [{ findings: [], covered: [], missing: true, stoppedAtLimit: true }] },
+      });
+      const result = await runFinishMachine(h.state, h.deps);
+      expect(result.outcome).toBe("draft");
+      expect(result.reason?.startsWith("review (quality) stopped at the")).toBe(true);
+      expect(result.reason).toContain("quality review missing");
+    });
+  });
+
+  test("a deadline outside a fix session is recorded as a flow stop with its step (#2463 wording)", async () => {
+    await withTempDir(async (dir) => {
+      const phase = new AbortController();
+      phase.abort();
+      const h = makeMachineHarness({ auditDir: dir, signal: phase.signal, flowMs: 10_800_000 });
+      const result = await runFinishMachine(h.state, h.deps);
+      expect(result.reason).toContain("gates not run");
+      expect(result.reason).toContain("finish time limit (3 h) reached during finish");
+      expect(h.state.stops).toHaveLength(1);
     });
   });
 });

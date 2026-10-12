@@ -211,7 +211,7 @@ export type AcceptanceFact = "green" | "red" | "unverified" | "not-configured";
 /** One quality gate's end-of-finish result. */
 export interface GateFact {
   name: string;
-  status: "green" | "red";
+  status: "green" | "red" | "not-run";
   excerpt?: string;
 }
 
@@ -224,6 +224,10 @@ export interface ResolutionFacts {
   unreviewedFixCommits: string[];
   coverage: Record<ReviewLens, number | null>;
   fixRounds: number;
+  /** Finish A: one entry per finding with its state (spec section 5). */
+  findings: import("./ledger").LedgerEntry[];
+  /** Finish A: every place the finish stopped short. */
+  stops: Stop[];
 }
 
 /** What the resolver decided, kept on the state so the PR context can read it. */

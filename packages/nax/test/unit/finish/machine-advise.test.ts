@@ -78,6 +78,7 @@ describe("approval", () => {
       expect(log.approvals).toHaveLength(1);
       expect(log.ledgerCommits).toBe(1);
       expect(state.resolution?.acceptedResidue).toHaveLength(1);
+      expect(state.review.ledger.map((e) => [e.state, e.ref])).toEqual([["accepted", "advisor approval"]]);
     });
   });
 
@@ -90,7 +91,6 @@ describe("approval", () => {
       const { deps, trail, state } = makeMachineHarness({
         auditDir: dir,
         script: { quality: [q("A"), q("A"), q("A"), { findings: [], covered: ["a.ts"] }] },
-        fixIsNoop: true,
         advise: advisor,
       });
       const result = await runFinishMachine(state, deps);
@@ -100,7 +100,8 @@ describe("approval", () => {
       expect(state.review.reReviewUsed).toBe(true);
       // the extra round came back clean, so the second resolve is clean and never reaches the advisor again
       expect(log.approvals).toHaveLength(1);
-      expect(log.approvals[0]?.findingsOpen).toHaveLength(1);
+      // the last allowed round's fix commit was never re-reviewed: that, not an open finding, is what asks the advisor
+      expect(log.approvals[0]?.unreviewedFixCommits).toHaveLength(1);
       expect(result.outcome).toBe("ready");
       expect(result.acceptedResidue).toBeUndefined();
       expect(log.ledgerCommits).toBe(1);
@@ -245,7 +246,9 @@ describe("judged findings", () => {
         ops: {
           fix: async (_phase, req) => {
             seen.push(req.findings ?? []);
-            return {};
+            return {
+              dispositions: (req.findings ?? []).map((_, i) => ({ index: i + 1, disposition: "fixed" as const })),
+            };
           },
         },
       });

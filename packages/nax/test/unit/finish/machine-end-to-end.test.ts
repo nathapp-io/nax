@@ -72,7 +72,7 @@ describe("machine-end-to-end", () => {
       expect(result.outcome).toBe("draft");
       expect(result.status).toBe("draft");
       expect(result.findings?.map((f) => f.title)).toEqual(["A"]);
-      expect(result.reason).toContain("1 open finding(s)");
+      expect(result.reason).toContain("1 open");
       expect(trail).toContain("finalizeDraftPr");
       expect(trail).not.toContain("promotePr");
       expect(state.review.rounds).toBe(3);

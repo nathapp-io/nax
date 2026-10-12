@@ -197,6 +197,8 @@ describe("loadFinishPrContext — A4 review output and resolution", () => {
     unreviewedFixCommits: ["abc1234"],
     coverage: { spec: null, quality: 0.5 },
     fixRounds: 2,
+    findings: [],
+    stops: [],
   };
 
   test("narrative and title come from the branch reviewer on state.review", async () => {

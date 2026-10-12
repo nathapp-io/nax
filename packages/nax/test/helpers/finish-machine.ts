@@ -298,7 +298,8 @@ export function makeMachineHarness(opts: MachineHarnessOpts): MachineHarness {
       git.dirty = opts.fixIsNoop !== true;
       if (userFix) return userFix(phase, req);
       trail.push(`fix:${phase}`);
-      return {};
+      // A fixer that reports nothing fixed nothing (the ledger is fail-closed): the default fixes every finding.
+      return { dispositions: (req.findings ?? []).map((_, i) => ({ index: i + 1, disposition: "fixed" as const })) };
     },
   });
   const audit: AuditTarget = { auditDir: opts.auditDir, runId: "run-1" };

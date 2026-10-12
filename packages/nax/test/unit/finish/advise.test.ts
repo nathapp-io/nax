@@ -367,6 +367,8 @@ describe("createFinishAdvisor.approval", () => {
     unreviewedFixCommits: ["abc123"],
     coverage: { spec: 0.5, quality: null },
     fixRounds: 2,
+    findings: [],
+    stops: [],
   };
 
   test("question evidence lists open findings, acceptance, gates with excerpt, missing lenses, unreviewed commits, coverage", async () => {
