@@ -24,6 +24,7 @@ export function computeFacts(args: {
   changed: string[];
   ledger: LedgerEntry[];
   stops: Stop[];
+  restoreFailed?: number[];
 }): ResolutionFacts {
   return {
     findingsOpen: openFindings(args.ledger),
@@ -38,6 +39,7 @@ export function computeFacts(args: {
     fixRounds: args.review.rounds,
     findings: [...args.ledger],
     stops: [...args.stops],
+    restoreFailed: [...(args.restoreFailed ?? [])],
   };
 }
 
@@ -126,6 +128,9 @@ function findingParts(findings: LedgerEntry[], openCount: number): string[] {
 
 export function draftReason(f: ResolutionFacts): string {
   const parts = [...findingParts(f.findings, f.findingsOpen.length)];
+  if (f.restoreFailed && f.restoreFailed.length > 0) {
+    parts.push(`worktree restore failed (${f.restoreFailed.map((n) => `handoff-${n}`).join(", ")})`);
+  }
   if (!acceptanceOk(f.acceptance)) parts.push(`acceptance ${f.acceptance}`);
   if (f.gates.some((g) => g.status === "not-run")) parts.push("gates not run");
   const red = f.gates.filter((g) => g.status === "red").map((g) => g.name);

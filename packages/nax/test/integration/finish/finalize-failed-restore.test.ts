@@ -49,7 +49,7 @@ async function failedSession(
 }
 
 describe("finalizeDraftPr with a restore-failed handoff (real git)", () => {
-  test("session 2 folds the half-edit into its base; finalize still sets it aside, not commits it", async () => {
+  test("session 2 sets the half-edit aside before it starts; finalize then has nothing of it left to set aside", async () => {
     await withRepo(async (dir, audit) => {
       await withRemote(dir, async (branch) => {
         await writeFile(join(dir, "u.txt"), "user file\n"); // untracked before session 1
@@ -57,23 +57,25 @@ describe("finalizeDraftPr with a restore-failed handoff (real git)", () => {
         await failedSession(dir, audit, state);
         expect(state.handoffs[0]?.restored).toBe(false);
         expect(await readFile(join(dir, "a.ts"), "utf8")).toBe(HALF);
-        // Session 2 starts from the dirty tree (the half-edit is now part of its base) and does nothing.
+        // Session 2's guard sets the half-edit aside with session 1's own base, then session 2 does nothing.
         const ops2 = makeFinishOps([], {}, { fix: async () => ({ dispositions: [] }) });
         await runFixStep(state, { ops: ops2, audit, now }, "review", { findings: [finding] });
-        // Session 1's snapshot survives session 2's own snapshot.
-        expect(existsSync(join(audit.auditDir, "run-1.fix-base-1", "u.txt"))).toBe(true);
+        expect(state.handoffs).toHaveLength(2);
+        expect(state.handoffs[0]?.settledBy).toBe(2);
+        expect(await readFile(join(dir, "a.ts"), "utf8")).toBe("export const a = 1;\n");
+        // Session 1's snapshot is settled with it; session 2's own is cleared when its step settles.
+        expect(existsSync(join(audit.auditDir, "run-1.fix-base-1"))).toBe(false);
 
         const head = (await git(dir, "rev-parse", "HEAD")).trim();
         const fin = createFinishOps({ callCtx: makeMockCallContext(), forge, forgeKind: null, audit });
         await fin.finalizeDraftPr(state);
 
-        // Only the user file is swept into the finalize commit (as before); the half-edit is not.
+        // Only the user file is swept into the finalize commit (as before); nothing is set aside twice.
         expect(await git(dir, "diff", "--name-only", head, "HEAD")).toBe("u.txt\n");
-        expect(await readFile(join(dir, "a.ts"), "utf8")).toBe("export const a = 1;\n");
         expect(await readFile(join(dir, "u.txt"), "utf8")).toBe("user file\n");
-        const extra = state.handoffs[state.handoffs.length - 1];
-        assertDefined(extra, "extra handoff");
         expect(state.handoffs).toHaveLength(2);
+        const extra = state.handoffs[1];
+        assertDefined(extra, "the leftover handoff");
         expect(extra.restored).toBe(true);
         expect(await readFile(join(extra.dir, "changes.patch"), "utf8")).toContain("half edit");
       });

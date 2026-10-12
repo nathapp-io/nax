@@ -21,6 +21,7 @@ import { changedFiles } from "./changed-files";
 import { writeCheckpoint } from "./checkpoint";
 import { headSha } from "./commit";
 import { runGatesLoop } from "./gates-loop";
+import { restorePendingNumbers } from "./handoff-state";
 import { applyLedgerEvent } from "./ledger";
 import { assertNotAborted, type FinishMachineDeps, fixStepDeps } from "./machine-deps";
 import type { ReviewInputs } from "./ops";
@@ -122,6 +123,7 @@ function currentFacts(state: FinishState, changed: string[]): ResolutionFacts {
     changed,
     ledger: state.review.ledger,
     stops: state.stops,
+    restoreFailed: restorePendingNumbers(state.handoffs),
   });
 }
 

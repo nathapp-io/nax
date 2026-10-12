@@ -234,6 +234,24 @@ describe("facts and reasons (finish A section 6)", () => {
       "1 set aside (handoff-1)",
     );
   });
+  test("an unrestored set-aside is named in the draft reason", () => {
+    const f = baseFacts({ restoreFailed: [1, 3] });
+    expect(draftReason(f)).toBe("worktree restore failed (handoff-1, handoff-3)");
+    expect(draftReason(baseFacts({ restoreFailed: [] }))).toBe("");
+  });
+  test("computeFacts carries the restore-failed handoff numbers", () => {
+    const f = computeFacts({
+      review: review(),
+      acceptance: "green",
+      gates: [],
+      unreviewedFixCommits: [],
+      changed: [],
+      ledger: [],
+      stops: [],
+      restoreFailed: [2],
+    });
+    expect(f.restoreFailed).toEqual([2]);
+  });
   test("computeFacts reads open findings and stops from the ledger", () => {
     const ledger = [entry("A", "open"), entry("B", "waived")];
     const f = computeFacts({

@@ -2,7 +2,7 @@
  * Finish A 4.5: what finalize does with a tree that is dirty after a set-aside whose restore failed.
  *
  * Rule: if ANY handoff has `restored: false` and the tree is dirty at finalize, the dirt is set aside
- * (never committed). Failed handoffs are processed oldest-first, each with the base its own fix
+ * (never committed). Failed handoffs (those not yet settled) are processed oldest-first, each with the base its own fix
  * session recorded (`HandoffRecord.base`), so a later session that folded the half-edit into its own
  * base cannot hide it. When HEAD has moved since that session (a later fix committed), the base's
  * tracked side is the current HEAD instead (`setAside` rebases it, and drops snapshot copies of files
@@ -16,6 +16,7 @@ import { errorMessage } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "@/logger";
 import type { AuditTarget } from "./audit";
 import { isDirty } from "./commit";
+import { restorePending, settleAll } from "./handoff-state";
 import { removeSnapshotDir, setAside } from "./set-aside";
 import type { FinishState } from "./state";
 
@@ -29,7 +30,7 @@ function noteLeftDirty(state: FinishState, handoff: number): void {
 
 /** Returns true when the commit must be skipped (only push what is already committed). */
 export async function setAsideLeftoverDirt(state: FinishState, audit: AuditTarget): Promise<boolean> {
-  const failed = state.handoffs.filter((h) => !h.restored);
+  const failed = state.handoffs.filter(restorePending);
   if (failed.length === 0 || !(await isDirty(state.workdir))) return false;
   for (const h of failed) {
     if (!h.base) {
@@ -60,7 +61,11 @@ export async function setAsideLeftoverDirt(state: FinishState, audit: AuditTarge
     state.handoffs = [...state.handoffs, record];
     if (!record.restored) return true;
     await removeSnapshotDir(audit.auditDir, h.base.untrackedSnapshot); // this failed handoff is now settled
-    if (!(await isDirty(state.workdir))) return false;
+    state.handoffs = state.handoffs.map((x) => (x.n === h.n ? { ...x, settledBy: record.n } : x));
+    if (!(await isDirty(state.workdir))) {
+      state.handoffs = settleAll(state.handoffs, record.n); // a clean tree: the older half-edits went with it
+      return false;
+    }
   }
   return false;
 }

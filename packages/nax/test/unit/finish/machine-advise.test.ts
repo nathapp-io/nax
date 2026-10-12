@@ -3,7 +3,7 @@
  * inside the review loop, and approving, re-reviewing or holding from the end-of-run facts.
  */
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeMachineHarness, restoreFinishMachineStubs, withTempDir } from "@test/helpers";
+import { makeHandoffRecord, makeMachineHarness, restoreFinishMachineStubs, withTempDir } from "@test/helpers";
 import type { ApprovalAction, Finding, FinishAdvisor, FinishReviewOutput, ResolutionFacts } from "@/finish";
 import { runFinishMachine } from "@/finish";
 
@@ -116,6 +116,22 @@ describe("approval", () => {
       expect(result.handoffs).toEqual([
         { dir: `${dir}/h1`, limit: "fix", findingIds: ["a"], consumed: false, reapplied: false },
       ]);
+    });
+  });
+
+  test("a restore-failed handoff is in the facts and the draft reason; a settled one is not", async () => {
+    await withTempDir(async (dir) => {
+      const failed = makeMachineHarness({ auditDir: dir, script: {}, qualityExit: () => 1 });
+      failed.state.handoffs = [makeHandoffRecord(dir, { restored: false })];
+      const result = await runFinishMachine(failed.state, failed.deps);
+      expect(result.facts?.restoreFailed).toEqual([1]);
+      expect(result.reason).toContain("worktree restore failed (handoff-1)");
+
+      const settled = makeMachineHarness({ auditDir: dir, script: {} });
+      settled.state.handoffs = [makeHandoffRecord(dir, { restored: false, settledBy: 2 })];
+      const ok = await runFinishMachine(settled.state, settled.deps);
+      expect(ok.facts?.restoreFailed).toEqual([]);
+      expect(ok.outcome).toBe("ready");
     });
   });
 

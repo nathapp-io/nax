@@ -229,6 +229,8 @@ export interface ResolutionFacts {
   findings: LedgerEntry[];
   /** Finish A: every place the finish stopped short. */
   stops: Stop[];
+  /** Finish A: handoffs whose restore failed and whose half-edit was never set aside (absent before this field). */
+  restoreFailed?: number[];
 }
 
 /** What the resolver decided, kept on the state so the PR context can read it. */
@@ -361,6 +363,11 @@ export interface HandoffRecord {
   hasNote: boolean;
   patchSaved: boolean;
   restored: boolean;
+  /**
+   * Set when a restore-failed handoff's leftover dirt was later set aside as handoff N (by the next fix
+   * step's guard or by finalize): the worktree no longer holds this session's half-edit.
+   */
+  settledBy?: number;
   /** HEAD had moved since the session's base (a commit was made): the restore targeted the current HEAD, so those commits were kept. */
   headMoved?: boolean;
   consumed: boolean;

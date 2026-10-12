@@ -16,6 +16,8 @@ import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import type { AuditTarget } from "./audit";
 import { writeCheckpoint } from "./checkpoint";
+import { setAsideLeftoverDirt } from "./finalize-dirt";
+import { restorePending, restorePendingNumbers } from "./handoff-state";
 import { findingId } from "./ledger";
 import type { FinishOps, FixOutcome, FixPhase, FixRequest } from "./ops";
 import {
@@ -216,6 +218,34 @@ async function settleSnapshot(deps: FixStepDeps, base: FixBase, handoff?: Handof
   await removeSnapshotDir(deps.audit.auditDir, base.untrackedSnapshot);
 }
 
+/**
+ * A restore-failed handoff still leaves its half-edit in the worktree. The next fixer must not start (and
+ * the next commit must not run `git add -A`) on top of it: set it aside first, with that session's own base,
+ * exactly as finalize does. Undefined when the step may go on; otherwise the reason it cannot.
+ */
+async function blockedByRestoreFailure(state: FinishState, deps: FixStepDeps): Promise<NaxError | undefined> {
+  if (!state.handoffs.some(restorePending)) return undefined;
+  try {
+    // A clean tree returns false: nothing to set aside.
+    if (!(await setAsideLeftoverDirt(state, deps.audit))) return undefined;
+  } catch (error) {
+    getSafeLogger()?.warn("finish", "Leftover set-aside threw before a fix step", {
+      storyId: "_run",
+      error: errorMessage(error),
+    });
+  }
+  const pending = restorePendingNumbers(state.handoffs).map((n) => `handoff-${n}`);
+  getSafeLogger()?.warn("finish", "Fix step skipped: an unrestored set-aside still leaves work in the worktree", {
+    storyId: "_run",
+    handoffs: pending,
+  });
+  return new NaxError(
+    `Fix step skipped: the worktree still holds the half-edit of ${pending.join(", ")}`,
+    "FINISH_RESTORE_BLOCKED",
+    { stage: "finish", handoffs: pending },
+  );
+}
+
 export async function runFixStep(
   state: FinishState,
   deps: FixStepDeps,
@@ -223,6 +253,8 @@ export async function runFixStep(
   req: Omit<FixRequest, "state" | "interrupt" | "continuation">,
 ): Promise<FixStepResult> {
   abortIfPhaseStopped(deps);
+  const blocked = await blockedByRestoreFailure(state, deps);
+  if (blocked) return checkpointed(state, deps, { kind: "failed", error: blocked });
   const captured = await captureBase(state, deps);
   if ("error" in captured) return checkpointed(state, deps, { kind: "failed", error: captured.error });
   const base = captured;
