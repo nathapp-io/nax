@@ -1,8 +1,11 @@
 /** Story brief (spec §6 step 1): requirements, spec excerpts, rulings, red-base warnings. */
 import { mkdir } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
+import type { AdviceDecision } from "@/advisor";
+import { getLogger } from "@/logger";
 import { buildWorkflowBrief } from "@/prompts";
 import { readResult } from "./result";
+import { rulingsForStory } from "./rulings";
 import { _workflowDeps, type StepContext } from "./step-context";
 
 const MAX_EXCERPT_CHARS = 12_000;
@@ -58,8 +61,20 @@ function contextFilePaths(sc: StepContext): string[] {
   return (sc.story.contextFiles ?? []).map((entry) => (typeof entry === "string" ? entry : entry.path));
 }
 
+async function loadDecisions(sc: StepContext): Promise<AdviceDecision[]> {
+  try {
+    return await _workflowDeps.readTrustedDecisions(sc.projectDir, sc.feature, sc.outputDir);
+  } catch (err) {
+    getLogger().warn("workflow", "Could not read advisor decisions for the brief - writing it without rulings", {
+      storyId: sc.story.id,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return [];
+  }
+}
+
 export async function writeBrief(sc: StepContext): Promise<void> {
-  const [spec, redBase] = await Promise.all([loadSpec(sc), redBaseDependencies(sc)]);
+  const [spec, redBase, decisions] = await Promise.all([loadSpec(sc), redBaseDependencies(sc), loadDecisions(sc)]);
   const text = buildWorkflowBrief({
     storyId: sc.story.id,
     title: sc.story.title,
@@ -72,7 +87,7 @@ export async function writeBrief(sc: StepContext): Promise<void> {
     ...(sc.contextMarkdown ? { storyContext: sc.contextMarkdown } : {}),
     ...(sc.featureContextMarkdown ? { featureContext: sc.featureContextMarkdown } : {}),
     ...(sc.constitution ? { constitution: sc.constitution } : {}),
-    rulings: [],
+    rulings: rulingsForStory(decisions, sc.story.id),
     redBaseDependencies: redBase,
     reportPath: sc.reportPath,
   });

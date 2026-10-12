@@ -3,7 +3,7 @@
  * `_workflowDeps` is the single test seam: every agent call goes through
  * `_workflowDeps.callOp`, so a test fakes the agent in one place.
  */
-import { createAdvisor } from "@/advisor";
+import { createAdvisor, readTrustedDecisions } from "@/advisor";
 import { resolveFeatureSpec } from "@/cli";
 import type { NaxConfig, TierConfig, WorkflowConfig } from "@/config";
 import { callOp } from "@/operations";
@@ -56,5 +56,6 @@ export const _workflowDeps = {
   resolveFeatureSpec: (feature: string, workdir: string): Promise<{ specSource?: { path: string } | null }> =>
     resolveFeatureSpec(feature, workdir),
   createAdvisor: createAdvisor as typeof createAdvisor,
+  readTrustedDecisions: readTrustedDecisions as typeof readTrustedDecisions,
   now: (): number => Date.now(),
 };
