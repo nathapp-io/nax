@@ -10,13 +10,14 @@
  * recorded on the returned record (`restored: false` whenever a read or restore failed);
  * nothing here throws.
  */
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "@/logger";
 import { tryParseLLMJson } from "@/utils/llm-json";
 import type { AuditTarget } from "./audit";
 import { isHandoffNote } from "./fix";
+import { insideRoot } from "./safe-path";
 import { chunks, gitLiteral, listBaseTree, listChanged, listUntracked, numstatPaths, repoRoot } from "./set-aside-git";
 import type { FixBase, HandoffLimit, HandoffNote, HandoffRecord } from "./types";
 import { _setAsideDeps, restoreUntracked } from "./untracked-snapshot";
@@ -72,14 +73,12 @@ async function dropIntent(root: string, created: string[]): Promise<void> {
   for (const group of chunks(created)) await git(["reset", "-q", "--", ...group], root);
 }
 
-/** The patch is `git diff --binary` text (the diff is decoded as UTF-8 by the git wrapper). */
+/** git writes the patch itself (`--output`), so its bytes are never decoded as text. */
 async function savePatch(root: string, dir: string, baseSha: string, created: string[]): Promise<boolean> {
   await addIntent(root, created);
   try {
-    const diff = await git(["diff", "--binary", "--no-renames", baseSha], root);
-    if (diff.exitCode !== 0) return false;
-    await writeFile(join(dir, PATCH), diff.stdout, "utf8");
-    return true;
+    const diff = await git(["diff", "--binary", "--no-renames", `--output=${join(dir, PATCH)}`, baseSha], root);
+    return diff.exitCode === 0;
   } finally {
     await dropIntent(root, created).catch(() => undefined);
   }
@@ -94,15 +93,33 @@ async function restoreKnown(root: string, baseSha: string, inBase: string[]): Pr
   return ok;
 }
 
-/** Paths the base knows are restored from it; paths it does not know (the session `git add`ed them) are unstaged and removed. */
-async function restorePaths(root: string, baseSha: string, tracked: string[], created: string[]): Promise<boolean> {
-  const known = await listBaseTree(root, baseSha);
+/** Removes one entry (a file or the symlink itself, never a symlink's target) after checking its parent is still inside the root. */
+async function removeEntry(root: string, rel: string): Promise<boolean> {
+  const file = join(root, rel);
+  if (!(await insideRoot(root, file))) return false;
+  if (!(await lstat(file).catch(() => null))) return true;
+  return _setAsideDeps.remove(file).then(
+    () => true,
+    () => false,
+  );
+}
+
+/**
+ * Paths the base knows are restored from it; paths it does not know (the session `git add`ed them)
+ * are unstaged and removed. A pre-existing untracked file is only unstaged here: it is never deleted
+ * without a kept copy, so `restoreUntracked` decides its fate.
+ */
+async function restorePaths(root: string, base: FixBase, tracked: string[], created: string[]): Promise<boolean> {
+  const known = await listBaseTree(root, base.baseSha);
   if (known === null) return false; // cannot tell which paths the base has: touch nothing
+  const preexisting = new Set(base.untrackedBefore);
   const inBase = tracked.filter((p) => known.has(p));
   const added = tracked.filter((p) => !known.has(p));
-  const ok = await restoreKnown(root, baseSha, inBase);
+  let ok = await restoreKnown(root, base.baseSha, inBase);
   for (const group of chunks(added)) await git(["rm", "-q", "--cached", "--ignore-unmatch", "--", ...group], root);
-  for (const path of [...added, ...created]) await _setAsideDeps.remove(join(root, path)).catch(() => undefined);
+  for (const path of [...added.filter((p) => !preexisting.has(p)), ...created]) {
+    ok = (await removeEntry(root, path)) && ok;
+  }
   return ok;
 }
 
@@ -166,7 +183,7 @@ export async function setAside(args: SetAsideArgs): Promise<HandoffRecord> {
   const created = (untracked ?? []).filter((p) => !before.has(p));
   const record = newRecord(args, dir, created, changed ?? []);
   await saveWork(args, root, record);
-  const pathsRestored = await restorePaths(root, args.base.baseSha, record.changedPaths, created).catch((err) => {
+  const pathsRestored = await restorePaths(root, args.base, record.changedPaths, created).catch((err) => {
     warn("Set-aside could not restore the worktree", err);
     return false;
   });
