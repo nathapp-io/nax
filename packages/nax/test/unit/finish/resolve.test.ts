@@ -131,6 +131,29 @@ describe("resolve", () => {
     expect(asked).toBe(false);
   });
 
+  test("clean facts with an unsettled restore-failed handoff end as a draft, with or without an advisor", async () => {
+    const f = facts({ restoreFailed: [2] });
+    const draft = { outcome: "draft", reason: "worktree restore failed (handoff-2)" };
+    expect(await resolve({ facts: f, reReviewUsed: false })).toEqual(draft);
+    let asked = false;
+    const advise = {
+      approval: async () => {
+        asked = true;
+        return { action: "approve" as const, rationale: "ok" };
+      },
+    };
+    expect(await resolve({ facts: f, advise, reReviewUsed: false })).toEqual(draft);
+    expect(asked).toBe(false);
+  });
+
+  test("clean facts with no restore failure (absent, empty) stay ready", async () => {
+    expect(await resolve({ facts: facts(), reReviewUsed: false })).toEqual({ outcome: "ready", acceptedResidue: [] });
+    expect(await resolve({ facts: facts({ restoreFailed: [] }), reReviewUsed: false })).toEqual({
+      outcome: "ready",
+      acceptedResidue: [],
+    });
+  });
+
   test("not clean without an advisor is draft", async () => {
     expect(await resolve({ facts: facts({ acceptance: "red" }), reReviewUsed: false })).toEqual({
       outcome: "draft",

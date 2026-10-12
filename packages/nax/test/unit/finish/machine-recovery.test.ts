@@ -397,3 +397,38 @@ describe("a later clean full round closes open and rejected findings (finish A, 
     });
   });
 });
+
+describe("a gate-fix crash whose restore fails (finish A, clean-path hole)", () => {
+  test("the next green gate run does not make the PR ready: draft, no promotePr, nothing committed", async () => {
+    await withTempDir(async (dir) => {
+      let gateCalls = 0;
+      const h = makeMachineHarness({
+        auditDir: dir,
+        context: { acceptanceStatus: "disabled" },
+        qualityExit: () => {
+          gateCalls += 1;
+          return gateCalls === 1 ? 1 : 0; // red once, then green because of the half-edit
+        },
+        ops: {
+          fix: async () => {
+            h.git.dirty = true;
+            throw new Error("session died");
+          },
+        },
+      });
+      const inner = _finishGitDeps.git;
+      _finishGitDeps.git = async (args, cwd, ...rest) => {
+        const a = args[0] === "--literal-pathspecs" ? args.slice(1) : args;
+        if (a[0] === "restore") return { exitCode: 1, stdout: "", stderr: "injected" };
+        return inner(args, cwd, ...rest);
+      };
+      const result = await runFinishMachine(h.state, h.deps);
+      expect(h.state.handoffs[0]).toMatchObject({ limit: "error", restored: false });
+      expect(result.facts?.gates.every((g) => g.status === "green")).toBe(true);
+      expect(result.outcome).toBe("draft");
+      expect(result.reason).toContain("worktree restore failed (handoff-1)");
+      expect(h.trail).not.toContain("promotePr");
+      expect(h.trail).not.toContain("commit");
+    });
+  });
+});

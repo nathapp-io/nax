@@ -162,7 +162,12 @@ export async function resolve(args: {
   reReviewUsed: boolean;
 }): Promise<Resolution> {
   const { facts } = args;
-  if (isClean(facts)) return { outcome: "ready", acceptedResidue: [] };
+  if (isClean(facts)) {
+    // Acceptance/gate fixes have no ledger entry: a half-edit left by a restore-failed session could make the
+    // next run green. Never ready (and never promoted/committed) while that work may still be in the worktree.
+    if ((facts.restoreFailed?.length ?? 0) > 0) return { outcome: "draft", reason: draftReason(facts) };
+    return { outcome: "ready", acceptedResidue: [] };
+  }
   if (!args.advise) return { outcome: "draft", reason: draftReason(facts) };
   let decision: { action: ApprovalAction; rationale: string };
   try {
