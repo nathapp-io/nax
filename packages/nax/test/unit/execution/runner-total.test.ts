@@ -289,6 +289,30 @@ describe("runner.run() — US-001 reconciled-total handoff", () => {
   });
 });
 
+describe("runner.run() — A5 workflowPassed", () => {
+  test("workflow mode: a failed feature workflow makes the run unsuccessful (P4-R13)", async () => {
+    const prd = makeCompletePrd();
+    _runnerDeps.runSetupPhase = async () => makeSetupResult(prd);
+    _runnerDeps.runExecutionPhase = async () => ({
+      prd,
+      iterations: 1,
+      storiesCompleted: 1,
+      totalCost: 0,
+      allStoryMetrics: [],
+      exitReason: "completed",
+    });
+    _runnerDeps.runCompletionPhase = async () => ({
+      durationMs: 1,
+      runCompletedAt: new Date().toISOString(),
+      acceptancePassed: true,
+      pluginGateFailed: false,
+      reportedTotal: 0,
+      workflowPassed: false,
+    });
+    expect((await run(makeMinimalOptions())).success).toBe(false);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // US-005 — run() forwards the interaction chain into the completion phase
 // ---------------------------------------------------------------------------
