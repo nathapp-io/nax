@@ -36,11 +36,11 @@
   - `STEP_TIMEOUT_MARGIN_MS = 60_000` (in `src/finish/step-signal.ts`);
   - `HANDOFF_MARKER = "<!-- nax-finish-handoff -->"` (in `src/finish/fix/handoff-note.ts`).
 - **Stop latency:** a running review or fix turn ends within 30 s of its limit. The handoff turn is a separate step after it.
-- **Git safety:** never `git clean`, never `git reset --hard`, never `git stash push/pop`. `git stash create` is allowed: it writes a commit object and does not touch the stash list or the tree.
+- **Git safety:** never `git clean`, never `git reset --hard`, never `git stash push/pop`. `git stash create` is allowed: it writes a commit object and does not touch the stash list or the tree. It may need a git identity (`user.name` / `user.email`); the integration test repo sets one, and when it fails on a dirty tree `captureFixBase` returns `null` rather than falling back to HEAD.
 - **Unchanged rules:** the ready/draft decision (`isClean`, `approvalFacts`, `resolve`), advisor callers, menus and ledger schemas.
 - **`FinishState.version`** becomes `3`. `deserializeFinishState` accepts only `3`.
 - **Frozen file:** `src/session/manager.ts` is grandfathered at 662 lines and may not grow (`scripts/baselines/file-sizes-baseline.json`).
-- **Test rules** (`.claude/rules/`; `check:test-escape-hatches` counts casts per file. A new test file that needs a `SessionHandle` uses the same `{ id, agentName } as SessionHandle` shape the neighbouring session tests use; if the counter fails, reuse the neighbouring file's helper instead of adding casts):
+- **Test rules** (`.claude/rules/`; `check:test-escape-hatches` counts casts per file. A new test file that needs a `SessionHandle` uses the same `{ id, agentName } as SessionHandle` shape `test/unit/session/manager-phase-b-prompt.test.ts` uses. If `check:test-escape-hatches` then fails on the new file, put the Task 2 cases into `manager-phase-b-prompt.test.ts`'s sibling split rather than adding a new cast site, or build the handle from `makeAgentAdapter()`'s `openSession` default (`test/helpers/mock-agent-adapter.ts` `DEFAULT_SESSION_HANDLE`)):
   - no `as never`, no postfix `!` (use `assertDefined`), no `as unknown as`, no fixed sleeps;
   - temp dirs only through `withTempDir` / `makeTempDir` from `@test/helpers`;
   - shared mocks from `@test/helpers` (`makeAgentAdapter`, `makeTurnResult`, `makeSessionManager`, …);
@@ -59,7 +59,7 @@
 
 Most likely first. Each line names the task whose tests pin it.
 
-1. **A soft interrupt that fires before the adapter registered the active call.** Expected: `interruptTurn` returns `false`, the turn runs to its own end, and the fix op's `timeoutMs` margin still bounds it. Pinned in Task 2 ("no active call") and Task 5 ("timeoutMs margin").
+1. **A soft interrupt that fires before the adapter registered the active call** (the native adapter registers only after `await this.client()` / `client.model()`, `nax-agent/src/native/session-adapter.ts:177-230`). Expected: `withInterrupt` keeps retrying `interruptTurn` every 250 ms until it returns `true`, so the turn still ends within the 30 s pass mark. Pinned in Task 3 ("already aborted on entry", "retries until a call registers").
 2. **A user's `.env`, or a pre-existing tracked edit (e.g. a gate's auto-fix), at fix-session start.** Expected: both survive a set-aside and a finalize. Pinned in Task 7 and Task 13.
 3. **A flow deadline while a fix session is running.** Expected: an interrupt, then a handoff note, then a set-aside, then `FINISH_ABORTED`, then a draft with a `flow` stop. The handoff must survive the throw. Pinned in Task 8.
 4. **A genuine idle-watchdog stall during a fix** (no interrupt fired). Expected: rethrown and stale-retried exactly as today; no handoff turn. Pinned in Task 6.
@@ -162,7 +162,13 @@ describe("buildRunDispatchOptions — abort signal (finish A, #2462)", () => {
 });
 ```
 
-- [ ] **Step 2: Write the failing no-swap test.** In the `runWithFallback` test file, add a case using that file's existing manager and hop fixtures. If no such fixture exists, use `makeMockAgentManager` / `fakeAgentManager` from `@test/helpers` as the file's other cases do. The hop must abort the request's signal and return a result with `adapterFailure: { category: "quality", outcome: "fail-adapter-error", retriable: false, message: "aborted" }`, under a config whose `agent.fallback.onQualityFailure` is `true` and whose fallback map names a second agent. Assert that `executeHop` was called exactly once and that `outcome.fallbacks` is empty.
+- [ ] **Step 2: Write the failing no-retry / no-swap test.**
+1. Find the existing `runWithFallback` unit tests: `grep -rln "runWithFallback" test/unit/agents`. Pick the file whose cases build an `AgentManager` and pass `executeHop` in the request.
+2. Copy its closest "swap on failure" case. Change it so that the request's `signal` comes from an `AbortController` that `executeHop` aborts before returning.
+3. Add two variants of the returned result:
+   - `adapterFailure: { category: "quality", outcome: "fail-adapter-error", retriable: false, message: "aborted" }`, under a config with `agent.fallback.onQualityFailure: true` and a second agent in the fallback map;
+   - `adapterFailure: { category: "availability", outcome: "fail-stale", retriable: true, message: "aborted" }`.
+4. For both, assert that `executeHop` ran exactly once and that `outcome.fallbacks` is `[]`.
 
 - [ ] **Step 3: Run them to verify they fail.**
 Run: `timeout 30 bun test test/unit/operations/call-run-options.test.ts <runWithFallback test file> --timeout=5000`
@@ -181,17 +187,17 @@ Expected: FAIL.
 
 Destructure `abortSignal` with the other params, and add `...(abortSignal !== undefined ? { abortSignal } : {}),` as the last entry of the returned object. In `call-dispatch-run.ts`, add `abortSignal,` after `keepOpen,` in the `buildRunDispatchOptions(ctx, {...})` call.
 
-In `manager-run-fallback.ts`, immediately before `const swap = decideSwap(...)`:
+In `manager-run-fallback.ts`, immediately **after** the `if (result.success) { ... }` block and **before** `const retry = trySameAgentRetry(...)` (~L124). Same-agent retries do not check the signal (`hop-retry-policy.ts:97` for fail-stale), so the guard must run before them:
 
 ```ts
-      // Finish A: an aborted call must not swap into a new agent with the same aborted signal.
+      // Finish A: an aborted call must neither retry nor swap into a new agent with the same aborted signal.
       if (request.signal?.aborted) {
         finalStatus = "error";
         return { result, fallbacks, didSwap, finalBundle: updatedBundle, finalPrompt, finalAgent: currentAgent, finalTarget: currentTarget, finalDepth: hopsSoFar, dispatchesCompleted };
       }
 ```
 
-Check the local variable names against the surrounding early returns (~L150-162). This must return the same object shape as they do.
+This returns the same object shape as the success return just above it (~L111-123).
 
 - [ ] **Step 5: Run the operations, agents and session suites.**
 Run: `timeout 60 bun test test/unit/operations/ test/unit/agents/ test/unit/session/ --timeout=5000`
@@ -401,6 +407,8 @@ export function staleTurnFailure(
 }
 ```
 
+If `turnIncomplete` / `adapterFailure` are not fields on `TurnResult` in `makeTurnResult`'s override type, use the field names `normalizeHopOutput` reads (`operations/turn-failure-classification.ts`).
+
 If `adapterFailure.reason` is typed as a closed union, add `"interrupted"` to it where it is declared (`grep -rn '"idle-watchdog"' src/agents ../nax-agent/src | head`).
 
 - [ ] **Step 5: Implement the manager without growing it.** In `src/session/manager.ts`, replace the `if (isWatchdogCancelledTurn({...})) { throw new SessionFailureError(...) }` block in `sendPrompt`'s `catch` with:
@@ -470,7 +478,7 @@ git commit -m "feat(session): interruptTurn - soft cancel that keeps the session
 - Produces:
   - `export interface SendTurnOverrides { readonly interrupt?: AbortSignal }`, exported from `@/operations`;
   - `HopBodyContext.send: (prompt: string, opts?: SendTurnOverrides) => Promise<TurnResult>`;
-  - `withInterrupt<T>(interrupt: AbortSignal | undefined, onInterrupt: () => Promise<unknown>, run: () => Promise<T>): Promise<T>`.
+  - `withInterrupt<T>(interrupt: AbortSignal | undefined, onInterrupt: () => Promise<boolean>, run: () => Promise<T>): Promise<T>`, retrying `onInterrupt` every `INTERRUPT_RETRY_MS = 250` until it returns `true` or the turn settles.
 
 - [ ] **Step 1: Write the failing test.** Create `test/unit/operations/send-interrupt.test.ts`:
 
@@ -481,7 +489,7 @@ import { withInterrupt } from "@/operations/send-interrupt";
 describe("withInterrupt (finish A)", () => {
   test("no interrupt: runs and never calls onInterrupt", async () => {
     let calls = 0;
-    expect(await withInterrupt(undefined, async () => void (calls += 1), async () => 7)).toBe(7);
+    expect(await withInterrupt(undefined, async () => { calls += 1; return true; }, async () => 7)).toBe(7);
     expect(calls).toBe(0);
   });
 
@@ -492,6 +500,7 @@ describe("withInterrupt (finish A)", () => {
     const run = withInterrupt(interrupt.signal, async () => {
       calls += 1;
       release();
+      return true;
     }, () => new Promise<string>((r) => {
       release = () => r("done");
     }));
@@ -503,9 +512,42 @@ describe("withInterrupt (finish A)", () => {
   test("the listener is removed after the turn settles", async () => {
     const interrupt = new AbortController();
     let calls = 0;
-    await withInterrupt(interrupt.signal, async () => void (calls += 1), async () => "x");
+    await withInterrupt(interrupt.signal, async () => { calls += 1; return true; }, async () => "x");
     interrupt.abort();
     expect(calls).toBe(0);
+  });
+
+  test("already aborted on entry: interrupts without waiting for an abort event", async () => {
+    const interrupt = new AbortController();
+    interrupt.abort();
+    let release: () => void = () => {};
+    let calls = 0;
+    const run = withInterrupt(interrupt.signal, async () => {
+      calls += 1;
+      release();
+      return true;
+    }, () => new Promise<string>((r) => {
+      release = () => r("ok");
+    }));
+    expect(await run).toBe("ok");
+    expect(calls).toBe(1);
+  });
+
+  test("retries until a call registers (false, then true)", async () => {
+    const interrupt = new AbortController();
+    let release: () => void = () => {};
+    let calls = 0;
+    const run = withInterrupt(interrupt.signal, async () => {
+      calls += 1;
+      if (calls < 2) return false;
+      release();
+      return true;
+    }, () => new Promise<string>((r) => {
+      release = () => r("ok");
+    }));
+    interrupt.abort();
+    expect(await run).toBe("ok");
+    expect(calls).toBe(2);
   });
 
   test("a rejecting onInterrupt never rejects the turn", async () => {
@@ -531,25 +573,40 @@ Expected: FAIL (module not found).
 
 ```ts
 /**
- * Finish A: run one turn with a soft interrupt. When `interrupt` aborts while the
- * turn runs, `onInterrupt` (SessionManager.interruptTurn) soft-cancels it; the turn
- * then ends fail-stale and the session stays usable. The listener never outlives
- * the turn, and a failing `onInterrupt` never fails the turn.
+ * Finish A: run one turn with a soft interrupt. When `interrupt` aborts (or is already
+ * aborted on entry), `onInterrupt` (SessionManager.interruptTurn) is tried until it
+ * cancels a registered call; the turn then ends fail-stale and the session stays
+ * usable. Nothing outlives the turn, and a failing `onInterrupt` never fails the turn.
  */
+export const INTERRUPT_RETRY_MS = 250;
+
 export async function withInterrupt<T>(
   interrupt: AbortSignal | undefined,
-  onInterrupt: () => Promise<unknown>,
+  onInterrupt: () => Promise<boolean>,
   run: () => Promise<T>,
 ): Promise<T> {
   if (!interrupt) return run();
-  const fire = (): void => {
-    onInterrupt().catch(() => undefined); // best-effort: the turn's own deadline still bounds it
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let settled = false;
+  // The adapter may not have registered its active call yet (native registers after
+  // client setup), so keep trying until interruptTurn reports it cancelled something.
+  const attempt = (): void => {
+    if (settled) return;
+    onInterrupt()
+      .catch(() => false)
+      .then((done) => {
+        // setTimeout (not Bun.sleep): the handle must be cancellable when the turn settles.
+        if (!done && !settled) timer = setTimeout(attempt, INTERRUPT_RETRY_MS);
+      });
   };
-  interrupt.addEventListener("abort", fire, { once: true });
+  if (interrupt.aborted) queueMicrotask(attempt);
+  else interrupt.addEventListener("abort", attempt, { once: true });
   try {
     return await run();
   } finally {
-    interrupt.removeEventListener("abort", fire);
+    settled = true;
+    if (timer) clearTimeout(timer);
+    interrupt.removeEventListener("abort", attempt);
   }
 }
 ```
@@ -564,7 +621,7 @@ export interface SendTurnOverrides {
 }
 ```
 
-Change `HopBodyContext.send` to `(prompt: string, opts?: SendTurnOverrides) => Promise<TurnResult>`. Export `SendTurnOverrides` from `src/operations/index.ts`.
+Change `HopBodyContext.send` to `(prompt: string, opts?: SendTurnOverrides) => Promise<TurnResult>`. Add `HopBody`, `HopBodyContext` and `SendTurnOverrides` to the type-export list from `./types` in `src/operations/index.ts` (~L131-136; today it exports only `BuildContext`, `CallContext`, `CompleteOperation`, `DeterministicOperation`, `Operation`, `RunOperation`, `VerifyContext`).
 
 In `build-hop-callback.ts`, the `hopBody` `bodyCtx.send` type becomes `(prompt: string, opts?: SendTurnOverrides) => Promise<TurnResult>`.
 
@@ -574,7 +631,7 @@ In `build-hop-callback-dispatch.ts`, wrap the existing closure body:
     const send = (turnPrompt: string, overrides?: SendTurnOverrides): Promise<TurnResult> =>
       withInterrupt(
         overrides?.interrupt,
-        () => ctx.sessionManager.interruptTurn(handle.id),
+        () => ctx.sessionManager.interruptTurn(handle.id), // Promise<boolean>
         () =>
           ctx.agentManager.runAsSession(
             /* ...existing arguments unchanged... */
@@ -748,9 +805,10 @@ In `phase.ts` (~L394-397), `reviewMs: settings.timeouts.reviewMs` and `fixMs: se
 
 In `selectors.ts` (~L148) and `operations/finish-fix.ts:41`, change the comment text `finish.timeouts.stepMs` to `finish.timeouts.reviewMs / fixMs`.
 
-- [ ] **Step 5: Update the existing tests that pin `stepMs`.**
+- [ ] **Step 5: Update the existing tests that pin `stepMs` or the old defaults.**
+- `test/unit/finish/config.test.ts:10`: the expected defaults become `{ acceptanceMs: 600_000, gateMs: 900_000, flowMs: 10_800_000, reviewMs: 900_000, fixMs: 1_200_000 }`.
 - `test/unit/config/finish-autoflow-schema.test.ts` (~L30-42): the input becomes `{ acceptanceMs: 1000, gateMs: 2000, flowMs: 3000, reviewMs: 4000, fixMs: 5000 }`. The expected object is the same five keys. Replace the `stepMs` nullable assertion with `expect(NaxConfigSchema.parse({ version: 1 }).finish.timeouts.fixMs).toBe(1_200_000);`.
-- `test/unit/config/loader-legacy-shim-optimizer.test.ts` (~L116-125): it runs the full shim chain on `timeouts: { acceptanceMs: 1, gateMs: 2, flowMs: 3, stepMs: 4 }`. The expected `out.finish.timeouts` becomes `{ acceptanceMs: 1, gateMs: 2, flowMs: 3, reviewMs: 4, fixMs: 4 }`. Add `expect(warnings.join(" ")).toContain("finish.timeouts.stepMs");`.
+- `test/unit/config/loader-legacy-shim-optimizer.test.ts` (~L105-127, "lifts finish.autoFlow.* onto finish.*"): this case calls `_applyFinishAutoFlowShim` alone, with `stepMs` under `finish.autoFlow.timeouts`, and expects it lifted to `finish.timeouts` unchanged. That shim's job does not change, so **leave this test as is**: it still passes. The `stepMs` migration is covered by the new shim test plus one new case in the same file that runs the full chain. Call `applyConfigCompatShims(conf, null, createConfigWarnDedupe(sink))` on `{ finish: { autoFlow: { timeouts: { stepMs: 4 } } } }` and expect `out.finish.timeouts` to equal `{ reviewMs: 4, fixMs: 4 }`, with a warning containing `finish.timeouts.stepMs`. The autoFlow shim runs first, so `stepMs` has been lifted when the new shim sees it.
 
 - [ ] **Step 6: Update the docs** in `../../docs/guides/configuration.md`, matching the table's existing style:
 - In the example (L737), replace the timeouts object with `"timeouts": { "acceptanceMs": 600000, "gateMs": 900000, "reviewMs": 900000, "fixMs": 1200000, "flowMs": 10800000 }`.
@@ -1010,7 +1068,7 @@ describe("handoff reply parsing (finish A)", () => {
 });
 ```
 
-- [ ] **Step 2: Write the failing op tests.** Append to `test/unit/operations/finish-fix.test.ts` (add the imports below if absent):
+- [ ] **Step 2: Write the failing op tests.** Append to `test/unit/operations/finish-fix.test.ts`. The file already imports `FinishFixInput` and `finishFixOp` (L11-13): **merge** the new names into those existing import lines instead of adding duplicates, and add only the imports that are missing:
 
 ```ts
 import { assertDefined, makeTurnResult } from "@test/helpers";
@@ -1059,6 +1117,21 @@ describe("finishFixOp handoff (finish A)", () => {
     expect(prompts[1]).toContain("Stop working");
     expect(out.output.startsWith(HANDOFF_MARKER)).toBe(true);
     expect(parseHandoffReply(out.output)).toMatchObject({ interrupted: true });
+  });
+
+  test("an incomplete handoff turn never forwards an adapterFailure", async () => {
+    const interrupt = new AbortController();
+    let calls = 0;
+    const out = await hopBody("fix", hopCtx({ ...base, interrupt: interrupt.signal }, async () => {
+      calls += 1;
+      if (calls === 1) {
+        interrupt.abort();
+        throw stale("interrupted");
+      }
+      return makeTurnResult({ output: "{", turnIncomplete: true, adapterFailure: { category: "availability", outcome: "fail-adapter-error", retriable: true, message: "incomplete" } });
+    }));
+    expect(out.adapterFailure).toBeUndefined();
+    expect(out.output.startsWith(HANDOFF_MARKER)).toBe(true);
   });
 
   test("a failing handoff turn still returns a marked, interrupted reply (no rethrow, so no stale-retry)", async () => {
@@ -1273,7 +1346,7 @@ In `build`, pass `...(input.continuation ? { continuation: input.continuation } 
   },
 ```
 
-Add `hopBody` (and add `"hopBody"` to the op's hook list, the same way `acceptance-generate.ts:64` declares it):
+Add `hopBody`, and change the op's type (`finish-fix.ts:31`) to `RunOperationWithHooks<FinishFixInput, FixOutcome, FinishConfig, "verify" | "recover" | "hopBody">`. `acceptance-generate.ts:64` declares its hooks the same way:
 
 ```ts
   /**
@@ -1291,7 +1364,14 @@ Add `hopBody` (and add `"hopBody"` to the op's hook list, the same way `acceptan
       if (!interrupt?.aborted || !isInterruptedStale(err)) throw err;
       const prompt = buildFinishHandoffPrompt(ctx.input.phase, ctx.input.findings);
       const handoff = await ctx.send(prompt, { interrupt: AbortSignal.timeout(HANDOFF_TURN_MS) }).catch(() => null);
-      return { ...(handoff ?? EMPTY_TURN), output: `${HANDOFF_MARKER}\n${handoff?.output ?? ""}` };
+      // Only the marked text and the cost survive: an adapterFailure on the handoff turn
+      // (e.g. turnIncomplete) would make the hop fail and the same-agent retry re-run the stopped fix.
+      return {
+        ...EMPTY_TURN,
+        output: `${HANDOFF_MARKER}\n${handoff?.output ?? ""}`,
+        estimatedCostUsd: handoff?.estimatedCostUsd ?? 0,
+        tokenUsage: handoff?.tokenUsage ?? EMPTY_TURN.tokenUsage,
+      };
     }
   },
 ```
@@ -1431,6 +1511,30 @@ describe("set-aside (finish A §4)", () => {
     });
   });
 
+  test("never runs git clean or reset --hard, and a file the session git-added is removed", async () => {
+    await withRepo(async (dir, audit) => {
+      const { _finishGitDeps } = await import("@/finish");
+      const real = _finishGitDeps.git;
+      const argv: string[][] = [];
+      _finishGitDeps.git = async (args, cwd, ms) => {
+        argv.push(args);
+        return real(args, cwd, ms);
+      };
+      try {
+        const base = assertDefined(await captureFixBase(dir), "base");
+        await writeFile(join(dir, "staged.ts"), "s\n");
+        await git(dir, "add", "staged.ts");
+        await setAside({ workdir: dir, audit, n: 1, base, phase: "gate", limit: "fix", findingIds: [], now });
+        expect(existsSync(join(dir, "staged.ts"))).toBe(false);
+        expect((await git(dir, "status", "--porcelain")).trim()).toBe("");
+        expect(argv.some((a) => a[0] === "clean")).toBe(false);
+        expect(argv.some((a) => a[0] === "reset" && a.includes("--hard"))).toBe(false);
+      } finally {
+        _finishGitDeps.git = real;
+      }
+    });
+  });
+
   test("a patch that no longer applies touches nothing", async () => {
     await withRepo(async (dir, audit) => {
       const base = assertDefined(await captureFixBase(dir), "base");
@@ -1495,13 +1599,22 @@ async function untracked(workdir: string): Promise<string[]> {
   return res.stdout.split("\n").filter((l) => l.startsWith("?? ")).map((l) => l.slice(3).trim());
 }
 
+/**
+ * Null (the step must fail, spec §4.1) when HEAD cannot be read, or when the tree has
+ * tracked changes and `git stash create` could not snapshot them: falling back to HEAD
+ * then would overwrite those edits on restore.
+ */
 export async function captureFixBase(workdir: string): Promise<FixBase | null> {
   const head = await git(["rev-parse", "HEAD"], workdir);
   if (head.exitCode !== 0) return null;
   const headSha = head.stdout.trim();
   const stash = await git(["stash", "create"], workdir);
-  const baseSha = stash.exitCode === 0 && stash.stdout.trim() !== "" ? stash.stdout.trim() : headSha;
-  return { baseSha, headSha, untrackedBefore: await untracked(workdir) };
+  const snapshot = stash.exitCode === 0 ? stash.stdout.trim() : "";
+  if (snapshot === "") {
+    const tracked = await git(["diff", "--name-only", "HEAD"], workdir);
+    if (tracked.exitCode !== 0 || tracked.stdout.trim() !== "") return null;
+  }
+  return { baseSha: snapshot || headSha, headSha, untrackedBefore: await untracked(workdir) };
 }
 
 async function savePatch(workdir: string, dir: string, baseSha: string, created: string[]): Promise<boolean> {
@@ -1513,13 +1626,21 @@ async function savePatch(workdir: string, dir: string, baseSha: string, created:
   return true;
 }
 
+/** Paths the base knows are restored from it; paths it does not know (the session `git add`ed them) are unstaged and removed. */
 async function restorePaths(workdir: string, baseSha: string, tracked: string[], created: string[]): Promise<boolean> {
+  const inBase: string[] = [];
+  const added: string[] = [];
+  for (const path of tracked) {
+    const known = await git(["cat-file", "-e", `${baseSha}:${path}`], workdir);
+    (known.exitCode === 0 ? inBase : added).push(path);
+  }
   let ok = true;
-  if (tracked.length > 0) {
-    const res = await git(["restore", `--source=${baseSha}`, "--worktree", "--", ...tracked], workdir);
+  if (inBase.length > 0) {
+    const res = await git(["restore", `--source=${baseSha}`, "--staged", "--worktree", "--", ...inBase], workdir);
     ok = res.exitCode === 0;
   }
-  for (const path of created) await _setAsideDeps.remove(join(workdir, path)).catch(() => undefined);
+  if (added.length > 0) await git(["rm", "-q", "--cached", "--ignore-unmatch", "--", ...added], workdir);
+  for (const path of [...added, ...created]) await _setAsideDeps.remove(join(workdir, path)).catch(() => undefined);
   return ok;
 }
 
@@ -1666,7 +1787,7 @@ export interface Stop {
 // fix-step.ts
 export type FixStepResult =
   | { kind: "done"; outcome: FixOutcome; continued?: HandoffRecord }
-  | { kind: "failed"; error: unknown }
+  | { kind: "failed"; error: unknown; handoff?: HandoffRecord }
   | { kind: "stopped"; handoff: HandoffRecord };
 export interface FixStepDeps { ops: FinishOps; audit: AuditTarget; now: () => string; signal?: AbortSignal; runSignal?: AbortSignal; fixMs?: number; flowMs?: number }
 export function findingIdsOf(findings: Finding[] | undefined): string[];
@@ -1689,6 +1810,7 @@ export function fixStepDeps(deps: FinishMachineDeps): FixStepDeps;
       if (args.some((a) => a.includes("..."))) return { exitCode: 0, stdout: (model.changedFiles ?? []).join("\n"), stderr: "" };
       return { exitCode: 0, stdout: model.dirty ? "a.ts\n" : "", stderr: "" };
     }
+    if (cmd === "cat-file") return { exitCode: 0, stdout: "", stderr: "" }; // every path is in the base
     if (cmd === "restore") {
       trail?.push("restore");
       model.dirty = false;
@@ -1718,13 +1840,13 @@ import { runFixStep } from "@/finish/fix-step";
 
 const restores: (() => void)[] = [];
 const dirs: string[] = [];
-afterEach(async () => {
-  for (const r of restores.splice(0)) r();
-  await Promise.all(dirs.splice(0).map((d) => cleanupTempDir(d)));
+afterEach(() => {
+  for (const r of restores.splice(0).reverse()) r();
+  for (const d of dirs.splice(0)) cleanupTempDir(d);
 });
 
 async function deps(over: Partial<{ ops: FinishOps; signal: AbortSignal; runSignal: AbortSignal; fixMs: number; flowMs: number }> = {}) {
-  const auditDir = await makeTempDir("fixstep-");
+  const auditDir = makeTempDir("fixstep-");
   dirs.push(auditDir);
   return { ops: over.ops ?? makeFinishOps([]), audit: { auditDir, runId: "run-1" }, now: () => "2026-10-12T00:00:00.000Z", ...over };
 }
@@ -1861,7 +1983,7 @@ describe("runFixStep (finish A)", () => {
 });
 ```
 
-`makeTempDir`'s exact signature comes from `@nathapp/nax-test-kit/bun/temp`. Check it, and drop the prefix argument if it takes none.
+`makeTempDir` and `cleanupTempDir` are synchronous (`packages/test-kit/src/bun/temp.ts:31,41`). Check `makeTempDir`'s parameters there and drop the prefix argument if it takes none.
 
 - [ ] **Step 3: Run it to verify it fails.**
 Run: `timeout 30 bun test test/unit/finish/fix-step.test.ts --timeout=5000`
@@ -1907,7 +2029,7 @@ import type { Finding, FixBase, HandoffLimit, HandoffNote, HandoffRecord, Stop }
 
 export type FixStepResult =
   | { kind: "done"; outcome: FixOutcome; continued?: HandoffRecord }
-  | { kind: "failed"; error: unknown }
+  | { kind: "failed"; error: unknown; handoff?: HandoffRecord }
   | { kind: "stopped"; handoff: HandoffRecord };
 
 export interface FixStepDeps {
@@ -1983,7 +2105,7 @@ export async function runFixStep(
   } catch (error) {
     const kind = stopKind(deps, limit) ?? "error";
     const handoff = await setAsideStep(state, deps, { phase, base, req, limit: kind });
-    if (kind === "error") return { kind: "failed", error };
+    if (kind === "error") return { kind: "failed", error, handoff };
     assertNotAborted(deps);
     return { kind: "stopped", handoff };
   }
@@ -2091,7 +2213,7 @@ test("a review fix stopped at fixMs is set aside, never committed, and the loop 
 
 Update `test/unit/finish/machine-invariants.test.ts` (~L44-63), "flowMs deadline during a fix session":
 - add `flowMs: 10_800_000` to the harness options;
-- expect `result.reason?.startsWith("finish time limit (3 h) reached during")` instead of `startsWith("deadline")`. The rest of the reason text comes from Task 11; until Task 11 lands, assert only that it does not start with `"deadline"` and contains `"handoff-1"` or `"finish time limit"`. Tighten it in Task 11.
+- in Task 8, **remove** the reason assertion and assert only `result.outcome === "draft"` (the `"deadline"` prefix only changes in Task 11, which adds the reason assertion back).
 - The trail after `fix:review` becomes `["restore", "finalizeDraftPr"]`.
 
 - [ ] **Step 8: Run all finish tests.**
@@ -2516,12 +2638,69 @@ export function openFindings(ledger: readonly LedgerEntry[]): Finding[] {
 ```
 
 In `advise.ts`:
-- `JudgedResult` gains `dropped` and `held` (shapes above); `judgeWithoutAdvisor` returns `dropped: [], held: []`.
-- `judgeOne` additionally returns `dropped?: "waive" | "supersede"`:
-  - for a reused prior: `dropped: prior.action.type === "supersede" ? "supersede" : "waive"`;
-  - for a fresh decision whose `action.type` is `"waive"` or `"supersede"`: `dropped: action.type`.
-- In `judged`, `out` starts as `{ toFix: [], advice: [], unresolved: [], dropped: [], held: [] }`. Push `{ finding: f, decisionId: r.ref.decisionId, action: r.dropped }` when `r.dropped && r.ref`, and `{ finding: f, decisionId: r.ref.decisionId }` into `held` when `r.hold !== undefined && r.ref`.
-- `judgeContradiction` also returns `dropped` (`[c.spec, c.quality]` with the action, for waive or supersede) and `held` (both findings, for a hold). The aggregator pushes them.
+- `JudgedResult` gains `dropped` and `held` (shapes above).
+- `judgeWithoutAdvisor` returns `{ toFix: ..., advice: [], unresolved: ..., dropped: [], held: [] }`.
+- `judgeOne` returns which way a ruling dropped the finding:
+
+```ts
+type Dropped = "waive" | "supersede";
+const droppedBy = (type: string): Dropped | undefined => (type === "waive" || type === "supersede" ? type : undefined);
+
+async function judgeOne(
+  deps: FinishAdvisorDeps,
+  phase: "spec" | "quality",
+  f: Finding,
+): Promise<{ keep?: Finding; ref?: AdviceRef; hold?: string; fallback?: string; dropped?: Dropped }> {
+  const question = judgmentQuestion(deps, phase, f);
+  const prior = await reusablePrior(deps, f, question.dedupeKey ?? "");
+  if (prior) {
+    const reused = await deps.advisor.recordReuse(question, prior);
+    const ref = { decisionId: reused?.id ?? prior.id, optionId: prior.chosenOptionId, reused: true };
+    return { ref, dropped: droppedBy(prior.action.type) ?? "waive" }; // findReusable only reuses waive / supersede
+  }
+  const { decision, fallbackReason } = await deps.advisor.advise(question, { findingSeverity: f.severity });
+  if (!decision) return { fallback: fallbackReason ?? "advisor unavailable" };
+  const ref: AdviceRef = { decisionId: decision.id, optionId: decision.chosenOptionId, reused: false };
+  const { action } = decision;
+  if (action.type === "hold") return { ref, hold: decision.rationale };
+  if (action.type !== "fix") {
+    const dropped = droppedBy(action.type);
+    return dropped ? { ref, dropped } : { ref };
+  }
+  return { ref, keep: { ...f, fix: `${f.fix}\n\nAdvisor ruling (${decision.id}): ${action.instruction}` } };
+}
+```
+
+- `judgeContradiction` returns `dropped` and `held` alongside `toFix` / `unresolved`:
+  - for `waive` / `supersede`: `{ ref, toFix: [], unresolved: [], dropped: [c.spec, c.quality].map((finding) => ({ finding, decisionId: decision.id, action: action.type })), held: [] }`;
+  - for `hold`: `{ ref, ...specFirst(c), dropped: [], held: [{ finding: c.quality, decisionId: decision.id }] }`;
+  - on every other path: `dropped: [], held: []`.
+- The aggregator in `judged`:
+
+```ts
+    async judged(findings, contradictions) {
+      const out: JudgedResult = { toFix: [], advice: [], unresolved: [], dropped: [], held: [] };
+      for (const f of findings) {
+        const r = await judgeOne(deps, f.source ?? "quality", f);
+        if (r.ref) out.advice.push(r.ref);
+        if (r.keep) out.toFix.push(r.keep);
+        else if (r.hold !== undefined || r.fallback !== undefined) out.unresolved.push(f);
+        if (r.ref && r.dropped) out.dropped.push({ finding: f, decisionId: r.ref.decisionId, action: r.dropped });
+        if (r.ref && r.hold !== undefined) out.held.push({ finding: f, decisionId: r.ref.decisionId });
+      }
+      for (const c of contradictions) {
+        const r = await judgeContradiction(deps, c);
+        if (r.ref) out.advice.push(r.ref);
+        out.toFix.push(...r.toFix);
+        out.unresolved.push(...r.unresolved);
+        out.dropped.push(...r.dropped);
+        out.held.push(...r.held);
+      }
+      return out;
+    },
+```
+
+If `judged` now exceeds the complexity limit, move the per-finding body into `collectJudgment(out, f, r)`.
 
 In `review-loop.ts`:
 
@@ -2564,7 +2743,7 @@ In `runOneRound`:
 
 In `fixRound`:
 - after a committed fix: `if (commit.committed && commit.shaAfter) ledgerEvent(state, { kind: "fixed", findings: fixList, dispositions: outcome.dispositions ?? [], sha: commit.shaAfter });`
-- in the non-done branch, when `step.kind === "stopped"`: `ledgerEvent(state, { kind: "set-aside", findings: fixList, handoff: \`handoff-${step.handoff.n}\` });`
+- in the non-done branch, when `step.handoff` is set (a stop, or a crash that was set aside, spec §5): `ledgerEvent(state, { kind: "set-aside", findings: fixList, handoff: \`handoff-${step.handoff.n}\` });`
 
 Keep the at-cap `patchReview(state, { lastFindings: [] })` and the unreviewed-commit push unchanged. `lastFindings` is now loop control only; reporting reads the ledger (Task 11).
 
@@ -2902,7 +3081,14 @@ export async function writeCheckpoint(audit: AuditTarget, state: FinishState): P
 
 Export both from `src/finish/index.ts`.
 
-In `machine.ts`, call `await writeCheckpoint(deps.audit, state);`:
+Call `await writeCheckpoint(deps.audit, state);` at every completed step (spec §4.4):
+- in `runFixStep` (`fix-step.ts`), just before each `return` (done, failed and stopped);
+- in `review-loop.ts` `runOneRound`, after the round's ledger events are applied;
+- in `acceptance-loop.ts` and `gates-loop.ts`, after each gate run is recorded (`recordGateOutcome` / `recordGateRound` call sites).
+
+`runFixStep` and the loops already have `deps.audit`.
+
+In `machine.ts`, also call it:
 - after each `runAcceptanceLoop` call;
 - after `runReviewLoop`;
 - after `runGatesLoop`;
@@ -2944,7 +3130,7 @@ git commit -m "feat(finish): atomic state checkpoint after every completed step"
   - `FinishResult.handoffs?: { dir: string; limit: HandoffLimit; findingIds: string[]; consumed: boolean; reapplied?: boolean }[]`;
   - `export async function isDirty(repoRoot: string): Promise<boolean>` (`commit.ts`).
 
-- [ ] **Step 1: Write the failing body tests.** Append to `test/unit/finish/pr-body.test.ts`. It uses that file's own context builder; if the file has none, build `FinishPrContext` through `loadFinishPrContext` as its other cases do:
+- [ ] **Step 1: Write the failing body tests.** Append to `test/unit/finish/pr-body.test.ts`. It uses that file's `baseCtx(over)` builder (L39); import `LedgerEntry` from `@/finish/ledger` and `Finding` from `@/finish` if missing:
 
 ```ts
 describe("findings table, Set aside and Stops (finish A §7)", () => {
@@ -2954,7 +3140,7 @@ describe("findings table, Set aside and Stops (finish A §7)", () => {
   });
 
   test("one table sorted by state then severity; resolved rows collapsed", () => {
-    const body = buildFinishBody(makeCtx({ unresolved: { ...unresolvedBase, ledger: [
+    const body = buildFinishBody(baseCtx({ unresolved: { ...unresolvedBase, ledger: [
       e("fixed one", "HIGH", "fixed-unreviewed", "68e7c2189abc"),
       e("open low", "LOW", "open"),
       e("open high", "HIGH", "open"),
@@ -2969,7 +3155,7 @@ describe("findings table, Set aside and Stops (finish A §7)", () => {
   });
 
   test("lists set-aside handoffs and stops", () => {
-    const body = buildFinishBody(makeCtx({ unresolved: { ...unresolvedBase,
+    const body = buildFinishBody(baseCtx({ unresolved: { ...unresolvedBase,
       stops: [{ kind: "fix", phase: "review", at: "t", limitMs: 1_200_000, handoff: 1, findings: 3 }],
       handoffs: [{ n: 1, dir: "/o/finish-audit/feat/run-1.handoff-1", phase: "review", limit: "fix", baseSha: "s", headSha: "s",
         findingIds: ["a", "b", "c"], newUntracked: [], changedPaths: [], stoppedAt: "t", hasNote: true, patchSaved: true,
@@ -2983,7 +3169,7 @@ describe("findings table, Set aside and Stops (finish A §7)", () => {
   });
 
   test("a not-run gate renders as 'Gates did not run', never as a red gate named gates", () => {
-    const body = buildFinishBody(makeCtx({ unresolved: { ...unresolvedBase, gates: [{ name: "gates", status: "not-run" }] } }));
+    const body = buildFinishBody(baseCtx({ unresolved: { ...unresolvedBase, gates: [{ name: "gates", status: "not-run" }] } }));
     expect(body).toContain("Gates did not run");
     expect(body).not.toContain("Gate `gates` is red");
   });
@@ -2994,11 +3180,15 @@ describe("findings table, Set aside and Stops (finish A §7)", () => {
 
 ```ts
 describe("finalizeDraftPr after a stop (finish A §4.5)", () => {
-  function stubDirtyGit(calls: string[][], dirty: { value: boolean }): void {
+  function stubDirtyGit(calls: string[][], dirty: { value: boolean }, restoreFails = false): void {
     _finishGitDeps.git = async (args: string[]) => {
       calls.push(args);
       if (args[0] === "status") return { exitCode: 0, stdout: dirty.value ? " M a.ts\n?? new.ts\n" : "", stderr: "" };
-      if (args[0] === "restore") dirty.value = false;
+      if (args[0] === "restore") {
+        if (restoreFails) return { exitCode: 1, stdout: "", stderr: "restore failed" };
+        dirty.value = false;
+      }
+      if (args[0] === "cat-file") return { exitCode: 0, stdout: "", stderr: "" };
       if (args[0] === "rev-parse") return { exitCode: 0, stdout: "sha1\n", stderr: "" };
       if (args[0] === "diff" && args.includes("--name-only")) return { exitCode: 0, stdout: dirty.value ? "a.ts\n" : "", stderr: "" };
       if (args[0] === "diff" && args.includes("--cached")) return { exitCode: dirty.value ? 1 : 0, stdout: "", stderr: "" };
@@ -3010,7 +3200,7 @@ describe("finalizeDraftPr after a stop (finish A §4.5)", () => {
     await withTempDir(async (dir) => {
       const { deps } = baseDeps();
       const calls: string[][] = [];
-      stubDirtyGit(calls, { value: true });
+      stubDirtyGit(calls, { value: true }, true); // the restore keeps failing: the tree stays dirty
       const removed: string[] = [];
       const { _setAsideDeps } = await import("@/finish");
       const originalRemove = _setAsideDeps.remove;
@@ -3027,7 +3217,9 @@ describe("finalizeDraftPr after a stop (finish A §4.5)", () => {
         const out = await createFinishOps({ ...deps, forgeKind: null, audit: { auditDir: dir, runId: "run-1" } }).finalizeDraftPr(state);
         expect(out.status).toBe("local-only");
         expect(calls.some((a) => a[0] === "commit")).toBe(false);
+        expect(calls.some((a) => a[0] === "push")).toBe(true);
         expect(state.handoffs).toHaveLength(2);
+        expect(state.handoffs[1].restored).toBe(false);
         expect(removed).toEqual([]); // new.ts existed before the session: never deleted
       } finally {
         _setAsideDeps.remove = originalRemove;
@@ -3130,6 +3322,7 @@ In `ops-impl.ts` `finalizeDraftPr`, before `commitAndPush`:
       // Finish A §4.5: only when a set-aside's restore failed is remaining dirt set aside
       // instead of committed, with the base and untrackedBefore of that fix session.
       const failedRestore = state.handoffs.some((h) => !h.restored);
+      let skipCommit = false;
       if (failedRestore && state.lastFixBase && (await isDirty(state.workdir))) {
         const record = await setAside({
           workdir: state.workdir,
@@ -3142,8 +3335,20 @@ In `ops-impl.ts` `finalizeDraftPr`, before `commitAndPush`:
           now: () => new Date().toISOString(),
         });
         state.handoffs = [...state.handoffs, record];
+        // Still dirty after a failed restore: push what is committed, commit nothing (spec §4.5).
+        skipCommit = !record.restored;
       }
 ```
+
+Then pass it to the existing call: `commitAndPush(state.workdir, state.branch, PROMOTE_MESSAGE(state.feature), { skipHooks: true, skipCommit })`.
+
+In `commit.ts`, `commitAndPush`'s options gain `skipCommit?: boolean`. When it is set, skip `commitFixes` and use `{ committed: false, shaAfter: null }`:
+
+```ts
+  const { committed, shaAfter } = opts.skipCommit ? { committed: false, shaAfter: null } : await commitFixes(repoRoot, message, opts);
+```
+
+Match `shaAfter`'s declared type in `SyncOutcome` / `commitFixes`'s return.
 
 Import `isDirty` from `./commit` and `setAside` from `./set-aside`.
 
