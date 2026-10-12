@@ -97,7 +97,7 @@ A stopped (or crashed) fix session's edits are never committed to the branch. A 
 
 ### 4.1 At fix-session start
 
-Record the base: `baseSha = git stash create || HEAD`, a commit object of the current worktree state that neither moves the branch nor touches the stash list, so pre-existing tracked edits (a gate's auto-fix, a user's edit) are part of the base and are never overwritten. Also record `untrackedBefore` (`git status --porcelain=v1 -uall`, untracked entries only) and `headSha`. The base is kept on the state (`state.lastFixBase`) until the step settles. If the base cannot be read (git fails), the step fails without running the fixer.
+Record the base: `baseSha = git stash create || HEAD`, a commit object of the current worktree state that neither moves the branch nor touches the stash list, so pre-existing tracked edits (a gate's auto-fix, a user's edit) are part of the base and are never overwritten. Also record `untrackedBefore` (`git status --porcelain=v1 -uall`, untracked entries only, so gitignored files are never included) and `headSha`. Snapshot those pre-existing untracked files into `<outputDir>/finish-audit/<feature>/<runId>.fix-base/`, up to 1 MB per file and 20 MB in total. Every file's size and mtime are recorded, so a change is detectable even when it was too big to copy. The base is kept on the state (`state.lastFixBase`) until the step settles. If the base cannot be read (git fails), the step fails without running the fixer.
 
 ### 4.2 When a fix session is stopped
 
@@ -108,7 +108,11 @@ Record the base: `baseSha = git stash create || HEAD`, a commit object of the cu
    - `changes.patch`: `git diff --binary <baseSha>` for tracked files, plus the untracked files created since `untrackedBefore` (added with `git add -N` for the diff, then reset);
    - `note.json`: the parsed note, when there is one;
    - `meta.json`: `{ baseSha, headSha, phase, findingIds, limit: "fix" | "flow" | "run" | "error", stoppedAt, newUntracked, restored }`.
-5. **Restore only what the session changed.** `git restore --source=<baseSha> --worktree -- <paths>`, where `<paths>` are the tracked files in the patch; then delete the untracked files in `newUntracked`. Never `git clean`, never `reset --hard`. A user's untracked files (`.env`, local notes) and pre-existing tracked edits survive.
+5. **Restore only what the session changed.**
+   - `git restore --source=<baseSha> --staged --worktree -- <paths>` for the tracked files in the patch that the base knows; files the session `git add`ed are unstaged and removed.
+   - Delete the untracked files in `newUntracked`.
+   - A pre-existing untracked file the session changed keeps its edit in `untracked-modified/` in the handoff and is put back from the snapshot. One with no snapshot (over the cap) is moved into the handoff instead. Either way, `git add -A` can never commit the half-edit; the PR lists any moved file.
+   - Never `git clean`, never `reset --hard`. Untouched untracked files (`.env`, local notes) and pre-existing tracked edits survive.
 6. **Write a checkpoint** (§4.4).
 
 A fixer that **crashes** (an error that is not a stop) is set aside the same way with `limit: "error"` and no note, but is not offered to the next attempt. This keeps the A4 rule that a failed fix "changed nothing", and keeps the tree at the base for the next step.
@@ -213,6 +217,7 @@ Unit tests use the shared `test/helpers/` factories and `_deps` injection; real 
    - the patch holds tracked changes and new untracked files;
    - restore touches only the session's paths;
    - a pre-existing tracked edit and a pre-existing untracked `.env` survive;
+   - a pre-existing untracked file the session edited is put back from the snapshot, with its edit kept in the handoff; over the cap, it is moved into the handoff;
    - `git clean` and `reset --hard` are never invoked.
 8. **Next attempt:** a clean re-apply carries the note; a patch that fails `--check` leaves the tree untouched and the handoff kept; after a commit the handoff is consumed.
 9. **Crash:** a fixer error is set aside with `limit: "error"` and not re-applied; the gate loop counts it as an attempt.

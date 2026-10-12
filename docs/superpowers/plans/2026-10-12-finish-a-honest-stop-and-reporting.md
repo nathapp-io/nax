@@ -36,6 +36,7 @@
   - `STEP_TIMEOUT_MARGIN_MS = 60_000` (in `src/finish/step-signal.ts`);
   - `HANDOFF_MARKER = "<!-- nax-finish-handoff -->"` (in `src/finish/fix/handoff-note.ts`).
 - **Stop latency:** a running review or fix turn ends within 30 s of its limit. The handoff turn is a separate step after it.
+- **Untracked snapshot caps:** `UNTRACKED_FILE_MAX = 1_048_576` (1 MB), `UNTRACKED_TOTAL_MAX = 20_971_520` (20 MB), in `src/finish/set-aside.ts`.
 - **Git safety:** never `git clean`, never `git reset --hard`, never `git stash push/pop`. `git stash create` is allowed: it writes a commit object and does not touch the stash list or the tree. It may need a git identity (`user.name` / `user.email`); the integration test repo sets one, and when it fails on a dirty tree `captureFixBase` returns `null` rather than falling back to HEAD.
 - **Unchanged rules:** the ready/draft decision (`isClean`, `approvalFacts`, `resolve`), advisor callers, menus and ledger schemas.
 - **`FinishState.version`** becomes `3`. `deserializeFinishState` accepts only `3`.
@@ -60,7 +61,7 @@
 Most likely first. Each line names the task whose tests pin it.
 
 1. **A soft interrupt that fires before the adapter registered the active call** (the native adapter registers only after `await this.client()` / `client.model()`, `nax-agent/src/native/session-adapter.ts:177-230`). Expected: `withInterrupt` keeps retrying `interruptTurn` every 250 ms until it returns `true`, so the turn still ends within the 30 s pass mark. Pinned in Task 3 ("already aborted on entry", "retries until a call registers").
-2. **A user's `.env`, or a pre-existing tracked edit (e.g. a gate's auto-fix), at fix-session start.** Expected: both survive a set-aside and a finalize. Pinned in Task 7 and Task 13.
+2. **A user's `.env`, a pre-existing untracked file the session edits, or a pre-existing tracked edit (e.g. a gate's auto-fix), at fix-session start.** Expected: an untouched file survives; an edited untracked file is put back from the snapshot (or, over the cap, moved into the handoff), so no half-edit can be committed; a tracked edit is in the base. Pinned in Task 7 and Task 13.
 3. **A flow deadline while a fix session is running.** Expected: an interrupt, then a handoff note, then a set-aside, then `FINISH_ABORTED`, then a draft with a `flow` stop. The handoff must survive the throw. Pinned in Task 8.
 4. **A genuine idle-watchdog stall during a fix** (no interrupt fired). Expected: rethrown and stale-retried exactly as today; no handoff turn. Pinned in Task 6.
 5. **A fixer reply with no `## DISPOSITIONS` section.** Expected: the findings stay `open`, never `fixed-unreviewed`. Pinned in Task 10.
@@ -1405,16 +1406,26 @@ git commit -m "feat(finish): interrupted fix session writes a handoff note in th
 
 ```ts
 // types.ts
-export interface FixBase { baseSha: string; headSha: string; untrackedBefore: string[] }
+export interface UntrackedEntry { path: string; size: number; mtimeMs: number; saved: boolean }
+export interface UntrackedSnapshot { dir: string; files: UntrackedEntry[] }
+export interface FixBase { baseSha: string; headSha: string; untrackedBefore: string[]; untrackedSnapshot?: UntrackedSnapshot }
 export type HandoffLimit = "fix" | "flow" | "run" | "error";
 export interface HandoffRecord {
   n: number; dir: string; phase: "acceptance" | "gate" | "review"; limit: HandoffLimit;
   baseSha: string; headSha: string; findingIds: string[]; newUntracked: string[]; changedPaths: string[];
   stoppedAt: string; hasNote: boolean; patchSaved: boolean; restored: boolean; consumed: boolean; reapplied?: boolean;
+  /** Pre-existing untracked files the session changed: put back from the snapshot. */
+  untrackedRestored: string[];
+  /** Pre-existing untracked files the session changed that had no snapshot (over the cap): moved into the handoff. */
+  untrackedMovedAside: string[];
 }
 // set-aside.ts
 export function handoffDir(audit: AuditTarget, n: number): string;
 export async function captureFixBase(workdir: string): Promise<FixBase | null>;
+export const UNTRACKED_FILE_MAX = 1_048_576; // 1 MB per file
+export const UNTRACKED_TOTAL_MAX = 20_971_520; // 20 MB per snapshot
+export async function snapshotUntracked(workdir: string, paths: string[], dir: string): Promise<UntrackedSnapshot>;
+export async function restoreUntracked(workdir: string, snapshot: UntrackedSnapshot | undefined, handoffPath: string): Promise<{ restored: string[]; movedAside: string[] }>;
 export async function setAside(args: {
   workdir: string; audit: AuditTarget; n: number; base: FixBase; phase: HandoffRecord["phase"];
   limit: HandoffLimit; findingIds: string[]; note?: HandoffNote; now: () => string;
@@ -1422,7 +1433,7 @@ export async function setAside(args: {
 export async function readHandoffNote(record: HandoffRecord): Promise<HandoffNote | undefined>;
 export async function reapplyHandoff(workdir: string, record: HandoffRecord): Promise<{ applied: boolean; files: string[] }>;
 export async function markHandoffConsumed(record: HandoffRecord): Promise<HandoffRecord>;
-export const _setAsideDeps: { remove: (path: string) => Promise<void> };
+export const _setAsideDeps: { remove: (path: string) => Promise<void>; limits: { fileMax: number; totalMax: number } };
 ```
 
 - [ ] **Step 1: Write the failing integration test.** Create `test/integration/finish/set-aside.test.ts`. The audit dir lives in a **second** temp dir, outside the repo, so its files never show up in `git status`:
@@ -1433,7 +1444,7 @@ import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { assertDefined, withTempDir } from "@test/helpers";
-import { captureFixBase, handoffDir, markHandoffConsumed, reapplyHandoff, setAside } from "@/finish/set-aside";
+import { _setAsideDeps, captureFixBase, handoffDir, markHandoffConsumed, reapplyHandoff, setAside, snapshotUntracked } from "@/finish/set-aside";
 
 async function git(cwd: string, ...args: string[]): Promise<string> {
   const p = Bun.spawn(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
@@ -1511,6 +1522,43 @@ describe("set-aside (finish A §4)", () => {
     });
   });
 
+  test("a pre-existing untracked file the session edited is put back, and its edit kept in the handoff", async () => {
+    await withRepo(async (dir, audit) => {
+      await writeFile(join(dir, "notes.md"), "mine\n"); // untracked, not ignored, before the session
+      const captured = assertDefined(await captureFixBase(dir), "base");
+      const snapshot = await snapshotUntracked(dir, captured.untrackedBefore, join(audit.auditDir, "run-1.fix-base"));
+      const base = { ...captured, untrackedSnapshot: snapshot };
+      await writeFile(join(dir, "notes.md"), "half-edited by the session\n");
+      const record = await setAside({ workdir: dir, audit, n: 1, base, phase: "review", limit: "fix", findingIds: [], now });
+      expect(record.untrackedRestored).toEqual(["notes.md"]);
+      expect(record.untrackedMovedAside).toEqual([]);
+      expect(await readFile(join(dir, "notes.md"), "utf8")).toBe("mine\n");
+      expect(await readFile(join(handoffDir(audit, 1), "untracked-modified", "notes.md"), "utf8")).toBe("half-edited by the session\n");
+    });
+  });
+
+  test("an edited untracked file over the snapshot cap is moved into the handoff, never left on the branch", async () => {
+    await withRepo(async (dir, audit) => {
+      const limits = { ..._setAsideDeps.limits };
+      _setAsideDeps.limits = { fileMax: 3, totalMax: 3 };
+      try {
+        await writeFile(join(dir, "big.md"), "too big to snapshot\n");
+        await writeFile(join(dir, ".env"), "SECRET=1\n"); // also over the cap, but never touched
+        const captured = assertDefined(await captureFixBase(dir), "base");
+        const snapshot = await snapshotUntracked(dir, captured.untrackedBefore, join(audit.auditDir, "run-1.fix-base"));
+        expect(snapshot.files.every((f) => !f.saved)).toBe(true);
+        await writeFile(join(dir, "big.md"), "edited\n");
+        const record = await setAside({ workdir: dir, audit, n: 1, base: { ...captured, untrackedSnapshot: snapshot }, phase: "review", limit: "fix", findingIds: [], now });
+        expect(record.untrackedMovedAside).toEqual(["big.md"]);
+        expect(existsSync(join(dir, "big.md"))).toBe(false);
+        expect(await readFile(join(handoffDir(audit, 1), "untracked-modified", "big.md"), "utf8")).toBe("edited\n");
+        expect(await readFile(join(dir, ".env"), "utf8")).toBe("SECRET=1\n");
+      } finally {
+        _setAsideDeps.limits = limits;
+      }
+    });
+  });
+
   test("never runs git clean or reset --hard, and a file the session git-added is removed", async () => {
     await withRepo(async (dir, audit) => {
       const { _finishGitDeps } = await import("@/finish");
@@ -1568,19 +1616,86 @@ Expected: FAIL (module not found).
  * `git clean`, never `reset --hard`. Every step after the snapshot is best-effort and
  * recorded on the returned record; nothing here throws.
  */
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { copyFile, mkdir, readFile, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "@/logger";
 import { tryParseLLMJson } from "@/utils/llm-json";
 import type { AuditTarget } from "./audit";
 import { _finishGitDeps } from "./commit";
 import { isHandoffNote } from "./fix";
-import type { FixBase, HandoffLimit, HandoffNote, HandoffRecord } from "./types";
+import type { FixBase, HandoffLimit, HandoffNote, HandoffRecord, UntrackedEntry, UntrackedSnapshot } from "./types";
+
+export const UNTRACKED_FILE_MAX = 1_048_576;
+export const UNTRACKED_TOTAL_MAX = 20_971_520;
 
 export const _setAsideDeps = {
   remove: (path: string): Promise<void> => unlink(path),
+  limits: { fileMax: UNTRACKED_FILE_MAX, totalMax: UNTRACKED_TOTAL_MAX },
 };
+
+async function copyInto(src: string, dest: string): Promise<boolean> {
+  try {
+    await mkdir(dirname(dest), { recursive: true });
+    await copyFile(src, dest);
+    return true;
+  } catch {
+    return false; // a missing source (the session deleted the file) is not an error here
+  }
+}
+
+/**
+ * Spec §4.1: copy pre-existing untracked, non-ignored files (as listed by `git status`,
+ * so ignored files such as node_modules are never included) into `dir`, within
+ * `_setAsideDeps.limits`. Every file is recorded with its size and mtime, so a change
+ * is detectable even when it was too big to copy.
+ */
+export async function snapshotUntracked(workdir: string, paths: string[], dir: string): Promise<UntrackedSnapshot> {
+  await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+  const { fileMax, totalMax } = _setAsideDeps.limits;
+  const files: UntrackedEntry[] = [];
+  let total = 0;
+  for (const path of paths) {
+    const st = await stat(join(workdir, path)).catch(() => null);
+    if (!st?.isFile()) continue;
+    const fits = st.size <= fileMax && total + st.size <= totalMax;
+    const saved = fits && (await copyInto(join(workdir, path), join(dir, path)));
+    if (saved) total += st.size;
+    files.push({ path, size: st.size, mtimeMs: st.mtimeMs, saved });
+  }
+  return { dir, files };
+}
+
+async function changedSince(workdir: string, e: UntrackedEntry): Promise<boolean> {
+  const st = await stat(join(workdir, e.path)).catch(() => null);
+  return !st || st.size !== e.size || st.mtimeMs !== e.mtimeMs;
+}
+
+/**
+ * Spec §4.2 step 5: a pre-existing untracked file the session changed keeps its edit in
+ * `<handoff>/untracked-modified/` and is put back from the snapshot. Without a snapshot
+ * (over the cap) it is moved into the handoff instead, so `git add -A` can never commit
+ * the half-edit.
+ */
+export async function restoreUntracked(
+  workdir: string,
+  snapshot: UntrackedSnapshot | undefined,
+  handoffPath: string,
+): Promise<{ restored: string[]; movedAside: string[] }> {
+  const restored: string[] = [];
+  const movedAside: string[] = [];
+  for (const e of snapshot?.files ?? []) {
+    if (!(await changedSince(workdir, e))) continue;
+    await copyInto(join(workdir, e.path), join(handoffPath, "untracked-modified", e.path));
+    if (e.saved && (await copyInto(join(snapshot?.dir ?? "", e.path), join(workdir, e.path)))) {
+      restored.push(e.path);
+    } else {
+      await _setAsideDeps.remove(join(workdir, e.path)).catch(() => undefined);
+      movedAside.push(e.path);
+    }
+  }
+  return { restored, movedAside };
+}
 
 const PATCH = "changes.patch";
 const NOTE = "note.json";
@@ -1683,6 +1798,8 @@ export async function setAside(args: {
     patchSaved: false,
     restored: false,
     consumed: false,
+    untrackedRestored: [],
+    untrackedMovedAside: [],
   };
   try {
     await mkdir(dir, { recursive: true });
@@ -1698,6 +1815,12 @@ export async function setAside(args: {
     warn("Set-aside could not restore the worktree", err);
     return false;
   });
+  const untrackedOut = await restoreUntracked(args.workdir, args.base.untrackedSnapshot, dir).catch((err) => {
+    warn("Set-aside could not restore pre-existing untracked files", err);
+    return { restored: [], movedAside: [] };
+  });
+  record.untrackedRestored = untrackedOut.restored;
+  record.untrackedMovedAside = untrackedOut.movedAside;
   await writeMeta(record).catch((err) => warn("Set-aside could not write meta.json", err));
   return record;
 }
@@ -1729,13 +1852,15 @@ export async function markHandoffConsumed(record: HandoffRecord): Promise<Handof
 }
 ```
 
-Export `captureFixBase`, `setAside`, `readHandoffNote`, `reapplyHandoff`, `markHandoffConsumed`, `handoffDir` and `_setAsideDeps` from `src/finish/index.ts`.
+Export `captureFixBase`, `snapshotUntracked`, `restoreUntracked`, `setAside`, `readHandoffNote`, `reapplyHandoff`, `markHandoffConsumed`, `handoffDir`, `UNTRACKED_FILE_MAX`, `UNTRACKED_TOTAL_MAX` and `_setAsideDeps` from `src/finish/index.ts`.
+
+`setAside` now does more: if `check:complexity` flags it, split out `newRecord(args, created, changedPaths)` and `restoreAll(args, record, dir)`.
 
 Note: if `src/finish/fix` imports anything from `src/finish/index.ts`, importing `./fix` here could create a cycle. `check:import-cycles` (Step 4) will say so. If it does, import from `./fix/handoff-note` directly; that is allowed as a nested module within the same directory.
 
 - [ ] **Step 4: Run.**
 Run: `timeout -k 5s 60s bun test test/integration/finish/set-aside.test.ts --timeout=60000 && bun run typecheck && bun run check:import-cycles && bun run check:complexity`
-Expected: PASS. `setAside` is near the complexity limit; if `check:complexity` flags it, split out a `newRecord(args, created, changedPaths)` helper.
+Expected: PASS.
 
 - [ ] **Step 5: Commit.**
 
@@ -2022,7 +2147,8 @@ import type { AuditTarget } from "./audit";
 import { findingId } from "./ledger";
 import { assertNotAborted } from "./machine-deps";
 import type { FinishOps, FixOutcome, FixPhase, FixRequest } from "./ops";
-import { captureFixBase, setAside } from "./set-aside";
+import { join } from "node:path";
+import { captureFixBase, setAside, snapshotUntracked } from "./set-aside";
 import type { FinishState } from "./state";
 import { stepSignal } from "./step-signal";
 import type { Finding, FixBase, HandoffLimit, HandoffNote, HandoffRecord, Stop } from "./types";
@@ -2095,8 +2221,10 @@ export async function runFixStep(
   req: Omit<FixRequest, "state" | "interrupt" | "continuation">,
 ): Promise<FixStepResult> {
   assertNotAborted(deps);
-  const base = await captureFixBase(state.workdir);
-  if (!base) return { kind: "failed", error: new NaxError("Cannot read the worktree base", "FINISH_FIX_BASE", { stage: "finish" }) };
+  const captured = await captureFixBase(state.workdir);
+  if (!captured) return { kind: "failed", error: new NaxError("Cannot read the worktree base", "FINISH_FIX_BASE", { stage: "finish" }) };
+  const snapshotDir = join(deps.audit.auditDir, `${deps.audit.runId}.fix-base`);
+  const base: FixBase = { ...captured, untrackedSnapshot: await snapshotUntracked(state.workdir, captured.untrackedBefore, snapshotDir) };
   state.lastFixBase = base;
   const { signal: interrupt, limit } = stepSignal(deps.signal, deps.fixMs);
   let outcome: FixOutcome;
@@ -2247,7 +2375,7 @@ function handoff(auditDir: string, over: Partial<HandoffRecord> = {}): HandoffRe
   return {
     n: 1, dir: join(auditDir, "run-1.handoff-1"), phase: "review", limit: "fix", baseSha: "sha1", headSha: "sha1",
     findingIds: [], newUntracked: [], changedPaths: [], stoppedAt: "t", hasNote: false, patchSaved: true,
-    restored: true, consumed: false, ...over,
+    restored: true, consumed: false, untrackedRestored: [], untrackedMovedAside: [], ...over,
   };
 }
 
@@ -3159,11 +3287,12 @@ describe("findings table, Set aside and Stops (finish A §7)", () => {
       stops: [{ kind: "fix", phase: "review", at: "t", limitMs: 1_200_000, handoff: 1, findings: 3 }],
       handoffs: [{ n: 1, dir: "/o/finish-audit/feat/run-1.handoff-1", phase: "review", limit: "fix", baseSha: "s", headSha: "s",
         findingIds: ["a", "b", "c"], newUntracked: [], changedPaths: [], stoppedAt: "t", hasNote: true, patchSaved: true,
-        restored: true, consumed: false, reapplied: false }],
+        restored: true, consumed: false, reapplied: false, untrackedRestored: [], untrackedMovedAside: ["big.md"] }],
     } }));
     expect(body).toContain("### Set aside");
     expect(body).toContain("run-1.handoff-1/changes.patch");
     expect(body).toContain("not re-applied");
+    expect(body).toContain("moved into the handoff: big.md");
     expect(body).toContain("### Stops");
     expect(body).toContain("fix session stopped at the 20 min limit (3 findings, handoff-1)");
   });
@@ -3211,7 +3340,7 @@ describe("finalizeDraftPr after a stop (finish A §4.5)", () => {
           stops: [{ kind: "flow" as const, step: "review" as const, at: "t", limitMs: 1 }],
           handoffs: [{ n: 1, dir: `${dir}/h1`, phase: "review" as const, limit: "flow" as const, baseSha: "sha1", headSha: "sha1",
             findingIds: [], newUntracked: [], changedPaths: ["a.ts"], stoppedAt: "t", hasNote: false, patchSaved: true,
-            restored: false, consumed: false }],
+            restored: false, consumed: false, untrackedRestored: [], untrackedMovedAside: [] }],
           lastFixBase: { baseSha: "sha1", headSha: "sha1", untrackedBefore: ["new.ts"] },
         };
         const out = await createFinishOps({ ...deps, forgeKind: null, audit: { auditDir: dir, runId: "run-1" } }).finalizeDraftPr(state);
@@ -3293,7 +3422,8 @@ function buildFindingsTable(ledger: LedgerEntry[]): string | null {
 function renderHandoff(h: HandoffRecord): string {
   const where = h.patchSaved ? `\`${h.dir}/changes.patch\`` : "_patch not saved, work lost_";
   const state = h.consumed ? "re-applied and committed" : h.reapplied === false ? "not re-applied" : h.limit === "error" ? "crashed, not re-applied" : "pending";
-  return `- handoff-${h.n} (${h.phase}, ${h.limit}, ${h.findingIds.length} finding(s)): ${where} — ${state}`;
+  const moved = h.untrackedMovedAside.length > 0 ? `; untracked files over the snapshot cap moved into the handoff: ${h.untrackedMovedAside.join(", ")}` : "";
+  return `- handoff-${h.n} (${h.phase}, ${h.limit}, ${h.findingIds.length} finding(s)): ${where} — ${state}${moved}`;
 }
 ```
 
