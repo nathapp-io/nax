@@ -2029,6 +2029,8 @@ and in `reconcileRulings(deps, check, budget, jctx?)` the asked branch becomes:
   const jctx: JudgeContext = { acceptance: await loadAcceptanceFiles(state.workdir, deps.acceptancePaths ?? []) };
 ```
 
+  (imports to add in `review-loop.ts`: `type JudgeContext` from `./advise-core`, `loadAcceptanceFiles` from `./acceptance-evidence`.)
+
   then `reconcileBefore(deps, merged, jctx)`, `judgeRound(state, deps, before.merged, jctx)`, `reconcileAfter(deps, before.merged.toFix, judgedNow, MAX_NEAR_MATCH_QUESTIONS - before.asked, jctx)`.
 
 **`src/finish/machine.ts`** `reviewLoopDeps(deps, inputs)` adds:
