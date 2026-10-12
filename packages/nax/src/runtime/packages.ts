@@ -1,6 +1,7 @@
 import { isAbsolute, join, relative } from "node:path";
 import type { ConfigLoader, ConfigSelector, NaxConfig } from "../config";
 import { mergePackageConfig, pinRootOnlyKeys } from "../config";
+import { applyWorkflowMode } from "../config/workflow-mode";
 import { getSafeLogger } from "../logger";
 
 export const _packagesDeps = { getSafeLogger };
@@ -205,7 +206,12 @@ export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): P
       const override = await load(repoRoot, dir);
       if (override !== null) {
         overlays.set(dir, override);
-        mergedConfigs.set(dir, pinRootOnlyKeys(mergePackageConfig(loader.current(), override), loader.current()));
+        // Workflow mode must hold per package: an overlay cannot re-enable what it turns off.
+        const merged = pinRootOnlyKeys(mergePackageConfig(loader.current(), override), loader.current());
+        mergedConfigs.set(
+          dir,
+          applyWorkflowMode(merged, (msg) => _packagesDeps.getSafeLogger()?.warn("packages", msg, { packageDir: dir })),
+        );
         // A pre-hydration resolve can have cached the same package through a
         // worktree path (`.nax-wt/<story>/<dir>`). Invalidate every identity
         // key that maps to this override, while preserving unrelated views.

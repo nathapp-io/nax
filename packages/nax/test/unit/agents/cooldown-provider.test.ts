@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { CooldownStore } from "@/agents/cooldown-store";
 import { resolveFallbackModelId } from "@/agents/fallback-model-identity";
+import type { ModelsConfig } from "@/config/schema-types";
 import type { AdapterFailure } from "@/context/engine";
 
 const quota: AdapterFailure = {
@@ -11,7 +12,7 @@ const quota: AdapterFailure = {
 };
 
 // Real resolver output: literal pins come back as "unknown/<pin>" for non-claude/gpt/gemini names.
-const models = { native: { fast: { provider: "minimax", model: "minimax/MiniMax-M3" } } } as never;
+const models: ModelsConfig = { native: { fast: { provider: "minimax", model: "minimax/MiniMax-M3" } } };
 const idOf = (tier: string | undefined, pin?: string, agent = "native") =>
   resolveFallbackModelId(models, agent, tier, agent, pin);
 
