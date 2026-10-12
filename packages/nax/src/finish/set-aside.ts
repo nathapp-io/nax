@@ -7,111 +7,40 @@
  * session's changes (tracked diff against the base, plus files it created) are saved
  * as a patch, then exactly those paths are restored and those files removed. Never
  * `git clean`, never `reset --hard`. Every step after the snapshot is best-effort and
- * recorded on the returned record; nothing here throws.
+ * recorded on the returned record (`restored: false` whenever a read or restore failed);
+ * nothing here throws.
  */
-import { copyFile, mkdir, readFile, rm, stat, unlink, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "@/logger";
 import { tryParseLLMJson } from "@/utils/llm-json";
 import type { AuditTarget } from "./audit";
-import { _finishGitDeps } from "./commit";
-import { isHandoffNote } from "./fix/handoff-note";
-import type { FixBase, HandoffLimit, HandoffNote, HandoffRecord, UntrackedEntry, UntrackedSnapshot } from "./types";
+import { isHandoffNote } from "./fix";
+import { chunks, gitLiteral, listBaseTree, listChanged, listUntracked, numstatPaths, repoRoot } from "./set-aside-git";
+import type { FixBase, HandoffLimit, HandoffNote, HandoffRecord } from "./types";
+import { _setAsideDeps, restoreUntracked } from "./untracked-snapshot";
 
-export const UNTRACKED_FILE_MAX = 1_048_576;
-export const UNTRACKED_TOTAL_MAX = 20_971_520;
-
-export const _setAsideDeps = {
-  remove: (path: string): Promise<void> => unlink(path),
-  limits: { fileMax: UNTRACKED_FILE_MAX, totalMax: UNTRACKED_TOTAL_MAX },
-};
-
-async function copyInto(src: string, dest: string): Promise<boolean> {
-  try {
-    await mkdir(dirname(dest), { recursive: true });
-    await copyFile(src, dest);
-    return true;
-  } catch {
-    return false; // a missing source (the session deleted the file) is not an error here
-  }
-}
-
-/**
- * Spec §4.1: copy pre-existing untracked, non-ignored files (as listed by `git status`,
- * so ignored files such as node_modules are never included) into `dir`, within
- * `_setAsideDeps.limits`. Every file is recorded with its size and mtime, so a change
- * is detectable even when it was too big to copy.
- */
-export async function snapshotUntracked(workdir: string, paths: string[], dir: string): Promise<UntrackedSnapshot> {
-  await rm(dir, { recursive: true, force: true }).catch(() => undefined);
-  const { fileMax, totalMax } = _setAsideDeps.limits;
-  const files: UntrackedEntry[] = [];
-  let total = 0;
-  for (const path of paths) {
-    const st = await stat(join(workdir, path)).catch(() => null);
-    if (!st?.isFile()) continue;
-    const fits = st.size <= fileMax && total + st.size <= totalMax;
-    const saved = fits && (await copyInto(join(workdir, path), join(dir, path)));
-    if (saved) total += st.size;
-    files.push({ path, size: st.size, mtimeMs: st.mtimeMs, saved });
-  }
-  return { dir, files };
-}
-
-async function changedSince(workdir: string, e: UntrackedEntry): Promise<boolean> {
-  const st = await stat(join(workdir, e.path)).catch(() => null);
-  return !st || st.size !== e.size || st.mtimeMs !== e.mtimeMs;
-}
-
-/**
- * Spec §4.2 step 5: a pre-existing untracked file the session changed keeps its edit in
- * `<handoff>/untracked-modified/` and is put back from the snapshot. Without a snapshot
- * (over the cap) it is moved into the handoff instead, so `git add -A` can never commit
- * the half-edit.
- */
-export async function restoreUntracked(
-  workdir: string,
-  snapshot: UntrackedSnapshot | undefined,
-  handoffPath: string,
-): Promise<{ restored: string[]; movedAside: string[] }> {
-  const restored: string[] = [];
-  const movedAside: string[] = [];
-  for (const e of snapshot?.files ?? []) {
-    if (!(await changedSince(workdir, e))) continue;
-    await copyInto(join(workdir, e.path), join(handoffPath, "untracked-modified", e.path));
-    if (e.saved && (await copyInto(join(snapshot?.dir ?? "", e.path), join(workdir, e.path)))) {
-      restored.push(e.path);
-    } else {
-      await _setAsideDeps.remove(join(workdir, e.path)).catch(() => undefined);
-      movedAside.push(e.path);
-    }
-  }
-  return { restored, movedAside };
-}
+export {
+  _setAsideDeps,
+  restoreUntracked,
+  snapshotUntracked,
+  UNTRACKED_FILE_MAX,
+  UNTRACKED_TOTAL_MAX,
+} from "./untracked-snapshot";
 
 const PATCH = "changes.patch";
 const NOTE = "note.json";
 const META = "meta.json";
 
-const git = (args: string[], cwd: string) => _finishGitDeps.git(args, cwd);
-const lines = (s: string): string[] =>
-  s
-    .split("\n")
-    .map((l) => l.trim())
-    .filter(Boolean);
+const git = gitLiteral;
 
 export function handoffDir(audit: AuditTarget, n: number): string {
   return join(audit.auditDir, `${audit.runId}.handoff-${n}`);
 }
 
-async function untracked(workdir: string): Promise<string[]> {
-  const res = await git(["status", "--porcelain=v1", "-uall"], workdir);
-  if (res.exitCode !== 0) return [];
-  return res.stdout
-    .split("\n")
-    .filter((l) => l.startsWith("?? "))
-    .map((l) => l.slice(3).trim());
+function warn(message: string, err: unknown): void {
+  getSafeLogger()?.warn("finish", message, { storyId: "_run", error: errorMessage(err) });
 }
 
 /**
@@ -120,42 +49,60 @@ async function untracked(workdir: string): Promise<string[]> {
  * then would overwrite those edits on restore.
  */
 export async function captureFixBase(workdir: string): Promise<FixBase | null> {
-  const head = await git(["rev-parse", "HEAD"], workdir);
+  const root = await repoRoot(workdir);
+  const head = await git(["rev-parse", "HEAD"], root);
   if (head.exitCode !== 0) return null;
   const headSha = head.stdout.trim();
-  const stash = await git(["stash", "create"], workdir);
+  const stash = await git(["stash", "create"], root);
   const snapshot = stash.exitCode === 0 ? stash.stdout.trim() : "";
   if (snapshot === "") {
-    const tracked = await git(["diff", "--name-only", "HEAD"], workdir);
+    const tracked = await git(["diff", "--name-only", "HEAD"], root);
     if (tracked.exitCode !== 0 || tracked.stdout.trim() !== "") return null;
   }
-  return { baseSha: snapshot || headSha, headSha, untrackedBefore: await untracked(workdir) };
+  const untrackedBefore = await listUntracked(root);
+  if (untrackedBefore === null) return null;
+  return { baseSha: snapshot || headSha, headSha, untrackedBefore };
 }
 
-async function savePatch(workdir: string, dir: string, baseSha: string, created: string[]): Promise<boolean> {
-  if (created.length > 0) await git(["add", "-N", "--", ...created], workdir);
-  const diff = await git(["diff", "--binary", baseSha], workdir);
-  if (created.length > 0) await git(["reset", "-q", "--", ...created], workdir);
-  if (diff.exitCode !== 0) return false;
-  await writeFile(join(dir, PATCH), diff.stdout, "utf8");
-  return true;
+async function addIntent(root: string, created: string[]): Promise<void> {
+  for (const group of chunks(created)) await git(["add", "-N", "--", ...group], root);
+}
+
+async function dropIntent(root: string, created: string[]): Promise<void> {
+  for (const group of chunks(created)) await git(["reset", "-q", "--", ...group], root);
+}
+
+/** The patch is `git diff --binary` text (the diff is decoded as UTF-8 by the git wrapper). */
+async function savePatch(root: string, dir: string, baseSha: string, created: string[]): Promise<boolean> {
+  await addIntent(root, created);
+  try {
+    const diff = await git(["diff", "--binary", "--no-renames", baseSha], root);
+    if (diff.exitCode !== 0) return false;
+    await writeFile(join(dir, PATCH), diff.stdout, "utf8");
+    return true;
+  } finally {
+    await dropIntent(root, created).catch(() => undefined);
+  }
+}
+
+async function restoreKnown(root: string, baseSha: string, inBase: string[]): Promise<boolean> {
+  let ok = true;
+  for (const group of chunks(inBase)) {
+    const res = await git(["restore", `--source=${baseSha}`, "--staged", "--worktree", "--", ...group], root);
+    ok = ok && res.exitCode === 0;
+  }
+  return ok;
 }
 
 /** Paths the base knows are restored from it; paths it does not know (the session `git add`ed them) are unstaged and removed. */
-async function restorePaths(workdir: string, baseSha: string, tracked: string[], created: string[]): Promise<boolean> {
-  const inBase: string[] = [];
-  const added: string[] = [];
-  for (const path of tracked) {
-    const known = await git(["cat-file", "-e", `${baseSha}:${path}`], workdir);
-    (known.exitCode === 0 ? inBase : added).push(path);
-  }
-  let ok = true;
-  if (inBase.length > 0) {
-    const res = await git(["restore", `--source=${baseSha}`, "--staged", "--worktree", "--", ...inBase], workdir);
-    ok = res.exitCode === 0;
-  }
-  if (added.length > 0) await git(["rm", "-q", "--cached", "--ignore-unmatch", "--", ...added], workdir);
-  for (const path of [...added, ...created]) await _setAsideDeps.remove(join(workdir, path)).catch(() => undefined);
+async function restorePaths(root: string, baseSha: string, tracked: string[], created: string[]): Promise<boolean> {
+  const known = await listBaseTree(root, baseSha);
+  if (known === null) return false; // cannot tell which paths the base has: touch nothing
+  const inBase = tracked.filter((p) => known.has(p));
+  const added = tracked.filter((p) => !known.has(p));
+  const ok = await restoreKnown(root, baseSha, inBase);
+  for (const group of chunks(added)) await git(["rm", "-q", "--cached", "--ignore-unmatch", "--", ...group], root);
+  for (const path of [...added, ...created]) await _setAsideDeps.remove(join(root, path)).catch(() => undefined);
   return ok;
 }
 
@@ -163,11 +110,7 @@ async function writeMeta(record: HandoffRecord): Promise<void> {
   await writeFile(join(record.dir, META), `${JSON.stringify(record, null, 2)}\n`, "utf8");
 }
 
-function warn(message: string, err: unknown): void {
-  getSafeLogger()?.warn("finish", message, { storyId: "_run", error: errorMessage(err) });
-}
-
-export async function setAside(args: {
+interface SetAsideArgs {
   workdir: string;
   audit: AuditTarget;
   n: number;
@@ -177,13 +120,10 @@ export async function setAside(args: {
   findingIds: string[];
   note?: HandoffNote;
   now: () => string;
-}): Promise<HandoffRecord> {
-  const dir = handoffDir(args.audit, args.n);
-  const before = new Set(args.base.untrackedBefore);
-  const created = (await untracked(args.workdir)).filter((p) => !before.has(p));
-  const changed = await git(["diff", "--name-only", args.base.baseSha], args.workdir);
-  const changedPaths = changed.exitCode === 0 ? lines(changed.stdout) : [];
-  const record: HandoffRecord = {
+}
+
+function newRecord(args: SetAsideArgs, dir: string, created: string[], changedPaths: string[]): HandoffRecord {
+  return {
     n: args.n,
     dir,
     phase: args.phase,
@@ -200,27 +140,44 @@ export async function setAside(args: {
     consumed: false,
     untrackedRestored: [],
     untrackedMovedAside: [],
+    untrackedFailed: [],
   };
+}
+
+async function saveWork(args: SetAsideArgs, root: string, record: HandoffRecord): Promise<void> {
   try {
-    await mkdir(dir, { recursive: true });
+    await mkdir(record.dir, { recursive: true });
     if (args.note) {
-      await writeFile(join(dir, NOTE), `${JSON.stringify(args.note, null, 2)}\n`, "utf8");
+      await writeFile(join(record.dir, NOTE), `${JSON.stringify(args.note, null, 2)}\n`, "utf8");
       record.hasNote = true;
     }
-    record.patchSaved = await savePatch(args.workdir, dir, args.base.baseSha, created);
+    record.patchSaved = await savePatch(root, record.dir, args.base.baseSha, record.newUntracked);
   } catch (err) {
     warn("Set-aside could not save the stopped session's work", err);
   }
-  record.restored = await restorePaths(args.workdir, args.base.baseSha, changedPaths, created).catch((err) => {
+}
+
+export async function setAside(args: SetAsideArgs): Promise<HandoffRecord> {
+  const dir = handoffDir(args.audit, args.n);
+  const root = await repoRoot(args.workdir);
+  const before = new Set(args.base.untrackedBefore);
+  const untracked = await listUntracked(root);
+  const changed = await listChanged(root, args.base.baseSha);
+  const created = (untracked ?? []).filter((p) => !before.has(p));
+  const record = newRecord(args, dir, created, changed ?? []);
+  await saveWork(args, root, record);
+  const pathsRestored = await restorePaths(root, args.base.baseSha, record.changedPaths, created).catch((err) => {
     warn("Set-aside could not restore the worktree", err);
     return false;
   });
-  const untrackedOut = await restoreUntracked(args.workdir, args.base.untrackedSnapshot, dir).catch((err) => {
+  const out = await restoreUntracked(args.workdir, args.base.untrackedSnapshot, dir).catch((err) => {
     warn("Set-aside could not restore pre-existing untracked files", err);
-    return { restored: [], movedAside: [] };
+    return { restored: [], movedAside: [], failed: ["(restore error)"] };
   });
-  record.untrackedRestored = untrackedOut.restored;
-  record.untrackedMovedAside = untrackedOut.movedAside;
+  record.untrackedRestored = out.restored;
+  record.untrackedMovedAside = out.movedAside;
+  record.untrackedFailed = out.failed;
+  record.restored = pathsRestored && untracked !== null && changed !== null && out.failed.length === 0;
   await writeMeta(record).catch((err) => warn("Set-aside could not write meta.json", err));
   return record;
 }
@@ -238,16 +195,17 @@ export async function reapplyHandoff(
   record: HandoffRecord,
 ): Promise<{ applied: boolean; files: string[] }> {
   if (!record.patchSaved) return { applied: false, files: [] };
+  const root = await repoRoot(workdir);
   const patch = join(record.dir, PATCH);
-  const check = await git(["apply", "--check", "--whitespace=nowarn", patch], workdir);
+  const check = await git(["apply", "--check", "--whitespace=nowarn", patch], root);
   if (check.exitCode !== 0) return { applied: false, files: [] };
-  const apply = await git(["apply", "--whitespace=nowarn", patch], workdir);
-  if (apply.exitCode !== 0) return { applied: false, files: [] };
-  const stat = await git(["apply", "--numstat", patch], workdir);
-  const files = lines(stat.stdout)
-    .map((l) => l.split("\t")[2] ?? "")
-    .filter(Boolean);
-  return { applied: true, files };
+  const apply = await git(["apply", "--whitespace=nowarn", patch], root);
+  if (apply.exitCode !== 0) {
+    warn("Set-aside re-apply failed after a clean check", apply.stderr.trim());
+    return { applied: false, files: [] };
+  }
+  const stat = await git(["apply", "--numstat", "-z", patch], root);
+  return { applied: true, files: numstatPaths(stat.stdout) };
 }
 
 export async function markHandoffConsumed(record: HandoffRecord): Promise<HandoffRecord> {
