@@ -13,6 +13,16 @@
 
 export type { A3Hint } from "./a3-hints";
 export { _a3HintsDeps, readA3Hints } from "./a3-hints";
+export type { AcBlock, AcceptanceFile, PinnedAc } from "./acceptance-evidence";
+export {
+  _acceptanceEvidenceDeps,
+  EXCERPT_LINES,
+  findingIdentifiers,
+  findPinnedAcs,
+  loadAcceptanceFiles,
+  MAX_PINNED_BLOCKS,
+  splitAcBlocks,
+} from "./acceptance-evidence";
 export {
   type AdviceRef,
   buildFinishAdvisorForPhase,
