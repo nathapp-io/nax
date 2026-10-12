@@ -38,6 +38,7 @@ import {
 } from "./profile";
 import { pinRootOnlyKeysRaw } from "./root-only-keys";
 import { DEFAULT_CONFIG, type NaxConfig, NaxConfigSchema } from "./schema";
+import { applyWorkflowMode } from "./workflow-mode";
 
 /**
  * CFG-2/CFG-3: resolve `$VAR`/`${VAR}` references in a config layer that has
@@ -276,7 +277,7 @@ function finalizeAndValidateRootConfig(rawConfig: Record<string, unknown>): NaxC
     });
   }
 
-  return result.data as NaxConfig;
+  return applyWorkflowMode(result.data as NaxConfig, defaultConfigWarn);
 }
 
 /**
@@ -574,6 +575,6 @@ export async function loadConfigForWorkdir(
       { stage: "config", packageDir, profileChain: packageChain },
     );
   }
-  merged = result.data as NaxConfig;
+  merged = applyWorkflowMode(result.data as NaxConfig, warnDedupe.warn);
   return packageConfigCache.set(resolvedRootConfigPath, packageDir, profileKey, merged);
 }
