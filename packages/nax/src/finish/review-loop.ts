@@ -9,6 +9,7 @@
  */
 import { getSafeLogger } from "@/logger";
 import { loadAcceptanceFiles } from "./acceptance-evidence";
+import { _guardDeps, allowedFrom, guardWorthRecording, mergeGuard } from "./acceptance-guard";
 import type { AdviceRef, FinishAdvisor, JudgedResult } from "./advise";
 import { judgeWithoutAdvisor } from "./advise";
 import { concatJudged, type JudgeContext } from "./advise-core";
@@ -159,7 +160,10 @@ async function fixRound(
   atCap: boolean,
 ): Promise<void> {
   deps.assertNotAborted();
-  const step = await runFixStep(state, deps.fix, "review", { findings: fixList });
+  const step = await runFixStep(state, deps.fix, "review", {
+    findings: fixList,
+    acceptancePaths: deps.acceptancePaths ?? [],
+  });
   if (step.kind !== "done") {
     if (step.kind === "failed") {
       getSafeLogger()?.warn("finish", "Review fix session failed; findings stay open", {
@@ -172,6 +176,12 @@ async function fixRound(
       ledgerEvent(state, { kind: "set-aside", findings: fixList, handoff: `handoff-${step.handoff.n}` });
     return;
   }
+  const guard = await _guardDeps.guard({
+    workdir: state.workdir,
+    paths: deps.acceptancePaths ?? [],
+    allowed: allowedFrom(fixList),
+  });
+  if (guardWorthRecording(guard)) state.acceptanceGuard = mergeGuard(state.acceptanceGuard, guard);
   const outcome = step.outcome;
   const message = buildFixCommitMessage(
     "review",

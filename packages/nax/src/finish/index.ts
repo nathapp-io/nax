@@ -24,6 +24,15 @@ export {
   splitAcBlocks,
 } from "./acceptance-evidence";
 export {
+  _guardDeps,
+  acceptancePathsOf,
+  allowedFrom,
+  gateGuardPaths,
+  guardAcceptanceEdits,
+  guardWorthRecording,
+  mergeGuard,
+} from "./acceptance-guard";
+export {
   type AdviceRef,
   buildFinishAdvisorForPhase,
   createFinishAdvisor,
@@ -143,7 +152,14 @@ export {
   UNTRACKED_FILE_MAX,
   UNTRACKED_TOTAL_MAX,
 } from "./set-aside";
-export type { FinishPhaseState, FinishState, FinishStateInit, FinishStatus, ReviewLoopState } from "./state";
+export type {
+  AcceptanceGuardRecord,
+  FinishPhaseState,
+  FinishState,
+  FinishStateInit,
+  FinishStatus,
+  ReviewLoopState,
+} from "./state";
 export { createFinishState, deserializeFinishState, serializeFinishState } from "./state";
 export type {
   AcceptanceFact,

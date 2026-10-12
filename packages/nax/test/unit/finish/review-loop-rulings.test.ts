@@ -4,7 +4,7 @@ import { type FinishGitModel, installFinishGit, makeFinishOps, makeFinishState, 
 import type { AdviceDecision, AdviceResult, Advisor, QuestionDraft } from "@/advisor";
 import { appendDecision, dedupeKeyFor } from "@/advisor";
 import type { Finding, FinishAdvisor, FinishOps, FinishReviewOutput, ReviewInputs } from "@/finish";
-import { createFinishAdvisor, runReviewLoop } from "@/finish";
+import { _guardDeps, createFinishAdvisor, runReviewLoop } from "@/finish";
 
 const inputs: ReviewInputs = { changed: ["a.ts"], hints: [], stories: [], prdPath: ".nax/features/feat/prd.json" };
 let restoreGit: () => void = () => {};
@@ -256,6 +256,42 @@ describe("review round: rulings stick (finish B)", () => {
       await runReviewLoop(makeFinishState({ workdir: dir }), loopDeps(ops, dir, finishAdvisor(dir, advisor), ["t.ts"]));
       expect(asked[0]?.evidence.some((e) => e.source === "ac" && e.ref === "t.ts#AC-51")).toBe(true);
       expect(asked[0]?.options.some((o) => o.fixed?.updateAcs?.includes("AC-51"))).toBe(true);
+    });
+  });
+});
+
+describe("acceptance guard wiring (finish B §6)", () => {
+  const realGuard = _guardDeps.guard;
+  afterEach(() => {
+    _guardDeps.guard = realGuard;
+  });
+
+  test("a review fix session gets the acceptance paths, the guard runs before the commit, and its outcome is recorded", async () => {
+    await withTempDir(async (dir) => {
+      const git: FinishGitModel = { dirty: false, head: 1 };
+      restoreGit = installFinishGit(git);
+      const calls: { paths: string[]; allowed: unknown[] }[] = [];
+      _guardDeps.guard = async (args) => {
+        calls.push({ paths: args.paths, allowed: args.allowed });
+        return { reverted: ["t.ts"], notRestorable: [], changed: [], beyondRuling: [], failed: false };
+      };
+      const fixReqs: (string[] | undefined)[] = [];
+      const ops = makeFinishOps(
+        [],
+        { quality: [out([qualityPlain])] },
+        {
+          fix: async (_p, req) => {
+            fixReqs.push(req.acceptancePaths);
+            git.dirty = true;
+            return {};
+          },
+        },
+      );
+      const state = makeFinishState({ workdir: dir });
+      await runReviewLoop(state, loopDeps(ops, dir, undefined, ["t.ts"]));
+      expect(fixReqs[0]).toEqual(["t.ts"]);
+      expect(calls[0]).toEqual({ paths: ["t.ts"], allowed: [] });
+      expect(state.acceptanceGuard?.reverted).toEqual(["t.ts"]);
     });
   });
 });
