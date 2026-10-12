@@ -12,6 +12,7 @@ import {
 import { z } from "zod";
 import { CommandSafetyConfigSchema } from "./schemas-command-safety";
 import { ConfiguredModelSchema, ModelTierSchema, TierConfigSchema } from "./schemas-model";
+import { ExecutionModeSchema } from "./schemas-workflow";
 
 const ComplexityRungSchema = z.union([
   ModelTierSchema,
@@ -248,6 +249,8 @@ export const CommandInterceptorConfigSchema = z
   });
 
 export const ExecutionConfigSchema = z.object({
+  /** A5: "workflow" swaps the story pipeline for the workflow loop. */
+  mode: ExecutionModeSchema.default("pipeline"),
   maxIterations: z.number().int().positive({ message: "maxIterations must be > 0" }),
   iterationDelayMs: z.number().int().nonnegative(),
   costLimit: z.number().positive({ message: "costLimit must be > 0" }),

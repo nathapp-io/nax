@@ -320,6 +320,7 @@ const NAX_CONFIG_KEYS: (keyof NaxConfig)[] = [
   "autoPr",
   "finish",
   "advisor",
+  "workflow",
   "mcp",
   "reporters",
   "profile",

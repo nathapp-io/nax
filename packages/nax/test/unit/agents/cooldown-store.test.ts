@@ -104,4 +104,25 @@ describe("CooldownStore", () => {
     expect(store.isCooling("native", undefined, "minimax/MiniMax-M3")).toBe(true);
     expect(store.isCooling("native", undefined, "openrouter/z-ai/glm-5.3-flash[high]")).toBe(false);
   });
+
+  test("fail-quota on a native provider cools only that provider, for the whole run", () => {
+    const clock = fakeClock();
+    const store = new CooldownStore(clock.now);
+    store.mark("native", failure("fail-quota"), "balanced", "minimax/MiniMax-M3");
+
+    expect(store.isCooling("native", "balanced", "minimax/MiniMax-M3")).toBe(true);
+    expect(store.isCooling("native", "fast", "minimax/MiniMax-M2.7")).toBe(true); // same provider
+    expect(store.isCooling("native", "powerful", "opencode-go/deepseek-v4.1-flash")).toBe(false); // other provider
+    clock.advance(24 * 3_600_000);
+    expect(store.isCooling("native", "balanced", "minimax/MiniMax-M3")).toBe(true);
+    store.sweepTransient();
+    expect(store.isCooling("native", "balanced", "minimax/MiniMax-M3")).toBe(true); // run-long survives the sweep
+  });
+
+  test("fail-quota with no provider in the model id falls back to agent-wide", () => {
+    const clock = fakeClock();
+    const store = new CooldownStore(clock.now);
+    store.mark("claude", failure("fail-quota"), "balanced", "sonnet");
+    expect(store.isCooling("claude", "fast", "haiku")).toBe(true);
+  });
 });

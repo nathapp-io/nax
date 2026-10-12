@@ -215,7 +215,7 @@ export interface IAgentManager {
    * check to that tier's own cooldown, distinct from the bare agent's — one tier's
    * provider failure must not blanket-exclude every other tier of the same agent.
    */
-  isUnavailable(agent: string, tier?: string): boolean;
+  isUnavailable(agent: string, tier?: string, model?: string): boolean;
 
   /** Mark an agent unavailable for this run (auth/quota/service-down). `tier` scopes the cooldown to that tier alone. */
   markUnavailable(agent: string, reason: AdapterFailure, tier?: string): void;

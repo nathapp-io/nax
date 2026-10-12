@@ -7,23 +7,32 @@
  * which block a stage's allow/deny come from.
  *
  * A1: the whole `advisor` block is root-only too — the advisor rules on
- * feature-level questions that can span packages (spec §4.13).
+ * feature-level questions that can span packages (spec §4.13). A5: `workflow` and
+ * `execution.mode` are root-only for the same reason (the mode is a run-level switch).
  */
 import type { NaxConfig } from "./schema";
 
-export const ROOT_ONLY_EXECUTION_KEYS = ["bashApproval", "approvalTimeout", "sandbox", "commandSafety"] as const;
+export const ROOT_ONLY_EXECUTION_KEYS = [
+  "bashApproval",
+  "approvalTimeout",
+  "sandbox",
+  "commandSafety",
+  "mode",
+] as const;
 
 const ROOT_ONLY = new Set<string>(ROOT_ONLY_EXECUTION_KEYS);
 
 /** Typed form, for callers holding a parsed config (runtime/packages.ts). Silent. */
 export function pinRootOnlyKeys(merged: NaxConfig, root: NaxConfig): NaxConfig {
-  const { auth: _packageAuth, advisor: _packageAdvisor, ...rootOnlyMerged } = merged;
+  const { auth: _packageAuth, advisor: _packageAdvisor, workflow: _packageWorkflow, ...rootOnlyMerged } = merged;
   return {
     ...rootOnlyMerged,
     ...(root.auth === undefined ? {} : { auth: root.auth }),
     ...(root.advisor === undefined ? {} : { advisor: root.advisor }),
+    ...(root.workflow === undefined ? {} : { workflow: root.workflow }),
     execution: {
       ...merged.execution,
+      mode: root.execution.mode,
       bashApproval: root.execution.bashApproval,
       approvalTimeout: root.execution.approvalTimeout,
       sandbox: root.execution.sandbox,
@@ -43,7 +52,7 @@ export function pinRootOnlyKeysRaw(
   packageDir: string,
   onIgnored: (msg: string) => void,
 ): Record<string, unknown> {
-  const { auth: _packageAuth, advisor: _packageAdvisor, ...rawWithoutAuth } = raw;
+  const { auth: _packageAuth, advisor: _packageAdvisor, workflow: _packageWorkflow, ...rawWithoutAuth } = raw;
   const execution = isRecord(raw.execution) ? raw.execution : {};
   const rootExecution: Record<string, unknown> = { ...root.execution };
   for (const key of ROOT_ONLY_EXECUTION_KEYS) {
@@ -61,10 +70,14 @@ export function pinRootOnlyKeysRaw(
   if (Object.hasOwn(raw, "advisor") && !Bun.deepEquals(raw.advisor, root.advisor)) {
     onIgnored(`advisor is root-only; the value set for package "${packageDir}" is ignored`);
   }
+  if (Object.hasOwn(raw, "workflow") && !Bun.deepEquals(raw.workflow, root.workflow)) {
+    onIgnored(`workflow is root-only; the value set for package "${packageDir}" is ignored`);
+  }
   return {
     ...rawWithoutAuth,
     ...(root.auth === undefined ? {} : { auth: root.auth }),
     ...(root.advisor === undefined ? {} : { advisor: root.advisor }),
+    ...(root.workflow === undefined ? {} : { workflow: root.workflow }),
     execution: { ...rest, ...pinned },
   };
 }

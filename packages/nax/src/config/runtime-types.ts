@@ -103,6 +103,8 @@ export type { SmartTestRunnerConfig, WorktreeDependenciesConfig } from "./runtim
 
 /** Execution limits */
 export interface ExecutionConfig {
+  /** A5: "workflow" swaps the story pipeline for the workflow loop. */
+  mode: import("./runtime-types-workflow").ExecutionMode;
   /** Max iterations per feature run — each story attempt, parallel batch and the final completion pass counts one */
   maxIterations: number;
   /** Delay between iterations (ms) */
@@ -541,6 +543,8 @@ export interface NaxConfig {
   finish?: import("./runtime-types-finish").FinishConfig;
   /** A1 advisor (rules on judgment calls instead of stopping the run) */
   advisor?: import("./runtime-types-advisor").AdvisorConfig;
+  /** A5 workflow mode (single implementer + bounded review loop); root-only */
+  workflow?: import("./runtime-types-workflow").WorkflowConfig;
   /** External MCP servers the native agent may call tools on (client only) */
   mcp?: import("./runtime-types-mcp").McpConfig;
   /** Hooks configuration (v0.10) */

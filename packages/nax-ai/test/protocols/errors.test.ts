@@ -334,3 +334,28 @@ describe("classifyThrown", () => {
     expect(classifyThrown(thrown).cause).toBe(thrown);
   });
 });
+
+describe("classifyProviderError quota refinement", () => {
+  const MINIMAX_2056 =
+    "Token Plan usage limit reached: Upgrade your Token Plan or purchase Credits for more usage. (2056)";
+
+  it("classifies a 429 with token-plan / usage-limit wording as quota", () => {
+    expect(classifyProviderError(429, MINIMAX_2056)).toBe("quota");
+    expect(classifyThrown(Object.assign(new Error(MINIMAX_2056), { status: 429 })).kind).toBe("quota");
+  });
+
+  it("keeps a plain 429 as rate-limit", () => {
+    expect(classifyProviderError(429, "Rate limit exceeded, please slow down")).toBe("rate-limit");
+    expect(classifyProviderError(429, undefined)).toBe("rate-limit");
+  });
+
+  it("keeps a per-minute 'Quota exceeded' 429 as rate-limit, but OpenAI exceeded-your-quota as quota", () => {
+    const perMinute = "Quota exceeded for quota metric 'Generate Content API requests per minute'";
+    expect(classifyProviderError(429, perMinute)).toBe("rate-limit");
+    expect(classifyProviderError(429, "You exceeded your current quota, please check your plan")).toBe("quota");
+  });
+
+  it("does not turn quota wording under a non-429 status into quota", () => {
+    expect(classifyProviderError(500, MINIMAX_2056)).toBe("transport");
+  });
+});

@@ -87,6 +87,11 @@ export function classifyParsedAgentError(
           ...(parsed.retryAfterSeconds !== undefined && { retryAfterSeconds: parsed.retryAfterSeconds }),
         },
       };
+    case "quota":
+      return {
+        ...base,
+        adapterFailure: { category: "availability", outcome: "fail-quota", retriable: false, message: truncated },
+      };
     case "model-not-available":
       return {
         ...base,
@@ -95,6 +100,14 @@ export function classifyParsedAgentError(
     default:
       return null;
   }
+}
+
+/** Account/plan exhaustion wording: the fault lasts for the run, unlike a transient rate limit. */
+const QUOTA_PATTERN =
+  /usage limit reached|token plan|exceeded your current quota|insufficient (credits|quota|balance)|purchase credits/i;
+
+export function isQuotaMessage(message: string): boolean {
+  return QUOTA_PATTERN.test(message);
 }
 
 /**
@@ -133,7 +146,7 @@ export function parseAgentError(stderr: string): AgentError {
     }
   }
 
-  const fromKeyValue = classifyFromCodeTokens(extractKeyValueCodes(stderr));
+  const fromKeyValue = classifyFromCodeTokens(extractKeyValueCodes(stderr), undefined, stderr);
   if (fromKeyValue) return fromKeyValue;
 
   // 3. Claude Code's flat-string model rejection (no machine-readable code).
@@ -160,7 +173,7 @@ function classifyJsonPayload(payload: Record<string, unknown>): AgentError | nul
   const jsonRpcModel = classifyJsonRpcModelError(payload);
   if (jsonRpcModel) return jsonRpcModel;
 
-  const structured = classifyFromCodeTokens(extractJsonCodeTokens(payload), payload);
+  const structured = classifyFromCodeTokens(extractJsonCodeTokens(payload), payload, JSON.stringify(payload));
   if (structured) return structured;
 
   return null;
@@ -190,6 +203,8 @@ function classifyNestedAnthropicError(payload: Record<string, unknown>): AgentEr
       return { type: "auth" };
     case "rate_limit_error":
     case "overloaded_error": {
+      const innerMessage = (inner as Record<string, unknown>).message;
+      if (typeof innerMessage === "string" && isQuotaMessage(innerMessage)) return { type: "quota" };
       const retryAfterSeconds = toNumber(
         (inner as Record<string, unknown>).retryAfterSeconds ??
           (inner as Record<string, unknown>).retry_after_seconds ??
@@ -307,7 +322,14 @@ function classifyModelErrorMessage(message: string): AgentError | null {
 
 function classifyDirectType(payload: Record<string, unknown>): AgentError | null {
   const type = payload.type;
-  if (type !== "rate-limit" && type !== "auth" && type !== "timeout" && type !== "crash" && type !== "unknown") {
+  if (
+    type !== "rate-limit" &&
+    type !== "quota" &&
+    type !== "auth" &&
+    type !== "timeout" &&
+    type !== "crash" &&
+    type !== "unknown"
+  ) {
     return null;
   }
 
@@ -382,7 +404,11 @@ function extractKeyValueCodes(stderr: string): string[] {
   return tokens;
 }
 
-function classifyFromCodeTokens(tokens: string[], payload?: Record<string, unknown>): AgentError | null {
+function classifyFromCodeTokens(
+  tokens: string[],
+  payload?: Record<string, unknown>,
+  message?: string,
+): AgentError | null {
   for (const token of tokens.map((value) => value.toUpperCase())) {
     if (
       token === "429" ||
@@ -392,6 +418,8 @@ function classifyFromCodeTokens(tokens: string[], payload?: Record<string, unkno
       token === "QUOTA_EXCEEDED" ||
       token === "RESOURCE_EXHAUSTED"
     ) {
+      // A code token alone is not quota: the message wording decides.
+      if (message !== undefined && isQuotaMessage(message)) return { type: "quota" };
       const retryAfterSeconds = payload ? findRetryAfterSeconds(payload) : undefined;
       return retryAfterSeconds !== undefined ? { type: "rate-limit", retryAfterSeconds } : { type: "rate-limit" };
     }

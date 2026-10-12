@@ -24,6 +24,7 @@ import type { ExitReason } from "./executor-types";
 import { getAllReadyStories } from "./helpers";
 import { captureRunBaseline } from "./lifecycle/test-baseline-capture";
 import { markNewPackageDirs } from "./new-package-setup";
+import { effectiveParallelCount } from "./workflow-parallel";
 
 /**
  * Options for the execution phase.
@@ -225,7 +226,9 @@ export async function runExecutionPhase(
       sessionManager: options.sessionManager ?? new SessionManager(),
       runId: options.runId,
       startTime: options.startTime,
-      parallelCount: options.parallel,
+      parallelCount: effectiveParallelCount(options.config, options.parallel, (m) =>
+        logger?.warn("execution", m, { storyId: "_run" }),
+      ),
       agentGetFn: options.agentGetFn,
       abortSignal: options.abortSignal,
       interactionChain: options.interactionChain,

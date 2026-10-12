@@ -57,6 +57,8 @@ export function classifyCompleteException(err: unknown): AdapterFailure {
         message,
         ...(parsed.retryAfterSeconds !== undefined ? { retryAfterSeconds: parsed.retryAfterSeconds } : {}),
       };
+    case "quota":
+      return { category: "availability", outcome: "fail-quota", retriable: false, message };
     case "model-not-available":
       return { category: "quality", outcome: "fail-adapter-error", retriable: false, message };
     case "timeout":

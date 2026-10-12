@@ -9,6 +9,7 @@ import { ConfiguredModelSchema } from "./schemas-model";
 export const AdvisorConfigObjectSchema = z.object({
   enabled: z.boolean().default(false),
   model: ConfiguredModelSchema.default("powerful"),
+  fallbackModels: z.array(ConfiguredModelSchema).default([]),
   memory: z.enum(["stateless", "warm"]).default("stateless"),
   callers: z
     .object({

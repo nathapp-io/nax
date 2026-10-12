@@ -29,13 +29,16 @@ export interface FailurePolicy {
   readonly cooldown: FailureCooldown;
   /**
    * What the cooldown applies to. `"agent"` is a fault of the agent itself —
-   * credentials, an exhausted account quota — which every model it serves shares,
+   * credentials — which every model it serves shares,
    * so parking one tier while its siblings look healthy only buys a second
    * identical failure. `"model"` is a fault of the model/provider actually
    * dispatched (a 429, that provider being down), which says nothing about the
-   * agent's other models. Read by `CooldownStore` to choose the entry's key.
+   * agent's other models. `"provider"` is a fault of the provider account (an
+   * exhausted plan quota): every model of that provider is parked for the run, but
+   * the agent's other providers are not (a multi-provider agent such as `native`).
+   * Without a provider in the model id it degrades to `"agent"`. Read by `CooldownStore` to choose the entry's key.
    */
-  readonly cooldownScope: "agent" | "model";
+  readonly cooldownScope: "agent" | "model" | "provider";
   /** Whether `resolveExhaustion` consults the retry strategy on a terminal exit. */
   readonly terminalBackoff: boolean;
 }
@@ -63,7 +66,7 @@ const POLICIES: Readonly<Record<AdapterFailure["outcome"], FailurePolicy>> = Obj
     sameAgentRetry: "none",
     swap: "immediate",
     cooldown: "run",
-    cooldownScope: "agent",
+    cooldownScope: "provider",
     terminalBackoff: false,
   },
   "fail-rate-limit": {

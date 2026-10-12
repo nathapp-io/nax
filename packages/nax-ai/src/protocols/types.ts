@@ -36,6 +36,7 @@ export type ProtocolEventType = (typeof PROTOCOL_EVENT_TYPES)[number];
 
 export const PROTOCOL_ERROR_KINDS = [
   "rate-limit",
+  "quota",
   "auth",
   "overloaded",
   "bad-request",

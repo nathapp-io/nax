@@ -19,7 +19,7 @@ describe("protocol discriminants", () => {
     ]);
   });
 
-  it("declares the seven error kinds", () => {
+  it("declares the eight error kinds", () => {
     // "context-overflow" sits beside "bad-request" because it is a refinement
     // of it: both arrive as a 4xx, and only the upstream message separates
     // them. The split exists because the recoveries are opposite: a
@@ -27,6 +27,7 @@ describe("protocol discriminants", () => {
     // shortens the conversation.
     expect([...PROTOCOL_ERROR_KINDS]).toEqual([
       "rate-limit",
+      "quota",
       "auth",
       "overloaded",
       "bad-request",

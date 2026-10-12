@@ -56,6 +56,7 @@ import {
   ReviewConfigSchema,
   SemanticReviewConfigSchema,
 } from "./schemas-review";
+import { WorkflowConfigObjectSchema } from "./schemas-workflow";
 
 export type { AuthConfig } from "./schemas-auth";
 export { AuthConfigSchema } from "./schemas-auth";
@@ -133,6 +134,7 @@ export const NaxConfigSchema = z
       agents: { enabled: true, strategy: "off", profiles: [] },
     }),
     execution: ExecutionConfigSchema.default({
+      mode: "pipeline",
       maxIterations: 20,
       iterationDelayMs: 2000,
       costLimit: 30.0,
@@ -481,6 +483,8 @@ export const NaxConfigSchema = z
       }),
     // A1 advisor. `.prefault({})` so every nested default applies (Zod 4).
     advisor: AdvisorConfigObjectSchema.prefault({}),
+    // A5 workflow mode. Read only when execution.mode === "workflow".
+    workflow: WorkflowConfigObjectSchema.prefault({}),
     // Derived, not hand-written — same reason as `context:` above: a literal
     // default here would shadow every inner `.default()` in McpConfigSchema.
     mcp: McpConfigSchema.default(() => McpConfigSchema.parse({})),

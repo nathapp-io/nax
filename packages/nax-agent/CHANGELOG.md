@@ -4,6 +4,11 @@ All notable changes to `@nathapp/nax-agent` are recorded here. The format follow
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). While the version is `0.x`, a minor
 release may change the public API.
 
+## [Unreleased]
+
+- Native errors: a `quota` kind from `@nathapp/nax-ai` (usage-limit and token-plan 429s) now maps to
+  `fail-quota` instead of a transient rate limit.
+
 ## [0.87.1] - 2026-10-12
 
 - No changes in this package. Released in lockstep with the other nax packages.

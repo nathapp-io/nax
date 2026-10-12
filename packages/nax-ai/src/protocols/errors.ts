@@ -121,6 +121,15 @@ const STREAM_POLICY_MARKERS: readonly (readonly [marker: string, kind: ProtocolE
   ["overloaded", "overloaded"],
 ];
 
+/**
+ * Account/plan exhaustion wording on a 429: the fault lasts for the run, unlike
+ * a transient rate limit. Twin of QUOTA_PATTERN in packages/nax
+ * src/agents/errors/parse-agent-error.ts (nax-ai cannot import from nax); keep
+ * the two in step. Same drift caveat as the tables above: upstream wire strings.
+ */
+export const QUOTA_MESSAGE_PATTERN =
+  /usage limit reached|token plan|exceeded your current quota|insufficient (credits|quota|balance)|purchase credits/i;
+
 /** A status that is not itself a report of failure: absent, or below 4xx. */
 function isNonFailingStatus(status: number | undefined): boolean {
   return status === undefined || status < 400;
@@ -134,7 +143,12 @@ function isNonFailingStatus(status: number | undefined): boolean {
  * status and no message, and widening it with a second input would make every
  * caller supply one. This is the message-aware layer above it.
  *
- * Two refinements, and only these two.
+ * Three refinements, and only these three.
+ *
+ * A 429 whose message carries quota wording is refined to `quota`: the account
+ * or plan is exhausted, so waiting and retrying cannot help. The streaming
+ * markers below are left as they are (their "quota" marker still files a
+ * status-less stream as `rate-limit`).
  *
  * `bad-request` is refined to `context-overflow` by message. A status with a
  * verdict of its own keeps it — a 429 mentioning tokens is a rate limit, and
@@ -155,6 +169,8 @@ export function classifyProviderError(status: number | undefined, message: strin
   if (isNonFailingStatus(status)) {
     return classifyBrokenStream(message);
   }
+
+  if (kind === "rate-limit" && message !== undefined && QUOTA_MESSAGE_PATTERN.test(message)) return "quota";
 
   if (kind !== "bad-request" || message === undefined) return kind;
 
