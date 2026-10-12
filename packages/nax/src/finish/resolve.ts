@@ -140,6 +140,10 @@ export function draftReason(f: ResolutionFacts): string {
   return parts.join("; ");
 }
 
+/** Set-aside work (a set-aside finding, or a handoff whose restore failed) is never approvable as residue. */
+const holdsSetAsideWork = (f: ResolutionFacts): boolean =>
+  f.findings.some((e) => e.state === "set-aside") || (f.restoreFailed?.length ?? 0) > 0;
+
 export type ApprovalAction = "approve" | "re-review" | "hold" | "unavailable";
 
 export type Resolution =
@@ -171,6 +175,9 @@ export async function resolve(args: {
     // re-checked here: a reply must never make a PR ready over unreviewed code.
     const approval = approvalFacts(facts, args.reReviewUsed);
     if (approval.allPhasesComplete && approval.gatesGreen) {
+      if (holdsSetAsideWork(facts)) {
+        return { outcome: "draft", reason: `advisor approval blocked: set-aside work exists; ${draftReason(facts)}` };
+      }
       return { outcome: "ready", acceptedResidue: facts.findingsOpen };
     }
     const why = approval.gatesGreen ? "phases incomplete" : "gates not green";

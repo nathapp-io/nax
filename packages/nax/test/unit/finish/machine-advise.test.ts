@@ -84,6 +84,50 @@ describe("approval", () => {
     });
   });
 
+  test("approve with a set-aside finding is blocked: draft PR, no promote, the reason names the handoff", async () => {
+    await withTempDir(async (dir) => {
+      const { advisor } = makeAdvisor([{ action: "approve", rationale: "residue is cosmetic" }]);
+      const { deps, trail, state } = makeMachineHarness({
+        auditDir: dir,
+        script: STUCK,
+        fixMs: 5,
+        advise: advisor,
+        ops: {
+          fix: async (_p, req) => {
+            await new Promise<void>((r) => req.interrupt?.addEventListener("abort", () => r(), { once: true }));
+            return { dispositions: [], interrupted: true };
+          },
+        },
+      });
+      const result = await runFinishMachine(state, deps);
+      expect(result.outcome).toBe("draft");
+      expect(trail).toContain("finalizeDraftPr");
+      expect(trail).not.toContain("promotePr");
+      expect(result.reason).toContain("advisor approval blocked: set-aside work exists;");
+      expect(result.reason).toMatch(/advisor approval blocked: set-aside work exists; 1 set aside \(handoff-3\)$/);
+      expect(result.acceptedResidue).toBeUndefined();
+      expect(state.review.ledger.map((e) => e.state)).toEqual(["set-aside"]);
+    });
+  });
+
+  test("approve with a restore-failed handoff is blocked even with no set-aside finding", async () => {
+    await withTempDir(async (dir) => {
+      const { advisor } = makeAdvisor([{ action: "approve", rationale: "fine" }]);
+      const { deps, trail, state } = makeMachineHarness({
+        auditDir: dir,
+        script: STUCK,
+        fixIsNoop: true,
+        advise: advisor,
+      });
+      state.handoffs = [makeHandoffRecord(dir, { restored: false })];
+      const result = await runFinishMachine(state, deps);
+      expect(result.outcome).toBe("draft");
+      expect(trail).not.toContain("promotePr");
+      expect(result.reason).toContain("advisor approval blocked: set-aside work exists;");
+      expect(result.reason).toContain("worktree restore failed (handoff-1)");
+    });
+  });
+
   test("result.handoffs lists every set-aside handoff; absent when there were none", async () => {
     await withTempDir(async (dir) => {
       const none = makeMachineHarness({ auditDir: dir, script: {} });

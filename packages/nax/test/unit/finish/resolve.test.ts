@@ -171,6 +171,72 @@ describe("resolve", () => {
     });
   });
 
+  const setAsideLedger = [entry("A", "set-aside", "handoff-1"), entry("B", "open")];
+  const withLedger = (findings: LedgerEntry[], over: Partial<ResolutionFacts> = {}) =>
+    facts({
+      findings,
+      findingsOpen: findings.filter((e) => OPEN_STATES.has(e.state)).map((e) => e.finding),
+      ...over,
+    });
+
+  test("approve with a set-aside finding is blocked: draft that names the handoff", async () => {
+    const out = await resolve({ facts: withLedger(setAsideLedger), advise: approve("approve"), reReviewUsed: false });
+    expect(out).toEqual({
+      outcome: "draft",
+      reason: "advisor approval blocked: set-aside work exists; 1 open; 1 set aside (handoff-1)",
+    });
+  });
+
+  test("approve with an unrestored handoff is blocked: draft that names the handoff", async () => {
+    const out = await resolve({
+      facts: withLedger([entry("B", "open")], { restoreFailed: [2] }),
+      advise: approve("approve"),
+      reReviewUsed: false,
+    });
+    expect(out).toEqual({
+      outcome: "draft",
+      reason: "advisor approval blocked: set-aside work exists; 1 open; worktree restore failed (handoff-2)",
+    });
+  });
+
+  test("approve with both set-aside findings and an unrestored handoff names both", async () => {
+    const out = await resolve({
+      facts: withLedger(setAsideLedger, { restoreFailed: [1] }),
+      advise: approve("approve"),
+      reReviewUsed: false,
+    });
+    expect(out).toEqual({
+      outcome: "draft",
+      reason:
+        "advisor approval blocked: set-aside work exists; 1 open; 1 set aside (handoff-1); worktree restore failed (handoff-1)",
+    });
+  });
+
+  test.each(["open", "rejected", "unresolved"] as const)(
+    "approve with only a %s finding is still ready, taking it as residue",
+    async (state) => {
+      const f = withLedger([entry("A", state)]);
+      expect(await resolve({ facts: f, advise: approve("approve"), reReviewUsed: false })).toEqual({
+        outcome: "ready",
+        acceptedResidue: f.findingsOpen,
+      });
+    },
+  );
+
+  test("a settled restore-failure (not in restoreFailed) does not block approve", async () => {
+    const f = withLedger([entry("A", "open")], { restoreFailed: [] });
+    expect((await resolve({ facts: f, advise: approve("approve"), reReviewUsed: false })).outcome).toBe("ready");
+  });
+
+  test("the existing gate and phase rejections keep their own reasons ahead of the set-aside one", async () => {
+    const out = await resolve({
+      facts: withLedger(setAsideLedger, { gates: [{ name: "lint", status: "red" }] }),
+      advise: approve("approve"),
+      reReviewUsed: false,
+    });
+    expect(out.outcome === "draft" && out.reason.startsWith("advisor: approve rejected (gates not green)")).toBe(true);
+  });
+
   test("re-review once, then draft", async () => {
     const f = facts({ findingsOpen: [finding] });
     expect(await resolve({ facts: f, advise: approve("re-review"), reReviewUsed: false })).toEqual({
@@ -319,6 +385,7 @@ describe("unchanged ready/draft rules on ledger-derived facts (finish A section 
   test.each([
     ["clean", ledgerFacts([]), true],
     ["fixed-reviewed only", ledgerFacts([one("fixed-reviewed")]), true],
+    ["cleared only", ledgerFacts([one("cleared")]), true],
     ["waived only", ledgerFacts([one("waived")]), true],
     ["one open", ledgerFacts([one("open")]), false],
     ["set-aside", ledgerFacts([one("set-aside")]), false],
@@ -332,6 +399,19 @@ describe("unchanged ready/draft rules on ledger-derived facts (finish A section 
     ["lens missing", ledgerFacts([], { reviewsMissing: ["spec"] }), false],
   ] as const)("%s -> clean=%s", (_name, f, clean) => {
     expect(isClean(f)).toBe(clean);
+  });
+
+  test.each([
+    ["one open", "ready", ledgerFacts([one("open")])],
+    ["rejected", "ready", ledgerFacts([one("rejected")])],
+    ["unresolved", "ready", ledgerFacts([one("unresolved")])],
+    ["cleared + waived", "ready", ledgerFacts([one("cleared"), one("waived")])],
+    ["set-aside", "draft", ledgerFacts([one("set-aside")])],
+    ["open + set-aside", "draft", ledgerFacts([one("open"), entry("y", "set-aside", "handoff-2")])],
+    ["restore failed", "draft", ledgerFacts([one("open")], { restoreFailed: [1] })],
+  ] as const)("advisor approve with %s -> %s", async (_name, outcome, f) => {
+    const advise = { approval: async () => ({ action: "approve" as const, rationale: "ok" }) };
+    expect((await resolve({ facts: f, advise, reReviewUsed: false })).outcome).toBe(outcome);
   });
 
   test("advisor off: not clean -> draft; clean -> ready", async () => {
