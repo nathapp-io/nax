@@ -10,7 +10,7 @@ export interface AdviceEvidence {
 export type SupersedeTarget = { kind: "ac"; storyId: string; acId: string } | { kind: "spec"; section: string };
 
 export type AdviceAction =
-  | { type: "fix"; instruction: string }
+  | { type: "fix"; instruction: string; updateAcs?: string[] }
   | { type: "waive"; reason: string }
   | { type: "supersede"; target: SupersedeTarget; newText: string }
   | { type: "retry"; instruction: string }
@@ -29,6 +29,8 @@ export interface AdviceOptionFixed {
   to?: "test" | "source";
   phase?: "spec" | "quality";
   target?: SupersedeTarget;
+  /** Finish B 5.2: acceptance tests a fix-and-update ruling allows to change. */
+  updateAcs?: string[];
 }
 
 export interface AdviceOption {
@@ -88,6 +90,8 @@ export interface AdviceDecision {
   /** Finish B §3.2: copied from the question; absent on lines written before finish B. */
   anchorFile?: string;
   rulingTitle?: string;
+  /** Finish B 6.4: the acceptance tests a fix-and-update ruling allows to change. */
+  acceptanceChanges?: string[];
   decidedAt: string;
   model: string;
   memoryMode: "stateless" | "warm";
@@ -106,6 +110,7 @@ export type MenuFacts =
       citesAc?: { storyId: string; acId: string };
       citesSpecSection?: string;
       acceptanceEnabledForStory: boolean;
+      pinnedAcs?: string[];
     }
   | {
       kind: "fix-cycle-give-up";

@@ -169,6 +169,7 @@ function buildDraft(
     ...(asked.question.dedupeKey ? { dedupeKey: asked.question.dedupeKey } : {}),
     ...(asked.question.anchorFile ? { anchorFile: asked.question.anchorFile } : {}),
     ...(asked.question.rulingTitle ? { rulingTitle: asked.question.rulingTitle } : {}),
+    ...(action.type === "fix" && action.updateAcs ? { acceptanceChanges: action.updateAcs } : {}),
     ...((findingSeverity ?? asked.question.findingSeverity)
       ? { findingSeverity: findingSeverity ?? asked.question.findingSeverity }
       : {}),

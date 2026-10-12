@@ -218,4 +218,13 @@ describe("advisor service — never throws", () => {
       expect(out.fallbackReason).toBe("advisor error: git spawn failed");
     });
   });
+
+  test("a fix-and-update ruling records acceptanceChanges on the decision (finish B 6.4)", async () => {
+    await withTempDir(async (dir) => {
+      stubDeps(reply("B", { instruction: "revert; update AC-40" }));
+      const options = buildMenu({ kind: "finish-judgment", acceptanceEnabledForStory: true, pinnedAcs: ["AC-40"] });
+      const out = await createAdvisor(actx(dir)).advise({ ...judgment, options });
+      expect(out.decision?.acceptanceChanges).toEqual(["AC-40"]);
+    });
+  });
 });
