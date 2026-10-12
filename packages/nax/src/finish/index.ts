@@ -105,6 +105,19 @@ export {
   routeAcceptance,
   routeQualityGates,
 } from "./route";
+export {
+  _setAsideDeps,
+  captureFixBase,
+  handoffDir,
+  markHandoffConsumed,
+  readHandoffNote,
+  reapplyHandoff,
+  restoreUntracked,
+  setAside,
+  snapshotUntracked,
+  UNTRACKED_FILE_MAX,
+  UNTRACKED_TOTAL_MAX,
+} from "./set-aside";
 export type { FinishPhaseState, FinishState, FinishStateInit, FinishStatus, ReviewLoopState } from "./state";
 export { createFinishState, deserializeFinishState, serializeFinishState } from "./state";
 export type {
@@ -119,8 +132,13 @@ export type {
   FinishReviewOutput,
   FinishRound,
   FinishTimeouts,
+  FixBase,
   GateFact,
+  HandoffLimit,
+  HandoffRecord,
   QualityGateResult,
   ResolutionFacts,
   ReviewLens,
+  UntrackedEntry,
+  UntrackedSnapshot,
 } from "./types";

@@ -299,3 +299,45 @@ export interface QualityGateResult {
   failing: string[];
   output: string;
 }
+
+/** Finish A §4.1: one pre-existing untracked file at fix-session start. */
+export interface UntrackedEntry {
+  path: string;
+  size: number;
+  mtimeMs: number;
+  saved: boolean;
+}
+export interface UntrackedSnapshot {
+  dir: string;
+  files: UntrackedEntry[];
+}
+/** Finish A §4.1: the state a fix session started from. */
+export interface FixBase {
+  baseSha: string;
+  headSha: string;
+  untrackedBefore: string[];
+  untrackedSnapshot?: UntrackedSnapshot;
+}
+export type HandoffLimit = "fix" | "flow" | "run" | "error";
+/** Finish A §4.2: `meta.json` of a set-aside handoff. */
+export interface HandoffRecord {
+  n: number;
+  dir: string;
+  phase: "acceptance" | "gate" | "review";
+  limit: HandoffLimit;
+  baseSha: string;
+  headSha: string;
+  findingIds: string[];
+  newUntracked: string[];
+  changedPaths: string[];
+  stoppedAt: string;
+  hasNote: boolean;
+  patchSaved: boolean;
+  restored: boolean;
+  consumed: boolean;
+  reapplied?: boolean;
+  /** Pre-existing untracked files the session changed: put back from the snapshot. */
+  untrackedRestored: string[];
+  /** Pre-existing untracked files the session changed that had no snapshot (over the cap): moved into the handoff. */
+  untrackedMovedAside: string[];
+}
