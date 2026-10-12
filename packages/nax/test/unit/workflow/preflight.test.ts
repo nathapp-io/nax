@@ -97,13 +97,39 @@ describe("runPreflight", () => {
     ]);
   });
 
-  test("existing preflight.json is reused without an advisor call (resume)", async () => {
+  test("existing valid preflight.json is reused: no advisor call, no ledger lines (resume)", async () => {
     const runDir = makeTempDir("wf-pf-");
     dirs.push(runDir);
-    await Bun.write(join(runDir, "preflight.json"), JSON.stringify({ schemaVersion: 1, overlap: [], conflicts: [] }));
+    const saved = { schemaVersion: 1, overlap: [], conflicts: [] };
+    await Bun.write(join(runDir, "preflight.json"), JSON.stringify(saved));
     const advisor = advisorReturning({ kind: "preflight", overlap: [], items: [] });
-    await runPreflight({ advisor, runDir, storyIds: ["US-1"], ledger: async () => {} });
+    const lines: string[] = [];
+    const file = await runPreflight({
+      advisor,
+      runDir,
+      storyIds: ["US-1"],
+      ledger: async (s, t) => {
+        lines.push(`${s}: ${t}`);
+      },
+    });
     expect(advisor.calls).toHaveLength(0);
+    expect(file).toEqual(saved);
+    expect(lines).toEqual([]);
+  });
+
+  test.each([
+    ["corrupt JSON", "{not json"],
+    ["wrong shape", '{"schemaVersion":2}'],
+    ["failed pre-flight", JSON.stringify({ schemaVersion: 1, overlap: [], conflicts: [], fallbackReason: "boom" })],
+  ])("unusable existing file (%s) re-runs the advisor and writes a valid file", async (_name, content) => {
+    const runDir = makeTempDir("wf-pf-");
+    dirs.push(runDir);
+    await Bun.write(join(runDir, "preflight.json"), content);
+    const advisor = advisorReturning({ kind: "preflight", overlap: [], items: [] });
+    const file = await runPreflight({ advisor, runDir, storyIds: ["US-1"], ledger: async () => {} });
+    expect(advisor.calls).toHaveLength(1);
+    expect(await Bun.file(preflightPath(runDir)).json()).toEqual(file);
+    expect(file.schemaVersion).toBe(1);
   });
 
   test("zero conflicts still writes the file (Review Focus 5)", async () => {
