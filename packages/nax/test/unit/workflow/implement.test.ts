@@ -186,6 +186,42 @@ describe("runImplementerTurn", () => {
     expect(seen[0]?.prompt).toContain("you own it now");
   });
 
+  test("fresh fix turn: a session that fails to close does not stop the turn", async () => {
+    const descriptor: SessionDescriptor = {
+      id: "sess-1",
+      role: "wf-implementer",
+      state: "CREATED",
+      agent: "claude",
+      workdir: "/repo",
+      protocolIds: { recordId: null, sessionId: null },
+      handle: "h1",
+      completedStages: [],
+      createdAt: "",
+      lastActivityAt: "",
+    };
+    const sessionManager = {
+      getForStory: () => [descriptor],
+      getLiveHandle: () => ({ id: "live", agentName: "claude" }),
+      closeSession: async () => {
+        throw new Error("close failed");
+      },
+    };
+    const seen: WorkflowImplementInput[] = [];
+    fakeImplement(doneReply, seen);
+    _workflowDeps.git = async () => ({ stdout: "", exitCode: 0 });
+    const out = await runImplementerTurn(
+      makeStepContext({
+        story: routed("fast"),
+        tierOrder: tiers,
+        workflow,
+        sessionManager: makeSessionManager(sessionManager),
+      }),
+      { kind: "fix", round: 4, fresh: true, stepUps: 1, findings: [], uncommitted: [] },
+    );
+    expect(out.failure).toBeUndefined();
+    expect(seen).toHaveLength(1);
+  });
+
   test("session failure becomes a failure string; abort rethrows", async () => {
     _workflowDeps.callOp = async () => {
       throw new Error("auth expired");

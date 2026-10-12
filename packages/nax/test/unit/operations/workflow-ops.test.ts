@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { makeNaxConfig, makeStory, makeTestRuntime, opSelector } from "@test/helpers";
 import { SessionFailureError } from "@/agents";
+import { ParseValidationError } from "@/agents/retry";
 import { workflowConfigSelector } from "@/config";
 import type { AdapterFailure } from "@/context/engine";
 import type { WorkflowImplementInput } from "@/operations";
@@ -107,5 +108,27 @@ describe("workflow review ops", () => {
       buildCtx(),
     );
     expect(out?.verdicts).toEqual([{ id: "F1", addressed: false, note: "(no verdict returned)" }]);
+  });
+
+  test("re-review build: the prompt is the task, no role text", () => {
+    const prompt = workflowReReviewOp.build({ prompt: "check F1", timeoutMs: 1, openIds: ["F1"] }, buildCtx());
+    expect(prompt.task.content).toBe("check F1");
+    expect(prompt.role.content).toBe("");
+  });
+
+  test("re-review retry: one reformat prompt, then the null fallback", () => {
+    const input = { prompt: "p", timeoutMs: 1, openIds: ["F1"] };
+    const resolved =
+      typeof workflowReReviewOp.retry === "function"
+        ? workflowReReviewOp.retry(input, buildCtx())
+        : workflowReReviewOp.retry;
+    if (!resolved || !("shouldRetry" in resolved)) throw new Error("expected a retry strategy");
+    const strategy = resolved;
+    const probe = new ParseValidationError("bad");
+    const ctx = { site: "run" as const, agentName: "claude", stage: "review" as const, lastOutput: "not json at all" };
+    const first = strategy.shouldRetry(probe, 0, ctx);
+    expect(first.retry).toBe(true);
+    const last = strategy.shouldRetry(probe, 1, ctx);
+    expect(last).toEqual({ retry: false, fallback: null });
   });
 });
