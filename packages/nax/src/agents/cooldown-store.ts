@@ -14,6 +14,7 @@
  */
 
 import type { AdapterFailure } from "@/context/engine";
+import { providerOf } from "./cooldown-provider";
 import { failurePolicyFor, resolveCooldownExpiry } from "./retry/failure-policy";
 
 /** `"run"` means no expiry — cleared only by a story-boundary sweep or `clear()`. */
@@ -47,9 +48,8 @@ export class CooldownStore {
     const expiresAt = resolveCooldownExpiry(failure, this._now());
     if (expiresAt === null) return;
     // The policy decides the SCOPE; this only chooses the key that expresses it.
-    // An agent-scoped fault (bad credentials, exhausted account quota) is shared
-    // by every model the agent serves, so it is keyed on the bare agent name and
-    // `_live` finds it from any lookup.
+    // An agent-scoped fault (bad credentials) is shared by every model the agent
+    // serves, so it is keyed on the bare agent name and `_live` finds it from any lookup.
     // A provider-scoped fault (exhausted plan quota) parks every model of that
     // provider; with no provider in the model id it degrades to the bare agent.
     const scope = failurePolicyFor(failure.outcome).cooldownScope;
@@ -131,12 +131,6 @@ export class CooldownStore {
 function identityKey(agent: string, tier?: string, modelId?: string): string {
   if (modelId) return `${agent}::model::${modelId}`;
   return tier ? `${agent}::${tier}` : agent;
-}
-
-/** Provider prefix of a resolved `provider/model` id; the model part is never part of the key. */
-function providerOf(modelId?: string): string | undefined {
-  const slash = modelId?.indexOf("/") ?? -1;
-  return modelId && slash > 0 ? modelId.slice(0, slash) : undefined;
 }
 
 /** Provider-scoped cooldown key; the bare agent when the model id names no provider. */

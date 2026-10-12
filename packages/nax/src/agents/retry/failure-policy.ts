@@ -29,7 +29,7 @@ export interface FailurePolicy {
   readonly cooldown: FailureCooldown;
   /**
    * What the cooldown applies to. `"agent"` is a fault of the agent itself —
-   * credentials, an exhausted account quota — which every model it serves shares,
+   * credentials — which every model it serves shares,
    * so parking one tier while its siblings look healthy only buys a second
    * identical failure. `"model"` is a fault of the model/provider actually
    * dispatched (a 429, that provider being down), which says nothing about the
