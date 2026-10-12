@@ -444,6 +444,7 @@ describe("AgentManager.runWithFallback after an abort (finish A, #2462)", () => 
       const manager = new AgentManager(
         makeNaxConfig({
           agent: {
+            default: "claude",
             fallback: {
               enabled: true,
               map: { claude: ["codex"] },
@@ -455,13 +456,13 @@ describe("AgentManager.runWithFallback after an abort (finish A, #2462)", () => 
         }),
       );
       const controller = new AbortController();
-      let hops = 0;
+      const agents: string[] = [];
 
       const outcome = await manager.runWithFallback({
         runOptions: RUN_OPTIONS,
         signal: controller.signal,
-        executeHop: async (_agent, bundle) => {
-          hops += 1;
+        executeHop: async (agent, bundle) => {
+          agents.push(agent);
           controller.abort();
           return {
             result: {
@@ -478,7 +479,9 @@ describe("AgentManager.runWithFallback after an abort (finish A, #2462)", () => 
         },
       });
 
-      expect(hops).toBe(1);
+      expect(agents).toEqual(["claude"]);
+      expect(manager.isUnavailable("claude")).toBe(false);
+      expect(manager.nextCandidate("claude", 0, "claude")).toEqual({ agent: "codex" });
       expect(outcome.fallbacks).toEqual([]);
       expect(outcome.result.success).toBe(false);
     });

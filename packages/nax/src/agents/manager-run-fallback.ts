@@ -125,7 +125,7 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
 
       // Finish A: an aborted call must neither retry nor swap into a new agent with the same aborted signal.
       if (request.signal?.aborted) {
-        finalStatus = "error";
+        finalStatus = "cancelled";
         return {
           result,
           fallbacks,
