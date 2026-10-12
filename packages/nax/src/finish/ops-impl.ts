@@ -157,7 +157,11 @@ export function createFinishOps(deps: FinishOpsDeps): FinishOps {
         timeoutMs: reviewTimeout(timeouts?.reviewMs),
       };
       return underReviewLimit(callCtx, timeouts?.reviewMs, (ctx) =>
-        _finishOpsDeps.callOp({ ...ctx, sessionOverride: { role: "finish-review-quality" } }, finishBranchReviewOp, input),
+        _finishOpsDeps.callOp(
+          { ...ctx, sessionOverride: { role: "finish-review-quality" } },
+          finishBranchReviewOp,
+          input,
+        ),
       );
     },
 

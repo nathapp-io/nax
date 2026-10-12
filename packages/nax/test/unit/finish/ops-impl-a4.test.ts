@@ -291,7 +291,10 @@ describe("review step limit (finish A)", () => {
       throw new Error("callOp[finish-spec-review]: aborted");
     }) as typeof _finishOpsDeps.callOp;
     const { deps } = baseDeps();
-    const out = await createFinishOps({ ...deps, timeouts: { reviewMs: 5, fixMs: 5 } }).reviewSpec(freshState(), inputs);
+    const out = await createFinishOps({ ...deps, timeouts: { reviewMs: 5, fixMs: 5 } }).reviewSpec(
+      freshState(),
+      inputs,
+    );
     expect(out).toMatchObject({ missing: true, stoppedAtLimit: true });
   });
 
@@ -301,7 +304,10 @@ describe("review step limit (finish A)", () => {
       return { findings: [{ severity: "LOW", title: "late", problem: "p", fix: "f" }], covered: [] };
     }) as typeof _finishOpsDeps.callOp;
     const { deps } = baseDeps();
-    const out = await createFinishOps({ ...deps, timeouts: { reviewMs: 5, fixMs: 5 } }).reviewBranch(freshState(), inputs);
+    const out = await createFinishOps({ ...deps, timeouts: { reviewMs: 5, fixMs: 5 } }).reviewBranch(
+      freshState(),
+      inputs,
+    );
     expect(out).toMatchObject({ missing: true, stoppedAtLimit: true, findings: [] });
   });
 
@@ -312,7 +318,11 @@ describe("review step limit (finish A)", () => {
       throw new Error("callOp[finish-spec-review]: aborted");
     }) as typeof _finishOpsDeps.callOp;
     const { deps } = baseDeps();
-    const ops = createFinishOps({ ...deps, callCtx: { ...deps.callCtx, signal: phase.signal }, timeouts: { reviewMs: 60_000 } });
+    const ops = createFinishOps({
+      ...deps,
+      callCtx: { ...deps.callCtx, signal: phase.signal },
+      timeouts: { reviewMs: 60_000 },
+    });
     await expect(ops.reviewSpec(freshState(), inputs)).rejects.toThrow("aborted");
   });
 
