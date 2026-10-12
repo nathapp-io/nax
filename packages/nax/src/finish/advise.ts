@@ -109,7 +109,9 @@ async function judgeOne(
   if (prior) {
     const reused = await deps.advisor.recordReuse(question, prior);
     const ref = { decisionId: reused?.id ?? prior.id, optionId: prior.chosenOptionId, reused: true };
-    return { ref, dropped: droppedBy(prior.action.type) ?? "waive" }; // findReusable only reuses waive / supersede
+    const dropped = droppedBy(prior.action.type);
+    // findReusable only reuses waive / supersede; anything else is carried unresolved, never silently dropped.
+    return dropped ? { ref, dropped } : { ref, fallback: `unexpected reusable action: ${prior.action.type}` };
   }
   const { decision, fallbackReason } = await deps.advisor.advise(question, { findingSeverity: f.severity });
   if (!decision) return { fallback: fallbackReason ?? "advisor unavailable" };

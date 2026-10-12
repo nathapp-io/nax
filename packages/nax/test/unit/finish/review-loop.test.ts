@@ -479,3 +479,98 @@ describe("runReviewLoop ledger (finish A)", () => {
     });
   });
 });
+
+describe("runReviewLoop ledger wiring (finish A fix round 1)", () => {
+  const judgedF = (title: string): Finding => ({
+    severity: "MEDIUM",
+    title,
+    problem: "p",
+    fix: "f",
+    source: "quality",
+    file: "a.ts",
+    judgment: true,
+  });
+  const judgingAdvisor = (result: (f: Finding[]) => Awaited<ReturnType<FinishAdvisor["judged"]>>): FinishAdvisor => ({
+    judgedEnabled: true,
+    approvalEnabled: false,
+    judged: async (findings) => result(findings),
+    approval: async () => ({ action: "unavailable", rationale: "n/a" }),
+    commitLedger: async () => {},
+  });
+
+  test("advisor rulings reach the ledger: waive, supersede and hold, each with its decision id", async () => {
+    await withTempDir(async (dir) => {
+      stubGit({ dirty: false, head: 1 });
+      const [w, sup, h] = [judgedF("W"), judgedF("S"), judgedF("H")];
+      const advise = judgingAdvisor(() => ({
+        toFix: [],
+        advice: [],
+        unresolved: [h],
+        dropped: [
+          { finding: w, decisionId: "D-1", action: "waive" },
+          { finding: sup, decisionId: "D-2", action: "supersede" },
+        ],
+        held: [{ finding: h, decisionId: "D-3" }],
+      }));
+      const ops = makeFinishOps([], { quality: [{ findings: [w, sup, h], covered: ["a.ts"] }] });
+      const state = makeFinishState();
+      await runReviewLoop(state, deps(ops, dir, advise));
+      expect(state.review.ledger.map((e) => [e.finding.title, e.state, e.ref])).toEqual([
+        ["W", "waived", "D-1"],
+        ["S", "superseded", "D-2"],
+        ["H", "unresolved", "D-3"],
+      ]);
+    });
+  });
+
+  test("a fix session that fails with a handoff leaves its findings set-aside in the ledger", async () => {
+    await withTempDir(async (dir) => {
+      const git = { dirty: false, head: 1 };
+      stubGit(git);
+      const ops = makeFinishOps(
+        [],
+        { quality: [q("A")] },
+        {
+          fix: async () => {
+            git.dirty = true;
+            throw new Error("fixer crashed");
+          },
+        },
+      );
+      const state = makeFinishState();
+      await runReviewLoop(state, deps(ops, dir));
+      expect(state.handoffs).toHaveLength(1);
+      expect(state.review.ledger.map((e) => [e.finding.title, e.state, e.ref])).toEqual([
+        ["A", "set-aside", "handoff-1"],
+      ]);
+    });
+  });
+
+  test("a round with a missing lens never promotes fixed-unreviewed to fixed-reviewed", async () => {
+    await withTempDir(async (dir) => {
+      const git = { dirty: false, head: 1 };
+      stubGit(git);
+      const ops = makeFinishOps(
+        [],
+        {
+          spec: [
+            { findings: [], covered: [] },
+            { findings: [], covered: [], missing: true },
+          ],
+          quality: [q("A")],
+        },
+        {
+          fix: async () => {
+            git.dirty = true;
+            return { dispositions: [{ index: 1, disposition: "fixed" as const }] };
+          },
+        },
+      );
+      const state = makeFinishState();
+      await runReviewLoop(state, deps(ops, dir));
+      expect(state.review.rounds).toBe(2);
+      expect(state.review.missingLenses).toEqual(["spec"]);
+      expect(state.review.ledger.map((e) => [e.finding.title, e.state])).toEqual([["A", "fixed-unreviewed"]]);
+    });
+  });
+});

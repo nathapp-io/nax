@@ -75,6 +75,13 @@ function fullRound(ledger: readonly LedgerEntry[], raised: Finding[]): LedgerEnt
 const setAll = (ledger: readonly LedgerEntry[], findings: Finding[], state: LedgerState, ref: string): LedgerEntry[] =>
   findings.reduce<LedgerEntry[]>((acc, f) => set(acc, f, state, ref), [...ledger]);
 
+/** A hold never overwrites an earlier waive / supersede / accept of the same finding. */
+function ruled(ledger: readonly LedgerEntry[], ev: Extract<LedgerEvent, { kind: "ruled" }>): LedgerEntry[] {
+  const prior = ledger.find((e) => e.id === findingId(ev.finding));
+  if (ev.state === "unresolved" && prior && STICKY.has(prior.state)) return [...ledger];
+  return set(ledger, ev.finding, ev.state, ev.ref);
+}
+
 /** Pure: returns a new ledger; never mutates `ledger`. */
 export function applyLedgerEvent(ledger: readonly LedgerEntry[], ev: LedgerEvent): LedgerEntry[] {
   switch (ev.kind) {
@@ -85,7 +92,7 @@ export function applyLedgerEvent(ledger: readonly LedgerEntry[], ev: LedgerEvent
     case "set-aside":
       return setAll(ledger, ev.findings, "set-aside", ev.handoff);
     case "ruled":
-      return set(ledger, ev.finding, ev.state, ev.ref);
+      return ruled(ledger, ev);
     case "full-round":
       return fullRound(ledger, ev.raised);
     case "accepted":
