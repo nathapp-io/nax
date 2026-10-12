@@ -372,7 +372,7 @@ only means "don't re-run".
   |---|---|---|---|
   | `preflight` (batch) | Once before the first story (if `workflow.preflight`) | `follow-ac` → `supersede {target: spec}` / `follow-spec` → `supersede {target: ac}` / `reconcile` → `supersede` with `newText` / `flag-human` → `hold` (the story runs under the stated default) | `hold` for each conflict |
   | `implementer-question` | `NEEDS_CONTEXT` / `BLOCKED` (≤ 2 per story) | **new** `answer {text}` | No answer. Proceed to review with the concern |
-  | `residual` (batch) | Story cap, branch adjudication | `park-reviewer-wrong` → `waive` / `park-real-deferred` → `defer` / `load-bearing` → **new** `carry {instruction, toStories}` (story scope only) / `flag-human` → `hold`. Plus a free-text diagnosis for each red gate | `hold` for each item |
+  | `residual` (batch) | Story cap, branch adjudication | `park-reviewer-wrong` → `waive` / `park-real-deferred` → `defer` / `load-bearing` → **new** `carry {instruction, toStories}` (story scope only) (`toStories` is fixed by the menu: the story's not-yet-passed dependents, P3-R1) / `flag-human` → `hold`. Plus a free-text diagnosis for each red gate | `hold` for each item |
   | `finish-approval` | §7.8 | existing | draft |
 
   Pre-flight's output (overlap table + conflicts) is written to `preflight.json`. Rulings go to the ledger,
@@ -534,3 +534,18 @@ Four stacked PRs, each code-reviewed before push:
 | P2-R7 | Spec excerpts in the brief match sections that mention the **story id**. Bare `AC-n` ids are not matched | Every story has an `AC-1`, so matching bare ids would paste most of the spec. The brief always gives the spec path |
 | P2-R9 | A prior record whose phase is still `implement` (a crash during the first turn) is **not** resumed: the story starts over, and the new session sees the uncommitted edits in the tree. Records past the first turn resume at the next round | §10 resumes "a story stopped mid-loop". Before the first turn ends there is no review state or finding list to resume into |
 | P2-R8 | `parseImplementerReply`, `parseStoryReviewReply` and `parseReReviewReply` and the finding/reply types live in `src/operations/` | `src/workflow` imports `src/operations`. The ops can't import `src/workflow` back without a cycle |
+
+## 16. PR3 plan rulings (2026-10-12)
+
+| # | Ruling | Why |
+|---|---|---|
+| P3-R1 | `answer` and `carry` take their text from the reply's existing `instruction` field. `carry.toStories` is **fixed by the menu**: the story's not-yet-passed dependents. The carry option appears only when such dependents exist | It reuses the reply contract and validator unchanged. nax knows which stories depend on this one; the advisor can't aim an instruction at an unrelated story |
+| P3-R2 | Pre-flight is **one** batch call in "discover" mode. The advisor lists the conflicts it finds, and each one is validated against the fixed four-option pre-flight menu built from that conflict's own AC and spec references. There is no separate scan call | One call, as spec §8 asks. The menu stays closed: nax builds it, the advisor only picks from it |
+| P3-R3 | `adviseBatch` never writes a default decision. It returns a result per item (`decision` or `fallbackReason`), and the caller applies the kind's default (`hold`) | Only advisor-written lines reach `decisions.jsonl`, so `readTrustedDecisions` (audit-matched) keeps its meaning |
+| P3-R4 | `AdviceDecision` gains an optional `appliesTo?: string[]`: a pre-flight conflict's story ids, or a carry's `toStories`. The brief selects rulings by it | One field answers "which briefs carry this ruling" for both kinds |
+| P3-R5 | Batch calls are always stateless and walk the model ladder, whatever `advisor.memory` says. The single `implementer-question` goes through `advise()`, which honours `memory` (default `stateless`) | A warm session is bound to one model and one question chain (spec §8). A batch is a one-shot judgement |
+| P3-R6 | `runPreflight` ships here and is tested directly. Calling it once before the first story is PR4's "pre-flight placement" | Spec §12 splits it that way |
+| P3-R7 | A batch writes **one audit artifact per decision** (shared prompt, the item's own raw answer, its share of the cost) | `readTrustedDecisions` matches each ledger line to `advisor-audit/<feature>/<D-n>.json`; this keeps that check unchanged |
+| P3-R8 | Residual gate diagnoses are free text. They return from the batch and go into the workflow ledger as today; they are not decisions | Spec §8: "a free-text diagnosis for each red gate"; a red gate stays red (D4) |
+| P3-R9 | A workflow ruling's "cost if wrong" is derived from the reply: `<confidence> confidence; reversible` or `hard to undo`, plus `; needs confirmation` when flagged | The reply contract has no cost field; the skill's ledger line needs one |
+| P3-R10 | PR2 carry-overs: the advisor-answer turn reuses the current round's model and time limit (PR2 final review M1); `adjudicateResidual` keeps the first ruling per finding and warns on duplicates and on rulings for unknown findings (PR2 T9) | Without M1, an answer would open a different session (the routed model) with no context once answers are real |

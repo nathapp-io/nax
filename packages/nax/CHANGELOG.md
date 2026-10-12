@@ -12,6 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Workflow mode advisor kinds (A5 PR3): the implementer's NEEDS_CONTEXT / BLOCKED question is answered
+  by the advisor into the same session (at most twice per story); at the fix-round cap the open items
+  get one batched advisor ruling each (park as reviewer-wrong, defer to the branch review, carry an
+  instruction into dependent stories, or flag for a human), with a diagnosis per red gate; and a
+  pre-flight batch (run by PR4 at run start) rules on spec/AC conflicts and writes `preflight.json`.
+  Every ruling is a standard decision in `decisions.jsonl`; pre-flight rulings and carried
+  instructions appear in the briefs of the stories they apply to. New advisor actions `answer` and
+  `carry`, and `adviseBatch` for one-call batches over the model ladder.
 - **Workflow mode story loop (A5 PR2).** With `execution.mode: "workflow"`, each story runs one implementer
   (TDD with evidence), lint/typecheck/scoped gates, a story review, and up to `workflow.maxFixRounds`
   fix rounds (warm for the first three, then fresh one tier up) with scoped re-reviews, then the full
