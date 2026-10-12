@@ -6,8 +6,9 @@ describe("workflowConfigSelector", () => {
   test("slices the keys workflow ops read", () => {
     const slice = workflowConfigSelector.select(makeNaxConfig({}));
     expect(Object.keys(slice).sort()).toEqual(
-      ["agent", "autoMode", "execution", "models", "quality", "review", "workflow"].sort(),
+      ["agent", "autoMode", "execution", "finish", "models", "quality", "review", "workflow"].sort(),
     );
     expect(slice.workflow?.maxFixRounds).toBe(5);
+    expect(slice.finish?.reviewers).toBeDefined();
   });
 });
