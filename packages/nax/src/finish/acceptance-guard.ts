@@ -55,6 +55,7 @@ function changedAcs(before: string, after: string): string[] {
   return [...new Set([...was.keys(), ...now.keys()])].filter((id) => was.get(id) !== now.get(id));
 }
 
+/** AC ids whose block differs between HEAD and the working copy of `path`. */
 async function acsChangedIn(root: string, path: string): Promise<string[]> {
   const head = await gitLiteral(["show", `HEAD:${path}`], root);
   const after = await _guardDeps.readText(join(root, path));
@@ -73,6 +74,19 @@ export async function guardAcceptanceEdits(args: {
   allowed: { testPath: string; acIds: string[] }[];
 }): Promise<GuardOutcome> {
   if (args.paths.length === 0) return none();
+  try {
+    return await guardUnchecked(args);
+  } catch {
+    // A git or spawn failure must not stop the commit: report it, never throw (spec §7).
+    return { ...none(), failed: true };
+  }
+}
+
+async function guardUnchecked(args: {
+  workdir: string;
+  paths: string[];
+  allowed: { testPath: string; acIds: string[] }[];
+}): Promise<GuardOutcome> {
   const root = await repoRoot(args.workdir);
   const [touched, inHead] = await Promise.all([touchedPaths(root, args.paths), listBaseTree(root, "HEAD")]);
   if (touched === null || inHead === null) return { ...none(), failed: true };
@@ -81,13 +95,16 @@ export async function guardAcceptanceEdits(args: {
   const restorable = unauthorised.filter((p) => inHead.has(p));
   const restored = await restoreFromHead(root, restorable);
   const authorised = touched.filter((p) => allowedPaths.has(p));
-  const changed = [...new Set((await Promise.all(authorised.map((p) => acsChangedIn(root, p)))).flat())];
-  const ruled = new Set(args.allowed.flatMap((a) => a.acIds));
+  // A ruling names ACs in one file; keyed by (testPath, acId) so it cannot authorise another file's AC.
+  const ruled = new Set(args.allowed.flatMap((a) => a.acIds.map((id) => `${a.testPath}\0${id}`)));
+  const perFile = await Promise.all(authorised.map(async (p) => ({ path: p, acs: await acsChangedIn(root, p) })));
+  const changed = [...new Set(perFile.flatMap((f) => f.acs))];
+  const beyondRuling = [...new Set(perFile.flatMap((f) => f.acs.filter((id) => !ruled.has(`${f.path}\0${id}`))))];
   return {
     reverted: restored ? restorable : [],
     notRestorable: unauthorised.filter((p) => !inHead.has(p)),
     changed,
-    beyondRuling: changed.filter((id) => !ruled.has(id)),
+    beyondRuling,
     failed: !restored,
   };
 }

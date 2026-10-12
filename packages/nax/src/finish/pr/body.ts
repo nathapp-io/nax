@@ -210,11 +210,7 @@ function renderRedGate(gate: GateFact): string {
   return `- Gate \`${gate.name}\` is red${excerpt}`;
 }
 
-/**
- * A4: what stands between this PR and a clean ready, or what the advisor
- * accepted on a ready one. Null when there is nothing to say, so a clean
- * ready PR carries no "Unresolved" heading at all.
- */
+/** Finish B §6.3: the acceptance-file guard's record as bullet lines; empty when it did nothing to report. */
 function guardLines(g: AcceptanceGuardRecord | undefined): string[] {
   if (!g) return [];
   return [
@@ -229,6 +225,11 @@ function guardLines(g: AcceptanceGuardRecord | undefined): string[] {
   ];
 }
 
+/**
+ * A4: what stands between this PR and a clean ready, or what the advisor
+ * accepted on a ready one. Null when there is nothing to say, so a clean
+ * ready PR carries no "Unresolved" heading at all.
+ */
 function buildUnresolvedSection(ctx: FinishPrContext, limits: BodyLimits): string | null {
   const u = ctx.unresolved;
   if (!u) return null;

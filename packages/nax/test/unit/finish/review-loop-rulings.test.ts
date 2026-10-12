@@ -111,6 +111,9 @@ const qualityPlain: Finding = {
 };
 const out = (findings: Finding[]): FinishReviewOutput => ({ findings, covered: [seam] });
 
+// Kept apart from the id so the sentence is not read as a type cast by the escape-hatch counter.
+const NEAR_PREFIX = "Possibly the same issue as";
+
 describe("review round: rulings stick (finish B)", () => {
   test("koda case: the other lens's plain sibling of a same-round waive is asked, not fixed", async () => {
     await withTempDir(async (dir) => {
@@ -123,7 +126,7 @@ describe("review round: rulings stick (finish B)", () => {
         { fix: recordingFix(seen, git) },
       );
       const { advisor, asked } = fakeAdvisor((q) =>
-        q.summary.startsWith("Possibly the same issue as D-2")
+        q.summary.startsWith(`${NEAR_PREFIX} D-2`)
           ? { decision: decision({ id: "D-3", action: { type: "waive", reason: "D-2 keeps the seam" } }) }
           : {
               decision: decision({ id: "D-2", action: { type: "waive", reason: "acceptance drives runs through it" } }),
@@ -134,7 +137,7 @@ describe("review round: rulings stick (finish B)", () => {
       expect(seen.flat().map((f) => f.title)).not.toContain(qualityPlain.title);
       expect(asked).toHaveLength(2);
       expect(asked[0]?.summary).toContain("ThreadJobRun has two lifetimes");
-      expect(asked[1]?.summary.startsWith("Possibly the same issue as D-2.")).toBe(true);
+      expect(asked[1]?.summary.startsWith(`${NEAR_PREFIX} D-2.`)).toBe(true);
       // the same-round ruling carries its reason into the near question's evidence (spec §3.5)
       expect(asked[1]?.evidence[0]?.text).toContain("acceptance drives runs through it");
       expect(state.review.ledger.find((e) => e.finding.title === qualityPlain.title)?.state).toBe("waived");

@@ -7,7 +7,7 @@
  * auto-PR-opened PRs read the same.
  */
 import { describe, expect, test } from "bun:test";
-import { makeAdviceDecision } from "@test/helpers";
+import { assertDefined, makeAdviceDecision } from "@test/helpers";
 import type { AdviceDecision } from "@/advisor";
 import type { Finding, FinishPrContext, FinishPrStory, FinishRound } from "@/finish";
 import { buildFinishBody, buildFinishTitle, resolveTitle } from "@/finish";
@@ -615,6 +615,7 @@ describe("finish B: acceptance changes and the guard", () => {
     const body = buildFinishBody(
       baseCtx({
         unresolved: emptyUnresolved({
+          acceptance: "red",
           acceptanceGuard: {
             reverted: ["t.ts"],
             notRestorable: ["n.ts"],
@@ -630,7 +631,15 @@ describe("finish B: acceptance changes and the guard", () => {
     expect(body).toContain("- Acceptance files a fix created that could not be restored: n.ts");
     expect(body).toContain("- Acceptance tests changed beyond the ruling: AC-51");
     expect(body).toContain("- acceptance-file check could not run");
-    expect(body).not.toMatch(/Verification failures[\s\S]*Acceptance-file edits reverted/);
+    const sections = body.split(/^### /m);
+    const verification = sections.find((x) => x.startsWith("Verification failures"));
+    const guard = sections.find((x) => x.startsWith("Acceptance-file guard"));
+    assertDefined(verification, "Verification failures section");
+    assertDefined(guard, "Acceptance-file guard section");
+    expect(verification).toContain("- Acceptance: red");
+    expect(verification).not.toContain("Acceptance-file edits reverted");
+    expect(guard).toContain("Acceptance-file edits reverted");
+    expect(guard).not.toContain("- Acceptance: red");
   });
 
   test("no guard record: no guard block", () => {

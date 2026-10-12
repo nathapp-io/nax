@@ -4,7 +4,7 @@ import type { FindingDisposition } from "../types";
 
 const DISPOSITION = /^\s*\[?(\d+)\]?\s*[.:)]?\s*(fixed|rejected)\b\s*(.*)$/i;
 const EVIDENCE = /evidence\s*:\s*(ruling\s+D-\d+|\S+)/i;
-const RULING_EVIDENCE = /^ruling\s+(D-\d+)$/;
+const RULING_EVIDENCE = /^ruling\s+(D-\d+)$/i;
 
 /** Parse the `## DISPOSITIONS` section of a fix node's reply. */
 export function parseDispositions(text: string): FindingDisposition[] {
@@ -49,7 +49,7 @@ export async function validateDispositions(
     dispositions.map(async (d) => {
       if (d.disposition !== "rejected" || !d.evidence) return d;
       const ruling = RULING_EVIDENCE.exec(d.evidence.trim());
-      if (ruling) return rulingIds.includes(ruling[1] ?? "") ? d : { ...d, evidenceMissing: true };
+      if (ruling) return rulingIds.includes((ruling[1] ?? "").toUpperCase()) ? d : { ...d, evidenceMissing: true };
       const file = d.evidence.split(":")[0];
       return (await exists(workdir, file)) ? d : { ...d, evidenceMissing: true };
     }),

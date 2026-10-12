@@ -78,6 +78,17 @@ describe("validateDispositions", () => {
     });
   });
 
+  test("ruling evidence is case-insensitive: `Ruling d-2` validates against the shown id D-2", async () => {
+    await withTempDir(async (dir) => {
+      const parsed = parseDispositions(
+        "[1] rejected \u2014 evidence: Ruling d-2\n[2] rejected \u2014 evidence: RULING d-7",
+      );
+      const out = await validateDispositions(dir, parsed, ["D-2"]);
+      expect(out[0]?.evidenceMissing).toBeUndefined();
+      expect(out[1]?.evidenceMissing).toBe(true);
+    });
+  });
+
   test("a file:line evidence still parses as before", () => {
     expect(parseDispositions("[1] rejected \u2014 evidence: test/a.test.ts:4")[0]?.evidence).toBe("test/a.test.ts:4");
   });

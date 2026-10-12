@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { installFinishGit, makeFinishContext } from "@test/helpers";
 import {
+  _finishGitDeps,
+  _guardDeps,
   acceptancePathsOf,
   allowedFrom,
   gateGuardPaths,
@@ -29,6 +31,82 @@ describe("guardAcceptanceEdits with the test git stub", () => {
     restoreGit = installFinishGit({ dirty: true, head: 1 }, trail);
     expect(await guardAcceptanceEdits({ workdir: "/repo", paths: [], allowed: [] })).toEqual(NONE);
     expect(trail).toEqual([]);
+  });
+});
+
+type GitOut = { exitCode: number; stdout: string; stderr: string };
+const gitOk = (stdout = ""): GitOut => ({ exitCode: 0, stdout, stderr: "" });
+
+describe("guardAcceptanceEdits failure and scope", () => {
+  const origGit = _finishGitDeps.git;
+  const origRead = _guardDeps.readText;
+  afterEach(() => {
+    _finishGitDeps.git = origGit;
+    _guardDeps.readText = origRead;
+  });
+
+  test("a spawn error is reported as failed, never thrown", async () => {
+    _finishGitDeps.git = async () => {
+      throw new Error("spawn git ENOENT");
+    };
+    const out = await guardAcceptanceEdits({ workdir: "/repo", paths: ["a.ts"], allowed: [] });
+    expect(out).toEqual({ ...NONE, failed: true });
+  });
+
+  test("a ruling for AC-40 in one file does not authorise AC-40 edits in another file", async () => {
+    const before = "AC-1 old\nAC-40 old\n";
+    _finishGitDeps.git = async (rawArgs) => {
+      const args = rawArgs[0] === "--literal-pathspecs" ? rawArgs.slice(1) : rawArgs;
+      switch (args[0]) {
+        case "rev-parse":
+          return gitOk("/repo\n");
+        case "diff":
+          return gitOk("a.ts\0b.ts\0");
+        case "ls-tree":
+          return gitOk("a.ts\0b.ts\0");
+        case "show":
+          return gitOk(before);
+        default:
+          return gitOk();
+      }
+    };
+    _guardDeps.readText = async () => "AC-1 new\nAC-40 new\n";
+    const out = await guardAcceptanceEdits({
+      workdir: "/repo",
+      paths: ["a.ts", "b.ts"],
+      allowed: [
+        { testPath: "a.ts", acIds: ["AC-40"] },
+        { testPath: "b.ts", acIds: ["AC-1"] },
+      ],
+    });
+    expect([...out.changed].sort((a, b) => a.localeCompare(b))).toEqual(["AC-1", "AC-40"]);
+    // a.ts changed AC-1 (ruled only in b.ts), b.ts changed AC-40 (ruled only in a.ts)
+    expect([...out.beyondRuling].sort((a, b) => a.localeCompare(b))).toEqual(["AC-1", "AC-40"]);
+  });
+
+  test("an AC changed only where it is ruled is not beyond the ruling", async () => {
+    _finishGitDeps.git = async (rawArgs) => {
+      const args = rawArgs[0] === "--literal-pathspecs" ? rawArgs.slice(1) : rawArgs;
+      switch (args[0]) {
+        case "rev-parse":
+          return gitOk("/repo\n");
+        case "diff":
+          return gitOk("a.ts\0");
+        case "ls-tree":
+          return gitOk("a.ts\0");
+        case "show":
+          return gitOk("AC-1 old\nAC-40 old\n");
+        default:
+          return gitOk();
+      }
+    };
+    _guardDeps.readText = async () => "AC-1 old\nAC-40 new\n";
+    const out = await guardAcceptanceEdits({
+      workdir: "/repo",
+      paths: ["a.ts"],
+      allowed: [{ testPath: "a.ts", acIds: ["AC-40"] }],
+    });
+    expect(out).toEqual({ ...NONE, changed: ["AC-40"] });
   });
 });
 
