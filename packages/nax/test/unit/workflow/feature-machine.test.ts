@@ -227,6 +227,34 @@ describe("runFeatureMachine", () => {
     expect(h.adjudicated[0]?.map((f) => f.id)).toEqual(["B1"]);
   });
 
+  test("a re-review verdict that omits an item keeps it open: finding adjudicated, fix-now minor becomes leave", async () => {
+    const h = harness(
+      {
+        review: {
+          ...PASS,
+          quality: "changes",
+          findings: [
+            { kind: "quality", severity: "important", issue: "a" },
+            { kind: "quality", severity: "important", issue: "b" },
+          ],
+          minorTriage: [{ id: "M1", decision: "fix-now" }],
+        },
+        reReview: { verdicts: [{ id: "B1", addressed: true, note: "" }], newFindings: [] },
+      },
+      {
+        record: newFeatureRecord({
+          now: "t",
+          seed: "seed0",
+          minors: [{ id: "M1", storyId: "US-001", text: "rename", triage: "leave" }],
+        }),
+      },
+    );
+    const final = await runFeatureMachine(h.env);
+    expect(h.reReviewInputs[0]?.map((f) => f.id)).toEqual(["B1", "B2", "M1"]);
+    expect(h.adjudicated[0]?.map((f) => f.id)).toEqual(["B2"]);
+    expect(final.minors.find((m) => m.id === "M1")?.triage).toBe("leave");
+  });
+
   test("the re-review gets the HEAD recorded just before the fix as its base", async () => {
     const h = harness({ review: { ...PASS, findings: [{ kind: "spec", severity: "important", issue: "x" }] } });
     await runFeatureMachine(h.env);

@@ -155,7 +155,9 @@ async function branchReReviewStep(env: FeatureEnv, rec: WorkflowFeatureRecord): 
     await env.sink.ledger(ledgerText.reviewSkipped(`branch re-review: ${out.why}`));
     return { step: "adjudicate" };
   }
-  const stillOpen = new Set(out.verdict.verdicts.filter((v) => !v.addressed).map((v) => v.id));
+  // Fail closed: an item the verdicts do not mark addressed stays open, omitted or not.
+  const addressed = new Set(out.verdict.verdicts.filter((v) => v.addressed).map((v) => v.id));
+  const stillOpen = new Set(items.map((f) => f.id).filter((id) => !addressed.has(id)));
   const { findings, nextFindingId } = assign(rec, out.verdict.newFindings.filter(isBlocking));
   return {
     reviewOpen: [...rec.reviewOpen.filter((f) => stillOpen.has(f.id)), ...findings],
