@@ -40,7 +40,7 @@ function makeAdvisor(
     approvalEnabled: true,
     judged: async (findings) => {
       log.judgedCalls.push(findings);
-      return { toFix: [], advice: [], unresolved: findings };
+      return { toFix: [], advice: [], unresolved: findings, dropped: [], held: [] };
     },
     approval: async (facts) => {
       log.approvals.push(facts);
@@ -232,6 +232,8 @@ describe("judged findings", () => {
           toFix: findings.map((f) => ({ ...f, fix: `${f.fix}\n\nAdvisor ruling (D-1): do it` })),
           advice: [{ decisionId: "D-1", optionId: "A", reused: false }],
           unresolved: [],
+          dropped: [],
+          held: [],
         }),
       });
       const { deps, state } = makeMachineHarness({
@@ -264,7 +266,7 @@ describe("judged findings", () => {
       const { advisor } = makeAdvisor([], {
         judgedEnabled: true,
         approvalEnabled: false,
-        judged: async (findings) => ({ toFix: [], advice: [], unresolved: findings }),
+        judged: async (findings) => ({ toFix: [], advice: [], unresolved: findings, dropped: [], held: [] }),
       });
       const { deps, trail, state } = makeMachineHarness({
         auditDir: dir,

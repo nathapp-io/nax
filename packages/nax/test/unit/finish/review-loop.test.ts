@@ -102,7 +102,7 @@ describe("runReviewLoop", () => {
       const advise: FinishAdvisor = {
         judgedEnabled: true,
         approvalEnabled: false,
-        judged: async (findings) => ({ toFix: findings, advice: [], unresolved: [] }),
+        judged: async (findings) => ({ toFix: findings, advice: [], unresolved: [], dropped: [], held: [] }),
         approval: async () => ({ action: "unavailable", rationale: "n/a" }),
         commitLedger: async () => {},
       };
@@ -293,7 +293,7 @@ describe("runReviewLoop deadline", () => {
         approvalEnabled: false,
         judged: async () => {
           judgedCalls += 1;
-          return { toFix: [], advice: [], unresolved: [] };
+          return { toFix: [], advice: [], unresolved: [], dropped: [], held: [] };
         },
         approval: async () => ({ action: "unavailable", rationale: "n/a" }),
         commitLedger: async () => {},
@@ -422,6 +422,60 @@ describe("runReviewLoop lens bookkeeping", () => {
       state.review.covered.spec.push("x.ts");
       expect(missing.covered).toEqual([]);
       expect(missing.findings).toEqual([]);
+    });
+  });
+});
+
+describe("runReviewLoop ledger (finish A)", () => {
+  test("a fixed finding not re-raised by the next full round becomes fixed-reviewed", async () => {
+    await withTempDir(async (dir) => {
+      const git = { dirty: false, head: 1 };
+      stubGit(git);
+      const ops = makeFinishOps(
+        [],
+        { quality: [q("A")] },
+        {
+          fix: async () => {
+            git.dirty = true;
+            return { dispositions: [{ index: 1, disposition: "fixed" as const }] };
+          },
+        },
+      );
+      const state = makeFinishState();
+      await runReviewLoop(state, deps(ops, dir));
+      expect(state.review.ledger.map((e) => [e.finding.title, e.state, e.ref])).toEqual([
+        ["A", "fixed-reviewed", "sha2"],
+      ]);
+    });
+  });
+
+  test("a fix with no dispositions leaves the finding open at the cap", async () => {
+    await withTempDir(async (dir) => {
+      const git = { dirty: false, head: 1 };
+      stubGit(git);
+      const ops = makeFinishOps(
+        [],
+        { quality: [q("A"), q("A"), q("A")] },
+        {
+          fix: async () => {
+            git.dirty = true;
+            return {};
+          },
+        },
+      );
+      const state = makeFinishState();
+      await runReviewLoop(state, deps(ops, dir));
+      expect(state.review.ledger[0]?.state).toBe("open");
+    });
+  });
+
+  test("a lens stopped at reviewMs is recorded as a review stop", async () => {
+    await withTempDir(async (dir) => {
+      stubGit({ dirty: false, head: 1 });
+      const ops = makeFinishOps([], { quality: [{ findings: [], covered: [], missing: true, stoppedAtLimit: true }] });
+      const state = makeFinishState();
+      await runReviewLoop(state, { ...deps(ops, dir), reviewMs: 900_000 });
+      expect(state.stops).toContainEqual({ kind: "review", lens: "quality", round: 1, at: "t", limitMs: 900_000 });
     });
   });
 });

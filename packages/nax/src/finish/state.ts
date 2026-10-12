@@ -1,4 +1,5 @@
 import { NaxError } from "../errors";
+import type { LedgerEntry } from "./ledger";
 import type {
   AcceptanceFact,
   Finding,
@@ -66,11 +67,13 @@ export interface ReviewLoopState {
   title?: string;
   summary?: string;
   covered: Record<ReviewLens, string[]>;
+  /** Finish A: one state per finding (spec section 5). Reporting reads this, not `lastFindings`. */
+  ledger: LedgerEntry[];
 }
 
 export interface FinishState {
   /** Bumped when a field's meaning changes, so a resumed state is rejected rather than misread. */
-  version: 2;
+  version: 3;
   feature: string;
   workdir: string;
   branch: string;
@@ -147,6 +150,7 @@ function zeroedReview(): ReviewLoopState {
     reReviewUsed: false,
     committedFixes: false,
     covered: { spec: [], quality: [] },
+    ledger: [],
   };
 }
 
@@ -161,7 +165,7 @@ export function createFinishState(init: FinishStateInit): FinishState {
     phases[phase] = zeroedPhaseState();
   }
   return {
-    version: 2,
+    version: 3,
     feature: init.feature,
     workdir: init.workdir,
     branch: init.branch,
@@ -189,7 +193,7 @@ export function serializeFinishState(state: FinishState): string {
  *
  * Throws `NaxError("FINISH_STATE_UNPARSEABLE")` when `text` is not valid JSON,
  * and `NaxError("FINISH_STATE_VERSION")` when the parsed payload's `version`
- * is not `2` — a resumed state with an unrecognised shape must be rejected
+ * is not `3` — a resumed state with an unrecognised shape must be rejected
  * rather than misread.
  */
 export function deserializeFinishState(text: string): FinishState {
@@ -204,7 +208,7 @@ export function deserializeFinishState(text: string): FinishState {
   }
 
   const version = (parsed as { version?: unknown })?.version;
-  if (version !== 2) {
+  if (version !== 3) {
     throw new NaxError(`Finish state has unsupported version: ${String(version)}`, "FINISH_STATE_VERSION", {
       stage: "finish",
       version,
