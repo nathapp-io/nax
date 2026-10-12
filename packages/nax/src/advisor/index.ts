@@ -13,6 +13,7 @@ export {
   readLabels,
   writeAdviceAudit,
 } from "./audit";
+export { adviseBatch, type BatchItemResult, type BatchRequest, type BatchResult } from "./batch";
 export { dedupeKeyFor } from "./dedupe";
 export {
   type AdvisorSummary,
