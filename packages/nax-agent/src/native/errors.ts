@@ -20,6 +20,13 @@ const FAILURES: Readonly<Record<string, AdapterFailure>> = Object.freeze({
     outcome: "fail-rate-limit",
     retriable: true,
   },
+  // The account or plan is exhausted: waiting does not help, so not retriable.
+  quota: {
+    message: "nax-ai account or plan quota exhausted",
+    category: "availability",
+    outcome: "fail-quota",
+    retriable: false,
+  },
   auth: {
     message: "nax-ai authentication failed",
     category: "availability",
