@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG } from "@/config";
-import { effectiveParallelCount } from "@/execution/workflow-parallel";
+import { assertPipelineMode, effectiveParallelCount } from "@/execution/workflow-parallel";
 
 describe("effectiveParallelCount", () => {
   test("pipeline mode passes the CLI value through", () => {
@@ -17,5 +17,13 @@ describe("effectiveParallelCount", () => {
     const cfg = { ...DEFAULT_CONFIG, execution: { ...DEFAULT_CONFIG.execution, mode: "workflow" as const } };
     expect(effectiveParallelCount(cfg, undefined, (m) => warnings.push(m))).toBeUndefined();
     expect(warnings).toEqual([]);
+  });
+});
+
+describe("assertPipelineMode", () => {
+  test("throws only in workflow mode", () => {
+    const cfg = { ...DEFAULT_CONFIG, execution: { ...DEFAULT_CONFIG.execution, mode: "workflow" as const } };
+    expect(() => assertPipelineMode(DEFAULT_CONFIG, "parallel-worker")).not.toThrow();
+    expect(() => assertPipelineMode(cfg, "parallel-worker")).toThrow(/parallel-worker/);
   });
 });

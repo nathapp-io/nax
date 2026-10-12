@@ -50,6 +50,31 @@ function buildDefaultPipeline(): PipelineStage[] {
   ];
 }
 
+/**
+ * A5 workflow mode (spec §5.1): the prompt, optimizer and execution stages give way to
+ * one workflow stage that builds its own prompts. Built lazily for the same TDZ reason
+ * as the default pipeline. The stage body is a dynamic import, so src/workflow (which
+ * imports operations) adds no load-time edge here (check:import-cycles).
+ */
+const lazyWorkflowStage: PipelineStage = {
+  name: "workflow",
+  enabled: () => true,
+  async execute(ctx) {
+    const { workflowStage } = await import("@/workflow");
+    return workflowStage.execute(ctx);
+  },
+};
+
+function buildWorkflowPipeline(): PipelineStage[] {
+  return [queueCheckStage, routingStage, constitutionStage, contextStage, lazyWorkflowStage, completionStage];
+}
+
+let _workflowPipeline: PipelineStage[] | undefined;
+export function getWorkflowPipeline(): PipelineStage[] {
+  if (!_workflowPipeline) _workflowPipeline = buildWorkflowPipeline();
+  return _workflowPipeline;
+}
+
 let _defaultPipeline: PipelineStage[] | undefined;
 export function getDefaultPipeline(): PipelineStage[] {
   if (!_defaultPipeline) _defaultPipeline = buildDefaultPipeline();

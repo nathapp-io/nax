@@ -119,6 +119,25 @@ describe("runIteration", () => {
     expect(result.costDelta).toBe(0);
   });
 
+  test("pipeline selection: workflow mode runs the workflow pipeline, default mode runs defaultPipeline", async () => {
+    const seen: string[][] = [];
+    _iterationRunnerDeps.runPipeline = mock(async (stages: PipelineStage[]) => {
+      seen.push(stages.map((s) => s.name));
+      return makePipelineResult({ success: true, finalAction: "complete" }, { prd });
+    });
+    const selection = { story, storiesToExecute: [story], routing: ROUTING, isBatchExecution: false };
+    const workflowCtx = makeCtx(tempDir, {
+      config: makeNaxConfig({ execution: { storyIsolation: "shared", mode: "workflow" } }),
+    });
+    await runIteration(workflowCtx, prd, selection, 1, 0, []);
+    await runIteration(makeCtx(tempDir), prd, selection, 1, 0, []);
+
+    expect(seen[0]).toContain("workflow");
+    expect(seen[0]).not.toContain("execution");
+    expect(seen[1]).toContain("execution");
+    expect(seen[1]).not.toContain("workflow");
+  });
+
   test("success path: runs the pipeline and returns storiesCompletedDelta/costDelta from handlePipelineSuccess", async () => {
     const ctx = makeCtx(tempDir);
     const runPipelineMock = mock(async () =>
@@ -514,7 +533,7 @@ describe("iteration-runner — worktree lifecycle (EXEC-002 / US-002)", () => {
     test("source calls prepareWorktreeDependencies before runPipeline", async () => {
       const src = await Bun.file("src/execution/iteration-runner.ts").text();
       const prepIndex = src.indexOf("prepareWorktreeDependencies");
-      const runPipelineIndex = src.indexOf("runPipeline(defaultPipeline");
+      const runPipelineIndex = src.indexOf("runPipeline(pipeline");
 
       expect(prepIndex).toBeGreaterThan(-1);
       expect(runPipelineIndex).toBeGreaterThan(-1);
