@@ -143,6 +143,12 @@ export type { VerifierInput, VerifierOutput } from "./verify";
 export { verifierOp, verifyTddOp } from "./verify";
 export type { VerifyScopedDeps, VerifyScopedInput, VerifyScopedOutput } from "./verify-scoped";
 export { _verifyScopedDeps, verifyScopedOp } from "./verify-scoped";
+export {
+  parseImplementerReply,
+  parseReReviewReply,
+  parseStoryReviewReply,
+  WORKFLOW_INTERRUPT_MARKER,
+} from "./workflow-replies";
 export type {
   GateName,
   ImplementerReply,

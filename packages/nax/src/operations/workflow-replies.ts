@@ -1,0 +1,129 @@
+/** A5 workflow reply parsers. Pure; every LLM JSON read goes through tryParseLLMJson. */
+import { tryParseLLMJson } from "../utils/llm-json";
+import type {
+  ImplementerReply,
+  ImplementerStatus,
+  ReReviewVerdict,
+  StoryReviewVerdict,
+  WorkflowFindingDraft,
+  WorkflowFindingKind,
+  WorkflowSeverity,
+} from "./workflow-types";
+
+export const WORKFLOW_INTERRUPT_MARKER = "<<nax-workflow-interrupted>>";
+
+const STATUSES: readonly ImplementerStatus[] = ["DONE", "DONE_WITH_CONCERNS", "NEEDS_CONTEXT", "BLOCKED"];
+const SEVERITIES: readonly WorkflowSeverity[] = ["critical", "important", "minor"];
+const REVIEW_KINDS: readonly WorkflowFindingKind[] = ["spec", "quality"];
+const NO_VERDICT_NOTE = "(no verdict returned)";
+const SPEC_FAIL_ISSUE =
+  "Story review returned spec: fail without a blocking spec finding. Re-read the brief's acceptance criteria and the TDD-evidence rule, and fix what is missing.";
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+function str(v: unknown): string | undefined {
+  return typeof v === "string" && v.trim() !== "" ? v : undefined;
+}
+
+function strings(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((s): s is string => typeof s === "string") : [];
+}
+
+export function parseImplementerReply(output: string): ImplementerReply {
+  if (output.startsWith(WORKFLOW_INTERRUPT_MARKER)) {
+    return {
+      status: "DONE_WITH_CONCERNS",
+      commits: [],
+      testSummary: "",
+      concerns: "step time limit reached",
+      interrupted: true,
+    };
+  }
+  if (output.startsWith('Agent "')) {
+    return { status: "DONE_WITH_CONCERNS", commits: [], testSummary: "", interrupted: false, failure: output.trim() };
+  }
+  const parsed = tryParseLLMJson<unknown>(output);
+  const status = isRecord(parsed) ? parsed.status : undefined;
+  if (!isRecord(parsed) || !STATUSES.includes(status as ImplementerStatus)) {
+    return {
+      status: "DONE_WITH_CONCERNS",
+      commits: [],
+      testSummary: "",
+      concerns: "implementer reply carried no status block",
+      interrupted: false,
+    };
+  }
+  const concerns = str(parsed.concerns);
+  return {
+    status: status as ImplementerStatus,
+    commits: strings(parsed.commits),
+    testSummary: typeof parsed.testSummary === "string" ? parsed.testSummary : "",
+    ...(concerns ? { concerns } : {}),
+    interrupted: false,
+  };
+}
+
+function toDraft(entry: unknown): WorkflowFindingDraft | null {
+  if (!isRecord(entry)) return null;
+  const issue = str(entry.issue);
+  if (!issue) return null;
+  const severity = SEVERITIES.includes(entry.severity as WorkflowSeverity)
+    ? (entry.severity as WorkflowSeverity)
+    : "important";
+  const kind = REVIEW_KINDS.includes(entry.kind as WorkflowFindingKind)
+    ? (entry.kind as WorkflowFindingKind)
+    : "quality";
+  const file = str(entry.file);
+  const acId = str(entry.acId);
+  const suggestion = str(entry.suggestion);
+  const line = Number.isInteger(entry.line) && (entry.line as number) > 0 ? (entry.line as number) : undefined;
+  return {
+    severity,
+    kind,
+    ...(file ? { file } : {}),
+    ...(line !== undefined ? { line } : {}),
+    ...(acId ? { acId } : {}),
+    issue,
+    ...(suggestion ? { suggestion } : {}),
+  };
+}
+
+function drafts(v: unknown): WorkflowFindingDraft[] {
+  return Array.isArray(v) ? v.map(toDraft).filter((d): d is WorkflowFindingDraft => d !== null) : [];
+}
+
+export function parseStoryReviewReply(output: string): StoryReviewVerdict | null {
+  const parsed = tryParseLLMJson<unknown>(output);
+  if (!isRecord(parsed)) return null;
+  if (parsed.spec !== "pass" && parsed.spec !== "fail") return null;
+  if (parsed.quality !== "approved" && parsed.quality !== "changes") return null;
+  const findings = drafts(parsed.findings);
+  const hasBlockingSpec = findings.some((f) => f.kind === "spec" && f.severity !== "minor");
+  const withSynthetic =
+    parsed.spec === "fail" && !hasBlockingSpec
+      ? [...findings, { kind: "spec" as const, severity: "important" as const, issue: SPEC_FAIL_ISSUE }]
+      : findings;
+  return {
+    spec: parsed.spec,
+    quality: parsed.quality,
+    findings: withSynthetic,
+    cannotVerify: strings(parsed.cannotVerify),
+  };
+}
+
+export function parseReReviewReply(output: string, openIds: readonly string[]): ReReviewVerdict | null {
+  const parsed = tryParseLLMJson<unknown>(output);
+  if (!isRecord(parsed) || !Array.isArray(parsed.findings)) return null;
+  const byId = new Map<string, Record<string, unknown>>();
+  for (const entry of parsed.findings) {
+    if (isRecord(entry) && typeof entry.id === "string" && !byId.has(entry.id)) byId.set(entry.id, entry);
+  }
+  const verdicts = openIds.map((id) => {
+    const entry = byId.get(id);
+    if (!entry) return { id, addressed: false, note: NO_VERDICT_NOTE };
+    return { id, addressed: entry.verdict === "ADDRESSED", note: typeof entry.note === "string" ? entry.note : "" };
+  });
+  return { verdicts, newFindings: drafts(parsed.newFindings) };
+}
