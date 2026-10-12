@@ -302,7 +302,7 @@ describe("recovery path (finish A section 6)", () => {
       });
       const result = await runFinishMachine(h.state, h.deps);
       expect(result.outcome).toBe("draft");
-      expect(result.reason?.startsWith("review (quality) stopped at the")).toBe(true);
+      expect(result.reason?.startsWith("review (quality) stopped; ")).toBe(true);
       expect(result.reason).toContain("quality review missing");
     });
   });

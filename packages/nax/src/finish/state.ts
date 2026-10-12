@@ -67,6 +67,8 @@ export interface ReviewLoopState {
   title?: string;
   summary?: string;
   covered: Record<ReviewLens, string[]>;
+  /** Round whose lenses are running (set at round start, 0 once counted); a flow stop reports `pendingRound || rounds`. */
+  pendingRound?: number;
   /** Finish A: one state per finding (spec section 5). Reporting reads this, not `lastFindings`. */
   ledger: LedgerEntry[];
 }

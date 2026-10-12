@@ -1,4 +1,5 @@
 import type { TemplateMode } from "@/forge";
+import type { LedgerEntry } from "./ledger";
 
 export type { TemplateMode };
 
@@ -225,7 +226,7 @@ export interface ResolutionFacts {
   coverage: Record<ReviewLens, number | null>;
   fixRounds: number;
   /** Finish A: one entry per finding with its state (spec section 5). */
-  findings: import("./ledger").LedgerEntry[];
+  findings: LedgerEntry[];
   /** Finish A: every place the finish stopped short. */
   stops: Stop[];
 }

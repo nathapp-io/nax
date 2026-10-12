@@ -268,7 +268,8 @@ function recordFlowStop(state: FinishState, deps: FinishMachineDeps): void {
     {
       kind: "flow",
       ...(state.step ? { step: state.step } : {}),
-      round: state.review.rounds,
+      // Convention: the review round the stop interrupted (lenses running), else the last completed one.
+      round: state.review.pendingRound || state.review.rounds,
       at: deps.now(),
       limitMs: deps.timeouts?.flowMs ?? 0,
     },

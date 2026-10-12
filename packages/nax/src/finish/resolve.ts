@@ -70,18 +70,29 @@ function where(s: Stop): string {
   return s.round !== undefined && step === "review" ? `${step} round ${s.round}` : step;
 }
 
+const hasLimit = (ms: number | undefined): ms is number => typeof ms === "number" && Number.isFinite(ms) && ms > 0;
+
+function describeFix(s: Stop): string {
+  const held = s.findings !== undefined ? `${s.findings} ${s.findings === 1 ? "finding" : "findings"}` : "";
+  const handoff = s.handoff !== undefined ? `handoff-${s.handoff}` : "";
+  const detail = [held, handoff].filter(Boolean).join(", ");
+  const limit = hasLimit(s.limitMs) ? ` at the ${duration(s.limitMs)} limit` : "";
+  return `fix session stopped${limit}${detail ? ` (${detail})` : ""}`;
+}
+
 function describeStop(s: Stop): string {
+  const limit = hasLimit(s.limitMs) ? ` (${duration(s.limitMs)})` : "";
   switch (s.kind) {
     case "review":
-      return `review (${s.lens ?? "?"}) stopped at the ${duration(s.limitMs)} limit`;
+      return `review (${s.lens ?? "?"}) stopped${hasLimit(s.limitMs) ? ` at the ${duration(s.limitMs)} limit` : ""}`;
     case "flow":
-      return `finish time limit (${duration(s.limitMs)}) reached during ${where(s)}`;
+      return `finish time limit${limit} reached during ${where(s)}`;
     case "run":
       return `run cancelled during ${where(s)}`;
-    case "fix": {
-      const held = s.findings !== undefined ? `${s.findings} findings, ` : "";
-      return `fix session stopped at the ${duration(s.limitMs)} limit (${held}handoff-${s.handoff})`;
-    }
+    case "fix":
+      return describeFix(s);
+    default:
+      return `stopped during ${where(s)}`;
   }
 }
 

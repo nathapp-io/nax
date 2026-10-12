@@ -205,6 +205,7 @@ async function fixRound(
 /** One round; true when the loop is finished (nothing left to fix). */
 async function runOneRound(state: FinishState, deps: ReviewLoopDeps, limit: number): Promise<boolean> {
   const { ops, inputs } = deps;
+  patchReview(state, { pendingRound: state.review.rounds + 1 });
   const round = await runReviewRound({
     spec: () => ops.reviewSpec(state, inputs),
     quality: () => ops.reviewBranch(state, inputs),
@@ -222,6 +223,7 @@ async function runOneRound(state: FinishState, deps: ReviewLoopDeps, limit: numb
   const fixList = specFirst([...merged.toFix, ...judged.toFix]);
   patchReview(state, {
     rounds: state.review.rounds + 1,
+    pendingRound: 0,
     lastFindings: fixList,
     missingLenses: round.missing,
     unresolved: addUnresolved(state.review.unresolved, judged.unresolved),

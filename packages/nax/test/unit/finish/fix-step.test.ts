@@ -89,7 +89,7 @@ describe("runFixStep (finish A)", () => {
     expect(trail).not.toContain("commit");
     expect(model.dirty).toBe(false);
     expect(state.stops).toEqual([
-      { kind: "fix", phase: "review", at: "2026-10-12T00:00:00.000Z", limitMs: 5, handoff: 1, findings: 1 },
+      { kind: "fix", phase: "review", at: "2026-10-12T00:00:00.000Z", limitMs: 5, handoff: 1, findings: 1, round: 0 },
     ]);
     expect(state.handoffs[0]).toMatchObject({ limit: "fix", hasNote: true });
     expect(state.pendingHandoff).toBe(1);

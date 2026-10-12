@@ -264,4 +264,18 @@ describe("facts and reasons (finish A section 6)", () => {
     expect(stopReason([{ kind: "run", step: "gate", at: "t", limitMs: 0 }])).toBe("run cancelled during gate");
     expect(stopReason([])).toBeUndefined();
   });
+  test("stopReason: plural more stops, singular finding, and no limit clause without a limit", () => {
+    const flow = { kind: "flow" as const, step: "gate" as const, at: "t", limitMs: 10_800_000 };
+    expect(stopReason([flow, flow, flow])).toBe("finish time limit (3 h) reached during gate; +2 more stops");
+    expect(stopReason([{ kind: "fix", phase: "review", at: "t", limitMs: 1_200_000, handoff: 2, findings: 1 }])).toBe(
+      "fix session stopped at the 20 min limit (1 finding, handoff-2)",
+    );
+    expect(stopReason([{ kind: "fix", phase: "gate", at: "t", limitMs: 0 }])).toBe("fix session stopped");
+    expect(stopReason([{ kind: "review", lens: "spec", at: "t", limitMs: Number.NaN }])).toBe("review (spec) stopped");
+    expect(stopReason([{ kind: "flow", step: "gate", at: "t", limitMs: 0 }])).toBe(
+      "finish time limit reached during gate",
+    );
+    const unknown = JSON.parse('{"kind":"other","at":"t","limitMs":1}');
+    expect(stopReason([unknown])).toBe("stopped during finish");
+  });
 });

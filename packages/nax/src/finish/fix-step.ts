@@ -66,7 +66,7 @@ function limitMsFor(deps: FixStepDeps, limit: HandoffLimit): number {
 
 function stopFor(
   deps: FixStepDeps,
-  ctx: { phase: FixPhase; req: Pick<FixRequest, "findings">; limit: Exclude<HandoffLimit, "error"> },
+  ctx: { phase: FixPhase; req: Pick<FixRequest, "findings">; limit: Exclude<HandoffLimit, "error">; round: number },
   record: HandoffRecord,
 ): Stop {
   return {
@@ -75,7 +75,7 @@ function stopFor(
     at: deps.now(),
     limitMs: limitMsFor(deps, ctx.limit),
     handoff: record.n,
-    ...(ctx.phase === "review" ? { findings: ctx.req.findings?.length ?? 0 } : {}),
+    ...(ctx.phase === "review" ? { findings: ctx.req.findings?.length ?? 0, round: ctx.round } : {}),
   };
 }
 
@@ -102,7 +102,10 @@ async function setAsideStep(state: FinishState, deps: FixStepDeps, ctx: AsideCtx
   state.handoffs = [...state.handoffs, record];
   if (ctx.limit === "fix" || ctx.limit === "flow") state.pendingHandoff = record.n;
   if (ctx.limit !== "error") {
-    state.stops = [...state.stops, stopFor(deps, { phase: ctx.phase, req: ctx.req, limit: ctx.limit }, record)];
+    state.stops = [
+      ...state.stops,
+      stopFor(deps, { phase: ctx.phase, req: ctx.req, limit: ctx.limit, round: state.review.rounds }, record),
+    ];
   }
   getSafeLogger()?.warn("finish", "Fix session set aside", {
     storyId: "_run",
