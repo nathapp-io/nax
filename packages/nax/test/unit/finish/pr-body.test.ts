@@ -447,6 +447,23 @@ describe("buildFinishBody — Advisor decisions section (A1)", () => {
     expect(body).toContain("…");
   });
 
+  test("renders answer and carry with what the ruling says", () => {
+    const body = buildFinishBody(
+      baseCtx({
+        advisorDecisions: [
+          makeAdviceDecision({
+            id: "D-1",
+            storyId: "US-3",
+            action: { type: "carry", instruction: "Keep lock order", toStories: ["US-4", "US-5"] },
+          }),
+          makeAdviceDecision({ id: "D-2", storyId: "US-3", action: { type: "answer", text: "Use Postgres" } }),
+        ],
+      }),
+    );
+    expect(body).toContain("carry → US-4, US-5 — Keep lock order");
+    expect(body).toContain("answer — Use Postgres");
+  });
+
   test("absent when the advisor made no decisions", () => {
     expect(buildFinishBody(baseCtx({}))).not.toContain("Advisor decisions");
   });

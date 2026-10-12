@@ -30,13 +30,29 @@ export function ledgerPath(repoRoot: string, feature: string): string {
   return join(featureDir(repoRoot, feature), "decisions.jsonl");
 }
 
+function isWellFormedAction(a: unknown): boolean {
+  if (typeof a !== "object" || a === null) return false;
+  const action = a as { type?: unknown; toStories?: unknown; text?: unknown; instruction?: unknown };
+  if (typeof action.type !== "string") return false;
+  if (action.type === "carry") {
+    return (
+      typeof action.instruction === "string" &&
+      Array.isArray(action.toStories) &&
+      action.toStories.every((s) => typeof s === "string")
+    );
+  }
+  if (action.type === "answer") return typeof action.text === "string";
+  return true;
+}
+
 function parseLines(text: string, path: string): AdviceDecision[] {
   const out: AdviceDecision[] = [];
   for (const line of text.split("\n")) {
     if (line.trim() === "") continue;
     try {
       const parsed: unknown = JSON.parse(line);
-      if (typeof parsed === "object" && parsed !== null && typeof (parsed as { id?: unknown }).id === "string") {
+      const rec = typeof parsed === "object" && parsed !== null ? (parsed as { id?: unknown; action?: unknown }) : null;
+      if (rec && typeof rec.id === "string" && isWellFormedAction(rec.action)) {
         out.push(parsed as AdviceDecision);
       } else {
         getSafeLogger()?.warn("advisor", "Skipping a ledger line that is not a decision", { storyId: "_run", path });

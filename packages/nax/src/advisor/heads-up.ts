@@ -8,7 +8,7 @@ export function formatHeadsUp(d: AdviceDecision, q: AdviceQuestion): string {
     `nax advisor ${d.id} (needs your confirmation, ${d.confidence} confidence)`,
     `Feature: ${q.feature}${q.storyId ? ` · Story: ${q.storyId}` : ""}`,
     `Question: ${q.summary}`,
-    `Chose: ${d.action.type}`,
+    `Chose: ${d.action.type}${d.action.type === "carry" ? ` (to ${d.action.toStories.join(", ")})` : ""}`,
     `Why: ${d.rationale}`,
     "The run continues. Stop it (Ctrl-C / queue ABORT) if this is wrong.",
   ].join("\n");

@@ -158,11 +158,17 @@ function flat(text: string): string {
 /** A1: flagged decisions first, then the rest, then every supersede as an amendment to apply. Null when none. */
 function buildAdvisorSection(decisions: AdviceDecision[] | undefined): string | null {
   if (!decisions || decisions.length === 0) return null;
+  const detail = (d: AdviceDecision): string => {
+    if (d.action.type === "carry")
+      return `carry → ${flat(d.action.toStories.join(", "))} — ${flat(d.action.instruction)}`;
+    if (d.action.type === "answer") return `answer — ${flat(d.action.text)}`;
+    return `${d.action.type} — ${flat(d.rationale)}`;
+  };
   const line = (d: AdviceDecision): string => {
     const acs = d.acceptanceChanges?.length
       ? ` — acceptance tests changed: ${flat(d.acceptanceChanges.join(", "))}`
       : "";
-    return `- **${flat(d.id)}**${d.needsHumanConfirm ? " (needs confirmation)" : ""} ${flat(d.storyId ?? "feature")} · ${d.action.type} — ${flat(d.rationale)}${acs}`;
+    return `- **${flat(d.id)}**${d.needsHumanConfirm ? " (needs confirmation)" : ""} ${flat(d.storyId ?? "feature")} · ${detail(d)}${acs}`;
   };
   const ordered = [...decisions.filter((d) => d.needsHumanConfirm), ...decisions.filter((d) => !d.needsHumanConfirm)];
   const amendments = decisions.flatMap((d) =>

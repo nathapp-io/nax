@@ -1,5 +1,12 @@
 /** A1 advisor types. Type-only module: no runtime code, no value imports. */
-export type AdviceQuestionKind = "finish-judgment" | "fix-cycle-give-up" | "uncategorised-failure" | "finish-approval";
+export type AdviceQuestionKind =
+  | "finish-judgment"
+  | "fix-cycle-give-up"
+  | "uncategorised-failure"
+  | "finish-approval"
+  | "preflight"
+  | "implementer-question"
+  | "residual";
 
 export interface AdviceEvidence {
   source: "finding" | "ac" | "spec" | "test-output" | "diff" | "agent-diagnosis" | "review-round" | "gate" | "decision";
@@ -20,7 +27,9 @@ export type AdviceAction =
   | { type: "defer"; reason: string }
   | { type: "approve" }
   | { type: "re-review"; phase: "spec" | "quality" }
-  | { type: "hold"; reason: string };
+  | { type: "hold"; reason: string }
+  | { type: "answer"; text: string }
+  | { type: "carry"; instruction: string; toStories: string[] };
 
 export type AdviceActionType = AdviceAction["type"];
 
@@ -31,6 +40,8 @@ export interface AdviceOptionFixed {
   target?: SupersedeTarget;
   /** Finish B 5.2: acceptance tests a fix-and-update ruling allows to change. */
   updateAcs?: string[];
+  /** A5 PR3: the stories a carry option sends its instruction to. */
+  toStories?: string[];
 }
 
 export interface AdviceOption {
@@ -92,6 +103,8 @@ export interface AdviceDecision {
   rulingTitle?: string;
   /** Finish B 6.4: the acceptance tests a fix-and-update ruling allows to change. */
   acceptanceChanges?: string[];
+  /** A5 PR3: the stories this ruling applies to (pre-flight conflict stories, or a carry's toStories). */
+  appliesTo?: string[];
   decidedAt: string;
   model: string;
   memoryMode: "stateless" | "warm";
@@ -129,4 +142,7 @@ export type MenuFacts =
       gatesGreen: boolean;
       reReviewUsed: boolean;
       reReviewPhase: "spec" | "quality";
-    };
+    }
+  | { kind: "implementer-question" }
+  | { kind: "residual"; dependents: string[] }
+  | { kind: "preflight"; acRef?: { storyId: string; acId: string }; specSection?: string };
