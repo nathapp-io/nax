@@ -31,8 +31,11 @@ export const workflowStage: PipelineStage = {
         inputTokens += event.tokenUsage?.inputTokens ?? 0;
         outputTokens += event.tokenUsage?.outputTokens ?? 0;
       }) ?? (() => {});
-    const { callCtx, dispose } = await _workflowStageDeps.buildWorkflowCallContext(ctx);
+    let dispose: (() => Promise<void>) | null = null;
     try {
+      const built = await _workflowStageDeps.buildWorkflowCallContext(ctx);
+      dispose = built.dispose;
+      const { callCtx } = built;
       const { sc, env } = await _workflowStageDeps.buildStoryEnv(ctx, callCtx);
       if (!env.resume) await _workflowStageDeps.writeBrief(sc);
       const outcome = await _workflowStageDeps.runStoryLoop(env);
@@ -51,7 +54,7 @@ export const workflowStage: PipelineStage = {
       await appendLedgerSafe(ctx, `complete-gate-open (workflow error: ${errorMessage(err)})`);
     } finally {
       unsubscribe();
-      await dispose();
+      if (dispose) await dispose();
     }
     ctx.agentResult = {
       success: true,
@@ -69,7 +72,10 @@ export const workflowStage: PipelineStage = {
 async function appendLedgerSafe(ctx: PipelineContext, text: string): Promise<void> {
   try {
     await appendLedger(workflowRunDir(ctx.runtime.outputDir, ctx.prd.feature, ctx.runtime.runId), ctx.story.id, text);
-  } catch {
-    // the ledger is best-effort on the error path
+  } catch (err) {
+    getLogger().debug("workflow", "Ledger append failed on the error path", {
+      storyId: ctx.story.id,
+      error: errorMessage(err),
+    });
   }
 }

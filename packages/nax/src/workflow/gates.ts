@@ -110,7 +110,7 @@ export async function runStoryGates(sc: StepContext): Promise<GateRunResult> {
   ]);
 }
 
-export async function runFullSuiteGate(sc: StepContext): Promise<GateRunResult> {
+export async function runWorkflowSuiteGate(sc: StepContext): Promise<GateRunResult> {
   const suite = await guarded("full-suite", async () => {
     const out: FullSuiteGateOutput = await _workflowDeps.callOp(sc.callCtx, fullSuiteGateOp, {
       story: sc.story,

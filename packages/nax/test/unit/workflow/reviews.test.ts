@@ -1,14 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import type { WorkflowReReviewInput } from "@/operations";
+import { cleanupTempDir, makeScriptedCallOp, makeStepContext, makeTempDir } from "@test/helpers";
 import { workflowReReviewOp, workflowStoryReviewOp } from "@/operations";
-import type { Operation } from "@/operations/types";
 import { runReReview } from "@/workflow/re-review";
 import { _workflowDeps, type StepContext } from "@/workflow/step-context";
 import { runStoryReview } from "@/workflow/story-review";
 import type { StoryReviewVerdict } from "@/workflow/types";
-import { makeStepContext } from "./step-context-helper";
 
 const original = { ..._workflowDeps };
 const dirs: string[] = [];
@@ -27,12 +24,12 @@ function makeSc(over: Partial<StepContext> = {}): StepContext {
 
 /** Fakes callOp: returns `result` (or throws it when it is an Error) for the named op only. */
 function fakeOp(name: string, result: unknown, seen: unknown[] = []): void {
-  _workflowDeps.callOp = async <I, O, C>(_ctx: unknown, op: Operation<I, O, C>, input: I): Promise<O> => {
+  _workflowDeps.callOp = makeScriptedCallOp((op, input) => {
     expect(op.name).toBe(name);
     seen.push(input);
     if (result instanceof Error) throw result;
-    return result as O;
-  };
+    return result;
+  });
 }
 
 const failingGit = async () => ({ stdout: "", stderr: "bad revision", exitCode: 128 });
@@ -92,7 +89,7 @@ describe("runReReview", () => {
     const seen: unknown[] = [];
     fakeOp(workflowReReviewOp.name, { verdicts: [], newFindings: [] }, seen);
     await runReReview(sc, 2, [{ id: "F3", kind: "quality", severity: "important", issue: "x" }], "fix-base");
-    expect((seen[0] as WorkflowReReviewInput).openIds).toEqual(["F3"]);
+    expect(seen[0]).toMatchObject({ openIds: ["F3"] });
     expect(gitCalls.some((a) => a.includes("fix-base..HEAD"))).toBe(true);
     expect(await Bun.file(join(sc.storyDir, "package-2.diff")).exists()).toBe(true);
     expect(await Bun.file(join(sc.storyDir, "rereview-2.json")).exists()).toBe(true);

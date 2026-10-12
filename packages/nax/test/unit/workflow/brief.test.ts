@@ -1,10 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { cleanupTempDir, makeMockCallContext, makeNaxConfig, makeTempDir, makeTestStory } from "@test/helpers";
-import { resolveWorkflowConfig } from "@/config";
+import { cleanupTempDir, makeStepContext, makeTempDir, makeTestStory } from "@test/helpers";
 import { specExcerpts, writeBrief } from "@/workflow/brief";
 import { newStoryRecord, upsertStoryRecord } from "@/workflow/result";
-import { _workflowDeps, type StepContext } from "@/workflow/step-context";
+import { _workflowDeps } from "@/workflow/step-context";
 
 const dirs: string[] = [];
 const original = { ..._workflowDeps };
@@ -13,28 +12,6 @@ afterEach(async () => {
   await Promise.all(dirs.map(cleanupTempDir));
   dirs.length = 0;
 });
-
-/** Typed StepContext builder: required fields get inert defaults, overrides win. */
-function makeStepContext(overrides: Partial<StepContext>): StepContext {
-  const config = makeNaxConfig();
-  return {
-    callCtx: makeMockCallContext(),
-    story: makeTestStory(),
-    config,
-    workflow: resolveWorkflowConfig(config),
-    tierOrder: [],
-    feature: "f",
-    projectDir: "/tmp/test",
-    workdir: "/tmp/test",
-    runDir: "/tmp/test/run",
-    storyDir: "/tmp/test/run/US-001",
-    briefPath: "/tmp/test/run/US-001/brief.md",
-    reportPath: "/tmp/test/run/US-001/report.md",
-    base: "HEAD",
-    dryRun: false,
-    ...overrides,
-  };
-}
 
 describe("specExcerpts", () => {
   test("keeps only sections that name the story id", () => {

@@ -100,14 +100,13 @@ describe("finishToolSurface", () => {
 });
 
 describe("filterAcpDelivery", () => {
-  const tool = (name: string): CodingTool =>
-    ({
-      name,
-      description: "d",
-      inputSchema: { type: "object", properties: {} },
-      scope: { pathFields: [] },
-      run: async () => ({ content: "" }),
-    }) as CodingTool;
+  const tool = (name: string): CodingTool => ({
+    name,
+    description: "d",
+    inputSchema: { type: "object", properties: {} },
+    scope: { pathFields: [] },
+    run: async () => ({ content: "" }),
+  });
 
   const result = providerResult({
     tools: [tool("codegraph__search_graph"), tool("codegraph__write_graph"), tool("other__probe")],

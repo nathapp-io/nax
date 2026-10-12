@@ -8,7 +8,7 @@ import { totalSpendUsd } from "@/runtime";
 import { resolveTestFilePatterns } from "@/test-runners";
 import { packageDirRelative } from "@/utils/paths";
 import { defaultWorkflowAdvisor } from "./advisor";
-import { runFullSuiteGate, runStoryGates } from "./gates";
+import { runStoryGates, runWorkflowSuiteGate } from "./gates";
 import { listUncommitted, readHead } from "./git";
 import { runImplementerTurn } from "./implement";
 import { appendLedger, ensureLedger } from "./ledger";
@@ -79,9 +79,9 @@ export async function buildStoryEnv(
   // A crash during the first implement turn leaves nothing to resume into: start the story over
   // (a new session sees the uncommitted edits in the tree). Mid-loop records resume (spec §10).
   const resume = prior && prior.phase !== "implement" ? prior : null;
-  let record: WorkflowStoryRecord = resume
-    ? { ...resume, maxRounds: workflow.maxFixRounds }
-    : newStoryRecord(ctx.story.id, workflow.maxFixRounds, new Date().toISOString());
+  const resumeRecord: WorkflowStoryRecord | null = resume ? { ...resume, maxRounds: workflow.maxFixRounds } : null;
+  let record: WorkflowStoryRecord =
+    resumeRecord ?? newStoryRecord(ctx.story.id, workflow.maxFixRounds, new Date().toISOString());
   const header = { runId, feature };
   await upsertStoryRecord(runDir, header, record);
   if (resume) {
@@ -96,7 +96,7 @@ export async function buildStoryEnv(
   const steps: StoryLoopSteps = {
     implement: timed("implement", addTiming, (turn) => runImplementerTurn(sc, turn)),
     gates: timed("gates", addTiming, () => runStoryGates(sc)),
-    fullSuite: timed("full-suite", addTiming, () => runFullSuiteGate(sc)),
+    fullSuite: timed("full-suite", addTiming, () => runWorkflowSuiteGate(sc)),
     storyReview: timed("story-review", addTiming, (concerns) => runStoryReview(sc, concerns)),
     reReview: timed("re-review", addTiming, (round, findings, fixBase) => runReReview(sc, round, findings, fixBase)),
     head: () => readHead(sc.projectDir),
@@ -118,7 +118,7 @@ export async function buildStoryEnv(
       },
       ledger: (text) => appendLedger(runDir, ctx.story.id, text),
     },
-    resume,
+    resume: resumeRecord,
   };
   return { sc, env };
 }

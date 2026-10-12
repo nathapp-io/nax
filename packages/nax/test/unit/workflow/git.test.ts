@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { NaxError } from "@/errors";
+import { assertNaxError, cleanupTempDir, makeTempDir } from "@test/helpers";
 import { listUncommitted, readHead, writeReviewPackage } from "@/workflow/git";
 
 const dirs: string[] = [];
@@ -55,8 +54,8 @@ describe("workflow git helpers", () => {
       () => undefined,
       (e: unknown) => e,
     );
-    expect(err).toBeInstanceOf(NaxError);
-    expect((err as NaxError).code).toBe("WORKFLOW_REVIEW_PACKAGE_FAILED");
+    assertNaxError(err);
+    expect(err.code).toBe("WORKFLOW_REVIEW_PACKAGE_FAILED");
     expect(await Bun.file(path).exists()).toBe(false);
   });
 

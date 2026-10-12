@@ -1,17 +1,15 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeSessionManager, makeTestStory } from "@test/helpers";
+import { makeScriptedCallOp, makeSessionManager, makeStepContext, makeTestStory } from "@test/helpers";
 import type { TierConfig, WorkflowConfig } from "@/config";
 import { resolveWorkflowConfig } from "@/config";
 import type { WorkflowImplementInput } from "@/operations";
 import { workflowImplementOp } from "@/operations";
-import type { Operation } from "@/operations/types";
 import type { UserStory } from "@/prd";
 import type { SessionDescriptor } from "@/session/types";
 import { fixModelFor } from "@/workflow/fix-round";
 import { runImplementerTurn } from "@/workflow/implement";
 import { _workflowDeps } from "@/workflow/step-context";
 import type { ImplementerReply } from "@/workflow/types";
-import { makeStepContext } from "./step-context-helper";
 
 const original = { ..._workflowDeps };
 afterEach(() => Object.assign(_workflowDeps, original));
@@ -66,14 +64,17 @@ const workflow: WorkflowConfig = {
 
 const doneReply: ImplementerReply = { status: "DONE", commits: [], testSummary: "ok", interrupted: false };
 
+function isImplementInput(v: unknown): v is WorkflowImplementInput {
+  return typeof v === "object" && v !== null && "prompt" in v;
+}
+
 /** Fakes callOp for the implement op only; records the inputs. */
 function fakeImplement(reply: ImplementerReply | (() => ImplementerReply), seen: WorkflowImplementInput[] = []): void {
-  _workflowDeps.callOp = async <I, O, C>(_ctx: unknown, op: Operation<I, O, C>, input: I): Promise<O> => {
+  _workflowDeps.callOp = makeScriptedCallOp((op, input) => {
     expect(op.name).toBe(workflowImplementOp.name);
-    seen.push(input as WorkflowImplementInput);
-    const out = typeof reply === "function" ? reply() : reply;
-    return out as O;
-  };
+    if (isImplementInput(input)) seen.push(input);
+    return typeof reply === "function" ? reply() : reply;
+  });
 }
 
 describe("runImplementerTurn", () => {

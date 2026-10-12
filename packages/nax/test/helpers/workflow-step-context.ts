@@ -1,6 +1,8 @@
-import { makeMockCallContext, makeNaxConfig, makeTestStory } from "@test/helpers";
 import { resolveWorkflowConfig } from "@/config";
 import type { StepContext } from "@/workflow/step-context";
+import { makeMockCallContext } from "./call-context";
+import { makeNaxConfig } from "./mock-nax-config";
+import { makeTestStory } from "./pipeline-context";
 
 /** Typed StepContext builder: required fields get inert defaults, overrides win. */
 export function makeStepContext(overrides: Partial<StepContext> = {}): StepContext {

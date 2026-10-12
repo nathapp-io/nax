@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeMockCallContext, makeNaxConfig, makeTestStory } from "@test/helpers";
-import { resolveWorkflowConfig } from "@/config";
+import { makeNaxConfig, makeScriptedCallOp, makeStepContext } from "@test/helpers";
 import type { Finding } from "@/findings";
 import {
   type FullSuiteGateOutput,
@@ -12,35 +11,12 @@ import {
   type VerifyScopedOutput,
   verifyScopedOp,
 } from "@/operations";
-import type { Operation } from "@/operations/types";
-import { MAX_GATE_FINDINGS, runFullSuiteGate, runStoryGates } from "@/workflow/gates";
+import { MAX_GATE_FINDINGS, runStoryGates, runWorkflowSuiteGate } from "@/workflow/gates";
 import { _workflowDeps, type StepContext } from "@/workflow/step-context";
 import type { GateState } from "@/workflow/types";
 
 const original = { ..._workflowDeps };
 afterEach(() => Object.assign(_workflowDeps, original));
-
-/** Typed StepContext builder: required fields get inert defaults, overrides win. */
-function makeStepContext(overrides: Partial<StepContext>): StepContext {
-  const config = makeNaxConfig();
-  return {
-    callCtx: makeMockCallContext(),
-    story: makeTestStory({ id: "US-001" }),
-    config,
-    workflow: resolveWorkflowConfig(config),
-    tierOrder: [],
-    feature: "f",
-    projectDir: "/repo",
-    workdir: "/repo",
-    runDir: "/repo/run",
-    storyDir: "/repo/run/US-001",
-    briefPath: "/repo/run/US-001/brief.md",
-    reportPath: "/repo/run/US-001/report.md",
-    base: "abc",
-    dryRun: false,
-    ...overrides,
-  };
-}
 
 function sc(commands: Record<string, string> = { lint: "lint", typecheck: "tc" }): StepContext {
   return makeStepContext({ config: makeNaxConfig({ quality: { commands } }) });
@@ -50,12 +26,11 @@ type Result = LintCheckOutput | TypecheckCheckOutput | VerifyScopedOutput | Full
 
 /** Fakes callOp by op name; a function value is invoked (and may throw). */
 function fake(byOp: Record<string, Result | (() => Result)>): void {
-  _workflowDeps.callOp = async <I, O, C>(_ctx: unknown, op: Operation<I, O, C>, _input: I): Promise<O> => {
+  _workflowDeps.callOp = makeScriptedCallOp((op) => {
     const v = byOp[op.name];
     if (v === undefined) throw new Error(`fake(): no result configured for op "${op.name}"`);
-    const out = typeof v === "function" ? v() : v;
-    return out as O;
-  };
+    return typeof v === "function" ? v() : v;
+  });
 }
 
 function lintFinding(message: string, extra: Partial<Finding> = {}): Finding {
@@ -139,7 +114,7 @@ describe("runStoryGates", () => {
   });
 });
 
-describe("runFullSuiteGate", () => {
+describe("runWorkflowSuiteGate", () => {
   const cases: ReadonlyArray<readonly [FullSuiteGateOutput["status"], boolean, GateState]> = [
     ["passed", false, "green"],
     ["passed-on-timeout", false, "green"],
@@ -160,7 +135,7 @@ describe("runFullSuiteGate", () => {
         rawOutput: "",
       },
     });
-    const r = await runFullSuiteGate(sc());
+    const r = await runWorkflowSuiteGate(sc());
     expect(r.red).toBe(red);
     expect(r.states["full-suite"]).toBe(state);
     if (red) expect(r.findings.length).toBeGreaterThan(0);
