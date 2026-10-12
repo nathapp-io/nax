@@ -21,6 +21,7 @@ export interface FinishBranchReviewInput {
   stories: { id: string; title: string }[];
   changedFiles: string[];
   hints: A3Hint[];
+  decisions?: string;
   model?: ConfiguredModel;
   timeoutMs?: number;
 }

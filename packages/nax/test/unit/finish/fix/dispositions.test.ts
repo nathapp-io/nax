@@ -54,4 +54,31 @@ describe("validateDispositions", () => {
       expect(out[0].evidenceMissing).toBeUndefined();
     });
   });
+  test("a rejection citing a ruling shown to the session is valid; an unknown ruling id is missing", async () => {
+    await withTempDir(async (dir) => {
+      const out = await validateDispositions(
+        dir,
+        [
+          { index: 1, disposition: "rejected", evidence: "ruling D-2" },
+          { index: 2, disposition: "rejected", evidence: "ruling D-7" },
+        ],
+        ["D-2"],
+      );
+      expect(out[0]?.evidenceMissing).toBeUndefined();
+      expect(out[1]?.evidenceMissing).toBe(true);
+    });
+  });
+
+  test("round trip: a fixer's `evidence: ruling D-2` line parses whole and validates against the shown ids", async () => {
+    await withTempDir(async (dir) => {
+      const parsed = parseDispositions("## DISPOSITIONS\n[1] fixed\n[2] rejected \u2014 evidence: ruling D-2\n");
+      expect(parsed[1]).toEqual({ index: 2, disposition: "rejected", evidence: "ruling D-2" });
+      const out = await validateDispositions(dir, parsed, ["D-2"]);
+      expect(out[1]?.evidenceMissing).toBeUndefined();
+    });
+  });
+
+  test("a file:line evidence still parses as before", () => {
+    expect(parseDispositions("[1] rejected \u2014 evidence: test/a.test.ts:4")[0]?.evidence).toBe("test/a.test.ts:4");
+  });
 });

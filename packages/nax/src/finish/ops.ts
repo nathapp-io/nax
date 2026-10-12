@@ -39,6 +39,8 @@ export interface FixRequest {
   interrupt?: AbortSignal;
   /** Finish A: a previous stopped session's work to continue from. */
   continuation?: FixContinuation;
+  /** Finish B 6.2: acceptance test files a review or gate fixer must not edit. */
+  acceptancePaths?: string[];
 }
 
 /** What a fix step did, so the commit round and commit message can report it. */

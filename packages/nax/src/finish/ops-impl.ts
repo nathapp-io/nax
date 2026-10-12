@@ -11,7 +11,7 @@
  */
 
 import { errorMessage } from "@nathapp/nax-agent/internal";
-import { formatDecisionsForPrompt, readTrustedDecisions } from "@/advisor";
+import { formatDecisionsForPrompt, formatRulingsForFix, readTrustedDecisions } from "@/advisor";
 import type { ConfiguredModel } from "@/config";
 import type { ForgeDeps, ForgeKind } from "@/forge";
 import type { CallContext, FinishBranchReviewInput, FinishFixInput, FinishSpecReviewInput } from "@/operations";
@@ -56,6 +56,16 @@ async function loadDecisionNotes(state: FinishState, outputDir: string | undefin
   const decisions = await readTrustedDecisions(state.workdir, state.feature, outputDir).catch(() => []);
   const notes = formatDecisionsForPrompt(decisions);
   return notes === "" ? undefined : notes;
+}
+
+/** Finish B 4.2: rulings in force for a fixer. Never throws: no ledger reads as none. */
+async function loadFixRulings(
+  state: FinishState,
+  outputDir: string | undefined,
+): Promise<{ text: string; ids: string[] }> {
+  if (!outputDir) return { text: "", ids: [] };
+  const decisions = await readTrustedDecisions(state.workdir, state.feature, outputDir).catch(() => []);
+  return formatRulingsForFix(decisions);
 }
 
 /** The commit the promote path pushes before touching the forge (matches the flow, line 344). */
@@ -160,6 +170,7 @@ export function createFinishOps(deps: FinishOpsDeps): FinishOps {
         stories: inputs.stories,
         changedFiles: inputs.changed,
         hints: inputs.hints,
+        decisions: await loadDecisionNotes(state, advisorOutputDir),
         model: models?.reviewQuality,
         timeoutMs: reviewTimeout(timeouts?.reviewMs),
       };
@@ -174,6 +185,7 @@ export function createFinishOps(deps: FinishOpsDeps): FinishOps {
 
     async fix(phase: FixPhase, req: FixRequest) {
       const { state, findings, failing, gateOutput, acceptanceOutput, interrupt, continuation } = req;
+      const rulings = await loadFixRulings(state, advisorOutputDir);
       const input: FinishFixInput = {
         phase,
         workdir: state.workdir,
@@ -187,6 +199,8 @@ export function createFinishOps(deps: FinishOpsDeps): FinishOps {
           timeouts?.fixMs !== undefined ? timeouts.fixMs + HANDOFF_TURN_MS + STEP_TIMEOUT_MARGIN_MS : undefined,
         ...(interrupt ? { interrupt } : {}),
         ...(continuation ? { continuation } : {}),
+        ...(rulings.text ? { rulings: rulings.text, rulingIds: rulings.ids } : {}),
+        ...(req.acceptancePaths ? { acceptancePaths: req.acceptancePaths } : {}),
       };
       // Not `callCtx` alone — an explicit `sessionOverride: undefined` makes sure a
       // context the caller built with one set (e.g. for a review call reused here)

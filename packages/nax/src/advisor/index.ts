@@ -18,6 +18,7 @@ export {
   type AdvisorSummary,
   describeTarget,
   formatDecisionsForPrompt,
+  formatRulingsForFix,
   isPromptSafe,
   summariseAdvisor,
 } from "./format";

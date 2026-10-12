@@ -35,6 +35,23 @@ export function formatDecisionsForPrompt(decisions: readonly AdviceDecision[]): 
   return lines.join("\n");
 }
 
+/** Finish B 4.2: waive + supersede rulings a fixer must not undo, with the ids it may cite. */
+export function formatRulingsForFix(decisions: readonly AdviceDecision[]): { text: string; ids: string[] } {
+  const lines: string[] = [];
+  const ids: string[] = [];
+  for (const d of decisions) {
+    if (d.action.type === "waive" && !BLOCKING.has(d.findingSeverity ?? "")) {
+      lines.push(`- ${d.id} waived: ${waivedSubject(d)} \u2014 ${d.action.reason}`);
+      ids.push(d.id);
+    }
+    if (d.action.type === "supersede") {
+      lines.push(`- ${d.id} superseded ${describeTarget(d.action.target)}: ${d.action.newText}`);
+      ids.push(d.id);
+    }
+  }
+  return { text: lines.join("\n"), ids };
+}
+
 export interface AdvisorSummary {
   decisions: number;
   flagged: number;

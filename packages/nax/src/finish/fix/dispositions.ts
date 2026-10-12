@@ -3,7 +3,8 @@ import path from "node:path";
 import type { FindingDisposition } from "../types";
 
 const DISPOSITION = /^\s*\[?(\d+)\]?\s*[.:)]?\s*(fixed|rejected)\b\s*(.*)$/i;
-const EVIDENCE = /evidence\s*:\s*(\S+)/i;
+const EVIDENCE = /evidence\s*:\s*(ruling\s+D-\d+|\S+)/i;
+const RULING_EVIDENCE = /^ruling\s+(D-\d+)$/;
 
 /** Parse the `## DISPOSITIONS` section of a fix node's reply. */
 export function parseDispositions(text: string): FindingDisposition[] {
@@ -38,14 +39,17 @@ async function exists(workdir: string, rel: string): Promise<boolean> {
   }
 }
 
-/** Mark any rejection whose cited `file:line` does not resolve in the repo. */
+/** Mark any rejection whose cited `file:line` does not resolve in the repo, or whose cited ruling was not shown. */
 export async function validateDispositions(
   workdir: string,
   dispositions: FindingDisposition[],
+  rulingIds: readonly string[] = [],
 ): Promise<FindingDisposition[]> {
   return Promise.all(
     dispositions.map(async (d) => {
       if (d.disposition !== "rejected" || !d.evidence) return d;
+      const ruling = RULING_EVIDENCE.exec(d.evidence.trim());
+      if (ruling) return rulingIds.includes(ruling[1] ?? "") ? d : { ...d, evidenceMissing: true };
       const file = d.evidence.split(":")[0];
       return (await exists(workdir, file)) ? d : { ...d, evidenceMissing: true };
     }),
