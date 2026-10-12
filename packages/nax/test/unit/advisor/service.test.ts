@@ -169,6 +169,17 @@ describe("advisor service", () => {
       expect(reused?.action).toEqual(first.action);
     });
   });
+
+  test("a judgment question's anchor file and title are copied onto the decision (finish B §3.2)", async () => {
+    await withTempDir(async (dir) => {
+      stubDeps(reply("B", { reason: "US-5 owns it" }));
+      const out = await createAdvisor(actx(dir)).advise({ ...judgment, anchorFile: "src/a.ts", rulingTitle: "Race" });
+      expect(out.decision?.anchorFile).toBe("src/a.ts");
+      expect(out.decision?.rulingTitle).toBe("Race");
+      const [line] = await readDecisions(dir, "feat");
+      expect(line?.anchorFile).toBe("src/a.ts");
+    });
+  });
 });
 
 describe("advisor service — prior decisions are trusted only", () => {

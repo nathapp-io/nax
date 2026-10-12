@@ -50,6 +50,10 @@ export interface AdviceQuestion {
   options: AdviceOption[];
   /** Severity of the finding the question is about, for the forced-confirm rule. */
   findingSeverity?: string;
+  /** Finish B §3.2: the ruled finding's `file`, copied onto the decision so later findings can match it. */
+  anchorFile?: string;
+  /** Finish B §3.2: the ruled finding's title, copied onto the decision. */
+  rulingTitle?: string;
 }
 
 export type AdviceConfidence = "high" | "medium" | "low";
@@ -81,6 +85,9 @@ export interface AdviceDecision {
   reusedFrom?: string;
   /** Severity of the finding the question was about (finish judgment / give-up), when known. */
   findingSeverity?: string;
+  /** Finish B §3.2: copied from the question; absent on lines written before finish B. */
+  anchorFile?: string;
+  rulingTitle?: string;
   decidedAt: string;
   model: string;
   memoryMode: "stateless" | "warm";

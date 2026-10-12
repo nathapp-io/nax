@@ -167,6 +167,8 @@ function buildDraft(
     kind: asked.question.kind,
     ...(asked.question.storyId ? { storyId: asked.question.storyId } : {}),
     ...(asked.question.dedupeKey ? { dedupeKey: asked.question.dedupeKey } : {}),
+    ...(asked.question.anchorFile ? { anchorFile: asked.question.anchorFile } : {}),
+    ...(asked.question.rulingTitle ? { rulingTitle: asked.question.rulingTitle } : {}),
     ...((findingSeverity ?? asked.question.findingSeverity)
       ? { findingSeverity: findingSeverity ?? asked.question.findingSeverity }
       : {}),
