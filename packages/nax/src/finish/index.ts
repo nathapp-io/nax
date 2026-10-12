@@ -99,8 +99,11 @@ export { _finishPhaseDeps, finishSkipReason, runFinishPhase, shouldRunFinish } f
 export type { FinishPrContext, FinishPrStory, LoadPrContextArgs } from "./pr";
 export {
   _finishPrDeps,
+  buildAdvisorSection,
   buildFinishBody,
   buildFinishTitle,
+  escapeInline,
+  escapeTableCell,
   loadFinishPrContext,
   openDraftFinishPr,
   openOrPromotePr,

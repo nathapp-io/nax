@@ -156,7 +156,7 @@ function flat(text: string): string {
 }
 
 /** A1: flagged decisions first, then the rest, then every supersede as an amendment to apply. Null when none. */
-function buildAdvisorSection(decisions: AdviceDecision[] | undefined): string | null {
+export function buildAdvisorSection(decisions: AdviceDecision[] | undefined): string | null {
   if (!decisions || decisions.length === 0) return null;
   const detail = (d: AdviceDecision): string => {
     if (d.action.type === "carry")
