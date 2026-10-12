@@ -24,6 +24,7 @@
 - Commits: conventional (`feat(finish):`, `test(finish):`), one task = one commit minimum, no attribution lines.
 - Constants: `MAX_NEAR_MATCH_QUESTIONS = 6` (per round), acceptance evidence `MAX_PINNED_BLOCKS = 5`, `EXCERPT_LINES = 40`.
 - Unchanged by ruling: trusted-decision model (`readTrustedDecisions`); a HIGH/CRITICAL finding or ruling is never reused without a new advisor call; acceptance-phase fix sessions are NOT guarded (A2-R1); AC supersede stays off while acceptance is enabled.
+- Formatting: run `bun run lint:fix` (from `packages/nax`) before each commit; the snippets here are not guaranteed Biome-formatted.
 - Pre-push gate: from the repo root `bun run check:all` and `bun run typecheck`, and from `packages/nax` `bun run test:coverage`.
 
 ## Review Focus
@@ -31,7 +32,7 @@
 1. **Two rulings on the same file, one waive and one supersede, and a third finding on that file.** Expected: one near question listing both ruling ids as evidence, newest first. Owned by Task 2 (matcher test "near collects every matching ruling, newest first").
 2. **A ruling whose ledger line predates `anchorFile` and whose dedupe key ends in a `#hash`.** Expected: no anchor, so only a legacy-key exact match can hit it; a same-title finding on some file is NOT matched. Owned by Task 2.
 3. **Advisor throws in the middle of reconcile.** Expected: every finding it was handling is carried unresolved, none is fixed, and the round still completes. Owned by Task 4 ("reconcile that throws carries its findings unresolved").
-4. **A fix session that edits the acceptance file when the acceptance test path has spaces or does not exist at HEAD.** Expected: a path with spaces is restored correctly (literal pathspecs); a path absent at HEAD is left alone and recorded as not restorable (it counts in `reverted` only when restored). Owned by Task 9.
+4. **A fix session that edits the acceptance file when the acceptance test path has spaces, or creates one that does not exist at HEAD (untracked or staged-new).** Expected: a path with spaces is restored correctly (literal pathspecs); a path absent at HEAD is never deleted and is reported in `notRestorable`, never in `reverted`. Owned by Task 9.
 5. **An acceptance file with no AC ids at all** (hand-written tests). Expected: no evidence, no fix-and-update option, plain menu, no crash. Owned by Task 6.
 
 ---
@@ -43,7 +44,8 @@
 | `src/advisor/types.ts` (modify) | `anchorFile`, `rulingTitle` on question + decision; `acceptanceChanges` on decision; `updateAcs` on fix action + option fixed; `pinnedAcs` menu fact | 1, 7 |
 | `src/advisor/service.ts` (modify) | `buildDraft` copies the new fields | 1, 7 |
 | `src/finish/ruling-check.ts` (create) | pure: `Ruling`, `rulingFromDecision`, `rulingFromDropped`, `matchLevel`, `checkRulings`, `splitForRulings` | 2 |
-| `src/finish/advise.ts` (modify) | question carries anchor/title; `adviseOn`, `collectJudgment`, `emptyJudged`, `concatJudged` exported; `FinishAdvisor` gains `rulingsInForce` + `reconcile` | 3 |
+| `src/finish/advise-core.ts` (create) | leaf: shared judge glue moved out of `advise.ts` (`JudgedResult`, `judgmentQuestion`, `contradictionQuestion`, `adviseOn`, `collectJudgment`, `emptyJudged`, `concatJudged`; Task 8 adds `JudgeContext`, `pinnedFor`, `allowedEdits`, `withFixRuling`) | 3, 8 |
+| `src/finish/advise.ts` (modify) | imports the core; `FinishAdvisor` gains `rulingsInForce` + `reconcile`; `jctx` threading | 3, 8 |
 | `src/finish/advise-rulings.ts` (create) | `nearQuestion`, `reconcileRulings`, `loadRulings` | 3 |
 | `src/finish/review-rulings.ts` (create) | `reconcileBefore`, `reconcileAfter` (the round steps 2 and 4) | 4 |
 | `src/finish/review-loop.ts` (modify) | wires steps 2-4; passes `JudgeContext`; acceptance guard after review fix | 4, 8, 9 |
@@ -57,7 +59,7 @@
 | `src/prompts/builders/advisor-builder.ts` (modify) | one POLICY line | 7 |
 | `src/finish/types.ts` (modify) | `Finding.allowedAcceptanceEdits` | 8 |
 | `src/finish/machine.ts` (modify) | `acceptancePaths` into review deps | 8 |
-| `src/finish/acceptance-guard.ts` (create) | detect, revert, diff AC blocks | 9 |
+| `src/finish/acceptance-guard.ts` (create) | detect (filtered to the acceptance paths), revert from HEAD, report not-restorable, diff AC blocks; `_guardDeps` seam; path helpers | 9 |
 | `src/finish/state.ts` (modify) | `acceptanceGuard` | 9 |
 | `src/finish/gates-loop.ts` (modify) | guard after gate fix | 9 |
 | `src/finish/pr/body.ts`, `src/finish/pr/context.ts` (modify) | decision AC changes; guard lines | 10 |
@@ -151,7 +153,10 @@ export interface RulingCheck {
 }
 export function normTitle(title: string): string;
 export function rulingFromDecision(d: AdviceDecision): Ruling | undefined;
-export function rulingFromDropped(d: { finding: Finding; decisionId: string; action: "waive" | "supersede" }): Ruling;
+export function rulingFromDropped(
+  d: { finding: Finding; decisionId: string; action: "waive" | "supersede" },
+  decision?: AdviceDecision,  // the same-round decision, so the summary carries its reason (spec §3.5)
+): Ruling;
 export function matchLevel(f: Finding, r: Ruling): MatchLevel;
 export function checkRulings(findings: Finding[], rulings: Ruling[]): RulingCheck;
 export function splitForRulings(merged: MergedFindings, rulings: Ruling[]): { check: RulingCheck; merged: MergedFindings };
@@ -161,10 +166,9 @@ export function splitForRulings(merged: MergedFindings, rulings: Ruling[]): { ch
 
 ```ts
 import { describe, expect, test } from "bun:test";
-import { makeAdviceDecision } from "@test/helpers";
+import { assertDefined, makeAdviceDecision } from "@test/helpers";
 import type { Finding, MergedFindings } from "@/finish";
 import { checkRulings, matchLevel, rulingFromDecision, rulingFromDropped, splitForRulings } from "@/finish";
-import { assertDefined } from "@test/helpers";
 
 const f = (over: Partial<Finding> = {}): Finding => ({
   severity: "MEDIUM",
@@ -282,6 +286,14 @@ describe("rulingFromDropped", () => {
     expect(r).toMatchObject({ id: "D-2", action: "waive", anchor: "src/thread-job-run.ts", blocking: false });
     expect(r.decision).toBeUndefined();
   });
+
+  test("with the same-round decision, the summary carries its reason and the decision is attached", () => {
+    const finding = f({ file: "src/t.ts", title: "Seam" });
+    const d = waive({ id: "D-2", action: { type: "waive", reason: "acceptance drives runs through it" } });
+    const r = rulingFromDropped({ finding, decisionId: "D-2", action: "waive" }, d);
+    expect(r.summary).toBe("waive: Seam (src/t.ts) — acceptance drives runs through it");
+    expect(r.decision?.id).toBe("D-2");
+  });
 });
 
 describe("splitForRulings", () => {
@@ -392,15 +404,21 @@ export function rulingFromDecision(d: AdviceDecision): Ruling | undefined {
   };
 }
 
-export function rulingFromDropped(d: { finding: Finding; decisionId: string; action: "waive" | "supersede" }): Ruling {
+export function rulingFromDropped(
+  d: { finding: Finding; decisionId: string; action: "waive" | "supersede" },
+  decision?: AdviceDecision,
+): Ruling {
   const { finding } = d;
+  const a = decision?.action;
+  const detail = a?.type === "waive" ? a.reason : a?.type === "supersede" ? a.newText : undefined;
   return {
     id: d.decisionId,
     action: d.action,
     ...(finding.file ? { anchor: finding.file } : {}),
     title: finding.title,
     blocking: BLOCKING.has(finding.severity),
-    summary: summaryOf(d.action, finding.title, finding.file),
+    summary: summaryOf(d.action, finding.title, finding.file, detail),
+    ...(decision ? { decision } : {}),
   };
 }
 
@@ -451,6 +469,8 @@ export function splitForRulings(
 }
 ```
 
+Two intended behaviours to keep (spec §3.1/§3.3 notes): (a) `checkRulings` takes the NEWEST exact match; when that one is blocking, the finding becomes a near question even if an older non-blocking exact match exists (the newest ruling is the one in force). (b) The legacy-key comparison is lens-specific because `dedupeKeyFor` includes the phase; cross-lens matching comes from the anchor + title rule, which is lens-free.
+
 Add to `src/finish/index.ts`:
 
 ```ts
@@ -477,32 +497,56 @@ export {
 ### Task 3: Finish advisor reconciles findings against rulings
 
 **Files:**
+- Create: `src/finish/advise-core.ts` (leaf module: the shared advisor-glue pieces moved out of `advise.ts`, so `advise.ts` and `advise-rulings.ts` both import it and no import cycle forms)
 - Modify: `src/finish/advise.ts`
 - Create: `src/finish/advise-rulings.ts`
-- Modify: `src/finish/index.ts` (export `emptyJudged`, `concatJudged`, `JudgeContext`, `MAX_NEAR_MATCH_QUESTIONS`)
+- Modify: `src/finish/index.ts`
 - Test: `test/unit/finish/advise-rulings.test.ts`
+
+**Why the split is mandatory:** `advise.ts` will import `advise-rulings.ts` (to bind `rulingsInForce`/`reconcile`), and `advise-rulings.ts` needs `judgmentQuestion`, `adviseOn` and `collectJudgment`. If those stayed in `advise.ts` the two files would form a cycle, and `bun run check:import-cycles` fails on any new module inside a strongly connected component. Dependency direction after this task: `advise.ts → advise-rulings.ts → advise-core.ts`, and `advise.ts → advise-core.ts`. `advise-core.ts` imports neither.
 
 **Interfaces:**
 - Consumes: Task 2 (`Ruling`, `RulingCheck`, `rulingFromDecision`).
-- Produces (in `advise.ts`):
+- Produces, in `advise-core.ts` (moved, bodies unchanged unless shown below):
 
 ```ts
-/** Finish B: what a judgment question may carry beyond the finding (acceptance evidence arrives in Task 8). */
-export interface JudgeContext {
-  acceptance?: import("./acceptance-evidence").AcceptanceFile[];   // added in Task 8; leave the field out until then
+export type AdviceRef = { decisionId: string; optionId: string; reused: boolean };
+export interface JudgedResult {
+  toFix: Finding[];
+  advice: AdviceRef[];
+  unresolved: Finding[];
+  dropped: { finding: Finding; decisionId: string; action: "waive" | "supersede" }[];
+  held: { finding: Finding; decisionId: string }[];
+  /** Finish B: decisions the advisor made while producing this result (same-round rulings carry their reason). */
+  decisions?: AdviceDecision[];
 }
+export interface FinishAdvisorDeps { /* moved verbatim from advise.ts */ }
+export type Dropped = "waive" | "supersede";
+export const droppedBy: (type: string) => Dropped | undefined;
+export type JudgeOneResult = {
+  keep?: Finding; ref?: AdviceRef; hold?: string; fallback?: string; dropped?: Dropped; decision?: AdviceDecision;
+};
+export function judgmentQuestion(deps: FinishAdvisorDeps, phase: "spec" | "quality", f: Finding): QuestionDraft;
+export function contradictionQuestion(deps: FinishAdvisorDeps, c: Contradiction): QuestionDraft;
+export const RANK: { CRITICAL: 4; HIGH: 3; MEDIUM: 2; LOW: 1 };
+export async function adviseOn(deps: FinishAdvisorDeps, question: QuestionDraft, f: Finding): Promise<JudgeOneResult>;
+export function collectJudgment(out: JudgedResult, f: Finding, r: JudgeOneResult): void;
 export function emptyJudged(): JudgedResult;
 export function concatJudged(...results: JudgedResult[]): JudgedResult;
-export interface FinishAdvisor {
-  // existing members unchanged, plus:
-  rulingsInForce(): Promise<Ruling[]>;
-  reconcile(check: RulingCheck, budget: number): Promise<{ result: JudgedResult; asked: number }>;
-}
 ```
 
-- In `advise-rulings.ts`: `export const MAX_NEAR_MATCH_QUESTIONS = 6;`, `nearQuestion(deps, f, rulings): QuestionDraft`, `reconcileRulings(deps, check, budget)`, `loadRulings(deps): Promise<Ruling[]>`.
+- In `advise.ts`: `export type { AdviceRef, FinishAdvisorDeps, JudgedResult } from "./advise-core";` (so `src/finish/index.ts` keeps exporting them from `./advise` unchanged), and `FinishAdvisor` gains:
 
-- [ ] **Step 1: Write the failing tests** — `test/unit/finish/advise-rulings.test.ts`. Reuse the helper shapes from `test/unit/finish/advise.test.ts` (copy `decision`, `fakeAdvisor`, `state`, `make` into this file; they are file-local there):
+```ts
+  /** Finish B §3.2: trusted waive / supersede rulings this feature already has. */
+  rulingsInForce(): Promise<Ruling[]>;
+  /** Finish B §3.4-3.6: reuse exact matches, ask about near ones (up to `budget`), carry the rest unresolved. */
+  reconcile(check: RulingCheck, budget: number): Promise<{ result: JudgedResult; asked: number }>;
+```
+
+- In `advise-rulings.ts`: `export const MAX_NEAR_MATCH_QUESTIONS = 6;`, `loadRulings(deps)`, `nearQuestion(deps, f, rulings)`, `reconcileRulings(deps, check, budget)`.
+
+- [ ] **Step 1: Write the failing tests** — `test/unit/finish/advise-rulings.test.ts`. Copy the file-local helpers `decision`, `fakeAdvisor`, `state` and `make` verbatim from the top of `test/unit/finish/advise.test.ts` (lines 1-77) into this file, then:
 
 ```ts
 import { describe, expect, test } from "bun:test";
@@ -510,10 +554,11 @@ import { join } from "node:path";
 import { withTempDir } from "@test/helpers";
 import type { AdviceDecision, AdviceResult, Advisor, QuestionDraft } from "@/advisor";
 import { appendDecision, dedupeKeyFor } from "@/advisor";
-import type { Finding } from "@/finish";
-import { checkRulings, createFinishAdvisor, rulingFromDropped } from "@/finish";
+import type { Finding, FinishState } from "@/finish";
+import { checkRulings, createFinishAdvisor, createFinishState, rulingFromDropped } from "@/finish";
+import { nearQuestion } from "@/finish/advise-rulings";
 
-// decision(), fakeAdvisor(), make() — copied verbatim from test/unit/finish/advise.test.ts
+// decision(), fakeAdvisor(), state(), make() — copied verbatim from test/unit/finish/advise.test.ts
 
 const low = (over: Partial<Finding> = {}): Finding => ({
   severity: "LOW",
@@ -562,8 +607,10 @@ describe("FinishAdvisor.reconcile", () => {
       expect(n).toBe(1);
       expect(asked[0]?.summary.startsWith("Possibly the same issue as D-1.")).toBe(true);
       expect(asked[0]?.evidence[0]).toMatchObject({ source: "decision", ref: "D-1" });
+      expect(asked[0]?.evidence[0]?.text).toContain("PRD outOfScope");
       expect(asked[0]?.anchorFile).toBe("src/pm.ts");
       expect(result.dropped).toEqual([{ finding: retitled, decisionId: "D-2", action: "waive" }]);
+      expect(result.decisions?.map((d) => d.id)).toEqual(["D-2"]);
       expect(result.toFix).toEqual([]);
     });
   });
@@ -581,11 +628,10 @@ describe("FinishAdvisor.reconcile", () => {
     });
   });
 
-  test("a same-round ruling (no decision object) is reused without a ledger line", async () => {
+  test("a same-round ruling with no decision object is reused without a ledger line", async () => {
     await withTempDir(async (dir) => {
       const { advisor, reused } = fakeAdvisor(() => ({ decision: null }));
-      const ruled = low({ source: "spec" });
-      const r = rulingFromDropped({ finding: ruled, decisionId: "D-2", action: "waive" });
+      const r = rulingFromDropped({ finding: low({ source: "spec" }), decisionId: "D-2", action: "waive" });
       const { result } = await make(dir, advisor).reconcile(checkRulings([low()], [r]), 6);
       expect(reused).toHaveLength(0);
       expect(result.dropped[0]).toMatchObject({ decisionId: "D-2", action: "waive" });
@@ -607,6 +653,20 @@ describe("FinishAdvisor.reconcile", () => {
     });
   });
 
+  test("budget 0: no call at all; near is unresolved, exact is still reused", async () => {
+    await withTempDir(async (dir) => {
+      await trustedWaive(dir, low());
+      const { advisor, asked, reused } = fakeAdvisor(() => ({ decision: null }));
+      const fa = make(dir, advisor);
+      const near = low({ title: "Other" });
+      const exact = low({ source: "spec" });
+      const { result } = await fa.reconcile(checkRulings([near, exact], await fa.rulingsInForce()), 0);
+      expect(asked).toHaveLength(0);
+      expect(reused).toHaveLength(1);
+      expect(result.unresolved).toEqual([near]);
+    });
+  });
+
   test("advisor gives no decision on a near match: unresolved", async () => {
     await withTempDir(async (dir) => {
       await trustedWaive(dir, low());
@@ -614,6 +674,31 @@ describe("FinishAdvisor.reconcile", () => {
       const near = low({ title: "Other" });
       const { result } = await fa.reconcile(checkRulings([near], await fa.rulingsInForce()), 6);
       expect(result.unresolved).toEqual([near]);
+    });
+  });
+});
+
+describe("nearQuestion (Review Focus 1)", () => {
+  test("lists every matched ruling id in the summary and as evidence, newest first", async () => {
+    await withTempDir(async (dir) => {
+      const d1 = await trustedWaive(dir, low());
+      const d2 = await trustedWaive(dir, low({ title: "Second ruling" }), {
+        action: { type: "supersede", target: { kind: "spec", section: "4" }, newText: "n" },
+      });
+      const fa = make(dir, fakeAdvisor(() => ({ decision: null })).advisor);
+      const check = checkRulings([low({ title: "Third finding" })], await fa.rulingsInForce());
+      const deps = {
+        advisor: fakeAdvisor(() => ({ decision: null })).advisor,
+        repoRoot: dir,
+        outputDir: join(dir, "out"),
+        feature: "feat",
+        acceptanceEnabled: () => true,
+        judgedEnabled: true,
+        approvalEnabled: false,
+      };
+      const q = nearQuestion(deps, low({ title: "Third finding" }), check.near[0]?.rulings ?? []);
+      expect(q.summary.startsWith(`Possibly the same issue as ${d2.id}, ${d1.id}.`)).toBe(true);
+      expect(q.evidence.filter((e) => e.source === "decision").map((e) => e.ref)).toEqual([d2.id, d1.id]);
     });
   });
 });
@@ -630,44 +715,50 @@ describe("judgment questions carry the anchor (finish B §3.2)", () => {
 });
 ```
 
+(Remove any import the copied helpers or these tests end up not using; Biome flags unused imports.)
+
 - [ ] **Step 2: Run, expect FAIL** — `timeout 30 bun test test/unit/finish/advise-rulings.test.ts --timeout=5000`.
 
 - [ ] **Step 3: Implement.**
 
-In `src/finish/advise.ts`:
+**3a. Create `src/finish/advise-core.ts`.** Header comment: "Finish advisor glue shared by `advise.ts` and `advise-rulings.ts`. A leaf: imports neither." Move these from `advise.ts` with their bodies unchanged: `AdviceRef`, `JudgedResult` (add the `decisions?` field shown above), `FinishAdvisorDeps`, `judgmentQuestion`, `Dropped`, `droppedBy`, `RANK`, `contradictionQuestion`, `collectJudgment`. Export all of them. Imports it needs: `buildMenu`, `dedupeKeyFor` and the types `AdviceDecision`, `Advisor`, `QuestionDraft` from `@/advisor`; `Contradiction` type from `./merge-findings`; `Finding` type from `./types`.
 
-1. `judgmentQuestion` adds the anchor after `dedupeKey`:
+Then apply these changes inside `advise-core.ts`:
+
+`judgmentQuestion` — add after `dedupeKey`:
 
 ```ts
     ...(f.file ? { anchorFile: f.file } : {}),
     rulingTitle: f.title,
 ```
 
-and is exported (`export function judgmentQuestion`). Do the same `anchorFile`/`rulingTitle` spread in `contradictionQuestion` using `c.spec`.
+`contradictionQuestion` — add the same two spreads using `c.spec`.
 
-2. Split `judgeOne` so its post-reuse half is reusable. Export the result type and the helper:
+New `adviseOn` (the post-reuse half of today's `judgeOne`, plus the decision):
 
 ```ts
-export type JudgeOneResult = { keep?: Finding; ref?: AdviceRef; hold?: string; fallback?: string; dropped?: Dropped };
-
 /** Ask one question about `f` and turn the decision into a judge result (no reuse lookup). */
 export async function adviseOn(deps: FinishAdvisorDeps, question: QuestionDraft, f: Finding): Promise<JudgeOneResult> {
   const { decision, fallbackReason } = await deps.advisor.advise(question, { findingSeverity: f.severity });
   if (!decision) return { fallback: fallbackReason ?? "advisor unavailable" };
   const ref: AdviceRef = { decisionId: decision.id, optionId: decision.chosenOptionId, reused: false };
   const { action } = decision;
-  if (action.type === "hold") return { ref, hold: decision.rationale };
+  if (action.type === "hold") return { ref, decision, hold: decision.rationale };
   if (action.type !== "fix") {
     const dropped = droppedBy(action.type);
-    return dropped ? { ref, dropped } : { ref };
+    return dropped ? { ref, decision, dropped } : { ref, decision };
   }
-  return { ref, keep: { ...f, fix: `${f.fix}\n\nAdvisor ruling (${decision.id}): ${action.instruction}` } };
+  return { ref, decision, keep: { ...f, fix: `${f.fix}\n\nAdvisor ruling (${decision.id}): ${action.instruction}` } };
 }
 ```
 
-`judgeOne` keeps its reuse block, then `return adviseOn(deps, question, f);`.
+`collectJudgment` — add one line at the end:
 
-3. Export `collectJudgment` (unchanged body) and add:
+```ts
+  if (r.decision) out.decisions = [...(out.decisions ?? []), r.decision];
+```
+
+New helpers:
 
 ```ts
 export function emptyJudged(): JudgedResult {
@@ -675,37 +766,48 @@ export function emptyJudged(): JudgedResult {
 }
 
 export function concatJudged(...results: JudgedResult[]): JudgedResult {
+  const decisions = results.flatMap((r) => r.decisions ?? []);
   return {
     toFix: results.flatMap((r) => r.toFix),
     advice: results.flatMap((r) => r.advice),
     unresolved: results.flatMap((r) => r.unresolved),
     dropped: results.flatMap((r) => r.dropped),
     held: results.flatMap((r) => r.held),
+    ...(decisions.length > 0 ? { decisions } : {}),
   };
 }
 ```
 
-and make `judged()` start from `emptyJudged()`.
+`emptyJudged()` has no `decisions` key, so `judgeWithoutAdvisor` (unchanged) and existing `toEqual` assertions on whole results stay valid. If an existing test in `advise.test.ts` compares a whole advisor-produced `JudgedResult` with `toEqual` and now sees a `decisions` key, add `decisions: [...]` to that expectation; do not drop the field.
 
-4. `FinishAdvisor` gains the two members; `createFinishAdvisor` binds them:
+**3b. `src/finish/advise.ts`.** Import the moved pieces from `./advise-core`, and re-export the three types: `export type { AdviceRef, FinishAdvisorDeps, JudgedResult } from "./advise-core";`. `judgeOne` keeps its reuse block, then ends with `return adviseOn(deps, judgmentQuestion(deps, phase, f), f);` (build the question once and pass it to both the reuse lookup and `adviseOn`). `judged()` starts from `emptyJudged()`. `judgeContradiction`: after a decision, add `decisions: [decision]` to each object it returns (the type is `ContradictionJudgment`, so add `decisions?: AdviceDecision[]` to that pick: `Pick<JudgedResult, "toFix" | "unresolved" | "dropped" | "held" | "decisions">`), and in `judged()` push them: `if (r.decisions) out.decisions = [...(out.decisions ?? []), ...r.decisions];`.
+
+`FinishAdvisor` gains the two members (above); `createFinishAdvisor` binds:
 
 ```ts
     rulingsInForce: () => loadRulings(deps),
     reconcile: (check, budget) => reconcileRulings(deps, check, budget),
 ```
 
-Create `src/finish/advise-rulings.ts`:
+**3c. Create `src/finish/advise-rulings.ts`:**
 
 ```ts
 /**
  * Finish B §3.4-§3.6: findings that repeat a ruling. Exact matches reuse it with no call;
  * near matches are asked (up to `budget` per round) with the matched rulings as evidence;
- * whatever cannot be asked is carried unresolved. Nothing here ever adds to the fix list
- * except an explicit `fix` ruling.
+ * whatever cannot be asked is carried unresolved. Nothing here adds to the fix list except
+ * an explicit `fix` ruling.
  */
 import type { QuestionDraft } from "@/advisor";
 import { readTrustedDecisions } from "@/advisor";
-import { adviseOn, collectJudgment, emptyJudged, type FinishAdvisorDeps, type JudgedResult, judgmentQuestion } from "./advise";
+import {
+  adviseOn,
+  collectJudgment,
+  emptyJudged,
+  type FinishAdvisorDeps,
+  type JudgedResult,
+  judgmentQuestion,
+} from "./advise-core";
 import { type Ruling, type RulingCheck, rulingFromDecision } from "./ruling-check";
 import type { Finding } from "./types";
 
@@ -759,15 +861,22 @@ export async function reconcileRulings(
 }
 ```
 
-`collectJudgment` already pushes `f` to `unresolved` on hold or fallback, and to `toFix` only on `keep` (a `fix` ruling).
+`collectJudgment` pushes `f` to `unresolved` on hold or fallback, to `toFix` only on `keep` (a `fix` ruling), and to `dropped` on waive/supersede.
 
-Note: if `advise-rulings.ts` importing from `./advise` while `advise.ts` imports `./advise-rulings` creates a runtime cycle flagged by `bun run check:import-cycles`, move `loadRulings`/`nearQuestion`/`reconcileRulings` callers so that `createFinishAdvisor` receives them by injection instead: keep the binding in `advise.ts` as `rulingsInForce: () => _adviseRulings.load(deps)` where `_adviseRulings` is set by `advise-rulings.ts`… — simpler fix: put `emptyJudged`, `concatJudged`, `collectJudgment`, `adviseOn`, `judgmentQuestion` and the shared types in a new leaf `src/finish/advise-core.ts`, imported by both `advise.ts` and `advise-rulings.ts`. Do this split up front if the cycle check fails.
+**3e. Existing hand-built `FinishAdvisor` literals** stop typechecking once the two members are required. Add exactly these two members to each, nothing else:
 
-Export from `src/finish/index.ts`: `emptyJudged`, `concatJudged`, `MAX_NEAR_MATCH_QUESTIONS`, `type JudgeContext` (add `export interface JudgeContext {}` in `advise.ts` now as a placeholder type with a doc comment "Task 8 adds acceptance files"; biome may flag an empty interface — if so use `export type JudgeContext = { acceptance?: never };` and widen it in Task 8).
+```ts
+  rulingsInForce: async () => [],
+  reconcile: async () => ({ result: emptyJudged(), asked: 0 }),
+```
 
-- [ ] **Step 4: Run, expect PASS** — `timeout 30 bun test test/unit/finish/advise-rulings.test.ts test/unit/finish/advise.test.ts --timeout=5000`; `bun run check:import-cycles`.
+Sites (verify with `grep -n "FinishAdvisor = {\|): FinishAdvisor => ({" test/unit/finish/*.test.ts`): `test/unit/finish/review-loop.test.ts` (the literals near lines 102, 255, 329 and the `judgingAdvisor` factory near 560), `test/unit/finish/machine-advise.test.ts` (near line 38), `test/unit/finish/checkpoint-wiring.test.ts` (near line 337). Import `emptyJudged` from `@/finish` in each.
 
-- [ ] **Step 5: Commit** — `git commit -am "feat(finish): reconcile findings against rulings in the finish advisor"` (add the new files first).
+**3d. `src/finish/index.ts`:** add `export { concatJudged, emptyJudged } from "./advise-core";` and `export { MAX_NEAR_MATCH_QUESTIONS } from "./advise-rulings";`.
+
+- [ ] **Step 4: Run, expect PASS** — `timeout 30 bun test test/unit/finish/ --timeout=5000` (the whole finish directory, so the updated fakes are exercised), then from `packages/nax`: `bun run typecheck`, `bun run check:import-cycles` and `bun run check:file-sizes`.
+
+- [ ] **Step 5: Commit** — `git add src/finish test/unit/finish && git commit -m "feat(finish): reconcile findings against rulings in the finish advisor"`
 
 ---
 
@@ -779,23 +888,25 @@ Export from `src/finish/index.ts`: `emptyJudged`, `concatJudged`, `MAX_NEAR_MATC
 - Test: `test/unit/finish/review-loop-rulings.test.ts`
 
 **Interfaces:**
-- Consumes: `FinishAdvisor.rulingsInForce/reconcile` (Task 3), `splitForRulings`, `checkRulings`, `rulingFromDropped` (Task 2), `emptyJudged`, `concatJudged`, `MAX_NEAR_MATCH_QUESTIONS`.
+- Consumes: `FinishAdvisor.rulingsInForce/reconcile` (Task 3), `splitForRulings`, `checkRulings`, `rulingFromDropped` (Task 2), `emptyJudged`, `concatJudged`, `JudgedResult.decisions` (Task 3), `MAX_NEAR_MATCH_QUESTIONS`.
 - Produces:
 
 ```ts
 export async function reconcileBefore(
-  deps: Pick<ReviewLoopDeps, "advise" | "assertNotAborted">,
+  deps: { advise?: FinishAdvisor; assertNotAborted: () => void },
   merged: MergedFindings,
 ): Promise<{ merged: MergedFindings; result: JudgedResult; asked: number }>;
 export async function reconcileAfter(
-  deps: Pick<ReviewLoopDeps, "advise" | "assertNotAborted">,
+  deps: { advise?: FinishAdvisor; assertNotAborted: () => void },
   toFix: Finding[],
   judged: JudgedResult,
   budget: number,
 ): Promise<{ rest: Finding[]; result: JudgedResult }>;
 ```
 
-- [ ] **Step 1: Write the failing tests** — `test/unit/finish/review-loop-rulings.test.ts`. Use the real `createFinishAdvisor` over a fake `Advisor` so the loop and the advisor glue are exercised together:
+**Gating rule (spec §3.6):** the ruling check runs whenever a `FinishAdvisor` exists, even when only the approval caller is enabled (`buildFinishAdvisorForPhase` returns one then, `src/finish/advise.ts:292-294`). Only the *advisor call* is gated: with `judgedEnabled` false the near budget is 0, so exact matches are still reused (no call) and near matches are carried unresolved. With no `FinishAdvisor` at all (advisor off), nothing is checked and findings flow as today.
+
+- [ ] **Step 1: Write the failing tests** — `test/unit/finish/review-loop-rulings.test.ts`. Use the real `createFinishAdvisor` over a fake `Advisor`, so the loop and the advisor glue are exercised together. Copy `decision()` and `fakeAdvisor()` verbatim from the top of `test/unit/finish/advise.test.ts`.
 
 ```ts
 import { afterEach, describe, expect, test } from "bun:test";
@@ -810,12 +921,13 @@ const inputs: ReviewInputs = { changed: ["a.ts"], hints: [], stories: [], prdPat
 let restoreGit: () => void = () => {};
 afterEach(() => restoreGit());
 
-// decision() and fakeAdvisor() — same shapes as test/unit/finish/advise.test.ts
+// decision() and fakeAdvisor() — copied verbatim from test/unit/finish/advise.test.ts
 
-function loopDeps(ops: FinishOps, auditDir: string, advise?: FinishAdvisor) {
+function loopDeps(ops: FinishOps, auditDir: string, advise?: FinishAdvisor, acceptancePaths?: string[]) {
   return {
     ops,
     ...(advise ? { advise } : {}),
+    ...(acceptancePaths ? { acceptancePaths } : {}),
     inputs,
     audit: { auditDir, runId: "run-1" },
     now: () => "t",
@@ -824,17 +936,37 @@ function loopDeps(ops: FinishOps, auditDir: string, advise?: FinishAdvisor) {
   };
 }
 
-function finishAdvisor(dir: string, advisor: Advisor): FinishAdvisor {
+function finishAdvisor(dir: string, advisor: Advisor, judgedEnabled = true): FinishAdvisor {
   return createFinishAdvisor({
     advisor,
     repoRoot: dir,
     outputDir: join(dir, "out"),
     feature: "feat",
     acceptanceEnabled: () => true,
-    judgedEnabled: true,
-    approvalEnabled: false,
+    judgedEnabled,
+    approvalEnabled: !judgedEnabled,
     git: async () => ({ exitCode: 0 }),
   });
+}
+
+/** A fixer that records the findings it was handed; `edits` makes it dirty the tree so a commit happens. */
+function recordingFix(seen: Finding[][], git?: FinishGitModel): FinishOps["fix"] {
+  return async (_phase, req) => {
+    seen.push(req.findings ?? []);
+    if (git) git.dirty = true;
+    return {};
+  };
+}
+
+async function trustedWaive(dir: string, f: Finding): Promise<void> {
+  const d = await appendDecision(dir, "feat", (id) => ({
+    ...decision({ action: { type: "waive", reason: "outOfScope" }, findingSeverity: f.severity }),
+    dedupeKey: dedupeKeyFor(f.source ?? "quality", f),
+    anchorFile: f.file,
+    rulingTitle: f.title,
+    auditRef: `advisor-audit/feat/${id}.json`,
+  }));
+  await Bun.write(join(dir, "out", d.auditRef), JSON.stringify({ result: { decision: d } }));
 }
 
 const seam = "src/thread-job-run.ts";
@@ -854,13 +986,7 @@ describe("review round: rulings stick (finish B)", () => {
       const git: FinishGitModel = { dirty: false, head: 1 };
       restoreGit = installFinishGit(git);
       const seen: Finding[][] = [];
-      const ops = makeFinishOps([], { spec: [out([specJudged])], quality: [out([qualityPlain])] }, {
-        fix: async (_p, req) => {
-          seen.push(req.findings ?? []);
-          git.dirty = true;
-          return {};
-        },
-      });
+      const ops = makeFinishOps([], { spec: [out([specJudged])], quality: [out([qualityPlain])] }, { fix: recordingFix(seen, git) });
       const { advisor, asked } = fakeAdvisor((q) =>
         q.summary.startsWith("Possibly the same issue as D-2")
           ? { decision: decision({ id: "D-3", action: { type: "waive", reason: "D-2 keeps the seam" } }) }
@@ -869,26 +995,20 @@ describe("review round: rulings stick (finish B)", () => {
       const state = makeFinishState({ workdir: dir });
       await runReviewLoop(state, loopDeps(ops, dir, finishAdvisor(dir, advisor)));
       expect(seen.flat().map((f) => f.title)).not.toContain(qualityPlain.title);
-      expect(asked.map((q) => q.summary.slice(0, 32))).toEqual([
-        expect.stringContaining("ThreadJobRun has two lifetimes"),
-        "Possibly the same issue as D-2. ",
-      ]);
-      const entry = state.review.ledger.find((e) => e.finding.title === qualityPlain.title);
-      expect(entry?.state).toBe("waived");
+      expect(asked).toHaveLength(2);
+      expect(asked[0]?.summary).toContain("ThreadJobRun has two lifetimes");
+      expect(asked[1]?.summary.startsWith("Possibly the same issue as D-2.")).toBe(true);
+      // the same-round ruling carries its reason into the near question's evidence (spec §3.5)
+      expect(asked[1]?.evidence[0]?.text).toContain("acceptance drives runs through it");
+      expect(state.review.ledger.find((e) => e.finding.title === qualityPlain.title)?.state).toBe("waived");
     });
   });
 
-  test("koda case with the near budget spent or no decision: the sibling is unresolved, not fixed", async () => {
+  test("koda case, advisor gives no decision on the sibling: unresolved, not fixed", async () => {
     await withTempDir(async (dir) => {
-      const git: FinishGitModel = { dirty: false, head: 1 };
-      restoreGit = installFinishGit(git);
+      restoreGit = installFinishGit({ dirty: false, head: 1 });
       const seen: Finding[][] = [];
-      const ops = makeFinishOps([], { spec: [out([specJudged])], quality: [out([qualityPlain])] }, {
-        fix: async (_p, req) => {
-          seen.push(req.findings ?? []);
-          return {};
-        },
-      });
+      const ops = makeFinishOps([], { spec: [out([specJudged])], quality: [out([qualityPlain])] }, { fix: recordingFix(seen) });
       const { advisor } = fakeAdvisor((q) =>
         q.summary.startsWith("Possibly")
           ? { decision: null, fallbackReason: "down" }
@@ -903,44 +1023,45 @@ describe("review round: rulings stick (finish B)", () => {
 
   test("#2464 across rounds: a re-titled re-raise of a trusted waive never reaches the fixer", async () => {
     await withTempDir(async (dir) => {
-      const git: FinishGitModel = { dirty: false, head: 1 };
-      restoreGit = installFinishGit(git);
+      restoreGit = installFinishGit({ dirty: false, head: 1 });
       const ruled: Finding = { ...qualityPlain, severity: "LOW", title: "Exec argv loses its refusal", file: "src/pm.ts" };
-      const d = await appendDecision(dir, "feat", (id) => ({
-        ...decision({ action: { type: "waive", reason: "outOfScope" }, findingSeverity: "LOW" }),
-        dedupeKey: dedupeKeyFor("quality", ruled),
-        anchorFile: "src/pm.ts",
-        rulingTitle: ruled.title,
-        auditRef: `advisor-audit/feat/${id}.json`,
-      }));
-      await Bun.write(join(dir, "out", d.auditRef), JSON.stringify({ result: { decision: d } }));
+      await trustedWaive(dir, ruled);
       const retitled: Finding = { ...ruled, title: "Opening configRefusal unscreens Exec argv" };
       const seen: Finding[][] = [];
-      const ops = makeFinishOps([], { quality: [out([retitled])] }, {
-        fix: async (_p, req) => {
-          seen.push(req.findings ?? []);
-          return {};
-        },
-      });
-      const { advisor } = fakeAdvisor(() => ({ decision: decision({ id: "D-2", action: { type: "waive", reason: "D-1" } }) }));
+      const ops = makeFinishOps([], { quality: [out([retitled])] }, { fix: recordingFix(seen) });
+      const { advisor, asked } = fakeAdvisor(() => ({ decision: decision({ id: "D-2", action: { type: "waive", reason: "D-1" } }) }));
       const state = makeFinishState({ workdir: dir });
       await runReviewLoop(state, loopDeps(ops, dir, finishAdvisor(dir, advisor)));
       expect(seen).toEqual([]);
+      expect(asked).toHaveLength(1);
       expect(state.review.ledger.find((e) => e.finding.title === retitled.title)?.state).toBe("waived");
+    });
+  });
+
+  test("approval-only advisor: no judgment calls; near is unresolved, exact is reused", async () => {
+    await withTempDir(async (dir) => {
+      restoreGit = installFinishGit({ dirty: false, head: 1 });
+      const ruled: Finding = { ...qualityPlain, severity: "LOW", title: "Ruled", file: "src/pm.ts" };
+      await trustedWaive(dir, ruled);
+      const near: Finding = { ...ruled, title: "Different wording" };
+      const exact: Finding = { ...ruled, source: "spec" };
+      const seen: Finding[][] = [];
+      const ops = makeFinishOps([], { spec: [out([exact])], quality: [out([near])] }, { fix: recordingFix(seen) });
+      const { advisor, asked, reused } = fakeAdvisor(() => ({ decision: null }));
+      const state = makeFinishState({ workdir: dir });
+      await runReviewLoop(state, loopDeps(ops, dir, finishAdvisor(dir, advisor, false)));
+      expect(asked).toHaveLength(0);
+      expect(reused).toHaveLength(1);
+      expect(seen).toEqual([]);
+      expect(state.review.unresolved.map((f) => f.title)).toEqual(["Different wording"]);
     });
   });
 
   test("reconcile that throws carries its findings unresolved (Review Focus 3)", async () => {
     await withTempDir(async (dir) => {
-      const git: FinishGitModel = { dirty: false, head: 1 };
-      restoreGit = installFinishGit(git);
+      restoreGit = installFinishGit({ dirty: false, head: 1 });
       const seen: Finding[][] = [];
-      const ops = makeFinishOps([], { quality: [out([qualityPlain])] }, {
-        fix: async (_p, req) => {
-          seen.push(req.findings ?? []);
-          return {};
-        },
-      });
+      const ops = makeFinishOps([], { quality: [out([qualityPlain])] }, { fix: recordingFix(seen) });
       const base = finishAdvisor(dir, fakeAdvisor(() => ({ decision: null })).advisor);
       const advise: FinishAdvisor = {
         ...base,
@@ -964,13 +1085,7 @@ describe("review round: rulings stick (finish B)", () => {
       const git: FinishGitModel = { dirty: false, head: 1 };
       restoreGit = installFinishGit(git);
       const seen: Finding[][] = [];
-      const ops = makeFinishOps([], { quality: [out([qualityPlain])] }, {
-        fix: async (_p, req) => {
-          seen.push(req.findings ?? []);
-          git.dirty = true;
-          return {};
-        },
-      });
+      const ops = makeFinishOps([], { quality: [out([qualityPlain])] }, { fix: recordingFix(seen, git) });
       await runReviewLoop(makeFinishState({ workdir: dir }), loopDeps(ops, dir));
       expect(seen[0]?.map((f) => f.title)).toEqual([qualityPlain.title]);
     });
@@ -987,10 +1102,12 @@ describe("review round: rulings stick (finish B)", () => {
  * Finish B §3.4: the review round's ruling checks. Step 2 runs every merged finding
  * against the rulings already in force; step 4 runs the plain findings still headed for
  * the fixer against the rulings the advisor made in step 3 (the same-round cross-lens case).
+ * The advisor call is gated on `judgedEnabled` (budget 0 otherwise); the check is not.
  * Any failure carries the findings it was handling unresolved: never fixed against a ruling.
  */
 import { getSafeLogger } from "@/logger";
-import { concatJudged, emptyJudged, type FinishAdvisor, type JudgedResult } from "./advise";
+import type { FinishAdvisor } from "./advise";
+import { emptyJudged, type JudgedResult } from "./advise-core";
 import { MAX_NEAR_MATCH_QUESTIONS } from "./advise-rulings";
 import type { MergedFindings } from "./merge-findings";
 import { checkRulings, type RulingCheck, rulingFromDropped, splitForRulings } from "./ruling-check";
@@ -1009,7 +1126,7 @@ async function safeReconcile(
 ): Promise<{ result: JudgedResult; asked: number }> {
   if (check.reuse.length === 0 && check.near.length === 0) return { result: emptyJudged(), asked: 0 };
   try {
-    return await advisor.reconcile(check, budget);
+    return await advisor.reconcile(check, advisor.judgedEnabled ? Math.max(0, budget) : 0);
   } catch (err) {
     deps.assertNotAborted();
     getSafeLogger()?.warn("finish", "Ruling reconcile failed; carrying the matched findings unresolved", {
@@ -1026,7 +1143,7 @@ export async function reconcileBefore(
   merged: MergedFindings,
 ): Promise<{ merged: MergedFindings; result: JudgedResult; asked: number }> {
   const advisor = deps.advise;
-  if (!advisor?.judgedEnabled) return { merged, result: emptyJudged(), asked: 0 };
+  if (!advisor) return { merged, result: emptyJudged(), asked: 0 };
   const rulings = await advisor.rulingsInForce().catch(() => []);
   const split = splitForRulings(merged, rulings);
   const r = await safeReconcile(deps, advisor, split.check, MAX_NEAR_MATCH_QUESTIONS);
@@ -1040,16 +1157,16 @@ export async function reconcileAfter(
   budget: number,
 ): Promise<{ rest: Finding[]; result: JudgedResult }> {
   const advisor = deps.advise;
-  if (!advisor?.judgedEnabled || judged.dropped.length === 0) return { rest: toFix, result: emptyJudged() };
-  const check = checkRulings(toFix, judged.dropped.map(rulingFromDropped));
-  const r = await safeReconcile(deps, advisor, check, Math.max(0, budget));
+  if (!advisor || judged.dropped.length === 0) return { rest: toFix, result: emptyJudged() };
+  const byId = new Map((judged.decisions ?? []).map((d) => [d.id, d]));
+  const rulings = judged.dropped.map((d) => rulingFromDropped(d, byId.get(d.decisionId)));
+  const check = checkRulings(toFix, rulings);
+  const r = await safeReconcile(deps, advisor, check, budget);
   return { rest: check.rest, result: r.result };
 }
-
-export { concatJudged };
 ```
 
-In `src/finish/review-loop.ts` `runOneRound`, replace the block from `const judged = await judgeRound(state, deps, merged);` through `const fixList = ...` with:
+In `src/finish/review-loop.ts` `runOneRound`, replace the block from `const judged = await judgeRound(state, deps, merged);` through `const fixList = specFirst([...merged.toFix, ...judged.toFix]);` with:
 
 ```ts
   const before = await reconcileBefore(deps, merged);
@@ -1061,13 +1178,13 @@ In `src/finish/review-loop.ts` `runOneRound`, replace the block from `const judg
   const fixList = specFirst([...after.rest, ...judged.toFix]);
 ```
 
-(Remove the old standalone `full-round` / `recordJudgment` lines this replaces; keep their order: full-round before recordJudgment, as today.) Imports: `concatJudged`, `MAX_NEAR_MATCH_QUESTIONS` from `./advise` / `./advise-rulings`, `reconcileBefore`, `reconcileAfter` from `./review-rulings`.
+(This replaces the old `judgeRound` call, the old `full-round` line and the old `recordJudgment` line; keep full-round before recordJudgment, as today.) Imports to add: `concatJudged` from `./advise-core`, `MAX_NEAR_MATCH_QUESTIONS` from `./advise-rulings`, `reconcileBefore`, `reconcileAfter` from `./review-rulings`.
 
-Why `ruled` events land correctly: `recordJudgment` already writes `ruled → waived|superseded` for every `dropped` entry and `ruled → unresolved` for every `unresolved` one, so reused and near-ruled findings get their ledger state with no new event kinds.
+Why the ledger states come out right: `recordJudgment` already writes `ruled → waived|superseded` for every `dropped` entry and `ruled → unresolved` for every `unresolved` one, so reused and near-ruled findings get their state with no new ledger event kinds.
 
-- [ ] **Step 4: Run, expect PASS** — `timeout 30 bun test test/unit/finish/review-loop-rulings.test.ts test/unit/finish/review-loop.test.ts test/unit/finish/machine-advise.test.ts --timeout=5000`. Existing review-loop tests must stay green unchanged (a `FinishAdvisor` fake there that lacks `rulingsInForce`/`reconcile` will fail to typecheck: add `rulingsInForce: async () => []` and `reconcile: async () => ({ result: emptyJudged(), asked: 0 })` to those fakes, nothing else).
+- [ ] **Step 4: Run, expect PASS** — `timeout 30 bun test test/unit/finish/ --timeout=5000` (existing review-loop, machine and checkpoint tests must stay green unchanged apart from the fake members added in Task 3).
 
-- [ ] **Step 5: Commit** — `git commit -m "feat(finish): check every finding against rulings before and after judging a round"`
+- [ ] **Step 5: Commit** — `git add src/finish test/unit/finish && git commit -m "feat(finish): check every finding against rulings before and after judging a round"`
 
 ---
 
@@ -1156,6 +1273,19 @@ describe("formatRulingsForFix", () => {
       expect(out[1]?.evidenceMissing).toBe(true);
     });
   });
+
+  test("round trip: a fixer's `evidence: ruling D-2` line parses whole and validates against the shown ids", async () => {
+    await withTempDir(async (dir) => {
+      const parsed = parseDispositions("## DISPOSITIONS\n[1] fixed\n[2] rejected — evidence: ruling D-2\n");
+      expect(parsed[1]).toEqual({ index: 2, disposition: "rejected", evidence: "ruling D-2" });
+      const out = await validateDispositions(dir, parsed, ["D-2"]);
+      expect(out[1]?.evidenceMissing).toBeUndefined();
+    });
+  });
+
+  test("a file:line evidence still parses as before", () => {
+    expect(parseDispositions("[1] rejected — evidence: test/a.test.ts:4")[0]?.evidence).toBe("test/a.test.ts:4");
+  });
 ```
 
 `test/unit/finish/ops-impl-a4.test.ts` — add (imports to add at the top: `join` from `node:path`, `withTempDir` and `makeAdviceDecision` from `@test/helpers`, `appendDecision` from `@/advisor`):
@@ -1173,10 +1303,13 @@ describe("rulings reach the quality lens and the fixer (finish B §4)", () => {
 
   test("fix gets rulings, ruling ids and acceptance paths; reviewBranch gets decisions", async () => {
     await withTempDir(async (repo) => {
+      await withTempDir(async (outputDir) => {
       const { deps } = baseDeps();
-      await trustedWaive(repo, deps.callCtx.runtime.outputDir);
+      // never write into the real runtime output area: point the runtime at a temp dir
+      const callCtx = { ...deps.callCtx, runtime: { ...deps.callCtx.runtime, outputDir } };
+      await trustedWaive(repo, outputDir);
       const state = { ...freshState(), workdir: repo };
-      const ops = createFinishOps(deps);
+      const ops = createFinishOps({ ...deps, callCtx });
 
       const fixSeen = recordCallOp();
       await ops.fix("review", { state, findings: [], acceptancePaths: ["t.ts"] });
@@ -1188,6 +1321,7 @@ describe("rulings reach the quality lens and the fixer (finish B §4)", () => {
       const reviewSeen = recordCallOp();
       await ops.reviewBranch(state, inputs);
       expect(String(reviewSeen.input?.decisions)).toContain("D-1 waived");
+      });
     });
   });
 
@@ -1201,7 +1335,9 @@ describe("rulings reach the quality lens and the fixer (finish B §4)", () => {
 });
 ```
 
-(`recordCallOp` returns `CLEAN` for the fix call too; `fix` returns whatever `callOp` returns, which is fine here because only the input is asserted. If `makeMockCallContext()`'s runtime has no `outputDir`, pass one: `makeMockCallContext({ runtime: … })` per `test/helpers/call-context.ts`.)
+(`recordCallOp` returns `CLEAN` for the fix call too; only the input is asserted. `createFinishOps` reads `callCtx.runtime.outputDir` once, at construction (`src/finish/ops-impl.ts`, `advisorOutputDir`), so the spread runtime is enough; `callOp` is stubbed and never sees it. If the spread does not typecheck because `NaxRuntime` has non-enumerable members, use `Object.assign(Object.create(Object.getPrototypeOf(rt)), rt, { outputDir })`. Let Biome reformat the nested `withTempDir` indentation.)
+
+Spec note: §4.2 says `FixRequest` gains `rulings`; the plan instead loads rulings inside `ops-impl.fix` (one place, every phase), and `FixRequest` gains only `acceptancePaths`. Same behaviour.
 
 - [ ] **Step 2: Run, expect FAIL** — `timeout 30 bun test test/unit/advisor/format.test.ts test/unit/prompts/builders/finish-review-builder.test.ts test/unit/finish/fix/dispositions.test.ts test/unit/finish/ops-impl-a4.test.ts --timeout=5000`.
 
@@ -1288,10 +1424,16 @@ export function buildFinishFixPrompt(
 
 `build` passes `rulings: input.rulings, acceptancePaths: input.acceptancePaths` to `buildFinishFixPrompt`; `verify` becomes `validateDispositions(input.workdir, parsed.dispositions ?? [], input.rulingIds ?? [])`.
 
-`src/finish/fix/dispositions.ts`:
+`src/finish/fix/dispositions.ts` — two changes. First, the parser: today `EVIDENCE = /evidence\s*:\s*(\S+)/i` (line 6) captures only `ruling` from `evidence: ruling D-2`, so a ruling citation would never reach the validator. Change it to:
 
 ```ts
-const RULING_EVIDENCE = /^ruling (D-\d+)$/;
+const EVIDENCE = /evidence\s*:\s*(ruling\s+D-\d+|\S+)/i;
+```
+
+Second, the validator:
+
+```ts
+const RULING_EVIDENCE = /^ruling\s+(D-\d+)$/;
 
 export async function validateDispositions(
   workdir: string,
@@ -1479,6 +1621,8 @@ const AC_ID = /\bAC-\d+\b/;
 /** camelCase, PascalCase with an inner capital, snake_case, or dotted names: words a reviewer would quote as code. */
 const CODE_WORD = /\b(?:[a-z]+[A-Z]\w*|[A-Z][a-z0-9]+[A-Z]\w*|[a-z0-9]+_[a-z0-9_]+|[A-Za-z_]\w*\.[A-Za-z_][\w.]*)\b/g;
 const BACKTICK = /`([^`\n]+)`/g;
+/** File base names too common to say anything about which AC a finding touches. */
+const GENERIC_BASENAMES = new Set(["index", "types", "utils", "util", "main", "mod", "lib", "helpers", "constants"]);
 
 export function splitAcBlocks(text: string): AcBlock[] {
   const lines = text.split("\n");
@@ -1501,7 +1645,10 @@ export function findingIdentifiers(f: Pick<Finding, "title" | "problem" | "file"
   const ids = new Set<string>();
   for (const m of `${f.title}\n${f.problem}`.matchAll(BACKTICK)) if (m[1]) ids.add(m[1].trim());
   for (const m of f.title.matchAll(CODE_WORD)) ids.add(m[0]);
-  if (f.file) ids.add(basename(f.file, extname(f.file)));
+  if (f.file) {
+    const base = basename(f.file, extname(f.file));
+    if (!GENERIC_BASENAMES.has(base)) ids.add(base);
+  }
   return [...ids].filter((s) => s.length >= 3);
 }
 
@@ -1655,7 +1802,7 @@ function fixDrafts(pinnedAcs: string[] | undefined): Draft[] {
 7. An acceptance test excerpt in the evidence that asserts the behaviour the finding wants changed means a plain fix turns acceptance red. Then choose "Fix, and update acceptance tests" (say exactly what changes in them), waive (the test pins the behaviour on purpose), or supersede.
 ```
 
-(Check `test/unit/prompts/builders/advisor-builder.test.ts` if it snapshots POLICY; update that expectation in the same commit.)
+(There is no `advisor-builder.test.ts` today; nothing snapshots POLICY. Do not create one for this line.)
 
 - [ ] **Step 4: Run, expect PASS** — `timeout 30 bun test test/unit/advisor/ test/unit/prompts/ --timeout=5000`.
 
@@ -1667,25 +1814,35 @@ function fixDrafts(pinnedAcs: string[] | undefined): Draft[] {
 
 **Files:**
 - Modify: `src/finish/types.ts` (`Finding.allowedAcceptanceEdits`)
-- Modify: `src/finish/advise.ts` (`JudgeContext`, `judgmentQuestion`, `contradictionQuestion`, `adviseOn`, `judged` signature)
-- Modify: `src/finish/advise-rulings.ts`, `src/finish/review-rulings.ts`, `src/finish/review-loop.ts` (thread `JudgeContext`; `ReviewLoopDeps.acceptancePaths`)
+- Modify: `src/finish/advise-core.ts` (`JudgeContext`, `pinnedFor`, `allowedEdits`, `judgmentQuestion`, `contradictionQuestion`, `adviseOn`)
+- Modify: `src/finish/advise.ts` (`judgeOne`, `judgeContradiction`, `judged`, `FinishAdvisor` signatures, `createFinishAdvisor`)
+- Modify: `src/finish/advise-rulings.ts` (`nearQuestion`, `reconcileRulings` take `jctx`)
+- Modify: `src/finish/review-rulings.ts`, `src/finish/review-loop.ts` (thread `JudgeContext`; `ReviewLoopDeps.acceptancePaths`)
 - Modify: `src/finish/machine.ts` (`reviewLoopDeps`)
 - Test: `test/unit/finish/advise-rulings.test.ts`, `test/unit/finish/review-loop-rulings.test.ts`
 
 **Interfaces:**
-- Consumes: Task 6 (`AcceptanceFile`, `findPinnedAcs`, `loadAcceptanceFiles`), Task 7 (`pinnedAcs`, `updateAcs`).
+- Consumes: Task 6 (`AcceptanceFile`, `PinnedAc`, `findPinnedAcs`, `loadAcceptanceFiles`), Task 7 (`pinnedAcs` menu fact, `updateAcs` on the fix action).
 - Produces:
 
 ```ts
-// types.ts — Finding
+// types.ts — Finding gains
   /** Finish B §5.3: set by finish (never the model) when a ruling allows these acceptance-test edits. */
   allowedAcceptanceEdits?: { testPath: string; acIds: string[] }[];
-// advise.ts
-export interface JudgeContext { acceptance: AcceptanceFile[] }
-judged(findings, contradictions, state, jctx?: JudgeContext): Promise<JudgedResult>;
-reconcile(check, budget, jctx?: JudgeContext): Promise<{ result: JudgedResult; asked: number }>;
-// review-loop.ts — ReviewLoopDeps
-  /** Finish B: repo-relative acceptance test paths that exist; [] when acceptance is disabled. */
+// advise-core.ts
+export interface JudgeContext { acceptance: AcceptanceFile[] }           // field required; the PARAMETER is optional everywhere
+export function pinnedFor(deps: FinishAdvisorDeps, f: Finding, jctx?: JudgeContext): PinnedAc[];
+export function judgmentQuestion(deps, phase, f, jctx?: JudgeContext): QuestionDraft;
+export function contradictionQuestion(deps, c, jctx?: JudgeContext): QuestionDraft;
+export async function adviseOn(deps, question, f, pinned?: PinnedAc[]): Promise<JudgeOneResult>;
+// advise.ts — FinishAdvisor
+judged(findings: Finding[], contradictions: Contradiction[], state: FinishState, jctx?: JudgeContext): Promise<JudgedResult>;
+reconcile(check: RulingCheck, budget: number, jctx?: JudgeContext): Promise<{ result: JudgedResult; asked: number }>;
+// advise-rulings.ts
+export function nearQuestion(deps, f, rulings, jctx?: JudgeContext): QuestionDraft;
+export async function reconcileRulings(deps, check, budget, jctx?: JudgeContext): Promise<{ result: JudgedResult; asked: number }>;
+// review-loop.ts — ReviewLoopDeps gains
+  /** Finish B: repo-relative acceptance test paths that exist; [] or absent when acceptance is disabled. */
   acceptancePaths?: string[];
 ```
 
@@ -1734,78 +1891,147 @@ describe("acceptance evidence on judgment questions (#2468)", () => {
 });
 ```
 
-In `test/unit/finish/review-loop-rulings.test.ts`, one test that a round with `acceptancePaths: ["t.ts"]` (file written in `dir` with an AC-51 block mentioning `costSpentUsd`) sends the judgment question with `ac` evidence (add `acceptancePaths` to `loopDeps` via a parameter).
+In `test/unit/finish/review-loop-rulings.test.ts` (uses that file's `loopDeps`, `finishAdvisor`, `fakeAdvisor`, `out`):
 
-- [ ] **Step 2: Run, expect FAIL.**
+```ts
+  test("a round with acceptance paths sends the judgment question with ac evidence (#2468)", async () => {
+    await withTempDir(async (dir) => {
+      restoreGit = installFinishGit({ dirty: false, head: 1 });
+      await Bun.write(join(dir, "t.ts"), 'test("AC-51: costSpentUsd is written", () => { row.costSpentUsd; });');
+      const finding: Finding = {
+        severity: "MEDIUM", title: "Remove write-only `costSpentUsd`", problem: "p", fix: "f",
+        source: "spec", file: "src/db/job.ts", judgment: true,
+      };
+      const ops = makeFinishOps([], { spec: [out([finding])] });
+      const { advisor, asked } = fakeAdvisor(() => ({ decision: null }));
+      await runReviewLoop(makeFinishState({ workdir: dir }), loopDeps(ops, dir, finishAdvisor(dir, advisor), ["t.ts"]));
+      expect(asked[0]?.evidence.some((e) => e.source === "ac" && e.ref === "t.ts#AC-51")).toBe(true);
+      expect(asked[0]?.options.some((o) => o.fixed?.updateAcs?.includes("AC-51"))).toBe(true);
+    });
+  });
+```
+
+- [ ] **Step 2: Run, expect FAIL** — `timeout 30 bun test test/unit/finish/advise-rulings.test.ts test/unit/finish/review-loop-rulings.test.ts --timeout=5000`.
 
 - [ ] **Step 3: Implement.**
 
-`advise.ts`:
+**`src/finish/types.ts`:** add `allowedAcceptanceEdits` to `Finding` (see Interfaces).
+
+**`src/finish/advise-core.ts`:**
 
 ```ts
 import { type AcceptanceFile, findPinnedAcs, type PinnedAc } from "./acceptance-evidence";
 
+/** Finish B: what a judgment question may carry beyond the finding. */
 export interface JudgeContext {
   acceptance: AcceptanceFile[];
 }
 
-function pinnedFor(deps: FinishAdvisorDeps, f: Finding, jctx: JudgeContext | undefined): PinnedAc[] {
+export function pinnedFor(deps: FinishAdvisorDeps, f: Finding, jctx?: JudgeContext): PinnedAc[] {
   if (!jctx || !deps.acceptanceEnabled()) return [];
   return findPinnedAcs(jctx.acceptance, f);
 }
-```
 
-`judgmentQuestion(deps, phase, f, jctx?)`: compute `const pinned = pinnedFor(deps, f, jctx);`, append evidence
+function acEvidence(pinned: PinnedAc[]): { source: "ac"; ref: string; text: string }[] {
+  return pinned.map((p) => ({ source: "ac" as const, ref: `${p.path}#${p.acId}`, text: p.excerpt }));
+}
 
-```ts
-      ...pinned.map((p) => ({ source: "ac" as const, ref: `${p.path}#${p.acId}`, text: p.excerpt })),
-```
+function pinnedAcIds(pinned: PinnedAc[]): { pinnedAcs: string[] } | Record<string, never> {
+  return pinned.length > 0 ? { pinnedAcs: [...new Set(pinned.map((p) => p.acId))] } : {};
+}
 
-and pass `...(pinned.length > 0 ? { pinnedAcs: [...new Set(pinned.map((p) => p.acId))] } : {})` into `buildMenu`. Same for `contradictionQuestion` over `c.spec` and `c.quality` combined (dedupe by `path#acId`).
-
-`adviseOn(deps, question, f, pinned: PinnedAc[] = [])`: in the `fix` branch,
-
-```ts
-  const acs = action.updateAcs ?? [];
-  if (acs.length === 0) return { ref, keep: { ...f, fix: `${f.fix}\n\nAdvisor ruling (${decision.id}): ${action.instruction}` } };
-  const allowed = allowedEdits(pinned, acs);
-  const where = allowed.map((a) => `${a.acIds.join(", ")} in ${a.testPath}`).join("; ");
-  return {
-    ref,
-    keep: {
-      ...f,
-      fix: `${f.fix}\n\nAdvisor ruling (${decision.id}): ${action.instruction}. You may edit these acceptance tests, and only these: ${where}.`,
-      allowedAcceptanceEdits: allowed,
-    },
-  };
-```
-
-with
-
-```ts
-function allowedEdits(pinned: PinnedAc[], acIds: string[]): { testPath: string; acIds: string[] }[] {
+/** The test files and AC ids a fix-and-update ruling may change: the pinned blocks it named. */
+export function allowedEdits(pinned: PinnedAc[], acIds: string[]): { testPath: string; acIds: string[] }[] {
   const byPath = new Map<string, string[]>();
   for (const p of pinned) {
     if (!acIds.includes(p.acId)) continue;
-    byPath.set(p.path, [...(byPath.get(p.path) ?? []), p.acId]);
+    byPath.set(p.path, [...new Set([...(byPath.get(p.path) ?? []), p.acId])]);
   }
-  return [...byPath.entries()].map(([testPath, ids]) => ({ testPath, acIds: [...new Set(ids)] }));
+  return [...byPath.entries()].map(([testPath, ids]) => ({ testPath, acIds: ids }));
+}
+
+/** The finding with the ruling appended to its fix, plus the acceptance edits a fix-and-update ruling allows. */
+export function withFixRuling(f: Finding, decisionId: string, instruction: string, allowed: { testPath: string; acIds: string[] }[]): Finding {
+  const base = `${f.fix}\n\nAdvisor ruling (${decisionId}): ${instruction}`;
+  if (allowed.length === 0) return { ...f, fix: base };
+  const where = allowed.map((a) => `${a.acIds.join(", ")} in ${a.testPath}`).join("; ");
+  return {
+    ...f,
+    fix: `${base}. You may edit these acceptance tests, and only these: ${where}.`,
+    allowedAcceptanceEdits: allowed,
+  };
 }
 ```
 
-`judgeOne(deps, phase, f, jctx?)` computes `pinned` once, builds the question with `jctx`, and calls `adviseOn(deps, question, f, pinned)`. `judged(findings, contradictions, _state, jctx?)` threads `jctx` to `judgeOne`; `judgeContradiction` adds the same allowed-edits handling on its `fix` branch using the contradiction's pinned list. `nearQuestion` and `reconcileRulings` take `jctx?` and pass it through (`judgmentQuestion(deps, …, jctx)`, `adviseOn(…, pinnedFor(deps, finding, jctx))` — export `pinnedFor`).
+`judgmentQuestion(deps, phase, f, jctx?)`: compute `const pinned = pinnedFor(deps, f, jctx);`, append `...acEvidence(pinned)` to `evidence`, and spread `...pinnedAcIds(pinned)` into the `buildMenu({ kind: "finish-judgment", … })` facts.
 
-`FinishAdvisor`: `judged(findings, contradictions, state, jctx?)`, `reconcile(check, budget, jctx?)`; `createFinishAdvisor` passes them through.
+`contradictionQuestion(deps, c, jctx?)`: `const pinned = dedupePinned([...pinnedFor(deps, c.spec, jctx), ...pinnedFor(deps, c.quality, jctx)]);` with
 
-`review-loop.ts`: `ReviewLoopDeps.acceptancePaths?: string[]`. In `runOneRound`, after the abort check that follows the lenses:
+```ts
+function dedupePinned(pinned: PinnedAc[]): PinnedAc[] {
+  const seen = new Set<string>();
+  return pinned.filter((p) => {
+    const k = `${p.path}#${p.acId}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+```
+
+(export `dedupePinned`), then the same evidence and menu spreads.
+
+`adviseOn(deps, question, f, pinned = [])`: its `fix` branch becomes
+
+```ts
+  const allowed = allowedEdits(pinned, action.updateAcs ?? []);
+  return { ref, decision, keep: withFixRuling(f, decision.id, action.instruction, allowed) };
+```
+
+**`src/finish/advise.ts`:**
+- `judgeOne(deps, phase, f, jctx?)`: `const question = judgmentQuestion(deps, phase, f, jctx);` (used for the reuse lookup and the call), and `return adviseOn(deps, question, f, pinnedFor(deps, f, jctx));`.
+- `judgeContradiction(deps, c, jctx?)`: build `const pinned = dedupePinned([...pinnedFor(deps, c.spec, jctx), ...pinnedFor(deps, c.quality, jctx)]);` and `contradictionQuestion(deps, c, jctx)`. In its `fix` branch replace the hand-built `fix` string with:
+
+```ts
+    const allowed = allowedEdits(pinned, action.updateAcs ?? []);
+    const toFix = [withFixRuling(c.spec, decision.id, action.instruction, allowed)];
+```
+
+  and return `toFix` in place of the old `[{ ...c.spec, fix }]` (the quality side stays superseded, as today).
+- `FinishAdvisor.judged` and `.reconcile` gain the optional `jctx` parameter; `createFinishAdvisor` threads it: `judged(findings, contradictions, _state, jctx)` passes `jctx` to `judgeOne(deps, f.source ?? "quality", f, jctx)` and `judgeContradiction(deps, c, jctx)`; `reconcile: (check, budget, jctx) => reconcileRulings(deps, check, budget, jctx)`.
+
+**`src/finish/advise-rulings.ts`:**
+
+```ts
+export function nearQuestion(deps: FinishAdvisorDeps, f: Finding, rulings: Ruling[], jctx?: JudgeContext): QuestionDraft {
+  const base = judgmentQuestion(deps, f.source ?? "quality", f, jctx);
+  // …rest unchanged
+}
+```
+
+and in `reconcileRulings(deps, check, budget, jctx?)` the asked branch becomes:
+
+```ts
+    const pinned = pinnedFor(deps, finding, jctx);
+    collectJudgment(out, finding, await adviseOn(deps, nearQuestion(deps, finding, rulings, jctx), finding, pinned));
+```
+
+`reuseOne` keeps calling `judgmentQuestion(deps, …, f)` without `jctx` (a reused ruling asks nothing; the question only labels the ledger reuse line).
+
+**`src/finish/review-rulings.ts`:** `reconcileBefore(deps, merged, jctx?)` and `reconcileAfter(deps, toFix, judged, budget, jctx?)` pass `jctx` to `safeReconcile`, which calls `advisor.reconcile(check, budget, jctx)`.
+
+**`src/finish/review-loop.ts`:**
+- `ReviewLoopDeps` gains `acceptancePaths?: string[]`.
+- `judgeRound(state, deps, merged, jctx?)` passes it: `advisor.judged(judged, contradictions, state, jctx)`.
+- In `runOneRound`, immediately after the `deps.assertNotAborted();` that follows the lenses:
 
 ```ts
   const jctx: JudgeContext = { acceptance: await loadAcceptanceFiles(state.workdir, deps.acceptancePaths ?? []) };
 ```
 
-Pass `jctx` to `reconcileBefore(deps, merged, jctx)`, `judgeRound(state, deps, before.merged, jctx)` (→ `advisor.judged(..., jctx)`), `reconcileAfter(deps, …, jctx)` (→ `advisor.reconcile(check, budget, jctx)`).
+  then `reconcileBefore(deps, merged, jctx)`, `judgeRound(state, deps, before.merged, jctx)`, `reconcileAfter(deps, before.merged.toFix, judgedNow, MAX_NEAR_MATCH_QUESTIONS - before.asked, jctx)`.
 
-`machine.ts` `reviewLoopDeps(deps, inputs)` adds:
+**`src/finish/machine.ts`** `reviewLoopDeps(deps, inputs)` adds:
 
 ```ts
     acceptancePaths:
@@ -1814,9 +2040,11 @@ Pass `jctx` to `reconcileBefore(deps, merged, jctx)`, `judgeRound(state, deps, b
         : deps.context.groups.filter((g) => g.exists).map((g) => g.testPath),
 ```
 
+(Task 9 replaces this expression with `acceptancePathsOf(deps.context)`.)
+
 - [ ] **Step 4: Run, expect PASS** — `timeout 30 bun test test/unit/finish/ --timeout=5000`.
 
-- [ ] **Step 5: Commit** — `git commit -m "feat(finish): judgment questions see the acceptance tests a ruling would contradict"`
+- [ ] **Step 5: Commit** — `git add src/finish test/unit/finish && git commit -m "feat(finish): judgment questions see the acceptance tests a ruling would contradict"`
 
 ---
 
@@ -1824,39 +2052,62 @@ Pass `jctx` to `reconcileBefore(deps, merged, jctx)`, `judgeRound(state, deps, b
 
 **Files:**
 - Create: `src/finish/acceptance-guard.ts`
-- Modify: `src/finish/state.ts` (`acceptanceGuard`), `src/finish/review-loop.ts` (`fixRound`), `src/finish/gates-loop.ts` (`fixOnce`), `src/finish/ops.ts` callers pass `acceptancePaths`
-- Test: `test/integration/finish/acceptance-guard.test.ts` (real git), `test/unit/finish/review-loop-rulings.test.ts` (wiring)
+- Modify: `src/finish/state.ts` (`AcceptanceGuardRecord`, `FinishState.acceptanceGuard`)
+- Modify: `src/finish/review-loop.ts` (`fixRound`), `src/finish/gates-loop.ts` (`fixOnce`), `src/finish/machine.ts` (use `acceptancePathsOf`)
+- Modify: `src/finish/index.ts` (export `_guardDeps`, `acceptancePathsOf`, `gateGuardPaths`, `guardAcceptanceEdits`, `mergeGuard`, `allowedFrom`, type `AcceptanceGuardRecord`)
+- Test: `test/integration/finish/acceptance-guard.test.ts` (real git), `test/unit/finish/acceptance-guard.test.ts` (stubbed git + pure helpers), `test/unit/finish/review-loop-rulings.test.ts` (wiring)
+
+**Design notes the implementer must keep:**
+- "Pre-session content" (spec §6.3) is `HEAD`: fix sessions never commit (`finishFixOp` has no commit tool and its prompt forbids committing), and the guard runs before `commitFixes`. So restoring from `HEAD` restores the pre-session file.
+- The test git stub (`installFinishGit`, `test/helpers/finish-machine.ts:126-167`) ignores pathspecs: it reports `a.ts` for any dirty `--name-only` diff and clears `dirty` on any `restore`. The guard therefore filters every git listing to `args.paths` **in JavaScript** before acting, so a machine test whose fixer dirties `a.ts` is never touched.
+- Paths absent from `HEAD` (untracked, or staged-new) cannot be restored from `HEAD`. They are never deleted; they are reported in `notRestorable`.
+- Accepted limitation (spec §6.3): when the guard reverts a file, the session's disposition for the finding still reads `fixed` and the ledger records `fixed-unreviewed`. The next full review round re-raises it if it is still real, and the PR body shows the revert. No disposition rewriting.
+- Gate fixes whose failing gate is the acceptance gate (`runGateZero`, `src/finish/gates-loop.ts:27-34`, `failing: ["acceptance"]`) are NOT guarded: repairing a red acceptance test is that session's job (A2-R1).
 
 **Interfaces:**
+- Consumes: `splitAcBlocks` (Task 6), `Finding.allowedAcceptanceEdits` (Task 8), `FixRequest.acceptancePaths` (Task 5), `gitLiteral`, `repoRoot`, `listBaseTree` (`src/finish/set-aside-git.ts`), `FinishContext` (`src/finish/context.ts`).
 - Produces:
 
 ```ts
 // state.ts
-export interface AcceptanceGuardRecord { reverted: string[]; changed: string[]; beyondRuling: string[]; failed: boolean }
-// FinishState
+export interface AcceptanceGuardRecord {
+  reverted: string[];
+  notRestorable: string[];
+  changed: string[];
+  beyondRuling: string[];
+  failed: boolean;
+}
+// FinishState gains:
+  /** Finish B §6.4: what the acceptance-file guard did, accumulated across guarded sessions. */
   acceptanceGuard?: AcceptanceGuardRecord;
+
 // acceptance-guard.ts
-export interface GuardOutcome { reverted: string[]; changed: string[]; beyondRuling: string[]; failed: boolean }
+export type GuardOutcome = AcceptanceGuardRecord;
+export const _guardDeps: { guard: typeof guardAcceptanceEdits; readText: (path: string) => Promise<string | null> };
+export function acceptancePathsOf(context: Pick<FinishContext, "acceptanceStatus" | "groups">): string[];
+export function gateGuardPaths(failing: string[], context: Pick<FinishContext, "acceptanceStatus" | "groups">): string[];
+export function allowedFrom(findings: Finding[] | undefined): { testPath: string; acIds: string[] }[];
 export async function guardAcceptanceEdits(args: {
   workdir: string;
-  paths: string[];                                         // repo-relative acceptance test paths
-  allowed: { testPath: string; acIds: string[] }[];        // union over the session's findings
+  paths: string[];
+  allowed: { testPath: string; acIds: string[] }[];
 }): Promise<GuardOutcome>;
 export function mergeGuard(prev: AcceptanceGuardRecord | undefined, next: GuardOutcome): AcceptanceGuardRecord;
-export function allowedFrom(findings: Finding[] | undefined): { testPath: string; acIds: string[] }[];
+export function guardWorthRecording(g: GuardOutcome): boolean;
 ```
 
-- [ ] **Step 1: Write the failing integration tests** — `test/integration/finish/acceptance-guard.test.ts`, using the real-git fixture:
+- [ ] **Step 1: Write the failing integration tests** — `test/integration/finish/acceptance-guard.test.ts`:
 
 ```ts
 import { describe, expect, test } from "bun:test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { guardAcceptanceEdits } from "@/finish/acceptance-guard";
+import { guardAcceptanceEdits } from "@/finish";
 import { commitAll, git, withRepo } from "./set-aside-fixture";
 
-const ACC = "test/acceptance/feat file.test.ts"; // a space, on purpose (Review Focus 4)
-const original = '// AC-40 envelope\nexpect(envelope);\n// AC-51 cost\nexpect(cost);\n';
+const ACC = "test/acceptance/feat file.test.ts"; // a space on purpose (Review Focus 4)
+const original = "// AC-40 envelope\nexpect(envelope);\n// AC-51 cost\nexpect(cost);\n";
+const NONE = { reverted: [], notRestorable: [], changed: [], beyondRuling: [], failed: false };
 
 async function seed(dir: string): Promise<void> {
   await mkdir(join(dir, "test/acceptance"), { recursive: true });
@@ -1864,14 +2115,14 @@ async function seed(dir: string): Promise<void> {
   await commitAll(dir, "acceptance");
 }
 
-describe("guardAcceptanceEdits", () => {
-  test("an unauthorised edit is restored from HEAD and reported", async () => {
+describe("guardAcceptanceEdits (real git)", () => {
+  test("an unauthorised edit is restored from HEAD; other edits stay", async () => {
     await withRepo(async (dir) => {
       await seed(dir);
       await writeFile(join(dir, ACC), original.replace("expect(cost)", "// removed"));
-      await writeFile(join(dir, "a.ts"), "export const a = 2;\n"); // a normal fix edit stays
+      await writeFile(join(dir, "a.ts"), "export const a = 2;\n");
       const out = await guardAcceptanceEdits({ workdir: dir, paths: [ACC], allowed: [] });
-      expect(out).toEqual({ reverted: [ACC], changed: [], beyondRuling: [], failed: false });
+      expect(out).toEqual({ ...NONE, reverted: [ACC] });
       expect(await Bun.file(join(dir, ACC)).text()).toBe(original);
       expect(await git(dir, "status", "--porcelain")).toContain("a.ts");
     });
@@ -1883,7 +2134,7 @@ describe("guardAcceptanceEdits", () => {
       await writeFile(join(dir, ACC), original.replace("expect(envelope)", "expect(flat)").replace("expect(cost)", "// gone"));
       const out = await guardAcceptanceEdits({ workdir: dir, paths: [ACC], allowed: [{ testPath: ACC, acIds: ["AC-40"] }] });
       expect(out.reverted).toEqual([]);
-      expect(out.changed.sort()).toEqual(["AC-40", "AC-51"]);
+      expect([...out.changed].sort()).toEqual(["AC-40", "AC-51"]);
       expect(out.beyondRuling).toEqual(["AC-51"]);
       expect(await Bun.file(join(dir, ACC)).text()).toContain("expect(flat)");
     });
@@ -1892,86 +2143,201 @@ describe("guardAcceptanceEdits", () => {
   test("untouched acceptance file: nothing reported", async () => {
     await withRepo(async (dir) => {
       await seed(dir);
-      expect(await guardAcceptanceEdits({ workdir: dir, paths: [ACC], allowed: [] })).toEqual({
-        reverted: [], changed: [], beyondRuling: [], failed: false,
-      });
+      expect(await guardAcceptanceEdits({ workdir: dir, paths: [ACC], allowed: [] })).toEqual(NONE);
     });
   });
 
-  test("a path absent at HEAD is left alone and not counted as reverted (Review Focus 4)", async () => {
+  test("an untracked acceptance file absent at HEAD is left alone and reported not restorable (Review Focus 4)", async () => {
     await withRepo(async (dir) => {
       await mkdir(join(dir, "test/acceptance"), { recursive: true });
       await writeFile(join(dir, ACC), "// AC-1 new\n");
       const out = await guardAcceptanceEdits({ workdir: dir, paths: [ACC], allowed: [] });
-      expect(out.reverted).toEqual([]);
+      expect(out).toEqual({ ...NONE, notRestorable: [ACC] });
       expect(await Bun.file(join(dir, ACC)).exists()).toBe(true);
     });
   });
 
-  test("no paths: no git call, nothing reported", async () => {
-    expect(await guardAcceptanceEdits({ workdir: "/nonexistent", paths: [], allowed: [] })).toEqual({
-      reverted: [], changed: [], beyondRuling: [], failed: false,
+  test("a staged-new acceptance file absent at HEAD is reported not restorable, not deleted", async () => {
+    await withRepo(async (dir) => {
+      await mkdir(join(dir, "test/acceptance"), { recursive: true });
+      await writeFile(join(dir, ACC), "// AC-1 new\n");
+      await git(dir, "add", "--", ACC);
+      const out = await guardAcceptanceEdits({ workdir: dir, paths: [ACC], allowed: [] });
+      expect(out).toEqual({ ...NONE, notRestorable: [ACC] });
+      expect(await Bun.file(join(dir, ACC)).exists()).toBe(true);
     });
   });
 });
 ```
 
-Wiring test in `test/unit/finish/review-loop-rulings.test.ts`: stub `_acceptanceGuardDeps.guard` (see below) to return `{ reverted: ["t.ts"], changed: [], beyondRuling: [], failed: false }`, run one round with one plain finding and `acceptancePaths: ["t.ts"]`, assert `state.acceptanceGuard?.reverted` is `["t.ts"]`, the guard was called with `allowed: []`, and the fix request carried `acceptancePaths: ["t.ts"]`.
+`test/unit/finish/acceptance-guard.test.ts` (stubbed git and pure helpers):
 
-- [ ] **Step 2: Run, expect FAIL** — `timeout 60 bun test test/integration/finish/acceptance-guard.test.ts --timeout=20000`.
+```ts
+import { afterEach, describe, expect, test } from "bun:test";
+import { installFinishGit, makeFinishContext } from "@test/helpers";
+import { acceptancePathsOf, allowedFrom, gateGuardPaths, guardAcceptanceEdits, guardWorthRecording, mergeGuard } from "@/finish";
+
+let restoreGit: () => void = () => {};
+afterEach(() => restoreGit());
+const NONE = { reverted: [], notRestorable: [], changed: [], beyondRuling: [], failed: false };
+
+describe("guardAcceptanceEdits with the test git stub", () => {
+  test("a dirty tree whose only change is not an acceptance path triggers no restore (machine tests stay intact)", async () => {
+    const trail: string[] = [];
+    const model = { dirty: true, head: 1 };
+    restoreGit = installFinishGit(model, trail);
+    const out = await guardAcceptanceEdits({ workdir: "/repo", paths: ["test/acceptance/feat.test.ts"], allowed: [] });
+    expect(out).toEqual(NONE);
+    expect(trail).not.toContain("restore");
+    expect(model.dirty).toBe(true);
+  });
+
+  test("no paths: nothing reported, no git call", async () => {
+    const trail: string[] = [];
+    restoreGit = installFinishGit({ dirty: true, head: 1 }, trail);
+    expect(await guardAcceptanceEdits({ workdir: "/repo", paths: [], allowed: [] })).toEqual(NONE);
+    expect(trail).toEqual([]);
+  });
+});
+
+describe("path helpers", () => {
+  test("acceptancePathsOf: existing groups only; none when acceptance is disabled", () => {
+    const ctx = makeFinishContext();
+    expect(acceptancePathsOf(ctx)).toEqual(["test/acceptance/feat.test.ts"]);
+    expect(acceptancePathsOf({ ...ctx, acceptanceStatus: "disabled" })).toEqual([]);
+    expect(acceptancePathsOf({ ...ctx, groups: ctx.groups.map((g) => ({ ...g, exists: false })) })).toEqual([]);
+  });
+
+  test("gateGuardPaths: a red acceptance gate is never guarded (A2-R1)", () => {
+    const ctx = makeFinishContext();
+    expect(gateGuardPaths(["acceptance"], ctx)).toEqual([]);
+    expect(gateGuardPaths(["lint"], ctx)).toEqual(["test/acceptance/feat.test.ts"]);
+  });
+
+  test("allowedFrom unions the findings' allowed edits", () => {
+    const f = { severity: "LOW" as const, title: "t", problem: "p", fix: "f" };
+    expect(
+      allowedFrom([f, { ...f, allowedAcceptanceEdits: [{ testPath: "a.ts", acIds: ["AC-1"] }] }]),
+    ).toEqual([{ testPath: "a.ts", acIds: ["AC-1"] }]);
+  });
+
+  test("mergeGuard accumulates without duplicates; guardWorthRecording ignores a clean outcome", () => {
+    const merged = mergeGuard({ ...NONE, reverted: ["a"] }, { ...NONE, reverted: ["a", "b"], failed: true });
+    expect(merged).toEqual({ ...NONE, reverted: ["a", "b"], failed: true });
+    expect(guardWorthRecording(NONE)).toBe(false);
+    expect(guardWorthRecording({ ...NONE, changed: ["AC-1"] })).toBe(true);
+  });
+});
+```
+
+Wiring test, appended to `test/unit/finish/review-loop-rulings.test.ts` (import `_guardDeps` from `@/finish`; restore it in `afterEach`):
+
+```ts
+describe("acceptance guard wiring (finish B §6)", () => {
+  const realGuard = _guardDeps.guard;
+  afterEach(() => {
+    _guardDeps.guard = realGuard;
+  });
+
+  test("a review fix session gets the acceptance paths, the guard runs before the commit, and its outcome is recorded", async () => {
+    await withTempDir(async (dir) => {
+      const git: FinishGitModel = { dirty: false, head: 1 };
+      restoreGit = installFinishGit(git);
+      const calls: { paths: string[]; allowed: unknown[] }[] = [];
+      _guardDeps.guard = async (args) => {
+        calls.push({ paths: args.paths, allowed: args.allowed });
+        return { reverted: ["t.ts"], notRestorable: [], changed: [], beyondRuling: [], failed: false };
+      };
+      const fixReqs: (string[] | undefined)[] = [];
+      const ops = makeFinishOps([], { quality: [out([qualityPlain])] }, {
+        fix: async (_p, req) => {
+          fixReqs.push(req.acceptancePaths);
+          git.dirty = true;
+          return {};
+        },
+      });
+      const state = makeFinishState({ workdir: dir });
+      await runReviewLoop(state, loopDeps(ops, dir, undefined, ["t.ts"]));
+      expect(fixReqs[0]).toEqual(["t.ts"]);
+      expect(calls[0]).toEqual({ paths: ["t.ts"], allowed: [] });
+      expect(state.acceptanceGuard?.reverted).toEqual(["t.ts"]);
+    });
+  });
+});
+```
+
+- [ ] **Step 2: Run, expect FAIL** — `timeout 60 bun test test/integration/finish/acceptance-guard.test.ts --timeout=20000` and `timeout 30 bun test test/unit/finish/acceptance-guard.test.ts --timeout=5000`.
 
 - [ ] **Step 3: Implement** `src/finish/acceptance-guard.ts`:
 
 ```ts
 /**
  * Finish B §6.3: after a review or gate fix session, before its commit. An acceptance
- * test file the session edited without a ruling naming its ACs is put back to HEAD,
- * path only. Authorised edits stay; the AC blocks that changed are reported, and any
- * outside the ruling is flagged (not reverted). Git failures are reported as
- * `failed: true`, never thrown: the commit goes ahead.
+ * test file the session edited without a ruling naming its ACs is restored to HEAD
+ * (= the pre-session content: fix sessions never commit), path only. A file absent at
+ * HEAD is never deleted; it is reported as not restorable. Authorised edits stay; the AC
+ * blocks that changed are reported, and any outside the ruling is flagged, not reverted.
+ * Git failures are reported as `failed`, never thrown: the commit goes ahead.
+ *
+ * Every git listing is filtered to `paths` here, not only by pathspec: the test git stub
+ * ignores pathspecs, and a guard that trusted them would restore unrelated files.
  */
 import { join } from "node:path";
 import { splitAcBlocks } from "./acceptance-evidence";
+import type { FinishContext } from "./context";
 import { gitLiteral, listBaseTree, repoRoot } from "./set-aside-git";
 import type { AcceptanceGuardRecord } from "./state";
 import type { Finding } from "./types";
 
-export interface GuardOutcome {
-  reverted: string[];
-  changed: string[];
-  beyondRuling: string[];
-  failed: boolean;
+export type GuardOutcome = AcceptanceGuardRecord;
+
+const none = (): GuardOutcome => ({ reverted: [], notRestorable: [], changed: [], beyondRuling: [], failed: false });
+
+export function acceptancePathsOf(context: Pick<FinishContext, "acceptanceStatus" | "groups">): string[] {
+  if (context.acceptanceStatus === "disabled") return [];
+  return context.groups.filter((g) => g.exists).map((g) => g.testPath);
 }
 
-const NONE: GuardOutcome = { reverted: [], changed: [], beyondRuling: [], failed: false };
-
-export const _acceptanceGuardDeps = {
-  readText: (path: string): Promise<string | null> =>
-    Bun.file(path)
-      .text()
-      .catch(() => null),
-};
+/** A gate fix for a red acceptance gate must be free to repair the acceptance test (A2-R1). */
+export function gateGuardPaths(
+  failing: string[],
+  context: Pick<FinishContext, "acceptanceStatus" | "groups">,
+): string[] {
+  return failing.includes("acceptance") ? [] : acceptancePathsOf(context);
+}
 
 export function allowedFrom(findings: Finding[] | undefined): { testPath: string; acIds: string[] }[] {
   return (findings ?? []).flatMap((f) => f.allowedAcceptanceEdits ?? []);
 }
 
-async function changedPaths(root: string, paths: string[]): Promise<string[] | null> {
-  const res = await gitLiteral(["diff", "--name-only", "-z", "HEAD", "--", ...paths], root);
-  return res.exitCode === 0 ? res.stdout.split("\0").filter(Boolean) : null;
+const nulList = (stdout: string, want: Set<string>): string[] => stdout.split("\0").filter((p) => want.has(p));
+
+async function touchedPaths(root: string, paths: string[]): Promise<string[] | null> {
+  const want = new Set(paths);
+  const [diff, others] = await Promise.all([
+    gitLiteral(["diff", "--name-only", "--no-renames", "-z", "HEAD", "--", ...paths], root),
+    gitLiteral(["ls-files", "--others", "--exclude-standard", "-z", "--", ...paths], root),
+  ]);
+  if (diff.exitCode !== 0 || others.exitCode !== 0) return null;
+  return [...new Set([...nulList(diff.stdout, want), ...nulList(others.stdout, want)])];
 }
 
 function changedAcs(before: string, after: string): string[] {
   const was = new Map(splitAcBlocks(before).map((b) => [b.acId, b.text]));
   const now = new Map(splitAcBlocks(after).map((b) => [b.acId, b.text]));
-  const ids = new Set([...was.keys(), ...now.keys()]);
-  return [...ids].filter((id) => was.get(id) !== now.get(id));
+  return [...new Set([...was.keys(), ...now.keys()])].filter((id) => was.get(id) !== now.get(id));
 }
 
 async function acsChangedIn(root: string, path: string): Promise<string[]> {
   const head = await gitLiteral(["show", `HEAD:${path}`], root);
-  const after = await _acceptanceGuardDeps.readText(join(root, path));
+  const after = await _guardDeps.readText(join(root, path));
   return changedAcs(head.exitCode === 0 ? head.stdout : "", after ?? "");
+}
+
+async function restoreFromHead(root: string, paths: string[]): Promise<boolean> {
+  if (paths.length === 0) return true;
+  const res = await gitLiteral(["restore", "--source=HEAD", "--staged", "--worktree", "--", ...paths], root);
+  return res.exitCode === 0;
 }
 
 export async function guardAcceptanceEdits(args: {
@@ -1979,50 +2345,58 @@ export async function guardAcceptanceEdits(args: {
   paths: string[];
   allowed: { testPath: string; acIds: string[] }[];
 }): Promise<GuardOutcome> {
-  if (args.paths.length === 0) return NONE;
+  if (args.paths.length === 0) return none();
   const root = await repoRoot(args.workdir);
-  const [changed, inHead] = await Promise.all([changedPaths(root, args.paths), listBaseTree(root, "HEAD")]);
-  if (changed === null || inHead === null) return { ...NONE, failed: true };
+  const [touched, inHead] = await Promise.all([touchedPaths(root, args.paths), listBaseTree(root, "HEAD")]);
+  if (touched === null || inHead === null) return { ...none(), failed: true };
   const allowedPaths = new Set(args.allowed.map((a) => a.testPath));
-  const unauthorised = changed.filter((p) => !allowedPaths.has(p) && inHead.has(p));
-  const restore =
-    unauthorised.length > 0
-      ? await gitLiteral(["restore", "--source=HEAD", "--staged", "--worktree", "--", ...unauthorised], root)
-      : { exitCode: 0 };
-  const authorised = changed.filter((p) => allowedPaths.has(p));
-  const perPath = await Promise.all(authorised.map(async (p) => ({ p, acs: await acsChangedIn(root, p) })));
+  const unauthorised = touched.filter((p) => !allowedPaths.has(p));
+  const restorable = unauthorised.filter((p) => inHead.has(p));
+  const restored = await restoreFromHead(root, restorable);
+  const authorised = touched.filter((p) => allowedPaths.has(p));
+  const changed = [...new Set((await Promise.all(authorised.map((p) => acsChangedIn(root, p)))).flat())];
   const ruled = new Set(args.allowed.flatMap((a) => a.acIds));
-  const changedIds = [...new Set(perPath.flatMap((x) => x.acs))];
   return {
-    reverted: restore.exitCode === 0 ? unauthorised : [],
-    changed: changedIds,
-    beyondRuling: changedIds.filter((id) => !ruled.has(id)),
-    failed: restore.exitCode !== 0,
+    reverted: restored ? restorable : [],
+    notRestorable: unauthorised.filter((p) => !inHead.has(p)),
+    changed,
+    beyondRuling: changed.filter((id) => !ruled.has(id)),
+    failed: !restored,
   };
+}
+
+export function guardWorthRecording(g: GuardOutcome): boolean {
+  return g.failed || g.reverted.length + g.notRestorable.length + g.changed.length > 0;
 }
 
 export function mergeGuard(prev: AcceptanceGuardRecord | undefined, next: GuardOutcome): AcceptanceGuardRecord {
   const u = (a: string[] = [], b: string[] = []): string[] => [...new Set([...a, ...b])];
   return {
     reverted: u(prev?.reverted, next.reverted),
+    notRestorable: u(prev?.notRestorable, next.notRestorable),
     changed: u(prev?.changed, next.changed),
     beyondRuling: u(prev?.beyondRuling, next.beyondRuling),
     failed: (prev?.failed ?? false) || next.failed,
   };
 }
+
+/** The one injectable seam: loop tests stub `guard`; `readText` is the guard's own file read. */
+export const _guardDeps = {
+  guard: guardAcceptanceEdits,
+  readText: (path: string): Promise<string | null> =>
+    Bun.file(path)
+      .text()
+      .catch(() => null),
+};
 ```
 
-Note: `gitLiteral` prefixes `--literal-pathspecs`, so the space in the path is literal; `git show HEAD:<path>` takes a revision:path argument, not a pathspec, which is fine.
+(`git show HEAD:<path>` takes a revision:path argument, not a pathspec, so `--literal-pathspecs` does not affect it; with the stub, `show` returns a file list, which only matters for authorised paths, which machine tests never have.)
 
-Also add an injectable seam so loop tests can stub the guard without git:
+`src/finish/state.ts`: add the exported `AcceptanceGuardRecord` interface and the optional `acceptanceGuard` field on `FinishState` (doc comment as in Interfaces). `createFinishState` leaves it unset.
 
-```ts
-export const _guardDeps = { guard: guardAcceptanceEdits };
-```
-
-`state.ts`: add the `AcceptanceGuardRecord` interface (exported) and `acceptanceGuard?: AcceptanceGuardRecord;` on `FinishState` with a doc comment "Finish B §6.4: what the acceptance-file guard did, across sessions".
-
-`review-loop.ts` `fixRound`, after `step.kind === "done"` and before `buildFixCommitMessage`:
+`src/finish/review-loop.ts`:
+- `fixRound`'s `runFixStep(state, deps.fix, "review", { findings: fixList })` becomes `runFixStep(state, deps.fix, "review", { findings: fixList, acceptancePaths: deps.acceptancePaths ?? [] })`.
+- Right after the `if (step.kind !== "done") { … return; }` block and before `const outcome = step.outcome;`:
 
 ```ts
   const guard = await _guardDeps.guard({
@@ -2030,20 +2404,21 @@ export const _guardDeps = { guard: guardAcceptanceEdits };
     paths: deps.acceptancePaths ?? [],
     allowed: allowedFrom(fixList),
   });
-  if (guard.reverted.length + guard.changed.length > 0 || guard.failed) {
-    state.acceptanceGuard = mergeGuard(state.acceptanceGuard, guard);
-  }
+  if (guardWorthRecording(guard)) state.acceptanceGuard = mergeGuard(state.acceptanceGuard, guard);
 ```
 
-and the `runFixStep(state, deps.fix, "review", { findings: fixList })` call gains `acceptancePaths: deps.acceptancePaths ?? []`.
+`src/finish/gates-loop.ts` `fixOnce`:
+- `const paths = gateGuardPaths(gates.failing, deps.context);`
+- the `runFixStep(..., "gate", { failing: gates.failing, gateOutput: gates.output })` request gains `acceptancePaths: paths`.
+- After the `if (step.kind !== "done") { … }` block and before `buildFixCommitMessage`, the same guard block with `paths` and `allowed: []`.
 
-`gates-loop.ts` `fixOnce`: compute `const paths = deps.context.acceptanceStatus === "disabled" ? [] : deps.context.groups.filter((g) => g.exists).map((g) => g.testPath);` (extract this into a tiny exported helper `acceptancePathsOf(context: FinishContext): string[]` in `acceptance-guard.ts` and use it from both `machine.ts` (Task 8 site) and here), pass `acceptancePaths: paths` into `runFixStep`, and run the same guard block (with `allowed: []`, since gate fixes carry no findings) before its `commitFixes`.
+`src/finish/machine.ts` `reviewLoopDeps`: replace the inline expression added in Task 8 with `acceptancePaths: acceptancePathsOf(deps.context),`.
 
-`runFixStep`'s `req` type is `Omit<FixRequest, "state" | "interrupt" | "continuation">`, so `acceptancePaths` flows through to `ops.fix` with no change there; `ops-impl.ts` already forwards it (Task 5).
+`runFixStep`'s `req` is `Omit<FixRequest, "state" | "interrupt" | "continuation">`, so `acceptancePaths` reaches `ops.fix` unchanged; `ops-impl.ts` forwards it (Task 5). The acceptance-phase loop (`src/finish/acceptance-loop.ts`) is NOT changed: it passes no `acceptancePaths` and runs no guard.
 
-- [ ] **Step 4: Run, expect PASS** — `timeout 60 bun test test/integration/finish/acceptance-guard.test.ts --timeout=20000` and `timeout 30 bun test test/unit/finish/ --timeout=5000`.
+- [ ] **Step 4: Run, expect PASS** — `timeout 60 bun test test/integration/finish/ --timeout=20000` and `timeout 30 bun test test/unit/finish/ --timeout=5000` (the whole finish unit directory: machine, gates and checkpoint tests must stay green, which proves the stub-safety filter).
 
-- [ ] **Step 5: Commit** — `git commit -m "feat(finish): guard the acceptance file in review and gate fix sessions"`
+- [ ] **Step 5: Commit** — `git add src/finish test/unit/finish test/integration/finish && git commit -m "feat(finish): guard the acceptance file in review and gate fix sessions"`
 
 ---
 
@@ -2051,38 +2426,77 @@ and the `runFixStep(state, deps.fix, "review", { findings: fixList })` call gain
 
 **Files:**
 - Modify: `src/finish/pr/body.ts` (`buildAdvisorSection`, `buildUnresolvedSection`)
-- Modify: `src/finish/pr/context.ts` (`FinishPrContext.unresolved.acceptanceGuard`, `fromResolution`)
-- Test: `test/unit/finish/pr-body.test.ts`
+- Modify: `src/finish/pr/context.ts` (`FinishPrContext["unresolved"]`, `fromResolution`)
+- Test: `test/unit/finish/pr-body.test.ts`, `test/unit/finish/pr-context.test.ts`
 
 **Interfaces:**
-- Consumes: `AdviceDecision.acceptanceChanges` (Task 7), `FinishState.acceptanceGuard` (Task 9).
-- Produces: `FinishPrContext["unresolved"]["acceptanceGuard"]?: AcceptanceGuardRecord`.
+- Consumes: `AdviceDecision.acceptanceChanges` (Task 7), `FinishState.acceptanceGuard`, `AcceptanceGuardRecord` (Task 9).
+- Produces: `FinishPrContext["unresolved"]` gains `acceptanceGuard?: AcceptanceGuardRecord`.
 
-- [ ] **Step 1: Write the failing tests** (use the context factory already used in `pr-body.test.ts`; find it with `grep -n "function ctx\|makePrContext" test/unit/finish/pr-body.test.ts`):
+**Rendering rules (why):** guard lines go in their own `### Acceptance-file guard` block, not in the "Verification failures" list and not in the findings table. The `unresolved` block is only forced onto an otherwise-clean ready PR when the guard did something a reviewer must see (a revert, a not-restorable file, a change beyond the ruling, or a failed check). An authorised, in-ruling AC change alone does not force it: the "Advisor decisions" section already reports it, and forcing `unresolved` would render the whole resolved-findings table (`buildFindingsTable`, `src/finish/pr/findings-sections.ts:71-81`) under an "Unresolved" heading on a ready PR.
+
+- [ ] **Step 1: Write the failing tests.** In `test/unit/finish/pr-body.test.ts` (it defines `baseCtx` at line 39; import `makeAdviceDecision` from `@test/helpers` if not already imported):
 
 ```ts
-  test("a decision with acceptanceChanges says which acceptance tests changed (finish B §6.4)", () => {
-    const body = buildFinishBody(ctxWith({
-      advisorDecisions: [makeAdviceDecision({ id: "D-3", action: { type: "fix", instruction: "i", updateAcs: ["AC-40"] }, acceptanceChanges: ["AC-40", "AC-51"] })],
-    }));
+const emptyUnresolved = (over: Partial<NonNullable<FinishPrContext["unresolved"]>> = {}) => ({
+  reason: "",
+  findings: [],
+  acceptance: "green" as const,
+  gates: [],
+  missing: [],
+  unreviewed: [],
+  accepted: [],
+  ledger: [],
+  stops: [],
+  handoffs: [],
+  ...over,
+});
+
+describe("finish B: acceptance changes and the guard", () => {
+  test("a decision with acceptanceChanges says which acceptance tests changed", () => {
+    const body = buildFinishBody(
+      baseCtx({
+        advisorDecisions: [
+          makeAdviceDecision({
+            id: "D-3",
+            action: { type: "fix", instruction: "i", updateAcs: ["AC-40"] },
+            acceptanceChanges: ["AC-40", "AC-51"],
+          }),
+        ],
+      }),
+    );
     expect(body).toContain("— acceptance tests changed: AC-40, AC-51");
   });
 
-  test("the Unresolved section lists guard reverts, beyond-ruling changes and a failed check", () => {
-    const body = buildFinishBody(ctxWith({
-      unresolved: { ...draftUnresolved(), acceptanceGuard: { reverted: ["t.ts"], changed: ["AC-51"], beyondRuling: ["AC-51"], failed: true } },
-    }));
+  test("the guard block lists reverts, not-restorable files, beyond-ruling changes and a failed check", () => {
+    const body = buildFinishBody(
+      baseCtx({
+        unresolved: emptyUnresolved({
+          acceptanceGuard: { reverted: ["t.ts"], notRestorable: ["n.ts"], changed: ["AC-51"], beyondRuling: ["AC-51"], failed: true },
+        }),
+      }),
+    );
+    expect(body).toContain("### Acceptance-file guard");
     expect(body).toContain("- Acceptance-file edits reverted: t.ts");
+    expect(body).toContain("- Acceptance files a fix created that could not be restored: n.ts");
     expect(body).toContain("- Acceptance tests changed beyond the ruling: AC-51");
     expect(body).toContain("- acceptance-file check could not run");
+    expect(body).not.toMatch(/Verification failures[\s\S]*Acceptance-file edits reverted/);
   });
+
+  test("no guard record: no guard block", () => {
+    expect(buildFinishBody(baseCtx({ unresolved: emptyUnresolved() }))).not.toContain("Acceptance-file guard");
+  });
+});
 ```
 
-(`ctxWith` / `draftUnresolved` stand for whatever context builders `pr-body.test.ts` already uses; reuse them rather than writing new ones, extending them with an override parameter if they lack one.)
+In `test/unit/finish/pr-context.test.ts`, add one test in that file's existing style (it drives `loadFinishPrContext` over a `FinishState` with a `resolution`; copy the setup of its nearest "ready" test): a ready-outcome state with `acceptanceGuard: { reverted: [], notRestorable: [], changed: ["AC-40"], beyondRuling: [], failed: false }` and no other residue produces **no** `unresolved`; the same state with `reverted: ["t.ts"]` produces `unresolved.acceptanceGuard.reverted` equal to `["t.ts"]`.
 
-- [ ] **Step 2: Run, expect FAIL** — `timeout 30 bun test test/unit/finish/pr-body.test.ts --timeout=5000`.
+- [ ] **Step 2: Run, expect FAIL** — `timeout 30 bun test test/unit/finish/pr-body.test.ts test/unit/finish/pr-context.test.ts --timeout=5000`.
 
-- [ ] **Step 3: Implement.** `buildAdvisorSection`'s `line`:
+- [ ] **Step 3: Implement.**
+
+`body.ts` `buildAdvisorSection`, replace the `line` arrow:
 
 ```ts
   const line = (d: AdviceDecision): string => {
@@ -2091,21 +2505,45 @@ and the `runFixStep(state, deps.fix, "review", { findings: fixList })` call gain
   };
 ```
 
-`context.ts`: add `acceptanceGuard?: AcceptanceGuardRecord;` to the `unresolved` type, set `...(state.acceptanceGuard ? { acceptanceGuard: state.acceptanceGuard } : {})` in `fromResolution`, and include `state.acceptanceGuard !== undefined` in `needsBlock` so a ready PR still shows a revert.
-
-`body.ts` `buildUnresolvedSection`, add to `checks`:
+`body.ts`, a new helper next to `buildUnresolvedSection`:
 
 ```ts
-    ...(u.acceptanceGuard?.reverted.length ? [`- Acceptance-file edits reverted: ${flat(u.acceptanceGuard.reverted.join(", "))}`] : []),
-    ...(u.acceptanceGuard?.beyondRuling.length
-      ? [`- Acceptance tests changed beyond the ruling: ${flat(u.acceptanceGuard.beyondRuling.join(", "))}`]
+function guardLines(g: AcceptanceGuardRecord | undefined): string[] {
+  if (!g) return [];
+  return [
+    ...(g.reverted.length > 0 ? [`- Acceptance-file edits reverted: ${flat(g.reverted.join(", "))}`] : []),
+    ...(g.notRestorable.length > 0
+      ? [`- Acceptance files a fix created that could not be restored: ${flat(g.notRestorable.join(", "))}`]
       : []),
-    ...(u.acceptanceGuard?.failed ? ["- acceptance-file check could not run"] : []),
+    ...(g.beyondRuling.length > 0 ? [`- Acceptance tests changed beyond the ruling: ${flat(g.beyondRuling.join(", "))}`] : []),
+    ...(g.failed ? ["- acceptance-file check could not run"] : []),
+  ];
+}
 ```
+
+and in `buildUnresolvedSection`'s `parts`, right after the `...block("Verification failures", checks),` entry:
+
+```ts
+    ...block("Acceptance-file guard", guardLines(u.acceptanceGuard)),
+```
+
+(`AcceptanceGuardRecord` type import from `../state`.)
+
+`context.ts`:
+- add `acceptanceGuard?: AcceptanceGuardRecord;` to the `unresolved` type;
+- in `fromResolution`:
+
+```ts
+  const g = state.acceptanceGuard;
+  const guardNeedsBlock = g !== undefined && (g.reverted.length + g.notRestorable.length + g.beyondRuling.length > 0 || g.failed);
+  const needsBlock = outcome === "draft" || acceptedResidue.length > 0 || state.stops.length > 0 || guardNeedsBlock;
+```
+
+and add `...(g ? { acceptanceGuard: g } : {}),` inside the `unresolved` object.
 
 - [ ] **Step 4: Run, expect PASS** — `timeout 30 bun test test/unit/finish/pr-body.test.ts test/unit/finish/pr-context.test.ts test/unit/finish/pr-body-ledger.test.ts --timeout=5000`.
 
-- [ ] **Step 5: Commit** — `git commit -m "feat(finish): PR body shows ruling acceptance changes and guard actions"`
+- [ ] **Step 5: Commit** — `git add src/finish/pr test/unit/finish && git commit -m "feat(finish): PR body shows ruling acceptance changes and guard actions"`
 
 ---
 
@@ -2117,7 +2555,7 @@ and the `runFixStep(state, deps.fix, "review", { findings: fixList })` call gain
 
 - [ ] **Step 1:** From `packages/nax`: `bun run test` → all green. Fix failures in the code, not by loosening tests.
 - [ ] **Step 2:** From `packages/nax`: `bun run test:coverage` → passes; every new `src/` file at or above 80% lines and functions.
-- [ ] **Step 3:** From the repo root: `bun run check:all` and `bun run typecheck` → green (file sizes, import cycles, cast ratchets, barrel rules).
+- [ ] **Step 3:** From `packages/nax`: `bun run lint:fix`, then from the repo root: `bun run check:all` and `bun run typecheck` → green (Biome, file sizes, import cycles, cast ratchets, barrel rules).
 - [ ] **Step 4:** Commit any doc touch-ups: `git commit -m "docs(finish): series B implementation notes"`.
 - [ ] **Step 5 (needs approval at launch, not part of this plan's execution):** go-live = one live finish with the advisor on, on the next feature run that uses finish, via the local build in `repos/nax-run` after it is fast-forwarded (only when no run is using it). Billed.
 
@@ -2125,5 +2563,6 @@ and the `runFixStep(state, deps.fix, "review", { findings: fixList })` call gain
 
 ## Self-review notes
 
-- Spec coverage: §3.1-3.3 → Tasks 1-2; §3.4-3.6 → Tasks 3-4; §4.1-4.2 → Task 5; §5.1 → Task 6; §5.2 → Tasks 7-8; §5.3 → Task 8; §6.1-6.3 → Task 9; §6.4 → Tasks 7, 9, 10; §7 error handling → Task 4 (reconcile throw), Task 6 (missing file), Task 9 (`failed`); §8 tests → mapped per task; go-live → Task 11 Step 5.
-- Known judgment calls an implementer may hit: the `advise.ts` ↔ `advise-rulings.ts` import cycle (Task 3 gives the leaf-module fallback); existing `FinishAdvisor` fakes in other tests need the two new members (Task 4 Step 4).
+- Spec coverage: §3.1-3.3 → Tasks 1-2; §3.4-3.6 → Tasks 3-4; §4.1-4.2 → Task 5; §5.1 → Task 6; §5.2 → Tasks 7-8; §5.3 → Task 8; §6.1-6.3 → Task 9; §6.4 → Tasks 7, 9, 10; §7 error handling → Task 4 (reconcile throw), Task 6 (missing file), Task 9 (`failed`, `notRestorable`); §8 tests → mapped per task; go-live → Task 11 Step 5.
+- Final review (2026-10-12, one read-only reviewer) fixes applied: ruling evidence parse regex (Task 5); guard filters git output to the acceptance paths so the pathspec-blind test stub cannot trigger restores (Task 9); `advise-core.ts` leaf split is the default, not a fallback (Task 3); the ruling check runs for an approval-only advisor with a 0 budget (Task 4); same-round rulings carry their decision and reason via `JudgedResult.decisions` (Tasks 2-4); red acceptance gates are not guarded (Task 9); untracked / staged-new acceptance files are reported `notRestorable`, never deleted (Task 9); the guard has its own PR block and only forces the unresolved block when it did something (Task 10); every hand-built `FinishAdvisor` fake is listed (Task 3); one guard seam `_guardDeps` (Task 9); fixed-after-revert is an accepted, documented limitation (Task 9, spec §6.3).
+- Every task's Step 4 runs the whole `test/unit/finish/` directory from Task 3 on, so interface changes that break existing tests surface in the task that made them.

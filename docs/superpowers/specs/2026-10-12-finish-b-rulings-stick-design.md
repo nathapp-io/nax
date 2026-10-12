@@ -49,7 +49,7 @@ Against a ruling in force (§3.2), a finding is:
 - **near**: same anchor, not exact.
 - **none**: otherwise.
 
-Lens is not part of matching. `dedupeKeyFor` stays as it is for the ledger line, so older readers still work.
+Lens is not part of the anchor + title rule. The legacy-key comparison is lens-specific (the key starts with the phase); cross-lens matching comes from the anchor rule. `dedupeKeyFor` stays as it is for the ledger line, so older readers still work.
 
 ### 3.2 Rulings in force
 
@@ -59,7 +59,7 @@ The waive and supersede decisions from `readTrustedDecisions` for this feature, 
 
 ### 3.3 The ruling check (new, pure: `finish/ruling-check.ts`)
 
-`checkRulings(findings, rulings) → { reuse: {finding, decision}[]; near: {finding, decision}[]; rest: Finding[] }`. When one finding matches several rulings, the newest exact one wins; otherwise the newest near one.
+`checkRulings(findings, rulings) → { reuse: {finding, decision}[]; near: {finding, decision}[]; rest: Finding[] }`. When one finding matches several rulings, the newest exact one wins; otherwise the newest near one. If the newest exact match is a blocking ruling, the finding is asked (near), even when an older non-blocking exact match exists: the newest ruling is the one in force.
 
 ### 3.4 Order in a round (`runOneRound`, `finish/review-loop.ts`)
 
@@ -79,7 +79,7 @@ Same as `judgmentQuestion`, plus one evidence item `{ source: "decision", ref: "
 ### 3.6 Caps and fallbacks
 
 - Near-match questions have their own cap: at most `MAX_NEAR_MATCH_QUESTIONS = 6` per round. They do not use `MAX_ADVISE_ROUNDS`.
-- Advisor off, judged caller disabled, cap spent, advisor error or no decision: a near match is carried **unresolved** (ledger `ruled` → `unresolved`, kept out of the fix list), never fixed. An exact reuse needs no advisor call and always applies when the advisor is on. With the advisor off, no rulings exist to match.
+- Advisor off, judged caller disabled, cap spent, advisor error or no decision: a near match is carried **unresolved** (ledger `ruled` → `unresolved`, kept out of the fix list), never fixed. An exact reuse needs no advisor call and always applies when the advisor is on. With the advisor off (no finish advisor at all), no rulings are checked. When only the approval caller is enabled, a finish advisor still exists: the check runs with a near budget of 0, so exact matches are reused and near matches are carried unresolved, with no judgment call.
 
 ## 4. Rulings reach every agent
 
@@ -100,7 +100,7 @@ If a change you are about to make would undo one of these, do not make it.
 
 For the review phase it adds: a finding that can only be fixed by undoing a ruling is REJECTED with `evidence: ruling D-n`. `validateDispositions` (`finish/fix/dispositions.ts`) today splits evidence on `:` and checks the path exists, so it would mark `ruling D-n` as `evidenceMissing`. It changes: evidence matching `^ruling D-\d+$` is checked against the ruling ids shown to this session (`FinishFixInput.rulingIds`) instead: valid when the id is in that list, otherwise `evidenceMissing`.
 
-The text comes from a new `formatRulingsForFix` in `advisor/format.ts`, built from the same prompt-safe set as `formatDecisionsForPrompt`. `FixRequest` gains `rulings?: string`; every `runFixStep` caller loads it once per fix session.
+The text comes from a new `formatRulingsForFix` in `advisor/format.ts`, built from the same prompt-safe set as `formatDecisionsForPrompt`. The rulings are loaded inside the fix operation wrapper (`ops-impl.fix`) for every phase, so no `runFixStep` caller changes; `FixRequest` gains only `acceptancePaths` (§6).
 
 ## 5. Acceptance evidence on judgment questions (#2468)
 
@@ -129,7 +129,7 @@ Unreadable or missing files give no evidence, never a throw. This runs for every
 
 ### 6.1 Which sessions
 
-- **Review and gate fix sessions:** guarded.
+- **Review and gate fix sessions:** guarded, except a gate fix whose failing gate is the acceptance gate itself (`runGateZero`): repairing a red acceptance test is that session's job (A2-R1).
 - **Acceptance-phase fix session:** not guarded (A2-R1: fixing a buggy generated test is its job). It does get the rulings section (§4.2).
 
 ### 6.2 The prompt rule
@@ -140,18 +140,20 @@ Guarded sessions get: "Do not edit the acceptance test files (<paths>) unless a 
 
 After a guarded session returns `done`:
 
-1. List changed acceptance test paths in the working tree (`git diff --name-only` + untracked, limited to the group test paths).
+1. List changed acceptance test paths in the working tree (`git diff --name-only HEAD` + untracked via `git ls-files --others --exclude-standard`), filtered to the group test paths in code, not only by pathspec.
 2. A path is **authorised** when some finding in this session's list has `allowedAcceptanceEdits` for it.
-3. Unauthorised changed paths are restored to their pre-session content, path only (`git checkout <pre-session sha> -- <path>`; set-aside's path-only restore helper where it fits). Recorded on `state.acceptanceGuard.reverted` (so it lands in `result.json`), and a line in the PR body's Unresolved section.
+3. Unauthorised changed paths are restored to their pre-session content, path only: `git restore --source=HEAD --staged --worktree`. `HEAD` is the pre-session content because fix sessions never commit and the guard runs before `commitFixes`. A path absent at `HEAD` (untracked or staged-new) is never deleted; it is recorded on `state.acceptanceGuard.notRestorable` and shown in the PR body. Recorded on `state.acceptanceGuard.reverted` (so it lands in `result.json`), and a line in the PR body's Unresolved section.
 4. For authorised paths, the AC blocks whose text changed are computed (block split from §5.1, before vs after). The changed AC ids are recorded on `state.acceptanceGuard.changed`. Changed AC ids not in `allowedAcceptanceEdits` are **flagged, not reverted**: recorded on `state.acceptanceGuard.beyondRuling` and listed in the PR body as "Acceptance tests changed beyond the ruling".
+
+Accepted limitation: when the guard reverts a file, the session's disposition still reads `fixed` and the finish ledger records `fixed-unreviewed`. The next full review round re-raises the finding if it is still real, and the PR body shows the revert.
 
 A session stopped mid-turn is set aside by series A. The guard runs when its patch is re-applied and committed by a later attempt, through the same path.
 
 ### 6.4 Recording
 
 - `AdviceDecision` gains `acceptanceChanges?: string[]` (the menu's `updateAcs` the ruling chose), written at decision time.
-- `FinishState` gains `acceptanceGuard?: { reverted: string[]; changed: string[]; beyondRuling: string[]; failed: boolean }`, accumulated across guarded sessions. `result.json` already serialises the state, so it carries this with no new field.
-- PR body: the existing "Advisor decisions" section (`buildAdvisorSection`, `finish/pr/body.ts`) appends "— acceptance tests changed: AC-40, AC-51" to a decision with `acceptanceChanges`. The Unresolved section gains "Acceptance-file edits reverted: <paths>", "Acceptance tests changed beyond the ruling: <ids>" and "acceptance-file check could not run" from `state.acceptanceGuard`.
+- `FinishState` gains `acceptanceGuard?: { reverted: string[]; notRestorable: string[]; changed: string[]; beyondRuling: string[]; failed: boolean }`, accumulated across guarded sessions. `result.json` already serialises the state, so it carries this with no new field.
+- PR body: the existing "Advisor decisions" section (`buildAdvisorSection`, `finish/pr/body.ts`) appends "— acceptance tests changed: AC-40, AC-51" to a decision with `acceptanceChanges`. The Unresolved section gains its own "Acceptance-file guard" block (reverted paths, not-restorable paths, changes beyond the ruling, a failed check) from `state.acceptanceGuard`. The guard forces that section onto an otherwise-clean ready PR only when it reverted, could not restore, saw a change beyond the ruling, or failed.
 - No new finish-ledger events: the guard acts on files, not findings.
 
 ## 7. Error handling
@@ -165,7 +167,7 @@ Every new read fails open toward **not fixing against a ruling**:
 
 Unit tests (TDD, against the pure helpers and the review loop with fake ops and advisor):
 
-1. #2464: a quality finding re-raised with a new title and the same `file` as a trusted waive is reused, with no advisor call, and does not appear in `findingsOpen`.
+1. #2464: a quality finding re-raised with a new title and the same `file` as a trusted waive becomes one near question carrying the waive as evidence (ruling B-R1), and when the advisor waives it again it does not appear in `findingsOpen`. A re-raise with the same title from either lens is reused with no advisor call.
 2. Legacy ledger line (no `anchorFile`): anchor recovered from `dedupeKey`; a `#hash` third segment is not an anchor.
 3. Koda case, same round: spec `judgment` finding waived in step 3, quality plain finding on the same file → near question in step 4 with D-n as evidence. With the advisor off or the cap spent, it is carried unresolved and is not in the fix list.
 4. Cross-round near match → question with the prior ruling as evidence; a HIGH exact match is not reused but asked.
