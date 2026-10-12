@@ -734,7 +734,7 @@ draft PR -> acceptance -> review loop (spec || branch) -> acceptance re-check ->
     "escalate": { "telegram": true },
     "notify": { "mode": "draft" },
     "rerun": "on-change",
-    "timeouts": { "acceptanceMs": 600000, "gateMs": 900000, "flowMs": 5400000 }
+    "timeouts": { "acceptanceMs": 600000, "gateMs": 900000, "reviewMs": 900000, "fixMs": 1200000, "flowMs": 10800000 }
   }
 }
 ```
@@ -750,8 +750,10 @@ draft PR -> acceptance -> review loop (spec || branch) -> acceptance re-check ->
 | `rerun` | `"on-change"` | Cross-run idempotency. `on-change` skips the whole phase when the finish ledger's branch/HEAD already match a terminal outcome (opened/promoted/already-ready/draft/local-only/nothing-to-finish) from a previous run — a re-run on an unchanged branch costs one `git rev-parse`, not a repeat of every review and gate. `always` bypasses the ledger and re-runs the phase every time, matching pre-ledger behaviour. |
 | `timeouts.acceptanceMs` | 10 min | Cap per acceptance-test group. |
 | `timeouts.gateMs` | 15 min | Cap per quality gate (build / typecheck / lint / test). |
-| `timeouts.flowMs` | 90 min | Whole-phase deadline, enforced as an `AbortSignal`. |
-| `timeouts.stepMs` | `null` | Cap per LLM op (one review or fix turn). `null` keeps the op's own default. |
+| `timeouts.reviewMs` | 15 min | Cap per review lens call. A lens that hits it, or answers after it, counts as missing for that round. |
+| `timeouts.fixMs` | 20 min | Cap per fix session. The session is interrupted, writes a handoff note, and its edits are set aside for the next attempt; they are never committed. |
+| `timeouts.flowMs` | 3 h | Whole-phase backstop. When it fires, the current step stops and finish ends as a draft PR. |
+| `timeouts.stepMs` | — | Removed. A value is migrated to `reviewMs` and `fixMs` with a warning. |
 
 **It runs only when** the run succeeded (no failed or paused stories, at least
 one completed), HEAD is not `main`/`master`, and `enabled` is true.
@@ -773,10 +775,10 @@ an alias for `draft`.
 | Outcome | Action |
 |:---|:---|
 | Everything green: no open findings, acceptance green or not configured, all gates green, no missing review, no unreviewed fix commits | Promotes the draft PR (or opens a **ready** PR/MR). Never merges. |
-| Findings with a clear recommended fix | Applies them in one shared loop (at most 3 review rounds), re-runs acceptance, then the gates. Acceptance and gate fixes are capped at 3 attempts each. |
-| Anything left open: unresolved findings, red or unverified acceptance or gates, a review that returned no verdict, fix commits made after the last review, or the `flowMs` deadline | Commits and pushes what it fixed, keeps the PR **draft**, writes an "Unresolved" section into the body and notifies per `notify.mode`. |
+| Findings with a clear recommended fix | Applies them in one shared loop (at most 3 review rounds), re-runs acceptance, then the gates. Acceptance and gate fixes are capped at 3 attempts each. A later review round with both lenses present closes a finding it does not raise again (state `cleared`), including one the fixer rejected or left without a disposition; findings from a stopped fix stay `set-aside` and keep the PR draft until a re-applied attempt commits, which releases them to the normal flow. An advisor `approve` is downgraded to a draft while any set-aside work exists or a set-aside's worktree restore failed. |
+| Anything left open: unresolved findings, red or unverified acceptance or gates, a review that returned no verdict, fix commits made after the last review, set-aside work (including a set-aside whose worktree restore failed, even when everything else is green), or the `flowMs` deadline | Commits and pushes what it fixed, keeps the PR **draft**, writes an "Unresolved" section into the body and notifies per `notify.mode`. |
 | The feature has no PRD, or its PRD yields zero acceptance groups, while acceptance is enabled | Acceptance cannot be verified ("nothing ran is not a pass"), so the PR ends **draft** with acceptance reported as unverified. Disable acceptance for the feature if there is genuinely nothing to run. |
-| The `flowMs` deadline or an unexpected error interrupts the run | Still ends in a draft PR carrying the reason. Any half-finished edit in the working tree is committed without running git hooks and listed under "Unreviewed fix commits". |
+| The `flowMs` deadline or an unexpected error interrupts the run | Still ends in a draft PR carrying the reason. Any half-finished fix is set aside as a patch under `finish-audit/<feature>/<runId>.handoff-<n>/` and listed in the PR under "Set aside"; it is not committed. |
 | Branch has no commits ahead of base | Reports `nothing-to-finish` and stops. |
 | Branch/HEAD already match a terminal outcome from a previous finish (`rerun: "on-change"`, the default) | Skips the phase entirely, logs it, and records `status: "skipped"` - see `rerun` above. |
 | The branch's PR/MR is already **merged** | Reports `nothing-to-finish` with `reason: "pr-merged"` and stops, rather than reviewing, committing onto a merged branch and rewriting the merged PR's body. |

@@ -42,6 +42,7 @@ import {
   resolveHopTooling,
 } from "./build-hop-callback-hop";
 import { hopModelId, hopTier } from "./hop-endpoint";
+import type { SendTurnOverrides } from "./types";
 
 // Re-exported from their new home so existing importers (and
 // test/unit/operations/build-hop-callback-tier.test.ts) are unaffected.
@@ -111,7 +112,7 @@ export interface BuildHopCallbackContext {
    */
   hopBody?: <I = unknown>(
     initialPrompt: string,
-    bodyCtx: { send: (prompt: string) => Promise<TurnResult>; input: I },
+    bodyCtx: { send: (prompt: string, opts?: SendTurnOverrides) => Promise<TurnResult>; input: I },
   ) => Promise<TurnResult>;
   /** Input value forwarded to `hopBody` via its `ctx.input`. */
   hopBodyInput?: unknown;

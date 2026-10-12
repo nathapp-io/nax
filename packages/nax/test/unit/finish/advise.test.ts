@@ -113,6 +113,48 @@ describe("createFinishAdvisor.judged: rulings and reuse", () => {
     });
   });
 
+  test("a reused supersede is reported in dropped with the recorded reuse id and its own action (finish A)", async () => {
+    await withTempDir(async (dir) => {
+      const d = await appendDecision(dir, "feat", (id) => ({
+        ...decision({ action: { type: "supersede", target: { kind: "spec", section: "Design" }, newText: "x" } }),
+        dedupeKey: dedupeKeyFor("quality", low),
+        auditRef: `advisor-audit/feat/${id}.json`,
+      }));
+      await Bun.write(join(dir, "out", d.auditRef), JSON.stringify({ result: { decision: d } }));
+      const { advisor, asked } = fakeAdvisor(() => ({ decision: decision({}) }));
+      const out = await make(dir, advisor).judged([low], [], state(dir));
+      expect(asked).toHaveLength(0);
+      expect(out.dropped).toEqual([{ finding: low, decisionId: "D-9", action: "supersede" }]);
+      expect(out.held).toEqual([]);
+    });
+  });
+
+  test("a reused waive is reported in dropped (finish A)", async () => {
+    await withTempDir(async (dir) => {
+      await priorWaive(dir, low);
+      const { advisor } = fakeAdvisor(() => ({ decision: decision({}) }));
+      const out = await make(dir, advisor).judged([low], [], state(dir));
+      expect(out.dropped).toEqual([{ finding: low, decisionId: "D-9", action: "waive" }]);
+    });
+  });
+
+  test("two findings with different rulings: each ruling lands on its own finding only (finish A)", async () => {
+    await withTempDir(async (dir) => {
+      const fa: Finding = { ...judged, title: "Alpha", severity: "MEDIUM" };
+      const fb: Finding = { ...judged, title: "Beta", severity: "MEDIUM" };
+      const { advisor } = fakeAdvisor((q) =>
+        q.summary.startsWith("Alpha")
+          ? { decision: decision({ id: "D-1", action: { type: "waive", reason: "ok" } }) }
+          : { decision: decision({ id: "D-2", action: { type: "hold", reason: "human" } }) },
+      );
+      const out = await make(dir, advisor).judged([fa, fb], [], state(dir));
+      expect(out.dropped).toEqual([{ finding: fa, decisionId: "D-1", action: "waive" }]);
+      expect(out.held).toEqual([{ finding: fb, decisionId: "D-2" }]);
+      expect(out.unresolved).toEqual([fb]);
+      expect(out.toFix).toEqual([]);
+    });
+  });
+
   test("a blocking-severity finding is never auto-reused: it goes back to the advisor", async () => {
     await withTempDir(async (dir) => {
       await priorWaive(dir, judged);
@@ -186,11 +228,34 @@ describe("createFinishAdvisor.judged: merged rounds", () => {
     });
   });
 
+  test("waive and supersede are reported per finding in dropped (finish A)", async () => {
+    await withTempDir(async (dir) => {
+      for (const [action, kind] of [
+        [{ type: "waive", reason: "spec allows it" }, "waive"],
+        [{ type: "supersede", target: { kind: "spec", section: "Design" }, newText: "x" }, "supersede"],
+      ] as const) {
+        const { advisor } = fakeAdvisor(() => ({ decision: decision({ action, chosenOptionId: "B" }) }));
+        const out = await make(dir, advisor).judged([judged], [], state(dir));
+        expect(out.dropped).toEqual([{ finding: judged, decisionId: "D-1", action: kind }]);
+      }
+    });
+  });
+
+  test("a hold is reported per finding in held (finish A)", async () => {
+    await withTempDir(async (dir) => {
+      const { advisor } = fakeAdvisor(() => ({
+        decision: decision({ action: { type: "hold", reason: "needs a human" } }),
+      }));
+      const out = await make(dir, advisor).judged([judged], [], state(dir));
+      expect(out.held).toEqual([{ finding: judged, decisionId: "D-1" }]);
+    });
+  });
+
   test("advisor unavailable gives unresolved", async () => {
     await withTempDir(async (dir) => {
       const { advisor } = fakeAdvisor(() => ({ decision: null, fallbackReason: "no-json" }));
       const out = await make(dir, advisor).judged([judged], [], state(dir));
-      expect(out).toEqual({ toFix: [], advice: [], unresolved: [judged] });
+      expect(out).toEqual({ toFix: [], advice: [], unresolved: [judged], dropped: [], held: [] });
     });
   });
 
@@ -223,6 +288,18 @@ describe("createFinishAdvisor.judged: merged rounds", () => {
     });
   });
 
+  test("a contradiction ruled fix supersedes the quality finding so it reaches a terminal state", async () => {
+    await withTempDir(async (dir) => {
+      const { advisor } = fakeAdvisor(() => ({
+        decision: decision({ action: { type: "fix", instruction: "keep retry" } }),
+      }));
+      const out = await make(dir, advisor).judged([], [{ spec: s, quality: qf }], state(dir));
+      expect(out.dropped).toEqual([{ finding: qf, decisionId: "D-1", action: "supersede" }]);
+      expect(out.unresolved).toEqual([]);
+      expect(out.held).toEqual([]);
+    });
+  });
+
   test("contradiction waived drops both", async () => {
     await withTempDir(async (dir) => {
       const { advisor } = fakeAdvisor(() => ({ decision: decision({ action: { type: "waive", reason: "fine" } }) }));
@@ -230,6 +307,32 @@ describe("createFinishAdvisor.judged: merged rounds", () => {
       expect(out.toFix).toEqual([]);
       expect(out.unresolved).toEqual([]);
       expect(out.advice).toHaveLength(1);
+    });
+  });
+
+  test("a contradiction waived or superseded reports both findings in dropped (finish A)", async () => {
+    await withTempDir(async (dir) => {
+      for (const [action, kind] of [
+        [{ type: "waive", reason: "fine" }, "waive"],
+        [{ type: "supersede", target: { kind: "spec", section: "Design" }, newText: "x" }, "supersede"],
+      ] as const) {
+        const { advisor } = fakeAdvisor(() => ({ decision: decision({ action }) }));
+        const out = await make(dir, advisor).judged([], [{ spec: s, quality: qf }], state(dir));
+        expect(out.dropped).toEqual([
+          { finding: s, decisionId: "D-1", action: kind },
+          { finding: qf, decisionId: "D-1", action: kind },
+        ]);
+        expect(out.held).toEqual([]);
+      }
+    });
+  });
+
+  test("a contradiction held reports the quality finding in held, nothing dropped (finish A)", async () => {
+    await withTempDir(async (dir) => {
+      const { advisor } = fakeAdvisor(() => ({ decision: decision({ action: { type: "hold", reason: "x" } }) }));
+      const out = await make(dir, advisor).judged([], [{ spec: s, quality: qf }], state(dir));
+      expect(out.held).toEqual([{ finding: qf, decisionId: "D-1" }]);
+      expect(out.dropped).toEqual([]);
     });
   });
 
@@ -254,7 +357,13 @@ describe("judgeWithoutAdvisor", () => {
     const s = { severity: "LOW" as const, title: "S", problem: "p", fix: "f", source: "spec" as const, file: "a.ts" };
     const q = { ...s, title: "Q", source: "quality" as const };
     const j = { ...s, title: "J", judgment: true };
-    expect(judgeWithoutAdvisor([j], [{ spec: s, quality: q }])).toEqual({ toFix: [s], advice: [], unresolved: [j, q] });
+    expect(judgeWithoutAdvisor([j], [{ spec: s, quality: q }])).toEqual({
+      toFix: [s],
+      advice: [],
+      unresolved: [j, q],
+      dropped: [],
+      held: [],
+    });
   });
 });
 
@@ -270,6 +379,8 @@ describe("createFinishAdvisor.approval", () => {
     unreviewedFixCommits: ["abc123"],
     coverage: { spec: 0.5, quality: null },
     fixRounds: 2,
+    findings: [],
+    stops: [],
   };
 
   test("question evidence lists open findings, acceptance, gates with excerpt, missing lenses, unreviewed commits, coverage", async () => {

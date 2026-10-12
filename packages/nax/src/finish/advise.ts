@@ -31,6 +31,10 @@ export interface JudgedResult {
   advice: AdviceRef[];
   /** Hold, advisor unavailable, or (advisor off) judged findings: carried to resolution unfixed. */
   unresolved: Finding[];
+  /** Findings a waive / supersede ruling dropped, for the ledger. */
+  dropped: { finding: Finding; decisionId: string; action: "waive" | "supersede" }[];
+  /** Hold decisions per finding, for the ledger ref. */
+  held: { finding: Finding; decisionId: string }[];
 }
 
 export interface FinishAdvisor {
@@ -92,23 +96,32 @@ async function reusablePrior(deps: FinishAdvisorDeps, f: Finding, key: string): 
   return findReusable(await readTrustedDecisions(deps.repoRoot, deps.feature, deps.outputDir), key);
 }
 
+type Dropped = "waive" | "supersede";
+const droppedBy = (type: string): Dropped | undefined => (type === "waive" || type === "supersede" ? type : undefined);
+
 async function judgeOne(
   deps: FinishAdvisorDeps,
   phase: "spec" | "quality",
   f: Finding,
-): Promise<{ keep?: Finding; ref?: AdviceRef; hold?: string; fallback?: string }> {
+): Promise<{ keep?: Finding; ref?: AdviceRef; hold?: string; fallback?: string; dropped?: Dropped }> {
   const question = judgmentQuestion(deps, phase, f);
   const prior = await reusablePrior(deps, f, question.dedupeKey ?? "");
   if (prior) {
     const reused = await deps.advisor.recordReuse(question, prior);
-    return { ref: { decisionId: reused?.id ?? prior.id, optionId: prior.chosenOptionId, reused: true } };
+    const ref = { decisionId: reused?.id ?? prior.id, optionId: prior.chosenOptionId, reused: true };
+    const dropped = droppedBy(prior.action.type);
+    // findReusable only reuses waive / supersede; anything else is carried unresolved, never silently dropped.
+    return dropped ? { ref, dropped } : { ref, fallback: `unexpected reusable action: ${prior.action.type}` };
   }
   const { decision, fallbackReason } = await deps.advisor.advise(question, { findingSeverity: f.severity });
   if (!decision) return { fallback: fallbackReason ?? "advisor unavailable" };
   const ref: AdviceRef = { decisionId: decision.id, optionId: decision.chosenOptionId, reused: false };
   const { action } = decision;
   if (action.type === "hold") return { ref, hold: decision.rationale };
-  if (action.type !== "fix") return { ref };
+  if (action.type !== "fix") {
+    const dropped = droppedBy(action.type);
+    return dropped ? { ref, dropped } : { ref };
+  }
   return { ref, keep: { ...f, fix: `${f.fix}\n\nAdvisor ruling (${decision.id}): ${action.instruction}` } };
 }
 
@@ -141,22 +154,29 @@ function specFirst(c: Contradiction): { toFix: Finding[]; unresolved: Finding[] 
   return { toFix: [c.spec], unresolved: [c.quality] };
 }
 
-async function judgeContradiction(
-  deps: FinishAdvisorDeps,
-  c: Contradiction,
-): Promise<{ ref?: AdviceRef; toFix: Finding[]; unresolved: Finding[] }> {
+type ContradictionJudgment = Pick<JudgedResult, "toFix" | "unresolved" | "dropped" | "held"> & { ref?: AdviceRef };
+
+async function judgeContradiction(deps: FinishAdvisorDeps, c: Contradiction): Promise<ContradictionJudgment> {
   const { decision } = await deps.advisor.advise(contradictionQuestion(deps, c), {
     findingSeverity: RANK[c.spec.severity] >= RANK[c.quality.severity] ? c.spec.severity : c.quality.severity,
   });
-  if (!decision) return specFirst(c);
+  if (!decision) return { ...specFirst(c), dropped: [], held: [] };
   const ref: AdviceRef = { decisionId: decision.id, optionId: decision.chosenOptionId, reused: false };
   const { action } = decision;
   if (action.type === "fix") {
     const fix = `${c.spec.fix}\n\nAdvisor ruling (${decision.id}): ${action.instruction}`;
-    return { ref, toFix: [{ ...c.spec, fix }], unresolved: [] };
+    // The ruling picks the spec side; the quality side is superseded, as it was before the ledger existed.
+    const dropped = [{ finding: c.quality, decisionId: decision.id, action: "supersede" as const }];
+    return { ref, toFix: [{ ...c.spec, fix }], unresolved: [], dropped, held: [] };
   }
-  if (action.type === "waive" || action.type === "supersede") return { ref, toFix: [], unresolved: [] };
-  return { ref, ...specFirst(c) };
+  if (action.type === "waive" || action.type === "supersede") {
+    const dropped = [c.spec, c.quality].map((finding) => ({ finding, decisionId: decision.id, action: action.type }));
+    return { ref, toFix: [], unresolved: [], dropped, held: [] };
+  }
+  if (action.type === "hold") {
+    return { ref, ...specFirst(c), dropped: [], held: [{ finding: c.quality, decisionId: decision.id }] };
+  }
+  return { ref, ...specFirst(c), dropped: [], held: [] };
 }
 
 /** Advisor off or the judged caller disabled: the deterministic fallback (spec §5 step 4). */
@@ -165,6 +185,8 @@ export function judgeWithoutAdvisor(findings: Finding[], contradictions: Contrad
     toFix: contradictions.map((c) => c.spec),
     advice: [],
     unresolved: [...findings, ...contradictions.map((c) => c.quality)],
+    dropped: [],
+    held: [],
   };
 }
 
@@ -210,24 +232,29 @@ function approvalQuestionFromFacts(
   };
 }
 
+function collectJudgment(out: JudgedResult, f: Finding, r: Awaited<ReturnType<typeof judgeOne>>): void {
+  if (r.ref) out.advice.push(r.ref);
+  if (r.keep) out.toFix.push(r.keep);
+  else if (r.hold !== undefined || r.fallback !== undefined) out.unresolved.push(f);
+  if (r.ref && r.dropped) out.dropped.push({ finding: f, decisionId: r.ref.decisionId, action: r.dropped });
+  if (r.ref && r.hold !== undefined) out.held.push({ finding: f, decisionId: r.ref.decisionId });
+}
+
 export function createFinishAdvisor(deps: FinishAdvisorDeps): FinishAdvisor {
   const git = deps.git ?? ((args, cwd) => gitWithTimeout(args, cwd, GIT_TIMEOUT_MS));
   return {
     judgedEnabled: deps.judgedEnabled,
     approvalEnabled: deps.approvalEnabled,
     async judged(findings, contradictions) {
-      const out: JudgedResult = { toFix: [], advice: [], unresolved: [] };
-      for (const f of findings) {
-        const r = await judgeOne(deps, f.source ?? "quality", f);
-        if (r.ref) out.advice.push(r.ref);
-        if (r.keep) out.toFix.push(r.keep);
-        else if (r.hold !== undefined || r.fallback !== undefined) out.unresolved.push(f);
-      }
+      const out: JudgedResult = { toFix: [], advice: [], unresolved: [], dropped: [], held: [] };
+      for (const f of findings) collectJudgment(out, f, await judgeOne(deps, f.source ?? "quality", f));
       for (const c of contradictions) {
         const r = await judgeContradiction(deps, c);
         if (r.ref) out.advice.push(r.ref);
         out.toFix.push(...r.toFix);
         out.unresolved.push(...r.unresolved);
+        out.dropped.push(...r.dropped);
+        out.held.push(...r.held);
       }
       return out;
     },

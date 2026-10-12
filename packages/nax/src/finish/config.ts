@@ -33,7 +33,7 @@ export interface FinishSettings {
    * `always` bypasses the ledger entirely, matching pre-ledger behaviour.
    */
   rerun: "on-change" | "always";
-  timeouts: { acceptanceMs: number; gateMs: number; flowMs: number; stepMs: number | null };
+  timeouts: { acceptanceMs: number; gateMs: number; flowMs: number; reviewMs: number; fixMs: number };
 }
 
 const DEFAULTS: Omit<FinishSettings, "models"> = {
@@ -43,7 +43,7 @@ const DEFAULTS: Omit<FinishSettings, "models"> = {
   escalate: { telegram: true },
   notify: { mode: "draft" },
   rerun: "on-change",
-  timeouts: { acceptanceMs: 600_000, gateMs: 900_000, flowMs: 5_400_000, stepMs: null },
+  timeouts: { acceptanceMs: 600_000, gateMs: 900_000, flowMs: 10_800_000, reviewMs: 900_000, fixMs: 1_200_000 },
 };
 
 /** Drop null/undefined slots so an absent selection reaches callOp as `undefined`, not `null`. */
@@ -96,7 +96,8 @@ export function readFinishConfig(config: unknown): FinishSettings {
       acceptanceMs: finish.timeouts?.acceptanceMs ?? DEFAULTS.timeouts.acceptanceMs,
       gateMs: finish.timeouts?.gateMs ?? DEFAULTS.timeouts.gateMs,
       flowMs: finish.timeouts?.flowMs ?? DEFAULTS.timeouts.flowMs,
-      stepMs: finish.timeouts?.stepMs ?? DEFAULTS.timeouts.stepMs,
+      reviewMs: finish.timeouts?.reviewMs ?? DEFAULTS.timeouts.reviewMs,
+      fixMs: finish.timeouts?.fixMs ?? DEFAULTS.timeouts.fixMs,
     },
   };
 }

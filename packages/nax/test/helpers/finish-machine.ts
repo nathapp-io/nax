@@ -9,9 +9,34 @@ import type {
   FinishOps,
   FinishReviewOutput,
   FinishState,
+  HandoffRecord,
 } from "@/finish";
 import { _acceptanceGateDeps, _finishGitDeps, _qualityGateDeps, createFinishState } from "@/finish";
 import type { QualityCommandOptions, QualityCommandResult } from "@/quality";
+
+/** A stopped `review` handoff of run-1, as `setAside` would record it. */
+export function makeHandoffRecord(auditDir: string, over: Partial<HandoffRecord> = {}): HandoffRecord {
+  return {
+    n: 1,
+    dir: `${auditDir}/run-1.handoff-1`,
+    phase: "review",
+    limit: "fix",
+    baseSha: "sha1",
+    headSha: "sha1",
+    findingIds: [],
+    newUntracked: [],
+    changedPaths: [],
+    stoppedAt: "t",
+    hasNote: false,
+    patchSaved: true,
+    restored: true,
+    consumed: false,
+    untrackedRestored: [],
+    untrackedMovedAside: [],
+    untrackedFailed: [],
+    ...over,
+  };
+}
 
 export function makeFinishContext(overrides: Partial<FinishContext> = {}): FinishContext {
   const group: AcceptanceGroupResult = {
@@ -89,26 +114,81 @@ export interface FinishGitModel {
   head: number;
   /** What `git show --name-only` reports for a fix commit (newline-separated). Default: one production file. */
   files?: string;
+  /** What `changedFiles()` (`diff --name-only <base>...HEAD`) reports. */
+  changedFiles?: string[];
+  /** When true, `git apply` fails (a handoff re-apply that no longer fits). */
+  applyFails?: boolean;
 }
 
-/**
- * Stubs `_finishGitDeps.git` so `commitFixes` commits exactly when `model.dirty` is set.
- * Returns a restore function for `afterEach`. A `commit` is appended to `trail` when given.
- */
-export function installFinishGit(model: FinishGitModel, trail?: string[]): () => void {
-  const original = _finishGitDeps.git;
-  _finishGitDeps.git = async (args) => {
-    const [cmd] = args;
-    if (cmd === "rev-parse") return { exitCode: 0, stdout: `sha${model.head}\n`, stderr: "" };
-    if (cmd === "status") return { exitCode: 0, stdout: model.dirty ? " M a.ts\n" : "", stderr: "" };
-    if (cmd === "diff" && args.includes("--cached")) return { exitCode: model.dirty ? 1 : 0, stdout: "", stderr: "" };
-    if (cmd === "commit") {
+type GitResult = { exitCode: number; stdout: string; stderr: string };
+const ok = (stdout = ""): GitResult => ({ exitCode: 0, stdout, stderr: "" });
+
+function diffResult(model: FinishGitModel, args: string[]): GitResult | undefined {
+  if (args.includes("--name-only")) {
+    // changedFiles() diffs `<base>...HEAD`; set-aside diffs one sha against the tree
+    if (args.some((a) => a.includes("..."))) return ok((model.changedFiles ?? []).join("\n"));
+    return ok(model.dirty ? `a.ts${args.includes("-z") ? "\0" : "\n"}` : "");
+  }
+  if (args.includes("--binary")) return ok(model.dirty ? "diff --git a/a.ts b/a.ts\n" : "");
+  if (args.includes("--cached")) return { exitCode: model.dirty ? 1 : 0, stdout: "", stderr: "" };
+  return undefined;
+}
+
+function applyResult(model: FinishGitModel, args: string[], trail?: string[]): GitResult {
+  if (args.includes("--numstat")) return ok(`1\t1\ta.ts${args.includes("-z") ? "\0" : "\n"}`);
+  const failed: GitResult = { exitCode: 1, stdout: "", stderr: "conflict" };
+  if (args.includes("--check")) {
+    trail?.push("apply-check");
+    return model.applyFails ? failed : ok();
+  }
+  // Every real apply is recorded, a failing one too: "no apply after a failed check" must be observable.
+  trail?.push("apply");
+  if (model.applyFails) return failed;
+  model.dirty = true;
+  return ok();
+}
+
+function gitResult(model: FinishGitModel, args: string[], trail?: string[]): GitResult {
+  switch (args[0]) {
+    case "rev-parse":
+      return args.includes("--show-toplevel") ? ok("/repo\n") : ok(`sha${model.head}\n`);
+    case "stash":
+      return ok(model.dirty ? "stashsha\n" : "");
+    case "ls-tree":
+      return ok("a.ts\0"); // a.ts is in every base
+    case "status":
+      return ok(model.dirty ? " M a.ts\n" : "");
+    case "diff":
+      return diffResult(model, args) ?? ok();
+    case "apply":
+      return applyResult(model, args, trail);
+    case "restore":
+      trail?.push("restore");
+      model.dirty = false;
+      return ok();
+    case "commit":
       trail?.push("commit");
       model.head += 1;
       model.dirty = false;
-    }
-    if (cmd === "show") return { exitCode: 0, stdout: `${model.files ?? "src/prod.ts"}\n`, stderr: "" };
-    return { exitCode: 0, stdout: "", stderr: "" };
+      return ok();
+    case "show":
+      return ok(`${model.files ?? "src/prod.ts"}\n`);
+    default:
+      return ok();
+  }
+}
+
+/**
+ * Stubs `_finishGitDeps.git` so `commitFixes` commits exactly when `model.dirty` is set, and the
+ * set-aside / re-apply commands follow the same model. Returns a restore function for `afterEach`.
+ * `commit`, `restore` and `apply` are appended to `trail` when given.
+ */
+export function installFinishGit(model: FinishGitModel, trail?: string[]): () => void {
+  const original = _finishGitDeps.git;
+  _finishGitDeps.git = async (rawArgs) => {
+    // set-aside runs every git call with a leading `--literal-pathspecs`
+    const args = rawArgs[0] === "--literal-pathspecs" ? rawArgs.slice(1) : rawArgs;
+    return gitResult(model, args, trail);
   };
   return () => {
     _finishGitDeps.git = original;
@@ -136,6 +216,8 @@ export interface MachineHarnessOpts {
   /** When true the fixer edits nothing, so `commitFixes` commits nothing. */
   fixIsNoop?: boolean;
   gitFiles?: string;
+  fixMs?: number;
+  flowMs?: number;
 }
 
 export interface MachineHarness {
@@ -216,7 +298,8 @@ export function makeMachineHarness(opts: MachineHarnessOpts): MachineHarness {
       git.dirty = opts.fixIsNoop !== true;
       if (userFix) return userFix(phase, req);
       trail.push(`fix:${phase}`);
-      return {};
+      // A fixer that reports nothing fixed nothing (the ledger is fail-closed): the default fixes every finding.
+      return { dispositions: (req.findings ?? []).map((_, i) => ({ index: i + 1, disposition: "fixed" as const })) };
     },
   });
   const audit: AuditTarget = { auditDir: opts.auditDir, runId: "run-1" };
@@ -228,6 +311,14 @@ export function makeMachineHarness(opts: MachineHarnessOpts): MachineHarness {
     ...(opts.advise ? { advise: opts.advise } : {}),
     ...(opts.signal ? { signal: opts.signal } : {}),
     ...(opts.runSignal ? { runSignal: opts.runSignal } : {}),
+    ...(opts.fixMs || opts.flowMs
+      ? {
+          timeouts: {
+            ...(opts.fixMs ? { fixMs: opts.fixMs } : {}),
+            ...(opts.flowMs ? { flowMs: opts.flowMs } : {}),
+          },
+        }
+      : {}),
     now: () => {
       tick += 1;
       return `2026-10-11T00:00:${String(tick).padStart(2, "0")}.000Z`;

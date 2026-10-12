@@ -11,8 +11,9 @@ export interface FinishTimeoutsConfig {
   acceptanceMs: number;
   gateMs: number;
   flowMs: number;
-  /** Per LLM op; null keeps callOp's own default */
-  stepMs: number | null;
+  /** Per LLM op (review lens / fix round) */
+  reviewMs: number;
+  fixMs: number;
 }
 
 /** `finish` config block — the in-process post-run finish phase (opt-in, off by default) */

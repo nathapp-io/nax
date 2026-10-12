@@ -3,7 +3,7 @@
  * inside the review loop, and approving, re-reviewing or holding from the end-of-run facts.
  */
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeMachineHarness, restoreFinishMachineStubs, withTempDir } from "@test/helpers";
+import { makeHandoffRecord, makeMachineHarness, restoreFinishMachineStubs, withTempDir } from "@test/helpers";
 import type { ApprovalAction, Finding, FinishAdvisor, FinishReviewOutput, ResolutionFacts } from "@/finish";
 import { runFinishMachine } from "@/finish";
 
@@ -40,7 +40,7 @@ function makeAdvisor(
     approvalEnabled: true,
     judged: async (findings) => {
       log.judgedCalls.push(findings);
-      return { toFix: [], advice: [], unresolved: findings };
+      return { toFix: [], advice: [], unresolved: findings, dropped: [], held: [] };
     },
     approval: async (facts) => {
       log.approvals.push(facts);
@@ -78,6 +78,104 @@ describe("approval", () => {
       expect(log.approvals).toHaveLength(1);
       expect(log.ledgerCommits).toBe(1);
       expect(state.resolution?.acceptedResidue).toHaveLength(1);
+      expect(state.review.ledger.map((e) => [e.state, e.ref])).toEqual([["accepted", "advisor approval"]]);
+      // result.json carries the ledger as finalized (accepted), not the pre-accept snapshot the decision was made on.
+      expect(result.facts?.findings.map((e) => e.state)).toEqual(["accepted"]);
+    });
+  });
+
+  test("approve with a set-aside finding is blocked: draft PR, no promote, the reason names the handoff", async () => {
+    await withTempDir(async (dir) => {
+      const { advisor } = makeAdvisor([{ action: "approve", rationale: "residue is cosmetic" }]);
+      const { deps, trail, state } = makeMachineHarness({
+        auditDir: dir,
+        script: STUCK,
+        fixMs: 5,
+        advise: advisor,
+        ops: {
+          fix: async (_p, req) => {
+            await new Promise<void>((r) => req.interrupt?.addEventListener("abort", () => r(), { once: true }));
+            return { dispositions: [], interrupted: true };
+          },
+        },
+      });
+      const result = await runFinishMachine(state, deps);
+      expect(result.outcome).toBe("draft");
+      expect(trail).toContain("finalizeDraftPr");
+      expect(trail).not.toContain("promotePr");
+      expect(result.reason).toContain("advisor approval blocked: set-aside work exists;");
+      expect(result.reason).toMatch(/advisor approval blocked: set-aside work exists; 1 set aside \(handoff-3\)$/);
+      expect(result.acceptedResidue).toBeUndefined();
+      expect(state.review.ledger.map((e) => e.state)).toEqual(["set-aside"]);
+    });
+  });
+
+  test("approve with a restore-failed handoff is blocked even with no set-aside finding", async () => {
+    await withTempDir(async (dir) => {
+      const { advisor } = makeAdvisor([{ action: "approve", rationale: "fine" }]);
+      const { deps, trail, state } = makeMachineHarness({
+        auditDir: dir,
+        script: STUCK,
+        fixIsNoop: true,
+        advise: advisor,
+      });
+      state.handoffs = [makeHandoffRecord(dir, { restored: false })];
+      const result = await runFinishMachine(state, deps);
+      expect(result.outcome).toBe("draft");
+      expect(trail).not.toContain("promotePr");
+      expect(result.reason).toContain("advisor approval blocked: set-aside work exists;");
+      expect(result.reason).toContain("worktree restore failed (handoff-1)");
+    });
+  });
+
+  test("result.handoffs lists every set-aside handoff; absent when there were none", async () => {
+    await withTempDir(async (dir) => {
+      const none = makeMachineHarness({ auditDir: dir, script: {} });
+      expect((await runFinishMachine(none.state, none.deps)).handoffs).toBeUndefined();
+
+      const { deps, state } = makeMachineHarness({ auditDir: dir, script: {} });
+      state.handoffs = [
+        {
+          n: 1,
+          dir: `${dir}/h1`,
+          phase: "review",
+          limit: "fix",
+          baseSha: "s",
+          headSha: "s",
+          findingIds: ["a"],
+          newUntracked: [],
+          changedPaths: [],
+          stoppedAt: "t",
+          hasNote: false,
+          patchSaved: true,
+          restored: true,
+          consumed: false,
+          reapplied: false,
+          untrackedRestored: [],
+          untrackedMovedAside: [],
+          untrackedFailed: [],
+        },
+      ];
+      const result = await runFinishMachine(state, deps);
+      expect(result.handoffs).toEqual([
+        { dir: `${dir}/h1`, limit: "fix", findingIds: ["a"], consumed: false, reapplied: false },
+      ]);
+    });
+  });
+
+  test("a restore-failed handoff is in the facts and the draft reason; a settled one is not", async () => {
+    await withTempDir(async (dir) => {
+      const failed = makeMachineHarness({ auditDir: dir, script: {}, qualityExit: () => 1 });
+      failed.state.handoffs = [makeHandoffRecord(dir, { restored: false })];
+      const result = await runFinishMachine(failed.state, failed.deps);
+      expect(result.facts?.restoreFailed).toEqual([1]);
+      expect(result.reason).toContain("worktree restore failed (handoff-1)");
+
+      const settled = makeMachineHarness({ auditDir: dir, script: {} });
+      settled.state.handoffs = [makeHandoffRecord(dir, { restored: false, settledBy: 2 })];
+      const ok = await runFinishMachine(settled.state, settled.deps);
+      expect(ok.facts?.restoreFailed).toEqual([]);
+      expect(ok.outcome).toBe("ready");
     });
   });
 
@@ -90,7 +188,6 @@ describe("approval", () => {
       const { deps, trail, state } = makeMachineHarness({
         auditDir: dir,
         script: { quality: [q("A"), q("A"), q("A"), { findings: [], covered: ["a.ts"] }] },
-        fixIsNoop: true,
         advise: advisor,
       });
       const result = await runFinishMachine(state, deps);
@@ -100,7 +197,8 @@ describe("approval", () => {
       expect(state.review.reReviewUsed).toBe(true);
       // the extra round came back clean, so the second resolve is clean and never reaches the advisor again
       expect(log.approvals).toHaveLength(1);
-      expect(log.approvals[0]?.findingsOpen).toHaveLength(1);
+      // the last allowed round's fix commit was never re-reviewed: that, not an open finding, is what asks the advisor
+      expect(log.approvals[0]?.unreviewedFixCommits).toHaveLength(1);
       expect(result.outcome).toBe("ready");
       expect(result.acceptedResidue).toBeUndefined();
       expect(log.ledgerCommits).toBe(1);
@@ -232,6 +330,8 @@ describe("judged findings", () => {
           toFix: findings.map((f) => ({ ...f, fix: `${f.fix}\n\nAdvisor ruling (D-1): do it` })),
           advice: [{ decisionId: "D-1", optionId: "A", reused: false }],
           unresolved: [],
+          dropped: [],
+          held: [],
         }),
       });
       const { deps, state } = makeMachineHarness({
@@ -243,7 +343,9 @@ describe("judged findings", () => {
         ops: {
           fix: async (_phase, req) => {
             seen.push(req.findings ?? []);
-            return {};
+            return {
+              dispositions: (req.findings ?? []).map((_, i) => ({ index: i + 1, disposition: "fixed" as const })),
+            };
           },
         },
       });
@@ -264,7 +366,7 @@ describe("judged findings", () => {
       const { advisor } = makeAdvisor([], {
         judgedEnabled: true,
         approvalEnabled: false,
-        judged: async (findings) => ({ toFix: [], advice: [], unresolved: findings }),
+        judged: async (findings) => ({ toFix: [], advice: [], unresolved: findings, dropped: [], held: [] }),
       });
       const { deps, trail, state } = makeMachineHarness({
         auditDir: dir,

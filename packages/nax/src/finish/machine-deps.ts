@@ -2,6 +2,7 @@ import { NaxError } from "../errors";
 import type { FinishAdvisor } from "./advise";
 import type { AuditTarget } from "./audit";
 import type { FinishContext } from "./context";
+import type { FixStepDeps } from "./fix-step";
 import type { FinishOps } from "./ops";
 import type { FinishTimeouts } from "./types";
 
@@ -31,4 +32,17 @@ export function assertNotAborted(deps: Pick<FinishMachineDeps, "signal">): void 
   if (deps.signal?.aborted) {
     throw new NaxError("Finish aborted mid-loop", "FINISH_ABORTED", { stage: "finish" });
   }
+}
+
+/** The `runFixStep` deps a loop passes, from the machine deps. */
+export function fixStepDeps(deps: FinishMachineDeps): FixStepDeps {
+  return {
+    ops: deps.ops,
+    audit: deps.audit,
+    now: deps.now,
+    ...(deps.signal ? { signal: deps.signal } : {}),
+    ...(deps.runSignal ? { runSignal: deps.runSignal } : {}),
+    ...(deps.timeouts?.fixMs !== undefined ? { fixMs: deps.timeouts.fixMs } : {}),
+    ...(deps.timeouts?.flowMs !== undefined ? { flowMs: deps.timeouts.flowMs } : {}),
+  };
 }

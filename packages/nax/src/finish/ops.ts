@@ -7,7 +7,7 @@
  */
 import type { A3Hint } from "./a3-hints";
 import type { FinishState } from "./state";
-import type { Finding, FindingDisposition, FinishReviewOutput } from "./types";
+import type { Finding, FindingDisposition, FinishReviewOutput, FixContinuation, HandoffNote } from "./types";
 
 /** What the two A4 review lenses need beyond `FinishState`: the diff's file list, PRD stories, A3 hints. */
 export interface ReviewInputs {
@@ -35,11 +35,19 @@ export interface FixRequest {
   failing?: string[];
   gateOutput?: string;
   acceptanceOutput?: string;
+  /** Finish A: soft interrupt (phase signal + fixMs). The op's own (hard) signal is the run's. */
+  interrupt?: AbortSignal;
+  /** Finish A: a previous stopped session's work to continue from. */
+  continuation?: FixContinuation;
 }
 
 /** What a fix step did, so the commit round and commit message can report it. */
 export interface FixOutcome {
   dispositions?: FindingDisposition[];
+  /** Finish A: the fix turn was soft-interrupted by its step or the phase. */
+  interrupted?: true;
+  /** Finish A: the same session's handoff note, when it gave one. */
+  handoffNote?: HandoffNote;
 }
 
 export interface FinishOps {

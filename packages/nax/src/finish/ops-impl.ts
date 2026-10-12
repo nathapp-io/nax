@@ -15,13 +15,17 @@ import { formatDecisionsForPrompt, readTrustedDecisions } from "@/advisor";
 import type { ConfiguredModel } from "@/config";
 import type { ForgeDeps, ForgeKind } from "@/forge";
 import type { CallContext, FinishBranchReviewInput, FinishFixInput, FinishSpecReviewInput } from "@/operations";
-import { callOp, finishBranchReviewOp, finishFixOp, finishSpecReviewOp } from "@/operations";
+import { callOp, finishBranchReviewOp, finishFixOp, finishSpecReviewOp, HANDOFF_TURN_MS } from "@/operations";
 import type { AuditTarget } from "./audit";
 import { commitAndPush } from "./commit";
+import { setAsideLeftoverDirt } from "./finalize-dirt";
 import type { FinishOps, FixPhase, FixRequest, ReviewInputs } from "./ops";
 import { buildFinishBody, buildFinishTitle, loadFinishPrContext, openDraftFinishPr, openOrPromotePr } from "./pr";
+import { stopReason } from "./resolve";
+import { MISSING_REVIEW } from "./review-json";
 import type { FinishState } from "./state";
-import type { FinishPrBodySettings } from "./types";
+import { STEP_TIMEOUT_MARGIN_MS, stepSignal } from "./step-signal";
+import type { FinishPrBodySettings, FinishReviewOutput, FinishTimeouts } from "./types";
 
 export interface FinishOpsDeps {
   /** The call context every LLM op runs under. Its `sessionOverride` is replaced per phase. */
@@ -37,7 +41,9 @@ export interface FinishOpsDeps {
     reviewQuality?: ConfiguredModel;
     fix?: ConfiguredModel;
   };
-  timeouts?: { reviewMs?: number; fixMs?: number };
+  timeouts?: Pick<FinishTimeouts, "reviewMs" | "fixMs">;
+  /** The run's own signal: the fix op's hard stop. The soft interrupt arrives on the request. */
+  runSignal?: AbortSignal;
   /** The existing `FinishPrBodySettings` from `./types` (D4.8). */
   prBody?: FinishPrBodySettings;
 }
@@ -60,6 +66,9 @@ function fallbackBody(state: FinishState, error: string): string {
   const lines = ["## Unresolved", ""];
   const resolution = state.resolution;
   if (resolution?.reason) lines.push(`Reason: ${resolution.reason}`);
+  const stopped = stopReason(state.stops ?? []);
+  if (stopped) lines.push(`Stopped: ${stopped}`);
+  for (const h of state.handoffs ?? []) lines.push(`- Set aside: ${h.dir}`);
   for (const f of resolution?.facts.findingsOpen ?? []) lines.push(`- [${f.severity}] ${f.title}`);
   lines.push("", `PR body could not be generated: ${error}`);
   return lines.join("\n");
@@ -102,6 +111,28 @@ function recordUnreviewedCommit(state: FinishState, sha: string): void {
   };
 }
 
+const STOPPED_REVIEW: FinishReviewOutput = { ...MISSING_REVIEW, stoppedAtLimit: true };
+
+/** One review call under its `reviewMs` limit: cut off or late, it reads as a missing verdict. */
+async function underReviewLimit(
+  callCtx: CallContext,
+  reviewMs: number | undefined,
+  run: (ctx: CallContext) => Promise<FinishReviewOutput>,
+): Promise<FinishReviewOutput> {
+  const { signal, limit } = stepSignal(callCtx.signal, reviewMs);
+  const stoppedHere = (): boolean => limit?.aborted === true && callCtx.signal?.aborted !== true;
+  try {
+    const out = await run(signal ? { ...callCtx, signal } : callCtx);
+    return stoppedHere() ? STOPPED_REVIEW : out;
+  } catch (err) {
+    if (stoppedHere()) return STOPPED_REVIEW;
+    throw err;
+  }
+}
+
+const reviewTimeout = (reviewMs: number | undefined): number | undefined =>
+  reviewMs !== undefined ? reviewMs + STEP_TIMEOUT_MARGIN_MS : undefined;
+
 export function createFinishOps(deps: FinishOpsDeps): FinishOps {
   const { callCtx, forge, forgeKind, audit, models, timeouts, prBody } = deps;
   // A1: where advisor audit artifacts live. Undefined (a bare test context) ⇒ no decision is trusted or shown.
@@ -116,12 +147,10 @@ export function createFinishOps(deps: FinishOpsDeps): FinishOps {
         changedFiles: inputs.changed,
         decisions: await loadDecisionNotes(state, advisorOutputDir),
         model: models?.reviewSpec,
-        timeoutMs: timeouts?.reviewMs,
+        timeoutMs: reviewTimeout(timeouts?.reviewMs),
       };
-      return _finishOpsDeps.callOp(
-        { ...callCtx, sessionOverride: { role: "finish-review-spec" } },
-        finishSpecReviewOp,
-        input,
+      return underReviewLimit(callCtx, timeouts?.reviewMs, (ctx) =>
+        _finishOpsDeps.callOp({ ...ctx, sessionOverride: { role: "finish-review-spec" } }, finishSpecReviewOp, input),
       );
     },
 
@@ -132,17 +161,19 @@ export function createFinishOps(deps: FinishOpsDeps): FinishOps {
         changedFiles: inputs.changed,
         hints: inputs.hints,
         model: models?.reviewQuality,
-        timeoutMs: timeouts?.reviewMs,
+        timeoutMs: reviewTimeout(timeouts?.reviewMs),
       };
-      return _finishOpsDeps.callOp(
-        { ...callCtx, sessionOverride: { role: "finish-review-quality" } },
-        finishBranchReviewOp,
-        input,
+      return underReviewLimit(callCtx, timeouts?.reviewMs, (ctx) =>
+        _finishOpsDeps.callOp(
+          { ...ctx, sessionOverride: { role: "finish-review-quality" } },
+          finishBranchReviewOp,
+          input,
+        ),
       );
     },
 
     async fix(phase: FixPhase, req: FixRequest) {
-      const { state, findings, failing, gateOutput, acceptanceOutput } = req;
+      const { state, findings, failing, gateOutput, acceptanceOutput, interrupt, continuation } = req;
       const input: FinishFixInput = {
         phase,
         workdir: state.workdir,
@@ -151,12 +182,21 @@ export function createFinishOps(deps: FinishOpsDeps): FinishOps {
         gateOutput,
         acceptanceOutput,
         model: models?.fix,
-        timeoutMs: timeouts?.fixMs,
+        // The agent's own timeout trails the step limit by the handoff turn and a margin, so fixMs fires first.
+        timeoutMs:
+          timeouts?.fixMs !== undefined ? timeouts.fixMs + HANDOFF_TURN_MS + STEP_TIMEOUT_MARGIN_MS : undefined,
+        ...(interrupt ? { interrupt } : {}),
+        ...(continuation ? { continuation } : {}),
       };
       // Not `callCtx` alone — an explicit `sessionOverride: undefined` makes sure a
       // context the caller built with one set (e.g. for a review call reused here)
       // doesn't leak a reviewer role into the fixer once a caller starts wiring one in.
-      return _finishOpsDeps.callOp({ ...callCtx, sessionOverride: undefined }, finishFixOp, input);
+      // `signal: undefined` falls back to the runtime signal: the hard stop is the run's, never the step's.
+      return _finishOpsDeps.callOp(
+        { ...callCtx, sessionOverride: undefined, signal: deps.runSignal },
+        finishFixOp,
+        input,
+      );
     },
 
     async openDraftPr(state: FinishState) {
@@ -194,7 +234,9 @@ export function createFinishOps(deps: FinishOpsDeps): FinishOps {
       // `openOrPromotePr` (called below) reads
       // it, or a run that pushed a real commit still gets skipped for the
       // body write it earned.
-      const { committed } = await commitAndPush(state.workdir, state.branch, PROMOTE_MESSAGE(state.feature));
+      const { committed } = await commitAndPush(state.workdir, state.branch, PROMOTE_MESSAGE(state.feature), {
+        excludeDir: audit.auditDir,
+      });
       if (committed) state.committedThisRun = true;
       if (forgeKind === null) return { status: "local-only" };
       const content = await buildPrContentOrFallback(state, audit, forgeKind, prBody, advisorOutputDir);
@@ -215,8 +257,11 @@ export function createFinishOps(deps: FinishOpsDeps): FinishOps {
       // Hooks off: a draft must always land (a deadline can leave a killed fix
       // session's half-edited tree here, which a pre-commit hook would reject).
       // That commit never passed a review, so it is listed as unreviewed.
+      const skipCommit = await setAsideLeftoverDirt(state, audit);
       const { committed, sha } = await commitAndPush(state.workdir, state.branch, PROMOTE_MESSAGE(state.feature), {
         skipHooks: true,
+        skipCommit,
+        excludeDir: audit.auditDir,
       });
       if (committed) {
         state.committedThisRun = true;

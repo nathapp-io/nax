@@ -460,12 +460,14 @@ export const NaxConfigSchema = z
             acceptanceMs: z.number().int().positive().default(600_000),
             /** Per quality gate (build / typecheck / lint / test). */
             gateMs: z.number().int().positive().default(900_000),
-            /** Whole-phase deadline, enforced as an AbortSignal (design 4.7). */
-            flowMs: z.number().int().positive().default(5_400_000),
-            /** Per LLM op (one review, fix or narrative turn). null keeps callOp's own default. */
-            stepMs: z.number().int().positive().nullable().default(null),
+            /** Whole-phase backstop, enforced as an AbortSignal (finish A: 3 h). */
+            flowMs: z.number().int().positive().default(10_800_000),
+            /** Per review lens call (finish A). */
+            reviewMs: z.number().int().positive().default(900_000),
+            /** Per fix session (finish A). */
+            fixMs: z.number().int().positive().default(1_200_000),
           })
-          .default({ acceptanceMs: 600_000, gateMs: 900_000, flowMs: 5_400_000, stepMs: null }),
+          .default({ acceptanceMs: 600_000, gateMs: 900_000, flowMs: 10_800_000, reviewMs: 900_000, fixMs: 1_200_000 }),
       })
       .default({
         enabled: false,
@@ -475,7 +477,7 @@ export const NaxConfigSchema = z
         escalate: { telegram: true },
         notify: { mode: "draft" },
         rerun: "on-change",
-        timeouts: { acceptanceMs: 600_000, gateMs: 900_000, flowMs: 5_400_000, stepMs: null },
+        timeouts: { acceptanceMs: 600_000, gateMs: 900_000, flowMs: 10_800_000, reviewMs: 900_000, fixMs: 1_200_000 },
       }),
     // A1 advisor. `.prefault({})` so every nested default applies (Zod 4).
     advisor: AdvisorConfigObjectSchema.prefault({}),

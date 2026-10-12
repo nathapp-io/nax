@@ -6,11 +6,13 @@
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "@/logger";
 import { recordRound } from "./audit";
+import { writeCheckpoint } from "./checkpoint";
 import { buildCommitRound, commitFixes, filesInCommit } from "./commit";
 import { buildFixCommitMessage } from "./commit-message";
+import { consumeIfCommitted, runFixStep } from "./fix-step";
 import { runAcceptanceGate } from "./gates/acceptance";
 import { resolveGateCommands, runQualityGates } from "./gates/quality";
-import { assertNotAborted, type FinishMachineDeps } from "./machine-deps";
+import { assertNotAborted, type FinishMachineDeps, fixStepDeps } from "./machine-deps";
 import type { ReviewLoopDeps } from "./review-loop";
 import { runReviewLoop } from "./review-loop";
 import { gateCommitRoute, gateFacts, MAX_REVIEW_ROUNDS, routeQualityGates } from "./route";
@@ -51,6 +53,7 @@ async function recordGateRound(state: FinishState, deps: FinishMachineDeps, fail
     findings: [],
     failing,
   });
+  await writeCheckpoint(deps.audit, state);
 }
 
 async function fixOnce(
@@ -59,25 +62,27 @@ async function fixOnce(
   gates: QualityGateResult,
 ): Promise<{ committed: boolean; changed: boolean }> {
   assertNotAborted(deps);
-  let fixOutcome: Awaited<ReturnType<FinishMachineDeps["ops"]["fix"]>>;
-  try {
-    fixOutcome = await deps.ops.fix("gate", { state, failing: gates.failing, gateOutput: gates.output });
-  } catch (err) {
-    assertNotAborted(deps); // a deadline or abort is not a failed fix
-    getSafeLogger()?.warn("finish", "Gate fix session failed; counted as used", {
-      storyId: "_run",
-      error: errorMessage(err),
-    });
+  const step = await runFixStep(state, fixStepDeps(deps), "gate", { failing: gates.failing, gateOutput: gates.output });
+  if (step.kind !== "done") {
+    if (step.kind === "failed") {
+      getSafeLogger()?.warn("finish", "Gate fix session failed; counted as used", {
+        storyId: "_run",
+        error: errorMessage(step.error),
+      });
+    }
+    // Counted either way: routeQualityGates stops the loop on the attempt cap.
     state.phases.gate.fixAttempts += 1;
     return { committed: false, changed: false };
   }
+  const fixOutcome = step.outcome;
   const message = buildFixCommitMessage(
     "gate",
     state.feature,
     { gate: { failing: gates.failing, output: gates.output } },
     { workdir: state.workdir },
   );
-  const commit = await commitFixes(state.workdir, message, { skipHooks: true });
+  const commit = await commitFixes(state.workdir, message, { skipHooks: true, excludeDir: deps.audit.auditDir });
+  await consumeIfCommitted(state, step.continued, commit.committed);
   if (commit.committed) state.committedThisRun = true;
   const files = commit.committed && commit.shaAfter ? await filesInCommit(state.workdir, commit.shaAfter) : null;
   const route = gateCommitRoute(commit.committed, files, deps.context.testFileRegex);
@@ -104,6 +109,8 @@ async function fixOnce(
 }
 
 /** A gate runner that throws (not an abort) is one red gate carrying the error; a fix cannot help it. */
+const CRASHED_GATE = "gates (runner crashed)";
+
 async function runGatesOrCrash(
   state: FinishState,
   deps: FinishMachineDeps,
@@ -114,7 +121,7 @@ async function runGatesOrCrash(
     assertNotAborted(deps);
     getSafeLogger()?.warn("finish", "Quality gates could not run", { storyId: "_run", error: errorMessage(err) });
     const output = errorMessage(err);
-    return { gates: { passed: false, ran: ["gates"], failing: ["gates"], output }, crashed: true };
+    return { gates: { passed: false, ran: [CRASHED_GATE], failing: [CRASHED_GATE], output }, crashed: true };
   }
 }
 

@@ -14,7 +14,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { SessionTurnError } from "@/agents/types";
-import { isWatchdogCancelledTurn } from "@/session/watchdog-turn-classification";
+import { isWatchdogCancelledTurn, staleTurnFailure } from "@/session/watchdog-turn-classification";
 
 const ACP_CANCELLED = () =>
   new SessionTurnError("Agent session ended with stop reason: error (externally cancelled)", true);
@@ -43,4 +43,41 @@ describe("isWatchdogCancelledTurn()", () => {
   test("a non-Error throw is never the watchdog's cancel", () => {
     expect(isWatchdogCancelledTurn({ watchdogFired: true, err: "aborted", signalAborted: false })).toBe(false);
   });
+});
+
+describe("staleTurnFailure (finish A)", () => {
+  const abort = Object.assign(new Error("aborted"), { name: "AbortError" });
+  test("watchdog cancel -> fail-stale idle-watchdog", () => {
+    expect(
+      staleTurnFailure({ watchdogFired: true, interrupted: false, err: abort, signalAborted: false })?.adapterFailure
+        .reason,
+    ).toBe("idle-watchdog");
+  });
+  test("interrupt -> fail-stale interrupted", () => {
+    expect(
+      staleTurnFailure({ watchdogFired: true, interrupted: true, err: abort, signalAborted: false })?.adapterFailure
+        .reason,
+    ).toBe("interrupted");
+  });
+  test("a caller-signalled abort is never stale", () => {
+    expect(
+      staleTurnFailure({ watchdogFired: true, interrupted: true, err: abort, signalAborted: true }),
+    ).toBeUndefined();
+  });
+});
+
+describe("isWatchdogCancelledTurn() with a finish interrupt", () => {
+  test.each([
+    [true, true, "plain", false, true],
+    [true, true, "acp", false, true],
+    [true, true, "plain", true, false],
+    [true, false, "plain", false, false],
+    [false, true, "plain", false, false],
+  ] as const)(
+    "watchdog=%s interrupted=%s err=%s signal=%s -> %s",
+    (watchdogFired, interrupted, shape, signalAborted, expected) => {
+      const err = shape === "acp" ? ACP_CANCELLED() : PLAIN_ERROR();
+      expect(isWatchdogCancelledTurn({ watchdogFired, interrupted, err, signalAborted })).toBe(expected);
+    },
+  );
 });

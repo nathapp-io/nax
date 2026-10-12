@@ -23,6 +23,8 @@ import {
   turnResultToAgentResult,
 } from "./build-hop-callback-hop";
 import type { HopEndpoint } from "./hop-endpoint";
+import { withInterrupt } from "./send-interrupt";
+import type { SendTurnOverrides } from "./types";
 
 /**
  * Classify a thrown turn into the failure AgentResult the fallback loop sees.
@@ -126,39 +128,44 @@ export async function dispatchHopTurn(args: HopDispatchArgs): Promise<HopOutcome
     // the initial prompt is the only one and a region-bearing prompt sent
     // from inside the body would reach the agent verbatim — the very
     // failure AC8 guards against.
-    const send = (turnPrompt: string): Promise<TurnResult> =>
-      ctx.agentManager.runAsSession(
-        agentName,
-        handle,
-        applyDiffAccessForAgentProtocol(agentName, turnPrompt, tooling.advertisedTools),
-        {
-          storyId: ctx.story.id,
-          featureName: ctx.featureName,
-          workdir: ctx.workdir,
-          projectDir: ctx.projectDir,
-          pipelineStage: input.stage,
-          // SEC-3: thread per-package config so monorepo permissionProfile is honored.
-          config: ctx.config,
-          sessionRole: resolvedRunOptions.sessionRole,
-          signal: resolvedRunOptions.abortSignal,
-          contextPullTools: tooling.contextPullTools,
-          contextToolRuntime: tooling.contextToolRuntime,
-          codingTools: tooling.codingSupport?.tools,
-          ...(resolvedRunOptions.callId !== undefined ? { callId: resolvedRunOptions.callId } : {}),
-          ...(resolvedRunOptions.scopeId !== undefined ? { scopeId: resolvedRunOptions.scopeId } : {}),
-          ...(tooling.interactionHandler ? { interactionHandler: tooling.interactionHandler } : {}),
-          // Context tools need at least one extra round-trip to answer a call;
-          // the adapter default of a single turn leaves no room. Mirrors
-          // session-run-hop.ts. Bridge-only callers keep their prior behaviour.
-          // Mirrors session-run-hop.ts — the two must not drift. Forwarded as
-          // the Q&A budget it is documented to be; the native loop no longer
-          // spends it on round-trips.
-          ...(tooling.hasContextTools
-            ? { maxInteractions: ctx.maxInteractionTurns ?? 10 }
-            : ctx.maxInteractionTurns !== undefined
-              ? { maxInteractions: ctx.maxInteractionTurns }
-              : {}),
-        },
+    const send = (turnPrompt: string, overrides?: SendTurnOverrides): Promise<TurnResult> =>
+      withInterrupt(
+        overrides?.interrupt,
+        () => ctx.sessionManager.interruptTurn(handle.id),
+        () =>
+          ctx.agentManager.runAsSession(
+            agentName,
+            handle,
+            applyDiffAccessForAgentProtocol(agentName, turnPrompt, tooling.advertisedTools),
+            {
+              storyId: ctx.story.id,
+              featureName: ctx.featureName,
+              workdir: ctx.workdir,
+              projectDir: ctx.projectDir,
+              pipelineStage: input.stage,
+              // SEC-3: thread per-package config so monorepo permissionProfile is honored.
+              config: ctx.config,
+              sessionRole: resolvedRunOptions.sessionRole,
+              signal: resolvedRunOptions.abortSignal,
+              contextPullTools: tooling.contextPullTools,
+              contextToolRuntime: tooling.contextToolRuntime,
+              codingTools: tooling.codingSupport?.tools,
+              ...(resolvedRunOptions.callId !== undefined ? { callId: resolvedRunOptions.callId } : {}),
+              ...(resolvedRunOptions.scopeId !== undefined ? { scopeId: resolvedRunOptions.scopeId } : {}),
+              ...(tooling.interactionHandler ? { interactionHandler: tooling.interactionHandler } : {}),
+              // Context tools need at least one extra round-trip to answer a call;
+              // the adapter default of a single turn leaves no room. Mirrors
+              // session-run-hop.ts. Bridge-only callers keep their prior behaviour.
+              // Mirrors session-run-hop.ts — the two must not drift. Forwarded as
+              // the Q&A budget it is documented to be; the native loop no longer
+              // spends it on round-trips.
+              ...(tooling.hasContextTools
+                ? { maxInteractions: ctx.maxInteractionTurns ?? 10 }
+                : ctx.maxInteractionTurns !== undefined
+                  ? { maxInteractions: ctx.maxInteractionTurns }
+                  : {}),
+            },
+          ),
       );
 
     const turnResult = ctx.hopBody

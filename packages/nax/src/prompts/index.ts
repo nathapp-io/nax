@@ -31,6 +31,7 @@ export type {
 export {
   buildFinishBranchReviewPrompt,
   buildFinishFixPrompt,
+  buildFinishHandoffPrompt,
   buildFinishReviewJsonRetry,
   buildFinishReviewJsonRetryCondensed,
   buildFinishSpecReviewPrompt,

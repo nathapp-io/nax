@@ -1,4 +1,5 @@
 import type { TemplateMode } from "@/forge";
+import type { LedgerEntry } from "./ledger";
 
 export type { TemplateMode };
 
@@ -33,6 +34,17 @@ export interface Finding {
   source?: ReviewLens;
 }
 
+/** Finish A: what an interrupted fix session says it finished, per finding. */
+export interface HandoffNote {
+  findings: { index: number; status: "done" | "partial" | "not-started"; files: string[]; remaining: string }[];
+}
+
+/** Finish A: an earlier set-aside fix attempt that the next attempt continues. */
+export interface FixContinuation {
+  note?: HandoffNote;
+  files: string[];
+}
+
 /** What one A4 finish review op returns. */
 export interface FinishReviewOutput {
   findings: Finding[];
@@ -44,6 +56,8 @@ export interface FinishReviewOutput {
   summary?: string;
   /** Set when the op produced no parseable verdict after its retry. */
   missing?: true;
+  /** Finish A: stopped by `finish.timeouts.reviewMs`; always paired with `missing`. */
+  stoppedAtLimit?: true;
 }
 
 /** What the fix node did with one finding it was handed. */
@@ -60,6 +74,9 @@ export interface FindingDisposition {
 export interface FinishTimeouts {
   acceptanceMs?: number;
   gateMs?: number;
+  reviewMs?: number;
+  fixMs?: number;
+  flowMs?: number;
 }
 /** The fix-and-reverify loops, in order. `review` is the shared fix round for both review lenses. */
 export type FinishPhase = "acceptance" | "spec" | "quality" | "review" | "gate";
@@ -195,7 +212,7 @@ export type AcceptanceFact = "green" | "red" | "unverified" | "not-configured";
 /** One quality gate's end-of-finish result. */
 export interface GateFact {
   name: string;
-  status: "green" | "red";
+  status: "green" | "red" | "not-run";
   excerpt?: string;
 }
 
@@ -208,6 +225,12 @@ export interface ResolutionFacts {
   unreviewedFixCommits: string[];
   coverage: Record<ReviewLens, number | null>;
   fixRounds: number;
+  /** Finish A: one entry per finding with its state (spec section 5). */
+  findings: LedgerEntry[];
+  /** Finish A: every place the finish stopped short. */
+  stops: Stop[];
+  /** Finish A: handoffs whose restore failed and whose half-edit was never set aside (absent before this field). */
+  restoreFailed?: number[];
 }
 
 /** What the resolver decided, kept on the state so the PR context can read it. */
@@ -242,6 +265,16 @@ export interface FinishResult {
   url?: string;
   /** Open findings on a draft PR. */
   findings?: Finding[];
+  /** Finish A: every stop on a failed result (a cancelled run); a ready or draft result carries them in `facts.stops`. */
+  stops?: Stop[];
+  /** Finish A: every fix session that was set aside; absent when none were. */
+  handoffs?: {
+    dir: string;
+    limit: HandoffLimit;
+    findingIds: string[];
+    consumed: boolean;
+    reapplied?: boolean;
+  }[];
   /**
    * Every fix round the flow ran, on *all* terminal statuses — not just
    * escalations. A successful finish that took four rounds to get there is the
@@ -282,4 +315,74 @@ export interface QualityGateResult {
   ran: string[];
   failing: string[];
   output: string;
+}
+
+/** Finish A §4.1: one pre-existing untracked file at fix-session start. */
+export interface UntrackedEntry {
+  path: string;
+  size: number;
+  mtimeMs: number;
+  /** Permission bits (`mode & 0o777`) so a put-back keeps them; absent on older checkpoints. */
+  mode?: number;
+  saved: boolean;
+}
+export interface UntrackedSnapshot {
+  dir: string;
+  files: UntrackedEntry[];
+}
+/** Finish A §4.1: the state a fix session started from. */
+export interface FixBase {
+  baseSha: string;
+  headSha: string;
+  untrackedBefore: string[];
+  untrackedSnapshot?: UntrackedSnapshot;
+}
+/** Finish A §3.3: one place a finish stopped short of its work, for the PR body and the result. */
+export interface Stop {
+  kind: "review" | "fix" | "flow" | "run";
+  step?: "acceptance" | "review" | "gate" | "resolve";
+  phase?: "acceptance" | "gate" | "review";
+  lens?: ReviewLens;
+  round?: number;
+  at: string;
+  limitMs: number;
+  handoff?: number;
+  findings?: number;
+}
+export type HandoffLimit = "fix" | "flow" | "run" | "error";
+/** Finish A §4.2: `meta.json` of a set-aside handoff. */
+export interface HandoffRecord {
+  n: number;
+  dir: string;
+  phase: "acceptance" | "gate" | "review";
+  limit: HandoffLimit;
+  baseSha: string;
+  headSha: string;
+  findingIds: string[];
+  newUntracked: string[];
+  changedPaths: string[];
+  stoppedAt: string;
+  hasNote: boolean;
+  patchSaved: boolean;
+  restored: boolean;
+  /**
+   * Set when a restore-failed handoff's leftover dirt was later set aside as handoff N (by the next fix
+   * step's guard or by finalize): the worktree no longer holds this session's half-edit.
+   */
+  settledBy?: number;
+  /** HEAD had moved since the session's base (a commit was made): the restore targeted the current HEAD, so those commits were kept. */
+  headMoved?: boolean;
+  consumed: boolean;
+  reapplied?: boolean;
+  /** Pre-existing untracked files the session changed: put back from the snapshot. */
+  untrackedRestored: string[];
+  /** Pre-existing untracked files the session changed that had no snapshot (over the cap): moved into the handoff. */
+  untrackedMovedAside: string[];
+  /** Pre-existing untracked files the session changed that could not be handled safely; left as the session left them. */
+  untrackedFailed: string[];
+  /**
+   * The base of the fix session this handoff set aside (including its pre-existing-untracked snapshot).
+   * Finalize needs it when the restore failed (spec 4.5). Absent on records written before it existed.
+   */
+  base?: FixBase;
 }

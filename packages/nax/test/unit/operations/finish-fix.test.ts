@@ -7,9 +7,12 @@ import { afterEach, describe, expect, test } from "bun:test";
  */
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { makeTestRuntime, opSelector, withTempDir } from "@test/helpers";
+import { makeTestRuntime, makeTurnResult, opSelector, withTempDir } from "@test/helpers";
+import type { TurnResult } from "@/agents/types";
+import { SessionFailureError } from "@/agents/types";
 import type { Finding } from "@/finish";
-import type { FinishFixInput } from "@/operations";
+import { HANDOFF_MARKER, parseHandoffReply } from "@/finish/fix";
+import type { FinishFixInput, HopBodyContext, SendTurnOverrides } from "@/operations";
 import { finishFixOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
 
@@ -62,8 +65,8 @@ describe("finishFixOp shape", () => {
   });
 
   test("timeoutMs prefers the input, else execution.sessionTimeoutSeconds", () => {
-    // finish.timeouts.stepMs defaults to null, so an input with no timeoutMs is
-    // the common case and must still be bounded.
+    // The finish phase supplies finish.timeouts.reviewMs / fixMs; a direct caller
+    // with no timeoutMs must still be bounded by execution.sessionTimeoutSeconds.
     const ctx = makeCtx();
     expect(finishFixOp.timeoutMs?.({ ...GATE_INPUT, timeoutMs: 4242 }, ctx)).toBe(4242);
     expect(finishFixOp.timeoutMs?.(GATE_INPUT, ctx)).toBe(ctx.config.execution.sessionTimeoutSeconds * 1000);
@@ -165,5 +168,118 @@ describe("finishFixOp.recover()", () => {
       );
       expect(result).toEqual({ dispositions: [] });
     });
+  });
+});
+
+function stale(reason: "interrupted" | "idle-watchdog"): SessionFailureError {
+  return new SessionFailureError("stale", {
+    category: "availability",
+    outcome: "fail-stale",
+    retriable: true,
+    message: "stale",
+    reason,
+  });
+}
+
+function hopCtx(
+  input: FinishFixInput,
+  send: (p: string, o?: SendTurnOverrides) => Promise<TurnResult>,
+): HopBodyContext<FinishFixInput> {
+  return { send, sendWithParseRetry: (p) => send(p), input };
+}
+
+describe("finishFixOp handoff (finish A)", () => {
+  const hopBody = finishFixOp.hopBody;
+  const base: FinishFixInput = {
+    phase: "review",
+    workdir: "/repo",
+    findings: [{ severity: "LOW", title: "A", problem: "p", fix: "f" }],
+  };
+
+  test("a normal turn is returned unchanged, sent with the interrupt", async () => {
+    const interrupt = new AbortController().signal;
+    const seen: (SendTurnOverrides | undefined)[] = [];
+    const turn = makeTurnResult({ output: "## DISPOSITIONS\n1. fixed" });
+    const out = await hopBody(
+      "fix",
+      hopCtx({ ...base, interrupt }, async (_p, o) => {
+        seen.push(o);
+        return turn;
+      }),
+    );
+    expect(out).toBe(turn);
+    expect(seen[0]?.interrupt).toBe(interrupt);
+  });
+
+  test("an interrupted turn sends the handoff prompt on the same session and returns a marked reply", async () => {
+    const interrupt = new AbortController();
+    const prompts: string[] = [];
+    const out = await hopBody(
+      "fix",
+      hopCtx({ ...base, interrupt: interrupt.signal }, async (p) => {
+        prompts.push(p);
+        if (prompts.length === 1) {
+          interrupt.abort();
+          throw stale("interrupted");
+        }
+        return makeTurnResult({ output: '{"findings":[]}' });
+      }),
+    );
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("Stop working");
+    expect(out.output.startsWith(HANDOFF_MARKER)).toBe(true);
+    expect(parseHandoffReply(out.output)).toMatchObject({ interrupted: true });
+  });
+
+  test("an incomplete handoff turn never forwards an adapterFailure", async () => {
+    const interrupt = new AbortController();
+    let calls = 0;
+    const out = await hopBody(
+      "fix",
+      hopCtx({ ...base, interrupt: interrupt.signal }, async () => {
+        calls += 1;
+        if (calls === 1) {
+          interrupt.abort();
+          throw stale("interrupted");
+        }
+        return makeTurnResult({
+          output: "{",
+          turnIncomplete: true,
+          adapterFailure: {
+            category: "availability",
+            outcome: "fail-adapter-error",
+            retriable: true,
+            message: "incomplete",
+          },
+        });
+      }),
+    );
+    expect(out.adapterFailure).toBeUndefined();
+    expect(out.output.startsWith(HANDOFF_MARKER)).toBe(true);
+  });
+
+  test("a failing handoff turn still returns a marked, interrupted reply (no rethrow, so no stale-retry)", async () => {
+    const interrupt = new AbortController();
+    let calls = 0;
+    const out = await hopBody(
+      "fix",
+      hopCtx({ ...base, interrupt: interrupt.signal }, async () => {
+        calls += 1;
+        if (calls === 1) interrupt.abort();
+        throw stale("interrupted");
+      }),
+    );
+    expect(out.output).toBe(`${HANDOFF_MARKER}\n`);
+  });
+
+  test("a real watchdog stall (interrupt not fired) is rethrown for the normal stale-retry", async () => {
+    await expect(
+      hopBody(
+        "fix",
+        hopCtx({ ...base, interrupt: new AbortController().signal }, async () => {
+          throw stale("idle-watchdog");
+        }),
+      ),
+    ).rejects.toBeInstanceOf(SessionFailureError);
   });
 });

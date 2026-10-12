@@ -31,6 +31,12 @@ export interface RunDispatchOptionsParams {
   readonly toolPatterns?: ToolPatternNarrowing;
   readonly fileOutputPath?: string;
   readonly keepOpen: boolean;
+  /**
+   * The call's abort signal (`ctx.signal ?? ctx.runtime.signal`, from the dispatch
+   * prologue). Each hop sends its turn with `resolvedRunOptions.abortSignal`; without
+   * this a deadline only lands after the hop returns (#2462).
+   */
+  readonly abortSignal?: AbortSignal;
 }
 
 /**
@@ -64,6 +70,7 @@ export function buildRunDispatchOptions(ctx: CallContext, params: RunDispatchOpt
     toolPatterns,
     fileOutputPath,
     keepOpen,
+    abortSignal,
   } = params;
   return {
     prompt,
@@ -108,5 +115,6 @@ export function buildRunDispatchOptions(ctx: CallContext, params: RunDispatchOpt
     ...(ctx.askResolver !== undefined ? { askResolver: ctx.askResolver } : {}),
     ...(ctx.commandShadow !== undefined ? { commandShadow: ctx.commandShadow } : {}),
     ...(ctx.maxInteractionTurns !== undefined ? { maxInteractionTurns: ctx.maxInteractionTurns } : {}),
+    ...(abortSignal !== undefined ? { abortSignal } : {}),
   };
 }

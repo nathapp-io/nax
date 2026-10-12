@@ -17,15 +17,19 @@ import { getSafeLogger } from "@/logger";
 import { runAcceptanceLoop } from "./acceptance-loop";
 import type { FinishAdvisor } from "./advise";
 import { type WriteResultOptions, writeResult } from "./audit";
+import { changedFiles } from "./changed-files";
+import { writeCheckpoint } from "./checkpoint";
 import { headSha } from "./commit";
 import { runGatesLoop } from "./gates-loop";
-import { assertNotAborted, type FinishMachineDeps } from "./machine-deps";
+import { restorePendingNumbers } from "./handoff-state";
+import { applyLedgerEvent } from "./ledger";
+import { assertNotAborted, type FinishMachineDeps, fixStepDeps } from "./machine-deps";
 import type { ReviewInputs } from "./ops";
-import { computeFacts, draftReason, type Resolution, resolve } from "./resolve";
+import { computeFacts, draftReason, type Resolution, resolve, stopReason } from "./resolve";
 import { loadReviewInputs } from "./review-inputs";
 import { type ReviewLoopDeps, runReviewLoop } from "./review-loop";
 import type { FinishState } from "./state";
-import type { FinishResolution, FinishResult, ResolutionFacts } from "./types";
+import type { FinishResolution, FinishResult, GateFact, ResolutionFacts } from "./types";
 
 export type { FinishMachineDeps } from "./machine-deps";
 
@@ -95,10 +99,12 @@ function reviewLoopDeps(deps: FinishMachineDeps, inputs: ReviewInputs): ReviewLo
     audit: deps.audit,
     now: deps.now,
     assertNotAborted: () => assertNotAborted(deps),
+    fix: fixStepDeps(deps),
+    ...(deps.timeouts?.reviewMs !== undefined ? { reviewMs: deps.timeouts.reviewMs } : {}),
   };
 }
 
-const NOT_RUN_GATE = [{ name: "gates", status: "red" as const, excerpt: "not run" }];
+const NOT_RUN_GATE: GateFact[] = [{ name: "gates", status: "not-run", excerpt: "not run" }];
 
 /**
  * The end-of-run facts. Fail closed: acceptance that never reported is
@@ -115,6 +121,9 @@ function currentFacts(state: FinishState, changed: string[]): ResolutionFacts {
     gates: state.gateFacts ?? NOT_RUN_GATE,
     unreviewedFixCommits: state.unreviewedFixCommits,
     changed,
+    ledger: state.review.ledger,
+    stops: state.stops,
+    restoreFailed: restorePendingNumbers(state.handoffs),
   });
 }
 
@@ -134,8 +143,13 @@ async function reReview(state: FinishState, deps: FinishMachineDeps, rdeps: Revi
   state.review = { ...state.review, reReviewUsed: true };
   const before = await headSha(state.workdir);
   await runReviewLoop(state, rdeps, 1);
-  if ((await headSha(state.workdir)) !== before) await runAcceptanceLoop(state, deps);
+  await writeCheckpoint(deps.audit, state);
+  if ((await headSha(state.workdir)) !== before) {
+    await runAcceptanceLoop(state, deps);
+    await writeCheckpoint(deps.audit, state);
+  }
   await runGatesLoop(state, deps, rdeps);
+  await writeCheckpoint(deps.audit, state);
 }
 
 type Decision =
@@ -179,6 +193,20 @@ async function finalizePr(state: FinishState, deps: FinishMachineDeps, decision:
   return out;
 }
 
+/** `result.handoffs` for a state that set work aside (absent when none did); on every terminal result. */
+function handoffsField(state: FinishState): Pick<FinishResult, "handoffs"> {
+  if (state.handoffs.length === 0) return {};
+  return {
+    handoffs: state.handoffs.map((h) => ({
+      dir: h.dir,
+      limit: h.limit,
+      findingIds: h.findingIds,
+      consumed: h.consumed,
+      ...(h.reapplied !== undefined ? { reapplied: h.reapplied } : {}),
+    })),
+  };
+}
+
 async function finalizeResult(
   state: FinishState,
   deps: FinishMachineDeps,
@@ -186,11 +214,26 @@ async function finalizeResult(
   decision: Decision,
 ): Promise<FinishResult> {
   const acceptedResidue = decision.outcome === "ready" ? decision.acceptedResidue : [];
-  const reason = decision.outcome === "draft" ? decision.reason : undefined;
+  if (acceptedResidue.length > 0) {
+    const ledger = applyLedgerEvent(state.review.ledger, {
+      kind: "accepted",
+      findings: acceptedResidue,
+      ref: "advisor approval",
+    });
+    state.review = { ...state.review, ledger };
+  }
+  const stopped = stopReason(state.stops);
+  const reason =
+    decision.outcome === "draft"
+      ? stopped && !decision.reason.startsWith(stopped)
+        ? `${stopped}; ${decision.reason}`
+        : decision.reason
+      : undefined;
   state.resolution = { outcome: decision.outcome, ...(reason ? { reason } : {}), facts, acceptedResidue };
   if (reason) state.reason = reason;
   const out = await finalizePr(state, deps, decision);
   state.status = out.status;
+  await writeCheckpoint(deps.audit, state);
   // The PR path can add a commit to the facts (an unreviewed recovery commit).
   const finalFacts = state.resolution?.facts ?? facts;
   const sha = await headSha(state.workdir);
@@ -200,9 +243,11 @@ async function finalizeResult(
     status: out.status,
     outcome: decision.outcome,
     ...(reason ? { reason } : {}),
-    facts: finalFacts,
+    // The ledger at finalize time: the PR body renders the same one (the earlier snapshot predates `accepted`).
+    facts: { ...finalFacts, findings: [...state.review.ledger] },
     ...(acceptedResidue.length > 0 ? { acceptedResidue } : {}),
     ...(decision.outcome === "draft" ? { findings: finalFacts.findingsOpen } : {}),
+    ...handoffsField(state),
     branch: state.branch,
     ...(sha ? { headSha: sha } : {}),
     ...(url ? { url } : {}),
@@ -235,19 +280,66 @@ async function failedResult(state: FinishState, deps: FinishMachineDeps, reason:
     reason,
     branch: state.branch,
     ...(sha ? { headSha: sha } : {}),
+    ...handoffsField(state),
+    ...(state.stops.length > 0 ? { stops: [...state.stops] } : {}),
   };
   await safeWriteResult(deps, result);
   return result;
 }
 
+/** Spec 3.3: a cancelled run is a `run` stop, never `flow`. A fix session aborted by the run already recorded its own. */
+function recordRunStop(state: FinishState, deps: FinishMachineDeps): void {
+  if (!deps.runSignal?.aborted || state.stops.some((s) => s.kind === "run")) return;
+  state.stops = [
+    ...state.stops,
+    {
+      kind: "run",
+      ...(state.step ? { step: state.step } : {}),
+      round: state.review.pendingRound || state.review.rounds,
+      at: deps.now(),
+      limitMs: 0,
+    },
+  ];
+}
+
+function recordFlowStop(state: FinishState, deps: FinishMachineDeps): void {
+  if (!deps.signal?.aborted || deps.runSignal?.aborted) return;
+  if (state.stops.some((s) => s.kind === "flow")) return;
+  state.stops = [
+    ...state.stops,
+    {
+      kind: "flow",
+      ...(state.step ? { step: state.step } : {}),
+      // Convention: the review round the stop interrupted (lenses running), else the last completed one.
+      round: state.review.pendingRound || state.review.rounds,
+      at: deps.now(),
+      limitMs: deps.timeouts?.flowMs ?? 0,
+    },
+  ];
+}
+
 /** The §3.1 table: what a throw becomes. */
-async function recoverAfterThrow(state: FinishState, deps: FinishMachineDeps, err: unknown): Promise<FinishResult> {
+async function recoverAfterThrow(
+  state: FinishState,
+  deps: FinishMachineDeps,
+  err: unknown,
+  inputs?: ReviewInputs,
+): Promise<FinishResult> {
   const message = errorMessage(err);
-  if (deps.runSignal?.aborted) return failedResult(state, deps, "aborted");
+  if (deps.runSignal?.aborted) {
+    recordRunStop(state, deps);
+    return failedResult(state, deps, "aborted");
+  }
   if (state.finalizing) return failedResult(state, deps, message);
-  const prefix = deps.signal?.aborted ? "deadline" : `finish error: ${message}`;
+  recordFlowStop(state, deps);
+  await writeCheckpoint(deps.audit, state);
+  const prefix = deps.signal?.aborted ? (stopReason(state.stops) ?? "deadline") : `finish error: ${message}`;
   try {
-    const facts = currentFacts(state, []);
+    const changed = inputs?.changed ?? (await changedFiles(state.workdir, state.base));
+    if (changed.length === 0) {
+      getSafeLogger()?.warn("finish", "No changed files for coverage on the recovery path", { storyId: "_run" });
+    }
+    const facts = currentFacts(state, changed);
     const detail = draftReason(facts);
     const decision: Decision = { outcome: "draft", reason: detail ? `${prefix}; ${detail}` : prefix };
     return await finalizeResult(state, deps, facts, decision);
@@ -257,18 +349,30 @@ async function recoverAfterThrow(state: FinishState, deps: FinishMachineDeps, er
 }
 
 export async function runFinishMachine(state: FinishState, deps: FinishMachineDeps): Promise<FinishResult> {
+  let inputs: ReviewInputs | undefined;
   try {
     const pre = await runPreconditions(state, deps);
     if (pre) return pre;
+    state.step = "acceptance";
     await runAcceptanceLoop(state, deps);
+    await writeCheckpoint(deps.audit, state);
     await maybeOpenDraftPr(state, deps);
-    const inputs = await loadReviewInputs(state, deps.outputDir);
+    inputs = await loadReviewInputs(state, deps.outputDir);
     const rdeps = reviewLoopDeps(deps, inputs);
+    state.step = "review";
     await runReviewLoop(state, rdeps);
-    if (state.review.committedFixes) await runAcceptanceLoop(state, deps);
+    await writeCheckpoint(deps.audit, state);
+    if (state.review.committedFixes) {
+      state.step = "acceptance";
+      await runAcceptanceLoop(state, deps);
+      await writeCheckpoint(deps.audit, state);
+    }
+    state.step = "gate";
     await runGatesLoop(state, deps, rdeps);
+    await writeCheckpoint(deps.audit, state);
+    state.step = "resolve";
     return await resolveAndFinalize(state, deps, rdeps);
   } catch (err) {
-    return await recoverAfterThrow(state, deps, err);
+    return await recoverAfterThrow(state, deps, err, inputs);
   }
 }

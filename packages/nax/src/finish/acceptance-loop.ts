@@ -6,10 +6,12 @@
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "@/logger";
 import { recordRound } from "./audit";
+import { writeCheckpoint } from "./checkpoint";
 import { buildCommitRound, commitFixes } from "./commit";
 import { buildFixCommitMessage } from "./commit-message";
+import { consumeIfCommitted, runFixStep } from "./fix-step";
 import { runAcceptanceGate } from "./gates/acceptance";
-import { assertNotAborted, type FinishMachineDeps } from "./machine-deps";
+import { assertNotAborted, type FinishMachineDeps, fixStepDeps } from "./machine-deps";
 import { routeAcceptance } from "./route";
 import type { FinishState } from "./state";
 import type { AcceptanceGateResult } from "./types";
@@ -40,29 +42,31 @@ async function recordGateOutcome(state: FinishState, deps: FinishMachineDeps): P
     outcome: "no-reviewer",
     findings: [],
   });
+  await writeCheckpoint(deps.audit, state);
 }
 
 async function fixOnce(state: FinishState, deps: FinishMachineDeps, output: string): Promise<void> {
   assertNotAborted(deps);
-  let fixOutcome: Awaited<ReturnType<FinishMachineDeps["ops"]["fix"]>>;
-  try {
-    fixOutcome = await deps.ops.fix("acceptance", { state, acceptanceOutput: output });
-  } catch (err) {
-    assertNotAborted(deps); // a deadline or abort is not a failed fix
-    getSafeLogger()?.warn("finish", "Acceptance fix session failed; counted as used", {
-      storyId: "_run",
-      error: errorMessage(err),
-    });
+  const step = await runFixStep(state, fixStepDeps(deps), "acceptance", { acceptanceOutput: output });
+  if (step.kind !== "done") {
+    if (step.kind === "failed") {
+      getSafeLogger()?.warn("finish", "Acceptance fix session failed; counted as used", {
+        storyId: "_run",
+        error: errorMessage(step.error),
+      });
+    }
     state.phases.acceptance.fixAttempts += 1;
     return;
   }
+  const fixOutcome = step.outcome;
   const message = buildFixCommitMessage(
     "acceptance",
     state.feature,
     { acceptance: { output } },
     { workdir: state.workdir },
   );
-  const commit = await commitFixes(state.workdir, message, { skipHooks: true });
+  const commit = await commitFixes(state.workdir, message, { skipHooks: true, excludeDir: deps.audit.auditDir });
+  await consumeIfCommitted(state, step.continued, commit.committed);
   if (commit.committed) {
     state.committedThisRun = true;
     if (commit.shaAfter) state.unreviewedFixCommits = [...state.unreviewedFixCommits, commit.shaAfter];

@@ -470,6 +470,9 @@ describe("buildFinishBody — Unresolved and coverage (A4)", () => {
     missing: [],
     unreviewed: [],
     accepted: [],
+    ledger: [],
+    stops: [],
+    handoffs: [],
     ...over,
   });
 
@@ -550,6 +553,9 @@ describe("buildFinishBody — Unresolved with a repo template (A4)", () => {
     missing: [],
     unreviewed: [],
     accepted: [],
+    ledger: [],
+    stops: [],
+    handoffs: [],
   };
 
   test.each(["merge", "strict"] as const)("%s mode renders Unresolved before the template sections", (mode) => {

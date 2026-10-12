@@ -228,6 +228,8 @@ const draftFacts = {
   unreviewedFixCommits: [],
   coverage: { spec: null, quality: null },
   fixRounds: 1,
+  findings: [],
+  stops: [],
 };
 
 describe("finalizeDraftPr recovery commit", () => {
@@ -281,5 +283,59 @@ describe("promotePr fallback content", () => {
     expect(body).toContain("Reason: 1 open finding(s)");
     expect(body).toContain("Missing guard");
     expect(body).toContain("render boom");
+  });
+});
+
+describe("review step limit (finish A)", () => {
+  test("a lens cut off at reviewMs returns missing + stoppedAtLimit", async () => {
+    _finishOpsDeps.callOp = (async (ctx: CallContext) => {
+      await new Promise<void>((r) => ctx.signal?.addEventListener("abort", () => r(), { once: true }));
+      throw new Error("callOp[finish-spec-review]: aborted");
+    }) as typeof _finishOpsDeps.callOp;
+    const { deps } = baseDeps();
+    const out = await createFinishOps({ ...deps, timeouts: { reviewMs: 5, fixMs: 5 } }).reviewSpec(
+      freshState(),
+      inputs,
+    );
+    expect(out).toMatchObject({ missing: true, stoppedAtLimit: true });
+  });
+
+  test("a verdict returned after reviewMs fired is discarded as missing", async () => {
+    _finishOpsDeps.callOp = (async (ctx: CallContext) => {
+      await new Promise<void>((r) => ctx.signal?.addEventListener("abort", () => r(), { once: true }));
+      return { findings: [{ severity: "LOW", title: "late", problem: "p", fix: "f" }], covered: [] };
+    }) as typeof _finishOpsDeps.callOp;
+    const { deps } = baseDeps();
+    const out = await createFinishOps({ ...deps, timeouts: { reviewMs: 5, fixMs: 5 } }).reviewBranch(
+      freshState(),
+      inputs,
+    );
+    expect(out).toMatchObject({ missing: true, stoppedAtLimit: true, findings: [] });
+  });
+
+  test("a phase stop is not a step limit: the error propagates", async () => {
+    const phase = new AbortController();
+    _finishOpsDeps.callOp = (async () => {
+      phase.abort();
+      throw new Error("callOp[finish-spec-review]: aborted");
+    }) as typeof _finishOpsDeps.callOp;
+    const { deps } = baseDeps();
+    const ops = createFinishOps({
+      ...deps,
+      callCtx: { ...deps.callCtx, signal: phase.signal },
+      timeouts: { reviewMs: 60_000 },
+    });
+    await expect(ops.reviewSpec(freshState(), inputs)).rejects.toThrow("aborted");
+  });
+
+  test("the op's timeoutMs is reviewMs plus the margin, so the step limit fires first", async () => {
+    let seen: Record<string, unknown> | undefined;
+    _finishOpsDeps.callOp = (async (_ctx: CallContext, _op: unknown, input: Record<string, unknown>) => {
+      seen = input;
+      return { findings: [], covered: [] };
+    }) as typeof _finishOpsDeps.callOp;
+    const { deps } = baseDeps();
+    await createFinishOps({ ...deps, timeouts: { reviewMs: 1_000 } }).reviewSpec(freshState(), inputs);
+    expect(seen?.timeoutMs).toBe(61_000);
   });
 });

@@ -35,6 +35,7 @@ export {
   writeResult,
 } from "./audit";
 export { changedFiles } from "./changed-files";
+export { _checkpointDeps, checkpointPath, writeCheckpoint } from "./checkpoint";
 export {
   _finishGitDeps,
   buildCommitRound,
@@ -43,6 +44,7 @@ export {
   commitRoundOutcome,
   filesInCommit,
   headSha,
+  isDirty,
   PUSH_TIMEOUT_MS,
 } from "./commit";
 export type { CommitMessageCtx } from "./commit-message";
@@ -53,6 +55,7 @@ export type { FinishContext, LoadFinishContextOptions } from "./context";
 export { _finishContextDeps, loadFinishContext } from "./context";
 export { _acceptanceGateDeps, runAcceptanceGate } from "./gates/acceptance";
 export { _qualityGateDeps, resolveGateCommands, runQualityGates } from "./gates/quality";
+export type { LedgerEntry, LedgerState } from "./ledger";
 export type { FinishMachineDeps } from "./machine";
 export { runFinishMachine } from "./machine";
 export type { Contradiction, MergedFindings } from "./merge-findings";
@@ -105,6 +108,19 @@ export {
   routeAcceptance,
   routeQualityGates,
 } from "./route";
+export {
+  _setAsideDeps,
+  captureFixBase,
+  handoffDir,
+  markHandoffConsumed,
+  readHandoffNote,
+  reapplyHandoff,
+  restoreUntracked,
+  setAside,
+  snapshotUntracked,
+  UNTRACKED_FILE_MAX,
+  UNTRACKED_TOTAL_MAX,
+} from "./set-aside";
 export type { FinishPhaseState, FinishState, FinishStateInit, FinishStatus, ReviewLoopState } from "./state";
 export { createFinishState, deserializeFinishState, serializeFinishState } from "./state";
 export type {
@@ -119,8 +135,13 @@ export type {
   FinishReviewOutput,
   FinishRound,
   FinishTimeouts,
+  FixBase,
   GateFact,
+  HandoffLimit,
+  HandoffRecord,
   QualityGateResult,
   ResolutionFacts,
   ReviewLens,
+  UntrackedEntry,
+  UntrackedSnapshot,
 } from "./types";

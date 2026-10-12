@@ -40,9 +40,9 @@ describe("serializeFinishState / deserializeFinishState", () => {
     expect(roundTripped).toEqual(state);
   });
 
-  test("throws FINISH_STATE_VERSION on a payload with version other than 2", () => {
+  test("throws FINISH_STATE_VERSION on a payload with version other than 3", () => {
     const state = createFinishState(BASE_INIT);
-    const badPayload = JSON.stringify({ ...state, version: 3 });
+    const badPayload = JSON.stringify({ ...state, version: 2 });
 
     expect(() => deserializeFinishState(badPayload)).toThrow(NaxError);
     try {
@@ -90,9 +90,9 @@ describe("serializeFinishState / deserializeFinishState", () => {
 });
 
 describe("A4 finish state", () => {
-  test("createFinishState is version 2 with a zeroed review loop and five phases", () => {
+  test("createFinishState is version 3 with a zeroed review loop and five phases", () => {
     const s = createFinishState(BASE_INIT);
-    expect(s.version).toBe(2);
+    expect(s.version).toBe(3);
     expect(Object.keys(s.phases).sort()).toEqual(["acceptance", "gate", "quality", "review", "spec"]);
     expect(s.review).toEqual({
       rounds: 0,
@@ -102,6 +102,7 @@ describe("A4 finish state", () => {
       reReviewUsed: false,
       committedFixes: false,
       covered: { spec: [], quality: [] },
+      ledger: [],
     });
     expect(s.unreviewedFixCommits).toEqual([]);
     expect(s).not.toHaveProperty("escalationReason");
@@ -111,8 +112,20 @@ describe("A4 finish state", () => {
     expect(() => deserializeFinishState('{"version":1}')).toThrow("unsupported version");
   });
 
-  test("a version 2 state round-trips", () => {
+  test("a version 3 state round-trips", () => {
     const s = createFinishState(BASE_INIT);
     expect(deserializeFinishState(serializeFinishState(s))).toEqual(s);
+  });
+
+  test("a version 3 checkpoint written with the removed lastFixBase field still loads", () => {
+    const s = createFinishState(BASE_INIT);
+    const old = JSON.stringify({ ...s, lastFixBase: { baseSha: "a", headSha: "a", untrackedBefore: [] } });
+    const loaded = deserializeFinishState(old);
+    expect(loaded.feature).toBe(s.feature);
+    expect(loaded.handoffs).toEqual([]);
+  });
+
+  test("a new state has no lastFixBase", () => {
+    expect(createFinishState(BASE_INIT)).not.toHaveProperty("lastFixBase");
   });
 });

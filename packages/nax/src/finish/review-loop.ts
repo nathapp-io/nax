@@ -11,8 +11,11 @@ import { getSafeLogger } from "@/logger";
 import type { AdviceRef, FinishAdvisor, JudgedResult } from "./advise";
 import { judgeWithoutAdvisor } from "./advise";
 import { type AuditTarget, recordRound } from "./audit";
+import { writeCheckpoint } from "./checkpoint";
 import { buildCommitRound, commitFixes } from "./commit";
 import { buildFixCommitMessage } from "./commit-message";
+import { consumeIfCommitted, type FixStepDeps, runFixStep } from "./fix-step";
+import { applyLedgerEvent, type LedgerEvent } from "./ledger";
 import type { MergedFindings } from "./merge-findings";
 import { mergeFindings } from "./merge-findings";
 import type { FinishOps, ReviewInputs } from "./ops";
@@ -33,6 +36,10 @@ export interface ReviewLoopDeps {
   audit: AuditTarget;
   now: () => string;
   assertNotAborted: () => void;
+  /** Finish A: how every fix session runs (interrupt, set-aside, stops). */
+  fix: FixStepDeps;
+  /** Finish A: `finish.timeouts.reviewMs`, consumed by the review lens limit (later task). */
+  reviewMs?: number;
 }
 
 function patchReview(state: FinishState, patch: Partial<FinishState["review"]>): void {
@@ -60,6 +67,40 @@ function noteRound(state: FinishState, round: ReviewRoundResult): void {
   for (const lens of LENSES) if (!round[lens].missing) covered[lens] = [...round[lens].covered];
   const { title, summary } = round.quality;
   patchReview(state, { covered, ...(title ? { title } : {}), ...(summary ? { summary } : {}) });
+}
+
+function ledgerEvent(state: FinishState, ev: LedgerEvent): void {
+  patchReview(state, { ledger: applyLedgerEvent(state.review.ledger, ev) });
+}
+
+function recordJudgment(state: FinishState, judged: JudgedResult): void {
+  for (const d of judged.dropped) {
+    ledgerEvent(state, {
+      kind: "ruled",
+      finding: d.finding,
+      state: d.action === "supersede" ? "superseded" : "waived",
+      ref: d.decisionId,
+    });
+  }
+  const heldRef = new Map(judged.held.map((h) => [h.finding, h.decisionId]));
+  for (const u of judged.unresolved) {
+    const ref = heldRef.get(u);
+    ledgerEvent(state, { kind: "ruled", finding: u, state: "unresolved", ...(ref ? { ref } : {}) });
+  }
+}
+
+function recordReviewStops(state: FinishState, deps: ReviewLoopDeps, round: ReviewRoundResult): void {
+  for (const lens of LENSES) {
+    if (!round[lens].stoppedAtLimit) continue;
+    const stop = {
+      kind: "review" as const,
+      lens,
+      round: state.review.rounds + 1,
+      at: deps.now(),
+      limitMs: deps.reviewMs ?? 0,
+    };
+    state.stops = [...state.stops, stop];
+  }
 }
 
 async function judgeRound(state: FinishState, deps: ReviewLoopDeps, merged: MergedFindings): Promise<JudgedResult> {
@@ -107,24 +148,44 @@ async function fixRound(
   atCap: boolean,
 ): Promise<void> {
   deps.assertNotAborted();
-  let outcome: Awaited<ReturnType<FinishOps["fix"]>>;
-  try {
-    outcome = await deps.ops.fix("review", { state, findings: fixList });
-  } catch (err) {
-    deps.assertNotAborted(); // a deadline or abort is not a failed fix
-    getSafeLogger()?.warn("finish", "Review fix session failed; findings stay open", {
-      storyId: "_run",
-      error: String(err),
-    });
+  const step = await runFixStep(state, deps.fix, "review", { findings: fixList });
+  if (step.kind !== "done") {
+    if (step.kind === "failed") {
+      getSafeLogger()?.warn("finish", "Review fix session failed; findings stay open", {
+        storyId: "_run",
+        error: String(step.error),
+      });
+    }
+    state.phases.review.fixAttempts += 1;
+    if (step.handoff)
+      ledgerEvent(state, { kind: "set-aside", findings: fixList, handoff: `handoff-${step.handoff.n}` });
     return;
   }
+  const outcome = step.outcome;
   const message = buildFixCommitMessage(
     "review",
     state.feature,
     { findings: fixList },
     { workdir: state.workdir, dispositions: outcome.dispositions },
   );
-  const commit = await commitFixes(state.workdir, message, { skipHooks: true });
+  const commit = await commitFixes(state.workdir, message, { skipHooks: true, excludeDir: deps.audit.auditDir });
+  await consumeIfCommitted(state, step.continued, commit.committed);
+  // 4.3 step 3: the handoff is consumed, so its findings (exact ids; titles get reworded) follow the normal flow.
+  if (step.continued && commit.committed) {
+    ledgerEvent(state, {
+      kind: "handoff-consumed",
+      ids: step.continued.findingIds,
+      handoff: `handoff-${step.continued.n}`,
+    });
+  }
+  if (commit.committed && commit.shaAfter) {
+    ledgerEvent(state, {
+      kind: "fixed",
+      findings: fixList,
+      dispositions: outcome.dispositions ?? [],
+      sha: commit.shaAfter,
+    });
+  }
   if (commit.committed) {
     state.committedThisRun = true;
     patchReview(state, { committedFixes: true });
@@ -153,24 +214,33 @@ async function fixRound(
 /** One round; true when the loop is finished (nothing left to fix). */
 async function runOneRound(state: FinishState, deps: ReviewLoopDeps, limit: number): Promise<boolean> {
   const { ops, inputs } = deps;
+  patchReview(state, { pendingRound: state.review.rounds + 1 });
   const round = await runReviewRound({
     spec: () => ops.reviewSpec(state, inputs),
     quality: () => ops.reviewBranch(state, inputs),
   });
+  const merged = mergeFindings(round.spec.findings, round.quality.findings);
+  const raised = [...merged.toFix, ...merged.judged, ...merged.contradictions.flatMap((c) => [c.spec, c.quality])];
+  // Ledger what the lenses produced before any abort check: a deadline mid-round must not lose it.
+  ledgerEvent(state, { kind: "raised", findings: raised });
   deps.assertNotAborted(); // a deadline during the lenses must not reach the advisor or a fix
   await recordLensRounds(state, deps, round);
+  recordReviewStops(state, deps, round);
   noteRound(state, round);
-  const merged = mergeFindings(round.spec.findings, round.quality.findings);
   const judged = await judgeRound(state, deps, merged);
+  if (round.missing.length === 0) ledgerEvent(state, { kind: "full-round", raised, round: state.review.rounds + 1 });
+  recordJudgment(state, judged);
   const fixList = specFirst([...merged.toFix, ...judged.toFix]);
   patchReview(state, {
     rounds: state.review.rounds + 1,
+    pendingRound: 0,
     lastFindings: fixList,
     missingLenses: round.missing,
     unresolved: addUnresolved(state.review.unresolved, judged.unresolved),
   });
   // A round that saw both lenses has seen every commit made before it (its own fix commit excluded).
   if (round.missing.length === 0) state.unreviewedFixCommits = [];
+  await writeCheckpoint(deps.audit, state);
   if (fixList.length === 0) return true;
   await fixRound(state, deps, fixList, judged.advice, state.review.rounds >= limit);
   return false;

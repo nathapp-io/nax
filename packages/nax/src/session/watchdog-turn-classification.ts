@@ -19,7 +19,7 @@
  * to be clean so a tearing-down run never retries.
  */
 
-import { SessionTurnError } from "../agents/types";
+import { SessionFailureError, SessionTurnError } from "../agents/types";
 
 export interface WatchdogTurnClassificationInput {
   /** `WatchdogCancelTracker.hasCancelled(handle.id)` — the watchdog's wrapped cancel ran. */
@@ -28,6 +28,13 @@ export interface WatchdogTurnClassificationInput {
   readonly err: unknown;
   /** `opts?.signal?.aborted` — a caller-signalled abort (run-level abort / queue ABORT). */
   readonly signalAborted: boolean;
+  /**
+   * `WatchdogCancelTracker.wasInterrupted(handle.id)` - a finish soft interrupt was requested
+   * for this turn. The flag is set BEFORE the cancel runs, so any failure observed after it
+   * is the interrupt's consequence: the native adapter surfaces an abort that lands while a
+   * tool call's JSON args are still streaming as a tool-args parse fault, not an AbortError.
+   */
+  readonly interrupted?: boolean;
 }
 
 export function isWatchdogCancelledTurn(input: WatchdogTurnClassificationInput): boolean {
@@ -38,7 +45,27 @@ export function isWatchdogCancelledTurn(input: WatchdogTurnClassificationInput):
   // generic-branch behavior (session poisoned, raw error rethrown, no retry) so
   // an aborting run does not retry into its own teardown.
   if (signalAborted) return false;
+  // An interrupted turn ends as the interrupt whatever shape the adapter's failure took.
+  if (input.interrupted === true) return true;
   // The native transport's abort shape — same predicate the generic abort
   // branch in sendPrompt matches on.
   return err instanceof Error && err.name === "AbortError";
+}
+
+/** The fail-stale error sendPrompt throws for a watchdog cancel or a finish interrupt; undefined otherwise. */
+export function staleTurnFailure(
+  input: WatchdogTurnClassificationInput & { interrupted: boolean },
+): SessionFailureError | undefined {
+  if (!isWatchdogCancelledTurn(input)) return undefined;
+  const reason = input.interrupted ? "interrupted" : "idle-watchdog";
+  const message = input.interrupted
+    ? "finish interrupted the turn — session kept warm"
+    : "idle watchdog cancelled session — no stream activity";
+  return new SessionFailureError(message, {
+    category: "availability",
+    outcome: "fail-stale",
+    retriable: true,
+    message,
+    reason,
+  });
 }

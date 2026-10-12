@@ -30,16 +30,16 @@ describe("finish schema", () => {
   test("accepts timeout overrides and rejects non-positive budgets", () => {
     const c = NaxConfigSchema.parse({
       version: 1,
-      finish: { timeouts: { acceptanceMs: 1000, gateMs: 2000, flowMs: 3000, stepMs: 4000 } },
+      finish: { timeouts: { acceptanceMs: 1000, gateMs: 2000, flowMs: 3000, reviewMs: 4000, fixMs: 5000 } },
     });
     expect(c.finish.timeouts).toEqual({
       acceptanceMs: 1000,
       gateMs: 2000,
       flowMs: 3000,
-      stepMs: 4000,
+      reviewMs: 4000,
+      fixMs: 5000,
     });
-    // stepMs is nullable — null means "leave callOp's own step default alone"
-    expect(NaxConfigSchema.parse({ version: 1 }).finish.timeouts.stepMs).toBeNull();
+    expect(NaxConfigSchema.parse({ version: 1 }).finish.timeouts.fixMs).toBe(1_200_000);
     expect(NaxConfigSchema.safeParse({ version: 1, finish: { timeouts: { gateMs: 0 } } }).success).toBe(false);
   });
 
