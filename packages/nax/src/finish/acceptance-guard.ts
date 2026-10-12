@@ -10,6 +10,7 @@
  * ignores pathspecs, and a guard that trusted them would restore unrelated files.
  */
 import { join } from "node:path";
+import { getSafeLogger } from "@/logger";
 import { splitAcBlocks } from "./acceptance-evidence";
 import type { FinishContext } from "./context";
 import { gitLiteral, listBaseTree, repoRoot } from "./set-aside-git";
@@ -68,31 +69,62 @@ async function restoreFromHead(root: string, paths: string[]): Promise<boolean> 
   return res.exitCode === 0;
 }
 
-export async function guardAcceptanceEdits(args: {
+/**
+ * Which of `paths` already differ from HEAD (modified, staged-new, untracked) before a fix
+ * session starts. The guard never restores these: their edits are not the session's to undo.
+ * `null` = unknown (git failed): the guard then restores nothing for that session.
+ */
+export async function dirtyAcceptancePaths(workdir: string, paths: string[]): Promise<string[] | null> {
+  if (paths.length === 0) return [];
+  try {
+    return await touchedPaths(await repoRoot(workdir), paths);
+  } catch (err) {
+    getSafeLogger()?.warn("finish", "Could not list pre-existing acceptance edits; the guard will restore nothing", {
+      storyId: "_run",
+      error: String(err),
+    });
+    return null;
+  }
+}
+
+interface GuardArgs {
   workdir: string;
   paths: string[];
   allowed: { testPath: string; acIds: string[] }[];
-}): Promise<GuardOutcome> {
+  /** Paths dirty before the session (default none); `null` = unknown, restore nothing. */
+  preDirty?: string[] | null;
+}
+
+export async function guardAcceptanceEdits(args: GuardArgs): Promise<GuardOutcome> {
   if (args.paths.length === 0) return none();
+  if (args.preDirty === null) return { ...none(), failed: true };
   try {
     return await guardUnchecked(args);
-  } catch {
+  } catch (err) {
+    getSafeLogger()?.warn("finish", "Acceptance guard failed; the fix commit goes ahead unguarded", {
+      storyId: "_run",
+      error: String(err),
+    });
     // A git or spawn failure must not stop the commit: report it, never throw (spec §7).
     return { ...none(), failed: true };
   }
 }
 
-async function guardUnchecked(args: {
-  workdir: string;
-  paths: string[];
-  allowed: { testPath: string; acIds: string[] }[];
-}): Promise<GuardOutcome> {
+async function guardUnchecked(args: GuardArgs): Promise<GuardOutcome> {
   const root = await repoRoot(args.workdir);
   const [touched, inHead] = await Promise.all([touchedPaths(root, args.paths), listBaseTree(root, "HEAD")]);
   if (touched === null || inHead === null) return { ...none(), failed: true };
   const allowedPaths = new Set(args.allowed.map((a) => a.testPath));
   const unauthorised = touched.filter((p) => !allowedPaths.has(p));
-  const restorable = unauthorised.filter((p) => inHead.has(p));
+  const preDirty = new Set(args.preDirty ?? []);
+  const entangled = unauthorised.filter((p) => preDirty.has(p));
+  if (entangled.length > 0) {
+    getSafeLogger()?.warn("finish", "Acceptance file was already dirty before the fix session; not restoring it", {
+      storyId: "_run",
+      paths: entangled,
+    });
+  }
+  const restorable = unauthorised.filter((p) => inHead.has(p) && !preDirty.has(p));
   const restored = await restoreFromHead(root, restorable);
   const authorised = touched.filter((p) => allowedPaths.has(p));
   // A ruling names ACs in one file; keyed by (testPath, acId) so it cannot authorise another file's AC.
@@ -102,7 +134,7 @@ async function guardUnchecked(args: {
   const beyondRuling = [...new Set(perFile.flatMap((f) => f.acs.filter((id) => !ruled.has(`${f.path}\0${id}`))))];
   return {
     reverted: restored ? restorable : [],
-    notRestorable: unauthorised.filter((p) => !inHead.has(p)),
+    notRestorable: unauthorised.filter((p) => !inHead.has(p) || preDirty.has(p)),
     changed,
     beyondRuling,
     failed: !restored,

@@ -27,6 +27,7 @@ export {
   _guardDeps,
   acceptancePathsOf,
   allowedFrom,
+  dirtyAcceptancePaths,
   gateGuardPaths,
   guardAcceptanceEdits,
   guardWorthRecording,

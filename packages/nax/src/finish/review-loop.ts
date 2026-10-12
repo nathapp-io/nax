@@ -9,7 +9,7 @@
  */
 import { getSafeLogger } from "@/logger";
 import { loadAcceptanceFiles } from "./acceptance-evidence";
-import { _guardDeps, allowedFrom, guardWorthRecording, mergeGuard } from "./acceptance-guard";
+import { _guardDeps, allowedFrom, dirtyAcceptancePaths, guardWorthRecording, mergeGuard } from "./acceptance-guard";
 import type { AdviceRef, FinishAdvisor, JudgedResult } from "./advise";
 import { judgeWithoutAdvisor } from "./advise";
 import { concatJudged, type JudgeContext } from "./advise-core";
@@ -160,6 +160,8 @@ async function fixRound(
   atCap: boolean,
 ): Promise<void> {
   deps.assertNotAborted();
+  const guardPaths = deps.acceptancePaths ?? [];
+  const preDirty = guardPaths.length > 0 ? await dirtyAcceptancePaths(state.workdir, guardPaths) : [];
   const step = await runFixStep(state, deps.fix, "review", {
     findings: fixList,
     acceptancePaths: deps.acceptancePaths ?? [],
@@ -180,6 +182,7 @@ async function fixRound(
     workdir: state.workdir,
     paths: deps.acceptancePaths ?? [],
     allowed: allowedFrom(fixList),
+    preDirty,
   });
   if (guardWorthRecording(guard)) state.acceptanceGuard = mergeGuard(state.acceptanceGuard, guard);
   const outcome = step.outcome;

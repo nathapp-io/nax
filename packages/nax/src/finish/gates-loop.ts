@@ -5,7 +5,7 @@
  */
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "@/logger";
-import { _guardDeps, gateGuardPaths, guardWorthRecording, mergeGuard } from "./acceptance-guard";
+import { _guardDeps, dirtyAcceptancePaths, gateGuardPaths, guardWorthRecording, mergeGuard } from "./acceptance-guard";
 import { recordRound } from "./audit";
 import { writeCheckpoint } from "./checkpoint";
 import { buildCommitRound, commitFixes, filesInCommit } from "./commit";
@@ -64,6 +64,7 @@ async function fixOnce(
 ): Promise<{ committed: boolean; changed: boolean }> {
   assertNotAborted(deps);
   const paths = gateGuardPaths(gates.failing, deps.context);
+  const preDirty = paths.length > 0 ? await dirtyAcceptancePaths(state.workdir, paths) : [];
   const step = await runFixStep(state, fixStepDeps(deps), "gate", {
     failing: gates.failing,
     gateOutput: gates.output,
@@ -84,6 +85,7 @@ async function fixOnce(
     workdir: state.workdir,
     paths: paths,
     allowed: [],
+    preDirty,
   });
   if (guardWorthRecording(guard)) state.acceptanceGuard = mergeGuard(state.acceptanceGuard, guard);
   const fixOutcome = step.outcome;

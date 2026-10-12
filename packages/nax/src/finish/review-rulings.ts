@@ -46,7 +46,13 @@ export async function reconcileBefore(
 ): Promise<{ merged: MergedFindings; result: JudgedResult; asked: number }> {
   const advisor = deps.advise;
   if (!advisor) return { merged, result: emptyJudged(), asked: 0 };
-  const rulings = await advisor.rulingsInForce().catch(() => []);
+  const rulings = await advisor.rulingsInForce().catch((err: unknown) => {
+    getSafeLogger()?.warn("finish", "Could not read rulings in force; proceeding with none", {
+      storyId: "_run",
+      error: String(err),
+    });
+    return [];
+  });
   const split = splitForRulings(merged, rulings);
   const r = await safeReconcile(deps, advisor, split.check, MAX_NEAR_MATCH_QUESTIONS, jctx);
   return { merged: split.merged, ...r };

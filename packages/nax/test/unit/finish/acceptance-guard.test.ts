@@ -5,11 +5,13 @@ import {
   _guardDeps,
   acceptancePathsOf,
   allowedFrom,
+  dirtyAcceptancePaths,
   gateGuardPaths,
   guardAcceptanceEdits,
   guardWorthRecording,
   mergeGuard,
 } from "@/finish";
+import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 
 let restoreGit: () => void = () => {};
 afterEach(() => restoreGit());
@@ -136,5 +138,97 @@ describe("path helpers", () => {
     expect(merged).toEqual({ ...NONE, reverted: ["a", "b"], failed: true });
     expect(guardWorthRecording(NONE)).toBe(false);
     expect(guardWorthRecording({ ...NONE, changed: ["AC-1"] })).toBe(true);
+  });
+});
+
+describe("guard with files dirty before the session", () => {
+  const origGit = _finishGitDeps.git;
+  afterEach(() => {
+    _finishGitDeps.git = origGit;
+    resetLogger();
+  });
+
+  function stubGit(restores: string[][], diffOut: string): void {
+    _finishGitDeps.git = async (rawArgs) => {
+      const args = rawArgs[0] === "--literal-pathspecs" ? rawArgs.slice(1) : rawArgs;
+      switch (args[0]) {
+        case "rev-parse":
+          return gitOk("/repo\n");
+        case "diff":
+          return gitOk(diffOut);
+        case "ls-tree":
+          return gitOk("a.ts\0b.ts\0");
+        case "restore":
+          restores.push(args);
+          return gitOk();
+        default:
+          return gitOk();
+      }
+    };
+  }
+
+  test("a path already dirty before the session is never restored and is reported as not restorable", async () => {
+    const restores: string[][] = [];
+    stubGit(restores, "a.ts\0b.ts\0");
+    const warns: LogEntry[] = [];
+    initLogger({ level: "info", headless: true, useChalk: false });
+    addSink((entry) => warns.push(entry));
+    const out = await guardAcceptanceEdits({
+      workdir: "/repo",
+      paths: ["a.ts", "b.ts"],
+      allowed: [],
+      preDirty: ["a.ts"],
+    });
+    expect(out.notRestorable).toEqual(["a.ts"]);
+    expect(out.reverted).toEqual(["b.ts"]);
+    expect(restores).toHaveLength(1);
+    expect(restores[0]).not.toContain("a.ts");
+    expect(restores[0]).toContain("b.ts");
+    expect(warns.some((w) => w.level === "warn" && w.message.includes("already dirty"))).toBe(true);
+  });
+
+  test("a clean path the session edited is still restored", async () => {
+    const restores: string[][] = [];
+    stubGit(restores, "a.ts\0");
+    const out = await guardAcceptanceEdits({ workdir: "/repo", paths: ["a.ts"], allowed: [], preDirty: [] });
+    expect(out).toEqual({ ...NONE, reverted: ["a.ts"] });
+    expect(restores).toHaveLength(1);
+  });
+
+  test("unknown pre-session state (null) restores nothing and reports failed", async () => {
+    const restores: string[][] = [];
+    stubGit(restores, "a.ts\0");
+    const out = await guardAcceptanceEdits({ workdir: "/repo", paths: ["a.ts"], allowed: [], preDirty: null });
+    expect(out).toEqual({ ...NONE, failed: true });
+    expect(restores).toEqual([]);
+  });
+
+  test("dirtyAcceptancePaths lists only the guarded paths that differ from HEAD", async () => {
+    stubGit([], "a.ts\0unrelated.ts\0");
+    expect(await dirtyAcceptancePaths("/repo", ["a.ts", "b.ts"])).toEqual(["a.ts"]);
+    expect(await dirtyAcceptancePaths("/repo", [])).toEqual([]);
+  });
+
+  test("dirtyAcceptancePaths returns null (unknown) when git fails, and logs a warning", async () => {
+    _finishGitDeps.git = async () => {
+      throw new Error("spawn git ENOENT");
+    };
+    const warns: LogEntry[] = [];
+    initLogger({ level: "info", headless: true, useChalk: false });
+    addSink((entry) => warns.push(entry));
+    expect(await dirtyAcceptancePaths("/repo", ["a.ts"])).toBeNull();
+    expect(warns.some((w) => w.level === "warn")).toBe(true);
+  });
+
+  test("a guard failure logs a warning instead of staying silent", async () => {
+    _finishGitDeps.git = async () => {
+      throw new Error("spawn git ENOENT");
+    };
+    const warns: LogEntry[] = [];
+    initLogger({ level: "info", headless: true, useChalk: false });
+    addSink((entry) => warns.push(entry));
+    const out = await guardAcceptanceEdits({ workdir: "/repo", paths: ["a.ts"], allowed: [] });
+    expect(out.failed).toBe(true);
+    expect(warns.some((w) => w.level === "warn" && w.message.includes("guard failed"))).toBe(true);
   });
 });
