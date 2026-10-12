@@ -136,11 +136,15 @@ function diffResult(model: FinishGitModel, args: string[]): GitResult | undefine
 
 function applyResult(model: FinishGitModel, args: string[], trail?: string[]): GitResult {
   if (args.includes("--numstat")) return ok(`1\t1\ta.ts${args.includes("-z") ? "\0" : "\n"}`);
-  if (model.applyFails) return { exitCode: 1, stdout: "", stderr: "conflict" };
-  if (!args.includes("--check")) {
-    trail?.push("apply");
-    model.dirty = true;
+  const failed: GitResult = { exitCode: 1, stdout: "", stderr: "conflict" };
+  if (args.includes("--check")) {
+    trail?.push("apply-check");
+    return model.applyFails ? failed : ok();
   }
+  // Every real apply is recorded, a failing one too: "no apply after a failed check" must be observable.
+  trail?.push("apply");
+  if (model.applyFails) return failed;
+  model.dirty = true;
   return ok();
 }
 

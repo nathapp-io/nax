@@ -12,6 +12,7 @@ import {
 import type { FinishOps, FixRequest } from "@/finish";
 import { _finishGitDeps } from "@/finish";
 import { consumeIfCommitted, runFixStep } from "@/finish/fix-step";
+import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 
 const restores: (() => void)[] = [];
 const dirs: string[] = [];
@@ -284,11 +285,21 @@ describe("runFixStep continuation (finish A 4.3)", () => {
     const state = makeFinishState();
     state.handoffs = [handoff(d.audit.auditDir)];
     state.pendingHandoff = 1;
-    await runFixStep(state, d, "review", { findings: [] });
+    const warns: LogEntry[] = [];
+    resetLogger();
+    initLogger({ level: "info", headless: true, useChalk: false });
+    addSink((entry) => warns.push(entry));
+    try {
+      await runFixStep(state, d, "review", { findings: [] });
+    } finally {
+      resetLogger();
+    }
     expect(seen?.continuation).toBeUndefined();
     expect(state.handoffs[0]?.reapplied).toBe(false);
     expect(state.pendingHandoff).toBeUndefined();
+    expect(trail).toContain("apply-check");
     expect(trail).not.toContain("apply");
+    expect(warns.some((w) => w.message.includes("starts from scratch"))).toBe(true);
   });
 
   test("a pending handoff of another phase is left alone", async () => {
