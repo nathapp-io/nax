@@ -169,6 +169,17 @@ describe("advisor service", () => {
       expect(reused?.action).toEqual(first.action);
     });
   });
+
+  test("a judgment question's anchor file and title are copied onto the decision (finish B §3.2)", async () => {
+    await withTempDir(async (dir) => {
+      stubDeps(reply("B", { reason: "US-5 owns it" }));
+      const out = await createAdvisor(actx(dir)).advise({ ...judgment, anchorFile: "src/a.ts", rulingTitle: "Race" });
+      expect(out.decision?.anchorFile).toBe("src/a.ts");
+      expect(out.decision?.rulingTitle).toBe("Race");
+      const [line] = await readDecisions(dir, "feat");
+      expect(line?.anchorFile).toBe("src/a.ts");
+    });
+  });
 });
 
 describe("advisor service — prior decisions are trusted only", () => {
@@ -205,6 +216,15 @@ describe("advisor service — never throws", () => {
       const out = await createAdvisor(actx(dir)).advise(judgment);
       expect(out.decision).toBeNull();
       expect(out.fallbackReason).toBe("advisor error: git spawn failed");
+    });
+  });
+
+  test("a fix-and-update ruling records acceptanceChanges on the decision (finish B 6.4)", async () => {
+    await withTempDir(async (dir) => {
+      stubDeps(reply("B", { instruction: "revert; update AC-40" }));
+      const options = buildMenu({ kind: "finish-judgment", acceptanceEnabledForStory: true, pinnedAcs: ["AC-40"] });
+      const out = await createAdvisor(actx(dir)).advise({ ...judgment, options });
+      expect(out.decision?.acceptanceChanges).toEqual(["AC-40"]);
     });
   });
 });

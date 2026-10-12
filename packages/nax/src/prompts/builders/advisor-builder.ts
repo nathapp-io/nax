@@ -27,7 +27,8 @@ const POLICY = `## Decision policy
 3. Waive only with a spec-backed or scope-backed reason (e.g. "US-005 owns this"). Choose supersede only when the spec cannot stand as written: it contradicts itself or an AC, or it is impossible to satisfy. Then give the corrected text. If you disagree with a choice the spec made, choose hold and say why; never supersede to make the spec match the code.
 4. A review that did not read the whole diff is never an approval.
 5. Prefer reversible choices. Set needsHumanConfirm when you are unsure or the choice is hard to undo.
-6. Verify claims by reading the code before you rule. Do not trust a finding's description on its own.`;
+6. Verify claims by reading the code before you rule. Do not trust a finding's description on its own.
+7. An acceptance test excerpt in the evidence that asserts the behaviour the finding wants changed means a plain fix turns acceptance red. Then choose "Fix, and update acceptance tests" (say exactly what changes in them), waive (the test pins the behaviour on purpose), or supersede.`;
 
 function decisionsBlock(decisions: readonly AdviceDecision[]): string {
   if (decisions.length === 0) return "## Decisions so far\nNone.";

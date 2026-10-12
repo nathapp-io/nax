@@ -16,6 +16,7 @@ import type { AdviceDecision } from "@/advisor";
 import { describeTarget } from "@/advisor";
 import type { BodySection } from "@/forge";
 import { mergeTemplate } from "@/forge";
+import type { AcceptanceGuardRecord } from "../state";
 import type { Finding, FindingDisposition, FinishRound, GateFact } from "../types";
 import type { FinishPrContext, FinishPrStory } from "./context";
 import { type BodyLimits, DEFAULT_LIMITS, escapeTableCell } from "./escape";
@@ -157,8 +158,12 @@ function flat(text: string): string {
 /** A1: flagged decisions first, then the rest, then every supersede as an amendment to apply. Null when none. */
 function buildAdvisorSection(decisions: AdviceDecision[] | undefined): string | null {
   if (!decisions || decisions.length === 0) return null;
-  const line = (d: AdviceDecision): string =>
-    `- **${flat(d.id)}**${d.needsHumanConfirm ? " (needs confirmation)" : ""} ${flat(d.storyId ?? "feature")} · ${d.action.type} — ${flat(d.rationale)}`;
+  const line = (d: AdviceDecision): string => {
+    const acs = d.acceptanceChanges?.length
+      ? ` — acceptance tests changed: ${flat(d.acceptanceChanges.join(", "))}`
+      : "";
+    return `- **${flat(d.id)}**${d.needsHumanConfirm ? " (needs confirmation)" : ""} ${flat(d.storyId ?? "feature")} · ${d.action.type} — ${flat(d.rationale)}${acs}`;
+  };
   const ordered = [...decisions.filter((d) => d.needsHumanConfirm), ...decisions.filter((d) => !d.needsHumanConfirm)];
   const amendments = decisions.flatMap((d) =>
     d.action.type === "supersede"
@@ -205,6 +210,21 @@ function renderRedGate(gate: GateFact): string {
   return `- Gate \`${gate.name}\` is red${excerpt}`;
 }
 
+/** Finish B §6.3: the acceptance-file guard's record as bullet lines; empty when it did nothing to report. */
+function guardLines(g: AcceptanceGuardRecord | undefined): string[] {
+  if (!g) return [];
+  return [
+    ...(g.reverted.length > 0 ? [`- Acceptance-file edits reverted: ${flat(g.reverted.join(", "))}`] : []),
+    ...(g.notRestorable.length > 0
+      ? [`- Acceptance files a fix created that could not be restored: ${flat(g.notRestorable.join(", "))}`]
+      : []),
+    ...(g.beyondRuling.length > 0
+      ? [`- Acceptance tests changed beyond the ruling: ${flat(g.beyondRuling.join(", "))}`]
+      : []),
+    ...(g.failed ? ["- acceptance-file check could not run"] : []),
+  ];
+}
+
 /**
  * A4: what stands between this PR and a clean ready, or what the advisor
  * accepted on a ready one. Null when there is nothing to say, so a clean
@@ -227,6 +247,7 @@ function buildUnresolvedSection(ctx: FinishPrContext, limits: BodyLimits): strin
       ? [`### Findings\n${table}`]
       : block("Open findings", bySeverity(u.findings).map(renderOpenFinding), limits.rows)),
     ...block("Verification failures", checks),
+    ...block("Acceptance-file guard", guardLines(u.acceptanceGuard)),
     ...block(
       "Missing reviews",
       u.missing.map((lens) => `- The ${lens} review returned no verdict`),

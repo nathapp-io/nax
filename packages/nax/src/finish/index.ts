@@ -13,6 +13,26 @@
 
 export type { A3Hint } from "./a3-hints";
 export { _a3HintsDeps, readA3Hints } from "./a3-hints";
+export type { AcBlock, AcceptanceFile, PinnedAc } from "./acceptance-evidence";
+export {
+  _acceptanceEvidenceDeps,
+  EXCERPT_LINES,
+  findingIdentifiers,
+  findPinnedAcs,
+  loadAcceptanceFiles,
+  MAX_PINNED_BLOCKS,
+  splitAcBlocks,
+} from "./acceptance-evidence";
+export {
+  _guardDeps,
+  acceptancePathsOf,
+  allowedFrom,
+  dirtyAcceptancePaths,
+  gateGuardPaths,
+  guardAcceptanceEdits,
+  guardWorthRecording,
+  mergeGuard,
+} from "./acceptance-guard";
 export {
   type AdviceRef,
   buildFinishAdvisorForPhase,
@@ -22,6 +42,8 @@ export {
   type JudgedResult,
   judgeWithoutAdvisor,
 } from "./advise";
+export { concatJudged, emptyJudged } from "./advise-core";
+export { MAX_NEAR_MATCH_QUESTIONS } from "./advise-rulings";
 export type { AuditTarget, FinishLedgerEntry, WriteResultOptions } from "./audit";
 export {
   appendRound,
@@ -109,6 +131,16 @@ export {
   routeQualityGates,
 } from "./route";
 export {
+  checkRulings,
+  matchLevel,
+  normTitle,
+  type Ruling,
+  type RulingCheck,
+  rulingFromDecision,
+  rulingFromDropped,
+  splitForRulings,
+} from "./ruling-check";
+export {
   _setAsideDeps,
   captureFixBase,
   handoffDir,
@@ -121,7 +153,14 @@ export {
   UNTRACKED_FILE_MAX,
   UNTRACKED_TOTAL_MAX,
 } from "./set-aside";
-export type { FinishPhaseState, FinishState, FinishStateInit, FinishStatus, ReviewLoopState } from "./state";
+export type {
+  AcceptanceGuardRecord,
+  FinishPhaseState,
+  FinishState,
+  FinishStateInit,
+  FinishStatus,
+  ReviewLoopState,
+} from "./state";
 export { createFinishState, deserializeFinishState, serializeFinishState } from "./state";
 export type {
   AcceptanceFact,

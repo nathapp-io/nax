@@ -74,11 +74,23 @@ function giveUpDrafts(f: Extract<MenuFacts, { kind: "fix-cycle-give-up" }>): Dra
   ];
 }
 
+function fixDrafts(pinnedAcs: string[] | undefined): Draft[] {
+  if (!pinnedAcs || pinnedAcs.length === 0) return [{ type: "fix" }];
+  return [
+    { type: "fix", label: "Fix without changing the acceptance tests" },
+    {
+      type: "fix",
+      fixed: { updateAcs: pinnedAcs },
+      label: `Fix, and update acceptance tests ${pinnedAcs.join(", ")} (say what changes in them)`,
+    },
+  ];
+}
+
 export function buildMenu(facts: MenuFacts): AdviceOption[] {
   switch (facts.kind) {
     case "finish-judgment":
       return withIds([
-        { type: "fix" },
+        ...fixDrafts(facts.pinnedAcs),
         { type: "waive" },
         ...supersedeDraft(facts.citesAc, facts.citesSpecSection, facts.acceptanceEnabledForStory),
         { type: "hold" },
@@ -105,8 +117,13 @@ export function toAction(option: AdviceOption, reply: AdvisorReply): AdviceActio
   const text = (k: "instruction" | "reason" | "newText"): string => reply[k] ?? "";
   switch (option.type) {
     case "fix":
+      return {
+        type: "fix",
+        instruction: text("instruction"),
+        ...(option.fixed?.updateAcs ? { updateAcs: option.fixed.updateAcs } : {}),
+      };
     case "retry":
-      return { type: option.type, instruction: text("instruction") };
+      return { type: "retry", instruction: text("instruction") };
     case "retarget":
       return { type: "retarget", to: option.fixed?.to ?? "source", instruction: text("instruction") };
     case "waive":

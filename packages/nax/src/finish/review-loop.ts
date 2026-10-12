@@ -8,8 +8,12 @@
  * this leaves behind.
  */
 import { getSafeLogger } from "@/logger";
+import { loadAcceptanceFiles } from "./acceptance-evidence";
+import { _guardDeps, allowedFrom, dirtyAcceptancePaths, guardWorthRecording, mergeGuard } from "./acceptance-guard";
 import type { AdviceRef, FinishAdvisor, JudgedResult } from "./advise";
 import { judgeWithoutAdvisor } from "./advise";
+import { concatJudged, type JudgeContext } from "./advise-core";
+import { MAX_NEAR_MATCH_QUESTIONS } from "./advise-rulings";
 import { type AuditTarget, recordRound } from "./audit";
 import { writeCheckpoint } from "./checkpoint";
 import { buildCommitRound, commitFixes } from "./commit";
@@ -20,6 +24,7 @@ import type { MergedFindings } from "./merge-findings";
 import { mergeFindings } from "./merge-findings";
 import type { FinishOps, ReviewInputs } from "./ops";
 import { type ReviewRoundResult, runReviewRound } from "./review-round";
+import { reconcileAfter, reconcileBefore } from "./review-rulings";
 import { MAX_REVIEW_ROUNDS } from "./route";
 import type { FinishState } from "./state";
 import type { Finding, ReviewLens } from "./types";
@@ -40,6 +45,8 @@ export interface ReviewLoopDeps {
   fix: FixStepDeps;
   /** Finish A: `finish.timeouts.reviewMs`, consumed by the review lens limit (later task). */
   reviewMs?: number;
+  /** Finish B: repo-relative acceptance test paths that exist; [] or absent when acceptance is disabled. */
+  acceptancePaths?: string[];
 }
 
 function patchReview(state: FinishState, patch: Partial<FinishState["review"]>): void {
@@ -103,7 +110,12 @@ function recordReviewStops(state: FinishState, deps: ReviewLoopDeps, round: Revi
   }
 }
 
-async function judgeRound(state: FinishState, deps: ReviewLoopDeps, merged: MergedFindings): Promise<JudgedResult> {
+async function judgeRound(
+  state: FinishState,
+  deps: ReviewLoopDeps,
+  merged: MergedFindings,
+  jctx?: JudgeContext,
+): Promise<JudgedResult> {
   const { judged, contradictions } = merged;
   const advisor = deps.advise;
   const spent = state.phases.review.adviseRounds ?? 0;
@@ -113,7 +125,7 @@ async function judgeRound(state: FinishState, deps: ReviewLoopDeps, merged: Merg
   }
   state.phases.review.adviseRounds = spent + 1;
   try {
-    return await advisor.judged(judged, contradictions, state);
+    return await advisor.judged(judged, contradictions, state, jctx);
   } catch (err) {
     deps.assertNotAborted();
     getSafeLogger()?.warn("finish", "Advisor failed on judged findings; carrying them unresolved", {
@@ -148,7 +160,12 @@ async function fixRound(
   atCap: boolean,
 ): Promise<void> {
   deps.assertNotAborted();
-  const step = await runFixStep(state, deps.fix, "review", { findings: fixList });
+  const guardPaths = deps.acceptancePaths ?? [];
+  const preDirty = guardPaths.length > 0 ? await dirtyAcceptancePaths(state.workdir, guardPaths) : [];
+  const step = await runFixStep(state, deps.fix, "review", {
+    findings: fixList,
+    acceptancePaths: deps.acceptancePaths ?? [],
+  });
   if (step.kind !== "done") {
     if (step.kind === "failed") {
       getSafeLogger()?.warn("finish", "Review fix session failed; findings stay open", {
@@ -161,6 +178,13 @@ async function fixRound(
       ledgerEvent(state, { kind: "set-aside", findings: fixList, handoff: `handoff-${step.handoff.n}` });
     return;
   }
+  const guard = await _guardDeps.guard({
+    workdir: state.workdir,
+    paths: deps.acceptancePaths ?? [],
+    allowed: allowedFrom(fixList),
+    preDirty,
+  });
+  if (guardWorthRecording(guard)) state.acceptanceGuard = mergeGuard(state.acceptanceGuard, guard);
   const outcome = step.outcome;
   const message = buildFixCommitMessage(
     "review",
@@ -224,13 +248,23 @@ async function runOneRound(state: FinishState, deps: ReviewLoopDeps, limit: numb
   // Ledger what the lenses produced before any abort check: a deadline mid-round must not lose it.
   ledgerEvent(state, { kind: "raised", findings: raised });
   deps.assertNotAborted(); // a deadline during the lenses must not reach the advisor or a fix
+  const jctx: JudgeContext = { acceptance: await loadAcceptanceFiles(state.workdir, deps.acceptancePaths ?? []) };
   await recordLensRounds(state, deps, round);
   recordReviewStops(state, deps, round);
   noteRound(state, round);
-  const judged = await judgeRound(state, deps, merged);
+  const before = await reconcileBefore(deps, merged, jctx);
+  const judgedNow = await judgeRound(state, deps, before.merged, jctx);
+  const after = await reconcileAfter(
+    deps,
+    before.merged.toFix,
+    judgedNow,
+    MAX_NEAR_MATCH_QUESTIONS - before.asked,
+    jctx,
+  );
+  const judged = concatJudged(before.result, judgedNow, after.result);
   if (round.missing.length === 0) ledgerEvent(state, { kind: "full-round", raised, round: state.review.rounds + 1 });
   recordJudgment(state, judged);
-  const fixList = specFirst([...merged.toFix, ...judged.toFix]);
+  const fixList = specFirst([...after.rest, ...judged.toFix]);
   patchReview(state, {
     rounds: state.review.rounds + 1,
     pendingRound: 0,

@@ -51,6 +51,11 @@ export interface FinishFixInput {
   interrupt?: AbortSignal;
   /** Finish A: an earlier set-aside attempt this one continues. */
   continuation?: FixContinuation;
+  /** Finish B 4.2: rulings in force, rendered; and the ids a rejection may cite. */
+  rulings?: string;
+  rulingIds?: string[];
+  /** Finish B 6.2: acceptance test files review and gate fixers may not edit unless a finding allows it. */
+  acceptancePaths?: string[];
 }
 
 export const finishFixOp: RunOperationWithHooks<
@@ -79,6 +84,8 @@ export const finishFixOp: RunOperationWithHooks<
       findings: input.findings,
       gateOutput: input.gateOutput,
       acceptanceOutput: input.acceptanceOutput,
+      rulings: input.rulings,
+      acceptancePaths: input.acceptancePaths,
       ...(input.continuation ? { continuation: input.continuation } : {}),
     });
     return {
@@ -131,7 +138,10 @@ export const finishFixOp: RunOperationWithHooks<
   // the op's O — `{ dispositions }` — not a bare array, or the field name is
   // lost and the value typechecks as unknown at the call site.
   async verify(parsed, input, _verifyCtx) {
-    return { ...parsed, dispositions: await validateDispositions(input.workdir, parsed.dispositions ?? []) };
+    return {
+      ...parsed,
+      dispositions: await validateDispositions(input.workdir, parsed.dispositions ?? [], input.rulingIds ?? []),
+    };
   },
   /**
    * Without this, an empty reply throws `CALL_OP_NO_OUTPUT` and discards a

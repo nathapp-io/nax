@@ -11,76 +11,60 @@
  */
 import { relative } from "node:path";
 import { gitWithTimeout } from "@nathapp/nax-agent/internal";
-import type { AdviceDecision, Advisor, HeadsUpChannel, QuestionDraft } from "@/advisor";
-import { buildMenu, createAdvisor, dedupeKeyFor, findReusable, ledgerPath, readTrustedDecisions } from "@/advisor";
+import type { AdviceDecision, HeadsUpChannel, QuestionDraft } from "@/advisor";
+import { buildMenu, createAdvisor, findReusable, ledgerPath, readTrustedDecisions } from "@/advisor";
 import type { NaxConfig } from "@/config";
 import { isAdvisorCallerEnabled } from "@/config";
 import type { CallContext } from "@/operations";
+import {
+  type AdviceRef,
+  adviseOn,
+  allowedEdits,
+  collectJudgment,
+  contradictionQuestion,
+  dedupePinned,
+  droppedBy,
+  emptyJudged,
+  type FinishAdvisorDeps,
+  type JudgeContext,
+  type JudgedResult,
+  type JudgeOneResult,
+  judgmentQuestion,
+  pinnedFor,
+  RANK,
+  withFixRuling,
+} from "./advise-core";
+import { loadRulings, reconcileRulings } from "./advise-rulings";
 import type { Contradiction } from "./merge-findings";
 import { type ApprovalAction, type approvalFacts, draftReason } from "./resolve";
+import type { Ruling, RulingCheck } from "./ruling-check";
 import type { FinishState } from "./state";
 import type { Finding, ResolutionFacts } from "./types";
 
+export type { AdviceRef, FinishAdvisorDeps, JudgedResult } from "./advise-core";
+
 const GIT_TIMEOUT_MS = 30_000;
-
-export type AdviceRef = { decisionId: string; optionId: string; reused: boolean };
-
-/** The result of judging a merged review round. */
-export interface JudgedResult {
-  toFix: Finding[];
-  advice: AdviceRef[];
-  /** Hold, advisor unavailable, or (advisor off) judged findings: carried to resolution unfixed. */
-  unresolved: Finding[];
-  /** Findings a waive / supersede ruling dropped, for the ledger. */
-  dropped: { finding: Finding; decisionId: string; action: "waive" | "supersede" }[];
-  /** Hold decisions per finding, for the ledger ref. */
-  held: { finding: Finding; decisionId: string }[];
-}
 
 export interface FinishAdvisor {
   judgedEnabled: boolean;
   approvalEnabled: boolean;
   /** Judge the merged round's judgment findings and contradictions. */
-  judged(findings: Finding[], contradictions: Contradiction[], state: FinishState): Promise<JudgedResult>;
+  judged(
+    findings: Finding[],
+    contradictions: Contradiction[],
+    state: FinishState,
+    jctx?: JudgeContext,
+  ): Promise<JudgedResult>;
   /** Approve / re-review / hold from the resolution facts. */
   approval(
     facts: ResolutionFacts,
     approval: ReturnType<typeof approvalFacts>,
   ): Promise<{ action: ApprovalAction; rationale: string }>;
   commitLedger(state: FinishState): Promise<void>;
-}
-
-export interface FinishAdvisorDeps {
-  advisor: Advisor;
-  repoRoot: string;
-  /** Where audit artifacts live (outside the repo tree); reuse requires the prior decision's artifact. */
-  outputDir: string;
-  feature: string;
-  acceptanceEnabled: () => boolean;
-  judgedEnabled: boolean;
-  approvalEnabled: boolean;
-  git?: (args: string[], cwd: string) => Promise<{ exitCode: number }>;
-}
-
-function judgmentQuestion(deps: FinishAdvisorDeps, phase: "spec" | "quality", f: Finding): QuestionDraft {
-  return {
-    kind: "finish-judgment",
-    feature: deps.feature,
-    dedupeKey: dedupeKeyFor(phase, f),
-    summary: `${f.title}: ${f.problem}`,
-    evidence: [
-      { source: "finding", text: `${f.problem}\nSuggested fix: ${f.fix}` },
-      ...(f.judgmentReason
-        ? [{ source: "finding" as const, ref: "reviewer", text: `Why a human: ${f.judgmentReason}` }]
-        : []),
-    ],
-    options: buildMenu({
-      kind: "finish-judgment",
-      acceptanceEnabledForStory: deps.acceptanceEnabled(),
-      ...(/\bspec\b/i.test(f.problem) ? { citesSpecSection: "spec" } : {}),
-    }),
-    findingSeverity: f.severity,
-  };
+  /** Finish B §3.2: trusted waive / supersede rulings this feature already has. */
+  rulingsInForce(): Promise<Ruling[]>;
+  /** Finish B §3.4-3.6: reuse exact matches, ask about near ones (up to `budget`), carry the rest unresolved. */
+  reconcile(check: RulingCheck, budget: number, jctx?: JudgeContext): Promise<{ result: JudgedResult; asked: number }>;
 }
 
 const BLOCKING = new Set(["HIGH", "CRITICAL"]);
@@ -96,15 +80,13 @@ async function reusablePrior(deps: FinishAdvisorDeps, f: Finding, key: string): 
   return findReusable(await readTrustedDecisions(deps.repoRoot, deps.feature, deps.outputDir), key);
 }
 
-type Dropped = "waive" | "supersede";
-const droppedBy = (type: string): Dropped | undefined => (type === "waive" || type === "supersede" ? type : undefined);
-
 async function judgeOne(
   deps: FinishAdvisorDeps,
   phase: "spec" | "quality",
   f: Finding,
-): Promise<{ keep?: Finding; ref?: AdviceRef; hold?: string; fallback?: string; dropped?: Dropped }> {
-  const question = judgmentQuestion(deps, phase, f);
+  jctx?: JudgeContext,
+): Promise<JudgeOneResult> {
+  const question = judgmentQuestion(deps, phase, f, jctx);
   const prior = await reusablePrior(deps, f, question.dedupeKey ?? "");
   if (prior) {
     const reused = await deps.advisor.recordReuse(question, prior);
@@ -113,40 +95,7 @@ async function judgeOne(
     // findReusable only reuses waive / supersede; anything else is carried unresolved, never silently dropped.
     return dropped ? { ref, dropped } : { ref, fallback: `unexpected reusable action: ${prior.action.type}` };
   }
-  const { decision, fallbackReason } = await deps.advisor.advise(question, { findingSeverity: f.severity });
-  if (!decision) return { fallback: fallbackReason ?? "advisor unavailable" };
-  const ref: AdviceRef = { decisionId: decision.id, optionId: decision.chosenOptionId, reused: false };
-  const { action } = decision;
-  if (action.type === "hold") return { ref, hold: decision.rationale };
-  if (action.type !== "fix") {
-    const dropped = droppedBy(action.type);
-    return dropped ? { ref, dropped } : { ref };
-  }
-  return { ref, keep: { ...f, fix: `${f.fix}\n\nAdvisor ruling (${decision.id}): ${action.instruction}` } };
-}
-
-const RANK = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 } as const;
-
-function contradictionQuestion(deps: FinishAdvisorDeps, c: Contradiction): QuestionDraft {
-  const where = `${c.spec.file}${c.spec.line ? `:${c.spec.line}` : ""}`;
-  const line = (label: string, f: Finding) => `${label}: ${f.title} — ${f.problem}\nSuggested fix: ${f.fix}`;
-  const sev = RANK[c.spec.severity] >= RANK[c.quality.severity] ? c.spec.severity : c.quality.severity;
-  return {
-    kind: "finish-judgment",
-    feature: deps.feature,
-    dedupeKey: dedupeKeyFor("spec", c.spec),
-    summary: `Spec and quality reviews disagree on ${where}`,
-    evidence: [
-      { source: "finding", text: line("Spec review", c.spec) },
-      { source: "finding", text: line("Quality review", c.quality) },
-    ],
-    options: buildMenu({
-      kind: "finish-judgment",
-      acceptanceEnabledForStory: deps.acceptanceEnabled(),
-      citesSpecSection: "spec",
-    }),
-    findingSeverity: sev,
-  };
+  return adviseOn(deps, question, f, pinnedFor(deps, f, jctx));
 }
 
 /** The deterministic split for a contradiction nobody ruled on: spec is fixed, quality carried. */
@@ -154,29 +103,43 @@ function specFirst(c: Contradiction): { toFix: Finding[]; unresolved: Finding[] 
   return { toFix: [c.spec], unresolved: [c.quality] };
 }
 
-type ContradictionJudgment = Pick<JudgedResult, "toFix" | "unresolved" | "dropped" | "held"> & { ref?: AdviceRef };
+type ContradictionJudgment = Pick<JudgedResult, "toFix" | "unresolved" | "dropped" | "held" | "decisions"> & {
+  ref?: AdviceRef;
+};
 
-async function judgeContradiction(deps: FinishAdvisorDeps, c: Contradiction): Promise<ContradictionJudgment> {
-  const { decision } = await deps.advisor.advise(contradictionQuestion(deps, c), {
+async function judgeContradiction(
+  deps: FinishAdvisorDeps,
+  c: Contradiction,
+  jctx?: JudgeContext,
+): Promise<ContradictionJudgment> {
+  const pinned = dedupePinned([...pinnedFor(deps, c.spec, jctx), ...pinnedFor(deps, c.quality, jctx)]);
+  const { decision } = await deps.advisor.advise(contradictionQuestion(deps, c, jctx), {
     findingSeverity: RANK[c.spec.severity] >= RANK[c.quality.severity] ? c.spec.severity : c.quality.severity,
   });
   if (!decision) return { ...specFirst(c), dropped: [], held: [] };
   const ref: AdviceRef = { decisionId: decision.id, optionId: decision.chosenOptionId, reused: false };
   const { action } = decision;
   if (action.type === "fix") {
-    const fix = `${c.spec.fix}\n\nAdvisor ruling (${decision.id}): ${action.instruction}`;
+    const allowed = allowedEdits(pinned, action.updateAcs ?? []);
+    const toFix = [withFixRuling(c.spec, decision.id, action.instruction, allowed)];
     // The ruling picks the spec side; the quality side is superseded, as it was before the ledger existed.
     const dropped = [{ finding: c.quality, decisionId: decision.id, action: "supersede" as const }];
-    return { ref, toFix: [{ ...c.spec, fix }], unresolved: [], dropped, held: [] };
+    return { ref, decisions: [decision], toFix, unresolved: [], dropped, held: [] };
   }
   if (action.type === "waive" || action.type === "supersede") {
     const dropped = [c.spec, c.quality].map((finding) => ({ finding, decisionId: decision.id, action: action.type }));
-    return { ref, toFix: [], unresolved: [], dropped, held: [] };
+    return { ref, decisions: [decision], toFix: [], unresolved: [], dropped, held: [] };
   }
   if (action.type === "hold") {
-    return { ref, ...specFirst(c), dropped: [], held: [{ finding: c.quality, decisionId: decision.id }] };
+    return {
+      ref,
+      decisions: [decision],
+      ...specFirst(c),
+      dropped: [],
+      held: [{ finding: c.quality, decisionId: decision.id }],
+    };
   }
-  return { ref, ...specFirst(c), dropped: [], held: [] };
+  return { ref, decisions: [decision], ...specFirst(c), dropped: [], held: [] };
 }
 
 /** Advisor off or the judged caller disabled: the deterministic fallback (spec §5 step 4). */
@@ -232,32 +195,27 @@ function approvalQuestionFromFacts(
   };
 }
 
-function collectJudgment(out: JudgedResult, f: Finding, r: Awaited<ReturnType<typeof judgeOne>>): void {
-  if (r.ref) out.advice.push(r.ref);
-  if (r.keep) out.toFix.push(r.keep);
-  else if (r.hold !== undefined || r.fallback !== undefined) out.unresolved.push(f);
-  if (r.ref && r.dropped) out.dropped.push({ finding: f, decisionId: r.ref.decisionId, action: r.dropped });
-  if (r.ref && r.hold !== undefined) out.held.push({ finding: f, decisionId: r.ref.decisionId });
-}
-
 export function createFinishAdvisor(deps: FinishAdvisorDeps): FinishAdvisor {
   const git = deps.git ?? ((args, cwd) => gitWithTimeout(args, cwd, GIT_TIMEOUT_MS));
   return {
     judgedEnabled: deps.judgedEnabled,
     approvalEnabled: deps.approvalEnabled,
-    async judged(findings, contradictions) {
-      const out: JudgedResult = { toFix: [], advice: [], unresolved: [], dropped: [], held: [] };
-      for (const f of findings) collectJudgment(out, f, await judgeOne(deps, f.source ?? "quality", f));
+    async judged(findings, contradictions, _state, jctx) {
+      const out = emptyJudged();
+      for (const f of findings) collectJudgment(out, f, await judgeOne(deps, f.source ?? "quality", f, jctx));
       for (const c of contradictions) {
-        const r = await judgeContradiction(deps, c);
+        const r = await judgeContradiction(deps, c, jctx);
         if (r.ref) out.advice.push(r.ref);
         out.toFix.push(...r.toFix);
         out.unresolved.push(...r.unresolved);
         out.dropped.push(...r.dropped);
         out.held.push(...r.held);
+        if (r.decisions) out.decisions = [...(out.decisions ?? []), ...r.decisions];
       }
       return out;
     },
+    rulingsInForce: () => loadRulings(deps),
+    reconcile: (check, budget, jctx) => reconcileRulings(deps, check, budget, jctx),
     async approval(facts, approval) {
       const { decision, fallbackReason } = await deps.advisor.advise(approvalQuestionFromFacts(deps, facts, approval));
       if (!decision) return { action: "unavailable", rationale: fallbackReason ?? "no decision" };

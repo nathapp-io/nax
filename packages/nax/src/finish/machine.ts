@@ -14,6 +14,7 @@
 
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "@/logger";
+import { acceptancePathsOf } from "./acceptance-guard";
 import { runAcceptanceLoop } from "./acceptance-loop";
 import type { FinishAdvisor } from "./advise";
 import { type WriteResultOptions, writeResult } from "./audit";
@@ -101,6 +102,7 @@ function reviewLoopDeps(deps: FinishMachineDeps, inputs: ReviewInputs): ReviewLo
     assertNotAborted: () => assertNotAborted(deps),
     fix: fixStepDeps(deps),
     ...(deps.timeouts?.reviewMs !== undefined ? { reviewMs: deps.timeouts.reviewMs } : {}),
+    acceptancePaths: acceptancePathsOf(deps.context),
   };
 }
 

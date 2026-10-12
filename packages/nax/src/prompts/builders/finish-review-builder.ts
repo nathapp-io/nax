@@ -124,6 +124,7 @@ export interface FinishBranchReviewPromptInput {
   stories: { id: string; title: string }[];
   changedFiles: string[];
   hints: A3Hint[];
+  decisions?: string;
 }
 
 function hintLine(h: A3Hint): string {
@@ -138,6 +139,7 @@ export function buildFinishBranchReviewPrompt(input: FinishBranchReviewPromptInp
     "You are reviewing a finished feature branch as a whole, across all of its stories. You do not edit anything.",
     `## Inputs\n- Diff: \`git diff ${input.base}...HEAD\`\n\n## Stories\n${stories}`,
     `## Changed files\n${fileList(input.changedFiles, input.base)}`,
+    ...(input.decisions ? [`## Decisions already made (do not raise these again)\n${input.decisions}`] : []),
     [
       "## What to look for",
       "- New code that nothing in production reaches (not wired in, only called from tests).",
@@ -247,10 +249,35 @@ function buildPhaseFixPrompt(
   ].join("\n\n");
 }
 
+const RULING_GUARD = "If a change you are about to make would undo one of these, do not make it.";
+const RULING_REJECT =
+  "A finding that can only be fixed by undoing a ruling is REJECTED, with `evidence: ruling D-n` (the ruling's id).";
+
+function rulingsSection(phase: "acceptance" | "gate" | "review", rulings: string | undefined): string[] {
+  if (!rulings) return [];
+  return [`## Rulings in force\n${rulings}\n${RULING_GUARD}${phase === "review" ? `\n${RULING_REJECT}` : ""}`];
+}
+
+function acceptanceRule(phase: "acceptance" | "gate" | "review", paths: string[] | undefined): string[] {
+  if (phase === "acceptance" || !paths || paths.length === 0) return [];
+  return [
+    `Do not edit the acceptance test files (${paths.join(", ")}) unless a finding below names the acceptance tests you may change.`,
+  ];
+}
+
 export function buildFinishFixPrompt(
   phase: "acceptance" | "gate" | "review",
-  args: { findings?: Finding[]; gateOutput?: string; acceptanceOutput?: string; continuation?: FixContinuation },
+  args: {
+    findings?: Finding[];
+    gateOutput?: string;
+    acceptanceOutput?: string;
+    continuation?: FixContinuation;
+    rulings?: string;
+    acceptancePaths?: string[];
+  },
 ): string {
   const body = phase === "review" ? buildReviewFixPrompt(args.findings ?? []) : buildPhaseFixPrompt(phase, args);
-  return args.continuation ? `${body}\n\n${continuationSection(args.continuation)}` : body;
+  const extras = [...rulingsSection(phase, args.rulings), ...acceptanceRule(phase, args.acceptancePaths)];
+  const withExtras = extras.length > 0 ? `${body}\n\n${extras.join("\n\n")}` : body;
+  return args.continuation ? `${withExtras}\n\n${continuationSection(args.continuation)}` : withExtras;
 }

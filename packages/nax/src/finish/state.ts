@@ -72,6 +72,15 @@ export interface ReviewLoopState {
   ledger: LedgerEntry[];
 }
 
+/** Finish B §6.4: what the acceptance-file guard did. */
+export interface AcceptanceGuardRecord {
+  reverted: string[];
+  notRestorable: string[];
+  changed: string[];
+  beyondRuling: string[];
+  failed: boolean;
+}
+
 export interface FinishState {
   /** Bumped when a field's meaning changes, so a resumed state is rejected rather than misread. */
   version: 3;
@@ -84,6 +93,8 @@ export interface FinishState {
   /** Repo-relative spec path for the review prompts. */
   specPath: string;
   status: FinishStatus;
+  /** Finish B §6.4: what the acceptance-file guard did, accumulated across guarded sessions. */
+  acceptanceGuard?: AcceptanceGuardRecord;
   phases: Record<FinishPhase, FinishPhaseState>;
   /** Findings the current phase's reviewer last reported; the fix step's input. */
   findings: Finding[];

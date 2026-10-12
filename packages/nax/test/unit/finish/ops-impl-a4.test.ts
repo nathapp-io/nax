@@ -4,7 +4,9 @@
  * are stubbed to record the commands they were handed.
  */
 import { afterEach, describe, expect, test } from "bun:test";
-import { assertDefined, makeMockCallContext } from "@test/helpers";
+import { join } from "node:path";
+import { assertDefined, makeAdviceDecision, makeMockCallContext, withTempDir } from "@test/helpers";
+import { appendDecision } from "@/advisor";
 import type { Finding, FinishReviewOutput, ReviewInputs } from "@/finish";
 import { _finishGitDeps, _finishOpsDeps, createFinishOps, createFinishState } from "@/finish";
 import type { ForgeDeps } from "@/forge";
@@ -337,5 +339,47 @@ describe("review step limit (finish A)", () => {
     const { deps } = baseDeps();
     await createFinishOps({ ...deps, timeouts: { reviewMs: 1_000 } }).reviewSpec(freshState(), inputs);
     expect(seen?.timeoutMs).toBe(61_000);
+  });
+});
+
+describe("rulings reach the quality lens and the fixer (finish B 4)", () => {
+  async function trustedWaive(repo: string, outputDir: string): Promise<void> {
+    const d = await appendDecision(repo, "demo", (id) => ({
+      ...makeAdviceDecision({ action: { type: "waive", reason: "outOfScope" }, findingSeverity: "LOW" }),
+      dedupeKey: "quality|Seam|src/t.ts",
+      auditRef: `advisor-audit/demo/${id}.json`,
+    }));
+    await Bun.write(join(outputDir, d.auditRef), JSON.stringify({ result: { decision: d } }));
+  }
+
+  test("fix gets rulings, ruling ids and acceptance paths; reviewBranch gets decisions", async () => {
+    await withTempDir(async (repo) => {
+      await withTempDir(async (outputDir) => {
+        const { deps } = baseDeps();
+        const callCtx = { ...deps.callCtx, runtime: { ...deps.callCtx.runtime, outputDir } };
+        await trustedWaive(repo, outputDir);
+        const state = { ...freshState(), workdir: repo };
+        const ops = createFinishOps({ ...deps, callCtx });
+
+        const fixSeen = recordCallOp();
+        await ops.fix("review", { state, findings: [], acceptancePaths: ["t.ts"] });
+        expect(fixSeen.op).toBe(finishFixOp);
+        expect(String(fixSeen.input?.rulings)).toContain("D-1 waived: Seam (src/t.ts) \u2014 outOfScope");
+        expect(fixSeen.input?.rulingIds).toEqual(["D-1"]);
+        expect(fixSeen.input?.acceptancePaths).toEqual(["t.ts"]);
+
+        const reviewSeen = recordCallOp();
+        await ops.reviewBranch(state, inputs);
+        expect(String(reviewSeen.input?.decisions)).toContain("D-1 waived");
+      });
+    });
+  });
+
+  test("no ledger: no rulings field on the fix input", async () => {
+    await withTempDir(async (repo) => {
+      const seen = recordCallOp();
+      await createFinishOps(baseDeps().deps).fix("gate", { state: { ...freshState(), workdir: repo } });
+      expect(seen.input && "rulings" in seen.input).toBe(false);
+    });
   });
 });

@@ -143,4 +143,39 @@ describe("finish handoff prompts (finish A)", () => {
       "No handoff note was recorded",
     );
   });
+  test("branch prompt renders settled decisions (finish B 4.1)", () => {
+    const p = buildFinishBranchReviewPrompt({
+      base: "origin/main",
+      stories: [],
+      changedFiles: [],
+      hints: [],
+      decisions: "- D-2 waived: Seam",
+    });
+    expect(p).toContain("## Decisions already made (do not raise these again)\n- D-2 waived: Seam");
+  });
+
+  test("every fix phase renders rulings in force; review adds the ruling rejection rule", () => {
+    for (const phase of ["acceptance", "gate", "review"] as const) {
+      const p = buildFinishFixPrompt(phase, { findings: [], rulings: "- D-2 waived: Seam" });
+      expect(p).toContain("## Rulings in force\n- D-2 waived: Seam");
+      expect(p).toContain("If a change you are about to make would undo one of these, do not make it.");
+    }
+    expect(buildFinishFixPrompt("review", { findings: [], rulings: "- D-2" })).toContain("evidence: ruling D-n");
+    expect(buildFinishFixPrompt("gate", { rulings: "- D-2" })).not.toContain("evidence: ruling D-n");
+  });
+
+  test("review and gate fix prompts forbid acceptance-file edits; acceptance phase does not", () => {
+    const paths = ["test/acceptance/feat.test.ts"];
+    expect(buildFinishFixPrompt("review", { findings: [], acceptancePaths: paths })).toContain(
+      "Do not edit the acceptance test files (test/acceptance/feat.test.ts) unless a finding below names the acceptance tests you may change.",
+    );
+    expect(buildFinishFixPrompt("gate", { acceptancePaths: paths })).toContain("Do not edit the acceptance test files");
+    expect(buildFinishFixPrompt("acceptance", { acceptancePaths: paths })).not.toContain(
+      "Do not edit the acceptance test files",
+    );
+  });
+
+  test("no rulings, no section", () => {
+    expect(buildFinishFixPrompt("review", { findings: [] })).not.toContain("Rulings in force");
+  });
 });

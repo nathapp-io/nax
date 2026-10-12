@@ -15,7 +15,14 @@ import {
   withTempDir,
 } from "@test/helpers";
 import type { FinishAdvisor, FinishOps, FinishReviewOutput, FinishState, ReviewInputs } from "@/finish";
-import { _checkpointDeps, _finishGitDeps, deserializeFinishState, runFinishMachine, runReviewLoop } from "@/finish";
+import {
+  _checkpointDeps,
+  _finishGitDeps,
+  deserializeFinishState,
+  emptyJudged,
+  runFinishMachine,
+  runReviewLoop,
+} from "@/finish";
 import { runAcceptanceLoop } from "@/finish/acceptance-loop";
 import { runFixStep } from "@/finish/fix-step";
 import { runGatesLoop } from "@/finish/gates-loop";
@@ -335,6 +342,8 @@ describe("the machine writes a checkpoint at every boundary", () => {
         { action: "approve" as const, rationale: "ok" },
       ];
       const advisor: FinishAdvisor = {
+        rulingsInForce: async () => [],
+        reconcile: async () => ({ result: emptyJudged(), asked: 0 }),
         judgedEnabled: false,
         approvalEnabled: true,
         judged: async (findings) => ({ toFix: [], advice: [], unresolved: findings, dropped: [], held: [] }),

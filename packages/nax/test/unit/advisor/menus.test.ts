@@ -142,3 +142,32 @@ describe("forcedConfirm", () => {
     expect(forcedConfirm({ type: "fix", instruction: "x" }, reply())).toBe(false);
   });
 });
+
+describe("fix-and-update acceptance option", () => {
+  test("finish-judgment with pinned ACs: plain fix relabelled, fix-and-update added after it", () => {
+    const menu = buildMenu({ kind: "finish-judgment", acceptanceEnabledForStory: true, pinnedAcs: ["AC-40", "AC-51"] });
+    expect(menu.map((o) => o.type)).toEqual(["fix", "fix", "waive", "hold"]);
+    expect(menu[0]?.label).toBe("Fix without changing the acceptance tests");
+    expect(menu[1]?.fixed).toEqual({ updateAcs: ["AC-40", "AC-51"] });
+    expect(menu[1]?.label).toBe("Fix, and update acceptance tests AC-40, AC-51 (say what changes in them)");
+  });
+
+  test("no pinned ACs: the menu is unchanged", () => {
+    expect(buildMenu({ kind: "finish-judgment", acceptanceEnabledForStory: true, pinnedAcs: [] })[0]?.label).toBe(
+      "Fix it, with the approach you describe",
+    );
+  });
+
+  test("toAction carries updateAcs on a fix-and-update option only", () => {
+    const opt = { id: "B", type: "fix" as const, label: "l", fixed: { updateAcs: ["AC-40"] } };
+    expect(toAction(opt, reply({ instruction: "revert envelope; update AC-40" }))).toEqual({
+      type: "fix",
+      instruction: "revert envelope; update AC-40",
+      updateAcs: ["AC-40"],
+    });
+    expect(toAction({ id: "A", type: "fix", label: "l" }, reply({ instruction: "i" }))).toEqual({
+      type: "fix",
+      instruction: "i",
+    });
+  });
+});
