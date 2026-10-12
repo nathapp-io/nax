@@ -3,16 +3,15 @@
  * The same op serves the first turn, fix rounds and advisor answers; the caller builds the prompt.
  * Warm across rounds 1..min(3, max): same role + same endpoint = the same session (§5.5).
  */
-import type { TurnResult } from "@/agents/types";
 import type { ConfiguredModel } from "@/config";
 import { workflowConfigSelector } from "@/config";
 import type { WorkflowOpConfig } from "@/config/selectors";
 import { STEP_TIMEOUT_MARGIN_MS } from "@/utils/step-signal";
 import type { UserStory } from "../prd";
-import { isInterruptedStale } from "./_interrupt";
+import { softInterruptTurn } from "./_interrupt";
 import { storyRoutingModel } from "./story-routing-model";
 import type { RunOperationWithHooks } from "./types";
-import { parseImplementerReply, WORKFLOW_INTERRUPT_MARKER } from "./workflow-replies";
+import { parseImplementerReply } from "./workflow-replies";
 import type { ImplementerReply } from "./workflow-types";
 
 export interface WorkflowImplementInput {
@@ -24,12 +23,20 @@ export interface WorkflowImplementInput {
   readonly timeoutMs: number;
 }
 
-const EMPTY_TURN: TurnResult = {
-  output: "",
-  tokenUsage: { inputTokens: 0, outputTokens: 0 },
-  estimatedCostUsd: 0,
-  internalRoundTrips: 0,
-};
+export const WORKFLOW_WRITE_TOOLS = [
+  "Read",
+  "Glob",
+  "Grep",
+  "Write",
+  "Edit",
+  "Delete",
+  "Git",
+  "RunCommand",
+  "GitCommit",
+  "Exec",
+  "Bash",
+  "RequestCapability",
+] as const;
 
 export const workflowImplementOp: RunOperationWithHooks<
   WorkflowImplementInput,
@@ -42,20 +49,7 @@ export const workflowImplementOp: RunOperationWithHooks<
   stage: "run",
   session: { role: "wf-implementer", lifetime: "warm" },
   config: workflowConfigSelector,
-  tools: [
-    "Read",
-    "Glob",
-    "Grep",
-    "Write",
-    "Edit",
-    "Delete",
-    "Git",
-    "RunCommand",
-    "GitCommit",
-    "Exec",
-    "Bash",
-    "RequestCapability",
-  ],
+  tools: [...WORKFLOW_WRITE_TOOLS],
   model: (input) => input.model ?? storyRoutingModel(input.story),
   keepOpen: () => true,
   // The agent's own timeout trails the step limit, so the soft interrupt always fires first.
@@ -71,15 +65,7 @@ export const workflowImplementOp: RunOperationWithHooks<
    * session warm and its edits in the tree (spec §6 failure table); it comes back as
    * the marker, never rethrown, so the stale-retry never re-runs a stopped turn.
    */
-  async hopBody(initialPrompt, ctx) {
-    const interrupt = AbortSignal.timeout(ctx.input.timeoutMs);
-    try {
-      return await ctx.send(initialPrompt, { interrupt });
-    } catch (err) {
-      if (!interrupt.aborted || !isInterruptedStale(err)) throw err;
-      return { ...EMPTY_TURN, output: WORKFLOW_INTERRUPT_MARKER };
-    }
-  },
+  hopBody: (initialPrompt, ctx) => softInterruptTurn(initialPrompt, ctx),
   parse: (output) => parseImplementerReply(output),
   /** An empty reply is not a failure: the implementer's real output is the working tree. */
   async recover() {

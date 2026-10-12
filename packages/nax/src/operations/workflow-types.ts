@@ -46,3 +46,10 @@ export interface ReReviewVerdict {
   readonly verdicts: readonly { readonly id: string; readonly addressed: boolean; readonly note: string }[];
   readonly newFindings: readonly WorkflowFindingDraft[];
 }
+
+export type MinorTriageDecision = "fix-now" | "leave";
+
+/** The whole-branch review (spec §7 step 2): the story-review verdict plus one triage per deferred minor. */
+export interface BranchReviewVerdict extends StoryReviewVerdict {
+  readonly minorTriage: readonly { readonly id: string; readonly decision: MinorTriageDecision }[];
+}

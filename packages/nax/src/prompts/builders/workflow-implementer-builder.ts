@@ -83,7 +83,7 @@ export function buildWorkflowBrief(input: WorkflowBriefInput): string {
     .join("\n");
 }
 
-const REPLY_CONTRACT = `End your reply with exactly one fenced json block:
+export const WORKFLOW_REPLY_CONTRACT = `End your reply with exactly one fenced json block:
 
 \`\`\`json
 {"status": "DONE" | "DONE_WITH_CONCERNS" | "NEEDS_CONTEXT" | "BLOCKED", "commits": ["<sha>"], "testSummary": "<one line>", "concerns": "<empty unless status is not DONE>"}
@@ -111,7 +111,7 @@ Write ${input.reportPath} with these sections:
 - **Files changed**
 - **Decisions & assumptions**: every judgment call you made and why.
 
-${REPLY_CONTRACT}`;
+${WORKFLOW_REPLY_CONTRACT}`;
 }
 
 export function buildWorkflowFixPrompt(input: {
@@ -144,7 +144,7 @@ ${renderWorkflowFindings(input.findings)}${uncommitted}
 - Commit, then append a "Fix round ${input.round}" section to ${input.reportPath}: what you changed for each finding id, the test evidence, and any new Decisions & assumptions.
 - Do not dispatch sub-agents or reviewers.
 
-${REPLY_CONTRACT}`;
+${WORKFLOW_REPLY_CONTRACT}`;
 }
 
 export function buildWorkflowAnswerPrompt(answer: string): string {

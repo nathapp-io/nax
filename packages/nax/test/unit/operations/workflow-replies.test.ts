@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  parseBranchReviewReply,
   parseImplementerReply,
   parseReReviewReply,
   parseStoryReviewReply,
@@ -127,5 +128,52 @@ describe("parseReReviewReply", () => {
 
   test("no findings array -> null", () => {
     expect(parseReReviewReply(JSON.stringify({ newFindings: [] }), ["F1"])).toBeNull();
+  });
+});
+
+describe("parseBranchReviewReply", () => {
+  const base = { spec: "pass", quality: "approved", findings: [], cannotVerify: [] };
+
+  test("keeps the story-review verdict and one triage entry per known minor id", () => {
+    const out = parseBranchReviewReply(
+      JSON.stringify({
+        ...base,
+        minorTriage: [
+          { id: "M2", decision: "fix-now" },
+          { id: "M1", decision: "leave" },
+        ],
+      }),
+      ["M1", "M2", "M3"],
+    );
+    expect(out?.spec).toBe("pass");
+    expect(out?.minorTriage).toEqual([
+      { id: "M1", decision: "leave" },
+      { id: "M2", decision: "fix-now" },
+      { id: "M3", decision: "leave" },
+    ]);
+  });
+
+  test("missing minorTriage, unknown ids, bad decisions and duplicates -> leave / ignored (P4-R8)", () => {
+    const out = parseBranchReviewReply(
+      JSON.stringify({
+        ...base,
+        minorTriage: [
+          { id: "M9", decision: "fix-now" },
+          { id: "M1", decision: "now!" },
+          { id: "M1", decision: "fix-now" },
+          { id: "M1", decision: "leave" },
+        ],
+      }),
+      ["M1"],
+    );
+    expect(out?.minorTriage).toEqual([{ id: "M1", decision: "fix-now" }]);
+    expect(parseBranchReviewReply(JSON.stringify(base), ["M1"])?.minorTriage).toEqual([
+      { id: "M1", decision: "leave" },
+    ]);
+  });
+
+  test("an invalid review shape is null", () => {
+    expect(parseBranchReviewReply("nope", ["M1"])).toBeNull();
+    expect(parseBranchReviewReply(JSON.stringify({ spec: "maybe" }), [])).toBeNull();
   });
 });

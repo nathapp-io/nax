@@ -1,8 +1,10 @@
 /** A5 workflow reply parsers. Pure; every LLM JSON read goes through tryParseLLMJson. */
 import { tryParseLLMJson } from "../utils/llm-json";
 import type {
+  BranchReviewVerdict,
   ImplementerReply,
   ImplementerStatus,
+  MinorTriageDecision,
   ReReviewVerdict,
   StoryReviewVerdict,
   WorkflowFindingDraft,
@@ -126,4 +128,22 @@ export function parseReReviewReply(output: string, openIds: readonly string[]): 
     return { id, addressed: entry.verdict === "ADDRESSED", note: typeof entry.note === "string" ? entry.note : "" };
   });
   return { verdicts, newFindings: drafts(parsed.newFindings) };
+}
+
+function triageOf(parsed: unknown): Map<string, MinorTriageDecision> {
+  const triage = new Map<string, MinorTriageDecision>();
+  if (!isRecord(parsed) || !Array.isArray(parsed.minorTriage)) return triage;
+  for (const entry of parsed.minorTriage) {
+    if (!isRecord(entry) || typeof entry.id !== "string" || triage.has(entry.id)) continue;
+    if (entry.decision === "fix-now" || entry.decision === "leave") triage.set(entry.id, entry.decision);
+  }
+  return triage;
+}
+
+/** One triage entry per known minor id, in the given order; untriaged or unknown -> leave (P4-R8). */
+export function parseBranchReviewReply(output: string, minorIds: readonly string[]): BranchReviewVerdict | null {
+  const verdict = parseStoryReviewReply(output);
+  if (!verdict) return null;
+  const triage = triageOf(tryParseLLMJson<unknown>(output));
+  return { ...verdict, minorTriage: minorIds.map((id) => ({ id, decision: triage.get(id) ?? "leave" })) };
 }

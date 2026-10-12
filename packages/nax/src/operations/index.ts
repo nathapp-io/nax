@@ -150,11 +150,16 @@ export type { VerifierInput, VerifierOutput } from "./verify";
 export { verifierOp, verifyTddOp } from "./verify";
 export type { VerifyScopedDeps, VerifyScopedInput, VerifyScopedOutput } from "./verify-scoped";
 export { _verifyScopedDeps, verifyScopedOp } from "./verify-scoped";
+export type { WorkflowBranchFixInput } from "./workflow-branch-fix";
+export { workflowBranchFixOp } from "./workflow-branch-fix";
+export type { WorkflowBranchReviewInput } from "./workflow-branch-review";
+export { workflowBranchReviewOp } from "./workflow-branch-review";
 export type { WorkflowImplementInput } from "./workflow-implement";
-export { workflowImplementOp } from "./workflow-implement";
+export { WORKFLOW_WRITE_TOOLS, workflowImplementOp } from "./workflow-implement";
 export type { WorkflowReReviewInput } from "./workflow-re-review";
 export { workflowReReviewOp } from "./workflow-re-review";
 export {
+  parseBranchReviewReply,
   parseImplementerReply,
   parseReReviewReply,
   parseStoryReviewReply,
@@ -163,9 +168,11 @@ export {
 export type { WorkflowReviewInput } from "./workflow-story-review";
 export { WORKFLOW_REVIEW_TOOLS, workflowStoryReviewOp } from "./workflow-story-review";
 export type {
+  BranchReviewVerdict,
   GateName,
   ImplementerReply,
   ImplementerStatus,
+  MinorTriageDecision,
   ReReviewVerdict,
   StoryReviewVerdict,
   WorkflowFinding,
