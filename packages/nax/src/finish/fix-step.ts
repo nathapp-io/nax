@@ -17,10 +17,17 @@ import { getSafeLogger } from "@/logger";
 import type { AuditTarget } from "./audit";
 import { findingId } from "./ledger";
 import type { FinishOps, FixOutcome, FixPhase, FixRequest } from "./ops";
-import { captureFixBase, setAside, snapshotUntracked } from "./set-aside";
+import {
+  captureFixBase,
+  markHandoffConsumed,
+  readHandoffNote,
+  reapplyHandoff,
+  setAside,
+  snapshotUntracked,
+} from "./set-aside";
 import type { FinishState } from "./state";
 import { stepSignal } from "./step-signal";
-import type { Finding, FixBase, HandoffLimit, HandoffNote, HandoffRecord, Stop } from "./types";
+import type { Finding, FixBase, FixContinuation, HandoffLimit, HandoffNote, HandoffRecord, Stop } from "./types";
 
 export type FixStepResult =
   | { kind: "done"; outcome: FixOutcome; continued?: HandoffRecord }
@@ -134,6 +141,43 @@ async function captureBase(state: FinishState, deps: FixStepDeps): Promise<FixBa
   }
 }
 
+function replaceHandoff(state: FinishState, next: HandoffRecord): void {
+  state.handoffs = state.handoffs.map((h) => (h.n === next.n ? next : h));
+}
+
+/** 4.3: the pending stopped handoff of this phase, re-applied; undefined when none or it no longer applies. */
+async function continueFrom(
+  state: FinishState,
+  phase: FixPhase,
+): Promise<{ record: HandoffRecord; continuation: FixContinuation } | undefined> {
+  const pending = state.handoffs.find((h) => h.n === state.pendingHandoff);
+  if (!pending || pending.phase !== phase) return undefined;
+  state.pendingHandoff = undefined;
+  const { applied, files } = await reapplyHandoff(state.workdir, pending);
+  const record = { ...pending, reapplied: applied };
+  replaceHandoff(state, record);
+  if (!applied) {
+    getSafeLogger()?.warn("finish", "Handoff no longer applies; fix attempt starts from scratch", {
+      storyId: "_run",
+      phase,
+      handoff: pending.dir,
+    });
+    return undefined;
+  }
+  const note = await readHandoffNote(record);
+  return { record, continuation: { files, ...(note ? { note } : {}) } };
+}
+
+/** A continued attempt that committed has used up its handoff. */
+export async function consumeIfCommitted(
+  state: FinishState,
+  continued: HandoffRecord | undefined,
+  committed: boolean,
+): Promise<void> {
+  if (!continued || !committed) return;
+  replaceHandoff(state, await markHandoffConsumed(continued));
+}
+
 export async function runFixStep(
   state: FinishState,
   deps: FixStepDeps,
@@ -145,10 +189,17 @@ export async function runFixStep(
   if ("error" in captured) return { kind: "failed", error: captured.error };
   const base = captured;
   state.lastFixBase = base;
+  // After the base is captured, so stopping again also sets the re-applied edits aside.
+  const cont = await continueFrom(state, phase);
   const { signal: interrupt, limit } = stepSignal(deps.signal, deps.fixMs);
   let outcome: FixOutcome;
   try {
-    outcome = await deps.ops.fix(phase, { ...req, state, ...(interrupt ? { interrupt } : {}) });
+    outcome = await deps.ops.fix(phase, {
+      ...req,
+      state,
+      ...(interrupt ? { interrupt } : {}),
+      ...(cont ? { continuation: cont.continuation } : {}),
+    });
   } catch (error) {
     // Any throw after the step limit fired is treated as a `fix` stop, whatever its message.
     const kind = stopKind(deps, limit) ?? "error";
@@ -158,7 +209,7 @@ export async function runFixStep(
     return { kind: "stopped", handoff };
   }
   const kind = stopKind(deps, limit, outcome);
-  if (!kind) return { kind: "done", outcome };
+  if (!kind) return { kind: "done", outcome, ...(cont ? { continued: cont.record } : {}) };
   const handoff = await setAsideStep(state, deps, {
     phase,
     base,

@@ -110,7 +110,7 @@ function diffResult(model: FinishGitModel, args: string[]): GitResult | undefine
 }
 
 function applyResult(model: FinishGitModel, args: string[], trail?: string[]): GitResult {
-  if (args.includes("--numstat")) return ok("1\t1\ta.ts\n");
+  if (args.includes("--numstat")) return ok(`1\t1\ta.ts${args.includes("-z") ? "\0" : "\n"}`);
   if (model.applyFails) return { exitCode: 1, stdout: "", stderr: "conflict" };
   if (!args.includes("--check")) {
     trail?.push("apply");

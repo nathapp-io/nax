@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { join } from "node:path";
 import { cleanupTempDir, installFinishGit, makeFinishOps, makeFinishState, makeTempDir } from "@test/helpers";
-import type { FinishOps, FixRequest } from "@/finish";
+import type { FinishOps, FixRequest, HandoffRecord } from "@/finish";
 import { _finishGitDeps } from "@/finish";
-import { runFixStep } from "@/finish/fix-step";
+import { consumeIfCommitted, runFixStep } from "@/finish/fix-step";
 
 const restores: (() => void)[] = [];
 const dirs: string[] = [];
@@ -225,5 +226,101 @@ describe("runFixStep (finish A)", () => {
     );
     expect((await runFixStep(makeFinishState(), deps({ ops }), "review", { findings: [] })).kind).toBe("failed");
     expect(ran).toBe(false);
+  });
+});
+
+function handoff(auditDir: string, over: Partial<HandoffRecord> = {}): HandoffRecord {
+  return {
+    n: 1,
+    dir: join(auditDir, "run-1.handoff-1"),
+    phase: "review",
+    limit: "fix",
+    baseSha: "sha1",
+    headSha: "sha1",
+    findingIds: [],
+    newUntracked: [],
+    changedPaths: [],
+    stoppedAt: "t",
+    hasNote: false,
+    patchSaved: true,
+    restored: true,
+    consumed: false,
+    untrackedRestored: [],
+    untrackedMovedAside: [],
+    untrackedFailed: [],
+    ...over,
+  };
+}
+
+describe("runFixStep continuation (finish A 4.3)", () => {
+  test("re-applies the pending handoff of the same phase and passes a continuation", async () => {
+    const model = { dirty: false, head: 1 };
+    const trail: string[] = [];
+    restores.push(installFinishGit(model, trail));
+    let seen: FixRequest | undefined;
+    const ops = makeFinishOps(
+      [],
+      {},
+      {
+        fix: async (_p, req) => {
+          seen = req;
+          return { dispositions: [] };
+        },
+      },
+    );
+    const d = deps({ ops, fixMs: 60_000 });
+    const state = makeFinishState();
+    state.handoffs = [handoff(d.audit.auditDir)];
+    state.pendingHandoff = 1;
+    const out = await runFixStep(state, d, "review", { findings: [] });
+    expect(trail).toContain("apply");
+    expect(seen?.continuation).toEqual({ files: ["a.ts"] });
+    expect(out.kind === "done" ? out.continued?.n : undefined).toBe(1);
+    expect(state.pendingHandoff).toBeUndefined();
+  });
+
+  test("a patch that fails --check: fresh start, handoff kept, marked not re-applied", async () => {
+    restores.push(installFinishGit({ dirty: false, head: 1, applyFails: true }));
+    let seen: FixRequest | undefined;
+    const ops = makeFinishOps(
+      [],
+      {},
+      {
+        fix: async (_p, req) => {
+          seen = req;
+          return {};
+        },
+      },
+    );
+    const d = deps({ ops, fixMs: 60_000 });
+    const state = makeFinishState();
+    state.handoffs = [handoff(d.audit.auditDir)];
+    state.pendingHandoff = 1;
+    await runFixStep(state, d, "review", { findings: [] });
+    expect(seen?.continuation).toBeUndefined();
+    expect(state.handoffs[0]?.reapplied).toBe(false);
+  });
+
+  test("a pending handoff of another phase is left alone", async () => {
+    const trail: string[] = [];
+    restores.push(installFinishGit({ dirty: false, head: 1 }, trail));
+    const d = deps({ fixMs: 60_000 });
+    const state = makeFinishState();
+    state.handoffs = [handoff(d.audit.auditDir, { phase: "gate" })];
+    state.pendingHandoff = 1;
+    await runFixStep(state, d, "review", { findings: [] });
+    expect(trail).not.toContain("apply");
+    expect(state.pendingHandoff).toBe(1);
+  });
+
+  test("consumeIfCommitted marks the handoff consumed only after a commit", async () => {
+    const d = deps();
+    const state = makeFinishState();
+    const rec = handoff(d.audit.auditDir);
+    state.handoffs = [rec];
+    await consumeIfCommitted(state, rec, false);
+    expect(state.handoffs[0]?.consumed).toBe(false);
+    await consumeIfCommitted(state, rec, true);
+    expect(state.handoffs[0]?.consumed).toBe(true);
   });
 });

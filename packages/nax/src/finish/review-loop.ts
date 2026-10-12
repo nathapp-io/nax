@@ -13,7 +13,7 @@ import { judgeWithoutAdvisor } from "./advise";
 import { type AuditTarget, recordRound } from "./audit";
 import { buildCommitRound, commitFixes } from "./commit";
 import { buildFixCommitMessage } from "./commit-message";
-import { type FixStepDeps, runFixStep } from "./fix-step";
+import { consumeIfCommitted, type FixStepDeps, runFixStep } from "./fix-step";
 import type { MergedFindings } from "./merge-findings";
 import { mergeFindings } from "./merge-findings";
 import type { FinishOps, ReviewInputs } from "./ops";
@@ -131,6 +131,7 @@ async function fixRound(
     { workdir: state.workdir, dispositions: outcome.dispositions },
   );
   const commit = await commitFixes(state.workdir, message, { skipHooks: true });
+  await consumeIfCommitted(state, step.continued, commit.committed);
   if (commit.committed) {
     state.committedThisRun = true;
     patchReview(state, { committedFixes: true });

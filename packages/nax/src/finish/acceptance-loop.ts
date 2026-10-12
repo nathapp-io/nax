@@ -8,7 +8,7 @@ import { getSafeLogger } from "@/logger";
 import { recordRound } from "./audit";
 import { buildCommitRound, commitFixes } from "./commit";
 import { buildFixCommitMessage } from "./commit-message";
-import { runFixStep } from "./fix-step";
+import { consumeIfCommitted, runFixStep } from "./fix-step";
 import { runAcceptanceGate } from "./gates/acceptance";
 import { assertNotAborted, type FinishMachineDeps, fixStepDeps } from "./machine-deps";
 import { routeAcceptance } from "./route";
@@ -64,6 +64,7 @@ async function fixOnce(state: FinishState, deps: FinishMachineDeps, output: stri
     { workdir: state.workdir },
   );
   const commit = await commitFixes(state.workdir, message, { skipHooks: true });
+  await consumeIfCommitted(state, step.continued, commit.committed);
   if (commit.committed) {
     state.committedThisRun = true;
     if (commit.shaAfter) state.unreviewedFixCommits = [...state.unreviewedFixCommits, commit.shaAfter];

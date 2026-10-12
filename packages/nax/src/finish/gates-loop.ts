@@ -8,7 +8,7 @@ import { getSafeLogger } from "@/logger";
 import { recordRound } from "./audit";
 import { buildCommitRound, commitFixes, filesInCommit } from "./commit";
 import { buildFixCommitMessage } from "./commit-message";
-import { runFixStep } from "./fix-step";
+import { consumeIfCommitted, runFixStep } from "./fix-step";
 import { runAcceptanceGate } from "./gates/acceptance";
 import { resolveGateCommands, runQualityGates } from "./gates/quality";
 import { assertNotAborted, type FinishMachineDeps, fixStepDeps } from "./machine-deps";
@@ -80,6 +80,7 @@ async function fixOnce(
     { workdir: state.workdir },
   );
   const commit = await commitFixes(state.workdir, message, { skipHooks: true });
+  await consumeIfCommitted(state, step.continued, commit.committed);
   if (commit.committed) state.committedThisRun = true;
   const files = commit.committed && commit.shaAfter ? await filesInCommit(state.workdir, commit.shaAfter) : null;
   const route = gateCommitRoute(commit.committed, files, deps.context.testFileRegex);
