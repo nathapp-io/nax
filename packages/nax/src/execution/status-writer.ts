@@ -19,6 +19,7 @@ import {
   type PostRunStatus,
   type RegressionPhaseStatus,
   type RunStateSnapshot,
+  type WorkflowStatusBlock,
   writeStatusFile,
 } from "./status-file";
 
@@ -81,6 +82,7 @@ export class StatusWriter {
   private _consecutiveWriteFailures = 0; // @design: BUG-2: Track consecutive write failures
   private _postRun: PostRunStatus | null = null;
   private _advisor: AdvisorSummary | null = null;
+  private _workflow: WorkflowStatusBlock | null = null;
 
   /**
    * Write mutex — serializes concurrent update() calls.
@@ -122,6 +124,11 @@ export class StatusWriter {
   /** A1: advisor decision counts for the status file (set once, at run completion). */
   setAdvisorSummary(summary: AdvisorSummary): void {
     this._advisor = summary;
+  }
+
+  /** A5: the workflow-mode block (spec §9, P4-R12), persisted by the next update(). */
+  setWorkflowStatus(block: WorkflowStatusBlock): void {
+    this._workflow = block;
   }
 
   setRunStatus(status: RunStateSnapshot["runStatus"]): void {
@@ -234,6 +241,9 @@ export class StatusWriter {
     };
     if (this._advisor !== null) {
       snapshot.advisor = this._advisor;
+    }
+    if (this._workflow !== null) {
+      snapshot.workflow = this._workflow;
     }
     if (this._postRun !== null) {
       snapshot.postRun = this._postRun;

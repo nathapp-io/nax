@@ -1,6 +1,9 @@
 /** Unified Story Executor (ADR-005, Phase 4) — sequential loop with optional parallel dispatch. */
 
 import { pipelineEventBus } from "@/pipeline/event-bus";
+import type { WorkflowRunStartInput } from "@/workflow";
+import { resolveDefaultAgent } from "../agents";
+import { isWorkflowMode } from "../config";
 import { checkPreMerge, isTriggerEnabled } from "../interaction/triggers";
 import { getSafeLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
@@ -32,6 +35,22 @@ export type { SequentialExecutionContext, SequentialExecutionResult } from "./ex
 
 // Internal run-scoped unsubscribers; do not clear the bus because it has external subscribers.
 let _prevRunUnsubscribers: Array<() => void> = [];
+
+/** A5 (spec §5.3): the advisor pre-flight runs once before the first story, in workflow mode only. Fail-open inside. */
+async function runWorkflowPreflightOnce(ctx: SequentialExecutionContext, prd: PRD): Promise<void> {
+  if (!isWorkflowMode(ctx.config) || ctx.dryRun) return;
+  await _unifiedExecutorDeps.runWorkflowPreflight({
+    runtime: ctx.runtime,
+    config: ctx.config,
+    prd,
+    feature: ctx.feature,
+    workdir: ctx.workdir,
+    runId: ctx.runId,
+    agentName: ctx.agentManager?.getDefault() ?? resolveDefaultAgent(ctx.config),
+    abortSignal: ctx.abortSignal,
+    interactionChain: ctx.interactionChain,
+  });
+}
 
 export async function executeUnified(
   ctx: SequentialExecutionContext,
@@ -152,6 +171,8 @@ export async function executeUnified(
         preRunPipeline,
       );
     }
+
+    await runWorkflowPreflightOnce(ctx, state.prd);
 
     while (iterations < ctx.config.execution.maxIterations) {
       iterations++;
@@ -277,6 +298,11 @@ export const _unifiedExecutorDeps = {
   runParallelBatch: async (opts: RunParallelBatchOptions): Promise<RunParallelBatchResult> => {
     const { runParallelBatch } = await import("./parallel-batch");
     return runParallelBatch(opts);
+  },
+  // Dynamic import: src/workflow is loaded lazily everywhere (no load-time cycle through operations).
+  runWorkflowPreflight: async (input: WorkflowRunStartInput): Promise<void> => {
+    const { runWorkflowPreflight } = await import("@/workflow");
+    return runWorkflowPreflight(input);
   },
   runIteration,
   selectIndependentBatch,

@@ -235,6 +235,8 @@ export interface NaxStatusFile {
   advisor?: AdvisorSummary;
   /** nax#2410 D6: per-server MCP adoption; absent when MCP is unconfigured. */
   mcpAdoption?: McpAdoptionSummary;
+  /** A5: workflow-mode block (spec §9); absent outside workflow mode. */
+  workflow?: WorkflowStatusBlock;
 }
 
 // ============================================================================
@@ -334,6 +336,8 @@ export interface RunStateSnapshot {
   advisor?: AdvisorSummary;
   /** nax#2410 D6: per-server MCP adoption summary, set at run completion when MCP is configured. */
   mcpAdoption?: McpAdoptionSummary;
+  /** A5: workflow-mode block (spec §9); absent outside workflow mode. */
+  workflow?: WorkflowStatusBlock;
   postRun?: PostRunStatus;
 }
 
@@ -387,6 +391,10 @@ export function buildStatusSnapshot(state: RunStateSnapshot): NaxStatusFile {
 
   if (state.mcpAdoption) {
     snapshot.mcpAdoption = state.mcpAdoption;
+  }
+
+  if (state.workflow) {
+    snapshot.workflow = state.workflow;
   }
 
   if (state.postRun) {

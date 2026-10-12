@@ -5,5 +5,7 @@ export { runWorkflowFeature } from "./feature";
 export type { WorkflowFeatureInput } from "./feature-context";
 export type { PreflightFile } from "./preflight";
 export { preflightPath, runPreflight } from "./preflight";
+export type { WorkflowRunStartInput } from "./preflight-run";
+export { runWorkflowPreflight } from "./preflight-run";
 export { workflowStage } from "./stage";
 export type * from "./types";
