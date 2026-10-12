@@ -1,3 +1,4 @@
+export * from "./adoption";
 export * from "./client";
 export * from "./lock";
 export * from "./pool";

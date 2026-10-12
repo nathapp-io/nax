@@ -12,4 +12,6 @@ export { acpBackend } from "#src/client/backend";
 export { ACP_STOP_CODES, type AcpStopCode } from "#src/client/errors";
 export { isAgentLaunchable, type LaunchCandidateKind, launchCandidateKind } from "#src/client/launchable";
 export type { AcpAgentSpec, AcpBackendOptions, AcpProcessHooks } from "#src/client/options";
-export type { AcpAgentName } from "#src/client/registry";
+export { TOOL_HOST_SERVER_NAME } from "#src/client/pre-approval";
+export type { AcpAgentName, AgentRegistryEntry } from "#src/client/registry";
+export { registryEntry } from "#src/client/registry";

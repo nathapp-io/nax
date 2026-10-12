@@ -38,6 +38,7 @@ import {
   type ToolAuditHeader,
   UNIVERSAL_CODING_TOOLS,
 } from "@nathapp/nax-agent/internal";
+import { attachAcpDelivery, resolveProviderSurface } from "@/agents";
 import { getSafeLogger } from "@/logger";
 import { loadConfigForPackage, type NaxConfig, scanConfigSecrets } from "../config";
 import { toolAuditDir } from "../config/paths";
@@ -324,6 +325,14 @@ export async function resolveProviderContribution(
           tools: [],
           grants: [],
           failures: [] as readonly { providerId: string; reason: string }[],
+          // nax#2410 D4 (settled): a whole-layer permission skip is a surface
+          // row, so the artifact explains an empty `advertised`. Only when
+          // providers are configured — silence for a plain no-MCP run.
+          skipped:
+            (options.providers?.length ?? 0) > 0
+              ? [{ providerId: "*", reason: "provider-scope:none" as const, stages: [] }]
+              : [],
+          withheld: [],
           providerIdByTool: new Map<string, string>(),
           entries: [],
         };
@@ -429,6 +438,31 @@ export function resolvedDispatchArgs(inputs: ResolvedDispatchInputs): Partial<Re
   };
 }
 
+/**
+ * The config-read gate (nax#2460): config files are readable only when the
+ * root's config passed the secret scan — and, under gated bash, only when the
+ * op did not declare Bash (a raw-bash op may read them: it could anyway).
+ * A failed scan fails closed: config reads stay disabled.
+ */
+async function configReadGateFor(
+  root: string | undefined,
+  resolved: ResolvedPermissions,
+  declaredWithProviders: readonly string[],
+  storyId: string | undefined,
+): Promise<boolean> {
+  if (root === undefined || root.trim() === "") return false;
+  let configScanClean = false;
+  try {
+    configScanClean = (await _codingToolSupportDeps.scanConfigSecrets(root)).clean;
+  } catch (err) {
+    getSafeLogger()?.warn("tools", "Config secret scan failed; config reads remain disabled", {
+      storyId: storyId ?? "_dispatch",
+      error: errorMessage(err),
+    });
+  }
+  return configScanClean && (resolved.bashApproval === "raw" || !declaredWithProviders.includes(BASH_TOOL_NAME));
+}
+
 /** Injectable deps for testability — mirrors the _agentManagerDeps pattern. Each nax-owned port has its default here. */
 export const _codingToolSupportDeps: {
   loadConfigForPackage: typeof loadConfigForPackage;
@@ -502,26 +536,23 @@ export async function resolveCodingToolSupport(
   // names, yet appending the provider names above is exactly what makes it a
   // real op. An empty union is the only case that yields no support.
   if (declaredWithProviders.length === 0) return undefined;
-  let configScanClean = false;
-  if (root !== undefined && root.trim() !== "") {
-    try {
-      configScanClean = (await _codingToolSupportDeps.scanConfigSecrets(root)).clean;
-    } catch (err) {
-      getSafeLogger()?.warn("tools", "Config secret scan failed; config reads remain disabled", {
-        storyId: options.storyId ?? "_dispatch",
-        error: errorMessage(err),
-      });
-    }
-  }
-  const configReadable =
-    configScanClean && (resolved.bashApproval === "raw" || !declaredWithProviders.includes(BASH_TOOL_NAME));
-  // Deny and ask bind under EVERY profile (spec R10), so Mcp deny/ask rules are
+  const configReadable = await configReadGateFor(root, resolved, declaredWithProviders, options.storyId); // Deny and ask bind under EVERY profile (spec R10), so Mcp deny/ask rules are
   // expanded even when providerScope is "all" — a deny must be able to withdraw
   // one tool from an otherwise fully-granted provider.
   const denyRules = [...denied.grants, ...expandMcpRuleGrants(denied.mcpPatterns, providerResult.entries)];
   const askRules = [...asked.grants, ...expandMcpRuleGrants(asked.mcpPatterns, providerResult.entries)];
   const launcher = await resolveDispatchLauncher(options, declared, sessionName);
-  return buildCodingToolSupport({
+  // nax#2410 D4: the surface record rides the audit file; nax#2444 D4: the ACP
+  // delivery set is the deny/ask enforcement point (claude pre-approves what it
+  // is handed, so delivery is the last chance to withhold).
+  const surface = resolveProviderSurface({
+    providerResult,
+    deniedMcp: denied.mcpPatterns,
+    askedMcp: asked.mcpPatterns,
+    stage: options.pipelineStage ?? "run",
+    declaredTools: declaredWithProviders,
+  });
+  const support = buildCodingToolSupport({
     root: options.codingToolRoot,
     pipelineStage: options.pipelineStage ?? "run",
     // No `repoRoot`: post single-frame redesign (PR2) it equals `root`, so
@@ -555,5 +586,8 @@ export async function resolveCodingToolSupport(
       packageName,
       launcher,
     }),
+    ...(surface.toolSurface !== undefined ? { toolSurface: surface.toolSurface } : {}),
   });
+  if (support === undefined) return undefined;
+  return attachAcpDelivery(support, surface);
 }

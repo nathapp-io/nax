@@ -37,6 +37,40 @@ describe("resolveProviderTools", () => {
     expect(grants).toEqual([]);
   });
 
+  test("records a stage-mismatched provider in skipped with its configured stages", async () => {
+    const { skipped, tools } = await resolveProviderTools([provider({ id: "runonly" })], "review", "/w/a");
+    expect(skipped).toEqual([{ providerId: "runonly", reason: "stage-mismatch", stages: ["run"] }]);
+    expect(tools).toEqual([]);
+  });
+
+  test("records a tool rejected by admits in withheld, not advertised", async () => {
+    const two = provider({
+      tools: async () => [
+        {
+          localName: "kept",
+          description: "k",
+          inputSchema: { type: "object", properties: {} },
+          run: async () => ({ content: "k" }),
+        },
+        {
+          localName: "dropped",
+          description: "d",
+          inputSchema: { type: "object", properties: {} },
+          run: async () => ({ content: "d" }),
+        },
+      ],
+    });
+    const { withheld, tools } = await resolveProviderTools([two], "run", "/w/a", {
+      admits: (_providerId, localName) => localName !== "dropped",
+    });
+    expect(withheld).toEqual([{ providerId: "fake", localName: "dropped", reason: "not-admitted" }]);
+    expect(tools.map((t) => t.name)).toEqual(["fake__kept"]);
+  });
+
+  test("no providers yields empty skipped and withheld", async () => {
+    expect(await resolveProviderTools([], "run", "/w/a")).toMatchObject({ skipped: [], withheld: [] });
+  });
+
   test("passes the hop root, not a shared one, to each provider", async () => {
     // The two-worktree case: the bug this guards is invisible with one root.
     const a = await resolveProviderTools([provider()], "run", "/w/a");

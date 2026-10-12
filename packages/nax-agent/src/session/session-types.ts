@@ -153,6 +153,17 @@ export interface OpenSessionOpts extends TrackedSpawnDeadlineOptions {
     readonly header: import("#src/tools/tool-audit").ToolAuditHeader;
   };
   /**
+   * ACP delivery (nax#2444, D3): provider tools already policy-filtered at the
+   * hop (deny/ask-ruled tools withheld), adapted by the ACP backend only when
+   * its registry entry declares a pre-approval channel. Native ignores it —
+   * provider tools ride `codingTools` on the turn.
+   */
+  providerTools?: readonly import("#src/tools/registry").CodingTool[];
+  /** ACP: the op's materialized declaration, which narrows the session profile (nax#2444, D2). */
+  declaredTools?: readonly string[];
+  /** ACP: the transport-less surface draft; the adapter stamps transport + profile (nax#2410, D4). */
+  toolSurface?: import("#src/tools/tool-audit").ToolSurfaceDraft;
+  /**
    * Native: identity that owns this session's transcript — the op invocation's
    * `scopeId ?? callId`. Stable across the retries and hops of one invocation,
    * different for every new stage entry, run and process, which is exactly the

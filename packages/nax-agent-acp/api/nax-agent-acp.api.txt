@@ -8,10 +8,13 @@ type AcpAgentSpec
 type AcpBackendOptions
 type AcpProcessHooks
 type AcpStopCode
+type AgentRegistryEntry
 type LaunchCandidateKind
+TOOL_HOST_SERVER_NAME
 acpBackend
 isAgentLaunchable
 launchCandidateKind
+registryEntry
 
 [./server]
 type MainDeps

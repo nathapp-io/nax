@@ -77,7 +77,7 @@
     "src/execution/plan-inputs.ts": { "assemblePlanInputsFromCtx": 28 },
     "src/execution/post-run.ts": { "applyPostRunInspection": 38 },
     "src/execution/queue-handler.ts": { "applyBatchBoundaryCommands": 27 },
-    "src/execution/runner-completion.ts": { "runCompletionPhase": 48 },
+    "src/execution/runner-completion.ts": { "runCompletionPhase": 39 },
     "src/execution/story-orchestrator/fix-review-strategy.ts": { "=>": 23 },
     "src/execution/story-orchestrator/phase-state.ts": { "=>": 36 },
     "src/execution/story-orchestrator/rectification.ts": { "runRectification": 49, "=>": 32 },

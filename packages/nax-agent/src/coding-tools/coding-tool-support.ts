@@ -32,6 +32,8 @@ import {
   type ToolAuditSink,
   type ToolGrant,
   type ToolPatternNarrowing,
+  type ToolSurfaceDraft,
+  type ToolSurfaceRecord,
 } from "#src/tools/index";
 import type { OwnedPathsPolicy } from "#src/tools/owned-paths";
 import { resolveBashSupport } from "./coding-tool-bash.ts";
@@ -42,6 +44,18 @@ export interface CodingToolSupport {
   readonly runtime: CodingToolRuntime;
   readonly tools: readonly CodingTool[];
   readonly auditSink: ToolAuditSink;
+  /** The materialized declaration this support resolved from (nax#2444 D2) — set on every resolve. */
+  readonly declaredTools?: readonly CodingToolName[];
+  /** The session's MCP tool surface (nax#2410 D4), stamped into the audit file at flush. */
+  readonly toolSurface?: ToolSurfaceRecord;
+  /**
+   * The policy-filtered provider-tool delivery for an ACP session (nax#2444 D4),
+   * attached by the nax resolver; the ACP adapter adapts `tools` to EmbedderTools.
+   */
+  readonly acpDelivery?: {
+    readonly tools: readonly CodingTool[];
+    readonly surface: ToolSurfaceDraft;
+  };
 }
 
 export function buildCodingToolSupport(args: {
@@ -99,6 +113,8 @@ export function buildCodingToolSupport(args: {
   /** `quality.shell` — the shell the Bash tool spawns. Defaults to /bin/sh. */
   shell?: string;
   auditDir?: string;
+  /** Stamped into the audit file at flush (nax#2410 D4); absent ⇒ no surface block. */
+  toolSurface?: ToolSurfaceRecord;
   sessionName?: string;
   header?: import("../tools/tool-audit.ts").ToolAuditHeader;
   callId?: string;
@@ -207,14 +223,7 @@ export function buildCodingToolSupport(args: {
   // P4/S5: under `raw`, an UNAVAILABLE launcher refuses every Bash call.
   // US-002: an AVAILABLE one marks the screen sandbox-wrapped, so a PRD it only reads is allowed.
   const rawScreenOptions = rawScreenOptionsFor(args.launcher);
-  const sink =
-    args.auditDir !== undefined
-      ? createToolAuditSink({
-          dir: args.auditDir,
-          sessionName: args.sessionName ?? "unattached",
-          ...(args.header ? { header: args.header } : {}),
-        })
-      : createNoOpToolAuditSink();
+  const sink = supportSink(args);
   const runtime = createCodingToolRuntime({
     policy: compileToolPolicy(effectiveGrants, args.root, {
       bashApproval,
@@ -280,7 +289,29 @@ export function buildCodingToolSupport(args: {
     });
   }
   if (tools.length === 0) return undefined;
-  return { runtime, tools, auditSink: sink };
+  return {
+    runtime,
+    tools,
+    auditSink: sink,
+    declaredTools: args.declared,
+    ...(args.toolSurface !== undefined ? { toolSurface: args.toolSurface } : {}),
+  };
+}
+
+/** The audit sink a support resolution records through; no dir ⇒ a non-recording sink. */
+function supportSink(args: {
+  auditDir?: string;
+  sessionName?: string;
+  header?: import("../tools/tool-audit.ts").ToolAuditHeader;
+  toolSurface?: ToolSurfaceRecord;
+}): ToolAuditSink {
+  if (args.auditDir === undefined) return createNoOpToolAuditSink();
+  return createToolAuditSink({
+    dir: args.auditDir,
+    sessionName: args.sessionName ?? "unattached",
+    ...(args.header !== undefined ? { header: args.header } : {}),
+    ...(args.toolSurface !== undefined ? { toolSurface: args.toolSurface } : {}),
+  });
 }
 
 /**
