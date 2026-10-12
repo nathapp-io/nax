@@ -183,8 +183,18 @@ describe("coverage on the recovery path (#2461)", () => {
   });
 });
 
-describe("fail-closed ledger at machine level (current spec-mandated behaviour)", () => {
-  test("a committed fix with no dispositions, then a clean full round, still ends as a draft with '1 open'", async () => {
+/** Makes the fix session's base unreadable (`git stash create` fails), so the step fails before the fixer runs. */
+function breakBaseCapture(): void {
+  const inner = _finishGitDeps.git;
+  _finishGitDeps.git = async (args, cwd, ...rest) => {
+    const a = args[0] === "--literal-pathspecs" ? args.slice(1) : args;
+    if (a[0] === "stash") return { exitCode: 128, stdout: "", stderr: "fatal" };
+    return inner(args, cwd, ...rest);
+  };
+}
+
+describe("a later clean full round closes open and rejected findings (finish A, owner-approved)", () => {
+  test("a committed fix with no dispositions leaves the finding open until the next clean full round clears it", async () => {
     await withTempDir(async (dir) => {
       const h = makeMachineHarness({
         auditDir: dir,
@@ -193,12 +203,31 @@ describe("fail-closed ledger at machine level (current spec-mandated behaviour)"
         ops: { fix: async () => ({}) },
       });
       const result = await runFinishMachine(h.state, h.deps);
-      expect(result.outcome).toBe("draft");
-      expect(result.reason).toBe("1 open");
+      expect(result.outcome).toBe("ready");
+      expect(result.reason).toBeUndefined();
+      expect(result.facts?.findingsOpen).toEqual([]);
+      expect(h.state.review.ledger.map((e) => [e.state, e.ref])).toEqual([
+        ["cleared", "not re-raised by full round 2"],
+      ]);
     });
   });
 
-  test("a finding the fixer rejected, not re-raised by the next clean full round, stays in the draft reason", async () => {
+  test("a fix that is never followed by a clean round keeps the finding open (Review Focus 5)", async () => {
+    await withTempDir(async (dir) => {
+      const h = makeMachineHarness({
+        auditDir: dir,
+        context: { acceptanceStatus: "disabled" },
+        script: { quality: Array.from({ length: 10 }, () => q("A")) },
+        ops: { fix: async () => ({}) },
+      });
+      const result = await runFinishMachine(h.state, h.deps);
+      expect(result.outcome).toBe("draft");
+      expect(result.reason).toContain("1 open");
+      expect(h.state.review.ledger.map((e) => e.state)).toEqual(["open"]);
+    });
+  });
+
+  test("a finding the fixer rejected, not re-raised by the next clean full round, is cleared and the PR is ready", async () => {
     await withTempDir(async (dir) => {
       const h = makeMachineHarness({
         auditDir: dir,
@@ -207,8 +236,56 @@ describe("fail-closed ledger at machine level (current spec-mandated behaviour)"
         ops: { fix: async () => ({ dispositions: [{ index: 1, disposition: "rejected", evidence: "a.ts:1" }] }) },
       });
       const result = await runFinishMachine(h.state, h.deps);
+      expect(result.outcome).toBe("ready");
+      expect(h.state.review.ledger.map((e) => e.state)).toEqual(["cleared"]);
+    });
+  });
+
+  test("a rejected finding the next round raises again stays open and the PR is a draft", async () => {
+    await withTempDir(async (dir) => {
+      const h = makeMachineHarness({
+        auditDir: dir,
+        context: { acceptanceStatus: "disabled" },
+        script: { quality: Array.from({ length: 10 }, () => q("A")) },
+        ops: { fix: async () => ({ dispositions: [{ index: 1, disposition: "rejected", evidence: "a.ts:1" }] }) },
+      });
+      const result = await runFinishMachine(h.state, h.deps);
       expect(result.outcome).toBe("draft");
-      expect(result.reason).toBe("1 open");
+      expect(result.reason).toContain("1 open");
+    });
+  });
+
+  test("a fix step that failed before running the fixer, then a clean full round, ends ready", async () => {
+    await withTempDir(async (dir) => {
+      const h = makeMachineHarness({
+        auditDir: dir,
+        context: { acceptanceStatus: "disabled" },
+        script: { quality: [q("A"), CLEAN] },
+      });
+      breakBaseCapture();
+      const result = await runFinishMachine(h.state, h.deps);
+      expect(h.state.handoffs).toEqual([]);
+      expect(result.outcome).toBe("ready");
+    });
+  });
+
+  test("a stopped fix stays set aside: the clean round does not close it and the draft names the handoff", async () => {
+    await withTempDir(async (dir) => {
+      const h = makeMachineHarness({
+        auditDir: dir,
+        context: { acceptanceStatus: "disabled" },
+        script: { quality: [q("A"), CLEAN] },
+        fixMs: 5,
+        ops: {
+          fix: async (_p, req) => {
+            await new Promise<void>((r) => req.interrupt?.addEventListener("abort", () => r(), { once: true }));
+            return { dispositions: [], interrupted: true };
+          },
+        },
+      });
+      const result = await runFinishMachine(h.state, h.deps);
+      expect(result.outcome).toBe("draft");
+      expect(result.reason).toContain("1 set aside (handoff-1)");
     });
   });
 });

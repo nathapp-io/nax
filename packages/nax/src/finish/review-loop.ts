@@ -220,7 +220,7 @@ async function runOneRound(state: FinishState, deps: ReviewLoopDeps, limit: numb
   recordReviewStops(state, deps, round);
   noteRound(state, round);
   const judged = await judgeRound(state, deps, merged);
-  if (round.missing.length === 0) ledgerEvent(state, { kind: "full-round", raised });
+  if (round.missing.length === 0) ledgerEvent(state, { kind: "full-round", raised, round: state.review.rounds + 1 });
   recordJudgment(state, judged);
   const fixList = specFirst([...merged.toFix, ...judged.toFix]);
   patchReview(state, {

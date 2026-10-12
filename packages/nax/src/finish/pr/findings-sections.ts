@@ -30,10 +30,11 @@ const STATE_ORDER: Record<LedgerState, number> = {
   "fixed-unreviewed": 4,
   accepted: 5,
   "fixed-reviewed": 6,
-  waived: 7,
-  superseded: 8,
+  cleared: 7,
+  waived: 8,
+  superseded: 9,
 };
-const RESOLVED: ReadonlySet<LedgerState> = new Set(["fixed-reviewed", "waived", "superseded"]);
+const RESOLVED: ReadonlySet<LedgerState> = new Set(["fixed-reviewed", "cleared", "waived", "superseded"]);
 const TABLE_HEAD = "| Severity | Finding | File | State | Ref |\n|---|---|---|---|---|";
 
 function refCell(e: LedgerEntry, cellMax: number): string {

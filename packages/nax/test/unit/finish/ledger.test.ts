@@ -69,6 +69,60 @@ describe("finish ledger (finish A §5)", () => {
     ]);
   });
 
+  test("a clean full round clears open and rejected entries it does not re-raise (cleared, ref names the round)", () => {
+    const l = apply([
+      { kind: "raised", findings: [f("A"), f("B"), f("C")] },
+      {
+        kind: "fixed",
+        findings: [f("A"), f("B")],
+        dispositions: [{ index: 2, disposition: "rejected", evidence: "src/a.ts:3" }],
+        sha: "s1",
+      },
+      { kind: "full-round", raised: [f("C")], round: 2 },
+    ]);
+    expect(l.map((e) => [e.finding.title, e.state, e.ref])).toEqual([
+      ["A", "cleared", "not re-raised by full round 2"],
+      ["B", "cleared", "not re-raised by full round 2"],
+      ["C", "open", undefined],
+    ]);
+    expect(openFindings(l).map((x) => x.title)).toEqual(["C"]);
+  });
+
+  test("a full round never clears set-aside, unresolved or sticky entries", () => {
+    const l = apply([
+      { kind: "raised", findings: [f("A"), f("B"), f("C"), f("D"), f("E")] },
+      { kind: "set-aside", findings: [f("A")], handoff: "handoff-1" },
+      { kind: "ruled", finding: f("B"), state: "unresolved" },
+      { kind: "ruled", finding: f("C"), state: "waived", ref: "D-1" },
+      { kind: "ruled", finding: f("D"), state: "superseded", ref: "D-2" },
+      { kind: "accepted", findings: [f("E")], ref: "advisor approval" },
+      { kind: "full-round", raised: [], round: 3 },
+    ]);
+    expect(l.map((e) => [e.state, e.ref])).toEqual([
+      ["set-aside", "handoff-1"],
+      ["unresolved", undefined],
+      ["waived", "D-1"],
+      ["superseded", "D-2"],
+      ["accepted", "advisor approval"],
+    ]);
+  });
+
+  test("a set-aside entry that a later fix commits is cleared by the next clean full round, not before", () => {
+    const l = apply([
+      { kind: "raised", findings: [f("A")] },
+      { kind: "set-aside", findings: [f("A")], handoff: "handoff-1" },
+      { kind: "full-round", raised: [], round: 2 },
+    ]);
+    expect(l[0]?.state).toBe("set-aside");
+  });
+
+  test("a full round does not mutate its input ledger", () => {
+    const l0 = apply([{ kind: "raised", findings: [f("A")] }]);
+    const copy = structuredClone(l0);
+    applyLedgerEvent(l0, { kind: "full-round", raised: [], round: 2 });
+    expect(l0).toEqual(copy);
+  });
+
   test("waived stays waived when re-raised; set-aside and unresolved count as open", () => {
     const l = apply([
       { kind: "raised", findings: [f("A"), f("B"), f("C")] },

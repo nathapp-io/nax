@@ -202,6 +202,17 @@ describe("findings table, Set aside and Stops (finish A 7)", () => {
     expect(body).toContain("| accepted | advisor approval |");
   });
 
+  test("a cleared finding is listed once, folded under 'resolved' with its ref", () => {
+    const cleared = e("gone", "MEDIUM", "cleared", "not re-raised by full round 2");
+    const body = buildFinishBody(
+      baseCtx({ unresolved: { ...unresolvedBase, ledger: [cleared, e("live", "LOW", "open")] } }),
+    );
+    expect(body.match(/gone/g)).toHaveLength(1);
+    expect(body).toContain("| cleared | not re-raised by full round 2 |");
+    expect(body.indexOf("1 resolved")).toBeLessThan(body.indexOf("gone"));
+    expect(body.indexOf("live")).toBeLessThan(body.indexOf("1 resolved"));
+  });
+
   test("handoff dir, moved file names and the sha ref are escaped", () => {
     const body = buildFinishBody(
       baseCtx({

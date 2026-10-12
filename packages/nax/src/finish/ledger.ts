@@ -9,6 +9,7 @@ export type LedgerState =
   | "open"
   | "fixed-unreviewed"
   | "fixed-reviewed"
+  | "cleared"
   | "rejected"
   | "set-aside"
   | "waived"
@@ -28,7 +29,7 @@ export type LedgerEvent =
   | { kind: "fixed"; findings: Finding[]; dispositions: FindingDisposition[]; sha: string }
   | { kind: "set-aside"; findings: Finding[]; handoff: string }
   | { kind: "ruled"; finding: Finding; state: "waived" | "superseded" | "unresolved"; ref?: string }
-  | { kind: "full-round"; raised: Finding[] }
+  | { kind: "full-round"; raised: Finding[]; round?: number }
   | { kind: "accepted"; findings: Finding[]; ref: string };
 
 export const OPEN_STATES: ReadonlySet<LedgerState> = new Set(["open", "rejected", "set-aside", "unresolved"]);
@@ -65,11 +66,20 @@ function fixed(ledger: readonly LedgerEntry[], ev: Extract<LedgerEvent, { kind: 
   );
 }
 
-function fullRound(ledger: readonly LedgerEntry[], raised: Finding[]): LedgerEntry[] {
+/**
+ * A full round (both lenses present) settles what it does not raise again: a fixed-unreviewed entry is
+ * reviewed; an `open` or `rejected` one is `cleared` (it was never fixed, so `fixed-reviewed` would be
+ * untrue). `set-aside`, `unresolved` and sticky entries are left alone.
+ */
+function fullRound(ledger: readonly LedgerEntry[], raised: Finding[], round?: number): LedgerEntry[] {
   const again = new Set(raised.map(findingId));
-  return ledger.map((e) =>
-    e.state === "fixed-unreviewed" && !again.has(e.id) ? { ...e, state: "fixed-reviewed" as const } : e,
-  );
+  const ref = round !== undefined ? `not re-raised by full round ${round}` : "not re-raised by a full round";
+  return ledger.map((e) => {
+    if (again.has(e.id)) return e;
+    if (e.state === "fixed-unreviewed") return { ...e, state: "fixed-reviewed" as const };
+    if (e.state === "open" || e.state === "rejected") return { ...e, state: "cleared" as const, ref };
+    return e;
+  });
 }
 
 const setAll = (ledger: readonly LedgerEntry[], findings: Finding[], state: LedgerState, ref: string): LedgerEntry[] =>
@@ -94,7 +104,7 @@ export function applyLedgerEvent(ledger: readonly LedgerEntry[], ev: LedgerEvent
     case "ruled":
       return ruled(ledger, ev);
     case "full-round":
-      return fullRound(ledger, ev.raised);
+      return fullRound(ledger, ev.raised, ev.round);
     case "accepted":
       return setAll(ledger, ev.findings, "accepted", ev.ref);
   }
