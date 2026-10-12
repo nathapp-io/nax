@@ -119,7 +119,7 @@ describe("CooldownStore", () => {
     expect(store.isCooling("native", "balanced", "minimax/MiniMax-M3")).toBe(true); // run-long survives the sweep
   });
 
-  test("fail-quota with no provider in the model id falls back to agent-wide (Review Focus 3)", () => {
+  test("fail-quota with no provider in the model id falls back to agent-wide", () => {
     const clock = fakeClock();
     const store = new CooldownStore(clock.now);
     store.mark("claude", failure("fail-quota"), "balanced", "sonnet");
