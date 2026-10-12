@@ -22,6 +22,8 @@ export {
   type JudgedResult,
   judgeWithoutAdvisor,
 } from "./advise";
+export { concatJudged, emptyJudged } from "./advise-core";
+export { MAX_NEAR_MATCH_QUESTIONS } from "./advise-rulings";
 export type { AuditTarget, FinishLedgerEntry, WriteResultOptions } from "./audit";
 export {
   appendRound,

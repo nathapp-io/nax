@@ -5,7 +5,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { makeHandoffRecord, makeMachineHarness, restoreFinishMachineStubs, withTempDir } from "@test/helpers";
 import type { ApprovalAction, Finding, FinishAdvisor, FinishReviewOutput, ResolutionFacts } from "@/finish";
-import { runFinishMachine } from "@/finish";
+import { emptyJudged, runFinishMachine } from "@/finish";
 
 afterEach(() => restoreFinishMachineStubs());
 
@@ -36,6 +36,8 @@ function makeAdvisor(
   const log: AdvisorLog = { approvals: [], judgedCalls: [], ledgerCommits: 0 };
   const queue = [...actions];
   const advisor: FinishAdvisor = {
+    rulingsInForce: async () => [],
+    reconcile: async () => ({ result: emptyJudged(), asked: 0 }),
     judgedEnabled: false,
     approvalEnabled: true,
     judged: async (findings) => {

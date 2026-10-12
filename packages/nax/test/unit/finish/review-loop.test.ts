@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { type FinishGitModel, installFinishGit, makeFinishOps, makeFinishState, withTempDir } from "@test/helpers";
 import type { Finding, FinishAdvisor, FinishOps, FinishReviewOutput, ReviewInputs } from "@/finish";
-import { MAX_REVIEW_ROUNDS, readRounds, runReviewLoop } from "@/finish";
+import { emptyJudged, MAX_REVIEW_ROUNDS, readRounds, runReviewLoop } from "@/finish";
 
 const inputs: ReviewInputs = { changed: ["a.ts"], hints: [], stories: [], prdPath: ".nax/features/feat/prd.json" };
 
@@ -100,6 +100,8 @@ describe("runReviewLoop", () => {
         judgment: true,
       };
       const advise: FinishAdvisor = {
+        rulingsInForce: async () => [],
+        reconcile: async () => ({ result: emptyJudged(), asked: 0 }),
         judgedEnabled: true,
         approvalEnabled: false,
         judged: async (findings) => ({ toFix: findings, advice: [], unresolved: [], dropped: [], held: [] }),
@@ -253,6 +255,8 @@ describe("runReviewLoop failures and advisor-off judgment", () => {
       const spec = s("Must retry", { file: "a.ts", line: 9, fix: "add retry" });
       const quality = q("Retry is bad", { line: 9 });
       const advise: FinishAdvisor = {
+        rulingsInForce: async () => [],
+        reconcile: async () => ({ result: emptyJudged(), asked: 0 }),
         judgedEnabled: true,
         approvalEnabled: false,
         judged: async (_f, contradictions) => ({
@@ -327,6 +331,8 @@ describe("runReviewLoop deadline", () => {
       let aborted = false;
       let judgedCalls = 0;
       const advise: FinishAdvisor = {
+        rulingsInForce: async () => [],
+        reconcile: async () => ({ result: emptyJudged(), asked: 0 }),
         judgedEnabled: true,
         approvalEnabled: false,
         judged: async () => {
@@ -558,6 +564,8 @@ describe("runReviewLoop ledger wiring (finish A fix round 1)", () => {
     judgment: true,
   });
   const judgingAdvisor = (result: (f: Finding[]) => Awaited<ReturnType<FinishAdvisor["judged"]>>): FinishAdvisor => ({
+    rulingsInForce: async () => [],
+    reconcile: async () => ({ result: emptyJudged(), asked: 0 }),
     judgedEnabled: true,
     approvalEnabled: false,
     judged: async (findings) => result(findings),
