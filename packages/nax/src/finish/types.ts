@@ -23,6 +23,8 @@ export interface Finding {
   judgment?: boolean;
   /** Why this finding needs a human; the escalation reason when it escalates. */
   judgmentReason?: string;
+  /** Finish B §5.3: set by finish (never the model) when a ruling allows these acceptance-test edits. */
+  allowedAcceptanceEdits?: { testPath: string; acIds: string[] }[];
   /** A4: repo-relative path the finding is about, when it has one. */
   file?: string;
   /** A4: line in `file`, when the reviewer gave one. */

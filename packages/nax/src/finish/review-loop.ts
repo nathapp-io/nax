@@ -8,9 +8,10 @@
  * this leaves behind.
  */
 import { getSafeLogger } from "@/logger";
+import { loadAcceptanceFiles } from "./acceptance-evidence";
 import type { AdviceRef, FinishAdvisor, JudgedResult } from "./advise";
 import { judgeWithoutAdvisor } from "./advise";
-import { concatJudged } from "./advise-core";
+import { concatJudged, type JudgeContext } from "./advise-core";
 import { MAX_NEAR_MATCH_QUESTIONS } from "./advise-rulings";
 import { type AuditTarget, recordRound } from "./audit";
 import { writeCheckpoint } from "./checkpoint";
@@ -43,6 +44,8 @@ export interface ReviewLoopDeps {
   fix: FixStepDeps;
   /** Finish A: `finish.timeouts.reviewMs`, consumed by the review lens limit (later task). */
   reviewMs?: number;
+  /** Finish B: repo-relative acceptance test paths that exist; [] or absent when acceptance is disabled. */
+  acceptancePaths?: string[];
 }
 
 function patchReview(state: FinishState, patch: Partial<FinishState["review"]>): void {
@@ -106,7 +109,12 @@ function recordReviewStops(state: FinishState, deps: ReviewLoopDeps, round: Revi
   }
 }
 
-async function judgeRound(state: FinishState, deps: ReviewLoopDeps, merged: MergedFindings): Promise<JudgedResult> {
+async function judgeRound(
+  state: FinishState,
+  deps: ReviewLoopDeps,
+  merged: MergedFindings,
+  jctx?: JudgeContext,
+): Promise<JudgedResult> {
   const { judged, contradictions } = merged;
   const advisor = deps.advise;
   const spent = state.phases.review.adviseRounds ?? 0;
@@ -116,7 +124,7 @@ async function judgeRound(state: FinishState, deps: ReviewLoopDeps, merged: Merg
   }
   state.phases.review.adviseRounds = spent + 1;
   try {
-    return await advisor.judged(judged, contradictions, state);
+    return await advisor.judged(judged, contradictions, state, jctx);
   } catch (err) {
     deps.assertNotAborted();
     getSafeLogger()?.warn("finish", "Advisor failed on judged findings; carrying them unresolved", {
@@ -227,12 +235,19 @@ async function runOneRound(state: FinishState, deps: ReviewLoopDeps, limit: numb
   // Ledger what the lenses produced before any abort check: a deadline mid-round must not lose it.
   ledgerEvent(state, { kind: "raised", findings: raised });
   deps.assertNotAborted(); // a deadline during the lenses must not reach the advisor or a fix
+  const jctx: JudgeContext = { acceptance: await loadAcceptanceFiles(state.workdir, deps.acceptancePaths ?? []) };
   await recordLensRounds(state, deps, round);
   recordReviewStops(state, deps, round);
   noteRound(state, round);
-  const before = await reconcileBefore(deps, merged);
-  const judgedNow = await judgeRound(state, deps, before.merged);
-  const after = await reconcileAfter(deps, before.merged.toFix, judgedNow, MAX_NEAR_MATCH_QUESTIONS - before.asked);
+  const before = await reconcileBefore(deps, merged, jctx);
+  const judgedNow = await judgeRound(state, deps, before.merged, jctx);
+  const after = await reconcileAfter(
+    deps,
+    before.merged.toFix,
+    judgedNow,
+    MAX_NEAR_MATCH_QUESTIONS - before.asked,
+    jctx,
+  );
   const judged = concatJudged(before.result, judgedNow, after.result);
   if (round.missing.length === 0) ledgerEvent(state, { kind: "full-round", raised, round: state.review.rounds + 1 });
   recordJudgment(state, judged);

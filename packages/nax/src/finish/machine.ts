@@ -101,6 +101,10 @@ function reviewLoopDeps(deps: FinishMachineDeps, inputs: ReviewInputs): ReviewLo
     assertNotAborted: () => assertNotAborted(deps),
     fix: fixStepDeps(deps),
     ...(deps.timeouts?.reviewMs !== undefined ? { reviewMs: deps.timeouts.reviewMs } : {}),
+    acceptancePaths:
+      deps.context.acceptanceStatus === "disabled"
+        ? []
+        : deps.context.groups.filter((g) => g.exists).map((g) => g.testPath),
   };
 }
 

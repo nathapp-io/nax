@@ -238,4 +238,24 @@ describe("review round: rulings stick (finish B)", () => {
       expect(seen[0]?.map((f) => f.title)).toEqual([qualityPlain.title]);
     });
   });
+  test("a round with acceptance paths sends the judgment question with ac evidence (#2468)", async () => {
+    await withTempDir(async (dir) => {
+      restoreGit = installFinishGit({ dirty: false, head: 1 });
+      await Bun.write(join(dir, "t.ts"), 'test("AC-51: costSpentUsd is written", () => { row.costSpentUsd; });');
+      const finding: Finding = {
+        severity: "MEDIUM",
+        title: "Remove write-only `costSpentUsd`",
+        problem: "p",
+        fix: "f",
+        source: "spec",
+        file: "src/db/job.ts",
+        judgment: true,
+      };
+      const ops = makeFinishOps([], { spec: [out([finding])] });
+      const { advisor, asked } = fakeAdvisor(() => ({ decision: null }));
+      await runReviewLoop(makeFinishState({ workdir: dir }), loopDeps(ops, dir, finishAdvisor(dir, advisor), ["t.ts"]));
+      expect(asked[0]?.evidence.some((e) => e.source === "ac" && e.ref === "t.ts#AC-51")).toBe(true);
+      expect(asked[0]?.options.some((o) => o.fixed?.updateAcs?.includes("AC-51"))).toBe(true);
+    });
+  });
 });

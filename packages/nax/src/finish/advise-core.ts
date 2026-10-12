@@ -3,6 +3,7 @@
  */
 import type { AdviceDecision, Advisor, QuestionDraft } from "@/advisor";
 import { buildMenu, dedupeKeyFor } from "@/advisor";
+import { type AcceptanceFile, findPinnedAcs, type PinnedAc } from "./acceptance-evidence";
 import type { Contradiction } from "./merge-findings";
 import type { Finding } from "./types";
 
@@ -47,7 +48,68 @@ export type JudgeOneResult = {
   decision?: AdviceDecision;
 };
 
-export function judgmentQuestion(deps: FinishAdvisorDeps, phase: "spec" | "quality", f: Finding): QuestionDraft {
+/** Finish B: what a judgment question may carry beyond the finding. */
+export interface JudgeContext {
+  acceptance: AcceptanceFile[];
+}
+
+export function pinnedFor(deps: FinishAdvisorDeps, f: Finding, jctx?: JudgeContext): PinnedAc[] {
+  if (!jctx || !deps.acceptanceEnabled()) return [];
+  return findPinnedAcs(jctx.acceptance, f);
+}
+
+function acEvidence(pinned: PinnedAc[]): { source: "ac"; ref: string; text: string }[] {
+  return pinned.map((p) => ({ source: "ac" as const, ref: `${p.path}#${p.acId}`, text: p.excerpt }));
+}
+
+function pinnedAcIds(pinned: PinnedAc[]): { pinnedAcs: string[] } | Record<string, never> {
+  return pinned.length > 0 ? { pinnedAcs: [...new Set(pinned.map((p) => p.acId))] } : {};
+}
+
+export function dedupePinned(pinned: PinnedAc[]): PinnedAc[] {
+  const seen = new Set<string>();
+  return pinned.filter((p) => {
+    const k = `${p.path}#${p.acId}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
+/** The test files and AC ids a fix-and-update ruling may change: the pinned blocks it named. */
+export function allowedEdits(pinned: PinnedAc[], acIds: string[]): { testPath: string; acIds: string[] }[] {
+  const byPath = new Map<string, string[]>();
+  for (const p of pinned) {
+    if (!acIds.includes(p.acId)) continue;
+    byPath.set(p.path, [...new Set([...(byPath.get(p.path) ?? []), p.acId])]);
+  }
+  return [...byPath.entries()].map(([testPath, ids]) => ({ testPath, acIds: ids }));
+}
+
+/** The finding with the ruling appended to its fix, plus the acceptance edits a fix-and-update ruling allows. */
+export function withFixRuling(
+  f: Finding,
+  decisionId: string,
+  instruction: string,
+  allowed: { testPath: string; acIds: string[] }[],
+): Finding {
+  const base = `${f.fix}\n\nAdvisor ruling (${decisionId}): ${instruction}`;
+  if (allowed.length === 0) return { ...f, fix: base };
+  const where = allowed.map((a) => `${a.acIds.join(", ")} in ${a.testPath}`).join("; ");
+  return {
+    ...f,
+    fix: `${base}. You may edit these acceptance tests, and only these: ${where}.`,
+    allowedAcceptanceEdits: allowed,
+  };
+}
+
+export function judgmentQuestion(
+  deps: FinishAdvisorDeps,
+  phase: "spec" | "quality",
+  f: Finding,
+  jctx?: JudgeContext,
+): QuestionDraft {
+  const pinned = pinnedFor(deps, f, jctx);
   return {
     kind: "finish-judgment",
     feature: deps.feature,
@@ -60,10 +122,12 @@ export function judgmentQuestion(deps: FinishAdvisorDeps, phase: "spec" | "quali
       ...(f.judgmentReason
         ? [{ source: "finding" as const, ref: "reviewer", text: `Why a human: ${f.judgmentReason}` }]
         : []),
+      ...acEvidence(pinned),
     ],
     options: buildMenu({
       kind: "finish-judgment",
       acceptanceEnabledForStory: deps.acceptanceEnabled(),
+      ...pinnedAcIds(pinned),
       ...(/\bspec\b/i.test(f.problem) ? { citesSpecSection: "spec" } : {}),
     }),
     findingSeverity: f.severity,
@@ -72,7 +136,8 @@ export function judgmentQuestion(deps: FinishAdvisorDeps, phase: "spec" | "quali
 
 export const RANK = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 } as const;
 
-export function contradictionQuestion(deps: FinishAdvisorDeps, c: Contradiction): QuestionDraft {
+export function contradictionQuestion(deps: FinishAdvisorDeps, c: Contradiction, jctx?: JudgeContext): QuestionDraft {
+  const pinned = dedupePinned([...pinnedFor(deps, c.spec, jctx), ...pinnedFor(deps, c.quality, jctx)]);
   const where = `${c.spec.file}${c.spec.line ? `:${c.spec.line}` : ""}`;
   const line = (label: string, f: Finding) => `${label}: ${f.title} — ${f.problem}\nSuggested fix: ${f.fix}`;
   const sev = RANK[c.spec.severity] >= RANK[c.quality.severity] ? c.spec.severity : c.quality.severity;
@@ -86,10 +151,12 @@ export function contradictionQuestion(deps: FinishAdvisorDeps, c: Contradiction)
     evidence: [
       { source: "finding", text: line("Spec review", c.spec) },
       { source: "finding", text: line("Quality review", c.quality) },
+      ...acEvidence(pinned),
     ],
     options: buildMenu({
       kind: "finish-judgment",
       acceptanceEnabledForStory: deps.acceptanceEnabled(),
+      ...pinnedAcIds(pinned),
       citesSpecSection: "spec",
     }),
     findingSeverity: sev,
@@ -97,7 +164,12 @@ export function contradictionQuestion(deps: FinishAdvisorDeps, c: Contradiction)
 }
 
 /** Ask one question about `f` and turn the decision into a judge result (no reuse lookup). */
-export async function adviseOn(deps: FinishAdvisorDeps, question: QuestionDraft, f: Finding): Promise<JudgeOneResult> {
+export async function adviseOn(
+  deps: FinishAdvisorDeps,
+  question: QuestionDraft,
+  f: Finding,
+  pinned: PinnedAc[] = [],
+): Promise<JudgeOneResult> {
   const { decision, fallbackReason } = await deps.advisor.advise(question, { findingSeverity: f.severity });
   if (!decision) return { fallback: fallbackReason ?? "advisor unavailable" };
   const ref: AdviceRef = { decisionId: decision.id, optionId: decision.chosenOptionId, reused: false };
@@ -107,7 +179,8 @@ export async function adviseOn(deps: FinishAdvisorDeps, question: QuestionDraft,
     const dropped = droppedBy(action.type);
     return dropped ? { ref, decision, dropped } : { ref, decision };
   }
-  return { ref, decision, keep: { ...f, fix: `${f.fix}\n\nAdvisor ruling (${decision.id}): ${action.instruction}` } };
+  const allowed = allowedEdits(pinned, action.updateAcs ?? []);
+  return { ref, decision, keep: withFixRuling(f, decision.id, action.instruction, allowed) };
 }
 
 export function collectJudgment(out: JudgedResult, f: Finding, r: JudgeOneResult): void {

@@ -11,8 +11,10 @@ import {
   collectJudgment,
   emptyJudged,
   type FinishAdvisorDeps,
+  type JudgeContext,
   type JudgedResult,
   judgmentQuestion,
+  pinnedFor,
 } from "./advise-core";
 import { type Ruling, type RulingCheck, rulingFromDecision } from "./ruling-check";
 import type { Finding } from "./types";
@@ -28,8 +30,13 @@ export async function loadRulings(deps: FinishAdvisorDeps): Promise<Ruling[]> {
   });
 }
 
-export function nearQuestion(deps: FinishAdvisorDeps, f: Finding, rulings: Ruling[]): QuestionDraft {
-  const base = judgmentQuestion(deps, f.source ?? "quality", f);
+export function nearQuestion(
+  deps: FinishAdvisorDeps,
+  f: Finding,
+  rulings: Ruling[],
+  jctx?: JudgeContext,
+): QuestionDraft {
+  const base = judgmentQuestion(deps, f.source ?? "quality", f, jctx);
   const ids = rulings.map((r) => r.id).join(", ");
   return {
     ...base,
@@ -51,6 +58,7 @@ export async function reconcileRulings(
   deps: FinishAdvisorDeps,
   check: RulingCheck,
   budget: number,
+  jctx?: JudgeContext,
 ): Promise<{ result: JudgedResult; asked: number }> {
   const out = emptyJudged();
   for (const { finding, ruling } of check.reuse) await reuseOne(deps, out, finding, ruling);
@@ -61,7 +69,8 @@ export async function reconcileRulings(
       continue;
     }
     asked += 1;
-    collectJudgment(out, finding, await adviseOn(deps, nearQuestion(deps, finding, rulings), finding));
+    const pinned = pinnedFor(deps, finding, jctx);
+    collectJudgment(out, finding, await adviseOn(deps, nearQuestion(deps, finding, rulings, jctx), finding, pinned));
   }
   return { result: out, asked };
 }

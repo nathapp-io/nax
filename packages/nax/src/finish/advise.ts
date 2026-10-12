@@ -19,15 +19,20 @@ import type { CallContext } from "@/operations";
 import {
   type AdviceRef,
   adviseOn,
+  allowedEdits,
   collectJudgment,
   contradictionQuestion,
+  dedupePinned,
   droppedBy,
   emptyJudged,
   type FinishAdvisorDeps,
+  type JudgeContext,
   type JudgedResult,
   type JudgeOneResult,
   judgmentQuestion,
+  pinnedFor,
   RANK,
+  withFixRuling,
 } from "./advise-core";
 import { loadRulings, reconcileRulings } from "./advise-rulings";
 import type { Contradiction } from "./merge-findings";
@@ -44,7 +49,12 @@ export interface FinishAdvisor {
   judgedEnabled: boolean;
   approvalEnabled: boolean;
   /** Judge the merged round's judgment findings and contradictions. */
-  judged(findings: Finding[], contradictions: Contradiction[], state: FinishState): Promise<JudgedResult>;
+  judged(
+    findings: Finding[],
+    contradictions: Contradiction[],
+    state: FinishState,
+    jctx?: JudgeContext,
+  ): Promise<JudgedResult>;
   /** Approve / re-review / hold from the resolution facts. */
   approval(
     facts: ResolutionFacts,
@@ -54,7 +64,7 @@ export interface FinishAdvisor {
   /** Finish B §3.2: trusted waive / supersede rulings this feature already has. */
   rulingsInForce(): Promise<Ruling[]>;
   /** Finish B §3.4-3.6: reuse exact matches, ask about near ones (up to `budget`), carry the rest unresolved. */
-  reconcile(check: RulingCheck, budget: number): Promise<{ result: JudgedResult; asked: number }>;
+  reconcile(check: RulingCheck, budget: number, jctx?: JudgeContext): Promise<{ result: JudgedResult; asked: number }>;
 }
 
 const BLOCKING = new Set(["HIGH", "CRITICAL"]);
@@ -70,8 +80,13 @@ async function reusablePrior(deps: FinishAdvisorDeps, f: Finding, key: string): 
   return findReusable(await readTrustedDecisions(deps.repoRoot, deps.feature, deps.outputDir), key);
 }
 
-async function judgeOne(deps: FinishAdvisorDeps, phase: "spec" | "quality", f: Finding): Promise<JudgeOneResult> {
-  const question = judgmentQuestion(deps, phase, f);
+async function judgeOne(
+  deps: FinishAdvisorDeps,
+  phase: "spec" | "quality",
+  f: Finding,
+  jctx?: JudgeContext,
+): Promise<JudgeOneResult> {
+  const question = judgmentQuestion(deps, phase, f, jctx);
   const prior = await reusablePrior(deps, f, question.dedupeKey ?? "");
   if (prior) {
     const reused = await deps.advisor.recordReuse(question, prior);
@@ -80,7 +95,7 @@ async function judgeOne(deps: FinishAdvisorDeps, phase: "spec" | "quality", f: F
     // findReusable only reuses waive / supersede; anything else is carried unresolved, never silently dropped.
     return dropped ? { ref, dropped } : { ref, fallback: `unexpected reusable action: ${prior.action.type}` };
   }
-  return adviseOn(deps, question, f);
+  return adviseOn(deps, question, f, pinnedFor(deps, f, jctx));
 }
 
 /** The deterministic split for a contradiction nobody ruled on: spec is fixed, quality carried. */
@@ -92,18 +107,24 @@ type ContradictionJudgment = Pick<JudgedResult, "toFix" | "unresolved" | "droppe
   ref?: AdviceRef;
 };
 
-async function judgeContradiction(deps: FinishAdvisorDeps, c: Contradiction): Promise<ContradictionJudgment> {
-  const { decision } = await deps.advisor.advise(contradictionQuestion(deps, c), {
+async function judgeContradiction(
+  deps: FinishAdvisorDeps,
+  c: Contradiction,
+  jctx?: JudgeContext,
+): Promise<ContradictionJudgment> {
+  const pinned = dedupePinned([...pinnedFor(deps, c.spec, jctx), ...pinnedFor(deps, c.quality, jctx)]);
+  const { decision } = await deps.advisor.advise(contradictionQuestion(deps, c, jctx), {
     findingSeverity: RANK[c.spec.severity] >= RANK[c.quality.severity] ? c.spec.severity : c.quality.severity,
   });
   if (!decision) return { ...specFirst(c), dropped: [], held: [] };
   const ref: AdviceRef = { decisionId: decision.id, optionId: decision.chosenOptionId, reused: false };
   const { action } = decision;
   if (action.type === "fix") {
-    const fix = `${c.spec.fix}\n\nAdvisor ruling (${decision.id}): ${action.instruction}`;
+    const allowed = allowedEdits(pinned, action.updateAcs ?? []);
+    const toFix = [withFixRuling(c.spec, decision.id, action.instruction, allowed)];
     // The ruling picks the spec side; the quality side is superseded, as it was before the ledger existed.
     const dropped = [{ finding: c.quality, decisionId: decision.id, action: "supersede" as const }];
-    return { ref, decisions: [decision], toFix: [{ ...c.spec, fix }], unresolved: [], dropped, held: [] };
+    return { ref, decisions: [decision], toFix, unresolved: [], dropped, held: [] };
   }
   if (action.type === "waive" || action.type === "supersede") {
     const dropped = [c.spec, c.quality].map((finding) => ({ finding, decisionId: decision.id, action: action.type }));
@@ -179,11 +200,11 @@ export function createFinishAdvisor(deps: FinishAdvisorDeps): FinishAdvisor {
   return {
     judgedEnabled: deps.judgedEnabled,
     approvalEnabled: deps.approvalEnabled,
-    async judged(findings, contradictions) {
+    async judged(findings, contradictions, _state, jctx) {
       const out = emptyJudged();
-      for (const f of findings) collectJudgment(out, f, await judgeOne(deps, f.source ?? "quality", f));
+      for (const f of findings) collectJudgment(out, f, await judgeOne(deps, f.source ?? "quality", f, jctx));
       for (const c of contradictions) {
-        const r = await judgeContradiction(deps, c);
+        const r = await judgeContradiction(deps, c, jctx);
         if (r.ref) out.advice.push(r.ref);
         out.toFix.push(...r.toFix);
         out.unresolved.push(...r.unresolved);
@@ -194,7 +215,7 @@ export function createFinishAdvisor(deps: FinishAdvisorDeps): FinishAdvisor {
       return out;
     },
     rulingsInForce: () => loadRulings(deps),
-    reconcile: (check, budget) => reconcileRulings(deps, check, budget),
+    reconcile: (check, budget, jctx) => reconcileRulings(deps, check, budget, jctx),
     async approval(facts, approval) {
       const { decision, fallbackReason } = await deps.advisor.advise(approvalQuestionFromFacts(deps, facts, approval));
       if (!decision) return { action: "unavailable", rationale: fallbackReason ?? "no decision" };

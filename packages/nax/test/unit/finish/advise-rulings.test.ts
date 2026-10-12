@@ -227,3 +227,68 @@ describe("judgment questions carry the anchor (finish B §3.2)", () => {
     });
   });
 });
+
+describe("acceptance evidence on judgment questions (#2468)", () => {
+  const acceptance = [
+    {
+      path: "test/acceptance/feat.test.ts",
+      text: 'test("AC-51: costSpentUsd is written", () => { row.costSpentUsd; });',
+    },
+  ];
+  const finding = low({ title: "Remove write-only `costSpentUsd`", judgment: true, file: "src/db/job.ts" });
+
+  test("the question carries the pinned AC as evidence and the fix-and-update option", async () => {
+    await withTempDir(async (dir) => {
+      const { advisor, asked } = fakeAdvisor(() => ({ decision: null }));
+      await make(dir, advisor).judged([finding], [], state(dir), { acceptance });
+      expect(asked[0]?.evidence.some((e) => e.source === "ac" && e.ref === "test/acceptance/feat.test.ts#AC-51")).toBe(
+        true,
+      );
+      expect(asked[0]?.options.find((o) => o.fixed?.updateAcs)?.fixed?.updateAcs).toEqual(["AC-51"]);
+    });
+  });
+
+  test("a fix-and-update ruling names the ACs in the fix and sets allowedAcceptanceEdits", async () => {
+    await withTempDir(async (dir) => {
+      const { advisor } = fakeAdvisor(() => ({
+        decision: decision({ action: { type: "fix", instruction: "drop the column", updateAcs: ["AC-51"] } }),
+      }));
+      const out = await make(dir, advisor).judged([finding], [], state(dir), { acceptance });
+      expect(out.toFix[0]?.fix).toContain(
+        "You may edit these acceptance tests, and only these: AC-51 in test/acceptance/feat.test.ts.",
+      );
+      expect(out.toFix[0]?.allowedAcceptanceEdits).toEqual([
+        { testPath: "test/acceptance/feat.test.ts", acIds: ["AC-51"] },
+      ]);
+    });
+  });
+
+  test("acceptance disabled: no evidence, plain menu", async () => {
+    await withTempDir(async (dir) => {
+      const { advisor, asked } = fakeAdvisor(() => ({ decision: null }));
+      const fa = createFinishAdvisor({
+        advisor,
+        repoRoot: dir,
+        outputDir: join(dir, "out"),
+        feature: "feat",
+        acceptanceEnabled: () => false,
+        judgedEnabled: true,
+        approvalEnabled: false,
+        git: async () => ({ exitCode: 0 }),
+      });
+      await fa.judged([finding], [], state(dir), { acceptance });
+      expect(asked[0]?.evidence.some((e) => e.source === "ac")).toBe(false);
+      expect(asked[0]?.options.some((o) => o.fixed?.updateAcs)).toBe(false);
+    });
+  });
+
+  test("an acceptance file with no AC ids gives no evidence and a plain menu", async () => {
+    await withTempDir(async (dir) => {
+      const { advisor, asked } = fakeAdvisor(() => ({ decision: null }));
+      const noIds = [{ path: "t.ts", text: 'test("costSpentUsd is written", () => {});' }];
+      await make(dir, advisor).judged([finding], [], state(dir), { acceptance: noIds });
+      expect(asked[0]?.evidence.some((e) => e.source === "ac")).toBe(false);
+      expect(asked[0]?.options.some((o) => o.fixed?.updateAcs)).toBe(false);
+    });
+  });
+});
