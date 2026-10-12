@@ -21,6 +21,8 @@ export interface AdviceAuditRecord {
   worktree: { sha: string; patch: string; patchTruncated: boolean };
   memoryMode: "stateless" | "warm";
   model: string;
+  /** A5 W-R10: ladder entries that failed before the answering one (all of them when none answered). */
+  attempts?: Array<{ model: string; error: string }>;
   prompt: string;
   rawReply: string;
   result: AdviceResult;

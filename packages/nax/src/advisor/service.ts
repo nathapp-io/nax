@@ -22,6 +22,7 @@ import { captureWorktreePatch, writeAdviceAudit } from "./audit";
 import type { HeadsUpChannel } from "./heads-up";
 import { formatHeadsUp } from "./heads-up";
 import { appendDecision, readTrustedDecisions } from "./ledger";
+import { advisorLadder, usableAdvisorModels } from "./ladder";
 import { forcedConfirm, toAction } from "./menus";
 import type { AdviceDecision, AdviceQuestion, AdviceResult, AdvisorReply } from "./types";
 
@@ -84,6 +85,9 @@ interface OpRun {
   out: AdviseOpOutput | null;
   error?: string;
   prompt: string;
+  /** The ladder entry that produced `out` (the last one tried when none answered). */
+  model?: AdvisorConfig["model"];
+  attempts?: Array<{ model: string; error: string }>;
 }
 
 async function prepare(actx: AdvisorCallContext, draft: QuestionDraft): Promise<Asked> {
@@ -100,6 +104,7 @@ async function callOnce(
   asked: Asked,
   continuation: boolean,
   keepOpen: boolean,
+  model: AdvisorConfig["model"] = configOf(actx).model,
 ): Promise<OpRun> {
   const config = configOf(actx);
   const input: AdviseOpInput = {
@@ -109,20 +114,45 @@ async function callOnce(
     priorDecisions: asked.priorDecisions,
     continuation,
     keepOpen,
-    model: config.model,
+    model,
     ...(config.timeoutMs ? { timeoutMs: config.timeoutMs } : {}),
   };
   const prompt = buildAdvisorPrompt(input);
   const ctx: CallContext = { ...actx.callCtx, sessionOverride: { role: "advisor", discriminator: "advisor" } };
   try {
-    return { out: await _advisorServiceDeps.callOp(ctx, adviseOp, input), prompt };
+    return { out: await _advisorServiceDeps.callOp(ctx, adviseOp, input), prompt, model };
   } catch (err) {
-    return { out: null, error: `dispatch: ${errorMessage(err)}`, prompt };
+    return { out: null, error: `dispatch: ${errorMessage(err)}`, prompt, model };
   }
 }
 
+function failureOf(run: OpRun): string {
+  if (run.out && !run.out.ok) return run.out.error;
+  return run.error ?? "no-output";
+}
+
+/** A5 W-R10: stateless calls walk the model ladder, skipping cooled-down entries, until one answers. */
+async function runLadder(actx: AdvisorCallContext, asked: Asked, config: AdvisorConfig): Promise<OpRun> {
+  const agentManager = actx.callCtx.runtime?.agentManager;
+  const isCooling = (m: AdvisorConfig["model"]): boolean =>
+    typeof m === "string" ? false : (agentManager?.isUnavailable(m.agent, undefined, m.model) ?? false);
+  const usable = usableAdvisorModels(config, isCooling);
+  // Every entry cooling: still make one attempt on the ladder rather than none.
+  const models = usable.length > 0 ? usable : advisorLadder(config);
+  const attempts: Array<{ model: string; error: string }> = [];
+  let last: OpRun = { out: null, prompt: "" };
+  for (const model of models) {
+    last = await callOnce(actx, asked, false, false, model);
+    if (last.out?.ok) break;
+    attempts.push({ model: describeModel(model), error: failureOf(last) });
+  }
+  return { ...last, ...(attempts.length > 0 ? { attempts } : {}) };
+}
+
 async function runOp(actx: AdvisorCallContext, asked: Asked): Promise<OpRun> {
-  if (configOf(actx).memory !== "warm") return callOnce(actx, asked, false, false);
+  const config = configOf(actx);
+  if (config.memory !== "warm") return runLadder(actx, asked, config);
+  // Warm memory stays primary-only: the warm session is bound to one model (spec section 8).
   const entry = warmEntry(actx);
   const first = await callOnce(actx, asked, entry.opened, true);
   if (first.out?.ok) {
@@ -156,6 +186,7 @@ function buildDraft(
   actx: AdvisorCallContext,
   asked: Asked,
   reply: AdvisorReply,
+  answeredBy: AdvisorConfig["model"],
   findingSeverity: string | undefined,
 ): ((id: string) => Omit<AdviceDecision, "id">) | null {
   const option = asked.question.options.find((o) => o.id === reply.optionId);
@@ -180,7 +211,7 @@ function buildDraft(
     reversible: reply.reversible,
     needsHumanConfirm: forcedConfirm(action, reply, findingSeverity),
     decidedAt: _advisorServiceDeps.now(),
-    model: describeModel(config.model),
+    model: describeModel(answeredBy),
     memoryMode: config.memory,
     auditRef: join("advisor-audit", actx.feature, `${id}.json`),
   });
@@ -230,7 +261,8 @@ async function writeAuditSafe(actx: AdvisorCallContext, a: AuditInput): Promise<
     context: { specPath: actx.specPath, specSha256: null, prdSha256: null, priorDecisions: a.asked.priorDecisions },
     worktree: a.asked.worktree,
     memoryMode: config.memory,
-    model: describeModel(config.model),
+    model: describeModel(a.run.model ?? config.model),
+    ...(a.run.attempts ? { attempts: a.run.attempts } : {}),
     prompt: a.run.prompt,
     rawReply: a.run.out ? JSON.stringify(a.run.out) : (a.run.error ?? ""),
     result: a.result,
@@ -264,7 +296,7 @@ async function adviseOnce(actx: AdvisorCallContext, draft: QuestionDraft, severi
 async function decide(actx: AdvisorCallContext, asked: Asked, run: OpRun, severity?: string): Promise<AdviceResult> {
   if (!run.out) return { decision: null, fallbackReason: run.error ?? "no-output" };
   if (!run.out.ok) return { decision: null, fallbackReason: run.out.error };
-  const draft = buildDraft(actx, asked, run.out.reply, severity);
+  const draft = buildDraft(actx, asked, run.out.reply, run.model ?? configOf(actx).model, severity);
   if (!draft) return { decision: null, fallbackReason: `optionId ${run.out.reply.optionId} is not on the menu` };
   try {
     return { decision: await appendDecision(actx.repoRoot, actx.feature, draft) };

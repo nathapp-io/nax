@@ -228,3 +228,45 @@ describe("advisor service — never throws", () => {
     });
   });
 });
+
+const ds = { agent: "native", model: "opencode-go/deepseek-v4.1-flash[high]" } as const;
+const sol = { agent: "native", model: "openai-codex/gpt-6.1-sol[medium]" } as const;
+
+function ladderActx(dir: string) {
+  const a = actx(dir);
+  const config = makeNaxConfig({ advisor: { ...ADVISOR_DEFAULTS, enabled: true, model: ds, fallbackModels: [sol] } });
+  return { ...a, callCtx: { ...a.callCtx, config } };
+}
+
+test("stateless advisor falls through the ladder: primary dispatch error, fallback answers", async () => {
+  await withTempDir(async (dir) => {
+    const { inputs } = stubDeps(reply("A", { instruction: "fix it" }));
+    _advisorServiceDeps.callOp = (async (_c: unknown, _o: unknown, input: { model: unknown }) => {
+      inputs.push(input);
+      if (Bun.deepEquals(input.model, ds)) throw new Error("429 Token Plan usage limit reached");
+      return reply("A", { instruction: "fix it" });
+    }) as typeof _advisorServiceDeps.callOp;
+    const out = await createAdvisor(ladderActx(dir)).advise(judgment);
+    expect(out.decision?.model).toBe("native:openai-codex/gpt-6.1-sol[medium]");
+    expect(inputs).toHaveLength(2);
+    const audit = JSON.parse(await Bun.file(join(dir, "out", "advisor-audit", "feat", "D-1.json")).text());
+    expect(audit.model).toBe("native:openai-codex/gpt-6.1-sol[medium]");
+    expect(audit.attempts).toEqual([
+      { model: "native:opencode-go/deepseek-v4.1-flash[high]", error: expect.stringContaining("dispatch:") },
+    ]);
+  });
+});
+
+test("every ladder entry failing returns the existing no-decision result (Review Focus 4)", async () => {
+  await withTempDir(async (dir) => {
+    stubDeps(async () => {
+      throw new Error("boom");
+    });
+    const out = await createAdvisor(ladderActx(dir)).advise(judgment);
+    expect(out.decision).toBeNull();
+    expect(out.fallbackReason?.startsWith("dispatch:")).toBe(true);
+    const files = await Array.fromAsync(new Bun.Glob("*.json").scan({ cwd: join(dir, "out", "advisor-audit", "feat") }));
+    const audit = JSON.parse(await Bun.file(join(dir, "out", "advisor-audit", "feat", files[0]!)).text());
+    expect(audit.attempts).toHaveLength(2);
+  });
+});
