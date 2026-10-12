@@ -183,3 +183,9 @@ Unit tests (TDD, against the pure helpers and the review loop with fake ops and 
 ## 9. Delivery
 
 One PR. If the plan finds it too large, split into PR 1 = §3 + §4 (ruling matching and prompts) and PR 2 = §5 + §6 (acceptance evidence, guard, recording), in that order.
+
+## 10. Implementation notes
+
+- The acceptance guard treats `HEAD` as the pre-session state. Fix sessions never commit; a session that commits itself would blind the guard to its own changes.
+- Rulings are scoped per (file, AC id), not per file alone.
+- The basename heuristic in acceptance evidence is substring-based, so a short basename can match more than the intended test file.
