@@ -109,6 +109,16 @@ export {
   routeQualityGates,
 } from "./route";
 export {
+  checkRulings,
+  matchLevel,
+  normTitle,
+  type Ruling,
+  type RulingCheck,
+  rulingFromDecision,
+  rulingFromDropped,
+  splitForRulings,
+} from "./ruling-check";
+export {
   _setAsideDeps,
   captureFixBase,
   handoffDir,
