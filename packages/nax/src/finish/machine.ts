@@ -281,9 +281,25 @@ async function failedResult(state: FinishState, deps: FinishMachineDeps, reason:
     branch: state.branch,
     ...(sha ? { headSha: sha } : {}),
     ...handoffsField(state),
+    ...(state.stops.length > 0 ? { stops: [...state.stops] } : {}),
   };
   await safeWriteResult(deps, result);
   return result;
+}
+
+/** Spec 3.3: a cancelled run is a `run` stop, never `flow`. A fix session aborted by the run already recorded its own. */
+function recordRunStop(state: FinishState, deps: FinishMachineDeps): void {
+  if (!deps.runSignal?.aborted || state.stops.some((s) => s.kind === "run")) return;
+  state.stops = [
+    ...state.stops,
+    {
+      kind: "run",
+      ...(state.step ? { step: state.step } : {}),
+      round: state.review.pendingRound || state.review.rounds,
+      at: deps.now(),
+      limitMs: 0,
+    },
+  ];
 }
 
 function recordFlowStop(state: FinishState, deps: FinishMachineDeps): void {
@@ -310,7 +326,10 @@ async function recoverAfterThrow(
   inputs?: ReviewInputs,
 ): Promise<FinishResult> {
   const message = errorMessage(err);
-  if (deps.runSignal?.aborted) return failedResult(state, deps, "aborted");
+  if (deps.runSignal?.aborted) {
+    recordRunStop(state, deps);
+    return failedResult(state, deps, "aborted");
+  }
   if (state.finalizing) return failedResult(state, deps, message);
   recordFlowStop(state, deps);
   await writeCheckpoint(deps.audit, state);

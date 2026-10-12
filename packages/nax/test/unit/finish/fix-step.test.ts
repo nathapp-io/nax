@@ -354,7 +354,6 @@ describe("runFixStep continuation (finish A 4.3)", () => {
     const out = await runFixStep(state, d, "review", { findings: [] });
     expect(out.kind).toBe("stopped");
     // A base taken after the re-apply would be the stash of the re-applied edits ("stashsha"), not HEAD.
-    expect(state.lastFixBase?.baseSha).toBe("sha1");
     expect(state.handoffs[1]).toMatchObject({ n: 2, baseSha: "sha1" });
     expect(trail.indexOf("restore")).toBeGreaterThan(trail.indexOf("apply"));
     expect(model.dirty).toBe(false);

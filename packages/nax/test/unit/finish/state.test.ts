@@ -116,4 +116,16 @@ describe("A4 finish state", () => {
     const s = createFinishState(BASE_INIT);
     expect(deserializeFinishState(serializeFinishState(s))).toEqual(s);
   });
+
+  test("a version 3 checkpoint written with the removed lastFixBase field still loads", () => {
+    const s = createFinishState(BASE_INIT);
+    const old = JSON.stringify({ ...s, lastFixBase: { baseSha: "a", headSha: "a", untrackedBefore: [] } });
+    const loaded = deserializeFinishState(old);
+    expect(loaded.feature).toBe(s.feature);
+    expect(loaded.handoffs).toEqual([]);
+  });
+
+  test("a new state has no lastFixBase", () => {
+    expect(createFinishState(BASE_INIT)).not.toHaveProperty("lastFixBase");
+  });
 });

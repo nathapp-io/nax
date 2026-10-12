@@ -265,6 +265,8 @@ export interface FinishResult {
   url?: string;
   /** Open findings on a draft PR. */
   findings?: Finding[];
+  /** Finish A: every stop on a failed result (a cancelled run); a ready or draft result carries them in `facts.stops`. */
+  stops?: Stop[];
   /** Finish A: every fix session that was set aside; absent when none were. */
   handoffs?: {
     dir: string;

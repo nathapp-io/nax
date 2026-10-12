@@ -6,6 +6,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { makeMachineHarness, restoreFinishMachineStubs, withTempDir, withWarnSpy } from "@test/helpers";
 import { _finishGitDeps, type Finding, type FinishReviewOutput, runFinishMachine } from "@/finish";
+import { stopReason } from "@/finish/resolve";
 
 afterEach(() => restoreFinishMachineStubs());
 
@@ -128,6 +129,113 @@ describe("flow stop round (the interrupted round, else the last completed one)",
       expect(result.reason).toBe(
         "finish time limit (3 h) reached during review; gates not run; spec review missing; quality review missing",
       );
+    });
+  });
+});
+
+describe("a run abort is recorded as a run stop, never a flow stop (spec 3.3)", () => {
+  const abortedRun = () => {
+    const run = new AbortController();
+    return { run, base: { signal: run.signal, runSignal: run.signal } };
+  };
+
+  test("during a review lens: failed 'aborted', a run stop naming the step and round, in result.stops", async () => {
+    await withTempDir(async (dir) => {
+      const { run, base } = abortedRun();
+      const h = makeMachineHarness({
+        auditDir: dir,
+        ...base,
+        context: { acceptanceStatus: "disabled" },
+        ops: {
+          reviewSpec: async () => {
+            run.abort();
+            throw new Error("aborted");
+          },
+        },
+      });
+      const result = await runFinishMachine(h.state, h.deps);
+      expect(result.status).toBe("failed");
+      expect(result.reason).toBe("aborted");
+      expect(result.stops).toEqual([{ kind: "run", step: "review", round: 1, at: expect.any(String), limitMs: 0 }]);
+      expect(h.state.stops).toEqual(result.stops ?? []);
+      expect(stopReason(result.stops ?? [])).toBe("run cancelled during review round 1");
+    });
+  });
+
+  test("during a gate run: the step is 'gate'", async () => {
+    await withTempDir(async (dir) => {
+      const { run, base } = abortedRun();
+      const h = makeMachineHarness({
+        auditDir: dir,
+        ...base,
+        context: { acceptanceStatus: "disabled" },
+        qualityExit: () => {
+          run.abort();
+          return 1;
+        },
+      });
+      const result = await runFinishMachine(h.state, h.deps);
+      expect(result.status).toBe("failed");
+      expect(result.stops?.map((x) => [x.kind, x.step])).toEqual([["run", "gate"]]);
+      expect(stopReason(result.stops ?? [])).toMatch(/^run cancelled during gate/);
+    });
+  });
+
+  test("during acceptance: the step is 'acceptance'", async () => {
+    await withTempDir(async (dir) => {
+      const { run, base } = abortedRun();
+      const h = makeMachineHarness({
+        auditDir: dir,
+        ...base,
+        acceptanceExit: () => {
+          run.abort();
+          return 1;
+        },
+      });
+      const result = await runFinishMachine(h.state, h.deps);
+      expect(result.status).toBe("failed");
+      expect(result.stops?.map((x) => [x.kind, x.step])).toEqual([["run", "acceptance"]]);
+    });
+  });
+
+  test("a fix session aborted by the run already recorded its run stop: the recovery path adds no second one", async () => {
+    await withTempDir(async (dir) => {
+      const { run, base } = abortedRun();
+      const h = makeMachineHarness({
+        auditDir: dir,
+        ...base,
+        context: { acceptanceStatus: "disabled" },
+        script: { quality: [q("A")] },
+        ops: {
+          fix: async () => {
+            run.abort();
+            throw new Error("aborted");
+          },
+        },
+      });
+      const result = await runFinishMachine(h.state, h.deps);
+      expect(result.status).toBe("failed");
+      expect(result.stops?.map((x) => [x.kind, x.phase])).toEqual([["run", "review"]]);
+    });
+  });
+
+  test("a phase deadline alone records a flow stop and no run stop", async () => {
+    await withTempDir(async (dir) => {
+      const phase = new AbortController();
+      phase.abort();
+      const h = makeMachineHarness({ auditDir: dir, signal: phase.signal, runSignal: new AbortController().signal });
+      const result = await runFinishMachine(h.state, h.deps);
+      expect(result.stops).toBeUndefined();
+      expect(h.state.stops.map((x) => x.kind)).toEqual(["flow"]);
+    });
+  });
+
+  test("a failed result that stopped nothing has no stops field", async () => {
+    await withTempDir(async (dir) => {
+      const h = makeMachineHarness({ auditDir: dir, context: { route: "escalate", reason: "no spec" } });
+      const result = await runFinishMachine(h.state, h.deps);
+      expect(result.status).toBe("failed");
+      expect(result.stops).toBeUndefined();
     });
   });
 });

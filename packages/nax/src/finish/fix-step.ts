@@ -258,7 +258,6 @@ export async function runFixStep(
   const captured = await captureBase(state, deps);
   if ("error" in captured) return checkpointed(state, deps, { kind: "failed", error: captured.error });
   const base = captured;
-  state.lastFixBase = base;
   // After the base is captured, so stopping again also sets the re-applied edits aside.
   const cont = await continueFrom(state, phase);
   const { signal: interrupt, limit } = stepSignal(deps.signal, deps.fixMs);

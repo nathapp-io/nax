@@ -6,7 +6,6 @@ import type {
   FinishPhase,
   FinishResolution,
   FinishResultStatus,
-  FixBase,
   GateFact,
   HandoffRecord,
   ReviewLens,
@@ -134,8 +133,6 @@ export interface FinishState {
   handoffs: HandoffRecord[];
   /** Finish A: the handoff the next fix attempt for the same work should continue from. */
   pendingHandoff?: number;
-  /** Finish A: the base the last fix session started from. */
-  lastFixBase?: FixBase;
   /** The step the machine is in, for flow stops recorded outside a fix session. */
   step?: Stop["step"];
 }
