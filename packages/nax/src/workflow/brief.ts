@@ -24,6 +24,15 @@ export function specExcerpts(specText: string, storyId: string): string[] {
   return kept;
 }
 
+/** The feature spec path relative to the repo ("" when there is none). */
+export async function specPathFor(feature: string, projectDir: string): Promise<string> {
+  try {
+    return (await _workflowDeps.resolveFeatureSpec(feature, projectDir)).specSource?.path ?? "";
+  } catch {
+    return "";
+  }
+}
+
 async function loadSpec(sc: StepContext): Promise<{ path?: string; excerpts: string[] }> {
   try {
     const resolved = await _workflowDeps.resolveFeatureSpec(sc.feature, sc.projectDir);

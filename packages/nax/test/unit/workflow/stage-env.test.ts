@@ -8,12 +8,14 @@ import {
   makeTempDir,
   makeTestContext,
 } from "@test/helpers";
+import type { Advisor, QuestionDraft } from "@/advisor";
 import type { ICostAggregator } from "@/runtime";
 import { createNoOpCostAggregator } from "@/runtime/cost-aggregator";
 import { ledgerFilePath } from "@/workflow/ledger";
 import { workflowRunDir, workflowStoryDir } from "@/workflow/paths";
 import { newStoryRecord, readResult, upsertStoryRecord } from "@/workflow/result";
 import { buildStoryEnv } from "@/workflow/stage-env";
+import { _workflowDeps } from "@/workflow/step-context";
 
 const dirs: string[] = [];
 afterEach(async () => {
@@ -141,5 +143,38 @@ describe("buildStoryEnv", () => {
     const { env } = await buildStoryEnv(ctx, makeMockCallContext());
     await env.sink.ledger("hello");
     expect(await Bun.file(ledgerFilePath(runDir)).text()).toContain(`${ctx.story.id}: hello`);
+  });
+
+  test("sc.outputDir is the runtime output dir", async () => {
+    const { ctx } = setup();
+    const { sc } = await buildStoryEnv(ctx, makeMockCallContext());
+    expect(sc.outputDir).toBe(ctx.runtime.outputDir);
+  });
+
+  test("env.advisor is the live advisor: an implementer question reaches createAdvisor", async () => {
+    const { ctx } = setup();
+    const asked: QuestionDraft[] = [];
+    const fake: Advisor = {
+      advise: async (q) => {
+        asked.push(q);
+        return { decision: null };
+      },
+      recordReuse: async () => null,
+      adviseBatch: async () => ({ kind: "residual", items: [], diagnoses: {} }),
+    };
+    const original = _workflowDeps.createAdvisor;
+    _workflowDeps.createAdvisor = () => fake;
+    try {
+      const { env } = await buildStoryEnv(ctx, makeMockCallContext());
+      const answer = await env.advisor.answerQuestion({
+        storyId: ctx.story.id,
+        status: "BLOCKED",
+        concerns: "which db?",
+      });
+      expect(answer).toBeNull();
+      expect(asked[0]?.kind).toBe("implementer-question");
+    } finally {
+      _workflowDeps.createAdvisor = original;
+    }
   });
 });

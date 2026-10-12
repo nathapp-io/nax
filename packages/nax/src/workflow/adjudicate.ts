@@ -21,7 +21,7 @@ export async function adjudicateResidual(
       });
     }
   }
-  const byId = new Map(answer.rulings.filter((r) => r.findingId).map((r) => [r.findingId as string, r]));
+  const byId = firstRulingPerFinding(req, answer.rulings);
   const rulings = req.items.map((item) => byId.get(item.id) ?? defaultHold(item));
   for (const r of rulings) await ledger(ledgerText.ruling(r));
   for (const gate of req.redGates) {
@@ -33,4 +33,26 @@ export async function adjudicateResidual(
     );
   }
   return rulings;
+}
+
+/** First ruling per finding wins; duplicates and rulings on unknown ids are warned about and dropped (P3-R10). */
+function firstRulingPerFinding(req: ResidualRequest, rulings: readonly WorkflowRuling[]): Map<string, WorkflowRuling> {
+  const known = new Set(req.items.map((i) => i.id));
+  const byId = new Map<string, WorkflowRuling>();
+  for (const r of rulings) {
+    if (!r.findingId || !known.has(r.findingId)) {
+      getLogger().warn("workflow", "Advisor ruled on an unknown finding - ignored", {
+        storyId: req.storyId,
+        findingId: r.findingId ?? "(none)",
+      });
+    } else if (byId.has(r.findingId)) {
+      getLogger().warn("workflow", "Duplicate advisor ruling for a finding - first kept", {
+        storyId: req.storyId,
+        findingId: r.findingId,
+      });
+    } else {
+      byId.set(r.findingId, r);
+    }
+  }
+  return byId;
 }

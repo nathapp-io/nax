@@ -32,6 +32,10 @@ export interface WorkflowRuling {
   readonly why: string;
   readonly costIfWrong: string;
   readonly source: "advisor" | "default";
+  /** The advisor decision behind this ruling (absent for deterministic defaults). */
+  readonly decisionId?: string;
+  /** carry only: the dependent stories whose briefs receive the instruction. */
+  readonly toStories?: readonly string[];
 }
 
 export interface WorkflowStoryRecord {

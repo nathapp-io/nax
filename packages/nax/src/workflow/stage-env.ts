@@ -2,13 +2,15 @@
 import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { resolveWorkflowConfig } from "@/config";
+import { headsUpChannel } from "@/execution";
 import { getLogger } from "@/logger";
 import type { CallContext } from "@/operations/types";
 import type { PipelineContext } from "@/pipeline/types";
 import { totalSpendUsd } from "@/runtime";
 import { resolveTestFilePatterns } from "@/test-runners";
 import { packageDirRelative } from "@/utils/paths";
-import { defaultWorkflowAdvisor } from "./advisor";
+import { createLiveWorkflowAdvisor, dependentsOf } from "./advisor-live";
+import { specPathFor } from "./brief";
 import { runStoryGates, runWorkflowSuiteGate } from "./gates";
 import { listUncommitted, readHead } from "./git";
 import { runImplementerTurn } from "./implement";
@@ -56,6 +58,7 @@ export async function buildStoryEnv(
     projectDir: ctx.projectDir,
     workdir: ctx.workdir,
     runDir,
+    outputDir,
     storyDir,
     briefPath: join(storyDir, "brief.md"),
     reportPath: join(storyDir, "report.md"),
@@ -113,7 +116,21 @@ export async function buildStoryEnv(
     storyId: ctx.story.id,
     maxFixRounds: workflow.maxFixRounds,
     steps,
-    advisor: defaultWorkflowAdvisor,
+    advisor: createLiveWorkflowAdvisor({
+      advisor: _workflowDeps.createAdvisor({
+        callCtx,
+        repoRoot: ctx.projectDir,
+        outputDir,
+        feature,
+        runId,
+        specPath: await specPathFor(feature, ctx.projectDir),
+        workdir: ctx.workdir,
+        ...headsUpChannel(ctx),
+      }),
+      feature,
+      storyId: ctx.story.id,
+      dependents: dependentsOf(ctx.prd, ctx.story.id),
+    }),
     sink: {
       update: async (patch) => {
         record = { ...record, ...patch };
