@@ -143,6 +143,21 @@ describe("ruleResidual", () => {
   });
 });
 
+describe("residual evidence source", () => {
+  test("a gate finding yields source gate; spec and quality findings yield finding", async () => {
+    const advisor = fakeAdvisor({});
+    const live = createLiveWorkflowAdvisor({ advisor, feature: "f", storyId: "US-3", dependents: [] });
+    await live.ruleResidual({
+      storyId: "US-3",
+      items: [{ ...finding("F1"), kind: "gate" as const }, { ...finding("F2"), kind: "spec" as const }, finding("F3")],
+      redGates: [],
+    });
+    const req = advisor.batches[0];
+    if (req?.kind !== "residual") throw new Error("kind");
+    expect(req.items.map((q) => q.evidence[0]?.source)).toEqual(["gate", "finding", "finding"]);
+  });
+});
+
 describe("helpers", () => {
   test("toWorkflowRuling maps waive/defer/carry/hold; other actions -> null", () => {
     expect(toWorkflowRuling("F1", decision({}))).toMatchObject({

@@ -79,7 +79,7 @@ export function createLiveWorkflowAdvisor(input: LiveAdvisorInput): WorkflowAdvi
         feature,
         storyId,
         summary: f.issue,
-        evidence: [{ source: "finding", ref: f.id, text: findingEvidence(f) }],
+        evidence: [{ source: f.kind === "gate" ? "gate" : "finding", ref: f.id, text: findingEvidence(f) }],
         options: buildMenu({ kind: "residual", dependents: [...dependents] }),
         findingSeverity: f.severity,
         ...(f.file ? { anchorFile: f.file } : {}),
