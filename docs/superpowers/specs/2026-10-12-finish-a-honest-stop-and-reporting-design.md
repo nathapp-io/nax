@@ -97,7 +97,7 @@ A stopped (or crashed) fix session's edits are never committed to the branch. A 
 
 ### 4.1 At fix-session start
 
-Record the base: `baseSha = git stash create || HEAD`, a commit object of the current worktree state that neither moves the branch nor touches the stash list, so pre-existing tracked edits (a gate's auto-fix, a user's edit) are part of the base and are never overwritten. Also record `untrackedBefore` (`git status --porcelain=v1 -uall`, untracked entries only, so gitignored files are never included) and `headSha`. Snapshot those pre-existing untracked files into `<outputDir>/finish-audit/<feature>/<runId>.fix-base/`, up to 1 MB per file and 20 MB in total. Every file's size and mtime are recorded, so a change is detectable even when it was too big to copy. The base is kept on the state (`state.lastFixBase`) until the step settles. If the base cannot be read (git fails), the step fails without running the fixer.
+Record the base: `baseSha = git stash create || HEAD`, a commit object of the current worktree state that neither moves the branch nor touches the stash list, so pre-existing tracked edits (a gate's auto-fix, a user's edit) are part of the base and are never overwritten. Also record `untrackedBefore` (`git status --porcelain=v1 -uall`, untracked entries only, so gitignored files are never included) and `headSha`. Snapshot those pre-existing untracked files into `<outputDir>/finish-audit/<feature>/<runId>.fix-base/`, up to 1 MB per file and 20 MB in total. Every file's size and mtime are recorded, so a change is detectable even when it was too big to copy. The base is kept on the step's `HandoffRecord.base` once the session is set aside, and its snapshot is removed when the step settles (kept until finalize or the next fix step's guard when the restore failed). If the base cannot be read (git fails), the step fails without running the fixer.
 
 ### 4.2 When a fix session is stopped
 
@@ -146,6 +146,7 @@ After every completed step (acceptance run or fix, review round, gate run or fix
 | `open` | A review round raised it, or raised it again after it was fixed. | — | open |
 | `fixed-unreviewed` | A committed fix attempt's disposition for it is `fixed`. | commit sha | not open; the sha is in `unreviewedFixCommits` |
 | `fixed-reviewed` | A later round with **both** lenses present did not raise it again. | commit sha | resolved |
+| `cleared` | A later round with **both** lenses present did not raise an `open` or `rejected` entry again (it was never fixed, so it is not `fixed-reviewed`). | `not re-raised by full round N` | resolved |
 | `rejected` | The fixer's disposition is `rejected` with evidence. | evidence `file:line` | open, with the evidence shown |
 | `set-aside` | Its fix attempt was stopped or crashed (§4). | `handoff-n` | open |
 | `waived` / `superseded` | An advisor ruling. | `D-n` | resolved |
@@ -173,7 +174,7 @@ Rules:
 
 ## 7. PR body and `result.json` (#2469)
 
-**PR body** (`finish/pr/body.ts`): in the Unresolved section, the open-findings list is replaced by one findings table. Columns: severity, title, file, state, ref. Rows are sorted by state (`open`, `rejected`, `set-aside`, `unresolved`, `fixed-unreviewed`), then by severity. Resolved entries (`fixed-reviewed`, `waived`, `superseded`) go in a collapsed `<details>` block after the table. Table cells use the existing `escapeTableCell`.
+**PR body** (`finish/pr/body.ts`): in the Unresolved section, the open-findings list is replaced by one findings table. Columns: severity, title, file, state, ref. Rows are sorted by state (`open`, `rejected`, `set-aside`, `unresolved`, `fixed-unreviewed`), then by severity. Resolved entries (`fixed-reviewed`, `cleared`, `waived`, `superseded`) go in a collapsed `<details>` block after the table. Table cells use the existing `escapeTableCell`.
 
 New sections:
 
@@ -268,6 +269,16 @@ What was built, where it differs from or adds to the sections above.
 - `FinishState` is version 3 only; version 2 is rejected.
 - `finish.timeouts` defaults: `reviewMs` 900000, `fixMs` 1200000, `flowMs` 10800000 (`acceptanceMs` 600000 and `gateMs` 900000 unchanged). The deprecated `stepMs` is a shim: it fills `reviewMs` and `fixMs` where unset, warns, and is dropped.
 
+### Decisions
+
+Owner-approved after the first implementation pass (they replace the earlier open items 2 to 5):
+
+1. **A clean full review round closes what it does not re-raise.** A round with both lenses present moves an `open` or `rejected` entry that it does not raise again to `cleared` (ref `not re-raised by full round N`); the entry counts as resolved. `fixed-unreviewed` still becomes `fixed-reviewed`. `set-aside`, `unresolved` and the sticky states (`waived`, `superseded`, `accepted`) are untouched, and so is everything from a round with a missing lens. Review Focus 5 still holds at the moment of the fix: a committed fix with no dispositions leaves the entry `open`; only the later independent clean round clears it. Effect: a fix that committed without dispositions, a fixer-rejected finding, or a fix step that failed before it ran, each followed by a clean full round, now end `ready`. A stopped fix stays `set-aside` and the PR stays a draft ("1 set aside (handoff-n)").
+2. **A fix step never commits past a restore-failed handoff.** Before each fix step captures its base, if any handoff has `restored: false` that no later handoff has settled and the tree is dirty, the same leftover set-aside that finalize uses runs first, oldest first, each with the handoff's own recorded base. Success marks the failed handoffs `settledBy: n` (so the guard and finalize do not set the same dirt aside twice) and the step goes on. Failure fails the step (`FINISH_RESTORE_BLOCKED`) with the fixer not run and nothing committed; the facts carry `restoreFailed: [n]` and the draft reason says `worktree restore failed (handoff-n)`.
+3. **Advisor `approve` is blocked while set-aside work exists.** When the approval re-check passes (phases complete, gates green) but any ledger entry is `set-aside` or any handoff is in `facts.restoreFailed`, `approve` becomes a draft: `advisor approval blocked: set-aside work exists; <draft reason>`. Plain open, rejected and unresolved findings stay approvable as residue. The approval menu in `src/advisor` still offers `approve`; the re-check downgrades it.
+
+Smaller gaps closed in the same pass: a run abort outside a fix session (a review lens, acceptance, gates) is recorded as a `run` stop (`limitMs: 0`, with step and round) and a failed result carries it in `result.stops`; `state.lastFixBase` is removed (checkpoints that still carry it load, the field is ignored).
+
 ### Open items
 
 1. The live check in section 11 (plan Task 14 Step 5) is still owed. It is a billed `nax run` and needs the user's approval at launch. It must verify:
@@ -277,8 +288,4 @@ What was built, where it differs from or adds to the sections above.
    - `finish-audit/<feature>/<runId>.handoff-1/` holds `changes.patch`, `meta.json` and `note.json`;
    - `<runId>.checkpoint.json` exists;
    - the draft PR's reason, findings table, Set aside and Stops match `result.json`.
-2. A restore-failed half-edit left on disk can be committed by a later successful fix session's `git add -A` (`commitFixes`) before finalize runs. Section 4.5 guards only finalize.
-3. Ready/draft is stricter than before in three cases, because `findingsOpen` is derived solely from the ledger (fail-closed): a committed fix with no dispositions followed by a clean round; a fix that was stopped or failed followed by a clean round; a fixer-rejected finding that is not raised again. The owner should confirm whether a clean full round should close those entries.
-4. `Stop.step` and `state.step` do not cover the recovery path, and a run abort there returns `failed: aborted` without recording a `run` stop.
-5. `lastFixBase` is now written but never read.
-6. The `git apply --check` guard in re-apply cannot be tested independently, because `git apply` is atomic.
+2. The `git apply --check` guard in re-apply cannot be tested independently, because `git apply` is atomic.
