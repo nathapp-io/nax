@@ -10,6 +10,8 @@
 import { getSafeLogger } from "@/logger";
 import type { AdviceRef, FinishAdvisor, JudgedResult } from "./advise";
 import { judgeWithoutAdvisor } from "./advise";
+import { concatJudged } from "./advise-core";
+import { MAX_NEAR_MATCH_QUESTIONS } from "./advise-rulings";
 import { type AuditTarget, recordRound } from "./audit";
 import { writeCheckpoint } from "./checkpoint";
 import { buildCommitRound, commitFixes } from "./commit";
@@ -20,6 +22,7 @@ import type { MergedFindings } from "./merge-findings";
 import { mergeFindings } from "./merge-findings";
 import type { FinishOps, ReviewInputs } from "./ops";
 import { type ReviewRoundResult, runReviewRound } from "./review-round";
+import { reconcileAfter, reconcileBefore } from "./review-rulings";
 import { MAX_REVIEW_ROUNDS } from "./route";
 import type { FinishState } from "./state";
 import type { Finding, ReviewLens } from "./types";
@@ -227,10 +230,13 @@ async function runOneRound(state: FinishState, deps: ReviewLoopDeps, limit: numb
   await recordLensRounds(state, deps, round);
   recordReviewStops(state, deps, round);
   noteRound(state, round);
-  const judged = await judgeRound(state, deps, merged);
+  const before = await reconcileBefore(deps, merged);
+  const judgedNow = await judgeRound(state, deps, before.merged);
+  const after = await reconcileAfter(deps, before.merged.toFix, judgedNow, MAX_NEAR_MATCH_QUESTIONS - before.asked);
+  const judged = concatJudged(before.result, judgedNow, after.result);
   if (round.missing.length === 0) ledgerEvent(state, { kind: "full-round", raised, round: state.review.rounds + 1 });
   recordJudgment(state, judged);
-  const fixList = specFirst([...merged.toFix, ...judged.toFix]);
+  const fixList = specFirst([...after.rest, ...judged.toFix]);
   patchReview(state, {
     rounds: state.review.rounds + 1,
     pendingRound: 0,
