@@ -265,6 +265,36 @@ describe("runStoryLoop", () => {
     expect(out.rounds).toBe(3);
   });
 
+  test("fixBase: taken once per fix cycle, kept across a red-gate round, retaken after a re-review", async () => {
+    const h = harness({ gates: [GREEN, RED_LINT, GREEN, GREEN], review: [failing()] });
+    const headCalls: string[] = [];
+    const reReviewBases: string[] = [];
+    const originalHead = h.env.steps.head;
+    const originalReReview = h.env.steps.reReview;
+    h.env.steps.head = async () => {
+      const value = await originalHead();
+      headCalls.push(value);
+      return value;
+    };
+    let n = 0;
+    h.env.steps.reReview = async (round, findings, fixBase) => {
+      reReviewBases.push(fixBase);
+      n++;
+      if (n === 1) {
+        return {
+          ran: true,
+          verdict: { verdicts: findings.map((f) => ({ id: f.id, addressed: false, note: "" })), newFindings: [] },
+        };
+      }
+      return originalReReview(round, findings, fixBase);
+    };
+    const out = await runStoryLoop(h.env);
+    expect(out).toMatchObject({ state: "complete", rounds: 3 });
+    // round 1 takes h1; round 2 (red gate, review finding still open) reuses it; round 3 retakes h2 after the re-review
+    expect(headCalls).toEqual(["h1", "h2"]);
+    expect(reReviewBases).toEqual(["h1", "h2"]);
+  });
+
   test("new breakage from a re-review joins the open list with a fresh id", async () => {
     const h = harness({ review: [failing()] });
     let n = 0;
