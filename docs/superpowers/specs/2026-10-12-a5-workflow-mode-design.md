@@ -441,7 +441,7 @@ Every new file needs its own tests: the coverage gate is per file (`coverage-per
   - **End states and run result:** end-state derivation, `RunResult.success` false on gate-open or not-run,
     and the ready/draft rules (CI `pending` vs `failed`).
   - **Normalisation:** a package config with `acceptance.enabled: true` is overridden; parallel is forced
-    off; advisor enabled; the deferred review is skipped; one warning names the overrides.
+    off; advisor enabled; one warning names the overrides.
   - **Config:** model fallback (`workflow.models.*` → existing keys) and the timeout defaults.
   - **Parsers and prompts:** implementer status, story review, re-review, and the batch reply. The prompt
     builders include the TDD-evidence, report-contract, Decisions & assumptions and no-sub-agents sections.
