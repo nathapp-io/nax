@@ -1,6 +1,7 @@
 /** Git reads the story loop needs. cwd is always the repo root (repo-rooted paths). */
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
+import { NaxError } from "@/errors";
 import { ALWAYS_EXCLUDED, truncateDiff } from "@/review";
 import { _workflowDeps } from "./step-context";
 
@@ -31,6 +32,15 @@ export async function writeReviewPackage(projectDir: string, from: string, path:
     _workflowDeps.git(["diff", "--stat", range, ...pathspec], projectDir),
     _workflowDeps.git(["diff", `--unified=${DIFF_CONTEXT_LINES}`, range, ...pathspec], projectDir),
   ]);
+  const failed = [log, stat, diff].find((r) => r.exitCode !== 0);
+  if (failed) {
+    const detail = (failed.stderr ?? failed.stdout).trim();
+    throw new NaxError(
+      `git failed building review package ${range}${detail ? `: ${detail}` : ""}`,
+      "WORKFLOW_REVIEW_PACKAGE_FAILED",
+      { stage: "workflow", from, path },
+    );
+  }
   const body = truncateDiff(diff.stdout, stat.stdout);
   await mkdir(dirname(path), { recursive: true });
   await Bun.write(

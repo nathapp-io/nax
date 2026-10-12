@@ -45,9 +45,9 @@ export interface StepContext {
 
 export const _workflowDeps = {
   callOp: callOp as <I, O, C>(ctx: CallContext, op: Operation<I, O, C>, input: I) => Promise<O>,
-  git: async (args: string[], cwd: string): Promise<{ stdout: string; exitCode: number }> => {
-    const { stdout, exitCode } = await gitWithTimeout(args, cwd);
-    return { stdout, exitCode };
+  git: async (args: string[], cwd: string): Promise<{ stdout: string; stderr?: string; exitCode: number }> => {
+    const { stdout, stderr, exitCode } = await gitWithTimeout(args, cwd);
+    return { stdout, stderr, exitCode };
   },
   autoCommitIfDirty,
   resolveFeatureSpec: (feature: string, workdir: string): Promise<{ specSource?: { path: string } | null }> =>

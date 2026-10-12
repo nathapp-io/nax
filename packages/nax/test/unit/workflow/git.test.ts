@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { NaxError } from "@/errors";
 import { listUncommitted, readHead, writeReviewPackage } from "@/workflow/git";
 
 const dirs: string[] = [];
@@ -45,6 +46,18 @@ describe("workflow git helpers", () => {
     expect(text).toContain("a.txt");
     expect(text).toContain("+two");
     expect(text).not.toContain(".nax/x.json");
+  });
+
+  test("package: an unknown from ref throws WORKFLOW_REVIEW_PACKAGE_FAILED and writes nothing", async () => {
+    const dir = await repo();
+    const path = join(dir, "out", "package-0.diff");
+    const err = await writeReviewPackage(dir, "deadbeef", path).then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(NaxError);
+    expect((err as NaxError).code).toBe("WORKFLOW_REVIEW_PACKAGE_FAILED");
+    expect(await Bun.file(path).exists()).toBe(false);
   });
 
   test("listUncommitted names modified and untracked files, not .nax", async () => {
