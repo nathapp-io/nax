@@ -44,7 +44,11 @@ export type CanonicalSessionRole =
   /** A5 — fresh, read-only story review. */
   | "wf-story-review"
   /** A5 — fresh, read-only re-review scoped to one fix diff. */
-  | "wf-rereview";
+  | "wf-rereview"
+  /** A5 — fresh, read-only whole-branch review (one per feature). */
+  | "wf-branch-review"
+  /** A5 — fresh, write-tool branch fix (exactly one pass). */
+  | "wf-branch-fix";
 
 export type SessionRole = CanonicalSessionRole;
 
@@ -76,6 +80,8 @@ export const KNOWN_SESSION_ROLES: readonly CanonicalSessionRole[] = [
   "wf-implementer",
   "wf-story-review",
   "wf-rereview",
+  "wf-branch-review",
+  "wf-branch-fix",
 ] as const;
 
 export function isSessionRole(s: string): s is SessionRole {

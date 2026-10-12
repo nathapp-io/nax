@@ -1,8 +1,10 @@
 /** A5 workflow mode — story-loop state and artifact shapes. */
 export type {
+  BranchReviewVerdict,
   GateName,
   ImplementerReply,
   ImplementerStatus,
+  MinorTriageDecision,
   ReReviewVerdict,
   StoryReviewVerdict,
   WorkflowFinding,
@@ -11,7 +13,7 @@ export type {
   WorkflowSeverity,
 } from "@/operations";
 
-import type { GateName, WorkflowFinding, WorkflowFindingDraft } from "@/operations";
+import type { GateName, MinorTriageDecision, WorkflowFinding, WorkflowFindingDraft } from "@/operations";
 
 export type GateState = "green" | "red" | "skipped";
 
@@ -36,6 +38,8 @@ export interface WorkflowRuling {
   readonly decisionId?: string;
   /** carry only: the dependent stories whose briefs receive the instruction. */
   readonly toStories?: readonly string[];
+  /** The advisor asked for a human to confirm this ruling (keeps the PR a draft). */
+  readonly needsHumanConfirm?: boolean;
 }
 
 export interface WorkflowStoryRecord {
@@ -51,8 +55,11 @@ export interface WorkflowStoryRecord {
   readonly nextFindingId: number;
   readonly deferredMinors: number;
   readonly rulings: number;
+  /** Rulings flagged for a human (hold, or needs confirmation), set at close. */
+  readonly flagged?: number;
   readonly gates: Readonly<Partial<Record<GateName, GateState>>>;
   readonly timings: Readonly<Record<string, number>>;
+  readonly tokensByRole?: Readonly<Record<string, RoleTokens>>;
   readonly startedAt: string;
   readonly endedAt?: string;
 }
@@ -62,4 +69,84 @@ export interface WorkflowResultFile {
   readonly runId: string;
   readonly feature: string;
   readonly stories: Readonly<Record<string, WorkflowStoryRecord>>;
+  readonly featureWorkflow?: WorkflowFeatureRecord;
+}
+
+export interface RoleTokens {
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly costUsd: number;
+  readonly calls: number;
+}
+
+export type FeatureStep =
+  | "repo-gates"
+  | "branch-review"
+  | "branch-fix"
+  | "branch-rereview"
+  | "adjudicate"
+  | "final-gates"
+  | "publish"
+  | "done";
+
+/** One runQualityGates pass. Nothing ran = nothing verified (P4-R5). */
+export interface RepoGateSummary {
+  readonly ran: readonly string[];
+  readonly failing: readonly string[];
+}
+
+export type FeatureCiState = "green" | "failed" | "pending" | "skipped";
+export type FeatureOutcome = "ready" | "draft" | "local-only";
+
+/** A story loop's deferred minor, numbered for the branch review's triage (P4-R7, P4-R8). */
+export interface MinorItem {
+  readonly id: string;
+  readonly storyId: string;
+  readonly text: string;
+  readonly triage: MinorTriageDecision;
+}
+
+export type StoryState = WorkflowEndState | "not-run";
+
+export interface StorySummary {
+  readonly id: string;
+  readonly title: string;
+  readonly state: StoryState;
+  readonly reason?: string;
+  readonly rounds: number;
+  readonly unreviewed: boolean;
+  readonly flagged: number;
+  /** The run dir holding this story's brief/report (absent when it has no record). */
+  readonly runDir?: string;
+}
+
+/** The feature workflow's persisted state (spec §7, §10, P4-R1). `step` is the NEXT step to run. */
+export interface WorkflowFeatureRecord {
+  readonly step: FeatureStep;
+  readonly startedAt: string;
+  readonly endedAt?: string;
+  /** HEAD when the workflow reached `done`. */
+  readonly head?: string;
+  readonly seed: string | null;
+  readonly repoGates?: RepoGateSummary;
+  /** Red repo gates and gate-open stories (step 1), handed to the branch fix. */
+  readonly gateFindings: readonly WorkflowFinding[];
+  readonly reviewRan: boolean;
+  /** Blocking branch-review findings still open. */
+  readonly reviewOpen: readonly WorkflowFinding[];
+  readonly minors: readonly MinorItem[];
+  /** Minor findings raised by the branch review or re-review (PR body, `leave`). */
+  readonly newMinors: readonly string[];
+  readonly nextFindingId: number;
+  readonly fixBase?: string;
+  readonly fixRan: boolean;
+  readonly rulings: readonly WorkflowRuling[];
+  readonly finalGates?: RepoGateSummary;
+  readonly ci?: FeatureCiState;
+  readonly outcome?: FeatureOutcome;
+  readonly reasons: readonly string[];
+  readonly url?: string;
+  readonly passed?: boolean;
+  readonly timings: Readonly<Record<string, number>>;
+  readonly tokensByRole: Readonly<Record<string, RoleTokens>>;
 }

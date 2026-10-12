@@ -12,6 +12,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Workflow mode feature workflow (A5 PR4).** With `execution.mode: "workflow"`, the advisor pre-flight
+  runs once before the first story, and after the last story one feature workflow runs: repo gates, one
+  whole-branch review (cross-story integration, reachability, consistency, triage of every deferred minor),
+  exactly one branch fix, one scoped re-review, an advisor ruling on whatever is still open, gates again,
+  then push, a draft PR, a CI wait (a timeout is `pending`, never `failed`), advisor approval, and the PR
+  promoted to ready only when every gate is green, CI did not fail, no story is gate-open or not run, no
+  ruling is flagged and the branch review ran. nax never merges. The run's success includes the feature
+  workflow; `status.json` gains a `workflow` block; `result.json` gains the resumable feature record and
+  per-role token totals. Finish and the deferred regression gate do not run in workflow mode.
+  A crash during the branch fix re-runs the fix on resume; a re-run at the same HEAD skips a finished (ready or
+  draft) feature but retries a local-only one.
 - Workflow mode advisor kinds (A5 PR3): the implementer's NEEDS_CONTEXT / BLOCKED question is answered
   by the advisor into the same session (at most twice per story); at the fix-round cap the open items
   get one batched advisor ruling each (park as reviewer-wrong, defer to the branch review, carry an

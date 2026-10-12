@@ -21,6 +21,7 @@ import { loadPriorStory, newStoryRecord, upsertStoryRecord } from "./result";
 import { _workflowDeps, type StepContext } from "./step-context";
 import type { StoryLoopEnv, StoryLoopSteps } from "./story-loop";
 import { runStoryReview } from "./story-review";
+import { addRoleTokens } from "./tokens";
 import type { WorkflowStoryRecord } from "./types";
 
 function timed<A extends unknown[], R>(
@@ -133,7 +134,11 @@ export async function buildStoryEnv(
     }),
     sink: {
       update: async (patch) => {
-        record = { ...record, ...patch };
+        // Per-role tokens add to a resumed record's prior totals instead of replacing them.
+        const tokens = patch.tokensByRole
+          ? { tokensByRole: addRoleTokens(record.tokensByRole ?? {}, patch.tokensByRole) }
+          : {};
+        record = { ...record, ...patch, ...tokens };
         await upsertStoryRecord(runDir, header, record);
       },
       ledger: (text) => appendLedger(runDir, ctx.story.id, text),

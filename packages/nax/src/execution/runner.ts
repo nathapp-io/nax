@@ -373,7 +373,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       interactionChain,
     });
 
-    const { durationMs, acceptancePassed, pluginGateFailed, reportedTotal } = completionResult;
+    const { durationMs, acceptancePassed, pluginGateFailed, reportedTotal, workflowPassed } = completionResult;
     runCompleted = true;
     // The completion phase's cost-aggregator-reconciled total is the authority
     // (status.json, the headless footer and the exit summary already use it).
@@ -384,7 +384,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
     const reviewsFailedOpen = sumReviewsFailedOpen(allStoryMetrics);
 
     return {
-      success: isComplete(prd) && acceptancePassed && !pluginGateFailed,
+      success: isComplete(prd) && acceptancePassed && !pluginGateFailed && workflowPassed !== false,
       iterations,
       storiesCompleted,
       totalCost,

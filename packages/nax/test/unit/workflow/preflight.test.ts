@@ -145,3 +145,47 @@ describe("runPreflight", () => {
     expect(await Bun.file(preflightPath(runDir)).exists()).toBe(true);
   });
 });
+
+describe("preflight.json reuse checks element shape (PR3 M6)", () => {
+  test("a conflict missing storyIds is not reused: pre-flight runs again", async () => {
+    const runDir = makeTempDir("wf-pf-shape-");
+    dirs.push(runDir);
+    await Bun.write(
+      preflightPath(runDir),
+      JSON.stringify({
+        schemaVersion: 1,
+        overlap: [],
+        conflicts: [{ questionId: "Q-1", summary: "s", decisionId: null, action: "hold" }],
+      }),
+    );
+    const advisor = advisorReturning({ kind: "preflight", overlap: [], items: [] });
+    await runPreflight({ advisor, runDir, storyIds: ["US-1"], ledger: async () => {} });
+    expect(advisor.calls).toHaveLength(1);
+  });
+
+  test("an overlap entry with a non-string section is not reused", async () => {
+    const runDir = makeTempDir("wf-pf-shape-");
+    dirs.push(runDir);
+    await Bun.write(
+      preflightPath(runDir),
+      JSON.stringify({ schemaVersion: 1, overlap: [{ storyId: "US-1", specSections: [3] }], conflicts: [] }),
+    );
+    const advisor = advisorReturning({ kind: "preflight", overlap: [], items: [] });
+    await runPreflight({ advisor, runDir, storyIds: ["US-1"], ledger: async () => {} });
+    expect(advisor.calls).toHaveLength(1);
+  });
+
+  test("a well-formed file is reused (no advisor call)", async () => {
+    const runDir = makeTempDir("wf-pf-shape-");
+    dirs.push(runDir);
+    const file: PreflightFile = {
+      schemaVersion: 1,
+      overlap: [{ storyId: "US-1", specSections: ["3"] }],
+      conflicts: [{ questionId: "Q-1", storyIds: ["US-1"], summary: "s", decisionId: "D-1", action: "supersede" }],
+    };
+    await Bun.write(preflightPath(runDir), JSON.stringify(file));
+    const advisor = advisorReturning({ kind: "preflight", overlap: [], items: [] });
+    expect(await runPreflight({ advisor, runDir, storyIds: ["US-1"], ledger: async () => {} })).toEqual(file);
+    expect(advisor.calls).toHaveLength(0);
+  });
+});

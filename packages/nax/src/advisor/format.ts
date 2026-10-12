@@ -6,7 +6,9 @@ export function describeTarget(t: SupersedeTarget): string {
 }
 
 function waivedSubject(d: AdviceDecision): string {
-  const [, title, path] = (d.dedupeKey ?? "").split("|");
+  const [, keyTitle, keyPath] = (d.dedupeKey ?? "").split("|");
+  const title = keyTitle || d.rulingTitle;
+  const path = keyPath || d.anchorFile;
   if (!title) return d.storyId ?? "finding";
   return path ? `${title} (${path})` : title;
 }

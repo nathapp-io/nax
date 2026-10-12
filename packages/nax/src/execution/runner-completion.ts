@@ -8,7 +8,7 @@
 import path from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { groupStoriesByPackage } from "@/acceptance";
-import { loadConfigForPackage, type NaxConfig } from "@/config";
+import { isWorkflowMode, loadConfigForPackage, type NaxConfig } from "@/config";
 import type { FinishPhaseContext, FinishResult } from "@/finish";
 import type { LoadedHooksConfig } from "@/hooks";
 import { fireHook } from "@/hooks";
@@ -20,14 +20,15 @@ import type { PipelineEventEmitter } from "@/pipeline/events";
 import type { AgentGetFn } from "@/pipeline/types";
 import type { PluginRegistry } from "@/plugins/registry";
 import type { PRD } from "@/prd";
-import { countStories, isComplete } from "@/prd";
+import { isComplete } from "@/prd";
 import { totalSpendUsd } from "@/runtime";
 import type { DispatchContext } from "@/runtime/dispatch-context";
-import { autoCommitIfDirty, gitWithTimeout } from "@/utils/git";
-import { storyPackageDir } from "@/utils/path-frame";
+import { autoCommitIfDirty } from "@/utils/git";
+import type { WorkflowFeatureInput, WorkflowFeatureResult } from "@/workflow";
 import { recordAdvisorSummary } from "./advisor-summary";
 import { stopHeartbeat, writeExitSummary } from "./crash-recovery";
 import type { DeferredReviewResult } from "./deferred-review";
+import { runEndPhase } from "./end-phase";
 import type { ExitReason } from "./executor-types";
 import type { AcceptanceLoopContext, AcceptanceLoopResult } from "./lifecycle/acceptance-loop";
 import type { RunCompletionOptions, RunCompletionResult } from "./lifecycle/run-completion";
@@ -107,6 +108,8 @@ export interface RunnerCompletionResult {
    *  Carried out of the completion phase so the returned RunResult.totalCost, the post-run
    *  context and reporter.onRunEnd all report the figure status.json already does. */
   reportedTotal: number;
+  /** A5: false when the feature workflow did not pass (spec §7 "Run result"); absent in pipeline mode. */
+  workflowPassed?: boolean;
 }
 
 /**
@@ -120,6 +123,7 @@ export const _runnerCompletionDeps: {
   // the way acceptance-setup's did (nax#2126).
   loadConfigForPackage(projectDir: string, packageDir: string | undefined, from: NaxConfig): Promise<NaxConfig>;
   runFinishPhase(ctx: FinishPhaseContext): Promise<FinishResult | null>;
+  runWorkflowFeature(input: WorkflowFeatureInput): Promise<WorkflowFeatureResult | null>;
 } = {
   async runAcceptanceLoop(ctx) {
     const { runAcceptanceLoop } = await import("./lifecycle/acceptance-loop");
@@ -136,6 +140,10 @@ export const _runnerCompletionDeps: {
   async runFinishPhase(ctx) {
     const { runFinishPhase } = await import("@/finish");
     return runFinishPhase(ctx);
+  },
+  async runWorkflowFeature(input) {
+    const { runWorkflowFeature } = await import("@/workflow");
+    return runWorkflowFeature(input);
   },
 };
 
@@ -360,7 +368,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     statusWriter: options.statusWriter,
     config: options.config,
     agentManager: options.agentManager,
-    skipRegression: regressionAlreadyPassed,
+    skipRegression: shouldSkipRegression(options, regressionAlreadyPassed),
     sessionManager: options.sessionManager,
     pluginProviderCache: options.pluginProviderCache,
     deferredReview: options.deferredReview,
@@ -445,27 +453,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
   // after it, finish's spend never reaches totalCost and its deadline signal
   // is already fired. Fail-open: a finish that cannot run never fails a run
   // whose stories all passed.
-  try {
-    await _runnerCompletionDeps.runFinishPhase({
-      runtime: options.runtime,
-      config: options.config,
-      feature: options.feature,
-      workdir: options.workdir,
-      branch: await resolveBranch(options.workdir),
-      runId: options.runId,
-      agentName: options.agentManager.getDefault(),
-      abortSignal: options.abortSignal,
-      storySummary: finishStorySummary(options),
-      statusWriter: options.statusWriter,
-      interactionChain: options.interactionChain,
-      packageDirs: options.prd.userStories.map(storyPackageDir),
-    });
-  } catch (err) {
-    logger?.warn("finish", "Finish phase failed; the run is unaffected", {
-      storyId: "_run",
-      error: errorMessage(err),
-    });
-  }
+  const workflowPassed = await runEndPhase(options, _runnerCompletionDeps);
 
   // Finish mutates postRun in memory and can add successful or failed-dispatch
   // spend. Persist both status paths and return the same reconciled total.
@@ -516,7 +504,13 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     acceptancePassed,
     pluginGateFailed,
     reportedTotal: finalTotal,
+    ...(workflowPassed !== undefined ? { workflowPassed } : {}),
   };
+}
+
+/** A5: the feature workflow's gates subsume the deferred regression gate (spec §5.3). */
+function shouldSkipRegression(options: RunnerCompletionOptions, alreadyPassed: boolean): boolean {
+  return alreadyPassed || isWorkflowMode(options.config);
 }
 
 /** Persist finish's in-memory outcome and reconcile the run's final spend. */
@@ -534,56 +528,4 @@ async function persistFinishStatus(
     });
   }
   return finalTotal;
-}
-
-/**
- * The three counts `shouldRunFinish` gates on, in the shape the plugin's own
- * gate read them.
- *
- * `completed` is `options.storiesCompleted` — **not** `countStories(prd).passed`
- * — for every run that actually executed a story. `buildPostRunContext`
- * (`src/execution/lifecycle/run-cleanup.ts:151-156`) builds
- * `PostRunContext.storySummary.completed` from the runner's `storiesCompleted`
- * counter and takes only `failed`/`skipped`/`paused` from `countStories`.
- * Substituting `passed` here would silently change the gate the native phase
- * inherits.
- *
- * The one narrow exception (#1671): a *resumed* run whose PRD is already
- * fully complete executes no story at all, so `storiesCompleted` stays 0 even
- * though the completion phase just did real work (deferred review, cleanup).
- * `unified-executor.ts:171` takes that exact "all stories already complete"
- * branch behind `isComplete(prd)` — the same predicate used below — so when
- * `storiesCompleted === 0` and `isComplete(prd)` is true, the fallback reports
- * `counts.passed` instead. `isComplete` rather than `counts.passed > 0`
- * because it additionally rules out any `pending`/`blocked` story; a run that
- * merely has one passed story among others still unstarted must not look
- * complete to `shouldRunFinish`. Any run that executed at least one story
- * keeps its own `storiesCompleted` count untouched.
- *
- * `countStories().failed` already folds in `regression-failed`, matching the
- * classification the deferred regression gate uses.
- */
-function finishStorySummary(options: RunnerCompletionOptions): { completed: number; failed: number; paused: number } {
-  const counts = countStories(options.prd);
-  const completed =
-    options.storiesCompleted === 0 && isComplete(options.prd) ? counts.passed : options.storiesCompleted;
-  return { completed, failed: counts.failed, paused: counts.paused };
-}
-
-/**
- * The branch finish would open a PR from.
- *
- * There is no `currentBranch` helper in `@/utils/git` — an earlier draft of
- * this plan invented one. This is the idiom `runner.ts:344-348` already uses
- * to resolve the branch it hands `cleanupRun`, including the fail-closed
- * empty-string default: `isFeatureBranch("")` is false, so an unresolvable
- * branch makes finish stand down rather than guess.
- */
-async function resolveBranch(workdir: string): Promise<string> {
-  try {
-    const { stdout, exitCode } = await gitWithTimeout(["branch", "--show-current"], workdir);
-    return exitCode === 0 ? stdout.trim() : "";
-  } catch {
-    return "";
-  }
 }

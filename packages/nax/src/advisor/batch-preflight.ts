@@ -24,6 +24,25 @@ function checkedAcRef(conflict: RawPreflightConflict, knownStoryIds: readonly st
   return undefined;
 }
 
+/** The batch story ids a conflict applies to; with none listed, its AC's story when known (PR3 M2). */
+function appliesToOf(conflict: RawPreflightConflict, knownStoryIds: readonly string[]): string[] {
+  const kept = conflict.storyIds.filter((id) => knownStoryIds.includes(id));
+  for (const dropped of conflict.storyIds.filter((id) => !knownStoryIds.includes(id))) {
+    getSafeLogger()?.warn("advisor", "Pre-flight conflict names a story that is not in the batch — dropped", {
+      storyId: dropped,
+      description: conflict.description,
+    });
+  }
+  if (kept.length > 0) return kept;
+  const acStory = conflict.acRef?.storyId;
+  if (acStory !== undefined && knownStoryIds.includes(acStory)) return [acStory];
+  getSafeLogger()?.warn("advisor", "Pre-flight conflict names no story in the batch — dropped", {
+    storyId: "_run",
+    description: conflict.description,
+  });
+  return [];
+}
+
 export function preflightItems(
   conflicts: readonly RawPreflightConflict[],
   knownStoryIds: readonly string[],
@@ -31,14 +50,8 @@ export function preflightItems(
 ): PreflightItem[] {
   const out: PreflightItem[] = [];
   for (const conflict of conflicts) {
-    const kept = conflict.storyIds.filter((id) => knownStoryIds.includes(id));
-    for (const dropped of conflict.storyIds.filter((id) => !knownStoryIds.includes(id))) {
-      getSafeLogger()?.warn("advisor", "Pre-flight conflict names a story that is not in the batch — dropped", {
-        storyId: dropped,
-        description: conflict.description,
-      });
-    }
-    const storyId = kept[0];
+    const appliesTo = appliesToOf(conflict, knownStoryIds);
+    const storyId = appliesTo[0];
     if (storyId === undefined) continue;
     const acRef = checkedAcRef(conflict, knownStoryIds);
     if (conflict.acRef && !acRef && !conflict.specSection) continue;
@@ -63,7 +76,7 @@ export function preflightItems(
           ...(conflict.specSection ? { specSection: conflict.specSection } : {}),
         }),
       },
-      appliesTo: kept,
+      appliesTo,
       raw: conflict.raw,
     });
   }

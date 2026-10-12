@@ -349,3 +349,17 @@ describe("runStoryLoop", () => {
     expect(out.state).toBe("complete");
   });
 });
+
+describe("flagged rulings at close", () => {
+  test("a default hold at the cap counts as flagged on the record", async () => {
+    const h = harness({ review: [failing()], reReviewAllAddressed: [false] }, { maxFixRounds: 1 });
+    await runStoryLoop(h.env);
+    expect(h.record().flagged).toBe(1);
+  });
+
+  test("a clean story has flagged 0", async () => {
+    const h = harness({});
+    await runStoryLoop(h.env);
+    expect(h.record().flagged).toBe(0);
+  });
+});

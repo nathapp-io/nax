@@ -69,12 +69,19 @@ export type { TimeoutRetryInput } from "./builders/timeout-retry-builder";
 // working tree changed during the timed-out attempt (US-003).
 export { timeoutRetry } from "./builders/timeout-retry-builder";
 // A5 workflow mode — story brief and implementer-session prompts (spec §6).
+export type { BranchReviewPromptInput } from "./builders/workflow-branch-builder";
+export {
+  buildWorkflowBranchFixPrompt,
+  buildWorkflowBranchReReviewPrompt,
+  buildWorkflowBranchReviewPrompt,
+} from "./builders/workflow-branch-builder";
 export type { WorkflowBriefInput, WorkflowPromptFinding } from "./builders/workflow-implementer-builder";
 export {
   buildWorkflowAnswerPrompt,
   buildWorkflowBrief,
   buildWorkflowFixPrompt,
   buildWorkflowImplementPrompt,
+  WORKFLOW_REPLY_CONTRACT,
 } from "./builders/workflow-implementer-builder";
 export { buildWorkflowReReviewPrompt } from "./builders/workflow-re-review-builder";
 export {

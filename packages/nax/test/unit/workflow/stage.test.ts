@@ -86,6 +86,7 @@ function wire(
     briefPath?: string;
     closed?: string[];
     buildCallCtx?: () => Promise<never>;
+    updates?: unknown[];
   } = {},
 ): () => boolean {
   let disposed = false;
@@ -99,7 +100,16 @@ function wire(
     }));
   _workflowStageDeps.buildStoryEnv = async () => ({
     sc: makeStepContext(opts.briefPath ? { briefPath: opts.briefPath } : {}),
-    env: { ...makeEnv(), resume: opts.resume ?? null },
+    env: {
+      ...makeEnv(),
+      resume: opts.resume ?? null,
+      sink: {
+        update: async (patch) => {
+          opts.updates?.push(patch);
+        },
+        ledger: async () => {},
+      },
+    },
     closeOnError: async (reason) => {
       opts.closed?.push(reason);
     },
@@ -286,6 +296,39 @@ describe("workflowStage", () => {
     await workflowStage.execute(ctx);
     expect(ctx.agentResult?.estimatedCostUsd).toBeCloseTo(0.75);
     expect(ctx.agentResult?.tokenUsage).toEqual({ inputTokens: 30, outputTokens: 12 });
+  });
+
+  test("per-role token totals are written onto the story record (spec §9)", async () => {
+    const runtime = makeMockRuntime({ costAggregator: createNoOpCostAggregator() });
+    const updates: unknown[] = [];
+    wire(
+      async () => {
+        runtime.dispatchEvents.emitDispatch(
+          makeEvent({
+            sessionRole: "wf-implementer",
+            estimatedCostUsd: 0.5,
+            tokenUsage: { inputTokens: 20, outputTokens: 7 },
+          }),
+        );
+        return OUTCOME;
+      },
+      { updates },
+    );
+    await workflowStage.execute(makeTestContext({ runtime }));
+    expect(updates.at(-1)).toEqual({
+      tokensByRole: { "wf-implementer": { inputTokens: 20, outputTokens: 7, costUsd: 0.5, calls: 1 } },
+    });
+  });
+});
+
+describe("workflowStage token recording", () => {
+  test("an empty meter does not touch the record (a resumed story keeps its prior totals)", async () => {
+    const updates: unknown[] = [];
+    wire(async () => OUTCOME, { updates });
+    await workflowStage.execute(
+      makeTestContext({ runtime: makeMockRuntime({ costAggregator: createNoOpCostAggregator() }) }),
+    );
+    expect(updates).toEqual([]);
   });
 });
 

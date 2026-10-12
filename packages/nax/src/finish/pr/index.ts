@@ -4,8 +4,9 @@
  * never from this file directly.
  */
 
-export { buildFinishBody, buildFinishTitle } from "./body";
+export { buildAdvisorSection, buildFinishBody, buildFinishTitle } from "./body";
 export type { FinishPrContext, FinishPrStory, LoadPrContextArgs } from "./context";
 export { _finishPrDeps, loadFinishPrContext } from "./context";
+export { escapeInline, escapeTableCell } from "./escape";
 export { NARRATIVE_MAX_CHARS, readSpecSummary, resolveNarrative } from "./narrative";
 export { openDraftFinishPr, openOrPromotePr, parseView, updatePrBody } from "./open";

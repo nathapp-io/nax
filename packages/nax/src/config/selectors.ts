@@ -148,6 +148,7 @@ export const llmRoutingConfigSelector = pickSelector(
 // `finish.timeouts.reviewMs / fixMs`; `execution.sessionTimeoutSeconds` is the fallback
 // for direct callers, matching how the acceptance ops resolve it.
 export const finishConfigSelector = pickSelector("finish", "finish", "interaction", "quality", "agent", "execution");
+// `finish` supplies the branch-review / branch-fix model fallbacks (spec §4, P4-R21).
 export const workflowConfigSelector = pickSelector(
   "workflow",
   "workflow",
@@ -157,6 +158,7 @@ export const workflowConfigSelector = pickSelector(
   "quality",
   "agent",
   "models",
+  "finish",
 );
 export const advisorConfigSelector = pickSelector("advisor", "advisor", "execution");
 

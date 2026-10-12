@@ -3,8 +3,8 @@
  * Written atomically (tmp + rename) after every phase change.
  */
 import { mkdir, readdir, rename, stat } from "node:fs/promises";
-import { join } from "node:path";
-import type { WorkflowResultFile, WorkflowStoryRecord } from "./types";
+import { basename, join } from "node:path";
+import type { WorkflowFeatureRecord, WorkflowResultFile, WorkflowStoryRecord } from "./types";
 
 export const _resultDeps = { mkdir, readdir, rename, stat };
 
@@ -45,12 +45,16 @@ export async function upsertStoryRecord(
   record: WorkflowStoryRecord,
 ): Promise<void> {
   const current = await readResult(runDir);
-  const next: WorkflowResultFile = {
+  await writeResult(runDir, {
     schemaVersion: 1,
     runId: header.runId,
     feature: header.feature,
     stories: { ...(current?.stories ?? {}), [record.storyId]: record },
-  };
+    ...(current?.featureWorkflow ? { featureWorkflow: current.featureWorkflow } : {}),
+  });
+}
+
+async function writeResult(runDir: string, next: WorkflowResultFile): Promise<void> {
   await _resultDeps.mkdir(runDir, { recursive: true });
   const tmp = join(runDir, `${RESULT_FILE}.tmp`);
   await Bun.write(tmp, `${JSON.stringify(next, null, 2)}\n`);
@@ -75,28 +79,47 @@ export async function loadPriorStory(
   currentRunId: string,
   storyId: string,
 ): Promise<{ readonly record: WorkflowStoryRecord; readonly runDir: string } | null> {
-  let entries: string[];
-  try {
-    entries = await _resultDeps.readdir(featureDir);
-  } catch {
-    return null;
-  }
-  const dated: { runDir: string; mtimeMs: number }[] = [];
-  for (const name of entries) {
-    if (name === currentRunId) continue;
-    const runDir = join(featureDir, name);
-    try {
-      const s = await _resultDeps.stat(join(runDir, RESULT_FILE));
-      dated.push({ runDir, mtimeMs: s.mtimeMs });
-    } catch {
-      // not a run dir, or no result.json yet
-    }
-  }
-  dated.sort((a, b) => b.mtimeMs - a.mtimeMs);
-  for (const { runDir } of dated) {
+  for (const runDir of await runDirsNewestFirst(featureDir)) {
+    if (basename(runDir) === currentRunId) continue;
     const record = (await readResult(runDir))?.stories[storyId];
     if (!record) continue;
     return record.state === undefined ? { record, runDir } : null;
   }
   return null;
+}
+
+/** Run dirs of a feature that hold a result.json, newest result.json first. */
+export async function runDirsNewestFirst(featureDir: string): Promise<string[]> {
+  let entries: string[];
+  try {
+    entries = await _resultDeps.readdir(featureDir);
+  } catch {
+    return [];
+  }
+  const dated: { runDir: string; mtimeMs: number }[] = [];
+  for (const name of entries) {
+    const runDir = join(featureDir, name);
+    try {
+      dated.push({ runDir, mtimeMs: (await _resultDeps.stat(join(runDir, RESULT_FILE))).mtimeMs });
+    } catch {
+      // not a run dir, or no result.json yet
+    }
+  }
+  return [...dated].sort((a, b) => b.mtimeMs - a.mtimeMs).map((d) => d.runDir);
+}
+
+/** Writes the feature workflow's state into this run's result.json, keeping the story records (P4-R1). */
+export async function upsertFeatureRecord(
+  runDir: string,
+  header: { readonly runId: string; readonly feature: string },
+  record: WorkflowFeatureRecord,
+): Promise<void> {
+  const current = await readResult(runDir);
+  await writeResult(runDir, {
+    schemaVersion: 1,
+    runId: header.runId,
+    feature: header.feature,
+    stories: current?.stories ?? {},
+    featureWorkflow: record,
+  });
 }

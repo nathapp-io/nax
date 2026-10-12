@@ -138,6 +138,33 @@ describe("buildStoryEnv", () => {
     expect(rec).toMatchObject({ phase: "gates", round: 1, rulings: 2, maxRounds: 4 });
   });
 
+  test("sink.update merges tokensByRole into a resumed record's prior totals", async () => {
+    const { ctx, runtime, runDir } = setup();
+    const priorDir = workflowRunDir(runtime.outputDir, "feat", "prior-run");
+    await upsertStoryRecord(
+      priorDir,
+      { runId: "prior-run", feature: "feat" },
+      {
+        ...newStoryRecord(ctx.story.id, 9, "t0"),
+        phase: "fix",
+        round: 1,
+        tokensByRole: { "wf-implementer": { inputTokens: 100, outputTokens: 10, costUsd: 1, calls: 2 } },
+      },
+    );
+    const { env } = await buildStoryEnv(ctx, makeMockCallContext());
+    await env.sink.update({
+      tokensByRole: {
+        "wf-implementer": { inputTokens: 5, outputTokens: 1, costUsd: 0.5, calls: 1 },
+        "wf-reviewer": { inputTokens: 7, outputTokens: 2, costUsd: 0.25, calls: 1 },
+      },
+    });
+    const rec = (await readResult(runDir))?.stories[ctx.story.id];
+    expect(rec?.tokensByRole).toEqual({
+      "wf-implementer": { inputTokens: 105, outputTokens: 11, costUsd: 1.5, calls: 3 },
+      "wf-reviewer": { inputTokens: 7, outputTokens: 2, costUsd: 0.25, calls: 1 },
+    });
+  });
+
   test("sink.ledger appends a story line", async () => {
     const { ctx, runDir } = setup();
     const { env } = await buildStoryEnv(ctx, makeMockCallContext());
