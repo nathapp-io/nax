@@ -16,6 +16,7 @@ import type { ConfiguredModel } from "@/config";
 import type { ForgeDeps, ForgeKind } from "@/forge";
 import type { CallContext, FinishBranchReviewInput, FinishFixInput, FinishSpecReviewInput } from "@/operations";
 import { callOp, finishBranchReviewOp, finishFixOp, finishSpecReviewOp, HANDOFF_TURN_MS } from "@/operations";
+import { STEP_TIMEOUT_MARGIN_MS, stepSignal } from "@/utils/step-signal";
 import type { AuditTarget } from "./audit";
 import { commitAndPush } from "./commit";
 import { setAsideLeftoverDirt } from "./finalize-dirt";
@@ -24,7 +25,6 @@ import { buildFinishBody, buildFinishTitle, loadFinishPrContext, openDraftFinish
 import { stopReason } from "./resolve";
 import { MISSING_REVIEW } from "./review-json";
 import type { FinishState } from "./state";
-import { STEP_TIMEOUT_MARGIN_MS, stepSignal } from "./step-signal";
 import type { FinishPrBodySettings, FinishReviewOutput, FinishTimeouts } from "./types";
 
 export interface FinishOpsDeps {

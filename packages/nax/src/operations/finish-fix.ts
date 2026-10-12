@@ -8,7 +8,6 @@
  * two ways documented below.
  */
 
-import { SessionFailureError } from "@/agents";
 import type { ConfiguredModel } from "@/config";
 import { finishConfigSelector } from "@/config";
 import type { FinishConfig } from "@/config/selectors";
@@ -17,6 +16,7 @@ import { buildFinishFixPrompt, buildFinishHandoffPrompt } from "@/prompts";
 import type { TurnResult } from "../agents/types";
 import type { FixOutcome } from "../finish/ops";
 import type { Finding, FixContinuation } from "../finish/types";
+import { isInterruptedStale } from "./_interrupt";
 import type { RunOperationWithHooks } from "./types";
 
 /** Finish A: the handoff turn's own cap, independent of the stopped fix. */
@@ -28,14 +28,6 @@ const EMPTY_TURN: TurnResult = {
   estimatedCostUsd: 0,
   internalRoundTrips: 0,
 };
-
-function isInterruptedStale(err: unknown): boolean {
-  return (
-    err instanceof SessionFailureError &&
-    err.adapterFailure.outcome === "fail-stale" &&
-    err.adapterFailure.reason === "interrupted"
-  );
-}
 
 export interface FinishFixInput {
   phase: "acceptance" | "gate" | "review";

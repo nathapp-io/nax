@@ -38,7 +38,13 @@ export type CanonicalSessionRole =
   /** A1 — the advisor's read-only session. */
   | "advisor"
   /** US-001 — read-only NBF worth-check session. */
-  | "nbf-worth-check";
+  | "nbf-worth-check"
+  /** A5 workflow mode — the story's one implementer (warm across fix rounds 1..min(3, max)). */
+  | "wf-implementer"
+  /** A5 — fresh, read-only story review. */
+  | "wf-story-review"
+  /** A5 — fresh, read-only re-review scoped to one fix diff. */
+  | "wf-rereview";
 
 export type SessionRole = CanonicalSessionRole;
 
@@ -67,6 +73,9 @@ export const KNOWN_SESSION_ROLES: readonly CanonicalSessionRole[] = [
   "finish-fix",
   "advisor",
   "nbf-worth-check",
+  "wf-implementer",
+  "wf-story-review",
+  "wf-rereview",
 ] as const;
 
 export function isSessionRole(s: string): s is SessionRole {

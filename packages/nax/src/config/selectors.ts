@@ -148,6 +148,16 @@ export const llmRoutingConfigSelector = pickSelector(
 // `finish.timeouts.reviewMs / fixMs`; `execution.sessionTimeoutSeconds` is the fallback
 // for direct callers, matching how the acceptance ops resolve it.
 export const finishConfigSelector = pickSelector("finish", "finish", "interaction", "quality", "agent", "execution");
+export const workflowConfigSelector = pickSelector(
+  "workflow",
+  "workflow",
+  "review",
+  "execution",
+  "autoMode",
+  "quality",
+  "agent",
+  "models",
+);
 export const advisorConfigSelector = pickSelector("advisor", "advisor", "execution");
 
 // Derived config-slice types — co-located with each selector so consumers
@@ -191,4 +201,5 @@ export type NbfWorthCheckConfig = z.infer<typeof NbfWorthCheckConfigSchema>;
  */
 export type FixReviewConfig = z.infer<typeof FixReviewConfigSchema>;
 export type FinishConfig = ReturnType<typeof finishConfigSelector.select>;
+export type WorkflowOpConfig = ReturnType<typeof workflowConfigSelector.select>;
 export type AdvisorConfigSlice = ReturnType<typeof advisorConfigSelector.select>;

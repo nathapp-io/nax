@@ -1,5 +1,5 @@
 /**
- * Finish A: a step's signal is the phase signal plus its own limit. `limit` is returned
+ * Finish A / A5 workflow: a step's signal is the phase signal plus its own limit. `limit` is returned
  * alone so callers can tell a step limit (continue the loop) from a phase stop. The
  * agent's own timeout is set to the limit plus a margin, so the step limit always
  * fires first: a fail-timeout is retried without checking the abort signal.
