@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { assertDefined, makeFinishOps, makeFinishState } from "@test/helpers";
 import { commitFixes } from "@/finish";
 import { runFixStep } from "@/finish/fix-step";
+import { restorePendingNumbers } from "@/finish/handoff-state";
 import { failGit, git, now, withRepo } from "./set-aside-fixture";
 
 const finding = { severity: "LOW" as const, title: "t", problem: "p", fix: "f" };
@@ -98,6 +99,36 @@ describe("runFixStep after a restore-failed handoff (real git)", () => {
       await runFixStep(state, { ops: realFix(dir), audit, now }, "review", { findings: [finding] });
       expect(state.handoffs).toHaveLength(3);
       expect(state.handoffs.map((h) => h.settledBy)).toEqual([3, 3, undefined]);
+    });
+  });
+
+  test("a leftover whose patch could not be saved is not settled: the step fails closed and the handoff stays pending", async () => {
+    await withRepo(async (dir, audit) => {
+      const state = makeFinishState({ workdir: dir });
+      await failedSession(dir, audit, state);
+      let fixerRan = false;
+      const ops = makeFinishOps(
+        [],
+        {},
+        {
+          fix: async () => {
+            fixerRan = true;
+            return { dispositions: [] };
+          },
+        },
+      );
+      const undo = failGit((args) => args.includes("--binary")); // the patch write fails; the restore still works
+      let step: Awaited<ReturnType<typeof runFixStep>>;
+      try {
+        step = await runFixStep(state, { ops, audit, now }, "review", { findings: [finding] });
+      } finally {
+        undo();
+      }
+      expect(step.kind).toBe("failed");
+      expect(fixerRan).toBe(false);
+      expect(state.handoffs[1]).toMatchObject({ restored: true, patchSaved: false });
+      expect(state.handoffs[0]?.settledBy).toBeUndefined();
+      expect(restorePendingNumbers(state.handoffs)).toEqual([1]);
     });
   });
 

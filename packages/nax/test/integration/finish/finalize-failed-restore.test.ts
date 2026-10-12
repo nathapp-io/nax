@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { assertDefined, makeFinishOps, makeFinishState, makeMockCallContext, withTempDir } from "@test/helpers";
 import { createFinishOps } from "@/finish";
 import { runFixStep } from "@/finish/fix-step";
+import { restorePendingNumbers } from "@/finish/handoff-state";
 import type { ForgeDeps } from "@/forge";
 import { failGit, git, now, withRepo } from "./set-aside-fixture";
 
@@ -78,6 +79,28 @@ describe("finalizeDraftPr with a restore-failed handoff (real git)", () => {
         assertDefined(extra, "the leftover handoff");
         expect(extra.restored).toBe(true);
         expect(await readFile(join(extra.dir, "changes.patch"), "utf8")).toContain("half edit");
+      });
+    });
+  });
+
+  test("finalize: a leftover whose patch was not saved stays pending and the reason says the work was lost", async () => {
+    await withRepo(async (dir, audit) => {
+      await withRemote(dir, async (branch) => {
+        const state = makeFinishState({ workdir: dir, branch });
+        await failedSession(dir, audit, state);
+        const head = (await git(dir, "rev-parse", "HEAD")).trim();
+        const fin = createFinishOps({ callCtx: makeMockCallContext(), forge, forgeKind: null, audit });
+        const undo = failGit((args) => args.includes("--binary"));
+        try {
+          await fin.finalizeDraftPr(state);
+        } finally {
+          undo();
+        }
+        expect(state.handoffs[0]?.settledBy).toBeUndefined();
+        expect(restorePendingNumbers(state.handoffs)).toEqual([1]);
+        expect(state.reason).toContain("handoff 1");
+        expect(state.reason).toContain("patch was not saved");
+        expect((await git(dir, "rev-parse", "HEAD")).trim()).toBe(head);
       });
     });
   });

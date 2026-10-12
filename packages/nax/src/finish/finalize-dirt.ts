@@ -21,8 +21,7 @@ import { removeSnapshotDir, setAside } from "./set-aside";
 import type { FinishState } from "./state";
 
 /** Fail closed: say in the draft's reason that the worktree still holds uncommitted work. */
-function noteLeftDirty(state: FinishState, handoff: number): void {
-  const note = `uncommitted changes left in the worktree: handoff ${handoff} did not restore and recorded no base`;
+function noteLeftDirty(state: FinishState, note: string): void {
   const reason = state.resolution?.reason ? `${state.resolution.reason}; ${note}` : note;
   if (state.resolution) state.resolution = { ...state.resolution, reason };
   state.reason = reason;
@@ -38,7 +37,10 @@ export async function setAsideLeftoverDirt(state: FinishState, audit: AuditTarge
         storyId: "_run",
         handoff: h.dir,
       });
-      noteLeftDirty(state, h.n);
+      noteLeftDirty(
+        state,
+        `uncommitted changes left in the worktree: handoff ${h.n} did not restore and recorded no base`,
+      );
       return true;
     }
     const record = await setAside({
@@ -60,6 +62,11 @@ export async function setAsideLeftoverDirt(state: FinishState, audit: AuditTarge
     if (!record) return true;
     state.handoffs = [...state.handoffs, record];
     if (!record.restored) return true;
+    if (!record.patchSaved) {
+      // The half-edit was restored away but its patch was not written: the work is lost, so the old handoff is NOT settled.
+      noteLeftDirty(state, `handoff ${h.n}'s half-edit was removed but its patch was not saved: the work was lost`);
+      return true;
+    }
     await removeSnapshotDir(audit.auditDir, h.base.untrackedSnapshot); // this failed handoff is now settled
     state.handoffs = state.handoffs.map((x) => (x.n === h.n ? { ...x, settledBy: record.n } : x));
     if (!(await isDirty(state.workdir))) {
