@@ -243,7 +243,8 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
       // there is no tier to name yet; that bare key is exactly what `CooldownStore`
       // needs for a genuinely agent-wide failure (fail-auth, missing binary, ...) to
       // blanket every endpoint of the agent — `_live()` treats a bare key as
-      // blanket-agent only when the failure's own `cooldownScope` is `"agent"`, so a
+      // blanket-agent only when the failure's own `cooldownScope` is `"agent"` (or
+      // `"provider"` with no provider to key on), so a
       // model-scoped failure recorded here (thanks to `dispatchedModel` below, when a
       // hop reports its endpoint) still lands narrow rather than blanket. Model-identity
       // exclusion therefore engages once a tier is NAMED by a hop (a swap target, or a

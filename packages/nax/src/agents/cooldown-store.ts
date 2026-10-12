@@ -50,7 +50,11 @@ export class CooldownStore {
     // An agent-scoped fault (bad credentials, exhausted account quota) is shared
     // by every model the agent serves, so it is keyed on the bare agent name and
     // `_live` finds it from any lookup.
-    const key = failurePolicyFor(failure.outcome).cooldownScope === "agent" ? agent : identityKey(agent, tier, modelId);
+    // A provider-scoped fault (exhausted plan quota) parks every model of that
+    // provider; with no provider in the model id it degrades to the bare agent.
+    const scope = failurePolicyFor(failure.outcome).cooldownScope;
+    const key =
+      scope === "agent" ? agent : scope === "provider" ? providerKey(agent, modelId) : identityKey(agent, tier, modelId);
     this._entries.set(key, { failure, expiresAt });
   }
 
@@ -80,7 +84,7 @@ export class CooldownStore {
   /**
    * Returns the entry only while it is still in force; expires it lazily.
    *
-   * Checks the narrow identity first, then the bare agent key — but the bare key
+   * Checks the narrow identity first, then the provider key, then the bare agent key — but the bare key
    * counts only when the entry there is itself agent-scoped. An agent-scoped
    * cooldown must block EVERY tier/model of that agent, or the swap re-dispatches
    * the same broken credentials under a different tier name and buys a second
@@ -94,8 +98,14 @@ export class CooldownStore {
     const narrow = identityKey(agent, tier, modelId);
     const own = this._at(narrow);
     if (own || narrow === agent) return own;
+    const provider = providerKey(agent, modelId);
+    const byProvider = provider === agent ? undefined : this._at(provider);
+    if (byProvider) return byProvider;
+    // The bare key blankets the agent for an agent-scoped fault, and for a
+    // provider-scoped one that named no provider (it had nothing narrower to key on).
     const agentWide = this._at(agent);
-    return agentWide && failurePolicyFor(agentWide.failure.outcome).cooldownScope === "agent" ? agentWide : undefined;
+    const scope = agentWide ? failurePolicyFor(agentWide.failure.outcome).cooldownScope : undefined;
+    return scope === "agent" || scope === "provider" ? agentWide : undefined;
   }
 
   /** One key's entry, expired lazily. */
@@ -117,4 +127,16 @@ export class CooldownStore {
 function identityKey(agent: string, tier?: string, modelId?: string): string {
   if (modelId) return `${agent}::model::${modelId}`;
   return tier ? `${agent}::${tier}` : agent;
+}
+
+/** Provider prefix of a resolved `provider/model` id; the model part is never part of the key. */
+function providerOf(modelId?: string): string | undefined {
+  const slash = modelId?.indexOf("/") ?? -1;
+  return modelId && slash > 0 ? modelId.slice(0, slash) : undefined;
+}
+
+/** Provider-scoped cooldown key; the bare agent when the model id names no provider. */
+function providerKey(agent: string, modelId?: string): string {
+  const provider = providerOf(modelId);
+  return provider ? `${agent}::provider::${provider}` : agent;
 }
