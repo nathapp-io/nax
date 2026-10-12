@@ -549,3 +549,29 @@ Four stacked PRs, each code-reviewed before push:
 | P3-R8 | Residual gate diagnoses are free text. They return from the batch and go into the workflow ledger as today; they are not decisions | Spec §8: "a free-text diagnosis for each red gate"; a red gate stays red (D4) |
 | P3-R9 | A workflow ruling's "cost if wrong" is derived from the reply: `<confidence> confidence; reversible` or `hard to undo`, plus `; needs confirmation` when flagged | The reply contract has no cost field; the skill's ledger line needs one |
 | P3-R10 | PR2 carry-overs: the advisor-answer turn reuses the current round's model and time limit (PR2 final review M1); `adjudicateResidual` keeps the first ruling per finding and warns on duplicates and on rulings for unknown findings (PR2 T9) | Without M1, an answer would open a different session (the routed model) with no context once answers are real |
+
+## 17. PR4 plan rulings (2026-10-12)
+
+| # | Ruling | Why |
+|---|---|---|
+| P4-R1 | The feature workflow's state is a `WorkflowFeatureRecord` under `featureWorkflow` in the current run's `result.json`, rewritten after every step; an unfinished prior record is resumed at its step; a `done` record at the current HEAD skips the workflow | §10 resume; a re-run must not open a second review or rewrite the PR |
+| P4-R2 | Story states for the feature workflow come from every run's `result.json` (newest wins per story); passed-without-record = `complete`; otherwise `not-run` | Resumed and re-run features span run dirs |
+| P4-R3 | Draft first: push, draft PR, CI wait on it, approval, then promote or keep the draft | `gh pr checks` / `glab mr view` need a PR; finish's D7 order |
+| P4-R4 | CI wait polls through "no checks yet" and running checks until `ciWaitMs` (→ `pending`); a CLI error or unparseable output is `pending` at once | Checks register after the push; W-R9 |
+| P4-R5 | Gates again = `runQualityGates` again (its `test` gate is the full suite), only when the branch fix ran; no configured commands = "nothing verified" (draft reason, not red) | `fullSuiteGateOp` is story-scoped |
+| P4-R6 | Ready also requires that the branch review ran | Unreviewed cross-story code must not go ready |
+| P4-R7 | The fix gets review findings, fix-now minors, red repo gates and gate-open stories; the re-review judges review findings and fix-now minors; gates judge gates; adjudication covers review findings still open; unaddressed fix-now minors become `leave` | Mirrors the story loop |
+| P4-R8 | An untriaged minor is `leave` | Fail-safe |
+| P4-R9 | The feature-scoped advisor has no heads-up channel in PR4; flagged rulings keep the PR a draft and are listed in the body | No `PipelineContext` at feature level |
+| P4-R10 | The advisor is asked to approve only when every deterministic condition holds; menu approve/hold; failure = draft | §7.8, §8 default |
+| P4-R11 | Dry run / abort skip the feature workflow; a non-feature branch, no forge, or a failed push end `local-only` | Finish's push rules |
+| P4-R12 | The `status.json` `workflow` block is set at each feature step and persisted by the post-finish status write; one `Workflow complete` log line is the exit summary | Heartbeat is stopped before finish |
+| P4-R13 | `RunnerCompletionResult.workflowPassed` (optional) ANDs into `RunResult.success`; a feature-workflow throw is `false` | §7 run result |
+| P4-R14 | Pre-flight runs in `executeUnified` before the loop, fail-open, over stories not yet passed; a reusable prior `preflight.json` is adopted first | No duplicate pre-flight decisions on resume |
+| P4-R15 | Seed = merge-base(origin default) → merge-base(main) → first persisted `storyGitRef`; none → branch review skipped | §7.2 plus a repo without `main` |
+| P4-R16 | Finish / workflow delegation lives in `execution/end-phase.ts` | `runner-completion.ts` file-size limit |
+| P4-R17 | Prompt-/tool-audit rows for the new roles are checked in the live smoke | Needs a real session |
+| P4-R18 | Branch adjudication is PR3's residual batch with no `storyId` (`_run`), no carry, no gate diagnoses | Branch findings are not story-scoped |
+| P4-R19 | PR3 carry-overs M2, M5, M6 | Deferred by the PR3 final review |
+| P4-R20 | The branch fix reuses the implementer reply contract and parser; one shared `softInterruptTurn` | One write-turn contract |
+| P4-R21 | `workflowConfigSelector` gains `finish` for the branch model fallbacks | §4 fallbacks |

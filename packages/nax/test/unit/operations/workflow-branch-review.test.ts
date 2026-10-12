@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { makeNaxConfig, makeTestRuntime, opSelector } from "@test/helpers";
+import { ParseValidationError } from "@/agents";
 import { workflowConfigSelector } from "@/config";
 import { type WorkflowBranchReviewInput, workflowBranchReviewOp } from "@/operations";
 
@@ -44,5 +45,27 @@ describe("workflowBranchReviewOp", () => {
       buildCtx(),
     );
     expect(out?.minorTriage).toEqual([{ id: "M1", decision: "leave" }]);
+  });
+
+  test("timeout adds the step margin to the input timeout", () => {
+    const t = workflowBranchReviewOp.timeoutMs;
+    const ms = typeof t === "function" ? t(input, buildCtx()) : t;
+    expect(ms).toBeGreaterThan(input.timeoutMs);
+  });
+
+  test("retry: an unparseable reply is retried with a JSON-only prompt, a truncated one with the condensed prompt", () => {
+    const resolve = workflowBranchReviewOp.retry;
+    if (typeof resolve !== "function") throw new Error("retry must be a resolver");
+    const strategy = resolve(input, buildCtx());
+    if (strategy === undefined || !("shouldRetry" in strategy)) throw new Error("retry must resolve to a strategy");
+    const base = { site: "complete" as const, agentName: "claude", stage: "review" as const, storyId: "_run" };
+    const invalid = strategy.shouldRetry(new ParseValidationError("bad"), 0, { ...base, lastOutput: "not json" });
+    expect(invalid.retry).toBe(true);
+    const truncated = strategy.shouldRetry(new ParseValidationError("bad"), 0, {
+      ...base,
+      lastOutput: '{"spec": "pass", "findings": [{"issue": "cut',
+    });
+    expect(truncated.retry).toBe(true);
+    if (invalid.retry && truncated.retry) expect(truncated.nextPrompt).not.toBe(invalid.nextPrompt);
   });
 });
