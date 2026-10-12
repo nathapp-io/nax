@@ -76,18 +76,15 @@ function combine(entries: readonly (readonly [GateName, OneGate])[]): GateRunRes
 }
 
 export async function runStoryGates(sc: StepContext): Promise<GateRunResult> {
-  const commands = sc.config.quality?.commands ?? {};
+  // The ops resolve their own command (config, then manifest detection) and report
+  // status "skipped" when none exists; never pre-skip here or a detected gate goes unrun.
   const checkInput = { workdir: sc.workdir, storyId: sc.story.id, sessionScratchDir: sc.sessionScratchDir };
-  const lint: OneGate = commands.lint
-    ? await guarded("lint", async () =>
-        fromCheck("lint", await _workflowDeps.callOp(sc.callCtx, lintCheckOp, checkInput)),
-      )
-    : { state: "skipped", findings: [] };
-  const typecheck: OneGate = commands.typecheck
-    ? await guarded("typecheck", async () =>
-        fromCheck("typecheck", await _workflowDeps.callOp(sc.callCtx, typecheckCheckOp, checkInput)),
-      )
-    : { state: "skipped", findings: [] };
+  const lint = await guarded("lint", async () =>
+    fromCheck("lint", await _workflowDeps.callOp(sc.callCtx, lintCheckOp, checkInput)),
+  );
+  const typecheck = await guarded("typecheck", async () =>
+    fromCheck("typecheck", await _workflowDeps.callOp(sc.callCtx, typecheckCheckOp, checkInput)),
+  );
   const scoped = await guarded("scoped", async () => {
     const out: VerifyScopedOutput = await _workflowDeps.callOp(sc.callCtx, verifyScopedOp, {
       workdir: sc.workdir,

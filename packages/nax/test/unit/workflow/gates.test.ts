@@ -52,6 +52,7 @@ type Result = LintCheckOutput | TypecheckCheckOutput | VerifyScopedOutput | Full
 function fake(byOp: Record<string, Result | (() => Result)>): void {
   _workflowDeps.callOp = async <I, O, C>(_ctx: unknown, op: Operation<I, O, C>, _input: I): Promise<O> => {
     const v = byOp[op.name];
+    if (v === undefined) throw new Error(`fake(): no result configured for op "${op.name}"`);
     const out = typeof v === "function" ? v() : v;
     return out as O;
   };
@@ -81,10 +82,19 @@ describe("runStoryGates", () => {
     expect(r).toEqual({ red: false, states: { lint: "green", typecheck: "green", scoped: "green" }, findings: [] });
   });
 
-  test("no lint/typecheck command -> skipped, not run", async () => {
-    fake(green);
+  test("ops reporting status skipped -> skipped states, both ops still called", async () => {
+    const skipped: LintCheckOutput = { success: true, status: "skipped", findings: [], durationMs: 1 };
+    fake({ ...green, [lintCheckOp.name]: skipped, [typecheckCheckOp.name]: skipped });
+    const called: string[] = [];
+    const inner = _workflowDeps.callOp;
+    _workflowDeps.callOp = async (ctx, op, input) => {
+      called.push(op.name);
+      return inner(ctx, op, input);
+    };
     const r = await runStoryGates(sc({}));
     expect(r.states).toEqual({ lint: "skipped", typecheck: "skipped", scoped: "green" });
+    expect(r.red).toBe(false);
+    expect(called).toEqual([lintCheckOp.name, typecheckCheckOp.name, verifyScopedOp.name]);
   });
 
   test("lint findings become important gate findings", async () => {
