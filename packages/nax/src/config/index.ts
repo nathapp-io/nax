@@ -42,6 +42,12 @@ export { getProjectKey } from "./project-key";
 export { pinRootOnlyKeys, pinRootOnlyKeysRaw, ROOT_ONLY_EXECUTION_KEYS } from "./root-only-keys";
 export type { AdvisorCaller, AdvisorConfig } from "./runtime-types-advisor";
 export type {
+  ExecutionMode,
+  WorkflowConfig,
+  WorkflowModelsConfig,
+  WorkflowTimeoutsConfig,
+} from "./runtime-types-workflow";
+export type {
   AuthConfig,
   AutoModeConfig,
   AutoRouteConfig,
@@ -115,6 +121,13 @@ export {
   TierConfigSchema,
 } from "./schemas-model";
 export { AdversarialReviewConfigSchema, ReviewConfigSchema, SemanticReviewConfigSchema } from "./schemas-review";
+export {
+  ExecutionModeSchema,
+  isWorkflowMode,
+  resolveWorkflowConfig,
+  WORKFLOW_DEFAULTS,
+  WorkflowConfigObjectSchema,
+} from "./schemas-workflow";
 export type { ConfigSecretFinding, ConfigSecretKind, ConfigSecretScan } from "./secret-scan";
 export { scanConfigSecrets } from "./secret-scan";
 export type { ConfigSelector } from "./selector";

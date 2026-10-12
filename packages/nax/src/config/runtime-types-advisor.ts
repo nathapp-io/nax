@@ -16,6 +16,8 @@ export interface AdvisorCallersConfig {
 export interface AdvisorConfig {
   enabled: boolean;
   model: ConfiguredModel;
+  /** Tried in order after `model` fails (quota, error, timeout, unparseable). */
+  fallbackModels: ConfiguredModel[];
   memory: "stateless" | "warm";
   callers: AdvisorCallersConfig;
   /** Kind 2 + 3 decisions allowed per story across the whole feature. */

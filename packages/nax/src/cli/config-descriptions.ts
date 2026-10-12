@@ -59,10 +59,34 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "routing.llm.mode": "Routing mode: one-shot | per-story | hybrid",
   "routing.llm.timeoutMs": "Timeout for LLM routing call in milliseconds",
 
+  // Workflow (A5)
+  workflow:
+    "Workflow mode settings (single implementer + bounded review loop). Read only when execution.mode is workflow. Root-only",
+  "workflow.models": "Per-role model overrides for workflow mode",
+  "workflow.models.storyReview":
+    "Model for the per-story review in workflow mode; unset falls back to review.semantic.model",
+  "workflow.models.branchReview":
+    "Model for the branch-level review in workflow mode; unset falls back to finish.reviewers.quality",
+  "workflow.models.branchFix":
+    "Model for branch-level fixes in workflow mode; unset falls back to finish.reviewers.fix",
+  "workflow.maxFixRounds":
+    "Max review-fix rounds per story in workflow mode (default 5); early rounds reuse the warm implementer session, later rounds start fresh one tier up",
+  "workflow.preflight": "Run the workflow preflight checks before implementing (default true)",
+  "workflow.timeouts": "Timeouts for workflow mode phases",
+  "workflow.timeouts.implementMs": "Timeout for the implement phase in milliseconds (default 3600000)",
+  "workflow.timeouts.fixMs": "Timeout for each fix phase in milliseconds (default 3600000)",
+  "workflow.timeouts.reviewMs": "Timeout for each review phase in milliseconds (default 1800000)",
+  "workflow.timeouts.ciWaitMs": "Max time to wait for CI in milliseconds (default 1200000)",
+  "workflow.timeouts.ciPollMs": "Interval between CI status polls in milliseconds (default 30000)",
+  "advisor.fallbackModels":
+    "Models tried in order after advisor.model fails (quota, error, timeout, unparseable); default is none",
+
   // Execution
   execution: "Execution limits and timeouts",
   "execution.maxIterations":
     "Max iterations per feature run — each story attempt, parallel batch and the final completion pass counts one",
+  "execution.mode":
+    'Run mode: "pipeline" (default) runs the per-story pipeline; "workflow" runs the A5 single-implementer review loop configured by `workflow`. Root-only',
   "execution.iterationDelayMs": "Delay between iterations in milliseconds",
   "execution.costLimit": "Max cost in USD before pausing execution (override per run with `nax run --max-cost`)",
   "execution.sessionTimeoutSeconds": "Timeout per agent coding session in seconds",

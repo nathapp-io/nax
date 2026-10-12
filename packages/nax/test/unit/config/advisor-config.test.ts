@@ -14,11 +14,20 @@ describe("advisor config", () => {
     expect(parsed.advisor).toEqual({
       enabled: false,
       model: "powerful",
+      fallbackModels: [],
       memory: "stateless",
       callers: { finishJudgment: false, fixCycleGiveUp: false, uncategorisedFailure: false, finishApproval: false },
       maxRulingsPerStory: 2,
       notify: { headsUp: true },
     });
+  });
+
+  test("fallbackModels defaults to [] and accepts tiers and literal pins", () => {
+    expect(NaxConfigSchema.parse({}).advisor?.fallbackModels).toEqual([]);
+    const parsed = NaxConfigSchema.parse({
+      advisor: { fallbackModels: ["powerful", { agent: "claude", model: "sonnet[medium]" }] },
+    });
+    expect(parsed.advisor?.fallbackModels).toEqual(["powerful", { agent: "claude", model: "sonnet[medium]" }]);
   });
 
   test("a partial block keeps the other defaults", () => {
