@@ -170,6 +170,14 @@ async function fixRound(
   );
   const commit = await commitFixes(state.workdir, message, { skipHooks: true, excludeDir: deps.audit.auditDir });
   await consumeIfCommitted(state, step.continued, commit.committed);
+  // 4.3 step 3: the handoff is consumed, so its findings (exact ids; titles get reworded) follow the normal flow.
+  if (step.continued && commit.committed) {
+    ledgerEvent(state, {
+      kind: "handoff-consumed",
+      ids: step.continued.findingIds,
+      handoff: `handoff-${step.continued.n}`,
+    });
+  }
   if (commit.committed && commit.shaAfter) {
     ledgerEvent(state, {
       kind: "fixed",

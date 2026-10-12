@@ -218,3 +218,55 @@ describe("finish ledger (finish A §5)", () => {
     ]);
   });
 });
+
+describe("handoff-consumed (finish A 4.3 step 3)", () => {
+  const idsOf = (...titles: string[]): string[] => titles.map((t) => findingId(f(t)));
+
+  test("moves only the listed set-aside entries of that handoff to open", () => {
+    const l = apply([
+      { kind: "set-aside", findings: [f("A"), f("B")], handoff: "handoff-1" },
+      { kind: "set-aside", findings: [f("C")], handoff: "handoff-2" },
+      { kind: "raised", findings: [f("D")] },
+      { kind: "handoff-consumed", ids: idsOf("A", "C", "D", "Z"), handoff: "handoff-1" },
+    ]);
+    expect(l.map((e) => [e.finding.title, e.state, e.ref])).toEqual([
+      ["A", "open", undefined],
+      ["B", "set-aside", "handoff-1"],
+      ["C", "set-aside", "handoff-2"],
+      ["D", "open", undefined],
+    ]);
+  });
+
+  test("sticky and already-settled entries are untouched", () => {
+    const l = apply([
+      { kind: "set-aside", findings: [f("A"), f("B"), f("C")], handoff: "handoff-1" },
+      { kind: "ruled", finding: f("A"), state: "waived", ref: "handoff-1" },
+      { kind: "accepted", findings: [f("B")], ref: "handoff-1" },
+      { kind: "handoff-consumed", ids: idsOf("A", "B", "C"), handoff: "handoff-1" },
+    ]);
+    expect(l.map((e) => [e.finding.title, e.state])).toEqual([
+      ["A", "waived"],
+      ["B", "accepted"],
+      ["C", "open"],
+    ]);
+  });
+
+  test("a consumed entry then follows the normal flow: a later full round clears it, a re-raise keeps it open", () => {
+    const base: LedgerEvent[] = [
+      { kind: "set-aside", findings: [f("A"), f("B")], handoff: "handoff-1" },
+      { kind: "handoff-consumed", ids: idsOf("A", "B"), handoff: "handoff-1" },
+    ];
+    const l = apply([...base, { kind: "full-round", raised: [f("B")], round: 2 }]);
+    expect(l.map((e) => [e.finding.title, e.state])).toEqual([
+      ["A", "cleared"],
+      ["B", "open"],
+    ]);
+  });
+
+  test("does not mutate its input ledger", () => {
+    const before = apply([{ kind: "set-aside", findings: [f("A")], handoff: "handoff-1" }]);
+    const frozen = JSON.stringify(before);
+    applyLedgerEvent(before, { kind: "handoff-consumed", ids: idsOf("A"), handoff: "handoff-1" });
+    expect(JSON.stringify(before)).toBe(frozen);
+  });
+});

@@ -30,7 +30,9 @@ export type LedgerEvent =
   | { kind: "set-aside"; findings: Finding[]; handoff: string }
   | { kind: "ruled"; finding: Finding; state: "waived" | "superseded" | "unresolved"; ref?: string }
   | { kind: "full-round"; raised: Finding[]; round?: number }
-  | { kind: "accepted"; findings: Finding[]; ref: string };
+  | { kind: "accepted"; findings: Finding[]; ref: string }
+  /** 4.3: a continued attempt committed, so the handoff's findings (exact ledger ids) leave `set-aside` and follow the normal flow. */
+  | { kind: "handoff-consumed"; ids: string[]; handoff: string };
 
 export const OPEN_STATES: ReadonlySet<LedgerState> = new Set(["open", "rejected", "set-aside", "unresolved"]);
 const STICKY: ReadonlySet<LedgerState> = new Set(["waived", "superseded", "accepted"]);
@@ -85,6 +87,22 @@ function fullRound(ledger: readonly LedgerEntry[], raised: Finding[], round?: nu
 const setAll = (ledger: readonly LedgerEntry[], findings: Finding[], state: LedgerState, ref: string): LedgerEntry[] =>
   findings.reduce<LedgerEntry[]>((acc, f) => set(acc, f, state, ref), [...ledger]);
 
+/**
+ * Only an entry still `set-aside` under this handoff moves (to `open`): a later ruling, an acceptance or a
+ * different handoff's hold stays as it is. Matching is by exact ledger id, never by title.
+ */
+function handoffConsumed(
+  ledger: readonly LedgerEntry[],
+  ev: Extract<LedgerEvent, { kind: "handoff-consumed" }>,
+): LedgerEntry[] {
+  const ids = new Set(ev.ids);
+  return ledger.map((e) => {
+    if (e.state !== "set-aside" || e.ref !== ev.handoff || !ids.has(e.id)) return e;
+    const { ref: _ref, ...rest } = e;
+    return { ...rest, state: "open" as const };
+  });
+}
+
 /** A hold never overwrites an earlier waive / supersede / accept of the same finding. */
 function ruled(ledger: readonly LedgerEntry[], ev: Extract<LedgerEvent, { kind: "ruled" }>): LedgerEntry[] {
   const prior = ledger.find((e) => e.id === findingId(ev.finding));
@@ -107,6 +125,8 @@ export function applyLedgerEvent(ledger: readonly LedgerEntry[], ev: LedgerEvent
       return fullRound(ledger, ev.raised, ev.round);
     case "accepted":
       return setAll(ledger, ev.findings, "accepted", ev.ref);
+    case "handoff-consumed":
+      return handoffConsumed(ledger, ev);
   }
 }
 

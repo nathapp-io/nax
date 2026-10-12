@@ -5,8 +5,9 @@
  */
 import { afterEach, describe, expect, test } from "bun:test";
 import { makeHandoffRecord, makeMachineHarness, restoreFinishMachineStubs, withTempDir } from "@test/helpers";
-import type { Finding, FinishReviewOutput } from "@/finish";
+import type { Finding, FinishReviewOutput, LedgerEntry } from "@/finish";
 import { MAX_FIX_ATTEMPTS, runFinishMachine } from "@/finish";
+import { findingId } from "@/finish/ledger";
 
 afterEach(() => restoreFinishMachineStubs());
 
@@ -349,6 +350,62 @@ describe("a continued fix attempt (finish A 4.3)", () => {
       await runFinishMachine(state, deps);
       expect(trail).toContain("fix:review");
       expect(state.handoffs[0]).toMatchObject({ reapplied: true, consumed: false });
+    });
+  });
+});
+
+describe("a continued fix attempt and the ledger (finish A 4.3 step 3)", () => {
+  /** Set-aside entries under an OLD wording of the finding: the LLM rewords titles between rounds. */
+  const asideLedger = (): { ids: string[]; entries: LedgerEntry[] } => {
+    const old: Finding[] = ["Old wording one", "Old wording two"].map((title) => ({
+      severity: "MEDIUM",
+      title,
+      problem: "p",
+      fix: "f",
+      source: "quality",
+      file: "a.ts",
+    }));
+    return {
+      ids: old.map(findingId),
+      entries: old.map((finding) => ({ id: findingId(finding), finding, state: "set-aside", ref: "handoff-1" })),
+    };
+  };
+
+  test("a continued attempt that commits, then a clean full round, clears the handoff's findings: READY", async () => {
+    await withTempDir(async (dir) => {
+      const { ids, entries } = asideLedger();
+      const { deps, state } = makeMachineHarness({ auditDir: dir, script: { quality: [q("Reworded")] } });
+      state.review = { ...state.review, ledger: entries };
+      state.handoffs = [makeHandoffRecord(dir, { phase: "review", findingIds: ids })];
+      state.pendingHandoff = 1;
+      const result = await runFinishMachine(state, deps);
+      expect(state.handoffs[0]).toMatchObject({ reapplied: true, consumed: true });
+      const ofHandoff = state.review.ledger.filter((e) => ids.includes(e.id));
+      expect(ofHandoff.map((e) => e.state)).toEqual(["cleared", "cleared"]);
+      expect(result.outcome).toBe("ready");
+      expect(result.facts?.findings.some((e) => e.state === "set-aside")).toBe(false);
+    });
+  });
+
+  test("a continued attempt that commits nothing leaves the entries set-aside and the result a draft", async () => {
+    await withTempDir(async (dir) => {
+      const { ids, entries } = asideLedger();
+      const { deps, state } = makeMachineHarness({
+        auditDir: dir,
+        script: { quality: [q("Reworded")] },
+        fixIsNoop: true,
+      });
+      state.review = { ...state.review, ledger: entries };
+      state.handoffs = [makeHandoffRecord(dir, { phase: "review", findingIds: ids })];
+      state.pendingHandoff = 1;
+      const result = await runFinishMachine(state, deps);
+      expect(state.handoffs[0]).toMatchObject({ reapplied: true, consumed: false });
+      expect(state.review.ledger.filter((e) => ids.includes(e.id)).map((e) => [e.state, e.ref])).toEqual([
+        ["set-aside", "handoff-1"],
+        ["set-aside", "handoff-1"],
+      ]);
+      expect(result.outcome).toBe("draft");
+      expect(result.reason).toContain("2 set aside (handoff-1)");
     });
   });
 });
