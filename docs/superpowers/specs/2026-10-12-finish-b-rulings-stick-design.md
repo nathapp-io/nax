@@ -98,7 +98,7 @@ Same as `judgmentQuestion`, plus one evidence item `{ source: "decision", ref: "
 If a change you are about to make would undo one of these, do not make it.
 ```
 
-For the review phase it adds: a finding that can only be fixed by undoing a ruling is REJECTED with `evidence: ruling D-n`. `validateDispositions` (`finish/fix/dispositions.ts`) today splits evidence on `:` and checks the path exists, so it would mark `ruling D-n` as `evidenceMissing`. It changes: evidence matching `^ruling D-\d+$` is checked against the rulings in force instead (valid when that id is in the list; otherwise `evidenceMissing`).
+For the review phase it adds: a finding that can only be fixed by undoing a ruling is REJECTED with `evidence: ruling D-n`. `validateDispositions` (`finish/fix/dispositions.ts`) today splits evidence on `:` and checks the path exists, so it would mark `ruling D-n` as `evidenceMissing`. It changes: evidence matching `^ruling D-\d+$` is checked against the ruling ids shown to this session (`FinishFixInput.rulingIds`) instead: valid when the id is in that list, otherwise `evidenceMissing`.
 
 The text comes from a new `formatRulingsForFix` in `advisor/format.ts`, built from the same prompt-safe set as `formatDecisionsForPrompt`. `FixRequest` gains `rulings?: string`; every `runFixStep` caller loads it once per fix session.
 
@@ -142,17 +142,17 @@ After a guarded session returns `done`:
 
 1. List changed acceptance test paths in the working tree (`git diff --name-only` + untracked, limited to the group test paths).
 2. A path is **authorised** when some finding in this session's list has `allowedAcceptanceEdits` for it.
-3. Unauthorised changed paths are restored to their pre-session content, path only (`git checkout <pre-session sha> -- <path>`; set-aside's path-only restore helper where it fits). Recorded as an `acceptance-reverted` ledger event with the paths, and a line in the PR body's Unresolved section.
-4. For authorised paths, the AC blocks whose text changed are computed (block split from §5.1, before vs after). The changed AC ids go into the commit round record. Changed AC ids not in `allowedAcceptanceEdits` are **flagged, not reverted**: listed in the PR body as "Acceptance tests changed beyond the ruling".
+3. Unauthorised changed paths are restored to their pre-session content, path only (`git checkout <pre-session sha> -- <path>`; set-aside's path-only restore helper where it fits). Recorded on `state.acceptanceGuard.reverted` (so it lands in `result.json`), and a line in the PR body's Unresolved section.
+4. For authorised paths, the AC blocks whose text changed are computed (block split from §5.1, before vs after). The changed AC ids are recorded on `state.acceptanceGuard.changed`. Changed AC ids not in `allowedAcceptanceEdits` are **flagged, not reverted**: recorded on `state.acceptanceGuard.beyondRuling` and listed in the PR body as "Acceptance tests changed beyond the ruling".
 
 A session stopped mid-turn is set aside by series A. The guard runs when its patch is re-applied and committed by a later attempt, through the same path.
 
 ### 6.4 Recording
 
 - `AdviceDecision` gains `acceptanceChanges?: string[]` (the menu's `updateAcs` the ruling chose), written at decision time.
-- Finish ledger (`finish/ledger.ts`): new event `acceptance-reverted { paths }`; the `fixed` event carries `acChanged?: string[]`.
-- PR body (`finish/pr/findings-sections.ts`): a "Rulings" list with one line per waive, supersede or fix-and-update ruling used in this finish, including "acceptance tests changed: AC-40, AC-51 (D-3)", plus the two lines from §6.3.
-- `result.json` gains `rulings: { id, action, finding, anchor?, acceptanceChanges? }[]`.
+- `FinishState` gains `acceptanceGuard?: { reverted: string[]; changed: string[]; beyondRuling: string[]; failed: boolean }`, accumulated across guarded sessions. `result.json` already serialises the state, so it carries this with no new field.
+- PR body: the existing "Advisor decisions" section (`buildAdvisorSection`, `finish/pr/body.ts`) appends "— acceptance tests changed: AC-40, AC-51" to a decision with `acceptanceChanges`. The Unresolved section gains "Acceptance-file edits reverted: <paths>", "Acceptance tests changed beyond the ruling: <ids>" and "acceptance-file check could not run" from `state.acceptanceGuard`.
+- No new finish-ledger events: the guard acts on files, not findings.
 
 ## 7. Error handling
 
@@ -174,7 +174,7 @@ Unit tests (TDD, against the pure helpers and the review loop with fake ops and 
 7. Menu: `pinnedAcs` adds the fix-and-update option; `toAction` carries `updateAcs`; the decision records `acceptanceChanges`.
 8. Guard: unauthorised acceptance edit reverted and recorded; authorised edit kept; a changed AC outside the ruling flagged; acceptance-phase session not guarded.
 9. Prompts: quality lens renders decisions; fix prompts render rulings for all three phases; a blocking waive is not rendered.
-10. PR body and `result.json` show rulings and acceptance changes.
+10. PR body shows acceptance changes per decision and the guard's lines; `result.json` carries `acceptanceGuard`.
 
 **Go-live:** one live finish with the advisor on, on the next feature run that uses finish (billed, approval at launch). No new billed replay.
 
