@@ -5,8 +5,7 @@
  * that path, so the hop's already-filtered set is served as-is; everything
  * here is pure and null-safe so the adapter stays testable without a process.
  */
-import type { AcpAgentName } from "@nathapp/nax-agent-acp/client";
-import { registryEntry } from "@nathapp/nax-agent-acp/client";
+
 import type {
   CodingTool,
   EmbedderTool,
@@ -14,8 +13,10 @@ import type {
   ToolSurfaceDraft,
   ToolSurfaceRecord,
 } from "@nathapp/nax-agent";
-import type { AcpProfile } from "./profile-map";
+import type { AcpAgentName } from "@nathapp/nax-agent-acp/client";
+import { registryEntry } from "@nathapp/nax-agent-acp/client";
 import { finishToolSurface } from "../tool-surface";
+import type { AcpProfile } from "./profile-map";
 
 /**
  * Per-call result cap for MCP results served over the loopback host. The host

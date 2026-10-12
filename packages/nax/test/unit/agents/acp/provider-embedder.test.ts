@@ -46,12 +46,20 @@ describe("toEmbedderTools", () => {
 
   test("run reaches the coding tool and maps the result", async () => {
     const [tool] = toEmbedderTools([CODING_TOOL], "/repo");
-    const result = await tool?.run({ q: "x" }, { sessionId: "s", toolCallId: "c1", signal: new AbortController().signal });
+    const result = await tool?.run(
+      { q: "x" },
+      { sessionId: "s", toolCallId: "c1", signal: new AbortController().signal },
+    );
     expect(result).toEqual({ content: "ok" });
   });
 
   test("a throwing tool run reaches the model as an error, not a crash (Review Focus 5)", async () => {
-    const throwing: CodingTool = { ...CODING_TOOL, run: async () => { throw new Error("boom"); } };
+    const throwing: CodingTool = {
+      ...CODING_TOOL,
+      run: async () => {
+        throw new Error("boom");
+      },
+    };
     const [tool] = toEmbedderTools([throwing], "/repo");
     const result = await tool?.run({}, { sessionId: "s", toolCallId: "c1", signal: new AbortController().signal });
     expect(result?.isError).toBe(true);
@@ -61,7 +69,11 @@ describe("toEmbedderTools", () => {
 
 describe("finalizeAcpSurface (D3 claude-only delivery)", () => {
   test("claude: tools delivered and the surface stamped acp + narrowed profile", () => {
-    const { tools, surface } = finalizeAcpSurface("claude", optsWith({ providerTools: [CODING_TOOL], toolSurface: DRAFT }), "read");
+    const { tools, surface } = finalizeAcpSurface(
+      "claude",
+      optsWith({ providerTools: [CODING_TOOL], toolSurface: DRAFT }),
+      "read",
+    );
     expect(tools.map((tool) => tool.name)).toEqual(["context7__query-docs"]);
     expect(surface?.transport).toBe("acp");
     expect(surface?.profile).toBe("read");
@@ -69,7 +81,11 @@ describe("finalizeAcpSurface (D3 claude-only delivery)", () => {
   });
 
   test("codex: no pre-approval channel — tools dropped, the skip recorded, advertised emptied", () => {
-    const { tools, surface } = finalizeAcpSurface("codex", optsWith({ providerTools: [CODING_TOOL], toolSurface: DRAFT }), "full");
+    const { tools, surface } = finalizeAcpSurface(
+      "codex",
+      optsWith({ providerTools: [CODING_TOOL], toolSurface: DRAFT }),
+      "full",
+    );
     expect(tools).toEqual([]);
     expect(surface?.advertised).toEqual([]);
     expect(surface?.skippedProviders).toContainEqual({ id: "codex", reason: "mcp-pre-approval-unsupported" });

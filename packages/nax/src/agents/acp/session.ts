@@ -35,10 +35,10 @@ import { cancellableDelay } from "@/utils/bun-deps";
 import { type RateCard, resolveRateCard } from "../cost";
 import { AWAITING_HUMAN_BEAT_MS, createAskPort } from "./ask-port";
 import { backendOptions, DEFAULT_CLOSE_DEADLINE_MS, openContext, transcriptStoreFor } from "./open-context";
+import { acpProfileFor } from "./profile-map";
+import { finalizeAcpSurface } from "./provider-embedder";
 import type { StreamContext } from "./stream-bridge";
 import { type AuditRecorder, createAuditRecorder } from "./tool-audit";
-import { finalizeAcpSurface } from "./provider-embedder";
-import { acpProfileFor } from "./profile-map";
 import { createTurnSlot, type TurnSlot } from "./turn-slot";
 
 const STAGE = "acp";

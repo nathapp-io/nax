@@ -8,12 +8,13 @@
  * enforced at delivery time, the only point on that path where it still can be.
  */
 import {
-  mcpRuleAdmits,
   type CodingTool,
+  mcpRuleAdmits,
   type ResolvedProviderTools,
   type ToolSurfaceDraft,
   type ToolSurfaceRecord,
 } from "@nathapp/nax-agent";
+import type { CodingToolSupport } from "@nathapp/nax-agent/internal";
 
 export interface ToolSurfaceDraftInput {
   readonly stage: string;
@@ -72,7 +73,11 @@ export function filterAcpDelivery(
   for (const adapted of providerResult.tools) {
     const providerId = providerResult.providerIdByTool.get(adapted.name);
     const localName = providerId === undefined ? adapted.name : adapted.name.slice(providerId.length + 2);
-    if (rules.deniedMcp.length > 0 && providerId !== undefined && mcpRuleAdmits(rules.deniedMcp, providerId, localName)) {
+    if (
+      rules.deniedMcp.length > 0 &&
+      providerId !== undefined &&
+      mcpRuleAdmits(rules.deniedMcp, providerId, localName)
+    ) {
       withheldExtra.push({ providerId, name: localName, reason: "denied" });
       continue;
     }
@@ -83,4 +88,71 @@ export function filterAcpDelivery(
     tools.push(adapted);
   }
   return { tools, withheldExtra };
+}
+
+/** One resolve's surface evidence: the native record, the ACP draft and delivery. */
+export interface ProviderSurface {
+  readonly delivery: ReturnType<typeof filterAcpDelivery> | undefined;
+  readonly acpDraft: ReturnType<typeof buildToolSurfaceDraft> | undefined;
+  readonly toolSurface: ReturnType<typeof finishToolSurface> | undefined;
+}
+
+export const NO_PROVIDER_SURFACE: ProviderSurface = {
+  delivery: undefined,
+  acpDraft: undefined,
+  toolSurface: undefined,
+};
+
+/**
+ * nax#2410 D4 + nax#2444 D4: the native surface record, the deny/ask-filtered
+ * ACP delivery set and the ACP draft share one signal — any provider evidence
+ * at all (advertised, skipped, withheld or failed). With none, both extra
+ * fields are absent so a plain run costs nothing.
+ */
+export function resolveProviderSurface(args: {
+  providerResult: ResolvedProviderTools;
+  deniedMcp: readonly string[];
+  askedMcp: readonly string[];
+  stage: string;
+  declaredTools: readonly string[];
+}): ProviderSurface {
+  const { providerResult } = args;
+  const signal =
+    providerResult.entries.length > 0 ||
+    providerResult.skipped.length > 0 ||
+    providerResult.withheld.length > 0 ||
+    providerResult.failures.length > 0;
+  if (!signal) return NO_PROVIDER_SURFACE;
+  const delivery = filterAcpDelivery(providerResult, { deniedMcp: args.deniedMcp, askedMcp: args.askedMcp });
+  return {
+    delivery,
+    acpDraft: buildToolSurfaceDraft({
+      stage: args.stage,
+      declaredTools: args.declaredTools,
+      providerResult,
+      extraWithheld: delivery.withheldExtra,
+    }),
+    toolSurface: finishToolSurface(
+      buildToolSurfaceDraft({ stage: args.stage, declaredTools: args.declaredTools, providerResult }),
+      "native",
+    ),
+  };
+}
+
+/** Attaches the ACP delivery fields to the resolved support; no draft means nothing to attach. */
+export function attachAcpDelivery(
+  support: CodingToolSupport,
+  surface: ProviderSurface,
+  declaredTools: readonly string[],
+): CodingToolSupport {
+  if (surface.acpDraft === undefined || surface.delivery === undefined) return support;
+  return {
+    ...support,
+    ...(surface.toolSurface !== undefined ? { toolSurface: surface.toolSurface } : {}),
+    acpDelivery: {
+      tools: surface.delivery.tools,
+      declaredTools: declaredTools,
+      surface: surface.acpDraft,
+    },
+  };
 }

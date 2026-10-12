@@ -46,8 +46,18 @@ describe("resolveProviderTools", () => {
   test("records a tool rejected by admits in withheld, not advertised", async () => {
     const two = provider({
       tools: async () => [
-        { localName: "kept", description: "k", inputSchema: { type: "object", properties: {} }, run: async () => ({ content: "k" }) },
-        { localName: "dropped", description: "d", inputSchema: { type: "object", properties: {} }, run: async () => ({ content: "d" }) },
+        {
+          localName: "kept",
+          description: "k",
+          inputSchema: { type: "object", properties: {} },
+          run: async () => ({ content: "k" }),
+        },
+        {
+          localName: "dropped",
+          description: "d",
+          inputSchema: { type: "object", properties: {} },
+          run: async () => ({ content: "d" }),
+        },
       ],
     });
     const { withheld, tools } = await resolveProviderTools([two], "run", "/w/a", {

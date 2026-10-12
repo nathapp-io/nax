@@ -105,7 +105,10 @@ describe("createAuditRecorder (spec §7.4, D3-j)", () => {
     await audit.flush();
     const files = readdirSync(dir);
     expect(files).toHaveLength(1);
-    const body = JSON.parse(readFileSync(join(dir, files[0] ?? ""), "utf8")) as { toolSurface?: { transport: string; profile?: string }; calls: unknown[] };
+    const body = JSON.parse(readFileSync(join(dir, files[0] ?? ""), "utf8")) as {
+      toolSurface?: { transport: string; profile?: string };
+      calls: unknown[];
+    };
     expect(body.toolSurface?.transport).toBe("acp");
     expect(body.toolSurface?.profile).toBe("read");
     expect(body.calls).toEqual([]);

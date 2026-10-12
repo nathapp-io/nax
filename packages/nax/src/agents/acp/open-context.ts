@@ -19,8 +19,8 @@ import {
 } from "@nathapp/nax-agent";
 import type { AcpAgentName, AcpBackendOptions, AcpProcessHooks } from "@nathapp/nax-agent-acp/client";
 import { buildAllowedEnv } from "../shared/env";
-import { finalizeAcpSurface } from "./provider-embedder";
 import { acpProfileFor } from "./profile-map";
+import { finalizeAcpSurface } from "./provider-embedder";
 import type { TurnSlot } from "./turn-slot";
 
 /** The backend's option schema accepts only these names (nax-agent-acp options.ts). */

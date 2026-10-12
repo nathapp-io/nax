@@ -19,9 +19,9 @@ describe("acpProfileFor (S4b spec §6.4)", () => {
   });
 
   test("the materialized default declaration (read tools + scratchpad) narrows to read", () => {
-    expect(acpProfileFor("approve-all", ["Read", "Glob", "Grep", "ScratchpadWrite", "ScratchpadRead", "ScratchpadList"])).toBe(
-      "read",
-    );
+    expect(
+      acpProfileFor("approve-all", ["Read", "Glob", "Grep", "ScratchpadWrite", "ScratchpadRead", "ScratchpadList"]),
+    ).toBe("read");
   });
 
   test("a declaration with a write tool keeps the mode's profile", () => {

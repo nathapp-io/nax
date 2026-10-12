@@ -199,7 +199,13 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
 
   // Phase 7.5 — MCP adoption summary (nax#2410 D6): per-server offered/called
   // counts plus the zero-adoption WARN. Undefined when MCP is unconfigured.
-  const mcpAdoption = await summarizeMcpAdoptionPhase({ options, logger });
+  const mcpAdoption = await summarizeMcpAdoptionPhase({
+    workdir,
+    feature,
+    config,
+    outputDir: options.runtime.outputDir,
+    logger,
+  });
 
   // Phase 8 — final status
   await writeFinalStatus({

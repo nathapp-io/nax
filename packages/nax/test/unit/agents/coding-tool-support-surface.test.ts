@@ -49,7 +49,9 @@ const resolveWith = (execution: Record<string, unknown>, providers: readonly Too
 
 describe("native tool-surface stamping (D4)", () => {
   test("support carries a native-stamped surface with the advertised provider tools", async () => {
-    const support = await resolveWith({ permissionProfile: "unrestricted" }, [fakeProvider("context7", ["query-docs"])]);
+    const support = await resolveWith({ permissionProfile: "unrestricted" }, [
+      fakeProvider("context7", ["query-docs"]),
+    ]);
     expect(support?.toolSurface?.transport).toBe("native");
     expect(support?.toolSurface?.stage).toBe("run");
     expect(support?.toolSurface?.advertised).toEqual([{ providerId: "context7", names: ["query-docs"] }]);
@@ -58,7 +60,9 @@ describe("native tool-surface stamping (D4)", () => {
   });
 
   test("the flushed audit file carries the surface", async () => {
-    const support = await resolveWith({ permissionProfile: "unrestricted" }, [fakeProvider("context7", ["query-docs"])]);
+    const support = await resolveWith({ permissionProfile: "unrestricted" }, [
+      fakeProvider("context7", ["query-docs"]),
+    ]);
     await support?.auditSink.flush();
     const files = await readdir(AUDIT_DIR());
     expect(files.length).toBeGreaterThan(0);
@@ -76,7 +80,9 @@ describe("native tool-surface stamping (D4)", () => {
 
 describe("acpDelivery (D4 delivery filter)", () => {
   test("delivers rule-free provider tools with the materialized declaration", async () => {
-    const support = await resolveWith({ permissionProfile: "unrestricted" }, [fakeProvider("context7", ["query-docs"])]);
+    const support = await resolveWith({ permissionProfile: "unrestricted" }, [
+      fakeProvider("context7", ["query-docs"]),
+    ]);
     expect(support?.acpDelivery?.tools.map((tool) => tool.name)).toEqual(["context7__query-docs"]);
     expect(support?.acpDelivery?.declaredTools).toContain("Read");
   });

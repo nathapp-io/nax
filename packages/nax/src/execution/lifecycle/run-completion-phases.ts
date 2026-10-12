@@ -23,8 +23,10 @@
 
 import { resolveDefaultAgent } from "@/agents";
 import type { NaxConfig } from "@/config";
+import { toolAuditDir } from "@/config/paths";
 import type { purgeStaleManifests } from "@/context/engine";
 import type { Logger } from "@/logger";
+import { type McpAdoptionSummary, summarizeMcpAdoption, warnZeroAdoption } from "@/mcp";
 import type { StoryMetrics } from "@/metrics";
 import { deriveRunFallbackAggregates, saveRunMetrics } from "@/metrics";
 import { pipelineEventBus } from "@/pipeline/event-bus";
@@ -32,8 +34,6 @@ import type { PRD } from "@/prd";
 import { countStories, isComplete, isStalled } from "@/prd";
 import { totalSpendUsd } from "@/runtime";
 import { purgeStaleScratch } from "@/session";
-import { toolAuditDir } from "@/config/paths";
-import { summarizeMcpAdoption, warnZeroAdoption, type McpAdoptionSummary } from "@/mcp/adoption";
 import type { closeAllRunSessions } from "../session-manager-runtime";
 import type { StatusWriter } from "../status-writer";
 import { applyBackfill } from "./backfill-story-metrics";
@@ -365,21 +365,52 @@ export function logRunCompletion(input: {
  * Undefined when no MCP server is configured — the status block is omitted.
  */
 export async function summarizeMcpAdoptionPhase(input: {
-  options: RunCompletionOptions;
+  workdir: string;
+  feature: string;
+  config: NaxConfig;
+  /** The run output dir: the audit files' primary location (paths precedence). */
+  outputDir: string | undefined;
   logger: Logger | undefined;
 }): Promise<McpAdoptionSummary | undefined> {
-  const servers = input.options.config.mcp?.servers ?? {};
+  const servers = input.config.mcp?.servers ?? {};
   const serverIds = Object.entries(servers)
     .filter(([, server]) => server.enabled)
     .map(([id]) => id);
   if (serverIds.length === 0) return undefined;
-  const auditDir = toolAuditDir(
-    { root: input.options.workdir, outputDir: input.options.runtime.outputDir },
-    input.options.feature,
-  );
+  const auditDir = toolAuditDir({ root: input.workdir, outputDir: input.outputDir }, input.feature);
   const summary = await summarizeMcpAdoption({ serverIds, auditDir });
   warnZeroAdoption(summary, input.logger);
   return summary;
+}
+
+/**
+ * Terminal feature-status write (SFC-002). `mcpAdoption` rides the file when
+ * MCP is configured (nax#2410 D6). The status is computed here because a
+ * gating plugin failure or a cost-limit stop outranks the PRD's own state —
+ * folded in here, not via setRunStatus inside handleRunCompletion, which this
+ * write would otherwise clobber back to "completed" (#1146 G2).
+ */
+export async function writeFinalFeatureStatus(input: {
+  featureDir: string;
+  statusWriter: StatusWriter;
+  pluginGateFailed: boolean;
+  exitReason: import("../executor-types").ExitReason | undefined;
+  prd: PRD;
+  reportedTotal: number;
+  iterations: number;
+  mcpAdoption: McpAdoptionSummary | undefined;
+}): Promise<void> {
+  const finalStatus = input.pluginGateFailed
+    ? "failed"
+    : input.exitReason === "cost-limit"
+      ? "cost-limit"
+      : isComplete(input.prd)
+        ? "completed"
+        : "failed";
+  input.statusWriter.setRunStatus(finalStatus);
+  await input.statusWriter.writeFeatureStatus(input.featureDir, input.reportedTotal, input.iterations, {
+    ...(input.mcpAdoption !== undefined ? { mcpAdoption: input.mcpAdoption } : {}),
+  });
 }
 
 /**

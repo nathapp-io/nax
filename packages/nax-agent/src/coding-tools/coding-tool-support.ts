@@ -222,15 +222,7 @@ export function buildCodingToolSupport(args: {
   // P4/S5: under `raw`, an UNAVAILABLE launcher refuses every Bash call.
   // US-002: an AVAILABLE one marks the screen sandbox-wrapped, so a PRD it only reads is allowed.
   const rawScreenOptions = rawScreenOptionsFor(args.launcher);
-  const sink =
-    args.auditDir !== undefined
-      ? createToolAuditSink({
-          dir: args.auditDir,
-          sessionName: args.sessionName ?? "unattached",
-          ...(args.header ? { header: args.header } : {}),
-          ...(args.toolSurface !== undefined ? { toolSurface: args.toolSurface } : {}),
-        })
-      : createNoOpToolAuditSink();
+  const sink = supportSink(args);
   const runtime = createCodingToolRuntime({
     policy: compileToolPolicy(effectiveGrants, args.root, {
       bashApproval,
@@ -296,7 +288,28 @@ export function buildCodingToolSupport(args: {
     });
   }
   if (tools.length === 0) return undefined;
-  return { runtime, tools, auditSink: sink, ...(args.toolSurface !== undefined ? { toolSurface: args.toolSurface } : {}) };
+  return {
+    runtime,
+    tools,
+    auditSink: sink,
+    ...(args.toolSurface !== undefined ? { toolSurface: args.toolSurface } : {}),
+  };
+}
+
+/** The audit sink a support resolution records through; no dir ⇒ a non-recording sink. */
+function supportSink(args: {
+  auditDir?: string;
+  sessionName?: string;
+  header?: import("../tools/tool-audit.ts").ToolAuditHeader;
+  toolSurface?: ToolSurfaceRecord;
+}): ToolAuditSink {
+  if (args.auditDir === undefined) return createNoOpToolAuditSink();
+  return createToolAuditSink({
+    dir: args.auditDir,
+    sessionName: args.sessionName ?? "unattached",
+    ...(args.header !== undefined ? { header: args.header } : {}),
+    ...(args.toolSurface !== undefined ? { toolSurface: args.toolSurface } : {}),
+  });
 }
 
 /**

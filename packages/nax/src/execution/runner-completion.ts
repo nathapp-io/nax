@@ -31,6 +31,7 @@ import type { DeferredReviewResult } from "./deferred-review";
 import type { ExitReason } from "./executor-types";
 import type { AcceptanceLoopContext, AcceptanceLoopResult } from "./lifecycle/acceptance-loop";
 import type { RunCompletionOptions, RunCompletionResult } from "./lifecycle/run-completion";
+import { writeFinalFeatureStatus } from "./lifecycle/run-completion-phases";
 import type { AcceptancePhaseStatus } from "./status-file";
 import { hookCtx } from "./story-context";
 
@@ -387,22 +388,15 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
   // options.totalCost accumulator, which drops acceptance/review/diagnosis
   // spend (issue #909).
   if (options.featureDir) {
-    // A gating-mode plugin reviewer failure fails the run even when all stories passed
-    // (#1146 G2). Folded in here — not via setRunStatus inside handleRunCompletion, which
-    // this line would otherwise clobber back to "completed".
-    // pluginGateFailed is checked first so a genuine gate failure is never masked by a
-    // cost-limit stop — the budget being hit doesn't make a reviewer failure less real.
-    const finalStatus = pluginGateFailed
-      ? "failed"
-      : options.exitReason === "cost-limit"
-        ? "cost-limit"
-        : isComplete(options.prd)
-          ? "completed"
-          : "failed";
-    options.statusWriter.setRunStatus(finalStatus);
-    await options.statusWriter.writeFeatureStatus(options.featureDir, reportedTotal, options.iterations, {
-      // nax#2410 D6: the per-server adoption block rides the feature status file.
-      ...(mcpAdoption !== undefined ? { mcpAdoption } : {}),
+    await writeFinalFeatureStatus({
+      featureDir: options.featureDir,
+      statusWriter: options.statusWriter,
+      pluginGateFailed,
+      exitReason: options.exitReason,
+      prd: options.prd,
+      reportedTotal,
+      iterations: options.iterations,
+      mcpAdoption,
     });
   }
 

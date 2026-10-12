@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { createMemoryTranscriptStore, type OpenSessionOpts } from "@nathapp/nax-agent";
+import { type CodingTool, createMemoryTranscriptStore, type OpenSessionOpts } from "@nathapp/nax-agent";
 import { createAskPort } from "@/agents/acp/ask-port";
 import {
   backendEnv,
@@ -164,13 +164,13 @@ describe("openContext (spec §6.1 step 2)", () => {
 });
 
 describe("openContext: provider-tool delivery (nax#2444)", () => {
-  const PROVIDER_TOOL: never = {
+  const PROVIDER_TOOL: CodingTool = {
     name: "context7__query-docs",
     description: "d",
     inputSchema: { type: "object", properties: {} },
-    approval: "never",
+    scope: { pathFields: [] },
     run: async () => ({ content: "ok" }),
-  } as never;
+  };
 
   test("claude with provider tools: the context opens with them, profile narrowed by the declaration", () => {
     const slot = createTurnSlot();

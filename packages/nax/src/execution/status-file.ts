@@ -10,7 +10,7 @@
 import { rename, unlink } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { AdvisorSummary } from "@/advisor/store";
-import type { McpAdoptionSummary } from "@/mcp/adoption";
+import type { McpAdoptionSummary } from "@/mcp";
 import { NaxError } from "../errors";
 import type { FinishResult } from "../finish/types";
 import type { PRD } from "../prd";

@@ -21,13 +21,13 @@
  *   from build-hop-callback.ts (that would cycle).
  */
 
+import type { CodingToolSupport } from "@nathapp/nax-agent/internal";
 import {
   buildLedgerHeader,
   resolveCodingToolSupport,
   resolveDispatchAuditDir,
 } from "../agents/coding-tool-support-resolve";
 import type { HopKind } from "../agents/manager-types";
-import type { CodingToolSupport } from "@nathapp/nax-agent/internal";
 import { buildRunInteractionHandler } from "../agents/run-interaction-handler";
 import { applyDiffAccessForAgentProtocol, promptWithToolPreamble } from "../agents/tool-preamble";
 import type { AgentResult, AgentRunOptions, SessionHandle, TurnResult } from "../agents/types";

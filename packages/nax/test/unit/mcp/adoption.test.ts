@@ -5,11 +5,11 @@
  * (transport-agnostic); the block lands in the feature status.json.
  */
 import { describe, expect, test } from "bun:test";
-import type { Logger } from "@/logger";
-import { _mcpAdoptionDeps, summarizeMcpAdoption } from "@/mcp/adoption";
+import { makeNaxConfig } from "@test/helpers";
 import { summarizeMcpAdoptionPhase } from "@/execution/lifecycle/run-completion-phases";
 import { buildStatusSnapshot, type RunStateSnapshot } from "@/execution/status-file";
-import { makeNaxConfig } from "@test/helpers";
+import type { Logger } from "@/logger";
+import { _mcpAdoptionDeps, summarizeMcpAdoption } from "@/mcp/adoption";
 
 type AdoptionFile = {
   sessionName?: string;
@@ -96,15 +96,15 @@ describe("summarizeMcpAdoption", () => {
 });
 
 describe("summarizeMcpAdoptionPhase (run-completion phase)", () => {
-  const base = (servers: Record<string, unknown>) => ({
+  const base = (servers: Record<string, { enabled: boolean; stages: Array<"run" | "*"> }>) => ({
     workdir: "/repo",
     feature: "feat",
-    runtime: { outputDir: "/out" },
-    config: makeNaxConfig({ mcp: { servers } as never }),
+    config: makeNaxConfig({ mcp: { servers } }),
+    outputDir: "/out" as string | undefined,
   });
 
   test("no servers configured: undefined, nothing aggregated", async () => {
-    const result = await summarizeMcpAdoptionPhase({ options: base({}) as never, logger: undefined });
+    const result = await summarizeMcpAdoptionPhase({ ...base({}), logger: undefined });
     expect(result).toBeUndefined();
   });
 
@@ -113,13 +113,22 @@ describe("summarizeMcpAdoptionPhase (run-completion phase)", () => {
     Object.assign(
       _mcpAdoptionDeps,
       fsWith({
-        "1-adv.json": { sessionName: "adv", toolSurface: { advertised: [{ providerId: "cg", names: ["search"] }] }, calls: [] },
+        "1-adv.json": {
+          sessionName: "adv",
+          toolSurface: { advertised: [{ providerId: "cg", names: ["search"] }] },
+          calls: [],
+        },
       }),
     );
     const warnings: unknown[] = [];
-    const logger = { warn: (stage: string, msg: string, ctx: unknown) => warnings.push({ stage, msg, ctx }) } as unknown as Logger;
+    const logger = {
+      warn: (stage: string, msg: string, ctx: unknown) => warnings.push({ stage, msg, ctx }),
+    } as unknown as Logger;
     try {
-      const result = await summarizeMcpAdoptionPhase({ options: base({ cg: { enabled: true, stages: ["run"] } }) as never, logger });
+      const result = await summarizeMcpAdoptionPhase({
+        ...base({ cg: { enabled: true, stages: ["run"] } }),
+        logger,
+      });
       expect(result?.cg).toEqual({ sessionsOffered: 1, sessionsCalled: 0, totalCalls: 0 });
       expect(warnings).toHaveLength(1);
       expect((warnings[0] as { msg: string }).msg).toContain("cg");
