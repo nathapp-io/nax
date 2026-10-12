@@ -289,11 +289,13 @@ Smaller gaps closed in the same pass: a run abort outside a fix session (a revie
 
 ### Open items
 
-1. The live check in section 11 (plan Task 14 Step 5) is still owed. It is a billed `nax run` and needs the user's approval at launch. It must verify:
-   - the stopped turn ends within 30 s;
-   - a handoff turn follows in the same session;
-   - no commit lands from the stopped session;
-   - `finish-audit/<feature>/<runId>.handoff-1/` holds `changes.patch`, `meta.json` and `note.json`;
-   - `<runId>.checkpoint.json` exists;
-   - the draft PR's reason, findings table, Set aside and Stops match `result.json`.
+1. The live check in section 11 ran on 2026-10-12 against a throwaway fixture (local build, native agent, a recording `gh` shim and a local bare remote, so no real PR was opened; about $0.05 per run). Results:
+   - The stopped turn ended at 3.0 s against `fixMs` 3 s, and at 14.9 s against 15 s. Pass.
+   - No commit landed from a stopped session. Pass.
+   - Each stop wrote `handoff-<n>/` with `changes.patch`, `meta.json` and `note.json`, with `restored: true`. Pass.
+   - `<runId>.checkpoint.json` (version 3) existed. Pass.
+   - The draft PR's reason, findings table, Set aside and Stops sections matched the checkpoint and `result.json`, and coverage was real (spec 100%, quality 100%). Pass.
+   - The first run found that an interrupt landing mid tool-call on the native agent was reported as `fail-adapter-error` (`Tool "Write" returned unparseable arguments`). That triggered a fresh-session retry, so the handoff did not run in the warm session. Fixed (interrupted classification), and the later runs show no session re-open between the interrupt and the handoff turn.
+   - The first run also found that a continued attempt's commit left its handoff findings `set-aside`. Fixed (`handoff-consumed` event).
+   - Not re-verified live after those two fixes: a stop with a non-empty patch followed by a committed continuation. The stops in the last run came at 3 s, before any edit, so every patch was empty and every handoff read "set aside, not re-applied". That path is covered by unit and integration tests only.
 2. The `git apply --check` guard in re-apply cannot be tested independently, because `git apply` is atomic.
