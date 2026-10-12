@@ -18,7 +18,7 @@ import type { BodySection } from "@/forge";
 import { mergeTemplate } from "@/forge";
 import type { Finding, FindingDisposition, FinishRound, GateFact } from "../types";
 import type { FinishPrContext, FinishPrStory } from "./context";
-import { escapeTableCell } from "./escape";
+import { type BodyLimits, DEFAULT_LIMITS, escapeTableCell } from "./escape";
 import { block, buildFindingsTable, buildStopSections } from "./findings-sections";
 
 const SECONDS_PER_MINUTE = 60;
@@ -210,10 +210,10 @@ function renderRedGate(gate: GateFact): string {
  * accepted on a ready one. Null when there is nothing to say, so a clean
  * ready PR carries no "Unresolved" heading at all.
  */
-function buildUnresolvedSection(ctx: FinishPrContext): string | null {
+function buildUnresolvedSection(ctx: FinishPrContext, limits: BodyLimits): string | null {
   const u = ctx.unresolved;
   if (!u) return null;
-  const table = buildFindingsTable(u.ledger);
+  const table = buildFindingsTable(u.ledger, limits);
   const hasLedger = u.ledger.length > 0;
   const checks = [
     ...(u.acceptance === "red" || u.acceptance === "unverified" ? [`- Acceptance: ${u.acceptance}`] : []),
@@ -223,7 +223,9 @@ function buildUnresolvedSection(ctx: FinishPrContext): string | null {
   const shas = u.unreviewed.map((sha) => `\`${sha.slice(0, SHORT_SHA_LEN)}\``).join(", ");
   const parts = [
     ...(u.reason ? [`This PR is a draft: ${flat(u.reason)}`] : []),
-    ...(table ? [`### Findings\n${table}`] : block("Open findings", bySeverity(u.findings).map(renderOpenFinding))),
+    ...(table
+      ? [`### Findings\n${table}`]
+      : block("Open findings", bySeverity(u.findings).map(renderOpenFinding), limits.rows)),
     ...block("Verification failures", checks),
     ...block(
       "Missing reviews",
@@ -234,8 +236,8 @@ function buildUnresolvedSection(ctx: FinishPrContext): string | null {
       u.unreviewed.length > 0 ? [`- ${shas} — fixes no full review round has seen`] : [],
     ),
     // With a ledger the table already lists accepted findings (state `accepted`): never twice.
-    ...(hasLedger ? [] : block("Accepted by the advisor", bySeverity(u.accepted).map(renderOpenFinding))),
-    ...buildStopSections(u),
+    ...(hasLedger ? [] : block("Accepted by the advisor", bySeverity(u.accepted).map(renderOpenFinding), limits.rows)),
+    ...buildStopSections(u, limits),
   ];
   return parts.length > 0 ? parts.join("\n\n") : null;
 }
@@ -289,9 +291,9 @@ function buildFooter(run: FinishPrContext["run"]): string | null {
  * headings; the run footer carries an empty heading so it stays unmatchable
  * and last.
  */
-function buildBodySections(ctx: FinishPrContext): BodySection[] {
+function buildBodySections(ctx: FinishPrContext, limits: BodyLimits): BodySection[] {
   const candidates: { key: string; heading: string; body: string | null; leading?: boolean }[] = [
-    { key: "unresolved", heading: "Unresolved", body: buildUnresolvedSection(ctx), leading: true },
+    { key: "unresolved", heading: "Unresolved", body: buildUnresolvedSection(ctx, limits), leading: true },
     { key: "narrative", heading: "What changed", body: buildNarrativeSection(ctx.narrative) },
     { key: "stories", heading: "Stories", body: ctx.stories.length > 0 ? buildStoriesSection(ctx.stories) : null },
     { key: "advisor", heading: "Advisor decisions", body: buildAdvisorSection(ctx.advisorDecisions) },
@@ -325,6 +327,34 @@ function lastDroppable(sections: BodySection[]): number {
   return -1;
 }
 
+/** Tighter row/cell caps tried, in order, once dropping whole sections is not enough. */
+const TIGHTER_LIMITS: readonly BodyLimits[] = [
+  { rows: 25, cell: 100 },
+  { rows: 10, cell: 60 },
+  { rows: 3, cell: 40 },
+];
+
+/** Room kept for the closers and the note appended by the last-resort cut. */
+const CUT_RESERVE = 400;
+
+const countOf = (text: string, needle: string): number => text.split(needle).length - 1;
+
+/**
+ * The last resort: cut at a line boundary (never inside a table row or a surrogate pair), then
+ * close whatever the cut left open (a `<details>` block, a code fence) and say so.
+ */
+function cutAtBudget(body: string): string {
+  let cut = body.slice(0, BODY_BUDGET - CUT_RESERVE);
+  const newline = cut.lastIndexOf("\n");
+  if (newline > 0) cut = cut.slice(0, newline);
+  cut = cut.replace(/[\uD800-\uDBFF]$/, "");
+  const closers = [
+    ...(countOf(cut, "```") % 2 === 1 ? ["```"] : []),
+    ...(countOf(cut, "<details>") > countOf(cut, "</details>") ? ["</details>"] : []),
+  ];
+  return [cut, ...closers, "_body truncated to fit the forge's size limit_"].join("\n\n");
+}
+
 /**
  * Assemble the body, merged into the repo's own PR template when it has one.
  *
@@ -333,25 +363,34 @@ function lastDroppable(sections: BodySection[]): number {
  * it verbatim, which is what this used to do, shipped a blank form under a
  * filled one (nax#1504).
  *
- * Size: when the body would exceed `BODY_BUDGET`, the lowest-priority sections are dropped
- * last-first and a note says how many; a body still over budget (a huge narrative or template)
- * is cut at the budget. Row and cell caps keep the unresolved section itself small.
+ * Size, when the body would exceed `BODY_BUDGET`: (1) the lowest-priority sections are dropped
+ * last-first, each drop counted in a note; (2) the unresolved section is re-rendered with
+ * tighter row and cell caps (each cut table says "N more - see result.json"), so its Set aside
+ * and Stops parts survive; (3) only then is the body cut at a line boundary, with its blocks closed.
  */
 export function buildFinishBody(ctx: FinishPrContext): string {
-  let sections = buildBodySections(ctx);
+  let limits = DEFAULT_LIMITS;
+  let sections = buildBodySections(ctx, limits);
   let body = render(ctx, sections);
   let dropped = 0;
+  const withNote = (): BodySection[] =>
+    dropped === 0
+      ? sections
+      : [
+          ...sections,
+          { key: OMITTED_KEY, heading: "", body: `_${dropped} section(s) omitted to fit the forge's size limit_` },
+        ];
   for (let i = lastDroppable(sections); body.length > BODY_BUDGET && i >= 0; i = lastDroppable(sections)) {
-    sections = sections.filter((_, j) => j !== i).filter((s) => s.key !== OMITTED_KEY);
+    sections = sections.filter((_, j) => j !== i);
     dropped += 1;
-    const note = {
-      key: OMITTED_KEY,
-      heading: "",
-      body: `_${dropped} section(s) omitted to fit the forge's size limit_`,
-    };
-    body = render(ctx, [...sections, note]);
+    body = render(ctx, withNote());
   }
-  return body.length > BODY_BUDGET
-    ? `${body.slice(0, BODY_BUDGET)}\n\n_body truncated to fit the forge's size limit_`
-    : body;
+  for (const tighter of TIGHTER_LIMITS) {
+    if (body.length <= BODY_BUDGET) break;
+    limits = tighter;
+    const rebuilt = buildBodySections(ctx, limits).filter((s) => sections.some((kept) => kept.key === s.key));
+    sections = rebuilt;
+    body = render(ctx, withNote());
+  }
+  return body.length > BODY_BUDGET ? cutAtBudget(body) : body;
 }

@@ -270,3 +270,170 @@ describe("table cell escaping (finish A 7)", () => {
     expect(body).toContain("| US-9 | a\\|b \\`c\\` &lt;i&gt;d&lt;/i&gt; e | 3 |");
   });
 });
+
+describe("size budget and the last-resort cut (finish A 7)", () => {
+  const unresolvedBase = {
+    reason: "r",
+    findings: [],
+    acceptance: "green" as const,
+    gates: [],
+    missing: [],
+    unreviewed: [],
+    accepted: [],
+    ledger: [],
+    stops: [],
+    handoffs: [],
+  };
+  const row = (title: string, state: LedgerEntry["state"], ref?: string): LedgerEntry => ({
+    id: `${state}-${title.slice(0, 20)}`,
+    finding: { severity: "HIGH", title, problem: "p", fix: "f", file: "src/a.ts" },
+    state,
+    ...(ref ? { ref } : {}),
+  });
+  const LONE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+  const wellFormed = (body: string): void => {
+    expect(body.length).toBeLessThan(65_536);
+    expect(body.match(/<details>/g)?.length ?? 0).toBe(body.match(/<\/details>/g)?.length ?? 0);
+    expect((body.match(/```/g)?.length ?? 0) % 2).toBe(0);
+    for (const line of body.split("\n")) if (line.startsWith("| ")) expect(line.endsWith(" |")).toBe(true);
+    expect(LONE.test(body)).toBe(false);
+  };
+  const hostileTitle = (i: number): string => `${i} <${"😀".repeat(40)}>${"<".repeat(150)}`;
+
+  test("many escaped resolved rows: under the limit, details balanced, no row cut mid-cell, pairs intact", () => {
+    const ledger = [
+      ...Array.from({ length: 10 }, (_, i) => row(hostileTitle(i), "open")),
+      ...Array.from({ length: 60 }, (_, i) => row(hostileTitle(i + 100), "fixed-reviewed", "abcdef1")),
+    ];
+    const body = buildFinishBody(
+      baseCtx({
+        unresolved: {
+          ...unresolvedBase,
+          ledger,
+          stops: [{ kind: "fix", phase: "review", at: "t", limitMs: 1_200_000, handoff: 1, findings: 3 }],
+        },
+      }),
+    );
+    wellFormed(body);
+    expect(body).toContain("### Stops");
+    expect(body).toContain("<details>");
+  });
+
+  test("60 live rows: the resolved block, Set aside and Stops survive (tighter caps, with notes)", () => {
+    const ledger = [
+      ...Array.from({ length: 60 }, (_, i) => row(hostileTitle(i), "open")),
+      ...Array.from({ length: 60 }, (_, i) => row(hostileTitle(i + 100), "waived", "D-1")),
+    ];
+    const handoffs = [
+      {
+        n: 1,
+        dir: "/o/run-1.handoff-1",
+        phase: "review" as const,
+        limit: "fix" as const,
+        baseSha: "s",
+        headSha: "s",
+        findingIds: [],
+        newUntracked: [],
+        changedPaths: [],
+        stoppedAt: "t",
+        hasNote: false,
+        patchSaved: true,
+        restored: true,
+        consumed: false,
+        untrackedRestored: [],
+        untrackedMovedAside: [],
+        untrackedFailed: [],
+      },
+    ];
+    const body = buildFinishBody(
+      baseCtx({
+        narrative: "n",
+        unresolved: {
+          ...unresolvedBase,
+          ledger,
+          handoffs,
+          stops: [{ kind: "fix", phase: "review", at: "t", limitMs: 1_200_000, handoff: 1, findings: 3 }],
+        },
+      }),
+    );
+    wellFormed(body);
+    expect(body).toContain("### Set aside");
+    expect(body).toContain("### Stops");
+    expect(body).toContain("</details>");
+    expect(body).toContain("more - see result.json");
+  });
+
+  test("huge handoff lists tighten the caps instead of losing Stops or the table", () => {
+    const handoff = (n: number) => ({
+      n,
+      dir: `/o/run-1.handoff-${n}`,
+      phase: "review" as const,
+      limit: "fix" as const,
+      baseSha: "s",
+      headSha: "s",
+      findingIds: [],
+      newUntracked: [],
+      changedPaths: [],
+      stoppedAt: "t",
+      hasNote: false,
+      patchSaved: true,
+      restored: true,
+      consumed: false,
+      untrackedRestored: [],
+      untrackedMovedAside: Array.from({ length: 30 }, (_, i) => `${"<".repeat(60)}${n}-${i}.md`),
+      untrackedFailed: [],
+    });
+    const body = buildFinishBody(
+      baseCtx({
+        unresolved: {
+          ...unresolvedBase,
+          ledger: [row("keep me", "open"), ...Array.from({ length: 49 }, (_, i) => row(hostileTitle(i), "open"))],
+          handoffs: Array.from({ length: 50 }, (_, i) => handoff(i + 1)),
+          stops: [{ kind: "fix", phase: "review", at: "t", limitMs: 1_200_000, handoff: 1, findings: 3 }],
+        },
+      }),
+    );
+    wellFormed(body);
+    expect(body).toContain("keep me");
+    expect(body).toContain("### Stops");
+    expect(body).toContain("more - see result.json");
+    expect(body.match(/- handoff-/g)?.length ?? 0).toBeLessThan(50);
+  });
+
+  test("dropping lower sections says so", () => {
+    const body = buildFinishBody(
+      baseCtx({
+        narrative: "n",
+        stories: Array.from({ length: 3000 }, (_, i) => story({ id: `US-${i}`, title: "t".repeat(150) })),
+      }),
+    );
+    expect(body.length).toBeLessThan(65_536);
+    expect(body).toContain("1 section(s) omitted");
+    expect(body).not.toContain("US-2999");
+  });
+
+  test("the final cut lands on a line boundary, closes an open details block and keeps pairs whole", () => {
+    const narrative = `<details>\n${Array.from({ length: 700 }, () => "😀".repeat(50)).join("\n")}`;
+    const body = buildFinishBody(baseCtx({ narrative }));
+    wellFormed(body);
+    expect(body).toContain("body truncated");
+    expect(body).toContain("</details>");
+    // every kept narrative line is whole (50 emoji = 100 UTF-16 units): the cut was on a line boundary
+    for (const line of body.split("\n")) if (line.includes("😀")) expect(line.length).toBe(100);
+  });
+
+  test("a hostile severity or state prints through the escape helper", () => {
+    const odd = JSON.parse(
+      JSON.stringify({
+        id: "o",
+        finding: { severity: "HI|`<b>`", title: "t", problem: "p", fix: "f" },
+        state: "st|`<i>`",
+      }),
+    );
+    const body = buildFinishBody(baseCtx({ unresolved: { ...unresolvedBase, ledger: [odd] } }));
+    expect(body).not.toContain("<b>");
+    expect(body).not.toContain("<i>");
+    expect(body).toContain("| HI\\|\\`&lt;b&gt;\\` |");
+    expect(body).toContain("st\\|\\`&lt;i&gt;\\`");
+  });
+});

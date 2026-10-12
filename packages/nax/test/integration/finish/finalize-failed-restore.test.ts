@@ -97,6 +97,10 @@ describe("finalizeDraftPr with a restore-failed handoff (real git)", () => {
         expect((await git(dir, "rev-parse", "HEAD")).trim()).toBe(head);
         expect(await readFile(join(dir, "keep.ts"), "utf8")).toBe("export const keep = 'fixed';\n");
         expect(await readFile(join(dir, "a.ts"), "utf8")).toBe("export const a = 1;\n");
+        const extra = state.handoffs[state.handoffs.length - 1];
+        assertDefined(extra, "extra handoff");
+        expect(extra.n).toBe(2);
+        expect(await readFile(join(extra.dir, "changes.patch"), "utf8")).toContain("half edit");
       });
     });
   });
