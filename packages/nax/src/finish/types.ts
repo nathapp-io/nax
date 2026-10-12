@@ -367,4 +367,9 @@ export interface HandoffRecord {
   untrackedMovedAside: string[];
   /** Pre-existing untracked files the session changed that could not be handled safely; left as the session left them. */
   untrackedFailed: string[];
+  /**
+   * The base of the fix session this handoff set aside (including its pre-existing-untracked snapshot).
+   * Finalize needs it when the restore failed (spec 4.5). Absent on records written before it existed.
+   */
+  base?: FixBase;
 }

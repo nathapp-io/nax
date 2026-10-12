@@ -191,6 +191,20 @@ async function finalizePr(state: FinishState, deps: FinishMachineDeps, decision:
   return out;
 }
 
+/** `result.handoffs` for a state that set work aside (absent when none did); on every terminal result. */
+function handoffsField(state: FinishState): Pick<FinishResult, "handoffs"> {
+  if (state.handoffs.length === 0) return {};
+  return {
+    handoffs: state.handoffs.map((h) => ({
+      dir: h.dir,
+      limit: h.limit,
+      findingIds: h.findingIds,
+      consumed: h.consumed,
+      ...(h.reapplied !== undefined ? { reapplied: h.reapplied } : {}),
+    })),
+  };
+}
+
 async function finalizeResult(
   state: FinishState,
   deps: FinishMachineDeps,
@@ -231,17 +245,7 @@ async function finalizeResult(
     facts: { ...finalFacts, findings: [...state.review.ledger] },
     ...(acceptedResidue.length > 0 ? { acceptedResidue } : {}),
     ...(decision.outcome === "draft" ? { findings: finalFacts.findingsOpen } : {}),
-    ...(state.handoffs.length > 0
-      ? {
-          handoffs: state.handoffs.map((h) => ({
-            dir: h.dir,
-            limit: h.limit,
-            findingIds: h.findingIds,
-            consumed: h.consumed,
-            ...(h.reapplied !== undefined ? { reapplied: h.reapplied } : {}),
-          })),
-        }
-      : {}),
+    ...handoffsField(state),
     branch: state.branch,
     ...(sha ? { headSha: sha } : {}),
     ...(url ? { url } : {}),
@@ -274,6 +278,7 @@ async function failedResult(state: FinishState, deps: FinishMachineDeps, reason:
     reason,
     branch: state.branch,
     ...(sha ? { headSha: sha } : {}),
+    ...handoffsField(state),
   };
   await safeWriteResult(deps, result);
   return result;

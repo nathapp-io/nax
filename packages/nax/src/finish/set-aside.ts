@@ -158,6 +158,7 @@ function newRecord(args: SetAsideArgs, dir: string, created: string[], changedPa
     untrackedRestored: [],
     untrackedMovedAside: [],
     untrackedFailed: [],
+    base: args.base,
   };
 }
 

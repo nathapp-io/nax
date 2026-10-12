@@ -132,7 +132,9 @@ async function captureBase(state: FinishState, deps: FixStepDeps): Promise<FixBa
       return { error: new NaxError("Cannot read the worktree base", "FINISH_FIX_BASE", { stage: "finish" }) };
     }
     // Only the nax audit directory is ever cleared and written: never a user-derived path.
-    const snapshotDir = join(deps.audit.auditDir, `${deps.audit.runId}.fix-base`);
+    // One directory per prospective handoff number: a later session must not clear the snapshot
+    // an earlier, restore-failed handoff still needs at finalize.
+    const snapshotDir = join(deps.audit.auditDir, `${deps.audit.runId}.fix-base-${state.handoffs.length + 1}`);
     return {
       ...captured,
       untrackedSnapshot: await snapshotUntracked(state.workdir, captured.untrackedBefore, snapshotDir),

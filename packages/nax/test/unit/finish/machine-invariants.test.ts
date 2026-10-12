@@ -5,7 +5,13 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { makeFinishContext, makeMachineHarness, restoreFinishMachineStubs, withTempDir } from "@test/helpers";
+import {
+  makeFinishContext,
+  makeHandoffRecord,
+  makeMachineHarness,
+  restoreFinishMachineStubs,
+  withTempDir,
+} from "@test/helpers";
 import type { Finding, FinishReviewOutput } from "@/finish";
 import { readLedger, runFinishMachine } from "@/finish";
 
@@ -38,6 +44,30 @@ describe("aborts and deadlines", () => {
       expect(result.reason).toBe("aborted");
       expect(trail).not.toContain("promotePr");
       expect(trail).not.toContain("finalizeDraftPr");
+    });
+  });
+
+  test("a failed result still lists the handoffs that were set aside", async () => {
+    await withTempDir(async (dir) => {
+      const run = new AbortController();
+      const { deps, state } = makeMachineHarness({
+        auditDir: dir,
+        signal: run.signal,
+        runSignal: run.signal,
+        context: { acceptanceStatus: "disabled" },
+        ops: {
+          reviewSpec: async () => {
+            run.abort();
+            throw new Error("aborted");
+          },
+        },
+      });
+      state.handoffs = [makeHandoffRecord(dir, { findingIds: ["f1"] })];
+      const result = await runFinishMachine(state, deps);
+      expect(result.status).toBe("failed");
+      expect(result.handoffs).toEqual([
+        { dir: `${dir}/run-1.handoff-1`, limit: "fix", findingIds: ["f1"], consumed: false },
+      ]);
     });
   });
 

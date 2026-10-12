@@ -91,9 +91,9 @@ describe("finalizeDraftPr after a stop (finish A 4.5)", () => {
               untrackedRestored: [],
               untrackedMovedAside: [],
               untrackedFailed: [],
+              base: { baseSha: "sha1", headSha: "sha1", untrackedBefore: ["new.ts"] },
             },
           ],
-          lastFixBase: { baseSha: "sha1", headSha: "sha1", untrackedBefore: ["new.ts"] },
         };
         const out = await createFinishOps({
           ...deps,
@@ -117,31 +117,8 @@ describe("finalizeDraftPr after a stop (finish A 4.5)", () => {
       const { deps } = baseDeps();
       const calls: string[][] = [];
       stubDirtyGit(calls, { value: true });
-      const state = {
-        ...freshState(),
-        handoffs: [
-          {
-            n: 1,
-            dir: `${dir}/h1`,
-            phase: "review" as const,
-            limit: "flow" as const,
-            baseSha: "sha1",
-            headSha: "sha1",
-            findingIds: [],
-            newUntracked: [],
-            changedPaths: ["a.ts"],
-            stoppedAt: "t",
-            hasNote: false,
-            patchSaved: true,
-            restored: false,
-            consumed: false,
-            untrackedRestored: [],
-            untrackedMovedAside: [],
-            untrackedFailed: [],
-          },
-        ],
-        lastFixBase: { baseSha: "sha1", headSha: "sha1", untrackedBefore: [] },
-      };
+      const state = { ...freshState(), handoffs: [record(dir, false)] };
+
       await createFinishOps({ ...deps, forgeKind: null, audit: { auditDir: dir, runId: "run-1" } }).finalizeDraftPr(
         state,
       );
@@ -168,15 +145,15 @@ describe("finalizeDraftPr after a stop (finish A 4.5)", () => {
     untrackedRestored: [],
     untrackedMovedAside: [],
     untrackedFailed: [],
+    base: { baseSha: "sha1", headSha: "sha1", untrackedBefore: [] },
   });
-  const fixBase = { baseSha: "sha1", headSha: "sha1", untrackedBefore: [] };
 
   test("a restored set-aside with a recorded base does not trigger another: the dirt is committed", async () => {
     await withTempDir(async (dir) => {
       const { deps } = baseDeps();
       const calls: string[][] = [];
       stubDirtyGit(calls, { value: true });
-      const state = { ...freshState(), handoffs: [record(dir, true)], lastFixBase: fixBase };
+      const state = { ...freshState(), handoffs: [record(dir, true)] };
       await createFinishOps({ ...deps, forgeKind: null, audit: { auditDir: dir, runId: "run-1" } }).finalizeDraftPr(
         state,
       );
@@ -189,11 +166,28 @@ describe("finalizeDraftPr after a stop (finish A 4.5)", () => {
     await withTempDir(async (dir) => {
       const { deps } = baseDeps();
       stubDirtyGit([], { value: false });
-      const state = { ...freshState(), handoffs: [record(dir, false)], lastFixBase: fixBase };
+      const state = { ...freshState(), handoffs: [record(dir, false)] };
       await createFinishOps({ ...deps, forgeKind: null, audit: { auditDir: dir, runId: "run-1" } }).finalizeDraftPr(
         state,
       );
       expect(state.handoffs).toHaveLength(1);
+    });
+  });
+
+  test("a failed handoff with no recorded base fails closed: nothing committed, the draft says so", async () => {
+    await withTempDir(async (dir) => {
+      const { deps } = baseDeps();
+      const calls: string[][] = [];
+      stubDirtyGit(calls, { value: true });
+      const { base: _omitted, ...noBase } = record(dir, false);
+      const state = { ...freshState(), handoffs: [noBase] };
+      await createFinishOps({ ...deps, forgeKind: null, audit: { auditDir: dir, runId: "run-1" } }).finalizeDraftPr(
+        state,
+      );
+      expect(calls.some((a) => a[0] === "commit")).toBe(false);
+      expect(calls.some((a) => a[0] === "push")).toBe(true);
+      expect(state.handoffs).toHaveLength(1);
+      expect(state.reason).toContain("uncommitted changes left in the worktree");
     });
   });
 
