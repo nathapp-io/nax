@@ -143,5 +143,16 @@ export type { VerifierInput, VerifierOutput } from "./verify";
 export { verifierOp, verifyTddOp } from "./verify";
 export type { VerifyScopedDeps, VerifyScopedInput, VerifyScopedOutput } from "./verify-scoped";
 export { _verifyScopedDeps, verifyScopedOp } from "./verify-scoped";
+export type {
+  GateName,
+  ImplementerReply,
+  ImplementerStatus,
+  ReReviewVerdict,
+  StoryReviewVerdict,
+  WorkflowFinding,
+  WorkflowFindingDraft,
+  WorkflowFindingKind,
+  WorkflowSeverity,
+} from "./workflow-types";
 export type { TestWriterInput, TestWriterOutput } from "./write-test";
 export { testWriterOp, writeTddTestOp } from "./write-test";
