@@ -32,11 +32,41 @@ function what(d: AdviceDecision): string {
   return d.action.type === "supersede" ? `supersede ${describeTarget(d.action.target)}` : d.action.type;
 }
 
-function isReusable(v: unknown): v is PreflightFile {
-  if (typeof v !== "object" || v === null) return false;
-  const o = v as Record<string, unknown>;
-  return o.schemaVersion === 1 && Array.isArray(o.overlap) && Array.isArray(o.conflicts) && !o.fallbackReason;
+function isRecordObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
 }
+
+function isStringArray(v: unknown): v is string[] {
+  return Array.isArray(v) && v.every((s) => typeof s === "string");
+}
+
+function isOverlapEntry(v: unknown): boolean {
+  return isRecordObject(v) && typeof v.storyId === "string" && isStringArray(v.specSections);
+}
+
+function isConflictRecord(v: unknown): boolean {
+  return (
+    isRecordObject(v) &&
+    typeof v.questionId === "string" &&
+    isStringArray(v.storyIds) &&
+    typeof v.summary === "string" &&
+    (v.decisionId === null || typeof v.decisionId === "string") &&
+    typeof v.action === "string"
+  );
+}
+
+/** Reusable = this schema, every element well-formed (PR3 M6), and not a failed pre-flight. */
+function isReusable(v: unknown): v is PreflightFile {
+  if (!isRecordObject(v) || v.schemaVersion !== 1 || v.fallbackReason) return false;
+  return (
+    Array.isArray(v.overlap) &&
+    v.overlap.every(isOverlapEntry) &&
+    Array.isArray(v.conflicts) &&
+    v.conflicts.every(isConflictRecord)
+  );
+}
+
+export const isReusablePreflight = isReusable;
 
 async function readExisting(path: string): Promise<PreflightFile | null> {
   const file = Bun.file(path);

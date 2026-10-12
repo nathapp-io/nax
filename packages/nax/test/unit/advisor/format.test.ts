@@ -89,3 +89,25 @@ describe("formatRulingsForFix", () => {
     expect(formatRulingsForFix([])).toEqual({ text: "", ids: [] });
   });
 });
+
+describe("waived subject (PR3 M5)", () => {
+  test("a residual waive with no dedupeKey names the ruled finding and its file", () => {
+    const text = formatDecisionsForPrompt([
+      d(
+        "D-9",
+        { type: "waive", reason: "reviewer misread" },
+        { kind: "residual", rulingTitle: "Missing null check", anchorFile: "src/a.ts", storyId: "US-3" },
+      ),
+    ]);
+    expect(text).toContain("D-9 waived: Missing null check (src/a.ts) — reviewer misread");
+  });
+
+  test("rulingTitle without a file; and the story id as the last fallback", () => {
+    expect(formatDecisionsForPrompt([d("D-1", { type: "waive", reason: "r" }, { rulingTitle: "T" })])).toContain(
+      "D-1 waived: T — r",
+    );
+    expect(formatDecisionsForPrompt([d("D-2", { type: "waive", reason: "r" }, { storyId: "US-4" })])).toContain(
+      "D-2 waived: US-4 — r",
+    );
+  });
+});

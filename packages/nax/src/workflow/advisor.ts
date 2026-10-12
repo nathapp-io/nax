@@ -36,3 +36,8 @@ export const defaultWorkflowAdvisor: WorkflowAdvisor = {
   answerQuestion: async () => null,
   ruleResidual: async (req) => ({ rulings: req.items.map(defaultHold), diagnoses: {} }),
 };
+
+/** A ruling a human must look at before the PR is ready (spec §7.8): a hold, or an advisor-flagged decision. */
+export function isFlaggedRuling(r: WorkflowRuling): boolean {
+  return r.action === "hold" || r.needsHumanConfirm === true;
+}

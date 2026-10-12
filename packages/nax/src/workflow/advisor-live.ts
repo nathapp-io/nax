@@ -7,10 +7,14 @@ import type { PRD } from "@/prd";
 import type { ResidualAnswer, ResidualRequest, WorkflowAdvisor } from "./advisor";
 import type { GateName, WorkflowFinding, WorkflowRuling } from "./types";
 
+/** The ledger/log scope for work that belongs to no single story. */
+export const FEATURE_SCOPE = "_run";
+
 export interface LiveAdvisorInput {
   readonly advisor: Advisor;
   readonly feature: string;
-  readonly storyId: string;
+  /** Absent: a feature-scoped residual (branch adjudication, P4-R18). */
+  readonly storyId?: string;
   /** Stories that depend on this one and have not passed yet (carry targets, P3-R1). */
   readonly dependents: readonly string[];
 }
@@ -39,6 +43,7 @@ export function toWorkflowRuling(findingId: string, d: AdviceDecision): Workflow
     costIfWrong: costIfWrongOf(d),
     source: "advisor" as const,
     decisionId: d.id,
+    ...(d.needsHumanConfirm ? { needsHumanConfirm: true } : {}),
   };
   const a = d.action;
   switch (a.type) {
@@ -87,7 +92,7 @@ export function createLiveWorkflowAdvisor(input: LiveAdvisorInput): WorkflowAdvi
       const items: QuestionDraft[] = req.items.map((f) => ({
         kind: "residual",
         feature,
-        storyId,
+        ...(storyId ? { storyId } : {}),
         summary: f.issue,
         evidence: [{ source: f.kind === "gate" ? "gate" : "finding", ref: f.id, text: findingEvidence(f) }],
         options: buildMenu({ kind: "residual", dependents: [...dependents] }),
@@ -97,8 +102,10 @@ export function createLiveWorkflowAdvisor(input: LiveAdvisorInput): WorkflowAdvi
       }));
       const result = await advisor.adviseBatch({
         kind: "residual",
-        storyId,
-        summary: `${storyId} reached its fix-round cap with ${req.items.length} open item(s).`,
+        storyId: storyId ?? FEATURE_SCOPE,
+        summary: storyId
+          ? `${storyId} reached its fix-round cap with ${req.items.length} open item(s).`
+          : `The branch review left ${req.items.length} open item(s) after its one fix pass.`,
         items,
         redGates: [...req.redGates],
       });

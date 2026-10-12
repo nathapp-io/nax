@@ -4,7 +4,7 @@
  * an end state; it never fails or pauses a story.
  */
 import { adjudicateResidual } from "./adjudicate";
-import type { WorkflowAdvisor } from "./advisor";
+import { isFlaggedRuling, type WorkflowAdvisor } from "./advisor";
 import { deriveEndState } from "./close";
 import type { ImplementOutcome, ImplementTurn } from "./implement";
 import { ledgerText } from "./ledger";
@@ -276,7 +276,14 @@ async function closeLoop(
   reason: string,
   rulings: readonly WorkflowRuling[],
 ): Promise<StoryLoopOutcome> {
-  await env.sink.update({ state, reason, phase: "closed", rulings: rulings.length, endedAt: new Date().toISOString() });
+  await env.sink.update({
+    state,
+    reason,
+    phase: "closed",
+    rulings: rulings.length,
+    flagged: rulings.filter(isFlaggedRuling).length,
+    endedAt: new Date().toISOString(),
+  });
   await env.sink.ledger(ledgerText.end(state, `${s.round} round(s), ${reason}${s.unreviewed ? ", unreviewed" : ""}`));
   return { state, reason, rounds: s.round, rulings, unreviewed: s.unreviewed };
 }

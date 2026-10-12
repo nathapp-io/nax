@@ -36,6 +36,8 @@ export interface WorkflowRuling {
   readonly decisionId?: string;
   /** carry only: the dependent stories whose briefs receive the instruction. */
   readonly toStories?: readonly string[];
+  /** The advisor asked for a human to confirm this ruling (keeps the PR a draft). */
+  readonly needsHumanConfirm?: boolean;
 }
 
 export interface WorkflowStoryRecord {
@@ -51,6 +53,8 @@ export interface WorkflowStoryRecord {
   readonly nextFindingId: number;
   readonly deferredMinors: number;
   readonly rulings: number;
+  /** Rulings flagged for a human (hold, or needs confirmation), set at close. */
+  readonly flagged?: number;
   readonly gates: Readonly<Partial<Record<GateName, GateState>>>;
   readonly timings: Readonly<Record<string, number>>;
   readonly startedAt: string;

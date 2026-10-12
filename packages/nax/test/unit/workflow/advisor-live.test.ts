@@ -1,7 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { makeTestPRD, makeTestStory } from "@test/helpers";
 import type { AdviceDecision, Advisor, BatchRequest, BatchResult, QuestionDraft } from "@/advisor";
-import { costIfWrongOf, createLiveWorkflowAdvisor, dependentsOf, toWorkflowRuling } from "@/workflow/advisor-live";
+import {
+  costIfWrongOf,
+  createLiveWorkflowAdvisor,
+  dependentsOf,
+  FEATURE_SCOPE,
+  toWorkflowRuling,
+} from "@/workflow/advisor-live";
 
 function decision(over: Partial<AdviceDecision>): AdviceDecision {
   return {
@@ -199,5 +205,32 @@ describe("helpers", () => {
       makeTestStory({ id: "US-6", dependencies: ["US-1"], passes: false }),
     ]);
     expect(dependentsOf(prd, "US-3")).toEqual(["US-4"]);
+  });
+});
+
+describe("feature-scoped residual (P4-R18)", () => {
+  test("no storyId: request storyId _run, items carry no storyId, no carry option", async () => {
+    const advisor = fakeAdvisor({});
+    const live = createLiveWorkflowAdvisor({ advisor, feature: "f", dependents: [] });
+    await live.ruleResidual({
+      storyId: FEATURE_SCOPE,
+      items: [{ id: "B1", kind: "quality", severity: "important", issue: "contract drift" }],
+      redGates: [],
+    });
+    const req = advisor.batches[0];
+    if (req?.kind !== "residual") throw new Error("expected a residual batch");
+    expect(req.storyId).toBe(FEATURE_SCOPE);
+    expect(req.storyId).toBe("_run");
+    expect(req.summary).toContain("branch review");
+    expect(req.items[0]?.storyId).toBeUndefined();
+    expect(req.items[0]?.options.map((o) => o.type)).toEqual(["waive", "defer", "hold"]);
+  });
+
+  test("toWorkflowRuling keeps needsHumanConfirm", () => {
+    const ruling = toWorkflowRuling(
+      "F1",
+      decision({ action: { type: "defer", reason: "later" }, needsHumanConfirm: true }),
+    );
+    expect(ruling?.needsHumanConfirm).toBe(true);
   });
 });
