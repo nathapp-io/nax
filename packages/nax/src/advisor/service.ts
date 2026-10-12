@@ -21,8 +21,8 @@ import type { AdviceAuditRecord } from "./audit";
 import { captureWorktreePatch, writeAdviceAudit } from "./audit";
 import type { HeadsUpChannel } from "./heads-up";
 import { formatHeadsUp } from "./heads-up";
-import { appendDecision, readTrustedDecisions } from "./ledger";
 import { advisorLadder, usableAdvisorModels } from "./ladder";
+import { appendDecision, readTrustedDecisions } from "./ledger";
 import { forcedConfirm, toAction } from "./menus";
 import type { AdviceDecision, AdviceQuestion, AdviceResult, AdvisorReply } from "./types";
 

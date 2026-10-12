@@ -54,7 +54,11 @@ export class CooldownStore {
     // provider; with no provider in the model id it degrades to the bare agent.
     const scope = failurePolicyFor(failure.outcome).cooldownScope;
     const key =
-      scope === "agent" ? agent : scope === "provider" ? providerKey(agent, modelId) : identityKey(agent, tier, modelId);
+      scope === "agent"
+        ? agent
+        : scope === "provider"
+          ? providerKey(agent, modelId)
+          : identityKey(agent, tier, modelId);
     this._entries.set(key, { failure, expiresAt });
   }
 

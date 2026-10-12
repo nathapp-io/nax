@@ -265,8 +265,12 @@ test("every ladder entry failing returns the existing no-decision result (Review
     const out = await createAdvisor(ladderActx(dir)).advise(judgment);
     expect(out.decision).toBeNull();
     expect(out.fallbackReason?.startsWith("dispatch:")).toBe(true);
-    const files = await Array.fromAsync(new Bun.Glob("*.json").scan({ cwd: join(dir, "out", "advisor-audit", "feat") }));
-    const audit = JSON.parse(await Bun.file(join(dir, "out", "advisor-audit", "feat", files[0]!)).text());
+    const files = await Array.fromAsync(
+      new Bun.Glob("*.json").scan({ cwd: join(dir, "out", "advisor-audit", "feat") }),
+    );
+    const auditFile = files[0] ?? "";
+    expect(auditFile).not.toBe("");
+    const audit = JSON.parse(await Bun.file(join(dir, "out", "advisor-audit", "feat", auditFile)).text());
     expect(audit.attempts).toHaveLength(2);
   });
 });

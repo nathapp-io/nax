@@ -2,31 +2,31 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DEFAULT_CONFIG, type NaxConfig } from "@/config";
+import { makeNaxConfig } from "@test/helpers";
+import type { NaxConfig } from "@/config";
 import { _clearRootConfigCache, loadConfigForWorkdir } from "@/config/loader";
 import { applyWorkflowMode } from "@/config/workflow-mode";
 
 type Mode = "pipeline" | "workflow";
 
-function makeConfig(opts: { mode?: Mode; acceptance: boolean; advisor?: boolean }): NaxConfig {
-  return {
-    ...DEFAULT_CONFIG,
-    execution: { ...DEFAULT_CONFIG.execution, mode: opts.mode ?? "pipeline" },
-    acceptance: { ...DEFAULT_CONFIG.acceptance, enabled: opts.acceptance },
-    ...(opts.advisor === undefined ? {} : { advisor: { ...DEFAULT_CONFIG.advisor, enabled: opts.advisor } }),
-  } as NaxConfig;
+function configFor(opts: { mode?: Mode; acceptance: boolean; advisor?: boolean }): NaxConfig {
+  return makeNaxConfig({
+    execution: { mode: opts.mode ?? "pipeline" },
+    acceptance: { enabled: opts.acceptance },
+    ...(opts.advisor === undefined ? {} : { advisor: { enabled: opts.advisor } }),
+  });
 }
 
 describe("applyWorkflowMode", () => {
   test("pipeline mode returns the same object untouched and never warns", () => {
-    const cfg = makeConfig({ acceptance: true });
+    const cfg = configFor({ acceptance: true });
     const warnings: string[] = [];
     expect(applyWorkflowMode(cfg, (m) => warnings.push(m))).toBe(cfg);
     expect(warnings).toEqual([]);
   });
 
   test("workflow mode forces acceptance off and the advisor on, with ONE warning naming both", () => {
-    const cfg = makeConfig({ mode: "workflow", acceptance: true, advisor: false });
+    const cfg = configFor({ mode: "workflow", acceptance: true, advisor: false });
     const warnings: string[] = [];
     const out = applyWorkflowMode(cfg, (m) => warnings.push(m));
     expect(out.acceptance.enabled).toBe(false);
@@ -38,7 +38,7 @@ describe("applyWorkflowMode", () => {
   });
 
   test("workflow mode with keys already at their forced values does not warn", () => {
-    const cfg = makeConfig({ mode: "workflow", acceptance: false, advisor: true });
+    const cfg = configFor({ mode: "workflow", acceptance: false, advisor: true });
     const warnings: string[] = [];
     applyWorkflowMode(cfg, (m) => warnings.push(m));
     expect(warnings).toEqual([]);

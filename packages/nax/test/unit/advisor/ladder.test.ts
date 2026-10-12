@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { ADVISOR_DEFAULTS } from "@/config";
 import { advisorLadder, usableAdvisorModels } from "@/advisor/ladder";
+import { ADVISOR_DEFAULTS } from "@/config";
 
 const ds = { agent: "native", model: "opencode-go/deepseek-v4.1-flash[high]" } as const;
 const sol = { agent: "native", model: "openai-codex/gpt-6.1-sol[medium]" } as const;
