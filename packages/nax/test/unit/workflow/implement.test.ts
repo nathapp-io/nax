@@ -129,9 +129,21 @@ describe("runImplementerTurn", () => {
 
   test("answer turn after a stepped-up fresh round uses that round's model and fixMs, and never closes the session", async () => {
     const closes: string[] = [];
+    const descriptor: SessionDescriptor = {
+      id: "sess-1",
+      role: "wf-implementer",
+      state: "RUNNING",
+      agent: "claude",
+      workdir: "/repo",
+      protocolIds: { recordId: null, sessionId: null },
+      handle: "h1",
+      completedStages: [],
+      createdAt: "",
+      lastActivityAt: "",
+    };
     const sessionManager = {
-      getForStory: () => [],
-      getLiveHandle: () => undefined,
+      getForStory: () => [descriptor],
+      getLiveHandle: () => ({ id: "live", agentName: "claude" }),
       closeSession: async () => {
         closes.push("close");
       },
@@ -166,6 +178,7 @@ describe("runImplementerTurn", () => {
     });
     expect(seen[0]?.model).toBeUndefined();
     expect(seen[0]?.timeoutMs).toBe(111);
+    expect(seen[0]?.prompt).toContain("Use X");
   });
 
   test("fresh fix turn: closes the warm session first, stepped-up model, fixMs, uncommitted files in prompt", async () => {
