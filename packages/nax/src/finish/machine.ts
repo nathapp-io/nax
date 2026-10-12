@@ -18,6 +18,7 @@ import { runAcceptanceLoop } from "./acceptance-loop";
 import type { FinishAdvisor } from "./advise";
 import { type WriteResultOptions, writeResult } from "./audit";
 import { changedFiles } from "./changed-files";
+import { writeCheckpoint } from "./checkpoint";
 import { headSha } from "./commit";
 import { runGatesLoop } from "./gates-loop";
 import { applyLedgerEvent } from "./ledger";
@@ -140,8 +141,13 @@ async function reReview(state: FinishState, deps: FinishMachineDeps, rdeps: Revi
   state.review = { ...state.review, reReviewUsed: true };
   const before = await headSha(state.workdir);
   await runReviewLoop(state, rdeps, 1);
-  if ((await headSha(state.workdir)) !== before) await runAcceptanceLoop(state, deps);
+  await writeCheckpoint(deps.audit, state);
+  if ((await headSha(state.workdir)) !== before) {
+    await runAcceptanceLoop(state, deps);
+    await writeCheckpoint(deps.audit, state);
+  }
   await runGatesLoop(state, deps, rdeps);
+  await writeCheckpoint(deps.audit, state);
 }
 
 type Decision =
@@ -211,6 +217,7 @@ async function finalizeResult(
   if (reason) state.reason = reason;
   const out = await finalizePr(state, deps, decision);
   state.status = out.status;
+  await writeCheckpoint(deps.audit, state);
   // The PR path can add a commit to the facts (an unreviewed recovery commit).
   const finalFacts = state.resolution?.facts ?? facts;
   const sha = await headSha(state.workdir);
@@ -287,6 +294,7 @@ async function recoverAfterThrow(
   if (deps.runSignal?.aborted) return failedResult(state, deps, "aborted");
   if (state.finalizing) return failedResult(state, deps, message);
   recordFlowStop(state, deps);
+  await writeCheckpoint(deps.audit, state);
   const prefix = deps.signal?.aborted ? (stopReason(state.stops) ?? "deadline") : `finish error: ${message}`;
   try {
     const changed = inputs?.changed ?? (await changedFiles(state.workdir, state.base));
@@ -309,17 +317,21 @@ export async function runFinishMachine(state: FinishState, deps: FinishMachineDe
     if (pre) return pre;
     state.step = "acceptance";
     await runAcceptanceLoop(state, deps);
+    await writeCheckpoint(deps.audit, state);
     await maybeOpenDraftPr(state, deps);
     inputs = await loadReviewInputs(state, deps.outputDir);
     const rdeps = reviewLoopDeps(deps, inputs);
     state.step = "review";
     await runReviewLoop(state, rdeps);
+    await writeCheckpoint(deps.audit, state);
     if (state.review.committedFixes) {
       state.step = "acceptance";
       await runAcceptanceLoop(state, deps);
+      await writeCheckpoint(deps.audit, state);
     }
     state.step = "gate";
     await runGatesLoop(state, deps, rdeps);
+    await writeCheckpoint(deps.audit, state);
     state.step = "resolve";
     return await resolveAndFinalize(state, deps, rdeps);
   } catch (err) {

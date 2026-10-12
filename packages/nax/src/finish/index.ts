@@ -35,6 +35,7 @@ export {
   writeResult,
 } from "./audit";
 export { changedFiles } from "./changed-files";
+export { _checkpointDeps, checkpointPath, writeCheckpoint } from "./checkpoint";
 export {
   _finishGitDeps,
   buildCommitRound,

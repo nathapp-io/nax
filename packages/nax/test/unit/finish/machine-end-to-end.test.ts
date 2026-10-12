@@ -4,6 +4,8 @@
  * deadlines live in `machine-invariants.test.ts`; the fix/re-review loops in `machine-loops.test.ts`.
  */
 import { afterEach, describe, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { assertDefined, makeMachineHarness, restoreFinishMachineStubs, withTempDir } from "@test/helpers";
 import type { Finding, FinishReviewOutput } from "@/finish";
 import { resultPath, runFinishMachine } from "@/finish";
@@ -43,6 +45,7 @@ describe("machine-end-to-end", () => {
       ]);
       expect(state.prUrl).toBe("https://x/pr/1");
       expect(state.resolution?.outcome).toBe("ready");
+      expect(existsSync(join(dir, "run-1.checkpoint.json"))).toBe(true);
     });
   });
 

@@ -11,6 +11,7 @@ import { getSafeLogger } from "@/logger";
 import type { AdviceRef, FinishAdvisor, JudgedResult } from "./advise";
 import { judgeWithoutAdvisor } from "./advise";
 import { type AuditTarget, recordRound } from "./audit";
+import { writeCheckpoint } from "./checkpoint";
 import { buildCommitRound, commitFixes } from "./commit";
 import { buildFixCommitMessage } from "./commit-message";
 import { consumeIfCommitted, type FixStepDeps, runFixStep } from "./fix-step";
@@ -230,6 +231,7 @@ async function runOneRound(state: FinishState, deps: ReviewLoopDeps, limit: numb
   });
   // A round that saw both lenses has seen every commit made before it (its own fix commit excluded).
   if (round.missing.length === 0) state.unreviewedFixCommits = [];
+  await writeCheckpoint(deps.audit, state);
   if (fixList.length === 0) return true;
   await fixRound(state, deps, fixList, judged.advice, state.review.rounds >= limit);
   return false;

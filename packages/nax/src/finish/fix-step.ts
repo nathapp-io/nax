@@ -15,6 +15,7 @@ import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import type { AuditTarget } from "./audit";
+import { writeCheckpoint } from "./checkpoint";
 import { findingId } from "./ledger";
 import type { FinishOps, FixOutcome, FixPhase, FixRequest } from "./ops";
 import {
@@ -196,6 +197,12 @@ export async function consumeIfCommitted(
   replaceHandoff(state, await markHandoffConsumed(continued));
 }
 
+/** §4.4: the step is complete, so the state is checkpointed. Never throws, so it cannot mask a later FINISH_ABORTED. */
+async function checkpointed(state: FinishState, deps: FixStepDeps, result: FixStepResult): Promise<FixStepResult> {
+  await writeCheckpoint(deps.audit, state);
+  return result;
+}
+
 export async function runFixStep(
   state: FinishState,
   deps: FixStepDeps,
@@ -204,7 +211,7 @@ export async function runFixStep(
 ): Promise<FixStepResult> {
   abortIfPhaseStopped(deps);
   const captured = await captureBase(state, deps);
-  if ("error" in captured) return { kind: "failed", error: captured.error };
+  if ("error" in captured) return checkpointed(state, deps, { kind: "failed", error: captured.error });
   const base = captured;
   state.lastFixBase = base;
   // After the base is captured, so stopping again also sets the re-applied edits aside.
@@ -222,12 +229,15 @@ export async function runFixStep(
     // Any throw after the step limit fired is treated as a `fix` stop, whatever its message.
     const kind = stopKind(deps, limit) ?? "error";
     const handoff = await setAsideStep(state, deps, { phase, base, req, limit: kind });
-    if (kind === "error") return { kind: "failed", error, handoff };
+    if (kind === "error") return checkpointed(state, deps, { kind: "failed", error, handoff });
+    await writeCheckpoint(deps.audit, state);
     abortIfPhaseStopped(deps);
     return { kind: "stopped", handoff };
   }
   const kind = stopKind(deps, limit, outcome);
-  if (!kind) return { kind: "done", outcome, ...(cont ? { continued: cont.record } : {}) };
+  if (!kind) {
+    return checkpointed(state, deps, { kind: "done", outcome, ...(cont ? { continued: cont.record } : {}) });
+  }
   const handoff = await setAsideStep(state, deps, {
     phase,
     base,
@@ -235,6 +245,7 @@ export async function runFixStep(
     limit: kind,
     ...(outcome.handoffNote ? { note: outcome.handoffNote } : {}),
   });
+  await writeCheckpoint(deps.audit, state);
   abortIfPhaseStopped(deps);
   return { kind: "stopped", handoff };
 }

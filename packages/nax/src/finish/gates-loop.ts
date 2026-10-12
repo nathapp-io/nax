@@ -6,6 +6,7 @@
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "@/logger";
 import { recordRound } from "./audit";
+import { writeCheckpoint } from "./checkpoint";
 import { buildCommitRound, commitFixes, filesInCommit } from "./commit";
 import { buildFixCommitMessage } from "./commit-message";
 import { consumeIfCommitted, runFixStep } from "./fix-step";
@@ -52,6 +53,7 @@ async function recordGateRound(state: FinishState, deps: FinishMachineDeps, fail
     findings: [],
     failing,
   });
+  await writeCheckpoint(deps.audit, state);
 }
 
 async function fixOnce(
