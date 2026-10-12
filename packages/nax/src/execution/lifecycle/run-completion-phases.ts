@@ -23,8 +23,10 @@
 
 import { resolveDefaultAgent } from "@/agents";
 import type { NaxConfig } from "@/config";
+import { toolAuditDir } from "@/config/paths";
 import type { purgeStaleManifests } from "@/context/engine";
 import type { Logger } from "@/logger";
+import { type McpAdoptionSummary, summarizeMcpAdoption, warnZeroAdoption } from "@/mcp";
 import type { StoryMetrics } from "@/metrics";
 import { deriveRunFallbackAggregates, saveRunMetrics } from "@/metrics";
 import { pipelineEventBus } from "@/pipeline/event-bus";
@@ -354,6 +356,61 @@ export function logRunCompletion(input: {
     ...(Object.keys(aggByStory).length > 0 && { costByStory: aggByStory }),
     durationMs,
     storyMetrics: storyMetricsSummary,
+  });
+}
+
+/**
+ * The MCP adoption summary (run-completion phase 7.5, nax#2410 D6): aggregate
+ * the run's tool-audit files per configured server and warn on zero adoption.
+ * Undefined when no MCP server is configured — the status block is omitted.
+ */
+export async function summarizeMcpAdoptionPhase(input: {
+  workdir: string;
+  feature: string;
+  config: NaxConfig;
+  /** The run output dir: the audit files' primary location (paths precedence). */
+  outputDir: string | undefined;
+  runId: string | undefined;
+  logger: Logger | undefined;
+}): Promise<McpAdoptionSummary | undefined> {
+  const servers = input.config.mcp?.servers ?? {};
+  const serverIds = Object.entries(servers)
+    .filter(([, server]) => server.enabled)
+    .map(([id]) => id);
+  if (serverIds.length === 0) return undefined;
+  const auditDir = toolAuditDir({ root: input.workdir, outputDir: input.outputDir }, input.feature);
+  const summary = await summarizeMcpAdoption({ serverIds, auditDir, runId: input.runId });
+  warnZeroAdoption(summary, input.logger);
+  return summary;
+}
+
+/**
+ * Terminal feature-status write (SFC-002). `mcpAdoption` rides the file when
+ * MCP is configured (nax#2410 D6). The status is computed here because a
+ * gating plugin failure or a cost-limit stop outranks the PRD's own state —
+ * folded in here, not via setRunStatus inside handleRunCompletion, which this
+ * write would otherwise clobber back to "completed" (#1146 G2).
+ */
+export async function writeFinalFeatureStatus(input: {
+  featureDir: string;
+  statusWriter: StatusWriter;
+  pluginGateFailed: boolean;
+  exitReason: import("../executor-types").ExitReason | undefined;
+  prd: PRD;
+  reportedTotal: number;
+  iterations: number;
+  mcpAdoption: McpAdoptionSummary | undefined;
+}): Promise<void> {
+  const finalStatus = input.pluginGateFailed
+    ? "failed"
+    : input.exitReason === "cost-limit"
+      ? "cost-limit"
+      : isComplete(input.prd)
+        ? "completed"
+        : "failed";
+  input.statusWriter.setRunStatus(finalStatus);
+  await input.statusWriter.writeFeatureStatus(input.featureDir, input.reportedTotal, input.iterations, {
+    ...(input.mcpAdoption !== undefined ? { mcpAdoption: input.mcpAdoption } : {}),
   });
 }
 

@@ -20,6 +20,7 @@ import {
 import type { AcpAgentName, AcpBackendOptions, AcpProcessHooks } from "@nathapp/nax-agent-acp/client";
 import { buildAllowedEnv } from "../shared/env";
 import { acpProfileFor } from "./profile-map";
+import { finalizeAcpSurface } from "./provider-embedder";
 import type { TurnSlot } from "./turn-slot";
 
 /** The backend's option schema accepts only these names (nax-agent-acp options.ts). */
@@ -73,6 +74,8 @@ export function transcriptStoreFor(dir: string | undefined): TranscriptStore {
 
 export interface OpenContextInput {
   readonly name: string;
+  /** The registered ACP agent — decides whether provider tools may be delivered (nax#2444 D3). */
+  readonly agent: AcpAgentName;
   readonly opts: OpenSessionOpts;
   readonly store: TranscriptStore;
   /** A crash-leftover document to restore (§6.1, D2-j). */
@@ -94,12 +97,16 @@ function metadataOf(opts: OpenSessionOpts): Record<string, string> {
 
 export function openContext(input: OpenContextInput): BackendOpenContext {
   const { name, opts, slot } = input;
+  const profile = acpProfileFor(opts.resolvedPermissions.mode, opts.declaredTools);
+  // nax#2444 D1/D3: provider tools ride the loopback host for capable agents;
+  // everything else stays the historical B5 shape (no tools registered).
+  const delivery = finalizeAcpSurface(input.agent, opts, profile);
   return {
     sessionId: name,
     workdir: opts.workdir,
-    profile: acpProfileFor(opts.resolvedPermissions.mode),
+    profile,
     instructions: undefined,
-    tools: [],
+    tools: delivery.tools,
     transcriptStore: input.store,
     resume: input.resume === undefined ? undefined : { doc: input.resume },
     asks: input.asks,

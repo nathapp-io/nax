@@ -57,7 +57,14 @@ export {
   spillRelativePath,
   writeSpill,
 } from "./spill.ts";
-export type { RegisteredSink, ToolAuditHeader, ToolAuditSink, ToolCallRecord } from "./tool-audit.ts";
+export type {
+  RegisteredSink,
+  ToolAuditHeader,
+  ToolAuditSink,
+  ToolCallRecord,
+  ToolSurfaceDraft,
+  ToolSurfaceRecord,
+} from "./tool-audit.ts";
 export {
   createNoOpToolAuditSink,
   createToolAuditSink,

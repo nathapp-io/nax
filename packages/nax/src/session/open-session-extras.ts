@@ -24,6 +24,9 @@ export function openSessionExtras(
     | "instructionFileName"
     | "instructionProtectedPaths"
     | "instructionDenyPaths"
+    | "providerTools"
+    | "declaredTools"
+    | "toolSurface"
   >,
   transcriptRoot: string | undefined,
   config?: Pick<NaxConfig, "agent">,
@@ -37,12 +40,18 @@ export function openSessionExtras(
   | "instructionFileName"
   | "instructionProtectedPaths"
   | "instructionDenyPaths"
+  | "providerTools"
+  | "declaredTools"
+  | "toolSurface"
 > {
   return {
     transcriptDir: opts.transcriptDir ?? deriveNativeTranscriptDir({ featureName: opts.featureName, transcriptRoot }),
     ...(opts.transcriptOwner !== undefined ? { transcriptOwner: opts.transcriptOwner } : {}),
     ...(opts.toolAudit !== undefined ? { toolAudit: opts.toolAudit } : {}),
     ...transcriptArchiveFor(opts.featureName, transcriptRoot, config),
+    ...(opts.providerTools !== undefined ? { providerTools: opts.providerTools } : {}),
+    ...(opts.declaredTools !== undefined ? { declaredTools: opts.declaredTools } : {}),
+    ...(opts.toolSurface !== undefined ? { toolSurface: opts.toolSurface } : {}),
     ...(opts.instructionDirectories !== undefined ? { instructionDirectories: opts.instructionDirectories } : {}),
     ...(opts.instructionFileName !== undefined ? { instructionFileName: opts.instructionFileName } : {}),
     ...(opts.instructionProtectedPaths !== undefined

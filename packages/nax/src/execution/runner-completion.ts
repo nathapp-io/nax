@@ -31,6 +31,7 @@ import type { DeferredReviewResult } from "./deferred-review";
 import type { ExitReason } from "./executor-types";
 import type { AcceptanceLoopContext, AcceptanceLoopResult } from "./lifecycle/acceptance-loop";
 import type { RunCompletionOptions, RunCompletionResult } from "./lifecycle/run-completion";
+import { writeFinalFeatureStatus } from "./lifecycle/run-completion-phases";
 import type { AcceptancePhaseStatus } from "./status-file";
 import { hookCtx } from "./story-context";
 
@@ -380,27 +381,23 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     interactionChain: options.interactionChain,
   });
 
-  const { durationMs, runCompletedAt, finalCounts, reportedTotal, pluginGateFailed } = completionResult;
+  const { durationMs, runCompletedAt, finalCounts, reportedTotal, pluginGateFailed, mcpAdoption } = completionResult;
 
   // Write feature-level status (SFC-002).
   // Use reportedTotal (cost-aggregator-corrected) instead of the legacy
   // options.totalCost accumulator, which drops acceptance/review/diagnosis
   // spend (issue #909).
   if (options.featureDir) {
-    // A gating-mode plugin reviewer failure fails the run even when all stories passed
-    // (#1146 G2). Folded in here — not via setRunStatus inside handleRunCompletion, which
-    // this line would otherwise clobber back to "completed".
-    // pluginGateFailed is checked first so a genuine gate failure is never masked by a
-    // cost-limit stop — the budget being hit doesn't make a reviewer failure less real.
-    const finalStatus = pluginGateFailed
-      ? "failed"
-      : options.exitReason === "cost-limit"
-        ? "cost-limit"
-        : isComplete(options.prd)
-          ? "completed"
-          : "failed";
-    options.statusWriter.setRunStatus(finalStatus);
-    await options.statusWriter.writeFeatureStatus(options.featureDir, reportedTotal, options.iterations);
+    await writeFinalFeatureStatus({
+      featureDir: options.featureDir,
+      statusWriter: options.statusWriter,
+      pluginGateFailed,
+      exitReason: options.exitReason,
+      prd: options.prd,
+      reportedTotal,
+      iterations: options.iterations,
+      mcpAdoption,
+    });
   }
 
   // §2.1 — surface non-blocking (sub-threshold) review findings accumulated this run.
@@ -478,7 +475,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     feature: options.feature,
     outputDir: options.runtime?.outputDir,
   });
-  const finalTotal = await persistFinishStatus(options, reportedTotal);
+  const finalTotal = await persistFinishStatus(options, reportedTotal, completionResult.mcpAdoption);
 
   // Output run footer in headless mode
   if (options.headless && options.formatterMode !== "json") {
@@ -521,11 +518,18 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
 }
 
 /** Persist finish's in-memory outcome and reconcile the run's final spend. */
-async function persistFinishStatus(options: RunnerCompletionOptions, reportedTotal: number): Promise<number> {
+async function persistFinishStatus(
+  options: RunnerCompletionOptions,
+  reportedTotal: number,
+  mcpAdoption: RunCompletionResult["mcpAdoption"],
+): Promise<number> {
   const finalTotal = options.runtime ? totalSpendUsd(options.runtime.costAggregator.snapshot()) : reportedTotal;
   await options.statusWriter.update(finalTotal, options.iterations);
   if (options.featureDir) {
-    await options.statusWriter.writeFeatureStatus(options.featureDir, finalTotal, options.iterations);
+    await options.statusWriter.writeFeatureStatus(options.featureDir, finalTotal, options.iterations, {
+      // nax#2410 D6: the adoption block survives the finish reconcile too.
+      ...(mcpAdoption !== undefined ? { mcpAdoption } : {}),
+    });
   }
   return finalTotal;
 }

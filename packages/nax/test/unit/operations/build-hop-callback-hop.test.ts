@@ -89,3 +89,48 @@ describe("prepareHopSession: toolAudit (S4b spec §7.4)", () => {
     expect(request).not.toHaveProperty("toolAudit");
   });
 });
+
+describe("prepareHopSession: ACP provider-tool delivery (nax#2444)", () => {
+  test("provider tools, the declaration and the surface draft ride the open request", async () => {
+    const request = await openRequestFor({
+      codingToolRoot: root,
+      outputDir: root,
+      declaredTools: ["Read"],
+      providers: [
+        {
+          id: "context7",
+          kind: "discovered",
+          stages: ["*"],
+          tools: async () => [
+            {
+              localName: "query-docs",
+              description: "d",
+              inputSchema: { type: "object", properties: {} },
+              run: async () => ({ content: "ok" }),
+            },
+          ],
+        },
+      ],
+    });
+    expect(request?.providerTools?.map((tool) => tool.name)).toEqual(["context7__query-docs"]);
+    expect(request?.declaredTools).toContain("Read");
+    expect(request?.declaredTools).toContain("context7__query-docs");
+    expect(request?.toolSurface).toBeDefined();
+    expect(request?.toolSurface?.advertised).toEqual([{ providerId: "context7", names: ["query-docs"] }]);
+    expect("transport" in (request?.toolSurface ?? {})).toBe(false);
+  });
+
+  test("no providers: the declaration still rides the open request (D2 fires without MCP)", async () => {
+    const request = await openRequestFor({ codingToolRoot: root, outputDir: root, declaredTools: ["Read"] });
+    expect(request?.declaredTools).toContain("Read");
+    expect(request?.providerTools).toBeUndefined();
+    expect(request?.toolSurface).toBeUndefined();
+  });
+
+  test("no declaration and no providers: none of the delivery keys appear", async () => {
+    const request = await openRequestFor({ codingToolRoot: root, outputDir: root });
+    expect(request?.providerTools).toBeUndefined();
+    expect(request?.declaredTools).toBeUndefined();
+    expect(request?.toolSurface).toBeUndefined();
+  });
+});

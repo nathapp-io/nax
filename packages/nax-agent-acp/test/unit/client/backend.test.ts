@@ -294,12 +294,14 @@ describe("acpBackend: close (spec §6.3 step 4, D-j)", () => {
 });
 
 describe("the public entry", () => {
-  test("./client exports acpBackend, ACP_STOP_CODES and the launcher checks (S4b)", () => {
+  test("./client exports acpBackend, ACP_STOP_CODES, the launcher checks, the registry and the host name (S4b, nax#2444)", () => {
     expect(Object.keys(publicClient).sort()).toEqual([
       "ACP_STOP_CODES",
+      "TOOL_HOST_SERVER_NAME",
       "acpBackend",
       "isAgentLaunchable",
       "launchCandidateKind",
+      "registryEntry",
     ]);
   });
 });

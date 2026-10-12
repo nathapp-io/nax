@@ -12,8 +12,10 @@ import {
   type ToolAuditHeader,
   type ToolAuditSink,
   type ToolCallRecord,
+  type ToolSurfaceRecord,
   type TurnEvent,
 } from "@nathapp/nax-agent";
+import { TOOL_HOST_SERVER_NAME } from "@nathapp/nax-agent-acp/client";
 
 export interface ToolAuditTarget {
   readonly dir: string;
@@ -45,13 +47,36 @@ export function createAuditRecorder(
   sessionName: string,
   target: ToolAuditTarget | undefined,
   now: () => Date = () => new Date(),
+  /** The finalized MCP tool surface (nax#2410 D4); stamped into the file at flush. */
+  surface?: ToolSurfaceRecord,
 ): AuditRecorder {
   const sink: ToolAuditSink =
     target === undefined
       ? createNoOpToolAuditSink()
-      : createToolAuditSink({ dir: target.dir, sessionName, header: target.header });
+      : createToolAuditSink({
+          dir: target.dir,
+          sessionName,
+          header: target.header,
+          ...(surface !== undefined ? { toolSurface: surface } : {}),
+        });
   const storyId = target?.header.storyId;
   const pending = new Map<string, Pending>();
+
+  /**
+   * nax#2410 D6: the adoption summary counts calls per server via the row's
+   * `provider` — the same field native rows carry. A loopback call reaches the
+   * recorder under the agent-visible name `mcp__<server>__<id>__<local>`; the
+   * namespaced identity it was served under is `<id>__<local>`, so the row is
+   * recorded in that shape with `provider` set.
+   */
+  const loopbackIdentityOf = (name: string): { tool: string; provider: string } | undefined => {
+    const prefix = `mcp__${TOOL_HOST_SERVER_NAME}__`;
+    if (!name.startsWith(prefix)) return undefined;
+    const namespaced = name.slice(prefix.length);
+    const separator = namespaced.indexOf("__");
+    if (separator <= 0) return undefined;
+    return { tool: namespaced, provider: namespaced.slice(0, separator) };
+  };
 
   const write = (
     callId: string | undefined,
@@ -59,12 +84,14 @@ export function createAuditRecorder(
     outcome: ToolCallRecord["outcome"],
     bytes: number,
   ): void => {
+    const identity = loopbackIdentityOf(call.tool);
     sink.record({
-      tool: call.tool,
+      tool: identity?.tool ?? call.tool,
       outcome,
       input: call.input,
       resultBytes: bytes,
       ...(storyId === undefined ? {} : { storyId }),
+      ...(identity !== undefined ? { provider: identity.provider } : {}),
       at: call.at,
       ...(callId === undefined ? {} : { toolCallId: callId }),
       ...(call.deniedReason === undefined ? {} : { reason: call.deniedReason }),

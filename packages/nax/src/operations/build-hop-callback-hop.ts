@@ -21,6 +21,7 @@
  *   from build-hop-callback.ts (that would cycle).
  */
 
+import type { CodingToolSupport } from "@nathapp/nax-agent/internal";
 import {
   buildLedgerHeader,
   resolveCodingToolSupport,
@@ -361,7 +362,7 @@ export interface HopSession {
   openFresh: () => Promise<{ handle: SessionHandle; endpoint: HopEndpoint }>;
 }
 
-export function prepareHopSession(input: HopInvocation): HopSession {
+export function prepareHopSession(input: HopInvocation, codingSupport: CodingToolSupport | undefined): HopSession {
   const { ctx, agentName, resolvedRunOptions, stage } = input;
 
   const sessionName = ctx.sessionManager.nameFor({
@@ -415,6 +416,16 @@ export function prepareHopSession(input: HopInvocation): HopSession {
     storyId: ctx.story.id,
     ...(transcriptOwner !== undefined ? { transcriptOwner } : {}),
     ...(toolAudit !== undefined ? { toolAudit } : {}),
+    // nax#2444 D2: the materialized declaration rides EVERY open, MCP or not —
+    // the ACP profile narrows by it. D3/D4: provider tools + surface ride only
+    // when provider tools resolved. Native ignores all three.
+    ...(codingSupport?.declaredTools !== undefined ? { declaredTools: codingSupport.declaredTools } : {}),
+    ...(codingSupport?.acpDelivery !== undefined
+      ? {
+          providerTools: codingSupport.acpDelivery.tools,
+          toolSurface: codingSupport.acpDelivery.surface,
+        }
+      : {}),
     signal: resolvedRunOptions.abortSignal,
   });
 

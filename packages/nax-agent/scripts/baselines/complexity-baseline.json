@@ -1,9 +1,9 @@
 {
-  "updatedAt": "2026-10-09T12:27:43.028Z",
+  "updatedAt": "2026-10-11T14:38:11.299Z",
   "limit": 20,
   "byFile": {
     "src/coding-tools/coding-tool-extras.ts": { "buildDeclaredCommandTools": 24 },
-    "src/coding-tools/coding-tool-support.ts": { "buildCodingToolSupport": 38 },
+    "src/coding-tools/coding-tool-support.ts": { "buildCodingToolSupport": 35 },
     "src/command-safety/shadow.ts": { "toRow": 27 },
     "src/infra/spin-breaker/index.ts": { "observe": 25 },
     "src/native/session-adapter.ts": { "sendTurn": 21 },

@@ -25,6 +25,7 @@ import { fireHook } from "@/hooks";
 import type { HooksConfig } from "@/hooks/types";
 import type { InteractionChain } from "@/interaction";
 import { getSafeLogger } from "@/logger";
+import type { McpAdoptionSummary } from "@/mcp/adoption";
 import type { StoryMetrics } from "@/metrics";
 import type { PRD } from "@/prd";
 import type { DispatchContext } from "@/runtime/dispatch-context";
@@ -38,6 +39,7 @@ import {
   logRunCompletion,
   purgeStaleRunArtifacts,
   snapshotCostsAndBackfill,
+  summarizeMcpAdoptionPhase,
   teardownRunSessions,
   writeFinalStatus,
 } from "./run-completion-phases";
@@ -104,6 +106,8 @@ export interface RunCompletionResult {
   runCompletedAt: string;
   /** Authoritative run total from the cost aggregator. Use for all downstream reporting. */
   reportedTotal: number;
+  /** nax#2410 D6: per-server MCP adoption; absent when no MCP server is configured. */
+  mcpAdoption?: McpAdoptionSummary;
   finalCounts: {
     total: number;
     passed: number;
@@ -193,6 +197,17 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
     logger,
   });
 
+  // Phase 7.5 — MCP adoption summary (nax#2410 D6): per-server offered/called
+  // counts plus the zero-adoption WARN. Undefined when MCP is unconfigured.
+  const mcpAdoption = await summarizeMcpAdoptionPhase({
+    workdir,
+    feature,
+    config,
+    outputDir: options.runtime.outputDir,
+    runId,
+    logger,
+  });
+
   // Phase 8 — final status
   await writeFinalStatus({
     options,
@@ -208,6 +223,7 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
     durationMs,
     runCompletedAt,
     reportedTotal: costs.reportedTotal,
+    ...(mcpAdoption !== undefined ? { mcpAdoption } : {}),
     finalCounts: {
       total: finalCounts.total,
       passed: finalCounts.passed,
