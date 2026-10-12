@@ -10,7 +10,7 @@ import type { ImplementerReply, WorkflowFinding } from "./types";
 
 export type ImplementTurn =
   | { readonly kind: "implement" }
-  | { readonly kind: "answer"; readonly text: string }
+  | { readonly kind: "answer"; readonly text: string; readonly stepUps: number; readonly limit: "implement" | "fix" }
   | {
       readonly kind: "fix";
       readonly round: number;
@@ -45,14 +45,19 @@ function promptFor(sc: StepContext, turn: ImplementTurn): string {
 
 export async function runImplementerTurn(sc: StepContext, turn: ImplementTurn): Promise<ImplementOutcome> {
   if (turn.kind === "fix" && turn.fresh) await closeImplementerSession(sc.sessionManager, sc.story.id);
-  const model = turn.kind === "fix" ? fixModelFor(sc.story, sc.tierOrder, turn.stepUps) : undefined;
+  const stepUps = turn.kind === "fix" || turn.kind === "answer" ? turn.stepUps : 0;
+  const model = stepUps > 0 ? fixModelFor(sc.story, sc.tierOrder, stepUps) : undefined;
+  const timeoutMs =
+    turn.kind === "implement" || (turn.kind === "answer" && turn.limit === "implement")
+      ? sc.workflow.timeouts.implementMs
+      : sc.workflow.timeouts.fixMs;
   let reply: ImplementerReply;
   try {
     reply = await _workflowDeps.callOp(sc.callCtx, workflowImplementOp, {
       story: sc.story,
       prompt: promptFor(sc, turn),
       ...(model !== undefined ? { model } : {}),
-      timeoutMs: turn.kind === "implement" ? sc.workflow.timeouts.implementMs : sc.workflow.timeouts.fixMs,
+      timeoutMs,
     });
   } catch (err) {
     if (sc.runSignal?.aborted) throw err;

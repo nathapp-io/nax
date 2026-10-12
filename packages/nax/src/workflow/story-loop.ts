@@ -91,7 +91,17 @@ class LoopState {
   }
 }
 
-async function absorbTurn(env: StoryLoopEnv, s: LoopState, outcome: ImplementOutcome): Promise<void> {
+interface TurnOrigin {
+  readonly stepUps: number;
+  readonly limit: "implement" | "fix";
+}
+
+async function absorbTurn(
+  env: StoryLoopEnv,
+  s: LoopState,
+  outcome: ImplementOutcome,
+  origin: TurnOrigin,
+): Promise<void> {
   let current = outcome;
   for (;;) {
     if (current.failure) {
@@ -117,7 +127,12 @@ async function absorbTurn(env: StoryLoopEnv, s: LoopState, outcome: ImplementOut
       });
       if (answer !== null) {
         await env.sink.ledger(ledgerText.note(`implementer ${reply.status}: answered by the advisor`));
-        current = await env.steps.implement({ kind: "answer", text: answer });
+        current = await env.steps.implement({
+          kind: "answer",
+          text: answer,
+          stepUps: origin.stepUps,
+          limit: origin.limit,
+        });
         continue;
       }
     }
@@ -194,7 +209,7 @@ export async function runStoryLoop(env: StoryLoopEnv): Promise<StoryLoopOutcome>
 
   if (!resumed) {
     await env.sink.update({ phase: "implement" });
-    await absorbTurn(env, s, await env.steps.implement({ kind: "implement" }));
+    await absorbTurn(env, s, await env.steps.implement({ kind: "implement" }), { stepUps: 0, limit: "implement" });
   }
 
   for (;;) {
@@ -247,7 +262,7 @@ export async function runStoryLoop(env: StoryLoopEnv): Promise<StoryLoopOutcome>
       findings: open,
       uncommitted: await env.steps.uncommitted(),
     };
-    await absorbTurn(env, s, await env.steps.implement(turn));
+    await absorbTurn(env, s, await env.steps.implement(turn), { stepUps: turn.stepUps, limit: "fix" });
   }
 
   const end = deriveEndState({ costStop: s.costStop, gates: s.gates, suite: s.suite, rulings: rulings.length });

@@ -98,6 +98,37 @@ function harness(script: Script, over: Partial<StoryLoopEnv> = {}) {
 const fixTurns = (turns: ImplementTurn[]) =>
   turns.filter((t): t is Extract<ImplementTurn, { kind: "fix" }> => t.kind === "fix");
 
+describe("answer turns", () => {
+  const answering = { ...defaultWorkflowAdvisor, answerQuestion: async () => "try X" };
+  const needsContext: ImplementOutcome = {
+    reply: { status: "NEEDS_CONTEXT", commits: [], testSummary: "", interrupted: false, concerns: "which API?" },
+    autoCommitted: false,
+  };
+  const answers = (turns: ImplementTurn[]) => turns.filter((t) => t.kind === "answer");
+
+  test("answer to the first implement turn carries stepUps 0 and the implement limit", async () => {
+    const h = harness({ implement: (t) => (t.kind === "implement" ? needsContext : ok) }, { advisor: answering });
+    await runStoryLoop(h.env);
+    expect(answers(h.turns)).toEqual([{ kind: "answer", text: "try X", stepUps: 0, limit: "implement" }]);
+  });
+
+  test("answer to a fresh round-4 fix turn carries that round's stepUps and the fix limit", async () => {
+    const h = harness(
+      {
+        review: [failing(), failing(), failing(), failing(), pass],
+        reReviewAllAddressed: [false, false, false, true],
+        implement: (t) => (t.kind === "fix" && t.round === 4 ? needsContext : ok),
+      },
+      { advisor: answering, maxFixRounds: 5 },
+    );
+    await runStoryLoop(h.env);
+    const round4 = fixTurns(h.turns).find((t) => t.round === 4);
+    expect(round4?.fresh).toBe(true);
+    expect(round4?.stepUps).toBe(1);
+    expect(answers(h.turns)).toEqual([{ kind: "answer", text: "try X", stepUps: 1, limit: "fix" }]);
+  });
+});
+
 describe("runStoryLoop", () => {
   test("clean story: implement, gates, review, suite -> complete, 0 rounds", async () => {
     const h = harness({});
@@ -235,8 +266,8 @@ describe("runStoryLoop", () => {
     const advisor = { ...defaultWorkflowAdvisor, answerQuestion: async () => "try X" };
     await runStoryLoop({ ...h.env, advisor });
     expect(h.turns.filter((t) => t.kind === "answer")).toEqual([
-      { kind: "answer", text: "try X" },
-      { kind: "answer", text: "try X" },
+      { kind: "answer", text: "try X", stepUps: 0, limit: "implement" },
+      { kind: "answer", text: "try X", stepUps: 0, limit: "implement" },
     ]);
   });
 
