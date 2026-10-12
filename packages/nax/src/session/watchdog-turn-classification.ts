@@ -19,7 +19,7 @@
  * to be clean so a tearing-down run never retries.
  */
 
-import { SessionTurnError } from "../agents/types";
+import { SessionFailureError, SessionTurnError } from "../agents/types";
 
 export interface WatchdogTurnClassificationInput {
   /** `WatchdogCancelTracker.hasCancelled(handle.id)` — the watchdog's wrapped cancel ran. */
@@ -41,4 +41,22 @@ export function isWatchdogCancelledTurn(input: WatchdogTurnClassificationInput):
   // The native transport's abort shape — same predicate the generic abort
   // branch in sendPrompt matches on.
   return err instanceof Error && err.name === "AbortError";
+}
+
+/** The fail-stale error sendPrompt throws for a watchdog cancel or a finish interrupt; undefined otherwise. */
+export function staleTurnFailure(
+  input: WatchdogTurnClassificationInput & { interrupted: boolean },
+): SessionFailureError | undefined {
+  if (!isWatchdogCancelledTurn(input)) return undefined;
+  const reason = input.interrupted ? "interrupted" : "idle-watchdog";
+  const message = input.interrupted
+    ? "finish interrupted the turn — session kept warm"
+    : "idle watchdog cancelled session — no stream activity";
+  return new SessionFailureError(message, {
+    category: "availability",
+    outcome: "fail-stale",
+    retriable: true,
+    message,
+    reason,
+  });
 }

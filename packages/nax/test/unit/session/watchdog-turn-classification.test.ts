@@ -14,7 +14,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { SessionTurnError } from "@/agents/types";
-import { isWatchdogCancelledTurn } from "@/session/watchdog-turn-classification";
+import { isWatchdogCancelledTurn, staleTurnFailure } from "@/session/watchdog-turn-classification";
 
 const ACP_CANCELLED = () =>
   new SessionTurnError("Agent session ended with stop reason: error (externally cancelled)", true);
@@ -42,5 +42,26 @@ describe("isWatchdogCancelledTurn()", () => {
 
   test("a non-Error throw is never the watchdog's cancel", () => {
     expect(isWatchdogCancelledTurn({ watchdogFired: true, err: "aborted", signalAborted: false })).toBe(false);
+  });
+});
+
+describe("staleTurnFailure (finish A)", () => {
+  const abort = Object.assign(new Error("aborted"), { name: "AbortError" });
+  test("watchdog cancel -> fail-stale idle-watchdog", () => {
+    expect(
+      staleTurnFailure({ watchdogFired: true, interrupted: false, err: abort, signalAborted: false })?.adapterFailure
+        .reason,
+    ).toBe("idle-watchdog");
+  });
+  test("interrupt -> fail-stale interrupted", () => {
+    expect(
+      staleTurnFailure({ watchdogFired: true, interrupted: true, err: abort, signalAborted: false })?.adapterFailure
+        .reason,
+    ).toBe("interrupted");
+  });
+  test("a caller-signalled abort is never stale", () => {
+    expect(
+      staleTurnFailure({ watchdogFired: true, interrupted: true, err: abort, signalAborted: true }),
+    ).toBeUndefined();
   });
 });

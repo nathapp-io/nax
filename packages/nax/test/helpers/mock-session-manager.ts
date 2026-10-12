@@ -54,6 +54,7 @@ export function makeSessionManager(overrides: Partial<ISessionManager> = {}): IS
     getLiveHandle: mock((_name: string) => undefined as SessionHandle | undefined),
     // nax#2218: cancelled-flag query used by warm-handle reuse sites (stale-retry).
     isCancelled: mock((_name: string) => false),
+    interruptTurn: mock(async (_name: string) => false),
     // US-004: run setup hands the run's plugin loop handlers to the session
     // manager through this method; a mock that does not accept them would make
     // every test of that delivery a type error.

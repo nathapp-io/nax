@@ -18,6 +18,8 @@
  */
 export class WatchdogCancelTracker {
   private readonly _cancelledCallsBySession = new Map<string, Set<string>>();
+  private readonly _activeCallsBySession = new Map<string, Set<string>>();
+  private readonly _interruptedSessions = new Set<string>();
 
   /**
    * Build the `onActiveCall` callback handed to the adapter. It populates the
@@ -32,6 +34,9 @@ export class WatchdogCancelTracker {
   ): ((callId: string, cancel: () => Promise<void>) => void) | undefined {
     if (!registry) return undefined;
     return (callId, cancel) => {
+      const active = this._activeCallsBySession.get(sessionName) ?? new Set<string>();
+      active.add(callId);
+      this._activeCallsBySession.set(sessionName, active);
       registry.set(callId, async () => {
         const cancelledCalls = this._cancelledCallsBySession.get(sessionName) ?? new Set<string>();
         cancelledCalls.add(callId);
@@ -46,8 +51,31 @@ export class WatchdogCancelTracker {
     return (this._cancelledCallsBySession.get(sessionName)?.size ?? 0) > 0;
   }
 
+  /**
+   * Finish A: soft-cancel every active call of a session through the same registered
+   * cancel the watchdog uses, so the turn ends fail-stale and the session stays warm.
+   * False when there is no registry or no live registered call.
+   */
+  async interrupt(sessionName: string, registry: Map<string, () => Promise<void>> | undefined): Promise<boolean> {
+    if (!registry) return false;
+    const cancels = [...(this._activeCallsBySession.get(sessionName) ?? [])]
+      .map((callId) => registry.get(callId))
+      .filter((c): c is () => Promise<void> => c !== undefined);
+    if (cancels.length === 0) return false;
+    this._interruptedSessions.add(sessionName);
+    await Promise.all(cancels.map((c) => c()));
+    return true;
+  }
+
+  /** Whether an interrupt was requested for this session's current turn. */
+  wasInterrupted(sessionName: string): boolean {
+    return this._interruptedSessions.has(sessionName);
+  }
+
   /** Forget a session's recorded cancels — after a turn settles, or on close. */
   clear(sessionName: string): void {
     this._cancelledCallsBySession.delete(sessionName);
+    this._activeCallsBySession.delete(sessionName);
+    this._interruptedSessions.delete(sessionName);
   }
 }

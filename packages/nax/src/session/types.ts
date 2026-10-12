@@ -332,6 +332,12 @@ export interface ISessionManager {
    * SESSION_CANCELLED guard (nax#2218).
    */
   isCancelled(name: string): boolean;
+  /**
+   * Soft-cancel the running turn (finish A): the same registered cancel the idle watchdog
+   * uses, so the turn ends fail-stale and the session stays usable. False when there is
+   * no watchdog registry or no active call.
+   */
+  interruptTurn(name: string): Promise<boolean>;
 
   /**
    * Send one prompt to an open session. Single-flight per handle —

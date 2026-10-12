@@ -11,7 +11,6 @@ import type { ProtocolIds } from "@nathapp/nax-agent";
 import { NO_OP_INTERACTION_HANDLER } from "@nathapp/nax-agent";
 import type { LoopHandlerSet } from "@nathapp/nax-agent/internal";
 import type { AgentAdapter, SessionHandle, TurnResult } from "../agents/types";
-import { SessionFailureError } from "../agents/types";
 import { type NaxConfig, trackedSpawnDeadlines } from "../config";
 import { resolvePermissions } from "../config/permissions";
 import { NaxError } from "../errors";
@@ -42,7 +41,7 @@ import type {
 } from "./types";
 import { SESSION_TRANSITIONS } from "./types";
 import { WatchdogCancelTracker } from "./watchdog-cancel-tracker";
-import { isWatchdogCancelledTurn } from "./watchdog-turn-classification";
+import { staleTurnFailure } from "./watchdog-turn-classification";
 
 export { _sessionManagerDeps } from "./manager-deps";
 
@@ -394,6 +393,11 @@ export class SessionManager implements ISessionManager {
     return this._cancelledSessions.has(name);
   }
 
+  /** Finish A: soft-cancel the session's running turn; it ends fail-stale and the session stays usable. */
+  interruptTurn(name: string): Promise<boolean> {
+    return this._watchdogCancels.interrupt(name, this._watchdogControllerRegistry);
+  }
+
   async openSession(name: string, opts: OpenSessionRequest): Promise<SessionHandle> {
     // RACE-37: synchronous single-flight guard for the open path. Without
     // this, two concurrent openSession(name) calls both pass the
@@ -590,21 +594,13 @@ export class SessionManager implements ISessionManager {
       // The watchdog's own cancel IS fail-stale — ACP surfaces it as
       // SessionTurnError(cancelled:true), native as a plain AbortError
       // (nax#2218). Anything else is an unrelated kill: pass through.
-      if (
-        isWatchdogCancelledTurn({
-          watchdogFired: this._watchdogCancels.hasCancelled(handle.id),
-          err,
-          signalAborted: opts?.signal?.aborted === true,
-        })
-      ) {
-        throw new SessionFailureError("idle watchdog cancelled session — no stream activity", {
-          category: "availability",
-          outcome: "fail-stale",
-          retriable: true,
-          message: "idle watchdog cancelled session — no stream activity",
-          reason: "idle-watchdog",
-        });
-      }
+      const stale = staleTurnFailure({
+        watchdogFired: this._watchdogCancels.hasCancelled(handle.id),
+        interrupted: this._watchdogCancels.wasInterrupted(handle.id),
+        err,
+        signalAborted: opts?.signal?.aborted === true,
+      });
+      if (stale) throw stale;
       // Check signal.aborted OR an AbortError thrown by the adapter to avoid
       // false-positive cancellation when a non-abort error races with an
       // incidentally-aborted signal from an unrelated controller.
