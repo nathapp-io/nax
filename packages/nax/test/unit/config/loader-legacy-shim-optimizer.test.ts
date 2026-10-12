@@ -15,7 +15,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { loadConfig } from "@/config";
-import { _applyFinishAutoFlowShim } from "@/config/compat-shims";
+import { _applyFinishAutoFlowShim, applyConfigCompatShims, createConfigWarnDedupe } from "@/config/compat-shims";
 import { addSink, initLogger, resetLogger } from "@/logger";
 
 describe("loadConfig — optimizer keys removed with the rule-based optimizer", () => {
@@ -151,5 +151,18 @@ describe("_applyFinishAutoFlowShim", () => {
   test("a config with no finish block is returned unchanged, same reference", () => {
     const conf = { review: {} };
     expect(_applyFinishAutoFlowShim(conf, () => {})).toBe(conf);
+  });
+});
+
+describe("finish.autoFlow stepMs through the full shim chain (finish A)", () => {
+  test("a lifted stepMs lands as reviewMs and fixMs with a deprecation warning", () => {
+    const warnings: string[] = [];
+    const out = applyConfigCompatShims(
+      { finish: { autoFlow: { timeouts: { stepMs: 4 } } } },
+      null,
+      createConfigWarnDedupe((m) => warnings.push(m)),
+    );
+    expect((out.finish as { timeouts: unknown }).timeouts).toEqual({ reviewMs: 4, fixMs: 4 });
+    expect(warnings.join(" ")).toContain("finish.timeouts.stepMs");
   });
 });

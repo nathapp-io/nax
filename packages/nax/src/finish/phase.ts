@@ -393,8 +393,8 @@ export async function runFinishPhase(ctx: FinishPhaseContext): Promise<FinishRes
       audit,
       models: settings.models,
       timeouts: {
-        reviewMs: settings.timeouts.stepMs ?? undefined,
-        fixMs: settings.timeouts.stepMs ?? undefined,
+        reviewMs: settings.timeouts.reviewMs,
+        fixMs: settings.timeouts.fixMs,
       },
       prBody: settings.prBody,
     });

@@ -38,7 +38,7 @@ export const finishFixOp: RunOperationWithHooks<FinishFixInput, FixOutcome, Fini
   // commits and pushes your edits itself" (buildFinishFixPrompt, prompts/builders/finish-review-builder.ts).
   tools: ["Read", "Glob", "Grep", "Write", "Edit", "Delete", "Git", "RunCommand", "Exec", "Bash", "RequestCapability"],
   model: (input) => input.model,
-  // `finish.timeouts.stepMs` when set, otherwise the run's own session timeout.
+  // `finish.timeouts.reviewMs / fixMs` when set, otherwise the run's own session timeout.
   // Not left undefined: `callOp` does fall back to `execution.sessionTimeoutSeconds`
   // for run-kind ops, but that is a branch inside `callOp` that nothing pins for
   // these ops, and complete-kind ops get no such fallback at all. Resolving it

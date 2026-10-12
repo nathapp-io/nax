@@ -145,7 +145,7 @@ export const llmRoutingConfigSelector = pickSelector(
 // `agent` is in the slice so nax-finish can default the flow's agent to the one
 // the run itself used, instead of letting the ACP agent fall back to its own default.
 // `execution` supplies the per-step LLM timeout the finish ops fall back to when
-// `finish.timeouts.stepMs` is unset (its default), matching how the acceptance
+// `finish.timeouts.reviewMs / fixMs` is unset (its default), matching how the acceptance
 // ops resolve `execution.sessionTimeoutSeconds`.
 export const finishConfigSelector = pickSelector("finish", "finish", "interaction", "quality", "agent", "execution");
 export const advisorConfigSelector = pickSelector("advisor", "advisor", "execution");

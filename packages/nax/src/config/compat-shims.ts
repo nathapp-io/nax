@@ -10,6 +10,7 @@
  */
 
 import { getLogger } from "../logger";
+import { _applyFinishStepTimeoutShim } from "./finish-timeouts-shim";
 import {
   type ConfigWarnLogger,
   migrateLegacyNonBlockingFix,
@@ -576,6 +577,7 @@ export function applyConfigCompatShims(
   out = _applyRemovedWorktreeInheritShim(out, warn);
   out = _applyRemovedAcpTransportShim(out, warn);
   out = _applyFinishAutoFlowShim(out, warn);
+  out = _applyFinishStepTimeoutShim(out, warn);
   out = _applyRemovedOptimizerKeysShim(out, warn);
   out = _applyRemovedCrossPackageDepthShim(out, warn);
   out = _applyTddStrategyAliasShim(out);
