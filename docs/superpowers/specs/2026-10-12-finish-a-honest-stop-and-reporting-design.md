@@ -247,3 +247,38 @@ Unit tests use the shared `test/helpers/` factories and `_deps` injection; real 
   - no unreviewed half-edit reaches the branch;
   - the handoff and the checkpoint are on disk;
   - the draft PR's reason and findings table match the ledger.
+
+## Implementation notes
+
+What was built, where it differs from or adds to the sections above.
+
+- The handoff note travels as the fix op's marked reply (`HANDOFF_MARKER`, `<!-- nax-finish-handoff -->`), not as a side file. A marked reply is always an interrupted fix.
+- `fail-stale` gains the reason `interrupted` (the other reason stays `idle-watchdog`).
+- `manager.ts` shrank (662 to 658 lines): the stale classification moved into `staleTurnFailure` in `watchdog-turn-classification.ts`.
+- A crashed fixer is set aside as `limit: "error"` and the step returns `failed`.
+- The 30-second latency is pinned per layer:
+  - run options carry the signal (Task 1);
+  - `interruptTurn` ends a turn through the real `SessionManager` (Task 2);
+  - native turns honour `opts.signal` and the registered cancel (nax-agent's existing US-002 and nax#2218 tests).
+  - End to end, only the live check proves it.
+- Each fix session records its own base (`FixBase`: `baseSha`, `headSha`, `untrackedBefore`, optional untracked snapshot) on its `HandoffRecord.base`, with a per-session snapshot dir `<runId>.fix-base-<n>` in the finish-audit directory.
+- Finalize sets aside restore-failed dirt fail-closed, using the failed handoff's own base, oldest handoff first. If HEAD has moved since that session, the tracked side uses the current HEAD. A failed handoff with no recorded base commits nothing and leaves the tree dirty.
+- The PR body has a size budget of 60,000 characters (`BODY_BUDGET`; GitHub rejects over 65,536). Over budget, it drops the lowest-priority sections whole (never `unresolved` or `narrative`), then tries tighter row/cell caps (25/100, 10/60, 3/40), then cuts at a line boundary, closes open fences and `<details>`, and says it was truncated.
+- A checkpoint is written after every completed step to `<runId>.checkpoint.json` in the finish-audit directory (atomic temp-file rename; a write failure is tolerated and does not fail the finish).
+- `FinishState` is version 3 only; version 2 is rejected.
+- `finish.timeouts` defaults: `reviewMs` 900000, `fixMs` 1200000, `flowMs` 10800000 (`acceptanceMs` 600000 and `gateMs` 900000 unchanged). The deprecated `stepMs` is a shim: it fills `reviewMs` and `fixMs` where unset, warns, and is dropped.
+
+### Open items
+
+1. The live check in section 11 (plan Task 14 Step 5) is still owed. It is a billed `nax run` and needs the user's approval at launch. It must verify:
+   - the stopped turn ends within 30 s;
+   - a handoff turn follows in the same session;
+   - no commit lands from the stopped session;
+   - `finish-audit/<feature>/<runId>.handoff-1/` holds `changes.patch`, `meta.json` and `note.json`;
+   - `<runId>.checkpoint.json` exists;
+   - the draft PR's reason, findings table, Set aside and Stops match `result.json`.
+2. A restore-failed half-edit left on disk can be committed by a later successful fix session's `git add -A` (`commitFixes`) before finalize runs. Section 4.5 guards only finalize.
+3. Ready/draft is stricter than before in three cases, because `findingsOpen` is derived solely from the ledger (fail-closed): a committed fix with no dispositions followed by a clean round; a fix that was stopped or failed followed by a clean round; a fixer-rejected finding that is not raised again. The owner should confirm whether a clean full round should close those entries.
+4. `Stop.step` and `state.step` do not cover the recovery path, and a run abort there returns `failed: aborted` without recording a `run` stop.
+5. `lastFixBase` is now written but never read.
+6. The `git apply --check` guard in re-apply cannot be tested independently, because `git apply` is atomic.

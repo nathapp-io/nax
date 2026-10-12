@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createFinishState } from "@/finish";
-import type { LedgerEntry } from "@/finish/ledger";
+import { type LedgerEntry, OPEN_STATES } from "@/finish/ledger";
 import { approvalFacts, computeFacts, draftReason, isClean, resolve, stopReason } from "@/finish/resolve";
 import type { ResolutionFacts } from "@/finish/types";
 
@@ -286,5 +286,38 @@ describe("facts and reasons (finish A section 6)", () => {
     );
     const unknown = JSON.parse('{"kind":"other","at":"t","limitMs":1}');
     expect(stopReason([unknown])).toBe("stopped during finish");
+  });
+});
+
+describe("unchanged ready/draft rules on ledger-derived facts (finish A section 2)", () => {
+  const one = (state: LedgerEntry["state"]): LedgerEntry => entry("x", state);
+  const ledgerFacts = (findings: LedgerEntry[], over: Partial<ResolutionFacts> = {}) =>
+    baseFacts({
+      findings,
+      findingsOpen: findings.filter((e) => OPEN_STATES.has(e.state)).map((e) => e.finding),
+      ...over,
+    });
+
+  test.each([
+    ["clean", ledgerFacts([]), true],
+    ["fixed-reviewed only", ledgerFacts([one("fixed-reviewed")]), true],
+    ["waived only", ledgerFacts([one("waived")]), true],
+    ["one open", ledgerFacts([one("open")]), false],
+    ["set-aside", ledgerFacts([one("set-aside")]), false],
+    [
+      "fixed-unreviewed with its commit",
+      ledgerFacts([one("fixed-unreviewed")], { unreviewedFixCommits: ["s"] }),
+      false,
+    ],
+    ["acceptance red", ledgerFacts([], { acceptance: "red" }), false],
+    ["gate not run", ledgerFacts([], { gates: [{ name: "gates", status: "not-run" }] }), false],
+    ["lens missing", ledgerFacts([], { reviewsMissing: ["spec"] }), false],
+  ] as const)("%s -> clean=%s", (_name, f, clean) => {
+    expect(isClean(f)).toBe(clean);
+  });
+
+  test("advisor off: not clean -> draft; clean -> ready", async () => {
+    expect((await resolve({ facts: ledgerFacts([one("open")]), reReviewUsed: false })).outcome).toBe("draft");
+    expect((await resolve({ facts: ledgerFacts([]), reReviewUsed: false })).outcome).toBe("ready");
   });
 });
