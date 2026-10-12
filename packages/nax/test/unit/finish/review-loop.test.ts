@@ -246,6 +246,44 @@ describe("runReviewLoop failures and advisor-off judgment", () => {
     });
   });
 
+  test("a contradiction ruled fix: spec fixed and reviewed, quality side superseded, nothing left open", async () => {
+    await withTempDir(async (dir) => {
+      const git = { dirty: false, head: 1 };
+      stubGit(git);
+      const spec = s("Must retry", { file: "a.ts", line: 9, fix: "add retry" });
+      const quality = q("Retry is bad", { line: 9 });
+      const advise: FinishAdvisor = {
+        judgedEnabled: true,
+        approvalEnabled: false,
+        judged: async (_f, contradictions) => ({
+          toFix: contradictions.map((c) => c.spec),
+          advice: [],
+          unresolved: [],
+          dropped: contradictions.map((c) => ({ finding: c.quality, decisionId: "D-1", action: "supersede" as const })),
+          held: [],
+        }),
+        approval: async () => ({ action: "unavailable", rationale: "n/a" }),
+        commitLedger: async () => {},
+      };
+      const ops = makeFinishOps(
+        [],
+        { spec: [spec, { findings: [], covered: [] }], quality: [quality, { findings: [], covered: [] }] },
+        {
+          fix: async () => {
+            git.dirty = true;
+            return { dispositions: [{ index: 1, disposition: "fixed" }] };
+          },
+        },
+      );
+      const state = makeFinishState();
+      await runReviewLoop(state, deps(ops, dir, advise));
+      expect(state.review.ledger.map((e) => `${e.finding.title}:${e.state}:${e.ref ?? ""}`)).toEqual([
+        "Must retry:fixed-reviewed:sha2",
+        "Retry is bad:superseded:D-1",
+      ]);
+    });
+  });
+
   test("judged finding with advisor off: unresolved, not fixed", async () => {
     await withTempDir(async (dir) => {
       stubGit({ dirty: false, head: 1 });
@@ -316,6 +354,35 @@ describe("runReviewLoop deadline", () => {
       };
       await expect(runReviewLoop(makeFinishState(), d)).rejects.toThrow("aborted");
       expect(judgedCalls).toBe(0);
+    });
+  });
+
+  test("an abort that lands during the lenses still ledgers the findings the lenses produced", async () => {
+    await withTempDir(async (dir) => {
+      stubGit({ dirty: false, head: 1 });
+      let aborted = false;
+      const ops = makeFinishOps(
+        [],
+        { spec: [s("Spec gap")], quality: [q("Quality gap")] },
+        {
+          reviewBranch: async () => {
+            aborted = true;
+            return q("Quality gap");
+          },
+        },
+      );
+      const d = {
+        ...deps(ops, dir),
+        assertNotAborted: () => {
+          if (aborted) throw new Error("aborted");
+        },
+      };
+      const state = makeFinishState();
+      await expect(runReviewLoop(state, d)).rejects.toThrow("aborted");
+      expect(state.review.ledger.map((e) => `${e.finding.title}:${e.state}`)).toEqual([
+        "Spec gap:open",
+        "Quality gap:open",
+      ]);
     });
   });
 });

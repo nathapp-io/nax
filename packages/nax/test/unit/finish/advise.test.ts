@@ -288,6 +288,18 @@ describe("createFinishAdvisor.judged: merged rounds", () => {
     });
   });
 
+  test("a contradiction ruled fix supersedes the quality finding so it reaches a terminal state", async () => {
+    await withTempDir(async (dir) => {
+      const { advisor } = fakeAdvisor(() => ({
+        decision: decision({ action: { type: "fix", instruction: "keep retry" } }),
+      }));
+      const out = await make(dir, advisor).judged([], [{ spec: s, quality: qf }], state(dir));
+      expect(out.dropped).toEqual([{ finding: qf, decisionId: "D-1", action: "supersede" }]);
+      expect(out.unresolved).toEqual([]);
+      expect(out.held).toEqual([]);
+    });
+  });
+
   test("contradiction waived drops both", async () => {
     await withTempDir(async (dir) => {
       const { advisor } = fakeAdvisor(() => ({ decision: decision({ action: { type: "waive", reason: "fine" } }) }));

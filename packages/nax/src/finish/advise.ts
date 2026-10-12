@@ -165,7 +165,9 @@ async function judgeContradiction(deps: FinishAdvisorDeps, c: Contradiction): Pr
   const { action } = decision;
   if (action.type === "fix") {
     const fix = `${c.spec.fix}\n\nAdvisor ruling (${decision.id}): ${action.instruction}`;
-    return { ref, toFix: [{ ...c.spec, fix }], unresolved: [], dropped: [], held: [] };
+    // The ruling picks the spec side; the quality side is superseded, as it was before the ledger existed.
+    const dropped = [{ finding: c.quality, decisionId: decision.id, action: "supersede" as const }];
+    return { ref, toFix: [{ ...c.spec, fix }], unresolved: [], dropped, held: [] };
   }
   if (action.type === "waive" || action.type === "supersede") {
     const dropped = [c.spec, c.quality].map((finding) => ({ finding, decisionId: decision.id, action: action.type }));

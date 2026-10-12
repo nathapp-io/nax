@@ -211,14 +211,15 @@ async function runOneRound(state: FinishState, deps: ReviewLoopDeps, limit: numb
     spec: () => ops.reviewSpec(state, inputs),
     quality: () => ops.reviewBranch(state, inputs),
   });
+  const merged = mergeFindings(round.spec.findings, round.quality.findings);
+  const raised = [...merged.toFix, ...merged.judged, ...merged.contradictions.flatMap((c) => [c.spec, c.quality])];
+  // Ledger what the lenses produced before any abort check: a deadline mid-round must not lose it.
+  ledgerEvent(state, { kind: "raised", findings: raised });
   deps.assertNotAborted(); // a deadline during the lenses must not reach the advisor or a fix
   await recordLensRounds(state, deps, round);
   recordReviewStops(state, deps, round);
   noteRound(state, round);
-  const merged = mergeFindings(round.spec.findings, round.quality.findings);
   const judged = await judgeRound(state, deps, merged);
-  const raised = [...merged.toFix, ...merged.judged, ...merged.contradictions.flatMap((c) => [c.spec, c.quality])];
-  ledgerEvent(state, { kind: "raised", findings: raised });
   if (round.missing.length === 0) ledgerEvent(state, { kind: "full-round", raised });
   recordJudgment(state, judged);
   const fixList = specFirst([...merged.toFix, ...judged.toFix]);
