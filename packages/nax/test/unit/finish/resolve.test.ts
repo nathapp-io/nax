@@ -133,7 +133,7 @@ describe("resolve", () => {
 
   test("clean facts with an unsettled restore-failed handoff end as a draft, with or without an advisor", async () => {
     const f = facts({ restoreFailed: [2] });
-    const draft = { outcome: "draft", reason: "worktree restore failed (handoff-2)" };
+    const draft = { outcome: "draft", reason: "worktree restore failed (handoff-2)" } as const;
     expect(await resolve({ facts: f, reReviewUsed: false })).toEqual(draft);
     let asked = false;
     const advise = {
