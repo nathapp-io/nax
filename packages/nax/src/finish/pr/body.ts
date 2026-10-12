@@ -16,7 +16,9 @@ import type { AdviceDecision } from "@/advisor";
 import { describeTarget } from "@/advisor";
 import type { BodySection } from "@/forge";
 import { mergeTemplate } from "@/forge";
-import type { Finding, FindingDisposition, FinishRound, GateFact } from "../types";
+import type { LedgerEntry, LedgerState } from "../ledger";
+import { stopReason } from "../resolve";
+import type { Finding, FindingDisposition, FinishRound, GateFact, HandoffRecord } from "../types";
 import type { FinishPrContext, FinishPrStory } from "./context";
 
 const SECONDS_PER_MINUTE = 60;
@@ -49,7 +51,18 @@ export function buildFinishTitle(ctx: FinishPrContext): string {
  * escaped first so the pipe escape survives a literal backslash in a title.
  */
 function escapeTableCell(value: string): string {
-  return value.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/\|/g, "\\|")
+    .replace(/`/g, "\\`")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\r?\n/g, " ");
+}
+
+/** A string for inline markdown outside a table (reviewer- or user-sourced): no code spans, no tags, one line. */
+function escapeInline(value: string): string {
+  return value.replace(/`/g, "'").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\r?\n/g, " ");
 }
 
 function formatDuration(durationMs: number): string {
@@ -215,6 +228,93 @@ function renderRedGate(gate: GateFact): string {
   return `- Gate \`${gate.name}\` is red${excerpt}`;
 }
 
+const STATE_ORDER: Record<LedgerState, number> = {
+  open: 0,
+  rejected: 1,
+  "set-aside": 2,
+  unresolved: 3,
+  "fixed-unreviewed": 4,
+  accepted: 5,
+  "fixed-reviewed": 6,
+  waived: 7,
+  superseded: 8,
+};
+const RESOLVED: ReadonlySet<LedgerState> = new Set(["fixed-reviewed", "waived", "superseded"]);
+const TABLE_HEAD = "| Severity | Finding | File | State | Ref |\n|---|---|---|---|---|";
+
+function refCell(e: LedgerEntry): string {
+  if (!e.ref) return "";
+  const isSha = e.state === "fixed-unreviewed" || e.state === "fixed-reviewed";
+  return isSha ? `\`${escapeInline(e.ref.slice(0, SHORT_SHA_LEN))}\`` : escapeTableCell(e.ref);
+}
+
+function ledgerRow(e: LedgerEntry): string {
+  const loc = e.finding.file ? `${e.finding.file}${e.finding.line !== undefined ? `:${e.finding.line}` : ""}` : "";
+  return `| ${e.finding.severity} | ${escapeTableCell(e.finding.title)} | ${escapeTableCell(loc)} | ${e.state} | ${refCell(e)} |`;
+}
+
+function sortLedger(entries: LedgerEntry[]): LedgerEntry[] {
+  return [...entries].sort(
+    (a, b) =>
+      STATE_ORDER[a.state] - STATE_ORDER[b.state] ||
+      SEVERITY_ORDER[a.finding.severity] - SEVERITY_ORDER[b.finding.severity],
+  );
+}
+
+/** One table of the live entries, then the resolved ones folded away. Null on an empty ledger. */
+function buildFindingsTable(ledger: LedgerEntry[]): string | null {
+  if (ledger.length === 0) return null;
+  const live = sortLedger(ledger.filter((e) => !RESOLVED.has(e.state)));
+  const done = sortLedger(ledger.filter((e) => RESOLVED.has(e.state)));
+  const table = live.length > 0 ? `${TABLE_HEAD}\n${live.map(ledgerRow).join("\n")}` : "";
+  const folded =
+    done.length > 0
+      ? `<details><summary>${done.length} resolved</summary>\n\n${TABLE_HEAD}\n${done.map(ledgerRow).join("\n")}\n\n</details>`
+      : "";
+  return [table, folded].filter(Boolean).join("\n\n");
+}
+
+function handoffState(h: HandoffRecord): string {
+  if (h.consumed) return "re-applied and committed";
+  if (h.reapplied === false) return "set aside, not re-applied";
+  return h.limit === "error" ? "crashed, not re-applied" : "pending";
+}
+
+function handoffTrouble(h: HandoffRecord): string[] {
+  const names = (paths: string[]): string => paths.map(escapeInline).join(", ");
+  return [
+    ...(h.restored ? [] : ["worktree restore failed"]),
+    ...(h.untrackedFailed.length > 0 ? [`your files that could not be put back: ${names(h.untrackedFailed)}`] : []),
+    ...(h.untrackedMovedAside.length > 0
+      ? [`untracked files over the snapshot cap moved into the handoff: ${names(h.untrackedMovedAside)}`]
+      : []),
+  ];
+}
+
+function renderHandoff(h: HandoffRecord): string {
+  const dir = escapeInline(h.dir);
+  const where = h.patchSaved ? `\`${dir}/changes.patch\`` : "_patch not saved, work lost_";
+  const trouble = handoffTrouble(h);
+  const head = `- handoff-${h.n} (${h.phase}, ${h.limit}, ${h.findingIds.length} finding(s)): ${where} — ${handoffState(h)}`;
+  return trouble.length > 0 ? `${head}; ${trouble.join("; ")}` : head;
+}
+
+const block = (heading: string, items: string[]): string[] =>
+  items.length > 0 ? [`### ${heading}\n${items.join("\n")}`] : [];
+
+type Unresolved = NonNullable<FinishPrContext["unresolved"]>;
+
+/** What was set aside and where the finish stopped short. */
+function buildStopSections(u: Unresolved): string[] {
+  return [
+    ...block("Set aside", u.handoffs.map(renderHandoff)),
+    ...block(
+      "Stops",
+      u.stops.map((s) => `- ${escapeInline(stopReason([s]) ?? "stopped")}`),
+    ),
+  ];
+}
+
 /**
  * A4: what stands between this PR and a clean ready, or what the advisor
  * accepted on a ready one. Null when there is nothing to say, so a clean
@@ -223,16 +323,16 @@ function renderRedGate(gate: GateFact): string {
 function buildUnresolvedSection(ctx: FinishPrContext): string | null {
   const u = ctx.unresolved;
   if (!u) return null;
-  const block = (heading: string, items: string[]): string[] =>
-    items.length > 0 ? [`### ${heading}\n${items.join("\n")}`] : [];
+  const table = buildFindingsTable(u.ledger);
   const checks = [
     ...(u.acceptance === "red" || u.acceptance === "unverified" ? [`- Acceptance: ${u.acceptance}`] : []),
+    ...(u.gates.some((g) => g.status === "not-run") ? ["- Gates did not run"] : []),
     ...u.gates.filter((g) => g.status === "red").map(renderRedGate),
   ];
   const shas = u.unreviewed.map((sha) => `\`${sha.slice(0, SHORT_SHA_LEN)}\``).join(", ");
   const parts = [
     ...(u.reason ? [`This PR is a draft: ${flat(u.reason)}`] : []),
-    ...block("Open findings", bySeverity(u.findings).map(renderOpenFinding)),
+    ...(table ? [`### Findings\n${table}`] : block("Open findings", bySeverity(u.findings).map(renderOpenFinding))),
     ...block("Verification failures", checks),
     ...block(
       "Missing reviews",
@@ -243,6 +343,7 @@ function buildUnresolvedSection(ctx: FinishPrContext): string | null {
       u.unreviewed.length > 0 ? [`- ${shas} — fixes no full review round has seen`] : [],
     ),
     ...block("Accepted by the advisor", bySeverity(u.accepted).map(renderOpenFinding)),
+    ...buildStopSections(u),
   ];
   return parts.length > 0 ? parts.join("\n\n") : null;
 }

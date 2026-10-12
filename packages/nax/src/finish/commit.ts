@@ -48,7 +48,7 @@ export interface SyncOutcome {
   sha?: string | null;
 }
 
-async function isDirty(repoRoot: string): Promise<boolean> {
+export async function isDirty(repoRoot: string): Promise<boolean> {
   const status = await _finishGitDeps.git(["status", "--porcelain"], repoRoot);
   if (status.exitCode !== 0) {
     throw new NaxError(
@@ -159,9 +159,11 @@ export async function commitAndPush(
   repoRoot: string,
   branch: string,
   message: string,
-  opts: { skipHooks?: boolean } = {},
+  opts: { skipHooks?: boolean; skipCommit?: boolean } = {},
 ): Promise<SyncOutcome> {
-  const { committed, shaAfter } = await commitFixes(repoRoot, message, opts);
+  const { committed, shaAfter } = opts.skipCommit
+    ? { committed: false, shaAfter: null }
+    : await commitFixes(repoRoot, message, opts);
 
   const push = await _finishGitDeps.git(["push", "--set-upstream", "origin", branch], repoRoot, PUSH_TIMEOUT_MS);
   if (push.exitCode !== 0) {

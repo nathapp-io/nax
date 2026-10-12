@@ -233,6 +233,9 @@ describe("loadFinishPrContext — A4 review output and resolution", () => {
       missing: ["spec"],
       unreviewed: ["abc1234"],
       accepted: [],
+      ledger: [],
+      stops: [],
+      handoffs: [],
     });
     expect(ctx.coverage).toEqual({ spec: null, quality: 0.5 });
   });
@@ -274,5 +277,44 @@ describe("loadFinishPrContext — A4 review output and resolution", () => {
     const ctx = await loadFinishPrContext({ state, audit: audit() });
     expect(ctx.unresolved).toBeUndefined();
     expect(ctx.coverage).toEqual({ spec: null, quality: 0.5 });
+  });
+
+  test("unresolved carries the live ledger, stops and handoffs from state", async () => {
+    _finishPrDeps.run = async () => ({ exitCode: 1, stdout: "", stderr: "" });
+    const state = stateFor(dir);
+    // The resolution snapshot shows the finding as open; the live ledger (after the accepted event) is authoritative.
+    const entry = { id: "i", finding: open, state: "accepted" as const, ref: "advisor approval" };
+    state.resolution = {
+      outcome: "draft",
+      reason: "r",
+      facts: { ...facts, findings: [{ ...entry, state: "open" }] },
+      acceptedResidue: [],
+    };
+    state.review = { ...state.review, ledger: [entry] };
+    state.stops = [{ kind: "flow", step: "review", at: "t", limitMs: 1 }];
+    const ctx = await loadFinishPrContext({ state, audit: audit() });
+    expect(ctx.unresolved?.ledger).toEqual([entry]);
+    expect(ctx.unresolved?.stops).toEqual(state.stops);
+    expect(ctx.unresolved?.handoffs).toEqual([]);
+  });
+
+  test("a ready resolution with a stop still gets an unresolved block", async () => {
+    _finishPrDeps.run = async () => ({ exitCode: 1, stdout: "", stderr: "" });
+    const state = stateFor(dir);
+    state.resolution = {
+      outcome: "ready",
+      facts: {
+        ...facts,
+        findingsOpen: [],
+        acceptance: "green",
+        gates: [],
+        reviewsMissing: [],
+        unreviewedFixCommits: [],
+      },
+      acceptedResidue: [],
+    };
+    state.stops = [{ kind: "run", step: "review", at: "t", limitMs: 0 }];
+    const ctx = await loadFinishPrContext({ state, audit: audit() });
+    expect(ctx.unresolved?.stops).toHaveLength(1);
   });
 });

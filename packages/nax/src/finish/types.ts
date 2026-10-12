@@ -263,6 +263,14 @@ export interface FinishResult {
   url?: string;
   /** Open findings on a draft PR. */
   findings?: Finding[];
+  /** Finish A: every fix session that was set aside; absent when none were. */
+  handoffs?: {
+    dir: string;
+    limit: HandoffLimit;
+    findingIds: string[];
+    consumed: boolean;
+    reapplied?: boolean;
+  }[];
   /**
    * Every fix round the flow ran, on *all* terminal statuses — not just
    * escalations. A successful finish that took four rounds to get there is the

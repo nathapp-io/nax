@@ -9,7 +9,7 @@
 import { describe, expect, test } from "bun:test";
 import { makeAdviceDecision } from "@test/helpers";
 import type { AdviceDecision } from "@/advisor";
-import type { Finding, FinishPrContext, FinishPrStory, FinishRound } from "@/finish";
+import type { Finding, FinishPrContext, FinishPrStory, FinishRound, LedgerEntry } from "@/finish";
 import { buildFinishBody, buildFinishTitle, resolveTitle } from "@/finish";
 
 const story = (over: Partial<FinishPrStory> = {}): FinishPrStory => ({
@@ -470,6 +470,9 @@ describe("buildFinishBody — Unresolved and coverage (A4)", () => {
     missing: [],
     unreviewed: [],
     accepted: [],
+    ledger: [],
+    stops: [],
+    handoffs: [],
     ...over,
   });
 
@@ -550,6 +553,9 @@ describe("buildFinishBody — Unresolved with a repo template (A4)", () => {
     missing: [],
     unreviewed: [],
     accepted: [],
+    ledger: [],
+    stops: [],
+    handoffs: [],
   };
 
   test.each(["merge", "strict"] as const)("%s mode renders Unresolved before the template sections", (mode) => {
@@ -572,5 +578,160 @@ describe("buildFinishBody — Unresolved with a repo template (A4)", () => {
     );
     expect(body.startsWith("---")).toBe(true);
     expect(body.indexOf("## Unresolved")).toBeLessThan(body.indexOf("## Summary"));
+  });
+});
+
+describe("findings table, Set aside and Stops (finish A 7)", () => {
+  const unresolvedBase = {
+    reason: "r",
+    findings: [],
+    acceptance: "green" as const,
+    gates: [],
+    missing: [],
+    unreviewed: [],
+    accepted: [],
+    ledger: [],
+    stops: [],
+    handoffs: [],
+  };
+  const e = (title: string, severity: Finding["severity"], state: LedgerEntry["state"], ref?: string): LedgerEntry => ({
+    id: title,
+    finding: { severity, title, problem: "p", fix: "f", file: "src/x|y.ts" },
+    state,
+    ...(ref ? { ref } : {}),
+  });
+  const handoff = (over: Record<string, unknown> = {}) => ({
+    n: 1,
+    dir: "/o/finish-audit/feat/run-1.handoff-1",
+    phase: "review" as const,
+    limit: "fix" as const,
+    baseSha: "s",
+    headSha: "s",
+    findingIds: ["a", "b", "c"],
+    newUntracked: [],
+    changedPaths: [],
+    stoppedAt: "t",
+    hasNote: true,
+    patchSaved: true,
+    restored: true,
+    consumed: false,
+    reapplied: false,
+    untrackedRestored: [],
+    untrackedMovedAside: ["big.md"],
+    untrackedFailed: [],
+    ...over,
+  });
+
+  test("one table sorted by state then severity; resolved rows collapsed", () => {
+    const body = buildFinishBody(
+      baseCtx({
+        unresolved: {
+          ...unresolvedBase,
+          ledger: [
+            e("fixed one", "HIGH", "fixed-unreviewed", "68e7c2189abc"),
+            e("open low", "LOW", "open"),
+            e("open high", "HIGH", "open"),
+            e("waived one", "MEDIUM", "waived", "D-2"),
+          ],
+        },
+      }),
+    );
+    const table = body.slice(body.indexOf("| Severity |"));
+    expect(table.indexOf("open high")).toBeLessThan(table.indexOf("open low"));
+    expect(table.indexOf("open low")).toBeLessThan(table.indexOf("fixed one"));
+    expect(body).toContain("`68e7c21`");
+    expect(body).toContain("src/x\\|y.ts");
+    expect(body).toMatch(/<details>[\s\S]*waived one[\s\S]*D-2[\s\S]*<\/details>/);
+  });
+
+  test("states sort open, rejected, set-aside, unresolved, fixed-unreviewed, accepted", () => {
+    const states: LedgerEntry["state"][] = [
+      "accepted",
+      "fixed-unreviewed",
+      "unresolved",
+      "set-aside",
+      "rejected",
+      "open",
+    ];
+    const body = buildFinishBody(
+      baseCtx({ unresolved: { ...unresolvedBase, ledger: states.map((s) => e(`t-${s}`, "HIGH", s)) } }),
+    );
+    const order = ["open", "rejected", "set-aside", "unresolved", "fixed-unreviewed", "accepted"].map((s) =>
+      body.indexOf(`t-${s}`),
+    );
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+  });
+
+  test("LLM-sourced cell text cannot break the table or the details block", () => {
+    const hostile: LedgerEntry = {
+      id: "h",
+      finding: { severity: "HIGH", title: "a </details> `x`\n| b", problem: "p", fix: "f", file: "f`<b>.ts" },
+      state: "open",
+    };
+    const done: LedgerEntry = {
+      ...hostile,
+      id: "h2",
+      finding: { ...hostile.finding, title: "z </details>" },
+      state: "waived",
+    };
+    const body = buildFinishBody(baseCtx({ unresolved: { ...unresolvedBase, ledger: [hostile, done] } }));
+    expect(body.match(/<\/details>/g)).toHaveLength(1);
+    const rows = body.split("\n").filter((l) => l.startsWith("| HIGH"));
+    expect(rows).toHaveLength(2);
+    for (const row of rows) expect(row).not.toMatch(/(?<!\\)`|<b>/);
+  });
+
+  test("lists set-aside handoffs and stops", () => {
+    const body = buildFinishBody(
+      baseCtx({
+        unresolved: {
+          ...unresolvedBase,
+          stops: [{ kind: "fix", phase: "review", at: "t", limitMs: 1_200_000, handoff: 1, findings: 3 }],
+          handoffs: [handoff()],
+        },
+      }),
+    );
+    expect(body).toContain("### Set aside");
+    expect(body).toContain("run-1.handoff-1/changes.patch");
+    expect(body).toContain("not re-applied");
+    expect(body).toContain("moved into the handoff: big.md");
+    expect(body).toContain("### Stops");
+    expect(body).toContain("fix session stopped at the 20 min limit (3 findings, handoff-1)");
+  });
+
+  test("surfaces restore failures and user files that could not be put back", () => {
+    const body = buildFinishBody(
+      baseCtx({
+        unresolved: {
+          ...unresolvedBase,
+          handoffs: [handoff({ restored: false, untrackedFailed: ["notes.md"], untrackedMovedAside: [] })],
+        },
+      }),
+    );
+    expect(body).toContain("worktree restore failed");
+    expect(body).toContain("could not be put back: notes.md");
+  });
+
+  test("a re-applied and consumed handoff reads as committed", () => {
+    const body = buildFinishBody(
+      baseCtx({ unresolved: { ...unresolvedBase, handoffs: [handoff({ consumed: true, reapplied: true })] } }),
+    );
+    expect(body).toContain("re-applied and committed");
+  });
+
+  test("pre-v3 results with an empty ledger keep the old open-findings list", () => {
+    const body = buildFinishBody(
+      baseCtx({ unresolved: { ...unresolvedBase, findings: [finding({ title: "legacy" })] } }),
+    );
+    expect(body).toContain("### Open findings");
+    expect(body).not.toContain("| Severity |");
+  });
+
+  test("a not-run gate renders as 'Gates did not run', never as a red gate named gates", () => {
+    const body = buildFinishBody(
+      baseCtx({ unresolved: { ...unresolvedBase, gates: [{ name: "gates", status: "not-run" }] } }),
+    );
+    expect(body).toContain("Gates did not run");
+    expect(body).not.toContain("Gate `gates` is red");
   });
 });

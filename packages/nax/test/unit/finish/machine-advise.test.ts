@@ -79,6 +79,43 @@ describe("approval", () => {
       expect(log.ledgerCommits).toBe(1);
       expect(state.resolution?.acceptedResidue).toHaveLength(1);
       expect(state.review.ledger.map((e) => [e.state, e.ref])).toEqual([["accepted", "advisor approval"]]);
+      // result.json carries the ledger as finalized (accepted), not the pre-accept snapshot the decision was made on.
+      expect(result.facts?.findings.map((e) => e.state)).toEqual(["accepted"]);
+    });
+  });
+
+  test("result.handoffs lists every set-aside handoff; absent when there were none", async () => {
+    await withTempDir(async (dir) => {
+      const none = makeMachineHarness({ auditDir: dir, script: {} });
+      expect((await runFinishMachine(none.state, none.deps)).handoffs).toBeUndefined();
+
+      const { deps, state } = makeMachineHarness({ auditDir: dir, script: {} });
+      state.handoffs = [
+        {
+          n: 1,
+          dir: `${dir}/h1`,
+          phase: "review",
+          limit: "fix",
+          baseSha: "s",
+          headSha: "s",
+          findingIds: ["a"],
+          newUntracked: [],
+          changedPaths: [],
+          stoppedAt: "t",
+          hasNote: false,
+          patchSaved: true,
+          restored: true,
+          consumed: false,
+          reapplied: false,
+          untrackedRestored: [],
+          untrackedMovedAside: [],
+          untrackedFailed: [],
+        },
+      ];
+      const result = await runFinishMachine(state, deps);
+      expect(result.handoffs).toEqual([
+        { dir: `${dir}/h1`, limit: "fix", findingIds: ["a"], consumed: false, reapplied: false },
+      ]);
     });
   });
 

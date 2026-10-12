@@ -18,6 +18,7 @@ import type { ForgeKind } from "@/forge";
 import { defaultForgeDeps, findPrTemplate } from "@/forge";
 import type { AuditTarget } from "../audit";
 import { readRounds } from "../audit";
+import type { LedgerEntry } from "../ledger";
 import { resolveTitle } from "../pr-title";
 import type { FinishState } from "../state";
 // TemplateMode is re-exported by ../types from @/forge (Task 1, D4.8) --
@@ -28,7 +29,9 @@ import type {
   FinishPrBodySettings,
   FinishRound,
   GateFact,
+  HandoffRecord,
   ReviewLens,
+  Stop,
   TemplateMode,
 } from "../types";
 import { readSpecSummary, resolveNarrative } from "./narrative";
@@ -80,6 +83,10 @@ export interface FinishPrContext {
     missing: ReviewLens[];
     unreviewed: string[];
     accepted: Finding[];
+    /** The per-finding ledger as it stands at finalize time (after the advisor's accepted event). */
+    ledger: LedgerEntry[];
+    stops: Stop[];
+    handoffs: HandoffRecord[];
   };
   /** A4: share of changed files each lens read, 0..1, or null when nothing changed. */
   coverage?: Record<ReviewLens, number | null>;
@@ -253,10 +260,11 @@ async function loadTemplate(workdir: string, forge: ForgeKind | undefined): Prom
 }
 
 /** A4: the resolver's decision, as the PR context's `unresolved` and `coverage` fields. */
-function fromResolution(resolution: FinishState["resolution"]): Pick<FinishPrContext, "unresolved" | "coverage"> {
+function fromResolution(state: FinishState): Pick<FinishPrContext, "unresolved" | "coverage"> {
+  const { resolution } = state;
   if (!resolution) return {};
   const { facts, acceptedResidue, outcome, reason } = resolution;
-  const needsBlock = outcome === "draft" || acceptedResidue.length > 0;
+  const needsBlock = outcome === "draft" || acceptedResidue.length > 0 || state.stops.length > 0;
   return {
     coverage: facts.coverage,
     ...(needsBlock
@@ -269,6 +277,10 @@ function fromResolution(resolution: FinishState["resolution"]): Pick<FinishPrCon
             missing: facts.reviewsMissing,
             unreviewed: facts.unreviewedFixCommits,
             accepted: acceptedResidue,
+            // The live ledger, not `facts.findings`: that snapshot predates the `accepted` event.
+            ledger: state.review.ledger,
+            stops: state.stops,
+            handoffs: state.handoffs,
           },
         }
       : {}),
@@ -313,7 +325,7 @@ export async function loadFinishPrContext(args: LoadPrContextArgs): Promise<Fini
     template,
     ...(args.prBody?.template !== undefined ? { templateMode: args.prBody.template } : {}),
     ...(args.prBody?.sectionMap !== undefined ? { templateSectionMap: args.prBody.sectionMap } : {}),
-    ...fromResolution(args.state.resolution),
+    ...fromResolution(args.state),
     narrative: resolveNarrative(args.narrative ?? args.state.review.summary, specSummary),
     title: resolveTitle(args.title ?? args.state.review.title, args.state.feature),
     run: {

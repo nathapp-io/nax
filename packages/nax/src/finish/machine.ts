@@ -227,9 +227,21 @@ async function finalizeResult(
     status: out.status,
     outcome: decision.outcome,
     ...(reason ? { reason } : {}),
-    facts: finalFacts,
+    // The ledger at finalize time: the PR body renders the same one (the earlier snapshot predates `accepted`).
+    facts: { ...finalFacts, findings: [...state.review.ledger] },
     ...(acceptedResidue.length > 0 ? { acceptedResidue } : {}),
     ...(decision.outcome === "draft" ? { findings: finalFacts.findingsOpen } : {}),
+    ...(state.handoffs.length > 0
+      ? {
+          handoffs: state.handoffs.map((h) => ({
+            dir: h.dir,
+            limit: h.limit,
+            findingIds: h.findingIds,
+            consumed: h.consumed,
+            ...(h.reapplied !== undefined ? { reapplied: h.reapplied } : {}),
+          })),
+        }
+      : {}),
     branch: state.branch,
     ...(sha ? { headSha: sha } : {}),
     ...(url ? { url } : {}),

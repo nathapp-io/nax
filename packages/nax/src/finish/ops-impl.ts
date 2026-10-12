@@ -17,10 +17,12 @@ import type { ForgeDeps, ForgeKind } from "@/forge";
 import type { CallContext, FinishBranchReviewInput, FinishFixInput, FinishSpecReviewInput } from "@/operations";
 import { callOp, finishBranchReviewOp, finishFixOp, finishSpecReviewOp, HANDOFF_TURN_MS } from "@/operations";
 import type { AuditTarget } from "./audit";
-import { commitAndPush } from "./commit";
+import { commitAndPush, isDirty } from "./commit";
 import type { FinishOps, FixPhase, FixRequest, ReviewInputs } from "./ops";
 import { buildFinishBody, buildFinishTitle, loadFinishPrContext, openDraftFinishPr, openOrPromotePr } from "./pr";
+import { stopReason } from "./resolve";
 import { MISSING_REVIEW } from "./review-json";
+import { setAside } from "./set-aside";
 import type { FinishState } from "./state";
 import { STEP_TIMEOUT_MARGIN_MS, stepSignal } from "./step-signal";
 import type { FinishPrBodySettings, FinishReviewOutput, FinishTimeouts } from "./types";
@@ -64,6 +66,9 @@ function fallbackBody(state: FinishState, error: string): string {
   const lines = ["## Unresolved", ""];
   const resolution = state.resolution;
   if (resolution?.reason) lines.push(`Reason: ${resolution.reason}`);
+  const stopped = stopReason(state.stops ?? []);
+  if (stopped) lines.push(`Stopped: ${stopped}`);
+  for (const h of state.handoffs ?? []) lines.push(`- Set aside: ${h.dir}`);
   for (const f of resolution?.facts.findingsOpen ?? []) lines.push(`- [${f.severity}] ${f.title}`);
   lines.push("", `PR body could not be generated: ${error}`);
   return lines.join("\n");
@@ -93,6 +98,29 @@ async function buildPrContentOrFallback(
   } catch (err) {
     return { title: `feat: ${state.feature}`, body: fallbackBody(state, errorMessage(err)) };
   }
+}
+
+/**
+ * Finish A 4.5: when a set-aside's restore failed and the tree is still dirty, that dirt is set
+ * aside as one more handoff (with the base and untrackedBefore of the fix session) instead of
+ * committed. Returns true when the commit must be skipped.
+ */
+async function setAsideLeftoverDirt(state: FinishState, audit: AuditTarget): Promise<boolean> {
+  const failedRestore = state.handoffs.some((h) => !h.restored);
+  if (!failedRestore || !state.lastFixBase || !(await isDirty(state.workdir))) return false;
+  const record = await setAside({
+    workdir: state.workdir,
+    audit,
+    n: state.handoffs.length + 1,
+    base: state.lastFixBase,
+    phase: "review",
+    limit: "flow",
+    findingIds: [],
+    now: () => new Date().toISOString(),
+  });
+  state.handoffs = [...state.handoffs, record];
+  // Still dirty after a failed restore: push what is committed, commit nothing.
+  return !record.restored;
 }
 
 /** Add a commit nobody reviewed to the state and to the frozen resolution the PR body renders. */
@@ -250,8 +278,10 @@ export function createFinishOps(deps: FinishOpsDeps): FinishOps {
       // Hooks off: a draft must always land (a deadline can leave a killed fix
       // session's half-edited tree here, which a pre-commit hook would reject).
       // That commit never passed a review, so it is listed as unreviewed.
+      const skipCommit = await setAsideLeftoverDirt(state, audit);
       const { committed, sha } = await commitAndPush(state.workdir, state.branch, PROMOTE_MESSAGE(state.feature), {
         skipHooks: true,
+        skipCommit,
       });
       if (committed) {
         state.committedThisRun = true;

@@ -44,6 +44,7 @@ export {
   commitRoundOutcome,
   filesInCommit,
   headSha,
+  isDirty,
   PUSH_TIMEOUT_MS,
 } from "./commit";
 export type { CommitMessageCtx } from "./commit-message";
@@ -54,6 +55,7 @@ export type { FinishContext, LoadFinishContextOptions } from "./context";
 export { _finishContextDeps, loadFinishContext } from "./context";
 export { _acceptanceGateDeps, runAcceptanceGate } from "./gates/acceptance";
 export { _qualityGateDeps, resolveGateCommands, runQualityGates } from "./gates/quality";
+export type { LedgerEntry, LedgerState } from "./ledger";
 export type { FinishMachineDeps } from "./machine";
 export { runFinishMachine } from "./machine";
 export type { Contradiction, MergedFindings } from "./merge-findings";
