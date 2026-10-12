@@ -5,10 +5,9 @@
  * (transport-agnostic); the block lands in the feature status.json.
  */
 import { describe, expect, test } from "bun:test";
-import { makeNaxConfig } from "@test/helpers";
+import { makeLogger, makeNaxConfig } from "@test/helpers";
 import { summarizeMcpAdoptionPhase } from "@/execution/lifecycle/run-completion-phases";
 import { buildStatusSnapshot, type RunStateSnapshot } from "@/execution/status-file";
-import type { Logger } from "@/logger";
 import { _mcpAdoptionDeps, summarizeMcpAdoption } from "@/mcp/adoption";
 
 type AdoptionFile = {
@@ -120,19 +119,17 @@ describe("summarizeMcpAdoptionPhase (run-completion phase)", () => {
         },
       }),
     );
-    const warnings: unknown[] = [];
-    const logger = {
-      warn: (stage: string, msg: string, ctx: unknown) => warnings.push({ stage, msg, ctx }),
-    } as unknown as Logger;
+    const logger = makeLogger();
     try {
       const result = await summarizeMcpAdoptionPhase({
         ...base({ cg: { enabled: true, stages: ["run"] } }),
         logger,
       });
       expect(result?.cg).toEqual({ sessionsOffered: 1, sessionsCalled: 0, totalCalls: 0 });
-      expect(warnings).toHaveLength(1);
-      expect((warnings[0] as { msg: string }).msg).toContain("cg");
-      expect((warnings[0] as { msg: string }).msg).toContain("never called");
+      const warns = logger.calls.filter((call) => call.level === "warn");
+      expect(warns).toHaveLength(1);
+      expect(warns[0]?.message).toContain("cg");
+      expect(warns[0]?.message).toContain("never called");
     } finally {
       Object.assign(_mcpAdoptionDeps, saved);
     }
@@ -141,21 +138,21 @@ describe("summarizeMcpAdoptionPhase (run-completion phase)", () => {
 
 describe("status.json projection", () => {
   test("mcpAdoption rides the snapshot like advisor", () => {
-    const state = {
+    const state: RunStateSnapshot = {
       runId: "r1",
       feature: "feat",
       startedAt: "t",
-      runStatus: "completed" as const,
+      runStatus: "running",
       dryRun: false,
       pid: 1,
-      prd: { userStories: [] },
+      prd: { project: "p", feature: "feat", branchName: "b", createdAt: "t", updatedAt: "t", userStories: [] },
       totalCost: 0,
       costLimit: null,
       currentStory: null,
       iterations: 1,
       startTimeMs: 0,
       mcpAdoption: { cg: { sessionsOffered: 2, sessionsCalled: 1, totalCalls: 1 } },
-    } as unknown as RunStateSnapshot;
+    };
     const snapshot = buildStatusSnapshot(state);
     expect(snapshot.mcpAdoption).toEqual({ cg: { sessionsOffered: 2, sessionsCalled: 1, totalCalls: 1 } });
   });
