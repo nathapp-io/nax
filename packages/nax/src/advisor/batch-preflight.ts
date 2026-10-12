@@ -12,6 +12,18 @@ export interface PreflightItem {
   raw: Record<string, unknown>;
 }
 
+/** The conflict's AC target, only when its story is in the batch (no decision may cite a story that does not exist). */
+function checkedAcRef(conflict: RawPreflightConflict, knownStoryIds: readonly string[]): RawPreflightConflict["acRef"] {
+  if (!conflict.acRef) return undefined;
+  if (knownStoryIds.includes(conflict.acRef.storyId)) return conflict.acRef;
+  getSafeLogger()?.warn("advisor", "Pre-flight AC target names a story that is not in the batch — target dropped", {
+    storyId: conflict.acRef.storyId,
+    acId: conflict.acRef.acId,
+    description: conflict.description,
+  });
+  return undefined;
+}
+
 export function preflightItems(
   conflicts: readonly RawPreflightConflict[],
   knownStoryIds: readonly string[],
@@ -28,6 +40,8 @@ export function preflightItems(
     }
     const storyId = kept[0];
     if (storyId === undefined) continue;
+    const acRef = checkedAcRef(conflict, knownStoryIds);
+    if (conflict.acRef && !acRef && !conflict.specSection) continue;
     out.push({
       question: {
         id: base.newId(),
@@ -45,7 +59,7 @@ export function preflightItems(
         ],
         options: buildMenu({
           kind: "preflight",
-          ...(conflict.acRef ? { acRef: conflict.acRef } : {}),
+          ...(acRef ? { acRef } : {}),
           ...(conflict.specSection ? { specSection: conflict.specSection } : {}),
         }),
       },

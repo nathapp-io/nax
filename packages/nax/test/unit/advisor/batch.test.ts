@@ -168,3 +168,80 @@ describe("adviseBatch preflight", () => {
     expect(out.items).toEqual([]);
   });
 });
+
+describe("adviseBatch hardening", () => {
+  test("batch decisions and audits record memoryMode stateless even when memory is warm (M1)", async () => {
+    const actx = setup();
+    const config = makeNaxConfig({ advisor: { enabled: true, model: "powerful", fallbackModels: [], memory: "warm" } });
+    const warm = { ...actx, callCtx: makeMockCallContext({ runtime: makeTestRuntime({ config }), config }) };
+    _advisorServiceDeps.callOp = (async (_c: unknown, _op: unknown, input: { items: { id: string }[] }) => ({
+      ok: true,
+      answers: input.items.map((it) => ({ itemId: it.id, reply: { optionId: "A", reason: "r", ...ok }, raw: {} })),
+      diagnoses: {},
+      conflicts: [],
+      overlap: [],
+    })) as typeof _advisorServiceDeps.callOp;
+    const out = await adviseBatch(warm, residual(1));
+    expect(out.items[0]?.decision?.memoryMode).toBe("stateless");
+    const audit = JSON.parse(await Bun.file(join(actx.outputDir, "advisor-audit", "f", "D-1.json")).text());
+    expect(audit.memoryMode).toBe("stateless");
+  });
+
+  test("a throwing heads-up channel never nulls decisions or skips audits (M7)", async () => {
+    const actx = setup();
+    const flagged = { ...ok, needsHumanConfirm: true };
+    _advisorServiceDeps.callOp = (async (_c: unknown, _op: unknown, input: { items: { id: string }[] }) => ({
+      ok: true,
+      answers: input.items.map((it) => ({ itemId: it.id, reply: { optionId: "A", reason: "r", ...flagged }, raw: {} })),
+      diagnoses: {},
+      conflicts: [],
+      overlap: [],
+    })) as typeof _advisorServiceDeps.callOp;
+    const throwing: AdvisorCallContext = {
+      ...actx,
+      headsUp: () => {
+        throw new Error("channel down");
+      },
+    };
+    const out = await adviseBatch(throwing, residual(2));
+    expect(out.items.map((i) => i.decision?.id)).toEqual(["D-1", "D-2"]);
+    expect(out.fallbackReason).toBeUndefined();
+    for (const id of ["D-1", "D-2"]) {
+      expect(await Bun.file(join(actx.outputDir, "advisor-audit", "f", `${id}.json`)).exists()).toBe(true);
+    }
+  });
+
+  test("a pre-flight AC target in a story outside the batch is dropped (M3)", async () => {
+    const actx = setup();
+    _advisorServiceDeps.callOp = (async () => ({
+      ok: true,
+      answers: [],
+      diagnoses: {},
+      overlap: [],
+      conflicts: [
+        {
+          storyIds: ["US-2"],
+          acRef: { storyId: "US-999", acId: "AC-9" },
+          specSection: "4.1",
+          description: "has a spec section",
+          raw: { optionId: "A", newText: "spec text", ...ok },
+        },
+        {
+          storyIds: ["US-2"],
+          acRef: { storyId: "US-999", acId: "AC-9" },
+          description: "nothing left",
+          raw: { optionId: "D", reason: "flag", ...ok },
+        },
+      ],
+    })) as typeof _advisorServiceDeps.callOp;
+    const out = await adviseBatch(actx, { kind: "preflight", summary: "pf", storyIds: ["US-2"] });
+    if (out.kind !== "preflight") throw new Error("kind");
+    expect(out.items).toHaveLength(1);
+    expect(out.items[0]?.question.options.map((o) => o.id)).toEqual(["A", "D"]);
+    expect(out.items[0]?.decision?.action).toEqual({
+      type: "supersede",
+      target: { kind: "spec", section: "4.1" },
+      newText: "spec text",
+    });
+  });
+});

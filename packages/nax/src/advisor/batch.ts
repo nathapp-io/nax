@@ -114,7 +114,7 @@ function preflightPending(
 
 async function decide(actx: AdvisorCallContext, run: BatchRun, p: Pending): Promise<BatchItemResult> {
   if (!p.reply) return { question: p.question, decision: null, fallbackReason: p.error ?? "no answer" };
-  const draft = decisionDraftFor(actx, p.question, p.reply, run.model, p.question.findingSeverity);
+  const draft = decisionDraftFor(actx, p.question, p.reply, run.model, p.question.findingSeverity, "stateless");
   if (!draft) {
     return { question: p.question, decision: null, fallbackReason: `optionId ${p.reply.optionId} is not on the menu` };
   }
@@ -149,7 +149,7 @@ async function auditItem(a: AuditCtx, item: BatchItemResult, raw: unknown, heads
     question: item.question,
     context: { specPath: actx.specPath, specSha256: null, prdSha256: null, priorDecisions: a.priorDecisions },
     worktree: a.worktree,
-    memoryMode: configOf(actx).memory,
+    memoryMode: "stateless",
     model: describeModel(run.model),
     ...(run.attempts.length > 0 ? { attempts: run.attempts } : {}),
     prompt: a.prompt,
@@ -165,6 +165,29 @@ async function auditItem(a: AuditCtx, item: BatchItemResult, raw: unknown, heads
       storyId: item.question.storyId ?? "_run",
       error: errorMessage(err),
     });
+  }
+}
+
+/** Heads-up + audit for one item; a failure here never undoes decisions already appended (M7). */
+async function finishItem(a: AuditCtx, item: BatchItemResult, raw: unknown): Promise<void> {
+  const storyId = item.question.storyId ?? "_run";
+  let headsUp: AdviceAuditRecord["headsUp"] = { sent: false, reason: "no-decision" };
+  if (item.decision) {
+    try {
+      headsUp = await deliverHeadsUp(a.actx, item.decision, item.question);
+    } catch (err) {
+      headsUp = { sent: false, reason: `delivery-failed: ${errorMessage(err)}` };
+      getSafeLogger()?.warn("advisor", "Batch heads-up failed — decision stands", {
+        storyId,
+        decisionId: item.decision.id,
+        error: errorMessage(err),
+      });
+    }
+  }
+  try {
+    await auditItem(a, item, raw, headsUp);
+  } catch (err) {
+    getSafeLogger()?.warn("advisor", "Batch audit failed — decision stands", { storyId, error: errorMessage(err) });
   }
 }
 
@@ -206,12 +229,7 @@ async function adviseOnce(actx: AdvisorCallContext, req: BatchRequest): Promise<
   const items: BatchItemResult[] = [];
   for (const p of pending) items.push(await decide(actx, run, p));
   const a: AuditCtx = { actx, run, prompt, worktree, priorDecisions, costUsd: cost / Math.max(1, items.length) };
-  for (const [i, item] of items.entries()) {
-    const headsUp = item.decision
-      ? await deliverHeadsUp(actx, item.decision, item.question)
-      : { sent: false, reason: "no-decision" };
-    await auditItem(a, item, pending[i]?.raw, headsUp);
-  }
+  for (const [i, item] of items.entries()) await finishItem(a, item, pending[i]?.raw);
   const fallback = failure ? { fallbackReason: failure } : {};
   return req.kind === "residual"
     ? { kind: "residual", items, diagnoses: run.out?.diagnoses ? { ...run.out.diagnoses } : {}, ...fallback }

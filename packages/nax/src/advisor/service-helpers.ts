@@ -70,6 +70,7 @@ export function decisionDraftFor(
   reply: AdvisorReply,
   answeredBy: AdvisorConfig["model"],
   findingSeverity: string | undefined,
+  memoryMode?: AdviceDecision["memoryMode"],
 ): ((id: string) => Omit<AdviceDecision, "id">) | null {
   const option = question.options.find((o) => o.id === reply.optionId);
   if (!option) return null;
@@ -94,7 +95,7 @@ export function decisionDraftFor(
     needsHumanConfirm: forcedConfirm(action, reply, findingSeverity),
     decidedAt: _advisorServiceDeps.now(),
     model: describeModel(answeredBy),
-    memoryMode: config.memory,
+    memoryMode: memoryMode ?? config.memory,
     auditRef: join("advisor-audit", actx.feature, `${id}.json`),
   });
 }

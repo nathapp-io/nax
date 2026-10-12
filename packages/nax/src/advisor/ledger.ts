@@ -115,7 +115,7 @@ export async function readTrustedDecisions(
   return all.filter((_, i) => checks[i]);
 }
 
-/** The audit artifact exists AND records this very decision (id, action type, dedupe key, story). */
+/** The audit artifact exists AND records this very decision, field for field (text, appliesTo and all). */
 async function auditMatches(d: AdviceDecision, outputDir: string): Promise<boolean> {
   const ref = d.auditRef;
   if (!ref || isAbsolute(ref) || ref.split(/[\\/]/).includes("..")) return false;
@@ -123,12 +123,7 @@ async function auditMatches(d: AdviceDecision, outputDir: string): Promise<boole
   if (text === null) return false;
   try {
     const rec = (JSON.parse(text) as { result?: { decision?: AdviceDecision | null } }).result?.decision;
-    return (
-      rec?.id === d.id &&
-      rec.action?.type === d.action?.type &&
-      rec.dedupeKey === d.dedupeKey &&
-      rec.storyId === d.storyId
-    );
+    return rec !== undefined && rec !== null && Bun.deepEquals(rec, d);
   } catch {
     // An unreadable artifact proves nothing about the line: not trusted.
     return false;

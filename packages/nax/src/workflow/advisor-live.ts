@@ -1,6 +1,8 @@
 /** A5 PR3: the real workflow advisor kinds behind PR2's WorkflowAdvisor seam (spec section 8). */
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { AdviceDecision, Advisor, QuestionDraft } from "@/advisor";
 import { buildMenu } from "@/advisor";
+import { getSafeLogger } from "@/logger";
 import type { PRD } from "@/prd";
 import type { ResidualAnswer, ResidualRequest, WorkflowAdvisor } from "./advisor";
 import type { GateName, WorkflowFinding, WorkflowRuling } from "./types";
@@ -70,8 +72,16 @@ export function createLiveWorkflowAdvisor(input: LiveAdvisorInput): WorkflowAdvi
         evidence: [{ source: "agent-diagnosis", text: q.concerns || "(no concern text)" }],
         options: buildMenu({ kind: "implementer-question" }),
       };
-      const { decision } = await advisor.advise(draft);
-      return decision?.action.type === "answer" ? decision.action.text : null;
+      try {
+        const { decision } = await advisor.advise(draft);
+        return decision?.action.type === "answer" ? decision.action.text : null;
+      } catch (err) {
+        getSafeLogger()?.warn("workflow", "Advisor answer failed — the story keeps today's behaviour", {
+          storyId: q.storyId,
+          error: errorMessage(err),
+        });
+        return null;
+      }
     },
     async ruleResidual(req: ResidualRequest): Promise<ResidualAnswer> {
       const items: QuestionDraft[] = req.items.map((f) => ({

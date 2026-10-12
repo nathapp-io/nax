@@ -53,6 +53,18 @@ const finding = (id: string) => ({
 });
 
 describe("answerQuestion", () => {
+  test("an advisor that throws -> null, never a throw (M4)", async () => {
+    const advisor = fakeAdvisor({});
+    const throwing: Advisor = {
+      ...advisor,
+      advise: async () => {
+        throw new Error("boom");
+      },
+    };
+    const live = createLiveWorkflowAdvisor({ advisor: throwing, feature: "f", storyId: "US-3", dependents: [] });
+    expect(await live.answerQuestion({ storyId: "US-3", status: "BLOCKED", concerns: "which db?" })).toBeNull();
+  });
+
   test("an answer decision returns its text; the question uses the implementer-question menu", async () => {
     const advisor = fakeAdvisor({
       advise: () => decision({ kind: "implementer-question", action: { type: "answer", text: "Use Postgres." } }),
