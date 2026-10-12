@@ -62,8 +62,7 @@ describe("workflow config", () => {
       "apps/api",
       (m) => warnings.push(m),
     );
-    expect((out.execution as Record<string, unknown>).mode).toBe("workflow");
-    expect((out.workflow as { maxFixRounds: number }).maxFixRounds).toBe(3);
+    expect(out).toMatchObject({ execution: { mode: "workflow" }, workflow: { maxFixRounds: 3 } });
     expect(warnings.some((w) => w.includes("execution.mode is root-only"))).toBe(true);
     expect(warnings.some((w) => w.includes("workflow is root-only"))).toBe(true);
   });

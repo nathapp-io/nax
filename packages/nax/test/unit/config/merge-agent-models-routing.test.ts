@@ -197,7 +197,7 @@ describe("mergePackageConfig — models section", () => {
 describe("mergePackageConfig — routing section", () => {
   test("merges routing.strategy for a package", () => {
     const root = makeRoot();
-    const result = mergePackageConfig(root, { routing: { strategy: "llm" } } as Partial<NaxConfig>);
+    const result = mergePackageConfig(root, { routing: { strategy: "llm" } });
     expect(result.routing?.strategy).toBe("llm");
     expect(result.routing?.llm).toEqual(root.routing?.llm); // root llm preserved
   });
@@ -222,7 +222,7 @@ describe("mergePackageConfig — routing section", () => {
   test("does not mutate root.routing", () => {
     const root = makeRoot();
     const origStrategy = root.routing?.strategy;
-    mergePackageConfig(root, { routing: { strategy: "llm" } } as Partial<NaxConfig>);
+    mergePackageConfig(root, { routing: { strategy: "llm" } });
     expect(root.routing?.strategy).toBe(origStrategy);
   });
 

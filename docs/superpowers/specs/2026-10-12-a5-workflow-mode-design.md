@@ -138,11 +138,11 @@ the following and log one warning that names every key it overrode.
   throws if it's ever reached in workflow mode.
 
 ### 5.2 `workflowStage` contract (with the unchanged stages around it)
-- **It must set the same fields `executionStage` does for `completionStage`:**
-  - `ctx.agentResult`: success, with cost, tokens and duration summed over every workflow session of the story;
-  - `ctx.storyMetrics` (cost, tokens, duration);
-  - `ctx.storyStartTime`;
-  - `ctx.storyGitRef` (the story's final `HEAD`).
+- **It sets only `ctx.agentResult`** (P2-R1, §15): success, with cost, tokens and duration summed over every
+  workflow session of the story. It does not set `storyStartTime`, `storyGitRef` or `storyMetrics`:
+  - `ctx.storyStartTime` and `ctx.storyGitRef` are set by `iteration-runner`. `storyGitRef` is the story's
+    persisted start ref, which the stage reads as BASE;
+  - `ctx.storyMetrics` is computed by `completionStage`.
 - **It always returns `continue`**, never `escalate` or `fail` (W-R3).
 - **Marking stays with `completionStage`.** It still calls `markStoryPassed` (`completion.ts:145`). The
   workflow's Close step **doesn't mark** (no double write); it records the end state in the ledger only.
@@ -436,7 +436,8 @@ Every new file needs its own tests: the coverage gate is per file (`coverage-per
 - **Unit tests** (`_deps` injection, TDD):
   - **Story loop:** warm rounds = min(3, max); fresh rounds step up, and stay on the same model at the last
     rung or with a pin; the shared cap; minors deferred; new breakage joins; `maxFixRounds` = 1/3/5.
-  - **Stage contract:** `workflowStage` sets `agentResult`, `storyMetrics` and `storyGitRef`, returns only
+  - **Stage contract:** `workflowStage` sets only `agentResult` (P2-R1; `storyStartTime`/`storyGitRef` come from
+    `iteration-runner`, `storyMetrics` from `completionStage`), returns only
     `continue`, and doesn't mark prd.json (exactly one mark).
   - **End states and run result:** end-state derivation, `RunResult.success` false on gate-open or not-run,
     and the ready/draft rules (CI `pending` vs `failed`).
@@ -519,3 +520,17 @@ Four stacked PRs, each code-reviewed before push:
 | m5 | §11 tests |
 | m6 | 4 PRs |
 | m7 | Spec path, package truncation, status block, `leave` destination, `maxFixRounds` minimum |
+
+## 15. PR2 plan rulings (2026-10-12)
+
+| # | Ruling | Why |
+|---|---|---|
+| P2-R1 | `workflowStage` sets **only** `ctx.agentResult`. It does not set `storyGitRef`, `storyStartTime` or `storyMetrics` | `iteration-runner.ts:114-120,198-199` already sets `storyStartTime` and `storyGitRef`. `storyGitRef` is the story's **start** ref, persisted in prd.json (BUG-114), and `completionStage` diffs from it. Spec §5.2 said "final HEAD", which would break that diff. `completionStage:80-86` computes `storyMetrics` itself. The stage reads `ctx.storyGitRef` as `BASE`, which also makes BASE survive a crash |
+| P2-R2 | PR2 registers three roles: `wf-implementer`, `wf-story-review`, `wf-rereview`. PR4 registers `wf-branch-review` and `wf-branch-fix` | YAGNI: nothing in PR2 opens a branch session |
+| P2-R3 | The `status.json` `workflow` block and per-role token totals in `result.json` move to PR4 | Both feed the feature report. PR2's `result.json` carries per-story state, rounds, gates and step timings |
+| P2-R4 | Step time limits reuse finish's mechanism: implement/fix turns get a **soft interrupt** (`send(prompt, { interrupt })`, as `finish-fix.ts` does) and no handoff turn. Reviews get a step `signal`. `src/finish/step-signal.ts` moves to `src/utils/step-signal.ts` so both can import it | Finish already proved this: the agent's own timeout trails the step limit by `STEP_TIMEOUT_MARGIN_MS`, so a stale-retry never re-runs a stopped turn |
+| P2-R5 | A fresh fix round **always** closes the live `wf-implementer` session first, whatever the model | One rule covers both spec cases: a stepped-up model, and the last rung or a pinned story, where the endpoint is the same |
+| P2-R6 | The brief takes `rulings` and `redBaseDependencies` inputs. PR2 passes no rulings (pre-flight and carry are PR3/PR4). It computes red-base warnings from this run's `result.json` | The seam exists now, so PR3 only fills it |
+| P2-R7 | Spec excerpts in the brief match sections that mention the **story id**. Bare `AC-n` ids are not matched | Every story has an `AC-1`, so matching bare ids would paste most of the spec. The brief always gives the spec path |
+| P2-R9 | A prior record whose phase is still `implement` (a crash during the first turn) is **not** resumed: the story starts over, and the new session sees the uncommitted edits in the tree. Records past the first turn resume at the next round | §10 resumes "a story stopped mid-loop". Before the first turn ends there is no review state or finding list to resume into |
+| P2-R8 | `parseImplementerReply`, `parseStoryReviewReply` and `parseReReviewReply` and the finding/reply types live in `src/operations/` | `src/workflow` imports `src/operations`. The ops can't import `src/workflow` back without a cycle |

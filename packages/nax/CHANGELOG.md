@@ -12,6 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Workflow mode story loop (A5 PR2).** With `execution.mode: "workflow"`, each story runs one implementer
+  (TDD with evidence), lint/typecheck/scoped gates, a story review, and up to `workflow.maxFixRounds`
+  fix rounds (warm for the first three, then fresh one tier up) with scoped re-reviews, then the full
+  suite. Stories always close as `complete`, `complete-with-rulings` or `complete-gate-open`. Writes
+  `workflow/<feature>/<runId>/ledger.md`, `result.json` and per-story briefs, reports, reviews and diff
+  packages, and resumes a story mid-loop after a crash. Advisor calls use their deterministic defaults
+  until PR3.
 - **Workflow mode config (`execution.mode: "workflow"`), inert until the workflow runner lands.** The key is accepted
   and normalised on every merged config (root chain and per-package overlays): acceptance is forced off, the advisor
   forced on, one warning names what was overridden, and `--parallel` is clamped to sequential. The default

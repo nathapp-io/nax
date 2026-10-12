@@ -67,6 +67,20 @@ export type { TimeoutRetryInput } from "./builders/timeout-retry-builder";
 // Timeout-retry prompt builder — informed retry prompt conditioned on whether the
 // working tree changed during the timed-out attempt (US-003).
 export { timeoutRetry } from "./builders/timeout-retry-builder";
+// A5 workflow mode — story brief and implementer-session prompts (spec §6).
+export type { WorkflowBriefInput, WorkflowPromptFinding } from "./builders/workflow-implementer-builder";
+export {
+  buildWorkflowAnswerPrompt,
+  buildWorkflowBrief,
+  buildWorkflowFixPrompt,
+  buildWorkflowImplementPrompt,
+} from "./builders/workflow-implementer-builder";
+export { buildWorkflowReReviewPrompt } from "./builders/workflow-re-review-builder";
+export {
+  buildWorkflowReviewJsonRetry,
+  buildWorkflowReviewJsonRetryCondensed,
+  buildWorkflowStoryReviewPrompt,
+} from "./builders/workflow-story-review-builder";
 export type { ComposeInput } from "./compose";
 // Wave 1 composition utilities — slot-ordered assembly and serialisation.
 export { composeSections, join } from "./compose";

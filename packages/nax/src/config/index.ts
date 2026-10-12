@@ -166,6 +166,7 @@ export {
   tddConfigSelector,
   testPatternConfigSelector,
   verifyConfigSelector,
+  workflowConfigSelector,
 } from "./selectors";
 export {
   AC_QUALITY_RULES,

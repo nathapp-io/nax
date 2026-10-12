@@ -39,6 +39,21 @@ export interface CallOpStubOptions {
 }
 
 /**
+ * A `callOp` stand-in whose result is scripted for EVERY op, deterministic ones
+ * included (unlike {@link makeCallOp}, which runs deterministic ops for real).
+ * `respond` may throw to script a failing dispatch. The one `O` cast lives here
+ * for the same reason as above: the caller picks `O`, so no test value can prove it.
+ */
+export function makeScriptedCallOp(
+  respond: (op: { name: string; kind: string }, input: unknown, ctx: CallContext) => unknown,
+) {
+  return async <I, O, C>(ctx: CallContext, op: Operation<I, O, C>, input: I): Promise<O> => {
+    const value: unknown = respond(op, input, ctx);
+    return value as O;
+  };
+}
+
+/**
  * ```ts
  * const dispatched: string[] = [];
  * _storyOrchestratorDeps.callOp = makeCallOp({ onDispatch: (op) => dispatched.push(op.name) });

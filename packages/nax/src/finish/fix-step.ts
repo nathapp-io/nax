@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
+import { stepSignal } from "@/utils/step-signal";
 import type { AuditTarget } from "./audit";
 import { writeCheckpoint } from "./checkpoint";
 import { setAsideLeftoverDirt } from "./finalize-dirt";
@@ -31,7 +32,6 @@ import {
   snapshotUntracked,
 } from "./set-aside";
 import type { FinishState } from "./state";
-import { stepSignal } from "./step-signal";
 import type { Finding, FixBase, FixContinuation, HandoffLimit, HandoffNote, HandoffRecord, Stop } from "./types";
 
 export type FixStepResult =

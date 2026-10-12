@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { STEP_TIMEOUT_MARGIN_MS, stepSignal } from "@/finish/step-signal";
+import { STEP_TIMEOUT_MARGIN_MS, stepSignal } from "@/utils/step-signal";
 
 describe("stepSignal (finish A)", () => {
   test("no base, no limit", () => {

@@ -16,7 +16,7 @@ export { makeAgentResult } from "./agent-result";
 export { assertDefined, firstCall } from "./assert-defined";
 export { assertCaughtInstanceOf, assertNaxError } from "./assert-nax-error";
 export { makeMockCallContext } from "./call-context";
-export { type CallOpStubOptions, DEFAULT_AGENT_ENVELOPE, makeCallOp } from "./call-op";
+export { type CallOpStubOptions, DEFAULT_AGENT_ENVELOPE, makeCallOp, makeScriptedCallOp } from "./call-op";
 export {
   GUARD_HIGH_ANSWER,
   GUARD_LOW_ANSWER,
@@ -131,4 +131,5 @@ export { useUntrustedRegistry } from "./trust";
 export { loadTrustModule, type TrustModule, trustFn } from "./trust-module";
 export { makeTurnResult } from "./turn-result";
 export { withDebugSpy, withInfoSpy, withWarnSpy } from "./warn-spy";
+export { makeStepContext } from "./workflow-step-context";
 export { type MockWorktreeManager, makeWorktreeManager } from "./worktree-manager";

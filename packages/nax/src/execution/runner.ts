@@ -36,6 +36,7 @@ import { runCompletionPhase } from "./runner-completion";
 import { runExecutionPhase } from "./runner-execution";
 import { runSetupPhase } from "./runner-setup";
 import { _storyOrchestratorDeps } from "./story-orchestrator";
+import { effectiveUseBatch } from "./workflow-parallel";
 
 /**
  * Injectable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
@@ -162,7 +163,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
     feature,
     featureDir,
     dryRun,
-    useBatch = true,
+    useBatch: requestedUseBatch = true,
     eventEmitter,
     statusFile,
     parallel,
@@ -174,6 +175,11 @@ export async function run(options: RunOptions): Promise<RunResult> {
     resumeMode = "auto",
     runId: callerRunId,
   } = options;
+
+  // A5: workflow mode never batches (one story per dispatch); `nax resume` also enters through here.
+  const useBatch = effectiveUseBatch(config, requestedUseBatch, (m) =>
+    getSafeLogger()?.warn("execution", m, { storyId: "_run" }),
+  );
 
   // Reentrant/concurrent `run()` would race on the module-global
   // `_storyOrchestratorDeps` mutation below — see `_runnerReentrancyGuard`'s

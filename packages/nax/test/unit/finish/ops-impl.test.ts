@@ -8,10 +8,10 @@
  */
 import { afterEach, describe, expect, test } from "bun:test";
 import { _finishGitDeps, _finishOpsDeps, createFinishOps, createFinishState } from "@/finish";
-import { STEP_TIMEOUT_MARGIN_MS } from "@/finish/step-signal";
 import type { ForgeDeps } from "@/forge";
 import type { CallContext } from "@/operations";
 import { HANDOFF_TURN_MS } from "@/operations";
+import { STEP_TIMEOUT_MARGIN_MS } from "@/utils/step-signal";
 
 const originalOps = { ..._finishOpsDeps };
 const originalGit = _finishGitDeps.git;
