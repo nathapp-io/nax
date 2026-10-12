@@ -10,6 +10,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+
+- **Workflow mode config (`execution.mode: "workflow"`), inert until the workflow runner lands.** The key is accepted
+  and normalised on every merged config (root chain and per-package overlays): acceptance is forced off, the advisor
+  forced on, one warning names what was overridden, and `--parallel` is clamped to sequential. The default
+  `"pipeline"` mode is untouched and returns the config unchanged.
+- **Provider-scoped quota cooldown.** A `fail-quota` failure now parks only the exhausted provider (every model id of
+  that provider) for the rest of the run, instead of cooling down the whole native agent.
+- **Token-plan 429 classification.** Usage-limit and token-plan 429 responses are classified as `fail-quota` rather
+  than a transient rate limit, so they fall back instead of retrying against a dead plan.
+- **Advisor `fallbackModels` ladder.** `advisor.fallbackModels` lists models tried in order when the primary advisor
+  model fails or is cooling down; each attempt is recorded in the advisor audit entry.
+
 ### Breaking
 
 - **nax now requires explicit folder trust before it runs repository-controlled code.** A gated command
