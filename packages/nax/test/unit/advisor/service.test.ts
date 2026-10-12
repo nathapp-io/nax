@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { join } from "node:path";
 import { assertDefined, makeMockCallContext, makeNaxConfig, withTempDir } from "@test/helpers";
 import type { AdvisorCallContext, QuestionDraft } from "@/advisor";
@@ -272,5 +272,34 @@ test("every ladder entry failing returns the existing no-decision result (Review
     expect(auditFile).not.toBe("");
     const audit = JSON.parse(await Bun.file(join(dir, "out", "advisor-audit", "feat", auditFile)).text());
     expect(audit.attempts).toHaveLength(2);
+  });
+});
+
+function coolingActx(dir: string, cooling: (agent: string, model: unknown) => boolean) {
+  const a = ladderActx(dir);
+  const manager = a.callCtx.runtime.agentManager;
+  spyOn(manager, "isUnavailable").mockImplementation((agent, _tier, model) => cooling(agent, model));
+  return a;
+}
+
+test("a cooling primary is skipped: the fallback is called first and only once", async () => {
+  await withTempDir(async (dir) => {
+    const { inputs } = stubDeps(reply("A", { instruction: "fix it" }));
+    const a = coolingActx(dir, (_agent, model) => model === ds.model);
+    const out = await createAdvisor(a).advise(judgment);
+    expect(out.decision?.model).toBe("native:openai-codex/gpt-6.1-sol[medium]");
+    expect(inputs).toHaveLength(1);
+    expect((inputs[0] as { model: unknown }).model).toEqual(sol);
+  });
+});
+
+test("every ladder entry cooling still makes one attempt on the primary (full-ladder fallback)", async () => {
+  await withTempDir(async (dir) => {
+    const { inputs } = stubDeps(reply("A", { instruction: "fix it" }));
+    const a = coolingActx(dir, () => true);
+    const out = await createAdvisor(a).advise(judgment);
+    expect(out.decision?.model).toBe("native:opencode-go/deepseek-v4.1-flash[high]");
+    expect(inputs).toHaveLength(1);
+    expect((inputs[0] as { model: unknown }).model).toEqual(ds);
   });
 });
