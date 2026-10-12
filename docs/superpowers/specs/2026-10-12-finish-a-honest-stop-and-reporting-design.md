@@ -281,6 +281,12 @@ Owner-approved after the first implementation pass (they replace the earlier ope
 
 Smaller gaps closed in the same pass: a run abort outside a fix session (a review lens, acceptance, gates) is recorded as a `run` stop (`limitMs: 0`, with step and round) and a failed result carries it in `result.stops`; `state.lastFixBase` is removed (checkpoints that still carry it load, the field is ignored).
 
+### Live-check findings (first live run)
+
+- **Interrupt mid tool-call.** On the native agent an interrupt that lands while a tool call's JSON args are still streaming ends the turn with a tool-args parse fault (`Tool "Write" returned unparseable arguments.`), not an abort. `sendPrompt` now treats any failure of a turn that `interruptTurn` cancelled as the interrupted `fail-stale` (the flag is set before the cancel runs, so an earlier genuine adapter error is never reclassified). The session stays warm, the handoff turn runs in the same session as turn 2, and the stale-retry never re-runs the stopped fix.
+- **Consumed handoff releases its findings.** When a continued attempt commits and its handoff is marked consumed, the review loop emits `handoff-consumed` with the handoff's recorded `findingIds` (exact ledger ids; titles get reworded). Entries still `set-aside` under that handoff move to `open` and follow the normal flow, so a later independent clean full round clears them. A handoff that is not consumed keeps them `set-aside`. Acceptance and gate fixes have no ledger entries.
+- **Stop limits render honestly.** One helper (`limitLabel`) renders every stop limit: `15 s`, `90 s`, `20 min`, `3 h` (a 15 s limit used to read `0 min`).
+
 ### Open items
 
 1. The live check in section 11 (plan Task 14 Step 5) is still owed. It is a billed `nax run` and needs the user's approval at launch. It must verify:
