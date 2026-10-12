@@ -48,6 +48,7 @@ describe("aborts and deadlines", () => {
         auditDir: dir,
         signal: phase.signal,
         runSignal: new AbortController().signal,
+        flowMs: 10_800_000,
         context: { acceptanceStatus: "disabled" },
         script: { quality: [q("A")] },
         ops: {
@@ -60,8 +61,7 @@ describe("aborts and deadlines", () => {
       });
       const result = await runFinishMachine(state, deps);
       expect(result.outcome).toBe("draft");
-      expect(result.reason?.startsWith("deadline")).toBe(true);
-      expect(trail.slice(trail.indexOf("fix:review") + 1)).toEqual(["finalizeDraftPr"]);
+      expect(trail.slice(trail.indexOf("fix:review") + 1)).toEqual(["restore", "finalizeDraftPr"]);
     });
   });
 

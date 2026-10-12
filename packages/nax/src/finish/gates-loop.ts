@@ -8,9 +8,10 @@ import { getSafeLogger } from "@/logger";
 import { recordRound } from "./audit";
 import { buildCommitRound, commitFixes, filesInCommit } from "./commit";
 import { buildFixCommitMessage } from "./commit-message";
+import { runFixStep } from "./fix-step";
 import { runAcceptanceGate } from "./gates/acceptance";
 import { resolveGateCommands, runQualityGates } from "./gates/quality";
-import { assertNotAborted, type FinishMachineDeps } from "./machine-deps";
+import { assertNotAborted, type FinishMachineDeps, fixStepDeps } from "./machine-deps";
 import type { ReviewLoopDeps } from "./review-loop";
 import { runReviewLoop } from "./review-loop";
 import { gateCommitRoute, gateFacts, MAX_REVIEW_ROUNDS, routeQualityGates } from "./route";
@@ -59,18 +60,19 @@ async function fixOnce(
   gates: QualityGateResult,
 ): Promise<{ committed: boolean; changed: boolean }> {
   assertNotAborted(deps);
-  let fixOutcome: Awaited<ReturnType<FinishMachineDeps["ops"]["fix"]>>;
-  try {
-    fixOutcome = await deps.ops.fix("gate", { state, failing: gates.failing, gateOutput: gates.output });
-  } catch (err) {
-    assertNotAborted(deps); // a deadline or abort is not a failed fix
-    getSafeLogger()?.warn("finish", "Gate fix session failed; counted as used", {
-      storyId: "_run",
-      error: errorMessage(err),
-    });
+  const step = await runFixStep(state, fixStepDeps(deps), "gate", { failing: gates.failing, gateOutput: gates.output });
+  if (step.kind !== "done") {
+    if (step.kind === "failed") {
+      getSafeLogger()?.warn("finish", "Gate fix session failed; counted as used", {
+        storyId: "_run",
+        error: errorMessage(step.error),
+      });
+    }
+    // Counted either way: routeQualityGates stops the loop on the attempt cap.
     state.phases.gate.fixAttempts += 1;
     return { committed: false, changed: false };
   }
+  const fixOutcome = step.outcome;
   const message = buildFixCommitMessage(
     "gate",
     state.feature,

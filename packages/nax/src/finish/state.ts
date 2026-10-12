@@ -5,8 +5,11 @@ import type {
   FinishPhase,
   FinishResolution,
   FinishResultStatus,
+  FixBase,
   GateFact,
+  HandoffRecord,
   ReviewLens,
+  Stop,
 } from "./types";
 
 const FINISH_PHASES: readonly FinishPhase[] = ["acceptance", "spec", "quality", "review", "gate"];
@@ -120,6 +123,16 @@ export interface FinishState {
    * `FinishState`.
    */
   committedThisRun: boolean;
+  /** Finish A: every place a step stopped short (review lens, fix session, flow deadline, run cancel). */
+  stops: Stop[];
+  /** Finish A: every fix session that was set aside, in order; `handoffs[n - 1]` is handoff `n`. */
+  handoffs: HandoffRecord[];
+  /** Finish A: the handoff the next fix attempt for the same work should continue from. */
+  pendingHandoff?: number;
+  /** Finish A: the base the last fix session started from. */
+  lastFixBase?: FixBase;
+  /** The step the machine is in, for flow stops recorded outside a fix session. */
+  step?: Stop["step"];
 }
 
 /** The caller-supplied identity fields of a fresh `FinishState`. */
@@ -161,6 +174,8 @@ export function createFinishState(init: FinishStateInit): FinishState {
     committedThisRun: false,
     review: zeroedReview(),
     unreviewedFixCommits: [],
+    stops: [],
+    handoffs: [],
   };
 }
 

@@ -30,6 +30,7 @@ function deps(ops: FinishOps, auditDir: string, advise?: FinishAdvisor) {
     audit: { auditDir, runId: "run-1" },
     now: () => "t",
     assertNotAborted: () => {},
+    fix: { ops, audit: { auditDir, runId: "run-1" }, now: () => "t" },
   };
 }
 
@@ -210,23 +211,19 @@ describe("runReviewLoop failures and advisor-off judgment", () => {
   test("an abort while a fix session was failing is not swallowed", async () => {
     await withTempDir(async (dir) => {
       stubGit({ dirty: false, head: 1 });
-      let aborted = false;
+      const phase = new AbortController();
       const ops = makeFinishOps(
         [],
         { quality: [q("A")] },
         {
           fix: async () => {
-            aborted = true;
+            phase.abort();
             throw new Error("deadline");
           },
         },
       );
-      const d = {
-        ...deps(ops, dir),
-        assertNotAborted: () => {
-          if (aborted) throw new Error("aborted");
-        },
-      };
+      const base = deps(ops, dir);
+      const d = { ...base, fix: { ...base.fix, signal: phase.signal } };
       await expect(runReviewLoop(makeFinishState(), d)).rejects.toThrow("aborted");
     });
   });

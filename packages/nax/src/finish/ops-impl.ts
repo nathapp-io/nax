@@ -15,7 +15,7 @@ import { formatDecisionsForPrompt, readTrustedDecisions } from "@/advisor";
 import type { ConfiguredModel } from "@/config";
 import type { ForgeDeps, ForgeKind } from "@/forge";
 import type { CallContext, FinishBranchReviewInput, FinishFixInput, FinishSpecReviewInput } from "@/operations";
-import { callOp, finishBranchReviewOp, finishFixOp, finishSpecReviewOp } from "@/operations";
+import { callOp, finishBranchReviewOp, finishFixOp, finishSpecReviewOp, HANDOFF_TURN_MS } from "@/operations";
 import type { AuditTarget } from "./audit";
 import { commitAndPush } from "./commit";
 import type { FinishOps, FixPhase, FixRequest, ReviewInputs } from "./ops";
@@ -40,6 +40,8 @@ export interface FinishOpsDeps {
     fix?: ConfiguredModel;
   };
   timeouts?: Pick<FinishTimeouts, "reviewMs" | "fixMs">;
+  /** The run's own signal: the fix op's hard stop. The soft interrupt arrives on the request. */
+  runSignal?: AbortSignal;
   /** The existing `FinishPrBodySettings` from `./types` (D4.8). */
   prBody?: FinishPrBodySettings;
 }
@@ -166,7 +168,7 @@ export function createFinishOps(deps: FinishOpsDeps): FinishOps {
     },
 
     async fix(phase: FixPhase, req: FixRequest) {
-      const { state, findings, failing, gateOutput, acceptanceOutput } = req;
+      const { state, findings, failing, gateOutput, acceptanceOutput, interrupt, continuation } = req;
       const input: FinishFixInput = {
         phase,
         workdir: state.workdir,
@@ -175,12 +177,21 @@ export function createFinishOps(deps: FinishOpsDeps): FinishOps {
         gateOutput,
         acceptanceOutput,
         model: models?.fix,
-        timeoutMs: timeouts?.fixMs,
+        // The agent's own timeout trails the step limit by the handoff turn and a margin, so fixMs fires first.
+        timeoutMs:
+          timeouts?.fixMs !== undefined ? timeouts.fixMs + HANDOFF_TURN_MS + STEP_TIMEOUT_MARGIN_MS : undefined,
+        ...(interrupt ? { interrupt } : {}),
+        ...(continuation ? { continuation } : {}),
       };
       // Not `callCtx` alone — an explicit `sessionOverride: undefined` makes sure a
       // context the caller built with one set (e.g. for a review call reused here)
       // doesn't leak a reviewer role into the fixer once a caller starts wiring one in.
-      return _finishOpsDeps.callOp({ ...callCtx, sessionOverride: undefined }, finishFixOp, input);
+      // `signal: undefined` falls back to the runtime signal: the hard stop is the run's, never the step's.
+      return _finishOpsDeps.callOp(
+        { ...callCtx, sessionOverride: undefined, signal: deps.runSignal },
+        finishFixOp,
+        input,
+      );
     },
 
     async openDraftPr(state: FinishState) {

@@ -396,6 +396,7 @@ export async function runFinishPhase(ctx: FinishPhaseContext): Promise<FinishRes
         reviewMs: settings.timeouts.reviewMs,
         fixMs: settings.timeouts.fixMs,
       },
+      runSignal: ctx.abortSignal,
       prBody: settings.prBody,
     });
     result = await _finishPhaseDeps.runFinishMachine(state, {
@@ -410,7 +411,13 @@ export async function runFinishPhase(ctx: FinishPhaseContext): Promise<FinishRes
       // carries both and cannot distinguish them.
       runSignal: ctx.abortSignal,
       now: _finishPhaseDeps.now,
-      timeouts: { acceptanceMs: settings.timeouts.acceptanceMs, gateMs: settings.timeouts.gateMs },
+      timeouts: {
+        acceptanceMs: settings.timeouts.acceptanceMs,
+        gateMs: settings.timeouts.gateMs,
+        reviewMs: settings.timeouts.reviewMs,
+        fixMs: settings.timeouts.fixMs,
+        flowMs: settings.timeouts.flowMs,
+      },
     });
   } catch (err) {
     failure = errorMessage(err);

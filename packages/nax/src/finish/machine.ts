@@ -19,7 +19,7 @@ import type { FinishAdvisor } from "./advise";
 import { type WriteResultOptions, writeResult } from "./audit";
 import { headSha } from "./commit";
 import { runGatesLoop } from "./gates-loop";
-import { assertNotAborted, type FinishMachineDeps } from "./machine-deps";
+import { assertNotAborted, type FinishMachineDeps, fixStepDeps } from "./machine-deps";
 import type { ReviewInputs } from "./ops";
 import { computeFacts, draftReason, type Resolution, resolve } from "./resolve";
 import { loadReviewInputs } from "./review-inputs";
@@ -95,6 +95,8 @@ function reviewLoopDeps(deps: FinishMachineDeps, inputs: ReviewInputs): ReviewLo
     audit: deps.audit,
     now: deps.now,
     assertNotAborted: () => assertNotAborted(deps),
+    fix: fixStepDeps(deps),
+    ...(deps.timeouts?.reviewMs !== undefined ? { reviewMs: deps.timeouts.reviewMs } : {}),
   };
 }
 

@@ -318,6 +318,18 @@ export interface FixBase {
   untrackedBefore: string[];
   untrackedSnapshot?: UntrackedSnapshot;
 }
+/** Finish A §3.3: one place a finish stopped short of its work, for the PR body and the result. */
+export interface Stop {
+  kind: "review" | "fix" | "flow" | "run";
+  step?: "acceptance" | "review" | "gate" | "resolve";
+  phase?: "acceptance" | "gate" | "review";
+  lens?: ReviewLens;
+  round?: number;
+  at: string;
+  limitMs: number;
+  handoff?: number;
+  findings?: number;
+}
 export type HandoffLimit = "fix" | "flow" | "run" | "error";
 /** Finish A §4.2: `meta.json` of a set-aside handoff. */
 export interface HandoffRecord {

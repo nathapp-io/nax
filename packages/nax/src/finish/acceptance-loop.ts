@@ -8,8 +8,9 @@ import { getSafeLogger } from "@/logger";
 import { recordRound } from "./audit";
 import { buildCommitRound, commitFixes } from "./commit";
 import { buildFixCommitMessage } from "./commit-message";
+import { runFixStep } from "./fix-step";
 import { runAcceptanceGate } from "./gates/acceptance";
-import { assertNotAborted, type FinishMachineDeps } from "./machine-deps";
+import { assertNotAborted, type FinishMachineDeps, fixStepDeps } from "./machine-deps";
 import { routeAcceptance } from "./route";
 import type { FinishState } from "./state";
 import type { AcceptanceGateResult } from "./types";
@@ -44,18 +45,18 @@ async function recordGateOutcome(state: FinishState, deps: FinishMachineDeps): P
 
 async function fixOnce(state: FinishState, deps: FinishMachineDeps, output: string): Promise<void> {
   assertNotAborted(deps);
-  let fixOutcome: Awaited<ReturnType<FinishMachineDeps["ops"]["fix"]>>;
-  try {
-    fixOutcome = await deps.ops.fix("acceptance", { state, acceptanceOutput: output });
-  } catch (err) {
-    assertNotAborted(deps); // a deadline or abort is not a failed fix
-    getSafeLogger()?.warn("finish", "Acceptance fix session failed; counted as used", {
-      storyId: "_run",
-      error: errorMessage(err),
-    });
+  const step = await runFixStep(state, fixStepDeps(deps), "acceptance", { acceptanceOutput: output });
+  if (step.kind !== "done") {
+    if (step.kind === "failed") {
+      getSafeLogger()?.warn("finish", "Acceptance fix session failed; counted as used", {
+        storyId: "_run",
+        error: errorMessage(step.error),
+      });
+    }
     state.phases.acceptance.fixAttempts += 1;
     return;
   }
+  const fixOutcome = step.outcome;
   const message = buildFixCommitMessage(
     "acceptance",
     state.feature,

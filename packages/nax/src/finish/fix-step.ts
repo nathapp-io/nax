@@ -1,0 +1,170 @@
+/**
+ * Finish A §3-§4: every fix session (acceptance, review, gate) runs here.
+ *
+ * - The fixer runs under the run's own signal (hard) plus an interrupt (soft) =
+ *   phase signal + fixMs. The fix op answers an interrupt with a handoff note.
+ * - Commit guard: anything that stopped is set aside, never returned as done.
+ * - A crash is set aside too ("error"), so the next step starts from the base.
+ * - fixMs stop -> `stopped` (the loop continues); flow / run stop -> set aside,
+ *   then FINISH_ABORTED, so the handoff survives the machine's recovery path.
+ * - A base that cannot be read (git fails, unsafe snapshot dir) fails the step
+ *   without running the fixer.
+ */
+import { join } from "node:path";
+import { errorMessage } from "@nathapp/nax-agent/internal";
+import { NaxError } from "@/errors";
+import { getSafeLogger } from "@/logger";
+import type { AuditTarget } from "./audit";
+import { findingId } from "./ledger";
+import type { FinishOps, FixOutcome, FixPhase, FixRequest } from "./ops";
+import { captureFixBase, setAside, snapshotUntracked } from "./set-aside";
+import type { FinishState } from "./state";
+import { stepSignal } from "./step-signal";
+import type { Finding, FixBase, HandoffLimit, HandoffNote, HandoffRecord, Stop } from "./types";
+
+export type FixStepResult =
+  | { kind: "done"; outcome: FixOutcome; continued?: HandoffRecord }
+  | { kind: "failed"; error: unknown; handoff?: HandoffRecord }
+  | { kind: "stopped"; handoff: HandoffRecord };
+
+export interface FixStepDeps {
+  ops: FinishOps;
+  audit: AuditTarget;
+  now: () => string;
+  /** Phase signal (run signal + flowMs deadline). */
+  signal?: AbortSignal;
+  /** The run's own signal (SIGINT / cancel). */
+  runSignal?: AbortSignal;
+  fixMs?: number;
+  flowMs?: number;
+}
+
+export function findingIdsOf(findings: Finding[] | undefined): string[] {
+  return (findings ?? []).map(findingId);
+}
+
+function stopKind(deps: FixStepDeps, limit: AbortSignal | undefined, outcome?: FixOutcome): HandoffLimit | undefined {
+  if (deps.runSignal?.aborted) return "run";
+  if (deps.signal?.aborted) return "flow";
+  if (limit?.aborted || outcome?.interrupted) return "fix";
+  return undefined;
+}
+
+function limitMsFor(deps: FixStepDeps, limit: HandoffLimit): number {
+  if (limit === "flow") return deps.flowMs ?? 0;
+  if (limit === "fix") return deps.fixMs ?? 0;
+  return 0;
+}
+
+function stopFor(
+  deps: FixStepDeps,
+  ctx: { phase: FixPhase; req: Pick<FixRequest, "findings">; limit: Exclude<HandoffLimit, "error"> },
+  record: HandoffRecord,
+): Stop {
+  return {
+    kind: ctx.limit,
+    phase: ctx.phase,
+    at: deps.now(),
+    limitMs: limitMsFor(deps, ctx.limit),
+    handoff: record.n,
+    ...(ctx.phase === "review" ? { findings: ctx.req.findings?.length ?? 0 } : {}),
+  };
+}
+
+interface AsideCtx {
+  phase: FixPhase;
+  base: FixBase;
+  req: Pick<FixRequest, "findings">;
+  limit: HandoffLimit;
+  note?: HandoffNote;
+}
+
+async function setAsideStep(state: FinishState, deps: FixStepDeps, ctx: AsideCtx): Promise<HandoffRecord> {
+  const record = await setAside({
+    workdir: state.workdir,
+    audit: deps.audit,
+    n: state.handoffs.length + 1,
+    base: ctx.base,
+    phase: ctx.phase,
+    limit: ctx.limit,
+    findingIds: findingIdsOf(ctx.req.findings),
+    ...(ctx.note ? { note: ctx.note } : {}),
+    now: deps.now,
+  });
+  state.handoffs = [...state.handoffs, record];
+  if (ctx.limit === "fix" || ctx.limit === "flow") state.pendingHandoff = record.n;
+  if (ctx.limit !== "error") {
+    state.stops = [...state.stops, stopFor(deps, { phase: ctx.phase, req: ctx.req, limit: ctx.limit }, record)];
+  }
+  getSafeLogger()?.warn("finish", "Fix session set aside", {
+    storyId: "_run",
+    phase: ctx.phase,
+    limit: ctx.limit,
+    restored: record.restored,
+    handoff: record.dir,
+  });
+  return record;
+}
+
+function abortIfPhaseStopped(deps: FixStepDeps): void {
+  if (deps.signal?.aborted || deps.runSignal?.aborted) {
+    throw new NaxError("Finish aborted mid-loop", "FINISH_ABORTED", { stage: "finish" });
+  }
+}
+
+/** The base the session starts from, or the reason it cannot (a failed step, never a crash). */
+async function captureBase(state: FinishState, deps: FixStepDeps): Promise<FixBase | { error: unknown }> {
+  try {
+    const captured = await captureFixBase(state.workdir);
+    if (!captured) {
+      return { error: new NaxError("Cannot read the worktree base", "FINISH_FIX_BASE", { stage: "finish" }) };
+    }
+    // Only the nax audit directory is ever cleared and written: never a user-derived path.
+    const snapshotDir = join(deps.audit.auditDir, `${deps.audit.runId}.fix-base`);
+    return {
+      ...captured,
+      untrackedSnapshot: await snapshotUntracked(state.workdir, captured.untrackedBefore, snapshotDir),
+    };
+  } catch (error) {
+    getSafeLogger()?.warn("finish", "Fix step could not capture its base", {
+      storyId: "_run",
+      error: errorMessage(error),
+    });
+    return { error };
+  }
+}
+
+export async function runFixStep(
+  state: FinishState,
+  deps: FixStepDeps,
+  phase: FixPhase,
+  req: Omit<FixRequest, "state" | "interrupt" | "continuation">,
+): Promise<FixStepResult> {
+  abortIfPhaseStopped(deps);
+  const captured = await captureBase(state, deps);
+  if ("error" in captured) return { kind: "failed", error: captured.error };
+  const base = captured;
+  state.lastFixBase = base;
+  const { signal: interrupt, limit } = stepSignal(deps.signal, deps.fixMs);
+  let outcome: FixOutcome;
+  try {
+    outcome = await deps.ops.fix(phase, { ...req, state, ...(interrupt ? { interrupt } : {}) });
+  } catch (error) {
+    const kind = stopKind(deps, limit) ?? "error";
+    const handoff = await setAsideStep(state, deps, { phase, base, req, limit: kind });
+    if (kind === "error") return { kind: "failed", error, handoff };
+    abortIfPhaseStopped(deps);
+    return { kind: "stopped", handoff };
+  }
+  const kind = stopKind(deps, limit, outcome);
+  if (!kind) return { kind: "done", outcome };
+  const handoff = await setAsideStep(state, deps, {
+    phase,
+    base,
+    req,
+    limit: kind,
+    ...(outcome.handoffNote ? { note: outcome.handoffNote } : {}),
+  });
+  abortIfPhaseStopped(deps);
+  return { kind: "stopped", handoff };
+}

@@ -13,6 +13,7 @@ import { judgeWithoutAdvisor } from "./advise";
 import { type AuditTarget, recordRound } from "./audit";
 import { buildCommitRound, commitFixes } from "./commit";
 import { buildFixCommitMessage } from "./commit-message";
+import { type FixStepDeps, runFixStep } from "./fix-step";
 import type { MergedFindings } from "./merge-findings";
 import { mergeFindings } from "./merge-findings";
 import type { FinishOps, ReviewInputs } from "./ops";
@@ -33,6 +34,10 @@ export interface ReviewLoopDeps {
   audit: AuditTarget;
   now: () => string;
   assertNotAborted: () => void;
+  /** Finish A: how every fix session runs (interrupt, set-aside, stops). */
+  fix: FixStepDeps;
+  /** Finish A: `finish.timeouts.reviewMs`, consumed by the review lens limit (later task). */
+  reviewMs?: number;
 }
 
 function patchReview(state: FinishState, patch: Partial<FinishState["review"]>): void {
@@ -107,17 +112,18 @@ async function fixRound(
   atCap: boolean,
 ): Promise<void> {
   deps.assertNotAborted();
-  let outcome: Awaited<ReturnType<FinishOps["fix"]>>;
-  try {
-    outcome = await deps.ops.fix("review", { state, findings: fixList });
-  } catch (err) {
-    deps.assertNotAborted(); // a deadline or abort is not a failed fix
-    getSafeLogger()?.warn("finish", "Review fix session failed; findings stay open", {
-      storyId: "_run",
-      error: String(err),
-    });
+  const step = await runFixStep(state, deps.fix, "review", { findings: fixList });
+  if (step.kind !== "done") {
+    if (step.kind === "failed") {
+      getSafeLogger()?.warn("finish", "Review fix session failed; findings stay open", {
+        storyId: "_run",
+        error: String(step.error),
+      });
+    }
+    state.phases.review.fixAttempts += 1;
     return;
   }
+  const outcome = step.outcome;
   const message = buildFixCommitMessage(
     "review",
     state.feature,

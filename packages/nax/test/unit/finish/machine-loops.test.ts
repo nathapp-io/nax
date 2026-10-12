@@ -249,3 +249,27 @@ describe("a fix session that throws counts as used and the loop continues", () =
     });
   });
 });
+
+describe("a fix session that hits fixMs (finish A)", () => {
+  test("is set aside, never committed, and the loop reviews again", async () => {
+    await withTempDir(async (dir) => {
+      const h = makeMachineHarness({
+        auditDir: dir,
+        context: { acceptanceStatus: "disabled" },
+        script: { quality: [q("x")] },
+        fixMs: 5,
+        ops: {
+          fix: async (_p, req) => {
+            await new Promise<void>((r) => req.interrupt?.addEventListener("abort", () => r(), { once: true }));
+            return { dispositions: [], interrupted: true };
+          },
+        },
+      });
+      await runFinishMachine(h.state, h.deps);
+      expect(count(h.trail, "commit")).toBe(0);
+      expect(h.trail).toContain("restore");
+      expect(h.state.stops[0]).toMatchObject({ kind: "fix", phase: "review" });
+      expect(count(h.trail, "review:quality")).toBeGreaterThan(1);
+    });
+  });
+});
