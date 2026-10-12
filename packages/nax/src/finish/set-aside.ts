@@ -230,3 +230,10 @@ export async function markHandoffConsumed(record: HandoffRecord): Promise<Handof
   await writeMeta(next).catch((err) => warn("Set-aside could not update meta.json", err));
   return next;
 }
+
+/** Record on disk whether the next attempt managed to re-apply this handoff. */
+export async function markHandoffReapplied(record: HandoffRecord, reapplied: boolean): Promise<HandoffRecord> {
+  const next = { ...record, reapplied };
+  await writeMeta(next).catch((err) => warn("Set-aside could not update meta.json", err));
+  return next;
+}

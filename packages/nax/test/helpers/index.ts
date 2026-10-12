@@ -51,6 +51,7 @@ export {
   makeFinishContext,
   makeFinishOps,
   makeFinishState,
+  makeHandoffRecord,
   makeMachineHarness,
   restoreFinishMachineStubs,
 } from "./finish-machine";

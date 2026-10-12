@@ -4,7 +4,7 @@
  * trail and the returned `FinishResult`, never on machine internals.
  */
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeMachineHarness, restoreFinishMachineStubs, withTempDir } from "@test/helpers";
+import { makeHandoffRecord, makeMachineHarness, restoreFinishMachineStubs, withTempDir } from "@test/helpers";
 import type { Finding, FinishReviewOutput } from "@/finish";
 import { MAX_FIX_ATTEMPTS, runFinishMachine } from "@/finish";
 
@@ -315,6 +315,40 @@ describe("a fix session that hits fixMs (finish A)", () => {
       });
       await runFinishMachine(h.state, h.deps);
       expect(h.state.stops[0]).toMatchObject({ kind: "flow", phase: "review", limitMs: 10_800_000 });
+    });
+  });
+});
+
+describe("a continued fix attempt (finish A 4.3)", () => {
+  const phases = [
+    { phase: "acceptance" as const, opts: { acceptanceExit: (call: number) => (call === 1 ? 1 : 0) } },
+    { phase: "gate" as const, opts: { qualityExit: (call: number) => (call === 1 ? 1 : 0) } },
+    { phase: "review" as const, opts: { script: { quality: [q("A")] } } },
+  ];
+
+  test.each(phases)("$phase loop: a continued attempt that commits consumes the handoff", async ({ phase, opts }) => {
+    await withTempDir(async (dir) => {
+      const { deps, trail, state } = makeMachineHarness({ auditDir: dir, ...opts });
+      state.handoffs = [makeHandoffRecord(dir, { phase })];
+      state.pendingHandoff = 1;
+      await runFinishMachine(state, deps);
+      expect(trail).toContain(`fix:${phase}`);
+      expect(state.handoffs[0]).toMatchObject({ reapplied: true, consumed: true });
+    });
+  });
+
+  test("a continued attempt that commits nothing leaves the handoff unconsumed", async () => {
+    await withTempDir(async (dir) => {
+      const { deps, trail, state } = makeMachineHarness({
+        auditDir: dir,
+        script: { quality: [q("A")] },
+        fixIsNoop: true,
+      });
+      state.handoffs = [makeHandoffRecord(dir, { phase: "review" })];
+      state.pendingHandoff = 1;
+      await runFinishMachine(state, deps);
+      expect(trail).toContain("fix:review");
+      expect(state.handoffs[0]).toMatchObject({ reapplied: true, consumed: false });
     });
   });
 });

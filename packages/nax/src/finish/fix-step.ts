@@ -20,6 +20,7 @@ import type { FinishOps, FixOutcome, FixPhase, FixRequest } from "./ops";
 import {
   captureFixBase,
   markHandoffConsumed,
+  markHandoffReapplied,
   readHandoffNote,
   reapplyHandoff,
   setAside,
@@ -145,6 +146,20 @@ function replaceHandoff(state: FinishState, next: HandoffRecord): void {
   state.handoffs = state.handoffs.map((h) => (h.n === next.n ? next : h));
 }
 
+/** A re-apply that throws is a re-apply that did not happen: the attempt starts from scratch. */
+async function safeReapply(workdir: string, pending: HandoffRecord): Promise<{ applied: boolean; files: string[] }> {
+  try {
+    return await reapplyHandoff(workdir, pending);
+  } catch (error) {
+    getSafeLogger()?.warn("finish", "Handoff re-apply threw; fix attempt starts from scratch", {
+      storyId: "_run",
+      handoff: pending.dir,
+      error: errorMessage(error),
+    });
+    return { applied: false, files: [] };
+  }
+}
+
 /** 4.3: the pending stopped handoff of this phase, re-applied; undefined when none or it no longer applies. */
 async function continueFrom(
   state: FinishState,
@@ -153,8 +168,8 @@ async function continueFrom(
   const pending = state.handoffs.find((h) => h.n === state.pendingHandoff);
   if (!pending || pending.phase !== phase) return undefined;
   state.pendingHandoff = undefined;
-  const { applied, files } = await reapplyHandoff(state.workdir, pending);
-  const record = { ...pending, reapplied: applied };
+  const { applied, files } = await safeReapply(state.workdir, pending);
+  const record = await markHandoffReapplied(pending, applied);
   replaceHandoff(state, record);
   if (!applied) {
     getSafeLogger()?.warn("finish", "Handoff no longer applies; fix attempt starts from scratch", {

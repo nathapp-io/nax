@@ -224,10 +224,13 @@ export function buildFinishHandoffPrompt(
   ].join("\n\n");
 }
 
+/** Note text comes from an LLM: one line only, so it cannot open a heading of its own. */
+const oneLine = (text: string): string => text.replace(/\s*[\r\n]+\s*/g, " ").trim();
+
 function continuationSection(c: FixContinuation): string {
-  const head = `## Continuing earlier work\nAn earlier attempt was stopped. Its edits are already applied to:\n${c.files.map((f) => `- ${f}`).join("\n")}`;
+  const head = `## Continuing earlier work\nAn earlier attempt was stopped. Its edits are already applied to:\n${c.files.map((f) => `- ${oneLine(f)}`).join("\n")}`;
   if (!c.note) return `${head}\n\nNo handoff note was recorded. Read those files before changing them again.`;
-  const lines = c.note.findings.map((n) => `- ${n.index}: ${n.status} — ${n.remaining}`);
+  const lines = c.note.findings.map((n) => `- ${n.index}: ${oneLine(String(n.status))} — ${oneLine(n.remaining)}`);
   return `${head}\n\nIts handoff note, per finding:\n${lines.join("\n")}\n\nFinish what is left; do not redo what is done.`;
 }
 

@@ -9,9 +9,34 @@ import type {
   FinishOps,
   FinishReviewOutput,
   FinishState,
+  HandoffRecord,
 } from "@/finish";
 import { _acceptanceGateDeps, _finishGitDeps, _qualityGateDeps, createFinishState } from "@/finish";
 import type { QualityCommandOptions, QualityCommandResult } from "@/quality";
+
+/** A stopped `review` handoff of run-1, as `setAside` would record it. */
+export function makeHandoffRecord(auditDir: string, over: Partial<HandoffRecord> = {}): HandoffRecord {
+  return {
+    n: 1,
+    dir: `${auditDir}/run-1.handoff-1`,
+    phase: "review",
+    limit: "fix",
+    baseSha: "sha1",
+    headSha: "sha1",
+    findingIds: [],
+    newUntracked: [],
+    changedPaths: [],
+    stoppedAt: "t",
+    hasNote: false,
+    patchSaved: true,
+    restored: true,
+    consumed: false,
+    untrackedRestored: [],
+    untrackedMovedAside: [],
+    untrackedFailed: [],
+    ...over,
+  };
+}
 
 export function makeFinishContext(overrides: Partial<FinishContext> = {}): FinishContext {
   const group: AcceptanceGroupResult = {
