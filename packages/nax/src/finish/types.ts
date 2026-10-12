@@ -33,6 +33,17 @@ export interface Finding {
   source?: ReviewLens;
 }
 
+/** Finish A: what an interrupted fix session says it finished, per finding. */
+export interface HandoffNote {
+  findings: { index: number; status: "done" | "partial" | "not-started"; files: string[]; remaining: string }[];
+}
+
+/** Finish A: an earlier set-aside fix attempt that the next attempt continues. */
+export interface FixContinuation {
+  note?: HandoffNote;
+  files: string[];
+}
+
 /** What one A4 finish review op returns. */
 export interface FinishReviewOutput {
   findings: Finding[];

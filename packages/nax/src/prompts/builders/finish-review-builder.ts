@@ -4,7 +4,7 @@
  * Replaces the markdown contract in `src/finish/review/prompt.ts`.
  */
 import type { A3Hint } from "@/finish/a3-hints";
-import type { Finding } from "@/finish/types";
+import type { Finding, FixContinuation } from "@/finish/types";
 
 const BRANCH_FIELDS = `,
  "title":"<conventional-commit PR title, at most 72 characters>",
@@ -197,11 +197,44 @@ function buildReviewFixPrompt(findings: Finding[]): string {
   ].join("\n\n");
 }
 
-export function buildFinishFixPrompt(
+function numberedBrief(findings: Finding[]): string {
+  return findings.map((f, i) => `${i + 1}. [${f.severity}] ${f.title}${f.file ? ` (${f.file})` : ""}`).join("\n");
+}
+
+const WORK: Record<"acceptance" | "gate" | "review", string> = {
+  acceptance: "the failing acceptance tests",
+  gate: "the failing repo checks",
+  review: "the review findings",
+};
+
+/** Finish A: the one extra turn an interrupted fix session gets, in the same session, to say what it did. */
+export function buildFinishHandoffPrompt(
   phase: "acceptance" | "gate" | "review",
-  args: { findings?: Finding[]; gateOutput?: string; acceptanceOutput?: string },
+  findings: Finding[] | undefined,
 ): string {
-  if (phase === "review") return buildReviewFixPrompt(args.findings ?? []);
+  const scope =
+    phase === "review" && findings && findings.length > 0
+      ? `The findings you were given, by number:\n${numberedBrief(findings)}`
+      : `You were fixing ${WORK[phase]}; report that work as finding 1.`;
+  return [
+    "Stop working: your time limit was reached. Do not edit any file and do not run any command.",
+    scope,
+    "Reply with only this JSON:",
+    '{ "findings": [ { "index": 1, "status": "done" | "partial" | "not-started", "files": ["path"], "remaining": "what is left" } ] }',
+  ].join("\n\n");
+}
+
+function continuationSection(c: FixContinuation): string {
+  const head = `## Continuing earlier work\nAn earlier attempt was stopped. Its edits are already applied to:\n${c.files.map((f) => `- ${f}`).join("\n")}`;
+  if (!c.note) return `${head}\n\nNo handoff note was recorded. Read those files before changing them again.`;
+  const lines = c.note.findings.map((n) => `- ${n.index}: ${n.status} — ${n.remaining}`);
+  return `${head}\n\nIts handoff note, per finding:\n${lines.join("\n")}\n\nFinish what is left; do not redo what is done.`;
+}
+
+function buildPhaseFixPrompt(
+  phase: "acceptance" | "gate",
+  args: { gateOutput?: string; acceptanceOutput?: string },
+): string {
   const detail = phase === "gate" ? (args.gateOutput ?? "") : (args.acceptanceOutput ?? "");
   return [
     `Fix the failing ${phase === "gate" ? "repo checks" : "acceptance tests"} below, directly in the repo.`,
@@ -209,4 +242,12 @@ export function buildFinishFixPrompt(
     `Output:\n${detail}`,
     "After fixing, re-run them; stop when they pass.",
   ].join("\n\n");
+}
+
+export function buildFinishFixPrompt(
+  phase: "acceptance" | "gate" | "review",
+  args: { findings?: Finding[]; gateOutput?: string; acceptanceOutput?: string; continuation?: FixContinuation },
+): string {
+  const body = phase === "review" ? buildReviewFixPrompt(args.findings ?? []) : buildPhaseFixPrompt(phase, args);
+  return args.continuation ? `${body}\n\n${continuationSection(args.continuation)}` : body;
 }

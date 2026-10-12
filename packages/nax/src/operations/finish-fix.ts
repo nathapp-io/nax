@@ -7,14 +7,35 @@
  * `build` `ComposeInput` pattern with the finish review ops, but is simpler in
  * two ways documented below.
  */
+
+import { SessionFailureError } from "@/agents";
 import type { ConfiguredModel } from "@/config";
 import { finishConfigSelector } from "@/config";
 import type { FinishConfig } from "@/config/selectors";
-import { parseDispositions, validateDispositions } from "@/finish/fix";
-import { buildFinishFixPrompt } from "@/prompts";
+import { HANDOFF_MARKER, parseDispositions, parseHandoffReply, validateDispositions } from "@/finish/fix";
+import { buildFinishFixPrompt, buildFinishHandoffPrompt } from "@/prompts";
+import type { TurnResult } from "../agents/types";
 import type { FixOutcome } from "../finish/ops";
-import type { Finding } from "../finish/types";
+import type { Finding, FixContinuation } from "../finish/types";
 import type { RunOperationWithHooks } from "./types";
+
+/** Finish A: the handoff turn's own cap, independent of the stopped fix. */
+export const HANDOFF_TURN_MS = 120_000;
+
+const EMPTY_TURN: TurnResult = {
+  output: "",
+  tokenUsage: { inputTokens: 0, outputTokens: 0 },
+  estimatedCostUsd: 0,
+  internalRoundTrips: 0,
+};
+
+function isInterruptedStale(err: unknown): boolean {
+  return (
+    err instanceof SessionFailureError &&
+    err.adapterFailure.outcome === "fail-stale" &&
+    err.adapterFailure.reason === "interrupted"
+  );
+}
 
 export interface FinishFixInput {
   phase: "acceptance" | "gate" | "review";
@@ -26,9 +47,18 @@ export interface FinishFixInput {
   /** Fixer selection, resolved by the caller from config (D3.6). */
   model?: ConfiguredModel;
   timeoutMs?: number;
+  /** Finish A: soft interrupt (phase + fixMs). The op's own signal is the run signal only. */
+  interrupt?: AbortSignal;
+  /** Finish A: an earlier set-aside attempt this one continues. */
+  continuation?: FixContinuation;
 }
 
-export const finishFixOp: RunOperationWithHooks<FinishFixInput, FixOutcome, FinishConfig, "verify" | "recover"> = {
+export const finishFixOp: RunOperationWithHooks<
+  FinishFixInput,
+  FixOutcome,
+  FinishConfig,
+  "verify" | "recover" | "hopBody"
+> = {
   kind: "run",
   name: "finish-fix",
   stage: "rectification",
@@ -49,11 +79,37 @@ export const finishFixOp: RunOperationWithHooks<FinishFixInput, FixOutcome, Fini
       findings: input.findings,
       gateOutput: input.gateOutput,
       acceptanceOutput: input.acceptanceOutput,
+      ...(input.continuation ? { continuation: input.continuation } : {}),
     });
     return {
       role: { id: "role", content: "", overridable: false },
       task: { id: "task", content, overridable: false },
     };
+  },
+  /**
+   * Finish A: one fix turn under a soft interrupt. When the interrupt fires, the turn
+   * ends fail-stale ("interrupted") with the session still warm, and the same session
+   * gets one more turn, capped at HANDOFF_TURN_MS, to say what it finished. The reply
+   * comes back marked; it is never rethrown, so the stale-retry never re-runs a stopped
+   * fix. A watchdog stall (interrupt not fired) is rethrown as before.
+   */
+  async hopBody(initialPrompt, ctx) {
+    const { interrupt } = ctx.input;
+    try {
+      return await ctx.send(initialPrompt, interrupt ? { interrupt } : undefined);
+    } catch (err) {
+      if (!interrupt?.aborted || !isInterruptedStale(err)) throw err;
+      const prompt = buildFinishHandoffPrompt(ctx.input.phase, ctx.input.findings);
+      const handoff = await ctx.send(prompt, { interrupt: AbortSignal.timeout(HANDOFF_TURN_MS) }).catch(() => null);
+      // Only the marked text and the cost survive: an adapterFailure on the handoff turn
+      // (e.g. turnIncomplete) would make the hop fail and the same-agent retry re-run the stopped fix.
+      return {
+        ...EMPTY_TURN,
+        output: `${HANDOFF_MARKER}\n${handoff?.output ?? ""}`,
+        estimatedCostUsd: handoff?.estimatedCostUsd ?? 0,
+        tokenUsage: handoff?.tokenUsage ?? EMPTY_TURN.tokenUsage,
+      };
+    }
   },
   /**
    * Nothing but the `## DISPOSITIONS` section is read from the reply.
@@ -67,13 +123,15 @@ export const finishFixOp: RunOperationWithHooks<FinishFixInput, FixOutcome, Fini
    * text-based parsing is the only route in and stays that way.
    */
   parse(output, _input, _ctx) {
+    const handoff = parseHandoffReply(output);
+    if (handoff) return { dispositions: [], ...handoff };
     return { dispositions: parseDispositions(output) };
   },
   // verify is the sanctioned disk-consulting hook (ADR-020 §D4). Must return
   // the op's O — `{ dispositions }` — not a bare array, or the field name is
   // lost and the value typechecks as unknown at the call site.
   async verify(parsed, input, _verifyCtx) {
-    return { dispositions: await validateDispositions(input.workdir, parsed.dispositions ?? []) };
+    return { ...parsed, dispositions: await validateDispositions(input.workdir, parsed.dispositions ?? []) };
   },
   /**
    * Without this, an empty reply throws `CALL_OP_NO_OUTPUT` and discards a
