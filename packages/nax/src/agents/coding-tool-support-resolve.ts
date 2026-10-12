@@ -438,6 +438,31 @@ export function resolvedDispatchArgs(inputs: ResolvedDispatchInputs): Partial<Re
   };
 }
 
+/**
+ * The config-read gate (nax#2460): config files are readable only when the
+ * root's config passed the secret scan — and, under gated bash, only when the
+ * op did not declare Bash (a raw-bash op may read them: it could anyway).
+ * A failed scan fails closed: config reads stay disabled.
+ */
+async function configReadGateFor(
+  root: string | undefined,
+  resolved: ResolvedPermissions,
+  declaredWithProviders: readonly string[],
+  storyId: string | undefined,
+): Promise<boolean> {
+  if (root === undefined || root.trim() === "") return false;
+  let configScanClean = false;
+  try {
+    configScanClean = (await _codingToolSupportDeps.scanConfigSecrets(root)).clean;
+  } catch (err) {
+    getSafeLogger()?.warn("tools", "Config secret scan failed; config reads remain disabled", {
+      storyId: storyId ?? "_dispatch",
+      error: errorMessage(err),
+    });
+  }
+  return configScanClean && (resolved.bashApproval === "raw" || !declaredWithProviders.includes(BASH_TOOL_NAME));
+}
+
 /** Injectable deps for testability — mirrors the _agentManagerDeps pattern. Each nax-owned port has its default here. */
 export const _codingToolSupportDeps: {
   loadConfigForPackage: typeof loadConfigForPackage;
@@ -511,20 +536,7 @@ export async function resolveCodingToolSupport(
   // names, yet appending the provider names above is exactly what makes it a
   // real op. An empty union is the only case that yields no support.
   if (declaredWithProviders.length === 0) return undefined;
-  let configScanClean = false;
-  if (root !== undefined && root.trim() !== "") {
-    try {
-      configScanClean = (await _codingToolSupportDeps.scanConfigSecrets(root)).clean;
-    } catch (err) {
-      getSafeLogger()?.warn("tools", "Config secret scan failed; config reads remain disabled", {
-        storyId: options.storyId ?? "_dispatch",
-        error: errorMessage(err),
-      });
-    }
-  }
-  const configReadable =
-    configScanClean && (resolved.bashApproval === "raw" || !declaredWithProviders.includes(BASH_TOOL_NAME));
-  // Deny and ask bind under EVERY profile (spec R10), so Mcp deny/ask rules are
+  const configReadable = await configReadGateFor(root, resolved, declaredWithProviders, options.storyId); // Deny and ask bind under EVERY profile (spec R10), so Mcp deny/ask rules are
   // expanded even when providerScope is "all" — a deny must be able to withdraw
   // one tool from an otherwise fully-granted provider.
   const denyRules = [...denied.grants, ...expandMcpRuleGrants(denied.mcpPatterns, providerResult.entries)];
