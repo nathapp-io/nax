@@ -122,6 +122,7 @@ export async function dispatchRunOp<I, O, C>(params: RunDispatchParams<I, O, C>)
     toolPatterns: op.toolPatterns,
     fileOutputPath,
     keepOpen,
+    abortSignal,
   });
 
   // Shared hop-callback context — everything except runOptions and hopBody.

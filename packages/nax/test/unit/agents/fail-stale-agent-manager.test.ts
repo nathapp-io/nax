@@ -426,3 +426,61 @@ describe("AgentManager.runWithFallback with fail-stale", () => {
     expect(outcome.result.success).toBe(true);
   });
 });
+
+describe("AgentManager.runWithFallback after an abort (finish A, #2462)", () => {
+  const abortedFailures: readonly { name: string; failure: AdapterFailure }[] = [
+    {
+      name: "quality fail-adapter-error",
+      failure: { category: "quality", outcome: "fail-adapter-error", retriable: false, message: "aborted" },
+    },
+    {
+      name: "retriable fail-stale",
+      failure: { category: "availability", outcome: "fail-stale", retriable: true, message: "aborted" },
+    },
+  ];
+
+  for (const { name, failure } of abortedFailures) {
+    test(`an aborted hop is neither retried nor swapped: ${name}`, async () => {
+      const manager = new AgentManager(
+        makeNaxConfig({
+          agent: {
+            fallback: {
+              enabled: true,
+              map: { claude: ["codex"] },
+              maxHopsPerStory: 3,
+              onQualityFailure: true,
+              rebuildContext: true,
+            },
+          },
+        }),
+      );
+      const controller = new AbortController();
+      let hops = 0;
+
+      const outcome = await manager.runWithFallback({
+        runOptions: RUN_OPTIONS,
+        signal: controller.signal,
+        executeHop: async (_agent, bundle) => {
+          hops += 1;
+          controller.abort();
+          return {
+            result: {
+              success: false,
+              exitCode: 1,
+              output: "",
+              rateLimited: false,
+              durationMs: 0,
+              estimatedCostUsd: 0,
+              adapterFailure: failure,
+            },
+            bundle,
+          };
+        },
+      });
+
+      expect(hops).toBe(1);
+      expect(outcome.fallbacks).toEqual([]);
+      expect(outcome.result.success).toBe(false);
+    });
+  }
+});

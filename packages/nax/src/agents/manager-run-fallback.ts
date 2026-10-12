@@ -123,6 +123,22 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
         };
       }
 
+      // Finish A: an aborted call must neither retry nor swap into a new agent with the same aborted signal.
+      if (request.signal?.aborted) {
+        finalStatus = "error";
+        return {
+          result,
+          fallbacks,
+          didSwap,
+          finalBundle: updatedBundle,
+          finalPrompt,
+          finalAgent: currentAgent,
+          finalTarget: currentTarget,
+          finalDepth: hopsSoFar,
+          dispatchesCompleted,
+        };
+      }
+
       const retry = trySameAgentRetry(
         result,
         {
@@ -274,12 +290,7 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
       budget.record(storyId, hopsSoFar);
       rateLimitRetry = 0;
       currentBundle = updatedBundle;
-      currentHopKind = {
-        kind: "swap",
-        failure,
-        ...(next.tier ? { tier: next.tier } : {}),
-        ...(next.model ? { model: next.model } : {}),
-      };
+      currentHopKind = swapHopKind(failure, next);
       const fallback = buildFallbackRecord({
         storyId,
         priorAgent: currentAgent,
@@ -318,6 +329,16 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
       ...(request.runOptions.scopeId !== undefined ? { scopeId: request.runOptions.scopeId } : {}),
     });
   }
+}
+
+/** The hop kind for a swap onto `next`, carrying its tier / literal model pin when it names one. */
+function swapHopKind(failure: AdapterFailure, next: FallbackTarget): HopKind {
+  return {
+    kind: "swap",
+    failure,
+    ...(next.tier ? { tier: next.tier } : {}),
+    ...(next.model ? { model: next.model } : {}),
+  };
 }
 
 /** Mirrors the `endpoint` shape `AgentRunRequest.executeHop` reports (manager-types.ts). */

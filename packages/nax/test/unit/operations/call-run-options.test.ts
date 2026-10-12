@@ -267,3 +267,43 @@ describe("buildRunDispatchOptions — the run's command interceptor (S1 spec por
     expect(Object.keys(result)).not.toContain("commandInterceptor");
   });
 });
+
+describe("buildRunDispatchOptions — abort signal (finish A, #2462)", () => {
+  function ctxFor(): { ctx: CallContext; config: ReturnType<typeof makeNaxConfig> } {
+    const config = makeNaxConfig();
+    const runtime = makeTestRuntime({ config, workdir: "/repo" });
+    createdRuntimes.push(runtime);
+    return {
+      config,
+      ctx: {
+        runtime,
+        packageView: runtime.packages.resolve("packages/api"),
+        packageDir: "packages/api",
+        config,
+        agentName: "claude",
+      },
+    };
+  }
+  const params = (config: ReturnType<typeof makeNaxConfig>) => ({
+    prompt: "hi",
+    effectiveTier: "balanced" as const,
+    dispatchModelDef: { provider: "claude", model: "sonnet" },
+    config,
+    callId: "call-1",
+    pipelineStage: "run" as const,
+    declaredTools: ["Read" as const],
+    keepOpen: false,
+  });
+
+  test("threads the call's abort signal onto the run options", () => {
+    const { ctx, config } = ctxFor();
+    const controller = new AbortController();
+    const result = buildRunDispatchOptions(ctx, { ...params(config), abortSignal: controller.signal });
+    expect(result.abortSignal).toBe(controller.signal);
+  });
+
+  test("omits abortSignal when none is given", () => {
+    const { ctx, config } = ctxFor();
+    expect("abortSignal" in buildRunDispatchOptions(ctx, params(config))).toBe(false);
+  });
+});
