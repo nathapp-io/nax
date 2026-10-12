@@ -524,7 +524,7 @@ export class SessionFailureError extends Error {
  */
 export interface AgentError {
   /** Error type classification */
-  type: "rate-limit" | "auth" | "timeout" | "crash" | "unknown" | "model-not-available";
+  type: "rate-limit" | "quota" | "auth" | "timeout" | "crash" | "unknown" | "model-not-available";
   /** Optional retry delay in seconds (for rate-limit errors) */
   retryAfterSeconds?: number;
 }
