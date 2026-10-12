@@ -20,7 +20,7 @@ import type { AuditTarget } from "../audit";
 import { readRounds } from "../audit";
 import type { LedgerEntry } from "../ledger";
 import { resolveTitle } from "../pr-title";
-import type { FinishState } from "../state";
+import type { AcceptanceGuardRecord, FinishState } from "../state";
 // TemplateMode is re-exported by ../types from @/forge (Task 1, D4.8) --
 // import it from ../types like every other finish-side type, not from @/forge.
 import type {
@@ -87,6 +87,8 @@ export interface FinishPrContext {
     ledger: LedgerEntry[];
     stops: Stop[];
     handoffs: HandoffRecord[];
+    /** What the acceptance-file guard did, present only when it recorded something. */
+    acceptanceGuard?: AcceptanceGuardRecord;
   };
   /** A4: share of changed files each lens read, 0..1, or null when nothing changed. */
   coverage?: Record<ReviewLens, number | null>;
@@ -264,7 +266,10 @@ function fromResolution(state: FinishState): Pick<FinishPrContext, "unresolved" 
   const { resolution } = state;
   if (!resolution) return {};
   const { facts, acceptedResidue, outcome, reason } = resolution;
-  const needsBlock = outcome === "draft" || acceptedResidue.length > 0 || state.stops.length > 0;
+  const g = state.acceptanceGuard;
+  const guardNeedsBlock =
+    g !== undefined && (g.reverted.length + g.notRestorable.length + g.beyondRuling.length > 0 || g.failed);
+  const needsBlock = outcome === "draft" || acceptedResidue.length > 0 || state.stops.length > 0 || guardNeedsBlock;
   return {
     coverage: facts.coverage,
     ...(needsBlock
@@ -281,6 +286,7 @@ function fromResolution(state: FinishState): Pick<FinishPrContext, "unresolved" 
             ledger: state.review.ledger,
             stops: state.stops,
             handoffs: state.handoffs,
+            ...(g ? { acceptanceGuard: g } : {}),
           },
         }
       : {}),

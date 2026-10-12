@@ -580,3 +580,60 @@ describe("buildFinishBody — Unresolved with a repo template (A4)", () => {
     expect(body.indexOf("## Unresolved")).toBeLessThan(body.indexOf("## Summary"));
   });
 });
+
+const emptyUnresolved = (over: Partial<NonNullable<FinishPrContext["unresolved"]>> = {}) => ({
+  reason: "",
+  findings: [],
+  acceptance: "green" as const,
+  gates: [],
+  missing: [],
+  unreviewed: [],
+  accepted: [],
+  ledger: [],
+  stops: [],
+  handoffs: [],
+  ...over,
+});
+
+describe("finish B: acceptance changes and the guard", () => {
+  test("a decision with acceptanceChanges says which acceptance tests changed", () => {
+    const body = buildFinishBody(
+      baseCtx({
+        advisorDecisions: [
+          makeAdviceDecision({
+            id: "D-3",
+            action: { type: "fix", instruction: "i", updateAcs: ["AC-40"] },
+            acceptanceChanges: ["AC-40", "AC-51"],
+          }),
+        ],
+      }),
+    );
+    expect(body).toContain("— acceptance tests changed: AC-40, AC-51");
+  });
+
+  test("the guard block lists reverts, not-restorable files, beyond-ruling changes and a failed check", () => {
+    const body = buildFinishBody(
+      baseCtx({
+        unresolved: emptyUnresolved({
+          acceptanceGuard: {
+            reverted: ["t.ts"],
+            notRestorable: ["n.ts"],
+            changed: ["AC-51"],
+            beyondRuling: ["AC-51"],
+            failed: true,
+          },
+        }),
+      }),
+    );
+    expect(body).toContain("### Acceptance-file guard");
+    expect(body).toContain("- Acceptance-file edits reverted: t.ts");
+    expect(body).toContain("- Acceptance files a fix created that could not be restored: n.ts");
+    expect(body).toContain("- Acceptance tests changed beyond the ruling: AC-51");
+    expect(body).toContain("- acceptance-file check could not run");
+    expect(body).not.toMatch(/Verification failures[\s\S]*Acceptance-file edits reverted/);
+  });
+
+  test("no guard record: no guard block", () => {
+    expect(buildFinishBody(baseCtx({ unresolved: emptyUnresolved() }))).not.toContain("Acceptance-file guard");
+  });
+});

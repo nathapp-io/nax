@@ -317,4 +317,29 @@ describe("loadFinishPrContext — A4 review output and resolution", () => {
     const ctx = await loadFinishPrContext({ state, audit: audit() });
     expect(ctx.unresolved?.stops).toHaveLength(1);
   });
+  test("the acceptance guard forces an unresolved block only when it did something a reviewer must see", async () => {
+    _finishPrDeps.run = async () => ({ exitCode: 1, stdout: "", stderr: "" });
+    const readyResolution = {
+      outcome: "ready" as const,
+      facts: {
+        ...facts,
+        findingsOpen: [],
+        acceptance: "green" as const,
+        gates: [],
+        reviewsMissing: [],
+        unreviewedFixCommits: [],
+      },
+      acceptedResidue: [],
+    };
+    const quiet = stateFor(dir);
+    quiet.resolution = readyResolution;
+    quiet.acceptanceGuard = { reverted: [], notRestorable: [], changed: ["AC-40"], beyondRuling: [], failed: false };
+    expect((await loadFinishPrContext({ state: quiet, audit: audit() })).unresolved).toBeUndefined();
+
+    const loud = stateFor(dir);
+    loud.resolution = readyResolution;
+    loud.acceptanceGuard = { reverted: ["t.ts"], notRestorable: [], changed: [], beyondRuling: [], failed: false };
+    const ctx = await loadFinishPrContext({ state: loud, audit: audit() });
+    expect(ctx.unresolved?.acceptanceGuard?.reverted).toEqual(["t.ts"]);
+  });
 });
