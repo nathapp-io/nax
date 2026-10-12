@@ -138,11 +138,11 @@ the following and log one warning that names every key it overrode.
   throws if it's ever reached in workflow mode.
 
 ### 5.2 `workflowStage` contract (with the unchanged stages around it)
-- **It must set the same fields `executionStage` does for `completionStage`:**
-  - `ctx.agentResult`: success, with cost, tokens and duration summed over every workflow session of the story;
-  - `ctx.storyMetrics` (cost, tokens, duration);
-  - `ctx.storyStartTime`;
-  - `ctx.storyGitRef`: **not set** (P2-R1, §15). It is the story's start ref, set by `iteration-runner` and used as BASE.
+- **It sets only `ctx.agentResult`** (P2-R1, §15): success, with cost, tokens and duration summed over every
+  workflow session of the story. It does not set `storyStartTime`, `storyGitRef` or `storyMetrics`:
+  - `ctx.storyStartTime` and `ctx.storyGitRef` are set by `iteration-runner`. `storyGitRef` is the story's
+    persisted start ref, which the stage reads as BASE;
+  - `ctx.storyMetrics` is computed by `completionStage`.
 - **It always returns `continue`**, never `escalate` or `fail` (W-R3).
 - **Marking stays with `completionStage`.** It still calls `markStoryPassed` (`completion.ts:145`). The
   workflow's Close step **doesn't mark** (no double write); it records the end state in the ledger only.
@@ -436,7 +436,8 @@ Every new file needs its own tests: the coverage gate is per file (`coverage-per
 - **Unit tests** (`_deps` injection, TDD):
   - **Story loop:** warm rounds = min(3, max); fresh rounds step up, and stay on the same model at the last
     rung or with a pin; the shared cap; minors deferred; new breakage joins; `maxFixRounds` = 1/3/5.
-  - **Stage contract:** `workflowStage` sets `agentResult`, `storyMetrics` and `storyGitRef`, returns only
+  - **Stage contract:** `workflowStage` sets only `agentResult` (P2-R1; `storyStartTime`/`storyGitRef` come from
+    `iteration-runner`, `storyMetrics` from `completionStage`), returns only
     `continue`, and doesn't mark prd.json (exactly one mark).
   - **End states and run result:** end-state derivation, `RunResult.success` false on gate-open or not-run,
     and the ready/draft rules (CI `pending` vs `failed`).

@@ -33,8 +33,9 @@ afterEach(async () => {
 });
 
 async function sh(cwd: string, ...args: string[]): Promise<void> {
-  const p = Bun.spawn(args, { cwd, stdout: "ignore", stderr: "ignore" });
-  await p.exited;
+  const p = Bun.spawn(args, { cwd, stdout: "ignore", stderr: "pipe" });
+  const [code, stderr] = await Promise.all([p.exited, new Response(p.stderr).text()]);
+  if (code !== 0) throw new Error(`command failed (${code}): ${args.join(" ")}\n${stderr}`);
 }
 
 async function setup() {
