@@ -40,7 +40,7 @@ describe("runBranchFix", () => {
   test("creates feature-report.md, runs the fix op under fixMs, auto-commits leftover edits", async () => {
     const { fc, inputs, commits } = setup(done, " M src/a.ts\n");
     const out = await runBranchFix(fc, { specPath: "spec.md", findings });
-    expect(out).toEqual({ reply: done, autoCommitted: true });
+    expect(out).toEqual({ reply: done, autoCommitted: true, dirty: false });
     expect(await Bun.file(fc.reportPath).text()).toContain("# Feature report — f");
     expect(inputs[0]).toMatchObject({ timeoutMs: fc.workflow.timeouts.fixMs });
     expect(String((inputs[0] as { prompt: string }).prompt)).toContain("[B1]");
@@ -95,13 +95,13 @@ describe("runBranchFix", () => {
     expect(commits).toHaveLength(1);
   });
 
-  test("a commit that throws resolves with autoCommitted false, not a rejection", async () => {
+  test("a commit that throws resolves with autoCommitted false and dirty true, not a rejection", async () => {
     const { fc } = setup(done, " M src/a.ts\n");
     _workflowDeps.autoCommitIfDirty = async () => {
       throw new Error("commit boom");
     };
     const out = await runBranchFix(fc, { findings });
-    expect(out).toEqual({ reply: done, autoCommitted: false });
+    expect(out).toEqual({ reply: done, autoCommitted: false, dirty: true });
   });
 
   test("a listUncommitted (git status) throw resolves with autoCommitted false, not a rejection", async () => {
@@ -110,7 +110,7 @@ describe("runBranchFix", () => {
       throw new Error("git boom");
     };
     const out = await runBranchFix(fc, { findings });
-    expect(out).toEqual({ reply: done, autoCommitted: false });
+    expect(out).toEqual({ reply: done, autoCommitted: false, dirty: false });
     expect(commits).toHaveLength(0);
   });
 });

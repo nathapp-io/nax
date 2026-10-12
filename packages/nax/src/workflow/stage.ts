@@ -107,6 +107,7 @@ async function recordTokensSafe(
   byRole: Readonly<Record<string, RoleTokens>>,
   storyId: string,
 ): Promise<void> {
+  if (Object.keys(byRole).length === 0) return;
   try {
     await env.sink.update({ tokensByRole: byRole });
   } catch (err) {

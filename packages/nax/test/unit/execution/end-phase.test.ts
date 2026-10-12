@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeDispatchContext, makeNaxConfig, makePRD, makeStatusWriter } from "@test/helpers";
+import { makeDispatchContext, makeNaxConfig, makePRD, makeStatusWriter, withInfoSpy, withWarnSpy } from "@test/helpers";
 import type { NaxConfig } from "@/config";
+import { NaxError } from "@/errors";
 import { _endPhaseDeps, type EndPhaseDeps, finishStorySummary, runEndPhase } from "@/execution/end-phase";
 import type { RunnerCompletionOptions } from "@/execution/runner-completion";
 import type { FinishPhaseContext } from "@/finish";
@@ -89,6 +90,27 @@ describe("runEndPhase (P4-R16)", () => {
     _endPhaseDeps.resolveBranch = async () => "feat/x";
     expect(await runEndPhase(opts(WORKFLOW), deps(null).d)).toBe(true);
     expect(await runEndPhase(opts(WORKFLOW), deps(new Error("boom")).d)).toBe(false);
+  });
+
+  test("workflow mode: a WORKFLOW_ABORTED throw logs a distinct info message and returns false", async () => {
+    _endPhaseDeps.resolveBranch = async () => "feat/x";
+    const aborted = new NaxError("Run aborted during the feature workflow", "WORKFLOW_ABORTED", { stage: "workflow" });
+    await withInfoSpy(async (info) => {
+      expect(await runEndPhase(opts(WORKFLOW), deps(aborted).d)).toBe(false);
+      expect(info.mock.calls.some((c) => String(c[1]).includes("Feature workflow aborted"))).toBe(true);
+    });
+    await withWarnSpy(async (warn) => {
+      expect(await runEndPhase(opts(WORKFLOW), deps(aborted).d)).toBe(false);
+      expect(warn.mock.calls).toHaveLength(0);
+    });
+  });
+
+  test("workflow mode: an ordinary throw still warns 'Feature workflow failed'", async () => {
+    _endPhaseDeps.resolveBranch = async () => "feat/x";
+    await withWarnSpy(async (warn) => {
+      expect(await runEndPhase(opts(WORKFLOW), deps(new Error("boom")).d)).toBe(false);
+      expect(warn.mock.calls.some((c) => String(c[1]).includes("Feature workflow failed"))).toBe(true);
+    });
   });
 
   test("workflow mode: an aborted run never starts the feature workflow", async () => {

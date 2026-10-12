@@ -28,6 +28,7 @@ const PASS: BranchReviewVerdict = {
 const FIXED: BranchFixOutcome = {
   reply: { status: "DONE", commits: [], testSummary: "", interrupted: false },
   autoCommitted: false,
+  dirty: false,
 };
 const PUBLISHED: PublishOutcome = { outcome: "ready", ci: "pending", url: "https://gh/pr/1", reasons: [] };
 const done = (id: string, over: Partial<StorySummary> = {}): StorySummary => ({
@@ -265,11 +266,20 @@ describe("runFeatureMachine", () => {
   test("a fix session failure is ledgered and the workflow goes on", async () => {
     const h = harness({
       review: { ...PASS, findings: [{ kind: "spec", severity: "important", issue: "x" }] },
-      fix: { failure: "quota", autoCommitted: false },
+      fix: { failure: "quota", autoCommitted: false, dirty: false },
     });
     const final = await runFeatureMachine(h.env);
     expect(h.ledger).toContain("branch fix session failed: quota");
     expect(final.step).toBe("done");
+  });
+
+  test("a fix that left the tree dirty is ledgered", async () => {
+    const h = harness({
+      review: { ...PASS, findings: [{ kind: "spec", severity: "important", issue: "x" }] },
+      fix: { autoCommitted: false, dirty: true },
+    });
+    await runFeatureMachine(h.env);
+    expect(h.ledger).toContain("branch fix left uncommitted edits: the auto-commit failed");
   });
 
   test("resume at adjudicate: earlier steps never run again (P4-R1)", async () => {

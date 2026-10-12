@@ -66,6 +66,7 @@ describe("workflowBranchReviewOp", () => {
       lastOutput: '{"spec": "pass", "findings": [{"issue": "cut',
     });
     expect(truncated.retry).toBe(true);
-    if (invalid.retry && truncated.retry) expect(truncated.nextPrompt).not.toBe(invalid.nextPrompt);
+    if (!invalid.retry || !truncated.retry) throw new Error("both replies must be retried");
+    expect(truncated.nextPrompt).not.toBe(invalid.nextPrompt);
   });
 });

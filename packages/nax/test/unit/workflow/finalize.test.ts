@@ -54,7 +54,15 @@ interface Call {
 }
 
 /** Wires every forge-side dep; returns the call log. */
-function wire(opts: { ci?: "green" | "failed" | "pending"; pushFails?: boolean; promoteThrows?: boolean } = {}) {
+function wire(
+  opts: {
+    ci?: "green" | "failed" | "pending";
+    pushFails?: boolean;
+    promoteThrows?: boolean;
+    alreadyReady?: boolean;
+    onCi?: () => void;
+  } = {},
+) {
   const calls: Call[] = [];
   _featureDeps.detectForge = async () => "github";
   _featureDeps.commitAndPush = async (repoRoot, branch) => {
@@ -68,6 +76,7 @@ function wire(opts: { ci?: "green" | "failed" | "pending"; pushFails?: boolean; 
   };
   _featureDeps.waitForChecks = async () => {
     calls.push({ name: "ci" });
+    opts.onCi?.();
     return { outcome: opts.ci ?? "pending", detail: "d" };
   };
   async function fakePromote(args: OpenOrPromoteArgs & { keepDraft: true }, deps: ForgeDeps): Promise<PromoteKept>;
@@ -76,6 +85,7 @@ function wire(opts: { ci?: "green" | "failed" | "pending"; pushFails?: boolean; 
   async function fakePromote(args: OpenOrPromoteArgs): Promise<PromoteKept | PromoteReady> {
     calls.push({ name: "promote", keepDraft: args.keepDraft, body: args.body });
     if (opts.promoteThrows) throw new Error("gh edit failed");
+    if (opts.alreadyReady && args.keepDraft) return { status: "already-ready", url: "https://gh/pr/7" };
     return args.keepDraft
       ? { status: "draft", url: "https://gh/pr/7" }
       : { status: "promoted", url: "https://gh/pr/7" };
@@ -169,5 +179,40 @@ describe("publish (P4-R3, P4-R11)", () => {
     const calls = wire({ ci: "green" });
     await publish(makeFeatureContext(), input({ stories: [{ ...done, runDir }] }));
     expect(String(calls.find((c) => c.name === "draft")?.arg)).toContain("US-001: - used the JWT tenant id");
+  });
+
+  test("an abort during the CI wait rejects: no approval, no promotion (W-R3)", async () => {
+    const ac = new AbortController();
+    const calls = wire({ ci: "pending", onCi: () => ac.abort() });
+    const asked: string[] = [];
+    const fc = makeFeatureContext({ runSignal: ac.signal });
+    const err = await publish(fc, input({ advisor: advisor(true, asked) })).catch((e: unknown) => e);
+    expect(err).toMatchObject({ code: "WORKFLOW_ABORTED" });
+    expect(asked).toEqual([]);
+    expect(calls.map((c) => c.name)).toEqual(["push", "draft", "ci"]);
+  });
+
+  test("uncommitted changes after the branch fix keep the draft and never ask the advisor", async () => {
+    const calls = wire({ ci: "green" });
+    _workflowDeps.git = async () => ({ stdout: " M src/a.ts\n", exitCode: 0 });
+    const asked: string[] = [];
+    const out = await publish(makeFeatureContext(), input({ advisor: advisor(true, asked) }));
+    expect(asked).toEqual([]);
+    expect(out).toMatchObject({ outcome: "draft", reasons: ["uncommitted changes after the branch fix"] });
+    expect(calls.at(-1)?.keepDraft).toBe(true);
+  });
+
+  test("a dirty tree is also a reason on the local-only path", async () => {
+    wire();
+    _workflowDeps.git = async () => ({ stdout: "?? new.ts\n", exitCode: 0 });
+    const out = await publish(makeFeatureContext({ dryRun: true }), input());
+    expect(out.reasons).toEqual(["uncommitted changes after the branch fix", "dry run"]);
+  });
+
+  test("a PR a human already marked ready stays as is, with a reason", async () => {
+    wire({ ci: "failed", alreadyReady: true });
+    const out = await publish(makeFeatureContext(), input());
+    expect(out.outcome).toBe("draft");
+    expect(out.reasons).toEqual(["CI failed", "a human already marked the PR ready; nax left it as is"]);
   });
 });

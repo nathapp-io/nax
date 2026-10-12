@@ -321,6 +321,17 @@ describe("workflowStage", () => {
   });
 });
 
+describe("workflowStage token recording", () => {
+  test("an empty meter does not touch the record (a resumed story keeps its prior totals)", async () => {
+    const updates: unknown[] = [];
+    wire(async () => OUTCOME, { updates });
+    await workflowStage.execute(
+      makeTestContext({ runtime: makeMockRuntime({ costAggregator: createNoOpCostAggregator() }) }),
+    );
+    expect(updates).toEqual([]);
+  });
+});
+
 describe("workflowStage with the real story env", () => {
   test("a forced loop throw leaves a closed record in result.json", async () => {
     const outputDir = makeTempDir("wf-stage-out-");

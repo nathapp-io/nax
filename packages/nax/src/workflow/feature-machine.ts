@@ -144,6 +144,7 @@ async function branchFixStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Promi
   const out = await env.steps.branchFix(toFix);
   if (out.failure) await env.sink.ledger(ledgerText.note(`branch fix session failed: ${out.failure}`));
   if (out.autoCommitted) await env.sink.ledger(ledgerText.note("auto-committed the branch fix's edits"));
+  if (out.dirty) await env.sink.ledger(ledgerText.note("branch fix left uncommitted edits: the auto-commit failed"));
   return { fixBase, fixRan: true, step: "branch-rereview" };
 }
 

@@ -18,6 +18,8 @@ export interface BranchFixOutcome {
   readonly reply?: ImplementerReply;
   readonly failure?: string;
   readonly autoCommitted: boolean;
+  /** True when the leftover commit failed and edits stay in the tree (they are not in the pushed branch). */
+  readonly dirty: boolean;
 }
 
 interface FixSession {
@@ -30,10 +32,12 @@ async function ensureReport(fc: FeatureContext): Promise<void> {
   await Bun.write(fc.reportPath, `# Feature report — ${fc.feature}\n\nThe branch fix appends its section below.\n`);
 }
 
-/** Best-effort: a failed commit is logged and reported as not committed, never thrown (abort excepted). */
-async function commitLeftovers(fc: FeatureContext): Promise<boolean> {
+/** Best-effort: a failed commit is logged and reported as dirty, never thrown (abort excepted). */
+async function commitLeftovers(fc: FeatureContext): Promise<{ autoCommitted: boolean; dirty: boolean }> {
+  let hasEdits = false;
   try {
-    if ((await listUncommitted(fc.projectDir)).length === 0) return false;
+    if ((await listUncommitted(fc.projectDir)).length === 0) return { autoCommitted: false, dirty: false };
+    hasEdits = true;
     await _workflowDeps.autoCommitIfDirty(
       fc.projectDir,
       "workflow",
@@ -42,14 +46,14 @@ async function commitLeftovers(fc: FeatureContext): Promise<boolean> {
       undefined,
       fc.dryRun,
     );
-    return true;
+    return { autoCommitted: true, dirty: false };
   } catch (err) {
     if (fc.runSignal?.aborted) throw err;
     getSafeLogger()?.warn("workflow", "Branch fix leftover commit failed; edits stay uncommitted", {
       storyId: FEATURE_SCOPE,
       error: errorMessage(err),
     });
-    return false;
+    return { autoCommitted: false, dirty: hasEdits };
   }
 }
 
@@ -78,5 +82,5 @@ export async function runBranchFix(
     findings: input.findings,
   });
   const session = await runFixSession(fc, prompt);
-  return { ...session, autoCommitted: await commitLeftovers(fc) };
+  return { ...session, ...(await commitLeftovers(fc)) };
 }

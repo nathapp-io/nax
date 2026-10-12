@@ -6,6 +6,7 @@
 import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { AdviceDecision, Advisor } from "@/advisor";
+import { NaxError } from "@/errors";
 import { sanitizeTitle } from "@/finish";
 import type { ForgeKind } from "@/forge";
 import { getSafeLogger } from "@/logger";
@@ -13,6 +14,7 @@ import { askApproval, type ReadinessFacts, readinessReasons } from "./approval";
 import type { CiWaitResult } from "./ci-wait";
 import type { FeatureContext } from "./feature-context";
 import { _featureDeps } from "./feature-deps";
+import { listUncommitted } from "./git";
 import { workflowStoryDir } from "./paths";
 import { buildWorkflowPrBody, extractAssumptions, type WorkflowPrBodyFacts } from "./pr-body";
 import type { PreflightFile } from "./preflight";
@@ -118,6 +120,66 @@ function approvalEvidence(input: PublishInput, ci: CiWaitResult, minorsLeft: num
   ];
 }
 
+const DIRTY_REASON = "uncommitted changes after the branch fix";
+const ALREADY_READY_REASON = "a human already marked the PR ready; nax left it as is";
+
+/** Edits the pushed branch lacks make every recorded gate and approval describe code that is not in the PR. */
+async function dirtyTreeReasons(fc: FeatureContext): Promise<string[]> {
+  try {
+    return (await listUncommitted(fc.projectDir)).length > 0 ? [DIRTY_REASON] : [];
+  } catch {
+    return [];
+  }
+}
+
+function abortedError(): NaxError {
+  return new NaxError("Run aborted during the CI wait", "WORKFLOW_ABORTED", {
+    stage: "workflow",
+    storyId: "_run",
+    step: "publish",
+  });
+}
+
+interface PrParts {
+  readonly pr: { workdir: string; branch: string; title: string; forge: ForgeKind };
+  readonly body: WorkflowPrBodyFacts;
+  readonly draftUrl?: string;
+}
+
+async function finishPr(
+  fc: FeatureContext,
+  parts: PrParts,
+  ci: CiWaitResult,
+  reasons: readonly string[],
+  approval: { approved: boolean; rationale: string } | null,
+): Promise<PublishOutcome> {
+  const ready = approval?.approved === true;
+  const finalReasons = ready ? [] : approval ? [...reasons, approval.rationale] : [...reasons];
+  const finalBody = buildWorkflowPrBody({
+    ...parts.body,
+    outcome: ready ? "ready" : "draft",
+    ci: ci.outcome,
+    reasons: finalReasons,
+  });
+  try {
+    const res = await _featureDeps.openOrPromotePr(
+      { ...parts.pr, body: finalBody, committedThisRun: true, keepDraft: !ready },
+      _featureDeps.forge,
+    );
+    const url = res.url ?? parts.draftUrl;
+    const kept = !ready && res.status === "already-ready" ? [...finalReasons, ALREADY_READY_REASON] : finalReasons;
+    return { outcome: ready ? "ready" : "draft", ci: ci.outcome, ...(url ? { url } : {}), reasons: kept };
+  } catch (err) {
+    if (fc.runSignal?.aborted) throw err;
+    return {
+      outcome: "draft",
+      ci: ci.outcome,
+      ...(parts.draftUrl ? { url: parts.draftUrl } : {}),
+      reasons: [...finalReasons, `PR update failed: ${errorMessage(err)}`],
+    };
+  }
+}
+
 export async function publish(fc: FeatureContext, input: PublishInput): Promise<PublishOutcome> {
   const facts: Omit<ReadinessFacts, "ci"> = {
     ...(input.record.finalGates ? { finalGates: input.record.finalGates } : {}),
@@ -125,7 +187,8 @@ export async function publish(fc: FeatureContext, input: PublishInput): Promise<
     flagged: input.flagged,
     branchReviewRan: input.record.reviewRan,
   };
-  const base = readinessReasons({ ...facts, ci: "skipped" });
+  const dirty = await dirtyTreeReasons(fc);
+  const base = [...readinessReasons({ ...facts, ci: "skipped" }), ...dirty];
   const target = await publishTarget(fc);
   if (!("forge" in target)) return { outcome: "local-only", ci: "skipped", reasons: [...base, target.reason] };
   const pushFailed = await pushBranch(fc);
@@ -143,7 +206,9 @@ export async function publish(fc: FeatureContext, input: PublishInput): Promise<
     pollMs: fc.workflow.timeouts.ciPollMs,
     ...(fc.runSignal ? { signal: fc.runSignal } : {}),
   });
-  const reasons = readinessReasons({ ...facts, ci: ci.outcome });
+  // An aborted wait reports `pending`, which never blocks readiness: stop before approval or promotion.
+  if (fc.runSignal?.aborted) throw abortedError();
+  const reasons = [...readinessReasons({ ...facts, ci: ci.outcome }), ...dirty];
   const approval =
     reasons.length === 0
       ? await askApproval(input.advisor, {
@@ -151,28 +216,5 @@ export async function publish(fc: FeatureContext, input: PublishInput): Promise<
           evidence: approvalEvidence(input, ci, body.minorsLeft.length),
         })
       : null;
-  const ready = approval?.approved === true;
-  const finalReasons = ready ? [] : approval ? [...reasons, approval.rationale] : reasons;
-  const finalBody = buildWorkflowPrBody({
-    ...body,
-    outcome: ready ? "ready" : "draft",
-    ci: ci.outcome,
-    reasons: finalReasons,
-  });
-  try {
-    const res = await _featureDeps.openOrPromotePr(
-      { ...pr, body: finalBody, committedThisRun: true, keepDraft: !ready },
-      _featureDeps.forge,
-    );
-    const url = res.url ?? draft?.url;
-    return { outcome: ready ? "ready" : "draft", ci: ci.outcome, ...(url ? { url } : {}), reasons: finalReasons };
-  } catch (err) {
-    if (fc.runSignal?.aborted) throw err;
-    return {
-      outcome: "draft",
-      ci: ci.outcome,
-      ...(draft?.url ? { url: draft.url } : {}),
-      reasons: [...finalReasons, `PR update failed: ${errorMessage(err)}`],
-    };
-  }
+  return finishPr(fc, { pr, body, ...(draft?.url ? { draftUrl: draft.url } : {}) }, ci, reasons, approval);
 }

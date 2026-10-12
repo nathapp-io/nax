@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ruling is flagged and the branch review ran. nax never merges. The run's success includes the feature
   workflow; `status.json` gains a `workflow` block; `result.json` gains the resumable feature record and
   per-role token totals. Finish and the deferred regression gate do not run in workflow mode.
+  A crash during the branch fix re-runs the fix on resume; a re-run at the same HEAD skips a finished (ready or
+  draft) feature but retries a local-only one.
 - Workflow mode advisor kinds (A5 PR3): the implementer's NEEDS_CONTEXT / BLOCKED question is answered
   by the advisor into the same session (at most twice per story); at the fix-round cap the open items
   get one batched advisor ruling each (park as reviewer-wrong, defer to the branch review, carry an

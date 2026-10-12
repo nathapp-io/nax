@@ -87,9 +87,17 @@ async function setup() {
   });
   const gh: string[][] = [];
   _featureDeps.detectForge = async () => "github";
-  _featureDeps.commitAndPush = async () => ({ committed: false, pushed: true });
+  const pushes: unknown[][] = [];
+  const gateRuns: unknown[][] = [];
+  _featureDeps.commitAndPush = async (...args: unknown[]) => {
+    pushes.push(args);
+    return { committed: false, pushed: true };
+  };
   _featureDeps.resolveGateCommands = async () => [];
-  _featureDeps.runQualityGates = async () => ({ passed: true, ran: ["test"], failing: [], output: "[test] exit=0" });
+  _featureDeps.runQualityGates = async (...args: unknown[]) => {
+    gateRuns.push(args);
+    return { passed: true, ran: ["test"], failing: [], output: "[test] exit=0" };
+  };
   _featureDeps.forge = {
     readText: async () => null,
     run: async (cmd): Promise<ForgeRunResult> => {
@@ -155,13 +163,15 @@ async function setup() {
     runId: runtime.runId,
     agentName: "claude",
   };
-  return { repo, out, input, gh, ops, runDir: join(out, "workflow", prd.feature, runtime.runId) };
+  return { repo, out, input, gh, ops, pushes, gateRuns, runDir: join(out, "workflow", prd.feature, runtime.runId) };
 }
 
 describe("workflow feature end to end", () => {
   test("review -> one fix -> re-review -> gates -> push -> draft PR -> CI timeout (pending) -> approved -> ready", async () => {
-    const { input, gh, ops, runDir } = await setup();
+    const { input, gh, ops, runDir, pushes, gateRuns } = await setup();
     const result = await runWorkflowFeature(input);
+    expect(gateRuns.length).toBeGreaterThanOrEqual(2); // repo gates, then final gates after the fix
+    expect(pushes).toHaveLength(1);
     expect(result).toEqual({ passed: true, outcome: "ready", url: "https://github.com/o/r/pull/9", reasons: [] });
     expect(ops).toEqual([workflowBranchReviewOp.name, workflowBranchFixOp.name, workflowReReviewOp.name]);
     expect(gh.some((c) => c.join(" ").startsWith("gh pr create") && c.includes("--draft"))).toBe(true);

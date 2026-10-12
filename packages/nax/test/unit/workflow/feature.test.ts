@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { join } from "node:path";
 import {
   cleanupTempDir,
@@ -9,6 +9,7 @@ import {
   makeTestRuntime,
   makeTestStory,
 } from "@test/helpers";
+import type { WorkflowStatusBlock } from "@/execution";
 import type { NaxRuntime } from "@/runtime";
 import { _featureRunDeps, runWorkflowFeature } from "@/workflow/feature";
 import type { FeatureEnv } from "@/workflow/feature-machine";
@@ -68,7 +69,21 @@ function setup(over: { dryRun?: boolean } = {}) {
     runId: "r-now",
     agentName: "claude",
   };
-  return { fc, input, envs, featureDir, disposed: () => disposed };
+  return { fc, input, envs, featureDir, runtime, disposed: () => disposed };
+}
+
+async function seedFinished(
+  featureDir: string,
+  feature: string,
+  over: { outcome: "ready" | "draft" | "local-only"; url?: string },
+): Promise<void> {
+  const prior = join(featureDir, "r-old");
+  await upsertStoryRecord(prior, { runId: "r-old", feature }, newStoryRecord("US-001", 5, "t"));
+  await upsertFeatureRecord(
+    prior,
+    { runId: "r-old", feature },
+    { ...newFeatureRecord({ now: "t", seed: "s", minors: [] }), step: "done", head: "headX", passed: true, ...over },
+  );
 }
 
 describe("runWorkflowFeature", () => {
@@ -126,6 +141,56 @@ describe("runWorkflowFeature", () => {
       reasons: [],
     });
     expect(envs).toHaveLength(0);
+  });
+
+  test("an already-finished skip still emits the done status block", async () => {
+    const { input, featureDir } = setup();
+    await seedFinished(featureDir, input.feature, { outcome: "draft", url: "https://gh/pr/2" });
+    const blocks: WorkflowStatusBlock[] = [];
+    await runWorkflowFeature({ ...input, statusWriter: { setWorkflowStatus: (b) => blocks.push(b) } });
+    expect(blocks).toEqual([
+      {
+        step: "done",
+        stories: { "US-001": { state: "complete", round: 0 } },
+        outcome: "draft",
+        url: "https://gh/pr/2",
+      },
+    ]);
+  });
+
+  test("a draft prior at the same HEAD is also skipped", async () => {
+    const { input, envs, featureDir } = setup();
+    await seedFinished(featureDir, input.feature, { outcome: "draft" });
+    expect((await runWorkflowFeature(input))?.outcome).toBe("already-finished");
+    expect(envs).toHaveLength(0);
+  });
+
+  test("a local-only prior at the same HEAD runs again (nothing was published)", async () => {
+    const { input, envs, featureDir } = setup();
+    await seedFinished(featureDir, input.feature, { outcome: "local-only" });
+    const result = await runWorkflowFeature(input);
+    expect(envs).toHaveLength(1);
+    expect(envs[0]?.record.step).toBe("repo-gates");
+    expect(result?.outcome).toBe("draft");
+  });
+
+  test("the token meter is unsubscribed even when the context build throws", async () => {
+    const { input, runtime } = setup();
+    const bus = runtime.dispatchEvents;
+    const realOn = bus.onDispatch.bind(bus);
+    let unsubscribed = 0;
+    spyOn(bus, "onDispatch").mockImplementation((listener) => {
+      const stop = realOn(listener);
+      return () => {
+        unsubscribed++;
+        stop();
+      };
+    });
+    _featureRunDeps.buildFeatureContext = async () => {
+      throw new Error("context broke");
+    };
+    await expect(runWorkflowFeature(input)).rejects.toThrow("context broke");
+    expect(unsubscribed).toBe(1);
   });
 
   test("a machine throw still disposes and propagates", async () => {

@@ -20,6 +20,7 @@ import { readHead } from "./git";
 import { appendLedger, ensureLedger, ledgerText } from "./ledger";
 import { collectLedgerItems } from "./ledger-items";
 import { resolveSeed } from "./seed";
+import { workflowStatusBlock } from "./status-block";
 import { startTokenMeter, type TokenMeter } from "./tokens";
 import type { FeatureOutcome, StorySummary, WorkflowFeatureRecord } from "./types";
 
@@ -41,12 +42,15 @@ export async function runWorkflowFeature(input: WorkflowFeatureInput): Promise<W
     return null;
   }
   const meter = startTokenMeter(input.runtime.dispatchEvents);
-  const { fc, dispose } = await _featureRunDeps.buildFeatureContext(input);
   try {
-    return await runInContext(fc, input, meter);
+    const { fc, dispose } = await _featureRunDeps.buildFeatureContext(input);
+    try {
+      return await runInContext(fc, input, meter);
+    } finally {
+      await dispose();
+    }
   } finally {
     meter.stop();
-    await dispose();
   }
 }
 
@@ -82,6 +86,11 @@ function logComplete(stories: readonly StorySummary[], rec: WorkflowFeatureRecor
   });
 }
 
+/** Ready and draft are published; a local-only prior published nothing, so it runs again (P4-R1 ruling). */
+function isFinishedAtHead(prior: WorkflowFeatureRecord | null, head: string): prior is WorkflowFeatureRecord {
+  return prior?.step === "done" && prior.head === head && (prior.outcome === "ready" || prior.outcome === "draft");
+}
+
 async function runInContext(
   fc: FeatureContext,
   input: WorkflowFeatureInput,
@@ -90,7 +99,8 @@ async function runInContext(
   await ensureLedger(fc.runDir, fc.runId, fc.feature);
   const stories = summariseStories(fc.prd, await collectStoryRecords(fc.featureDir));
   const prior = await loadPriorFeature(fc.featureDir, fc.runId);
-  if (prior?.step === "done" && prior.head === (await readHead(fc.projectDir))) {
+  if (isFinishedAtHead(prior, await readHead(fc.projectDir))) {
+    input.statusWriter?.setWorkflowStatus?.(workflowStatusBlock(stories, "done", prior));
     getSafeLogger()?.info("workflow", "Feature workflow already finished at this HEAD — skipped", {
       storyId: "_run",
       ...(prior.url ? { url: prior.url } : {}),

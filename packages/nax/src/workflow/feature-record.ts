@@ -69,6 +69,7 @@ function isFeatureRecord(v: unknown): v is WorkflowFeatureRecord {
   const o = v as Record<string, unknown>;
   return (
     FEATURE_STEPS.includes(o.step as FeatureStep) &&
+    typeof o.nextFindingId === "number" &&
     Array.isArray(o.gateFindings) &&
     Array.isArray(o.reviewOpen) &&
     Array.isArray(o.minors) &&

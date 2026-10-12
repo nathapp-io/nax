@@ -1,10 +1,12 @@
 /**
  * The end-of-run phase (spec §5.3, P4-R16): finish in pipeline mode, the A5 feature
- * workflow in workflow mode. Both are fail-open on setup errors. Split out of
+ * workflow in workflow mode. Finish is fail-open (a throw is logged and the run is
+ * unaffected); a feature workflow throw marks the run unsuccessful. Split out of
  * runner-completion.ts to keep it under the file-size limit.
  */
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { isWorkflowMode } from "@/config";
+import { NaxError } from "@/errors";
 import type { FinishPhaseContext, FinishResult } from "@/finish";
 import { getSafeLogger } from "@/logger";
 import { countStories, isComplete } from "@/prd";
@@ -121,6 +123,13 @@ async function runWorkflowEnd(options: RunnerCompletionOptions, deps: EndPhaseDe
     });
     return result?.passed ?? true;
   } catch (err) {
+    if (err instanceof NaxError && err.code === "WORKFLOW_ABORTED") {
+      getSafeLogger()?.info("workflow", "Feature workflow aborted — run marked unsuccessful", {
+        storyId: "_run",
+        error: errorMessage(err),
+      });
+      return false;
+    }
     getSafeLogger()?.warn("workflow", "Feature workflow failed — run marked unsuccessful", {
       storyId: "_run",
       error: errorMessage(err),

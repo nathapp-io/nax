@@ -124,6 +124,16 @@ describe("loadPriorFeature (P4-R1)", () => {
     await Bun.write(join(r1, "result.json"), JSON.stringify({ ...file, featureWorkflow: { step: "teleport" } }));
     expect(await loadPriorFeature(feature, "run-2")).toBeNull();
   });
+
+  test("a record without a numeric nextFindingId is ignored", async () => {
+    const feature = makeTempDir("wf-fr-");
+    dirs.push(feature);
+    const r1 = await writeRun(feature, "run-1", 100, [closed("US-001")]);
+    const file = await Bun.file(join(r1, "result.json")).json();
+    const noId = { ...newFeatureRecord({ now: "t", seed: "s", minors: [] }), nextFindingId: undefined };
+    await Bun.write(join(r1, "result.json"), JSON.stringify({ ...file, featureWorkflow: noId }));
+    expect(await loadPriorFeature(feature, "run-2")).toBeNull();
+  });
 });
 
 describe("minorsFrom and newestPreflight", () => {
