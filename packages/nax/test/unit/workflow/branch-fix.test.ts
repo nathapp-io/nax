@@ -77,4 +77,40 @@ describe("runBranchFix", () => {
     const { fc } = setup(new Error("stopped"), "");
     await expect(runBranchFix({ ...fc, runSignal: ac.signal }, { findings })).rejects.toThrow("stopped");
   });
+
+  test("a thrown session failure with a dirty tree still commits its leftover edits", async () => {
+    const { fc, commits } = setup(new Error("503"), " M src/a.ts\n");
+    const out = await runBranchFix(fc, { findings });
+    expect(out.failure).toBe("503");
+    expect(out.autoCommitted).toBe(true);
+    expect(commits).toHaveLength(1);
+  });
+
+  test("reply.failure with a dirty tree still commits its leftover edits", async () => {
+    const failed = { ...done, failure: 'Agent "native" failed: quota' };
+    const { fc, commits } = setup(failed, " M src/a.ts\n");
+    const out = await runBranchFix(fc, { findings });
+    expect(out.failure).toContain("quota");
+    expect(out.autoCommitted).toBe(true);
+    expect(commits).toHaveLength(1);
+  });
+
+  test("a commit that throws resolves with autoCommitted false, not a rejection", async () => {
+    const { fc } = setup(done, " M src/a.ts\n");
+    _workflowDeps.autoCommitIfDirty = async () => {
+      throw new Error("commit boom");
+    };
+    const out = await runBranchFix(fc, { findings });
+    expect(out).toEqual({ reply: done, autoCommitted: false });
+  });
+
+  test("a listUncommitted (git status) throw resolves with autoCommitted false, not a rejection", async () => {
+    const { fc, commits } = setup(done, "");
+    _workflowDeps.git = async () => {
+      throw new Error("git boom");
+    };
+    const out = await runBranchFix(fc, { findings });
+    expect(out).toEqual({ reply: done, autoCommitted: false });
+    expect(commits).toHaveLength(0);
+  });
 });
