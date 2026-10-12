@@ -78,6 +78,7 @@ describe("runFixStep (finish A)", () => {
     const trail: string[] = [];
     restores.push(installFinishGit(model, trail));
     const state = makeFinishState();
+    state.review = { ...state.review, rounds: 1 }; // review fixes run after the round is counted
     const out = await runFixStep(
       state,
       deps({ ops: makeFinishOps([], {}, { fix: interruptedFix(model) }), fixMs: 5 }),
@@ -89,10 +90,27 @@ describe("runFixStep (finish A)", () => {
     expect(trail).not.toContain("commit");
     expect(model.dirty).toBe(false);
     expect(state.stops).toEqual([
-      { kind: "fix", phase: "review", at: "2026-10-12T00:00:00.000Z", limitMs: 5, handoff: 1, findings: 1, round: 0 },
+      { kind: "fix", phase: "review", at: "2026-10-12T00:00:00.000Z", limitMs: 5, handoff: 1, findings: 1, round: 1 },
     ]);
     expect(state.handoffs[0]).toMatchObject({ limit: "fix", hasNote: true });
     expect(state.pendingHandoff).toBe(1);
+  });
+
+  test("a fix stop in a phase without review rounds records no round", async () => {
+    const model = { dirty: false, head: 1 };
+    restores.push(installFinishGit(model, []));
+    const state = makeFinishState();
+    state.review = { ...state.review, rounds: 3 };
+    const out = await runFixStep(
+      state,
+      deps({ ops: makeFinishOps([], {}, { fix: interruptedFix(model) }), fixMs: 5 }),
+      "gate",
+      { failing: ["lint"] },
+    );
+    expect(out.kind).toBe("stopped");
+    expect(state.stops).toEqual([
+      { kind: "fix", phase: "gate", at: "2026-10-12T00:00:00.000Z", limitMs: 5, handoff: 1 },
+    ]);
   });
 
   test("flow stop: interrupted, set aside, then FINISH_ABORTED", async () => {

@@ -275,6 +275,15 @@ describe("facts and reasons (finish A section 6)", () => {
     expect(stopReason([{ kind: "flow", step: "gate", at: "t", limitMs: 0 }])).toBe(
       "finish time limit reached during gate",
     );
+    expect(stopReason([{ kind: "fix", phase: "review", at: "t", limitMs: 60_000, findings: 2 }])).toBe(
+      "fix session stopped at the 1 min limit (2 findings)",
+    );
+    expect(stopReason([{ kind: "flow", step: "review", round: 0, at: "t", limitMs: 10_800_000 }])).toBe(
+      "finish time limit (3 h) reached during review",
+    );
+    expect(stopReason([{ kind: "flow", step: "gate", round: 2, at: "t", limitMs: 10_800_000 }])).toBe(
+      "finish time limit (3 h) reached during gate",
+    );
     const unknown = JSON.parse('{"kind":"other","at":"t","limitMs":1}');
     expect(stopReason([unknown])).toBe("stopped during finish");
   });

@@ -67,7 +67,7 @@ function duration(ms: number): string {
 
 function where(s: Stop): string {
   const step = s.step ?? s.phase ?? "finish";
-  return s.round !== undefined && step === "review" ? `${step} round ${s.round}` : step;
+  return s.round !== undefined && s.round > 0 && step === "review" ? `${step} round ${s.round}` : step;
 }
 
 const hasLimit = (ms: number | undefined): ms is number => typeof ms === "number" && Number.isFinite(ms) && ms > 0;

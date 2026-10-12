@@ -104,7 +104,30 @@ describe("flow stop round (the interrupted round, else the last completed one)",
         },
       });
       const result = await runFinishMachine(h.state, h.deps);
-      expect(result.reason?.startsWith("finish time limit (3 h) reached during review round 1;")).toBe(true);
+      expect(h.state.stops.map((s) => [s.kind, s.phase, s.round])).toEqual([["flow", "review", 1]]);
+      expect(result.reason).toBe("finish time limit (3 h) reached during review round 1; 1 open; gates not run");
+    });
+  });
+
+  test("a deadline after the review step starts but before round 1 begins reads 'during review', not round 0", async () => {
+    await withTempDir(async (dir) => {
+      const phase = new AbortController();
+      const h = makeMachineHarness({
+        auditDir: dir,
+        signal: phase.signal,
+        flowMs: 10_800_000,
+        context: { acceptanceStatus: "disabled" },
+      });
+      // the review inputs load (changed files), then the deadline hits before the loop's first round
+      stubChangedFiles(() => {
+        phase.abort();
+        return undefined;
+      });
+      const result = await runFinishMachine(h.state, h.deps);
+      expect(h.state.stops.map((x) => [x.kind, x.step, x.round])).toEqual([["flow", "review", 0]]);
+      expect(result.reason).toBe(
+        "finish time limit (3 h) reached during review; gates not run; spec review missing; quality review missing",
+      );
     });
   });
 });
@@ -171,7 +194,7 @@ describe("fail-closed ledger at machine level (current spec-mandated behaviour)"
       });
       const result = await runFinishMachine(h.state, h.deps);
       expect(result.outcome).toBe("draft");
-      expect(result.reason).toContain("1 open");
+      expect(result.reason).toBe("1 open");
     });
   });
 
@@ -185,7 +208,7 @@ describe("fail-closed ledger at machine level (current spec-mandated behaviour)"
       });
       const result = await runFinishMachine(h.state, h.deps);
       expect(result.outcome).toBe("draft");
-      expect(result.reason).toContain("1 open");
+      expect(result.reason).toBe("1 open");
     });
   });
 });
