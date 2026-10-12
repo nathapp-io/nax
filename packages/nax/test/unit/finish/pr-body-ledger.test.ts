@@ -149,6 +149,19 @@ describe("findings table, Set aside and Stops (finish A 7)", () => {
     expect(body).toContain("fix session stopped at the 20 min limit (3 findings, handoff-1)");
   });
 
+  test("renders a sub-minute stop limit in seconds in the Stops section", () => {
+    const body = buildFinishBody(
+      baseCtx({
+        unresolved: {
+          ...unresolvedBase,
+          stops: [{ kind: "fix", phase: "review", at: "t", limitMs: 15_000, handoff: 1, findings: 3 }],
+        },
+      }),
+    );
+    expect(body).toContain("fix session stopped at the 15 s limit (3 findings, handoff-1)");
+    expect(body).not.toContain("0 min");
+  });
+
   test("surfaces restore failures and user files that could not be put back", () => {
     const body = buildFinishBody(
       baseCtx({

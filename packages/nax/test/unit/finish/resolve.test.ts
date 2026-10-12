@@ -385,6 +385,15 @@ describe("facts and reasons (finish A section 6)", () => {
     expect(stopReason([{ kind: "fix", phase: "review", at: "t", limitMs: 60_000, findings: 2 }])).toBe(
       "fix session stopped at the 1 min limit (2 findings)",
     );
+    expect(stopReason([{ kind: "fix", phase: "review", at: "t", limitMs: 15_000, handoff: 1, findings: 3 }])).toBe(
+      "fix session stopped at the 15 s limit (3 findings, handoff-1)",
+    );
+    expect(stopReason([{ kind: "review", lens: "spec", at: "t", limitMs: 90_000 }])).toBe(
+      "review (spec) stopped at the 90 s limit",
+    );
+    expect(stopReason([{ kind: "flow", step: "gate", at: "t", limitMs: 45_000 }])).toBe(
+      "finish time limit (45 s) reached during gate",
+    );
     expect(stopReason([{ kind: "flow", step: "review", round: 0, at: "t", limitMs: 10_800_000 }])).toBe(
       "finish time limit (3 h) reached during review",
     );

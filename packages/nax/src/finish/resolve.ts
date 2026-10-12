@@ -5,6 +5,7 @@
  */
 
 import { type LedgerEntry, openFindings } from "./ledger";
+import { limitLabel } from "./limit-label";
 import type { ReviewLoopState } from "./state";
 import type { AcceptanceFact, Finding, GateFact, ResolutionFacts, ReviewLens, Stop } from "./types";
 
@@ -63,10 +64,6 @@ export function approvalFacts(f: ResolutionFacts, reReviewUsed: boolean) {
 
 const SHORT_SHA = 7;
 
-function duration(ms: number): string {
-  return ms >= 3_600_000 && ms % 3_600_000 === 0 ? `${ms / 3_600_000} h` : `${Math.round(ms / 60_000)} min`;
-}
-
 function where(s: Stop): string {
   const step = s.step ?? s.phase ?? "finish";
   return s.round !== undefined && s.round > 0 && step === "review" ? `${step} round ${s.round}` : step;
@@ -78,15 +75,15 @@ function describeFix(s: Stop): string {
   const held = s.findings !== undefined ? `${s.findings} ${s.findings === 1 ? "finding" : "findings"}` : "";
   const handoff = s.handoff !== undefined ? `handoff-${s.handoff}` : "";
   const detail = [held, handoff].filter(Boolean).join(", ");
-  const limit = hasLimit(s.limitMs) ? ` at the ${duration(s.limitMs)} limit` : "";
+  const limit = hasLimit(s.limitMs) ? ` at the ${limitLabel(s.limitMs)} limit` : "";
   return `fix session stopped${limit}${detail ? ` (${detail})` : ""}`;
 }
 
 function describeStop(s: Stop): string {
-  const limit = hasLimit(s.limitMs) ? ` (${duration(s.limitMs)})` : "";
+  const limit = hasLimit(s.limitMs) ? ` (${limitLabel(s.limitMs)})` : "";
   switch (s.kind) {
     case "review":
-      return `review (${s.lens ?? "?"}) stopped${hasLimit(s.limitMs) ? ` at the ${duration(s.limitMs)} limit` : ""}`;
+      return `review (${s.lens ?? "?"}) stopped${hasLimit(s.limitMs) ? ` at the ${limitLabel(s.limitMs)} limit` : ""}`;
     case "flow":
       return `finish time limit${limit} reached during ${where(s)}`;
     case "run":
