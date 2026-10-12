@@ -127,6 +127,7 @@ export {
   type RunnerCompletionResult,
   runCompletionPhase,
 } from "./runner-completion";
+export type { WorkflowStatusBlock } from "./status-file";
 export { StatusWriter, type StatusWriterContext } from "./status-writer";
 export {
   _storyOrchestratorDeps,

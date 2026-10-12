@@ -1,6 +1,7 @@
 /** The feature-level context (spec §7): root config, one feature CallContext, and the run's paths. */
 import { join } from "node:path";
 import { featureDir, type NaxConfig, resolveWorkflowConfig, type WorkflowConfig } from "@/config";
+import type { WorkflowStatusBlock } from "@/execution";
 import { buildRunDispatchAskWiring, type InteractionChain } from "@/interaction";
 import type { CallContext } from "@/operations";
 import type { PRD } from "@/prd";
@@ -21,7 +22,7 @@ export interface WorkflowFeatureInput {
   readonly agentName: string;
   readonly abortSignal?: AbortSignal;
   readonly interactionChain?: InteractionChain | null;
-  readonly statusWriter?: { setWorkflowStatus?(block: { step: string }): void };
+  readonly statusWriter?: { setWorkflowStatus?(block: WorkflowStatusBlock): void };
 }
 
 export interface FeatureContext {

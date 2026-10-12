@@ -1,0 +1,139 @@
+import { afterEach, describe, expect, test } from "bun:test";
+import { join } from "node:path";
+import {
+  cleanupTempDir,
+  makeFeatureContext,
+  makeNaxConfig,
+  makeTempDir,
+  makeTestPRD,
+  makeTestRuntime,
+  makeTestStory,
+} from "@test/helpers";
+import type { NaxRuntime } from "@/runtime";
+import { _featureRunDeps, runWorkflowFeature } from "@/workflow/feature";
+import type { FeatureEnv } from "@/workflow/feature-machine";
+import { newFeatureRecord } from "@/workflow/feature-record";
+import { newStoryRecord, upsertFeatureRecord, upsertStoryRecord } from "@/workflow/result";
+import { _workflowDeps } from "@/workflow/step-context";
+
+const originalRun = { ..._featureRunDeps };
+const originalWf = { ..._workflowDeps };
+const dirs: string[] = [];
+const runtimes: NaxRuntime[] = [];
+afterEach(async () => {
+  Object.assign(_featureRunDeps, originalRun);
+  Object.assign(_workflowDeps, originalWf);
+  await Promise.allSettled(runtimes.map((r) => r.close()));
+  runtimes.length = 0;
+  await Promise.all(dirs.map(cleanupTempDir));
+  dirs.length = 0;
+});
+
+function setup(over: { dryRun?: boolean } = {}) {
+  const out = makeTempDir("wf-feat-");
+  dirs.push(out);
+  const config = makeNaxConfig({ outputDir: out });
+  const runtime = makeTestRuntime({ config, workdir: "/repo", ...(over.dryRun ? { dryRun: true } : {}) });
+  runtimes.push(runtime);
+  const prd = makeTestPRD([makeTestStory({ id: "US-001", status: "passed", passes: true })]);
+  const featureDir = join(out, "workflow", prd.feature);
+  const fc = makeFeatureContext({
+    prd,
+    feature: prd.feature,
+    featureDir,
+    runDir: join(featureDir, "r-now"),
+    runId: "r-now",
+  });
+  let disposed = 0;
+  _featureRunDeps.buildFeatureContext = async () => ({
+    fc,
+    dispose: async () => {
+      disposed++;
+    },
+  });
+  _workflowDeps.git = async (args) =>
+    args[0] === "rev-parse" ? { stdout: "headX\n", exitCode: 0 } : { stdout: "", exitCode: 1 };
+  const envs: FeatureEnv[] = [];
+  _featureRunDeps.runFeatureMachine = async (env) => {
+    envs.push(env);
+    return { ...env.record, step: "done", outcome: "draft", passed: false, reasons: ["CI failed"], url: "u" };
+  };
+  const input = {
+    runtime,
+    config,
+    prd,
+    feature: prd.feature,
+    workdir: "/repo",
+    branch: "feat/x",
+    runId: "r-now",
+    agentName: "claude",
+  };
+  return { fc, input, envs, featureDir, disposed: () => disposed };
+}
+
+describe("runWorkflowFeature", () => {
+  test("dry run: skipped before any context is built", async () => {
+    const { input, envs, disposed } = setup({ dryRun: true });
+    expect(await runWorkflowFeature(input)).toBeNull();
+    expect(envs).toHaveLength(0);
+    expect(disposed()).toBe(0);
+  });
+
+  test("a fresh feature: new record at repo-gates; the result comes from the final record", async () => {
+    const { input, envs, disposed } = setup();
+    const result = await runWorkflowFeature(input);
+    expect(envs[0]?.record.step).toBe("repo-gates");
+    expect(result).toEqual({ passed: false, outcome: "draft", url: "u", reasons: ["CI failed"] });
+    expect(disposed()).toBe(1);
+  });
+
+  test("an unfinished prior record is resumed (P4-R1)", async () => {
+    const { input, envs, featureDir } = setup();
+    const prior = join(featureDir, "r-old");
+    await upsertStoryRecord(prior, { runId: "r-old", feature: input.feature }, newStoryRecord("US-001", 5, "t"));
+    await upsertFeatureRecord(
+      prior,
+      { runId: "r-old", feature: input.feature },
+      {
+        ...newFeatureRecord({ now: "t", seed: "s", minors: [] }),
+        step: "branch-fix",
+      },
+    );
+    await runWorkflowFeature(input);
+    expect(envs[0]?.record.step).toBe("branch-fix");
+  });
+
+  test("a finished prior record at the same HEAD skips the machine (already finished)", async () => {
+    const { input, envs, featureDir } = setup();
+    const prior = join(featureDir, "r-old");
+    await upsertStoryRecord(prior, { runId: "r-old", feature: input.feature }, newStoryRecord("US-001", 5, "t"));
+    await upsertFeatureRecord(
+      prior,
+      { runId: "r-old", feature: input.feature },
+      {
+        ...newFeatureRecord({ now: "t", seed: "s", minors: [] }),
+        step: "done",
+        head: "headX",
+        passed: true,
+        outcome: "ready",
+        url: "https://gh/pr/1",
+      },
+    );
+    expect(await runWorkflowFeature(input)).toEqual({
+      passed: true,
+      outcome: "already-finished",
+      url: "https://gh/pr/1",
+      reasons: [],
+    });
+    expect(envs).toHaveLength(0);
+  });
+
+  test("a machine throw still disposes and propagates", async () => {
+    const { input, disposed } = setup();
+    _featureRunDeps.runFeatureMachine = async () => {
+      throw new Error("boom");
+    };
+    await expect(runWorkflowFeature(input)).rejects.toThrow("boom");
+    expect(disposed()).toBe(1);
+  });
+});
