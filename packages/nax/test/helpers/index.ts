@@ -131,5 +131,6 @@ export { useUntrustedRegistry } from "./trust";
 export { loadTrustModule, type TrustModule, trustFn } from "./trust-module";
 export { makeTurnResult } from "./turn-result";
 export { withDebugSpy, withInfoSpy, withWarnSpy } from "./warn-spy";
+export { makeFeatureContext } from "./workflow-feature-context";
 export { makeStepContext } from "./workflow-step-context";
 export { type MockWorktreeManager, makeWorktreeManager } from "./worktree-manager";

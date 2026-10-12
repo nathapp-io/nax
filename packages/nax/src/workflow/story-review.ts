@@ -19,7 +19,7 @@ export type ReviewOutcome<V> =
  * A package failure is a skipped review, not a thrown error (abort still propagates).
  */
 export async function underReviewLimit<V>(
-  sc: StepContext,
+  sc: Pick<StepContext, "runSignal" | "workflow">,
   writePackage: () => Promise<void>,
   run: (signal: AbortSignal | undefined) => Promise<V | null>,
 ): Promise<ReviewOutcome<V>> {
