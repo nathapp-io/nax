@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import { adjudicateResidual } from "@/workflow/adjudicate";
 import { defaultWorkflowAdvisor, type WorkflowAdvisor } from "@/workflow/advisor";
 import { deriveEndState } from "@/workflow/close";
@@ -64,6 +65,48 @@ describe("adjudicateResidual", () => {
     expect(
       await defaultWorkflowAdvisor.answerQuestion({ storyId: "US-001", status: "BLOCKED", concerns: "x" }),
     ).toBeNull();
+  });
+});
+
+describe("adjudicateResidual duplicate and unknown rulings (P3-R10)", () => {
+  let logs: LogEntry[] = [];
+  beforeEach(() => {
+    resetLogger();
+    logs = [];
+    initLogger({ level: "silent" });
+    addSink((entry) => logs.push(entry));
+  });
+  afterEach(() => resetLogger());
+
+  const ruling = (findingId: string, action: "waive" | "hold") => ({
+    findingId,
+    action,
+    text: `${action} ${findingId}`,
+    why: "w",
+    costIfWrong: "c",
+    source: "advisor" as const,
+  });
+
+  test("first ruling per finding wins; duplicates and unknown ids are warned about and ignored", async () => {
+    const advisor: WorkflowAdvisor = {
+      answerQuestion: async () => null,
+      ruleResidual: async () => ({
+        rulings: [ruling("F1", "waive"), ruling("F1", "hold"), ruling("F9", "waive")],
+        diagnoses: {},
+      }),
+    };
+    const rulings = await adjudicateResidual(
+      advisor,
+      { storyId: "US-001", items: [f("F1")], redGates: [] },
+      async () => {},
+    );
+    expect(rulings.map((r) => [r.findingId, r.action])).toEqual([["F1", "waive"]]);
+    const warns = logs.filter((e) => e.level === "warn");
+    expect(warns).toHaveLength(2);
+    expect(warns.map((e) => e.data)).toEqual([
+      { storyId: "US-001", findingId: "F1" },
+      { storyId: "US-001", findingId: "F9" },
+    ]);
   });
 });
 

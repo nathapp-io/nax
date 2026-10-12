@@ -17,6 +17,7 @@ export function makeStepContext(overrides: Partial<StepContext> = {}): StepConte
     projectDir: "/repo",
     workdir: "/repo",
     runDir: "/repo/run",
+    outputDir: "/repo/out",
     storyDir: "/repo/run/US-001",
     briefPath: "/repo/run/US-001/brief.md",
     reportPath: "/repo/run/US-001/report.md",

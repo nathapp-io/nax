@@ -177,6 +177,7 @@ export {
   logDeterministicPhaseOutcome,
 } from "./story-orchestrator-logging";
 export type { StoryRunResult } from "./types";
+export { headsUpChannel } from "./uncategorised-advice";
 // BUG-2 testability seam: re-export `executeUnified` + its `_deps`
 // shim so test files can mutate `_unifiedExecutorDeps` via the barrel
 // (alias-internals lint requires alias imports to target barrels, not

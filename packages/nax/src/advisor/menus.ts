@@ -18,6 +18,8 @@ const LABELS: Record<AdviceActionType, string> = {
   approve: "Approve: promote the PR",
   "re-review": "Run one more review pass before deciding",
   hold: "Hold: escalate to a human instead of proceeding",
+  answer: "Answer the implementer's question (put the answer in instruction)",
+  carry: "Load-bearing: carry an instruction into the dependent stories",
 };
 
 /** Text field each action needs from the advisor's reply; null = none. */
@@ -33,17 +35,60 @@ export const REQUIRED_TEXT_FIELD: Record<AdviceActionType, "instruction" | "reas
   approve: null,
   "re-review": null,
   hold: "reason",
+  answer: "instruction",
+  carry: "instruction",
 };
 
-type Draft = { type: AdviceActionType; fixed?: AdviceOptionFixed; label?: string };
+type Draft = { type: AdviceActionType; fixed?: AdviceOptionFixed; label?: string; id?: string };
 
 function withIds(drafts: readonly Draft[]): AdviceOption[] {
   return drafts.map((d, i) => ({
-    id: OPTION_IDS[i] ?? String(i),
+    id: d.id ?? OPTION_IDS[i] ?? String(i),
     type: d.type,
     label: d.label ?? LABELS[d.type],
     ...(d.fixed ? { fixed: d.fixed } : {}),
   }));
+}
+
+export const PREFLIGHT_OPTION_IDS = { followAc: "A", followSpec: "B", reconcile: "C", flag: "D" } as const;
+
+function preflightDrafts(f: Extract<MenuFacts, { kind: "preflight" }>): Draft[] {
+  const followAc: Draft[] = f.specSection
+    ? [
+        {
+          id: PREFLIGHT_OPTION_IDS.followAc,
+          type: "supersede",
+          fixed: { target: { kind: "spec", section: f.specSection } },
+          label: "Follow the AC: supersede the spec section (give the corrected spec text)",
+        },
+      ]
+    : [];
+  const acTarget = f.acRef ? { target: { kind: "ac" as const, ...f.acRef } } : undefined;
+  const onAc: Draft[] = acTarget
+    ? [
+        {
+          id: PREFLIGHT_OPTION_IDS.followSpec,
+          type: "supersede",
+          fixed: acTarget,
+          label: "Follow the spec: supersede the AC (give the corrected AC text)",
+        },
+        {
+          id: PREFLIGHT_OPTION_IDS.reconcile,
+          type: "supersede",
+          fixed: acTarget,
+          label: "Reconcile: rewrite the AC so it satisfies both (give the text)",
+        },
+      ]
+    : [];
+  return [
+    ...followAc,
+    ...onAc,
+    {
+      id: PREFLIGHT_OPTION_IDS.flag,
+      type: "hold",
+      label: "Flag for a human: the story runs under a stated default (put the default in reason)",
+    },
+  ];
 }
 
 function supersedeDraft(
@@ -109,6 +154,28 @@ export function buildMenu(facts: MenuFacts): AdviceOption[] {
         ...(facts.reReviewUsed ? [] : [{ type: "re-review" as const, fixed: { phase: facts.reReviewPhase } }]),
         { type: "hold" },
       ]);
+    case "implementer-question":
+      return withIds([
+        { type: "answer" },
+        { type: "hold", label: "No answer: the implementer goes on to review with its concern" },
+      ]);
+    case "residual":
+      return withIds([
+        { type: "waive", label: "Park: the reviewer is wrong (say why in reason)" },
+        { type: "defer", label: "Park: real, but defer it to the branch review (say why in reason)" },
+        ...(facts.dependents.length > 0
+          ? [
+              {
+                type: "carry" as const,
+                fixed: { toStories: facts.dependents },
+                label: `Load-bearing: carry an instruction into ${facts.dependents.join(", ")}`,
+              },
+            ]
+          : []),
+        { type: "hold", label: "Flag for a human" },
+      ]);
+    case "preflight":
+      return withIds(preflightDrafts(facts));
   }
 }
 
@@ -139,6 +206,10 @@ export function toAction(option: AdviceOption, reply: AdvisorReply): AdviceActio
       };
     case "re-review":
       return { type: "re-review", phase: option.fixed?.phase ?? "quality" };
+    case "answer":
+      return { type: "answer", text: text("instruction") };
+    case "carry":
+      return { type: "carry", instruction: text("instruction"), toStories: option.fixed?.toStories ?? [] };
     case "retry-as-lite":
     case "approve":
       return { type: option.type };

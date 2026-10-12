@@ -13,3 +13,9 @@ export function usableAdvisorModels(
 ): ConfiguredModel[] {
   return advisorLadder(config).filter((m) => !isCooling(m));
 }
+
+/** Usable entries in order; every entry cooling still yields one attempt per entry rather than none. */
+export function ladderModels(config: AdvisorConfig, isCooling: (model: ConfiguredModel) => boolean): ConfiguredModel[] {
+  const usable = usableAdvisorModels(config, isCooling);
+  return usable.length > 0 ? usable : advisorLadder(config);
+}

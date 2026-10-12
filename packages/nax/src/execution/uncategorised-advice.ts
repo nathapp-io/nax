@@ -43,6 +43,11 @@ function headsUpVia(ctx: PipelineContext) {
   };
 }
 
+/** The heads-up channel createAdvisor takes (shared by the uncategorised caller and the workflow advisor). */
+export function headsUpChannel(ctx: PipelineContext): Pick<AdvisorCallContext, "headsUp"> {
+  return { headsUp: headsUpVia(ctx) };
+}
+
 function toStageResult(d: AdviceDecision, ctx: PipelineContext, pauseReason: string): StageResult | null {
   switch (d.action.type) {
     case "retry-as-lite":
@@ -71,7 +76,7 @@ export async function adviseUncategorised(frame: DecideFrame, pauseReason: strin
     runId: ctx.runtime.runId,
     specPath: relative(repoRoot, join(featureDir(repoRoot, feature), "spec.md")),
     workdir: ctx.workdir,
-    headsUp: headsUpVia(ctx),
+    ...headsUpChannel(ctx),
   });
   const failed = planResult.failedPhases?.join(", ") ?? "unknown";
   const { decision } = await advisor.advise({

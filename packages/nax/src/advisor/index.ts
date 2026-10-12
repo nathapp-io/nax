@@ -13,6 +13,7 @@ export {
   readLabels,
   writeAdviceAudit,
 } from "./audit";
+export { adviseBatch, type BatchItemResult, type BatchRequest, type BatchResult } from "./batch";
 export { dedupeKeyFor } from "./dedupe";
 export {
   type AdvisorSummary,
@@ -33,7 +34,7 @@ export {
   readDecisions,
   readTrustedDecisions,
 } from "./ledger";
-export { buildMenu, forcedConfirm, REQUIRED_TEXT_FIELD, toAction } from "./menus";
+export { buildMenu, forcedConfirm, PREFLIGHT_OPTION_IDS, REQUIRED_TEXT_FIELD, toAction } from "./menus";
 export {
   _advisorServiceDeps,
   type Advisor,

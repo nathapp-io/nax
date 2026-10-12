@@ -41,6 +41,7 @@ function fakeAdvisor(reply: (q: QuestionDraft) => AdviceResult) {
       asked.push(q);
       return reply(q);
     },
+    adviseBatch: async () => ({ kind: "residual", items: [], diagnoses: {} }),
     recordReuse: async (q, from) => {
       reused.push([q, from]);
       return { ...from, id: "D-9", reusedFrom: from.id };

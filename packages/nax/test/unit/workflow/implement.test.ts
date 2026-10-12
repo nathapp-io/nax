@@ -127,13 +127,58 @@ describe("runImplementerTurn", () => {
     expect(out.autoCommitted).toBe(false);
   });
 
-  test("answer turn uses fixMs", async () => {
+  test("answer turn after a stepped-up fresh round uses that round's model and fixMs, and never closes the session", async () => {
+    const closes: string[] = [];
+    const descriptor: SessionDescriptor = {
+      id: "sess-1",
+      role: "wf-implementer",
+      state: "RUNNING",
+      agent: "claude",
+      workdir: "/repo",
+      protocolIds: { recordId: null, sessionId: null },
+      handle: "h1",
+      completedStages: [],
+      createdAt: "",
+      lastActivityAt: "",
+    };
+    const sessionManager = {
+      getForStory: () => [descriptor],
+      getLiveHandle: () => ({ id: "live", agentName: "claude" }),
+      closeSession: async () => {
+        closes.push("close");
+      },
+    };
     const seen: WorkflowImplementInput[] = [];
     fakeImplement(doneReply, seen);
     _workflowDeps.git = async () => ({ stdout: "", exitCode: 0 });
-    await runImplementerTurn(makeStepContext({ workflow }), { kind: "answer", text: "use the helper" });
+    await runImplementerTurn(
+      makeStepContext({
+        story: routed("fast"),
+        tierOrder: tiers,
+        workflow,
+        sessionManager: makeSessionManager(sessionManager),
+      }),
+      { kind: "answer", text: "Use X", stepUps: 1, limit: "fix" },
+    );
+    expect(seen[0]?.model).toBe("balanced");
     expect(seen[0]?.timeoutMs).toBe(222);
-    expect(seen[0]?.prompt).toContain("use the helper");
+    expect(seen[0]?.prompt).toContain("Use X");
+    expect(closes).toEqual([]);
+  });
+
+  test("answer turn after the first implement turn uses the routed model and implementMs", async () => {
+    const seen: WorkflowImplementInput[] = [];
+    fakeImplement(doneReply, seen);
+    _workflowDeps.git = async () => ({ stdout: "", exitCode: 0 });
+    await runImplementerTurn(makeStepContext({ story: routed("fast"), tierOrder: tiers, workflow }), {
+      kind: "answer",
+      text: "Use X",
+      stepUps: 0,
+      limit: "implement",
+    });
+    expect(seen[0]?.model).toBeUndefined();
+    expect(seen[0]?.timeoutMs).toBe(111);
+    expect(seen[0]?.prompt).toContain("Use X");
   });
 
   test("fresh fix turn: closes the warm session first, stepped-up model, fixMs, uncommitted files in prompt", async () => {

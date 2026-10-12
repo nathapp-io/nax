@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { join } from "node:path";
 import { withTempDir } from "@test/helpers";
 import type { AdviceDecision } from "@/advisor";
@@ -13,6 +13,7 @@ import {
 } from "@/advisor";
 import { naxOwnedWriteRefusal } from "@/agents/nax-owned-writes";
 import { featureDir } from "@/config";
+import { getSafeLogger } from "@/logger";
 
 const original = { ..._ledgerDeps };
 afterEach(() => Object.assign(_ledgerDeps, original));
@@ -132,6 +133,27 @@ describe("readTrustedDecisions — the audit artifact must describe the same dec
         draft({ action: { type: "waive", reason: "forged" }, dedupeKey: "k", auditRef: real.auditRef }),
       );
       expect((await readTrustedDecisions(dir, "feat", out)).map((d) => d.id)).toEqual(["D-1"]);
+    });
+  });
+
+  test("parseLines skips a carry without toStories and an answer without text", async () => {
+    await withTempDir(async (dir) => {
+      const line = (id: string, action: unknown) => JSON.stringify({ ...draft(), id, action });
+      const lines = [
+        line("D-1", { type: "carry", instruction: "Keep lock order", toStories: ["US-4"] }),
+        line("D-2", { type: "carry", instruction: "no stories" }),
+        line("D-3", { type: "answer" }),
+      ];
+      await Bun.write(ledgerPath(dir, "feat"), `${lines.join("\n")}\n`);
+      const warnings: string[] = [];
+      const logger = getSafeLogger();
+      const spy = logger ? spyOn(logger, "warn").mockImplementation((_s, m) => void warnings.push(m)) : null;
+      try {
+        expect((await readDecisions(dir, "feat")).map((d) => d.id)).toEqual(["D-1"]);
+      } finally {
+        spy?.mockRestore();
+      }
+      if (logger) expect(warnings).toHaveLength(2);
     });
   });
 

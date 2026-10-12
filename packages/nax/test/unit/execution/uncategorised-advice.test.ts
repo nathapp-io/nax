@@ -29,6 +29,7 @@ function stub(reply: AdviceResult): QuestionDraft[] {
         asked.push(q);
         return reply;
       },
+      adviseBatch: async () => ({ kind: "residual", items: [], diagnoses: {} }),
       recordReuse: async () => null,
     };
     return a;

@@ -3,6 +3,7 @@
  * `_workflowDeps` is the single test seam: every agent call goes through
  * `_workflowDeps.callOp`, so a test fakes the agent in one place.
  */
+import { createAdvisor, readTrustedDecisions } from "@/advisor";
 import { resolveFeatureSpec } from "@/cli";
 import type { NaxConfig, TierConfig, WorkflowConfig } from "@/config";
 import { callOp } from "@/operations";
@@ -27,6 +28,8 @@ export interface StepContext {
   /** Story package dir. */
   readonly workdir: string;
   readonly runDir: string;
+  /** The run output dir (advisor ledger and audit location). */
+  readonly outputDir: string;
   readonly storyDir: string;
   readonly briefPath: string;
   readonly reportPath: string;
@@ -52,5 +55,7 @@ export const _workflowDeps = {
   autoCommitIfDirty,
   resolveFeatureSpec: (feature: string, workdir: string): Promise<{ specSource?: { path: string } | null }> =>
     resolveFeatureSpec(feature, workdir),
+  createAdvisor: createAdvisor as typeof createAdvisor,
+  readTrustedDecisions: readTrustedDecisions as typeof readTrustedDecisions,
   now: (): number => Date.now(),
 };

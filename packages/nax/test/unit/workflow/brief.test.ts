@@ -52,4 +52,42 @@ describe("writeBrief", () => {
     expect(text).toContain("full-suite red");
     expect(text).toContain("CTX");
   });
+
+  test("puts carried instructions from trusted decisions in Rulings in force", async () => {
+    const root = makeTempDir("wf-brief-");
+    dirs.push(root);
+    const runDir = join(root, "run");
+    _workflowDeps.resolveFeatureSpec = async () => ({ specSource: null });
+    _workflowDeps.readTrustedDecisions = async () => [
+      {
+        id: "D-4",
+        questionId: "Q",
+        kind: "residual",
+        storyId: "US-1",
+        chosenOptionId: "A",
+        appliesTo: ["US-002"],
+        action: { type: "carry", instruction: "Keep lock order", toStories: ["US-002"] },
+        rationale: "x",
+        confidence: "high",
+        reversible: true,
+        needsHumanConfirm: false,
+        decidedAt: "t",
+        model: "m",
+        memoryMode: "stateless",
+        auditRef: "a",
+      },
+    ];
+    const sc = makeStepContext({
+      story: makeTestStory({ id: "US-002", acceptanceCriteria: ["pays"] }),
+      projectDir: root,
+      runDir,
+      storyDir: join(runDir, "US-002"),
+      briefPath: join(runDir, "US-002", "brief.md"),
+      reportPath: join(runDir, "US-002", "report.md"),
+    });
+    await writeBrief(sc);
+    const text = await Bun.file(sc.briefPath).text();
+    expect(text).toContain("Rulings in force");
+    expect(text).toContain("Carried from US-1 (D-4): Keep lock order");
+  });
 });

@@ -88,6 +88,7 @@ function setup(
         severities.push(opts?.findingSeverity);
         return reply(q);
       },
+      adviseBatch: async () => ({ kind: "residual", items: [], diagnoses: {} }),
       recordReuse: async () => null,
     };
     return advisor;
