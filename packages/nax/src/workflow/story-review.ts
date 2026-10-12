@@ -1,6 +1,7 @@
 /** Story review (spec §6 step 4): fresh session, BASE..HEAD package, review.json. Never throws except on abort. */
 import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
+import { getLogger } from "@/logger";
 import { workflowStoryReviewOp } from "@/operations";
 import { buildWorkflowStoryReviewPrompt } from "@/prompts";
 import { stepSignal } from "@/utils/step-signal";
@@ -40,6 +41,18 @@ export async function underReviewLimit<V>(
   }
 }
 
+/** The verdict file is an artifact; a write failure is logged and the verdict still returns. */
+export async function writeVerdictSafe(sc: StepContext, file: string, verdict: unknown): Promise<void> {
+  try {
+    await Bun.write(join(sc.storyDir, file), `${JSON.stringify(verdict, null, 2)}\n`);
+  } catch (err) {
+    getLogger().warn("workflow", `Could not write ${file}, continuing`, {
+      storyId: sc.story.id,
+      error: errorMessage(err),
+    });
+  }
+}
+
 export async function runStoryReview(
   sc: StepContext,
   concerns: readonly string[],
@@ -60,6 +73,6 @@ export async function runStoryReview(
         timeoutMs: sc.workflow.timeouts.reviewMs,
       }),
   );
-  if (outcome.ran) await Bun.write(join(sc.storyDir, "review.json"), `${JSON.stringify(outcome.verdict, null, 2)}\n`);
+  if (outcome.ran) await writeVerdictSafe(sc, "review.json", outcome.verdict);
   return outcome;
 }

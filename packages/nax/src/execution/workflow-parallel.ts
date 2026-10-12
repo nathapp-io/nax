@@ -13,6 +13,17 @@ export function effectiveParallelCount(
   return 0;
 }
 
+/**
+ * A5: workflow mode runs one story per dispatch. Batching groups consecutive simple stories into one
+ * pipeline pass, and completionStage would mark every batched story passed while workflowStage only runs
+ * the first, so batching is clamped off. `warn` fires once, only when it overrides a requested batch.
+ */
+export function effectiveUseBatch(config: NaxConfig, requested: boolean, warn: (msg: string) => void): boolean {
+  if (!isWorkflowMode(config) || !requested) return requested;
+  warn('execution.mode "workflow" runs stories one at a time; story batching disabled');
+  return false;
+}
+
 /** Parallel paths are unreachable in workflow mode (normalisation forces parallel off). Reaching one is a bug. */
 export function assertPipelineMode(config: NaxConfig, site: string): void {
   if (isWorkflowMode(config)) {

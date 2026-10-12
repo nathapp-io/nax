@@ -1,14 +1,30 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeMockCallContext, makeMockRuntime, makeStepContext, makeTestContext } from "@test/helpers";
+import { join } from "node:path";
+import {
+  assertNaxError,
+  cleanupTempDir,
+  makeMockCallContext,
+  makeMockRuntime,
+  makeNaxConfig,
+  makeStepContext,
+  makeTempDir,
+  makeTestContext,
+} from "@test/helpers";
 import { createNoOpCostAggregator } from "@/runtime/cost-aggregator";
 import type { SessionTurnDispatchEvent } from "@/runtime/dispatch-events";
 import { defaultWorkflowAdvisor } from "@/workflow/advisor";
-import { newStoryRecord } from "@/workflow/result";
+import { workflowRunDir } from "@/workflow/paths";
+import { newStoryRecord, readResult } from "@/workflow/result";
 import { _workflowStageDeps, workflowStage } from "@/workflow/stage";
 import type { StoryLoopEnv, StoryLoopOutcome } from "@/workflow/story-loop";
 
 const original = { ..._workflowStageDeps };
-afterEach(() => Object.assign(_workflowStageDeps, original));
+const dirs: string[] = [];
+afterEach(async () => {
+  Object.assign(_workflowStageDeps, original);
+  await Promise.all(dirs.map(cleanupTempDir));
+  dirs.length = 0;
+});
 
 function makeEnv(): StoryLoopEnv {
   return {
@@ -64,7 +80,13 @@ function makeEvent(overrides: Partial<SessionTurnDispatchEvent>): SessionTurnDis
 
 function wire(
   loop: () => Promise<StoryLoopOutcome>,
-  opts: { resume?: StoryLoopEnv["resume"]; briefs?: string[]; buildCallCtx?: () => Promise<never> } = {},
+  opts: {
+    resume?: StoryLoopEnv["resume"];
+    briefs?: string[];
+    briefPath?: string;
+    closed?: string[];
+    buildCallCtx?: () => Promise<never>;
+  } = {},
 ): () => boolean {
   let disposed = false;
   _workflowStageDeps.buildWorkflowCallContext =
@@ -76,8 +98,11 @@ function wire(
       },
     }));
   _workflowStageDeps.buildStoryEnv = async () => ({
-    sc: makeStepContext(),
+    sc: makeStepContext(opts.briefPath ? { briefPath: opts.briefPath } : {}),
     env: { ...makeEnv(), resume: opts.resume ?? null },
+    closeOnError: async (reason) => {
+      opts.closed?.push(reason);
+    },
   });
   _workflowStageDeps.writeBrief = async () => {
     opts.briefs?.push("brief");
@@ -162,10 +187,80 @@ describe("workflowStage", () => {
     await workflowStage.execute(makeTestContext());
     expect(fresh).toEqual(["brief"]);
 
+    const dir = makeTempDir("wf-stage-brief-");
+    dirs.push(dir);
+    const briefPath = join(dir, "brief.md");
+    await Bun.write(briefPath, "carried brief");
     const resumed: string[] = [];
-    wire(async () => OUTCOME, { briefs: resumed, resume: newStoryRecord("US-001", 5, "t") });
+    wire(async () => OUTCOME, { briefs: resumed, resume: newStoryRecord("US-001", 5, "t"), briefPath });
     await workflowStage.execute(makeTestContext());
     expect(resumed).toEqual([]);
+  });
+
+  test("a resumed story whose prior brief is missing gets a fresh brief", async () => {
+    const dir = makeTempDir("wf-stage-brief-");
+    dirs.push(dir);
+    const rewritten: string[] = [];
+    wire(async () => OUTCOME, {
+      briefs: rewritten,
+      resume: newStoryRecord("US-001", 5, "t"),
+      briefPath: join(dir, "brief.md"),
+    });
+    await workflowStage.execute(makeTestContext());
+    expect(rewritten).toEqual(["brief"]);
+  });
+
+  test("a batch of more than one story throws WORKFLOW_BATCH_UNREACHABLE and runs nothing", async () => {
+    let looped = false;
+    wire(async () => {
+      looped = true;
+      return OUTCOME;
+    });
+    const ctx = makeTestContext();
+    const batched = { ...ctx, stories: [ctx.story, { ...ctx.story, id: "US-002" }] };
+    const err = await workflowStage.execute(batched).catch((e: unknown) => e);
+    assertNaxError(err);
+    expect(err.code).toBe("WORKFLOW_BATCH_UNREACHABLE");
+    expect(looped).toBe(false);
+  });
+
+  test("an abort swallowed inside the loop still rethrows after it returns", async () => {
+    const ac = new AbortController();
+    wire(async () => {
+      ac.abort();
+      return OUTCOME;
+    });
+    const ctx = makeTestContext({ abortSignal: ac.signal });
+    const err = await workflowStage.execute(ctx).catch((e: unknown) => e);
+    assertNaxError(err);
+    expect(err.code).toBe("WORKFLOW_ABORTED");
+    expect(ctx.agentResult).toBeUndefined();
+  });
+
+  test("a contained loop error closes the story record gate-open", async () => {
+    const closed: string[] = [];
+    wire(
+      async () => {
+        throw new Error("bug");
+      },
+      { closed },
+    );
+    await workflowStage.execute(makeTestContext());
+    expect(closed).toEqual(["bug"]);
+  });
+
+  test("an abort does not close the record", async () => {
+    const closed: string[] = [];
+    wire(
+      async () => {
+        throw new Error("aborted");
+      },
+      { closed },
+    );
+    const ac = new AbortController();
+    ac.abort();
+    await expect(workflowStage.execute(makeTestContext({ abortSignal: ac.signal }))).rejects.toThrow("aborted");
+    expect(closed).toEqual([]);
   });
 
   test("dispose runs on the error path", async () => {
@@ -191,5 +286,39 @@ describe("workflowStage", () => {
     await workflowStage.execute(ctx);
     expect(ctx.agentResult?.estimatedCostUsd).toBeCloseTo(0.75);
     expect(ctx.agentResult?.tokenUsage).toEqual({ inputTokens: 30, outputTokens: 12 });
+  });
+});
+
+describe("workflowStage with the real story env", () => {
+  test("a forced loop throw leaves a closed record in result.json", async () => {
+    const outputDir = makeTempDir("wf-stage-out-");
+    const workdir = makeTempDir("wf-stage-work-");
+    dirs.push(outputDir, workdir);
+    const config = makeNaxConfig({ outputDir });
+    const runtime = makeMockRuntime({ config, workdir });
+    const ctx = makeTestContext({
+      config,
+      rootConfig: config,
+      runtime,
+      projectDir: workdir,
+      workdir,
+      storyGitRef: "base123",
+      prd: { ...makeTestContext().prd, feature: "feat" },
+    });
+    _workflowStageDeps.buildWorkflowCallContext = async () => ({
+      callCtx: makeMockCallContext(),
+      dispose: async () => {},
+    });
+    _workflowStageDeps.writeBrief = async () => {};
+    _workflowStageDeps.runStoryLoop = async () => {
+      throw new Error("forced");
+    };
+    expect(await workflowStage.execute(ctx)).toEqual({ action: "continue" });
+    const result = await readResult(workflowRunDir(runtime.outputDir, "feat", runtime.runId));
+    expect(result?.stories[ctx.story.id]).toMatchObject({
+      state: "complete-gate-open",
+      reason: "workflow error: forced",
+      phase: "closed",
+    });
   });
 });

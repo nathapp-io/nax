@@ -4,7 +4,7 @@ import { workflowReReviewOp } from "@/operations";
 import { buildWorkflowReReviewPrompt } from "@/prompts";
 import { writeReviewPackage } from "./git";
 import { _workflowDeps, type StepContext } from "./step-context";
-import { type ReviewOutcome, underReviewLimit } from "./story-review";
+import { type ReviewOutcome, underReviewLimit, writeVerdictSafe } from "./story-review";
 import type { ReReviewVerdict, WorkflowFinding } from "./types";
 
 export async function runReReview(
@@ -30,8 +30,6 @@ export async function runReReview(
         timeoutMs: sc.workflow.timeouts.reviewMs,
       }),
   );
-  if (outcome.ran) {
-    await Bun.write(join(sc.storyDir, `rereview-${round}.json`), `${JSON.stringify(outcome.verdict, null, 2)}\n`);
-  }
+  if (outcome.ran) await writeVerdictSafe(sc, `rereview-${round}.json`, outcome.verdict);
   return outcome;
 }

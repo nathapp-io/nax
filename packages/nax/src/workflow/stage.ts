@@ -4,6 +4,7 @@
  * when the run is aborted (W-R3).
  */
 import { errorMessage } from "@nathapp/nax-agent/internal";
+import { NaxError } from "@/errors";
 import { getLogger } from "@/logger";
 import type { PipelineContext, PipelineStage, StageResult } from "@/pipeline/types";
 import { writeBrief } from "./brief";
@@ -21,6 +22,14 @@ export const workflowStage: PipelineStage = {
 
   async execute(ctx: PipelineContext): Promise<StageResult> {
     const logger = getLogger();
+    // Batched stories must never reach this stage (completionStage would pass the unimplemented ones).
+    if (ctx.stories.length > 1) {
+      throw new NaxError(
+        `workflowStage received a batch of ${ctx.stories.length} stories; workflow mode runs one story at a time`,
+        "WORKFLOW_BATCH_UNREACHABLE",
+        { stage: "workflow", storyId: ctx.story.id, batchSize: ctx.stories.length },
+      );
+    }
     const started = Date.now();
     let costUsd = 0;
     let inputTokens = 0;
@@ -32,13 +41,19 @@ export const workflowStage: PipelineStage = {
         outputTokens += event.tokenUsage?.outputTokens ?? 0;
       }) ?? (() => {});
     let dispose: (() => Promise<void>) | null = null;
+    let closeOnError: ((reason: string) => Promise<void>) | null = null;
     try {
       const built = await _workflowStageDeps.buildWorkflowCallContext(ctx);
       dispose = built.dispose;
       const { callCtx } = built;
-      const { sc, env } = await _workflowStageDeps.buildStoryEnv(ctx, callCtx);
-      if (!env.resume) await _workflowStageDeps.writeBrief(sc);
+      const storyEnv = await _workflowStageDeps.buildStoryEnv(ctx, callCtx);
+      const { sc, env } = storyEnv;
+      closeOnError = storyEnv.closeOnError;
+      // A resumed story keeps its prior brief (copied into this run's dir); a missing one is rewritten.
+      if (!env.resume || !(await Bun.file(sc.briefPath).exists())) await _workflowStageDeps.writeBrief(sc);
       const outcome = await _workflowStageDeps.runStoryLoop(env);
+      // An abort swallowed inside a step (e.g. a gate) must not close the story as passed.
+      if (ctx.abortSignal?.aborted) throw abortError(ctx);
       logger.info("workflow", "Story closed", {
         storyId: ctx.story.id,
         state: outcome.state,
@@ -52,6 +67,7 @@ export const workflowStage: PipelineStage = {
         error: errorMessage(err),
       });
       await appendLedgerSafe(ctx, `complete-gate-open (workflow error: ${errorMessage(err)})`);
+      if (closeOnError) await closeOnError(errorMessage(err));
     } finally {
       unsubscribe();
       if (dispose) await dispose();
@@ -68,6 +84,13 @@ export const workflowStage: PipelineStage = {
     return { action: "continue" };
   },
 };
+
+function abortError(ctx: PipelineContext): NaxError {
+  return new NaxError("Run aborted during the workflow story loop", "WORKFLOW_ABORTED", {
+    stage: "workflow",
+    storyId: ctx.story.id,
+  });
+}
 
 async function appendLedgerSafe(ctx: PipelineContext, text: string): Promise<void> {
   try {

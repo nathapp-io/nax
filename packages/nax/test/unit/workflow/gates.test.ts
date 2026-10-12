@@ -141,3 +141,29 @@ describe("runWorkflowSuiteGate", () => {
     if (red) expect(r.findings.length).toBeGreaterThan(0);
   });
 });
+
+describe("run abort inside a gate", () => {
+  test("is rethrown, not turned into a red finding", async () => {
+    const ac = new AbortController();
+    fake({
+      ...green,
+      [lintCheckOp.name]: () => {
+        ac.abort();
+        throw new Error("aborted");
+      },
+    });
+    const base = sc();
+    await expect(runStoryGates(makeStepContext({ ...base, runSignal: ac.signal }))).rejects.toThrow("aborted");
+  });
+
+  test("a gate error without an abort stays a red finding", async () => {
+    fake({
+      ...green,
+      [lintCheckOp.name]: () => {
+        throw new Error("boom");
+      },
+    });
+    const r = await runStoryGates(sc());
+    expect(r.states.lint).toBe("red");
+  });
+});

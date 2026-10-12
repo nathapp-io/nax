@@ -24,7 +24,7 @@ import type { ExitReason } from "./executor-types";
 import { getAllReadyStories } from "./helpers";
 import { captureRunBaseline } from "./lifecycle/test-baseline-capture";
 import { markNewPackageDirs } from "./new-package-setup";
-import { effectiveParallelCount } from "./workflow-parallel";
+import { effectiveParallelCount, effectiveUseBatch } from "./workflow-parallel";
 
 /**
  * Options for the execution phase.
@@ -90,6 +90,9 @@ export async function runExecutionPhase(
   pluginRegistry: PluginRegistry,
 ): Promise<RunnerExecutionResult> {
   const logger = getSafeLogger();
+  const useBatch = effectiveUseBatch(options.config, options.useBatch, (m) =>
+    logger?.warn("execution", m, { storyId: "_run" }),
+  );
 
   let iterations = 0;
   let storiesCompleted = 0;
@@ -121,7 +124,7 @@ export async function runExecutionPhase(
     totalStories: prd.userStories.length,
     doneStories: prd.userStories.filter((s) => s.status === "passed").length,
     pendingStories: prd.userStories.filter((s) => s.status === "pending").length,
-    batchingEnabled: options.useBatch,
+    batchingEnabled: useBatch,
   });
 
   // The LLM routing cache is run-scoped (options.runtime.routingCache, BUG-19)
@@ -197,11 +200,11 @@ export async function runExecutionPhase(
     })),
   });
 
-  const batchPlan = options.useBatch ? precomputeBatchPlan(readyStories, 4) : [];
+  const batchPlan = useBatch ? precomputeBatchPlan(readyStories, 4) : [];
 
   // nax#1809: batch LLM routing is a real model spend under a dry run — skip it;
   // the batch path itself never dispatches under dryRun (unified-executor.ts).
-  if (options.useBatch && !options.dryRun) {
+  if (useBatch && !options.dryRun) {
     await tryLlmBatchRoute(options.config, readyStories, "routing", {
       agentManager: options.agentManager,
       runtime: options.runtime,
@@ -218,7 +221,7 @@ export async function runExecutionPhase(
       feature: options.feature,
       featureDir: options.featureDir,
       dryRun: options.dryRun,
-      useBatch: options.useBatch,
+      useBatch,
       pluginRegistry,
       eventEmitter: options.eventEmitter,
       statusWriter: options.statusWriter,

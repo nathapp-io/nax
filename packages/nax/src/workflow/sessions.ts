@@ -10,7 +10,14 @@ export async function closeImplementerSession(
   storyId: string,
 ): Promise<void> {
   if (!sessionManager) return;
-  for (const desc of sessionManager.getForStory(storyId)) {
+  let descriptors: ReturnType<typeof sessionManager.getForStory>;
+  try {
+    descriptors = sessionManager.getForStory(storyId);
+  } catch (err) {
+    getLogger().warn("workflow", "Could not list story sessions, continuing", { storyId, error: errorMessage(err) });
+    return;
+  }
+  for (const desc of descriptors) {
     if (desc.role !== "wf-implementer" || !desc.handle || !LIVE_STATES.has(desc.state)) continue;
     const live = sessionManager.getLiveHandle(desc.handle);
     if (!live) continue;

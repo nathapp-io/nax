@@ -1,5 +1,6 @@
 /** Builds the StepContext and wires the real steps, sink and advisor into a StoryLoopEnv (Task 10's contract). */
 import { join } from "node:path";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { resolveWorkflowConfig } from "@/config";
 import { getLogger } from "@/logger";
 import type { CallContext } from "@/operations/types";
@@ -14,7 +15,7 @@ import { runImplementerTurn } from "./implement";
 import { appendLedger, ensureLedger } from "./ledger";
 import { workflowFeatureDir, workflowRunDir, workflowStoryDir } from "./paths";
 import { runReReview } from "./re-review";
-import { loadPriorStoryRecord, newStoryRecord, upsertStoryRecord } from "./result";
+import { loadPriorStory, newStoryRecord, upsertStoryRecord } from "./result";
 import { _workflowDeps, type StepContext } from "./step-context";
 import type { StoryLoopEnv, StoryLoopSteps } from "./story-loop";
 import { runStoryReview } from "./story-review";
@@ -38,7 +39,7 @@ function timed<A extends unknown[], R>(
 export async function buildStoryEnv(
   ctx: PipelineContext,
   callCtx: CallContext,
-): Promise<{ sc: StepContext; env: StoryLoopEnv }> {
+): Promise<{ sc: StepContext; env: StoryLoopEnv; closeOnError: (reason: string) => Promise<void> }> {
   const feature = ctx.prd.feature;
   const { outputDir, runId } = ctx.runtime;
   const runDir = workflowRunDir(outputDir, feature, runId);
@@ -75,7 +76,8 @@ export async function buildStoryEnv(
   };
 
   await ensureLedger(runDir, runId, feature);
-  const prior = await loadPriorStoryRecord(workflowFeatureDir(outputDir, feature), runId, ctx.story.id);
+  const priorStory = await loadPriorStory(workflowFeatureDir(outputDir, feature), runId, ctx.story.id);
+  const prior = priorStory?.record ?? null;
   // A crash during the first implement turn leaves nothing to resume into: start the story over
   // (a new session sees the uncommitted edits in the tree). Mid-loop records resume (spec §10).
   const resume = prior && prior.phase !== "implement" ? prior : null;
@@ -84,7 +86,8 @@ export async function buildStoryEnv(
     resumeRecord ?? newStoryRecord(ctx.story.id, workflow.maxFixRounds, new Date().toISOString());
   const header = { runId, feature };
   await upsertStoryRecord(runDir, header, record);
-  if (resume) {
+  if (resume && priorStory) {
+    await carryOverArtifacts(workflowStoryDir(priorStory.runDir, ctx.story.id), storyDir, ctx.story.id);
     await appendLedger(runDir, ctx.story.id, `resumed at round ${resume.round} (prior record, warm session gone)`);
     getLogger().info("workflow", "Resuming story from a prior run", { storyId: ctx.story.id, round: resume.round });
   }
@@ -120,5 +123,39 @@ export async function buildStoryEnv(
     },
     resume: resumeRecord,
   };
-  return { sc, env };
+  // Error containment (W-R3): the stage swallowed a non-abort error, so close the record gate-open
+  // rather than leave it mid-loop. Best-effort, like the ledger line.
+  const closeOnError = async (reason: string): Promise<void> => {
+    try {
+      record = {
+        ...record,
+        state: "complete-gate-open",
+        reason: `workflow error: ${reason}`,
+        phase: "closed",
+        endedAt: new Date().toISOString(),
+      };
+      await upsertStoryRecord(runDir, header, record);
+    } catch (err) {
+      getLogger().debug("workflow", "Record close failed on the error path", {
+        storyId: ctx.story.id,
+        error: errorMessage(err),
+      });
+    }
+  };
+  return { sc, env, closeOnError };
+}
+
+/** The resumed implementer and reviewers read brief.md / report.md from this run's story dir (spec §10). */
+async function carryOverArtifacts(priorStoryDir: string, storyDir: string, storyId: string): Promise<void> {
+  for (const name of ["brief.md", "report.md"]) {
+    const src = Bun.file(join(priorStoryDir, name));
+    try {
+      if (await src.exists()) await Bun.write(join(storyDir, name), src);
+    } catch (err) {
+      getLogger().warn("workflow", `Could not carry ${name} over from the prior run`, {
+        storyId,
+        error: errorMessage(err),
+      });
+    }
+  }
 }

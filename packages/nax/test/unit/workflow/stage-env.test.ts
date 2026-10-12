@@ -11,7 +11,7 @@ import {
 import type { ICostAggregator } from "@/runtime";
 import { createNoOpCostAggregator } from "@/runtime/cost-aggregator";
 import { ledgerFilePath } from "@/workflow/ledger";
-import { workflowRunDir } from "@/workflow/paths";
+import { workflowRunDir, workflowStoryDir } from "@/workflow/paths";
 import { newStoryRecord, readResult, upsertStoryRecord } from "@/workflow/result";
 import { buildStoryEnv } from "@/workflow/stage-env";
 
@@ -76,6 +76,36 @@ describe("buildStoryEnv", () => {
     const written = (await readResult(runDir))?.stories[ctx.story.id];
     expect(written?.maxRounds).toBe(4);
     expect(await Bun.file(ledgerFilePath(runDir)).text()).toContain("resumed at round 2");
+  });
+
+  test("resuming across two runIds carries the prior brief and report into this run's story dir", async () => {
+    const { ctx, runtime } = setup();
+    await seedPrior(runtime.outputDir, ctx.story.id, "fix", 2);
+    const priorStoryDir = workflowStoryDir(workflowRunDir(runtime.outputDir, "feat", "prior-run"), ctx.story.id);
+    await Bun.write(join(priorStoryDir, "brief.md"), "prior brief");
+    await Bun.write(join(priorStoryDir, "report.md"), "prior report");
+    expect(runtime.runId).not.toBe("prior-run");
+    const { sc, env } = await buildStoryEnv(ctx, makeMockCallContext());
+    expect(env.resume).not.toBeNull();
+    expect(await Bun.file(sc.briefPath).text()).toBe("prior brief");
+    expect(await Bun.file(sc.reportPath).text()).toBe("prior report");
+  });
+
+  test("resuming with no prior brief or report leaves them absent (the stage rewrites the brief)", async () => {
+    const { ctx, runtime } = setup();
+    await seedPrior(runtime.outputDir, ctx.story.id, "fix", 1);
+    const { sc } = await buildStoryEnv(ctx, makeMockCallContext());
+    expect(await Bun.file(sc.briefPath).exists()).toBe(false);
+    expect(await Bun.file(sc.reportPath).exists()).toBe(false);
+  });
+
+  test("closeOnError closes the record gate-open with the error reason", async () => {
+    const { ctx, runDir } = setup();
+    const { closeOnError } = await buildStoryEnv(ctx, makeMockCallContext());
+    await closeOnError("disk full");
+    const rec = (await readResult(runDir))?.stories[ctx.story.id];
+    expect(rec).toMatchObject({ state: "complete-gate-open", reason: "workflow error: disk full", phase: "closed" });
+    expect(typeof rec?.endedAt).toBe("string");
   });
 
   test("ensures the ledger and a fresh result record", async () => {

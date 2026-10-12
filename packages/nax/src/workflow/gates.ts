@@ -50,10 +50,11 @@ function redWithoutDetail(gate: GateName, issue: string): OneGate {
   return { state: "red", findings: [{ kind: "gate", gate, severity: "important", issue }] };
 }
 
-async function guarded(gate: GateName, run: () => Promise<OneGate>): Promise<OneGate> {
+async function guarded(sc: StepContext, gate: GateName, run: () => Promise<OneGate>): Promise<OneGate> {
   try {
     return await run();
   } catch (err) {
+    if (sc.runSignal?.aborted) throw err; // a run abort is not a red gate
     return redWithoutDetail(gate, `${gate} gate errored: ${errorMessage(err)}`);
   }
 }
@@ -79,13 +80,13 @@ export async function runStoryGates(sc: StepContext): Promise<GateRunResult> {
   // The ops resolve their own command (config, then manifest detection) and report
   // status "skipped" when none exists; never pre-skip here or a detected gate goes unrun.
   const checkInput = { workdir: sc.workdir, storyId: sc.story.id, sessionScratchDir: sc.sessionScratchDir };
-  const lint = await guarded("lint", async () =>
+  const lint = await guarded(sc, "lint", async () =>
     fromCheck("lint", await _workflowDeps.callOp(sc.callCtx, lintCheckOp, checkInput)),
   );
-  const typecheck = await guarded("typecheck", async () =>
+  const typecheck = await guarded(sc, "typecheck", async () =>
     fromCheck("typecheck", await _workflowDeps.callOp(sc.callCtx, typecheckCheckOp, checkInput)),
   );
-  const scoped = await guarded("scoped", async () => {
+  const scoped = await guarded(sc, "scoped", async () => {
     const out: VerifyScopedOutput = await _workflowDeps.callOp(sc.callCtx, verifyScopedOp, {
       workdir: sc.workdir,
       storyId: sc.story.id,
@@ -111,7 +112,7 @@ export async function runStoryGates(sc: StepContext): Promise<GateRunResult> {
 }
 
 export async function runWorkflowSuiteGate(sc: StepContext): Promise<GateRunResult> {
-  const suite = await guarded("full-suite", async () => {
+  const suite = await guarded(sc, "full-suite", async () => {
     const out: FullSuiteGateOutput = await _workflowDeps.callOp(sc.callCtx, fullSuiteGateOp, {
       story: sc.story,
       workdir: sc.workdir,

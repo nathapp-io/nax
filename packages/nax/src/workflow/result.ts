@@ -66,6 +66,15 @@ export async function loadPriorStoryRecord(
   currentRunId: string,
   storyId: string,
 ): Promise<WorkflowStoryRecord | null> {
+  return (await loadPriorStory(featureDir, currentRunId, storyId))?.record ?? null;
+}
+
+/** Same lookup as loadPriorStoryRecord, plus the prior run directory (its brief.md / report.md live there). */
+export async function loadPriorStory(
+  featureDir: string,
+  currentRunId: string,
+  storyId: string,
+): Promise<{ readonly record: WorkflowStoryRecord; readonly runDir: string } | null> {
   let entries: string[];
   try {
     entries = await _resultDeps.readdir(featureDir);
@@ -87,7 +96,7 @@ export async function loadPriorStoryRecord(
   for (const { runDir } of dated) {
     const record = (await readResult(runDir))?.stories[storyId];
     if (!record) continue;
-    return record.state === undefined ? record : null;
+    return record.state === undefined ? { record, runDir } : null;
   }
   return null;
 }
