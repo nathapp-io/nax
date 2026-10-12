@@ -203,6 +203,12 @@ export interface VerifyContext<C> extends BuildContext<C> {
   readonly fileExists: (path: string) => Promise<boolean>;
 }
 
+/** Per-turn options a hop body may pass to `send` (finish A). */
+export interface SendTurnOverrides {
+  /** Soft interrupt: when it aborts, the running turn is soft-cancelled and the session stays usable. */
+  readonly interrupt?: AbortSignal;
+}
+
 /**
  * Context passed to a per-op `hopBody`. Exposes a bound `send(prompt)` closure
  * that dispatches one turn against the active hop's session via
@@ -211,7 +217,7 @@ export interface VerifyContext<C> extends BuildContext<C> {
  * `buildHopCallback`.
  */
 export interface HopBodyContext<I> {
-  readonly send: (prompt: string) => Promise<TurnResult>;
+  readonly send: (prompt: string, opts?: SendTurnOverrides) => Promise<TurnResult>;
   /**
    * `send` plus the parse-retry loop declared by `op.retry`. Equal to `send`
    * when `op.retry` is unset — always safe to call.

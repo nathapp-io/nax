@@ -130,8 +130,11 @@ export type {
   CallContext,
   CompleteOperation,
   DeterministicOperation,
+  HopBody,
+  HopBodyContext,
   Operation,
   RunOperation,
+  SendTurnOverrides,
   VerifyContext,
 } from "./types";
 export type { ValidateMockStructureOptions } from "./validate-mock-structure-files";

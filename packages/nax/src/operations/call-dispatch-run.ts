@@ -40,7 +40,7 @@ import {
 } from "./call-resolvers";
 import { buildRunDispatchOptions } from "./call-run-options";
 import { makeVerifyCtx, runPostParse } from "./post-parse";
-import type { BuildContext, CallContext, RunOperation } from "./types";
+import type { BuildContext, CallContext, RunOperation, SendTurnOverrides } from "./types";
 import { resolveDeclaredTools } from "./types";
 
 export interface RunDispatchParams<I, O, C> {
@@ -247,7 +247,7 @@ function createRunSenders<I, O, C>(
 ): {
   effectiveHopBody: (
     initialPrompt: string,
-    bodyCtx: { send: (p: string) => Promise<TurnResult>; input: unknown },
+    bodyCtx: { send: (p: string, o?: SendTurnOverrides) => Promise<TurnResult>; input: unknown },
   ) => Promise<TurnResult>;
 } {
   const { ctx, op, retryStrategy, dispatchAgent, abortSignal, fileOutputPath, retryState, deps } = params;
@@ -257,9 +257,10 @@ function createRunSenders<I, O, C>(
   // (spec §B1) — see call-hop-output.ts for the full rationale.
   const sendWithFileOutput = (
     promptText: string,
-    bodyCtx: { send: (p: string) => Promise<TurnResult> },
+    bodyCtx: { send: (p: string, o?: SendTurnOverrides) => Promise<TurnResult> },
+    overrides?: SendTurnOverrides,
   ): Promise<TurnResult> =>
-    normalizeHopOutput(bodyCtx.send, promptText, {
+    normalizeHopOutput((p) => bodyCtx.send(p, overrides), promptText, {
       storyId: ctx.storyId,
       opName: op.name,
       dispatchAgent,
@@ -276,7 +277,7 @@ function createRunSenders<I, O, C>(
   // When op.retry is absent, this reduces to bodyCtx.send(initialPrompt).
   const sendWithParseRetry = async (
     initialPrompt: string,
-    bodyCtx: { send: (p: string) => Promise<TurnResult>; input: unknown },
+    bodyCtx: { send: (p: string, o?: SendTurnOverrides) => Promise<TurnResult>; input: unknown },
   ): Promise<TurnResult> => {
     // Reset shared state so each call is independent.
     retryState.retryFallback = undefined;
@@ -343,11 +344,11 @@ function createRunSenders<I, O, C>(
   // ctx.sendWithParseRetry. When no user body, sendWithParseRetry is the body.
   const effectiveHopBody = (
     initialPrompt: string,
-    bodyCtx: { send: (p: string) => Promise<TurnResult>; input: unknown },
+    bodyCtx: { send: (p: string, o?: SendTurnOverrides) => Promise<TurnResult>; input: unknown },
   ): Promise<TurnResult> => {
     if (op.hopBody) {
       return op.hopBody(initialPrompt, {
-        send: (p) => sendWithFileOutput(p, bodyCtx),
+        send: (p, o) => sendWithFileOutput(p, bodyCtx, o),
         sendWithParseRetry: (p) => sendWithParseRetry(p, bodyCtx),
         input: bodyCtx.input as I,
       });
