@@ -104,7 +104,7 @@ export function classifyParsedAgentError(
 
 /** Account/plan exhaustion wording: the fault lasts for the run, unlike a transient rate limit. */
 const QUOTA_PATTERN =
-  /usage limit reached|token plan|exceeded your current quota|insufficient (credits|quota|balance)|quota exceeded|purchase credits/i;
+  /usage limit reached|token plan|exceeded your current quota|insufficient (credits|quota|balance)|purchase credits/i;
 
 export function isQuotaMessage(message: string): boolean {
   return QUOTA_PATTERN.test(message);

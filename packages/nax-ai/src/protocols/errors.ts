@@ -128,7 +128,7 @@ const STREAM_POLICY_MARKERS: readonly (readonly [marker: string, kind: ProtocolE
  * the two in step. Same drift caveat as the tables above: upstream wire strings.
  */
 export const QUOTA_MESSAGE_PATTERN =
-  /usage limit reached|token plan|exceeded your current quota|insufficient (credits|quota|balance)|quota exceeded|purchase credits/i;
+  /usage limit reached|token plan|exceeded your current quota|insufficient (credits|quota|balance)|purchase credits/i;
 
 /** A status that is not itself a report of failure: absent, or below 4xx. */
 function isNonFailingStatus(status: number | undefined): boolean {

@@ -15,6 +15,15 @@ describe("quota classification", () => {
     expect(isQuotaMessage("Rate limit exceeded, please slow down")).toBe(false);
   });
 
+  test("a per-minute 'Quota exceeded' 429 is not quota", () => {
+    const perMinute = "Quota exceeded for quota metric 'Generate Content API requests per minute'";
+    expect(isQuotaMessage(perMinute)).toBe(false);
+    const raw = `429 {"type":"error","error":{"type":"rate_limit_error","message":"${perMinute}"}}`;
+    const parsed = parseAgentError(raw);
+    expect(parsed?.type).toBe("rate-limit");
+    expect(classifyParsedAgentError(parsed, raw)?.adapterFailure?.outcome).toBe("fail-rate-limit");
+  });
+
   test("the MiniMax 2056 token-plan 429 parses as quota and maps to fail-quota", () => {
     const parsed = parseAgentError(MINIMAX_2056);
     expect(parsed?.type).toBe("quota");
