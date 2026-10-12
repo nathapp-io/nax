@@ -12,6 +12,13 @@ export { acceptanceRepairOp } from "./acceptance-repair";
 export type { AdversarialReviewInput, AdversarialReviewOutput } from "./adversarial-review";
 export { adversarialReviewOp } from "./adversarial-review";
 export { type AdviseOpInput, type AdviseOpOutput, adviseOp, validateAdvisorReply } from "./advise";
+export {
+  type AdviseBatchOpInput,
+  type AdviseBatchOpOutput,
+  adviseBatchOp,
+  type BatchItemAnswer,
+  type RawPreflightConflict,
+} from "./advise-batch";
 export type {
   ApplyTestEditDeclarationsOptions,
   DeclarationDiagnostic,
