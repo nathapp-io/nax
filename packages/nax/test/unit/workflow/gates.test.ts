@@ -1,0 +1,158 @@
+import { afterEach, describe, expect, test } from "bun:test";
+import { makeMockCallContext, makeNaxConfig, makeTestStory } from "@test/helpers";
+import { resolveWorkflowConfig } from "@/config";
+import type { Finding } from "@/findings";
+import {
+  type FullSuiteGateOutput,
+  fullSuiteGateOp,
+  type LintCheckOutput,
+  lintCheckOp,
+  type TypecheckCheckOutput,
+  typecheckCheckOp,
+  type VerifyScopedOutput,
+  verifyScopedOp,
+} from "@/operations";
+import type { Operation } from "@/operations/types";
+import { MAX_GATE_FINDINGS, runFullSuiteGate, runStoryGates } from "@/workflow/gates";
+import { _workflowDeps, type StepContext } from "@/workflow/step-context";
+import type { GateState } from "@/workflow/types";
+
+const original = { ..._workflowDeps };
+afterEach(() => Object.assign(_workflowDeps, original));
+
+/** Typed StepContext builder: required fields get inert defaults, overrides win. */
+function makeStepContext(overrides: Partial<StepContext>): StepContext {
+  const config = makeNaxConfig();
+  return {
+    callCtx: makeMockCallContext(),
+    story: makeTestStory({ id: "US-001" }),
+    config,
+    workflow: resolveWorkflowConfig(config),
+    tierOrder: [],
+    feature: "f",
+    projectDir: "/repo",
+    workdir: "/repo",
+    runDir: "/repo/run",
+    storyDir: "/repo/run/US-001",
+    briefPath: "/repo/run/US-001/brief.md",
+    reportPath: "/repo/run/US-001/report.md",
+    base: "abc",
+    dryRun: false,
+    ...overrides,
+  };
+}
+
+function sc(commands: Record<string, string> = { lint: "lint", typecheck: "tc" }): StepContext {
+  return makeStepContext({ config: makeNaxConfig({ quality: { commands } }) });
+}
+
+type Result = LintCheckOutput | TypecheckCheckOutput | VerifyScopedOutput | FullSuiteGateOutput;
+
+/** Fakes callOp by op name; a function value is invoked (and may throw). */
+function fake(byOp: Record<string, Result | (() => Result)>): void {
+  _workflowDeps.callOp = async <I, O, C>(_ctx: unknown, op: Operation<I, O, C>, _input: I): Promise<O> => {
+    const v = byOp[op.name];
+    const out = typeof v === "function" ? v() : v;
+    return out as O;
+  };
+}
+
+function lintFinding(message: string, extra: Partial<Finding> = {}): Finding {
+  return { source: "lint", severity: "error", category: "style", message, ...extra };
+}
+
+const green = {
+  [lintCheckOp.name]: { success: true, findings: [], durationMs: 1 },
+  [typecheckCheckOp.name]: { success: true, findings: [], durationMs: 1 },
+  [verifyScopedOp.name]: {
+    success: true,
+    status: "passed",
+    findings: [],
+    durationMs: 1,
+    passCount: 3,
+    isFullSuite: false,
+  },
+} satisfies Record<string, Result>;
+
+describe("runStoryGates", () => {
+  test("all green", async () => {
+    fake(green);
+    const r = await runStoryGates(sc());
+    expect(r).toEqual({ red: false, states: { lint: "green", typecheck: "green", scoped: "green" }, findings: [] });
+  });
+
+  test("no lint/typecheck command -> skipped, not run", async () => {
+    fake(green);
+    const r = await runStoryGates(sc({}));
+    expect(r.states).toEqual({ lint: "skipped", typecheck: "skipped", scoped: "green" });
+  });
+
+  test("lint findings become important gate findings", async () => {
+    fake({
+      ...green,
+      [lintCheckOp.name]: {
+        success: false,
+        findings: [lintFinding("no-var", { file: "a.ts", line: 3 })],
+        durationMs: 1,
+      },
+    });
+    const r = await runStoryGates(sc());
+    expect(r.red).toBe(true);
+    expect(r.findings).toEqual([
+      { kind: "gate", gate: "lint", severity: "important", file: "a.ts", line: 3, issue: "no-var" },
+    ]);
+  });
+
+  test("Review Focus 2: failure with no parsed findings, or a thrown gate, is still red", async () => {
+    fake({
+      ...green,
+      [typecheckCheckOp.name]: { success: false, findings: [], durationMs: 1 },
+      [verifyScopedOp.name]: () => {
+        throw new Error("spawn ENOENT");
+      },
+    });
+    const r = await runStoryGates(sc());
+    expect(r.red).toBe(true);
+    expect(r.states).toMatchObject({ typecheck: "red", scoped: "red" });
+    expect(r.findings.map((f) => f.issue)).toEqual([
+      "typecheck gate failed with no parsed findings",
+      "scoped gate errored: spawn ENOENT",
+    ]);
+  });
+
+  test("findings are capped with a summary line", async () => {
+    const many = Array.from({ length: 30 }, (_, i) => lintFinding(`m${i}`));
+    fake({ ...green, [lintCheckOp.name]: { success: false, findings: many, durationMs: 1 } });
+    const r = await runStoryGates(sc());
+    expect(r.findings).toHaveLength(MAX_GATE_FINDINGS + 1);
+    expect(r.findings.at(-1)?.issue).toBe("lint: 5 more findings not shown");
+  });
+});
+
+describe("runFullSuiteGate", () => {
+  const cases: ReadonlyArray<readonly [FullSuiteGateOutput["status"], boolean, GateState]> = [
+    ["passed", false, "green"],
+    ["passed-on-timeout", false, "green"],
+    ["skipped", false, "skipped"],
+    ["failed", true, "red"],
+    ["execution-failed", true, "red"],
+    ["timeout", true, "red"],
+    ["inconclusive", true, "red"],
+  ];
+  test.each(cases)("status %s -> red=%s state=%s", async (status, red, state) => {
+    fake({
+      [fullSuiteGateOp.name]: {
+        success: !red,
+        passed: !red,
+        status,
+        estimatedCostUsd: 0,
+        findings: [],
+        rawOutput: "",
+      },
+    });
+    const r = await runFullSuiteGate(sc());
+    expect(r.red).toBe(red);
+    expect(r.states["full-suite"]).toBe(state);
+    if (red) expect(r.findings.length).toBeGreaterThan(0);
+  });
+});
