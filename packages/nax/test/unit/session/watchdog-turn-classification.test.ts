@@ -65,3 +65,19 @@ describe("staleTurnFailure (finish A)", () => {
     ).toBeUndefined();
   });
 });
+
+describe("isWatchdogCancelledTurn() with a finish interrupt", () => {
+  test.each([
+    [true, true, "plain", false, true],
+    [true, true, "acp", false, true],
+    [true, true, "plain", true, false],
+    [true, false, "plain", false, false],
+    [false, true, "plain", false, false],
+  ] as const)(
+    "watchdog=%s interrupted=%s err=%s signal=%s -> %s",
+    (watchdogFired, interrupted, shape, signalAborted, expected) => {
+      const err = shape === "acp" ? ACP_CANCELLED() : PLAIN_ERROR();
+      expect(isWatchdogCancelledTurn({ watchdogFired, interrupted, err, signalAborted })).toBe(expected);
+    },
+  );
+});
