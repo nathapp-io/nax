@@ -62,8 +62,8 @@ describe("finishFixOp shape", () => {
   });
 
   test("timeoutMs prefers the input, else execution.sessionTimeoutSeconds", () => {
-    // finish.timeouts.stepMs defaults to null, so an input with no timeoutMs is
-    // the common case and must still be bounded.
+    // The finish phase supplies finish.timeouts.reviewMs / fixMs; a direct caller
+    // with no timeoutMs must still be bounded by execution.sessionTimeoutSeconds.
     const ctx = makeCtx();
     expect(finishFixOp.timeoutMs?.({ ...GATE_INPUT, timeoutMs: 4242 }, ctx)).toBe(4242);
     expect(finishFixOp.timeoutMs?.(GATE_INPUT, ctx)).toBe(ctx.config.execution.sessionTimeoutSeconds * 1000);

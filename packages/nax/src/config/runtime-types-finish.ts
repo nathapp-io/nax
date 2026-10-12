@@ -11,7 +11,7 @@ export interface FinishTimeoutsConfig {
   acceptanceMs: number;
   gateMs: number;
   flowMs: number;
-  /** Per LLM op; null keeps callOp's own default */
+  /** Per LLM op (review lens / fix round) */
   reviewMs: number;
   fixMs: number;
 }

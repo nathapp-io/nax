@@ -44,6 +44,8 @@ export interface FinishReviewOutput {
   summary?: string;
   /** Set when the op produced no parseable verdict after its retry. */
   missing?: true;
+  /** Finish A: stopped by `finish.timeouts.reviewMs`; always paired with `missing`. */
+  stoppedAtLimit?: true;
 }
 
 /** What the fix node did with one finding it was handed. */
@@ -60,6 +62,9 @@ export interface FindingDisposition {
 export interface FinishTimeouts {
   acceptanceMs?: number;
   gateMs?: number;
+  reviewMs?: number;
+  fixMs?: number;
+  flowMs?: number;
 }
 /** The fix-and-reverify loops, in order. `review` is the shared fix round for both review lenses. */
 export type FinishPhase = "acceptance" | "spec" | "quality" | "review" | "gate";

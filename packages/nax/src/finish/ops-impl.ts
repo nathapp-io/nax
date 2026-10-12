@@ -20,8 +20,10 @@ import type { AuditTarget } from "./audit";
 import { commitAndPush } from "./commit";
 import type { FinishOps, FixPhase, FixRequest, ReviewInputs } from "./ops";
 import { buildFinishBody, buildFinishTitle, loadFinishPrContext, openDraftFinishPr, openOrPromotePr } from "./pr";
+import { MISSING_REVIEW } from "./review-json";
 import type { FinishState } from "./state";
-import type { FinishPrBodySettings } from "./types";
+import { STEP_TIMEOUT_MARGIN_MS, stepSignal } from "./step-signal";
+import type { FinishPrBodySettings, FinishReviewOutput, FinishTimeouts } from "./types";
 
 export interface FinishOpsDeps {
   /** The call context every LLM op runs under. Its `sessionOverride` is replaced per phase. */
@@ -37,7 +39,7 @@ export interface FinishOpsDeps {
     reviewQuality?: ConfiguredModel;
     fix?: ConfiguredModel;
   };
-  timeouts?: { reviewMs?: number; fixMs?: number };
+  timeouts?: Pick<FinishTimeouts, "reviewMs" | "fixMs">;
   /** The existing `FinishPrBodySettings` from `./types` (D4.8). */
   prBody?: FinishPrBodySettings;
 }
@@ -102,6 +104,28 @@ function recordUnreviewedCommit(state: FinishState, sha: string): void {
   };
 }
 
+const STOPPED_REVIEW: FinishReviewOutput = { ...MISSING_REVIEW, stoppedAtLimit: true };
+
+/** One review call under its `reviewMs` limit: cut off or late, it reads as a missing verdict. */
+async function underReviewLimit(
+  callCtx: CallContext,
+  reviewMs: number | undefined,
+  run: (ctx: CallContext) => Promise<FinishReviewOutput>,
+): Promise<FinishReviewOutput> {
+  const { signal, limit } = stepSignal(callCtx.signal, reviewMs);
+  const stoppedHere = (): boolean => limit?.aborted === true && callCtx.signal?.aborted !== true;
+  try {
+    const out = await run(signal ? { ...callCtx, signal } : callCtx);
+    return stoppedHere() ? STOPPED_REVIEW : out;
+  } catch (err) {
+    if (stoppedHere()) return STOPPED_REVIEW;
+    throw err;
+  }
+}
+
+const reviewTimeout = (reviewMs: number | undefined): number | undefined =>
+  reviewMs !== undefined ? reviewMs + STEP_TIMEOUT_MARGIN_MS : undefined;
+
 export function createFinishOps(deps: FinishOpsDeps): FinishOps {
   const { callCtx, forge, forgeKind, audit, models, timeouts, prBody } = deps;
   // A1: where advisor audit artifacts live. Undefined (a bare test context) ⇒ no decision is trusted or shown.
@@ -116,12 +140,10 @@ export function createFinishOps(deps: FinishOpsDeps): FinishOps {
         changedFiles: inputs.changed,
         decisions: await loadDecisionNotes(state, advisorOutputDir),
         model: models?.reviewSpec,
-        timeoutMs: timeouts?.reviewMs,
+        timeoutMs: reviewTimeout(timeouts?.reviewMs),
       };
-      return _finishOpsDeps.callOp(
-        { ...callCtx, sessionOverride: { role: "finish-review-spec" } },
-        finishSpecReviewOp,
-        input,
+      return underReviewLimit(callCtx, timeouts?.reviewMs, (ctx) =>
+        _finishOpsDeps.callOp({ ...ctx, sessionOverride: { role: "finish-review-spec" } }, finishSpecReviewOp, input),
       );
     },
 
@@ -132,12 +154,10 @@ export function createFinishOps(deps: FinishOpsDeps): FinishOps {
         changedFiles: inputs.changed,
         hints: inputs.hints,
         model: models?.reviewQuality,
-        timeoutMs: timeouts?.reviewMs,
+        timeoutMs: reviewTimeout(timeouts?.reviewMs),
       };
-      return _finishOpsDeps.callOp(
-        { ...callCtx, sessionOverride: { role: "finish-review-quality" } },
-        finishBranchReviewOp,
-        input,
+      return underReviewLimit(callCtx, timeouts?.reviewMs, (ctx) =>
+        _finishOpsDeps.callOp({ ...ctx, sessionOverride: { role: "finish-review-quality" } }, finishBranchReviewOp, input),
       );
     },
 
