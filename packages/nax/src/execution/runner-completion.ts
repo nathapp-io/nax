@@ -34,6 +34,7 @@ import type { RunCompletionOptions, RunCompletionResult } from "./lifecycle/run-
 import { writeFinalFeatureStatus } from "./lifecycle/run-completion-phases";
 import type { AcceptancePhaseStatus } from "./status-file";
 import { hookCtx } from "./story-context";
+import { effectiveParallelCount } from "./workflow-parallel";
 
 /**
  * Options for the completion phase.
@@ -377,7 +378,8 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     // matching the executor's `(parallelCount ?? 0) > 0` dispatch check — a
     // comparison-based test (e.g. `<= 1`) would call NaN parallel and withhold
     // snapshots from a run that actually executed sequentially.
-    isSequential: options.parallel === undefined || !(options.parallel > 1),
+    // Workflow mode clamps --parallel to sequential (the executor already warned), so classify the clamped value.
+    isSequential: !((effectiveParallelCount(options.config, options.parallel, () => {}) ?? 0) > 1),
     interactionChain: options.interactionChain,
   });
 

@@ -740,4 +740,23 @@ describe("runCompletionPhase - forwards parallel mode as isSequential", () => {
 
     expect(captured?.isSequential).toBe(expectedIsSequential);
   });
+
+  test("workflow mode clamps --parallel 4 to sequential", async () => {
+    let captured: { isSequential?: boolean } | undefined;
+    _runnerCompletionDeps.handleRunCompletion = mock(async (opts) => {
+      captured = opts as { isSequential?: boolean };
+      return defaultCompletionResult;
+    });
+
+    const base = makeConfig(false);
+    const config = { ...base, execution: { ...base.execution, mode: "workflow" as const } };
+    const opts: RunnerCompletionOptions = {
+      ...makeOpts(config, makePRD([{ id: "US-001", status: "passed" }]), makeStatusWriter()),
+      parallel: 4,
+    };
+
+    await runCompletionPhase(opts);
+
+    expect(captured?.isSequential).toBe(true);
+  });
 });
