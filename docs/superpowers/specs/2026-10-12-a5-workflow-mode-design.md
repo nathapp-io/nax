@@ -104,7 +104,6 @@ the following and log one warning that names every key it overrode.
 | `acceptance.enabled` | `false` | D5. This covers every reader: `unified-executor.ts:134,:221`, `runner-completion.ts:174,:221` (per-package `groupConfig`), `run-initialization.ts:139`, `acceptance-setup.ts:206,:488`, `acceptance.ts:199`, `give-up-advice.ts:81`, `finish/advise.ts:269`, `execution-description.ts:101` |
 | parallel | off | W-R11 |
 | `advisor.enabled` | `true` | Workflow kinds ignore `advisor.callers` |
-| `review.mode` deferred plugin review (`unified-executor.ts:183`) | skipped | The branch review replaces it |
 
 - **Ownership.** `workflow.*` and `execution.mode` are **root-only** keys (`root-only-keys.ts`), like
   `advisor`. The plan adds them to the root-only list, `config-descriptions.ts`, `nax config` display, and
@@ -156,8 +155,9 @@ the following and log one warning that names every key it overrode.
 - **Run start.** In workflow mode, `unified-executor` runs **pre-flight** (§8) once before the first
   iteration, and skips:
   - the pre-run acceptance pipeline (`:134`);
-  - the post-run acceptance pipeline (`:221`);
-  - the deferred review (`:183`).
+  - the post-run acceptance pipeline (`:221`).
+
+  The deferred **plugin** review (`:183`, a deterministic SAST scan, about 4 s) **stays**: it's a gate, not an LLM review.
 - **Run end.** `runner-completion.ts` stays at about 587 lines, so it only gets delegates:
   - `handleRunCompletion` is called with `skipRegression: true`, because §7's gates subsume the deferred
     regression gate;
