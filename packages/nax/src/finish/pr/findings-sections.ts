@@ -89,6 +89,9 @@ function handoffTrouble(h: HandoffRecord, cellMax: number): string[] {
   const names = (paths: string[]): string => escapeInline(paths.join(", "), cellMax * 5);
   return [
     ...(h.restored ? [] : ["worktree restore failed"]),
+    ...(h.headMoved
+      ? ["the session had committed; those commits were kept and only uncommitted edits were set aside"]
+      : []),
     ...(h.untrackedFailed.length > 0 ? [`your files that could not be put back: ${names(h.untrackedFailed)}`] : []),
     ...(h.untrackedMovedAside.length > 0
       ? [`untracked files over the snapshot cap moved into the handoff: ${names(h.untrackedMovedAside)}`]

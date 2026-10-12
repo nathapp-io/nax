@@ -17,13 +17,14 @@ import { getSafeLogger } from "@/logger";
 import { tryParseLLMJson } from "@/utils/llm-json";
 import type { AuditTarget } from "./audit";
 import { isHandoffNote } from "./fix";
-import { insideRoot } from "./safe-path";
+import { insideRoot, outsideDir, relativeInsideRoot } from "./safe-path";
 import { chunks, gitLiteral, listBaseTree, listChanged, listUntracked, numstatPaths, repoRoot } from "./set-aside-git";
 import type { FixBase, HandoffLimit, HandoffNote, HandoffRecord } from "./types";
 import { _setAsideDeps, restoreUntracked } from "./untracked-snapshot";
 
 export {
   _setAsideDeps,
+  removeSnapshotDir,
   restoreUntracked,
   snapshotUntracked,
   UNTRACKED_FILE_MAX,
@@ -49,7 +50,7 @@ function warn(message: string, err: unknown): void {
  * tracked changes and `git stash create` could not snapshot them: falling back to HEAD
  * then would overwrite those edits on restore.
  */
-export async function captureFixBase(workdir: string): Promise<FixBase | null> {
+export async function captureFixBase(workdir: string, auditDir?: string): Promise<FixBase | null> {
   const root = await repoRoot(workdir);
   const head = await git(["rev-parse", "HEAD"], root);
   if (head.exitCode !== 0) return null;
@@ -60,9 +61,15 @@ export async function captureFixBase(workdir: string): Promise<FixBase | null> {
     const tracked = await git(["diff", "--name-only", "HEAD"], root);
     if (tracked.exitCode !== 0 || tracked.stdout.trim() !== "") return null;
   }
-  const untrackedBefore = await listUntracked(root);
-  if (untrackedBefore === null) return null;
+  const listed = await listUntracked(root);
+  if (listed === null) return null;
+  // The audit dir may sit inside the repo: its snapshots and handoffs are nax's, never the user's files.
+  const untrackedBefore = await withoutAuditDir(root, auditDir, listed);
   return { baseSha: snapshot || headSha, headSha, untrackedBefore };
+}
+
+async function withoutAuditDir(root: string, auditDir: string | undefined, paths: string[]): Promise<string[]> {
+  return auditDir === undefined ? paths : outsideDir(paths, await relativeInsideRoot(root, auditDir));
 }
 
 async function addIntent(root: string, created: string[]): Promise<void> {
@@ -175,14 +182,37 @@ async function saveWork(args: SetAsideArgs, root: string, record: HandoffRecord)
   }
 }
 
-export async function setAside(args: SetAsideArgs): Promise<HandoffRecord> {
+/**
+ * When HEAD moved since the session's base (the session, or a later fix, committed), restoring to the old
+ * base would turn the tree into the reverse of those commits. The current HEAD is the base instead, and
+ * snapshot bytes are never put back over a path HEAD now tracks (that would revert reviewed work).
+ */
+async function rebaseOnHead(root: string, base: FixBase): Promise<{ base: FixBase; headMoved: boolean }> {
+  const res = await git(["rev-parse", "HEAD"], root);
+  const head = res.exitCode === 0 ? res.stdout.trim() : "";
+  if (head === "" || head === base.headSha) return { base, headMoved: false };
+  const tracked = await listBaseTree(root, head);
+  const snapshot = base.untrackedSnapshot;
+  const keptSnapshot =
+    snapshot && tracked ? { ...snapshot, files: snapshot.files.filter((f) => !tracked.has(f.path)) } : undefined;
+  const untrackedBefore = tracked ? base.untrackedBefore.filter((p) => !tracked.has(p)) : base.untrackedBefore;
+  const { untrackedSnapshot: _dropped, ...rest } = base;
+  const next: FixBase = { ...rest, baseSha: head, headSha: head, untrackedBefore };
+  return { base: keptSnapshot ? { ...next, untrackedSnapshot: keptSnapshot } : next, headMoved: true };
+}
+
+export async function setAside(input: SetAsideArgs): Promise<HandoffRecord> {
+  const root = await repoRoot(input.workdir);
+  const rebased = await rebaseOnHead(root, input.base);
+  const args = { ...input, base: rebased.base };
   const dir = handoffDir(args.audit, args.n);
-  const root = await repoRoot(args.workdir);
   const before = new Set(args.base.untrackedBefore);
-  const untracked = await listUntracked(root);
+  const listed = await listUntracked(root);
+  const untracked = listed === null ? null : await withoutAuditDir(root, args.audit.auditDir, listed);
   const changed = await listChanged(root, args.base.baseSha);
   const created = (untracked ?? []).filter((p) => !before.has(p));
   const record = newRecord(args, dir, created, changed ?? []);
+  if (rebased.headMoved) record.headMoved = true;
   await saveWork(args, root, record);
   const pathsRestored = await restorePaths(root, args.base, record.changedPaths, created).catch((err) => {
     warn("Set-aside could not restore the worktree", err);

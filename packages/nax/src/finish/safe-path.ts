@@ -6,7 +6,7 @@
  * the real parent directory is still inside the real repository root.
  */
 import { realpath } from "node:fs/promises";
-import { dirname, sep } from "node:path";
+import { basename, dirname, join, relative, sep } from "node:path";
 
 /**
  * True when the nearest existing ancestor of `target` resolves inside the real `root`.
@@ -23,4 +23,29 @@ export async function insideRoot(root: string, target: string): Promise<boolean>
     if (up === dir) return false;
     dir = up;
   }
+}
+
+/** `realpath` of the nearest existing ancestor of `target`, with the missing tail appended. */
+async function realpathLoose(target: string): Promise<string> {
+  const real = await realpath(target).catch(() => null);
+  if (real !== null) return real;
+  const up = dirname(target);
+  return up === target ? target : join(await realpathLoose(up), basename(target));
+}
+
+/**
+ * The root-relative path of `dir` (posix separators) when it lies strictly inside the real `root`, else
+ * null. Lets a caller drop everything under a directory (e.g. the in-repo audit dir) from a git listing.
+ */
+export async function relativeInsideRoot(root: string, dir: string): Promise<string | null> {
+  const [realRoot, realDir] = await Promise.all([realpathLoose(root), realpathLoose(dir)]);
+  const rel = relative(realRoot, realDir);
+  if (rel === "" || rel.startsWith("..") || rel.startsWith(sep)) return null;
+  return rel.split(sep).join("/");
+}
+
+/** Paths that are not `excluded` itself or under it. `excluded` null keeps everything. */
+export function outsideDir(paths: string[], excluded: string | null): string[] {
+  if (excluded === null) return paths;
+  return paths.filter((p) => p !== excluded && !p.startsWith(`${excluded}/`));
 }

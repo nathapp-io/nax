@@ -162,6 +162,13 @@ describe("findings table, Set aside and Stops (finish A 7)", () => {
     expect(body).toContain("could not be put back: notes.md");
   });
 
+  test("a handoff whose session had committed says so in one line", () => {
+    const body = buildFinishBody(
+      baseCtx({ unresolved: { ...unresolvedBase, handoffs: [handoff({ headMoved: true })] } }),
+    );
+    expect(body).toContain("the session had committed; those commits were kept");
+  });
+
   test("a re-applied and consumed handoff reads as committed", () => {
     const body = buildFinishBody(
       baseCtx({ unresolved: { ...unresolvedBase, handoffs: [handoff({ consumed: true, reapplied: true })] } }),

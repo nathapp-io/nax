@@ -234,7 +234,9 @@ export function createFinishOps(deps: FinishOpsDeps): FinishOps {
       // `openOrPromotePr` (called below) reads
       // it, or a run that pushed a real commit still gets skipped for the
       // body write it earned.
-      const { committed } = await commitAndPush(state.workdir, state.branch, PROMOTE_MESSAGE(state.feature));
+      const { committed } = await commitAndPush(state.workdir, state.branch, PROMOTE_MESSAGE(state.feature), {
+        excludeDir: audit.auditDir,
+      });
       if (committed) state.committedThisRun = true;
       if (forgeKind === null) return { status: "local-only" };
       const content = await buildPrContentOrFallback(state, audit, forgeKind, prBody, advisorOutputDir);
@@ -259,6 +261,7 @@ export function createFinishOps(deps: FinishOpsDeps): FinishOps {
       const { committed, sha } = await commitAndPush(state.workdir, state.branch, PROMOTE_MESSAGE(state.feature), {
         skipHooks: true,
         skipCommit,
+        excludeDir: audit.auditDir,
       });
       if (committed) {
         state.committedThisRun = true;

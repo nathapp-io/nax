@@ -29,6 +29,7 @@
 import { gitlinkSafeAdd, hasStagedChanges } from "@nathapp/nax-agent/internal";
 import { NaxError } from "../errors";
 import { gitWithTimeout } from "../utils/git";
+import { relativeInsideRoot } from "./safe-path";
 import type { Finding, FindingDisposition, FinishPhase, FinishRound, FinishRoundOutcome } from "./types";
 
 export const _finishGitDeps = { git: gitWithTimeout };
@@ -90,6 +91,13 @@ export async function filesInCommit(repoRoot: string, sha: string): Promise<stri
     .filter((l) => l.length > 0);
 }
 
+/** nax's own audit dir can sit inside the repo (no .gitignore section): it is never committed. */
+async function unstageDir(repoRoot: string, dir: string): Promise<void> {
+  const rel = await relativeInsideRoot(repoRoot, dir);
+  if (rel === null) return;
+  await _finishGitDeps.git(["--literal-pathspecs", "reset", "-q", "--", rel], repoRoot);
+}
+
 /**
  * Commit the working tree, if it has anything in it, without pushing.
  *
@@ -114,7 +122,7 @@ export async function filesInCommit(repoRoot: string, sha: string): Promise<stri
 export async function commitFixes(
   repoRoot: string,
   message: string,
-  opts: { skipHooks?: boolean } = {},
+  opts: { skipHooks?: boolean; excludeDir?: string } = {},
 ): Promise<{ committed: boolean; shaBefore: string | null; shaAfter: string | null }> {
   const shaBefore = await headSha(repoRoot);
   if (!(await isDirty(repoRoot))) return { committed: false, shaBefore, shaAfter: shaBefore };
@@ -127,6 +135,7 @@ export async function commitFixes(
       { stage: "finish-git", repoRoot },
     );
   }
+  if (opts.excludeDir) await unstageDir(repoRoot, opts.excludeDir);
   // Never run a commit that would only print status: that can recurse into a gitlink (#2210).
   const staged = await hasStagedChanges(_finishGitDeps.git, repoRoot);
   if (staged === false) return { committed: false, shaBefore, shaAfter: shaBefore };
@@ -159,7 +168,7 @@ export async function commitAndPush(
   repoRoot: string,
   branch: string,
   message: string,
-  opts: { skipHooks?: boolean; skipCommit?: boolean } = {},
+  opts: { skipHooks?: boolean; skipCommit?: boolean; excludeDir?: string } = {},
 ): Promise<SyncOutcome> {
   const { committed, shaAfter } = opts.skipCommit
     ? { committed: false, shaAfter: null }

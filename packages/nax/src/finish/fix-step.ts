@@ -24,6 +24,7 @@ import {
   markHandoffReapplied,
   readHandoffNote,
   reapplyHandoff,
+  removeSnapshotDir,
   setAside,
   snapshotUntracked,
 } from "./set-aside";
@@ -127,7 +128,7 @@ function abortIfPhaseStopped(deps: FixStepDeps): void {
 /** The base the session starts from, or the reason it cannot (a failed step, never a crash). */
 async function captureBase(state: FinishState, deps: FixStepDeps): Promise<FixBase | { error: unknown }> {
   try {
-    const captured = await captureFixBase(state.workdir);
+    const captured = await captureFixBase(state.workdir, deps.audit.auditDir);
     if (!captured) {
       return { error: new NaxError("Cannot read the worktree base", "FINISH_FIX_BASE", { stage: "finish" }) };
     }
@@ -205,6 +206,16 @@ async function checkpointed(state: FinishState, deps: FixStepDeps, result: FixSt
   return result;
 }
 
+/**
+ * The base's snapshot holds copies of the user's untracked files (possibly secrets), so it lives only as
+ * long as something can still need it: until the step settles, or until finalize for a handoff whose
+ * restore failed.
+ */
+async function settleSnapshot(deps: FixStepDeps, base: FixBase, handoff?: HandoffRecord): Promise<void> {
+  if (handoff && !handoff.restored) return;
+  await removeSnapshotDir(deps.audit.auditDir, base.untrackedSnapshot);
+}
+
 export async function runFixStep(
   state: FinishState,
   deps: FixStepDeps,
@@ -231,6 +242,7 @@ export async function runFixStep(
     // Any throw after the step limit fired is treated as a `fix` stop, whatever its message.
     const kind = stopKind(deps, limit) ?? "error";
     const handoff = await setAsideStep(state, deps, { phase, base, req, limit: kind });
+    await settleSnapshot(deps, base, handoff);
     if (kind === "error") return checkpointed(state, deps, { kind: "failed", error, handoff });
     await writeCheckpoint(deps.audit, state);
     abortIfPhaseStopped(deps);
@@ -238,6 +250,7 @@ export async function runFixStep(
   }
   const kind = stopKind(deps, limit, outcome);
   if (!kind) {
+    await settleSnapshot(deps, base);
     return checkpointed(state, deps, { kind: "done", outcome, ...(cont ? { continued: cont.record } : {}) });
   }
   const handoff = await setAsideStep(state, deps, {
@@ -247,6 +260,7 @@ export async function runFixStep(
     limit: kind,
     ...(outcome.handoffNote ? { note: outcome.handoffNote } : {}),
   });
+  await settleSnapshot(deps, base, handoff);
   await writeCheckpoint(deps.audit, state);
   abortIfPhaseStopped(deps);
   return { kind: "stopped", handoff };

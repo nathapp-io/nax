@@ -168,7 +168,7 @@ async function fixRound(
     { findings: fixList },
     { workdir: state.workdir, dispositions: outcome.dispositions },
   );
-  const commit = await commitFixes(state.workdir, message, { skipHooks: true });
+  const commit = await commitFixes(state.workdir, message, { skipHooks: true, excludeDir: deps.audit.auditDir });
   await consumeIfCommitted(state, step.continued, commit.committed);
   if (commit.committed && commit.shaAfter) {
     ledgerEvent(state, {

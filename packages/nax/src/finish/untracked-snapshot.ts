@@ -3,8 +3,8 @@
  * put-back after a stopped session. Nothing here follows a symlink, and a user's file
  * is removed only after a copy of it has been kept.
  */
-import { copyFile, lstat, mkdir, realpath, rm, unlink } from "node:fs/promises";
-import { dirname, join, resolve, sep } from "node:path";
+import { chmod, copyFile, lstat, mkdir, realpath, rm, unlink } from "node:fs/promises";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { NaxError } from "@/errors";
 import { insideRoot } from "./safe-path";
 import { repoRoot } from "./set-aside-git";
@@ -18,16 +18,44 @@ export const _setAsideDeps = {
   limits: { fileMax: UNTRACKED_FILE_MAX, totalMax: UNTRACKED_TOTAL_MAX },
 };
 
-/** Copies a regular file (never through a symlink). False when the source is missing, not a regular file, or the copy failed. */
-async function copyFileInto(src: string, dest: string): Promise<boolean> {
+const PRIVATE_DIR = 0o700;
+const PRIVATE_FILE = 0o600;
+
+/**
+ * Copies a regular file (never through a symlink). False when the source is missing, not a regular file,
+ * or the copy failed. `ownerOnly` makes the copy (and any directory created for it) 0600/0700: a copy of an
+ * untracked file such as `.env.local` must not be readable by other users.
+ */
+async function copyFileInto(src: string, dest: string, ownerOnly = false): Promise<boolean> {
   try {
     if (!(await lstat(src)).isFile()) return false;
-    await mkdir(dirname(dest), { recursive: true });
+    await mkdir(dirname(dest), ownerOnly ? { recursive: true, mode: PRIVATE_DIR } : { recursive: true });
     await copyFile(src, dest);
+    if (ownerOnly) await chmod(dest, PRIVATE_FILE);
     return true;
   } catch {
     return false;
   }
+}
+
+/** Owner-only directories from `top` down to `dir` (both created if missing). */
+async function privateDirs(top: string, dir: string): Promise<void> {
+  await mkdir(dir, { recursive: true, mode: PRIVATE_DIR });
+  for (let d = dir; ; d = dirname(d)) {
+    await chmod(d, PRIVATE_DIR);
+    if (d === top || dirname(d) === d) return;
+  }
+}
+
+/**
+ * Removes a settled session's snapshot directory. Only a directory inside `auditDir` is ever removed
+ * (a checkpointed path is not trusted), and a failure never throws.
+ */
+export async function removeSnapshotDir(auditDir: string, snapshot: UntrackedSnapshot | undefined): Promise<void> {
+  if (!snapshot) return;
+  const rel = relative(resolve(auditDir), resolve(snapshot.dir));
+  if (rel === "" || rel.startsWith("..") || resolve(rel) === rel) return;
+  await rm(snapshot.dir, { recursive: true, force: true }).catch(() => undefined);
 }
 
 const realOrResolved = (path: string): Promise<string> => realpath(path).catch(() => resolve(path));
@@ -54,6 +82,7 @@ export async function snapshotUntracked(workdir: string, paths: string[], dir: s
     );
   }
   await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+  await privateDirs(dirname(dir), dir);
   const { fileMax, totalMax } = _setAsideDeps.limits;
   const files: UntrackedEntry[] = [];
   let total = 0;
@@ -61,9 +90,9 @@ export async function snapshotUntracked(workdir: string, paths: string[], dir: s
     const st = await lstat(join(root, path)).catch(() => null);
     if (!st?.isFile()) continue;
     const fits = st.size <= fileMax && total + st.size <= totalMax;
-    const saved = fits && (await copyFileInto(join(root, path), join(dir, path)));
+    const saved = fits && (await copyFileInto(join(root, path), join(dir, path), true));
     if (saved) total += st.size;
-    files.push({ path, size: st.size, mtimeMs: st.mtimeMs, saved });
+    files.push({ path, size: st.size, mtimeMs: st.mtimeMs, mode: st.mode & 0o777, saved });
   }
   return { dir, files };
 }
@@ -75,12 +104,14 @@ function unchanged(st: Lstat | null, e: UntrackedEntry): boolean {
 }
 
 /** Writes the snapshot copy back over `dest`: a symlink there is unlinked first, so the copy never lands on its target. */
-async function putBack(root: string, from: string, dest: string): Promise<boolean> {
+async function putBack(root: string, from: string, dest: string, mode?: number): Promise<boolean> {
   try {
     if (!(await insideRoot(root, dest))) return false;
     const st = await lstat(dest).catch(() => null);
     if (st && !st.isFile()) await unlink(dest);
-    return await copyFileInto(from, dest);
+    const copied = await copyFileInto(from, dest);
+    if (copied && mode !== undefined) await chmod(dest, mode); // the snapshot copy is owner-only; the user's file is not
+    return copied;
   } catch {
     return false;
   }
@@ -114,10 +145,10 @@ export async function restoreUntracked(
     }
     const st = await lstat(file).catch(() => null);
     if (unchanged(st, e)) continue;
-    const kept = !st?.isFile() || (await copyFileInto(file, join(handoffPath, "untracked-modified", e.path)));
+    const kept = !st?.isFile() || (await copyFileInto(file, join(handoffPath, "untracked-modified", e.path), true));
     if (!kept) {
       out.failed.push(e.path);
-    } else if (e.saved && snapshot && (await putBack(root, join(snapshot.dir, e.path), file))) {
+    } else if (e.saved && snapshot && (await putBack(root, join(snapshot.dir, e.path), file, e.mode))) {
       out.restored.push(e.path);
     } else if (!e.saved && st) {
       const removed = await _setAsideDeps.remove(file).then(

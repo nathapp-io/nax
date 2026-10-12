@@ -5,7 +5,8 @@
  * (never committed). Failed handoffs are processed oldest-first, each with the base its own fix
  * session recorded (`HandoffRecord.base`), so a later session that folded the half-edit into its own
  * base cannot hide it. When HEAD has moved since that session (a later fix committed), the base's
- * tracked side is the current HEAD instead: restoring to the old base would revert committed work.
+ * tracked side is the current HEAD instead (`setAside` rebases it, and drops snapshot copies of files
+ * HEAD now tracks): restoring to the old base would revert committed work.
  * A failed handoff with no recorded base fails closed: nothing is committed, the dirt stays in the
  * worktree, and the draft says so. A dirty tree with no failed restore (e.g. a gate's auto-fix) is
  * still committed by the caller, hooks off, as unreviewed.
@@ -14,15 +15,9 @@
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "@/logger";
 import type { AuditTarget } from "./audit";
-import { headSha, isDirty } from "./commit";
-import { setAside } from "./set-aside";
+import { isDirty } from "./commit";
+import { removeSnapshotDir, setAside } from "./set-aside";
 import type { FinishState } from "./state";
-import type { FixBase } from "./types";
-
-async function baseForFinalize(workdir: string, base: FixBase): Promise<FixBase> {
-  const head = await headSha(workdir).catch(() => null);
-  return head && head !== base.headSha ? { ...base, baseSha: head, headSha: head } : base;
-}
 
 /** Fail closed: say in the draft's reason that the worktree still holds uncommitted work. */
 function noteLeftDirty(state: FinishState, handoff: number): void {
@@ -49,7 +44,7 @@ export async function setAsideLeftoverDirt(state: FinishState, audit: AuditTarge
       workdir: state.workdir,
       audit,
       n: state.handoffs.length + 1,
-      base: await baseForFinalize(state.workdir, h.base),
+      base: h.base, // setAside moves a stale base onto the current HEAD itself
       phase: "review",
       limit: "flow",
       findingIds: [],
@@ -64,6 +59,7 @@ export async function setAsideLeftoverDirt(state: FinishState, audit: AuditTarge
     if (!record) return true;
     state.handoffs = [...state.handoffs, record];
     if (!record.restored) return true;
+    await removeSnapshotDir(audit.auditDir, h.base.untrackedSnapshot); // this failed handoff is now settled
     if (!(await isDirty(state.workdir))) return false;
   }
   return false;

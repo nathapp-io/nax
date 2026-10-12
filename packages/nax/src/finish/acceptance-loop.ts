@@ -65,7 +65,7 @@ async function fixOnce(state: FinishState, deps: FinishMachineDeps, output: stri
     { acceptance: { output } },
     { workdir: state.workdir },
   );
-  const commit = await commitFixes(state.workdir, message, { skipHooks: true });
+  const commit = await commitFixes(state.workdir, message, { skipHooks: true, excludeDir: deps.audit.auditDir });
   await consumeIfCommitted(state, step.continued, commit.committed);
   if (commit.committed) {
     state.committedThisRun = true;

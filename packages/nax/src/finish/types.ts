@@ -318,6 +318,8 @@ export interface UntrackedEntry {
   path: string;
   size: number;
   mtimeMs: number;
+  /** Permission bits (`mode & 0o777`) so a put-back keeps them; absent on older checkpoints. */
+  mode?: number;
   saved: boolean;
 }
 export interface UntrackedSnapshot {
@@ -359,6 +361,8 @@ export interface HandoffRecord {
   hasNote: boolean;
   patchSaved: boolean;
   restored: boolean;
+  /** HEAD had moved since the session's base (a commit was made): the restore targeted the current HEAD, so those commits were kept. */
+  headMoved?: boolean;
   consumed: boolean;
   reapplied?: boolean;
   /** Pre-existing untracked files the session changed: put back from the snapshot. */

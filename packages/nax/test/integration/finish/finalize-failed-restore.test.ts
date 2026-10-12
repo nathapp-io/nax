@@ -104,4 +104,27 @@ describe("finalizeDraftPr with a restore-failed handoff (real git)", () => {
       });
     });
   });
+
+  test("a pre-existing untracked file a later fix committed is never overwritten by the old snapshot", async () => {
+    await withRepo(async (dir, audit) => {
+      await withRemote(dir, async (branch) => {
+        await writeFile(join(dir, "u.txt"), "user file\n"); // untracked before session 1, so snapshotted
+        const state = makeFinishState({ workdir: dir, branch });
+        await failedSession(dir, audit, state);
+        expect(state.handoffs[0]?.base?.untrackedSnapshot?.files.map((f) => f.path)).toEqual(["u.txt"]);
+        // A later fix rewrites the file and commits it; the half-edit rides along in the tree.
+        await writeFile(join(dir, "u.txt"), "reviewed fix\n");
+        await git(dir, "add", "u.txt");
+        await git(dir, "commit", "-q", "-m", "fix: later");
+        const head = (await git(dir, "rev-parse", "HEAD")).trim();
+
+        const fin = createFinishOps({ callCtx: makeMockCallContext(), forge, forgeKind: null, audit });
+        await fin.finalizeDraftPr(state);
+
+        expect(await readFile(join(dir, "u.txt"), "utf8")).toBe("reviewed fix\n");
+        expect(await git(dir, "diff", "--name-only", head, "HEAD")).toBe("");
+        expect(await readFile(join(dir, "a.ts"), "utf8")).toBe("export const a = 1;\n");
+      });
+    });
+  });
 });

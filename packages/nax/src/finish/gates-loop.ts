@@ -81,7 +81,7 @@ async function fixOnce(
     { gate: { failing: gates.failing, output: gates.output } },
     { workdir: state.workdir },
   );
-  const commit = await commitFixes(state.workdir, message, { skipHooks: true });
+  const commit = await commitFixes(state.workdir, message, { skipHooks: true, excludeDir: deps.audit.auditDir });
   await consumeIfCommitted(state, step.continued, commit.committed);
   if (commit.committed) state.committedThisRun = true;
   const files = commit.committed && commit.shaAfter ? await filesInCommit(state.workdir, commit.shaAfter) : null;
