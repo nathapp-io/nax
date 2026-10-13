@@ -1,5 +1,5 @@
 export {
-  isRunStatePath,
+  isKeeperOwnedPath,
   type RepoSnapshot,
   type RestoreReport,
   restoreRepoSnapshot,
