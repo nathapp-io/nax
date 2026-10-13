@@ -133,6 +133,7 @@ describe("feature machine step models", () => {
       adjudicate: async () => [],
       publish: async () => ({ outcome: "local-only", ci: "skipped", reasons: [] }),
       head: async () => "h",
+      changedFiles: async () => [],
       modelFor: (step) => ({ agentName: "native", model: `${step}-model` }),
     };
     const env: FeatureEnv = {

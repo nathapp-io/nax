@@ -12,6 +12,18 @@ export async function readHead(projectDir: string): Promise<string> {
   return stdout.trim();
 }
 
+/** Repo-rooted paths changed between `base` and HEAD (#2496 second-fix eligibility). Throws on a git failure. */
+export async function changedFilesSince(projectDir: string, base: string): Promise<string[]> {
+  const { stdout, stderr, exitCode } = await _workflowDeps.git(["diff", "--name-only", `${base}..HEAD`], projectDir);
+  if (exitCode !== 0) {
+    throw new NaxError(`git diff --name-only failed: ${stderr ?? ""}`.trim(), "WORKFLOW_GIT_FAILED", {
+      stage: "workflow",
+      storyId: "_run",
+    });
+  }
+  return stdout.split("\n").filter((line) => line !== "");
+}
+
 /** Paths with uncommitted edits (modified, staged, untracked), minus nax-owned paths. */
 export async function listUncommitted(projectDir: string): Promise<string[]> {
   const { stdout, exitCode } = await _workflowDeps.git(["status", "--porcelain", "--untracked-files=all"], projectDir);

@@ -63,6 +63,7 @@ function envWith(script: {
     adjudicate: async () => [],
     publish: async () => NO_FORGE,
     head: async () => "h",
+    changedFiles: async () => [],
   };
   return {
     steps,

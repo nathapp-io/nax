@@ -52,6 +52,8 @@ interface Script {
   gates?: RepoGateRun[];
   review?: BranchReviewVerdict | null;
   reReview?: ReReviewVerdict | null;
+  reReviews?: (ReReviewVerdict | null)[];
+  changed?: string[] | Error;
   fix?: BranchFixOutcome;
 }
 
@@ -68,6 +70,7 @@ function harness(
   const reReviewInputs: (readonly WorkflowFinding[])[] = [];
   const adjudicated: (readonly WorkflowFinding[])[] = [];
   const gates = [...(script.gates ?? [])];
+  const reReviewQueue = [...(script.reReviews ?? [])];
   let clock = 0;
   const steps: FeatureSteps = {
     repoGates: async () => {
@@ -87,10 +90,14 @@ function harness(
     branchReReview: async (findings, fixBase) => {
       calls.push(`branchReReview:${fixBase}`);
       reReviewInputs.push(findings);
+      const queued = reReviewQueue.length > 0 ? reReviewQueue.shift() : undefined;
+      const fallback = script.reReview;
       const v =
-        script.reReview === undefined
-          ? { verdicts: findings.map((f) => ({ id: f.id, addressed: true, note: "" })), newFindings: [] }
-          : script.reReview;
+        queued !== undefined
+          ? queued
+          : fallback === undefined
+            ? { verdicts: findings.map((f) => ({ id: f.id, addressed: true, note: "" })), newFindings: [] }
+            : fallback;
       return v === null ? { ran: false, why: "timeout" } : { ran: true, verdict: v };
     },
     adjudicate: async (items) => {
@@ -110,6 +117,11 @@ function harness(
       return PUBLISHED;
     },
     head: async () => `h${calls.length}`,
+    changedFiles: async () => {
+      calls.push("changedFiles");
+      if (script.changed instanceof Error) throw script.changed;
+      return script.changed ?? [];
+    },
   };
   const env: FeatureEnv = {
     steps,
@@ -351,5 +363,104 @@ describe("runFeatureMachine", () => {
     expect(final.finalGates).toEqual(GREEN.summary);
     expect(final).not.toHaveProperty("finalGateFindings");
     expect(h.ledger.some((line) => line.includes("final gates red"))).toBe(false);
+  });
+});
+
+const REVIEW_B1: BranchReviewVerdict = {
+  ...PASS,
+  spec: "fail",
+  findings: [{ kind: "spec", severity: "important", issue: "cap missing", file: "src/a.ts" }],
+};
+const NEW_IN_FIX = (file?: string): ReReviewVerdict => ({
+  verdicts: [{ id: "B1", addressed: true, note: "" }],
+  newFindings: [{ kind: "spec", severity: "important", issue: "fix broke publish", ...(file ? { file } : {}) }],
+});
+const ALL_ADDRESSED = (id: string): ReReviewVerdict => ({
+  verdicts: [{ id, addressed: true, note: "" }],
+  newFindings: [],
+});
+
+describe("second branch fix (#2496)", () => {
+  test("taken when every item is addressed and new blocking findings sit in the fix diff", async () => {
+    const h = harness({
+      review: REVIEW_B1,
+      reReviews: [NEW_IN_FIX("src/a.ts"), ALL_ADDRESSED("B2")],
+      changed: ["src/a.ts"],
+    });
+    const final = await runFeatureMachine(h.env);
+    expect(h.fixInputs.map((f) => f.map((x) => x.id))).toEqual([["B1"], ["B2"]]);
+    expect(h.reReviewInputs[1]?.map((f) => f.id)).toEqual(["B2"]);
+    expect(final.fixRounds).toBe(2);
+    expect(final.reviewOpen).toEqual([]);
+    expect(h.calls).not.toContain("adjudicate");
+    expect(h.ledger.some((l) => l.startsWith("branch fix r2: 1 item(s): B2"))).toBe(true);
+    expect(h.artifacts["branch-rereview-r2.json"]).toBeDefined();
+  });
+
+  test("never a third round: round-2 re-review findings go to adjudicate", async () => {
+    const h = harness({
+      review: REVIEW_B1,
+      reReviews: [NEW_IN_FIX("src/a.ts"), NEW_IN_FIX("src/a.ts")],
+      changed: ["src/a.ts"],
+    });
+    const final = await runFeatureMachine(h.env);
+    expect(h.fixInputs).toHaveLength(2);
+    expect(h.calls).toContain("adjudicate");
+    expect(final.fixRounds).toBe(2);
+  });
+
+  test("not taken when an earlier item stays open", async () => {
+    const stillOpen: ReReviewVerdict = {
+      ...NEW_IN_FIX("src/a.ts"),
+      verdicts: [{ id: "B1", addressed: false, note: "" }],
+    };
+    const h = harness({ review: REVIEW_B1, reReviews: [stillOpen], changed: ["src/a.ts"] });
+    await runFeatureMachine(h.env);
+    expect(h.fixInputs).toHaveLength(1);
+    expect(h.calls).toContain("adjudicate");
+  });
+
+  test("not taken when a new finding is outside the fix diff", async () => {
+    const h = harness({ review: REVIEW_B1, reReviews: [NEW_IN_FIX("src/other.ts")], changed: ["src/a.ts"] });
+    await runFeatureMachine(h.env);
+    expect(h.fixInputs).toHaveLength(1);
+  });
+
+  test("not taken when a new finding names no file", async () => {
+    const h = harness({ review: REVIEW_B1, reReviews: [NEW_IN_FIX()], changed: ["src/a.ts"] });
+    await runFeatureMachine(h.env);
+    expect(h.fixInputs).toHaveLength(1);
+  });
+
+  test("a git failure listing the fix diff skips the second fix and says so", async () => {
+    const h = harness({ review: REVIEW_B1, reReviews: [NEW_IN_FIX("src/a.ts")], changed: new Error("bad revision") });
+    await runFeatureMachine(h.env);
+    expect(h.fixInputs).toHaveLength(1);
+    expect(h.ledger.some((l) => l.includes("second branch fix skipped"))).toBe(true);
+  });
+
+  test("a file spelled ./src/a.ts still matches the fix diff", async () => {
+    const h = harness({
+      review: REVIEW_B1,
+      reReviews: [NEW_IN_FIX("./src/a.ts"), ALL_ADDRESSED("B2")],
+      changed: ["src/a.ts"],
+    });
+    await runFeatureMachine(h.env);
+    expect(h.fixInputs).toHaveLength(2);
+  });
+
+  test("resumes a pre-#2496 record (no fixRounds/fixTargets/cannotVerify) without a second round", async () => {
+    const legacy: WorkflowFeatureRecord = {
+      ...newFeatureRecord({ now: "t", seed: "seed0", minors: [] }),
+      step: "branch-rereview",
+      fixRan: true,
+      fixBase: "h1",
+      reviewOpen: [{ id: "B1", kind: "spec", severity: "important", issue: "x", file: "src/a.ts" }],
+      nextFindingId: 2,
+    };
+    const h = harness({ reReviews: [ALL_ADDRESSED("B1")] }, { record: legacy });
+    const final = await runFeatureMachine(h.env);
+    expect(h.fixInputs).toHaveLength(0);
+    expect(final.step).toBe("done");
   });
 });

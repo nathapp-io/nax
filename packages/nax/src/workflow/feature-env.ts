@@ -7,7 +7,7 @@ import { runBranchReReview, runBranchReview, writeFeatureArtifact } from "./bran
 import type { FeatureContext, WorkflowFeatureInput } from "./feature-context";
 import type { FeatureEnv, FeatureSink, FeatureSteps } from "./feature-machine";
 import { publish } from "./finalize";
-import { readHead } from "./git";
+import { changedFilesSince, readHead } from "./git";
 import { appendLedger, type LedgerWriteOptions } from "./ledger";
 import type { LedgerItems } from "./ledger-items";
 import type { PreflightFile } from "./preflight";
@@ -76,6 +76,7 @@ export function buildFeatureEnv(fc: FeatureContext, input: WorkflowFeatureInput,
         preflight: preflightFile,
       }),
     head: () => readHead(fc.projectDir),
+    changedFiles: (base) => changedFilesSince(fc.projectDir, base),
     modelFor: featureModelFor(fc),
   };
   const header = { runId: fc.runId, feature: fc.feature };
