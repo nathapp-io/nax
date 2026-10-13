@@ -1,12 +1,15 @@
 /**
  * Refusals that protect nax's run state (`.nax/`) from git commands an agent
- * runs through Bash (#2490).
+ * runs through Bash (#2490, #2493).
  *
- * Three rules, evaluated PER SEGMENT of a compound command by the gated and
- * raw Bash screens alike:
+ * Rules, evaluated PER SEGMENT of a compound command by the gated and raw
+ * Bash screens alike. Every one is a hard, non-escalatable denial; the ones
+ * that say "while a `.nax/` exists" do nothing in a repository without one.
  *
  * 1. `git checkout` / `git restore` of a `.nax` path (the nax#2007 gate that
- *    used to protect only a standalone command).
+ *    used to protect only a standalone command), and of a WHOLE-TREE pathspec
+ *    (`.`, `:/`, `*`, the root directory, exclusion-only) unless a full `.nax`
+ *    exclusion follows `--`; `git reset --hard` in any form (see nax-revert.ts).
  * 2. `git update-index` with `--skip-worktree`, `--assume-unchanged` or their
  *    `--no-` forms (git accepts any unambiguous abbreviation, so the whole
  *    `--skip*` / `--assume*` / `--no-skip*` / `--no-assume*` families are
@@ -15,59 +18,84 @@
  * 3. `git stash` in any form other than the read-only/bookkeeping allowlist
  *    (`list`, `show`, `create`, `store`, `drop`, `clear`) when a `.nax/`
  *    directory exists at a live working directory, between it and the root,
- *    or at the root. Policy time has no cheap way to know whether a `.nax/`
- *    path is DIRTY, so the rule is conservative. A stash is allowed when its
- *    pathspec excludes the whole of `.nax` (`-- . ':!.nax'`), or when it is a
- *    `push` whose every pathspec lies outside `.nax`.
+ *    at the root, or nested below it (depth <= 3, see nax-dirs.ts). Policy
+ *    time has no cheap way to know whether a `.nax/` path is DIRTY, so the
+ *    rule is conservative. A stash is allowed when its pathspec excludes the
+ *    whole of `.nax` (`-- . ':!.nax'`), or when it is a `push` whose every
+ *    pathspec lies outside `.nax`.
+ * 4. Hiding the verb (nax-evasion.ts): `git config alias.X <value>` whose
+ *    value names stash / update-index / checkout / restore / reset (so even
+ *    `git config alias.co checkout` is refused while a `.nax/` exists);
+ *    `GIT_CONFIG_*` set in leading assignments or `env` args next to such a
+ *    verb; a command head or git subcommand built by expansion (`$G stash`,
+ *    `git $X reset`) next to such a verb; `python|node|perl|ruby -c|-e` code
+ *    that runs one.
  *
  * Operands are resolved against every live working directory and judged by
  * the `.nax` path SEGMENT of the root-relative result, never a substring, so
  * `cd .nax && git update-index --skip-worktree prd.json` and `foo/../.nax`
- * are caught while `src/nax-helpers.ts` is not.
+ * are caught while `src/nax-helpers.ts` is not. `-C`, `--work-tree`,
+ * `--git-dir`, `GIT_WORK_TREE` and `GIT_DIR` all move the frames.
+ *
+ * `locateGit` reads the invocation: `\git`, wrappers, global options (an
+ * unknown one is "uncertain" and sends the segment to the BACKSTOP), and
+ * aliases (expanded, then the global-option skip is run again; a `!` alias is
+ * guarded as shell text).
  *
  * BACKSTOP. The structured rules above only fire on a segment whose git
  * invocation `locateGit` can read. `naxStateRefusalInText` therefore also runs
  * a deliberately COARSE check over the whole command string (and every
  * `bash -c` / `eval` string, recursively) for segments the structured rules
  * could not classify (`eval git stash`, `time git stash`, `nohup`, `stdbuf`,
- * an unknown wrapper): when such a segment names `git` and one of `stash`,
- * `update-index` with a hiding flag, or `checkout`/`restore` of a `.nax` path,
- * it is refused. It exists to catch wrappers and aliases nobody can enumerate,
- * so it trades precision for coverage; a segment the structured rules DID
- * classify keeps their (precise) verdict, which is why
+ * an unknown wrapper, an unknown global option): when such a segment names
+ * `git` and one of `stash`, `reset --hard`, `update-index` with a hiding flag,
+ * or `checkout`/`restore` of a `.nax` path or the whole tree, it is refused.
+ * It exists to catch wrappers and aliases nobody can enumerate, so it trades
+ * precision for coverage; a segment the structured rules DID classify keeps
+ * their (precise) verdict, which is why
  * `git update-index --assume-unchanged src/a.ts` stays allowed.
  *
  * KNOWN, NOT FIXED:
- * - A whole-tree `git checkout .` / `git restore .` also reverts `.nax`
- *   (pre-existing gap: it names no `.nax` operand).
  * - Stash is refused in ANY repository that has a `.nax/`, by design, even
  *   when that directory is clean.
- * - Only the root `.nax/` (and one at a working directory on the way down) is
- *   looked for; a nested-only `packages/a/.nax` is not seen by the stash rule.
- * - `git checkout feature/.nax` (a branch whose name has a `.nax` segment) is
- *   a false positive; it is kept.
+ * - Prose that reads as a command (`echo git stash`, `python -c 'print("git
+ *   stash")'`) is refused when a `.nax/` exists: the guard works on words.
+ * - Under `raw` Bash approval an operand BUILT by expansion (`.na?/x`,
+ *   `$D/prd.json`) is not resolved; raw mode is advisory. A verb built by
+ *   expansion IS refused (rule 4), but `git $X` alone, naming no guarded
+ *   verb, is not.
+ * - A heredoc body fed to an interpreter (`python3 <<EOF`) is data to this
+ *   reader, as is `--pathspec-from-file`, `GIT_CONFIG_GLOBAL` pointing at a
+ *   file, and `export GIT_CONFIG_*` set on an earlier line.
+ * - A full `:!.nax` exclusion names the root `.nax`; a whole-tree revert that
+ *   excludes only that still reaches a nested package `.nax`.
+ * - From inside `.nax` (`cd .nax`), every unmarked `git checkout` operand is
+ *   read as a path.
  */
-import { existsSync, lstatSync } from "node:fs";
-import { join, relative, resolve, sep } from "node:path";
+import { lstatSync } from "node:fs";
+import { resolve } from "node:path";
 import { NAX_OWNED_RUN_STATE_EXPLANATION } from "./denial-redirect.ts";
-import { commandHeadIndex, gitExecutableIndex, locateGit } from "./git-flags/locate.ts";
+import { commandHeadIndex, gitExecutableIndex, type LocatedGit, locateGit } from "./git-flags/locate.ts";
+import { hasNaxDirNear, type NaxGuardContext } from "./nax-dirs.ts";
+import {
+  buildsVerbByExpansion,
+  CONFIG_ENV_REFUSAL,
+  configAliasRefusal,
+  EXPANSION_REFUSAL,
+  flattenCode,
+  interpreterCode,
+  mentionsGuardedVerb,
+} from "./nax-evasion.ts";
+import { isFullNaxExclusion, operandTouchesNax, resetRefusal, revertRefusal } from "./nax-revert.ts";
 
-/** Where a segment runs: every live working-directory frame, and the permitted root. */
-export interface NaxGuardContext {
-  readonly frames: readonly string[];
-  readonly root: string;
-}
-
-const REVERT_VERBS: ReadonlySet<string> = new Set(["checkout", "restore"]);
+export type { NaxDirIndex, NaxGuardContext } from "./nax-dirs.ts";
+export { createNaxDirIndex } from "./nax-dirs.ts";
 
 /** Stash subcommands that neither capture nor replay the working tree. */
 const STASH_SAFE_SUBCOMMANDS: ReadonlySet<string> = new Set(["list", "show", "create", "store", "drop", "clear"]);
 
 /** Abbreviations git really accepts: `--sk`, `--as`, `--no-sk`, `--no-as` and everything longer. */
 const INDEX_HIDING_FLAG = /^--(?:no-)?(?:sk|as)/;
-
-/** `:!X`, `:^X`, `:(exclude)X`. */
-const EXCLUDE_PATHSPEC = /^:(?:[!^]|\(exclude[^)]*\))(.*)$/;
 
 const SHELLS: ReadonlySet<string> = new Set(["bash", "sh", "zsh", "dash", "ksh", "eval"]);
 
@@ -86,45 +114,15 @@ const ALIAS_REFUSAL =
   "A git alias defined through `--config-env` cannot be inspected while the repository holds nax's run state under `.nax/`. " +
   "Run the git verb directly, or define the alias with `-c alias.NAME=VALUE`.";
 
-/** True when `.nax` is a path segment of `path`. */
-function hasNaxSegment(path: string): boolean {
-  return path.split(/[\\/]/).includes(".nax");
-}
-
-/** True when `operand`, resolved from any frame, lands on or under a `.nax` directory. */
-function operandTouchesNax(operand: string, ctx: NaxGuardContext): boolean {
-  if (hasNaxSegment(operand)) return true;
-  return ctx.frames.some((frame) => {
-    const rel = relative(ctx.root, resolve(frame, operand));
-    return !rel.startsWith("..") && hasNaxSegment(rel);
-  });
-}
-
-/** True when a `.nax/` exists at a frame, between a frame and the root, or at the root. */
-function hasNaxDirNear(ctx: NaxGuardContext): boolean {
-  const candidates = new Set<string>([ctx.root]);
-  for (const frame of ctx.frames) {
-    let dir = frame;
-    candidates.add(dir);
-    while (dir !== ctx.root && dir.startsWith(`${ctx.root}${sep}`)) {
-      dir = resolve(dir, "..");
-      candidates.add(dir);
-    }
-  }
-  return [...candidates].some((dir) => existsSync(join(dir, ".nax")));
-}
-
-/** The frames plus where `-C` / `--work-tree` / `--git-dir` (chained, in order) lead from each. */
+/**
+ * The frames plus where `-C` / `--work-tree` / `--git-dir` / `GIT_WORK_TREE` /
+ * `GIT_DIR` lead from each: every directory alone, and the whole chain in order.
+ */
 function withGitDirs(ctx: NaxGuardContext, dirs: readonly string[]): NaxGuardContext {
   if (dirs.length === 0) return ctx;
-  const moved = ctx.frames.map((frame) => dirs.reduce((dir, next) => resolve(dir, next), frame));
-  return { root: ctx.root, frames: [...ctx.frames, ...moved] };
-}
-
-function revertRefusal(operands: readonly string[], ctx: NaxGuardContext): string | undefined {
-  return operands.some((word) => word !== "--" && operandTouchesNax(word, ctx))
-    ? NAX_OWNED_RUN_STATE_EXPLANATION
-    : undefined;
+  const chained = ctx.frames.map((frame) => dirs.reduce((dir, next) => resolve(dir, next), frame));
+  const single = ctx.frames.flatMap((frame) => dirs.map((dir) => resolve(frame, dir)));
+  return { ...ctx, frames: [...ctx.frames, ...single, ...chained] };
 }
 
 function updateIndexRefusal(args: readonly string[], ctx: NaxGuardContext, viaXargs: boolean): string | undefined {
@@ -139,14 +137,6 @@ function updateIndexRefusal(args: readonly string[], ctx: NaxGuardContext, viaXa
     args.includes("--stdin") ||
     args.includes("--index-info");
   return uninspectable && hasNaxDirNear(ctx) ? UPDATE_INDEX_REFUSAL : undefined;
-}
-
-/** `:!.nax`, `:^.nax/`, `:(exclude).nax/**` -- and it must resolve to `<root>/.nax` from EVERY frame. */
-function isFullNaxExclusion(spec: string, ctx: NaxGuardContext): boolean {
-  const target = EXCLUDE_PATHSPEC.exec(spec)?.[1];
-  if (target === undefined) return false;
-  const path = target.replace(/\/(?:\*\*)?$/, "");
-  return ctx.frames.every((frame) => resolve(frame, path) === join(ctx.root, ".nax"));
 }
 
 /** An existing regular file (not a directory, symlink or glob) that is not under `.nax`. */
@@ -190,25 +180,44 @@ function shellCommandString(words: readonly string[]): string | undefined {
     .replace(/^\s*['"]|['"]\s*$/g, "");
 }
 
+/** The structured rules for one located git invocation. */
+function verbRefusal(git: LocatedGit, segment: readonly string[], where: NaxGuardContext): string | undefined {
+  if (git.subcommand === "checkout" || git.subcommand === "restore") {
+    return revertRefusal(git.subcommand, git.args, where);
+  }
+  if (git.subcommand === "reset") return resetRefusal(git.args, where);
+  if (git.subcommand === "stash") return stashRefusal(git.args, where);
+  if (git.subcommand === "config") return hasNaxDirNear(where) ? configAliasRefusal(git.args) : undefined;
+  if (git.subcommand !== "update-index") return undefined;
+  const viaXargs = segment.slice(0, gitExecutableIndex(segment)).includes("xargs");
+  return updateIndexRefusal(git.args, where, viaXargs);
+}
+
+/** Refusals that depend on HOW git was invoked, not on its verb: environment config, `--config-env` and `!` aliases. */
+function invocationRefusal(git: LocatedGit, segment: readonly string[], where: NaxGuardContext): string | undefined {
+  if (git.unresolvedAlias && hasNaxDirNear(where)) return ALIAS_REFUSAL;
+  if (git.configEnv && mentionsGuardedVerb(segment.join(" ")) && hasNaxDirNear(where)) return CONFIG_ENV_REFUSAL;
+  return git.shellAlias === undefined ? undefined : naxStateRefusalInText(git.shellAlias, where);
+}
+
 /**
  * The refusal for one command segment (its words, `git` possibly behind
  * wrappers and global options), or undefined. A segment whose git invocation
- * cannot be located is NOT judged here; see the BACKSTOP in the header.
+ * cannot be located is NOT judged here; see the BACKSTOP in the header. One
+ * that CAN be located but met a global option this reader does not know is
+ * judged by the structured rules and then, with a `.nax/` present, by the BACKSTOP.
  */
 export function naxStateRefusal(segment: readonly string[], ctx: NaxGuardContext): string | undefined {
   const inner = shellCommandString(segment);
   if (inner !== undefined) return naxStateRefusalInText(inner, ctx);
+  const code = interpreterCode(segment);
+  if (code !== undefined) return naxStateRefusalInText(flattenCode(code), ctx);
   const git = locateGit(segment);
   if (git === undefined) return undefined;
   const where = withGitDirs(ctx, git.dirs);
-  if (git.unresolvedAlias && hasNaxDirNear(where)) return ALIAS_REFUSAL;
-  if (REVERT_VERBS.has(git.subcommand)) return revertRefusal(git.args, where);
-  if (git.subcommand === "update-index") {
-    const viaXargs = segment.slice(0, gitExecutableIndex(segment)).includes("xargs");
-    return updateIndexRefusal(git.args, where, viaXargs);
-  }
-  if (git.subcommand === "stash") return stashRefusal(git.args, where);
-  return undefined;
+  const refusal = invocationRefusal(git, segment, where) ?? verbRefusal(git, segment, where);
+  if (refusal !== undefined || !git.uncertain || !hasNaxDirNear(where)) return refusal;
+  return backstopRefusal(segment, where);
 }
 
 /** Split command text into segments of tokens: quotes are removed and kept atomic; `; & | ( ) { }` and newlines end a segment. */
@@ -287,20 +296,35 @@ function namesVerb(word: string, verb: string): boolean {
   return word === verb || (aliasTarget(word)?.includes(verb) ?? false);
 }
 
+/** `git`, `\git` or a path ending in `/git`. */
+function isGitToken(word: string): boolean {
+  return word === "git" || word === "\\git" || word.endsWith("/git");
+}
+
+/** The coarse revert check: whole-tree and `.nax` operands after the first word naming `verb`. */
+function backstopRevert(words: readonly string[], verb: string, ctx: NaxGuardContext): string | undefined {
+  const at = words.findIndex((word) => namesVerb(word, verb));
+  if (at === -1) return undefined;
+  const refusal = revertRefusal(verb, words.slice(at + 1), ctx);
+  if (refusal !== undefined) return refusal;
+  return words.some((word) => operandTouchesNax(word, ctx)) ? NAX_OWNED_RUN_STATE_EXPLANATION : undefined;
+}
+
 /**
  * The coarse check for a segment `locateGit` could not read. Requires a `git`
  * token in the same segment, so `echo stash` and a commit message that merely
  * contains the word never match.
  */
 function backstopRefusal(words: readonly string[], ctx: NaxGuardContext): string | undefined {
-  if (!words.some((word) => word === "git" || word.endsWith("/git"))) return undefined;
+  if (!words.some(isGitToken)) return undefined;
   const mentions = (verb: string) => words.some((word) => namesVerb(word, verb));
   if (mentions("update-index") && words.some((word) => INDEX_HIDING_FLAG.test(word))) return UPDATE_INDEX_REFUSAL;
   if (mentions("stash") && !stashIsSafeWord(words)) return STASH_REFUSAL;
-  if ((mentions("checkout") || mentions("restore")) && words.some((word) => operandTouchesNax(word, ctx))) {
-    return NAX_OWNED_RUN_STATE_EXPLANATION;
+  if (mentions("reset")) {
+    const reset = resetRefusal(words, ctx);
+    if (reset !== undefined) return reset;
   }
-  return undefined;
+  return backstopRevert(words, "checkout", ctx) ?? backstopRevert(words, "restore", ctx);
 }
 
 function stashIsSafeWord(words: readonly string[]): boolean {
@@ -329,13 +353,15 @@ function nestedRefusal(words: readonly string[], ctx: NaxGuardContext): string |
  */
 export function naxStateRefusalInText(command: string, ctx: NaxGuardContext): string | undefined {
   let frames = ctx.frames;
-  for (const words of shellSegments(withoutHeredocBodies(command))) {
+  const code = withoutHeredocBodies(command);
+  if (buildsVerbByExpansion(code) && hasNaxDirNear(ctx)) return EXPANSION_REFUSAL;
+  for (const words of shellSegments(code)) {
     const moved = framesAfterCd(words, frames);
     if (moved !== undefined) {
       frames = moved;
       continue;
     }
-    const here = { root: ctx.root, frames };
+    const here = { ...ctx, frames };
     const refusal =
       naxStateRefusal(words, here) ??
       nestedRefusal(words, here) ??

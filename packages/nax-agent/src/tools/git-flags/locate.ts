@@ -102,10 +102,15 @@ export function commandHeadIndex(words: readonly string[]): number {
   return i;
 }
 
+/** `git`, or `\\git` (a leading backslash only suppresses shell aliases, so it still runs git). */
+function isGitWord(word: string | undefined): boolean {
+  return word === "git" || word === "\\git";
+}
+
 /** Find `git` in the executable position after supported wrappers. */
 export function gitExecutableIndex(words: readonly string[]): number | undefined {
   const i = commandHeadIndex(words);
-  return words[i] === "git" ? i : undefined;
+  return isGitWord(words[i]) ? i : undefined;
 }
 
 /** Long global options whose value is the NEXT word (`--git-dir X`); `--key=value` forms are skipped as one word. */
@@ -115,6 +120,33 @@ const GIT_SEPARATE_VALUE_LONG: ReadonlySet<string> = new Set([
   "--namespace",
   "--super-prefix",
   "--config-env",
+  "--attr-source",
+]);
+
+/** Global options that take no value, or only an `=value` (`git help git`). Anything else before the subcommand is unknown. */
+const GIT_KNOWN_FLAG_GLOBALS: ReadonlySet<string> = new Set([
+  "-v",
+  "--version",
+  "-h",
+  "--help",
+  "--exec-path",
+  "--html-path",
+  "--man-path",
+  "--info-path",
+  "-p",
+  "--paginate",
+  "-P",
+  "--no-pager",
+  "--no-replace-objects",
+  "--no-lazy-fetch",
+  "--no-optional-locks",
+  "--no-advice",
+  "--bare",
+  "--literal-pathspecs",
+  "--glob-pathspecs",
+  "--noglob-pathspecs",
+  "--icase-pathspecs",
+  "--list-cmds",
 ]);
 
 /** Global options whose value redirects git to another directory. */
@@ -123,50 +155,116 @@ const GIT_DIR_OPTIONS: ReadonlySet<string> = new Set(["-C", "--git-dir", "--work
 export interface LocatedGit {
   readonly subcommand: string;
   readonly args: readonly string[];
-  /** Values of `-C`, `--work-tree` and `--git-dir` (both `--key value` and `--key=value`), in order. */
+  /**
+   * Values of `-C`, `--work-tree` and `--git-dir` (both `--key value` and
+   * `--key=value`) and of leading `GIT_WORK_TREE=` / `GIT_DIR=` assignments, in order.
+   */
   readonly dirs: readonly string[];
   /** True when an alias is defined through `--config-env=alias.*`: its value lives in the environment and cannot be read. */
   readonly unresolvedAlias: boolean;
+  /** True when a global option this reader does not know sat before the subcommand: the subcommand found may be that option's value. */
+  readonly uncertain: boolean;
+  /** The shell text a `!` alias runs (its value without the `!`, then the call's remaining arguments), or undefined. */
+  readonly shellAlias: string | undefined;
+  /** True when a leading assignment sets a `GIT_CONFIG*` variable (config, including aliases, injected through the environment). */
+  readonly configEnv: boolean;
 }
 
-/** Expand `-c alias.NAME=VALUE` when `subcommand` is such an alias; otherwise return it unchanged. */
-function expandAlias(
-  subcommand: string,
-  args: readonly string[],
-  aliases: ReadonlyMap<string, string>,
-): { readonly subcommand: string; readonly args: readonly string[] } {
-  const value = aliases.get(subcommand.toLowerCase());
-  if (value === undefined) return { subcommand, args };
+interface GlobalState {
+  readonly dirs: string[];
+  readonly aliases: Map<string, string>;
+  uncertain: boolean;
+}
+
+/** Aliases may name aliases; git bounds the chain, so does this reader. */
+const MAX_ALIAS_DEPTH = 8;
+
+/** Skip global options from `start`; returns the index of the first word that is not one. */
+function skipGlobals(words: readonly string[], start: number, state: GlobalState): number {
+  let i = start;
+  while (i < words.length && (words[i] as string).startsWith("-") && words[i] !== "--") {
+    i = consumeGlobal(words, i, state);
+  }
+  return i;
+}
+
+/** Alias value words, with a leading `!` and a leading `git` removed. */
+function aliasWords(value: string): string[] {
   const words = value
     .replace(/^!/, "")
     .split(/\s+/)
     .filter((word) => word.length > 0);
-  if (words[0] === "git") words.shift();
-  const [head, ...rest] = words;
-  return head === undefined ? { subcommand, args } : { subcommand: head, args: [...rest, ...args] };
+  if (isGitWord(words[0])) words.shift();
+  return words;
+}
+
+interface Resolved {
+  readonly subcommand: string;
+  readonly args: readonly string[];
+  readonly shellAlias: string | undefined;
+}
+
+/**
+ * Expand `-c alias.NAME=VALUE` while `subcommand` names such an alias. The
+ * expanded words are run through the global-option skip again (an alias may
+ * start with `-C .` or `--no-pager`), and a `!` value is also returned as shell text.
+ */
+function resolveAliases(subcommand: string, args: readonly string[], state: GlobalState): Resolved {
+  let current: Resolved = { subcommand, args, shellAlias: undefined };
+  for (let depth = 0; depth < MAX_ALIAS_DEPTH; depth += 1) {
+    const value = state.aliases.get(current.subcommand.toLowerCase());
+    if (value === undefined) break;
+    const shellAlias = value.startsWith("!") ? `${value.slice(1)} ${current.args.join(" ")}`.trim() : undefined;
+    const merged = [...aliasWords(value), ...current.args];
+    const next = skipGlobals(merged, 0, state);
+    const head = merged[next];
+    if (head === undefined) break;
+    current = { subcommand: head, args: merged.slice(next + 1), shellAlias: current.shellAlias ?? shellAlias };
+  }
+  return current;
+}
+
+/** Directory and config environment set by leading assignments (also those of an `env` wrapper). */
+function leadingGitEnv(words: readonly string[], gitIdx: number): { dirs: string[]; configEnv: boolean } {
+  const dirs: string[] = [];
+  let configEnv = false;
+  for (const word of words.slice(0, gitIdx)) {
+    const match = /^(GIT_WORK_TREE|GIT_DIR|GIT_CONFIG[A-Z0-9_]*)=(.*)$/.exec(word);
+    if (match === null) continue;
+    if (match[1]?.startsWith("GIT_CONFIG")) configEnv = true;
+    else dirs.push(match[2] as string);
+  }
+  return { dirs, configEnv };
 }
 
 /**
  * Locate executable `git` in `words` and advance past its global options.
  * Returns the subcommand (alias-expanded), its arguments, and the directories
  * the global options point git at, or `undefined` when `git` isn't there or has
- * no subcommand. Handles `sudo git`, `env VAR=x git`, `git --no-pager checkout`,
- * and an UNKNOWN `-x` / `--xxx` global (skipped as one word, so a new git
- * option cannot hide the subcommand).
+ * no subcommand. Handles `sudo git`, `env VAR=x git`, a backslash-prefixed
+ * `git`, `git --no-pager checkout`, and an UNKNOWN `-x` / `--xxx` global
+ * (skipped as one word and flagged `uncertain`, so a new git option cannot
+ * hide the subcommand silently).
  */
 export function locateGit(words: readonly string[]): LocatedGit | undefined {
   const gitIdx = gitExecutableIndex(words);
   if (gitIdx === undefined) return undefined;
-  const dirs: string[] = [];
-  const aliases = new Map<string, string>();
-  let i = gitIdx + 1;
-  while (i < words.length && (words[i] as string).startsWith("-") && words[i] !== "--") {
-    i = consumeGlobal(words, i, dirs, aliases);
-  }
+  const env = leadingGitEnv(words, gitIdx);
+  const state: GlobalState = { dirs: [...env.dirs], aliases: new Map(), uncertain: false };
+  const i = skipGlobals(words, gitIdx + 1, state);
   const unresolvedAlias = words.slice(gitIdx + 1, i).some((word, k, globals) => isConfigEnvAlias(word, globals[k + 1]));
   const subcommand = words[i];
   if (subcommand === undefined) return undefined;
-  return { ...expandAlias(subcommand, words.slice(i + 1), aliases), dirs, unresolvedAlias };
+  const resolved = resolveAliases(subcommand, words.slice(i + 1), state);
+  return {
+    subcommand: resolved.subcommand,
+    args: resolved.args,
+    dirs: state.dirs,
+    unresolvedAlias,
+    uncertain: state.uncertain,
+    shellAlias: resolved.shellAlias,
+    configEnv: env.configEnv,
+  };
 }
 
 /** `--config-env=alias.x=VAR` or `--config-env alias.x=VAR` (git config keys are case-insensitive). */
@@ -176,17 +274,21 @@ function isConfigEnvAlias(word: string, next: string | undefined): boolean {
 }
 
 /** Consume one global option at `i`, recording directory values and `-c alias.*` definitions; returns the next index. */
-function consumeGlobal(words: readonly string[], i: number, dirs: string[], aliases: Map<string, string>): number {
+function consumeGlobal(words: readonly string[], i: number, state: GlobalState): number {
   const w = words[i] as string;
   if (w === "-c") {
     const alias = /^alias\.([^=]+)=(.*)$/is.exec(words[i + 1] ?? "");
-    if (alias !== null) aliases.set((alias[1] as string).toLowerCase(), alias[2] as string);
+    if (alias !== null) state.aliases.set((alias[1] as string).toLowerCase(), alias[2] as string);
     return i + 2;
   }
   const eq = w.indexOf("=");
   const key = eq === -1 ? w : w.slice(0, eq);
-  if (!GIT_DIR_OPTIONS.has(key) && !GIT_SEPARATE_VALUE_LONG.has(key)) return i + 1;
+  const separate = GIT_DIR_OPTIONS.has(key) || GIT_SEPARATE_VALUE_LONG.has(key);
+  if (!separate) {
+    if (!GIT_KNOWN_FLAG_GLOBALS.has(key)) state.uncertain = true;
+    return i + 1;
+  }
   const value = eq === -1 ? words[i + 1] : w.slice(eq + 1);
-  if (GIT_DIR_OPTIONS.has(key) && value !== undefined) dirs.push(value);
+  if (GIT_DIR_OPTIONS.has(key) && value !== undefined) state.dirs.push(value);
   return eq === -1 ? i + 2 : i + 1;
 }

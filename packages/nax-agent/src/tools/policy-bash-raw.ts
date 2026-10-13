@@ -53,6 +53,7 @@ import { relative, resolve, sep } from "node:path";
 import { realOrRaw } from "#src/internal/realpath";
 import { type BashSegment, type BashToken, lexBashCommand } from "#src/permissions/index";
 import { cdTargetsFor, nextWorkingDirectories } from "./bash-cwd.ts";
+import type { NaxDirIndex } from "./nax-dirs.ts";
 import { naxStateRefusalInText } from "./nax-state-guard.ts";
 import type { OwnedBashCandidate, OwnedPathsPolicy } from "./owned-paths.ts";
 import type { BashCheck } from "./policy-bash.ts";
@@ -66,6 +67,8 @@ export interface RawScreenArgs {
   readonly resolvePath: (candidate: string, cwd: string) => string | null;
   /** The permitted root, used to relativise a resolved path. */
   readonly root: string;
+  /** Per-policy cache of the `.nax` directories below the root (#2493). */
+  readonly naxDirs?: NaxDirIndex;
   /**
    * US-002: true when the command runs inside the OS sandbox (an available
    * launcher). A token that only NAMES a feature PRD is then no longer refused
@@ -183,7 +186,11 @@ function segmentGuard(args: RawScreenArgs, segment: BashSegment): BashCheck | un
  * inversion: unreadable means unscreened, and unscreened means allowed.
  */
 function earlyVerdict(args: RawScreenArgs, command: string, lexKind: "ok" | "refused"): BashCheck | undefined {
-  const stateRefusal = naxStateRefusalInText(command, { frames: [args.initialPath], root: args.root });
+  const stateRefusal = naxStateRefusalInText(command, {
+    frames: [args.initialPath],
+    root: args.root,
+    ...(args.naxDirs !== undefined ? { naxDirs: args.naxDirs } : {}),
+  });
   if (stateRefusal !== undefined) return deny(stateRefusal);
   return lexKind === "refused" ? { kind: "allow" } : undefined;
 }

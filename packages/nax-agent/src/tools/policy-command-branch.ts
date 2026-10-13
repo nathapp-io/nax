@@ -11,6 +11,7 @@
  */
 
 import type { BashApprovalMode } from "#src/config/bash-approval";
+import type { NaxDirIndex } from "./nax-dirs.ts";
 import type { OwnedPathsPolicy } from "./owned-paths.ts";
 import { checkBashCommand } from "./policy-bash.ts";
 import { screenRawBashCommand } from "./policy-bash-raw.ts";
@@ -30,6 +31,8 @@ export interface BashCommandBranchArgs {
   /** S3-2: host-owned path rules; the `raw` screen hands it one candidate per live frame. */
   readonly ownedPaths: OwnedPathsPolicy;
   readonly resolvedRoot: string;
+  /** Per-policy cache of the `.nax` directories below the root, shared by every Bash call (#2493). */
+  readonly naxDirs?: NaxDirIndex;
   readonly denyBy: ReadonlyMap<string, CompiledEntry>;
   readonly askBy: ReadonlyMap<string, CompiledEntry>;
   readonly resolvePath: (candidate: string, cwd: string) => string | null;
@@ -48,6 +51,7 @@ export function commandBranch(args: BashCommandBranchArgs): PolicyVerdict | unde
     sandboxWrapped,
     ownedPaths,
     resolvedRoot,
+    naxDirs,
     denyBy,
     askBy,
     resolvePath,
@@ -63,6 +67,7 @@ export function commandBranch(args: BashCommandBranchArgs): PolicyVerdict | unde
       command: input[scope.commandField],
       initialPath: resolvedRoot,
       root: resolvedRoot,
+      ...(naxDirs !== undefined ? { naxDirs } : {}),
       sandboxWrapped: sandboxWrapped === true,
       resolvePath,
       ownedPaths,
@@ -80,6 +85,7 @@ export function commandBranch(args: BashCommandBranchArgs): PolicyVerdict | unde
     ...(denyEntry !== undefined ? { denyEntry } : {}),
     ...(askEntry !== undefined ? { askEntry } : {}),
     initialPath: resolvedRoot,
+    ...(naxDirs !== undefined ? { naxDirs } : {}),
     resolvePath,
   });
   if (result.kind === "deny") {
