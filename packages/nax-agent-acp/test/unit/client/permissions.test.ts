@@ -18,6 +18,7 @@ import {
   NO_ALLOW_ONCE_REASON,
   offeredOptions,
   readOnlyReason,
+  REVIEW_NO_SANDBOX_REASON,
   rejectLocally,
   UNSHOWABLE_REASON,
 } from "#src/client/permissions";
@@ -236,6 +237,17 @@ describe("profile review (nax#2500)", () => {
     );
     expect(res).toEqual(selected("allow_once"));
     expect(seen.auto[0]?.decision).toBe("allow");
+  });
+
+  test("execute with no sandbox is denied (fail closed)", async () => {
+    const { port, seen } = asks();
+    const res = await decidePermission(
+      request(["allow_once", "reject_once"], { toolCallId: "t", kind: "execute", title: "ls" }),
+      { ...base(), asks: port },
+    );
+    expect(res).toEqual(selected("reject_once"));
+    expect(seen.auto[0]?.req.reason).toBe(REVIEW_NO_SANDBOX_REASON);
+    expect(seen.auto[0]?.decision).toBe("deny");
   });
 
   test("denies an edit request", async () => {

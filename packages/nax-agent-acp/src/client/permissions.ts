@@ -1,7 +1,7 @@
 /**
  * session/request_permission by profile (S4 spec §6.4 layer 2). none and read
- * reject every request; review allows commands (kind execute) and rejects the
- * rest; under review and full a sandbox network request follows the sandbox
+ * reject every request; review allows commands (kind execute) only when a
+ * sandbox policy is present (fail closed) and rejects the rest; under review and full a sandbox network request follows the sandbox
  * network policy (open: allow, allow-list: deny); full allows it; ask puts it in front of the caller through
  * asks.requestApproval and answer(). Only options the agent offered are chosen,
  * and only the *_once kinds: allow_always would outlive the session. Auto-decisions
@@ -22,6 +22,7 @@ export const ASK_REASON = "the ACP agent asks permission";
 export const FULL_REASON = 'profile "full" allows every permission request';
 export const UNKNOWN_PROFILE_REASON = "unknown profile";
 export const REVIEW_EXECUTE_REASON = 'profile "review" allows commands';
+export const REVIEW_NO_SANDBOX_REASON = 'profile "review" runs commands only inside the sandbox';
 export const NETWORK_OPEN_REASON = "the sandbox network is open";
 export const NETWORK_LISTED_REASON = "the sandbox network is an allow-list";
 /** claude-agent-acp 0.85.1 surfaces the SDK's sandbox network callback as a tool call titled with its tool name. */
@@ -123,6 +124,10 @@ export async function decidePermission(
     case "review":
       if (display.tool !== "execute") {
         auto(readOnlyReason(ctx.profile), "deny");
+        return rejectWith(offered);
+      }
+      if (ctx.sandbox === undefined) {
+        auto(REVIEW_NO_SANDBOX_REASON, "deny");
         return rejectWith(offered);
       }
       if (offered.allowOnce === undefined) return denyNoAllowOnce(offered, auto);
