@@ -78,6 +78,28 @@ describe("workflow git helpers", () => {
     expect(section.match(/\(partially shown\)/g)).toHaveLength(1);
   });
 
+  test("package: a shown type change (file to symlink) counts as one file (nax#2486)", async () => {
+    const dir = await repo();
+    await Bun.write(join(dir, "aa-tc.txt"), "plain\n");
+    await git(dir, "add", "-A");
+    await git(dir, "commit", "-qm", "seed: tc");
+    const base = await readHead(dir);
+    await git(dir, "rm", "-q", "aa-tc.txt");
+    expect(await Bun.spawn(["ln", "-s", "a.txt", join(dir, "aa-tc.txt")]).exited).toBe(0);
+    const filler = `${"x".repeat(120)}\n`.repeat(60);
+    for (let i = 0; i < 12; i++) await Bun.write(join(dir, `src/a-${String(i).padStart(2, "0")}.ts`), filler);
+    await git(dir, "add", "-A");
+    await git(dir, "commit", "-qm", "feat: big");
+    const path = join(dir, "out", "package-0.diff");
+    await writeReviewPackage(dir, base, path);
+    const text = await Bun.file(path).text();
+    const section = text.slice(text.indexOf("## Files not shown in the diff"));
+    expect(text.match(/^diff --git a\/aa-tc\.txt /gm)).toHaveLength(2);
+    const partial = section.match(/^- (.+) \(partially shown\)$/m)?.[1];
+    const kept = (text.match(/^diff --git a\/(src\/\S+) /gm) ?? []).length;
+    expect(partial).toBe(`src/a-${String(kept - 1).padStart(2, "0")}.ts`);
+  });
+
   test("package: a shown rename is not listed; a non-ASCII omitted path is listed verbatim (nax#2486)", async () => {
     const dir = await repo();
     await Bun.write(join(dir, "aa/old.ts"), "export const kept = 'a stable body long enough to detect a rename';\n");

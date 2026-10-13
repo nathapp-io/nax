@@ -32,7 +32,9 @@ function omittedFilesSection(names: string, body: string): string {
   // names are the N file headers the cut kept. Counting headers avoids parsing them (renames show the
   // old path, quoted paths, custom prefixes). The last kept header is the file the cut went through.
   const all = names.split("\0").filter((n) => n !== "");
-  const headers = (body.match(/^diff --git /gm) ?? []).length;
+  // A type change (file <-> symlink) is one name but two identical headers (delete + create): count it once.
+  const headerLines = body.match(/^diff --git .*$/gm) ?? [];
+  const headers = headerLines.filter((h, i) => h !== headerLines[i - 1]).length;
   const partial = headers > 0 ? all[headers - 1] : undefined;
   const lines = [...(partial ? [`- ${partial} (partially shown)`] : []), ...all.slice(headers).map((n) => `- ${n}`)];
   return lines.length > 0 ? `\n## Files not shown in the diff (read them yourself)\n${lines.join("\n")}\n` : "";
