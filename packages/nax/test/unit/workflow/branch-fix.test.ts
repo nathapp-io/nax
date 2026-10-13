@@ -42,7 +42,7 @@ describe("runBranchFix", () => {
     const out = await runBranchFix(fc, { specPath: "spec.md", findings });
     expect(out).toEqual({ reply: done, autoCommitted: true, dirty: false });
     expect(await Bun.file(fc.reportPath).text()).toContain("# Feature report — f");
-    expect(inputs[0]).toMatchObject({ timeoutMs: fc.workflow.timeouts.fixMs });
+    expect(inputs[0]).toMatchObject({ timeoutMs: fc.workflow.timeouts.fixMs, reportPath: fc.reportPath });
     expect(String((inputs[0] as { prompt: string }).prompt)).toContain("[B1]");
     expect(commits[0]?.slice(0, 4)).toEqual([fc.projectDir, "workflow", "wf-branch-fix", "_run"]);
   });

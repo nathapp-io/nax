@@ -38,7 +38,7 @@ function hopCtx(
   send: HopBodyContext<WorkflowImplementInput>["send"],
   timeoutMs: number,
 ): HopBodyContext<WorkflowImplementInput> {
-  return { send, sendWithParseRetry: send, input: { story, prompt: "go", timeoutMs } };
+  return { send, sendWithParseRetry: send, input: { story, prompt: "go", timeoutMs, reportPath: "/r.md" } };
 }
 
 const interrupted: AdapterFailure = {
@@ -56,13 +56,13 @@ describe("workflowImplementOp", () => {
     expect(workflowImplementOp.tools).toContain("Write");
     expect(workflowImplementOp.tools).toContain("GitCommit");
     const ctx = buildCtx();
-    expect(workflowImplementOp.keepOpen?.({ story, prompt: "p", timeoutMs: 1 }, ctx)).toBe(true);
+    expect(workflowImplementOp.keepOpen?.({ story, prompt: "p", timeoutMs: 1, reportPath: "/r.md" }, ctx)).toBe(true);
   });
 
   test("model: explicit override wins, else the story's routed tier", () => {
     const ctx = buildCtx();
     const resolve = workflowImplementOp.model as (i: unknown, c: unknown) => unknown;
-    expect(resolve({ story, prompt: "p", timeoutMs: 1 }, ctx)).toBe("balanced");
+    expect(resolve({ story, prompt: "p", timeoutMs: 1, reportPath: "/r.md" }, ctx)).toBe("balanced");
     expect(resolve({ story, prompt: "p", timeoutMs: 1, model: "powerful" }, ctx)).toBe("powerful");
   });
 
@@ -180,8 +180,4 @@ describe("workflow writing ops can write their declared report (nax#2479)", () =
       expect(sibling?.kind).toBe("denied");
     });
   }
-
-  test("no report path means no writable output", () => {
-    expect(workflowImplementOp.writableOutput?.({ story, prompt: "p", timeoutMs: 1 })).toBeUndefined();
-  });
 });

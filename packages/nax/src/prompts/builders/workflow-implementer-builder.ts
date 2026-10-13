@@ -85,7 +85,7 @@ export function buildWorkflowBrief(input: WorkflowBriefInput): string {
 
 /** nax#2479: evidence lives in the report, never as new files in the repository. */
 export const WORKFLOW_ARTIFACTS_RULE =
-  "The report is the only place for evidence, command output and notes. Do not create evidence, log or note files anywhere else in the repository; use your scratchpad (.nax/scratchpad/) for throwaway files.";
+  "The report is the only place for evidence, command output and notes: write it with the Write or Edit tool (shell redirects into it are blocked). Do not create evidence, log or note files anywhere else in the repository; use your scratchpad (.nax/scratchpad/) for throwaway files.";
 
 export const WORKFLOW_REPLY_CONTRACT = `End your reply with exactly one fenced json block:
 

@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Fixed
+
 - **Workflow mode: the run tree moves into the repo (nax#2479).** Briefs, reports, review packages, the
   ledger and `result.json` now live under `.nax/features/<feature>/workflow/<runId>/` instead of
   `<outputDir>/<project>/workflow/`, which sat outside the agents' file-tool root: implementers could not
@@ -18,7 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Agents still may not write `.nax/`: the implementer and branch-fix ops declare their one report as
   the new `writableOutput`, a path-exact owned-write exemption that, unlike `fileOutput`, leaves the
   reply untouched. The writing prompts now say evidence belongs in the report, not in new repo files.
-  Workflow records left by an earlier run under the old location are not migrated.
+  Workflow records left by an earlier run under the old location are not migrated. Workflow mode now also forces
+  `execution.storyIsolation: "shared"`, since the tree and its git reads sit in the main checkout.
+
 ### Added
 
 - **Workflow mode feature workflow (A5 PR4).** With `execution.mode: "workflow"`, the advisor pre-flight

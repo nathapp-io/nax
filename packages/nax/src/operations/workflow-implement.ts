@@ -22,7 +22,7 @@ export interface WorkflowImplementInput {
   /** Step limit: the soft interrupt fires at this point. */
   readonly timeoutMs: number;
   /** The story's report.md: the one nax-owned file this session may write (nax#2479). */
-  readonly reportPath?: string;
+  readonly reportPath: string;
 }
 
 export const WORKFLOW_WRITE_TOOLS = [

@@ -37,6 +37,18 @@ describe("applyWorkflowMode", () => {
     expect(warnings[0]).toContain("advisor.enabled");
   });
 
+  test("workflow mode forces shared story isolation: the workflow tree sits in the main checkout (nax#2479)", () => {
+    const cfg = makeNaxConfig({
+      execution: { mode: "workflow", storyIsolation: "worktree" },
+      acceptance: { enabled: false },
+      advisor: { enabled: true },
+    });
+    const warnings: string[] = [];
+    const out = applyWorkflowMode(cfg, (m) => warnings.push(m));
+    expect(out.execution.storyIsolation).toBe("shared");
+    expect(warnings[0]).toContain("execution.storyIsolation=shared");
+  });
+
   test("workflow mode with keys already at their forced values does not warn", () => {
     const cfg = configFor({ mode: "workflow", acceptance: false, advisor: true });
     const warnings: string[] = [];

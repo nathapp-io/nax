@@ -19,7 +19,7 @@ export interface WorkflowBranchFixInput {
   /** Step limit: the soft interrupt fires here. */
   readonly timeoutMs: number;
   /** The feature report: the one nax-owned file this session may write (nax#2479). */
-  readonly reportPath?: string;
+  readonly reportPath: string;
 }
 
 export const workflowBranchFixOp: RunOperationWithHooks<

@@ -109,7 +109,16 @@ describe("NAX_GITIGNORE_ENTRIES", () => {
         expectIgnored(`${feature}/${acceptance}`, false);
         expectIgnored(`packages/api/${feature}/${acceptance}`, false);
       }
-      for (const artifact of ["status.json", "progress.txt", "plan/x.jsonl", "fragments/US-001.md", "prd.json.bak"]) {
+      for (const artifact of [
+        "status.json",
+        "progress.txt",
+        "plan/x.jsonl",
+        "fragments/US-001.md",
+        "prd.json.bak",
+        // Workflow mode's run tree (nax#2479): briefs, reports, packages, ledger.
+        "workflow/run-1/US-001/report.md",
+        "workflow/run-1/result.json",
+      ]) {
         expectIgnored(`${feature}/${artifact}`, true);
       }
 
