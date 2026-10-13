@@ -161,7 +161,7 @@ describe("runFeatureMachine", () => {
     const h = harness({ review });
     const final = await runFeatureMachine(h.env);
     const written: unknown = h.artifacts["branch-review.json"];
-    expect(written).toMatchObject({ findings: [{ id: "B1" }] });
+    expect(written).toMatchObject({ findings: [{ id: "B1" }, { kind: "quality" }] });
     expect(final.cannotVerify).toEqual(["CI-only path"]);
     expect(h.artifacts["branch-rereview.json"]).toBeDefined();
   });
