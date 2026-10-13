@@ -302,6 +302,7 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
       runId: options.runId,
       feature: options.feature,
       featureDir: options.featureDir,
+      workdir: options.workdir,
       getStartTime: () => options.startTime,
       getTotalStories: options.getTotalStories,
       getStoriesCompleted: options.getStoriesCompleted,

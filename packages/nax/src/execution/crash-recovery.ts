@@ -61,6 +61,8 @@ export interface CrashRecoveryContext {
    * target is assigned once `buildApprovalsSeal` resolves.
    */
   sealApprovals?: () => Promise<void>;
+  /** Repo working directory; teardown clears hidden `.nax/` index flags there (#2490). */
+  workdir?: string;
 }
 
 // Stores the active cleanup function so a second installCrashHandlers() call

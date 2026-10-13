@@ -4,10 +4,10 @@ import { RULE_SET_VERSION, scoreRules } from "#src/command-safety/index";
 const hits = (command: string) => scoreRules(command).hits;
 
 describe("rule scorer", () => {
-  test("version is 3 and every category is reported", () => {
+  test("version is 4 and every category is reported", () => {
     const r = scoreRules("ls");
     expect(r.version).toBe(RULE_SET_VERSION);
-    expect(RULE_SET_VERSION).toBe(3);
+    expect(RULE_SET_VERSION).toBe(4);
     expect(Object.keys(r.hits).sort()).toEqual([
       "deletes_data",
       "discards_work",
@@ -207,9 +207,9 @@ describe("rule scorer — outside_project with the project root (v2)", () => {
  * so a path in a neighbouring segment neither creates nor suppresses a hit.
  */
 describe("rule scorer — path-scoped discards (v3)", () => {
-  test("US-001 AC14: RULE_SET_VERSION and scoreRules().version are both 3", () => {
-    expect(RULE_SET_VERSION).toBe(3);
-    expect(scoreRules("ls").version).toBe(3);
+  test("US-001 AC14: RULE_SET_VERSION and scoreRules().version are both 4", () => {
+    expect(RULE_SET_VERSION).toBe(4);
+    expect(scoreRules("ls").version).toBe(4);
   });
 
   test("US-001 AC1: git checkout of a dot-extension file path is a discard", () => {

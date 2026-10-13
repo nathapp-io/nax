@@ -474,3 +474,36 @@ describe("runCompletionPhase - dry run", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// nax#2490: the hidden-index-flag sweep runs before the run-end auto-commit
+// ---------------------------------------------------------------------------
+
+describe("runCompletionPhase - .nax index flag sweep (#2490)", () => {
+  test("lists .nax index flags before the auto-commit stages anything", async () => {
+    const origSpawn = _gitDeps.spawn;
+    const calls: string[][] = [];
+    _gitDeps.spawn = makeSpawn(({ cmd }) => {
+      calls.push(cmd);
+      if (cmd.includes("rev-parse")) return `${WORKDIR}\n`;
+      if (cmd.includes("status")) return " M .nax/status.json\n";
+      return "";
+    }).spawn;
+    try {
+      await runCompletionPhase(
+        makeOpts(
+          makeConfig(true),
+          makePRD([{ id: "US-001", status: "passed" }]),
+          makeWriter(makePostRunStatus("passed", "passed")),
+        ),
+      );
+
+      const sweep = calls.findIndex((c) => c.includes("ls-files"));
+      const stage = calls.findIndex((c) => c.includes("add"));
+      expect(sweep).toBeGreaterThanOrEqual(0);
+      expect(stage).toBeGreaterThan(sweep);
+    } finally {
+      _gitDeps.spawn = origSpawn;
+    }
+  });
+});

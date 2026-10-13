@@ -17,6 +17,7 @@
  */
 
 import { getSafeLogger } from "../logger";
+import { clearNaxIndexFlags } from "../utils/nax-index-flags";
 import { type RunCompleteContext, updateStatusToCrashed, writeFatalLog, writeRunComplete } from "./crash-writer";
 import type { PidRegistry } from "./pid-registry";
 import type { StatusWriter } from "./status-writer";
@@ -48,6 +49,11 @@ export interface SignalHandlerContext extends RunCompleteContext {
    * early has no dispatch scope to seal.
    */
   sealApprovals?: () => Promise<void>;
+  /**
+   * Repo working directory (#2490). When set, teardown clears any
+   * skip-worktree/assume-unchanged flag an agent left on `.nax/` run state.
+   */
+  workdir?: string;
 }
 
 /**
@@ -141,6 +147,29 @@ export async function performTeardown(ctx: SignalHandlerContext): Promise<void> 
   }
 }
 
+/** Upper bound on the fatal-path index-flag sweep (#2490), so a wedged git cannot eat the teardown deadline. */
+const INDEX_SWEEP_BUDGET_MS = 2000;
+
+/**
+ * #2490: clear any skip-worktree/assume-unchanged flag an agent left on
+ * `.nax/` run state. Runs LAST on every fatal path -- after the fatal log, the
+ * run.complete event and the crashed status are written -- and is raced
+ * against a short budget on top of `gitWithTimeout`'s own timeout. It never
+ * throws.
+ */
+export async function clearHiddenNaxIndexFlags(ctx: SignalHandlerContext): Promise<void> {
+  if (!ctx.workdir) return;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const budget = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, INDEX_SWEEP_BUDGET_MS);
+  });
+  try {
+    await Promise.race([clearNaxIndexFlags(ctx.workdir, getSafeLogger()).then(() => undefined), budget]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * Get numeric signal number for exit code
  */
@@ -183,6 +212,8 @@ function createSignalHandler(
     await writeFatalLog(ctx.jsonlFilePath, signal);
     await writeRunComplete(ctx, signal.toLowerCase());
     await updateStatusToCrashed(ctx.statusWriter, ctx.getTotalCost(), ctx.getIterations(), signal, ctx.featureDir);
+
+    await clearHiddenNaxIndexFlags(ctx);
 
     cancelDeadline();
     _crashSignalsDeps.exit(128 + getSignalNumber(signal));
@@ -228,6 +259,8 @@ function createUncaughtExceptionHandler(
       ctx.featureDir,
     );
 
+    await clearHiddenNaxIndexFlags(ctx);
+
     cancelDeadline();
     _crashSignalsDeps.exit(1);
   };
@@ -271,6 +304,8 @@ function createUnhandledRejectionHandler(
       "unhandledRejection",
       ctx.featureDir,
     );
+
+    await clearHiddenNaxIndexFlags(ctx);
 
     cancelDeadline();
     _crashSignalsDeps.exit(1);
