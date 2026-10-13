@@ -319,6 +319,9 @@ export interface CreateRuntimeOptions {
   commandInterceptor?: import("@nathapp/nax-agent/internal").CommandInterceptor;
 }
 
+/** Injectable for tests: the afterTurn run-state repair (#2497). */
+export const _runtimeRunStateDeps = { repairRunState };
+
 export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateRuntimeOptions): NaxRuntime {
   const runId = crypto.randomUUID();
 
@@ -413,7 +416,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
       transcriptRoot: outputDir,
       // #2497: repair nax run state after every agent turn (native and ACP).
       afterTurn: async (desc, turn) => {
-        await repairRunState({
+        await _runtimeRunStateDeps.repairRunState({
           trigger: "turn",
           storyId: desc.storyId,
           sessionName: desc.handle ?? desc.id,

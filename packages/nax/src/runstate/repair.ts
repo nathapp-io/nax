@@ -13,7 +13,7 @@ export interface RepairContext {
   readonly sessionName?: string;
   readonly stage?: string;
   readonly turn?: number;
-  /** Fallback only: the workdir the #2490 flag sweep runs on when no keeper is active. */
+  /** The workdir the #2490 flag sweep runs on: at run-end/crash always, otherwise only when no keeper is active. */
   readonly workdir?: string;
 }
 export type Damage = "missing" | "modified" | "hidden";
@@ -155,12 +155,13 @@ async function repairRoot(keeper: RunStateKeeper, root: string, ctx: RepairConte
 
 async function repairAll(ctx: RepairContext): Promise<RepairRecord[]> {
   const keepers = activeKeepers();
-  if (keepers.length === 0) {
-    if (ctx.workdir) await _repairDeps.clearNaxIndexFlags(ctx.workdir, _repairDeps.logger());
-    return [];
-  }
   const out: RepairRecord[] = [];
   for (const k of keepers) for (const root of k.roots()) out.push(...(await repairRoot(k, root, ctx)));
+  // The keeper only guards files it holds; at run end the full #2490 sweep always runs.
+  const sweepAll = ctx.trigger === "run-end" || ctx.trigger === "crash";
+  if (ctx.workdir && (keepers.length === 0 || sweepAll)) {
+    await _repairDeps.clearNaxIndexFlags(ctx.workdir, _repairDeps.logger());
+  }
   return out;
 }
 

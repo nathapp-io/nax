@@ -158,4 +158,34 @@ describe("repairRunState (#2497)", () => {
     _repairDeps.clearNaxIndexFlags = origClear;
     expect(swept).toEqual([dir]);
   });
+
+  describe("the .nax flag sweep with a keeper active (#2490)", () => {
+    const SPEC = ".nax/features/f/spec.md";
+    async function hideSpec(): Promise<void> {
+      writeFileSync(join(dir, SPEC), "spec");
+      await git("add", "-f", SPEC);
+      await git("commit", "-q", "-m", "spec");
+      await git("update-index", "--skip-worktree", SPEC);
+    }
+    const tag = async (): Promise<string> => (await git("ls-files", "-v", "--", SPEC)).slice(0, 2);
+
+    test("run-end clears flags on files the keeper does not hold", async () => {
+      await hideSpec();
+      expect(await tag()).toBe("S ");
+      await repairRunState({ trigger: "run-end", workdir: dir });
+      expect(await tag()).toBe("H ");
+    });
+
+    test("crash clears them too", async () => {
+      await hideSpec();
+      await repairRunState({ trigger: "crash", workdir: dir });
+      expect(await tag()).toBe("H ");
+    });
+
+    test("a turn repair leaves them (scope of the per-turn check)", async () => {
+      await hideSpec();
+      await repairRunState({ trigger: "turn", workdir: dir });
+      expect(await tag()).toBe("S ");
+    });
+  });
 });
