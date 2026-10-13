@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-10-13T10:23:36.577Z",
+  "updatedAt": "2026-10-13T13:45:28.776Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": { "collectStats": 27 },
@@ -138,7 +138,6 @@
     "src/runtime/middleware/idle-watchdog/index.ts": { "=>": 37 },
     "src/runtime/packages.ts": { "hydrate": 21 },
     "src/runtime/session-run-hop.ts": { "=>": 57 },
-    "src/session/manager.ts": { "sendPrompt": 21 },
     "src/tdd/verdict-reader.ts": { "isValidVerdict": 27 },
     "src/test-runners/conventions.ts": { "globToRegex": 22 },
     "src/test-runners/detect/framework-configs-python.ts": { "parsePytestIni": 26 },

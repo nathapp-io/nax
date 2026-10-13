@@ -15,6 +15,7 @@ import type { CiWaitResult } from "./ci-wait";
 import type { FeatureContext } from "./feature-context";
 import { _featureDeps } from "./feature-deps";
 import { listUncommitted } from "./git";
+import { buildOpenItems } from "./open-items";
 import { workflowStoryDir } from "./paths";
 import { buildWorkflowPrBody, extractAssumptions, type WorkflowPrBodyFacts } from "./pr-body";
 import type { PreflightFile } from "./preflight";
@@ -107,6 +108,7 @@ async function bodyFacts(fc: FeatureContext, input: PublishInput): Promise<Workf
     ...(r.finalGates ? { finalGates: r.finalGates } : {}),
     ...(r.finalGateFindings ? { finalGateFindings: r.finalGateFindings } : {}),
     assumptions: await loadAssumptions(input.stories),
+    openItems: buildOpenItems(r),
   };
 }
 

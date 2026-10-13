@@ -24,8 +24,8 @@ import { isComplete } from "@/prd";
 import { totalSpendUsd } from "@/runtime";
 import type { DispatchContext } from "@/runtime/dispatch-context";
 import { autoCommitIfDirty } from "@/utils/git";
-import { clearNaxIndexFlags } from "@/utils/nax-index-flags";
 import type { WorkflowFeatureInput, WorkflowFeatureResult } from "@/workflow";
+import { repairRunState } from "../runstate";
 import { recordAdvisorSummary } from "./advisor-summary";
 import { stopHeartbeat, writeExitSummary } from "./crash-recovery";
 import type { DeferredReviewResult } from "./deferred-review";
@@ -537,9 +537,9 @@ async function finishRun(
     // the final status snapshot.
     stopHeartbeat();
 
-    // #2490: un-hide any .nax path an agent flagged skip-worktree/assume-unchanged,
+    // #2490/#2497: repair any run state an agent reverted, deleted or hid,
     // so the auto-commit below sees it and the flag does not outlive the run.
-    await clearNaxIndexFlags(options.workdir, logger);
+    await repairRunState({ trigger: "run-end", workdir: options.workdir });
 
     // Commit status.json and any other nax runtime files left dirty at run end
     logger?.debug("execution", "Completion phase — auto-committing dirty files");

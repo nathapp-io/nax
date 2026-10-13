@@ -201,4 +201,71 @@ describe("workflow feature end to end", () => {
     expect(first.gh.length).toBe(ghBefore);
     expect(first.ops.length).toBe(opsBefore);
   });
+
+  /** B3 (#2496): the first fix introduces B2 in src/a.ts, which sits inside the fix diff. */
+  function scriptB3(repo: string, secondAddressed: boolean) {
+    const fixes: string[] = [];
+    let reReviews = 0;
+    _workflowDeps.git = async (args, cwd) =>
+      args[0] === "diff" && args[1] === "--name-only" ? { stdout: "src/a.ts\n", exitCode: 0 } : saved.wf.git(args, cwd);
+    _workflowDeps.callOp = makeScriptedCallOp(async (op) => {
+      if (op.name === workflowBranchReviewOp.name) {
+        return {
+          spec: "pass",
+          quality: "changes",
+          findings: [{ kind: "quality", severity: "important", issue: "cap missing", file: "src/a.ts" }],
+          cannotVerify: [],
+          minorTriage: [],
+        };
+      }
+      if (op.name === workflowBranchFixOp.name) {
+        const file = `fix${fixes.length + 1}.ts`;
+        fixes.push(file);
+        await Bun.write(join(repo, file), `export const f${fixes.length} = 1;\n`);
+        await sh(repo, "git", "add", ".");
+        await sh(repo, "git", "commit", "-qm", `fix: round ${fixes.length}`);
+        return { status: "DONE", commits: [], testSummary: "1 pass", interrupted: false };
+      }
+      if (op.name === workflowReReviewOp.name) {
+        reReviews += 1;
+        if (reReviews === 1) {
+          return {
+            verdicts: [{ id: "B1", addressed: true, note: "" }],
+            newFindings: [{ kind: "quality", severity: "important", issue: "fix broke published()", file: "src/a.ts" }],
+          };
+        }
+        return { verdicts: [{ id: "B2", addressed: secondAddressed, note: "" }], newFindings: [] };
+      }
+      throw new Error(`unexpected op ${op.name}`);
+    });
+    return fixes;
+  }
+
+  test("B3: a defect the branch fix introduced is fixed by the second pass (#2496)", async () => {
+    const { input, repo, runDir } = await setup();
+    const fixes = scriptB3(repo, true);
+    await runWorkflowFeature(input);
+    expect(fixes).toHaveLength(2);
+    const file = await readResult(runDir);
+    expect(file?.verdict?.openItems).toEqual([]);
+    expect(file?.featureWorkflow?.fixRounds).toBe(2);
+  });
+
+  test("B3: second re-review still failing ends draft with the full open item", async () => {
+    const { input, repo, runDir, gh } = await setup();
+    scriptB3(repo, false);
+    await runWorkflowFeature(input);
+    const verdict = (await readResult(runDir))?.verdict;
+    expect(verdict).toMatchObject({ outcome: "draft", workflowPassed: false });
+    expect(verdict?.openItems[0]).toMatchObject({
+      id: "B2",
+      file: "src/a.ts",
+      issue: "fix broke published()",
+      ruling: { action: "hold" },
+    });
+    const create = gh.find((c) => c.join(" ").startsWith("gh pr create"));
+    const body = create?.[create.indexOf("--body") + 1] ?? "";
+    expect(body).toContain("## Before marking ready");
+    expect(body).toContain("**B2**");
+  });
 });

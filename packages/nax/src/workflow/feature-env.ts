@@ -3,11 +3,11 @@ import { adjudicateResidual } from "./adjudicate";
 import { createLiveWorkflowAdvisor, FEATURE_SCOPE } from "./advisor-live";
 import { flaggedCount } from "./approval";
 import { runBranchFix } from "./branch-fix";
-import { runBranchReReview, runBranchReview } from "./branch-review";
+import { runBranchReReview, runBranchReview, writeFeatureArtifact } from "./branch-review";
 import type { FeatureContext, WorkflowFeatureInput } from "./feature-context";
 import type { FeatureEnv, FeatureSink, FeatureSteps } from "./feature-machine";
 import { publish } from "./finalize";
-import { readHead } from "./git";
+import { changedFilesSince, readHead } from "./git";
 import { appendLedger, type LedgerWriteOptions } from "./ledger";
 import type { LedgerItems } from "./ledger-items";
 import type { PreflightFile } from "./preflight";
@@ -76,6 +76,7 @@ export function buildFeatureEnv(fc: FeatureContext, input: WorkflowFeatureInput,
         preflight: preflightFile,
       }),
     head: () => readHead(fc.projectDir),
+    changedFiles: (base) => changedFilesSince(fc.projectDir, base),
     modelFor: featureModelFor(fc),
   };
   const header = { runId: fc.runId, feature: fc.feature };
@@ -86,6 +87,7 @@ export function buildFeatureEnv(fc: FeatureContext, input: WorkflowFeatureInput,
         tokensByRole: addRoleTokens(ctx.record.tokensByRole, ctx.meter.byRole()),
       }),
     ledger,
+    artifact: (name, value) => writeFeatureArtifact(fc, name, value),
     step: (step, record) => input.statusWriter?.setWorkflowStatus?.(workflowStatusBlock(ctx.stories, step, record)),
   };
   return {

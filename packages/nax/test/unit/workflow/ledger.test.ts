@@ -98,4 +98,17 @@ describe("workflow ledger", () => {
     expect(logs[0]?.message.endsWith("...")).toBe(true);
     expect(await Bun.file(ledgerFilePath(dir)).text()).toContain(long);
   });
+
+  test("ledgerText.ruling marks a coerced defer (#2496)", () => {
+    const text = ledgerText.ruling({
+      findingId: "B3",
+      action: "hold",
+      text: "t",
+      why: "w",
+      costIfWrong: "c",
+      source: "advisor",
+      coercedFrom: "defer",
+    });
+    expect(text).toEndWith("(coerced from defer: no later review step)");
+  });
 });

@@ -11,6 +11,7 @@ import { rename, unlink } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { AdvisorSummary } from "@/advisor/store";
 import type { McpAdoptionSummary } from "@/mcp";
+import { runStateWrite } from "@/runstate/store";
 import { NaxError } from "../errors";
 import type { FinishResult } from "../finish/types";
 import type { PRD } from "../prd";
@@ -451,6 +452,9 @@ export async function writeStatusFile(filePath: string, status: NaxStatusFile): 
     // Ignore error if file doesn't exist
   }
 
-  await Bun.write(tmpPath, JSON.stringify(status, null, 2));
-  await rename(tmpPath, resolvedPath);
+  const text = JSON.stringify(status, null, 2);
+  await runStateWrite(resolvedPath, { content: text }, async () => {
+    await Bun.write(tmpPath, text);
+    await rename(tmpPath, resolvedPath);
+  });
 }

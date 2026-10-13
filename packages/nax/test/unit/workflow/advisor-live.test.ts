@@ -206,10 +206,27 @@ describe("helpers", () => {
     ]);
     expect(dependentsOf(prd, "US-3")).toEqual(["US-4"]);
   });
+
+  test("toWorkflowRuling coerces defer to a flagged hold at branch scope (#2496)", () => {
+    const ruling = toWorkflowRuling("B3", decision({ action: { type: "defer", reason: "later" } }), "branch");
+    expect(ruling).toMatchObject({
+      findingId: "B3",
+      action: "hold",
+      text: "later",
+      needsHumanConfirm: true,
+      coercedFrom: "defer",
+    });
+  });
+
+  test("toWorkflowRuling keeps defer at story scope", () => {
+    const ruling = toWorkflowRuling("F1", decision({ action: { type: "defer", reason: "later" } }), "story");
+    expect(ruling?.action).toBe("defer");
+    expect(ruling?.coercedFrom).toBeUndefined();
+  });
 });
 
 describe("feature-scoped residual (P4-R18)", () => {
-  test("no storyId: request storyId _run, items carry no storyId, no carry option", async () => {
+  test("no storyId: request storyId _run, items carry no storyId, no defer or carry option", async () => {
     const advisor = fakeAdvisor({});
     const live = createLiveWorkflowAdvisor({ advisor, feature: "f", dependents: [] });
     await live.ruleResidual({
@@ -223,7 +240,7 @@ describe("feature-scoped residual (P4-R18)", () => {
     expect(req.storyId).toBe("_run");
     expect(req.summary).toContain("branch review");
     expect(req.items[0]?.storyId).toBeUndefined();
-    expect(req.items[0]?.options.map((o) => o.type)).toEqual(["waive", "defer", "hold"]);
+    expect(req.items[0]?.options.map((o) => o.type)).toEqual(["waive", "hold"]);
   });
 
   test("toWorkflowRuling keeps needsHumanConfirm", () => {

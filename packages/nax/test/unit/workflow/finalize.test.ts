@@ -181,6 +181,28 @@ describe("publish (P4-R3, P4-R11)", () => {
     expect(String(calls.find((c) => c.name === "draft")?.arg)).toContain("US-001: - used the JWT tenant id");
   });
 
+  test("a held branch finding puts a Before marking ready section in the draft body (#2496)", async () => {
+    const calls = wire({ ci: "green" });
+    const record = {
+      ...greenRecord,
+      reviewOpen: [{ id: "B1", kind: "quality" as const, severity: "important" as const, issue: "needs a human" }],
+      rulings: [
+        {
+          findingId: "B1",
+          action: "hold" as const,
+          text: "t",
+          why: "risky",
+          costIfWrong: "c",
+          source: "advisor" as const,
+        },
+      ],
+    };
+    await publish(makeFeatureContext(), input({ record }));
+    const body = String(calls.find((c) => c.name === "draft")?.arg);
+    expect(body).toContain("## Before marking ready");
+    expect(body).toContain("**B1**");
+  });
+
   test("an abort during the CI wait rejects: no approval, no promotion (W-R3)", async () => {
     const ac = new AbortController();
     const calls = wire({ ci: "pending", onCi: () => ac.abort() });

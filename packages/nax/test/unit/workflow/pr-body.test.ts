@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { makeAdviceDecision } from "@test/helpers";
-import { buildWorkflowPrBody, extractAssumptions, type WorkflowPrBodyInput } from "@/workflow/pr-body";
+import {
+  buildWorkflowPrBody,
+  extractAssumptions,
+  PR_BODY_MAX_CHARS,
+  type WorkflowPrBodyInput,
+} from "@/workflow/pr-body";
+import type { OpenItem } from "@/workflow/types";
 
 const input: WorkflowPrBodyInput = {
   feature: "refunds",
@@ -35,6 +41,7 @@ const input: WorkflowPrBodyInput = {
   minorsLeft: ["US-001: rename tmp"],
   finalGates: { ran: ["build", "lint"], failing: ["lint"] },
   assumptions: [{ storyId: "US-001", text: "used the JWT tenant id" }],
+  openItems: [],
 };
 
 describe("buildWorkflowPrBody", () => {
@@ -112,6 +119,85 @@ describe("buildWorkflowPrBody", () => {
     expect(empty).not.toContain("Not ready because");
     expect(empty.match(/None\./g)?.length).toBe(5);
     expect(empty).toContain("- Gates: nothing configured (nothing was verified)");
+  });
+
+  const held: OpenItem = {
+    id: "B3",
+    kind: "ruling",
+    severity: "important",
+    file: "src/p.ts",
+    line: 9,
+    issue: `published() returns void ${"y".repeat(400)} <script>`,
+    suggestion: "return the `id`",
+    ruling: { action: "hold", why: "needs a human" },
+  };
+
+  test("draft: Before marking ready lists each open item in full with a checklist (#2496)", () => {
+    const withItem = buildWorkflowPrBody({ ...input, openItems: [held] });
+    const section = withItem.slice(
+      withItem.indexOf("## Before marking ready"),
+      withItem.indexOf("## Pre-flight rulings"),
+    );
+    expect(section).toContain("- [ ] **B3** (important, ruling) `src/p.ts:9`");
+    expect(section).toContain("y".repeat(400));
+    expect(section).toContain("&lt;script&gt;");
+    expect(section).toContain("Suggestion: return the 'id'");
+    expect(section).toContain("Advisor: hold — needs a human");
+    expect(section).toContain("Then: rerun the repo gates, push, and run `gh pr ready`.");
+    expect(withItem.indexOf("## Before marking ready")).toBeGreaterThan(withItem.indexOf("## Stories"));
+  });
+
+  test("no section when nothing is open or the PR is ready", () => {
+    expect(buildWorkflowPrBody(input)).not.toContain("## Before marking ready");
+    expect(buildWorkflowPrBody({ ...input, outcome: "ready", openItems: [held] })).not.toContain(
+      "## Before marking ready",
+    );
+  });
+
+  test("more than 50 open items: cap with a pointer to result.json", () => {
+    const many = Array.from({ length: 52 }, (_, i) => ({ ...held, id: `B${i}` }));
+    expect(buildWorkflowPrBody({ ...input, openItems: many })).toContain(
+      "…and 2 more, see result.json verdict.openItems",
+    );
+  });
+
+  test("a gate open item is one line; the excerpt stays under Gates and CI", () => {
+    const gate: OpenItem = { id: "lint", kind: "gate", issue: `lint output ${"z".repeat(3000)}` };
+    const body = buildWorkflowPrBody({ ...input, openItems: [gate] });
+    expect(body).toContain("- [ ] **lint** (gate) — final gate lint is red; see the excerpt under Gates and CI");
+    expect(body).not.toContain("z".repeat(100));
+  });
+
+  test("a body over the limit is bounded and points at result.json", () => {
+    const many = Array.from({ length: 50 }, (_, i) => ({ ...held, id: `B${i}`, issue: "q".repeat(3000) }));
+    const body = buildWorkflowPrBody({ ...input, openItems: many });
+    expect(body.length).toBeLessThanOrEqual(PR_BODY_MAX_CHARS);
+    expect(body).toContain("Open items truncated to fit the PR body; full text in result.json verdict.openItems");
+  });
+
+  test("a body that is still over the limit after capping is truncated whole", () => {
+    const body = buildWorkflowPrBody({
+      ...input,
+      minorsLeft: Array.from({ length: 50 }, () => "m".repeat(299)),
+      rulings: Array.from({ length: 50 }, () => ({
+        findingId: "B",
+        action: "defer" as const,
+        text: "t".repeat(299),
+        why: "w".repeat(299),
+        costIfWrong: "c",
+        source: "advisor" as const,
+      })),
+      assumptions: Array.from({ length: 50 }, () => ({ storyId: "S", text: "a".repeat(699) })),
+      openItems: [held],
+    });
+    expect(body.length).toBeLessThanOrEqual(PR_BODY_MAX_CHARS);
+    expect(body).toContain("Open items truncated to fit the PR body");
+  });
+
+  test("a small body keeps open item text in full", () => {
+    const body = buildWorkflowPrBody({ ...input, openItems: [held] });
+    expect(body).toContain("y".repeat(400));
+    expect(body).not.toContain("Open items truncated");
   });
 
   test("lists are capped at 50 rows", () => {

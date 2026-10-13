@@ -63,10 +63,11 @@ function envWith(script: {
     adjudicate: async () => [],
     publish: async () => NO_FORGE,
     head: async () => "h",
+    changedFiles: async () => [],
   };
   return {
     steps,
-    sink: { update: async () => {}, ledger: async () => {}, step: () => {} },
+    sink: { update: async () => {}, ledger: async () => {}, artifact: async () => {}, step: () => {} },
     facts: { stories: [story], parked: [], cannotVerify: [] },
     record: newFeatureRecord({ now: "t", seed: "seed0", minors: [] }),
     aborted: () => false,

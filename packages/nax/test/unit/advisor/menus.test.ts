@@ -109,6 +109,16 @@ describe("buildMenu", () => {
       ["A", "B"],
     );
   });
+
+  test("residual at branch scope offers only waive and hold (#2496)", () => {
+    const menu = buildMenu({ kind: "residual", dependents: [], scope: "branch" });
+    expect(menu.map((o) => o.type)).toEqual(["waive", "hold"]);
+  });
+
+  test("residual at story scope keeps defer and carry", () => {
+    const menu = buildMenu({ kind: "residual", dependents: ["US-2"] });
+    expect(menu.map((o) => o.type)).toEqual(["waive", "defer", "carry", "hold"]);
+  });
 });
 
 describe("toAction", () => {

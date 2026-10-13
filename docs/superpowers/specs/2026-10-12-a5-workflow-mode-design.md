@@ -376,7 +376,7 @@ only means "don't re-run".
   |---|---|---|---|
   | `preflight` (batch) | Once before the first story (if `workflow.preflight`) | `follow-ac` → `supersede {target: spec}` / `follow-spec` → `supersede {target: ac}` / `reconcile` → `supersede` with `newText` / `flag-human` → `hold` (the story runs under the stated default) | `hold` for each conflict |
   | `implementer-question` | `NEEDS_CONTEXT` / `BLOCKED` (≤ 2 per story) | **new** `answer {text}` | No answer. Proceed to review with the concern |
-  | `residual` (batch) | Story cap, branch adjudication | `park-reviewer-wrong` → `waive` / `park-real-deferred` → `defer` / `load-bearing` → **new** `carry {instruction, toStories}` (story scope only) (`toStories` is fixed by the menu: the story's not-yet-passed dependents, P3-R1) / `flag-human` → `hold`. Plus a free-text diagnosis for each red gate | `hold` for each item |
+  | `residual` (batch) | Story cap, branch adjudication | `park-reviewer-wrong` → `waive` / `park-real-deferred` → `defer` (story scope only; at branch scope the menu is `waive` / `hold` and a returned `defer` is coerced to a flagged `hold`, #2496) / `load-bearing` → **new** `carry {instruction, toStories}` (story scope only) (`toStories` is fixed by the menu: the story's not-yet-passed dependents, P3-R1) / `flag-human` → `hold`. Plus a free-text diagnosis for each red gate | `hold` for each item |
   | `finish-approval` | §7.8 | existing | draft |
 
   Pre-flight's output (overlap table + conflicts) is written to `preflight.json`. Rulings go to the ledger,
@@ -579,3 +579,15 @@ Four stacked PRs, each code-reviewed before push:
 | P4-R19 | PR3 carry-overs M2, M5, M6 | Deferred by the PR3 final review |
 | P4-R20 | The branch fix reuses the implementer reply contract and parser; one shared `softInterruptTurn` | One write-turn contract |
 | P4-R21 | `workflowConfigSelector` gains `finish` for the branch model fallbacks | §4 fallbacks |
+
+## Appendix: finishing contract (#2496)
+
+A tool that takes a workflow draft to ready (the toolkit finish skill) reads one file:
+`.nax/features/<feature>/workflow/<runId>/result.json`. Stable within `schemaVersion` 1:
+
+- `verdict.workflowPassed`: stories and final gates pass and no finding, ruling or gate item is open.
+- `verdict.outcome`: `ready` | `draft` | `local-only`. `verdict.reasons`: why it is not ready.
+- `verdict.openItems[]`: `{ id, kind: finding | ruling | cannot-verify | gate, severity?, file?, line?, issue, suggestion?, ruling? }`, full text.
+- `featureWorkflow.{outcome, reasons, reviewOpen, rulings, finalGates, finalGateFindings}`.
+- `branch-review.json` / `branch-rereview.json` findings carry the same `B<n>` ids.
+- `ledger.md` lines `_run: cannot-verify: <item>` and `Ruling: ...`.

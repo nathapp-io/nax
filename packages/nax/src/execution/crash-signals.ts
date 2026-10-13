@@ -17,7 +17,7 @@
  */
 
 import { getSafeLogger } from "../logger";
-import { clearNaxIndexFlags } from "../utils/nax-index-flags";
+import { repairRunState } from "../runstate";
 import { type RunCompleteContext, updateStatusToCrashed, writeFatalLog, writeRunComplete } from "./crash-writer";
 import type { PidRegistry } from "./pid-registry";
 import type { StatusWriter } from "./status-writer";
@@ -164,7 +164,7 @@ export async function clearHiddenNaxIndexFlags(ctx: SignalHandlerContext): Promi
     timer = setTimeout(resolve, INDEX_SWEEP_BUDGET_MS);
   });
   try {
-    await Promise.race([clearNaxIndexFlags(ctx.workdir, getSafeLogger()).then(() => undefined), budget]);
+    await Promise.race([repairRunState({ trigger: "crash", workdir: ctx.workdir }).then(() => undefined), budget]);
   } finally {
     clearTimeout(timer);
   }

@@ -133,11 +133,12 @@ describe("feature machine step models", () => {
       adjudicate: async () => [],
       publish: async () => ({ outcome: "local-only", ci: "skipped", reasons: [] }),
       head: async () => "h",
+      changedFiles: async () => [],
       modelFor: (step) => ({ agentName: "native", model: `${step}-model` }),
     };
     const env: FeatureEnv = {
       steps,
-      sink: { update: async () => {}, ledger: async () => {}, step: () => {} },
+      sink: { update: async () => {}, ledger: async () => {}, artifact: async () => {}, step: () => {} },
       facts: { stories: [story], parked: [], cannotVerify: [] },
       record: newFeatureRecord({ now: "t", seed: "seed0", minors: [] }),
       aborted: () => false,

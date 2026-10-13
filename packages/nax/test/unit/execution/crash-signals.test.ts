@@ -469,7 +469,25 @@ describe("performTeardown — US-002 approvals seal", () => {
   });
 });
 
-describe("performTeardown — hidden .nax index flags (#2490)", () => {
+describe("performTeardown — run-state repair (#2490/#2497)", () => {
+  test("runs repairRunState for the context workdir when no keeper is active", async () => {
+    const { _repairDeps } = await import("@/runstate");
+    const origClear = _repairDeps.clearNaxIndexFlags;
+    const workdirs: string[] = [];
+    _repairDeps.clearNaxIndexFlags = async (workdir) => {
+      workdirs.push(workdir);
+      return [];
+    };
+    try {
+      const started = Date.now();
+      await clearHiddenNaxIndexFlags({ ...minimalCtx, workdir: "/tmp/nax-crash-repair" });
+      expect(Date.now() - started).toBeLessThan(2500);
+      expect(workdirs).toEqual(["/tmp/nax-crash-repair"]);
+    } finally {
+      _repairDeps.clearNaxIndexFlags = origClear;
+    }
+  });
+
   test("clears a skip-worktree flag on a .nax path when the context names a workdir", async () => {
     const { mkdirSync, mkdtempSync, rmSync, writeFileSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");

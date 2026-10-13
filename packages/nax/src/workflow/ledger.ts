@@ -4,6 +4,7 @@
  */
 import { appendFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { runStateWrite } from "@/runstate/store";
 import { mirrorLedger } from "./run-log";
 import type { WorkflowEndState, WorkflowRuling } from "./types";
 
@@ -21,7 +22,8 @@ function oneLine(text: string): string {
 export const ledgerText = {
   fixRound: (round: number, max: number, summary: string): string => `fix round ${round}/${max} (${oneLine(summary)})`,
   deferredMinor: (issue: string): string => `deferred-minor: ${oneLine(issue)}`,
-  ruling: (r: WorkflowRuling): string => `Ruling: ${oneLine(r.text)} — ${oneLine(r.why)} — ${oneLine(r.costIfWrong)}`,
+  ruling: (r: WorkflowRuling): string =>
+    `Ruling: ${oneLine(r.text)} — ${oneLine(r.why)} — ${oneLine(r.costIfWrong)}${r.coercedFrom ? " (coerced from defer: no later review step)" : ""}`,
   end: (state: WorkflowEndState, summary: string): string => `${state} (${oneLine(summary)})`,
   reviewSkipped: (what: string): string => `review-skipped (${oneLine(what)})`,
   note: (text: string): string => oneLine(text),
@@ -31,7 +33,10 @@ export async function ensureLedger(runDir: string, runId: string, feature: strin
   const path = ledgerFilePath(runDir);
   if (await Bun.file(path).exists()) return;
   await _ledgerDeps.mkdir(runDir, { recursive: true });
-  await Bun.write(path, `# Workflow ledger — run: ${runId} — feature: ${feature}\n`);
+  const header = `# Workflow ledger — run: ${runId} — feature: ${feature}\n`;
+  await runStateWrite(path, { content: header }, async () => {
+    await Bun.write(path, header);
+  });
 }
 
 export interface LedgerWriteOptions {
@@ -45,7 +50,9 @@ export async function appendLedger(
   text: string,
   options: LedgerWriteOptions = {},
 ): Promise<void> {
-  await _ledgerDeps.appendFile(ledgerFilePath(runDir), `${storyId}: ${text}\n`);
+  const path = ledgerFilePath(runDir);
+  const line = `${storyId}: ${text}\n`;
+  await runStateWrite(path, { append: line }, () => _ledgerDeps.appendFile(path, line));
   // The one mirror point: every workflow ledger write (story, feature, preflight, error path) lands here.
   if (options.mirror !== false) mirrorLedger(storyId, text);
 }

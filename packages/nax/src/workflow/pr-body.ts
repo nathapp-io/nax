@@ -5,6 +5,7 @@ import type { PreflightFile } from "./preflight";
 import type {
   FeatureCiState,
   FeatureOutcome,
+  OpenItem,
   RepoGateSummary,
   StorySummary,
   WorkflowFindingDraft,
@@ -24,6 +25,8 @@ export interface WorkflowPrBodyFacts {
   /** Excerpts of the failing final gates (nax#2484), shown under the gates line when they are red. */
   readonly finalGateFindings?: readonly WorkflowFindingDraft[];
   readonly assumptions: readonly { readonly storyId: string; readonly text: string }[];
+  /** What is still open on the feature (#2496); drives the "Before marking ready" section. */
+  readonly openItems: readonly OpenItem[];
 }
 
 export interface WorkflowPrBodyInput extends WorkflowPrBodyFacts {
@@ -92,10 +95,42 @@ function gateExcerpts(input: WorkflowPrBodyInput): string {
   return (input.finalGateFindings ?? []).map((f) => `\n\n${fenced(f.issue)}`).join("");
 }
 
-export function buildWorkflowPrBody(input: WorkflowPrBodyInput): string {
+/** Open items are shown in full unless the whole body would exceed PR_BODY_MAX_CHARS (#2496). */
+const FULL_TEXT = Number.MAX_SAFE_INTEGER;
+
+function openItemLine(item: OpenItem, chars = FULL_TEXT): string {
+  if (item.kind === "gate")
+    return `- [ ] **${escapeInline(item.id, chars)}** (gate) — final gate ${escapeInline(item.id, chars)} is red; see the excerpt under Gates and CI`;
+  const where = item.file
+    ? ` \`${escapeInline(item.file, chars)}${item.line !== undefined ? `:${item.line}` : ""}\``
+    : "";
+  const tags = (item.severity ? [item.severity, item.kind] : [item.kind]).join(", ");
+  return [
+    `- [ ] **${escapeInline(item.id, chars)}** (${tags})${where} — ${escapeInline(item.issue, chars)}`,
+    ...(item.suggestion ? [`  Suggestion: ${escapeInline(item.suggestion, chars)}`] : []),
+    ...(item.ruling ? [`  Advisor: ${item.ruling.action} — ${escapeInline(item.ruling.why, chars)}`] : []),
+  ].join("\n");
+}
+
+function beforeReady(input: WorkflowPrBodyInput, chars = FULL_TEXT): string | null {
+  if (input.outcome === "ready" || input.openItems.length === 0) return null;
+  const shown = input.openItems.slice(0, ROW_CAP).map((i) => openItemLine(i, chars));
+  const hidden = input.openItems.length - shown.length;
+  return [
+    "## Before marking ready",
+    "",
+    ...shown,
+    ...(hidden > 0 ? [`- …and ${hidden} more, see result.json verdict.openItems`] : []),
+    "",
+    "Then: rerun the repo gates, push, and run `gh pr ready`.",
+  ].join("\n");
+}
+
+function assemble(input: WorkflowPrBodyInput, ready: string | null): string {
   return [
     `## Summary\n\n${summary(input)}`,
     `## Stories\n\n${storiesTable(input.stories)}`,
+    ...(ready ? [ready] : []),
     `## Pre-flight rulings\n\n${list(preflightLines(input.preflight))}`,
     `## Advisor decisions\n\n${buildAdvisorSection([...input.decisions]) ?? NONE}`,
     `## Parked findings\n\n${list(input.rulings.map((r) => `${r.findingId ?? "?"} ${r.action}: ${r.text} — ${r.why}`))}`,
@@ -107,6 +142,20 @@ export function buildWorkflowPrBody(input: WorkflowPrBodyInput): string {
     )}`,
     "_Opened by nax workflow mode. nax never merges._",
   ].join("\n\n");
+}
+
+/** GitHub rejects a PR body over ~65,536 chars; stay well under it. */
+export const PR_BODY_MAX_CHARS = 60_000;
+const TRUNCATED_POINTER = "Open items truncated to fit the PR body; full text in result.json verdict.openItems";
+
+export function buildWorkflowPrBody(input: WorkflowPrBodyInput): string {
+  const full = assemble(input, beforeReady(input));
+  if (full.length <= PR_BODY_MAX_CHARS) return full;
+  const ready = beforeReady(input, ITEM_CHARS);
+  const capped = assemble(input, ready ? `${ready}\n\n${TRUNCATED_POINTER}` : null);
+  if (capped.length <= PR_BODY_MAX_CHARS) return capped;
+  const tail = `\n\n${TRUNCATED_POINTER}`;
+  return `${capped.slice(0, PR_BODY_MAX_CHARS - tail.length)}${tail}`;
 }
 
 /** The first "Decisions & assumptions" section of a story report, flattened and capped (spec §7.9). */

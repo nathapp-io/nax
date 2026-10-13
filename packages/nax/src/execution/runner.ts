@@ -14,7 +14,6 @@
  */
 
 import { totalSpendUsd } from "@/runtime";
-import { clearNaxIndexFlags } from "@/utils/nax-index-flags";
 import type { NaxConfig } from "../config";
 import { PluginProviderCache, ProviderWeightsCache } from "../context/engine";
 import { NaxError } from "../errors";
@@ -25,6 +24,7 @@ import type { StoryMetrics } from "../metrics";
 import type { PipelineEventEmitter } from "../pipeline/events";
 import { countStories, isComplete } from "../prd";
 import type { PRD } from "../prd/types";
+import { activateRunState, type RunStateHandle, repairRunState } from "../runstate";
 import { gitWithTimeout } from "../utils/git";
 import { NAX_VERSION } from "../version";
 import { applyRecordGreenDeps, applyResumeModeDeps } from "./checkpoint";
@@ -46,6 +46,7 @@ import { effectiveUseBatch } from "./workflow-parallel";
 export const _runnerDeps = {
   fireHook,
   runSetupPhase,
+  activateRunState,
   runExecutionPhase,
   runCompletionPhase,
   // Dynamic import (matching _runnerCompletionDeps' pattern) rather than a static
@@ -297,7 +298,10 @@ export async function run(options: RunOptions): Promise<RunResult> {
   const agentManager = runtime.agentManager;
   const agentGetFn = agentManager.getAgent.bind(agentManager);
 
+  let runState: RunStateHandle | null = null;
   try {
+    // #2497: track nax run state for this run's feature so agent damage is repaired.
+    runState = feature ? await _runnerDeps.activateRunState({ runId, feature, root: workdir }) : null;
     // ── Phase 2: Execution ──────────────────────────────────────────────────────
     const executionResult = await _runnerDeps.runExecutionPhase(
       {
@@ -421,9 +425,10 @@ export async function run(options: RunOptions): Promise<RunResult> {
         // Branch resolution is non-critical
       }
 
-      // #2490: idempotent; covers an execution-phase throw that skipped the
-      // completion-phase sweep. Never throws.
-      await clearNaxIndexFlags(workdir, logger);
+      // #2490/#2497: idempotent repair; covers an execution-phase throw that
+      // skipped the completion-phase repair. Never throws.
+      await repairRunState({ trigger: "run-end", workdir });
+      runState?.deactivate();
 
       // Execute cleanup operations
       logger?.debug("execution", "Runner finally — running cleanupRun");

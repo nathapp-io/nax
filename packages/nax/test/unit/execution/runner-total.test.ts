@@ -40,6 +40,7 @@ import {
 import type { RunnerSetupResult } from "@/execution/runner-setup";
 import { InteractionChain } from "@/interaction";
 import type { PRD } from "@/prd";
+import { RunStateKeeper } from "@/runstate";
 import { SessionManager } from "@/session";
 import { _gitDeps } from "@/utils/git";
 
@@ -122,6 +123,8 @@ beforeEach(() => {
   origRecordGreen = _storyOrchestratorDeps.recordGreen;
   origGitSpawn = _gitDeps.spawn;
   origRunnerDeps = { ..._runnerDeps };
+  // #2497: keep the run-state keeper off the real filesystem.
+  _runnerDeps.activateRunState = async () => ({ keeper: new RunStateKeeper("r", "f"), deactivate: () => {} });
   _runnerReentrancyGuard.inFlight = false;
   // Hermetic: the finally block resolves the current branch via
   // gitWithTimeout — stub the git process it would spawn.

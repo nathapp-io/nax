@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, utimes } from "node:fs/promises";
 import { join } from "node:path";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeTempDir, withTempDir } from "@test/helpers";
 import { newFeatureRecord } from "@/workflow/feature-record";
 import {
   loadPriorStoryRecord,
@@ -92,5 +92,22 @@ describe("feature record in result.json (P4-R1)", () => {
     }
     await mkdir(join(feature, "not-a-run"), { recursive: true });
     expect(await runDirsNewestFirst(feature)).toEqual(["run-b", "run-c", "run-a"].map((n) => join(feature, n)));
+  });
+});
+
+describe("verdict in result.json (#2496)", () => {
+  test("upsertFeatureRecord writes a top-level verdict once the outcome is set; story upserts keep it (#2496)", async () => {
+    await withTempDir(async (runDir) => {
+      const record = {
+        ...newFeatureRecord({ now: "t", seed: "s", minors: [] }),
+        outcome: "draft" as const,
+        passed: true,
+        reasons: ["r"],
+      };
+      await upsertFeatureRecord(runDir, { runId: "r1", feature: "f" }, record);
+      await upsertStoryRecord(runDir, { runId: "r1", feature: "f" }, newStoryRecord("US-001", 3, "t"));
+      const file = await readResult(runDir);
+      expect(file?.verdict).toEqual({ workflowPassed: true, outcome: "draft", reasons: ["r"], openItems: [] });
+    });
   });
 });

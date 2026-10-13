@@ -1,10 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { assertNaxError, cleanupTempDir, makeTempDir } from "@test/helpers";
-import { listUncommitted, readHead, writeReviewPackage } from "@/workflow/git";
+import { changedFilesSince, listUncommitted, readHead, writeReviewPackage } from "@/workflow/git";
+import { _workflowDeps } from "@/workflow/step-context";
 
 const dirs: string[] = [];
+const origGit = _workflowDeps.git;
 afterEach(async () => {
+  _workflowDeps.git = origGit;
   await Promise.all(dirs.map(cleanupTempDir));
   dirs.length = 0;
 });
@@ -29,6 +32,13 @@ async function repo(): Promise<string> {
 }
 
 describe("workflow git helpers", () => {
+  test("changedFilesSince lists names from base..HEAD and throws on a git failure", async () => {
+    _workflowDeps.git = async () => ({ stdout: "src/a.ts\nsrc/b.ts\n", exitCode: 0 });
+    expect(await changedFilesSince("/repo", "abc")).toEqual(["src/a.ts", "src/b.ts"]);
+    _workflowDeps.git = async () => ({ stdout: "", stderr: "bad revision", exitCode: 128 });
+    await expect(changedFilesSince("/repo", "abc")).rejects.toThrow("bad revision");
+  });
+
   test("package: commit list, stat and a -U10 diff; .nax excluded", async () => {
     const dir = await repo();
     const base = await readHead(dir);

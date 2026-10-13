@@ -56,7 +56,6 @@ export async function runBranchReview(
         minorIds: input.facts.minors.map((m) => m.id),
       }),
   );
-  if (outcome.ran) await writeFeatureArtifact(fc, "branch-review.json", outcome.verdict);
   return outcome;
 }
 
@@ -83,6 +82,5 @@ export async function runBranchReReview(
         ...(model !== undefined ? { model } : {}),
       }),
   );
-  if (outcome.ran) await writeFeatureArtifact(fc, "branch-rereview.json", outcome.verdict);
   return outcome;
 }

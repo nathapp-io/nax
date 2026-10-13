@@ -116,6 +116,7 @@ import { buildMcpRollup, createMcpPool, createMcpProviders, writeMcpRollup } fro
 import type { IReviewAuditor } from "../review/review-audit";
 import { createNoOpReviewAuditor, ReviewAuditor } from "../review/review-audit";
 import type { RoutingDecision } from "../routing/decision";
+import { repairRunState } from "../runstate";
 import type { ISessionManager } from "../session";
 import { SessionManager } from "../session";
 import { createQuarantineMemo, type QuarantineMemo } from "../verification/flake-triage";
@@ -318,6 +319,9 @@ export interface CreateRuntimeOptions {
   commandInterceptor?: import("@nathapp/nax-agent/internal").CommandInterceptor;
 }
 
+/** Injectable for tests: the afterTurn run-state repair (#2497). */
+export const _runtimeRunStateDeps = { repairRunState };
+
 export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateRuntimeOptions): NaxRuntime {
   const runId = crypto.randomUUID();
 
@@ -410,6 +414,16 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
       // (a sibling of `runs/`), never the project tree — see
       // deriveNativeTranscriptDir in session/manager-deps.ts.
       transcriptRoot: outputDir,
+      // #2497: repair nax run state after every agent turn (native and ACP).
+      afterTurn: async (desc, turn) => {
+        await _runtimeRunStateDeps.repairRunState({
+          trigger: "turn",
+          storyId: desc.storyId,
+          sessionName: desc.handle ?? desc.id,
+          stage: desc.role,
+          turn,
+        });
+      },
     });
   }
   const agentManagerOpts: CreateAgentManagerOpts = {

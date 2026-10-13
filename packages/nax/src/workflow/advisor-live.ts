@@ -36,7 +36,11 @@ export function costIfWrongOf(d: AdviceDecision): string {
   ].join("; ");
 }
 
-export function toWorkflowRuling(findingId: string, d: AdviceDecision): WorkflowRuling | null {
+export function toWorkflowRuling(
+  findingId: string,
+  d: AdviceDecision,
+  scope: "story" | "branch" = "story",
+): WorkflowRuling | null {
   const base = {
     findingId,
     why: d.rationale,
@@ -47,8 +51,13 @@ export function toWorkflowRuling(findingId: string, d: AdviceDecision): Workflow
   };
   const a = d.action;
   switch (a.type) {
-    case "waive":
     case "defer":
+      // #2496: nothing reviews again after branch adjudication, so a defer can only mean "a human decides".
+      if (scope === "branch") {
+        return { ...base, action: "hold", text: a.reason, needsHumanConfirm: true, coercedFrom: "defer" };
+      }
+      return { ...base, action: "defer", text: a.reason };
+    case "waive":
     case "hold":
       return { ...base, action: a.type, text: a.reason };
     case "carry":
@@ -89,13 +98,14 @@ export function createLiveWorkflowAdvisor(input: LiveAdvisorInput): WorkflowAdvi
       }
     },
     async ruleResidual(req: ResidualRequest): Promise<ResidualAnswer> {
+      const scope = storyId ? "story" : "branch";
       const items: QuestionDraft[] = req.items.map((f) => ({
         kind: "residual",
         feature,
         ...(storyId ? { storyId } : {}),
         summary: f.issue,
         evidence: [{ source: f.kind === "gate" ? "gate" : "finding", ref: f.id, text: findingEvidence(f) }],
-        options: buildMenu({ kind: "residual", dependents: [...dependents] }),
+        options: buildMenu({ kind: "residual", dependents: [...dependents], scope }),
         findingSeverity: f.severity,
         ...(f.file ? { anchorFile: f.file } : {}),
         rulingTitle: f.issue,
@@ -112,9 +122,17 @@ export function createLiveWorkflowAdvisor(input: LiveAdvisorInput): WorkflowAdvi
       if (result.kind !== "residual") return { rulings: [], diagnoses: {} };
       const rulings = result.items.flatMap((item, i) => {
         const finding = req.items[i];
-        const ruling = finding && item.decision ? toWorkflowRuling(finding.id, item.decision) : null;
+        const ruling = finding && item.decision ? toWorkflowRuling(finding.id, item.decision, scope) : null;
         return ruling ? [ruling] : [];
       });
+      for (const r of rulings.filter((x) => x.coercedFrom)) {
+        getSafeLogger()?.warn("workflow", "Advisor deferred at branch scope; coerced to hold (no later review step)", {
+          storyId: FEATURE_SCOPE,
+          findingId: r.findingId,
+          from: "defer",
+          to: "hold",
+        });
+      }
       return { rulings, diagnoses: result.diagnoses as Partial<Record<GateName, string>> };
     },
   };

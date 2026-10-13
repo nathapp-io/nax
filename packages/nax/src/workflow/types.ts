@@ -13,7 +13,13 @@ export type {
   WorkflowSeverity,
 } from "@/operations";
 
-import type { GateName, MinorTriageDecision, WorkflowFinding, WorkflowFindingDraft } from "@/operations";
+import type {
+  GateName,
+  MinorTriageDecision,
+  WorkflowFinding,
+  WorkflowFindingDraft,
+  WorkflowSeverity,
+} from "@/operations";
 
 export type GateState = "green" | "red" | "skipped";
 
@@ -40,6 +46,8 @@ export interface WorkflowRuling {
   readonly toStories?: readonly string[];
   /** The advisor asked for a human to confirm this ruling (keeps the PR a draft). */
   readonly needsHumanConfirm?: boolean;
+  /** Set when the advisor answered an action the scope does not allow and nax substituted this one (#2496). */
+  readonly coercedFrom?: "defer";
 }
 
 export interface WorkflowStoryRecord {
@@ -70,6 +78,28 @@ export interface WorkflowResultFile {
   readonly feature: string;
   readonly stories: Readonly<Record<string, WorkflowStoryRecord>>;
   readonly featureWorkflow?: WorkflowFeatureRecord;
+  /** #2496: the one place a finishing tool reads. Absent until the feature workflow publishes. */
+  readonly verdict?: WorkflowVerdict;
+}
+
+/** #2496: one thing still open on a workflow feature, with its evidence in full. */
+export interface OpenItem {
+  readonly id: string;
+  readonly kind: "finding" | "ruling" | "cannot-verify" | "gate";
+  readonly severity?: WorkflowSeverity;
+  readonly file?: string;
+  readonly line?: number;
+  readonly issue: string;
+  readonly suggestion?: string;
+  readonly ruling?: { readonly action: WorkflowRuling["action"]; readonly why: string; readonly decisionId?: string };
+}
+
+/** #2496: the feature's top-level verdict in result.json (see the A5 spec appendix). */
+export interface WorkflowVerdict {
+  readonly workflowPassed: boolean;
+  readonly outcome: FeatureOutcome;
+  readonly reasons: readonly string[];
+  readonly openItems: readonly OpenItem[];
 }
 
 export interface RoleTokens {
@@ -132,6 +162,8 @@ export interface WorkflowFeatureRecord {
   /** Red repo gates and gate-open stories (step 1), handed to the branch fix. */
   readonly gateFindings: readonly WorkflowFinding[];
   readonly reviewRan: boolean;
+  /** The branch review's cannot-verify items (#2496: listed as open items, never blocking). */
+  readonly cannotVerify?: readonly string[];
   /** Blocking branch-review findings still open. */
   readonly reviewOpen: readonly WorkflowFinding[];
   readonly minors: readonly MinorItem[];
@@ -140,6 +172,10 @@ export interface WorkflowFeatureRecord {
   readonly nextFindingId: number;
   readonly fixBase?: string;
   readonly fixRan: boolean;
+  /** Branch fix sessions run so far (#2496: at most 2). Absent on records written before #2496. */
+  readonly fixRounds?: number;
+  /** Round 2 only: the ids of the new findings the second fix targets. */
+  readonly fixTargets?: readonly string[];
   readonly rulings: readonly WorkflowRuling[];
   readonly finalGates?: RepoGateSummary;
   /** The excerpts from a red final gate pass, one per failing gate (nax#2484). Absent when the pass is green. */

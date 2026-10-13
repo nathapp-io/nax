@@ -6,6 +6,7 @@
 import { appendFile, mkdir } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
 import { withPathFileLock } from "@nathapp/nax-agent/internal";
+import { runStateWrite } from "@/runstate/store";
 import { featureDir } from "../config";
 import { getSafeLogger } from "../logger";
 import type { AdviceDecision } from "./types";
@@ -82,7 +83,8 @@ export async function appendDecision(repoRoot: string, feature: string, draft: D
     const text = (await _ledgerDeps.readText(path)) ?? "";
     // A crash mid-append can leave a partial last line without "\n"; start ours on a fresh line.
     const prefix = text.length > 0 && !text.endsWith("\n") ? "\n" : "";
-    await _ledgerDeps.appendText(path, `${prefix}${JSON.stringify(decision)}\n`);
+    const chunk = `${prefix}${JSON.stringify(decision)}\n`;
+    await runStateWrite(path, { append: chunk }, () => _ledgerDeps.appendText(path, chunk));
     return decision;
   });
 }

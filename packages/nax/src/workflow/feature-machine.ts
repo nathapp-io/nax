@@ -1,8 +1,10 @@
 /**
  * The feature workflow (spec §7) as a state machine. Pure orchestration over injected
  * steps, persisted after every step (P4-R1), so a crash resumes at `record.step`.
- * One branch review, exactly one fix pass, one scoped re-review, one adjudication.
+ * One branch review, one fix pass (plus one targeted second pass for defects the fix introduced, #2496),
+ * one scoped re-review per pass, one adjudication.
  */
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import { FEATURE_SCOPE } from "./advisor-live";
 import { featurePassed } from "./approval";
@@ -34,6 +36,8 @@ export interface FeatureSteps {
   adjudicate(items: readonly WorkflowFinding[]): Promise<readonly WorkflowRuling[]>;
   publish(record: WorkflowFeatureRecord): Promise<PublishOutcome>;
   head(): Promise<string>;
+  /** Repo-rooted paths changed between `base` and HEAD. Throws on a git failure. */
+  changedFiles(base: string): Promise<readonly string[]>;
   /** The model a step will run on, for its start line (nax#2491 P6). Optional: absent names none. */
   modelFor?(step: "branch-review" | "branch-fix" | "branch-rereview"): StepModel | undefined;
 }
@@ -42,6 +46,8 @@ export interface FeatureSink {
   update(record: WorkflowFeatureRecord): Promise<void>;
   ledger(text: string, options?: LedgerWriteOptions): Promise<void>;
   step(step: FeatureStep, record: WorkflowFeatureRecord): void;
+  /** Writes a review artifact into the run dir. Best effort: never throws. */
+  artifact(name: string, value: unknown): Promise<void>;
 }
 
 export interface FeatureFacts {
@@ -83,6 +89,39 @@ function minorFinding(m: MinorItem): WorkflowFinding {
 
 function fixNowMinors(rec: WorkflowFeatureRecord): WorkflowFinding[] {
   return rec.minors.filter((m) => m.triage === "fix-now").map(minorFinding);
+}
+
+const MAX_BRANCH_FIX_ROUNDS = 2;
+const fixRoundsOf = (rec: WorkflowFeatureRecord): number => rec.fixRounds ?? (rec.fixRan ? 1 : 0);
+const isSecondRound = (rec: WorkflowFeatureRecord): boolean =>
+  fixRoundsOf(rec) >= 1 && (rec.fixTargets?.length ?? 0) > 0;
+const repoPath = (file: string): string => file.replace(/^\.\//, "");
+
+function secondRoundTargets(rec: WorkflowFeatureRecord): WorkflowFinding[] {
+  const ids = new Set(rec.fixTargets ?? []);
+  return rec.reviewOpen.filter((f) => ids.has(f.id));
+}
+
+/** #2496: one more fix only when the first fix is clean and its own diff introduced the new defects. */
+async function secondFixEligible(
+  env: FeatureEnv,
+  rec: WorkflowFeatureRecord,
+  stillOpen: ReadonlySet<string>,
+  added: readonly WorkflowFinding[],
+): Promise<boolean> {
+  if (fixRoundsOf(rec) >= MAX_BRANCH_FIX_ROUNDS || stillOpen.size > 0 || added.length === 0 || !rec.fixBase)
+    return false;
+  if (added.some((f) => !f.file)) return false;
+  try {
+    const changed = new Set((await env.steps.changedFiles(rec.fixBase)).map(repoPath));
+    return added.every((f) => f.file !== undefined && changed.has(repoPath(f.file)));
+  } catch (err) {
+    await env.sink.ledger(
+      ledgerText.note(`second branch fix skipped: could not list the fix diff (${errorMessage(err)})`),
+      NO_MIRROR,
+    );
+    return false;
+  }
 }
 
 function storyNote(s: StorySummary): string | undefined {
@@ -146,9 +185,12 @@ async function branchReviewStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Pr
   const triage = new Map(out.verdict.minorTriage.map((t) => [t.id, t.decision]));
   const { findings, nextFindingId } = assign(rec, out.verdict.findings.filter(isBlocking));
   const minors = out.verdict.findings.filter((f) => !isBlocking(f));
+  // #2496: written here, after assign(), so the file and result.json name findings the same way.
+  await env.sink.artifact("branch-review.json", { ...out.verdict, findings: [...findings, ...minors] });
   log.done(`spec ${out.verdict.spec}, quality ${out.verdict.quality} - ${describeFindings([...findings, ...minors])}`);
   return {
     reviewRan: true,
+    cannotVerify: out.verdict.cannotVerify,
     reviewOpen: findings,
     nextFindingId,
     minors: rec.minors.map((m) => ({ ...m, triage: triage.get(m.id) ?? "leave" })),
@@ -158,20 +200,30 @@ async function branchReviewStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Pr
 }
 
 async function branchFixStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Promise<Patch> {
-  const toFix = [...rec.reviewOpen, ...fixNowMinors(rec), ...rec.gateFindings];
+  const round = fixRoundsOf(rec) + 1;
+  const toFix = isSecondRound(rec)
+    ? secondRoundTargets(rec)
+    : [...rec.reviewOpen, ...fixNowMinors(rec), ...rec.gateFindings];
   if (toFix.length === 0) return { step: "branch-rereview" };
   const fixBase = await env.steps.head();
   await env.sink.ledger(
-    ledgerText.note(`branch fix: ${toFix.length} item(s): ${toFix.map((f) => f.id).join(", ")}`),
+    ledgerText.note(
+      `${round > 1 ? `branch fix r${round}` : "branch fix"}: ${toFix.length} item(s): ${toFix.map((f) => f.id).join(", ")}`,
+    ),
     NO_MIRROR,
   );
-  const log = featureStep("branch-fix", true, false, env.steps.modelFor?.("branch-fix"));
+  const log = featureStep(
+    round > 1 ? `branch-fix r${round}` : "branch-fix",
+    true,
+    false,
+    env.steps.modelFor?.("branch-fix"),
+  );
   const out = await env.steps.branchFix(toFix);
   log.done(`${toFix.map((f) => f.id).join(" ")}${out.failure ? ` (session failed: ${out.failure})` : ""}`);
   if (out.failure) await env.sink.ledger(ledgerText.note(`branch fix session failed: ${out.failure}`), NO_MIRROR);
   if (out.autoCommitted) await env.sink.ledger(ledgerText.note("auto-committed the branch fix's edits"));
   if (out.dirty) await env.sink.ledger(ledgerText.note("branch fix left uncommitted edits: the auto-commit failed"));
-  return { fixBase, fixRan: true, step: "branch-rereview" };
+  return { fixBase, fixRan: true, fixRounds: round, step: "branch-rereview" };
 }
 
 function reReviewText(
@@ -190,9 +242,15 @@ function reReviewText(
 }
 
 async function branchReReviewStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Promise<Patch> {
-  const items = [...rec.reviewOpen, ...fixNowMinors(rec)];
+  const second = isSecondRound(rec);
+  const items = second ? secondRoundTargets(rec) : [...rec.reviewOpen, ...fixNowMinors(rec)];
   if (items.length === 0 || !rec.fixBase) return { step: "adjudicate" };
-  const log = featureStep("branch-rereview", true, false, env.steps.modelFor?.("branch-rereview"));
+  const log = featureStep(
+    second ? "branch-rereview r2" : "branch-rereview",
+    true,
+    false,
+    env.steps.modelFor?.("branch-rereview"),
+  );
   const out = await env.steps.branchReReview(items, rec.fixBase);
   if (!out.ran) {
     log.done(`skipped (${out.why})`);
@@ -203,18 +261,30 @@ async function branchReReviewStep(env: FeatureEnv, rec: WorkflowFeatureRecord): 
   const addressed = new Set(out.verdict.verdicts.filter((v) => v.addressed).map((v) => v.id));
   const stillOpen = new Set(items.map((f) => f.id).filter((id) => !addressed.has(id)));
   const { findings, nextFindingId } = assign(rec, out.verdict.newFindings.filter(isBlocking));
+  await env.sink.artifact(second ? "branch-rereview-r2.json" : "branch-rereview.json", {
+    ...out.verdict,
+    newFindings: [...findings, ...out.verdict.newFindings.filter((f) => !isBlocking(f))],
+  });
   const minors = rec.minors.map((m) =>
     m.triage === "fix-now" && stillOpen.has(m.id) ? { ...m, triage: "leave" as const } : m,
   );
   const newMinors = [...rec.newMinors, ...minorIssues(out.verdict.newFindings)];
   const minorsLeft = minors.filter((m) => m.triage === "leave").length + newMinors.length;
   log.done(reReviewText(items, stillOpen, findings, minorsLeft));
+  const again = !second && (await secondFixEligible(env, rec, stillOpen, findings));
+  if (again) {
+    await env.sink.ledger(
+      ledgerText.note(`second branch fix: ${findings.map((f) => f.id).join(", ")} introduced by the fix`),
+      NO_MIRROR,
+    );
+  }
   return {
     reviewOpen: [...rec.reviewOpen.filter((f) => stillOpen.has(f.id)), ...findings],
     nextFindingId,
     minors,
     newMinors,
-    step: "adjudicate",
+    ...(again ? { fixTargets: findings.map((f) => f.id) } : {}),
+    step: again ? "branch-fix" : "adjudicate",
   };
 }
 
