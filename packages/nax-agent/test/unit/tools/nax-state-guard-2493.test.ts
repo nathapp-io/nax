@@ -68,10 +68,10 @@ describe("#2493 item 1: whole-tree reverts", () => {
   });
 
   test("the denial text names the safe forms", () => {
-    expect(text("git checkout .")).toContain("git checkout -- . ':(exclude,glob)**/.nax'");
-    expect(text("git restore .")).toContain("git restore -- . ':(exclude,glob)**/.nax'");
+    expect(text("git checkout .")).toContain("git checkout -- . ':(top,exclude,glob)**/.nax/**'");
+    expect(text("git restore .")).toContain("git restore -- . ':(top,exclude,glob)**/.nax/**'");
     const reset = text("git reset --hard") as string;
-    expect(reset).toContain("git checkout -- . ':(exclude,glob)**/.nax'");
+    expect(reset).toContain("git checkout -- . ':(top,exclude,glob)**/.nax/**'");
     expect(reset).toContain("git reset");
   });
 

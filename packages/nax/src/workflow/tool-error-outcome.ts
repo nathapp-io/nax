@@ -141,11 +141,6 @@ export async function readToolEntriesSince(scope: ToolAuditScope, sinceMs: numbe
   return entries;
 }
 
-/** Rows only: {@link readToolEntriesSince} without the claim keys. */
-export async function readToolRowsSince(scope: ToolAuditScope, sinceMs: number): Promise<ToolRow[]> {
-  return (await readToolEntriesSince(scope, sinceMs)).map((entry) => entry.row);
-}
-
 export interface ToolErrorStep extends ToolAuditScope {
   /** The log scope (`US-004`, or `_run` for feature steps). */
   readonly storyId: string;
@@ -155,7 +150,17 @@ export interface ToolErrorStep extends ToolAuditScope {
 /** Row keys already reported, per run: a row is blamed on one step only. */
 const claimed = new Map<string, Set<string>>();
 
-/** Forget what was reported (a test seam; a process normally serves one run). */
+/** Drop a run's claimed rows: the feature workflow is the last step that reads them. */
+export function clearToolErrorClaims(runId: string): void {
+  claimed.delete(runId);
+}
+
+/** True while the run still holds claimed rows. */
+export function toolErrorClaimsHeld(runId: string): boolean {
+  return claimed.has(runId);
+}
+
+/** Test seam: forget every run's claims. */
 export function resetToolErrorClaims(): void {
   claimed.clear();
 }

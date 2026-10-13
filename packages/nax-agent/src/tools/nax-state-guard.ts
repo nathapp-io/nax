@@ -12,8 +12,13 @@
  *    exclusion follows `--`; `git reset --hard|--keep|--merge`; forced
  *    `checkout -f` / `switch -f`; `git clean`; `checkout-index -a -f`;
  *    `read-tree -u --reset` (see nax-revert.ts). A "covering" exclusion is
- *    `':(exclude,glob)**' + '/.nax'` (any depth); the literal `:!.nax` covers
- *    only the root one, so it counts only while that is the sole `.nax`.
+ *    the top-anchored glob ending in `/.nax/` plus two stars, quoted as in
+ *    COVERING_EXCLUSION (any depth, and the files inside: a glob without the
+ *    trailing stars matches only the directory entry); the literal `:!.nax`
+ *    covers only the root one, so it counts only while that is the sole
+ *    `.nax`. A `:(...)` spec with an `attr:` element is never an exclusion.
+ *    Long options are matched by prefix, as git accepts (`--k`, `--f`, `--a`).
+ *    `git clean -n` / `--dry-run` is allowed.
  * 2. `git update-index` with `--skip-worktree`, `--assume-unchanged` or their
  *    `--no-` forms (git accepts any unambiguous abbreviation, so the whole
  *    `--skip*` / `--assume*` / `--no-skip*` / `--no-assume*` families are
@@ -34,8 +39,10 @@
  *    verb; a command head or git subcommand built by expansion
  *    (`git $X reset`) next to such a verb and a `git` token; interpreter code
  *    (`python|node|bun|deno|php|lua|perl|ruby|osascript|pwsh -c|-e|-r|eval`)
- *    and ANY quoted string with whitespace in a segment that is not a
- *    readable git call and mentions such a verb; git config keys git EXECUTES
+ *    and a quoted string with whitespace in a segment whose head is a shell,
+ *    an interpreter or an exec-style wrapper (`ssh`, `env`, `xargs`, `sudo`,
+ *    `nohup`, `time`, `watch`, ...) that mentions such a verb (data commands
+ *    such as `grep`, `gh`, `sed`, `printf`, `echo` are not scanned); git config keys git EXECUTES
  *    (`core.fsmonitor`, `core.hooksPath`, `core.pager`, `diff.external`,
  *    `include.path`, `*.textconv`, `filter.*.clean`, ...) set with `-c`,
  *    `--config-env` or `git config`. Aliases are never expanded over a git
@@ -72,6 +79,15 @@
  *   stash")'`, `echo "git stash"`) is refused when a `.nax/` exists: the guard
  *   works on words. A scratch fixture `.nax/` within three levels also makes
  *   stash refused.
+ * - Git subcommands that execute a string (`rebase -x`, `submodule foreach`,
+ *   `bisect run`, `difftool -x`, `fetch --upload-pack=`), executing
+ *   environment variables (`GIT_EXTERNAL_DIFF`, `GIT_PAGER`, `GIT_EDITOR`,
+ *   `GIT_SSH_COMMAND`) and executing config keys not in the list above
+ *   (`remote.*.uploadpack`, `uploadpack.packObjectsHook`,
+ *   `core.alternateRefsCommand`, `merge.*.driver`, `core.gitProxy`,
+ *   `protocol.ext.allow` with `ext::` URLs) are not read.
+ * - `deno eval` is an interpreter only in gated mode's quoted-string scan;
+ *   code built by string arithmetic inside any interpreter is not read.
  * - A verb built by a bare expansion head with no `git` token (`$G stash`) is
  *   not seen, nor is one assembled by string arithmetic inside an interpreter.
  * - Under `raw` Bash approval an operand BUILT by expansion (`.na?/x`,
@@ -381,8 +397,55 @@ function stashIsSafeWord(words: readonly string[]): boolean {
   return words.includes("stash") && next !== undefined && STASH_SAFE_SUBCOMMANDS.has(next);
 }
 
-const runsNestedShell = (words: readonly string[]): boolean =>
-  words.some((word) => SHELLS.has(word.split("/").pop() as string) || /^-[A-Za-z]*c[A-Za-z]*$/.test(word));
+const baseName = (word: string | undefined): string => (word ?? "").split("/").pop() as string;
+
+/** Commands whose string arguments are run or interpreted: wrappers, and interpreters (their program text). */
+const EXEC_STYLE_HEADS: ReadonlySet<string> = new Set([
+  "ssh",
+  "env",
+  "xargs",
+  "nohup",
+  "time",
+  "stdbuf",
+  "sudo",
+  "doas",
+  "watch",
+  "timeout",
+  "nice",
+  "command",
+  "exec",
+  "awk",
+  "gawk",
+  "mawk",
+  "tclsh",
+  "expect",
+  "osascript",
+  "pwsh",
+  "powershell",
+  "bun",
+  "deno",
+  "php",
+  "perl",
+  "ruby",
+  "node",
+  "nodejs",
+]);
+
+const isInterpreterName = (name: string): boolean => /^(?:python[\d.]*|lua[\d.]*)$/.test(name);
+
+/** The first word that is not a `VAR=x` assignment. */
+const leadWord = (words: readonly string[]): string | undefined => words.find((w) => !/^[A-Za-z_]\w*=/.test(w));
+
+/**
+ * Is a quoted string in this segment possibly a command? Only when the head is a shell, an interpreter or an
+ * exec-style wrapper (`ssh host "git stash"`); data commands (`grep "git stash"`, `gh ... --body "..."`, `sed`,
+ * `printf`, `echo`) never run their arguments, so they are not scanned.
+ */
+function mayRunItsStrings(words: readonly string[]): boolean {
+  const head = baseName(words[commandHeadIndex(words)]);
+  const lead = baseName(leadWord(words));
+  return [head, lead].some((n) => SHELLS.has(n) || EXEC_STYLE_HEADS.has(n) || isInterpreterName(n));
+}
 
 /**
  * Recurse into every multi-word token of a segment that runs a nested shell, or that is not a readable git
@@ -393,7 +456,9 @@ const runsNestedShell = (words: readonly string[]): boolean =>
 function nestedRefusal(words: readonly string[], ctx: NaxGuardContext): string | undefined {
   const git = locateGit(words);
   const readableGit = git !== undefined && !git.uncertain;
-  if (!runsNestedShell(words) && (readableGit || !mentionsGuardedVerb(words.join(" ")))) return undefined;
+  if (!mayRunItsStrings(words)) return undefined;
+  const shellHead = SHELLS.has(baseName(words[commandHeadIndex(words)]));
+  if (!shellHead && (readableGit || !mentionsGuardedVerb(words.join(" ")))) return undefined;
   for (const word of words) {
     if (!/\s/.test(word)) continue;
     const refusal = naxStateRefusalInText(word, ctx) ?? naxStateRefusalInText(flattenCode(word), ctx);

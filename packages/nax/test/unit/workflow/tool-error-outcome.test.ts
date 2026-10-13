@@ -5,7 +5,7 @@ import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import {
   describeRepeatedToolErrors,
-  readToolRowsSince,
+  readToolEntriesSince,
   resetToolErrorClaims,
   type ToolRow,
   withToolErrorOutcome,
@@ -82,7 +82,7 @@ describe("describeRepeatedToolErrors", () => {
   });
 });
 
-describe("readToolRowsSince", () => {
+describe("readToolEntriesSince", () => {
   const dirs: string[] = [];
   afterEach(async () => {
     await Promise.all(dirs.map(cleanupTempDir));
@@ -105,16 +105,16 @@ describe("readToolRowsSince", () => {
       "run1-3000-b.json": [row("Write", "ok", "a.ts")],
       "run2-2500-other.json": [row("Edit", "error", "x.ts")],
     });
-    const rows = await readToolRowsSince({ outputDir: out, feature: "feat", runId: "run1" }, 2000);
-    expect(rows.map((r) => r.tool)).toEqual(["Edit", "Write"]);
+    const entries = await readToolEntriesSince({ outputDir: out, feature: "feat", runId: "run1" }, 2000);
+    expect(entries.map((e) => e.row.tool)).toEqual(["Edit", "Write"]);
   });
 
   test("a missing directory or a bad file is no rows, not an error", async () => {
     const out = makeTempDir("tool-err-none-");
     dirs.push(out);
-    expect(await readToolRowsSince({ outputDir: out, feature: "feat", runId: "run1" }, 0)).toEqual([]);
+    expect(await readToolEntriesSince({ outputDir: out, feature: "feat", runId: "run1" }, 0)).toEqual([]);
     await Bun.write(join(out, "tool-audit", "feat", "run1-5000-bad.json"), "{nope");
-    expect(await readToolRowsSince({ outputDir: out, feature: "feat", runId: "run1" }, 0)).toEqual([]);
+    expect(await readToolEntriesSince({ outputDir: out, feature: "feat", runId: "run1" }, 0)).toEqual([]);
   });
 });
 

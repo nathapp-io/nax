@@ -8,8 +8,8 @@
  * that call still logs the model it ran on in its own agent-call lines. Fail-open: any
  * resolution error returns undefined, because a log label must never fail a step.
  */
-import { DEFAULT_CONFIG, resolveConfiguredModel } from "@/config";
-import { normalizeSelector, resolveDispatchTarget, resolveOpModel } from "./call-resolvers";
+import { resolveOpEndpoint } from "./call-dispatch-prologue";
+import { normalizeSelector } from "./call-resolvers";
 import type { CallContext, Operation } from "./types";
 
 export interface OpModelPreview {
@@ -22,15 +22,11 @@ export function previewOpModel<I, O, C>(
   op: Operation<I, O, C>,
   input: I,
 ): OpModelPreview | undefined {
+  if (op.kind === "deterministic") return undefined;
   try {
     const config = ctx.config ?? ctx.runtime.configLoader.current();
     const buildCtx = { packageView: ctx.packageView, config: normalizeSelector(op.config, op.name).select(config) };
-    const selection = resolveOpModel(op, input, buildCtx) ?? "balanced";
-    const models = config.models ?? DEFAULT_CONFIG.models;
-    const defaultAgent = ctx.runtime.agentManager.getDefault();
-    const resolved = resolveConfiguredModel(models, ctx.agentName, selection, defaultAgent);
-    const role = ctx.sessionOverride?.role ?? (op.kind === "run" ? op.session.role : undefined);
-    const target = resolveDispatchTarget(ctx, resolved, models, resolved.modelTier ?? "balanced", defaultAgent, role);
+    const { target } = resolveOpEndpoint(ctx, op, input, config, buildCtx);
     return { agentName: target.agent, model: target.modelDef.model };
   } catch {
     return undefined;

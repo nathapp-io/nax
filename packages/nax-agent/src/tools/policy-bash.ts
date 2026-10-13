@@ -31,6 +31,7 @@ import { lexBashCommand } from "#src/permissions/index";
 import { cdTargetsFor, nextWorkingDirectories } from "./bash-cwd.ts";
 import { deniedFlag } from "./exec-guard.ts";
 import type { NaxDirIndex } from "./nax-dirs.ts";
+import { isCoveringExclusion } from "./nax-revert.ts";
 import { naxStateRefusalInText } from "./nax-state-guard.ts";
 import type { CompiledEntry, CompiledPattern } from "./policy-match.ts";
 
@@ -170,7 +171,8 @@ function checkPayload(
   if (flag !== undefined) return { refusal: deny(`flag ${flag} is not permitted in a Bash command`) };
 
   for (const token of segment.tokens) {
-    if (token.opaque || hasUnmodelledExpansion(token.text)) {
+    // The exact covering pathspec (a quoted glob) is git pathspec magic, not shell expansion (#2493).
+    if (token.opaque || (hasUnmodelledExpansion(token.text) && !isCoveringExclusion(token.text))) {
       return { refusal: deny(`token "${token.text}" depends on shell expansion this gate cannot resolve`) };
     }
     const target = containmentTarget(token.text);

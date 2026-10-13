@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Run log, review round 2 (nax#2491).** The repeated-tool-error line releases its per-run ledger of reported
+  rows when the feature workflow ends, and the model preview shares one endpoint resolver with dispatch
+  (`resolveOpEndpoint`) so the two cannot drift.
 - **Run log and Duration, review round 1 (nax#2491, nax#2494).** The repeated-tool-error line now counts a row
   only inside the step's own time window (each tool-audit row carries its timestamp; a row without one falls
   back to its file's stamp) and reports each row once per run, so an ACP session that writes its audit file at
