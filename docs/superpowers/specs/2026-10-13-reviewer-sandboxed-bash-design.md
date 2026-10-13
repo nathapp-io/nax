@@ -1,6 +1,6 @@
 # Reviewer sandboxed Bash, and the sandbox for ACP Claude (nax#2500)
 
-**Date:** 2026-10-13 · **Issue:** nax#2500 · **Status:** design approved in brainstorming, spec awaiting review
+**Date:** 2026-10-13 · **Issue:** nax#2500 · **Status:** rev 2 after one read-only review (3 blocker, 8 major folded); awaiting user review
 **Branch:** `feat/2500-reviewer-sandboxed-bash` (off main `93f8818c7`)
 
 ## 1. Problem
@@ -12,9 +12,8 @@ Read-only reviewer ops cannot run the commands a review needs.
 - **ACP (claude):** a declaration with no write-class tool opens the ACP `read` profile
   (`nax/src/agents/acp/profile-map.ts`). Under `read`, `decidePermission`
   (`nax-agent-acp/src/client/permissions.ts`) denies every permission request, so even `git diff` fails
-  ("profile read rejects every permission request"). nax's MCP session tools are offered only to `ask`
-  and `full` (`nax-agent-acp/src/server/mcp/session-tools.ts:39`), so the declared `Git` tool is
-  dropped too.
+  ("profile read rejects every permission request"). nax's declared `Git` tool does reach ACP (4.2),
+  but the reviewer used Claude's own Bash for `git diff` and that was denied.
 - Reviewers then report such checks as `cannot-verify` and base findings on gate output they cannot
   reproduce. Observed: an ACP Claude branch review on rs-stock could not run `uv run ruff format --check .`.
 
@@ -64,120 +63,186 @@ Rejected:
 Unchanged (they judge findings, they do not verify code): `fix-review`, `nbf-worth-check`,
 `advise-batch`. The plan confirms each op's session role against `SessionManager.nameFor` callers.
 
-Prompt: each reviewer builder (in `src/prompts/builders/`) gains one shared paragraph: commands are for
+Prompt: one shared section in `src/prompts/builders/`, included by every reviewer builder: commands are for
 verification (formatters in check mode, linters, scoped tests, git); do not edit files; any change to
 the working tree is reverted after the turn.
 
 ### 4.2 Profile tier `review`
 
 `AgentSessionProfile` (`nax-agent/src/session/agent-session-types.ts`) becomes
-`"none" | "read" | "review" | "ask" | "full"`.
+`"none" | "read" | "review" | "ask" | "full"`; `AcpProfile` (`nax/src/agents/acp/profile-map.ts`)
+becomes `"full" | "review" | "read"`.
 
-`acpProfileFor(mode, declaredTools)` (`nax/src/agents/acp/profile-map.ts`):
+`acpProfileFor(mode, declaredTools)`:
 
 | Declaration | `approve-all` | `approve-reads` / default |
 |---|---|---|
-| none / empty | mode decides (`full`) | `read` |
-| has a file-write tool (`Write`, `Edit`, `Delete`, `GitCommit`) | `full` | `read` |
-| has `Bash`/`Exec`/`RunCommand`, no file-write tool | **`review`** | `read` |
-| neither | `read` | `read` |
+| none / empty | `full` (mode decides, unchanged) | `read` |
+| any file-write tool (`Write`, `Edit`, `Delete`, `GitCommit`), with or without command tools | `full` | `read` |
+| command tool (`Bash`, `Exec`, `RunCommand`), no file-write tool | **`review`** | `read` |
+| otherwise (read tools only) | `read` | `read` |
 
-`ACP_WRITE_CLASS_TOOLS` splits into file-write tools and command tools. `review` is never wider than
-the resolved mode.
+`ACP_WRITE_CLASS_TOOLS` splits into `ACP_FILE_WRITE_TOOLS` and `ACP_COMMAND_TOOLS`; its one caller
+(`profile-map.ts`) is the only consumer. `review` is never wider than the resolved mode.
 
-nax-agent-acp, `review` profile (claude only):
-- `decidePermission`: a Bash permission request is allowed (it also auto-allows under the sandbox, see
-  4.3); every other request is denied, as under `read`.
-- Read-only enforcement as `read` (`registry.ts` claude `readOnly`: `disallowedTools` Write, Edit,
-  MultiEdit, NotebookEdit, EnterPlanMode; `settingSources: []`), so `readOnlyFor` and `modeFor` treat
-  `review` like `read`.
-- MCP session tools are offered (`session-tools.ts` `offers`), so nax's `Git` arrives. The
-  `claudeCode.allowedTools` pre-approval lists them as today.
-- Elicitation stays off (`clientCapabilitiesFor`), as under `read`.
-- Agents without the claude read-only enforcement reject `review` with
-  `AGENT_SESSION_CAPABILITY_UNSUPPORTED`, the same rule as `read`.
+Every consumer of the two unions handles `review` explicitly (no fall-through):
 
-nax-agent facade (`session-tool-support.ts` `declaredToolsFor`): `review` = universal + READ_TOOLS +
-`Bash`. The S5 ACP server does not advertise `review` in its user-facing mode list (`nax-config.ts`
-`MODES`); it is an embedder profile only.
+| Consumer | `review` behaviour |
+|---|---|
+| zod enum `nax-agent/src/session/agent-session-options.ts` | accepts `review` |
+| `nax/src/agents/tool-surface.ts` `profile?:` and `ToolSurfaceRecord.profile` (`tool-audit.ts`) | widened type; audit records `review` |
+| nax-agent-acp `client/capabilities.ts` `isReadOnlyProfile` | true (so `readOnlyFor`/`modeFor` in `open.ts` apply the claude read-only enforcement: `disallowedTools` Write, Edit, MultiEdit, NotebookEdit, EnterPlanMode; `settingSources: []`; `allowDangerouslySkipPermissions: false`; mode `default`) |
+| `client/open.ts` `clientCapabilitiesFor` | no elicitation (as `read`) |
+| `client/permissions.ts` `decidePermission` | new `case "review"` (below) |
+| `client/elicitation.ts` | declines (as `read`), unchanged |
+| nax-agent facade `session-tool-support.ts` `declaredToolsFor` | universal + READ_TOOLS + `Bash` (no write tools) |
+| `session-tool-support.ts` `resolveSessionLauncher` | applies the sandbox floor to `review` as to `ask`/`full` |
+| `native-backend-options.ts` `nativeProfileRules` | `review` has tools and accepts `bashApproval` |
+| S5 server `nax-config.ts` `MODES` + zod enum, `session-config.ts`, `open-session.ts` `TOOL_PROFILES`, `notices.ts` | not advertised to users; `MODES` unchanged; `TOOL_PROFILES` unchanged (S5 sessions never open `review`) |
 
-Native nax runs need no profile change: the op's declared tools decide what the session exposes, and
-native `Bash` already runs in the sandbox.
+`decidePermission` under `review` (claude only):
+- A request whose ACP `kind` is `execute` is allowed (Claude's Bash; normally pre-allowed by
+  `autoAllowBashIfSandboxed`, 4.3, so this is the fallback path).
+- A network permission request (Claude's `SandboxNetworkAccess`) follows 4.3 network rules.
+- Every other request is denied, as under `read`.
+
+nax's declared tools (including `Git`) already reach ACP through `finalizeAcpSurface` and `ctx.tools`
+(`nax/src/agents/acp/provider-embedder.ts`, `client/open.ts`) with no profile gate, and
+`claudeSessionMeta` pre-allows them. The S5 server's `session-tools.ts` `offers` governs
+user-configured MCP servers only and is NOT changed. The observed `git diff` failure was Claude's own
+Bash being denied.
+
+Agents other than claude reject `review` with `AGENT_SESSION_CAPABILITY_UNSUPPORTED`, the same rule as
+`read` (#2372).
+
+Native nax runs: the op's declared tools decide what the session exposes, and native `Bash` already
+runs in the sandbox through the dispatch launcher. Reviewer `bashApproval` is whatever the permission
+profile resolves (`unrestricted` = not gated). Under `gated`/`escalate`, reviewer Bash asks and is
+refused when unattended; the reviewer then reports `cannot-verify`, as today.
 
 ### 4.3 Sandbox for ACP Claude (`review` and `full`)
 
-- **One policy source.** On an ACP open whose profile is `review` or `full`, nax computes the session
-  sandbox policy with the same inputs native uses (`resolveSessionSandbox`,
-  `nax-agent/src/coding-tools/coding-tool-sandbox.ts`, and `buildSandboxPolicy`): workdir, run temp
-  roots, git guard files, `.nax` entries, owned paths, credential files, config
-  `execution.sandbox.filesystem.allowWrite/denyRead/allowSharedTmp` and `network.allowedDomains`.
-- **Transport.** The policy travels on the open request as a new optional field (plain data:
-  `writeRoots`, `denyWrite`, `denyRead`, `network`). nax-agent-acp never computes policy.
-- **Mapping (claude registry entry).** Added to `_meta.claudeCode.options` beside the existing
-  `allowedTools`/read-only options (`pre-approval.ts` `claudeSessionMeta`):
+**Policy extraction.** `resolveSessionSandbox` (`nax-agent/src/coding-tools/coding-tool-sandbox.ts`)
+returns a `CommandLauncher`; the policy is built per command inside its `policyFor` closure. Extract
+that body into an exported pure `buildSessionPolicy(inputs)` that both the launcher and the ACP path
+call. Inputs are those `resolveDispatchLauncher` (`nax/src/agents/coding-tool-support-resolve.ts`)
+already gathers: `outputDir`, `runTmpRoot`, `tmpDir`, protected paths, owned paths, git layout,
+`config.execution.sandbox`.
 
-  ```
-  sandbox: {
-    enabled: true,
-    failIfUnavailable: true,
-    allowUnsandboxedCommands: false,
-    autoAllowBashIfSandboxed: true,
-    filesystem: { allowWrite: writeRoots, denyWrite, denyRead },
-    network: { allowedDomains }        // only when configured
-  }
-  ```
+**Plumbing.** nax computes `{ policy, available }` where it resolves the dispatch launcher and carries
+it on a new optional `OpenSessionOpts.sandboxPolicy` (`nax-agent/src/session/session-types.ts`),
+forwarded by `runtime/session-run-hop.ts` to `openSession`, and onto a new
+`BackendOpenContext.sandbox` (`session-backend.ts`) for the ACP backend. The field is plain data
+(`writeRoots`, `denyWrite`, `denyRead`, `network`). nax-agent-acp never computes policy.
 
-  The keys exist in the Claude Agent SDK 0.3.286 `SandboxSettings` and claude-agent-acp 0.85.1 passes
-  `sandbox` through (`OPTION_REBUILDS_SESSION`).
-- **Config.** `execution.sandbox.enabled: false` sends no sandbox (same as native). Enabled but the
-  policy cannot be built, or the agent cannot sandbox: the open fails (4.5). Never a silent unsandboxed
-  session.
-- **R4 file-tool path check (`full`).** The sandbox wraps Bash only. Under `full`, `decidePermission`
-  receives Claude's Write/Edit permission requests; when the request names a path, deny it if the path
-  is under `denyWrite` or outside every `writeRoots` entry (resolved, symlink-aware like the native
-  owned-paths check). Requests with no resolvable path keep today's behaviour.
-- **Accepted gap.** Claude's `Read` tool is not sandboxed and reads inside the workdir without a
-  permission request, so `denyRead` (credentials) is enforced for Bash only. Documented, not chased.
+**Mapping (claude registry entry).** Added to `_meta.claudeCode.options` by `claudeSessionMeta`
+(`client/pre-approval.ts`) when the profile is `review` or `full` and a policy is present:
+
+```
+sandbox: {
+  enabled: true,
+  failIfUnavailable: true,
+  allowUnsandboxedCommands: false,
+  autoAllowBashIfSandboxed: true,
+  filesystem: { allowWrite: writeRoots, denyWrite, denyRead },
+  network: { allowedDomains }        // only when nax's policy has an allow-list
+}
+```
+
+Keys verified in Claude Agent SDK 0.3.286 `SandboxSettings`; claude-agent-acp 0.85.1 passes `sandbox`
+through and rebuilds the session when it changes (`OPTION_REBUILDS_SESSION`).
+
+**Network semantics.** nax: absent `allowedDomains` = open network. Claude: an unlisted domain raises
+a `SandboxNetworkAccess` permission request. So: when nax's network is open, `decidePermission` allows
+network requests under `review` and `full`; when nax has an allow-list, it is passed as
+`allowedDomains` and network requests are denied.
+
+**Resume and staleness.** The policy is computed at open and again at resume/load (the same `_meta`
+path). Paths added mid-session (a worktree created during the session, new `.nax` entries) are not
+reflected until the next open; native recomputes per command. Accepted: sessions are per story/role
+and short-lived relative to such changes.
+
+**Config.** `execution.sandbox.enabled: false` sends no sandbox (same as native).
+
+**R4 file-tool path check (`full`).** The sandbox wraps Bash only. Under `full`, Claude's edit tools
+raise permission requests with ACP `kind` `edit` (or `delete`/`move`). `decidePermission` takes the
+target paths from `toolCall.locations[*].path` and `rawInput.file_path` / `rawInput.notebook_path`
+(this deliberately uses display fields for a decision, overriding the D3-a "display only" note in
+`client/tool-display.ts`; the override is commented at the site). Each path is resolved (relative to
+the session cwd, `~` expanded, realpath of the deepest existing ancestor). Deny when any path is under
+`denyWrite` or outside every `writeRoots` entry. A request with no resolvable path keeps today's
+behaviour (allow). nax sets the claude session mode explicitly (`modeFor`), so a settings
+`defaultMode` cannot bypass requests; `allowDangerouslySkipPermissions: false` is added for `full`.
+**Accepted gap:** under `full`, Claude still loads user/project settings (`settingSources` is blanked
+only for read-only profiles, because implementers need the project's CLAUDE.md), so a settings allow
+rule for Edit/Write pre-approves edits without a request and bypasses R4.
+
+**Accepted gap.** Claude's `Read` tool is not sandboxed and reads inside the workdir without a
+request, so `denyRead` (credentials) is enforced for Bash only.
 
 ### 4.4 Revert reviewer changes after each turn
 
-- **Where.** The runtime turn hooks that host the #2497 `afterTurn` repair (`nax/src/runtime/index.ts`),
-  extended with a before-turn snapshot. Applies only to reviewer session roles (4.1 table). The role
-  set is one exported constant.
-- **Snapshot (before the turn):** `HEAD`; the tracked working tree and index as a commit object
-  (`git stash create`, no ref, nothing written to the stash list) or `HEAD` when clean; the list of
-  untracked, non-ignored files (`git ls-files --others --exclude-standard`).
-- **After the turn:**
-  - `HEAD` moved: `git reset --soft` back to the snapshot `HEAD` (a reviewer has no `GitCommit`, but
-    Bash can `git commit`).
-  - Tracked files that differ from the snapshot (index or working tree, including those a moved `HEAD`
-    left staged): restored path-only, index and working tree, from the snapshot.
-  - Untracked, non-ignored files not in the snapshot list: deleted. Pre-existing ones are left alone.
-  - Git-ignored paths are never touched (`.venv`, caches, `node_modules`, build output).
-  - `.nax` run state is left to the #2497 keeper, which runs in the same hook.
-- **Reporting.** One `reviewer-tree-reverted` log line (storyId first, role, paths, headMoved) and a
-  ledger entry. The review result is used as returned; a revert never fails a review.
-- **Concurrency.** Reviewers may run concurrently with each other in one checkout (A4 finish runs the
-  spec and branch reviews in parallel). Each restores to its own snapshot; since neither writes
-  legitimately, both snapshots describe the same tree. No writer shares a checkout with a reviewer
-  (pipeline `--parallel` stories use separate worktrees; workflow mode is sequential). The plan
-  verifies this assumption against the call sites.
+**Hooks.** `TurnHooks` (`nax/src/session/turn-hooks.ts`) gains `beforeTurn` next to `afterTurn`.
+`session/manager.ts` is at its grandfathered size baseline and must not grow: the before-turn call
+replaces or folds into an existing line in `sendPrompt` (or code moves out of `manager.ts`); the plan
+pins the exact edit. The reviewer guard lives in a new module (`nax/src/session/reviewer-tree-guard.ts`
+or `runtime/`), not in `runtime/index.ts` (581/600 lines). The role filter checks `desc.role` against
+one exported constant `REVIEWER_SESSION_ROLES` (4.1 table); finish reviews carry their role through
+`sessionOverride`, which the plan verifies.
+
+**Snapshot (shared per repository).** Reviewers may run concurrently in one checkout (A4 finish runs
+the spec and branch reviews with `Promise.allSettled`, `finish/review-round.ts`). A per-repository
+guard keyed by the git toplevel (`git -C <desc.workdir> rev-parse --show-toplevel`, so a monorepo
+package workdir maps to its repo) holds one snapshot and a count of active reviewer turns:
+- First reviewer turn in: take the snapshot. Later reviewers join it (count + 1).
+- Last reviewer turn out: compare and restore. Earlier ones only decrement.
+- Snapshot content:
+  - working-tree tree id via `snapshotWorkingTree` (`review/fix-review/tree-snapshot/index.ts`:
+    tracked + untracked, `.gitignore` honoured, mutates nothing);
+  - index tree id (`git write-tree`);
+  - symbolic `HEAD` and the `HEAD` commit, the current branch ref, and the stash list (`git stash
+    list --format=%H`).
+
+**Restore (last out).**
+- `changedPathsBetween(snapshotTree, currentTree)` (repo-root-relative), excluding `.nax/**` (the #2497
+  keeper owns run state). Each changed path: restored from the snapshot blob when it existed in the
+  snapshot (tracked or untracked), deleted when it did not. Only changed paths are touched; nothing is
+  re-written wholesale.
+- Index: when the index tree differs from the snapshot index tree, `git read-tree <snapshotIndexTree>`
+  (restores the staged/unstaged split exactly; the working tree is restored separately above).
+- Refs: symbolic `HEAD` re-pointed if it changed (`git symbolic-ref` / detached checkout of the
+  recorded commit without touching the tree), the recorded branch ref reset to its recorded commit
+  (`git update-ref`), branches created during the turn are left (recorded in the log), stash entries
+  added during the turn are dropped by SHA.
+- Ignored paths are never touched (`.venv`, caches, `node_modules`, build output).
+- All git calls use `git -C <toplevel>` with `:/`-anchored pathspecs.
+
+**Reporting.** One `reviewer-tree-reverted` log line per restore: role(s), changed paths, index
+restored, refs restored, stash entries dropped. No ledger entry. A revert never fails a review.
+
+**Who else can write during a reviewer turn.** No nax writer shares a checkout with a reviewer: the
+workflow story/branch fix and the finish fix run after the review round; pipeline `--parallel` stories
+use separate worktrees; the pipeline autofix runs after review. The plan verifies each call site.
+**Accepted risk:** a human editing the same checkout during a review can have edits reverted; the log
+line names every path restored.
 
 ### 4.5 Failure handling
 
 | Case | Behaviour |
 |---|---|
-| ACP Claude, sandbox enabled, unavailable on host | Claude SDK `failIfUnavailable` ends the session with an error; nax surfaces it as a session failure; existing fallback/escalation handles it |
-| Policy cannot be built on the nax side (probe fails) | Open fails with `AGENT_SESSION_CAPABILITY_UNSUPPORTED` and the reason; never opens unsandboxed |
+| ACP Claude, nax policy says sandbox unavailable on host | Open fails with `AGENT_SESSION_CAPABILITY_UNSUPPORTED` and the probe reason; existing fallback/escalation handles it. **Deliberate difference from native**, where the session opens and raw Bash is refused: ACP Claude's Bash cannot be refused per command by nax. |
+| ACP Claude, Claude's own sandbox fails to start | SDK `failIfUnavailable` ends the session with an error; surfaced as a session failure |
 | `review` on codex/gemini/opencode/pi | `AGENT_SESSION_CAPABILITY_UNSUPPORTED`, as `read` today |
-| Revert fails (git error, lock) | `[WARN]` log + ledger entry, review result kept; the #2497 keeper still guards run state |
+| S5 server `full` sessions (Zed etc.) | No embedder policy, no sandbox; unchanged. "Never unsandboxed" applies to nax-run opens, which always carry a policy when `execution.sandbox.enabled` |
+| Revert fails (git error, lock) | `[WARN]` log, review result kept; the #2497 keeper still guards run state |
 | Native, sandbox unavailable | Unchanged: raw Bash refuses (existing `rawBashRefusalReason`) |
 
 ## 5. Out of scope
 
 - Command-safety guard (#2292) and #2490 rules: unchanged (R3).
 - Sandboxing other ACP agents (R5).
-- Restricting Claude's `Read` tool (4.3 accepted gap).
+- Restricting Claude's `Read` tool; blanking Claude settings under `full` (4.3 accepted gaps).
+- S5 server profile list and `session-tools.ts` `offers`.
 - New config keys. Everything rides on `execution.sandbox` and `execution.permissionProfile`.
 - `fix-review`, `nbf-worth-check`, `advise-batch` tool lists.
 
@@ -185,26 +250,44 @@ native `Bash` already runs in the sandbox.
 
 Unit:
 - `acpProfileFor`: every row of the 4.2 table, both modes.
-- Policy to Claude `sandbox` options mapping: enabled, disabled (absent), network configured/absent.
-- `claudeSessionMeta`: `review` carries read-only enforcement + tool rules + sandbox; `full` carries
-  tool rules + sandbox; `read`/`none` carry no sandbox.
-- `decidePermission`: `review` allows Bash, denies others; `full` path check (inside root, `denyWrite`,
-  outside roots, symlink escape, no path).
-- `session-tools` offers under `review`; `declaredToolsFor("review")`.
-- Revert: tracked edit, new untracked file, pre-existing untracked file kept, ignored path kept,
-  `HEAD` moved, clean tree, non-reviewer role untouched, git failure logged.
-- Reviewer op tool lists include `Bash`; unchanged ops unchanged.
+- `buildSessionPolicy` extraction: launcher output unchanged (existing sandbox tests stay green).
+- Policy to Claude `sandbox` options mapping: enabled, disabled (absent), network open/allow-list.
+- `claudeSessionMeta`: `review` = read-only enforcement + tool rules + sandbox; `full` = tool rules +
+  sandbox + `allowDangerouslySkipPermissions: false`; `read`/`none` = no sandbox.
+- `decidePermission`: `review` allows `execute`, denies others; network requests open vs allow-list;
+  `full` path check (inside root, `denyWrite`, outside roots, symlink escape, relative, `~`, multiple
+  locations one bad, notebook path, no path).
+- Every 4.2 consumer row (`declaredToolsFor("review")`, `resolveSessionLauncher` floor,
+  `nativeProfileRules`, zod enum, `isReadOnlyProfile`).
+- Reviewer guard: tracked edit; staged-vs-unstaged split preserved; new untracked file deleted;
+  pre-existing untracked file modified -> restored; ignored path kept; `.nax` path left to keeper;
+  `HEAD` moved by commit; `checkout -b`; `stash push` dropped; monorepo package workdir maps to
+  toplevel; worktree checkout; clean tree no-op; non-reviewer role untouched; git failure logged;
+  two concurrent reviewers with an edit made between their snapshots (restored once, by the last out).
+- Reviewer op tool lists include `Bash`; unchanged ops unchanged; `check-bash-dispatch-ask` (#2202)
+  passes: every dispatch site of the reviewer ops carries `askResolver` and `commandShadow`, and none
+  sits in `ALLOWED_BARE_SITES`.
+- Shared reviewer prompt section present in each reviewer builder output.
 
 Integration:
 - Native reviewer session in a temp git repo runs a check command and a stray write; the write is
   reverted and logged.
-- ACP open with a fake agent: the request `_meta` carries the sandbox for `review` and `full`.
+- ACP open with a fake agent: request `_meta` carries the sandbox for `review` and `full`, none for
+  `read`; resume carries it again.
 
 Live check (billed, needs approval at launch):
 - One ACP Claude branch review on rs-stock runs `uv run ruff format --check .`; the tool audit shows no
   denied Bash.
 - One ACP Claude implementer turn that writes outside the workdir is blocked (Bash by the sandbox,
   Write by the R4 path check).
+- macOS only is verified live; Linux `failIfUnavailable` behaviour is covered by unit tests only.
+
+## Plan notes (from spec review, 2026-10-13)
+
+- File-size ratchets: `session/manager.ts` (baseline, no growth), `runtime/index.ts` (581/600),
+  `operations/adversarial-review.ts` (597/600), `operations/semantic-review.ts` (577/600). The tool
+  array edits are in place; the prompt paragraph lives in one shared builder section.
+- `check-bash-dispatch-ask` (#2202) applies once the reviewer ops declare `Bash`.
 
 ## 7. Rollout
 
