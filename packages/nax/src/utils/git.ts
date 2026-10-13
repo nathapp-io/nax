@@ -2,7 +2,14 @@
  * Git utility functions
  */
 
-import { _gitDeps, gitlinkSafeAdd, gitWithTimeout, hasStagedChanges, realOrRaw } from "@nathapp/nax-agent/internal";
+import {
+  _gitDeps,
+  errorMessage,
+  gitlinkSafeAdd,
+  gitWithTimeout,
+  hasStagedChanges,
+  realOrRaw,
+} from "@nathapp/nax-agent/internal";
 import { restoreDeletedNaxPaths } from "./nax-path-restore";
 
 export { _gitDeps, GIT_TIMEOUT_MS, getGitRoot, gitWithTimeout } from "@nathapp/nax-agent/internal";
@@ -180,6 +187,23 @@ export async function getUntrackedPaths(workdir: string): Promise<string[] | nul
   return parsePorcelainUntrackedPaths(stdout);
 }
 
+/** Context handed to before-auto-commit hooks (#2497: run-state repair runs here). */
+export interface AutoCommitHookContext {
+  readonly workdir: string;
+  readonly stage: string;
+  readonly storyId: string;
+}
+type AutoCommitHook = (ctx: AutoCommitHookContext) => Promise<void>;
+const beforeAutoCommitHooks = new Set<AutoCommitHook>();
+
+/** Registers a hook awaited before every auto-commit; returns its unregister. utils/git never imports the hook owners. */
+export function registerBeforeAutoCommit(hook: AutoCommitHook): () => void {
+  beforeAutoCommitHooks.add(hook);
+  return () => {
+    beforeAutoCommitHooks.delete(hook);
+  };
+}
+
 /**
  * Auto-commit safety net.
  *
@@ -215,6 +239,11 @@ export async function autoCommitIfDirty(
   if (dryRun === true) {
     logger?.debug(stage, "auto-commit: skipped under dry run", { storyId, role });
     return;
+  }
+  for (const hook of [...beforeAutoCommitHooks]) {
+    await hook({ workdir, stage, storyId }).catch((err: unknown) =>
+      logger?.warn(stage, "auto-commit: before-commit hook failed", { storyId, error: errorMessage(err) }),
+    );
   }
   try {
     // Guard: only auto-commit if workdir IS the git repository root.

@@ -9,7 +9,7 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { gitSpawnEnv } from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeLogger, makeSpawn, makeTempDir, withDepsRestore } from "@test/helpers";
-import { _gitDeps, autoCommitIfDirty } from "@/utils/git";
+import { _gitDeps, autoCommitIfDirty, registerBeforeAutoCommit } from "@/utils/git";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -25,6 +25,37 @@ describe("autoCommitIfDirty", () => {
   withDepsRestore(_gitDeps, ["spawn"]);
   beforeEach(() => {
     calls.length = 0;
+  });
+
+  test("before-auto-commit hooks run first; a throwing hook does not block the commit (#2497)", async () => {
+    const order: string[] = [];
+    _gitDeps.spawn = makeSpawn(({ cmd }) => {
+      if (cmd.includes("rev-parse")) return "/repo\n";
+      if (cmd.includes("status")) return " M src/foo.ts\n";
+      if (cmd.includes("--cached")) return { exitCode: 1 };
+      if (cmd.includes("commit")) order.push("commit");
+      return "";
+    }).spawn;
+    const unhookA = registerBeforeAutoCommit(async (c) => {
+      order.push(`hook:${c.stage}:${c.storyId}`);
+    });
+    const unhookB = registerBeforeAutoCommit(async () => {
+      throw new Error("boom");
+    });
+    await autoCommitIfDirty("/repo", "run.complete", "run-summary", "US-001");
+    unhookA();
+    unhookB();
+    expect(order).toEqual(["hook:run.complete:US-001", "commit"]);
+  });
+
+  test("a dry run skips the hooks", async () => {
+    let ran = false;
+    const unhook = registerBeforeAutoCommit(async () => {
+      ran = true;
+    });
+    await autoCommitIfDirty("/repo", "s", "r", "US-001", undefined, true);
+    unhook();
+    expect(ran).toBe(false);
   });
 
   // nax#1808: a dry run reached the completion phase and auto-committed the

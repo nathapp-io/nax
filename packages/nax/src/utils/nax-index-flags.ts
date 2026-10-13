@@ -24,7 +24,7 @@ function isHiddenTag(tag: string): boolean {
 }
 
 /** Paths under `.nax/` carrying a skip-worktree or assume-unchanged bit. */
-async function hiddenNaxPaths(workdir: string, logger: IndexFlagLogger | null | undefined): Promise<string[]> {
+export async function hiddenNaxPaths(workdir: string, logger: IndexFlagLogger | null | undefined): Promise<string[]> {
   const { stdout, stderr, exitCode } = await gitWithTimeout(["ls-files", "-v", "-z", "--", NAX_PATHSPEC], workdir);
   if (exitCode !== 0) {
     logger?.warn("run-end", "Index flag sweep could not list .nax entries", { storyId: "_run", exitCode, stderr });
