@@ -16,6 +16,8 @@ export interface WorkflowFindingDraft {
   readonly line?: number;
   readonly acId?: string;
   readonly suggestion?: string;
+  /** Verbatim excerpt the reviewer quoted as proof (nax#2486). */
+  readonly observed?: string;
   readonly gate?: GateName;
 }
 

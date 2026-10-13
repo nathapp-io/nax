@@ -80,6 +80,7 @@ function toDraft(entry: unknown): WorkflowFindingDraft | null {
   const file = str(entry.file);
   const acId = str(entry.acId);
   const suggestion = str(entry.suggestion);
+  const observed = str(entry.observed);
   const line = Number.isInteger(entry.line) && (entry.line as number) > 0 ? (entry.line as number) : undefined;
   return {
     severity,
@@ -89,6 +90,7 @@ function toDraft(entry: unknown): WorkflowFindingDraft | null {
     ...(acId ? { acId } : {}),
     issue,
     ...(suggestion ? { suggestion } : {}),
+    ...(observed ? { observed } : {}),
   };
 }
 

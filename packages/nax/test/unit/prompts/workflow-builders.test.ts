@@ -7,6 +7,7 @@ import {
   buildWorkflowReReviewPrompt,
   buildWorkflowStoryReviewPrompt,
 } from "@/prompts";
+import { renderWorkflowFindings } from "@/prompts/builders/workflow-implementer-builder";
 
 const brief = {
   storyId: "US-003",
@@ -110,6 +111,33 @@ describe("workflow builders", () => {
     ]) {
       expect(text).toContain(needle);
     }
+  });
+
+  test("rendered findings carry the observed excerpt to the fixer (nax#2486)", () => {
+    const text = renderWorkflowFindings([
+      {
+        id: "F1",
+        kind: "spec",
+        severity: "important",
+        issue: "too narrow",
+        observed: "note VARCHAR(191)",
+        suggestion: "widen",
+      },
+    ]);
+    expect(text).toContain("Observed: note VARCHAR(191)");
+    expect(text.indexOf("Observed:")).toBeLessThan(text.indexOf("Suggestion:"));
+  });
+
+  test("story review does not demand an excerpt for a missing-test finding (nax#2486)", () => {
+    const text = buildWorkflowStoryReviewPrompt({
+      briefPath: "/b.md",
+      reportPath: "/r.md",
+      packagePath: "/p.diff",
+      concerns: [],
+    });
+    expect(text).toContain("Start with these three files");
+    expect(text).toContain("names the AC and the test file you checked instead");
+    expect(text).toContain("Files not shown in the diff");
   });
 
   test("story review walks each AC against the current code, not only the diff, and asks for evidence (nax#2486)", () => {

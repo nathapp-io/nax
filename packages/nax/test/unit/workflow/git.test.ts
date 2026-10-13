@@ -75,6 +75,29 @@ describe("workflow git helpers", () => {
     expect(section).toContain(`- ${migration}`);
     expect(section).toContain("- zz/late.ts");
     expect(section).not.toContain("src/a-00.ts");
+    expect(section.match(/\(partially shown\)/g)).toHaveLength(1);
+  });
+
+  test("package: a shown rename is not listed; a non-ASCII omitted path is listed verbatim (nax#2486)", async () => {
+    const dir = await repo();
+    await Bun.write(join(dir, "aa/old.ts"), "export const kept = 'a stable body long enough to detect a rename';\n");
+    await git(dir, "add", "-A");
+    await git(dir, "commit", "-qm", "seed: old");
+    const base = await readHead(dir);
+    await git(dir, "mv", "aa/old.ts", "aa/new.ts");
+    const filler = `${"x".repeat(120)}\n`.repeat(60);
+    for (let i = 0; i < 12; i++) await Bun.write(join(dir, `src/a-${String(i).padStart(2, "0")}.ts`), filler);
+    await Bun.write(join(dir, "zz/café.ts"), "export const late = 1;\n");
+    await git(dir, "add", "-A");
+    await git(dir, "commit", "-qm", "feat: big");
+    const path = join(dir, "out", "package-0.diff");
+    await writeReviewPackage(dir, base, path);
+    const text = await Bun.file(path).text();
+    const section = text.slice(text.indexOf("## Files not shown in the diff"));
+    expect(text).toContain("rename to aa/new.ts");
+    expect(section).not.toContain("aa/new.ts");
+    expect(section).not.toContain("aa/old.ts");
+    expect(section).toContain("- zz/café.ts");
   });
 
   test("package: an unknown from ref throws WORKFLOW_REVIEW_PACKAGE_FAILED and writes nothing", async () => {
