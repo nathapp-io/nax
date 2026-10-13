@@ -67,7 +67,7 @@ function captureLogs(): LogEntry[] {
   initLogger({ level: "silent", suppressConsole: true });
   const entries: LogEntry[] = [];
   addSink((e) => {
-    if (e.level === "warn") entries.push(e);
+    if (e.level === "warn" || e.level === "error") entries.push(e);
   });
   return entries;
 }
@@ -122,6 +122,36 @@ describe("ReviewerTreeGuard (nax#2500)", () => {
     await expect(g.afterTurn(desc("wf-story-review"))).resolves.toBeUndefined();
   });
 
+  test("a failed snapshot logs reviewer-guard-unguarded-turn at error level", async () => {
+    fakes();
+    _reviewerGuardDeps.take = async () => {
+      throw new Error("git gone");
+    };
+    const logs = captureLogs();
+    const g = new ReviewerTreeGuard();
+    await g.beforeTurn(desc("wf-story-review"));
+    const entry = logs.find((e) => e.message === "reviewer-guard-unguarded-turn");
+    expect(entry?.level).toBe("error");
+    expect(entry?.data).toMatchObject({
+      storyId: "US-001",
+      role: "wf-story-review",
+      toplevel: "/repo",
+      error: "git gone",
+    });
+  });
+
+  test("a failing toplevel lookup also logs reviewer-guard-unguarded-turn", async () => {
+    fakes();
+    _reviewerGuardDeps.toplevel = async () => {
+      throw new Error("not a repo");
+    };
+    const logs = captureLogs();
+    await new ReviewerTreeGuard().beforeTurn(desc("wf-story-review"));
+    const entry = logs.find((e) => e.message === "reviewer-guard-unguarded-turn");
+    expect(entry?.level).toBe("error");
+    expect(entry?.data).toMatchObject({ storyId: "US-001", error: "not a repo" });
+  });
+
   test("a throwing restore never throws", async () => {
     fakes();
     _reviewerGuardDeps.restore = async () => {
@@ -138,8 +168,13 @@ describe("ReviewerTreeGuard (nax#2500)", () => {
     const gate = new Promise<void>((r) => {
       release = r;
     });
+    let restoreStarted: () => void = () => {};
+    const started = new Promise<void>((r) => {
+      restoreStarted = r;
+    });
     _reviewerGuardDeps.restore = async () => {
       calls.push("restore-start");
+      restoreStarted();
       await gate;
       calls.push("restore-end");
       return CLEAN;
@@ -147,9 +182,10 @@ describe("ReviewerTreeGuard (nax#2500)", () => {
     const g = new ReviewerTreeGuard();
     await g.beforeTurn(desc("wf-story-review", "a"));
     const out = g.afterTurn(desc("wf-story-review", "a"));
-    await Bun.sleep(10);
+    await started;
     const next = g.beforeTurn(desc("wf-rereview", "b"));
-    await Bun.sleep(20);
+    // Drain every pending microtask: if beforeTurn were going to ignore the gate it would have by now.
+    await new Promise<void>((r) => setImmediate(r));
     expect(calls).toEqual(["take", "restore-start"]);
     release();
     await out;

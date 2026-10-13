@@ -144,12 +144,17 @@ describe("SessionManager.interruptTurn: a non-abort failure after the interrupt 
 
   test("the same failure WITHOUT an interrupt is still the raw adapter error", async () => {
     let fail: (e: Error) => void = () => {};
+    let turnStarted: () => void = () => {};
+    const started = new Promise<void>((r) => {
+      turnStarted = r;
+    });
     const adapter = makeAgentAdapter({
       openSession: mock(async (name: string) => handleFor(name)),
       sendTurn: mock(
         () =>
           new Promise<TurnResult>((_res, rej) => {
             fail = rej;
+            turnStarted();
           }),
       ),
     });
@@ -157,7 +162,7 @@ describe("SessionManager.interruptTurn: a non-abort failure after the interrupt 
     sm.configureRuntime({ watchdogControllerRegistry: new Map() });
     const handle = await sm.openSession("nax-no-interrupt", REQUEST);
     const first = sm.sendPrompt(handle, "work");
-    await Bun.sleep(0); // sendPrompt awaits the before-turn hook (nax#2500) before sendTurn starts
+    await started; // sendPrompt awaits the before-turn hook (nax#2500) before sendTurn starts
     fail(new Error(TOOL_ARGS_MESSAGE));
     const caught = await settle(first);
     expect(caught).toBeInstanceOf(Error);
@@ -168,6 +173,10 @@ describe("SessionManager.interruptTurn: a non-abort failure after the interrupt 
   test("an adapter error raised BEFORE the interrupt is not reclassified by a later interrupt", async () => {
     let fail: (e: Error) => void = () => {};
     let register: OpenSessionOpts["onActiveCall"];
+    let turnStarted: () => void = () => {};
+    const started = new Promise<void>((r) => {
+      turnStarted = r;
+    });
     const adapter = makeAgentAdapter({
       openSession: mock(async (name: string, opts: OpenSessionOpts) => {
         register = opts.onActiveCall;
@@ -177,6 +186,7 @@ describe("SessionManager.interruptTurn: a non-abort failure after the interrupt 
         () =>
           new Promise<TurnResult>((_res, rej) => {
             fail = rej;
+            turnStarted();
             assertDefined(register, "onActiveCall");
             register("call-1", async () => {});
           }),
@@ -186,7 +196,7 @@ describe("SessionManager.interruptTurn: a non-abort failure after the interrupt 
     sm.configureRuntime({ watchdogControllerRegistry: new Map() });
     const handle = await sm.openSession("nax-early-error", REQUEST);
     const first = sm.sendPrompt(handle, "work");
-    await Bun.sleep(0); // sendPrompt awaits the before-turn hook (nax#2500) before sendTurn starts
+    await started; // sendPrompt awaits the before-turn hook (nax#2500) before sendTurn starts
     fail(new Error("provider 500"));
     const caught = await settle(first);
     expect(await sm.interruptTurn("nax-early-error")).toBe(false);

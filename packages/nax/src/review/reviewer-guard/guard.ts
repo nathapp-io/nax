@@ -59,14 +59,14 @@ export class ReviewerTreeGuard {
         return;
       }
       const snapshot = _reviewerGuardDeps.take(key).catch((err: unknown) => {
-        this.warn(desc, "snapshot failed", err);
+        this.unguarded(desc, key, err);
         return undefined;
       });
       this.active.set(key, { snapshot, ids: new Set([desc.id]) });
       // The turn must not start until the snapshot is captured, or its edits could land in it.
       await snapshot;
     } catch (err) {
-      this.warn(desc, "snapshot failed", err);
+      this.unguarded(desc, this.keyBySession.get(desc.id), err);
     }
   }
 
@@ -118,6 +118,19 @@ export class ReviewerTreeGuard {
     } catch (err) {
       this.warn(desc, "restore failed", err);
     }
+  }
+
+  /**
+   * A failed snapshot leaves the turn running without a restore (nax#2500 R16: accepted,
+   * refusing the turn is out of scope), so it is logged at ERROR rather than WARN.
+   */
+  private unguarded(desc: SessionDescriptor, toplevel: string | undefined, err: unknown): void {
+    getSafeLogger()?.error("review", "reviewer-guard-unguarded-turn", {
+      storyId: desc.storyId,
+      role: desc.role,
+      toplevel,
+      error: errorMessage(err),
+    });
   }
 
   private warn(desc: SessionDescriptor, what: string, err: unknown): void {
