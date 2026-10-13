@@ -12,8 +12,8 @@ Read-only reviewer ops cannot run the commands a review needs.
 - **ACP (claude):** a declaration with no write-class tool opens the ACP `read` profile
   (`nax/src/agents/acp/profile-map.ts`). Under `read`, `decidePermission`
   (`nax-agent-acp/src/client/permissions.ts`) denies every permission request, so even `git diff` fails
-  ("profile read rejects every permission request"). nax's declared `Git` tool does reach ACP (4.2),
-  but the reviewer used Claude's own Bash for `git diff` and that was denied.
+  ("profile read rejects every permission request"). nax's built-in `Git` tool is not delivered to ACP
+  sessions at all (only provider MCP tools are), so Claude's own Bash is the only way to run git there.
 - Reviewers then report such checks as `cannot-verify` and base findings on gate output they cannot
   reproduce. Observed: an ACP Claude branch review on rs-stock could not run `uv run ruff format --check .`.
 
@@ -106,11 +106,10 @@ Every consumer of the two unions handles `review` explicitly (no fall-through):
 - A network permission request (Claude's `SandboxNetworkAccess`) follows 4.3 network rules.
 - Every other request is denied, as under `read`.
 
-nax's declared tools (including `Git`) already reach ACP through `finalizeAcpSurface` and `ctx.tools`
-(`nax/src/agents/acp/provider-embedder.ts`, `client/open.ts`) with no profile gate, and
-`claudeSessionMeta` pre-allows them. The S5 server's `session-tools.ts` `offers` governs
-user-configured MCP servers only and is NOT changed. The observed `git diff` failure was Claude's own
-Bash being denied.
+Only provider MCP tools reach ACP sessions (`finalizeAcpSurface`, `nax/src/agents/acp/provider-embedder.ts`);
+nax's built-in coding tools, including `Git`, do not. ACP reviewers therefore run git through Claude's own
+Bash, which `review` allows. Delivering nax's built-in `Git` over MCP is not needed and is out of scope.
+The S5 server's `session-tools.ts` `offers` governs user-configured MCP servers only and is NOT changed.
 
 Agents other than claude reject `review` with `AGENT_SESSION_CAPABILITY_UNSUPPORTED`, the same rule as
 `read` (#2372).
