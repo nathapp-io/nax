@@ -170,6 +170,8 @@ export interface LocatedGit {
   readonly configKeys: readonly string[];
   /** True when a leading assignment sets a `GIT_CONFIG*` variable (config, including aliases, injected through the environment). */
   readonly configEnv: boolean;
+  /** True under `--literal-pathspecs` or a non-empty, non-`0` `GIT_LITERAL_PATHSPECS`: every `:(...)` / `:!` exclusion is a literal path. */
+  readonly literalPathspecs: boolean;
 }
 
 interface GlobalState {
@@ -302,16 +304,22 @@ function resolveAliases(subcommand: string, args: readonly string[], state: Glob
 }
 
 /** Directory and config environment set by leading assignments (also those of an `env` wrapper). */
-function leadingGitEnv(words: readonly string[], gitIdx: number): { dirs: string[]; configEnv: boolean } {
+function leadingGitEnv(
+  words: readonly string[],
+  gitIdx: number,
+): { dirs: string[]; configEnv: boolean; literalPathspecs: boolean } {
   const dirs: string[] = [];
   let configEnv = false;
+  let literalPathspecs = false;
   for (const word of words.slice(0, gitIdx)) {
+    const literal = /^GIT_LITERAL_PATHSPECS=(.*)$/.exec(word);
+    if (literal !== null) literalPathspecs = literal[1] !== "" && literal[1] !== "0";
     const match = /^(GIT_WORK_TREE|GIT_DIR|GIT_CONFIG[A-Z0-9_]*)=(.*)$/.exec(word);
     if (match === null) continue;
     if (match[1]?.startsWith("GIT_CONFIG")) configEnv = true;
     else dirs.push(match[2] as string);
   }
-  return { dirs, configEnv };
+  return { dirs, configEnv, literalPathspecs };
 }
 
 /**
@@ -342,6 +350,7 @@ export function locateGit(words: readonly string[]): LocatedGit | undefined {
     uncertain: state.uncertain,
     shellAlias: resolved.shellAlias,
     configEnv: env.configEnv,
+    literalPathspecs: env.literalPathspecs || words.slice(gitIdx + 1, i).includes("--literal-pathspecs"),
   };
 }
 

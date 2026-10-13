@@ -223,6 +223,16 @@ export function resetRefusal(args: readonly string[], ctx: NaxGuardContext): str
 const hasFlag = (flags: readonly string[], long: string, short: string): boolean =>
   flags.some((f) => isLongPrefix(f, long) || (/^-[A-Za-z]+$/.test(f) && f.includes(short)));
 
+/**
+ * `git clean -n` / `--dry-run`. In a short cluster `-e` takes the rest of the cluster as its value
+ * (`-fdenx` is `-f -d -e nx`, a real clean), so only an `n` before any `e` counts.
+ */
+const isCleanDryRun = (flags: readonly string[]): boolean =>
+  flags.some(
+    (f) =>
+      isLongPrefix(f, "--dry-run") || (/^-[A-Za-z]+$/.test(f) && (f.slice(1).split("e")[0] as string).includes("n")),
+  );
+
 /** Operands (and `--opt=value` values) of a discard verb that name a `.nax` path. */
 function namesNax(ops: Operands, ctx: NaxGuardContext): boolean {
   const values = ops.flags.filter((f) => f.includes("=")).map((f) => f.slice(f.indexOf("=") + 1));
@@ -237,7 +247,7 @@ function wipesTree(verb: string, ops: Operands, ctx: NaxGuardContext): boolean {
   if (verb === "switch") return f.some(isForceFlag) || f.some((w) => isLongPrefix(w, "--discard-changes"));
   if (verb === "clean") {
     const covered = ops.hasSeparator && ops.after.some((spec) => isFullNaxExclusion(spec, ctx));
-    return !covered && !hasFlag(f, "--dry-run", "n");
+    return !covered && !isCleanDryRun(f);
   }
   if (verb === "checkout-index") return hasFlag(f, "--all", "a") && hasFlag(f, "--force", "f");
   if (verb === "read-tree") return f.some((w) => isLongPrefix(w, "--reset")) && hasFlag(f, "--update", "u");

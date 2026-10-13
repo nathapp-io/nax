@@ -143,6 +143,10 @@ const UPDATE_INDEX_REFUSAL =
   "Marking it with `git update-index --skip-worktree` or `--assume-unchanged` hides it from git and from nax's own commits, " +
   "and the flag outlives the run. To see whether something pre-existed, use `git diff HEAD -- <file>` or `git show HEAD:<file>`.";
 
+const LITERAL_PATHSPECS_REFUSAL =
+  "`--literal-pathspecs` / `GIT_LITERAL_PATHSPECS` turn every `:(...)` and `:!` exclusion into a literal path, " +
+  "so nothing keeps nax's run state under `.nax/` out of this command. Drop the literal-pathspec setting.";
+
 const STASH_REFUSAL =
   "`git stash` is refused while the repository holds nax's run state under `.nax/`: the stash would capture " +
   "nax's uncommitted state and a later pop would replay stale copies over what nax has written since. " +
@@ -222,7 +226,13 @@ function shellCommandString(words: readonly string[]): string | undefined {
 /** The structured rules for one located git invocation. */
 const DISCARD_VERBS: ReadonlySet<string> = new Set(["switch", "clean", "checkout-index", "read-tree"]);
 
+/** Verbs whose exclusion pathspecs `--literal-pathspecs` turns into literal paths. */
+const EXCLUDING_VERBS: ReadonlySet<string> = new Set(["checkout", "restore", "stash", "clean"]);
+
 function verbRefusal(git: LocatedGit, segment: readonly string[], where: NaxGuardContext): string | undefined {
+  if (git.literalPathspecs && EXCLUDING_VERBS.has(git.subcommand) && git.args.some((a) => a.startsWith(":"))) {
+    if (hasNaxDirNear(where)) return LITERAL_PATHSPECS_REFUSAL;
+  }
   if (git.subcommand === "checkout" || git.subcommand === "restore") {
     return revertRefusal(git.subcommand, git.args, where);
   }
@@ -441,6 +451,10 @@ const leadWord = (words: readonly string[]): string | undefined => words.find((w
  * exec-style wrapper (`ssh host "git stash"`); data commands (`grep "git stash"`, `gh ... --body "..."`, `sed`,
  * `printf`, `echo`) never run their arguments, so they are not scanned.
  */
+/** A shell name or a `-c` cluster anywhere in the segment (`if sh -c "..."`, `find -exec sh -c`, `su -c "..."`). */
+const runsNestedShell = (words: readonly string[]): boolean =>
+  words.some((word) => SHELLS.has(baseName(word)) || /^-[A-Za-z]*c[A-Za-z]*$/.test(word));
+
 function mayRunItsStrings(words: readonly string[]): boolean {
   const head = baseName(words[commandHeadIndex(words)]);
   const lead = baseName(leadWord(words));
@@ -456,7 +470,7 @@ function mayRunItsStrings(words: readonly string[]): boolean {
 function nestedRefusal(words: readonly string[], ctx: NaxGuardContext): string | undefined {
   const git = locateGit(words);
   const readableGit = git !== undefined && !git.uncertain;
-  if (!mayRunItsStrings(words)) return undefined;
+  if (!runsNestedShell(words) && !mayRunItsStrings(words)) return undefined;
   const shellHead = SHELLS.has(baseName(words[commandHeadIndex(words)]));
   if (!shellHead && (readableGit || !mentionsGuardedVerb(words.join(" ")))) return undefined;
   for (const word of words) {
