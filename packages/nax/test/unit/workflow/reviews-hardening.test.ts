@@ -22,7 +22,7 @@ function makeSc(over: Partial<StepContext> = {}): StepContext {
   return makeStepContext({ storyDir, base: "base0", ...over });
 }
 
-const VERDICT = { spec: "pass", quality: "approved", findings: [], cannotVerify: [] } as const;
+const VERDICT = { spec: "pass", quality: "approved", findings: [], cannotVerify: [], inspectedFiles: [] } as const;
 
 describe("review artifact write failures", () => {
   test("a review.json write failure still returns the verdict", async () => {

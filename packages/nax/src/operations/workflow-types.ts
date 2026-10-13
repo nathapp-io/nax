@@ -42,6 +42,7 @@ export interface StoryReviewVerdict {
   readonly quality: "approved" | "changes";
   readonly findings: readonly WorkflowFindingDraft[];
   readonly cannotVerify: readonly string[];
+  readonly inspectedFiles: readonly string[];
 }
 
 export interface ReReviewVerdict {

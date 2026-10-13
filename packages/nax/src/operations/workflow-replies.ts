@@ -114,6 +114,7 @@ export function parseStoryReviewReply(output: string): StoryReviewVerdict | null
     quality: parsed.quality,
     findings: withSynthetic,
     cannotVerify: strings(parsed.cannotVerify),
+    inspectedFiles: strings(parsed.inspectedFiles),
   };
 }
 
