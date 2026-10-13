@@ -25,7 +25,7 @@ const input = {
 };
 
 describe("finishBranchReviewOp", () => {
-  test("is a read-only review op on the finish-review-quality role", () => {
+  test("is a review op (read tools plus sandboxed Bash) on the finish-review-quality role", () => {
     expect(finishBranchReviewOp.name).toBe("finish-branch-review");
     expect(finishBranchReviewOp.session.role).toBe("finish-review-quality");
     expect(finishBranchReviewOp.session.lifetime).toBe("fresh");

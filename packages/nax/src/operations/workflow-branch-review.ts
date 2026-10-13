@@ -1,4 +1,4 @@
-/** A5 workflow mode: the one whole-branch review (spec §7 step 2). Fresh, read-only; one parse retry, then null. */
+/** A5 workflow mode: the one whole-branch review (spec §7 step 2). Fresh, read tools plus sandboxed Bash; one parse retry, then null. */
 import { makeParseRetryStrategy } from "@/agents/retry";
 import { workflowConfigSelector } from "@/config";
 import type { WorkflowOpConfig } from "@/config/selectors";

@@ -1,5 +1,5 @@
 /**
- * A4: branch-level spec review (spec §4.2). Read-only; JSON reply; one parse
+ * A4: branch-level spec review (spec §4.2). Read tools plus sandboxed Bash; JSON reply; one parse
  * retry, then a missing verdict (`MISSING_REVIEW`) — never a throw, never a pass.
  */
 import { makeParseRetryStrategy } from "@/agents/retry";
@@ -32,7 +32,7 @@ export const finishSpecReviewOp: RunOperation<FinishSpecReviewInput, FinishRevie
   stage: "review",
   config: finishConfigSelector,
   session: { role: "finish-review-spec", lifetime: "fresh" },
-  // Read-only, plus Git: the prompt tells the reviewer to read `git diff base...HEAD`,
+  // Read tools plus sandboxed Bash (nax#2500), plus Git: the prompt tells the reviewer to read `git diff base...HEAD`,
   // and DEFAULT_CODING_TOOLS has no Git (same list as adversarial-review.ts).
   tools: ["Read", "Glob", "Grep", "Git", "Bash"],
   model: (input) => input.model,

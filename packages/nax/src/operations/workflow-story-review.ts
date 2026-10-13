@@ -1,4 +1,4 @@
-/** A5 workflow mode: fresh, read-only story review (spec §6 step 4). One parse retry, then null (review-skipped). */
+/** A5 workflow mode: fresh story review (read tools plus sandboxed Bash) (spec §6 step 4). One parse retry, then null (review-skipped). */
 import { makeParseRetryStrategy } from "@/agents/retry";
 import type { ConfiguredModel } from "@/config";
 import { workflowConfigSelector } from "@/config";

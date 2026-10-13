@@ -13,6 +13,11 @@ import type { SessionDescriptor } from "./types";
 
 export type AfterTurnHook = (desc: SessionDescriptor, turn: number) => Promise<void>;
 export type BeforeTurnHook = (desc: SessionDescriptor) => Promise<void>;
+/**
+ * The hook signatures are written inline rather than reusing BeforeTurnHook / AfterTurnHook:
+ * Biome's `useAwaitThenable` cannot infer through a function-type alias declared and consumed
+ * in the same module as an optional property (a false positive on `await hooks.before?.(...)`).
+ */
 export interface TurnHookPair {
   readonly before?: (desc: SessionDescriptor) => Promise<void>;
   readonly after?: (desc: SessionDescriptor, turn: number) => Promise<void>;

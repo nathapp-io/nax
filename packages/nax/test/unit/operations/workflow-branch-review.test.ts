@@ -18,7 +18,7 @@ function modelFor(i: WorkflowBranchReviewInput, overrides: Record<string, unknow
 }
 
 describe("workflowBranchReviewOp", () => {
-  test("shape: fresh wf-branch-review, stage review, read tools + Git only", () => {
+  test("shape: fresh wf-branch-review, stage review, read tools + Git + sandboxed Bash", () => {
     expect(workflowBranchReviewOp.session).toEqual({ role: "wf-branch-review", lifetime: "fresh" });
     expect(workflowBranchReviewOp.stage).toBe("review");
     expect(workflowBranchReviewOp.tools).toEqual(["Read", "Glob", "Grep", "Git", "Bash"]);

@@ -24,7 +24,11 @@ export interface SessionRunHopResult {
 
 type ResolvedSupport = Awaited<ReturnType<typeof resolveCodingToolSupport>>;
 
-/** nax#2500: the dispatch sandbox for an ACP open; absent when the sandbox is disabled. */
+/**
+ * nax#2500: the dispatch sandbox for an ACP open; absent when the sandbox is disabled.
+ * A separate helper so the conditional spread does not add a branch to
+ * `createSessionRunHop`, which sits at the complexity ratchet (check:complexity).
+ */
 function sandboxOption(support: ResolvedSupport): { sandbox?: NonNullable<ResolvedSupport>["acpSandbox"] } {
   return support?.acpSandbox !== undefined ? { sandbox: support.acpSandbox } : {};
 }
