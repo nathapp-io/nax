@@ -18,6 +18,12 @@ const RED_LINT: RepoGateRun = {
   summary: { ran: ["build", "lint"], failing: ["lint"] },
   findings: [{ kind: "gate", severity: "important", issue: "repo gate lint failed:\nno-var" }],
 };
+const RED_TEST: RepoGateRun = {
+  summary: { ran: ["build", "test"], failing: ["test"] },
+  findings: [
+    { kind: "gate", severity: "important", issue: "repo gate test failed:\nFAIL src/adds.test.ts > adds 1 + 1" },
+  ],
+};
 const PASS: BranchReviewVerdict = {
   spec: "pass",
   quality: "approved",
@@ -305,5 +311,22 @@ describe("runFeatureMachine", () => {
   test("passed is false when a story is not-run, even if publish succeeds", async () => {
     const h = harness({}, { stories: [done("US-001", { state: "not-run" })] });
     expect((await runFeatureMachine(h.env)).passed).toBe(false);
+  });
+
+  test("a red final gate keeps its output in finalGateFindings and the ledger points at it (nax#2484)", async () => {
+    const h = harness({ gates: [RED_TEST, RED_TEST] });
+    const final = await runFeatureMachine(h.env);
+    expect(final.finalGates).toEqual(RED_TEST.summary);
+    expect(final.finalGateFindings).toEqual(RED_TEST.findings);
+    expect(final.finalGateFindings?.[0]?.issue).toContain("FAIL src/adds.test.ts > adds 1 + 1");
+    expect(h.ledger).toContain("final gates red: test (output in result.json featureWorkflow.finalGateFindings)");
+  });
+
+  test("a green final gate writes no finalGateFindings and no pointer line (nax#2484)", async () => {
+    const h = harness({ gates: [RED_TEST, GREEN] });
+    const final = await runFeatureMachine(h.env);
+    expect(final.finalGates).toEqual(GREEN.summary);
+    expect(final).not.toHaveProperty("finalGateFindings");
+    expect(h.ledger.some((line) => line.includes("final gates red"))).toBe(false);
   });
 });

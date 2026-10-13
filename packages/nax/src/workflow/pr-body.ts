@@ -2,7 +2,14 @@
 import type { AdviceDecision } from "@/advisor";
 import { buildAdvisorSection, escapeInline, escapeTableCell } from "@/finish";
 import type { PreflightFile } from "./preflight";
-import type { FeatureCiState, FeatureOutcome, RepoGateSummary, StorySummary, WorkflowRuling } from "./types";
+import type {
+  FeatureCiState,
+  FeatureOutcome,
+  RepoGateSummary,
+  StorySummary,
+  WorkflowFindingDraft,
+  WorkflowRuling,
+} from "./types";
 
 export interface WorkflowPrBodyFacts {
   readonly feature: string;
@@ -14,6 +21,8 @@ export interface WorkflowPrBodyFacts {
   /** Deferred minors marked leave, plus minors the branch review raised. */
   readonly minorsLeft: readonly string[];
   readonly finalGates?: RepoGateSummary;
+  /** Excerpts of the failing final gates (nax#2484), shown under the gates line when they are red. */
+  readonly finalGateFindings?: readonly WorkflowFindingDraft[];
   readonly assumptions: readonly { readonly storyId: string; readonly text: string }[];
 }
 
@@ -71,6 +80,18 @@ function gateLines(input: WorkflowPrBodyInput): string[] {
   return [gates, `CI: ${input.ci}`];
 }
 
+/** A fence one backtick longer than any run in the text, so the excerpt cannot close it early. */
+function fenced(text: string): string {
+  const runs = text.match(/`+/g) ?? [];
+  const fence = "`".repeat(Math.max(3, Math.max(0, ...runs.map((r) => r.length)) + 1));
+  return `${fence}\n${text}\n${fence}`;
+}
+
+function gateExcerpts(input: WorkflowPrBodyInput): string {
+  if ((input.finalGates?.failing.length ?? 0) === 0) return "";
+  return (input.finalGateFindings ?? []).map((f) => `\n\n${fenced(f.issue)}`).join("");
+}
+
 export function buildWorkflowPrBody(input: WorkflowPrBodyInput): string {
   return [
     `## Summary\n\n${summary(input)}`,
@@ -79,7 +100,7 @@ export function buildWorkflowPrBody(input: WorkflowPrBodyInput): string {
     `## Advisor decisions\n\n${buildAdvisorSection([...input.decisions]) ?? NONE}`,
     `## Parked findings\n\n${list(input.rulings.map((r) => `${r.findingId ?? "?"} ${r.action}: ${r.text} — ${r.why}`))}`,
     `## Deferred minors (left)\n\n${list(input.minorsLeft)}`,
-    `## Gates and CI\n\n${list(gateLines(input))}`,
+    `## Gates and CI\n\n${list(gateLines(input))}${gateExcerpts(input)}`,
     `## Decisions & assumptions\n\n${list(
       input.assumptions.map((a) => `${a.storyId}: ${a.text}`),
       ASSUMPTION_ITEM_CHARS,

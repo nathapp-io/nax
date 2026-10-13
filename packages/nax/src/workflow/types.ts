@@ -142,6 +142,8 @@ export interface WorkflowFeatureRecord {
   readonly fixRan: boolean;
   readonly rulings: readonly WorkflowRuling[];
   readonly finalGates?: RepoGateSummary;
+  /** The excerpts from a red final gate pass, one per failing gate (nax#2484). Absent when the pass is green. */
+  readonly finalGateFindings?: readonly WorkflowFindingDraft[];
   readonly ci?: FeatureCiState;
   readonly outcome?: FeatureOutcome;
   readonly reasons: readonly string[];
