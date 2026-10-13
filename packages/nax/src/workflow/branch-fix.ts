@@ -62,6 +62,7 @@ async function runFixSession(fc: FeatureContext, prompt: string): Promise<FixSes
     const reply = await _workflowDeps.callOp(fc.callCtx, workflowBranchFixOp, {
       prompt,
       timeoutMs: fc.workflow.timeouts.fixMs,
+      reportPath: fc.reportPath,
     });
     return reply.failure ? { reply, failure: reply.failure } : { reply };
   } catch (err) {

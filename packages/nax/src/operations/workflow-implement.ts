@@ -21,6 +21,8 @@ export interface WorkflowImplementInput {
   readonly model?: ConfiguredModel;
   /** Step limit: the soft interrupt fires at this point. */
   readonly timeoutMs: number;
+  /** The story's report.md: the one nax-owned file this session may write (nax#2479). */
+  readonly reportPath?: string;
 }
 
 export const WORKFLOW_WRITE_TOOLS = [
@@ -52,6 +54,7 @@ export const workflowImplementOp: RunOperationWithHooks<
   tools: [...WORKFLOW_WRITE_TOOLS],
   model: (input) => input.model ?? storyRoutingModel(input.story),
   keepOpen: () => true,
+  writableOutput: (input) => input.reportPath,
   // The agent's own timeout trails the step limit, so the soft interrupt always fires first.
   timeoutMs: (input) => input.timeoutMs + STEP_TIMEOUT_MARGIN_MS,
   build(input) {

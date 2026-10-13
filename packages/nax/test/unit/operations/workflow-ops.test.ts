@@ -1,12 +1,17 @@
 import { describe, expect, test } from "bun:test";
-import { makeNaxConfig, makeStory, makeTestRuntime, opSelector } from "@test/helpers";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { buildCodingToolSupport } from "@nathapp/nax-agent/internal";
+import { makeNaxConfig, makeStory, makeTempDir, makeTestRuntime, opSelector } from "@test/helpers";
 import { SessionFailureError } from "@/agents";
+import { naxOwnedPathsPolicy } from "@/agents/nax-owned-writes";
 import { ParseValidationError } from "@/agents/retry";
 import { workflowConfigSelector } from "@/config";
 import type { AdapterFailure } from "@/context/engine";
-import type { WorkflowImplementInput } from "@/operations";
+import type { WorkflowBranchFixInput, WorkflowImplementInput } from "@/operations";
 import {
   WORKFLOW_INTERRUPT_MARKER,
+  workflowBranchFixOp,
   workflowImplementOp,
   workflowReReviewOp,
   workflowStoryReviewOp,
@@ -130,5 +135,53 @@ describe("workflow review ops", () => {
     expect(first.retry).toBe(true);
     const last = strategy.shouldRetry(probe, 1, ctx);
     expect(last).toEqual({ retry: false, fallback: null });
+  });
+});
+
+/**
+ * nax#2479: the report a workflow session writes lives under the repo's `.nax/`, which
+ * agents may not write. Each writing op declares its one report path as `writableOutput`,
+ * and that path (and only that path) must be writable under the op's own declared tools,
+ * while the reply is left alone (no `fileOutput` swap).
+ */
+describe("workflow writing ops can write their declared report (nax#2479)", () => {
+  const root = makeTempDir("nax-2479-");
+  const REPORT_REL = ".nax/features/auth/workflow/run-1/US-001/report.md";
+  const reportPath = join(root, REPORT_REL);
+  const implementInput: WorkflowImplementInput = { story, prompt: "p", timeoutMs: 1, reportPath };
+  const branchFixInput: WorkflowBranchFixInput = { prompt: "p", timeoutMs: 1, reportPath };
+  const declared = [
+    ["workflow-implement", workflowImplementOp.tools ?? [], workflowImplementOp.writableOutput?.(implementInput)],
+    ["workflow-branch-fix", workflowBranchFixOp.tools ?? [], workflowBranchFixOp.writableOutput?.(branchFixInput)],
+  ] as const;
+
+  test("both ops declare the report as writable output and do not swap their reply", () => {
+    for (const [, , writable] of declared) expect(writable).toBe(reportPath);
+    expect(workflowImplementOp.fileOutput).toBeUndefined();
+    expect(workflowBranchFixOp.fileOutput).toBeUndefined();
+  });
+
+  for (const [name, tools, writable] of declared) {
+    test(`${name} may write the report under its own tools, but not the brief beside it`, async () => {
+      const support = buildCodingToolSupport({
+        root,
+        declared: [...tools],
+        grants: [{ tool: "Write", patterns: ["**"] }],
+        ownedPaths: naxOwnedPathsPolicy,
+        ...(writable !== undefined ? { fileOutputPath: writable } : {}),
+      });
+      const ok = await support?.runtime.callTool("Write", { path: REPORT_REL, content: "# report" });
+      expect(ok?.kind).toBe("ok");
+      expect(existsSync(reportPath)).toBe(true);
+      const sibling = await support?.runtime.callTool("Write", {
+        path: ".nax/features/auth/workflow/run-1/US-001/brief.md",
+        content: "x",
+      });
+      expect(sibling?.kind).toBe("denied");
+    });
+  }
+
+  test("no report path means no writable output", () => {
+    expect(workflowImplementOp.writableOutput?.({ story, prompt: "p", timeoutMs: 1 })).toBeUndefined();
   });
 });

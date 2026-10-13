@@ -18,6 +18,7 @@ import {
   workflowReReviewOp,
   workflowStoryReviewOp,
 } from "@/operations";
+import { workflowRunDir } from "@/workflow/paths";
 import { _workflowStageDeps, workflowStage } from "@/workflow/stage";
 import { _workflowDeps } from "@/workflow/step-context";
 
@@ -89,7 +90,7 @@ function fakeAgent(repo: string, reviews: unknown[]): string[] {
 
 describe("workflow story end to end", () => {
   test("review finding -> one warm fix -> re-review -> complete; artifacts written", async () => {
-    const { repo, out, ctx } = await setup();
+    const { repo, ctx } = await setup();
     const seen = fakeAgent(repo, [
       {
         spec: "fail",
@@ -101,7 +102,7 @@ describe("workflow story end to end", () => {
     const result = await workflowStage.execute(ctx);
     expect(result).toEqual({ action: "continue" });
     expect(seen.filter((n) => n === workflowImplementOp.name)).toHaveLength(2);
-    const runDir = join(out, "workflow", ctx.prd.feature, ctx.runtime.runId);
+    const runDir = workflowRunDir(repo, ctx.prd.feature, ctx.runtime.runId);
     const storyDir = join(runDir, ctx.story.id);
     const ledger = await Bun.file(join(runDir, "ledger.md")).text();
     expect(ledger).toContain(`${ctx.story.id}: fix round 1/5 (1 open: F1)`);
@@ -115,10 +116,10 @@ describe("workflow story end to end", () => {
   });
 
   test("unparseable review -> review-skipped, story still completes", async () => {
-    const { repo, out, ctx } = await setup();
+    const { repo, ctx } = await setup();
     fakeAgent(repo, [null]);
     await workflowStage.execute(ctx);
-    const ledger = await Bun.file(join(out, "workflow", ctx.prd.feature, ctx.runtime.runId, "ledger.md")).text();
+    const ledger = await Bun.file(join(workflowRunDir(repo, ctx.prd.feature, ctx.runtime.runId), "ledger.md")).text();
     expect(ledger).toContain("review-skipped (story review: unparseable reply)");
     expect(ledger).toContain("complete (0 round(s), clean, unreviewed)");
   });

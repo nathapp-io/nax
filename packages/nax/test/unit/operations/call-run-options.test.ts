@@ -307,3 +307,46 @@ describe("buildRunDispatchOptions — abort signal (finish A, #2462)", () => {
     expect("abortSignal" in buildRunDispatchOptions(ctx, params(config))).toBe(false);
   });
 });
+
+describe("buildRunDispatchOptions — writableOutputPath (nax#2479)", () => {
+  function ctxFor(): { ctx: CallContext; config: ReturnType<typeof makeNaxConfig> } {
+    const config = makeNaxConfig();
+    const runtime = makeTestRuntime({ config, workdir: "/repo" });
+    createdRuntimes.push(runtime);
+    return {
+      config,
+      ctx: { runtime, packageView: runtime.packages.resolve(""), packageDir: "", config, agentName: "native" },
+    };
+  }
+  const params = (config: ReturnType<typeof makeNaxConfig>) => ({
+    prompt: "hi",
+    effectiveTier: "balanced" as const,
+    dispatchModelDef: { provider: "claude", model: "sonnet" },
+    config,
+    callId: "call-1",
+    pipelineStage: "run" as const,
+    declaredTools: ["Write" as const],
+    keepOpen: false,
+  });
+
+  test("forwards a writable output path as the owned-write exemption", () => {
+    const { ctx, config } = ctxFor();
+    const result = buildRunDispatchOptions(ctx, { ...params(config), writableOutputPath: "/repo/report.md" });
+    expect(result.codingToolFileOutput).toBe("/repo/report.md");
+  });
+
+  test("a fileOutput path wins when both are given", () => {
+    const { ctx, config } = ctxFor();
+    const result = buildRunDispatchOptions(ctx, {
+      ...params(config),
+      fileOutputPath: "/repo/prd.json",
+      writableOutputPath: "/repo/report.md",
+    });
+    expect(result.codingToolFileOutput).toBe("/repo/prd.json");
+  });
+
+  test("neither path adds no exemption key", () => {
+    const { ctx, config } = ctxFor();
+    expect("codingToolFileOutput" in buildRunDispatchOptions(ctx, params(config))).toBe(false);
+  });
+});

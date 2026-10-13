@@ -217,18 +217,19 @@ export interface AgentRunOptions {
    */
   codingToolWorkdirLabel?: string;
   /**
-   * The absolute `fileOutput` path the dispatching op declared, when it declared
-   * one (nax#2115).
+   * The absolute `fileOutput` (or `writableOutput`) path the dispatching op
+   * declared, when it declared one (nax#2115, nax#2479).
    *
    * Forwarded to `compileToolPolicy` as `ownedWriteExemption` so an op whose
    * contract is "write your result to this file" can write it even when the path
-   * is otherwise nax-owned run state. Today only the two surviving plan ops
-   * (`plan`, `plan-refine`) name a guarded path; every other
-   * fileOutput path is unguarded and the exemption is inert for them.
+   * is otherwise nax-owned run state. The plan ops (`plan`, `plan-refine`) name a
+   * guarded PRD; the workflow implementer and branch fix name their report under
+   * the feature's `workflow/` tree. Any other path is unguarded and the exemption
+   * is inert for it.
    *
    * PRODUCER: src/operations/call-run-options.ts
-   * (`codingToolFileOutput: fileOutputPath`, from `runOp.fileOutput?.(input)` at
-   * the call site).
+   * (`codingToolFileOutput: fileOutputPath ?? writableOutputPath`, from
+   * `runOp.fileOutput?.(input)` / `runOp.writableOutput?.(input)` at the call site).
    */
   codingToolFileOutput?: string;
   /**

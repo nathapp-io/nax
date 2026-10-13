@@ -107,6 +107,7 @@ export async function dispatchRunOp<I, O, C>(params: RunDispatchParams<I, O, C>)
   // This makes the retry probe check the actual written file, not the text
   // confirmation — so retries only fire when the file is missing or invalid.
   const fileOutputPath = op.fileOutput?.(input);
+  const writableOutputPath = op.writableOutput?.(input);
   const keepOpen = op.keepOpen?.(input, buildCtx) ?? op.session.lifetime === "warm";
 
   const runOptions = buildRunDispatchOptions(ctx, {
@@ -121,6 +122,7 @@ export async function dispatchRunOp<I, O, C>(params: RunDispatchParams<I, O, C>)
     declaredTools: resolveDeclaredTools(op),
     toolPatterns: op.toolPatterns,
     fileOutputPath,
+    writableOutputPath,
     keepOpen,
     abortSignal,
   });

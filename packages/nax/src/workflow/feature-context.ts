@@ -37,7 +37,7 @@ export interface FeatureContext {
   readonly outputDir: string;
   /** This run's workflow dir. */
   readonly runDir: string;
-  /** Every run of this feature (`workflow/<feature>`). */
+  /** Every run of this feature (`.nax/features/<feature>/workflow`). */
   readonly featureDir: string;
   readonly prdPath: string;
   /** `<runDir>/feature-report.md`. */
@@ -79,7 +79,7 @@ export async function buildFeatureContext(
     askResolver: dispatchAsk.askResolver,
     ...(dispatchAsk.commandShadow ? { commandShadow: dispatchAsk.commandShadow } : {}),
   };
-  const runDir = workflowRunDir(input.runtime.outputDir, input.feature, input.runId);
+  const runDir = workflowRunDir(input.workdir, input.feature, input.runId);
   const fc: FeatureContext = {
     callCtx,
     config: input.config,
@@ -91,7 +91,7 @@ export async function buildFeatureContext(
     runId: input.runId,
     outputDir: input.runtime.outputDir,
     runDir,
-    featureDir: workflowFeatureDir(input.runtime.outputDir, input.feature),
+    featureDir: workflowFeatureDir(input.workdir, input.feature),
     prdPath: join(featureDir(input.workdir, input.feature), "prd.json"),
     reportPath: join(runDir, "feature-report.md"),
     packageDirs: [...new Set(storyPackageDirs.filter((d): d is string => typeof d === "string" && d !== ""))],

@@ -92,7 +92,7 @@ function abortError(ctx: PipelineContext): NaxError {
 
 async function appendLedgerSafe(ctx: PipelineContext, text: string): Promise<void> {
   try {
-    await appendLedger(workflowRunDir(ctx.runtime.outputDir, ctx.prd.feature, ctx.runtime.runId), ctx.story.id, text);
+    await appendLedger(workflowRunDir(ctx.projectDir, ctx.prd.feature, ctx.runtime.runId), ctx.story.id, text);
   } catch (err) {
     getLogger().debug("workflow", "Ledger append failed on the error path", {
       storyId: ctx.story.id,

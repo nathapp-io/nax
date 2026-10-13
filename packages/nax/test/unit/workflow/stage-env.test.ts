@@ -47,11 +47,11 @@ function setup(opts: { costUsd?: number } = {}) {
     storyGitRef: "base123",
     prd: { ...makeTestContext().prd, feature: "feat" },
   });
-  return { ctx, runtime, outputDir, runDir: workflowRunDir(runtime.outputDir, "feat", runtime.runId) };
+  return { ctx, runtime, outputDir, runDir: workflowRunDir(workdir, "feat", runtime.runId) };
 }
 
-async function seedPrior(runtimeOutputDir: string, storyId: string, phase: "implement" | "fix", round: number) {
-  const priorDir = workflowRunDir(runtimeOutputDir, "feat", "prior-run");
+async function seedPrior(projectDir: string, storyId: string, phase: "implement" | "fix", round: number) {
+  const priorDir = workflowRunDir(projectDir, "feat", "prior-run");
   await upsertStoryRecord(
     priorDir,
     { runId: "prior-run", feature: "feat" },
@@ -61,15 +61,15 @@ async function seedPrior(runtimeOutputDir: string, storyId: string, phase: "impl
 
 describe("buildStoryEnv", () => {
   test("a prior record still in the first implement turn does not resume", async () => {
-    const { ctx, runtime } = setup();
-    await seedPrior(runtime.outputDir, ctx.story.id, "implement", 0);
+    const { ctx } = setup();
+    await seedPrior(ctx.projectDir, ctx.story.id, "implement", 0);
     const { env } = await buildStoryEnv(ctx, makeMockCallContext());
     expect(env.resume).toBeNull();
   });
 
   test("a mid-loop prior record resumes with maxRounds from the current workflow config", async () => {
-    const { ctx, runtime, runDir } = setup();
-    await seedPrior(runtime.outputDir, ctx.story.id, "fix", 2);
+    const { ctx, runDir } = setup();
+    await seedPrior(ctx.projectDir, ctx.story.id, "fix", 2);
     const { env } = await buildStoryEnv(ctx, makeMockCallContext());
     expect(env.resume?.round).toBe(2);
     expect(env.resume?.phase).toBe("fix");
@@ -82,8 +82,8 @@ describe("buildStoryEnv", () => {
 
   test("resuming across two runIds carries the prior brief and report into this run's story dir", async () => {
     const { ctx, runtime } = setup();
-    await seedPrior(runtime.outputDir, ctx.story.id, "fix", 2);
-    const priorStoryDir = workflowStoryDir(workflowRunDir(runtime.outputDir, "feat", "prior-run"), ctx.story.id);
+    await seedPrior(ctx.projectDir, ctx.story.id, "fix", 2);
+    const priorStoryDir = workflowStoryDir(workflowRunDir(ctx.projectDir, "feat", "prior-run"), ctx.story.id);
     await Bun.write(join(priorStoryDir, "brief.md"), "prior brief");
     await Bun.write(join(priorStoryDir, "report.md"), "prior report");
     expect(runtime.runId).not.toBe("prior-run");
@@ -94,8 +94,8 @@ describe("buildStoryEnv", () => {
   });
 
   test("resuming with no prior brief or report leaves them absent (the stage rewrites the brief)", async () => {
-    const { ctx, runtime } = setup();
-    await seedPrior(runtime.outputDir, ctx.story.id, "fix", 1);
+    const { ctx } = setup();
+    await seedPrior(ctx.projectDir, ctx.story.id, "fix", 1);
     const { sc } = await buildStoryEnv(ctx, makeMockCallContext());
     expect(await Bun.file(sc.briefPath).exists()).toBe(false);
     expect(await Bun.file(sc.reportPath).exists()).toBe(false);
@@ -139,8 +139,8 @@ describe("buildStoryEnv", () => {
   });
 
   test("sink.update merges tokensByRole into a resumed record's prior totals", async () => {
-    const { ctx, runtime, runDir } = setup();
-    const priorDir = workflowRunDir(runtime.outputDir, "feat", "prior-run");
+    const { ctx, runDir } = setup();
+    const priorDir = workflowRunDir(ctx.projectDir, "feat", "prior-run");
     await upsertStoryRecord(
       priorDir,
       { runId: "prior-run", feature: "feat" },

@@ -333,6 +333,13 @@ export interface RunOperation<I, O, C> extends OperationBase<I, O, C> {
    * missing or contains invalid JSON, not on every text-confirmation turn.
    */
   readonly fileOutput?: (input: I) => string | undefined;
+  /**
+   * The one file this op's session may write even when it is nax-owned state (nax#2479),
+   * WITHOUT the `fileOutput` swap: the reply stays the turn's output. For ops whose agent
+   * keeps a working file (the workflow report) and still answers with a reply contract.
+   * `fileOutput` wins when both are declared.
+   */
+  readonly writableOutput?: (input: I) => string | undefined;
 }
 
 export interface CompleteOperation<I, O, C> extends OperationBase<I, O, C> {

@@ -46,6 +46,8 @@ const FEATURE_RUN_ARTIFACTS = [
   "acceptance-refined.json",
   // Backups the LLM-recovery path drops beside the file it rewrote.
   "*.bak",
+  // Workflow mode's run tree: briefs, reports, review packages, ledger (nax#2479).
+  "workflow/",
 ].map((artifact) => `**/${PROJECT_FEATURES_DIR}/*/${artifact}`);
 
 export const NAX_GITIGNORE_ENTRIES = [

@@ -1,12 +1,18 @@
 import { join } from "node:path";
+import { featureDir } from "@/config";
 
-/** `<outputDir>/<project>` is runtime.outputDir; the workflow tree sits under it. */
-export function workflowFeatureDir(outputDir: string, feature: string): string {
-  return join(outputDir, "workflow", feature);
+/**
+ * The workflow tree sits inside the repo, under the feature dir, so the agents' file tools
+ * can read the briefs, reports and review packages (nax#2479). It is git-ignored through
+ * `NAX_GITIGNORE_ENTRIES`, and agents write only the one report path their op declares
+ * (`writableOutput`); everything else under `.nax/` stays nax-owned.
+ */
+export function workflowFeatureDir(projectDir: string, feature: string): string {
+  return join(featureDir(projectDir, feature), "workflow");
 }
 
-export function workflowRunDir(outputDir: string, feature: string, runId: string): string {
-  return join(workflowFeatureDir(outputDir, feature), runId);
+export function workflowRunDir(projectDir: string, feature: string, runId: string): string {
+  return join(workflowFeatureDir(projectDir, feature), runId);
 }
 
 export function workflowStoryDir(runDir: string, storyId: string): string {

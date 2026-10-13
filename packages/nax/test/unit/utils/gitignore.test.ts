@@ -20,6 +20,10 @@ import {
 import { journalDir } from "@/verification";
 
 describe("NAX_GITIGNORE_ENTRIES", () => {
+  test("covers the per-feature workflow tree (nax#2479)", () => {
+    expect(NAX_GITIGNORE_ENTRIES).toContain("**/.nax/features/*/workflow/");
+  });
+
   test("covers the mutation journal directory", () => {
     expect(NAX_GITIGNORE_ENTRIES).toContain(".nax/mutation-journal/");
   });
