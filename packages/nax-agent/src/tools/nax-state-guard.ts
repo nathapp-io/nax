@@ -9,7 +9,11 @@
  * 1. `git checkout` / `git restore` of a `.nax` path (the nax#2007 gate that
  *    used to protect only a standalone command), and of a WHOLE-TREE pathspec
  *    (`.`, `:/`, `*`, the root directory, exclusion-only) unless a full `.nax`
- *    exclusion follows `--`; `git reset --hard` in any form (see nax-revert.ts).
+ *    exclusion follows `--`; `git reset --hard|--keep|--merge`; forced
+ *    `checkout -f` / `switch -f`; `git clean`; `checkout-index -a -f`;
+ *    `read-tree -u --reset` (see nax-revert.ts). A "covering" exclusion is
+ *    `':(exclude,glob)**' + '/.nax'` (any depth); the literal `:!.nax` covers
+ *    only the root one, so it counts only while that is the sole `.nax`.
  * 2. `git update-index` with `--skip-worktree`, `--assume-unchanged` or their
  *    `--no-` forms (git accepts any unambiguous abbreviation, so the whole
  *    `--skip*` / `--assume*` / `--no-skip*` / `--no-assume*` families are
@@ -27,9 +31,15 @@
  *    value names stash / update-index / checkout / restore / reset (so even
  *    `git config alias.co checkout` is refused while a `.nax/` exists);
  *    `GIT_CONFIG_*` set in leading assignments or `env` args next to such a
- *    verb; a command head or git subcommand built by expansion (`$G stash`,
- *    `git $X reset`) next to such a verb; `python|node|perl|ruby -c|-e` code
- *    that runs one.
+ *    verb; a command head or git subcommand built by expansion
+ *    (`git $X reset`) next to such a verb and a `git` token; interpreter code
+ *    (`python|node|bun|deno|php|lua|perl|ruby|osascript|pwsh -c|-e|-r|eval`)
+ *    and ANY quoted string with whitespace in a segment that is not a
+ *    readable git call and mentions such a verb; git config keys git EXECUTES
+ *    (`core.fsmonitor`, `core.hooksPath`, `core.pager`, `diff.external`,
+ *    `include.path`, `*.textconv`, `filter.*.clean`, ...) set with `-c`,
+ *    `--config-env` or `git config`. Aliases are never expanded over a git
+ *    builtin, chains have no depth limit, and a cycle is refused.
  *
  * Operands are resolved against every live working directory and judged by
  * the `.nax` path SEGMENT of the root-relative result, never a substring, so
@@ -59,16 +69,20 @@
  * - Stash is refused in ANY repository that has a `.nax/`, by design, even
  *   when that directory is clean.
  * - Prose that reads as a command (`echo git stash`, `python -c 'print("git
- *   stash")'`) is refused when a `.nax/` exists: the guard works on words.
+ *   stash")'`, `echo "git stash"`) is refused when a `.nax/` exists: the guard
+ *   works on words. A scratch fixture `.nax/` within three levels also makes
+ *   stash refused.
+ * - A verb built by a bare expansion head with no `git` token (`$G stash`) is
+ *   not seen, nor is one assembled by string arithmetic inside an interpreter.
  * - Under `raw` Bash approval an operand BUILT by expansion (`.na?/x`,
- *   `$D/prd.json`) is not resolved; raw mode is advisory. A verb built by
- *   expansion IS refused (rule 4), but `git $X` alone, naming no guarded
- *   verb, is not.
+ *   `$D/prd.json`) is not resolved; raw mode is advisory. `git $X` alone,
+ *   naming no guarded verb, is not refused.
  * - A heredoc body fed to an interpreter (`python3 <<EOF`) is data to this
  *   reader, as is `--pathspec-from-file`, `GIT_CONFIG_GLOBAL` pointing at a
  *   file, and `export GIT_CONFIG_*` set on an earlier line.
- * - A full `:!.nax` exclusion names the root `.nax`; a whole-tree revert that
- *   excludes only that still reaches a nested package `.nax`.
+ * - The nested `.nax` scan is bounded (depth 3) and an empty result is
+ *   trusted for one second; a `.nax` deeper or created within that second is
+ *   not seen.
  * - From inside `.nax` (`cd .nax`), every unmarked `git checkout` operand is
  *   read as a path.
  */
@@ -81,12 +95,21 @@ import {
   buildsVerbByExpansion,
   CONFIG_ENV_REFUSAL,
   configAliasRefusal,
+  EXEC_CONFIG_REFUSAL,
   EXPANSION_REFUSAL,
   flattenCode,
   interpreterCode,
+  isExecConfigKey,
   mentionsGuardedVerb,
 } from "./nax-evasion.ts";
-import { isFullNaxExclusion, operandTouchesNax, resetRefusal, revertRefusal } from "./nax-revert.ts";
+import {
+  COVERING_EXCLUSION,
+  discardRefusal,
+  isFullNaxExclusion,
+  operandTouchesNax,
+  resetRefusal,
+  revertRefusal,
+} from "./nax-revert.ts";
 
 export type { NaxDirIndex, NaxGuardContext } from "./nax-dirs.ts";
 export { createNaxDirIndex } from "./nax-dirs.ts";
@@ -108,10 +131,10 @@ const STASH_REFUSAL =
   "`git stash` is refused while the repository holds nax's run state under `.nax/`: the stash would capture " +
   "nax's uncommitted state and a later pop would replay stale copies over what nax has written since. " +
   "To check whether something pre-existed, use `git diff HEAD -- <file>` or `git show HEAD:<file>`. " +
-  "A `git stash push -- . ':!.nax'` (or `push` of named regular files) is allowed.";
+  `A \`git stash push -- . ${COVERING_EXCLUSION}\` (or \`push\` of named regular files) is allowed.`;
 
 const ALIAS_REFUSAL =
-  "A git alias defined through `--config-env` cannot be inspected while the repository holds nax's run state under `.nax/`. " +
+  "A git alias defined through `--config-env`, or one that loops back on itself, cannot be inspected while the repository holds nax's run state under `.nax/`. " +
   "Run the git verb directly, or define the alias with `-c alias.NAME=VALUE`.";
 
 /**
@@ -181,11 +204,14 @@ function shellCommandString(words: readonly string[]): string | undefined {
 }
 
 /** The structured rules for one located git invocation. */
+const DISCARD_VERBS: ReadonlySet<string> = new Set(["switch", "clean", "checkout-index", "read-tree"]);
+
 function verbRefusal(git: LocatedGit, segment: readonly string[], where: NaxGuardContext): string | undefined {
   if (git.subcommand === "checkout" || git.subcommand === "restore") {
     return revertRefusal(git.subcommand, git.args, where);
   }
   if (git.subcommand === "reset") return resetRefusal(git.args, where);
+  if (DISCARD_VERBS.has(git.subcommand)) return discardRefusal(git.subcommand, git.args, where);
   if (git.subcommand === "stash") return stashRefusal(git.args, where);
   if (git.subcommand === "config") return hasNaxDirNear(where) ? configAliasRefusal(git.args) : undefined;
   if (git.subcommand !== "update-index") return undefined;
@@ -196,6 +222,7 @@ function verbRefusal(git: LocatedGit, segment: readonly string[], where: NaxGuar
 /** Refusals that depend on HOW git was invoked, not on its verb: environment config, `--config-env` and `!` aliases. */
 function invocationRefusal(git: LocatedGit, segment: readonly string[], where: NaxGuardContext): string | undefined {
   if (git.unresolvedAlias && hasNaxDirNear(where)) return ALIAS_REFUSAL;
+  if (git.configKeys.some(isExecConfigKey) && hasNaxDirNear(where)) return EXEC_CONFIG_REFUSAL;
   if (git.configEnv && mentionsGuardedVerb(segment.join(" ")) && hasNaxDirNear(where)) return CONFIG_ENV_REFUSAL;
   return git.shellAlias === undefined ? undefined : naxStateRefusalInText(git.shellAlias, where);
 }
@@ -220,6 +247,21 @@ export function naxStateRefusal(segment: readonly string[], ctx: NaxGuardContext
   return backstopRefusal(segment, where);
 }
 
+/**
+ * What a backslash at `i` contributes: outside quotes `\X` is `X` (so `g\it` is `git`), inside double quotes
+ * only before `"` `\` `$` or a backtick, and `\<newline>` is a line continuation (nothing).
+ */
+function readEscape(
+  chars: readonly string[],
+  i: number,
+  quote: string | undefined,
+): { text: string; consumed: number } {
+  const next = chars[i + 1];
+  if (next === "\n") return { text: "", consumed: 1 };
+  if (next !== undefined && (quote === undefined || '"\\$`'.includes(next))) return { text: next, consumed: 1 };
+  return { text: "\\", consumed: 0 };
+}
+
 /** Split command text into segments of tokens: quotes are removed and kept atomic; `; & | ( ) { }` and newlines end a segment. */
 function shellSegments(command: string): string[][] {
   const segments: string[][] = [[]];
@@ -231,8 +273,15 @@ function shellSegments(command: string): string[][] {
     token = "";
     inToken = false;
   };
-  for (const ch of command) {
-    if (quote !== undefined) {
+  const chars = [...command];
+  for (let i = 0; i < chars.length; i += 1) {
+    const ch = chars[i] as string;
+    if (ch === "\\" && quote !== "'") {
+      const esc = readEscape(chars, i, quote);
+      token += esc.text;
+      if (esc.text !== "") inToken = true;
+      i += esc.consumed;
+    } else if (quote !== undefined) {
       if (ch === quote) quote = undefined;
       else token += ch;
     } else if (ch === "'" || ch === '"') {
@@ -332,14 +381,22 @@ function stashIsSafeWord(words: readonly string[]): boolean {
   return words.includes("stash") && next !== undefined && STASH_SAFE_SUBCOMMANDS.has(next);
 }
 
-/** Recurse into every multi-word token of a segment that runs a nested shell. */
+const runsNestedShell = (words: readonly string[]): boolean =>
+  words.some((word) => SHELLS.has(word.split("/").pop() as string) || /^-[A-Za-z]*c[A-Za-z]*$/.test(word));
+
+/**
+ * Recurse into every multi-word token of a segment that runs a nested shell, or that is not a readable git
+ * call but mentions a guarded verb (`ssh host "git stash"`, `awk 'BEGIN{system("git stash")}'`): whatever the
+ * head, a quoted string with whitespace may be a command. A certain git call keeps its structured verdict, so
+ * `git commit -m "fix: git stash handling"` stays allowed.
+ */
 function nestedRefusal(words: readonly string[], ctx: NaxGuardContext): string | undefined {
-  if (!words.some((word) => SHELLS.has(word.split("/").pop() as string) || /^-[A-Za-z]*c[A-Za-z]*$/.test(word))) {
-    return undefined;
-  }
+  const git = locateGit(words);
+  const readableGit = git !== undefined && !git.uncertain;
+  if (!runsNestedShell(words) && (readableGit || !mentionsGuardedVerb(words.join(" ")))) return undefined;
   for (const word of words) {
     if (!/\s/.test(word)) continue;
-    const refusal = naxStateRefusalInText(word, ctx);
+    const refusal = naxStateRefusalInText(word, ctx) ?? naxStateRefusalInText(flattenCode(word), ctx);
     if (refusal !== undefined) return refusal;
   }
   return undefined;

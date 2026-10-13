@@ -19,8 +19,11 @@ import { join, relative, resolve, sep } from "node:path";
 import { NAX_OWNED_RUN_STATE_EXPLANATION } from "./denial-redirect.ts";
 import { findNaxDirs, type NaxGuardContext } from "./nax-dirs.ts";
 
+/** The pathspec that covers EVERY `.nax` directory, named in advice texts. */
+export const COVERING_EXCLUSION = "':(exclude,glob)**/.nax'";
+
 /** `:!X`, `:^X`, `:(exclude)X`. */
-export const EXCLUDE_PATHSPEC = /^:(?:[!^]|\(exclude[^)]*\))(.*)$/;
+export const EXCLUDE_PATHSPEC = /^:(?:[!^]|\([^)]*exclude[^)]*\))(.*)$/;
 
 /** True when `.nax` is a path segment of `path`. */
 export function hasNaxSegment(path: string): boolean {
@@ -36,18 +39,29 @@ export function operandTouchesNax(operand: string, ctx: NaxGuardContext): boolea
   });
 }
 
-/** `:!.nax`, `:^.nax/`, `:(exclude).nax/**` -- and it must resolve to `<root>/.nax` from EVERY frame. */
+// The glob forms `:(exclude,glob)<any depth>/.nax` and the same with a trailing `/**` cover a `.nax` at any depth.
+const GLOB_EXCLUSION = /^:\((?:exclude,glob|glob,exclude)\)\*\*\/\.nax(?:\/\*\*)?$/;
+
+/**
+ * An exclusion that covers EVERY `.nax` the guard knows of. The glob form always does. The literal forms
+ * (`:!.nax`, `:^.nax/`, `:(exclude).nax` plus a trailing glob) name only `<root>/.nax` (resolved from EVERY frame), so they
+ * count only while that is the single `.nax` there is.
+ */
 export function isFullNaxExclusion(spec: string, ctx: NaxGuardContext): boolean {
+  if (GLOB_EXCLUSION.test(spec)) return true;
   const target = EXCLUDE_PATHSPEC.exec(spec)?.[1];
   if (target === undefined) return false;
+  const rootNax = join(ctx.root, ".nax");
+  if (findNaxDirs(ctx).some((dir) => dir !== rootNax)) return false;
   const path = target.replace(/\/(?:\*\*)?$/, "");
-  return ctx.frames.every((frame) => resolve(frame, path) === join(ctx.root, ".nax"));
+  return ctx.frames.every((frame) => resolve(frame, path) === rootNax);
 }
 
 /** Options whose value occupies the next word, per verb. */
 const VALUE_FLAGS: Readonly<Record<string, ReadonlySet<string>>> = {
   checkout: new Set(["-b", "-B", "--orphan", "--pathspec-from-file"]),
   restore: new Set(["-s", "--source", "--pathspec-from-file"]),
+  clean: new Set(["-e", "--exclude"]),
 };
 
 interface Operands {
@@ -104,19 +118,34 @@ function coversNax(spec: string, ctx: NaxGuardContext, nax: readonly string[]): 
   });
 }
 
-/** `restore --staged` without `--worktree` touches only the index. */
+/** `--staged` and every unambiguous abbreviation git accepts (`--st`), or a short cluster of only `S`. */
+const STAGED_FLAG = /^(?:--st|-S+$)/;
+/** Flags that change nothing about WHAT is restored. */
+const NEUTRAL_RESTORE_FLAG = /^(?:-q|--quiet|--progress|--no-progress)$/;
+
+/**
+ * `restore --staged` touches only the index. Fails closed: every flag must be `--staged` (or an
+ * abbreviation) or a neutral one, so `--wor` / `-SW` / `--source=...` / an unknown flag all count as
+ * touching the worktree.
+ */
 function touchesIndexOnly(flags: readonly string[]): boolean {
-  const staged = flags.includes("--staged") || flags.includes("-S");
-  return staged && !flags.includes("--worktree") && !flags.includes("-W");
+  return (
+    flags.some((f) => STAGED_FLAG.test(f)) && flags.every((f) => STAGED_FLAG.test(f) || NEUTRAL_RESTORE_FLAG.test(f))
+  );
 }
 
 const treeRefusal = (verb: string): string =>
   `${NAX_OWNED_RUN_STATE_EXPLANATION} A whole-tree \`git ${verb}\` reverts it too. ` +
-  `Exclude it: \`git ${verb} -- . ':!.nax'\`.`;
+  `Exclude it: \`git ${verb} -- . ${COVERING_EXCLUSION}\`.`;
 
 const RESET_REFUSAL =
-  `${NAX_OWNED_RUN_STATE_EXPLANATION} \`git reset --hard\` resets the whole tree, \`.nax/\` included, and has no pathspec form. ` +
-  "To discard changes outside it use `git checkout -- . ':!.nax'`; to unstage use plain `git reset`.";
+  `${NAX_OWNED_RUN_STATE_EXPLANATION} \`git reset --hard\` (and \`--keep\` / \`--merge\`) resets the whole tree, ` +
+  "`.nax/` included, and has no pathspec form. " +
+  `To discard changes outside it use \`git checkout -- . ${COVERING_EXCLUSION}\`; to unstage use plain \`git reset\`.`;
+
+const DISCARD_REFUSAL =
+  `${NAX_OWNED_RUN_STATE_EXPLANATION} This command discards or deletes working-tree changes across the whole tree, ` +
+  `\`.nax/\` included. Name the files, or exclude it: \`-- . ${COVERING_EXCLUSION}\` (not available for forced checkouts and switches).`;
 
 function wholeTreeRefusal(verb: string, ops: Operands, ctx: NaxGuardContext): string | undefined {
   const nax = findNaxDirs(ctx);
@@ -127,15 +156,51 @@ function wholeTreeRefusal(verb: string, ops: Operands, ctx: NaxGuardContext): st
   return exclusionOnly || specs.some((spec) => coversNax(spec, ctx, nax)) ? treeRefusal(verb) : undefined;
 }
 
+/** `-f` (alone or in a cluster) or `--force` and its abbreviations. */
+const isForceFlag = (word: string): boolean => /^--fo/.test(word) || (/^-[A-Za-z]+$/.test(word) && word.includes("f"));
+
+/** A forced checkout throws local changes away whatever it names. */
+function forcedCheckoutRefusal(verb: string, ops: Operands, ctx: NaxGuardContext): string | undefined {
+  if (verb !== "checkout" || !ops.flags.some(isForceFlag) || findNaxDirs(ctx).length === 0) return undefined;
+  return ops.hasSeparator && ops.after.some((spec) => isFullNaxExclusion(spec, ctx)) ? undefined : DISCARD_REFUSAL;
+}
+
 /** The refusal for `git checkout` / `git restore` with these arguments, or undefined. */
 export function revertRefusal(verb: string, args: readonly string[], ctx: NaxGuardContext): string | undefined {
   const ops = splitOperands(verb, args);
-  const names = pathOperands(verb, ops, ctx).some((word) => operandTouchesNax(word, ctx));
-  return names ? NAX_OWNED_RUN_STATE_EXPLANATION : wholeTreeRefusal(verb, ops, ctx);
+  // An exclusion NAMES `.nax` to keep it out; it is not an operand that touches it.
+  const names = pathOperands(verb, ops, ctx).some(
+    (word) => !EXCLUDE_PATHSPEC.test(word) && operandTouchesNax(word, ctx),
+  );
+  if (names) return NAX_OWNED_RUN_STATE_EXPLANATION;
+  return wholeTreeRefusal(verb, ops, ctx) ?? forcedCheckoutRefusal(verb, ops, ctx);
 }
 
-/** `git reset --hard` (any abbreviation of the flag git accepts) while a `.nax/` exists. */
+/** `git reset --hard` / `--keep` / `--merge` (any abbreviation git accepts) while a `.nax/` exists. */
 export function resetRefusal(args: readonly string[], ctx: NaxGuardContext): string | undefined {
-  if (!args.some((word) => /^--ha(?:rd?)?$/.test(word))) return undefined;
+  if (!args.some((word) => /^--(?:ha(?:rd?)?|ke|me)/.test(word))) return undefined;
   return findNaxDirs(ctx).length > 0 ? RESET_REFUSAL : undefined;
+}
+
+const hasFlag = (flags: readonly string[], long: RegExp, short: string): boolean =>
+  flags.some((f) => long.test(f) || (/^-[A-Za-z]+$/.test(f) && f.includes(short)));
+
+/** `switch -f`, `clean`, `checkout-index -a -f`, `read-tree -u --reset`: other ways to wipe the tree. */
+export function discardRefusal(verb: string, args: readonly string[], ctx: NaxGuardContext): string | undefined {
+  if (findNaxDirs(ctx).length === 0) return undefined;
+  const ops = splitOperands(verb, args);
+  const covered = ops.hasSeparator && ops.after.some((spec) => isFullNaxExclusion(spec, ctx));
+  const f = ops.flags;
+  if (verb === "switch") {
+    return f.some(isForceFlag) || f.some((w) => /^--di/.test(w)) ? DISCARD_REFUSAL : undefined;
+  }
+  if (verb === "clean") return covered ? undefined : DISCARD_REFUSAL;
+  if (verb === "checkout-index") {
+    return hasFlag(f, /^--al/, "a") && hasFlag(f, /^--fo/, "f") ? DISCARD_REFUSAL : undefined;
+  }
+  if (verb === "read-tree") {
+    const reset = f.some((w) => /^--res/.test(w));
+    return reset && hasFlag(f, /^--upd/, "u") ? DISCARD_REFUSAL : undefined;
+  }
+  return undefined;
 }

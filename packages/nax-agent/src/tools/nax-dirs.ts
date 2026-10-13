@@ -54,15 +54,24 @@ export interface NaxDirIndex {
   below(root: string): readonly string[];
 }
 
-export function createNaxDirIndex(): NaxDirIndex {
-  const byRoot = new Map<string, readonly string[]>();
+/** How long an EMPTY scan result is trusted: a `.nax/` created later is seen within this. */
+const NEGATIVE_TTL_MS = 1_000;
+
+/**
+ * A found `.nax` is cached for the index's lifetime (a deleted one may keep refusing, which is safe); an
+ * empty result only for {@link NEGATIVE_TTL_MS}, so one created mid-run is not invisible for ever.
+ */
+export function createNaxDirIndex(now: () => number = Date.now): NaxDirIndex {
+  const byRoot = new Map<string, { readonly dirs: readonly string[]; readonly at: number }>();
   return {
     below(root) {
       const cached = byRoot.get(root);
-      if (cached !== undefined) return cached;
-      const scanned = scanNaxDirs(root);
-      byRoot.set(root, scanned);
-      return scanned;
+      if (cached !== undefined && (cached.dirs.length > 0 || now() - cached.at < NEGATIVE_TTL_MS)) {
+        return cached.dirs;
+      }
+      const dirs = scanNaxDirs(root);
+      byRoot.set(root, { dirs, at: now() });
+      return dirs;
     },
   };
 }

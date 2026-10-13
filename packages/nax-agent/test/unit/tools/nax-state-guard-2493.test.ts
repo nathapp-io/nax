@@ -68,10 +68,10 @@ describe("#2493 item 1: whole-tree reverts", () => {
   });
 
   test("the denial text names the safe forms", () => {
-    expect(text("git checkout .")).toContain("git checkout -- . ':!.nax'");
-    expect(text("git restore .")).toContain("git restore -- . ':!.nax'");
+    expect(text("git checkout .")).toContain("git checkout -- . ':(exclude,glob)**/.nax'");
+    expect(text("git restore .")).toContain("git restore -- . ':(exclude,glob)**/.nax'");
     const reset = text("git reset --hard") as string;
-    expect(reset).toContain("git checkout -- . ':!.nax'");
+    expect(reset).toContain("git checkout -- . ':(exclude,glob)**/.nax'");
     expect(reset).toContain("git reset");
   });
 
@@ -284,24 +284,26 @@ describe("#2493 item 8: GIT_* environment overrides", () => {
 
 describe("#2493 item 9: expansion in the command head or subcommand", () => {
   test.each([
-    "$G stash",
     "git $X reset --hard",
     "git $X stash",
     "git `echo stash`",
     "git $(echo stash)",
-    "$GIT checkout .",
     "git $V update-index --skip-worktree x",
-    "$G restore -- src",
   ])("denies %s", (command) => {
     expect(text(command)).toBeDefined();
   });
 
-  test.each(["git $X", "$EDITOR file.txt", "echo $HOME", "git status $X", "git log --format=$FMT", "$G status"])(
-    "allows %s",
-    (command) => {
-      expect(text(command)).toBeUndefined();
-    },
-  );
+  test.each([
+    "git $X",
+    "$EDITOR file.txt",
+    "echo $HOME",
+    "git status $X",
+    "git log --format=$FMT",
+    "$G status",
+    "$G stash",
+  ])("allows %s", (command) => {
+    expect(text(command)).toBeUndefined();
+  });
 
   test("allows the same when there is no .nax", () => {
     expect(text("$G stash", withoutNax)).toBeUndefined();

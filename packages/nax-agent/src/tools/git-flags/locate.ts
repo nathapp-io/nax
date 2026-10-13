@@ -166,6 +166,8 @@ export interface LocatedGit {
   readonly uncertain: boolean;
   /** The shell text a `!` alias runs (its value without the `!`, then the call's remaining arguments), or undefined. */
   readonly shellAlias: string | undefined;
+  /** Lower-cased keys set by `-c key=value` and `--config-env=key=VAR`, in order. */
+  readonly configKeys: readonly string[];
   /** True when a leading assignment sets a `GIT_CONFIG*` variable (config, including aliases, injected through the environment). */
   readonly configEnv: boolean;
 }
@@ -173,11 +175,75 @@ export interface LocatedGit {
 interface GlobalState {
   readonly dirs: string[];
   readonly aliases: Map<string, string>;
+  readonly configKeys: string[];
   uncertain: boolean;
 }
 
-/** Aliases may name aliases; git bounds the chain, so does this reader. */
-const MAX_ALIAS_DEPTH = 8;
+/**
+ * Subcommands git runs itself: an alias of the same name is NEVER expanded (`git -c alias.stash=status
+ * stash` really stashes). Every guarded verb plus the common builtins; a name missing here is expanded,
+ * which can only over-refuse.
+ */
+const GIT_BUILTINS: ReadonlySet<string> = new Set([
+  "add",
+  "am",
+  "apply",
+  "archive",
+  "bisect",
+  "blame",
+  "branch",
+  "bundle",
+  "checkout",
+  "checkout-index",
+  "cherry",
+  "cherry-pick",
+  "clean",
+  "clone",
+  "commit",
+  "config",
+  "describe",
+  "diff",
+  "fetch",
+  "format-patch",
+  "gc",
+  "grep",
+  "init",
+  "log",
+  "ls-files",
+  "ls-tree",
+  "merge",
+  "mv",
+  "notes",
+  "pull",
+  "push",
+  "rebase",
+  "reflog",
+  "remote",
+  "reset",
+  "restore",
+  "revert",
+  "rm",
+  "show",
+  "sparse-checkout",
+  "stash",
+  "status",
+  "submodule",
+  "switch",
+  "tag",
+  "update-index",
+  "update-ref",
+  "worktree",
+  "read-tree",
+  "write-tree",
+  "rev-parse",
+  "rev-list",
+  "symbolic-ref",
+  "show-ref",
+  "for-each-ref",
+  "hash-object",
+  "cat-file",
+  "help",
+]);
 
 /** Skip global options from `start`; returns the index of the first word that is not one. */
 function skipGlobals(words: readonly string[], start: number, state: GlobalState): number {
@@ -202,24 +268,35 @@ interface Resolved {
   readonly subcommand: string;
   readonly args: readonly string[];
   readonly shellAlias: string | undefined;
+  readonly cycle: boolean;
 }
 
 /**
- * Expand `-c alias.NAME=VALUE` while `subcommand` names such an alias. The
+ * Expand `-c alias.NAME=VALUE` while `subcommand` names such an alias (never a builtin, see GIT_BUILTINS).
+ * A name met twice is a cycle: `cycle` is set and the chain stops. The
  * expanded words are run through the global-option skip again (an alias may
  * start with `-C .` or `--no-pager`), and a `!` value is also returned as shell text.
  */
 function resolveAliases(subcommand: string, args: readonly string[], state: GlobalState): Resolved {
-  let current: Resolved = { subcommand, args, shellAlias: undefined };
-  for (let depth = 0; depth < MAX_ALIAS_DEPTH; depth += 1) {
-    const value = state.aliases.get(current.subcommand.toLowerCase());
+  let current: Resolved = { subcommand, args, shellAlias: undefined, cycle: false };
+  const seen = new Set<string>();
+  for (;;) {
+    const name = current.subcommand.toLowerCase();
+    const value = GIT_BUILTINS.has(name) ? undefined : state.aliases.get(name);
     if (value === undefined) break;
+    if (seen.has(name)) return { ...current, cycle: true };
+    seen.add(name);
     const shellAlias = value.startsWith("!") ? `${value.slice(1)} ${current.args.join(" ")}`.trim() : undefined;
     const merged = [...aliasWords(value), ...current.args];
     const next = skipGlobals(merged, 0, state);
     const head = merged[next];
     if (head === undefined) break;
-    current = { subcommand: head, args: merged.slice(next + 1), shellAlias: current.shellAlias ?? shellAlias };
+    current = {
+      subcommand: head,
+      args: merged.slice(next + 1),
+      shellAlias: current.shellAlias ?? shellAlias,
+      cycle: false,
+    };
   }
   return current;
 }
@@ -250,7 +327,7 @@ export function locateGit(words: readonly string[]): LocatedGit | undefined {
   const gitIdx = gitExecutableIndex(words);
   if (gitIdx === undefined) return undefined;
   const env = leadingGitEnv(words, gitIdx);
-  const state: GlobalState = { dirs: [...env.dirs], aliases: new Map(), uncertain: false };
+  const state: GlobalState = { dirs: [...env.dirs], aliases: new Map(), configKeys: [], uncertain: false };
   const i = skipGlobals(words, gitIdx + 1, state);
   const unresolvedAlias = words.slice(gitIdx + 1, i).some((word, k, globals) => isConfigEnvAlias(word, globals[k + 1]));
   const subcommand = words[i];
@@ -260,7 +337,8 @@ export function locateGit(words: readonly string[]): LocatedGit | undefined {
     subcommand: resolved.subcommand,
     args: resolved.args,
     dirs: state.dirs,
-    unresolvedAlias,
+    unresolvedAlias: unresolvedAlias || resolved.cycle,
+    configKeys: state.configKeys,
     uncertain: state.uncertain,
     shellAlias: resolved.shellAlias,
     configEnv: env.configEnv,
@@ -277,6 +355,8 @@ function isConfigEnvAlias(word: string, next: string | undefined): boolean {
 function consumeGlobal(words: readonly string[], i: number, state: GlobalState): number {
   const w = words[i] as string;
   if (w === "-c") {
+    const configKey = /^([^=]+)=/.exec(words[i + 1] ?? "")?.[1];
+    if (configKey !== undefined) state.configKeys.push(configKey.toLowerCase());
     const alias = /^alias\.([^=]+)=(.*)$/is.exec(words[i + 1] ?? "");
     if (alias !== null) state.aliases.set((alias[1] as string).toLowerCase(), alias[2] as string);
     return i + 2;
@@ -289,6 +369,10 @@ function consumeGlobal(words: readonly string[], i: number, state: GlobalState):
     return i + 1;
   }
   const value = eq === -1 ? words[i + 1] : w.slice(eq + 1);
+  if (key === "--config-env") {
+    const envKey = /^([^=]+)=/.exec(value ?? "")?.[1];
+    if (envKey !== undefined) state.configKeys.push(envKey.toLowerCase());
+  }
   if (GIT_DIR_OPTIONS.has(key) && value !== undefined) state.dirs.push(value);
   return eq === -1 ? i + 2 : i + 1;
 }
