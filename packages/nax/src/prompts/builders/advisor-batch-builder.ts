@@ -15,13 +15,28 @@ export interface AdvisorBatchPromptInput {
 
 const ANSWER_FIELDS = `"optionId": "A", "instruction": "...", "reason": "...", "newText": "...", "rationale": "...", "confidence": "high|medium|low", "reversible": true, "needsHumanConfirm": false`;
 
+/** The parking guidance follows the menu actually offered: branch scope has no defer and no carry (#2496). */
+function parkGuidance(items: readonly AdviceQuestion[]): string {
+  const offered = new Set(items.flatMap((i) => i.options.map((o) => o.type)));
+  const park = offered.has("defer")
+    ? "Park an item when the reviewer is wrong (waive) or when it is real but can wait for the branch review (defer)."
+    : "No review step follows. Accept the risk (waive) only when the item is safe to ship, and say why in reason; otherwise flag it for a human (hold).";
+  const carry = offered.has("carry")
+    ? " Choose carry only when a later story must act on it, and say exactly what that story must do."
+    : "";
+  return `${park}${carry}`;
+}
+
 function residualBlock(input: AdvisorBatchPromptInput): string {
   const items = input.items.map(advisorQuestionBlock).join("\n\n");
   const gates =
     input.redGates.length > 0
       ? `\n\n## Red gates to diagnose\n${input.redGates.map((g) => `- ${g}`).join("\n")}\nA red gate stays red whatever you rule. Give a short diagnosis for each in "diagnoses".`
       : "";
-  return `## The story reached its fix-round cap\n${input.summary}\n\nRule on each open item below. Park an item when the reviewer is wrong (waive) or when it is real but can wait for the branch review (defer). Choose carry only when a later story must act on it, and say exactly what that story must do.\n\n${items}${gates}
+  const heading = input.items.some((i) => i.options.some((o) => o.type === "defer"))
+    ? "## The story reached its fix-round cap"
+    : "## Open items after the branch fix";
+  return `${heading}\n${input.summary}\n\nRule on each open item below. ${parkGuidance(input.items)}\n\n${items}${gates}
 
 ## Reply
 End your reply with exactly one fenced JSON block, one answer per item id:

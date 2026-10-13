@@ -119,6 +119,30 @@ function giveUpDrafts(f: Extract<MenuFacts, { kind: "fix-cycle-give-up" }>): Dra
   ];
 }
 
+/** Branch adjudication has no later review step, so a real defect can only be accepted or flagged (#2496). */
+function residualDrafts(f: Extract<MenuFacts, { kind: "residual" }>): Draft[] {
+  if (f.scope === "branch") {
+    return [
+      { type: "waive", label: "Accept the risk: say in reason why it is safe to ship" },
+      { type: "hold", label: "A human must decide before this is marked ready" },
+    ];
+  }
+  return [
+    { type: "waive", label: "Park: the reviewer is wrong (say why in reason)" },
+    { type: "defer", label: "Park: real, but defer it to the branch review (say why in reason)" },
+    ...(f.dependents.length > 0
+      ? [
+          {
+            type: "carry" as const,
+            fixed: { toStories: f.dependents },
+            label: `Load-bearing: carry an instruction into ${f.dependents.join(", ")}`,
+          },
+        ]
+      : []),
+    { type: "hold", label: "Flag for a human" },
+  ];
+}
+
 function fixDrafts(pinnedAcs: string[] | undefined): Draft[] {
   if (!pinnedAcs || pinnedAcs.length === 0) return [{ type: "fix" }];
   return [
@@ -160,20 +184,7 @@ export function buildMenu(facts: MenuFacts): AdviceOption[] {
         { type: "hold", label: "No answer: the implementer goes on to review with its concern" },
       ]);
     case "residual":
-      return withIds([
-        { type: "waive", label: "Park: the reviewer is wrong (say why in reason)" },
-        { type: "defer", label: "Park: real, but defer it to the branch review (say why in reason)" },
-        ...(facts.dependents.length > 0
-          ? [
-              {
-                type: "carry" as const,
-                fixed: { toStories: facts.dependents },
-                label: `Load-bearing: carry an instruction into ${facts.dependents.join(", ")}`,
-              },
-            ]
-          : []),
-        { type: "hold", label: "Flag for a human" },
-      ]);
+      return withIds(residualDrafts(facts));
     case "preflight":
       return withIds(preflightDrafts(facts));
   }

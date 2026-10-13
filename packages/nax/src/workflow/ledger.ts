@@ -21,7 +21,8 @@ function oneLine(text: string): string {
 export const ledgerText = {
   fixRound: (round: number, max: number, summary: string): string => `fix round ${round}/${max} (${oneLine(summary)})`,
   deferredMinor: (issue: string): string => `deferred-minor: ${oneLine(issue)}`,
-  ruling: (r: WorkflowRuling): string => `Ruling: ${oneLine(r.text)} — ${oneLine(r.why)} — ${oneLine(r.costIfWrong)}`,
+  ruling: (r: WorkflowRuling): string =>
+    `Ruling: ${oneLine(r.text)} — ${oneLine(r.why)} — ${oneLine(r.costIfWrong)}${r.coercedFrom ? " (coerced from defer: no later review step)" : ""}`,
   end: (state: WorkflowEndState, summary: string): string => `${state} (${oneLine(summary)})`,
   reviewSkipped: (what: string): string => `review-skipped (${oneLine(what)})`,
   note: (text: string): string => oneLine(text),

@@ -40,6 +40,8 @@ export interface WorkflowRuling {
   readonly toStories?: readonly string[];
   /** The advisor asked for a human to confirm this ruling (keeps the PR a draft). */
   readonly needsHumanConfirm?: boolean;
+  /** Set when the advisor answered an action the scope does not allow and nax substituted this one (#2496). */
+  readonly coercedFrom?: "defer";
 }
 
 export interface WorkflowStoryRecord {

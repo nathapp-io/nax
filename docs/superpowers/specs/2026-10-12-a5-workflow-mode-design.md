@@ -376,7 +376,7 @@ only means "don't re-run".
   |---|---|---|---|
   | `preflight` (batch) | Once before the first story (if `workflow.preflight`) | `follow-ac` → `supersede {target: spec}` / `follow-spec` → `supersede {target: ac}` / `reconcile` → `supersede` with `newText` / `flag-human` → `hold` (the story runs under the stated default) | `hold` for each conflict |
   | `implementer-question` | `NEEDS_CONTEXT` / `BLOCKED` (≤ 2 per story) | **new** `answer {text}` | No answer. Proceed to review with the concern |
-  | `residual` (batch) | Story cap, branch adjudication | `park-reviewer-wrong` → `waive` / `park-real-deferred` → `defer` / `load-bearing` → **new** `carry {instruction, toStories}` (story scope only) (`toStories` is fixed by the menu: the story's not-yet-passed dependents, P3-R1) / `flag-human` → `hold`. Plus a free-text diagnosis for each red gate | `hold` for each item |
+  | `residual` (batch) | Story cap, branch adjudication | `park-reviewer-wrong` → `waive` / `park-real-deferred` → `defer` (story scope only; at branch scope the menu is `waive` / `hold` and a returned `defer` is coerced to a flagged `hold`, #2496) / `load-bearing` → **new** `carry {instruction, toStories}` (story scope only) (`toStories` is fixed by the menu: the story's not-yet-passed dependents, P3-R1) / `flag-human` → `hold`. Plus a free-text diagnosis for each red gate | `hold` for each item |
   | `finish-approval` | §7.8 | existing | draft |
 
   Pre-flight's output (overlap table + conflicts) is written to `preflight.json`. Rulings go to the ledger,

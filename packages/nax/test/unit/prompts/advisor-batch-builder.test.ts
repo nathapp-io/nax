@@ -64,4 +64,34 @@ describe("buildAdvisorBatchPrompt", () => {
       expect(text).toContain(needle);
     }
   });
+
+  test("residual without a defer option says no review step follows (#2496)", () => {
+    const text = buildAdvisorBatchPrompt({
+      ...base,
+      kind: "residual",
+      summary: "branch",
+      items: [item],
+      redGates: [],
+      storyIds: [],
+    });
+    expect(text).toContain("No review step follows");
+    expect(text).not.toContain("can wait for the branch review");
+    expect(text).not.toContain("Choose carry");
+  });
+
+  test("residual with a defer option keeps the branch-review guidance", () => {
+    const withDefer: AdviceQuestion = {
+      ...item,
+      options: [...item.options, { id: "B", type: "defer", label: "Park: defer" }],
+    };
+    const text = buildAdvisorBatchPrompt({
+      ...base,
+      kind: "residual",
+      summary: "s",
+      items: [withDefer],
+      redGates: [],
+      storyIds: [],
+    });
+    expect(text).toContain("can wait for the branch review (defer)");
+  });
 });

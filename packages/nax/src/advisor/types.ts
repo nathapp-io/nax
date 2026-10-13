@@ -144,5 +144,5 @@ export type MenuFacts =
       reReviewPhase: "spec" | "quality";
     }
   | { kind: "implementer-question" }
-  | { kind: "residual"; dependents: string[] }
+  | { kind: "residual"; dependents: string[]; scope?: "story" | "branch" }
   | { kind: "preflight"; acRef?: { storyId: string; acId: string }; specSection?: string };
