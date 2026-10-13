@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import type { RestoreReport } from "@/review/reviewer-guard";
 import { _reviewerGuardDeps, REVIEWER_SESSION_ROLES, ReviewerTreeGuard } from "@/review/reviewer-guard";
-import type { SessionDescriptor } from "@/session";
+import type { SessionDescriptor, SessionRole } from "@/session";
 
 const saved = { ..._reviewerGuardDeps };
 const dirs: string[] = [];
@@ -15,7 +15,7 @@ afterEach(async () => {
   await Promise.all(dirs.splice(0).map((d) => rm(d, { recursive: true, force: true })));
 });
 
-function desc(role: string, id = role, workdir = "/repo/pkg"): SessionDescriptor {
+function desc(role: SessionRole, id: string = role, workdir = "/repo/pkg"): SessionDescriptor {
   return {
     id,
     role,
@@ -27,7 +27,7 @@ function desc(role: string, id = role, workdir = "/repo/pkg"): SessionDescriptor
     completedStages: [],
     createdAt: "",
     lastActivityAt: "",
-  } as SessionDescriptor;
+  };
 }
 
 const CLEAN: RestoreReport = { paths: [], indexRestored: false, headRestored: false, stashesDropped: 0, failures: [] };

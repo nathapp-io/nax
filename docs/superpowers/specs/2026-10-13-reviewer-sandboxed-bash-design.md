@@ -161,7 +161,7 @@ path). Paths added mid-session (a worktree created during the session, new `.nax
 reflected until the next open; native recomputes per command. Accepted: sessions are per story/role
 and short-lived relative to such changes.
 
-**Config.** `execution.sandbox.enabled: false` sends no sandbox (same as native).
+**Config.** `execution.sandbox.enabled: false` sends no sandbox (same as native). Under `review`, commands are then denied when no sandbox policy is present, even though sandboxing is disabled (controller ruling R3); native reviewers lose Bash without a usable sandbox (R9).
 
 **R4 file-tool path check (`full`).** The sandbox wraps Bash only. Under `full`, Claude's edit tools
 raise permission requests with ACP `kind` `edit` (or `delete`/`move`). `decidePermission` takes the
