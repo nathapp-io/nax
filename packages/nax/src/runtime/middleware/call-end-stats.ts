@@ -2,9 +2,11 @@
  * The agent-stream's counters for a call that just ended, handed to the dispatch "Agent call complete"
  * line so the end of a call is ONE info line (nax#2491 P7).
  *
- * Keyed by session name: the stream event's `callId` is the transport's, the dispatch event's is the
- * operation's, and the two never match (see `ToolCallRecord.callId`). A session runs one call at a time,
- * so the latest note for a session is the call that just ended. Bounded; a note nobody takes is dropped.
+ * Keyed by run and session name: the stream event's `callId` is the transport's, the dispatch event's is the
+ * operation's, and the two never match (see `ToolCallRecord.callId`). A note is only handed to a dispatch
+ * event whose call was RUNNING when the note's call ended (`endedAt >= the dispatch call's start`), so a note
+ * left behind by a call whose dispatch event never came is not attached to the next call. Bounded per run,
+ * and dropped when the run's subscribers are detached.
  */
 export interface CallEndStats {
   readonly status: string;
@@ -14,21 +16,34 @@ export interface CallEndStats {
   readonly idleMs: number;
 }
 
-const MAX_PENDING = 256;
-const pending = new Map<string, CallEndStats>();
+interface Note {
+  readonly stats: CallEndStats;
+  readonly endedAt: number;
+}
 
-export function noteCallEnded(sessionName: string, stats: CallEndStats): void {
-  pending.delete(sessionName);
-  pending.set(sessionName, stats);
-  if (pending.size > MAX_PENDING) {
-    const oldest = pending.keys().next().value;
-    if (oldest !== undefined) pending.delete(oldest);
+const MAX_PENDING_PER_RUN = 256;
+const pending = new Map<string, Map<string, Note>>();
+
+export function noteCallEnded(runId: string, sessionName: string, stats: CallEndStats, endedAt: number): void {
+  const run = pending.get(runId) ?? new Map<string, Note>();
+  pending.set(runId, run);
+  run.delete(sessionName);
+  run.set(sessionName, { stats, endedAt });
+  if (run.size > MAX_PENDING_PER_RUN) {
+    const oldest = run.keys().next().value;
+    if (oldest !== undefined) run.delete(oldest);
   }
 }
 
-/** The counters of the session's most recent ended call, once. */
-export function takeCallEnded(sessionName: string): CallEndStats | undefined {
-  const stats = pending.get(sessionName);
-  pending.delete(sessionName);
-  return stats;
+/** The counters of the session's most recent ended call, once, if that call ended at or after `startedAt`. */
+export function takeCallEnded(runId: string, sessionName: string, startedAt: number): CallEndStats | undefined {
+  const run = pending.get(runId);
+  const note = run?.get(sessionName);
+  run?.delete(sessionName);
+  return note !== undefined && note.endedAt >= startedAt ? note.stats : undefined;
+}
+
+/** Forget a run's notes (its subscribers were detached). */
+export function clearRunCallEnds(runId: string): void {
+  pending.delete(runId);
 }

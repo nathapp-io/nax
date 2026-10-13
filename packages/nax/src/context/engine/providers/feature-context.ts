@@ -396,14 +396,19 @@ export class FeatureContextProviderV2 implements IContextProvider {
       // of invisible failure as the empty one this bound replaced.
       // Note: the loop keeps scanning after a skip, so a small distant
       // fragment may still fit once a larger nearer one has been dropped.
-      logger.warnOnce("feature-context-v2", "Fragment budget reached — some dependency fragments were dropped", {
-        storyId: request.storyId,
+      logger.warnOnce(
+        "feature-context-v2",
+        "Fragment budget reached — some dependency fragments were dropped",
+        {
+          storyId: request.storyId,
+          featureId,
+          kept: out.length,
+          dropped: droppedForBudget,
+          fragmentBudget,
+          usedTokens,
+        },
         featureId,
-        kept: out.length,
-        dropped: droppedForBudget,
-        fragmentBudget,
-        usedTokens,
-      });
+      );
     }
 
     if (out.length > 0) {

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { makeMockCallContext, makeNaxConfig, makeTestStory } from "@test/helpers";
+import { ladderSlotKey } from "@/agents/ladder-slot";
 import { previewOpModel, workflowImplementOp, workflowStoryReviewOp } from "@/operations";
 import type { UserStory } from "@/prd";
 
@@ -40,6 +41,18 @@ describe("previewOpModel", () => {
     const ctx = makeMockCallContext({ config, agentName: "claude" });
     const preview = previewOpModel(ctx, workflowStoryReviewOp, { prompt: "", timeoutMs: 1 });
     expect(preview).toEqual({ agentName: "claude", model: "model-b" });
+  });
+
+  test("a story that already swapped to another endpoint names the swapped one", () => {
+    const ctx = makeMockCallContext({ config, agentName: "native", storyId: "US-001" });
+    ctx.runtime.ladderSlots.set(ladderSlotKey("US-001", "fast", "native", "wf-implementer"), {
+      target: { agent: "claude", tier: "fast" },
+      depth: 1,
+    });
+    expect(previewOpModel(ctx, workflowImplementOp, implementer(routed("fast")))).toEqual({
+      agentName: "claude",
+      model: "model-a",
+    });
   });
 
   test("returns undefined instead of throwing when the model cannot be resolved", () => {

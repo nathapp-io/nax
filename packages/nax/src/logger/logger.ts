@@ -293,8 +293,10 @@ export class Logger {
    * so the JSONL keeps the full tally for telemetry. The ledger is per Logger
    * instance, which is per run.
    */
-  warnOnce(stage: string, message: string, data?: Record<string, unknown>): void {
-    const key = `${stage}|${message}`;
+  warnOnce(stage: string, message: string, data?: Record<string, unknown>, discriminator?: string): void {
+    // `discriminator` separates occurrences that share a message but differ in what they are about
+    // (an agent/tier pair, a package): each of those still warns once.
+    const key = `${stage}|${message}${discriminator === undefined ? "" : `|${discriminator}`}`;
     const seen = (this.warnOnceSeen.get(key) ?? 0) + 1;
     this.warnOnceSeen.set(key, seen);
 

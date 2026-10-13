@@ -120,7 +120,7 @@ function ctxFor(dir: string): AdvisorCallContext {
 }
 
 describe("advisor service logging", () => {
-  test("a hold (force-flagged, no channel) logs ONE info line with the content and no separate warning", async () => {
+  test("a hold (force-flagged, no channel) logs ONE warn line with the content and no separate warning", async () => {
     await withTempDir(async (dir) => {
       stub({
         ok: true,
@@ -135,10 +135,11 @@ describe("advisor service logging", () => {
       });
       await createAdvisor(ctxFor(dir)).advise(judgment);
       const advisor = logs.filter((e) => e.stage === "advisor");
-      expect(advisor.filter((e) => e.level === "warn")).toHaveLength(0);
+      expect(advisor.filter((e) => e.level === "warn" && !e.message.startsWith("Advisor ruling"))).toHaveLength(0);
       const rulings = advisor.filter((e) => e.message.startsWith("Advisor ruling"));
       expect(rulings).toHaveLength(1);
-      expect(rulings[0]?.level).toBe("info");
+      // A decision that needs a human and cannot reach one is a warning: nothing else will tell anyone.
+      expect(rulings[0]?.level).toBe("warn");
       expect(rulings[0]?.message).toContain("[finish-judgment] US-002: hold: needs a human (confidence low)");
       expect(rulings[0]?.message).toEndWith("; flagged, no delivery channel");
     });

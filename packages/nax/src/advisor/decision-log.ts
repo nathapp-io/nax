@@ -62,7 +62,9 @@ export function decisionLine(decision: AdviceDecision, headsUp?: HeadsUpOutcome)
 }
 
 export function logAdvisorDecision(decision: AdviceDecision, headsUp?: HeadsUpOutcome): void {
-  getSafeLogger()?.info("advisor", decisionLine(decision, headsUp), {
+  // Flagged for a human with no way to reach one: the old standalone warning's severity, now on the ruling line.
+  const stranded = decision.needsHumanConfirm && headsUp?.reason === "no-channel";
+  getSafeLogger()?.[stranded ? "warn" : "info"]("advisor", decisionLine(decision, headsUp), {
     storyId: decision.storyId ?? "_run",
     decisionId: decision.id,
     questionId: decision.questionId,

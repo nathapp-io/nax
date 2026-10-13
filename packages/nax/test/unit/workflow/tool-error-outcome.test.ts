@@ -6,6 +6,7 @@ import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import {
   describeRepeatedToolErrors,
   readToolRowsSince,
+  resetToolErrorClaims,
   type ToolRow,
   withToolErrorOutcome,
 } from "@/workflow/tool-error-outcome";
@@ -57,6 +58,20 @@ describe("describeRepeatedToolErrors", () => {
     ]);
   });
 
+  test("an Exec error is keyed by its argv, and a call with no target is never grouped", () => {
+    const exec = (outcome: string, argv: string[]): ToolRow => ({ tool: "Exec", outcome, input: { argv } });
+    expect(
+      describeRepeatedToolErrors([
+        exec("error", ["bun", "test", "a"]),
+        exec("error", ["bun", "test", "a"]),
+        exec("error", ["bun", "test", "a"]),
+        exec("ok", ["bun", "test", "a"]),
+      ]),
+    ).toEqual(["3 Exec errors on bun test a, then succeeded"]);
+    const bare = (outcome: string): ToolRow => ({ tool: "Glob", outcome, input: {} });
+    expect(describeRepeatedToolErrors([bare("error"), bare("error"), bare("error"), bare("ok")])).toEqual([]);
+  });
+
   test("denied calls are not errors", () => {
     expect(describeRepeatedToolErrors([1, 2, 3].map(() => row("Edit", "denied", "src/a.ts")))).toEqual([]);
   });
@@ -103,11 +118,78 @@ describe("readToolRowsSince", () => {
   });
 });
 
+describe("withToolErrorOutcome windows and claims rows (ACP writes the file at session close)", () => {
+  const dirs: string[] = [];
+  let logs: LogEntry[] = [];
+  beforeEach(() => {
+    resetLogger();
+    resetToolErrorClaims();
+    logs = [];
+    initLogger({ level: "silent" });
+    addSink((entry) => logs.push(entry));
+  });
+  afterEach(async () => {
+    resetLogger();
+    await Promise.all(dirs.map(cleanupTempDir));
+    dirs.length = 0;
+  });
+  const at = (ms: number): string => new Date(ms).toISOString();
+  const timed = (ms: number, n: number, file = "src/a.ts"): ToolRow[] =>
+    Array.from({ length: n }, () => ({ ...row("Edit", "error", file), at: at(ms) }));
+  const step = (out: string, run: string, now: () => number) => ({
+    outputDir: out,
+    feature: "feat",
+    runId: run,
+    storyId: "_run",
+    now,
+  });
+  const lines = () => logs.filter((e) => e.stage === "workflow").map((e) => e.message);
+
+  test("rows stamped before the step began are not blamed on it", async () => {
+    const out = makeTempDir("tool-err-win-");
+    dirs.push(out);
+    // One session file written at close holds an EARLIER step's errors (10_000) and this step's (50_000).
+    await Bun.write(
+      join(out, "tool-audit", "feat", "winrun-60000-s.json"),
+      JSON.stringify({ calls: [...timed(10_000, 3, "old.ts"), ...timed(50_000, 3, "new.ts")] }),
+    );
+    let clock = 40_000;
+    await withToolErrorOutcome(
+      step(out, "winrun", () => clock),
+      "step B",
+      async () => {
+        clock = 55_000;
+      },
+    );
+    expect(lines()).toEqual(["step B: 3 Edit errors on new.ts, then gave up"]);
+  });
+
+  test("a row already reported by one step is not reported by the next", async () => {
+    const out = makeTempDir("tool-err-claim-");
+    dirs.push(out);
+    await Bun.write(
+      join(out, "tool-audit", "feat", "claimrun-60000-s.json"),
+      JSON.stringify({ calls: timed(50_000, 3) }),
+    );
+    let clock = 40_000;
+    const now = () => clock;
+    await withToolErrorOutcome(step(out, "claimrun", now), "first", async () => {
+      clock = 55_000;
+    });
+    clock = 40_000;
+    await withToolErrorOutcome(step(out, "claimrun", now), "second", async () => {
+      clock = 55_000;
+    });
+    expect(lines()).toEqual(["first: 3 Edit errors on src/a.ts, then gave up"]);
+  });
+});
+
 describe("withToolErrorOutcome", () => {
   let logs: LogEntry[] = [];
   const dirs: string[] = [];
   beforeEach(() => {
     resetLogger();
+    resetToolErrorClaims();
     logs = [];
     initLogger({ level: "silent" });
     addSink((entry) => logs.push(entry));

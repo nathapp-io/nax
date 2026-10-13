@@ -286,6 +286,24 @@ describe("resolveTierMembership (spec §3)", () => {
     }
   });
 
+  test("each distinct agent/tier pair across the boundary warns once, a repeat does not", () => {
+    const levels: string[] = [];
+    resetLogger();
+    initLogger({ level: "debug" });
+    const removeSink = addSink((entry) => {
+      if (entry.message.startsWith("Configured tier resolves")) levels.push(entry.level);
+    });
+    try {
+      resolveConfiguredModel(models, "claude", { agent: "native", model: "balanced" }, "claude");
+      resolveConfiguredModel(models, "claude", { agent: "native", model: "balanced" }, "claude");
+      resolveConfiguredModel(models, "claude", { agent: "native", model: "fast" }, "claude");
+      expect(levels).toEqual(["warn", "debug", "warn"]);
+    } finally {
+      removeSink();
+      resetLogger();
+    }
+  });
+
   test("provider-qualified literal stays a pin (modelTier absent)", () => {
     const r = resolveConfiguredModel(models, "claude", { agent: "native", model: "opencode-go/qwen-4" }, "claude");
     expect(r.modelTier).toBeUndefined();

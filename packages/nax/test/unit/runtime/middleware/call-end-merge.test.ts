@@ -17,6 +17,8 @@ afterEach(() => resetLogger());
 
 const base = { runId: "r-1", agentName: "claude", sessionName: "sess-1", storyId: "s-1", stage: "run" as const };
 
+import { clearRunCallEnds } from "@/runtime/middleware/call-end-stats";
+
 function runCall(order: "stream-first" | "dispatch-first"): void {
   const stream = new AgentStreamEventBus();
   const dispatch = new DispatchEventBus();
@@ -56,6 +58,63 @@ function runCall(order: "stream-first" | "dispatch-first"): void {
 
 const infoEnds = () =>
   logs.filter((e) => e.level === "info" && (e.message === "Agent call ended" || e.message === "Agent call complete"));
+
+describe("a note never attaches to the wrong call", () => {
+  const complete = (dispatch: DispatchEventBus, timestamp: number, durationMs: number): void =>
+    dispatch.emitDispatch({
+      ...base,
+      kind: "complete",
+      sessionRole: "main",
+      prompt: "p",
+      response: "r",
+      resolvedPermissions: { mode: "approve-reads", bashApproval: "raw" },
+      durationMs,
+      timestamp,
+    });
+  const stream = (bus: AgentStreamEventBus, kind: "agent.call_started" | "agent.call_ended", timestamp: number) =>
+    bus.emitAgentStream(
+      kind === "agent.call_started"
+        ? { ...base, kind, callId: "c", pid: 1, timestamp, model: "m", timeoutSeconds: 60 }
+        : { ...base, kind, callId: "c", timestamp, status: "success" },
+    );
+
+  test("a stale note from a call whose dispatch event never came is not given to the next call", () => {
+    const streams = new AgentStreamEventBus();
+    const dispatch = new DispatchEventBus();
+    attachAgentStreamLogging(streams, "r-1");
+    attachLoggingSubscriber(dispatch, "r-1");
+    stream(streams, "agent.call_started", 1000);
+    stream(streams, "agent.call_ended", 5000); // call 1: noted, its dispatch event is lost (an error path)
+    complete(dispatch, 9000, 3000); // call 2 (started 6000): dispatch lands before its own stream end
+    const line = logs.find((e) => e.message === "Agent call complete");
+    expect(line?.data).not.toHaveProperty("messageUpdates");
+    expect(line?.data).not.toHaveProperty("status");
+  });
+
+  test("notes are per run: another run's dispatch never takes them", () => {
+    const streams = new AgentStreamEventBus();
+    attachAgentStreamLogging(streams, "r-1");
+    const otherDispatch = new DispatchEventBus();
+    attachLoggingSubscriber(otherDispatch, "r-2");
+    stream(streams, "agent.call_started", 1000);
+    stream(streams, "agent.call_ended", 5000);
+    complete(otherDispatch, 5001, 4000);
+    expect(logs.find((e) => e.message === "Agent call complete")?.data).not.toHaveProperty("status");
+  });
+
+  test("detaching a run's subscribers drops its notes", () => {
+    const streams = new AgentStreamEventBus();
+    const offStream = attachAgentStreamLogging(streams, "r-3");
+    stream(streams, "agent.call_started", 1000);
+    stream(streams, "agent.call_ended", 5000);
+    offStream();
+    const dispatch = new DispatchEventBus();
+    attachLoggingSubscriber(dispatch, "r-3");
+    complete(dispatch, 5001, 4000);
+    expect(logs.find((e) => e.message === "Agent call complete")?.data).not.toHaveProperty("status");
+    clearRunCallEnds("r-3");
+  });
+});
 
 describe("agent call end lines", () => {
   test("one info line per call: the middleware line, carrying the stream's counters", () => {

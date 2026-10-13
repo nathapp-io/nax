@@ -9,6 +9,7 @@ import { newFeatureRecord } from "@/workflow/feature-record";
 import { readResult } from "@/workflow/result";
 import { _workflowDeps } from "@/workflow/step-context";
 import { startTokenMeter } from "@/workflow/tokens";
+import { resetToolErrorClaims } from "@/workflow/tool-error-outcome";
 
 const original = { ..._workflowDeps };
 const dirs: string[] = [];
@@ -61,6 +62,7 @@ function setup(over: (runDir: string) => Parameters<typeof makeFeatureContext>[0
 describe("buildFeatureEnv step wiring (nax#2491 P6, P8)", () => {
   test("the branch fix reports repeated tool errors after the step, and names its model", async () => {
     resetLogger();
+    resetToolErrorClaims();
     const logs: LogEntry[] = [];
     initLogger({ level: "silent" });
     addSink((entry) => logs.push(entry));

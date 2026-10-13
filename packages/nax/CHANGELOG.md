@@ -12,6 +12,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Run log and Duration, review round 1 (nax#2491, nax#2494).** The repeated-tool-error line now counts a row
+  only inside the step's own time window (each tool-audit row carries its timestamp; a row without one falls
+  back to its file's stamp) and reports each row once per run, so an ACP session that writes its audit file at
+  close is not blamed on the wrong step (an ACP step whose file is not written until later gets no line);
+  `Exec` calls are keyed by their argv and calls that name no target are never grouped. The model named on a
+  step start line follows the story's sticky ladder slot, so a story that already swapped away from a dead
+  primary names the endpoint it will use. `warnOnce` takes an optional discriminator, used for the
+  cross-protocol tier warning (per agent/tier) and the budget warnings, so distinct cases each warn once. A
+  flagged advisor decision that has no way to reach a human is logged at warn. The merged agent-call end line
+  only takes stream counters from a call that was running when the note's call ended, per run, and drops them
+  when the run's subscribers detach. The footer shows `+ end phase` only when the end phase took a second or
+  more. Known and kept: on `run.complete`, `costByStage`, `costByStory` and `errorCostUsd` (and
+  `RunResult.runCompletedAt`) still describe the stories phase, as `run:completed` does; `totalCost` and the
+  durations are the final, whole-run figures.
 - **Run log: advisor rulings, resolved models, quieter gates, tool-error outcomes (nax#2491 P4, P6-P8).**
   Every advisor decision logs one `advisor` info line, `Advisor ruling [<caller>] <story>: <ruling, about 200
   characters> (confidence <c>)`, and a flagged decision that has no way to reach a human says so on that same

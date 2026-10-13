@@ -231,12 +231,17 @@ export function resolveConfiguredModel(
   if (membership.isTier) {
     if (membership.viaDefaultAgentFallback && (selection.agent === "native") !== (defaultAgent === "native")) {
       // warnOnce: resolution runs on every call, so the same boundary would warn per call (nax#2491 P7).
-      // The first occurrence warns; repeats (any agent/tier) go to debug with their data.
-      getSafeLogger()?.warnOnce("config", "Configured tier resolves via the default agent across a protocol boundary", {
-        agent: selection.agent,
-        tier: selection.model,
-        defaultAgent,
-      });
+      // The first occurrence of each agent/tier pair warns; its repeats go to debug with their data.
+      getSafeLogger()?.warnOnce(
+        "config",
+        "Configured tier resolves via the default agent across a protocol boundary",
+        {
+          agent: selection.agent,
+          tier: selection.model,
+          defaultAgent,
+        },
+        `${selection.agent}|${selection.model}`,
+      );
     }
     return {
       agent: selection.agent,

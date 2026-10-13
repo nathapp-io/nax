@@ -2,7 +2,7 @@
  * nax#2494: in pipeline mode the run's Duration runs through the end phase (finish, ...), and
  * run.complete is written after it with the stories / end-phase split.
  */
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import {
   makeMockRuntime,
   makeNaxConfig,
@@ -177,6 +177,26 @@ describe("runCompletionPhase — Duration in pipeline mode (nax#2494)", () => {
     _workflowEndReportDeps.saveDuration = async () => false;
     await runCompletionPhase(opts());
     expect(logs.some((e) => e.level === "warn" && e.message.startsWith("No saved run metrics"))).toBe(true);
+  });
+
+  test("the footer shows the split only when the end phase took a second or more", async () => {
+    const log = spyOn(console, "log").mockImplementation(() => {});
+    try {
+      await runCompletionPhase(opts({ headless: true, formatterMode: "normal" }));
+      expect(log.mock.calls.map((c) => String(c[0])).join("\n")).toContain("end phase");
+      log.mockClear();
+      _runnerCompletionDeps.runFinishPhase = mock(async () => {
+        clock += 400;
+        return null;
+      });
+      clock = 1_000_000 + STORIES_MS;
+      await runCompletionPhase(opts({ headless: true, formatterMode: "normal" }));
+      const out = log.mock.calls.map((c) => String(c[0])).join("\n");
+      expect(out).toContain("Duration");
+      expect(out).not.toContain("end phase");
+    } finally {
+      log.mockRestore();
+    }
   });
 
   test("no workflow summary line is logged in pipeline mode", async () => {

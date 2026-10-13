@@ -176,6 +176,9 @@ async function closePipelineRun(options: RunnerCompletionOptions, input: CloseIn
   return { final, summary: undefined };
 }
 
+/** Below this the end phase is not worth a `+ end phase` split in the footer. */
+const MIN_SPLIT_END_PHASE_MS = 1_000;
+
 export interface EndPhaseReport {
   /** undefined in pipeline mode. */
   readonly workflowPassed: boolean | undefined;
@@ -209,15 +212,15 @@ export async function runEndPhaseReported(
   };
   if (workflowPassed === undefined) {
     const run = await closePipelineRun(options, input);
+    const endPhaseDurationMs = run.final.endPhaseDurationMs ?? 0;
+    // A finish that did not run (or took no time) has nothing to split out: the footer stays plain.
     return {
       workflowPassed,
       durationMs: run.final.durationMs,
-      footer: {
-        endPhaseTiming: {
-          storiesDurationMs: run.final.storiesDurationMs,
-          endPhaseDurationMs: run.final.endPhaseDurationMs ?? 0,
-        },
-      },
+      footer:
+        endPhaseDurationMs >= MIN_SPLIT_END_PHASE_MS
+          ? { endPhaseTiming: { storiesDurationMs: run.final.storiesDurationMs, endPhaseDurationMs } }
+          : {},
     };
   }
   const run = await closeWorkflowRun(options, input);
