@@ -51,7 +51,8 @@ export function buildWorkflowRunSummary(
       maxRounds: s.maxRounds,
       ...(s.state ? { state: s.state } : {}),
     })),
-    ...(rec ? { branch: branchOf(rec) } : {}),
+    ...(rec?.reviewRan ? { branch: branchOf(rec) } : {}),
+    ...(rec && !rec.reviewRan ? { branchReviewSkipped: true } : {}),
     ...(finalGates ? { finalGates: finalGates.failing.length === 0 ? ("green" as const) : ("red" as const) } : {}),
     ...(rec?.outcome
       ? { publish: { outcome: rec.outcome, ...(rec.url ? { url: rec.url } : {}), reasons: rec.reasons } }

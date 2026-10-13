@@ -108,4 +108,24 @@ describe("story loop run log", () => {
     expect(workflow.length).toBeGreaterThan(0);
     for (const e of workflow) expect(Object.keys(e.data ?? {})[0]).toBe("storyId");
   });
+
+  describe("one line per fact (M4)", () => {
+    test("a skipped review and the story close reach the ledger without the log mirroring them", async () => {
+      const env = envFor(review(), []);
+      const ledgerCalls: { text: string; mirror: boolean | undefined }[] = [];
+      const run: StoryLoopEnv = {
+        ...env,
+        sink: {
+          ...env.sink,
+          ledger: async (text, options) => void ledgerCalls.push({ text, mirror: options?.mirror }),
+        },
+        steps: { ...env.steps, storyReview: async () => ({ ran: false, why: "timeout" }) },
+      };
+      await runStoryLoop(run);
+      const skipped = ledgerCalls.find((c) => c.text.startsWith("review-skipped"));
+      const end = ledgerCalls.find((c) => c.text.startsWith("complete"));
+      expect(skipped?.mirror).toBe(false);
+      expect(end?.mirror).toBe(false);
+    });
+  });
 });

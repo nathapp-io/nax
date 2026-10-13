@@ -36,6 +36,7 @@ function resultFile(): WorkflowResultFile {
       ...feature,
       step: "done",
       nextFindingId: 5,
+      reviewRan: true,
       reviewOpen: [{ id: "B4", kind: "quality", severity: "important", issue: "x" }],
       newMinors: ["nit"],
       finalGates: { ran: ["lint"], failing: [] },
@@ -86,5 +87,31 @@ describe("buildWorkflowRunSummary", () => {
 
   test("a missing result file yields no summary", () => {
     expect(buildWorkflowRunSummary(null, { storiesDurationMs: 1, featureWorkflowDurationMs: 1 })).toBeNull();
+  });
+
+  describe("branch review skipped (L3)", () => {
+    test("no branch section, and the view says the review was skipped", () => {
+      const file = resultFile();
+      const rec = file.featureWorkflow;
+      if (!rec) throw new Error("fixture has a feature record");
+      const v = buildWorkflowRunSummary(
+        { ...file, featureWorkflow: { ...rec, reviewRan: false } },
+        { storiesDurationMs: 1, featureWorkflowDurationMs: 1 },
+      );
+      expect(v?.branch).toBeUndefined();
+      expect(v?.branchReviewSkipped).toBe(true);
+    });
+
+    test("a review that ran has a branch section and no skipped flag", () => {
+      const file = resultFile();
+      const rec = file.featureWorkflow;
+      if (!rec) throw new Error("fixture has a feature record");
+      const v = buildWorkflowRunSummary(
+        { ...file, featureWorkflow: { ...rec, reviewRan: true } },
+        { storiesDurationMs: 1, featureWorkflowDurationMs: 1 },
+      );
+      expect(v?.branch).toBeDefined();
+      expect(v?.branchReviewSkipped).toBeUndefined();
+    });
   });
 });

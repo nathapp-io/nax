@@ -8,7 +8,7 @@ import type { FeatureContext, WorkflowFeatureInput } from "./feature-context";
 import type { FeatureEnv, FeatureSink, FeatureSteps } from "./feature-machine";
 import { publish } from "./finalize";
 import { readHead } from "./git";
-import { appendLedger } from "./ledger";
+import { appendLedger, type LedgerWriteOptions } from "./ledger";
 import type { LedgerItems } from "./ledger-items";
 import type { PreflightFile } from "./preflight";
 import { runRepoGates } from "./repo-gates";
@@ -40,7 +40,7 @@ export function buildFeatureEnv(fc: FeatureContext, input: WorkflowFeatureInput,
     workdir: fc.projectDir,
   });
   const live = createLiveWorkflowAdvisor({ advisor, feature: fc.feature, dependents: [] });
-  const ledger = (text: string) => appendLedger(fc.runDir, FEATURE_SCOPE, text);
+  const ledger = (text: string, options?: LedgerWriteOptions) => appendLedger(fc.runDir, FEATURE_SCOPE, text, options);
   const preflightFile = ctx.preflight?.file ?? null;
   const steps: FeatureSteps = {
     repoGates: () => runRepoGates(fc),

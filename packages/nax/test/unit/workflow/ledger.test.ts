@@ -57,9 +57,45 @@ describe("workflow ledger", () => {
     }
     expect(logs.map((e) => [e.level, e.stage, e.message])).toEqual([
       ["info", "workflow", "US-001: fix round 1/5 (2 open: F1, F2)"],
-      ["info", "workflow", "_run: feature local-only: no forge"],
+      ["info", "workflow", "feature local-only: no forge"],
     ]);
     expect(Object.keys(logs[0]?.data ?? {})[0]).toBe("storyId");
     expect(logs[1]?.data?.storyId).toBe("_run");
+  });
+
+  test("mirror: false writes ledger.md but logs nothing (the step line already says it)", async () => {
+    const dir = makeTempDir("wf-ledger-nomirror-");
+    dirs.push(dir);
+    resetLogger();
+    const logs: LogEntry[] = [];
+    initLogger({ level: "silent" });
+    addSink((entry) => logs.push(entry));
+    try {
+      await ensureLedger(dir, "run-1", "feat-a");
+      await appendLedger(dir, "US-001", "hidden fact", { mirror: false });
+    } finally {
+      resetLogger();
+    }
+    expect(logs).toHaveLength(0);
+    expect(await Bun.file(ledgerFilePath(dir)).text()).toContain("US-001: hidden fact");
+  });
+
+  test("mirrored text is capped at 200 chars in the log; ledger.md keeps all of it", async () => {
+    const dir = makeTempDir("wf-ledger-cap-");
+    dirs.push(dir);
+    resetLogger();
+    const logs: LogEntry[] = [];
+    initLogger({ level: "silent" });
+    addSink((entry) => logs.push(entry));
+    const long = "x".repeat(500);
+    try {
+      await ensureLedger(dir, "run-1", "feat-a");
+      await appendLedger(dir, "US-001", long);
+    } finally {
+      resetLogger();
+    }
+    expect(logs[0]?.message.length).toBeLessThanOrEqual("US-001: ".length + 200);
+    expect(logs[0]?.message.endsWith("...")).toBe(true);
+    expect(await Bun.file(ledgerFilePath(dir)).text()).toContain(long);
   });
 });

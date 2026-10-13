@@ -25,6 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   block built from `result.json`: tokens and cost by role, rounds per story, branch findings found / fixed /
   left, and the publish outcome. Advisor content on log lines, resolved models, gate-line and warning noise
   reduction and the repeated-tool-error outcome line (P4, P6-P8 of the issue) are not part of this change.
+  In workflow mode the saved `metrics.json` record is rewritten after the feature workflow with the
+  whole-run `totalDurationMs` plus `storiesDurationMs` and `featureWorkflowDurationMs`, and the `run.complete`
+  line carries the final cost and a `success` that follows the workflow result. The `run:completed` event
+  (reporters, the on-complete hook) still fires before the feature workflow, so it sees the stories-only
+  duration and cost. In pipeline mode `Duration` still excludes the end phase (finish), while workflow-mode
+  `Duration` includes it; that asymmetry is unchanged here. Ledger lines the step lines already state are no
+  longer mirrored to the log (`ledger.md` keeps them), and mirrored text is capped at 200 characters.
 - **Workflow mode: the run tree moves into the repo (nax#2479).** Briefs, reports, review packages, the
   ledger and `result.json` now live under `.nax/features/<feature>/workflow/<runId>/` instead of
   `<outputDir>/<project>/workflow/`, which sat outside the agents' file-tool root: implementers could not

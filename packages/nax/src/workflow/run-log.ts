@@ -19,9 +19,12 @@ export function logWorkflow(storyId: string, message: string, data: Record<strin
   getSafeLogger()?.info("workflow", message, { storyId, ...data });
 }
 
-/** The ledger's mirror in the log: same text, so the log and ledger.md never disagree. */
+const MAX_MIRROR_CHARS = 200;
+
+/** The ledger's mirror in the log: same text (capped; ledger.md keeps all of it), same prefix rule as step lines. */
 export function mirrorLedger(storyId: string, text: string): void {
-  logWorkflow(storyId, `${storyId}: ${text}`, { ledger: true });
+  const capped = text.length > MAX_MIRROR_CHARS ? `${text.slice(0, MAX_MIRROR_CHARS - 3)}...` : text;
+  logWorkflow(storyId, storyId === FEATURE_SCOPE ? capped : `${storyId}: ${capped}`, { ledger: true });
 }
 
 function shortIssue(issue: string): string {

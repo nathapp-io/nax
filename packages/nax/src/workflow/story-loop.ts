@@ -7,7 +7,7 @@ import { adjudicateResidual } from "./adjudicate";
 import { isFlaggedRuling, type WorkflowAdvisor } from "./advisor";
 import { deriveEndState } from "./close";
 import type { ImplementOutcome, ImplementTurn } from "./implement";
-import { ledgerText } from "./ledger";
+import { type LedgerWriteOptions, ledgerText } from "./ledger";
 import { describeFindings, startStep } from "./run-log";
 import type { ReviewOutcome } from "./story-review";
 import type {
@@ -41,7 +41,7 @@ export interface StoryLoopSteps {
 }
 export interface StoryLoopSink {
   update(patch: Partial<WorkflowStoryRecord>): Promise<void>;
-  ledger(text: string): Promise<void>;
+  ledger(text: string, options?: LedgerWriteOptions): Promise<void>;
 }
 export interface StoryLoopEnv {
   readonly storyId: string;
@@ -59,6 +59,9 @@ export interface StoryLoopOutcome {
   readonly rulings: readonly WorkflowRuling[];
   readonly unreviewed: boolean;
 }
+
+/** The step line in the log already says it; ledger.md still records it. */
+const NO_MIRROR: LedgerWriteOptions = { mirror: false };
 
 const isBlocking = (f: WorkflowFindingDraft): boolean => f.severity !== "minor";
 
@@ -163,7 +166,7 @@ async function review(env: StoryLoopEnv, s: LoopState): Promise<void> {
     if (!out.ran) {
       step.done(`skipped (${out.why})`);
       s.unreviewed = true;
-      await env.sink.ledger(ledgerText.reviewSkipped(`story review: ${out.why}`));
+      await env.sink.ledger(ledgerText.reviewSkipped(`story review: ${out.why}`), NO_MIRROR);
       return;
     }
     for (const item of out.verdict.cannotVerify) await env.sink.ledger(ledgerText.note(`cannot-verify: ${item}`));
@@ -181,7 +184,7 @@ async function review(env: StoryLoopEnv, s: LoopState): Promise<void> {
   s.fixBase = undefined;
   if (!out.ran) {
     step.done(`skipped (${out.why})`);
-    await env.sink.ledger(ledgerText.reviewSkipped(`re-review round ${s.round}: ${out.why}`));
+    await env.sink.ledger(ledgerText.reviewSkipped(`re-review round ${s.round}: ${out.why}`), NO_MIRROR);
     return;
   }
   const stillOpen = new Set(out.verdict.verdicts.filter((v) => !v.addressed).map((v) => v.id));
@@ -316,6 +319,9 @@ async function closeLoop(
     flagged: rulings.filter(isFlaggedRuling).length,
     endedAt: new Date().toISOString(),
   });
-  await env.sink.ledger(ledgerText.end(state, `${s.round} round(s), ${reason}${s.unreviewed ? ", unreviewed" : ""}`));
+  await env.sink.ledger(
+    ledgerText.end(state, `${s.round} round(s), ${reason}${s.unreviewed ? ", unreviewed" : ""}`),
+    NO_MIRROR, // the stage logs "Story closed" with the same state and reason
+  );
   return { state, reason, rounds: s.round, rulings, unreviewed: s.unreviewed };
 }

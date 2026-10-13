@@ -141,7 +141,7 @@ export async function buildStoryEnv(
         record = { ...record, ...patch, ...tokens };
         await upsertStoryRecord(runDir, header, record);
       },
-      ledger: (text) => appendLedger(runDir, ctx.story.id, text),
+      ledger: (text, options) => appendLedger(runDir, ctx.story.id, text, options),
     },
     resume: resumeRecord,
   };

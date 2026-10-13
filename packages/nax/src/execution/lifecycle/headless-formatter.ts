@@ -82,7 +82,12 @@ export function outputRunFooter(options: RunFooterOptions): void {
     totalCost,
     startedAt,
     completedAt,
-    ...(workflowTiming ?? {}),
+    ...(workflowTiming
+      ? {
+          storiesDurationMs: workflowTiming.storiesDurationMs,
+          featureWorkflowDurationMs: workflowTiming.featureWorkflowDurationMs,
+        }
+      : {}),
     ...(workflowSummary ? { workflow: workflowSummary } : {}),
   };
 

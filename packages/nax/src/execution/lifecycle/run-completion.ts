@@ -107,10 +107,14 @@ export interface RunCompletionOptions extends DispatchContext {
 }
 
 /** What the caller knows only after the feature workflow: the whole run's duration and its two parts. */
-export interface RunCompleteTiming {
+export interface RunCompleteFinal {
   durationMs: number;
   storiesDurationMs: number;
   featureWorkflowDurationMs: number;
+  /** Spend through the end of the feature workflow. */
+  totalCost: number;
+  /** False when the feature workflow did not pass; the line's `success` follows it. */
+  workflowPassed: boolean;
 }
 
 export interface RunCompletionResult {
@@ -134,7 +138,7 @@ export interface RunCompletionResult {
    */
   pluginGateFailed: boolean;
   /** Present only when `deferRunCompleteLog` was set: writes the held-back `run.complete` line. */
-  logRunComplete?: (timing: RunCompleteTiming) => void;
+  logRunComplete?: (final: RunCompleteFinal) => void;
 }
 
 /**
@@ -198,7 +202,7 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
   });
 
   // Phase 7 — completion summary log (per-story metrics, AC-25 context cost)
-  const logComplete = (timing?: RunCompleteTiming): void =>
+  const logComplete = (timing?: RunCompleteFinal): void =>
     logRunCompletion({
       options,
       prd,

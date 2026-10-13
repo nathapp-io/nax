@@ -68,6 +68,14 @@ afterEach(() => {
   pipelineEventBus.clear();
 });
 
+const FINAL = {
+  durationMs: 9_448_000,
+  storiesDurationMs: 8_393_000,
+  featureWorkflowDurationMs: 1_055_000,
+  totalCost: 4.25,
+  workflowPassed: true,
+};
+
 const completes = () => logs.filter((e) => e.stage === "run.complete" && e.message === "Feature execution completed");
 
 describe("handleRunCompletion — run.complete in workflow mode (nax#2491)", () => {
@@ -84,18 +92,22 @@ describe("handleRunCompletion — run.complete in workflow mode (nax#2491)", () 
     expect(result.logRunComplete).toBeFunction();
   });
 
-  test("the deferred line carries the whole-run duration and both parts", async () => {
+  test("the deferred line carries the whole-run duration, both parts and the final cost", async () => {
     const result = await handleRunCompletion(opts({ deferRunCompleteLog: true }));
-    result.logRunComplete?.({
-      durationMs: 9_448_000,
-      storiesDurationMs: 8_393_000,
-      featureWorkflowDurationMs: 1_055_000,
-    });
+    result.logRunComplete?.({ ...FINAL, workflowPassed: true });
     expect(completes()).toHaveLength(1);
     expect(completes()[0]?.data).toMatchObject({
       durationMs: 9_448_000,
       storiesDurationMs: 8_393_000,
       featureWorkflowDurationMs: 1_055_000,
+      totalCost: 4.25,
+      success: true,
     });
+  });
+
+  test("success is false when the feature workflow did not pass", async () => {
+    const result = await handleRunCompletion(opts({ deferRunCompleteLog: true }));
+    result.logRunComplete?.({ ...FINAL, workflowPassed: false });
+    expect(completes()[0]?.data).toMatchObject({ success: false });
   });
 });

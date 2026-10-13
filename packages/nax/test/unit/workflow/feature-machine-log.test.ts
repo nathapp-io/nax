@@ -130,4 +130,26 @@ describe("feature machine run log", () => {
     expect(feature.length).toBeGreaterThan(0);
     for (const e of feature) expect(Object.entries(e.data ?? {})[0]).toEqual(["storyId", "_run"]);
   });
+
+  describe("one line per fact (M4)", () => {
+    test("ledger lines the step lines already cover are written with mirror: false", async () => {
+      const env = envWith({ fixFailure: "timeout", gates: [RED_LINT, RED_LINT] });
+      const calls: { text: string; mirror: boolean | undefined }[] = [];
+      await runFeatureMachine({
+        ...env,
+        sink: { ...env.sink, ledger: async (text, options) => void calls.push({ text, mirror: options?.mirror }) },
+      });
+      for (const prefix of [
+        "repo gates red",
+        "branch fix:",
+        "branch fix session failed",
+        "final gates red",
+        "feature local-only",
+      ]) {
+        const call = calls.find((c) => c.text.startsWith(prefix));
+        expect(call, prefix).toBeDefined();
+        expect(call?.mirror, prefix).toBe(false);
+      }
+    });
+  });
 });
