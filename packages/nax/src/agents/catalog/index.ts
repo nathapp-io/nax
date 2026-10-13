@@ -30,6 +30,9 @@ import type { Catalog, Pricing, RawProvider } from "@nathapp/nax-ai";
 import { defaultProviders, normaliseCatalog } from "@nathapp/nax-ai";
 import pkg from "@/_pkg";
 
+/** Exact `X.Y.Z` pin, optionally with a prerelease tag; rejects ranges and tags like `latest`. */
+const EXACT_VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?$/;
+
 /**
  * Version of the pinned `@nathapp/nax-ai` catalog package, read at build
  * time from nax's own `package.json` `dependencies["@nathapp/nax-ai"]`.
@@ -51,15 +54,16 @@ import pkg from "@/_pkg";
  * `undefined` when the declared pin is unreadable at build time — the
  * `package.json` cannot be imported (the bundler covers this), the
  * `dependencies` block is missing the catalog key, the value is empty
- * or non-string, or the value is not a strict `<major>.<minor>.<patch>`
- * numeric version. A cost row omits `catalogVersion` in that case
+ * or non-string, or the value is not an exact `<major>.<minor>.<patch>`
+ * version with an optional prerelease tag (`0.88.0-canary.1` — a canary
+ * release pins nax-ai to its own prerelease). A cost row omits `catalogVersion` in that case
  * rather than recording an empty or placeholder string
  * (`catalogVersion: ""` would falsely imply a catalog origin). US-003
  * AC9 + AC12.
  */
 export const CATALOG_VERSION: string | undefined = (() => {
   const dep = (pkg as { dependencies?: Record<string, unknown> }).dependencies?.["@nathapp/nax-ai"];
-  return typeof dep === "string" && /^\d+\.\d+\.\d+$/.test(dep) ? dep : undefined;
+  return typeof dep === "string" && EXACT_VERSION.test(dep) ? dep : undefined;
 })();
 
 /** Injectable seams — tests replace these to drive `lookupPricing` deterministically. */
