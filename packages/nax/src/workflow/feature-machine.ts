@@ -177,10 +177,12 @@ async function adjudicateStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Prom
 async function finalGatesStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Promise<Patch> {
   if (!rec.fixRan) return { ...(rec.repoGates ? { finalGates: rec.repoGates } : {}), step: "publish" };
   const run = await env.steps.repoGates();
-  if (run.summary.failing.length > 0) {
-    await env.sink.ledger(ledgerText.note(`final gates red: ${run.summary.failing.join(", ")}`));
-  }
-  return { finalGates: run.summary, step: "publish" };
+  if (run.summary.failing.length === 0) return { finalGates: run.summary, step: "publish" };
+  const names = run.summary.failing.join(", ");
+  await env.sink.ledger(
+    ledgerText.note(`final gates red: ${names} (output in result.json featureWorkflow.finalGateFindings)`),
+  );
+  return { finalGates: run.summary, finalGateFindings: run.findings, step: "publish" };
 }
 
 async function publishStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Promise<Patch> {

@@ -25,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Workflow mode: one run writes one run folder (nax#2482).** The pre-flight and the feature workflow keyed the run folder on the runner run id while the story loop used the runtime run id, so each run's ledger and result.json were split across two sibling folders. All phases now use `runtime.runId`.
 
+- **Workflow mode: a red final gate keeps its output (nax#2484).** The final gates recorded only the names of the failing commands, so a red final gate could not be diagnosed after the run. The per-gate output excerpts are now kept in `featureWorkflow.finalGateFindings` in `result.json`, the ledger line points at them, and the PR body shows them under the gates line.
+
 ### Added
 
 - **Workflow mode feature workflow (A5 PR4).** With `execution.mode: "workflow"`, the advisor pre-flight

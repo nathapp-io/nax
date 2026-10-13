@@ -73,6 +73,30 @@ describe("buildWorkflowPrBody", () => {
     expect(body).toContain("nax never merges");
   });
 
+  test("a red final gate appends each excerpt in a fenced block under the gates line (nax#2484)", () => {
+    const red = buildWorkflowPrBody({
+      ...input,
+      finalGateFindings: [
+        { kind: "gate", severity: "important", issue: "repo gate test failed:\nFAIL src/adds.test.ts > adds 1 + 1" },
+      ],
+    });
+    expect(red).toContain("- Gates: red: lint (ran build, lint)");
+    expect(red).toContain("```\nrepo gate test failed:\nFAIL src/adds.test.ts > adds 1 + 1\n```");
+  });
+
+  test("a fence longer than any backtick run in the excerpt cannot be closed early", () => {
+    const red = buildWorkflowPrBody({
+      ...input,
+      finalGateFindings: [{ kind: "gate", severity: "important", issue: "repo gate lint failed:\n```ts\nx\n```" }],
+    });
+    expect(red).toContain("````\nrepo gate lint failed:\n```ts\nx\n```\n````");
+  });
+
+  test("a green final gate shows no excerpt block", () => {
+    const green = buildWorkflowPrBody({ ...input, finalGates: { ran: ["build"], failing: [] } });
+    expect(green).not.toContain("```");
+  });
+
   test("empty sections read None.", () => {
     const empty = buildWorkflowPrBody({
       ...input,

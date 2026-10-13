@@ -105,6 +105,7 @@ async function bodyFacts(fc: FeatureContext, input: PublishInput): Promise<Workf
     rulings: r.rulings,
     minorsLeft: [...r.minors.filter((m) => m.triage === "leave").map((m) => `${m.storyId}: ${m.text}`), ...r.newMinors],
     ...(r.finalGates ? { finalGates: r.finalGates } : {}),
+    ...(r.finalGateFindings ? { finalGateFindings: r.finalGateFindings } : {}),
     assumptions: await loadAssumptions(input.stories),
   };
 }
