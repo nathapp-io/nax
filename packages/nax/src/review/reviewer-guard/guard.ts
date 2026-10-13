@@ -34,21 +34,27 @@ export const _reviewerGuardDeps = {
 
 interface Entry {
   readonly snapshot: Promise<RepoSnapshot | undefined>;
-  count: number;
+  /** Sessions currently inside the snapshot; re-registering one id is a no-op. */
+  readonly ids: Set<string>;
 }
 
 export class ReviewerTreeGuard {
   private readonly active = new Map<string, Entry>();
   private readonly keyBySession = new Map<string, string>();
+  /** Per-toplevel restore in flight; a new snapshot must wait for it to settle. */
+  private readonly restoring = new Map<string, Promise<void>>();
 
   async beforeTurn(desc: SessionDescriptor): Promise<void> {
     if (!REVIEWER_SESSION_ROLES.has(desc.role)) return;
     try {
       const key = await _reviewerGuardDeps.toplevel(desc.workdir);
+      for (let pending = this.restoring.get(key); pending !== undefined; pending = this.restoring.get(key)) {
+        await pending;
+      }
       this.keyBySession.set(desc.id, key);
       const entry = this.active.get(key);
       if (entry !== undefined) {
-        entry.count += 1;
+        entry.ids.add(desc.id);
         await entry.snapshot;
         return;
       }
@@ -56,7 +62,7 @@ export class ReviewerTreeGuard {
         this.warn(desc, "snapshot failed", err);
         return undefined;
       });
-      this.active.set(key, { snapshot, count: 1 });
+      this.active.set(key, { snapshot, ids: new Set([desc.id]) });
       // The turn must not start until the snapshot is captured, or its edits could land in it.
       await snapshot;
     } catch (err) {
@@ -70,9 +76,15 @@ export class ReviewerTreeGuard {
     this.keyBySession.delete(desc.id);
     const entry = this.active.get(key);
     if (entry === undefined) return;
-    entry.count -= 1;
-    if (entry.count > 0) return;
+    entry.ids.delete(desc.id);
+    if (entry.ids.size > 0) return;
     this.active.delete(key);
+    const restore = this.restoreEntry(desc, entry).finally(() => this.restoring.delete(key));
+    this.restoring.set(key, restore);
+    await restore;
+  }
+
+  private async restoreEntry(desc: SessionDescriptor, entry: Entry): Promise<void> {
     try {
       const snap = await entry.snapshot;
       if (snap === undefined) return;

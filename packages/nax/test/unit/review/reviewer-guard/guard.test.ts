@@ -124,6 +124,40 @@ describe("ReviewerTreeGuard (nax#2500)", () => {
     await expect(g.afterTurn(desc("wf-story-review"))).resolves.toBeUndefined();
   });
 
+  test("a beforeTurn during an in-flight restore waits for it before taking a new snapshot", async () => {
+    const calls = fakes();
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    _reviewerGuardDeps.restore = async () => {
+      calls.push("restore-start");
+      await gate;
+      calls.push("restore-end");
+      return CLEAN;
+    };
+    const g = new ReviewerTreeGuard();
+    await g.beforeTurn(desc("wf-story-review", "a"));
+    const out = g.afterTurn(desc("wf-story-review", "a"));
+    await Bun.sleep(10);
+    const next = g.beforeTurn(desc("wf-rereview", "b"));
+    await Bun.sleep(20);
+    expect(calls).toEqual(["take", "restore-start"]);
+    release();
+    await out;
+    await next;
+    expect(calls).toEqual(["take", "restore-start", "restore-end", "take"]);
+  });
+
+  test("the same id registered twice restores once after a single afterTurn", async () => {
+    const calls = fakes();
+    const g = new ReviewerTreeGuard();
+    await g.beforeTurn(desc("wf-story-review", "a"));
+    await g.beforeTurn(desc("wf-story-review", "a"));
+    await g.afterTurn(desc("wf-story-review", "a"));
+    expect(calls).toEqual(["take", "restore"]);
+  });
+
   test("afterTurn without a matching beforeTurn is a no-op", async () => {
     const calls = fakes();
     await new ReviewerTreeGuard().afterTurn(desc("wf-story-review"));
