@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { _editTargetsDeps, editTargets, firstOutsidePolicy } from "#src/client/edit-targets";
 
 async function onPlatform<T>(platform: string, run: () => Promise<T>): Promise<T> {
@@ -24,6 +24,8 @@ beforeAll(async () => {
   await symlink(join(outside, "new-file.txt"), join(root, "dangling"));
   await symlink(join(root, "loopB"), join(root, "loopA"));
   await symlink(join(root, "loopA"), join(root, "loopB"));
+  await symlink(join("..", basename(outside), "f.txt"), join(root, "up"));
+  await symlink(join("sub", "target.txt"), join(root, "inroot"));
 });
 afterAll(async () => {
   await rm(root, { recursive: true, force: true });
@@ -100,6 +102,22 @@ describe("firstOutsidePolicy", () => {
   test("linux: denyWrite matches case-sensitively, so the other spelling is inside (R7)", async () => {
     expect(
       await onPlatform("linux", () => firstOutsidePolicy([`${root}/SECRET-DIR/x.ts`], caseDeny(), root)),
+    ).toBeUndefined();
+  });
+  test("R8: a relative symlink target with a .. segment is outside", async () => {
+    expect(await firstOutsidePolicy([join(root, "up")], policy(), root)).toBe(join(root, "up"));
+  });
+  test("R8b: a relative symlink target resolves against the real parent (inside stays inside)", async () => {
+    expect(await firstOutsidePolicy([join(root, "inroot")], policy(), root)).toBeUndefined();
+  });
+  test("R8b: writeRoots containment is case-sensitive, even on darwin (over-deny accepted)", async () => {
+    // A synthetic root that is absent on disk: realpath cannot fold its case on any filesystem.
+    const synthetic = () => ({ writeRoots: ["/nax-caseprobe-root"], denyWrite: [], denyRead: [], network: {} });
+    expect(
+      await onPlatform("darwin", () => firstOutsidePolicy(["/NAX-CASEPROBE-ROOT/src/a.ts"], synthetic(), undefined)),
+    ).toBe("/NAX-CASEPROBE-ROOT/src/a.ts");
+    expect(
+      await onPlatform("darwin", () => firstOutsidePolicy(["/nax-caseprobe-root/src/a.ts"], synthetic(), undefined)),
     ).toBeUndefined();
   });
 });

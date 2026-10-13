@@ -150,8 +150,12 @@ export async function decidePermission(
   }
 }
 
-/** ACP kinds that write to a path (nax#2500 R5): the only kinds the R4 path check applies to. */
-const WRITE_KINDS: ReadonlySet<string> = new Set(["edit", "delete", "move"]);
+/**
+ * ACP kinds exempt from the R4 path check (nax#2500 R5/R8): they do not write a path
+ * the sandbox has to police. execute is the Bash sandbox's job. Every other kind,
+ * including `other` and any unknown kind, is path-checked (fail closed).
+ */
+const READ_ONLY_KINDS: ReadonlySet<string> = new Set(["read", "search", "think", "fetch", "switch_mode"]);
 
 /** full allows every request, except (nax#2500 R4/R5) a write whose target is outside the sandbox write roots. */
 async function decideFull(
@@ -163,7 +167,7 @@ async function decideFull(
 ): Promise<RequestPermissionResponse> {
   if (offered.allowOnce === undefined) return denyNoAllowOnce(offered, auto);
   const outside =
-    ctx.sandbox !== undefined && WRITE_KINDS.has(display.tool)
+    ctx.sandbox !== undefined && display.tool !== "execute" && !READ_ONLY_KINDS.has(display.tool)
       ? await firstOutsidePolicy(editTargets(request.toolCall), ctx.sandbox, ctx.cwd)
       : undefined;
   if (outside !== undefined) {

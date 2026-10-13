@@ -74,7 +74,12 @@ async function followLink(
   hops: number,
 ): Promise<string | undefined> {
   if (hops >= MAX_SYMLINK_HOPS) return undefined;
-  const next = isAbsolute(link) ? link : resolve(dirname(linkPath), link);
+  // R8: a raw `..` in the link target is outside: its meaning depends on the OS resolving it after symlinks.
+  if (hasDotDotSegment(link)) return undefined;
+  // R8b: a relative target resolves against the real parent directory (the link's own directory is real-resolved).
+  const parent = await realpathOrUndefined(dirname(linkPath));
+  if (parent === undefined) return undefined;
+  const next = isAbsolute(link) ? link : resolve(parent, link);
   const resolved = await canonical(next, hops + 1);
   return resolved === undefined ? undefined : join(resolved, ...tail);
 }
@@ -102,15 +107,21 @@ async function canonical(path: string, hops = 0): Promise<string | undefined> {
 /** Policy paths: an unresolvable one keeps its raw form (a deny entry still matches its own spelling). */
 const canonicalPolicyPath = async (path: string): Promise<string> => (await canonical(path)) ?? path;
 
-/** Case folding for the comparison only, on the platforms whose default filesystem ignores case. */
-const fold = (path: string): string =>
+/** Both sides of every comparison are NFC-normalised (R8b). */
+const nfc = (path: string): string => path.normalize("NFC");
+
+/** Case folding, only for denyWrite matching, on the platforms whose default filesystem ignores case (R8b). */
+const foldCase = (path: string): string =>
   _editTargetsDeps.platform() === "darwin" || _editTargetsDeps.platform() === "win32" ? path.toLowerCase() : path;
 
-const within = (path: string, root: string): boolean => {
-  const p = fold(path);
-  const r = fold(root);
-  return p === r || p.startsWith(r.endsWith(sep) ? r : `${r}${sep}`);
-};
+const contains = (path: string, root: string): boolean =>
+  path === root || path.startsWith(root.endsWith(sep) ? root : `${root}${sep}`);
+
+/** writeRoots containment: exact (case-sensitive) comparison. */
+const withinRoot = (path: string, root: string): boolean => contains(nfc(path), nfc(root));
+
+/** denyWrite matching: case-folded on darwin and win32, so a differently cased spelling is still denied. */
+const withinDenied = (path: string, denied: string): boolean => contains(foldCase(nfc(path)), foldCase(nfc(denied)));
 
 export async function firstOutsidePolicy(
   targets: readonly string[],
@@ -125,7 +136,7 @@ export async function firstOutsidePolicy(
     if (absolute === undefined) return target;
     const real = await canonical(absolute);
     if (real === undefined) return target;
-    if (denied.some((d) => within(real, d)) || !roots.some((r) => within(real, r))) return target;
+    if (denied.some((d) => withinDenied(real, d)) || !roots.some((r) => withinRoot(real, r))) return target;
   }
   return undefined;
 }
