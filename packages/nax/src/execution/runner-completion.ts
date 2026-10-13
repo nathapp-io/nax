@@ -558,7 +558,7 @@ async function finishRun(
     });
     return { advisoryFindings, mutationSummaries, endReport };
   } finally {
-    gate.ensure(() => {
+    gate.ensureSafely(() => {
       const durationMs = _runnerCompletionDeps.now() - options.startTime;
       return {
         durationMs,

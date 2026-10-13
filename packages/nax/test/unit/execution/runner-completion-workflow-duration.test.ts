@@ -15,6 +15,7 @@ import {
 import type { RunCompleteFinal, RunCompletionResult } from "@/execution/lifecycle/run-completion";
 import { _runnerCompletionDeps, type RunnerCompletionOptions, runCompletionPhase } from "@/execution/runner-completion";
 import { _workflowEndReportDeps } from "@/execution/workflow-end-report";
+import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import { _gitDeps } from "@/utils/git";
 
@@ -79,7 +80,12 @@ const origDeps = { ..._runnerCompletionDeps };
 const origReport = { ..._workflowEndReportDeps };
 const origGit = _gitDeps.spawn;
 
+let logs: LogEntry[] = [];
 beforeEach(() => {
+  resetLogger();
+  logs = [];
+  initLogger({ level: "silent" });
+  addSink((entry) => logs.push(entry));
   clock = 1_000_000 + STORIES_MS;
   runComplete = [];
   _runnerCompletionDeps.now = () => clock;
@@ -101,6 +107,7 @@ beforeEach(() => {
   _gitDeps.spawn = makeSpawn().spawn;
 });
 afterEach(() => {
+  resetLogger();
   Object.assign(_runnerCompletionDeps, origDeps);
   Object.assign(_workflowEndReportDeps, origReport);
   _gitDeps.spawn = origGit;
@@ -139,14 +146,15 @@ describe("runCompletionPhase — Duration in workflow mode (nax#2491)", () => {
 
   test("the saved metrics record is rewritten with the whole-run duration and both parts (M1)", async () => {
     await runCompletionPhase(opts("workflow"));
-    expect(saved).toEqual([
-      {
-        runId: "run-001",
-        totalDurationMs: STORIES_MS + FEATURE_MS,
-        storiesDurationMs: STORIES_MS,
-        featureWorkflowDurationMs: FEATURE_MS,
-      },
-    ]);
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({
+      runId: "run-001",
+      totalDurationMs: STORIES_MS + FEATURE_MS,
+      storiesDurationMs: STORIES_MS,
+      featureWorkflowDurationMs: FEATURE_MS,
+      totalCost: 4.25,
+    });
+    expect(typeof saved[0]?.completedAt).toBe("string");
   });
 
   test("pipeline mode does not touch the saved metrics record", async () => {
@@ -180,5 +188,25 @@ describe("runCompletionPhase — Duration in workflow mode (nax#2491)", () => {
     );
     expect(runComplete).toHaveLength(1);
     expect(runComplete[0]).toMatchObject({ workflowPassed: false, featureWorkflowDurationMs: 0, totalCost: 0 });
+  });
+
+  test("a missing metrics record is a warning, not silence (item 5)", async () => {
+    _workflowEndReportDeps.saveDuration = async () => false;
+    await runCompletionPhase(opts("workflow"));
+    expect(logs.some((e) => e.level === "warn" && e.message.startsWith("No saved run metrics"))).toBe(true);
+  });
+
+  test("a fault in the fallback run.complete write cannot mask the original rejection (item 2)", async () => {
+    const statusWriter = makeStatusWriter();
+    statusWriter.writeFeatureStatus = mock(async () => {
+      throw new Error("disk full");
+    });
+    _runnerCompletionDeps.now = () => {
+      throw new Error("clock fault");
+    };
+    await expect(runCompletionPhase(opts("workflow", { statusWriter, featureDir: `${WORKDIR}/feat` }))).rejects.toThrow(
+      "disk full",
+    );
+    expect(logs.some((e) => e.level === "warn" && e.message.includes("fallback run.complete"))).toBe(true);
   });
 });

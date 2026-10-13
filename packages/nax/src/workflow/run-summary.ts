@@ -23,6 +23,11 @@ function rolesOf(result: WorkflowResultFile): WorkflowSummaryView["roles"] {
     .sort((a, b) => a.role.localeCompare(b.role));
 }
 
+/** Story minors nobody fixed, plus the ones the branch review itself raised. */
+function minorsLeftOf(rec: WorkflowFeatureRecord): number {
+  return rec.minors.filter((m) => m.triage === "leave").length + rec.newMinors.length;
+}
+
 /** Found = every blocking branch finding issued a B id; the repo-gate findings share the counter and are not counted. */
 function branchOf(rec: WorkflowFeatureRecord): NonNullable<WorkflowSummaryView["branch"]> {
   const found = Math.max(0, rec.nextFindingId - 1 - rec.gateFindings.length);
@@ -31,7 +36,7 @@ function branchOf(rec: WorkflowFeatureRecord): NonNullable<WorkflowSummaryView["
     found,
     fixed: Math.max(0, found - left),
     left,
-    minorsLeft: rec.minors.filter((m) => m.triage === "leave").length + rec.newMinors.length,
+    minorsLeft: minorsLeftOf(rec),
   };
 }
 
@@ -52,7 +57,7 @@ export function buildWorkflowRunSummary(
       ...(s.state ? { state: s.state } : {}),
     })),
     ...(rec?.reviewRan ? { branch: branchOf(rec) } : {}),
-    ...(rec && !rec.reviewRan ? { branchReviewSkipped: true } : {}),
+    ...(rec && !rec.reviewRan ? { branchReviewSkipped: { minorsLeft: minorsLeftOf(rec) } } : {}),
     ...(finalGates ? { finalGates: finalGates.failing.length === 0 ? ("green" as const) : ("red" as const) } : {}),
     ...(rec?.outcome
       ? { publish: { outcome: rec.outcome, ...(rec.url ? { url: rec.url } : {}), reasons: rec.reasons } }

@@ -129,6 +129,7 @@ async function repoGatesStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Promi
 
 async function branchReviewStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Promise<Patch> {
   if (!rec.seed) {
+    featureStep("branch-review", false).done("skipped (no seed)");
     await env.sink.ledger(ledgerText.reviewSkipped("branch review: no seed"), NO_MIRROR);
     return { reviewRan: false, step: "branch-fix" };
   }

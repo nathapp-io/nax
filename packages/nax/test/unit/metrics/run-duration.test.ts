@@ -32,11 +32,19 @@ describe("updateRunMetricsDuration", () => {
       totalDurationMs: 30,
       storiesDurationMs: 20,
       featureWorkflowDurationMs: 10,
+      totalCost: 4.25,
+      completedAt: "t2",
     });
     expect(ok).toBe(true);
     const runs = await loadRunMetrics(dir);
     expect(runs[0]?.totalDurationMs).toBe(10);
-    expect(runs[1]).toMatchObject({ totalDurationMs: 30, storiesDurationMs: 20, featureWorkflowDurationMs: 10 });
+    expect(runs[1]).toMatchObject({
+      totalDurationMs: 30,
+      storiesDurationMs: 20,
+      featureWorkflowDurationMs: 10,
+      totalCost: 4.25,
+      completedAt: "t2",
+    });
   });
 
   test("an unknown run is left alone and reported as not updated", async () => {
@@ -47,6 +55,8 @@ describe("updateRunMetricsDuration", () => {
       totalDurationMs: 1,
       storiesDurationMs: 1,
       featureWorkflowDurationMs: 0,
+      totalCost: 0,
+      completedAt: "t",
     });
     expect(ok).toBe(false);
     expect((await loadRunMetrics(dir))[0]?.totalDurationMs).toBe(10);

@@ -152,4 +152,14 @@ describe("feature machine run log", () => {
       }
     });
   });
+
+  describe("branch review without a seed", () => {
+    test("still leaves exactly one info line in the log", async () => {
+      const env = envWith({});
+      await runFeatureMachine({ ...env, record: { ...env.record, seed: null } });
+      const skipped = lines().filter((l) => l.startsWith("branch-review"));
+      expect(skipped).toHaveLength(1);
+      expect(skipped[0]).toMatch(/^branch-review: skipped \(no seed\) {2}/);
+    });
+  });
 });

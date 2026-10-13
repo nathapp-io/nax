@@ -62,8 +62,13 @@ export interface ClosedWorkflowRun {
 /** Writes the held-back `run.complete` line at most once, whichever path reaches it first (nax#2491). */
 export interface RunCompleteGate {
   log(final: RunCompleteFinal): void;
-  /** The `finally` path: logs `fallback()` when nothing else did. */
-  ensure(fallback: () => RunCompleteFinal): void;
+  /**
+   * The `finally` path: logs `fallback()` when nothing else did. A fault here is logged at warn and
+   * swallowed, so it cannot mask the rejection that brought us to the `finally`.
+   * Known and accepted: on SIGINT crash-signals may also write a `run.complete` ("terminated") line;
+   * `nax runs` reads the first one, so the second is harmless.
+   */
+  ensureSafely(fallback: () => RunCompleteFinal): void;
 }
 
 export function createRunCompleteGate(write: ((final: RunCompleteFinal) => void) | undefined): RunCompleteGate {
@@ -73,16 +78,36 @@ export function createRunCompleteGate(write: ((final: RunCompleteFinal) => void)
     logged = true;
     write?.(final);
   };
-  return { log, ensure: (fallback) => log(fallback()) };
+  const ensureSafely = (fallback: () => RunCompleteFinal): void => {
+    try {
+      log(fallback());
+    } catch (err) {
+      getSafeLogger()?.warn("run.complete", "Could not write the fallback run.complete line", {
+        error: errorMessage(err),
+      });
+    }
+  };
+  return { log, ensureSafely };
 }
 
 async function saveWholeRunDuration(options: RunnerCompletionOptions, final: RunCompleteFinal): Promise<void> {
   try {
-    await _workflowEndReportDeps.saveDuration(options.runtime.outputDir, options.runId, {
+    if (!options.runtime) {
+      getSafeLogger()?.warn("run.complete", "No runtime to locate the run metrics; whole-run duration not saved");
+      return;
+    }
+    const saved = await _workflowEndReportDeps.saveDuration(options.runtime.outputDir, options.runId, {
       totalDurationMs: final.durationMs,
       storiesDurationMs: final.storiesDurationMs,
       featureWorkflowDurationMs: final.featureWorkflowDurationMs,
+      totalCost: final.totalCost,
+      completedAt: new Date().toISOString(),
     });
+    if (!saved) {
+      getSafeLogger()?.warn("run.complete", "No saved run metrics to update with the whole-run duration", {
+        runId: options.runId,
+      });
+    }
   } catch (err) {
     getSafeLogger()?.warn("run.complete", "Failed to update run metrics with the whole-run duration", {
       error: errorMessage(err),

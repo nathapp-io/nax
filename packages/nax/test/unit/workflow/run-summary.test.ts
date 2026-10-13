@@ -99,7 +99,7 @@ describe("buildWorkflowRunSummary", () => {
         { storiesDurationMs: 1, featureWorkflowDurationMs: 1 },
       );
       expect(v?.branch).toBeUndefined();
-      expect(v?.branchReviewSkipped).toBe(true);
+      expect(v?.branchReviewSkipped).toEqual({ minorsLeft: 1 });
     });
 
     test("a review that ran has a branch section and no skipped flag", () => {

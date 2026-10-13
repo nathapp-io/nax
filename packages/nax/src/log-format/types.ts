@@ -79,7 +79,7 @@ export interface WorkflowSummaryView {
   /** Absent when the feature workflow never ran. */
   branch?: { found: number; fixed: number; left: number; minorsLeft: number } | undefined;
   /** The feature workflow ran but its branch review did not. */
-  branchReviewSkipped?: boolean | undefined;
+  branchReviewSkipped?: { minorsLeft: number } | undefined;
   finalGates?: "green" | "red" | undefined;
   publish?: { outcome: string; url?: string; reasons: readonly string[] } | undefined;
 }

@@ -12,6 +12,9 @@ export interface RunDurationPatch {
   readonly totalDurationMs: number;
   readonly storiesDurationMs: number;
   readonly featureWorkflowDurationMs: number;
+  /** Spend through the end of the feature workflow, as `run.complete` reports it. */
+  readonly totalCost: number;
+  readonly completedAt: string;
 }
 
 /** Returns false when no record for `runId` exists (e.g. the earlier save failed). */

@@ -84,8 +84,11 @@ describe("formatRunSummary with a workflow", () => {
 
   describe("branch review skipped (L3)", () => {
     test("prints that the branch review was skipped instead of finding counts", () => {
-      const out = formatWorkflowSummary({ ...VIEW, branch: undefined, branchReviewSkipped: true }, { useColor: false });
-      expect(out).toContain("Branch findings: branch review skipped");
+      const out = formatWorkflowSummary(
+        { ...VIEW, branch: undefined, branchReviewSkipped: { minorsLeft: 3 } },
+        { useColor: false },
+      );
+      expect(out).toContain("Branch findings: branch review skipped (minors left 3)");
     });
   });
 });
