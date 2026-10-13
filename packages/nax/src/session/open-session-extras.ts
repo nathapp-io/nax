@@ -26,6 +26,7 @@ export function openSessionExtras(
     | "instructionDenyPaths"
     | "providerTools"
     | "declaredTools"
+    | "sandbox"
     | "toolSurface"
   >,
   transcriptRoot: string | undefined,
@@ -42,6 +43,7 @@ export function openSessionExtras(
   | "instructionDenyPaths"
   | "providerTools"
   | "declaredTools"
+  | "sandbox"
   | "toolSurface"
 > {
   return {
@@ -51,6 +53,7 @@ export function openSessionExtras(
     ...transcriptArchiveFor(opts.featureName, transcriptRoot, config),
     ...(opts.providerTools !== undefined ? { providerTools: opts.providerTools } : {}),
     ...(opts.declaredTools !== undefined ? { declaredTools: opts.declaredTools } : {}),
+    ...(opts.sandbox !== undefined ? { sandbox: opts.sandbox } : {}),
     ...(opts.toolSurface !== undefined ? { toolSurface: opts.toolSurface } : {}),
     ...(opts.instructionDirectories !== undefined ? { instructionDirectories: opts.instructionDirectories } : {}),
     ...(opts.instructionFileName !== undefined ? { instructionFileName: opts.instructionFileName } : {}),

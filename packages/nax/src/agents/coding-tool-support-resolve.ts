@@ -26,6 +26,7 @@ import {
   type ResolvedProviderTools,
   resolveProviderTools,
   runTmpRoot,
+  sessionSandboxFrom,
   sessionTmpDirUnder,
   type ToolGrant,
 } from "@nathapp/nax-agent";
@@ -589,5 +590,7 @@ export async function resolveCodingToolSupport(
     ...(surface.toolSurface !== undefined ? { toolSurface: surface.toolSurface } : {}),
   });
   if (support === undefined) return undefined;
-  return attachAcpDelivery(support, surface);
+  const acpSandbox = await sessionSandboxFrom(launcher, options.codingToolRoot ?? "");
+  const withSandbox = acpSandbox === undefined ? support : { ...support, acpSandbox };
+  return attachAcpDelivery(withSandbox, surface);
 }

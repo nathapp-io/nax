@@ -28,10 +28,19 @@ describe("acpProfileFor (S4b spec §6.4)", () => {
     expect(acpProfileFor("approve-all", ["Read", "Write"])).toBe("full");
   });
 
-  test("git-write and command tools count as write-class", () => {
+  test("file-write tools keep the mode's profile (nax#2500)", () => {
     expect(acpProfileFor("approve-all", ["Read", "GitCommit"])).toBe("full");
-    expect(acpProfileFor("approve-all", ["Read", "Bash"])).toBe("full");
-    expect(acpProfileFor("approve-all", ["Read", "Exec", "RunCommand"])).toBe("full");
+    expect(acpProfileFor("approve-all", ["Read", "Write", "Bash"])).toBe("full");
+  });
+
+  test("command tools without file-write tools open review (nax#2500)", () => {
+    expect(acpProfileFor("approve-all", ["Read", "Glob", "Grep", "Git", "Bash"])).toBe("review");
+    expect(acpProfileFor("approve-all", ["Read", "Exec", "RunCommand"])).toBe("review");
+  });
+
+  test("review is never wider than the mode", () => {
+    expect(acpProfileFor("approve-reads", ["Read", "Bash"])).toBe("read");
+    expect(acpProfileFor("default", ["Read", "Bash"])).toBe("read");
   });
 
   test("no declaration: mode alone (unchanged)", () => {

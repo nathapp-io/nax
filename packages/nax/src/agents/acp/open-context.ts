@@ -115,5 +115,6 @@ export function openContext(input: OpenContextInput): BackendOpenContext {
     turnTimeoutSeconds: opts.timeoutSeconds,
     metadata: metadataOf(opts),
     openSignal: input.openSignal,
+    ...((profile === "review" || profile === "full") && opts.sandbox !== undefined ? { sandbox: opts.sandbox } : {}),
   };
 }

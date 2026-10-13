@@ -238,3 +238,35 @@ describe("transcriptStoreFor", () => {
     expect(await store.load("s")).toMatchObject({ savedAt: "t" });
   });
 });
+
+describe("openContext sandbox (nax#2500)", () => {
+  const sandbox = {
+    kind: "policy",
+    policy: { writeRoots: ["/repo"], denyWrite: [], denyRead: [], network: {} },
+  } as const;
+  const build = (opts: OpenSessionOpts) => {
+    const slot = createTurnSlot();
+    return openContext({
+      name: "s1",
+      agent: "claude",
+      opts,
+      store: createMemoryTranscriptStore(),
+      resume: undefined,
+      asks: createAskPort(slot),
+      slot,
+      openSignal: new AbortController().signal,
+    });
+  };
+
+  test("a command-declaring op opens review and carries the sandbox", () => {
+    const ctx = build({ ...OPTS, declaredTools: ["Read", "Bash"], sandbox });
+    expect(ctx.profile).toBe("review");
+    expect(ctx.sandbox).toEqual(sandbox);
+  });
+
+  test("a read profile never carries the sandbox", () => {
+    const ctx = build({ ...OPTS, declaredTools: ["Read"], sandbox });
+    expect(ctx.profile).toBe("read");
+    expect(ctx.sandbox).toBeUndefined();
+  });
+});

@@ -420,6 +420,7 @@ export function prepareHopSession(input: HopInvocation, codingSupport: CodingToo
     // the ACP profile narrows by it. D3/D4: provider tools + surface ride only
     // when provider tools resolved. Native ignores all three.
     ...(codingSupport?.declaredTools !== undefined ? { declaredTools: codingSupport.declaredTools } : {}),
+    ...(codingSupport?.acpSandbox !== undefined ? { sandbox: codingSupport.acpSandbox } : {}),
     ...(codingSupport?.acpDelivery !== undefined
       ? {
           providerTools: codingSupport.acpDelivery.tools,

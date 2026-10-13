@@ -22,6 +22,13 @@ export interface SessionRunHopResult {
   dispatched?: boolean;
 }
 
+type ResolvedSupport = Awaited<ReturnType<typeof resolveCodingToolSupport>>;
+
+/** nax#2500: the dispatch sandbox for an ACP open; absent when the sandbox is disabled. */
+function sandboxOption(support: ResolvedSupport): { sandbox?: NonNullable<ResolvedSupport>["acpSandbox"] } {
+  return support?.acpSandbox !== undefined ? { sandbox: support.acpSandbox } : {};
+}
+
 export type SessionRunHopFn = (agentName: string, options: AgentRunOptions) => Promise<SessionRunHopResult>;
 
 export function createSessionRunHop(
@@ -104,6 +111,7 @@ export function createSessionRunHop(
       storyId: options.storyId,
       // nax#1877 — mirrors build-hop-callback.ts; the two must not drift.
       ...(transcriptOwner !== undefined ? { transcriptOwner } : {}),
+      ...sandboxOption(codingSupport),
       signal: options.abortSignal,
       onSessionEstablished: options.onSessionEstablished,
     });
