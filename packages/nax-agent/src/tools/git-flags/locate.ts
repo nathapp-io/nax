@@ -125,6 +125,8 @@ export interface LocatedGit {
   readonly args: readonly string[];
   /** Values of `-C`, `--work-tree` and `--git-dir` (both `--key value` and `--key=value`), in order. */
   readonly dirs: readonly string[];
+  /** True when an alias is defined through `--config-env=alias.*`: its value lives in the environment and cannot be read. */
+  readonly unresolvedAlias: boolean;
 }
 
 /** Expand `-c alias.NAME=VALUE` when `subcommand` is such an alias; otherwise return it unchanged. */
@@ -133,7 +135,7 @@ function expandAlias(
   args: readonly string[],
   aliases: ReadonlyMap<string, string>,
 ): { readonly subcommand: string; readonly args: readonly string[] } {
-  const value = aliases.get(subcommand);
+  const value = aliases.get(subcommand.toLowerCase());
   if (value === undefined) return { subcommand, args };
   const words = value
     .replace(/^!/, "")
@@ -161,17 +163,24 @@ export function locateGit(words: readonly string[]): LocatedGit | undefined {
   while (i < words.length && (words[i] as string).startsWith("-") && words[i] !== "--") {
     i = consumeGlobal(words, i, dirs, aliases);
   }
+  const unresolvedAlias = words.slice(gitIdx + 1, i).some((word, k, globals) => isConfigEnvAlias(word, globals[k + 1]));
   const subcommand = words[i];
   if (subcommand === undefined) return undefined;
-  return { ...expandAlias(subcommand, words.slice(i + 1), aliases), dirs };
+  return { ...expandAlias(subcommand, words.slice(i + 1), aliases), dirs, unresolvedAlias };
+}
+
+/** `--config-env=alias.x=VAR` or `--config-env alias.x=VAR` (git config keys are case-insensitive). */
+function isConfigEnvAlias(word: string, next: string | undefined): boolean {
+  if (word.startsWith("--config-env=")) return /^alias\./i.test(word.slice("--config-env=".length));
+  return word === "--config-env" && /^alias\./i.test(next ?? "");
 }
 
 /** Consume one global option at `i`, recording directory values and `-c alias.*` definitions; returns the next index. */
 function consumeGlobal(words: readonly string[], i: number, dirs: string[], aliases: Map<string, string>): number {
   const w = words[i] as string;
   if (w === "-c") {
-    const alias = /^alias\.([^=]+)=(.*)$/s.exec(words[i + 1] ?? "");
-    if (alias !== null) aliases.set(alias[1] as string, alias[2] as string);
+    const alias = /^alias\.([^=]+)=(.*)$/is.exec(words[i + 1] ?? "");
+    if (alias !== null) aliases.set((alias[1] as string).toLowerCase(), alias[2] as string);
     return i + 2;
   }
   const eq = w.indexOf("=");

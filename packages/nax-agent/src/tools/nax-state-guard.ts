@@ -82,6 +82,10 @@ const STASH_REFUSAL =
   "To check whether something pre-existed, use `git diff HEAD -- <file>` or `git show HEAD:<file>`. " +
   "A `git stash push -- . ':!.nax'` (or `push` of named regular files) is allowed.";
 
+const ALIAS_REFUSAL =
+  "A git alias defined through `--config-env` cannot be inspected while the repository holds nax's run state under `.nax/`. " +
+  "Run the git verb directly, or define the alias with `-c alias.NAME=VALUE`.";
+
 /** True when `.nax` is a path segment of `path`. */
 function hasNaxSegment(path: string): boolean {
   return path.split(/[\\/]/).includes(".nax");
@@ -127,8 +131,13 @@ function updateIndexRefusal(args: readonly string[], ctx: NaxGuardContext, viaXa
   if (!args.some((word) => INDEX_HIDING_FLAG.test(word))) return undefined;
   const operands = args.filter((word) => !word.startsWith("-"));
   if (operands.some((word) => operandTouchesNax(word, ctx))) return UPDATE_INDEX_REFUSAL;
-  // Paths that arrive on stdin or from xargs cannot be inspected, with or without other operands.
-  const uninspectable = viaXargs || operands.length === 0 || args.includes("--stdin") || args.includes("--index-info");
+  // Paths that arrive on stdin, from xargs or from an expansion cannot be inspected, with or without other operands.
+  const uninspectable =
+    viaXargs ||
+    operands.length === 0 ||
+    operands.some((word) => /[$`]/.test(word)) ||
+    args.includes("--stdin") ||
+    args.includes("--index-info");
   return uninspectable && hasNaxDirNear(ctx) ? UPDATE_INDEX_REFUSAL : undefined;
 }
 
@@ -192,6 +201,7 @@ export function naxStateRefusal(segment: readonly string[], ctx: NaxGuardContext
   const git = locateGit(segment);
   if (git === undefined) return undefined;
   const where = withGitDirs(ctx, git.dirs);
+  if (git.unresolvedAlias && hasNaxDirNear(where)) return ALIAS_REFUSAL;
   if (REVERT_VERBS.has(git.subcommand)) return revertRefusal(git.args, where);
   if (git.subcommand === "update-index") {
     const viaXargs = segment.slice(0, gitExecutableIndex(segment)).includes("xargs");
@@ -233,16 +243,43 @@ function shellSegments(command: string): string[][] {
   return segments.map((words) => words.filter((word) => !/^\d*[<>]/.test(word))).filter((words) => words.length > 0);
 }
 
-/** `cd X` widens the frames to also include X resolved from each (the union stays conservative). */
+const HEREDOC_MARKER = /(?<!<)<<(?!<)-?\s*(?:'([^']+)'|"([^"]+)"|([A-Za-z_][\w-]*))/g;
+
+/** The heredoc terminators a command line opens, in order. */
+function heredocTerminators(line: string): string[] {
+  return [...line.matchAll(HEREDOC_MARKER)].map((match) => (match[1] ?? match[2] ?? match[3]) as string);
+}
+
+/**
+ * Drop heredoc bodies (the lines after `<<WORD`, `<<'WORD'`, `<<"WORD"` or
+ * `<<-WORD` up to the terminator line): they are data, not commands, so a
+ * commit message that says "git stash" is not a stash.
+ */
+function withoutHeredocBodies(command: string): string {
+  const kept: string[] = [];
+  let pending: string[] = [];
+  for (const line of command.split("\n")) {
+    if (pending.length > 0) {
+      if (line.trim() === pending[0]) pending = pending.slice(1);
+      continue;
+    }
+    kept.push(line);
+    pending = heredocTerminators(line);
+  }
+  return kept.join("\n");
+}
+
+/** `cd X` / `pushd X` widens the frames to also include X resolved from each (the union stays conservative). */
 function framesAfterCd(words: readonly string[], frames: readonly string[]): readonly string[] | undefined {
-  if (words[commandHeadIndex(words)] !== "cd") return undefined;
-  const target = words[commandHeadIndex(words) + 1];
-  if (target === undefined || /^[-$~]/.test(target)) return frames;
+  const head = words[commandHeadIndex(words)];
+  if (head !== "cd" && head !== "pushd") return undefined;
+  const target = words.slice(commandHeadIndex(words) + 1).find((word) => !word.startsWith("-"));
+  if (target === undefined || /^[$~]/.test(target)) return frames;
   return [...frames, ...frames.map((frame) => resolve(frame, target))];
 }
 
 function aliasTarget(word: string): string | undefined {
-  return /^alias\.[^=]+=(.*)$/s.exec(word)?.[1];
+  return /^alias\.[^=]+=(.*)$/is.exec(word)?.[1];
 }
 
 /** True when `word` is a git verb token, or an alias definition that expands to one. */
@@ -292,7 +329,7 @@ function nestedRefusal(words: readonly string[], ctx: NaxGuardContext): string |
  */
 export function naxStateRefusalInText(command: string, ctx: NaxGuardContext): string | undefined {
   let frames = ctx.frames;
-  for (const words of shellSegments(command)) {
+  for (const words of shellSegments(withoutHeredocBodies(command))) {
     const moved = framesAfterCd(words, frames);
     if (moved !== undefined) {
       frames = moved;

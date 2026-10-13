@@ -247,17 +247,23 @@ function checkPayload(
   return { cdTargets };
 }
 
+/** The shape guards: a non-string or blank command is refused before anything is lexed. */
+function invalidCommandDenial(command: unknown): BashCheck | undefined {
+  if (typeof command !== "string") return deny(`"command" must be a string`);
+  return command.trim() === "" ? deny(`"command" must not be empty`) : undefined;
+}
+
 /**
- * The denials that need no grant lookup: nax's run state (#2490) -- revert,
- * index-hiding and stash in any segment, nested shell or unreadable construct,
- * never escalatable -- and then the escalatable lexical refusal.
+ * nax's run state (#2490): revert, index-hiding and stash in any segment,
+ * nested shell or unreadable construct. Never escalatable, and checked BEFORE
+ * any escalatable refusal so a user approval can never run it.
  */
-function earlyRefusal(args: BashCheckArgs, lexed: ReturnType<typeof lexBashCommand>): BashCheck | undefined {
-  const stateRefusal = naxStateRefusalInText(String(args.command), {
-    frames: [args.initialPath],
-    root: args.initialPath,
-  });
-  if (stateRefusal !== undefined) return deny(stateRefusal);
+function stateDenial(args: BashCheckArgs): BashCheck | undefined {
+  const refusal = naxStateRefusalInText(String(args.command), { frames: [args.initialPath], root: args.initialPath });
+  return refusal === undefined ? undefined : deny(refusal);
+}
+
+function lexicalDenial(lexed: ReturnType<typeof lexBashCommand>): BashCheck | undefined {
   if (lexed.kind !== "refused") return undefined;
   return deny(
     `command contains ${lexed.construct}, which cannot be analysed and is therefore refused -- ` +
@@ -269,10 +275,12 @@ function earlyRefusal(args: BashCheckArgs, lexed: ReturnType<typeof lexBashComma
 
 export function checkBashCommand(args: BashCheckArgs): BashCheck {
   const { command, tool } = args;
-  if (typeof command !== "string") return deny(`"command" must be a string`);
-  if (command.trim() === "") return deny(`"command" must not be empty`);
+  const invalid = invalidCommandDenial(command);
+  if (invalid !== undefined) return invalid;
+  const state = stateDenial(args);
+  if (state !== undefined) return state;
 
-  const lexed = lexBashCommand(command);
+  const lexed = lexBashCommand(command as string);
   // On a refusal the gate still runs its deny and payload checks -- over the
   // lexable prefix, the part before the unreadable construct. The prefix is
   // empty when the refusal preceded any completed word, leaving the checks a
@@ -294,8 +302,8 @@ export function checkBashCommand(args: BashCheckArgs): BashCheck {
     cwd = nextWorkingDirectories(segment, cwd, result.cdTargets);
   }
 
-  const early = earlyRefusal(args, lexed);
-  if (early !== undefined) return early;
+  const lexical = lexicalDenial(lexed);
+  if (lexical !== undefined) return lexical;
 
   for (const segment of segments) {
     if (args.grant.unconditional || matchesSegment(args.grant, segment)) continue;

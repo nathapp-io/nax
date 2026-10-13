@@ -242,6 +242,69 @@ describe("redirectForCommand reads every segment", () => {
   });
 });
 
+describe("round 3 (#2490)", () => {
+  const text = (command: string, ctx: NaxGuardContext = withNax) => naxStateRefusalInText(command, ctx);
+
+  test.each([
+    "git commit -F - <<'EOF'\nfix: handle git stash in guard\nEOF",
+    "cat > notes.md <<'EOF'\nNever run git stash here\nEOF",
+    'cat <<"END"\ngit stash\nEND\necho done',
+    "cat <<-TAB\n\tgit stash\n\tTAB\n",
+    "cat <<A <<B\ngit stash\nA\ngit stash pop\nB",
+  ])("treats a heredoc body as data: %s", (command) => {
+    expect(text(command)).toBeUndefined();
+  });
+
+  test.each([
+    "cat <<'EOF'\nbody\nEOF\ngit stash",
+    "cat <<EOF\nbody\nEOF\ngit update-index --skip-worktree .nax/x",
+    "git stash <<EOF\nbody\nEOF",
+  ])("still denies a real command around a heredoc: %s", (command) => {
+    expect(text(command)).toBeDefined();
+  });
+
+  test.each([
+    "pushd .nax && git update-index --skip-worktree prd.json",
+    "pushd .nax; git checkout -- prd.json",
+    "pushd -n .nax; popd; git update-index --skip-worktree prd.json",
+  ])("tracks pushd like cd: %s", (command) => {
+    expect(text(command)).toBeDefined();
+  });
+
+  test("pushd into a source directory stays allowed", () => {
+    expect(text("pushd src && git update-index --skip-worktree x.ts")).toBeUndefined();
+  });
+
+  test.each([
+    "git update-index --skip-worktree $(git ls-files .nax)",
+    "git update-index --skip-worktree `git ls-files .nax`",
+    "git update-index --assume-unchanged $FILES",
+  ])("an expansion operand of a hiding update-index is uninspectable: %s", (command) => {
+    expect(text(command)).toBeDefined();
+    expect(text(command, withoutNax)).toBeUndefined();
+  });
+
+  test.each([
+    "git -c ALIAS.s=stash s",
+    "git -c Alias.S=update-index S --skip-worktree .nax/x",
+    "git -c alias.s=stash S",
+  ])("matches alias definitions case-insensitively: %s", (command) => {
+    expect(refuse(command)).toBeDefined();
+  });
+
+  test.each(["git --config-env=alias.s=SOMEVAR s", "git --config-env alias.s=SOMEVAR s"])(
+    "an alias defined through --config-env is unresolvable and refused when .nax exists: %s",
+    (command) => {
+      expect(refuse(command)).toBeDefined();
+      expect(refuse(command, withoutNax)).toBeUndefined();
+    },
+  );
+
+  test("--config-env for a non-alias key stays allowed", () => {
+    expect(refuse("git --config-env=http.extraheader=HDR status")).toBeUndefined();
+  });
+});
+
 describe("gated and raw Bash enforce the guard on every segment", () => {
   const gated = (command: string, cwdRoot = root) =>
     compileToolPolicy([{ tool: "Bash", patterns: ["*"] }], cwdRoot, { ownedPaths: naxOwnedPathsPolicy }).check(
@@ -275,6 +338,9 @@ describe("gated and raw Bash enforce the guard on every segment", () => {
     "git -C .nax checkout -- prd.json",
     "bash -c 'cd .nax && git update-index --skip-worktree prd.json'",
     "cd .nax && git update-index --skip-worktree prd.json $(true)",
+    "git update-index --skip-worktree $(git ls-files .nax)",
+    "pushd .nax && git update-index --skip-worktree prd.json",
+    "git -c ALIAS.s=stash s",
     "git -C . stash",
     "git --no-pager stash",
     "FOO=1 git stash",
@@ -296,6 +362,11 @@ describe("gated and raw Bash enforce the guard on every segment", () => {
     const verdict = raw(command);
     expect(verdict.kind).toBe("deny");
     if (verdict.kind === "deny") expect(verdict.escalatable).toBe(false);
+  });
+
+  test("raw mode allows a heredoc whose body mentions git stash", () => {
+    expect(raw("git commit -F - <<'EOF'\nfix: handle git stash in guard\nEOF").kind).toBe("allow");
+    expect(raw("cat <<'EOF'\nx\nEOF\ngit stash").kind).toBe("deny");
   });
 
   test("both modes still allow ordinary git on source files", () => {
