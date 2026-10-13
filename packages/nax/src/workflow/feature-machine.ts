@@ -42,6 +42,8 @@ export interface FeatureSink {
   update(record: WorkflowFeatureRecord): Promise<void>;
   ledger(text: string, options?: LedgerWriteOptions): Promise<void>;
   step(step: FeatureStep, record: WorkflowFeatureRecord): void;
+  /** Writes a review artifact into the run dir. Best effort: never throws. */
+  artifact(name: string, value: unknown): Promise<void>;
 }
 
 export interface FeatureFacts {
@@ -146,9 +148,12 @@ async function branchReviewStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Pr
   const triage = new Map(out.verdict.minorTriage.map((t) => [t.id, t.decision]));
   const { findings, nextFindingId } = assign(rec, out.verdict.findings.filter(isBlocking));
   const minors = out.verdict.findings.filter((f) => !isBlocking(f));
+  // #2496: written here, after assign(), so the file and result.json name findings the same way.
+  await env.sink.artifact("branch-review.json", { ...out.verdict, findings: [...findings, ...minors] });
   log.done(`spec ${out.verdict.spec}, quality ${out.verdict.quality} - ${describeFindings([...findings, ...minors])}`);
   return {
     reviewRan: true,
+    cannotVerify: out.verdict.cannotVerify,
     reviewOpen: findings,
     nextFindingId,
     minors: rec.minors.map((m) => ({ ...m, triage: triage.get(m.id) ?? "leave" })),
@@ -203,6 +208,10 @@ async function branchReReviewStep(env: FeatureEnv, rec: WorkflowFeatureRecord): 
   const addressed = new Set(out.verdict.verdicts.filter((v) => v.addressed).map((v) => v.id));
   const stillOpen = new Set(items.map((f) => f.id).filter((id) => !addressed.has(id)));
   const { findings, nextFindingId } = assign(rec, out.verdict.newFindings.filter(isBlocking));
+  await env.sink.artifact("branch-rereview.json", {
+    ...out.verdict,
+    newFindings: [...findings, ...out.verdict.newFindings.filter((f) => !isBlocking(f))],
+  });
   const minors = rec.minors.map((m) =>
     m.triage === "fix-now" && stillOpen.has(m.id) ? { ...m, triage: "leave" as const } : m,
   );

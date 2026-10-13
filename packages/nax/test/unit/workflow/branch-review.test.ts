@@ -30,7 +30,7 @@ const facts = {
 };
 
 describe("runBranchReview", () => {
-  test("writes package-branch.diff from the seed and branch-review.json; passes the minor ids", async () => {
+  test("writes package-branch.diff from the seed (the machine owns branch-review.json); passes the minor ids", async () => {
     const ctx = fc();
     const gitCalls: string[][] = [];
     _workflowDeps.git = async (args) => {
@@ -55,7 +55,7 @@ describe("runBranchReview", () => {
     expect(out).toEqual({ ran: true, verdict });
     expect(gitCalls.some((a) => a.includes("seed0..HEAD"))).toBe(true);
     expect(await Bun.file(join(ctx.runDir, "package-branch.diff")).exists()).toBe(true);
-    expect(await Bun.file(join(ctx.runDir, "branch-review.json")).json()).toEqual(verdict);
+    expect(await Bun.file(join(ctx.runDir, "branch-review.json")).exists()).toBe(false);
     expect(inputs[0]).toMatchObject({ minorIds: ["M1"], timeoutMs: ctx.workflow.timeouts.reviewMs });
   });
 
@@ -68,7 +68,7 @@ describe("runBranchReview", () => {
 });
 
 describe("runBranchReReview", () => {
-  test("re-review op on the fix diff with the branch model; writes branch-rereview.json", async () => {
+  test("re-review op on the fix diff with the branch model", async () => {
     const ctx = fc({ workflow: { ...makeFeatureContext().workflow, models: { branchReview: "powerful" } } });
     const inputs: unknown[] = [];
     _workflowDeps.callOp = makeScriptedCallOp((op, input) => {
@@ -83,6 +83,6 @@ describe("runBranchReReview", () => {
     expect(out.ran).toBe(true);
     expect(inputs[0]).toMatchObject({ openIds: ["B1"], model: "powerful" });
     expect(await Bun.file(join(ctx.runDir, "package-branch-fix.diff")).exists()).toBe(true);
-    expect(await Bun.file(join(ctx.runDir, "branch-rereview.json")).exists()).toBe(true);
+    expect(await Bun.file(join(ctx.runDir, "branch-rereview.json")).exists()).toBe(false);
   });
 });

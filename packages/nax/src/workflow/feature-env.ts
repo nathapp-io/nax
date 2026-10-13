@@ -3,7 +3,7 @@ import { adjudicateResidual } from "./adjudicate";
 import { createLiveWorkflowAdvisor, FEATURE_SCOPE } from "./advisor-live";
 import { flaggedCount } from "./approval";
 import { runBranchFix } from "./branch-fix";
-import { runBranchReReview, runBranchReview } from "./branch-review";
+import { runBranchReReview, runBranchReview, writeFeatureArtifact } from "./branch-review";
 import type { FeatureContext, WorkflowFeatureInput } from "./feature-context";
 import type { FeatureEnv, FeatureSink, FeatureSteps } from "./feature-machine";
 import { publish } from "./finalize";
@@ -86,6 +86,7 @@ export function buildFeatureEnv(fc: FeatureContext, input: WorkflowFeatureInput,
         tokensByRole: addRoleTokens(ctx.record.tokensByRole, ctx.meter.byRole()),
       }),
     ledger,
+    artifact: (name, value) => writeFeatureArtifact(fc, name, value),
     step: (step, record) => input.statusWriter?.setWorkflowStatus?.(workflowStatusBlock(ctx.stories, step, record)),
   };
   return {

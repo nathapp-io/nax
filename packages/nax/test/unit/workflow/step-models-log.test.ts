@@ -137,7 +137,7 @@ describe("feature machine step models", () => {
     };
     const env: FeatureEnv = {
       steps,
-      sink: { update: async () => {}, ledger: async () => {}, step: () => {} },
+      sink: { update: async () => {}, ledger: async () => {}, artifact: async () => {}, step: () => {} },
       facts: { stories: [story], parked: [], cannotVerify: [] },
       record: newFeatureRecord({ now: "t", seed: "seed0", minors: [] }),
       aborted: () => false,

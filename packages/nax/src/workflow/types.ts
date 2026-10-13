@@ -134,6 +134,8 @@ export interface WorkflowFeatureRecord {
   /** Red repo gates and gate-open stories (step 1), handed to the branch fix. */
   readonly gateFindings: readonly WorkflowFinding[];
   readonly reviewRan: boolean;
+  /** The branch review's cannot-verify items (#2496: listed as open items, never blocking). */
+  readonly cannotVerify?: readonly string[];
   /** Blocking branch-review findings still open. */
   readonly reviewOpen: readonly WorkflowFinding[];
   readonly minors: readonly MinorItem[];

@@ -61,6 +61,7 @@ function harness(
 ) {
   const calls: string[] = [];
   const ledger: string[] = [];
+  const artifacts: Record<string, unknown> = {};
   const stepsSeen: FeatureStep[] = [];
   const updates: WorkflowFeatureRecord[] = [];
   const fixInputs: (readonly WorkflowFinding[])[] = [];
@@ -122,16 +123,37 @@ function harness(
       step: (s) => {
         stepsSeen.push(s);
       },
+      artifact: async (name, value) => {
+        artifacts[name] = value;
+      },
     },
     facts: { stories: over.stories ?? [done("US-001")], parked: [], cannotVerify: [] },
     record: over.record ?? newFeatureRecord({ now: "t", seed: "seed0", minors: [] }),
     aborted: () => over.aborted === true,
     now: () => (clock += 5),
   };
-  return { env, calls, ledger, stepsSeen, updates, fixInputs, reReviewInputs, adjudicated };
+  return { env, calls, ledger, artifacts, stepsSeen, updates, fixInputs, reReviewInputs, adjudicated };
 }
 
 describe("runFeatureMachine", () => {
+  test("branch-review.json carries the same B-ids as the record; cannot-verify kept (#2496)", async () => {
+    const review: BranchReviewVerdict = {
+      ...PASS,
+      spec: "fail",
+      findings: [
+        { kind: "spec", severity: "important", issue: "missing refund cap", file: "src/r.ts", line: 4 },
+        { kind: "quality", severity: "minor", issue: "rename tmp" },
+      ],
+      cannotVerify: ["CI-only path"],
+    };
+    const h = harness({ review });
+    const final = await runFeatureMachine(h.env);
+    const written = h.artifacts["branch-review.json"] as BranchReviewVerdict & { findings: { id?: string }[] };
+    expect(written.findings[0]?.id).toBe("B1");
+    expect(final.cannotVerify).toEqual(["CI-only path"]);
+    expect(h.artifacts["branch-rereview.json"]).toBeDefined();
+  });
+
   test("clean branch: no fix, no re-review, no adjudication; final gates reuse step 1", async () => {
     const h = harness({});
     const final = await runFeatureMachine(h.env);
