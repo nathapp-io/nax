@@ -38,6 +38,8 @@ export interface RunFooterOptions {
   formatterMode: "quiet" | "normal" | "verbose" | "json";
   /** Workflow mode (nax#2491): the split behind `durationMs`. */
   workflowTiming?: { storiesDurationMs: number; featureWorkflowDurationMs: number };
+  /** Pipeline mode (nax#2494): the split behind `durationMs` between the story loops and the end phase (finish, ...). */
+  endPhaseTiming?: { storiesDurationMs: number; endPhaseDurationMs: number };
   workflowSummary?: WorkflowSummaryView | undefined;
 }
 
@@ -66,8 +68,17 @@ export async function outputRunHeader(options: RunHeaderOptions): Promise<void> 
  * Output run footer in headless mode
  */
 export function outputRunFooter(options: RunFooterOptions): void {
-  const { finalCounts, durationMs, totalCost, startedAt, completedAt, formatterMode, workflowTiming, workflowSummary } =
-    options;
+  const {
+    finalCounts,
+    durationMs,
+    totalCost,
+    startedAt,
+    completedAt,
+    formatterMode,
+    workflowTiming,
+    endPhaseTiming,
+    workflowSummary,
+  } = options;
 
   if (formatterMode === "json") {
     return;
@@ -87,6 +98,9 @@ export function outputRunFooter(options: RunFooterOptions): void {
           storiesDurationMs: workflowTiming.storiesDurationMs,
           featureWorkflowDurationMs: workflowTiming.featureWorkflowDurationMs,
         }
+      : {}),
+    ...(endPhaseTiming
+      ? { storiesDurationMs: endPhaseTiming.storiesDurationMs, endPhaseDurationMs: endPhaseTiming.endPhaseDurationMs }
       : {}),
     ...(workflowSummary ? { workflow: workflowSummary } : {}),
   };

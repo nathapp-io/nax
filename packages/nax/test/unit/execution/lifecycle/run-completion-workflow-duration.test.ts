@@ -2,7 +2,7 @@
  * nax#2491: in workflow mode the `run.complete` log line is held back until the feature workflow
  * has run, then written with the whole run's duration and the stories / feature-workflow split.
  */
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import {
   makeMockAgentManager,
@@ -109,5 +109,32 @@ describe("handleRunCompletion — run.complete in workflow mode (nax#2491)", () 
     const result = await handleRunCompletion(opts({ deferRunCompleteLog: true }));
     result.logRunComplete?.({ ...FINAL, workflowPassed: false });
     expect(completes()[0]?.data).toMatchObject({ success: false });
+  });
+});
+
+describe("handleRunCompletion — the end-phase split on run.complete (nax#2494)", () => {
+  test("the deferred line carries endPhaseDurationMs and no workflow split", async () => {
+    const result = await handleRunCompletion(opts({ deferRunCompleteLog: true }));
+    result.logRunComplete?.({
+      durationMs: 9_448_000,
+      storiesDurationMs: 8_393_000,
+      endPhaseDurationMs: 1_055_000,
+      totalCost: 4.25,
+      workflowPassed: true,
+    });
+    const data = completes()[0]?.data;
+    expect(data).toMatchObject({ durationMs: 9_448_000, storiesDurationMs: 8_393_000, endPhaseDurationMs: 1_055_000 });
+    expect(data).not.toHaveProperty("featureWorkflowDurationMs");
+  });
+
+  test("a failure after the line was held back still writes it once", async () => {
+    const statusWriter = makeStatusWriter();
+    statusWriter.setRunStatus = mock(() => {
+      throw new Error("status write failed");
+    });
+    await expect(handleRunCompletion(opts({ deferRunCompleteLog: true, statusWriter }))).rejects.toThrow(
+      "status write failed",
+    );
+    expect(completes()).toHaveLength(1);
   });
 });

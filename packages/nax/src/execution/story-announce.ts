@@ -15,6 +15,7 @@
  * the max-retries trigger all depend on that pairing.
  */
 
+import { DEFAULT_CONFIG, type ModelTier, type NaxConfig, resolveModelForAgent } from "../config";
 import { getSafeLogger } from "../logger";
 import type { PRD, UserStory } from "../prd/types";
 
@@ -23,6 +24,22 @@ export interface StoryStartAnnouncement {
   complexity: string;
   modelTier: string;
   agent: string;
+  /** The model id the tier resolves to for `agent`, when it could be resolved (nax#2491 P6). */
+  model?: string;
+}
+
+/** The model id `tier` resolves to for `agent` (default-agent fallback, as dispatch does), or undefined. */
+export function storyModelName(
+  config: NaxConfig,
+  agent: string,
+  tier: string,
+  defaultAgent: string,
+): string | undefined {
+  try {
+    return resolveModelForAgent(config.models ?? DEFAULT_CONFIG.models, agent, tier as ModelTier, defaultAgent).model;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -36,6 +53,17 @@ export function storyOrdinal(prd: PRD, storyId: string): number {
   return prd.userStories.findIndex((s) => s.id === storyId) + 1;
 }
 
+/** `{ model }` for a StoryStartAnnouncement, or `{}` when the tier cannot be resolved. */
+export function announcedModel(
+  config: NaxConfig,
+  agent: string,
+  tier: string,
+  defaultAgent: string | undefined,
+): { model?: string } {
+  const model = storyModelName(config, agent, tier, defaultAgent ?? agent);
+  return model !== undefined ? { model } : {};
+}
+
 /** Emit the `story.start` log line for a story that is about to be dispatched. */
 export function logStoryStart(prd: PRD, story: UserStory, announcement: StoryStartAnnouncement): void {
   getSafeLogger()?.info("story.start", `${story.title}`, {
@@ -44,6 +72,7 @@ export function logStoryStart(prd: PRD, story: UserStory, announcement: StorySta
     complexity: announcement.complexity,
     modelTier: announcement.modelTier,
     agent: announcement.agent,
+    ...(announcement.model !== undefined ? { model: announcement.model } : {}),
     storyNumber: storyOrdinal(prd, story.id),
     storyTotal: prd.userStories.length,
     attempt: story.attempts + 1,

@@ -220,11 +220,17 @@ export function truncateToContextBudget(filteredMd: string, budgetTokens: number
 
   if (estimated <= budgetTokens) return filteredMd;
 
-  logger.warn("feature-context", "Feature context exceeds budget, truncating (tail-biased)", {
+  // warnOnce: the same feature context is truncated for every story that reads it (nax#2491 P7).
+  logger.warnOnce(
+    "feature-context",
+    "Feature context exceeds budget, truncating (tail-biased)",
+    {
+      featureId,
+      estimatedTokens: estimated,
+      budgetTokens,
+    },
     featureId,
-    estimatedTokens: estimated,
-    budgetTokens,
-  });
+  );
 
   // Tail-biased: keep as many chars from the END as the budget allows
   const maxChars = budgetTokens * 4;

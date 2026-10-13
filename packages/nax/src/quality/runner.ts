@@ -20,6 +20,7 @@ import { getSafeLogger } from "../logger";
 import { assertTrusted } from "../trust";
 import { withAgentOutputEnv } from "../verification/executor";
 import { aggregateResults } from "./aggregate";
+import { qualityLogsAreQuiet } from "./log-scope";
 
 /** Default timeout for quality commands — matches legacy REVIEW_CHECK_TIMEOUT_MS. */
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -134,7 +135,7 @@ async function runSingleCommand(
   const startTime = Date.now();
   const logger = getSafeLogger();
   // Console level follows the caller, not the outcome — see `origin` above.
-  const level = origin === "agent-tool" ? "debug" : "info";
+  const level = origin === "agent-tool" || qualityLogsAreQuiet() ? "debug" : "info";
 
   logger?.[level]("quality", `Running ${commandName}`, { storyId, commandName, command, workdir });
 

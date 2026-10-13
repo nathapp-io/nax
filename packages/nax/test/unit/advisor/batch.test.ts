@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { cleanupTempDir, makeMockCallContext, makeNaxConfig, makeTempDir, makeTestRuntime } from "@test/helpers";
 import type { AdvisorCallContext } from "@/advisor";
 import { _advisorServiceDeps, adviseBatch, buildMenu, readDecisions } from "@/advisor";
+import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import { adviseBatchOp } from "@/operations";
 
 const original = { ..._advisorServiceDeps };
@@ -46,6 +47,34 @@ const residual = (n: number) => ({
   })),
 });
 const ok = { rationale: "r", confidence: "high" as const, reversible: true, needsHumanConfirm: false };
+
+describe("adviseBatch decision log (nax#2491 P4)", () => {
+  test("each batch decision logs one ruling line with its content", async () => {
+    resetLogger();
+    const logs: LogEntry[] = [];
+    initLogger({ level: "debug" });
+    addSink((entry) => logs.push(entry));
+    try {
+      const actx = setup();
+      _advisorServiceDeps.callOp = (async (_c: unknown, _op: unknown, input: { items: { id: string }[] }) => ({
+        ok: true,
+        answers: [
+          { itemId: input.items[0]?.id, reply: { optionId: "C", instruction: "Keep lock order", ...ok }, raw: {} },
+        ],
+        diagnoses: {},
+        conflicts: [],
+        overlap: [],
+      })) as typeof _advisorServiceDeps.callOp;
+      await adviseBatch(actx, residual(1));
+      const rulings = logs.filter((e) => e.stage === "advisor" && e.message.startsWith("Advisor ruling"));
+      expect(rulings.map((e) => e.message)).toEqual([
+        "Advisor ruling [residual] US-3: carry to US-4: Keep lock order (confidence high)",
+      ]);
+    } finally {
+      resetLogger();
+    }
+  });
+});
 
 describe("adviseBatch residual", () => {
   test("valid answers become decisions; a missing or invalid one falls back alone (Review Focus 1)", async () => {

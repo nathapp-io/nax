@@ -25,6 +25,7 @@ import { logWorkflow } from "./run-log";
 import { resolveSeed } from "./seed";
 import { workflowStatusBlock } from "./status-block";
 import { startTokenMeter, type TokenMeter } from "./tokens";
+import { clearToolErrorClaims } from "./tool-error-outcome";
 import type { FeatureOutcome, StorySummary, WorkflowFeatureRecord } from "./types";
 
 export interface WorkflowFeatureResult {
@@ -54,6 +55,7 @@ export async function runWorkflowFeature(input: WorkflowFeatureInput): Promise<W
     }
   } finally {
     meter.stop();
+    clearToolErrorClaims(input.runtime.runId);
   }
 }
 

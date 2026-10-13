@@ -12,6 +12,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Run log, review round 2 (nax#2491).** The repeated-tool-error line releases its per-run ledger of reported
+  rows when the feature workflow ends, and the model preview shares one endpoint resolver with dispatch
+  (`resolveOpEndpoint`) so the two cannot drift.
+- **Run log and Duration, review round 1 (nax#2491, nax#2494).** The repeated-tool-error line now counts a row
+  only inside the step's own time window (each tool-audit row carries its timestamp; a row without one falls
+  back to its file's stamp) and reports each row once per run, so an ACP session that writes its audit file at
+  close is not blamed on the wrong step (an ACP step whose file is not written until later gets no line);
+  `Exec` calls are keyed by their argv and calls that name no target are never grouped. The model named on a
+  step start line follows the story's sticky ladder slot, so a story that already swapped away from a dead
+  primary names the endpoint it will use. `warnOnce` takes an optional discriminator, used for the
+  cross-protocol tier warning (per agent/tier) and the budget warnings, so distinct cases each warn once. A
+  flagged advisor decision that has no way to reach a human is logged at warn. The merged agent-call end line
+  only takes stream counters from a call that was running when the note's call ended, per run, and drops them
+  when the run's subscribers detach. The footer shows `+ end phase` only when the end phase took a second or
+  more. Known and kept: on `run.complete`, `costByStage`, `costByStory` and `errorCostUsd` (and
+  `RunResult.runCompletedAt`) still describe the stories phase, as `run:completed` does; `totalCost` and the
+  durations are the final, whole-run figures.
+- **Run log: advisor rulings, resolved models, quieter gates, tool-error outcomes (nax#2491 P4, P6-P8).**
+  Every advisor decision logs one `advisor` info line, `Advisor ruling [<caller>] <story>: <ruling, about 200
+  characters> (confidence <c>)`, and a flagged decision that has no way to reach a human says so on that same
+  line (`; flagged, no delivery channel`) instead of a separate warning that named nothing. The end-of-feature
+  block lists the decisions under its count, or prints `Advisor decisions this feature: (none)`. The resolved
+  model is named on the story header (`4/7 • medium • fast -> native·<model>`, in pipeline mode too) and on
+  the start line of each workflow implementer, fix, story-review, re-review, branch-review, branch-fix and
+  branch-rereview step (`agentName` / `model`, rendered `native·<model>`), so a fix round that steps up a tier
+  shows the new model. A story's gates log ONE line, `US-004 gates lint ✓ 2.1s · typecheck ✓ 1.3s · scoped
+  tests ✓ 4.7s (12 tests)` (the count is tests passed; the scoped run does not report a file count), expanded
+  per gate with the findings when one is red; the quality runner's own `Running <gate>` / `<gate> completed`
+  pairs are debug inside the workflow gates. Warnings that every story repeated (canonical-rules budget,
+  feature-context budget, dependency-fragment budget, the cross-protocol tier resolution) warn once per run and
+  go to debug afterwards. The two agent-call end lines are one: `middleware Agent call complete` carries the
+  stream's status and activity counters, and `agent-stream Agent call ended` is debug. After a workflow agent
+  step whose session logged three or more identical tool errors (same tool, same Bash exit code, same target;
+  the tool audit does not store the error text) one line says what followed, for example `branch-fix: 4 Edit
+  errors on src/a.ts, then succeeded via Write` or `, then gave up`. That last line reads the tool audit after
+  a workflow step and is workflow-mode only.
+- **Pipeline mode: Duration includes the end phase (nax#2494).** `Duration` (footer, exit summary,
+  `RunResult.durationMs`, `run.complete`, `metrics.json` `totalDurationMs`) used to stop before the end phase
+  (finish, etc.), so pipeline and workflow runs measured different spans. Pipeline `Duration` now runs through
+  the end phase, and the footer shows the split: `stories 139m 53s + end phase 17m 35s`. `run.complete` is held
+  back until the end phase is done in both modes (still exactly once, through the same gate) and carries
+  `storiesDurationMs` and `endPhaseDurationMs` (workflow mode keeps `featureWorkflowDurationMs`); the saved
+  `metrics.json` record is rewritten with the whole-run `totalDurationMs`, the split and the final `totalCost`
+  and `completedAt`. The `run:completed` event (reporters, the on-complete hook) deliberately stays where it
+  is, before the end phase, in both modes: it fires with the stories-only duration and cost, and is not
+  re-fired. If a late completion step throws, the held-back `run.complete` line is still written before the
+  error propagates.
 - **Workflow mode: the run log shows decisions, and Duration covers the feature workflow (nax#2491).**
   `Duration` and `run.complete` used to stop at the last story and leave out the feature workflow (repo
   gates, branch review, branch fix, re-review, final gates, publish), undercounting a run by 10-16%. They now
@@ -24,13 +71,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   re-review addressed/not addressed, final gates, publish outcome). The end-of-run summary adds a workflow
   block built from `result.json`: tokens and cost by role, rounds per story, branch findings found / fixed /
   left, and the publish outcome. Advisor content on log lines, resolved models, gate-line and warning noise
-  reduction and the repeated-tool-error outcome line (P4, P6-P8 of the issue) are not part of this change.
+  reduction and the repeated-tool-error outcome line (P4, P6-P8 of the issue) followed in the next entry.
   In workflow mode the saved `metrics.json` record is rewritten after the feature workflow with the
   whole-run `totalDurationMs` plus `storiesDurationMs` and `featureWorkflowDurationMs`, and the `run.complete`
   line carries the final cost and a `success` that follows the workflow result. The `run:completed` event
   (reporters, the on-complete hook) still fires before the feature workflow, so it sees the stories-only
-  duration and cost. In pipeline mode `Duration` still excludes the end phase (finish), while workflow-mode
-  `Duration` includes it; that asymmetry is unchanged here. Ledger lines the step lines already state are no
+  duration and cost. Pipeline mode follows the same rule since nax#2494 (see above). Ledger lines the step lines already state are no
   longer mirrored to the log (`ledger.md` keeps them), and mirrored text is capped at 200 characters.
 - **A hidden `.nax/` index flag no longer outlives the run (#2490).** At run end (completion phase, the runner's finally block, and fatal-signal teardown) nax clears `skip-worktree` / `assume-unchanged` on any `.nax` path (root or nested) and logs a warning, so the PRD an agent hid from git is committed again.
 - **Workflow mode: the run tree moves into the repo (nax#2479).** Briefs, reports, review packages, the

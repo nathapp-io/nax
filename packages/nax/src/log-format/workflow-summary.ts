@@ -16,6 +16,11 @@ export function formatDurationSplit(storiesMs: number, featureWorkflowMs: number
   return `stories ${formatDuration(storiesMs)} + feature workflow ${formatDuration(featureWorkflowMs)}`;
 }
 
+/** `stories 139m 53s + end phase 17m 35s` (pipeline mode: finish, ...). */
+export function formatEndPhaseSplit(storiesMs: number, endPhaseMs: number): string {
+  return `stories ${formatDuration(storiesMs)} + end phase ${formatDuration(endPhaseMs)}`;
+}
+
 const count = (n: number): string => n.toLocaleString("en-US");
 
 function roleLine(r: WorkflowSummaryView["roles"][number]): string {

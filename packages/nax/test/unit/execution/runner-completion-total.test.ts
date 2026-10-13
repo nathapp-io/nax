@@ -181,7 +181,10 @@ describe("runCompletionPhase — US-001 reportedTotal seam", () => {
       reportedTotal: 5.8042,
     }));
 
-    const result = await runCompletionPhase(makeOpts());
+    // nax#2494: the run's duration is read off the run clock after the end phase, not taken from handleRunCompletion.
+    const opts = makeOpts();
+    _runnerCompletionDeps.now = () => opts.startTime + 100;
+    const result = await runCompletionPhase(opts);
 
     expect(result.durationMs).toBe(100);
     expect(result.acceptancePassed).toBe(true);

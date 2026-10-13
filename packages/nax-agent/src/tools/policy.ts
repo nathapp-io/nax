@@ -18,6 +18,7 @@ import { relative, resolve, sep } from "node:path";
 import type { BashApprovalMode } from "#src/config/bash-approval";
 import { realOrRaw } from "#src/internal/realpath";
 import { validateArgv } from "./exec-guard.ts";
+import { createNaxDirIndex } from "./nax-dirs.ts";
 import { EMPTY_OWNED_PATHS_POLICY, type OwnedPathsPolicy } from "./owned-paths.ts";
 import { commandBranch } from "./policy-command-branch.ts";
 import {
@@ -100,6 +101,8 @@ function isFieldlessScope(scope: ToolScope): boolean {
 
 export function compileToolPolicy(grants: readonly ToolGrant[], root: string, options?: ToolPolicyOptions): ToolPolicy {
   const resolvedRoot = realOrRaw(root);
+  // One downward `.nax` scan per compiled policy, shared by every Bash call it checks (#2493).
+  const naxDirs = createNaxDirIndex();
   const owned = options?.ownedPaths ?? EMPTY_OWNED_PATHS_POLICY;
   // nax#2115: the SAME transform `relativeTo` applies to every checked path, so
   // the guard compares like with like. A path outside the root yields a
@@ -321,6 +324,7 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
           sandboxWrapped: options?.sandboxWrapped,
           ownedPaths: owned,
           resolvedRoot,
+          naxDirs,
           denyBy,
           askBy,
           resolvePath: (candidate, cwd) => resolveWithin(resolvedRoot, resolve(cwd, candidate), owned),

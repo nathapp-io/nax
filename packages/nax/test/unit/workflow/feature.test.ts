@@ -17,6 +17,7 @@ import type { FeatureEnv } from "@/workflow/feature-machine";
 import { newFeatureRecord } from "@/workflow/feature-record";
 import { newStoryRecord, upsertFeatureRecord, upsertStoryRecord } from "@/workflow/result";
 import { _workflowDeps } from "@/workflow/step-context";
+import { toolErrorClaimsHeld, withToolErrorOutcome } from "@/workflow/tool-error-outcome";
 
 const originalRun = { ..._featureRunDeps };
 const originalWf = { ..._workflowDeps };
@@ -86,6 +87,24 @@ async function seedFinished(
     { ...newFeatureRecord({ now: "t", seed: "s", minors: [] }), step: "done", head: "headX", passed: true, ...over },
   );
 }
+
+describe("runWorkflowFeature releases the run's tool-error claims (nax#2491 P8)", () => {
+  test("the claimed-row ledger for the run is dropped when the feature workflow ends", async () => {
+    const { input, runtime } = setup();
+    const out = makeTempDir("wf-claims-");
+    dirs.push(out);
+    const calls = [1, 2, 3].map(() => ({ tool: "Edit", outcome: "error", input: { file_path: "a.ts" } }));
+    await Bun.write(join(out, "tool-audit", "f", `${runtime.runId}-9999999999999-s.json`), JSON.stringify({ calls }));
+    await withToolErrorOutcome(
+      { outputDir: out, feature: "f", runId: runtime.runId, storyId: "_run", now: () => 0 },
+      "x",
+      async () => {},
+    );
+    expect(toolErrorClaimsHeld(runtime.runId)).toBe(true);
+    await runWorkflowFeature(input);
+    expect(toolErrorClaimsHeld(runtime.runId)).toBe(false);
+  });
+});
 
 describe("runWorkflowFeature", () => {
   test("dry run: skipped before any context is built", async () => {

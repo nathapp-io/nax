@@ -4,10 +4,10 @@ import { RULE_SET_VERSION, scoreRules } from "#src/command-safety/index";
 const hits = (command: string) => scoreRules(command).hits;
 
 describe("rule scorer", () => {
-  test("version is 4 and every category is reported", () => {
+  test("version is 6 and every category is reported", () => {
     const r = scoreRules("ls");
     expect(r.version).toBe(RULE_SET_VERSION);
-    expect(RULE_SET_VERSION).toBe(4);
+    expect(RULE_SET_VERSION).toBe(6);
     expect(Object.keys(r.hits).sort()).toEqual([
       "deletes_data",
       "discards_work",
@@ -207,9 +207,9 @@ describe("rule scorer — outside_project with the project root (v2)", () => {
  * so a path in a neighbouring segment neither creates nor suppresses a hit.
  */
 describe("rule scorer — path-scoped discards (v3)", () => {
-  test("US-001 AC14: RULE_SET_VERSION and scoreRules().version are both 4", () => {
-    expect(RULE_SET_VERSION).toBe(4);
-    expect(scoreRules("ls").version).toBe(4);
+  test("US-001 AC14: RULE_SET_VERSION and scoreRules().version are both 6", () => {
+    expect(RULE_SET_VERSION).toBe(6);
+    expect(scoreRules("ls").version).toBe(6);
   });
 
   test("US-001 AC1: git checkout of a dot-extension file path is a discard", () => {
@@ -316,5 +316,28 @@ describe("rule scorer — path-scoped discards (v3)", () => {
     expect(hits("sudo -h host git checkout src/a.ts").discards_work).toBe(true);
     expect(hits("sudo -D /tmp git checkout src/a.ts").discards_work).toBe(true);
     expect(hits("env MODE=safe git restore src/a.ts").discards_work).toBe(true);
+  });
+});
+
+describe("rule scorer — locateGit reads (v5, v6)", () => {
+  test("v6: an alias never shadows a git builtin, so the real checkout -f is seen", () => {
+    expect(hits("git -c alias.checkout=status checkout -f").discards_work).toBe(true);
+  });
+
+  test("v6: a long alias chain still reaches the verb", () => {
+    const defs = Array.from({ length: 12 }, (_, i) => `-c alias.a${i + 1}=${i === 11 ? "checkout" : `a${i + 2}`}`);
+    expect(hits(`git ${defs.join(" ")} a1 -f`).discards_work).toBe(true);
+  });
+
+  test("an alias that starts with a global option still reaches the v3 per-segment pass", () => {
+    expect(hits("git -c 'alias.x=-C . checkout src/a.ts' x").discards_work).toBe(true);
+  });
+
+  test("a backslash-prefixed git is still git", () => {
+    expect(hits("\\git checkout -f").discards_work).toBe(true);
+  });
+
+  test("an alias to a non-discard stays clean", () => {
+    expect(hits("git -c 'alias.x=-C . status' x").discards_work).toBe(false);
   });
 });

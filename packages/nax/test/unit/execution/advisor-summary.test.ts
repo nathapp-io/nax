@@ -7,6 +7,7 @@ import { ADVISOR_DEFAULTS } from "@/config";
 import { recordAdvisorSummary } from "@/execution/advisor-summary";
 import type { RunStateSnapshot } from "@/execution/status-file";
 import { buildStatusSnapshot } from "@/execution/status-file";
+import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 
 const draft = (over: Partial<AdviceDecision> & { auditRef: string }): Omit<AdviceDecision, "id"> => ({
   questionId: "Q",
@@ -62,6 +63,48 @@ describe("recordAdvisorSummary", () => {
       });
       expect(w.seen).toEqual([{ decisions: 1, flagged: 1, byKind: { "finish-judgment": 1 } }]);
     });
+  });
+});
+
+describe("recordAdvisorSummary — run log (nax#2491 P4)", () => {
+  async function logged(setup: (dir: string, out: string) => Promise<void>): Promise<string[]> {
+    resetLogger();
+    const logs: LogEntry[] = [];
+    initLogger({ level: "debug" });
+    addSink((entry) => logs.push(entry));
+    try {
+      await withTempDir(async (dir) => {
+        const out = join(dir, "out");
+        await setup(dir, out);
+        await recordAdvisorSummary({
+          config: makeNaxConfig({ advisor: { ...ADVISOR_DEFAULTS, enabled: true } }),
+          statusWriter: writer().statusWriter,
+          repoRoot: dir,
+          feature: "feat",
+          outputDir: out,
+        });
+      });
+      return logs.filter((e) => e.stage === "advisor").map((e) => e.message);
+    } finally {
+      resetLogger();
+    }
+  }
+
+  test("no decisions prints (none)", async () => {
+    expect(await logged(async () => {})).toEqual(["Advisor decisions this feature: (none)"]);
+  });
+
+  test("lists each trusted decision under the count", async () => {
+    const lines = await logged(async (dir, out) => {
+      const real = await appendDecision(dir, "feat", (id) =>
+        draft({ storyId: "US-002", needsHumanConfirm: true, auditRef: `advisor-audit/feat/${id}.json` }),
+      );
+      await Bun.write(join(out, real.auditRef), JSON.stringify({ result: { decision: real } }));
+    });
+    expect(lines).toEqual([
+      "Advisor decisions this feature: 1 (1 flagged)",
+      "  D-1 [finish-judgment] US-002: fix: x (confidence high)",
+    ]);
   });
 });
 

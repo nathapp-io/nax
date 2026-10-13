@@ -1,7 +1,9 @@
 /**
- * Workflow mode: the end-of-run report (nax#2491 P5). Reads the run's result.json, logs one
+ * The end-of-run report. Workflow mode (nax#2491 P5): reads the run's result.json, logs one
  * summary line (stories vs feature-workflow time, branch findings, publish) and hands the
- * view to the headless footer. Fail-open: a report that cannot be built never fails a run.
+ * view to the headless footer. Both modes (nax#2494): closes the run once its end phase is done,
+ * which writes the held-back `run.complete` line and rewrites the saved metrics record with the
+ * whole-run duration. Fail-open: a report that cannot be built never fails a run.
  */
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { formatDurationSplit, type WorkflowSummaryView } from "@/log-format";
@@ -99,7 +101,10 @@ async function saveWholeRunDuration(options: RunnerCompletionOptions, final: Run
     const saved = await _workflowEndReportDeps.saveDuration(options.runtime.outputDir, options.runId, {
       totalDurationMs: final.durationMs,
       storiesDurationMs: final.storiesDurationMs,
-      featureWorkflowDurationMs: final.featureWorkflowDurationMs,
+      ...(final.featureWorkflowDurationMs !== undefined
+        ? { featureWorkflowDurationMs: final.featureWorkflowDurationMs }
+        : {}),
+      ...(final.endPhaseDurationMs !== undefined ? { endPhaseDurationMs: final.endPhaseDurationMs } : {}),
       totalCost: final.totalCost,
       completedAt: new Date().toISOString(),
     });
@@ -115,50 +120,80 @@ async function saveWholeRunDuration(options: RunnerCompletionOptions, final: Run
   }
 }
 
-/**
- * Called once the feature workflow is done: derives the whole-run duration (start to now) and the
- * feature-workflow part (end phase only), writes the held-back run.complete line, rewrites the
- * saved metrics record, and reports. `run:completed` (reporters, on-complete hook) has already
- * fired by now with the stories-only figures; it is deliberately not re-fired.
- */
-async function closeWorkflowRun(
+/** The whole run's final figures, as `run.complete` and the saved metrics record report them. */
+function wholeRunFinal(
   options: RunnerCompletionOptions,
   input: {
-    readonly gate: RunCompleteGate;
+    readonly split: Pick<RunCompleteFinal, "featureWorkflowDurationMs" | "endPhaseDurationMs">;
     readonly workflowPassed: boolean;
     readonly fallbackCost: number;
     readonly endStartedAt: number;
     readonly endedAt: number;
   },
-): Promise<ClosedWorkflowRun> {
-  const featureWorkflowDurationMs = input.endedAt - input.endStartedAt;
+): RunCompleteFinal {
   const durationMs = input.endedAt - options.startTime;
-  const final: RunCompleteFinal = {
+  return {
     durationMs,
-    storiesDurationMs: durationMs - featureWorkflowDurationMs,
-    featureWorkflowDurationMs,
+    storiesDurationMs: durationMs - (input.endedAt - input.endStartedAt),
+    ...input.split,
     totalCost: options.runtime ? totalSpendUsd(options.runtime.costAggregator.snapshot()) : input.fallbackCost,
     workflowPassed: input.workflowPassed,
   };
+}
+
+interface CloseInput {
+  readonly gate: RunCompleteGate;
+  readonly workflowPassed: boolean;
+  readonly fallbackCost: number;
+  readonly endStartedAt: number;
+  readonly endedAt: number;
+}
+
+/**
+ * Called once the end phase is done: derives the whole-run duration (start to now) and the end-phase
+ * part, writes the held-back run.complete line, rewrites the saved metrics record, and (workflow mode)
+ * reports. `run:completed` (reporters, on-complete hook) has already fired by now with the
+ * stories-only figures; it is deliberately not re-fired, in either mode.
+ */
+async function closeWorkflowRun(options: RunnerCompletionOptions, input: CloseInput): Promise<ClosedWorkflowRun> {
+  const featureWorkflowDurationMs = input.endedAt - input.endStartedAt;
+  const final = wholeRunFinal(options, { ...input, split: { featureWorkflowDurationMs } });
   input.gate.log(final);
   await saveWholeRunDuration(options, final);
-  const summary = await reportWorkflowRun(options, final);
+  const summary = await reportWorkflowRun(options, {
+    storiesDurationMs: final.storiesDurationMs,
+    featureWorkflowDurationMs,
+  });
   return { final, summary };
 }
+
+/** Pipeline mode: the same close, split into stories and end phase (finish, ...), with no workflow summary. */
+async function closePipelineRun(options: RunnerCompletionOptions, input: CloseInput): Promise<ClosedWorkflowRun> {
+  const endPhaseDurationMs = input.endedAt - input.endStartedAt;
+  const final = wholeRunFinal(options, { ...input, split: { endPhaseDurationMs } });
+  input.gate.log(final);
+  await saveWholeRunDuration(options, final);
+  return { final, summary: undefined };
+}
+
+/** Below this the end phase is not worth a `+ end phase` split in the footer. */
+const MIN_SPLIT_END_PHASE_MS = 1_000;
 
 export interface EndPhaseReport {
   /** undefined in pipeline mode. */
   readonly workflowPassed: boolean | undefined;
-  /** The run's duration: through the end of the feature workflow in workflow mode, as completed otherwise. */
+  /** The run's duration: through the end of the end phase (finish / feature workflow) in both modes. */
   readonly durationMs: number;
-  /** Fields for the headless footer; empty in pipeline mode. */
-  readonly footer: Pick<RunFooterOptions, "workflowTiming" | "workflowSummary">;
+  /** Fields for the headless footer: the split in both modes, the workflow block in workflow mode. */
+  readonly footer: Pick<RunFooterOptions, "workflowTiming" | "workflowSummary" | "endPhaseTiming">;
 }
 
 /**
- * runEndPhase, timed. In workflow mode it also closes the run (nax#2491): workflow Duration runs through
- * the end of the feature workflow. Pipeline Duration is unchanged and still EXCLUDES the end phase (finish),
- * because handleRunCompletion computes it before runEndPhase; that asymmetry is known and tracked separately.
+ * runEndPhase, timed. It also closes the run in both modes (nax#2491, nax#2494): Duration runs through
+ * the end of the end phase (finish in pipeline mode, the feature workflow in workflow mode), `run.complete`
+ * is written once with the split, and the saved metrics record is rewritten.
+ * `run:completed` (reporters, the on-complete hook) is NOT moved: it fires inside handleRunCompletion,
+ * before the end phase, in both modes, so it carries the stories-only duration and cost.
  */
 export async function runEndPhaseReported(
   options: RunnerCompletionOptions,
@@ -168,21 +203,34 @@ export async function runEndPhaseReported(
 ): Promise<EndPhaseReport> {
   const endStartedAt = clock.now();
   const workflowPassed = await runEndPhase(options, deps);
-  if (workflowPassed === undefined) return { workflowPassed, durationMs: completion.durationMs, footer: {} };
-  const run = await closeWorkflowRun(options, {
+  const input: CloseInput = {
     gate: clock.gate,
-    workflowPassed,
+    workflowPassed: workflowPassed ?? true,
     fallbackCost: completion.reportedTotal,
     endStartedAt,
     endedAt: clock.now(),
-  });
+  };
+  if (workflowPassed === undefined) {
+    const run = await closePipelineRun(options, input);
+    const endPhaseDurationMs = run.final.endPhaseDurationMs ?? 0;
+    // A finish that did not run (or took no time) has nothing to split out: the footer stays plain.
+    return {
+      workflowPassed,
+      durationMs: run.final.durationMs,
+      footer:
+        endPhaseDurationMs >= MIN_SPLIT_END_PHASE_MS
+          ? { endPhaseTiming: { storiesDurationMs: run.final.storiesDurationMs, endPhaseDurationMs } }
+          : {},
+    };
+  }
+  const run = await closeWorkflowRun(options, input);
   return {
     workflowPassed,
     durationMs: run.final.durationMs,
     footer: {
       workflowTiming: {
         storiesDurationMs: run.final.storiesDurationMs,
-        featureWorkflowDurationMs: run.final.featureWorkflowDurationMs,
+        featureWorkflowDurationMs: run.final.featureWorkflowDurationMs ?? 0,
       },
       workflowSummary: run.summary,
     },

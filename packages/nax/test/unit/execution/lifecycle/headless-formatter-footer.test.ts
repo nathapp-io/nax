@@ -25,6 +25,13 @@ describe("outputRunFooter", () => {
     expect(out).not.toContain("feature workflow");
   });
 
+  test("pipeline footer with an end phase shows the split", () => {
+    const out = footer({ endPhaseTiming: { storiesDurationMs: 8_393_000, endPhaseDurationMs: 1_055_000 } });
+    const plain = Bun.stripANSI(out);
+    expect(plain).toContain("157m 28s (stories 139m 53s + end phase 17m 35s)");
+    expect(plain).not.toContain("feature workflow");
+  });
+
   test("workflow footer shows the whole duration with its split, and the workflow block", () => {
     const out = footer({
       workflowTiming: { storiesDurationMs: 8_393_000, featureWorkflowDurationMs: 1_055_000 },

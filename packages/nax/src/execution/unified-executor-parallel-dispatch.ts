@@ -26,7 +26,7 @@ import { drainQueueAtBatchBoundary } from "./queue-handler";
 import { reconcileBatchOutcome } from "./reconcile-batch-outcome";
 import { reconcileRunCost } from "./run-cost-reconcile";
 import { closeStorySessions } from "./session-manager-runtime";
-import { logStoryStart } from "./story-announce";
+import { announcedModel, logStoryStart } from "./story-announce";
 import { resolveRetryCandidate, type selectIndependentBatch } from "./story-selector";
 import {
   closeStoryIfTerminal,
@@ -175,10 +175,13 @@ async function runManyStoryParallelBatch(
   // #1653: announce only the stories that actually dispatch.
   for (const story of batchPreCheck.dispatchable) {
     const announcement = batchAnnouncements.get(story.id);
+    const tier = announcement?.modelTier ?? buildPreviewRouting(story, ctx.config).modelTier;
+    const agent = announcement?.agent ?? agentFor(story, ctx);
     logStoryStart(batchPreCheck.prd, story, {
       complexity: story.routing?.complexity ?? "unknown",
-      modelTier: announcement?.modelTier ?? buildPreviewRouting(story, ctx.config).modelTier,
-      agent: announcement?.agent ?? agentFor(story, ctx),
+      modelTier: tier,
+      agent,
+      ...announcedModel(ctx.config, agent, tier, ctx.agentManager?.getDefault()),
     });
   }
   const batchResult = await deps.runParallelBatch({
@@ -377,6 +380,7 @@ async function runSingleStoryInBatch(
     complexity: singleSelection.routing.complexity ?? "unknown",
     modelTier,
     agent: singleAgent,
+    ...announcedModel(ctx.config, singleAgent, modelTier, ctx.agentManager?.getDefault()),
   });
 
   const singleIter = await deps.runIteration(ctx, prd, singleSelection, iterations, totalCost, allStoryMetrics);

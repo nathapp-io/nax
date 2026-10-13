@@ -136,14 +136,6 @@ describe("runCompletionPhase — Duration in workflow mode (nax#2491)", () => {
     expect(call?.[0]).toMatchObject({ deferRunCompleteLog: true });
   });
 
-  test("pipeline mode is untouched: no deferral, durationMs as completed", async () => {
-    const result = await runCompletionPhase(opts("pipeline"));
-    expect(result.durationMs).toBe(STORIES_MS);
-    const call = (_runnerCompletionDeps.handleRunCompletion as ReturnType<typeof mock>).mock.calls[0];
-    expect(call?.[0]).not.toMatchObject({ deferRunCompleteLog: true });
-    expect(runComplete).toHaveLength(0);
-  });
-
   test("the saved metrics record is rewritten with the whole-run duration and both parts (M1)", async () => {
     await runCompletionPhase(opts("workflow"));
     expect(saved).toHaveLength(1);
@@ -155,11 +147,6 @@ describe("runCompletionPhase — Duration in workflow mode (nax#2491)", () => {
       totalCost: 4.25,
     });
     expect(typeof saved[0]?.completedAt).toBe("string");
-  });
-
-  test("pipeline mode does not touch the saved metrics record", async () => {
-    await runCompletionPhase(opts("pipeline"));
-    expect(saved).toHaveLength(0);
   });
 
   test("run.complete is written exactly once, as failed, when the feature workflow throws", async () => {

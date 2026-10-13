@@ -93,6 +93,42 @@ export function throwRetryBudgetExhausted(
 /** The non-deterministic members of the Operation union — prologue callers only. */
 export type DispatchableOperation<I, O, C> = Exclude<Operation<I, O, C>, DeterministicOperation<I, O, C, never>>;
 
+/** The endpoint resolution shared by dispatch and by the start-line preview (`previewOpModel`). */
+export interface OpEndpoint {
+  readonly defaultAgent: string;
+  readonly effectiveModels: ModelsConfig;
+  readonly resolved: ResolvedConfiguredModel;
+  readonly effectiveTier: string;
+  readonly sessionRole: SessionRole | undefined;
+  readonly target: DispatchTarget;
+}
+
+/**
+ * Where an op will dispatch: its model, resolved against the agent, then the story's sticky ladder slot.
+ * One copy for the dispatch prologue and the preview, so they cannot drift.
+ */
+export function resolveOpEndpoint<I, O, C>(
+  ctx: CallContext,
+  op: DispatchableOperation<I, O, C>,
+  input: I,
+  config: NaxConfig,
+  buildCtx: BuildContext<C>,
+): OpEndpoint {
+  const defaultAgent = ctx.runtime.agentManager.getDefault();
+  const opModel: ConfiguredModel = resolveOpModel(op, input, buildCtx) ?? "balanced";
+  // resolved.agent honors `{ agent, model }` pin; resolved.modelTier is undefined when a
+  // non-tier model is pinned. Fallback to DEFAULT_CONFIG.models when config.models is absent.
+  const effectiveModels = config.models ?? DEFAULT_CONFIG.models;
+  const resolved = resolveConfiguredModel(effectiveModels, ctx.agentName, opModel, defaultAgent);
+  // Pin default: a pinned (tierless) resolution swaps via "balanced" unless the fallback map names a tier (spec §7).
+  const effectiveTier = resolved.modelTier ?? "balanced";
+  // Sticky slots are keyed per role, so both branches need it before resolving dispatch.
+  const sessionRole = ctx.sessionOverride?.role ?? (op.kind === "run" ? op.session.role : undefined);
+  // A swap this story already made outranks the op's own resolution — see resolveDispatchTarget (nax#1964).
+  const target = resolveDispatchTarget(ctx, resolved, effectiveModels, effectiveTier, defaultAgent, sessionRole);
+  return { defaultAgent, effectiveModels, resolved, effectiveTier, sessionRole, target };
+}
+
 /** Resolve every value both dispatch kinds need before branching on kind. */
 export function buildDispatchPrologue<I, O, C>(
   ctx: CallContext,
@@ -117,18 +153,13 @@ export function buildDispatchPrologue<I, O, C>(
   // The caller's deadline wins over the run's; see CallContext.signal.
   const abortSignal = ctx.signal ?? ctx.runtime.signal;
 
-  const defaultAgent = ctx.runtime.agentManager.getDefault();
-  const opModel: ConfiguredModel = resolveOpModel(op, input, buildCtx) ?? "balanced";
-  // resolved.agent honors `{ agent, model }` pin; resolved.modelTier is undefined when a
-  // non-tier model is pinned. Fallback to DEFAULT_CONFIG.models when config.models is absent.
-  const effectiveModels = config.models ?? DEFAULT_CONFIG.models;
-  const resolved = resolveConfiguredModel(effectiveModels, ctx.agentName, opModel, defaultAgent);
-  // Pin default: a pinned (tierless) resolution swaps via "balanced" unless the fallback map names a tier (spec §7).
-  const effectiveTier = resolved.modelTier ?? "balanced";
-  // Sticky slots are keyed per role, so both branches need it before resolving dispatch.
-  const sessionRole = ctx.sessionOverride?.role ?? (op.kind === "run" ? op.session.role : undefined);
-  // A swap this story already made outranks the op's own resolution — see resolveDispatchTarget (nax#1964).
-  const target = resolveDispatchTarget(ctx, resolved, effectiveModels, effectiveTier, defaultAgent, sessionRole);
+  const { defaultAgent, effectiveModels, resolved, effectiveTier, sessionRole, target } = resolveOpEndpoint(
+    ctx,
+    op,
+    input,
+    config,
+    buildCtx,
+  );
 
   return {
     buildCtx,

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { makeFeatureContext } from "@test/helpers";
+import { qualityLogsAreQuiet } from "@/quality/log-scope";
 import { _featureDeps } from "@/workflow/feature-deps";
 import { gateExcerpt, runRepoGates } from "@/workflow/repo-gates";
 
@@ -22,6 +23,17 @@ describe("gateExcerpt", () => {
 });
 
 describe("runRepoGates", () => {
+  test("runs the gates inside the quiet-quality scope (the step line says the result)", async () => {
+    let quiet: boolean | undefined;
+    _featureDeps.resolveGateCommands = async () => [];
+    _featureDeps.runQualityGates = async () => {
+      quiet = qualityLogsAreQuiet();
+      return { passed: true, ran: ["build"], failing: [], output: "" };
+    };
+    await runRepoGates(makeFeatureContext());
+    expect(quiet).toBe(true);
+  });
+
   test("passes the feature's package dirs; one finding per failing gate", async () => {
     const seen: string[][] = [];
     _featureDeps.resolveGateCommands = async (_root, packageDirs) => {

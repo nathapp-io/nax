@@ -393,8 +393,8 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     // Workflow mode clamps --parallel to sequential (the executor already warned), so classify the clamped value.
     isSequential: !((effectiveParallelCount(options.config, options.parallel, () => {}) ?? 0) > 1),
     interactionChain: options.interactionChain,
-    // Workflow mode writes run.complete after the feature workflow, when the whole duration is known (nax#2491).
-    deferRunCompleteLog: isWorkflowMode(options.config),
+    // run.complete is written after the end phase (finish / feature workflow), when the whole duration is known (nax#2491, nax#2494).
+    deferRunCompleteLog: true,
   });
 
   const { runCompletedAt, finalCounts, reportedTotal, pluginGateFailed } = completionResult;
@@ -482,9 +482,9 @@ async function persistFinishStatus(
 
 /**
  * Everything between handleRunCompletion and the run footer: final feature status, advisory and mutation
- * warnings, the dirty-file auto-commit and the end phase. In workflow mode `run.complete` is held back by
- * handleRunCompletion; the gate guarantees it is written exactly once, with the timing so far, even if
- * something in here rejects before the feature workflow is closed (nax#2491).
+ * warnings, the dirty-file auto-commit and the end phase. `run.complete` is held back by
+ * handleRunCompletion in both modes; the gate guarantees it is written exactly once, with the timing so far,
+ * even if something in here rejects before the end phase is closed (nax#2491, nax#2494).
  */
 async function finishRun(
   options: RunnerCompletionOptions,
@@ -565,12 +565,13 @@ async function finishRun(
   } finally {
     gate.ensureSafely(() => {
       const durationMs = _runnerCompletionDeps.now() - options.startTime;
+      const workflow = isWorkflowMode(options.config);
       return {
         durationMs,
         storiesDurationMs: durationMs,
-        featureWorkflowDurationMs: 0,
+        ...(workflow ? { featureWorkflowDurationMs: 0 } : { endPhaseDurationMs: 0 }),
         totalCost: completionResult.reportedTotal,
-        workflowPassed: false,
+        workflowPassed: !workflow,
       };
     });
   }

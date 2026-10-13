@@ -49,12 +49,20 @@ export interface StepLog {
   done(text: string, data?: Record<string, unknown>): number;
 }
 
+/** The model a step resolved to: logged as `agentName` / `model`, which the console formatter renders as `agent·model`. */
+export interface StepModel {
+  readonly agentName: string;
+  readonly model: string;
+}
+
 export interface StepLogOptions {
   readonly now?: () => number;
   /** False for steps that make no agent call (gates, publish): only the result line is logged. */
   readonly announce?: boolean;
   /** `done` text is joined to the label with a space instead of a colon (`repo-gates green`). */
   readonly bare?: boolean;
+  /** Named on the start line (nax#2491 P6). */
+  readonly model?: StepModel | undefined;
 }
 
 /**
@@ -65,7 +73,10 @@ export function startStep(storyId: string, label: string, options: StepLogOption
   const now = options.now ?? Date.now;
   const prefix = storyId === FEATURE_SCOPE ? "" : `${storyId} `;
   const startedAt = now();
-  if (options.announce !== false) logWorkflow(storyId, `${prefix}${label} start`, { step: label });
+  if (options.announce !== false) {
+    const model = options.model ? { agentName: options.model.agentName, model: options.model.model } : {};
+    logWorkflow(storyId, `${prefix}${label} start`, { step: label, ...model });
+  }
   return {
     done(text, data = {}) {
       const durationMs = now() - startedAt;

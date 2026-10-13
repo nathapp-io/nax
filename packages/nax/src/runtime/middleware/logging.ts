@@ -1,5 +1,6 @@
 import { getSafeLogger } from "@/logger";
 import type { DispatchErrorEvent, DispatchEvent, IDispatchEventBus } from "../dispatch-events";
+import { clearRunCallEnds, takeCallEnded } from "./call-end-stats";
 
 export function attachLoggingSubscriber(bus: IDispatchEventBus, runId: string): () => void {
   const offDispatch = bus.onDispatch((event: DispatchEvent) => {
@@ -10,6 +11,8 @@ export function attachLoggingSubscriber(bus: IDispatchEventBus, runId: string): 
       kind: event.kind,
       stage: event.stage,
       durationMs: event.durationMs,
+      // The stream's counters for this call (status, activity), when it reported its end first.
+      ...takeCallEnded(runId, event.sessionName, event.timestamp - event.durationMs),
     });
   });
 
@@ -27,5 +30,6 @@ export function attachLoggingSubscriber(bus: IDispatchEventBus, runId: string): 
   return () => {
     offDispatch();
     offError();
+    clearRunCallEnds(runId);
   };
 }

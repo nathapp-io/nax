@@ -106,6 +106,8 @@ export type {
 export { _nbfWorthCheckDeps, nbfWorthCheckOp, parseNbfWorthReply } from "./nbf-worth-check";
 export type { NbfWorthCheckAuditFile, NbfWorthCheckRecord } from "./nbf-worth-check-audit";
 export { _nbfWorthCheckAuditDeps, recordNbfWorthCheck } from "./nbf-worth-check-audit";
+export type { OpModelPreview } from "./op-model-preview";
+export { previewOpModel } from "./op-model-preview";
 export type { PlanInteractiveInput } from "./plan";
 export { _planInteractiveDeps, planInteractiveOp } from "./plan";
 export {

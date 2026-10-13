@@ -318,12 +318,14 @@ export interface RunMetrics {
   storiesCompleted: number;
   /** Number of stories that failed */
   storiesFailed: number;
-  /** Total duration in milliseconds. Workflow mode: through the end of the feature workflow. */
+  /** Total duration in milliseconds, through the end of the end phase (finish, or the feature workflow in workflow mode). */
   totalDurationMs: number;
-  /** Workflow mode only: the story loops' share of `totalDurationMs`. */
+  /** The story loops' share of `totalDurationMs`. */
   storiesDurationMs?: number;
   /** Workflow mode only: the feature workflow's share of `totalDurationMs`. */
   featureWorkflowDurationMs?: number;
+  /** Pipeline mode only: the end phase's (finish, acceptance etc.) share of `totalDurationMs`. */
+  endPhaseDurationMs?: number;
   /** Per-story metrics */
   stories: StoryMetrics[];
   /** Total token usage for the run */

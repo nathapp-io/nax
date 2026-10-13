@@ -27,6 +27,15 @@
  * hit. The existing eleven regex families stay; the new patterns live in a
  * per-segment pass.
  *
+ * v5: `locateGit` (shared with the nax-state guard, #2493) reads a
+ * backslash-prefixed `\git`, runs the global-option skip again over an
+ * expanded alias, and follows alias chains, so a discard behind any of those
+ * is now located by the v3 per-segment pass.
+ *
+ * v6: `locateGit` never expands an alias that shadows a git builtin (git ignores it) and follows alias
+ * chains of any length (a cycle is reported, not looped on), so `git -c alias.checkout=status checkout -f`
+ * is the discard it really is.
+ *
  * Frozen before the red-team corpus was written. Any pattern or behaviour
  * change bumps RULE_SET_VERSION.
  */
@@ -36,7 +45,7 @@ import { lexBashCommand } from "#src/permissions/index";
 import { locateGit } from "#src/tools/git-flags/locate";
 import { QUESTION_IDS, type QuestionId, type RuleResult } from "./types.ts";
 
-export const RULE_SET_VERSION = 4;
+export const RULE_SET_VERSION = 6;
 
 const RULES: Readonly<Record<QuestionId, readonly RegExp[]>> = {
   deletes_data: [
