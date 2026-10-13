@@ -120,6 +120,43 @@ describe("parseStoryReviewReply", () => {
     expect(parseStoryReviewReply(JSON.stringify({ spec: "ok", quality: "approved", findings: [] }))).toBeNull();
     expect(parseStoryReviewReply("not json")).toBeNull();
   });
+
+  test("keeps inspectedFiles (nax#2488)", () => {
+    const v = parseStoryReviewReply(
+      JSON.stringify({
+        spec: "pass",
+        quality: "approved",
+        inspectedFiles: ["a.ts", "prisma/schema.prisma"],
+        findings: [],
+        cannotVerify: [],
+      }),
+    );
+    expect(v?.inspectedFiles).toEqual(["a.ts", "prisma/schema.prisma"]);
+  });
+
+  test("missing inspectedFiles -> []", () => {
+    const v = parseStoryReviewReply(JSON.stringify({ spec: "pass", quality: "approved", findings: [] }));
+    expect(v?.inspectedFiles).toEqual([]);
+  });
+
+  test("non-array inspectedFiles -> []", () => {
+    const v = parseStoryReviewReply(
+      JSON.stringify({ spec: "pass", quality: "approved", inspectedFiles: "a.ts", findings: [] }),
+    );
+    expect(v?.inspectedFiles).toEqual([]);
+  });
+
+  test("non-string inspectedFiles entries are filtered out (nax#2488)", () => {
+    const v = parseStoryReviewReply(
+      JSON.stringify({
+        spec: "pass",
+        quality: "approved",
+        inspectedFiles: ["a.ts", 3, null, { path: "b.ts" }, "c.ts"],
+        findings: [],
+      }),
+    );
+    expect(v?.inspectedFiles).toEqual(["a.ts", "c.ts"]);
+  });
 });
 
 describe("parseReReviewReply", () => {

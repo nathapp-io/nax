@@ -37,7 +37,13 @@ const failingGit = async () => ({ stdout: "", stderr: "bad revision", exitCode: 
 describe("runStoryReview", () => {
   test("writes package-0.diff and review.json; returns the verdict", async () => {
     const sc = makeSc();
-    const verdict: StoryReviewVerdict = { spec: "pass", quality: "approved", findings: [], cannotVerify: [] };
+    const verdict: StoryReviewVerdict = {
+      spec: "pass",
+      quality: "approved",
+      findings: [],
+      cannotVerify: [],
+      inspectedFiles: [],
+    };
     fakeOp(workflowStoryReviewOp.name, verdict);
     const out = await runStoryReview(sc, []);
     expect(out).toEqual({ ran: true, verdict });

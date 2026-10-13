@@ -42,6 +42,7 @@ describe("runBranchReview", () => {
       quality: "approved",
       findings: [],
       cannotVerify: [],
+      inspectedFiles: [],
       minorTriage: [{ id: "M1", decision: "fix-now" }],
     };
     const inputs: unknown[] = [];

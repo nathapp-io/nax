@@ -25,7 +25,13 @@ const ok = {
   reply: { status: "DONE" as const, commits: [], testSummary: "", interrupted: false },
   autoCommitted: false,
 };
-const pass: StoryReviewVerdict = { spec: "pass", quality: "approved", findings: [], cannotVerify: [] };
+const pass: StoryReviewVerdict = {
+  spec: "pass",
+  quality: "approved",
+  findings: [],
+  cannotVerify: [],
+  inspectedFiles: [],
+};
 const failing = (n = 1): StoryReviewVerdict => ({
   spec: "fail",
   quality: "changes",
@@ -35,6 +41,7 @@ const failing = (n = 1): StoryReviewVerdict => ({
     issue: `gap ${i}`,
   })),
   cannotVerify: [],
+  inspectedFiles: [],
 });
 
 interface Script {
@@ -171,6 +178,7 @@ describe("runStoryLoop", () => {
           quality: "approved",
           findings: [{ kind: "quality", severity: "minor", issue: "nit" }],
           cannotVerify: [],
+          inspectedFiles: [],
         },
       ],
     });

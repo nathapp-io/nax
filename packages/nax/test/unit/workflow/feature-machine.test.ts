@@ -29,6 +29,7 @@ const PASS: BranchReviewVerdict = {
   quality: "approved",
   findings: [],
   cannotVerify: [],
+  inspectedFiles: [],
   minorTriage: [],
 };
 const FIXED: BranchFixOutcome = {
