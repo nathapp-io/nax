@@ -30,9 +30,11 @@ describe("sendPrompt() afterTurn hook (#2497)", () => {
     });
     const sm = new SessionManager({ getAdapter: () => adapter });
     sm.configureRuntime({
-      afterTurn: async (_d, turn) => {
-        turns.push(turn);
-        throw new Error("repair failed");
+      turnHooks: {
+        after: async (_d, turn) => {
+          turns.push(turn);
+          throw new Error("repair failed");
+        },
       },
     });
     const handle = await sm.openSession("nax-after-turn-err", OPEN_REQUEST);
@@ -48,13 +50,42 @@ describe("sendPrompt() afterTurn hook (#2497)", () => {
     });
     const sm = new SessionManager({ getAdapter: () => adapter });
     sm.configureRuntime({
-      afterTurn: async (_d, turn) => {
-        turns.push(turn);
+      turnHooks: {
+        after: async (_d, turn) => {
+          turns.push(turn);
+        },
       },
     });
     const handle = await sm.openSession("nax-after-turn-ok", OPEN_REQUEST);
     const result = await sm.sendPrompt(handle, "go");
     expect(result.output).toBe("hello world");
     expect(turns).toEqual([1]);
+  });
+});
+
+describe("sendPrompt() before hook (nax#2500)", () => {
+  test("before runs once per sendPrompt, ahead of the adapter's sendTurn", async () => {
+    const order: string[] = [];
+    const adapter = makeAgentAdapter({
+      openSession: mock(async (name: string) => ({ id: name, agentName: "claude" })),
+      sendTurn: mock(async () => {
+        order.push("sendTurn");
+        return MOCK_TURN;
+      }),
+    });
+    const sm = new SessionManager({ getAdapter: () => adapter });
+    sm.configureRuntime({
+      turnHooks: {
+        before: async () => {
+          order.push("before");
+        },
+        after: async () => {
+          order.push("after");
+        },
+      },
+    });
+    const handle = await sm.openSession("nax-before-turn", OPEN_REQUEST);
+    await sm.sendPrompt(handle, "go");
+    expect(order).toEqual(["before", "sendTurn", "after"]);
   });
 });

@@ -145,6 +145,7 @@ import { createPackageRegistry } from "./packages";
 import { curatorRollupPath, globalOutputDir, projectOutputDir } from "./paths";
 import type { IPromptAuditor } from "./prompt-auditor";
 import { createNoOpPromptAuditor, PromptAuditor } from "./prompt-auditor";
+import { createRunTurnHooks } from "./run-turn-hooks";
 import { createSessionRunHop } from "./session-run-hop";
 import type { IUsageAuditor } from "./usage-auditor";
 import { createNoOpUsageAuditor, UsageAuditor } from "./usage-auditor";
@@ -414,16 +415,8 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
       // (a sibling of `runs/`), never the project tree — see
       // deriveNativeTranscriptDir in session/manager-deps.ts.
       transcriptRoot: outputDir,
-      // #2497: repair nax run state after every agent turn (native and ACP).
-      afterTurn: async (desc, turn) => {
-        await _runtimeRunStateDeps.repairRunState({
-          trigger: "turn",
-          storyId: desc.storyId,
-          sessionName: desc.handle ?? desc.id,
-          stage: desc.role,
-          turn,
-        });
-      },
+      // #2497 run-state repair + nax#2500 reviewer tree guard, native and ACP.
+      turnHooks: createRunTurnHooks({ repairRunState: (ctx) => _runtimeRunStateDeps.repairRunState(ctx) }),
     });
   }
   const agentManagerOpts: CreateAgentManagerOpts = {
