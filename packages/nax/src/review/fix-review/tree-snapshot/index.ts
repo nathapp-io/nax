@@ -98,7 +98,7 @@ async function runGit(
 ): Promise<GitRunResult> {
   const proc = _treeSnapshotDeps.spawn(hardenedGitArgv(["git", ...args]), {
     cwd,
-    env: gitSpawnEnv(indexOverlay),
+    env: gitSpawnEnv({ ...indexOverlay, GIT_NO_REPLACE_OBJECTS: "1" }),
     stdout: "pipe",
     stderr: "pipe",
   });

@@ -51,7 +51,8 @@ describe("reviewer tree snapshot (nax#2500)", () => {
       paths: [],
       indexRestored: false,
       headRestored: false,
-      stashesDropped: 0,
+      refsLeft: [],
+      stashLeft: [],
       failures: [],
     });
   });
@@ -129,14 +130,14 @@ describe("reviewer tree snapshot (nax#2500)", () => {
     expect(await git(d, "symbolic-ref", "--short", "HEAD")).toBe("main");
   });
 
-  test("stash push by the reviewer: entry dropped and tree restored", async () => {
+  test("stash push by the reviewer: tree restored, stash entry left and reported", async () => {
     const d = await repo();
     await writeFile(join(d, "a.txt"), "wip\n");
     const snap = await takeRepoSnapshot(d);
     await git(d, "stash", "push", "-q");
     const report = await restoreRepoSnapshot(snap);
-    expect(report.stashesDropped).toBe(1);
-    expect(await git(d, "stash", "list")).toBe("");
+    expect(report.stashLeft.length).toBe(1);
+    expect((await git(d, "stash", "list")).split("\n").length).toBe(1);
     expect(await readFile(join(d, "a.txt"), "utf8")).toBe("wip\n");
   });
 
@@ -239,10 +240,10 @@ describe("reviewer tree snapshot (nax#2500)", () => {
     expect(report.failures).toEqual([]);
     expect(await git(d, "symbolic-ref", "--short", "HEAD")).toBe("main");
     expect(await git(d, "rev-parse", "main")).toBe(before);
-    expect(await git(d, "branch", "--list", "side")).toBe("");
+    expect(report.refsLeft).toEqual(["added refs/heads/side"]);
   });
 
-  test("moved branch reverted, new tag removed, deleted branch recreated", async () => {
+  test("other branches and tags are never moved, created or deleted; the diff is reported", async () => {
     const d = await repo();
     const base = await git(d, "rev-parse", "HEAD");
     await git(d, "branch", "other");
@@ -254,13 +255,19 @@ describe("reviewer tree snapshot (nax#2500)", () => {
     await git(d, "branch", "-f", "other", fresh);
     await git(d, "tag", "t");
     await git(d, "branch", "-D", "gone");
-    await restoreRepoSnapshot(snap);
-    expect(await git(d, "rev-parse", "other")).toBe(base);
-    expect(await git(d, "rev-parse", "gone")).toBe(base);
-    expect(await git(d, "tag", "--list")).toBe("");
+    const report = await restoreRepoSnapshot(snap);
+    expect(await git(d, "rev-parse", "main")).toBe(base);
+    expect(await git(d, "rev-parse", "other")).toBe(fresh);
+    expect(await git(d, "tag", "--list")).toBe("t");
+    expect(await git(d, "branch", "--list", "gone")).toBe("");
+    expect([...report.refsLeft].sort()).toEqual([
+      "added refs/tags/t",
+      "deleted refs/heads/gone",
+      "moved refs/heads/other",
+    ]);
   });
 
-  test("a pre-existing stash popped by the reviewer is stored back", async () => {
+  test("a pre-existing stash popped by the reviewer is not stored back, only reported", async () => {
     const d = await repo();
     await writeFile(join(d, "a.txt"), "stashed\n");
     await git(d, "stash", "push", "-q");
@@ -269,9 +276,9 @@ describe("reviewer tree snapshot (nax#2500)", () => {
     await git(d, "stash", "pop", "-q");
     const report = await restoreRepoSnapshot(snap);
     expect(report.failures).toEqual([]);
-    expect(await git(d, "stash", "list", "--format=%H")).toBe(sha);
+    expect(await git(d, "stash", "list")).toBe("");
+    expect(report.stashLeft).toEqual([`missing ${sha}`]);
     expect(await readFile(join(d, "a.txt"), "utf8")).toBe("a\n");
-    expect(await git(d, "status", "--porcelain")).toBe("");
   });
 
   test("empty repo: takeRepoSnapshot throws a NaxError", async () => {

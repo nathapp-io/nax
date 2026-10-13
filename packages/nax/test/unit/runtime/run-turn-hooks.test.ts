@@ -22,12 +22,13 @@ describe("createRunTurnHooks (nax#2500, #2497)", () => {
         head: "h",
         symbolicHead: undefined,
         refs: [],
+        replaceRefs: [],
         stashes: [],
       };
     };
     _reviewerGuardDeps.restore = async () => {
       order.push("restore");
-      return { paths: [], indexRestored: false, headRestored: false, stashesDropped: 0, failures: [] };
+      return { paths: [], indexRestored: false, headRestored: false, refsLeft: [], stashLeft: [], failures: [] };
     };
     const hooks = createRunTurnHooks({ repairRunState: async () => void order.push("repair") });
     const d: SessionDescriptor = {

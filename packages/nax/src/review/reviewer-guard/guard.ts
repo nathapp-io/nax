@@ -93,7 +93,8 @@ export class ReviewerTreeGuard {
         report.paths.length > 0 ||
         report.indexRestored ||
         report.headRestored ||
-        report.stashesDropped > 0 ||
+        report.refsLeft.length > 0 ||
+        report.stashLeft.length > 0 ||
         report.failures.length > 0;
       if (touched) {
         getSafeLogger()?.warn("review", "reviewer-tree-reverted", {
@@ -102,7 +103,8 @@ export class ReviewerTreeGuard {
           paths: report.paths,
           indexRestored: report.indexRestored,
           headRestored: report.headRestored,
-          stashesDropped: report.stashesDropped,
+          refsLeft: report.refsLeft,
+          stashLeft: report.stashLeft,
           failures: report.failures,
         });
       }

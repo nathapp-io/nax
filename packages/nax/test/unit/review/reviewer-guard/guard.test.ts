@@ -30,7 +30,14 @@ function desc(role: SessionRole, id: string = role, workdir = "/repo/pkg"): Sess
   };
 }
 
-const CLEAN: RestoreReport = { paths: [], indexRestored: false, headRestored: false, stashesDropped: 0, failures: [] };
+const CLEAN: RestoreReport = {
+  paths: [],
+  indexRestored: false,
+  headRestored: false,
+  refsLeft: [],
+  stashLeft: [],
+  failures: [],
+};
 
 function fakes(report: RestoreReport = CLEAN) {
   const calls: string[] = [];
@@ -44,6 +51,7 @@ function fakes(report: RestoreReport = CLEAN) {
       head: "h",
       symbolicHead: "refs/heads/main",
       refs: [],
+      replaceRefs: [],
       stashes: [],
     };
   };

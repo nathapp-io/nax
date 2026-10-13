@@ -2,15 +2,26 @@
  * nax#2500: snapshot and restore a repository around reviewer turns. The working
  * tree (tracked + untracked, .gitignore honoured) is captured as a tree object
  * without touching the real index (snapshotWorkingTree); the index as its own tree;
- * HEAD, its symbolic ref, every branch/tag and the stash list as ids. Restore touches
- * only paths that changed, never run state the #2497 keeper owns and never ignored paths.
+ * HEAD, its symbolic ref, every branch/tag, refs/replace and the stash list as ids.
+ * Restore touches only paths that changed, never run state the #2497 keeper owns and
+ * never ignored paths. Refs and the stash are shared by all worktrees of a repo, so
+ * only this worktree's own HEAD is restored; other refs/stash entries are only reported.
  * Each restore phase is failure-isolated: a failure is recorded and later phases still run.
  */
 import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { classifyRunStatePath } from "@/runstate/store";
 import { _snapshotDeps, git, gitRaw, symbolicHead } from "./deps";
-import { listRefs, listStashes, type RefEntry, restoreRefs, restoreStashes } from "./snapshot-refs";
+import {
+  diffRefsLeft,
+  diffStashesLeft,
+  listRefs,
+  listReplaceRefs,
+  listStashes,
+  type RefEntry,
+  removeAddedReplaceRefs,
+  restoreOwnHead,
+} from "./snapshot-refs";
 
 export { _snapshotDeps } from "./deps";
 
@@ -21,6 +32,7 @@ export interface RepoSnapshot {
   readonly head: string;
   readonly symbolicHead: string | undefined;
   readonly refs: readonly RefEntry[];
+  readonly replaceRefs: readonly string[];
   readonly stashes: readonly string[];
 }
 
@@ -28,7 +40,10 @@ export interface RestoreReport {
   readonly paths: readonly string[];
   readonly indexRestored: boolean;
   readonly headRestored: boolean;
-  readonly stashesDropped: number;
+  /** Branch/tag changes made during the turn that were left alone: "added|moved|deleted <ref>". */
+  readonly refsLeft: readonly string[];
+  /** Stash changes made during the turn that were left alone: "added|missing <sha>". */
+  readonly stashLeft: readonly string[];
   /** Phases or paths that could not be restored; empty on a clean restore. */
   readonly failures: readonly string[];
 }
@@ -42,15 +57,16 @@ export function isKeeperOwnedPath(toplevel: string, rel: string): boolean {
 
 export async function takeRepoSnapshot(workdir: string): Promise<RepoSnapshot> {
   const toplevel = await git(["rev-parse", "--show-toplevel"], workdir);
-  const [tree, indexTree, head, symbolic, refs, stashes] = await Promise.all([
+  const [tree, indexTree, head, symbolic, refs, replaceRefs, stashes] = await Promise.all([
     _snapshotDeps.snapshotWorkingTree(toplevel),
     git(["write-tree"], toplevel),
     git(["rev-parse", "HEAD"], toplevel),
     symbolicHead(toplevel),
     listRefs(toplevel),
+    listReplaceRefs(toplevel),
     listStashes(toplevel),
   ]);
-  return { toplevel, tree, indexTree, head, symbolicHead: symbolic, refs, stashes };
+  return { toplevel, tree, indexTree, head, symbolicHead: symbolic, refs, replaceRefs, stashes };
 }
 
 function isAbsent(err: unknown): boolean {
@@ -135,11 +151,21 @@ export async function restoreRepoSnapshot(snap: RepoSnapshot): Promise<RestoreRe
       return fallback;
     }
   };
-  // Order is load-bearing: refs, then stashes, then the tree comparison (snapshotWorkingTree
-  // seeds from HEAD, so HEAD must be back first), then the index.
-  const headRestored = await phase("refs", false, () => restoreRefs(snap, snap.toplevel));
-  const stashesDropped = await phase("stash", 0, () => restoreStashes(snap.stashes, snap.toplevel));
+  // Order is load-bearing: own HEAD and replace refs first, then the tree comparison
+  // (snapshotWorkingTree seeds from HEAD, so HEAD must be back first), then the index.
+  // Refs and stash diffs are read-only reports (nax#2500 R15).
+  const headMoved = await phase("refs", false, () => restoreOwnHead(snap, snap.toplevel));
+  const replaceRemoved = await phase("replace-refs", false, () => removeAddedReplaceRefs(snap, snap.toplevel));
+  const refsLeft = await phase("refs-report", [] as string[], () => diffRefsLeft(snap, snap.toplevel));
+  const stashLeft = await phase("stash-report", [] as string[], () => diffStashesLeft(snap.stashes, snap.toplevel));
   const tree = await phase("tree", { paths: [] as string[], restored: false }, () => restoreTree(snap, failures));
   const indexRestored = await phase("index", false, () => restoreIndex(snap, tree.restored));
-  return { paths: tree.paths, indexRestored, headRestored, stashesDropped, failures };
+  return {
+    paths: tree.paths,
+    indexRestored,
+    headRestored: headMoved || replaceRemoved,
+    refsLeft,
+    stashLeft,
+    failures,
+  };
 }

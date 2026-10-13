@@ -7,10 +7,15 @@ export const _hardenedGitDeps: {
   timeoutMs: number;
 } = { spawn: typedSpawn, timeoutMs: 30_000 };
 
+/** Exit code reported for a git killed by the timeout (the `timeout(1)` convention); never a real git exit. */
+export const HARDENED_GIT_TIMEOUT_EXIT = 124;
+
 export interface HardenedGitResult {
   readonly stdout: string;
   readonly stderr: string;
   readonly exitCode: number;
+  /** True when git was killed for exceeding the timeout. */
+  readonly timedOut?: boolean;
 }
 
 /**
@@ -22,7 +27,8 @@ export async function runHardenedGit(args: readonly string[], cwd: string): Prom
   const timeoutMs = _hardenedGitDeps.timeoutMs;
   const proc = _hardenedGitDeps.spawn(hardenedGitArgv(["git", ...args]), {
     cwd,
-    env: gitSpawnEnv(undefined),
+    // Replacement refs a reviewer plants must not rewrite what the guard reads.
+    env: gitSpawnEnv({ GIT_NO_REPLACE_OBJECTS: "1" }),
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -41,7 +47,13 @@ export async function runHardenedGit(args: readonly string[], cwd: string): Prom
   const stderrText = new Response(proc.stderr).text().catch(() => "");
   const exitCode = await proc.exited;
   clearTimeout(timer);
-  if (timedOut) return { stdout: "", stderr: `timed out after ${timeoutMs}ms`, exitCode: 1 };
+  if (timedOut)
+    return {
+      stdout: "",
+      stderr: `timed out after ${timeoutMs}ms`,
+      exitCode: HARDENED_GIT_TIMEOUT_EXIT,
+      timedOut: true,
+    };
   const [stdout, stderr] = await Promise.all([stdoutText, stderrText]);
   return { stdout, stderr, exitCode };
 }
