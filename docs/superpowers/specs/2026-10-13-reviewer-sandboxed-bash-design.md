@@ -211,19 +211,30 @@ package workdir maps to its repo) holds one snapshot and a count of active revie
   (restores the staged/unstaged split exactly; the working tree is restored separately above).
 - Refs: symbolic `HEAD` re-pointed if it changed (`git symbolic-ref` / detached checkout of the
   recorded commit without touching the tree), the recorded branch ref reset to its recorded commit
-  (`git update-ref`), branches created during the turn are left (recorded in the log), stash entries
-  added during the turn are dropped by SHA.
+  (`git update-ref`). Only this worktree's own HEAD is restored (R15): branches, tags and stash
+  entries created, moved or removed during the turn are left alone and recorded in the log
+  (`refsLeft`, `stashLeft`). `refs/replace/*` entries added during the turn are deleted, and every
+  guard git call runs with `GIT_NO_REPLACE_OBJECTS=1`.
 - Ignored paths are never touched (`.venv`, caches, `node_modules`, build output).
 - All git calls use `git -C <toplevel>` with `:/`-anchored pathspecs.
 
 **Reporting.** One `reviewer-tree-reverted` log line per restore: role(s), changed paths, index
-restored, refs restored, stash entries dropped. No ledger entry. A revert never fails a review.
+restored, own HEAD restored, refs and stash entries left (`refsLeft`, `stashLeft`). No ledger entry. A revert never fails a review.
 
 **Who else can write during a reviewer turn.** No nax writer shares a checkout with a reviewer: the
 workflow story/branch fix and the finish fix run after the review round; pipeline `--parallel` stories
 use separate worktrees; the pipeline autofix runs after review. The plan verifies each call site.
 **Accepted risk:** a human editing the same checkout during a review can have edits reverted; the log
 line names every path restored.
+
+**Accepted limitations (4.4).**
+- (a) A background process the reviewer starts (`nohup cmd &`) can keep writing after the restore.
+- (b) A failed snapshot leaves that turn unguarded (R16): the turn still runs and the failure is
+  logged at ERROR as `reviewer-guard-unguarded-turn`. Refusing the turn is out of scope.
+- (c) Ignored paths are never reverted.
+- (d) Refs and the stash are shared by all worktrees of a repository (nax parallel mode uses one
+  worktree per story), so other worktrees' branches, tags and the shared stash are never modified,
+  only logged (R15).
 
 ### 4.5 Failure handling
 
