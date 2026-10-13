@@ -17,8 +17,8 @@ import {
   FULL_REASON,
   NO_ALLOW_ONCE_REASON,
   offeredOptions,
-  readOnlyReason,
   REVIEW_NO_SANDBOX_REASON,
+  readOnlyReason,
   rejectLocally,
   UNSHOWABLE_REASON,
 } from "#src/client/permissions";
