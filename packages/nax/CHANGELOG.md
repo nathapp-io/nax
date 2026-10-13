@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Workflow records left by an earlier run under the old location are not migrated. Workflow mode now also forces
   `execution.storyIsolation: "shared"`, since the tree and its git reads sit in the main checkout.
 
+- **Workflow mode: one run writes one run folder (nax#2482).** The pre-flight and the feature workflow keyed the run folder on the runner run id while the story loop used the runtime run id, so each run's ledger and result.json were split across two sibling folders. All phases now use `runtime.runId`.
+
 ### Added
 
 - **Workflow mode feature workflow (A5 PR4).** With `execution.mode: "workflow"`, the advisor pre-flight

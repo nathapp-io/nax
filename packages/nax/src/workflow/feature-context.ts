@@ -18,6 +18,7 @@ export interface WorkflowFeatureInput {
   /** Repo root. */
   readonly workdir: string;
   readonly branch: string;
+  /** The runner run id. Used only for the ask wiring; the run folder keys on `runtime.runId` (nax#2482). */
   readonly runId: string;
   readonly agentName: string;
   readonly abortSignal?: AbortSignal;
@@ -33,6 +34,7 @@ export interface FeatureContext {
   readonly feature: string;
   readonly projectDir: string;
   readonly branch: string;
+  /** `runtime.runId`, the same id the story loop uses, so one run = one folder (nax#2482). */
   readonly runId: string;
   readonly outputDir: string;
   /** This run's workflow dir. */
@@ -79,7 +81,8 @@ export async function buildFeatureContext(
     askResolver: dispatchAsk.askResolver,
     ...(dispatchAsk.commandShadow ? { commandShadow: dispatchAsk.commandShadow } : {}),
   };
-  const runDir = workflowRunDir(input.workdir, input.feature, input.runId);
+  const runId = input.runtime.runId;
+  const runDir = workflowRunDir(input.workdir, input.feature, runId);
   const fc: FeatureContext = {
     callCtx,
     config: input.config,
@@ -88,7 +91,7 @@ export async function buildFeatureContext(
     feature: input.feature,
     projectDir: input.workdir,
     branch: input.branch,
-    runId: input.runId,
+    runId,
     outputDir: input.runtime.outputDir,
     runDir,
     featureDir: workflowFeatureDir(input.workdir, input.feature),
