@@ -14,6 +14,8 @@ import { CLAUDE_CONFIG_OPTIONS, type FakeScript, type FakeStep } from "#test/fix
 import { type InMemoryAgent, inMemoryAgent } from "#test/helpers/in-memory-launch";
 import { driveTurn, endOf } from "#test/helpers/session-events";
 
+const FULL_META = { claudeCode: { options: { allowDangerouslySkipPermissions: false } } };
+
 const realLaunch = _acpBackendDeps.launch;
 let workdir: string;
 const sessions: AgentSession[] = [];
@@ -91,7 +93,9 @@ describe("reconnect after a crash (spec §6.3 step 5, S4-6 D6-g)", () => {
     await tick();
     expect(endOf(await driveTurn(session, "two"))).toMatchObject({ status: "completed", output: "back" });
     expect(fake.requests).toHaveLength(2);
-    expect(fake.callsTo("session/resume")).toEqual([{ sessionId: "fake-session-1", cwd: workdir, mcpServers: [] }]);
+    expect(fake.callsTo("session/resume")).toEqual([
+      { sessionId: "fake-session-1", cwd: workdir, mcpServers: [], _meta: FULL_META },
+    ]);
     expect(session.backend.capabilities).toMatchObject({ restoredWith: "resume" });
   });
 

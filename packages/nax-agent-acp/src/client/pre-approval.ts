@@ -8,6 +8,8 @@
  * Under none/read the entry's read-only enforcement adds the removed tools and its
  * session options (#2366).
  */
+import type { SandboxPolicy } from "@nathapp/nax-agent";
+import { claudeSandboxOptions } from "#src/client/claude-sandbox";
 import type { AgentRegistryEntry, ReadOnlyEnforcement } from "#src/client/registry";
 
 /** The ACP MCP server name; the agent sees the tools as `mcp__nax__<tool>`. */
@@ -17,16 +19,26 @@ export function mcpToolRule(toolName: string): string {
   return `mcp__${TOOL_HOST_SERVER_NAME}__${toolName}`;
 }
 
+export interface ClaudeMetaExtras {
+  /** nax#2500: the session sandbox (profiles review and full). */
+  readonly sandbox?: SandboxPolicy;
+  /** nax#2500: profile full pins allowDangerouslySkipPermissions false. */
+  readonly lockSkipPermissions?: boolean;
+}
+
 /** The session/new, resume and load `_meta` for Claude: tool rules and the read-only enforcement; undefined when empty. */
 export function claudeSessionMeta(
   kind: AgentRegistryEntry["preApproval"],
   toolNames: readonly string[],
   readOnly: ReadOnlyEnforcement | undefined,
+  extras: ClaudeMetaExtras = {},
 ): Readonly<Record<string, unknown>> | undefined {
   if (kind !== "claudeCode.allowedTools") return undefined;
   const options = {
     ...(toolNames.length === 0 ? {} : { allowedTools: toolNames.map(mcpToolRule) }),
     ...(readOnly === undefined ? {} : { disallowedTools: [...readOnly.disallowedTools], ...readOnly.sessionOptions }),
+    ...(extras.sandbox === undefined ? {} : { sandbox: claudeSandboxOptions(extras.sandbox) }),
+    ...(extras.lockSkipPermissions === true ? { allowDangerouslySkipPermissions: false } : {}),
   };
   return Object.keys(options).length === 0 ? undefined : { claudeCode: { options } };
 }
