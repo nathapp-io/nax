@@ -254,6 +254,25 @@ describe("profile review (nax#2500)", () => {
     ).toEqual(selected("reject_once"));
   });
 
+  test("an edit-kind request titled SandboxNetworkAccess is not a network request: denied read-only", async () => {
+    const { port, seen } = asks();
+    const res = await decidePermission(
+      request(["allow_once", "reject_once"], { toolCallId: "n", kind: "edit", title: "SandboxNetworkAccess" }),
+      { ...base(OPEN), asks: port },
+    );
+    expect(res).toEqual(selected("reject_once"));
+    expect(seen.auto[0]?.req.reason).toBe(readOnlyReason("review"));
+  });
+
+  test("a network request with no kind still counts", async () => {
+    const { port } = asks();
+    const res = await decidePermission(
+      request(["allow_once", "reject_once"], { toolCallId: "n", title: "SandboxNetworkAccess" }),
+      { ...base(OPEN), asks: port },
+    );
+    expect(res).toEqual(selected("allow_once"));
+  });
+
   test("full: network request follows the same rule", async () => {
     const { port } = asks();
     expect(

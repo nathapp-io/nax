@@ -28,7 +28,12 @@ export const NETWORK_LISTED_REASON = "the sandbox network is an allow-list";
 const NETWORK_TOOL_TITLE = "SandboxNetworkAccess";
 
 export function isNetworkRequest(toolCall: unknown): boolean {
-  return isRecord(toolCall) && toolCall.title === NETWORK_TOOL_TITLE;
+  // title is agent-controlled display data: require the kind it renders with (absent or "other") too.
+  return (
+    isRecord(toolCall) &&
+    toolCall.title === NETWORK_TOOL_TITLE &&
+    (toolCall.kind === undefined || toolCall.kind === null || toolCall.kind === "other")
+  );
 }
 
 export function readOnlyReason(profile: AgentSessionProfile): string {
