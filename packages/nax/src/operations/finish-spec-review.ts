@@ -12,6 +12,7 @@ import {
   buildFinishReviewJsonRetry,
   buildFinishReviewJsonRetryCondensed,
   buildFinishSpecReviewPrompt,
+  reviewerCommandsSection,
 } from "@/prompts";
 import type { RunOperation } from "./types";
 
@@ -33,12 +34,13 @@ export const finishSpecReviewOp: RunOperation<FinishSpecReviewInput, FinishRevie
   session: { role: "finish-review-spec", lifetime: "fresh" },
   // Read-only, plus Git: the prompt tells the reviewer to read `git diff base...HEAD`,
   // and DEFAULT_CODING_TOOLS has no Git (same list as adversarial-review.ts).
-  tools: ["Read", "Glob", "Grep", "Git"],
+  tools: ["Read", "Glob", "Grep", "Git", "Bash"],
   model: (input) => input.model,
   timeoutMs: (input, ctx) => input.timeoutMs ?? ctx.config.execution.sessionTimeoutSeconds * 1000,
   build(input) {
     const content = buildFinishSpecReviewPrompt(input);
     return {
+      instructions: reviewerCommandsSection(),
       role: { id: "role", content: "", overridable: false },
       task: { id: "task", content, overridable: false },
     };

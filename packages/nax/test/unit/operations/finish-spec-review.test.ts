@@ -29,7 +29,7 @@ describe("finishSpecReviewOp", () => {
     expect(finishSpecReviewOp.name).toBe("finish-spec-review");
     expect(finishSpecReviewOp.session.role).toBe("finish-review-spec");
     expect(finishSpecReviewOp.session.lifetime).toBe("fresh");
-    expect(finishSpecReviewOp.tools).toEqual(["Read", "Glob", "Grep", "Git"]);
+    expect(finishSpecReviewOp.tools).toEqual(["Read", "Glob", "Grep", "Git", "Bash"]);
   });
 
   test("build carries the spec, PRD and changed files", () => {

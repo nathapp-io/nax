@@ -3,7 +3,11 @@ import { makeParseRetryStrategy } from "@/agents/retry";
 import type { ConfiguredModel } from "@/config";
 import { workflowConfigSelector } from "@/config";
 import type { WorkflowOpConfig } from "@/config/selectors";
-import { buildWorkflowReviewJsonRetry, buildWorkflowReviewJsonRetryCondensed } from "@/prompts";
+import {
+  buildWorkflowReviewJsonRetry,
+  buildWorkflowReviewJsonRetryCondensed,
+  reviewerCommandsSection,
+} from "@/prompts";
 import { STEP_TIMEOUT_MARGIN_MS } from "@/utils/step-signal";
 import type { RunOperation } from "./types";
 import { parseStoryReviewReply } from "./workflow-replies";
@@ -15,7 +19,9 @@ export interface WorkflowReviewInput {
   readonly timeoutMs: number;
 }
 
-export const WORKFLOW_REVIEW_TOOLS = ["Read", "Glob", "Grep", "Git"] as const;
+export const REVIEWER_VERIFY_TOOLS = ["Read", "Glob", "Grep", "Git", "Bash"] as const;
+/** @deprecated alias kept for existing imports; same value as REVIEWER_VERIFY_TOOLS. */
+export const WORKFLOW_REVIEW_TOOLS = REVIEWER_VERIFY_TOOLS;
 
 export const workflowStoryReviewOp: RunOperation<WorkflowReviewInput, StoryReviewVerdict | null, WorkflowOpConfig> = {
   kind: "run",
@@ -28,6 +34,7 @@ export const workflowStoryReviewOp: RunOperation<WorkflowReviewInput, StoryRevie
   timeoutMs: (input) => input.timeoutMs + STEP_TIMEOUT_MARGIN_MS,
   build(input) {
     return {
+      instructions: reviewerCommandsSection(),
       role: { id: "role", content: "", overridable: false },
       task: { id: "task", content: input.prompt, overridable: false },
     };

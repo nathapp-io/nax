@@ -94,7 +94,7 @@ describe("workflow review ops", () => {
   test("story review: fresh wf-story-review, read tools + Git, no writes", () => {
     expect(workflowStoryReviewOp.session).toEqual({ role: "wf-story-review", lifetime: "fresh" });
     expect(workflowStoryReviewOp.stage).toBe("review");
-    expect(workflowStoryReviewOp.tools).toEqual(["Read", "Glob", "Grep", "Git"]);
+    expect(workflowStoryReviewOp.tools).toEqual(["Read", "Glob", "Grep", "Git", "Bash"]);
   });
 
   test("story review model: workflow.models.storyReview, else review.semantic.model", () => {

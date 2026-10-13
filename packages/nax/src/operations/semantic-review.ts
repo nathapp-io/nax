@@ -4,7 +4,7 @@ import { reviewConfigSelector } from "../config";
 import type { ReviewConfig } from "../config/selectors";
 import type { Finding, Iteration } from "../findings";
 import { getSafeLogger } from "../logger";
-import { ReviewPromptBuilder } from "../prompts";
+import { ReviewPromptBuilder, reviewerCommandsSection } from "../prompts";
 import type { AcDroppedEntry, AcGroundingMinimalRejection, LLMFinding } from "../review/finding-filters";
 import {
   checkFindingEvidence,
@@ -328,7 +328,7 @@ export const semanticReviewOp: RunOperationWithHooks<
   name: "semantic-review",
   stage: "review",
   session: { role: "reviewer-semantic", lifetime: "fresh" },
-  tools: ["Read", "Glob", "Grep", "Git"],
+  tools: ["Read", "Glob", "Grep", "Git", "Bash"],
   config: reviewConfigSelector,
   model: (input) => input.semanticConfig.model,
   timeoutMs: (input) => input.semanticConfig.timeoutMs,
@@ -357,6 +357,7 @@ export const semanticReviewOp: RunOperationWithHooks<
     });
     const content = input.featureCtxBlock ? `${input.featureCtxBlock}${base}` : base;
     return {
+      instructions: reviewerCommandsSection(),
       role: { id: "role", content: "", overridable: false },
       task: { id: "task", content, overridable: false },
     };

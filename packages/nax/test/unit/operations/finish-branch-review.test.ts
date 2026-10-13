@@ -29,7 +29,7 @@ describe("finishBranchReviewOp", () => {
     expect(finishBranchReviewOp.name).toBe("finish-branch-review");
     expect(finishBranchReviewOp.session.role).toBe("finish-review-quality");
     expect(finishBranchReviewOp.session.lifetime).toBe("fresh");
-    expect(finishBranchReviewOp.tools).toEqual(["Read", "Glob", "Grep", "Git"]);
+    expect(finishBranchReviewOp.tools).toEqual(["Read", "Glob", "Grep", "Git", "Bash"]);
   });
 
   test("build carries stories, changed files and previously skipped hints", () => {

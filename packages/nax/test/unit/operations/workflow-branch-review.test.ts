@@ -21,7 +21,7 @@ describe("workflowBranchReviewOp", () => {
   test("shape: fresh wf-branch-review, stage review, read tools + Git only", () => {
     expect(workflowBranchReviewOp.session).toEqual({ role: "wf-branch-review", lifetime: "fresh" });
     expect(workflowBranchReviewOp.stage).toBe("review");
-    expect(workflowBranchReviewOp.tools).toEqual(["Read", "Glob", "Grep", "Git"]);
+    expect(workflowBranchReviewOp.tools).toEqual(["Read", "Glob", "Grep", "Git", "Bash"]);
     expect(workflowBranchReviewOp.build(input, buildCtx()).task.content).toBe("review the branch");
   });
 
