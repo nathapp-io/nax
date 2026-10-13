@@ -193,7 +193,10 @@ describe("workflow feature end to end", () => {
     await runWorkflowFeature(first.input);
     const ghBefore = first.gh.length;
     const opsBefore = first.ops.length;
-    const again = await runWorkflowFeature({ ...first.input, runId: "run-again" });
+    // A second run is a new runtime with its own run id, as the runner builds one per run (nax#2482).
+    const second = makeTestRuntime({ config: first.input.config, workdir: first.repo });
+    runtimes.push(second);
+    const again = await runWorkflowFeature({ ...first.input, runtime: second, runId: second.runId });
     expect(again?.outcome).toBe("already-finished");
     expect(first.gh.length).toBe(ghBefore);
     expect(first.ops.length).toBe(opsBefore);
