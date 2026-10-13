@@ -48,6 +48,23 @@ describe("autoCommitIfDirty", () => {
     expect(order).toEqual(["hook:run.complete:US-001", "commit"]);
   });
 
+  test("a hook that throws synchronously does not block the commit", async () => {
+    let committed = false;
+    _gitDeps.spawn = makeSpawn(({ cmd }) => {
+      if (cmd.includes("rev-parse")) return "/repo\n";
+      if (cmd.includes("status")) return " M src/foo.ts\n";
+      if (cmd.includes("--cached")) return { exitCode: 1 };
+      if (cmd.includes("commit")) committed = true;
+      return "";
+    }).spawn;
+    const unhook = registerBeforeAutoCommit((() => {
+      throw new Error("sync boom");
+    }) as () => Promise<void>);
+    await autoCommitIfDirty("/repo", "run.complete", "run-summary", "US-001");
+    unhook();
+    expect(committed).toBe(true);
+  });
+
   test("a dry run skips the hooks", async () => {
     let ran = false;
     const unhook = registerBeforeAutoCommit(async () => {

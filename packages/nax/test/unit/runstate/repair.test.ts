@@ -107,12 +107,44 @@ describe("repairRunState (#2497)", () => {
     expect(await repairRunState(ctx)).toEqual([]); // the ledger line is nax's own write, never flagged
   });
 
+  test("a nax write recorded while the repair awaits git is not reverted", async () => {
+    const origHidden = _repairDeps.hiddenNaxPaths;
+    _repairDeps.hiddenNaxPaths = async (workdir, logger) => {
+      await naxWrite(join(dir, PRD), '{"stories":"newer"}');
+      return origHidden(workdir, logger);
+    };
+    const records = await repairRunState(ctx);
+    _repairDeps.hiddenNaxPaths = origHidden;
+    expect(records).toEqual([]);
+    expect(await Bun.file(join(dir, PRD)).text()).toBe('{"stories":"newer"}');
+  });
+
+  test("a hidden file whose flag could not be cleared is not reported restored", async () => {
+    await git("update-index", "--skip-worktree", PRD);
+    const origClear = _repairDeps.clearNaxIndexFlags;
+    _repairDeps.clearNaxIndexFlags = async () => [];
+    const records = await repairRunState(ctx);
+    _repairDeps.clearNaxIndexFlags = origClear;
+    expect(records[0]?.restored).toBe(false);
+  });
+
+  test("a failing ledger note keeps the repair records", async () => {
+    const ledger = join(dir, ".nax/features/f/workflow/run-1/ledger.md");
+    mkdirSync(join(dir, ".nax/features/f/workflow/run-1"), { recursive: true });
+    await naxWrite(ledger, "# Workflow ledger\n");
+    rmSync(join(dir, ".nax/features/f/workflow"), { recursive: true, force: true });
+    writeFileSync(join(dir, ".nax/features/f/workflow"), "not a directory");
+    await git("checkout", "--", PRD);
+    const records = await repairRunState(ctx);
+    expect(records.some((r) => r.rel === PRD && r.restored)).toBe(true);
+  });
+
   test("never rejects when git fails; falls back to the flag sweep with no keeper", async () => {
     const origHidden = _repairDeps.hiddenNaxPaths;
     _repairDeps.hiddenNaxPaths = async () => {
       throw new Error("git gone");
     };
-    await expect(repairRunState(ctx)).resolves.toBeDefined();
+    await expect(repairRunState(ctx)).resolves.toEqual([]);
     _repairDeps.hiddenNaxPaths = origHidden;
 
     handle?.deactivate();

@@ -241,9 +241,11 @@ export async function autoCommitIfDirty(
     return;
   }
   for (const hook of [...beforeAutoCommitHooks]) {
-    await hook({ workdir, stage, storyId }).catch((err: unknown) =>
-      logger?.warn(stage, "auto-commit: before-commit hook failed", { storyId, error: errorMessage(err) }),
-    );
+    await Promise.resolve()
+      .then(() => hook({ workdir, stage, storyId }))
+      .catch((err: unknown) =>
+        logger?.warn(stage, "auto-commit: before-commit hook failed", { storyId, error: errorMessage(err) }),
+      );
   }
   try {
     // Guard: only auto-commit if workdir IS the git repository root.

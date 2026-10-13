@@ -4,7 +4,7 @@ import { dirname } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "../logger";
 import { clearNaxIndexFlags, hiddenNaxPaths, type IndexFlagLogger } from "../utils/nax-index-flags";
-import { activeKeepers, type KeptFile, type RunStateKeeper, runStateWrite } from "./store";
+import { activeKeepers, type KeptFile, type RunStateKeeper, runStateWrite, withPathLock } from "./store";
 
 export type RepairTrigger = "turn" | "pre-commit" | "run-end" | "crash";
 export interface RepairContext {
@@ -54,7 +54,12 @@ function where(ctx: RepairContext): string {
     .join(" ");
 }
 
-async function repairFile(f: KeptFile, damage: Damage[], ctx: RepairContext): Promise<RepairRecord> {
+async function repairFile(
+  f: KeptFile,
+  damage: Damage[],
+  ctx: RepairContext,
+  cleared: ReadonlySet<string>,
+): Promise<RepairRecord> {
   const log = _repairDeps.logger();
   const data = {
     storyId: ctx.storyId ?? "_run",
@@ -67,8 +72,10 @@ async function repairFile(f: KeptFile, damage: Damage[], ctx: RepairContext): Pr
   };
   try {
     if (damage.includes("missing") || damage.includes("modified")) await restore(f);
-    log?.warn("runstate", `${where(ctx)}: ${f.rel} ${damage.join("+")} by the agent; restored`, data);
-    return { path: f.path, rel: f.rel, damage, restored: true };
+    const restored = !damage.includes("hidden") || cleared.has(f.rel);
+    if (restored) log?.warn("runstate", `${where(ctx)}: ${f.rel} ${damage.join("+")} by the agent; restored`, data);
+    else log?.warn("runstate", `[FAIL] ${where(ctx)}: could not clear the index flag on ${f.rel}`, data);
+    return { path: f.path, rel: f.rel, damage, restored };
   } catch (err) {
     log?.warn("runstate", `[FAIL] ${where(ctx)}: could not restore ${f.rel}`, { ...data, error: errorMessage(err) });
     return { path: f.path, rel: f.rel, damage, restored: false };
@@ -90,23 +97,59 @@ async function noteInLedgers(
   }
 }
 
-async function clearHidden(root: string, files: readonly KeptFile[]): Promise<ReadonlySet<string>> {
+interface HiddenState {
+  readonly hidden: ReadonlySet<string>;
+  readonly cleared: ReadonlySet<string>;
+}
+
+async function clearHidden(root: string, files: readonly KeptFile[]): Promise<HiddenState> {
   const log = _repairDeps.logger();
   const hidden = new Set(await _repairDeps.hiddenNaxPaths(root, log));
-  if (files.some((f) => hidden.has(f.rel))) await _repairDeps.clearNaxIndexFlags(root, log);
-  return hidden;
+  const cleared = files.some((f) => hidden.has(f.rel)) ? await _repairDeps.clearNaxIndexFlags(root, log) : [];
+  return { hidden, cleared: new Set(cleared) };
+}
+
+/** Under the path lock, judge the keeper's CURRENT bytes: a nax write recorded since the snapshot is never reverted. */
+function repairLocked(
+  keeper: RunStateKeeper,
+  path: string,
+  state: HiddenState,
+  ctx: RepairContext,
+): Promise<RepairRecord | undefined> {
+  return withPathLock(path, async () => {
+    const fresh = keeper.get(path);
+    if (!fresh || keeper.isInFlight(path)) return undefined;
+    const damage = await damageOf(fresh, state.hidden);
+    return damage.length > 0 ? await repairFile(fresh, damage, ctx, state.cleared) : undefined;
+  });
+}
+
+async function noteInLedgersSafely(
+  keeper: RunStateKeeper,
+  root: string,
+  records: readonly RepairRecord[],
+  ctx: RepairContext,
+): Promise<void> {
+  try {
+    await noteInLedgers(keeper, root, records, ctx);
+  } catch (err) {
+    _repairDeps.logger()?.warn("runstate", "Could not note run-state repair in the ledger", {
+      storyId: ctx.storyId ?? "_run",
+      error: errorMessage(err),
+    });
+  }
 }
 
 async function repairRoot(keeper: RunStateKeeper, root: string, ctx: RepairContext): Promise<RepairRecord[]> {
   const files = keeper.files().filter((f) => f.root === root && !keeper.isInFlight(f.path));
   if (files.length === 0) return [];
-  const hidden = await clearHidden(root, files);
+  const state = await clearHidden(root, files);
   const records: RepairRecord[] = [];
   for (const f of files) {
-    const damage = await damageOf(f, hidden);
-    if (damage.length > 0) records.push(await repairFile(f, damage, ctx));
+    const record = await repairLocked(keeper, f.path, state, ctx);
+    if (record) records.push(record);
   }
-  if (records.length > 0) await noteInLedgers(keeper, root, records, ctx);
+  if (records.length > 0) await noteInLedgersSafely(keeper, root, records, ctx);
   return records;
 }
 

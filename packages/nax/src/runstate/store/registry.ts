@@ -33,10 +33,10 @@ async function baseContent(keeper: RunStateKeeper, path: string): Promise<string
 }
 
 /** Run `task` after every earlier write queued for `abs` has settled (fulfilled or rejected). */
-function serialized(abs: string, task: () => Promise<void>): Promise<void> {
+function serialized<T>(abs: string, task: () => Promise<T>): Promise<T> {
   const previous = chains.get(abs) ?? Promise.resolve();
   const run = previous.then(task, task);
-  const tail = run.then(
+  const tail: Promise<void> = run.then(
     () => undefined,
     () => undefined,
   );
@@ -90,4 +90,9 @@ export async function runStateWrite(path: string, intent: WriteIntent, write: ()
   const classified = classifyRunStatePath(abs);
   if (!classified || ![...active].some((k) => k.owns(classified))) return write();
   return serialized(abs, () => recordThenWrite(abs, classified, intent, write));
+}
+
+/** Run `task` under the same per-path lock runStateWrite holds, so it never interleaves with a nax write to `path`. */
+export function withPathLock<T>(path: string, task: () => Promise<T>): Promise<T> {
+  return serialized(resolve(path), task);
 }
