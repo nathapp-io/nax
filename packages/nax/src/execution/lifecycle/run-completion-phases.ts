@@ -193,7 +193,9 @@ export async function emitRunCompletedAndSaveMetrics(input: {
   // and the saved metrics so consumers see the field only when meaningful.
   const fallbackAggregate = deriveRunFallbackAggregates(allStoryMetrics);
 
-  // Emit run:completed after regression gate with real story counts (RL-002)
+  // Emit run:completed after regression gate with real story counts (RL-002).
+  // Workflow mode: this fires BEFORE the feature workflow, so reporters and the on-complete hook see the
+  // stories-only duration and cost; metrics.json is rewritten with the whole run afterwards (nax#2491).
   pipelineEventBus.emit({
     type: "run:completed",
     totalStories: finalCounts.total,
@@ -302,6 +304,13 @@ export function logRunCompletion(input: {
   aggByStage: CompletionCosts["aggByStage"];
   aggByStory: CompletionCosts["aggByStory"];
   durationMs: number;
+  /** Workflow mode (nax#2491): the stories / feature-workflow split behind `durationMs`. */
+  timing?: {
+    storiesDurationMs: number;
+    featureWorkflowDurationMs: number;
+    totalCost: number;
+    workflowPassed: boolean;
+  };
   logger: Logger | undefined;
 }): void {
   const logger = input.logger;
@@ -315,6 +324,7 @@ export function logRunCompletion(input: {
     aggByStage,
     aggByStory,
     durationMs,
+    timing,
   } = input;
   const { runId, feature, iterations, storiesCompleted } = options;
 
@@ -343,18 +353,21 @@ export function logRunCompletion(input: {
   logger?.info("run.complete", "Feature execution completed", {
     runId,
     feature,
-    success: isComplete(prd),
+    success: isComplete(prd) && timing?.workflowPassed !== false,
     iterations,
     totalStories: finalCounts.total,
     storiesCompleted,
     storiesFailed: finalCounts.failed,
     storiesPending: finalCounts.pending,
-    totalCost: reportedTotal,
+    totalCost: timing?.totalCost ?? reportedTotal,
     ...errorCostField,
     ...(contextCostUsd > 0 && { contextCostUsd }),
     ...(Object.keys(aggByStage).length > 0 && { costByStage: aggByStage }),
     ...(Object.keys(aggByStory).length > 0 && { costByStory: aggByStory }),
     durationMs,
+    ...(timing
+      ? { storiesDurationMs: timing.storiesDurationMs, featureWorkflowDurationMs: timing.featureWorkflowDurationMs }
+      : {}),
     storyMetrics: storyMetricsSummary,
   });
 }

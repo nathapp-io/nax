@@ -7,5 +7,7 @@ export type { PreflightFile } from "./preflight";
 export { preflightPath, runPreflight } from "./preflight";
 export type { WorkflowRunStartInput } from "./preflight-run";
 export { runWorkflowPreflight } from "./preflight-run";
+export type { WorkflowTiming } from "./run-summary";
+export { readWorkflowRunSummary } from "./run-summary";
 export { workflowStage } from "./stage";
 export type * from "./types";

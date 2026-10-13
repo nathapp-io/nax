@@ -4,6 +4,7 @@
  */
 import { appendFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { mirrorLedger } from "./run-log";
 import type { WorkflowEndState, WorkflowRuling } from "./types";
 
 export const _ledgerDeps = { appendFile, mkdir };
@@ -33,6 +34,18 @@ export async function ensureLedger(runDir: string, runId: string, feature: strin
   await Bun.write(path, `# Workflow ledger — run: ${runId} — feature: ${feature}\n`);
 }
 
-export async function appendLedger(runDir: string, storyId: string, text: string): Promise<void> {
+export interface LedgerWriteOptions {
+  /** False when the log already says this fact on a step line, so the log keeps one line per fact. */
+  readonly mirror?: boolean;
+}
+
+export async function appendLedger(
+  runDir: string,
+  storyId: string,
+  text: string,
+  options: LedgerWriteOptions = {},
+): Promise<void> {
   await _ledgerDeps.appendFile(ledgerFilePath(runDir), `${storyId}: ${text}\n`);
+  // The one mirror point: every workflow ledger write (story, feature, preflight, error path) lands here.
+  if (options.mirror !== false) mirrorLedger(storyId, text);
 }

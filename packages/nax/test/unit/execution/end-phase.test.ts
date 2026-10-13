@@ -119,4 +119,13 @@ describe("runEndPhase (P4-R16)", () => {
     await runEndPhase(opts(WORKFLOW, { exitReason: "aborted" }), d);
     expect(workflow).toHaveLength(0);
   });
+
+  describe("runEndPhase hand-off figure (L4)", () => {
+    test("the stories duration handed to the feature workflow comes from the injected clock", async () => {
+      _endPhaseDeps.resolveBranch = async () => "feat/x";
+      const { d, workflow } = deps({ passed: true, outcome: "ready", reasons: [] });
+      await runEndPhase(opts(WORKFLOW, { startTime: 1_000 }), { ...d, now: () => 9_001_000 });
+      expect(workflow[0]?.storiesDurationMs).toBe(9_000_000);
+    });
+  });
 });

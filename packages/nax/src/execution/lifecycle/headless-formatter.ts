@@ -6,7 +6,13 @@
  */
 
 import chalk from "chalk";
-import { formatAdvisorySummary, formatMutationSummary, formatRunSummary, type RunSummary } from "@/log-format";
+import {
+  formatAdvisorySummary,
+  formatMutationSummary,
+  formatRunSummary,
+  type RunSummary,
+  type WorkflowSummaryView,
+} from "@/log-format";
 import type { AdvisoryFindingSummaryEntry, MutationStorySummary } from "@/runtime";
 import { NAX_VERSION } from "@/version";
 
@@ -30,6 +36,9 @@ export interface RunFooterOptions {
   startedAt: string;
   completedAt: string;
   formatterMode: "quiet" | "normal" | "verbose" | "json";
+  /** Workflow mode (nax#2491): the split behind `durationMs`. */
+  workflowTiming?: { storiesDurationMs: number; featureWorkflowDurationMs: number };
+  workflowSummary?: WorkflowSummaryView | undefined;
 }
 
 /**
@@ -57,7 +66,8 @@ export async function outputRunHeader(options: RunHeaderOptions): Promise<void> 
  * Output run footer in headless mode
  */
 export function outputRunFooter(options: RunFooterOptions): void {
-  const { finalCounts, durationMs, totalCost, startedAt, completedAt, formatterMode } = options;
+  const { finalCounts, durationMs, totalCost, startedAt, completedAt, formatterMode, workflowTiming, workflowSummary } =
+    options;
 
   if (formatterMode === "json") {
     return;
@@ -72,6 +82,13 @@ export function outputRunFooter(options: RunFooterOptions): void {
     totalCost,
     startedAt,
     completedAt,
+    ...(workflowTiming
+      ? {
+          storiesDurationMs: workflowTiming.storiesDurationMs,
+          featureWorkflowDurationMs: workflowTiming.featureWorkflowDurationMs,
+        }
+      : {}),
+    ...(workflowSummary ? { workflow: workflowSummary } : {}),
   };
 
   const summaryOutput = formatRunSummary(runSummary, {

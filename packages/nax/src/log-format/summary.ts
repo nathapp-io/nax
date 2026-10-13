@@ -16,6 +16,7 @@ import { SEVERITY_RANK } from "../review/severity.js";
 import { type ChalkLike, createNoopChalk } from "./chalk-like.js";
 import { formatCost, formatDuration } from "./formatter.js";
 import { EMOJI, type FormatterOptions, type RunSummary } from "./types.js";
+import { formatDurationSplit, formatWorkflowSummary } from "./workflow-summary.js";
 
 /**
  * Format run summary footer
@@ -64,8 +65,16 @@ export function formatRunSummary(summary: RunSummary, options: FormatterOptions)
 
   lines.push(`  ${c.gray("Success:")}  ${statusColor(c.bold(`${successRate}%`))}`);
   lines.push(c.blue("─".repeat(60)));
-  lines.push(`  ${EMOJI.duration} Duration: ${c.bold(formatDuration(summary.durationMs))}`);
+  const split =
+    summary.storiesDurationMs !== undefined && summary.featureWorkflowDurationMs !== undefined
+      ? ` (${formatDurationSplit(summary.storiesDurationMs, summary.featureWorkflowDurationMs)})`
+      : "";
+  lines.push(`  ${EMOJI.duration} Duration: ${c.bold(formatDuration(summary.durationMs))}${split}`);
   lines.push(`  ${EMOJI.cost} Cost:     ${c.bold(formatCost(summary.totalCost))}`);
+  if (summary.workflow) {
+    lines.push(c.blue("─".repeat(60)));
+    lines.push(formatWorkflowSummary(summary.workflow, { useColor }));
+  }
   lines.push(c.blue("═".repeat(60)));
   lines.push("");
 
