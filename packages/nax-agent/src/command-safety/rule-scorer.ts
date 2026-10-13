@@ -36,7 +36,7 @@ import { lexBashCommand } from "#src/permissions/index";
 import { locateGit } from "#src/tools/git-flags/locate";
 import { QUESTION_IDS, type QuestionId, type RuleResult } from "./types.ts";
 
-export const RULE_SET_VERSION = 3;
+export const RULE_SET_VERSION = 4;
 
 const RULES: Readonly<Record<QuestionId, readonly RegExp[]>> = {
   deletes_data: [

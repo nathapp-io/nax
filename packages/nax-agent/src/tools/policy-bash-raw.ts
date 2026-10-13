@@ -53,7 +53,7 @@ import { relative, resolve, sep } from "node:path";
 import { realOrRaw } from "#src/internal/realpath";
 import { type BashSegment, type BashToken, lexBashCommand } from "#src/permissions/index";
 import { cdTargetsFor, nextWorkingDirectories } from "./bash-cwd.ts";
-import { naxStateRefusal, naxStateRefusalInText } from "./nax-state-guard.ts";
+import { naxStateRefusalInText } from "./nax-state-guard.ts";
 import type { OwnedBashCandidate, OwnedPathsPolicy } from "./owned-paths.ts";
 import type { BashCheck } from "./policy-bash.ts";
 
@@ -161,17 +161,12 @@ function ownedCandidates(args: RawScreenArgs, candidate: string, cwd: readonly s
   });
 }
 
-/** The raw verdict for a nax-run-state refusal: a deny, or allow when there is none. */
-function stateScreen(refusal: string | undefined): BashCheck {
-  return refusal === undefined ? { kind: "allow" } : deny(refusal);
-}
-
 /**
  * US-002 COST GUARD: a `find` rooted at the whole filesystem walks every mount
  * and runs into the 300s Bash timeout. Raw has no containment, so nothing else
- * stops it. Not a boundary -- a cost guard. Then the nax-run-state rules.
+ * stops it. Not a boundary -- a cost guard.
  */
-function segmentGuard(args: RawScreenArgs, segment: BashSegment, cwd: readonly string[]): BashCheck | undefined {
+function segmentGuard(args: RawScreenArgs, segment: BashSegment): BashCheck | undefined {
   const findStart = wholeFilesystemFind(segment.tokens);
   if (findStart !== undefined) {
     return deny(
@@ -179,11 +174,18 @@ function segmentGuard(args: RawScreenArgs, segment: BashSegment, cwd: readonly s
         `Search within the repository root instead: ${args.root}`,
     );
   }
-  const refusal = naxStateRefusal(
-    segment.tokens.map((token) => token.text),
-    { frames: cwd, root: args.root },
-  );
-  return refusal === undefined ? undefined : deny(refusal);
+  return undefined;
+}
+
+/**
+ * #2490: nax's run state is screened even for a command the lexer cannot read
+ * (`... 2>&1; git stash pop`), using the guard's own text reader. Then the
+ * inversion: unreadable means unscreened, and unscreened means allowed.
+ */
+function earlyVerdict(args: RawScreenArgs, command: string, lexKind: "ok" | "refused"): BashCheck | undefined {
+  const stateRefusal = naxStateRefusalInText(command, { frames: [args.initialPath], root: args.root });
+  if (stateRefusal !== undefined) return deny(stateRefusal);
+  return lexKind === "refused" ? { kind: "allow" } : undefined;
 }
 
 export function screenRawBashCommand(args: RawScreenArgs): BashCheck {
@@ -192,18 +194,17 @@ export function screenRawBashCommand(args: RawScreenArgs): BashCheck {
   if (command.trim() === "") return deny(`"command" must not be empty`);
 
   const lexed = lexBashCommand(command);
-  // The inversion: unreadable means unscreened, and unscreened means allowed.
-  // Except nax's run state (#2490): a refused command (`... 2>&1; git stash pop`)
-  // is still read with the crude splitter for the revert/update-index/stash rules.
-  if (lexed.kind === "refused")
-    return stateScreen(naxStateRefusalInText(command, { frames: [args.initialPath], root: args.root }));
+  const early = earlyVerdict(args, command, lexed.kind);
+  if (early !== undefined) return early;
+  // Reaching here means the lexer succeeded: `earlyVerdict` allows a refused command.
+  const { segments = [] } = lexed as { readonly segments?: readonly BashSegment[] };
 
   let cwd: readonly string[] = [args.initialPath];
   const sandboxWrapped = args.sandboxWrapped === true;
-  for (const segment of lexed.segments) {
+  for (const segment of segments) {
     // US-002 COST GUARD (see the file header) and the #2490 nax-run-state
     // rules (revert, index-hiding, stash), applied to every segment.
-    const segmentDeny = segmentGuard(args, segment, cwd);
+    const segmentDeny = segmentGuard(args, segment);
     if (segmentDeny !== undefined) return segmentDeny;
     // US-002: sandbox-wrapped, a token that only NAMES a PRD is allowed -- the
     // policy now applies that exemption (`bashRefusal` receives

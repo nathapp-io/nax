@@ -145,11 +145,28 @@ export async function performTeardown(ctx: SignalHandlerContext): Promise<void> 
   if (ctx.sealApprovals) {
     await ctx.sealApprovals().catch(() => undefined);
   }
+}
 
-  // #2490: an agent may have hidden nax's run state from git. One bounded git
-  // spawn (gitWithTimeout) that never throws, inside the fatal deadline.
-  if (ctx.workdir) {
-    await clearNaxIndexFlags(ctx.workdir, getSafeLogger());
+/** Upper bound on the fatal-path index-flag sweep (#2490), so a wedged git cannot eat the teardown deadline. */
+const INDEX_SWEEP_BUDGET_MS = 2000;
+
+/**
+ * #2490: clear any skip-worktree/assume-unchanged flag an agent left on
+ * `.nax/` run state. Runs LAST on every fatal path -- after the fatal log, the
+ * run.complete event and the crashed status are written -- and is raced
+ * against a short budget on top of `gitWithTimeout`'s own timeout. It never
+ * throws.
+ */
+export async function clearHiddenNaxIndexFlags(ctx: SignalHandlerContext): Promise<void> {
+  if (!ctx.workdir) return;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const budget = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, INDEX_SWEEP_BUDGET_MS);
+  });
+  try {
+    await Promise.race([clearNaxIndexFlags(ctx.workdir, getSafeLogger()).then(() => undefined), budget]);
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -196,6 +213,8 @@ function createSignalHandler(
     await writeRunComplete(ctx, signal.toLowerCase());
     await updateStatusToCrashed(ctx.statusWriter, ctx.getTotalCost(), ctx.getIterations(), signal, ctx.featureDir);
 
+    await clearHiddenNaxIndexFlags(ctx);
+
     cancelDeadline();
     _crashSignalsDeps.exit(128 + getSignalNumber(signal));
   };
@@ -240,6 +259,8 @@ function createUncaughtExceptionHandler(
       ctx.featureDir,
     );
 
+    await clearHiddenNaxIndexFlags(ctx);
+
     cancelDeadline();
     _crashSignalsDeps.exit(1);
   };
@@ -283,6 +304,8 @@ function createUnhandledRejectionHandler(
       "unhandledRejection",
       ctx.featureDir,
     );
+
+    await clearHiddenNaxIndexFlags(ctx);
 
     cancelDeadline();
     _crashSignalsDeps.exit(1);

@@ -7,30 +7,6 @@
  * option that hides `git` from one cannot hide it from the other.
  */
 
-/** `git`'s global options that take no value — pass-through, then look for
- *  the subcommand. */
-const GIT_BOOLEAN_GLOBALS: ReadonlySet<string> = new Set([
-  "--no-pager",
-  "--no-replace-objects",
-  "--bare",
-  "--literal-pathspecs",
-  "--glob-pathspecs",
-  "--noglob-pathspecs",
-  "--icase-pathspecs",
-]);
-
-/** `git`'s global options that take a separate value (the next token). */
-const GIT_VALUE_GLOBALS: ReadonlySet<string> = new Set(["-c", "-C"]);
-
-/** `git`'s global long options that embed their value (`--key=value`). */
-const GIT_KEY_VALUE_GLOBALS: ReadonlySet<string> = new Set([
-  "--git-dir=",
-  "--exec-path=",
-  "--work-tree=",
-  "--namespace=",
-  "--super-prefix=",
-]);
-
 /** `sudo` options whose values occupy the next shell word. */
 const SUDO_VALUE_OPTIONS: ReadonlySet<string> = new Set([
   "-u",
@@ -132,34 +108,76 @@ export function gitExecutableIndex(words: readonly string[]): number | undefined
   return words[i] === "git" ? i : undefined;
 }
 
-/** Locate executable `git` in `words` and advance past its global options. Returns the
-   subcommand and the index of the first argument (or `undefined` when `git`
-   isn't there or has no subcommand). Handles `sudo git`, `env VAR=x git`,
-   `git --no-pager checkout`, etc. */
-export function locateGit(
-  words: readonly string[],
-): { readonly subcommand: string; readonly args: readonly string[] } | undefined {
+/** Long global options whose value is the NEXT word (`--git-dir X`); `--key=value` forms are skipped as one word. */
+const GIT_SEPARATE_VALUE_LONG: ReadonlySet<string> = new Set([
+  "--git-dir",
+  "--work-tree",
+  "--namespace",
+  "--super-prefix",
+  "--config-env",
+]);
+
+/** Global options whose value redirects git to another directory. */
+const GIT_DIR_OPTIONS: ReadonlySet<string> = new Set(["-C", "--git-dir", "--work-tree"]);
+
+export interface LocatedGit {
+  readonly subcommand: string;
+  readonly args: readonly string[];
+  /** Values of `-C`, `--work-tree` and `--git-dir` (both `--key value` and `--key=value`), in order. */
+  readonly dirs: readonly string[];
+}
+
+/** Expand `-c alias.NAME=VALUE` when `subcommand` is such an alias; otherwise return it unchanged. */
+function expandAlias(
+  subcommand: string,
+  args: readonly string[],
+  aliases: ReadonlyMap<string, string>,
+): { readonly subcommand: string; readonly args: readonly string[] } {
+  const value = aliases.get(subcommand);
+  if (value === undefined) return { subcommand, args };
+  const words = value
+    .replace(/^!/, "")
+    .split(/\s+/)
+    .filter((word) => word.length > 0);
+  if (words[0] === "git") words.shift();
+  const [head, ...rest] = words;
+  return head === undefined ? { subcommand, args } : { subcommand: head, args: [...rest, ...args] };
+}
+
+/**
+ * Locate executable `git` in `words` and advance past its global options.
+ * Returns the subcommand (alias-expanded), its arguments, and the directories
+ * the global options point git at, or `undefined` when `git` isn't there or has
+ * no subcommand. Handles `sudo git`, `env VAR=x git`, `git --no-pager checkout`,
+ * and an UNKNOWN `-x` / `--xxx` global (skipped as one word, so a new git
+ * option cannot hide the subcommand).
+ */
+export function locateGit(words: readonly string[]): LocatedGit | undefined {
   const gitIdx = gitExecutableIndex(words);
   if (gitIdx === undefined) return undefined;
+  const dirs: string[] = [];
+  const aliases = new Map<string, string>();
   let i = gitIdx + 1;
-  while (i < words.length) {
-    const w = words[i] as string;
-    if (GIT_BOOLEAN_GLOBALS.has(w)) {
-      i += 1;
-      continue;
-    }
-    if (GIT_VALUE_GLOBALS.has(w)) {
-      // The value is a separate token; skip it.
-      i += 2;
-      continue;
-    }
-    if ([...GIT_KEY_VALUE_GLOBALS].some((prefix) => w.startsWith(prefix))) {
-      i += 1;
-      continue;
-    }
-    break;
+  while (i < words.length && (words[i] as string).startsWith("-") && words[i] !== "--") {
+    i = consumeGlobal(words, i, dirs, aliases);
   }
   const subcommand = words[i];
   if (subcommand === undefined) return undefined;
-  return { subcommand, args: words.slice(i + 1) };
+  return { ...expandAlias(subcommand, words.slice(i + 1), aliases), dirs };
+}
+
+/** Consume one global option at `i`, recording directory values and `-c alias.*` definitions; returns the next index. */
+function consumeGlobal(words: readonly string[], i: number, dirs: string[], aliases: Map<string, string>): number {
+  const w = words[i] as string;
+  if (w === "-c") {
+    const alias = /^alias\.([^=]+)=(.*)$/s.exec(words[i + 1] ?? "");
+    if (alias !== null) aliases.set(alias[1] as string, alias[2] as string);
+    return i + 2;
+  }
+  const eq = w.indexOf("=");
+  const key = eq === -1 ? w : w.slice(0, eq);
+  if (!GIT_DIR_OPTIONS.has(key) && !GIT_SEPARATE_VALUE_LONG.has(key)) return i + 1;
+  const value = eq === -1 ? words[i + 1] : w.slice(eq + 1);
+  if (GIT_DIR_OPTIONS.has(key) && value !== undefined) dirs.push(value);
+  return eq === -1 ? i + 2 : i + 1;
 }

@@ -30,7 +30,7 @@ import type { BashSegment, BashToken } from "#src/permissions/index";
 import { lexBashCommand } from "#src/permissions/index";
 import { cdTargetsFor, nextWorkingDirectories } from "./bash-cwd.ts";
 import { deniedFlag } from "./exec-guard.ts";
-import { naxStateRefusal, naxStateRefusalInText } from "./nax-state-guard.ts";
+import { naxStateRefusalInText } from "./nax-state-guard.ts";
 import type { CompiledEntry, CompiledPattern } from "./policy-match.ts";
 
 export type BashCheck =
@@ -166,10 +166,6 @@ function checkPayload(
   const flag = deniedFlag(words);
   if (flag !== undefined) return { refusal: deny(`flag ${flag} is not permitted in a Bash command`) };
 
-  // #2490: nax's run state is out of bounds for revert, index-hiding and stash.
-  const stateRefusal = naxStateRefusal(words, { frames: cwd, root: args.initialPath });
-  if (stateRefusal !== undefined) return { refusal: deny(stateRefusal) };
-
   for (const token of segment.tokens) {
     if (token.opaque || hasUnmodelledExpansion(token.text)) {
       return { refusal: deny(`token "${token.text}" depends on shell expansion this gate cannot resolve`) };
@@ -251,15 +247,20 @@ function checkPayload(
   return { cdTargets };
 }
 
-/** The lexical refusal, except that a stash/update-index/revert of nax's run state (#2490) is a hard, non-escalatable deny. */
-function refusedDeny(args: BashCheckArgs, construct: string): BashCheck {
+/**
+ * The denials that need no grant lookup: nax's run state (#2490) -- revert,
+ * index-hiding and stash in any segment, nested shell or unreadable construct,
+ * never escalatable -- and then the escalatable lexical refusal.
+ */
+function earlyRefusal(args: BashCheckArgs, lexed: ReturnType<typeof lexBashCommand>): BashCheck | undefined {
   const stateRefusal = naxStateRefusalInText(String(args.command), {
     frames: [args.initialPath],
     root: args.initialPath,
   });
   if (stateRefusal !== undefined) return deny(stateRefusal);
+  if (lexed.kind !== "refused") return undefined;
   return deny(
-    `command contains ${construct}, which cannot be analysed and is therefore refused -- ` +
+    `command contains ${lexed.construct}, which cannot be analysed and is therefore refused -- ` +
       "rewrite it without that construct, or use a structured tool",
     false,
     true,
@@ -293,7 +294,8 @@ export function checkBashCommand(args: BashCheckArgs): BashCheck {
     cwd = nextWorkingDirectories(segment, cwd, result.cdTargets);
   }
 
-  if (lexed.kind === "refused") return refusedDeny(args, lexed.construct);
+  const early = earlyRefusal(args, lexed);
+  if (early !== undefined) return early;
 
   for (const segment of segments) {
     if (args.grant.unconditional || matchesSegment(args.grant, segment)) continue;

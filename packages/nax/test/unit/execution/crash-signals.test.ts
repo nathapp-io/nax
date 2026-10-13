@@ -15,6 +15,7 @@ import { makeStatusWriter } from "@test/helpers";
 import type { SignalHandlerContext } from "@/execution/crash-signals";
 import {
   _crashSignalsDeps,
+  clearHiddenNaxIndexFlags,
   FATAL_TEARDOWN_DEADLINE_MS,
   installSignalHandlers,
   performTeardown,
@@ -483,7 +484,7 @@ describe("performTeardown — hidden .nax index flags (#2490)", () => {
       await gitWithTimeout(["-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-q", "-m", "seed"], dir);
       await gitWithTimeout(["update-index", "--skip-worktree", ".nax/prd.json"], dir);
 
-      await performTeardown({ ...minimalCtx, workdir: dir });
+      await clearHiddenNaxIndexFlags({ ...minimalCtx, workdir: dir });
 
       const { stdout } = await gitWithTimeout(["ls-files", "-v", "--", ".nax"], dir);
       expect(stdout).toMatch(/^H /);

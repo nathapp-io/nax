@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { redirectForCommand } from "#src/tools/denial-redirect";
 import { compileToolPolicy } from "#src/tools/index";
@@ -21,6 +21,9 @@ beforeEach(() => {
   mkdirSync(join(root, ".nax/features/f"), { recursive: true });
   mkdirSync(join(root, "src"), { recursive: true });
   mkdirSync(join(root, "pkg/sub"), { recursive: true });
+  writeFileSync(join(root, "src/x.ts"), "x\n");
+  writeFileSync(join(root, "src/a.ts"), "a\n");
+  writeFileSync(join(root, "data.json"), "{}\n");
   withNax = { frames: [root], root };
   bare = makeTempDir("nax-state-guard-bare-");
   withoutNax = { frames: [bare], root: bare };
@@ -78,6 +81,15 @@ describe("stash", () => {
     "git stash apply",
     "git stash branch fix",
     "git stash save wip",
+    "git stash save -- src/x.ts",
+    "git stash -- src/x.ts",
+    "git stash push -m :!.nax",
+    "git stash save :!.nax",
+    "git stash push -- *.json",
+    "git stash push -- data.json *.json",
+    "git stash push -- src",
+    "git stash push -- missing.ts",
+    "git stash push -- :(glob)src/*",
   ])("denies %s when a .nax exists", (command) => {
     const reason = refuse(command);
     expect(reason).toContain("git diff HEAD");
@@ -102,11 +114,17 @@ describe("stash", () => {
     expect(naxStateRefusal(["git", "stash", "push", "--", ".", ":!.nax/features"], withNax)).toBeDefined();
   });
 
-  test("allows a push whose every pathspec lies outside .nax, refuses the rest", () => {
+  test("allows a push whose every pathspec is a plain existing file, refuses the rest", () => {
     expect(naxStateRefusal(["git", "stash", "push", "--", "src/x.ts"], withNax)).toBeUndefined();
     expect(naxStateRefusal(["git", "stash", "push", "--", "src/x.ts", ".nax/a"], withNax)).toBeDefined();
     expect(naxStateRefusal(["git", "stash", "push", "--", "."], withNax)).toBeDefined();
     expect(naxStateRefusal(["git", "stash", "push", "src/x.ts"], withNax)).toBeDefined();
+  });
+
+  test("an exclusion must name <root>/.nax from every frame", () => {
+    const fromSrc = { frames: [join(root, "src")], root };
+    expect(naxStateRefusal(["git", "stash", "push", "--", ".", ":!.nax"], fromSrc)).toBeDefined();
+    expect(naxStateRefusal(["git", "stash", "push", "--", ".", ":!../.nax"], fromSrc)).toBeUndefined();
   });
 
   test("finds the .nax from a subdirectory frame (cd src && git stash)", () => {
@@ -136,6 +154,24 @@ describe("wrappers, global options and nested shells", () => {
     "xargs git update-index --skip-worktree",
     "xargs -n 1 git update-index --assume-unchanged",
     "git --git-dir=.git stash",
+    "git -P stash",
+    "git --paginate stash",
+    "git --no-optional-locks stash",
+    "git --work-tree . stash",
+    "git --work-tree=. stash pop",
+    "git -c alias.s=stash s",
+    "git update-index --sk .nax/x",
+    "git update-index --no-sk .nax/x",
+    "git update-index --as .nax/x",
+    "git -C .nax update-index --skip-worktree prd.json",
+    "git -C .nax checkout -- prd.json",
+    "git --work-tree .nax checkout -- prd.json",
+    "git update-index --skip-worktree --stdin src/x.ts",
+    "git update-index --assume-unchanged --index-info src/x.ts",
+    "xargs git update-index --skip-worktree src/x.ts",
+    "eval git stash",
+    "eval git update-index --skip-worktree .nax/x",
+    "bash -c 'cd .nax && git update-index --skip-worktree prd.json'",
   ])("denies %s", (command) => {
     expect(refuse(command)).toBeDefined();
   });
@@ -149,14 +185,35 @@ describe("wrappers, global options and nested shells", () => {
     expect(refuse(command)).toBeDefined();
   });
 
-  test("does not flag an unrelated shell command", () => {
-    expect(refuse("bash -c 'echo hi'")).toBeUndefined();
+  test.each([
+    "bash -c 'echo hi'",
+    "bash -c 'npm test && echo ok'",
+    "git -C pkg status",
+    "git -C pkg stash list",
+    "git stash list",
+    "git stash show -p",
+    "git update-index --refresh",
+    "git update-index --assume-unchanged src/a.ts",
+    'git commit -m "fix stash handling"',
+    "echo stash",
+    "time git stash list",
+    "git stash push -- src/x.ts",
+    "git stash push -- src/x.ts src/a.ts",
+    "git stash push -- . :!.nax",
+  ])("does not flag %s", (command) => {
+    expect(refuse(command)).toBeUndefined();
   });
 });
 
 describe("naxStateRefusalInText (the lexer-refused path)", () => {
   test.each([
     "git stash 2>&1",
+    "time git stash",
+    "nohup git stash",
+    "stdbuf -o0 git stash",
+    "time git update-index --skip-worktree .nax/x",
+    "cd .nax && git update-index --skip-worktree prd.json $(true) && true",
+    "cd .nax && git update-index --skip-worktree prd.json $(true)",
     "(git stash)",
     "{ git stash; }",
     "git stash >out.txt",
@@ -210,6 +267,14 @@ describe("gated and raw Bash enforce the guard on every segment", () => {
     "cat x | git update-index --assume-unchanged .nax/features/f/prd.json",
     "git stash --keep-index; git diff HEAD x",
     "git stash 2>&1",
+    "time git stash",
+    "nohup git stash",
+    "stdbuf -o0 git stash",
+    "git -P stash",
+    "git -c alias.s=stash s",
+    "git -C .nax checkout -- prd.json",
+    "bash -c 'cd .nax && git update-index --skip-worktree prd.json'",
+    "cd .nax && git update-index --skip-worktree prd.json $(true)",
     "git -C . stash",
     "git --no-pager stash",
     "FOO=1 git stash",
