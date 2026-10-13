@@ -237,6 +237,7 @@ type SessionEventBase
 type SessionEventBody
 type SessionHandle
 type SessionModel
+type SessionSandbox
 SessionTurnError
 type ShadowCall
 type ShadowTap
@@ -427,6 +428,7 @@ scratchpadListTool
 scratchpadReadTool
 scratchpadWriteTool
 servedAuth
+sessionSandboxFrom
 sessionTmpDir
 sessionTmpDirUnder
 setAgentLogger
@@ -662,6 +664,7 @@ type SecretSpan
 type SecretValuePattern
 type SelectChoice
 type SessionAnchor
+type SessionSandbox
 type SessionTranscript
 type ShellInterceptOutcome
 type ShellInterceptRequest
@@ -971,6 +974,7 @@ scratchpadWriteTool
 servedAuth
 sessionAnchorFor
 sessionModule
+sessionSandboxFrom
 sessionTmpDir
 sessionTmpDirUnder
 sessionTranscriptFor

@@ -212,5 +212,9 @@ export function createCommandLauncher(opts: CommandLauncherOptions): CommandLaun
         await opts.afterWrapped?.();
       }
     },
+    // nax#2500: `false` keeps /tmp/claude writable; Claude's own srt forces that TMPDIR.
+    ...(opts.policyFor !== undefined
+      ? { policyAt: (root: string) => (opts.policyFor as NonNullable<typeof opts.policyFor>)(root, false) }
+      : {}),
   };
 }

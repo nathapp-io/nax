@@ -161,6 +161,8 @@ export interface OpenSessionOpts extends TrackedSpawnDeadlineOptions {
   providerTools?: readonly import("#src/tools/registry").CodingTool[];
   /** ACP: the op's materialized declaration, which narrows the session profile (nax#2444, D2). */
   declaredTools?: readonly string[];
+  /** nax#2500: the dispatch sandbox for ACP backends that run their own shell (claude). Native ignores it. */
+  sandbox?: import("#src/sandbox/types").SessionSandbox;
   /** ACP: the transport-less surface draft; the adapter stamps transport + profile (nax#2410, D4). */
   toolSurface?: import("#src/tools/tool-audit").ToolSurfaceDraft;
   /**
