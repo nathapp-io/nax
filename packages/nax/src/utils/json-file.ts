@@ -9,6 +9,7 @@ import { existsSync } from "node:fs";
 import { rename, unlink } from "node:fs/promises";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
+import { runStateWrite } from "../runstate/store";
 
 /**
  * Load a JSON file with type safety and error handling.
@@ -127,6 +128,11 @@ export async function saveJsonFile<T>(path: string, data: T, context = "json-fil
  * @throws Error if write fails
  */
 export async function atomicWriteText(path: string, content: string, context = "json-file"): Promise<void> {
+  // #2497: run-state files are recorded for repair; any other path is written as before.
+  await runStateWrite(path, { content }, () => writeTextAtomically(path, content, context));
+}
+
+async function writeTextAtomically(path: string, content: string, context: string): Promise<void> {
   const tmpPath = `${path}.tmp-${crypto.randomUUID()}`;
   try {
     await Bun.write(tmpPath, content);

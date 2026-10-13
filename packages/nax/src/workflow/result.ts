@@ -4,6 +4,7 @@
  */
 import { mkdir, readdir, rename, stat } from "node:fs/promises";
 import { basename, join } from "node:path";
+import { runStateWrite } from "@/runstate/store";
 import { buildVerdict } from "./open-items";
 import type { WorkflowFeatureRecord, WorkflowResultFile, WorkflowStoryRecord } from "./types";
 
@@ -58,9 +59,13 @@ export async function upsertStoryRecord(
 
 async function writeResult(runDir: string, next: WorkflowResultFile): Promise<void> {
   await _resultDeps.mkdir(runDir, { recursive: true });
-  const tmp = join(runDir, `${RESULT_FILE}.tmp`);
-  await Bun.write(tmp, `${JSON.stringify(next, null, 2)}\n`);
-  await _resultDeps.rename(tmp, join(runDir, RESULT_FILE));
+  const path = join(runDir, RESULT_FILE);
+  const tmp = `${path}.tmp`;
+  const text = `${JSON.stringify(next, null, 2)}\n`;
+  await runStateWrite(path, { content: text }, async () => {
+    await Bun.write(tmp, text);
+    await _resultDeps.rename(tmp, path);
+  });
 }
 
 /**
