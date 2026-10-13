@@ -40,7 +40,7 @@ nax keeps live run state in the work tree (`.nax/features/<f>/prd.json`, `status
 - `residualMenu` takes a `scope: "story" | "branch"` input. Branch scope offers only `waive` (label: "accept the risk; give the reason it is acceptable to ship") and `hold` (label: "a human must decide before this is marked ready"). `defer` and `carry` are not offered.
 - `adjudicateResidual` passes `scope: "branch"` when `storyId === FEATURE_SCOPE` (`workflow/feature-env.ts`). Story callers pass `"story"`.
 - The residual prompt (`prompts/builders/advisor-batch-builder.ts:24`) renders the defer guidance only when `defer` is on the menu. Prompt text stays in the builder.
-- **Coercion.** If a branch-scope reply still carries `defer`, `toWorkflowRuling` maps it to `hold` with `needsHumanConfirm: true`, logs one `[WARN]` (`{ storyId: "_run", findingId, from: "defer", to: "hold" }`) and writes the ledger line `_run: ruling <id> defer coerced to hold: no later review step`.
+- **Coercion.** If a branch-scope reply still carries `defer`, `toWorkflowRuling` maps it to `hold` with `needsHumanConfirm: true`, sets `coercedFrom: "defer"` on the ruling, and logs one `[WARN]` (`{ storyId: "_run", findingId, from: "defer", to: "hold" }`). The ruling's ledger line ends with `(coerced from defer: no later review step)`.
 - The A5 spec row `park-real-deferred -> defer` is amended to `hold` for branch adjudication.
 
 ## 4. One capped second branch fix (#2496 optional item, included by ruling 2026-10-13)
@@ -62,7 +62,7 @@ Second round:
 ## 5. Evidence and verdict (#2496 parts 2-4)
 
 ### 5.1 Finding ids at the source
-`assign()` runs before `branch-review.json` is written, so the file carries the same `B<n>` ids as `result.json`. Same for `branch-rereview.json` new findings.
+The feature machine writes `branch-review.json` and `branch-rereview.json` itself, through a new `FeatureSink.artifact(name, value)`, after `assign()`, so the files carry the same `B<n>` ids as `result.json`. `runBranchReview` / `runBranchReReview` stop writing them.
 
 ### 5.2 Top-level verdict in `result.json`
 `WorkflowResultFile` gains an optional top-level `verdict`, written by `publishStep`:
@@ -91,7 +91,7 @@ Built by one pure function `buildOpenItems(rec, cannotVerify)` in `workflow/open
 - every branch-level cannot-verify item recorded during this run (the feature machine keeps them on the record as `cannotVerify: string[]`, in addition to the ledger line).
 - every failing final gate, with its excerpt from `finalGateFindings`.
 
-`workflowPassed` is the field a finishing tool and the end report read. `featureWorkflow.passed` keeps its current meaning.
+`workflowPassed` is the field a finishing tool reads. `featureWorkflow.passed`, the end report and `RunResult.success` keep their current meaning.
 
 ### 5.3 PR body: "Before marking ready"
 When `openItems` is non-empty, `buildWorkflowPrBody` renders a section above "Advisor decisions":
@@ -112,45 +112,50 @@ A finishing tool reads `.nax/features/<f>/workflow/<runId>/result.json`: top-lev
 
 ## 6. Run-state keeper (#2497)
 
+Revised 2026-10-13 while planning, after reading the writers and the import graph (see §6.5).
+
 ### 6.1 Module
-New `src/runstate/` (barrelled): `keeper.ts`, `verify.ts`, `types.ts`. Each under 200 lines.
+New `src/runstate/`, split so the writers never import git code:
+- `src/runstate/store/` (nested barrel, imported by the writers): `classifyRunStatePath`, the `RunStateKeeper` class, the process-wide set of active keepers, and `runStateWrite`. It imports only `@/config/paths`.
+- `src/runstate/` (barrel): re-exports the store, plus `verifyKeeper` (repair), `activateRunState` and `repairRunState`.
 
 ```ts
 type RunStateKind = "prd" | "status" | "workflow-result" | "ledger" | "decisions";
-interface RunStateKeeper {
-  record(path: string, bytes: Uint8Array | string, kind: RunStateKind, workdir: string): void;
-  seed(workdir: string): Promise<void>;
-  workdirs(): readonly string[];
-  entries(workdir: string): readonly KeptFile[];
-}
+type WriteIntent = { readonly content: string } | { readonly append: string };
+function runStateWrite(path: string, intent: WriteIntent, write: () => Promise<void>): Promise<void>;
 ```
 
-- Owned by the runtime (`NaxRuntime.runState`), one per run. Keyed by absolute path; holds the bytes nax last wrote and a hash.
-- **Writers record after their own write:** `savePRD` (`prd/index.ts`), `StatusWriter` (`execution/status-writer.ts`), `crash-writer.ts`, `upsertStoryRecord` / `upsertFeatureRecord` (`workflow/result.ts`), `ensureLedger` / `appendLedger` (`workflow/ledger.ts`), `appendDecision` (`advisor/ledger.ts`). Each reaches the keeper through its existing `_deps` (or an optional parameter where it has none), so writers called outside a run (CLI `nax accept`, plan) work unchanged with no keeper.
-- Append-only files record their full content after each append.
-- A nax write during a turn (status heartbeat, an advisor decision mid-turn) updates the keeper itself, so it is never flagged.
-- **Seed** at run start and on resume: every owned file present under `featureDir(workdir, feature)` and the run dir is read once into the keeper. Parallel pipeline worktrees are seeded when the worker opens its worktree.
+- **One keeper per run, scoped to the run's feature.** `activateRunState({ runId, feature, root })` creates it, seeds it and registers it. The runner deactivates it in its `finally`. A keeper tracks only `<any root>/.nax/features/<its feature>/...` files of a known kind: `prd.json`, `status.json`, `decisions.jsonl`, `workflow/<runId>/result.json`, `workflow/<runId>/ledger.md`. A second nax run on another feature in the same repo is never touched.
+- **Writers record the intent before they write.** `runStateWrite` records the full new content (for an append: kept content plus the chunk, reading the file first when the path is not yet tracked). It marks the path in flight, awaits the real write, then clears the mark. The call sites are `atomicWriteText` (`utils/json-file.ts`, covers `savePRD`), `writeStatusFile` (`execution/status-file.ts`, covers heartbeat, feature and crash writes), `writeResult` (`workflow/result.ts`), `ensureLedger` / `appendLedger` (`workflow/ledger.ts`) and `appendDecision` (`advisor/ledger.ts`). With no active keeper, `runStateWrite` just runs the write, so CLI and plan paths are unchanged.
+- Recording before the write closes the race with a concurrent verify: a verify that runs mid-write either skips the in-flight path or restores exactly the bytes nax is writing.
+- **Seed** at activation: `prd.json`, `status.json` and `decisions.jsonl` under `featureDir(root, feature)`, when present. The workflow run dir files are tracked from nax's first write. Files under a parallel worktree are tracked from nax's first write there. Files nax never writes in this run are not protected.
 
 ### 6.2 Verify and repair
-`verifyRunState(keeper, workdir, ctx)` where `ctx = { storyId?, sessionName?, stage, turn?, trigger }` and `trigger` is `turn | pre-commit | pre-read | run-end | crash`:
+`repairRunState(ctx)` with `ctx = { storyId?, sessionName?, stage?, turn?, trigger, workdir? }` and `trigger` one of `turn | pre-commit | run-end | crash`:
 
-1. `hiddenNaxPaths(workdir)` once (one `git ls-files -v -z` call).
-2. For each kept file under `workdir`: classify `missing` (no file), `modified` (hash differs), `hidden` (index flag set). A file can be both hidden and modified.
-3. Repair: `clearNaxIndexFlags` for hidden paths, then atomic-write the kept bytes for missing or modified ones.
-4. Report per repaired file: one `logger.warn("runstate", ...)` with `{ storyId, sessionName, stage, turn, trigger, path, damage }`, message like `US-002 implementer turn 3: .nax/features/f/prd.json modified by the agent; restored`. Append a `run-state-repair` entry to the tool-audit sink for the session when one is open, and in workflow mode a ledger line `<storyId>: run-state repaired: <path> (<damage>)`.
-5. Return `{ repaired: RepairRecord[] }`. Never throws; a failed restore logs `[FAIL]` and continues.
-
-The ledger line is itself a nax write, so it is recorded in the keeper after the repair, never flagged.
+1. Serialised by one promise chain, so two sessions ending turns at once never repair concurrently.
+2. For each active keeper and each of its roots: one `hiddenNaxPaths(root)` call (`git ls-files -v -z`, exported from `utils/nax-index-flags.ts`).
+3. For each tracked file not in flight: classify `missing`, `modified` (bytes differ) or `hidden` (index flag set). Hidden and modified can both apply.
+4. Repair: clear the flags (`clearNaxIndexFlags`, scoped to the hidden tracked paths), then write the kept bytes atomically (tmp + rename).
+5. Report per repaired file: one `logger.warn("runstate", ...)` with `{ storyId, sessionName, stage, turn, trigger, path, damage }`, message `<storyId> <stage> turn <n>: <rel path> <damage> by the agent; restored`. When the keeper tracks a workflow `ledger.md` under that root, also append `<storyId|_run>: run-state repaired: <rel path> (<damage>)` through `runStateWrite`. The run log (JSONL) and the ledger are the record; the per-session tool-audit sink is not used (it lives in nax-agent and is closed by turn end).
+6. Never throws; a failed restore logs `[FAIL]` and continues.
+7. **Fallback:** when no keeper is active and `ctx.workdir` is set, run the #2490 `clearNaxIndexFlags(workdir)` sweep, so non-run paths keep today's behaviour.
 
 ### 6.3 When it runs
-- **After every agent turn:** in the `finally` around `adapter.sendTurn` in `SessionManager` (`session/manager.ts:587`). This covers native and ACP and failed turns. The `session-turn` bus event is not used: it fires only on success, and subscribers are not awaited. On ACP a turn is one delegated agent run, which still meets "within one turn".
-- **Before every auto-commit:** at the top of `autoCommitIfDirty` (`utils/git.ts:206`) and before the workflow auto-commits (`workflow/implement.ts:70`, `workflow/branch-fix.ts:41`). A reverted PRD is never committed.
-- **Before read-back:** at the run's `loadPRD` reload points and `readResult` in the workflow loop, through the runtime (CLI reads outside a run are unaffected).
-- **Run end and crash:** replaces the #2490 sweep at `runner.ts:426`, `runner-completion.ts:542` and `crash-signals.ts:154-168` with `verifyRunState` over `keeper.workdirs()`. The crash path keeps the 2000 ms budget. `runner-completion.ts` (578/600 lines) must not grow: the call is a one-line swap.
-- When no keeper is present (no runtime), the existing sweep behaviour is kept as the fallback so CLI paths do not regress.
+- **After every agent turn:** `SessionManager` gains an `afterTurn(descriptor, turn)` hook (set through `configureRuntime`, called in the `finally` around `adapter.sendTurn`, `session/manager.ts:587`, after a success or a failure, and awaited with errors swallowed). It keeps a per-session turn counter. `createRuntime` wires it to `repairRunState({ trigger: "turn", storyId, sessionName, stage: role, turn })`. This covers native and ACP. The `session-turn` bus event is not used: it fires only on success, and its subscribers are not awaited. On ACP a turn is one delegated agent run, which still meets "within one turn".
+- **Before every auto-commit:** `utils/git.ts` gains `registerBeforeAutoCommit(hook)`. `autoCommitIfDirty` awaits the registered hooks after its dry-run check. `activateRunState` registers `repairRunState({ trigger: "pre-commit", ... })` and unregisters on deactivate. Workflow `implement.ts` and `branch-fix.ts` commit through `autoCommitIfDirty`, so they are covered. The inversion keeps `utils/git` free of a `runstate` import (`runstate` reaches `utils/git` through `nax-index-flags`).
+- **Before read-back:** not a separate trigger. Agents only act inside a turn, and every turn ends with a repair, so nax always reads repaired state. A background process the agent left running is caught at the next turn or commit.
+- **Run end and crash:** the three #2490 sweep calls (`runner.ts:426`, `runner-completion.ts:542`, `crash-signals.ts:166`) become `repairRunState({ trigger: "run-end" | "crash", workdir })`. The crash path keeps the 2000 ms budget. `runner-completion.ts` (578/600 lines) must not grow: each call is a one-line swap.
 
-### 6.4 Owned-paths deny
-`naxOwnedKind` (`agents/nax-owned-writes.ts:167`) adds `status.json`, `workflow/**/result.json`, `workflow/**/ledger.md` and `decisions.jsonl` under the feature dir, so Write/Edit/Delete tools refuse them up front. Repair remains the guarantee for anything that lands anyway.
+### 6.4 Owned-paths deny (dropped)
+Adding `status.json`, `result.json`, `ledger.md` and `decisions.jsonl` to `naxOwnedKind` was dropped while planning. `naxOwnedKind` also drives the Bash screen, which refuses reads too, so it would add exactly the false positives #2497 warns about. Repair covers these files.
+
+### 6.5 Changes from the first draft
+- The writers reach the keeper through `runStateWrite` and a process-wide registry (the `registerToolAuditSink` precedent), not `_deps` threading through about 25 `savePRD` callers.
+- The keeper records before the write, not after, to close the race with a concurrent verify.
+- A turn repairs every tracked file of every active keeper, not only the session's workdir. A session's workdir may be a package dir, and the files are few.
+- There is no pre-read trigger (§6.3), no tool-audit entry (§6.2) and no owned-paths change (§6.4).
+- `workflowPassed` (§5.2) is written to `result.json` only. The run's end report and `RunResult.success` keep using `featurePassed`.
 
 ## 7. Error handling
 - Repair and verify never throw into the run; every failure is a `[WARN]` or `[FAIL]` log line with `storyId` first.
@@ -183,7 +188,7 @@ No rule changes. The header of `nax-state-guard.ts` is rewritten: the guard is a
   - checkout with `:(exclude,glob)**/.nax` pathspec
   - `git update-index --skip-worktree` and `--assume-unchanged` on `prd.json`
   - `git stash -u` with only `.nax` dirty
-- `session/manager` wiring test: verify runs after a turn that throws.
+- `session/manager` wiring test: the afterTurn hook runs after a turn that throws, and its failure never masks the turn's result.
 - `utils/git` wiring test: `autoCommitIfDirty` restores a reverted PRD before committing.
 - Existing sweep tests (`nax-index-flags.test.ts`, `crash-signals.test.ts`) keep passing via the fallback.
 
@@ -195,5 +200,5 @@ No rule changes. The header of `nax-state-guard.ts` is rewritten: the guard is a
 3. A draft PR body lists each open item in full with a promotion checklist.
 4. `result.json` carries a top-level `verdict` with `workflowPassed` and `openItems[]`; `branch-review.json` findings have ids.
 5. Every bypass in §9's matrix is detected within one turn, repaired, and logged with session, step and turn.
-6. The verifier runs on native and ACP, in pipeline and workflow mode, before every auto-commit, and at run end and crash.
+6. The repair runs after every turn on native and ACP, in pipeline and workflow mode, before every auto-commit, and at run end and crash.
 7. The guard's known-gaps list references #2497 as the guarantee.
