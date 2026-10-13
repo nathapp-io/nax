@@ -26,7 +26,7 @@ describe("claude session _meta by profile (#2366)", () => {
   };
 
   test("none and read: the removed tools and the settings lock, with or without tools", () => {
-    for (const profile of ["none", "read"] as const) {
+    for (const profile of ["none", "read", "review"] as const) {
       const readOnly = readOnlyFor(profile, claude);
       expect(claudeSessionMeta(claude?.preApproval, [], readOnly)).toEqual({
         claudeCode: { options: READ_ONLY_OPTIONS },

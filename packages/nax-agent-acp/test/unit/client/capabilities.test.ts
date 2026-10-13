@@ -161,6 +161,14 @@ describe("config options", () => {
     expect(readOnlyFor("none", registryEntry("codex"))).toBeUndefined();
     expect(modeFor("full", undefined)).toBeUndefined();
   });
+
+  test("review is read-only enforced like read on Claude (nax#2500)", () => {
+    expect(readOnlyFor("review", CLAUDE)).toBe(CLAUDE?.readOnly);
+    expect(modeFor("review", CLAUDE)).toEqual({ configId: "mode", value: "default" });
+    expect(unmetRequirement(customRecord, { profile: "review", toolCount: 0, resume: false })?.capability).toBe(
+      "profile",
+    );
+  });
 });
 
 function select(id: string, category: string | undefined, values: readonly string[]): SessionConfigOption {

@@ -4,7 +4,13 @@ import type {
   RequestPermissionRequest,
   RequestPermissionResponse,
 } from "@agentclientprotocol/sdk";
-import type { AgentSessionProfile, ApprovalDecidedBy, ApprovalRequest, SessionAskPort } from "@nathapp/nax-agent";
+import type {
+  AgentSessionProfile,
+  ApprovalDecidedBy,
+  ApprovalRequest,
+  SandboxPolicy,
+  SessionAskPort,
+} from "@nathapp/nax-agent";
 import {
   ASK_REASON,
   decidePermission,
@@ -208,5 +214,56 @@ describe("decidePermission: ask", () => {
     expect(await decidePermission(unshowable, ctx("ask", port))).toEqual(selected("reject_once"));
     expect(seen.asked).toEqual([]);
     expect(seen.auto[0]).toMatchObject({ req: { reason: UNSHOWABLE_REASON }, decision: "deny" });
+  });
+});
+
+describe("profile review (nax#2500)", () => {
+  const base = (sandbox?: SandboxPolicy) => ({
+    profile: "review" as const,
+    secrets: [],
+    signal: IDLE,
+    ...(sandbox ? { sandbox } : {}),
+  });
+  const OPEN: SandboxPolicy = { writeRoots: ["/r"], denyWrite: [], denyRead: [], network: {} };
+  const LISTED: SandboxPolicy = { ...OPEN, network: { allowedDomains: ["pypi.org"] } };
+  const net = { toolCallId: "n", kind: "other" as const, title: "SandboxNetworkAccess" };
+
+  test("allows an execute request", async () => {
+    const { port, seen } = asks();
+    const res = await decidePermission(
+      request(["allow_once", "reject_once"], { toolCallId: "t", kind: "execute", title: "ruff format --check ." }),
+      { ...base(OPEN), asks: port },
+    );
+    expect(res).toEqual(selected("allow_once"));
+    expect(seen.auto[0]?.decision).toBe("allow");
+  });
+
+  test("denies an edit request", async () => {
+    const { port } = asks();
+    const res = await decidePermission(request(["allow_once", "reject_once"]), { ...base(OPEN), asks: port });
+    expect(res).toEqual(selected("reject_once"));
+  });
+
+  test("network request: allowed when the sandbox network is open, denied under an allow-list", async () => {
+    const { port } = asks();
+    expect(await decidePermission(request(["allow_once", "reject_once"], net), { ...base(OPEN), asks: port })).toEqual(
+      selected("allow_once"),
+    );
+    expect(
+      await decidePermission(request(["allow_once", "reject_once"], net), { ...base(LISTED), asks: port }),
+    ).toEqual(selected("reject_once"));
+  });
+
+  test("full: network request follows the same rule", async () => {
+    const { port } = asks();
+    expect(
+      await decidePermission(request(["allow_once", "reject_once"], net), {
+        profile: "full",
+        secrets: [],
+        signal: IDLE,
+        asks: port,
+        sandbox: LISTED,
+      }),
+    ).toEqual(selected("reject_once"));
   });
 });
