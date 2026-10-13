@@ -99,6 +99,22 @@ export interface RunCompletionOptions extends DispatchContext {
   exitReason?: ExitReason;
   /** The run's interaction chain, threaded to the deferred regression rectifier's ask resolver (#2201). */
   interactionChain?: InteractionChain | null;
+  /**
+   * Workflow mode: do not write `run.complete` yet. The feature workflow still has to run, so the caller
+   * writes the line itself (via `RunCompletionResult.logRunComplete`) once it knows the whole duration (nax#2491).
+   */
+  deferRunCompleteLog?: boolean;
+}
+
+/** What the caller knows only after the feature workflow: the whole run's duration and its two parts. */
+export interface RunCompleteFinal {
+  durationMs: number;
+  storiesDurationMs: number;
+  featureWorkflowDurationMs: number;
+  /** Spend through the end of the feature workflow. */
+  totalCost: number;
+  /** False when the feature workflow did not pass; the line's `success` follows it. */
+  workflowPassed: boolean;
 }
 
 export interface RunCompletionResult {
@@ -121,6 +137,8 @@ export interface RunCompletionResult {
    * observational mode (#1146 G2).
    */
   pluginGateFailed: boolean;
+  /** Present only when `deferRunCompleteLog` was set: writes the held-back `run.complete` line. */
+  logRunComplete?: (final: RunCompleteFinal) => void;
 }
 
 /**
@@ -184,18 +202,21 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
   });
 
   // Phase 7 — completion summary log (per-story metrics, AC-25 context cost)
-  logRunCompletion({
-    options,
-    prd,
-    allStoryMetrics,
-    finalCounts,
-    reportedTotal: costs.reportedTotal,
-    errorCostField: costs.errorCostField,
-    aggByStage: costs.aggByStage,
-    aggByStory: costs.aggByStory,
-    durationMs,
-    logger,
-  });
+  const logComplete = (timing?: RunCompleteFinal): void =>
+    logRunCompletion({
+      options,
+      prd,
+      allStoryMetrics,
+      finalCounts,
+      reportedTotal: costs.reportedTotal,
+      errorCostField: costs.errorCostField,
+      aggByStage: costs.aggByStage,
+      aggByStory: costs.aggByStory,
+      durationMs: timing?.durationMs ?? durationMs,
+      ...(timing ? { timing } : {}),
+      logger,
+    });
+  if (!options.deferRunCompleteLog) logComplete();
 
   // Phase 7.5 — MCP adoption summary (nax#2410 D6): per-server offered/called
   // counts plus the zero-adoption WARN. Undefined when MCP is unconfigured.
@@ -232,5 +253,6 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
       pending: finalCounts.pending,
     },
     pluginGateFailed,
+    ...(options.deferRunCompleteLog ? { logRunComplete: logComplete } : {}),
   };
 }

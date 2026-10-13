@@ -18,6 +18,8 @@ import type { RunnerCompletionOptions } from "./runner-completion";
 export interface EndPhaseDeps {
   runFinishPhase(ctx: FinishPhaseContext): Promise<FinishResult | null>;
   runWorkflowFeature(input: WorkflowFeatureInput): Promise<WorkflowFeatureResult | null>;
+  /** The run clock; Date.now when absent. */
+  now?(): number;
 }
 
 /**
@@ -120,6 +122,7 @@ async function runWorkflowEnd(options: RunnerCompletionOptions, deps: EndPhaseDe
       abortSignal: options.abortSignal,
       interactionChain: options.interactionChain,
       statusWriter: options.statusWriter,
+      storiesDurationMs: (deps.now ?? Date.now)() - options.startTime,
     });
     return result?.passed ?? true;
   } catch (err) {

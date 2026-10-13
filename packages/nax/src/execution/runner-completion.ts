@@ -28,13 +28,13 @@ import type { WorkflowFeatureInput, WorkflowFeatureResult } from "@/workflow";
 import { recordAdvisorSummary } from "./advisor-summary";
 import { stopHeartbeat, writeExitSummary } from "./crash-recovery";
 import type { DeferredReviewResult } from "./deferred-review";
-import { runEndPhase } from "./end-phase";
 import type { ExitReason } from "./executor-types";
 import type { AcceptanceLoopContext, AcceptanceLoopResult } from "./lifecycle/acceptance-loop";
 import type { RunCompletionOptions, RunCompletionResult } from "./lifecycle/run-completion";
 import { writeFinalFeatureStatus } from "./lifecycle/run-completion-phases";
 import type { AcceptancePhaseStatus } from "./status-file";
 import { hookCtx } from "./story-context";
+import { createRunCompleteGate, runEndPhaseReported } from "./workflow-end-report";
 import { effectiveParallelCount } from "./workflow-parallel";
 
 /**
@@ -124,6 +124,8 @@ export const _runnerCompletionDeps: {
   loadConfigForPackage(projectDir: string, packageDir: string | undefined, from: NaxConfig): Promise<NaxConfig>;
   runFinishPhase(ctx: FinishPhaseContext): Promise<FinishResult | null>;
   runWorkflowFeature(input: WorkflowFeatureInput): Promise<WorkflowFeatureResult | null>;
+  /** The run clock (wall ms); a seam so the workflow-duration split is testable. */
+  now(): number;
 } = {
   async runAcceptanceLoop(ctx) {
     const { runAcceptanceLoop } = await import("./lifecycle/acceptance-loop");
@@ -145,6 +147,7 @@ export const _runnerCompletionDeps: {
     const { runWorkflowFeature } = await import("@/workflow");
     return runWorkflowFeature(input);
   },
+  now: () => Date.now(),
 };
 
 /**
@@ -389,71 +392,16 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     // Workflow mode clamps --parallel to sequential (the executor already warned), so classify the clamped value.
     isSequential: !((effectiveParallelCount(options.config, options.parallel, () => {}) ?? 0) > 1),
     interactionChain: options.interactionChain,
+    // Workflow mode writes run.complete after the feature workflow, when the whole duration is known (nax#2491).
+    deferRunCompleteLog: isWorkflowMode(options.config),
   });
 
-  const { durationMs, runCompletedAt, finalCounts, reportedTotal, pluginGateFailed, mcpAdoption } = completionResult;
+  const { runCompletedAt, finalCounts, reportedTotal, pluginGateFailed } = completionResult;
+  let durationMs = completionResult.durationMs;
 
-  // Write feature-level status (SFC-002).
-  // Use reportedTotal (cost-aggregator-corrected) instead of the legacy
-  // options.totalCost accumulator, which drops acceptance/review/diagnosis
-  // spend (issue #909).
-  if (options.featureDir) {
-    await writeFinalFeatureStatus({
-      featureDir: options.featureDir,
-      statusWriter: options.statusWriter,
-      pluginGateFailed,
-      exitReason: options.exitReason,
-      prd: options.prd,
-      reportedTotal,
-      iterations: options.iterations,
-      mcpAdoption,
-    });
-  }
-
-  // §2.1 — surface non-blocking (sub-threshold) review findings accumulated this run.
-  // Without this, real findings below `blockingThreshold` are only visible in a
-  // per-story debug log line and the on-disk `.nax/review-audit/` trail.
-  const advisoryFindings = options.runtime?.reviewAuditor?.getAdvisoryFindings() ?? [];
-  if (advisoryFindings.length > 0) {
-    const coverageGapCount = advisoryFindings.filter((f) => f.coverageGap).length;
-    logger?.warn("review", `${advisoryFindings.length} non-blocking review finding(s) surfaced at run end`, {
-      storyId: "_run",
-      count: advisoryFindings.length,
-      coverageGapCount,
-      findings: advisoryFindings,
-    });
-  }
-
-  const mutationSummaries = [...(options.runtime?.mutationSummaries?.values() ?? [])];
-  const survivorCount = mutationSummaries.reduce((count, summary) => count + summary.survivors.length, 0);
-  if (survivorCount > 0) {
-    logger?.warn("mutation-check", "Surviving mutants detected at run end", {
-      storyId: "_run",
-      survivorCount,
-    });
-  }
-
-  // Stop heartbeat before finish so stale execution totals cannot overwrite
-  // the final status snapshot.
-  stopHeartbeat();
-
-  // Commit status.json and any other nax runtime files left dirty at run end
-  logger?.debug("execution", "Completion phase — auto-committing dirty files");
-  await autoCommitIfDirty(
-    options.workdir,
-    "run.complete",
-    "run-summary",
-    options.feature,
-    options.runtime?.dirtyWorktrees,
-    options.runtime?.dryRun,
-  );
-
-  // Native finish phase (design 4.1). Must precede runtime.close(), whose own
-  // comment below says it drains the cost aggregator and aborts the signal —
-  // after it, finish's spend never reaches totalCost and its deadline signal
-  // is already fired. Fail-open: a finish that cannot run never fails a run
-  // whose stories all passed.
-  const workflowPassed = await runEndPhase(options, _runnerCompletionDeps);
+  const { advisoryFindings, mutationSummaries, endReport } = await finishRun(options, completionResult, logger);
+  const { workflowPassed } = endReport;
+  durationMs = endReport.durationMs;
 
   // Finish mutates postRun in memory and can add successful or failed-dispatch
   // spend. Persist both status paths and return the same reconciled total.
@@ -486,6 +434,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
       startedAt: options.startedAt,
       completedAt: runCompletedAt,
       formatterMode: options.formatterMode,
+      ...endReport.footer,
     });
   }
 
@@ -528,4 +477,96 @@ async function persistFinishStatus(
     });
   }
   return finalTotal;
+}
+
+/**
+ * Everything between handleRunCompletion and the run footer: final feature status, advisory and mutation
+ * warnings, the dirty-file auto-commit and the end phase. In workflow mode `run.complete` is held back by
+ * handleRunCompletion; the gate guarantees it is written exactly once, with the timing so far, even if
+ * something in here rejects before the feature workflow is closed (nax#2491).
+ */
+async function finishRun(
+  options: RunnerCompletionOptions,
+  completionResult: RunCompletionResult,
+  logger: ReturnType<typeof getSafeLogger>,
+) {
+  const gate = createRunCompleteGate(completionResult.logRunComplete);
+  try {
+    // Write feature-level status (SFC-002).
+    // Use reportedTotal (cost-aggregator-corrected) instead of the legacy
+    // options.totalCost accumulator, which drops acceptance/review/diagnosis
+    // spend (issue #909).
+    if (options.featureDir) {
+      await writeFinalFeatureStatus({
+        featureDir: options.featureDir,
+        statusWriter: options.statusWriter,
+        pluginGateFailed: completionResult.pluginGateFailed,
+        exitReason: options.exitReason,
+        prd: options.prd,
+        reportedTotal: completionResult.reportedTotal,
+        iterations: options.iterations,
+        mcpAdoption: completionResult.mcpAdoption,
+      });
+    }
+
+    // §2.1 — surface non-blocking (sub-threshold) review findings accumulated this run.
+    // Without this, real findings below `blockingThreshold` are only visible in a
+    // per-story debug log line and the on-disk `.nax/review-audit/` trail.
+    const advisoryFindings = options.runtime?.reviewAuditor?.getAdvisoryFindings() ?? [];
+    if (advisoryFindings.length > 0) {
+      const coverageGapCount = advisoryFindings.filter((f) => f.coverageGap).length;
+      logger?.warn("review", `${advisoryFindings.length} non-blocking review finding(s) surfaced at run end`, {
+        storyId: "_run",
+        count: advisoryFindings.length,
+        coverageGapCount,
+        findings: advisoryFindings,
+      });
+    }
+
+    const mutationSummaries = [...(options.runtime?.mutationSummaries?.values() ?? [])];
+    const survivorCount = mutationSummaries.reduce((count, summary) => count + summary.survivors.length, 0);
+    if (survivorCount > 0) {
+      logger?.warn("mutation-check", "Surviving mutants detected at run end", {
+        storyId: "_run",
+        survivorCount,
+      });
+    }
+
+    // Stop heartbeat before finish so stale execution totals cannot overwrite
+    // the final status snapshot.
+    stopHeartbeat();
+
+    // Commit status.json and any other nax runtime files left dirty at run end
+    logger?.debug("execution", "Completion phase — auto-committing dirty files");
+    await autoCommitIfDirty(
+      options.workdir,
+      "run.complete",
+      "run-summary",
+      options.feature,
+      options.runtime?.dirtyWorktrees,
+      options.runtime?.dryRun,
+    );
+
+    // Native finish phase (design 4.1). Must precede runtime.close(), whose own
+    // comment below says it drains the cost aggregator and aborts the signal —
+    // after it, finish's spend never reaches totalCost and its deadline signal
+    // is already fired. Fail-open: a finish that cannot run never fails a run
+    // whose stories all passed.
+    const endReport = await runEndPhaseReported(options, _runnerCompletionDeps, completionResult, {
+      now: _runnerCompletionDeps.now,
+      gate,
+    });
+    return { advisoryFindings, mutationSummaries, endReport };
+  } finally {
+    gate.ensureSafely(() => {
+      const durationMs = _runnerCompletionDeps.now() - options.startTime;
+      return {
+        durationMs,
+        storiesDurationMs: durationMs,
+        featureWorkflowDurationMs: 0,
+        totalCost: completionResult.reportedTotal,
+        workflowPassed: false,
+      };
+    });
+  }
 }

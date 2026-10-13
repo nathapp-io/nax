@@ -14,6 +14,7 @@ export {
   type CostStory,
   toCostReport,
 } from "./report";
+export { type RunDurationPatch, updateRunMetricsDuration } from "./run-duration";
 export {
   collectBatchMetrics,
   collectStoryMetrics,

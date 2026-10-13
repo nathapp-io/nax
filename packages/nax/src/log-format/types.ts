@@ -53,6 +53,35 @@ export interface RunSummary {
   startedAt: string;
   /** Run completion timestamp */
   completedAt?: string;
+  /** Workflow mode: the part of `durationMs` spent in the story loops. */
+  storiesDurationMs?: number;
+  /** Workflow mode: the part of `durationMs` spent in the feature workflow (gates, branch review/fix, publish). */
+  featureWorkflowDurationMs?: number;
+  /** Workflow mode: the workflow section printed under the summary. */
+  workflow?: WorkflowSummaryView;
+}
+
+/** Tokens and cost of one workflow role, summed over the run. */
+export interface WorkflowRoleUsage {
+  role: string;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+  calls: number;
+}
+
+/** What the end-of-run summary shows for a workflow-mode run (nax#2491 P5). */
+export interface WorkflowSummaryView {
+  storiesDurationMs: number;
+  featureWorkflowDurationMs: number;
+  roles: readonly WorkflowRoleUsage[];
+  stories: readonly { id: string; rounds: number; maxRounds: number; state?: string }[];
+  /** Absent when the feature workflow never ran. */
+  branch?: { found: number; fixed: number; left: number; minorsLeft: number } | undefined;
+  /** The feature workflow ran but its branch review did not. */
+  branchReviewSkipped?: { minorsLeft: number } | undefined;
+  finalGates?: "green" | "red" | undefined;
+  publish?: { outcome: string; url?: string; reasons: readonly string[] } | undefined;
 }
 
 /**
