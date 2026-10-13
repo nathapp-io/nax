@@ -5,6 +5,7 @@ import type { PreflightFile } from "./preflight";
 import type {
   FeatureCiState,
   FeatureOutcome,
+  OpenItem,
   RepoGateSummary,
   StorySummary,
   WorkflowFindingDraft,
@@ -24,6 +25,8 @@ export interface WorkflowPrBodyFacts {
   /** Excerpts of the failing final gates (nax#2484), shown under the gates line when they are red. */
   readonly finalGateFindings?: readonly WorkflowFindingDraft[];
   readonly assumptions: readonly { readonly storyId: string; readonly text: string }[];
+  /** What is still open on the feature (#2496); drives the "Before marking ready" section. */
+  readonly openItems: readonly OpenItem[];
 }
 
 export interface WorkflowPrBodyInput extends WorkflowPrBodyFacts {
@@ -92,10 +95,41 @@ function gateExcerpts(input: WorkflowPrBodyInput): string {
   return (input.finalGateFindings ?? []).map((f) => `\n\n${fenced(f.issue)}`).join("");
 }
 
+/** Open items are shown in full: a human acts on them, so nothing is truncated (#2496). */
+const FULL_TEXT = Number.MAX_SAFE_INTEGER;
+
+function openItemLine(item: OpenItem): string {
+  const where = item.file
+    ? ` \`${escapeInline(item.file, FULL_TEXT)}${item.line !== undefined ? `:${item.line}` : ""}\``
+    : "";
+  const tags = (item.severity ? [item.severity, item.kind] : [item.kind]).join(", ");
+  return [
+    `- [ ] **${escapeInline(item.id, FULL_TEXT)}** (${tags})${where} — ${escapeInline(item.issue, FULL_TEXT)}`,
+    ...(item.suggestion ? [`  Suggestion: ${escapeInline(item.suggestion, FULL_TEXT)}`] : []),
+    ...(item.ruling ? [`  Advisor: ${item.ruling.action} — ${escapeInline(item.ruling.why, FULL_TEXT)}`] : []),
+  ].join("\n");
+}
+
+function beforeReady(input: WorkflowPrBodyInput): string | null {
+  if (input.outcome === "ready" || input.openItems.length === 0) return null;
+  const shown = input.openItems.slice(0, ROW_CAP).map(openItemLine);
+  const hidden = input.openItems.length - shown.length;
+  return [
+    "## Before marking ready",
+    "",
+    ...shown,
+    ...(hidden > 0 ? [`- …and ${hidden} more, see result.json verdict.openItems`] : []),
+    "",
+    "Then: rerun the repo gates, push, and run `gh pr ready`.",
+  ].join("\n");
+}
+
 export function buildWorkflowPrBody(input: WorkflowPrBodyInput): string {
+  const ready = beforeReady(input);
   return [
     `## Summary\n\n${summary(input)}`,
     `## Stories\n\n${storiesTable(input.stories)}`,
+    ...(ready ? [ready] : []),
     `## Pre-flight rulings\n\n${list(preflightLines(input.preflight))}`,
     `## Advisor decisions\n\n${buildAdvisorSection([...input.decisions]) ?? NONE}`,
     `## Parked findings\n\n${list(input.rulings.map((r) => `${r.findingId ?? "?"} ${r.action}: ${r.text} — ${r.why}`))}`,
