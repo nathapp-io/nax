@@ -29,6 +29,7 @@ import {
 import { _runnerDeps, _runnerReentrancyGuard, _storyOrchestratorDeps, type RunOptions, run } from "@/execution";
 import type { RunnerSetupResult } from "@/execution/runner-setup";
 import type { PRD } from "@/prd";
+import { RunStateKeeper } from "@/runstate";
 import { SessionManager } from "@/session";
 import { _gitDeps } from "@/utils/git";
 
@@ -95,6 +96,8 @@ beforeEach(() => {
   origRecordGreen = _storyOrchestratorDeps.recordGreen;
   origGitSpawn = _gitDeps.spawn;
   origRunnerDeps = { ..._runnerDeps };
+  // #2497: keep the run-state keeper off the real filesystem.
+  _runnerDeps.activateRunState = async () => ({ keeper: new RunStateKeeper("r", "f"), deactivate: () => {} });
   _runnerReentrancyGuard.inFlight = false;
   _gitDeps.spawn = makeSpawn().spawn;
 });

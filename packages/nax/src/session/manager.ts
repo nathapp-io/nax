@@ -17,17 +17,13 @@ import { NaxError } from "../errors";
 import type { PidRegistry } from "../execution/pid-registry";
 import { getLogger } from "../logger";
 import { decideReuse } from "./endpoint-identity";
-import {
-  buildLoopHandlerTurnOpts,
-  LOOP_HANDLERS_NATIVE_ONLY_MESSAGE,
-  shouldLogNativeOnlyScope,
-} from "./loop-handler-forwarding";
 import { _sessionManagerDeps, persistDescriptor, resolveProjectDirFromScratchDir } from "./manager-deps";
 import { DEFAULT_ORPHAN_TTL_MS, sweepOrphansImpl } from "./manager-sweep";
 import { selectModel } from "./model-selection";
 import { formatSessionName } from "./naming";
 import { openSessionExtras } from "./open-session-extras";
 import { selectNativeTurnConfig } from "./turn-config-selection";
+import { type AfterTurnHook, TurnHooks } from "./turn-hooks";
 import type {
   CreateSessionOptions,
   ISessionManager,
@@ -88,8 +84,8 @@ export class SessionManager implements ISessionManager {
    * then, and for a manager no run setup ever configured.
    */
   private _loopHandlers: LoopHandlerSet = NO_LOOP_HANDLERS;
-  /** Whether the native-only scope line has already been logged for this manager. */
-  private _loopHandlerScopeLogged = false;
+  /** Per-turn loop-handler delivery and the afterTurn hook (#2497). */
+  private readonly _turnHooks = new TurnHooks();
   /**
    * Watchdog-invoked cancels, per session — populated by the wrapped
    * `onActiveCall` cancel closure; consumed when the adapter surfaces
@@ -119,7 +115,10 @@ export class SessionManager implements ISessionManager {
      * per-call callback needed).
      */
     agentStreamEvents?: import("../runtime/agent-stream-events").IAgentStreamEventBus;
+    /** Awaited after every turn (success or error); failures are swallowed (#2497). */
+    afterTurn?: AfterTurnHook;
   }): void {
+    if (opts.afterTurn) this._turnHooks.setAfterTurn(opts.afterTurn);
     if (opts.getAdapter) this._getAdapter = opts.getAdapter;
     if (opts.config) this._config = opts.config;
     if (opts.pidRegistry) this._pidRegistry = opts.pidRegistry;
@@ -571,15 +570,7 @@ export class SessionManager implements ISessionManager {
       );
     }
 
-    // US-004: deliver the run's plugin loop handlers to this turn. A session on
-    // any other agent gets neither key, and a non-empty set reaching a
-    // non-native session is worth saying once — the native loop is the only
-    // consumer, so those handlers can never fire here.
-    const loopHandlerOpts = buildLoopHandlerTurnOpts({ handle, descriptor: terminalDesc, set: this._loopHandlers });
-    if (shouldLogNativeOnlyScope(this._loopHandlers, handle, this._loopHandlerScopeLogged)) {
-      this._loopHandlerScopeLogged = true;
-      getLogger().info("plugins", LOOP_HANDLERS_NATIVE_ONLY_MESSAGE, { sessionName: handle.id });
-    }
+    const loopHandlerOpts = this._turnHooks.loopHandlerOpts(handle, terminalDesc, this._loopHandlers);
 
     this._busySessions.add(handle.id);
 
@@ -617,6 +608,7 @@ export class SessionManager implements ISessionManager {
       // call is complete (success or error), and single-flight is per session.
       this._watchdogCancels.clear(handle.id);
       this._busySessions.delete(handle.id);
+      await this._turnHooks.afterTurn(terminalDesc, handle.id); // #2497 run-state repair
     }
   }
 
