@@ -17,6 +17,7 @@ import { NAX_COMMIT, NAX_VERSION } from "../version";
 import type { AdviceAuditRecord } from "./audit";
 import { writeAdviceAudit } from "./audit";
 import { adviseBatch, type BatchRequest, type BatchResult } from "./batch";
+import { type HeadsUpOutcome, logAdvisorDecision } from "./decision-log";
 import { ladderModels } from "./ladder";
 import { appendDecision, readTrustedDecisions } from "./ledger";
 import {
@@ -192,7 +193,7 @@ async function adviseOnce(actx: AdvisorCallContext, draft: QuestionDraft, severi
     ? await deliverHeadsUp(actx, result.decision, asked.question)
     : { sent: false, reason: "no-decision" };
   await writeAuditSafe(actx, { asked, run, result, costUsd, headsUp });
-  logOutcome(asked.question, result);
+  logOutcome(asked.question, result, headsUp);
   return result;
 }
 
@@ -223,16 +224,11 @@ async function adviseSafely(actx: AdvisorCallContext, draft: QuestionDraft, seve
   }
 }
 
-function logOutcome(question: AdviceQuestion, result: AdviceResult): void {
+function logOutcome(question: AdviceQuestion, result: AdviceResult, headsUp: HeadsUpOutcome): void {
   const logger = getSafeLogger();
   const base = { storyId: question.storyId ?? "_run", questionId: question.id, kind: question.kind };
   if (result.decision) {
-    logger?.info("advisor", "Advisor decided", {
-      ...base,
-      decisionId: result.decision.id,
-      action: result.decision.action.type,
-      needsHumanConfirm: result.decision.needsHumanConfirm,
-    });
+    logAdvisorDecision(result.decision, headsUp);
   } else {
     logger?.warn("advisor", "Advisor fell back — caller keeps today's behaviour", {
       ...base,
@@ -266,6 +262,7 @@ async function recordReuseImpl(
       costUsd: 0,
       headsUp: { sent: false, reason: "reused" },
     });
+    logAdvisorDecision(decision, { sent: false, reason: "reused" });
     return decision;
   } catch (err) {
     getSafeLogger()?.warn("advisor", "Reusing an advisor decision failed", {

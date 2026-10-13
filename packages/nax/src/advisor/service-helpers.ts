@@ -118,7 +118,8 @@ export async function deliverHeadsUp(
     actx.queueHeadsUp(question.storyId, text);
     return { sent: false, reason: "queued-for-stage" };
   }
-  getSafeLogger()?.warn("advisor", "Flagged advisor decision has no delivery channel", {
+  // The ruling's own log line says "flagged, no delivery channel" (nax#2491 P4); this stays for the JSONL only.
+  getSafeLogger()?.debug("advisor", "Flagged advisor decision has no delivery channel", {
     storyId: question.storyId ?? "_run",
     decisionId: decision.id,
   });

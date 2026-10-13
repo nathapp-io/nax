@@ -540,7 +540,8 @@ export async function loadCanonicalRules(
   });
   const warningThreshold = Math.floor(options.budgetTokens * RULES_BUDGET_WARNING_RATIO);
   if (budgetResult.totalTokens >= warningThreshold) {
-    logger.warn("canonical-loader", "Canonical rules are approaching/exceeding budget", {
+    // warnOnce: every story re-reads the same rules, so the same warning would repeat per story (nax#2491 P7).
+    logger.warnOnce("canonical-loader", "Canonical rules are approaching/exceeding budget", {
       fileCount: rules.length,
       totalTokens: budgetResult.totalTokens,
       budgetTokens: options.budgetTokens,
@@ -549,7 +550,7 @@ export async function loadCanonicalRules(
     });
   }
   if (budgetResult.droppedCount > 0) {
-    logger.warn("canonical-loader", "Canonical rules truncated by budget (tail-biased by priority)", {
+    logger.warnOnce("canonical-loader", "Canonical rules truncated by budget (tail-biased by priority)", {
       droppedCount: budgetResult.droppedCount,
       keptCount: budgetResult.rules.length,
       totalTokens: budgetResult.totalTokens,

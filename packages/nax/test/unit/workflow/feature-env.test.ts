@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { cleanupTempDir, makeFeatureContext, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeFeatureContext, makeScriptedCallOp, makeTempDir } from "@test/helpers";
 import type { Advisor } from "@/advisor";
+import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import { buildFeatureEnv } from "@/workflow/feature-env";
 import { newFeatureRecord } from "@/workflow/feature-record";
 import { readResult } from "@/workflow/result";
@@ -22,11 +24,11 @@ const noDecisions: Advisor = {
   adviseBatch: async () => ({ kind: "residual", items: [], diagnoses: {} }),
 };
 
-function setup() {
+function setup(over: (runDir: string) => Parameters<typeof makeFeatureContext>[0] = () => ({})) {
   const runDir = makeTempDir("wf-env-");
   dirs.push(runDir);
   _workflowDeps.createAdvisor = () => noDecisions;
-  const fc = makeFeatureContext({ runDir });
+  const fc = makeFeatureContext({ runDir, ...over(runDir) });
   const blocks: unknown[] = [];
   const env = buildFeatureEnv(
     fc,
@@ -55,6 +57,40 @@ function setup() {
   );
   return { fc, env, blocks };
 }
+
+describe("buildFeatureEnv step wiring (nax#2491 P6, P8)", () => {
+  test("the branch fix reports repeated tool errors after the step, and names its model", async () => {
+    resetLogger();
+    const logs: LogEntry[] = [];
+    initLogger({ level: "silent" });
+    addSink((entry) => logs.push(entry));
+    try {
+      const { fc, env } = setup((runDir) => ({
+        outputDir: join(runDir, "out"),
+        reportPath: join(runDir, "feature-report.md"),
+      }));
+      const audit = join(fc.outputDir, "tool-audit", fc.feature);
+      _workflowDeps.git = async () => ({ stdout: "", exitCode: 0 });
+      _workflowDeps.callOp = makeScriptedCallOp(() => {
+        const edit = { tool: "Edit", outcome: "error", input: { file_path: "src/a.ts" } };
+        mkdirSync(audit, { recursive: true });
+        writeFileSync(
+          join(audit, `${fc.runId}-${Date.now() + 5}-s.json`),
+          JSON.stringify({ calls: [edit, edit, edit] }),
+        );
+        return { status: "DONE", commits: [], testSummary: "", interrupted: false };
+      });
+      await env.steps.branchFix([{ id: "B1", kind: "quality", severity: "important", issue: "x" }]);
+      expect(env.steps.modelFor?.("branch-fix")).toMatchObject({
+        agentName: expect.any(String),
+        model: expect.any(String),
+      });
+      expect(logs.map((e) => e.message)).toContain("branch-fix: 3 Edit errors on src/a.ts, then gave up");
+    } finally {
+      resetLogger();
+    }
+  });
+});
 
 describe("buildFeatureEnv", () => {
   test("sink.update writes featureWorkflow into this run's result.json, keeping prior tokens", async () => {

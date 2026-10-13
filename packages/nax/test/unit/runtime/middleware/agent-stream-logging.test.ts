@@ -188,7 +188,9 @@ describe("attachAgentStreamLogging", () => {
     const entries = await parseAllEntries(logFile);
     const endedEntry = entries.find((e) => e.message === "Agent call ended");
     assertDefined(endedEntry, "endedEntry");
-    expect(endedEntry.level).toBe("info");
+    // nax#2491 P7: the end of a call is ONE info line (middleware "Agent call complete", which folds these
+    // counters in); the stream's own record stays in the JSONL at debug.
+    expect(endedEntry.level).toBe("debug");
     expect(endedEntry.data).toMatchObject({
       storyId: "s-42",
       callId: "call-001",

@@ -1,5 +1,6 @@
 import { getSafeLogger } from "@/logger";
 import type { IAgentStreamEventBus } from "@/runtime";
+import { noteCallEnded } from "./call-end-stats";
 
 interface CallTrackingState {
   callId: string;
@@ -86,7 +87,16 @@ export function attachAgentStreamLogging(bus: IAgentStreamEventBus, runId: strin
         const state = activeCalls.get(event.callId);
         if (state) {
           const idleMs = event.timestamp - state.lastActivityAt;
-          getSafeLogger()?.info("agent-stream", "Agent call ended", {
+          // The info line for the end of a call is the dispatch "Agent call complete" (nax#2491 P7); it folds
+          // these counters in. This record stays in the JSONL at debug.
+          noteCallEnded(event.sessionName, {
+            status: event.status,
+            messageUpdates: state.messageUpdates,
+            thinkingUpdates: state.thinkingUpdates,
+            toolCallUpdates: state.toolCallUpdates,
+            idleMs,
+          });
+          getSafeLogger()?.debug("agent-stream", "Agent call ended", {
             storyId: state.storyId,
             runId,
             callId: state.callId,

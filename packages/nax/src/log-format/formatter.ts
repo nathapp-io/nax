@@ -149,6 +149,59 @@ function formatRunStart(entry: LogEntry, c: ChalkLike, timestamp: string, _mode:
   };
 }
 
+/** The tier segment of the story header: `fast -> native·model` once the tier has resolved to a model (nax#2491 P6). */
+function tierSegment(tier: string, agent: string | undefined, model: string | undefined): string[] {
+  if (agent && model) return [`${tier} -> ${agent}·${model}`];
+  return agent ? [tier, agent] : [tier];
+}
+
+interface StoryStartFields {
+  readonly complexity: string;
+  readonly tier: string;
+  readonly attempt: number;
+  readonly agent: string | undefined;
+  readonly model: string | undefined;
+  readonly progress: string | undefined;
+}
+
+function storyStartFields(data: Record<string, unknown>): StoryStartFields {
+  return {
+    complexity: typeof data.complexity === "string" ? data.complexity : "unknown",
+    tier: typeof data.modelTier === "string" ? data.modelTier : "unknown",
+    attempt: typeof data.attempt === "number" ? data.attempt : 1,
+    agent: typeof data.agent === "string" ? data.agent : undefined,
+    model: typeof data.model === "string" ? data.model : undefined,
+    progress:
+      typeof data.storyNumber === "number" && typeof data.storyTotal === "number"
+        ? `${data.storyNumber}/${data.storyTotal}`
+        : undefined,
+  };
+}
+
+function verboseStartLines(f: StoryStartFields, c: ChalkLike): string[] {
+  const lines: string[] = [];
+  if (f.progress) lines.push(`  ${c.gray("├─")} Story: ${c.cyan(f.progress)}`);
+  lines.push(`  ${c.gray("├─")} Complexity: ${c.yellow(f.complexity)}`);
+  lines.push(`  ${c.gray("├─")} Tier: ${c.magenta(f.tier)}`);
+  if (f.agent) lines.push(`  ${c.gray("├─")} Agent: ${c.cyan(f.model ? `${f.agent}·${f.model}` : f.agent)}`);
+  lines.push(
+    f.attempt > 1
+      ? `  ${c.gray("└─")} Attempt: ${c.yellow(`#${f.attempt}`)} ${EMOJI.retry}`
+      : `  ${c.gray("└─")} Status: ${c.green("starting")}`,
+  );
+  return lines;
+}
+
+function compactStartLine(f: StoryStartFields, c: ChalkLike): string {
+  const metadata = [
+    ...(f.progress ? [f.progress] : []),
+    f.complexity,
+    ...tierSegment(f.tier, f.agent, f.model),
+    ...(f.attempt > 1 ? [`attempt #${f.attempt} ${EMOJI.retry}`] : []),
+  ];
+  return `  ${c.gray(metadata.join(" • "))}`;
+}
+
 /**
  * Format story start event
  */
@@ -158,37 +211,13 @@ function formatStoryStart(entry: LogEntry, c: ChalkLike, _timestamp: string, mod
   // ANSI/control chars before interpolating into a chalk-colorized line.
   const storyId = stripControlChars(String(data.storyId || entry.storyId || "unknown"));
   const title = stripControlChars(String(data.storyTitle || data.title || "Untitled story"));
-  const complexity = typeof data.complexity === "string" ? data.complexity : "unknown";
-  const tier = typeof data.modelTier === "string" ? data.modelTier : "unknown";
-  const attempt = typeof data.attempt === "number" ? data.attempt : 1;
-  const agent = typeof data.agent === "string" ? data.agent : undefined;
-  const progress =
-    typeof data.storyNumber === "number" && typeof data.storyTotal === "number"
-      ? `${data.storyNumber}/${data.storyTotal}`
-      : undefined;
+  const fields = storyStartFields(data);
 
   const lines: string[] = [];
   lines.push("");
   lines.push(c.bold(`${EMOJI.storyStart} ${c.cyan(storyId)}: ${title}`));
-
-  if (mode === "verbose") {
-    if (progress) lines.push(`  ${c.gray("├─")} Story: ${c.cyan(progress)}`);
-    lines.push(`  ${c.gray("├─")} Complexity: ${c.yellow(complexity)}`);
-    lines.push(`  ${c.gray("├─")} Tier: ${c.magenta(tier)}`);
-    if (agent) lines.push(`  ${c.gray("├─")} Agent: ${c.cyan(agent)}`);
-    if (attempt > 1) {
-      lines.push(`  ${c.gray("└─")} Attempt: ${c.yellow(`#${attempt}`)} ${EMOJI.retry}`);
-    } else {
-      lines.push(`  ${c.gray("└─")} Status: ${c.green("starting")}`);
-    }
-  } else {
-    const metadata: string[] = [];
-    if (progress) metadata.push(progress);
-    metadata.push(complexity, tier);
-    if (agent) metadata.push(agent);
-    if (attempt > 1) metadata.push(`attempt #${attempt} ${EMOJI.retry}`);
-    lines.push(`  ${c.gray(metadata.join(" • "))}`);
-  }
+  if (mode === "verbose") lines.push(...verboseStartLines(fields, c));
+  else lines.push(compactStartLine(fields, c));
 
   return {
     output: lines.join("\n"),

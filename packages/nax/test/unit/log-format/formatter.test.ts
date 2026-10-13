@@ -189,6 +189,23 @@ describe("formatLogEntry — story start enrichment", () => {
     expect(out).toContain("fast");
   });
 
+  test("names the resolved model after the tier when the announcement carries one (nax#2491 P6)", () => {
+    const out = storyStart({
+      complexity: "medium",
+      modelTier: "fast",
+      agent: "native",
+      model: "model-a",
+      storyNumber: 4,
+      storyTotal: 7,
+    });
+    expect(out).toContain("4/7 • medium • fast -> native·model-a");
+  });
+
+  test("without a model the header is unchanged", () => {
+    const out = storyStart({ complexity: "medium", modelTier: "fast", agent: "native", storyNumber: 4, storyTotal: 7 });
+    expect(out).toContain("4/7 • medium • fast • native");
+  });
+
   test("omits progress counter when counts are absent", () => {
     const out = storyStart({ complexity: "complex", modelTier: "fast" });
     expect(out).not.toContain("/");

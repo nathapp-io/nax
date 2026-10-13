@@ -19,9 +19,11 @@ import { workflowFeatureDir, workflowRunDir, workflowStoryDir } from "./paths";
 import { runReReview } from "./re-review";
 import { loadPriorStory, newStoryRecord, upsertStoryRecord } from "./result";
 import { _workflowDeps, type StepContext } from "./step-context";
-import type { StoryLoopEnv, StoryLoopSteps } from "./story-loop";
+import { storyModelFor } from "./step-model";
+import { type StoryLoopEnv, type StoryLoopSteps, turnLabel } from "./story-loop";
 import { runStoryReview } from "./story-review";
 import { addRoleTokens } from "./tokens";
+import { withToolErrorOutcome } from "./tool-error-outcome";
 import type { WorkflowStoryRecord } from "./types";
 
 function timed<A extends unknown[], R>(
@@ -100,14 +102,26 @@ export async function buildStoryEnv(
     record = { ...record, timings: { ...record.timings, [step]: (record.timings[step] ?? 0) + ms } };
   };
   const costLimit = ctx.rootConfig.execution.costLimit;
+  // nax#2491 P8: after an agent step, say what became of any session's repeated tool errors.
+  const toolErrors = <T>(label: string, run: () => Promise<T>): Promise<T> =>
+    withToolErrorOutcome(
+      { outputDir, feature, runId, storyId: ctx.story.id, now: () => _workflowDeps.now() },
+      `${ctx.story.id} ${label}`,
+      run,
+    );
   const steps: StoryLoopSteps = {
-    implement: timed("implement", addTiming, (turn) => runImplementerTurn(sc, turn)),
+    implement: timed("implement", addTiming, (turn) => toolErrors(turnLabel(turn), () => runImplementerTurn(sc, turn))),
     gates: timed("gates", addTiming, () => runStoryGates(sc)),
     fullSuite: timed("full-suite", addTiming, () => runWorkflowSuiteGate(sc)),
-    storyReview: timed("story-review", addTiming, (concerns) => runStoryReview(sc, concerns)),
-    reReview: timed("re-review", addTiming, (round, findings, fixBase) => runReReview(sc, round, findings, fixBase)),
+    storyReview: timed("story-review", addTiming, (concerns) =>
+      toolErrors("story-review", () => runStoryReview(sc, concerns)),
+    ),
+    reReview: timed("re-review", addTiming, (round, findings, fixBase) =>
+      toolErrors(`re-review r${round}`, () => runReReview(sc, round, findings, fixBase)),
+    ),
     head: () => readHead(sc.projectDir),
     uncommitted: () => listUncommitted(sc.projectDir),
+    modelFor: storyModelFor(sc),
     costExceeded: () =>
       typeof costLimit === "number" &&
       costLimit > 0 &&

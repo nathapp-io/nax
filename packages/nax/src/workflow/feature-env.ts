@@ -15,7 +15,9 @@ import { runRepoGates } from "./repo-gates";
 import { upsertFeatureRecord } from "./result";
 import { workflowStatusBlock } from "./status-block";
 import { _workflowDeps } from "./step-context";
+import { featureModelFor } from "./step-model";
 import { addRoleTokens, type TokenMeter } from "./tokens";
+import { withToolErrorOutcome } from "./tool-error-outcome";
 import type { StorySummary, WorkflowFeatureRecord } from "./types";
 
 export interface FeatureEnvInput {
@@ -42,12 +44,28 @@ export function buildFeatureEnv(fc: FeatureContext, input: WorkflowFeatureInput,
   const live = createLiveWorkflowAdvisor({ advisor, feature: fc.feature, dependents: [] });
   const ledger = (text: string, options?: LedgerWriteOptions) => appendLedger(fc.runDir, FEATURE_SCOPE, text, options);
   const preflightFile = ctx.preflight?.file ?? null;
+  // nax#2491 P8: after an agent step, say what became of any session's repeated tool errors.
+  const toolErrors = <T>(label: string, run: () => Promise<T>): Promise<T> =>
+    withToolErrorOutcome(
+      {
+        outputDir: fc.outputDir,
+        feature: fc.feature,
+        runId: fc.runId,
+        storyId: FEATURE_SCOPE,
+        now: () => _workflowDeps.now(),
+      },
+      label,
+      run,
+    );
   const steps: FeatureSteps = {
     repoGates: () => runRepoGates(fc),
     branchReview: (seed, facts) =>
-      runBranchReview(fc, { seed, ...spec, ...(ctx.preflight ? { preflightPath: ctx.preflight.path } : {}), facts }),
-    branchFix: (findings) => runBranchFix(fc, { ...spec, findings }),
-    branchReReview: (findings, fixBase) => runBranchReReview(fc, { ...spec, findings, fixBase }),
+      toolErrors("branch-review", () =>
+        runBranchReview(fc, { seed, ...spec, ...(ctx.preflight ? { preflightPath: ctx.preflight.path } : {}), facts }),
+      ),
+    branchFix: (findings) => toolErrors("branch-fix", () => runBranchFix(fc, { ...spec, findings })),
+    branchReReview: (findings, fixBase) =>
+      toolErrors("branch-rereview", () => runBranchReReview(fc, { ...spec, findings, fixBase })),
     adjudicate: (items) => adjudicateResidual(live, { storyId: FEATURE_SCOPE, items, redGates: [] }, ledger),
     publish: (record) =>
       publish(fc, {
@@ -58,6 +76,7 @@ export function buildFeatureEnv(fc: FeatureContext, input: WorkflowFeatureInput,
         preflight: preflightFile,
       }),
     head: () => readHead(fc.projectDir),
+    modelFor: featureModelFor(fc),
   };
   const header = { runId: fc.runId, feature: fc.feature };
   const sink: FeatureSink = {

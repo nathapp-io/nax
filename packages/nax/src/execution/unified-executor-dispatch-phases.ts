@@ -34,7 +34,7 @@ import { getAllReadyStories } from "./helpers";
 import type { runIteration } from "./iteration-runner";
 import { reconcileRunCost } from "./run-cost-reconcile";
 import { closeStorySessions } from "./session-manager-runtime";
-import { logStoryStart } from "./story-announce";
+import { announcedModel, logStoryStart } from "./story-announce";
 import { selectNextStories } from "./story-selector";
 
 export const TERMINAL_ACTIONS = new Set(["fail", "skip", "pause"]);
@@ -181,6 +181,7 @@ export async function runSequentialDispatch(
     complexity: selection.routing.complexity ?? "unknown",
     modelTier,
     agent: seqAgent,
+    ...announcedModel(ctx.config, seqAgent, modelTier, ctx.agentManager?.getDefault()),
   });
 
   const iter = await deps.runIteration(ctx, prd, selection, iterations, totalCost, allStoryMetrics);

@@ -12,6 +12,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Run log: advisor rulings, resolved models, quieter gates, tool-error outcomes (nax#2491 P4, P6-P8).**
+  Every advisor decision logs one `advisor` info line, `Advisor ruling [<caller>] <story>: <ruling, about 200
+  characters> (confidence <c>)`, and a flagged decision that has no way to reach a human says so on that same
+  line (`; flagged, no delivery channel`) instead of a separate warning that named nothing. The end-of-feature
+  block lists the decisions under its count, or prints `Advisor decisions this feature: (none)`. The resolved
+  model is named on the story header (`4/7 • medium • fast -> native·<model>`, in pipeline mode too) and on
+  the start line of each workflow implementer, fix, story-review, re-review, branch-review, branch-fix and
+  branch-rereview step (`agentName` / `model`, rendered `native·<model>`), so a fix round that steps up a tier
+  shows the new model. A story's gates log ONE line, `US-004 gates lint ✓ 2.1s · typecheck ✓ 1.3s · scoped
+  tests ✓ 4.7s (12 tests)` (the count is tests passed; the scoped run does not report a file count), expanded
+  per gate with the findings when one is red; the quality runner's own `Running <gate>` / `<gate> completed`
+  pairs are debug inside the workflow gates. Warnings that every story repeated (canonical-rules budget,
+  feature-context budget, dependency-fragment budget, the cross-protocol tier resolution) warn once per run and
+  go to debug afterwards. The two agent-call end lines are one: `middleware Agent call complete` carries the
+  stream's status and activity counters, and `agent-stream Agent call ended` is debug. After a workflow agent
+  step whose session logged three or more identical tool errors (same tool, same Bash exit code, same target;
+  the tool audit does not store the error text) one line says what followed, for example `branch-fix: 4 Edit
+  errors on src/a.ts, then succeeded via Write` or `, then gave up`. That last line reads the tool audit after
+  a workflow step and is workflow-mode only.
 - **Pipeline mode: Duration includes the end phase (nax#2494).** `Duration` (footer, exit summary,
   `RunResult.durationMs`, `run.complete`, `metrics.json` `totalDurationMs`) used to stop before the end phase
   (finish, etc.), so pipeline and workflow runs measured different spans. Pipeline `Duration` now runs through
@@ -35,7 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   re-review addressed/not addressed, final gates, publish outcome). The end-of-run summary adds a workflow
   block built from `result.json`: tokens and cost by role, rounds per story, branch findings found / fixed /
   left, and the publish outcome. Advisor content on log lines, resolved models, gate-line and warning noise
-  reduction and the repeated-tool-error outcome line (P4, P6-P8 of the issue) are not part of this change.
+  reduction and the repeated-tool-error outcome line (P4, P6-P8 of the issue) followed in the next entry.
   In workflow mode the saved `metrics.json` record is rewritten after the feature workflow with the
   whole-run `totalDurationMs` plus `storiesDurationMs` and `featureWorkflowDurationMs`, and the `run.complete`
   line carries the final cost and a `success` that follows the workflow result. The `run:completed` event

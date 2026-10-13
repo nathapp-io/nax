@@ -15,7 +15,9 @@ import {
   type VerifyScopedOutput,
   verifyScopedOp,
 } from "@/operations";
+import { runQualityQuietly } from "@/quality";
 import { packageDirRelative } from "@/utils/paths";
+import { type GateReport, logGates } from "./gates-log";
 import { _workflowDeps, type StepContext } from "./step-context";
 import type { GateName, GateRunResult, GateState, WorkflowFindingDraft } from "./types";
 
@@ -27,6 +29,8 @@ const SUITE_SKIPPED = new Set(["skipped"]);
 interface OneGate {
   readonly state: GateState;
   readonly findings: readonly WorkflowFindingDraft[];
+  /** Shown on the gates log line next to a green gate. */
+  readonly note?: string;
 }
 
 function toDrafts(gate: GateName, findings: readonly Finding[]): WorkflowFindingDraft[] {
@@ -76,17 +80,43 @@ function combine(entries: readonly (readonly [GateName, OneGate])[]): GateRunRes
   };
 }
 
+/** Runs one gate inside the quiet-quality scope and times it for the gates line. */
+async function timedGate(
+  sc: StepContext,
+  name: GateName,
+  run: () => Promise<OneGate>,
+): Promise<readonly [GateName, OneGate, GateReport]> {
+  const start = _workflowDeps.now();
+  const gate = await runQualityQuietly(() => guarded(sc, name, run));
+  const report: GateReport = {
+    name,
+    state: gate.state,
+    ms: _workflowDeps.now() - start,
+    findings: gate.findings,
+    ...(gate.note ? { note: gate.note } : {}),
+  };
+  return [name, gate, report];
+}
+
+function finish(sc: StepContext, ran: readonly (readonly [GateName, OneGate, GateReport])[]): GateRunResult {
+  logGates(
+    sc.story.id,
+    ran.map(([, , report]) => report),
+  );
+  return combine(ran.map(([name, gate]) => [name, gate] as const));
+}
+
 export async function runStoryGates(sc: StepContext): Promise<GateRunResult> {
   // The ops resolve their own command (config, then manifest detection) and report
   // status "skipped" when none exists; never pre-skip here or a detected gate goes unrun.
   const checkInput = { workdir: sc.workdir, storyId: sc.story.id, sessionScratchDir: sc.sessionScratchDir };
-  const lint = await guarded(sc, "lint", async () =>
+  const lint = await timedGate(sc, "lint", async () =>
     fromCheck("lint", await _workflowDeps.callOp(sc.callCtx, lintCheckOp, checkInput)),
   );
-  const typecheck = await guarded(sc, "typecheck", async () =>
+  const typecheck = await timedGate(sc, "typecheck", async () =>
     fromCheck("typecheck", await _workflowDeps.callOp(sc.callCtx, typecheckCheckOp, checkInput)),
   );
-  const scoped = await guarded(sc, "scoped", async () => {
+  const scoped = await timedGate(sc, "scoped", async () => {
     const out: VerifyScopedOutput = await _workflowDeps.callOp(sc.callCtx, verifyScopedOp, {
       workdir: sc.workdir,
       storyId: sc.story.id,
@@ -98,21 +128,19 @@ export async function runStoryGates(sc: StepContext): Promise<GateRunResult> {
       resolvedTestPatterns: sc.resolvedTestPatterns,
       sessionScratchDir: sc.sessionScratchDir,
     });
-    if (out.status === "passed") return { state: "green", findings: [] };
+    if (out.status === "passed") {
+      return { state: "green", findings: [], ...(out.passCount > 0 ? { note: `(${out.passCount} tests)` } : {}) };
+    }
     if (out.status === "skipped") return { state: "skipped", findings: [] };
     return out.findings.length > 0
       ? { state: "red", findings: toDrafts("scoped", out.findings) }
       : redWithoutDetail("scoped", `scoped gate ${out.status} with no parsed findings`);
   });
-  return combine([
-    ["lint", lint],
-    ["typecheck", typecheck],
-    ["scoped", scoped],
-  ]);
+  return finish(sc, [lint, typecheck, scoped]);
 }
 
 export async function runWorkflowSuiteGate(sc: StepContext): Promise<GateRunResult> {
-  const suite = await guarded(sc, "full-suite", async () => {
+  const suite = await timedGate(sc, "full-suite", async () => {
     const out: FullSuiteGateOutput = await _workflowDeps.callOp(sc.callCtx, fullSuiteGateOp, {
       story: sc.story,
       workdir: sc.workdir,
@@ -127,5 +155,5 @@ export async function runWorkflowSuiteGate(sc: StepContext): Promise<GateRunResu
       ? { state: "red", findings: toDrafts("full-suite", out.findings) }
       : redWithoutDetail("full-suite", `full suite ${out.status} with no parsed failures`);
   });
-  return combine([["full-suite", suite]]);
+  return finish(sc, [suite]);
 }

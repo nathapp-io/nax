@@ -8,7 +8,7 @@ import { isFlaggedRuling, type WorkflowAdvisor } from "./advisor";
 import { deriveEndState } from "./close";
 import type { ImplementOutcome, ImplementTurn } from "./implement";
 import { type LedgerWriteOptions, ledgerText } from "./ledger";
-import { describeFindings, startStep } from "./run-log";
+import { describeFindings, type StepModel, startStep } from "./run-log";
 import type { ReviewOutcome } from "./story-review";
 import type {
   GateName,
@@ -38,6 +38,8 @@ export interface StoryLoopSteps {
   head(): Promise<string>;
   uncommitted(): Promise<string[]>;
   costExceeded(): boolean;
+  /** The model a step will run on, for its start line (nax#2491 P6). Optional: absent names none. */
+  modelFor?(step: "implementer" | "story-review" | "re-review", turn?: ImplementTurn): StepModel | undefined;
 }
 export interface StoryLoopSink {
   update(patch: Partial<WorkflowStoryRecord>): Promise<void>;
@@ -100,12 +102,12 @@ interface TurnOrigin {
   readonly limit: "implement" | "fix";
 }
 
-const turnLabel = (turn: ImplementTurn): string =>
+export const turnLabel = (turn: ImplementTurn): string =>
   turn.kind === "implement" ? "implementer" : turn.kind === "answer" ? "implementer answer" : `fix r${turn.round}`;
 
 /** One implementer call, labelled in the run log with its step and round (nax#2491 P2). */
 async function implementTurn(env: StoryLoopEnv, turn: ImplementTurn): Promise<ImplementOutcome> {
-  const step = startStep(env.storyId, turnLabel(turn));
+  const step = startStep(env.storyId, turnLabel(turn), { model: env.steps.modelFor?.("implementer", turn) });
   const out = await env.steps.implement(turn);
   step.done(out.failure ? `failed (${out.failure})` : (out.reply?.status ?? "no reply"));
   return out;
@@ -160,7 +162,7 @@ async function absorbTurn(
 
 async function review(env: StoryLoopEnv, s: LoopState): Promise<void> {
   if (!s.reviewed) {
-    const step = startStep(env.storyId, "story-review");
+    const step = startStep(env.storyId, "story-review", { model: env.steps.modelFor?.("story-review") });
     const out: ReviewOutcome<StoryReviewVerdict> = await env.steps.storyReview(s.concerns);
     s.reviewed = true;
     if (!out.ran) {
@@ -179,7 +181,7 @@ async function review(env: StoryLoopEnv, s: LoopState): Promise<void> {
     return;
   }
   if (s.reviewOpen.length === 0 || s.fixBase === undefined) return;
-  const step = startStep(env.storyId, `re-review r${s.round}`);
+  const step = startStep(env.storyId, `re-review r${s.round}`, { model: env.steps.modelFor?.("re-review") });
   const out: ReviewOutcome<ReReviewVerdict> = await env.steps.reReview(s.round, s.reviewOpen, s.fixBase);
   s.fixBase = undefined;
   if (!out.ran) {

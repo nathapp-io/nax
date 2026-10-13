@@ -12,6 +12,7 @@ import { NAX_COMMIT, NAX_VERSION } from "../version";
 import type { AdviceAuditRecord } from "./audit";
 import { writeAdviceAudit } from "./audit";
 import { preflightItems } from "./batch-preflight";
+import { logAdvisorDecision } from "./decision-log";
 import { ladderModels } from "./ladder";
 import { appendDecision, readTrustedDecisions } from "./ledger";
 import {
@@ -184,6 +185,7 @@ async function finishItem(a: AuditCtx, item: BatchItemResult, raw: unknown): Pro
       });
     }
   }
+  if (item.decision) logAdvisorDecision(item.decision, headsUp);
   try {
     await auditItem(a, item, raw, headsUp);
   } catch (err) {

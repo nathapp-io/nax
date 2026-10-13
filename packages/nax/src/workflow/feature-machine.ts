@@ -12,7 +12,7 @@ import type { PublishOutcome } from "./finalize";
 import { type LedgerWriteOptions, ledgerText } from "./ledger";
 import type { LedgerItem } from "./ledger-items";
 import type { RepoGateRun } from "./repo-gates";
-import { describeFindings, startStep } from "./run-log";
+import { describeFindings, type StepModel, startStep } from "./run-log";
 import type { ReviewOutcome } from "./story-review";
 import type {
   BranchReviewVerdict,
@@ -34,6 +34,8 @@ export interface FeatureSteps {
   adjudicate(items: readonly WorkflowFinding[]): Promise<readonly WorkflowRuling[]>;
   publish(record: WorkflowFeatureRecord): Promise<PublishOutcome>;
   head(): Promise<string>;
+  /** The model a step will run on, for its start line (nax#2491 P6). Optional: absent names none. */
+  modelFor?(step: "branch-review" | "branch-fix" | "branch-rereview"): StepModel | undefined;
 }
 
 export interface FeatureSink {
@@ -103,8 +105,8 @@ function reviewFacts(env: FeatureEnv, rec: WorkflowFeatureRecord): BranchReviewF
 }
 
 /** Wall-clock timing for the log only; the record's `timings` keep using `env.now`. */
-const featureStep = (label: string, announce = true, bare = false) =>
-  startStep(FEATURE_SCOPE, label, { announce, bare });
+const featureStep = (label: string, announce = true, bare = false, model?: StepModel) =>
+  startStep(FEATURE_SCOPE, label, { announce, bare, model });
 
 const gatesText = (failing: readonly string[]): string =>
   failing.length > 0 ? `red (${failing.join(", ")})` : "green";
@@ -133,7 +135,7 @@ async function branchReviewStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Pr
     await env.sink.ledger(ledgerText.reviewSkipped("branch review: no seed"), NO_MIRROR);
     return { reviewRan: false, step: "branch-fix" };
   }
-  const log = featureStep("branch-review");
+  const log = featureStep("branch-review", true, false, env.steps.modelFor?.("branch-review"));
   const out = await env.steps.branchReview(rec.seed, reviewFacts(env, rec));
   if (!out.ran) {
     log.done(`skipped (${out.why})`);
@@ -163,7 +165,7 @@ async function branchFixStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Promi
     ledgerText.note(`branch fix: ${toFix.length} item(s): ${toFix.map((f) => f.id).join(", ")}`),
     NO_MIRROR,
   );
-  const log = featureStep("branch-fix");
+  const log = featureStep("branch-fix", true, false, env.steps.modelFor?.("branch-fix"));
   const out = await env.steps.branchFix(toFix);
   log.done(`${toFix.map((f) => f.id).join(" ")}${out.failure ? ` (session failed: ${out.failure})` : ""}`);
   if (out.failure) await env.sink.ledger(ledgerText.note(`branch fix session failed: ${out.failure}`), NO_MIRROR);
@@ -190,7 +192,7 @@ function reReviewText(
 async function branchReReviewStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Promise<Patch> {
   const items = [...rec.reviewOpen, ...fixNowMinors(rec)];
   if (items.length === 0 || !rec.fixBase) return { step: "adjudicate" };
-  const log = featureStep("branch-rereview");
+  const log = featureStep("branch-rereview", true, false, env.steps.modelFor?.("branch-rereview"));
   const out = await env.steps.branchReReview(items, rec.fixBase);
   if (!out.ran) {
     log.done(`skipped (${out.why})`);

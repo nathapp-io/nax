@@ -1,5 +1,6 @@
 /** Implementer turns (spec §6 steps 2, 5): the first turn, fix rounds and advisor answers, all on workflowImplementOp. */
 import { errorMessage } from "@nathapp/nax-agent/internal";
+import type { ConfiguredModel } from "@/config";
 import { workflowImplementOp } from "@/operations";
 import { buildWorkflowAnswerPrompt, buildWorkflowFixPrompt, buildWorkflowImplementPrompt } from "@/prompts";
 import { fixModelFor } from "./fix-round";
@@ -43,10 +44,15 @@ function promptFor(sc: StepContext, turn: ImplementTurn): string {
   });
 }
 
+/** The model a turn steps up to (spec §4 "Implementer model"); undefined keeps the story's routed model. */
+export function implementerModelFor(sc: StepContext, turn: ImplementTurn): ConfiguredModel | undefined {
+  const stepUps = turn.kind === "fix" || turn.kind === "answer" ? turn.stepUps : 0;
+  return stepUps > 0 ? fixModelFor(sc.story, sc.tierOrder, stepUps) : undefined;
+}
+
 export async function runImplementerTurn(sc: StepContext, turn: ImplementTurn): Promise<ImplementOutcome> {
   if (turn.kind === "fix" && turn.fresh) await closeImplementerSession(sc.sessionManager, sc.story.id);
-  const stepUps = turn.kind === "fix" || turn.kind === "answer" ? turn.stepUps : 0;
-  const model = stepUps > 0 ? fixModelFor(sc.story, sc.tierOrder, stepUps) : undefined;
+  const model = implementerModelFor(sc, turn);
   const timeoutMs =
     turn.kind === "implement" || (turn.kind === "answer" && turn.limit === "implement")
       ? sc.workflow.timeouts.implementMs
