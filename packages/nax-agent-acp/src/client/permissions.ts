@@ -150,7 +150,10 @@ export async function decidePermission(
   }
 }
 
-/** full allows every request, except (nax#2500 R4) a Claude edit whose target is outside the sandbox write roots. */
+/** ACP kinds that write to a path (nax#2500 R5): the only kinds the R4 path check applies to. */
+const WRITE_KINDS: ReadonlySet<string> = new Set(["edit", "delete", "move"]);
+
+/** full allows every request, except (nax#2500 R4/R5) a write whose target is outside the sandbox write roots. */
 async function decideFull(
   request: RequestPermissionRequest,
   display: ToolCallDisplay,
@@ -160,7 +163,7 @@ async function decideFull(
 ): Promise<RequestPermissionResponse> {
   if (offered.allowOnce === undefined) return denyNoAllowOnce(offered, auto);
   const outside =
-    ctx.sandbox !== undefined && display.tool !== "execute"
+    ctx.sandbox !== undefined && WRITE_KINDS.has(display.tool)
       ? await firstOutsidePolicy(editTargets(request.toolCall), ctx.sandbox, ctx.cwd)
       : undefined;
   if (outside !== undefined) {

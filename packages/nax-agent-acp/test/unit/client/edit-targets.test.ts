@@ -2,7 +2,17 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { editTargets, firstOutsidePolicy } from "#src/client/edit-targets";
+import { _editTargetsDeps, editTargets, firstOutsidePolicy } from "#src/client/edit-targets";
+
+async function onPlatform<T>(platform: string, run: () => Promise<T>): Promise<T> {
+  const original = _editTargetsDeps.platform;
+  _editTargetsDeps.platform = () => platform;
+  try {
+    return await run();
+  } finally {
+    _editTargetsDeps.platform = original;
+  }
+}
 
 let root: string;
 let outside: string;
@@ -11,6 +21,9 @@ beforeAll(async () => {
   outside = await mkdtemp(join(tmpdir(), "nax-edit-out-"));
   await mkdir(join(root, ".git", "hooks"), { recursive: true });
   await symlink(outside, join(root, "escape"));
+  await symlink(join(outside, "new-file.txt"), join(root, "dangling"));
+  await symlink(join(root, "loopB"), join(root, "loopA"));
+  await symlink(join(root, "loopA"), join(root, "loopB"));
 });
 afterAll(async () => {
   await rm(root, { recursive: true, force: true });
@@ -67,5 +80,26 @@ describe("firstOutsidePolicy", () => {
   });
   test("no cwd: ~ still expands to home, so it is outside", async () => {
     expect(await firstOutsidePolicy(["~/x.txt"], policy(), undefined)).toBe("~/x.txt");
+  });
+  test("dangling symlink inside the root pointing outside is caught (R6)", async () => {
+    expect(await firstOutsidePolicy([join(root, "dangling")], policy(), root)).toBe(join(root, "dangling"));
+  });
+  test("symlink loop is treated as outside (R6 hop bound)", async () => {
+    expect(await firstOutsidePolicy([join(root, "loopA")], policy(), root)).toBe(join(root, "loopA"));
+  });
+  test("a literal .. segment is outside, before any resolution (R7)", async () => {
+    expect(await firstOutsidePolicy([`${root}/a/../b.ts`], policy(), root)).toBe(`${root}/a/../b.ts`);
+  });
+  // The denied directory is absent on disk, so realpath cannot fold the case on any filesystem.
+  const caseDeny = () => ({ writeRoots: [root], denyWrite: [join(root, "secret-dir")], denyRead: [], network: {} });
+  test("darwin: denyWrite matches case-insensitively (R7)", async () => {
+    expect(await onPlatform("darwin", () => firstOutsidePolicy([`${root}/SECRET-DIR/x.ts`], caseDeny(), root))).toBe(
+      `${root}/SECRET-DIR/x.ts`,
+    );
+  });
+  test("linux: denyWrite matches case-sensitively, so the other spelling is inside (R7)", async () => {
+    expect(
+      await onPlatform("linux", () => firstOutsidePolicy([`${root}/SECRET-DIR/x.ts`], caseDeny(), root)),
+    ).toBeUndefined();
   });
 });

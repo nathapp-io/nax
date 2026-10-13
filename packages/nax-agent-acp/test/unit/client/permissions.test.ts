@@ -324,6 +324,26 @@ describe("full: R4 edit path check (nax#2500)", () => {
     expect(seen.auto[0]?.decision).toBe("deny");
   });
 
+  test("a read outside the write roots is allowed under full (R5: only write kinds are path-checked)", async () => {
+    const { port } = asks();
+    expect(
+      await decidePermission(
+        edit({ kind: "read", locations: [{ path: "/etc/x" }] }),
+        fullCtx(port, { sandbox: SANDBOX, cwd: ROOT }),
+      ),
+    ).toEqual(selected("allow_once"));
+  });
+
+  test("a delete outside the write roots is rejected (R5)", async () => {
+    const { port, seen } = asks();
+    const res = await decidePermission(
+      edit({ kind: "delete", locations: [{ path: "/etc/x" }] }),
+      fullCtx(port, { sandbox: SANDBOX, cwd: ROOT }),
+    );
+    expect(res).toEqual(selected("reject_once"));
+    expect(seen.auto[0]?.req.reason).toBe(OUTSIDE_WRITE_ROOTS_REASON);
+  });
+
   test("an edit under denyWrite is rejected", async () => {
     const { port } = asks();
     const res = await decidePermission(
