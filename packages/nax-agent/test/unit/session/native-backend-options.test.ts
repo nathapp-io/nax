@@ -180,3 +180,10 @@ describe("nativeProfileRules", () => {
     );
   });
 });
+
+test("review accepts bashApproval and allowUnsandboxed like full (nax#2500)", () => {
+  expect(nativeProfileRules("review", { model: "openai/x", bashApproval: "gated", allowUnsandboxed: true })).toEqual({
+    bashApproval: "gated",
+    allowUnsandboxed: true,
+  });
+});

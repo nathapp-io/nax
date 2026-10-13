@@ -260,7 +260,7 @@ export interface ToolSurfaceDraft {
 /** A draft stamped with the transport (and, on ACP, the narrowed profile). */
 export interface ToolSurfaceRecord extends ToolSurfaceDraft {
   readonly transport: "native" | "acp";
-  readonly profile?: "full" | "read";
+  readonly profile?: "full" | "review" | "read";
 }
 
 /**

@@ -6,7 +6,6 @@
  */
 import { join } from "node:path";
 import {
-  type AgentSessionProfile,
   type CredentialAuthConfig,
   type CredentialsConfig,
   type NativeBackendOptions,
@@ -27,7 +26,7 @@ export interface TierModel {
 }
 
 export interface AgentServerSection {
-  readonly defaultMode?: AgentSessionProfile;
+  readonly defaultMode?: ServerMode;
   readonly bashApproval?: BashApproval;
   readonly sessionsDir?: string;
   readonly mcpConnectTimeoutSeconds?: number;
@@ -51,6 +50,8 @@ export interface LoadedNaxConfig {
 }
 
 export const MODES = ["none", "read", "ask", "full"] as const;
+/** The profiles an ACP server session may run; `review` is a client-side profile (nax#2500). */
+export type ServerMode = (typeof MODES)[number];
 export const BASH_APPROVALS = ["gated", "escalate", "raw"] as const;
 
 const ModelEntrySchema = z.union([

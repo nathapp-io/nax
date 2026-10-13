@@ -221,3 +221,32 @@ describe("resolveSessionLauncher", () => {
     expect(await resolveSessionLauncher({ ...launcherArgs, profile: "full", allowUnsandboxed: true })).toBeUndefined();
   });
 });
+
+describe("profile review (nax#2500)", () => {
+  withDepsRestore(_sessionSandboxDeps);
+  withSessionSandboxSeam(_sessionSandboxDeps);
+
+  test("declares the read tools plus Bash, no write tools", () => {
+    const declared = declaredToolsFor("review", { ...EMPTY, gitIgnorePatterns: [".nax/"] });
+    expect(declared).toContain("Bash");
+    expect(declared).toContain("Git");
+    expect(declared).not.toContain("Write");
+    expect(declared).not.toContain("Edit");
+    expect(declared).not.toContain("Delete");
+    expect(declared).not.toContain("GitCommit");
+  });
+
+  test("the sandbox floor applies to review", async () => {
+    stubSessionSandboxDeps(_sessionSandboxDeps);
+    _sessionSandboxDeps.probe = async () => ({ available: false, reason: "no srt" });
+    await expect(
+      resolveSessionLauncher({
+        profile: "review",
+        root: "/tmp/r",
+        protectedPaths: EMPTY,
+        bashApproval: "raw",
+        allowUnsandboxed: false,
+      }),
+    ).rejects.toThrow('Profile "review" needs a usable sandbox');
+  });
+});

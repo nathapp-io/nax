@@ -14,7 +14,7 @@ import type { JSONSchema } from "./tool-descriptor.ts";
  * What the session's agent may touch. Capability statements, not tool lists
  * (spec 4.5). `ask`: every mutating action is approved through `answer()`.
  */
-export type AgentSessionProfile = "none" | "read" | "ask" | "full";
+export type AgentSessionProfile = "none" | "read" | "review" | "ask" | "full";
 
 export interface EmbedderToolContext {
   readonly sessionId: string;

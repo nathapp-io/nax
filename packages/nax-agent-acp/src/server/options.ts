@@ -3,7 +3,6 @@
  * built-in default. Config dir: master plan M-5.
  */
 import { join } from "node:path";
-import type { AgentSessionProfile } from "@nathapp/nax-agent";
 import type { CliFlags } from "#src/server/cli";
 import {
   BASH_APPROVALS,
@@ -11,6 +10,7 @@ import {
   type CompactionSettings,
   MODES,
   type NaxConfigSubset,
+  type ServerMode,
   type TierModel,
 } from "#src/server/nax-config";
 
@@ -23,7 +23,7 @@ export interface ServerOptions {
   readonly configDir: string;
   readonly sessionsDir: string;
   readonly defaultModel?: string;
-  readonly defaultMode: AgentSessionProfile;
+  readonly defaultMode: ServerMode;
   readonly bashApproval: BashApproval;
   readonly tiers: readonly TierModel[];
   readonly catalogOverrides: readonly Readonly<Record<string, unknown>>[];

@@ -6,12 +6,11 @@
  * validated here; applying them is the registry's close-and-reopen (§3.3).
  */
 import type { SessionConfigOption, SessionMode, SessionModeState } from "@agentclientprotocol/sdk";
-import type { AgentSessionProfile } from "@nathapp/nax-agent";
 import { invalidParams } from "#src/server/errors";
-import { BASH_APPROVALS, type BashApproval, MODES, type TierModel } from "#src/server/nax-config";
+import { BASH_APPROVALS, type BashApproval, MODES, type ServerMode, type TierModel } from "#src/server/nax-config";
 
 export interface SessionSettings {
-  readonly mode: AgentSessionProfile;
+  readonly mode: ServerMode;
   readonly model: string;
   readonly bashApproval: BashApproval;
 }
