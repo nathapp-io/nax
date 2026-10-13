@@ -13,7 +13,13 @@ export type {
   WorkflowSeverity,
 } from "@/operations";
 
-import type { GateName, MinorTriageDecision, WorkflowFinding, WorkflowFindingDraft } from "@/operations";
+import type {
+  GateName,
+  MinorTriageDecision,
+  WorkflowFinding,
+  WorkflowFindingDraft,
+  WorkflowSeverity,
+} from "@/operations";
 
 export type GateState = "green" | "red" | "skipped";
 
@@ -72,6 +78,28 @@ export interface WorkflowResultFile {
   readonly feature: string;
   readonly stories: Readonly<Record<string, WorkflowStoryRecord>>;
   readonly featureWorkflow?: WorkflowFeatureRecord;
+  /** #2496: the one place a finishing tool reads. Absent until the feature workflow publishes. */
+  readonly verdict?: WorkflowVerdict;
+}
+
+/** #2496: one thing still open on a workflow feature, with its evidence in full. */
+export interface OpenItem {
+  readonly id: string;
+  readonly kind: "finding" | "ruling" | "cannot-verify" | "gate";
+  readonly severity?: WorkflowSeverity;
+  readonly file?: string;
+  readonly line?: number;
+  readonly issue: string;
+  readonly suggestion?: string;
+  readonly ruling?: { readonly action: WorkflowRuling["action"]; readonly why: string; readonly decisionId?: string };
+}
+
+/** #2496: the feature's top-level verdict in result.json (see the A5 spec appendix). */
+export interface WorkflowVerdict {
+  readonly workflowPassed: boolean;
+  readonly outcome: FeatureOutcome;
+  readonly reasons: readonly string[];
+  readonly openItems: readonly OpenItem[];
 }
 
 export interface RoleTokens {

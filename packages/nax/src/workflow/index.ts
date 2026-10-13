@@ -3,6 +3,7 @@ export { defaultWorkflowAdvisor } from "./advisor";
 export type { WorkflowFeatureResult } from "./feature";
 export { runWorkflowFeature } from "./feature";
 export type { WorkflowFeatureInput } from "./feature-context";
+export { buildOpenItems, buildVerdict } from "./open-items";
 export type { PreflightFile } from "./preflight";
 export { preflightPath, runPreflight } from "./preflight";
 export type { WorkflowRunStartInput } from "./preflight-run";

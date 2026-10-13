@@ -4,6 +4,7 @@
  */
 import { mkdir, readdir, rename, stat } from "node:fs/promises";
 import { basename, join } from "node:path";
+import { buildVerdict } from "./open-items";
 import type { WorkflowFeatureRecord, WorkflowResultFile, WorkflowStoryRecord } from "./types";
 
 export const _resultDeps = { mkdir, readdir, rename, stat };
@@ -51,6 +52,7 @@ export async function upsertStoryRecord(
     feature: header.feature,
     stories: { ...(current?.stories ?? {}), [record.storyId]: record },
     ...(current?.featureWorkflow ? { featureWorkflow: current.featureWorkflow } : {}),
+    ...(current?.verdict ? { verdict: current.verdict } : {}),
   });
 }
 
@@ -115,11 +117,13 @@ export async function upsertFeatureRecord(
   record: WorkflowFeatureRecord,
 ): Promise<void> {
   const current = await readResult(runDir);
+  const verdict = buildVerdict(record);
   await writeResult(runDir, {
     schemaVersion: 1,
     runId: header.runId,
     feature: header.feature,
     stories: current?.stories ?? {},
     featureWorkflow: record,
+    ...(verdict ? { verdict } : {}),
   });
 }
