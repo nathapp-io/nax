@@ -9,6 +9,7 @@ export interface WorkflowPromptFinding {
   readonly line?: number;
   readonly acId?: string;
   readonly suggestion?: string;
+  readonly observed?: string;
 }
 
 export interface WorkflowBriefInput {
@@ -41,8 +42,9 @@ export function renderWorkflowFindings(findings: readonly WorkflowPromptFinding[
     .map((f) => {
       const where = f.file ? ` (${f.file}${f.line ? `:${f.line}` : ""})` : "";
       const ac = f.acId ? ` [${f.acId}]` : "";
+      const seen = f.observed ? `\n  Observed: ${f.observed}` : "";
       const fix = f.suggestion ? `\n  Suggestion: ${f.suggestion}` : "";
-      return `[${f.id}] [${f.severity}/${f.kind}]${ac}${where} ${f.issue}${fix}`;
+      return `[${f.id}] [${f.severity}/${f.kind}]${ac}${where} ${f.issue}${seen}${fix}`;
     })
     .join("\n");
 }

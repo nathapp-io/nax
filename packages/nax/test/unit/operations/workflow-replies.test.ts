@@ -48,6 +48,21 @@ describe("parseImplementerReply", () => {
 });
 
 describe("parseStoryReviewReply", () => {
+  test("keeps the reviewer's observed excerpt on a finding (nax#2486)", () => {
+    const v = parseStoryReviewReply(
+      JSON.stringify({
+        spec: "fail",
+        quality: "approved",
+        inspectedFiles: ["prisma/migration.sql"],
+        findings: [
+          { severity: "important", kind: "spec", issue: "column narrower than the DTO", observed: "note VARCHAR(191)" },
+        ],
+        cannotVerify: [],
+      }),
+    );
+    expect(v?.findings[0]?.observed).toBe("note VARCHAR(191)");
+  });
+
   test("normalises findings and drops ones without an issue", () => {
     const v = parseStoryReviewReply(
       JSON.stringify({

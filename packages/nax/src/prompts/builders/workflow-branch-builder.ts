@@ -37,7 +37,7 @@ export function buildWorkflowBranchReviewPrompt(input: BranchReviewPromptInput):
   return `You are reviewing a whole feature branch. Every story was implemented and reviewed on its own already. Read:
 - the feature spec: ${input.specPath ?? "(no spec file found)"}
 - the PRD (stories and acceptance criteria): ${input.prdPath}${preflight}
-- the branch review package (commits, --stat, full diff with context; truncated files are listed by name, read them yourself): ${input.packagePath}
+- the branch review package (commits, --stat, full diff with context): ${input.packagePath}. When the diff is truncated, the package ends with "Files not shown in the diff": read those yourself, schema, migration and shared-contract files first.
 
 ## Stories
 ${storyLines(input)}
@@ -58,8 +58,9 @@ ${input.minors.length > 0 ? input.minors.map((m) => `[${m.id}] ${m.storyId}: ${m
 - Cross-story integration and contracts: do the stories fit together, do callers and callees agree, is shared state consistent?
 - Reachability: is every new piece wired in and reachable from where the spec says it is used?
 - Consistency and duplication across stories.
+- Storage against contracts: for every field one story persists and another story reads, writes or validates, the column type and width (as the migration declares it, not only the schema) must hold every value the DTOs, acceptance criteria and API contracts accept.
 - Triage each deferred minor as "fix-now" (cheap and worth doing before the PR) or "leave".
-Do not re-review each story line by line; the story reviews did that.
+Do not re-review each story line by line; the story reviews did that, each from its own diff, so a contract that spans two stories is yours to check.
 
 Severity: "critical" (wrong or unsafe behaviour), "important" (must fix before the PR), "minor" (worth noting, not blocking). Put anything you could not check in "cannotVerify".
 

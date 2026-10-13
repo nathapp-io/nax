@@ -45,6 +45,13 @@ describe("buildWorkflowBranchReviewPrompt", () => {
     expect(prompt).toContain('"minorTriage": [{"id": "M1", "decision": "fix-now|leave"}]');
   });
 
+  test("checks storage against every declared limit and points at omitted files (nax#2486)", () => {
+    expect(prompt).toContain("Storage against contracts");
+    expect(prompt).toMatch(/column type and width/);
+    expect(prompt).toContain("Files not shown in the diff");
+    expect(prompt).toContain("migration");
+  });
+
   test("empty sections read as none", () => {
     const empty = buildWorkflowBranchReviewPrompt({
       prdPath: "p",
