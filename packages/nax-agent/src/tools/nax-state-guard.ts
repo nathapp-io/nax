@@ -72,7 +72,13 @@
  * their (precise) verdict, which is why
  * `git update-index --assume-unchanged src/a.ts` stays allowed.
  *
- * KNOWN, NOT FIXED:
+ * KNOWN, NOT FIXED (by design, #2497): this guard is a first line that redirects
+ * common accidents with a helpful message. It is not the boundary and is not
+ * extended toward completeness. The guarantee is detect-and-repair: nax's
+ * `src/runstate/` restores any nax-owned run-state file, and clears its index
+ * flags, after every agent turn and before every auto-commit, whatever command
+ * changed it (bypass matrix: test/integration/runstate/bypass-matrix.test.ts).
+ * Gaps:
  * - Stash is refused in ANY repository that has a `.nax/`, by design, even
  *   when that directory is clean.
  * - Prose that reads as a command (`echo git stash`, `python -c 'print("git
