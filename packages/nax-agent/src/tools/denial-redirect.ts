@@ -36,7 +36,7 @@ const GIT_COMMIT_VERBS = new Set(["add", "commit"]);
  */
 const GIT_REVERT_VERBS = new Set(["checkout", "restore"]);
 
-const NAX_OWNED_RUN_STATE_EXPLANATION =
+export const NAX_OWNED_RUN_STATE_EXPLANATION =
   "`.nax/` is nax's own run state, written by the harness during this run. It is not part of your diff and must not be reverted.";
 
 /**
@@ -47,13 +47,13 @@ const NAX_OWNED_RUN_STATE_EXPLANATION =
  * module's header forbids naming one it does not hold. So this predicate is
  * checked BEFORE `intentFor` in both entry points and returns its own sentence.
  *
- * Verb scope is `checkout` and `restore` only; `git stash` is the agent's own
- * WIP, not nax's state, and has no operands to gate on. The gate is a `.nax`
+ * Verb scope is `checkout` and `restore` only; `git stash` has no operands to
+ * gate on and is handled by `nax-state-guard.ts` instead. The gate is a `.nax`
  * path SEGMENT (split on `/`), never a substring, so `src/nax-helpers.ts` and
  * `docs/.naxignore` stay unanswered. `--` is a separator, not an operand, and a
  * `timeout N` wrapper is stripped the same way `intentFor` strips it.
  */
-function naxOwnedRunStateExplanation(tokens: readonly string[]): string | undefined {
+export function naxOwnedRunStateExplanation(tokens: readonly string[]): string | undefined {
   const av = withoutTimeoutPrefix(tokens);
   const hasGitPrefix = av[0] === "git";
   const verb = hasGitPrefix ? av[1] : av[0];
@@ -156,7 +156,7 @@ function isSingleFileDelete(tokens: readonly string[], from: number): boolean {
 }
 
 /** A `timeout N ...` prefix wraps the real command; look past it. */
-function withoutTimeoutPrefix(tokens: readonly string[]): readonly string[] {
+export function withoutTimeoutPrefix(tokens: readonly string[]): readonly string[] {
   return tokens[0] === "timeout" ? tokens.slice(2) : tokens;
 }
 
@@ -231,26 +231,43 @@ export function redirectForArgv(
 /**
  * Name the tool that serves the intent behind a denied Bash COMMAND.
  *
- * Reads the first segment only: that is what the model reached for, and a
- * later segment's intent is not what to teach when the call is refused. The
+ * The intent redirect reads the first segment only: that is what the model
+ * reached for, and a later segment's intent is not what to teach when the call
+ * is refused. The
  * split is deliberately its own crude one rather than the lexer's
  * (`lexBashCommand`): a command REFUSED for an unanalysable construct must
  * still get a redirect, and the lexer returns nothing to read in that case.
  */
+function tokenize(segment: string): string[] {
+  return segment
+    .trim()
+    .split(/\s+/)
+    .filter((token) => token.length > 0);
+}
+
+/**
+ * The crude segment split shared by the redirect and the raw screen's fallback
+ * for a command the lexer refused. Deliberately not the lexer: it must still
+ * produce segments when the lexer returns nothing to read.
+ */
+export function crudeCommandSegments(command: string): string[][] {
+  return command.split(/&&|\|\||;|\||\n/).map(tokenize);
+}
+
 export function redirectForCommand(
   command: string,
   available: ReadonlySet<string>,
   declaredCommands: ReadonlySet<string>,
 ): string | undefined {
-  const [first = ""] = command.split(/&&|\|\||;|\||\n/);
-  const tokens = first
-    .trim()
-    .split(/\s+/)
-    .filter((token) => token.length > 0);
+  const segments = crudeCommandSegments(command);
+  // A revert of nax's run state is explained wherever it sits in a compound
+  // command (#2490); only the intent redirect below is first-segment-only.
+  for (const segment of segments) {
+    const ownedRunState = naxOwnedRunStateExplanation(segment);
+    if (ownedRunState !== undefined) return ownedRunState;
+  }
+  const tokens = segments[0] ?? [];
   if (tokens.length === 0) return undefined;
-
-  const ownedRunState = naxOwnedRunStateExplanation(tokens);
-  if (ownedRunState !== undefined) return ownedRunState;
 
   const hit = intentFor(tokens);
   if (hit === undefined) return taskRunnerFallback(tokens, available, declaredCommands);

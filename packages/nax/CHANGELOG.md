@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A hidden `.nax/` index flag no longer outlives the run (#2490).** At run end nax clears `skip-worktree` / `assume-unchanged` on any `.nax` path (root or nested) and logs a warning, so the PRD an agent hid from git is committed again.
 - **Workflow mode: the run tree moves into the repo (nax#2479).** Briefs, reports, review packages, the
   ledger and `result.json` now live under `.nax/features/<feature>/workflow/<runId>/` instead of
   `<outputDir>/<project>/workflow/`, which sat outside the agents' file-tool root: implementers could not

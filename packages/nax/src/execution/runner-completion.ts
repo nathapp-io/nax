@@ -24,6 +24,7 @@ import { isComplete } from "@/prd";
 import { totalSpendUsd } from "@/runtime";
 import type { DispatchContext } from "@/runtime/dispatch-context";
 import { autoCommitIfDirty } from "@/utils/git";
+import { clearNaxIndexFlags } from "@/utils/nax-index-flags";
 import type { WorkflowFeatureInput, WorkflowFeatureResult } from "@/workflow";
 import { recordAdvisorSummary } from "./advisor-summary";
 import { stopHeartbeat, writeExitSummary } from "./crash-recovery";
@@ -436,6 +437,10 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
   // Stop heartbeat before finish so stale execution totals cannot overwrite
   // the final status snapshot.
   stopHeartbeat();
+
+  // #2490: un-hide any .nax path an agent flagged skip-worktree/assume-unchanged,
+  // so the auto-commit below sees it and the flag does not outlive the run.
+  await clearNaxIndexFlags(options.workdir, logger);
 
   // Commit status.json and any other nax runtime files left dirty at run end
   logger?.debug("execution", "Completion phase — auto-committing dirty files");
