@@ -6,6 +6,7 @@
  * (maskForPrompt), redacted and capped. Oversized raw text and text whose secret
  * cannot be masked safely make the request unshowable: it is never put in front
  * of a person (D3-b).
+ * Exception (nax#2500 R4): `edit-targets.ts` reads `locations`/`rawInput` paths to decide a full-profile edit, because no other source names the target.
  */
 import type { ToolKind } from "@agentclientprotocol/sdk";
 import { maskForPrompt, redactSecrets, TOOL_CALL_INPUT_BYTES } from "@nathapp/nax-agent";

@@ -11,6 +11,7 @@ import type {
   SandboxPolicy,
   SessionAskPort,
 } from "@nathapp/nax-agent";
+import { OUTSIDE_WRITE_ROOTS_REASON } from "#src/client/edit-targets";
 import {
   ASK_REASON,
   decidePermission,
@@ -296,5 +297,81 @@ describe("profile review (nax#2500)", () => {
         sandbox: LISTED,
       }),
     ).toEqual(selected("reject_once"));
+  });
+});
+
+describe("full: R4 edit path check (nax#2500)", () => {
+  const ROOT = "/work/repo";
+  const SANDBOX: SandboxPolicy = { writeRoots: [ROOT], denyWrite: [`${ROOT}/.git/hooks`], denyRead: [], network: {} };
+  const edit = (toolCall: Record<string, unknown>) =>
+    request(["allow_once", "reject_once"], { toolCallId: "e", kind: "edit", title: "Edit", ...toolCall });
+  const fullCtx = (port: SessionAskPort, extra: { sandbox?: SandboxPolicy; cwd?: string } = {}) => ({
+    profile: "full" as const,
+    secrets: [],
+    signal: IDLE,
+    asks: port,
+    ...extra,
+  });
+
+  test("an edit outside the write roots is rejected with the outside-roots reason", async () => {
+    const { port, seen } = asks();
+    const res = await decidePermission(
+      edit({ locations: [{ path: "/etc/x" }] }),
+      fullCtx(port, { sandbox: SANDBOX, cwd: ROOT }),
+    );
+    expect(res).toEqual(selected("reject_once"));
+    expect(seen.auto[0]?.req.reason).toBe(OUTSIDE_WRITE_ROOTS_REASON);
+    expect(seen.auto[0]?.decision).toBe("deny");
+  });
+
+  test("an edit under denyWrite is rejected", async () => {
+    const { port } = asks();
+    const res = await decidePermission(
+      edit({ rawInput: { file_path: `${ROOT}/.git/hooks/pre-commit` } }),
+      fullCtx(port, { sandbox: SANDBOX, cwd: ROOT }),
+    );
+    expect(res).toEqual(selected("reject_once"));
+  });
+
+  test("an edit inside the root is allowed", async () => {
+    const { port, seen } = asks();
+    const res = await decidePermission(
+      edit({ locations: [{ path: `${ROOT}/src/a.ts` }] }),
+      fullCtx(port, { sandbox: SANDBOX, cwd: ROOT }),
+    );
+    expect(res).toEqual(selected("allow_once"));
+    expect(seen.auto[0]?.req.reason).toBe(FULL_REASON);
+  });
+
+  test("an edit with no path is allowed (today's behaviour)", async () => {
+    const { port } = asks();
+    expect(await decidePermission(edit({}), fullCtx(port, { sandbox: SANDBOX, cwd: ROOT }))).toEqual(
+      selected("allow_once"),
+    );
+  });
+
+  test("full with no sandbox in ctx: an outside edit is allowed", async () => {
+    const { port } = asks();
+    expect(await decidePermission(edit({ locations: [{ path: "/etc/x" }] }), fullCtx(port))).toEqual(
+      selected("allow_once"),
+    );
+  });
+
+  test("an execute request under full with a policy is allowed (Bash is the sandbox's job)", async () => {
+    const { port } = asks();
+    const res = await decidePermission(
+      request(["allow_once", "reject_once"], { toolCallId: "x", kind: "execute", title: "rm -rf /etc/x" }),
+      fullCtx(port, { sandbox: SANDBOX, cwd: ROOT }),
+    );
+    expect(res).toEqual(selected("allow_once"));
+  });
+
+  test("an outside edit with no allow_once offered is denied with no allow option", async () => {
+    const { port } = asks();
+    const res = await decidePermission(
+      request(["reject_once"], { toolCallId: "e", kind: "edit", title: "Edit", locations: [{ path: "/etc/x" }] }),
+      fullCtx(port, { sandbox: SANDBOX, cwd: ROOT }),
+    );
+    expect(res).toEqual(selected("reject_once"));
   });
 });

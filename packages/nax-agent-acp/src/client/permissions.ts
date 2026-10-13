@@ -13,6 +13,7 @@
  */
 import type { RequestPermissionRequest, RequestPermissionResponse } from "@agentclientprotocol/sdk";
 import type { AgentSessionProfile, SandboxPolicy, SessionAskPort } from "@nathapp/nax-agent";
+import { editTargets, firstOutsidePolicy, OUTSIDE_WRITE_ROOTS_REASON } from "#src/client/edit-targets";
 import { isRecord } from "#src/client/text";
 import { describeToolCall, type ToolCallDisplay } from "#src/client/tool-display";
 
@@ -134,9 +135,7 @@ export async function decidePermission(
       auto(REVIEW_EXECUTE_REASON, "allow");
       return selected(offered.allowOnce);
     case "full":
-      if (offered.allowOnce === undefined) return denyNoAllowOnce(offered, auto);
-      auto(FULL_REASON, "allow");
-      return selected(offered.allowOnce);
+      return decideFull(request, display, offered, auto, ctx);
     case "ask":
       if (offered.allowOnce === undefined) return denyNoAllowOnce(offered, auto);
       if (!display.showable) {
@@ -149,6 +148,27 @@ export async function decidePermission(
       auto(UNKNOWN_PROFILE_REASON, "deny");
       return rejectWith(offered);
   }
+}
+
+/** full allows every request, except (nax#2500 R4) a Claude edit whose target is outside the sandbox write roots. */
+async function decideFull(
+  request: RequestPermissionRequest,
+  display: ToolCallDisplay,
+  offered: OfferedOptions,
+  auto: AutoDecide,
+  ctx: PermissionContext,
+): Promise<RequestPermissionResponse> {
+  if (offered.allowOnce === undefined) return denyNoAllowOnce(offered, auto);
+  const outside =
+    ctx.sandbox !== undefined && display.tool !== "execute"
+      ? await firstOutsidePolicy(editTargets(request.toolCall), ctx.sandbox, ctx.cwd)
+      : undefined;
+  if (outside !== undefined) {
+    auto(OUTSIDE_WRITE_ROOTS_REASON, "deny");
+    return rejectWith(offered);
+  }
+  auto(FULL_REASON, "allow");
+  return selected(offered.allowOnce);
 }
 
 function decideNetwork(policy: SandboxPolicy, offered: OfferedOptions, auto: AutoDecide): RequestPermissionResponse {
