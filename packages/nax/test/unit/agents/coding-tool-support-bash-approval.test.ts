@@ -41,7 +41,7 @@ describe("resolveCodingToolSupport — bashApproval threading", () => {
       sandbox: { enabled: false },
     };
     return resolveCodingToolSupport({
-      declaredTools: ["Bash"],
+      declaredTools: ["Bash", "Write"],
       codingToolRoot: root,
       pipelineStage: "run",
       config: makeNaxConfig({ execution }),
@@ -73,7 +73,7 @@ describe("resolveCodingToolSupport — bashApproval threading", () => {
       sandbox: { enabled: false },
     };
     const support = await resolveCodingToolSupport({
-      declaredTools: ["Bash"],
+      declaredTools: ["Bash", "Write"],
       codingToolRoot: root,
       pipelineStage: "run",
       config: makeNaxConfig({ execution }),
@@ -113,7 +113,7 @@ describe("resolveCodingToolSupport — bashApproval threading", () => {
         ...(humanReachable !== undefined ? { humanReachable } : {}),
       };
       const support = await resolveCodingToolSupport({
-        declaredTools: ["Bash"],
+        declaredTools: ["Bash", "Write"],
         codingToolRoot: root,
         pipelineStage: "run",
         config: makeNaxConfig({ execution }),

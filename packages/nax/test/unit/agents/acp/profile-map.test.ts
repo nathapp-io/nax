@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { acpProfileFor } from "@/agents/acp/profile-map";
+import { acpProfileFor, isReviewerShaped } from "@/agents/acp/profile-map";
 
 describe("acpProfileFor (S4b spec §6.4)", () => {
   test("approve-all maps to full", () => {
@@ -46,5 +46,16 @@ describe("acpProfileFor (S4b spec §6.4)", () => {
   test("no declaration: mode alone (unchanged)", () => {
     expect(acpProfileFor("approve-all", undefined)).toBe("full");
     expect(acpProfileFor("approve-all", [])).toBe("full");
+  });
+});
+
+describe("isReviewerShaped (nax#2500 R9)", () => {
+  test("command tool without a file-write tool is reviewer-shaped", () => {
+    expect(isReviewerShaped(["Read", "Bash"])).toBe(true);
+    expect(isReviewerShaped(["Read", "Exec"])).toBe(true);
+  });
+  test("a file-write tool or no command tool is not", () => {
+    expect(isReviewerShaped(["Read", "Write", "Bash"])).toBe(false);
+    expect(isReviewerShaped(["Read"])).toBe(false);
   });
 });

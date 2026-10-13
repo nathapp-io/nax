@@ -351,7 +351,7 @@ describe("resolveCodingToolSupport — Exec package workdir is ABSOLUTE (Task 10
         permissions: { run: { allow: ["Exec(pwd)"] } },
       };
       const support = await resolveCodingToolSupport({
-        declaredTools: ["RunCommand", "Exec"],
+        declaredTools: ["RunCommand", "Exec", "Write"],
         codingToolRoot: repo,
         // RELATIVE to projectDir and worktree-shaped in production; feeding it
         // raw to Exec would make `relative(absoluteRepoRoot, relativeValue)`
@@ -405,7 +405,7 @@ describe("resolveCodingToolSupport — Exec package name from the story package 
         sandbox: { enabled: false },
       };
       const support = await resolveCodingToolSupport({
-        declaredTools: ["RunCommand", "Exec"],
+        declaredTools: ["RunCommand", "Exec", "Write"],
         codingToolRoot: projectDir,
         codingToolPackageDir: "packages/api",
         projectDir,

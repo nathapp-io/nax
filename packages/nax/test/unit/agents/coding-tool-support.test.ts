@@ -245,7 +245,7 @@ describe("buildCodingToolSupport — declared-command seam and audit sink", () =
     process.env[secretName] = "must-not-reach-the-model";
     try {
       const support = await resolveCodingToolSupport({
-        declaredTools: ["RunCommand"],
+        declaredTools: ["RunCommand", "Write"],
         codingToolRoot: process.cwd(),
         pipelineStage: "run",
         config: makeNaxConfig({
@@ -404,7 +404,7 @@ describe("buildCodingToolSupport — Exec grant selection (findLast)", () => {
       permissions: { run: { allow: ["Exec(bun x tsc*)"] } },
     };
     const support = await resolveCodingToolSupport({
-      declaredTools: ["RunCommand", "Exec"],
+      declaredTools: ["RunCommand", "Exec", "Write"],
       codingToolRoot: root,
       pipelineStage: "run",
       config: makeNaxConfig({ execution }),
@@ -431,7 +431,7 @@ describe("resolveCodingToolSupport — repoRoot falls back to the unified root (
         permissions: { run: { allow: ["Exec(pwd)"] } },
       };
       const support = await resolveCodingToolSupport({
-        declaredTools: ["RunCommand", "Exec"],
+        declaredTools: ["RunCommand", "Exec", "Write"],
         codingToolRoot: repo,
         pipelineStage: "run",
         config: makeNaxConfig({ execution }),
@@ -514,7 +514,7 @@ describe("resolveCodingToolSupport — per-package declared commands (#2066 resi
   test("a package story's RunCommand runs the PACKAGE override, not the root-only config a stale caller threaded", async () => {
     const packageDir = join(tempDir, "packages", "api");
     const support = await resolveCodingToolSupport({
-      declaredTools: ["RunCommand"],
+      declaredTools: ["RunCommand", "Write"],
       codingToolRoot: packageDir,
       codingToolPackageDir: "packages/api",
       projectDir: tempDir,
@@ -535,7 +535,7 @@ describe("resolveCodingToolSupport — per-package declared commands (#2066 resi
     const packageDir = join(tempDir, "packages", "api");
     const dispatch = () =>
       resolveCodingToolSupport({
-        declaredTools: ["RunCommand"],
+        declaredTools: ["RunCommand", "Write"],
         codingToolRoot: packageDir,
         codingToolPackageDir: "packages/api",
         projectDir: tempDir,
@@ -563,7 +563,7 @@ describe("resolveCodingToolSupport — per-package declared commands (#2066 resi
     expect(acceptanceResolved.quality.commands.test).toBe("echo PACKAGE");
 
     const support = await resolveCodingToolSupport({
-      declaredTools: ["RunCommand"],
+      declaredTools: ["RunCommand", "Write"],
       codingToolRoot: join(tempDir, "packages", "api"),
       codingToolPackageDir: "packages/api",
       projectDir: tempDir,
@@ -587,7 +587,7 @@ describe("resolveCodingToolSupport — per-package declared commands (#2066 resi
     };
     try {
       const support = await resolveCodingToolSupport({
-        declaredTools: ["RunCommand"],
+        declaredTools: ["RunCommand", "Write"],
         codingToolRoot: join(tempDir, "packages", "api"),
         codingToolPackageDir: "packages/api",
         projectDir: tempDir,
@@ -639,7 +639,7 @@ describe("resolveCodingToolSupport — per-package declared commands (#2066 resi
     packageConfigCache.clear();
 
     const support = await resolveCodingToolSupport({
-      declaredTools: ["RunCommand"],
+      declaredTools: ["RunCommand", "Write"],
       codingToolRoot: worktreePkg,
       codingToolPackageDir: ".nax-wt/US-001/packages/api",
       projectDir: tempDir,
@@ -670,7 +670,7 @@ describe("resolveCodingToolSupport — per-package declared commands (#2066 resi
     packageConfigCache.clear();
 
     const support = await resolveCodingToolSupport({
-      declaredTools: ["RunCommand"],
+      declaredTools: ["RunCommand", "Write"],
       codingToolRoot: tempDir,
       codingToolPackageDir: "packages/api",
       projectDir: tempDir,
@@ -778,7 +778,7 @@ describe("resolveCodingToolSupport — askResolver (P2 threading)", () => {
         permissions: { run: { allow: ["Bash(echo *)"] } },
       };
       const support = await resolveCodingToolSupport({
-        declaredTools: ["Bash"],
+        declaredTools: ["Bash", "Write"],
         codingToolRoot: root,
         pipelineStage: "run",
         config: makeNaxConfig({ execution }),

@@ -18,6 +18,11 @@ export const ACP_FILE_WRITE_TOOLS: ReadonlySet<string> = new Set(["Write", "Edit
 /** Declared tools that run commands: without a file-write tool they open `review` (nax#2500). */
 export const ACP_COMMAND_TOOLS: ReadonlySet<string> = new Set(["Bash", "Exec", "RunCommand"]);
 
+/** nax#2500 R9: command tools without file-write tools — the reviewer declaration shape. */
+export function isReviewerShaped(declaredTools: readonly string[]): boolean {
+  return declaredTools.some((t) => ACP_COMMAND_TOOLS.has(t)) && !declaredTools.some((t) => ACP_FILE_WRITE_TOOLS.has(t));
+}
+
 const PROFILE_BY_MODE: Readonly<Record<ResolvedPermissions["mode"], AcpProfile>> = Object.freeze({
   "approve-all": "full", // nax-permission-mode-allow: consumer, maps the resolved mode to an ACP profile
   "approve-reads": "read", // nax-permission-mode-allow: consumer, maps the resolved mode to an ACP profile
@@ -30,5 +35,5 @@ export function acpProfileFor(mode: ResolvedPermissions["mode"], declaredTools?:
   if (declaredTools === undefined || declaredTools.length === 0) return modeProfile;
   if (modeProfile === "read") return "read";
   if (declaredTools.some((tool) => ACP_FILE_WRITE_TOOLS.has(tool))) return modeProfile;
-  return declaredTools.some((tool) => ACP_COMMAND_TOOLS.has(tool)) ? "review" : "read";
+  return isReviewerShaped(declaredTools) ? "review" : "read";
 }
