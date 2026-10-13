@@ -112,6 +112,21 @@ describe("workflow builders", () => {
     }
   });
 
+  test("story review walks each AC against the current code, not only the diff, and asks for evidence (nax#2486)", () => {
+    const text = buildWorkflowStoryReviewPrompt({
+      briefPath: "/b.md",
+      reportPath: "/r.md",
+      packagePath: "/p.diff",
+      concerns: [],
+    });
+    expect(text).toContain("not as the only source of truth");
+    expect(text).toContain("an earlier story");
+    expect(text).toMatch(/schema/i);
+    expect(text).toContain("migration");
+    expect(text).toContain('"inspectedFiles"');
+    expect(text).toContain('"observed"');
+  });
+
   test("re-review lists open ids and scopes new breakage to the fix diff", () => {
     const text = buildWorkflowReReviewPrompt({
       briefPath: "/b.md",

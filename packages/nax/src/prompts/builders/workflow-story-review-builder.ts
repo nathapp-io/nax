@@ -15,14 +15,18 @@ export function buildWorkflowStoryReviewPrompt(input: {
 - the implementer's report: ${input.reportPath}
 - the review package (commits, --stat, full diff with context; truncated files are listed by name, read them yourself): ${input.packagePath}${concerns}
 
+For each acceptance criterion, verify the current code implements it correctly. Use the diff to find the changed paths, not as the only source of truth. Follow each criterion's data and contract to where it is declared or stored (schema, migrations, DTOs, shared types), including code an earlier story created that this diff does not touch: a limit the story accepts must fit the storage and contracts it writes to. Read a file before you flag it.
+
 Give two verdicts:
 - **spec**: "pass" only if every acceptance criterion is implemented and covered by a test that would fail without it. Check the report's TDD evidence: missing evidence for an AC, or a test that asserts nothing, is a spec failure.
 - **quality**: "approved" or "changes" (correctness, error handling, edge cases, conventions of the surrounding code).
 
 Severity: "critical" (wrong or unsafe behaviour), "important" (must fix before this story is done), "minor" (worth noting, not blocking). Put anything you could not check in "cannotVerify".
 
+List every file you opened in "inspectedFiles". Every critical or important finding carries "observed": a verbatim 1-3 line excerpt from the file that proves it; if you cannot quote one, it is minor or belongs in "cannotVerify".
+
 Reply with only this JSON object:
-{"spec": "pass|fail", "quality": "approved|changes", "findings": [{"severity": "critical|important|minor", "kind": "spec|quality", "file": "path", "line": 0, "acId": "AC-3", "issue": "what is wrong", "suggestion": "how to fix"}], "cannotVerify": ["..."]}`;
+{"spec": "pass|fail", "quality": "approved|changes", "inspectedFiles": ["path"], "findings": [{"severity": "critical|important|minor", "kind": "spec|quality", "file": "path", "line": 0, "acId": "AC-3", "issue": "what is wrong", "observed": "verbatim excerpt", "suggestion": "how to fix"}], "cannotVerify": ["..."]}`;
 }
 
 export function buildWorkflowReviewJsonRetry(): string {

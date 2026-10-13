@@ -47,6 +47,36 @@ describe("workflow git helpers", () => {
     expect(text).not.toContain(".nax/x.json");
   });
 
+  test("package: a small diff has no omitted-files section", async () => {
+    const dir = await repo();
+    const base = await readHead(dir);
+    await Bun.write(join(dir, "a.txt"), "two\n");
+    await git(dir, "commit", "-qam", "feat: two");
+    const path = join(dir, "out", "package-0.diff");
+    await writeReviewPackage(dir, base, path);
+    expect(await Bun.file(path).text()).not.toContain("## Files not shown in the diff");
+  });
+
+  test("package: a truncated diff lists every omitted file by its full path (nax#2486)", async () => {
+    const dir = await repo();
+    const base = await readHead(dir);
+    const filler = `${"x".repeat(120)}\n`.repeat(60);
+    for (let i = 0; i < 12; i++) await Bun.write(join(dir, `src/a-${String(i).padStart(2, "0")}.ts`), filler);
+    const migration = "web/api/prisma/migrations/20261013000000_long_feature_name/migration.sql";
+    await Bun.write(join(dir, migration), "CREATE TABLE t (note VARCHAR(191));\n");
+    await Bun.write(join(dir, "zz/late.ts"), "export const late = 1;\n");
+    await git(dir, "add", "-A");
+    await git(dir, "commit", "-qm", "feat: big");
+    const path = join(dir, "out", "package-0.diff");
+    await writeReviewPackage(dir, base, path);
+    const text = await Bun.file(path).text();
+    const section = text.slice(text.indexOf("## Files not shown in the diff"));
+    expect(text).toContain("## Files not shown in the diff");
+    expect(section).toContain(`- ${migration}`);
+    expect(section).toContain("- zz/late.ts");
+    expect(section).not.toContain("src/a-00.ts");
+  });
+
   test("package: an unknown from ref throws WORKFLOW_REVIEW_PACKAGE_FAILED and writes nothing", async () => {
     const dir = await repo();
     const path = join(dir, "out", "package-0.diff");
