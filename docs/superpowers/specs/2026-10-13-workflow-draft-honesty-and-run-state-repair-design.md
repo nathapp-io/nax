@@ -69,7 +69,7 @@ The feature machine writes `branch-review.json` and `branch-rereview.json` itsel
 
 ```ts
 interface WorkflowVerdict {
-  readonly workflowPassed: boolean;   // featurePassed && openItems.length === 0
+  readonly workflowPassed: boolean;   // featurePassed && no open item of kind finding | ruling | gate
   readonly outcome: FeatureOutcome;   // ready | draft | local-only
   readonly reasons: readonly string[];
   readonly openItems: readonly OpenItem[];
@@ -88,13 +88,13 @@ interface OpenItem {
 
 Built by one pure function `buildOpenItems(rec, cannotVerify)` in `workflow/open-items.ts`:
 - every `reviewOpen` finding, joined on `findingId` with its ruling. A `waive` without `needsHumanConfirm` closes the item (accepted risk, not open). A `hold` or flagged ruling keeps it open with `kind: "ruling"`. An unruled finding is `kind: "finding"`.
-- every branch-level cannot-verify item recorded during this run (the feature machine keeps them on the record as `cannotVerify: string[]`, in addition to the ledger line).
+- every branch-level cannot-verify item recorded during this run (listed for the reader; it does not fail `workflowPassed`, matching `readinessReasons`, which never blocks on it) (the feature machine keeps them on the record as `cannotVerify: string[]`, in addition to the ledger line).
 - every failing final gate, with its excerpt from `finalGateFindings`.
 
 `workflowPassed` is the field a finishing tool reads. `featureWorkflow.passed`, the end report and `RunResult.success` keep their current meaning.
 
 ### 5.3 PR body: "Before marking ready"
-When `openItems` is non-empty, `buildWorkflowPrBody` renders a section above "Advisor decisions":
+When `openItems` is non-empty and the outcome is not `ready`, `buildWorkflowPrBody` renders a section right after "Stories":
 
 ```
 ## Before marking ready
