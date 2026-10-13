@@ -1,7 +1,8 @@
 /**
- * Workflow mode: the run's metrics record is saved before the feature workflow runs, so its
- * duration is stories-only. This rewrites the record with the whole-run duration and its two
- * parts once the workflow is done (nax#2491). The `run:completed` event is NOT re-fired.
+ * The run's metrics record is saved when `run:completed` fires, before the end phase (finish, or the
+ * feature workflow) runs, so its duration is stories-only. This rewrites the record with the whole-run
+ * duration and its two parts once the end phase is done (nax#2491 workflow mode, nax#2494 pipeline
+ * mode). The `run:completed` event is NOT re-fired.
  */
 import { withPathFileLock } from "@nathapp/nax-agent/internal";
 import { saveJsonFile } from "../utils/json-file";
@@ -11,8 +12,11 @@ import type { RunMetrics } from "./types";
 export interface RunDurationPatch {
   readonly totalDurationMs: number;
   readonly storiesDurationMs: number;
-  readonly featureWorkflowDurationMs: number;
-  /** Spend through the end of the feature workflow, as `run.complete` reports it. */
+  /** Workflow mode. */
+  readonly featureWorkflowDurationMs?: number;
+  /** Pipeline mode. */
+  readonly endPhaseDurationMs?: number;
+  /** Spend through the end of the end phase, as `run.complete` reports it. */
   readonly totalCost: number;
   readonly completedAt: string;
 }

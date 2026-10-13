@@ -53,10 +53,12 @@ export interface RunSummary {
   startedAt: string;
   /** Run completion timestamp */
   completedAt?: string;
-  /** Workflow mode: the part of `durationMs` spent in the story loops. */
+  /** The part of `durationMs` spent in the story loops (workflow mode, and pipeline mode with an end phase). */
   storiesDurationMs?: number;
   /** Workflow mode: the part of `durationMs` spent in the feature workflow (gates, branch review/fix, publish). */
   featureWorkflowDurationMs?: number;
+  /** Pipeline mode: the part of `durationMs` spent in the end phase (finish, ...). */
+  endPhaseDurationMs?: number;
   /** Workflow mode: the workflow section printed under the summary. */
   workflow?: WorkflowSummaryView;
 }

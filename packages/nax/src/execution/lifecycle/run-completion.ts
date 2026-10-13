@@ -100,20 +100,28 @@ export interface RunCompletionOptions extends DispatchContext {
   /** The run's interaction chain, threaded to the deferred regression rectifier's ask resolver (#2201). */
   interactionChain?: InteractionChain | null;
   /**
-   * Workflow mode: do not write `run.complete` yet. The feature workflow still has to run, so the caller
-   * writes the line itself (via `RunCompletionResult.logRunComplete`) once it knows the whole duration (nax#2491).
+   * Do not write `run.complete` yet. The end phase (finish, or the feature workflow in workflow mode) still
+   * has to run, so the caller writes the line itself (via `RunCompletionResult.logRunComplete`) once it knows
+   * the whole duration (nax#2491, nax#2494). If a later phase here throws, the line is written before the
+   * error propagates, so it is never lost.
    */
   deferRunCompleteLog?: boolean;
 }
 
-/** What the caller knows only after the feature workflow: the whole run's duration and its two parts. */
+/**
+ * What the caller knows only after the end phase: the whole run's duration and its two parts. Exactly one
+ * of `featureWorkflowDurationMs` (workflow mode) and `endPhaseDurationMs` (pipeline mode: finish etc.) is set.
+ */
 export interface RunCompleteFinal {
   durationMs: number;
   storiesDurationMs: number;
-  featureWorkflowDurationMs: number;
-  /** Spend through the end of the feature workflow. */
+  /** Workflow mode: the feature workflow's part of `durationMs`. */
+  featureWorkflowDurationMs?: number;
+  /** Pipeline mode: the end phase's (finish, ...) part of `durationMs`. */
+  endPhaseDurationMs?: number;
+  /** Spend through the end of the end phase. */
   totalCost: number;
-  /** False when the feature workflow did not pass; the line's `success` follows it. */
+  /** False when the feature workflow did not pass; the line's `success` follows it. Always true in pipeline mode. */
   workflowPassed: boolean;
 }
 
@@ -218,27 +226,34 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
     });
   if (!options.deferRunCompleteLog) logComplete();
 
-  // Phase 7.5 — MCP adoption summary (nax#2410 D6): per-server offered/called
-  // counts plus the zero-adoption WARN. Undefined when MCP is unconfigured.
-  const mcpAdoption = await summarizeMcpAdoptionPhase({
-    workdir,
-    feature,
-    config,
-    outputDir: options.runtime.outputDir,
-    runId,
-    logger,
-  });
+  let mcpAdoption: McpAdoptionSummary | undefined;
+  try {
+    // Phase 7.5 — MCP adoption summary (nax#2410 D6): per-server offered/called
+    // counts plus the zero-adoption WARN. Undefined when MCP is unconfigured.
+    mcpAdoption = await summarizeMcpAdoptionPhase({
+      workdir,
+      feature,
+      config,
+      outputDir: options.runtime.outputDir,
+      runId,
+      logger,
+    });
 
-  // Phase 8 — final status
-  await writeFinalStatus({
-    options,
-    prd,
-    statusWriter,
-    config,
-    regressionGateFailed,
-    reportedTotal: costs.reportedTotal,
-    iterations,
-  });
+    // Phase 8 — final status
+    await writeFinalStatus({
+      options,
+      prd,
+      statusWriter,
+      config,
+      regressionGateFailed,
+      reportedTotal: costs.reportedTotal,
+      iterations,
+    });
+  } catch (err) {
+    // The held-back line would never reach its caller: write it, as of now, before the error goes up.
+    if (options.deferRunCompleteLog) logComplete();
+    throw err;
+  }
 
   return {
     durationMs,

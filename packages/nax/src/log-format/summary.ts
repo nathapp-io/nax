@@ -16,7 +16,19 @@ import { SEVERITY_RANK } from "../review/severity.js";
 import { type ChalkLike, createNoopChalk } from "./chalk-like.js";
 import { formatCost, formatDuration } from "./formatter.js";
 import { EMOJI, type FormatterOptions, type RunSummary } from "./types.js";
-import { formatDurationSplit, formatWorkflowSummary } from "./workflow-summary.js";
+import { formatDurationSplit, formatEndPhaseSplit, formatWorkflowSummary } from "./workflow-summary.js";
+
+/** ` (stories X + feature workflow Y)` or ` (stories X + end phase Y)`, or "" when the run reports no split. */
+function durationSplit(summary: RunSummary): string {
+  if (summary.storiesDurationMs === undefined) return "";
+  if (summary.featureWorkflowDurationMs !== undefined) {
+    return ` (${formatDurationSplit(summary.storiesDurationMs, summary.featureWorkflowDurationMs)})`;
+  }
+  if (summary.endPhaseDurationMs !== undefined) {
+    return ` (${formatEndPhaseSplit(summary.storiesDurationMs, summary.endPhaseDurationMs)})`;
+  }
+  return "";
+}
 
 /**
  * Format run summary footer
@@ -65,10 +77,7 @@ export function formatRunSummary(summary: RunSummary, options: FormatterOptions)
 
   lines.push(`  ${c.gray("Success:")}  ${statusColor(c.bold(`${successRate}%`))}`);
   lines.push(c.blue("─".repeat(60)));
-  const split =
-    summary.storiesDurationMs !== undefined && summary.featureWorkflowDurationMs !== undefined
-      ? ` (${formatDurationSplit(summary.storiesDurationMs, summary.featureWorkflowDurationMs)})`
-      : "";
+  const split = durationSplit(summary);
   lines.push(`  ${EMOJI.duration} Duration: ${c.bold(formatDuration(summary.durationMs))}${split}`);
   lines.push(`  ${EMOJI.cost} Cost:     ${c.bold(formatCost(summary.totalCost))}`);
   if (summary.workflow) {

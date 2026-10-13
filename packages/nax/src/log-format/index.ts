@@ -27,4 +27,4 @@ export {
   type WorkflowRoleUsage,
   type WorkflowSummaryView,
 } from "./types.js";
-export { formatDurationSplit, formatWorkflowSummary } from "./workflow-summary.js";
+export { formatDurationSplit, formatEndPhaseSplit, formatWorkflowSummary } from "./workflow-summary.js";

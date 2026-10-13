@@ -12,6 +12,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Pipeline mode: Duration includes the end phase (nax#2494).** `Duration` (footer, exit summary,
+  `RunResult.durationMs`, `run.complete`, `metrics.json` `totalDurationMs`) used to stop before the end phase
+  (finish, etc.), so pipeline and workflow runs measured different spans. Pipeline `Duration` now runs through
+  the end phase, and the footer shows the split: `stories 139m 53s + end phase 17m 35s`. `run.complete` is held
+  back until the end phase is done in both modes (still exactly once, through the same gate) and carries
+  `storiesDurationMs` and `endPhaseDurationMs` (workflow mode keeps `featureWorkflowDurationMs`); the saved
+  `metrics.json` record is rewritten with the whole-run `totalDurationMs`, the split and the final `totalCost`
+  and `completedAt`. The `run:completed` event (reporters, the on-complete hook) deliberately stays where it
+  is, before the end phase, in both modes: it fires with the stories-only duration and cost, and is not
+  re-fired. If a late completion step throws, the held-back `run.complete` line is still written before the
+  error propagates.
 - **Workflow mode: the run log shows decisions, and Duration covers the feature workflow (nax#2491).**
   `Duration` and `run.complete` used to stop at the last story and leave out the feature workflow (repo
   gates, branch review, branch fix, re-review, final gates, publish), undercounting a run by 10-16%. They now
@@ -29,8 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   whole-run `totalDurationMs` plus `storiesDurationMs` and `featureWorkflowDurationMs`, and the `run.complete`
   line carries the final cost and a `success` that follows the workflow result. The `run:completed` event
   (reporters, the on-complete hook) still fires before the feature workflow, so it sees the stories-only
-  duration and cost. In pipeline mode `Duration` still excludes the end phase (finish), while workflow-mode
-  `Duration` includes it; that asymmetry is unchanged here. Ledger lines the step lines already state are no
+  duration and cost. Pipeline mode follows the same rule since nax#2494 (see above). Ledger lines the step lines already state are no
   longer mirrored to the log (`ledger.md` keeps them), and mirrored text is capped at 200 characters.
 - **A hidden `.nax/` index flag no longer outlives the run (#2490).** At run end (completion phase, the runner's finally block, and fatal-signal teardown) nax clears `skip-worktree` / `assume-unchanged` on any `.nax` path (root or nested) and logs a warning, so the PRD an agent hid from git is committed again.
 - **Workflow mode: the run tree moves into the repo (nax#2479).** Briefs, reports, review packages, the
