@@ -83,6 +83,10 @@ export function buildWorkflowBrief(input: WorkflowBriefInput): string {
     .join("\n");
 }
 
+/** nax#2479: evidence lives in the report, never as new files in the repository. */
+export const WORKFLOW_ARTIFACTS_RULE =
+  "The report is the only place for evidence, command output and notes: write it with the Write or Edit tool (shell redirects into it are blocked). Do not create evidence, log or note files anywhere else in the repository; use your scratchpad (.nax/scratchpad/) for throwaway files.";
+
 export const WORKFLOW_REPLY_CONTRACT = `End your reply with exactly one fenced json block:
 
 \`\`\`json
@@ -110,6 +114,8 @@ Write ${input.reportPath} with these sections:
 - **TDD evidence**: for each AC, the failing run and the passing run (command and the relevant output lines). Missing evidence, or a test that asserts nothing, fails review.
 - **Files changed**
 - **Decisions & assumptions**: every judgment call you made and why.
+
+${WORKFLOW_ARTIFACTS_RULE}
 
 ${WORKFLOW_REPLY_CONTRACT}`;
 }
@@ -142,6 +148,7 @@ ${renderWorkflowFindings(input.findings)}${uncommitted}
 ## How to work
 - Fix every finding above. Re-run the tests that cover what you changed, and add a test where a finding names a missing one (TDD: see it fail first).
 - Commit, then append a "Fix round ${input.round}" section to ${input.reportPath}: what you changed for each finding id, the test evidence, and any new Decisions & assumptions.
+- ${WORKFLOW_ARTIFACTS_RULE}
 - Do not dispatch sub-agents or reviewers.
 
 ${WORKFLOW_REPLY_CONTRACT}`;

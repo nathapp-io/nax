@@ -12,7 +12,7 @@ function buildCtx(overrides: Record<string, unknown> = {}) {
   return { packageView, config: packageView.select(opSelector(workflowConfigSelector)) };
 }
 
-const input: WorkflowBranchFixInput = { prompt: "fix B1", timeoutMs: 1 };
+const input: WorkflowBranchFixInput = { prompt: "fix B1", timeoutMs: 1, reportPath: "/r.md" };
 const interrupted: AdapterFailure = {
   category: "availability",
   outcome: "fail-stale",

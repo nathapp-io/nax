@@ -39,10 +39,10 @@ describe("buildFeatureContext", () => {
     expect(fc.callCtx.featureName).toBe("f");
     expect(fc.callCtx.storyId).toBeUndefined();
     expect(fc.callCtx.askResolver).toBeDefined();
-    expect(fc.runDir).toBe(`${runtime.outputDir}/workflow/f/r1`);
-    expect(fc.featureDir).toBe(`${runtime.outputDir}/workflow/f`);
+    expect(fc.runDir).toBe("/repo/.nax/features/f/workflow/r1");
+    expect(fc.featureDir).toBe("/repo/.nax/features/f/workflow");
     expect(fc.prdPath).toBe("/repo/.nax/features/f/prd.json");
-    expect(fc.reportPath).toBe(`${runtime.outputDir}/workflow/f/r1/feature-report.md`);
+    expect(fc.reportPath).toBe("/repo/.nax/features/f/workflow/r1/feature-report.md");
     expect(fc.packageDirs).toEqual(["packages/api"]);
     await dispose();
     expect(disposed).toBe(true);

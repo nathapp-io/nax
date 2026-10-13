@@ -56,6 +56,7 @@ export async function runImplementerTurn(sc: StepContext, turn: ImplementTurn): 
     reply = await _workflowDeps.callOp(sc.callCtx, workflowImplementOp, {
       story: sc.story,
       prompt: promptFor(sc, turn),
+      reportPath: sc.reportPath,
       ...(model !== undefined ? { model } : {}),
       timeoutMs,
     });

@@ -45,7 +45,7 @@ export async function buildStoryEnv(
 ): Promise<{ sc: StepContext; env: StoryLoopEnv; closeOnError: (reason: string) => Promise<void> }> {
   const feature = ctx.prd.feature;
   const { outputDir, runId } = ctx.runtime;
-  const runDir = workflowRunDir(outputDir, feature, runId);
+  const runDir = workflowRunDir(ctx.projectDir, feature, runId);
   const storyDir = workflowStoryDir(runDir, ctx.story.id);
   const workflow = resolveWorkflowConfig(ctx.rootConfig);
   const base = ctx.storyGitRef ?? (await readHead(ctx.projectDir));
@@ -80,7 +80,7 @@ export async function buildStoryEnv(
   };
 
   await ensureLedger(runDir, runId, feature);
-  const priorStory = await loadPriorStory(workflowFeatureDir(outputDir, feature), runId, ctx.story.id);
+  const priorStory = await loadPriorStory(workflowFeatureDir(ctx.projectDir, feature), runId, ctx.story.id);
   const prior = priorStory?.record ?? null;
   // A crash during the first implement turn leaves nothing to resume into: start the story over
   // (a new session sees the uncommitted edits in the tree). Mid-loop records resume (spec §10).

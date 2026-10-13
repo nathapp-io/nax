@@ -1,6 +1,7 @@
 /** A5 workflow mode: the whole-branch review, its scoped re-review, and the one branch fix (spec §7 steps 2-4). */
 import {
   renderWorkflowFindings,
+  WORKFLOW_ARTIFACTS_RULE,
   WORKFLOW_REPLY_CONTRACT,
   type WorkflowPromptFinding,
 } from "./workflow-implementer-builder";
@@ -101,6 +102,7 @@ ${renderWorkflowFindings(input.findings)}
 - For a red repo gate, make that gate green. For a story that ended with a red gate, make its gates green.
 - Re-run the tests that cover what you changed, and add a test where a finding names a missing one (TDD: see it fail first).
 - Commit, then append a "Branch fix" section to ${input.reportPath}: what you changed for each finding id, the test evidence, and any Decisions & assumptions.
+- ${WORKFLOW_ARTIFACTS_RULE}
 - Do not dispatch sub-agents or reviewers.
 
 ${WORKFLOW_REPLY_CONTRACT}`;

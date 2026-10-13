@@ -30,6 +30,8 @@ export interface RunDispatchOptionsParams {
   readonly declaredTools: readonly CodingToolName[];
   readonly toolPatterns?: ToolPatternNarrowing;
   readonly fileOutputPath?: string;
+  /** `op.writableOutput`: exempt from the owned-write guard, never swapped into the reply (nax#2479). */
+  readonly writableOutputPath?: string;
   readonly keepOpen: boolean;
   /**
    * The call's abort signal (`ctx.signal ?? ctx.runtime.signal`, from the dispatch
@@ -69,9 +71,11 @@ export function buildRunDispatchOptions(ctx: CallContext, params: RunDispatchOpt
     declaredTools,
     toolPatterns,
     fileOutputPath,
+    writableOutputPath,
     keepOpen,
     abortSignal,
   } = params;
+  const ownedWriteExemption = fileOutputPath ?? writableOutputPath;
   return {
     prompt,
     workdir: storyExecRoot(ctx.packageView),
@@ -92,7 +96,7 @@ export function buildRunDispatchOptions(ctx: CallContext, params: RunDispatchOpt
     ...runtimeDispatchFields(ctx.runtime),
     ...(toolPatterns !== undefined ? { toolPatterns } : {}),
     codingToolRoot: storyExecRoot(ctx.packageView),
-    ...(fileOutputPath !== undefined ? { codingToolFileOutput: fileOutputPath } : {}),
+    ...(ownedWriteExemption !== undefined ? { codingToolFileOutput: ownedWriteExemption } : {}),
     // PR1 (single-frame redesign): thread the repo root and the story's
     // RELATIVE package dir independently of codingToolRoot, so
     // resolveCodingToolSupport can resolve declared commands' execution cwd

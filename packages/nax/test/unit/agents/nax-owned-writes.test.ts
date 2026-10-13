@@ -131,6 +131,22 @@ describe("naxOwnedWriteRefusal — queue run-control file (SEC-5)", () => {
   });
 });
 
+describe("naxOwnedWriteRefusal — workflow report exemption (nax#2479)", () => {
+  const REPORT = ".nax/features/auth/workflow/run-1/US-001/report.md";
+
+  test("exempts the one report path a workflow session declared", () => {
+    for (const tool of ["Write", "Edit"]) expect(naxOwnedWriteRefusal(tool, REPORT, REPORT)).toBeUndefined();
+  });
+
+  test("the exemption is path-exact: the brief beside it stays refused", () => {
+    expect(naxOwnedWriteRefusal("Write", ".nax/features/auth/workflow/run-1/US-001/brief.md", REPORT)).toBeDefined();
+  });
+
+  test("without the exemption the report is nax state like any other", () => {
+    expect(naxOwnedWriteRefusal("Write", REPORT)).toBeDefined();
+  });
+});
+
 describe("naxOwnedWriteRefusal — plan-op exemption (nax#2115)", () => {
   const PRD = ".nax/features/auth/prd.json";
 

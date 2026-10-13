@@ -218,7 +218,11 @@ the following and log one warning that names every key it overrode.
 ## 6. Story workflow (`workflowStage`, one story)
 
 Record `BASE = HEAD` first. Per-story artifacts live under `<storyDir>` =
-`<outputDir>/<project>/workflow/<feature>/<runId>/<storyId>/`.
+`<repo>/.nax/features/<feature>/workflow/<runId>/<storyId>/` (nax#2479: inside the repo so the agents'
+file tools can read them; git-ignored through `NAX_GITIGNORE_ENTRIES`, which run setup reconciles into
+`.git/info/exclude`). Agents may write only the one report their op declares as `writableOutput`
+(the story's `report.md`, or the feature report for the branch fix); everything else under `.nax/`
+stays nax-owned.
 
 1. **Brief** (`brief.md`):
    - the story description, ACs word for word, `contextFiles`, `expectedFiles`;
@@ -399,7 +403,7 @@ only means "don't re-run".
 
 ## 9. Artifacts and telemetry
 
-`<outputDir>/<project>/workflow/<feature>/<runId>/`:
+`<repo>/.nax/features/<feature>/workflow/<runId>/` (see §6 for why it lives in the repo):
 - **`ledger.md`:** the recovery map. The first line identifies the run, then the skill's line format:
   - `US-003: fix round 2/5 (…)`
   - `US-003: deferred-minor: …`

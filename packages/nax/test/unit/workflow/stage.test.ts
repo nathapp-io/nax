@@ -357,7 +357,7 @@ describe("workflowStage with the real story env", () => {
       throw new Error("forced");
     };
     expect(await workflowStage.execute(ctx)).toEqual({ action: "continue" });
-    const result = await readResult(workflowRunDir(runtime.outputDir, "feat", runtime.runId));
+    const result = await readResult(workflowRunDir(workdir, "feat", runtime.runId));
     expect(result?.stories[ctx.story.id]).toMatchObject({
       state: "complete-gate-open",
       reason: "workflow error: forced",

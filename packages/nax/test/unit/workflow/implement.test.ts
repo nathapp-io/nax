@@ -93,6 +93,8 @@ describe("runImplementerTurn", () => {
     expect(seen[0]?.timeoutMs).toBe(111);
     expect(seen[0]?.model).toBeUndefined();
     expect(seen[0]?.prompt).toContain("/b.md");
+    // nax#2479: the report path rides on every implementer call, so the session may write it.
+    expect(seen[0]?.reportPath).toBe("/r.md");
     expect(out.autoCommitted).toBe(true);
     expect(commits[0]?.slice(0, 4)).toEqual(["/repo", "workflow", "wf-implementer", "US-001"]);
   });
@@ -229,6 +231,8 @@ describe("runImplementerTurn", () => {
     expect(seen[0]?.model).toBe("balanced");
     expect(seen[0]?.prompt).toContain("src/half.ts");
     expect(seen[0]?.prompt).toContain("you own it now");
+    // The fresh escalated session gets the same report exemption as the warm one (nax#2479).
+    expect(seen[0]?.reportPath).toBe(makeStepContext({ workflow }).reportPath);
   });
 
   test("fresh fix turn: a session that fails to close does not stop the turn", async () => {

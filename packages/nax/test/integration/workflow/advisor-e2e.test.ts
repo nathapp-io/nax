@@ -27,6 +27,7 @@ import {
   workflowReReviewOp,
   workflowStoryReviewOp,
 } from "@/operations";
+import { workflowRunDir } from "@/workflow/paths";
 import { _workflowStageDeps, workflowStage } from "@/workflow/stage";
 import { _workflowDeps } from "@/workflow/step-context";
 
@@ -162,7 +163,7 @@ async function readDecisions(repo: string, feature: string) {
 
 describe("workflow advisor kinds end to end", () => {
   test("residual carry: US-1 closes with rulings; US-2's brief carries the instruction", async () => {
-    const { repo, out, ctxFor, feature } = await setup();
+    const { repo, ctxFor, feature } = await setup();
     fakeWorkflowAgent(repo, {
       implementer: () => ({ status: "DONE" }),
       review: {
@@ -185,7 +186,7 @@ describe("workflow advisor kinds end to end", () => {
     const ctx1 = ctxFor(US1);
     expect(await workflowStage.execute(ctx1)).toEqual({ action: "continue" });
 
-    const runDir = join(out, "workflow", feature, ctx1.runtime.runId);
+    const runDir = workflowRunDir(repo, feature, ctx1.runtime.runId);
     const result = await Bun.file(join(runDir, "result.json")).json();
     expect(result.stories["US-1"].state).toBe("complete-with-rulings");
     const decisions = await readDecisions(repo, feature);

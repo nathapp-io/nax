@@ -18,6 +18,7 @@ import { _ciWaitDeps } from "@/workflow/ci-wait";
 import { runWorkflowFeature } from "@/workflow/feature";
 import { _featureContextDeps } from "@/workflow/feature-context";
 import { _featureDeps } from "@/workflow/feature-deps";
+import { workflowRunDir } from "@/workflow/paths";
 import { newStoryRecord, readResult, upsertStoryRecord } from "@/workflow/result";
 import { _workflowDeps } from "@/workflow/step-context";
 
@@ -66,7 +67,7 @@ async function setup() {
   runtimes.push(runtime);
   const prd = makeTestPRD([makeTestStory({ id: "US-001", status: "passed", passes: true })]);
   // A prior story run left a closed record and one deferred minor.
-  const storyRun = join(out, "workflow", prd.feature, "run-stories");
+  const storyRun = workflowRunDir(repo, prd.feature, "run-stories");
   await upsertStoryRecord(
     storyRun,
     { runId: "run-stories", feature: prd.feature },
@@ -163,7 +164,7 @@ async function setup() {
     runId: runtime.runId,
     agentName: "claude",
   };
-  return { repo, out, input, gh, ops, pushes, gateRuns, runDir: join(out, "workflow", prd.feature, runtime.runId) };
+  return { repo, out, input, gh, ops, pushes, gateRuns, runDir: workflowRunDir(repo, prd.feature, runtime.runId) };
 }
 
 describe("workflow feature end to end", () => {

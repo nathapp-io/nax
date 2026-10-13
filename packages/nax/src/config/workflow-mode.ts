@@ -11,11 +11,14 @@ export function applyWorkflowMode(config: NaxConfig, warn: (msg: string) => void
   const overridden: string[] = [];
   if (config.acceptance.enabled) overridden.push("acceptance.enabled=false");
   if (config.advisor && !config.advisor.enabled) overridden.push("advisor.enabled=true");
+  // The workflow tree and its git reads sit in the main checkout (nax#2479), so stories share it.
+  if (config.execution.storyIsolation === "worktree") overridden.push("execution.storyIsolation=shared");
   if (overridden.length === 0) return config;
   warn(`execution.mode "workflow" overrides: ${overridden.join(", ")}`);
   return {
     ...config,
     acceptance: { ...config.acceptance, enabled: false },
+    execution: { ...config.execution, storyIsolation: "shared" },
     ...(config.advisor ? { advisor: { ...config.advisor, enabled: true } } : {}),
   };
 }

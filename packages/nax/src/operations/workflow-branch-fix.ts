@@ -18,6 +18,8 @@ export interface WorkflowBranchFixInput {
   readonly model?: ConfiguredModel;
   /** Step limit: the soft interrupt fires here. */
   readonly timeoutMs: number;
+  /** The feature report: the one nax-owned file this session may write (nax#2479). */
+  readonly reportPath: string;
 }
 
 export const workflowBranchFixOp: RunOperationWithHooks<
@@ -35,6 +37,7 @@ export const workflowBranchFixOp: RunOperationWithHooks<
   model: (input, ctx) =>
     input.model ?? ctx.config.workflow?.models?.branchFix ?? ctx.config.finish?.reviewers?.fix ?? undefined,
   timeoutMs: (input) => input.timeoutMs + STEP_TIMEOUT_MARGIN_MS,
+  writableOutput: (input) => input.reportPath,
   build(input) {
     return {
       role: { id: "role", content: "", overridable: false },
