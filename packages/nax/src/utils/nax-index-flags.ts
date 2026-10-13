@@ -24,9 +24,12 @@ function isHiddenTag(tag: string): boolean {
 }
 
 /** Paths under `.nax/` carrying a skip-worktree or assume-unchanged bit. */
-async function hiddenNaxPaths(workdir: string): Promise<string[]> {
-  const { stdout, exitCode } = await gitWithTimeout(["ls-files", "-v", "-z", "--", NAX_PATHSPEC], workdir);
-  if (exitCode !== 0) return [];
+async function hiddenNaxPaths(workdir: string, logger: IndexFlagLogger | null | undefined): Promise<string[]> {
+  const { stdout, stderr, exitCode } = await gitWithTimeout(["ls-files", "-v", "-z", "--", NAX_PATHSPEC], workdir);
+  if (exitCode !== 0) {
+    logger?.warn("run-end", "Index flag sweep could not list .nax entries", { storyId: "_run", exitCode, stderr });
+    return [];
+  }
   return stdout
     .split("\0")
     .filter((entry) => entry.length > 2 && isHiddenTag(entry[0] as string))
@@ -44,12 +47,19 @@ export async function clearNaxIndexFlags(
 ): Promise<string[]> {
   const cleared: string[] = [];
   try {
-    for (const path of await hiddenNaxPaths(workdir)) {
+    for (const path of await hiddenNaxPaths(workdir, logger)) {
       // Two calls: git applies only one of the two --no- flags when both are
       // passed together, leaving the other bit set.
       const skip = await gitWithTimeout(["update-index", "--no-skip-worktree", "--", path], workdir);
       const assume = await gitWithTimeout(["update-index", "--no-assume-unchanged", "--", path], workdir);
-      if (skip.exitCode !== 0 || assume.exitCode !== 0) continue;
+      if (skip.exitCode !== 0 || assume.exitCode !== 0) {
+        logger?.warn("run-end", "Could not clear a skip-worktree/assume-unchanged flag on nax run state", {
+          storyId: "_run",
+          path,
+          stderr: `${skip.stderr}${assume.stderr}`,
+        });
+        continue;
+      }
       cleared.push(path);
       logger?.warn("run-end", "Cleared a skip-worktree/assume-unchanged flag on nax run state", {
         storyId: "_run",

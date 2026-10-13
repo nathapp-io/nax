@@ -6,7 +6,7 @@ release may change the public API.
 
 ## [Unreleased]
 
-- Bash guard for nax run state (#2490): `git update-index --skip-worktree` / `--assume-unchanged` (and the `--no-` forms) on a `.nax` path, `git stash` / `push` / `pop` / `apply` in a repo that holds a `.nax/` directory (unless the pathspec excludes `.nax`), and `git checkout` / `restore` of a `.nax` path are now refused in every segment of a compound command, in gated and raw mode.
+- Bash guard for nax run state (#2490): `git update-index --skip-worktree` / `--assume-unchanged` (and the `--no-` forms) on a `.nax` path, `git stash` / `push` / `pop` / `apply` in a repo that holds a `.nax/` directory (unless the pathspec excludes `.nax`), and `git checkout` / `restore` of a `.nax` path are now refused in every segment of a compound command, in gated and raw mode, also behind `git -C`/`-c`, env assignments, `env`/`command`/`nice`/`timeout`/`xargs` wrappers and `bash -c`.
 - Native errors: a `quota` kind from `@nathapp/nax-ai` (usage-limit and token-plan 429s) now maps to
   `fail-quota` instead of a transient rate limit.
 

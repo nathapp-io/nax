@@ -14,6 +14,7 @@
  */
 
 import { totalSpendUsd } from "@/runtime";
+import { clearNaxIndexFlags } from "@/utils/nax-index-flags";
 import type { NaxConfig } from "../config";
 import { PluginProviderCache, ProviderWeightsCache } from "../context/engine";
 import { NaxError } from "../errors";
@@ -419,6 +420,10 @@ export async function run(options: RunOptions): Promise<RunResult> {
       } catch {
         // Branch resolution is non-critical
       }
+
+      // #2490: idempotent; covers an execution-phase throw that skipped the
+      // completion-phase sweep. Never throws.
+      await clearNaxIndexFlags(workdir, logger);
 
       // Execute cleanup operations
       logger?.debug("execution", "Runner finally — running cleanupRun");

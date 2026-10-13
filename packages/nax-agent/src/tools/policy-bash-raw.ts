@@ -53,7 +53,7 @@ import { relative, resolve, sep } from "node:path";
 import { realOrRaw } from "#src/internal/realpath";
 import { type BashSegment, type BashToken, lexBashCommand } from "#src/permissions/index";
 import { cdTargetsFor, nextWorkingDirectories } from "./bash-cwd.ts";
-import { anyFrameHasNaxDir, naxStateRefusal, naxStateRefusalInText } from "./nax-state-guard.ts";
+import { naxStateRefusal, naxStateRefusalInText } from "./nax-state-guard.ts";
 import type { OwnedBashCandidate, OwnedPathsPolicy } from "./owned-paths.ts";
 import type { BashCheck } from "./policy-bash.ts";
 
@@ -181,7 +181,7 @@ function segmentGuard(args: RawScreenArgs, segment: BashSegment, cwd: readonly s
   }
   const refusal = naxStateRefusal(
     segment.tokens.map((token) => token.text),
-    anyFrameHasNaxDir(cwd),
+    { frames: cwd, root: args.root },
   );
   return refusal === undefined ? undefined : deny(refusal);
 }
@@ -196,7 +196,7 @@ export function screenRawBashCommand(args: RawScreenArgs): BashCheck {
   // Except nax's run state (#2490): a refused command (`... 2>&1; git stash pop`)
   // is still read with the crude splitter for the revert/update-index/stash rules.
   if (lexed.kind === "refused")
-    return stateScreen(naxStateRefusalInText(command, anyFrameHasNaxDir([args.initialPath])));
+    return stateScreen(naxStateRefusalInText(command, { frames: [args.initialPath], root: args.root }));
 
   let cwd: readonly string[] = [args.initialPath];
   const sandboxWrapped = args.sandboxWrapped === true;

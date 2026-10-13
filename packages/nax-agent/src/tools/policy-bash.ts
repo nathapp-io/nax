@@ -30,7 +30,7 @@ import type { BashSegment, BashToken } from "#src/permissions/index";
 import { lexBashCommand } from "#src/permissions/index";
 import { cdTargetsFor, nextWorkingDirectories } from "./bash-cwd.ts";
 import { deniedFlag } from "./exec-guard.ts";
-import { anyFrameHasNaxDir, naxStateRefusal } from "./nax-state-guard.ts";
+import { naxStateRefusal, naxStateRefusalInText } from "./nax-state-guard.ts";
 import type { CompiledEntry, CompiledPattern } from "./policy-match.ts";
 
 export type BashCheck =
@@ -167,7 +167,7 @@ function checkPayload(
   if (flag !== undefined) return { refusal: deny(`flag ${flag} is not permitted in a Bash command`) };
 
   // #2490: nax's run state is out of bounds for revert, index-hiding and stash.
-  const stateRefusal = naxStateRefusal(words, anyFrameHasNaxDir(cwd));
+  const stateRefusal = naxStateRefusal(words, { frames: cwd, root: args.initialPath });
   if (stateRefusal !== undefined) return { refusal: deny(stateRefusal) };
 
   for (const token of segment.tokens) {
@@ -251,6 +251,21 @@ function checkPayload(
   return { cdTargets };
 }
 
+/** The lexical refusal, except that a stash/update-index/revert of nax's run state (#2490) is a hard, non-escalatable deny. */
+function refusedDeny(args: BashCheckArgs, construct: string): BashCheck {
+  const stateRefusal = naxStateRefusalInText(String(args.command), {
+    frames: [args.initialPath],
+    root: args.initialPath,
+  });
+  if (stateRefusal !== undefined) return deny(stateRefusal);
+  return deny(
+    `command contains ${construct}, which cannot be analysed and is therefore refused -- ` +
+      "rewrite it without that construct, or use a structured tool",
+    false,
+    true,
+  );
+}
+
 export function checkBashCommand(args: BashCheckArgs): BashCheck {
   const { command, tool } = args;
   if (typeof command !== "string") return deny(`"command" must be a string`);
@@ -278,14 +293,7 @@ export function checkBashCommand(args: BashCheckArgs): BashCheck {
     cwd = nextWorkingDirectories(segment, cwd, result.cdTargets);
   }
 
-  if (lexed.kind === "refused") {
-    return deny(
-      `command contains ${lexed.construct}, which cannot be analysed and is therefore refused -- ` +
-        "rewrite it without that construct, or use a structured tool",
-      false,
-      true,
-    );
-  }
+  if (lexed.kind === "refused") return refusedDeny(args, lexed.construct);
 
   for (const segment of segments) {
     if (args.grant.unconditional || matchesSegment(args.grant, segment)) continue;

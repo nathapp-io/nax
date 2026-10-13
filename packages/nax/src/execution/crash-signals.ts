@@ -17,6 +17,7 @@
  */
 
 import { getSafeLogger } from "../logger";
+import { clearNaxIndexFlags } from "../utils/nax-index-flags";
 import { type RunCompleteContext, updateStatusToCrashed, writeFatalLog, writeRunComplete } from "./crash-writer";
 import type { PidRegistry } from "./pid-registry";
 import type { StatusWriter } from "./status-writer";
@@ -48,6 +49,11 @@ export interface SignalHandlerContext extends RunCompleteContext {
    * early has no dispatch scope to seal.
    */
   sealApprovals?: () => Promise<void>;
+  /**
+   * Repo working directory (#2490). When set, teardown clears any
+   * skip-worktree/assume-unchanged flag an agent left on `.nax/` run state.
+   */
+  workdir?: string;
 }
 
 /**
@@ -138,6 +144,12 @@ export async function performTeardown(ctx: SignalHandlerContext): Promise<void> 
   // wedged seal must not leave teardown hanging.
   if (ctx.sealApprovals) {
     await ctx.sealApprovals().catch(() => undefined);
+  }
+
+  // #2490: an agent may have hidden nax's run state from git. One bounded git
+  // spawn (gitWithTimeout) that never throws, inside the fatal deadline.
+  if (ctx.workdir) {
+    await clearNaxIndexFlags(ctx.workdir, getSafeLogger());
   }
 }
 

@@ -467,3 +467,28 @@ describe("performTeardown — US-002 approvals seal", () => {
     expect(killAll).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("performTeardown — hidden .nax index flags (#2490)", () => {
+  test("clears a skip-worktree flag on a .nax path when the context names a workdir", async () => {
+    const { mkdirSync, mkdtempSync, rmSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { gitWithTimeout } = await import("@/utils/git");
+    const dir = mkdtempSync(join(tmpdir(), "nax-teardown-"));
+    try {
+      await gitWithTimeout(["init", "-q"], dir);
+      mkdirSync(join(dir, ".nax"), { recursive: true });
+      writeFileSync(join(dir, ".nax/prd.json"), "{}\n");
+      await gitWithTimeout(["add", "-A"], dir);
+      await gitWithTimeout(["-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-q", "-m", "seed"], dir);
+      await gitWithTimeout(["update-index", "--skip-worktree", ".nax/prd.json"], dir);
+
+      await performTeardown({ ...minimalCtx, workdir: dir });
+
+      const { stdout } = await gitWithTimeout(["ls-files", "-v", "--", ".nax"], dir);
+      expect(stdout).toMatch(/^H /);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

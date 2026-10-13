@@ -61,6 +61,23 @@ describe("clearNaxIndexFlags (#2490)", () => {
     expect(await git(dir, "ls-files", "-v", "--", "src/x.ts")).toMatch(/^S /);
   });
 
+  test("clears an entry with both bits set (lowercase h tag)", async () => {
+    const dir = await makeRepo();
+    await git(dir, "update-index", "--skip-worktree", "--assume-unchanged", ".nax/features/f/prd.json");
+    expect(await git(dir, "ls-files", "-v", "--", ".nax")).toMatch(/^h /);
+    const cleared = await clearNaxIndexFlags(dir, { warn: () => {} });
+    expect(cleared).toEqual([".nax/features/f/prd.json"]);
+    expect(await git(dir, "ls-files", "-v", "--", ".nax")).toMatch(/^H /);
+  });
+
+  test("warns when git cannot list the entries", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "nax-idx-nogit-"));
+    dirs.push(dir);
+    const warnings: string[] = [];
+    await clearNaxIndexFlags(dir, { warn: (_s: string, m: string) => warnings.push(m) });
+    expect(warnings.some((m) => m.includes("could not list"))).toBe(true);
+  });
+
   test("returns nothing outside a git repository", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nax-idx-nogit-"));
     dirs.push(dir);
