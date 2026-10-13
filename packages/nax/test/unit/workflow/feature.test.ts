@@ -10,6 +10,7 @@ import {
   makeTestStory,
 } from "@test/helpers";
 import type { WorkflowStatusBlock } from "@/execution";
+import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import type { NaxRuntime } from "@/runtime";
 import { _featureRunDeps, runWorkflowFeature } from "@/workflow/feature";
 import type { FeatureEnv } from "@/workflow/feature-machine";
@@ -200,5 +201,19 @@ describe("runWorkflowFeature", () => {
     };
     await expect(runWorkflowFeature(input)).rejects.toThrow("boom");
     expect(disposed()).toBe(1);
+  });
+
+  test("logs the hand-off from the story loops to the feature workflow, with the stories' duration", async () => {
+    const { input } = setup();
+    resetLogger();
+    const logs: LogEntry[] = [];
+    initLogger({ level: "silent" });
+    addSink((entry) => logs.push(entry));
+    try {
+      await runWorkflowFeature({ ...input, storiesDurationMs: 8_393_000 });
+    } finally {
+      resetLogger();
+    }
+    expect(logs.map((e) => e.message)).toContain("stories done 1/1 (139m 53s) - feature workflow start");
   });
 });

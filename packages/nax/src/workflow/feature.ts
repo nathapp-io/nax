@@ -3,7 +3,9 @@
  * one branch review, one branch fix, one re-review, adjudication, gates again, then publish.
  * Resumes an unfinished prior record; skips when already finished at this HEAD (P4-R1).
  */
+import { formatDuration } from "@/log-format";
 import { getSafeLogger } from "@/logger";
+import { FEATURE_SCOPE } from "./advisor-live";
 import { specPathFor } from "./brief";
 import { buildFeatureContext, type FeatureContext, type WorkflowFeatureInput } from "./feature-context";
 import { buildFeatureEnv } from "./feature-env";
@@ -19,6 +21,7 @@ import {
 import { readHead } from "./git";
 import { appendLedger, ensureLedger, ledgerText } from "./ledger";
 import { collectLedgerItems } from "./ledger-items";
+import { logWorkflow } from "./run-log";
 import { resolveSeed } from "./seed";
 import { workflowStatusBlock } from "./status-block";
 import { startTokenMeter, type TokenMeter } from "./tokens";
@@ -86,6 +89,12 @@ function logComplete(stories: readonly StorySummary[], rec: WorkflowFeatureRecor
   });
 }
 
+function logHandOff(stories: readonly StorySummary[], storiesDurationMs: number | undefined): void {
+  const ran = stories.filter((s) => s.state !== "not-run").length;
+  const took = storiesDurationMs === undefined ? "" : ` (${formatDuration(storiesDurationMs)})`;
+  logWorkflow(FEATURE_SCOPE, `stories done ${ran}/${stories.length}${took} - feature workflow start`);
+}
+
 /** Ready and draft are published; a local-only prior published nothing, so it runs again (P4-R1 ruling). */
 function isFinishedAtHead(prior: WorkflowFeatureRecord | null, head: string): prior is WorkflowFeatureRecord {
   return prior?.step === "done" && prior.head === head && (prior.outcome === "ready" || prior.outcome === "draft");
@@ -108,6 +117,7 @@ async function runInContext(
     return { ...resultOf(prior), outcome: "already-finished" };
   }
   const record = await startRecord(fc, prior);
+  logHandOff(stories, input.storiesDurationMs);
   const env = buildFeatureEnv(fc, input, {
     stories,
     ledgerItems: await collectLedgerItems(fc.featureDir),

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import { appendLedger, ensureLedger, ledgerFilePath, ledgerText } from "@/workflow/ledger";
 
 const dirs: string[] = [];
@@ -38,5 +39,27 @@ describe("workflow ledger", () => {
 
   test("multi-line text is folded onto one line", () => {
     expect(ledgerText.deferredMinor("a\nb")).toBe("deferred-minor: a b");
+  });
+
+  test("every append is mirrored to the run log at info level, tag workflow, with storyId first", async () => {
+    const dir = makeTempDir("wf-ledger-log-");
+    dirs.push(dir);
+    resetLogger();
+    const logs: LogEntry[] = [];
+    initLogger({ level: "silent" });
+    addSink((entry) => logs.push(entry));
+    try {
+      await ensureLedger(dir, "run-1", "feat-a");
+      await appendLedger(dir, "US-001", ledgerText.fixRound(1, 5, "2 open: F1, F2"));
+      await appendLedger(dir, "_run", ledgerText.note("feature local-only: no forge"));
+    } finally {
+      resetLogger();
+    }
+    expect(logs.map((e) => [e.level, e.stage, e.message])).toEqual([
+      ["info", "workflow", "US-001: fix round 1/5 (2 open: F1, F2)"],
+      ["info", "workflow", "_run: feature local-only: no forge"],
+    ]);
+    expect(Object.keys(logs[0]?.data ?? {})[0]).toBe("storyId");
+    expect(logs[1]?.data?.storyId).toBe("_run");
   });
 });

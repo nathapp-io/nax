@@ -4,6 +4,7 @@
  * One branch review, exactly one fix pass, one scoped re-review, one adjudication.
  */
 import { NaxError } from "@/errors";
+import { FEATURE_SCOPE } from "./advisor-live";
 import { featurePassed } from "./approval";
 import type { BranchFixOutcome } from "./branch-fix";
 import type { BranchReviewFacts } from "./branch-review";
@@ -11,6 +12,7 @@ import type { PublishOutcome } from "./finalize";
 import { ledgerText } from "./ledger";
 import type { LedgerItem } from "./ledger-items";
 import type { RepoGateRun } from "./repo-gates";
+import { describeFindings, startStep } from "./run-log";
 import type { ReviewOutcome } from "./story-review";
 import type {
   BranchReviewVerdict,
@@ -97,8 +99,17 @@ function reviewFacts(env: FeatureEnv, rec: WorkflowFeatureRecord): BranchReviewF
   };
 }
 
+/** Wall-clock timing for the log only; the record's `timings` keep using `env.now`. */
+const featureStep = (label: string, announce = true, bare = false) =>
+  startStep(FEATURE_SCOPE, label, { announce, bare });
+
+const gatesText = (failing: readonly string[]): string =>
+  failing.length > 0 ? `red (${failing.join(", ")})` : "green";
+
 async function repoGatesStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Promise<Patch> {
+  const log = featureStep("repo-gates", false, true);
   const run = await env.steps.repoGates();
+  log.done(gatesText(run.summary.failing));
   const gateOpen: WorkflowFindingDraft[] = env.facts.stories
     .filter((s) => s.state === "complete-gate-open")
     .map((s) => ({
@@ -118,14 +129,18 @@ async function branchReviewStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Pr
     await env.sink.ledger(ledgerText.reviewSkipped("branch review: no seed"));
     return { reviewRan: false, step: "branch-fix" };
   }
+  const log = featureStep("branch-review");
   const out = await env.steps.branchReview(rec.seed, reviewFacts(env, rec));
   if (!out.ran) {
+    log.done(`skipped (${out.why})`);
     await env.sink.ledger(ledgerText.reviewSkipped(`branch review: ${out.why}`));
     return { reviewRan: false, step: "branch-fix" };
   }
   for (const item of out.verdict.cannotVerify) await env.sink.ledger(ledgerText.note(`cannot-verify: ${item}`));
   const triage = new Map(out.verdict.minorTriage.map((t) => [t.id, t.decision]));
   const { findings, nextFindingId } = assign(rec, out.verdict.findings.filter(isBlocking));
+  const minors = out.verdict.findings.filter((f) => !isBlocking(f));
+  log.done(`spec ${out.verdict.spec}, quality ${out.verdict.quality} - ${describeFindings([...findings, ...minors])}`);
   return {
     reviewRan: true,
     reviewOpen: findings,
@@ -141,18 +156,37 @@ async function branchFixStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Promi
   if (toFix.length === 0) return { step: "branch-rereview" };
   const fixBase = await env.steps.head();
   await env.sink.ledger(ledgerText.note(`branch fix: ${toFix.length} item(s): ${toFix.map((f) => f.id).join(", ")}`));
+  const log = featureStep("branch-fix");
   const out = await env.steps.branchFix(toFix);
+  log.done(`${toFix.map((f) => f.id).join(" ")}${out.failure ? ` (session failed: ${out.failure})` : ""}`);
   if (out.failure) await env.sink.ledger(ledgerText.note(`branch fix session failed: ${out.failure}`));
   if (out.autoCommitted) await env.sink.ledger(ledgerText.note("auto-committed the branch fix's edits"));
   if (out.dirty) await env.sink.ledger(ledgerText.note("branch fix left uncommitted edits: the auto-commit failed"));
   return { fixBase, fixRan: true, step: "branch-rereview" };
 }
 
+function reReviewText(
+  items: readonly WorkflowFinding[],
+  stillOpen: ReadonlySet<string>,
+  added: readonly WorkflowFinding[],
+  minorsLeft: number,
+): string {
+  const ids = (open: boolean) => items.filter((f) => stillOpen.has(f.id) === open).map((f) => f.id);
+  const parts = [
+    ...(ids(false).length > 0 ? [`${ids(false).join(" ")} addressed`] : []),
+    ...(ids(true).length > 0 ? [`${ids(true).join(" ")} NOT addressed`] : []),
+    ...(added.length > 0 ? [`new: ${describeFindings(added)}`] : []),
+  ];
+  return `${parts.join(", ")}; minors left: ${minorsLeft}`;
+}
+
 async function branchReReviewStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Promise<Patch> {
   const items = [...rec.reviewOpen, ...fixNowMinors(rec)];
   if (items.length === 0 || !rec.fixBase) return { step: "adjudicate" };
+  const log = featureStep("branch-rereview");
   const out = await env.steps.branchReReview(items, rec.fixBase);
   if (!out.ran) {
+    log.done(`skipped (${out.why})`);
     await env.sink.ledger(ledgerText.reviewSkipped(`branch re-review: ${out.why}`));
     return { step: "adjudicate" };
   }
@@ -160,11 +194,17 @@ async function branchReReviewStep(env: FeatureEnv, rec: WorkflowFeatureRecord): 
   const addressed = new Set(out.verdict.verdicts.filter((v) => v.addressed).map((v) => v.id));
   const stillOpen = new Set(items.map((f) => f.id).filter((id) => !addressed.has(id)));
   const { findings, nextFindingId } = assign(rec, out.verdict.newFindings.filter(isBlocking));
+  const minors = rec.minors.map((m) =>
+    m.triage === "fix-now" && stillOpen.has(m.id) ? { ...m, triage: "leave" as const } : m,
+  );
+  const newMinors = [...rec.newMinors, ...minorIssues(out.verdict.newFindings)];
+  const minorsLeft = minors.filter((m) => m.triage === "leave").length + newMinors.length;
+  log.done(reReviewText(items, stillOpen, findings, minorsLeft));
   return {
     reviewOpen: [...rec.reviewOpen.filter((f) => stillOpen.has(f.id)), ...findings],
     nextFindingId,
-    minors: rec.minors.map((m) => (m.triage === "fix-now" && stillOpen.has(m.id) ? { ...m, triage: "leave" } : m)),
-    newMinors: [...rec.newMinors, ...minorIssues(out.verdict.newFindings)],
+    minors,
+    newMinors,
     step: "adjudicate",
   };
 }
@@ -175,8 +215,15 @@ async function adjudicateStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Prom
 }
 
 async function finalGatesStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Promise<Patch> {
-  if (!rec.fixRan) return { ...(rec.repoGates ? { finalGates: rec.repoGates } : {}), step: "publish" };
+  if (!rec.fixRan) {
+    featureStep("final-gates", false, true).done(
+      `${gatesText(rec.repoGates?.failing ?? [])} (no fix ran; repo-gates reused)`,
+    );
+    return { ...(rec.repoGates ? { finalGates: rec.repoGates } : {}), step: "publish" };
+  }
+  const log = featureStep("final-gates", false, true);
   const run = await env.steps.repoGates();
+  log.done(gatesText(run.summary.failing));
   if (run.summary.failing.length === 0) return { finalGates: run.summary, step: "publish" };
   const names = run.summary.failing.join(", ");
   await env.sink.ledger(
@@ -186,9 +233,11 @@ async function finalGatesStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Prom
 }
 
 async function publishStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Promise<Patch> {
+  const log = featureStep("publish", false, true);
   const out = await env.steps.publish(rec);
   const head = await env.steps.head();
   const why = out.reasons.length > 0 ? `: ${out.reasons.join("; ")}` : "";
+  log.done(`${out.outcome}${out.url ? ` ${out.url}` : ""}${why}`);
   await env.sink.ledger(ledgerText.note(`feature ${out.outcome}${out.url ? ` ${out.url}` : ""}${why}`));
   return {
     outcome: out.outcome,

@@ -24,6 +24,8 @@ export interface WorkflowFeatureInput {
   readonly abortSignal?: AbortSignal;
   readonly interactionChain?: InteractionChain | null;
   readonly statusWriter?: { setWorkflowStatus?(block: WorkflowStatusBlock): void };
+  /** Wall time of the story loops, for the hand-off log line (nax#2491). */
+  readonly storiesDurationMs?: number;
 }
 
 export interface FeatureContext {

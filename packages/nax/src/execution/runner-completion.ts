@@ -28,13 +28,13 @@ import type { WorkflowFeatureInput, WorkflowFeatureResult } from "@/workflow";
 import { recordAdvisorSummary } from "./advisor-summary";
 import { stopHeartbeat, writeExitSummary } from "./crash-recovery";
 import type { DeferredReviewResult } from "./deferred-review";
-import { runEndPhase } from "./end-phase";
 import type { ExitReason } from "./executor-types";
 import type { AcceptanceLoopContext, AcceptanceLoopResult } from "./lifecycle/acceptance-loop";
 import type { RunCompletionOptions, RunCompletionResult } from "./lifecycle/run-completion";
 import { writeFinalFeatureStatus } from "./lifecycle/run-completion-phases";
 import type { AcceptancePhaseStatus } from "./status-file";
 import { hookCtx } from "./story-context";
+import { runEndPhaseReported } from "./workflow-end-report";
 import { effectiveParallelCount } from "./workflow-parallel";
 
 /**
@@ -124,6 +124,8 @@ export const _runnerCompletionDeps: {
   loadConfigForPackage(projectDir: string, packageDir: string | undefined, from: NaxConfig): Promise<NaxConfig>;
   runFinishPhase(ctx: FinishPhaseContext): Promise<FinishResult | null>;
   runWorkflowFeature(input: WorkflowFeatureInput): Promise<WorkflowFeatureResult | null>;
+  /** The run clock (wall ms); a seam so the workflow-duration split is testable. */
+  now(): number;
 } = {
   async runAcceptanceLoop(ctx) {
     const { runAcceptanceLoop } = await import("./lifecycle/acceptance-loop");
@@ -145,6 +147,7 @@ export const _runnerCompletionDeps: {
     const { runWorkflowFeature } = await import("@/workflow");
     return runWorkflowFeature(input);
   },
+  now: () => Date.now(),
 };
 
 /**
@@ -389,9 +392,12 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     // Workflow mode clamps --parallel to sequential (the executor already warned), so classify the clamped value.
     isSequential: !((effectiveParallelCount(options.config, options.parallel, () => {}) ?? 0) > 1),
     interactionChain: options.interactionChain,
+    // Workflow mode writes run.complete after the feature workflow, when the whole duration is known (nax#2491).
+    deferRunCompleteLog: isWorkflowMode(options.config),
   });
 
-  const { durationMs, runCompletedAt, finalCounts, reportedTotal, pluginGateFailed, mcpAdoption } = completionResult;
+  const { runCompletedAt, finalCounts, reportedTotal, pluginGateFailed, mcpAdoption } = completionResult;
+  let durationMs = completionResult.durationMs;
 
   // Write feature-level status (SFC-002).
   // Use reportedTotal (cost-aggregator-corrected) instead of the legacy
@@ -453,7 +459,14 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
   // after it, finish's spend never reaches totalCost and its deadline signal
   // is already fired. Fail-open: a finish that cannot run never fails a run
   // whose stories all passed.
-  const workflowPassed = await runEndPhase(options, _runnerCompletionDeps);
+  const endReport = await runEndPhaseReported(
+    options,
+    _runnerCompletionDeps,
+    completionResult,
+    _runnerCompletionDeps.now,
+  );
+  const { workflowPassed } = endReport;
+  durationMs = endReport.durationMs;
 
   // Finish mutates postRun in memory and can add successful or failed-dispatch
   // spend. Persist both status paths and return the same reconciled total.
@@ -486,6 +499,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
       startedAt: options.startedAt,
       completedAt: runCompletedAt,
       formatterMode: options.formatterMode,
+      ...endReport.footer,
     });
   }
 

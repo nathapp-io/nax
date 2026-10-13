@@ -4,6 +4,7 @@
  */
 import { appendFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { mirrorLedger } from "./run-log";
 import type { WorkflowEndState, WorkflowRuling } from "./types";
 
 export const _ledgerDeps = { appendFile, mkdir };
@@ -35,4 +36,6 @@ export async function ensureLedger(runDir: string, runId: string, feature: strin
 
 export async function appendLedger(runDir: string, storyId: string, text: string): Promise<void> {
   await _ledgerDeps.appendFile(ledgerFilePath(runDir), `${storyId}: ${text}\n`);
+  // The one mirror point: every workflow ledger write (story, feature, preflight, error path) lands here.
+  mirrorLedger(storyId, text);
 }

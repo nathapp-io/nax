@@ -120,6 +120,7 @@ async function runWorkflowEnd(options: RunnerCompletionOptions, deps: EndPhaseDe
       abortSignal: options.abortSignal,
       interactionChain: options.interactionChain,
       statusWriter: options.statusWriter,
+      storiesDurationMs: Date.now() - options.startTime,
     });
     return result?.passed ?? true;
   } catch (err) {

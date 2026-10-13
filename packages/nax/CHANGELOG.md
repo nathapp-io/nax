@@ -12,6 +12,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Workflow mode: the run log shows decisions, and Duration covers the feature workflow (nax#2491).**
+  `Duration` and `run.complete` used to stop at the last story and leave out the feature workflow (repo
+  gates, branch review, branch fix, re-review, final gates, publish), undercounting a run by 10-16%. They now
+  run through the end of the feature workflow, and the summary shows the parts: `stories 139m 53s + feature
+  workflow 17m 35s` (`run.complete` also carries `storiesDurationMs` and `featureWorkflowDurationMs`). The
+  `workflow` log tag now says what was decided: every ledger append is mirrored to the log (one helper at
+  all write points); each implementer, story-review, fix and re-review call is labelled with its step and
+  round, with the review verdict and finding count on one line and the per-finding re-review result; the
+  feature workflow logs one line per step (repo gates, branch-review finding counts by severity, branch fix,
+  re-review addressed/not addressed, final gates, publish outcome). The end-of-run summary adds a workflow
+  block built from `result.json`: tokens and cost by role, rounds per story, branch findings found / fixed /
+  left, and the publish outcome. Advisor content on log lines, resolved models, gate-line and warning noise
+  reduction and the repeated-tool-error outcome line (P4, P6-P8 of the issue) are not part of this change.
 - **Workflow mode: the run tree moves into the repo (nax#2479).** Briefs, reports, review packages, the
   ledger and `result.json` now live under `.nax/features/<feature>/workflow/<runId>/` instead of
   `<outputDir>/<project>/workflow/`, which sat outside the agents' file-tool root: implementers could not

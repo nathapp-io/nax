@@ -302,6 +302,8 @@ export function logRunCompletion(input: {
   aggByStage: CompletionCosts["aggByStage"];
   aggByStory: CompletionCosts["aggByStory"];
   durationMs: number;
+  /** Workflow mode (nax#2491): the stories / feature-workflow split behind `durationMs`. */
+  timing?: { storiesDurationMs: number; featureWorkflowDurationMs: number };
   logger: Logger | undefined;
 }): void {
   const logger = input.logger;
@@ -315,6 +317,7 @@ export function logRunCompletion(input: {
     aggByStage,
     aggByStory,
     durationMs,
+    timing,
   } = input;
   const { runId, feature, iterations, storiesCompleted } = options;
 
@@ -355,6 +358,9 @@ export function logRunCompletion(input: {
     ...(Object.keys(aggByStage).length > 0 && { costByStage: aggByStage }),
     ...(Object.keys(aggByStory).length > 0 && { costByStory: aggByStory }),
     durationMs,
+    ...(timing
+      ? { storiesDurationMs: timing.storiesDurationMs, featureWorkflowDurationMs: timing.featureWorkflowDurationMs }
+      : {}),
     storyMetrics: storyMetricsSummary,
   });
 }
