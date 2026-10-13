@@ -12,19 +12,20 @@ export interface RunStatePath {
   readonly rel: string;
 }
 
-const FEATURE_FILES: Readonly<Record<string, RunStateKind>> = {
-  "prd.json": "prd",
-  "status.json": "status",
-  "decisions.jsonl": "decisions",
-};
-const WORKFLOW_RUN_FILES: Readonly<Record<string, RunStateKind>> = {
-  "result.json": "workflow-result",
-  "ledger.md": "ledger",
-};
+/** Maps, not records: a plain-object lookup would find `constructor` and `__proto__` on the prototype chain. */
+const FEATURE_FILES: ReadonlyMap<string, RunStateKind> = new Map([
+  ["prd.json", "prd"],
+  ["status.json", "status"],
+  ["decisions.jsonl", "decisions"],
+]);
+const WORKFLOW_RUN_FILES: ReadonlyMap<string, RunStateKind> = new Map([
+  ["result.json", "workflow-result"],
+  ["ledger.md", "ledger"],
+]);
 
 function kindOf(tail: readonly string[]): RunStateKind | undefined {
-  if (tail.length === 1) return FEATURE_FILES[tail[0] ?? ""];
-  if (tail.length === 3 && tail[0] === "workflow") return WORKFLOW_RUN_FILES[tail[2] ?? ""];
+  if (tail.length === 1) return FEATURE_FILES.get(tail[0] ?? "");
+  if (tail.length === 3 && tail[0] === "workflow") return WORKFLOW_RUN_FILES.get(tail[2] ?? "");
   return undefined;
 }
 

@@ -4,11 +4,14 @@
  */
 import { resolve } from "node:path";
 import type { RunStateKeeper } from "./keeper";
-import { classifyRunStatePath } from "./paths";
+import { classifyRunStatePath, type RunStatePath } from "./paths";
 
 export type WriteIntent = { readonly content: string } | { readonly append: string };
 
 const active = new Set<RunStateKeeper>();
+
+/** Tail of the serialized write chain per absolute path. Entries are removed when their chain drains. */
+const chains = new Map<string, Promise<void>>();
 
 export function registerKeeper(k: RunStateKeeper): void {
   active.add(k);
@@ -29,14 +32,45 @@ async function baseContent(keeper: RunStateKeeper, path: string): Promise<string
   return (await file.exists()) ? await file.text() : "";
 }
 
-/** Record the intent first, so a concurrent repair restores exactly what nax is writing, then write. */
-export async function runStateWrite(path: string, intent: WriteIntent, write: () => Promise<void>): Promise<void> {
-  const abs = resolve(path);
-  const classified = classifyRunStatePath(abs);
-  const keepers = classified ? [...active].filter((k) => k.owns(classified)) : [];
-  if (!classified || keepers.length === 0) return write();
+/** Run `task` after every earlier write queued for `abs` has settled (fulfilled or rejected). */
+function serialized(abs: string, task: () => Promise<void>): Promise<void> {
+  const previous = chains.get(abs) ?? Promise.resolve();
+  const run = previous.then(task, task);
+  const tail = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  chains.set(abs, tail);
+  void tail.then(() => {
+    if (chains.get(abs) === tail) chains.delete(abs);
+  });
+  return run;
+}
+
+/** Compute every keeper's content before any mark is set, so a read failure leaves no keeper in flight. */
+async function contentsFor(
+  keepers: readonly RunStateKeeper[],
+  abs: string,
+  intent: WriteIntent,
+): Promise<readonly (readonly [RunStateKeeper, string])[]> {
+  const out: (readonly [RunStateKeeper, string])[] = [];
   for (const k of keepers) {
     const content = "content" in intent ? intent.content : `${await baseContent(k, abs)}${intent.append}`;
+    out.push([k, content]);
+  }
+  return out;
+}
+
+async function recordThenWrite(
+  abs: string,
+  classified: RunStatePath,
+  intent: WriteIntent,
+  write: () => Promise<void>,
+): Promise<void> {
+  const keepers = [...active].filter((k) => k.owns(classified));
+  if (keepers.length === 0) return write();
+  const contents = await contentsFor(keepers, abs, intent);
+  for (const [k, content] of contents) {
     k.record(abs, classified, content);
     k.begin(abs);
   }
@@ -45,4 +79,15 @@ export async function runStateWrite(path: string, intent: WriteIntent, write: ()
   } finally {
     for (const k of keepers) k.end(abs);
   }
+}
+
+/**
+ * Record the intent first, so a concurrent repair restores exactly what nax is writing, then write.
+ * Writes to one path are serialized so an append reads the base the previous append recorded.
+ */
+export async function runStateWrite(path: string, intent: WriteIntent, write: () => Promise<void>): Promise<void> {
+  const abs = resolve(path);
+  const classified = classifyRunStatePath(abs);
+  if (!classified || ![...active].some((k) => k.owns(classified))) return write();
+  return serialized(abs, () => recordThenWrite(abs, classified, intent, write));
 }

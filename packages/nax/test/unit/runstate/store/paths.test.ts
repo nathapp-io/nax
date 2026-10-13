@@ -19,6 +19,8 @@ describe("classifyRunStatePath (#2497)", () => {
     "/r/.nax/config.json",
     "/r/src/prd.json",
     "/r/.nax/features/f/stories/US-1/prd.json",
+    "/r/.nax/features/f/constructor",
+    "/r/.nax/features/f/workflow/run-1/__proto__",
   ])("%s is not run state", (path) => {
     expect(classifyRunStatePath(path)).toBeNull();
   });
