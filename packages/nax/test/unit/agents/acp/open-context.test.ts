@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { type CodingTool, createMemoryTranscriptStore, type OpenSessionOpts } from "@nathapp/nax-agent";
 import { createAskPort } from "@/agents/acp/ask-port";
 import {
+  acpOpenSummary,
   backendEnv,
   backendOptions,
   DEFAULT_CLOSE_DEADLINE_MS,
@@ -268,5 +269,24 @@ describe("openContext sandbox (nax#2500)", () => {
     const ctx = build({ ...OPTS, declaredTools: ["Read"], sandbox });
     expect(ctx.profile).toBe("read");
     expect(ctx.sandbox).toBeUndefined();
+  });
+});
+
+describe("acpOpenSummary (nax#2500 observability)", () => {
+  const policy = { writeRoots: ["/repo"], denyWrite: [], denyRead: [], network: {} };
+
+  test("a reviewer declaration opens review with the policy sandbox", () => {
+    const summary = acpOpenSummary({ ...OPTS, declaredTools: ["Read", "Bash"], sandbox: { kind: "policy", policy } });
+    expect(summary).toEqual({ profile: "review", sandbox: "policy" });
+  });
+
+  test("an undeclared approve-all session opens full; an unavailable sandbox is named", () => {
+    const summary = acpOpenSummary({ ...OPTS, sandbox: { kind: "unavailable", reason: "no srt" } });
+    expect(summary).toEqual({ profile: "full", sandbox: "unavailable" });
+  });
+
+  test("a read session reports no sandbox even when one is supplied", () => {
+    const summary = acpOpenSummary({ ...OPTS, declaredTools: ["Read"], sandbox: { kind: "policy", policy } });
+    expect(summary).toEqual({ profile: "read", sandbox: "none" });
   });
 });

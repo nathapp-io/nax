@@ -24,6 +24,7 @@ import type {
 } from "../types";
 import { runComplete } from "./complete";
 import { type AcpEntry, acpEntry, UNSUPPORTED_ENTRY } from "./entries";
+import { acpOpenSummary } from "./open-context";
 import { _acpDeps, type AcpSession, closeDeadlineMs, createSession, shutdownSession } from "./session";
 import { runTurnLoop } from "./turn-loop";
 
@@ -105,6 +106,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       sessionName: name,
       agent: entry.agent,
       permission: opts.resolvedPermissions.mode,
+      ...acpOpenSummary(opts),
     });
     const session = await createSession(name, entry.agent, opts);
     this.live.set(name, session);
