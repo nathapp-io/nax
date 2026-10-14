@@ -72,6 +72,8 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "workflow.maxFixRounds":
     "Max review-fix rounds per story in workflow mode (default 5); early rounds reuse the warm implementer session, later rounds start fresh one tier up",
   "workflow.preflight": "Run the workflow preflight checks before implementing (default true)",
+  "workflow.publish":
+    'What publishing does after the final gates: "pr" (default) pushes, opens or promotes the PR and waits for CI; "push" pushes and waits for CI but opens no PR (the caller owns the PR); "none" pushes nothing and stays local. Root-only',
   "workflow.timeouts": "Timeouts for workflow mode phases",
   "workflow.timeouts.implementMs": "Timeout for the implement phase in milliseconds (default 3600000)",
   "workflow.timeouts.fixMs": "Timeout for each fix phase in milliseconds (default 3600000)",

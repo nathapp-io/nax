@@ -45,6 +45,7 @@ export type {
   ExecutionMode,
   WorkflowConfig,
   WorkflowModelsConfig,
+  WorkflowPublishMode,
   WorkflowTimeoutsConfig,
 } from "./runtime-types-workflow";
 export type {

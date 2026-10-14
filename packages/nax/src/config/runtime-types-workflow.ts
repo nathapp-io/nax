@@ -21,12 +21,17 @@ export interface WorkflowTimeoutsConfig {
   ciPollMs: number;
 }
 
+/** What `publish()` does after the final gates: `pr` opens or promotes a PR, `push` only pushes, `none` stays local. */
+export type WorkflowPublishMode = "pr" | "push" | "none";
+
 /** `workflow` block. Read only when `execution.mode === "workflow"`. */
 export interface WorkflowConfig {
   models: WorkflowModelsConfig;
   /** Rounds 1..min(3, max) reuse the warm implementer session; later rounds are fresh, one tier up. */
   maxFixRounds: number;
   preflight: boolean;
+  /** What publishing does after the final gates. Optional so a hand-built config reads as the `pr` default. */
+  publish?: WorkflowPublishMode;
   timeouts: WorkflowTimeoutsConfig;
 }
 

@@ -189,3 +189,14 @@ describe("FIELD_DESCRIPTIONS agent.acp.transport (removed in S4b-5)", () => {
     expect(Object.hasOwn(FIELD_DESCRIPTIONS, "agent.acp.transport")).toBe(false);
   });
 });
+
+describe("FIELD_DESCRIPTIONS workflow.publish (US-002)", () => {
+  test("AC-12: it is a non-empty description naming all three modes", () => {
+    const description = FIELD_DESCRIPTIONS["workflow.publish"];
+    expect(typeof description).toBe("string");
+    expect(description.length).toBeGreaterThan(0);
+    expect(description).toContain('"pr"');
+    expect(description).toContain('"push"');
+    expect(description).toContain('"none"');
+  });
+});

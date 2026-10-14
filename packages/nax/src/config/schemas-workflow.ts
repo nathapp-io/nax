@@ -18,6 +18,7 @@ export const WorkflowConfigObjectSchema = z.object({
     .prefault({}),
   maxFixRounds: z.number().int().min(1).default(5),
   preflight: z.boolean().default(true),
+  publish: z.enum(["pr", "push", "none"]).default("pr"),
   timeouts: z
     .object({
       implementMs: z.number().int().positive().default(3_600_000),

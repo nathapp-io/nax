@@ -1,11 +1,14 @@
 /**
  * Publish (spec §7 steps 7-9, P4-R3, P4-R11): push, open (or find) the draft PR, wait for CI,
  * ask for approval only when every deterministic condition holds, then promote or keep the draft.
- * nax never merges. A non-feature branch, a dry run, no forge or a failed push ends local-only.
+ * `workflow.publish` selects the depth: `pr` (default) is the above, `push` stops after the CI wait,
+ * `none` touches nothing. nax never merges. A non-feature branch, a dry run, no forge or a failed
+ * push ends local-only.
  */
 import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { AdviceDecision, Advisor } from "@/advisor";
+import type { WorkflowPublishMode } from "@/config";
 import { NaxError } from "@/errors";
 import { sanitizeTitle } from "@/finish";
 import type { ForgeKind } from "@/forge";
@@ -125,6 +128,9 @@ function approvalEvidence(input: PublishInput, ci: CiWaitResult, minorsLeft: num
 
 const DIRTY_REASON = "uncommitted changes after the branch fix";
 const ALREADY_READY_REASON = "a human already marked the PR ready; nax left it as is";
+const PUBLISH_DISABLED_REASON = "publish disabled (workflow.publish: none)";
+/** Absent on a config written before `workflow.publish` existed (and on hand-built test configs). */
+const DEFAULT_PUBLISH_MODE: WorkflowPublishMode = "pr";
 
 /** Edits the pushed branch lacks make every recorded gate and approval describe code that is not in the PR. */
 async function dirtyTreeReasons(fc: FeatureContext): Promise<string[]> {
@@ -183,6 +189,38 @@ async function finishPr(
   }
 }
 
+/** The CI wait both publishing modes share; the timeout and poll interval come from the workflow config. */
+function waitForCi(fc: FeatureContext, forge: ForgeKind): Promise<CiWaitResult> {
+  return _featureDeps.waitForChecks(forge, fc.branch, {
+    cwd: fc.projectDir,
+    timeoutMs: fc.workflow.timeouts.ciWaitMs,
+    pollMs: fc.workflow.timeouts.ciPollMs,
+    ...(fc.runSignal ? { signal: fc.runSignal } : {}),
+  });
+}
+
+/** Everything `publish` needs to build the push mode's answer: the facts, the dirty tree, the target-less base. */
+interface PushModeInput {
+  readonly fc: FeatureContext;
+  readonly forge: ForgeKind;
+  readonly facts: Omit<ReadinessFacts, "ci">;
+  readonly dirty: readonly string[];
+  readonly base: readonly string[];
+}
+
+/**
+ * `push` mode: push, wait for CI, then stop. The caller owns the PR, so nax opens or promotes nothing
+ * and asks the advisor nothing; an aborted wait and a failed push behave exactly as in `pr` mode.
+ */
+async function pushOnly(input: PushModeInput): Promise<PublishOutcome> {
+  const pushFailed = await pushBranch(input.fc);
+  if (pushFailed) return { outcome: "local-only", ci: "skipped", reasons: [...input.base, pushFailed] };
+  const ci = await waitForCi(input.fc, input.forge);
+  if (input.fc.runSignal?.aborted) throw abortedError();
+  const reasons = [...readinessReasons({ ...input.facts, ci: ci.outcome }), ...input.dirty];
+  return { outcome: "pushed", ci: ci.outcome, reasons };
+}
+
 export async function publish(fc: FeatureContext, input: PublishInput): Promise<PublishOutcome> {
   const facts: Omit<ReadinessFacts, "ci"> = {
     ...(input.record.finalGates ? { finalGates: input.record.finalGates } : {}),
@@ -192,8 +230,12 @@ export async function publish(fc: FeatureContext, input: PublishInput): Promise<
   };
   const dirty = await dirtyTreeReasons(fc);
   const base = [...readinessReasons({ ...facts, ci: "skipped" }), ...dirty];
+  const mode = fc.workflow.publish ?? DEFAULT_PUBLISH_MODE;
+  // `none` outranks the target checks: on any branch, with or without a forge, nothing is touched.
+  if (mode === "none") return { outcome: "local-only", ci: "skipped", reasons: [...base, PUBLISH_DISABLED_REASON] };
   const target = await publishTarget(fc);
   if (!("forge" in target)) return { outcome: "local-only", ci: "skipped", reasons: [...base, target.reason] };
+  if (mode === "push") return pushOnly({ fc, forge: target.forge, facts, dirty, base });
   const pushFailed = await pushBranch(fc);
   if (pushFailed) return { outcome: "local-only", ci: "skipped", reasons: [...base, pushFailed] };
 
@@ -203,12 +245,7 @@ export async function publish(fc: FeatureContext, input: PublishInput): Promise<
     { ...pr, body: buildWorkflowPrBody({ ...body, outcome: "draft", ci: "pending", reasons: base }) },
     _featureDeps.forge,
   );
-  const ci = await _featureDeps.waitForChecks(target.forge, fc.branch, {
-    cwd: fc.projectDir,
-    timeoutMs: fc.workflow.timeouts.ciWaitMs,
-    pollMs: fc.workflow.timeouts.ciPollMs,
-    ...(fc.runSignal ? { signal: fc.runSignal } : {}),
-  });
+  const ci = await waitForCi(fc, target.forge);
   // An aborted wait reports `pending`, which never blocks readiness: stop before approval or promotion.
   if (fc.runSignal?.aborted) throw abortedError();
   const reasons = [...readinessReasons({ ...facts, ci: ci.outcome }), ...dirty];

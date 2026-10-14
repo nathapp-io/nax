@@ -77,7 +77,7 @@ function setup(over: { dryRun?: boolean } = {}) {
 async function seedFinished(
   featureDir: string,
   feature: string,
-  over: { outcome: "ready" | "draft" | "local-only"; url?: string },
+  over: { outcome: "ready" | "draft" | "local-only" | "pushed"; url?: string },
 ): Promise<void> {
   const prior = join(featureDir, "r-old");
   await upsertStoryRecord(prior, { runId: "r-old", feature }, newStoryRecord("US-001", 5, "t"));
@@ -181,6 +181,13 @@ describe("runWorkflowFeature", () => {
   test("a draft prior at the same HEAD is also skipped", async () => {
     const { input, envs, featureDir } = setup();
     await seedFinished(featureDir, input.feature, { outcome: "draft" });
+    expect((await runWorkflowFeature(input))?.outcome).toBe("already-finished");
+    expect(envs).toHaveLength(0);
+  });
+
+  test("AC-18: a pushed prior at the same HEAD is also skipped", async () => {
+    const { input, envs, featureDir } = setup();
+    await seedFinished(featureDir, input.feature, { outcome: "pushed" });
     expect((await runWorkflowFeature(input))?.outcome).toBe("already-finished");
     expect(envs).toHaveLength(0);
   });
