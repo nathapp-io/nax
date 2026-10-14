@@ -82,6 +82,7 @@ export {
   buildWorkflowBrief,
   buildWorkflowFixPrompt,
   buildWorkflowImplementPrompt,
+  buildWorkflowRestartPrompt,
   WORKFLOW_REPLY_CONTRACT,
 } from "./builders/workflow-implementer-builder";
 export { buildWorkflowReReviewPrompt } from "./builders/workflow-re-review-builder";

@@ -35,6 +35,28 @@ describe("parseImplementerReply", () => {
     expect(parseImplementerReply(fence({ status: "MAYBE" })).status).toBe("DONE_WITH_CONCERNS");
   });
 
+  // US-001 (nax#2509): the flag the no-work ladder keys on.
+  test("no status block -> noStatusBlock: true (US-001)", () => {
+    const r = parseImplementerReply("I changed some files.");
+    expect(r.noStatusBlock).toBe(true);
+    expect(r.interrupted).toBe(false);
+  });
+
+  test("a valid status block carries no noStatusBlock key (US-001)", () => {
+    const r = parseImplementerReply(fence({ status: "DONE", commits: ["abc123"], testSummary: "12 pass" }));
+    expect("noStatusBlock" in r).toBe(false);
+  });
+
+  test("the interrupt marker carries no noStatusBlock key (US-001)", () => {
+    const r = parseImplementerReply(WORKFLOW_INTERRUPT_MARKER);
+    expect("noStatusBlock" in r).toBe(false);
+  });
+
+  test("a failed hop's reply carries no noStatusBlock key (US-001)", () => {
+    const r = parseImplementerReply('Agent "native" failed: 503 upstream');
+    expect("noStatusBlock" in r).toBe(false);
+  });
+
   test("interrupt marker -> interrupted", () => {
     const r = parseImplementerReply(WORKFLOW_INTERRUPT_MARKER);
     expect(r.interrupted).toBe(true);

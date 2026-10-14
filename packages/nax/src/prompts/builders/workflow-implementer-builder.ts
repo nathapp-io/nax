@@ -122,6 +122,18 @@ ${WORKFLOW_ARTIFACTS_RULE}
 ${WORKFLOW_REPLY_CONTRACT}`;
 }
 
+/**
+ * US-001: the warm restart — the implementer never started, so it gets the one-line
+ * reminder rather than the full implement prompt (the session already holds it).
+ */
+export function buildWorkflowRestartPrompt(input: { storyId: string; briefPath: string; reportPath: string }): string {
+  return `You have not started story ${input.storyId}: there are no commits, no changes and no report yet. Read the brief at
+${input.briefPath} now and implement it as it says. Write ${input.reportPath}, commit your work, and end your reply with
+the json status block.
+
+${WORKFLOW_REPLY_CONTRACT}`;
+}
+
 export function buildWorkflowFixPrompt(input: {
   mode: "warm" | "fresh";
   round: number;

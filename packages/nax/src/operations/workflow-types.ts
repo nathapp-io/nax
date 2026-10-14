@@ -35,6 +35,8 @@ export interface ImplementerReply {
   readonly interrupted: boolean;
   /** Set when every agent hop failed ('Agent "x" failed: …'). */
   readonly failure?: string;
+  /** US-001: the reply carried no status block at all — the ladder's no-work signal. */
+  readonly noStatusBlock?: true;
 }
 
 export interface StoryReviewVerdict {

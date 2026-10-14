@@ -102,8 +102,13 @@ interface TurnOrigin {
   readonly limit: "implement" | "fix";
 }
 
-export const turnLabel = (turn: ImplementTurn): string =>
-  turn.kind === "implement" ? "implementer" : turn.kind === "answer" ? "implementer answer" : `fix r${turn.round}`;
+export const turnLabel = (turn: ImplementTurn): string => {
+  if (turn.kind === "implement") return "implementer";
+  if (turn.kind === "answer") return "implementer answer";
+  // US-001: a restart is its own run-log step, so a no-work story's restarts read distinctly from the first turn.
+  if (turn.kind === "restart") return turn.fresh ? "implementer restart (fresh)" : "implementer restart";
+  return `fix r${turn.round}`;
+};
 
 /** One implementer call, labelled in the run log with its step and round (nax#2491 P2). */
 async function implementTurn(env: StoryLoopEnv, turn: ImplementTurn): Promise<ImplementOutcome> {

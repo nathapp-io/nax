@@ -2,7 +2,12 @@
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { ConfiguredModel } from "@/config";
 import { workflowImplementOp } from "@/operations";
-import { buildWorkflowAnswerPrompt, buildWorkflowFixPrompt, buildWorkflowImplementPrompt } from "@/prompts";
+import {
+  buildWorkflowAnswerPrompt,
+  buildWorkflowFixPrompt,
+  buildWorkflowImplementPrompt,
+  buildWorkflowRestartPrompt,
+} from "@/prompts";
 import { fixModelFor } from "./fix-round";
 import { listUncommitted } from "./git";
 import { closeImplementerSession } from "./sessions";
@@ -11,6 +16,12 @@ import type { ImplementerReply, WorkflowFinding } from "./types";
 
 export type ImplementTurn =
   | { readonly kind: "implement" }
+  | {
+      /** US-001: a no-work turn's restart. `fresh` closes the session and re-sends the full implement prompt. */
+      readonly kind: "restart";
+      readonly fresh: boolean;
+      readonly stepUps: number;
+    }
   | { readonly kind: "answer"; readonly text: string; readonly stepUps: number; readonly limit: "implement" | "fix" }
   | {
       readonly kind: "fix";
@@ -28,9 +39,11 @@ export interface ImplementOutcome {
 }
 
 function promptFor(sc: StepContext, turn: ImplementTurn): string {
-  if (turn.kind === "implement") {
-    return buildWorkflowImplementPrompt({ storyId: sc.story.id, briefPath: sc.briefPath, reportPath: sc.reportPath });
-  }
+  const paths = { storyId: sc.story.id, briefPath: sc.briefPath, reportPath: sc.reportPath };
+  if (turn.kind === "implement") return buildWorkflowImplementPrompt(paths);
+  // US-001: the warm restart keeps the session, so it gets the short prompt; the fresh one starts over in full.
+  if (turn.kind === "restart")
+    return turn.fresh ? buildWorkflowImplementPrompt(paths) : buildWorkflowRestartPrompt(paths);
   if (turn.kind === "answer") return buildWorkflowAnswerPrompt(turn.text);
   return buildWorkflowFixPrompt({
     mode: turn.fresh ? "fresh" : "warm",
@@ -46,15 +59,20 @@ function promptFor(sc: StepContext, turn: ImplementTurn): string {
 
 /** The model a turn steps up to (spec §4 "Implementer model"); undefined keeps the story's routed model. */
 export function implementerModelFor(sc: StepContext, turn: ImplementTurn): ConfiguredModel | undefined {
-  const stepUps = turn.kind === "fix" || turn.kind === "answer" ? turn.stepUps : 0;
+  const stepUps = turn.kind === "implement" ? 0 : turn.stepUps;
   return stepUps > 0 ? fixModelFor(sc.story, sc.tierOrder, stepUps) : undefined;
 }
 
+/** A fresh turn (fix or restart) must close the warm session first, or it would not be fresh (P2-R5). */
+function closesSessionFirst(turn: ImplementTurn): boolean {
+  return (turn.kind === "restart" || turn.kind === "fix") && turn.fresh;
+}
+
 export async function runImplementerTurn(sc: StepContext, turn: ImplementTurn): Promise<ImplementOutcome> {
-  if (turn.kind === "fix" && turn.fresh) await closeImplementerSession(sc.sessionManager, sc.story.id);
+  if (closesSessionFirst(turn)) await closeImplementerSession(sc.sessionManager, sc.story.id);
   const model = implementerModelFor(sc, turn);
   const timeoutMs =
-    turn.kind === "implement" || (turn.kind === "answer" && turn.limit === "implement")
+    turn.kind === "implement" || turn.kind === "restart" || (turn.kind === "answer" && turn.limit === "implement")
       ? sc.workflow.timeouts.implementMs
       : sc.workflow.timeouts.fixMs;
   let reply: ImplementerReply;

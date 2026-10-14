@@ -55,6 +55,8 @@ export function parseImplementerReply(output: string): ImplementerReply {
       testSummary: "",
       concerns: "implementer reply carried no status block",
       interrupted: false,
+      // US-001: the ladder keys its no-work check on this.
+      noStatusBlock: true,
     };
   }
   const concerns = str(parsed.concerns);

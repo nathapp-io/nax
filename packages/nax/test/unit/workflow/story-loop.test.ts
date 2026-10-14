@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { defaultWorkflowAdvisor } from "@/workflow/advisor";
 import type { ImplementOutcome, ImplementTurn } from "@/workflow/implement";
 import { newStoryRecord } from "@/workflow/result";
-import { runStoryLoop, type StoryLoopEnv, type StoryLoopSteps } from "@/workflow/story-loop";
+import { runStoryLoop, type StoryLoopEnv, type StoryLoopSteps, turnLabel } from "@/workflow/story-loop";
 import type { GateRunResult, StoryReviewVerdict, WorkflowStoryRecord } from "@/workflow/types";
 
 const GREEN: GateRunResult = {
@@ -369,5 +369,25 @@ describe("flagged rulings at close", () => {
     const h = harness({});
     await runStoryLoop(h.env);
     expect(h.record().flagged).toBe(0);
+  });
+});
+
+describe("turnLabel (US-001)", () => {
+  test("a warm restart, a fresh restart and an implement turn get three distinct labels", () => {
+    const labels = [
+      turnLabel({ kind: "implement" }),
+      turnLabel({ kind: "restart", fresh: false, stepUps: 0 }),
+      turnLabel({ kind: "restart", fresh: true, stepUps: 1 }),
+    ];
+    expect(new Set(labels).size).toBe(3);
+    expect(labels[0]).toBe("implementer");
+  });
+
+  test("a restart label is neither the implement label nor a fix-round label", () => {
+    for (const fresh of [true, false]) {
+      const label = turnLabel({ kind: "restart", fresh, stepUps: 0 });
+      expect(label).not.toBe("implementer");
+      expect(label).not.toMatch(/^fix r\d+$/);
+    }
   });
 });
