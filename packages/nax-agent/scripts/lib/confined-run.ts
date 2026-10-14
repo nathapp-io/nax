@@ -211,7 +211,8 @@ async function removeRunRoot(runTmpRoot: string): Promise<void> {
  * The session temp dir is created before the policy that grants it (as
  * `resolveSessionSandbox` does), the backend is released with
  * `commandFinished` then `reset`, and the run root is removed on every path —
- * including a non-zero exit and a failing spawn.
+ * including a non-zero exit, a failing spawn, and a backend whose release path
+ * throws (the removal is nested inside the release's own `finally`).
  */
 export async function runConfinedTests(input: ConfinedRunInput): Promise<number> {
   const timeoutMs = input.timeoutMs ?? DEFAULT_TEST_TIMEOUT_MS;
@@ -251,8 +252,15 @@ export async function runConfinedTests(input: ConfinedRunInput): Promise<number>
     const [exitCode] = await Promise.all([child.exited, pumpStdout(child.stdout, _confinedRunDeps.stdout)]);
     return exitCode;
   } finally {
-    backend.commandFinished();
-    await backend.reset();
-    await removeRunRoot(runTmpRoot);
+    try {
+      backend.commandFinished();
+      await backend.reset();
+    } finally {
+      // Nested (F3): the run root is this runner's OWN temp data, so a backend
+      // whose release path throws must not be able to leave it behind. The
+      // release error still propagates — a backend that cannot reset is a
+      // malfunction worth surfacing — but only after the root is gone.
+      await removeRunRoot(runTmpRoot);
+    }
   }
 }

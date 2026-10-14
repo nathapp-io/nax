@@ -59,6 +59,8 @@ interface SeamOptions {
   readonly chunks?: readonly string[];
   readonly rmRejects?: boolean;
   readonly spawnThrows?: boolean;
+  /** The backend's release path fails, as a broken backend's cleanup does. */
+  readonly backendFailures?: { readonly commandFinished?: boolean; readonly reset?: boolean };
 }
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
@@ -92,7 +94,11 @@ function fakeSpawnResult(chunks: readonly string[], exited: Promise<number>): Ag
 }
 
 /** A backend that records its wrap requests and renders argv the way srt does: `sh -c <command>`. */
-function makeFakeBackend(events: string[], calls: SandboxWrapRequest[]): SandboxBackend {
+function makeFakeBackend(
+  events: string[],
+  calls: SandboxWrapRequest[],
+  failures: { readonly commandFinished?: boolean; readonly reset?: boolean } = {},
+): SandboxBackend {
   return {
     name: "srt",
     async isSupportedPlatform() {
@@ -108,9 +114,11 @@ function makeFakeBackend(events: string[], calls: SandboxWrapRequest[]): Sandbox
     },
     commandFinished() {
       events.push("commandFinished");
+      if (failures.commandFinished === true) throw new Error("the backend could not finish the command");
     },
     async reset() {
       events.push("reset");
+      if (failures.reset === true) throw new Error("the backend could not reset");
     },
   };
 }
@@ -130,7 +138,7 @@ function installSeam(options: SeamOptions = {}): SeamRecord {
     stdoutChunks: [],
     stderrChunks: [],
   };
-  const backend = makeFakeBackend(record.events, record.calls);
+  const backend = makeFakeBackend(record.events, record.calls, options.backendFailures ?? {});
   const exited = options.exitPromise ?? Promise.resolve(0);
   _confinedRunDeps.backend = () => backend;
   _confinedRunDeps.probe = options.probe ?? ((): Promise<ProbeResult> => Promise.resolve({ available: true }));
@@ -375,6 +383,21 @@ describe("runConfinedTests", () => {
     await expect(runConfinedTests({ packageDir, paths: ["./test/unit/"] })).rejects.toThrow(/could not spawn/);
     expect(record.events).toContain("commandFinished");
     expect(record.events).toContain("reset");
+    expect(record.rmPaths).toEqual([runRootOf(record)]);
+  });
+
+  // F3: cleanup is nested, so a backend whose release path fails cannot leave
+  // the run's temp root — the one thing this runner owns — behind.
+  test("removes the run root even when the backend's reset rejects", async () => {
+    const record = installSeam({ backendFailures: { reset: true } });
+    await expect(runConfinedTests({ packageDir, paths: ["./test/unit/"] })).rejects.toThrow(/could not reset/);
+    expect(record.rmPaths).toEqual([runRootOf(record)]);
+    expect(record.events.indexOf("reset")).toBeLessThan(record.events.indexOf("rm"));
+  });
+
+  test("removes the run root even when commandFinished throws", async () => {
+    const record = installSeam({ backendFailures: { commandFinished: true } });
+    await expect(runConfinedTests({ packageDir, paths: ["./test/unit/"] })).rejects.toThrow(/could not finish/);
     expect(record.rmPaths).toEqual([runRootOf(record)]);
   });
 });
