@@ -1,7 +1,6 @@
 {
   "updatedAt": "2026-10-06T17:56:22.679Z",
   "byFile": {
-    "src/commands/detect.ts": 0.3554,
-    "src/execution/feature-lock.ts": 0.7662
+    "src/commands/detect.ts": 0.3554
   }
 }

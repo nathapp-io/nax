@@ -493,3 +493,165 @@ describe("releaseFeatureLock", () => {
     expect(await Bun.file(recordPath).exists()).toBe(false);
   });
 });
+
+describe("failure and race branches (deterministic, independent of other suites)", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = makeTempDir("nax-feature-lock-");
+    _featureLockDeps.host = () => "test-machine";
+  });
+  afterEach(() => {
+    cleanupTempDir(dir);
+  });
+
+  function errno(code: string): NodeJS.ErrnoException {
+    return Object.assign(new Error(code), { code });
+  }
+
+  async function plantStaleLock(feature: string): Promise<string> {
+    const recordPath = lockPath(dir, feature);
+    mkdirSync(join(dir, "features", feature), { recursive: true });
+    await Bun.write(
+      recordPath,
+      JSON.stringify({
+        pid: 424_242,
+        host: "test-machine",
+        workdir: join(dir, "old"),
+        feature,
+        runId: "old-run",
+        startedAt: new Date(Date.now() - 10 * HOUR_MS).toISOString(),
+        timestamp: Date.now() - 10 * HOUR_MS,
+      }),
+    );
+    _featureLockDeps.isProcessAlive = () => false;
+    return recordPath;
+  }
+
+  const acquireArgs = (feature: string) => ({
+    outputDir: dir,
+    feature,
+    workdir: join(dir, "checkout"),
+    runId: "run-new",
+  });
+
+  test("a foreign lock with no timestamp and no startedAt is reclaimable (age unknown)", () => {
+    expect(isLockReclaimable({ pid: 1, host: "other-machine" }, NOW)).toBe(true);
+    expect(isLockReclaimable({ pid: 1, host: "other-machine", startedAt: "not-a-date" }, NOW)).toBe(true);
+  });
+
+  test("acquire rethrows a rename failure that is not ENOENT", async () => {
+    await plantStaleLock("f");
+    _featureLockDeps.rename = () => Promise.reject(errno("EACCES"));
+    await expect(acquireFeatureLock(acquireArgs("f"))).rejects.toThrow("EACCES");
+  });
+
+  test("acquire restores a tombstone whose pid changed and refuses with the restored holder", async () => {
+    const recordPath = await plantStaleLock("f");
+    const realRename = _featureLockDeps.rename;
+    _featureLockDeps.rename = async (from, to) => {
+      await realRename(from, to);
+      await Bun.write(String(to), JSON.stringify({ pid: 777, host: "test-machine", runId: "usurper" }));
+    };
+    const result = await acquireFeatureLock(acquireArgs("f"));
+    expect(result.acquired).toBe(false);
+    if (!result.acquired) expect(result.holder.runId).toBe("usurper");
+    expect(await Bun.file(recordPath).text()).toContain("usurper");
+  });
+
+  test("acquire refuses with an empty holder when the tombstone is unparseable and restore yields nothing readable", async () => {
+    await plantStaleLock("f");
+    const realRename = _featureLockDeps.rename;
+    _featureLockDeps.rename = async (from, to) => {
+      await realRename(from, to);
+      await Bun.write(String(to), "{ not json");
+    };
+    const result = await acquireFeatureLock(acquireArgs("f"));
+    expect(result.acquired).toBe(false);
+    if (!result.acquired) expect(result.holder.pid).toBe(0);
+  });
+
+  test("acquire warns when a stolen lock cannot be restored because a newer lock exists", async () => {
+    await plantStaleLock("f");
+    const realRename = _featureLockDeps.rename;
+    _featureLockDeps.rename = async (from, to) => {
+      await realRename(from, to);
+      await Bun.write(String(to), JSON.stringify({ pid: 777, host: "test-machine", runId: "usurper" }));
+    };
+    _featureLockDeps.tryExclusiveCreate = async () => false;
+    const result = await acquireFeatureLock(acquireArgs("f"));
+    expect(result.acquired).toBe(false);
+  });
+
+  test("acquire refuses with an empty holder when exclusive-create fails and nothing is readable", async () => {
+    _featureLockDeps.tryExclusiveCreate = async () => false;
+    const result = await acquireFeatureLock(acquireArgs("f"));
+    expect(result.acquired).toBe(false);
+    if (!result.acquired) expect(result.holder.feature).toBe("f");
+  });
+
+  test("release warns and returns when the lock cannot be read for a reason other than ENOENT", async () => {
+    // a directory at the lock path makes the read fail with EISDIR
+    mkdirSync(lockPath(dir, "f"), { recursive: true });
+    await withWarnSpy(async (warnSpy) => {
+      await releaseFeatureLock({ outputDir: dir, feature: "f", runId: "run-1" });
+      expect(warnSpy.mock.calls.length).toBeGreaterThan(0);
+    });
+  });
+
+  test("release warns when claiming the lock fails with a non-ENOENT error", async () => {
+    const recordPath = lockPath(dir, "f");
+    mkdirSync(join(dir, "features", "f"), { recursive: true });
+    await Bun.write(recordPath, JSON.stringify({ pid: 1, host: "test-machine", runId: "run-1" }));
+    _featureLockDeps.rename = () => Promise.reject(errno("EPERM"));
+    await withWarnSpy(async (warnSpy) => {
+      await releaseFeatureLock({ outputDir: dir, feature: "f", runId: "run-1" });
+      expect(warnSpy.mock.calls.length).toBeGreaterThan(0);
+    });
+    expect(await Bun.file(recordPath).exists()).toBe(true);
+  });
+
+  test("release stays silent when claiming the lock fails with ENOENT", async () => {
+    const recordPath = lockPath(dir, "f");
+    mkdirSync(join(dir, "features", "f"), { recursive: true });
+    await Bun.write(recordPath, JSON.stringify({ pid: 1, host: "test-machine", runId: "run-1" }));
+    _featureLockDeps.rename = () => Promise.reject(errno("ENOENT"));
+    await withWarnSpy(async (warnSpy) => {
+      await releaseFeatureLock({ outputDir: dir, feature: "f", runId: "run-1" });
+      expect(warnSpy.mock.calls.length).toBe(0);
+    });
+  });
+
+  test("release restores a lock that a new holder swapped in between the read and the claim", async () => {
+    const recordPath = lockPath(dir, "f");
+    mkdirSync(join(dir, "features", "f"), { recursive: true });
+    await Bun.write(recordPath, JSON.stringify({ pid: 1, host: "test-machine", runId: "run-1" }));
+    const realRename = _featureLockDeps.rename;
+    _featureLockDeps.rename = async (from, to) => {
+      // a new holder replaces the record after release read it, before release claims it
+      await Bun.write(String(from), JSON.stringify({ pid: 2, host: "test-machine", runId: "run-2" }));
+      await realRename(from, to);
+    };
+    await releaseFeatureLock({ outputDir: dir, feature: "f", runId: "run-1" });
+    expect(await Bun.file(recordPath).text()).toContain("run-2");
+  });
+
+  test("release warns when the claimed tombstone cannot be unlinked, and is silent on ENOENT", async () => {
+    const recordPath = lockPath(dir, "f");
+    mkdirSync(join(dir, "features", "f"), { recursive: true });
+    const write = () => Bun.write(recordPath, JSON.stringify({ pid: 1, host: "test-machine", runId: "run-1" }));
+
+    await write();
+    _featureLockDeps.unlink = () => Promise.reject(errno("EPERM"));
+    await withWarnSpy(async (warnSpy) => {
+      await releaseFeatureLock({ outputDir: dir, feature: "f", runId: "run-1" });
+      expect(warnSpy.mock.calls.length).toBeGreaterThan(0);
+    });
+
+    await write();
+    _featureLockDeps.unlink = () => Promise.reject(errno("ENOENT"));
+    await withWarnSpy(async (warnSpy) => {
+      await releaseFeatureLock({ outputDir: dir, feature: "f", runId: "run-1" });
+      expect(warnSpy.mock.calls.length).toBe(0);
+    });
+  });
+});
