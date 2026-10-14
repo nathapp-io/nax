@@ -15,6 +15,7 @@ import { runStoryGates, runWorkflowSuiteGate } from "./gates";
 import { listUncommitted, readHead } from "./git";
 import { runImplementerTurn } from "./implement";
 import { appendLedger, ensureLedger } from "./ledger";
+import { storyWorkEvidence } from "./no-work";
 import { workflowFeatureDir, workflowRunDir, workflowStoryDir } from "./paths";
 import { runReReview } from "./re-review";
 import { loadPriorStory, newStoryRecord, upsertStoryRecord } from "./result";
@@ -121,6 +122,7 @@ export async function buildStoryEnv(
     ),
     head: () => readHead(sc.projectDir),
     uncommitted: () => listUncommitted(sc.projectDir),
+    workProduced: () => storyWorkEvidence(sc),
     modelFor: storyModelFor(sc),
     costExceeded: () =>
       typeof costLimit === "number" &&
