@@ -319,9 +319,10 @@ describe("propagateOutOfScopeToStories", () => {
     expect(result.userStories[0].outOfScope).toEqual(["no Ink TUI", "no checkpoints", "no CLI wiring"]);
   });
 
-  test("feature-level items outrank story-level ones when the cap truncates", () => {
-    // The spec author's declared boundary must survive; planner-invented
-    // story-specific entries are what gets dropped at the cap.
+  test("feature-level items outrank story-level ones when the feature cap truncates", () => {
+    // The spec author's declared boundary must survive and lead the list. The
+    // cap covers the feature-level part only (US-005): a story's own entries are
+    // never cut, so all 25 of them follow the one feature-level entry.
     const storySpecific = Array.from({ length: MAX_OUT_OF_SCOPE_ITEMS }, (_, i) => `story-item-${i}`);
     const prd = makePRD({
       outOfScope: ["FEATURE-LEVEL-CRITICAL"],
@@ -330,8 +331,9 @@ describe("propagateOutOfScopeToStories", () => {
 
     const merged = propagateOutOfScopeToStories(prd).userStories[0].outOfScope;
 
-    expect(merged).toHaveLength(MAX_OUT_OF_SCOPE_ITEMS);
+    expect(merged).toHaveLength(26);
     expect(merged?.[0]).toBe("FEATURE-LEVEL-CRITICAL");
+    expect(merged?.slice(1)).toEqual(storySpecific);
   });
 
   test("returns the same PRD reference when there is nothing to propagate", () => {

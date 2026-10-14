@@ -25,6 +25,7 @@ import type { StoryScopedExclusion } from "./out-of-scope-extract";
 import {
   canonical,
   dedupeAndCap,
+  dedupeOutOfScope,
   extractSpecOutOfScope,
   extractStoryScopedOutOfScope,
   INLINE_MARKER,
@@ -202,23 +203,31 @@ export function applyOutOfScopeFallback(prd: PRD, specContent: string): PRD {
  *
  * The implementer, rectifier, and reviewers only ever receive a `UserStory` —
  * never the PRD envelope — so a root-only field would be invisible to them.
- * Story-level entries (a planner may add story-specific exclusions) keep their
- * position; feature-level items are merged in after, deduplicated on canonical
- * form. Returns the input PRD unchanged when there is nothing to propagate.
+ * Feature-level items lead; a planner's story-specific exclusions follow in the
+ * order the story already had them, deduplicated on canonical form. Returns the
+ * input PRD unchanged when there is nothing to propagate.
+ *
+ * **The cap covers the feature-level part only.** `dedupeAndCap` bounds the
+ * list copied onto every story; the story's own entries are appended *after*
+ * that cap and so are never truncated. Capping the merge instead (the previous
+ * behaviour) meant a feature with `MAX_OUT_OF_SCOPE_ITEMS` boundaries silently
+ * deleted every story-specific exclusion — the guidance a story was given about
+ * its own deferred work. `stripPropagatedOutOfScope` writes the survivors back,
+ * so `loadPRD` -> `savePRD` is a round trip at any story-list length.
  */
 export function propagateOutOfScopeToStories(prd: PRD): PRD {
   const featureLevel = prd.outOfScope ?? [];
   if (featureLevel.length === 0) return prd;
 
-  // Feature-level entries come FIRST. `dedupeAndCap` truncates the tail, so
-  // ordering decides who survives a story that already carries many exclusions:
-  // the spec author's declared boundary must outrank planner-invented
-  // story-specific ones. With story entries first, a story holding
-  // MAX_OUT_OF_SCOPE_ITEMS of its own silently dropped every feature-level item —
-  // exactly the statement this whole path exists to deliver.
+  // Feature-level entries come FIRST, and only they are capped. Ordering decides
+  // who survives `dedupeAndCap`: the spec author's declared boundary must
+  // outrank planner-invented story-specific ones. With story entries first, a
+  // story holding MAX_OUT_OF_SCOPE_ITEMS of its own silently dropped every
+  // feature-level item — exactly the statement this whole path exists to deliver.
+  const capped = dedupeAndCap(featureLevel);
   const userStories: UserStory[] = prd.userStories.map((story) => ({
     ...story,
-    outOfScope: dedupeAndCap([...featureLevel, ...(story.outOfScope ?? [])]),
+    outOfScope: dedupeOutOfScope([...capped, ...(story.outOfScope ?? [])]),
   }));
   return { ...prd, userStories };
 }
