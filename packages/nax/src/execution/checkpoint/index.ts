@@ -11,7 +11,7 @@
  */
 
 export { loadCheckpoints } from "./reader";
-export { applyRecordGreenDeps, applyResumeModeDeps, type ResumeMode } from "./resume-cli";
+export { _workflowResumeDeps, applyRecordGreenDeps, applyResumeModeDeps, type ResumeMode } from "./resume-cli";
 export type { CaptureTreeStateDeps, CaptureTreeStateOptions } from "./resume-hydrate";
 export {
   buildCheckpointLogData,

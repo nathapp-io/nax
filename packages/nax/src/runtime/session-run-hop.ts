@@ -25,12 +25,34 @@ export interface SessionRunHopResult {
 type ResolvedSupport = Awaited<ReturnType<typeof resolveCodingToolSupport>>;
 
 /**
+ * The per-hop support resolution, injectable so a test can drive the exact shape
+ * the hop forwards (the real resolver always appends the universal scratchpad tools
+ * to a non-empty declaration, so one cannot come back as the two names a caller
+ * declared). Mirrors `_buildHopCallbackDeps` on the op path; production never
+ * overrides it.
+ */
+export const _sessionRunHopDeps: { resolveCodingToolSupport: typeof resolveCodingToolSupport } = {
+  resolveCodingToolSupport,
+};
+
+/**
  * nax#2500: the dispatch sandbox for an ACP open; absent when the sandbox is disabled.
  * A separate helper so the conditional spread does not add a branch to
  * `createSessionRunHop`, which sits at the complexity ratchet (check:complexity).
  */
 function sandboxOption(support: ResolvedSupport): { sandbox?: NonNullable<ResolvedSupport>["acpSandbox"] } {
   return support?.acpSandbox !== undefined ? { sandbox: support.acpSandbox } : {};
+}
+
+/**
+ * nax#2506 (US-003): the operation's MATERIALIZED declaration for an ACP open —
+ * the resolver's `declaredTools` (provider + universal scratchpad names included),
+ * the same field `prepareHopSession` (build-hop-callback-hop.ts) sends, so the two
+ * hops cannot drift. Absent when nothing was declared. A separate helper for the
+ * same reason as `sandboxOption`: no new branch in the ratcheted function.
+ */
+function declaredToolsOption(support: ResolvedSupport): { declaredTools?: readonly string[] } {
+  return support?.declaredTools !== undefined ? { declaredTools: support.declaredTools } : {};
 }
 
 export type SessionRunHopFn = (agentName: string, options: AgentRunOptions) => Promise<SessionRunHopResult>;
@@ -75,7 +97,7 @@ export function createSessionRunHop(
     // future maintainers who might add side-effects before this line.
     let codingSupport: Awaited<ReturnType<typeof resolveCodingToolSupport>>;
     try {
-      codingSupport = await resolveCodingToolSupport(options);
+      codingSupport = await _sessionRunHopDeps.resolveCodingToolSupport(options);
     } catch (err) {
       const errMessage = err instanceof Error ? err.message : String(err);
       // US-001: coding-tool setup failed before any adapter was reached — no model
@@ -116,6 +138,7 @@ export function createSessionRunHop(
       // nax#1877 — mirrors build-hop-callback.ts; the two must not drift.
       ...(transcriptOwner !== undefined ? { transcriptOwner } : {}),
       ...sandboxOption(codingSupport),
+      ...declaredToolsOption(codingSupport),
       signal: options.abortSignal,
       onSessionEstablished: options.onSessionEstablished,
     });

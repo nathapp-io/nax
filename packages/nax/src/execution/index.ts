@@ -2,6 +2,7 @@ export type { FailureCategory } from "../tdd/types";
 export { groupStoriesIntoBatches, type StoryBatch } from "./batching";
 export { buildPlanForStrategy, requiresInitialRefCapture, resolveStoryPathAnchors } from "./build-plan-for-strategy";
 export {
+  _workflowResumeDeps,
   applyResumeModeDeps,
   buildCheckpointLogData,
   buildResumePlan,

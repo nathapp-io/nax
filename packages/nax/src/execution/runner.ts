@@ -27,7 +27,7 @@ import type { PRD } from "../prd/types";
 import { activateRunState, type RunStateHandle, repairRunState } from "../runstate";
 import { gitWithTimeout } from "../utils/git";
 import { NAX_VERSION } from "../version";
-import { applyRecordGreenDeps, applyResumeModeDeps } from "./checkpoint";
+import { _workflowResumeDeps, applyRecordGreenDeps, applyResumeModeDeps } from "./checkpoint";
 import { stopHeartbeat } from "./crash-recovery";
 import type { RunCleanupOptions } from "./lifecycle/run-cleanup";
 import { sumReviewsFailedOpen } from "./post-run-review-summary";
@@ -215,6 +215,11 @@ export async function run(options: RunOptions): Promise<RunResult> {
   // enter the inner try block below.
   const origLoadCheckpoints = _storyOrchestratorDeps.loadCheckpoints;
   const origRecordGreen = _storyOrchestratorDeps.recordGreen;
+  // US-003 — the workflow stage reads the resume mode from its own seam (see
+  // _workflowResumeDeps): `execution/` cannot import `@/workflow`, so this is
+  // how `--fresh` / `--no-resume` reaches `buildStoryEnv`'s resume decision.
+  // Saved here so both restore points below can put the prior value back.
+  const origWorkflowResumeMode = _workflowResumeDeps.mode;
   // Feature-less runs have no directory to durably record checkpoints under —
   // `join("", "checkpoint.jsonl")` resolves to a bare relative path, which lands in
   // whatever the process CWD happens to be and cross-seeds unrelated runs (BUG-40).
@@ -222,6 +227,9 @@ export async function run(options: RunOptions): Promise<RunResult> {
   if (featureDir) {
     applyResumeModeDeps(featureDir, resumeMode);
     applyRecordGreenDeps(featureDir, runId);
+    // Workflow mode only runs against a feature, so a feature-less run has no
+    // workflow record to resume and no reason to touch the seam.
+    _workflowResumeDeps.mode = resumeMode;
   }
   let iterations = 0;
   let storiesCompleted = 0;
@@ -280,6 +288,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
   } catch (err) {
     _storyOrchestratorDeps.loadCheckpoints = origLoadCheckpoints;
     _storyOrchestratorDeps.recordGreen = origRecordGreen;
+    _workflowResumeDeps.mode = origWorkflowResumeMode;
     _runnerReentrancyGuard.inFlight = false;
     throw err;
   }
@@ -407,6 +416,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       // runCompletionPhase.
       _storyOrchestratorDeps.loadCheckpoints = origLoadCheckpoints;
       _storyOrchestratorDeps.recordGreen = origRecordGreen;
+      _workflowResumeDeps.mode = origWorkflowResumeMode;
       _runnerReentrancyGuard.inFlight = false;
       // Stop heartbeat on any exit (US-007)
       stopHeartbeat();
