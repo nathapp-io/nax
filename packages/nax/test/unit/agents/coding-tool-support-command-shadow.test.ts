@@ -40,7 +40,7 @@ describe("resolveCodingToolSupport — commandShadow (P5 threading)", () => {
         commandShadow,
       });
       expect(support?.tools.some((tool) => tool.name === "Bash")).toBe(true);
-      await support!.runtime.callTool("Bash", { command: "echo threaded" });
+      await support?.runtime.callTool("Bash", { command: "echo threaded" });
       expect(observed).toEqual(["echo threaded"]);
     } finally {
       cleanupTempDir(root);

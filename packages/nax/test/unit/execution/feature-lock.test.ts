@@ -372,10 +372,7 @@ describe("acquireFeatureLock", () => {
     const winnerMayRename = new Promise<void>((resolve) => {
       releaseWinner = resolve;
     });
-    _featureLockDeps.rename = async (
-      from: Parameters<typeof realRename>[0],
-      to: Parameters<typeof realRename>[1],
-    ) => {
+    _featureLockDeps.rename = async (from: Parameters<typeof realRename>[0], to: Parameters<typeof realRename>[1]) => {
       renameAttempts += 1;
       if (renameAttempts === 1) {
         // Keep the stale record in place until the other contender has read
