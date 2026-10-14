@@ -174,6 +174,8 @@ describe("runWorkflowFeature", () => {
         stories: { "US-001": { state: "complete", round: 0 } },
         outcome: "draft",
         url: "https://gh/pr/2",
+        // US-004: the prior record is a passed workflow, so its verdict rides the block.
+        passed: true,
       },
     ]);
   });

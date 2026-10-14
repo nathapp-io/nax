@@ -33,6 +33,7 @@ import type { ExitReason } from "./executor-types";
 import type { AcceptanceLoopContext, AcceptanceLoopResult } from "./lifecycle/acceptance-loop";
 import type { RunCompletionOptions, RunCompletionResult } from "./lifecycle/run-completion";
 import { writeFinalFeatureStatus } from "./lifecycle/run-completion-phases";
+import { workflowFinalRunStatus } from "./lifecycle/workflow-run-status";
 import type { AcceptancePhaseStatus } from "./status-file";
 import { hookCtx } from "./story-context";
 import { createRunCompleteGate, runEndPhaseReported } from "./workflow-end-report";
@@ -561,6 +562,9 @@ async function finishRun(
       now: _runnerCompletionDeps.now,
       gate,
     });
+    // US-004: only "completed" with an explicit negative verdict is downgraded.
+    const nextStatus = workflowFinalRunStatus(options.statusWriter.runStatus, endReport.workflowPassed);
+    if (nextStatus !== options.statusWriter.runStatus) options.statusWriter.setRunStatus(nextStatus);
     return { advisoryFindings, mutationSummaries, endReport };
   } finally {
     gate.ensureSafely(() => {

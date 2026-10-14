@@ -135,6 +135,18 @@ export class StatusWriter {
     this._runStatus = status;
   }
 
+  /**
+   * The value last passed to setRunStatus ("running" before the first call).
+   *
+   * The completion phase reads it after the end phase: a workflow-mode run whose
+   * feature workflow did not pass must be turned from "completed" into "failed",
+   * and the call site compares against this to leave every other status — and
+   * pipeline mode — without a redundant setRunStatus call (US-004).
+   */
+  get runStatus(): RunStateSnapshot["runStatus"] {
+    return this._runStatus;
+  }
+
   /** Update the loaded PRD used for progress counting */
   setPrd(prd: PRD): void {
     this._prd = prd;

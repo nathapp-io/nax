@@ -29,6 +29,8 @@ export interface WorkflowStatusBlock {
   stories: Record<string, { state: string; round: number }>;
   outcome?: string;
   url?: string;
+  /** US-004: the feature workflow's verdict. Absent on a record that carries none. */
+  passed?: boolean;
 }
 
 /** Status of the acceptance test phase during post-run */
