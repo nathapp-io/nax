@@ -236,7 +236,8 @@
           "get_code_snippet",
           "get_architecture",
           "search_code",
-          "detect_changes"
+          "detect_changes",
+          "list_projects"
         ]
       }
     }
