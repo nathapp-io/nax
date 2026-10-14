@@ -283,10 +283,26 @@ function otherCommandsDeclaring(
   return names;
 }
 
+/**
+ * US-006: the platform seam `execSandboxNote` reads to decide whether the
+ * description carries the macOS ps note.
+ *
+ * Kept out of `src/tools/index.ts` on purpose: `src/index.ts` takes named
+ * exports from that barrel, so a seam there would reach the package's public
+ * `.` entry, where `_` names are forbidden. It DOES reach `./internal`, because
+ * `src/internal.ts` star-exports this module — which is exactly where a
+ * `_*Deps` seam belongs (nax-only, outside semver), and why adding it here
+ * needed the one-line api/ snapshot update. Tests reach it through
+ * `#src/tools/run-command`.
+ */
+export const _runCommandToolDeps = {
+  platform: (): NodeJS.Platform => process.platform,
+};
+
 function execSandboxNote(launcher: CommandLauncher | undefined): string {
   const state = launcher?.state;
   if (state?.kind === "available")
-    return ` An "argv" call runs ${sandboxSentence(state.network, state.sharedTmp !== false)}`;
+    return ` An "argv" call runs ${sandboxSentence(state.network, state.sharedTmp !== false, _runCommandToolDeps.platform())}`;
   if (state?.kind === "unavailable") return ` ${unsandboxedSentence(state.reason)}`;
   return "";
 }

@@ -21,14 +21,31 @@ function describeNetwork(network: "open" | readonly string[]): string {
 const tempRootsPhrase = (sharedTmp: boolean): string =>
   sharedTmp ? "the system temp directories" : "this run's temp directory ($TMPDIR)";
 
-export function sandboxSentence(network: "open" | readonly string[], sharedTmp = true): string {
-  return (
+/**
+ * US-006: on macOS srt refuses every setuid program, `/bin/ps` among them, and
+ * kills a non-setuid copy with SIGKILL. A test that shells out to ps therefore
+ * fails for a reason that has nothing to do with the test, and an agent reading
+ * only "Operation not permitted" has no way to tell the two apart. Appended on
+ * darwin alone: on Linux ps runs, where the sentence would excuse a real
+ * failure. It is deliberately in `sandboxSentence` rather than at each call
+ * site so every description that advertises a WORKING sandbox carries it.
+ */
+const DARWIN_SETUID_REFUSAL_SENTENCE =
+  'On macOS the sandbox also refuses ps and other setuid programs ("Operation not permitted"), so a test that ' +
+  "shells out to ps fails here for that reason alone.";
+
+export function sandboxSentence(
+  network: "open" | readonly string[],
+  sharedTmp = true,
+  platform?: NodeJS.Platform,
+): string {
+  const sentence =
     `inside an OS sandbox: writes are allowed only under the repository root, ${tempRootsPhrase(sharedTmp)} and ` +
     "package-manager caches -- and nothing under .nax/ except .nax/scratchpad/, since .nax/ is nax's own state " +
     "(change a feature's acceptance test with the Edit tool); credential files (~/.ssh, ~/.aws, ~/.npmrc, nax credentials and similar) are unreadable; " +
     `${describeNetwork(network)}. A write anywhere else fails with "Operation not permitted" or "Read-only file system" ` +
-    "-- that is the sandbox, not a bug in your command."
-  );
+    "-- that is the sandbox, not a bug in your command.";
+  return platform === "darwin" ? `${sentence} ${DARWIN_SETUID_REFUSAL_SENTENCE}` : sentence;
 }
 
 export function unsandboxedSentence(reason: string): string {

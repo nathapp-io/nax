@@ -79,9 +79,15 @@ export interface BashToolOptions {
   readonly launcher?: CommandLauncher;
 }
 
-/** Injectable spawn seam, mirroring `_argvExecDeps`. */
+/**
+ * Injectable spawn seam, mirroring `_argvExecDeps`, plus the platform seam
+ * US-006 added: it decides whether a description carries the macOS ps note, and
+ * exists so a test can pin both platforms without touching the global
+ * `process.platform`.
+ */
 export const _bashToolDeps = {
   runArgv,
+  platform: (): NodeJS.Platform => process.platform,
 };
 
 function describeGrants(patterns: readonly string[] | undefined): string {
@@ -182,6 +188,12 @@ function rawDescription(shell: string, containment: string = RAW_UNCONTAINED): s
   );
 }
 
+/**
+ * US-006: no `sandboxSentence` here, deliberately. This variant describes a
+ * sandbox that is NOT running, so the darwin ps note -- which explains a
+ * refusal an AVAILABLE sandbox makes -- would be a false statement about this
+ * machine. The refusal names its own reason and that every call is refused.
+ */
 function rawUnavailableDescription(shell: string, reason: string): string {
   return (
     `Run one shell command string under ${shell} -- but on this machine ${rawBashRefusalReason(reason)} ` +
@@ -192,11 +204,14 @@ function rawUnavailableDescription(shell: string, reason: string): string {
 
 function bashToolDescription(shell: string, opts: BashToolOptions): string {
   const state = opts.launcher?.state ?? { kind: "disabled" as const };
+  // US-006: read ONCE, so every `sandboxSentence` call site in this description
+  // agrees on the host's platform.
+  const platform = _bashToolDeps.platform();
   if (opts.bashApproval === "raw") {
     if (state.kind === "available")
       return rawDescription(
         shell,
-        `The command runs from the repository root ${sandboxSentence(state.network, state.sharedTmp !== false)} `,
+        `The command runs from the repository root ${sandboxSentence(state.network, state.sharedTmp !== false, platform)} `,
       );
     if (state.kind === "unavailable") return rawUnavailableDescription(shell, state.reason);
     return rawDescription(shell);
@@ -212,7 +227,7 @@ function bashToolDescription(shell: string, opts: BashToolOptions): string {
       ? escalateDescription(shell, opts.patterns)
       : gatedDescription(shell, opts.patterns);
   if (state.kind === "available") {
-    return `${policyDescription} Commands that pass run ${sandboxSentence(state.network, state.sharedTmp !== false)}`;
+    return `${policyDescription} Commands that pass run ${sandboxSentence(state.network, state.sharedTmp !== false, platform)}`;
   }
   if (state.kind === "unavailable") return `${policyDescription} ${unsandboxedSentence(state.reason)}`;
   return policyDescription;
