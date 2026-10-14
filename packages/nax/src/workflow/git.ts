@@ -1,11 +1,52 @@
 /** Git reads the story loop needs. cwd is always the repo root (repo-rooted paths). */
 import { mkdir } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, relative } from "node:path";
+import { ledgerPath } from "@/advisor";
 import { NaxError } from "@/errors";
 import { ALWAYS_EXCLUDED, truncateDiff } from "@/review";
 import { _workflowDeps } from "./step-context";
 
 const DIFF_CONTEXT_LINES = 10;
+
+/** The message every ledger commit carries, in both workflow and pipeline mode (`finish/advise.ts`). */
+export function ledgerCommitMessage(feature: string): string {
+  return `chore(${feature}): advisor decisions`;
+}
+
+function ledgerGitError(path: string, step: string, result: { stderr?: string; exitCode: number }): NaxError {
+  const detail = result.stderr?.trim() || `exit ${result.exitCode}`;
+  return new NaxError(`git ${step} of "${path}" failed: ${detail}`, "WORKFLOW_GIT_FAILED", {
+    stage: "workflow",
+    storyId: "_run",
+    path,
+  });
+}
+
+/**
+ * Commit the advisor's ledger **alone**, when it changed (US-003).
+ *
+ * The pushed branch must carry the rulings the PR body cites, and nothing else ever commits them: the
+ * ledger is appended outside the story loop, and both pushes run `commitAndPush` with `skipCommit`.
+ * The pathspec commit keeps unrelated staged and unstaged edits out of it, and `--no-verify` matches
+ * pipeline mode's ledger commit. Deliberately no `[skip ci]`: a skipped required check blocks a merge.
+ *
+ * True only when this call created a commit. A missing ledger is `false`, not an error; a failing git
+ * operation throws, and the caller decides how loud that is (`publish` is fail-open about it).
+ */
+export async function commitLedger(projectDir: string, feature: string): Promise<boolean> {
+  const path = relative(projectDir, ledgerPath(projectDir, feature));
+  if (!(await Bun.file(ledgerPath(projectDir, feature)).exists())) return false;
+  const added = await _workflowDeps.git(["add", "--", path], projectDir);
+  if (added.exitCode !== 0) throw ledgerGitError(path, "add", added);
+  const staged = await _workflowDeps.git(["diff", "--cached", "--quiet", "--", path], projectDir);
+  if (staged.exitCode === 0) return false;
+  const commit = await _workflowDeps.git(
+    ["commit", "--no-verify", "-m", ledgerCommitMessage(feature), "--", path],
+    projectDir,
+  );
+  if (commit.exitCode !== 0) throw ledgerGitError(path, "commit", commit);
+  return true;
+}
 
 export async function readHead(projectDir: string): Promise<string> {
   const { stdout } = await _workflowDeps.git(["rev-parse", "HEAD"], projectDir);
