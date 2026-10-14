@@ -5,6 +5,7 @@ export type {
   ImplementerReply,
   ImplementerStatus,
   MinorTriageDecision,
+  ReReviewResidual,
   ReReviewVerdict,
   StoryReviewVerdict,
   WorkflowFinding,

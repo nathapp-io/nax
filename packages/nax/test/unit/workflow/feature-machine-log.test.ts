@@ -118,6 +118,24 @@ describe("feature machine run log", () => {
     expect(out.some((l) => l.startsWith("branch-rereview"))).toBe(false);
   });
 
+  // US-004 (nax#2524): a residual verdict is its own group; the other groups are unchanged.
+  test("a PARTIAL verdict on the branch-rereview line names the verdict (AC-19)", async () => {
+    await runFeatureMachine(
+      envWith({
+        reReview: {
+          verdicts: [
+            { id: "B1", addressed: false, note: "", residual: { issue: "still open", file: "a.ts", line: 3 } },
+            { id: "B2", addressed: false, note: "" },
+          ],
+          newFindings: [],
+        },
+      }),
+    );
+    const line = lines().find((l) => l.startsWith("branch-rereview: "));
+    expect(line).toContain("B1 PARTIAL");
+    expect(line).toMatch(/^branch-rereview: B1 PARTIAL, B2 NOT addressed; minors left: 1 {2}/);
+  });
+
   test("a failed fix session is stated on the branch-fix line", async () => {
     await runFeatureMachine(envWith({ fixFailure: "timeout" }));
     expect(lines().find((l) => l.startsWith("branch-fix: "))).toMatch(

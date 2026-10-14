@@ -356,6 +356,77 @@ describe("runStoryLoop", () => {
     expect(fixTurns(h.turns)[1]?.findings.map((f) => f.id)).toEqual(["F2"]);
     expect(out.state).toBe("complete");
   });
+
+  // US-004 (nax#2524): a PARTIAL verdict keeps F1 open under its own id with the residual as its issue.
+  test("a PARTIAL re-review keeps F1 open with the residual as its issue (AC-16)", async () => {
+    const h = harness({ review: [failing()] });
+    let n = 0;
+    h.env.steps.reReview = async (_round, findings) => {
+      n++;
+      return {
+        ran: true,
+        verdict: {
+          verdicts: findings.map((f) => ({
+            id: f.id,
+            addressed: n > 1,
+            note: "",
+            ...(n === 1 ? { residual: { issue: "still open" } } : {}),
+          })),
+          newFindings: [],
+        },
+      };
+    };
+    const out = await runStoryLoop(h.env);
+    const secondFix = fixTurns(h.turns)[1];
+    expect(secondFix?.findings.map((f) => f.id)).toEqual(["F1"]);
+    expect(secondFix?.findings[0]?.issue).toBe("still open");
+    expect(out.state).toBe("complete");
+  });
+
+  test("a new finding that restates the residual is neither opened nor deferred (US-004)", async () => {
+    const h = harness({
+      review: [
+        {
+          spec: "fail",
+          quality: "changes",
+          findings: [{ kind: "spec", severity: "important", issue: "gap", file: "a.ts", line: 53 }],
+          cannotVerify: [],
+          inspectedFiles: [],
+        },
+      ],
+    });
+    let n = 0;
+    h.env.steps.reReview = async (_round, findings) => {
+      n++;
+      return {
+        ran: true,
+        verdict: {
+          verdicts: findings.map((f) => ({
+            id: f.id,
+            addressed: n > 1,
+            note: "",
+            ...(n === 1 ? { residual: { issue: "symlinks still bypass", file: "a.ts", line: 53 } } : {}),
+          })),
+          // the reviewer restates the residual at the same place, and adds one minor elsewhere
+          newFindings:
+            n === 1
+              ? [
+                  { kind: "spec", severity: "critical", issue: "symlinks still bypass", file: "a.ts", line: 53 },
+                  { kind: "quality", severity: "minor", issue: "naming nit", file: "b.ts", line: 7 },
+                ]
+              : [],
+        },
+      };
+    };
+    const out = await runStoryLoop(h.env);
+    const secondFix = fixTurns(h.turns)[1];
+    expect(secondFix?.findings.map((f) => f.id)).toEqual(["F1"]);
+    expect(secondFix?.findings[0]?.issue).toBe("symlinks still bypass");
+    expect(h.ledger).toContain("deferred-minor: naming nit");
+    expect(h.ledger.filter((l) => l.startsWith("deferred-minor:"))).toHaveLength(1);
+    expect(h.record().deferredMinors).toBe(1);
+    expect(out.state).toBe("complete");
+  });
 });
 
 describe("flagged rulings at close", () => {

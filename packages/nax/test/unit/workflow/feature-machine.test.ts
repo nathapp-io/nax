@@ -464,3 +464,66 @@ describe("second branch fix (#2496)", () => {
     expect(final.step).toBe("done");
   });
 });
+
+const SAME_PLACE_B1: BranchReviewVerdict = {
+  ...PASS,
+  spec: "fail",
+  findings: [{ kind: "spec", severity: "important", issue: "cap missing", file: "src/a.ts", line: 53 }],
+};
+/** US-004 (nax#2524): the fix resolved part of B1, and the reviewer filed the remainder again. */
+const PARTIAL_B1 = (severity: "critical" | "minor" = "critical"): ReReviewVerdict => ({
+  verdicts: [
+    {
+      id: "B1",
+      addressed: false,
+      note: "half done",
+      residual: { issue: "symlinks still bypass", file: "src/a.ts", line: 53 },
+    },
+  ],
+  newFindings: [{ kind: "spec", severity, issue: "symlinks still bypass", file: "src/a.ts", line: 53 }],
+});
+
+describe("branch re-review PARTIAL (US-004)", () => {
+  test("B1 stays open with the residual's issue and the restatement is not filed (AC-17)", async () => {
+    const h = harness({ review: SAME_PLACE_B1, reReview: PARTIAL_B1() });
+    const final = await runFeatureMachine(h.env);
+    expect(final.reviewOpen).toHaveLength(1);
+    expect(final.reviewOpen[0]?.id).toBe("B1");
+    expect(final.reviewOpen[0]?.issue).toBe("symlinks still bypass");
+  });
+
+  test("adjudicate sees exactly one item, the residual finding (AC-18)", async () => {
+    const h = harness({ review: SAME_PLACE_B1, reReview: PARTIAL_B1() });
+    await runFeatureMachine(h.env);
+    expect(h.adjudicated).toHaveLength(1);
+    expect(h.adjudicated[0]?.map((f) => f.id)).toEqual(["B1"]);
+  });
+
+  test("the restatement's id is never spent, and the artifact keeps the assigned findings", async () => {
+    const h = harness({ review: SAME_PLACE_B1, reReview: PARTIAL_B1() });
+    const final = await runFeatureMachine(h.env);
+    expect(final.nextFindingId).toBe(2);
+    expect(h.artifacts["branch-rereview.json"]).toMatchObject({ newFindings: [] });
+  });
+
+  test("a restated minor never reaches newMinors", async () => {
+    const h = harness({ review: SAME_PLACE_B1, reReview: PARTIAL_B1("minor") });
+    const final = await runFeatureMachine(h.env);
+    expect(final.newMinors).toEqual([]);
+    expect(h.artifacts["branch-rereview.json"]).toMatchObject({ newFindings: [] });
+  });
+
+  test("a residual at another location keeps a new finding there", async () => {
+    const verdict: ReReviewVerdict = {
+      ...PARTIAL_B1(),
+      newFindings: [{ kind: "spec", severity: "critical", issue: "broke publish", file: "src/a.ts", line: 60 }],
+    };
+    const h = harness({ review: SAME_PLACE_B1, reReview: verdict });
+    const final = await runFeatureMachine(h.env);
+    // B1 is still open, so #2496's second fix is not eligible: the new finding goes to adjudication too.
+    expect(final.reviewOpen.map((f) => f.id)).toEqual(["B1", "B2"]);
+    expect(final.reviewOpen.map((f) => f.issue)).toEqual(["symlinks still bypass", "broke publish"]);
+    expect(h.adjudicated[0]?.map((f) => f.id)).toEqual(["B1", "B2"]);
+    expect(h.fixInputs).toHaveLength(1);
+  });
+});

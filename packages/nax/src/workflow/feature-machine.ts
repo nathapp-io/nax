@@ -14,6 +14,7 @@ import type { BranchReviewFacts } from "./branch-review";
 import type { PublishOutcome } from "./finalize";
 import { type LedgerWriteOptions, ledgerText } from "./ledger";
 import type { LedgerItem } from "./ledger-items";
+import { absorbReReviewVerdict } from "./re-review-absorb";
 import type { RepoGateRun } from "./repo-gates";
 import { describeFindings, type StepModel, startStep } from "./run-log";
 import type { ReviewOutcome } from "./story-review";
@@ -232,19 +233,28 @@ async function branchFixStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Promi
   return { fixBase, fixRan: true, fixRounds: round, step: "branch-rereview" };
 }
 
-function reReviewText(
-  items: readonly WorkflowFinding[],
-  stillOpen: ReadonlySet<string>,
-  added: readonly WorkflowFinding[],
-  minorsLeft: number,
-): string {
-  const ids = (open: boolean) => items.filter((f) => stillOpen.has(f.id) === open).map((f) => f.id);
+/**
+ * US-004 (nax#2524): one line per group of verdicts. The groups are the same as before — addressed,
+ * then the open ones — with a `PARTIAL` group between them so a residual keeps its own id in plain
+ * sight; with no residual in the verdicts the text is exactly what it always was.
+ */
+function reReviewText(input: {
+  readonly items: readonly WorkflowFinding[];
+  readonly verdicts: ReReviewVerdict["verdicts"];
+  readonly stillOpen: ReadonlySet<string>;
+  readonly added: readonly WorkflowFinding[];
+  readonly minorsLeft: number;
+}): string {
+  const residuals = new Set(input.verdicts.filter((v) => v.residual).map((v) => v.id));
+  const ids = (open: boolean, partial: boolean): string[] =>
+    input.items.filter((f) => input.stillOpen.has(f.id) === open && residuals.has(f.id) === partial).map((f) => f.id);
   const parts = [
-    ...(ids(false).length > 0 ? [`${ids(false).join(" ")} addressed`] : []),
-    ...(ids(true).length > 0 ? [`${ids(true).join(" ")} NOT addressed`] : []),
-    ...(added.length > 0 ? [`new: ${describeFindings(added)}`] : []),
+    ...(ids(false, false).length > 0 ? [`${ids(false, false).join(" ")} addressed`] : []),
+    ...(ids(true, true).length > 0 ? [`${ids(true, true).join(" ")} PARTIAL`] : []),
+    ...(ids(true, false).length > 0 ? [`${ids(true, false).join(" ")} NOT addressed`] : []),
+    ...(input.added.length > 0 ? [`new: ${describeFindings(input.added)}`] : []),
   ];
-  return `${parts.join(", ")}; minors left: ${minorsLeft}`;
+  return `${parts.join(", ")}; minors left: ${input.minorsLeft}`;
 }
 
 async function branchReReviewStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Promise<Patch> {
@@ -266,17 +276,19 @@ async function branchReReviewStep(env: FeatureEnv, rec: WorkflowFeatureRecord): 
   // Fail closed: an item the verdicts do not mark addressed stays open, omitted or not.
   const addressed = new Set(out.verdict.verdicts.filter((v) => v.addressed).map((v) => v.id));
   const stillOpen = new Set(items.map((f) => f.id).filter((id) => !addressed.has(id)));
-  const { findings, nextFindingId } = assign(rec, out.verdict.newFindings.filter(isBlocking));
+  // US-004: only the review findings are absorbed — the fix-now minors keep their own triage handling.
+  const absorbed = absorbReReviewVerdict(rec.reviewOpen, out.verdict);
+  const { findings, nextFindingId } = assign(rec, absorbed.newDrafts.filter(isBlocking));
   await env.sink.artifact(second ? "branch-rereview-r2.json" : "branch-rereview.json", {
     ...out.verdict,
-    newFindings: [...findings, ...out.verdict.newFindings.filter((f) => !isBlocking(f))],
+    newFindings: [...findings, ...absorbed.newDrafts.filter((f) => !isBlocking(f))],
   });
   const minors = rec.minors.map((m) =>
     m.triage === "fix-now" && stillOpen.has(m.id) ? { ...m, triage: "leave" as const } : m,
   );
-  const newMinors = [...rec.newMinors, ...minorIssues(out.verdict.newFindings)];
+  const newMinors = [...rec.newMinors, ...minorIssues(absorbed.newDrafts)];
   const minorsLeft = minors.filter((m) => m.triage === "leave").length + newMinors.length;
-  log.done(reReviewText(items, stillOpen, findings, minorsLeft));
+  log.done(reReviewText({ items, verdicts: out.verdict.verdicts, stillOpen, added: findings, minorsLeft }));
   const again = !second && (await secondFixEligible(env, rec, stillOpen, findings));
   if (again) {
     await env.sink.ledger(
@@ -285,7 +297,7 @@ async function branchReReviewStep(env: FeatureEnv, rec: WorkflowFeatureRecord): 
     );
   }
   return {
-    reviewOpen: [...rec.reviewOpen.filter((f) => stillOpen.has(f.id)), ...findings],
+    reviewOpen: [...absorbed.open, ...findings],
     nextFindingId,
     minors,
     newMinors,

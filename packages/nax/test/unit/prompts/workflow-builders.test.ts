@@ -188,4 +188,19 @@ ${WORKFLOW_REPLY_CONTRACT}`);
     expect(text).toContain("NOT_ADDRESSED");
     expect(text).toContain("only in this fix diff");
   });
+
+  // US-004 (nax#2524): the third verdict, the residual it must carry, and the dedupe it enables.
+  test("re-review offers PARTIAL with a residual and forbids restating it in newFindings (AC-21)", () => {
+    const text = buildWorkflowReReviewPrompt({
+      briefPath: "/b.md",
+      reportPath: "/r.md",
+      packagePath: "/p-2.diff",
+      findings: [{ id: "F1", kind: "quality", severity: "critical", issue: "leak" }],
+    });
+    expect(text).toContain("ADDRESSED|PARTIAL|NOT_ADDRESSED");
+    expect(text).toContain('Never list a residual again in "newFindings".');
+    expect(text).toContain('"residual": {"issue": "...", "suggestion": "...", "file": "path", "line": 0}');
+    expect(text).toContain("describe only what remains");
+    expect(text).not.toContain("ADDRESSED or NOT_ADDRESSED");
+  });
 });

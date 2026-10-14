@@ -77,8 +77,9 @@ describe("buildWorkflowBranchReReviewPrompt", () => {
     });
     expect(prompt).toContain("/out/package-branch-fix.diff");
     expect(prompt).toContain("[B1]");
-    expect(prompt).toContain("ADDRESSED|NOT_ADDRESSED");
+    expect(prompt).toContain("ADDRESSED|PARTIAL|NOT_ADDRESSED");
     expect(prompt).toContain("Do not re-review the rest of the branch");
+    expect(prompt).toContain('Never list a residual again in "newFindings".');
   });
 });
 

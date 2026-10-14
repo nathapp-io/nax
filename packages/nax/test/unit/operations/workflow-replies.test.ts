@@ -203,6 +203,103 @@ describe("parseReReviewReply", () => {
   test("no findings array -> null", () => {
     expect(parseReReviewReply(JSON.stringify({ newFindings: [] }), ["F1"])).toBeNull();
   });
+
+  // US-004 (nax#2524): the third verdict, whose residual keeps the finding open under its own id.
+  test("a PARTIAL verdict keeps its residual and stays not addressed (AC-1)", () => {
+    const v = parseReReviewReply(
+      JSON.stringify({
+        findings: [{ id: "F1", verdict: "PARTIAL", note: "half done", residual: { issue: "symlinks still bypass" } }],
+        newFindings: [],
+      }),
+      ["F1"],
+    );
+    expect(v?.verdicts[0]?.addressed).toBe(false);
+    expect(v?.verdicts[0]?.residual?.issue).toBe("symlinks still bypass");
+  });
+
+  // A usable PARTIAL residual in the same reply, so each test below fails before the parser knows PARTIAL
+  // instead of passing vacuously on a parser that never emits a residual at all.
+  const CONTROL = { id: "F9", verdict: "PARTIAL", note: "", residual: { issue: "a usable residual" } };
+
+  test("a PARTIAL residual with no issue, or an empty one, carries no residual (AC-2, AC-3)", () => {
+    const residuals: unknown[] = [
+      undefined,
+      {},
+      { issue: "" },
+      { issue: "   " },
+      { issue: 7 },
+      "symlinks still bypass",
+    ];
+    const ids = residuals.map((_, i) => `F${i + 1}`);
+    const v = parseReReviewReply(
+      JSON.stringify({
+        findings: [
+          ...residuals.map((residual, i) => ({
+            id: ids[i],
+            verdict: "PARTIAL",
+            note: "",
+            ...(residual === undefined ? {} : { residual }),
+          })),
+          CONTROL,
+        ],
+        newFindings: [],
+      }),
+      [...ids, "F9"],
+    );
+    for (const [i, id] of ids.entries()) {
+      const why = `${id} ${JSON.stringify(residuals[i])}`;
+      expect(v?.verdicts[i]?.addressed, why).toBe(false);
+      expect(v?.verdicts[i], why).not.toHaveProperty("residual");
+    }
+    expect(v?.verdicts.at(-1)?.residual?.issue).toBe("a usable residual");
+  });
+
+  test("a non-PARTIAL verdict that carries a residual drops it (AC-4)", () => {
+    const verdicts = ["NOT_ADDRESSED", "ADDRESSED", "partial"];
+    const ids = verdicts.map((_, i) => `F${i + 1}`);
+    const v = parseReReviewReply(
+      JSON.stringify({
+        findings: [
+          ...verdicts.map((verdict, i) => ({
+            id: ids[i],
+            verdict,
+            note: "",
+            residual: { issue: "symlinks still bypass", file: "a.ts", line: 3 },
+          })),
+          CONTROL,
+        ],
+        newFindings: [],
+      }),
+      [...ids, "F9"],
+    );
+    for (const [i, verdict] of verdicts.entries()) {
+      expect(v?.verdicts[i], verdict).not.toHaveProperty("residual");
+    }
+    expect(v?.verdicts.at(-1)?.residual).toEqual({ issue: "a usable residual" });
+  });
+
+  test("a PARTIAL residual keeps only its well-formed fields (AC-15)", () => {
+    const v = parseReReviewReply(
+      JSON.stringify({
+        findings: [
+          {
+            id: "F1",
+            verdict: "PARTIAL",
+            note: "",
+            residual: { issue: "still bypass", suggestion: "", file: "a.ts", line: 0 },
+          },
+        ],
+        newFindings: [],
+      }),
+      ["F1"],
+    );
+    expect(v?.verdicts[0]?.residual).toEqual({ issue: "still bypass", file: "a.ts" });
+  });
+
+  test("a missing verdict for a PARTIAL-able id keeps today's note and no residual", () => {
+    const v = parseReReviewReply(JSON.stringify({ findings: [], newFindings: [] }), ["F1"]);
+    expect(v?.verdicts).toEqual([{ id: "F1", addressed: false, note: "(no verdict returned)" }]);
+  });
 });
 
 describe("parseBranchReviewReply", () => {
