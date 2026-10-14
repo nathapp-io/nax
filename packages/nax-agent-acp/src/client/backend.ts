@@ -113,7 +113,13 @@ function toolHostFor(
 
 /** Permission requests and elicitations, decided by profile with the session's redaction set. */
 function routerFor(ctx: BackendOpenContext, secrets: readonly string[]): InboundRouter {
-  const base = { profile: ctx.profile, asks: ctx.asks, secrets };
+  const base = {
+    profile: ctx.profile,
+    asks: ctx.asks,
+    secrets,
+    cwd: ctx.workdir,
+    ...(ctx.sandbox?.kind === "policy" ? { sandbox: ctx.sandbox.policy } : {}),
+  };
   return createInboundRouter(
     (request, signal) => decidePermission(request, { ...base, signal }),
     (request, signal) => answerElicitation(request, { ...base, signal }),

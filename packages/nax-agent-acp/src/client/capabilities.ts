@@ -67,7 +67,9 @@ export function buildCapabilityRecord(
   });
 }
 
-const isReadOnlyProfile = (profile: AgentSessionProfile): boolean => profile === "none" || profile === "read";
+/** none, read and review (nax#2500) run with the agent's own write tools removed. */
+const isReadOnlyProfile = (profile: AgentSessionProfile): boolean =>
+  profile === "none" || profile === "read" || profile === "review";
 
 /** The first requirement this agent cannot meet, or undefined. The model is checked after session/new. */
 export function unmetRequirement(record: CapabilityRecord, req: Requirements): UnmetRequirement | undefined {

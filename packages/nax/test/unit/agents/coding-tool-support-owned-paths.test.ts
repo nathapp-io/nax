@@ -198,7 +198,7 @@ describe("nax owned paths through resolveCodingToolSupport (S3-2 byte-identity p
  */
 describe("US-003 — the native config read gate through resolveCodingToolSupport", () => {
   test("US-003 AC12: a clean config is readable when Bash runs in raw mode", async () => {
-    const support = await supportFor({ declaredTools: ["Read", "Bash"], bashApproval: "raw" });
+    const support = await supportFor({ declaredTools: ["Read", "Bash", "Write"], bashApproval: "raw" });
     const outcome = await support?.runtime.callTool("Read", { path: ".nax/config.json" });
     expect(outcome?.kind).toBe("ok");
     if (outcome?.kind !== "ok") throw new Error("expected Read of the root config to be admitted");
@@ -214,7 +214,7 @@ describe("US-003 — the native config read gate through resolveCodingToolSuppor
   });
 
   test("US-003 AC12 (boundary): a gated dispatch that DOES declare Bash keeps the read closed", async () => {
-    const support = await supportFor({ declaredTools: ["Read", "Bash"], bashApproval: "gated" });
+    const support = await supportFor({ declaredTools: ["Read", "Bash", "Write"], bashApproval: "gated" });
     const outcome = await support?.runtime.callTool("Read", { path: ".nax/config.json" });
     expect(outcome?.kind).toBe("denied");
   });
@@ -238,7 +238,7 @@ describe("US-003 — the native config read gate through resolveCodingToolSuppor
   });
 
   test("US-003 AC15: a gated Bash dispatch keeps the config read closed and names nax doctor", async () => {
-    const support = await supportFor({ declaredTools: ["Bash", "Read"], bashApproval: "gated" });
+    const support = await supportFor({ declaredTools: ["Bash", "Read", "Write"], bashApproval: "gated" });
     const outcome = await support?.runtime.callTool("Read", { path: ".nax/config.json" });
     expect(outcome?.kind).toBe("denied");
     if (outcome?.kind !== "denied") throw new Error("expected Read of the root config to be denied under gated Bash");
@@ -246,7 +246,7 @@ describe("US-003 — the native config read gate through resolveCodingToolSuppor
   });
 
   test("US-003 AC16: a gated Bash redirect into the config is refused and the file is untouched", async () => {
-    const support = await supportFor({ declaredTools: ["Bash"], bashApproval: "gated" });
+    const support = await supportFor({ declaredTools: ["Bash", "Write"], bashApproval: "gated" });
     const outcome = await support?.runtime.callTool("Bash", { command: "echo x > .nax/config.json" });
     expect(outcome?.kind).toBe("denied");
     expect(rootConfigContents()).toBe("{}");

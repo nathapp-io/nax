@@ -8,9 +8,9 @@ type ConfigureOpts = Parameters<SessionManager["configureRuntime"]>[0];
 
 /** Captures the afterTurn hook createRuntime hands to the session manager. */
 class CapturingSessionManager extends SessionManager {
-  hook: ConfigureOpts["afterTurn"];
+  hook: ConfigureOpts["turnHooks"];
   override configureRuntime(opts: ConfigureOpts): void {
-    this.hook = opts.afterTurn;
+    this.hook = opts.turnHooks;
     super.configureRuntime(opts);
   }
 }
@@ -42,8 +42,8 @@ describe("createRuntime afterTurn wiring (#2497)", () => {
     try {
       const sessionManager = new CapturingSessionManager();
       makeTestRuntime({ sessionManager });
-      await sessionManager.hook?.(descriptor("nax-handle"), 3);
-      await sessionManager.hook?.(descriptor(), 1);
+      await sessionManager.hook?.after?.(descriptor("nax-handle"), 3);
+      await sessionManager.hook?.after?.(descriptor(), 1);
     } finally {
       _runtimeRunStateDeps.repairRunState = orig;
     }

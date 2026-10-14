@@ -247,8 +247,8 @@ describe("answerElicitation: declined before asking (D5-i)", () => {
     expect(notes).toEqual(["declined: Log in"]);
   });
 
-  test("under none and read: declined with no question and no note", async () => {
-    for (const profile of ["none", "read"] as const) {
+  test("under none, read and review: declined with no question and no note", async () => {
+    for (const profile of ["none", "read", "review"] as const) {
       const { response, questions, notes } = await answer(CLAUDE_SINGLE, ["1"], profile);
       expect(response).toEqual({ action: "decline" });
       expect(questions).toEqual([]);

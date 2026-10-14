@@ -21,6 +21,15 @@ export interface SandboxPolicy {
   readonly network: SandboxNetworkPolicy;
 }
 
+/**
+ * nax#2500: the sandbox an embedder hands a backend that runs its own shell
+ * (ACP Claude). Absent = sandbox disabled by config. `unavailable` = enabled but
+ * unusable on this host; the backend must refuse rather than run unsandboxed.
+ */
+export type SessionSandbox =
+  | { readonly kind: "policy"; readonly policy: SandboxPolicy }
+  | { readonly kind: "unavailable"; readonly reason: string };
+
 export type ProbeResult = { readonly available: true } | { readonly available: false; readonly reason: string };
 
 export interface SandboxWrapRequest {
@@ -98,4 +107,6 @@ export interface LaunchResult extends ArgvExecResult {
 export interface CommandLauncher {
   readonly state: SandboxState;
   run(req: LaunchRequest): Promise<LaunchResult>;
+  /** nax#2500: the policy this launcher would apply at `root`, without the session TMPDIR. Present when available. */
+  policyAt?(root: string): Promise<SandboxPolicy>;
 }

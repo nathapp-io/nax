@@ -23,7 +23,7 @@ import { selectModel } from "./model-selection";
 import { formatSessionName } from "./naming";
 import { openSessionExtras } from "./open-session-extras";
 import { selectNativeTurnConfig } from "./turn-config-selection";
-import { type AfterTurnHook, TurnHooks } from "./turn-hooks";
+import { type TurnHookPair, TurnHooks } from "./turn-hooks";
 import type {
   CreateSessionOptions,
   ISessionManager,
@@ -84,7 +84,7 @@ export class SessionManager implements ISessionManager {
    * then, and for a manager no run setup ever configured.
    */
   private _loopHandlers: LoopHandlerSet = NO_LOOP_HANDLERS;
-  /** Per-turn loop-handler delivery and the afterTurn hook (#2497). */
+  /** Per-turn loop-handler delivery and the before/after turn hooks (#2497, #2500). */
   private readonly _turnHooks = new TurnHooks();
   /**
    * Watchdog-invoked cancels, per session — populated by the wrapped
@@ -116,9 +116,9 @@ export class SessionManager implements ISessionManager {
      */
     agentStreamEvents?: import("../runtime/agent-stream-events").IAgentStreamEventBus;
     /** Awaited after every turn (success or error); failures are swallowed (#2497). */
-    afterTurn?: AfterTurnHook;
+    turnHooks?: TurnHookPair;
   }): void {
-    if (opts.afterTurn) this._turnHooks.setAfterTurn(opts.afterTurn);
+    if (opts.turnHooks) this._turnHooks.setHooks(opts.turnHooks);
     if (opts.getAdapter) this._getAdapter = opts.getAdapter;
     if (opts.config) this._config = opts.config;
     if (opts.pidRegistry) this._pidRegistry = opts.pidRegistry;
@@ -570,11 +570,11 @@ export class SessionManager implements ISessionManager {
       );
     }
 
-    const loopHandlerOpts = this._turnHooks.loopHandlerOpts(handle, terminalDesc, this._loopHandlers);
-
     this._busySessions.add(handle.id);
 
     try {
+      const loopHandlerOpts = await this._turnHooks.beginTurn(handle, terminalDesc, this._loopHandlers);
+
       const result = await adapter.sendTurn(handle, prompt, {
         ...opts,
         interactionHandler: opts?.interactionHandler ?? NO_OP_INTERACTION_HANDLER,

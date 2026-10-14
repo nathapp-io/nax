@@ -157,6 +157,8 @@ export interface OpenSessionRequest {
    */
   providerTools?: readonly import("@nathapp/nax-agent").CodingTool[];
   declaredTools?: readonly string[];
+  /** nax#2500: dispatch sandbox for ACP backends that run their own shell. */
+  sandbox?: import("@nathapp/nax-agent").SessionSandbox;
   toolSurface?: import("@nathapp/nax-agent").ToolSurfaceDraft;
   /** Native repository instruction scope, independent of the file-tool execution root. */
   instructionDirectories?: readonly string[];

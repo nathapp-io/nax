@@ -57,6 +57,7 @@ export { repoScopedRectification } from "./builders/rectifier-builder-helpers";
 export type { SemanticReviewPromptOptions } from "./builders/review-builder";
 // Review prompt builder — semantic review prompt construction.
 export { ReviewPromptBuilder } from "./builders/review-builder";
+export { reviewerCommandsSection } from "./builders/reviewer-commands-section";
 // Setup prompt builder — LLM-driven nax init config generation.
 export { SetupPromptBuilder } from "./builders/setup-builder";
 export { buildSourceRootsSection } from "./builders/source-roots-builder";

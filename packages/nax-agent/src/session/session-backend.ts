@@ -65,6 +65,8 @@ export interface BackendOpenContext {
   readonly metadata: Readonly<Record<string, string>>;
   /** Aborted when the session starts closing. */
   readonly openSignal: AbortSignal;
+  /** nax#2500: present only for profiles review/full when the embedder supplied one. */
+  readonly sandbox?: import("#src/sandbox/types").SessionSandbox;
 }
 
 export interface OpenedBackend {

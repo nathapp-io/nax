@@ -19,7 +19,7 @@ import {
 } from "@nathapp/nax-agent";
 import type { AcpAgentName, AcpBackendOptions, AcpProcessHooks } from "@nathapp/nax-agent-acp/client";
 import { buildAllowedEnv } from "../shared/env";
-import { acpProfileFor } from "./profile-map";
+import { type AcpProfile, acpProfileFor } from "./profile-map";
 import { finalizeAcpSurface } from "./provider-embedder";
 import type { TurnSlot } from "./turn-slot";
 
@@ -95,9 +95,25 @@ function metadataOf(opts: OpenSessionOpts): Record<string, string> {
   };
 }
 
+/** nax#2500: the profile an ACP open uses and the sandbox it forwards (logged at open). */
+export interface AcpOpenSummary {
+  readonly profile: AcpProfile;
+  readonly sandbox: "policy" | "unavailable" | "none";
+}
+
+export function acpOpenSummary(opts: OpenSessionOpts): AcpOpenSummary {
+  const profile = acpProfileFor(opts.resolvedPermissions.mode, opts.declaredTools);
+  return { profile, sandbox: sandboxFor(profile, opts)?.kind ?? "none" };
+}
+
+function sandboxFor(profile: AcpProfile, opts: OpenSessionOpts): OpenSessionOpts["sandbox"] {
+  return profile === "review" || profile === "full" ? opts.sandbox : undefined;
+}
+
 export function openContext(input: OpenContextInput): BackendOpenContext {
   const { name, opts, slot } = input;
-  const profile = acpProfileFor(opts.resolvedPermissions.mode, opts.declaredTools);
+  const { profile } = acpOpenSummary(opts);
+  const sandbox = sandboxFor(profile, opts);
   // nax#2444 D1/D3: provider tools ride the loopback host for capable agents;
   // everything else stays the historical B5 shape (no tools registered).
   const delivery = finalizeAcpSurface(input.agent, opts, profile);
@@ -115,5 +131,6 @@ export function openContext(input: OpenContextInput): BackendOpenContext {
     turnTimeoutSeconds: opts.timeoutSeconds,
     metadata: metadataOf(opts),
     openSignal: input.openSignal,
+    ...(sandbox !== undefined ? { sandbox } : {}),
   };
 }

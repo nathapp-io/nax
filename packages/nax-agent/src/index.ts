@@ -279,6 +279,8 @@ export {
   type SandboxRecord,
   type SandboxState,
   type SandboxWrapRequest,
+  type SessionSandbox,
+  sessionSandboxFrom,
   sandboxBackendFor,
   sandboxSentence,
   sessionTmpDir,

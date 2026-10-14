@@ -69,7 +69,7 @@ describe("resolveCodingToolSupport — per-session TMPDIR (US-004)", () => {
     const calls = recordingRunArgv();
 
     const support = await resolveCodingToolSupport({
-      declaredTools: ["Bash"],
+      declaredTools: ["Bash", "Write"],
       codingToolRoot: root,
       pipelineStage: "run",
       storyId: "US-001",
@@ -93,7 +93,7 @@ describe("resolveCodingToolSupport — per-session TMPDIR (US-004)", () => {
     const calls = recordingRunArgv();
 
     const support = await resolveCodingToolSupport({
-      declaredTools: ["Bash"],
+      declaredTools: ["Bash", "Write"],
       codingToolRoot: root,
       pipelineStage: "run",
       storyId: "US-001",

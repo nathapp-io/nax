@@ -17,6 +17,12 @@ describe("openSessionExtras", () => {
     ).toEqual({ transcriptDir: "/explicit", transcriptOwner: "op-1", toolAudit });
   });
 
+  test("sandbox is forwarded when present and absent otherwise (nax#2500)", () => {
+    const sandbox = { kind: "unavailable", reason: "test" } as const;
+    expect(openSessionExtras({ sandbox }, undefined).sandbox).toEqual(sandbox);
+    expect("sandbox" in openSessionExtras({}, undefined)).toBe(false);
+  });
+
   test("no root and no feature: no transcriptDir key at all", () => {
     expect(openSessionExtras({}, undefined)).toEqual({ transcriptDir: undefined });
   });

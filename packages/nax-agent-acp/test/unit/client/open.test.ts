@@ -6,6 +6,7 @@ import type { AgentSessionProfile, EmbedderTool } from "@nathapp/nax-agent";
 import { type AgentSessionErrorCode, createMemoryTranscriptStore, type TranscriptStore } from "@nathapp/nax-agent";
 import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
 import { waitForCondition } from "@nathapp/nax-test-kit/bun/timeout";
+import { claudeSandboxOptions } from "#src/client/claude-sandbox";
 import { createInboundRouter } from "#src/client/inbound";
 import { clientCapabilitiesFor, openAcpSession } from "#src/client/open";
 import { type AcpBackendOptions, resolveAcpOptions } from "#src/client/options";
@@ -64,6 +65,7 @@ async function openWith(
 }
 
 // #2366: claude-agent-acp fingerprints _meta.claudeCode.options on restore.
+const FULL_META = { claudeCode: { options: { allowDangerouslySkipPermissions: false } } };
 const READ_META = {
   claudeCode: {
     options: {
@@ -85,7 +87,7 @@ describe("openAcpSession: the happy path (spec §6.3 step 1)", () => {
     expect(fake.callsTo("initialize")).toEqual([
       { protocolVersion: 1, clientCapabilities: { ...CLIENT_CAPABILITIES, elicitation: { form: {} } } },
     ]);
-    expect(fake.callsTo("session/new")).toEqual([{ cwd: dir, mcpServers: [] }]);
+    expect(fake.callsTo("session/new")).toEqual([{ cwd: dir, mcpServers: [], _meta: FULL_META }]);
     expect(fake.callsTo("session/set_config_option")).toEqual([
       { sessionId: "fake-session-1", configId: "mode", value: "default" },
     ]);
@@ -280,7 +282,14 @@ describe("openAcpSession: the tool host (spec §6.3 steps 3-4, §6.6)", () => {
       {
         cwd: dir,
         mcpServers: [SERVER],
-        _meta: { claudeCode: { options: { allowedTools: ["mcp__nax__lookup", "mcp__nax__fetch_page"] } } },
+        _meta: {
+          claudeCode: {
+            options: {
+              allowedTools: ["mcp__nax__lookup", "mcp__nax__fetch_page"],
+              allowDangerouslySkipPermissions: false,
+            },
+          },
+        },
       },
     ]);
   });
@@ -348,7 +357,9 @@ describe("openAcpSession: restoring a stored session (spec §6.9, S4-6)", () => 
     const acp = await opened;
     expect(fake.callsTo("session/new")).toEqual([]);
     expect(fake.callsTo("session/load")).toEqual([]);
-    expect(fake.callsTo("session/resume")).toEqual([{ sessionId: "fake-session-1", cwd: dir, mcpServers: [] }]);
+    expect(fake.callsTo("session/resume")).toEqual([
+      { sessionId: "fake-session-1", cwd: dir, mcpServers: [], _meta: FULL_META },
+    ]);
     expect(fake.callsTo("session/set_config_option")).toEqual([
       { sessionId: "fake-session-1", configId: "mode", value: "default" },
     ]);
@@ -359,7 +370,9 @@ describe("openAcpSession: restoring a stored session (spec §6.9, S4-6)", () => 
   test("session/load when only loadSession is advertised", async () => {
     const { fake, opened } = restoreWith({ capabilities: { loadSession: true } });
     expect((await opened).restoredWith).toBe("load");
-    expect(fake.callsTo("session/load")).toEqual([{ sessionId: "fake-session-1", cwd: dir, mcpServers: [] }]);
+    expect(fake.callsTo("session/load")).toEqual([
+      { sessionId: "fake-session-1", cwd: dir, mcpServers: [], _meta: FULL_META },
+    ]);
   });
 
   test("read: session/resume carries the read-only _meta and resets the mode to default", async () => {
@@ -578,5 +591,59 @@ describe("openAcpSession: onProcess (S4b spec §8)", () => {
     expect(acp.agentSessionId).toBe("fake-session-1");
     fake.crash();
     await acp.launched.exited;
+  });
+});
+
+describe("openAcpSession: the Claude sandbox option (nax#2500)", () => {
+  const POLICY = { writeRoots: ["/r"], denyWrite: [], denyRead: [], network: {} };
+  const handlers = () => createInboundRouter(async (r) => rejectLocally(r)).handlers;
+
+  test("full: session/new carries the sandbox and locks skip-permissions", async () => {
+    const fake = inMemoryAgent(CLAUDE_SCRIPT);
+    const ctx = openContext(dir, { profile: "full", sandbox: { kind: "policy", policy: POLICY } });
+    await openAcpSession(options(), ctx, handlers(), fake.launch);
+    expect(fake.callsTo("session/new")).toEqual([
+      {
+        cwd: dir,
+        mcpServers: [],
+        _meta: {
+          claudeCode: {
+            options: { sandbox: claudeSandboxOptions(POLICY), allowDangerouslySkipPermissions: false },
+          },
+        },
+      },
+    ]);
+  });
+
+  test("review with an unavailable sandbox refuses the open and never creates a session", async () => {
+    const fake = inMemoryAgent(CLAUDE_SCRIPT);
+    const ctx = openContext(dir, { profile: "review", sandbox: { kind: "unavailable", reason: "no bwrap" } });
+    const err = sessionError(await rejection(openAcpSession(options(), ctx, handlers(), fake.launch)));
+    expect(err.code).toBe("AGENT_SESSION_CAPABILITY_UNSUPPORTED");
+    expect(err.message).toContain("no bwrap");
+    expect(fake.callsTo("session/new")).toEqual([]);
+  });
+
+  test("read ignores a sandbox", async () => {
+    const fake = inMemoryAgent(CLAUDE_SCRIPT);
+    const ctx = openContext(dir, { profile: "read", sandbox: { kind: "policy", policy: POLICY } });
+    await openAcpSession(options(), ctx, handlers(), fake.launch);
+    expect(fake.callsTo("session/new")).toEqual([{ cwd: dir, mcpServers: [], _meta: READ_META }]);
+  });
+
+  test("a restored review session carries the same sandbox _meta on session/resume", async () => {
+    const fake = inMemoryAgent({
+      ...CLAUDE_SCRIPT,
+      capabilities: { loadSession: true, sessionCapabilities: { resume: {} } },
+    });
+    const ctx = openContext(dir, { profile: "review", sandbox: { kind: "policy", policy: POLICY } });
+    await openAcpSession(options(), ctx, handlers(), fake.launch, undefined, {
+      agentSessionId: "fake-session-1",
+      cwd: dir,
+      costUsd: 0,
+    });
+    const meta = (fake.callsTo("session/resume")[0] as { _meta: { claudeCode: { options: Record<string, unknown> } } })
+      ._meta;
+    expect(meta.claudeCode.options.sandbox).toEqual(claudeSandboxOptions(POLICY));
   });
 });

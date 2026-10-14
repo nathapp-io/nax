@@ -4,13 +4,21 @@ import type {
   RequestPermissionRequest,
   RequestPermissionResponse,
 } from "@agentclientprotocol/sdk";
-import type { AgentSessionProfile, ApprovalDecidedBy, ApprovalRequest, SessionAskPort } from "@nathapp/nax-agent";
+import type {
+  AgentSessionProfile,
+  ApprovalDecidedBy,
+  ApprovalRequest,
+  SandboxPolicy,
+  SessionAskPort,
+} from "@nathapp/nax-agent";
+import { OUTSIDE_WRITE_ROOTS_REASON } from "#src/client/edit-targets";
 import {
   ASK_REASON,
   decidePermission,
   FULL_REASON,
   NO_ALLOW_ONCE_REASON,
   offeredOptions,
+  REVIEW_NO_SANDBOX_REASON,
   readOnlyReason,
   rejectLocally,
   UNSHOWABLE_REASON,
@@ -208,5 +216,207 @@ describe("decidePermission: ask", () => {
     expect(await decidePermission(unshowable, ctx("ask", port))).toEqual(selected("reject_once"));
     expect(seen.asked).toEqual([]);
     expect(seen.auto[0]).toMatchObject({ req: { reason: UNSHOWABLE_REASON }, decision: "deny" });
+  });
+});
+
+describe("profile review (nax#2500)", () => {
+  const base = (sandbox?: SandboxPolicy) => ({
+    profile: "review" as const,
+    secrets: [],
+    signal: IDLE,
+    ...(sandbox ? { sandbox } : {}),
+  });
+  const OPEN: SandboxPolicy = { writeRoots: ["/r"], denyWrite: [], denyRead: [], network: {} };
+  const LISTED: SandboxPolicy = { ...OPEN, network: { allowedDomains: ["pypi.org"] } };
+  const net = { toolCallId: "n", kind: "other" as const, title: "SandboxNetworkAccess" };
+
+  test("allows an execute request", async () => {
+    const { port, seen } = asks();
+    const res = await decidePermission(
+      request(["allow_once", "reject_once"], { toolCallId: "t", kind: "execute", title: "ruff format --check ." }),
+      { ...base(OPEN), asks: port },
+    );
+    expect(res).toEqual(selected("allow_once"));
+    expect(seen.auto[0]?.decision).toBe("allow");
+  });
+
+  test("execute with no sandbox is denied (fail closed)", async () => {
+    const { port, seen } = asks();
+    const res = await decidePermission(
+      request(["allow_once", "reject_once"], { toolCallId: "t", kind: "execute", title: "ls" }),
+      { ...base(), asks: port },
+    );
+    expect(res).toEqual(selected("reject_once"));
+    expect(seen.auto[0]?.req.reason).toBe(REVIEW_NO_SANDBOX_REASON);
+    expect(seen.auto[0]?.decision).toBe("deny");
+  });
+
+  test("denies an edit request", async () => {
+    const { port } = asks();
+    const res = await decidePermission(request(["allow_once", "reject_once"]), { ...base(OPEN), asks: port });
+    expect(res).toEqual(selected("reject_once"));
+  });
+
+  test("network request: allowed when the sandbox network is open, denied under an allow-list", async () => {
+    const { port } = asks();
+    expect(await decidePermission(request(["allow_once", "reject_once"], net), { ...base(OPEN), asks: port })).toEqual(
+      selected("allow_once"),
+    );
+    expect(
+      await decidePermission(request(["allow_once", "reject_once"], net), { ...base(LISTED), asks: port }),
+    ).toEqual(selected("reject_once"));
+  });
+
+  test("an edit-kind request titled SandboxNetworkAccess is not a network request: denied read-only", async () => {
+    const { port, seen } = asks();
+    const res = await decidePermission(
+      request(["allow_once", "reject_once"], { toolCallId: "n", kind: "edit", title: "SandboxNetworkAccess" }),
+      { ...base(OPEN), asks: port },
+    );
+    expect(res).toEqual(selected("reject_once"));
+    expect(seen.auto[0]?.req.reason).toBe(readOnlyReason("review"));
+  });
+
+  test("a network request with no kind still counts", async () => {
+    const { port } = asks();
+    const res = await decidePermission(
+      request(["allow_once", "reject_once"], { toolCallId: "n", title: "SandboxNetworkAccess" }),
+      { ...base(OPEN), asks: port },
+    );
+    expect(res).toEqual(selected("allow_once"));
+  });
+
+  test("full: network request follows the same rule", async () => {
+    const { port } = asks();
+    expect(
+      await decidePermission(request(["allow_once", "reject_once"], net), {
+        profile: "full",
+        secrets: [],
+        signal: IDLE,
+        asks: port,
+        sandbox: LISTED,
+      }),
+    ).toEqual(selected("reject_once"));
+  });
+});
+
+describe("full: R4 edit path check (nax#2500)", () => {
+  const ROOT = "/work/repo";
+  const SANDBOX: SandboxPolicy = { writeRoots: [ROOT], denyWrite: [`${ROOT}/.git/hooks`], denyRead: [], network: {} };
+  const edit = (toolCall: Record<string, unknown>) =>
+    request(["allow_once", "reject_once"], { toolCallId: "e", kind: "edit", title: "Edit", ...toolCall });
+  const fullCtx = (port: SessionAskPort, extra: { sandbox?: SandboxPolicy; cwd?: string } = {}) => ({
+    profile: "full" as const,
+    secrets: [],
+    signal: IDLE,
+    asks: port,
+    ...extra,
+  });
+
+  test("an edit outside the write roots is rejected with the outside-roots reason", async () => {
+    const { port, seen } = asks();
+    const res = await decidePermission(
+      edit({ locations: [{ path: "/etc/x" }] }),
+      fullCtx(port, { sandbox: SANDBOX, cwd: ROOT }),
+    );
+    expect(res).toEqual(selected("reject_once"));
+    expect(seen.auto[0]?.req.reason).toBe(OUTSIDE_WRITE_ROOTS_REASON);
+    expect(seen.auto[0]?.decision).toBe("deny");
+  });
+
+  test("a read outside the write roots is allowed under full (R5/R8: read-only kinds are exempt)", async () => {
+    const { port } = asks();
+    expect(
+      await decidePermission(
+        edit({ kind: "read", locations: [{ path: "/etc/x" }] }),
+        fullCtx(port, { sandbox: SANDBOX, cwd: ROOT }),
+      ),
+    ).toEqual(selected("allow_once"));
+  });
+
+  test("an other-kind request outside the write roots is rejected (R8: unknown kinds fail closed)", async () => {
+    const { port, seen } = asks();
+    const res = await decidePermission(
+      edit({ kind: "other", locations: [{ path: "/etc/x" }] }),
+      fullCtx(port, { sandbox: SANDBOX, cwd: ROOT }),
+    );
+    expect(res).toEqual(selected("reject_once"));
+    expect(seen.auto[0]?.req.reason).toBe(OUTSIDE_WRITE_ROOTS_REASON);
+  });
+
+  test("an execute request with a path outside the write roots is still allowed under full (R8)", async () => {
+    const { port } = asks();
+    expect(
+      await decidePermission(
+        request(["allow_once", "reject_once"], {
+          toolCallId: "x",
+          kind: "execute",
+          title: "cat /etc/x",
+          locations: [{ path: "/etc/x" }],
+        }),
+        fullCtx(port, { sandbox: SANDBOX, cwd: ROOT }),
+      ),
+    ).toEqual(selected("allow_once"));
+  });
+
+  test("a delete outside the write roots is rejected (R5)", async () => {
+    const { port, seen } = asks();
+    const res = await decidePermission(
+      edit({ kind: "delete", locations: [{ path: "/etc/x" }] }),
+      fullCtx(port, { sandbox: SANDBOX, cwd: ROOT }),
+    );
+    expect(res).toEqual(selected("reject_once"));
+    expect(seen.auto[0]?.req.reason).toBe(OUTSIDE_WRITE_ROOTS_REASON);
+  });
+
+  test("an edit under denyWrite is rejected", async () => {
+    const { port } = asks();
+    const res = await decidePermission(
+      edit({ rawInput: { file_path: `${ROOT}/.git/hooks/pre-commit` } }),
+      fullCtx(port, { sandbox: SANDBOX, cwd: ROOT }),
+    );
+    expect(res).toEqual(selected("reject_once"));
+  });
+
+  test("an edit inside the root is allowed", async () => {
+    const { port, seen } = asks();
+    const res = await decidePermission(
+      edit({ locations: [{ path: `${ROOT}/src/a.ts` }] }),
+      fullCtx(port, { sandbox: SANDBOX, cwd: ROOT }),
+    );
+    expect(res).toEqual(selected("allow_once"));
+    expect(seen.auto[0]?.req.reason).toBe(FULL_REASON);
+  });
+
+  test("an edit with no path is allowed (today's behaviour)", async () => {
+    const { port } = asks();
+    expect(await decidePermission(edit({}), fullCtx(port, { sandbox: SANDBOX, cwd: ROOT }))).toEqual(
+      selected("allow_once"),
+    );
+  });
+
+  test("full with no sandbox in ctx: an outside edit is allowed", async () => {
+    const { port } = asks();
+    expect(await decidePermission(edit({ locations: [{ path: "/etc/x" }] }), fullCtx(port))).toEqual(
+      selected("allow_once"),
+    );
+  });
+
+  test("an execute request under full with a policy is allowed (Bash is the sandbox's job)", async () => {
+    const { port } = asks();
+    const res = await decidePermission(
+      request(["allow_once", "reject_once"], { toolCallId: "x", kind: "execute", title: "rm -rf /etc/x" }),
+      fullCtx(port, { sandbox: SANDBOX, cwd: ROOT }),
+    );
+    expect(res).toEqual(selected("allow_once"));
+  });
+
+  test("an outside edit with no allow_once offered is denied with no allow option", async () => {
+    const { port } = asks();
+    const res = await decidePermission(
+      request(["reject_once"], { toolCallId: "e", kind: "edit", title: "Edit", locations: [{ path: "/etc/x" }] }),
+      fullCtx(port, { sandbox: SANDBOX, cwd: ROOT }),
+    );
+    expect(res).toEqual(selected("reject_once"));
   });
 });

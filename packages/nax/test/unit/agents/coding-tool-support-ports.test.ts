@@ -33,7 +33,7 @@ describe("port 7: declared-command runner", () => {
       return { success: true, exitCode: 0, output: "" };
     };
     const support = await resolveCodingToolSupport({
-      declaredTools: ["RunCommand"],
+      declaredTools: ["RunCommand", "Write"],
       codingToolRoot: root,
       pipelineStage: "run",
       config: makeNaxConfig({ quality: { commands: { lint: "bun lint" } } }),
@@ -73,7 +73,7 @@ describe("port 7: command interceptor", () => {
       sandbox: { enabled: false },
     };
     const support = await resolveCodingToolSupport({
-      declaredTools: ["Git", "Bash"],
+      declaredTools: ["Git", "Bash", "Write"],
       codingToolRoot: root,
       pipelineStage: "run",
       config: makeNaxConfig({ execution }),

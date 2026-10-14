@@ -2,9 +2,9 @@
  * Who may ever hold Bash (spec §4 US-004's ceiling).
  *
  * Declaration is the CEILING, not a grant: every op below still gets zero Bash
- * unless a human wrote a `Bash(...)` allow rule (spec R4). Review ops are
- * excluded in v1 — a reviewer that can run arbitrary commands is no longer
- * judging the work from the outside.
+ * unless a human wrote a `Bash(...)` allow rule (spec R4). Reviewer ops declare
+ * Bash since nax#2500: their Bash runs in the sandbox and tree changes are
+ * reverted (see reviewer-tools.test.ts).
  */
 import { describe, expect, test } from "bun:test";
 import {
@@ -37,6 +37,8 @@ describe("ops that may hold Bash", () => {
     ["acceptance-fix-test", acceptanceFixTestOp],
     ["finish-fix", finishFixOp],
     ["full-suite-rectify", fullSuiteRectifyOp],
+    ["adversarial-review", adversarialReviewOp],
+    ["semantic-review", semanticReviewOp],
   ] as const)("%s declares Bash", (_name, op) => {
     expect(op.tools).toContain("Bash");
   });
@@ -44,8 +46,6 @@ describe("ops that may hold Bash", () => {
 
 describe("ops that must never hold Bash", () => {
   test.each([
-    ["adversarial-review", adversarialReviewOp],
-    ["semantic-review", semanticReviewOp],
     ["plan", planInteractiveOp],
     // The verifier judges the implementer's work. It already cannot install
     // (no `Exec` — see test/unit/operations/op-tool-declarations.test.ts), and

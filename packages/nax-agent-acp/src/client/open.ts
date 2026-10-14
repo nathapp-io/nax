@@ -17,6 +17,7 @@ import {
   type BackendOpenContext,
   getLogger,
   NaxError,
+  type SandboxPolicy,
   type TranscriptDoc,
 } from "@nathapp/nax-agent";
 import {
@@ -187,7 +188,8 @@ async function establish(o: Opening): Promise<OpenedAcp> {
     resume: o.restore !== undefined,
   });
   if (unmet !== undefined) throw capabilityUnsupported(unmet.capability, unmet.reason);
-  const setup = await sessionSetup(o);
+  const sandbox = sandboxFor(o.ctx);
+  const setup = await sessionSetup(o, sandbox);
   const session =
     o.restore === undefined
       ? await newSession(o, setup)
@@ -212,13 +214,27 @@ async function newSession(o: Opening, setup: SessionSetup): Promise<Established>
   return { agentSessionId: created.sessionId, cwd: o.ctx.workdir, configOptions: created.configOptions ?? [] };
 }
 
+/** nax#2500: review/full sessions with an embedder sandbox; an unusable one refuses the open. */
+function sandboxFor(ctx: BackendOpenContext): SandboxPolicy | undefined {
+  if (ctx.profile !== "review" && ctx.profile !== "full") return undefined;
+  if (ctx.sandbox === undefined) return undefined;
+  if (ctx.sandbox.kind === "unavailable") {
+    throw capabilityUnsupported("profile", `the sandbox is unavailable: ${ctx.sandbox.reason}`);
+  }
+  return ctx.sandbox.policy;
+}
+
 /** §6.3 step 3: start the tool host when the session has tools; its entry and Claude's `_meta` (§6.6, #2365). */
-async function sessionSetup(o: Opening): Promise<SessionSetup> {
+async function sessionSetup(o: Opening, sandbox: SandboxPolicy | undefined): Promise<SessionSetup> {
   const kind = o.options.entry?.preApproval;
   const meta = claudeSessionMeta(
     kind,
     o.ctx.tools.map((tool) => tool.name),
     readOnlyFor(o.ctx.profile, o.options.entry),
+    {
+      ...(sandbox === undefined ? {} : { sandbox }),
+      ...(o.ctx.profile === "full" ? { lockSkipPermissions: true } : {}),
+    },
   );
   if (o.host === undefined) return meta === undefined ? { mcpServers: [] } : { mcpServers: [], _meta: { ...meta } };
   if (meta === undefined) throw capabilityUnsupported("tools", "the agent has no way to pre-approve embedder tools");

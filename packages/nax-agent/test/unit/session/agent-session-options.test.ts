@@ -110,6 +110,12 @@ describe("resolveAgentSessionOptions", () => {
     rejects(base({ profile: "full", workdir: "relative/dir" }), "AGENT_SESSION_INVALID_OPTIONS", "workdir");
   });
 
+  test("accepts the review profile (nax#2500)", () => {
+    expect(resolveAgentSessionOptions(base({ profile: "review", workdir: "/tmp/work" })).raw).toMatchObject({
+      profile: "review",
+    });
+  });
+
   test("approvalTimeoutMs and turnTimeoutSeconds are range-checked", () => {
     rejects(base({ approvalTimeoutMs: 29_999 }), "AGENT_SESSION_INVALID_OPTIONS", "approvalTimeoutMs");
     rejects(base({ approvalTimeoutMs: 3_600_001 }), "AGENT_SESSION_INVALID_OPTIONS", "approvalTimeoutMs");

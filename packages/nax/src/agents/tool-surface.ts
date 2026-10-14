@@ -65,7 +65,7 @@ export function buildToolSurfaceDraft(input: ToolSurfaceDraftInput): ToolSurface
 export function finishToolSurface(
   draft: ToolSurfaceDraft,
   transport: "native" | "acp",
-  profile?: "full" | "read",
+  profile?: "full" | "review" | "read",
 ): ToolSurfaceRecord {
   return { ...draft, transport, ...(profile === undefined ? {} : { profile }) };
 }

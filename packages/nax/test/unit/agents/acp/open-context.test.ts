@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { type CodingTool, createMemoryTranscriptStore, type OpenSessionOpts } from "@nathapp/nax-agent";
 import { createAskPort } from "@/agents/acp/ask-port";
 import {
+  acpOpenSummary,
   backendEnv,
   backendOptions,
   DEFAULT_CLOSE_DEADLINE_MS,
@@ -236,5 +237,56 @@ describe("transcriptStoreFor", () => {
     const store = transcriptStoreFor(undefined);
     await store.save("s", { savedAt: "t", messages: [] });
     expect(await store.load("s")).toMatchObject({ savedAt: "t" });
+  });
+});
+
+describe("openContext sandbox (nax#2500)", () => {
+  const sandbox = {
+    kind: "policy",
+    policy: { writeRoots: ["/repo"], denyWrite: [], denyRead: [], network: {} },
+  } as const;
+  const build = (opts: OpenSessionOpts) => {
+    const slot = createTurnSlot();
+    return openContext({
+      name: "s1",
+      agent: "claude",
+      opts,
+      store: createMemoryTranscriptStore(),
+      resume: undefined,
+      asks: createAskPort(slot),
+      slot,
+      openSignal: new AbortController().signal,
+    });
+  };
+
+  test("a command-declaring op opens review and carries the sandbox", () => {
+    const ctx = build({ ...OPTS, declaredTools: ["Read", "Bash"], sandbox });
+    expect(ctx.profile).toBe("review");
+    expect(ctx.sandbox).toEqual(sandbox);
+  });
+
+  test("a read profile never carries the sandbox", () => {
+    const ctx = build({ ...OPTS, declaredTools: ["Read"], sandbox });
+    expect(ctx.profile).toBe("read");
+    expect(ctx.sandbox).toBeUndefined();
+  });
+});
+
+describe("acpOpenSummary (nax#2500 observability)", () => {
+  const policy = { writeRoots: ["/repo"], denyWrite: [], denyRead: [], network: {} };
+
+  test("a reviewer declaration opens review with the policy sandbox", () => {
+    const summary = acpOpenSummary({ ...OPTS, declaredTools: ["Read", "Bash"], sandbox: { kind: "policy", policy } });
+    expect(summary).toEqual({ profile: "review", sandbox: "policy" });
+  });
+
+  test("an undeclared approve-all session opens full; an unavailable sandbox is named", () => {
+    const summary = acpOpenSummary({ ...OPTS, sandbox: { kind: "unavailable", reason: "no srt" } });
+    expect(summary).toEqual({ profile: "full", sandbox: "unavailable" });
+  });
+
+  test("a read session reports no sandbox even when one is supplied", () => {
+    const summary = acpOpenSummary({ ...OPTS, declaredTools: ["Read"], sandbox: { kind: "policy", policy } });
+    expect(summary).toEqual({ profile: "read", sandbox: "none" });
   });
 });

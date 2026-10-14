@@ -5,7 +5,7 @@ import type { ReviewConfig } from "../config/selectors";
 import type { Finding, Iteration } from "../findings";
 import { getSafeLogger } from "../logger";
 import type { TestInventory } from "../prompts";
-import { AdversarialReviewPromptBuilder, ReviewPromptBuilder } from "../prompts";
+import { AdversarialReviewPromptBuilder, ReviewPromptBuilder, reviewerCommandsSection } from "../prompts";
 import type { AdversarialLLMFinding } from "../review/adversarial-helpers";
 import {
   isBlockingSeverity,
@@ -285,7 +285,7 @@ export const adversarialReviewOp: RunOperationWithHooks<
   name: "adversarial-review",
   stage: "review",
   session: { role: "reviewer-adversarial", lifetime: "fresh" },
-  tools: ["Read", "Glob", "Grep", "Git"],
+  tools: ["Read", "Glob", "Grep", "Git", "Bash"],
   config: reviewConfigSelector,
   model: (input) => input.adversarialConfig.model,
   timeoutMs: (input) => input.adversarialConfig.timeoutMs,
@@ -363,6 +363,7 @@ export const adversarialReviewOp: RunOperationWithHooks<
     );
     const content = input.featureCtxBlock ? `${input.featureCtxBlock}${base}` : base;
     return {
+      instructions: reviewerCommandsSection(),
       role: { id: "role", content: "", overridable: false },
       task: { id: "task", content, overridable: false },
     };

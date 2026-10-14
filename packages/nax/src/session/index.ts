@@ -21,6 +21,7 @@ export type { SessionKeeperOptions, SessionKeeperSendOptions } from "./session-k
 export { SessionKeeper } from "./session-keeper";
 export type { SweepFeatureTranscriptsOptions } from "./transcript-sweep";
 export { sweepFeatureTranscripts } from "./transcript-sweep";
+export type { AfterTurnHook, BeforeTurnHook, TurnHookPair } from "./turn-hooks";
 export type {
   CreateSessionOptions,
   ISessionManager,

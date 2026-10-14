@@ -32,6 +32,7 @@ export {
   sandboxBackendFor,
   warnSandboxUnavailableOnce,
 } from "./registry.ts";
+export { sessionSandboxFrom } from "./session-sandbox.ts";
 export { _sessionTmpDeps, runTmpRoot, sessionTmpDir, sessionTmpDirUnder } from "./session-tmp.ts";
 export { _srtBackendDeps, createSrtBackend } from "./srt-backend.ts";
 export type {
@@ -47,4 +48,5 @@ export type {
   SandboxRecord,
   SandboxState,
   SandboxWrapRequest,
+  SessionSandbox,
 } from "./types.ts";

@@ -32,6 +32,7 @@ export function declaredToolsFor(
 ): readonly CodingToolName[] {
   if (profile === "none") return [...UNIVERSAL_CODING_TOOLS];
   if (profile === "read") return [...UNIVERSAL_CODING_TOOLS, ...READ_TOOLS];
+  if (profile === "review") return [...UNIVERSAL_CODING_TOOLS, ...READ_TOOLS, "Bash"];
   // GitCommit refuses every path without ignore patterns, so it is offered only with them.
   const commit: readonly CodingToolName[] = protectedPaths.gitIgnorePatterns.length > 0 ? ["GitCommit"] : [];
   return [...UNIVERSAL_CODING_TOOLS, ...READ_TOOLS, ...WRITE_TOOLS, ...commit];
@@ -84,9 +85,9 @@ export interface SessionLauncherArgs {
   readonly allowUnsandboxed: boolean;
 }
 
-/** The sandbox floor (spec 6.3): "ask" and "full" need a usable sandbox unless gated + allowUnsandboxed. */
+/** The sandbox floor (spec 6.3): "ask", "full" and "review" need a usable sandbox unless gated + allowUnsandboxed. */
 export async function resolveSessionLauncher(args: SessionLauncherArgs): Promise<CommandLauncher | undefined> {
-  if (args.profile !== "full" && args.profile !== "ask") return undefined;
+  if (args.profile !== "full" && args.profile !== "ask" && args.profile !== "review") return undefined;
   const launcher = await resolveSessionSandbox({
     config: DEFAULT_SANDBOX_CONFIG,
     root: args.root,

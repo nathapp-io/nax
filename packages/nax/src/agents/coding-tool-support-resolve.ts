@@ -26,6 +26,7 @@ import {
   type ResolvedProviderTools,
   resolveProviderTools,
   runTmpRoot,
+  sessionSandboxFrom,
   sessionTmpDirUnder,
   type ToolGrant,
 } from "@nathapp/nax-agent";
@@ -49,6 +50,7 @@ import { createConfigReadGatePolicy } from "./config-read-gate";
 import { resolvePackageName } from "./exec-package-name";
 import { naxOwnedPathsPolicy } from "./nax-owned-writes";
 import { naxProtectedPaths } from "./nax-protected-paths";
+import { withheldReviewerCommands } from "./reviewer-command-withhold";
 import type { AgentRunOptions } from "./types";
 
 /** The dispatch options `resolveCodingToolSupport` reads — its exact signature. */
@@ -530,7 +532,11 @@ export async function resolveCodingToolSupport(
   const header = buildLedgerHeader(options);
   const packageName = await resolvePackageNameForDispatch(root, declared, commandCwd);
   const { allow, denied, asked, providerResult } = await resolveProviderContribution(resolved, options, root);
-  const declaredWithProviders = unionDeclaredTools(declared, providerResult);
+  const launcher = await resolveDispatchLauncher(options, declared, sessionName);
+  // nax#2500 R9: a reviewer-shaped declaration loses its command tools without a usable sandbox.
+  const unioned = unionDeclaredTools(declared, providerResult);
+  const declaredWithProviders = withheldReviewerCommands(unioned, launcher, options);
+  const reviewerWithheld = declaredWithProviders.length < unioned.length;
   warnDroppedProviders(providerResult, options.storyId);
   // Resolved BEFORE this guard (R15): a provider-only op declares no built-in
   // names, yet appending the provider names above is exactly what makes it a
@@ -541,7 +547,6 @@ export async function resolveCodingToolSupport(
   // one tool from an otherwise fully-granted provider.
   const denyRules = [...denied.grants, ...expandMcpRuleGrants(denied.mcpPatterns, providerResult.entries)];
   const askRules = [...asked.grants, ...expandMcpRuleGrants(asked.mcpPatterns, providerResult.entries)];
-  const launcher = await resolveDispatchLauncher(options, declared, sessionName);
   // nax#2410 D4: the surface record rides the audit file; nax#2444 D4: the ACP
   // delivery set is the deny/ask enforcement point (claude pre-approves what it
   // is handed, so delivery is the last chance to withhold).
@@ -589,5 +594,7 @@ export async function resolveCodingToolSupport(
     ...(surface.toolSurface !== undefined ? { toolSurface: surface.toolSurface } : {}),
   });
   if (support === undefined) return undefined;
-  return attachAcpDelivery(support, surface);
+  const acpSandbox = reviewerWithheld || !root?.trim() ? undefined : await sessionSandboxFrom(launcher, root);
+  const withSandbox = acpSandbox === undefined ? support : { ...support, acpSandbox };
+  return attachAcpDelivery(withSandbox, surface);
 }

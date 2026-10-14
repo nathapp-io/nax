@@ -127,12 +127,14 @@ export function nativeProfileRules(
   profile: AgentSessionProfile,
   raw: NativeBackendOptions,
 ): { readonly bashApproval: BashApprovalMode; readonly allowUnsandboxed: boolean } {
-  const tools = profile === "full" || profile === "ask";
+  const tools = profile === "full" || profile === "ask" || profile === "review";
   if (!tools && raw.bashApproval !== undefined) {
-    throw invalid('bashApproval applies to profiles "ask" and "full" only', { path: "backend.bashApproval" });
+    throw invalid('bashApproval applies to profiles "ask", "full" and "review" only', { path: "backend.bashApproval" });
   }
   if (!tools && raw.allowUnsandboxed !== undefined) {
-    throw invalid('allowUnsandboxed applies to profiles "ask" and "full" only', { path: "backend.allowUnsandboxed" });
+    throw invalid('allowUnsandboxed applies to profiles "ask", "full" and "review" only', {
+      path: "backend.allowUnsandboxed",
+    });
   }
   const bashApproval = raw.bashApproval ?? "gated";
   if (profile === "ask" && bashApproval !== "gated") {

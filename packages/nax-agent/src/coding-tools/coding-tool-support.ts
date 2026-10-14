@@ -56,6 +56,8 @@ export interface CodingToolSupport {
     readonly tools: readonly CodingTool[];
     readonly surface: ToolSurfaceDraft;
   };
+  /** nax#2500: the dispatch launcher's sandbox as data, attached by the nax resolver for ACP opens. */
+  readonly acpSandbox?: import("#src/sandbox/types").SessionSandbox;
 }
 
 export function buildCodingToolSupport(args: {

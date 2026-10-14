@@ -17,6 +17,8 @@ import { naxError, rejection, sessionError } from "#test/helpers/errors";
 import { type InMemoryAgent, inMemoryAgent } from "#test/helpers/in-memory-launch";
 import { driveTurn, endOf } from "#test/helpers/session-events";
 
+const FULL_META = { claudeCode: { options: { allowDangerouslySkipPermissions: false } } };
+
 const realLaunch = _acpBackendDeps.launch;
 let workdir: string;
 const sessions: AgentSession[] = [];
@@ -90,7 +92,9 @@ describe("resumeAgentSession over ACP: session/resume (spec §6.9)", () => {
     const second = await resume(h);
     expect(h.fake.requests).toHaveLength(2);
     expect(h.fake.callsTo("session/new")).toHaveLength(1);
-    expect(h.fake.callsTo("session/resume")).toEqual([{ sessionId: "fake-session-1", cwd: workdir, mcpServers: [] }]);
+    expect(h.fake.callsTo("session/resume")).toEqual([
+      { sessionId: "fake-session-1", cwd: workdir, mcpServers: [], _meta: FULL_META },
+    ]);
     expect(h.fake.callsTo("session/set_config_option")).toHaveLength(2);
     expect(second.backend.capabilities).toMatchObject({ resume: true, restoredWith: "resume" });
     expect(endOf(await driveTurn(second, "two"))).toMatchObject({ status: "completed", output: "again" });
@@ -230,6 +234,8 @@ describe("resume failures (spec §6.9, §7)", () => {
     const h = harness();
     await (await create(h, { workdir: link })).close();
     await resume(h, { workdir: real });
-    expect(h.fake.callsTo("session/resume")).toEqual([{ sessionId: "fake-session-1", cwd: link, mcpServers: [] }]);
+    expect(h.fake.callsTo("session/resume")).toEqual([
+      { sessionId: "fake-session-1", cwd: link, mcpServers: [], _meta: FULL_META },
+    ]);
   });
 });

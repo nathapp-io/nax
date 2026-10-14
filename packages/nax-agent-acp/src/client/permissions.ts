@@ -1,6 +1,8 @@
 /**
  * session/request_permission by profile (S4 spec §6.4 layer 2). none and read
- * reject every request; full allows it; ask puts it in front of the caller through
+ * reject every request; review allows commands (kind execute) only when a
+ * sandbox policy is present (fail closed) and rejects the rest; under review and full a sandbox network request follows the sandbox
+ * network policy (open: allow, allow-list: deny); full allows it; ask puts it in front of the caller through
  * asks.requestApproval and answer(). Only options the agent offered are chosen,
  * and only the *_once kinds: allow_always would outlive the session. Auto-decisions
  * are recorded with decidedBy "profile". Fail closed: a deny or deadline answers
@@ -10,7 +12,8 @@
  * like any other, because its title is display data (S4-4 D4-c).
  */
 import type { RequestPermissionRequest, RequestPermissionResponse } from "@agentclientprotocol/sdk";
-import type { AgentSessionProfile, SessionAskPort } from "@nathapp/nax-agent";
+import type { AgentSessionProfile, SandboxPolicy, SessionAskPort } from "@nathapp/nax-agent";
+import { editTargets, firstOutsidePolicy, OUTSIDE_WRITE_ROOTS_REASON } from "#src/client/edit-targets";
 import { isRecord } from "#src/client/text";
 import { describeToolCall, type ToolCallDisplay } from "#src/client/tool-display";
 
@@ -19,6 +22,21 @@ export const UNSHOWABLE_REASON = "the request could not be shown safely";
 export const ASK_REASON = "the ACP agent asks permission";
 export const FULL_REASON = 'profile "full" allows every permission request';
 export const UNKNOWN_PROFILE_REASON = "unknown profile";
+export const REVIEW_EXECUTE_REASON = 'profile "review" allows commands';
+export const REVIEW_NO_SANDBOX_REASON = 'profile "review" runs commands only inside the sandbox';
+export const NETWORK_OPEN_REASON = "the sandbox network is open";
+export const NETWORK_LISTED_REASON = "the sandbox network is an allow-list";
+/** claude-agent-acp 0.85.1 surfaces the SDK's sandbox network callback as a tool call titled with its tool name. */
+const NETWORK_TOOL_TITLE = "SandboxNetworkAccess";
+
+export function isNetworkRequest(toolCall: unknown): boolean {
+  // title is agent-controlled display data: require the kind it renders with (absent or "other") too.
+  return (
+    isRecord(toolCall) &&
+    toolCall.title === NETWORK_TOOL_TITLE &&
+    (toolCall.kind === undefined || toolCall.kind === null || toolCall.kind === "other")
+  );
+}
 
 export function readOnlyReason(profile: AgentSessionProfile): string {
   return `profile "${profile}" rejects every permission request`;
@@ -30,6 +48,10 @@ export interface PermissionContext {
   readonly secrets: readonly string[];
   /** Aborts when the turn's binding is released or the agent process exits (D3-d). */
   readonly signal: AbortSignal;
+  /** nax#2500: the session sandbox policy (review/full on claude); drives the network and R4 path rules. */
+  readonly sandbox?: SandboxPolicy;
+  /** nax#2500: the session cwd, for resolving relative edit targets (R4). */
+  readonly cwd?: string;
 }
 
 export interface OfferedOptions {
@@ -88,15 +110,32 @@ export async function decidePermission(
   const display = describeToolCall(request.toolCall, ctx.secrets);
   const auto: AutoDecide = (reason, decision) =>
     ctx.asks.recordAutoDecision({ ...eventFields(display), reason }, decision);
+  if (
+    (ctx.profile === "review" || ctx.profile === "full") &&
+    ctx.sandbox !== undefined &&
+    isNetworkRequest(request.toolCall)
+  ) {
+    return decideNetwork(ctx.sandbox, offered, auto);
+  }
   switch (ctx.profile) {
     case "none":
     case "read":
       auto(readOnlyReason(ctx.profile), "deny");
       return rejectWith(offered);
-    case "full":
+    case "review":
+      if (display.tool !== "execute") {
+        auto(readOnlyReason(ctx.profile), "deny");
+        return rejectWith(offered);
+      }
+      if (ctx.sandbox === undefined) {
+        auto(REVIEW_NO_SANDBOX_REASON, "deny");
+        return rejectWith(offered);
+      }
       if (offered.allowOnce === undefined) return denyNoAllowOnce(offered, auto);
-      auto(FULL_REASON, "allow");
+      auto(REVIEW_EXECUTE_REASON, "allow");
       return selected(offered.allowOnce);
+    case "full":
+      return decideFull(request, display, offered, auto, ctx);
     case "ask":
       if (offered.allowOnce === undefined) return denyNoAllowOnce(offered, auto);
       if (!display.showable) {
@@ -109,6 +148,44 @@ export async function decidePermission(
       auto(UNKNOWN_PROFILE_REASON, "deny");
       return rejectWith(offered);
   }
+}
+
+/**
+ * ACP kinds exempt from the R4 path check (nax#2500 R5/R8): they do not write a path
+ * the sandbox has to police. execute is the Bash sandbox's job. Every other kind,
+ * including `other` and any unknown kind, is path-checked (fail closed).
+ */
+const READ_ONLY_KINDS: ReadonlySet<string> = new Set(["read", "search", "think", "fetch", "switch_mode"]);
+
+/** full allows every request, except (nax#2500 R4/R5) a write whose target is outside the sandbox write roots. */
+async function decideFull(
+  request: RequestPermissionRequest,
+  display: ToolCallDisplay,
+  offered: OfferedOptions,
+  auto: AutoDecide,
+  ctx: PermissionContext,
+): Promise<RequestPermissionResponse> {
+  if (offered.allowOnce === undefined) return denyNoAllowOnce(offered, auto);
+  const outside =
+    ctx.sandbox !== undefined && display.tool !== "execute" && !READ_ONLY_KINDS.has(display.tool)
+      ? await firstOutsidePolicy(editTargets(request.toolCall), ctx.sandbox, ctx.cwd)
+      : undefined;
+  if (outside !== undefined) {
+    auto(OUTSIDE_WRITE_ROOTS_REASON, "deny");
+    return rejectWith(offered);
+  }
+  auto(FULL_REASON, "allow");
+  return selected(offered.allowOnce);
+}
+
+function decideNetwork(policy: SandboxPolicy, offered: OfferedOptions, auto: AutoDecide): RequestPermissionResponse {
+  if (policy.network.allowedDomains !== undefined) {
+    auto(NETWORK_LISTED_REASON, "deny");
+    return rejectWith(offered);
+  }
+  if (offered.allowOnce === undefined) return denyNoAllowOnce(offered, auto);
+  auto(NETWORK_OPEN_REASON, "allow");
+  return selected(offered.allowOnce);
 }
 
 function denyNoAllowOnce(offered: OfferedOptions, auto: AutoDecide): RequestPermissionResponse {
