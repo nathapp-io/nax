@@ -130,6 +130,30 @@ describe("stripPropagatedOutOfScope — round trip beyond the cap", () => {
     expect(propagated.userStories.map((story) => story.outOfScope?.length)).toEqual([26, 27, 25, 30]);
     expect(stripPropagatedOutOfScope(propagated)).toEqual(prd);
   });
+
+  test("a story entry mirroring an entry stored beyond the feature cap is not absorbed", () => {
+    // `propagateOutOfScopeToStories` truncates the feature list at the cap, so the
+    // root's 26th entry never reaches a story. A story entry that happens to match
+    // it canonically is therefore the story's own guidance, not a mirror of what
+    // the story received — absorbing it into the root would delete the story's
+    // only copy on the next load, which is the loss this story exists to stop.
+    const feature = [...featureEntries(MAX_OUT_OF_SCOPE_ITEMS), "feature boundary beyond the cap"];
+    const prd = makePRD({
+      outOfScope: feature,
+      userStories: [makeStory({ id: "US-001", outOfScope: ["feature boundary beyond the cap"] })],
+    });
+
+    const propagated = propagateOutOfScopeToStories(prd);
+    expect(propagated.userStories[0].outOfScope).toHaveLength(MAX_OUT_OF_SCOPE_ITEMS + 1);
+
+    const stripped = stripPropagatedOutOfScope(propagated);
+
+    expect(stripped.userStories[0].outOfScope).toEqual(["feature boundary beyond the cap"]);
+    // Second round trip: the entry is still on the story, not just in the root.
+    expect(propagateOutOfScopeToStories(stripped).userStories[0].outOfScope).toContain(
+      "feature boundary beyond the cap",
+    );
+  });
 });
 
 describe("loadPRD / savePRD — story-level exclusions beyond the feature cap", () => {

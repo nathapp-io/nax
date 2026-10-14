@@ -238,14 +238,22 @@ export function propagateOutOfScopeToStories(prd: PRD): PRD {
  * ones. Applied before writing `prd.json` so the root field stays the single
  * source of truth on disk and the file does not repeat the same list N times.
  *
+ * The mirror set is the **cap-applied** feature list, not the raw root: entries
+ * stored past `MAX_OUT_OF_SCOPE_ITEMS` are never propagated to a story, so a
+ * story entry that matches one of them canonically is the story's own guidance
+ * rather than a mirror of what the story received. Filtering against the raw
+ * root deleted that story's only copy on the next `loadPRD` — the loss this
+ * path exists to prevent.
+ *
  * Propagate-then-strip is idempotent and preserves each story's *effective* set,
  * but is not byte-identical in one case: a story entry that duplicates a
- * feature-level one is absorbed into the root and not written back to the story.
- * That is intentional — the next `loadPRD` re-propagates it, so the story's
- * effective exclusions are unchanged and the file avoids a redundant copy.
+ * *within-cap* feature-level one is absorbed into the root and not written back
+ * to the story. That is intentional — the next `loadPRD` re-propagates it, so
+ * the story's effective exclusions are unchanged and the file avoids a
+ * redundant copy.
  */
 export function stripPropagatedOutOfScope(prd: PRD): PRD {
-  const featureLevel = new Set((prd.outOfScope ?? []).map(canonical));
+  const featureLevel = new Set(dedupeAndCap(prd.outOfScope ?? []).map(canonical));
   if (featureLevel.size === 0) return prd;
   if (!prd.userStories.some((story) => (story.outOfScope ?? []).length > 0)) return prd;
 
