@@ -11,6 +11,7 @@ import { NaxError } from "#src/infra/index";
 import { realOrRaw } from "#src/internal/realpath";
 import { SANDBOX_GLOB_CHARS, type SandboxConfig } from "../config/schemas-sandbox.ts";
 import type { OwnedPathsPolicy } from "../tools/owned-paths.ts";
+import { CLAUDE_SETTINGS_FILES } from "./claude-settings.ts";
 import {
   BUILTIN_CACHE_WRITE_ROOTS,
   BUILTIN_CREDENTIAL_READ_DENIES,
@@ -142,25 +143,6 @@ function projectStateDenies(input: SandboxPolicyInput): string[] {
     .map((name) => join(root, projectStateDir, name));
 }
 
-/**
- * US-006: Claude Code loads `allow` rules, hooks and MCP servers from these two
- * files at the session ROOT, so a command that writes one weakens every later
- * session started in that workdir -- a privilege escalation that survives the
- * run that made it. Both are denied as write targets, and they go through the
- * same `literal()`/`realOrRaw` path as every other entry so the deny holds
- * whether or not the file (or `.claude/` itself) exists yet.
- *
- * `.claude` is deliberately NOT denied: a project keeps skills, commands and
- * agents under it, and on Linux srt turns a directory deny into a bind mount
- * over all of them.
- *
- * Only the session root's own files are covered. A monorepo package's
- * `packages/<pkg>/.claude/settings.json` is out of scope: covering it needs
- * package discovery, the same reason `projectStateDenies` covers only
- * `<root>/<projectStateDir>`.
- */
-const CLAUDE_SETTINGS_FILES: readonly string[] = [".claude/settings.json", ".claude/settings.local.json"];
-
 export function buildSandboxPolicy(input: SandboxPolicyInput): SandboxPolicy {
   const { root, home, config } = input;
   const darwin = input.platform === "darwin";
@@ -215,6 +197,9 @@ export function buildSandboxPolicy(input: SandboxPolicyInput): SandboxPolicy {
     ...input.gitGuardFiles,
     ...(input.approvalsFile !== undefined ? [input.approvalsFile] : []),
     ...(input.trustStoreFile !== undefined ? [input.trustStoreFile] : []),
+    // US-006: the two session-root Claude settings files. One canonical list
+    // with the native tool policy that refuses the same paths (B1) -- see
+    // ./claude-settings.ts for why each is denied and why `.claude` is not.
     ...CLAUDE_SETTINGS_FILES.map((rel) => join(root, rel)),
     ...(darwin && confined ? SRT_MACOS_TMPDIR_DENIES : []),
   ]);

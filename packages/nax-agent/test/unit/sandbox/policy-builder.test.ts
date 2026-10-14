@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { DEFAULT_SANDBOX_CONFIG, type SandboxConfig } from "#src/config/schemas-sandbox";
 import { realOrRaw } from "#src/internal/realpath";
+import { CLAUDE_SETTINGS_FILES } from "#src/sandbox/claude-settings";
 import { SRT_MACOS_TMPDIR_DENIES } from "#src/sandbox/defaults";
 import { buildSandboxPolicy, type SandboxPolicyInput } from "#src/sandbox/index";
 import { EMPTY_OWNED_PATHS_POLICY } from "#src/tools/owned-paths";
@@ -364,6 +365,14 @@ describe("US-006 — the session-root Claude settings files are denied", () => {
   test("AC-1: .claude/settings.json is a deny entry", () => {
     const policy = buildSandboxPolicy(input());
     expect(policy.denyWrite).toContain(settingsPath("settings.json"));
+  });
+
+  // Branch review B1: the names come from the one canonical list, which the
+  // NATIVE tool policy refuses to the same paths. Pinning the sandbox to that
+  // constant is what keeps the two guards from drifting apart.
+  test("B1: every canonical CLAUDE_SETTINGS_FILES entry is denied, from the shared constant", () => {
+    const policy = buildSandboxPolicy(input());
+    for (const rel of CLAUDE_SETTINGS_FILES) expect(policy.denyWrite).toContain(realOrRaw(join(root, rel)));
   });
 
   test("AC-2: .claude/settings.local.json is a deny entry", () => {
