@@ -10,10 +10,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
-import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { readdir, readFile, writeFile } from "node:fs/promises";
 import { byCodePoint } from "@nathapp/nax-agent/internal";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import type { LogEntry } from "@/logger";
 import { addSink, initLogger, resetLogger } from "@/logger";
 import {
@@ -26,30 +25,22 @@ import type { RunMetrics, StoryMetrics } from "@/metrics/types";
 import { StoryTokenUsage } from "@/metrics/types";
 
 // OUTPUT_DIR plays the role of outputDir (e.g. ~/.nax/<projectKey>): metrics are written
-// directly to OUTPUT_DIR/metrics.json, no .nax/ subdirectory.
-const OUTPUT_DIR = `/tmp/nax-save-run-metrics-test-${randomUUID()}`;
-
-async function setupWorkdir() {
-  await mkdir(OUTPUT_DIR, { recursive: true });
-}
-
-async function cleanupWorkdir() {
-  if (existsSync(OUTPUT_DIR)) {
-    await rm(OUTPUT_DIR, { recursive: true, force: true });
-  }
-}
+// directly to OUTPUT_DIR/metrics.json, no .nax/ subdirectory. A fresh dir per test, under
+// `$TMPDIR` — the only temp a confined run may write (a literal `/tmp/...` is denied by the
+// confined session's sandbox).
+let OUTPUT_DIR: string;
 
 async function readMetricsFile(): Promise<RunMetrics[]> {
   const content = await readFile(`${OUTPUT_DIR}/metrics.json`, "utf-8");
   return JSON.parse(content);
 }
 
-beforeEach(async () => {
-  await setupWorkdir();
+beforeEach(() => {
+  OUTPUT_DIR = makeTempDir("nax-save-run-metrics-test-");
 });
 
-afterEach(async () => {
-  await cleanupWorkdir();
+afterEach(() => {
+  cleanupTempDir(OUTPUT_DIR);
 });
 
 describe("saveRunMetrics - totalTokens aggregation", () => {

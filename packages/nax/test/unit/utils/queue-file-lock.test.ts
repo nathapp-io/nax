@@ -10,10 +10,15 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { join } from "node:path";
 import { _fileLockDeps } from "@nathapp/nax-agent/internal";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { withQueueFileLock } from "@/utils/queue-file-lock";
 
 let orig: typeof _fileLockDeps;
+
+/** Every dir this file creates, so one afterEach cleans them all up. */
+const created: string[] = [];
 
 beforeEach(() => {
   orig = { ..._fileLockDeps };
@@ -22,17 +27,19 @@ beforeEach(() => {
 afterEach(() => {
   Object.assign(_fileLockDeps, orig);
   mock.restore();
+  for (const dir of created.splice(0)) cleanupTempDir(dir);
 });
 
-async function makeTempDir(): Promise<{ dir: string; queuePath: string }> {
-  const dir = `/tmp/nax-queue-lock-test-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  await Bun.$`mkdir -p ${dir}`.quiet();
-  return { dir, queuePath: `${dir}/queue.txt` };
+/** A fresh queue path under `$TMPDIR` — the only temp a confined run may write. */
+function makeQueuePath(): string {
+  const dir = makeTempDir("nax-queue-lock-test-");
+  created.push(dir);
+  return join(dir, "queue.txt");
 }
 
 describe("withQueueFileLock", () => {
   test("locks the derived <queue>.lock file and releases it after the operation", async () => {
-    const { dir, queuePath } = await makeTempDir();
+    const queuePath = makeQueuePath();
 
     let lockSeenInside = false;
     await withQueueFileLock(queuePath, async () => {
@@ -41,12 +48,10 @@ describe("withQueueFileLock", () => {
 
     expect(lockSeenInside).toBe(true);
     expect(await Bun.file(`${queuePath}.lock`).exists()).toBe(false);
-
-    await Bun.$`rm -rf ${dir}`.quiet();
   });
 
   test("serializes concurrent appends so no queued command is lost", async () => {
-    const { dir, queuePath } = await makeTempDir();
+    const queuePath = makeQueuePath();
     await Bun.write(queuePath, "");
 
     const writers = Array.from({ length: 8 }, (_, i) =>
@@ -65,12 +70,10 @@ describe("withQueueFileLock", () => {
       .map(Number)
       .sort((a, b) => a - b);
     expect(lines).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
-
-    await Bun.$`rm -rf ${dir}`.quiet();
   }, 20_000);
 
   test("fails closed with the [queue] identity when the holder never releases", async () => {
-    const { dir, queuePath } = await makeTempDir();
+    const queuePath = makeQueuePath();
     await Bun.write(`${queuePath}.lock`, "7777\n");
     // The wrapper exposes no timeoutMs; accelerate the acquire deadline via
     // the now seam — the first calls compute the real deadline, later calls
@@ -84,7 +87,5 @@ describe("withQueueFileLock", () => {
     await expect(withQueueFileLock(queuePath, async () => {})).rejects.toThrow(/Timed out acquiring queue lock/);
     // The live holder's lock is untouched by our failed acquisition.
     expect((await Bun.file(`${queuePath}.lock`).text()).trim()).toBe("7777");
-
-    await Bun.$`rm -rf ${dir}`.quiet();
   });
 });

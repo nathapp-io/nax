@@ -9,9 +9,17 @@
  * green even if the call site dropped both arguments again.
  */
 
-import { afterEach, describe, expect, mock, test } from "bun:test";
-import { randomUUID } from "node:crypto";
-import { makeDispatchContext, makePluginRegistry, makePRD, makeStatusWriter, makeTestRuntime } from "@test/helpers";
+import { afterAll, afterEach, describe, expect, mock, test } from "bun:test";
+import { join } from "node:path";
+import {
+  cleanupTempDir,
+  makeDispatchContext,
+  makePluginRegistry,
+  makePRD,
+  makeStatusWriter,
+  makeTempDir,
+  makeTestRuntime,
+} from "@test/helpers";
 import type { AgentFallbackRecord } from "@/agents/manager-types";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { stopHeartbeat } from "@/execution/crash-recovery";
@@ -27,8 +35,15 @@ import type { NaxRuntime } from "@/runtime";
 // ---------------------------------------------------------------------------
 
 const EMPTY_HOOKS: LoadedHooksConfig = { hooks: {} };
-const WORKDIR = `/tmp/nax-1709-parallel-seam-${randomUUID()}`;
-const PRD_PATH = `/tmp/nax-1709-parallel-seam-prd-${randomUUID()}.json`;
+// A real dir under `$TMPDIR`: the executor persists the PRD at PRD_PATH
+// (`savePRD` writes `<path>.tmp-<uuid>`), and a confined run may not write a
+// literal `/tmp/...`. Created once — the whole file shares one fixture.
+const WORKDIR = makeTempDir("nax-1709-parallel-seam-");
+const PRD_PATH = join(WORKDIR, "prd.json");
+
+afterAll(() => {
+  cleanupTempDir(WORKDIR);
+});
 
 function makePendingStory(id: string): UserStory {
   return {

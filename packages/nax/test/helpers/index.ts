@@ -30,6 +30,17 @@ export {
   requireGuard,
 } from "./command-safety";
 export { opSelector } from "./config-selector";
+export {
+  _confinedDeps,
+  CONFINED_TEST_ENV,
+  CONFINED_TEST_TIMEOUT_MS,
+  type ConfinedProc,
+  confinedSandboxAvailable,
+  isConfinedTestRun,
+  runConfinedFiles,
+  SANDBOX_UNAVAILABLE_EXIT,
+  USAGE_EXIT,
+} from "./confined";
 export { makeContextBundle, makeContextManifest } from "./context-bundle";
 export { type MockContextOrchestrator, makeContextOrchestrator } from "./context-orchestrator";
 export { withDepsRestore } from "./deps";

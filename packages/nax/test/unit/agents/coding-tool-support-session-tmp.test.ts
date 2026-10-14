@@ -20,7 +20,14 @@
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { _launcherDeps, _resetSandboxRegistryForTests, _sessionTmpDeps, runTmpRoot } from "@nathapp/nax-agent/internal";
-import { cleanupTempDir, makeNaxConfig, makeTempDir, stubSessionTmpDeps, withDepsRestore } from "@test/helpers";
+import {
+  cleanupTempDir,
+  isConfinedTestRun,
+  makeNaxConfig,
+  makeTempDir,
+  stubSessionTmpDeps,
+  withDepsRestore,
+} from "@test/helpers";
 import { resolveCodingToolSupport } from "@/agents/coding-tool-support-resolve";
 
 let root: string;
@@ -65,7 +72,13 @@ describe("resolveCodingToolSupport — per-session TMPDIR (US-004)", () => {
   });
   afterEach(() => cleanupTempDir(runRoot));
 
-  test("US-004 AC12: a Bash call runs with TMPDIR at the run's session directory", async () => {
+  // Class C: the launcher creates `<runRoot>/<sessionName>` under the shared
+  // `/tmp/nax` parent before it exports `TMPDIR` (`src/sandbox/launcher.ts`:
+  // `ensureTmpDir` drops the override when the mkdir fails), and a confined
+  // sandbox denies every write under `/tmp`. Skipped there rather than stubbed:
+  // the TMPDIR this asserts is the one the launcher created.
+  const skipConfined = test.skipIf(isConfinedTestRun());
+  skipConfined("US-004 AC12: a Bash call runs with TMPDIR at the run's session directory", async () => {
     const calls = recordingRunArgv();
 
     const support = await resolveCodingToolSupport({

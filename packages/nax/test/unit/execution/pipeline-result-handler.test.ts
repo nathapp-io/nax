@@ -75,8 +75,8 @@ function makeCtx(story: UserStory, overrides: Partial<PipelineHandlerContext> = 
   return {
     config: DEFAULT_CONFIG,
     prd,
-    prdPath: "/tmp/prd.json",
-    workdir: "/tmp/repo",
+    prdPath: join(ctxWorkdir, "prd.json"),
+    workdir: ctxWorkdir,
     hooks: { hooks: {} },
     feature: "test-feature",
     totalCost: 0,
@@ -108,6 +108,11 @@ const WORKTREE_CONFIG = {
   execution: { ...DEFAULT_CONFIG.execution, storyIsolation: "worktree" as const },
 };
 
+// The fixture's workdir/prdPath: a real dir under `$TMPDIR`, because the
+// handler persists the PRD there (`savePRD` writes `<path>.tmp-<uuid>`), and a
+// confined run may not write a literal `/tmp/...`.
+let ctxWorkdir: string;
+
 let origSpawn: typeof _gitDeps.spawn;
 let origResultSpawn: typeof _resultHandlerDeps.spawn;
 let origMergeEngine: typeof _resultHandlerDeps.mergeEngine;
@@ -115,6 +120,7 @@ let origSavePrd: typeof _tierEscalationDeps.savePRD;
 let origExistsSync: typeof _resultHandlerDeps.existsSync;
 
 beforeEach(() => {
+  ctxWorkdir = makeTempDir("nax-result-handler-");
   origSpawn = _gitDeps.spawn;
   origResultSpawn = _resultHandlerDeps.spawn;
   origMergeEngine = _resultHandlerDeps.mergeEngine;
@@ -134,6 +140,7 @@ afterEach(() => {
   _resultHandlerDeps.mergeEngine = origMergeEngine;
   _tierEscalationDeps.savePRD = origSavePrd;
   _resultHandlerDeps.existsSync = origExistsSync;
+  cleanupTempDir(ctxWorkdir);
   mock.restore();
 });
 
@@ -274,7 +281,7 @@ describe("handlePipelineSuccess — worktree mode (EXEC-002)", () => {
     // `(ctx.feature, ctx.story.id)` before calling mergeEngine.merge.
     // The fixture's `feature: "test-feature"` derives
     // `story-test-feature-US-001` — assert on the composed form.
-    expect(mergeMock).toHaveBeenCalledWith("/tmp/repo", deriveStoryWorktreeId("test-feature", "US-001"));
+    expect(mergeMock).toHaveBeenCalledWith(ctxWorkdir, deriveStoryWorktreeId("test-feature", "US-001"));
     expect(result.prdDirty).toBe(true);
   });
 

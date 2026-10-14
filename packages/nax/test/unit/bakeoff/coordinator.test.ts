@@ -9,10 +9,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, rmSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { assertDefined, makeNaxConfig } from "@test/helpers";
+import { assertDefined, cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
 import type {
   BakeoffCoordinatorDeps,
   BakeoffOptions,
@@ -363,15 +362,16 @@ describe("runBakeoff (AC-7: fail-open across DNF contestants)", () => {
 // ── AC-8: All-DNF still persists and signals non-zero outcome ────────────────
 
 describe("runBakeoff (AC-8: all-DNF persistence + non-zero outcome)", () => {
+  // Under `$TMPDIR` — the only temp a confined run may write (a literal
+  // `/tmp/...` is denied by the confined session's sandbox).
   let tempDir: string;
 
   beforeEach(() => {
-    tempDir = join("/tmp", `bakeoff-coord-${randomUUID()}`);
-    mkdirSync(tempDir, { recursive: true });
+    tempDir = makeTempDir("bakeoff-coord-");
   });
 
   afterEach(() => {
-    rmSync(tempDir, { recursive: true, force: true });
+    cleanupTempDir(tempDir);
   });
 
   it("AC8: persists bakeoff.json, returns BakeoffResult with all contestants, and signals a non-zero outcome when every contestant DNFs", async () => {

@@ -13,12 +13,14 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
 import {
+  cleanupTempDir,
   makeAgentResult,
   makeMergeEngine,
   makeMockRuntime,
   makePRD,
   makeSpawn,
   makeStory,
+  makeTempDir,
   makeTestContext,
   withInfoSpy,
   withWarnSpy,
@@ -40,8 +42,8 @@ function makeCtx(story: UserStory, overrides: Partial<PipelineHandlerContext> = 
   return {
     config: DEFAULT_CONFIG,
     prd,
-    prdPath: "/tmp/prd.json",
-    workdir: "/tmp/repo",
+    prdPath: join(fixtureWorkdir, "prd.json"),
+    workdir: fixtureWorkdir,
     hooks: { hooks: {} },
     feature: "test-feature",
     totalCost: 0,
@@ -71,10 +73,16 @@ const WORKTREE_CONFIG = {
   execution: { ...DEFAULT_CONFIG.execution, storyIsolation: "worktree" as const },
 };
 
+// The fixture's workdir/prdPath: a real dir under `$TMPDIR`, because the
+// handler persists the PRD there (`savePRD` writes `<path>.tmp-<uuid>`), and a
+// confined run may not write a literal `/tmp/...`.
+let fixtureWorkdir: string;
+
 let origResultSpawn: typeof _resultHandlerDeps.spawn;
 let origExistsSync: typeof _resultHandlerDeps.existsSync;
 
 beforeEach(() => {
+  fixtureWorkdir = makeTempDir("nax-worktree-cleanup-");
   origResultSpawn = _resultHandlerDeps.spawn;
   origExistsSync = _resultHandlerDeps.existsSync;
   // Default to "does not exist" — the safe, deterministic default. Tests
@@ -85,6 +93,7 @@ beforeEach(() => {
 afterEach(() => {
   _resultHandlerDeps.spawn = origResultSpawn;
   _resultHandlerDeps.existsSync = origExistsSync;
+  cleanupTempDir(fixtureWorkdir);
   mock.restore();
 });
 

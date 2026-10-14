@@ -7,12 +7,15 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { join } from "node:path";
 import {
   assertDefined,
+  cleanupTempDir,
   makeDispatchContext,
   makeMockRuntime,
   makePluginRegistry,
   makeStatusWriter,
+  makeTempDir,
 } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import type { InteractionConfig } from "@/config/runtime-types";
@@ -66,10 +69,23 @@ function makePrd(stories: UserStory[]): PRD {
   };
 }
 
+// The fixture's prdPath/workdir: a real dir per test under `$TMPDIR`, because the
+// executor persists the PRD at `prdPath` (`savePRD` writes `<path>.tmp-<uuid>`),
+// and a confined run may not write a literal `/tmp/...`.
+let fixtureDir: string;
+
+beforeEach(() => {
+  fixtureDir = makeTempDir("nax-unified-executor-cost-");
+});
+
+afterEach(() => {
+  cleanupTempDir(fixtureDir);
+});
+
 function makeCtx(overrides: { parallelCount?: number } = {}): SequentialExecutionContext {
   return {
-    prdPath: "/tmp/test-prd.json",
-    workdir: "/tmp/test-workdir",
+    prdPath: join(fixtureDir, "prd.json"),
+    workdir: fixtureDir,
     config: {
       ...DEFAULT_CONFIG,
       execution: {

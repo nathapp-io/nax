@@ -9,11 +9,12 @@
  * the PRD, so this cap must not touch either.
  */
 
-import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  cleanupTempDir,
   makeEscalationContext,
   makeInProgressStory,
   makeLogger,
@@ -21,10 +22,23 @@ import {
   makeNaxConfig,
   makePRD,
   makeStory,
+  makeTempDir,
 } from "@test/helpers";
 import { _tierEscalationDeps, handleTierEscalation, preIterationTierCheck } from "@/execution/escalation";
 import type { CuratorPostRunContext } from "@/plugins/builtin/curator";
 import { collectObservations } from "@/plugins/builtin/curator";
+
+// The runtime-crash pause path persists the PRD, so that fixture path must be
+// a real dir under `$TMPDIR`: a confined run may not write a literal `/tmp/...`.
+let fixtureDir: string;
+
+beforeEach(() => {
+  fixtureDir = makeTempDir("nax-tier-retry-cap-");
+});
+
+afterEach(() => {
+  cleanupTempDir(fixtureDir);
+});
 
 describe("handleTierEscalation — runtime-crash retry cap", () => {
   test("pauses the story once the runtime-crash retry cap is exceeded, instead of looping forever", async () => {
@@ -68,7 +82,7 @@ describe("handleTierEscalation — runtime-crash retry cap", () => {
             routing: { llm: { mode: "per-story" }, strategy: "keyword" },
           }),
           prd,
-          prdPath: "/tmp/test-prd-us002-retry-cap.json",
+          prdPath: join(fixtureDir, "prd.json"),
           feature: "f",
           runtimeCrashResult: { status: "RUNTIME_CRASH", success: false },
         });
