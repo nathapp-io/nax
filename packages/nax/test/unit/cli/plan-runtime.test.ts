@@ -11,6 +11,7 @@ import { _planDeps, detectProjectName } from "@/cli";
 import { resolvePlanModelSelection } from "@/cli/plan-runtime";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config";
+import { addSink, initLogger, resetLogger } from "@/logger";
 
 describe("resolvePlanModelSelection", () => {
   test("resolves the configured tier for a real agent+config", () => {
@@ -177,5 +178,29 @@ describe("resolvePlanModelSelection unknown-literal guard (spec §3)", () => {
     const r = resolvePlanModelSelection(config, "claude");
     expect(r.modelTier).toBeUndefined();
     expect(r.modelDef.model).toBe("opencode-go/qwen-4");
+  });
+
+  test("AC-15: a suffixed shorthand plan.model resolves through its tier, no fallback warning", () => {
+    const messages: string[] = [];
+    resetLogger();
+    initLogger({ level: "warn" });
+    const removeSink = addSink((entry) => {
+      if (entry.level === "warn") messages.push(entry.message);
+    });
+    try {
+      const config = makeNaxConfig({
+        models: { claude: { fast: "claude-haiku-5", balanced: "claude-sonnet-5", powerful: "claude-opus-5" } },
+        plan: { model: { agent: "claude", model: "sonnet[high]" } },
+      });
+      const r = resolvePlanModelSelection(config, "claude");
+      expect(r.modelTier).toBe("balanced");
+      expect(r.modelDef.model).toBe("claude-sonnet-5[high]");
+      expect(messages).not.toContain(
+        "plan.model is neither a tier nor a recognizable model id — using default balanced model",
+      );
+    } finally {
+      removeSink();
+      resetLogger();
+    }
   });
 });

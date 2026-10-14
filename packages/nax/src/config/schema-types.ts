@@ -6,6 +6,7 @@
  */
 
 import type { Pricing, PricingTier } from "@nathapp/nax-agent";
+import { parseModelSpec } from "@nathapp/nax-agent";
 import { getSafeLogger } from "../logger";
 
 export type Complexity = "simple" | "medium" | "complex" | "expert";
@@ -192,7 +193,26 @@ export function resolveTierMembership(
 
 /** A literal id resolveModel cannot attribute to a provider and that is not provider-qualified. */
 export function isUnrecognizedLiteralModel(model: string): boolean {
-  return !model.includes("/") && resolveModel(model).provider === "unknown";
+  // A nax profile model carries a trailing `[effort]` suffix (`parseModelSpec`).
+  // It is not part of the id, so recognition runs on the base: `sonnet[medium]`
+  // is the `sonnet` alias, not an id no heuristic knows.
+  const { model: base } = parseModelSpec(model);
+  if (base.includes("/")) return false;
+  if (MODEL_SHORTHAND_TIERS[base.toLowerCase()] !== undefined) return false;
+  return resolveModel(base).provider === "unknown";
+}
+
+/**
+ * Carry `effort` onto a resolved tier entry's model id.
+ *
+ * The suffix on the id the selector names is the one that dispatches, so it
+ * replaces whatever suffix the tier entry already carries (the entry is
+ * otherwise preserved verbatim). The entry object is copied, never mutated: it
+ * is usually the caller's configured object.
+ */
+function withEffort(modelDef: ModelDef, effort: string | undefined): ModelDef {
+  if (effort === undefined) return modelDef;
+  return { ...modelDef, model: `${parseModelSpec(modelDef.model).model}[${effort}]` };
 }
 
 /**
@@ -203,6 +223,11 @@ export function isUnrecognizedLiteralModel(model: string): boolean {
  * - shorthand alias (haiku/sonnet/opus) -> mapped tier via config.models
  * - builtin tier (fast/balanced/powerful) -> resolved via config.models
  * - otherwise -> raw model id via resolveModel()
+ *
+ * A trailing `[effort]` suffix (`parseModelSpec`) is not part of the id: every
+ * lookup above runs on the base, and the suffix is carried onto the resolved
+ * model id so the selected effort survives resolution (US-001). The suffix the
+ * selector names replaces one the tier entry already carries.
  */
 export function resolveConfiguredModel(
   models: ModelsConfig,
@@ -218,16 +243,18 @@ export function resolveConfiguredModel(
     };
   }
 
-  const aliasedTier = MODEL_SHORTHAND_TIERS[selection.model.toLowerCase()];
+  const { model: base, effort } = parseModelSpec(selection.model);
+
+  const aliasedTier = MODEL_SHORTHAND_TIERS[base.toLowerCase()];
   if (aliasedTier) {
     return {
       agent: selection.agent,
-      modelDef: resolveModelForAgent(models, selection.agent, aliasedTier, defaultAgent),
+      modelDef: withEffort(resolveModelForAgent(models, selection.agent, aliasedTier, defaultAgent), effort),
       modelTier: aliasedTier,
     };
   }
 
-  const membership = resolveTierMembership(models, selection.agent, selection.model, defaultAgent);
+  const membership = resolveTierMembership(models, selection.agent, base, defaultAgent);
   if (membership.isTier) {
     if (membership.viaDefaultAgentFallback && (selection.agent === "native") !== (defaultAgent === "native")) {
       // warnOnce: resolution runs on every call, so the same boundary would warn per call (nax#2491 P7).
@@ -237,16 +264,16 @@ export function resolveConfiguredModel(
         "Configured tier resolves via the default agent across a protocol boundary",
         {
           agent: selection.agent,
-          tier: selection.model,
+          tier: base,
           defaultAgent,
         },
-        `${selection.agent}|${selection.model}`,
+        `${selection.agent}|${base}`,
       );
     }
     return {
       agent: selection.agent,
-      modelDef: resolveModelForAgent(models, selection.agent, selection.model, defaultAgent),
-      modelTier: selection.model,
+      modelDef: withEffort(resolveModelForAgent(models, selection.agent, base, defaultAgent), effort),
+      modelTier: base,
     };
   }
 
