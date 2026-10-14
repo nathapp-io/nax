@@ -6,7 +6,12 @@ export interface MeterEvent {
   readonly sessionRole: string;
   readonly exactCostUsd?: number;
   readonly estimatedCostUsd?: number;
-  readonly tokenUsage?: { readonly inputTokens?: number; readonly outputTokens?: number };
+  readonly tokenUsage?: {
+    readonly inputTokens?: number;
+    readonly outputTokens?: number;
+    readonly cacheReadTokens?: number;
+    readonly cacheWriteTokens?: number;
+  };
 }
 
 export interface DispatchSource {
@@ -21,13 +26,30 @@ export interface TokenMeter {
 
 export const EMPTY_TOKENS: RoleTokens = { inputTokens: 0, outputTokens: 0, costUsd: 0, calls: 0 };
 
-function add(a: RoleTokens, b: RoleTokens): RoleTokens {
+/**
+ * US-005 (nax#2525): attach the cache columns only when there is cache traffic. Omitting a zero
+ * keeps every role-entry shape written before this field existed byte-identical, so the existing
+ * closed-world assertions (and any older `result.json`) still read as zero cache tokens.
+ */
+function withCache(base: RoleTokens, cacheReadTokens: number, cacheWriteTokens: number): RoleTokens {
   return {
-    inputTokens: a.inputTokens + b.inputTokens,
-    outputTokens: a.outputTokens + b.outputTokens,
-    costUsd: a.costUsd + b.costUsd,
-    calls: a.calls + b.calls,
+    ...base,
+    ...(cacheReadTokens !== 0 ? { cacheReadTokens } : {}),
+    ...(cacheWriteTokens !== 0 ? { cacheWriteTokens } : {}),
   };
+}
+
+function add(a: RoleTokens, b: RoleTokens): RoleTokens {
+  return withCache(
+    {
+      inputTokens: a.inputTokens + b.inputTokens,
+      outputTokens: a.outputTokens + b.outputTokens,
+      costUsd: a.costUsd + b.costUsd,
+      calls: a.calls + b.calls,
+    },
+    (a.cacheReadTokens ?? 0) + (b.cacheReadTokens ?? 0),
+    (a.cacheWriteTokens ?? 0) + (b.cacheWriteTokens ?? 0),
+  );
 }
 
 export function addRoleTokens(
@@ -42,12 +64,16 @@ export function startTokenMeter(source: DispatchSource | undefined): TokenMeter 
   let byRole: Readonly<Record<string, RoleTokens>> = {};
   const unsubscribe =
     source?.onDispatch((e) => {
-      const one: RoleTokens = {
-        inputTokens: e.tokenUsage?.inputTokens ?? 0,
-        outputTokens: e.tokenUsage?.outputTokens ?? 0,
-        costUsd: e.exactCostUsd ?? e.estimatedCostUsd ?? 0,
-        calls: 1,
-      };
+      const one = withCache(
+        {
+          inputTokens: e.tokenUsage?.inputTokens ?? 0,
+          outputTokens: e.tokenUsage?.outputTokens ?? 0,
+          costUsd: e.exactCostUsd ?? e.estimatedCostUsd ?? 0,
+          calls: 1,
+        },
+        e.tokenUsage?.cacheReadTokens ?? 0,
+        e.tokenUsage?.cacheWriteTokens ?? 0,
+      );
       byRole = { ...byRole, [e.sessionRole]: add(byRole[e.sessionRole] ?? EMPTY_TOKENS, one) };
     }) ?? (() => {});
   return {
