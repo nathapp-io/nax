@@ -60,8 +60,12 @@ async function publishTarget(fc: FeatureContext): Promise<{ forge: ForgeKind } |
 }
 
 async function pushBranch(fc: FeatureContext): Promise<string | null> {
+  // US-005 (nax#2526): name the push, so a slow one is not a silent gap. The ledger commit and the
+  // ledger push stay unnamed (they are bookkeeping, not publish steps).
+  getSafeLogger()?.info("workflow", `Publish: pushing ${fc.branch}`, { storyId: "_run" });
   try {
     await _featureDeps.commitAndPush(fc.projectDir, fc.branch, `chore(${fc.feature}): workflow`, { skipCommit: true });
+    getSafeLogger()?.info("workflow", `Publish: pushed ${fc.branch}`, { storyId: "_run" });
     return null;
   } catch (err) {
     if (fc.runSignal?.aborted) throw err;
@@ -200,6 +204,7 @@ async function finishPr(
     );
     const url = res.url ?? parts.draftUrl;
     const kept = !ready && res.status === "already-ready" ? [...finalReasons, ALREADY_READY_REASON] : finalReasons;
+    logFinishPr(ready, url, kept);
     return { outcome: ready ? "ready" : "draft", ci: ci.outcome, ...(url ? { url } : {}), reasons: kept };
   } catch (err) {
     if (fc.runSignal?.aborted) throw err;
@@ -210,6 +215,14 @@ async function finishPr(
       reasons: [...finalReasons, `PR update failed: ${errorMessage(err)}`],
     };
   }
+}
+
+/** US-005 (nax#2526): the last publish sub-step — promoted, or kept a draft and why. */
+function logFinishPr(ready: boolean, url: string | undefined, kept: readonly string[]): void {
+  const where = url ? ` ${url}` : "";
+  const why = kept.length > 0 ? `: ${kept.join("; ")}` : "";
+  const line = ready ? `Publish: PR marked ready${where}` : `Publish: PR kept as draft${where}${why}`;
+  getSafeLogger()?.info("workflow", line, { storyId: "_run" });
 }
 
 /**
@@ -297,6 +310,8 @@ async function prMode(plan: PublishPlan, input: PublishInput): Promise<PublishOu
     { ...pr, body: buildWorkflowPrBody({ ...body, outcome: "draft", ci: "pending", reasons: plan.base }) },
     _featureDeps.forge,
   );
+  // US-005: a URL the forge did not return is left out rather than invented; the step is still named.
+  getSafeLogger()?.info("workflow", `Publish: draft PR${draft?.url ? ` ${draft.url}` : ""}`, { storyId: "_run" });
   const ci = await waitForCi(fc, plan.forge);
   // An aborted wait reports `pending`, which never blocks readiness: stop before approval or promotion.
   if (fc.runSignal?.aborted) throw abortedError();
