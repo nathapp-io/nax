@@ -402,6 +402,52 @@ describe("isConfinedTestRun", () => {
   });
 });
 
+// ── the fixtures ───────────────────────────────────────────────────────────
+
+describe("confined fixtures", () => {
+  const LITERAL_TMP = "./test/fixtures/confined/writes-literal-tmp.fixture.ts";
+  const TMPDIR = "./test/fixtures/confined/writes-tmpdir.fixture.ts";
+
+  /** Run one fixture under `bun test` with a chosen marker value, keeping the rest of the env. */
+  function runFixture(fixture: string, marker: string | undefined): { code: number; stdout: string; stderr: string } {
+    const env = { ...process.env };
+    delete env[CONFINED_TEST_ENV];
+    if (marker !== undefined) env[CONFINED_TEST_ENV] = marker;
+    const proc = Bun.spawnSync(["bun", "test", fixture], { cwd: PACKAGE_DIR, stdout: "pipe", stderr: "pipe", env });
+    return { code: proc.exitCode, stdout: proc.stdout.toString(), stderr: proc.stderr.toString() };
+  }
+
+  // F1: a gate that runs a changed test file, or a bare `bun test`, collects an
+  // explicit path whatever its suffix. The literal-`/tmp` fixture is built to
+  // FAIL under confinement, so an unguarded run of it records that designed
+  // failure as a failing test.
+  test("without the confined marker both fixtures skip", () => {
+    for (const fixture of [LITERAL_TMP, TMPDIR]) {
+      const { code, stderr } = runFixture(fixture, undefined);
+      expect(code, `${fixture}: ${stderr}`).toBe(0);
+      expect(stderr).toContain("1 skip");
+    }
+  }, 30_000);
+
+  test("with the marker the $TMPDIR fixture runs rather than skipping", () => {
+    const { code, stderr } = runFixture(TMPDIR, "1");
+    expect(code, stderr).toBe(0);
+    expect(stderr).toContain("1 pass");
+  }, 30_000);
+
+  // F2: the runner pipes the child's stdout and INHERITS its stderr (spec:
+  // `stderr: "inherit"`, so results reach the CI log), and `bun test` writes
+  // only its version banner to stdout. An integration assertion on the runner's
+  // captured output therefore can never see a test's name or its failure — it
+  // must assert the exit code.
+  test("a child bun test puts its banner on stdout and its result on stderr", () => {
+    const { stdout, stderr } = runFixture(LITERAL_TMP, undefined);
+    expect(stdout).toContain("bun test v");
+    expect(stdout).not.toContain("skip");
+    expect(stderr).toContain("1 skip");
+  }, 30_000);
+});
+
 // ── the CLI ────────────────────────────────────────────────────────────────
 
 describe("run-confined-tests CLI", () => {
