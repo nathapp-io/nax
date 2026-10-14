@@ -14,6 +14,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { utimes } from "node:fs/promises";
 import { _fileLockDeps, withFileLock } from "#src/internal/file-lock";
+import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
 
 const PATH_LOCK_OPTS = { lockName: "path", errorPrefix: "[path-lock]" } as const;
 
@@ -28,15 +29,19 @@ afterEach(() => {
   mock.restore();
 });
 
-async function makeTempDir(): Promise<{ dir: string; target: string; lockPath: string }> {
-  const dir = `/tmp/nax-file-lock-test-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  await Bun.$`mkdir -p ${dir}`.quiet();
+/**
+ * A lock directory under `$TMPDIR` (nax#2523): a literal `/tmp/...` path is
+ * outside the write roots a confined agent session gets, so the suite failed
+ * there while passing on the host.
+ */
+function makeLockDir(): { dir: string; target: string; lockPath: string } {
+  const dir = makeTempDir("nax-file-lock-test-");
   return { dir, target: `${dir}/metrics.json`, lockPath: `${dir}/metrics.json.lock` };
 }
 
 describe("withFileLock — mutual exclusion", () => {
   test("serializes 8 concurrent read-modify-write writers (no lost update, BUG-6)", async () => {
-    const { dir, target, lockPath } = await makeTempDir();
+    const { dir, target, lockPath } = makeLockDir();
     await Bun.write(target, "[]");
 
     const writers = Array.from({ length: 8 }, (_, i) =>
@@ -57,7 +62,7 @@ describe("withFileLock — mutual exclusion", () => {
     const final = (await Bun.file(target).json()) as number[];
     expect(final.sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
 
-    await Bun.$`rm -rf ${dir}`.quiet();
+    cleanupTempDir(dir);
   }, 20_000);
 
   test("#1731: a create attempt landing while the holder is inside waits its turn", async () => {
@@ -65,7 +70,7 @@ describe("withFileLock — mutual exclusion", () => {
     // until writer A is already inside the critical section. The previous
     // design let the late candidate win the "oldest" ordering and enter
     // concurrently; the exclusive-create design must make B wait.
-    const { dir, lockPath } = await makeTempDir();
+    const { dir, lockPath } = makeLockDir();
 
     const realWriteFile = _fileLockDeps.writeFile;
     let createCalls = 0;
@@ -121,13 +126,13 @@ describe("withFileLock — mutual exclusion", () => {
 
     expect(maxInside).toBe(1);
 
-    await Bun.$`rm -rf ${dir}`.quiet();
+    cleanupTempDir(dir);
   }, 10_000);
 });
 
 describe("withFileLock — stale lock handling (BUG-10 / BUG-25)", () => {
   test("reclaims a lock whose holder pid is proven dead", async () => {
-    const { dir, lockPath } = await makeTempDir();
+    const { dir, lockPath } = makeLockDir();
     await Bun.write(lockPath, "424242\n");
     Object.assign(_fileLockDeps, { isPidAlive: (pid: number) => pid !== 424242 });
 
@@ -144,7 +149,7 @@ describe("withFileLock — stale lock handling (BUG-10 / BUG-25)", () => {
     expect(state.ran).toBe(true);
     expect(state.holderPidInside).toBe(process.pid);
 
-    await Bun.$`rm -rf ${dir}`.quiet();
+    cleanupTempDir(dir);
   });
 
   test("gravedigger declines to unlink when its stale observation was replaced by a live holder", async () => {
@@ -152,7 +157,7 @@ describe("withFileLock — stale lock handling (BUG-10 / BUG-25)", () => {
     // wins the claim, but the lock file was replaced by a NEW live holder
     // before the re-verify read. The re-verify must see pid !== observedPid
     // and decline — otherwise the gravedigger would delete a live lock.
-    const { dir, lockPath } = await makeTempDir();
+    const { dir, lockPath } = makeLockDir();
     const claimPath = `${lockPath}.claim`;
     await Bun.write(lockPath, "424242\n");
     Object.assign(_fileLockDeps, { isPidAlive: (pid: number) => pid !== 424242 });
@@ -183,11 +188,11 @@ describe("withFileLock — stale lock handling (BUG-10 / BUG-25)", () => {
     expect((await Bun.file(lockPath).text()).trim()).toBe("7777");
     expect(await Bun.file(claimPath).exists()).toBe(false);
 
-    await Bun.$`rm -rf ${dir}`.quiet();
+    cleanupTempDir(dir);
   });
 
   test("fails fast on environmental create errors instead of a misleading timeout", async () => {
-    const { dir, lockPath } = await makeTempDir();
+    const { dir, lockPath } = makeLockDir();
     Object.assign(_fileLockDeps, {
       writeFile: async () => {
         const err = new Error("spawn of the lock file was denied");
@@ -201,11 +206,11 @@ describe("withFileLock — stale lock handling (BUG-10 / BUG-25)", () => {
     // Must propagate immediately — not burn the full 5s default timeout.
     expect(_fileLockDeps.now() - started).toBeLessThan(1_000);
 
-    await Bun.$`rm -rf ${dir}`.quiet();
+    cleanupTempDir(dir);
   });
 
   test("steals an aged claim left by a crashed gravedigger and reclaims the dead lock", async () => {
-    const { dir, lockPath } = await makeTempDir();
+    const { dir, lockPath } = makeLockDir();
     const claimPath = `${lockPath}.claim`;
     await Bun.write(lockPath, "424242\n");
     await Bun.write(claimPath, "999999\n");
@@ -227,11 +232,11 @@ describe("withFileLock — stale lock handling (BUG-10 / BUG-25)", () => {
     expect(state.ran).toBe(true);
     expect(await Bun.file(claimPath).exists()).toBe(false);
 
-    await Bun.$`rm -rf ${dir}`.quiet();
+    cleanupTempDir(dir);
   });
 
   test("never steals a lock whose holder pid is alive (BUG-10) — times out instead", async () => {
-    const { dir, lockPath } = await makeTempDir();
+    const { dir, lockPath } = makeLockDir();
     await Bun.write(lockPath, "7777\n");
     Object.assign(_fileLockDeps, { isPidAlive: (pid: number) => pid === 7777 });
 
@@ -241,14 +246,14 @@ describe("withFileLock — stale lock handling (BUG-10 / BUG-25)", () => {
 
     expect((await Bun.file(lockPath).text()).trim()).toBe("7777");
 
-    await Bun.$`rm -rf ${dir}`.quiet();
+    cleanupTempDir(dir);
   });
 
   test("respects fresh unparseable content (BUG-25) — waits instead of entering", async () => {
     // Empty content means the creator died between the exclusive create and
     // the pid write — but a LIVE creator could still be mid-write, so the
     // waiter fails closed until the file ages past the reclaim bound.
-    const { dir, lockPath } = await makeTempDir();
+    const { dir, lockPath } = makeLockDir();
     await Bun.write(lockPath, "");
     Object.assign(_fileLockDeps, { isPidAlive: () => true });
 
@@ -258,11 +263,11 @@ describe("withFileLock — stale lock handling (BUG-10 / BUG-25)", () => {
 
     expect(await Bun.file(lockPath).exists()).toBe(true);
 
-    await Bun.$`rm -rf ${dir}`.quiet();
+    cleanupTempDir(dir);
   });
 
   test("reclaims an aged unparseable lock left by a crashed creator", async () => {
-    const { dir, lockPath } = await makeTempDir();
+    const { dir, lockPath } = makeLockDir();
     await Bun.write(lockPath, "");
     const aged = new Date(_fileLockDeps.now() - 20_000);
     await utimes(lockPath, aged, aged);
@@ -278,7 +283,7 @@ describe("withFileLock — stale lock handling (BUG-10 / BUG-25)", () => {
 
     expect(ran).toBe(true);
 
-    await Bun.$`rm -rf ${dir}`.quiet();
+    cleanupTempDir(dir);
   });
 
   test("reclaim never lets two stealers enter — claim blocks the second gravedigger", async () => {
@@ -288,7 +293,7 @@ describe("withFileLock — stale lock handling (BUG-10 / BUG-25)", () => {
     // and must NOT enter while A is reclaiming. Without claim serialization,
     // B's unlink+create could land inside A's verify→unlink window and both
     // would enter.
-    const { dir, lockPath } = await makeTempDir();
+    const { dir, lockPath } = makeLockDir();
     const claimPath = `${lockPath}.claim`;
     await Bun.write(lockPath, "424242\n");
     Object.assign(_fileLockDeps, { isPidAlive: (pid: number) => pid !== 424242 });
@@ -345,11 +350,11 @@ describe("withFileLock — stale lock handling (BUG-10 / BUG-25)", () => {
     expect(maxInside).toBe(1);
     expect(await Bun.file(claimPath).exists()).toBe(false);
 
-    await Bun.$`rm -rf ${dir}`.quiet();
+    cleanupTempDir(dir);
   }, 10_000);
 
   test("concurrent stealers of the same dead lock yield exactly one holder at a time", async () => {
-    const { dir, lockPath } = await makeTempDir();
+    const { dir, lockPath } = makeLockDir();
     Object.assign(_fileLockDeps, { isPidAlive: (pid: number) => pid !== 424242 });
 
     for (let iteration = 0; iteration < 5; iteration++) {
@@ -372,6 +377,6 @@ describe("withFileLock — stale lock handling (BUG-10 / BUG-25)", () => {
       expect(await Bun.file(lockPath).exists()).toBe(false);
     }
 
-    await Bun.$`rm -rf ${dir}`.quiet();
+    cleanupTempDir(dir);
   }, 20_000);
 });
