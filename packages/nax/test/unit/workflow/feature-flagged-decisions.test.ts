@@ -15,7 +15,7 @@ import type { PublishOutcome } from "@/workflow/finalize";
 import { readResult } from "@/workflow/result";
 import { _workflowDeps } from "@/workflow/step-context";
 import { startTokenMeter } from "@/workflow/tokens";
-import type { StorySummary, WorkflowFeatureRecord } from "@/workflow/types";
+import type { FeatureOutcome, StorySummary, WorkflowFeatureRecord } from "@/workflow/types";
 
 const originalDeps = { ..._workflowDeps };
 const dirs: string[] = [];
@@ -76,13 +76,19 @@ const atPublish = (): WorkflowFeatureRecord => ({
 function buildEnv(over: { projectDir?: string; outputDir?: string; feature?: string } = {}): FeatureEnv {
   const runDir = makeTempDir("flag-run-");
   dirs.push(runDir);
+  return envFor(
+    makeFeatureContext({
+      runDir,
+      ...(over.projectDir !== undefined ? { projectDir: over.projectDir } : {}),
+      ...(over.outputDir !== undefined ? { outputDir: over.outputDir } : {}),
+      ...(over.feature !== undefined ? { feature: over.feature } : {}),
+    }),
+  );
+}
+
+/** The env's other steps read an inert advisor; only `createAdvisor` is faked, never the ledger read. */
+function envFor(fc: ReturnType<typeof makeFeatureContext>): FeatureEnv {
   _workflowDeps.createAdvisor = () => noDecisions;
-  const fc = makeFeatureContext({
-    runDir,
-    ...(over.projectDir !== undefined ? { projectDir: over.projectDir } : {}),
-    ...(over.outputDir !== undefined ? { outputDir: over.outputDir } : {}),
-    ...(over.feature !== undefined ? { feature: over.feature } : {}),
-  });
   return buildFeatureEnv(
     fc,
     {
@@ -107,6 +113,21 @@ function buildEnv(over: { projectDir?: string; outputDir?: string; feature?: str
   );
 }
 
+/** A ledger line plus the audit artifact that makes `readTrustedDecisions` trust it. */
+async function addDecision(
+  repo: string,
+  outputDir: string,
+  feature: string,
+  needsHumanConfirm: boolean,
+  audited = true,
+): Promise<AdviceDecision> {
+  const entry = await appendDecision(repo, feature, (id) =>
+    draft({ needsHumanConfirm, auditRef: `advisor-audit/${feature}/${id}.json` }),
+  );
+  if (audited) await Bun.write(join(outputDir, entry.auditRef), JSON.stringify({ result: { decision: entry } }));
+  return entry;
+}
+
 function flaggedStepOf(env: FeatureEnv): () => Promise<readonly string[]> {
   const step = env.steps.flaggedDecisions;
   if (!step) throw new Error("buildFeatureEnv must wire steps.flaggedDecisions");
@@ -114,10 +135,13 @@ function flaggedStepOf(env: FeatureEnv): () => Promise<readonly string[]> {
 }
 
 /** A machine harness whose publish step is stubbed — AC-3..AC-5 drive exactly that step. */
-function harness(opts: { flagged?: () => Promise<readonly string[]>; record?: WorkflowFeatureRecord } = {}) {
+function harness(
+  opts: { flagged?: () => Promise<readonly string[]>; record?: WorkflowFeatureRecord; outcome?: FeatureOutcome } = {},
+) {
   const calls: string[] = [];
   const updates: WorkflowFeatureRecord[] = [];
   const flaggedImpl = opts.flagged;
+  const published: PublishOutcome = { ...PUBLISHED, ...(opts.outcome ? { outcome: opts.outcome } : {}) };
   const never = async () => {
     throw new Error("step not expected in this test");
   };
@@ -129,7 +153,7 @@ function harness(opts: { flagged?: () => Promise<readonly string[]>; record?: Wo
     adjudicate: never,
     publish: async () => {
       calls.push("publish");
-      return PUBLISHED;
+      return published;
     },
     head: async () => "h1",
     changedFiles: async () => [],
@@ -178,6 +202,19 @@ describe("buildFeatureEnv — the flaggedDecisions step (US-005)", () => {
     const env = buildEnv();
     expect(await flaggedStepOf(env)()).toEqual([]);
   });
+
+  test("a real ledger: only trusted human-confirm decisions, still in ledger order", async () => {
+    const repo = makeTempDir("flag-repo-");
+    dirs.push(repo);
+    const outputDir = join(repo, "out");
+    const feature = "f";
+    const first = await addDecision(repo, outputDir, feature, true);
+    await addDecision(repo, outputDir, feature, false); // trusted, but no human needed
+    await addDecision(repo, outputDir, feature, true, false); // flagged, but no audit artifact
+    const last = await addDecision(repo, outputDir, feature, true);
+    const env = envFor(makeFeatureContext({ projectDir: repo, outputDir, feature }));
+    expect(await flaggedStepOf(env)()).toEqual([first.id, last.id]);
+  });
 });
 
 describe("runFeatureMachine — the publish step collects flagged rulings (US-005)", () => {
@@ -188,6 +225,16 @@ describe("runFeatureMachine — the publish step collects flagged rulings (US-00
     expect(final.flaggedDecisions).toEqual(["D-1"]);
     expect(final.step).toBe("done");
   });
+
+  test.each(["ready", "draft", "pushed", "local-only"] as const)(
+    "the ids are collected whatever publish did: %s",
+    async (outcome) => {
+      const h = harness({ flagged: async () => ["D-1"], outcome });
+      const final = await runFeatureMachine(h.env);
+      expect(final.outcome).toBe(outcome);
+      expect(final.flaggedDecisions).toEqual(["D-1"]);
+    },
+  );
 
   test("AC-4: an unreadable ledger warns once, persists no ids and never blocks the step", async () => {
     const h = harness({
