@@ -363,19 +363,19 @@ describe("US-006 — the session-root Claude settings files are denied", () => {
 
   test("AC-1: .claude/settings.json is a deny entry", () => {
     const policy = buildSandboxPolicy(input());
-    expect(policy.denyWrite).toContain(realOrRaw(join(root, ".claude", "settings.json")));
+    expect(policy.denyWrite).toContain(settingsPath("settings.json"));
   });
 
   test("AC-2: .claude/settings.local.json is a deny entry", () => {
     const policy = buildSandboxPolicy(input());
-    expect(policy.denyWrite).toContain(realOrRaw(join(root, ".claude", "settings.local.json")));
+    expect(policy.denyWrite).toContain(settingsPath("settings.local.json"));
   });
 
   test("AC-3: both are denied while .claude/ does not exist yet", () => {
     expect(existsSync(join(root, ".claude"))).toBe(false);
     const policy = buildSandboxPolicy(input());
-    expect(policy.denyWrite).toContain(realOrRaw(join(root, ".claude", "settings.json")));
-    expect(policy.denyWrite).toContain(realOrRaw(join(root, ".claude", "settings.local.json")));
+    expect(policy.denyWrite).toContain(settingsPath("settings.json"));
+    expect(policy.denyWrite).toContain(settingsPath("settings.local.json"));
   });
 
   test("AC-3 boundary: an absent .claude/ under a symlinked root keeps the resolved spelling", () => {
@@ -388,9 +388,9 @@ describe("US-006 — the session-root Claude settings files are denied", () => {
     expect(policy.denyWrite).toContain(join(real, ".claude", "settings.local.json"));
   });
 
-  test("AC-3 boundary: both stay denied once .claude/ and the files exist", () => {
+  test("AC-3 boundary: both stay denied once .claude/ and the files exist", async () => {
     mkdirSync(join(root, ".claude"), { recursive: true });
-    for (const name of ["settings.json", "settings.local.json"]) Bun.write(join(root, ".claude", name), "{}");
+    for (const name of ["settings.json", "settings.local.json"]) await Bun.write(join(root, ".claude", name), "{}");
     const policy = buildSandboxPolicy(input());
     for (const name of ["settings.json", "settings.local.json"]) expect(policy.denyWrite).toContain(settingsPath(name));
   });
