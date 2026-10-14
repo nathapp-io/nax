@@ -10,6 +10,7 @@ import {
   runDirsNewestFirst,
   upsertFeatureRecord,
   upsertStoryRecord,
+  writePreflightTokens,
 } from "@/workflow/result";
 
 const dirs: string[] = [];
@@ -108,6 +109,63 @@ describe("verdict in result.json (#2496)", () => {
       await upsertStoryRecord(runDir, { runId: "r1", feature: "f" }, newStoryRecord("US-001", 3, "t"));
       const file = await readResult(runDir);
       expect(file?.verdict).toEqual({ workflowPassed: true, outcome: "draft", reasons: ["r"], openItems: [] });
+    });
+  });
+});
+
+/** US-004: the pre-flight's role totals are written by the pre-flight and must survive every later write. */
+describe("pre-flight tokens in result.json (US-004)", () => {
+  const PREFLIGHT = { advisor: { inputTokens: 10, outputTokens: 5, costUsd: 0.3, calls: 1 } };
+
+  test("writePreflightTokens creates the file, then a second write keeps the story records", async () => {
+    await withTempDir(async (runDir) => {
+      await writePreflightTokens(runDir, { runId: "r1", feature: "f" }, PREFLIGHT);
+      await upsertStoryRecord(runDir, { runId: "r1", feature: "f" }, newStoryRecord("US-001", 3, "t"));
+      const file = await readResult(runDir);
+      expect(file?.preflightTokensByRole).toEqual(PREFLIGHT);
+      expect(file?.stories["US-001"]?.storyId).toBe("US-001");
+      expect(file?.schemaVersion).toBe(1);
+    });
+  });
+
+  test("writePreflightTokens keeps the feature record and the verdict an earlier write left", async () => {
+    await withTempDir(async (runDir) => {
+      await upsertStoryRecord(runDir, { runId: "r1", feature: "f" }, newStoryRecord("US-001", 3, "t"));
+      await upsertFeatureRecord(
+        runDir,
+        { runId: "r1", feature: "f" },
+        {
+          ...newFeatureRecord({ now: "t", seed: "s", minors: [] }),
+          outcome: "draft" as const,
+          passed: true,
+          reasons: ["r"],
+        },
+      );
+      await writePreflightTokens(runDir, { runId: "r1", feature: "f" }, PREFLIGHT);
+      const file = await readResult(runDir);
+      expect(file?.preflightTokensByRole).toEqual(PREFLIGHT);
+      expect(file?.featureWorkflow?.seed).toBe("s");
+      expect(file?.verdict?.outcome).toBe("draft");
+    });
+  });
+
+  test("AC-4: upsertStoryRecord keeps preflightTokensByRole unchanged", async () => {
+    await withTempDir(async (runDir) => {
+      await writePreflightTokens(runDir, { runId: "r1", feature: "f" }, PREFLIGHT);
+      await upsertStoryRecord(runDir, { runId: "r1", feature: "f" }, newStoryRecord("US-001", 3, "t"));
+      expect((await readResult(runDir))?.preflightTokensByRole).toEqual(PREFLIGHT);
+    });
+  });
+
+  test("AC-5: upsertFeatureRecord keeps preflightTokensByRole unchanged", async () => {
+    await withTempDir(async (runDir) => {
+      await writePreflightTokens(runDir, { runId: "r1", feature: "f" }, PREFLIGHT);
+      await upsertFeatureRecord(
+        runDir,
+        { runId: "r1", feature: "f" },
+        newFeatureRecord({ now: "t", seed: "s", minors: [] }),
+      );
+      expect((await readResult(runDir))?.preflightTokensByRole).toEqual(PREFLIGHT);
     });
   });
 });
