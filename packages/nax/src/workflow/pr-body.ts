@@ -27,6 +27,8 @@ export interface WorkflowPrBodyFacts {
   readonly assumptions: readonly { readonly storyId: string; readonly text: string }[];
   /** What is still open on the feature (#2496); drives the "Before marking ready" section. */
   readonly openItems: readonly OpenItem[];
+  /** The `Closes:` issues of the feature spec (US-007); absent when the spec named none. */
+  readonly closes?: readonly number[];
 }
 
 export interface WorkflowPrBodyInput extends WorkflowPrBodyFacts {
@@ -126,9 +128,16 @@ function beforeReady(input: WorkflowPrBodyInput, chars = FULL_TEXT): string | nu
   ].join("\n");
 }
 
+/** The `## Closes` section, right after Summary: the body's tail is what gets cut (US-007). */
+function closesSection(closes: readonly number[] | undefined): string[] {
+  if (!closes || closes.length === 0) return [];
+  return [`## Closes\n\n${closes.map((issue) => `Closes #${issue}`).join("\n")}`];
+}
+
 function assemble(input: WorkflowPrBodyInput, ready: string | null): string {
   return [
     `## Summary\n\n${summary(input)}`,
+    ...closesSection(input.closes),
     `## Stories\n\n${storiesTable(input.stories)}`,
     ...(ready ? [ready] : []),
     `## Pre-flight rulings\n\n${list(preflightLines(input.preflight))}`,

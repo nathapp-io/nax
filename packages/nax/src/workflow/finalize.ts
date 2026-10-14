@@ -5,7 +5,7 @@
  * `none` touches nothing. nax never merges. A non-feature branch, a dry run, no forge or a failed
  * push ends local-only.
  */
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { AdviceDecision, Advisor } from "@/advisor";
 import type { WorkflowPublishMode } from "@/config";
@@ -15,6 +15,7 @@ import type { ForgeKind } from "@/forge";
 import { getSafeLogger } from "@/logger";
 import { askApproval, type ReadinessFacts, readinessReasons } from "./approval";
 import type { CiWaitResult } from "./ci-wait";
+import { parseClosingIssues } from "./closing-issues";
 import type { FeatureContext } from "./feature-context";
 import { _featureDeps } from "./feature-deps";
 import { ledgerCommitMessage, listUncommitted } from "./git";
@@ -99,8 +100,29 @@ async function loadAssumptions(stories: readonly StorySummary[]): Promise<{ stor
   return out;
 }
 
+/**
+ * The closing issues the feature spec declares (US-007), or `undefined` when there is nothing to
+ * claim: no spec source, a spec that is not on disk, an unreadable one, or one that declares no
+ * `Closes:` line. The path is resolved the way `loadSpec` in `brief.ts` does — the repo-relative
+ * path joined to the project dir. Reading is attempted without an `exists` probe so a missing file
+ * and an unreadable one (a directory, a permission error) take the same arm: the PR body is built
+ * exactly as it was before this feature.
+ */
+async function specClosingIssues(fc: FeatureContext): Promise<readonly number[] | undefined> {
+  try {
+    const rel = (await _workflowDeps.resolveFeatureSpec(fc.feature, fc.projectDir)).specSource?.path;
+    if (!rel) return undefined;
+    const abs = isAbsolute(rel) ? rel : join(fc.projectDir, rel);
+    const closes = parseClosingIssues(await Bun.file(abs).text());
+    return closes.length > 0 ? closes : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 async function bodyFacts(fc: FeatureContext, input: PublishInput): Promise<WorkflowPrBodyFacts> {
   const r = input.record;
+  const closes = await specClosingIssues(fc);
   return {
     feature: fc.feature,
     stories: input.stories,
@@ -112,6 +134,7 @@ async function bodyFacts(fc: FeatureContext, input: PublishInput): Promise<Workf
     ...(r.finalGateFindings ? { finalGateFindings: r.finalGateFindings } : {}),
     assumptions: await loadAssumptions(input.stories),
     openItems: buildOpenItems(r),
+    ...(closes ? { closes } : {}),
   };
 }
 

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { cleanupTempDir, makeAdviceDecision, makeFeatureContext, makeTempDir, withWarnSpy } from "@test/helpers";
 import type { Advisor } from "@/advisor";
@@ -69,6 +70,11 @@ interface WireOpts {
   ledgerThrowsAt?: number;
   /** 1-based `commitAndPush` call that throws instead of pushing. */
   pushThrowsAt?: number;
+  /**
+   * What `_workflowDeps.resolveFeatureSpec` answers (US-007): `{ path }` for a resolved spec, `null`
+   * for no spec source, an Error to reject. Absent leaves the real resolver wired.
+   */
+  spec?: { path: string } | null | Error;
 }
 
 /** Wires every forge-side dep; returns the call log. */
@@ -110,6 +116,13 @@ function wire(opts: WireOpts = {}) {
   }
   _featureDeps.openOrPromotePr = fakePromote;
   _workflowDeps.readTrustedDecisions = async () => [];
+  if (opts.spec !== undefined) {
+    const spec = opts.spec;
+    _workflowDeps.resolveFeatureSpec = async () => {
+      if (spec instanceof Error) throw spec;
+      return { specSource: spec };
+    };
+  }
   return calls;
 }
 
@@ -518,5 +531,74 @@ describe("publish commits the ledger (US-003)", () => {
     });
     expect(calls.filter((c) => c.name === "push")).toHaveLength(1);
     expect(out).toMatchObject({ outcome: "draft", ci: "green" });
+  });
+});
+
+/** US-007: the draft PR body names the issues the feature spec declares with `Closes:`. */
+describe("publish names the spec's closing issues (US-007)", () => {
+  const SPEC = "docs/specs/SPEC-pre-release-hardening.md";
+
+  /** A project dir holding `text` at SPEC, registered for cleanup; `null` writes no file. */
+  async function projectWithSpec(text: string | null): Promise<string> {
+    const dir = makeTempDir("wf-closes-");
+    dirs.push(dir);
+    if (text === null) return dir;
+    await mkdir(join(dir, "docs", "specs"), { recursive: true });
+    await Bun.write(join(dir, SPEC), text);
+    return dir;
+  }
+
+  const draftBody = (calls: readonly Call[]) => String(calls.find((c) => c.name === "draft")?.arg);
+
+  test("AC-10: a spec holding Closes: #41, #42 renders both lines in the draft body", async () => {
+    const dir = await projectWithSpec("# Spec\n\nCloses: #41, #42\n");
+    const calls = wire({ ci: "green", spec: { path: SPEC } });
+    await publish(makeFeatureContext({ projectDir: dir }), input());
+    const body = draftBody(calls);
+    expect(body).toContain("Closes #41\nCloses #42");
+    expect(body.indexOf("## Closes")).toBeGreaterThan(body.indexOf("## Summary"));
+    expect(body.indexOf("## Closes")).toBeLessThan(body.indexOf("## Stories"));
+  });
+
+  test("AC-11: a resolver that rejects builds the body without a Closes section", async () => {
+    const calls = wire({ ci: "green", spec: new Error("no spec source for feature f") });
+    await publish(makeFeatureContext(), input());
+    const body = draftBody(calls);
+    expect(body).not.toContain("## Closes");
+    expect(body).toContain("## Stories");
+  });
+
+  test("AC-12: no spec source builds the body without a Closes section", async () => {
+    const calls = wire({ ci: "green", spec: null });
+    await publish(makeFeatureContext(), input());
+    const body = draftBody(calls);
+    expect(body).not.toContain("## Closes");
+    expect(body).toContain("## Stories");
+  });
+
+  test("AC-13: a resolved spec path that is not on disk builds the body without a Closes section", async () => {
+    const dir = await projectWithSpec(null);
+    // The premise: the path the resolver reports really cannot be read.
+    await expect(Bun.file(join(dir, SPEC)).text()).rejects.toThrow();
+    const calls = wire({ ci: "green", spec: { path: SPEC } });
+    await publish(makeFeatureContext({ projectDir: dir }), input());
+    const body = draftBody(calls);
+    expect(body).not.toContain("## Closes");
+    expect(body).toContain("## Stories");
+  });
+
+  test("AC-14: an unreadable spec file builds the body without a Closes section", async () => {
+    // The path exists but cannot be read as text (EISDIR). A directory is used rather than a
+    // `chmod 000` file because that denial is a no-op for a root user; a directory read fails for
+    // every user, and the premise assertion below pins it.
+    const dir = await projectWithSpec(null);
+    await mkdir(join(dir, SPEC), { recursive: true });
+    // The premise: the resolved path exists and the read fails anyway.
+    await expect(Bun.file(join(dir, SPEC)).text()).rejects.toThrow();
+    const calls = wire({ ci: "green", spec: { path: SPEC } });
+    await publish(makeFeatureContext({ projectDir: dir }), input());
+    const body = draftBody(calls);
+    expect(body).not.toContain("## Closes");
+    expect(body).toContain("## Stories");
   });
 });
