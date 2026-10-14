@@ -18,7 +18,7 @@ import { hostname } from "node:os";
 import path from "node:path";
 import { isProcessAlive } from "@nathapp/nax-agent/internal";
 import { NaxError } from "../errors";
-import { getLogger } from "../logger";
+import { getSafeLogger } from "../logger";
 import { tryExclusiveCreate } from "./lock";
 
 /** Two hours — the cross-host reclaim/suspect threshold. */
@@ -92,15 +92,6 @@ export type FeatureLockResult =
         timestamp: number;
       };
     };
-
-/** Safely get logger instance, returns null if not initialized. */
-function getSafeLogger() {
-  try {
-    return getLogger();
-  } catch {
-    return null;
-  }
-}
 
 /**
  * Resolve the on-disk path to the feature lock file.
