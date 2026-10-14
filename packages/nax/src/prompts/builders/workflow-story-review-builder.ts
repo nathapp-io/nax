@@ -14,7 +14,7 @@ function naxCheckedBlock(gates: WorkflowStoryGateStates): string {
   const state = (name: "lint" | "typecheck" | "scoped"): string => gates[name] ?? "not run";
   return `## What nax already checked
 nax ran these gates on this story before your review: lint ${state("lint")}, typecheck ${state("typecheck")}, scoped tests ${state("scoped")}.
-After your review nax runs the full test suite on this story, and once every story is done it runs the repository gates. Do not list any of these as something you could not verify.
+After your review nax runs the full test suite on this story, and once every story is done it runs the repository gates. Both run only when the workflow reaches them: a red gate, or a finding left open, can end the story before the suite. Do not list any of these as something you could not verify; if nax never reached one, that is a real gap, so say so in "cannotVerify" and name it.
 If you have a shell tool, run this story's own test files with one scoped test command before you give the spec verdict.`;
 }
 

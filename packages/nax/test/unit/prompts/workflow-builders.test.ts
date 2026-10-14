@@ -221,6 +221,18 @@ ${WORKFLOW_REPLY_CONTRACT}`);
     );
   });
 
+  // F1 (fix round 1): the suite is conditional — a red gate or an open finding ends the story first,
+  // so a gate nax never reached stays reportable instead of being suppressed.
+  test("story review qualifies the suite as conditional and keeps an unreached gate reportable (F1)", () => {
+    const text = buildWorkflowStoryReviewPrompt(storyReviewBase);
+    expect(text).toContain(
+      "Both run only when the workflow reaches them: a red gate, or a finding left open, can end the story before the suite.",
+    );
+    expect(text).toContain(
+      'Do not list any of these as something you could not verify; if nax never reached one, that is a real gap, so say so in "cannotVerify" and name it.',
+    );
+  });
+
   test("story review expects one scoped command over the story's own tests (AC-7)", () => {
     expect(buildWorkflowStoryReviewPrompt(storyReviewBase)).toContain(
       "run this story's own test files with one scoped test command",
