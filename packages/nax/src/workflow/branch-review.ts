@@ -15,9 +15,10 @@ import { _workflowDeps } from "./step-context";
 import { type ReviewOutcome, underReviewLimit } from "./story-review";
 import type { BranchReviewVerdict, ReReviewVerdict, WorkflowFinding } from "./types";
 
+/** US-006 (nax#2527): `repoGates` is the repo-gate summary the branch reviewer is told about. */
 export type BranchReviewFacts = Pick<
   BranchReviewPromptInput,
-  "stories" | "minors" | "parked" | "cannotVerify" | "gateFindings"
+  "stories" | "minors" | "parked" | "cannotVerify" | "gateFindings" | "repoGates"
 >;
 
 /** Feature artifacts are best effort: a write failure is logged and the step goes on. */

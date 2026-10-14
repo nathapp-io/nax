@@ -86,6 +86,7 @@ export {
   WORKFLOW_REPLY_CONTRACT,
 } from "./builders/workflow-implementer-builder";
 export { buildWorkflowReReviewPrompt } from "./builders/workflow-re-review-builder";
+export type { WorkflowStoryGateStates } from "./builders/workflow-story-review-builder";
 export {
   buildWorkflowReviewJsonRetry,
   buildWorkflowReviewJsonRetryCondensed,

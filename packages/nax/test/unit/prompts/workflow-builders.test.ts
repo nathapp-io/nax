@@ -189,6 +189,60 @@ ${WORKFLOW_REPLY_CONTRACT}`);
     expect(text).toContain("only in this fix diff");
   });
 
+  // US-006 (nax#2527): the story reviewer sees nax's own gate results, so "not re-run" reads as a real gap.
+  const storyReviewBase = { briefPath: "/b.md", reportPath: "/r.md", packagePath: "/p.diff", concerns: [] };
+
+  test("story review states the recorded gate results (AC-1)", () => {
+    const text = buildWorkflowStoryReviewPrompt({
+      ...storyReviewBase,
+      gates: { lint: "green", typecheck: "green", scoped: "green" },
+    });
+    expect(text).toContain("lint green, typecheck green, scoped tests green");
+  });
+
+  test("story review renders a gate with no recorded state as not run (AC-2)", () => {
+    const text = buildWorkflowStoryReviewPrompt(storyReviewBase);
+    expect(text).toContain("lint not run, typecheck not run, scoped tests not run");
+  });
+
+  test("story review names a skipped gate (AC-4)", () => {
+    expect(buildWorkflowStoryReviewPrompt({ ...storyReviewBase, gates: { scoped: "skipped" } })).toContain(
+      "scoped tests skipped",
+    );
+  });
+
+  test("story review names a red gate (AC-5)", () => {
+    expect(buildWorkflowStoryReviewPrompt({ ...storyReviewBase, gates: { lint: "red" } })).toContain("lint red");
+  });
+
+  test("story review says which gates run after it (AC-6)", () => {
+    expect(buildWorkflowStoryReviewPrompt(storyReviewBase)).toContain(
+      "After your review nax runs the full test suite on this story",
+    );
+  });
+
+  test("story review expects one scoped command over the story's own tests (AC-7)", () => {
+    expect(buildWorkflowStoryReviewPrompt(storyReviewBase)).toContain(
+      "run this story's own test files with one scoped test command",
+    );
+  });
+
+  test("story review replaces the open-ended cannotVerify sentence (AC-8)", () => {
+    expect(buildWorkflowStoryReviewPrompt(storyReviewBase)).not.toContain("Put anything you could not check in");
+  });
+
+  test("story review narrows cannotVerify to what neither the gates nor a scoped command can check (AC-9)", () => {
+    expect(buildWorkflowStoryReviewPrompt(storyReviewBase)).toContain(
+      "only what neither nax's gates nor a scoped command can check",
+    );
+  });
+
+  test("story review requires the command and error behind an unavailability claim (AC-18)", () => {
+    expect(buildWorkflowStoryReviewPrompt(storyReviewBase)).toContain(
+      "Say a tool or service is unavailable only together with the command you ran and the error it returned; otherwise say what you did not try.",
+    );
+  });
+
   // US-004 (nax#2524): the third verdict, the residual it must carry, and the dedupe it enables.
   test("re-review offers PARTIAL with a residual and forbids restating it in newFindings (AC-21)", () => {
     const text = buildWorkflowReReviewPrompt({

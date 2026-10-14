@@ -8,7 +8,7 @@ import { stepSignal } from "@/utils/step-signal";
 import { writeReviewPackage } from "./git";
 import type { StepContext } from "./step-context";
 import { _workflowDeps } from "./step-context";
-import type { StoryReviewVerdict } from "./types";
+import type { GateName, GateState, StoryReviewVerdict } from "./types";
 
 export type ReviewOutcome<V> =
   | { readonly ran: true; readonly verdict: V }
@@ -53,9 +53,14 @@ export async function writeVerdictSafe(sc: StepContext, file: string, verdict: u
   }
 }
 
+/**
+ * US-006 (nax#2527): `gates` are the story's recorded gate states, so the prompt states what nax
+ * already checked. Optional — an existing two-argument caller keeps working and renders `not run`.
+ */
 export async function runStoryReview(
   sc: StepContext,
   concerns: readonly string[],
+  gates: Readonly<Partial<Record<GateName, GateState>>> = {},
 ): Promise<ReviewOutcome<StoryReviewVerdict>> {
   const packagePath = join(sc.storyDir, "package-0.diff");
   const prompt = buildWorkflowStoryReviewPrompt({
@@ -63,6 +68,7 @@ export async function runStoryReview(
     reportPath: sc.reportPath,
     packagePath,
     concerns,
+    gates,
   });
   const outcome = await underReviewLimit(
     sc,

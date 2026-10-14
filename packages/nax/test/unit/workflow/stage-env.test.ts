@@ -5,6 +5,7 @@ import {
   makeMockCallContext,
   makeMockRuntime,
   makeNaxConfig,
+  makeScriptedCallOp,
   makeTempDir,
   makeTestContext,
 } from "@test/helpers";
@@ -178,6 +179,25 @@ describe("buildStoryEnv", () => {
     const { ctx } = setup();
     const { sc } = await buildStoryEnv(ctx, makeMockCallContext());
     expect(sc.outputDir).toBe(ctx.runtime.outputDir);
+  });
+
+  // US-006 (nax#2527): the loop's gate states survive the timed/toolErrors adapters into the prompt.
+  test("the storyReview step forwards the loop's gate states into the review prompt", async () => {
+    const { ctx } = setup();
+    const { env } = await buildStoryEnv(ctx, makeMockCallContext());
+    const seen: unknown[] = [];
+    const original = { ..._workflowDeps };
+    _workflowDeps.callOp = makeScriptedCallOp((_op, input) => {
+      seen.push(input);
+      return { spec: "pass", quality: "approved", findings: [], cannotVerify: [], inspectedFiles: [] };
+    });
+    _workflowDeps.git = async () => ({ stdout: "", exitCode: 0 });
+    try {
+      await env.steps.storyReview([], { lint: "red" });
+    } finally {
+      Object.assign(_workflowDeps, original);
+    }
+    expect((seen[0] as { prompt: string }).prompt).toContain("lint red");
   });
 
   test("env.advisor is the live advisor: an implementer question reaches createAdvisor", async () => {

@@ -8,5 +8,7 @@ describe("reviewerCommandsSection (nax#2500)", () => {
     expect(s.overridable).toBe(false);
     expect(s.content).toContain("check mode");
     expect(s.content).toContain("reverted");
+    // US-006 (nax#2527): unchanged — the workflow story/branch prompts carry the gate results themselves.
+    expect(s.content).toContain("you may run commands");
   });
 });

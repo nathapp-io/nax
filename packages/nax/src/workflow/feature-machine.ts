@@ -147,6 +147,8 @@ function reviewFacts(env: FeatureEnv, rec: WorkflowFeatureRecord): BranchReviewF
     parked: env.facts.parked,
     cannotVerify: env.facts.cannotVerify,
     gateFindings: rec.gateFindings,
+    // US-006 (nax#2527): a record with no repo gates yet reads as "not run", never as green.
+    repoGates: rec.repoGates ?? { ran: [], failing: [] },
   };
 }
 

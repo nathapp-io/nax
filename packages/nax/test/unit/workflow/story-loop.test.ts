@@ -3,7 +3,7 @@ import { defaultWorkflowAdvisor } from "@/workflow/advisor";
 import type { ImplementOutcome, ImplementTurn } from "@/workflow/implement";
 import { newStoryRecord } from "@/workflow/result";
 import { runStoryLoop, type StoryLoopEnv, type StoryLoopSteps, turnLabel } from "@/workflow/story-loop";
-import type { GateRunResult, StoryReviewVerdict, WorkflowStoryRecord } from "@/workflow/types";
+import type { GateName, GateRunResult, GateState, StoryReviewVerdict, WorkflowStoryRecord } from "@/workflow/types";
 
 const GREEN: GateRunResult = {
   red: false,
@@ -55,6 +55,7 @@ interface Script {
 function harness(script: Script, over: Partial<StoryLoopEnv> = {}) {
   const turns: ImplementTurn[] = [];
   const ledger: string[] = [];
+  const reviewGates: (Readonly<Partial<Record<GateName, GateState>>> | undefined)[] = [];
   let record: WorkflowStoryRecord = newStoryRecord("US-001", over.maxFixRounds ?? 5, "t");
   const gates = [...(script.gates ?? [])];
   const suites = [...(script.suite ?? [])];
@@ -68,7 +69,8 @@ function harness(script: Script, over: Partial<StoryLoopEnv> = {}) {
     },
     gates: async () => gates.shift() ?? GREEN,
     fullSuite: async () => suites.shift() ?? SUITE_GREEN,
-    storyReview: async () => {
+    storyReview: async (_concerns, gateStates) => {
+      reviewGates.push(gateStates);
       const v = reviews.length > 0 ? reviews.shift() : pass;
       return v === null || v === undefined ? { ran: false, why: "unparseable reply" } : { ran: true, verdict: v };
     },
@@ -99,7 +101,7 @@ function harness(script: Script, over: Partial<StoryLoopEnv> = {}) {
     resume: null,
     ...over,
   };
-  return { env, turns, ledger, record: () => record };
+  return { env, turns, ledger, reviewGates, record: () => record };
 }
 
 const fixTurns = (turns: ImplementTurn[]) =>
@@ -426,6 +428,14 @@ describe("runStoryLoop", () => {
     expect(h.ledger.filter((l) => l.startsWith("deferred-minor:"))).toHaveLength(1);
     expect(h.record().deferredMinors).toBe(1);
     expect(out.state).toBe("complete");
+  });
+});
+
+describe("story review gate context (US-006)", () => {
+  test("the gate states the loop already recorded reach storyReview (AC-10)", async () => {
+    const h = harness({});
+    await runStoryLoop(h.env);
+    expect(h.reviewGates[0]).toEqual({ lint: "green", typecheck: "green", scoped: "green" });
   });
 });
 

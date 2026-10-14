@@ -16,6 +16,11 @@ export interface BranchReviewPromptInput {
   readonly parked: readonly { readonly storyId: string; readonly text: string }[];
   readonly cannotVerify: readonly { readonly storyId: string; readonly text: string }[];
   readonly gateFindings: readonly WorkflowPromptFinding[];
+  /**
+   * US-006 (nax#2527): the repo gates nax ran before this review. Structurally the workflow
+   * module's `RepoGateSummary`, declared inline so this builder imports nothing from `@/workflow`.
+   */
+  readonly repoGates?: { readonly ran: readonly string[]; readonly failing: readonly string[] };
 }
 
 const NONE = "(none)";
@@ -23,6 +28,21 @@ const NONE = "(none)";
 function bullets(lines: readonly string[]): string {
   return lines.length > 0 ? lines.map((l) => `- ${l}`).join("\n") : NONE;
 }
+
+const listOr = (items: readonly string[], empty: string): string => (items.length > 0 ? items.join(", ") : empty);
+
+/** What nax itself checked on the branch before this review, and what it runs after it. */
+function naxCheckedBlock(repoGates: BranchReviewPromptInput["repoGates"]): string {
+  const ran = listOr(repoGates?.ran ?? [], "not run");
+  const failing = listOr(repoGates?.failing ?? [], "none");
+  return `## What nax already checked
+Repository gates before this review: ${ran}; failing: ${failing}.
+nax runs them again after the branch fix. Do not list any of these as something you could not verify.`;
+}
+
+/** The narrowed cannotVerify rule and the evidence rule behind an unavailability claim (US-006, nax#2531). */
+const CANNOT_VERIFY_RULE = `Put in "cannotVerify" only what neither nax's gates nor a scoped command can check, such as behaviour that needs a live external service.
+Say a tool or service is unavailable only together with the command you ran and the error it returned; otherwise say what you did not try.`;
 
 function storyLines(input: BranchReviewPromptInput): string {
   return bullets(input.stories.map((s) => `${s.id}: ${s.state}${s.note ? ` (${s.note})` : ""}`));
@@ -54,6 +74,8 @@ ${bullets(input.cannotVerify.map((c) => `${c.storyId}: ${c.text}`))}
 ## Deferred minor findings (triage each one)
 ${input.minors.length > 0 ? input.minors.map((m) => `[${m.id}] ${m.storyId}: ${m.text}`).join("\n") : NONE}
 
+${naxCheckedBlock(input.repoGates)}
+
 ## Your remit
 - Cross-story integration and contracts: do the stories fit together, do callers and callees agree, is shared state consistent?
 - Reachability: is every new piece wired in and reachable from where the spec says it is used?
@@ -62,7 +84,7 @@ ${input.minors.length > 0 ? input.minors.map((m) => `[${m.id}] ${m.storyId}: ${m
 - Triage each deferred minor as "fix-now" (cheap and worth doing before the PR) or "leave".
 Do not re-review each story line by line; the story reviews did that, each from its own diff, so a contract that spans two stories is yours to check.
 
-Severity: "critical" (wrong or unsafe behaviour), "important" (must fix before the PR), "minor" (worth noting, not blocking). Put anything you could not check in "cannotVerify".
+Severity: "critical" (wrong or unsafe behaviour), "important" (must fix before the PR), "minor" (worth noting, not blocking). ${CANNOT_VERIFY_RULE}
 
 Reply with only this JSON object:
 ${REVIEW_JSON}`;

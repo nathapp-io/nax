@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { BranchFixOutcome } from "@/workflow/branch-fix";
+import type { BranchReviewFacts } from "@/workflow/branch-review";
 import { type FeatureEnv, type FeatureSteps, runFeatureMachine } from "@/workflow/feature-machine";
 import { newFeatureRecord } from "@/workflow/feature-record";
 import type { PublishOutcome } from "@/workflow/finalize";
@@ -67,6 +68,7 @@ function harness(
   const stepsSeen: FeatureStep[] = [];
   const updates: WorkflowFeatureRecord[] = [];
   const fixInputs: (readonly WorkflowFinding[])[] = [];
+  const reviewFacts: BranchReviewFacts[] = [];
   const reReviewInputs: (readonly WorkflowFinding[])[] = [];
   const adjudicated: (readonly WorkflowFinding[])[] = [];
   const gates = [...(script.gates ?? [])];
@@ -77,8 +79,9 @@ function harness(
       calls.push("repoGates");
       return gates.shift() ?? GREEN;
     },
-    branchReview: async (seed) => {
+    branchReview: async (seed, facts) => {
       calls.push(`branchReview:${seed}`);
+      reviewFacts.push(facts);
       const v = script.review === undefined ? PASS : script.review;
       return v === null ? { ran: false, why: "unparseable reply" } : { ran: true, verdict: v };
     },
@@ -144,10 +147,22 @@ function harness(
     aborted: () => over.aborted === true,
     now: () => (clock += 5),
   };
-  return { env, calls, ledger, artifacts, stepsSeen, updates, fixInputs, reReviewInputs, adjudicated };
+  return { env, calls, ledger, artifacts, stepsSeen, updates, fixInputs, reviewFacts, reReviewInputs, adjudicated };
 }
 
 describe("runFeatureMachine", () => {
+  // US-006 (nax#2527): the branch reviewer sees the repo gates the record already holds.
+  test("the record's repo gates reach the branch review facts (AC-16)", async () => {
+    const record: WorkflowFeatureRecord = {
+      ...newFeatureRecord({ now: "t", seed: "seed0", minors: [] }),
+      step: "branch-review",
+      repoGates: { ran: ["lint"], failing: [] },
+    };
+    const h = harness({}, { record });
+    await runFeatureMachine(h.env);
+    expect(h.reviewFacts[0]?.repoGates).toEqual({ ran: ["lint"], failing: [] });
+  });
+
   test("branch-review.json carries the same B-ids as the record; cannot-verify kept (#2496)", async () => {
     const review: BranchReviewVerdict = {
       ...PASS,

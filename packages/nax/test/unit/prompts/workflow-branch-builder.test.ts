@@ -66,6 +66,50 @@ describe("buildWorkflowBranchReviewPrompt", () => {
     expect(empty).toContain("(none)");
     expect(empty).not.toContain("preflight.json");
   });
+
+  // US-006 (nax#2527): the branch reviewer sees the repo-gate summary nax already recorded.
+  const gateBase = {
+    prdPath: "p",
+    packagePath: "k",
+    stories: [],
+    minors: [],
+    parked: [],
+    cannotVerify: [],
+    gateFindings: [],
+  };
+
+  test("states the repo gates that ran before this review (AC-12)", () => {
+    const text = buildWorkflowBranchReviewPrompt({
+      ...gateBase,
+      repoGates: { ran: ["build", "test"], failing: [] },
+    });
+    expect(text).toContain("Repository gates before this review: build, test; failing: none.");
+  });
+
+  test("names the failing repo gates (AC-13)", () => {
+    const text = buildWorkflowBranchReviewPrompt({
+      ...gateBase,
+      repoGates: { ran: ["build", "test"], failing: ["test"] },
+    });
+    expect(text).toContain("failing: test.");
+  });
+
+  test("no repo-gate summary reads as not run (AC-14)", () => {
+    expect(buildWorkflowBranchReviewPrompt(gateBase)).toContain(
+      "Repository gates before this review: not run; failing: none.",
+    );
+  });
+
+  test("narrows cannotVerify to what neither the gates nor a scoped command can check (AC-15)", () => {
+    const text = buildWorkflowBranchReviewPrompt(gateBase);
+    expect(text).toContain("only what neither nax's gates nor a scoped command can check");
+  });
+
+  test("requires the command and error behind an unavailability claim (AC-19)", () => {
+    expect(buildWorkflowBranchReviewPrompt(gateBase)).toContain(
+      "Say a tool or service is unavailable only together with the command you ran and the error it returned; otherwise say what you did not try.",
+    );
+  });
 });
 
 describe("buildWorkflowBranchReReviewPrompt", () => {

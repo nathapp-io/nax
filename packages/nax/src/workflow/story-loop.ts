@@ -15,6 +15,7 @@ import type { ReviewOutcome } from "./story-review";
 import type {
   GateName,
   GateRunResult,
+  GateState,
   ReReviewVerdict,
   StoryReviewVerdict,
   WorkflowEndState,
@@ -31,7 +32,14 @@ export interface StoryLoopSteps {
   implement(turn: ImplementTurn): Promise<ImplementOutcome>;
   gates(): Promise<GateRunResult>;
   fullSuite(): Promise<GateRunResult>;
-  storyReview(concerns: readonly string[]): Promise<ReviewOutcome<StoryReviewVerdict>>;
+  /**
+   * US-006 (nax#2527): `gates` is the states the loop already recorded, so the reviewer prompt
+   * states what nax checked. Optional so a caller that never ran the gates still compiles.
+   */
+  storyReview(
+    concerns: readonly string[],
+    gates?: Readonly<Partial<Record<GateName, GateState>>>,
+  ): Promise<ReviewOutcome<StoryReviewVerdict>>;
   reReview(
     round: number,
     findings: readonly WorkflowFinding[],
@@ -175,7 +183,7 @@ async function absorbTurn(
 async function review(env: StoryLoopEnv, s: LoopState): Promise<void> {
   if (!s.reviewed) {
     const step = startStep(env.storyId, "story-review", { model: env.steps.modelFor?.("story-review") });
-    const out: ReviewOutcome<StoryReviewVerdict> = await env.steps.storyReview(s.concerns);
+    const out: ReviewOutcome<StoryReviewVerdict> = await env.steps.storyReview(s.concerns, s.gates?.states);
     s.reviewed = true;
     if (!out.ran) {
       step.done(`skipped (${out.why})`);
