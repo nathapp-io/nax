@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { randomUUID } from "node:crypto";
-import { mkdir, rm } from "node:fs/promises";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import type { RunOptions } from "@/execution/runner";
 import { run } from "@/execution/runner";
@@ -56,8 +55,7 @@ describe("execution runner", () => {
     ]);
 
     // Create temporary PRD file
-    const tmpDir = `/tmp/nax-test-${randomUUID()}`;
-    await mkdir(tmpDir, { recursive: true });
+    const tmpDir = makeTempDir();
     const prdPath = `${tmpDir}/prd.json`;
     await Bun.write(prdPath, JSON.stringify(prd, null, 2));
 
@@ -78,7 +76,7 @@ describe("execution runner", () => {
     expect(result.success).toBe(true); // Dry run marks stories as passed and completes
 
     // Cleanup
-    await rm(tmpDir, { recursive: true, force: true });
+    cleanupTempDir(tmpDir);
   });
 
   test("chooses three-session-tdd strategy for complex tasks", async () => {
@@ -98,8 +96,7 @@ describe("execution runner", () => {
       },
     ]);
 
-    const tmpDir = `/tmp/nax-test-${randomUUID()}`;
-    await mkdir(tmpDir, { recursive: true });
+    const tmpDir = makeTempDir();
     const prdPath = `${tmpDir}/prd.json`;
     await Bun.write(prdPath, JSON.stringify(prd, null, 2));
 
@@ -119,7 +116,7 @@ describe("execution runner", () => {
     expect(result.iterations).toBeGreaterThan(0);
 
     // Cleanup
-    await rm(tmpDir, { recursive: true, force: true });
+    cleanupTempDir(tmpDir);
   });
 
   test("escalates model tier on failure", async () => {
@@ -139,8 +136,7 @@ describe("execution runner", () => {
       },
     ]);
 
-    const tmpDir = `/tmp/nax-test-${randomUUID()}`;
-    await mkdir(tmpDir, { recursive: true });
+    const tmpDir = makeTempDir();
     const prdPath = `${tmpDir}/prd.json`;
     await Bun.write(prdPath, JSON.stringify(prd, null, 2));
 
@@ -173,7 +169,7 @@ describe("execution runner", () => {
     expect(result.iterations).toBeGreaterThan(0);
 
     // Cleanup
-    await rm(tmpDir, { recursive: true, force: true });
+    cleanupTempDir(tmpDir);
   });
 
   test("stops when cost limit reached", async () => {
@@ -194,8 +190,7 @@ describe("execution runner", () => {
       },
     ]);
 
-    const tmpDir = `/tmp/nax-test-${randomUUID()}`;
-    await mkdir(tmpDir, { recursive: true });
+    const tmpDir = makeTempDir();
     const prdPath = `${tmpDir}/prd.json`;
     await Bun.write(prdPath, JSON.stringify(prd, null, 2));
 
@@ -222,7 +217,7 @@ describe("execution runner", () => {
     expect(result.totalCost).toBeLessThanOrEqual(0.001);
 
     // Cleanup
-    await rm(tmpDir, { recursive: true, force: true });
+    cleanupTempDir(tmpDir);
   });
 
   test("marks story as passed on success", async () => {
@@ -236,8 +231,7 @@ describe("execution runner", () => {
       },
     ]);
 
-    const tmpDir = `/tmp/nax-test-${randomUUID()}`;
-    await mkdir(tmpDir, { recursive: true });
+    const tmpDir = makeTempDir();
     const prdPath = `${tmpDir}/prd.json`;
     await Bun.write(prdPath, JSON.stringify(prd, null, 2));
 
@@ -260,7 +254,7 @@ describe("execution runner", () => {
     expect(updatedPRD.userStories).toHaveLength(1);
 
     // Cleanup
-    await rm(tmpDir, { recursive: true, force: true });
+    cleanupTempDir(tmpDir);
   });
 
   // Un-skipped 2026-08-28 by `suspicious/noSkippedTests`, which is the point of
@@ -285,7 +279,7 @@ describe("execution runner", () => {
   //    run-initialization.ts: the preflight is now conditional, so this test
   //    needs no stub and passes with no agent installed.
   test("completes when all stories are done", async () => {
-    const tmpDir = `/tmp/nax-test-${randomUUID()}`;
+    const tmpDir = makeTempDir();
     const prd = createTestPRD([
       {
         id: "US-001",
@@ -305,7 +299,6 @@ describe("execution runner", () => {
       },
     ]);
 
-    await mkdir(tmpDir, { recursive: true });
     const prdPath = `${tmpDir}/prd.json`;
     await Bun.write(prdPath, JSON.stringify(prd, null, 2));
 
@@ -339,7 +332,7 @@ describe("execution runner", () => {
     expect(result.iterations).toBe(0);
     expect(result.storiesCompleted).toBe(0); // Already completed
 
-    await rm(tmpDir, { recursive: true, force: true });
+    cleanupTempDir(tmpDir);
   });
 
   test("escalates entire batch when escalateEntireBatch is true (default)", async () => {
@@ -386,8 +379,7 @@ describe("execution runner", () => {
       },
     ]);
 
-    const tmpDir = `/tmp/nax-test-${randomUUID()}`;
-    await mkdir(tmpDir, { recursive: true });
+    const tmpDir = makeTempDir();
     const prdPath = `${tmpDir}/prd.json`;
     await Bun.write(prdPath, JSON.stringify(prd, null, 2));
 
@@ -420,7 +412,7 @@ describe("execution runner", () => {
     // Real integration testing would require mocking the agent adapter
 
     // Cleanup
-    await rm(tmpDir, { recursive: true, force: true });
+    cleanupTempDir(tmpDir);
   });
 
   test("escalates only first story when escalateEntireBatch is false", async () => {
@@ -467,8 +459,7 @@ describe("execution runner", () => {
       },
     ]);
 
-    const tmpDir = `/tmp/nax-test-${randomUUID()}`;
-    await mkdir(tmpDir, { recursive: true });
+    const tmpDir = makeTempDir();
     const prdPath = `${tmpDir}/prd.json`;
     await Bun.write(prdPath, JSON.stringify(prd, null, 2));
 
@@ -501,7 +492,7 @@ describe("execution runner", () => {
     // Real integration testing would require mocking the agent adapter
 
     // Cleanup
-    await rm(tmpDir, { recursive: true, force: true });
+    cleanupTempDir(tmpDir);
   });
 });
 
@@ -534,8 +525,7 @@ describe("execution runner — lite mode routing", () => {
       },
     ]);
 
-    const tmpDir = `/tmp/nax-test-${randomUUID()}`;
-    await mkdir(tmpDir, { recursive: true });
+    const tmpDir = makeTempDir();
     const prdPath = `${tmpDir}/prd.json`;
     await Bun.write(prdPath, JSON.stringify(prd, null, 2));
 
@@ -557,7 +547,7 @@ describe("execution runner — lite mode routing", () => {
     expect(result.iterations).toBeGreaterThan(0);
 
     // Cleanup
-    await rm(tmpDir, { recursive: true, force: true });
+    cleanupTempDir(tmpDir);
   });
 
   test("config tdd.strategy='lite' routes complex stories to three-session-tdd-lite", async () => {
@@ -637,8 +627,7 @@ describe("execution runner — lite mode routing", () => {
       },
     ]);
 
-    const tmpDir = `/tmp/nax-test-${randomUUID()}`;
-    await mkdir(tmpDir, { recursive: true });
+    const tmpDir = makeTempDir();
     const prdPath = `${tmpDir}/prd.json`;
     await Bun.write(prdPath, JSON.stringify(prd, null, 2));
 
@@ -662,6 +651,6 @@ describe("execution runner — lite mode routing", () => {
     expect(result.success).toBe(true);
 
     // Cleanup
-    await rm(tmpDir, { recursive: true, force: true });
+    cleanupTempDir(tmpDir);
   });
 });

@@ -4,8 +4,8 @@
  */
 
 import { beforeAll, describe, expect, test } from "bun:test";
-import { randomUUID } from "node:crypto";
 import { join } from "node:path";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { scanCodebase } from "@/analyze/scanner";
 import type { CodebaseScan } from "@/analyze/types";
 
@@ -45,17 +45,24 @@ describe("scanCodebase", () => {
   });
 
   test("handles missing src directory", async () => {
-    const workdir = `/tmp/nax-test-no-src-${randomUUID()}`;
+    // A real temp dir with no `src/` in it. `makeTempDir()` resolves through
+    // `os.tmpdir()`, so it follows `$TMPDIR` under the confined runner — a
+    // literal `/tmp/...` path is unwritable there.
+    const workdir = makeTempDir("nax-test-no-src-");
 
-    // Create temp dir without src/
-    await Bun.write(join(workdir, "package.json"), JSON.stringify({}));
+    try {
+      // Create temp dir without src/
+      await Bun.write(join(workdir, "package.json"), JSON.stringify({}));
 
-    const scan = await scanCodebase(workdir);
+      const scan = await scanCodebase(workdir);
 
-    // Should return placeholder for missing src
-    expect(scan.fileTree).toBe("No src/ directory");
-    expect(scan.dependencies).toEqual({});
-    expect(scan.devDependencies).toEqual({});
+      // Should return placeholder for missing src
+      expect(scan.fileTree).toBe("No src/ directory");
+      expect(scan.dependencies).toEqual({});
+      expect(scan.devDependencies).toEqual({});
+    } finally {
+      cleanupTempDir(workdir);
+    }
   });
 
   test("extracts dependencies from package.json", () => {

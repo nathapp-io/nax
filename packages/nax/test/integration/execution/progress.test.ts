@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { chmodSync } from "node:fs";
-import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { appendProgress } from "@/execution";
@@ -8,8 +7,7 @@ import { getLogger, initLogger, resetLogger } from "@/logger";
 
 describe("appendProgress", () => {
   test("creates progress.txt and appends entry", async () => {
-    const tmpDir = `/tmp/nax-progress-${Date.now()}`;
-    await mkdir(tmpDir, { recursive: true });
+    const tmpDir = makeTempDir("nax-progress-");
 
     await appendProgress(tmpDir, "US-001", "passed", "Add login endpoint — Cost: $0.0200");
 
@@ -18,12 +16,11 @@ describe("appendProgress", () => {
     expect(content).toContain("PASSED");
     expect(content).toContain("Add login endpoint");
 
-    await rm(tmpDir, { recursive: true, force: true });
+    cleanupTempDir(tmpDir);
   });
 
   test("appends multiple entries", async () => {
-    const tmpDir = `/tmp/nax-progress-multi-${Date.now()}`;
-    await mkdir(tmpDir, { recursive: true });
+    const tmpDir = makeTempDir("nax-progress-multi-");
 
     await appendProgress(tmpDir, "US-001", "passed", "First story done");
     await appendProgress(tmpDir, "US-002", "failed", "Second story failed");
@@ -34,7 +31,7 @@ describe("appendProgress", () => {
     expect(lines[0]).toContain("PASSED");
     expect(lines[1]).toContain("FAILED");
 
-    await rm(tmpDir, { recursive: true, force: true });
+    cleanupTempDir(tmpDir);
   });
 });
 

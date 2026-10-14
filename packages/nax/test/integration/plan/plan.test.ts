@@ -9,8 +9,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { existsSync } from "node:fs";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import {
   assertDefined,
@@ -29,7 +28,7 @@ describe("planCommand", () => {
   let tmpDir: string;
 
   beforeEach(async () => {
-    tmpDir = `/tmp/nax-plan-${Date.now()}`;
+    tmpDir = makeTempDir("nax-plan-");
     await mkdir(`${tmpDir}/nax`, { recursive: true });
     await mkdir(`${tmpDir}/src`, { recursive: true });
 
@@ -47,21 +46,18 @@ describe("planCommand", () => {
     await Bun.write(`${tmpDir}/src/index.ts`, "export const app = {};\n");
   });
 
-  afterEach(async () => {
-    if (existsSync(tmpDir)) {
-      await rm(tmpDir, { recursive: true, force: true });
-    }
+  afterEach(() => {
+    cleanupTempDir(tmpDir);
   });
 
   test("throws when nax not initialized", async () => {
-    const emptyDir = `/tmp/nax-plan-empty-${Date.now()}`;
-    await mkdir(emptyDir, { recursive: true });
+    const emptyDir = makeTempDir("nax-plan-empty-");
 
     expect(planCommand(emptyDir, DEFAULT_CONFIG, { from: "spec.md", feature: "add-feature-x" })).rejects.toThrow(
       "nax directory not found",
     );
 
-    await rm(emptyDir, { recursive: true, force: true });
+    cleanupTempDir(emptyDir);
   });
 
   test("validates config.plan settings", () => {

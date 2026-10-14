@@ -41,6 +41,7 @@ import {
 import {
   assertDefined,
   cleanupTempDir,
+  isConfinedTestRun,
   makeNaxConfig,
   makePluginRegistry,
   makePRD,
@@ -58,7 +59,15 @@ const DECLARED = ["Bash"] as const;
 /** The ledger session name the dispatch derives for a story + role. */
 const SESSION_NAME = "US-2300-implementer";
 
-describe("#2300 — the run temp root dispatch creates is the root cleanupRun wipes", () => {
+/**
+ * Skipped in a confined test run: the subject is the SHARED `/tmp/nax` parent,
+ * which the confined sandbox withholds (`/tmp` is a denied write root there);
+ * `stubSessionTmpDeps(_sessionTmpDeps, { parent: "ENOENT" })` below is what
+ * pins the parent for the host run. There is no confined equivalent of this
+ * assertion — the run's own temp root lives elsewhere inside the sandbox — so
+ * the suite skips rather than asserting a path the sandbox denies.
+ */
+describe.skipIf(isConfinedTestRun())("#2300 — the run temp root dispatch creates is the root cleanupRun wipes", () => {
   withDepsRestore(_sessionSandboxDeps);
   withSessionSandboxSeam(_sessionSandboxDeps);
   withDepsRestore(_sessionTmpDeps);

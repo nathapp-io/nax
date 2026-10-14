@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { randomUUID } from "node:crypto";
 import * as fs from "node:fs/promises";
 import { resolve } from "node:path";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { _resetPluginErrorSink, _setPluginErrorSink, loadPlugins as loadPluginsWithBuiltins } from "@/plugins/loader";
 
 const DISABLE_BUILTIN_PLUGINS = ["nax-curator", "nax-auto-pr"];
@@ -19,13 +19,19 @@ function loadPlugins(...args: Parameters<typeof loadPluginsWithBuiltins>): Retur
 }
 
 describe("Loader Security (SEC-1, SEC-2)", () => {
-  const projectRoot = `/tmp/nax-sec-test-${randomUUID()}`;
-  const projectPluginsDir = resolve(projectRoot, ".nax/plugins");
-  const globalPluginsDir = resolve(projectRoot, ".nax/global-plugins");
+  // A real temp root: `makeTempDir()` resolves through `os.tmpdir()`, so the
+  // plugin fixture dirs follow `$TMPDIR` under the confined runner — a literal
+  // `/tmp/...` root is unwritable there.
+  let projectRoot: string;
+  let projectPluginsDir: string;
+  let globalPluginsDir: string;
 
   let capturedErrors: string[] = [];
 
   beforeEach(async () => {
+    projectRoot = makeTempDir("nax-sec-test-");
+    projectPluginsDir = resolve(projectRoot, ".nax/plugins");
+    globalPluginsDir = resolve(projectRoot, ".nax/global-plugins");
     await fs.mkdir(projectPluginsDir, { recursive: true });
     await fs.mkdir(globalPluginsDir, { recursive: true });
     capturedErrors = [];
@@ -34,8 +40,8 @@ describe("Loader Security (SEC-1, SEC-2)", () => {
     });
   });
 
-  afterEach(async () => {
-    await fs.rm(projectRoot, { recursive: true, force: true });
+  afterEach(() => {
+    cleanupTempDir(projectRoot);
     _resetPluginErrorSink();
   });
 

@@ -5,12 +5,14 @@
  * runner-parallel-metrics-rectification-events.test.ts.
  */
 
+import { join } from "node:path";
 import {
   makeDispatchContext,
   makePluginRegistry,
   makePRD,
   makeStatusWriter,
   makeStory,
+  makeTempDir,
   makeTestRuntime,
 } from "@test/helpers";
 import type { NaxConfig } from "@/config";
@@ -21,6 +23,21 @@ import type { PRD, UserStory } from "@/prd/types";
 import { createNoOpCostAggregator } from "@/runtime";
 
 const EMPTY_HOOKS: LoadedHooksConfig = { hooks: {} };
+
+/**
+ * One real temp root for this helper's fixture paths. `prdPath` below reaches
+ * `savePRD`, which writes `<path>.tmp-<uuid>` beside it — so a literal
+ * `/tmp/test-prd.json` fixture cannot survive the confined sandbox, and it also
+ * leaked into the host's `/tmp` on every ordinary run. `makeTempDir()` resolves
+ * through `os.tmpdir()`, which the confined runner points at `$TMPDIR`, so the
+ * write lands where a confined session is allowed to write.
+ *
+ * No `afterAll` cleanup: two test files import this module, and a hook
+ * registered here during the first file's load would delete the root the second
+ * file is still writing to. One temp root per process, as `test/preload.ts`'s
+ * own `mkdtempSync` already is.
+ */
+const FIXTURE_ROOT = makeTempDir("nax-parallel-metrics-");
 
 export function makePendingStory(id: string): UserStory {
   return makeStory({
@@ -74,7 +91,7 @@ export function makeCtx(overrides: MakeCtxOverrides = {}): SequentialExecutionCo
   // enforceCostLimit through mocked batch totals only.
   const runtime = makeTestRuntime({ config, costAggregator: createNoOpCostAggregator() });
   return {
-    prdPath: "/tmp/test-prd.json",
+    prdPath: join(FIXTURE_ROOT, "test-prd.json"),
     workdir: "/tmp/test-workdir",
     config,
     hooks: EMPTY_HOOKS,

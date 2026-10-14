@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdir, rm } from "node:fs/promises";
-import { makeMockCallContext, makeRuntimeWithFakeAgent } from "@test/helpers";
+import { cleanupTempDir, makeMockCallContext, makeRuntimeWithFakeAgent, makeTempDir } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { buildPlanForStrategy } from "@/execution/build-plan-for-strategy";
 import type { PlanInputs } from "@/execution/plan-inputs";
@@ -63,8 +62,7 @@ function _makePlanInputsNoGreenfield(storyArg: UserStory = story): PlanInputs {
 describe("buildPlanForStrategy — zero-file greenfield scenarios", () => {
   test("zero-file scenario returns success=false when greenfield gate is configured", async () => {
     // BUG-010: Zero test files → greenfield-gate stops the pipeline. No auto-fallback occurs.
-    const tmpDir = `/tmp/nax-fallback-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    await mkdir(tmpDir, { recursive: true });
+    const tmpDir = makeTempDir("nax-fallback-");
 
     try {
       mockGitSpawn({
@@ -90,13 +88,12 @@ describe("buildPlanForStrategy — zero-file greenfield scenarios", () => {
       // Greenfield gate stops the plan; no auto-fallback to lite mode
       expect(result.success).toBe(false);
     } finally {
-      await rm(tmpDir, { recursive: true, force: true });
+      cleanupTempDir(tmpDir);
     }
   });
 
   test("lite strategy with zero-file scenario also returns success=false", async () => {
-    const tmpDir = `/tmp/nax-fallback-lite-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    await mkdir(tmpDir, { recursive: true });
+    const tmpDir = makeTempDir("nax-fallback-lite-");
 
     try {
       mockGitSpawn({
@@ -121,13 +118,12 @@ describe("buildPlanForStrategy — zero-file greenfield scenarios", () => {
 
       expect(result.success).toBe(false);
     } finally {
-      await rm(tmpDir, { recursive: true, force: true });
+      cleanupTempDir(tmpDir);
     }
   });
 
   test("strict strategy: no test files → success=false (no fallback)", async () => {
-    const tmpDir = `/tmp/nax-fallback-strict-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    await mkdir(tmpDir, { recursive: true });
+    const tmpDir = makeTempDir("nax-fallback-strict-");
 
     try {
       mockGitSpawn({
@@ -152,16 +148,15 @@ describe("buildPlanForStrategy — zero-file greenfield scenarios", () => {
 
       expect(result.success).toBe(false);
     } finally {
-      await rm(tmpDir, { recursive: true, force: true });
+      cleanupTempDir(tmpDir);
     }
   });
 
   test("when pre-existing test files exist, greenfield gate passes and plan succeeds", async () => {
     // Create a temp dir WITH an actual test file so greenfield check passes
-    const tmpDir = `/tmp/nax-fallback-existing-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const tmpDir = makeTempDir("nax-fallback-existing-");
+    const { mkdir, writeFile } = await import("node:fs/promises");
     await mkdir(`${tmpDir}/test`, { recursive: true });
-
-    const { writeFile } = await import("node:fs/promises");
     await writeFile(`${tmpDir}/test/user.test.ts`, "// placeholder test file");
 
     try {
@@ -192,7 +187,7 @@ describe("buildPlanForStrategy — zero-file greenfield scenarios", () => {
       // Pre-existing tests found → greenfield gate passes → plan succeeds
       expect(result.success).toBe(true);
     } finally {
-      await rm(tmpDir, { recursive: true, force: true });
+      cleanupTempDir(tmpDir);
     }
   });
 });

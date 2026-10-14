@@ -308,9 +308,8 @@ describe("PERF-1: Batch optimization", () => {
 describe("PERF-2 & MEM-1: PRD file size limit and dirty-flag optimization", () => {
   let tmpDir: string;
 
-  beforeEach(async () => {
-    tmpDir = `/tmp/nax-prd-test-${Date.now()}`;
-    await mkdir(tmpDir, { recursive: true });
+  beforeEach(() => {
+    tmpDir = makeTempDir("nax-prd-test-");
   });
 
   test("rejects PRD files exceeding size limit", async () => {
@@ -366,7 +365,7 @@ describe("PERF-2 & MEM-1: PRD file size limit and dirty-flag optimization", () =
     }
 
     // Cleanup
-    await rm(tmpDir, { recursive: true, force: true });
+    cleanupTempDir(tmpDir);
   });
 
   test("accepts PRD files within size limit", async () => {
@@ -395,7 +394,7 @@ describe("PERF-2 & MEM-1: PRD file size limit and dirty-flag optimization", () =
     expect(loaded.project).toBe("test-project");
 
     // Cleanup
-    await rm(tmpDir, { recursive: true, force: true });
+    cleanupTempDir(tmpDir);
   });
 
   test("PRD_MAX_FILE_SIZE constant is 5MB", () => {

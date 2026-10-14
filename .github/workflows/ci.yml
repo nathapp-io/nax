@@ -26,10 +26,13 @@ jobs:
   nax:
     name: nax
     runs-on: ubuntu-latest
-    # 15, not 10: this job absorbed the `typecheck` + `check:all` matrix (#1534),
-    # which used to run in parallel under its own 5-minute budget. The work grew
-    # while the budget did not, and a timeout here reads like a test failure.
-    timeout-minutes: 15
+    # 25, not 10: this job absorbed the `typecheck` + `check:all` matrix (#1534),
+    # which used to run in parallel under its own 5-minute budget, and then the
+    # "Test (confined sandbox)" step (nax#2523) re-ran the unit and integration
+    # suites inside the sandbox. The work grew while the budget did not, and a
+    # timeout here reads like a test failure. (nax-agent priced the same
+    # confined step at a doubling, 10 -> 20.)
+    timeout-minutes: 25
     defaults:
       run:
         working-directory: packages/nax
@@ -62,6 +65,15 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq bubblewrap socat ripgrep
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+
+      # nax#2523: the unit and integration suites again, this time inside the
+      # sandbox a confined agent session gets
+      # (../nax-agent/scripts/run-confined-tests.ts). It is the gate on test temp
+      # hygiene — a test writing under a literal `/tmp/...` fails here exactly as
+      # it fails in a session — so it runs after the bubblewrap install above and
+      # fails the job on a non-zero exit, including 3 (no usable sandbox).
+      - name: Test (confined sandbox)
+        run: bun run test:confined
 
       # Runs first since it's ~1-2s — fail fast before the slower steps below.
       - name: Typecheck

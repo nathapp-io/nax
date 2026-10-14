@@ -7,20 +7,20 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
-import { appendFile, mkdir, rm } from "node:fs/promises";
+import { appendFile } from "node:fs/promises";
 import { join } from "node:path";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { CheckpointWriter, createCheckpointWriter, loadCheckpoints } from "@/execution";
 
 describe("loadCheckpoints integration", () => {
   let tmpDir: string;
 
-  beforeEach(async () => {
-    tmpDir = `/tmp/nax-checkpoint-int-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    await mkdir(tmpDir, { recursive: true });
+  beforeEach(() => {
+    tmpDir = makeTempDir("nax-checkpoint-int-");
   });
 
-  afterEach(async () => {
-    await rm(tmpDir, { recursive: true, force: true });
+  afterEach(() => {
+    cleanupTempDir(tmpDir);
   });
 
   test("returns empty Map when checkpoint.jsonl does not exist", async () => {
