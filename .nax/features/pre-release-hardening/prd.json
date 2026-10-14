@@ -1,0 +1,493 @@
+{
+  "project": "nax-monorepo",
+  "feature": "pre-release-hardening",
+  "branchName": "feat/pre-release-hardening",
+  "createdAt": "2026-10-09T00:00:00.000Z",
+  "updatedAt": "2026-10-14T09:32:09.872Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add implementer no-status signaling and restart turns",
+      "description": "**Goal** — Mark missing-status implementer replies and support warm and fresh restart turns with the correct prompts, deadlines, models and run-log labels.\n\n**Motivation** — `parseImplementerReply` (`src/operations/workflow-replies.ts`) maps a reply with no status block to `DONE_WITH_CONCERNS` with the concern \"implementer reply carried no status block\", and `runStoryLoop` (`src/workflow/story-loop.ts`) goes straight on to gates and a billed story review.\n\n**Approach** — **No-work turns, implementer side (US-001).** `parseImplementerReply` marks a reply with no status block `noStatusBlock: true`. A new `restart` implementer turn runs warm (same session, the short restart prompt) or fresh (session closed first, the full implement prompt, stepped up by `stepUps` through `fixModelFor`, which keeps the routed model when there is no higher rung).\n\nMutated symbols. The baseline exists only to locate the code; implement the target.\n- `ImplementerReply` (`packages/nax/src/operations/workflow-types.ts`). Baseline: `{ status, commits, testSummary, concerns?, interrupted, failure? }`. Target: adds `readonly noStatusBlock?: true`, set only by the no-status branch of `parseImplementerReply`.\n- `ImplementTurn` (`packages/nax/src/workflow/implement.ts`). Baseline: `implement | answer | fix`. Target: adds `{ readonly kind: \"restart\"; readonly fresh: boolean; readonly stepUps: number }`. `runImplementerTurn` closes the session first when `fresh`; the prompt is `buildWorkflowRestartPrompt` when warm and `buildWorkflowImplementPrompt` when fresh; the timeout is `timeouts.implementMs`; `implementerModelFor` steps up by `stepUps` for a restart turn. `turnLabel` gives the restart turns their own run-log label (wording is the implementer's choice).\n\nWarm restart prompt (`buildWorkflowRestartPrompt`), verbatim apart from the interpolations:\n```text\nYou have not started story ${storyId}: there are no commits, no changes and no report yet. Read the brief at\n${briefPath} now and implement it as it says. Write ${reportPath}, commit your work, and end your reply with\nthe json status block.\n```\nfollowed by the existing `WORKFLOW_REPLY_CONTRACT`.\n\nRead-only integration: `fixModelFor(story, tierOrder, stepUps): ConfiguredModel | undefined` — `packages/nax/src/workflow/fix-round.ts`; `closeImplementerSession(sessionManager, storyId)` — `packages/nax/src/workflow/sessions.ts`.\n\n**Scope** — In: reply flag, restart union/dispatch, restart prompt exported from @/prompts, run-log labels, and caller-level regression tests using runImplementerTurn with a faked op. Out: no-work detection, ladder, workProduced wiring and close-without-review belong to US-002; run-start resume/hop changes belong to US-003. The no-work guard on fix rounds, answer turns or a resumed story — it runs only on the first implement turn of a fresh story and its restarts.\n\n**Interface** — `readonly noStatusBlock?: true`; `{ readonly kind: \"restart\"; readonly fresh: boolean; readonly stepUps: number }`; `buildWorkflowRestartPrompt(input: { storyId: string; briefPath: string; reportPath: string }): string` — `packages/nax/src/prompts/builders/workflow-implementer-builder.ts`, exported from `@/prompts`. Preserve the existing turn contracts and absence of the optional reply key in valid-status, interrupt and failure replies.",
+      "acceptanceCriteria": [
+        "[unit] parseImplementerReply(\"I changed some files.\") returns noStatusBlock: true.",
+        "[unit] parseImplementerReply on a reply whose fenced json block has status: \"DONE\" returns an object without a noStatusBlock key.",
+        "[unit] parseImplementerReply on the workflow interrupt marker returns an object without a noStatusBlock key.",
+        "[unit] parseImplementerReply('Agent \"native\" failed: 503 upstream') returns an object without a noStatusBlock key.",
+        "[unit] runImplementerTurn with { kind: \"restart\", fresh: false, stepUps: 0 } passes _workflowDeps.callOp a prompt equal to buildWorkflowRestartPrompt({ storyId, briefPath, reportPath }) for the story.",
+        "[unit] runImplementerTurn with { kind: \"restart\", fresh: false, stepUps: 0 } does not call closeImplementerSession.",
+        "[unit] runImplementerTurn with { kind: \"restart\", fresh: true, stepUps: 1 } calls closeImplementerSession before _workflowDeps.callOp.",
+        "[unit] runImplementerTurn with { kind: \"restart\", fresh: true, stepUps: 1 } passes _workflowDeps.callOp a prompt equal to buildWorkflowImplementPrompt({ storyId, briefPath, reportPath }).",
+        "[unit] runImplementerTurn with { kind: \"restart\", fresh: true, stepUps: 1 } on a story routed to tier fast with tier order fast, balanced passes _workflowDeps.callOp the model fixModelFor returns for one step-up (balanced).",
+        "[unit] runImplementerTurn with a restart turn passes timeoutMs equal to workflow.timeouts.implementMs.",
+        "[unit] buildWorkflowRestartPrompt({ storyId: \"US-001\", briefPath: \"/b/brief.md\", reportPath: \"/b/report.md\" }) returns text that starts with \"You have not started story US-001\" and names \"/b/brief.md\" and \"/b/report.md\".",
+        "[unit] turnLabel returns different labels for a warm restart turn, a fresh restart turn and an implement turn."
+      ],
+      "tags": [
+        "fix",
+        "workflow",
+        "sessions",
+        "prompts"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "The existing reply parser, prompt builders, turn union and fixModelFor provide standard additive extension points, so no new orchestration abstraction is needed. Keep strict three-session TDD because fresh restarts change session lifecycle behavior; verify dispatch inputs and close-before-call order through existing fakes.",
+        "agentProfileId": "native-deepseek",
+        "agent": "native",
+        "profileModelTier": "balanced",
+        "initialAgent": "native",
+        "initialProfileId": "native-deepseek",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/implement.ts",
+        "packages/nax/src/operations/workflow-replies.ts",
+        "packages/nax/src/prompts/index.ts",
+        "packages/nax/src/prompts/builders/workflow-implementer-builder.ts",
+        "packages/nax/src/workflow/story-loop.ts"
+      ],
+      "suggestedCriteria": [
+        "runImplementerTurn with a fresh restart on the highest configured rung omits the model override, preserving the story's routed model.",
+        "buildWorkflowRestartPrompt appends the existing WORKFLOW_REPLY_CONTRACT after the exact restart text."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "ed24285fcc446adae4c92d26b1426f0a5fd70328"
+    },
+    {
+      "id": "US-002",
+      "title": "Restart empty implementer turns and close persistent no-work stories",
+      "description": "**Goal** — Detect truly empty fresh-story implementer turns, retry warm then fresh one tier up, and close persistent no-work stories without billed review or fix work.\n\n**Motivation** — Observed on a private NestJS monorepo (nax `ee04b5483`): the implementer read the brief, replied \"What would you like help with?\", wrote nothing, and the story spent a review and two fix rounds (one hung 20 minutes) on an empty package.\n\n**Approach** — **No-work ladder (US-002).** A no-work turn is one whose reply has `noStatusBlock: true` and after which the story has no work evidence: no files changed since the story base (`changedFilesSince(projectDir, sc.base)` empty), no uncommitted files (`listUncommitted` empty) and no `report.md` at `sc.reportPath`. `buildStoryEnv` wires this as `steps.workProduced`; the changed-file list it checks excludes paths under `.nax/` and `.nax-*`, the same filter `listUncommitted` applies. The check runs only after the first implement turn of a non-resumed story and after each restart turn. `runStoryLoop` and `absorbTurn` are at the complexity ratchet (Biome scores 20 and 19 against a strict limit of 20; `story-loop.ts` has no baseline entry), so `runStoryLoop` must not gain a branch: its `if (!resumed) { ... }` block moves into a private helper `openStory(env, s)` in `story-loop.ts` that returns `StoryLoopOutcome | undefined`, and `runStoryLoop` keeps only `const early = await openStory(env, s); if (early) return early;`. `openStory` runs the first implement turn, calls `runNoWorkLadder` (new, `src/workflow/no-work.ts`), absorbs the last turn's outcome, and returns the `closeLoop` result when the ladder closed the story. To avoid an import cycle (`story-loop.ts` imports `no-work.ts`), `runNoWorkLadder` takes the turn runner as a parameter instead of importing `implementTurn`. `openStory` and `runNoWorkLadder` each stay at a Biome complexity of 20 or below. The turn's outcome is absorbed with origin `{ stepUps: 0, limit: \"implement\" }` after the implement turn or a warm restart, and `{ stepUps: 1, limit: \"implement\" }` after a fresh restart, so an advisor answer to a question from the fresh restart runs on the stepped-up model. The ladder:\n1. the implement turn is a no-work turn → ledger note \"no work: reply carried no status block, no changes since the story base, no report\", then a **warm restart** turn `{ kind: \"restart\", fresh: false, stepUps: 0 }`;\n2. the warm restart is a no-work turn → ledger note \"no work after the restart: restarting fresh one tier up\", then a **fresh restart** turn `{ kind: \"restart\", fresh: true, stepUps: 1 }`;\n3. the fresh restart is a no-work turn → ledger note \"no work after the fresh restart: closing the story without review\", and the story closes `complete-gate-open` with reason `no work produced`. Gates, story review, fix rounds and adjudication do not run.\n\nBefore each restart the ladder checks `steps.costExceeded()`; when it is true the ladder stops and the loop continues as today (its own cost check then stops the story). A restart turn that fails (`failure` set) or is interrupted is absorbed as today and ends the ladder; the loop continues to gates. A restart turn that produces work continues the loop exactly as a normal implement turn does.\n\n`StoryLoopSteps` (`packages/nax/src/workflow/story-loop.ts`). Target: adds optional `workProduced?(): Promise<boolean>`. Absent means \"work produced\", so the guard never fires.\n\nFailure handling: `workProduced` throws (git error, unreadable report path) — Treated as work produced: the guard does not fire and the loop goes on as today (fail-open). A restart turn fails (`failure` set) or is interrupted — Absorbed as today (a `session` finding or a concern); the ladder ends and the loop continues to gates. `steps.costExceeded()` is true before a restart — The ladder stops without the restart; the loop's own cost check closes the story `complete-gate-open` with reason `cost-limit`.\n\nRead-only integration: `changedFilesSince(projectDir: string, base: string): Promise<string[]>` and `listUncommitted(projectDir: string): Promise<string[]>` — `packages/nax/src/workflow/git.ts`. `ledgerText.note(text)` returns `oneLine(text)`; `ledgerText.end(state, summary)` returns `${state} (${summary})` — `packages/nax/src/workflow/ledger.ts`.\n\n**Scope** — In: new ladder, private opening helper, optional work-evidence step, real git/report wiring and caller-driven loop/integration tests. Out: restart turn dispatch, prompt builder and labels belong to US-001; resume-mode plumbing belongs to US-003. The no-work guard on fix rounds, answer turns or a resumed story — it runs only on the first implement turn of a fresh story and its restarts. Consume US-001's restart turn contract without reimplementing it.\n\n**Interface** — `runNoWorkLadder(env: StoryLoopEnv, first: ImplementOutcome, runTurn: (turn: ImplementTurn) => Promise<ImplementOutcome>): Promise<NoWorkLadderResult>` — `packages/nax/src/workflow/no-work.ts` (new file). `NoWorkLadderResult` is `{ readonly closed: boolean; readonly outcome: ImplementOutcome; readonly stepUps: number }`: `closed` true means the story closes with `no work produced`; otherwise `outcome` is the last turn's outcome and `stepUps` the step-up it ran at, which `openStory` absorbs. `workProduced?(): Promise<boolean>`. Existing step fakes omit workProduced and must keep their behavior. Add satellite tests driving runStoryLoop and buildStoryEnv rather than only the ladder helper.",
+      "acceptanceCriteria": [
+        "[unit] runStoryLoop on a fresh story whose implement turn returns a reply with noStatusBlock: true and whose steps.workProduced resolves false passes steps.implement a second turn { kind: \"restart\", fresh: false, stepUps: 0 } before steps.gates is called.",
+        "[unit] When a fresh story's first implement turn is a no-work turn (noStatusBlock: true and steps.workProduced resolves false), runStoryLoop's ledger receives \"no work: reply carried no status block, no changes since the story base, no report\" before the warm restart turn.",
+        "[unit] When the warm restart is also a no-work turn, the third turn steps.implement receives is { kind: \"restart\", fresh: true, stepUps: 1 }, preceded by the ledger line \"no work after the restart: restarting fresh one tier up\".",
+        "[unit] When the fresh restart is also a no-work turn, runStoryLoop returns state: \"complete-gate-open\" and reason: \"no work produced\".",
+        "[unit] When all three implement/restart turns produce no work, runStoryLoop calls none of steps.gates, steps.storyReview and steps.fullSuite.",
+        "[unit] When all three implement/restart turns produce no work, the ledger receives \"no work after the fresh restart: closing the story without review\".",
+        "[unit] When a fresh story's implement, warm restart and fresh restart are all no-work turns, runStoryLoop's last record update carries state: \"complete-gate-open\", reason: \"no work produced\" and phase: \"closed\".",
+        "[unit] When the warm restart returns a DONE reply and steps.workProduced then resolves true, runStoryLoop calls steps.gates next and issues no fresh restart.",
+        "[unit] When the implement turn's reply has noStatusBlock: true but steps.workProduced resolves true, runStoryLoop issues no restart turn and calls steps.gates.",
+        "[unit] When the implement turn's reply has status: \"DONE\" without noStatusBlock and steps.workProduced resolves false, runStoryLoop issues no restart turn.",
+        "[unit] When steps.workProduced is absent, a noStatusBlock: true reply issues no restart turn.",
+        "[unit] When steps.workProduced rejects, a noStatusBlock: true reply issues no restart turn and runStoryLoop calls steps.gates.",
+        "[unit] When the warm restart turn returns failure: \"boom\", runStoryLoop issues no fresh restart and calls steps.gates.",
+        "[unit] When steps.costExceeded() returns true after the first no-work implement turn, runStoryLoop issues no restart turn and returns reason: \"cost-limit\".",
+        "[unit] A resumed story (env.resume set) never calls steps.workProduced.",
+        "[unit] When the fresh restart replies NEEDS_CONTEXT and the advisor answers, the answer turn steps.implement receives has stepUps: 1 and limit: \"implement\".",
+        "[integration] In a git repo fixture whose HEAD equals the story base, with a clean tree and no report.md, env.steps.workProduced() from buildStoryEnv resolves false.",
+        "[integration] In a clean git repo fixture with no report.md and a commit changing a non-nax-owned source file on top of the story base, env.steps.workProduced() from buildStoryEnv resolves true.",
+        "[integration] In a git repo fixture whose HEAD equals the story base, with a clean tree and only report.md written at sc.reportPath, env.steps.workProduced() from buildStoryEnv resolves true.",
+        "[integration] In a clean git repo fixture with no report.md after a commit that changes only a file under .nax/ on top of the story base, env.steps.workProduced() from buildStoryEnv resolves false.",
+        "[unit] When a restart reply is interrupted, runStoryLoop calls steps.gates next without issuing another restart, absorbing the interruption as an existing concern."
+      ],
+      "tags": [
+        "fix",
+        "workflow",
+        "sessions",
+        "state-machine",
+        "integration"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "New bounded recovery abstraction joins session turns, advisor model origins, git evidence and durable state under a complexity ratchet. Strict session TDD with scripted runStoryLoop callers and real git buildStoryEnv fixtures preserves existing failure/cost behavior.",
+        "agentProfileId": "native-deepseek",
+        "agent": "native",
+        "profileModelTier": "balanced",
+        "initialAgent": "native",
+        "initialProfileId": "native-deepseek",
+        "initialModelTier": "balanced",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/story-loop.ts",
+        "packages/nax/src/workflow/stage-env.ts",
+        "packages/nax/src/workflow/git.ts",
+        "packages/nax/src/workflow/implement.ts",
+        "packages/nax/test/unit/workflow/story-loop.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/workflow/no-work.ts",
+        "packages/nax/test/unit/workflow/story-loop-no-work.test.ts",
+        "packages/nax/test/integration/workflow/stage-env-work-produced.test.ts"
+      ],
+      "suggestedCriteria": [
+        "buildStoryEnv's env.steps.workProduced resolves true when a non-nax file is untracked or staged but no new commit or report exists.",
+        "buildStoryEnv's env.steps.workProduced resolves false when the only committed or uncommitted paths start with .nax- and no report exists.",
+        "runStoryLoop issues no fresh restart and returns reason: \"cost-limit\" when steps.costExceeded becomes true after a no-work warm restart.",
+        "runStoryLoop invokes no advisor adjudication when the fresh restart remains a no-work turn."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "5e9f4316a119c33a3985e47a4926baa5684bd83e"
+    },
+    {
+      "id": "US-003",
+      "title": "Honor workflow fresh mode and forward hop tool declarations",
+      "description": "**Goal** — Carry run-start resume mode into workflow story selection and declared coding tools into session-run-hop opens.\n\n**Motivation** — `--fresh` / `--no-resume` only reach the classic checkpoint seam (`applyResumeModeDeps`, `src/execution/checkpoint/resume-cli.ts`), so a user who restarts a story with a different model inherits the old run's findings and round count. `createSessionRunHop` (`src/runtime/session-run-hop.ts`) forwards `sandbox` but not `declaredTools`, while the op path (`src/operations/build-hop-callback-hop.ts`) forwards both.\n\n**Approach** — **`--fresh` reaches workflow resume (US-003).** A module-level `_workflowResumeDeps.mode` (default `\"auto\"`, in `src/execution/checkpoint/resume-cli.ts` beside `applyResumeModeDeps`, exported through `@/execution`; `execution/` may not import `@/workflow` statically and `stage-env.ts` already imports `@/execution`) is set by `run()` (`src/execution/runner.ts`) to its `resumeMode` next to the existing `applyResumeModeDeps` call, and restored to its prior value at the two places `run()` already restores `_storyOrchestratorDeps.loadCheckpoints` (the setup-error path and the outer `finally`). `applyResumeModeDeps` is not changed. `buildStoryEnv` ignores a resumable prior record when the mode is not `\"auto\"`, logs it, and starts the story fresh. Old run directories stay on disk.\n\n**declaredTools on the hop (US-003).** `createSessionRunHop` forwards `codingSupport.declaredTools` on `openSession`, through a helper next to `sandboxOption` (the function is at the complexity ratchet).\n\n`run()` (`packages/nax/src/execution/runner.ts`). Target: assigns `_workflowResumeDeps.mode = resumeMode` where it calls `applyResumeModeDeps`, and restores the prior value wherever it restores `_storyOrchestratorDeps.loadCheckpoints`. Export through the existing checkpoint and execution barrels. Treat only mid-loop unfinished records as resumable; an earlier phase: implement record is not an ignored resume and must not produce the ignore log.\n\n**Scope** — In: separate module-global workflow resume seam, run save/set/restore, stage-env read/log/fresh record and hop open declarations, with caller-level run/buildStoryEnv/sessionManager tests. Out: restart turns/ladder belong to US-001/US-002; do not change applyResumeModeDeps. A per-story reset command or flag (`--reset-story`, `nax workflow reset`) — `--fresh` / `--no-resume` is the only reset this spec adds. Reconciling a prior workflow record against the PRD story's `status` or `attempts` — workflow mode leaves both unchanged, so a reset cannot be told apart from a crash. Forwarding `providerTools` / `toolSurface` from `session-run-hop` — only `declaredTools` is added.\n\n**Interface** — `_workflowResumeDeps: { mode: ResumeMode }` (default `\"auto\"`) — `packages/nax/src/execution/checkpoint/resume-cli.ts`, exported from `@/execution`. Existing `ResumeMode = \"auto\" | \"fresh\" | \"no-resume\"` remains the contract. Omit the declaredTools key when support has no declaration, and retain the sandbox key when both are present.",
+      "acceptanceCriteria": [
+        "[integration] With _workflowResumeDeps.mode set to \"fresh\", buildStoryEnv with a seeded mid-loop prior record (phase: \"fix\", round: 2) returns env.resume null.",
+        "[integration] With _workflowResumeDeps.mode set to \"fresh\" and that seeded resumable record, buildStoryEnv logs an info entry \"Ignoring a prior run's workflow record (resume mode fresh)\" with the story id.",
+        "[integration] With _workflowResumeDeps.mode set to \"no-resume\", buildStoryEnv with a seeded mid-loop prior record (phase: \"fix\", round: 2) returns env.resume null.",
+        "[integration] With _workflowResumeDeps.mode at its default, buildStoryEnv with a seeded mid-loop prior record (phase: \"fix\", round: 2) returns env.resume.round 2.",
+        "[integration] With _workflowResumeDeps.mode set to \"fresh\", buildStoryEnv writes a story record with round: 0 and phase: \"implement\".",
+        "[integration] With _workflowResumeDeps.mode set to \"fresh\" and the seeded mid-loop prior record, buildStoryEnv's ledger has no \"resumed at round\" line.",
+        "[integration] With _workflowResumeDeps.mode set to \"fresh\" and a seeded prior record at phase: \"implement\" (which never resumes), buildStoryEnv logs no \"Ignoring a prior run's workflow record\" entry.",
+        "[integration] run() called with resumeMode: \"fresh\" and a feature dir, whose setup phase throws, leaves _workflowResumeDeps.mode equal to its value before the call.",
+        "[integration] run() called with resumeMode: \"fresh\" and a feature dir sets _workflowResumeDeps.mode to \"fresh\" before the setup phase runs (observed from a faked setup phase).",
+        "[unit] createSessionRunHop with options whose resolved coding-tool support has declaredTools [\"Read\", \"Grep\"] calls sessionManager.openSession with options whose declaredTools equals [\"Read\", \"Grep\"].",
+        "[unit] When the resolved coding-tool support has no declaredTools, the openSession options have no declaredTools key.",
+        "[unit] When the resolved support carries both declaredTools and acpSandbox, the openSession options carry both declaredTools and sandbox."
+      ],
+      "tags": [
+        "fix",
+        "workflow",
+        "resume",
+        "sessions",
+        "access-control",
+        "integration"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Two bounded plumbing fixes reuse existing run save/restore points, resume selection and conditional session-open option helpers rather than adding a new orchestration layer. Keep strict three-session TDD for session/tool-access state and verify the runner setup/error lifecycle and hop options through existing caller seams.",
+        "agentProfileId": "native-deepseek",
+        "agent": "native",
+        "profileModelTier": "balanced",
+        "initialAgent": "native",
+        "initialProfileId": "native-deepseek",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/execution/runner.ts",
+        "packages/nax/src/workflow/stage-env.ts",
+        "packages/nax/src/execution/checkpoint/resume-cli.ts",
+        "packages/nax/src/runtime/session-run-hop.ts",
+        "packages/nax/src/operations/build-hop-callback-hop.ts"
+      ],
+      "suggestedCriteria": [
+        "run() restores _workflowResumeDeps.mode to its pre-call value after a successful run and after an execution-phase rejection.",
+        "buildStoryEnv with fresh mode leaves the seeded earlier run's result.json and report files unchanged on disk."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "a03e46da6d1a06ccd7a8962bd5403090f8ae8931"
+    },
+    {
+      "id": "US-004",
+      "title": "Reconcile workflow role and run completion cost breakdowns",
+      "description": "**Goal** — Include preflight advisor spend in workflow roles, log live completion breakdowns, and separate run-level spend from story metrics.\n\n**Motivation** — `runWorkflowPreflight` (`src/workflow/preflight-run.ts`) dispatches the advisor with no token meter running, so its spend never reaches the role table (`rolesOf`, `src/workflow/run-summary.ts`). With `deferRunCompleteLog`, the deferred line gets a fresh `totalCost` but logs the phase-3 breakdowns, which predate the feature workflow ($0.5228 missing in the observed run).\n\n**Approach** — **Cost totals (US-004).** `runWorkflowPreflight` runs `startTokenMeter(input.runtime.dispatchEvents)` around the pre-flight and, in a `finally` (so spend before a pre-flight error is kept) when the meter recorded at least one call, writes its `byRole()` into this run's `result.json` as a new top-level `preflightTokensByRole`; `rolesOf` folds it in. A pre-flight that dispatched nothing (an adopted prior pre-flight) writes nothing. The deferred `run.complete` line (the `logComplete` closure in `handleRunCompletion`) re-reads `costAggregator.byStage()` / `byStory()` when it is written, and passes those to `logRunCompletion` (`run-completion-phases.ts`), where `costByStory` reports the run-level key `\"\"` as `_run`. `backfillDomain` (`backfill-story-metrics.ts`) skips `\"\"`.\n\n`WorkflowResultFile` (`packages/nax/src/workflow/types.ts`). Target: adds `readonly preflightTokensByRole?: Readonly<Record<string, RoleTokens>>`. `upsertStoryRecord` and `upsertFeatureRecord` keep it when present.\n`RunCompletionResult.logRunComplete` (`run-completion.ts`): unchanged signature; the breakdowns it logs are read at call time.\n\nRead-only integration: `startTokenMeter(source): TokenMeter` and `addRoleTokens(a, b)` — `packages/nax/src/workflow/tokens.ts`. Reuse the existing atomic result writer and preserve stories, featureWorkflow and verdict when writing accounting data. Stop the meter on all exits so events after the preflight cannot change the stored role totals. Preflight adoption with no dispatch must not create a result file just for zero accounting.\n\nFailure handling: `writePreflightTokens` throws — Logged at debug with `storyId: \"_run\"`; the pre-flight result is unaffected. Preserve already-spent calls when preflight throws; existing preflight error containment still applies.\n\n**Scope** — In: preflight meter and accounting persistence, optional result field retained by both upserts, role aggregation, live deferred log splits, run-level log key and exclusion from backfill, with bus-to-result and completion-caller tests. Out: story retry/resume belongs to US-001 through US-003; other accounting schemas, aggregator key storage and lifecycle ordering are unchanged. Cache read/write token columns in the workflow role table.\n\n**Interface** — `writePreflightTokens(runDir, header, byRole): Promise<void>` — `packages/nax/src/workflow/result.ts`. `readonly preflightTokensByRole?: Readonly<Record<string, RoleTokens>>`. Preserve schemaVersion 1 and backward compatibility for results lacking the optional field; ordinary pipeline completion still logs its breakdowns during handleRunCompletion. The spec's advisor event object lists the accounting fields of interest, not a replacement for the existing DispatchEvent contract: populate the other required fields when emitting through the real runtime bus. Compare arithmetic USD sums with floating-point tolerance, while preserving the specified 0.6 role total and unchanged cost storage semantics.",
+      "acceptanceCriteria": [
+        "[integration] runWorkflowPreflight with workflow pre-flight enabled, one pending story, and input.runtime.dispatchEvents emitting one event { sessionRole: \"advisor\", exactCostUsd: 0.3, tokenUsage: { inputTokens: 10, outputTokens: 5 } } from the faked advisor call writes this run's result.json with preflightTokensByRole.advisor equal to { inputTokens: 10, outputTokens: 5, costUsd: 0.3, calls: 1 }.",
+        "[integration] runWorkflowPreflight whose pre-flight dispatches nothing creates no result.json in this run's directory.",
+        "[unit] An event emitted on input.runtime.dispatchEvents after runWorkflowPreflight returns does not change preflightTokensByRole.",
+        "[unit] upsertStoryRecord on a result.json that holds preflightTokensByRole keeps it unchanged.",
+        "[unit] upsertFeatureRecord on a result.json that holds preflightTokensByRole keeps it unchanged.",
+        "[unit] buildWorkflowRunSummary on a result with one story at advisor $0.1, a feature record at advisor $0.2 and preflightTokensByRole.advisor $0.3 returns one advisor role row whose costUsd is 0.6.",
+        "[unit] buildWorkflowRunSummary on a result without preflightTokensByRole returns the same roles as before this change.",
+        "[unit] When writePreflightTokens throws, runWorkflowPreflight still resolves and logs the \"Pre-flight done\" entry.",
+        "[unit] When writePreflightTokens throws, runWorkflowPreflight logs the accounting-write failure at debug with storyId: \"_run\", leaving the pre-flight result unaffected.",
+        "[integration] When the pre-flight advisor call emits one advisor dispatch event and then runPreflight throws, runWorkflowPreflight resolves and this run's result.json holds preflightTokensByRole.advisor with calls: 1.",
+        "[integration] handleRunCompletion with deferRunCompleteLog: true and a cost aggregator whose byStage() gains a review entry after the call returns, then logRunComplete(final), logs run.complete with costByStage.review present.",
+        "[integration] With handleRunCompletion using deferRunCompleteLog: true, when the aggregator's stage snapshots' totalCostUsd + totalErrorCostUsd sum to final.totalCost at logRunComplete(final), the logged costByStage entries' totalCostUsd + totalErrorCostUsd sum to the logged totalCost.",
+        "[integration] handleRunCompletion without deferRunCompleteLog logs costByStage from the aggregator as read during the call (pipeline-mode behaviour unchanged).",
+        "[unit] logRunCompletion given aggByStory with keys \"\" and \"US-001\" logs costByStory with keys _run and US-001 and no \"\" key.",
+        "[unit] backfillDomain with aggregatorKeys [\"\", \"US-001\"] returns a domain without \"\".",
+        "[integration] handleRunCompletion with an aggregator whose byStory() holds \"\" at $0.2983 and no story metrics produces no storyMetrics entry with storyId: \"\"."
+      ],
+      "tags": [
+        "fix",
+        "workflow",
+        "metrics",
+        "data",
+        "integration"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Cross-module accounting spans dispatch subscriptions, durable envelope preservation, role sums and deferred lifecycle snapshots. Apply the requested token/session-role isolation override and test the real bus/result and completion callbacks with strict three-session TDD.",
+        "agentProfileId": "native-deepseek",
+        "agent": "native",
+        "profileModelTier": "balanced",
+        "initialAgent": "native",
+        "initialProfileId": "native-deepseek",
+        "initialModelTier": "balanced",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/preflight-run.ts",
+        "packages/nax/src/workflow/result.ts",
+        "packages/nax/src/execution/lifecycle/run-completion.ts",
+        "packages/nax/src/execution/lifecycle/run-completion-phases.ts",
+        "packages/nax/src/execution/lifecycle/backfill-story-metrics.ts"
+      ],
+      "suggestedCriteria": [
+        "Deferred logRunComplete(final) logs a byStory entry added after handleRunCompletion returned, mapping its empty run-level key to _run.",
+        "writePreflightTokens leaves existing story records, featureWorkflow and verdict unchanged in result.json.",
+        "backfillDomain excludes empty ids from fallbackKeys and crashKeys as well as aggregatorKeys."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "c1d05261f72f4b4d15ab535f99bf1ba31c811ce0"
+    },
+    {
+      "id": "US-005",
+      "title": "Preserve story-specific exclusions beyond the feature cap",
+      "description": "**Goal** — Keep every unique story-level out-of-scope entry through PRD load/save while retaining the 25-item feature cap.\n\n**Motivation** — `propagateOutOfScopeToStories` (`src/prd/out-of-scope.ts`) builds each story's list as `dedupeAndCap([...featureLevel, ...storyLevel])`, so at 25 feature-level entries every story-specific entry is cut.\n\n**Approach** — **Out-of-scope round trip (US-005).** A new `dedupeOutOfScope(items)` in `out-of-scope-extract.ts` applies `dedupeAndCap`'s filters (empty sentinels, list lead-ins, canonical duplicates) without the cap; `dedupeAndCap` becomes `dedupeOutOfScope` plus the cap. `propagateOutOfScopeToStories` builds each story's list as `dedupeOutOfScope([...dedupeAndCap(featureLevel), ...storyLevel])`, so the cap applies only to the feature-level part and every story-specific entry is kept. `stripPropagatedOutOfScope` then writes them all back. `test/unit/prd/out-of-scope.test.ts` is 749 lines against the 800-line test limit, so new tests go in a new satellite file.\n\n`dedupeAndCap(items)` (`packages/nax/src/prd/out-of-scope-extract.ts`). Target: same output as today, implemented as `dedupeOutOfScope(items)` truncated to `MAX_OUT_OF_SCOPE_ITEMS`.\n\nUS-005 owns the existing test change: `packages/nax/test/unit/prd/out-of-scope.test.ts` — the test \"feature-level items outrank story-level ones when the cap truncates\" asserts the merged list `toHaveLength(MAX_OUT_OF_SCOPE_ITEMS)` for one feature-level entry plus 25 story-specific ones. Under US-005 story-specific entries are never truncated, so the merged list has 26 entries; US-005 owns changing that assertion to length 26, keeping `merged[0]` equal to \"FEATURE-LEVEL-CRITICAL\".\n\nRead-only integration: `dedupeAndCap(items)`, `canonical(item)`, `MAX_OUT_OF_SCOPE_ITEMS = 25` — `packages/nax/src/prd/out-of-scope-extract.ts`. The new uncapped helper is called through propagateOutOfScopeToStories and dedupeAndCap; integration tests drive loadPRD/savePRD rather than only helper composition.\n\n**Scope** — In: uncapped canonical dedupe, capped wrapper with unchanged output, propagation cap restricted to feature entries, the owned old-test assertion and satellite cap/persistence tests. Out: workflow record/accounting changes belong to US-003/US-004; do not change unrelated plan-time extraction/demotion normalization or recover already-deleted persisted data. Cross-story ownership boundary: A new `dedupeOutOfScope(items)` in `out-of-scope-extract.ts` applies `dedupeAndCap`'s filters (empty sentinels, list lead-ins, canonical duplicates) without the cap; `dedupeAndCap` becomes `dedupeOutOfScope` plus the cap. `propagateOutOfScopeToStories` builds each story's list as `dedupeOutOfScope([...dedupeAndCap(featureLevel), ...storyLevel])`, so the cap applies only to the feature-level part and every story-specific entry is kept. `stripPropagatedOutOfScope` then writes them all back. `test/unit/prd/out-of-scope.test.ts` is 749 lines against the 800-line test limit, so new tests go in a new satellite file. Clarifier: this is US-005's required design, excluded from sibling stories only; US-005 must implement it.\n\n**Interface** — `dedupeOutOfScope(items: string[]): string[]` — `packages/nax/src/prd/out-of-scope-extract.ts`. Preserve first-appearance order, first-seen wording, empty-sentinel and list-lead-in filters, and the existing canonical duplicate semantics. For the exact propagate/strip round-trip fixture, use distinct meaningful entries and leave outOfScope absent on the story with zero specific entries, matching the existing strip function's empty-key normalization; canonical duplicates and sentinels still normalize away.",
+      "acceptanceCriteria": [
+        "[unit] dedupeOutOfScope on 30 distinct entries returns all 30.",
+        "[unit] dedupeAndCap on 30 distinct entries returns the first 25, as today.",
+        "[unit] propagateOutOfScopeToStories with 25 feature-level entries and a story carrying 2 story-specific entries gives that story 27 entries: the 25 feature-level ones first, then the 2 story-specific ones in their order.",
+        "[unit] propagateOutOfScopeToStories with 1 feature-level entry and a story carrying 25 story-specific entries gives that story 26 entries with the feature-level entry first.",
+        "[unit] propagateOutOfScopeToStories with 30 feature-level entries gives a story with no story-specific entries exactly the first 25 feature-level ones.",
+        "[unit] propagateOutOfScopeToStories returns a story list where a story-specific entry that equals a feature-level entry on canonical form appears once.",
+        "[unit] Given a PRD with a non-empty feature-level outOfScope list, propagateOutOfScopeToStories drops a story-specific entry \"None.\" from the propagated list.",
+        "[unit] stripPropagatedOutOfScope(propagateOutOfScopeToStories(prd)) equals prd for a PRD with 25 feature-level entries and stories carrying 1, 2, 0 and 5 story-specific entries.",
+        "[integration] savePRD after loadPRD of a prd.json with 25 feature-level entries and a story carrying 5 story-specific entries writes the story's outOfScope with all 5 entries."
+      ],
+      "tags": [
+        "fix",
+        "prd",
+        "data",
+        "persistence"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Two-module deterministic filtering/cap fix uses existing PRD load/save contracts with no new dependencies. Write failing satellite round-trip tests first and retain the existing feature-first regression anchor.",
+        "agentProfileId": "native-deepseek",
+        "agent": "native",
+        "profileModelTier": "balanced",
+        "initialAgent": "native",
+        "initialProfileId": "native-deepseek",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/prd/out-of-scope.ts",
+        "packages/nax/src/prd/out-of-scope-extract.ts",
+        "packages/nax/src/prd/index.ts",
+        "packages/nax/test/unit/prd/out-of-scope.test.ts",
+        "packages/nax/test/unit/prd/out-of-scope-persistence.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/prd/out-of-scope-cap.test.ts"
+      ],
+      "suggestedCriteria": [
+        "dedupeOutOfScope drops list lead-ins ending with a colon and empty canonical entries while preserving the first wording of canonical duplicates.",
+        "propagateOutOfScopeToStories leaves its input object and story exclusion arrays unmodified."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/prd/out-of-scope.test.ts",
+          "reason": "the test \"feature-level items outrank story-level ones when the cap truncates\" asserts the merged list `toHaveLength(MAX_OUT_OF_SCOPE_ITEMS)` for one feature-level entry plus 25 story-specific ones. Under US-005 story-specific entries are never truncated, so the merged list has 26 entries; US-005 owns changing that assertion to length 26, keeping `merged[0]` equal to \"FEATURE-LEVEL-CRITICAL\"."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "05f2a8fc29fe8e715a73fed5183bd0e79a2400f8"
+    },
+    {
+      "id": "US-006",
+      "title": "Protect Claude settings and explain macOS sandbox ps failures",
+      "description": "**Goal** — Deny writes to session-root Claude settings and tell native Bash/RunCommand users why ps-based tests fail in the macOS sandbox.\n\n**Motivation** — An agent can add allow rules, hooks or MCP servers there and weaken every later session in that workdir. On macOS the srt sandbox refuses `/bin/ps` (`Operation not permitted`; a non-setuid copy is killed with SIGKILL).\n\n**Approach** — **Sandbox (US-006).** `buildSandboxPolicy` adds `<root>/.claude/settings.json` and `<root>/.claude/settings.local.json` to `denyWrite`. The ACP edit-path check (`firstOutsidePolicy`, `packages/nax-agent-acp/src/client/edit-targets.ts`) already refuses any path under a `denyWrite` entry, so the same list covers the Write/Edit tools and Bash. `sandboxSentence` gains an optional `platform` argument; on `\"darwin\"` it appends one sentence about `ps`. The Bash tool (both `sandboxSentence` call sites in `bashToolDescription`: raw mode and gated/escalate) and the RunCommand tool pass the platform from a deps seam. `_runCommandToolDeps` is not exported from `src/internal.ts` (tests import it through `#src`), so the API snapshot does not change.\n\n`sandboxSentence(network, sharedTmp = true)` (`packages/nax-agent/src/sandbox/messages.ts`). Target: `sandboxSentence(network, sharedTmp = true, platform?: NodeJS.Platform)`. Output is unchanged unless `platform === \"darwin\"`.\n\ndarwin sentence appended by `sandboxSentence` (after the existing text, separated by one space):\n```text\nOn macOS the sandbox also refuses ps and other setuid programs (\"Operation not permitted\"), so a test that shells out to ps fails here for that reason alone.\n```\n\nResolve both deny entries through the same realOrRaw/literal policy path as other entries, including when the files or .claude directory do not exist. Do not deny .claude itself. The ACP consumer is read-only context; all source and tests for this story stay in packages/nax-agent. Tests must patch platform seams, not the global process.platform, and preserve existing two-argument message fixtures. Keep the unavailable raw-Bash description unchanged: it names the refusal reason and refuses every call, without the darwin sentence that describes an available sandbox.\n\n**Scope** — In: two settings-file denies, optional platform message, existing Bash seam extension, local RunCommand seam and policy/tool-description unit tests. Out: hop tool forwarding belongs to US-003; no changes to packages/nax-agent-acp or workflow prompts. Loading only the implementer's `CLAUDE.md` instead of full user and project Claude settings (the second half of nax#2505). Settings-file `allow` rules that Claude honours without a permission request (the first half of nax#2505) — the deny list stops new edits to the settings files, not rules already in them. Per-package `.claude/settings*.json` under a monorepo package other than the session root. An opt-out for the new `.claude/settings*.json` write denies. Creating other files under a `.claude/` directory that does not exist yet on Linux — srt's bwrap mounts an empty directory at the first missing component of a deny path, which blocks that; accepted. Making `ps` or other setuid programs runnable inside the macOS sandbox — srt refuses them and kills a non-setuid copy. A darwin note for ACP Claude sessions, whose Bash sandbox description is Claude's own.\n\n**Interface** — `sandboxSentence(network, sharedTmp = true, platform?: NodeJS.Platform)`; `_bashToolDeps.platform: () => NodeJS.Platform` (added to the existing seam in `packages/nax-agent/src/tools/bash.ts`) and `_runCommandToolDeps: { platform: () => NodeJS.Platform }` (new in `packages/nax-agent/src/tools/run-command.ts`). Use process.platform as the production seam value; keep the new RunCommand seam out of src/internal.ts and public exports.",
+      "acceptanceCriteria": [
+        "[unit] buildSandboxPolicy for root /repo returns denyWrite containing /repo/.claude/settings.json (through the same realOrRaw resolution as the other entries).",
+        "[unit] buildSandboxPolicy for root /repo returns denyWrite containing /repo/.claude/settings.local.json.",
+        "[unit] buildSandboxPolicy for root /repo returns denyWrite containing both /repo/.claude/settings.json and /repo/.claude/settings.local.json when /repo/.claude/ does not exist.",
+        "[unit] buildSandboxPolicy for root /repo returns denyWrite containing both /repo/.claude/settings.json and /repo/.claude/settings.local.json for platform: \"linux\" and for platform: \"darwin\".",
+        "[unit] buildSandboxPolicy for root /repo returns denyWrite without an entry for /repo/.claude itself.",
+        "[unit] sandboxSentence(\"open\", true, \"darwin\") ends with \"On macOS the sandbox also refuses ps and other setuid programs (\"Operation not permitted\"), so a test that shells out to ps fails here for that reason alone.\".",
+        "[unit] sandboxSentence(\"open\", true, \"linux\") equals sandboxSentence(\"open\", true).",
+        "[unit] sandboxSentence(\"open\", false, \"darwin\") names \"this run's temp directory ($TMPDIR)\" and ends with the darwin sentence.",
+        "[unit] With bashApproval: \"gated\", an available sandbox launcher state and _bashToolDeps.platform returning \"darwin\", the Bash tool's description ends with the darwin sentence.",
+        "[unit] With bashApproval: \"gated\", an available sandbox launcher state and _bashToolDeps.platform returning \"linux\", the Bash tool's description ends with \"-- that is the sandbox, not a bug in your command.\".",
+        "[unit] With bashApproval: \"raw\", an available sandbox launcher state and _bashToolDeps.platform returning \"darwin\", the Bash tool's description includes the darwin sentence.",
+        "[unit] With an available sandbox launcher state and _runCommandToolDeps.platform returning \"darwin\", the RunCommand tool's description includes the darwin sentence.",
+        "[unit] createBashTool with bashApproval: \"raw\", launcher state { kind: \"unavailable\", backend: \"srt\", reason: \"no bwrap\" } and _bashToolDeps.platform returning \"darwin\" returns a description containing \"sandbox unavailable (no bwrap)\" and \"every call is refused\", preserving the existing unavailable-sandbox refusal rather than advertising the available-sandbox darwin sentence."
+      ],
+      "tags": [
+        "fix",
+        "security",
+        "sandbox",
+        "access-control",
+        "tools",
+        "macos"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Four-module policy/message change reuses existing canonical deny and description patterns. Settings writes are an access-control boundary, mandating strict isolated TDD with portable platform seams and missing-path policy fixtures.",
+        "agentProfileId": "native-deepseek",
+        "agent": "native",
+        "profileModelTier": "balanced",
+        "initialAgent": "native",
+        "initialProfileId": "native-deepseek",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/sandbox/policy-builder.ts",
+        "packages/nax-agent/src/sandbox/messages.ts",
+        "packages/nax-agent/src/tools/bash.ts",
+        "packages/nax-agent/src/tools/run-command.ts",
+        "packages/nax-agent/test/unit/sandbox/policy-builder.test.ts"
+      ],
+      "suggestedCriteria": [
+        "buildSandboxPolicy retains both Claude settings deny entries when filesystem.allowWrite explicitly includes those files.",
+        "With bashApproval: \"escalate\", humanApproval: true, an available sandbox and _bashToolDeps.platform returning \"darwin\", the Bash tool description ends with the darwin sentence.",
+        "sandboxSentence appends exactly one space between the existing sentence and the darwin sentence."
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "1e575094aee22a527de71c10f170c932ac8a6302"
+    },
+    {
+      "id": "US-007",
+      "title": "Publish explicit spec closing issues in workflow PR bodies",
+      "description": "**Goal** — Parse explicit spec Closes: declarations and render durable Closes #N lines near the top of workflow PR bodies.\n\n**Motivation** — The workflow PR body (`assemble`, `src/workflow/pr-body.ts`) has no issue references, so a person adds `Closes #N` by hand after every bundled-issue run (PR #2512).\n\n**Approach** — **Closes lines (US-007).** A new `parseClosingIssues(specText)` reads `Closes:` lines from the feature spec. `bodyFacts` (`src/workflow/finalize.ts`) resolves the spec through `_workflowDeps.resolveFeatureSpec`, reads it the way `loadSpec` in `brief.ts` does (a relative path joined to the project dir), parses it and sets `closes` on the PR body facts; `assemble` renders a `## Closes` section right after `## Summary` when the list is non-empty (the body's 60,000-character cut trims the tail, so the section sits near the top).\n\n`WorkflowPrBodyFacts` (`packages/nax/src/workflow/pr-body.ts`). Target: adds `readonly closes?: readonly number[]`.\n\n### Closes line format\nA `Closes:` line is a line whose trimmed text starts with `Closes:` (case-insensitive) outside a fenced code block. Its remainder is split on commas and whitespace; each token that is exactly `#` followed by digits counts, and every other token on the line is ignored. Numbers are deduplicated and kept in first-appearance order across all `Closes:` lines. Rendered section:\n```markdown\n## Closes\n\nCloses #2505\nCloses #2506\n```\n\nRead-only integration: `_workflowDeps.resolveFeatureSpec(feature, workdir)` returns `{ specSource?: { path } | null }`, a path relative to the repo — `packages/nax/src/workflow/step-context.ts`. Mirror loadSpec's handling of absolute/relative paths and Bun file reads.\n\nFailure handling: `resolveFeatureSpec` throws, returns no `specSource`, or the spec file is missing or unreadable, while building PR body facts — `closes` is omitted; the body is built as today.\n\n**Scope** — In: new parser, optional PR facts field, spec read in bodyFacts, top-position section in assemble, parser/body unit cases and publish integration with captured fake forge calls. Out: sandbox belongs to US-006 and cost reporting to US-004. Cross-repo issue references (`koda#270`, `owner/repo#N`) and guessing issue numbers from spec prose — only explicit `Closes:` lines count. `Closes` lines in the finish (pipeline-mode) PR body, and issue references in the run report for `workflow.publish` `push` / `none`.\n\n**Interface** — `parseClosingIssues(text: string): number[]` — `packages/nax/src/workflow/closing-issues.ts` (new file). `readonly closes?: readonly number[]`. Integration assertions drive publish with a faked resolved spec and inspect the body passed to `_featureDeps.openDraftFinishPr`, proving the new parser is connected to the PR caller rather than testing it only in isolation.",
+      "acceptanceCriteria": [
+        "[unit] parseClosingIssues(\"Closes: #2508, #2507\") returns [2508, 2507].",
+        "[unit] parseClosingIssues(\"closes: #12 #13\") returns [12, 13].",
+        "[unit] parseClosingIssues on text with two Closes: lines #5, #6 and #6, #7 returns [5, 6, 7].",
+        "[unit] parseClosingIssues(\"Closes: #12, koda#270, owner/repo#9, 14\") returns [12].",
+        "[unit] parseClosingIssues on text whose only Closes: #12 line sits inside a fenced code block returns [].",
+        "[unit] parseClosingIssues on prose that mentions \"since #2491\" with no Closes: line returns [].",
+        "[unit] buildWorkflowPrBody with closes: [2508, 2507] renders a ## Closes section with the lines \"Closes #2508\" and \"Closes #2507\" in that order, directly after the ## Summary section and before ## Stories.",
+        "[unit] buildWorkflowPrBody with closes: [7] and facts large enough that the body is cut to PR_BODY_MAX_CHARS still includes \"Closes #7\".",
+        "[unit] buildWorkflowPrBody with closes: [] returns the same string as with closes absent.",
+        "[integration] publish on a publishable branch with a forge, where _workflowDeps.resolveFeatureSpec resolves a spec file holding \"Closes: #41, #42\", calls _featureDeps.openDraftFinishPr with a body that has the lines \"Closes #41\" and \"Closes #42\".",
+        "[integration] publish where _workflowDeps.resolveFeatureSpec rejects calls _featureDeps.openDraftFinishPr with a body that has no \"## Closes\" section.",
+        "[integration] publish where _workflowDeps.resolveFeatureSpec resolves { specSource: null } calls _featureDeps.openDraftFinishPr with a body that has no \"## Closes\" section.",
+        "[integration] publish where the resolved spec path does not exist on disk calls _featureDeps.openDraftFinishPr with a body that has no \"## Closes\" section.",
+        "[integration] publish where the resolved spec file is unreadable calls _featureDeps.openDraftFinishPr with a body that has no \"## Closes\" section, preserving today's body-building behavior."
+      ],
+      "tags": [
+        "fix",
+        "workflow",
+        "forge",
+        "parser",
+        "integration"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A deterministic parser and two existing workflow modules add optional PR metadata without new dependencies or security decisions. Write parser/body regressions and publish-to-fake-forge spec-read tests first.",
+        "agentProfileId": "native-deepseek",
+        "agent": "native",
+        "profileModelTier": "balanced",
+        "initialAgent": "native",
+        "initialProfileId": "native-deepseek",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/pr-body.ts",
+        "packages/nax/src/workflow/finalize.ts",
+        "packages/nax/src/workflow/brief.ts",
+        "packages/nax/test/unit/workflow/finalize.test.ts",
+        "packages/nax/test/unit/workflow/pr-body.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/workflow/closing-issues.ts",
+        "packages/nax/test/unit/workflow/closing-issues.test.ts"
+      ],
+      "suggestedCriteria": [
+        "parseClosingIssues ignores Closes: lines inside tilde-fenced code blocks as well as backtick-fenced code blocks.",
+        "publish resolving a project-relative spec path reads it under fc.projectDir and renders its closing issues regardless of the process working directory.",
+        "parseClosingIssues ignores tokens such as #12x, (#13), #14. and # without digits."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "caa1dd1ca7bb8fe0fa9824e7ca544c1835b27134"
+    }
+  ],
+  "analysis": "Goal and completion: fix the nine specified pre-release defects before stable 0.88.0 makes workflow mode the default. This is an enhancement of existing workflow, lifecycle, PRD and sandbox code, not a greenfield architecture or a release/version-bump task. Done means the specified runtime behavior and regression anchors hold, including fail-open paths and preservation of old optional-field behavior. Navigation: codebase-memory MCP is not exposed in this session, so structural discovery used direct reads, Glob and Grep as the permitted fallback. Citations below refer to the inspected repository, not merely the spec's af2cadf7f baseline. No implementation code or tests were changed or run while drafting.\n\nArchitecture and conventions: docs/architecture/ARCHITECTURE.md:17 describes injectable _deps; :130 summarizes file/function limits and permission SSOT. The architecture index is at the repository root, not packages/nax/docs/. nax uses Bun APIs, @/ aliases, named barrel exports and bun:test; nax-agent must remain Node-compatible, use #src aliases and explicit .ts suffixes on relative source imports. Keep external calls on existing _deps seams and restore patched objects after tests, rather than mock.module or global monkey-patching. No new dependencies or cross-package imports are needed. Tests should prove regressions fail on the old implementation, use shared helpers, and drive callers rather than only newly introduced helpers. Package-level gates and per-file coverage are implementation validation, not acceptance criteria or standalone stories. Do not modify generated AGENTS/CLAUDE/rules files or bump package versions; releases are maintainer-initiated and lockstep.\n\nStory structure and sequencing: preserve exactly US-001 through US-007 and their package workdirs. The binding table says dependencies are not stated for every story, while the design explicitly describes a US-002 -> US-001 dependency. The later binding instruction is honored with empty dependencies arrays; nevertheless US-002 consumes US-001's restart turn contract, so apply US-001 before US-002 in implementation order. Do not let US-002 re-author the restart prompt/turn plumbing. Shared-file integration risks are story-loop.ts (US-001 labels and US-002 opening helper) and stage-env.ts (US-002 work evidence and US-003 resume mode); coordinate their edits rather than overwriting sibling changes.\n\nUS-001 findings and impact: packages/nax/src/operations/workflow-replies.ts:36 parses implementer replies. Its early interrupt and Agent failure branches already distinguish transport outcomes; only the invalid/missing-status branch should gain noStatusBlock. The source contract is packages/nax/src/operations/workflow-types.ts:30, re-exported into workflow types. packages/nax/src/workflow/implement.ts:12 defines the turn union; :48 derives fix/answer step-ups; :53 closes fresh fix sessions, chooses deadlines and dispatches workflowImplementOp. Add restart without changing existing implement/answer/fix semantics, autocommit, failure or abort handling. packages/nax/src/prompts/builders/workflow-implementer-builder.ts:91 holds WORKFLOW_REPLY_CONTRACT and :103 the full implement prompt; export the short restart builder through packages/nax/src/prompts/index.ts. packages/nax/src/workflow/story-loop.ts:105 is the public label function consumed by stage-env timings/tool-error logs. Existing tests packages/nax/test/unit/workflow/implement.test.ts:70 fake _workflowDeps.callOp and capture inputs; :27 already tests fixModelFor's ceiling and profile-pin behavior. Also extend operations/workflow-replies.test.ts, prompts/workflow-builders.test.ts and workflow/story-loop-log.test.ts. Main risks: accidentally closing warm sessions, giving restarts fix deadlines, flagging interrupted/failed replies as no-work, or bypassing routed-model/profile-pin behavior. Session lifecycle changes require three-session-tdd.\n\nUS-002 findings and impact: packages/nax/src/workflow/story-loop.ts:28 is the injected step interface, :116 absorbTurn maps failures to session findings and handles advisor answers using TurnOrigin, :240 runs the state machine, and :306 closes and persists the final record. Extract openStory instead of adding branching to runStoryLoop/absorbTurn; the spec states complexity scores 20/19 and a strict ceiling of 20, so preserve the ratchet without baseline exemptions. The new no-work module must receive a turn runner to avoid importing back into story-loop. Absorb only the last ladder outcome and carry stepUps=1 for a fresh restart into subsequent advisor answer turns. packages/nax/src/workflow/stage-env.ts:44 wires steps, :89 currently distinguishes only implement-phase records from resumable records, and :118 begins the real steps object. Work evidence must compare against sc.base, not only the reply's commits. packages/nax/src/workflow/git.ts:57 throws on failed changedFilesSince; :69 lists staged/modified/untracked paths, excluding .nax/ and .nax-*; failed git status currently returns [], so preserve the helper and guard fail-open on thrown errors rather than changing its global contract. Check report existence independently of the nax-path filtering, because workflow artifacts live under nax-owned directories. packages/nax/test/unit/workflow/story-loop.test.ts:55 provides scripted turn and sink fakes and intentionally lacks workProduced. packages/nax/test/unit/workflow/stage-env.test.ts:28 uses base123; retain fail-open compatibility and use a real git base in new evidence fixtures. New tests should exercise runStoryLoop, not just runNoWorkLadder, and buildStoryEnv against isolated git fixtures. Risks: false no-work classification from advisor/state commits, accidentally charging review/fix/adjudication after final no-work, using the guard on resumed/fix/answer turns, and losing last-turn failure/interruption or model origin.\n\nUS-003 findings and impact: packages/nax/src/execution/checkpoint/resume-cli.ts:41 defines ResumeMode and :54 applies only classic checkpoint behavior. Add a separate _workflowResumeDeps object without altering applyResumeModeDeps. packages/nax/src/execution/checkpoint/index.ts:14 and packages/nax/src/execution/index.ts:5 are the export chain. packages/nax/src/execution/runner.ts:223 applies resume mode before setup and :281/:408 restores checkpoint deps on setup failure and outer finally. Save/restore the workflow mode at those same points; the existing reentrancy guard protects module-global run state. Do not add a static execution -> workflow edge. stage-env already imports @/execution and should log only when an otherwise-resumable prior record is deliberately ignored. Old run directories/artifacts remain untouched, and a new current-run record starts at round 0/implement. packages/nax/src/runtime/session-run-hop.ts:33 separates sandbox option construction to avoid a complexity increase; :115 opens sessions without declaredTools. Mirror packages/nax/src/operations/build-hop-callback-hop.ts:422, which forwards declaredTools and sandbox separately. Absence means omit the property, not an undefined field. Test with packages/nax/test/unit/execution/runner-resume-deps.test.ts:47 lifecycle fakes, workflow/stage-env.test.ts:49 prior-record seeding, runtime/session-run-hop.test.ts and execution/checkpoint/resume-cli.test.ts. Risks: process-global mode leaks across runs/tests, restoration only on success, false ignore logs for prior implement-phase records, broadening ACP tools by dropping caller declarations, and disturbing the classic checkpoint seam. Session/tool access paths require three-session-tdd.\n\nUS-004 findings and impact: packages/nax/src/workflow/preflight-run.ts:44 currently dispatches the advisor with no token meter; :79 disposes context in finally. packages/nax/src/workflow/tokens.ts:41 provides immutable per-role snapshots and explicit unsubscribe via stop; it already prefers exactCostUsd over estimates. Meter input.runtime.dispatchEvents, stop it on all exits, and persist calls spent before a preflight error without making accounting writes fatal. packages/nax/src/workflow/result.ts:44 and :119 reconstruct result envelopes, so both upserts must retain the new optional field; use the existing atomic write/runStateWrite path rather than a parallel direct writer. packages/nax/src/workflow/types.ts:75 defines WorkflowResultFile and :105 RoleTokens. No schemaVersion bump is needed for the optional preflightTokensByRole. packages/nax/src/workflow/run-summary.ts:19 currently adds only story and feature role totals. packages/nax/src/execution/lifecycle/run-completion.ts:183 snapshots costs before teardown and :213 closes over those stale breakdowns; read byStage/byStory inside logComplete while retaining the callback signature and ordinary pipeline behavior. packages/nax/src/execution/lifecycle/run-completion-phases.ts:297 logs breakdowns and uses final timing.totalCost; map only the empty run-level key to _run. packages/nax/src/execution/lifecycle/backfill-story-metrics.ts:150 constructs a union domain from cost/fallback/crash keys and failed PRD stories; filter the empty id at the common admission point so applyBackfill never synthesizes a pseudo-story. Existing tests: workflow/preflight-run.test.ts:32 has a real dispatch-capable runtime and faked advisor, workflow/result.test.ts, workflow/run-summary.test.ts, execution/lifecycle/run-completion-aggregator.test.ts, run-completion-workflow-duration.test.ts, backfill-story-metrics.test.ts and run-completion-backfill.test.ts. Integration tests must emit events through the actual run bus and read result.json, then mutate aggregator snapshots between completion and deferred logging. Risks: unsubscribed listeners double-count later calls, discarding spend on exceptions, overwriting the new field in later upserts, metering an adopted preflight that dispatched nothing, rounding in cost comparisons, and conflating run-level accounting with per-story execution metrics. Usage tokens here are billing data, not credentials/authentication tokens; this story changes accounting rather than access control.\n\nUS-005 findings and impact: packages/nax/src/prd/out-of-scope-extract.ts:290 currently combines sentinel/lead-in filtering, canonical dedupe and early cap termination. Extract the same filters into uncapped dedupeOutOfScope and apply the existing 25-item cap only in dedupeAndCap. packages/nax/src/prd/out-of-scope.ts:209 caps the combined propagated list today; :238 strips root canonical entries before save. Preserve feature-first order and first-seen wording, but never truncate unique story-specific entries. packages/nax/src/prd/index.ts:143 propagates after load and :149 strips on save, so caller-level persistence tests are essential. Existing normalize/demotion/extraction callers still require the capped helper; do not widen unrelated plan-time behavior. packages/nax/test/unit/prd/out-of-scope.test.ts:322 explicitly pins the old merged cap and :333 must become length 26 while preserving the first feature item; :350 covers propagate/strip and existing out-of-scope-persistence.test.ts covers disk persistence. The inspected existing file is 749 lines, near the 800-line ceiling; put new cap/round-trip cases in out-of-scope-cap.test.ts. Duplicate canonical entries and empty sentinels intentionally normalize away, so byte-exact round-trip assertions use distinct, meaningful entries and the same absent/empty-field shape. No data migration can recover entries already deleted on prior saves; the change prevents future loss.\n\nUS-006 findings and impact: packages/nax-agent/src/sandbox/policy-builder.ts:192 builds denyWrite through literal(), which applies realOrRaw to existing ancestors and rejects globs. Add only the two root .claude settings files, unconditionally for both platforms and even when absent; deny precedence must not be lifted by allowWrite or broadened into a .claude directory deny. packages/nax-agent/src/coding-tools/coding-tool-sandbox.ts:141 consumes this policy, and packages/nax-agent-acp/src/client/edit-targets.ts:125 already canonicalizes write roots and denies with platform-aware case folding. No ACP package modifications or imports are required; its permission-time path check has a documented TOCTOU limitation and does not remediate existing settings allow rules. packages/nax-agent/src/sandbox/messages.ts:24 defines the current sentence; optional platform must leave old two-argument callers unchanged. packages/nax-agent/src/tools/bash.ts:83 contains _bashToolDeps and :193/:199/:215 cover raw and gated/escalate description branches. packages/nax-agent/src/tools/run-command.ts:286 supplies the argv sandbox note; add only a local _runCommandToolDeps platform seam and do not expose it via internal/public barrels. packages/nax-agent/src/index.ts:285 already publicly exports sandboxSentence; the API name snapshot remains unchanged since no exported names are added. Tests: sandbox/policy-builder.test.ts:28 constructs portable policy input, sandbox/messages.test.ts, tools/bash-sandbox.test.ts and tools/run-command-exec-sandbox.test.ts. Inject darwin/linux through seams rather than depending on the host OS; restore the full seam so tests do not leak platform state. Real bwrap availability can cause integration skips, so unit policy tests cannot be mistaken for kernel enforcement evidence. Security override requires three-session-tdd. The accepted Linux side effect is that a missing .claude directory is mounted empty and blocks other new children; do not introduce an opt-out.\n\nUS-007 findings and impact: packages/nax/src/workflow/pr-body.ts:15 defines facts, :129 assembles Summary before Stories, and :151 applies the 60,000-character tail cut. Insert the optional Closes section immediately after Summary to survive that cut, preserving byte-identical empty/absent output. packages/nax/src/workflow/finalize.ts:102 gathers facts, :270 reads them for the first draft and later reuses them in finishPr, and :293 gates publication modes. Parse only explicit case-insensitive trimmed Closes: lines outside fenced code blocks; split remainder on comma/whitespace, accept exactly #digits, dedupe numbers in first-seen order, and never infer issues from prose or cross-repo references. packages/nax/src/workflow/brief.ts:39 already demonstrates resolving the spec through _workflowDeps, joining relative paths to projectDir, checking existence and swallowing read/resolve errors. Mirror that failure behavior in bodyFacts so publishing is not disrupted. packages/nax/test/unit/workflow/finalize.test.ts:74 wire() captures the body passed to openDraftFinishPr and stubs every forge-side effect; use temporary spec files and restore _workflowDeps, with no real forge/network calls. Extend workflow/pr-body.test.ts and add closing-issues.test.ts for parser cases. Risks: parsing examples inside fences, accepting malformed/cross-repo tokens, using cwd instead of projectDir, moving the section below truncated content, or accidentally touching finish/pipeline PR bodies.\n\nMigration and compatibility: all new persisted/interface fields are optional; default auto resume, missing workProduced, missing platform, missing preflight totals and missing/empty closes preserve current behavior. SchemaVersion remains 1 and old result files are accepted. Fresh mode ignores prior records only in memory while writing a clean current-run record, retaining historical directories. Cost naming changes empty story keys to _run only in the run.complete presentation and excludes them from backfill; do not alter the aggregator's storage keys or global total. Source changes are confined to packages/nax and packages/nax-agent, with packages/nax-agent-acp inspected read-only as an integration consumer. No changes are needed in nax-ai. Failure-table coverage belongs to US-002 (evidence errors, failed/interrupted restarts, cost limit), US-004 (accounting persistence debug/fail-open), and US-007 (resolve/missing/unreadable spec fail-open).\n\nRefine-pass audit: enumerated all 90 original spec ACs (US-001: 12; US-002: 19; US-003: 10; US-004: 15; US-005: 9; US-006: 12; US-007: 13) and retained every assertion in its original story, including the split ledger/log assertions and all regression qualifiers. All five failure-table rows remain represented. Re-read packages/nax/src/workflow/implement.ts:48, sessions.ts:8, fix-round.ts:6, stage-env.ts:89, tokens.ts:41, packages/nax/src/execution/runner.ts:223, and packages/nax-agent/src/tools/bash.ts:193/:296 to check actual callers. Lowered US-001 and US-003 to medium because their changes extend existing helpers/seams rather than introducing new orchestration abstractions; session/tool-access TDD overrides remain strict. Added an explicit US-006 unavailable-sandbox negative-path AC, matching the existing createBashTool branch and packages/nax-agent/test/unit/tools/bash-sandbox.test.ts:37. Clarified git fixture criteria to separate non-nax source commits from the explicitly excluded .nax-only commits, and gave propagation/sandbox negative assertions explicit caller/preconditions. All stories now have negative-path acceptance assertions. Every spec-recommended context file is retained within the five-file limit, every created file stays outside contextFiles, all 15 feature exclusions remain verbatim, and binding IDs/workdirs/dependencies are unchanged. The result-writer and dispatch-error paths remain additive, with old optional-field behavior protected. Accounting tests should use floating-point-tolerant sum assertions without altering persisted cost semantics; real DispatchEvent test values require the other existing mandatory event fields in addition to the spec's abbreviated accounting fields (packages/nax/src/runtime/dispatch-events.ts:15). No runtime validation command was executed because this session exposes only file tools.",
+  "outOfScope": [
+    "A per-story reset command or flag (`--reset-story`, `nax workflow reset`) — `--fresh` / `--no-resume` is the only reset this spec adds.",
+    "Reconciling a prior workflow record against the PRD story's `status` or `attempts` — workflow mode leaves both unchanged, so a reset cannot be told apart from a crash.",
+    "The no-work guard on fix rounds, answer turns or a resumed story — it runs only on the first implement turn of a fresh story and its restarts.",
+    "Loading only the implementer's `CLAUDE.md` instead of full user and project Claude settings (the second half of nax#2505).",
+    "Settings-file `allow` rules that Claude honours without a permission request (the first half of nax#2505) — the deny list stops new edits to the settings files, not rules already in them.",
+    "Per-package `.claude/settings*.json` under a monorepo package other than the session root.",
+    "An opt-out for the new `.claude/settings*.json` write denies.",
+    "Creating other files under a `.claude/` directory that does not exist yet on Linux — srt's bwrap mounts an empty directory at the first missing component of a deny path, which blocks that; accepted.",
+    "Making `ps` or other setuid programs runnable inside the macOS sandbox — srt refuses them and kills a non-setuid copy.",
+    "A darwin note for ACP Claude sessions, whose Bash sandbox description is Claude's own.",
+    "Cache read/write token columns in the workflow role table.",
+    "Forwarding `providerTools` / `toolSurface` from `session-run-hop` — only `declaredTools` is added.",
+    "Cross-repo issue references (`koda#270`, `owner/repo#N`) and guessing issue numbers from spec prose — only explicit `Closes:` lines count.",
+    "`Closes` lines in the finish (pipeline-mode) PR body, and issue references in the run report for `workflow.publish` `push` / `none`.",
+    "MCP server instructions (nax#2517) and a blocking pre-run setup step (nax#2521)."
+  ],
+  "routingProfile": "cross-agent"
+}

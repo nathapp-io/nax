@@ -2,7 +2,7 @@
 import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { resolveWorkflowConfig } from "@/config";
-import { headsUpChannel } from "@/execution";
+import { _workflowResumeDeps, headsUpChannel } from "@/execution";
 import { getLogger } from "@/logger";
 import type { CallContext } from "@/operations/types";
 import type { PipelineContext } from "@/pipeline/types";
@@ -15,6 +15,7 @@ import { runStoryGates, runWorkflowSuiteGate } from "./gates";
 import { listUncommitted, readHead } from "./git";
 import { runImplementerTurn } from "./implement";
 import { appendLedger, ensureLedger } from "./ledger";
+import { storyWorkEvidence } from "./no-work";
 import { workflowFeatureDir, workflowRunDir, workflowStoryDir } from "./paths";
 import { runReReview } from "./re-review";
 import { loadPriorStory, newStoryRecord, upsertStoryRecord } from "./result";
@@ -84,9 +85,7 @@ export async function buildStoryEnv(
   await ensureLedger(runDir, runId, feature);
   const priorStory = await loadPriorStory(workflowFeatureDir(ctx.projectDir, feature), runId, ctx.story.id);
   const prior = priorStory?.record ?? null;
-  // A crash during the first implement turn leaves nothing to resume into: start the story over
-  // (a new session sees the uncommitted edits in the tree). Mid-loop records resume (spec §10).
-  const resume = prior && prior.phase !== "implement" ? prior : null;
+  const resume = resumablePrior(prior, ctx.story.id);
   const resumeRecord: WorkflowStoryRecord | null = resume ? { ...resume, maxRounds: workflow.maxFixRounds } : null;
   let record: WorkflowStoryRecord =
     resumeRecord ?? newStoryRecord(ctx.story.id, workflow.maxFixRounds, new Date().toISOString());
@@ -121,6 +120,7 @@ export async function buildStoryEnv(
     ),
     head: () => readHead(sc.projectDir),
     uncommitted: () => listUncommitted(sc.projectDir),
+    workProduced: () => storyWorkEvidence(sc),
     modelFor: storyModelFor(sc),
     costExceeded: () =>
       typeof costLimit === "number" &&
@@ -179,6 +179,32 @@ export async function buildStoryEnv(
     }
   };
   return { sc, env, closeOnError };
+}
+
+/**
+ * US-003 (nax#2511) — which prior workflow record this run resumes into.
+ *
+ * A crash during the first implement turn leaves nothing to resume into: start the
+ * story over (a new session sees the uncommitted edits in the tree). Mid-loop records
+ * resume (spec §10) — but only in the default `"auto"` mode: `--fresh` /
+ * `--no-resume` restart the story from the top, which is the only signal that tells a
+ * deliberate restart apart from a crash (workflow mode leaves the PRD story's `status`
+ * and `attempts` untouched). The ignored record is logged and left on disk; this run
+ * simply starts a fresh one and never reads the old one.
+ *
+ * Its own function so the resume decision does not grow `buildStoryEnv`, which is
+ * close to its complexity budget, and so the phase rule reads in one place.
+ */
+function resumablePrior(prior: WorkflowStoryRecord | null, storyId: string): WorkflowStoryRecord | null {
+  if (prior === null || prior.phase === "implement") return null;
+  const mode = _workflowResumeDeps.mode;
+  if (mode === "auto") return prior;
+  getLogger().info("workflow", `Ignoring a prior run's workflow record (resume mode ${mode})`, {
+    storyId,
+    round: prior.round,
+    phase: prior.phase,
+  });
+  return null;
 }
 
 /** The resumed implementer and reviewers read brief.md / report.md from this run's story dir (spec §10). */

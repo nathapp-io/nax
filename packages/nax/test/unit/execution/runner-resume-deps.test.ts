@@ -20,7 +20,15 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { assertCaughtInstanceOf, assertNaxError } from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
-import { _runnerDeps, _runnerReentrancyGuard, _storyOrchestratorDeps, type RunOptions, run } from "@/execution";
+import {
+  _runnerDeps,
+  _runnerReentrancyGuard,
+  _storyOrchestratorDeps,
+  _workflowResumeDeps,
+  type ResumeMode,
+  type RunOptions,
+  run,
+} from "@/execution";
 import type { LoadedHooksConfig } from "@/hooks";
 
 function makeMinimalOptions(overrides: Partial<RunOptions> = {}): RunOptions {
@@ -127,6 +135,62 @@ describe("runner.run() — resume-dep lifecycle (US-004 regression)", () => {
     const after2 = _storyOrchestratorDeps.loadCheckpoints;
     expect(after2).toBe(before2);
     expect(after2).toBe(before1);
+  });
+});
+
+/**
+ * `run()` carries its resume mode into workflow resume (`_workflowResumeDeps.mode`,
+ * US-003 / nax#2511). The mode is the ONLY signal that distinguishes a deliberate
+ * restart from a crash: workflow mode leaves the PRD story's status and attempts
+ * untouched, so a `buildStoryEnv` that ignored this seam would silently resume the
+ * old run's findings and round count after `nax run --fresh`.
+ *
+ * The set happens next to the existing `applyResumeModeDeps` call (before the setup
+ * phase) and the restore mirrors `_storyOrchestratorDeps.loadCheckpoints`'s two
+ * restore points — the setup-error catch and the outer `finally`.
+ */
+describe("runner.run() — workflow resume mode (US-003)", () => {
+  let origRunSetupPhase: typeof _runnerDeps.runSetupPhase;
+  let origMode: ResumeMode;
+
+  beforeEach(() => {
+    origRunSetupPhase = _runnerDeps.runSetupPhase;
+    origMode = _workflowResumeDeps.mode;
+    _runnerReentrancyGuard.inFlight = false;
+  });
+
+  afterEach(() => {
+    _runnerDeps.runSetupPhase = origRunSetupPhase;
+    _workflowResumeDeps.mode = origMode;
+    _runnerReentrancyGuard.inFlight = false;
+  });
+
+  test("AC-8: a setup-phase throw restores _workflowResumeDeps.mode to its prior value", async () => {
+    // A non-default prior value, so a run() that never wrote the seam fails this
+    // as loudly as one that wrote it and never restored it.
+    _workflowResumeDeps.mode = "no-resume";
+    _runnerDeps.runSetupPhase = (async () => {
+      throw new Error("fresh-mode setup failure");
+    }) as typeof _runnerDeps.runSetupPhase;
+
+    await expect(run(makeMinimalOptions({ resumeMode: "fresh" }))).rejects.toThrow("fresh-mode setup failure");
+
+    expect(_workflowResumeDeps.mode).toBe("no-resume");
+  });
+
+  test("AC-9: the mode is 'fresh' already while the setup phase runs", async () => {
+    let modeDuringSetup: ResumeMode | undefined;
+    _runnerDeps.runSetupPhase = (async () => {
+      modeDuringSetup = _workflowResumeDeps.mode;
+      // End the run here: the assertion is about what the setup phase observes.
+      throw new Error("observed the setup phase");
+    }) as typeof _runnerDeps.runSetupPhase;
+
+    await expect(run(makeMinimalOptions({ resumeMode: "fresh", featureDir: "/tmp/feat-fresh" }))).rejects.toThrow(
+      "observed the setup phase",
+    );
+
+    expect(modeDuringSetup).toBe("fresh");
   });
 });
 

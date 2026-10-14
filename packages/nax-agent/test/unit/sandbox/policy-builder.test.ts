@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, symlinkSync } from "node:fs";
+import { existsSync, mkdirSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { DEFAULT_SANDBOX_CONFIG, type SandboxConfig } from "#src/config/schemas-sandbox";
 import { realOrRaw } from "#src/internal/realpath";
+import { CLAUDE_SETTINGS_FILES } from "#src/sandbox/claude-settings";
 import { SRT_MACOS_TMPDIR_DENIES } from "#src/sandbox/defaults";
 import { buildSandboxPolicy, type SandboxPolicyInput } from "#src/sandbox/index";
 import { EMPTY_OWNED_PATHS_POLICY } from "#src/tools/owned-paths";
@@ -349,5 +350,72 @@ describe("buildSandboxPolicy reads owned paths from the port (S3-2)", () => {
     });
     expect(policy.denyWrite.some((p) => p.includes(`${join(root, ".nax")}`))).toBe(false);
     expect(policy.denyWrite).toContain(join(root, ".queue.txt"));
+  });
+});
+
+// US-006: Claude Code loads its allow rules, hooks and MCP servers from these
+// two files at the session root, so a write into either one weakens every later
+// session in that workdir. Both are denied as write targets -- through the same
+// `realOrRaw` resolution as every other entry, so the deny holds whether or not
+// the file (or `.claude/` itself) exists yet. `.claude` is deliberately NOT
+// denied: a project keeps skills, commands and agents there.
+describe("US-006 — the session-root Claude settings files are denied", () => {
+  const settingsPath = (name: string): string => realOrRaw(join(root, ".claude", name));
+
+  test("AC-1: .claude/settings.json is a deny entry", () => {
+    const policy = buildSandboxPolicy(input());
+    expect(policy.denyWrite).toContain(settingsPath("settings.json"));
+  });
+
+  // Branch review B1: the names come from the one canonical list, which the
+  // NATIVE tool policy refuses to the same paths. Pinning the sandbox to that
+  // constant is what keeps the two guards from drifting apart.
+  test("B1: every canonical CLAUDE_SETTINGS_FILES entry is denied, from the shared constant", () => {
+    const policy = buildSandboxPolicy(input());
+    for (const rel of CLAUDE_SETTINGS_FILES) expect(policy.denyWrite).toContain(realOrRaw(join(root, rel)));
+  });
+
+  test("AC-2: .claude/settings.local.json is a deny entry", () => {
+    const policy = buildSandboxPolicy(input());
+    expect(policy.denyWrite).toContain(settingsPath("settings.local.json"));
+  });
+
+  test("AC-3: both are denied while .claude/ does not exist yet", () => {
+    expect(existsSync(join(root, ".claude"))).toBe(false);
+    const policy = buildSandboxPolicy(input());
+    expect(policy.denyWrite).toContain(settingsPath("settings.json"));
+    expect(policy.denyWrite).toContain(settingsPath("settings.local.json"));
+  });
+
+  test("AC-3 boundary: an absent .claude/ under a symlinked root keeps the resolved spelling", () => {
+    const real = join(base, "real-claude");
+    mkdirSync(real, { recursive: true });
+    const link = join(base, "link-claude");
+    symlinkSync(real, link);
+    const policy = buildSandboxPolicy(input({ root: link }));
+    expect(policy.denyWrite).toContain(join(real, ".claude", "settings.json"));
+    expect(policy.denyWrite).toContain(join(real, ".claude", "settings.local.json"));
+  });
+
+  test("AC-3 boundary: both stay denied once .claude/ and the files exist", async () => {
+    mkdirSync(join(root, ".claude"), { recursive: true });
+    for (const name of ["settings.json", "settings.local.json"]) await Bun.write(join(root, ".claude", name), "{}");
+    const policy = buildSandboxPolicy(input());
+    for (const name of ["settings.json", "settings.local.json"]) expect(policy.denyWrite).toContain(settingsPath(name));
+  });
+
+  test("AC-4: the denies are platform-independent (linux and darwin)", () => {
+    for (const platform of ["linux", "darwin"] as const) {
+      const policy = buildSandboxPolicy(input({ platform }));
+      for (const name of ["settings.json", "settings.local.json"])
+        expect(policy.denyWrite).toContain(settingsPath(name));
+    }
+  });
+
+  test("AC-5: .claude itself is never a deny entry", () => {
+    const policy = buildSandboxPolicy(input());
+    const dir = join(root, ".claude");
+    expect(policy.denyWrite).not.toContain(realOrRaw(dir));
+    expect(policy.denyWrite.some((p) => p === dir || p === `${dir}/`)).toBe(false);
   });
 });

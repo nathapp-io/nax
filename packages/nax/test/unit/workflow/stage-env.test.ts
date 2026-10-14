@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import {
   cleanupTempDir,
@@ -9,6 +9,8 @@ import {
   makeTestContext,
 } from "@test/helpers";
 import type { Advisor, QuestionDraft } from "@/advisor";
+import { _workflowResumeDeps } from "@/execution";
+import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import type { ICostAggregator } from "@/runtime";
 import { createNoOpCostAggregator } from "@/runtime/cost-aggregator";
 import { ledgerFilePath } from "@/workflow/ledger";
@@ -203,5 +205,94 @@ describe("buildStoryEnv", () => {
     } finally {
       _workflowDeps.createAdvisor = original;
     }
+  });
+});
+
+/**
+ * US-003 (nax#2511) — `run()`'s resume mode reaches workflow resume through the
+ * `_workflowResumeDeps.mode` seam (written by `run()`, read by `buildStoryEnv`).
+ * `nax run --fresh` / `--no-resume` must ignore a prior run's mid-loop record and
+ * start the story over, which is the only signal that tells a deliberate restart
+ * apart from a crash (workflow mode leaves the PRD story's status and attempts
+ * untouched).
+ */
+describe("buildStoryEnv — workflow resume mode (US-003)", () => {
+  let logs: LogEntry[] = [];
+  const defaultMode = _workflowResumeDeps.mode;
+
+  beforeEach(() => {
+    resetLogger();
+    logs = [];
+    initLogger({ level: "silent" });
+    addSink((entry) => logs.push(entry));
+  });
+
+  afterEach(() => {
+    _workflowResumeDeps.mode = defaultMode;
+    resetLogger();
+  });
+
+  const ignoreEntries = () => logs.filter((e) => e.message.startsWith("Ignoring a prior run's workflow record"));
+
+  test("AC-1: mode fresh ignores a seeded mid-loop prior record (env.resume null)", async () => {
+    const { ctx } = setup();
+    await seedPrior(ctx.projectDir, ctx.story.id, "fix", 2);
+    _workflowResumeDeps.mode = "fresh";
+    const { env } = await buildStoryEnv(ctx, makeMockCallContext());
+    expect(env.resume).toBeNull();
+  });
+
+  test("AC-2: mode fresh logs the ignored record, naming the mode and the story", async () => {
+    const { ctx } = setup();
+    await seedPrior(ctx.projectDir, ctx.story.id, "fix", 2);
+    _workflowResumeDeps.mode = "fresh";
+    await buildStoryEnv(ctx, makeMockCallContext());
+    const entry = logs.find((e) => e.message === "Ignoring a prior run's workflow record (resume mode fresh)");
+    expect(entry?.level).toBe("info");
+    expect(entry?.stage).toBe("workflow");
+    expect(entry?.data?.storyId).toBe(ctx.story.id);
+  });
+
+  test("AC-3: mode no-resume ignores a seeded mid-loop prior record (env.resume null)", async () => {
+    const { ctx } = setup();
+    await seedPrior(ctx.projectDir, ctx.story.id, "fix", 2);
+    _workflowResumeDeps.mode = "no-resume";
+    const { env } = await buildStoryEnv(ctx, makeMockCallContext());
+    expect(env.resume).toBeNull();
+  });
+
+  test("AC-4: the default mode still resumes the mid-loop record", async () => {
+    expect(_workflowResumeDeps.mode).toBe("auto");
+    const { ctx } = setup();
+    await seedPrior(ctx.projectDir, ctx.story.id, "fix", 2);
+    const { env } = await buildStoryEnv(ctx, makeMockCallContext());
+    expect(env.resume?.round).toBe(2);
+  });
+
+  test("AC-5: mode fresh writes a story record at round 0, phase implement", async () => {
+    const { ctx, runDir } = setup();
+    await seedPrior(ctx.projectDir, ctx.story.id, "fix", 2);
+    _workflowResumeDeps.mode = "fresh";
+    await buildStoryEnv(ctx, makeMockCallContext());
+    const written = (await readResult(runDir))?.stories[ctx.story.id];
+    expect(written?.round).toBe(0);
+    expect(written?.phase).toBe("implement");
+  });
+
+  test("AC-6: mode fresh writes no 'resumed at round' ledger line", async () => {
+    const { ctx, runDir } = setup();
+    await seedPrior(ctx.projectDir, ctx.story.id, "fix", 2);
+    _workflowResumeDeps.mode = "fresh";
+    await buildStoryEnv(ctx, makeMockCallContext());
+    expect(await Bun.file(ledgerFilePath(runDir)).text()).not.toContain("resumed at round");
+  });
+
+  test("AC-7: a prior record still in its first implement turn is not an ignored resume", async () => {
+    const { ctx } = setup();
+    await seedPrior(ctx.projectDir, ctx.story.id, "implement", 0);
+    _workflowResumeDeps.mode = "fresh";
+    const { env } = await buildStoryEnv(ctx, makeMockCallContext());
+    expect(env.resume).toBeNull();
+    expect(ignoreEntries()).toHaveLength(0);
   });
 });

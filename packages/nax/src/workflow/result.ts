@@ -6,7 +6,7 @@ import { mkdir, readdir, rename, stat } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { runStateWrite } from "@/runstate/store";
 import { buildVerdict } from "./open-items";
-import type { WorkflowFeatureRecord, WorkflowResultFile, WorkflowStoryRecord } from "./types";
+import type { RoleTokens, WorkflowFeatureRecord, WorkflowResultFile, WorkflowStoryRecord } from "./types";
 
 export const _resultDeps = { mkdir, readdir, rename, stat };
 
@@ -52,6 +52,28 @@ export async function upsertStoryRecord(
     runId: header.runId,
     feature: header.feature,
     stories: { ...(current?.stories ?? {}), [record.storyId]: record },
+    ...(current?.featureWorkflow ? { featureWorkflow: current.featureWorkflow } : {}),
+    ...(current?.verdict ? { verdict: current.verdict } : {}),
+    ...(current?.preflightTokensByRole ? { preflightTokensByRole: current.preflightTokensByRole } : {}),
+  });
+}
+
+/**
+ * US-004: this run's pre-flight spend, per role. Written once by `runWorkflowPreflight` — the file
+ * may not exist yet, so this is also the run's first result write. Every later write keeps the field.
+ */
+export async function writePreflightTokens(
+  runDir: string,
+  header: { readonly runId: string; readonly feature: string },
+  byRole: Readonly<Record<string, RoleTokens>>,
+): Promise<void> {
+  const current = await readResult(runDir);
+  await writeResult(runDir, {
+    schemaVersion: 1,
+    runId: header.runId,
+    feature: header.feature,
+    stories: current?.stories ?? {},
+    preflightTokensByRole: byRole,
     ...(current?.featureWorkflow ? { featureWorkflow: current.featureWorkflow } : {}),
     ...(current?.verdict ? { verdict: current.verdict } : {}),
   });
@@ -130,5 +152,6 @@ export async function upsertFeatureRecord(
     stories: current?.stories ?? {},
     featureWorkflow: record,
     ...(verdict ? { verdict } : {}),
+    ...(current?.preflightTokensByRole ? { preflightTokensByRole: current.preflightTokensByRole } : {}),
   });
 }

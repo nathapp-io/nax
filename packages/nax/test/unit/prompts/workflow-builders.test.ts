@@ -5,7 +5,9 @@ import {
   buildWorkflowFixPrompt,
   buildWorkflowImplementPrompt,
   buildWorkflowReReviewPrompt,
+  buildWorkflowRestartPrompt,
   buildWorkflowStoryReviewPrompt,
+  WORKFLOW_REPLY_CONTRACT,
 } from "@/prompts";
 import { renderWorkflowFindings } from "@/prompts/builders/workflow-implementer-builder";
 
@@ -90,6 +92,25 @@ describe("workflow builders", () => {
 
   test("answer prompt quotes the answer", () => {
     expect(buildWorkflowAnswerPrompt("Use Postgres.")).toContain("Use Postgres.");
+  });
+
+  test("restart prompt names the story and both paths, and carries the reply contract (US-001)", () => {
+    const text = buildWorkflowRestartPrompt({
+      storyId: "US-001",
+      briefPath: "/b/brief.md",
+      reportPath: "/b/report.md",
+    });
+    expect(text.startsWith("You have not started story US-001")).toBe(true);
+    expect(text).toContain("/b/brief.md");
+    expect(text).toContain("/b/report.md");
+    // The spec's text verbatim, apart from the interpolations.
+    expect(
+      text,
+    ).toBe(`You have not started story US-001: there are no commits, no changes and no report yet. Read the brief at
+/b/brief.md now and implement it as it says. Write /b/report.md, commit your work, and end your reply with
+the json status block.
+
+${WORKFLOW_REPLY_CONTRACT}`);
   });
 
   test("story review asks for the JSON shape and reads the three files", () => {

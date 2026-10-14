@@ -748,6 +748,7 @@ _resetNativeClient
 _resetRegistryForTest
 _resetSandboxRegistryForTests
 _resetTranscriptTruncationWarningForTests
+_runCommandToolDeps
 _sandboxRegistryDeps
 _sessionSandboxDeps
 _sessionTmpDeps

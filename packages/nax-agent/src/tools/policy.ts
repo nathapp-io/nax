@@ -17,6 +17,7 @@
 import { relative, resolve, sep } from "node:path";
 import type { BashApprovalMode } from "#src/config/bash-approval";
 import { realOrRaw } from "#src/internal/realpath";
+import { claudeSettingsWriteRefusal } from "#src/sandbox/claude-settings";
 import { validateArgv } from "./exec-guard.ts";
 import { createNaxDirIndex } from "./nax-dirs.ts";
 import { EMPTY_OWNED_PATHS_POLICY, type OwnedPathsPolicy } from "./owned-paths.ts";
@@ -170,6 +171,13 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
    * denied and an ask on an ungranted call never becomes an approval prompt.
    */
   function applyPathRules(tool: string, rel: string, state: RuleState): PolicyVerdict | undefined {
+    // US-006 (branch-review B1): the session-root Claude Code settings files are
+    // refused to the same mutating path tools the OS sandbox denies writes to.
+    // The port's `writeRefusal` cannot carry this one -- an embedder that injects
+    // nothing still gets the sandbox deny, so it must get the tool deny too --
+    // and both guards read the ONE list in `#src/sandbox/claude-settings`.
+    const settingsRefusal = claudeSettingsWriteRefusal(tool, rel, resolvedRoot);
+    if (settingsRefusal !== undefined) return deny(`${tool} may not modify ${settingsRefusal}`);
     const ownedRefusal = owned.writeRefusal(tool, rel, { exemptRel: ownedWriteExemption, optIns: naxOptIns });
     if (ownedRefusal !== undefined) return deny(`${tool} may not modify ${ownedRefusal}`);
     const denyEntry = denyBy.get(tool);

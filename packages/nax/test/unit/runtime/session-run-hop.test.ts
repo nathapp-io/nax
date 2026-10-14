@@ -1,12 +1,20 @@
 import { describe, expect, mock, test } from "bun:test";
-import { cleanupTempDir, makeMockAgentManager, makeNaxConfig, makeSessionManager, makeTempDir } from "@test/helpers";
+import {
+  cleanupTempDir,
+  makeMockAgentManager,
+  makeNaxConfig,
+  makeSessionManager,
+  makeTempDir,
+  withDepsRestore,
+} from "@test/helpers";
 import { SessionTurnError } from "@/agents";
+import { resolveCodingToolSupport } from "@/agents/coding-tool-support-resolve";
 import type { RunAsSessionOpts } from "@/agents/manager-types";
 import type { AgentRunOptions, SessionHandle, TurnResult } from "@/agents/types";
 import type { AdapterFailure, ToolDescriptor } from "@/context/engine";
 import { wrapDiffAccess } from "@/prompts/sections/diff-access";
-import { createSessionRunHop } from "@/runtime/session-run-hop";
-import type { SendPromptOpts } from "@/session/types";
+import { _sessionRunHopDeps, createSessionRunHop } from "@/runtime/session-run-hop";
+import type { OpenSessionRequest, SendPromptOpts } from "@/session/types";
 
 function makeRunOptions(): AgentRunOptions {
   return {
@@ -668,5 +676,90 @@ describe("createSessionRunHop — diff-access substitution", () => {
     });
     expect(prompt).toContain("SHELL BODY");
     expect(prompt).not.toContain('"subcommand":"diff"');
+  });
+});
+
+/**
+ * nax#2506 (US-003) — the hop must hand an ACP open the operation's MATERIALIZED
+ * declaration, exactly as `prepareHopSession` (build-hop-callback-hop.ts) does:
+ * the resolver's `declaredTools` (provider + universal scratchpad names included),
+ * never the raw `options.declaredTools` list. The resolved support is injected so
+ * each case drives the shape under test rather than whatever this environment
+ * happens to resolve (the real resolver always appends the universal scratchpad
+ * tools, so a two-name declaration cannot come back from it).
+ */
+describe("createSessionRunHop — declaredTools on the open (nax#2506)", () => {
+  withDepsRestore(_sessionRunHopDeps);
+
+  const TURN: TurnResult = {
+    output: "done",
+    tokenUsage: { inputTokens: 1, outputTokens: 1 },
+    estimatedCostUsd: 0,
+    internalRoundTrips: 1,
+  };
+
+  type ResolvedSupport = NonNullable<Awaited<ReturnType<typeof resolveCodingToolSupport>>>;
+
+  /** The openSession request an ACP open carries, with the resolved support shaped by `inject`. */
+  async function openRequestWith(
+    inject: (support: ResolvedSupport) => ResolvedSupport,
+  ): Promise<OpenSessionRequest | undefined> {
+    const root = makeTempDir("nax-hop-declared-");
+    try {
+      const support = await resolveCodingToolSupport({
+        declaredTools: ["Read"],
+        codingToolRoot: root,
+        pipelineStage: "run",
+        config: makeNaxConfig({ execution: { permissionProfile: "unrestricted" } }),
+      });
+      if (support === undefined) throw new Error("fixture: resolveCodingToolSupport returned no support");
+      _sessionRunHopDeps.resolveCodingToolSupport = async () => inject(support);
+
+      let captured: OpenSessionRequest | undefined;
+      const handle: SessionHandle = { id: "nax-session", agentName: "claude" };
+      const sessionManager = makeSessionManager({
+        nameFor: mock(() => "nax-session"),
+        openSession: mock(async (_name: string, opts: OpenSessionRequest) => {
+          captured = opts;
+          return handle;
+        }),
+        sendPrompt: mock(async () => TURN),
+        closeSession: mock(async () => {}),
+      });
+      const options: AgentRunOptions = {
+        ...makeRunOptions(),
+        workdir: root,
+        codingToolRoot: root,
+        // The raw declaration: NOT what must reach the open (the support's own
+        // materialized list is), so a hop that forwards this instead fails.
+        declaredTools: ["Read"],
+      };
+      await createSessionRunHop(sessionManager)("claude", options);
+      return captured;
+    } finally {
+      cleanupTempDir(root);
+    }
+  }
+
+  test("AC-10: forwards the declaration the resolved support carries", async () => {
+    const request = await openRequestWith((support) => ({ ...support, declaredTools: ["Read", "Grep"] }));
+    expect(request?.declaredTools).toEqual(["Read", "Grep"]);
+  });
+
+  test("AC-11: omits the declaredTools key when the resolved support declares nothing", async () => {
+    const request = await openRequestWith(({ runtime, tools, auditSink }) => ({ runtime, tools, auditSink }));
+    expect(request).toBeDefined();
+    expect(request).not.toHaveProperty("declaredTools");
+  });
+
+  test("AC-12: carries both the declaration and the sandbox when the support has both", async () => {
+    const sandbox: NonNullable<ResolvedSupport["acpSandbox"]> = { kind: "unavailable", reason: "no usable sandbox" };
+    const request = await openRequestWith((support) => ({
+      ...support,
+      declaredTools: ["Read", "Grep"],
+      acpSandbox: sandbox,
+    }));
+    expect(request?.declaredTools).toEqual(["Read", "Grep"]);
+    expect(request?.sandbox).toEqual(sandbox);
   });
 });

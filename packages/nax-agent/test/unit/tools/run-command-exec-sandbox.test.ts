@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { _agentOutputEnvDeps } from "#src/internal/agent-output-env";
 import { _launcherDeps, createCommandLauncher } from "#src/sandbox/index";
 import { createRunCommandTool } from "#src/tools/index";
+import { _runCommandToolDeps } from "#src/tools/run-command";
 import { runExecBranch } from "#src/tools/run-command-exec";
 import { cleanupTempDir, makeFakeSandboxBackend, makeTempDir, withDepsRestore } from "#test/helpers/index";
 
@@ -106,5 +107,42 @@ describe("Exec env overlay through the launcher", () => {
       exec: { repoRoot: root, packageWorkdir: root, allowScripts: false, patterns: ["yarn *"], launcher },
     });
     expect(seen[0]?.env).toEqual({ YARN_ENABLE_SCRIPTS: "false", AGENT: "1" });
+  });
+});
+
+// US-006: RunCommand's Exec note carries the same macOS ps sentence as the Bash
+// tool, sourced from its own platform seam (patched here, never the global
+// `process.platform`).
+describe("US-006 — the darwin ps note in the RunCommand description", () => {
+  withDepsRestore(_runCommandToolDeps, ["platform"]);
+
+  const DARWIN_PS_SENTENCE =
+    'On macOS the sandbox also refuses ps and other setuid programs ("Operation not permitted"), so a test that shells out to ps fails here for that reason alone.';
+
+  const execTool = () =>
+    createRunCommandTool(new Map([["test", "bun test"]]), {
+      exec: {
+        repoRoot: root,
+        packageWorkdir: root,
+        allowScripts: false,
+        patterns: ["bun *"],
+        launcher: createCommandLauncher({
+          state: { kind: "available", backend: "srt", network: "open" },
+          backend: makeFakeSandboxBackend(),
+          policyFor,
+        }),
+      },
+    }).description;
+
+  test("AC-12: a darwin description names the ps note", () => {
+    _runCommandToolDeps.platform = () => "darwin";
+    expect(execTool()).toContain(DARWIN_PS_SENTENCE);
+  });
+
+  test("AC-12 boundary: a linux description omits it", () => {
+    _runCommandToolDeps.platform = () => "linux";
+    const description = execTool();
+    expect(description).toContain('An "argv" call runs inside an OS sandbox');
+    expect(description).not.toContain(DARWIN_PS_SENTENCE);
   });
 });

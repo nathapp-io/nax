@@ -80,6 +80,13 @@ export interface WorkflowResultFile {
   readonly featureWorkflow?: WorkflowFeatureRecord;
   /** #2496: the one place a finishing tool reads. Absent until the feature workflow publishes. */
   readonly verdict?: WorkflowVerdict;
+  /**
+   * US-004: the pre-flight advisor's own spend, metered by `runWorkflowPreflight`. It belongs to
+   * no story, so `WorkflowStoryRecord.tokensByRole` could not hold it; `rolesOf` folds it into the
+   * end-of-run role table. Absent when the pre-flight dispatched nothing (an adopted earlier
+   * pre-flight) and on every result written before this field existed.
+   */
+  readonly preflightTokensByRole?: Readonly<Record<string, RoleTokens>>;
 }
 
 /** #2496: one thing still open on a workflow feature, with its evidence in full. */

@@ -8,6 +8,7 @@ import { isFlaggedRuling, type WorkflowAdvisor } from "./advisor";
 import { deriveEndState } from "./close";
 import type { ImplementOutcome, ImplementTurn } from "./implement";
 import { type LedgerWriteOptions, ledgerText } from "./ledger";
+import { runNoWorkLadder } from "./no-work";
 import { describeFindings, type StepModel, startStep } from "./run-log";
 import type { ReviewOutcome } from "./story-review";
 import type {
@@ -38,6 +39,11 @@ export interface StoryLoopSteps {
   head(): Promise<string>;
   uncommitted(): Promise<string[]>;
   costExceeded(): boolean;
+  /**
+   * US-002: did the story leave any work evidence behind? Absent means "work produced", so the
+   * no-work guard never fires for a caller that has not wired it.
+   */
+  workProduced?(): Promise<boolean>;
   /** The model a step will run on, for its start line (nax#2491 P6). Optional: absent names none. */
   modelFor?(step: "implementer" | "story-review" | "re-review", turn?: ImplementTurn): StepModel | undefined;
 }
@@ -102,8 +108,13 @@ interface TurnOrigin {
   readonly limit: "implement" | "fix";
 }
 
-export const turnLabel = (turn: ImplementTurn): string =>
-  turn.kind === "implement" ? "implementer" : turn.kind === "answer" ? "implementer answer" : `fix r${turn.round}`;
+export const turnLabel = (turn: ImplementTurn): string => {
+  if (turn.kind === "implement") return "implementer";
+  if (turn.kind === "answer") return "implementer answer";
+  // US-001: a restart is its own run-log step, so a no-work story's restarts read distinctly from the first turn.
+  if (turn.kind === "restart") return turn.fresh ? "implementer restart (fresh)" : "implementer restart";
+  return `fix r${turn.round}`;
+};
 
 /** One implementer call, labelled in the run log with its step and round (nax#2491 P2). */
 async function implementTurn(env: StoryLoopEnv, turn: ImplementTurn): Promise<ImplementOutcome> {
@@ -244,10 +255,8 @@ export async function runStoryLoop(env: StoryLoopEnv): Promise<StoryLoopOutcome>
   let firstAfterResume = resumed;
   let rulings: readonly WorkflowRuling[] = [];
 
-  if (!resumed) {
-    await env.sink.update({ phase: "implement" });
-    await absorbTurn(env, s, await implementTurn(env, { kind: "implement" }), { stepUps: 0, limit: "implement" });
-  }
+  const early = await openStory(env, s);
+  if (early) return early;
 
   for (;;) {
     if (env.steps.costExceeded()) {
@@ -304,6 +313,20 @@ export async function runStoryLoop(env: StoryLoopEnv): Promise<StoryLoopOutcome>
 
   const end = deriveEndState({ costStop: s.costStop, gates: s.gates, suite: s.suite, rulings: rulings.length });
   return closeLoop(env, s, end.state, end.reason, rulings);
+}
+
+/**
+ * The first implement turn of a fresh story, and the no-work ladder it may open (US-002).
+ * Lifted out of `runStoryLoop` so the loop's own cognitive complexity does not grow.
+ */
+async function openStory(env: StoryLoopEnv, s: LoopState): Promise<StoryLoopOutcome | undefined> {
+  if (env.resume !== null) return undefined;
+  await env.sink.update({ phase: "implement" });
+  const first = await implementTurn(env, { kind: "implement" });
+  const result = await runNoWorkLadder(env, first, (turn) => implementTurn(env, turn));
+  await absorbTurn(env, s, result.outcome, { stepUps: result.stepUps, limit: "implement" });
+  if (!result.closed) return undefined;
+  return closeLoop(env, s, "complete-gate-open", "no work produced", []);
 }
 
 async function closeLoop(

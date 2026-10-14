@@ -73,3 +73,31 @@ describe("sandbox messages", () => {
     expect(LIKELY_SANDBOX_DENIAL.test("No such file or directory")).toBe(false);
   });
 });
+
+// US-006: on macOS srt refuses every setuid program and kills a non-setuid copy
+// of /bin/ps, so a test that shells out to ps fails for a reason that has
+// nothing to do with the test itself. The note is darwin-only: on Linux ps
+// runs, and the sentence would be a false excuse for a real failure.
+describe("US-006 — the darwin ps note", () => {
+  const DARWIN_PS_SENTENCE =
+    'On macOS the sandbox also refuses ps and other setuid programs ("Operation not permitted"), so a test that shells out to ps fails here for that reason alone.';
+
+  test("AC-6: a darwin sentence ends with the ps note", () => {
+    const s = sandboxSentence("open", true, "darwin");
+    expect(s).toEndWith(DARWIN_PS_SENTENCE);
+    // Appended to the pre-change sentence, not a replacement for it.
+    expect(s).toStartWith(sandboxSentence("open", true));
+  });
+
+  test("AC-7: an explicit linux platform is byte-identical to the two-argument call", () => {
+    expect(sandboxSentence("open", true, "linux")).toBe(sandboxSentence("open", true));
+    expect(sandboxSentence("open", true, "linux")).toEndWith("-- that is the sandbox, not a bug in your command.");
+  });
+
+  test("AC-8: the confined darwin sentence names $TMPDIR and ends with the ps note", () => {
+    const s = sandboxSentence("open", false, "darwin");
+    expect(s).toContain("this run's temp directory ($TMPDIR)");
+    expect(s).not.toContain("the system temp directories");
+    expect(s).toEndWith(DARWIN_PS_SENTENCE);
+  });
+});

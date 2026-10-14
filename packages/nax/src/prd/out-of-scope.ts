@@ -25,6 +25,7 @@ import type { StoryScopedExclusion } from "./out-of-scope-extract";
 import {
   canonical,
   dedupeAndCap,
+  dedupeOutOfScope,
   extractSpecOutOfScope,
   extractStoryScopedOutOfScope,
   INLINE_MARKER,
@@ -202,23 +203,31 @@ export function applyOutOfScopeFallback(prd: PRD, specContent: string): PRD {
  *
  * The implementer, rectifier, and reviewers only ever receive a `UserStory` —
  * never the PRD envelope — so a root-only field would be invisible to them.
- * Story-level entries (a planner may add story-specific exclusions) keep their
- * position; feature-level items are merged in after, deduplicated on canonical
- * form. Returns the input PRD unchanged when there is nothing to propagate.
+ * Feature-level items lead; a planner's story-specific exclusions follow in the
+ * order the story already had them, deduplicated on canonical form. Returns the
+ * input PRD unchanged when there is nothing to propagate.
+ *
+ * **The cap covers the feature-level part only.** `dedupeAndCap` bounds the
+ * list copied onto every story; the story's own entries are appended *after*
+ * that cap and so are never truncated. Capping the merge instead (the previous
+ * behaviour) meant a feature with `MAX_OUT_OF_SCOPE_ITEMS` boundaries silently
+ * deleted every story-specific exclusion — the guidance a story was given about
+ * its own deferred work. `stripPropagatedOutOfScope` writes the survivors back,
+ * so `loadPRD` -> `savePRD` is a round trip at any story-list length.
  */
 export function propagateOutOfScopeToStories(prd: PRD): PRD {
   const featureLevel = prd.outOfScope ?? [];
   if (featureLevel.length === 0) return prd;
 
-  // Feature-level entries come FIRST. `dedupeAndCap` truncates the tail, so
-  // ordering decides who survives a story that already carries many exclusions:
-  // the spec author's declared boundary must outrank planner-invented
-  // story-specific ones. With story entries first, a story holding
-  // MAX_OUT_OF_SCOPE_ITEMS of its own silently dropped every feature-level item —
-  // exactly the statement this whole path exists to deliver.
+  // Feature-level entries come FIRST, and only they are capped. Ordering decides
+  // who survives `dedupeAndCap`: the spec author's declared boundary must
+  // outrank planner-invented story-specific ones. With story entries first, a
+  // story holding MAX_OUT_OF_SCOPE_ITEMS of its own silently dropped every
+  // feature-level item — exactly the statement this whole path exists to deliver.
+  const capped = dedupeAndCap(featureLevel);
   const userStories: UserStory[] = prd.userStories.map((story) => ({
     ...story,
-    outOfScope: dedupeAndCap([...featureLevel, ...(story.outOfScope ?? [])]),
+    outOfScope: dedupeOutOfScope([...capped, ...(story.outOfScope ?? [])]),
   }));
   return { ...prd, userStories };
 }
@@ -229,14 +238,22 @@ export function propagateOutOfScopeToStories(prd: PRD): PRD {
  * ones. Applied before writing `prd.json` so the root field stays the single
  * source of truth on disk and the file does not repeat the same list N times.
  *
+ * The mirror set is the **cap-applied** feature list, not the raw root: entries
+ * stored past `MAX_OUT_OF_SCOPE_ITEMS` are never propagated to a story, so a
+ * story entry that matches one of them canonically is the story's own guidance
+ * rather than a mirror of what the story received. Filtering against the raw
+ * root deleted that story's only copy on the next `loadPRD` — the loss this
+ * path exists to prevent.
+ *
  * Propagate-then-strip is idempotent and preserves each story's *effective* set,
  * but is not byte-identical in one case: a story entry that duplicates a
- * feature-level one is absorbed into the root and not written back to the story.
- * That is intentional — the next `loadPRD` re-propagates it, so the story's
- * effective exclusions are unchanged and the file avoids a redundant copy.
+ * *within-cap* feature-level one is absorbed into the root and not written back
+ * to the story. That is intentional — the next `loadPRD` re-propagates it, so
+ * the story's effective exclusions are unchanged and the file avoids a
+ * redundant copy.
  */
 export function stripPropagatedOutOfScope(prd: PRD): PRD {
-  const featureLevel = new Set((prd.outOfScope ?? []).map(canonical));
+  const featureLevel = new Set(dedupeAndCap(prd.outOfScope ?? []).map(canonical));
   if (featureLevel.size === 0) return prd;
   if (!prd.userStories.some((story) => (story.outOfScope ?? []).length > 0)) return prd;
 

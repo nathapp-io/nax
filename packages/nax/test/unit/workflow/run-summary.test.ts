@@ -150,4 +150,38 @@ describe("buildWorkflowRunSummary", () => {
       expect(v?.branchReviewSkipped).toBeUndefined();
     });
   });
+
+  describe("the pre-flight's own role totals (US-004)", () => {
+    const timing = { storiesDurationMs: 100, featureWorkflowDurationMs: 40 };
+    /** One story at advisor $0.1, a feature record at advisor $0.2, a pre-flight at advisor $0.3. */
+    function preflightResult(): WorkflowResultFile {
+      const file = resultFile();
+      const rec = file.featureWorkflow;
+      if (!rec) throw new Error("fixture has a feature record");
+      return {
+        schemaVersion: 1,
+        runId: file.runId,
+        feature: file.feature,
+        stories: { "US-001": { ...newStoryRecord("US-001", 5, "t"), tokensByRole: { advisor: tok(1, 1, 0.1, 1) } } },
+        featureWorkflow: { ...rec, tokensByRole: { advisor: tok(1, 1, 0.2, 1) } },
+        preflightTokensByRole: { advisor: tok(10, 5, 0.3, 1) },
+      };
+    }
+
+    test("AC-6: the pre-flight's advisor spend folds into the one advisor role row", () => {
+      const v = buildWorkflowRunSummary(preflightResult(), timing);
+      expect(v?.roles).toHaveLength(1);
+      expect(v?.roles[0]?.role).toBe("advisor");
+      expect(v?.roles[0]?.costUsd).toBeCloseTo(0.6, 10);
+      expect(v?.roles[0]?.inputTokens).toBe(12);
+      expect(v?.roles[0]?.outputTokens).toBe(7);
+      expect(v?.roles[0]?.calls).toBe(3);
+    });
+
+    test("AC-7: a result without preflightTokensByRole reports exactly the roles it did before", () => {
+      const { preflightTokensByRole: _drop, ...withoutPreflight } = preflightResult();
+      const v = buildWorkflowRunSummary(withoutPreflight, timing);
+      expect(v?.roles).toEqual([{ role: "advisor", inputTokens: 2, outputTokens: 2, costUsd: 0.1 + 0.2, calls: 2 }]);
+    });
+  });
 });

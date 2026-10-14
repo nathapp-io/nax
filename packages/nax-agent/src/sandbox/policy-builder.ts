@@ -11,6 +11,7 @@ import { NaxError } from "#src/infra/index";
 import { realOrRaw } from "#src/internal/realpath";
 import { SANDBOX_GLOB_CHARS, type SandboxConfig } from "../config/schemas-sandbox.ts";
 import type { OwnedPathsPolicy } from "../tools/owned-paths.ts";
+import { CLAUDE_SETTINGS_FILES } from "./claude-settings.ts";
 import {
   BUILTIN_CACHE_WRITE_ROOTS,
   BUILTIN_CREDENTIAL_READ_DENIES,
@@ -196,6 +197,10 @@ export function buildSandboxPolicy(input: SandboxPolicyInput): SandboxPolicy {
     ...input.gitGuardFiles,
     ...(input.approvalsFile !== undefined ? [input.approvalsFile] : []),
     ...(input.trustStoreFile !== undefined ? [input.trustStoreFile] : []),
+    // US-006: the two session-root Claude settings files. One canonical list
+    // with the native tool policy that refuses the same paths (B1) -- see
+    // ./claude-settings.ts for why each is denied and why `.claude` is not.
+    ...CLAUDE_SETTINGS_FILES.map((rel) => join(root, rel)),
     ...(darwin && confined ? SRT_MACOS_TMPDIR_DENIES : []),
   ]);
   const denyRead = literal([

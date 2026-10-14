@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createCommandLauncher, DISABLED_SANDBOX_STATE } from "#src/sandbox/index";
-import { createBashTool } from "#src/tools/index";
-import { cleanupTempDir, makeFakeSandboxBackend, makeTempDir } from "#test/helpers/index";
+import { _bashToolDeps, createBashTool } from "#src/tools/index";
+import { cleanupTempDir, makeFakeSandboxBackend, makeTempDir, withDepsRestore } from "#test/helpers/index";
 
 let root: string;
 beforeEach(() => {
@@ -113,5 +113,55 @@ describe("US-003 — Bash description names the confined temp root", () => {
     const tool = createBashTool({ bashApproval: "gated", patterns: ["bun *"], launcher: launcherFor(false) });
     expect(tool.description).toContain("the system temp directories");
     expect(tool.description).not.toContain("this run's temp directory ($TMPDIR)");
+  });
+});
+
+// US-006: the platform seam decides whether a description carries the macOS ps
+// note. It is patched through `_bashToolDeps`, never the global
+// `process.platform`, so the assertions hold on every host the suite runs on.
+describe("US-006 — the darwin ps note in the Bash description", () => {
+  withDepsRestore(_bashToolDeps, ["platform"]);
+
+  const DARWIN_PS_SENTENCE =
+    'On macOS the sandbox also refuses ps and other setuid programs ("Operation not permitted"), so a test that shells out to ps fails here for that reason alone.';
+
+  const launcher = () => createCommandLauncher({ state: available, backend: makeFakeSandboxBackend(), policyFor });
+
+  test("AC-9: a gated darwin description ends with the ps note", () => {
+    _bashToolDeps.platform = () => "darwin";
+    const description = createBashTool({
+      bashApproval: "gated",
+      patterns: ["bun *"],
+      launcher: launcher(),
+    }).description;
+    expect(description).toEndWith(DARWIN_PS_SENTENCE);
+  });
+
+  test("AC-10: a gated linux description keeps today's closing sentence", () => {
+    _bashToolDeps.platform = () => "linux";
+    const description = createBashTool({
+      bashApproval: "gated",
+      patterns: ["bun *"],
+      launcher: launcher(),
+    }).description;
+    expect(description).toEndWith("-- that is the sandbox, not a bug in your command.");
+    expect(description).not.toContain("refuses ps");
+  });
+
+  test("AC-11: a raw darwin description names the ps note", () => {
+    _bashToolDeps.platform = () => "darwin";
+    const description = createBashTool({ bashApproval: "raw", launcher: launcher() }).description;
+    expect(description).toContain(DARWIN_PS_SENTENCE);
+  });
+
+  test("AC-13: an unavailable raw sandbox keeps the refusal and never advertises the ps note", () => {
+    _bashToolDeps.platform = () => "darwin";
+    const description = createBashTool({
+      bashApproval: "raw",
+      launcher: createCommandLauncher({ state: { kind: "unavailable", backend: "srt", reason: "no bwrap" } }),
+    }).description;
+    expect(description).toContain("sandbox unavailable (no bwrap)");
+    expect(description).toContain("every call is refused");
+    expect(description).not.toContain(DARWIN_PS_SENTENCE);
   });
 });

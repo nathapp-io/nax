@@ -41,6 +41,23 @@ import { createCheckpointWriter } from "./writer";
 export type ResumeMode = "auto" | "fresh" | "no-resume";
 
 /**
+ * US-003 (nax#2511) — the run-start resume mode as the WORKFLOW stage reads it.
+ *
+ * `execution/` may not import `@/workflow` statically, so the mode cannot ride a
+ * parameter from `run()` into `buildStoryEnv`; it travels this module-global seam
+ * instead, exactly as `_storyOrchestratorDeps` does for the orchestrator's
+ * checkpoint deps. `run()` writes it next to `applyResumeModeDeps` (before the
+ * setup phase) and restores the prior value wherever it restores
+ * `_storyOrchestratorDeps.loadCheckpoints` — the setup-error catch and the outer
+ * `finally`. `applyResumeModeDeps` itself is unchanged: it owns the orchestrator's
+ * in-memory skip state, this seam owns the workflow record.
+ *
+ * Defaults to `"auto"` (today's behaviour) so a `buildStoryEnv` call outside
+ * `run()` — tests, `nax workflow` subcommands — still resumes.
+ */
+export const _workflowResumeDeps: { mode: ResumeMode } = { mode: "auto" };
+
+/**
  * Install the orchestrator's `loadCheckpoints` dep for the given feature
  * and resume mode. Callers must restore the original dep afterwards when
  * running multiple in-process runs (the runner handles this in its `finally`

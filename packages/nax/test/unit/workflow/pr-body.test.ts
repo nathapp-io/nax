@@ -62,6 +62,25 @@ describe("buildWorkflowPrBody", () => {
     expect([...order].sort((a, b) => a - b)).toEqual(order);
   });
 
+  test("AC-7: closes renders a ## Closes section directly after Summary and before Stories (US-007)", () => {
+    const withCloses = buildWorkflowPrBody({ ...input, closes: [2508, 2507] });
+    const section = "## Closes\n\nCloses #2508\nCloses #2507";
+    expect(withCloses).toContain(section);
+    // The section sits between Summary and Stories, and nothing else does.
+    expect(withCloses.slice(withCloses.indexOf("## Closes"), withCloses.indexOf("## Stories"))).toBe(`${section}\n\n`);
+    expect(
+      withCloses.slice(withCloses.indexOf("## Summary"), withCloses.indexOf("## Closes")).match(/^## .*/gm),
+    ).toEqual(["## Summary"]);
+  });
+
+  test("AC-9: an empty closes list renders exactly the body of no closes at all (US-007)", () => {
+    const none = buildWorkflowPrBody(input);
+    expect(buildWorkflowPrBody({ ...input, closes: [] })).toBe(none);
+    expect(none).not.toContain("## Closes");
+    // Control: a non-empty list does change the body, so the equality above is not vacuous.
+    expect(buildWorkflowPrBody({ ...input, closes: [1] })).not.toBe(none);
+  });
+
   test("outcome, reasons, story rows (escaped), unreviewed marker", () => {
     expect(body).toContain("Outcome: **draft**");
     expect(body).toContain("- stories gate-open: US-002");
@@ -192,6 +211,27 @@ describe("buildWorkflowPrBody", () => {
     });
     expect(body.length).toBeLessThanOrEqual(PR_BODY_MAX_CHARS);
     expect(body).toContain("Open items truncated to fit the PR body");
+  });
+
+  test("AC-8: a body cut to PR_BODY_MAX_CHARS still carries Closes #7 (US-007)", () => {
+    const body = buildWorkflowPrBody({
+      ...input,
+      closes: [7],
+      minorsLeft: Array.from({ length: 50 }, () => "m".repeat(299)),
+      rulings: Array.from({ length: 50 }, () => ({
+        findingId: "B",
+        action: "defer" as const,
+        text: "t".repeat(299),
+        why: "w".repeat(299),
+        costIfWrong: "c",
+        source: "advisor" as const,
+      })),
+      assumptions: Array.from({ length: 50 }, () => ({ storyId: "S", text: "a".repeat(699) })),
+      openItems: [held],
+    });
+    // The hard cut, not just the capping pass: the body is exactly the limit and keeps its head.
+    expect(body.length).toBe(PR_BODY_MAX_CHARS);
+    expect(body).toContain("## Closes\n\nCloses #7");
   });
 
   test("a small body keeps open item text in full", () => {

@@ -5,6 +5,7 @@ import { resolveWorkflowConfig } from "@/config";
 import type { WorkflowImplementInput } from "@/operations";
 import { workflowImplementOp } from "@/operations";
 import type { UserStory } from "@/prd";
+import { buildWorkflowImplementPrompt, buildWorkflowRestartPrompt } from "@/prompts";
 import type { SessionDescriptor } from "@/session/types";
 import { fixModelFor } from "@/workflow/fix-round";
 import { runImplementerTurn } from "@/workflow/implement";
@@ -283,5 +284,105 @@ describe("runImplementerTurn", () => {
     await expect(
       runImplementerTurn(makeStepContext({ workflow, runSignal: ac.signal }), { kind: "implement" }),
     ).rejects.toThrow("auth expired");
+  });
+});
+
+/** US-001 (nax#2509): a live wf-implementer session whose close is recorded, so a turn that must not close shows it. */
+function liveImplementerSessions(order: string[]) {
+  const descriptor: SessionDescriptor = {
+    id: "sess-1",
+    role: "wf-implementer",
+    state: "RUNNING",
+    agent: "claude",
+    workdir: "/repo",
+    protocolIds: { recordId: null, sessionId: null },
+    handle: "h1",
+    completedStages: [],
+    createdAt: "",
+    lastActivityAt: "",
+  };
+  return makeSessionManager({
+    getForStory: () => [descriptor],
+    getLiveHandle: () => ({ id: "live", agentName: "claude" }),
+    closeSession: async () => {
+      order.push("close");
+    },
+  });
+}
+
+const restartPaths = { briefPath: "/b/brief.md", reportPath: "/b/report.md" };
+
+describe("runImplementerTurn restart turns (US-001)", () => {
+  test("warm restart: the short restart prompt, no session close", async () => {
+    const order: string[] = [];
+    const seen: WorkflowImplementInput[] = [];
+    fakeImplement(() => {
+      order.push("call");
+      return doneReply;
+    }, seen);
+    _workflowDeps.git = async () => ({ stdout: "", exitCode: 0 });
+    await runImplementerTurn(
+      makeStepContext({
+        story: routed("fast"),
+        tierOrder: tiers,
+        workflow,
+        ...restartPaths,
+        sessionManager: liveImplementerSessions(order),
+      }),
+      { kind: "restart", fresh: false, stepUps: 0 },
+    );
+    expect(seen[0]?.prompt).toBe(
+      buildWorkflowRestartPrompt({ storyId: "US-001", briefPath: "/b/brief.md", reportPath: "/b/report.md" }),
+    );
+    expect(order).toEqual(["call"]);
+    expect(seen[0]?.model).toBeUndefined();
+  });
+
+  test("fresh restart: closes the warm session first, then the full implement prompt, stepped up one rung", async () => {
+    const order: string[] = [];
+    const seen: WorkflowImplementInput[] = [];
+    const story = routed("fast");
+    fakeImplement(() => {
+      order.push("call");
+      return doneReply;
+    }, seen);
+    _workflowDeps.git = async () => ({ stdout: "", exitCode: 0 });
+    await runImplementerTurn(
+      makeStepContext({
+        story,
+        tierOrder: tiers,
+        workflow,
+        ...restartPaths,
+        sessionManager: liveImplementerSessions(order),
+      }),
+      { kind: "restart", fresh: true, stepUps: 1 },
+    );
+    expect(order).toEqual(["close", "call"]);
+    expect(seen[0]?.prompt).toBe(
+      buildWorkflowImplementPrompt({ storyId: "US-001", briefPath: "/b/brief.md", reportPath: "/b/report.md" }),
+    );
+    expect(seen[0]?.model).toBe(fixModelFor(story, tiers, 1));
+    expect(seen[0]?.model).toBe("balanced");
+  });
+
+  test.each([
+    ["warm", { kind: "restart", fresh: false, stepUps: 0 } as const],
+    ["fresh", { kind: "restart", fresh: true, stepUps: 1 } as const],
+  ])("restart turn (%s): the implement timeout, not the fix timeout", async (_name, turn) => {
+    const order: string[] = [];
+    const seen: WorkflowImplementInput[] = [];
+    fakeImplement(doneReply, seen);
+    _workflowDeps.git = async () => ({ stdout: "", exitCode: 0 });
+    await runImplementerTurn(
+      makeStepContext({
+        story: routed("fast"),
+        tierOrder: tiers,
+        workflow,
+        sessionManager: liveImplementerSessions(order),
+      }),
+      turn,
+    );
+    expect(seen[0]?.timeoutMs).toBe(workflow.timeouts.implementMs);
+    expect(seen[0]?.timeoutMs).toBe(111);
   });
 });

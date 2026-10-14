@@ -20,6 +20,9 @@ function rolesOf(result: WorkflowResultFile): WorkflowSummaryView["roles"] {
   const total: Readonly<Record<string, RoleTokens>> = [
     ...Object.values(result.stories).map((s) => s.tokensByRole ?? {}),
     result.featureWorkflow?.tokensByRole ?? {},
+    // US-004: the pre-flight runs before the first story and belongs to no story record, so without
+    // this its spend is missing from the role table (and from the run's role total) entirely.
+    result.preflightTokensByRole ?? {},
   ].reduce((acc, next) => addRoleTokens(acc, next), {});
   return Object.entries(total)
     .map(([role, t]) => ({ role, ...t }))

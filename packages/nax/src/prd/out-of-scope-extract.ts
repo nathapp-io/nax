@@ -286,8 +286,15 @@ function isListLeadIn(item: string): boolean {
   return item.trimEnd().endsWith(":");
 }
 
-/** Deduplicate on canonical form, keeping first-seen (spec) wording, then cap. */
-export function dedupeAndCap(items: string[]): string[] {
+/**
+ * Deduplicate on canonical form, keeping first-seen (spec) wording — no cap.
+ *
+ * Split out of {@link dedupeAndCap} because the cap's reach is narrower than the
+ * filters': a story's own exclusions are *story-specific guidance* and must
+ * never be cut, while the feature-level list copied onto every story stays
+ * bounded. See `propagateOutOfScopeToStories` (`./out-of-scope`).
+ */
+export function dedupeOutOfScope(items: string[]): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const item of items) {
@@ -299,9 +306,19 @@ export function dedupeAndCap(items: string[]): string[] {
     if (key.length === 0 || seen.has(key)) continue;
     seen.add(key);
     out.push(item);
-    if (out.length >= MAX_OUT_OF_SCOPE_ITEMS) break;
   }
   return out;
+}
+
+/**
+ * {@link dedupeOutOfScope}, truncated to {@link MAX_OUT_OF_SCOPE_ITEMS}.
+ *
+ * `slice` after deduplicating the whole list rather than breaking out of the loop
+ * is the same output: the dedupe is order-preserving, so the first N kept items
+ * cannot depend on items the loop has not reached yet.
+ */
+export function dedupeAndCap(items: string[]): string[] {
+  return dedupeOutOfScope(items).slice(0, MAX_OUT_OF_SCOPE_ITEMS);
 }
 
 /**
