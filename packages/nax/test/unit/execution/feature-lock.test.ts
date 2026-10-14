@@ -367,14 +367,26 @@ describe("acquireFeatureLock", () => {
     );
 
     const realRename = _featureLockDeps.rename;
-    let claimed = false;
-    _featureLockDeps.rename = (from: Parameters<typeof realRename>[0], to: Parameters<typeof realRename>[1]) => {
-      if (claimed) {
-        // simulate the second racer losing the rename race (BUG-34 window)
-        throw Object.assign(new Error(`ENOENT: ${String(from)} -> ${String(to)}`), { code: "ENOENT" });
+    let renameAttempts = 0;
+    let releaseWinner!: () => void;
+    const winnerMayRename = new Promise<void>((resolve) => {
+      releaseWinner = resolve;
+    });
+    _featureLockDeps.rename = async (
+      from: Parameters<typeof realRename>[0],
+      to: Parameters<typeof realRename>[1],
+    ) => {
+      renameAttempts += 1;
+      if (renameAttempts === 1) {
+        // Keep the stale record in place until the other contender has read
+        // it and attempts the same rename. Coverage instrumentation can
+        // otherwise let one contender finish before the second reads it.
+        await winnerMayRename;
+        return realRename(from, to);
       }
-      claimed = true;
-      return realRename(from, to);
+      releaseWinner();
+      // Simulate the second racer losing the rename race (BUG-34 window).
+      throw Object.assign(new Error(`ENOENT: ${String(from)} -> ${String(to)}`), { code: "ENOENT" });
     };
 
     const results = await Promise.all([

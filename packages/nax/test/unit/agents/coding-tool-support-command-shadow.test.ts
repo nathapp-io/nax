@@ -26,14 +26,21 @@ describe("resolveCodingToolSupport — commandShadow (P5 threading)", () => {
         settle: () => {},
         drain: async () => {},
       };
+      const execution: Record<string, unknown> = {
+        bashApproval: "raw",
+        permissionProfile: "scoped",
+        permissions: { run: { allow: ["Bash(echo *)"] } },
+        sandbox: { enabled: false },
+      };
       const support = await resolveCodingToolSupport({
-        declaredTools: ["Bash"],
+        declaredTools: ["Bash", "Write"],
         codingToolRoot: root,
         pipelineStage: "run",
-        config: makeNaxConfig({ execution: { bashApproval: "raw" } }),
+        config: makeNaxConfig({ execution }),
         commandShadow,
       });
-      await support?.runtime.callTool("Bash", { command: "echo threaded" });
+      expect(support?.tools.some((tool) => tool.name === "Bash")).toBe(true);
+      await support!.runtime.callTool("Bash", { command: "echo threaded" });
       expect(observed).toEqual(["echo threaded"]);
     } finally {
       cleanupTempDir(root);
