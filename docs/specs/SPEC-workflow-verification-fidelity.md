@@ -12,7 +12,7 @@ table drops cache read and write tokens. nax#2526: the publish step logs nothing
 CI. nax#2527: reviewers file `cannotVerify` items for checks that nax's own gates already cover. The review
 prompts now state those gate results, expect a scoped test run, and narrow `cannotVerify`.
 
-Closes: #2523, #2524, #2525, #2526, #2527
+Closes: #2523, #2524, #2525, #2526, #2527, #2531
 
 ## Motivation
 
@@ -229,6 +229,7 @@ Story review block, inserted before the verdict instructions:
 Story and branch `cannotVerify` sentence. It replaces "Put anything you could not check in "cannotVerify".":
 
 > Put in "cannotVerify" only what neither nax's gates nor a scoped command can check, such as behaviour that needs a live external service.
+> Say a tool or service is unavailable only together with the command you ran and the error it returned; otherwise say what you did not try.
 
 Branch review block:
 
@@ -368,7 +369,8 @@ Workdir: `packages/nax`
 
 Passes the story's gate states into `storyReview` → `runStoryReview` → `buildWorkflowStoryReviewPrompt`, and
 `rec.repoGates` into the branch review facts → `buildWorkflowBranchReviewPrompt`. Adds the "What nax already
-checked" blocks, the scoped-run expectation and the narrowed `cannotVerify` sentence to both workflow review prompts.
+checked" blocks, the scoped-run expectation, the narrowed `cannotVerify` sentence and the evidence rule for
+unavailability claims (nax#2531: a reviewer may not state an unchecked cause) to both workflow review prompts.
 
 Dependencies: none. (Workflow mode runs stories one at a time in order, so US-006 already lands after US-001..US-003.)
 
@@ -605,5 +607,7 @@ Verification note: CI's `nax` job runs `bun run test:confined` and fails on a no
 - [unit] `buildWorkflowBranchReviewPrompt` with `repoGates: { ran: ["build", "test"], failing: ["test"] }` returns text containing `failing: test.`
 - [unit] `buildWorkflowBranchReviewPrompt` without `repoGates` returns text containing `Repository gates before this review: not run; failing: none.`
 - [unit] `buildWorkflowBranchReviewPrompt` returns text containing `only what neither nax's gates nor a scoped command can check`.
+- [unit] `buildWorkflowStoryReviewPrompt` returns text containing `Say a tool or service is unavailable only together with the command you ran and the error it returned; otherwise say what you did not try.`
+- [unit] `buildWorkflowBranchReviewPrompt` returns text containing `Say a tool or service is unavailable only together with the command you ran and the error it returned; otherwise say what you did not try.`
 - [unit] `runFeatureMachine` whose record has `repoGates: { ran: ["lint"], failing: [] }` calls `branchReview` with facts whose `repoGates` equals that summary.
 - [unit] `reviewerCommandsSection().content` still contains `you may run commands`.
