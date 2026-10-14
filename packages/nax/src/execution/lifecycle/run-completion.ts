@@ -218,8 +218,11 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
       finalCounts,
       reportedTotal: costs.reportedTotal,
       errorCostField: costs.errorCostField,
-      aggByStage: costs.aggByStage,
-      aggByStory: costs.aggByStory,
+      // US-004: read the aggregator's splits as the line is written, not at phase 3. The deferred
+      // line is written after the feature workflow, whose spend reached the aggregator since — a
+      // phase-3 snapshot reported a breakdown that predated it and did not sum to the total.
+      aggByStage: options.runtime.costAggregator.byStage(),
+      aggByStory: options.runtime.costAggregator.byStory(),
       durationMs: timing?.durationMs ?? durationMs,
       ...(timing ? { timing } : {}),
       logger,

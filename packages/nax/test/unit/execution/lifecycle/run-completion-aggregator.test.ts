@@ -177,6 +177,23 @@ describe("handleRunCompletion — Bug 909: aggregator-driven totalCost reporting
     expect(metrics).toHaveLength(0);
   });
 
+  test("AC-16: run-level aggregator spend (the '' key) never becomes a story metric", async () => {
+    // The feature workflow's ops carry no story, and `synthesizeStory(undefined)` reports their
+    // id as "". The run-level row is real spend, but it is not a story: it must not appear in
+    // storyMetrics, where a reader would take it for one (US-004).
+    const prd = makePRD(["US-001"]);
+    const aggregator = makeMockAggregator({
+      snapshot: () => ({ ...makeEmptySnapshot(), totalCostUsd: 0.2983, callCount: 1 }),
+      byStory: () => ({ "": { ...makeEmptySnapshot(), totalCostUsd: 0.2983, callCount: 1 } }),
+    });
+
+    const metrics: StoryMetrics[] = [];
+    await handleRunCompletion(makeOpts(prd, metrics, aggregator));
+
+    expect(metrics.filter((m) => m.storyId === "")).toHaveLength(0);
+    expect(metrics).toHaveLength(0);
+  });
+
   test("does not double-count when execution-phase already reported cost for a story", async () => {
     const prd = makePRD(["US-001"]);
     // Aggregator says US-001 spent $3.50 total; execution-phase already logged $1.00

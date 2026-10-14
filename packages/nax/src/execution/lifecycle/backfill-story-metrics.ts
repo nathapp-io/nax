@@ -136,6 +136,20 @@ export function synthesizeBackfillMetric(args: BackfillMetricArgs): StoryMetrics
 }
 
 /**
+ * The cost aggregator's key for work that belongs to no story — the feature workflow's branch
+ * review and fix dispatch with no `storyId`, and `synthesizeStory(undefined)` reports the id as `""`
+ * (`src/operations/call-resolvers.ts`). Run-level spend is real, but it is not a story.
+ */
+export const RUN_LEVEL_AGGREGATOR_STORY_ID = "";
+
+/**
+ * US-004: what the run-level row is called where a human reads it — the same `_run` scope every
+ * other run-scoped line already uses (`FEATURE_SCOPE` in `@/workflow`, which `execution/` may not
+ * import). The completion line reports the aggregator's `""` row under this name instead.
+ */
+export const RUN_LEVEL_STORY_KEY = "_run";
+
+/**
  * Which stories the back-fill should consider, and in what order.
  *
  * nax#1721: the loop used to iterate the cost aggregator's keys alone, so a story
@@ -146,6 +160,10 @@ export function synthesizeBackfillMetric(args: BackfillMetricArgs): StoryMetrics
  *
  * Aggregator keys come first so the pre-existing emission order is preserved; the
  * other sources only append ids that order did not already cover.
+ *
+ * US-004: the run-level key is skipped from every source. It has cost and so passed
+ * the evidence rule, which stamped a `storyId: ""` row into `storyMetrics` for spend
+ * that no story produced.
  */
 export function backfillDomain(input: {
   aggregatorKeys: Iterable<string>;
@@ -156,7 +174,7 @@ export function backfillDomain(input: {
   const ordered: string[] = [];
   const seen = new Set<string>();
   const add = (id: string): void => {
-    if (seen.has(id)) return;
+    if (id === RUN_LEVEL_AGGREGATOR_STORY_ID || seen.has(id)) return;
     seen.add(id);
     ordered.push(id);
   };

@@ -32,11 +32,11 @@ import { deriveRunFallbackAggregates, saveRunMetrics } from "@/metrics";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { PRD } from "@/prd";
 import { countStories, isComplete, isStalled } from "@/prd";
-import { totalSpendUsd } from "@/runtime";
+import { type CostSnapshot, totalSpendUsd } from "@/runtime";
 import { purgeStaleScratch } from "@/session";
 import type { closeAllRunSessions } from "../session-manager-runtime";
 import type { StatusWriter } from "../status-writer";
-import { applyBackfill } from "./backfill-story-metrics";
+import { applyBackfill, RUN_LEVEL_AGGREGATOR_STORY_ID, RUN_LEVEL_STORY_KEY } from "./backfill-story-metrics";
 import type { RunCompletionOptions } from "./run-completion";
 
 /** The slice of `_runCompletionDeps` the teardown phase calls. */
@@ -102,14 +102,16 @@ export interface CompletionCosts {
    * its presence always means dispatches actually failed.
    */
   errorCostField: { errorCostUsd?: number };
-  aggByStage: ReturnType<RunCompletionOptions["runtime"]["costAggregator"]["byStage"]>;
-  aggByStory: ReturnType<RunCompletionOptions["runtime"]["costAggregator"]["byStory"]>;
 }
 
 /**
  * Snapshot the cost aggregator and apply the story-metrics backfill
  * (run-completion phase 3). Mutates `allStoryMetrics` in place, exactly as
  * the original inline block did.
+ *
+ * US-004: the per-stage / per-story splits are read here for the back-fill only, never
+ * returned. They are reported by `logRunCompletion`, which reads them when it writes the
+ * line — in workflow mode that is after the feature workflow has added its own spend.
  */
 export function snapshotCostsAndBackfill(input: {
   options: RunCompletionOptions;
@@ -127,7 +129,6 @@ export function snapshotCostsAndBackfill(input: {
   const errorCostUsd = aggSnap.totalErrorCostUsd;
   const errorCostField: { errorCostUsd?: number } = errorCostUsd > 0 ? { errorCostUsd } : {};
 
-  const aggByStage = options.runtime.costAggregator.byStage();
   const aggByStory = options.runtime.costAggregator.byStory();
 
   // nax#1721: domain, evidence rule and synthesis all live in backfill-story-metrics.ts.
@@ -140,7 +141,7 @@ export function snapshotCostsAndBackfill(input: {
     config,
     defaultAgent: options.agentManager?.getDefault() ?? resolveDefaultAgent(config),
   });
-  return { reportedTotal, errorCostField, aggByStage, aggByStory };
+  return { reportedTotal, errorCostField };
 }
 
 /**
@@ -291,8 +292,25 @@ export async function purgeStaleRunArtifacts(input: {
 }
 
 /**
+ * US-004: the aggregator files run-level spend under the empty story id; the log line reports it as
+ * `_run`, the name every other run-scoped line uses, so it and the story rows read consistently.
+ */
+function withRunScopeKey(aggByStory: Record<string, CostSnapshot>): Record<string, CostSnapshot> {
+  return Object.fromEntries(
+    Object.entries(aggByStory).map(([storyId, snap]) => [
+      storyId === RUN_LEVEL_AGGREGATOR_STORY_ID ? RUN_LEVEL_STORY_KEY : storyId,
+      snap,
+    ]),
+  );
+}
+
+/**
  * The completion summary log (run-completion phase 7): per-story metrics,
  * AC-25 context cost, and the aggregator's per-stage/per-story splits.
+ *
+ * US-004: the splits are the caller's read of the aggregator at the moment the line is written,
+ * not a phase-3 snapshot — in workflow mode this line is held back until the feature workflow has
+ * run, and its spend is exactly what a stale snapshot left out of the breakdown.
  */
 export function logRunCompletion(input: {
   options: RunCompletionOptions;
@@ -301,8 +319,8 @@ export function logRunCompletion(input: {
   finalCounts: ReturnType<typeof countStories>;
   reportedTotal: number;
   errorCostField: { errorCostUsd?: number };
-  aggByStage: CompletionCosts["aggByStage"];
-  aggByStory: CompletionCosts["aggByStory"];
+  aggByStage: ReturnType<RunCompletionOptions["runtime"]["costAggregator"]["byStage"]>;
+  aggByStory: ReturnType<RunCompletionOptions["runtime"]["costAggregator"]["byStory"]>;
   durationMs: number;
   /** The stories / end-phase split behind `durationMs` (nax#2491 workflow mode, nax#2494 pipeline mode). */
   timing?: {
@@ -364,7 +382,7 @@ export function logRunCompletion(input: {
     ...errorCostField,
     ...(contextCostUsd > 0 && { contextCostUsd }),
     ...(Object.keys(aggByStage).length > 0 && { costByStage: aggByStage }),
-    ...(Object.keys(aggByStory).length > 0 && { costByStory: aggByStory }),
+    ...(Object.keys(aggByStory).length > 0 && { costByStory: withRunScopeKey(aggByStory) }),
     durationMs,
     ...(timing ? { storiesDurationMs: timing.storiesDurationMs } : {}),
     ...(timing?.featureWorkflowDurationMs !== undefined

@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import {
+  assertDefined,
   makeMockAgentManager,
   makeMockRuntime,
   makeNaxConfig,
@@ -14,9 +15,11 @@ import {
 } from "@test/helpers";
 import type { RunCompletionOptions } from "@/execution";
 import { handleRunCompletion } from "@/execution";
-import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
+import { logRunCompletion } from "@/execution/lifecycle/run-completion-phases";
+import { addSink, getSafeLogger, initLogger, type LogEntry, resetLogger } from "@/logger";
 import { pipelineEventBus } from "@/pipeline";
-import type { PRD, UserStory } from "@/prd";
+import { countStories, type PRD, type UserStory } from "@/prd";
+import { type CostSnapshot, createNoOpCostAggregator, type ICostAggregator } from "@/runtime";
 
 const WORKDIR = `/tmp/nax-test-run-completion-wf-duration-${randomUUID()}`;
 
@@ -136,5 +139,125 @@ describe("handleRunCompletion — the end-phase split on run.complete (nax#2494)
       "status write failed",
     );
     expect(completes()).toHaveLength(1);
+  });
+});
+
+/** US-004: the cost breakdowns on the line are the aggregator's state when the line is written. */
+describe("run.complete cost breakdowns (US-004)", () => {
+  const snap = (totalCostUsd: number, totalErrorCostUsd = 0): CostSnapshot => ({
+    ...createNoOpCostAggregator().snapshot(),
+    totalCostUsd,
+    totalErrorCostUsd,
+  });
+
+  /** A no-op aggregator whose stage/story splits are read from `stages()` at every call. */
+  const aggregatorWith = (
+    stages: () => Record<string, CostSnapshot>,
+    stories: () => Record<string, CostSnapshot>,
+  ): ICostAggregator => ({ ...createNoOpCostAggregator(), byStage: stages, byStory: stories });
+
+  const completeData = (): Record<string, unknown> => {
+    const entry = completes()[0];
+    assertDefined(entry, "the run.complete log entry");
+    assertDefined(entry.data, "the run.complete log data");
+    return entry.data;
+  };
+
+  // The line's data is unknown-typed, and a snapshot reaches a sink already redacted
+  // (`tokenUsageCount` is key-redacted by SECRET_KEY_PATTERN), so these read the two cost halves
+  // and the keys rather than deep-comparing a whole snapshot.
+  /** The keys of one split on the line, code-point sorted so the assertion is order-independent. */
+  function keysOf(split: unknown): string[] {
+    if (typeof split !== "object" || split === null) return [];
+    return Object.keys(split).toSorted((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  }
+
+  /** One row of a split, by key. */
+  function rowOf(split: unknown, key: string): unknown {
+    if (typeof split !== "object" || split === null) return undefined;
+    for (const [k, row] of Object.entries(split)) if (k === key) return row;
+    return undefined;
+  }
+
+  /** Σ over a split's rows of (cost + failed-dispatch spend): the money a breakdown accounts for. */
+  function spentOf(split: unknown): number {
+    if (typeof split !== "object" || split === null) return 0;
+    return Object.values(split).reduce((sum, row) => sum + rowSpend(row), 0);
+  }
+
+  /** One row's two cost halves, read defensively. */
+  function rowSpend(row: unknown): number {
+    if (typeof row !== "object" || row === null) return 0;
+    const cost = "totalCostUsd" in row ? row.totalCostUsd : undefined;
+    const errorCost = "totalErrorCostUsd" in row ? row.totalErrorCostUsd : undefined;
+    return (typeof cost === "number" ? cost : 0) + (typeof errorCost === "number" ? errorCost : 0);
+  }
+
+  test("AC-11: the deferred line reports a stage entry the aggregator gained after the call returned", async () => {
+    let stages: Record<string, CostSnapshot> = { implement: snap(0.5) };
+    const runtime = makeMockRuntime({
+      costAggregator: aggregatorWith(
+        () => stages,
+        () => ({}),
+      ),
+    });
+    const result = await handleRunCompletion(opts({ deferRunCompleteLog: true, runtime }));
+    // The feature workflow runs after handleRunCompletion returns, so its review lands in the aggregator late.
+    stages = { ...stages, review: snap(0.7) };
+    result.logRunComplete?.(FINAL);
+    expect(keysOf(completeData().costByStage)).toEqual(["implement", "review"]);
+  });
+
+  test("AC-12: the logged stage splits sum to the logged total, error spend included", async () => {
+    const implement = snap(0.5, 0.25);
+    const review = snap(0.7, 0.05);
+    let stages: Record<string, CostSnapshot> = { implement };
+    const runtime = makeMockRuntime({
+      costAggregator: aggregatorWith(
+        () => stages,
+        () => ({}),
+      ),
+    });
+    const result = await handleRunCompletion(opts({ deferRunCompleteLog: true, runtime }));
+    stages = { implement, review };
+    // What the feature workflow's late spend brings the run to.
+    const total = implement.totalCostUsd + implement.totalErrorCostUsd + review.totalCostUsd + review.totalErrorCostUsd;
+    result.logRunComplete?.({ ...FINAL, totalCost: total });
+    expect(spentOf(completeData().costByStage)).toBeCloseTo(total, 10);
+    expect(spentOf(completeData().costByStage)).toBeCloseTo(1.5, 10);
+    expect(Number(completeData().totalCost)).toBeCloseTo(total, 10);
+  });
+
+  test("AC-13: without deferRunCompleteLog the line reports the split as read during the call", async () => {
+    let stages: Record<string, CostSnapshot> = { implement: snap(0.5) };
+    const runtime = makeMockRuntime({
+      costAggregator: aggregatorWith(
+        () => stages,
+        () => ({}),
+      ),
+    });
+    await handleRunCompletion(opts({ runtime }));
+    stages = { ...stages, review: snap(9) };
+    expect(completes()).toHaveLength(1);
+    expect(keysOf(completeData().costByStage)).toEqual(["implement"]);
+  });
+
+  test("AC-14: the aggregator's run-level story key is logged as _run, and no '' row is logged", () => {
+    logRunCompletion({
+      options: opts(),
+      prd: prd(),
+      allStoryMetrics: [],
+      finalCounts: countStories(prd()),
+      reportedTotal: 0.2983,
+      errorCostField: {},
+      aggByStage: {},
+      aggByStory: { "": snap(0.2983), "US-001": snap(1) },
+      durationMs: 10,
+      logger: getSafeLogger() ?? undefined,
+    });
+    const costByStory = completeData().costByStory;
+    expect(keysOf(costByStory)).toEqual(["US-001", "_run"]);
+    expect(rowSpend(rowOf(costByStory, "_run"))).toBeCloseTo(0.2983, 10);
+    expect(rowSpend(rowOf(costByStory, "US-001"))).toBeCloseTo(1, 10);
   });
 });

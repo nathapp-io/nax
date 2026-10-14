@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { makeNaxConfig, makeStory } from "@test/helpers";
-import { isExecutionFailure, synthesizeBackfillMetric } from "@/execution";
+import {
+  backfillDomain,
+  isExecutionFailure,
+  synthesizeBackfillMetric,
+} from "@/execution/lifecycle/backfill-story-metrics";
 import type { StoryRouting } from "@/prd/types";
 
 const TS = "2026-07-03T00:00:00.000Z";
@@ -335,5 +339,22 @@ describe("isExecutionFailure is exported for the back-fill domain (#1721)", () =
     expect(isExecutionFailure(makeStory({ id: "C", status: "passed", attempts: 1 }))).toBe(false);
     expect(isExecutionFailure(makeStory({ id: "D", status: "pending", attempts: 0 }))).toBe(false);
     expect(isExecutionFailure(undefined)).toBe(false);
+  });
+});
+
+describe("backfillDomain — the run-level story key (US-004)", () => {
+  test("AC-15: the aggregator's run-level '' key is never part of the domain", () => {
+    const domain = backfillDomain({ aggregatorKeys: ["", "US-001"], fallbackKeys: [], crashKeys: [], stories: [] });
+    expect(domain).toEqual(["US-001"]);
+  });
+
+  test("the '' key is skipped from every source, and the order of the rest is kept", () => {
+    const domain = backfillDomain({
+      aggregatorKeys: ["US-002", ""],
+      fallbackKeys: [""],
+      crashKeys: ["US-003", ""],
+      stories: [makeStory({ id: "", status: "failed", attempts: 0 }), makeStory({ id: "US-004", status: "failed" })],
+    });
+    expect(domain).toEqual(["US-002", "US-003", "US-004"]);
   });
 });
