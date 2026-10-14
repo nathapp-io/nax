@@ -185,6 +185,13 @@ export interface WorkflowFeatureRecord {
   readonly reasons: readonly string[];
   readonly url?: string;
   readonly passed?: boolean;
+  /**
+   * US-005: the ids of the feature's trusted ledger decisions flagged for a human
+   * (`needsHumanConfirm`), in ledger order, collected after publish. Absent when
+   * nothing was flagged, when the ledger could not be read, or on records written
+   * before the step existed.
+   */
+  readonly flaggedDecisions?: readonly string[];
   readonly timings: Readonly<Record<string, number>>;
   readonly tokensByRole: Readonly<Record<string, RoleTokens>>;
 }

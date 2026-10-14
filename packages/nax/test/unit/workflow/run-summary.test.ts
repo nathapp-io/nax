@@ -89,6 +89,42 @@ describe("buildWorkflowRunSummary", () => {
     expect(buildWorkflowRunSummary(null, { storiesDurationMs: 1, featureWorkflowDurationMs: 1 })).toBeNull();
   });
 
+  describe("flagged rulings (US-005)", () => {
+    const withFeature = (over: Partial<NonNullable<WorkflowResultFile["featureWorkflow"]>>): WorkflowResultFile => {
+      const file = resultFile();
+      const rec = file.featureWorkflow;
+      if (!rec) throw new Error("fixture has a feature record");
+      return { ...file, featureWorkflow: { ...rec, ...over } };
+    };
+    const timing = { storiesDurationMs: 100, featureWorkflowDurationMs: 40 };
+
+    test("a local-only record carries the ids and the feature hint", () => {
+      const v = buildWorkflowRunSummary(withFeature({ outcome: "local-only", flaggedDecisions: ["D-1"] }), timing, "f");
+      expect(v?.flagged).toEqual({ ids: ["D-1"], hint: "nax advisor list -f f" });
+    });
+
+    test("a ready record shows them just the same", () => {
+      const v = buildWorkflowRunSummary(withFeature({ outcome: "ready", flaggedDecisions: ["D-2"] }), timing, "f");
+      expect(v?.flagged).toEqual({ ids: ["D-2"], hint: "nax advisor list -f f" });
+    });
+
+    test("no feature argument: the bare hint", () => {
+      const v = buildWorkflowRunSummary(withFeature({ flaggedDecisions: ["D-1"] }), timing);
+      expect(v?.flagged?.hint).toBe("nax advisor list");
+      expect(v?.flagged?.ids).toEqual(["D-1"]);
+    });
+
+    test("no flaggedDecisions: no flagged key", () => {
+      expect(buildWorkflowRunSummary(withFeature({ flaggedDecisions: undefined }), timing, "f")).not.toHaveProperty(
+        "flagged",
+      );
+    });
+
+    test("an empty list: no flagged key", () => {
+      expect(buildWorkflowRunSummary(withFeature({ flaggedDecisions: [] }), timing, "f")).not.toHaveProperty("flagged");
+    });
+  });
+
   describe("branch review skipped (L3)", () => {
     test("no branch section, and the view says the review was skipped", () => {
       const file = resultFile();

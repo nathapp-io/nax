@@ -31,6 +31,11 @@ export interface WorkflowStatusBlock {
   url?: string;
   /** US-004: the feature workflow's verdict. Absent on a record that carries none. */
   passed?: boolean;
+  /**
+   * US-005: the ids of the trusted ledger decisions flagged for a human, in ledger order.
+   * Absent when nothing was flagged (or the record predates the field).
+   */
+  flagged?: string[];
 }
 
 /** Status of the acceptance test phase during post-run */

@@ -13,6 +13,9 @@ export interface WorkflowTiming {
   readonly featureWorkflowDurationMs: number;
 }
 
+/** US-005: how the end-of-run surfaces point a human at the flagged decisions. */
+const FLAGGED_LIST_COMMAND = "nax advisor list";
+
 function rolesOf(result: WorkflowResultFile): WorkflowSummaryView["roles"] {
   const total: Readonly<Record<string, RoleTokens>> = [
     ...Object.values(result.stories).map((s) => s.tokensByRole ?? {}),
@@ -40,13 +43,33 @@ function branchOf(rec: WorkflowFeatureRecord): NonNullable<WorkflowSummaryView["
   };
 }
 
+/** The command that lists the feature's decisions; without a feature name, the whole ledger. */
+function flaggedHint(feature?: string): string {
+  return feature ? `${FLAGGED_LIST_COMMAND} -f ${feature}` : FLAGGED_LIST_COMMAND;
+}
+
+/**
+ * US-005: the ids the record flagged for a human. Only a non-empty list is surfaced — an empty one
+ * says nothing the missing section does not, and records written before the field have none at all.
+ */
+function flaggedOf(
+  rec: WorkflowFeatureRecord | undefined,
+  feature?: string,
+): NonNullable<WorkflowSummaryView["flagged"]> | undefined {
+  const ids = rec?.flaggedDecisions;
+  if (!ids || ids.length === 0) return undefined;
+  return { ids: [...ids], hint: flaggedHint(feature) };
+}
+
 export function buildWorkflowRunSummary(
   result: WorkflowResultFile | null,
   timing: WorkflowTiming,
+  feature?: string,
 ): WorkflowSummaryView | null {
   if (!result) return null;
   const rec = result.featureWorkflow;
   const finalGates = rec?.finalGates ?? rec?.repoGates;
+  const flagged = flaggedOf(rec, feature);
   return {
     ...timing,
     roles: rolesOf(result),
@@ -62,6 +85,7 @@ export function buildWorkflowRunSummary(
     ...(rec?.outcome
       ? { publish: { outcome: rec.outcome, ...(rec.url ? { url: rec.url } : {}), reasons: rec.reasons } }
       : {}),
+    ...(flagged ? { flagged } : {}),
   };
 }
 
@@ -72,5 +96,5 @@ export async function readWorkflowRunSummary(
   runId: string,
   timing: WorkflowTiming,
 ): Promise<WorkflowSummaryView | null> {
-  return buildWorkflowRunSummary(await readResult(workflowRunDir(projectDir, feature, runId)), timing);
+  return buildWorkflowRunSummary(await readResult(workflowRunDir(projectDir, feature, runId)), timing, feature);
 }

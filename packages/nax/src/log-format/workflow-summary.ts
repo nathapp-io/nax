@@ -56,5 +56,8 @@ export function formatWorkflowSummary(view: WorkflowSummaryView, options: { useC
     const url = view.publish.url ? ` ${view.publish.url}` : "";
     lines.push(`  ${c.gray("Publish: ")} ${view.publish.outcome}${url}${why}`);
   }
+  if (view.flagged) {
+    lines.push(`  ${c.gray("Flagged for a human:")} ${view.flagged.ids.join(", ")} (${view.flagged.hint})`);
+  }
   return lines.join("\n");
 }

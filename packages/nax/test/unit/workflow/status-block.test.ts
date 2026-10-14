@@ -37,3 +37,21 @@ describe("workflowStatusBlock — passed projection (US-004)", () => {
     expect(block).toEqual({ step: "repo-gates", stories: { "US-001": { state: "complete", round: 2 } } });
   });
 });
+
+describe("workflowStatusBlock — flagged projection (US-005)", () => {
+  test("the ids flagged for a human ride the block, in ledger order", () => {
+    const block = workflowStatusBlock(STORIES, "done", { outcome: "local-only", flaggedDecisions: ["D-1", "D-3"] });
+    expect(block.flagged).toEqual(["D-1", "D-3"]);
+  });
+
+  test("an empty list leaves the key off the block", () => {
+    const block = workflowStatusBlock(STORIES, "done", { outcome: "ready", flaggedDecisions: [] });
+    expect("flagged" in block).toBe(false);
+    expect(block.outcome).toBe("ready");
+  });
+
+  test("a record that never collected leaves the key off the block", () => {
+    const block = workflowStatusBlock(STORIES, "done", { outcome: "ready" });
+    expect("flagged" in block).toBe(false);
+  });
+});

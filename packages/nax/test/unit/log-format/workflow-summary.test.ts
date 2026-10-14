@@ -82,6 +82,23 @@ describe("formatRunSummary with a workflow", () => {
     expect(out).not.toContain("WORKFLOW");
   });
 
+  describe("flagged rulings (US-005)", () => {
+    test("names the ids, the hint and the count line for a human", () => {
+      const text = formatWorkflowSummary(
+        { ...VIEW, flagged: { ids: ["D-1", "D-3"], hint: "nax advisor list -f f" } },
+        { useColor: false },
+      );
+      const line = text.split("\n").find((l) => l.includes("Flagged for a human:"));
+      expect(line).toBeDefined();
+      expect(line).toContain("D-1, D-3");
+      expect(line).toContain("nax advisor list -f f");
+    });
+
+    test("a view without flagged rulings omits the line", () => {
+      expect(formatWorkflowSummary(VIEW, { useColor: false })).not.toContain("Flagged for a human:");
+    });
+  });
+
   describe("branch review skipped (L3)", () => {
     test("prints that the branch review was skipped instead of finding counts", () => {
       const out = formatWorkflowSummary(

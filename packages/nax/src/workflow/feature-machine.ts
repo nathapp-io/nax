@@ -6,6 +6,7 @@
  */
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
+import { getSafeLogger } from "@/logger";
 import { FEATURE_SCOPE } from "./advisor-live";
 import { featurePassed } from "./approval";
 import type { BranchFixOutcome } from "./branch-fix";
@@ -40,6 +41,11 @@ export interface FeatureSteps {
   changedFiles(base: string): Promise<readonly string[]>;
   /** The model a step will run on, for its start line (nax#2491 P6). Optional: absent names none. */
   modelFor?(step: "branch-review" | "branch-fix" | "branch-rereview"): StepModel | undefined;
+  /**
+   * US-005: the ids of the trusted ledger decisions flagged for a human, in ledger order.
+   * Optional: absent means the run collects nothing and the record keeps no ids.
+   */
+  flaggedDecisions?(): Promise<readonly string[]>;
 }
 
 export interface FeatureSink {
@@ -312,6 +318,24 @@ async function finalGatesStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Prom
   return { finalGates: run.summary, finalGateFindings: run.findings, step: "publish" };
 }
 
+/**
+ * US-005: the ids of the feature's trusted ledger decisions a human still has to confirm. Best
+ * effort by design — an unreadable ledger is a warning, never a failed publish — and an empty
+ * list means `publishStep` records no field, exactly like an absent step.
+ */
+async function collectFlaggedDecisions(env: FeatureEnv): Promise<readonly string[]> {
+  if (!env.steps.flaggedDecisions) return [];
+  try {
+    return await env.steps.flaggedDecisions();
+  } catch (err) {
+    getSafeLogger()?.warn("workflow", "Flagged advisor decisions unavailable", {
+      storyId: "_run",
+      error: errorMessage(err),
+    });
+    return [];
+  }
+}
+
 async function publishStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Promise<Patch> {
   const log = featureStep("publish", false, true);
   const out = await env.steps.publish(rec);
@@ -319,6 +343,9 @@ async function publishStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Promise
   const why = out.reasons.length > 0 ? `: ${out.reasons.join("; ")}` : "";
   log.done(`${out.outcome}${out.url ? ` ${out.url}` : ""}${why}`);
   await env.sink.ledger(ledgerText.note(`feature ${out.outcome}${out.url ? ` ${out.url}` : ""}${why}`), NO_MIRROR);
+  // US-005: collected after publish, whatever it did — a local-only or draft feature still needs
+  // its flagged rulings named at run end.
+  const flagged = await collectFlaggedDecisions(env);
   return {
     outcome: out.outcome,
     ci: out.ci,
@@ -326,6 +353,7 @@ async function publishStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Promise
     ...(out.url ? { url: out.url } : {}),
     head,
     passed: featurePassed({ ...(rec.finalGates ? { finalGates: rec.finalGates } : {}), stories: env.facts.stories }),
+    ...(flagged.length > 0 ? { flaggedDecisions: flagged } : {}),
     endedAt: new Date().toISOString(),
     step: "done",
   };

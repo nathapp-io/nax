@@ -5,7 +5,7 @@ import type { StorySummary, WorkflowFeatureRecord } from "./types";
 export function workflowStatusBlock(
   stories: readonly StorySummary[],
   step: string,
-  rec?: Pick<WorkflowFeatureRecord, "outcome" | "url" | "passed">,
+  rec?: Pick<WorkflowFeatureRecord, "outcome" | "url" | "passed" | "flaggedDecisions">,
 ): WorkflowStatusBlock {
   return {
     step,
@@ -15,5 +15,8 @@ export function workflowStatusBlock(
     // US-004: the workflow's own verdict. `false` is a real verdict and must be
     // projected, so this is an undefined check, never a truthiness check.
     ...(rec?.passed !== undefined ? { passed: rec.passed } : {}),
+    // US-005: the rulings a human still has to confirm. An empty list says nothing
+    // the missing key does not, so only a non-empty one is projected.
+    ...(rec?.flaggedDecisions && rec.flaggedDecisions.length > 0 ? { flagged: [...rec.flaggedDecisions] } : {}),
   };
 }
