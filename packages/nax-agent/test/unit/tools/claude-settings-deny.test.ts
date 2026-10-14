@@ -22,7 +22,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { CLAUDE_SETTINGS_FILES } from "#src/sandbox/claude-settings";
 import type { CodingToolOutcome, CodingToolRuntime } from "#src/tools/index";
@@ -159,5 +159,55 @@ describe("B1: reads and every other .claude file stay reachable", () => {
     // Read is not granted here, so it is denied for being ungranted -- the
     // separation the test above pins from the other direction.
     expect(readDenied.kind).toBe("denied");
+  });
+});
+
+describe("B2: a symlink cannot walk a write past the settings deny", () => {
+  // The policy hands the guard its symlink-resolved spelling, so a settings path
+  // that is a symlink arrives as its TARGET. The deny must follow the same
+  // resolution, or `.claude/settings.json -> ../actual.json` reopens the file.
+  const TARGET = "actual-settings.json";
+
+  function seedSymlinkedSettings(): void {
+    mkdirSync(join(root, ".claude"), { recursive: true });
+    writeFileSync(join(root, TARGET), ORIGINAL);
+    symlinkSync(join(root, TARGET), join(root, SETTINGS));
+  }
+
+  test("B2: Write, Edit and Delete through a symlinked settings.json are denied and the target keeps its bytes", async () => {
+    seedSymlinkedSettings();
+    const outcomes = [
+      await runtime.callTool("Write", { path: SETTINGS, content: "{}" }),
+      await runtime.callTool("Edit", { path: SETTINGS, old_string: "Bash(*)", new_string: "Read(*)" }),
+      await runtime.callTool("Delete", { path: SETTINGS }),
+    ];
+    for (const out of outcomes) expect(out.kind).toBe("denied");
+    expect(readFileSync(join(root, TARGET), "utf8")).toBe(ORIGINAL);
+  });
+
+  test("B2 boundary: the symlink target is refused under its own name too, since it IS the settings content", async () => {
+    seedSymlinkedSettings();
+    const out = await runtime.callTool("Write", { path: TARGET, content: "{}" });
+    expect(out.kind).toBe("denied");
+    expect(readFileSync(join(root, TARGET), "utf8")).toBe(ORIGINAL);
+  });
+
+  test("B2: a symlinked .claude directory does not reopen a settings file that does not exist yet", async () => {
+    mkdirSync(join(root, "claude-real"));
+    symlinkSync(join(root, "claude-real"), join(root, ".claude"));
+    for (const rel of CLAUDE_SETTINGS_FILES) {
+      const out = await runtime.callTool("Write", { path: rel, content: "{}" });
+      expect(out.kind).toBe("denied");
+    }
+    expect(existsSync(join(root, "claude-real/settings.json"))).toBe(false);
+    expect(existsSync(join(root, "claude-real/settings.local.json"))).toBe(false);
+  });
+
+  test("B2 boundary: other files under a symlinked .claude directory stay writable", async () => {
+    mkdirSync(join(root, "claude-real"));
+    symlinkSync(join(root, "claude-real"), join(root, ".claude"));
+    const out = await runtime.callTool("Write", { path: ".claude/commands/ship.md", content: "# ship" });
+    expect(out.kind).toBe("ok");
+    expect(readFileSync(join(root, "claude-real/commands/ship.md"), "utf8")).toBe("# ship");
   });
 });

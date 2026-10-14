@@ -1,3 +1,6 @@
+import { join, relative, sep } from "node:path";
+import { realOrRaw } from "#src/internal/realpath";
+
 /**
  * US-006: the two session-root Claude Code settings files.
  *
@@ -46,14 +49,33 @@ const CLAUDE_SETTINGS_WRITE_TOOLS: ReadonlySet<string> = new Set(["Write", "Edit
  * spelling would let `./.claude/settings.json` or `.claude/../.claude/x` walk
  * past this guard while reaching the same file.
  *
+ * Because `rel` is symlink-resolved, each settings entry is resolved the same
+ * way before it is compared (branch review B2): a `.claude/settings.json` that
+ * is a symlink, or a `.claude/` that is one, arrives here as its target, and a
+ * literal-only match would let the write through. Resolved per call, not at
+ * policy compile time, so a symlink created mid-session is still seen.
+ *
  * Segment-exact on the full path — a sibling such as `settings.json.bak`, or any
  * other file under `.claude/`, is an ordinary path a tool must still reach.
  */
-export function claudeSettingsWriteRefusal(tool: string, rel: string): string | undefined {
-  if (!CLAUDE_SETTINGS_WRITE_TOOLS.has(tool) || !CLAUDE_SETTINGS_FILES.includes(rel)) return undefined;
+export function claudeSettingsWriteRefusal(tool: string, rel: string, resolvedRoot: string): string | undefined {
+  if (!CLAUDE_SETTINGS_WRITE_TOOLS.has(tool)) return undefined;
+  const entry = CLAUDE_SETTINGS_FILES.find((e) => e === rel || resolvedSettingsRel(resolvedRoot, e) === rel);
+  if (entry === undefined) return undefined;
+  const subject =
+    entry === rel
+      ? `"${rel}" is a Claude Code settings file`
+      : `"${rel}" is the target of the Claude Code settings file "${entry}"`;
   return (
-    `"${rel}" is a Claude Code settings file: Claude loads allow rules, hooks and MCP servers from it for every ` +
+    `${subject}: Claude loads allow rules, hooks and MCP servers from it for every ` +
     "session started in this workdir, so a change here outlives this run and is not made from inside it. " +
     "The sandbox refuses writes to it as well; a human changes it by hand, outside the run."
   );
+}
+
+/** `entry`'s symlink-resolved spelling, relative to the already-resolved root, `/`-joined. */
+function resolvedSettingsRel(resolvedRoot: string, entry: string): string {
+  return relative(resolvedRoot, realOrRaw(join(resolvedRoot, entry)))
+    .split(sep)
+    .join("/");
 }

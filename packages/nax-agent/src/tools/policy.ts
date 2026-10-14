@@ -176,7 +176,7 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
     // The port's `writeRefusal` cannot carry this one -- an embedder that injects
     // nothing still gets the sandbox deny, so it must get the tool deny too --
     // and both guards read the ONE list in `#src/sandbox/claude-settings`.
-    const settingsRefusal = claudeSettingsWriteRefusal(tool, rel);
+    const settingsRefusal = claudeSettingsWriteRefusal(tool, rel, resolvedRoot);
     if (settingsRefusal !== undefined) return deny(`${tool} may not modify ${settingsRefusal}`);
     const ownedRefusal = owned.writeRefusal(tool, rel, { exemptRel: ownedWriteExemption, optIns: naxOptIns });
     if (ownedRefusal !== undefined) return deny(`${tool} may not modify ${ownedRefusal}`);
