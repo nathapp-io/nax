@@ -28,6 +28,16 @@ export const _ciWaitDeps = {
   run: (cmd: string[], opts: { cwd: string }): Promise<ForgeRunResult> => defaultForgeDeps.run(cmd, opts),
   sleep: (ms: number): Promise<void> => Bun.sleep(ms),
   now: (): number => Date.now(),
+  /**
+   * The wait's own clock, independent of polling and of any single sleep. It
+   * fires `fn` every `ms` until the returned cancel runs, so a heartbeat still
+   * lands while a slow forge call or a long poll interval is in flight (B3).
+   */
+  schedule: (fn: () => void, ms: number): (() => void) => {
+    const timer = setInterval(fn, ms);
+    timer.unref?.();
+    return () => clearInterval(timer);
+  },
 };
 
 /** The run scope, first in every progress line's data (the logger convention; AC-23). */
@@ -130,6 +140,8 @@ interface ProgressLog {
   start(prRef: string, timeoutMs: number, pollMs: number): void;
   /** Logs a changed check summary; an unchanged poll says nothing (AC-10). */
   note(summary: string | undefined): void;
+  /** How long since the last info line, so a wait can bound its slices. */
+  sinceLastInfo(): number;
   /** A heartbeat once `CI_WAIT_HEARTBEAT_MS` have passed since the last info line. */
   heartbeatIfDue(startedAt: number): void;
   done(outcome: CiWaitOutcome, startedAt: number): void;
@@ -152,6 +164,9 @@ function progressLog(): ProgressLog {
       lastSummary = summary;
       say(summary);
     },
+    sinceLastInfo() {
+      return _ciWaitDeps.now() - lastInfoAt;
+    },
     heartbeatIfDue(startedAt) {
       if (_ciWaitDeps.now() - lastInfoAt < CI_WAIT_HEARTBEAT_MS) return;
       say(
@@ -162,6 +177,25 @@ function progressLog(): ProgressLog {
       say(`CI wait done: ${outcome} after ${formatDuration(_ciWaitDeps.now() - startedAt)}`);
     },
   };
+}
+
+/**
+ * Wait out one polling interval without letting a heartbeat slip past the
+ * interval bound: the wait is sliced so the next slice never runs longer than
+ * the time left until a heartbeat is due. The slices sum to `ms`, so the
+ * configured polling cadence is unchanged; only the progress reporting gained
+ * an upper bound (B3).
+ */
+async function waitWithHeartbeat(ms: number, startedAt: number, progress: ProgressLog): Promise<void> {
+  let remaining = ms;
+  while (remaining > 0) {
+    const untilBeat = Math.max(1, CI_WAIT_HEARTBEAT_MS - progress.sinceLastInfo());
+    const slice = Math.min(remaining, untilBeat);
+    await _ciWaitDeps.sleep(slice);
+    remaining -= slice;
+    // Each `say` resets the last-info clock; `startedAt` is untouched.
+    progress.heartbeatIfDue(startedAt);
+  }
 }
 
 export async function waitForChecks(
@@ -178,27 +212,34 @@ export async function waitForChecks(
     progress.done(outcome, startedAt);
     return { outcome, detail };
   };
-  for (;;) {
-    if (opts.signal?.aborted) return end("pending", "aborted");
-    const poll = await pollOnce(forge, prRef, opts.cwd);
-    if (poll.state !== "error") progress.note(poll.summary);
-    if (poll.state === "green") return end("green", "all checks passed");
-    if (poll.state === "failed") return end("failed", "a check failed");
-    if (poll.state === "error") {
-      getSafeLogger()?.warn("workflow", "CI status unavailable — treated as pending", {
-        storyId: RUN_SCOPE,
-        forge,
-        error: poll.detail,
-      });
-      return end("pending", `CI status unavailable: ${poll.detail}`);
+  // Independent of polling and of any single sleep: a slow forge call cannot
+  // suppress the heartbeat, and the schedule is cancelled on every return path.
+  const cancelHeartbeat = _ciWaitDeps.schedule(() => progress.heartbeatIfDue(startedAt), CI_WAIT_HEARTBEAT_MS);
+  try {
+    for (;;) {
+      if (opts.signal?.aborted) return end("pending", "aborted");
+      const poll = await pollOnce(forge, prRef, opts.cwd);
+      if (poll.state !== "error") progress.note(poll.summary);
+      if (poll.state === "green") return end("green", "all checks passed");
+      if (poll.state === "failed") return end("failed", "a check failed");
+      if (poll.state === "error") {
+        getSafeLogger()?.warn("workflow", "CI status unavailable — treated as pending", {
+          storyId: RUN_SCOPE,
+          forge,
+          error: poll.detail,
+        });
+        return end("pending", `CI status unavailable: ${poll.detail}`);
+      }
+      if (_ciWaitDeps.now() + opts.pollMs > deadline) {
+        return end("pending", `no CI result within ${opts.timeoutMs}ms`);
+      }
+      // Both sides of the wait: `_ciWaitDeps.now` may move during a slow forge call or during the
+      // wait itself, and the heartbeat has to hold either way (each `say` resets the clock).
+      progress.heartbeatIfDue(startedAt);
+      await waitWithHeartbeat(opts.pollMs, startedAt, progress);
+      progress.heartbeatIfDue(startedAt);
     }
-    if (_ciWaitDeps.now() + opts.pollMs > deadline) {
-      return end("pending", `no CI result within ${opts.timeoutMs}ms`);
-    }
-    // Both sides of the sleep: `_ciWaitDeps.now` may move during a slow forge call or during the
-    // wait itself, and the heartbeat has to hold either way (each `say` resets the clock).
-    progress.heartbeatIfDue(startedAt);
-    await _ciWaitDeps.sleep(opts.pollMs);
-    progress.heartbeatIfDue(startedAt);
+  } finally {
+    cancelHeartbeat();
   }
 }

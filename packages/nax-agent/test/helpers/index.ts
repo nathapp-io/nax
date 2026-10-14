@@ -7,6 +7,7 @@ export type { FakeClock } from "@nathapp/nax-test-kit/bun/fake-clock";
 export { makeFakeClock } from "@nathapp/nax-test-kit/bun/fake-clock";
 export { waitForFile } from "@nathapp/nax-test-kit/bun/fs";
 export { mockFetch } from "@nathapp/nax-test-kit/bun/mock-fetch";
+export { psCanReportProcessGroup } from "@nathapp/nax-test-kit/bun/ps-probe";
 export {
   type NaxParentFailure,
   type NaxParentKind,

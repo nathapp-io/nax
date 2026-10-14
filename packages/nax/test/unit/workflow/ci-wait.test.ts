@@ -211,6 +211,48 @@ describe("waitForChecks progress log", () => {
     expect(beat).toContain("(CI checks: 0/2 passed, 2 pending)");
   });
 
+  test("B3: a polling interval longer than the heartbeat still beats within 60s", async () => {
+    // pollMs 300000 is the config's own upper bound; a heartbeat bound to the
+    // poll would be five minutes late.
+    _ciWaitDeps.schedule = () => () => {};
+    progressScript([TWO_CHECKS_PENDING]);
+    const out = await waitForChecks("github", "b", { cwd: "/repo", timeoutMs: 300000, pollMs: 300000 });
+    expect(out.outcome).toBe("pending");
+    const beats = messages().filter((m) => m.startsWith("CI wait: still waiting after"));
+    expect(beats.length).toBeGreaterThan(0);
+    // 60000ms virtual, formatted: the bound, not the poll interval.
+    expect(beats[0]).toContain("after 1m 0s");
+  });
+
+  test("B3: a slow forge call does not suppress the heartbeat, and the schedule is cancelled", async () => {
+    let heartbeat: (() => void) | undefined;
+    let cancelled = 0;
+    _ciWaitDeps.schedule = (fn) => {
+      heartbeat = fn;
+      return () => {
+        cancelled += 1;
+      };
+    };
+    let clock = 0;
+    _ciWaitDeps.now = () => clock;
+    _ciWaitDeps.sleep = async () => {};
+    let first = true;
+    _ciWaitDeps.run = async () => {
+      if (first) {
+        first = false;
+        clock += 300000; // the forge call itself is what takes five minutes
+        heartbeat?.(); // the independent schedule fires while it is still in flight
+        return TWO_CHECKS_PENDING;
+      }
+      return ALL_PASS;
+    };
+    expect((await waitForChecks("github", "b", { cwd: "/repo", timeoutMs: 600000, pollMs: 30000 })).outcome).toBe(
+      "green",
+    );
+    expect(messages().some((m) => m.startsWith("CI wait: still waiting after"))).toBe(true);
+    expect(cancelled).toBe(1);
+  });
+
   test("AC-14: a wait under 60s reports no heartbeat", async () => {
     progressScript([TWO_CHECKS_PENDING]);
     const out = await waitForChecks("github", "b", { cwd: "/repo", timeoutMs: 35000, pollMs: 10000 });
