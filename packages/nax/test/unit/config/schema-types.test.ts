@@ -11,7 +11,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { assertNaxError } from "@test/helpers";
-import type { ModelsConfig, TierConfig } from "@/config/schema-types";
+import type { ModelDef, ModelsConfig, TierConfig } from "@/config/schema-types";
 import {
   isUnrecognizedLiteralModel,
   resolveConfiguredModel,
@@ -321,5 +321,115 @@ describe("resolveTierMembership (spec §3)", () => {
     expect(isUnrecognizedLiteralModel("opencode-go/qwen-4")).toBe(false);
     expect(isUnrecognizedLiteralModel("claude-opus-5")).toBe(false);
     expect(isUnrecognizedLiteralModel("gpt-5")).toBe(false);
+  });
+});
+
+describe("resolveConfiguredModel — effort suffix (US-001)", () => {
+  const models: ModelsConfig = {
+    claude: { fast: "claude-haiku-5", balanced: "claude-sonnet-5", powerful: "claude-opus-5" },
+  };
+  const LITERAL_WARN = "Configured model is neither a tier nor a recognizable model id — dispatching as a literal";
+
+  /** Run `fn` with a warn-level logger and collect every `warn` message it emits. */
+  function warnMessages(fn: () => void): string[] {
+    const messages: string[] = [];
+    resetLogger();
+    initLogger({ level: "warn" });
+    const removeSink = addSink((entry) => {
+      if (entry.level === "warn") messages.push(entry.message);
+    });
+    try {
+      fn();
+    } finally {
+      removeSink();
+      resetLogger();
+    }
+    return messages;
+  }
+
+  test("AC-1: shorthand sonnet[medium] resolves via balanced and keeps the suffix", () => {
+    const r = resolveConfiguredModel(models, "claude", { agent: "claude", model: "sonnet[medium]" }, "claude");
+    expect(r.modelTier).toBe("balanced");
+    expect(r.modelDef.model).toBe("claude-sonnet-5[medium]");
+  });
+
+  test("AC-2: shorthand haiku[low] resolves via fast and keeps the suffix", () => {
+    const r = resolveConfiguredModel(models, "claude", { agent: "claude", model: "haiku[low]" }, "claude");
+    expect(r.modelTier).toBe("fast");
+    expect(r.modelDef.model).toBe("claude-haiku-5[low]");
+  });
+
+  test("AC-3: shorthand opus[high] resolves via powerful and keeps the suffix", () => {
+    const r = resolveConfiguredModel(models, "claude", { agent: "claude", model: "opus[high]" }, "claude");
+    expect(r.modelTier).toBe("powerful");
+    expect(r.modelDef.model).toBe("claude-opus-5[high]");
+  });
+
+  test("AC-4: the alias lookup stays case-insensitive with a suffix", () => {
+    const r = resolveConfiguredModel(models, "claude", { agent: "claude", model: "Sonnet[high]" }, "claude");
+    expect(r.modelTier).toBe("balanced");
+    expect(r.modelDef.model).toBe("claude-sonnet-5[high]");
+  });
+
+  test("AC-5: the selection's suffix replaces the one on the tier entry", () => {
+    const suffixed: ModelsConfig = {
+      claude: { fast: "claude-haiku-5", balanced: "claude-sonnet-5[high]", powerful: "claude-opus-5" },
+    };
+    const r = resolveConfiguredModel(suffixed, "claude", { agent: "claude", model: "sonnet[low]" }, "claude");
+    expect(r.modelDef.model).toBe("claude-sonnet-5[low]");
+  });
+
+  test("AC-6: no selection suffix leaves the tier entry's suffix in place", () => {
+    const suffixed: ModelsConfig = {
+      claude: { fast: "claude-haiku-5", balanced: "claude-sonnet-5[high]", powerful: "claude-opus-5" },
+    };
+    const r = resolveConfiguredModel(suffixed, "claude", { agent: "claude", model: "sonnet" }, "claude");
+    expect(r.modelDef.model).toBe("claude-sonnet-5[high]");
+  });
+
+  test("AC-7: an object tier entry keeps its metadata and gains the selection's suffix", () => {
+    const entry: ModelDef = { provider: "anthropic", model: "claude-sonnet-5", contextWindow: 200000 };
+    const r = resolveConfiguredModel(
+      { claude: { fast: "claude-haiku-5", balanced: entry, powerful: "claude-opus-5" } },
+      "claude",
+      { agent: "claude", model: "sonnet[medium]" },
+      "claude",
+    );
+    expect(r.modelDef.provider).toBe("anthropic");
+    expect(r.modelDef.contextWindow).toBe(200000);
+    expect(r.modelDef.model).toBe("claude-sonnet-5[medium]");
+    // The configured entry itself is never mutated by the suffix substitution.
+    expect(r.modelDef).not.toBe(entry);
+    expect(entry.model).toBe("claude-sonnet-5");
+  });
+
+  test("AC-8: a builtin tier name with a suffix resolves as that tier", () => {
+    const r = resolveConfiguredModel(models, "claude", { agent: "claude", model: "balanced[high]" }, "claude");
+    expect(r.modelTier).toBe("balanced");
+    expect(r.modelDef.model).toBe("claude-sonnet-5[high]");
+  });
+
+  test("AC-9: a suffixed shorthand logs no literal-dispatch warning", () => {
+    const messages = warnMessages(() => {
+      resolveConfiguredModel(models, "claude", { agent: "claude", model: "sonnet[medium]" }, "claude");
+    });
+    expect(messages).not.toContain(LITERAL_WARN);
+  });
+
+  test("AC-10: a misspelled suffixed shorthand warns once and still dispatches as a literal", () => {
+    let resolved: ReturnType<typeof resolveConfiguredModel> | undefined;
+    const messages = warnMessages(() => {
+      resolved = resolveConfiguredModel(models, "claude", { agent: "claude", model: "sonet[medium]" }, "claude");
+    });
+    expect(messages.filter((m) => m === LITERAL_WARN)).toHaveLength(1);
+    expect(resolved?.modelTier).toBeUndefined();
+    expect(resolved?.modelDef.model).toBe("sonet[medium]");
+  });
+
+  test("AC-11..14: isUnrecognizedLiteralModel evaluates the base of a suffixed id", () => {
+    expect(isUnrecognizedLiteralModel("sonnet[medium]")).toBe(false);
+    expect(isUnrecognizedLiteralModel("sonet[medium]")).toBe(true);
+    expect(isUnrecognizedLiteralModel("claude-opus-5[high]")).toBe(false);
+    expect(isUnrecognizedLiteralModel("turbo[high]")).toBe(true);
   });
 });

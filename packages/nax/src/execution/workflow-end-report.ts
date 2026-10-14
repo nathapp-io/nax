@@ -37,6 +37,8 @@ function summaryLine(view: WorkflowSummaryView): string {
     parts.push(`branch findings ${b.found} found, ${b.fixed} fixed, ${b.left} left`);
   }
   if (view.publish) parts.push(`publish ${view.publish.outcome}`);
+  // US-005: a ruling that changed an acceptance criterion must not go unnoticed at run end.
+  if (view.flagged) parts.push(`flagged ${view.flagged.ids.length} (${view.flagged.hint})`);
   return `Workflow summary: ${parts.join("; ")}`;
 }
 

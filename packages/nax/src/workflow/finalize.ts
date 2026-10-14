@@ -1,11 +1,14 @@
 /**
  * Publish (spec §7 steps 7-9, P4-R3, P4-R11): push, open (or find) the draft PR, wait for CI,
  * ask for approval only when every deterministic condition holds, then promote or keep the draft.
- * nax never merges. A non-feature branch, a dry run, no forge or a failed push ends local-only.
+ * `workflow.publish` selects the depth: `pr` (default) is the above, `push` stops after the CI wait,
+ * `none` touches nothing. nax never merges. A non-feature branch, a dry run, no forge or a failed
+ * push ends local-only.
  */
 import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { AdviceDecision, Advisor } from "@/advisor";
+import type { WorkflowPublishMode } from "@/config";
 import { NaxError } from "@/errors";
 import { sanitizeTitle } from "@/finish";
 import type { ForgeKind } from "@/forge";
@@ -14,7 +17,7 @@ import { askApproval, type ReadinessFacts, readinessReasons } from "./approval";
 import type { CiWaitResult } from "./ci-wait";
 import type { FeatureContext } from "./feature-context";
 import { _featureDeps } from "./feature-deps";
-import { listUncommitted } from "./git";
+import { ledgerCommitMessage, listUncommitted } from "./git";
 import { buildOpenItems } from "./open-items";
 import { workflowStoryDir } from "./paths";
 import { buildWorkflowPrBody, extractAssumptions, type WorkflowPrBodyFacts } from "./pr-body";
@@ -125,6 +128,9 @@ function approvalEvidence(input: PublishInput, ci: CiWaitResult, minorsLeft: num
 
 const DIRTY_REASON = "uncommitted changes after the branch fix";
 const ALREADY_READY_REASON = "a human already marked the PR ready; nax left it as is";
+const PUBLISH_DISABLED_REASON = "publish disabled (workflow.publish: none)";
+/** Absent on a config written before `workflow.publish` existed (and on hand-built test configs). */
+const DEFAULT_PUBLISH_MODE: WorkflowPublishMode = "pr";
 
 /** Edits the pushed branch lacks make every recorded gate and approval describe code that is not in the PR. */
 async function dirtyTreeReasons(fc: FeatureContext): Promise<string[]> {
@@ -183,6 +189,107 @@ async function finishPr(
   }
 }
 
+/**
+ * The ledger-only commit, fail-open (US-003). The rulings the PR body cites have to be on the pushed
+ * branch, but a git failure or a locked index must never change what publishing does — so a throw is
+ * logged and read as "no commit was made".
+ */
+async function ledgerCommit(fc: FeatureContext): Promise<boolean> {
+  if (fc.dryRun) return false;
+  try {
+    return await _featureDeps.commitLedger(fc.projectDir, fc.feature);
+  } catch (err) {
+    getSafeLogger()?.warn("workflow", "Advisor ledger commit failed — publishing continues", {
+      storyId: "_run",
+      error: errorMessage(err),
+    });
+    return false;
+  }
+}
+
+/**
+ * After the approval: `askApproval` appended the `finish-approval` ruling, and that line needs its own
+ * commit *and* its own push — the first push already happened. A second push that fails is logged, not
+ * fatal: the PR is promoted on the CI result observed before the approval (US-003).
+ */
+async function pushLedger(fc: FeatureContext): Promise<void> {
+  if (!(await ledgerCommit(fc))) return;
+  try {
+    await _featureDeps.commitAndPush(fc.projectDir, fc.branch, ledgerCommitMessage(fc.feature), { skipCommit: true });
+  } catch (err) {
+    getSafeLogger()?.warn("workflow", "Ledger push failed — the PR is still promoted", {
+      storyId: "_run",
+      error: errorMessage(err),
+    });
+  }
+}
+
+/** The CI wait both publishing modes share; the timeout and poll interval come from the workflow config. */
+function waitForCi(fc: FeatureContext, forge: ForgeKind): Promise<CiWaitResult> {
+  return _featureDeps.waitForChecks(forge, fc.branch, {
+    cwd: fc.projectDir,
+    timeoutMs: fc.workflow.timeouts.ciWaitMs,
+    pollMs: fc.workflow.timeouts.ciPollMs,
+    ...(fc.runSignal ? { signal: fc.runSignal } : {}),
+  });
+}
+
+/** Everything a pushing mode needs: the facts, the dirty tree and the target-less base reasons. */
+interface PublishPlan {
+  readonly fc: FeatureContext;
+  readonly forge: ForgeKind;
+  readonly facts: Omit<ReadinessFacts, "ci">;
+  readonly dirty: readonly string[];
+  readonly base: readonly string[];
+}
+
+/**
+ * `push` mode: commit the ledger, push, wait for CI, then stop. The caller owns the PR, so nax opens
+ * or promotes nothing and asks the advisor nothing; an aborted wait and a failed push behave exactly
+ * as in `pr` mode.
+ */
+async function pushMode(plan: PublishPlan): Promise<PublishOutcome> {
+  await ledgerCommit(plan.fc);
+  const pushFailed = await pushBranch(plan.fc);
+  if (pushFailed) return { outcome: "local-only", ci: "skipped", reasons: [...plan.base, pushFailed] };
+  const ci = await waitForCi(plan.fc, plan.forge);
+  if (plan.fc.runSignal?.aborted) throw abortedError();
+  const reasons = [...readinessReasons({ ...plan.facts, ci: ci.outcome }), ...plan.dirty];
+  return { outcome: "pushed", ci: ci.outcome, reasons };
+}
+
+/**
+ * `pr` mode: the ledger commit, the push, the draft PR, the CI wait, the approval (which appends its
+ * own ruling and so gets the ledger committed and pushed again), then promote or keep the draft.
+ */
+async function prMode(plan: PublishPlan, input: PublishInput): Promise<PublishOutcome> {
+  const fc = plan.fc;
+  await ledgerCommit(fc);
+  const pushFailed = await pushBranch(fc);
+  if (pushFailed) return { outcome: "local-only", ci: "skipped", reasons: [...plan.base, pushFailed] };
+
+  const body = await bodyFacts(fc, input);
+  const pr = { workdir: fc.projectDir, branch: fc.branch, title: workflowPrTitle(fc), forge: plan.forge };
+  const draft = await _featureDeps.openDraftFinishPr(
+    { ...pr, body: buildWorkflowPrBody({ ...body, outcome: "draft", ci: "pending", reasons: plan.base }) },
+    _featureDeps.forge,
+  );
+  const ci = await waitForCi(fc, plan.forge);
+  // An aborted wait reports `pending`, which never blocks readiness: stop before approval or promotion.
+  if (fc.runSignal?.aborted) throw abortedError();
+  const reasons = [...readinessReasons({ ...plan.facts, ci: ci.outcome }), ...plan.dirty];
+  const approval =
+    reasons.length === 0
+      ? await askApproval(input.advisor, {
+          feature: fc.feature,
+          evidence: approvalEvidence(input, ci, body.minorsLeft.length),
+        })
+      : null;
+  // A deterministic reason means the advisor was never asked, so there is no second ledger line either.
+  if (approval) await pushLedger(fc);
+  return finishPr(fc, { pr, body, ...(draft?.url ? { draftUrl: draft.url } : {}) }, ci, reasons, approval);
+}
+
 export async function publish(fc: FeatureContext, input: PublishInput): Promise<PublishOutcome> {
   const facts: Omit<ReadinessFacts, "ci"> = {
     ...(input.record.finalGates ? { finalGates: input.record.finalGates } : {}),
@@ -192,32 +299,18 @@ export async function publish(fc: FeatureContext, input: PublishInput): Promise<
   };
   const dirty = await dirtyTreeReasons(fc);
   const base = [...readinessReasons({ ...facts, ci: "skipped" }), ...dirty];
+  const mode = fc.workflow.publish ?? DEFAULT_PUBLISH_MODE;
+  // `none` outranks the target checks: on any branch, with or without a forge, nothing is pushed. Every
+  // path that pushes nothing still commits the ledger — the rulings stay with the branch (US-003).
+  if (mode === "none") {
+    await ledgerCommit(fc);
+    return { outcome: "local-only", ci: "skipped", reasons: [...base, PUBLISH_DISABLED_REASON] };
+  }
   const target = await publishTarget(fc);
-  if (!("forge" in target)) return { outcome: "local-only", ci: "skipped", reasons: [...base, target.reason] };
-  const pushFailed = await pushBranch(fc);
-  if (pushFailed) return { outcome: "local-only", ci: "skipped", reasons: [...base, pushFailed] };
-
-  const body = await bodyFacts(fc, input);
-  const pr = { workdir: fc.projectDir, branch: fc.branch, title: workflowPrTitle(fc), forge: target.forge };
-  const draft = await _featureDeps.openDraftFinishPr(
-    { ...pr, body: buildWorkflowPrBody({ ...body, outcome: "draft", ci: "pending", reasons: base }) },
-    _featureDeps.forge,
-  );
-  const ci = await _featureDeps.waitForChecks(target.forge, fc.branch, {
-    cwd: fc.projectDir,
-    timeoutMs: fc.workflow.timeouts.ciWaitMs,
-    pollMs: fc.workflow.timeouts.ciPollMs,
-    ...(fc.runSignal ? { signal: fc.runSignal } : {}),
-  });
-  // An aborted wait reports `pending`, which never blocks readiness: stop before approval or promotion.
-  if (fc.runSignal?.aborted) throw abortedError();
-  const reasons = [...readinessReasons({ ...facts, ci: ci.outcome }), ...dirty];
-  const approval =
-    reasons.length === 0
-      ? await askApproval(input.advisor, {
-          feature: fc.feature,
-          evidence: approvalEvidence(input, ci, body.minorsLeft.length),
-        })
-      : null;
-  return finishPr(fc, { pr, body, ...(draft?.url ? { draftUrl: draft.url } : {}) }, ci, reasons, approval);
+  if (!("forge" in target)) {
+    await ledgerCommit(fc);
+    return { outcome: "local-only", ci: "skipped", reasons: [...base, target.reason] };
+  }
+  const plan: PublishPlan = { fc, forge: target.forge, facts, dirty, base };
+  return mode === "push" ? pushMode(plan) : prMode(plan, input);
 }

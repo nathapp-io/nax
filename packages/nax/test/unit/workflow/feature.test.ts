@@ -77,7 +77,11 @@ function setup(over: { dryRun?: boolean } = {}) {
 async function seedFinished(
   featureDir: string,
   feature: string,
-  over: { outcome: "ready" | "draft" | "local-only"; url?: string },
+  over: {
+    outcome: "ready" | "draft" | "local-only" | "pushed";
+    url?: string;
+    flaggedDecisions?: readonly string[];
+  },
 ): Promise<void> {
   const prior = join(featureDir, "r-old");
   await upsertStoryRecord(prior, { runId: "r-old", feature }, newStoryRecord("US-001", 5, "t"));
@@ -174,6 +178,29 @@ describe("runWorkflowFeature", () => {
         stories: { "US-001": { state: "complete", round: 0 } },
         outcome: "draft",
         url: "https://gh/pr/2",
+        // US-004: the prior record is a passed workflow, so its verdict rides the block.
+        passed: true,
+      },
+    ]);
+  });
+
+  test("an already-finished skip carries the prior record's flagged rulings into the done block (US-005)", async () => {
+    const { input, featureDir } = setup();
+    await seedFinished(featureDir, input.feature, {
+      outcome: "draft",
+      url: "https://gh/pr/2",
+      flaggedDecisions: ["D-1", "D-3"],
+    });
+    const blocks: WorkflowStatusBlock[] = [];
+    await runWorkflowFeature({ ...input, statusWriter: { setWorkflowStatus: (b) => blocks.push(b) } });
+    expect(blocks).toEqual([
+      {
+        step: "done",
+        stories: { "US-001": { state: "complete", round: 0 } },
+        outcome: "draft",
+        url: "https://gh/pr/2",
+        passed: true,
+        flagged: ["D-1", "D-3"],
       },
     ]);
   });
@@ -181,6 +208,13 @@ describe("runWorkflowFeature", () => {
   test("a draft prior at the same HEAD is also skipped", async () => {
     const { input, envs, featureDir } = setup();
     await seedFinished(featureDir, input.feature, { outcome: "draft" });
+    expect((await runWorkflowFeature(input))?.outcome).toBe("already-finished");
+    expect(envs).toHaveLength(0);
+  });
+
+  test("AC-18: a pushed prior at the same HEAD is also skipped", async () => {
+    const { input, envs, featureDir } = setup();
+    await seedFinished(featureDir, input.feature, { outcome: "pushed" });
     expect((await runWorkflowFeature(input))?.outcome).toBe("already-finished");
     expect(envs).toHaveLength(0);
   });

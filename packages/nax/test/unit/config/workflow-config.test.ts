@@ -11,6 +11,7 @@ describe("workflow config", () => {
       models: {},
       maxFixRounds: 5,
       preflight: true,
+      publish: "pr",
       timeouts: {
         implementMs: 3_600_000,
         fixMs: 3_600_000,
@@ -19,6 +20,24 @@ describe("workflow config", () => {
         ciPollMs: 30_000,
       },
     });
+  });
+
+  test("AC-1: workflow.publish defaults to pr", () => {
+    expect(NaxConfigSchema.parse({}).workflow.publish).toBe("pr");
+  });
+
+  test("AC-2: workflow.publish accepts push and none", () => {
+    const push = NaxConfigSchema.safeParse({ workflow: { publish: "push" } });
+    if (!push.success) throw new Error(`push should parse: ${push.error.message}`);
+    expect(push.data.workflow.publish).toBe("push");
+    const none = NaxConfigSchema.safeParse({ workflow: { publish: "none" } });
+    if (!none.success) throw new Error(`none should parse: ${none.error.message}`);
+    expect(none.data.workflow.publish).toBe("none");
+  });
+
+  test("AC-3: workflow.publish rejects an unknown mode", () => {
+    const parsed = NaxConfigSchema.safeParse({ workflow: { publish: "draft" } });
+    expect(parsed.success).toBe(false);
   });
 
   test("a partial block keeps the other defaults", () => {

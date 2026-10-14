@@ -2,12 +2,14 @@
 import { commitAndPush, openDraftFinishPr, openOrPromotePr, resolveGateCommands, runQualityGates } from "@/finish";
 import { defaultForgeDeps, detectForge, type ForgeDeps, type ForgeKind } from "@/forge";
 import { waitForChecks } from "./ci-wait";
+import { commitLedger } from "./git";
 
 export const _featureDeps = {
   forge: defaultForgeDeps as ForgeDeps,
   detectForge: (projectDir: string): Promise<ForgeKind | null> => detectForge(defaultForgeDeps, projectDir),
   resolveGateCommands,
   runQualityGates,
+  commitLedger,
   commitAndPush,
   openDraftFinishPr,
   openOrPromotePr,

@@ -97,9 +97,13 @@ function logHandOff(stories: readonly StorySummary[], storiesDurationMs: number 
   logWorkflow(FEATURE_SCOPE, `stories done ${ran}/${stories.length}${took} - feature workflow start`);
 }
 
-/** Ready and draft are published; a local-only prior published nothing, so it runs again (P4-R1 ruling). */
+/**
+ * Ready, draft and pushed all published something; a local-only prior published nothing, so it runs
+ * again (P4-R1 ruling). `pushed` counts only with `workflow.publish: "push"`: the branch is on origin.
+ */
 function isFinishedAtHead(prior: WorkflowFeatureRecord | null, head: string): prior is WorkflowFeatureRecord {
-  return prior?.step === "done" && prior.head === head && (prior.outcome === "ready" || prior.outcome === "draft");
+  const done = prior?.outcome === "ready" || prior?.outcome === "draft" || prior?.outcome === "pushed";
+  return prior?.step === "done" && prior.head === head && done;
 }
 
 async function runInContext(

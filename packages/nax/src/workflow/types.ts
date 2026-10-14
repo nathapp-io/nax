@@ -126,7 +126,7 @@ export interface RepoGateSummary {
 }
 
 export type FeatureCiState = "green" | "failed" | "pending" | "skipped";
-export type FeatureOutcome = "ready" | "draft" | "local-only";
+export type FeatureOutcome = "ready" | "draft" | "local-only" | "pushed";
 
 /** A story loop's deferred minor, numbered for the branch review's triage (P4-R7, P4-R8). */
 export interface MinorItem {
@@ -185,6 +185,13 @@ export interface WorkflowFeatureRecord {
   readonly reasons: readonly string[];
   readonly url?: string;
   readonly passed?: boolean;
+  /**
+   * US-005: the ids of the feature's trusted ledger decisions flagged for a human
+   * (`needsHumanConfirm`), in ledger order, collected after publish. Absent when
+   * nothing was flagged, when the ledger could not be read, or on records written
+   * before the step existed.
+   */
+  readonly flaggedDecisions?: readonly string[];
   readonly timings: Readonly<Record<string, number>>;
   readonly tokensByRole: Readonly<Record<string, RoleTokens>>;
 }

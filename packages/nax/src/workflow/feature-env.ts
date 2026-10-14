@@ -77,6 +77,12 @@ export function buildFeatureEnv(fc: FeatureContext, input: WorkflowFeatureInput,
       }),
     head: () => readHead(fc.projectDir),
     changedFiles: (base) => changedFilesSince(fc.projectDir, base),
+    // US-005: every trusted decision in the feature's ledger flagged for a human, across all its
+    // runs and in ledger order. The throw is the machine's to handle: the step warns and goes on.
+    flaggedDecisions: async () =>
+      (await _workflowDeps.readTrustedDecisions(fc.projectDir, fc.feature, fc.outputDir))
+        .filter((d) => d.needsHumanConfirm === true)
+        .map((d) => d.id),
     modelFor: featureModelFor(fc),
   };
   const header = { runId: fc.runId, feature: fc.feature };

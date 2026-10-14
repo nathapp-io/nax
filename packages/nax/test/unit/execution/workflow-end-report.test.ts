@@ -1,10 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { makeMockRuntime } from "@test/helpers";
+import { cleanupTempDir, makeMockRuntime, makeTempDir } from "@test/helpers";
 import { _workflowEndReportDeps, reportWorkflowRun } from "@/execution/workflow-end-report";
 import type { WorkflowSummaryView } from "@/log-format";
 import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
+import { newFeatureRecord } from "@/workflow/feature-record";
+import { workflowRunDir } from "@/workflow/paths";
+import { upsertFeatureRecord } from "@/workflow/result";
 
 const original = { ..._workflowEndReportDeps };
+const dirs: string[] = [];
 const opts = { workdir: "/repo", feature: "f", runId: "r1", runtime: makeMockRuntime() };
 const timing = { storiesDurationMs: 8_393_000, featureWorkflowDurationMs: 1_055_000 };
 const view: WorkflowSummaryView = {
@@ -22,9 +26,11 @@ beforeEach(() => {
   initLogger({ level: "silent" });
   addSink((entry) => logs.push(entry));
 });
-afterEach(() => {
+afterEach(async () => {
   resetLogger();
   Object.assign(_workflowEndReportDeps, original);
+  await Promise.all(dirs.map(cleanupTempDir));
+  dirs.length = 0;
 });
 
 describe("reportWorkflowRun", () => {
@@ -50,5 +56,28 @@ describe("reportWorkflowRun", () => {
     };
     expect(await reportWorkflowRun(opts, timing)).toBeUndefined();
     expect(logs.map((e) => [e.level, e.message])).toEqual([["warn", "Workflow summary unavailable"]]);
+  });
+
+  test("a feature record with flagged rulings names the count and the feature hint (US-005)", async () => {
+    const dir = makeTempDir("wf-end-report-");
+    dirs.push(dir);
+    const runtime = makeMockRuntime();
+    const runDir = workflowRunDir(dir, "f", runtime.runId);
+    await upsertFeatureRecord(
+      runDir,
+      { runId: runtime.runId, feature: "f" },
+      {
+        ...newFeatureRecord({ now: "t", seed: "s", minors: [] }),
+        step: "done",
+        outcome: "local-only",
+        reasons: [],
+        passed: true,
+        flaggedDecisions: ["D-1"],
+      },
+    );
+    const view = await reportWorkflowRun({ workdir: dir, feature: "f", runId: runtime.runId, runtime }, timing);
+    expect(view?.flagged).toEqual({ ids: ["D-1"], hint: "nax advisor list -f f" });
+    const line = logs.find((e) => e.message.startsWith("Workflow summary:"));
+    expect(line?.message).toContain("flagged 1 (nax advisor list -f f)");
   });
 });
