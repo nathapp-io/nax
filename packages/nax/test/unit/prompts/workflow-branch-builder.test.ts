@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildBranchPackageReadingNote,
+  buildWorkflowBranchCoverageRetry,
   buildWorkflowBranchFixPrompt,
   buildWorkflowBranchReReviewPrompt,
   buildWorkflowBranchReviewPrompt,
@@ -132,6 +133,29 @@ describe("buildWorkflowBranchReviewPrompt", () => {
   test("requires the command and error behind an unavailability claim (AC-19)", () => {
     expect(buildWorkflowBranchReviewPrompt(gateBase)).toContain(
       "Say a tool or service is unavailable only together with the command you ran and the error it returned; otherwise say what you did not try.",
+    );
+  });
+});
+
+describe("buildWorkflowBranchCoverageRetry (US-003, nax#2532)", () => {
+  const retry = buildWorkflowBranchCoverageRetry("seed0..HEAD", ["src/a.ts", "src/b.ts"]);
+
+  test("lists every missing path, one per line (AC-2)", () => {
+    expect(retry).toContain("- src/a.ts");
+    expect(retry).toContain("- src/b.ts");
+  });
+
+  test("gives the per-file diff command for the branch range (AC-3)", () => {
+    expect(retry).toContain("git diff seed0..HEAD -- <path>");
+  });
+
+  test("asks for the whole JSON object again (AC-4)", () => {
+    expect(retry).toContain("Re-send the whole JSON object");
+  });
+
+  test("asks for every file read or diffed in this session, not only the new ones (AC-5)", () => {
+    expect(retry).toContain(
+      "List in inspectedFiles every file you have read or diffed in this session, not only the new ones.",
     );
   });
 });

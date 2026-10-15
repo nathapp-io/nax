@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { unreadFiles } from "@/operations";
+import { type BranchReviewVerdict, isCompleteBranchVerdict, unreadFiles } from "@/operations";
 
 describe("unreadFiles", () => {
   test("returns the required paths no inspected entry covers, in required order (AC-19)", () => {
@@ -24,5 +24,34 @@ describe("unreadFiles", () => {
 
   test("no entries at all leaves every required path unread", () => {
     expect(unreadFiles(["src/a.ts", "src/b.ts"], [])).toEqual(["src/a.ts", "src/b.ts"]);
+  });
+});
+
+/** A verdict differing only in the files it claims to have inspected. */
+const verdict = (inspectedFiles: readonly string[]): BranchReviewVerdict => ({
+  spec: "pass",
+  quality: "approved",
+  findings: [],
+  cannotVerify: [],
+  inspectedFiles,
+  minorTriage: [],
+});
+
+describe("isCompleteBranchVerdict (US-003)", () => {
+  test("true when inspectedFiles covers every required file (AC-6)", () => {
+    expect(isCompleteBranchVerdict(verdict(["src/a.ts"]), ["src/a.ts"])).toBe(true);
+  });
+
+  test("false when a required file is not covered (AC-7)", () => {
+    expect(isCompleteBranchVerdict(verdict([]), ["src/a.ts"])).toBe(false);
+  });
+
+  test("false when only some required files are covered", () => {
+    expect(isCompleteBranchVerdict(verdict(["src/a.ts"]), ["src/a.ts", "src/b.ts"])).toBe(false);
+  });
+
+  test("an empty required set is complete whatever the reply listed", () => {
+    expect(isCompleteBranchVerdict(verdict([]), [])).toBe(true);
+    expect(isCompleteBranchVerdict(verdict(["src/a.ts"]), [])).toBe(true);
   });
 });

@@ -7,6 +7,7 @@
  * the reviewer's `inspectedFiles` list is self-reported and nax trusts it; this only compares it
  * against the paths the branch actually changed.
  */
+import type { BranchReviewVerdict } from "./workflow-types";
 
 /** A leading `./` is a spelling of the same path, so it is stripped before comparing. */
 function normalize(entry: string): string {
@@ -33,4 +34,14 @@ function covers(entry: string, path: string): boolean {
 export function unreadFiles(required: readonly string[], inspected: readonly string[]): string[] {
   const entries = inspected.map(normalize);
   return required.filter((path) => !entries.some((entry) => covers(entry, path)));
+}
+
+/**
+ * `true` when the verdict covers every required file — what the branch op's retry `validate` asks,
+ * and nothing more (US-003, nax#2532). Coverage decides only whether to ask the reviewer again; it
+ * never decides whether the verdict is usable, so `op.parse` stays the lenient shape check and an
+ * incomplete verdict is kept, findings included.
+ */
+export function isCompleteBranchVerdict(verdict: BranchReviewVerdict, requiredFiles: readonly string[]): boolean {
+  return unreadFiles(requiredFiles, verdict.inspectedFiles).length === 0;
 }

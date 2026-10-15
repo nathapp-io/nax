@@ -73,6 +73,7 @@ export { timeoutRetry } from "./builders/timeout-retry-builder";
 export type { BranchReviewPromptInput } from "./builders/workflow-branch-builder";
 export {
   buildBranchPackageReadingNote,
+  buildWorkflowBranchCoverageRetry,
   buildWorkflowBranchFixPrompt,
   buildWorkflowBranchReReviewPrompt,
   buildWorkflowBranchReviewPrompt,

@@ -10,7 +10,14 @@ export interface ParseRetryOpts {
   readonly reviewerKind: string;
   readonly maxAttempts?: number;
   readonly prompts: {
-    readonly invalid: () => string;
+    /**
+     * The reply to re-prompt with when the last output did not parse (or parsed but failed
+     * `validate`). It receives that output, so an op that knows *what* was wrong with a
+     * parseable reply — e.g. the branch review's missing file coverage — can say so in the
+     * retry instead of asking for valid JSON in general (US-003, nax#2532). A zero-argument
+     * function remains assignable.
+     */
+    readonly invalid: (lastOutput: string) => string;
     readonly truncated: () => string;
   };
   readonly parse?: (output: string) => unknown;
@@ -45,6 +52,25 @@ export const UNPARSED_PREVIEW_BYTES = 600;
 export function previewOutput(output: string, maxBytes: number): string {
   const collapsed = output.replace(/\s+/g, " ").trim();
   return collapsed.length > maxBytes ? `${collapsed.slice(0, maxBytes)}…` : collapsed;
+}
+
+/**
+ * The retry prompt for a reply that failed to parse or to validate, and whether the truncation hint
+ * fired (the caller logs which). The condensed truncation prompt is for an *unparseable* reply only:
+ * an output the op's own parser accepted is complete by definition, so a dangling brace further down
+ * (a second, cut-off object after a valid one) is not evidence the reply was truncated, and asking a
+ * reviewer to shorten a reply it already finished would be the wrong instruction. A parseable reply
+ * goes to `invalid` instead, which sees the output and can name what is actually missing
+ * (US-003, nax#2532).
+ */
+function retryPromptFor(
+  parsed: unknown,
+  lastOutput: string,
+  prompts: ParseRetryOpts["prompts"],
+  checkTruncated: (raw: string) => boolean,
+): { readonly truncated: boolean; readonly prompt: string } {
+  const truncated = parsed == null && checkTruncated(lastOutput);
+  return { truncated, prompt: truncated ? prompts.truncated() : prompts.invalid(lastOutput) };
 }
 
 export function makeParseRetryStrategy(opts: ParseRetryOpts): RetryStrategy {
@@ -113,8 +139,12 @@ export function makeParseRetryStrategy(opts: ParseRetryOpts): RetryStrategy {
         return { retry: false, ...(fallback !== undefined ? { fallback } : {}) };
       }
 
-      const isTruncated = checkTruncated(ctx.lastOutput);
-      const nextPrompt = isTruncated ? opts.prompts.truncated() : opts.prompts.invalid();
+      const { truncated: isTruncated, prompt: nextPrompt } = retryPromptFor(
+        parsed,
+        ctx.lastOutput,
+        opts.prompts,
+        checkTruncated,
+      );
 
       const logger = opts._logger ?? getSafeLogger();
       const preview =

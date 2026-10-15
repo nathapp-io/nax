@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-10-13T13:45:28.776Z",
+  "updatedAt": "2026-10-15T03:17:52.797Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": { "collectStats": 27 },
@@ -18,7 +18,7 @@
     "src/agents/manager-run-fallback.ts": { "runWithFallback": 52 },
     "src/agents/manager.ts": { "completeWithFallback": 40 },
     "src/agents/retry/hop-retry-policy.ts": { "trySameAgentRetry": 45 },
-    "src/agents/retry/parse-retry.ts": { "shouldRetry": 44 },
+    "src/agents/retry/parse-retry.ts": { "shouldRetry": 42 },
     "src/agents/run-interaction-handler.ts": { "onInteraction": 52 },
     "src/agents/shared/decompose.ts": { "=>": 32 },
     "src/cli/approvals.ts": { "approvalsRmCommand": 39 },

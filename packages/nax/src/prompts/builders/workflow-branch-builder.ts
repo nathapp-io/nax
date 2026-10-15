@@ -111,6 +111,21 @@ Reply with only this JSON object:
 ${REVIEW_JSON}`;
 }
 
+/**
+ * The coverage retry (US-003, nax#2532): the reviewer replied with a parseable verdict that does not
+ * cover every changed file. It is re-prompted in the same session with the paths it missed, the
+ * command to read each one, and the instruction to list everything it has read in this session —
+ * the first reply's `inspectedFiles` named only the files it opened after the retry prompt, so the
+ * whole list has to be sent again, not just the additions.
+ */
+export function buildWorkflowBranchCoverageRetry(range: string, missing: readonly string[]): string {
+  return `Your reply parsed, but its inspectedFiles does not cover every changed file. Read each of these with \`git diff ${range} -- <path>\` (or Read it, if the branch added it), and review it:
+${missing.map((path) => `- ${path}`).join("\n")}
+
+List in inspectedFiles every file you have read or diffed in this session, not only the new ones.
+Re-send the whole JSON object: the same findings, plus anything the files above turned up.`;
+}
+
 export function buildWorkflowBranchReReviewPrompt(input: {
   specPath?: string;
   reportPath: string;

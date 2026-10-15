@@ -179,6 +179,21 @@ describe("publish (P4-R3, P4-R11)", () => {
     expect(out.reasons).toEqual(["stories gate-open: US-001"]);
   });
 
+  // US-003 (nax#2532): the files the branch review never read keep the PR a draft.
+  test("an incomplete branch review keeps the draft and never asks the advisor (AC-23)", async () => {
+    const calls = wire({ ci: "green" });
+    const asked: string[] = [];
+    const out = await publish(
+      makeFeatureContext(),
+      input({ record: { ...greenRecord, reviewUnread: ["src/b.ts"] }, advisor: advisor(true, asked) }),
+    );
+
+    expect(out.outcome).toBe("draft");
+    expect(out.reasons).toEqual(["branch review did not read 1 changed file(s): src/b.ts"]);
+    expect(asked).toEqual([]);
+    expect(calls.at(-1)?.keepDraft).toBe(true);
+  });
+
   test("CI failed -> draft with the reason", async () => {
     wire({ ci: "failed" });
     const out = await publish(makeFeatureContext(), input());

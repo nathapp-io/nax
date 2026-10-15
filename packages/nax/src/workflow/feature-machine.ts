@@ -8,7 +8,7 @@ import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import { FEATURE_SCOPE } from "./advisor-live";
-import { featurePassed } from "./approval";
+import { describeUnread, featurePassed } from "./approval";
 import type { BranchFixOutcome } from "./branch-fix";
 import type { BranchReviewFacts } from "./branch-review";
 import type { PublishOutcome } from "./finalize";
@@ -191,6 +191,11 @@ async function branchReviewStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Pr
     return { reviewRan: false, step: "branch-fix" };
   }
   for (const item of out.verdict.cannotVerify) await env.sink.ledger(ledgerText.note(`cannot-verify: ${item}`));
+  // US-003: the files the verdict did not read. Nothing else records them — the step line names the
+  // findings, not the coverage — so the note is mirrored to the run log as well, in the same words
+  // `publish` uses for the reason that keeps the PR a draft.
+  const unread = out.verdict.unreadFiles ?? [];
+  if (unread.length > 0) await env.sink.ledger(ledgerText.note(describeUnread(unread)));
   const triage = new Map(out.verdict.minorTriage.map((t) => [t.id, t.decision]));
   const { findings, nextFindingId } = assign(rec, out.verdict.findings.filter(isBlocking));
   const minors = out.verdict.findings.filter((f) => !isBlocking(f));
@@ -200,6 +205,7 @@ async function branchReviewStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Pr
   return {
     reviewRan: true,
     cannotVerify: out.verdict.cannotVerify,
+    ...(unread.length > 0 ? { reviewUnread: unread } : {}),
     reviewOpen: findings,
     nextFindingId,
     minors: rec.minors.map((m) => ({ ...m, triage: triage.get(m.id) ?? "leave" })),

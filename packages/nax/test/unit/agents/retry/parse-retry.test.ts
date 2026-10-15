@@ -126,6 +126,44 @@ describe("makeParseRetryStrategy", () => {
     });
   });
 
+  describe("AC-1: prompts.invalid receives the last output", () => {
+    test("is called with ctx.lastOutput and its return value becomes nextPrompt", () => {
+      const seen: string[] = [];
+      const strategy = makeParseRetryStrategy({
+        validate: () => false,
+        reviewerKind: "test",
+        parse: () => null,
+        looksTruncated: () => false,
+        prompts: {
+          invalid: (lastOutput: string) => {
+            seen.push(lastOutput);
+            return `retry-for:${lastOutput}`;
+          },
+          truncated: () => "truncated-prompt",
+        },
+      });
+
+      const result = strategy.shouldRetry(parseError, 0, makeCtx({ lastOutput: "not json" }));
+
+      expect(result).toEqual({ retry: true, delayMs: 0, nextPrompt: "retry-for:not json" });
+      expect(seen).toEqual(["not json"]);
+    });
+
+    test("a zero-argument invalid prompt stays valid and is still used", () => {
+      const strategy = makeParseRetryStrategy({
+        validate: () => false,
+        reviewerKind: "test",
+        parse: () => null,
+        looksTruncated: () => false,
+        prompts: { invalid: () => "invalid-prompt", truncated: () => "truncated-prompt" },
+      });
+
+      const result = strategy.shouldRetry(parseError, 0, makeCtx({ lastOutput: "not json" }));
+
+      expect(result).toEqual({ retry: true, delayMs: 0, nextPrompt: "invalid-prompt" });
+    });
+  });
+
   describe("AC-7: budget exhausted", () => {
     test("returns { retry: false } when attempt >= maxAttempts - 1 (default maxAttempts=2)", () => {
       const strategy = makeParseRetryStrategy({

@@ -132,6 +132,9 @@ async function setup() {
       return {
         spec: "pass",
         quality: "changes",
+        // US-003: the fixture's only changed file after the seed (b.ts) must be reported read,
+        // or the incomplete-review reason turns the expected "ready" into a draft.
+        inspectedFiles: ["b.ts"],
         findings: [{ kind: "quality", severity: "important", issue: "b.ts never exported from the barrel" }],
         cannotVerify: [],
         minorTriage: [{ id: "M1", decision: "fix-now" }],
@@ -213,6 +216,8 @@ describe("workflow feature end to end", () => {
         return {
           spec: "pass",
           quality: "changes",
+          // US-003: b.ts is the one file this fixture changes after the seed.
+          inspectedFiles: ["b.ts"],
           findings: [{ kind: "quality", severity: "important", issue: "cap missing", file: "src/a.ts" }],
           cannotVerify: [],
           minorTriage: [],
