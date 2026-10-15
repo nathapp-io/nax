@@ -83,6 +83,7 @@ export class StatusWriter {
   private _postRun: PostRunStatus | null = null;
   private _advisor: AdvisorSummary | null = null;
   private _workflow: WorkflowStatusBlock | null = null;
+  private _parallel: RunStateSnapshot["parallel"];
 
   /**
    * Write mutex — serializes concurrent update() calls.
@@ -166,6 +167,12 @@ export class StatusWriter {
   setPhase(phase: string): void {
     if (!this._currentStory) return;
     this._currentStory = { ...this._currentStory, phase };
+    void this.flush();
+  }
+
+  /** Persist the ready-worker parallel block on every transition. */
+  setParallel(info: NonNullable<RunStateSnapshot["parallel"]>): void {
+    this._parallel = info;
     void this.flush();
   }
 
@@ -277,6 +284,9 @@ export class StatusWriter {
       startTimeMs: this.ctx.startTimeMs,
       currentStory: this._currentStory,
     };
+    if (this._parallel !== undefined) {
+      snapshot.parallel = this._parallel;
+    }
     if (this._advisor !== null) {
       snapshot.advisor = this._advisor;
     }

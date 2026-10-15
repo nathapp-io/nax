@@ -192,6 +192,12 @@ async function runManyStoryParallelBatch(
       hooks: ctx.hooks,
       pluginRegistry: ctx.pluginRegistry,
       maxConcurrency: ctx.parallelCount as number,
+      onActiveStories: (active) =>
+        ctx.statusWriter.setParallel({
+          enabled: true,
+          maxConcurrency: ctx.parallelCount as number,
+          activeStories: [...active],
+        }),
       pipelineContext: {
         config: ctx.config,
         rootConfig: ctx.config,
