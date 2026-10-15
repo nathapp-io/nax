@@ -225,7 +225,10 @@ export function createFinishAdvisor(deps: FinishAdvisorDeps): FinishAdvisor {
     },
     async commitLedger(state) {
       const path = relative(state.workdir, ledgerPath(deps.repoRoot, deps.feature));
-      await git(["add", "--", path], state.workdir);
+      // US-007 (nax#2534): the ledger is nax's own artifact and belongs on the branch even when an
+      // ignore rule hides it. Without `-f` git refuses the add and the rulings the PR body cites
+      // never reach the commit.
+      await git(["add", "-f", "--", path], state.workdir);
       const staged = await git(["diff", "--cached", "--quiet", "--", path], state.workdir);
       if (staged.exitCode === 0) return;
       await git(

@@ -5,6 +5,7 @@ import { buildBranchPackageReadingNote } from "@/prompts";
 import { ALWAYS_EXCLUDED } from "@/review";
 import {
   changedFilesSince,
+  commitLedger,
   listUncommitted,
   readHead,
   writeBranchReviewPackage,
@@ -158,6 +159,25 @@ describe("workflow git helpers", () => {
     await Bun.write(join(dir, "b.txt"), "new\n");
     await Bun.write(join(dir, ".nax", "y.json"), "{}");
     expect((await listUncommitted(dir)).sort((a, b) => a.localeCompare(b))).toEqual(["a.txt", "b.txt"]);
+  });
+});
+
+/** US-007 (nax#2534): the argv the ledger commit uses. What git then does with `-f` in a
+ *  repository whose `.gitignore` hides the ledger is `test/integration/workflow/ledger-ignored.test.ts`. */
+describe("commitLedger argv", () => {
+  test("AC-1: stages the ledger with `add -f`, so an ignore rule cannot skip it", async () => {
+    const dir = makeTempDir("wf-ledger-argv-");
+    dirs.push(dir);
+    await Bun.write(join(dir, ".nax", "features", "f", "decisions.jsonl"), '{"id":"D-1"}\n');
+    const calls: string[][] = [];
+    _workflowDeps.git = async (args) => {
+      calls.push(args);
+      return { stdout: "", exitCode: args[0] === "diff" ? 1 : 0 };
+    };
+
+    expect(await commitLedger(dir, "f")).toBe(true);
+
+    expect(calls[0]).toEqual(["add", "-f", "--", ".nax/features/f/decisions.jsonl"]);
   });
 });
 

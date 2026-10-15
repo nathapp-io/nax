@@ -194,6 +194,19 @@ describe("createFinishAdvisor.commitLedger", () => {
       expect(s.committedThisRun).toBe(false);
     });
   });
+
+  // US-007 (nax#2534): a `.gitignore` rule hiding the ledger makes a plain `git add` fail, so the
+  // rulings the PR body cites would never be committed. `-f` overrides the rule (not the path).
+  test("AC-4: stages the ledger with `add -f`, before the `--` pathspec separator", async () => {
+    await withTempDir(async (dir) => {
+      const calls: string[][] = [];
+      const fa = make(dir, fakeAdvisor(() => ({ decision: null })).advisor, calls);
+
+      await fa.commitLedger(state(dir));
+
+      expect(calls[0]).toEqual(["add", "-f", "--", ".nax/features/feat/decisions.jsonl"]);
+    });
+  });
 });
 
 describe("createFinishAdvisor.judged: merged rounds", () => {
