@@ -4,8 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeNaxConfig } from "@test/helpers";
 import type { NaxConfig } from "@/config";
+import { DEFAULT_CONFIG } from "@/config/defaults";
 import { _clearRootConfigCache, loadConfigForWorkdir } from "@/config/loader";
-import { applyWorkflowMode } from "@/config/workflow-mode";
+import { applyWorkflowMode, warnDeprecatedPipelineMode } from "@/config/workflow-mode";
 
 type Mode = "pipeline" | "workflow";
 
@@ -25,16 +26,22 @@ describe("applyWorkflowMode", () => {
     expect(warnings).toEqual([]);
   });
 
-  test("workflow mode forces acceptance off and the advisor on, with ONE warning naming both", () => {
+  test("workflow mode forces acceptance off and the advisor on, silently when they are the shipped defaults", () => {
     const cfg = configFor({ mode: "workflow", acceptance: true, advisor: false });
     const warnings: string[] = [];
     const out = applyWorkflowMode(cfg, (m) => warnings.push(m));
     expect(out.acceptance.enabled).toBe(false);
     expect(out.advisor?.enabled).toBe(true);
     expect(cfg.acceptance.enabled).toBe(true); // input not mutated
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain("acceptance.enabled");
-    expect(warnings[0]).toContain("advisor.enabled");
+    // workflow is the default mode, so overriding untouched defaults is not news on every run
+    expect(warnings).toEqual([]);
+  });
+
+  test("the shipped default config resolves in workflow mode without a warning", () => {
+    const warnings: string[] = [];
+    const out = applyWorkflowMode(DEFAULT_CONFIG, (m) => warnings.push(m));
+    expect(out.acceptance.enabled).toBe(false);
+    expect(warnings).toEqual([]);
   });
 
   test("workflow mode forces shared story isolation: the workflow tree sits in the main checkout (nax#2479)", () => {
@@ -46,6 +53,7 @@ describe("applyWorkflowMode", () => {
     const warnings: string[] = [];
     const out = applyWorkflowMode(cfg, (m) => warnings.push(m));
     expect(out.execution.storyIsolation).toBe("shared");
+    expect(warnings).toHaveLength(1);
     expect(warnings[0]).toContain("execution.storyIsolation=shared");
   });
 
@@ -53,6 +61,30 @@ describe("applyWorkflowMode", () => {
     const cfg = configFor({ mode: "workflow", acceptance: false, advisor: true });
     const warnings: string[] = [];
     applyWorkflowMode(cfg, (m) => warnings.push(m));
+    expect(warnings).toEqual([]);
+  });
+});
+
+describe("workflow is the default execution mode", () => {
+  test("the shipped default config runs in workflow mode", () => {
+    expect(DEFAULT_CONFIG.execution.mode).toBe("workflow");
+  });
+});
+
+describe("warnDeprecatedPipelineMode", () => {
+  test("pipeline mode warns once that it is deprecated and names workflow as the replacement", () => {
+    const warnings: string[] = [];
+    warnDeprecatedPipelineMode(configFor({ mode: "pipeline", acceptance: true }), (m) => warnings.push(m));
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('execution.mode "pipeline" is deprecated');
+    expect(warnings[0]).toContain('"workflow"');
+  });
+
+  test("workflow mode does not warn", () => {
+    const warnings: string[] = [];
+    warnDeprecatedPipelineMode(configFor({ mode: "workflow", acceptance: false, advisor: true }), (m) =>
+      warnings.push(m),
+    );
     expect(warnings).toEqual([]);
   });
 });
@@ -74,6 +106,15 @@ describe("applyWorkflowMode at the per-package loader exit", () => {
       JSON.stringify({ acceptance: { enabled: true } }),
     );
     const cfg = await loadConfigForWorkdir(join(dir, ".nax", "config.json"), "apps/api");
+    expect(cfg.acceptance.enabled).toBe(false);
+  });
+
+  test("a root config with no execution.mode resolves to workflow mode", async () => {
+    dir = mkdtempSync(join(tmpdir(), "nax-wf-"));
+    mkdirSync(join(dir, ".nax"), { recursive: true });
+    writeFileSync(join(dir, ".nax", "config.json"), JSON.stringify({ acceptance: { enabled: true } }));
+    const cfg = await loadConfigForWorkdir(join(dir, ".nax", "config.json"));
+    expect(cfg.execution.mode).toBe("workflow");
     expect(cfg.acceptance.enabled).toBe(false);
   });
 

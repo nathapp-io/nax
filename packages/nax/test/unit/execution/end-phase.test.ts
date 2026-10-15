@@ -54,7 +54,7 @@ function deps(result: WorkflowFeatureResult | null | Error = null) {
   return { d, finish, workflow };
 }
 
-const PIPELINE = makeNaxConfig({});
+const PIPELINE = makeNaxConfig({ execution: { mode: "pipeline" } });
 const WORKFLOW = makeNaxConfig({ execution: { mode: "workflow" } });
 
 describe("runEndPhase (P4-R16)", () => {

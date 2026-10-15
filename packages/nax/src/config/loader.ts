@@ -38,7 +38,7 @@ import {
 } from "./profile";
 import { pinRootOnlyKeysRaw } from "./root-only-keys";
 import { DEFAULT_CONFIG, type NaxConfig, NaxConfigSchema } from "./schema";
-import { applyWorkflowMode } from "./workflow-mode";
+import { applyWorkflowMode, warnDeprecatedPipelineMode } from "./workflow-mode";
 
 /**
  * CFG-2/CFG-3: resolve `$VAR`/`${VAR}` references in a config layer that has
@@ -277,6 +277,7 @@ function finalizeAndValidateRootConfig(rawConfig: Record<string, unknown>): NaxC
     });
   }
 
+  warnDeprecatedPipelineMode(result.data as NaxConfig, defaultConfigWarn);
   return applyWorkflowMode(result.data as NaxConfig, defaultConfigWarn);
 }
 

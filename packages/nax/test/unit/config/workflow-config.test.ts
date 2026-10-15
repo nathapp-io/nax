@@ -4,9 +4,9 @@ import { isWorkflowMode, NaxConfigSchema, resolveWorkflowConfig, WORKFLOW_DEFAUL
 import { pinRootOnlyKeysRaw } from "@/config/root-only-keys";
 
 describe("workflow config", () => {
-  test("defaults: pipeline mode, every workflow default filled (Zod 4 prefault)", () => {
+  test("defaults: workflow mode, every workflow default filled (Zod 4 prefault)", () => {
     const parsed = NaxConfigSchema.parse({});
-    expect(parsed.execution.mode).toBe("pipeline");
+    expect(parsed.execution.mode).toBe("workflow");
     expect(parsed.workflow).toEqual({
       models: {},
       maxFixRounds: 5,

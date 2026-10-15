@@ -22,7 +22,10 @@ afterEach(() => {
 function initRepo(config: Record<string, unknown> = {}): string {
   const naxDir = join(tempDir, ".nax");
   mkdirSync(join(naxDir, "features"), { recursive: true });
-  writeFileSync(join(naxDir, "config.json"), JSON.stringify({ name: "test-project", ...config }));
+  writeFileSync(
+    join(naxDir, "config.json"),
+    JSON.stringify({ name: "test-project", execution: { mode: "pipeline" }, ...config }),
+  );
   return naxDir;
 }
 
