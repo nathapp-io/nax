@@ -93,17 +93,6 @@ jobs:
       - name: Build
         run: bun run build
 
-      - name: Test (unit)
-        run: bun test test/unit/ --timeout=60000 --bail
-
-      - name: Test (integration)
-        run: bun test test/integration/ --timeout=60000 --bail
-        env:
-          NAX_SANDBOX_REQUIRED: "1"
-
-      - name: Test (ui)
-        run: bun test test/ui/ --timeout=60000 --bail
-
       # Excluded from `bun run test` by design (scripts/run-tests.ts PHASES) — but the
       # scripted-agent e2e suite is the only end-to-end cover for the story orchestrator,
       # so CI runs it explicitly. ~30s.
@@ -113,12 +102,18 @@ jobs:
       # Enforces the documented 80% floor over `src/`, aggregate and per file. Bun's
       # own coverageThreshold only exits non-zero with the `text` reporter enabled,
       # and has no per-file ratchet, so packages/repo-tooling/scripts/check-coverage.ts parses lcov instead.
-      # Re-runs unit + integration + ui in ONE invocation (~55s) — Bun writes a
-      # single merged report per invocation and cannot merge across them, so the
-      # three steps above cannot be reused for this. nax-agent gates its own
+      # Runs unit + integration + ui in ONE invocation — Bun writes a single
+      # merged report per invocation and cannot merge across them. It is also
+      # the job's only unconfined run of those suites: the gate
+      # exits 1 when any test fails, so separate `bun test test/unit/` /
+      # `test/integration/` / `test/ui/` steps only ran the same tests a second
+      # time (~130s). NAX_SANDBOX_REQUIRED moved here with them, so the live
+      # sandbox suite still cannot pass by skipping. nax-agent gates its own
       # sources in its own job.
       - name: Coverage floor
         run: bun run test:coverage
+        env:
+          NAX_SANDBOX_REQUIRED: "1"
 
   nax-agent:
     name: nax-agent
