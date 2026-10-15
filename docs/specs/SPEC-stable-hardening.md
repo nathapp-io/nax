@@ -160,8 +160,8 @@ reach the user.
         `--paginate`, `--bare`, `--literal-pathspecs`, `--no-replace-objects`.
      5. For a `sh`, `bash`, `dash`, `zsh` or `ksh` head, scan its options for a cluster matching
         `^-[A-Za-z]*c[A-Za-z]*$` (`-c`, `-lc`, `-ec`), skipping known option values (`-o <opt>`,
-        `--rcfile <f>`) and long options such as `--norc`, as the state guard's `shellCommandString`
-        does. Lex the token after that cluster's
+        `--rcfile <f>`) and long options such as `--norc`; unlike the state guard's `shellCommandString`,
+        which only locates the cluster, the canonicaliser implements this skipping itself. Lex the token after that cluster's
         text with `lexBashCommand` and canonicalise each resulting segment, at most 3 levels deep.
         An opaque payload, a refused lex, or a fourth level is `refused`.
    - A canonical segment that is left empty (a bare `fi`, `done` or `}`) is dropped.
@@ -179,8 +179,8 @@ reach the user.
     directory. The guard refuses:
     - a `git checkout`, `git restore`, `git rm` or `git reset` pathspec operand containing `*`, `?`
       or `[`, because a glob such as `'*.json'` can match files under `.nax`. An exclusion pathspec
-      (`isExclusionSpec`, e.g. `':(exclude,glob)**/.nax/**'`, which the guard's own refusal text
-      recommends) is exempt;
+      (`isExclusionSpec`, e.g. `':(top,exclude,glob)**/.nax/**'`, the `COVERING_EXCLUSION` the
+      guard's own refusal text recommends) is exempt. The exclusion validators are unchanged;
     - `git rebase`, `git pull` or `git merge` with `--autostash`;
     - `git rm` with any operand that touches `.nax`, whatever its flags (so `git rm -r .` and
       `git rm -r packages` refuse when they contain a `.nax` directory);
@@ -588,8 +588,7 @@ in one bundle, and the spec-review's additions pushed three stories past the AC 
 
 **US-007**
 - `packages/nax/test/unit/review/reviewer-guard/snapshot.test.ts` — any case asserting that a failed working-tree snapshot restores no paths. The replacing invariant is the tracked-only fallback.
-- `packages/nax/test/unit/mcp/pool.test.ts` — any case asserting that `close()` waits for an in-flight open to finish its attempts. The replacing invariant is that `close()` aborts it.
-- `packages/nax/test/unit/mcp/pool.test.ts` — any case asserting that the pid is registered after the connect resolves. The replacing invariant is that it is registered through `onSpawn` and unregistered when the open fails.
+- `packages/nax/test/unit/mcp/pool.test.ts` — any case asserting that `close()` waits for an in-flight open to finish its attempts; the replacing invariant is that `close()` aborts it. Also any case asserting that the pid is registered after the connect resolves; the replacing invariant is that it is registered through `onSpawn` and unregistered when the open fails.
 
 **US-008**
 
@@ -701,7 +700,7 @@ None. `warnOrDefer` is new and `defaultConfigWarn`'s callers keep their signatur
 19. [unit] The guard allows `git stash push -m wip src/a.ts`.
 20. [unit] The guard refuses `git stash push .nax/features/f/prd.json`.
 21. [unit] The guard refuses `git stash push --pathspec-from-file=list.txt`.
-22. [unit] The guard allows `git checkout -- . ':(exclude,glob)**/.nax/**'`.
+22. [unit] The guard allows `git checkout -- . ':(top,exclude,glob)**/.nax/**'`.
 
 ### US-005
 
