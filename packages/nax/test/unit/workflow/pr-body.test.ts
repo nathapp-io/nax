@@ -324,16 +324,17 @@ describe("buildWorkflowPrBody — agent-sourced text is redacted and neutralised
     expect(body).toContain(`@${ZWSP}octocat`);
   });
 
-  test("leaves scoped package paths and code spans alone, never a mention", () => {
+  test("leaves file-path code spans and word@word alone; breaks team and user mentions", () => {
     const body = buildWorkflowPrBody({
       ...input,
       openItems: [
-        { kind: "finding", id: "F1", file: "packages/@scope/x/a.ts", issue: "bump node@20 in @types/node usage" },
+        { kind: "finding", id: "F1", file: "packages/@scope/x/a.ts", issue: "bump node@20, ask @org/team and x/@user" },
       ],
     });
     expect(body).toContain("`packages/@scope/x/a.ts`");
     expect(body).toContain("node@20");
-    expect(body).toContain(`@${ZWSP}types/node`);
+    expect(body).toContain(`@${ZWSP}org/team`);
+    expect(body).toContain(`x/@${ZWSP}user`);
   });
 
   test("leaves the ## Closes section built from the spec untouched", () => {

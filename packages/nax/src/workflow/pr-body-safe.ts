@@ -17,14 +17,14 @@ const ZERO_WIDTH_SPACE = "​";
 
 /**
  * Break `#123`, `@user` and `/issues/12` / `/pull/12` URLs so GitHub neither links, closes nor notifies.
- * Every `#<digit>` is broken, `owner/repo#45` included (GitHub links it across repos). An `@` is broken
- * only where GitHub would mention: not after `/`, `.`, `-`, `@` or a word character (`packages/@scope/x`,
- * `node@20`, `a.b@c` stay intact).
+ * Every `#<digit>` is broken, `owner/repo#45` included (GitHub links it across repos). Every `@` is broken
+ * except right after a word character (`node@20`, `a@b`), the one case GitHub never mentions; `@org/team`
+ * notifies a team, so a following `/` is no exemption. File paths render through `safeCode` instead.
  */
 export function neutralise(text: string): string {
   return text
     .replace(/#(?=\d)/g, `#${ZERO_WIDTH_SPACE}`)
-    .replace(/(?<![\w/.@-])@(?=[A-Za-z0-9_])/g, `@${ZERO_WIDTH_SPACE}`)
+    .replace(/(?<!\w)@(?=[A-Za-z0-9_])/g, `@${ZERO_WIDTH_SPACE}`)
     .replace(/\/(issues|pull)\/(?=\d)/gi, `/$1/${ZERO_WIDTH_SPACE}`);
 }
 
