@@ -3,14 +3,15 @@ import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { ConfiguredModel } from "@/config";
 import { getLogger } from "@/logger";
-import { workflowBranchReviewOp, workflowReReviewOp } from "@/operations";
+import { unreadFiles, workflowBranchReviewOp, workflowReReviewOp } from "@/operations";
 import {
   type BranchReviewPromptInput,
   buildWorkflowBranchReReviewPrompt,
   buildWorkflowBranchReviewPrompt,
 } from "@/prompts";
 import type { FeatureContext } from "./feature-context";
-import { writeReviewPackage } from "./git";
+import { writeBranchReviewPackage, writeReviewPackage } from "./git";
+import { reviewRequiredFiles } from "./review-coverage";
 import { _workflowDeps } from "./step-context";
 import { type ReviewOutcome, underReviewLimit } from "./story-review";
 import type { BranchReviewVerdict, ReReviewVerdict, WorkflowFinding } from "./types";
@@ -40,25 +41,37 @@ export async function runBranchReview(
   input: { seed: string; specPath?: string; preflightPath?: string; facts: BranchReviewFacts },
 ): Promise<ReviewOutcome<BranchReviewVerdict>> {
   const packagePath = join(fc.runDir, "package-branch.diff");
+  const range = `${input.seed}..HEAD`;
   const prompt = buildWorkflowBranchReviewPrompt({
     ...(input.specPath ? { specPath: input.specPath } : {}),
     prdPath: fc.prdPath,
     ...(input.preflightPath ? { preflightPath: input.preflightPath } : {}),
     packagePath,
-    range: `${input.seed}..HEAD`,
+    range,
     ...input.facts,
   });
+  // The package writer's callback assigns this before the op runs; a throw from either step is a
+  // skipped review, so the op never sees a half-built set.
+  let requiredFiles: readonly string[] = [];
   const outcome = await underReviewLimit(
     fc,
-    () => writeReviewPackage(fc.projectDir, input.seed, packagePath),
+    async () => {
+      const paths = await writeBranchReviewPackage(fc.projectDir, input.seed, packagePath);
+      requiredFiles = await reviewRequiredFiles(paths, fc);
+    },
     (signal) =>
       _workflowDeps.callOp({ ...fc.callCtx, ...(signal ? { signal } : {}) }, workflowBranchReviewOp, {
         prompt,
         timeoutMs: fc.workflow.timeouts.reviewMs,
         minorIds: input.facts.minors.map((m) => m.id),
+        requiredFiles,
+        range,
       }),
   );
-  return outcome;
+  if (!outcome.ran) return outcome;
+  const unread = unreadFiles(requiredFiles, outcome.verdict.inspectedFiles ?? []);
+  // A spread, not a mutation: the verdict the op returned is also written as an artifact elsewhere.
+  return unread.length > 0 ? { ran: true, verdict: { ...outcome.verdict, unreadFiles: unread } } : outcome;
 }
 
 export async function runBranchReReview(

@@ -73,4 +73,11 @@ export type MinorTriageDecision = "fix-now" | "leave";
 /** The whole-branch review (spec §7 step 2): the story-review verdict plus one triage per deferred minor. */
 export interface BranchReviewVerdict extends StoryReviewVerdict {
   readonly minorTriage: readonly { readonly id: string; readonly decision: MinorTriageDecision }[];
+  /**
+   * The required files the reply's `inspectedFiles` list does not cover (US-002, nax#2622). Set by
+   * `runBranchReview` from the package's required set and the parsed verdict — never parsed from the
+   * reply, so it is absent on every op-produced verdict and on every record from before it existed.
+   * Present only when non-empty.
+   */
+  readonly unreadFiles?: readonly string[];
 }

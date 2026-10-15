@@ -10,7 +10,13 @@ function buildCtx(overrides: Record<string, unknown> = {}) {
   return { packageView, config: packageView.select(opSelector(workflowConfigSelector)) };
 }
 
-const input: WorkflowBranchReviewInput = { prompt: "review the branch", timeoutMs: 1000, minorIds: ["M1"] };
+const input: WorkflowBranchReviewInput = {
+  prompt: "review the branch",
+  timeoutMs: 1000,
+  minorIds: ["M1"],
+  requiredFiles: [],
+  range: "seed0..HEAD",
+};
 
 function modelFor(i: WorkflowBranchReviewInput, overrides: Record<string, unknown>) {
   const m = workflowBranchReviewOp.model;

@@ -10,7 +10,7 @@ import { callOp } from "@/operations";
 import type { CallContext, Operation } from "@/operations/types";
 import type { UserStory } from "@/prd";
 import type { ISessionManager } from "@/session/types";
-import type { ResolvedTestPatterns } from "@/test-runners";
+import { type ResolvedTestPatterns, resolveTestFilePatterns } from "@/test-runners";
 import { autoCommitIfDirty, gitWithTimeout } from "@/utils/git";
 import type { NaxIgnoreIndex } from "@/utils/path-filters";
 
@@ -57,5 +57,6 @@ export const _workflowDeps = {
     resolveFeatureSpec(feature, workdir),
   createAdvisor: createAdvisor as typeof createAdvisor,
   readTrustedDecisions: readTrustedDecisions as typeof readTrustedDecisions,
+  resolveTestPatterns: resolveTestFilePatterns,
   now: (): number => Date.now(),
 };

@@ -16,6 +16,10 @@ import type { BranchReviewVerdict } from "./workflow-types";
 export interface WorkflowBranchReviewInput extends WorkflowReviewInput {
   /** The deferred minors the reviewer must triage, in prompt order. */
   readonly minorIds: readonly string[];
+  /** The changed files the reviewer must inspect (US-002): the package minus tests and non-source files. */
+  readonly requiredFiles: readonly string[];
+  /** `<seed>..HEAD`: the range the branch fix and this package's reading note are phrased in. */
+  readonly range: string;
 }
 
 export const workflowBranchReviewOp: RunOperation<
