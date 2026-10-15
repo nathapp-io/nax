@@ -8,17 +8,19 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeNaxConfig, makeTestContext } from "@test/helpers";
+import { cleanupTempDir, makeNaxConfig, makeTempDir, makeTestContext } from "@test/helpers";
 import { applyPostRunInspection } from "@/execution/post-run";
 import { implementerOp, testWriterOp, verifierOp } from "@/operations";
 import { _scratchWriterDeps } from "@/session/scratch-writer";
 import { makeInspectionOpts, makePlanResult } from "./_post-run-fixtures";
 
 describe("applyPostRunInspection — scratch-entry write failures are swallowed", () => {
+  let scratchDir: string;
   let origAppendFile: typeof _scratchWriterDeps.appendFile;
   let appendFileMock: ReturnType<typeof mock<typeof _scratchWriterDeps.appendFile>>;
 
   beforeEach(() => {
+    scratchDir = makeTempDir("nax-scratch-entries-");
     origAppendFile = _scratchWriterDeps.appendFile;
     appendFileMock = mock(async () => {
       throw new Error("disk full");
@@ -28,11 +30,12 @@ describe("applyPostRunInspection — scratch-entry write failures are swallowed"
 
   afterEach(() => {
     _scratchWriterDeps.appendFile = origAppendFile;
+    cleanupTempDir(scratchDir);
   });
 
   test("self-verification scratch write failure does not throw and still returns a result", async () => {
     const ctx = makeTestContext({
-      sessionScratchDir: "/tmp/nax-test-scratch",
+      sessionScratchDir: scratchDir,
       config: makeNaxConfig({ context: { v2: { enabled: true } } }),
     });
     const planResult = makePlanResult({
@@ -43,11 +46,12 @@ describe("applyPostRunInspection — scratch-entry write failures are swallowed"
     const result = await applyPostRunInspection(ctx, planResult, makeInspectionOpts());
 
     expect(result.agentResult.success).toBe(true);
+    expect(appendFileMock).toHaveBeenCalled();
   });
 
   test("test-writer and verifier scratch write failures in TDD mode do not throw", async () => {
     const ctx = makeTestContext({
-      sessionScratchDir: "/tmp/nax-test-scratch",
+      sessionScratchDir: scratchDir,
       config: makeNaxConfig({ context: { v2: { enabled: true } } }),
     });
     const planResult = makePlanResult({

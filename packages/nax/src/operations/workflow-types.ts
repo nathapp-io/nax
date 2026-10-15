@@ -47,8 +47,24 @@ export interface StoryReviewVerdict {
   readonly inspectedFiles: readonly string[];
 }
 
+/**
+ * US-004 (nax#2524): what remains of a partly fixed finding. A `PARTIAL` re-review verdict carries it,
+ * and it replaces the finding's own issue on the same id rather than becoming a second finding.
+ */
+export interface ReReviewResidual {
+  readonly issue: string;
+  readonly suggestion?: string;
+  readonly file?: string;
+  readonly line?: number;
+}
+
 export interface ReReviewVerdict {
-  readonly verdicts: readonly { readonly id: string; readonly addressed: boolean; readonly note: string }[];
+  readonly verdicts: readonly {
+    readonly id: string;
+    readonly addressed: boolean;
+    readonly note: string;
+    readonly residual?: ReReviewResidual;
+  }[];
   readonly newFindings: readonly WorkflowFindingDraft[];
 }
 

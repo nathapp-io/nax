@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { assertDefined, makeDispatchContext, makeNaxConfig } from "@test/helpers";
+import { join } from "node:path";
+import { assertDefined, cleanupTempDir, makeDispatchContext, makeNaxConfig, makeTempDir } from "@test/helpers";
 import { DEFAULT_CONFIG, type NaxConfig } from "@/config";
 import {
   _acceptanceSetupDeps,
@@ -62,9 +63,9 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
     stories,
     routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
     rootConfig: DEFAULT_CONFIG,
-    workdir: "/tmp/test-workdir",
-    projectDir: "/tmp/test-workdir",
-    featureDir: "/tmp/test-workdir/.nax/features/test-feature",
+    workdir: fixtureDir,
+    projectDir: fixtureDir,
+    featureDir: join(fixtureDir, ".nax", "features", "test-feature"),
     hooks: { hooks: {} },
     ...makeDispatchContext(),
     ...overrides,
@@ -87,14 +88,21 @@ function makeDefaultCallOp(
   };
 }
 
+// The stage writes the generated test file and its meta file into the feature
+// dir, so that fixture must be a real dir under `$TMPDIR`: a confined run may
+// not write a literal `/tmp/...`.
+let fixtureDir: string;
+
 let savedDeps: typeof _acceptanceSetupDeps;
 
 beforeEach(() => {
+  fixtureDir = makeTempDir("nax-acceptance-setup-");
   savedDeps = { ..._acceptanceSetupDeps };
 });
 
 afterEach(() => {
   Object.assign(_acceptanceSetupDeps, savedDeps);
+  cleanupTempDir(fixtureDir);
   mock.restore();
 });
 
@@ -120,7 +128,7 @@ describe("acceptance-setup: writes test file", () => {
 
     expect(writtenPaths.length).toBe(1);
     expect(writtenPaths[0]).toContain(".nax/features/test-feature/.nax-acceptance.test.ts");
-    expect(writtenPaths[0]).toContain("/tmp/test-workdir");
+    expect(writtenPaths[0]).toContain(fixtureDir);
   });
 
   test("written content matches generated testCode", async () => {
@@ -258,9 +266,9 @@ describe("acceptance-setup: skips generation when test file exists and fingerpri
   }
 
   function matchingLayoutFingerprint() {
-    return computeAcceptanceLayoutFingerprint("/tmp/test-workdir", [
+    return computeAcceptanceLayoutFingerprint(fixtureDir, [
       {
-        testPath: "/tmp/test-workdir/.nax/features/test-feature/.nax-acceptance.test.ts",
+        testPath: join(fixtureDir, ".nax", "features", "test-feature", ".nax-acceptance.test.ts"),
         stories: [{ id: "US-001" }, { id: "US-002" }],
       },
     ]);
@@ -404,7 +412,7 @@ describe("acceptance stage (GREEN gate): works with pre-generated test file", ()
     );
     expect(result.action).toBe("fail");
     if (result.action === "fail") {
-      expect(result.reason).toContain("/tmp/test-workdir");
+      expect(result.reason).toContain(fixtureDir);
     }
   });
 });

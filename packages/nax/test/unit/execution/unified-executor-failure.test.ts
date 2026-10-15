@@ -10,12 +10,14 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
 import {
+  cleanupTempDir,
   makeDispatchContext,
   makeMockRuntime,
   makePluginRegistry,
   makePRD,
   makeStatusWriter,
   makeStory,
+  makeTempDir,
 } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { stopHeartbeat } from "@/execution/crash-recovery";
@@ -88,10 +90,15 @@ describe("exec AC-23 (behavioral): executeUnified calls handlePipelineFailure fo
     return makePRD({ userStories: stories });
   }
 
+  // The fixture's prdPath/workdir: a real dir per test under `$TMPDIR`, because the
+  // executor persists the PRD at `prdPath` (`savePRD` writes `<path>.tmp-<uuid>`),
+  // and a confined run may not write a literal `/tmp/...`.
+  let fixtureDir: string;
+
   function makeCtx(parallelCount = 2): SequentialExecutionContext {
     return {
-      prdPath: "/tmp/test-prd.json",
-      workdir: "/tmp/test-workdir",
+      prdPath: join(fixtureDir, "prd.json"),
+      workdir: fixtureDir,
       config: {
         ...DEFAULT_CONFIG,
         execution: {
@@ -130,6 +137,7 @@ describe("exec AC-23 (behavioral): executeUnified calls handlePipelineFailure fo
   let origBatch: unknown;
 
   beforeEach(async () => {
+    fixtureDir = makeTempDir("nax-unified-executor-failure-");
     const mod = await import("@/execution/unified-executor");
     deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
     origSelect = deps.selectIndependentBatch;
@@ -139,6 +147,7 @@ describe("exec AC-23 (behavioral): executeUnified calls handlePipelineFailure fo
   afterEach(() => {
     deps.selectIndependentBatch = origSelect;
     deps.runParallelBatch = origBatch;
+    cleanupTempDir(fixtureDir);
     mock.restore();
   });
 

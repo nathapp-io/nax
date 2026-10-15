@@ -21,6 +21,7 @@ import {
 import { type BashApprovalMode, buildCodingToolSupport, DEFAULT_BASH_APPROVAL_MODE } from "@nathapp/nax-agent/internal";
 import {
   cleanupTempDir,
+  isConfinedTestRun,
   makeCommandShadowRecorder,
   makeFakeSandboxBackend,
   makeNaxConfig,
@@ -485,7 +486,13 @@ describe.each([...SHADOW_VARIANTS])("shadow=%s", (variant) => {
   // that drops the bashApproval forwarding in `resolveCodingToolSupport` would
   // otherwise leave these tests green while the shipped posture silently reverted
   // to gated. The seam matters -- pins it.
-  describe("US-001: raw screen protects nax config files", () => {
+  // A sandbox launch inside the confined test runner's own sandbox does not
+  // work (spec: out of scope), so a confined invocation cannot adjudicate these
+  // rows at all: every case below runs a shell through the coding-tool
+  // launcher, which wraps it in the OS sandbox. The skip names the nested
+  // sandbox rather than turning its failure into a pass — the host run is what
+  // adjudicates them.
+  describe.skipIf(isConfinedTestRun())("US-001: raw screen protects nax config files", () => {
     const rawSession = () => resolveSession({ bashApproval: "raw", allow: [] });
 
     test("AC1: a parseable redirect into the root .nax/config.json is denied", async () => {

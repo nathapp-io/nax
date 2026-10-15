@@ -7,8 +7,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { randomUUID } from "node:crypto";
-import { unlink } from "node:fs/promises";
+import { join } from "node:path";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { render } from "ink-testing-library";
 import { createElement } from "react";
 import type { UserStory } from "@/prd/types";
@@ -165,22 +165,18 @@ describe("Focus mode", () => {
 });
 
 describe("Queue command writer", () => {
-  const tempQueueFile = `/tmp/nax-test-queue-${randomUUID()}.txt`;
+  // The queue path lives under `$TMPDIR` — the only temp a confined run may
+  // write (a literal `/tmp/...` is denied by the confined session's sandbox).
+  let tempDir: string;
+  let tempQueueFile: string;
 
-  beforeEach(async () => {
-    try {
-      await unlink(tempQueueFile);
-    } catch {
-      /* ignore */
-    }
+  beforeEach(() => {
+    tempDir = makeTempDir("nax-tui-queue-test-");
+    tempQueueFile = join(tempDir, "queue.txt");
   });
 
-  afterEach(async () => {
-    try {
-      await unlink(tempQueueFile);
-    } catch {
-      /* ignore */
-    }
+  afterEach(() => {
+    cleanupTempDir(tempDir);
   });
 
   test.each([
@@ -208,11 +204,7 @@ describe("Queue command writer", () => {
   });
 
   test("creates queue file if it doesn't exist", async () => {
-    try {
-      await unlink(tempQueueFile);
-    } catch {
-      /* ignore */
-    }
+    // The per-test temp dir starts empty: nothing is written before this call.
     await writeQueueCommand(tempQueueFile, { type: "PAUSE" });
     const file = Bun.file(tempQueueFile);
     expect(await file.exists()).toBe(true);

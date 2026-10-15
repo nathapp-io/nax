@@ -5,6 +5,7 @@ export type {
   ImplementerReply,
   ImplementerStatus,
   MinorTriageDecision,
+  ReReviewResidual,
   ReReviewVerdict,
   StoryReviewVerdict,
   WorkflowFinding,
@@ -114,6 +115,13 @@ export interface RoleTokens {
   readonly outputTokens: number;
   readonly costUsd: number;
   readonly calls: number;
+  /**
+   * US-005 (nax#2525): prompt-cache reads/writes, additive telemetry beside `inputTokens` (which
+   * keeps its meaning: uncached input). Absent when the role saw no cache traffic — a record
+   * written before this field existed therefore reads as zero, and every older shape is unchanged.
+   */
+  readonly cacheReadTokens?: number;
+  readonly cacheWriteTokens?: number;
 }
 
 export type FeatureStep =

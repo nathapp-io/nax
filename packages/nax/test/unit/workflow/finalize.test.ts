@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { cleanupTempDir, makeAdviceDecision, makeFeatureContext, makeTempDir, withWarnSpy } from "@test/helpers";
@@ -6,6 +6,8 @@ import type { Advisor } from "@/advisor";
 import type { WorkflowConfig } from "@/config";
 import type { OpenOrPromoteArgs } from "@/finish/pr/open";
 import type { ForgeDeps } from "@/forge";
+import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
+import { _ciWaitDeps, waitForChecks } from "@/workflow/ci-wait";
 import type { FeatureContext } from "@/workflow/feature-context";
 import { _featureDeps } from "@/workflow/feature-deps";
 import { newFeatureRecord } from "@/workflow/feature-record";
@@ -15,10 +17,12 @@ import type { StorySummary } from "@/workflow/types";
 
 const originalFeature = { ..._featureDeps };
 const originalWorkflow = { ..._workflowDeps };
+const originalCiWait = { ..._ciWaitDeps };
 const dirs: string[] = [];
 afterEach(async () => {
   Object.assign(_featureDeps, originalFeature);
   Object.assign(_workflowDeps, originalWorkflow);
+  Object.assign(_ciWaitDeps, originalCiWait);
   await Promise.all(dirs.map(cleanupTempDir));
   dirs.length = 0;
 });
@@ -600,5 +604,81 @@ describe("publish names the spec's closing issues (US-007)", () => {
     const body = draftBody(calls);
     expect(body).not.toContain("## Closes");
     expect(body).toContain("## Stories");
+  });
+});
+
+/** US-005 (nax#2526): the publish step names its sub-steps, so a long CI wait is not a silent gap. */
+describe("publish progress log (US-005)", () => {
+  let logs: LogEntry[];
+  beforeEach(() => {
+    resetLogger();
+    logs = [];
+    initLogger({ level: "silent" });
+    addSink((entry) => logs.push(entry));
+  });
+  afterEach(() => resetLogger());
+
+  const messages = () => logs.filter((e) => e.stage === "workflow").map((e) => e.message);
+  const GH_PASS = {
+    stdout: JSON.stringify([{ name: "build", state: "PASS", bucket: "pass" }]),
+    stderr: "",
+    exitCode: 8,
+  };
+  /** A gate-open story is a deterministic readiness reason: no advisor, no promotion. */
+  const gateOpen = () => input({ stories: [{ ...done, state: "complete-gate-open" as const }] });
+
+  test("AC-18: the push is named before and after it happens, exactly once", async () => {
+    wire({ ci: "green" });
+    await publish(makeFeatureContext(), input());
+    expect(messages()).toContain("Publish: pushing feat/x");
+    expect(messages().filter((m) => m === "Publish: pushed feat/x")).toHaveLength(1);
+  });
+
+  test("AC-19: the draft PR line names the URL the forge returned", async () => {
+    wire({ ci: "green" });
+    await publish(makeFeatureContext(), input());
+    expect(messages()).toContain("Publish: draft PR https://gh/pr/7");
+  });
+
+  test("AC-20: a granted approval names the promoted PR", async () => {
+    wire({ ci: "green" });
+    await publish(makeFeatureContext(), input());
+    expect(messages()).toContain("Publish: PR marked ready https://gh/pr/7");
+  });
+
+  test("AC-21: a kept draft names the URL and the reason", async () => {
+    wire({ ci: "green" });
+    await publish(makeFeatureContext(), gateOpen());
+    expect(messages()).toContain("Publish: PR kept as draft https://gh/pr/7: stories gate-open: US-001");
+  });
+
+  test("AC-22: a failed push never claims it was pushed", async () => {
+    wire({ pushFails: true });
+    expect((await publish(makeFeatureContext(), input())).outcome).toBe("local-only");
+    expect(messages()).toContain("Publish: pushing feat/x");
+    expect(messages().some((m) => m.startsWith("Publish: pushed"))).toBe(false);
+  });
+
+  test("push mode names its own push", async () => {
+    wire({ ci: "green" });
+    await publish(withMode(makeFeatureContext(), "push"), input());
+    expect(messages()).toContain("Publish: pushed feat/x");
+  });
+
+  test("AC-23: every CI and Publish line tags the run scope first", async () => {
+    wire({ ci: "green" });
+    _featureDeps.waitForChecks = (forge, prRef, opts) => waitForChecks(forge, prRef, opts);
+    _ciWaitDeps.run = async () => GH_PASS;
+    await publish(makeFeatureContext(), input());
+    const ci = logs.filter(
+      (e) => e.stage === "workflow" && /^(CI wait|CI checks|CI pipeline|Publish:)/.test(e.message),
+    );
+    const said = ci.map((e) => e.message);
+    // The premise: this publish logged every kind of line the AC names.
+    expect(said).toContain("CI wait: feat/x (timeout 1200000ms, poll 30000ms)");
+    expect(said).toContain("CI checks: 1/1 passed, 0 pending");
+    expect(said.some((m) => m.startsWith("CI wait done: green after"))).toBe(true);
+    expect(said).toContain("Publish: pushed feat/x");
+    for (const entry of ci) expect(Object.entries(entry.data ?? {})[0]).toEqual(["storyId", "_run"]);
   });
 });

@@ -82,6 +82,32 @@ describe("runStoryReview", () => {
     expect(!out.ran && out.why).toContain("bad revision");
     expect(seen).toHaveLength(0);
   });
+
+  // US-006 (nax#2527): the caller's gate states reach the built prompt unchanged.
+  const PASS: StoryReviewVerdict = {
+    spec: "pass",
+    quality: "approved",
+    findings: [],
+    cannotVerify: [],
+    inspectedFiles: [],
+  };
+  const promptOf = (input: unknown): string => (input as { prompt: string }).prompt;
+
+  test("no gates given -> the prompt says every gate was not run (AC-3)", async () => {
+    const sc = makeSc();
+    const seen: unknown[] = [];
+    fakeOp(workflowStoryReviewOp.name, PASS, seen);
+    await runStoryReview(sc, []);
+    expect(promptOf(seen[0])).toContain("lint not run");
+  });
+
+  test("a red lint gate reaches the prompt (AC-11)", async () => {
+    const sc = makeSc();
+    const seen: unknown[] = [];
+    fakeOp(workflowStoryReviewOp.name, PASS, seen);
+    await runStoryReview(sc, [], { lint: "red" });
+    expect(promptOf(seen[0])).toContain("lint red");
+  });
 });
 
 describe("runReReview", () => {

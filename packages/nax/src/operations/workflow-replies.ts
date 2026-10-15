@@ -5,6 +5,7 @@ import type {
   ImplementerReply,
   ImplementerStatus,
   MinorTriageDecision,
+  ReReviewResidual,
   ReReviewVerdict,
   StoryReviewVerdict,
   WorkflowFindingDraft,
@@ -100,6 +101,29 @@ function drafts(v: unknown): WorkflowFindingDraft[] {
   return Array.isArray(v) ? v.map(toDraft).filter((d): d is WorkflowFindingDraft => d !== null) : [];
 }
 
+/**
+ * US-004 (nax#2524): the residual of a PARTIAL verdict, sanitised exactly as `toDraft` sanitises a
+ * finding. Anything else — another verdict, a non-object residual, an empty issue — yields nothing, so
+ * the finding fails closed to NOT_ADDRESSED and stays open unchanged.
+ */
+function residualOf(entry: Record<string, unknown>): ReReviewResidual | undefined {
+  if (entry.verdict !== "PARTIAL" || !isRecord(entry.residual)) return undefined;
+  const issue = str(entry.residual.issue);
+  if (!issue) return undefined;
+  const suggestion = str(entry.residual.suggestion);
+  const file = str(entry.residual.file);
+  const line =
+    Number.isInteger(entry.residual.line) && (entry.residual.line as number) > 0
+      ? (entry.residual.line as number)
+      : undefined;
+  return {
+    issue,
+    ...(suggestion ? { suggestion } : {}),
+    ...(file ? { file } : {}),
+    ...(line !== undefined ? { line } : {}),
+  };
+}
+
 export function parseStoryReviewReply(output: string): StoryReviewVerdict | null {
   const parsed = tryParseLLMJson<unknown>(output);
   if (!isRecord(parsed)) return null;
@@ -130,7 +154,13 @@ export function parseReReviewReply(output: string, openIds: readonly string[]): 
   const verdicts = openIds.map((id) => {
     const entry = byId.get(id);
     if (!entry) return { id, addressed: false, note: NO_VERDICT_NOTE };
-    return { id, addressed: entry.verdict === "ADDRESSED", note: typeof entry.note === "string" ? entry.note : "" };
+    const residual = residualOf(entry);
+    return {
+      id,
+      addressed: entry.verdict === "ADDRESSED",
+      note: typeof entry.note === "string" ? entry.note : "",
+      ...(residual ? { residual } : {}),
+    };
   });
   return { verdicts, newFindings: drafts(parsed.newFindings) };
 }

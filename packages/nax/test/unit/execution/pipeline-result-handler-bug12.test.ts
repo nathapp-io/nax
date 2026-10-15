@@ -49,8 +49,8 @@ function makeCtx(story: UserStory, overrides: Partial<PipelineHandlerContext> = 
   return {
     config: DEFAULT_CONFIG,
     prd,
-    prdPath: "/tmp/prd.json",
-    workdir: "/tmp/repo",
+    prdPath: join(fixtureWorkdir, "prd.json"),
+    workdir: fixtureWorkdir,
     hooks: { hooks: {} },
     feature: "test-feature",
     totalCost: 0,
@@ -80,21 +80,28 @@ const failResult: PipelineRunResult = {
   context: makeTestContext({ agentResult: makeAgentResult() }),
 };
 
+// The fixture's workdir/prdPath: a real dir under `$TMPDIR`, because the
+// handler persists the PRD there (`savePRD` writes `<path>.tmp-<uuid>`), and a
+// confined run may not write a literal `/tmp/...`.
+let fixtureWorkdir: string;
+
 let origResultSpawn: typeof _resultHandlerDeps.spawn;
 let origExistsSync: typeof _resultHandlerDeps.existsSync;
 
 beforeEach(() => {
+  fixtureWorkdir = makeTempDir("nax-result-handler-bug12-");
   origResultSpawn = _resultHandlerDeps.spawn;
   origExistsSync = _resultHandlerDeps.existsSync;
   // MEM-6: cleanup now keys off real worktree existence rather than config
   // mode — simulate "exists" so these worktree-mode removal tests don't
-  // depend on real disk state at the fake /tmp/repo workdir.
+  // depend on real disk state at the fixture workdir.
   _resultHandlerDeps.existsSync = (() => true) as typeof _resultHandlerDeps.existsSync;
 });
 
 afterEach(() => {
   _resultHandlerDeps.spawn = origResultSpawn;
   _resultHandlerDeps.existsSync = origExistsSync;
+  cleanupTempDir(fixtureWorkdir);
   mock.restore();
 });
 
@@ -248,8 +255,8 @@ function makePauseCtx(story: UserStory, overrides: Partial<PipelineHandlerContex
   return {
     config: DEFAULT_CONFIG,
     prd,
-    prdPath: "/tmp/prd.json",
-    workdir: "/tmp/repo",
+    prdPath: join(fixtureWorkdir, "prd.json"),
+    workdir: fixtureWorkdir,
     hooks: { hooks: {} },
     feature: "test-feature",
     totalCost: 0,
@@ -276,9 +283,9 @@ describe("handlePipelineFailure — pause-reason persistence (nax#1582)", () => 
     tempDir = makeTempDir("nax-pause-reason-");
     prdPath = join(tempDir, "prd.json");
     origExistsSync = _resultHandlerDeps.existsSync;
-    // MEM-6: ctx.workdir here is the shared fake "/tmp/repo" path (not
-    // per-test-isolated), so force "no worktree" rather than letting a real,
-    // unmocked existsSync/spawn depend on whatever happens to exist on disk.
+    // MEM-6: ctx.workdir here is the file-level fixture workdir (shared by
+    // every test in this file), so force "no worktree" rather than letting a
+    // real, unmocked existsSync/spawn depend on whatever happens to exist on disk.
     _resultHandlerDeps.existsSync = (() => false) as typeof _resultHandlerDeps.existsSync;
   });
 

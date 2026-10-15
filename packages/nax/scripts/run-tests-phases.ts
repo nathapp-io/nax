@@ -18,7 +18,12 @@ export const SUITE_PHASES: readonly Phase[] = [
   // hangs (per-test timeout stays 5s; the group reap still fires on overrun),
   // so it must not sit at the suite's legitimate steady-state cost.
   { name: "unit", dir: "test/unit/", testTimeoutMs: 5_000, phaseTimeoutMs: 240_000 },
-  { name: "integration", dir: "test/integration/", testTimeoutMs: 5_000, phaseTimeoutMs: 120_000 },
+  // 300s, not 120s: the same overrun as the unit phase, one phase later. A cold
+  // `bun test test/integration/ --timeout=5000` was observed at 145.8s wall
+  // (1670 tests, 164 files, every file run to completion and no extra failure),
+  // while the same phase warm costs ~60s; the 120s budget killed the cold run
+  // with nothing to report, which is not a test result. See the note above.
+  { name: "integration", dir: "test/integration/", testTimeoutMs: 5_000, phaseTimeoutMs: 300_000 },
   { name: "ui", dir: "test/ui/", testTimeoutMs: 5_000, phaseTimeoutMs: 30_000 },
 ];
 

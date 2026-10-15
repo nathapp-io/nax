@@ -11,6 +11,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _fileLockDeps } from "#src/internal/file-lock";
 import { withPathFileLock } from "#src/internal/path-file-lock";
+import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
 
 let orig: typeof _fileLockDeps;
 
@@ -23,15 +24,19 @@ afterEach(() => {
   mock.restore();
 });
 
-async function makeTempDir(): Promise<{ dir: string; target: string }> {
-  const dir = `/tmp/nax-path-lock-test-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  await Bun.$`mkdir -p ${dir}`.quiet();
+/**
+ * A lock directory under `$TMPDIR` (nax#2523): a literal `/tmp/...` path is
+ * outside the write roots a confined agent session gets, so the suite failed
+ * there while passing on the host.
+ */
+function makeLockDir(): { dir: string; target: string } {
+  const dir = makeTempDir("nax-path-lock-test-");
   return { dir, target: `${dir}/metrics.json` };
 }
 
 describe("withPathFileLock", () => {
   test("locks the derived <target>.lock file and releases it after the operation", async () => {
-    const { dir, target } = await makeTempDir();
+    const { dir, target } = makeLockDir();
 
     let lockSeenInside = false;
     await withPathFileLock(target, async () => {
@@ -41,11 +46,11 @@ describe("withPathFileLock", () => {
     expect(lockSeenInside).toBe(true);
     expect(await Bun.file(`${target}.lock`).exists()).toBe(false);
 
-    await Bun.$`rm -rf ${dir}`.quiet();
+    cleanupTempDir(dir);
   });
 
   test("serializes concurrent saves so both writes survive (BUG-6)", async () => {
-    const { dir, target } = await makeTempDir();
+    const { dir, target } = makeLockDir();
     await Bun.write(target, "[]");
 
     const writers = Array.from({ length: 8 }, (_, i) =>
@@ -61,11 +66,11 @@ describe("withPathFileLock", () => {
     const final = (await Bun.file(target).json()) as number[];
     expect(final.sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
 
-    await Bun.$`rm -rf ${dir}`.quiet();
+    cleanupTempDir(dir);
   }, 20_000);
 
   test("fails closed with the [path-lock] identity when the holder never releases", async () => {
-    const { dir, target } = await makeTempDir();
+    const { dir, target } = makeLockDir();
     await Bun.write(`${target}.lock`, "7777\n");
     Object.assign(_fileLockDeps, { isPidAlive: (pid: number) => pid === 7777 });
 
@@ -75,6 +80,6 @@ describe("withPathFileLock", () => {
     // The live holder's lock is untouched by our failed acquisition.
     expect((await Bun.file(`${target}.lock`).text()).trim()).toBe("7777");
 
-    await Bun.$`rm -rf ${dir}`.quiet();
+    cleanupTempDir(dir);
   });
 });

@@ -4,15 +4,15 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeSpawn, makeTempDir, withDepsRestore } from "@test/helpers";
 import { _pidRegistryDeps, PidRegistry } from "@/execution";
 
-const TEST_WORKDIR = `/tmp/nax-pid-registry-test-${randomUUID()}`;
-const PID_FILE = `${TEST_WORKDIR}/.nax-pids`;
+// A fresh dir per test, under `$TMPDIR` — the only temp a confined run may
+// write (a literal `/tmp/...` is denied by the confined session's sandbox).
+let TEST_WORKDIR: string;
+let PID_FILE: string;
 
 withDepsRestore(_pidRegistryDeps, ["spawn", "sleep"]);
 
@@ -27,22 +27,12 @@ function _makeStream(text = ""): ReadableStream<Uint8Array> {
 
 describe("PidRegistry", () => {
   beforeEach(() => {
-    // Create test workdir
-    if (!existsSync(TEST_WORKDIR)) {
-      mkdirSync(TEST_WORKDIR, { recursive: true });
-    }
-
-    // Clean up any existing .nax-pids file
-    if (existsSync(PID_FILE)) {
-      rmSync(PID_FILE);
-    }
+    TEST_WORKDIR = makeTempDir("nax-pid-registry-test-");
+    PID_FILE = join(TEST_WORKDIR, ".nax-pids");
   });
 
   afterEach(() => {
-    // Cleanup test workdir
-    if (existsSync(TEST_WORKDIR)) {
-      rmSync(TEST_WORKDIR, { recursive: true });
-    }
+    cleanupTempDir(TEST_WORKDIR);
   });
 
   test("register() adds PID to in-memory set and writes to file", async () => {
@@ -422,9 +412,7 @@ describe("PidRegistry - Concurrent Operations", () => {
   let registry: PidRegistry;
 
   afterEach(() => {
-    if (tempDir?.startsWith(tmpdir())) {
-      rmSync(tempDir, { recursive: true, force: true });
-    }
+    cleanupTempDir(tempDir);
   });
 
   test("concurrent register() calls do not lose PIDs", async () => {
@@ -545,12 +533,11 @@ describe("PidRegistry.freeze()", () => {
   let workdir: string;
 
   beforeEach(() => {
-    workdir = `/tmp/nax-pid-freeze-test-${randomUUID()}`;
-    mkdirSync(workdir, { recursive: true });
+    workdir = makeTempDir("nax-pid-freeze-test-");
   });
 
   afterEach(() => {
-    if (existsSync(workdir)) rmSync(workdir, { recursive: true });
+    cleanupTempDir(workdir);
   });
 
   test("register() before freeze() records the PID", async () => {

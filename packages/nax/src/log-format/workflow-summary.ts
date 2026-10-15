@@ -25,7 +25,12 @@ const count = (n: number): string => n.toLocaleString("en-US");
 
 function roleLine(r: WorkflowSummaryView["roles"][number]): string {
   const calls = `${r.calls} ${r.calls === 1 ? "call" : "calls"}`;
-  return `    ${r.role.padEnd(ROLE_WIDTH)} in ${count(r.inputTokens)}  out ${count(r.outputTokens)}  ${formatCost(r.costUsd)}  ${calls}`;
+  const reads = r.cacheReadTokens ?? 0;
+  const writes = r.cacheWriteTokens ?? 0;
+  // US-005 (nax#2525): the cache columns are additive telemetry — a role with no cache traffic
+  // renders exactly the line it always did.
+  const cache = reads !== 0 || writes !== 0 ? `  cache r ${count(reads)} w ${count(writes)}` : "";
+  return `    ${r.role.padEnd(ROLE_WIDTH)} in ${count(r.inputTokens)}  out ${count(r.outputTokens)}  ${formatCost(r.costUsd)}  ${calls}${cache}`;
 }
 
 export function formatWorkflowSummary(view: WorkflowSummaryView, options: { useColor?: boolean } = {}): string {

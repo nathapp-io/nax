@@ -55,3 +55,48 @@ describe("startTokenMeter", () => {
     });
   });
 });
+
+// US-005 (nax#2525): cache reads and writes are additive telemetry, emitted only when non-zero.
+describe("cache tokens", () => {
+  test("AC-1/AC-2: an event's cache reads and writes reach its role entry", () => {
+    const s = source();
+    const meter = startTokenMeter(s);
+    s.emit({
+      sessionRole: "advisor",
+      tokenUsage: { inputTokens: 4, outputTokens: 10, cacheReadTokens: 54627, cacheWriteTokens: 57056 },
+    });
+    expect(meter.byRole().advisor?.cacheReadTokens).toBe(54627);
+    expect(meter.byRole().advisor?.cacheWriteTokens).toBe(57056);
+  });
+
+  test("AC-3: an event without cache fields reports neither cache key", () => {
+    const s = source();
+    const meter = startTokenMeter(s);
+    s.emit({ sessionRole: "advisor", tokenUsage: { inputTokens: 4, outputTokens: 10 } });
+    const entry = meter.byRole().advisor;
+    expect(entry?.inputTokens).toBe(4);
+    expect(entry ?? {}).not.toHaveProperty("cacheReadTokens");
+    expect(entry ?? {}).not.toHaveProperty("cacheWriteTokens");
+    expect(Object.keys(entry ?? {}).sort()).toEqual(["calls", "costUsd", "inputTokens", "outputTokens"]);
+  });
+
+  test("AC-4: addRoleTokens carries a cache read across the merge", () => {
+    const merged = addRoleTokens(
+      { a: { inputTokens: 1, outputTokens: 1, costUsd: 0, calls: 1 } },
+      { a: { inputTokens: 1, outputTokens: 1, costUsd: 0, calls: 1, cacheReadTokens: 7 } },
+    );
+    expect(merged.a?.cacheReadTokens).toBe(7);
+    expect(merged.a).not.toHaveProperty("cacheWriteTokens");
+  });
+
+  test("zero cache traffic adds no key, and two cache-carrying entries sum", () => {
+    const none = addRoleTokens({ a: { inputTokens: 1, outputTokens: 1, costUsd: 0, calls: 1 } }, {});
+    expect(none.a).not.toHaveProperty("cacheReadTokens");
+    const both = addRoleTokens(
+      { a: { inputTokens: 1, outputTokens: 1, costUsd: 0, calls: 1, cacheReadTokens: 7 } },
+      { a: { inputTokens: 1, outputTokens: 1, costUsd: 0, calls: 1, cacheReadTokens: 3, cacheWriteTokens: 5 } },
+    );
+    expect(both.a?.cacheReadTokens).toBe(10);
+    expect(both.a?.cacheWriteTokens).toBe(5);
+  });
+});

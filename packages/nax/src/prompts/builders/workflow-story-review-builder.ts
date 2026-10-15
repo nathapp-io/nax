@@ -1,10 +1,33 @@
 /** A5 workflow mode: the story review prompt (spec §6 step 4) and the JSON retries shared with the re-review. */
 
+/**
+ * US-006 (nax#2527): the story's recorded gate states, declared here rather than imported from
+ * `@/workflow` — this builder must keep reaching nothing outside `src/prompts`. Structurally the
+ * workflow module's `Partial<Record<GateName, GateState>>`.
+ */
+export type WorkflowStoryGateStates = Readonly<
+  Partial<Record<"lint" | "typecheck" | "scoped" | "full-suite", "green" | "red" | "skipped">>
+>;
+
+/** The gates nax itself ran on the story before the review, and what it runs thereafter. */
+function naxCheckedBlock(gates: WorkflowStoryGateStates): string {
+  const state = (name: "lint" | "typecheck" | "scoped"): string => gates[name] ?? "not run";
+  return `## What nax already checked
+nax ran these gates on this story before your review: lint ${state("lint")}, typecheck ${state("typecheck")}, scoped tests ${state("scoped")}.
+After your review nax runs the full test suite on this story, and once every story is done it runs the repository gates. Both run only when the workflow reaches them: a red gate, or a finding left open, can end the story before the suite. Do not list any of these as something you could not verify; if nax never reached one, that is a real gap, so say so in "cannotVerify" and name it.
+If you have a shell tool, run this story's own test files with one scoped test command before you give the spec verdict.`;
+}
+
+/** The narrowed cannotVerify rule and the evidence rule behind an unavailability claim (US-006, nax#2531). */
+const CANNOT_VERIFY_RULE = `Put in "cannotVerify" only what neither nax's gates nor a scoped command can check, such as behaviour that needs a live external service.
+Say a tool or service is unavailable only together with the command you ran and the error it returned; otherwise say what you did not try.`;
+
 export function buildWorkflowStoryReviewPrompt(input: {
   briefPath: string;
   reportPath: string;
   packagePath: string;
   concerns: readonly string[];
+  gates?: WorkflowStoryGateStates;
 }): string {
   const concerns =
     input.concerns.length > 0
@@ -17,11 +40,13 @@ export function buildWorkflowStoryReviewPrompt(input: {
 
 For each acceptance criterion, verify the current code implements it correctly. Use the diff to find the changed paths, not as the only source of truth. Follow each criterion's data and contract to where it is declared or stored (schema, migrations, DTOs, shared types), including code an earlier story created that this diff does not touch: a limit the story accepts must fit the storage and contracts it writes to. Read a file before you flag it.
 
+${naxCheckedBlock(input.gates ?? {})}
+
 Give two verdicts:
 - **spec**: "pass" only if every acceptance criterion is implemented and covered by a test that would fail without it. Check the report's TDD evidence: missing evidence for an AC, or a test that asserts nothing, is a spec failure.
 - **quality**: "approved" or "changes" (correctness, error handling, edge cases, conventions of the surrounding code).
 
-Severity: "critical" (wrong or unsafe behaviour), "important" (must fix before this story is done), "minor" (worth noting, not blocking). Put anything you could not check in "cannotVerify".
+Severity: "critical" (wrong or unsafe behaviour), "important" (must fix before this story is done), "minor" (worth noting, not blocking). ${CANNOT_VERIFY_RULE}
 
 List every file you opened in "inspectedFiles". A critical or important finding about what the code does carries "observed": a verbatim 1-3 line excerpt from the file that proves it; if you cannot quote one, it is minor or belongs in "cannotVerify". A finding about a missing or empty test names the AC and the test file you checked instead.
 

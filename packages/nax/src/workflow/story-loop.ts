@@ -9,11 +9,13 @@ import { deriveEndState } from "./close";
 import type { ImplementOutcome, ImplementTurn } from "./implement";
 import { type LedgerWriteOptions, ledgerText } from "./ledger";
 import { runNoWorkLadder } from "./no-work";
+import { absorbReReviewVerdict } from "./re-review-absorb";
 import { describeFindings, type StepModel, startStep } from "./run-log";
 import type { ReviewOutcome } from "./story-review";
 import type {
   GateName,
   GateRunResult,
+  GateState,
   ReReviewVerdict,
   StoryReviewVerdict,
   WorkflowEndState,
@@ -30,7 +32,14 @@ export interface StoryLoopSteps {
   implement(turn: ImplementTurn): Promise<ImplementOutcome>;
   gates(): Promise<GateRunResult>;
   fullSuite(): Promise<GateRunResult>;
-  storyReview(concerns: readonly string[]): Promise<ReviewOutcome<StoryReviewVerdict>>;
+  /**
+   * US-006 (nax#2527): `gates` is the states the loop already recorded, so the reviewer prompt
+   * states what nax checked. Optional so a caller that never ran the gates still compiles.
+   */
+  storyReview(
+    concerns: readonly string[],
+    gates?: Readonly<Partial<Record<GateName, GateState>>>,
+  ): Promise<ReviewOutcome<StoryReviewVerdict>>;
   reReview(
     round: number,
     findings: readonly WorkflowFinding[],
@@ -174,7 +183,7 @@ async function absorbTurn(
 async function review(env: StoryLoopEnv, s: LoopState): Promise<void> {
   if (!s.reviewed) {
     const step = startStep(env.storyId, "story-review", { model: env.steps.modelFor?.("story-review") });
-    const out: ReviewOutcome<StoryReviewVerdict> = await env.steps.storyReview(s.concerns);
+    const out: ReviewOutcome<StoryReviewVerdict> = await env.steps.storyReview(s.concerns, s.gates?.states);
     s.reviewed = true;
     if (!out.ran) {
       step.done(`skipped (${out.why})`);
@@ -200,12 +209,19 @@ async function review(env: StoryLoopEnv, s: LoopState): Promise<void> {
     await env.sink.ledger(ledgerText.reviewSkipped(`re-review round ${s.round}: ${out.why}`), NO_MIRROR);
     return;
   }
-  const stillOpen = new Set(out.verdict.verdicts.filter((v) => !v.addressed).map((v) => v.id));
-  await deferMinors(env, s, out.verdict.newFindings);
   const asked = s.reviewOpen;
-  const added = s.assign(out.verdict.newFindings.filter(isBlocking));
-  s.reviewOpen = [...asked.filter((f) => stillOpen.has(f.id)), ...added];
+  const absorbed = absorbReReviewVerdict(asked, out.verdict);
+  await deferMinors(env, s, absorbed.newDrafts);
+  const added = s.assign(absorbed.newDrafts.filter(isBlocking));
+  s.reviewOpen = [...absorbed.open, ...added];
   step.done(reReviewSummary(asked, out.verdict, added));
+}
+
+/** US-004 (nax#2524): a PARTIAL verdict keeps its id open, so its line names the residual verdict. */
+function reReviewStatus(v: ReReviewVerdict["verdicts"][number] | undefined): string {
+  if (!v) return "no verdict";
+  if (v.residual) return "PARTIAL";
+  return v.addressed ? "addressed" : "NOT addressed";
 }
 
 function reReviewSummary(
@@ -213,10 +229,7 @@ function reReviewSummary(
   verdict: ReReviewVerdict,
   added: readonly WorkflowFinding[],
 ) {
-  const per = asked.map((f) => {
-    const v = verdict.verdicts.find((x) => x.id === f.id);
-    return `${f.id} ${v ? (v.addressed ? "addressed" : "NOT addressed") : "no verdict"}`;
-  });
+  const per = asked.map((f) => `${f.id} ${reReviewStatus(verdict.verdicts.find((x) => x.id === f.id))}`);
   return added.length > 0 ? `${per.join(", ")}; new: ${describeFindings(added)}` : per.join(", ");
 }
 

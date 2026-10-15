@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeMockCallContext, makeRuntimeWithFakeAgent } from "@test/helpers";
+import { cleanupTempDir, makeMockCallContext, makeRuntimeWithFakeAgent, makeTempDir } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { buildPlanForStrategy } from "@/execution/build-plan-for-strategy";
 import type { PlanInputs } from "@/execution/plan-inputs";
@@ -205,10 +205,9 @@ describe("buildPlanForStrategy — failure scenarios", () => {
 
   test("zero-file scenario (greenfield) returns success=false when greenfieldGate is included", async () => {
     // BUG-010: Zero test files → greenfield-gate stops the pipeline
-    // Need a real tmpDir for filesystem check
-    const { mkdir, rm } = await import("node:fs/promises");
-    const tmpDir = `/tmp/nax-fc-greenfield-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    await mkdir(tmpDir, { recursive: true });
+    // Need a real tmpDir for filesystem check — one under `$TMPDIR`, since a
+    // literal `/tmp/...` path is unwritable under the confined runner.
+    const tmpDir = makeTempDir("nax-fc-greenfield-");
 
     try {
       mockGitSpawn({
@@ -243,7 +242,7 @@ describe("buildPlanForStrategy — failure scenarios", () => {
 
       expect(result.success).toBe(false);
     } finally {
-      await rm(tmpDir, { recursive: true, force: true });
+      cleanupTempDir(tmpDir);
     }
   });
 });

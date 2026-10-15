@@ -30,6 +30,17 @@ export {
   requireGuard,
 } from "./command-safety";
 export { opSelector } from "./config-selector";
+export {
+  _confinedDeps,
+  CONFINED_TEST_ENV,
+  CONFINED_TEST_TIMEOUT_MS,
+  type ConfinedProc,
+  confinedSandboxAvailable,
+  isConfinedTestRun,
+  runConfinedFiles,
+  SANDBOX_UNAVAILABLE_EXIT,
+  USAGE_EXIT,
+} from "./confined";
 export { makeContextBundle, makeContextManifest } from "./context-bundle";
 export { type MockContextOrchestrator, makeContextOrchestrator } from "./context-orchestrator";
 export { withDepsRestore } from "./deps";
@@ -90,6 +101,7 @@ export { makeOptimizerResult } from "./optimizer-result";
 export { DEFAULT_TEST_ROUTING, makeTestContext, makeTestPRD, makeTestStory } from "./pipeline-context";
 export { makeMockPlanInputs, makeResolvedTestPatterns } from "./plan-inputs";
 export { type MockPluginRegistry, makePluginRegistry } from "./plugin-registry";
+export { psCanReportProcessGroup } from "./ps-probe";
 export { expectRetryStrategy } from "./retry-strategy";
 export { makeAdversarialOutput, makeDiagnoseOutput, makeSemanticOutput } from "./review-outputs";
 export {

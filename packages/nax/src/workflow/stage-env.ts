@@ -112,8 +112,8 @@ export async function buildStoryEnv(
     implement: timed("implement", addTiming, (turn) => toolErrors(turnLabel(turn), () => runImplementerTurn(sc, turn))),
     gates: timed("gates", addTiming, () => runStoryGates(sc)),
     fullSuite: timed("full-suite", addTiming, () => runWorkflowSuiteGate(sc)),
-    storyReview: timed("story-review", addTiming, (concerns) =>
-      toolErrors("story-review", () => runStoryReview(sc, concerns)),
+    storyReview: timed("story-review", addTiming, (concerns, gates) =>
+      toolErrors("story-review", () => runStoryReview(sc, concerns, gates)),
     ),
     reReview: timed("re-review", addTiming, (round, findings, fixBase) =>
       toolErrors(`re-review r${round}`, () => runReReview(sc, round, findings, fixBase)),

@@ -539,7 +539,10 @@ describe("US-002 WorktreeManager — retryable failed worktrees (AC-1 integratio
         },
       },
       prd: makePRD({ userStories: [story] }),
-      prdPath: "/tmp/prd.json",
+      // A real temp path: handlePipelineFailure reaches savePRD, which writes
+      // `<path>.tmp-<uuid>` beside it, and a literal `/tmp/...` fixture is
+      // unwritable under the confined runner.
+      prdPath: join(projectRoot, "prd.json"),
       workdir: projectRoot,
       hooks: { hooks: {} },
       feature: "test-feature",

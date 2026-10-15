@@ -18,11 +18,13 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import {
   assertDefined,
+  cleanupTempDir,
   makeMockCallContext,
   makeMockPlanInputs,
   makeNaxConfig,
   makeSpawn,
   makeStory,
+  makeTempDir,
   makeTestRuntime,
 } from "@test/helpers";
 import type { PlanInputs } from "@/execution";
@@ -35,6 +37,12 @@ import { _rollbackDeps } from "@/tdd";
 type RunFixCycleCycle = Parameters<typeof _storyOrchestratorDeps.runFixCycle>[0];
 type CapturedStrategy = RunFixCycleCycle["strategies"][number];
 
+let workdir: string;
+beforeEach(() => {
+  workdir = makeTempDir("nax-nbf-strategies-");
+});
+afterEach(() => cleanupTempDir(workdir));
+
 function makeImplementerInput(story: UserStory): import("@/operations").ImplementerInput {
   return { story };
 }
@@ -44,7 +52,7 @@ function makeVerifierInput(story: UserStory): import("@/operations").VerifierInp
 }
 
 function makeFullSuiteGateInput(story: UserStory): import("@/operations").FullSuiteGateInput {
-  return { story, workdir: "/tmp/test" };
+  return { story, workdir };
 }
 
 function makeTddRetryInputs(story: UserStory, extra: Partial<PlanInputs> = {}): PlanInputs {
@@ -153,13 +161,13 @@ describe("nbf-seed strategy set — AC11: promptSeverityFloor stays 'info' regar
   test("AC11: review.blockingThreshold='error' + warning advisory → autofix-implementer still uses promptSeverityFloor='info'", async () => {
     const story = makeStory({ attempts: 1 });
     const config = withTriageNbf("error");
-    runtime = makeTestRuntime({ config });
-    const ctx = makeMockCallContext({ runtime });
+    runtime = makeTestRuntime({ config, workdir });
+    const ctx = makeMockCallContext({ runtime, packageDir: workdir });
     assertDefined(config.review.adversarial, "config.review.adversarial");
     const inputs = makeTddRetryInputs(story, {
       adversarialReview: {
         story,
-        workdir: "/tmp/test",
+        workdir,
         adversarialConfig: config.review.adversarial,
         mode: config.review.adversarial.diffMode,
       },
@@ -198,13 +206,13 @@ describe("nbf-seed strategy set — AC11: promptSeverityFloor stays 'info' regar
     // nbf strategy set must keep the "info" floor for the prompt builder.
     const story = makeStory({ attempts: 1 });
     const config = withTriageNbf("warning");
-    runtime = makeTestRuntime({ config });
-    const ctx = makeMockCallContext({ runtime });
+    runtime = makeTestRuntime({ config, workdir });
+    const ctx = makeMockCallContext({ runtime, packageDir: workdir });
     assertDefined(config.review.adversarial, "config.review.adversarial");
     const inputs = makeTddRetryInputs(story, {
       adversarialReview: {
         story,
-        workdir: "/tmp/test",
+        workdir,
         adversarialConfig: config.review.adversarial,
         mode: config.review.adversarial.diffMode,
       },
@@ -305,13 +313,13 @@ describe("nbf-seed strategy set — AC12: semantic-review source with fixTarget=
   test("AC12: triage scope + semantic-review finding with fixTarget='source' → autofix-implementer.appliesTo === true", async () => {
     const story = makeStory({ attempts: 1 });
     const config = withTriageNbf("error");
-    runtime = makeTestRuntime({ config });
-    const ctx = makeMockCallContext({ runtime });
+    runtime = makeTestRuntime({ config, workdir });
+    const ctx = makeMockCallContext({ runtime, packageDir: workdir });
     assertDefined(config.review.adversarial, "config.review.adversarial");
     const inputs = makeTddRetryInputs(story, {
       adversarialReview: {
         story,
-        workdir: "/tmp/test",
+        workdir,
         adversarialConfig: config.review.adversarial,
         mode: config.review.adversarial.diffMode,
       },

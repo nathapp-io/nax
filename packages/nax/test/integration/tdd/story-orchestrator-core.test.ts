@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdir, rm } from "node:fs/promises";
-import { makeMockCallContext, makeRuntimeWithFakeAgent } from "@test/helpers";
+import { cleanupTempDir, makeMockCallContext, makeRuntimeWithFakeAgent, makeTempDir } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { buildPlanForStrategy } from "@/execution/build-plan-for-strategy";
 import type { PlanInputs } from "@/execution/plan-inputs";
@@ -186,9 +185,11 @@ describe("buildPlanForStrategy — three-session-tdd", () => {
   });
 
   test("BUG-20: failure when test-writer creates no test files (greenfield) — filesystem check", async () => {
-    // With a real temp dir that has NO test files, the greenfield gate fails the plan
-    const tmpDir = `/tmp/nax-greenfield-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    await mkdir(tmpDir, { recursive: true });
+    // With a real temp dir that has NO test files, the greenfield gate fails the
+    // plan. `makeTempDir()` resolves through `os.tmpdir()`, so the dir follows
+    // `$TMPDIR` under the confined runner — a literal `/tmp/...` path is
+    // unwritable there.
+    const tmpDir = makeTempDir("nax-greenfield-");
 
     try {
       mockGitSpawn({
@@ -214,7 +215,7 @@ describe("buildPlanForStrategy — three-session-tdd", () => {
       // Greenfield gate detects no test files → pipeline stops
       expect(result.success).toBe(false);
     } finally {
-      await rm(tmpDir, { recursive: true, force: true });
+      cleanupTempDir(tmpDir);
     }
   });
 

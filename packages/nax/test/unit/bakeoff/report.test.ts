@@ -11,9 +11,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import type { BakeoffCoordinatorDeps, BakeoffResult, ContestantResult } from "@/bakeoff";
 import { _coordinatorDeps, renderBakeoffReport } from "@/bakeoff";
 
@@ -61,15 +61,16 @@ function withCoordinatorPersist<T>(
 // ── AC-5: persistBakeoffResult writes bakeoff.json correctly ─────────────────
 
 describe("persistBakeoffResult (AC-5: bakeoff.json contents)", () => {
+  // Under `$TMPDIR` — the only temp a confined run may write (a literal
+  // `/tmp/...` is denied by the confined session's sandbox).
   let tempDir: string;
 
   beforeEach(() => {
-    tempDir = join("/tmp", `bakeoff-report-${randomUUID()}`);
-    mkdirSync(tempDir, { recursive: true });
+    tempDir = makeTempDir("bakeoff-report-");
   });
 
   afterEach(() => {
-    rmSync(tempDir, { recursive: true, force: true });
+    cleanupTempDir(tempDir);
   });
 
   it("US-002 AC11: writes bakeoff.json under bakeoff/<feature> within outputDir, with feature, ranking length, and first-place agent matching the result", async () => {

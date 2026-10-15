@@ -4,7 +4,7 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, rm } from "node:fs/promises";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { buildContext, formatContextAsMarkdown } from "@/context/builder";
 
@@ -45,17 +45,21 @@ const createTestPRD = (stories: Partial<UserStory>[]): PRD => ({
 
 let tmpDirs: string[] = [];
 
-const createTmpDir = async (): Promise<string> => {
-  const tmpDir = `/tmp/nax-context-test-${Date.now()}-${Math.random()}`;
-  await mkdir(tmpDir, { recursive: true });
+/**
+ * A fresh real temp dir per test. `makeTempDir()` resolves through
+ * `os.tmpdir()`, so it follows `$TMPDIR` under the confined runner; a literal
+ * `/tmp/...` path is unwritable there.
+ */
+const createTmpDir = (): string => {
+  const tmpDir = makeTempDir("nax-context-test-");
   tmpDirs.push(tmpDir);
   return tmpDir;
 };
 
-afterEach(async () => {
+afterEach(() => {
   // Cleanup all temporary directories
   for (const tmpDir of tmpDirs) {
-    await rm(tmpDir, { recursive: true, force: true });
+    cleanupTempDir(tmpDir);
   }
   tmpDirs = [];
 });
@@ -73,7 +77,7 @@ describe("Context Builder Integration", () => {
         },
       ]);
 
-      const tmpDir = await createTmpDir();
+      const tmpDir = createTmpDir();
       const prdPath = `${tmpDir}/prd.json`;
       await Bun.write(prdPath, JSON.stringify(prd, null, 2));
 
@@ -108,7 +112,7 @@ describe("Context Builder Integration", () => {
         },
       ]);
 
-      const tmpDir = await createTmpDir();
+      const tmpDir = createTmpDir();
       const prdPath = `${tmpDir}/prd.json`;
       await Bun.write(prdPath, JSON.stringify(prd, null, 2));
 
@@ -143,7 +147,7 @@ describe("Context Builder Integration", () => {
         },
       ]);
 
-      const tmpDir = await createTmpDir();
+      const tmpDir = createTmpDir();
       const prdPath = `${tmpDir}/prd.json`;
       await Bun.write(prdPath, JSON.stringify(prd, null, 2));
 

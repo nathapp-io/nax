@@ -5,9 +5,23 @@
  * Tests the structured failure context for escalated tiers to know exactly what failed.
  */
 
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { join } from "node:path";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import type { StructuredFailure, TestFailureContext, UserStory } from "@/prd";
 import { loadPRD } from "@/prd";
+
+// The PRD fixtures below are written to real files: a fresh dir per test under
+// `$TMPDIR`, because a confined run may not write a literal `/tmp/...`.
+let fixtureDir: string;
+
+beforeEach(() => {
+  fixtureDir = makeTempDir("nax-structured-failure-");
+});
+
+afterEach(() => {
+  cleanupTempDir(fixtureDir);
+});
 
 describe("StructuredFailure Type", () => {
   test("should have all required fields", () => {
@@ -227,7 +241,7 @@ describe("UserStory priorFailures Field", () => {
     });
 
     // Write to temp file
-    const tmpFile = "/tmp/test-prd-priorFailures.json";
+    const tmpFile = join(fixtureDir, "test-prd-priorFailures.json");
     await Bun.write(tmpFile, prdContent);
 
     // Load and verify
@@ -272,7 +286,7 @@ describe("UserStory priorFailures Field", () => {
       ],
     });
 
-    const tmpFile = "/tmp/test-prd-existing-failures.json";
+    const tmpFile = join(fixtureDir, "test-prd-existing-failures.json");
     await Bun.write(tmpFile, prdContent);
 
     const prd = await loadPRD(tmpFile);

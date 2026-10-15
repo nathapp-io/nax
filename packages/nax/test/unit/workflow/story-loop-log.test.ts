@@ -102,6 +102,19 @@ describe("story loop run log", () => {
     expect(out.some((l) => l.startsWith("US-003 fix r2"))).toBe(true);
   });
 
+  // US-004 (nax#2524): a residual verdict says PARTIAL, on the same line and in the same shape as before.
+  test("a PARTIAL verdict on the re-review line names the verdict (AC-20)", async () => {
+    await runStoryLoop(
+      envFor(review("a"), [
+        {
+          verdicts: [{ id: "F1", addressed: false, note: "", residual: { issue: "still open" } }],
+          newFindings: [],
+        },
+      ]),
+    );
+    expect(lines().find((l) => l.startsWith("US-003 re-review r1: "))).toMatch(/^US-003 re-review r1: F1 PARTIAL {2}/);
+  });
+
   test("every line carries storyId as its first data key", async () => {
     await runStoryLoop(envFor(review("a"), [{ verdicts: [{ id: "F1", addressed: true, note: "" }], newFindings: [] }]));
     const workflow = logs.filter((e) => e.stage === "workflow");

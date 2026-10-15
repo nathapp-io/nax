@@ -3,7 +3,7 @@ import { defaultWorkflowAdvisor } from "@/workflow/advisor";
 import type { ImplementOutcome, ImplementTurn } from "@/workflow/implement";
 import { newStoryRecord } from "@/workflow/result";
 import { runStoryLoop, type StoryLoopEnv, type StoryLoopSteps, turnLabel } from "@/workflow/story-loop";
-import type { GateRunResult, StoryReviewVerdict, WorkflowStoryRecord } from "@/workflow/types";
+import type { GateName, GateRunResult, GateState, StoryReviewVerdict, WorkflowStoryRecord } from "@/workflow/types";
 
 const GREEN: GateRunResult = {
   red: false,
@@ -55,6 +55,7 @@ interface Script {
 function harness(script: Script, over: Partial<StoryLoopEnv> = {}) {
   const turns: ImplementTurn[] = [];
   const ledger: string[] = [];
+  const reviewGates: (Readonly<Partial<Record<GateName, GateState>>> | undefined)[] = [];
   let record: WorkflowStoryRecord = newStoryRecord("US-001", over.maxFixRounds ?? 5, "t");
   const gates = [...(script.gates ?? [])];
   const suites = [...(script.suite ?? [])];
@@ -68,7 +69,8 @@ function harness(script: Script, over: Partial<StoryLoopEnv> = {}) {
     },
     gates: async () => gates.shift() ?? GREEN,
     fullSuite: async () => suites.shift() ?? SUITE_GREEN,
-    storyReview: async () => {
+    storyReview: async (_concerns, gateStates) => {
+      reviewGates.push(gateStates);
       const v = reviews.length > 0 ? reviews.shift() : pass;
       return v === null || v === undefined ? { ran: false, why: "unparseable reply" } : { ran: true, verdict: v };
     },
@@ -99,7 +101,7 @@ function harness(script: Script, over: Partial<StoryLoopEnv> = {}) {
     resume: null,
     ...over,
   };
-  return { env, turns, ledger, record: () => record };
+  return { env, turns, ledger, reviewGates, record: () => record };
 }
 
 const fixTurns = (turns: ImplementTurn[]) =>
@@ -355,6 +357,85 @@ describe("runStoryLoop", () => {
     const out = await runStoryLoop(h.env);
     expect(fixTurns(h.turns)[1]?.findings.map((f) => f.id)).toEqual(["F2"]);
     expect(out.state).toBe("complete");
+  });
+
+  // US-004 (nax#2524): a PARTIAL verdict keeps F1 open under its own id with the residual as its issue.
+  test("a PARTIAL re-review keeps F1 open with the residual as its issue (AC-16)", async () => {
+    const h = harness({ review: [failing()] });
+    let n = 0;
+    h.env.steps.reReview = async (_round, findings) => {
+      n++;
+      return {
+        ran: true,
+        verdict: {
+          verdicts: findings.map((f) => ({
+            id: f.id,
+            addressed: n > 1,
+            note: "",
+            ...(n === 1 ? { residual: { issue: "still open" } } : {}),
+          })),
+          newFindings: [],
+        },
+      };
+    };
+    const out = await runStoryLoop(h.env);
+    const secondFix = fixTurns(h.turns)[1];
+    expect(secondFix?.findings.map((f) => f.id)).toEqual(["F1"]);
+    expect(secondFix?.findings[0]?.issue).toBe("still open");
+    expect(out.state).toBe("complete");
+  });
+
+  test("a new finding that restates the residual is neither opened nor deferred (US-004)", async () => {
+    const h = harness({
+      review: [
+        {
+          spec: "fail",
+          quality: "changes",
+          findings: [{ kind: "spec", severity: "important", issue: "gap", file: "a.ts", line: 53 }],
+          cannotVerify: [],
+          inspectedFiles: [],
+        },
+      ],
+    });
+    let n = 0;
+    h.env.steps.reReview = async (_round, findings) => {
+      n++;
+      return {
+        ran: true,
+        verdict: {
+          verdicts: findings.map((f) => ({
+            id: f.id,
+            addressed: n > 1,
+            note: "",
+            ...(n === 1 ? { residual: { issue: "symlinks still bypass", file: "a.ts", line: 53 } } : {}),
+          })),
+          // the reviewer restates the residual at the same place, and adds one minor elsewhere
+          newFindings:
+            n === 1
+              ? [
+                  { kind: "spec", severity: "critical", issue: "symlinks still bypass", file: "a.ts", line: 53 },
+                  { kind: "quality", severity: "minor", issue: "naming nit", file: "b.ts", line: 7 },
+                ]
+              : [],
+        },
+      };
+    };
+    const out = await runStoryLoop(h.env);
+    const secondFix = fixTurns(h.turns)[1];
+    expect(secondFix?.findings.map((f) => f.id)).toEqual(["F1"]);
+    expect(secondFix?.findings[0]?.issue).toBe("symlinks still bypass");
+    expect(h.ledger).toContain("deferred-minor: naming nit");
+    expect(h.ledger.filter((l) => l.startsWith("deferred-minor:"))).toHaveLength(1);
+    expect(h.record().deferredMinors).toBe(1);
+    expect(out.state).toBe("complete");
+  });
+});
+
+describe("story review gate context (US-006)", () => {
+  test("the gate states the loop already recorded reach storyReview (AC-10)", async () => {
+    const h = harness({});
+    await runStoryLoop(h.env);
+    expect(h.reviewGates[0]).toEqual({ lint: "green", typecheck: "green", scoped: "green" });
   });
 });
 

@@ -11,8 +11,10 @@
  * These tests FAIL until BUG-025 is implemented.
  */
 
-import { describe, expect, mock, test } from "bun:test";
+import { afterAll, describe, expect, mock, test } from "bun:test";
+import { join } from "node:path";
 import {
+  cleanupTempDir,
   type DeepPartial,
   makeDispatchContext,
   makeMockRuntime,
@@ -21,6 +23,7 @@ import {
   makePRD,
   makeStatusWriter,
   makeStory,
+  makeTempDir,
   makeTestContext,
 } from "@test/helpers";
 import type { NaxConfig } from "@/config";
@@ -36,6 +39,19 @@ import type { PRD, UserStory } from "@/prd/types";
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * One real temp root for the `prdPath` fixtures below. `handlePipelineFailure`
+ * reaches `savePRD`, which writes `<path>.tmp-<uuid>` beside it — so a literal
+ * `/tmp/prd.json` fixture cannot survive the confined sandbox, and it also
+ * leaked into the host's `/tmp` on every ordinary run. `makeTempDir()` resolves
+ * through `os.tmpdir()`, which the confined runner points at `$TMPDIR`.
+ */
+const FIXTURE_ROOT = makeTempDir("nax-interaction-chain-");
+
+afterAll(() => {
+  cleanupTempDir(FIXTURE_ROOT);
+});
 
 const baseConfig: DeepPartial<NaxConfig> = {
   execution: {
@@ -179,7 +195,7 @@ describe("SequentialExecutionContext accepts interactionChain", () => {
 
     const ctx: SequentialExecutionContext = {
       ...makeDispatchContext(),
-      prdPath: "/tmp/prd.json",
+      prdPath: join(FIXTURE_ROOT, "prd.json"),
       workdir: "/tmp",
       config: naxConfig,
       hooks: { hooks: {} },
@@ -205,7 +221,7 @@ describe("SequentialExecutionContext accepts interactionChain", () => {
 
     const ctx: SequentialExecutionContext = {
       ...makeDispatchContext(),
-      prdPath: "/tmp/prd.json",
+      prdPath: join(FIXTURE_ROOT, "prd.json"),
       workdir: "/tmp",
       config: naxConfig,
       hooks: { hooks: {} },
@@ -260,7 +276,7 @@ describe("AC2: max retries triggers human-review interaction", () => {
       {
         config: naxConfig,
         prd,
-        prdPath: "/tmp/prd.json",
+        prdPath: join(FIXTURE_ROOT, "prd.json"),
         workdir: "/tmp",
         featureDir: undefined,
         hooks: { hooks: {} },
@@ -333,7 +349,7 @@ describe("AC2: max retries triggers human-review interaction", () => {
       {
         config: naxConfig,
         prd,
-        prdPath: "/tmp/prd.json",
+        prdPath: join(FIXTURE_ROOT, "prd.json"),
         workdir: "/tmp",
         featureDir: undefined,
         hooks: { hooks: {} },
@@ -405,7 +421,7 @@ describe("AC2: max retries triggers human-review interaction", () => {
     // Instead, verify the interactionChain is passed correctly and used
     // This test serves as a sentinel: executeUnified accepts interactionChain via SequentialExecutionContext
     const seqCtx = {
-      prdPath: "/tmp/prd.json",
+      prdPath: join(FIXTURE_ROOT, "prd.json"),
       workdir: "/tmp",
       config: naxConfig,
       hooks: { hooks: {} },

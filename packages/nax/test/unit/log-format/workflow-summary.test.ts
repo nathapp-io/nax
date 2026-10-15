@@ -108,4 +108,44 @@ describe("formatRunSummary with a workflow", () => {
       expect(out).toContain("Branch findings: branch review skipped (minors left 3)");
     });
   });
+
+  // US-005 (nax#2525): the cache columns are additive — a role with no cache traffic renders as before.
+  describe("cache tokens", () => {
+    const roleLineOf = (role: WorkflowSummaryView["roles"][number]): string => {
+      const out = formatWorkflowSummary({ ...VIEW, roles: [role] }, { useColor: false });
+      const line = out.split("\n").find((l) => l.includes(role.role));
+      if (line === undefined) throw new Error(`no role line for ${role.role}`);
+      return line;
+    };
+
+    test("AC-6: a role with cache traffic appends `cache r <reads> w <writes>`", () => {
+      const line = roleLineOf({
+        role: "advisor",
+        inputTokens: 4,
+        outputTokens: 10,
+        costUsd: 0.01,
+        calls: 1,
+        cacheReadTokens: 54627,
+        cacheWriteTokens: 57056,
+      });
+      expect(line).toContain("cache r 54,627 w 57,056");
+    });
+
+    test("AC-7: a role with no cache fields renders no cache segment", () => {
+      const line = roleLineOf({ role: "advisor", inputTokens: 4, outputTokens: 10, costUsd: 0.01, calls: 1 });
+      expect(line).not.toContain("cache");
+    });
+
+    test("only one of the two counts non-zero still renders both numbers", () => {
+      const line = roleLineOf({
+        role: "advisor",
+        inputTokens: 4,
+        outputTokens: 10,
+        costUsd: 0.01,
+        calls: 1,
+        cacheWriteTokens: 57056,
+      });
+      expect(line).toContain("cache r 0 w 57,056");
+    });
+  });
 });

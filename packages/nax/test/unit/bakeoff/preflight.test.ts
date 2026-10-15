@@ -7,9 +7,9 @@
  */
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, spyOn } from "bun:test";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { assertNaxError, makeNaxConfig, makeSpawn } from "@test/helpers";
+import { assertNaxError, cleanupTempDir, makeNaxConfig, makeSpawn, makeTempDir } from "@test/helpers";
 import {
   assertCompareAgentExclusive,
   buildContestantConfig,
@@ -45,7 +45,17 @@ describe("parseCompareList", () => {
 });
 
 describe("validateContestants", () => {
-  const projectRoot = "/tmp/bakeoff-fixture-project";
+  // A real dir under `$TMPDIR` — the only temp a confined run may write
+  // (a literal `/tmp/...` is denied by the confined session's sandbox).
+  let projectRoot: string;
+
+  beforeAll(() => {
+    projectRoot = makeTempDir("nax-bakeoff-fixture-project-");
+  });
+
+  afterAll(() => {
+    cleanupTempDir(projectRoot);
+  });
 
   function fakeLoadProfile(
     resolvable: Record<string, Record<string, unknown>>,
@@ -165,15 +175,12 @@ describe("validateContestants", () => {
   // _preflightDeps.loadProfile against projectRoot — which needs the profile
   // fixture ("cross-agent-pi" → agent "pi") materialised on disk.
   describe("isInstalled routing", () => {
-    const profileDir = join(projectRoot, ".nax", "profiles");
+    let profileDir: string;
 
     beforeAll(() => {
+      profileDir = join(projectRoot, ".nax", "profiles");
       mkdirSync(profileDir, { recursive: true });
       writeFileSync(join(profileDir, "cross-agent-pi.json"), JSON.stringify({ agent: { default: "pi" } }), "utf8");
-    });
-
-    afterAll(() => {
-      rmSync(projectRoot, { recursive: true, force: true });
     });
 
     it("isInstalled is asked with the contestant's resolved agent", async () => {

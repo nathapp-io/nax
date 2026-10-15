@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { newFeatureRecord } from "@/workflow/feature-record";
 import { newStoryRecord } from "@/workflow/result";
 import { buildWorkflowRunSummary } from "@/workflow/run-summary";
-import type { WorkflowResultFile } from "@/workflow/types";
+import type { RoleTokens, WorkflowResultFile } from "@/workflow/types";
 
 const tok = (inputTokens: number, outputTokens: number, costUsd: number, calls: number) => ({
   inputTokens,
@@ -182,6 +182,41 @@ describe("buildWorkflowRunSummary", () => {
       const { preflightTokensByRole: _drop, ...withoutPreflight } = preflightResult();
       const v = buildWorkflowRunSummary(withoutPreflight, timing);
       expect(v?.roles).toEqual([{ role: "advisor", inputTokens: 2, outputTokens: 2, costUsd: 0.1 + 0.2, calls: 2 }]);
+    });
+  });
+
+  // US-005 (nax#2525): cache tokens ride along with the role table, and a legacy record reads as zero.
+  describe("cache tokens", () => {
+    const timing = { storiesDurationMs: 100, featureWorkflowDurationMs: 40 };
+
+    function advisorResult(tokens: Readonly<Record<string, RoleTokens>>): WorkflowResultFile {
+      const file = resultFile();
+      const rec = file.featureWorkflow;
+      if (!rec) throw new Error("fixture has a feature record");
+      return {
+        schemaVersion: 1,
+        runId: file.runId,
+        feature: file.feature,
+        stories: {},
+        featureWorkflow: { ...rec, tokensByRole: tokens },
+      };
+    }
+
+    test("AC-5: a feature's cache reads reach the advisor role entry", () => {
+      const v = buildWorkflowRunSummary(
+        advisorResult({ advisor: { ...tok(4, 10, 0.1, 1), cacheReadTokens: 100 } }),
+        timing,
+      );
+      expect(v?.roles).toEqual([
+        { role: "advisor", inputTokens: 4, outputTokens: 10, costUsd: 0.1, calls: 1, cacheReadTokens: 100 },
+      ]);
+    });
+
+    test("AC-24: a legacy advisor entry with no cache fields reports neither cache key", () => {
+      const v = buildWorkflowRunSummary(advisorResult({ advisor: tok(4, 10, 0.1, 1) }), timing);
+      expect(v?.roles).toEqual([{ role: "advisor", inputTokens: 4, outputTokens: 10, costUsd: 0.1, calls: 1 }]);
+      expect(v?.roles[0] ?? {}).not.toHaveProperty("cacheReadTokens");
+      expect(v?.roles[0] ?? {}).not.toHaveProperty("cacheWriteTokens");
     });
   });
 });

@@ -70,6 +70,9 @@ export interface WorkflowRoleUsage {
   outputTokens: number;
   costUsd: number;
   calls: number;
+  /** US-005 (nax#2525): prompt-cache reads/writes; absent when the role saw no cache traffic. */
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
 }
 
 /** What the end-of-run summary shows for a workflow-mode run (nax#2491 P5). */
