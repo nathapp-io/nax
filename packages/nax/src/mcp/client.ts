@@ -41,6 +41,8 @@ export async function connectMcpServer(args: {
   args: readonly string[];
   env: Record<string, string>;
   connectTimeoutMs: number;
+  signal?: AbortSignal;
+  onSpawn?: (pid: number) => void;
 }): Promise<McpConnection> {
   const config: McpTransportConfig = {
     kind: "stdio",
@@ -50,8 +52,8 @@ export async function connectMcpServer(args: {
     cwd: args.workdir,
   };
   const opts: ConnectMcpOptions = {
-    // No cancellation source in nax run; connect is bounded by timeoutMs.
-    signal: new AbortController().signal,
+    signal: args.signal ?? new AbortController().signal,
+    onSpawn: args.onSpawn,
     timeoutMs: args.connectTimeoutMs,
     clientInfo: { name: "nax", version: "1" },
   };

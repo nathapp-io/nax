@@ -63,6 +63,8 @@ export function createMcpPool(opts: {
   storyId?: string;
 }): McpPool {
   const retry = opts.retry ?? MCP_DEFAULT_RETRY;
+  const controller = new AbortController();
+  const { signal } = controller;
   // JSON.stringify, not a separator character: a workdir may contain anything a
   // filesystem allows, and a delimiter collision would silently merge two keys.
   const keyOf = (serverId: string, workdir: string): string => JSON.stringify([serverId, workdir]);
@@ -85,12 +87,14 @@ export function createMcpPool(opts: {
     // error-as-data.
     await assertTrusted(workdir, "mcp");
 
-    for (let attempt = 1; attempt <= retry.maxAttempts; attempt++) {
+    for (let attempt = 1; attempt <= retry.maxAttempts && !signal.aborted; attempt++) {
       // Declared above the try so the catch can tell "connect failed" — where
       // client.ts has already closed the transport — from "connected, then
       // tools/list failed", where the connection below must be reaped or its
       // subprocess becomes an orphan that outlives the pool (spec US-002).
       let connection: McpConnection | undefined;
+      let spawnedPid: number | undefined;
+      let registration: Promise<void> | undefined;
       try {
         connection = await connectMcpServer({
           serverId,
@@ -99,9 +103,16 @@ export function createMcpPool(opts: {
           args: server.args,
           env: server.env,
           connectTimeoutMs: MCP_CONNECT_TIMEOUT_MS,
+          signal,
+          onSpawn(pid) {
+            spawnedPid = pid;
+            // Invoke immediately: a hard exit during initialize must see this pid.
+            registration = opts.pidRegistry?.register(pid).catch(() => {});
+          },
         });
+        signal.throwIfAborted();
+        await registration;
         const pid = connection.pid;
-        if (pid !== null) await opts.pidRegistry?.register(pid).catch(() => {});
         const tools = await connection.listTools();
         record({ kind: "connected", serverId, workdir, at: new Date().toISOString(), pid, toolCount: tools.length });
         getSafeLogger()?.info("mcp", `[pool] ${serverId} connected`, {
@@ -113,11 +124,10 @@ export function createMcpPool(opts: {
         });
         return { connection, tools };
       } catch (error) {
-        if (connection !== undefined) {
-          const pid = connection.pid;
-          await connection.close().catch(() => {});
-          if (pid !== null) await opts.pidRegistry?.unregister(pid).catch(() => {});
-        }
+        if (connection !== undefined) await connection.close().catch(() => {});
+        // connect has rejected (and reaped its half-open transport) before removal.
+        await registration;
+        if (spawnedPid !== undefined) await opts.pidRegistry?.unregister(spawnedPid).catch(() => {});
         const reason = error instanceof Error ? error.message : String(error);
         record({ kind: "connect-failed", serverId, workdir, at: new Date().toISOString(), reason, attempt });
         getSafeLogger()?.warn("mcp", `[pool] ${serverId} connect failed`, {
@@ -127,8 +137,8 @@ export function createMcpPool(opts: {
           attempt,
           error: reason,
         });
-        if (attempt < retry.maxAttempts && retry.baseDelayMs > 0) {
-          await Bun.sleep(retry.baseDelayMs * attempt);
+        if (attempt < retry.maxAttempts && retry.baseDelayMs > 0 && !signal.aborted) {
+          await cancellableDelay(retry.baseDelayMs * attempt, signal).catch(() => {});
         }
       }
     }
@@ -207,6 +217,7 @@ export function createMcpPool(opts: {
     async close() {
       if (closed) return;
       closed = true;
+      controller.abort();
       const pending = [...entries.values()];
       entries.clear();
       const settled = await Promise.allSettled(pending);

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import type { McpConnection, McpTransportConfig } from "@nathapp/nax-agent/mcp";
+import type { ConnectMcpOptions, McpConnection, McpTransportConfig } from "@nathapp/nax-agent/mcp";
 import { cleanupTempDir, makeTempDir, useUntrustedRegistry, withTimerSpy } from "@test/helpers";
 
 /** nax run only ever configures stdio servers; this is the variant the fakes receive. */
@@ -36,13 +36,14 @@ function fakeSdk(opts: { failFirst?: number; gate?: Promise<void> } = {}) {
   let attempts = 0;
   let nextPid = 100;
   Object.assign(_mcpClientDeps, {
-    connect: async (config: StdioConfig) => {
+    connect: async (config: StdioConfig, options: ConnectMcpOptions) => {
       attempts++;
       // The spawn is recorded BEFORE the failure check, matching the real
       // layer: the transport is constructed (process started), then the
       // handshake may fail — a failed connect still started a subprocess.
       const pid = nextPid++;
       spawns.push({ cwd: config.cwd, pid });
+      options.onSpawn?.(pid);
       // A gate the test opens explicitly. A fixed sleep is banned in tests
       // (.nax/rules/forbidden-patterns-tests.md): flaky under load, and
       // additive on a suite Bun runs serially.
@@ -228,7 +229,7 @@ describe("createMcpPool", () => {
     await pool.close();
   });
 
-  test("a failed connect retries, registers only the surviving connection, leaves no orphan", async () => {
+  test("a failed connect retries, registers every spawn and unregisters the failed pid", async () => {
     // tools/list now happens INSIDE the shared connect, so a mid-connect failure
     // rejects `connectMcpServer` itself: the shared layer has already closed the
     // half-open transport (pinned by nax-agent's connect tests) and the pool is
@@ -247,10 +248,81 @@ describe("createMcpPool", () => {
     expect((await pool.listTools("memory", "/w")).map((t) => t.name)).toEqual(["t"]);
     expect(sdk.spawns.length).toBe(2);
     expect(sdk.closes.length).toBe(0);
-    expect(registered.length).toBe(1);
-    expect(unregistered).toEqual([]);
+    expect(registered).toEqual([100, 101]);
+    expect(unregistered).toEqual([100]);
     await pool.close();
     expect(sdk.closes.length).toBe(1);
     expect(unregistered).toEqual(registered);
+  });
+});
+
+describe("US-007 MCP shutdown", () => {
+  test("AC14-16,19: close aborts an in-flight open promptly, without retries or throwing", async () => {
+    const started = Promise.withResolvers<AbortSignal>();
+    let attempts = 0;
+    _mcpClientDeps.connect = async (_config, options) => {
+      attempts++;
+      started.resolve(options.signal);
+      // A bounded watchdog lets the old, non-cancelling implementation finish;
+      // this is not synchronization by sleep. The new path rejects on abort.
+      const watchdog = AbortSignal.timeout(250);
+      await new Promise<never>((_resolve, reject) => {
+        options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true });
+        watchdog.addEventListener("abort", () => reject(new Error("watchdog")), { once: true });
+      });
+      throw new Error("unreachable");
+    };
+    const pool = createMcpPool({ servers, retry: { maxAttempts: 3, baseDelayMs: 0 } });
+    const tools = pool.listTools("memory", "/w");
+    const signal = await started.promise;
+    const before = performance.now();
+    await pool.close();
+    const elapsed = performance.now() - before;
+    expect({ aborted: signal.aborted, attempts, tools: await tools, prompt: elapsed < 200 }).toEqual({
+      aborted: true,
+      attempts: 1,
+      tools: [],
+      prompt: true,
+    });
+    expect(pool.events()).toContainEqual(expect.objectContaining({ kind: "connect-failed", serverId: "memory" }));
+    expect(await pool.instructions?.("memory", "/w")).toBeUndefined();
+    expect((await pool.call("memory", "/w", "t", {}, { timeoutMs: 100, maxBytes: 100 })).isError).toBe(true);
+  });
+
+  test("AC17-18: onSpawn registers synchronously during handshake; rejection unregisters afterwards", async () => {
+    const started = Promise.withResolvers<ConnectMcpOptions>();
+    const handshake = Promise.withResolvers<never>();
+    const registered: number[] = [];
+    const unregistered: number[] = [];
+    _mcpClientDeps.connect = async (config, options) => {
+      expect(config.kind).toBe("stdio");
+      started.resolve(options);
+      return handshake.promise;
+    };
+    const pool = createMcpPool({
+      servers,
+      retry: { maxAttempts: 1, baseDelayMs: 0 },
+      pidRegistry: {
+        register: async (pid) => {
+          registered.push(pid);
+        },
+        unregister: async (pid) => {
+          unregistered.push(pid);
+        },
+      },
+    });
+    const tools = pool.listTools("memory", "/w");
+    const options = await started.promise;
+    const hasOnSpawn = typeof options.onSpawn === "function";
+    options.onSpawn?.(4242);
+    const during = { registered: [...registered], unregistered: [...unregistered] };
+    handshake.reject(new Error("initialize failed"));
+    expect(await tools).toEqual([]);
+    expect({ hasOnSpawn, during, unregistered }).toEqual({
+      hasOnSpawn: true,
+      during: { registered: [4242], unregistered: [] },
+      unregistered: [4242],
+    });
+    await pool.close();
   });
 });

@@ -4,7 +4,15 @@ import { NaxError } from "@/errors";
 import { changedPathsBetween, snapshotWorkingTree } from "@/review/fix-review/tree-snapshot";
 import { runHardenedGit } from "@/utils/hardened-git";
 
-export const _snapshotDeps = { rm, lstat, snapshotWorkingTree, changedPathsBetween, git: runHardenedGit };
+export const _snapshotDeps = {
+  rm,
+  lstat,
+  snapshotWorkingTree,
+  changedPathsBetween,
+  git: runHardenedGit,
+  sleep: (ms: number): Promise<void> => Bun.sleep(ms),
+  now: Date.now,
+};
 
 export const STAGE = "reviewer-guard";
 

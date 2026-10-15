@@ -8,9 +8,9 @@
  * only this worktree's own HEAD is restored; other refs/stash entries are only reported.
  * Each restore phase is failure-isolated: a failure is recorded and later phases still run.
  */
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
-import { classifyRunStatePath } from "@/runstate/store";
+import { activeKeepers } from "@/runstate/store";
 import { _snapshotDeps, git, gitRaw, symbolicHead } from "./deps";
 import { listIgnoreFiles, restoreIgnoreRules, type TreeEntry } from "./snapshot-ignore-rules";
 import {
@@ -41,6 +41,7 @@ export interface RepoSnapshot {
 
 export interface RestoreReport {
   readonly paths: readonly string[];
+  readonly fallback?: "tracked-only";
   readonly indexRestored: boolean;
   readonly headRestored: boolean;
   /** Branch/tag changes made during the turn that were left alone: "added|moved|deleted <ref>". */
@@ -52,10 +53,18 @@ export interface RestoreReport {
 }
 
 const CHECKOUT_CHUNK = 500;
+export const INDEX_LOCK_WAIT_MS = 5_000;
+const INDEX_LOCK_POLL_MS = 100;
+
+interface TreeRestore {
+  paths: string[];
+  restored: boolean;
+  fallback?: "tracked-only";
+}
 
 /** True when the #2497 run-state keeper owns this repo-relative path. */
 export function isKeeperOwnedPath(toplevel: string, rel: string): boolean {
-  return classifyRunStatePath(join(toplevel, rel)) !== null;
+  return activeKeepers().some((keeper) => keeper.get(join(toplevel, rel)) !== undefined);
 }
 
 export async function takeRepoSnapshot(workdir: string): Promise<RepoSnapshot> {
@@ -110,7 +119,40 @@ async function snapshotEntries(snap: RepoSnapshot): Promise<Map<string, TreeEntr
   return entries;
 }
 
-async function restoreTree(snap: RepoSnapshot, failures: string[]): Promise<{ paths: string[]; restored: boolean }> {
+async function waitForIndexLock(snap: RepoSnapshot, failures: string[]): Promise<void> {
+  const lock = resolve(snap.toplevel, await git(["rev-parse", "--git-path", "index.lock"], snap.toplevel));
+  const deadline = _snapshotDeps.now() + INDEX_LOCK_WAIT_MS;
+  while (true) {
+    try {
+      await _snapshotDeps.lstat(lock);
+    } catch (err) {
+      if (isAbsent(err)) return;
+      throw err;
+    }
+    const remaining = deadline - _snapshotDeps.now();
+    if (remaining <= 0) {
+      failures.push("index.lock held");
+      return;
+    }
+    await _snapshotDeps.sleep(Math.min(INDEX_LOCK_POLL_MS, remaining));
+  }
+}
+
+async function checkoutPaths(snap: RepoSnapshot, paths: string[], failures: string[]): Promise<boolean> {
+  let restored = false;
+  for (let i = 0; i < paths.length; i += CHECKOUT_CHUNK) {
+    const chunk = paths.slice(i, i + CHECKOUT_CHUNK);
+    try {
+      await git(["checkout", snap.tree, "--", ...chunk.map((p) => `:(top,literal)${p}`)], snap.toplevel);
+      restored = true;
+    } catch (err) {
+      failures.push(`checkout ${chunk.length} path(s): ${errorMessage(err)}`);
+    }
+  }
+  return restored;
+}
+
+async function restoreTree(snap: RepoSnapshot, failures: string[]): Promise<TreeRestore> {
   const entries = await snapshotEntries(snap);
   // Reset the ignore rules first: the comparison below honours them, and a reviewer-edited
   // .gitignore would otherwise hide the reviewer's own files from it (nax#2552).
@@ -125,10 +167,19 @@ async function restoreTree(snap: RepoSnapshot, failures: string[]): Promise<{ pa
     },
     failures,
   );
-  const current = await _snapshotDeps.snapshotWorkingTree(snap.toplevel);
-  const diffed = (await _snapshotDeps.changedPathsBetween(snap.toplevel, snap.tree, current)).filter(
-    (p) => !isKeeperOwnedPath(snap.toplevel, p),
-  );
+  let diffed: string[];
+  try {
+    const current = await _snapshotDeps.snapshotWorkingTree(snap.toplevel);
+    diffed = (await _snapshotDeps.changedPathsBetween(snap.toplevel, snap.tree, current)).filter(
+      (p) => !isKeeperOwnedPath(snap.toplevel, p),
+    );
+  } catch (err) {
+    failures.push(`tree: ${errorMessage(err)}`);
+    const paths = [...entries]
+      .filter(([p, entry]) => entry.type !== "commit" && !isKeeperOwnedPath(snap.toplevel, p))
+      .map(([p]) => p);
+    return { paths, restored: await checkoutPaths(snap, paths, failures), fallback: "tracked-only" };
+  }
   const changed = [...new Set([...ruleChanges, ...diffed])];
   if (changed.length === 0) return { paths: [], restored: false };
   // A nested repo (gitlink) in the snapshot cannot be re-created from a tree: leave it.
@@ -138,12 +189,7 @@ async function restoreTree(snap: RepoSnapshot, failures: string[]): Promise<{ pa
   for (const p of remove) {
     await removePath(join(snap.toplevel, p)).catch((err) => failures.push(`remove ${p}: ${errorMessage(err)}`));
   }
-  for (let i = 0; i < restore.length; i += CHECKOUT_CHUNK) {
-    const chunk = restore.slice(i, i + CHECKOUT_CHUNK);
-    await git(["checkout", snap.tree, "--", ...chunk.map((p) => `:(top,literal)${p}`)], snap.toplevel).catch((err) =>
-      failures.push(`checkout ${chunk.length} path(s): ${errorMessage(err)}`),
-    );
-  }
+  await checkoutPaths(snap, restore, failures);
   return { paths: changed, restored: restore.length > 0 || ruleChanges.length > 0 };
 }
 
@@ -179,10 +225,12 @@ export async function restoreRepoSnapshot(snap: RepoSnapshot): Promise<RestoreRe
   const replaceRemoved = await phase("replace-refs", false, () => removeAddedReplaceRefs(snap, snap.toplevel));
   const refsLeft = await phase("refs-report", [] as string[], () => diffRefsLeft(snap, snap.toplevel));
   const stashLeft = await phase("stash-report", [] as string[], () => diffStashesLeft(snap.stashes, snap.toplevel));
-  const tree = await phase("tree", { paths: [] as string[], restored: false }, () => restoreTree(snap, failures));
+  await phase("index-lock", undefined, () => waitForIndexLock(snap, failures));
+  const tree = await phase<TreeRestore>("tree", { paths: [], restored: false }, () => restoreTree(snap, failures));
   const indexRestored = await phase("index", false, () => restoreIndex(snap, tree.restored));
   return {
     paths: tree.paths,
+    ...(tree.fallback === undefined ? {} : { fallback: tree.fallback }),
     indexRestored,
     headRestored: headMoved || replaceRemoved,
     refsLeft,
