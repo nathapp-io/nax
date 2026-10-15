@@ -163,6 +163,8 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
     "Also grant the shared temp directories (os.tmpdir(), /tmp) to sandboxed commands. Off by default: temp writes stay inside this run's own temp root",
   "execution.sandbox.network": "Network policy for sandboxed commands",
   "execution.sandbox.network.allowedDomains": "Domains sandboxed commands may reach; absent means open",
+  "execution.sandbox.network.allowLocalBinding":
+    "Allow sandboxed commands to reach loopback ports when allowedDomains restricts the network; off when absent",
   "execution.commandSafety": "Command classifier: shadow rows, plus the optional flag-for-review guard",
   "execution.commandSafety.shadow": "Classifier endpoint settings; absent means off",
   "execution.commandSafety.shadow.url": "Classifier URL (loopback unless allowRemote)",
