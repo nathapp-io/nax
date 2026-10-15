@@ -384,11 +384,11 @@ describe("collectStoryMetrics — cost accumulates across all tier escalations",
 
 // BUG-067
 describe("handleTierEscalation — priorFailures records attempt data for cross-tier tracking", () => {
-  let origSavePRD: typeof _tierEscalationDeps.savePRD;
+  let origSavePRD: typeof _tierEscalationDeps.savePrdProgress;
 
   afterEach(() => {
     if (origSavePRD) {
-      _tierEscalationDeps.savePRD = origSavePRD;
+      _tierEscalationDeps.savePrdProgress = origSavePRD;
     }
   });
 
@@ -439,8 +439,8 @@ describe("handleTierEscalation — priorFailures records attempt data for cross-
       },
     },
   ])("$name", async ({ checkKey, assertion }) => {
-    origSavePRD = _tierEscalationDeps.savePRD;
-    _tierEscalationDeps.savePRD = mock(() => Promise.resolve());
+    origSavePRD = _tierEscalationDeps.savePrdProgress;
+    _tierEscalationDeps.savePrdProgress = mock(() => Promise.resolve());
 
     const baseStory = makeStory({
       attempts: 1,

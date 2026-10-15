@@ -15,6 +15,7 @@ import type { AdviceDecision, HeadsUpChannel, QuestionDraft } from "@/advisor";
 import { buildMenu, createAdvisor, findReusable, ledgerPath, readTrustedDecisions } from "@/advisor";
 import type { NaxConfig } from "@/config";
 import { isAdvisorCallerEnabled } from "@/config";
+import { NaxError } from "@/errors";
 import type { CallContext } from "@/operations";
 import {
   type AdviceRef,
@@ -195,6 +196,18 @@ function approvalQuestionFromFacts(
   };
 }
 
+const MAX_GIT_STDERR_CHARS = 500;
+
+/** A failed ledger git step. `commitLedgerSafe` (machine.ts) catches it and warns with storyId first. */
+function ledgerGitError(step: string, result: { exitCode: number; stderr?: string }): NaxError {
+  const detail = result.stderr?.trim().slice(0, MAX_GIT_STDERR_CHARS) || `exit ${result.exitCode}`;
+  return new NaxError(`Advisor ledger ${step} failed: ${detail}`, "FINISH_LEDGER_COMMIT", {
+    stage: "finish",
+    step,
+    exitCode: result.exitCode,
+  });
+}
+
 export function createFinishAdvisor(deps: FinishAdvisorDeps): FinishAdvisor {
   const git = deps.git ?? ((args, cwd) => gitWithTimeout(args, cwd, GIT_TIMEOUT_MS));
   return {
@@ -228,13 +241,17 @@ export function createFinishAdvisor(deps: FinishAdvisorDeps): FinishAdvisor {
       // US-007 (nax#2534): the ledger is nax's own artifact and belongs on the branch even when an
       // ignore rule hides it. Without `-f` git refuses the add and the rulings the PR body cites
       // never reach the commit.
-      await git(["add", "-f", "--", path], state.workdir);
+      const added = await git(["add", "-f", "--", path], state.workdir);
+      if (added.exitCode !== 0) throw ledgerGitError("add", added);
       const staged = await git(["diff", "--cached", "--quiet", "--", path], state.workdir);
       if (staged.exitCode === 0) return;
-      await git(
+      // `--quiet` exits 1 when something is staged; anything above that is git failing, not a dirty ledger.
+      if (staged.exitCode !== 1) throw ledgerGitError("diff", staged);
+      const commit = await git(
         ["commit", "--no-verify", "-m", `chore(${deps.feature}): advisor decisions`, "--", path],
         state.workdir,
       );
+      if (commit.exitCode !== 0) throw ledgerGitError("commit", commit);
     },
   };
 }

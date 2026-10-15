@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { assertDefined, withTempDir } from "@test/helpers";
 import type { AdviceDecision, AdviceResult, Advisor, QuestionDraft } from "@/advisor";
 import { appendDecision, dedupeKeyFor } from "@/advisor";
+import { NaxError } from "@/errors";
 import type { Finding, FinishState, ResolutionFacts } from "@/finish";
 import { approvalFacts, createFinishAdvisor, createFinishState, judgeWithoutAdvisor } from "@/finish";
 
@@ -205,6 +206,56 @@ describe("createFinishAdvisor.commitLedger", () => {
       await fa.commitLedger(state(dir));
 
       expect(calls[0]).toEqual(["add", "-f", "--", ".nax/features/feat/decisions.jsonl"]);
+    });
+  });
+});
+
+describe("createFinishAdvisor.commitLedger exit codes (#2554)", () => {
+  /** An advisor whose git answers each step by name; `fail` maps a step to its exit code and stderr. */
+  function makeFailing(dir: string, fail: Record<string, { exitCode: number; stderr?: string }>) {
+    const calls: string[][] = [];
+    const fa = createFinishAdvisor({
+      advisor: fakeAdvisor(() => ({ decision: null })).advisor,
+      repoRoot: dir,
+      outputDir: join(dir, "out"),
+      feature: "feat",
+      acceptanceEnabled: () => true,
+      judgedEnabled: true,
+      approvalEnabled: true,
+      git: async (args) => {
+        calls.push(args);
+        return fail[args[0] ?? ""] ?? { exitCode: args[0] === "diff" ? 1 : 0 };
+      },
+    });
+    return { fa, calls };
+  }
+
+  test("a failed add throws a NaxError naming the step and git's words, and stops before commit", async () => {
+    await withTempDir(async (dir) => {
+      const { fa, calls } = makeFailing(dir, { add: { exitCode: 128, stderr: "fatal: pathspec" } });
+      const err = await fa.commitLedger(state(dir)).then(
+        () => null,
+        (e: unknown) => e,
+      );
+      if (!(err instanceof NaxError)) throw new Error("expected a NaxError");
+      expect(err.message).toContain("add");
+      expect(err.message).toContain("fatal: pathspec");
+      expect(calls.map((c) => c[0])).toEqual(["add"]);
+    });
+  });
+
+  test("a failed commit throws a NaxError", async () => {
+    await withTempDir(async (dir) => {
+      const { fa } = makeFailing(dir, { commit: { exitCode: 1, stderr: "hook said no" } });
+      await expect(fa.commitLedger(state(dir))).rejects.toBeInstanceOf(NaxError);
+    });
+  });
+
+  test("a diff that errors (exit above 1) throws instead of being read as 'dirty'", async () => {
+    await withTempDir(async (dir) => {
+      const { fa, calls } = makeFailing(dir, { diff: { exitCode: 129 } });
+      await expect(fa.commitLedger(state(dir))).rejects.toBeInstanceOf(NaxError);
+      expect(calls.map((c) => c[0])).toEqual(["add", "diff"]);
     });
   });
 });

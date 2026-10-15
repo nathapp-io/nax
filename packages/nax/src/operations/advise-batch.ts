@@ -51,6 +51,11 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
+function unparsedPreview(output: string): string {
+  const preview = previewOutput(output, UNPARSED_PREVIEW_BYTES);
+  return preview === "" ? "(empty response)" : preview;
+}
+
 function strings(v: unknown): string[] {
   return Array.isArray(v) ? v.filter((s): s is string => typeof s === "string" && s.trim() !== "") : [];
 }
@@ -127,13 +132,19 @@ export const adviseBatchOp: RunOperation<AdviseBatchOpInput, AdviseBatchOpOutput
   }),
   parse: (output, input) => {
     const parsed = tryParseLLMJson<unknown>(output);
-    if (!isRecord(parsed)) {
-      const preview = previewOutput(output, UNPARSED_PREVIEW_BYTES);
-      return { ok: false, error: "no-json", preview: preview === "" ? "(empty response)" : preview };
+    if (!isRecord(parsed)) return { ok: false, error: "no-json", preview: unparsedPreview(output) };
+    // Fail closed: a reply that is JSON but carries no usable ruling must escalate the ladder
+    // (runBatchLadder only moves on when !ok), not pass as "the advisor had nothing to say".
+    const answers = input.kind === "residual" ? residualAnswers(parsed, input) : [];
+    if (input.kind === "residual" && input.items.length > 0 && !answers.some((a) => a.reply)) {
+      return { ok: false, error: "no-valid-answers", preview: unparsedPreview(output) };
+    }
+    if (input.kind === "preflight" && !Array.isArray(parsed.conflicts)) {
+      return { ok: false, error: "no-conflicts-array", preview: unparsedPreview(output) };
     }
     return {
       ok: true,
-      answers: input.kind === "residual" ? residualAnswers(parsed, input) : [],
+      answers,
       diagnoses: input.kind === "residual" ? diagnoses(parsed, input.redGates) : {},
       conflicts: input.kind === "preflight" ? conflicts(parsed) : [],
       overlap: input.kind === "preflight" ? overlap(parsed) : [],

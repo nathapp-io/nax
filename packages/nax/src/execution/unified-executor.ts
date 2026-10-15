@@ -14,7 +14,7 @@ import { wireInteraction } from "../pipeline/subscribers/interaction";
 import { wireRegistry } from "../pipeline/subscribers/registry";
 import { wireReporters } from "../pipeline/subscribers/reporters";
 import type { PipelineContext } from "../pipeline/types";
-import { countStories, isComplete, loadPRD } from "../prd";
+import { countStories, isComplete, loadPRD, savePrdProgress } from "../prd";
 import type { PRD } from "../prd/types";
 import { totalSpendUsd } from "../runtime";
 import { buildNaxIgnoreIndex } from "../utils/path-filters";
@@ -216,6 +216,7 @@ export async function executeUnified(
       // Parallel dispatch when parallelCount > 0 and batch > 1 story. Never under a dry run: runIteration owns that short-circuit (nax#1808).
       if ((ctx.parallelCount ?? 0) > 0 && !ctx.dryRun) {
         const step = await runParallelDispatch(dispatchParams, {
+          savePrdProgress: _unifiedExecutorDeps.savePrdProgress,
           selectIndependentBatch: _unifiedExecutorDeps.selectIndependentBatch,
           preIterationTierCheck: _unifiedExecutorDeps.preIterationTierCheck,
           runParallelBatch: _unifiedExecutorDeps.runParallelBatch,
@@ -307,4 +308,5 @@ export const _unifiedExecutorDeps = {
   runIteration,
   selectIndependentBatch,
   preIterationTierCheck,
+  savePrdProgress,
 };

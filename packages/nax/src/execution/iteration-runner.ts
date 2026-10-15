@@ -14,7 +14,7 @@ import { getLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
 import { runPipeline } from "../pipeline/runner";
 import type { PipelineContext, PipelineStage } from "../pipeline/types";
-import { markStoryFailed, savePRD } from "../prd";
+import { markStoryFailed, savePRD, savePrdProgress } from "../prd";
 import type { PRD } from "../prd/types";
 import { captureGitRef, isGitRefValid } from "../utils/git";
 import { storyAbsWorkdir, storyPackageDir } from "../utils/path-frame";
@@ -160,7 +160,7 @@ export async function runIteration(
       });
     } catch (error) {
       markStoryFailed(prd, story.id, "dependency-prep", "worktree-dependencies", ctx.statusWriter);
-      await savePRD(prd, ctx.prdPath);
+      await _iterationRunnerDeps.savePrdProgress(prd, ctx.prdPath, story.id, "failed");
       try {
         // US-003: same composed identity create() used, so the cleanup removes
         // the worktree that was actually built.
@@ -340,5 +340,6 @@ export const _iterationRunnerDeps = {
   prepareWorktreeDependencies,
   runPipeline,
   existsSync,
+  savePrdProgress,
   worktreeManager: new WorktreeManager(),
 };

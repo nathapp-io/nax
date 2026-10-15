@@ -32,7 +32,7 @@ export interface FinishAdvisorDeps {
   acceptanceEnabled: () => boolean;
   judgedEnabled: boolean;
   approvalEnabled: boolean;
-  git?: (args: string[], cwd: string) => Promise<{ exitCode: number }>;
+  git?: (args: string[], cwd: string) => Promise<{ exitCode: number; stderr?: string }>;
 }
 
 export type Dropped = "waive" | "supersede";

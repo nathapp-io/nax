@@ -68,8 +68,8 @@ describe("preIterationTierCheck — story:failed event emission (BUG-5)", () => 
   test("emits story:failed when the story has exhausted the final tier's budget (no next tier)", async () => {
     const { preIterationTierCheck, _tierEscalationDeps } = await import("@/execution/escalation/tier-escalation");
 
-    const origSavePRD = _tierEscalationDeps.savePRD;
-    _tierEscalationDeps.savePRD = () => Promise.resolve();
+    const origSavePRD = _tierEscalationDeps.savePrdProgress;
+    _tierEscalationDeps.savePrdProgress = () => Promise.resolve();
 
     try {
       // attempts === tierCfg.attempts (1) for the ONLY tier in tierOrder → no
@@ -113,14 +113,14 @@ describe("preIterationTierCheck — story:failed event emission (BUG-5)", () => 
       });
       expect(capturedEvents[0].reason).toContain("All tiers exhausted");
     } finally {
-      _tierEscalationDeps.savePRD = origSavePRD;
+      _tierEscalationDeps.savePrdProgress = origSavePRD;
     }
   });
 
   test("leaves the caller's PRD untouched when marking the story failed (BUG-36)", async () => {
     const { preIterationTierCheck, _tierEscalationDeps } = await import("@/execution/escalation/tier-escalation");
-    const origSavePRD = _tierEscalationDeps.savePRD;
-    _tierEscalationDeps.savePRD = async () => {};
+    const origSavePRD = _tierEscalationDeps.savePrdProgress;
+    _tierEscalationDeps.savePrdProgress = async () => {};
 
     try {
       const story = makeStory({
@@ -158,15 +158,15 @@ describe("preIterationTierCheck — story:failed event emission (BUG-5)", () => 
       expect(prd.userStories.find((s) => s.id === story.id)?.status).toBe("in-progress");
       expect(story.status).toBe("in-progress");
     } finally {
-      _tierEscalationDeps.savePRD = origSavePRD;
+      _tierEscalationDeps.savePrdProgress = origSavePRD;
     }
   });
 
   test("does not emit story:failed when the story still has escalation budget or a next tier", async () => {
     const { preIterationTierCheck, _tierEscalationDeps } = await import("@/execution/escalation/tier-escalation");
 
-    const origSavePRD = _tierEscalationDeps.savePRD;
-    _tierEscalationDeps.savePRD = () => Promise.resolve();
+    const origSavePRD = _tierEscalationDeps.savePrdProgress;
+    _tierEscalationDeps.savePrdProgress = () => Promise.resolve();
 
     try {
       const story = makeStory({
@@ -207,15 +207,15 @@ describe("preIterationTierCheck — story:failed event emission (BUG-5)", () => 
       expect(result.shouldSkipIteration).toBe(true);
       expect(capturedEvents).toHaveLength(0);
     } finally {
-      _tierEscalationDeps.savePRD = origSavePRD;
+      _tierEscalationDeps.savePrdProgress = origSavePRD;
     }
   });
 
   test("cost falls back to totalCost when no runtime is passed", async () => {
     const { preIterationTierCheck, _tierEscalationDeps } = await import("@/execution/escalation/tier-escalation");
 
-    const origSavePRD = _tierEscalationDeps.savePRD;
-    _tierEscalationDeps.savePRD = () => Promise.resolve();
+    const origSavePRD = _tierEscalationDeps.savePrdProgress;
+    _tierEscalationDeps.savePrdProgress = () => Promise.resolve();
 
     try {
       const story = makeStory({
@@ -247,15 +247,15 @@ describe("preIterationTierCheck — story:failed event emission (BUG-5)", () => 
       expect(capturedEvents).toHaveLength(1);
       expect(capturedEvents[0].cost).toBe(4.5);
     } finally {
-      _tierEscalationDeps.savePRD = origSavePRD;
+      _tierEscalationDeps.savePrdProgress = origSavePRD;
     }
   });
 
   test("cost uses the per-story total from runtime.costAggregator.byStory() when a runtime is passed", async () => {
     const { preIterationTierCheck, _tierEscalationDeps } = await import("@/execution/escalation/tier-escalation");
 
-    const origSavePRD = _tierEscalationDeps.savePRD;
-    _tierEscalationDeps.savePRD = () => Promise.resolve();
+    const origSavePRD = _tierEscalationDeps.savePrdProgress;
+    _tierEscalationDeps.savePrdProgress = () => Promise.resolve();
 
     try {
       const story = makeStory({
@@ -304,7 +304,7 @@ describe("preIterationTierCheck — story:failed event emission (BUG-5)", () => 
       expect(capturedEvents).toHaveLength(1);
       expect(capturedEvents[0].cost).toBe(1.25);
     } finally {
-      _tierEscalationDeps.savePRD = origSavePRD;
+      _tierEscalationDeps.savePrdProgress = origSavePRD;
     }
   });
 });
@@ -325,8 +325,8 @@ describe("preIterationTierCheck — on-story-fail hook fires exactly once (regre
   test("terminal tier-exhaustion fires the on-story-fail hook exactly once", async () => {
     const { preIterationTierCheck, _tierEscalationDeps } = await import("@/execution/escalation/tier-escalation");
 
-    const origSavePRD = _tierEscalationDeps.savePRD;
-    _tierEscalationDeps.savePRD = () => Promise.resolve();
+    const origSavePRD = _tierEscalationDeps.savePrdProgress;
+    _tierEscalationDeps.savePrdProgress = () => Promise.resolve();
 
     // A tiny counter script — invoked in argv mode (no shell) by the real hook
     // runner. Each invocation increments the integer stored in markerPath.
@@ -387,7 +387,7 @@ describe("preIterationTierCheck — on-story-fail hook fires exactly once (regre
         .catch(() => "0");
       expect(markerText.trim()).toBe("1");
     } finally {
-      _tierEscalationDeps.savePRD = origSavePRD;
+      _tierEscalationDeps.savePrdProgress = origSavePRD;
     }
   });
 });
@@ -472,22 +472,22 @@ async function runPreIter(story: UserStory, config: NaxConfig, prd: PRD) {
   );
 }
 
-let origOffLadderSavePRD: typeof _tierEscalationDeps.savePRD;
+let origOffLadderSavePRD: typeof _tierEscalationDeps.savePrdProgress;
 let origOffLadderGetSafeLogger: typeof _tierEscalationDeps.getSafeLogger;
 let offLadderLogger: ReturnType<typeof makeLogger>;
 
 beforeEach(() => {
-  origOffLadderSavePRD = _tierEscalationDeps.savePRD;
+  origOffLadderSavePRD = _tierEscalationDeps.savePrdProgress;
   origOffLadderGetSafeLogger = _tierEscalationDeps.getSafeLogger;
   // No-op persistence so the test never touches real disk.
-  _tierEscalationDeps.savePRD = () => Promise.resolve();
+  _tierEscalationDeps.savePrdProgress = () => Promise.resolve();
   // Capture warnings for the logged-once contract.
   offLadderLogger = makeLogger();
   _tierEscalationDeps.getSafeLogger = () => offLadderLogger;
 });
 
 afterEach(() => {
-  _tierEscalationDeps.savePRD = origOffLadderSavePRD;
+  _tierEscalationDeps.savePrdProgress = origOffLadderSavePRD;
   _tierEscalationDeps.getSafeLogger = origOffLadderGetSafeLogger;
 });
 

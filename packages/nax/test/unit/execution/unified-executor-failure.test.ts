@@ -180,8 +180,8 @@ describe("exec AC-23 (behavioral): executeUnified calls handlePipelineFailure fo
 
     // Inject a savePRD spy so handlePipelineFailure doesn't attempt real disk writes
     const { _tierEscalationDeps } = await import("@/execution/escalation/tier-escalation");
-    const origSavePRD = _tierEscalationDeps.savePRD;
-    _tierEscalationDeps.savePRD = mock(async () => {});
+    const origSavePRD = _tierEscalationDeps.savePrdProgress;
+    _tierEscalationDeps.savePrdProgress = mock(async () => {});
 
     // Inject into pipeline-result-handler as well
     const { _resultHandlerDeps } = await import("@/execution/pipeline-result-handler");
@@ -200,7 +200,7 @@ describe("exec AC-23 (behavioral): executeUnified calls handlePipelineFailure fo
       expect(result).toBeDefined();
       expect((result as { storiesCompleted: number }).storiesCompleted).toBe(1);
     } finally {
-      _tierEscalationDeps.savePRD = origSavePRD;
+      _tierEscalationDeps.savePrdProgress = origSavePRD;
       _resultHandlerDeps.spawn = origSpawn;
     }
   });

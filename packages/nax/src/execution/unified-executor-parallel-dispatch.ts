@@ -8,7 +8,7 @@
 
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import { type StoryMetrics, toFallbackHops } from "../metrics";
-import { isStalled, loadPRD, savePRD } from "../prd";
+import { isStalled, loadPRD, type savePrdProgress } from "../prd";
 import type { PRD, UserStory } from "../prd/types";
 import { resolveRouting } from "../routing";
 import { storyPackageDir } from "../utils/path-frame";
@@ -37,6 +37,8 @@ import {
 } from "./unified-executor-dispatch-phases";
 
 export interface ParallelDispatchDeps {
+  /** Writes the reconciled PRD and commits it (#2533, #2554). */
+  savePrdProgress: typeof savePrdProgress;
   selectIndependentBatch: typeof selectIndependentBatch;
   preIterationTierCheck: typeof preIterationTierCheck;
   runParallelBatch: (opts: RunParallelBatchOptions) => Promise<RunParallelBatchResult>;
@@ -226,7 +228,7 @@ async function runManyStoryParallelBatch(
   // Single-writer PRD reconciliation (H-1): worktree pipelines skipped persistence, so record completed + merge-conflict outcomes here.
   reconcileBatchOutcome(prd, batchResult);
   const queueDrain = await drainQueueAtBatchBoundary(ctx.workdir, prd); // BUG-9
-  await savePRD(prd, ctx.prdPath);
+  await deps.savePrdProgress(prd, ctx.prdPath, "_batch", "reconciled");
   await pipelineEventBus.drain();
   // #2006: fold in aggregator spend the phaseCosts sum cannot see (pre-run pipeline, failed dispatches).
   totalCost = reconcileRunCost(totalCost + batchResult.totalCost, ctx.runtime.costAggregator);

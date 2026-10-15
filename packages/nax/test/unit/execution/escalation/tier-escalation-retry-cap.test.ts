@@ -44,9 +44,9 @@ describe("handleTierEscalation — runtime-crash retry cap", () => {
     const mod = await import("@/execution/escalation");
     const { handleTierEscalation, _tierEscalationDeps, _runtimeCrashRetryCounts, RUNTIME_CRASH_RETRY_CAP } = mod;
 
-    const origSavePRD = _tierEscalationDeps.savePRD;
+    const origSavePRD = _tierEscalationDeps.savePrdProgress;
     let saveCalls = 0;
-    _tierEscalationDeps.savePRD = () => {
+    _tierEscalationDeps.savePrdProgress = () => {
       saveCalls++;
       return Promise.resolve();
     };
@@ -102,7 +102,7 @@ describe("handleTierEscalation — runtime-crash retry cap", () => {
       expect(finalResult.prdDirty).toBe(true);
       expect(saveCalls).toBe(0);
     } finally {
-      _tierEscalationDeps.savePRD = origSavePRD;
+      _tierEscalationDeps.savePrdProgress = origSavePRD;
       _runtimeCrashRetryCounts.delete(storyId);
     }
   });
@@ -112,8 +112,8 @@ describe("handleTierEscalation — runtime-crash retry cap", () => {
     const { handleTierEscalation, _tierEscalationDeps, _runtimeCrashRetryCounts, RUNTIME_CRASH_RETRY_CAP } = mod;
 
     const storyId = "US-002-retry-cap-reset";
-    const origSavePRD = _tierEscalationDeps.savePRD;
-    _tierEscalationDeps.savePRD = () => Promise.resolve();
+    const origSavePRD = _tierEscalationDeps.savePrdProgress;
+    _tierEscalationDeps.savePrdProgress = () => Promise.resolve();
     _runtimeCrashRetryCounts.delete(storyId);
 
     try {
@@ -156,7 +156,7 @@ describe("handleTierEscalation — runtime-crash retry cap", () => {
       const nextCrash = await handleTierEscalation(buildCtx(true));
       expect(nextCrash.outcome).toBe("retry-same");
     } finally {
-      _tierEscalationDeps.savePRD = origSavePRD;
+      _tierEscalationDeps.savePrdProgress = origSavePRD;
       _runtimeCrashRetryCounts.delete(storyId);
     }
   });
@@ -166,8 +166,8 @@ describe("handleTierEscalation — runtime-crash retry cap", () => {
     const { _tierEscalationDeps, _runtimeCrashRetryCounts, resetRuntimeCrashRetryCounts } = mod;
 
     const storyId = "US-002-retry-cap-succeed";
-    const origSavePRD = _tierEscalationDeps.savePRD;
-    _tierEscalationDeps.savePRD = () => Promise.resolve();
+    const origSavePRD = _tierEscalationDeps.savePrdProgress;
+    _tierEscalationDeps.savePrdProgress = () => Promise.resolve();
     _runtimeCrashRetryCounts.delete(storyId);
 
     try {
@@ -219,7 +219,7 @@ describe("handleTierEscalation — runtime-crash retry cap", () => {
 
       expect(_runtimeCrashRetryCounts.size).toBe(0);
     } finally {
-      _tierEscalationDeps.savePRD = origSavePRD;
+      _tierEscalationDeps.savePrdProgress = origSavePRD;
       _runtimeCrashRetryCounts.delete(storyId);
     }
   });
@@ -244,8 +244,8 @@ describe("preIterationTierCheck — dry run never persists escalation (nax#1809)
     const mod = await import("@/execution/escalation/tier-escalation");
     const { preIterationTierCheck, _tierEscalationDeps } = mod;
 
-    const origSavePRD = _tierEscalationDeps.savePRD;
-    const savePRDSpy = spyOn(_tierEscalationDeps, "savePRD").mockImplementation(() => Promise.resolve());
+    const origSavePRD = _tierEscalationDeps.savePrdProgress;
+    const savePRDSpy = spyOn(_tierEscalationDeps, "savePrdProgress").mockImplementation(() => Promise.resolve());
 
     try {
       const story = makeStory({
@@ -299,7 +299,7 @@ describe("preIterationTierCheck — dry run never persists escalation (nax#1809)
       expect(result.prd).toBe(prd);
     } finally {
       savePRDSpy.mockRestore();
-      _tierEscalationDeps.savePRD = origSavePRD;
+      _tierEscalationDeps.savePrdProgress = origSavePRD;
     }
   });
 });
@@ -386,11 +386,11 @@ function makeCollectorContext(root: string, workdir: string, logFilePath: string
 
 /** Overrides the deps object with the provided hooks; returns restore closures. */
 function installDeps(opts: {
-  savePRD?: TierEscalationDeps["savePRD"];
+  savePRD?: TierEscalationDeps["savePrdProgress"];
   getSafeLogger?: TierEscalationDeps["getSafeLogger"];
 }): void {
   const deps = _tierEscalationDeps;
-  deps.savePRD = opts.savePRD ?? (() => Promise.resolve());
+  deps.savePrdProgress = opts.savePRD ?? (() => Promise.resolve());
   deps.getSafeLogger = opts.getSafeLogger ?? (deps.getSafeLogger as TierEscalationDeps["getSafeLogger"]);
 }
 
@@ -399,16 +399,16 @@ function installDeps(opts: {
 // ---------------------------------------------------------------------------
 
 describe("US-001: handleTierEscalation routes logger through _tierEscalationDeps.getSafeLogger (AC-1)", () => {
-  let origSavePRD: TierEscalationDeps["savePRD"];
+  let origSavePRD: TierEscalationDeps["savePrdProgress"];
   let origGetSafeLogger: TierEscalationDeps["getSafeLogger"];
 
   afterEach(() => {
-    _tierEscalationDeps.savePRD = origSavePRD;
+    _tierEscalationDeps.savePrdProgress = origSavePRD;
     _tierEscalationDeps.getSafeLogger = origGetSafeLogger;
   });
 
   test("escalation log is emitted via the dep's getSafeLogger", async () => {
-    origSavePRD = _tierEscalationDeps.savePRD;
+    origSavePRD = _tierEscalationDeps.savePrdProgress;
     origGetSafeLogger = _tierEscalationDeps.getSafeLogger;
 
     const mockLogger = makeLogger();
@@ -446,16 +446,16 @@ describe("US-001: handleTierEscalation routes logger through _tierEscalationDeps
 // ---------------------------------------------------------------------------
 
 describe("US-001: handleTierEscalation logs fromTier and nextTier (AC-2, AC-3)", () => {
-  let origSavePRD: TierEscalationDeps["savePRD"];
+  let origSavePRD: TierEscalationDeps["savePrdProgress"];
   let origGetSafeLogger: TierEscalationDeps["getSafeLogger"];
 
   afterEach(() => {
-    _tierEscalationDeps.savePRD = origSavePRD;
+    _tierEscalationDeps.savePrdProgress = origSavePRD;
     _tierEscalationDeps.getSafeLogger = origGetSafeLogger;
   });
 
   test("logs at stage 'escalation' with data.fromTier 'fast' and data.nextTier 'balanced'", async () => {
-    origSavePRD = _tierEscalationDeps.savePRD;
+    origSavePRD = _tierEscalationDeps.savePrdProgress;
     origGetSafeLogger = _tierEscalationDeps.getSafeLogger;
 
     const mockLogger = makeLogger();
@@ -491,16 +491,16 @@ describe("US-001: handleTierEscalation logs fromTier and nextTier (AC-2, AC-3)",
 // ---------------------------------------------------------------------------
 
 describe("US-001: escalation log entries from both emitters round-trip to collectObservations (AC-6, AC-7)", () => {
-  let origSavePRD: TierEscalationDeps["savePRD"];
+  let origSavePRD: TierEscalationDeps["savePrdProgress"];
   let origGetSafeLogger: TierEscalationDeps["getSafeLogger"];
 
   afterEach(() => {
-    _tierEscalationDeps.savePRD = origSavePRD;
+    _tierEscalationDeps.savePrdProgress = origSavePRD;
     _tierEscalationDeps.getSafeLogger = origGetSafeLogger;
   });
 
   test("AC-6: handleTierEscalation's log line yields exactly one escalation observation", async () => {
-    origSavePRD = _tierEscalationDeps.savePRD;
+    origSavePRD = _tierEscalationDeps.savePrdProgress;
     origGetSafeLogger = _tierEscalationDeps.getSafeLogger;
 
     const mockLogger = makeLogger();
@@ -548,7 +548,7 @@ describe("US-001: escalation log entries from both emitters round-trip to collec
   });
 
   test("AC-7: preIterationTierCheck's log line yields exactly one escalation observation", async () => {
-    origSavePRD = _tierEscalationDeps.savePRD;
+    origSavePRD = _tierEscalationDeps.savePrdProgress;
     origGetSafeLogger = _tierEscalationDeps.getSafeLogger;
 
     const mockLogger = makeLogger();

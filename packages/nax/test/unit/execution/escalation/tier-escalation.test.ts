@@ -96,8 +96,8 @@ describe("handleTierEscalation — tier escalation regression guard", () => {
     const mod = await import("@/execution/escalation/tier-escalation");
     const { handleTierEscalation, _tierEscalationDeps } = mod;
 
-    const origSavePRD = _tierEscalationDeps.savePRD;
-    _tierEscalationDeps.savePRD = () => Promise.resolve();
+    const origSavePRD = _tierEscalationDeps.savePrdProgress;
+    _tierEscalationDeps.savePrdProgress = () => Promise.resolve();
 
     try {
       const story = makeStory({
@@ -150,7 +150,7 @@ describe("handleTierEscalation — tier escalation regression guard", () => {
       // TEST_FAILURE must still escalate — existing behaviour preserved
       expect(result.outcome).toBe("escalated");
     } finally {
-      _tierEscalationDeps.savePRD = origSavePRD;
+      _tierEscalationDeps.savePrdProgress = origSavePRD;
     }
   });
 });
@@ -167,8 +167,8 @@ describe("handleTierEscalation — cross-agent escalation (US-004)", () => {
     const mod = await import("@/execution/escalation/tier-escalation");
     const { handleTierEscalation, _tierEscalationDeps } = mod;
 
-    const origSavePRD = _tierEscalationDeps.savePRD;
-    _tierEscalationDeps.savePRD = () => Promise.resolve();
+    const origSavePRD = _tierEscalationDeps.savePrdProgress;
+    _tierEscalationDeps.savePrdProgress = () => Promise.resolve();
 
     try {
       const story = makeStory({
@@ -230,7 +230,7 @@ describe("handleTierEscalation — cross-agent escalation (US-004)", () => {
       expect(updatedStory?.routing?.modelTier).toBe("balanced");
       expect(updatedStory?.routing?.agent).toBe("claude");
     } finally {
-      _tierEscalationDeps.savePRD = origSavePRD;
+      _tierEscalationDeps.savePrdProgress = origSavePRD;
     }
   });
 
@@ -238,8 +238,8 @@ describe("handleTierEscalation — cross-agent escalation (US-004)", () => {
     const mod = await import("@/execution/escalation/tier-escalation");
     const { handleTierEscalation, _tierEscalationDeps } = mod;
 
-    const origSavePRD = _tierEscalationDeps.savePRD;
-    _tierEscalationDeps.savePRD = () => Promise.resolve();
+    const origSavePRD = _tierEscalationDeps.savePrdProgress;
+    _tierEscalationDeps.savePrdProgress = () => Promise.resolve();
 
     try {
       const story = makeStory({
@@ -301,7 +301,7 @@ describe("handleTierEscalation — cross-agent escalation (US-004)", () => {
       expect(updatedStory?.routing?.modelTier).toBe("fast");
       expect(updatedStory?.routing?.agent).toBe("codex");
     } finally {
-      _tierEscalationDeps.savePRD = origSavePRD;
+      _tierEscalationDeps.savePrdProgress = origSavePRD;
     }
   });
 
@@ -309,8 +309,8 @@ describe("handleTierEscalation — cross-agent escalation (US-004)", () => {
     const mod = await import("@/execution/escalation/tier-escalation");
     const { handleTierEscalation, _tierEscalationDeps } = mod;
 
-    const origSavePRD = _tierEscalationDeps.savePRD;
-    _tierEscalationDeps.savePRD = () => Promise.resolve();
+    const origSavePRD = _tierEscalationDeps.savePrdProgress;
+    _tierEscalationDeps.savePrdProgress = () => Promise.resolve();
 
     try {
       const story = makeStory({
@@ -366,7 +366,7 @@ describe("handleTierEscalation — cross-agent escalation (US-004)", () => {
       // No agent field set — caller uses defaultAgent
       expect(updatedStory?.routing?.agent).toBeUndefined();
     } finally {
-      _tierEscalationDeps.savePRD = origSavePRD;
+      _tierEscalationDeps.savePrdProgress = origSavePRD;
     }
   });
 });
@@ -395,8 +395,8 @@ describe("preIterationTierCheck — story:escalated event emission", () => {
     const mod = await import("@/execution/escalation/tier-escalation");
     const { preIterationTierCheck, _tierEscalationDeps } = mod;
 
-    const origSavePRD = _tierEscalationDeps.savePRD;
-    _tierEscalationDeps.savePRD = () => Promise.resolve();
+    const origSavePRD = _tierEscalationDeps.savePrdProgress;
+    _tierEscalationDeps.savePrdProgress = () => Promise.resolve();
 
     try {
       const story = makeStory({
@@ -452,7 +452,7 @@ describe("preIterationTierCheck — story:escalated event emission", () => {
         toTier: "balanced",
       });
     } finally {
-      _tierEscalationDeps.savePRD = origSavePRD;
+      _tierEscalationDeps.savePrdProgress = origSavePRD;
     }
   });
 
@@ -460,8 +460,8 @@ describe("preIterationTierCheck — story:escalated event emission", () => {
     const mod = await import("@/execution/escalation/tier-escalation");
     const { preIterationTierCheck, _tierEscalationDeps } = mod;
 
-    const origSavePRD = _tierEscalationDeps.savePRD;
-    _tierEscalationDeps.savePRD = () => Promise.resolve();
+    const origSavePRD = _tierEscalationDeps.savePrdProgress;
+    _tierEscalationDeps.savePrdProgress = () => Promise.resolve();
 
     try {
       const story = makeStory({
@@ -511,7 +511,7 @@ describe("preIterationTierCheck — story:escalated event emission", () => {
       expect(result.shouldSkipIteration).toBe(false);
       expect(capturedEvents).toHaveLength(0);
     } finally {
-      _tierEscalationDeps.savePRD = origSavePRD;
+      _tierEscalationDeps.savePrdProgress = origSavePRD;
     }
   });
 });
@@ -539,8 +539,8 @@ describe("handleTierEscalation — story:escalated event emission", () => {
     const mod = await import("@/execution/escalation/tier-escalation");
     const { handleTierEscalation, _tierEscalationDeps } = mod;
 
-    const origSavePRD = _tierEscalationDeps.savePRD;
-    _tierEscalationDeps.savePRD = () => Promise.resolve();
+    const origSavePRD = _tierEscalationDeps.savePrdProgress;
+    _tierEscalationDeps.savePrdProgress = () => Promise.resolve();
 
     try {
       const story = makeStory({
@@ -599,7 +599,7 @@ describe("handleTierEscalation — story:escalated event emission", () => {
         toTier: "balanced",
       });
     } finally {
-      _tierEscalationDeps.savePRD = origSavePRD;
+      _tierEscalationDeps.savePrdProgress = origSavePRD;
     }
   });
 });
@@ -617,10 +617,10 @@ describe("preIterationTierCheck — M2: unmatched rung on non-empty agent ladder
     const mod = await import("@/execution/escalation/tier-escalation");
     const { preIterationTierCheck, _tierEscalationDeps } = mod;
 
-    const origSavePRD = _tierEscalationDeps.savePRD;
+    const origSavePRD = _tierEscalationDeps.savePrdProgress;
     const origGetSafeLogger = _tierEscalationDeps.getSafeLogger;
     const mockLogger = makeLogger();
-    _tierEscalationDeps.savePRD = () => Promise.resolve();
+    _tierEscalationDeps.savePrdProgress = () => Promise.resolve();
     _tierEscalationDeps.getSafeLogger = () => mockLogger;
 
     try {
@@ -680,7 +680,7 @@ describe("preIterationTierCheck — M2: unmatched rung on non-empty agent ladder
       expect(unmatchedWarn?.data?.agent).toBe("codex");
       expect(unmatchedWarn?.data?.hasAgentRungs).toBe(true);
     } finally {
-      _tierEscalationDeps.savePRD = origSavePRD;
+      _tierEscalationDeps.savePrdProgress = origSavePRD;
       _tierEscalationDeps.getSafeLogger = origGetSafeLogger;
     }
   });
@@ -699,9 +699,9 @@ describe("preIterationTierCheck — ADR-025 gap #3: prior context captured on bu
     const mod = await import("@/execution/escalation/tier-escalation");
     const { preIterationTierCheck, _tierEscalationDeps } = mod;
 
-    const origSavePRD = _tierEscalationDeps.savePRD;
+    const origSavePRD = _tierEscalationDeps.savePrdProgress;
     let capturedPrd: import("@/prd").PRD | undefined;
-    _tierEscalationDeps.savePRD = async (prd) => {
+    _tierEscalationDeps.savePrdProgress = async (prd) => {
       capturedPrd = prd as import("@/prd").PRD;
     };
 
@@ -772,7 +772,7 @@ describe("preIterationTierCheck — ADR-025 gap #3: prior context captured on bu
       expect(failure.modelTier).toBe("fast");
       expect(failure.summary.toLowerCase()).toContain("budget");
     } finally {
-      _tierEscalationDeps.savePRD = origSavePRD;
+      _tierEscalationDeps.savePrdProgress = origSavePRD;
     }
   });
 });
@@ -791,9 +791,9 @@ describe("handleTierEscalation — ADR-025 gap #2: cross-agent escalation proven
     const mod = await import("@/execution/escalation/tier-escalation");
     const { handleTierEscalation, _tierEscalationDeps } = mod;
 
-    const origSavePRD = _tierEscalationDeps.savePRD;
+    const origSavePRD = _tierEscalationDeps.savePrdProgress;
     let capturedPrd: import("@/prd").PRD | undefined;
-    _tierEscalationDeps.savePRD = async (prd) => {
+    _tierEscalationDeps.savePrdProgress = async (prd) => {
       capturedPrd = prd as import("@/prd").PRD;
     };
 
@@ -867,7 +867,7 @@ describe("handleTierEscalation — ADR-025 gap #2: cross-agent escalation proven
       expect(record.fromAgent).toBe("claude");
       expect(record.toAgent).toBe("codex");
     } finally {
-      _tierEscalationDeps.savePRD = origSavePRD;
+      _tierEscalationDeps.savePrdProgress = origSavePRD;
     }
   });
 });
@@ -889,9 +889,9 @@ describe("handleTierEscalation — runtime-crash retry-same (US-002)", () => {
     const mod = await import("@/execution/escalation");
     const { handleTierEscalation, _tierEscalationDeps } = mod;
 
-    const origSavePRD = _tierEscalationDeps.savePRD;
+    const origSavePRD = _tierEscalationDeps.savePrdProgress;
     let saveCalls = 0;
-    _tierEscalationDeps.savePRD = () => {
+    _tierEscalationDeps.savePrdProgress = () => {
       saveCalls++;
       return Promise.resolve();
     };
@@ -949,7 +949,7 @@ describe("handleTierEscalation — runtime-crash retry-same (US-002)", () => {
       // existing in-flight PRD with a tier-unchanged-but-prdDirty=true record
       expect(saveCalls).toBe(0);
     } finally {
-      _tierEscalationDeps.savePRD = origSavePRD;
+      _tierEscalationDeps.savePrdProgress = origSavePRD;
     }
   });
 
@@ -957,8 +957,8 @@ describe("handleTierEscalation — runtime-crash retry-same (US-002)", () => {
     const mod = await import("@/execution/escalation");
     const { handleTierEscalation, _tierEscalationDeps } = mod;
 
-    const origSavePRD = _tierEscalationDeps.savePRD;
-    _tierEscalationDeps.savePRD = () => Promise.resolve();
+    const origSavePRD = _tierEscalationDeps.savePrdProgress;
+    _tierEscalationDeps.savePrdProgress = () => Promise.resolve();
 
     try {
       const story = makeStory({
@@ -1019,7 +1019,7 @@ describe("handleTierEscalation — runtime-crash retry-same (US-002)", () => {
       // The story in the result must also be the same reference (no spread)
       expect(result.prd.userStories[0]).toBe(story);
     } finally {
-      _tierEscalationDeps.savePRD = origSavePRD;
+      _tierEscalationDeps.savePrdProgress = origSavePRD;
     }
   });
 });
