@@ -252,10 +252,23 @@ function openTranscriptStore(name: string, opts: OpenSessionOpts): TranscriptSto
 /**
  * Records, or clears, the session's system prompt at open. A helper so that
  * openNativeSession gains no branch.
+ *
+ * `providerInstructions` (the rendered `## MCP servers` section, #2517) is
+ * folded in HERE rather than kept in a map of its own: the model sees one
+ * `system` string, and every consumer of `state.systemPrompts`
+ * (`systemFieldFor`, the adapter's context-budget setup) keeps working
+ * unchanged.
  */
-function recordSystemPrompt(state: NativeSessionState, name: string, systemPrompt: string | undefined): void {
-  if (systemPrompt === undefined) state.systemPrompts.delete(name);
-  else state.systemPrompts.set(name, systemPrompt);
+function recordSystemPrompt(
+  state: NativeSessionState,
+  name: string,
+  prompts: { readonly systemPrompt?: string; readonly providerInstructions?: string },
+): void {
+  const parts = [prompts.systemPrompt, prompts.providerInstructions].filter(
+    (part): part is string => part !== undefined && part !== "",
+  );
+  if (parts.length === 0) state.systemPrompts.delete(name);
+  else state.systemPrompts.set(name, parts.join("\n\n"));
 }
 
 /** The request field for the session's system prompt: `{ system }`, or `{}` when it has none. */
@@ -286,7 +299,7 @@ export async function openNativeSession(
   else state.transcriptOwners.delete(name);
   if (opts.carryHistoryAcrossModels === true) state.carryHistoryAcrossModels.add(name);
   else state.carryHistoryAcrossModels.delete(name);
-  recordSystemPrompt(state, name, opts.systemPrompt);
+  recordSystemPrompt(state, name, opts);
   const instructions = await openRepositoryInstructions(name, opts, store);
   state.repositoryInstructions.set(name, instructions);
   state.transcripts.set(name, {

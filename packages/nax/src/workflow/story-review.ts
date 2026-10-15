@@ -69,6 +69,9 @@ export async function runStoryReview(
     packagePath,
     concerns,
     gates,
+    // US-009: the e2e gate runs on the host, so a journey it covers is not something the reviewer
+    // could not verify — but only when the project declares that command.
+    e2eGate: sc.config.quality?.commands?.e2e !== undefined,
   });
   const outcome = await underReviewLimit(
     sc,

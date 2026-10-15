@@ -17,8 +17,26 @@ type SrtModule = typeof import("@anthropic-ai/sandbox-runtime");
 type SrtRuntimeConfig = Parameters<SrtModule["SandboxManager"]["initialize"]>[0];
 type SrtNetwork = SrtRuntimeConfig["network"];
 
+/**
+ * The slice of the srt module this backend calls. Narrowed on purpose: this seam
+ * is what a test replaces, and a double for the whole module needs an
+ * `as unknown as` cast, which test/ forbids (check-test-as-unknown-as). The real
+ * `typeof import(...)` satisfies this structurally, so nothing is lost.
+ */
+type SrtModuleSlice = {
+  SandboxManager: Pick<
+    SrtModule["SandboxManager"],
+    | "initialize"
+    | "isSupportedPlatform"
+    | "wrapWithSandboxArgv"
+    | "annotateStderrWithSandboxFailures"
+    | "cleanupAfterCommand"
+    | "reset"
+  >;
+};
+
 export const _srtBackendDeps = {
-  load: (): Promise<SrtModule> => import("@anthropic-ai/sandbox-runtime"),
+  load: (): Promise<SrtModuleSlice> => import("@anthropic-ai/sandbox-runtime"),
   platform: (): NodeJS.Platform => process.platform,
   mkdir,
 };
@@ -30,10 +48,17 @@ export const _srtBackendDeps = {
  * `network`, so the object must exist. This is the one cast in the module; the
  * live suite pins the behaviour (open => no proxy variables in the argv), so
  * an srt bump that changes it fails a test rather than silently restricting.
+ *
+ * US-002 (#2538): `allowLocalBinding` rides along. srt reads it once per process
+ * from THIS object (`getAllowLocalBinding`, sandbox-manager.js:1171), never from
+ * a per-command `customConfig`, so it is emitted only here. Only `true` is
+ * emitted: srt's default is off, so absent and `false` are equivalent, and the
+ * policy type (`SandboxNetworkPolicy`) cannot express an explicit `false`.
  */
-function srtNetwork(allowedDomains: readonly string[] | undefined): SrtNetwork {
-  if (allowedDomains !== undefined) return { allowedDomains: [...allowedDomains], deniedDomains: [] };
-  const open: Pick<SrtNetwork, "deniedDomains"> = { deniedDomains: [] };
+function srtNetwork(allowedDomains: readonly string[] | undefined, allowLocalBinding?: boolean): SrtNetwork {
+  const localBinding = allowLocalBinding === true ? { allowLocalBinding: true as const } : {};
+  if (allowedDomains !== undefined) return { allowedDomains: [...allowedDomains], deniedDomains: [], ...localBinding };
+  const open: Pick<SrtNetwork, "deniedDomains" | "allowLocalBinding"> = { deniedDomains: [], ...localBinding };
   return open as SrtNetwork;
 }
 
@@ -44,21 +69,24 @@ function customConfig(policy: SandboxPolicy): Partial<SrtRuntimeConfig> {
       allowWrite: [...policy.writeRoots],
       denyWrite: [...policy.denyWrite],
     },
+    // US-002: `allowLocalBinding` is deliberately NOT here. srt applies it
+    // process-wide, from the `initialize` config, so a copy on the per-command
+    // config would promise a per-command effect it does not have.
     ...(policy.network.allowedDomains !== undefined ? { network: srtNetwork(policy.network.allowedDomains) } : {}),
   };
 }
 
 export function createSrtBackend(network: SandboxConfig["network"]): SandboxBackend {
-  let initialized: Promise<SrtModule> | undefined;
-  let loaded: SrtModule | undefined;
+  let initialized: Promise<SrtModuleSlice> | undefined;
+  let loaded: SrtModuleSlice | undefined;
   let inFlight = 0;
 
-  function initialize(): Promise<SrtModule> {
+  function initialize(): Promise<SrtModuleSlice> {
     initialized ??= (async () => {
       const mod = await _srtBackendDeps.load();
       if (_srtBackendDeps.platform() === "darwin") await _srtBackendDeps.mkdir(SRT_MACOS_TMPDIR, { recursive: true });
       await mod.SandboxManager.initialize({
-        network: srtNetwork(network.allowedDomains),
+        network: srtNetwork(network.allowedDomains, network.allowLocalBinding),
         filesystem: { denyRead: [], allowWrite: [], denyWrite: [] },
       } as SrtRuntimeConfig);
       loaded = mod;

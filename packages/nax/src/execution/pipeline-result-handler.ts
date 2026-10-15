@@ -18,7 +18,7 @@ import type { StoryMetrics } from "../metrics";
 import type { PipelineRunResult } from "../pipeline/runner";
 import type { PluginRegistry } from "../plugins";
 import type { PostRunStatusWriter } from "../prd";
-import { countStories, markStoryFailed, markStoryPaused, savePRD } from "../prd";
+import { countStories, markStoryFailed, markStoryPaused, savePrdProgress } from "../prd";
 import type { PRD, UserStory } from "../prd/types";
 import type { routeTask } from "../routing";
 import { storySpendUsd } from "../runtime";
@@ -40,6 +40,7 @@ import { appendProgress } from "./progress";
 export const _resultHandlerDeps = {
   spawn,
   existsSync,
+  savePrdProgress,
   worktreeManager: new WorktreeManager(),
   mergeEngine: new MergeEngine(new WorktreeManager()),
   handleTierEscalation,
@@ -177,7 +178,7 @@ async function recordNaxOrphanOwnership(
  *
  * - The executor answers `prdDirty: true` by **reloading from disk**
  *   (`unified-executor.ts:484-486`), which would restore `passed` and discard
- *   the correction. The `savePRD` here is what makes it stick.
+ *   the correction. The `savePrdProgress` here is what makes it stick.
  * - `isComplete(prd)` / `countStories(prd)` read story status, so leaving it
  *   `passed` lets the whole run report complete for code that is not on the branch.
  *
@@ -187,7 +188,7 @@ async function recordNaxOrphanOwnership(
  */
 async function failStoryAfterMerge(ctx: PipelineHandlerContext, prd: PRD, reason: string): Promise<void> {
   markStoryFailed(prd, ctx.story.id, undefined, undefined, ctx.statusWriter);
-  await savePRD(prd, ctx.prdPath);
+  await _resultHandlerDeps.savePrdProgress(prd, ctx.prdPath, ctx.story.id, "failed");
 
   if (ctx.featureDir) {
     await appendProgress(ctx.featureDir, ctx.story.id, "failed", `${ctx.story.title} — ${reason}`);
@@ -436,7 +437,7 @@ export async function handlePipelineFailure(
         ? await verifyEscalationQuotes(rawPauseReason, ctx.workdir, ctx.story.id)
         : rawPauseReason;
       markStoryPaused(prd, ctx.story.id, pauseReason || undefined);
-      await savePRD(prd, ctx.prdPath);
+      await _resultHandlerDeps.savePrdProgress(prd, ctx.prdPath, ctx.story.id, "paused");
       prdDirty = true;
       logger?.warn("pipeline", "Story paused", { storyId: ctx.story.id, reason: pipelineResult.reason });
       // EXEC-002: Remove worktree directory on pause (keep branch for diagnostics).
@@ -477,7 +478,7 @@ export async function handlePipelineFailure(
         pipelineResult.stoppedAtStage,
         ctx.statusWriter,
       );
-      await savePRD(prd, ctx.prdPath);
+      await _resultHandlerDeps.savePrdProgress(prd, ctx.prdPath, ctx.story.id, "failed");
       prdDirty = true;
       logger?.error("pipeline", "Story failed", { storyId: ctx.story.id, reason: pipelineResult.reason });
       // EXEC-002: All tiers exhausted — remove the worktree directory but keep the branch

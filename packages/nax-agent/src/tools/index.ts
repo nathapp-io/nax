@@ -22,6 +22,7 @@ export { gitExcludePathspecsOf, gitIgnorePatternsOf } from "./protected-paths.ts
 export * from "./provider-adapt.ts";
 export * from "./provider-advertise.ts";
 export * from "./provider-grants.ts";
+export * from "./provider-instructions.ts";
 export * from "./provider-sanitize.ts";
 export * from "./provider-types.ts";
 export { readTool } from "./read.ts";

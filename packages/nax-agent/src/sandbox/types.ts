@@ -12,6 +12,15 @@ export type SandboxBackendName = "srt";
 export interface SandboxNetworkPolicy {
   /** Absent = unrestricted. */
   readonly allowedDomains?: readonly string[];
+  /**
+   * US-002: srt may let a command bind to -- and reach -- loopback ports, so a
+   * DB-backed test run sees a local server that is up (#2538).
+   *
+   * `true` only. srt's own default is off, so absent and `false` are the same
+   * thing to it, and a policy that cannot express "off" cannot contradict the
+   * config it was built from.
+   */
+  readonly allowLocalBinding?: true;
 }
 
 export interface SandboxPolicy {

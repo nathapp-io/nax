@@ -21,7 +21,7 @@ import { appendProgress } from "@/execution";
 import { checkReviewGate, isTriggerEnabled } from "@/interaction";
 import { getLogger } from "@/logger";
 import { collectBatchMetrics, collectStoryMetrics } from "@/metrics";
-import { countStories, markStoryPassed, savePRD } from "@/prd";
+import { commitPrdProgress, countStories, markStoryPassed, savePRD } from "@/prd";
 import { storySpendUsd } from "@/runtime";
 import { GIT_TIMEOUT_MS } from "@/utils/git";
 import { NAX_OWNED_TOP_EXCLUDE_PATHSPECS } from "@/utils/nax-owned-paths";
@@ -203,6 +203,15 @@ export const completionStage: PipelineStage = {
     // Save PRD (skipped in parallel worktree mode — unified executor is the single writer)
     if (persistPrd) {
       await _completionDeps.savePRD(ctx.prd, prdPath);
+      // #2533: commit the status write on its own, so the next story's agent
+      // never sees an unexplained modification and `autoCommitIfDirty` cannot
+      // sweep it into someone else's commit. Best-effort (never throws).
+      await _completionDeps.commitPrdProgress({
+        prdPath,
+        feature: ctx.prd.feature,
+        storyId: ctx.story.id,
+        label: "passed",
+      });
     }
 
     logHighMemoryCheckpoint(logger, ctx);
@@ -409,6 +418,7 @@ async function getDiffFilePaths(workdir: string, baseRef: string | undefined): P
 export const _completionDeps = {
   checkReviewGate,
   savePRD,
+  commitPrdProgress,
   getDiffText,
   getDiffFilePaths,
   readTextStreamPrefix,

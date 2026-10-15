@@ -34,6 +34,12 @@ export interface McpConnection {
   /** The stdio child process pid; null for HTTP. Read before close() — the SDK may clear it after. */
   readonly pid: number | null;
   readonly tools: readonly McpToolInfo[];
+  /**
+   * The server's own `initialize` instructions — how to use it, in its words
+   * (#2517). Absent when it sent none (or an empty string): an MCP server that
+   * says nothing must not produce an empty prompt section.
+   */
+  readonly instructions?: string;
   /** Server-side tool errors are `isError` results; transport failures throw McpCallError. */
   call(name: string, input: unknown, opts: McpCallOptions): Promise<McpCallResult>;
   /** stdio only: called once when the process exits without close() having been called. */

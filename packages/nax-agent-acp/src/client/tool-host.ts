@@ -7,7 +7,8 @@
  * refuses to reuse a stateless transport. The token exists before the host
  * listens, so it joins the session's redaction set from the start (D4-i). stop()
  * revokes the token, aborts calls, drops open connections and closes the port
- * (D4-l).
+ * (D4-l). The host's `initialize` result carries the session's provider
+ * instructions when the backend supplied them (#2517).
  */
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer, type Server as HttpServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -33,6 +34,16 @@ const BEARER = "Bearer ";
 /** MCP-level server identity shown to the agent; not the package version. */
 const SERVER_INFO = { name: TOOL_HOST_SERVER_NAME, version: "1.0.0" };
 
+export interface ToolHostOptions {
+  /**
+   * nax#2517: the MCP `initialize` result's `instructions`, so the agent's own
+   * MCP client receives the same `## MCP servers` text a native session is
+   * given. The SDK drops an empty one (`server/index.js`), and so does the
+   * backend before it gets here.
+   */
+  readonly instructions?: string;
+}
+
 export interface ToolHost {
   /** Known before start(), so every redaction set can include it. */
   readonly token: string;
@@ -51,6 +62,8 @@ export interface ToolHost {
 interface HostState {
   readonly token: string;
   readonly calls: ToolCalls;
+  /** nax#2517: what every MCP `initialize` on this host answers with; absent means none. */
+  readonly instructions: string | undefined;
   /** Aborted by stop(): every call's signal includes it, so calls answer even where a dropped socket fires nothing. */
   readonly stopped: AbortController;
   port: number;
@@ -131,7 +144,10 @@ function readBody(req: IncomingMessage): Promise<Body> {
 async function serveMcp(state: HostState, req: IncomingMessage, res: ServerResponse, body: unknown): Promise<void> {
   const gone = new AbortController();
   const signal = AbortSignal.any([gone.signal, state.stopped.signal]);
-  const server = new Server(SERVER_INFO, { capabilities: { tools: {} } });
+  const server = new Server(SERVER_INFO, {
+    capabilities: { tools: {} },
+    ...(state.instructions === undefined ? {} : { instructions: state.instructions }),
+  });
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: state.calls.list() }));
   server.setRequestHandler(CallToolRequestSchema, (request) =>
     state.calls.call(request.params.name, request.params.arguments, signal),
@@ -192,8 +208,22 @@ async function close(http: HttpServer): Promise<void> {
   await race(closed, { timeoutMs: CLOSE_WAIT_MS });
 }
 
-export function createToolHost(calls: ToolCalls, token: string = newToolHostToken()): ToolHost {
-  const state: HostState = { token, calls, stopped: new AbortController(), port: 0 };
+/**
+ * `opts.instructions` (nax#2517) rides every MCP `initialize` this host answers:
+ * the agent's MCP client reads it there, not from the prompt.
+ */
+export function createToolHost(
+  calls: ToolCalls,
+  token: string = newToolHostToken(),
+  opts: ToolHostOptions = {},
+): ToolHost {
+  const state: HostState = {
+    token,
+    calls,
+    instructions: opts.instructions,
+    stopped: new AbortController(),
+    port: 0,
+  };
   const http = createServer((req, res) => {
     void handle(state, req, res).catch(() => failed(res));
   });

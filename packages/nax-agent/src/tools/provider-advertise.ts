@@ -51,6 +51,37 @@ export interface ResolvedProviderTools {
    * back apart (src/tools/provider-adapt.ts's header).
    */
   readonly entries: readonly ProviderGrantEntry[];
+  /**
+   * What each attached provider that still advertises a tool says about using
+   * it (#2517), in provider order — the raw texts, not the rendered section:
+   * rendering is a prompt concern (`provider-instructions.ts`), and a caller
+   * that reorders or drops entries must be able to (nax US-005 renders them).
+   *
+   * ABSENT when no provider contributed one, so "nobody spoke" and "everyone
+   * was silent" stay distinguishable rather than collapsing to `[]`.
+   */
+  readonly instructions?: readonly { providerId: string; text: string }[];
+}
+
+/**
+ * One provider's instructions, or `undefined` when it has none to give.
+ *
+ * A provider that throws costs one warn and nothing else: its tools stay
+ * advertised, because instructions are an aid and a broken aid must never
+ * withdraw a working capability. Never rejects.
+ */
+async function instructionsFor(provider: ToolProvider, workdir: string): Promise<string | undefined> {
+  if (provider.instructions === undefined) return undefined;
+  try {
+    const text = await provider.instructions(workdir);
+    return typeof text === "string" && text !== "" ? text : undefined;
+  } catch (error) {
+    getSafeLogger()?.warn("mcp", `[provider] ${provider.id} instructions failed`, {
+      workdir,
+      reason: String(error),
+    });
+    return undefined;
+  }
 }
 
 export async function resolveProviderTools(
@@ -72,6 +103,7 @@ export async function resolveProviderTools(
   const skipped: { providerId: string; reason: "stage-mismatch"; stages: readonly string[] }[] = [];
   const withheld: { providerId: string; localName: string; reason: "not-admitted" }[] = [];
   const providerIdByTool = new Map<string, string>();
+  const instructions: { providerId: string; text: string }[] = [];
 
   for (const provider of providers) {
     if (!providerAttachesTo(provider, stage)) {
@@ -93,12 +125,28 @@ export async function resolveProviderTools(
         localNames.push(tool.localName);
       }
       entries.push({ providerId: provider.id, localNames });
+      // Only a provider the model can actually use gets to speak: instructions
+      // for a capability `admits` withheld would describe tools that are not in
+      // the list, which is worse than saying nothing (#2517).
+      if (localNames.length > 0) {
+        const text = await instructionsFor(provider, workdir);
+        if (text !== undefined) instructions.push({ providerId: provider.id, text });
+      }
     } catch (error) {
       failures.push({ providerId: provider.id, reason: String(error) });
     }
   }
 
-  return { tools, grants: expandProviderGrants(entries), failures, skipped, withheld, providerIdByTool, entries };
+  return {
+    tools,
+    grants: expandProviderGrants(entries),
+    failures,
+    skipped,
+    withheld,
+    providerIdByTool,
+    entries,
+    ...(instructions.length > 0 ? { instructions } : {}),
+  };
 }
 
 /**

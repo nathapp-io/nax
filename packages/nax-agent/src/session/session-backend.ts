@@ -67,6 +67,13 @@ export interface BackendOpenContext {
   readonly openSignal: AbortSignal;
   /** nax#2500: present only for profiles review/full when the embedder supplied one. */
   readonly sandbox?: import("#src/sandbox/types").SessionSandbox;
+  /**
+   * The rendered `## MCP servers` section for this open (#2517). The ACP
+   * backend (nax-agent-acp) offers it to its tool host, so the agent's own MCP
+   * client receives it in `initialize`; the native backend leaves it alone —
+   * native reaches the same text through `OpenSessionOpts.providerInstructions`.
+   */
+  readonly providerInstructions?: string;
 }
 
 export interface OpenedBackend {

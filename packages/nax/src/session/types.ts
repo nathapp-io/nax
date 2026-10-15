@@ -156,6 +156,7 @@ export interface OpenSessionRequest {
    * adapters ignore all three.
    */
   providerTools?: readonly import("@nathapp/nax-agent").CodingTool[];
+  providerInstructions?: string;
   declaredTools?: readonly string[];
   /** nax#2500: dispatch sandbox for ACP backends that run their own shell. */
   sandbox?: import("@nathapp/nax-agent").SessionSandbox;

@@ -23,6 +23,7 @@ import {
   type ProtectedPathsPolicy,
   partitionMcpRules,
   type ResolvedProviderTools,
+  renderProviderInstructions,
   resolveProviderTools,
   runTmpRoot,
   sessionSandboxFrom,
@@ -519,7 +520,16 @@ export async function resolveCodingToolSupport(
     stage: options.pipelineStage ?? "run",
     declaredTools: declaredWithProviders,
   });
+  const providerInstructions = renderProviderInstructions(providerResult.instructions ?? []);
+  if (providerInstructions !== undefined) {
+    getSafeLogger()?.info("mcp", "Provider instructions attached", {
+      storyId: options.storyId,
+      providerIds: providerResult.instructions?.map(({ providerId }) => providerId),
+      length: providerInstructions.length,
+    });
+  }
   const support = buildCodingToolSupport({
+    ...(providerInstructions !== undefined ? { providerInstructions } : {}),
     root: options.codingToolRoot,
     pipelineStage: options.pipelineStage ?? "run",
     // No `repoRoot`: post single-frame redesign (PR2) it equals `root`, so

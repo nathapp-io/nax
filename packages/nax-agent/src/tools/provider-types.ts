@@ -36,6 +36,18 @@ export interface ToolProvider {
    * run executes stories in parallel worktrees.
    */
   tools(workdir: string): Promise<readonly ProviderTool[]>;
+  /**
+   * What the provider says about USING it (#2517), with the same
+   * `workdir` contract as `tools` — an MCP server's own `initialize`
+   * instructions, plus whatever the host configured. Optional: a provider with
+   * nothing to say contributes no section.
+   *
+   * Called only for a provider that attached to this stage AND still has at
+   * least one advertised tool after `admits`, so instructions never describe a
+   * capability the model cannot see, and an empty or throwing answer costs the
+   * caller nothing (`provider-advertise.ts`).
+   */
+  instructions?(workdir: string): Promise<string | undefined>;
 }
 
 /**

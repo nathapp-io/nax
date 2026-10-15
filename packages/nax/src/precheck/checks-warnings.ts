@@ -12,6 +12,7 @@ import type { ProjectProfile } from "../config/runtime-types";
 import type { PrecheckConfig } from "../config/selectors";
 import type { PRD } from "../prd/types";
 import { activeRetiredEntries } from "../utils/gitignore";
+import { findIgnoredNaxTrackedPaths, ignoredNaxPathMessage } from "../utils/ignored-nax-paths";
 import type { Check } from "./types";
 
 /** Injectable Bun.which for testability */
@@ -213,6 +214,11 @@ async function hasPackageScript(workdir: string, name: string): Promise<boolean>
 /**
  * Check if .gitignore covers nax runtime files.
  * Patterns: nax.lock, runs/, .nax-pids, .nax-wt/
+ *
+ * Also fails when a `.gitignore` rule hides a file nax commits — the ledger,
+ * `spec.md`, `prd.json` (US-007, nax#2534). git never reports an ignored file, so
+ * a wholesale feature-directory rule silently drops the rulings the PR body
+ * cites; the message names the path, its rule and the two fixes.
  */
 export async function checkGitignoreCoversNax(workdir: string): Promise<Check> {
   const gitignorePath = `${workdir}/.gitignore`;
@@ -246,11 +252,15 @@ export async function checkGitignoreCoversNax(workdir: string): Promise<Check> {
   // A retired entry still in force hides files nax now expects to be committed
   // (the acceptance tests), so it is as much a warning as a missing one.
   const retired = activeRetiredEntries(content);
-  const passed = missing.length === 0 && retired.length === 0;
+  // The opposite failure: an entry that is present but too broad, which hides the
+  // files this check's `patterns` list deliberately insists stay committable.
+  const hidden = await findIgnoredNaxTrackedPaths(workdir);
+  const passed = missing.length === 0 && retired.length === 0 && hidden.length === 0;
 
   const problems = [
     ...(missing.length > 0 ? [`.gitignore missing patterns: ${missing.join(", ")}`] : []),
     ...(retired.length > 0 ? [`.gitignore still ignores files nax now commits — remove: ${retired.join(", ")}`] : []),
+    ...hidden.map(ignoredNaxPathMessage),
   ];
 
   return {

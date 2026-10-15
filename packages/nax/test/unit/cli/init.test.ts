@@ -11,11 +11,12 @@ import { afterEach, beforeEach, describe, expect, it, test } from "bun:test";
 import { existsSync, rmSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { makeTempDir, withTempDir } from "@test/helpers";
+import { makeTempDir, withTempDir, withWarnSpy } from "@test/helpers";
 import { _initDeps, checkInitCollision, initCommand, initProject, validateProjectName } from "@/cli/init";
 import { generatePackageContextTemplate, initPackage } from "@/cli/init-context";
 import { globalConfigDir } from "@/config/paths";
 import { writeProjectIdentity } from "@/runtime";
+import { _ignoredNaxPathsDeps } from "@/utils/ignored-nax-paths";
 
 describe("initProject — creates the project config scaffold", () => {
   test("creates config.json, constitution.md, hooks/ and features/; config.json has no prompts.overrides", async () => {
@@ -168,6 +169,45 @@ describe("initProject — re-running is idempotent", () => {
       await initProject(tempDir);
 
       expect(await Bun.file(join(tempDir, ".gitignore")).text()).toContain("nax.lock");
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// US-007 (#2534): nax-tracked files a broad .gitignore rule hides
+// ---------------------------------------------------------------------------
+
+describe("initProject — warns about nax-tracked files the project ignores (US-007)", () => {
+  const originalDeps = { ..._ignoredNaxPathsDeps };
+  const RULE = ".gitignore:4:**/.nax/features/*/";
+  const PATH = ".nax/features/_probe/prd.json";
+  afterEach(() => Object.assign(_ignoredNaxPathsDeps, originalDeps));
+
+  /** init's own `logger.warn("init", …)` records, in order. */
+  async function initWarns(tempDir: string): Promise<string[]> {
+    return withWarnSpy(async (warnSpy) => {
+      await initProject(tempDir);
+      return warnSpy.mock.calls.filter((call) => call[0] === "init").map((call) => String(call[1]));
+    });
+  }
+
+  test("AC-12: one hidden path logs one warn naming that path and its rule", async () => {
+    await withTempDir(async (tempDir) => {
+      _ignoredNaxPathsDeps.git = async () => ({ stdout: `${RULE}\t${PATH}\n`, exitCode: 0 });
+
+      const warns = await initWarns(tempDir);
+
+      expect(warns).toHaveLength(1);
+      expect(warns[0]).toContain(PATH);
+      expect(warns[0]).toContain(RULE);
+    });
+  });
+
+  test("a project hiding none of them logs no warn", async () => {
+    await withTempDir(async (tempDir) => {
+      _ignoredNaxPathsDeps.git = async () => ({ stdout: "", exitCode: 1 });
+
+      expect(await initWarns(tempDir)).toEqual([]);
     });
   });
 });

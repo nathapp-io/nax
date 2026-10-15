@@ -58,6 +58,14 @@ export interface CodingToolSupport {
   };
   /** nax#2500: the dispatch launcher's sandbox as data, attached by the nax resolver for ACP opens. */
   readonly acpSandbox?: import("#src/sandbox/types").SessionSandbox;
+  /**
+   * The rendered `## MCP servers` section (nax#2517), built by the nax resolver
+   * with `renderProviderInstructions` from this hop's resolved provider
+   * instructions. The session open folds it into the session's `system` field
+   * (native) or hands it to the ACP tool host. ABSENT when no attached provider
+   * contributed instructions, so "no section" and "an empty one" stay distinct.
+   */
+  readonly providerInstructions?: string;
 }
 
 export function buildCodingToolSupport(args: {
@@ -161,6 +169,12 @@ export function buildCodingToolSupport(args: {
   launcher?: CommandLauncher;
   /** US-001: forwarded into ToolRunContext so Bash/Exec can SIGKILL on cancel. */
   abortSignal?: AbortSignal;
+  /**
+   * The rendered `## MCP servers` section for this hop (nax#2517), produced by
+   * the resolver from `ResolvedProviderTools.instructions`; returned on the
+   * support unchanged.
+   */
+  providerInstructions?: string;
 }): CodingToolSupport | undefined {
   if (args.declared.length === 0) return undefined;
   const grants = args.grants ?? [];
@@ -297,7 +311,21 @@ export function buildCodingToolSupport(args: {
     auditSink: sink,
     declaredTools: args.declared,
     ...(args.toolSurface !== undefined ? { toolSurface: args.toolSurface } : {}),
+    ...providerInstructionsField(args),
   };
+}
+
+/**
+ * The support's optional `providerInstructions` (#2517) as a spreadable field —
+ * ABSENT when unset, so `"providerInstructions" in support` answers "is there
+ * an MCP section?". A helper rather than an inline conditional because
+ * `buildCodingToolSupport` sits at its complexity baseline.
+ */
+function providerInstructionsField(args: {
+  providerInstructions?: string;
+}): Pick<CodingToolSupport, "providerInstructions"> {
+  if (args.providerInstructions === undefined) return {};
+  return { providerInstructions: args.providerInstructions };
 }
 
 /** The audit sink a support resolution records through; no dir ⇒ a non-recording sink. */

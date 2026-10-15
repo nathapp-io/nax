@@ -98,6 +98,7 @@ export * from "#src/tools/git-commit";
 export * from "#src/tools/grep";
 export * from "#src/tools/index";
 export { _instructionAccessDeps } from "#src/tools/instruction-access";
+export { _naxStateGuardDeps } from "#src/tools/nax-stash-restore";
 // S3-2: the port (nax supplies the policy behind it from its own module).
 export * from "#src/tools/owned-paths";
 export * from "#src/tools/package-managers";

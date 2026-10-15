@@ -50,12 +50,31 @@ export function createMcpProviders(args: {
   const lock = (): Promise<McpLockFile | undefined> => (lockPromise ??= read(args.projectRoot));
 
   return servers.map(([serverId, server]): ToolProvider => {
+    let checkedInstructions = false;
+    const instructions = async (workdir: string): Promise<string | undefined> => {
+      const poolText = await args.pool.instructions?.(serverId, workdir);
+      const configText = server.instructions?.replaceAll("{workdir}", () => workdir);
+      return [poolText, configText].filter((text) => text !== undefined && text.length > 0).join("\n\n") || undefined;
+    };
     return {
       id: serverId,
       kind: "discovered",
       stages: server.stages,
+      instructions,
       async tools(workdir: string): Promise<readonly ProviderTool[]> {
         const discovered = await args.pool.listTools(serverId, workdir);
+        // Claim before awaiting: concurrent listings and other workdirs must not warn twice.
+        if (!checkedInstructions) {
+          checkedInstructions = true;
+          const text = await instructions(workdir).catch(() => undefined);
+          warnWithheldInstructionTool({
+            serverId,
+            text,
+            discovered,
+            allowed: server.allowedTools,
+            storyId: args.storyId,
+          });
+        }
         if (discovered.length === 0) return [];
 
         const { admitted, withheld } = applyLock((await lock())?.servers[serverId], discovered);
@@ -94,5 +113,28 @@ export function createMcpProviders(args: {
         }));
       },
     };
+  });
+}
+
+/** One diagnostic per server; do not confuse a substring with a named tool. */
+function warnWithheldInstructionTool(args: {
+  serverId: string;
+  text: string | undefined;
+  discovered: readonly { name: string }[];
+  allowed: readonly string[] | undefined;
+  storyId: string | undefined;
+}): void {
+  if (!args.text || args.allowed === undefined) return;
+  const tool = args.discovered.find(({ name }) => {
+    if (args.allowed?.includes(name)) return false;
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`\\b${escaped}\\b`).test(args.text ?? "");
+  });
+  if (tool === undefined) return;
+  getSafeLogger()?.warn("mcp", `[provider] ${args.serverId} instructions name withheld tool ${tool.name}`, {
+    storyId: args.storyId,
+    serverId: args.serverId,
+    tool: tool.name,
+    reason: "allowedTools",
   });
 }

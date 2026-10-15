@@ -163,6 +163,8 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
     "Also grant the shared temp directories (os.tmpdir(), /tmp) to sandboxed commands. Off by default: temp writes stay inside this run's own temp root",
   "execution.sandbox.network": "Network policy for sandboxed commands",
   "execution.sandbox.network.allowedDomains": "Domains sandboxed commands may reach; absent means open",
+  "execution.sandbox.network.allowLocalBinding":
+    "Allow sandboxed commands to reach loopback ports when allowedDomains restricts the network; off when absent",
   "execution.commandSafety": "Command classifier: shadow rows, plus the optional flag-for-review guard",
   "execution.commandSafety.shadow": "Classifier endpoint settings; absent means off",
   "execution.commandSafety.shadow.url": "Classifier URL (loopback unless allowRemote)",
@@ -185,6 +187,8 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "quality.commands.formatFixScoped": "Scoped format fix command template for story-owned files (supports {{files}})",
   "quality.commands.test": "Custom test command",
   "quality.commands.build": "Custom build command",
+  "quality.commands.e2e": "Host-side end-to-end journey gate (runs last, outside the agent sandbox)",
+  "quality.commands.e2eSetup": "One-time host bootstrap for the e2e gate; never run by an agent",
   "quality.forceExit": "Append --forceExit to test command (prevents hangs)",
   "quality.detectOpenHandles": "Append --detectOpenHandles on timeout",
   "quality.detectOpenHandlesRetries": "Max retries with --detectOpenHandles",

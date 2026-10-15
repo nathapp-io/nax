@@ -97,23 +97,34 @@ export const WORKFLOW_REPLY_CONTRACT = `End your reply with exactly one fenced j
 
 Use NEEDS_CONTEXT when you need information the brief does not give you, and BLOCKED when you cannot proceed. Say what you need in "concerns".`;
 
+/**
+ * US-009 (nax#2530): browser e2e cannot launch inside the Bash sandbox, so the declared `e2e`
+ * command is the only way in. Rendered only when the project declares that gate — a prompt that
+ * names a command the project does not have would send the agent looking for it.
+ */
+const E2E_IMPLEMENTER_RULE =
+  'Browser e2e tests cannot launch inside the Bash sandbox. Run the e2e suite only with `RunCommand {"command":"e2e"}`; nax also runs it as a repository gate once every story is done.';
+
 export function buildWorkflowImplementPrompt(input: {
   storyId: string;
   briefPath: string;
   reportPath: string;
+  /** US-009: the project declares a host-side e2e gate, so the prompt says how to reach it. */
+  e2eGate?: boolean;
 }): string {
+  const e2e = input.e2eGate ? `${E2E_IMPLEMENTER_RULE}\n\n` : "";
   return `You are the implementer for story ${input.storyId}. Read the brief first: ${input.briefPath}. It is your requirements.
 
 ## How to work
-1. TDD for every acceptance criterion: write the test first, run it and see it failing, then write the code and see it passing. Run focused tests while you iterate, not the whole suite.
+1. TDD for every acceptance criterion: write the test, run it, and capture the failing run before you write the implementation for that criterion; then write the code and capture the passing run. Never stash, revert, move or copy aside implementation files to produce a failing run afterwards. Run focused tests while you iterate, not the whole suite.
 2. Commit your work with a conventional commit message. Commit before you reply.
 3. Self-review your diff before you reply: correctness, edge cases, and anything the brief asks for that you skipped.
 4. Do not dispatch sub-agents, helpers or reviewers. A reviewer checks your work after you reply.
 
-## Report
+${e2e}## Report
 Write ${input.reportPath} with these sections:
 - **What was built**
-- **TDD evidence**: for each AC, the failing run and the passing run (command and the relevant output lines). Missing evidence, or a test that asserts nothing, fails review.
+- **TDD evidence**: for each AC, the failing run and the passing run (command and the relevant output lines). If you did not capture the failing run, say so under **Decisions & assumptions**; then evidence that the test exercises the new code path is acceptable. Missing evidence without that note, or a test that asserts nothing, fails review.
 - **Files changed**
 - **Decisions & assumptions**: every judgment call you made and why.
 

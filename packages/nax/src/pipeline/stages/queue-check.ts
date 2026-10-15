@@ -15,12 +15,21 @@ import {
   injectStory,
   markStorySkipped,
   resetStoryToPending,
-  savePRD,
+  savePrdProgress,
   setStoryPriority,
   validateInjectedStory,
 } from "@/prd";
 import type { QueueCommand } from "@/queue";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
+
+/**
+ * Swappable deps for testing (avoids `mock.module()`, which leaks in Bun 1.x).
+ *
+ * `savePrdProgress` writes the PRD *and commits it* (#2533) — every command
+ * below mutates a story's status, and an uncommitted status write is what the
+ * next story's agent sees as an unexplained modification.
+ */
+export const _queueCheckDeps = { savePrdProgress };
 
 /**
  * Resolve the PRD path for this pipeline context. Prefers the feature directory
@@ -135,7 +144,7 @@ async function processQueueCommands(
       }
 
       // Save PRD path from featureDir
-      await savePRD(ctx.prd, resolvePrdPath(ctx));
+      await _queueCheckDeps.savePrdProgress(ctx.prd, resolvePrdPath(ctx), "_run", "aborted");
       logDroppedCommands(logger, ctx, queueCommands, index);
 
       return { action: "pause", reason: "User requested abort" };
@@ -144,7 +153,7 @@ async function processQueueCommands(
     if (cmd.type === "RETRY") {
       logger.warn("queue", "Retrying story by user request", { storyId: cmd.storyId });
       resetStoryToPending(ctx.prd, cmd.storyId);
-      await savePRD(ctx.prd, resolvePrdPath(ctx));
+      await _queueCheckDeps.savePrdProgress(ctx.prd, resolvePrdPath(ctx), cmd.storyId, "retry");
       continue;
     }
 
@@ -154,7 +163,7 @@ async function processQueueCommands(
         priority: cmd.value,
       });
       setStoryPriority(ctx.prd, cmd.storyId, cmd.value);
-      await savePRD(ctx.prd, resolvePrdPath(ctx));
+      await _queueCheckDeps.savePrdProgress(ctx.prd, resolvePrdPath(ctx), cmd.storyId, "priority");
       continue;
     }
 
@@ -179,7 +188,7 @@ async function processQueueCommands(
           storyFile: cmd.storyFile,
         });
 
-        await savePRD(ctx.prd, resolvePrdPath(ctx));
+        await _queueCheckDeps.savePrdProgress(ctx.prd, resolvePrdPath(ctx), story.id, "inject");
       } catch (err) {
         logger.error("queue", "Failed to inject story — skipping INJECT command", {
           storyId: ctx.story?.id ?? "unknown",
@@ -201,7 +210,7 @@ async function processQueueCommands(
       // writing the PRD behind it would be two lies and a wasted write.
       if (markStorySkipped(ctx.prd, cmd.storyId)) {
         logger.warn("queue", "Skipping story by user request", { storyId: cmd.storyId });
-        await savePRD(ctx.prd, resolvePrdPath(ctx));
+        await _queueCheckDeps.savePrdProgress(ctx.prd, resolvePrdPath(ctx), cmd.storyId, "skipped");
       } else {
         logger.warn("queue", "SKIP names a story that is not in the PRD — ignoring", {
           storyId: cmd.storyId,

@@ -11,11 +11,15 @@ const MS_PER_SECOND = 1_000;
 
 /**
  * The declared commands that run the test suite (the keys
- * `resolveQualityTestCommands` reads, plus coverage). Only these get the
- * full-suite budget; lint/typecheck keep the runner default, matching the
- * harness's own lint/typecheck gates, so a hung watcher still dies quickly.
+ * `resolveQualityTestCommands` reads, plus coverage and the host-side e2e
+ * journey). Only these get the full-suite budget; lint/typecheck keep the
+ * runner default, matching the harness's own lint/typecheck gates, so a hung
+ * watcher still dies quickly. `e2e` belongs here for the same reason `test`
+ * does (#2530): a browser journey outlives the runner's 120s default by a wide
+ * margin, and the host gate that judges the agent's work runs it under the
+ * full-suite budget.
  */
-const SUITE_COMMAND_NAMES: ReadonlySet<string> = new Set(["test", "testScoped", "coverage"]);
+const SUITE_COMMAND_NAMES: ReadonlySet<string> = new Set(["test", "testScoped", "coverage", "e2e"]);
 
 /**
  * RULING F2: AgentRunOptions['config'] is typed as the agent-manager Pick
@@ -46,10 +50,23 @@ export interface DispatchConfigFields {
   suiteCommandTimeoutMs: number;
 }
 
+/**
+ * The declared commands a coding tool may run, from the dispatch's config
+ * slice. `e2eSetup` is dropped: it bootstraps the HOST (docker compose, a dev
+ * server) and belongs to nax's own e2e gate, never to the agent's sandboxed
+ * Bash (#2530). `e2e` itself stays declared — the agent may run the suite.
+ */
+function agentVisibleCommands(
+  commands: Partial<Record<string, QualityCommandSpec>>,
+): Partial<Record<string, QualityCommandSpec>> {
+  const { e2eSetup: _hostOnly, ...visible } = commands;
+  return visible;
+}
+
 export function extractDispatchConfigFields(config: WidenedDispatchConfig | undefined): DispatchConfigFields {
   const quality = config?.quality;
   return {
-    commands: quality?.commands ?? {},
+    commands: agentVisibleCommands(quality?.commands ?? {}),
     stripEnvVars: Array.isArray(quality?.stripEnvVars)
       ? quality.stripEnvVars.filter((value): value is string => typeof value === "string")
       : [],

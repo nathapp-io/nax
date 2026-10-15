@@ -22,6 +22,7 @@ export interface McpCallResult {
 }
 
 export interface McpConnection {
+  readonly instructions?: string;
   readonly serverId: string;
   readonly workdir: string;
   /** Child pid, for the runtime's PidRegistry. Null before start or after close. */

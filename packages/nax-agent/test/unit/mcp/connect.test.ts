@@ -21,8 +21,8 @@ afterEach(async () => {
   }
 });
 
-async function connectTo(tools: readonly FixtureTool[], pageSize?: number) {
-  const fixture = await inMemoryServer(tools, pageSize);
+async function connectTo(tools: readonly FixtureTool[], pageSize?: number, instructions?: string) {
+  const fixture = await inMemoryServer(tools, pageSize, instructions);
   cleanups.push(() => fixture.server.close());
   _mcpTransportDeps.create = (): TransportHandle => ({
     transport: fixture.clientTransport,
@@ -53,6 +53,18 @@ describe("connectMcp", () => {
   test("skips listed tools without a string name", async () => {
     const { connection } = await connectTo([{ name: "" }, { name: "ok" }]);
     expect(connection.tools.map((t) => t.name)).toEqual(["ok"]);
+    await connection.close();
+  });
+
+  test("carries the server's initialize instructions", async () => {
+    const { connection } = await connectTo([{ name: "a" }], undefined, "Call list_projects first");
+    expect(connection.instructions).toBe("Call list_projects first");
+    await connection.close();
+  });
+
+  test("a server with no initialize instructions leaves the field unset", async () => {
+    const { connection } = await connectTo([{ name: "a" }]);
+    expect(connection.instructions).toBeUndefined();
     await connection.close();
   });
 

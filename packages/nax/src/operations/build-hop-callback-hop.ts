@@ -421,6 +421,9 @@ export function prepareHopSession(input: HopInvocation, codingSupport: CodingToo
     // when provider tools resolved. Native ignores all three.
     ...(codingSupport?.declaredTools !== undefined ? { declaredTools: codingSupport.declaredTools } : {}),
     ...(codingSupport?.acpSandbox !== undefined ? { sandbox: codingSupport.acpSandbox } : {}),
+    ...(codingSupport?.providerInstructions !== undefined
+      ? { providerInstructions: codingSupport.providerInstructions }
+      : {}),
     ...(codingSupport?.acpDelivery !== undefined
       ? {
           providerTools: codingSupport.acpDelivery.tools,

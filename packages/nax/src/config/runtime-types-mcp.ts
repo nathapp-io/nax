@@ -19,6 +19,8 @@ export type McpStage =
 export interface McpServerConfig {
   /** Executable spawned over stdio. */
   command: string;
+  /** Repository hint; every {workdir} is replaced with the hop root. */
+  instructions?: string;
   args: string[];
   /** Overlaid on the inherited environment; never replaces PATH wholesale. */
   env: Record<string, string>;
