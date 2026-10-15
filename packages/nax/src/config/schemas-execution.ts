@@ -376,6 +376,22 @@ export const QualityConfigSchema = z.object({
       formatFixScoped: QualityCommandSpecSchema.optional(),
       build: QualityCommandSpecSchema.optional(),
       /**
+       * Host-side end-to-end journey gate (#2530). Runs as the last repo gate,
+       * on the host rather than inside an agent's sandbox: Chromium's
+       * `bootstrap_check_in` Mach service registration is denied under srt, so a
+       * browser journey can only run outside the sandbox. Layerable per-package
+       * via `.nax/mono/<pkg>/config.json`, like every other command here.
+       */
+      e2e: QualityCommandSpecSchema.optional(),
+      /**
+       * One-time bootstrap for {@link e2e} (e.g. `docker compose up -d`),
+       * run immediately before it, on the host. Never offered to a coding
+       * agent: it starts services on the host, and the agent's own sandboxed
+       * Bash is not where that belongs. A setup without an `e2e` command
+       * declares no gate.
+       */
+      e2eSetup: QualityCommandSpecSchema.optional(),
+      /**
        * Coverage gate (e.g. `bun run test:coverage`, `pytest --cov`). nax never
        * invokes this itself -- it exists so a coding agent can check whether it
        * met the project's coverage bar instead of guessing a script name and

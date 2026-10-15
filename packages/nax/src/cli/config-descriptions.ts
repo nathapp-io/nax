@@ -187,6 +187,8 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "quality.commands.formatFixScoped": "Scoped format fix command template for story-owned files (supports {{files}})",
   "quality.commands.test": "Custom test command",
   "quality.commands.build": "Custom build command",
+  "quality.commands.e2e": "Host-side end-to-end journey gate (runs last, outside the agent sandbox)",
+  "quality.commands.e2eSetup": "One-time host bootstrap for the e2e gate; never run by an agent",
   "quality.forceExit": "Append --forceExit to test command (prevents hangs)",
   "quality.detectOpenHandles": "Append --detectOpenHandles on timeout",
   "quality.detectOpenHandlesRetries": "Max retries with --detectOpenHandles",

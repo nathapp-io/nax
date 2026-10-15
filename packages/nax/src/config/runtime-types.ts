@@ -206,6 +206,10 @@ export interface QualityConfig {
     formatFix?: QualityCommandSpec;
     formatFixScoped?: QualityCommandSpec;
     build?: QualityCommandSpec;
+    /** Host-side e2e journey gate (#2530); last in the gate order. */
+    e2e?: QualityCommandSpec;
+    /** One-time host bootstrap for `e2e`; a setup without `e2e` declares no gate. */
+    e2eSetup?: QualityCommandSpec;
     /** Coverage gate (e.g. "bun run test:coverage"); agent affordance, never invoked by nax. */
     coverage?: QualityCommandSpec;
     /** One-time package init (e.g. "uv sync"/"bun install"); see schema for full docs. */
