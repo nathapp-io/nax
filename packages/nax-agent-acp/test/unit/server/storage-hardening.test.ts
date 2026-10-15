@@ -18,6 +18,7 @@ function setup() {
   let now = Date.parse("2026-10-09T00:00:00Z");
   let tick: () => void | Promise<void> = () => {};
   let interval = 0;
+  let handle: ReturnType<typeof setInterval> | undefined;
   const deps: StorageDeps = {
     dir,
     pid: 1000,
@@ -27,7 +28,8 @@ function setup() {
     setInterval: (fn, ms) => {
       tick = fn;
       interval = ms;
-      return setInterval(() => {}, 2 ** 30);
+      handle = setInterval(() => {}, 2 ** 30);
+      return handle;
     },
   };
   const path = join(dir, "a.lock");
@@ -41,6 +43,7 @@ function setup() {
       await tick();
     },
     interval: () => interval,
+    timer: () => handle,
   };
 }
 
@@ -87,6 +90,31 @@ test.each([false, true])("release retries contention and preserves a replacement
   } finally {
     await rm(guard, { recursive: true, force: true });
     await outcome;
+  }
+});
+
+test("a terminal release error still stops the heartbeat", async () => {
+  const s = setup();
+  const release = await s.store.acquireLock("a");
+  const handle = s.timer();
+  const originalRemove = _lockDeps.remove;
+  const originalClear = globalThis.clearInterval;
+  const cleared: unknown[] = [];
+  globalThis.clearInterval = ((timer?: Parameters<typeof clearInterval>[0]) => {
+    cleared.push(timer);
+    originalClear(timer);
+  }) as typeof clearInterval;
+  _lockDeps.remove = (path, options) => {
+    if (path === s.path) throw Object.assign(new Error("injected"), { code: "EIO" });
+    originalRemove(path, options);
+  };
+  try {
+    await expect(release()).rejects.toMatchObject({ code: "EIO" });
+    // An orphaned lock must age into stale recovery, not be refreshed forever.
+    expect(cleared).toContain(handle);
+  } finally {
+    _lockDeps.remove = originalRemove;
+    globalThis.clearInterval = originalClear;
   }
 });
 

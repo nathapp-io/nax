@@ -64,6 +64,57 @@ test("close retains cleanup ownership while waiting for a competing lock guard",
   await s.registry.closeAll();
 });
 
+test("closeAll stays bounded while lock cleanup waits on a live guard, then releases later", async () => {
+  const s = setupRegistry(dir(), OPTIONS);
+  const { sessionId } = await s.registry.create(s.input());
+  const path = join(s.dir, `${sessionId}.lock`);
+  const guard = `${path}.guard`;
+  await mkdir(guard);
+  await writeFile(join(guard, `${process.pid}.00000000-0000-0000-0000-000000000000`), "");
+  try {
+    const closing = s.registry.closeAll().then(
+      () => "closed",
+      () => "rejected",
+    );
+    let sentinel: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<string>((resolve) => {
+      sentinel = setTimeout(() => resolve("pending"), 300);
+    });
+    // shutdownWaitMs is 50: the deadline must cover lock cleanup, not only server.close().
+    expect(await Promise.race([closing, late])).toBe("closed");
+    clearTimeout(sentinel);
+    expect(s.lines.some((line) => line.message.includes("cleanup did not finish in time"))).toBe(true);
+    expect(await readFile(path, "utf8")).toContain("nonce");
+  } finally {
+    await rm(guard, { recursive: true, force: true });
+  }
+  // Ownership cleanup is deferred, not abandoned: the lock goes once the guard clears.
+  for (let i = 0; i < 100; i++) {
+    const gone = await readFile(path).then(
+      () => false,
+      () => true,
+    );
+    if (gone) break;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  await expect(readFile(path)).rejects.toMatchObject({ code: "ENOENT" });
+});
+
+test("closeAll still rejects when lock cleanup fails before the deadline", async () => {
+  const s = setupRegistry(dir(), OPTIONS);
+  const acquire = s.storage.acquireLock;
+  s.storage.acquireLock = async (id) => {
+    const release = await acquire(id);
+    return async () => {
+      await release();
+      throw new Error("release failed");
+    };
+  };
+  const { sessionId } = await s.registry.create(s.input());
+  await expect(s.registry.closeAll()).rejects.toThrow("release failed");
+  expect(s.registry.find(sessionId)).toBeUndefined();
+});
+
 test.each(["load", "resume"] as const)("cost survives a new registry and %s", async (method) => {
   const d = dir();
   const first = setupRegistry(d, OPTIONS, { scripts: [priced(0.5)] });

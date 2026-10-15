@@ -50,13 +50,29 @@ export async function closeEntries({
           await entry.release();
         }
       };
+      const deferred = (error: unknown) => {
+        logger.warn("session", "deferred session cleanup failed", { sessionId, error: messageOf(error) });
+      };
       if (outcome === "timeout" && entry.server.running) {
         // Bound shutdown, not ownership: a slow cancelled turn must still be
         // able to persist its cost before another process can resume it.
-        void closed.then(cleanup).catch((error: unknown) => {
-          logger.warn("session", "deferred session cleanup failed", { sessionId, error: messageOf(error) });
-        });
-      } else await cleanup();
+        void closed.then(cleanup).catch(deferred);
+        return;
+      }
+      // Cleanup is bounded too: a release waiting on a live lock guard keeps
+      // ownership in the background instead of hanging shutdown.
+      const cleaning = cleanup();
+      const cleanupLimit = waitAtMost(wait);
+      let settled: "cleaned" | "timeout";
+      try {
+        settled = await Promise.race([cleaning.then(() => "cleaned" as const), cleanupLimit.done]);
+      } finally {
+        cleanupLimit.cancel();
+      }
+      if (settled === "timeout") {
+        logger.warn("session", "session cleanup did not finish in time", { sessionId, waitMs: wait });
+        cleaning.catch(deferred);
+      }
     }),
   );
 }

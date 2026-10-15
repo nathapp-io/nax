@@ -111,7 +111,8 @@ async function releaseOwnedLock(path: string, nonce: string): Promise<void> {
       if (!(error instanceof SessionLockGuardBusy)) throw error;
       // Release owns cleanup until it can check the nonce under the guard.
       // Yield to the holder rather than abandoning a fresh lock on contention.
-      await sleep(10);
+      // Unref'd: a deferred release after bounded shutdown never keeps the process alive.
+      await sleep(10, undefined, { ref: false });
     }
   }
 }
@@ -146,7 +147,12 @@ export function acquireSessionLock(
   }, LOCK_HEARTBEAT_MS);
   timer.unref();
   return async () => {
-    await releaseOwnedLock(path, body.nonce);
-    clearInterval(timer);
+    try {
+      // The heartbeat stays live while release waits out contention.
+      await releaseOwnedLock(path, body.nonce);
+    } finally {
+      // A terminal release failure must let the lock age into stale recovery.
+      clearInterval(timer);
+    }
   };
 }
