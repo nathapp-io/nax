@@ -697,3 +697,96 @@ describe("publish progress log (US-005)", () => {
     for (const entry of ci) expect(Object.entries(entry.data ?? {})[0]).toEqual(["storyId", "_run"]);
   });
 });
+
+/**
+ * US-007 (nax#2534): a ledger commit that fails leaves the branch without the rulings the PR body
+ * cites, so publishing says how many are missing and keeps the PR a draft instead of asking the
+ * advisor to approve a PR it cannot back up.
+ */
+describe("publish reports a ledger it could not commit (US-007)", () => {
+  const LEDGER_REASON = "advisor ledger not committed: the branch is missing 3 advisor rulings";
+
+  /** A project dir whose feature ledger holds `rulings` non-empty lines (registered for cleanup). */
+  async function projectWithLedger(rulings: number): Promise<string> {
+    const dir = makeTempDir("wf-ledger-missing-");
+    dirs.push(dir);
+    const lines = Array.from({ length: rulings }, (_, i) => `{"id":"D-${i + 1}"}`).join("\n");
+    await Bun.write(join(dir, ".nax", "features", "f", "decisions.jsonl"), lines === "" ? "" : `${lines}\n`);
+    return dir;
+  }
+  const project = (dir: string) => makeFeatureContext({ projectDir: dir });
+
+  /** The `_run`-scoped warn messages `publish` emitted. */
+  async function warnsOf(fn: () => Promise<unknown>): Promise<string[]> {
+    return withWarnSpy(async (warnSpy) => {
+      await fn();
+      return warnSpy.mock.calls
+        .filter((c) => (c[2] as { storyId?: string } | undefined)?.storyId === "_run")
+        .map((c) => String(c[1]));
+    });
+  }
+
+  test("AC-13: `none` mode warns once, naming how many rulings the branch is missing", async () => {
+    const dir = await projectWithLedger(3);
+    wire({ ledgerThrowsAt: 1 });
+
+    const warns = await warnsOf(() => publish(withMode(project(dir), "none"), input()));
+
+    expect(warns).toHaveLength(1);
+    expect(warns[0]).toContain("the branch is missing 3 advisor rulings");
+  });
+
+  test("AC-14: `none` mode adds the ledger readiness reason", async () => {
+    const dir = await projectWithLedger(3);
+    wire({ ledgerThrowsAt: 1 });
+
+    const out = await publish(withMode(project(dir), "none"), input());
+
+    expect(out.reasons).toContain(LEDGER_REASON);
+  });
+
+  test("AC-15: pr mode keeps the PR a draft and never asks the advisor", async () => {
+    const dir = await projectWithLedger(3);
+    const calls = wire({ ci: "green", ledgerThrowsAt: 1 });
+    const asked: string[] = [];
+
+    const out = await publish(project(dir), input({ advisor: advisor(true, asked) }));
+
+    expect(asked).toEqual([]);
+    expect(out).toMatchObject({ outcome: "draft", ci: "green" });
+    expect(out.reasons).toContain(LEDGER_REASON);
+    expect(calls.at(-1)?.keepDraft).toBe(true);
+  });
+
+  test("AC-16: push mode adds the ledger reason to the pushed run's reasons", async () => {
+    const dir = await projectWithLedger(3);
+    wire({ ci: "green", ledgerThrowsAt: 1 });
+
+    const out = await publish(withMode(project(dir), "push"), input());
+
+    expect(out).toMatchObject({ outcome: "pushed", ci: "green" });
+    expect(out.reasons).toContain(LEDGER_REASON);
+  });
+
+  test("AC-17: a target-less publish (no forge) adds the ledger reason", async () => {
+    const dir = await projectWithLedger(3);
+    wire({ ledgerThrowsAt: 1 });
+    _featureDeps.detectForge = async () => null;
+
+    const out = await publish(project(dir), input());
+
+    expect(out.outcome).toBe("local-only");
+    expect(out.reasons).toContain(LEDGER_REASON);
+  });
+
+  test("AC-18: a ledger with no rulings adds no ledger reason", async () => {
+    const emptyLedger = await projectWithLedger(0);
+    wire({ ledgerThrowsAt: 1 });
+
+    const empty = await publish(withMode(project(emptyLedger), "none"), input());
+    expect(empty.reasons).toEqual([PUBLISH_DISABLED]);
+    // Nor does a project with no ledger file at all — there are no rulings to lose.
+    const missing = await publish(withMode(makeFeatureContext(), "none"), input());
+    expect(missing.reasons).toEqual([PUBLISH_DISABLED]);
+  });
+});
