@@ -16,8 +16,8 @@
  */
 
 import "../src/agent-runtime/install";
-import { afterAll } from "bun:test";
-import { writeFileSync } from "node:fs";
+import { afterAll, beforeAll } from "bun:test";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { _clientDeps } from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
@@ -28,12 +28,6 @@ import { _nativeCredentialDeps } from "../src/precheck/checks-native-credentials
 import { markTrusted } from "../src/trust";
 
 const isolatedGlobalDir = makeTempDir("nax-test-global-");
-afterAll(() => cleanupTempDir(isolatedGlobalDir));
-process.once("exit", () => cleanupTempDir(isolatedGlobalDir));
-
-process.env.NAX_GLOBAL_CONFIG_DIR = isolatedGlobalDir;
-configureNaxCredentials();
-delete process.env.NAX_RUNS_DIR;
 
 // ─── Trust gate ───────────────────────────────────────────────────────────────
 // The project trust gate refuses repository-controlled code -- plugins, hooks,
@@ -44,11 +38,30 @@ delete process.env.NAX_RUNS_DIR;
 // same entry in the store makes them trusted too. Tests of the untrusted path
 // clear the registry (useUntrustedRegistry) or point NAX_GLOBAL_CONFIG_DIR at
 // an empty directory.
-writeFileSync(
-  join(isolatedGlobalDir, "trust.json"),
-  `${JSON.stringify({ version: 1, folders: [{ path: "/", addedAt: new Date().toISOString(), via: "cli" }] }, null, 2)}\n`,
-);
-markTrusted("/");
+function provisionGlobalDir(): void {
+  mkdirSync(isolatedGlobalDir, { recursive: true });
+  process.env.NAX_GLOBAL_CONFIG_DIR = isolatedGlobalDir;
+  writeFileSync(
+    join(isolatedGlobalDir, "trust.json"),
+    `${JSON.stringify({ version: 1, folders: [{ path: "/", addedAt: new Date().toISOString(), via: "cli" }] }, null, 2)}\n`,
+  );
+  markTrusted("/");
+}
+
+// Lifecycle. `bun test` emits neither `exit` nor `beforeExit` on a normal finish
+// (probed on 1.4.3), so the root afterAll is what actually removes the
+// directory; the `exit` handler only covers an explicit process.exit(). Root
+// hooks run once per FILE while this module runs once per process, which is the
+// same thing serially but not under `--parallel --no-isolate`: there a worker
+// keeps this module across the files it runs, so the directory removed after
+// one file must be provisioned again, at the same path, before the next.
+provisionGlobalDir();
+beforeAll(provisionGlobalDir);
+afterAll(() => cleanupTempDir(isolatedGlobalDir));
+process.once("exit", () => cleanupTempDir(isolatedGlobalDir));
+
+configureNaxCredentials();
+delete process.env.NAX_RUNS_DIR;
 
 // ─── Outbound-notification isolation ──────────────────────────────────────────
 // telegramCreds() falls back to these ambient env vars when config carries no

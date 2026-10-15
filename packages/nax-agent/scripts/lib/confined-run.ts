@@ -76,12 +76,15 @@ export interface ConfinedCommandInput {
   readonly tmpDir: string;
   readonly paths: readonly string[];
   readonly timeoutMs: number;
+  /** `bun test --parallel=<n> --no-isolate` workers; absent runs the files serially. */
+  readonly parallel?: number;
 }
 
 export interface ConfinedRunInput {
   readonly packageDir: string;
   readonly paths: readonly string[];
   readonly timeoutMs?: number;
+  readonly parallel?: number;
 }
 
 /**
@@ -157,14 +160,19 @@ export async function confinedTestPolicy(input: ConfinedPolicyInput): Promise<Sa
  * The temp exports ride the command rather than an env overlay because srt
  * replaces the child's environment wholesale (the launcher's own reason for
  * its `export TMPDIR=…` prefix).
+ *
+ * `parallel` adds `--no-isolate` with it: `--parallel` alone implies
+ * `--isolate`, which re-imports every module per file and ran nax's unit suite
+ * slower than serial (103s against 71s); without isolation it took 25s.
  */
 export function confinedTestCommand(input: ConfinedCommandInput): string {
   const tmpDir = quoteArgvForShell([input.tmpDir]);
   const paths = quoteArgvForShell(input.paths);
   const cd = quoteArgvForShell([input.packageDir]);
+  const parallel = input.parallel === undefined ? "" : ` --parallel=${input.parallel} --no-isolate`;
   return (
     `export TMPDIR=${tmpDir} TMP=${tmpDir} TEMP=${tmpDir} ${CONFINED_TEST_ENV}=1; ` +
-    `cd ${cd} && bun test ${paths} --timeout=${input.timeoutMs}`
+    `cd ${cd} && bun test ${paths} --timeout=${input.timeoutMs}${parallel}`
   );
 }
 
@@ -243,7 +251,13 @@ export async function runConfinedTests(input: ConfinedRunInput): Promise<number>
       platform: _confinedRunDeps.platform(),
     });
     const request: SandboxWrapRequest = {
-      command: confinedTestCommand({ packageDir: input.packageDir, tmpDir, paths: input.paths, timeoutMs }),
+      command: confinedTestCommand({
+        packageDir: input.packageDir,
+        tmpDir,
+        paths: input.paths,
+        timeoutMs,
+        ...(input.parallel !== undefined ? { parallel: input.parallel } : {}),
+      }),
       shell: CONFINED_RUN_SHELL,
       policy,
       cwd: input.packageDir,

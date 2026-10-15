@@ -2,7 +2,7 @@
 /**
  * The confined test runner's CLI (nax#2523).
  *
- * `bun scripts/run-confined-tests.ts [--package=<dir>] [--timeout=<ms>] [--probe] <test paths...>`
+ * `bun scripts/run-confined-tests.ts [--package=<dir>] [--timeout=<ms>] [--parallel=<n>] [--probe] <test paths...>`
  *
  * Argument checks come first: without `--probe` and with no test path there is
  * nothing to do, so the process exits `USAGE_EXIT` (2) before it probes the
@@ -24,10 +24,11 @@ import {
 } from "./lib/confined-run.ts";
 
 const USAGE =
-  "usage: run-confined-tests [--package=<dir>] [--timeout=<ms>] [--probe] <test paths...>\n" +
+  "usage: run-confined-tests [--package=<dir>] [--timeout=<ms>] [--parallel=<n>] [--probe] <test paths...>\n" +
   "  <test paths...>  test paths passed to `bun test` inside the confined sandbox\n" +
   "  --package=<dir>  package directory to run in (default: the working directory)\n" +
   "  --timeout=<ms>   per-test timeout (default: 60000)\n" +
+  "  --parallel=<n>   run the files over n workers (bun test --parallel=<n> --no-isolate)\n" +
   "  --probe          report whether this host has a usable sandbox, then exit\n";
 
 export interface ConfinedCliDeps {
@@ -39,15 +40,48 @@ export interface ConfinedCliDeps {
 export interface ConfinedCliArgs {
   readonly packageDir?: string;
   readonly timeoutMs?: number;
+  readonly parallel?: number;
   readonly probe: boolean;
   readonly paths: readonly string[];
+}
+
+type NumericFlag = "timeoutMs" | "parallel";
+
+/**
+ * The `--<flag>=<n>` options and how each reads its value (null = invalid).
+ * `--timeout` keeps its original lenient `parseInt` reading; `--parallel` is
+ * a worker count, so anything but a plain positive integer is refused.
+ */
+const NUMERIC_FLAGS: readonly { prefix: string; key: NumericFlag; parse: (value: string) => number | null }[] = [
+  {
+    prefix: "--timeout=",
+    key: "timeoutMs",
+    parse: (value) => {
+      const parsed = Number.parseInt(value, 10);
+      return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+    },
+  },
+  {
+    prefix: "--parallel=",
+    key: "parallel",
+    parse: (value) => {
+      const parsed = Number.parseInt(value, 10);
+      return Number.isSafeInteger(parsed) && parsed > 0 && String(parsed) === value ? parsed : null;
+    },
+  },
+];
+
+/** The numeric flag `arg` sets, with its parsed value; undefined when `arg` is not one. */
+function parseNumericFlag(arg: string): { key: NumericFlag; value: number | null } | undefined {
+  const flag = NUMERIC_FLAGS.find((candidate) => arg.startsWith(candidate.prefix));
+  return flag === undefined ? undefined : { key: flag.key, value: flag.parse(arg.slice(flag.prefix.length)) };
 }
 
 /** Parse the argv, or null when it is not a usable command line. */
 export function parseConfinedCliArgs(argv: readonly string[]): ConfinedCliArgs | null {
   const paths: string[] = [];
+  const numbers: Partial<Record<NumericFlag, number>> = {};
   let packageDir: string | undefined;
-  let timeoutMs: number | undefined;
   let probe = false;
   for (const arg of argv) {
     if (arg === "--probe") {
@@ -58,10 +92,10 @@ export function parseConfinedCliArgs(argv: readonly string[]): ConfinedCliArgs |
       packageDir = arg.slice("--package=".length);
       continue;
     }
-    if (arg.startsWith("--timeout=")) {
-      const value = Number.parseInt(arg.slice("--timeout=".length), 10);
-      if (!Number.isSafeInteger(value) || value <= 0) return null;
-      timeoutMs = value;
+    const numeric = parseNumericFlag(arg);
+    if (numeric !== undefined) {
+      if (numeric.value === null) return null;
+      numbers[numeric.key] = numeric.value;
       continue;
     }
     // An unknown flag is a usage error, never a test path `bun test` would
@@ -71,7 +105,7 @@ export function parseConfinedCliArgs(argv: readonly string[]): ConfinedCliArgs |
   }
   return {
     ...(packageDir !== undefined ? { packageDir } : {}),
-    ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+    ...numbers,
     probe,
     paths,
   };
@@ -102,6 +136,7 @@ export async function main(argv: readonly string[], overrides: Partial<ConfinedC
     packageDir: resolve(args.packageDir ?? process.cwd()),
     paths: args.paths,
     timeoutMs: args.timeoutMs ?? DEFAULT_TEST_TIMEOUT_MS,
+    ...(args.parallel !== undefined ? { parallel: args.parallel } : {}),
   });
 }
 

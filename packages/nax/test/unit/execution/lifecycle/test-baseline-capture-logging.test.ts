@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { type LogCall, makeLogger, makeNaxConfig } from "@test/helpers";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { cleanupTempDir, type LogCall, makeLogger, makeNaxConfig, makeTempDir } from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import {
   _captureDeps,
@@ -10,12 +10,22 @@ import * as loggerModule from "@/logger";
 
 const originalDeps = { ..._captureDeps };
 
+// A real temp root: `captureRunBaseline` writes the baseline under
+// `<root>/.nax/features/<id>/`, so a literal `/tmp/...` root wrote to the host
+// and failed confined (EPERM, plus two extra warn logs) whenever no earlier
+// file had left a writer mocked.
+let root: string;
+
+beforeEach(() => {
+  root = makeTempDir("nax-baseline-logging-");
+});
+
 function makeOptions(): CaptureRunBaselineOptions {
   const config: NaxConfig = makeNaxConfig({
     execution: { regressionGate: { enabled: true, timeoutSeconds: 60 } },
     quality: { commands: { test: "bun test" } },
   });
-  return { root: "/tmp/repo", featureId: "feat-x", config, workdir: "/tmp/repo" };
+  return { root, featureId: "feat-x", config, workdir: root };
 }
 
 function installInfoLogSpy(): LogCall[] {
@@ -27,6 +37,7 @@ function installInfoLogSpy(): LogCall[] {
 afterEach(() => {
   Object.assign(_captureDeps, originalDeps);
   mock.restore();
+  cleanupTempDir(root);
 });
 
 describe("captureRunBaseline — issue #2152 logging", () => {

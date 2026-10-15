@@ -110,6 +110,7 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator]
 | `src/review/` | Code review orchestration (built-in + semantic + plugin checks) |
 | `src/analyze/` | `nax analyze` — story classifier |
 | `src/queue/` | Mid-run queue control (PAUSE, ABORT, SKIP) |
+| `src/runstate/` | Run-state ownership and repair (#2497): `activate.ts`, `repair.ts`, and `store/` -- `RunStateKeeper` is in `src/runstate/store/keeper.ts` (no `src/runstate/keeper.ts`), with `store/registry.ts` and `store/paths.ts` |
 | `src/worktree/` | Git worktree management for parallel execution |
 | `src/tui/` | React/Ink terminal UI |
 | `src/optimizer/` | Prompt optimization seam (no-op built-in, plugin-provided) |
@@ -121,7 +122,7 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator]
 | `src/precheck/` | Pre-run checks (agents, CLI, config, git, system) + story-size gate |
 | `src/quality/` | Resolves and runs the project's real lint/typecheck/test commands |
 | `src/test-runners/` | Test-framework detection, output parsing, scoped test selection |
-| `src/session/` | Agent session lifecycle — naming, model selection, keeper, scratch dirs, sweep |
+| `src/session/` | Agent session lifecycle — naming, model selection, session keeper (`session-keeper.ts`, not the run-state keeper), scratch dirs, sweep |
 | `src/plan/` | `nax plan` — single/refine strategies, prompt building, PRD types, spec lint gate, persist/write (incl. fidelity repair) |
 | `src/replay/` | Reconstruct a past run from its artifacts (`nax replay`) |
 | `src/bakeoff/` | Multi-contestant bakeoff runs — coordinator, ranking, report |
@@ -161,7 +162,7 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator]
   `bun run check:nax-ai-imports`.
 - **LLM fallback rule:** Any code needing LLM calls MUST resolve the agent via the canonical accessors — `ctx.agentManager?.getDefault() ?? "claude"` in pipeline stages, or `resolveDefaultAgent(config)` in standalone modules. Never inline stubs, never read `config.autoMode.defaultAgent` (removed in ADR-012 Phase 6). Use `agent.complete(prompt)` for one-shot calls.
 - **Forward-compatible:** `getAgent()` returns the active adapter — calling code doesn't depend on the protocol.
-- See `docs/architecture/design-patterns.md` §11 (Adapter) for full pattern.
+- See `docs/architecture/design-patterns.md` §11 (Adapter) for full pattern (repository root; `../../docs/architecture/design-patterns.md` from `packages/nax`).
 
 ## Permission Resolution (Mandatory)
 
@@ -198,7 +199,7 @@ per-stage allowlist). `scoped` resolves through `resolveScopedPermissions`
 load by `validatePermissionsBlock` (`src/config/config-guards.ts`); `scoped` is in the
 schema enum in `src/config/schemas-execution.ts`. GitHub #374 tracked the original design;
 the block is wired and enforced, not rejected.
-**Full spec:** `docs/architecture/agent-adapters.md` §14.
+**Full spec:** `docs/architecture/agent-adapters.md` §14 (repository root; `../../docs/architecture/agent-adapters.md` from `packages/nax`).
 
 ## Workflow Protocol
 
@@ -209,7 +210,7 @@ the block is wired and enforced, not rejected.
 
 ## Coding Standards & Architecture Patterns
 
-**Read `docs/architecture/ARCHITECTURE.md` (index) before writing any code.** It links to focused docs covering:
+**Read `docs/architecture/ARCHITECTURE.md` (index) before writing any code.** It is at the repository root, not in this package: from `packages/nax` the path is `../../docs/architecture/ARCHITECTURE.md` (there is no `packages/nax/docs/`). Every `docs/...` path in this file is repository-root relative. It links to focused docs covering:
 
 - **Dependency injection** — `_deps` pattern for all external calls (spawn, fs, fetch)
 - **Error handling** — `[stage]` prefix + context + `{ cause: err }`
