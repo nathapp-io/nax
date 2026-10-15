@@ -35,6 +35,23 @@ async function connectTo(tools: readonly FixtureTool[], pageSize?: number, instr
 }
 
 describe("connectMcp", () => {
+  test("AC-5: non-stdio never notifies onSpawn", async () => {
+    const fixture = await inMemoryServer([]);
+    cleanups.push(() => fixture.server.close());
+    _mcpTransportDeps.create = () => ({
+      transport: fixture.clientTransport,
+      pid: () => null,
+      stderrTail: () => "",
+    });
+    const onSpawn = jest.fn();
+    const connection = await connectMcp(CONFIG, { ...OPTS, onSpawn });
+    cleanups.push(() => connection.close());
+    expect(connection.kind).toBe("http");
+    expect(onSpawn).not.toHaveBeenCalled();
+    await connection.close();
+    expect(onSpawn).not.toHaveBeenCalled();
+  });
+
   test("lists every page of tools at connect", async () => {
     const names = ["a", "b", "c", "d", "e"];
     const { connection } = await connectTo(

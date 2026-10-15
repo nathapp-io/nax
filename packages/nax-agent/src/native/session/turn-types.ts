@@ -113,7 +113,7 @@ export interface TurnDeps {
    * actually wait (forbidden-patterns-tests.md). Absent uses a real timer —
    * a real session always wants to actually wait.
    */
-  sleep?: (ms: number) => Promise<void>;
+  sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
   /**
    * Live repetition-breaker instance (nax#2013, session-lifetime since #2047). Absent disables the breaker.
    */

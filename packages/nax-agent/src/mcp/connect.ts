@@ -116,6 +116,18 @@ export async function connectMcp(config: McpTransportConfig, opts: ConnectMcpOpt
   const signal = AbortSignal.any([opts.signal, deadline]);
   try {
     if (signal.aborted) throw new McpConnectError("MCP connect failed: aborted");
+    if (config.kind === "stdio" && opts.onSpawn !== undefined) {
+      const start = handle.transport.start;
+      let notified = false;
+      handle.transport.start = async function () {
+        await start.call(this);
+        const pid = handle.pid();
+        if (pid !== null && !notified) {
+          notified = true;
+          opts.onSpawn?.(pid);
+        }
+      };
+    }
     await client.connect(handle.transport, { signal, timeout: opts.timeoutMs });
     const tools = await listAll(client, signal, opts.timeoutMs);
     return liveConnection(config, client, handle, tools, {

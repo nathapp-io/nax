@@ -9,7 +9,11 @@
  */
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import {
+  CallToolRequestSchema,
+  InitializeRequestSchema,
+  ListToolsRequestSchema,
+} from "@modelcontextprotocol/sdk/types.js";
 
 const argv = process.argv.slice(2);
 const flag = (name) => argv.includes(name);
@@ -28,7 +32,10 @@ if (flag("--stubborn")) {
 
 const server = new Server({ name: "stdio-fixture", version: "1.0.0" }, { capabilities: { tools: {} } });
 const hangToolsList = flag("--hang-tools-list");
-if (hangToolsList) process.stderr.write(`pid=${process.pid}`);
+// Never finish initialize: spawn notification must not depend on a successful handshake.
+const hangInitialize = flag("--hang-initialize");
+if (hangToolsList || hangInitialize) process.stderr.write(`pid=${process.pid}`);
+if (hangInitialize) server.setRequestHandler(InitializeRequestSchema, () => new Promise(() => {}));
 server.setRequestHandler(
   ListToolsRequestSchema,
   hangToolsList

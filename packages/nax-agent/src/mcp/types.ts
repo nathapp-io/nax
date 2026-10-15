@@ -52,6 +52,8 @@ export interface ConnectMcpOptions {
   readonly signal: AbortSignal;
   readonly timeoutMs: number;
   readonly clientInfo: { readonly name: string; readonly version: string };
+  /** stdio only: called once after spawn, before the initialize request is sent. */
+  readonly onSpawn?: (pid: number) => void;
   /** stdio: how long close() waits for the process before SIGKILL. Default 3000. */
   readonly closeGraceMs?: number;
 }

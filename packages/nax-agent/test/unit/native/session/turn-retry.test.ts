@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import {
   abortableSleep,
   canAttemptTurnRetry,
@@ -7,6 +7,7 @@ import {
   retryTransportFault,
   turnRetryDelayMs,
 } from "@nathapp/nax-agent/internal";
+import { realSleep } from "#src/native/session/turn-retry";
 
 /** Mirrors the fixture ProtocolStreamError used in turn-loop-compaction.test.ts. */
 class ProtocolStreamError extends Error {
@@ -120,7 +121,8 @@ describe("turnRetryDelayMs", () => {
 describe("abortableSleep", () => {
   test("resolves via the injected sleep when no signal is given", async () => {
     let sleptMs: number | undefined;
-    await abortableSleep(250, async (ms) => {
+    await abortableSleep(250, async (ms, receivedSignal) => {
+      expect(receivedSignal).toBeUndefined();
       sleptMs = ms;
     });
     expect(sleptMs).toBe(250);
@@ -154,6 +156,44 @@ describe("abortableSleep", () => {
   });
 });
 
+describe("realSleep cancellation", () => {
+  test("AC-2: rejects promptly on abort with the abort reason", async () => {
+    const controller = new AbortController();
+    const pending = realSleep(10_000, controller.signal);
+    const reason = new Error("cancel backoff");
+    controller.abort(reason);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const outcome = await Promise.race([
+        pending.then(
+          () => "resolved",
+          (error: unknown) => error,
+        ),
+        new Promise((resolve) => {
+          timer = setTimeout(() => resolve("still sleeping"), 100);
+        }),
+      ]);
+      expect(outcome).toBe(reason);
+    } finally {
+      clearTimeout(timer);
+    }
+  });
+
+  test("AC-3: clears the backoff timer on abort", async () => {
+    const clear = spyOn(globalThis, "clearTimeout");
+    const controller = new AbortController();
+    try {
+      const pending = realSleep(10_000, controller.signal);
+      controller.abort();
+      void pending.catch(() => undefined);
+      expect(clear).toHaveBeenCalledTimes(1);
+      expect(clear.mock.calls[0]?.[0]).toBeDefined();
+    } finally {
+      clear.mockRestore();
+    }
+  });
+});
+
 describe("retryTransportFault", () => {
   const noopSleep = async () => {};
 
@@ -161,14 +201,17 @@ describe("retryTransportFault", () => {
     const first = new ProtocolStreamError({ kind: "transport", message: "stall" });
     let attempts = 0;
     const delays: number[] = [];
+    const signal = new AbortController().signal;
 
     const result = await retryTransportFault(first, {
+      signal,
       attempt: async () => {
         attempts += 1;
         return "ok";
       },
       config,
-      sleep: async (ms) => {
+      sleep: async (ms, receivedSignal) => {
+        expect(receivedSignal).toBe(signal); // AC-1
         delays.push(ms);
       },
       random: () => 0,
@@ -286,7 +329,8 @@ describe("retryTransportFault", () => {
     await retryTransportFault(err, {
       attempt: async () => "ok",
       config,
-      sleep: async (ms) => {
+      sleep: async (ms, receivedSignal) => {
+        expect(receivedSignal).toBeUndefined();
         delays.push(ms);
       },
     });
@@ -305,7 +349,8 @@ describe("retryTransportFault", () => {
         },
         config,
         deadline: { expired: () => false, remainingMs: () => 5_000 },
-        sleep: async (ms) => {
+        sleep: async (ms, receivedSignal) => {
+          expect(receivedSignal).toBeUndefined();
           slept.push(ms);
         },
       }),
@@ -343,7 +388,8 @@ describe("retryTransportFault budget refusal", () => {
       },
       config: { maxAttempts: 3, baseDelayMs: 1000 },
       deadline: { expired: () => false, remainingMs: () => 300_000 },
-      sleep: (ms) => {
+      sleep: (ms, receivedSignal) => {
+        expect(receivedSignal).toBeUndefined();
         slept.push(ms);
         return Promise.resolve();
       },
@@ -367,7 +413,8 @@ describe("retryTransportFault budget refusal", () => {
         },
         config: { maxAttempts: 3, baseDelayMs: 1000 },
         deadline: { expired: () => false, remainingMs: () => 10_000 },
-        sleep: (ms) => {
+        sleep: (ms, receivedSignal) => {
+          expect(receivedSignal).toBeUndefined();
           slept.push(ms);
           return Promise.resolve();
         },
@@ -384,7 +431,8 @@ describe("retryTransportFault budget refusal", () => {
       attempt: () => Promise.resolve("ok"),
       config: { maxAttempts: 3, baseDelayMs: 1000 },
       deadline: { expired: () => false, remainingMs: () => undefined },
-      sleep: (ms) => {
+      sleep: (ms, receivedSignal) => {
+        expect(receivedSignal).toBeUndefined();
         slept.push(ms);
         return Promise.resolve();
       },
@@ -399,7 +447,8 @@ describe("retryTransportFault budget refusal", () => {
       config: { maxAttempts: 3, baseDelayMs: 1000 },
       deadline: { expired: () => false, remainingMs: () => 300_000 },
       random: () => 0,
-      sleep: (ms) => {
+      sleep: (ms, receivedSignal) => {
+        expect(receivedSignal).toBeUndefined();
         slept.push(ms);
         return Promise.resolve();
       },

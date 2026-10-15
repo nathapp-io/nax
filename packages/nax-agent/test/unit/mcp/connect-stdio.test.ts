@@ -49,6 +49,27 @@ describe("connectMcp over stdio", () => {
     }
   }, 20_000);
 
+  test.concurrent("AC-4: onSpawn reports the pid once even while initialize hangs", async () => {
+    const pids: number[] = [];
+    const error = await connectMcp(stdio(["--hang-initialize"]), {
+      ...OPTS,
+      timeoutMs: 1000,
+      closeGraceMs: 500,
+      onSpawn: (pid) => pids.push(pid),
+    }).catch((e: unknown) => e);
+    assertCaughtInstanceOf(error, McpConnectError);
+    const pid = Number(/pid=(\d+)/.exec(error.stderrTail ?? "")?.[1]);
+    try {
+      expect(pid).toBeGreaterThan(0);
+      expect(pids).toEqual([pid]);
+      // The runtime may still be reaping the child just after close resolves.
+      for (let i = 0; i < 40 && isProcessAlive(pid); i += 1) await settle(25);
+      expect(isProcessAlive(pid)).toBe(false);
+    } finally {
+      killQuietly(pid);
+    }
+  }, 20_000);
+
   test.concurrent("exposes the stdio child pid on the connection", async () => {
     const connection = await connectMcp(stdio(), OPTS);
     const pid = await pidOf(connection);
