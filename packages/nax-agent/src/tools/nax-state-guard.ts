@@ -31,7 +31,8 @@
  *    time has no cheap way to know whether a `.nax/` path is DIRTY, so the
  *    rule is conservative. A stash is allowed when its pathspec excludes the
  *    whole of `.nax` (`-- . ':!.nax'`), or when it is a `push` whose every
- *    pathspec lies outside `.nax`.
+ *    pathspec lies outside `.nax` (directories are listed with git). A `pop`
+ *    or `apply` is allowed only when git lists no `.nax` path in the stash.
  * 4. Hiding the verb (nax-evasion.ts): `git config alias.X <value>` whose
  *    value names stash / update-index / checkout / restore / reset (so even
  *    `git config alias.co checkout` is refused while a `.nax/` exists);
@@ -79,8 +80,8 @@
  * flags, after every agent turn and before every auto-commit, whatever command
  * changed it (bypass matrix: test/integration/runstate/bypass-matrix.test.ts).
  * Gaps:
- * - Stash is refused in ANY repository that has a `.nax/`, by design, even
- *   when that directory is clean.
+ * - Stash without explicit safe pathspecs or an inspectable restore ref is
+ *   refused while a `.nax/` exists, even when that directory is clean.
  * - Prose that reads as a command (`echo git stash`, `python -c 'print("git
  *   stash")'`, `echo "git stash"`) is refused when a `.nax/` exists: the guard
  *   works on words. A scratch fixture `.nax/` within three levels also makes
@@ -108,7 +109,6 @@
  * - From inside `.nax` (`cd .nax`), every unmarked `git checkout` operand is
  *   read as a path.
  */
-import { lstatSync } from "node:fs";
 import { resolve } from "node:path";
 import { NAX_OWNED_RUN_STATE_EXPLANATION } from "./denial-redirect.ts";
 import { commandHeadIndex, gitExecutableIndex, type LocatedGit, locateGit } from "./git-flags/locate.ts";
@@ -124,14 +124,8 @@ import {
   isExecConfigKey,
   mentionsGuardedVerb,
 } from "./nax-evasion.ts";
-import {
-  COVERING_EXCLUSION,
-  discardRefusal,
-  isFullNaxExclusion,
-  operandTouchesNax,
-  resetRefusal,
-  revertRefusal,
-} from "./nax-revert.ts";
+import { COVERING_EXCLUSION, discardRefusal, operandTouchesNax, resetRefusal, revertRefusal } from "./nax-revert.ts";
+import { stashIsExempt } from "./nax-stash-restore.ts";
 
 export type { NaxDirIndex, NaxGuardContext } from "./nax-dirs.ts";
 export { createNaxDirIndex } from "./nax-dirs.ts";
@@ -157,7 +151,8 @@ const STASH_REFUSAL =
   "`git stash` is refused while the repository holds nax's run state under `.nax/`: the stash would capture " +
   "nax's uncommitted state and a later pop would replay stale copies over what nax has written since. " +
   "To check whether something pre-existed, use `git diff HEAD -- <file>` or `git show HEAD:<file>`. " +
-  `A \`git stash push -- . ${COVERING_EXCLUSION}\` (or \`push\` of named regular files) is allowed.`;
+  `A \`git stash push -- . ${COVERING_EXCLUSION}\` is allowed. ` +
+  "`push` of files or directories outside `.nax` is allowed, and so is `pop` or `apply` of a stash that holds no `.nax` path (quote the ref, e.g. `'stash@{1}'`).";
 
 const ALIAS_REFUSAL =
   "A git alias defined through `--config-env`, or one that loops back on itself, cannot be inspected while the repository holds nax's run state under `.nax/`. " +
@@ -188,32 +183,11 @@ function updateIndexRefusal(args: readonly string[], ctx: NaxGuardContext, viaXa
   return uninspectable && hasNaxDirNear(ctx) ? UPDATE_INDEX_REFUSAL : undefined;
 }
 
-/** An existing regular file (not a directory, symlink or glob) that is not under `.nax`. */
-function isPlainFileOutsideNax(spec: string, ctx: NaxGuardContext): boolean {
-  if (spec.startsWith(":") || /[*?[]/.test(spec) || operandTouchesNax(spec, ctx)) return false;
-  return ctx.frames.every((frame) => {
-    try {
-      return lstatSync(resolve(frame, spec)).isFile();
-    } catch {
-      return false;
-    }
-  });
-}
-
-/** Only `push`, and only AFTER `--`, may use a pathspec exemption. */
-function pushIsExempt(args: readonly string[], ctx: NaxGuardContext): boolean {
-  const separator = args.indexOf("--");
-  if (args[0] !== "push" || separator === -1) return false;
-  const specs = args.slice(separator + 1);
-  if (specs.some((spec) => isFullNaxExclusion(spec, ctx))) return true;
-  return specs.length > 0 && specs.every((spec) => isPlainFileOutsideNax(spec, ctx));
-}
-
 function stashRefusal(args: readonly string[], ctx: NaxGuardContext): string | undefined {
   const first = args[0];
   if (first !== undefined && STASH_SAFE_SUBCOMMANDS.has(first)) return undefined;
   if (!hasNaxDirNear(ctx)) return undefined;
-  return pushIsExempt(args, ctx) ? undefined : STASH_REFUSAL;
+  return stashIsExempt(args, ctx) ? undefined : STASH_REFUSAL;
 }
 
 /** The string a `bash -c <string>` / `eval <string>` style segment runs, or undefined. */

@@ -736,6 +736,7 @@ _globDeps
 _grepDeps
 _instructionAccessDeps
 _launcherDeps
+_naxStateGuardDeps
 _openUrlDeps
 _policyInputDeps
 _probeDeps

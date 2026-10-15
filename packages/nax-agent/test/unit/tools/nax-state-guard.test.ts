@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { redirectForCommand } from "#src/tools/denial-redirect";
 import { compileToolPolicy } from "#src/tools/index";
+import { _naxStateGuardDeps } from "#src/tools/nax-stash-restore";
 import { type NaxGuardContext, naxStateRefusal, naxStateRefusalInText } from "#src/tools/nax-state-guard";
 import { screenRawBashCommand } from "#src/tools/policy-bash-raw";
 import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
@@ -11,12 +12,15 @@ import { naxOwnedPathsPolicy } from "#test/helpers/nax-owned-paths";
 const BASH_SCOPE = { pathFields: [], commandField: "command" } as const;
 const words = (command: string) => command.split(/\s+/);
 
+const originalGit = _naxStateGuardDeps.git;
+
 let root: string;
 let bare: string;
 let withNax: NaxGuardContext;
 let withoutNax: NaxGuardContext;
 
 beforeEach(() => {
+  _naxStateGuardDeps.git = () => undefined;
   root = makeTempDir("nax-state-guard-");
   mkdirSync(join(root, ".nax/features/f"), { recursive: true });
   mkdirSync(join(root, "src"), { recursive: true });
@@ -29,6 +33,7 @@ beforeEach(() => {
   withoutNax = { frames: [bare], root: bare };
 });
 afterEach(() => {
+  _naxStateGuardDeps.git = originalGit;
   cleanupTempDir(root);
   cleanupTempDir(bare);
 });
@@ -87,7 +92,6 @@ describe("stash", () => {
     "git stash save :!.nax",
     "git stash push -- *.json",
     "git stash push -- data.json *.json",
-    "git stash push -- src",
     "git stash push -- missing.ts",
     "git stash push -- :(glob)src/*",
   ])("denies %s when a .nax exists", (command) => {
