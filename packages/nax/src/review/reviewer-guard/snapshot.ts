@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { classifyRunStatePath } from "@/runstate/store";
 import { _snapshotDeps, git, gitRaw, symbolicHead } from "./deps";
-import { restoreIgnoreRules, type TreeEntry } from "./snapshot-ignore-rules";
+import { listIgnoreFiles, restoreIgnoreRules, type TreeEntry } from "./snapshot-ignore-rules";
 import {
   diffRefsLeft,
   diffStashesLeft,
@@ -35,6 +35,8 @@ export interface RepoSnapshot {
   readonly refs: readonly RefEntry[];
   readonly replaceRefs: readonly string[];
   readonly stashes: readonly string[];
+  /** Every .gitignore at snapshot time, ignored ones included; `null` when it could not be listed (nax#2552). */
+  readonly ignoreFiles: readonly string[] | null;
 }
 
 export interface RestoreReport {
@@ -58,7 +60,7 @@ export function isKeeperOwnedPath(toplevel: string, rel: string): boolean {
 
 export async function takeRepoSnapshot(workdir: string): Promise<RepoSnapshot> {
   const toplevel = await git(["rev-parse", "--show-toplevel"], workdir);
-  const [tree, indexTree, head, symbolic, refs, replaceRefs, stashes] = await Promise.all([
+  const [tree, indexTree, head, symbolic, refs, replaceRefs, stashes, ignoreFiles] = await Promise.all([
     _snapshotDeps.snapshotWorkingTree(toplevel),
     git(["write-tree"], toplevel),
     git(["rev-parse", "HEAD"], toplevel),
@@ -66,8 +68,12 @@ export async function takeRepoSnapshot(workdir: string): Promise<RepoSnapshot> {
     listRefs(toplevel),
     listReplaceRefs(toplevel),
     listStashes(toplevel),
+    listIgnoreFiles(toplevel).then(
+      (files) => [...files],
+      () => null,
+    ),
   ]);
-  return { toplevel, tree, indexTree, head, symbolicHead: symbolic, refs, replaceRefs, stashes };
+  return { toplevel, tree, indexTree, head, symbolicHead: symbolic, refs, replaceRefs, stashes, ignoreFiles };
 }
 
 function isAbsent(err: unknown): boolean {
@@ -113,6 +119,7 @@ async function restoreTree(snap: RepoSnapshot, failures: string[]): Promise<{ pa
       toplevel: snap.toplevel,
       tree: snap.tree,
       entries,
+      known: snap.ignoreFiles === null ? null : new Set(snap.ignoreFiles),
       skip: (p) => isKeeperOwnedPath(snap.toplevel, p),
       remove: removePath,
     },

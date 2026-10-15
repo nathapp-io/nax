@@ -24,6 +24,7 @@ describe("createRunTurnHooks (nax#2500, #2497)", () => {
         refs: [],
         replaceRefs: [],
         stashes: [],
+        ignoreFiles: [],
       };
     };
     _reviewerGuardDeps.restore = async () => {

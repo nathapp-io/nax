@@ -340,6 +340,18 @@ describe("reviewer ignore-rule edits cannot hide files from the restore (#2552)"
     expect([...report.paths].sort()).toEqual(["sub/.gitignore", "sub/hook.sh"]);
   });
 
+  // The node_modules/x/.gitignore and .pytest_cache/.gitignore case: an ignored .gitignore the review never
+  // touched is not the reviewer's, so a clean restore keeps it and reports nothing.
+  test("a pre-existing .gitignore inside an ignored directory survives a clean restore", async () => {
+    const d = await repo();
+    await mkdir(join(d, "ignored", "pkg"), { recursive: true });
+    await writeFile(join(d, "ignored", "pkg", ".gitignore"), "*.log\n");
+    const snap = await takeRepoSnapshot(d);
+    const report = await restoreRepoSnapshot(snap);
+    expect(report.paths).toEqual([]);
+    expect(existsSync(join(d, "ignored", "pkg", ".gitignore"))).toBe(true);
+  });
+
   test("a pre-existing ignored path stays untouched after a clean restore", async () => {
     const d = await repo();
     await mkdir(join(d, "ignored"), { recursive: true });

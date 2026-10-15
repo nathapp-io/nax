@@ -64,7 +64,7 @@ describe("lastHead (nax#2550)", () => {
     expect(final.lastHead).toBeDefined();
   });
 
-  test("a failed read leaves it unset, falling back to startHead", async () => {
+  test("a failed read keeps the previous lastHead rather than dropping it", async () => {
     const h = harness({});
     const env = {
       ...h.env,
@@ -79,7 +79,7 @@ describe("lastHead (nax#2550)", () => {
     const record = { ...h.env.record, lastHead: "stale", step: "gate-repair" as const };
     const final = await runFeatureMachine({ ...env, record });
     expect(final.step).toBe("done");
-    expect(final.lastHead).toBeUndefined();
+    expect(final.lastHead).toBe("stale");
   });
 });
 
@@ -101,7 +101,7 @@ describe("HEAD reads (nax#2550)", () => {
     expect(final).not.toHaveProperty("head");
   });
 
-  test("a HEAD that cannot be read for the fix base stops the machine rather than fixing with no base", async () => {
+  test("a HEAD that cannot be read for the fix base skips the fix: findings go to adjudication", async () => {
     const h = harness({ review: ONE_FINDING });
     const env = {
       ...h.env,
@@ -112,7 +112,10 @@ describe("HEAD reads (nax#2550)", () => {
         },
       },
     };
-    await expect(runFeatureMachine(env)).rejects.toThrow("rev-parse failed");
+    const final = await runFeatureMachine(env);
     expect(h.calls).not.toContain("branchFix");
+    expect(h.calls).toContain("adjudicate");
+    expect(final.step).toBe("done");
+    expect(h.ledger.some((l) => l.includes("branch fix skipped: HEAD could not be read"))).toBe(true);
   });
 });

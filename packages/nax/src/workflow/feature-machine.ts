@@ -235,7 +235,13 @@ async function branchFixStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Promi
     return { step: "adjudicate" };
   }
   // A follow-up round keeps round 1's base, so its re-review sees the whole fix, not just the last edit.
-  const fixBase = round > 1 && rec.fixBase ? rec.fixBase : await env.steps.head();
+  const fixBase = round > 1 && rec.fixBase ? rec.fixBase : await readHeadSoft(env);
+  if (!fixBase) {
+    // nax#2550: no base means no re-review of the fix, so no fix runs; the findings go to adjudication
+    // as with a round cap, and the run goes on instead of losing the feature workflow to a git blip.
+    await env.sink.ledger(ledgerText.note("branch fix skipped: HEAD could not be read"), NO_MIRROR);
+    return { step: "adjudicate" };
+  }
   await env.sink.ledger(
     ledgerText.note(
       `${roundLabel("branch fix", round)}: ${toFix.length} item(s): ${toFix.map((f) => f.id).join(", ")}`,
@@ -421,7 +427,7 @@ async function readHeadSoft(env: FeatureEnv): Promise<string | undefined> {
   try {
     return await env.steps.head();
   } catch (err) {
-    getSafeLogger()?.warn("workflow", "Could not read HEAD after publish; the record keeps none", {
+    getSafeLogger()?.warn("workflow", "Could not read HEAD after a committing step; the record keeps the last one", {
       storyId: "_run",
       error: errorMessage(err),
     });
@@ -526,7 +532,9 @@ export async function runFeatureMachine(env: FeatureEnv): Promise<WorkflowFeatur
     const stopped = await costStop(env, rec, step);
     const stepPatch = stopped ?? (await STEPS[step](env, rec));
     // nax#2550: a step that can commit moves HEAD on purpose; record where, so a resume is not a restart.
-    const patch = !stopped && COMMIT_STEPS.has(step) ? { ...stepPatch, lastHead: await readHeadSoft(env) } : stepPatch;
+    // A failed read keeps the previous `lastHead`: dropping it would make a resume restart over our own commits.
+    const head = !stopped && COMMIT_STEPS.has(step) ? await readHeadSoft(env) : undefined;
+    const patch = head ? { ...stepPatch, lastHead: head } : stepPatch;
     rec = { ...rec, ...patch, timings: { ...rec.timings, [step]: (rec.timings[step] ?? 0) + (env.now() - started) } };
     await env.sink.update(rec);
   }

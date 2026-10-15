@@ -1,7 +1,7 @@
 /** The workflow PR body (spec §7 step 9). Separate from finish's body; reuses its advisor section and escapes. */
 import type { AdviceDecision } from "@/advisor";
 import { buildAdvisorSection } from "@/finish";
-import { redactedExcerpt, safeBlock, safeCell, safeInline } from "./pr-body-safe";
+import { redactedExcerpt, safeBlock, safeCell, safeCode, safeInline } from "./pr-body-safe";
 import type { PreflightFile } from "./preflight";
 import type {
   FeatureCiState,
@@ -104,9 +104,7 @@ const FULL_TEXT = Number.MAX_SAFE_INTEGER;
 function openItemLine(item: OpenItem, chars = FULL_TEXT): string {
   if (item.kind === "gate")
     return `- [ ] **${safeInline(item.id, chars)}** (gate) — final gate ${safeInline(item.id, chars)} is red; see the excerpt under Gates and CI`;
-  const where = item.file
-    ? ` \`${safeInline(item.file, chars)}${item.line !== undefined ? `:${item.line}` : ""}\``
-    : "";
+  const where = item.file ? ` \`${safeCode(item.file, chars)}${item.line !== undefined ? `:${item.line}` : ""}\`` : "";
   const tags = (item.severity ? [item.severity, item.kind] : [item.kind]).join(", ");
   return [
     `- [ ] **${safeInline(item.id, chars)}** (${tags})${where} — ${safeInline(item.issue, chars)}`,

@@ -15,11 +15,16 @@ import { redactSecrets } from "@/logger";
 
 const ZERO_WIDTH_SPACE = "​";
 
-/** Break `#123`, `@user` and `/issues/12` / `/pull/12` URLs so GitHub neither links, closes nor notifies. */
+/**
+ * Break `#123`, `@user` and `/issues/12` / `/pull/12` URLs so GitHub neither links, closes nor notifies.
+ * Every `#<digit>` is broken, `owner/repo#45` included (GitHub links it across repos). An `@` is broken
+ * only where GitHub would mention: not after `/`, `.`, `-`, `@` or a word character (`packages/@scope/x`,
+ * `node@20`, `a.b@c` stay intact).
+ */
 export function neutralise(text: string): string {
   return text
     .replace(/#(?=\d)/g, `#${ZERO_WIDTH_SPACE}`)
-    .replace(/@(?=[A-Za-z0-9_])/g, `@${ZERO_WIDTH_SPACE}`)
+    .replace(/(?<![\w/.@-])@(?=[A-Za-z0-9_])/g, `@${ZERO_WIDTH_SPACE}`)
     .replace(/\/(issues|pull)\/(?=\d)/gi, `/$1/${ZERO_WIDTH_SPACE}`);
 }
 
@@ -31,6 +36,11 @@ export function safeBlock(text: string): string {
 /** Redacted, neutralised, one-line inline text, capped after escaping. */
 export function safeInline(text: string, max?: number): string {
   return escapeInline(safeBlock(text), max);
+}
+
+/** Redacted, one-line text for an inline code span (a file path): GitHub neither links nor mentions there. */
+export function safeCode(text: string, max?: number): string {
+  return escapeInline(redactSecrets(text), max);
 }
 
 /** Redacted, neutralised, escaped table-cell text. */

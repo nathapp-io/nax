@@ -27,11 +27,17 @@ export interface IgnoreRuleRestore {
   readonly toplevel: string;
   readonly tree: string;
   readonly entries: ReadonlyMap<string, TreeEntry>;
+  /**
+   * Every .gitignore present when the snapshot was taken, ignored ones included (`node_modules/x/.gitignore`,
+   * `.pytest_cache/.gitignore`). Only a .gitignore outside this list is the reviewer's and removed; `null`
+   * (the list could not be read) removes none, rather than deleting files the review never touched.
+   */
+  readonly known: ReadonlySet<string> | null;
   readonly skip: (path: string) => boolean;
   readonly remove: (absolutePath: string) => Promise<void>;
 }
 
-async function listIgnoreFiles(toplevel: string): Promise<Set<string>> {
+export async function listIgnoreFiles(toplevel: string): Promise<Set<string>> {
   // Visible files (tracked + untracked) and the ones a rule hides, e.g. a nested `*` file hiding itself.
   const [visible, hidden] = await Promise.all([
     gitRaw(["ls-files", "-z", "-c", "-o", "--exclude-standard", "--", IGNORE_PATHSPEC], toplevel),
@@ -59,7 +65,9 @@ export async function restoreIgnoreRules(ctx: IgnoreRuleRestore, failures: strin
       .filter(([p, e]) => basename(p) === IGNORE_FILE && e.type !== "commit" && !ctx.skip(p))
       .map(([p]) => p);
     const wantedSet = new Set(wanted);
-    const added = current.filter((p) => !wantedSet.has(p));
+    const known = ctx.known;
+    if (known === null) failures.push("ignore-rules: snapshot-time .gitignore list unavailable; added ones kept");
+    const added = known === null ? [] : current.filter((p) => !wantedSet.has(p) && !known.has(p));
     for (const p of added) {
       await ctx.remove(join(toplevel, p)).catch((err) => failures.push(`remove ${p}: ${errorMessage(err)}`));
     }
