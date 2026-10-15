@@ -6,11 +6,11 @@ import { _workflowResumeDeps, headsUpChannel } from "@/execution";
 import { getLogger } from "@/logger";
 import type { CallContext } from "@/operations/types";
 import type { PipelineContext } from "@/pipeline/types";
-import { totalSpendUsd } from "@/runtime";
 import { resolveTestFilePatterns } from "@/test-runners";
 import { packageDirRelative } from "@/utils/paths";
 import { createLiveWorkflowAdvisor, dependentsOf } from "./advisor-live";
 import { specPathFor } from "./brief";
+import { costLimitReached } from "./cost-limit";
 import { runStoryGates, runWorkflowSuiteGate } from "./gates";
 import { listUncommitted, readHead } from "./git";
 import { runImplementerTurn } from "./implement";
@@ -126,10 +126,7 @@ export async function buildStoryEnv(
     uncommitted: () => listUncommitted(sc.projectDir),
     workProduced: () => storyWorkEvidence(sc),
     modelFor: storyModelFor(sc),
-    costExceeded: () =>
-      typeof costLimit === "number" &&
-      costLimit > 0 &&
-      totalSpendUsd(ctx.runtime.costAggregator.snapshot()) >= costLimit,
+    costExceeded: () => costLimitReached(costLimit, ctx.runtime),
   };
   const env: StoryLoopEnv = {
     storyId: ctx.story.id,

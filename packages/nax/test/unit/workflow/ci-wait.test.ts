@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { ForgeRunResult } from "@/forge";
 import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
-import { _ciWaitDeps, waitForChecks } from "@/workflow/ci-wait";
+import { _ciWaitDeps, CI_ERROR_POLL_LIMIT, waitForChecks } from "@/workflow/ci-wait";
 
 const original = { ..._ciWaitDeps };
 afterEach(() => Object.assign(_ciWaitDeps, original));
@@ -20,6 +20,8 @@ function script(replies: (ForgeRunResult | Error)[]): { calls: string[][]; sleep
     clock += ms;
   };
   _ciWaitDeps.run = async (cmd) => {
+    // The GitHub mergeability read answers MERGEABLE outside the script; `wire` below scripts it.
+    if (cmd[0] === "gh" && cmd[2] === "view") return r('{"mergeable":"MERGEABLE"}');
     calls.push(cmd);
     const next = replies.length > 1 ? replies.shift() : replies[0];
     if (next instanceof Error) throw next;
@@ -61,21 +63,45 @@ describe("waitForChecks (github)", () => {
     expect(calls.length).toBeGreaterThan(1);
   });
 
-  test("a CLI error returns pending at once (P4-R4)", async () => {
-    const { calls } = script([r("", 4, "gh: command failed: auth required")]);
-    const out = await waitForChecks("github", "b", OPTS);
-    expect(out).toEqual({ outcome: "pending", detail: "CI status unavailable: gh: command failed: auth required" });
-    expect(calls).toHaveLength(1);
+  // nax#2550: one unreadable poll is retried; only a run of them ends the wait, as `unavailable`.
+  test("a persistent CLI error ends as unavailable after CI_ERROR_POLL_LIMIT polls", async () => {
+    const { calls, sleeps } = script([r("", 4, "gh: command failed: auth required")]);
+    const out = await waitForChecks("github", "b", { ...OPTS, timeoutMs: 1_000 });
+    expect(out).toEqual({ outcome: "unavailable", detail: "CI status unavailable: gh: command failed: auth required" });
+    expect(calls).toHaveLength(CI_ERROR_POLL_LIMIT);
+    expect(sleeps).toHaveLength(CI_ERROR_POLL_LIMIT - 1);
   });
 
-  test("a spawn throw (gh not installed) returns pending", async () => {
+  test("a transient CLI error is retried: error, then green -> green", async () => {
+    const { calls } = script([r("", 4, "gh: rate limited"), gh(["pass"])]);
+    expect((await waitForChecks("github", "b", OPTS)).outcome).toBe("green");
+    expect(calls).toHaveLength(2);
+  });
+
+  test("a readable poll resets the error run", async () => {
+    const err = r("", 4, "gh: blip");
+    script([err, err, gh(["pending"]), err, err, gh(["pass"])]);
+    expect((await waitForChecks("github", "b", { ...OPTS, timeoutMs: 1_000 })).outcome).toBe("green");
+  });
+
+  test("the deadline reached while polls still error is unavailable, not pending", async () => {
+    script([gh(["pending"]), r("", 4, "gh: blip")]);
+    expect(await waitForChecks("github", "b", OPTS)).toEqual({
+      outcome: "unavailable",
+      detail: "CI status unavailable: gh: blip",
+    });
+  });
+
+  test("a spawn throw (gh not installed) ends as unavailable", async () => {
     script([new Error("ENOENT: gh")]);
-    expect((await waitForChecks("github", "b", OPTS)).outcome).toBe("pending");
+    expect((await waitForChecks("github", "b", OPTS)).outcome).toBe("unavailable");
   });
 
-  test("unparseable stdout returns pending", async () => {
+  test("unparseable stdout ends as unavailable", async () => {
     script([r("not json")]);
-    expect((await waitForChecks("github", "b", OPTS)).detail).toContain("unparseable");
+    const out = await waitForChecks("github", "b", OPTS);
+    expect(out.outcome).toBe("unavailable");
+    expect(out.detail).toContain("unparseable");
   });
 
   test("an aborted signal returns pending without polling", async () => {
@@ -109,9 +135,9 @@ describe("waitForChecks (gitlab)", () => {
     expect((await waitForChecks("gitlab", "b", OPTS)).outcome).toBe("green");
   });
 
-  test("glab error exit -> pending", async () => {
+  test("persistent glab error exit -> unavailable", async () => {
     script([r("", 1, "glab: not logged in")]);
-    expect((await waitForChecks("gitlab", "b", OPTS)).outcome).toBe("pending");
+    expect((await waitForChecks("gitlab", "b", OPTS)).outcome).toBe("unavailable");
   });
 });
 
@@ -191,11 +217,30 @@ describe("US-002 conflict and missing CI", () => {
     expect(logs.filter((e) => e.level === "warn")).toEqual([]);
   });
 
-  test("AC-6: a pending check never reads GitHub mergeability", async () => {
-    const { calls } = wire(r('{"mergeable":"CONFLICTING"}'), [gh(["pending"])]);
-    expect((await waitForChecks("github", "b", OPTS)).outcome).toBe("pending");
-    expect(calls.length).toBeGreaterThan(1);
-    expect(calls.every((cmd) => cmd[2] === "checks")).toBe(true);
+  // nax#2550: reported checks do not hide a conflict — push-triggered checks run on a conflicting PR.
+  test("a conflicting PR with pending checks ends as conflicting", async () => {
+    const { sleeps } = wire(r('{"mergeable":"CONFLICTING","baseRefName":"main"}'), [gh(["pending"])]);
+    expect(await waitForChecks("github", "b", OPTS)).toEqual({
+      outcome: "conflicting",
+      detail: "PR has merge conflicts with main",
+    });
+    expect(sleeps).toEqual([]);
+  });
+
+  test("a conflicting PR with all checks green ends as conflicting, not green", async () => {
+    wire(r('{"mergeable":"CONFLICTING","mergeStateStatus":"DIRTY"}'), [gh(["pass"])]);
+    expect((await waitForChecks("github", "b", OPTS)).outcome).toBe("conflicting");
+  });
+
+  test("a failed check stays failed without reading mergeability", async () => {
+    const { calls } = wire(r('{"mergeable":"CONFLICTING"}'), [gh(["fail"])]);
+    expect((await waitForChecks("github", "b", OPTS)).outcome).toBe("failed");
+    expect(calls.filter((cmd) => cmd[2] === "view")).toEqual([]);
+  });
+
+  test("green checks with an unreadable mergeability stay green (fail open)", async () => {
+    wire(new Error("auxiliary failure"), [gh(["pass"])]);
+    expect((await waitForChecks("github", "b", OPTS)).outcome).toBe("green");
   });
 
   test.each([empty, r("[]")])(
@@ -212,7 +257,8 @@ describe("US-002 conflict and missing CI", () => {
   test("AC-15: remembers earlier checks but still checks conflicts on later empty polls", async () => {
     const { calls } = wire(r('{"mergeable":"MERGEABLE"}'), [gh(["pending"]), empty]);
     expect((await waitForChecks("github", "b", OPTS)).outcome).toBe("pending");
-    expect(calls.filter((cmd) => cmd[2] === "view")).toHaveLength(3);
+    // Every poll reads mergeability, the one that reported checks included (nax#2550).
+    expect(calls.filter((cmd) => cmd[2] === "view")).toHaveLength(4);
     wire(r('{"mergeable":"CONFLICTING"}'), [gh(["pending"]), empty]);
     expect((await waitForChecks("github", "b", OPTS)).outcome).toBe("conflicting");
   });
@@ -232,16 +278,24 @@ describe("US-002 conflict and missing CI", () => {
     expect(sleeps).toEqual([]);
   });
 
+  test("a GitLab MR with a green pipeline and conflicts ends as conflicting (nax#2550)", async () => {
+    wire(r(JSON.stringify({ has_conflicts: true, target_branch: "main", head_pipeline: { status: "success" } })));
+    expect(await waitForChecks("gitlab", "7", OPTS)).toEqual({
+      outcome: "conflicting",
+      detail: "PR has merge conflicts with main",
+    });
+  });
+
   test("AC-16: no GitLab pipeline ends as no-checks", async () => {
     const { calls } = wire(r('{"head_pipeline":null,"has_conflicts":false}'));
     expect((await waitForChecks("gitlab", "7", OPTS)).outcome).toBe("no-checks");
     expect(calls).toHaveLength(4);
   });
 
-  test("AC-17: main poll throwing remains pending", async () => {
+  test("AC-17: main poll throwing persistently ends as unavailable", async () => {
     script([new Error("main poll failed")]);
     expect(await waitForChecks("github", "b", OPTS)).toEqual({
-      outcome: "pending",
+      outcome: "unavailable",
       detail: "CI status unavailable: main poll failed",
     });
   });
@@ -414,7 +468,8 @@ describe("waitForChecks progress log", () => {
     };
     _ciWaitDeps.sleep = async (ms) => advance(ms);
     let polls = 0;
-    _ciWaitDeps.run = async () => {
+    _ciWaitDeps.run = async (cmd) => {
+      if (cmd[2] === "view") return r('{"mergeable":"MERGEABLE"}');
       polls++;
       advance(polls === 1 ? 30_000 : 120_000);
       return polls === 1 ? TWO_CHECKS_PENDING : ALL_PASS;

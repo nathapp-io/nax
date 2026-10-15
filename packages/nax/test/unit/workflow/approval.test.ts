@@ -41,6 +41,8 @@ describe("readinessReasons (spec §7.8, P4-R6)", () => {
     [{ ci: "conflicting" as const, ciDetail: "PR has merge conflicts with main" }, "PR has merge conflicts with main"], // AC-18
     [{ ci: "conflicting" as const }, "PR has merge conflicts with its base branch"],
     [{ ci: "no-checks" as const }, "no CI check was reported"], // AC-19
+    [{ ci: "unavailable" as const }, "CI status unavailable"], // nax#2550
+    [{ ci: "unavailable" as const, ciDetail: "CI status unavailable: gh: auth" }, "CI status unavailable: gh: auth"],
     [{ ci: "no-checks" as const, ciDetail: "no CI check reported within 2m 0s" }, "no CI check reported within 2m 0s"],
     [{ stories: [story("US-001", { state: "complete-gate-open" })] }, "stories gate-open: US-001"],
     [{ stories: [story("US-002", { state: "not-run" })] }, "stories not run: US-002"],

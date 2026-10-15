@@ -20,6 +20,8 @@ export interface ReadinessFacts {
    * draft — an unread file is a file no one reviewed. Absent or empty adds no reason.
    */
   readonly branchReviewUnread?: readonly string[];
+  /** nax#2550: the feature workflow skipped an agent step at the cost limit. */
+  readonly costLimited?: boolean;
 }
 
 const NOTHING_VERIFIED = "no quality commands configured — nothing was verified";
@@ -48,7 +50,12 @@ function gateReasons(gates: RepoGateSummary | undefined): string[] {
   return gates.failing.length > 0 ? [`gates red: ${gates.failing.join(", ")}`] : [];
 }
 
-/** Why the PR can't be ready, in a stable order; empty = ask the advisor. CI pending never blocks (W-R9). */
+const COST_LIMITED = "cost limit reached: the feature workflow stopped before its review and fix steps finished";
+
+/**
+ * Why the PR can't be ready, in a stable order; empty = ask the advisor. Slow CI (`pending`) never
+ * blocks (W-R9); CI that could not be read (`unavailable`) does, since it was never observed (nax#2550).
+ */
 export function readinessReasons(f: ReadinessFacts): string[] {
   const gateOpen = idsIn(f.stories, "complete-gate-open");
   const notRun = idsIn(f.stories, "not-run");
@@ -58,11 +65,13 @@ export function readinessReasons(f: ReadinessFacts): string[] {
     ...(f.ci === "failed" ? ["CI failed"] : []),
     ...(f.ci === "conflicting" ? [f.ciDetail ?? "PR has merge conflicts with its base branch"] : []),
     ...(f.ci === "no-checks" ? [f.ciDetail ?? "no CI check was reported"] : []),
+    ...(f.ci === "unavailable" ? [f.ciDetail ?? "CI status unavailable"] : []),
     ...(gateOpen.length > 0 ? [`stories gate-open: ${gateOpen.join(", ")}`] : []),
     ...(notRun.length > 0 ? [`stories not run: ${notRun.join(", ")}`] : []),
     ...(f.flagged > 0 ? [`${f.flagged} ruling(s) flagged for a human`] : []),
     ...(f.branchReviewRan ? [] : ["branch review did not run"]),
     ...(unread.length > 0 ? [describeUnread(unread)] : []),
+    ...(f.costLimited ? [COST_LIMITED] : []),
   ];
 }
 

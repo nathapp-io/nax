@@ -50,6 +50,8 @@ export interface FeatureMachineHarnessOpts {
   stories?: StorySummary[];
   aborted?: boolean;
   limits?: FeatureLimits;
+  /** nax#2550: the run's cost check, read before each agent step; absent = never exceeded. */
+  costExceeded?: (calls: readonly string[]) => boolean;
 }
 
 /** The re-review a script did not queue: every item addressed, nothing new. */
@@ -138,6 +140,7 @@ export function makeFeatureMachineHarness(script: FeatureMachineScript, over: Fe
     aborted: () => over.aborted === true,
     now: () => (clock += 5),
     ...(over.limits ? { limits: over.limits } : {}),
+    ...(over.costExceeded ? { costExceeded: () => over.costExceeded?.(calls) === true } : {}),
   };
   return { env, calls, ledger, artifacts, stepsSeen, updates, fixInputs, reviewFacts, reReviewInputs, adjudicated };
 }

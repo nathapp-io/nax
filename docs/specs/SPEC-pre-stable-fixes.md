@@ -68,7 +68,8 @@ splits, so the returned `model` never carries `[effort]`. Both walks (tier entri
   `{ outcome: "no-checks", detail: "no CI check reported within <formatDuration(timeoutMs)>" }`
   instead of `pending`. A deadline reached after at least one check was reported stays `pending`
   (slow CI is still non-blocking, W-R9 unchanged for that case). A CLI error and an abort stay
-  `pending` exactly as today.
+  `pending` exactly as today. *(Superseded by nax#2550: a CLI error is retried, and a run of them ends as
+  `unavailable`, a readiness reason; an abort stays `pending`.)*
 - `waitForChecks` is held to the strict cognitive-complexity limit (it is not in
   `complexity-baseline.json`), so the mergeability/conflict read and the "a check was ever
   reported" bookkeeping live in their own helper functions in `ci-wait.ts`, not inline in the loop.
@@ -186,11 +187,11 @@ the new file `test/unit/execution/parallel-dispatch-active-stories.test.ts`, eac
 
 ## Out of Scope
 
-- `ci: pending` from a CLI error or an abort keeps today's meaning (non-blocking). Only "deadline reached with no check ever reported" becomes `no-checks`.
+- `ci: pending` from a CLI error or an abort keeps today's meaning (non-blocking). Only "deadline reached with no check ever reported" becomes `no-checks`. *(Superseded by nax#2550 for CLI errors: see `unavailable`.)*
 - Slow CI (checks reported, still running at the deadline) stays `pending` and non-blocking (W-R9).
 - The advisor's `finish-approval` evidence wording is unchanged; the new states never reach the advisor.
 - No automatic rebase or merge of the base branch into a conflicting PR.
-- GitHub mergeability is read only on polls that report no checks; a PR that becomes conflicting while its checks are running is not detected by the wait.
+- GitHub mergeability is read only on polls that report no checks; a PR that becomes conflicting while its checks are running is not detected by the wait. *(Superseded by nax#2550: GitHub reads it on every waiting and green poll, and a green GitLab pipeline no longer hides a conflict.)*
 - US-003 only: the `current` block stays `null` during a parallel batch; per-story phases of parallel workers are not tracked.
 - US-004 only: the single-story branch of parallel dispatch (`batch.length === 1`) runs through the sequential path and does not write `parallel.activeStories`.
 - A repository with no CI configured ends every workflow publish as `no-checks` and keeps the PR a draft; this is intended (a PR no CI verified is not auto-promoted).
