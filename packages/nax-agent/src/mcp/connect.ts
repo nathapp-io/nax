@@ -97,6 +97,16 @@ function createHandle(config: McpTransportConfig): TransportHandle {
   }
 }
 
+/**
+ * The server's `initialize` instructions (#2517), or `undefined` for anything
+ * that is not a non-empty string: an empty one would render an empty prompt
+ * section, and a `getInstructions()` that returns nothing is the same silence.
+ */
+function serverInstructions(client: Client): string | undefined {
+  const text = client.getInstructions();
+  return typeof text === "string" && text !== "" ? text : undefined;
+}
+
 export async function connectMcp(config: McpTransportConfig, opts: ConnectMcpOptions): Promise<McpConnection> {
   const handle = createHandle(config);
   const client = new Client({ name: opts.clientInfo.name, version: opts.clientInfo.version });
@@ -108,7 +118,11 @@ export async function connectMcp(config: McpTransportConfig, opts: ConnectMcpOpt
     if (signal.aborted) throw new McpConnectError("MCP connect failed: aborted");
     await client.connect(handle.transport, { signal, timeout: opts.timeoutMs });
     const tools = await listAll(client, signal, opts.timeoutMs);
-    return liveConnection(config, client, handle, tools, { graceMs, life });
+    return liveConnection(config, client, handle, tools, {
+      graceMs,
+      life,
+      instructions: serverInstructions(client),
+    });
   } catch (error) {
     await closeTransport(client, handle, graceMs, life);
     throw error instanceof McpConnectError ? error : connectFailure(error, deadline, opts, handle);
@@ -136,7 +150,7 @@ function liveConnection(
   client: Client,
   handle: TransportHandle,
   tools: readonly McpToolInfo[],
-  state: { readonly graceMs: number; readonly life: Life },
+  state: { readonly graceMs: number; readonly life: Life; readonly instructions: string | undefined },
 ): McpConnection {
   let closing: Promise<void> | undefined;
   const { life } = state;
@@ -146,6 +160,7 @@ function liveConnection(
       return handle.pid();
     },
     tools,
+    ...(state.instructions !== undefined ? { instructions: state.instructions } : {}),
     call(name, input, opts) {
       if (closing !== undefined || life.exited)
         return Promise.reject(new McpCallError(`MCP call ${name} failed: the connection is closed`));

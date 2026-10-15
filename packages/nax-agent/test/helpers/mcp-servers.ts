@@ -30,10 +30,17 @@ export interface InMemoryFixture {
   readonly server: Server;
 }
 
-/** `pageSize` splits tools/list into pages to exercise nextCursor. */
-export async function inMemoryServer(tools: readonly FixtureTool[], pageSize = 1000): Promise<InMemoryFixture> {
+/** `pageSize` splits tools/list into pages to exercise nextCursor; `instructions` is the server's `initialize` hint (#2517). */
+export async function inMemoryServer(
+  tools: readonly FixtureTool[],
+  pageSize = 1000,
+  instructions?: string,
+): Promise<InMemoryFixture> {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const server = new Server({ name: "fixture", version: "1.0.0" }, { capabilities: { tools: {} } });
+  const server = new Server(
+    { name: "fixture", version: "1.0.0" },
+    { capabilities: { tools: {} }, ...(instructions !== undefined ? { instructions } : {}) },
+  );
   const calls: { name: string; args: Record<string, unknown> }[] = [];
   server.setRequestHandler(ListToolsRequestSchema, async (request) => {
     const start = Number(request.params?.cursor ?? "0");

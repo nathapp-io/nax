@@ -9,6 +9,7 @@ import {
   markNativeTurnOutcome,
   openNativeSession,
   sessionAnchorFor,
+  systemFieldFor,
 } from "#src/native/session/session";
 import type { OpenSessionOpts } from "#src/session/session-types";
 
@@ -100,5 +101,32 @@ describe("NativeSessionState", () => {
     state.lastUsage.set("s", { promptTokens: 10, anchorIndex: 2, model: "m1" });
     expect(sessionAnchorFor(state, "s", "m2")).toBeUndefined();
     expect(state.lastUsage.has("s")).toBe(false);
+  });
+});
+
+describe("the session's system field", () => {
+  test("joins the system prompt and providerInstructions with a blank line", async () => {
+    const state = createNativeSessionState();
+    const dir = await tempDir();
+    await openNativeSession(state, "both", {
+      ...openOpts(dir, dir),
+      systemPrompt: "BASE",
+      providerInstructions: "## MCP servers",
+    });
+    expect(systemFieldFor(state, "both")).toEqual({ system: "BASE\n\n## MCP servers" });
+  });
+
+  test("a session opened without providerInstructions keeps its system prompt alone", async () => {
+    const state = createNativeSessionState();
+    const dir = await tempDir();
+    await openNativeSession(state, "base", { ...openOpts(dir, dir), systemPrompt: "BASE" });
+    expect(systemFieldFor(state, "base")).toEqual({ system: "BASE" });
+  });
+
+  test("providerInstructions with no system prompt are the whole system field", async () => {
+    const state = createNativeSessionState();
+    const dir = await tempDir();
+    await openNativeSession(state, "instructions", { ...openOpts(dir, dir), providerInstructions: "## MCP servers" });
+    expect(systemFieldFor(state, "instructions")).toEqual({ system: "## MCP servers" });
   });
 });

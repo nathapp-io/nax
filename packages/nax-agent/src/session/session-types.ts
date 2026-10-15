@@ -199,6 +199,14 @@ export interface OpenSessionOpts extends TrackedSpawnDeadlineOptions {
    * facade sets it from `instructions`; nax leaves it unset. ACP ignores it.
    */
   systemPrompt?: string;
+  /**
+   * Native: the rendered `## MCP servers` section, appended to `systemPrompt`
+   * after a blank line (#2517) — one `system` field, so the instructions reach
+   * the model exactly where `systemPrompt` already goes and no second state
+   * map is needed. Set together with `systemPrompt` by nax
+   * (`openSessionExtras`); either may be set alone. ACP ignores it.
+   */
+  providerInstructions?: string;
   /** Native: repository-relative instruction scopes, independent of the file-tool root. */
   instructionDirectories?: readonly string[];
   /** Native: instruction Markdown basename; defaults to AGENTS.md and its legacy fallback chain. */

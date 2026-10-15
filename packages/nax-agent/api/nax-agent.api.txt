@@ -153,6 +153,8 @@ type LoopHandlerSet
 MAX_PROVIDER_DESCRIPTION_BYTES
 MAX_PROVIDER_SCHEMA_BYTES
 MAX_RETAINED_TRANSCRIPTS
+MCP_INSTRUCTIONS_MAX_CHARS_PER_SERVER
+MCP_INSTRUCTIONS_MAX_CHARS_TOTAL
 MCP_RULE_TOOL
 MODEL_MAX_BYTES
 MODEL_MAX_LINES
@@ -409,6 +411,7 @@ registerCodingTool
 registerToolAuditSink
 removeApprovals
 removeStoredProvider
+renderProviderInstructions
 requestCapabilityTool
 resetSandboxBackend
 resolveGitLayout
@@ -586,6 +589,8 @@ MAX_PROVIDER_DESCRIPTION_BYTES
 MAX_PROVIDER_SCHEMA_BYTES
 MAX_RETAINED_TRANSCRIPTS
 MAX_UNDELIVERED_CONTROL_EVENTS
+MCP_INSTRUCTIONS_MAX_CHARS_PER_SERVER
+MCP_INSTRUCTIONS_MAX_CHARS_TOTAL
 MCP_RULE_TOOL
 MODEL_MAX_BYTES
 MODEL_MAX_LINES
@@ -946,6 +951,7 @@ registerToolAuditSink
 removeApprovals
 removeStoredProvider
 renderCommandSpec
+renderProviderInstructions
 replaceInCommandSpec
 requestCapabilityTool
 resetSandboxBackend
