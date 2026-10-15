@@ -5,10 +5,10 @@
  * override file path does not exist. Non-blocking: run continues regardless.
  */
 
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { type DeepPartial, makeNaxConfig, makeTempDir } from "@test/helpers";
+import { type DeepPartial, makeNaxConfig, makeTempDir, withTempDir } from "@test/helpers";
 import type { NaxConfig } from "@/config/types";
 import {
   _checkDiskSpaceDeps,
@@ -18,6 +18,7 @@ import {
   checkPromptOverrideFiles,
   parseDiskSpaceOutput,
 } from "@/precheck";
+import { _ignoredNaxPathsDeps } from "@/utils/ignored-nax-paths";
 
 function makeTmpDir(): string {
   return makeTempDir("nax-test-");
@@ -198,6 +199,55 @@ describe("checkGitignoreCoversNax — retired acceptance-test patterns", () => {
     writeFileSync(join(workdir, ".gitignore"), [...COVERING, "# **/.nax-acceptance*"].join("\n"));
 
     const result = await checkGitignoreCoversNax(workdir);
+    expect(result.passed).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// US-007 (#2534): a broad .gitignore rule hiding nax-tracked files
+// ---------------------------------------------------------------------------
+
+describe("checkGitignoreCoversNax — hidden nax-tracked files (US-007)", () => {
+  const COVERING = [
+    "nax.lock",
+    ".nax/**/runs/",
+    ".nax/metrics.json",
+    ".nax-pids",
+    ".nax-wt/",
+    "**/_nax_suggested_test.py",
+    "**/.nax/features/*/fragments/",
+  ];
+  /** The rule git reports for a wholesale feature-directory `.gitignore` entry. */
+  const LEDGER_RULE = ".gitignore:1:**/.nax/features/*/";
+  const LEDGER_LINE = `${LEDGER_RULE}\t.nax/features/_probe/decisions.jsonl\n`;
+  const originalDeps = { ..._ignoredNaxPathsDeps };
+  afterEach(() => Object.assign(_ignoredNaxPathsDeps, originalDeps));
+
+  /** A project whose .gitignore holds every required pattern, with `check-ignore` stubbed. */
+  async function check(stdout: string, exitCode = 0) {
+    _ignoredNaxPathsDeps.git = async () => ({ stdout, exitCode });
+    return withTempDir(async (workdir) => {
+      writeFileSync(join(workdir, ".gitignore"), COVERING.join("\n"));
+      return checkGitignoreCoversNax(workdir);
+    });
+  }
+
+  test("AC-10: a hidden ledger fails the check and names the rule that hides it", async () => {
+    const result = await check(LEDGER_LINE);
+
+    expect(result.passed).toBe(false);
+    expect(result.message).toContain(LEDGER_RULE);
+  });
+
+  test("AC-11: the same failure names the .gitignore line that re-includes the ledger", async () => {
+    const result = await check(LEDGER_LINE);
+
+    expect(result.message).toContain("!.nax/features/*/decisions.jsonl");
+  });
+
+  test("a rule hiding none of the nax-tracked paths keeps the check passing", async () => {
+    const result = await check("", 1);
+
     expect(result.passed).toBe(true);
   });
 });

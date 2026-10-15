@@ -19,6 +19,7 @@ import {
   NAX_NAXIGNORE_SUGGESTIONS,
   patchIgnoreFile,
 } from "../utils/gitignore";
+import { findIgnoredNaxTrackedPaths, ignoredNaxPathMessage } from "../utils/ignored-nax-paths";
 import { initContext, initPackage } from "./init-context";
 import type { ProjectStack } from "./init-detect";
 import { buildInitConfig, detectStack } from "./init-detect";
@@ -164,6 +165,23 @@ async function updateNaxignore(projectRoot: string): Promise<void> {
     path: naxignorePath,
     added: result.added,
   });
+}
+
+/**
+ * Warn about nax-tracked files this project's ignore rules hide (US-007, nax#2534).
+ *
+ * `updateGitignore` only adds the runtime-file entries; a rule the *user* wrote
+ * (a wholesale feature-directory rule, or an older ignore of every `.jsonl` under
+ * `.nax`) still hides `decisions.jsonl`, `spec.md` and `prd.json`, and git reports
+ * nothing about it. Init is the one moment the user is looking at this project's
+ * ignore files, so it names each hidden path and the two fixes. Never removes a
+ * rule itself.
+ */
+async function warnOnIgnoredNaxTrackedPaths(projectRoot: string): Promise<void> {
+  const logger = getLogger();
+  for (const entry of await findIgnoredNaxTrackedPaths(projectRoot)) {
+    logger.warn("init", ignoredNaxPathMessage(entry), { path: entry.path, rule: entry.rule });
+  }
 }
 
 /**
@@ -393,6 +411,9 @@ export async function initProject(projectRoot: string, options?: InitProjectOpti
   // is the case where a user's ignore file has drifted out of date.
   await updateGitignore(projectRoot);
   await updateNaxignore(projectRoot);
+  // After the patch, so a rule this init just added is not reported as hiding
+  // anything — only rules the project's own ignore files still carry are.
+  await warnOnIgnoredNaxTrackedPaths(projectRoot);
 
   // Print summary
   _initDeps.log("\n[OK] nax init complete. Created files:");
