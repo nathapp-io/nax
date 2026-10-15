@@ -32,7 +32,10 @@
  *    rule is conservative. A stash is allowed when its pathspec excludes the
  *    whole of `.nax` (`-- . ':!.nax'`), or when it is a `push` whose every
  *    pathspec lies outside `.nax` (directories are listed with git). A `pop`
- *    or `apply` is allowed only when git lists no `.nax` path in the stash.
+ *    or `apply` is allowed only when git lists no `.nax` path in the stash, and
+ *    an `--index` restore must also list none in the stash's index snapshot
+ *    (a `.nax` change staged and then reverted in the working tree lives there
+ *    alone, and `--index` writes it back into the index).
  * 4. Hiding the verb (nax-evasion.ts): `git config alias.X <value>` whose
  *    value names stash / update-index / checkout / restore / reset (so even
  *    `git config alias.co checkout` is refused while a `.nax/` exists);

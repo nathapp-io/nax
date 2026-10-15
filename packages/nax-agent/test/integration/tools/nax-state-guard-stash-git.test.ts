@@ -12,7 +12,8 @@ const git = async (...args: string[]) => {
   expect(result.exitCode).toBe(0);
   return result.stdout;
 };
-const check = () => naxStateRefusalInText("git stash pop", { root, frames: [root] });
+const checkCommand = (command: string) => naxStateRefusalInText(command, { root, frames: [root] });
+const check = () => checkCommand("git stash pop");
 
 beforeEach(async () => {
   root = makeTempDir("stash-real-git-");
@@ -101,4 +102,37 @@ test("untracked .nax stash content is inspected", async () => {
       "stash@{0}",
     ]),
   ).toContain(".nax/untracked.json\0");
+});
+
+/**
+ * B1: a `.nax` change that is staged and then reverted in the WORKING TREE only.
+ * `git stash show` lists the stash's working-tree snapshot, which matches HEAD for
+ * that path, so the old guard saw a clean listing and allowed `pop --index` — and
+ * git then wrote the stale `.nax` content back into the index. Without `--index`
+ * the index snapshot is never replayed, so that restore stays allowed.
+ */
+test("B1: a staged .nax change reversed in the working tree refuses an --index restore", async () => {
+  const prd = join(root, ".nax/features/f/prd.json");
+  writeFileSync(prd, '{ "staged": true }\n');
+  await git("add", ".nax/features/f/prd.json");
+  writeFileSync(prd, "{}\n");
+  writeFileSync(join(root, "a.ts"), "changed\n");
+  await git("stash", "push");
+
+  const listing = _naxStateGuardDeps.git(root, [
+    "stash",
+    "show",
+    "-z",
+    "--name-only",
+    "--no-renames",
+    "--include-untracked",
+    "stash@{0}",
+  ]);
+  expect(listing).toContain("a.ts\0");
+  expect(listing).not.toContain(".nax");
+
+  // Plain pop drops the staged snapshot instead of replaying it; --index replays it.
+  expect(checkCommand("git stash pop")).toBeUndefined();
+  expect(checkCommand("git stash pop --index")).toBeDefined();
+  expect(checkCommand("git stash pop --index")).toContain("`pop` or `apply` of a stash that holds no `.nax` path");
 });

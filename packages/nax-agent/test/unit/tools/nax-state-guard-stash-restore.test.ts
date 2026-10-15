@@ -101,6 +101,47 @@ describe("stash restore acceptance", () => {
   });
 });
 
+describe("index snapshot (B1)", () => {
+  /** `stash show` sees the working tree only; `--index` also writes back the stash's index parent. */
+  const indexHoldsNax = (_cwd: string, args: readonly string[]): string | undefined =>
+    args[0] === "diff" ? ".nax/features/f/prd.json\0" : "src/a.ts\0";
+
+  test("B1: an --index restore refuses when only the index snapshot holds a .nax path", () => {
+    git.mockImplementation(indexHoldsNax);
+    expectStashRefusal(check("git stash pop --index"));
+  });
+
+  test("B1: the same stash without --index is still allowed", () => {
+    git.mockImplementation(indexHoldsNax);
+    expect(check("git stash pop")).toBeUndefined();
+    // The index snapshot is only ever read for an --index restore.
+    expect(git.mock.calls.every(([, args]) => args[0] === "stash")).toBe(true);
+  });
+
+  test("B1: the index check diffs the index parent against its base", () => {
+    check("git stash pop --index 'stash@{1}'");
+    expect(git).toHaveBeenCalledWith(root, ["diff", "-z", "--name-only", "--no-renames", "stash@{1}^1", "stash@{1}^2"]);
+  });
+
+  test("B1: a bare numeric ref is spelled as git's own stash ref for the diff", () => {
+    check("git stash apply --index 2");
+    expect(git).toHaveBeenCalledWith(root, ["diff", "-z", "--name-only", "--no-renames", "stash@{2}^1", "stash@{2}^2"]);
+  });
+
+  test("B1: an index snapshot that cannot be read refuses", () => {
+    git.mockImplementation((_cwd, args) => (args[0] === "stash" ? "src/a.ts\0" : undefined));
+    expectStashRefusal(check("git stash pop --index"));
+  });
+
+  test("B1: every frame's index snapshot must be readable and clean", () => {
+    mkdirSync(join(root, "src/src"), { recursive: true });
+    ctx = { ...ctx, frames: [root, join(root, "src")] };
+    git.mockImplementation((cwd, args) => (args[0] === "diff" && cwd !== root ? ".nax/status.json\0" : "src/a.ts\0"));
+    expectStashRefusal(check("git stash pop --index"));
+    expect(git.mock.calls.map(([cwd]) => cwd)).toContain(join(root, "src"));
+  });
+});
+
 describe("fail-closed edges", () => {
   test.each(["--quiet", "-q", "--index --quiet 'stash@{12}'"])("restore accepts %s", (args) => {
     expect(check(`git stash apply ${args}`)).toBeUndefined();
