@@ -3,7 +3,7 @@
   "feature": "stable-hardening",
   "branchName": "feat/stable-hardening",
   "createdAt": "2026-10-16T00:00:00.000Z",
-  "updatedAt": "2026-10-15T16:38:51.090Z",
+  "updatedAt": "2026-10-15T16:45:48.563Z",
   "userStories": [
     {
       "id": "US-001",
@@ -426,14 +426,17 @@
         "hardening"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Path-traversal prevention, fail-closed write authorization and pid-reuse-safe group termination all require the strict security test strategy."
+        "reasoning": "Path-traversal prevention, fail-closed write authorization and pid-reuse-safe group termination all require the strict security test strategy.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent-acp/src/server/connection.ts",
@@ -466,7 +469,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "389e67c5e148e10864f837c3707c63c366b40ca0"
     },
     {
       "id": "US-007",
