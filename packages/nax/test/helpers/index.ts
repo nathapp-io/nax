@@ -144,5 +144,7 @@ export { loadTrustModule, type TrustModule, trustFn } from "./trust-module";
 export { makeTurnResult } from "./turn-result";
 export { withDebugSpy, withInfoSpy, withWarnSpy } from "./warn-spy";
 export { makeFeatureContext } from "./workflow-feature-context";
+export type { FeatureMachineHarnessOpts, FeatureMachineScript } from "./workflow-feature-machine";
+export { featureMachineFixtures, makeDoneStory, makeFeatureMachineHarness } from "./workflow-feature-machine";
 export { makeStepContext } from "./workflow-step-context";
 export { type MockWorktreeManager, makeWorktreeManager } from "./worktree-manager";

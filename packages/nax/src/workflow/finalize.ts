@@ -142,14 +142,26 @@ async function bodyFacts(fc: FeatureContext, input: PublishInput): Promise<Workf
   };
 }
 
-function approvalEvidence(input: PublishInput, ci: CiWaitResult, minorsLeft: number): string[] {
+/** What the approval advisor reads before ruling on readiness. Exported for its own test. */
+export function approvalEvidence(
+  input: Pick<PublishInput, "record" | "stories">,
+  ci: Pick<CiWaitResult, "outcome" | "detail">,
+  minorsLeft: number,
+): string[] {
   const r = input.record;
+  // nax#2548: a repair commits after the re-review, so its diff reaches the PR unreviewed.
+  const repaired = r.gateRepairRounds
+    ? [
+        `Gate repair: ${r.gateRepairRounds} round(s) after the final gates went red; the repair diff was not re-reviewed`,
+      ]
+    : [];
   return [
     `Stories: ${input.stories.map((s) => `${s.id} ${s.state} (${s.rounds} round(s))`).join(", ") || "none"}`,
     `Final gates: ${r.finalGates?.ran.join(", ") || "none"}, all green`,
     `CI: ${ci.outcome} (${ci.detail})`,
     `Branch review ran; open findings after the fix pass: ${r.reviewOpen.length}; branch rulings: ${r.rulings.length}`,
     `Deferred minors left: ${minorsLeft}`,
+    ...repaired,
   ];
 }
 

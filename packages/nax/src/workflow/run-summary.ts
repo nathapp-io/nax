@@ -43,6 +43,7 @@ function branchOf(rec: WorkflowFeatureRecord): NonNullable<WorkflowSummaryView["
     fixed: Math.max(0, found - left),
     left,
     minorsLeft: minorsLeftOf(rec),
+    ...(rec.fixRounds ? { fixRounds: rec.fixRounds } : {}),
   };
 }
 
@@ -85,6 +86,7 @@ export function buildWorkflowRunSummary(
     ...(rec?.reviewRan ? { branch: branchOf(rec) } : {}),
     ...(rec && !rec.reviewRan ? { branchReviewSkipped: { minorsLeft: minorsLeftOf(rec) } } : {}),
     ...(finalGates ? { finalGates: finalGates.failing.length === 0 ? ("green" as const) : ("red" as const) } : {}),
+    ...(rec?.gateRepairRounds ? { gateRepairRounds: rec.gateRepairRounds } : {}),
     ...(rec?.outcome
       ? { publish: { outcome: rec.outcome, ...(rec.url ? { url: rec.url } : {}), reasons: rec.reasons } }
       : {}),

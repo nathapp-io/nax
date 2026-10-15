@@ -10,6 +10,8 @@ describe("workflow config", () => {
     expect(parsed.workflow).toEqual({
       models: {},
       maxFixRounds: 5,
+      maxBranchFixRounds: 2,
+      finalGateRepairRounds: 1,
       preflight: true,
       publish: "pr",
       timeouts: {
@@ -60,6 +62,17 @@ describe("workflow config", () => {
   test("maxFixRounds must be an integer >= 1", () => {
     expect(() => NaxConfigSchema.parse({ workflow: { maxFixRounds: 0 } })).toThrow();
     expect(() => NaxConfigSchema.parse({ workflow: { maxFixRounds: 2.5 } })).toThrow();
+  });
+
+  // nax#2547 / nax#2548: the feature-level round caps are config, not module constants.
+  test("maxBranchFixRounds and finalGateRepairRounds accept 0 and reject negatives or fractions", () => {
+    const off = NaxConfigSchema.parse({ workflow: { maxBranchFixRounds: 0, finalGateRepairRounds: 0 } });
+    expect(off.workflow.maxBranchFixRounds).toBe(0);
+    expect(off.workflow.finalGateRepairRounds).toBe(0);
+    expect(NaxConfigSchema.parse({ workflow: { maxBranchFixRounds: 4 } }).workflow.maxBranchFixRounds).toBe(4);
+    expect(() => NaxConfigSchema.parse({ workflow: { maxBranchFixRounds: -1 } })).toThrow();
+    expect(() => NaxConfigSchema.parse({ workflow: { maxBranchFixRounds: 1.5 } })).toThrow();
+    expect(() => NaxConfigSchema.parse({ workflow: { finalGateRepairRounds: -1 } })).toThrow();
   });
 
   test("execution.mode rejects unknown values", () => {

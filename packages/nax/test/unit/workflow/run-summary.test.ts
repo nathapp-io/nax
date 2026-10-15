@@ -73,6 +73,20 @@ describe("buildWorkflowRunSummary", () => {
     expect(view?.branch).toEqual({ found: 4, fixed: 3, left: 1, minorsLeft: 1 });
   });
 
+  // nax#2547 / nax#2548: how many fix and gate-repair rounds the feature workflow spent.
+  test("the record's fix and gate-repair rounds reach the view; absent when none ran", () => {
+    const file = resultFile();
+    const rec = file.featureWorkflow;
+    if (!rec) throw new Error("fixture has a feature record");
+    const v = buildWorkflowRunSummary(
+      { ...file, featureWorkflow: { ...rec, fixRounds: 2, gateRepairRounds: 1 } },
+      { storiesDurationMs: 0, featureWorkflowDurationMs: 0 },
+    );
+    expect(v?.branch?.fixRounds).toBe(2);
+    expect(v?.gateRepairRounds).toBe(1);
+    expect(view).not.toHaveProperty("gateRepairRounds");
+  });
+
   test("publish outcome and final gates", () => {
     expect(view?.publish).toEqual({ outcome: "local-only", reasons: ["no forge"] });
     expect(view?.finalGates).toBe("green");

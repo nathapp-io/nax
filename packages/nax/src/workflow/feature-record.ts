@@ -14,6 +14,7 @@ export const FEATURE_STEPS: readonly FeatureStep[] = [
   "branch-rereview",
   "adjudicate",
   "final-gates",
+  "gate-repair",
   "publish",
   "done",
 ];

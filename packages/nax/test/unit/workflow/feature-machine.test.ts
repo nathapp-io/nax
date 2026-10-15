@@ -1,20 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import type { BranchFixOutcome } from "@/workflow/branch-fix";
-import type { BranchReviewFacts } from "@/workflow/branch-review";
-import { type FeatureEnv, type FeatureSteps, runFeatureMachine } from "@/workflow/feature-machine";
+import { featureMachineFixtures, makeDoneStory, makeFeatureMachineHarness } from "@test/helpers";
+import { runFeatureMachine } from "@/workflow/feature-machine";
 import { newFeatureRecord } from "@/workflow/feature-record";
-import type { PublishOutcome } from "@/workflow/finalize";
 import type { RepoGateRun } from "@/workflow/repo-gates";
-import type {
-  BranchReviewVerdict,
-  FeatureStep,
-  ReReviewVerdict,
-  StorySummary,
-  WorkflowFeatureRecord,
-  WorkflowFinding,
-} from "@/workflow/types";
+import type { BranchReviewVerdict, ReReviewVerdict, WorkflowFeatureRecord } from "@/workflow/types";
 
-const GREEN: RepoGateRun = { summary: { ran: ["build", "test"], failing: [] }, findings: [] };
+const { GREEN, PASS } = featureMachineFixtures;
+const harness = makeFeatureMachineHarness;
+const ONE_ROUND = { maxBranchFixRounds: 1, finalGateRepairRounds: 1 };
+const done = makeDoneStory;
 const RED_LINT: RepoGateRun = {
   summary: { ran: ["build", "lint"], failing: ["lint"] },
   findings: [{ kind: "gate", severity: "important", issue: "repo gate lint failed:\nno-var" }],
@@ -25,130 +19,6 @@ const RED_TEST: RepoGateRun = {
     { kind: "gate", severity: "important", issue: "repo gate test failed:\nFAIL src/adds.test.ts > adds 1 + 1" },
   ],
 };
-const PASS: BranchReviewVerdict = {
-  spec: "pass",
-  quality: "approved",
-  findings: [],
-  cannotVerify: [],
-  inspectedFiles: [],
-  minorTriage: [],
-};
-const FIXED: BranchFixOutcome = {
-  reply: { status: "DONE", commits: [], testSummary: "", interrupted: false },
-  autoCommitted: false,
-  dirty: false,
-};
-const PUBLISHED: PublishOutcome = { outcome: "ready", ci: "pending", url: "https://gh/pr/1", reasons: [] };
-const done = (id: string, over: Partial<StorySummary> = {}): StorySummary => ({
-  id,
-  title: id,
-  state: "complete",
-  rounds: 0,
-  unreviewed: false,
-  flagged: 0,
-  ...over,
-});
-
-interface Script {
-  gates?: RepoGateRun[];
-  review?: BranchReviewVerdict | null;
-  reReview?: ReReviewVerdict | null;
-  reReviews?: (ReReviewVerdict | null)[];
-  changed?: string[] | Error;
-  fix?: BranchFixOutcome;
-}
-
-function harness(
-  script: Script,
-  over: { record?: WorkflowFeatureRecord; stories?: StorySummary[]; aborted?: boolean } = {},
-) {
-  const calls: string[] = [];
-  const ledger: string[] = [];
-  const artifacts: Record<string, unknown> = {};
-  const stepsSeen: FeatureStep[] = [];
-  const updates: WorkflowFeatureRecord[] = [];
-  const fixInputs: (readonly WorkflowFinding[])[] = [];
-  const reviewFacts: BranchReviewFacts[] = [];
-  const reReviewInputs: (readonly WorkflowFinding[])[] = [];
-  const adjudicated: (readonly WorkflowFinding[])[] = [];
-  const gates = [...(script.gates ?? [])];
-  const reReviewQueue = [...(script.reReviews ?? [])];
-  let clock = 0;
-  const steps: FeatureSteps = {
-    repoGates: async () => {
-      calls.push("repoGates");
-      return gates.shift() ?? GREEN;
-    },
-    branchReview: async (seed, facts) => {
-      calls.push(`branchReview:${seed}`);
-      reviewFacts.push(facts);
-      const v = script.review === undefined ? PASS : script.review;
-      return v === null ? { ran: false, why: "unparseable reply" } : { ran: true, verdict: v };
-    },
-    branchFix: async (findings) => {
-      calls.push("branchFix");
-      fixInputs.push(findings);
-      return script.fix ?? FIXED;
-    },
-    branchReReview: async (findings, fixBase) => {
-      calls.push(`branchReReview:${fixBase}`);
-      reReviewInputs.push(findings);
-      const queued = reReviewQueue.length > 0 ? reReviewQueue.shift() : undefined;
-      const fallback = script.reReview;
-      const v =
-        queued !== undefined
-          ? queued
-          : fallback === undefined
-            ? { verdicts: findings.map((f) => ({ id: f.id, addressed: true, note: "" })), newFindings: [] }
-            : fallback;
-      return v === null ? { ran: false, why: "timeout" } : { ran: true, verdict: v };
-    },
-    adjudicate: async (items) => {
-      calls.push("adjudicate");
-      adjudicated.push(items);
-      return items.map((f) => ({
-        findingId: f.id,
-        action: "hold" as const,
-        text: `hold ${f.id}`,
-        why: "w",
-        costIfWrong: "c",
-        source: "default" as const,
-      }));
-    },
-    publish: async () => {
-      calls.push("publish");
-      return PUBLISHED;
-    },
-    head: async () => `h${calls.length}`,
-    changedFiles: async () => {
-      calls.push("changedFiles");
-      if (script.changed instanceof Error) throw script.changed;
-      return script.changed ?? [];
-    },
-  };
-  const env: FeatureEnv = {
-    steps,
-    sink: {
-      update: async (r) => {
-        updates.push(r);
-      },
-      ledger: async (t) => {
-        ledger.push(t);
-      },
-      step: (s) => {
-        stepsSeen.push(s);
-      },
-      artifact: async (name, value) => {
-        artifacts[name] = value;
-      },
-    },
-    facts: { stories: over.stories ?? [done("US-001")], parked: [], cannotVerify: [] },
-    record: over.record ?? newFeatureRecord({ now: "t", seed: "seed0", minors: [] }),
-    aborted: () => over.aborted === true,
-    now: () => (clock += 5),
-  };
-  return { env, calls, ledger, artifacts, stepsSeen, updates, fixInputs, reviewFacts, reReviewInputs, adjudicated };
-}
 
 describe("runFeatureMachine", () => {
   // US-006 (nax#2527): the branch reviewer sees the repo gates the record already holds.
@@ -242,6 +112,8 @@ describe("runFeatureMachine", () => {
           }),
         },
         stories: [done("US-001"), done("US-002", { state: "complete-gate-open", reason: "red: lint" })],
+        // One round: this test is about what reaches the first fix; later rounds are covered in feature-machine-fix-rounds.
+        limits: ONE_ROUND,
       },
     );
     const final = await runFeatureMachine(h.env);
@@ -413,105 +285,6 @@ describe("branch review coverage (US-003)", () => {
   });
 });
 
-const REVIEW_B1: BranchReviewVerdict = {
-  ...PASS,
-  spec: "fail",
-  findings: [{ kind: "spec", severity: "important", issue: "cap missing", file: "src/a.ts" }],
-};
-const NEW_IN_FIX = (file?: string): ReReviewVerdict => ({
-  verdicts: [{ id: "B1", addressed: true, note: "" }],
-  newFindings: [{ kind: "spec", severity: "important", issue: "fix broke publish", ...(file ? { file } : {}) }],
-});
-const ALL_ADDRESSED = (id: string): ReReviewVerdict => ({
-  verdicts: [{ id, addressed: true, note: "" }],
-  newFindings: [],
-});
-
-describe("second branch fix (#2496)", () => {
-  test("taken when every item is addressed and new blocking findings sit in the fix diff", async () => {
-    const h = harness({
-      review: REVIEW_B1,
-      reReviews: [NEW_IN_FIX("src/a.ts"), ALL_ADDRESSED("B2")],
-      changed: ["src/a.ts"],
-    });
-    const final = await runFeatureMachine(h.env);
-    expect(h.fixInputs.map((f) => f.map((x) => x.id))).toEqual([["B1"], ["B2"]]);
-    expect(h.reReviewInputs[1]?.map((f) => f.id)).toEqual(["B2"]);
-    expect(final.fixRounds).toBe(2);
-    expect(final.reviewOpen).toEqual([]);
-    expect(h.calls).not.toContain("adjudicate");
-    expect(h.ledger.some((l) => l.startsWith("branch fix r2: 1 item(s): B2"))).toBe(true);
-    expect(h.artifacts["branch-rereview-r2.json"]).toBeDefined();
-  });
-
-  test("never a third round: round-2 re-review findings go to adjudicate", async () => {
-    const h = harness({
-      review: REVIEW_B1,
-      reReviews: [NEW_IN_FIX("src/a.ts"), NEW_IN_FIX("src/a.ts")],
-      changed: ["src/a.ts"],
-    });
-    const final = await runFeatureMachine(h.env);
-    expect(h.fixInputs).toHaveLength(2);
-    expect(h.calls).toContain("adjudicate");
-    expect(final.fixRounds).toBe(2);
-  });
-
-  test("not taken when an earlier item stays open", async () => {
-    const stillOpen: ReReviewVerdict = {
-      ...NEW_IN_FIX("src/a.ts"),
-      verdicts: [{ id: "B1", addressed: false, note: "" }],
-    };
-    const h = harness({ review: REVIEW_B1, reReviews: [stillOpen], changed: ["src/a.ts"] });
-    await runFeatureMachine(h.env);
-    expect(h.fixInputs).toHaveLength(1);
-    expect(h.calls).toContain("adjudicate");
-  });
-
-  test("not taken when a new finding is outside the fix diff", async () => {
-    const h = harness({ review: REVIEW_B1, reReviews: [NEW_IN_FIX("src/other.ts")], changed: ["src/a.ts"] });
-    await runFeatureMachine(h.env);
-    expect(h.fixInputs).toHaveLength(1);
-  });
-
-  test("not taken when a new finding names no file", async () => {
-    const h = harness({ review: REVIEW_B1, reReviews: [NEW_IN_FIX()], changed: ["src/a.ts"] });
-    await runFeatureMachine(h.env);
-    expect(h.fixInputs).toHaveLength(1);
-  });
-
-  test("a git failure listing the fix diff skips the second fix and says so", async () => {
-    const h = harness({ review: REVIEW_B1, reReviews: [NEW_IN_FIX("src/a.ts")], changed: new Error("bad revision") });
-    await runFeatureMachine(h.env);
-    expect(h.fixInputs).toHaveLength(1);
-    expect(h.ledger.some((l) => l.includes("second branch fix skipped"))).toBe(true);
-  });
-
-  test("a file spelled ./src/a.ts still matches the fix diff", async () => {
-    const h = harness({
-      review: REVIEW_B1,
-      reReviews: [NEW_IN_FIX("./src/a.ts"), ALL_ADDRESSED("B2")],
-      changed: ["src/a.ts"],
-    });
-    await runFeatureMachine(h.env);
-    expect(h.fixInputs).toHaveLength(2);
-  });
-
-  test("resumes a pre-#2496 record (no fixRounds/fixTargets/cannotVerify) without a second round", async () => {
-    const legacy: WorkflowFeatureRecord = {
-      ...newFeatureRecord({ now: "t", seed: "seed0", minors: [] }),
-      step: "branch-rereview",
-      fixRan: true,
-      fixBase: "h1",
-      reviewOpen: [{ id: "B1", kind: "spec", severity: "important", issue: "x", file: "src/a.ts" }],
-      nextFindingId: 2,
-    };
-    const h = harness({ reReviews: [ALL_ADDRESSED("B1")] }, { record: legacy });
-    const final = await runFeatureMachine(h.env);
-    expect(h.fixInputs).toHaveLength(0);
-    expect(final.step).toBe("done");
-  });
-});
-
 const SAME_PLACE_B1: BranchReviewVerdict = {
   ...PASS,
   spec: "fail",
@@ -565,9 +338,9 @@ describe("branch re-review PARTIAL (US-004)", () => {
       ...PARTIAL_B1(),
       newFindings: [{ kind: "spec", severity: "critical", issue: "broke publish", file: "src/a.ts", line: 60 }],
     };
-    const h = harness({ review: SAME_PLACE_B1, reReview: verdict });
+    const h = harness({ review: SAME_PLACE_B1, reReview: verdict }, { limits: ONE_ROUND });
     const final = await runFeatureMachine(h.env);
-    // B1 is still open, so #2496's second fix is not eligible: the new finding goes to adjudication too.
+    // One round (nax#2547 would otherwise re-fix B1): the new finding goes to adjudication with it.
     expect(final.reviewOpen.map((f) => f.id)).toEqual(["B1", "B2"]);
     expect(final.reviewOpen.map((f) => f.issue)).toEqual(["symlinks still bypass", "broke publish"]);
     expect(h.adjudicated[0]?.map((f) => f.id)).toEqual(["B1", "B2"]);

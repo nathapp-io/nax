@@ -29,6 +29,13 @@ export interface WorkflowConfig {
   models: WorkflowModelsConfig;
   /** Rounds 1..min(3, max) reuse the warm implementer session; later rounds are fresh, one tier up. */
   maxFixRounds: number;
+  /** Branch fix -> re-review cycles after the branch review (nax#2547); 0 runs no branch fix. */
+  maxBranchFixRounds: number;
+  /**
+   * Repair rounds when the final gates turn red after a branch fix while the first repo-gate pass
+   * was green (nax#2548); 0 publishes the red gates as before.
+   */
+  finalGateRepairRounds: number;
   preflight: boolean;
   /** What publishing does after the final gates. Optional so a hand-built config reads as the `pr` default. */
   publish?: WorkflowPublishMode;

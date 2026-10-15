@@ -34,8 +34,10 @@ function summaryLine(view: WorkflowSummaryView): string {
   const parts = [formatDurationSplit(view.storiesDurationMs, view.featureWorkflowDurationMs)];
   if (view.branch) {
     const b = view.branch;
-    parts.push(`branch findings ${b.found} found, ${b.fixed} fixed, ${b.left} left`);
+    const rounds = b.fixRounds ? ` over ${b.fixRounds} fix round${b.fixRounds === 1 ? "" : "s"}` : "";
+    parts.push(`branch findings ${b.found} found, ${b.fixed} fixed, ${b.left} left${rounds}`);
   }
+  if (view.gateRepairRounds) parts.push(`gate repair rounds ${view.gateRepairRounds}`);
   if (view.publish) parts.push(`publish ${view.publish.outcome}`);
   // US-005: a ruling that changed an acceptance criterion must not go unnoticed at run end.
   if (view.flagged) parts.push(`flagged ${view.flagged.ids.length} (${view.flagged.hint})`);
