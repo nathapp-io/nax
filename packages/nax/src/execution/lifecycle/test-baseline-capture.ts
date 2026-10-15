@@ -16,7 +16,7 @@
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { NaxConfig } from "@/config";
 import { getSafeLogger } from "@/logger";
-import { resolveQualityTestCommands } from "@/quality";
+import { resolveFullSuiteTimeoutSeconds, resolveQualityTestCommands } from "@/quality";
 import { parseTestOutput, type TestSummary } from "@/test-runners";
 import {
   clearStoryBaselines,
@@ -76,9 +76,6 @@ export interface TestBaselineCaptureDeps {
   regressionGateEnabled: (config: NaxConfig) => boolean;
 }
 
-/** Schema default for the gate timeout (matches `regressionGate.timeoutSeconds` schema floor). */
-const DEFAULT_GATE_TIMEOUT_SECONDS = 300;
-
 /**
  * Production wiring: production code reads from this object; tests override
  * individual members. All external calls (process spawn, file IO, git) live
@@ -117,10 +114,7 @@ export const _captureDeps: TestBaselineCaptureDeps = {
   writeStoryBaseline,
   clearStoryBaselines,
   now: () => new Date().toISOString(),
-  resolveGateTimeoutSeconds: (config) =>
-    config.execution?.regressionGate?.timeoutSeconds ??
-    config.execution?.rectification?.fullSuiteTimeoutSeconds ??
-    DEFAULT_GATE_TIMEOUT_SECONDS,
+  resolveGateTimeoutSeconds: resolveFullSuiteTimeoutSeconds,
   regressionGateEnabled: (config) => config.execution?.regressionGate?.enabled ?? true,
 };
 

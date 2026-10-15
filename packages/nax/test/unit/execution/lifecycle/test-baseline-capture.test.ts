@@ -33,6 +33,7 @@ import {
   type CaptureRunnerResult,
   captureRunBaseline,
 } from "@/execution/lifecycle/test-baseline-capture";
+import { DEFAULT_FULL_SUITE_TIMEOUT_SECONDS } from "@/quality";
 import type { TestBaseline } from "@/verification";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -371,7 +372,7 @@ describe("captureRunBaseline — AC4 (rectification fallback)", () => {
     expect(received).toBe(77);
   });
 
-  test("AC4 boundary: with neither timeout configured, runner receives the shipped 300s fallback", async () => {
+  test("AC4 boundary: with neither timeout configured, runner receives the shipped DEFAULT_FULL_SUITE_TIMEOUT_SECONDS fallback", async () => {
     let received = 0;
     _captureDeps.resolveTestCommands = async () => "bun test";
     _captureDeps.runCommand = async (_command, timeout) => {
@@ -379,14 +380,14 @@ describe("captureRunBaseline — AC4 (rectification fallback)", () => {
       return { success: true, output: "", timedOut: false };
     };
     // No `execution` subtree at all — both documented fallbacks are absent, so
-    // the shipped `?? DEFAULT_GATE_TIMEOUT_SECONDS` branch has to answer. A
+    // the shipped `?? DEFAULT_FULL_SUITE_TIMEOUT_SECONDS` branch has to answer. A
     // sparse config is the only way to reach it: the schema always populates
     // both keys on a parsed config.
     const config = makeSparseNaxConfig({});
 
     await captureRunBaseline(makeOptions(config));
 
-    expect(received).toBe(300);
+    expect(received).toBe(DEFAULT_FULL_SUITE_TIMEOUT_SECONDS);
   });
 });
 
