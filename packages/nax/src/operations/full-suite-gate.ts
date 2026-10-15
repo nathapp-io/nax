@@ -143,14 +143,9 @@ export interface FullSuiteGateDeps {
 export const _fullSuiteGateDeps: FullSuiteGateDeps = {
   resolveGateContext: async (input, ctx) => {
     const { resolveQualityTestCommands } = await import("../quality/command-resolver");
+    const { resolveFullSuiteTimeoutSeconds } = await import("../quality/gate-timeout");
     const config = ctx.packageView.config; // package-merged config (2b), not root
-    // Prefer regressionGate.timeoutSeconds (matches legacy RegressionStrategy / issue #1116)
-    // and fall back to rectification.fullSuiteTimeoutSeconds for backwards compatibility with
-    // callers that still set the older key.
-    const fullSuiteTimeout =
-      config.execution?.regressionGate?.timeoutSeconds ??
-      config.execution?.rectification?.fullSuiteTimeoutSeconds ??
-      300;
+    const fullSuiteTimeout = resolveFullSuiteTimeoutSeconds(config);
     const { testCommand: resolvedTestCmd } = await resolveQualityTestCommands(
       config,
       input.workdir,

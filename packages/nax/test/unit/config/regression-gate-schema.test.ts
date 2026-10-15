@@ -89,3 +89,27 @@ describe("RegressionGateConfigSchema - mode field", () => {
 // maxRectificationAttempts field removed — regression cycle now shares
 // execution.rectification.maxAttemptsTotal. See rejectLegacyRectificationKeys
 // in src/config/loader.ts for the migration guard.
+
+// ---------------------------------------------------------------------------
+// full-suite timeout range (#2536) — same ceiling as verificationTimeoutSeconds
+// ---------------------------------------------------------------------------
+
+describe("full-suite timeout range", () => {
+  test.each([
+    ["regressionGate.timeoutSeconds", (s: number) => buildConfigWith({ ...BASE_REGRESSION_GATE, timeoutSeconds: s })],
+    [
+      "rectification.fullSuiteTimeoutSeconds",
+      (s: number) => ({
+        ...DEFAULT_CONFIG,
+        execution: {
+          ...DEFAULT_CONFIG.execution,
+          rectification: { ...DEFAULT_CONFIG.execution.rectification, fullSuiteTimeoutSeconds: s },
+        },
+      }),
+    ],
+  ])("%s accepts up to 3600 and rejects above", (_key, build) => {
+    expect(NaxConfigSchema.safeParse(build(1800)).success).toBe(true);
+    expect(NaxConfigSchema.safeParse(build(3600)).success).toBe(true);
+    expect(NaxConfigSchema.safeParse(build(3601)).success).toBe(false);
+  });
+});

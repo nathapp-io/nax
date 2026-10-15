@@ -16,7 +16,6 @@ import {
   BASH_TOOL_NAME,
   type CodingToolName,
   type CommandLauncher,
-  type DeclaredCommandRunner,
   EXEC_TOOL_NAME,
   expandMcpRuleGrants,
   mcpRuleAdmits,
@@ -47,6 +46,11 @@ import { type ResolvedPermissions, resolvePermissions } from "../config/permissi
 import { type QualityCommandSpec, runQualityCommand } from "../quality";
 import { packageOverrideKey, packageWorkdir } from "../runtime/packages";
 import { createConfigReadGatePolicy } from "./config-read-gate";
+import {
+  extractDispatchConfigFields,
+  type TimedDeclaredCommandRunner,
+  withSuiteCommandTimeout,
+} from "./dispatch-config-fields";
 import { resolvePackageName } from "./exec-package-name";
 import { naxOwnedPathsPolicy } from "./nax-owned-writes";
 import { naxProtectedPaths } from "./nax-protected-paths";
@@ -80,33 +84,6 @@ export type ResolveCodingToolSupportOptions = Pick<
 
 /** The args literal `resolveCodingToolSupport` ends up calling the sync seam with. */
 type ResolveSupportArgs = Parameters<typeof buildCodingToolSupport>[0];
-
-/**
- * RULING F2: AgentRunOptions['config'] is typed as the agent-manager Pick
- * (agent/execution/profile), yet both hops source it from configLoader.current(),
- * so it carries the full NaxConfig at runtime — only the type lies. The read is
- * widened locally here; the shared agentManagerConfigSelector stays untouched.
- * (AgentManagerConfig is a Pick without quality/install, but every member here
- * is optional, so both shapes are assignable without a cast.)
- */
-export interface WidenedDispatchConfig {
-  quality?: {
-    commands?: Partial<Record<string, QualityCommandSpec>>;
-    stripEnvVars?: unknown;
-    shell?: unknown;
-  };
-  install?: { allowScripts?: boolean };
-  execution?: { denyPaths?: readonly string[] };
-}
-
-/** The quality/install/execution fields the dispatch needs, package-config first. */
-export interface DispatchConfigFields {
-  commands: Partial<Record<string, QualityCommandSpec>>;
-  stripEnvVars: string[];
-  shell: string | undefined;
-  allowScripts: boolean;
-  denyPaths: readonly string[] | undefined;
-}
 
 /** The MCP rule partitions plus the provider tools resolved against them. */
 export interface ProviderContribution {
@@ -178,7 +155,7 @@ export async function loadPackageEffectiveConfig(
       // commandCwd below keeps the RAW dir so the command runs in the story's
       // worktree (see packageOverrideKey in src/runtime/packages.ts).
       packageOverrideKey(packageDir),
-      // RULING F2 (see WidenedDispatchConfig): options.config's declared type is
+      // RULING F2 (WidenedDispatchConfig, ./dispatch-config-fields): options.config's declared type is
       // a Pick, but at runtime both hops source it from the full NaxConfig.
       options.config as unknown as NaxConfig,
     );
@@ -190,21 +167,6 @@ export async function loadPackageEffectiveConfig(
     });
     return undefined;
   }
-}
-
-export function extractDispatchConfigFields(config: WidenedDispatchConfig | undefined): DispatchConfigFields {
-  const quality = config?.quality;
-  return {
-    commands: quality?.commands ?? {},
-    stripEnvVars: Array.isArray(quality?.stripEnvVars)
-      ? quality.stripEnvVars.filter((value): value is string => typeof value === "string")
-      : [],
-    shell: typeof quality?.shell === "string" ? quality.shell : undefined,
-    allowScripts: config?.install?.allowScripts ?? false,
-    // Same package-first fallback as the config itself — a package can
-    // override execution.denyPaths too.
-    denyPaths: config?.execution?.denyPaths,
-  };
 }
 
 export function declaredCommandsFrom(
@@ -468,8 +430,8 @@ async function configReadGateFor(
 /** Injectable deps for testability — mirrors the _agentManagerDeps pattern. Each nax-owned port has its default here. */
 export const _codingToolSupportDeps: {
   loadConfigForPackage: typeof loadConfigForPackage;
-  /** Port 7: the declared-command runner RunCommand calls. */
-  runDeclaredCommand: DeclaredCommandRunner;
+  /** Port 7: the declared-command runner RunCommand calls, bound to the dispatch timeout below. */
+  runDeclaredCommand: TimedDeclaredCommandRunner;
   /** Port 6: the host-owned paths the tools and the sandbox protect. */
   protectedPaths: () => ProtectedPathsPolicy;
   /** S3-2 port: the paths nax owns the writes to; injected into the tools (and, from Task 4, the sandbox). */
@@ -569,7 +531,10 @@ export async function resolveCodingToolSupport(
     extraTools: providerResult.tools,
     providerIdByTool: providerResult.providerIdByTool,
     declaredCommands,
-    runDeclaredCommand: _codingToolSupportDeps.runDeclaredCommand,
+    runDeclaredCommand: withSuiteCommandTimeout(
+      _codingToolSupportDeps.runDeclaredCommand,
+      fields.suiteCommandTimeoutMs,
+    ),
     interceptor: options.commandInterceptor,
     protectedPaths: _codingToolSupportDeps.protectedPaths(),
     ownedPaths: createConfigReadGatePolicy(_codingToolSupportDeps.ownedPaths, configReadable),

@@ -20,7 +20,7 @@ beforeEach(() => {
 afterEach(() => cleanupTempDir(root));
 
 describe("port 7: declared-command runner", () => {
-  withDepsRestore(_codingToolSupportDeps, ["runDeclaredCommand"]);
+  withDepsRestore(_codingToolSupportDeps, ["runDeclaredCommand", "loadConfigForPackage"]);
 
   test("defaults to nax's quality runner", () => {
     expect(_codingToolSupportDeps.runDeclaredCommand).toBe(runQualityCommand);
@@ -40,6 +40,53 @@ describe("port 7: declared-command runner", () => {
     });
     await support?.runtime.callTool("RunCommand", { command: "lint" });
     expect(seen.map((request) => request.commandName)).toEqual(["lint"]);
+  });
+
+  test("suite commands run under the full-suite gate timeout; others keep the runner default (#2536)", async () => {
+    const seen: Array<[string, number | "runner-default"]> = [];
+    _codingToolSupportDeps.runDeclaredCommand = async (request) => {
+      seen.push([request.commandName, request.timeoutMs ?? "runner-default"]);
+      return { success: true, exitCode: 0, output: "" };
+    };
+    const config = makeNaxConfig({
+      quality: { commands: { test: "bun run test", lint: "bun run lint" } },
+      execution: { regressionGate: { timeoutSeconds: 600 } },
+    });
+    const support = await resolveCodingToolSupport({
+      declaredTools: ["RunCommand", "Write"],
+      codingToolRoot: root,
+      pipelineStage: "run",
+      config,
+    });
+    await support?.runtime.callTool("RunCommand", { command: "test" });
+    await support?.runtime.callTool("RunCommand", { command: "lint" });
+    expect(seen).toStrictEqual([
+      ["test", 600_000],
+      ["lint", "runner-default"],
+    ]);
+  });
+
+  test("reads the timeout from the story's package config first", async () => {
+    const timeouts: Array<number | undefined> = [];
+    _codingToolSupportDeps.runDeclaredCommand = async (request) => {
+      timeouts.push(request.timeoutMs);
+      return { success: true, exitCode: 0, output: "" };
+    };
+    _codingToolSupportDeps.loadConfigForPackage = async () =>
+      makeNaxConfig({
+        quality: { commands: { testScoped: "bun run test:pkg" } },
+        execution: { regressionGate: { timeoutSeconds: 900 } },
+      });
+    const support = await resolveCodingToolSupport({
+      declaredTools: ["RunCommand", "Write"],
+      codingToolRoot: root,
+      codingToolPackageDir: "packages/api",
+      projectDir: root,
+      pipelineStage: "run",
+      config: makeNaxConfig({ execution: { regressionGate: { timeoutSeconds: 600 } } }),
+    });
+    await support?.runtime.callTool("RunCommand", { command: "testScoped" });
+    expect(timeouts).toEqual([900_000]);
   });
 });
 

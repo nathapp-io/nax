@@ -23,7 +23,7 @@ import {
   withDebugSpy,
   withInfoSpy,
 } from "@test/helpers";
-import { _qualityRunnerDeps, runQualityCommand } from "@/quality/runner";
+import { _qualityRunnerDeps, runQualityCommand, TIMEOUT_OUTPUT_TAIL_CHARS } from "@/quality/runner";
 
 // ---------------------------------------------------------------------------
 // Mock helpers
@@ -175,6 +175,48 @@ describe("runQualityCommand — timeout flow", () => {
     expect(result.output).toContain("timed out");
     expect(result.output).toContain("lint");
     expect(killMock).toHaveBeenCalledWith(-1234, "SIGTERM");
+  });
+
+  /** Spawns a process that prints `stdout`, then only exits on the runner's SIGTERM. */
+  function spawnHangingWith(stdout: string): void {
+    let resolveExited!: (code: number) => void;
+    const exitedPromise = new Promise<number>((res) => {
+      resolveExited = res;
+    });
+    process.kill = mock((_pid: number, signal?: string | number) => {
+      if (signal === "SIGTERM") resolveExited(143);
+      return true;
+    }) as typeof process.kill;
+    _qualityRunnerDeps.spawn = makeSpawn(() => {
+      const proc = makeSpawnResult({ pid: 1234, stdout });
+      Object.defineProperty(proc, "exited", { value: exitedPromise });
+      return proc;
+    }).spawn;
+  }
+
+  const runTimedOut = (origin: "harness" | "agent-tool") =>
+    runQualityCommand({ commandName: "test", command: "bun run test", workdir: "/tmp/project", timeoutMs: 50, origin });
+
+  test("an agent-tool run keeps the output tail from a line boundary (#2536)", async () => {
+    spawnHangingWith(`${"x".repeat(TIMEOUT_OUTPUT_TAIL_CHARS)}\npkg/a.test.ts ok\nslow.test.ts still running`);
+
+    const result = await runTimedOut("agent-tool");
+
+    expect(result.timedOut).toBe(true);
+    expect(result.output.startsWith("[nax] test timed out after 0.05s")).toBe(true);
+    expect(result.output).toContain("slow.test.ts still running");
+    // The cut lands inside the x-run; that partial line is dropped, not shown truncated.
+    expect(result.output).not.toContain("xxx");
+    expect(result.output.length).toBeLessThan(TIMEOUT_OUTPUT_TAIL_CHARS + 200);
+  });
+
+  test("a harness run keeps only the notice, so findings parsers never see partial output", async () => {
+    spawnHangingWith("src/a.ts:1:1 error partial diagnostic");
+
+    const result = await runTimedOut("harness");
+
+    expect(result.timedOut).toBe(true);
+    expect(result.output).toBe("[nax] test timed out after 0.05s");
   });
 });
 

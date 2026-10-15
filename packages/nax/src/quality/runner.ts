@@ -29,6 +29,14 @@ const DEFAULT_TIMEOUT_MS = 120_000;
 const SIGKILL_GRACE_PERIOD_MS = 5_000;
 const STREAM_DRAIN_TIMEOUT_MS = 2_000;
 
+/**
+ * How much of a timed-out agent-tool command's output is kept: the tail, so the
+ * agent can see which step was still running (#2536). Harness runs keep only
+ * the notice, because their findings parsers would read a partial run as a
+ * complete one.
+ */
+export const TIMEOUT_OUTPUT_TAIL_CHARS = 4_000;
+
 export interface QualityCommandOptions {
   /** Short name used in logs (e.g. "lint", "typecheck", "lintFix"). */
   commandName: string;
@@ -97,6 +105,19 @@ function createDrainDeadline(deadlineMs: number): { promise: Promise<string>; ca
       }
     },
   };
+}
+
+/**
+ * The timeout notice, followed by the tail of `partial` (stdout, then stderr)
+ * cut at a line boundary so no truncated path reaches the reader.
+ */
+function timedOutOutput(commandName: string, timeoutMs: number, partial: string): string {
+  const notice = `[nax] ${commandName} timed out after ${timeoutMs / 1000}s`;
+  const cut = partial.slice(-TIMEOUT_OUTPUT_TAIL_CHARS);
+  const firstBreak = cut.indexOf("\n");
+  const whole = partial.length > TIMEOUT_OUTPUT_TAIL_CHARS && firstBreak >= 0 ? cut.slice(firstBreak + 1) : cut;
+  const tail = whole.trim();
+  return tail === "" ? notice : `${notice}; last output before the kill:\n${tail}`;
 }
 
 /**
@@ -238,7 +259,7 @@ async function runSingleCommand(
         command,
         success: false,
         exitCode: -1,
-        output: `[nax] ${commandName} timed out after ${timeoutMs / 1000}s`,
+        output: timedOutOutput(commandName, timeoutMs, origin === "agent-tool" ? [stdout, stderr].join("\n") : ""),
         durationMs,
         timedOut: true,
       };
