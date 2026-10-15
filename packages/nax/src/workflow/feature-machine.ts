@@ -12,7 +12,7 @@ import { getSafeLogger } from "@/logger";
 import { FEATURE_SCOPE } from "./advisor-live";
 import { describeUnread, featurePassed } from "./approval";
 import type { BranchFixOutcome } from "./branch-fix";
-import { type FeatureLimits, nextBranchFixRound } from "./branch-fix-rounds";
+import { dropKnownRestatements, type FeatureLimits, nextBranchFixRound } from "./branch-fix-rounds";
 import type { BranchReviewFacts } from "./branch-review";
 import type { PublishOutcome } from "./finalize";
 import { type LedgerWriteOptions, ledgerText } from "./ledger";
@@ -276,7 +276,8 @@ async function branchReReviewStep(env: FeatureEnv, rec: WorkflowFeatureRecord): 
   const addressed = new Set(out.verdict.verdicts.filter((v) => v.addressed).map((v) => v.id));
   const stillOpen = new Set(items.map((f) => f.id).filter((id) => !addressed.has(id)));
   // US-004: only the review findings are absorbed — the fix-now minors keep their own triage handling.
-  const absorbed = absorbReReviewVerdict(rec.reviewOpen, out.verdict);
+  const absorbedRaw = absorbReReviewVerdict(rec.reviewOpen, out.verdict);
+  const absorbed = { ...absorbedRaw, newDrafts: dropKnownRestatements(absorbedRaw.newDrafts, absorbedRaw.open) };
   const { findings, nextFindingId } = assign(rec, absorbed.newDrafts.filter(isBlocking));
   await env.sink.artifact(round > 1 ? `branch-rereview-r${round}.json` : "branch-rereview.json", {
     ...out.verdict,
@@ -337,7 +338,7 @@ async function finalGatesStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Prom
     ledgerText.note(`final gates red: ${names} (output in result.json featureWorkflow.finalGateFindings)`),
     NO_MIRROR,
   );
-  return { finalGates: run.summary, finalGateFindings: run.findings, step: "publish" };
+  return { finalGates: run.summary, finalGateFindings: run.findings, gateRepairFindings: undefined, step: "publish" };
 }
 
 /**
@@ -351,6 +352,15 @@ function gateRepairAllowed(env: FeatureEnv, rec: WorkflowFeatureRecord): boolean
 
 async function gateRepairStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Promise<Patch> {
   const round = (rec.gateRepairRounds ?? 0) + 1;
+  const max = limitsOf(env).finalGateRepairRounds;
+  if (round > max) {
+    // A resume can find the cap lowered under a pending repair; the gates run again unrepaired.
+    await env.sink.ledger(
+      ledgerText.note(`gate repair skipped: round ${round} is past workflow.finalGateRepairRounds (${max})`),
+      NO_MIRROR,
+    );
+    return { step: "final-gates" };
+  }
   // `G` ids: a gate excerpt is no branch finding, so it never spends the B counter the summary counts.
   const findings = (rec.gateRepairFindings ?? []).map((d, i) => ({ ...d, id: `G${i + 1}` }));
   if (findings.length === 0) return { gateRepairRounds: round, step: "final-gates" };

@@ -151,7 +151,7 @@ export function buildWorkflowBranchFixPrompt(input: {
   findings: readonly WorkflowPromptFinding[];
 }): string {
   const spec = input.specPath ? `the spec (${input.specPath}) and ` : "";
-  return `You are fixing a feature branch after its whole-branch review. This is the only fix pass: there is no second one. Read ${spec}the PRD (${input.prdPath}) for what the feature must do.
+  return `You are fixing a feature branch after its whole-branch review. Fix every finding in this pass: a later pass, if any, only re-checks what is still open. Read ${spec}the PRD (${input.prdPath}) for what the feature must do.
 
 ## Findings to fix
 ${renderWorkflowFindings(input.findings)}
@@ -160,6 +160,7 @@ ${renderWorkflowFindings(input.findings)}
 - Fix every finding above. Findings marked minor are cheap cleanups the reviewer chose to fix now.
 - For a red repo gate, make that gate green. For a story that ended with a red gate, make its gates green.
 - Re-run the tests that cover what you changed, and add a test where a finding names a missing one (TDD: see it fail first).
+- Before you commit, run the full test command of every package you changed, not only the tests you touched: the final repo gates run every suite, and a fix that breaks an unrelated test there turns the branch red.
 - Commit, then append a "Branch fix" section to ${input.reportPath}: what you changed for each finding id, the test evidence, and any Decisions & assumptions.
 - ${WORKFLOW_ARTIFACTS_RULE}
 - Do not dispatch sub-agents or reviewers.

@@ -42,6 +42,20 @@ describe("nextBranchFixRound (nax#2547)", () => {
     expect(out.targets).toEqual(["B1"]);
   });
 
+  test("a follow-up whose PARTIAL residual changed made progress and continues", async () => {
+    const before = { ...f("B1"), issue: "symlinks and hardlinks bypass" };
+    const after = { ...f("B1"), issue: "hardlinks bypass" };
+    const out = await nextBranchFixRound(input({ round: 2, max: 3, followUp: true, items: [before], open: [after] }));
+    expect(out.targets).toEqual(["B1"]);
+  });
+
+  test("a follow-up whose PARTIAL residual is unchanged addressed nothing and stops", async () => {
+    const out = await nextBranchFixRound(
+      input({ round: 2, max: 3, followUp: true, items: [f("B1")], open: [f("B1")] }),
+    );
+    expect(out).toEqual({ targets: [], notes: ["branch fix stopped: round 2 addressed nothing"] });
+  });
+
   test("a follow-up that addressed only some items continues with the rest", async () => {
     const out = await nextBranchFixRound(
       input({

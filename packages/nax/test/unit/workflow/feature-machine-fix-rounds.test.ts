@@ -194,6 +194,24 @@ describe("branch fix rounds (#2496, nax#2547)", () => {
     expect(bases[1]).toBe(bases[0]);
   });
 
+  test("a follow-up re-review re-raising a known open finding at its file:line files no duplicate", async () => {
+    const known = { kind: "spec" as const, severity: "important" as const, issue: "leak", file: "src/b.ts", line: 9 };
+    const h = harness(
+      {
+        review: REVIEW_B1,
+        reReviews: [
+          { verdicts: [{ id: "B1", addressed: false, note: "" }], newFindings: [known] },
+          { verdicts: [{ id: "B1", addressed: true, note: "" }], newFindings: [{ ...known, issue: "leak again" }] },
+        ],
+        changed: ["src/a.ts"],
+      },
+      limits(3),
+    );
+    const final = await runFeatureMachine(h.env);
+    expect(final.reviewOpen.map((f) => f.id)).toEqual(["B2"]);
+    expect(final.nextFindingId).toBe(3);
+  });
+
   test("the last round clears fixTargets", async () => {
     const h = harness({ review: REVIEW_B1, reReviews: [PARTIAL_B1, ALL_ADDRESSED("B1")] });
     expect((await runFeatureMachine(h.env)).fixTargets).toBeUndefined();
@@ -287,9 +305,27 @@ describe("final-gate repair (nax#2548)", () => {
     expect(final.finalGateFindings).toEqual(RED_TEST.findings);
   });
 
-  test("a successful repair leaves no stale repair excerpts on the record", async () => {
-    const h = harness({ review: REVIEW_B1, gates: [GREEN, RED_TEST, GREEN] });
-    expect((await runFeatureMachine(h.env)).gateRepairFindings).toBeUndefined();
+  test("no stale repair excerpts on the record, green or still red after the last repair", async () => {
+    const green = harness({ review: REVIEW_B1, gates: [GREEN, RED_TEST, GREEN] });
+    expect((await runFeatureMachine(green.env)).gateRepairFindings).toBeUndefined();
+    const red = harness({ review: REVIEW_B1, gates: [GREEN, RED_TEST, RED_TEST] });
+    expect((await runFeatureMachine(red.env)).gateRepairFindings).toBeUndefined();
+  });
+
+  test("a repair cap lowered before a resume at gate-repair is honoured", async () => {
+    const record: WorkflowFeatureRecord = {
+      ...newFeatureRecord({ now: "t", seed: "seed0", minors: [] }),
+      step: "gate-repair",
+      fixRan: true,
+      fixRounds: 1,
+      repoGates: GREEN.summary,
+      gateRepairFindings: RED_TEST.findings,
+    };
+    const h = harness({ gates: [RED_TEST] }, { record, ...limits(2, 0) });
+    const final = await runFeatureMachine(h.env);
+    expect(h.fixInputs).toHaveLength(0);
+    expect(h.ledger).toContain("gate repair skipped: round 1 is past workflow.finalGateRepairRounds (0)");
+    expect(final.finalGateFindings).toEqual(RED_TEST.findings);
   });
 
   test("a red gate with no excerpt is not repaired: there is nothing to hand the session", async () => {

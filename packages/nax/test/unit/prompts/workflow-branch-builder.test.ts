@@ -176,13 +176,15 @@ describe("buildWorkflowBranchReReviewPrompt", () => {
 });
 
 describe("buildWorkflowBranchFixPrompt", () => {
-  test("one pass only, findings verbatim, report section, no sub-agents, the reply contract", () => {
+  test("fix everything now, full package suites, findings verbatim, report section, no sub-agents, the reply contract", () => {
     const prompt = buildWorkflowBranchFixPrompt({
       prdPath: "/repo/.nax/features/f/prd.json",
       reportPath: "/out/feature-report.md",
       findings: [finding],
     });
-    expect(prompt).toContain("only fix pass");
+    expect(prompt).toContain("Fix every finding in this pass");
+    expect(prompt).not.toContain("only fix pass");
+    expect(prompt).toContain("run the full test command of every package you changed");
     expect(prompt).toContain("[B1] [important/quality] US-2 never calls the US-1 lock");
     expect(prompt).toContain('append a "Branch fix" section to /out/feature-report.md');
     expect(prompt).toContain("Do not dispatch sub-agents");
