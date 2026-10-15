@@ -129,6 +129,7 @@ import {
 } from "./nax-evasion.ts";
 import { COVERING_EXCLUSION, discardRefusal, operandTouchesNax, resetRefusal, revertRefusal } from "./nax-revert.ts";
 import { stashIsExempt } from "./nax-stash-restore.ts";
+import { verbGapsRefusal } from "./nax-verb-gaps.ts";
 
 export type { NaxDirIndex, NaxGuardContext } from "./nax-dirs.ts";
 export { createNaxDirIndex } from "./nax-dirs.ts";
@@ -213,6 +214,8 @@ const DISCARD_VERBS: ReadonlySet<string> = new Set(["switch", "clean", "checkout
 const EXCLUDING_VERBS: ReadonlySet<string> = new Set(["checkout", "restore", "stash", "clean"]);
 
 function verbRefusal(git: LocatedGit, segment: readonly string[], where: NaxGuardContext): string | undefined {
+  const gaps = verbGapsRefusal(git.subcommand, git.args, where);
+  if (gaps !== undefined) return gaps;
   if (git.literalPathspecs && EXCLUDING_VERBS.has(git.subcommand) && git.args.some((a) => a.startsWith(":"))) {
     if (hasNaxDirNear(where)) return LITERAL_PATHSPECS_REFUSAL;
   }

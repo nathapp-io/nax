@@ -111,7 +111,7 @@ interface Operands {
   readonly flags: readonly string[];
 }
 
-function splitOperands(verb: string, args: readonly string[]): Operands {
+export function splitOperands(verb: string, args: readonly string[]): Operands {
   const valueFlags = VALUE_FLAGS[verb] ?? new Set<string>();
   const before: string[] = [];
   const after: string[] = [];
@@ -144,7 +144,7 @@ function pathOperands(verb: string, ops: Operands, ctx: NaxGuardContext): readon
 }
 
 /** True when `spec` selects a directory that holds one of the `.nax` directories (or all of them, from the top). */
-function coversNax(spec: string, ctx: NaxGuardContext, nax: readonly string[]): boolean {
+export function coversNax(spec: string, ctx: NaxGuardContext, nax: readonly string[]): boolean {
   if (isExclusionSpec(spec)) return false;
   const magic = /^:(?:\(([^)]*)\)|\/)?(.*)$/s.exec(spec);
   const top = magic !== null && (spec.startsWith(":/") || /(?:^|,)top(?:,|$)/.test(magic[1] ?? ""));
