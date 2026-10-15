@@ -10,6 +10,7 @@
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { NaxConfigSchema } from "@/config/schemas";
+import { DEFAULT_FULL_SUITE_TIMEOUT_SECONDS } from "@/quality";
 
 // ---------------------------------------------------------------------------
 // Helper: build a full NaxConfig-shaped object with a custom regressionGate
@@ -111,5 +112,13 @@ describe("full-suite timeout range", () => {
     expect(NaxConfigSchema.safeParse(build(1800)).success).toBe(true);
     expect(NaxConfigSchema.safeParse(build(3600)).success).toBe(true);
     expect(NaxConfigSchema.safeParse(build(3601)).success).toBe(false);
+  });
+});
+
+describe("full-suite timeout defaults (#2536)", () => {
+  test("both keys default to 600s, so an untuned project's agent can run a suite slower than 120s", () => {
+    expect(DEFAULT_CONFIG.execution.regressionGate.timeoutSeconds).toBe(600);
+    expect(DEFAULT_CONFIG.execution.rectification.fullSuiteTimeoutSeconds).toBe(600);
+    expect(DEFAULT_FULL_SUITE_TIMEOUT_SECONDS).toBe(600);
   });
 });

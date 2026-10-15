@@ -14,7 +14,7 @@ After all stories pass their individual verification, nax can run a deferred ful
       "enabled": true,
       "mode": "deferred",
       "acceptOnTimeout": true,
-      "timeoutSeconds": 120
+      "timeoutSeconds": 600
     }
   }
 }
@@ -26,7 +26,7 @@ After all stories pass their individual verification, nax can run a deferred ful
 | `per-story` | Full suite after each story **and** the deferred full suite once after all stories complete — a superset of `deferred`. Higher cost and slower if stories fail regression |
 | `deferred` | Full suite once after all stories pass (recommended) — **default** |
 
-The values shown above are the defaults. `timeoutSeconds` accepts 10–3600, the same ceiling as `verificationTimeoutSeconds`. It is also the timeout for every declared command the agent runs through `RunCommand` (#2536), so the agent is never held to a shorter budget than this gate. With `acceptOnTimeout: true` a timed-out suite counts as passed. `enabled: false` skips the in-loop full-suite gate (`fullSuiteGateOp`) — to turn off the end-of-run pass use `mode: "disabled"`.
+The values shown above are the defaults. `timeoutSeconds` accepts 10–3600, the same ceiling as `verificationTimeoutSeconds`. It is also the timeout for the suite-running commands the agent runs through `RunCommand` (`test`, `testScoped`, `coverage`; #2536), so the agent is never held to a shorter budget than this gate. Other declared commands keep the 120s runner default. With `acceptOnTimeout: true` a timed-out suite counts as passed. `enabled: false` skips the in-loop full-suite gate (`fullSuiteGateOp`) — to turn off the end-of-run pass use `mode: "disabled"`.
 
 **Per-story full-suite gate:** three-session TDD stories always run the full-suite gate between implementer and verifier. Other strategies run it only when `mode` is `per-story`.
 

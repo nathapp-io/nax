@@ -68,7 +68,7 @@ export const RectificationConfigSchema = z.object({
   /** Default per-strategy cap for LLM-driven strategies (autofix-implementer,
    * autofix-test-writer, full-suite-rectify). Mechanical strategies stay at 1. */
   maxAttemptsPerStrategy: z.number().int().min(1).max(20).default(3),
-  fullSuiteTimeoutSeconds: z.number().int().min(10).max(3600).default(120),
+  fullSuiteTimeoutSeconds: z.number().int().min(10).max(3600).default(600),
   maxFailureSummaryChars: z.number().int().min(500).max(10000).default(2000),
   abortOnIncreasingFailures: z.boolean().default(true),
   /** Number of consecutive iterations whose finding count must increase
@@ -106,7 +106,7 @@ export const RectificationConfigSchema = z.object({
 
 export const RegressionGateConfigSchema = z.object({
   enabled: z.boolean().default(true),
-  timeoutSeconds: z.number().int().min(10).max(3600).default(120),
+  timeoutSeconds: z.number().int().min(10).max(3600).default(600),
   acceptOnTimeout: z.boolean().default(true),
   mode: z.enum(["deferred", "per-story", "disabled"]).default("deferred"),
 });

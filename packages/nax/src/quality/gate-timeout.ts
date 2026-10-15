@@ -4,8 +4,11 @@
  * so the agent is never held to a shorter budget than the gate that judges it.
  */
 
-/** Used only for a config slice with neither key; a parsed config always carries `regressionGate.timeoutSeconds` (schema default 120). */
-export const DEFAULT_FULL_SUITE_TIMEOUT_SECONDS = 300;
+/**
+ * Used only for a config slice with neither key; a parsed config always
+ * carries `regressionGate.timeoutSeconds`, whose schema default is the same 600.
+ */
+export const DEFAULT_FULL_SUITE_TIMEOUT_SECONDS = 600;
 
 /** The config keys the resolver reads; every member optional so any config slice fits. */
 export interface FullSuiteTimeoutConfig {
