@@ -111,6 +111,12 @@ describe("StatusWriter live phase persistence", () => {
     await sw.idle();
     expect((await read()).lastHeartbeat).toBe(timestamp);
   });
+  test("update without overrides keeps the last lastHeartbeat on disk", async () => {
+    const sw = writer();
+    await sw.update(0, 1, { lastHeartbeat: timestamp });
+    await sw.update(0, 2);
+    expect((await read()).lastHeartbeat).toBe(timestamp);
+  });
   test("AC-6 flush writes with last update arguments, not the monotonic cost getter", async () => {
     const sw = writer();
     await sw.update(5, 3);
@@ -176,7 +182,8 @@ describe("StatusWriter live phase persistence", () => {
         message: "Failed to write status file (non-fatal)",
       }),
     );
-    expect(logs[0]?.data?.error).toBe("Invalid status file path: path traversal detected");
+    const warning = logs.find((entry) => entry.stage === "status-file");
+    expect(warning?.data?.error).toBe("Invalid status file path: path traversal detected");
   });
   test("AC-20 no current story remains null in memory", async () => {
     const sw = writer({ current: false });

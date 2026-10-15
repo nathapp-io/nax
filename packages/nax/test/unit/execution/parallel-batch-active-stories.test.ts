@@ -106,13 +106,29 @@ describe("ready-worker active notifications", () => {
       expect(notify.mock.calls[0]?.[0].map((active) => active.worktreePath)).toEqual([...args[4].values()]);
       return execute(...args);
     };
-    _parallelBatchDeps.createMergeEngine = async () => {
-      expect(notify).toHaveBeenLastCalledWith([]);
-      return makeMergeEngine();
-    };
     await runParallelBatch({ stories, prd, ctx: context(notify) });
     expect(notify).toHaveBeenCalledTimes(2);
     expect(notify).toHaveBeenLastCalledWith([]);
+  });
+  test("AC-5/6 clears activeStories before mergePassedStories creates the merge engine", async () => {
+    const notify = mock<NonNullable<ParallelBatchCtx["onActiveStories"]>>(() => {});
+    _parallelBatchDeps.executeParallelBatch = async () => ({
+      pipelinePassed: [stories[0]],
+      merged: [],
+      failed: [],
+      totalCost: 0,
+      mergeConflicts: [],
+      storyCosts: new Map(),
+    });
+    let lastNotifiedAtMerge: unknown;
+    const createMergeEngine = mock(async () => {
+      lastNotifiedAtMerge = notify.mock.calls.at(-1)?.[0];
+      return makeMergeEngine();
+    });
+    _parallelBatchDeps.createMergeEngine = createMergeEngine;
+    await runParallelBatch({ stories, prd, ctx: context(notify) });
+    expect(createMergeEngine).toHaveBeenCalledTimes(1);
+    expect(lastNotifiedAtMerge).toEqual([]);
   });
   test("AC-7/8 clears before propagating the identical worker error", async () => {
     const notify = mock<NonNullable<ParallelBatchCtx["onActiveStories"]>>(() => {});

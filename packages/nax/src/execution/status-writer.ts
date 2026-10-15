@@ -179,9 +179,7 @@ export class StatusWriter {
   /** Queue the latest snapshot, retaining liveness but not one-off crash overrides. */
   async flush(): Promise<void> {
     if (!this._prd || this._runStatus === "crashed") return;
-    await this.update(this._lastUpdateCost, this._lastIterations, {
-      ...(this._lastHeartbeat !== undefined ? { lastHeartbeat: this._lastHeartbeat } : {}),
-    });
+    await this.update(this._lastUpdateCost, this._lastIterations);
   }
 
   /** Wait for queued writes without producing another snapshot. */
@@ -339,7 +337,8 @@ export class StatusWriter {
       if (!base) {
         throw new NaxError("Failed to get snapshot", "STATUS_SNAPSHOT_FAILED", { stage: "execution" });
       }
-      const state: RunStateSnapshot = { ...base, ...overrides };
+      const retained = this._lastHeartbeat !== undefined ? { lastHeartbeat: this._lastHeartbeat } : {};
+      const state: RunStateSnapshot = { ...base, ...retained, ...overrides };
       await writeStatusFile(this.statusFile, buildStatusSnapshot(state));
       this._consecutiveWriteFailures = 0; // Reset counter on success
     } catch (err) {

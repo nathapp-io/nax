@@ -91,6 +91,18 @@ export function logPipelineOutcome(result: PipelineRunResult, label: string, sto
   getLogger().info("execution", `${label} did not complete`, data);
 }
 
+/** Live-phase reporting is observational: a failing callback is logged and must not end the run. */
+function reportStagePhase(context: PipelineContext, stageName: string): void {
+  try {
+    context.reportPhase?.(stageName);
+  } catch (error) {
+    getLogger().warn("pipeline", `reportPhase failed for stage "${stageName}"`, {
+      storyId: context.story.id,
+      error: errorMessage(error),
+    });
+  }
+}
+
 export async function runPipeline(
   stages: PipelineStage[],
   context: PipelineContext,
@@ -116,7 +128,7 @@ export async function runPipeline(
       continue;
     }
 
-    context.reportPhase?.(stage.name);
+    reportStagePhase(context, stage.name);
     eventEmitter?.emit("stage:enter", stage.name, context.story);
 
     let result: StageResult;

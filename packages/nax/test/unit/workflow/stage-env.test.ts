@@ -113,6 +113,16 @@ describe("buildStoryEnv", () => {
     expect(typeof rec?.endedAt).toBe("string");
   });
 
+  test("closeOnError reports the closed phase", async () => {
+    const { ctx } = setup();
+    const phases: string[] = [];
+    ctx.reportPhase = (phase) => phases.push(phase);
+    const { closeOnError } = await buildStoryEnv(ctx, makeMockCallContext());
+    phases.length = 0;
+    await closeOnError("disk full");
+    expect(phases).toEqual(["closed"]);
+  });
+
   test("ensures the ledger and a fresh result record", async () => {
     const { ctx, runDir } = setup();
     const { sc } = await buildStoryEnv(ctx, makeMockCallContext());

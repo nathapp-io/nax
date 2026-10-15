@@ -63,6 +63,29 @@ describe("runPipeline logs a stage throw", () => {
     expect(logged).toContain("Session unsupported: openSession");
   });
 
+  test("a throwing reportPhase is logged and does not stop the pipeline", async () => {
+    const ctx = makeCtx();
+    ctx.reportPhase = () => {
+      throw new Error("status sink exploded");
+    };
+    let executed = false;
+    const stages: PipelineStage[] = [
+      {
+        name: "verify",
+        enabled: () => true,
+        execute: async () => {
+          executed = true;
+          return { action: "continue" };
+        },
+      },
+    ];
+    const result = await runPipeline(stages, ctx);
+    expect(result.success).toBe(true);
+    expect(executed).toBe(true);
+    const warned = logCalls.filter((e) => e.level === "warn").map((e) => JSON.stringify(e.data ?? {}));
+    expect(warned.join("\n")).toContain("status sink exploded");
+  });
+
   test("AC-14 reports only enabled stages in order, even headless", async () => {
     const phases: string[] = [];
     const ctx = makeCtx();

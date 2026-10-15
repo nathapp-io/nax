@@ -176,6 +176,7 @@ export async function buildStoryEnv(
         endedAt: new Date().toISOString(),
       };
       await upsertStoryRecord(runDir, header, record);
+      reportStoryPhase(ctx, record);
     } catch (err) {
       getLogger().debug("workflow", "Record close failed on the error path", {
         storyId: ctx.story.id,
