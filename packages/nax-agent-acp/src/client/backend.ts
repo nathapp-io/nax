@@ -48,8 +48,11 @@ import { createToolHost, newToolHostToken, type ToolHost } from "#src/client/too
 import { runPromptTurn, type TurnState } from "#src/client/turn";
 import { type CostMeter, createCostMeter } from "#src/client/usage";
 
-/** Test seam: the process launcher. Production always uses launchAgent. */
-export const _acpBackendDeps: { launch: LaunchFn } = { launch: launchAgent };
+/** Test seam: the process launcher and the tool host factory. Production always uses launchAgent and createToolHost. */
+export const _acpBackendDeps: { launch: LaunchFn; createToolHost: typeof createToolHost } = {
+  launch: launchAgent,
+  createToolHost,
+};
 
 /** One agent process and everything bound to it. A reconnect replaces it whole (D6-g). */
 interface Live {
@@ -93,7 +96,18 @@ function withTokens(options: ResolvedAcpOptions, tokens: readonly string[]): Res
   return Object.freeze({ ...options, secrets: Object.freeze([...options.secrets, ...tokens]) });
 }
 
-function toolHostFor(
+/**
+ * The host's options: nax#2517's rendered `## MCP servers` text, which the
+ * agent's MCP client reads from `initialize`. Absent — an empty one counts as
+ * absent, as in the native path — leaves the option off entirely.
+ */
+function toolHostOptions(ctx: BackendOpenContext): { instructions: string } | undefined {
+  const instructions = ctx.providerInstructions;
+  return instructions === undefined || instructions === "" ? undefined : { instructions };
+}
+
+/** Exported for its unit test; `./client` does not re-export it. */
+export function toolHostFor(
   ctx: BackendOpenContext,
   router: InboundRouter,
   secrets: readonly string[],
@@ -108,7 +122,7 @@ function toolHostFor(
     turnSignal: () => router.activeSignal(),
     secrets,
   });
-  return createToolHost(calls, token);
+  return _acpBackendDeps.createToolHost(calls, token, toolHostOptions(ctx));
 }
 
 /** Permission requests and elicitations, decided by profile with the session's redaction set. */
