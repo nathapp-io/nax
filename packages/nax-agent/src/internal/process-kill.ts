@@ -13,7 +13,9 @@
  * 2. Falls back to killing the single process if group kill fails
  *
  * @param pid - Process ID (positive, not negative)
- * @param signal - Signal to send (SIGTERM, SIGKILL, etc.)
+ * @param signal - Signal to send (SIGTERM, SIGKILL, etc.); `0` probes whether the group still has a member
+ * @param opts - `singleProcessFallback: false` skips step 2. Pass it once the group leader is known to have
+ *   exited: the bare pid may have been reused by an unrelated process by then.
  * @returns true if kill was sent successfully, false if process already exited
  *
  * @example
@@ -25,7 +27,11 @@
  * }
  * ```
  */
-export function killProcessGroup(pid: number, signal: NodeJS.Signals | number): boolean {
+export function killProcessGroup(
+  pid: number,
+  signal: NodeJS.Signals | number,
+  opts: { readonly singleProcessFallback?: boolean } = {},
+): boolean {
   // A pid that is not a real child reaches other processes: 0 is our own group,
   // 1 (as -1) is every process we may signal, and a negative pid is init or a
   // foreign group. A spawn that failed has no pid, so refuse rather than signal.
@@ -38,6 +44,7 @@ export function killProcessGroup(pid: number, signal: NodeJS.Signals | number): 
     const err = error as NodeJS.ErrnoException;
     // ESRCH = no such process — process group doesn't exist, try single process
     if (err.code === "ESRCH") {
+      if (opts.singleProcessFallback === false) return false;
       try {
         process.kill(pid, signal);
         return true;

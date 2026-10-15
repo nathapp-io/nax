@@ -1,6 +1,6 @@
 // test/protocols/collect.test.ts
 import { describe, expect, it } from "vitest";
-import { collectStream } from "../../src/protocols/collect.ts";
+import { collectStream, ProtocolStreamError, partialUsageOf } from "../../src/protocols/collect.ts";
 import type { ProtocolEvent } from "../../src/protocols/types.ts";
 
 async function* emit(...events: ProtocolEvent[]): AsyncIterable<ProtocolEvent> {
@@ -113,5 +113,40 @@ describe("collectStream", () => {
 
     expect("responseId" in result).toBe(false);
     expect("responseModel" in result).toBe(false);
+  });
+
+  describe("billed usage on a failed round trip", () => {
+    it("carries the usage seen before an error event on the thrown ProtocolStreamError", async () => {
+      const err = await collectStream(
+        emit({ type: "usage", usage }, { type: "error", error: { kind: "transport", message: "reset" } }),
+      ).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ProtocolStreamError);
+      expect((err as ProtocolStreamError).usage).toEqual(usage);
+      expect(partialUsageOf(err)).toEqual(usage);
+    });
+
+    it("leaves usage absent when none was billed before the error", async () => {
+      const err = await collectStream(emit({ type: "error", error: { kind: "transport", message: "reset" } })).catch(
+        (e: unknown) => e,
+      );
+      expect((err as ProtocolStreamError).usage).toBeUndefined();
+      expect(partialUsageOf(err)).toBeUndefined();
+    });
+
+    it("carries usage on an abort thrown by the stream after a usage event, without changing the error", async () => {
+      const abort = new DOMException("Aborted", "AbortError");
+      async function* aborted(): AsyncIterable<ProtocolEvent> {
+        yield { type: "usage", usage };
+        throw abort;
+      }
+      const err = await collectStream(aborted()).catch((e: unknown) => e);
+      expect(err).toBe(abort);
+      expect(partialUsageOf(err)).toEqual(usage);
+    });
+
+    it("does not report usage for an unrelated error", () => {
+      expect(partialUsageOf(new Error("x"))).toBeUndefined();
+      expect(partialUsageOf("nope")).toBeUndefined();
+    });
   });
 });

@@ -23,7 +23,9 @@ import { getSafeLogger } from "#src/infra/index";
 import type { TranscriptMessage as NativeTranscriptMessage } from "./compaction.ts";
 import { applyHistoryPatch } from "./loop-events/cache-boundary.ts";
 import type { CompleteCallOptions, LoopEventRegistry } from "./loop-events/index.ts";
+import { takePartialSpend } from "./partial-spend.ts";
 import type { TurnAccumulator } from "./turn-accumulator.ts";
+import { usageBeat } from "./turn-accumulator.ts";
 import { runOverflowCompaction } from "./turn-compaction-step.ts";
 import type { TurnEventEmitter } from "./turn-event-emitter.ts";
 import { realSleep, retryTransportFault } from "./turn-retry.ts";
@@ -162,8 +164,25 @@ export async function completeWithRecovery(args: CompleteStepArgs): Promise<Comp
     honoured = wire.honoured;
     return deps.complete(wire.messages, tools, options, turnEvents.deltaSink(roundTrip));
   };
+  // A failed round trip was still billed for what it streamed. Folding it in
+  // here, per attempt, is what makes a retry count both attempts and an
+  // aborted or timed-out one count what it cost; `takePartialSpend` consumes
+  // the entry, and the retry loop rethrows the error it was given without
+  // re-entering this wrapper, so nothing counts twice.
+  const countedRequest = async (msgs: readonly NativeTranscriptMessage[]): Promise<NativeTurnResponse> => {
+    try {
+      return await request(msgs);
+    } catch (err) {
+      const spend = takePartialSpend(err);
+      if (spend !== undefined) {
+        usage.add(spend.usage, spend.costUsd, spend.rates);
+        deps.onActivity?.(usageBeat(spend.usage, spend.costUsd));
+      }
+      throw err;
+    }
+  };
   try {
-    res = await request(messages);
+    res = await countedRequest(messages);
   } catch (err) {
     // Written as one guarded `if` (not a separate `canRetry` boolean) so
     // TypeScript's narrowing carries deps.summarize/contextWindow/compaction
@@ -182,7 +201,7 @@ export async function completeWithRecovery(args: CompleteStepArgs): Promise<Comp
       // backoff live in retryTransportFault (./turn-retry), called once.
       if (deps.transportRetry === undefined) throw err;
       res = await retryTransportFault(err, {
-        attempt: () => request(messages),
+        attempt: () => countedRequest(messages),
         config: deps.transportRetry,
         deadline: deps.deadline,
         signal,
@@ -233,7 +252,7 @@ export async function completeWithRecovery(args: CompleteStepArgs): Promise<Comp
       turnEvents.emit({ type: "compaction", reason: "overflow" });
       // Retried once. A second overflow propagates: compacting further would be
       // guessing, and the failure now carries a correct diagnosis.
-      res = await request(messages);
+      res = await countedRequest(messages);
     }
   }
   return { res, messages, compacted, honoured, boundary: compacted };

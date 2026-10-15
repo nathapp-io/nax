@@ -54,9 +54,20 @@ export async function commitLedger(projectDir: string, feature: string): Promise
   return true;
 }
 
+/** The failure every plain read helper throws (nax#2550): a failed read must never pass for an answer. */
+function gitReadError(step: string, result: { stderr?: string; exitCode: number }): NaxError {
+  const detail = result.stderr?.trim() || `exit ${result.exitCode}`;
+  return new NaxError(`git ${step} failed: ${detail}`, "WORKFLOW_GIT_FAILED", { stage: "workflow", storyId: "_run" });
+}
+
+/**
+ * HEAD's sha. Throws `WORKFLOW_GIT_FAILED` on a git failure (nax#2550): it used to return "", which a
+ * caller could store as a base or compare equal to another failed read.
+ */
 export async function readHead(projectDir: string): Promise<string> {
-  const { stdout } = await _workflowDeps.git(["rev-parse", "HEAD"], projectDir);
-  return stdout.trim();
+  const result = await _workflowDeps.git(["rev-parse", "HEAD"], projectDir);
+  if (result.exitCode !== 0) throw gitReadError("rev-parse HEAD", result);
+  return result.stdout.trim();
 }
 
 /** Repo-rooted paths changed between `base` and HEAD (#2496 second-fix eligibility). Throws on a git failure. */
@@ -71,11 +82,14 @@ export async function changedFilesSince(projectDir: string, base: string): Promi
   return stdout.split("\n").filter((line) => line !== "");
 }
 
-/** Paths with uncommitted edits (modified, staged, untracked), minus nax-owned paths. */
+/**
+ * Paths with uncommitted edits (modified, staged, untracked), minus nax-owned paths. Throws
+ * `WORKFLOW_GIT_FAILED` on a git failure (nax#2550): it used to return [], which read as a clean tree.
+ */
 export async function listUncommitted(projectDir: string): Promise<string[]> {
-  const { stdout, exitCode } = await _workflowDeps.git(["status", "--porcelain", "--untracked-files=all"], projectDir);
-  if (exitCode !== 0) return [];
-  return stdout
+  const result = await _workflowDeps.git(["status", "--porcelain", "--untracked-files=all"], projectDir);
+  if (result.exitCode !== 0) throw gitReadError("status", result);
+  return result.stdout
     .split("\n")
     .filter((line) => line.length > 3)
     .map((line) => line.slice(3).replace(/^"|"$/g, "").split(" -> ").pop() ?? "")

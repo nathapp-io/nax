@@ -175,8 +175,9 @@ const DEFAULT_PUBLISH_MODE: WorkflowPublishMode = "pr";
 async function dirtyTreeReasons(fc: FeatureContext): Promise<string[]> {
   try {
     return (await listUncommitted(fc.projectDir)).length > 0 ? [DIRTY_REASON] : [];
-  } catch {
-    return [];
+  } catch (err) {
+    // nax#2550: a tree whose state cannot be read is not a verified clean one, so it keeps the draft.
+    return [`could not verify a clean working tree: ${errorMessage(err)}`];
   }
 }
 
@@ -417,6 +418,8 @@ export async function publish(fc: FeatureContext, input: PublishInput): Promise<
     // its reason keeps the PR a draft and the advisor is never asked (reasons non-empty).
     ...(input.record.reviewUnread ? { branchReviewUnread: input.record.reviewUnread } : {}),
     ...(input.record.costLimited ? { costLimited: true } : {}),
+    // nax#2550: fix commits no re-review looked at never go ready.
+    ...(input.record.reReviewSkipped ? { reReviewSkipped: true } : {}),
   };
   const dirty = await dirtyTreeReasons(fc);
   const base = [...readinessReasons({ ...facts, ci: "skipped" }), ...dirty];

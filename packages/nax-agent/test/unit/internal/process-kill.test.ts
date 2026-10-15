@@ -46,6 +46,23 @@ describe("killProcessGroup", () => {
     expect(killCalls[1]).toEqual({ pid: 1234, signal: "SIGTERM" });
   });
 
+  test("with singleProcessFallback:false an empty group is not retried against the bare pid", () => {
+    const killCalls: Array<{ pid: number | string; signal?: string | number }> = [];
+    const spy = spyOn(process, "kill").mockImplementation((pid, signal) => {
+      killCalls.push({ pid, signal });
+      throw Object.assign(new Error("No such process"), { code: "ESRCH" });
+    });
+
+    try {
+      const result = killProcessGroup(1234, "SIGKILL", { singleProcessFallback: false });
+
+      expect(result).toBe(false);
+      expect(killCalls).toEqual([{ pid: -1234, signal: "SIGKILL" }]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   test("returns false when both group and process kill fail with ESRCH", () => {
     process.kill = ((_pid, _signal) => {
       const err = new Error("No such process");

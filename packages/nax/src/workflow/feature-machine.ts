@@ -171,6 +171,18 @@ async function repoGatesStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Promi
   return { repoGates: run.summary, gateFindings: findings, nextFindingId, step: "branch-review" };
 }
 
+/**
+ * nax#2550: `quality: "changes"` with no blocking finding is not a clean review. Mirrors
+ * `parseStoryReviewReply`, which adds a synthetic spec finding to `spec: "fail"` with none, so the
+ * reviewer's verdict always leaves something for the fix pass and the adjudication to act on.
+ */
+const QUALITY_CHANGES_ISSUE = "quality: reviewer reported changes without a finding";
+function withQualityFloor(verdict: BranchReviewVerdict): WorkflowFindingDraft[] {
+  const blocking = verdict.findings.filter(isBlocking);
+  if (verdict.quality !== "changes" || blocking.length > 0) return blocking;
+  return [{ kind: "quality", severity: "important", issue: QUALITY_CHANGES_ISSUE }];
+}
+
 async function branchReviewStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Promise<Patch> {
   if (!rec.seed) {
     featureStep("branch-review", false).done("skipped (no seed)");
@@ -191,7 +203,7 @@ async function branchReviewStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Pr
   const unread = out.verdict.unreadFiles ?? [];
   if (unread.length > 0) await env.sink.ledger(ledgerText.note(describeUnread(unread)));
   const triage = new Map(out.verdict.minorTriage.map((t) => [t.id, t.decision]));
-  const { findings, nextFindingId } = assign(rec, out.verdict.findings.filter(isBlocking));
+  const { findings, nextFindingId } = assign(rec, withQualityFloor(out.verdict));
   const minors = out.verdict.findings.filter((f) => !isBlocking(f));
   // #2496: written here, after assign(), so the file and result.json name findings the same way.
   await env.sink.artifact("branch-review.json", { ...out.verdict, findings: [...findings, ...minors] });
@@ -223,7 +235,13 @@ async function branchFixStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Promi
     return { step: "adjudicate" };
   }
   // A follow-up round keeps round 1's base, so its re-review sees the whole fix, not just the last edit.
-  const fixBase = round > 1 && rec.fixBase ? rec.fixBase : await env.steps.head();
+  const fixBase = round > 1 && rec.fixBase ? rec.fixBase : await readHeadSoft(env);
+  if (!fixBase) {
+    // nax#2550: no base means no re-review of the fix, so no fix runs; the findings go to adjudication
+    // as with a round cap, and the run goes on instead of losing the feature workflow to a git blip.
+    await env.sink.ledger(ledgerText.note("branch fix skipped: HEAD could not be read"), NO_MIRROR);
+    return { step: "adjudicate" };
+  }
   await env.sink.ledger(
     ledgerText.note(
       `${roundLabel("branch fix", round)}: ${toFix.length} item(s): ${toFix.map((f) => f.id).join(", ")}`,
@@ -273,7 +291,8 @@ async function branchReReviewStep(env: FeatureEnv, rec: WorkflowFeatureRecord): 
   if (!out.ran) {
     log.done(`skipped (${out.why})`);
     await env.sink.ledger(ledgerText.reviewSkipped(`branch re-review: ${out.why}`), NO_MIRROR);
-    return { step: "adjudicate" };
+    // nax#2550: the fix commits stay unreviewed, and `publish` must say so (a draft, not a ready PR).
+    return { reReviewSkipped: true, step: "adjudicate" };
   }
   // Fail closed: an item the verdicts do not mark addressed stays open, omitted or not.
   const addressed = new Set(out.verdict.verdicts.filter((v) => v.addressed).map((v) => v.id));
@@ -399,10 +418,27 @@ async function collectFlaggedDecisions(env: FeatureEnv): Promise<readonly string
   }
 }
 
+/**
+ * nax#2550: HEAD read fail-soft, after a step already did its work. A failed read must not lose that
+ * work, so the record just keeps no `head` (done record: it then matches no later HEAD, and the next
+ * run does not skip as already finished) or no `lastHead` (a resume falls back to `startHead`).
+ */
+async function readHeadSoft(env: FeatureEnv): Promise<string | undefined> {
+  try {
+    return await env.steps.head();
+  } catch (err) {
+    getSafeLogger()?.warn("workflow", "Could not read HEAD after a committing step; the record keeps the last one", {
+      storyId: "_run",
+      error: errorMessage(err),
+    });
+    return undefined;
+  }
+}
+
 async function publishStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Promise<Patch> {
   const log = featureStep("publish", false, true);
   const out = await env.steps.publish(rec);
-  const head = await env.steps.head();
+  const head = await readHeadSoft(env);
   const why = out.reasons.length > 0 ? `: ${out.reasons.join("; ")}` : "";
   log.done(`${out.outcome}${out.url ? ` ${out.url}` : ""}${why}`);
   await env.sink.ledger(ledgerText.note(`feature ${out.outcome}${out.url ? ` ${out.url}` : ""}${why}`), NO_MIRROR);
@@ -414,7 +450,7 @@ async function publishStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Promise
     ci: out.ci,
     reasons: out.reasons,
     ...(out.url ? { url: out.url } : {}),
-    head,
+    ...(head ? { head } : {}),
     passed: featurePassed({ ...(rec.finalGates ? { finalGates: rec.finalGates } : {}), stories: env.facts.stories }),
     ...(flagged.length > 0 ? { flaggedDecisions: flagged } : {}),
     endedAt: new Date().toISOString(),
@@ -465,6 +501,9 @@ async function costStop(env: FeatureEnv, rec: WorkflowFeatureRecord, step: Featu
   return { costLimited: true, step: "final-gates" };
 }
 
+/** nax#2550: the steps that can commit, and so move HEAD themselves (publish: the advisor ledger commit). */
+const COMMIT_STEPS: ReadonlySet<FeatureStep> = new Set(["branch-fix", "gate-repair", "publish"]);
+
 const STEPS: Readonly<Record<Exclude<FeatureStep, "done">, StepFn>> = {
   "repo-gates": repoGatesStep,
   "branch-review": branchReviewStep,
@@ -490,7 +529,12 @@ export async function runFeatureMachine(env: FeatureEnv): Promise<WorkflowFeatur
     }
     env.sink.step(step, rec);
     const started = env.now();
-    const patch = (await costStop(env, rec, step)) ?? (await STEPS[step](env, rec));
+    const stopped = await costStop(env, rec, step);
+    const stepPatch = stopped ?? (await STEPS[step](env, rec));
+    // nax#2550: a step that can commit moves HEAD on purpose; record where, so a resume is not a restart.
+    // A failed read keeps the previous `lastHead`: dropping it would make a resume restart over our own commits.
+    const head = !stopped && COMMIT_STEPS.has(step) ? await readHeadSoft(env) : undefined;
+    const patch = head ? { ...stepPatch, lastHead: head } : stepPatch;
     rec = { ...rec, ...patch, timings: { ...rec.timings, [step]: (rec.timings[step] ?? 0) + (env.now() - started) } };
     await env.sink.update(rec);
   }

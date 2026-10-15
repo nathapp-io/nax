@@ -14,7 +14,7 @@ import type { LoadedHooksConfig } from "@/hooks";
 import { getSafeLogger } from "@/logger";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { PRD, StructuredFailure, UserStory, VerificationStage } from "@/prd";
-import { markStoryFailed, savePRD } from "@/prd";
+import { markStoryFailed, savePrdProgress } from "@/prd";
 import type { RoutingDecision } from "@/routing";
 import { storySpendUsd } from "@/runtime";
 import type { FailureCategory } from "@/tdd/types";
@@ -211,7 +211,7 @@ export async function preIterationTierCheck(
           : s,
       ),
     };
-    await _tierEscalationDeps.savePRD(updatedPrd, prdPath);
+    await _tierEscalationDeps.savePrdProgress(updatedPrd, prdPath, story.id, "escalated");
 
     pipelineEventBus.emit({
       type: "story:escalated",
@@ -246,7 +246,7 @@ export async function preIterationTierCheck(
   // depended on the caller's copy being mutated.
   const failedPrd: PRD = { ...prd, userStories: prd.userStories.map((s) => ({ ...s })) };
   markStoryFailed(failedPrd, story.id, undefined, undefined);
-  await _tierEscalationDeps.savePRD(failedPrd, prdPath);
+  await _tierEscalationDeps.savePrdProgress(failedPrd, prdPath, story.id, "failed");
 
   if (featureDir) {
     await appendProgress(featureDir, story.id, "failed", `${story.title} — All tiers exhausted`);
@@ -359,7 +359,7 @@ export function resetRuntimeCrashRetryCounts(): void {
  * Swappable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
  */
 export const _tierEscalationDeps = {
-  savePRD,
+  savePrdProgress,
   getSafeLogger,
 };
 
@@ -541,7 +541,7 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
     }),
   };
 
-  await _tierEscalationDeps.savePRD(updatedPrd, ctx.prdPath);
+  await _tierEscalationDeps.savePrdProgress(updatedPrd, ctx.prdPath, ctx.story.id, "escalated");
 
   // Escalation does not LLM-re-route; tier is deterministic. See #1710.
 

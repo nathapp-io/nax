@@ -3,14 +3,18 @@
  * `session/request_permission`, and the chosen option is passed to `answer()`.
  * allow_always and reject_always are remembered for the session's life (M-12).
  * Execute tools are keyed on the command plus its subcommand (`git status`,
- * `npm test`) when the second word is a plain word, else on the command alone
- * (`ls`, `ls -la`), so "always allow git status" never approves `git push`.
- * Never remembered: no command; a first or second word that is not plain
- * (quotes, escapes, globs, expansions, an environment assignment), which must
- * not widen the key; a masked command (its visible words are not the real
+ * `npm test`) when the second word is a plain word, and on the bare command
+ * only when there is no second word (`ls`), so "always allow git status" never
+ * approves `git push`. Never remembered: no command; a first or second word
+ * that is not plain (quotes, escapes, globs, expansions, an environment
+ * assignment), which must not widen the key; a second word that is a flag
+ * (`rm -f x`, `git -C repo status`), which would widen the key to every use of
+ * the command; a masked command (its visible words are not the real
  * command); a wrapper or interpreter, whose first word says nothing about what
  * runs. A remembered allow covers only a simple command: one with shell
- * metacharacters (chaining, substitution, redirection) is asked again. A
+ * metacharacters (chaining, substitution, redirection) is asked again, and so
+ * is one with a flag or a non-plain word after the key (`git push origin
+ * --force` under a remembered `git push`), since those change what runs (nax#2553). A
  * remembered reject applies to its key regardless. When S3 settles a request
  * itself (timeout, cancel), the client request is aborted and a late reply is
  * ignored. A failed client request is a deny (M-13).
@@ -117,14 +121,20 @@ export function memoryKey(event: ApprovalEvent): string | undefined {
   if (!PLAIN_WORD.test(first)) return undefined;
   const name = first.slice(first.lastIndexOf("/") + 1).toLowerCase();
   if (name === "" || WRAPPERS.has(name)) return undefined;
-  if (second === undefined || second.startsWith("-")) return `${event.tool}:${first}`;
+  if (second === undefined) return `${event.tool}:${first}`;
+  // A flag can change what the command does (`rm -f`, `git -C repo`): remembering the bare command would
+  // approve every later invocation of it, so a flag second word is never remembered (nax#2553).
+  if (second.startsWith("-")) return undefined;
   return PLAIN_WORD.test(second) ? `${event.tool}:${first} ${second}` : undefined;
 }
 
 /** Whether a remembered decision may answer this request without asking. */
 function memoryApplies(event: ApprovalEvent, decision: Decision): boolean {
   if (decision === "deny" || toolKind(event.tool) !== "execute") return true;
-  return !SHELL_METACHARACTERS.test(event.command ?? "");
+  const command = event.command ?? "";
+  if (SHELL_METACHARACTERS.test(command)) return false;
+  const rest = command.trim().split(/\s+/).slice(2);
+  return rest.every((word) => PLAIN_WORD.test(word) && !word.startsWith("-"));
 }
 
 function choice(response: RequestPermissionResponse): Choice {

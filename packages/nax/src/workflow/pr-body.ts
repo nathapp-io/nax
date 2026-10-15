@@ -1,6 +1,7 @@
 /** The workflow PR body (spec §7 step 9). Separate from finish's body; reuses its advisor section and escapes. */
 import type { AdviceDecision } from "@/advisor";
-import { buildAdvisorSection, escapeInline, escapeTableCell } from "@/finish";
+import { buildAdvisorSection } from "@/finish";
+import { redactedExcerpt, safeBlock, safeCell, safeCode, safeInline } from "./pr-body-safe";
 import type { PreflightFile } from "./preflight";
 import type {
   FeatureCiState,
@@ -47,14 +48,14 @@ const NEXT_SECTION = /^\s*(?:#{1,6}\s|- \*\*|\*\*[^*]+\*\*)/;
 
 function list(items: readonly string[], chars = ITEM_CHARS): string {
   if (items.length === 0) return NONE;
-  const shown = items.slice(0, ROW_CAP).map((i) => `- ${escapeInline(i, chars)}`);
+  const shown = items.slice(0, ROW_CAP).map((i) => `- ${safeInline(i, chars)}`);
   const hidden = items.length - shown.length;
   return [...shown, ...(hidden > 0 ? [`- …and ${hidden} more`] : [])].join("\n");
 }
 
 function summary(input: WorkflowPrBodyInput): string {
   const n = input.stories.length;
-  const head = `Workflow mode (A5) implemented ${n} ${n === 1 ? "story" : "stories"} for **${escapeInline(input.feature)}**. Outcome: **${input.outcome}**.`;
+  const head = `Workflow mode (A5) implemented ${n} ${n === 1 ? "story" : "stories"} for **${safeInline(input.feature)}**. Outcome: **${input.outcome}**.`;
   return input.reasons.length > 0 ? `${head}\n\nNot ready because:\n${list(input.reasons)}` : head;
 }
 
@@ -63,7 +64,7 @@ function storiesTable(stories: readonly StorySummary[]): string {
     .slice(0, ROW_CAP)
     .map(
       (s) =>
-        `| ${escapeTableCell(s.id)} | ${escapeTableCell(s.title)} | ${escapeTableCell(s.state)}${s.unreviewed ? " (unreviewed)" : ""} | ${s.rounds} |`,
+        `| ${safeCell(s.id)} | ${safeCell(s.title)} | ${safeCell(s.state)}${s.unreviewed ? " (unreviewed)" : ""} | ${s.rounds} |`,
     );
   return ["| Story | Title | State | Rounds |", "|---|---|---|---|", ...rows].join("\n");
 }
@@ -94,7 +95,7 @@ function fenced(text: string): string {
 
 function gateExcerpts(input: WorkflowPrBodyInput): string {
   if ((input.finalGates?.failing.length ?? 0) === 0) return "";
-  return (input.finalGateFindings ?? []).map((f) => `\n\n${fenced(f.issue)}`).join("");
+  return (input.finalGateFindings ?? []).map((f) => `\n\n${fenced(redactedExcerpt(f.issue))}`).join("");
 }
 
 /** Open items are shown in full unless the whole body would exceed PR_BODY_MAX_CHARS (#2496). */
@@ -102,15 +103,13 @@ const FULL_TEXT = Number.MAX_SAFE_INTEGER;
 
 function openItemLine(item: OpenItem, chars = FULL_TEXT): string {
   if (item.kind === "gate")
-    return `- [ ] **${escapeInline(item.id, chars)}** (gate) — final gate ${escapeInline(item.id, chars)} is red; see the excerpt under Gates and CI`;
-  const where = item.file
-    ? ` \`${escapeInline(item.file, chars)}${item.line !== undefined ? `:${item.line}` : ""}\``
-    : "";
+    return `- [ ] **${safeInline(item.id, chars)}** (gate) — final gate ${safeInline(item.id, chars)} is red; see the excerpt under Gates and CI`;
+  const where = item.file ? ` \`${safeCode(item.file, chars)}${item.line !== undefined ? `:${item.line}` : ""}\`` : "";
   const tags = (item.severity ? [item.severity, item.kind] : [item.kind]).join(", ");
   return [
-    `- [ ] **${escapeInline(item.id, chars)}** (${tags})${where} — ${escapeInline(item.issue, chars)}`,
-    ...(item.suggestion ? [`  Suggestion: ${escapeInline(item.suggestion, chars)}`] : []),
-    ...(item.ruling ? [`  Advisor: ${item.ruling.action} — ${escapeInline(item.ruling.why, chars)}`] : []),
+    `- [ ] **${safeInline(item.id, chars)}** (${tags})${where} — ${safeInline(item.issue, chars)}`,
+    ...(item.suggestion ? [`  Suggestion: ${safeInline(item.suggestion, chars)}`] : []),
+    ...(item.ruling ? [`  Advisor: ${item.ruling.action} — ${safeInline(item.ruling.why, chars)}`] : []),
   ].join("\n");
 }
 
@@ -141,7 +140,7 @@ function assemble(input: WorkflowPrBodyInput, ready: string | null): string {
     `## Stories\n\n${storiesTable(input.stories)}`,
     ...(ready ? [ready] : []),
     `## Pre-flight rulings\n\n${list(preflightLines(input.preflight))}`,
-    `## Advisor decisions\n\n${buildAdvisorSection([...input.decisions]) ?? NONE}`,
+    `## Advisor decisions\n\n${safeBlock(buildAdvisorSection([...input.decisions]) ?? NONE)}`,
     `## Parked findings\n\n${list(input.rulings.map((r) => `${r.findingId ?? "?"} ${r.action}: ${r.text} — ${r.why}`))}`,
     `## Deferred minors (left)\n\n${list(input.minorsLeft)}`,
     `## Gates and CI\n\n${list(gateLines(input))}${gateExcerpts(input)}`,

@@ -96,16 +96,16 @@ async function runPreIter(story: UserStory, config: NaxConfig, prd: PRD, prdPath
   );
 }
 
-let origSavePRD: typeof _tierEscalationDeps.savePRD;
+let origSavePRD: typeof _tierEscalationDeps.savePrdProgress;
 
 beforeEach(() => {
-  origSavePRD = _tierEscalationDeps.savePRD;
+  origSavePRD = _tierEscalationDeps.savePrdProgress;
   // No-op persistence so the test never touches real disk.
-  _tierEscalationDeps.savePRD = () => Promise.resolve();
+  _tierEscalationDeps.savePrdProgress = () => Promise.resolve();
 });
 
 afterEach(() => {
-  _tierEscalationDeps.savePRD = origSavePRD;
+  _tierEscalationDeps.savePrdProgress = origSavePRD;
 });
 
 // ---------------------------------------------------------------------------

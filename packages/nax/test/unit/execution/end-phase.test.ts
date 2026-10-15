@@ -116,7 +116,8 @@ describe("runEndPhase (P4-R16)", () => {
   test("workflow mode: an aborted run never starts the feature workflow", async () => {
     _endPhaseDeps.resolveBranch = async () => "feat/x";
     const { d, workflow } = deps({ passed: true, outcome: "ready", reasons: [] });
-    await runEndPhase(opts(WORKFLOW, { exitReason: "aborted" }), d);
+    // nax#2550: the workflow did not run, so the run is not reported as a workflow success.
+    expect(await runEndPhase(opts(WORKFLOW, { exitReason: "aborted" }), d)).toBe(false);
     expect(workflow).toHaveLength(0);
   });
 

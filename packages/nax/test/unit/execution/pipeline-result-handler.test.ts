@@ -116,7 +116,7 @@ let ctxWorkdir: string;
 let origSpawn: typeof _gitDeps.spawn;
 let origResultSpawn: typeof _resultHandlerDeps.spawn;
 let origMergeEngine: typeof _resultHandlerDeps.mergeEngine;
-let origSavePrd: typeof _tierEscalationDeps.savePRD;
+let origSavePrd: typeof _tierEscalationDeps.savePrdProgress;
 let origExistsSync: typeof _resultHandlerDeps.existsSync;
 
 beforeEach(() => {
@@ -124,7 +124,7 @@ beforeEach(() => {
   origSpawn = _gitDeps.spawn;
   origResultSpawn = _resultHandlerDeps.spawn;
   origMergeEngine = _resultHandlerDeps.mergeEngine;
-  origSavePrd = _tierEscalationDeps.savePRD;
+  origSavePrd = _tierEscalationDeps.savePrdProgress;
   origExistsSync = _resultHandlerDeps.existsSync;
   // MEM-6: cleanup now keys off real worktree existence rather than config
   // mode. Default to "does not exist" — the safe, deterministic default that
@@ -138,7 +138,7 @@ afterEach(() => {
   _gitDeps.spawn = origSpawn;
   _resultHandlerDeps.spawn = origResultSpawn;
   _resultHandlerDeps.mergeEngine = origMergeEngine;
-  _tierEscalationDeps.savePRD = origSavePrd;
+  _tierEscalationDeps.savePrdProgress = origSavePrd;
   _resultHandlerDeps.existsSync = origExistsSync;
   cleanupTempDir(ctxWorkdir);
   mock.restore();

@@ -11,15 +11,55 @@ import type { ProtocolError, ProtocolEvent, ThinkingBlock, ToolCall } from "./ty
 
 const EMPTY_USAGE: TokenUsage = { inputTokens: 0, outputTokens: 0 };
 
+/**
+ * Usage billed by a round trip that then failed, for errors that are not a
+ * `ProtocolStreamError` (a caller abort thrown mid-stream). Keyed on identity so
+ * the thrown value is never mutated or wrapped.
+ */
+const partialUsageByError = new WeakMap<object, TokenUsage>();
+
 export class ProtocolStreamError extends Error {
-  constructor(readonly protocolError: ProtocolError) {
+  /**
+   * Tokens the provider billed before the stream failed, when it reported any.
+   * A failed request still bills; dropping this made every retry and abort undercount.
+   */
+  readonly usage?: TokenUsage;
+
+  constructor(
+    readonly protocolError: ProtocolError,
+    usage?: TokenUsage,
+  ) {
     super(protocolError.message);
+    if (usage !== undefined) this.usage = usage;
     this.name = "ProtocolStreamError";
     if (protocolError.cause !== undefined) this.cause = protocolError.cause;
   }
 }
 
+/** The usage a failed `collectStream` call had already been billed, or undefined when none was reported. */
+export function partialUsageOf(err: unknown): TokenUsage | undefined {
+  if (typeof err !== "object" || err === null) return undefined;
+  return err instanceof ProtocolStreamError ? err.usage : partialUsageByError.get(err);
+}
+
 export async function collectStream(events: AsyncIterable<ProtocolEvent>): Promise<CompleteResult> {
+  let usage: TokenUsage | undefined;
+  try {
+    return await foldStream(events, (u) => {
+      usage = u;
+    });
+  } catch (err) {
+    if (usage !== undefined && typeof err === "object" && err !== null && !(err instanceof ProtocolStreamError)) {
+      partialUsageByError.set(err, usage);
+    }
+    throw err;
+  }
+}
+
+async function foldStream(
+  events: AsyncIterable<ProtocolEvent>,
+  onUsage: (u: TokenUsage) => void,
+): Promise<CompleteResult> {
   const text: string[] = [];
   const toolCalls: ToolCall[] = [];
   const thinking: ThinkingBlock[] = [];
@@ -42,9 +82,10 @@ export async function collectStream(events: AsyncIterable<ProtocolEvent>): Promi
         break;
       case "usage":
         usage = event.usage;
+        onUsage(usage);
         break;
       case "error":
-        throw new ProtocolStreamError(event.error);
+        throw new ProtocolStreamError(event.error, usage);
       case "done":
         stopReason = event.stopReason;
         identity = {

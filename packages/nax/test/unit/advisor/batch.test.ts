@@ -184,6 +184,28 @@ describe("adviseBatch preflight", () => {
     expect(out.items[1]?.decision).toBeNull(); // option B needs an acRef the conflict lacks
   });
 
+  test("every ladder model fails -> the failure is logged with its fallbackReason (#2554)", async () => {
+    resetLogger();
+    const logs: LogEntry[] = [];
+    initLogger({ level: "debug" });
+    addSink((entry) => logs.push(entry));
+    try {
+      const actx = setup();
+      _advisorServiceDeps.callOp = (async () => ({
+        ok: false,
+        error: "no-json",
+        preview: "garbage",
+      })) as typeof _advisorServiceDeps.callOp;
+      const out = await adviseBatch(actx, { kind: "preflight", summary: "pf", storyIds: ["US-1"] });
+      expect(out.fallbackReason).toBe("no-json");
+      const warns = logs.filter((e) => e.stage === "advisor" && e.level === "warn");
+      expect(warns).toHaveLength(1);
+      expect(warns[0]?.data).toMatchObject({ storyId: "_run", kind: "preflight", fallbackReason: "no-json" });
+    } finally {
+      resetLogger();
+    }
+  });
+
   test("zero conflicts -> empty items, no decisions", async () => {
     const actx = setup();
     _advisorServiceDeps.callOp = (async () => ({

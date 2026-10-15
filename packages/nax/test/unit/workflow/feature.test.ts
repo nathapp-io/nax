@@ -80,6 +80,9 @@ async function seedFinished(
   over: {
     outcome: "ready" | "draft" | "local-only" | "pushed";
     url?: string;
+    head?: string;
+    passed?: boolean;
+    finalGates?: { ran: string[]; failing: string[] };
     flaggedDecisions?: readonly string[];
   },
 ): Promise<void> {
@@ -140,6 +143,129 @@ describe("runWorkflowFeature", () => {
     );
     await runWorkflowFeature(input);
     expect(envs[0]?.record.step).toBe("branch-fix");
+  });
+
+  // nax#2550: the record remembers the HEAD it started on; a moved HEAD voids its gates and review.
+  test("a resumed record whose HEAD moved restarts at repo-gates, keeping its counters", async () => {
+    const { input, envs, featureDir } = setup();
+    const prior = join(featureDir, "r-old");
+    await upsertStoryRecord(prior, { runId: "r-old", feature: input.feature }, newStoryRecord("US-001", 5, "t"));
+    await upsertFeatureRecord(
+      prior,
+      { runId: "r-old", feature: input.feature },
+      {
+        ...newFeatureRecord({ now: "t0", seed: "s", minors: [] }),
+        step: "branch-fix",
+        startHead: "oldHead",
+        repoGates: { ran: ["test"], failing: [] },
+        reviewOpen: [{ id: "B3", kind: "spec", severity: "important", issue: "stale" }],
+        nextFindingId: 4,
+        fixBase: "oldBase",
+        timings: { "repo-gates": 7 },
+      },
+    );
+    await runWorkflowFeature(input);
+    const rec = envs[0]?.record;
+    expect(rec?.step).toBe("repo-gates");
+    expect(rec?.startHead).toBe("headX");
+    expect(rec?.repoGates).toBeUndefined();
+    expect(rec?.reviewOpen).toEqual([]);
+    expect(rec?.fixBase).toBeUndefined();
+    expect(rec?.startedAt).toBe("t0");
+    expect(rec?.nextFindingId).toBe(4);
+    expect(rec?.timings).toEqual({ "repo-gates": 7 });
+  });
+
+  // The workflow's own fix commit moves HEAD; the resume compares against the HEAD it recorded.
+  test("a crash after branch-fix with HEAD at the fix commit resumes at branch-rereview, not a restart", async () => {
+    const { input, envs, featureDir } = setup();
+    const prior = join(featureDir, "r-old");
+    await upsertStoryRecord(prior, { runId: "r-old", feature: input.feature }, newStoryRecord("US-001", 5, "t"));
+    await upsertFeatureRecord(
+      prior,
+      { runId: "r-old", feature: input.feature },
+      {
+        ...newFeatureRecord({ now: "t", seed: "s", minors: [] }),
+        step: "branch-rereview",
+        startHead: "oldHead",
+        lastHead: "headX",
+        fixBase: "oldHead",
+        fixRan: true,
+        fixRounds: 1,
+      },
+    );
+    await runWorkflowFeature(input);
+    expect(envs[0]?.record.step).toBe("branch-rereview");
+    expect(envs[0]?.record.fixRounds).toBe(1);
+  });
+
+  test("a human commit on top of the recorded lastHead restarts at repo-gates", async () => {
+    const { input, envs, featureDir } = setup();
+    const prior = join(featureDir, "r-old");
+    await upsertStoryRecord(prior, { runId: "r-old", feature: input.feature }, newStoryRecord("US-001", 5, "t"));
+    await upsertFeatureRecord(
+      prior,
+      { runId: "r-old", feature: input.feature },
+      {
+        ...newFeatureRecord({ now: "t", seed: "s", minors: [] }),
+        step: "branch-rereview",
+        startHead: "oldHead",
+        lastHead: "fixCommit",
+        fixRan: true,
+        fixRounds: 1,
+      },
+    );
+    await runWorkflowFeature(input);
+    expect(envs[0]?.record.step).toBe("repo-gates");
+    expect(envs[0]?.record.lastHead).toBeUndefined();
+  });
+
+  test("a resumed record on the same HEAD resumes where it was", async () => {
+    const { input, envs, featureDir } = setup();
+    const prior = join(featureDir, "r-old");
+    await upsertStoryRecord(prior, { runId: "r-old", feature: input.feature }, newStoryRecord("US-001", 5, "t"));
+    await upsertFeatureRecord(
+      prior,
+      { runId: "r-old", feature: input.feature },
+      { ...newFeatureRecord({ now: "t", seed: "s", minors: [] }), step: "branch-fix", startHead: "headX" },
+    );
+    await runWorkflowFeature(input);
+    expect(envs[0]?.record.step).toBe("branch-fix");
+  });
+
+  test("a resume whose HEAD cannot be read restarts at repo-gates rather than trusting stale state", async () => {
+    const { input, envs, featureDir } = setup();
+    _workflowDeps.git = async () => ({ stdout: "", stderr: "boom", exitCode: 128 });
+    const prior = join(featureDir, "r-old");
+    await upsertStoryRecord(prior, { runId: "r-old", feature: input.feature }, newStoryRecord("US-001", 5, "t"));
+    await upsertFeatureRecord(
+      prior,
+      { runId: "r-old", feature: input.feature },
+      { ...newFeatureRecord({ now: "t", seed: "s", minors: [] }), step: "branch-fix", startHead: "headX" },
+    );
+    await runWorkflowFeature(input);
+    expect(envs[0]?.record.step).toBe("repo-gates");
+  });
+
+  test("an already-finished skip recomputes passed from the current stories and gates", async () => {
+    const { input, envs, featureDir } = setup();
+    await seedFinished(featureDir, input.feature, {
+      outcome: "ready",
+      passed: true,
+      finalGates: { ran: ["test"], failing: ["test"] },
+    });
+    const result = await runWorkflowFeature(input);
+    expect(result).toMatchObject({ outcome: "already-finished", passed: false });
+    expect(envs).toHaveLength(0);
+  });
+
+  test("a failed HEAD read is never a match for a prior record stored with an empty head", async () => {
+    const { input, envs, featureDir } = setup();
+    _workflowDeps.git = async () => ({ stdout: "", stderr: "boom", exitCode: 128 });
+    await seedFinished(featureDir, input.feature, { outcome: "ready", head: "" });
+    const result = await runWorkflowFeature(input);
+    expect(result?.outcome).not.toBe("already-finished");
+    expect(envs).toHaveLength(1);
   });
 
   test("a finished prior record at the same HEAD skips the machine (already finished)", async () => {

@@ -173,6 +173,18 @@ export interface WorkflowFeatureRecord {
   readonly endedAt?: string;
   /** HEAD when the workflow reached `done`. */
   readonly head?: string;
+  /**
+   * nax#2550: HEAD when this record started. A resume on a different HEAD restarts at `repo-gates`,
+   * since the recorded gates, review and `fixBase` describe code that is no longer the branch.
+   * Absent on records written before this field existed, which resume as they always did.
+   */
+  readonly startHead?: string;
+  /**
+   * nax#2550: the HEAD after the last step that can commit (branch fix, gate repair, publish), read by
+   * the machine itself. A resume compares the current HEAD to `lastHead ?? startHead`, so the
+   * workflow's own commits never force a restart. Absent until such a step ran, and when its read failed.
+   */
+  readonly lastHead?: string;
   readonly seed: string | null;
   readonly repoGates?: RepoGateSummary;
   /** Red repo gates and gate-open stories (step 1), handed to the branch fix. */
@@ -187,6 +199,12 @@ export interface WorkflowFeatureRecord {
   readonly reviewUnread?: readonly string[];
   /** nax#2550: an agent step was skipped because the run reached `execution.costLimit`. */
   readonly costLimited?: true;
+  /**
+   * nax#2550: a branch re-review did not run (timeout, unparseable reply), so the fix commits it was
+   * to check are unreviewed. Absent when every re-review ran, and on records written before this
+   * field existed; `publish` turns its presence into the reason that keeps the PR a draft.
+   */
+  readonly reReviewSkipped?: true;
   /** The branch review's cannot-verify items (#2496: listed as open items, never blocking). */
   readonly cannotVerify?: readonly string[];
   /** Blocking branch-review findings still open. */

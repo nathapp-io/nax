@@ -351,21 +351,21 @@ function asHooks(): LoadedHooksConfig {
 
 /** Captured logger, so a test can assert on the absence of a diagnostic. */
 let logger: MockLogger;
-let origSavePRD: typeof _tierEscalationDeps.savePRD;
+let origSavePRD: typeof _tierEscalationDeps.savePrdProgress;
 let origGetSafeLogger: typeof _tierEscalationDeps.getSafeLogger;
 
 beforeEach(() => {
   logger = makeLogger();
-  origSavePRD = _tierEscalationDeps.savePRD;
+  origSavePRD = _tierEscalationDeps.savePrdProgress;
   origGetSafeLogger = _tierEscalationDeps.getSafeLogger;
   // No-op persistence so the test never touches real disk.
-  _tierEscalationDeps.savePRD = () => Promise.resolve();
+  _tierEscalationDeps.savePrdProgress = () => Promise.resolve();
   // Capture warnings for the logged-once contract.
   _tierEscalationDeps.getSafeLogger = () => logger;
 });
 
 afterEach(() => {
-  _tierEscalationDeps.savePRD = origSavePRD;
+  _tierEscalationDeps.savePrdProgress = origSavePRD;
   _tierEscalationDeps.getSafeLogger = origGetSafeLogger;
 });
 

@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { attachPartialSpend } from "#src/native/session/partial-spend";
 import { createNativeSessionState, type NativeSessionState } from "#src/native/session/session";
 import { saveTranscript } from "#src/native/session/transcript-store";
 import { buildNativeStreamEvent, type NativeTurnActivity } from "#src/native/session/turn-events";
 import { runNativeTurn } from "#src/native/session/turn-loop";
+import { readNativeTurnFailureUsage } from "#src/native/session/turn-types";
 import type { SendTurnOpts } from "#src/session/session-types";
 import { cleanupTempDir, makeTempDir, seedNativeSession } from "#test/helpers/index";
 
@@ -167,5 +169,92 @@ describe("native turn loop — usage activities (nax#2045)", () => {
     expect(retryBeat).toEqual({ kind: "usage", inputTokens: 0, outputTokens: 0, costUsd: 0 });
     expect("perRoundTrip" in buildNativeStreamEvent(base, retryBeat, 1)).toBe(false);
     expect(beats[1]).toHaveProperty("roundTrip", 1);
+  });
+
+  describe("billed usage on failed round trips", () => {
+    const partial = { inputTokens: 40, outputTokens: 2 };
+    const failing = (kind: string, spend = true) => {
+      const err = new ProtocolStreamError({ kind, message: "boom" });
+      if (spend) attachPartialSpend(err, { usage: partial, costUsd: 0.4 });
+      return err;
+    };
+
+    test("a retried round trip counts the failed attempt and the successful one", async () => {
+      let calls = 0;
+      const result = await runNativeTurn(handle, "hi", opts(), {
+        sessionState,
+        transportRetry: { maxAttempts: 3, baseDelayMs: 100 },
+        sleep: async () => {},
+        complete: async () => {
+          calls += 1;
+          if (calls === 1) throw failing("transport");
+          return reply({ usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.1 });
+        },
+      });
+
+      expect(result.tokenUsage).toMatchObject({ inputTokens: 50, outputTokens: 7 });
+      expect(result.estimatedCostUsd).toBeCloseTo(0.5);
+    });
+
+    test("every failed attempt of an exhausted retry is counted on the recorded failure usage", async () => {
+      let thrown: unknown;
+      try {
+        await runNativeTurn(handle, "hi", opts(), {
+          sessionState,
+          transportRetry: { maxAttempts: 2, baseDelayMs: 100 },
+          sleep: async () => {},
+          complete: async () => {
+            throw failing("transport");
+          },
+        });
+      } catch (err) {
+        thrown = err;
+      }
+      expect(readNativeTurnFailureUsage(thrown)).toEqual({
+        tokenUsage: { inputTokens: 80, outputTokens: 4 },
+        costUsd: expect.closeTo(0.8),
+      });
+    });
+
+    test("an aborted or non-retryable round trip counts what it was billed", async () => {
+      let thrown: unknown;
+      try {
+        await runNativeTurn(handle, "hi", opts(), {
+          sessionState,
+          complete: async () => {
+            throw failing("bad-request");
+          },
+        });
+      } catch (err) {
+        thrown = err;
+      }
+      expect(readNativeTurnFailureUsage(thrown)?.tokenUsage).toEqual({ inputTokens: 40, outputTokens: 2 });
+    });
+
+    test("the success path adds nothing beyond the response usage", async () => {
+      const result = await runNativeTurn(handle, "hi", opts(), {
+        sessionState,
+        complete: async () => reply({ usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.1 }),
+      });
+      expect(result.tokenUsage).toMatchObject({ inputTokens: 10, outputTokens: 5 });
+      expect(result.estimatedCostUsd).toBeCloseTo(0.1);
+    });
+
+    test("a failed attempt with no billed usage adds no usage beat", async () => {
+      const activity: NativeTurnActivity[] = [];
+      let calls = 0;
+      await runNativeTurn(handle, "hi", opts(), {
+        sessionState,
+        transportRetry: { maxAttempts: 3, baseDelayMs: 100 },
+        sleep: async () => {},
+        onActivity: (a) => activity.push(a),
+        complete: async () => {
+          calls += 1;
+          if (calls === 1) throw failing("transport", false);
+          return reply();
+        },
+      });
+      expect(usageBeats(activity)).toHaveLength(2);
+    });
   });
 });

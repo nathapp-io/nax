@@ -153,6 +153,24 @@ describe("workflow git helpers", () => {
     expect(await Bun.file(path).exists()).toBe(false);
   });
 
+  // nax#2550: a failed read is a throw, never "" or "nothing changed".
+  test("readHead and listUncommitted throw WORKFLOW_GIT_FAILED on a git failure", async () => {
+    _workflowDeps.git = async () => ({ stdout: "", stderr: "not a git repository", exitCode: 128 });
+    for (const read of [readHead, listUncommitted]) {
+      const err = await read("/repo").catch((e: unknown) => e);
+      assertNaxError(err);
+      expect(err.code).toBe("WORKFLOW_GIT_FAILED");
+      expect(err.message).toContain("not a git repository");
+    }
+  });
+
+  test("readHead trims the sha; a clean status is an empty list", async () => {
+    _workflowDeps.git = async () => ({ stdout: "abc123\n", exitCode: 0 });
+    expect(await readHead("/repo")).toBe("abc123");
+    _workflowDeps.git = async () => ({ stdout: "", exitCode: 0 });
+    expect(await listUncommitted("/repo")).toEqual([]);
+  });
+
   test("listUncommitted names modified and untracked files, not .nax", async () => {
     const dir = await repo();
     await Bun.write(join(dir, "a.txt"), "changed\n");

@@ -223,6 +223,15 @@ async function adviseOnce(actx: AdvisorCallContext, req: BatchRequest): Promise<
   const cost = _advisorServiceDeps.costTotal(actx.callCtx.runtime) - costBefore;
 
   const failure = run.out ? undefined : (run.error ?? "no-output");
+  // A pre-flight has no per-item questions to audit, so a total ladder failure would otherwise leave no trace.
+  if (failure && req.kind === "preflight") {
+    getSafeLogger()?.warn("advisor", "Advisor pre-flight failed on every ladder model — no rulings", {
+      storyId: "_run",
+      kind: req.kind,
+      fallbackReason: failure,
+      attempts: run.attempts,
+    });
+  }
   const pending: Pending[] = !run.out
     ? questions.map((question) => ({ question, error: failure, raw: null }))
     : req.kind === "residual"

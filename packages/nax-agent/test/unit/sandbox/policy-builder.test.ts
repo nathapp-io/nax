@@ -118,6 +118,8 @@ describe("buildSandboxPolicy", () => {
     const policy = buildSandboxPolicy(input());
     expect(policy.denyWrite).toContain(join(root, ".git", "hooks"));
     expect(policy.denyWrite).toContain(join(root, ".git", "config"));
+    // info/exclude is a read-side ignore rule a reviewer could plant to hide files from the guard (#2552).
+    expect(policy.denyWrite).toContain(join(root, ".git", "info"));
     expect(policy.writeRoots).not.toContain(join(root, ".git"));
   });
 
@@ -134,11 +136,13 @@ describe("buildSandboxPolicy", () => {
     for (const p of [
       join(common, "hooks"),
       join(common, "config"),
+      join(common, "info"),
       join(common, "config.worktree"),
       join(root, ".git"),
       join(gitDir, "gitdir"),
       join(gitDir, "commondir"),
       join(gitDir, "config.worktree"),
+      join(gitDir, "info"),
     ]) {
       expect(policy.denyWrite).toContain(p);
     }

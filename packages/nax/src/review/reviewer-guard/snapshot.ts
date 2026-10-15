@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { classifyRunStatePath } from "@/runstate/store";
 import { _snapshotDeps, git, gitRaw, symbolicHead } from "./deps";
+import { listIgnoreFiles, restoreIgnoreRules, type TreeEntry } from "./snapshot-ignore-rules";
 import {
   diffRefsLeft,
   diffStashesLeft,
@@ -34,6 +35,8 @@ export interface RepoSnapshot {
   readonly refs: readonly RefEntry[];
   readonly replaceRefs: readonly string[];
   readonly stashes: readonly string[];
+  /** Every .gitignore at snapshot time, ignored ones included; `null` when it could not be listed (nax#2552). */
+  readonly ignoreFiles: readonly string[] | null;
 }
 
 export interface RestoreReport {
@@ -57,7 +60,7 @@ export function isKeeperOwnedPath(toplevel: string, rel: string): boolean {
 
 export async function takeRepoSnapshot(workdir: string): Promise<RepoSnapshot> {
   const toplevel = await git(["rev-parse", "--show-toplevel"], workdir);
-  const [tree, indexTree, head, symbolic, refs, replaceRefs, stashes] = await Promise.all([
+  const [tree, indexTree, head, symbolic, refs, replaceRefs, stashes, ignoreFiles] = await Promise.all([
     _snapshotDeps.snapshotWorkingTree(toplevel),
     git(["write-tree"], toplevel),
     git(["rev-parse", "HEAD"], toplevel),
@@ -65,8 +68,12 @@ export async function takeRepoSnapshot(workdir: string): Promise<RepoSnapshot> {
     listRefs(toplevel),
     listReplaceRefs(toplevel),
     listStashes(toplevel),
+    listIgnoreFiles(toplevel).then(
+      (files) => [...files],
+      () => null,
+    ),
   ]);
-  return { toplevel, tree, indexTree, head, symbolicHead: symbolic, refs, replaceRefs, stashes };
+  return { toplevel, tree, indexTree, head, symbolicHead: symbolic, refs, replaceRefs, stashes, ignoreFiles };
 }
 
 function isAbsent(err: unknown): boolean {
@@ -90,29 +97,43 @@ async function removePath(abs: string): Promise<void> {
   }
 }
 
-/** Snapshot entry kinds by path: "commit" is a gitlink, anything else a regular blob. */
-async function snapshotEntries(snap: RepoSnapshot): Promise<Map<string, string>> {
+/** Snapshot entries by path: type "commit" is a gitlink, anything else a regular blob. */
+async function snapshotEntries(snap: RepoSnapshot): Promise<Map<string, TreeEntry>> {
   const out = await gitRaw(["ls-tree", "-r", "-z", snap.tree], snap.toplevel);
-  const entries = new Map<string, string>();
+  const entries = new Map<string, TreeEntry>();
   for (const rec of out.split("\0")) {
     const tab = rec.indexOf("\t");
     if (tab < 0) continue;
-    const [, type = ""] = rec.slice(0, tab).split(" ");
-    entries.set(rec.slice(tab + 1), type);
+    const [, type = "", sha = ""] = rec.slice(0, tab).split(" ");
+    entries.set(rec.slice(tab + 1), { type, sha });
   }
   return entries;
 }
 
 async function restoreTree(snap: RepoSnapshot, failures: string[]): Promise<{ paths: string[]; restored: boolean }> {
+  const entries = await snapshotEntries(snap);
+  // Reset the ignore rules first: the comparison below honours them, and a reviewer-edited
+  // .gitignore would otherwise hide the reviewer's own files from it (nax#2552).
+  const ruleChanges = await restoreIgnoreRules(
+    {
+      toplevel: snap.toplevel,
+      tree: snap.tree,
+      entries,
+      known: snap.ignoreFiles === null ? null : new Set(snap.ignoreFiles),
+      skip: (p) => isKeeperOwnedPath(snap.toplevel, p),
+      remove: removePath,
+    },
+    failures,
+  );
   const current = await _snapshotDeps.snapshotWorkingTree(snap.toplevel);
-  const changed = (await _snapshotDeps.changedPathsBetween(snap.toplevel, snap.tree, current)).filter(
+  const diffed = (await _snapshotDeps.changedPathsBetween(snap.toplevel, snap.tree, current)).filter(
     (p) => !isKeeperOwnedPath(snap.toplevel, p),
   );
+  const changed = [...new Set([...ruleChanges, ...diffed])];
   if (changed.length === 0) return { paths: [], restored: false };
-  const entries = await snapshotEntries(snap);
   // A nested repo (gitlink) in the snapshot cannot be re-created from a tree: leave it.
-  const restore = changed.filter((p) => entries.get(p) !== undefined && entries.get(p) !== "commit");
-  const remove = changed.filter((p) => entries.get(p) === undefined);
+  const restore = diffed.filter((p) => entries.get(p) !== undefined && entries.get(p)?.type !== "commit");
+  const remove = diffed.filter((p) => entries.get(p) === undefined);
   // Removals first: a file/dir swap must clear the obstructing path before checkout.
   for (const p of remove) {
     await removePath(join(snap.toplevel, p)).catch((err) => failures.push(`remove ${p}: ${errorMessage(err)}`));
@@ -123,7 +144,7 @@ async function restoreTree(snap: RepoSnapshot, failures: string[]): Promise<{ pa
       failures.push(`checkout ${chunk.length} path(s): ${errorMessage(err)}`),
     );
   }
-  return { paths: changed, restored: restore.length > 0 };
+  return { paths: changed, restored: restore.length > 0 || ruleChanges.length > 0 };
 }
 
 async function restoreIndex(snap: RepoSnapshot, force: boolean): Promise<boolean> {

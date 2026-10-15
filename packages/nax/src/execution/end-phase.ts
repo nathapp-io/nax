@@ -107,7 +107,8 @@ async function runFinish(options: RunnerCompletionOptions, deps: EndPhaseDeps, b
 async function runWorkflowEnd(options: RunnerCompletionOptions, deps: EndPhaseDeps, branch: string): Promise<boolean> {
   if (options.exitReason === "aborted" || options.abortSignal?.aborted) {
     getSafeLogger()?.info("workflow", "Feature workflow skipped — the run was aborted", { storyId: "_run" });
-    return true;
+    // nax#2550: the workflow did not run, so it cannot be reported as passed.
+    return false;
   }
   try {
     const result = await deps.runWorkflowFeature({

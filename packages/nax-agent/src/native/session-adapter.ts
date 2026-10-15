@@ -25,6 +25,7 @@ import { _clientDeps, getNativeClient, type NativeCatalogOverrides } from "./cli
 import type { GuardedCredentialStore } from "./credentials/index.ts";
 import { type CredentialSource, createSessionCredentialStore } from "./credentials/session-source.ts";
 import { toAdapterFailure } from "./errors.ts";
+import { billedOnFailure } from "./failed-round-trip-spend.ts";
 import { buildRateCard, NATIVE_AGENT, parseNativeModel, resolveContextWindow, toThinkingLevel } from "./models.ts";
 import { createInstructionInteraction } from "./session/instruction-interaction.ts";
 import {
@@ -352,30 +353,32 @@ export class NativeSessionAdapter implements AgentSessionAdapter {
 
           try {
             instructionInteraction.acknowledge();
-            const res = await streamComplete(
-              client,
-              resolved,
-              {
-                messages,
-                ...(tools.length > 0 ? { tools } : {}),
-                sessionId,
-                ...systemFieldFor(this.state, handle.id),
-                signal,
-                ...(requestThinking !== undefined ? { thinking: requestThinking } : {}),
-                ...(requestOptions?.temperature !== undefined ? { temperature: requestOptions.temperature } : {}),
-                // nax#1835: "short" is fixed, not config-driven (this repo's
-                // precedent -- the compaction design -- rejects knobs added
-                // before evidence). The turn loop's round trips are seconds
-                // apart, so "short" already hits; "long" would only pay off for
-                // a later turn and bills more at write time for a window this
-                // turn does not need. Only this round-trip closure sets it: the
-                // one-shot complete() and the summarize closure below have no
-                // successor turn (or, for summarize, a shape unlikely to repeat)
-                // to reuse the entry, so a cache write there costs more than it
-                // saves.
-                cacheRetention: "short",
-              },
-              onDelta,
+            const res = await billedOnFailure(rates, () =>
+              streamComplete(
+                client,
+                resolved,
+                {
+                  messages,
+                  ...(tools.length > 0 ? { tools } : {}),
+                  sessionId,
+                  ...systemFieldFor(this.state, handle.id),
+                  signal,
+                  ...(requestThinking !== undefined ? { thinking: requestThinking } : {}),
+                  ...(requestOptions?.temperature !== undefined ? { temperature: requestOptions.temperature } : {}),
+                  // nax#1835: "short" is fixed, not config-driven (this repo's
+                  // precedent -- the compaction design -- rejects knobs added
+                  // before evidence). The turn loop's round trips are seconds
+                  // apart, so "short" already hits; "long" would only pay off for
+                  // a later turn and bills more at write time for a window this
+                  // turn does not need. Only this round-trip closure sets it: the
+                  // one-shot complete() and the summarize closure below have no
+                  // successor turn (or, for summarize, a shape unlikely to repeat)
+                  // to reuse the entry, so a cache write there costs more than it
+                  // saves.
+                  cacheRetention: "short",
+                },
+                onDelta,
+              ),
             );
             const usage = res.usage;
             // Single `priceCall` invocation: `costUsd` and `resolvedRates`

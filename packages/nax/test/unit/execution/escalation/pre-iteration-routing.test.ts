@@ -2,15 +2,15 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 import { _tierEscalationDeps, preIterationTierCheck } from "@/execution/escalation/tier-escalation";
 
-let originalSavePRD: typeof _tierEscalationDeps.savePRD;
+let originalSavePRD: typeof _tierEscalationDeps.savePrdProgress;
 
 beforeEach(() => {
-  originalSavePRD = _tierEscalationDeps.savePRD;
-  _tierEscalationDeps.savePRD = () => Promise.resolve();
+  originalSavePRD = _tierEscalationDeps.savePrdProgress;
+  _tierEscalationDeps.savePrdProgress = () => Promise.resolve();
 });
 
 afterEach(() => {
-  _tierEscalationDeps.savePRD = originalSavePRD;
+  _tierEscalationDeps.savePrdProgress = originalSavePRD;
 });
 
 describe("#1762 — pre-iteration escalation routing", () => {

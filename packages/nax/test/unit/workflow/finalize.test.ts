@@ -120,6 +120,8 @@ function wire(opts: WireOpts = {}) {
   }
   _featureDeps.openOrPromotePr = fakePromote;
   _workflowDeps.readTrustedDecisions = async () => [];
+  // A clean tree by default: an unreadable one is a readiness reason now (nax#2550).
+  _workflowDeps.git = async () => ({ stdout: "", exitCode: 0 });
   if (opts.spec !== undefined) {
     const spec = opts.spec;
     _workflowDeps.resolveFeatureSpec = async () => {

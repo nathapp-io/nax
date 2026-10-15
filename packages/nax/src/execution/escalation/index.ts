@@ -17,4 +17,4 @@ export {
   resetRuntimeCrashRetryCounts,
   resolveMaxAttemptsOutcome,
 } from "./tier-escalation";
-export { handleMaxAttemptsReached, handleNoTierAvailable } from "./tier-outcome";
+export { _tierOutcomeDeps, handleMaxAttemptsReached, handleNoTierAvailable } from "./tier-outcome";

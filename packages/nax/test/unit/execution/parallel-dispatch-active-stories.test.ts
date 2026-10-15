@@ -47,7 +47,9 @@ test("AC-11 many-story dispatch forwards parallel metadata and copies active lis
     ...makeDispatchContext({ runtime }),
   };
   const active = [{ storyId: "US-001", worktreePath: "/w/.nax-wt/a" }];
+  const savePrdProgress = mock(async () => {});
   const deps: ParallelDispatchDeps = {
+    savePrdProgress,
     selectIndependentBatch: () => stories,
     preIterationTierCheck: async () => ({ shouldSkipIteration: false, prd, prdDirty: false }),
     runIteration: mock(async () => {
@@ -75,4 +77,7 @@ test("AC-11 many-story dispatch forwards parallel metadata and copies active lis
   );
   expect(deps.runParallelBatch).toHaveBeenCalledTimes(1);
   expect(deps.runIteration).not.toHaveBeenCalled();
+  // #2554: the batch reconcile is a status write, so it is committed (not a bare savePRD).
+  expect(savePrdProgress).toHaveBeenCalledTimes(1);
+  expect(savePrdProgress).toHaveBeenCalledWith(expect.anything(), join(dir, "prd.json"), "_batch", "reconciled");
 });

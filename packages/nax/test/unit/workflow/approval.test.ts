@@ -48,6 +48,7 @@ describe("readinessReasons (spec §7.8, P4-R6)", () => {
     [{ stories: [story("US-002", { state: "not-run" })] }, "stories not run: US-002"],
     [{ flagged: 2 }, "2 ruling(s) flagged for a human"],
     [{ branchReviewRan: false }, "branch review did not run"],
+    [{ reReviewSkipped: true }, "branch re-review did not run: the fix commits are unreviewed"], // nax#2550
   ])("%p -> %s", (over, reason) => {
     expect(readinessReasons({ ...READY, ...over })).toEqual([reason]);
   });

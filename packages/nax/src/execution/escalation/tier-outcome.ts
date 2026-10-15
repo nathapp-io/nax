@@ -9,13 +9,19 @@
 
 import { getSafeLogger } from "@/logger";
 import { pipelineEventBus } from "@/pipeline/event-bus";
-import { markStoryFailed, markStoryPaused, savePRD } from "@/prd";
+import { markStoryFailed, markStoryPaused, savePrdProgress } from "@/prd";
 import { storySpendUsd } from "@/runtime";
 import type { FailureCategory } from "@/tdd/types";
 import { appendProgress } from "../progress";
 import { resolveMaxAttemptsOutcome } from "./max-attempts-outcome";
 import { verifyEscalationQuotes } from "./quote-integrity";
 import type { EscalationHandlerContext, EscalationHandlerResult } from "./tier-escalation";
+
+/**
+ * Swappable dependencies for testing. `savePrdProgress` writes the PRD and commits it (#2533):
+ * paused/failed are status transitions that must not be left as a dirty prd.json (#2554).
+ */
+export const _tierOutcomeDeps = { savePrdProgress };
 
 /**
  * Handle case when no tier is available for escalation
@@ -32,7 +38,7 @@ export async function handleNoTierAvailable(
     const pauseReason = `Execution stopped (${failureCategory ?? "unknown"} requires human review)${pipelineDetail}`;
     const pausedPrd = { ...ctx.prd };
     markStoryPaused(pausedPrd, ctx.story.id, await verifyEscalationQuotes(pauseReason, ctx.workdir, ctx.story.id));
-    await savePRD(pausedPrd, ctx.prdPath);
+    await _tierOutcomeDeps.savePrdProgress(pausedPrd, ctx.prdPath, ctx.story.id, "paused");
 
     logger?.warn("execution", "Story paused - no tier available (needs human review)", {
       storyId: ctx.story.id,
@@ -63,7 +69,7 @@ export async function handleNoTierAvailable(
   // Outcome is "fail"
   const failedPrd = { ...ctx.prd };
   markStoryFailed(failedPrd, ctx.story.id, failureCategory, undefined);
-  await savePRD(failedPrd, ctx.prdPath);
+  await _tierOutcomeDeps.savePrdProgress(failedPrd, ctx.prdPath, ctx.story.id, "failed");
 
   logger?.error("execution", "Story failed - execution failed", {
     storyId: ctx.story.id,
@@ -102,7 +108,7 @@ export async function handleMaxAttemptsReached(
     const pauseReason = `Max attempts reached (${failureCategory ?? "unknown"} requires human review)${pipelineDetail}`;
     const pausedPrd = { ...ctx.prd };
     markStoryPaused(pausedPrd, ctx.story.id, await verifyEscalationQuotes(pauseReason, ctx.workdir, ctx.story.id));
-    await savePRD(pausedPrd, ctx.prdPath);
+    await _tierOutcomeDeps.savePrdProgress(pausedPrd, ctx.prdPath, ctx.story.id, "paused");
 
     logger?.warn("execution", "Story paused - max attempts reached (needs human review)", {
       storyId: ctx.story.id,
@@ -133,7 +139,7 @@ export async function handleMaxAttemptsReached(
   // Outcome is "fail"
   const failedPrd = { ...ctx.prd };
   markStoryFailed(failedPrd, ctx.story.id, failureCategory, undefined);
-  await savePRD(failedPrd, ctx.prdPath);
+  await _tierOutcomeDeps.savePrdProgress(failedPrd, ctx.prdPath, ctx.story.id, "failed");
 
   logger?.error("execution", "Story failed - max attempts reached", {
     storyId: ctx.story.id,

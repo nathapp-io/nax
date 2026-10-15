@@ -90,6 +90,11 @@ export interface QualityCommandResult {
  */
 export const _qualityRunnerDeps = {
   spawn: spawn as typeof Bun.spawn,
+  killProcessGroup,
+  setTimeout: ((fn: () => void, ms: number) => setTimeout(fn, ms)) as (fn: () => void, ms: number) => unknown,
+  clearTimeout: ((handle: unknown) => clearTimeout(handle as ReturnType<typeof setTimeout>)) as (
+    handle: unknown,
+  ) => void,
 };
 
 function createDrainDeadline(deadlineMs: number): { promise: Promise<string>; cancel: () => void } {
@@ -192,28 +197,39 @@ async function runSingleCommand(
     });
 
     let timedOut = false;
-    let exitedBeforeSigkill = false;
-    let sigkillTimer: ReturnType<typeof setTimeout> | undefined;
+    let leaderExited = false;
+    let sigkillTimer: unknown;
+    let sigkillSent: Promise<void> | undefined;
+    let sigkillFired = false;
 
-    // Track process exit so SIGKILL is skipped if the process already died during the grace period.
+    // The shell leader's exit says nothing about the rest of its group, so it
+    // only changes HOW the SIGKILL is sent (see below), never whether.
     proc.exited
       .then(() => {
-        exitedBeforeSigkill = true;
+        leaderExited = true;
       })
       // Floating by design (the flag defaults to the safe value); .catch keeps a
       // rejected proc.exited from surfacing as an unhandled rejection, which the
       // crash handler would escalate to a full teardown.
       .catch(() => {});
 
-    const killTimer = setTimeout(() => {
+    // setTimeout, not Bun.sleep: both timers must be cancellable mid-flight
+    // (forbidden-patterns-source.md, the clearTimeout exception).
+    const killTimer = _qualityRunnerDeps.setTimeout(() => {
       timedOut = true;
-      killProcessGroup(proc.pid, "SIGTERM");
-      sigkillTimer = setTimeout(() => {
-        sigkillTimer = undefined;
-        if (!exitedBeforeSigkill) {
-          killProcessGroup(proc.pid, "SIGKILL");
-        }
-      }, SIGKILL_GRACE_PERIOD_MS);
+      _qualityRunnerDeps.killProcessGroup(proc.pid, "SIGTERM");
+      // Escalate to SIGKILL for the whole group even if the leader exited in the
+      // meantime: members that ignored SIGTERM would otherwise leak. Once the
+      // leader is gone the bare pid may belong to an unrelated process, so the
+      // single-process fallback is off. The timer never outlives this function:
+      // it is cleared below for an empty group, and otherwise awaited.
+      sigkillSent = new Promise<void>((resolve) => {
+        sigkillTimer = _qualityRunnerDeps.setTimeout(() => {
+          sigkillFired = true;
+          _qualityRunnerDeps.killProcessGroup(proc.pid, "SIGKILL", { singleProcessFallback: !leaderExited });
+          resolve();
+        }, SIGKILL_GRACE_PERIOD_MS);
+      });
     }, timeoutMs);
 
     // Drain stdout and stderr concurrently with proc.exited to avoid deadlock
@@ -237,10 +253,16 @@ async function runSingleCommand(
         })()
       : await Promise.all([stdoutPromise, stderrPromise]);
 
-    clearTimeout(killTimer);
+    _qualityRunnerDeps.clearTimeout(killTimer);
+    // A pending SIGKILL is awaited while the group still has a member (signal 0
+    // probes without delivering anything) and cancelled once it is empty, so no
+    // timer outlives the call.
     if (sigkillTimer !== undefined) {
-      clearTimeout(sigkillTimer);
-      sigkillTimer = undefined;
+      const membersLeft =
+        !sigkillFired && _qualityRunnerDeps.killProcessGroup(proc.pid, 0, { singleProcessFallback: false });
+      if (membersLeft) await sigkillSent;
+      // Cleared even once fired: every armed timer reaches clearTimeout (a no-op on a fired one).
+      _qualityRunnerDeps.clearTimeout(sigkillTimer);
     }
 
     const durationMs = Date.now() - startTime;

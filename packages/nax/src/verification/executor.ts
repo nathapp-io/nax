@@ -12,7 +12,14 @@ import { assertTrusted } from "../trust";
 import type { TestExecutionResult } from "./types";
 
 /** Injectable deps for testability — mock _executorDeps.spawn instead of global Bun.spawn */
-export const _executorDeps = { spawn };
+export const _executorDeps = {
+  spawn,
+  killProcessGroup,
+  setTimeout: ((fn: () => void, ms: number) => setTimeout(fn, ms)) as (fn: () => void, ms: number) => unknown,
+  clearTimeout: ((handle: unknown) => clearTimeout(handle as ReturnType<typeof setTimeout>)) as (
+    handle: unknown,
+  ) => void,
+};
 
 /**
  * Race an already-in-progress Promise against a deadline.
@@ -134,10 +141,10 @@ export async function executeWithTimeout(
   const timeoutMs = timeoutSeconds * 1000;
 
   let timedOut = false;
-  const timer = { id: undefined as ReturnType<typeof setTimeout> | undefined };
+  const timer = { id: undefined as unknown };
 
   const timeoutPromise = new Promise<void>((resolve) => {
-    timer.id = setTimeout(() => {
+    timer.id = _executorDeps.setTimeout(() => {
       timedOut = true;
       resolve();
     }, timeoutMs);
@@ -146,33 +153,54 @@ export async function executeWithTimeout(
   const processPromise = proc.exited;
 
   const raceResult = await Promise.race([processPromise, timeoutPromise]);
-  clearTimeout(timer.id);
+  _executorDeps.clearTimeout(timer.id);
 
   if (timedOut) {
     const pid = proc.pid;
 
     // Send SIGTERM to process group to kill children too
-    killProcessGroup(pid, "SIGTERM");
+    _executorDeps.killProcessGroup(pid, "SIGTERM");
+
+    // SIGKILL the group when the grace period ends, whether or not the shell
+    // leader has exited by then: group members that ignored SIGTERM would
+    // otherwise leak. Once the leader is gone its bare pid may have been reused,
+    // so the single-process fallback is off. setTimeout (not Bun.sleep) because
+    // the timer must be cancellable: it is cleared below when the group is
+    // already empty, and otherwise awaited, so it never outlives this call.
+    let leaderExited = false;
+    let sigkillTimer: unknown;
+    const sigkillSent = new Promise<void>((resolve) => {
+      sigkillTimer = _executorDeps.setTimeout(() => {
+        _executorDeps.killProcessGroup(pid, "SIGKILL", { singleProcessFallback: !leaderExited });
+        resolve();
+      }, gracePeriodMs);
+    });
 
     // Wait for graceful shutdown, but bail early if process already exited.
     // Bun.sleep is not cancellable; use setTimeout via raceWithDeadline so the
     // grace timer is cleared as soon as the process exits. Leaving it armed kept
     // Bun's event loop alive for the full grace period after this function had
     // already returned — a hard delay on CLI exit for every test timeout.
-    let exitedDuringGrace = false;
     await raceWithDeadline(
       proc.exited
         .then(() => {
-          exitedDuringGrace = true;
+          leaderExited = true;
         })
         .catch(() => {}),
       gracePeriodMs,
     );
 
-    // Only send SIGKILL if the process is still alive — avoids signaling a reused PID
-    if (!exitedDuringGrace) {
-      killProcessGroup(pid, "SIGKILL");
+    // Signal 0 probes whether the group still has a member without delivering
+    // anything. An empty group has nothing left to kill; otherwise wait out the
+    // rest of the grace period for the SIGKILL (a Linux zombie still counts as a
+    // member until reaped, so this can wait the full grace period there).
+    if (leaderExited && !_executorDeps.killProcessGroup(pid, 0, { singleProcessFallback: false })) {
+      _executorDeps.clearTimeout(sigkillTimer);
+    } else {
+      await sigkillSent;
     }
+    // Cleared even once fired: every armed timer reaches clearTimeout (a no-op on a fired one).
+    _executorDeps.clearTimeout(sigkillTimer);
 
     // Bun bug: piped streams may not close after kill — cap the already-in-progress
     // reads with a deadline so we collect whatever was buffered without hanging.

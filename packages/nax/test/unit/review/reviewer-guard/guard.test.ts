@@ -53,6 +53,7 @@ function fakes(report: RestoreReport = CLEAN) {
       refs: [],
       replaceRefs: [],
       stashes: [],
+      ignoreFiles: [],
     };
   };
   _reviewerGuardDeps.restore = async () => {

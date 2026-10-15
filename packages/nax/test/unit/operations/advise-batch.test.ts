@@ -87,6 +87,31 @@ describe("adviseBatchOp.parse", () => {
     expect(out.conflicts[0]?.description).toBe("AC-3 says 30d, spec says 14d");
   });
 
+  test("residual: no valid answer for any item -> ok:false no-valid-answers with a preview (#2554)", () => {
+    const raw = JSON.stringify({ answers: [{ itemId: "Q-1", optionId: "Z", ...ok }] });
+    const out = adviseBatchOp.parse(raw, input, ctx);
+    expect(out).toEqual({ ok: false, error: "no-valid-answers", preview: expect.stringContaining("Q-1") });
+  });
+
+  test("residual: an empty JSON object -> ok:false no-valid-answers (#2554)", () => {
+    const out = adviseBatchOp.parse("{}", input, ctx);
+    expect(out.ok).toBe(false);
+    if (!out.ok) expect(out.error).toBe("no-valid-answers");
+  });
+
+  test("preflight: conflicts that is not an array -> ok:false (#2554)", () => {
+    const pf = { ...input, kind: "preflight" as const, items: [], redGates: [], storyIds: ["US-1"] };
+    for (const body of ["{}", JSON.stringify({ conflicts: "none" }), JSON.stringify({ overlap: [] })]) {
+      const out = adviseBatchOp.parse(body, pf, ctx);
+      expect(out.ok).toBe(false);
+    }
+  });
+
+  test("preflight: an explicit empty conflicts array is a valid 'no conflicts' answer (#2554)", () => {
+    const pf = { ...input, kind: "preflight" as const, items: [], redGates: [], storyIds: ["US-1"] };
+    expect(adviseBatchOp.parse(JSON.stringify({ conflicts: [], overlap: [] }), pf, ctx).ok).toBe(true);
+  });
+
   test("shape: fresh advisor session, read-only tools", () => {
     expect(adviseBatchOp.session).toEqual({ role: "advisor", lifetime: "fresh" });
     expect(adviseBatchOp.tools).toEqual(["Read", "Glob", "Grep"]);

@@ -54,9 +54,14 @@ describe("memoryKey (spec §4.3)", () => {
     expect(memoryKey(approval("r", "Bash", { command: "npm test -- --watch" }))).toBe("Bash:npm test");
   });
 
-  test("execute tools: the command alone when there is no subcommand or it starts with a flag", () => {
+  test("execute tools: the bare command alone when there is no second word", () => {
     expect(memoryKey(approval("r", "Bash", { command: "ls" }))).toBe("Bash:ls");
-    expect(memoryKey(approval("r", "Bash", { command: "ls -la src" }))).toBe("Bash:ls");
+  });
+
+  test("a second word that is a flag is never remembered (it must not widen to the bare command, #2553)", () => {
+    expect(memoryKey(approval("r", "Bash", { command: "rm -f x" }))).toBeUndefined();
+    expect(memoryKey(approval("r", "Bash", { command: "git -C repo status" }))).toBeUndefined();
+    expect(memoryKey(approval("r", "Bash", { command: "ls -la src" }))).toBeUndefined();
   });
 
   test("a second word that is not plain is never remembered (it must not widen to the bare command)", () => {
@@ -92,7 +97,8 @@ describe("memoryKey (spec §4.3)", () => {
     for (const command of ["'bash' -c x", '"sh" x', "b\\ash -c x", "ba*h -c x", "BASH -c x", "$(which sh) x"]) {
       expect(memoryKey(approval("r", "Bash", { command }))).toBeUndefined();
     }
-    expect(memoryKey(approval("r", "Bash", { command: "./scripts/build.sh --fast" }))).toBe("Bash:./scripts/build.sh");
+    expect(memoryKey(approval("r", "Bash", { command: "./scripts/build.sh" }))).toBe("Bash:./scripts/build.sh");
+    expect(memoryKey(approval("r", "Bash", { command: "./scripts/build.sh --fast" }))).toBeUndefined();
   });
 
   test("an execute tool with no command is never remembered (M-12)", () => {
@@ -209,9 +215,13 @@ describe("createPermissionBroker", () => {
     s.broker.request(approval("r2", "Bash", { command: "git status --short" }), undefined);
     s.broker.request(approval("r3", "Bash", { command: "git push --force" }), undefined);
     await s.broker.drain();
-    expect(s.asks).toHaveLength(2);
-    expect(s.asks[1]?.toolCall.rawInput).toEqual({ command: "git push --force" });
-    expect(s.answers.find((a) => a.requestId === "r2")?.reply).toEqual({ decision: "allow" });
+    // nax#2553: `--short` is a flag after the key, so it is asked again rather than covered.
+    expect(s.asks).toHaveLength(3);
+    expect(s.asks.map((a) => a.toolCall.rawInput)).toEqual([
+      { command: "git status" },
+      { command: "git status --short" },
+      { command: "git push --force" },
+    ]);
   });
 
   test("a remembered allow never covers a compound command; a remembered reject does", async () => {
@@ -221,9 +231,11 @@ describe("createPermissionBroker", () => {
     allow.broker.request(approval("r2", "Bash", { command: "git status; rm -rf ~" }), undefined);
     allow.broker.request(approval("r3", "Bash", { command: "git status $(cat secret)" }), undefined);
     allow.broker.request(approval("r4", "Bash", { command: "git status --short" }), undefined);
+    allow.broker.request(approval("r5", "Bash", { command: "git status src" }), undefined);
     await allow.broker.drain();
-    expect(allow.asks).toHaveLength(3);
-    expect(allow.answers.find((a) => a.requestId === "r4")?.reply).toEqual({ decision: "allow" });
+    // nax#2553: a flag after the key changes what runs, so `--short` is asked again; a plain word is not.
+    expect(allow.asks).toHaveLength(4);
+    expect(allow.asks.map((a) => a.toolCall.rawInput)).not.toContainEqual({ command: "git status src" });
     const reject = setup({ permission: async () => select("reject_always") });
     reject.broker.request(approval("r1", "Bash", { command: "git push" }), undefined);
     await reject.broker.drain();
@@ -231,6 +243,18 @@ describe("createPermissionBroker", () => {
     await reject.broker.drain();
     expect(reject.asks).toHaveLength(1);
     expect(reject.answers.find((a) => a.requestId === "r2")?.reply).toEqual({ decision: "deny" });
+  });
+
+  test("a remembered allow never covers a later flag: `git push origin --force` is asked again (nax#2553)", async () => {
+    const s = setup({ permission: async () => select("allow_always") });
+    s.broker.request(approval("r1", "Bash", { command: "git push origin main" }), undefined);
+    await s.broker.drain();
+    s.broker.request(approval("r2", "Bash", { command: "git push origin main --force" }), undefined);
+    s.broker.request(approval("r3", "Bash", { command: "git push origin main -f" }), undefined);
+    s.broker.request(approval("r4", "Bash", { command: "git push origin feature" }), undefined);
+    await s.broker.drain();
+    expect(s.asks).toHaveLength(3);
+    expect(s.asks.map((a) => a.toolCall.rawInput)).not.toContainEqual({ command: "git push origin feature" });
   });
 
   test("the fallback tool call shows no control or bidi characters", async () => {
