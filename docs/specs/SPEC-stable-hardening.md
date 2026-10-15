@@ -1,4 +1,3 @@
-<!-- spec-writing: completed-through-phase-5 -->
 # SPEC: Stable Hardening
 
 Closes: #2550, #2551, #2552, #2553, #2554, #2555
