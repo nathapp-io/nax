@@ -3,6 +3,13 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, readdirSync, renameSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { RequestError } from "@agentclientprotocol/sdk";
 
+/** Distinguishes retryable mutex contention from mutation and filesystem failures. */
+export class SessionLockGuardBusy extends RequestError {
+  constructor() {
+    super(-32600, "session in use by another process");
+  }
+}
+
 function codeOf(error: unknown): unknown {
   return typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
 }
@@ -56,8 +63,7 @@ export function withSessionLockGuard(path: string, mutate: () => void): void {
       // an empty (released/reaped) guard, but never a live non-empty guard.
       renameSync(prepared, guard);
     } catch (error) {
-      if (["ENOTEMPTY", "EEXIST"].includes(String(codeOf(error))))
-        throw RequestError.invalidRequest(undefined, "session in use by another process");
+      if (["ENOTEMPTY", "EEXIST"].includes(String(codeOf(error)))) throw new SessionLockGuardBusy();
       throw error;
     }
     try {

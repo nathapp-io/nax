@@ -1,9 +1,10 @@
 /** Local-filesystem ownership protocol. All lock mutations share an exclusive directory guard. */
 import { randomUUID } from "node:crypto";
 import { linkSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { setTimeout as sleep } from "node:timers/promises";
 import { RequestError } from "@agentclientprotocol/sdk";
 import { z } from "zod";
-import { withSessionLockGuard as guarded } from "#src/server/session-lock-guard";
+import { withSessionLockGuard as guarded, SessionLockGuardBusy } from "#src/server/session-lock-guard";
 import type { StorageDeps } from "#src/server/storage";
 
 export const LOCK_HEARTBEAT_MS = 30_000;
@@ -99,6 +100,22 @@ function takeover(path: string, body: Body, deps: StorageDeps, isAlive: (pid: nu
   }
 }
 
+async function releaseOwnedLock(path: string, nonce: string): Promise<void> {
+  for (;;) {
+    try {
+      guarded(path, () => {
+        if (read(path).body?.nonce === nonce) _lockDeps.remove(path, { force: true });
+      });
+      return;
+    } catch (error) {
+      if (!(error instanceof SessionLockGuardBusy)) throw error;
+      // Release owns cleanup until it can check the nonce under the guard.
+      // Yield to the holder rather than abandoning a fresh lock on contention.
+      await sleep(10);
+    }
+  }
+}
+
 export function acquireSessionLock(
   path: string,
   deps: StorageDeps,
@@ -129,9 +146,7 @@ export function acquireSessionLock(
   }, LOCK_HEARTBEAT_MS);
   timer.unref();
   return async () => {
+    await releaseOwnedLock(path, body.nonce);
     clearInterval(timer);
-    guarded(path, () => {
-      if (read(path).body?.nonce === body.nonce) _lockDeps.remove(path, { force: true });
-    });
   };
 }

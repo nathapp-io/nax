@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
 import { connectNothing } from "#src/server/mcp/connect";
@@ -32,6 +32,35 @@ test("retires dead switched entry, releases its lock, and load reopens storage",
   await s.registry.load(sessionId, s.input());
   expect(s.registry.get(sessionId)).not.toBe(previous);
   expect(s.opened).toHaveLength(4);
+  await s.registry.closeAll();
+});
+
+test("close retains cleanup ownership while waiting for a competing lock guard", async () => {
+  const s = setupRegistry(dir(), OPTIONS);
+  const { sessionId } = await s.registry.create(s.input());
+  const path = join(s.dir, `${sessionId}.lock`);
+  const guard = `${path}.guard`;
+  await mkdir(guard);
+  await writeFile(join(guard, `${process.pid}.00000000-0000-0000-0000-000000000000`), "");
+  const closing = s.registry.close(sessionId);
+  // Observe rejection as well as resolution so the pre-fix failure is not unhandled.
+  const outcome = closing.then(
+    () => "closed",
+    () => "rejected",
+  );
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(await Promise.race([outcome, Promise.resolve("pending")])).toBe("pending");
+    expect(s.registry.find(sessionId)).toBeDefined();
+    expect(await readFile(path, "utf8")).toContain("nonce");
+  } finally {
+    await rm(guard, { recursive: true, force: true });
+    await outcome;
+  }
+  await expect(closing).resolves.toBeUndefined();
+  expect(s.registry.find(sessionId)).toBeUndefined();
+  await expect(readFile(path)).rejects.toMatchObject({ code: "ENOENT" });
+  await s.registry.load(sessionId, s.input());
   await s.registry.closeAll();
 });
 

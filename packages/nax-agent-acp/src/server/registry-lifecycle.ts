@@ -96,11 +96,14 @@ export async function closeRegistryEntry(entries: Map<string, Entry>, sessionId:
   try {
     await entry.server.close();
   } finally {
-    entries.delete(sessionId);
     try {
-      await entry.mcp.closeAll();
+      try {
+        await entry.mcp.closeAll();
+      } finally {
+        await entry.release();
+      }
     } finally {
-      await entry.release();
+      entries.delete(sessionId);
     }
   }
 }

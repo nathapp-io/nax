@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { readFileSync, renameSync, writeFileSync } from "node:fs";
-import { readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
 import { _lockDeps } from "#src/server/session-lock";
@@ -60,6 +60,34 @@ test("unique nonces, atomic heartbeat, owned release and loss of ownership", asy
   expect((await s.read()).nonce).toBe("replacement");
   await otherRelease();
   await expect(readFile(join(s.deps.dir, "b.lock"))).rejects.toMatchObject({ code: "ENOENT" });
+});
+
+test.each([false, true])("release retries contention and preserves a replacement: %s", async (replace) => {
+  const s = setup();
+  const release = await s.store.acquireLock("a");
+  const first = await s.read();
+  const guard = `${s.path}.guard`;
+  await mkdir(guard);
+  await writeFile(join(guard, `${process.pid}.00000000-0000-0000-0000-000000000000`), "");
+  const closing = release();
+  const outcome = closing.then(
+    () => "closed",
+    () => "rejected",
+  );
+  try {
+    expect(await Promise.race([outcome, Promise.resolve("pending")])).toBe("pending");
+    rmSync(guard, { recursive: true });
+    // Before the retry timer fires, the heartbeat must still be active.
+    await s.advance();
+    expect(JSON.parse(readFileSync(s.path, "utf8")).heartbeatAt).not.toBe(first.heartbeatAt);
+    if (replace) writeFileSync(s.path, JSON.stringify({ ...first, nonce: "replacement" }));
+    await expect(closing).resolves.toBeUndefined();
+    if (replace) expect((await s.read()).nonce).toBe("replacement");
+    else await expect(readFile(s.path)).rejects.toMatchObject({ code: "ENOENT" });
+  } finally {
+    await rm(guard, { recursive: true, force: true });
+    await outcome;
+  }
 });
 
 test.each(["stale", "fresh", "own"])("handles %s live lock", async (kind) => {
