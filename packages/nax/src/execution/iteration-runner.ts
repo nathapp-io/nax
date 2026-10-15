@@ -186,6 +186,7 @@ export async function runIteration(
   const resolvedWorkdir = dependencyContext?.cwd ?? storyAbsWorkdir(isolationRoot, story);
 
   const pipelineContext: PipelineContext = {
+    reportPhase: (phase) => ctx.statusWriter.setPhase(phase),
     config: effectiveConfig,
     rootConfig: ctx.config,
     prd,

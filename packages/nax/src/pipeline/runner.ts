@@ -116,6 +116,7 @@ export async function runPipeline(
       continue;
     }
 
+    context.reportPhase?.(stage.name);
     eventEmitter?.emit("stage:enter", stage.name, context.story);
 
     let result: StageResult;
