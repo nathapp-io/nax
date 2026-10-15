@@ -268,6 +268,16 @@ describe("confinedTestCommand", () => {
     });
     expect(quoted).toContain("bun test './a b'\\''c/' './d/' --timeout=10");
   });
+  test("--parallel: a worker count appends --parallel=<n> --no-isolate after the timeout", () => {
+    const parallel = confinedTestCommand({
+      packageDir: "/r/p",
+      tmpDir: "/t",
+      paths: ["./test/unit/"],
+      timeoutMs: 5000,
+      parallel: 4,
+    });
+    expect(parallel.endsWith("bun test './test/unit/' --timeout=5000 --parallel=4 --no-isolate")).toBe(true);
+  });
 });
 
 // ── runConfinedTests ────────────────────────────────────────────────────────
@@ -327,6 +337,12 @@ describe("runConfinedTests", () => {
       stdout: "pipe",
       stderr: "inherit",
     });
+  });
+
+  test("--parallel: the worker count reaches the confined command", async () => {
+    const record = installSeam();
+    await runConfinedTests({ packageDir, paths: ["./test/unit/"], parallel: 4 });
+    expect(record.calls[0]?.command).toEndWith("--parallel=4 --no-isolate");
   });
 
   test("AC-13: creates the session temp dir before the backend wraps the command", async () => {
@@ -502,7 +518,7 @@ describe("confined fixtures", () => {
 // ── the CLI ────────────────────────────────────────────────────────────────
 
 describe("run-confined-tests CLI", () => {
-  const seen: { packageDir: string; paths: readonly string[]; timeoutMs?: number }[] = [];
+  const seen: { packageDir: string; paths: readonly string[]; timeoutMs?: number; parallel?: number }[] = [];
 
   beforeEach(() => {
     seen.length = 0;
@@ -525,6 +541,22 @@ describe("run-confined-tests CLI", () => {
     expect(seen.map((input) => input.timeoutMs)).toEqual([5000, DEFAULT_TEST_TIMEOUT_MS]);
     expect(seen[0]?.paths).toEqual(["./test/unit/"]);
   });
+
+  test("--parallel=<n> reaches runConfinedTests; absent, the run stays serial", async () => {
+    const deps = recordRun();
+    expect(await main(["--parallel=4", "./test/unit/"], deps)).toBe(0);
+    expect(await main(["./test/unit/"], deps)).toBe(0);
+    expect(seen.map((input) => input.parallel)).toEqual([4, undefined]);
+  });
+
+  test.each(["--parallel=0", "--parallel=-1", "--parallel=x", "--parallel="])(
+    "%s is a usage error, not a run",
+    async (flag) => {
+      const deps = { ...recordRun(), stderr: () => {} };
+      expect(await main([flag, "./test/unit/"], deps)).toBe(USAGE_EXIT);
+      expect(seen).toEqual([]);
+    },
+  );
 
   test("AC-6: --package=<dir> resolves against the working directory", async () => {
     expect(await main(["--package=.", "./test/unit/"], recordRun())).toBe(0);

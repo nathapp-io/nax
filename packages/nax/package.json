@@ -56,7 +56,7 @@
     "test:integration": "bun test ./test/integration/ --timeout=60000",
     "test:ui": "bun test ./test/ui/ --timeout=60000",
     "test:e2e": "bun run scripts/run-tests.ts --e2e",
-    "test:confined": "bun ../nax-agent/scripts/run-confined-tests.ts --package=. --timeout=5000 ./test/unit/ && bun ../nax-agent/scripts/run-confined-tests.ts --package=. --timeout=5000 ./test/integration/",
+    "test:confined": "bun ../nax-agent/scripts/run-confined-tests.ts --package=. --timeout=5000 --parallel=4 ./test/unit/ && bun ../nax-agent/scripts/run-confined-tests.ts --package=. --timeout=5000 --parallel=4 ./test/integration/",
     "test:coverage": "bun run ../repo-tooling/scripts/check-coverage.ts --require-all-files",
     "test:coverage:report": "bun run ../repo-tooling/scripts/check-coverage.ts --require-all-files --report",
     "test:coverage:update": "bun run ../repo-tooling/scripts/check-coverage.ts --require-all-files --update-baseline",
