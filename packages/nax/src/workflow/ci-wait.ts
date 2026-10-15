@@ -52,8 +52,13 @@ const RUN_SCOPE = "_run";
 const NO_SUMMARY = "no CI status yet";
 
 type Poll =
-  | { readonly state: "green" | "failed" | "waiting"; readonly summary?: string }
-  | { readonly state: "error" | "conflicting"; readonly detail: string };
+  | {
+      readonly state: "green" | "failed" | "waiting";
+      readonly summary?: string;
+      readonly sha?: string;
+      readonly mismatch?: string;
+    }
+  | { readonly state: "error" | "conflicting" | "unavailable"; readonly detail: string };
 
 const GH_FAILED = new Set(["fail", "cancel"]);
 const GH_OK = new Set(["pass", "skipping"]);
@@ -122,10 +127,18 @@ function classifyGlab(r: ForgeRunResult): Poll {
   const status = isRecord(pipeline) && typeof pipeline.status === "string" ? pipeline.status : undefined;
   if (status === undefined) return glabWaiting(parsed.value);
   const summary = `CI pipeline: ${status}`;
-  // nax#2550: a green pipeline does not make a conflicting MR mergeable.
-  if (status === "success") {
+  if (status === "manual" || status === "scheduled") {
+    return { state: "unavailable", detail: `pipeline is waiting on a ${status} job` };
+  }
+  // A green pipeline does not make a conflicting MR mergeable.
+  if (status === "success" || status === "skipped") {
     const waiting = glabWaiting(parsed.value, summary);
-    return waiting.state === "conflicting" ? waiting : { state: "green", summary };
+    const head = parsed.value.head_pipeline;
+    const fallback = parsed.value.pipeline;
+    const sha = (isRecord(head) ? head.sha : undefined) ?? (isRecord(fallback) ? fallback.sha : undefined);
+    return waiting.state === "conflicting"
+      ? waiting
+      : { state: "green", summary, ...(typeof sha === "string" ? { sha } : {}) };
   }
   return GL_FAILED.has(status) ? { state: "failed", summary } : glabWaiting(parsed.value, summary);
 }
@@ -149,14 +162,18 @@ function glabWaiting(mr: Record<string, unknown>, summary?: string): Poll {
 async function githubWaiting(poll: Poll, prRef: string, cwd: string): Promise<Poll> {
   if (poll.state !== "waiting" && poll.state !== "green") return poll;
   try {
-    const r = await _ciWaitDeps.run(["gh", "pr", "view", prRef, "--json", "mergeable,mergeStateStatus,baseRefName"], {
-      cwd,
-    });
+    const r = await _ciWaitDeps.run(
+      ["gh", "pr", "view", prRef, "--json", "mergeable,mergeStateStatus,baseRefName,headRefOid"],
+      {
+        cwd,
+      },
+    );
     if (r.exitCode !== 0) return poll;
     const parsed = parseJson(r.stdout);
     if (!parsed.ok || !isRecord(parsed.value)) return poll;
     const mr = parsed.value;
-    return mr.mergeable === "CONFLICTING" || mr.mergeStateStatus === "DIRTY" ? conflictPoll(mr.baseRefName) : poll;
+    if (mr.mergeable === "CONFLICTING" || mr.mergeStateStatus === "DIRTY") return conflictPoll(mr.baseRefName);
+    return typeof mr.headRefOid === "string" ? { ...poll, sha: mr.headRefOid } : poll;
   } catch {
     return poll;
   }
@@ -240,7 +257,18 @@ async function waitWithHeartbeat(ms: number, startedAt: number, progress: Progre
   }
 }
 
+/** Only a would-be green poll is held back; absent SHAs preserve the auxiliary read's fail-open contract. */
+function bindToHead(poll: Poll, expectedSha?: string): Poll {
+  if (poll.state !== "green" || !expectedSha || !poll.sha || poll.sha === expectedSha) return poll;
+  return {
+    ...poll,
+    state: "waiting",
+    mismatch: `checks report ${poll.sha.slice(0, 8)} but HEAD is ${expectedSha.slice(0, 8)}`,
+  };
+}
+
 function terminalPoll(poll: Poll): CiWaitResult | undefined {
+  if (poll.state === "unavailable") return { outcome: "unavailable", detail: poll.detail };
   if (poll.state === "green") return { outcome: "green", detail: "all checks passed" };
   if (poll.state === "failed") return { outcome: "failed", detail: "a check failed" };
   if (poll.state === "conflicting") {
@@ -305,7 +333,13 @@ function checkHistory() {
 export async function waitForChecks(
   forge: ForgeKind,
   prRef: string,
-  opts: { readonly cwd: string; readonly timeoutMs: number; readonly pollMs: number; readonly signal?: AbortSignal },
+  opts: {
+    readonly cwd: string;
+    readonly timeoutMs: number;
+    readonly pollMs: number;
+    readonly signal?: AbortSignal;
+    readonly expectedSha?: string;
+  },
 ): Promise<CiWaitResult> {
   const startedAt = _ciWaitDeps.now();
   const deadline = startedAt + opts.timeoutMs;
@@ -329,12 +363,13 @@ export async function waitForChecks(
   try {
     for (;;) {
       if (opts.signal?.aborted) return end("pending", "aborted");
-      const poll = await pollOnce(forge, prRef, opts.cwd);
+      const poll = bindToHead(await pollOnce(forge, prRef, opts.cwd), opts.expectedSha);
       history.note(poll);
       if ("summary" in poll) progress.note(poll.summary);
       const terminal = terminalPoll(poll) ?? errors.note(poll);
       if (terminal) return end(terminal.outcome, terminal.detail);
       if (_ciWaitDeps.now() + opts.pollMs > deadline) {
+        if ("mismatch" in poll && poll.mismatch) return end("unavailable", poll.mismatch);
         const timeout = errors.timeout() ?? history.timeout(opts.timeoutMs);
         return end(timeout.outcome, timeout.detail);
       }
