@@ -1,8 +1,8 @@
-import { describe, expect, test } from "bun:test";
-import { mkdtempSync, realpathSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { realpathSync } from "node:fs";
 import { join } from "node:path";
 import { SCRATCHPAD_DIR } from "@nathapp/nax-agent";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import {
   isNaxConfigFile,
   isNaxOwnedWritePath,
@@ -409,7 +409,11 @@ describe("naxOwnedBashRefusal — sandboxWrapped (US-002)", () => {
 
 describe("naxOwnedPathsPolicy (the OwnedPathsPolicy adapter over this module)", () => {
   const p = naxOwnedPathsPolicy;
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "nax-owned-adapter-")));
+  let root: string;
+  beforeAll(() => {
+    root = realpathSync(makeTempDir("nax-owned-adapter-"));
+  });
+  afterAll(() => cleanupTempDir(root));
 
   test("writeRefusal is naxOwnedWriteRefusal", () => {
     const optIns = new Set<string>();

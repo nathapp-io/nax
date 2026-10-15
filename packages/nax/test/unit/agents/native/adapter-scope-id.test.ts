@@ -9,25 +9,39 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { _adapterDeps, _clientDeps, _resetNativeClient } from "@nathapp/nax-agent/internal";
 import type { Client, ResolvedModel } from "@nathapp/nax-ai";
-import { withDerivedStream } from "@test/helpers";
+import { cleanupTempDir, makeTempDir, withDerivedStream } from "@test/helpers";
 import { NativeAgentAdapter } from "@/agents/native-agent";
 import type { ProviderCatalogOverride } from "@/config/schema-types";
 import type { AgentStreamEvent } from "@/runtime/agent-stream-events";
+
+const tempDirs: string[] = [];
+
+function makeTestDir(prefix: string): string {
+  const dir = makeTempDir(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+
+const sessionCleanups: (() => Promise<void>)[] = [];
 
 const REAL_BUILD = _clientDeps.build;
 const REAL_LIST = _adapterDeps.listStoredProviders;
 const REAL_SWEEP = _adapterDeps.anyAmbientCredential;
 
-afterEach(() => {
-  _clientDeps.build = REAL_BUILD;
-  _resetNativeClient();
-  _adapterDeps.listStoredProviders = REAL_LIST;
-  _adapterDeps.anyAmbientCredential = REAL_SWEEP;
+afterEach(async () => {
+  const closed = await Promise.allSettled(sessionCleanups.splice(0).map(async (close) => close()));
+  try {
+    const errors = closed.flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
+    if (errors.length > 0) throw new AggregateError(errors, "Failed to close test sessions");
+  } finally {
+    for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+    _clientDeps.build = REAL_BUILD;
+    _resetNativeClient();
+    _adapterDeps.listStoredProviders = REAL_LIST;
+    _adapterDeps.anyAmbientCredential = REAL_SWEEP;
+  }
 });
 
 const MODEL = {
@@ -71,13 +85,14 @@ async function runOneTurn(over: { transcriptOwner?: string } = {}): Promise<Turn
     resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
     modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
     timeoutSeconds: 60,
-    transcriptDir: await mkdtemp(join(tmpdir(), "nax-adapter-scope-id-")),
+    transcriptDir: makeTestDir("nax-adapter-scope-id-"),
     onStreamActivity: (event) => events.push(event),
     onActiveCall: (callId) => {
       capture.activeCallId = callId;
     },
     ...(over.transcriptOwner !== undefined ? { transcriptOwner: over.transcriptOwner } : {}),
   });
+  sessionCleanups.push(() => adapter.closeSession(handle));
 
   await adapter.sendTurn(handle, "hi", {
     interactionHandler: { onInteraction: async () => ({ answer: "" }) },
@@ -197,8 +212,9 @@ describe("NativeAgentAdapter catalog overrides", () => {
       resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
       modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
       timeoutSeconds: 60,
-      transcriptDir: await mkdtemp(join(tmpdir(), "nax-adapter-overrides-")),
+      transcriptDir: makeTestDir("nax-adapter-overrides-"),
     });
+    sessionCleanups.push(() => adapter.closeSession(handle));
 
     await adapter.sendTurn(handle, "hi", {
       interactionHandler: { onInteraction: async () => ({ answer: "" }) },

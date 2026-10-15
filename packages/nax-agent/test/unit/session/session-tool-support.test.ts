@@ -5,8 +5,7 @@
  * Read, and the sandbox floor for "full" (spec 6.3).
  */
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { _sessionSandboxDeps } from "#src/coding-tools/coding-tool-sandbox";
 import { _resetCredentialsConfig, configureCredentials, credentialsConfig } from "#src/infra/credentials-config";
@@ -22,7 +21,26 @@ import {
 } from "#src/session/session-tool-support";
 import type { ProtectedPathsPolicy } from "#src/tools/protected-paths";
 import type { CodingToolName } from "#src/tools/types";
-import { assertNaxError, stubSessionSandboxDeps, withDepsRestore, withSessionSandboxSeam } from "#test/helpers/index";
+import {
+  assertNaxError,
+  cleanupTempDir,
+  makeTempDir,
+  stubSessionSandboxDeps,
+  withDepsRestore,
+  withSessionSandboxSeam,
+} from "#test/helpers/index";
+
+const tempDirs: string[] = [];
+
+function makeTestDir(prefix: string): string {
+  const dir = makeTempDir(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+});
 
 const EMPTY: ProtectedPathsPolicy = { gitExcludePathspecs: [], gitIgnorePatterns: [] };
 // Typed so the profile assertions below check the literals against the real union.
@@ -31,7 +49,7 @@ const TRIO: readonly CodingToolName[] = ["ScratchpadWrite", "ScratchpadRead", "S
 async function args(extra: Partial<SessionToolSupportArgs> = {}): Promise<SessionToolSupportArgs> {
   return {
     profile: "none",
-    root: await mkdtemp(join(tmpdir(), "nax-session-tools-")),
+    root: makeTestDir("nax-session-tools-"),
     sessionName: "s1",
     protectedPaths: EMPTY,
     bashApproval: "gated",

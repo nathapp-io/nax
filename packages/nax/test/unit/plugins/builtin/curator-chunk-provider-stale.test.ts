@@ -13,15 +13,26 @@
  *    producer (collector) and the consumer (heuristic).
  */
 
-import { describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, utimes, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdir, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { makeNaxConfig, withTempDir } from "@test/helpers";
+import { cleanupTempDir, makeNaxConfig, makeTempDir, withTempDir } from "@test/helpers";
 import type { CuratorPostRunContext, Observation } from "@/plugins/builtin/curator";
 import { collectObservations } from "@/plugins/builtin/curator";
 import type { CuratorThresholds } from "@/plugins/builtin/curator/heuristics";
 import { runHeuristics } from "@/plugins/builtin/curator/heuristics";
+
+const tempDirs: string[] = [];
+
+function makeTestDir(prefix: string): string {
+  const dir = makeTempDir(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+});
 
 /**
  * Run `body` against a temp workdir that has the .nax/features layout for a
@@ -428,7 +439,7 @@ function makeScopingContext(root: string, workdir: string): CuratorPostRunContex
 
 describe("collectObservations — run scoping", () => {
   test("collects only review-audit entries from THIS run when runStartedAt is set (#1422)", async () => {
-    const root = await mkdtemp(join(tmpdir(), "curator-run-scope-"));
+    const root = makeTestDir("curator-run-scope-");
     const outputDir = join(root, "out");
     const auditDir = join(outputDir, "review-audit", "feat-auth");
     await mkdir(auditDir, { recursive: true });
@@ -464,7 +475,7 @@ describe("collectObservations — run scoping", () => {
   });
 
   test("ignores a concurrent run's entries for a DIFFERENT feature (#1422)", async () => {
-    const root = await mkdtemp(join(tmpdir(), "curator-concurrent-"));
+    const root = makeTestDir("curator-concurrent-");
     const outputDir = join(root, "out");
     await mkdir(join(outputDir, "review-audit", "feat-auth"), { recursive: true });
     await mkdir(join(outputDir, "review-audit", "feat-billing"), { recursive: true });
@@ -491,7 +502,7 @@ describe("collectObservations — run scoping", () => {
   });
 
   test("observations are stamped with the current schema version and their project", async () => {
-    const root = await mkdtemp(join(tmpdir(), "curator-schema-"));
+    const root = makeTestDir("curator-schema-");
     const outputDir = join(root, "out");
     const auditDir = join(outputDir, "review-audit", "feat-auth");
     await mkdir(auditDir, { recursive: true });
@@ -519,7 +530,7 @@ describe("collectObservations — run scoping", () => {
   });
 
   test("collects everything when runStartedAt is absent (back-compat)", async () => {
-    const root = await mkdtemp(join(tmpdir(), "curator-no-scope-"));
+    const root = makeTestDir("curator-no-scope-");
     const outputDir = join(root, "out");
     const auditDir = join(outputDir, "review-audit", "feat-auth");
     await mkdir(auditDir, { recursive: true });
@@ -538,7 +549,7 @@ describe("collectObservations — run scoping", () => {
   });
 
   test("an audit entry with no timestamp is kept rather than silently dropped (#1422)", async () => {
-    const root = await mkdtemp(join(tmpdir(), "curator-undated-"));
+    const root = makeTestDir("curator-undated-");
     const outputDir = join(root, "out");
     const auditDir = join(outputDir, "review-audit", "feat-auth");
     await mkdir(auditDir, { recursive: true });
@@ -560,7 +571,7 @@ describe("collectObservations — run scoping", () => {
   });
 
   test("skips context manifests untouched by this run (#1422)", async () => {
-    const root = await mkdtemp(join(tmpdir(), "curator-manifest-scope-"));
+    const root = makeTestDir("curator-manifest-scope-");
     const workdir = join(root, "work");
     const stories = join(workdir, ".nax", "features", "feat-auth", "stories");
     await mkdir(join(stories, "US-001"), { recursive: true });

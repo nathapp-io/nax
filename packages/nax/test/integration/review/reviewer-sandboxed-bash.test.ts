@@ -100,7 +100,12 @@ describe("reviewer turn through SessionManager + run turn hooks", () => {
     const sm = new SessionManager({ getAdapter: () => adapter });
     sm.configureRuntime({ turnHooks: createRunTurnHooks({ repairRunState: async () => undefined }) });
     const handle = await sm.openSession(`nax-2500-${role}`, request(workdir, role));
-    await sm.sendPrompt(handle, "review");
+    try {
+      await sm.sendPrompt(handle, "review");
+    } finally {
+      await sm.closeSession(handle);
+      sm.close();
+    }
   }
 
   test("stray files are removed, tracked edits restored, one reverted record logged", async () => {

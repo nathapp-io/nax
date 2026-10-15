@@ -33,8 +33,10 @@ function killQuietly(pid: number): void {
 
 const settle = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Each case owns its server process, connection and cleanup. Concurrent cases
+// preserve the real process boundary while overlapping startup and grace waits.
 describe("connectMcp over stdio", () => {
-  test("env is an overlay: PATH survives and configured vars arrive", async () => {
+  test.concurrent("env is an overlay: PATH survives and configured vars arrive", async () => {
     const connection = await connectMcp(stdio([], { FIXTURE_VAR: "x1" }), OPTS);
     let pid = -1;
     try {
@@ -47,7 +49,7 @@ describe("connectMcp over stdio", () => {
     }
   }, 20_000);
 
-  test("exposes the stdio child pid on the connection", async () => {
+  test.concurrent("exposes the stdio child pid on the connection", async () => {
     const connection = await connectMcp(stdio(), OPTS);
     const pid = await pidOf(connection);
     try {
@@ -58,7 +60,7 @@ describe("connectMcp over stdio", () => {
     }
   }, 20_000);
 
-  test("close() resolves only after the process is gone", async () => {
+  test.concurrent("close() resolves only after the process is gone", async () => {
     const connection = await connectMcp(stdio(), OPTS);
     const pid = await pidOf(connection);
     try {
@@ -69,7 +71,7 @@ describe("connectMcp over stdio", () => {
     }
   }, 20_000);
 
-  test("a stubborn server is SIGKILLed within closeGraceMs", async () => {
+  test.concurrent("a stubborn server is SIGKILLed within closeGraceMs", async () => {
     const connection = await connectMcp(stdio(["--stubborn"]), { ...OPTS, closeGraceMs: 300 });
     const pid = await pidOf(connection);
     try {
@@ -82,7 +84,7 @@ describe("connectMcp over stdio", () => {
     }
   }, 20_000);
 
-  test("onClose fires once when the process exits unexpectedly, never on close()", async () => {
+  test.concurrent("onClose fires once when the process exits unexpectedly, never on close()", async () => {
     const reasons: string[] = [];
     const connection = await connectMcp(stdio(), OPTS);
     let pid = -1;
@@ -111,7 +113,7 @@ describe("connectMcp over stdio", () => {
     }
   }, 20_000);
 
-  test("an exit before onClose is attached is reported to the late listener", async () => {
+  test.concurrent("an exit before onClose is attached is reported to the late listener", async () => {
     const connection = await connectMcp(stdio(), OPTS);
     let pid = -1;
     try {
@@ -128,7 +130,7 @@ describe("connectMcp over stdio", () => {
     }
   }, 20_000);
 
-  test("a server that exits at start fails with its stderr tail", async () => {
+  test.concurrent("a server that exits at start fails with its stderr tail", async () => {
     const error = await connectMcp(stdio(["--stderr", "boom: missing config", "--exit-at-start"]), OPTS).catch(
       (e: unknown) => e,
     );
@@ -136,12 +138,12 @@ describe("connectMcp over stdio", () => {
     expect(error.stderrTail).toContain("boom: missing config");
   }, 20_000);
 
-  test("a command that does not exist fails with McpConnectError", async () => {
+  test.concurrent("a command that does not exist fails with McpConnectError", async () => {
     const config: McpTransportConfig = { kind: "stdio", command: "/nonexistent/mcp-bin", args: [], env: {}, cwd: "/" };
     await expect(connectMcp(config, OPTS)).rejects.toBeInstanceOf(McpConnectError);
   }, 20_000);
 
-  test("a connect that fails after spawn closes the process before rejecting", async () => {
+  test.concurrent("a connect that fails after spawn closes the process before rejecting", async () => {
     const error = await connectMcp(stdio(["--hang-tools-list"]), {
       ...OPTS,
       timeoutMs: 1000,

@@ -6,9 +6,6 @@
  */
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdtemp } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { createAgentSession, type EmbedderTool, type SessionEvent, type TranscriptStore } from "@nathapp/nax-agent";
 import { NaxError } from "#src/infra/nax-error";
 import { _clientDeps } from "#src/native/client";
@@ -27,9 +24,37 @@ import {
   turnEndOf,
   types,
 } from "#test/helpers/agent-session";
-import { assertNaxError, withDepsRestore } from "#test/helpers/index";
+import { assertNaxError, cleanupTempDir, makeTempDir, withDepsRestore } from "#test/helpers/index";
 
-afterEach(resetScriptedProvider);
+const tempDirs: string[] = [];
+const sessionCleanups: (() => Promise<void>)[] = [];
+
+function makeTestDir(prefix: string): string {
+  const dir = makeTempDir(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+
+async function closeTestSessions(): Promise<void> {
+  const closed = await Promise.allSettled(sessionCleanups.splice(0).map(async (close) => close()));
+  const errors = closed.flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
+  if (errors.length > 0) throw new AggregateError(errors, "Failed to close test sessions");
+}
+
+async function createTestSession(...args: Parameters<typeof createAgentSession>) {
+  const session = await createAgentSession(...args);
+  sessionCleanups.push(() => session.close());
+  return session;
+}
+
+afterEach(async () => {
+  try {
+    await closeTestSessions();
+  } finally {
+    for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+    resetScriptedProvider();
+  }
+});
 
 function expectCode(fn: () => unknown, code: string): void {
   let caught: unknown;
@@ -95,7 +120,7 @@ describe("createAgentSession: chat", () => {
   test("two turns stream deltas and usage, end with turn_end, and carry history", async () => {
     const provider = installScriptedProvider();
     provider.push(textRound("Hello"), textRound("Again"));
-    const session = await createAgentSession(sessionOptions({ sessionId: "chat-1", metadata: { tenant: "t1" } }));
+    const session = await createTestSession(sessionOptions({ sessionId: "chat-1", metadata: { tenant: "t1" } }));
     const first = await collect(session.send("hi"));
     expect(types(first)).toEqual(["turn_start", "text_delta", "usage", "turn_end"]);
     const end = turnEndOf(first);
@@ -129,7 +154,7 @@ describe("createAgentSession: chat", () => {
       seen.push(options);
       return scripted(overrides, options);
     };
-    const session = await createAgentSession(
+    const session = await createTestSession(
       sessionOptions({ credentials: { kind: "memory", credentials: { openai: { kind: "api-key", key: "k" } } } }),
     );
     await collect(session.send("hi"));
@@ -141,7 +166,7 @@ describe("createAgentSession: chat", () => {
   test("instructions reach the provider as the system field", async () => {
     const provider = installScriptedProvider();
     provider.push(textRound("ok"));
-    const session = await createAgentSession(sessionOptions({ instructions: "Answer in one word." }));
+    const session = await createTestSession(sessionOptions({ instructions: "Answer in one word." }));
     await collect(session.send("hi"));
     expect(provider.requests[0]?.system).toBe("Answer in one word.");
     await session.close();
@@ -150,13 +175,13 @@ describe("createAgentSession: chat", () => {
   test("the none profile advertises the scratchpad trio, embedder tools and ask_human; read adds the read tools", async () => {
     const provider = installScriptedProvider();
     provider.push(textRound("a"), textRound("b"));
-    const none = await createAgentSession(sessionOptions({ tools: [lookup] }));
+    const none = await createTestSession(sessionOptions({ tools: [lookup] }));
     await collect(none.send("hi"));
     expect(provider.requests[0]?.tools?.map((tool) => tool.name).sort()).toEqual(
       ["ScratchpadList", "ScratchpadRead", "ScratchpadWrite", "ask_human", "lookup"].sort(),
     );
-    const workdir = await mkdtemp(join(tmpdir(), "nax-agent-session-read-"));
-    const read = await createAgentSession(sessionOptions({ profile: "read", workdir }));
+    const workdir = makeTestDir("nax-agent-session-read-");
+    const read = await createTestSession(sessionOptions({ profile: "read", workdir }));
     await collect(read.send("hi"));
     expect(provider.requests[1]?.tools?.map((tool) => tool.name).sort()).toEqual(
       ["Git", "Glob", "Grep", "Read", "ScratchpadList", "ScratchpadRead", "ScratchpadWrite", "ask_human"].sort(),
@@ -169,7 +194,7 @@ describe("createAgentSession: chat", () => {
     const provider = installScriptedProvider();
     provider.push(textRound("ok"));
     const { store, calls } = spyStore();
-    const session = await createAgentSession(sessionOptions({ transcriptStore: store }));
+    const session = await createTestSession(sessionOptions({ transcriptStore: store }));
     const events = await collect(session.send("hi"));
     expect(calls.filter((call) => call !== "load" && call !== "delete")).toEqual([
       "markTurn:running",
@@ -188,7 +213,7 @@ describe("createAgentSession: chat", () => {
     const store = createMemoryTranscriptStore();
     await store.save("taken", { savedAt: "2026-10-04T00:00:00.000Z", messages: [{ role: "user", content: "old" }] });
     await rejectsWith(
-      createAgentSession(sessionOptions({ sessionId: "taken", transcriptStore: store })),
+      createTestSession(sessionOptions({ sessionId: "taken", transcriptStore: store })),
       "AGENT_SESSION_EXISTS",
     );
     expect((await store.load("taken"))?.messages).toEqual([{ role: "user", content: "old" }]);
@@ -196,7 +221,7 @@ describe("createAgentSession: chat", () => {
 
   test("a workdir that is not a directory is an invalid option", async () => {
     await rejectsWith(
-      createAgentSession(sessionOptions({ profile: "read", workdir: "/nonexistent/nax-agent-session" })),
+      createTestSession(sessionOptions({ profile: "read", workdir: "/nonexistent/nax-agent-session" })),
       "AGENT_SESSION_INVALID_OPTIONS",
     );
   });
@@ -208,7 +233,7 @@ describe("createAgentSession: single flight and close", () => {
   test("a claimed turn makes send busy; the iterable is single-use; cancel releases an unstarted claim", async () => {
     const provider = installScriptedProvider();
     provider.push(textRound("ok"));
-    const session = await createAgentSession(sessionOptions());
+    const session = await createTestSession(sessionOptions());
     const claimed = session.send("never iterated");
     expectCode(() => session.send("second"), "AGENT_SESSION_BUSY");
     session.cancel();
@@ -222,7 +247,7 @@ describe("createAgentSession: single flight and close", () => {
   test("send() from inside the loop on turn_end succeeds: the slot is free before turn_end arrives", async () => {
     const provider = installScriptedProvider();
     provider.push(textRound("one"), textRound("two"));
-    const session = await createAgentSession(sessionOptions());
+    const session = await createTestSession(sessionOptions());
     let second: SessionEvent[] = [];
     for await (const event of session.send("first")) {
       if (event.type === "turn_end") second = await collect(session.send("second"));
@@ -239,7 +264,7 @@ describe("createAgentSession: single flight and close", () => {
       removed.push(dir);
       await realRemove(dir);
     };
-    const session = await createAgentSession(sessionOptions());
+    const session = await createTestSession(sessionOptions());
     const a = session.close();
     const b = session.close();
     expect(a).toBe(b);
@@ -295,7 +320,7 @@ describe("createAgentSession: turn failures arrive as turn_end", () => {
   test("a provider auth fault ends the turn errored with the adapter outcome", async () => {
     const provider = installScriptedProvider();
     provider.push([{ type: "error", error: { kind: "auth", message: "bad key" } }]);
-    const session = await createAgentSession(sessionOptions());
+    const session = await createTestSession(sessionOptions());
     const end = turnEndOf(await collect(session.send("hi")));
     expect(end.status).toBe("errored");
     expect(end.error?.code).toBe("fail-auth");
@@ -315,7 +340,7 @@ describe("createAgentSession: turn failures arrive as turn_end", () => {
         throw new NaxError("store offline", "STORE_OFFLINE", { stage: "test" });
       },
     };
-    const session = await createAgentSession(sessionOptions({ transcriptStore: store }));
+    const session = await createTestSession(sessionOptions({ transcriptStore: store }));
     expect(turnEndOf(await collect(session.send("hi"))).error?.code).toBe("STORE_OFFLINE");
     expect(provider.requests).toHaveLength(0);
     await session.close();
@@ -333,7 +358,7 @@ describe("createAgentSession: turn failures arrive as turn_end", () => {
         throw new Error("disk full");
       },
     };
-    const session = await createAgentSession(sessionOptions({ transcriptStore: store }));
+    const session = await createTestSession(sessionOptions({ transcriptStore: store }));
     const end = turnEndOf(await collect(session.send("hi")));
     expect(end).toMatchObject({
       status: "errored",
@@ -348,7 +373,7 @@ describe("createAgentSession: transport retry", () => {
   test("a transport fault after streamed text is retried: stream_reset voids the deltas and the turn completes", async () => {
     const provider = installScriptedProvider();
     provider.push(faultRound("stale"), textRound("fresh"));
-    const session = await createAgentSession(sessionOptions());
+    const session = await createTestSession(sessionOptions());
     const events = await collect(session.send("hi"));
     expect(types(events)).toEqual(["turn_start", "text_delta", "stream_reset", "text_delta", "usage", "turn_end"]);
     expect(eventsOf(events, "stream_reset")[0]).toMatchObject({ round: 1, attempt: 2 });
@@ -360,7 +385,7 @@ describe("createAgentSession: transport retry", () => {
   test("a fault on every attempt ends the turn errored after three attempts", async () => {
     const provider = installScriptedProvider();
     provider.push(faultRound("a"), faultRound("b"), faultRound("c"));
-    const session = await createAgentSession(sessionOptions());
+    const session = await createTestSession(sessionOptions());
     const end = turnEndOf(await collect(session.send("hi")));
     expect(end.status).toBe("errored");
     expect(provider.requests).toHaveLength(3);

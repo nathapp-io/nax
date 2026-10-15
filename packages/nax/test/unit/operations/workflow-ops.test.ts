@@ -1,8 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { buildCodingToolSupport } from "@nathapp/nax-agent/internal";
-import { makeNaxConfig, makeStory, makeTempDir, makeTestRuntime, opSelector } from "@test/helpers";
+import { cleanupTempDir, makeNaxConfig, makeStory, makeTempDir, makeTestRuntime, opSelector } from "@test/helpers";
 import { SessionFailureError } from "@/agents";
 import { naxOwnedPathsPolicy } from "@/agents/nax-owned-writes";
 import { ParseValidationError } from "@/agents/retry";
@@ -145,24 +145,42 @@ describe("workflow review ops", () => {
  * while the reply is left alone (no `fileOutput` swap).
  */
 describe("workflow writing ops can write their declared report (nax#2479)", () => {
-  const root = makeTempDir("nax-2479-");
+  let root: string;
+  let reportPath: string;
   const REPORT_REL = ".nax/features/auth/workflow/run-1/US-001/report.md";
-  const reportPath = join(root, REPORT_REL);
-  const implementInput: WorkflowImplementInput = { story, prompt: "p", timeoutMs: 1, reportPath };
-  const branchFixInput: WorkflowBranchFixInput = { prompt: "p", timeoutMs: 1, reportPath };
+  beforeAll(() => {
+    root = makeTempDir("nax-2479-");
+    reportPath = join(root, REPORT_REL);
+  });
+  afterAll(() => cleanupTempDir(root));
   const declared = [
-    ["workflow-implement", workflowImplementOp.tools ?? [], workflowImplementOp.writableOutput?.(implementInput)],
-    ["workflow-branch-fix", workflowBranchFixOp.tools ?? [], workflowBranchFixOp.writableOutput?.(branchFixInput)],
+    [
+      "workflow-implement",
+      workflowImplementOp.tools ?? [],
+      () => {
+        const input: WorkflowImplementInput = { story, prompt: "p", timeoutMs: 1, reportPath };
+        return workflowImplementOp.writableOutput?.(input);
+      },
+    ],
+    [
+      "workflow-branch-fix",
+      workflowBranchFixOp.tools ?? [],
+      () => {
+        const input: WorkflowBranchFixInput = { prompt: "p", timeoutMs: 1, reportPath };
+        return workflowBranchFixOp.writableOutput?.(input);
+      },
+    ],
   ] as const;
 
   test("both ops declare the report as writable output and do not swap their reply", () => {
-    for (const [, , writable] of declared) expect(writable).toBe(reportPath);
+    for (const [, , getWritable] of declared) expect(getWritable()).toBe(reportPath);
     expect(workflowImplementOp.fileOutput).toBeUndefined();
     expect(workflowBranchFixOp.fileOutput).toBeUndefined();
   });
 
-  for (const [name, tools, writable] of declared) {
+  for (const [name, tools, getWritable] of declared) {
     test(`${name} may write the report under its own tools, but not the brief beside it`, async () => {
+      const writable = getWritable();
       const support = buildCodingToolSupport({
         root,
         declared: [...tools],

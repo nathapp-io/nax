@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { chmodSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -25,22 +25,30 @@ const entry = (command: string, stage = "implementer") => ({
 });
 
 describe("approvals store", () => {
-  test("a missing file reads as empty, not an error", async () => {
+  const dirs: string[] = [];
+  function makeApprovalDir(): string {
     const dir = makeTempDir("approvals-");
+    dirs.push(dir);
+    return dir;
+  }
+  afterEach(() => {
+    for (const dir of dirs.splice(0)) cleanupTempDir(dir);
+  });
+
+  test("a missing file reads as empty, not an error", async () => {
+    const dir = makeApprovalDir();
     expect(await readApprovals(join(dir, "approvals.json"))).toEqual([]);
-    cleanupTempDir(dir);
   });
 
   test("a malformed file reads as empty rather than throwing", async () => {
-    const dir = makeTempDir("approvals-");
+    const dir = makeApprovalDir();
     const path = join(dir, "approvals.json");
     writeFileSync(path, "{ this is not json");
     expect(await readApprovals(path)).toEqual([]);
-    cleanupTempDir(dir);
   });
 
   test("append then read round-trips", async () => {
-    const dir = makeTempDir("approvals-");
+    const dir = makeApprovalDir();
     const path = join(dir, "approvals.json");
     await appendApproval(path, entry("bun run test"));
     const entries = await readApprovals(path);
@@ -78,17 +86,16 @@ describe("approvals store", () => {
   });
 
   test("a null element is dropped so a valid sibling still resolves without throwing", async () => {
-    const dir = makeTempDir("approvals-");
+    const dir = makeApprovalDir();
     const path = join(dir, "approvals.json");
     writeFileSync(path, JSON.stringify({ entries: [null, entry("bun run test")] }));
     const entries = await readApprovals(path);
     expect(entries).toHaveLength(1);
     expect(findApproval(entries, "implementer", "bun run test")).toBeDefined();
-    cleanupTempDir(dir);
   });
 
   test("concurrent appends keep both entries and valid JSON", async () => {
-    const dir = makeTempDir("approvals-");
+    const dir = makeApprovalDir();
     const path = join(dir, "approvals.json");
     await Promise.all([appendApproval(path, entry("cmd-a")), appendApproval(path, entry("cmd-b"))]);
     const commands = (await readApprovals(path)).map((e) => e.command).sort();
@@ -96,20 +103,19 @@ describe("approvals store", () => {
   });
 
   test("appending to an unparseable store refuses instead of replacing it", async () => {
-    const dir = makeTempDir("approvals-");
+    const dir = makeApprovalDir();
     const path = join(dir, "approvals.json");
     writeFileSync(path, '{ "entries": [ { "stage": "implementer", "comm');
     await expect(appendApproval(path, entry("bun run test"))).rejects.toMatchObject({
       code: "APPROVALS_STORE_UNPARSEABLE",
     });
     expect(await Bun.file(path).text()).toBe('{ "entries": [ { "stage": "implementer", "comm');
-    cleanupTempDir(dir);
   });
 
   test.skipIf(process.getuid?.() === 0)(
     "appending to an unreadable store propagates the error instead of replacing it",
     async () => {
-      const dir = makeTempDir("approvals-");
+      const dir = makeApprovalDir();
       const path = join(dir, "approvals.json");
       await appendApproval(path, entry("first"));
       // Write-only: the READ fails with EACCES while a write would still succeed, so the old
@@ -122,7 +128,6 @@ describe("approvals store", () => {
         chmodSync(path, 0o600);
       }
       expect((await readApprovals(path)).map((e) => e.command)).toEqual(["first"]);
-      cleanupTempDir(dir);
     },
   );
 });

@@ -12,9 +12,8 @@
 
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "bun:test";
 import * as nodeFs from "node:fs";
-import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { makeAgentAdapter, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeAgentAdapter, makeTempDir } from "@test/helpers";
 import { _registryTestAdapters } from "@/agents/registry";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config";
@@ -74,8 +73,14 @@ function makePRD(feature: string, storyCount = 2): PRD {
   };
 }
 
+const tempDirs: string[] = [];
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+});
+
 async function setupDir(feature: string, storyCount = 2) {
   const tmpDir = makeTempDir("nax-sf-int-");
+  tempDirs.push(tmpDir);
   const naxDir = path.join(tmpDir, ".nax");
   const featureDir = path.join(naxDir, "features", feature);
   nodeFs.mkdirSync(path.join(featureDir, "runs"), { recursive: true });
@@ -124,14 +129,8 @@ describe("RunOptions.statusFile", () => {
 // Status file is always written when provided
 // ============================================================================
 describe("status file always written when provided", () => {
-  let tmpDir: string;
-  afterEach(async () => {
-    if (tmpDir) await fs.rm(tmpDir, { recursive: true, force: true });
-  });
-
   it("writes status file to provided path during dry-run", async () => {
-    const { setup, statusFilePath } = await runWithStatus("sf-always-written", 1);
-    tmpDir = setup.tmpDir;
+    const { statusFilePath } = await runWithStatus("sf-always-written", 1);
     expect(nodeFs.existsSync(statusFilePath)).toBe(true);
   });
 });
@@ -140,26 +139,18 @@ describe("status file always written when provided", () => {
 // Status file written during dry-run
 // ============================================================================
 describe("status file written during dry-run", () => {
-  let tmpDir: string;
-  afterEach(async () => {
-    if (tmpDir) await fs.rm(tmpDir, { recursive: true, force: true });
-  });
-
   it("creates the file", async () => {
-    const { setup, statusFilePath } = await runWithStatus("sf-creates");
-    tmpDir = setup.tmpDir;
+    const { statusFilePath } = await runWithStatus("sf-creates");
     expect(nodeFs.existsSync(statusFilePath)).toBe(true);
   });
 
   it("produces valid JSON", async () => {
-    const { setup, statusFilePath } = await runWithStatus("sf-valid-json");
-    tmpDir = setup.tmpDir;
+    const { statusFilePath } = await runWithStatus("sf-valid-json");
     expect(() => JSON.parse(nodeFs.readFileSync(statusFilePath, "utf-8"))).not.toThrow();
   });
 
   it("has correct NaxStatusFile schema (version, run, progress, cost, current, iterations, updatedAt, durationMs)", async () => {
-    const { setup, statusFilePath } = await runWithStatus("sf-schema", 2);
-    tmpDir = setup.tmpDir;
+    const { statusFilePath } = await runWithStatus("sf-schema", 2);
     const p = JSON.parse(nodeFs.readFileSync(statusFilePath, "utf-8")) as NaxStatusFile;
     expect(p.version).toBe(1);
     expect(typeof p.run.id).toBe("string");
@@ -176,16 +167,14 @@ describe("status file written during dry-run", () => {
   });
 
   it("run.status is 'completed' when all stories pass", async () => {
-    const { setup, statusFilePath } = await runWithStatus("sf-completed", 2);
-    tmpDir = setup.tmpDir;
+    const { statusFilePath } = await runWithStatus("sf-completed", 2);
     const p = JSON.parse(nodeFs.readFileSync(statusFilePath, "utf-8")) as NaxStatusFile;
     expect(p.run.status).toBe("completed");
   });
 
   it("progress.passed equals story count after dry-run", async () => {
     const storyCount = 3;
-    const { setup, statusFilePath } = await runWithStatus("sf-progress", storyCount);
-    tmpDir = setup.tmpDir;
+    const { statusFilePath } = await runWithStatus("sf-progress", storyCount);
     const p = JSON.parse(nodeFs.readFileSync(statusFilePath, "utf-8")) as NaxStatusFile;
     expect(p.progress.total).toBe(storyCount);
     expect(p.progress.passed).toBe(storyCount);
@@ -193,28 +182,24 @@ describe("status file written during dry-run", () => {
   });
 
   it("current is null at run end (write point 4)", async () => {
-    const { setup, statusFilePath } = await runWithStatus("sf-current-null");
-    tmpDir = setup.tmpDir;
+    const { statusFilePath } = await runWithStatus("sf-current-null");
     const p = JSON.parse(nodeFs.readFileSync(statusFilePath, "utf-8")) as NaxStatusFile;
     expect(p.current).toBeNull();
   });
 
   it("no .tmp file left behind after write", async () => {
-    const { setup, statusFilePath } = await runWithStatus("sf-no-tmp");
-    tmpDir = setup.tmpDir;
+    const { statusFilePath } = await runWithStatus("sf-no-tmp");
     expect(nodeFs.existsSync(`${statusFilePath}.tmp`)).toBe(false);
   });
 
   it("run.id starts with 'run-'", async () => {
-    const { setup, statusFilePath } = await runWithStatus("sf-runid");
-    tmpDir = setup.tmpDir;
+    const { statusFilePath } = await runWithStatus("sf-runid");
     const p = JSON.parse(nodeFs.readFileSync(statusFilePath, "utf-8")) as NaxStatusFile;
     expect(p.run.id).toMatch(/^run-/);
   });
 
   it("cost.limit is null when config.costLimit is Infinity", async () => {
     const setup = await setupDir("sf-cost-null", 1);
-    tmpDir = setup.tmpDir;
     const statusFilePath = path.join(setup.tmpDir, "nax-status.json");
     const config = createTestConfig();
     config.execution.costLimit = Number.POSITIVE_INFINITY;

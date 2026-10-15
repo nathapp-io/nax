@@ -8,10 +8,9 @@
  * - No failureStage => NOT reconciled to "passed", reset to "pending" for re-run
  */
 
-import { afterAll, afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { rmSync } from "node:fs";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { join } from "node:path";
-import { makeAgentAdapter, makeSpawn, makeTempDir, withWarnSpy } from "@test/helpers";
+import { cleanupTempDir, makeAgentAdapter, makeSpawn, makeTempDir, withWarnSpy } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { _reconcileDeps, initializeRun } from "@/execution/lifecycle/run-initialization";
 import { getLogger, initLogger, resetLogger } from "@/logger";
@@ -59,7 +58,11 @@ function makePrd(overrides: Partial<PRD["userStories"][number]> = {}): PRD {
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-const tmpDir = makeTempDir("nax-test-reconcile-");
+let tmpDir: string;
+beforeEach(() => {
+  tmpDir = makeTempDir("nax-test-reconcile-");
+});
+afterEach(() => cleanupTempDir(tmpDir));
 
 /** The story ID every fixture in this file uses. */
 const US_001 = "US-001";
@@ -93,14 +96,6 @@ describe("reconcileState", () => {
     _reconcileDeps.hasCommitsForStory = origHasCommits;
     _reconcileDeps.runReview = origRunReview;
     mock.restore();
-  });
-
-  afterAll(() => {
-    try {
-      rmSync(tmpDir, { recursive: true });
-    } catch {
-      // best-effort cleanup
-    }
   });
 
   test("no failureStage + commits => NOT reconciled to passed (unknown failure stage), reset to pending for re-run", async () => {

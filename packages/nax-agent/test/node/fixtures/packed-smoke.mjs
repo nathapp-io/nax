@@ -3,7 +3,7 @@
  * tarball (S2 spec §7.3). Plain Node ESM: no repo imports, no test framework.
  */
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -28,6 +28,9 @@ import { connectMcp } from "@nathapp/nax-agent/mcp";
 assert.equal(process.versions.bun, undefined, "the packed smoke must run on native Node");
 
 const workdir = mkdtempSync(join(tmpdir(), "nax-packed-"));
+// This root lives outside the consumer directory owned by pack-smoke.test.ts.
+// Exit cleanup also runs when a fixture assertion fails.
+process.once("exit", () => rmSync(workdir, { recursive: true, force: true }));
 writeFileSync(join(workdir, "hello.txt"), "hello");
 
 // The credentials slot throws when unset (S1 D12); an embedder fills it the

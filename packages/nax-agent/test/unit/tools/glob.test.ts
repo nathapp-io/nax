@@ -7,13 +7,14 @@
  * test provoke the catch path without planting a malformed pattern on disk.
  */
 
-import { afterEach, beforeAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { _globDeps, DEFAULT_TOOL_MAX_FILE_BYTES, globTool } from "#src/tools/index";
+import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
 
 let root: string;
+const caseRoots: string[] = [];
 
 // Capture the production scanner at module-load time so the afterEach hook
 // restores the real Bun.Glob scanner, not a placeholder. The capture must
@@ -22,7 +23,7 @@ let root: string;
 const productionScan = _globDeps.scan;
 
 beforeAll(() => {
-  root = mkdtempSync(join(tmpdir(), "nax-glob-"));
+  root = makeTempDir("nax-glob-");
   mkdirSync(join(root, "src", "deep"), { recursive: true });
   mkdirSync(join(root, "docs"), { recursive: true });
   writeFileSync(join(root, "src", "a.ts"), "export const a = 1;\n");
@@ -32,11 +33,14 @@ beforeAll(() => {
   writeFileSync(join(root, "docs", "release notes.md"), "release\n");
 });
 
+afterAll(() => cleanupTempDir(root));
+
 afterEach(() => {
   // _globDeps.scan is test-only; production wires it to a real Bun.Glob
   // scanner. Restore the original scanner between cases so a stub from one
   // test never leaks into the next.
   _globDeps.scan = productionScan;
+  for (const dir of caseRoots.splice(0)) cleanupTempDir(dir);
 });
 
 function ctx() {
@@ -216,7 +220,8 @@ describe("globTool — directory-grouped output", () => {
   });
 
   test("AC4 (extended): basenames are ordered ascending even when the disk order is shuffled", async () => {
-    const fixtureRoot = mkdtempSync(join(tmpdir(), "nax-glob-shuffle-"));
+    const fixtureRoot = makeTempDir("nax-glob-shuffle-");
+    caseRoots.push(fixtureRoot);
     mkdirSync(join(fixtureRoot, "dir"), { recursive: true });
     // Write in reverse order to make sure the sort is the renderer's doing.
     writeFileSync(join(fixtureRoot, "dir", "c.ts"), "");
@@ -407,7 +412,8 @@ describe("globTool — directory-grouped output", () => {
   });
 
   test("AC10: more than 500 matches yield exactly 500 basenames across group lines", async () => {
-    const manyRoot = mkdtempSync(join(tmpdir(), "nax-glob-many-"));
+    const manyRoot = makeTempDir("nax-glob-many-");
+    caseRoots.push(manyRoot);
     mkdirSync(join(manyRoot, "dir"), { recursive: true });
     // 600 files; the cap is 500, so 500 basenames must appear in the output.
     for (let i = 0; i < 600; i++) {

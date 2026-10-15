@@ -31,14 +31,30 @@ import {
 import type { Client, ClientRequest, ResolvedModel } from "@nathapp/nax-ai";
 import { createMemoryTranscriptStore } from "#src/native/session/memory-transcript-store";
 import { NativeSessionAdapter } from "#src/native/session-adapter";
-import { withDerivedStream } from "#test/helpers/index";
+import { cleanupTempDir, makeTempDir, withDerivedStream } from "#test/helpers/index";
+
+const tempDirs: string[] = [];
+const sessionCleanups: (() => Promise<void>)[] = [];
+
+function makeTestDir(prefix: string): string {
+  const dir = makeTempDir(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
 
 const REAL_BUILD = _clientDeps.build;
 const REAL_WINDOW = 128_000;
 
-afterEach(() => {
-  _clientDeps.build = REAL_BUILD;
-  _resetNativeClient();
+afterEach(async () => {
+  const closed = await Promise.allSettled(sessionCleanups.splice(0).map(async (close) => close()));
+  try {
+    const errors = closed.flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
+    if (errors.length > 0) throw new AggregateError(errors, "Failed to close test sessions");
+  } finally {
+    for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+    _clientDeps.build = REAL_BUILD;
+    _resetNativeClient();
+  }
 });
 
 function catalogModel(): ResolvedModel {
@@ -82,7 +98,7 @@ async function openIn(
   name: string,
   over: Partial<OpenSessionOpts> = {},
 ): Promise<{ handle: Awaited<ReturnType<NativeSessionAdapter["openSession"]>>; dir: string }> {
-  const dir = await mkdtemp(join(tmpdir(), `nax-session-adapter-${name}-`));
+  const dir = makeTestDir(`nax-session-adapter-${name}-`);
   const handle = await adapter.openSession(name, {
     agentName: "native",
     workdir: process.cwd(),
@@ -92,6 +108,7 @@ async function openIn(
     transcriptDir: dir,
     ...over,
   });
+  sessionCleanups.push(() => adapter.closeSession(handle));
   return { handle, dir };
 }
 

@@ -5,13 +5,25 @@
  * All tests are expected to FAIL until PromptBuilder is implemented.
  */
 
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import type { UserStory } from "@/prd";
 import type { PromptRole } from "@/prompts";
 import { PromptBuilder } from "@/prompts";
+
+const tempDirs: string[] = [];
+
+function makeTestDir(prefix: string): string {
+  const dir = makeTempDir(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+});
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -124,7 +136,7 @@ describe("PromptBuilder section order", () => {
 
 describe("PromptBuilder non-overridable sections", () => {
   test("override preserves story context, conventions footer order, and isolation rules", async () => {
-    const tmpDir = makeTempDir("nax-pb-test-");
+    const tmpDir = makeTestDir("nax-pb-test-");
     const overridePath = join(tmpDir, "override.md");
     writeFileSync(overridePath, "# Custom override body");
 
@@ -140,7 +152,7 @@ describe("PromptBuilder non-overridable sections", () => {
   });
 
   test("story context not removable via override for each role", async () => {
-    const tmpDir = makeTempDir("nax-pb-test-");
+    const tmpDir = makeTestDir("nax-pb-test-");
     const overridePath = join(tmpDir, "override.md");
     writeFileSync(overridePath, "Override that attempts to hide story context.");
 
@@ -169,7 +181,7 @@ describe("PromptBuilder override fallthrough", () => {
   });
 
   test("valid override file replaces default template body", async () => {
-    const tmpDir = makeTempDir("nax-pb-test-");
+    const tmpDir = makeTestDir("nax-pb-test-");
     const overridePath = join(tmpDir, "override.md");
     const overrideBody = "UNIQUE_OVERRIDE_BODY_CONTENT";
     writeFileSync(overridePath, overrideBody);

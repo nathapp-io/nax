@@ -1,14 +1,25 @@
-import { beforeAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DEFAULT_TOOL_MAX_FILE_BYTES, globTool, readTool } from "#src/tools/index";
-import { withTempDir } from "#test/helpers/index";
+import { cleanupTempDir, makeTempDir, withTempDir } from "#test/helpers/index";
+
+const tempDirs: string[] = [];
+
+function makeTestDir(prefix: string): string {
+  const dir = makeTempDir(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterAll(() => {
+  for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+});
 
 let root: string;
 
 beforeAll(() => {
-  root = mkdtempSync(join(tmpdir(), "nax-fs-"));
+  root = makeTestDir("nax-fs-");
   mkdirSync(join(root, "src", "deep"), { recursive: true });
   writeFileSync(join(root, "src", "a.ts"), "export const a = 1;\n");
   writeFileSync(join(root, "src", "deep", "b.ts"), "export const b = 2;\n");
@@ -156,7 +167,7 @@ describe("readTool", () => {
     // readPrefix stops at the ceiling, so the lines it saw are all we know about.
     // Reporting them as "of N" would state a total the tool never established.
     // Its own root: the shared fixture root is asserted file-by-file by globTool.
-    const bigRoot = mkdtempSync(join(tmpdir(), "nax-fs-big-"));
+    const bigRoot = makeTestDir("nax-fs-big-");
     const bigPath = join(bigRoot, "big.ts");
     const line = `${"x".repeat(99)}\n`;
     writeFileSync(bigPath, line.repeat(400));

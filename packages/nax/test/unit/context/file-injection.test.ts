@@ -11,12 +11,24 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { makeConfigSlice, makeSparseNaxConfig, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeConfigSlice, makeSparseNaxConfig, makeTempDir } from "@test/helpers";
 // NOTE: _contextBuilderDeps is exported from builder.ts — mock-based tests below
 // use this injection pattern for testing
 import { _contextBuilderDeps, buildContext } from "@/context/builder";
 import type { ContextBudget, StoryContext } from "@/context/types";
 import type { PRD, UserStory } from "@/prd";
+
+const tempDirs: string[] = [];
+
+function makeTestDir(prefix: string): string {
+  const dir = makeTempDir(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+});
 
 // Helper to create a minimal test PRD
 const createTestPRD = (stories: Partial<UserStory>[]): PRD => ({
@@ -53,7 +65,7 @@ const BUDGET: ContextBudget = {
 
 /** Set up a temp git repo with a src file, returns tempDir */
 async function setupGitRepo(srcFiles: Record<string, string>): Promise<string> {
-  const tempDir = makeTempDir("nax-test-injection-");
+  const tempDir = makeTestDir("nax-test-injection-");
   await Bun.spawn(["git", "init"], { cwd: tempDir }).exited;
   await Bun.spawn(["git", "config", "user.email", "test@test.com"], { cwd: tempDir }).exited;
   await Bun.spawn(["git", "config", "user.name", "Test User"], { cwd: tempDir }).exited;
@@ -374,7 +386,7 @@ describe("fileInjection modes — mock-based (CTX-003)", () => {
 
   beforeEach(async () => {
     originalAutoDetect = _contextBuilderDeps.autoDetectContextFiles;
-    tempDir = makeTempDir("nax-fi-mock-test-");
+    tempDir = makeTestDir("nax-fi-mock-test-");
   });
 
   afterEach(async () => {

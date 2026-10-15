@@ -3,13 +3,25 @@
  * Tests for context builder module — buildContext and file loading
  */
 
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { makeNaxConfig, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
 import { buildContext } from "@/context";
 import type { ContextBudget, StoryContext } from "@/context/types";
 import type { PRD, UserStory } from "@/prd";
+
+const tempDirs: string[] = [];
+
+function makeTestDir(prefix: string): string {
+  const dir = makeTempDir(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+});
 
 // Helper to create test PRD
 const createTestPRD = (stories: Partial<UserStory>[]): PRD => ({
@@ -226,7 +238,7 @@ describe("Context Builder", () => {
     });
 
     test("should load files from contextFiles when present", async () => {
-      const tempDir = makeTempDir("nax-test-");
+      const tempDir = makeTestDir("nax-test-");
       const testFile1 = path.join(tempDir, "helper.ts");
       const testFile2 = path.join(tempDir, "utils.ts");
 
@@ -272,7 +284,7 @@ describe("Context Builder", () => {
     });
 
     test("should fall back to relevantFiles for file loading when contextFiles not present", async () => {
-      const tempDir = makeTempDir("nax-test-");
+      const tempDir = makeTestDir("nax-test-");
       const testFile = path.join(tempDir, "legacy.ts");
 
       await fs.writeFile(testFile, 'export function legacy() { return "old"; }');
@@ -313,7 +325,7 @@ describe("Context Builder", () => {
     });
 
     test("should prefer contextFiles over relevantFiles for file loading", async () => {
-      const tempDir = makeTempDir("nax-test-");
+      const tempDir = makeTestDir("nax-test-");
       const newFile = path.join(tempDir, "new.ts");
       const oldFile = path.join(tempDir, "old.ts");
 
@@ -358,7 +370,7 @@ describe("Context Builder", () => {
     });
 
     test("should respect max 5 files limit", async () => {
-      const tempDir = makeTempDir("nax-test-");
+      const tempDir = makeTestDir("nax-test-");
 
       try {
         const files: string[] = [];
@@ -401,7 +413,7 @@ describe("Context Builder", () => {
     });
 
     test("should add path-only element for files larger than 10KB", async () => {
-      const tempDir = makeTempDir("nax-test-");
+      const tempDir = makeTestDir("nax-test-");
 
       try {
         const smallFile = path.join(tempDir, "small.ts");
@@ -453,7 +465,7 @@ describe("Context Builder", () => {
     });
 
     test("should warn on missing files", async () => {
-      const tempDir = makeTempDir("nax-test-");
+      const tempDir = makeTestDir("nax-test-");
 
       try {
         const prd = createTestPRD([
@@ -516,7 +528,7 @@ describe("Context Builder", () => {
     });
 
     test("should respect token budget when loading files", async () => {
-      const tempDir = makeTempDir("nax-test-");
+      const tempDir = makeTestDir("nax-test-");
 
       try {
         await fs.writeFile(path.join(tempDir, "file1.ts"), "x".repeat(5000));
@@ -561,7 +573,7 @@ describe("Context Builder — single-package (repo-root) story", () => {
   const budget: ContextBudget = { maxTokens: 10000, reservedForInstructions: 1000, availableForContext: 9000 };
 
   test("loads a root-relative contextFile when the story has no workdir", async () => {
-    const tempDir = makeTempDir("nax-test-");
+    const tempDir = makeTestDir("nax-test-");
     await fs.mkdir(path.join(tempDir, "src"), { recursive: true });
     await fs.writeFile(path.join(tempDir, "src", "a.ts"), "export const a = 1;");
 
@@ -583,7 +595,7 @@ describe("Context Builder — repo-rooted declared paths pass through (single-fr
   const budget: ContextBudget = { maxTokens: 10000, reservedForInstructions: 1000, availableForContext: 9000 };
 
   test("emits a repo-rooted contextFile as stored and reads it from the repo root", async () => {
-    const tempDir = makeTempDir("nax-test-");
+    const tempDir = makeTestDir("nax-test-");
     const packageDir = path.join(tempDir, "packages", "api");
     await fs.mkdir(path.join(packageDir, "src"), { recursive: true });
     await fs.writeFile(path.join(packageDir, "src", "bar.ts"), "export const bar = true;");
@@ -608,7 +620,7 @@ describe("Context Builder — repo-rooted declared paths pass through (single-fr
   });
 
   test("emits a cross-package contextFile instead of dropping it as unreachable", async () => {
-    const tempDir = makeTempDir("nax-test-");
+    const tempDir = makeTestDir("nax-test-");
     const packageDir = path.join(tempDir, "packages", "api");
     const otherDir = path.join(tempDir, "packages", "other", "src");
     await fs.mkdir(path.join(packageDir, "src"), { recursive: true });
@@ -636,7 +648,7 @@ describe("Context Builder — repo-rooted declared paths pass through (single-fr
   });
 
   test("a repo-root story (workdir '.') still loads its context file", async () => {
-    const tempDir = makeTempDir("nax-test-");
+    const tempDir = makeTestDir("nax-test-");
     await fs.mkdir(path.join(tempDir, "src"), { recursive: true });
     await fs.writeFile(path.join(tempDir, "src", "root.ts"), "export const root = true;");
 

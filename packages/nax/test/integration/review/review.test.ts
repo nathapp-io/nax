@@ -3,18 +3,22 @@
  * Review Phase Tests
  */
 
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { makeConfigSlice, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeConfigSlice, makeTempDir } from "@test/helpers";
 import { DEFAULT_CONFIG, type ExecutionConfig, type NaxConfig, NaxConfigSchema } from "@/config/schema";
 import type { ReviewConfig } from "@/review";
 import { runReview } from "@/review/runner";
 
+let tempDir: string;
+beforeEach(() => {
+  tempDir = makeTempDir("nax-review-");
+});
+afterEach(() => cleanupTempDir(tempDir));
+
 describe("Review Phase", () => {
   test("runReview - all checks pass", async () => {
-    const tempDir = makeTempDir("nax-review-test-");
-
     const config: ReviewConfig = makeConfigSlice("review", {
       enabled: true,
       checks: ["test"],
@@ -34,8 +38,6 @@ describe("Review Phase", () => {
   });
 
   test("runReview - check fails", async () => {
-    const tempDir = makeTempDir("nax-review-test-");
-
     const config: ReviewConfig = makeConfigSlice("review", {
       enabled: true,
       checks: ["typecheck"],
@@ -55,8 +57,6 @@ describe("Review Phase", () => {
   });
 
   test("runReview - multiple checks, stop on first failure", async () => {
-    const tempDir = makeTempDir("nax-review-test-");
-
     const config: ReviewConfig = makeConfigSlice("review", {
       enabled: true,
       checks: ["typecheck", "lint", "test"],
@@ -80,8 +80,6 @@ describe("Review Phase", () => {
   });
 
   test("runReview - uses review config commands when specified", async () => {
-    const tempDir = makeTempDir("nax-review-test-");
-
     const config: ReviewConfig = makeConfigSlice("review", {
       enabled: true,
       checks: ["test"],
@@ -97,8 +95,6 @@ describe("Review Phase", () => {
   });
 
   test("runReview - empty checks array", async () => {
-    const tempDir = makeTempDir("nax-review-test-");
-
     const config: ReviewConfig = makeConfigSlice("review", {
       enabled: true,
       checks: [],
@@ -113,8 +109,6 @@ describe("Review Phase", () => {
   });
 
   test("runReview - captures command output", async () => {
-    const tempDir = makeTempDir("nax-review-test-");
-
     const config: ReviewConfig = makeConfigSlice("review", {
       enabled: true,
       checks: ["test"],
@@ -131,8 +125,6 @@ describe("Review Phase", () => {
   });
 
   test("runReview - records duration", async () => {
-    const tempDir = makeTempDir("nax-review-test-");
-
     const config: ReviewConfig = makeConfigSlice("review", {
       enabled: true,
       checks: ["test"],
@@ -155,8 +147,6 @@ describe("Review Phase", () => {
 // US-005: config-driven command resolution for the review stage.
 describe("Review Config-Driven Commands (US-005)", () => {
   test("uses explicit executionConfig.lintCommand when provided", async () => {
-    const tempDir = makeTempDir("nax-review-config-");
-
     const reviewConfig: ReviewConfig = makeConfigSlice("review", {
       enabled: true,
       checks: ["lint"],
@@ -180,8 +170,6 @@ describe("Review Config-Driven Commands (US-005)", () => {
   });
 
   test("uses explicit executionConfig.typecheckCommand when provided", async () => {
-    const tempDir = makeTempDir("nax-review-config-");
-
     const reviewConfig: ReviewConfig = makeConfigSlice("review", {
       enabled: true,
       checks: ["typecheck"],
@@ -205,8 +193,6 @@ describe("Review Config-Driven Commands (US-005)", () => {
   });
 
   test("skips check when executionConfig command is null (explicitly disabled)", async () => {
-    const tempDir = makeTempDir("nax-review-config-");
-
     const reviewConfig: ReviewConfig = makeConfigSlice("review", {
       enabled: true,
       checks: ["lint", "typecheck"],
@@ -231,8 +217,6 @@ describe("Review Config-Driven Commands (US-005)", () => {
   });
 
   test("uses package.json script when no executionConfig override", async () => {
-    const tempDir = makeTempDir("nax-review-config-");
-
     // Create package.json with lint script
     const packageJson = {
       name: "test-project",
@@ -257,8 +241,6 @@ describe("Review Config-Driven Commands (US-005)", () => {
   });
 
   test("skips check when package.json script not found", async () => {
-    const tempDir = makeTempDir("nax-review-config-");
-
     // Create package.json WITHOUT lint script
     const packageJson = {
       name: "test-project",
@@ -282,8 +264,6 @@ describe("Review Config-Driven Commands (US-005)", () => {
   });
 
   test("executionConfig takes precedence over package.json", async () => {
-    const tempDir = makeTempDir("nax-review-config-");
-
     // Create package.json with lint script
     const packageJson = {
       name: "test-project",
@@ -317,8 +297,6 @@ describe("Review Config-Driven Commands (US-005)", () => {
   });
 
   test("reviewConfig.commands takes precedence over package.json (backwards compat)", async () => {
-    const tempDir = makeTempDir("nax-review-config-");
-
     // Create package.json with lint script
     const packageJson = {
       name: "test-project",
@@ -345,8 +323,6 @@ describe("Review Config-Driven Commands (US-005)", () => {
   });
 
   test("executionConfig takes precedence over reviewConfig.commands", async () => {
-    const tempDir = makeTempDir("nax-review-config-");
-
     const reviewConfig: ReviewConfig = makeConfigSlice("review", {
       enabled: true,
       checks: ["lint"],
@@ -373,7 +349,6 @@ describe("Review Config-Driven Commands (US-005)", () => {
   });
 
   test("handles missing package.json gracefully", async () => {
-    const tempDir = makeTempDir("nax-review-config-");
     // No package.json created
 
     const reviewConfig: ReviewConfig = makeConfigSlice("review", {
@@ -390,7 +365,6 @@ describe("Review Config-Driven Commands (US-005)", () => {
   });
 
   test("handles invalid package.json gracefully", async () => {
-    const tempDir = makeTempDir("nax-review-config-");
     writeFileSync(join(tempDir, "package.json"), "invalid json {{{");
 
     const reviewConfig: ReviewConfig = makeConfigSlice("review", {
@@ -407,8 +381,6 @@ describe("Review Config-Driven Commands (US-005)", () => {
   });
 
   test("resolution order: executionConfig > reviewConfig > package.json", async () => {
-    const tempDir = makeTempDir("nax-review-config-");
-
     // Create package.json with all scripts
     const packageJson = {
       name: "test-project",
@@ -455,8 +427,6 @@ describe("Review Config-Driven Commands (US-005)", () => {
   });
 
   test("test command ignores executionConfig (not affected by this story)", async () => {
-    const tempDir = makeTempDir("nax-review-config-");
-
     const reviewConfig: ReviewConfig = makeConfigSlice("review", {
       enabled: true,
       checks: ["test"],

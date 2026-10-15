@@ -5,9 +5,6 @@
  * stream-bus activity are identical (spec 8: behaviour-neutral pins).
  */
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type {
   AgentStreamEvent,
   CodingTool,
@@ -20,6 +17,7 @@ import type {
 import { _clientDeps, _resetNativeClient, loadTranscript } from "@nathapp/nax-agent/internal";
 import type { Client, ProtocolEvent, ResolvedModel } from "@nathapp/nax-ai";
 import { NativeSessionAdapter } from "#src/native/session-adapter";
+import { withTempDir } from "#test/helpers/index";
 
 const REAL_BUILD = _clientDeps.build;
 afterEach(() => {
@@ -87,32 +85,37 @@ interface Run {
 }
 
 async function runTurn(onTurnEvent?: TurnEventSink): Promise<Run> {
-  _resetNativeClient();
-  _clientDeps.build = async () => scriptedClient();
-  const adapter = new NativeSessionAdapter();
-  const dir = await mkdtemp(join(tmpdir(), "nax-adapter-turn-events-"));
-  const activity: AgentStreamEvent[] = [];
-  const handle = await adapter.openSession("turn-events", {
-    agentName: "native",
-    workdir: dir,
-    resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
-    modelDef: MODEL_DEF,
-    timeoutSeconds: 60,
-    transcriptDir: dir,
-    onStreamActivity: (event) => void activity.push(event),
+  return withTempDir(async (dir) => {
+    _resetNativeClient();
+    _clientDeps.build = async () => scriptedClient();
+    const adapter = new NativeSessionAdapter();
+    const activity: AgentStreamEvent[] = [];
+    const handle = await adapter.openSession("turn-events", {
+      agentName: "native",
+      workdir: dir,
+      resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
+      modelDef: MODEL_DEF,
+      timeoutSeconds: 60,
+      transcriptDir: dir,
+      onStreamActivity: (event) => void activity.push(event),
+    });
+    try {
+      const opts: SendTurnOpts = {
+        // Coding-tool calls reach the handler as kind "coding-tool"; its answer is the tool result.
+        interactionHandler: { onInteraction: async () => ({ answer: "contents" }) },
+        codingTools: [fakeRead],
+        ...(onTurnEvent !== undefined ? { onTurnEvent } : {}),
+      };
+      const result = await adapter.sendTurn(handle, "read a.ts", opts);
+      return {
+        result,
+        transcript: await loadTranscript(dir, handle.id),
+        activity: activity.map(({ callId: _c, timestamp: _t, ...rest }) => rest),
+      };
+    } finally {
+      await adapter.closeSession(handle);
+    }
   });
-  const opts: SendTurnOpts = {
-    // Coding-tool calls reach the handler as kind "coding-tool"; its answer is the tool result.
-    interactionHandler: { onInteraction: async () => ({ answer: "contents" }) },
-    codingTools: [fakeRead],
-    ...(onTurnEvent !== undefined ? { onTurnEvent } : {}),
-  };
-  const result = await adapter.sendTurn(handle, "read a.ts", opts);
-  return {
-    result,
-    transcript: await loadTranscript(dir, handle.id),
-    activity: activity.map(({ callId: _c, timestamp: _t, ...rest }) => rest),
-  };
 }
 
 describe("NativeSessionAdapter.sendTurn onTurnEvent (S3-3)", () => {

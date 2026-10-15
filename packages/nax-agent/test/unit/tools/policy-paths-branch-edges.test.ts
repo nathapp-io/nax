@@ -1,3 +1,4 @@
+import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
 /**
  * Characterisation for `pathsBranch`'s unpinned branches, written green against
  * the unrefactored branch before the cognitive-complexity drain moves it
@@ -10,17 +11,28 @@
  * that scrambles a guard's order or message fails here rather than silently.
  */
 
-import { beforeAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { ToolScope } from "#src/tools/index";
 import { compileToolPolicy } from "#src/tools/index";
 
+const tempDirs: string[] = [];
+
+function makeTestDir(prefix: string): string {
+  const dir = makeTempDir(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterAll(() => {
+  for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+});
+
 let root: string;
 
 beforeAll(() => {
-  root = join(mkdtempSync(join(tmpdir(), "nax-policy-paths-edges-")), "repo");
+  root = join(makeTestDir("nax-policy-paths-edges-"), "repo");
   mkdirSync(join(root, "src"), { recursive: true });
 });
 

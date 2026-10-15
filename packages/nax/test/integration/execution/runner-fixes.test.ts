@@ -4,7 +4,7 @@
  * Tests for PERF-2 (PRD dirty-flag reload optimization) and MEM-1 (file size limit)
  */
 
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, rename, rm } from "node:fs/promises";
 import path from "node:path";
 import { assertCaughtInstanceOf, cleanupTempDir, makeTempDir } from "@test/helpers";
@@ -41,6 +41,7 @@ function createStory(
 // BUG-002
 describe("Queue race condition: atomic rename prevents concurrent read/write conflicts", () => {
   let tmpDir: string;
+  afterEach(() => cleanupTempDir(tmpDir));
 
   beforeEach(async () => {
     tmpDir = makeTempDir("nax-race-test-");
@@ -71,9 +72,6 @@ describe("Queue race condition: atomic rename prevents concurrent read/write con
     expect(await newQueueFile.exists()).toBe(true);
     const newContent = await newQueueFile.text();
     expect(newContent).toBe("SKIP US-001\n");
-
-    // Cleanup
-    cleanupTempDir(tmpDir);
   });
 
   test("processing file is deleted after reading", async () => {
@@ -94,9 +92,6 @@ describe("Queue race condition: atomic rename prevents concurrent read/write con
 
     // Verify processing file is deleted
     expect(await Bun.file(processingPath).exists()).toBe(false);
-
-    // Cleanup
-    cleanupTempDir(tmpDir);
   });
 
   test("concurrent writes during processing don't lose commands", async () => {
@@ -126,15 +121,13 @@ describe("Queue race condition: atomic rename prevents concurrent read/write con
     const newContent = await Bun.file(queuePath).text();
     const newLines = newContent.trim().split("\n");
     expect(newLines).toEqual(["SKIP US-002", "SKIP US-003"]);
-
-    // Cleanup
-    cleanupTempDir(tmpDir);
   });
 });
 
 // BUG-002
 describe("File locking: lock file prevents concurrent execution and is released after run", () => {
   let tmpDir: string;
+  afterEach(() => cleanupTempDir(tmpDir));
 
   beforeEach(async () => {
     tmpDir = makeTempDir("nax-lock-test-");
@@ -160,9 +153,6 @@ describe("File locking: lock file prevents concurrent execution and is released 
     const parsed = JSON.parse(content);
     expect(parsed.pid).toBe(process.pid);
     expect(parsed.timestamp).toBeGreaterThan(0);
-
-    // Cleanup
-    cleanupTempDir(tmpDir);
   });
 
   test("stale lock is removed after 1 hour", async () => {
@@ -181,9 +171,6 @@ describe("File locking: lock file prevents concurrent execution and is released 
     const lockAge = Date.now() - lockData.timestamp;
     const ONE_HOUR = 60 * 60 * 1000;
     expect(lockAge).toBeGreaterThan(ONE_HOUR);
-
-    // Cleanup
-    cleanupTempDir(tmpDir);
   });
 
   test("lock is released after execution", async () => {
@@ -204,9 +191,6 @@ describe("File locking: lock file prevents concurrent execution and is released 
 
     // Verify lock is removed
     expect(await Bun.file(lockPath).exists()).toBe(false);
-
-    // Cleanup
-    cleanupTempDir(tmpDir);
   });
 });
 
@@ -307,6 +291,7 @@ describe("PERF-1: Batch optimization", () => {
 
 describe("PERF-2 & MEM-1: PRD file size limit and dirty-flag optimization", () => {
   let tmpDir: string;
+  afterEach(() => cleanupTempDir(tmpDir));
 
   beforeEach(() => {
     tmpDir = makeTempDir("nax-prd-test-");
@@ -363,9 +348,6 @@ describe("PERF-2 & MEM-1: PRD file size limit and dirty-flag optimization", () =
       expect(error.message).toContain("exceeds");
       expect(error.message).toContain("MB");
     }
-
-    // Cleanup
-    cleanupTempDir(tmpDir);
   });
 
   test("accepts PRD files within size limit", async () => {
@@ -392,9 +374,6 @@ describe("PERF-2 & MEM-1: PRD file size limit and dirty-flag optimization", () =
     const loaded = await loadPRD(prdPath);
     expect(loaded.userStories).toHaveLength(2);
     expect(loaded.project).toBe("test-project");
-
-    // Cleanup
-    cleanupTempDir(tmpDir);
   });
 
   test("PRD_MAX_FILE_SIZE constant is 5MB", () => {

@@ -6,13 +6,15 @@
  * fills it, provider keys scrubbed from the environment, console silenced, and a
  * sentinel on the native client builder so no test caches a real nax-ai client.
  */
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { afterAll } from "bun:test";
 import { join } from "node:path";
+import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
 import { type CredentialAuthConfig, configureCredentials } from "#src/infra/index";
 import { _clientDeps } from "#src/native/client";
 
-const isolatedGlobalDir = mkdtempSync(join(tmpdir(), "nax-agent-test-global-"));
+const isolatedGlobalDir = makeTempDir("nax-agent-test-global-");
+afterAll(() => cleanupTempDir(isolatedGlobalDir));
+process.once("exit", () => cleanupTempDir(isolatedGlobalDir));
 process.env.NAX_GLOBAL_CONFIG_DIR = isolatedGlobalDir;
 delete process.env.NAX_RUNS_DIR;
 

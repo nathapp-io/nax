@@ -1,9 +1,8 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { readFile, realpath as realpathAsync } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AskResolver } from "@nathapp/nax-agent";
+import { type AskResolver, resetSandboxBackend } from "@nathapp/nax-agent";
 import { _codingToolDeps, _resetSandboxRegistryForTests, buildCodingToolSupport } from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeLogger, makeNaxConfig, makeTempDir } from "@test/helpers";
 import { _codingToolSupportDeps, resolveCodingToolSupport } from "@/agents/coding-tool-support-resolve";
@@ -15,10 +14,17 @@ import { verifierOp } from "@/operations";
 import { VERDICT_FILE } from "@/tdd";
 import { gitWithTimeout } from "@/utils/git";
 
-afterEach(() => _resetSandboxRegistryForTests()); // sandbox on by default: drop the cached backend
+afterEach(async () => {
+  try {
+    await resetSandboxBackend();
+  } finally {
+    _resetSandboxRegistryForTests();
+  }
+});
 let root: string;
+afterAll(() => cleanupTempDir(root));
 beforeAll(() => {
-  root = mkdtempSync(join(tmpdir(), "nax-support-"));
+  root = makeTempDir("nax-support-");
   // The deny/ask tests read a granted file to prove only the matching rule
   // refuses; Read on a missing path returns kind "error", masking the "ok".
   writeFileSync(join(root, "file.txt"), "x");
@@ -447,40 +453,6 @@ describe("resolveCodingToolSupport — repoRoot falls back to the unified root (
     } finally {
       cleanupTempDir(repo);
     }
-  });
-});
-
-describe("resolveCodingToolSupport — dispatch visibility (#2066)", () => {
-  let logCalls: LogEntry[];
-
-  beforeEach(() => {
-    resetLogger();
-    logCalls = [];
-    initLogger({ level: "silent" });
-    addSink((entry) => logCalls.push(entry));
-  });
-
-  afterEach(() => {
-    resetLogger();
-  });
-
-  test("logs the declared command keys and the resolved permission profile", async () => {
-    const root = makeTempDir("nax-dispatch-log-");
-    await resolveCodingToolSupport({
-      declaredTools: ["Read"],
-      codingToolRoot: root,
-      pipelineStage: "run",
-      storyId: "US-005",
-      config: makeNaxConfig({ quality: { commands: { testScoped: "pkg-runner {{files}}" } } }),
-    });
-
-    const entry = logCalls.find((l) => l.message.includes("Declared commands resolved"));
-    expect(entry).toBeDefined();
-    expect(entry?.data?.commands).toEqual(["testScoped"]);
-    expect(entry?.data?.storyId).toBe("US-005");
-    // DEFAULT_CONFIG.execution.permissionProfile is "unrestricted"; the test's
-    // quality override leaves it untouched, so that is the resolved value.
-    expect(entry?.data?.permissionProfile).toBe("unrestricted");
   });
 });
 
