@@ -10,6 +10,7 @@ import { resolveCodingToolSupport } from "@/agents/coding-tool-support-resolve";
 
 let root: string;
 beforeEach(() => {
+  _resetSandboxRegistryForTests();
   root = makeTempDir("nax-cts-acp-sandbox-");
 });
 afterEach(() => {

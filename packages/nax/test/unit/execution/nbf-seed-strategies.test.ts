@@ -18,11 +18,13 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import {
   assertDefined,
+  cleanupTempDir,
   makeMockCallContext,
   makeMockPlanInputs,
   makeNaxConfig,
   makeSpawn,
   makeStory,
+  makeTempDir,
   makeTestRuntime,
 } from "@test/helpers";
 import type { PlanInputs } from "@/execution";
@@ -35,6 +37,12 @@ import { _rollbackDeps } from "@/tdd";
 type RunFixCycleCycle = Parameters<typeof _storyOrchestratorDeps.runFixCycle>[0];
 type CapturedStrategy = RunFixCycleCycle["strategies"][number];
 
+let workdir: string;
+beforeEach(() => {
+  workdir = makeTempDir("nax-nbf-strategies-");
+});
+afterEach(() => cleanupTempDir(workdir));
+
 function makeImplementerInput(story: UserStory): import("@/operations").ImplementerInput {
   return { story };
 }
@@ -44,7 +52,7 @@ function makeVerifierInput(story: UserStory): import("@/operations").VerifierInp
 }
 
 function makeFullSuiteGateInput(story: UserStory): import("@/operations").FullSuiteGateInput {
-  return { story, workdir: "/tmp/test" };
+  return { story, workdir };
 }
 
 function makeTddRetryInputs(story: UserStory, extra: Partial<PlanInputs> = {}): PlanInputs {
@@ -159,7 +167,7 @@ describe("nbf-seed strategy set — AC11: promptSeverityFloor stays 'info' regar
     const inputs = makeTddRetryInputs(story, {
       adversarialReview: {
         story,
-        workdir: "/tmp/test",
+        workdir,
         adversarialConfig: config.review.adversarial,
         mode: config.review.adversarial.diffMode,
       },
@@ -204,7 +212,7 @@ describe("nbf-seed strategy set — AC11: promptSeverityFloor stays 'info' regar
     const inputs = makeTddRetryInputs(story, {
       adversarialReview: {
         story,
-        workdir: "/tmp/test",
+        workdir,
         adversarialConfig: config.review.adversarial,
         mode: config.review.adversarial.diffMode,
       },
@@ -311,7 +319,7 @@ describe("nbf-seed strategy set — AC12: semantic-review source with fixTarget=
     const inputs = makeTddRetryInputs(story, {
       adversarialReview: {
         story,
-        workdir: "/tmp/test",
+        workdir,
         adversarialConfig: config.review.adversarial,
         mode: config.review.adversarial.diffMode,
       },

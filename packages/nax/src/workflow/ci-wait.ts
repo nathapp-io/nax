@@ -148,12 +148,13 @@ interface ProgressLog {
 }
 
 /** The wait's voice. Every line is `<message>` at info, stage `workflow`, `storyId` first. */
-function progressLog(): ProgressLog {
+function progressLog(onInfo: () => void): ProgressLog {
   let lastInfoAt = _ciWaitDeps.now();
   let lastSummary = "";
   const say = (message: string): void => {
     lastInfoAt = _ciWaitDeps.now();
     getSafeLogger()?.info("workflow", message, { storyId: RUN_SCOPE });
+    onInfo();
   };
   return {
     start(prRef, timeoutMs, pollMs) {
@@ -205,7 +206,13 @@ export async function waitForChecks(
 ): Promise<CiWaitResult> {
   const startedAt = _ciWaitDeps.now();
   const deadline = startedAt + opts.timeoutMs;
-  const progress = progressLog();
+  let cancelHeartbeat = (): void => {};
+  const progress = progressLog(() => {
+    // Every info line starts a fresh deadline. A fixed interval could skip a
+    // tick after a changed summary and leave almost two minutes of silence.
+    cancelHeartbeat();
+    cancelHeartbeat = _ciWaitDeps.schedule(() => progress.heartbeatIfDue(startedAt), CI_WAIT_HEARTBEAT_MS);
+  });
   progress.start(prRef, opts.timeoutMs, opts.pollMs);
   /** Every terminal return, and only a terminal return, says how it ended. */
   const end = (outcome: CiWaitOutcome, detail: string): CiWaitResult => {
@@ -214,7 +221,6 @@ export async function waitForChecks(
   };
   // Independent of polling and of any single sleep: a slow forge call cannot
   // suppress the heartbeat, and the schedule is cancelled on every return path.
-  const cancelHeartbeat = _ciWaitDeps.schedule(() => progress.heartbeatIfDue(startedAt), CI_WAIT_HEARTBEAT_MS);
   try {
     for (;;) {
       if (opts.signal?.aborted) return end("pending", "aborted");

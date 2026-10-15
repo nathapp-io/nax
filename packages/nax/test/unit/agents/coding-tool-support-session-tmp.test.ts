@@ -66,11 +66,15 @@ describe("resolveCodingToolSupport — per-session TMPDIR (US-004)", () => {
   // `r1` is `/tmp/nax/r1` on every machine. `runRoot` is captured while the stub
   // is in place, so the cleanup can still name the directory the launcher made.
   let runRoot: string;
+  let usedRunRoot: boolean;
   beforeEach(() => {
     stubSessionTmpDeps(_sessionTmpDeps, { parent: "ENOENT" });
     runRoot = runTmpRoot("r1");
+    usedRunRoot = false;
   });
-  afterEach(() => cleanupTempDir(runRoot));
+  afterEach(() => {
+    if (usedRunRoot) cleanupTempDir(runRoot);
+  });
 
   // Class C: the launcher creates `<runRoot>/<sessionName>` under the shared
   // `/tmp/nax` parent before it exports `TMPDIR` (`src/sandbox/launcher.ts`:
@@ -79,6 +83,7 @@ describe("resolveCodingToolSupport — per-session TMPDIR (US-004)", () => {
   // the TMPDIR this asserts is the one the launcher created.
   const skipConfined = test.skipIf(isConfinedTestRun());
   skipConfined("US-004 AC12: a Bash call runs with TMPDIR at the run's session directory", async () => {
+    usedRunRoot = true;
     const calls = recordingRunArgv();
 
     const support = await resolveCodingToolSupport({

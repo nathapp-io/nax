@@ -2,9 +2,9 @@
  * The confined test runner (nax#2523): the policy it builds, the command it
  * wraps, and the spawn/cleanup lifecycle `runConfinedTests` drives.
  *
- * Every test here drives the `_confinedRunDeps` seam, so nothing launches a
- * sandbox: the real thing is the integration suite's job, and a unit test that
- * needed a working bwrap could not run inside CI's confined run either.
+ * The runner tests drive the `_confinedRunDeps` seam. The CLI's real probe
+ * also launches a sandbox, so it runs only outside the confined suite, like
+ * the real sandbox integration tests.
  *
  * The CLI is exercised through its imported `main`, which takes the same seam
  * shape — plus one real subprocess run for the two exit codes (`--probe`, and
@@ -536,20 +536,27 @@ describe("run-confined-tests CLI", () => {
     expect(stderrChunks.join("")).toBe("sandbox unavailable: no bwrap\n");
   });
 
-  test("AC-20: the real --probe agrees with this host's sandbox", async () => {
-    const backend = createSrtBackend(DEFAULT_SANDBOX_CONFIG.network);
-    let available: boolean;
-    try {
-      available = (await probeSandbox(backend)).available;
-    } finally {
-      await backend.reset();
-    }
-    const proc = Bun.spawnSync(["bun", "run", CLI, "--probe"], {
-      cwd: PACKAGE_DIR,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    expect(proc.exitCode).toBe(available ? 0 : SANDBOX_UNAVAILABLE_EXIT);
-    if (!available) expect(proc.stderr.toString()).toStartWith("sandbox unavailable: ");
-  }, 30_000);
+  // A confined run withholds nested sandbox creation (Linux namespaces and
+  // macOS Seatbelt). Keep the real host probe outside that outer sandbox;
+  // the seam-based exit-code contract above still runs confined.
+  test.skipIf(isConfinedTestRun())(
+    "AC-20: the real --probe agrees with this host's sandbox",
+    async () => {
+      const backend = createSrtBackend(DEFAULT_SANDBOX_CONFIG.network);
+      let available: boolean;
+      try {
+        available = (await probeSandbox(backend)).available;
+      } finally {
+        await backend.reset();
+      }
+      const proc = Bun.spawnSync(["bun", "run", CLI, "--probe"], {
+        cwd: PACKAGE_DIR,
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      expect(proc.exitCode).toBe(available ? 0 : SANDBOX_UNAVAILABLE_EXIT);
+      if (!available) expect(proc.stderr.toString()).toStartWith("sandbox unavailable: ");
+    },
+    30_000,
+  );
 });

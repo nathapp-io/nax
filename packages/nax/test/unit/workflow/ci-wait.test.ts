@@ -226,11 +226,12 @@ describe("waitForChecks progress log", () => {
 
   test("B3: a slow forge call does not suppress the heartbeat, and the schedule is cancelled", async () => {
     let heartbeat: (() => void) | undefined;
-    let cancelled = 0;
+    let activeSchedules = 0;
     _ciWaitDeps.schedule = (fn) => {
       heartbeat = fn;
+      activeSchedules++;
       return () => {
-        cancelled += 1;
+        activeSchedules--;
       };
     };
     let clock = 0;
@@ -250,7 +251,56 @@ describe("waitForChecks progress log", () => {
       "green",
     );
     expect(messages().some((m) => m.startsWith("CI wait: still waiting after"))).toBe(true);
-    expect(cancelled).toBe(1);
+    expect(activeSchedules).toBe(0);
+  });
+
+  test("B3: a changed summary resets the heartbeat deadline during a slow next poll", async () => {
+    let clock = 0;
+    const timers = new Set<{ next: number; period: number; fire: () => void }>();
+    const infoAt: number[] = [];
+    addSink((entry) => {
+      if (entry.stage === "workflow" && entry.level === "info") infoAt.push(clock);
+    });
+    _ciWaitDeps.now = () => clock;
+    _ciWaitDeps.schedule = (fire, period) => {
+      const timer = { next: clock + period, period, fire };
+      timers.add(timer);
+      return () => {
+        timers.delete(timer);
+      };
+    };
+    const advance = (ms: number) => {
+      const end = clock + ms;
+      for (;;) {
+        const next = [...timers].sort((a, b) => a.next - b.next)[0];
+        if (!next || next.next > end) break;
+        clock = next.next;
+        next.next += next.period;
+        next.fire();
+      }
+      clock = end;
+    };
+    _ciWaitDeps.sleep = async (ms) => advance(ms);
+    let polls = 0;
+    _ciWaitDeps.run = async () => {
+      polls++;
+      advance(polls === 1 ? 30_000 : 120_000);
+      return polls === 1 ? TWO_CHECKS_PENDING : ALL_PASS;
+    };
+
+    const out = await waitForChecks("github", "b", { cwd: "/repo", timeoutMs: 600_000, pollMs: 30_000 });
+
+    expect(out.outcome).toBe("green");
+    expect(infoAt).toContain(90_000);
+    let previous = 0;
+    for (const at of infoAt) {
+      expect(at - previous).toBeLessThanOrEqual(60_000);
+      previous = at;
+    }
+    expect(timers.size).toBe(0);
+    const before = messages();
+    advance(180_000);
+    expect(messages()).toEqual(before);
   });
 
   test("AC-14: a wait under 60s reports no heartbeat", async () => {

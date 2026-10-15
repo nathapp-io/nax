@@ -20,7 +20,16 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { firstCall, makeDispatchContext, makeMockRuntime, makePluginRegistry, makeStatusWriter } from "@test/helpers";
+import { join } from "node:path";
+import {
+  cleanupTempDir,
+  firstCall,
+  makeDispatchContext,
+  makeMockRuntime,
+  makePluginRegistry,
+  makeStatusWriter,
+  makeTempDir,
+} from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { stopHeartbeat } from "@/execution/crash-recovery";
 import type { SequentialExecutionContext } from "@/execution/unified-executor";
@@ -29,12 +38,18 @@ import type { LoadedHooksConfig } from "@/hooks";
 import type { PRD, UserStory } from "@/prd/types";
 import { createNoOpCostAggregator } from "@/runtime/cost-aggregator";
 
+let workdir: string;
+beforeEach(() => {
+  workdir = makeTempDir("nax-tier-budget-");
+});
+
 const EMPTY_HOOKS: LoadedHooksConfig = { hooks: {} };
 
 // executeUnified starts a heartbeat that runner.ts normally owns; stop it here
 // so the unit suite does not leak parked 60s-timer loops (#1679).
 afterEach(() => {
   stopHeartbeat();
+  cleanupTempDir(workdir);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -73,8 +88,8 @@ function makePrd(stories: ReturnType<typeof makePendingStory>[]): PRD {
 
 function makeCtx(overrides: { parallelCount?: number } = {}): SequentialExecutionContext {
   return {
-    prdPath: "/tmp/test-prd-tier-budget.json",
-    workdir: "/tmp/test-workdir-tier-budget",
+    prdPath: join(workdir, "prd.json"),
+    workdir,
     config: {
       ...DEFAULT_CONFIG,
       execution: {
@@ -100,7 +115,7 @@ function makeCtx(overrides: { parallelCount?: number } = {}): SequentialExecutio
     interactionChain: null,
     ...makeDispatchContext({
       runtime: makeMockRuntime({
-        workdir: "/tmp/nax-test-tier-budget-output",
+        workdir,
         costAggregator: createNoOpCostAggregator(),
       }),
     }),
@@ -382,6 +397,8 @@ describe("US-003: batch executor excludes shouldSkipIteration stories from dispa
 
     const prd = makePrd([story1, story2, story3]);
     const ctx = makeCtx({ parallelCount: 3 });
+    // A skipped sibling reloads the persisted PRD before batch dispatch.
+    await Bun.write(ctx.prdPath, JSON.stringify(prd));
 
     await executeUnified(ctx, prd).catch(() => {});
 
@@ -417,9 +434,11 @@ describe("US-003: batch executor excludes shouldSkipIteration stories from dispa
 
     const prd = makePrd([story1, story2]);
     const ctx = makeCtx({ parallelCount: 2 });
+    await Bun.write(ctx.prdPath, JSON.stringify(prd));
 
     await executeUnified(ctx, prd).catch(() => {});
 
+    expect(preIterationTierCheckMock).toHaveBeenCalledTimes(2);
     expect(runParallelBatchMock).not.toHaveBeenCalled();
   });
 });
