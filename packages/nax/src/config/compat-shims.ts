@@ -9,7 +9,7 @@
  * file under the source-file size limit and to give the shim chain one home.
  */
 
-import { warnOrDefer } from "../logger";
+import { type getLogger, warnOrDefer } from "../logger";
 import { _applyFinishStepTimeoutShim } from "./finish-timeouts-shim";
 import {
   type ConfigWarnLogger,
