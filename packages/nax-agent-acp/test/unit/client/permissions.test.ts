@@ -388,11 +388,28 @@ describe("full: R4 edit path check (nax#2500)", () => {
     expect(seen.auto[0]?.req.reason).toBe(FULL_REASON);
   });
 
-  test("an edit with no path is allowed (today's behaviour)", async () => {
+  test.each(["edit", "delete", "move"])("a %s with no path gets the outside-roots decision", async (kind) => {
+    const { port, seen } = asks();
+    const ctx = fullCtx(port, { sandbox: SANDBOX, cwd: ROOT });
+    expect(await decidePermission(edit({ kind }), ctx)).toEqual(
+      await decidePermission(edit({ kind, locations: [{ path: "/etc/x" }] }), ctx),
+    );
+    expect(seen.auto.map((entry) => entry.req.reason)).toEqual([
+      OUTSIDE_WRITE_ROOTS_REASON,
+      OUTSIDE_WRITE_ROOTS_REASON,
+    ]);
+  });
+
+  test("other with no target stays allowed with a sandbox", async () => {
     const { port } = asks();
-    expect(await decidePermission(edit({}), fullCtx(port, { sandbox: SANDBOX, cwd: ROOT }))).toEqual(
+    expect(await decidePermission(edit({ kind: "other" }), fullCtx(port, { sandbox: SANDBOX }))).toEqual(
       selected("allow_once"),
     );
+  });
+
+  test("edit with no target stays allowed without a sandbox", async () => {
+    const { port } = asks();
+    expect(await decidePermission(edit({}), fullCtx(port))).toEqual(selected("allow_once"));
   });
 
   test("full with no sandbox in ctx: an outside edit is allowed", async () => {

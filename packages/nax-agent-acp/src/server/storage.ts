@@ -16,6 +16,7 @@ import { acquireSessionLock } from "#src/server/session-lock";
 
 export { LOCK_HEARTBEAT_MS, LOCK_STALE_MS } from "#src/server/session-lock";
 
+export const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 export const LIST_PAGE_SIZE = 50;
 const META_SUFFIX = ".session.json";
 

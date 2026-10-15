@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { randomUUID } from "node:crypto";
 import { PassThrough } from "node:stream";
 import { client, PROTOCOL_VERSION, RequestError } from "@agentclientprotocol/sdk";
 import { createMemoryTranscriptStore } from "@nathapp/nax-agent";
@@ -8,7 +9,7 @@ import { initializeResponse } from "#src/server/capabilities";
 import { buildAgentApp, serveStdio } from "#src/server/connection";
 import { createSessionRegistry, type RegistryDeps } from "#src/server/registry";
 import { TURN_TIMEOUT_SECONDS } from "#src/server/server-session";
-import { createSessionStorage } from "#src/server/storage";
+import { createSessionStorage, SESSION_ID_PATTERN } from "#src/server/storage";
 import { recordingLogger } from "#test/helpers/recording-logger";
 
 let dir: string;
@@ -77,6 +78,33 @@ describe("initialize (S5-0/S5-3 capabilities)", () => {
     expect(result.init.agentInfo?.version).toBe("9.9.9");
     expect(result.failure).toBeInstanceOf(RequestError);
     expect(result.failure instanceof RequestError ? result.failure.code : 0).toBe(-32601);
+  });
+});
+
+describe("client session ids", () => {
+  test.each([
+    ["session/delete", "../x"],
+    ["session/load", "a/b"],
+    ["session/resume", "x".repeat(129)],
+  ] as const)("%s rejects unsafe ids before reaching storage", async (method, sessionId) => {
+    const deps = appDeps();
+    let accessed = false;
+    const unexpected = async (): Promise<never> => {
+      accessed = true;
+      throw new Error("registry must not be reached");
+    };
+    const registry = { ...deps.registry, delete: unexpected, load: unexpected, resume: unexpected };
+    const failure = await client({ name: "test" }).connectWith(buildAgentApp({ ...deps, registry }), async (agent) => {
+      await agent.request("initialize", { protocolVersion: PROTOCOL_VERSION });
+      return agent.request(method, { sessionId, cwd: dir, mcpServers: [] }).catch((e: unknown) => e);
+    });
+    expect(failure).toBeInstanceOf(RequestError);
+    expect(failure instanceof RequestError ? failure.code : 0).toBe(-32602);
+    expect(accessed).toBe(false);
+  });
+
+  test("production UUIDs match the session id pattern", () => {
+    expect(randomUUID()).toMatch(SESSION_ID_PATTERN);
   });
 });
 

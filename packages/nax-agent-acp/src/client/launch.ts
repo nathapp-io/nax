@@ -17,6 +17,8 @@ import type { LaunchCandidate } from "#src/client/registry";
 
 /** How long a transport failure waits for the exit status. */
 const GONE_WAIT_MS = 1_000;
+/** Test seam for process-group signalling. */
+export const _launchDeps = { killProcessGroup };
 /** How long, after the exit, the last stderr may take to arrive. */
 const STDERR_DRAIN_MS = 200;
 
@@ -40,7 +42,7 @@ export interface LaunchedAgent {
   readonly exited: Promise<AgentExit>;
   /** The exit once the process has exited (and its stderr drained), or undefined after `waitMs`. */
   whenGone(waitMs: number): Promise<AgentExit | undefined>;
-  /** Closes stdin, SIGTERMs the group, SIGKILLs it after `graceMs`; resolves once exited. */
+  /** Closes stdin, SIGTERMs the group, SIGKILLs survivors on leader exit or after `graceMs`; resolves once exited. */
   terminate(graceMs: number): Promise<void>;
   /** SIGKILLs the group now. */
   kill(): void;
@@ -149,7 +151,9 @@ function startedLaunch(
     gone = true;
   });
   const kill = (): void => {
-    if (!gone && pid !== undefined) killProcessGroup(pid, "SIGKILL");
+    if (pid === undefined) return;
+    if (gone) _launchDeps.killProcessGroup(pid, "SIGKILL", { singleProcessFallback: false });
+    else _launchDeps.killProcessGroup(pid, "SIGKILL");
   };
   return {
     target: { kind: "stream", stream },
@@ -164,14 +168,20 @@ function startedLaunch(
       return exit.value;
     },
     async terminate(graceMs) {
-      if (!gone && pid !== undefined) {
-        child.stdin.end();
-        killProcessGroup(pid, "SIGTERM");
-        const timer = setTimeout(kill, graceMs);
+      if (pid === undefined) {
         await exited;
+        return;
+      }
+      if (!gone) child.stdin.end();
+      if (gone) _launchDeps.killProcessGroup(pid, "SIGTERM", { singleProcessFallback: false });
+      else _launchDeps.killProcessGroup(pid, "SIGTERM");
+      const timer = setTimeout(kill, graceMs);
+      try {
+        await exited;
+        kill();
+      } finally {
         clearTimeout(timer);
       }
-      await exited;
     },
   };
 }

@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { isProcessAlive } from "@nathapp/nax-agent";
+import { isProcessAlive, killProcessGroup } from "@nathapp/nax-agent";
 import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
 import { waitForCondition } from "@nathapp/nax-test-kit/bun/timeout";
 import {
+  _launchDeps,
   agentGoneError,
   findExecutable,
   type LaunchedAgent,
@@ -121,6 +122,71 @@ describe("launchAgent (spec §6.1 launch)", () => {
     await waitForCondition(() => readRecords(record).length > 0, 5_000);
     await agent.terminate(150);
     expect((await agent.exited).signal).toBe("SIGKILL");
+  });
+
+  test("kill after leader exit signals only the group", async () => {
+    const { agent } = fake({ startup: { exitCode: 0 } });
+    await agent.exited;
+    const original = _launchDeps.killProcessGroup;
+    const calls: unknown[] = [];
+    _launchDeps.killProcessGroup = (...args) => {
+      calls.push(args);
+      return true;
+    };
+    try {
+      agent.kill();
+      expect(calls).toEqual([[agent.pid, "SIGKILL", { singleProcessFallback: false }]]);
+    } finally {
+      _launchDeps.killProcessGroup = original;
+    }
+  });
+
+  test("terminate SIGKILLs the group immediately on leader exit and clears its timer", async () => {
+    const { agent, record } = fake({ startup: { hang: true } });
+    await waitForCondition(() => readRecords(record).length > 0, 5_000);
+    const original = _launchDeps.killProcessGroup;
+    const calls: unknown[][] = [];
+    _launchDeps.killProcessGroup = (...args) => {
+      calls.push(args);
+      return original(...args);
+    };
+    try {
+      const start = Date.now();
+      await agent.terminate(500);
+      expect(Date.now() - start).toBeLessThan(400);
+      expect(calls).toEqual([
+        [agent.pid, "SIGTERM"],
+        [agent.pid, "SIGKILL", { singleProcessFallback: false }],
+      ]);
+      await new Promise((resolve) => setTimeout(resolve, 550));
+      expect(calls).toHaveLength(2);
+    } finally {
+      _launchDeps.killProcessGroup = original;
+    }
+  });
+
+  test("kill reaps a grandchild after its leader exited (integration)", async () => {
+    const pidFile = join(dir, "grandchild.pid");
+    const script = `const {spawn}=require('node:child_process'); const fs=require('node:fs'); spawn('/bin/sh',['-c','sleep 30 & echo $! > "$1"; wait','orphan-fixture',process.argv[1]],{stdio:'ignore'}); setInterval(()=>{if(fs.existsSync(process.argv[1])) process.exit(0)},10);`;
+    const agent = launchAgent({
+      command: process.execPath,
+      args: ["-e", script, pidFile],
+      cwd: dir,
+      env: { PATH: process.env.PATH ?? "/bin:/usr/bin" },
+    });
+    launched.push(agent);
+    await agent.exited;
+    const grandchild = Number(readFileSync(pidFile, "utf8").trim());
+    try {
+      expect(isProcessAlive(grandchild)).toBe(true);
+      agent.kill();
+      await waitForCondition(() => !isProcessAlive(grandchild), 2_000);
+    } finally {
+      // Explicit group cleanup also runs against the pre-fix implementation.
+      killProcessGroup(agent.pid ?? -1, "SIGKILL", {
+        singleProcessFallback: false,
+      });
+    }
   });
 
   test("kill reaches the whole process group", async () => {

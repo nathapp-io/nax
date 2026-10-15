@@ -16,6 +16,8 @@ import { isRecord } from "#src/client/text";
 
 export const OUTSIDE_WRITE_ROOTS_REASON = "the edit target is outside the sandbox write roots";
 const RAW_PATH_KEYS = ["file_path", "notebook_path"] as const;
+const WRITE_PATH_KEYS = [...RAW_PATH_KEYS, "path", "filePath", "old_path", "new_path"] as const;
+export const WRITE_KINDS: ReadonlySet<string> = new Set(["edit", "delete", "move"]);
 /** Test seam: the platform decides whether path comparison folds case (darwin and win32 filesystems are case-insensitive by default). */
 export const _editTargetsDeps = { platform: (): string => process.platform };
 
@@ -27,7 +29,8 @@ export function editTargets(toolCall: unknown): readonly string[] {
       )
     : [];
   const raw = isRecord(toolCall.rawInput) ? toolCall.rawInput : {};
-  const fromRaw = RAW_PATH_KEYS.flatMap((k) => (typeof raw[k] === "string" && raw[k] !== "" ? [raw[k] as string] : []));
+  const keys = typeof toolCall.kind === "string" && WRITE_KINDS.has(toolCall.kind) ? WRITE_PATH_KEYS : RAW_PATH_KEYS;
+  const fromRaw = keys.flatMap((k) => (typeof raw[k] === "string" && raw[k] !== "" ? [raw[k] as string] : []));
   return [...new Set([...fromLocations, ...fromRaw])];
 }
 
