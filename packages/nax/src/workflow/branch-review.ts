@@ -65,11 +65,12 @@ export async function runBranchReview(
         timeoutMs: fc.workflow.timeouts.reviewMs,
         minorIds: input.facts.minors.map((m) => m.id),
         requiredFiles,
+        repoRoot: fc.projectDir,
         range,
       }),
   );
   if (!outcome.ran) return outcome;
-  const unread = unreadFiles(requiredFiles, outcome.verdict.inspectedFiles ?? []);
+  const unread = unreadFiles(requiredFiles, outcome.verdict.inspectedFiles ?? [], fc.projectDir);
   // A spread, not a mutation: the verdict the op returned is also written as an artifact elsewhere.
   return unread.length > 0 ? { ran: true, verdict: { ...outcome.verdict, unreadFiles: unread } } : outcome;
 }

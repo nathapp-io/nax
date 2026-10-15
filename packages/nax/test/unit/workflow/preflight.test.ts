@@ -100,7 +100,7 @@ describe("runPreflight", () => {
   test("existing valid preflight.json is reused: no advisor call, no ledger lines (resume)", async () => {
     const runDir = makeTempDir("wf-pf-");
     dirs.push(runDir);
-    const saved: PreflightFile = { schemaVersion: 1, overlap: [], conflicts: [] };
+    const saved: PreflightFile = { schemaVersion: 1, storyIds: ["US-1"], overlap: [], conflicts: [] };
     await Bun.write(join(runDir, "preflight.json"), JSON.stringify(saved));
     const advisor = advisorReturning({ kind: "preflight", overlap: [], items: [] });
     const lines: string[] = [];
@@ -118,9 +118,13 @@ describe("runPreflight", () => {
   });
 
   test.each([
+    ["legacy missing storyIds", JSON.stringify({ schemaVersion: 1, overlap: [], conflicts: [] })],
     ["corrupt JSON", "{not json"],
     ["wrong shape", '{"schemaVersion":2}'],
-    ["failed pre-flight", JSON.stringify({ schemaVersion: 1, overlap: [], conflicts: [], fallbackReason: "boom" })],
+    [
+      "failed pre-flight",
+      JSON.stringify({ schemaVersion: 1, storyIds: ["US-1"], overlap: [], conflicts: [], fallbackReason: "boom" }),
+    ],
   ])("unusable existing file (%s) re-runs the advisor and writes a valid file", async (_name, content) => {
     const runDir = makeTempDir("wf-pf-");
     dirs.push(runDir);
@@ -141,6 +145,7 @@ describe("runPreflight", () => {
       storyIds: ["US-1"],
       ledger: async () => {},
     });
+    expect(file.storyIds).toEqual(["US-1"]);
     expect(file.conflicts).toEqual([]);
     expect(await Bun.file(preflightPath(runDir)).exists()).toBe(true);
   });
@@ -154,6 +159,7 @@ describe("preflight.json reuse checks element shape (PR3 M6)", () => {
       preflightPath(runDir),
       JSON.stringify({
         schemaVersion: 1,
+        storyIds: ["US-1"],
         overlap: [],
         conflicts: [{ questionId: "Q-1", summary: "s", decisionId: null, action: "hold" }],
       }),
@@ -168,7 +174,12 @@ describe("preflight.json reuse checks element shape (PR3 M6)", () => {
     dirs.push(runDir);
     await Bun.write(
       preflightPath(runDir),
-      JSON.stringify({ schemaVersion: 1, overlap: [{ storyId: "US-1", specSections: [3] }], conflicts: [] }),
+      JSON.stringify({
+        schemaVersion: 1,
+        storyIds: ["US-1"],
+        overlap: [{ storyId: "US-1", specSections: [3] }],
+        conflicts: [],
+      }),
     );
     const advisor = advisorReturning({ kind: "preflight", overlap: [], items: [] });
     await runPreflight({ advisor, runDir, storyIds: ["US-1"], ledger: async () => {} });
@@ -180,6 +191,7 @@ describe("preflight.json reuse checks element shape (PR3 M6)", () => {
     dirs.push(runDir);
     const file: PreflightFile = {
       schemaVersion: 1,
+      storyIds: ["US-1"],
       overlap: [{ storyId: "US-1", specSections: ["3"] }],
       conflicts: [{ questionId: "Q-1", storyIds: ["US-1"], summary: "s", decisionId: "D-1", action: "supersede" }],
     };

@@ -1,10 +1,10 @@
 /** Story brief (spec §6 step 1): requirements, spec excerpts, rulings, red-base warnings. */
 import { mkdir } from "node:fs/promises";
-import { isAbsolute, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import type { AdviceDecision } from "@/advisor";
 import { getLogger } from "@/logger";
 import { buildWorkflowBrief } from "@/prompts";
-import { readResult } from "./result";
+import { collectStoryRecords } from "./feature-record";
 import { rulingsForStory } from "./rulings";
 import { _workflowDeps, type StepContext } from "./step-context";
 
@@ -50,9 +50,9 @@ async function loadSpec(sc: StepContext): Promise<{ path?: string; excerpts: str
 }
 
 async function redBaseDependencies(sc: StepContext): Promise<{ storyId: string; reason: string }[]> {
-  const result = await readResult(sc.runDir);
+  const records = await collectStoryRecords(dirname(sc.runDir));
   return (sc.story.dependencies ?? [])
-    .map((id) => result?.stories[id])
+    .map((id) => records[id]?.record)
     .filter((r) => r?.state === "complete-gate-open")
     .map((r) => ({ storyId: r?.storyId ?? "", reason: r?.reason ?? "gate red" }));
 }

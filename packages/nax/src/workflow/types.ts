@@ -52,6 +52,8 @@ export interface WorkflowRuling {
 }
 
 export interface WorkflowStoryRecord {
+  /** HEAD before the pending fix, retained until its re-review completes. */
+  readonly fixBase?: string;
   readonly storyId: string;
   readonly state?: WorkflowEndState;
   readonly reason?: string;

@@ -108,10 +108,18 @@ describe("runWorkflowPreflight (P4-R14)", () => {
     const { input, calls, featureDir, runDir } = setup();
     const old = join(featureDir, "r-old");
     await upsertStoryRecord(old, { runId: "r-old", feature: "f" }, newStoryRecord("US-001", 5, "t"));
-    await Bun.write(preflightPath(old), JSON.stringify({ schemaVersion: 1, overlap: [], conflicts: [] }));
+    await Bun.write(
+      preflightPath(old),
+      JSON.stringify({ schemaVersion: 1, storyIds: ["US-001"], overlap: [], conflicts: [] }),
+    );
     await runWorkflowPreflight(input);
     expect(calls).toHaveLength(0);
-    expect(await Bun.file(preflightPath(runDir)).json()).toEqual({ schemaVersion: 1, overlap: [], conflicts: [] });
+    expect(await Bun.file(preflightPath(runDir)).json()).toEqual({
+      schemaVersion: 1,
+      storyIds: ["US-001"],
+      overlap: [],
+      conflicts: [],
+    });
   });
 
   test("fail-open: an advisor failure never throws", async () => {
@@ -125,9 +133,9 @@ describe("adoptPriorPreflight", () => {
     const { featureDir, runDir } = setup();
     await Bun.write(
       preflightPath(runDir),
-      JSON.stringify({ schemaVersion: 1, overlap: [], conflicts: [], mine: true }),
+      JSON.stringify({ schemaVersion: 1, storyIds: ["US-001"], overlap: [], conflicts: [], mine: true }),
     );
-    expect(await adoptPriorPreflight(featureDir, runDir)).toBe(false);
+    expect(await adoptPriorPreflight(featureDir, runDir, ["US-001"])).toBe(false);
   });
 });
 
@@ -210,5 +218,46 @@ describe("runWorkflowPreflight — a failing accounting write is contained (US-0
     expect(String(entry?.data?.error)).toContain("disk full");
     // Debug, not warn: the run's own spend is already persisted and the pre-flight result stands.
     expect(logs.filter((e) => e.level === "warn" && String(e.data?.error).includes("disk full"))).toHaveLength(0);
+  });
+});
+
+describe("US-002 story-set reuse", () => {
+  test.each([
+    ["AC-1", ["US-001", "US-002"], true],
+    ["AC-2", ["US-001"], false],
+  ] as const)("%s adoption", async (_ac, ids, expected) => {
+    const { featureDir, runDir } = setup();
+    const old = join(featureDir, "r-old");
+    await upsertStoryRecord(old, { runId: "r-old", feature: "f" }, newStoryRecord("US-001", 5, "t"));
+    const saved = {
+      schemaVersion: 1,
+      storyIds: expected ? ["US-002", "US-001"] : ["US-001", "US-002"],
+      overlap: [],
+      conflicts: [],
+    };
+    await Bun.write(preflightPath(old), JSON.stringify(saved));
+    expect(await adoptPriorPreflight(featureDir, runDir, ids)).toBe(expected);
+    expect(await Bun.file(preflightPath(runDir)).exists()).toBe(expected);
+    if (expected) expect(await Bun.file(preflightPath(runDir)).json()).toEqual(saved);
+  });
+  test("AC-3 changed pending set never logs reuse", async () => {
+    const { input, calls, featureDir } = setup();
+    const old = join(featureDir, "r-old");
+    await upsertStoryRecord(old, { runId: "r-old", feature: "f" }, newStoryRecord("US-001", 5, "t"));
+    await Bun.write(
+      preflightPath(old),
+      JSON.stringify({ schemaVersion: 1, storyIds: ["US-001", "US-002"], overlap: [], conflicts: [] }),
+    );
+    resetLogger();
+    initLogger({ level: "silent" });
+    const logs: LogEntry[] = [];
+    addSink((e) => logs.push(e));
+    try {
+      await runWorkflowPreflight(input);
+      expect(logs.some((e) => e.message === "Reusing the pre-flight of an earlier run")).toBe(false);
+      expect(calls).toHaveLength(1);
+    } finally {
+      resetLogger();
+    }
   });
 });

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { utimes } from "node:fs/promises";
 import { join } from "node:path";
 import { cleanupTempDir, makeStepContext, makeTempDir, makeTestStory } from "@test/helpers";
 import { specExcerpts, writeBrief } from "@/workflow/brief";
@@ -89,5 +90,39 @@ describe("writeBrief", () => {
     const text = await Bun.file(sc.briefPath).text();
     expect(text).toContain("Rulings in force");
     expect(text).toContain("Carried from US-1 (D-4): Keep lock order");
+  });
+});
+
+describe("US-002 cross-run dependencies", () => {
+  test.each(["complete-gate-open", "complete"] as const)("AC-19/20 newest earlier state %s", async (state) => {
+    const root = makeTempDir("wf-brief-cross-");
+    dirs.push(root);
+    for (const [run, priorState] of [
+      ["older", state === "complete" ? "complete-gate-open" : "complete"],
+      ["earlier", state],
+    ] as const) {
+      await upsertStoryRecord(
+        join(root, run),
+        { runId: run, feature: "f" },
+        { ...newStoryRecord("US-001", 5, "t"), state: priorState, reason: "dependency reason" },
+      );
+      const date = new Date(run === "older" ? "2025-01-01" : "2025-01-02");
+      await utimes(join(root, run, "result.json"), date, date);
+    }
+    const runDir = join(root, "now");
+    const sc = makeStepContext({
+      projectDir: root,
+      runDir,
+      story: makeTestStory({ id: "US-002", dependencies: ["US-001"] }),
+      storyDir: join(runDir, "US-002"),
+      briefPath: join(runDir, "US-002", "brief.md"),
+    });
+    await writeBrief(sc);
+    const text = await Bun.file(sc.briefPath).text();
+    expect(text.includes("red base")).toBe(state === "complete-gate-open");
+    if (state === "complete-gate-open") {
+      expect(text).toContain("US-001");
+      expect(text).toContain("dependency reason");
+    }
   });
 });

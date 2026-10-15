@@ -55,6 +55,7 @@ export function featureModelFor(fc: FeatureContext): NonNullable<FeatureSteps["m
         timeoutMs: NO_TIMEOUT,
         minorIds: [],
         requiredFiles: [],
+        repoRoot: fc.projectDir,
         range: "",
       });
     }

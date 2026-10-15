@@ -16,6 +16,7 @@ import { WORKFLOW_REVIEW_TOOLS, type WorkflowReviewInput } from "./workflow-stor
 import type { BranchReviewVerdict } from "./workflow-types";
 
 export interface WorkflowBranchReviewInput extends WorkflowReviewInput {
+  readonly repoRoot: string;
   /** The deferred minors the reviewer must triage, in prompt order. */
   readonly minorIds: readonly string[];
   /** The changed files the reviewer must inspect (US-002): the package minus tests and non-source files. */
@@ -55,7 +56,7 @@ export const workflowBranchReviewOp: RunOperation<
      */
     const invalid = (lastOutput: string): string => {
       const verdict = parseBranchReviewReply(lastOutput, input.minorIds);
-      const missing = verdict ? unreadFiles(input.requiredFiles, verdict.inspectedFiles) : [];
+      const missing = verdict ? unreadFiles(input.requiredFiles, verdict.inspectedFiles, input.repoRoot) : [];
       return missing.length > 0
         ? buildWorkflowBranchCoverageRetry(input.range, missing)
         : buildWorkflowReviewJsonRetry();
@@ -66,7 +67,7 @@ export const workflowBranchReviewOp: RunOperation<
       // the retry's validation but NOT of `op.parse`, which stays the lenient shape check. Coverage
       // decides only whether to ask again; an incomplete verdict is kept, findings included.
       validate: (parsed) =>
-        parsed !== null && isCompleteBranchVerdict(parsed as BranchReviewVerdict, input.requiredFiles),
+        parsed !== null && isCompleteBranchVerdict(parsed as BranchReviewVerdict, input.requiredFiles, input.repoRoot),
       reviewerKind: "workflow-branch-review",
       maxAttempts: 2,
       prompts: { invalid, truncated: buildWorkflowReviewJsonRetryCondensed },

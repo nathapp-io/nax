@@ -472,3 +472,53 @@ describe("turnLabel (US-001)", () => {
     }
   });
 });
+
+describe("US-002 persisted fix base", () => {
+  test("AC-4 persists before fix and clears after re-review", async () => {
+    const h = harness({ review: [failing()] });
+    h.env.steps.head = async () => "abc";
+    const update = h.env.sink.update;
+    h.env.sink.update = async (patch) => {
+      if (h.record().fixBase && "fixBase" in patch && patch.fixBase === undefined) {
+        expect(patch.openFindings).toEqual([]);
+      }
+      await update(patch);
+    };
+    const implement = h.env.steps.implement;
+    h.env.steps.implement = async (turn) => {
+      if (turn.kind === "fix") expect(h.record().fixBase).toBe("abc");
+      return implement(turn);
+    };
+    await runStoryLoop(h.env);
+    expect(fixTurns(h.turns)).toHaveLength(1);
+    expect(h.record().fixBase).toBeUndefined();
+  });
+  test("AC-5 resumed fix is re-reviewed before a new fix", async () => {
+    const h = harness(
+      {},
+      {
+        resume: {
+          ...newStoryRecord("US-001", 5, "t"),
+          reviewed: true,
+          round: 1,
+          fixBase: "abc",
+          openFindings: [{ id: "F1", kind: "spec", severity: "important", issue: "gap" }],
+        },
+      },
+    );
+    const calls: string[] = [];
+    h.env.steps.reReview = async (_round, findings, base) => {
+      calls.push(`review:${base}`);
+      return {
+        ran: true,
+        verdict: { verdicts: findings.map((f) => ({ id: f.id, addressed: true, note: "" })), newFindings: [] },
+      };
+    };
+    h.env.steps.implement = async () => {
+      calls.push("fix");
+      return ok;
+    };
+    await runStoryLoop(h.env);
+    expect(calls).toEqual(["review:abc"]);
+  });
+});

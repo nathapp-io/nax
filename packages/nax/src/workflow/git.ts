@@ -218,3 +218,17 @@ export async function writeReviewPackage(projectDir: string, from: string, path:
     `## Commits (${range})\n${log.stdout.trim() || "(none)"}\n\n## Stat\n${stat.stdout.trim() || "(no changes)"}\n\n## Diff\n${body}\n${omitted}`,
   );
 }
+
+/** The remote's configured default branch; missing origin/HEAD leaves the static protections in force. */
+export async function readDefaultBranch(projectDir: string): Promise<string | undefined> {
+  try {
+    const result = await _workflowDeps.git(
+      ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"],
+      projectDir,
+    );
+    if (result.exitCode !== 0) return undefined;
+    return result.stdout.trim().replace(/^origin\//, "") || undefined;
+  } catch {
+    return undefined;
+  }
+}

@@ -18,6 +18,7 @@ export interface PreflightConflictRecord {
 }
 
 export interface PreflightFile {
+  readonly storyIds: readonly string[];
   readonly schemaVersion: 1;
   readonly overlap: readonly { readonly storyId: string; readonly specSections: readonly string[] }[];
   readonly conflicts: readonly PreflightConflictRecord[];
@@ -57,7 +58,7 @@ function isConflictRecord(v: unknown): boolean {
 
 /** Reusable = this schema, every element well-formed (PR3 M6), and not a failed pre-flight. */
 function isReusable(v: unknown): v is PreflightFile {
-  if (!isRecordObject(v) || v.schemaVersion !== 1 || v.fallbackReason) return false;
+  if (!isRecordObject(v) || v.schemaVersion !== 1 || !isStringArray(v.storyIds) || v.fallbackReason) return false;
   return (
     Array.isArray(v.overlap) &&
     v.overlap.every(isOverlapEntry) &&
@@ -112,6 +113,7 @@ export async function runPreflight(input: {
   }));
   const file: PreflightFile = {
     schemaVersion: 1,
+    storyIds: [...input.storyIds],
     overlap: result.kind === "preflight" ? result.overlap : [],
     conflicts,
     ...(result.kind === "preflight" && result.fallbackReason ? { fallbackReason: result.fallbackReason } : {}),
