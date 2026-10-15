@@ -12,7 +12,9 @@
  * the command; a masked command (its visible words are not the real
  * command); a wrapper or interpreter, whose first word says nothing about what
  * runs. A remembered allow covers only a simple command: one with shell
- * metacharacters (chaining, substitution, redirection) is asked again. A
+ * metacharacters (chaining, substitution, redirection) is asked again, and so
+ * is one with a flag or a non-plain word after the key (`git push origin
+ * --force` under a remembered `git push`), since those change what runs (nax#2553). A
  * remembered reject applies to its key regardless. When S3 settles a request
  * itself (timeout, cancel), the client request is aborted and a late reply is
  * ignored. A failed client request is a deny (M-13).
@@ -129,7 +131,10 @@ export function memoryKey(event: ApprovalEvent): string | undefined {
 /** Whether a remembered decision may answer this request without asking. */
 function memoryApplies(event: ApprovalEvent, decision: Decision): boolean {
   if (decision === "deny" || toolKind(event.tool) !== "execute") return true;
-  return !SHELL_METACHARACTERS.test(event.command ?? "");
+  const command = event.command ?? "";
+  if (SHELL_METACHARACTERS.test(command)) return false;
+  const rest = command.trim().split(/\s+/).slice(2);
+  return rest.every((word) => PLAIN_WORD.test(word) && !word.startsWith("-"));
 }
 
 function choice(response: RequestPermissionResponse): Choice {

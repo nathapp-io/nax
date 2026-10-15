@@ -108,6 +108,8 @@ function gitDenies(root: string, git: GitLayout): string[] {
     join(git.gitDir, "gitdir"),
     join(git.gitDir, "commondir"),
     join(git.gitDir, WORKTREE_CONFIG_FILE),
+    // A linked worktree keeps its own info/ (sparse-checkout) beside the shared one (#2552).
+    join(git.gitDir, "info"),
   ];
 }
 

@@ -142,6 +142,7 @@ describe("buildSandboxPolicy", () => {
       join(gitDir, "gitdir"),
       join(gitDir, "commondir"),
       join(gitDir, "config.worktree"),
+      join(gitDir, "info"),
     ]) {
       expect(policy.denyWrite).toContain(p);
     }

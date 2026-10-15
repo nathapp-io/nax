@@ -352,6 +352,19 @@ describe("reviewer ignore-rule edits cannot hide files from the restore (#2552)"
     expect(existsSync(join(d, "ignored", "pkg", ".gitignore"))).toBe(true);
   });
 
+  test("with no snapshot-time .gitignore list, a reviewer-added visible one is still removed (fail closed)", async () => {
+    const d = await repo();
+    const snap = { ...(await takeRepoSnapshot(d)), ignoreFiles: null };
+    await writeFile(join(d, ".gitignore"), "ignored/\nplanted*\n");
+    await mkdir(join(d, "pkg2"), { recursive: true });
+    await writeFile(join(d, "pkg2", ".gitignore"), "x\n");
+    await writeFile(join(d, "planted1.sh"), "echo planted\n");
+    const report = await restoreRepoSnapshot(snap);
+    expect(existsSync(join(d, "pkg2", ".gitignore"))).toBe(false);
+    expect(existsSync(join(d, "planted1.sh"))).toBe(false);
+    expect(report.failures.some((f) => f.includes("snapshot-time .gitignore list unavailable"))).toBe(true);
+  });
+
   test("a pre-existing ignored path stays untouched after a clean restore", async () => {
     const d = await repo();
     await mkdir(join(d, "ignored"), { recursive: true });

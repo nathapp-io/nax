@@ -29,8 +29,9 @@ export interface IgnoreRuleRestore {
   readonly entries: ReadonlyMap<string, TreeEntry>;
   /**
    * Every .gitignore present when the snapshot was taken, ignored ones included (`node_modules/x/.gitignore`,
-   * `.pytest_cache/.gitignore`). Only a .gitignore outside this list is the reviewer's and removed; `null`
-   * (the list could not be read) removes none, rather than deleting files the review never touched.
+   * `.pytest_cache/.gitignore`). Only a .gitignore outside this list is the reviewer's and removed. `null`
+   * (the list could not be read) still removes every VISIBLE added one — the snapshot tree holds every
+   * visible file, so those can only be the reviewer's — and keeps only the ignored ones, as a failure.
    */
   readonly known: ReadonlySet<string> | null;
   readonly skip: (path: string) => boolean;
@@ -44,6 +45,11 @@ export async function listIgnoreFiles(toplevel: string): Promise<Set<string>> {
     gitRaw(["ls-files", "-z", "-o", "-i", "--exclude-standard", "--", IGNORE_PATHSPEC], toplevel),
   ]);
   return new Set([...visible.split("\0"), ...hidden.split("\0")].filter((p) => p.length > 0));
+}
+
+async function listVisibleIgnoreFiles(toplevel: string): Promise<Set<string>> {
+  const visible = await gitRaw(["ls-files", "-z", "-c", "-o", "--exclude-standard", "--", IGNORE_PATHSPEC], toplevel);
+  return new Set(visible.split("\0").filter((p) => p.length > 0));
 }
 
 async function currentShas(toplevel: string, paths: readonly string[]): Promise<Map<string, string>> {
@@ -65,9 +71,12 @@ export async function restoreIgnoreRules(ctx: IgnoreRuleRestore, failures: strin
       .filter(([p, e]) => basename(p) === IGNORE_FILE && e.type !== "commit" && !ctx.skip(p))
       .map(([p]) => p);
     const wantedSet = new Set(wanted);
-    const known = ctx.known;
-    if (known === null) failures.push("ignore-rules: snapshot-time .gitignore list unavailable; added ones kept");
-    const added = known === null ? [] : current.filter((p) => !wantedSet.has(p) && !known.has(p));
+    const known = ctx.known ?? (await listVisibleIgnoreFiles(toplevel));
+    if (ctx.known === null) failures.push("ignore-rules: snapshot-time .gitignore list unavailable; ignored ones kept");
+    const added =
+      ctx.known === null
+        ? current.filter((p) => !wantedSet.has(p) && known.has(p))
+        : current.filter((p) => !wantedSet.has(p) && !known.has(p));
     for (const p of added) {
       await ctx.remove(join(toplevel, p)).catch((err) => failures.push(`remove ${p}: ${errorMessage(err)}`));
     }
