@@ -3,7 +3,7 @@
   "feature": "workflow-review-depth",
   "branchName": "feat/workflow-review-depth",
   "createdAt": "2026-09-25T00:00:00.000Z",
-  "updatedAt": "2026-10-15T01:53:50.359Z",
+  "updatedAt": "2026-10-15T03:40:15.572Z",
   "userStories": [
     {
       "id": "US-001",
@@ -41,8 +41,8 @@
         "review"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -54,7 +54,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "native",
         "initialProfileId": "native-deepseek",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/prompts/builders/workflow-branch-builder.ts",
@@ -80,7 +82,11 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "d23a5d8fb1de796b182c4ae8400f436f8e4bee35"
     },
     {
       "id": "US-002",
@@ -121,8 +127,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -134,7 +140,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "native",
         "initialProfileId": "native-deepseek",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/git.ts",
@@ -161,7 +169,11 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "b6a5222137e4731929a404830ccfa6b180de4ea7"
     },
     {
       "id": "US-003",
@@ -203,8 +215,8 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -216,7 +228,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "native",
         "initialProfileId": "native-deepseek",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/agents/retry/parse-retry.ts",
@@ -237,7 +251,11 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "99d23ce64d0799b038c6facaaf4f0a2e1d6e1823"
     }
   ],
   "analysis": "Goal and completion: close nathapp-io/nax#2532 items A, B and D by deepening workflow story/whole-branch quality review, replacing only the whole-branch inline patch with a complete changed-file manifest, and making incomplete self-reported inspection a deterministic draft reason after one same-session retry. This is an enhancement of packages/nax, not a new subsystem or a change to nax-agent, nax-agent-acp or nax-ai. No implementation files were changed during PRD drafting. Graph-navigation tools were unavailable; findings below were verified with direct reads and text searches.\n\nArchitecture and conventions: docs/architecture/ARCHITECTURE.md:17 identifies the shared dependency-injection/error conventions; docs/architecture/ARCHITECTURE.md:94 identifies prompt construction as owned by src/prompts. Keep instructional text in prompt builders, access external git and resolver calls through _workflowDeps, use Bun file APIs and bun:test, restore injected dependencies after tests, and preserve public barrels. The operations-to-workflow boundary is explicit in packages/nax/src/operations/workflow-types.ts:1: operations owns the reply types because workflow consumes operations, never the reverse. Therefore unreadFiles and isCompleteBranchVerdict belong in operations, while package ownership and test-pattern classification belong in workflow/review-coverage.ts. Workflow imports unreadFiles through @/operations; git imports buildBranchPackageReadingNote through @/prompts. Exports to extend are packages/nax/src/prompts/index.ts:73 and packages/nax/src/operations/index.ts:157.\n\nUS-001 impact: packages/nax/src/prompts/builders/workflow-story-review-builder.ts:28 builds the story prompt with optional gate context; its quality remit is generic and its observed excerpt/noise guard must remain. packages/nax/src/prompts/builders/workflow-branch-builder.ts:9 defines BranchReviewPromptInput without range, :50 defines REVIEW_JSON without inspectedFiles/observed, and :53 builds the prompt with an inline-diff/truncation description and a do-not-re-review sentence. Add the verbatim shared constants, broaden only the whole-branch remit, and preserve the repoGates/gates blocks and both CANNOT_VERIFY_RULEs introduced by verification fidelity. The existing branch fix and branch re-review builders in that file stay scoped as they are. packages/nax/src/workflow/branch-review.ts:38 is the production caller that must supply seed..HEAD. New pure unreadFiles should compare exact case-sensitive repo-rooted paths or slash-boundary suffixes after stripping a leading ./; do not accidentally treat package-relative paths, directories or :line suffixes as coverage. Existing tests in packages/nax/test/unit/prompts/workflow-branch-builder.test.ts:40 explicitly require the old do-not-re-review text; :47 requires omitted-file text. Replace only those obsolete expectations, preserve Cross-story integration, Reachability, minorTriage, column type and width, and migration assertions, and add range to prompt, empty and gateBase fixtures at :11, :55 and :70. New checklist and pure coverage test files are explicit US-001 outputs.\n\nUS-002 impact: packages/nax/src/workflow/git.ts:97 contains writeReviewPackage, which concurrently gathers log, stat, -U10 patch and NUL-separated names, then truncates the patch. packages/nax/src/review/diff-utils.ts:17 pins DIFF_CAP_BYTES to 51_200 and :20 defines ALWAYS_EXCLUDED. Do not alter either constant or the existing writer: add writeBranchReviewPackage beside it with log/stat/name-status only and the same NaxError failure code. Parse NUL records, not whitespace or line-delimited names; R/C consume two paths and lose their score in rendering, D is displayed but not returned, and T remains returned like M. Every diff uses -- . and ALWAYS_EXCLUDED; no --unified argument or patch body belongs in this writer. packages/nax/src/workflow/branch-review.ts:50 currently passes writeReviewPackage directly to underReviewLimit; replace only that whole-branch callback with an async callback that writes the manifest then computes requiredFiles into an invocation-local variable. packages/nax/src/workflow/story-review.ts:21 catches callback errors as review package failed before starting the timed op; :33 preserves timeout/unparseable outcomes. Computing classification outside this callback would lose that failure boundary. runBranchReReview at packages/nax/src/workflow/branch-review.ts:63 must continue using writeReviewPackage.\n\nClassification seam: packages/nax/src/workflow/step-context.ts:49 defines _workflowDeps and needs resolveTestPatterns. packages/nax/src/test-runners/resolver.ts:143 defines resolveTestFilePatterns(config, workdir, packageDir?, options?), with regex at :48; this is the classification SSOT and honors per-package overrides and explicitly empty patterns. Detection is package-relative at :211, so preserve proper package-relative matching semantics for anchored patterns, while returning original repo-rooted paths. FeatureContext.packageDirs is already present at packages/nax/src/workflow/feature-context.ts:50 and constructed at :102. Select the longest directory-prefix owner with a directory boundary, use undefined for root/unowned paths, and use that owner's regex set; avoid accidentally treating apps/api2 as owned by apps/api. A resolver exception warns with storyId _run and keeps that package's possible tests required; do not substitute root test patterns on that error. Non-source exclusions are the spec's fixed case-insensitive basename list, not a broad source-extension allowlist: config, JSON, YAML, i18n and unmatched helpers remain required. Add readonly requiredFiles/range to WorkflowBranchReviewInput in this story so its production caller and typed fixtures evolve together; coverage retry behavior belongs to US-003. BranchReviewVerdict at packages/nax/src/operations/workflow-types.ts:74 gains optional unreadFiles computed by nax, never accepted as reviewer-provided truth.\n\nUS-002 regression fixtures: packages/nax/test/unit/workflow/branch-review.test.ts:17 stubs git with empty stdout, so existing successful results remain exactly { ran: true, verdict } without an unreadFiles property. Its null-verdict case at :63 remains unparseable reply. packages/nax/test/unit/operations/workflow-branch-review.test.ts:13 has the typed input fixture requiring requiredFiles: [] and range: seed0..HEAD. packages/nax/test/unit/workflow/git.test.ts:42, :70, :91, :113 and :135 protect the original inline writer, truncation, type-change/rename handling and git failures; extend this existing file for the new writer instead of modifying old behavior. New review-coverage.test.ts exercises the classifier and injected resolver warning path.\n\nUS-003 impact: packages/nax/src/agents/retry/parse-retry.ts:13 currently types prompts.invalid as () => string, and :119 calls it without lastOutput. Extend this callback to (lastOutput: string) => string and pass ctx.lastOutput. Existing zero-argument callbacks remain assignable; callers include workflow story/re-review, finish spec/branch review, plan/refine, semantic/adversarial review and setup generation (for example packages/nax/src/operations/workflow-story-review.ts:43 and packages/nax/src/operations/finish-branch-review.ts:52). Do not change their behavior or their retry budgets. packages/nax/src/operations/workflow-branch-review.ts:43 currently shape-validates with maxAttempts 2 and a null fallback; make validation require coverage, but retain lenient parse and parseBranchReviewReply as the shared shape check. packages/nax/src/operations/workflow-replies.ts:125 normalizes inspectedFiles through strings(), and :178 extends that parsed story verdict with minor triage; these parsers are read-only integration points. Missing inspectedFiles on a stubbed/legacy verdict must also be tolerated in runBranchReview, independent of the parser's normal normalization.\n\nSame-session behavior is already provided by packages/nax/src/operations/call-dispatch-run.ts:285: sendWithParseRetry calls the session send again, probes strategy.validate on each reply and returns the last turn. The authoritative final parse in that file uses op.parse(rawOutput); do not introduce a new session, independent coverage loop, fallback agent or extra retry budget. Use maxAttempts 2 for parse and coverage combined; only unparseable output can select the condensed truncation prompt. A parseable incomplete final verdict remains usable with findings. Conversely, an unparseable retry or timed-out retry discards the first reply; no first-verdict cache. The required validate-versus-parse exception is ALREADY recorded at .nax/rules/retry-strategy.md:116; preserve it rather than duplicating or removing it. Generated .claude/rules copies are not hand-edited.\n\nReadiness integration: packages/nax/src/workflow/feature-machine.ts:180 runs the branch review, assigns finding IDs, writes its artifact and persists the step patch; :386 merges/persists each step. Add reviewUnread to the patch only for a non-empty returned unreadFiles list and emit one ledgerText.note using describeUnread; findings and existing fix/adjudication routing remain intact. packages/nax/src/workflow/types.ts:169 owns WorkflowFeatureRecord, whose new field must remain optional for historic records and existing fixtures. packages/nax/src/workflow/approval.ts:10 defines ReadinessFacts and :30 returns stable ordered reasons; append the unread reason last and share its five-path-limited formatter with the ledger. packages/nax/src/workflow/finalize.ts:329 builds publish facts, while :314 asks approval only when reasons is empty. Thread input.record.reviewUnread into branchReviewUnread there, without changing featurePassed, forge behavior, publish modes or adding a separate PR-body unread-files section. Deterministic reasons naturally suppress advisor approval and promotion.\n\nTest execution and migration: implement each story with failing targeted bun:test tests, then the applicable TDD implementation/verifier phases; use existing makeFeatureContext, makeScriptedCallOp, makeTestRuntime, makeSessionManager and warning-spy helpers, not mock.module or reimplemented runtime stubs. packages/nax/test/unit/operations/call-op-retry.test.ts:1 imports these retry/runtime helpers and demonstrates the same-session test pattern; that file is already 799 lines, so extend the existing workflow-branch-review test file for branch-specific runtime tests rather than pushing the generic file over its limit. Existing workflow feature-machine, approval and finalize tests cover the persistence and readiness seams; packages/nax/test/unit/workflow/finalize.test.ts:169 already proves a deterministic reason skips the advisor. packages/nax/test/integration/workflow/feature-e2e.test.ts:61 creates b.ts after the seed and branch verdict scripts at :131 and :212 omit inspectedFiles; US-003 must add inspectedFiles: [\"b.ts\"] to both so the existing ready outcomes, reasons and call sequences remain unchanged. No data/schema migration or version bump is needed; optional record fields leave old data readable, but newly reviewed branches without a complete inspection report intentionally remain draft. No packages outside nax require runtime changes.\n\nOrdering and fidelity: exactly US-001, US-002 and US-003 are retained, each with workdir packages/nax. The binding table states no dependencies for any story, so their dependencies arrays are empty, overriding the narrative dependency notes. The listed implementation order remains the intended handoff: shared prompts/helpers, package/required-set wiring, then retry/readiness. contextFiles reference only files verified on disk, not outputs assumed available through undeclared dependencies. US-003's description identifies the symbols produced earlier so its agent understands those seams. All enumerated ACs are retained in their original story, and failure-table rows not fully exercised by them receive explicit behavioral criteria rather than being silently deferred. This can exceed the narrative maxAcCount split rationale in US-003; the binding three-story structure and required failure behavior are preserved instead of dropping criteria or creating a fourth story. Extra hardening ideas appear only in suggestedCriteria. Refine self-audit: all 23 US-001, 23 US-002 and 23 US-003 explicitly enumerated spec criteria remain in their original story and order, including the observed-rule, still-includes, slash-boundary, case-insensitive-basename, does-not-reject, finding-included and existing-session-pattern regression qualifiers. The four additional US-003 failure-table criteria also remain. All nine failure-table rows map to criteria; all eleven feature exclusions remain verbatim. Each story already has negative paths and backward-compatibility assertions. US-002 root/longest-owner classification criteria now state concrete returned arrays and distinct resolver inputs rather than an underspecified classification claim. US-003's goal now explicitly retains only the final-turn parseable verdict, fixing the draft's misleading last-parseable wording that could have implied caching the first verdict. The shared retry integration is clarified: strategy.parse consumes the raw string, validate consumes that parsed verdict, and op.parse independently uses the same shape parser. Context lists retain the five most critical spec-recommended existing files per story, without adding outputs as inputs; dependencies remain exactly the binding table's empty arrays. Routing is reduced to medium/tdd-simple for US-001's deterministic strings/pure helper and US-002's standard git/resolver integration. US-003 retains complex/three-session-tdd for its cross-module same-session retry/readiness contract and the explicit session strategy override. Main risks are malformed NUL status parsing, score/two-path desynchronization, incorrect package ownership or anchored test regex application, overexcluding real config defects, coverage matches without slash boundaries, null/missing inspectedFiles, treating a valid reply with trailing truncated text as unparseable, retry-budget/session drift, losing findings on an incomplete parseable verdict, and failing to propagate unread state to readiness. Self-reported inspection remains trusted by design; this feature improves review instructions and accountability, not an audit-backed guarantee of review correctness.",
