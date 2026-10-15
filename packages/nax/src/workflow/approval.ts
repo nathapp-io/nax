@@ -10,6 +10,7 @@ import type { FeatureCiState, RepoGateSummary, StoryState, StorySummary, Workflo
 export interface ReadinessFacts {
   readonly finalGates?: RepoGateSummary;
   readonly ci: FeatureCiState;
+  readonly ciDetail?: string;
   readonly stories: readonly StorySummary[];
   readonly flagged: number;
   readonly branchReviewRan: boolean;
@@ -55,6 +56,8 @@ export function readinessReasons(f: ReadinessFacts): string[] {
   return [
     ...gateReasons(f.finalGates),
     ...(f.ci === "failed" ? ["CI failed"] : []),
+    ...(f.ci === "conflicting" ? [f.ciDetail ?? "PR has merge conflicts with its base branch"] : []),
+    ...(f.ci === "no-checks" ? [f.ciDetail ?? "no CI check was reported"] : []),
     ...(gateOpen.length > 0 ? [`stories gate-open: ${gateOpen.join(", ")}`] : []),
     ...(notRun.length > 0 ? [`stories not run: ${notRun.join(", ")}`] : []),
     ...(f.flagged > 0 ? [`${f.flagged} ruling(s) flagged for a human`] : []),

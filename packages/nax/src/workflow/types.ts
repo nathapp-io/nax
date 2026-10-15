@@ -140,7 +140,7 @@ export interface RepoGateSummary {
   readonly failing: readonly string[];
 }
 
-export type FeatureCiState = "green" | "failed" | "pending" | "skipped";
+export type FeatureCiState = "green" | "failed" | "pending" | "skipped" | "conflicting" | "no-checks";
 export type FeatureOutcome = "ready" | "draft" | "local-only" | "pushed";
 
 /** A story loop's deferred minor, numbered for the branch review's triage (P4-R7, P4-R8). */

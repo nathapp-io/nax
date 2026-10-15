@@ -116,7 +116,10 @@ async function setup() {
   _ciWaitDeps.sleep = async (ms) => {
     clock += ms;
   };
-  _ciWaitDeps.run = async () => ({ exitCode: 1, stdout: "", stderr: "no checks reported on the 'feat/x' branch" });
+  _ciWaitDeps.run = async (cmd) =>
+    cmd[0] === "gh" && cmd[1] === "pr" && cmd[2] === "checks"
+      ? { exitCode: 8, stdout: '[{"name":"t","state":"PENDING","bucket":"pending"}]', stderr: "" }
+      : { exitCode: 1, stdout: "", stderr: "no checks reported on the 'feat/x' branch" };
 
   const approver: Advisor = {
     advise: async () => ({ decision: makeAdviceDecision({ action: { type: "approve" }, rationale: "clean" }) }),
