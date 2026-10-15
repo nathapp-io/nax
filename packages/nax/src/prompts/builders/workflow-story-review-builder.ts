@@ -12,12 +12,17 @@ export type WorkflowStoryGateStates = Readonly<
 >;
 
 /** The gates nax itself ran on the story before the review, and what it runs thereafter. */
-function naxCheckedBlock(gates: WorkflowStoryGateStates): string {
+function naxCheckedBlock(gates: WorkflowStoryGateStates, e2eGate: boolean): string {
   const state = (name: "lint" | "typecheck" | "scoped"): string => gates[name] ?? "not run";
+  // US-009 (nax#2530): the host runs e2e, so its journeys are never something the reviewer could
+  // not verify — only the projects that declare the gate hear about it.
+  const e2e = e2eGate
+    ? "\nnax runs the e2e suite as a repository gate on the host; do not list e2e journeys in cannotVerify."
+    : "";
   return `## What nax already checked
 nax ran these gates on this story before your review: lint ${state("lint")}, typecheck ${state("typecheck")}, scoped tests ${state("scoped")}.
 After your review nax runs the full test suite on this story, and once every story is done it runs the repository gates. Both run only when the workflow reaches them: a red gate, or a finding left open, can end the story before the suite. Do not list any of these as something you could not verify; if nax never reached one, that is a real gap, so say so in "cannotVerify" and name it.
-If you have a shell tool, run this story's own test files with one scoped test command before you give the spec verdict.`;
+If you have a shell tool, run this story's own test files with one scoped test command before you give the spec verdict.${e2e}`;
 }
 
 /** The narrowed cannotVerify rule and the evidence rule behind an unavailability claim (US-006, nax#2531). */
@@ -30,6 +35,8 @@ export function buildWorkflowStoryReviewPrompt(input: {
   packagePath: string;
   concerns: readonly string[];
   gates?: WorkflowStoryGateStates;
+  /** US-009: the project declares a host-side e2e gate, so its journeys are not unverifiable. */
+  e2eGate?: boolean;
 }): string {
   const concerns =
     input.concerns.length > 0
@@ -42,14 +49,14 @@ export function buildWorkflowStoryReviewPrompt(input: {
 
 For each acceptance criterion, verify the current code implements it correctly. Use the diff to find the changed paths, not as the only source of truth. Follow each criterion's data and contract to where it is declared or stored (schema, migrations, DTOs, shared types), including code an earlier story created that this diff does not touch: a limit the story accepts must fit the storage and contracts it writes to. Read a file before you flag it.
 
-${naxCheckedBlock(input.gates ?? {})}
+${naxCheckedBlock(input.gates ?? {}, input.e2eGate === true)}
 
 ${WORKFLOW_QUALITY_CHECKLIST}
 
 ${WORKFLOW_ENUMERATION_INSTRUCTION}
 
 Give two verdicts:
-- **spec**: "pass" only if every acceptance criterion is implemented and covered by a test that would fail without it. Check the report's TDD evidence: missing evidence for an AC, or a test that asserts nothing, is a spec failure.
+- **spec**: "pass" only if every acceptance criterion is implemented and covered by a test that would fail without it. Check the report's TDD evidence: missing evidence for an AC (other than an honest not-captured note), or a test that asserts nothing, is a spec failure. A report that says the failing run was not captured is not a spec failure when the test exercises the new code path. A failing run produced by reverting or stashing the implementation is a finding.
 - **quality**: "approved" or "changes" (correctness, error handling, edge cases, conventions of the surrounding code).
 
 Severity: "critical" (wrong or unsafe behaviour), "important" (must fix before this story is done), "minor" (worth noting, not blocking). ${CANNOT_VERIFY_RULE}

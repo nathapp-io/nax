@@ -40,10 +40,14 @@ export interface ImplementOutcome {
 
 function promptFor(sc: StepContext, turn: ImplementTurn): string {
   const paths = { storyId: sc.story.id, briefPath: sc.briefPath, reportPath: sc.reportPath };
-  if (turn.kind === "implement") return buildWorkflowImplementPrompt(paths);
+  // US-009: a declared e2e command is the only way for an agent to run browser e2e (the Bash sandbox
+  // cannot launch a browser), so both full implement prompts say how. The warm restart keeps its
+  // one-line reminder and gains nothing.
+  const e2eGate = sc.config.quality?.commands?.e2e !== undefined;
+  if (turn.kind === "implement") return buildWorkflowImplementPrompt({ ...paths, e2eGate });
   // US-001: the warm restart keeps the session, so it gets the short prompt; the fresh one starts over in full.
   if (turn.kind === "restart")
-    return turn.fresh ? buildWorkflowImplementPrompt(paths) : buildWorkflowRestartPrompt(paths);
+    return turn.fresh ? buildWorkflowImplementPrompt({ ...paths, e2eGate }) : buildWorkflowRestartPrompt(paths);
   if (turn.kind === "answer") return buildWorkflowAnswerPrompt(turn.text);
   return buildWorkflowFixPrompt({
     mode: turn.fresh ? "fresh" : "warm",
