@@ -57,6 +57,8 @@ export interface RoutingResult {
 export type AgentGetFn = (name: string) => import("../agents/types").AgentAdapter | undefined;
 
 export interface PipelineContext extends DispatchContext {
+  /** Reports live phases even in headless runs without an event emitter. */
+  reportPhase?: (phase: string) => void;
   /**
    * Effective config for this story's package.
    * When story.workdir is set, this is root config merged with package config.

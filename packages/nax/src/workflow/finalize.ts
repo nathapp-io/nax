@@ -336,7 +336,11 @@ async function pushMode(plan: PublishPlan): Promise<PublishOutcome> {
   }
   const ci = await waitForCi(plan.fc, plan.forge);
   if (plan.fc.runSignal?.aborted) throw abortedError();
-  const reasons = [...readinessReasons({ ...plan.facts, ci: ci.outcome }), ...plan.dirty, ...ledgerReasons(ledger)];
+  const reasons = [
+    ...readinessReasons({ ...plan.facts, ci: ci.outcome, ciDetail: ci.detail }),
+    ...plan.dirty,
+    ...ledgerReasons(ledger),
+  ];
   return { outcome: "pushed", ci: ci.outcome, reasons };
 }
 
@@ -374,7 +378,11 @@ async function prMode(plan: PublishPlan, input: PublishInput): Promise<PublishOu
   if (fc.runSignal?.aborted) throw abortedError();
   // US-007: a ledger the branch lacks is a readiness reason like any other, so the advisor is never
   // asked to approve a PR citing rulings the branch does not carry.
-  const reasons = [...readinessReasons({ ...plan.facts, ci: ci.outcome }), ...plan.dirty, ...ledgerReason];
+  const reasons = [
+    ...readinessReasons({ ...plan.facts, ci: ci.outcome, ciDetail: ci.detail }),
+    ...plan.dirty,
+    ...ledgerReason,
+  ];
   const approval =
     reasons.length === 0
       ? await askApproval(input.advisor, {

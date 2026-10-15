@@ -69,6 +69,7 @@ export interface ParallelBatchCtx {
   pipelineContext: Omit<PipelineContext, "story" | "stories" | "workdir" | "routing">;
   eventEmitter?: PipelineEventEmitter;
   agentGetFn?: AgentGetFn;
+  onActiveStories?: (active: ReadonlyArray<{ storyId: string; worktreePath: string }>) => void;
 }
 
 /**
@@ -170,19 +171,31 @@ export async function runParallelBatch(options: RunParallelBatchOptions): Promis
     frame,
   });
 
-  // 2. Execute all stories in parallel
-  const workerResult = await executeReadyStories({
-    deps: _parallelBatchDeps,
-    workdir,
-    config,
-    maxConcurrency,
-    pipelineContext,
-    eventEmitter,
-    readyStories,
-    worktreePaths: frame.worktreePaths,
-    dependencyContexts,
-    storyEffectiveConfigs,
-  });
+  // Report only prepared stories with paths, not every requested/created worktree.
+  ctx.onActiveStories?.(
+    readyStories.flatMap((story) => {
+      const worktreePath = frame.worktreePaths.get(story.id);
+      return worktreePath ? [{ storyId: story.id, worktreePath }] : [];
+    }),
+  );
+  // Clear as soon as workers settle, before any merge or rectification work.
+  let workerResult: Awaited<ReturnType<typeof executeReadyStories>>;
+  try {
+    workerResult = await executeReadyStories({
+      deps: _parallelBatchDeps,
+      workdir,
+      config,
+      maxConcurrency,
+      pipelineContext,
+      eventEmitter,
+      readyStories,
+      worktreePaths: frame.worktreePaths,
+      dependencyContexts,
+      storyEffectiveConfigs,
+    });
+  } finally {
+    ctx.onActiveStories?.([]);
+  }
   // Batch execution complete — record end time for stories resolved in the batch
   const batchEndMs = Date.now();
 

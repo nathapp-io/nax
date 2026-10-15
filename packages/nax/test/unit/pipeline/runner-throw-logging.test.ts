@@ -6,6 +6,7 @@ import { addSink, initLogger, resetLogger } from "@/logger";
 import type { LogEntry } from "@/logger/types";
 import type { PipelineContext, PipelineStage } from "@/pipeline";
 import { runPipeline } from "@/pipeline";
+import { PipelineEventEmitter } from "@/pipeline/events";
 
 function makeCtx(): PipelineContext {
   return {
@@ -60,6 +61,65 @@ describe("runPipeline logs a stage throw", () => {
     const logged = errors.map((e) => `${e.message} ${JSON.stringify(e.data ?? {})}`).join("\n");
     expect(logged).toContain("acceptance-setup");
     expect(logged).toContain("Session unsupported: openSession");
+  });
+
+  test("a throwing reportPhase is logged and does not stop the pipeline", async () => {
+    const ctx = makeCtx();
+    ctx.reportPhase = () => {
+      throw new Error("status sink exploded");
+    };
+    let executed = false;
+    const stages: PipelineStage[] = [
+      {
+        name: "verify",
+        enabled: () => true,
+        execute: async () => {
+          executed = true;
+          return { action: "continue" };
+        },
+      },
+    ];
+    const result = await runPipeline(stages, ctx);
+    expect(result.success).toBe(true);
+    expect(executed).toBe(true);
+    const warned = logCalls.filter((e) => e.level === "warn").map((e) => JSON.stringify(e.data ?? {}));
+    expect(warned.join("\n")).toContain("status sink exploded");
+  });
+
+  test("AC-14 reports only enabled stages in order, even headless", async () => {
+    const phases: string[] = [];
+    const ctx = makeCtx();
+    ctx.reportPhase = (phase) => phases.push(phase);
+    const stages: PipelineStage[] = ["first", "disabled", "third"].map((name) => ({
+      name,
+      enabled: () => name !== "disabled",
+      execute: async () => ({ action: "continue" }),
+    }));
+    await runPipeline(stages, ctx);
+    expect(phases).toEqual(["first", "third"]);
+  });
+
+  test("AC-15 reports the stage before execute", async () => {
+    const calls: string[] = [];
+    const ctx = makeCtx();
+    ctx.reportPhase = (phase) => calls.push(`report:${phase}`);
+    const emitter = new PipelineEventEmitter();
+    emitter.on("stage:enter", (phase) => calls.push(`enter:${phase}`));
+    await runPipeline(
+      [
+        {
+          name: "verify",
+          enabled: () => true,
+          execute: async () => {
+            calls.push("execute:verify");
+            return { action: "continue" };
+          },
+        },
+      ],
+      ctx,
+      emitter,
+    );
+    expect(calls).toEqual(["report:verify", "enter:verify", "execute:verify"]);
   });
 
   test("does not log an error when a stage fails cleanly rather than throwing", async () => {

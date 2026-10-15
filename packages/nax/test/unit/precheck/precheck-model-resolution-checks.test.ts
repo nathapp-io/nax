@@ -14,6 +14,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { NATIVE_AGENT } from "@nathapp/nax-agent";
 import { _modelResolutionDeps, checkModelResolution, type ModelResolutionDeps } from "@/precheck/checks";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -28,6 +29,68 @@ beforeEach(() => {
 
 afterEach(() => {
   _modelResolutionDeps.resolveNative = originalDeps.resolveNative;
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-001: effort suffix normalization through both resolution walks
+// ─────────────────────────────────────────────────────────────────────────────
+
+const EFFORT_MODEL = "deepseek-v4.1-flash";
+const EFFORT_TIER_CONFIG = {
+  agent: { default: NATIVE_AGENT },
+  models: { native: { powerful: `opencode-go/${EFFORT_MODEL}[high]` } },
+};
+
+describe("checkModelResolution — effort suffix normalization (US-001)", () => {
+  test("AC-5: tier walk resolves the normalized provider and model", async () => {
+    const calls: Array<[string, string]> = [];
+    _modelResolutionDeps.resolveNative = async (provider, model) => {
+      calls.push([provider, model]);
+      return { status: "resolved" };
+    };
+
+    await checkModelResolution(EFFORT_TIER_CONFIG);
+
+    expect(calls).toContainEqual(["opencode-go", EFFORT_MODEL]);
+  });
+
+  test("AC-6: a resolved effort-suffixed tier produces the passing check", async () => {
+    _modelResolutionDeps.resolveNative = async () => ({ status: "resolved" });
+
+    await expect(checkModelResolution(EFFORT_TIER_CONFIG)).resolves.toEqual([
+      { name: "model-resolution", tier: "blocker", passed: true, message: "All configured model ids resolve" },
+    ]);
+  });
+
+  test("AC-7: literal native pins are resolved without their effort suffix", async () => {
+    const calls: Array<[string, string]> = [];
+    _modelResolutionDeps.resolveNative = async (provider, model) => {
+      calls.push([provider, model]);
+      return { status: "resolved" };
+    };
+
+    await checkModelResolution({
+      agent: { default: NATIVE_AGENT },
+      plan: { model: { agent: NATIVE_AGENT, model: `opencode-go/${EFFORT_MODEL}[high]` } },
+    });
+
+    expect(calls).toContainEqual(["opencode-go", EFFORT_MODEL]);
+  });
+
+  test("AC-8: normalized but unresolved tier ids remain blocking", async () => {
+    _modelResolutionDeps.resolveNative = async (provider, model) =>
+      provider === "opencode-go" && model === EFFORT_MODEL ? { status: "unresolved" } : { status: "resolved" };
+
+    const checks = await checkModelResolution(EFFORT_TIER_CONFIG);
+    expect(checks).toContainEqual(
+      expect.objectContaining({
+        name: "model-resolution",
+        tier: "blocker",
+        passed: false,
+        message: expect.stringContaining("models.native.powerful provider=opencode-go model=deepseek-v4.1-flash"),
+      }),
+    );
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

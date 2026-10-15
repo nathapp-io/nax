@@ -42,6 +42,10 @@ function timed<A extends unknown[], R>(
   };
 }
 
+function reportStoryPhase(ctx: PipelineContext, patch: Partial<WorkflowStoryRecord>): void {
+  if (typeof patch.phase === "string") ctx.reportPhase?.(patch.phase);
+}
+
 export async function buildStoryEnv(
   ctx: PipelineContext,
   callCtx: CallContext,
@@ -148,6 +152,7 @@ export async function buildStoryEnv(
     }),
     sink: {
       update: async (patch) => {
+        reportStoryPhase(ctx, patch);
         // Per-role tokens add to a resumed record's prior totals instead of replacing them.
         const tokens = patch.tokensByRole
           ? { tokensByRole: addRoleTokens(record.tokensByRole ?? {}, patch.tokensByRole) }
@@ -171,6 +176,7 @@ export async function buildStoryEnv(
         endedAt: new Date().toISOString(),
       };
       await upsertStoryRecord(runDir, header, record);
+      reportStoryPhase(ctx, record);
     } catch (err) {
       getLogger().debug("workflow", "Record close failed on the error path", {
         storyId: ctx.story.id,

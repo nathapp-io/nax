@@ -83,6 +83,7 @@ export class StatusWriter {
   private _postRun: PostRunStatus | null = null;
   private _advisor: AdvisorSummary | null = null;
   private _workflow: WorkflowStatusBlock | null = null;
+  private _parallel: RunStateSnapshot["parallel"];
 
   /**
    * Write mutex — serializes concurrent update() calls.
@@ -108,6 +109,10 @@ export class StatusWriter {
    * update(); retaining it gives the runner's getter a live reading.
    */
   private _lastTotalCost = 0;
+  /** Last update arguments, independent of the monotonic cost getter. */
+  private _lastUpdateCost = 0;
+  private _lastIterations = 0;
+  private _lastHeartbeat: string | undefined;
 
   /** Latest reconciled run total seen by update(); 0 before the first call. */
   get lastTotalCost(): number {
@@ -126,9 +131,10 @@ export class StatusWriter {
     this._advisor = summary;
   }
 
-  /** A5: the workflow-mode block (spec §9, P4-R12), persisted by the next update(). */
+  /** A5: persist the workflow-mode block on every transition (spec §9, P4-R12). */
   setWorkflowStatus(block: WorkflowStatusBlock): void {
     this._workflow = block;
+    void this.flush();
   }
 
   setRunStatus(status: RunStateSnapshot["runStatus"]): void {
@@ -157,6 +163,30 @@ export class StatusWriter {
     this._currentStory = story;
   }
 
+  /** Persist a live phase without replacing the rest of the current story. */
+  setPhase(phase: string): void {
+    if (!this._currentStory) return;
+    this._currentStory = { ...this._currentStory, phase };
+    void this.flush();
+  }
+
+  /** Persist the ready-worker parallel block on every transition. */
+  setParallel(info: NonNullable<RunStateSnapshot["parallel"]>): void {
+    this._parallel = info;
+    void this.flush();
+  }
+
+  /** Queue the latest snapshot, retaining liveness but not one-off crash overrides. */
+  async flush(): Promise<void> {
+    if (!this._prd || this._runStatus === "crashed") return;
+    await this.update(this._lastUpdateCost, this._lastIterations);
+  }
+
+  /** Wait for queued writes without producing another snapshot. */
+  async idle(): Promise<void> {
+    await this._mutex;
+  }
+
   /** Merge reviewSummary into the current story (no-op if no current story) */
   setReviewSummary(reviewSummary: NonNullable<RunStateSnapshot["currentStory"]>["reviewSummary"]): void {
     if (!this._currentStory) return;
@@ -165,7 +195,7 @@ export class StatusWriter {
 
   /**
    * Merge a partial update into the in-memory postRun state for a given phase.
-   * The next update() call will write the merged state to disk.
+   * Queues the merged state for persistence immediately.
    */
   setPostRunPhase(phase: "acceptance", update: Partial<AcceptancePhaseStatus>): void;
   setPostRunPhase(phase: "regression", update: Partial<RegressionPhaseStatus>): void;
@@ -196,6 +226,7 @@ export class StatusWriter {
         finish: { ...(this._postRun.finish ?? { status: "not-run" }), ...(update as Partial<FinishPhaseStatus>) },
       };
     }
+    void this.flush();
   }
 
   /**
@@ -251,6 +282,9 @@ export class StatusWriter {
       startTimeMs: this.ctx.startTimeMs,
       currentStory: this._currentStory,
     };
+    if (this._parallel !== undefined) {
+      snapshot.parallel = this._parallel;
+    }
     if (this._advisor !== null) {
       snapshot.advisor = this._advisor;
     }
@@ -282,6 +316,9 @@ export class StatusWriter {
     // Monotonic retention — a lower total is a stale reading (e.g. an
     // accumulator that has not yet absorbed the aggregator), not a refund.
     if (totalCost > this._lastTotalCost) this._lastTotalCost = totalCost;
+    this._lastUpdateCost = totalCost;
+    this._lastIterations = iterations;
+    if (overrides.lastHeartbeat !== undefined) this._lastHeartbeat = overrides.lastHeartbeat;
     // Serialize: chain onto the tail of _mutex. The call to _doUpdate is
     // deferred inside the .then()/.catch() callbacks so it does not start
     // running (and does not touch the shared .tmp file) until prior writes
@@ -300,7 +337,8 @@ export class StatusWriter {
       if (!base) {
         throw new NaxError("Failed to get snapshot", "STATUS_SNAPSHOT_FAILED", { stage: "execution" });
       }
-      const state: RunStateSnapshot = { ...base, ...overrides };
+      const retained = this._lastHeartbeat !== undefined ? { lastHeartbeat: this._lastHeartbeat } : {};
+      const state: RunStateSnapshot = { ...base, ...retained, ...overrides };
       await writeStatusFile(this.statusFile, buildStatusSnapshot(state));
       this._consecutiveWriteFailures = 0; // Reset counter on success
     } catch (err) {

@@ -53,11 +53,11 @@ describe("waitForChecks (github)", () => {
     expect(sleeps).toEqual([30]);
   });
 
-  test("no checks reported yet keeps polling; the limit returns pending (W-R9)", async () => {
+  test("no checks reported yet keeps polling; the limit returns no-checks", async () => {
     const { calls } = script([r("", 1, "no checks reported on the 'b' branch")]);
     const out = await waitForChecks("github", "b", OPTS);
-    expect(out.outcome).toBe("pending");
-    expect(out.detail).toContain("100ms");
+    expect(out.outcome).toBe("no-checks");
+    expect(out.detail).toBe("no CI check reported within 100ms");
     expect(calls.length).toBeGreaterThan(1);
   });
 
@@ -112,6 +112,138 @@ describe("waitForChecks (gitlab)", () => {
   test("glab error exit -> pending", async () => {
     script([r("", 1, "glab: not logged in")]);
     expect((await waitForChecks("gitlab", "b", OPTS)).outcome).toBe("pending");
+  });
+});
+
+// Command-aware replies keep auxiliary reads independent from the check sequence.
+describe("US-002 conflict and missing CI", () => {
+  let logs: LogEntry[];
+  beforeEach(() => {
+    resetLogger();
+    logs = [];
+    initLogger({ level: "silent" });
+    addSink((entry) => logs.push(entry));
+    _ciWaitDeps.schedule = () => () => {};
+  });
+  afterEach(() => resetLogger());
+
+  const empty = r("", 1, "no checks reported");
+  function wire(view: ForgeRunResult | Error, checks: ForgeRunResult[] = [empty]) {
+    const observed = script([empty]);
+    let index = 0;
+    _ciWaitDeps.run = async (cmd) => {
+      observed.calls.push(cmd);
+      if (cmd[0] === "gh" && cmd[2] === "checks") {
+        const reply = checks[Math.min(index++, checks.length - 1)];
+        if (!reply) throw new Error("no check reply scripted");
+        return reply;
+      }
+      if (view instanceof Error) throw view;
+      return view;
+    };
+    return observed;
+  }
+
+  test("AC-1/2/3/13: conflict ends on first poll with argv, no sleep and attributed info before done", async () => {
+    const { calls, sleeps } = wire(r('{"mergeable":"CONFLICTING","mergeStateStatus":"DIRTY","baseRefName":"main"}'));
+    expect(await waitForChecks("github", "feat/x", OPTS)).toEqual({
+      outcome: "conflicting",
+      detail: "PR has merge conflicts with main",
+    });
+    expect(sleeps).toEqual([]);
+    expect(calls).toEqual([
+      ["gh", "pr", "checks", "feat/x", "--json", "name,state,bucket"],
+      ["gh", "pr", "view", "feat/x", "--json", "mergeable,mergeStateStatus,baseRefName"],
+    ]);
+    const conflict = logs.find((e) => e.message === "CI wait: PR has merge conflicts with main — CI cannot start");
+    expect(conflict).toMatchObject({ level: "info", stage: "workflow" });
+    expect(Object.entries(conflict?.data ?? {})[0]).toEqual(["storyId", "_run"]);
+    expect(logs.at(-2)).toBe(conflict);
+    expect(logs.at(-1)?.message).toStartWith("CI wait done: conflicting after");
+  });
+
+  test.each([
+    ["AC-4", { mergeable: "MERGEABLE", mergeStateStatus: "DIRTY", baseRefName: "main" }, "main"],
+    ["AC-9", { mergeable: "CONFLICTING" }, "its base branch"],
+  ])("%s: GitHub conflict variants", async (_ac, value, base) => {
+    wire(r(JSON.stringify(value)));
+    expect(await waitForChecks("github", "b", OPTS)).toEqual({
+      outcome: "conflicting",
+      detail: `PR has merge conflicts with ${base}`,
+    });
+  });
+
+  test.each([
+    ["AC-5 UNKNOWN", r('{"mergeable":"UNKNOWN","mergeStateStatus":"UNKNOWN"}')],
+    ["AC-7/29 nonzero", r('{"mergeable":"CONFLICTING"}', 1)],
+    ["AC-8/29 malformed exit zero", r("not json")],
+    ["AC-27/29 throw", new Error("auxiliary failure")],
+    ["AC-28/29 malformed nonzero", r("not json", 1)],
+  ])("%s: auxiliary reads fail open without warnings until deadline", async (_ac, view) => {
+    const { calls, sleeps } = wire(view);
+    expect(await waitForChecks("github", "b", { ...OPTS, timeoutMs: 60 })).toEqual({
+      outcome: "no-checks",
+      detail: "no CI check reported within 60ms",
+    });
+    expect(calls.filter((cmd) => cmd[2] === "checks")).toHaveLength(3);
+    expect(calls.filter((cmd) => cmd[2] === "view")).toHaveLength(3);
+    expect(sleeps).toEqual([30, 30]);
+    expect(logs.filter((e) => e.level === "warn")).toEqual([]);
+  });
+
+  test("AC-6: a pending check never reads GitHub mergeability", async () => {
+    const { calls } = wire(r('{"mergeable":"CONFLICTING"}'), [gh(["pending"])]);
+    expect((await waitForChecks("github", "b", OPTS)).outcome).toBe("pending");
+    expect(calls.length).toBeGreaterThan(1);
+    expect(calls.every((cmd) => cmd[2] === "checks")).toBe(true);
+  });
+
+  test.each([empty, r("[]")])(
+    "AC-14: no checks in this poll times out with formatted duration (%p)",
+    async (checks) => {
+      wire(r('{"mergeable":"MERGEABLE"}'), [checks]);
+      expect(await waitForChecks("github", "b", { ...OPTS, timeoutMs: 120_000, pollMs: 60_000 })).toEqual({
+        outcome: "no-checks",
+        detail: "no CI check reported within 2m 0s",
+      });
+    },
+  );
+
+  test("AC-15: remembers earlier checks but still checks conflicts on later empty polls", async () => {
+    const { calls } = wire(r('{"mergeable":"MERGEABLE"}'), [gh(["pending"]), empty]);
+    expect((await waitForChecks("github", "b", OPTS)).outcome).toBe("pending");
+    expect(calls.filter((cmd) => cmd[2] === "view")).toHaveLength(3);
+    wire(r('{"mergeable":"CONFLICTING"}'), [gh(["pending"]), empty]);
+    expect((await waitForChecks("github", "b", OPTS)).outcome).toBe("conflicting");
+  });
+
+  test.each([
+    ["AC-10", { has_conflicts: true, target_branch: "main", head_pipeline: null }, "main"],
+    ["AC-11", { has_conflicts: false, detailed_merge_status: "conflict", target_branch: "main" }, "main"],
+    ["AC-12", { has_conflicts: true, target_branch: "main", head_pipeline: { status: "running" } }, "main"],
+    ["fallback", { has_conflicts: true }, "its base branch"],
+  ])("%s: GitLab conflicts from the existing MR read", async (_ac, value, base) => {
+    const { calls, sleeps } = wire(r(JSON.stringify(value)));
+    expect(await waitForChecks("gitlab", "7", OPTS)).toEqual({
+      outcome: "conflicting",
+      detail: `PR has merge conflicts with ${base}`,
+    });
+    expect(calls).toEqual([["glab", "mr", "view", "7", "--output", "json"]]);
+    expect(sleeps).toEqual([]);
+  });
+
+  test("AC-16: no GitLab pipeline ends as no-checks", async () => {
+    const { calls } = wire(r('{"head_pipeline":null,"has_conflicts":false}'));
+    expect((await waitForChecks("gitlab", "7", OPTS)).outcome).toBe("no-checks");
+    expect(calls).toHaveLength(4);
+  });
+
+  test("AC-17: main poll throwing remains pending", async () => {
+    script([new Error("main poll failed")]);
+    expect(await waitForChecks("github", "b", OPTS)).toEqual({
+      outcome: "pending",
+      detail: "CI status unavailable: main poll failed",
+    });
   });
 });
 
