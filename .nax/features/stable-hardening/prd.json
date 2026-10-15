@@ -3,7 +3,7 @@
   "feature": "stable-hardening",
   "branchName": "feat/stable-hardening",
   "createdAt": "2026-10-16T00:00:00.000Z",
-  "updatedAt": "2026-10-15T16:29:06.154Z",
+  "updatedAt": "2026-10-15T16:38:51.090Z",
   "userStories": [
     {
       "id": "US-001",
@@ -350,14 +350,17 @@
         "hardening"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "expert",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Session ownership uses concurrent filesystem takeover and heartbeat algorithms, with security-critical lifecycle cleanup and durable cumulative accounting across reopen/restart."
+        "reasoning": "Session ownership uses concurrent filesystem takeover and heartbeat algorithms, with security-critical lifecycle cleanup and durable cumulative accounting across reopen/restart.",
+        "initialComplexity": "expert",
+        "modelTier": "powerful",
+        "initialModelTier": "powerful"
       },
       "contextFiles": [
         "packages/nax-agent-acp/src/server/storage.ts",
@@ -391,7 +394,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "411a664181f19755eedb36fbc0de23a1d5d639b0"
     },
     {
       "id": "US-006",
