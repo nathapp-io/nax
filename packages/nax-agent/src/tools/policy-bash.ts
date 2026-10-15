@@ -28,6 +28,7 @@
 
 import type { BashSegment, BashToken } from "#src/permissions/index";
 import { lexBashCommand } from "#src/permissions/index";
+import { type CanonicalResult, canonicalSegments } from "./bash-canonical.ts";
 import { cdTargetsFor, nextWorkingDirectories } from "./bash-cwd.ts";
 import { deniedFlag } from "./exec-guard.ts";
 import type { NaxDirIndex } from "./nax-dirs.ts";
@@ -282,6 +283,34 @@ function lexicalDenial(lexed: ReturnType<typeof lexBashCommand>): BashCheck | un
   );
 }
 
+function matchingDenial(args: BashCheckArgs, segments: readonly BashSegment[]): BashCheck | undefined {
+  const entry = args.denyEntry;
+  if (entry === undefined) return undefined;
+  for (const segment of segments) {
+    if (segment.tokens[0]?.text === "eval") return deny("Bash canonical analysis refused: eval cannot be analysed");
+    if (matchesSegment(entry, segment)) {
+      return deny(
+        `${args.tool} segment "${render(segment)}" is denied for this stage by rule ${ruleExpr(args.tool, entry, segment)}`,
+      );
+    }
+  }
+  return undefined;
+}
+
+function ruleSegments(segments: readonly BashSegment[], refuseUnreadable: boolean): CanonicalResult {
+  const views: BashSegment[] = [];
+  for (const segment of segments) {
+    views.push(segment);
+    const canonical = canonicalSegments(segment);
+    if (canonical.kind === "refused") {
+      if (refuseUnreadable) return canonical;
+    } else {
+      views.push(...canonical.segments);
+    }
+  }
+  return { kind: "ok", segments: views };
+}
+
 export function checkBashCommand(args: BashCheckArgs): BashCheck {
   const { command, tool } = args;
   const invalid = invalidCommandDenial(command);
@@ -296,13 +325,13 @@ export function checkBashCommand(args: BashCheckArgs): BashCheck {
   // no-op and the escalatable lexical refusal intact (Category A).
   const segments = lexed.kind === "ok" ? lexed.segments : lexed.prefix;
 
-  for (const segment of segments) {
-    if (args.denyEntry !== undefined && matchesSegment(args.denyEntry, segment)) {
-      return deny(
-        `${tool} segment "${render(segment)}" is denied for this stage by rule ${ruleExpr(tool, args.denyEntry, segment)}`,
-      );
-    }
-  }
+  // Only deny/ask see these additional views. Payloads, cwd and grants below
+  // continue to evaluate the original tokens (canonicalization cannot grant).
+  const views = ruleSegments(segments, args.denyEntry !== undefined);
+  if (views.kind === "refused") return deny(views.reason);
+  const matchingSegments = views.segments;
+  const denied = matchingDenial(args, matchingSegments);
+  if (denied !== undefined) return denied;
 
   let cwd: readonly string[] = [args.initialPath];
   for (const segment of segments) {
@@ -321,7 +350,7 @@ export function checkBashCommand(args: BashCheckArgs): BashCheck {
     return deny(`${tool} is not granted "${render(segment)}" -- ${alternatives}`, false, true);
   }
 
-  for (const segment of segments) {
+  for (const segment of matchingSegments) {
     if (args.askEntry !== undefined && matchesSegment(args.askEntry, segment)) {
       return { kind: "ask", rule: ruleExpr(tool, args.askEntry, segment) };
     }

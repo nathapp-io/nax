@@ -36,6 +36,61 @@ function policyFor(
 
 const check = (policy: ReturnType<typeof policyFor>, command: string) => policy.check("Bash", BASH_SCOPE, { command });
 
+describe("canonical deny and ask rules", () => {
+  test.each([
+    [16, "env rm -rf x", "rm *"],
+    [17, "sh -c 'rm -rf x'", "rm *"],
+    [18, "if true; then rm x; fi", "rm *"],
+    [19, "git -C . push origin", "git push *"],
+  ] as const)("AC-%i denies canonical command %s", (_ac, command, rule) => {
+    const verdict = check(policyFor(["*"], { deny: [rule] }), command);
+    expect(verdict.allowed).toBe(false);
+    if (!verdict.allowed) {
+      expect(verdict.reason).toContain(`rule Bash(${rule})`);
+      expect(verdict.escalatable).toBe(false);
+    }
+  });
+
+  test("AC-20: eval is refused when a deny entry exists", () => {
+    const verdict = check(policyFor(["*"], { deny: ["rm *"] }), "eval ls");
+    expect(verdict.allowed).toBe(false);
+    if (!verdict.allowed) expect(verdict.reason).toContain("eval");
+  });
+  test("AC-21: eval alone does not introduce a deny without deny rules", () => {
+    expect(check(policyFor(["eval *"]), "eval ls").allowed).toBe(true);
+  });
+  test.each(['sh -c "$CMD"', "sh -c 'echo $(whoami)'", `sh -c "sh -c \\"sh -c 'sh -c ls'\\""`])(
+    "AC-22: unreadable nested shell cannot bypass a deny: %s",
+    (command) => {
+      const verdict = check(policyFor(["*"], { deny: ["rm *"] }), command);
+      expect(verdict.allowed).toBe(false);
+      if (!verdict.allowed) {
+        expect(verdict.reason).toContain("canonical");
+        expect(verdict.escalatable).toBe(false);
+      }
+    },
+  );
+  test("AC-23: canonical ask runs after a raw grant", () => {
+    const verdict = check(policyFor(["env curl *"], { ask: ["curl *"] }), "env curl -s host");
+    expect(verdict.allowed).toBe(false);
+    if (!verdict.allowed) {
+      expect(verdict.outcome).toBe("ask");
+      expect(verdict.reason).toContain("Bash(curl *)");
+    }
+  });
+  test("AC-24: canonicalization does not widen grants", () => {
+    const verdict = check(policyFor(["rm *"]), "env rm x");
+    expect(verdict.allowed).toBe(false);
+    if (!verdict.allowed) expect(verdict.reason).toContain("not granted");
+  });
+  test("raw mode stays a pass-through for deny and ask rules", () => {
+    const policy = policyFor(["*"], { deny: ["rm *"], ask: ["curl *"], bashApproval: "raw" });
+    for (const command of ["env rm x", "sh -c 'rm x'", "eval ls", "env --frobnicate rm x", "env curl -s host"]) {
+      expect(check(policy, command).allowed).toBe(true);
+    }
+  });
+});
+
 describe("granted commands run", () => {
   test("a trailing * is optional: the bare prefix is allowed (spec §4 US-005.3)", () => {
     const policy = policyFor(["bun test *"]);
