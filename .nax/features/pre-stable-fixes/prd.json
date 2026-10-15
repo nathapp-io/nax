@@ -3,7 +3,7 @@
   "feature": "pre-stable-fixes",
   "branchName": "feat/pre-stable-fixes",
   "createdAt": "2026-10-15T00:00:00.000Z",
-  "updatedAt": "2026-10-15T09:28:00.595Z",
+  "updatedAt": "2026-10-15T10:18:39.439Z",
   "userStories": [
     {
       "id": "US-001",
@@ -26,14 +26,17 @@
         "native"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "simple",
         "testStrategy": "tdd-simple",
-        "reasoning": "One source-function normalization reuses an existing public parser without a new dependency; regressions exercise the existing walker and resolver seam."
+        "reasoning": "One source-function normalization reuses an existing public parser without a new dependency; regressions exercise the existing walker and resolver seam.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
       },
       "contextFiles": [
         "packages/nax/src/precheck/checks-model-resolution-walk.ts",
@@ -47,7 +50,11 @@
         "splitEntry(\"provider/namespace/model[low]\") returns { provider: \"provider\", model: \"namespace/model\" }, preserving splitting at the first slash."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "79c7aa6069cc5c53fa7021c61ae566c44c980c5a"
     },
     {
       "id": "US-002",
@@ -92,14 +99,17 @@
         "readiness"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Four existing source modules gain bounded CI classification/helpers and detail forwarding through existing forge and readiness seams; scripted virtual-time and publish tests support single-session TDD without a new abstraction or transport integration."
+        "reasoning": "Four existing source modules gain bounded CI classification/helpers and detail forwarding through existing forge and readiness seams; scripted virtual-time and publish tests support single-session TDD without a new abstraction or transport integration.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/ci-wait.ts",
@@ -131,7 +141,11 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "6508b466ff11ee518afdc9329e42b64c7ced5ab9"
     },
     {
       "id": "US-003",
@@ -167,14 +181,17 @@
         "workflow"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Cross-module phase plumbing combines serialized asynchronous persistence, synchronous setters, heartbeat retention and crash-override preservation; seam tests must prove real iteration and workflow wiring."
+        "reasoning": "Cross-module phase plumbing combines serialized asynchronous persistence, synchronous setters, heartbeat retention and crash-override preservation; seam tests must prove real iteration and workflow wiring.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/execution/status-writer.ts",
@@ -196,7 +213,11 @@
         "When update() is called without overrides after a heartbeat-bearing update(), a later flush() preserves the most recently supplied lastHeartbeat."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "cf29a936255910744888656035cca26fb6336fa6"
     },
     {
       "id": "US-004",
@@ -225,14 +246,17 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Three source modules gain additive state/callback wiring using US-003's existing persistence seam and standard try/finally cleanup; no new parallel scheduler or status schema is introduced."
+        "reasoning": "Three source modules gain additive state/callback wiring using US-003's existing persistence seam and standard try/finally cleanup; no new parallel scheduler or status schema is introduced.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/execution/parallel-batch.ts",
@@ -251,7 +275,11 @@
         "When runParallelBatch is called without onActiveStories, its normal completion result is unchanged."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "e7611094f83496e31a187d78faa066a96abdd031"
     }
   ],
   "analysis": "Existing-code bug fixes for #2543, #2545 and #2356, before workflow mode becomes the default in 0.88.0. This PRD does not enable that default or initiate a release. All implementation changes belong to packages/nax; packages/nax-agent supplies a read-only public parser. Exactly four stories follow the binding decomposition: US-001, US-002 and US-003 are independent; US-004 consumes US-003's persistence seam.\n\nNavigation and conventions: codebase-memory MCP was unavailable, so findings come from targeted repository reads and text searches, not an indexed graph. docs/architecture/ARCHITECTURE.md:13 links the conventions and DI guidance; docs/architecture/ARCHITECTURE.md:119 documents source/test size limits and other gates. Use Bun and bun:test in packages/nax, existing @test/helpers factories and exported _deps seams with per-file restore; do not monkey-patch globals or use mock.module. Write regression tests first and demonstrate the regression against the old implementation. Commands run from packages/nax: targeted bun test <explicit paths> --timeout=30000 during iteration, bun run test for the package suite, and bun run test:coverage after adding/moving tests. Never bare bun test or bun run nax. The implementation pipeline owns lint/typecheck/test gates; these are not acceptance criteria.\n\nUS-001 findings and impact: packages/nax/src/precheck/checks-model-resolution-walk.ts:79 splits the unparsed string at the first slash, inferring a provider for bare ids. collectConfiguredModelPins begins at :220 and tier collection invokes splitEntry at :232. packages/nax/src/precheck/checks-model-resolution.ts:110 resolves those tier entries, :132 normalizes native literal pins through splitEntry, and :216 uses the same splitter for matching a pin to tier overrides. The sole source change should normalize through parseModelSpec(entry).model before the existing split/provider heuristic; this fixes both walks and matching without independently changing resolver logic. packages/nax-agent/src/cost/model-spec.ts:31 defines the anchored, well-formed suffix expression and :33 exports parseModelSpec; malformed or non-trailing brackets deliberately remain opaque model ids. The public export already exists at packages/nax-agent/src/index.ts:78 and packages/nax/src/config/schema-types.ts:9 already imports it, so no agent package API change, dependency addition or copied regex is needed. checkModelResolution returns its single success row at packages/nax/src/precheck/checks-model-resolution.ts:196. Extend packages/nax/test/unit/precheck/checks-model-resolution-walk.test.ts:19 for direct splitting and tier collection, and packages/nax/test/unit/precheck/precheck-model-resolution-checks.test.ts:24 for resolver-seam regressions. Their partial configs merge over DEFAULT_CONFIG, so stub every native lookup as resolved rather than assuming only the explicitly overridden tier is walked. Keep provider heuristics, catalogOverrides, ACP validation policy and existing literal override-loss warnings unchanged.\n\nUS-002 findings and impact: packages/nax/src/workflow/ci-wait.ts:17 currently exposes only green/failed/pending. classifyGh (:96) distinguishes empty/no-checks output from a nonempty list only internally; classifyGlab (:110) reads head_pipeline or pipeline but ignores MR conflict flags. pollOnce (:130) converts command exceptions to an error result; waitForChecks (:202) currently treats all timeouts as pending (:240), CLI failures as pending (:237), and abort as pending (:226). Preserve that latter error/abort contract and heartbeat cancellation (:249). Add helpers carrying per-poll check presence and sticky ever-reported state, plus conditional mergeability/conflict reads; do not pile branches into the strictly budgeted wait loop. GitHub's separate view call must run only on a current waiting/no-checks poll, even if an earlier poll saw a check; nonempty pending lists must not trigger it. GitLab must examine the same successful MR JSON on waiting polls, including running pipelines, with no redundant view command. A conflict wins immediately without sleeping. Mergeability read errors are silent and fail-open, unlike errors of the main checks poll. The no-checks detail uses formatDuration, while slow CI remains pending and non-blocking under W-R9.\n\nWiden FeatureCiState at packages/nax/src/workflow/types.ts:143 and CiWaitOutcome together. packages/nax/src/workflow/approval.ts:10 defines ReadinessFacts; readinessReasons (:51) has a stable CI failed slot (:57). Insert conflicting/no-checks reasons immediately after that slot, with detail-or-fallback phrasing. packages/nax/src/workflow/finalize.ts:339 and :377 must both pass ciDetail: ci.detail. prMode asks the advisor only when reasons.length === 0 (:379), and finishPr already forwards keepDraft and body to openOrPromotePr (:201), so no new approval mechanism is necessary. packages/nax/src/workflow/feature-deps.ts:4/:16 exposes the wait seam; packages/nax/src/workflow/pr-body.ts:85 already interpolates CI directly, requiring no rendering change. Existing feature records and PR body consumers see an additive union of states; no stored-data migration is needed, but external consumers assuming a closed list must tolerate conflicting/no-checks. Repositories with no CI intentionally stop being auto-promoted.\n\nUS-002 tests and mandatory fixture migration: packages/nax/test/unit/workflow/ci-wait.test.ts:13 provides a virtual clock/command seam; its no-checks timeout test at :55 must now expect outcome no-checks and exact detail no CI check reported within 100ms, retaining calls.length > 1. Extra gh pr view calls receive its repeated exit-1 reply and are ignored. Use command-aware stubs for new multi-command tests, restoring run/sleep/now/schedule and logger sinks. Readiness assertions belong with packages/nax/test/unit/workflow/approval.test.ts; new publish seam tests belong in packages/nax/test/unit/workflow/finalize-ci-gate.test.ts, not the existing 792-line finalize.test.ts. Mirror existing finalize stubs and helpers without importing that test file; isolate forge, ledger, dirty-tree/spec/decision dependencies from live services. packages/nax/test/integration/workflow/feature-e2e.test.ts:118 currently scripts no checks forever, but its :172 scenario intentionally asserts pending -> advisor approval -> ready. Change only gh pr checks to return [{\"name\":\"t\",\"state\":\"PENDING\",\"bucket\":\"pending\"}] with exit 8; retain the exit-1 no-checks reply for every other command, preserving all current ready/pending assertions. No other timeout assertion is expected to change.\n\nUS-003 findings and impact: packages/nax/src/execution/status-writer.ts owns state, snapshot projection and one shared write mutex (:99). setWorkflowStatus (:130) and setPostRunPhase (:170) currently mutate only memory; setCurrentStory (:156) and setReviewSummary (:161) establish the current-story shape. getSnapshot (:234) returns null before a PRD and conditionally includes workflow/postRun. update (:280) queues _doUpdate on the mutex (:291); _doUpdate (:296) catches write failures and logs the existing non-fatal status-file message (:309), escalating after three failures. Reuse this chain for flush and idle; setters remain synchronous, update memory first and queue void this.flush(). Preserve every field of currentStory with a spread in setPhase. Retain the last update's cost/iterations for flush (iterations zero initially) while preserving the existing monotonic public lastTotalCost behavior used by crash reporting. This distinction matters if a stale lower cost ever reaches update: do not casually change the existing lastTotalCost contract. Remember and reapply the most recent defined overrides.lastHeartbeat, not arbitrary old overrides.\n\nCrash/liveness risks: packages/nax/src/execution/crash-heartbeat.ts:80 supplies lastHeartbeat as a one-write override, so frequent setter writes must preserve it. packages/nax/src/execution/crash-writer.ts:105 sets crashed and :106-114 writes crashedAt/crashSignal as one-off overrides for project and feature status. A rebuilt post-crash snapshot would erase those fields: flush must stop writing once runStatus is crashed, without disabling the explicit crash update itself. Account for queued/in-flight writes and make idle deterministic without creating another write. Disk failures must stay contained by _doUpdate; no setter throw/rejection or unhandled floating promise. Existing atomic .tmp writes must remain serialized; do not introduce another mutex or direct setter file writes.\n\nPhase plumbing: packages/nax/src/pipeline/types.ts:59 declares PipelineContext. packages/nax/src/pipeline/runner.ts:112 skips disabled stages; insert context.reportPhase?.(stage.name) immediately before stage:enter at :119, before execute at :123. This works headlessly without an event emitter and naturally reports stage re-entry on retries. packages/nax/src/execution/iteration-runner.ts:188 creates the context, :231 establishes currentStory with routing phase, and :246 invokes _iterationRunnerDeps.runPipeline. Wire the optional reportPhase to the actual StatusWriter, not to an event subscription. packages/nax/src/workflow/stage-env.ts:45 builds StoryLoopEnv; sink.update at :150 persists workflow story patches but currently does not update run status. Add a module-level string-phase helper and invoke it from that sink so implement/review/rereview/gates/suite/fix/residual/closed replace the otherwise-unhelpful workflow stage name. Non-phase patches must not report. Existing transition callers need no edits: acceptance at packages/nax/src/execution/runner-completion.ts:191, regression completion, finish at packages/nax/src/finish/phase.ts:245, and the feature step sink at packages/nax/src/workflow/feature-env.ts:97 already call these setters. Do not grow the 582-line runner-completion.ts. Keep getPostRunStatus recovery semantics unchanged.\n\nUS-003 tests: create packages/nax/test/unit/execution/status-writer-live-phase.test.ts for real-file StatusWriter assertions and the runIteration/buildStoryEnv seam tests, with its own _deps stubs, logger cleanup and restore. Await idle before reading/removing files; use existing temp-dir/PRD/context/runtime helpers rather than racing queued writes. packages/nax/test/unit/execution/status-writer-workflow.test.ts:23 is an existing persistence fixture to mirror. Extend packages/nax/test/unit/pipeline/runner-throw-logging.test.ts:32 (78 lines) for enabled-stage and execution-order assertions. Do not grow iteration-runner.test.ts (675 lines). Source status-writer.ts is currently 360 lines, so keep additions focused and respect the size/complexity limits without unrelated extraction. No status schema migration or heartbeat interval change is needed.\n\nUS-004 findings and impact: packages/nax/src/execution/status-file.ts:217 already declares parallel.enabled/maxConcurrency/activeStories; RunStateSnapshot carries parallel at :335 and buildStatusSnapshot copies it at :392-393. Add private optional parallel state and setParallel to StatusWriter, project it only when set, and reuse US-003 flush; no new JSON fields or status-file serialization change is needed. packages/nax/src/execution/parallel-batch.ts:63 defines ParallelBatchCtx; dependencies are prepared at :162 and workers begin at :174. Report readyStories filtered to paths in frame.worktreePaths between those calls and clear active stories in finally immediately when executeReadyStories settles, before merges/rectification. packages/nax/src/execution/parallel-batch-phases.ts:178 filters absent paths and :185-214 contains dependency-preparation failures; its :218-260 executeReadyStories returns an empty batch when no story is ready. Therefore report twice even for an empty ready list, and do not report merely requested stories or retain failed-dependency worktrees as active. Worker errors must propagate by identity after cleanup.\n\npackages/nax/src/execution/unified-executor-parallel-dispatch.ts:187 passes the many-story batch context and :194 supplies parallelCount; add the callback there with enabled true, that concurrency and a copied active list. The single-story branch remains untouched. The batch boundary clears currentStory at :274, not per worker; per-story parallel phases remain intentionally untracked. Keep optional callback compatibility for other ParallelBatchCtx producers. New tests must be isolated in packages/nax/test/unit/execution/parallel-batch-active-stories.test.ts and packages/nax/test/unit/execution/parallel-dispatch-active-stories.test.ts, with their own _deps snapshots/restores, plus StatusWriter parallel assertions in the new batch-active-stories test file. Existing parallel-batch.test.ts is 767 lines and unified-executor-dispatch.test.ts is 759 lines, so neither may grow. Existing helpers visible at packages/nax/test/unit/execution/parallel-batch.test.ts:13 and unified-executor-dispatch.test.ts:17 provide worktree, merge, runtime and dispatch fixtures.\n\nCompatibility/migration summary: all new context callbacks and ReadinessFacts.ciDetail are optional; writer methods are additive. US-001 reuses the existing public parser, and US-004 populates an already-supported optional block. The only deliberate externally observable contract change is deterministic draft readiness for conflicting/no-checks, while previously reported but slow checks, main CLI errors and aborts retain pending semantics. No automatic rebase, permission-policy change, advisor-evidence rewrite, agent package edit, version bump or new dependency is required. The two explicitly owned CI test-fixture updates are part of US-002, not extra stories. Validate failure table rows directly: silent mergeability-read failures, unknown mergeability, logged/nonthrowing status writes, no-current-story no-op, and active-story cleanup with unchanged error propagation.\n\nRefinement audit: enumerated all 56 explicit spec ACs (US-001: 7; US-002: 24; US-003: 16; US-004: 9) against their owning acceptanceCriteria, retaining every asserted value, seam, ordering condition and regression qualifier. The source-to-PRD ordinal mapping is US-001 1-7 -> 1-7; US-002 1-21 -> 1-21, 22 -> 22-23, 23 -> 24-25, 24 -> 26; US-003 1 -> 1, 2 -> 2-3, 3 -> 4, 4 -> 5, 5 -> 6, 6 -> 7, 7 -> 8, 8 -> 9, 9 -> 10, 10 -> 11-12, 11 -> 13, 12 -> 14, 13 -> 15, 14 -> 16, 15 -> 17, 16 -> 18; US-004 1 -> 1, 2 -> 2-3, 3 -> 4, 4 -> 5, 5 -> 6, 6 -> 7-8, 7 -> 9, 8 -> 10, 9 -> 11. Splits separate observable assertions without moving criteria between stories. US-002 AC8 now explicitly retains both continued polling and the no-checks result. Failure-table requirements remain in US-002 AC7-8/27-29, US-003 AC7/11-12/19-20 and US-004 AC7-8. Added US-001 AC8 for unresolved normalized catalog ids because the original draft had no negative-path acceptance criterion; this preserves existing blocker behavior rather than introducing a new validation policy. Corrected US-003 crash assertions to observable run.crashedAt/run.crashSignal, confirmed by packages/nax/src/execution/status-file.ts:377-378, and made PRD/current-story preconditions explicit to avoid no-op-based false positives in crash/write-failure tests.\n\nAll four contextFiles lists retain the five files explicitly recommended by the corresponding spec story, verified against existing paths; the four expected outputs are still new test files. The binding story ids, package workdirs and dependencies are unchanged, and all 11 feature-level exclusions remain verbatim. Verified helper exports at packages/nax/test/helpers/index.ts:47,81,96,101,136,146,148. No description contradicts its ACs: splitter normalization still rejects truly unresolved models, CI-read errors are distinguished from auxiliary mergeability-read failures, and persistence retains the crash/liveness fields at their actual disk projection. US-002 is reduced to medium/tdd-simple because it extends four existing modules with existing forge/DI contracts, not a new integration. US-003 remains complex/three-session-tdd-lite because flush/idle and synchronous setter writes cross existing asynchronous mutex, crash and liveness boundaries as well as two independently wired phase producers. No source implementation changes are part of this PRD audit.",
