@@ -58,4 +58,48 @@ describe("test preload temporary globals", () => {
     },
     15_000,
   );
+
+  // Under `--parallel --no-isolate` the preload module runs once per worker but
+  // its root-level hooks run once per FILE, so a cleanup in afterAll used to
+  // delete the global directory after a worker's first file and leave every
+  // later file on that worker without it (no trust.json -> PROJECT_UNTRUSTED).
+  // Four files over two workers: at least one worker runs two or more.
+  test.each(["nax", "nax-agent"] as const)(
+    "%s keeps its global directory for every file a --parallel --no-isolate worker runs",
+    async (pkg) => {
+      await withTempDir(async (dir) => {
+        const imports = 'import { expect, test } from "bun:test"; import { existsSync } from "node:fs";';
+        const checkGlobal = 'expect(existsSync(process.env.NAX_GLOBAL_CONFIG_DIR ?? "")).toBe(true);';
+        const files = [1, 2, 3, 4].map((n) => join(dir, `preload-worker-${n}.test.ts`));
+        await Promise.all(
+          files.map((file, i) =>
+            Bun.write(file, `${imports} test("worker fixture ${i + 1}", () => { ${checkGlobal} });`),
+          ),
+        );
+        const args = ["test", ...files, "--timeout=5000", "--parallel=2", "--no-isolate", "--parallel-delay=0"];
+        const child = Bun.spawn([process.execPath, ...args], {
+          cwd: resolve(import.meta.dir, "../../..", pkg),
+          env: { ...process.env, AGENT: "0", TMPDIR: dir, TMP: dir, TEMP: dir },
+          stdout: "pipe",
+          stderr: "pipe",
+        });
+        try {
+          const [code, stdout, stderr] = await withTimeout(
+            Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]),
+            10_000,
+            "preload parallel child",
+          );
+          expect(code, `${stdout}\n${stderr}`).toBe(0);
+          expect(`${stdout}\n${stderr}`).toContain("4 pass");
+          expect(
+            (await readdir(dir)).filter((name) => name.startsWith("nax-") && name.includes("test-global-")),
+          ).toEqual([]);
+        } finally {
+          child.kill();
+          await child.exited;
+        }
+      });
+    },
+    15_000,
+  );
 });

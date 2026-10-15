@@ -6,16 +6,28 @@
  * fills it, provider keys scrubbed from the environment, console silenced, and a
  * sentinel on the native client builder so no test caches a real nax-ai client.
  */
-import { afterAll } from "bun:test";
+import { afterAll, beforeAll } from "bun:test";
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
 import { type CredentialAuthConfig, configureCredentials } from "#src/infra/index";
 import { _clientDeps } from "#src/native/client";
 
 const isolatedGlobalDir = makeTempDir("nax-agent-test-global-");
+
+function provisionGlobalDir(): void {
+  mkdirSync(isolatedGlobalDir, { recursive: true });
+  process.env.NAX_GLOBAL_CONFIG_DIR = isolatedGlobalDir;
+}
+
+// Root hooks run once per FILE, this module once per process. Under
+// `--parallel --no-isolate` a worker keeps this module across its files, so
+// the directory the afterAll removes is provisioned again before the next
+// file. See packages/nax/test/preload.ts for the full reasoning.
+provisionGlobalDir();
+beforeAll(provisionGlobalDir);
 afterAll(() => cleanupTempDir(isolatedGlobalDir));
 process.once("exit", () => cleanupTempDir(isolatedGlobalDir));
-process.env.NAX_GLOBAL_CONFIG_DIR = isolatedGlobalDir;
 delete process.env.NAX_RUNS_DIR;
 
 const configDir = (): string => process.env.NAX_GLOBAL_CONFIG_DIR || isolatedGlobalDir;
