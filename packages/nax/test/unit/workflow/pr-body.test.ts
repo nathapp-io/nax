@@ -266,3 +266,74 @@ describe("extractAssumptions", () => {
     expect(long.endsWith("…")).toBe(true);
   });
 });
+
+describe("buildWorkflowPrBody — agent-sourced text is redacted and neutralised (#2552)", () => {
+  const SECRET = "sk-abcdefghijklmnopqrstuvwx";
+  const ZWSP = "​";
+
+  test("redacts a secret in a failing-gate excerpt", () => {
+    const body = buildWorkflowPrBody({
+      ...input,
+      finalGateFindings: [{ kind: "gate", severity: "important", issue: `lint failed, key ${SECRET}` }],
+    });
+    expect(body).not.toContain(SECRET);
+    expect(body).toContain("[REDACTED]");
+  });
+
+  test("redacts secrets in assumptions, rulings, reasons, minors, open items and advisor rationale", () => {
+    const body = buildWorkflowPrBody({
+      ...input,
+      outcome: "draft",
+      reasons: [`reason ${SECRET}`],
+      assumptions: [{ storyId: "US-001", text: `assumed ${SECRET}` }],
+      rulings: [
+        {
+          findingId: "B2",
+          action: "defer",
+          text: `t ${SECRET}`,
+          why: `w ${SECRET}`,
+          costIfWrong: "c",
+          source: "advisor",
+        },
+      ],
+      minorsLeft: [`minor ${SECRET}`],
+      openItems: [{ kind: "finding", id: "F1", issue: `issue ${SECRET}`, suggestion: `fix ${SECRET}` }],
+      decisions: [makeAdviceDecision({ id: "D-9", action: { type: "answer", text: `answer ${SECRET}` } })],
+    });
+    expect(body).not.toContain(SECRET);
+  });
+
+  test("redacts a secret in a story title", () => {
+    const body = buildWorkflowPrBody({
+      ...input,
+      stories: [{ id: "US-1", title: `title ${SECRET}`, state: "complete", rounds: 1, unreviewed: false, flagged: 0 }],
+    });
+    expect(body).not.toContain(SECRET);
+  });
+
+  test("neutralises issue references and mentions in agent text outside ## Closes", () => {
+    const body = buildWorkflowPrBody({
+      ...input,
+      assumptions: [{ storyId: "US-001", text: "Fixes #123 and org/repo#45, cc @octocat" }],
+      minorsLeft: ["see https://github.com/o/r/issues/77"],
+    });
+    expect(body).not.toMatch(/#\d/);
+    expect(body).not.toMatch(/@[A-Za-z]/);
+    expect(body).not.toMatch(/issues\/\d/);
+    expect(body).toContain(`#${ZWSP}123`);
+    expect(body).toContain(`@${ZWSP}octocat`);
+  });
+
+  test("leaves the ## Closes section built from the spec untouched", () => {
+    const body = buildWorkflowPrBody({ ...input, closes: [2508, 2507] });
+    expect(body).toContain("## Closes\n\nCloses #2508\nCloses #2507");
+  });
+
+  test("does not touch a failing-gate excerpt's fence content beyond redaction", () => {
+    const body = buildWorkflowPrBody({
+      ...input,
+      finalGateFindings: [{ kind: "gate", severity: "important", issue: "error at line 5 in a.ts" }],
+    });
+    expect(body).toContain("```\nerror at line 5 in a.ts\n```");
+  });
+});

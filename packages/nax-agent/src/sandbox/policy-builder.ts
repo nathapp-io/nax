@@ -91,7 +91,13 @@ function gitDenies(root: string, git: GitLayout): string[] {
   const common = git.kind === "worktree" ? git.commonDir : git.gitDir;
   // config.worktree is read when extensions.worktreeConfig is on; an absent one
   // is safe to deny (srt stubs it empty, and empty is valid config) (#2198).
-  const shared = [join(common, "hooks"), join(common, "config"), join(common, WORKTREE_CONFIG_FILE)];
+  // info/ holds exclude and sparse-checkout: an agent-written ignore rule hides files from review guards (#2552).
+  const shared = [
+    join(common, "hooks"),
+    join(common, "config"),
+    join(common, "info"),
+    join(common, WORKTREE_CONFIG_FILE),
+  ];
   if (git.kind === "main") return shared;
   // A worktree's `.git` is a pointer FILE, and gitdir/commondir point back;
   // repointing any of them at an agent-written config (core.hooksPath) would

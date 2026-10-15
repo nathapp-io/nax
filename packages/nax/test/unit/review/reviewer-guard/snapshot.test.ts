@@ -313,3 +313,40 @@ describe("reviewer tree snapshot (nax#2500)", () => {
     }
   });
 });
+
+describe("reviewer ignore-rule edits cannot hide files from the restore (#2552)", () => {
+  test("appending a pattern to .gitignore and creating a matching file: the file is removed, the rule reverted", async () => {
+    const d = await repo();
+    const snap = await takeRepoSnapshot(d);
+    await writeFile(join(d, ".gitignore"), "ignored/\nplanted*\n");
+    await writeFile(join(d, "planted1.sh"), "echo planted\n");
+    const report = await restoreRepoSnapshot(snap);
+    expect(existsSync(join(d, "planted1.sh"))).toBe(false);
+    expect(await readFile(join(d, ".gitignore"), "utf8")).toBe("ignored/\n");
+    expect([...report.paths].sort()).toEqual([".gitignore", "planted1.sh"]);
+    expect(report.failures).toEqual([]);
+    expect(await git(d, "status", "--porcelain")).toBe("");
+  });
+
+  test("a reviewer-created nested .gitignore that ignores itself and its siblings is removed with them", async () => {
+    const d = await repo();
+    const snap = await takeRepoSnapshot(d);
+    await mkdir(join(d, "sub"), { recursive: true });
+    await writeFile(join(d, "sub", ".gitignore"), "*\n");
+    await writeFile(join(d, "sub", "hook.sh"), "echo planted\n");
+    const report = await restoreRepoSnapshot(snap);
+    expect(existsSync(join(d, "sub", "hook.sh"))).toBe(false);
+    expect(existsSync(join(d, "sub", ".gitignore"))).toBe(false);
+    expect([...report.paths].sort()).toEqual(["sub/.gitignore", "sub/hook.sh"]);
+  });
+
+  test("a pre-existing ignored path stays untouched after a clean restore", async () => {
+    const d = await repo();
+    await mkdir(join(d, "ignored"), { recursive: true });
+    await writeFile(join(d, "ignored", "cache"), "x\n");
+    const snap = await takeRepoSnapshot(d);
+    const report = await restoreRepoSnapshot(snap);
+    expect(report.paths).toEqual([]);
+    expect(existsSync(join(d, "ignored", "cache"))).toBe(true);
+  });
+});

@@ -31,6 +31,11 @@ function finding(file: string, pointer: string, kind: ConfigSecretKind): ConfigS
 
 const ROOT_CONFIG = ".nax/config.json";
 
+/** A braced env reference, built so the literal is not read as a template placeholder. */
+function braced(name: string): string {
+  return ["$", "{", name, "}"].join("");
+}
+
 describe("scanConfigSecrets — files scanned", () => {
   test("AC1: resolves to a clean scan listing the root config when it is an empty object", async () => {
     await withTempDir(async (root) => {
@@ -417,6 +422,69 @@ describe("scanConfigSecrets — never returns the secret value", () => {
       const scan = await scanConfigSecrets(root);
 
       expect(JSON.stringify(scan)).not.toContain("sk-abcdefghijklmnopqrstu");
+    });
+  });
+});
+
+describe("scanConfigSecrets — key-aware scan outside env/headers (#2552)", () => {
+  test("flags a literal under a secret-named key at any depth", async () => {
+    await withTempDir(async (root) => {
+      writeJsonConfig(root, ROOT_CONFIG, {
+        a: { apiKey: "Zk3p9Qx7Lm2Vb8Nc4Rt6" },
+        b: { password: "hunter2hunter2" },
+      });
+
+      const scan = await scanConfigSecrets(root);
+
+      expect(scan.findings).toEqual([
+        finding(ROOT_CONFIG, "/a/apiKey", "secret-key"),
+        finding(ROOT_CONFIG, "/b/password", "secret-key"),
+      ]);
+    });
+  });
+
+  test("flags a secret-named key holding a literal mixed with an env reference", async () => {
+    await withTempDir(async (root) => {
+      writeJsonConfig(root, ROOT_CONFIG, { a: { apiKey: "literalprefix-$SUFFIX" } });
+
+      const scan = await scanConfigSecrets(root);
+
+      expect(scan.findings).toEqual([finding(ROOT_CONFIG, "/a/apiKey", "secret-key")]);
+    });
+  });
+
+  test("flags an env value that mixes a literal with a trailing reference", async () => {
+    await withTempDir(async (root) => {
+      writeJsonConfig(root, ROOT_CONFIG, { mcp: { env: { GITHUB_TOKEN: "ghliteral123$X" } } });
+
+      const scan = await scanConfigSecrets(root);
+
+      expect(scan.findings).toEqual([finding(ROOT_CONFIG, "/mcp/env/GITHUB_TOKEN", "secret-env")]);
+    });
+  });
+
+  test("leaves a secret-named key that is purely an env reference clean", async () => {
+    await withTempDir(async (root) => {
+      writeJsonConfig(root, ROOT_CONFIG, {
+        a: { apiKey: braced("OPENAI_API_KEY"), password: "$DB_PASSWORD" },
+        mcp: { env: { GITHUB_TOKEN: braced("GITHUB_TOKEN") } },
+      });
+
+      const scan = await scanConfigSecrets(root);
+
+      expect(scan.findings).toEqual([]);
+    });
+  });
+
+  test("leaves plural token counts and pointer-style keys clean (maxTokens, apiKeyEnv, tokenFile, authPath)", async () => {
+    await withTempDir(async (root) => {
+      writeJsonConfig(root, ROOT_CONFIG, {
+        a: { maxTokens: "4096", inputTokens: "10", apiKeyEnv: "OPENAI_API_KEY", tokenFile: "t", authPath: "p" },
+      });
+
+      const scan = await scanConfigSecrets(root);
+
+      expect(scan.findings).toEqual([]);
     });
   });
 });

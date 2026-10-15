@@ -54,9 +54,14 @@ describe("memoryKey (spec §4.3)", () => {
     expect(memoryKey(approval("r", "Bash", { command: "npm test -- --watch" }))).toBe("Bash:npm test");
   });
 
-  test("execute tools: the command alone when there is no subcommand or it starts with a flag", () => {
+  test("execute tools: the bare command alone when there is no second word", () => {
     expect(memoryKey(approval("r", "Bash", { command: "ls" }))).toBe("Bash:ls");
-    expect(memoryKey(approval("r", "Bash", { command: "ls -la src" }))).toBe("Bash:ls");
+  });
+
+  test("a second word that is a flag is never remembered (it must not widen to the bare command, #2553)", () => {
+    expect(memoryKey(approval("r", "Bash", { command: "rm -f x" }))).toBeUndefined();
+    expect(memoryKey(approval("r", "Bash", { command: "git -C repo status" }))).toBeUndefined();
+    expect(memoryKey(approval("r", "Bash", { command: "ls -la src" }))).toBeUndefined();
   });
 
   test("a second word that is not plain is never remembered (it must not widen to the bare command)", () => {
@@ -92,7 +97,8 @@ describe("memoryKey (spec §4.3)", () => {
     for (const command of ["'bash' -c x", '"sh" x', "b\\ash -c x", "ba*h -c x", "BASH -c x", "$(which sh) x"]) {
       expect(memoryKey(approval("r", "Bash", { command }))).toBeUndefined();
     }
-    expect(memoryKey(approval("r", "Bash", { command: "./scripts/build.sh --fast" }))).toBe("Bash:./scripts/build.sh");
+    expect(memoryKey(approval("r", "Bash", { command: "./scripts/build.sh" }))).toBe("Bash:./scripts/build.sh");
+    expect(memoryKey(approval("r", "Bash", { command: "./scripts/build.sh --fast" }))).toBeUndefined();
   });
 
   test("an execute tool with no command is never remembered (M-12)", () => {

@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { redactSecrets } from "@nathapp/nax-agent/internal";
 
-export type ConfigSecretKind = "literal-header" | "secret-env" | "token-shape" | "unscannable";
+export type ConfigSecretKind = "literal-header" | "secret-env" | "secret-key" | "token-shape" | "unscannable";
 
 export interface ConfigSecretFinding {
   readonly file: string;
@@ -16,6 +16,15 @@ export interface ConfigSecretScan {
 }
 
 const ENV_REFERENCE = /\$(?:[A-Za-z_][A-Za-z0-9_]*|\{[A-Za-z_][A-Za-z0-9_]*\})/g;
+/**
+ * Key names that point at a secret rather than hold one (`apiKeyEnv`, `tokenFile`,
+ * `credentialsPath`): the value is an env-var name or a path, so the key-aware check
+ * skips them (token-shape still applies). A survey of this repo's JSON, ~/.nax profiles
+ * and every project .nax/config.json found no real key needing this today; it keeps a
+ * future pointer-style key from becoming a false positive.
+ */
+const POINTER_KEY_SUFFIX = /(?:Env|EnvVar|File|Path|_env|_file|_path)$/;
+const KEY_PROBE_VALUE = "x";
 const SAFE_HEADERS = new Set(["content-type", "accept", "user-agent", "http-referer", "x-title"]);
 
 /** Scan nax's root and package configs for literal secret-bearing values. */
@@ -76,16 +85,26 @@ function scanValue(
 }
 
 function classifyString(value: string, key: string, ancestors: readonly string[]): ConfigSecretKind | undefined {
-  const hasReference = ENV_REFERENCE.test(value);
-  ENV_REFERENCE.lastIndex = 0;
-  if (ancestors.includes("headers") && !SAFE_HEADERS.has(key.toLowerCase()) && !hasReference) {
-    return "literal-header";
-  }
-  if (ancestors.includes("env") && !hasReference && redactSecrets({ [key]: value })[key] !== value) {
-    return "secret-env";
-  }
   const stripped = value.replace(ENV_REFERENCE, "");
   ENV_REFERENCE.lastIndex = 0;
+  const hasReference = stripped !== value;
+  // Only a value that is nothing but references ("${VAR}", "$A$B") is exempt from the
+  // literal checks; a literal next to a reference is still a literal secret.
+  const onlyReferences = hasReference && stripped.trim() === "";
+  const inHeaders = ancestors.includes("headers");
+  if (inHeaders && !SAFE_HEADERS.has(key.toLowerCase()) && !hasReference) {
+    return "literal-header";
+  }
+  // Header values keep the header rule above ("Bearer ${TOKEN}" under Authorization is fine).
+  if (!inHeaders && !onlyReferences && !POINTER_KEY_SUFFIX.test(key)) {
+    // Under env the whole pair is checked (a token-shaped value is a secret-env finding); elsewhere
+    // only the key name is probed so a token-shaped value keeps its token-shape classification.
+    if (ancestors.includes("env")) {
+      if (redactSecrets({ [key]: value })[key] !== value) return "secret-env";
+    } else if (redactSecrets({ [key]: KEY_PROBE_VALUE })[key] !== KEY_PROBE_VALUE) {
+      return "secret-key";
+    }
+  }
   if (redactSecrets(stripped) !== stripped) return "token-shape";
   return undefined;
 }
