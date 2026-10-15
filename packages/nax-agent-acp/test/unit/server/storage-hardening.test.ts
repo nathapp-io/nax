@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -126,6 +127,75 @@ test.each(["restore", "newer", "lost-rename"])("takeover protects a raced holder
   } finally {
     _lockDeps.rename = original;
   }
+});
+
+test.each(["heartbeat", "release"] as const)(
+  "serializes a separate-process takeover at the %s mutation barrier",
+  async (kind) => {
+    const s = setup();
+    const release = await s.store.acquireLock("a");
+    const originalRename = _lockDeps.rename;
+    const originalRemove = _lockDeps.remove;
+    const contend = () => {
+      const child = spawnSync(process.execPath, [join(import.meta.dir, "../../fixtures/lock-contender.ts"), s.path], {
+        encoding: "utf8",
+        timeout: 10_000,
+      });
+      expect(child.status).toBe(0);
+      return JSON.parse(child.stdout);
+    };
+    let attempted = false;
+    let acquired = false;
+    const barrier = () => {
+      attempted = true;
+      acquired = contend().acquired;
+    };
+    _lockDeps.rename = (from, to) => {
+      if (to === s.path) barrier();
+      originalRename(from, to);
+    };
+    _lockDeps.remove = (path, options) => {
+      if (path === s.path) barrier();
+      originalRemove(path, options);
+    };
+    try {
+      if (kind === "heartbeat") await s.advance();
+      else await release();
+      expect(attempted).toBe(true);
+      expect(acquired).toBe(false);
+      // Once A leaves the critical section, B can take ownership. A can no longer
+      // replace or unlink B's lock, even when its old timer/release runs again.
+      _lockDeps.rename = originalRename;
+      _lockDeps.remove = originalRemove;
+      const winner = contend();
+      expect(winner.acquired).toBe(true);
+      await s.advance();
+      await release();
+      expect((await s.read()).nonce).toBe(winner.body.nonce);
+    } finally {
+      _lockDeps.rename = originalRename;
+      _lockDeps.remove = originalRemove;
+      await release();
+    }
+  },
+);
+
+test("recovers a guard abandoned by a process that died in its critical section", async () => {
+  const s = setup();
+  const child = spawnSync(
+    process.execPath,
+    [join(import.meta.dir, "../../fixtures/lock-contender.ts"), s.path, "crash-guard"],
+    {
+      encoding: "utf8",
+      timeout: 10_000,
+    },
+  );
+  expect(child.status).toBe(0);
+  expect((await readdir(`${s.path}.guard`)).length).toBe(1);
+  const release = await s.store.acquireLock("a");
+  expect((await s.read()).pid).toBe(1000);
+  await release();
+  expect(await readdir(s.deps.dir)).toEqual([]);
 });
 
 test("creation links a fully written body, never an empty lock", async () => {

@@ -52,6 +52,86 @@ test.each(["load", "resume"] as const)("cost survives a new registry and %s", as
   await second.registry.closeAll();
 });
 
+test.each(["close", "closeAll"] as const)(
+  "%s drains cancelled-turn cost persistence before releasing ownership",
+  async (method) => {
+    const started = Promise.withResolvers<void>();
+    const persist = Promise.withResolvers<void>();
+    const writing = Promise.withResolvers<void>();
+    const script: Script = async function* (control) {
+      yield { type: "usage", round: 1, inputTokens: 1, outputTokens: 1, costUsd: 0.5 };
+      started.resolve();
+      await control.cancelled;
+      yield turnEnd("cancelled");
+    };
+    const s = setupRegistry(dir(), OPTIONS, { scripts: [script] });
+    const { sessionId } = await s.registry.create(s.input());
+    const write = s.storage.writeMeta;
+    s.storage.writeMeta = async (meta) => {
+      writing.resolve();
+      await persist.promise;
+      await write(meta);
+    };
+    const server = s.registry.get(sessionId);
+    const turn = server.prompt(prompt);
+    await started.promise;
+    let closed = false;
+    const closing = (method === "close" ? s.registry.close(sessionId) : s.registry.closeAll()).then(() => {
+      closed = true;
+    });
+    // The old implementation has already removed the entry, so never invokes writeMeta.
+    await Promise.race([writing.promise, closing]);
+    expect(closed).toBe(false);
+    expect(server.isClosed()).toBe(true);
+    await expect(server.prompt(prompt)).rejects.toThrow();
+    expect(await readFile(join(s.dir, `${sessionId}.lock`), "utf8")).toContain("nonce");
+    persist.resolve();
+    await Promise.all([turn, closing]);
+    expect((await s.storage.readMeta(sessionId))?.costUsd).toBe(0.5);
+    expect(s.registry.find(sessionId)).toBeUndefined();
+    await expect(readFile(join(s.dir, `${sessionId}.lock`))).rejects.toMatchObject({ code: "ENOENT" });
+    const second = setupRegistry(s.dir, OPTIONS, { scripts: [priced(0.25)] });
+    await second.registry.resume(sessionId, second.input());
+    await second.registry.get(sessionId).prompt(prompt);
+    expect((await second.storage.readMeta(sessionId))?.costUsd).toBe(0.75);
+    await second.registry.closeAll();
+  },
+);
+
+test("bounded shutdown retains ownership until a slow cancelled turn finishes bookkeeping", async () => {
+  const started = Promise.withResolvers<void>();
+  const drain = Promise.withResolvers<void>();
+  const released = Promise.withResolvers<void>();
+  const script: Script = async function* (control) {
+    yield { type: "usage", round: 1, inputTokens: 1, outputTokens: 1, costUsd: 0.5 };
+    started.resolve();
+    await control.cancelled;
+    await drain.promise;
+    yield turnEnd("cancelled");
+  };
+  const s = setupRegistry(dir(), OPTIONS, { scripts: [script] });
+  const acquire = s.storage.acquireLock;
+  s.storage.acquireLock = async (id) => {
+    const release = await acquire(id);
+    return async () => {
+      expect((await s.storage.readMeta(id))?.costUsd).toBe(0.5);
+      await release();
+      released.resolve();
+    };
+  };
+  const { sessionId } = await s.registry.create(s.input());
+  const turn = s.registry.get(sessionId).prompt(prompt);
+  await started.promise;
+  await s.registry.closeAll();
+  expect(s.lines.some((line) => line.message.includes("did not close"))).toBe(true);
+  expect(await readFile(join(s.dir, `${sessionId}.lock`), "utf8")).toContain("nonce");
+  await expect(s.registry.resume(sessionId, s.input())).rejects.toThrow();
+  drain.resolve();
+  await turn;
+  await released.promise;
+  expect(s.registry.find(sessionId)).toBeUndefined();
+});
+
 test("cost write failure warns once without changing turn result", async () => {
   const s = setupRegistry(dir(), OPTIONS, { scripts: [priced(0.5)] });
   const { sessionId } = await s.registry.create(s.input());

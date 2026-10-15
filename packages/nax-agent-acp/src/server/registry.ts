@@ -394,9 +394,8 @@ export function createSessionRegistry(deps: RegistryDeps): SessionRegistry {
       closing = true;
       shutdown.abort();
       const open = [...entries.entries()];
-      entries.clear();
       const wait = deps.shutdownWaitMs ?? SHUTDOWN_WAIT_MS;
-      await closeEntries({ open, wait, logger: deps.logger });
+      await closeEntries({ open, entries, wait, logger: deps.logger });
     },
   };
 }

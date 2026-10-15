@@ -77,6 +77,7 @@ export function createReopen(deps: ReopenDeps): Reopener {
     async reopen(sessionId, input, replay) {
       const open = deps.entries.get(sessionId);
       if (open !== undefined) {
+        if (open.server.isClosed()) throw unknownSession(sessionId);
         // An already-open session keeps its connection and ignores input.mcpServers (§4.4).
         if (replay) {
           await replayTo(open.port, (await deps.transcripts.load(sessionId))?.messages ?? [], open.meta.cwd, (name) =>

@@ -19,10 +19,12 @@ function waitAtMost(ms: number): { readonly done: Promise<"timeout">; cancel(): 
 
 export async function closeEntries({
   open,
+  entries,
   wait,
   logger,
 }: {
   readonly open: readonly (readonly [string, Entry])[];
+  readonly entries: Map<string, Entry>;
   readonly wait: number;
   readonly logger: AgentLogger;
 }): Promise<void> {
@@ -40,11 +42,21 @@ export async function closeEntries({
       const outcome = await Promise.race([closed, limit.done]);
       limit.cancel();
       if (outcome === "timeout") logger.warn("session", "session did not close in time", { sessionId, waitMs: wait });
-      try {
-        await entry.mcp.closeAll();
-      } finally {
-        await entry.release();
-      }
+      const cleanup = async () => {
+        entries.delete(sessionId);
+        try {
+          await entry.mcp.closeAll();
+        } finally {
+          await entry.release();
+        }
+      };
+      if (outcome === "timeout" && entry.server.running) {
+        // Bound shutdown, not ownership: a slow cancelled turn must still be
+        // able to persist its cost before another process can resume it.
+        void closed.then(cleanup).catch((error: unknown) => {
+          logger.warn("session", "deferred session cleanup failed", { sessionId, error: messageOf(error) });
+        });
+      } else await cleanup();
     }),
   );
 }
@@ -81,10 +93,10 @@ export function createEntryServer({
 }
 
 export async function closeRegistryEntry(entries: Map<string, Entry>, sessionId: string, entry: Entry): Promise<void> {
-  entries.delete(sessionId);
   try {
     await entry.server.close();
   } finally {
+    entries.delete(sessionId);
     try {
       await entry.mcp.closeAll();
     } finally {

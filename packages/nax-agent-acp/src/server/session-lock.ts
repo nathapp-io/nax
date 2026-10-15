@@ -1,8 +1,9 @@
-/** Local-filesystem ownership protocol. Critical check/mutate sequences do not yield. */
+/** Local-filesystem ownership protocol. All lock mutations share an exclusive directory guard. */
 import { randomUUID } from "node:crypto";
 import { linkSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { RequestError } from "@agentclientprotocol/sdk";
 import { z } from "zod";
+import { withSessionLockGuard as guarded } from "#src/server/session-lock-guard";
 import type { StorageDeps } from "#src/server/storage";
 
 export const LOCK_HEARTBEAT_MS = 30_000;
@@ -22,7 +23,7 @@ const LockSchema = z.union([
   }),
 ]);
 type Body = z.infer<typeof LockSchema>;
-export const _lockDeps = { rename: renameSync, link: linkSync };
+export const _lockDeps = { rename: renameSync, link: linkSync, remove: rmSync };
 
 function codeOf(error: unknown): unknown {
   return typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
@@ -105,18 +106,21 @@ export function acquireSessionLock(
 ): () => Promise<void> {
   const stamp = deps.now().toISOString();
   const body = { pid: deps.pid, startedAt: stamp, nonce: randomUUID(), heartbeatAt: stamp };
-  if (!create(path, body)) takeover(path, body, deps, isAlive);
+  guarded(path, () => {
+    if (!create(path, body)) takeover(path, body, deps, isAlive);
+  });
   const timer = (deps.setInterval ?? setInterval)(() => {
     const temp = `${path}.${body.nonce}.tmp`;
     try {
-      if (read(path).body?.nonce !== body.nonce) {
-        clearInterval(timer);
-        return;
-      }
-      body.heartbeatAt = deps.now().toISOString();
-      writeFileSync(temp, JSON.stringify(body));
-      if (read(path).body?.nonce === body.nonce) _lockDeps.rename(temp, path);
-      else clearInterval(timer);
+      guarded(path, () => {
+        if (read(path).body?.nonce !== body.nonce) {
+          clearInterval(timer);
+          return;
+        }
+        body.heartbeatAt = deps.now().toISOString();
+        writeFileSync(temp, JSON.stringify(body));
+        _lockDeps.rename(temp, path);
+      });
     } catch (error) {
       deps.logger.warn("session", "lock heartbeat failed", { path, error: String(error) });
     } finally {
@@ -126,6 +130,8 @@ export function acquireSessionLock(
   timer.unref();
   return async () => {
     clearInterval(timer);
-    if (read(path).body?.nonce === body.nonce) rmSync(path, { force: true });
+    guarded(path, () => {
+      if (read(path).body?.nonce === body.nonce) _lockDeps.remove(path, { force: true });
+    });
   };
 }

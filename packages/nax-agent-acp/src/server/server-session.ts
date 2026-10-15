@@ -140,6 +140,8 @@ export function createServerSession(deps: ServerSessionDeps): ServerSession {
   let turn: Turn | undefined;
   let agent: AgentSession = deps.session;
   let contextWindow = deps.contextWindow;
+  let drained = Promise.resolve();
+  let closing: Promise<void> | undefined;
 
   function stopWaiting(): void {
     turn?.permissions.abortAll();
@@ -213,23 +215,33 @@ export function createServerSession(deps: ServerSessionDeps): ServerSession {
     },
     async prompt(blocks) {
       if (running) throw turnInProgress();
+      if (closed) throw RequestError.invalidRequest(undefined, "session is closed");
       const message = flattenPrompt(blocks);
       running = true;
       cancelBeforeSend = false;
+      let finish: () => void = () => {};
+      drained = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
       let outcome: PromptOutcome | undefined;
       try {
         outcome = await runTurn(message);
       } finally {
         // Still "running" while the turn is recorded, so a switchTo cannot
         // slip in and write metadata from before this turn's title/updatedAt.
-        await reportTurnEnd(message);
-        running = false;
+        try {
+          await reportTurnEnd(message);
+        } finally {
+          running = false;
+          finish();
+        }
       }
       if (outcome === undefined) throw RequestError.internalError(undefined, "the turn ended without a turn_end event");
       if (outcome.kind === "error") throw outcome.error;
       return outcome.response;
     },
     async switchTo(open, restore) {
+      if (closed) throw RequestError.invalidRequest(undefined, "session is closed");
       if (running) throw turnInProgress();
       running = true;
       try {
@@ -271,11 +283,23 @@ export function createServerSession(deps: ServerSessionDeps): ServerSession {
       agent.cancel("cancelled by the client");
       stopWaiting();
     },
-    async close() {
+    close() {
+      if (closing !== undefined) return closing;
+      if (closed) return Promise.resolve();
+      closed = true; // Refuse new prompts/switches before the first await.
+      cancelBeforeSend = true;
+      agent.cancel("session is closing");
       stopWaiting();
-      if (closed) return;
-      closed = true;
-      await agent.close();
+      closing = (async () => {
+        try {
+          await agent.close();
+        } finally {
+          // AgentSession.close need not await the facade's event delivery or
+          // onTurnEnd. Ownership must outlive both, even if close rejects.
+          await drained;
+        }
+      })();
+      return closing;
     },
   };
 }
