@@ -12,10 +12,43 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { NATIVE_AGENT } from "@nathapp/nax-agent";
 import { byCodePoint } from "@nathapp/nax-agent/internal";
-import { collectConfiguredModelPins } from "@/precheck/checks-model-resolution-walk";
+import { collectConfiguredModelPins, splitEntry } from "@/precheck/checks-model-resolution-walk";
 
 const FIX_REVIEW_SITE = "review.fixReview.model";
+const EFFORT_MODEL_CONFIG = {
+  agent: { default: NATIVE_AGENT },
+  models: { native: { powerful: "opencode-go/deepseek-v4.1-flash[high]" } },
+};
+
+describe("splitEntry — effort suffix normalization (US-001)", () => {
+  test("AC-1: strips effort suffix from a provider-qualified model", () => {
+    expect(splitEntry("opencode-go/deepseek-v4.1-flash[high]")).toEqual({
+      provider: "opencode-go",
+      model: "deepseek-v4.1-flash",
+    });
+  });
+
+  test("AC-2: preserves a provider-qualified model without effort suffix", () => {
+    expect(splitEntry("openai/gpt-5.4-mini")).toEqual({ provider: "openai", model: "gpt-5.4-mini" });
+  });
+
+  test("AC-3: strips effort suffix from a bare model and infers provider", () => {
+    expect(splitEntry("claude-sonnet-4-5[low]")).toEqual({ provider: "anthropic", model: "claude-sonnet-4-5" });
+  });
+
+  test("AC-4: collected native tier entry uses the normalized id", () => {
+    const { tierEntries } = collectConfiguredModelPins(EFFORT_MODEL_CONFIG);
+    expect(tierEntries).toContainEqual(
+      expect.objectContaining({
+        keyPath: "models.native.powerful",
+        provider: "opencode-go",
+        model: "deepseek-v4.1-flash",
+      }),
+    );
+  });
+});
 
 describe("collectConfiguredModelPins — review.fixReview.model (US-001)", () => {
   test("US-001 AC8: a tier-label fixReview.model adds a review.fixReview.model site", () => {

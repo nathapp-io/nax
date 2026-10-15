@@ -21,6 +21,7 @@
  * { catalogOverrides: [...] } } }`) without restating every other key.
  */
 
+import { parseModelSpec } from "@nathapp/nax-agent";
 import { DEFAULT_AGENT_NAME, DEFAULT_CONFIG, type NaxConfig } from "@/config";
 import type { ConfiguredModel, ProviderCatalogOverride } from "@/config/schema-types";
 
@@ -77,9 +78,10 @@ function providerFromEntry(entry: string): string {
 
 /** Split an entry like "provider/model" into provider+model. Bare strings get a heuristic provider. */
 export function splitEntry(entry: string): { provider: string; model: string } {
-  const slash = entry.indexOf("/");
-  if (slash === -1) return { provider: providerFromEntry(entry), model: entry };
-  return { provider: entry.slice(0, slash), model: entry.slice(slash + 1) };
+  const modelId = parseModelSpec(entry).model;
+  const slash = modelId.indexOf("/");
+  if (slash === -1) return { provider: providerFromEntry(modelId), model: modelId };
+  return { provider: modelId.slice(0, slash), model: modelId.slice(slash + 1) };
 }
 
 /** Build a literal pin from a `ConfiguredModel` (string tier OR `{agent, model}` pin).
