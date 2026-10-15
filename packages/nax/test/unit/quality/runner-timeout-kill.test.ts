@@ -71,21 +71,20 @@ describe("runQualityCommand — SIGKILL after a timeout", () => {
   test("SIGKILLs the group after the grace period although the leader already exited", async () => {
     const { pending } = await startRun();
     await clock.advance(TIMEOUT_MS);
+    // The run waits out the grace period for a group that still has members, so it settles only after it.
+    await clock.advance(GRACE_MS);
     const result = await pending;
 
     expect(result.timedOut).toBe(true);
-    expect(kills.map((k) => k.signal)).toEqual(["SIGTERM", 0]);
-
-    await clock.advance(GRACE_MS);
-
     expect(kills.filter((k) => k.signal === "SIGKILL")).toEqual([{ pid: PID, signal: "SIGKILL", fallback: false }]);
+    expect(clock.pending()).toBe(0);
   });
 
   test("never falls back to the bare pid once the leader has exited", async () => {
     const { pending } = await startRun();
     await clock.advance(TIMEOUT_MS);
-    await pending;
     await clock.advance(GRACE_MS);
+    await pending;
 
     expect(kills.filter((k) => k.signal !== "SIGTERM").every((k) => k.fallback === false)).toBe(true);
   });

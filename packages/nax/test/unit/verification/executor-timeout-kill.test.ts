@@ -64,14 +64,40 @@ describe("executeWithTimeout — SIGKILL after a timeout", () => {
   test("SIGKILLs the group after the grace period although the leader already exited", async () => {
     const { pending } = await startRun();
     await clock.advance(TIMEOUT_S * 1000);
+    // A group with members left is waited out to the end of the grace period, so the call settles only after it.
+    await waitForCondition(() => kills.some((k) => k.signal === 0));
+    await clock.advance(GRACE_MS);
     const result = await pending;
 
     expect(result.timeout).toBe(true);
-    expect(kills.map((k) => k.signal)).toEqual(["SIGTERM", 0]);
-
-    await clock.advance(GRACE_MS);
-
+    expect(kills.map((k) => k.signal)).toEqual(["SIGTERM", 0, "SIGKILL"]);
     expect(kills.filter((k) => k.signal === "SIGKILL")).toEqual([{ pid: PID, signal: "SIGKILL", fallback: false }]);
+    expect(clock.pending()).toBe(0);
+  });
+
+  // The Linux CI case: a SIGTERMed child stays a zombie group member until reaped, so the group probe
+  // still finds it. The SIGKILL timer then fires instead of being cancelled; it must still reach clearTimeout.
+  test("every armed timer reaches clearTimeout when the group outlives the leader", async () => {
+    const armed: unknown[] = [];
+    const cleared = new Set<unknown>();
+    const { setTimeout: arm, clearTimeout: clear } = _executorDeps;
+    _executorDeps.setTimeout = (fn, ms) => {
+      const id = arm(fn, ms);
+      armed.push(id);
+      return id;
+    };
+    _executorDeps.clearTimeout = (id) => {
+      cleared.add(id);
+      clear(id);
+    };
+    const { pending } = await startRun();
+    await clock.advance(TIMEOUT_S * 1000);
+    await waitForCondition(() => kills.some((k) => k.signal === 0));
+    await clock.advance(GRACE_MS);
+    await pending;
+
+    expect(armed.length).toBeGreaterThan(0);
+    expect(armed.filter((id) => !cleared.has(id))).toEqual([]);
   });
 
   test("leaves no timer armed and sends no SIGKILL when the group is already empty", async () => {

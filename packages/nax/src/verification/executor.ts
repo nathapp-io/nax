@@ -166,12 +166,15 @@ export async function executeWithTimeout(
     // otherwise leak. Once the leader is gone its bare pid may have been reused,
     // so the single-process fallback is off. setTimeout (not Bun.sleep) because
     // the timer must be cancellable: it is cleared below when the group is
-    // already empty, and unref'd so it can never keep the process alive.
+    // already empty, and otherwise awaited, so it never outlives this call.
     let leaderExited = false;
-    const sigkillTimer = _executorDeps.setTimeout(() => {
-      _executorDeps.killProcessGroup(pid, "SIGKILL", { singleProcessFallback: !leaderExited });
-    }, gracePeriodMs);
-    (sigkillTimer as { unref?: () => void }).unref?.();
+    let sigkillTimer: unknown;
+    const sigkillSent = new Promise<void>((resolve) => {
+      sigkillTimer = _executorDeps.setTimeout(() => {
+        _executorDeps.killProcessGroup(pid, "SIGKILL", { singleProcessFallback: !leaderExited });
+        resolve();
+      }, gracePeriodMs);
+    });
 
     // Wait for graceful shutdown, but bail early if process already exited.
     // Bun.sleep is not cancellable; use setTimeout via raceWithDeadline so the
@@ -188,11 +191,16 @@ export async function executeWithTimeout(
     );
 
     // Signal 0 probes whether the group still has a member without delivering
-    // anything. An empty group has nothing left to kill; otherwise the SIGKILL
-    // stays armed for the end of the grace period.
+    // anything. An empty group has nothing left to kill; otherwise wait out the
+    // rest of the grace period for the SIGKILL (a Linux zombie still counts as a
+    // member until reaped, so this can wait the full grace period there).
     if (leaderExited && !_executorDeps.killProcessGroup(pid, 0, { singleProcessFallback: false })) {
       _executorDeps.clearTimeout(sigkillTimer);
+    } else {
+      await sigkillSent;
     }
+    // Cleared even once fired: every armed timer reaches clearTimeout (a no-op on a fired one).
+    _executorDeps.clearTimeout(sigkillTimer);
 
     // Bun bug: piped streams may not close after kill — cap the already-in-progress
     // reads with a deadline so we collect whatever was buffered without hanging.

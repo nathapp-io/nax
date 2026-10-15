@@ -199,6 +199,8 @@ async function runSingleCommand(
     let timedOut = false;
     let leaderExited = false;
     let sigkillTimer: unknown;
+    let sigkillSent: Promise<void> | undefined;
+    let sigkillFired = false;
 
     // The shell leader's exit says nothing about the rest of its group, so it
     // only changes HOW the SIGKILL is sent (see below), never whether.
@@ -219,13 +221,15 @@ async function runSingleCommand(
       // Escalate to SIGKILL for the whole group even if the leader exited in the
       // meantime: members that ignored SIGTERM would otherwise leak. Once the
       // leader is gone the bare pid may belong to an unrelated process, so the
-      // single-process fallback is off. The timer outlives this function on
-      // purpose and is unref'd so it can never keep the process alive.
-      sigkillTimer = _qualityRunnerDeps.setTimeout(() => {
-        sigkillTimer = undefined;
-        _qualityRunnerDeps.killProcessGroup(proc.pid, "SIGKILL", { singleProcessFallback: !leaderExited });
-      }, SIGKILL_GRACE_PERIOD_MS);
-      (sigkillTimer as { unref?: () => void }).unref?.();
+      // single-process fallback is off. The timer never outlives this function:
+      // it is cleared below for an empty group, and otherwise awaited.
+      sigkillSent = new Promise<void>((resolve) => {
+        sigkillTimer = _qualityRunnerDeps.setTimeout(() => {
+          sigkillFired = true;
+          _qualityRunnerDeps.killProcessGroup(proc.pid, "SIGKILL", { singleProcessFallback: !leaderExited });
+          resolve();
+        }, SIGKILL_GRACE_PERIOD_MS);
+      });
     }, timeoutMs);
 
     // Drain stdout and stderr concurrently with proc.exited to avoid deadlock
@@ -250,15 +254,15 @@ async function runSingleCommand(
       : await Promise.all([stdoutPromise, stderrPromise]);
 
     _qualityRunnerDeps.clearTimeout(killTimer);
-    // Only a timed-out run keeps the SIGKILL armed, and only while the group still
-    // has a member (signal 0 probes without delivering anything). A clean exit has
-    // nothing to kill.
-    if (
-      sigkillTimer !== undefined &&
-      !(timedOut && _qualityRunnerDeps.killProcessGroup(proc.pid, 0, { singleProcessFallback: false }))
-    ) {
+    // A pending SIGKILL is awaited while the group still has a member (signal 0
+    // probes without delivering anything) and cancelled once it is empty, so no
+    // timer outlives the call.
+    if (sigkillTimer !== undefined) {
+      const membersLeft =
+        !sigkillFired && _qualityRunnerDeps.killProcessGroup(proc.pid, 0, { singleProcessFallback: false });
+      if (membersLeft) await sigkillSent;
+      // Cleared even once fired: every armed timer reaches clearTimeout (a no-op on a fired one).
       _qualityRunnerDeps.clearTimeout(sigkillTimer);
-      sigkillTimer = undefined;
     }
 
     const durationMs = Date.now() - startTime;

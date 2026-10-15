@@ -126,6 +126,9 @@ describe("runQualityCommand — failure (non-zero exit)", () => {
   });
 });
 
+/** What kill(-pgid, 0) raises once every member of the group has exited. */
+const GROUP_GONE = Object.assign(new Error("kill ESRCH"), { code: "ESRCH" });
+
 describe("runQualityCommand — timeout flow", () => {
   let originalSpawn: typeof _qualityRunnerDeps.spawn;
   let originalProcessKill: typeof process.kill;
@@ -150,8 +153,9 @@ describe("runQualityCommand — timeout flow", () => {
     // Mock process.kill to track calls and resolve the process promise
     process.kill = mock((pid: number, signal?: string | number) => {
       killMock(pid, signal);
-      // Simulate process dying after SIGTERM
+      // Simulate process dying after SIGTERM; its group is then empty (signal 0 probes it).
       if (signal === "SIGTERM") resolveExited(143);
+      if (signal === 0) throw GROUP_GONE;
       return true;
     }) as typeof process.kill;
 
@@ -185,6 +189,7 @@ describe("runQualityCommand — timeout flow", () => {
     });
     process.kill = mock((_pid: number, signal?: string | number) => {
       if (signal === "SIGTERM") resolveExited(143);
+      if (signal === 0) throw GROUP_GONE;
       return true;
     }) as typeof process.kill;
     _qualityRunnerDeps.spawn = makeSpawn(() => {
