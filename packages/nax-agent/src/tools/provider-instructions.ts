@@ -25,9 +25,12 @@ export const MCP_INSTRUCTIONS_MAX_CHARS_TOTAL = 6000;
 const SECTION_HEADING = "## MCP servers";
 const TRUNCATION_MARKER = "…(truncated)";
 
-// C0 controls except tab (\u0009) and newline (\u000A), plus DEL.
+// C0 controls except tab (\u0009) and newline (\u000A), plus DEL. Carriage return
+// (\u000D) is NOT exempt: it is a line-break-ish byte that no MCP server needs in
+// prompt text, and keeping it would let a CRLF body smuggle a bare CR into the
+// system prompt.
 // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping control bytes is the point of this regex
-const CONTROL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g;
+const CONTROL_CHARS = /[\u0000-\u0008\u000B-\u001F\u007F]/g;
 
 /**
  * Caps text at `max` code POINTS, so a cut never splits a surrogate pair the

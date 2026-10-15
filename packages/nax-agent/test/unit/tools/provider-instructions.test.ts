@@ -27,6 +27,17 @@ describe("renderProviderInstructions", () => {
     expect(renderProviderInstructions([entry("cm", "a\u0007b\nc\td")])).toBe("## MCP servers\n\n### cm\nab\nc\td");
   });
 
+  test("strips every C0 control except newline and tab, and DEL — carriage return included", () => {
+    const controls = Array.from({ length: 0x20 }, (_, code) => String.fromCharCode(code));
+    const text = controls.filter((char) => char !== "\n" && char !== "\t").join("") + controls.join("") + "\u007F";
+    // Only the tab and the newline of the second half survive, in that order.
+    expect(renderProviderInstructions([entry("cm", text)])).toBe("## MCP servers\n\n### cm\n\t\n");
+  });
+
+  test("a CRLF body loses its carriage returns", () => {
+    expect(renderProviderInstructions([entry("cm", "a\r\nb")])).toBe("## MCP servers\n\n### cm\na\nb");
+  });
+
   test("caps one server's text and marks the cut", () => {
     const rendered = renderProviderInstructions([entry("cm", "x".repeat(2500))]);
     expect(rendered).toBe(`## MCP servers\n\n### cm\n${"x".repeat(2000)}…(truncated)`);
