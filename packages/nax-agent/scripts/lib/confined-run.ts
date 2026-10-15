@@ -169,8 +169,15 @@ export function confinedTestCommand(input: ConfinedCommandInput): string {
 }
 
 /** Is the srt backend built from the default config usable on this host? */
-export function probeConfinedSandbox(): Promise<ProbeResult> {
-  return _confinedRunDeps.probe(_confinedRunDeps.backend(DEFAULT_SANDBOX_CONFIG.network));
+export async function probeConfinedSandbox(): Promise<ProbeResult> {
+  const backend = _confinedRunDeps.backend(DEFAULT_SANDBOX_CONFIG.network);
+  try {
+    return await _confinedRunDeps.probe(backend);
+  } finally {
+    // This standalone probe owns its backend. On Linux, srt's network bridge
+    // processes keep the CLI alive until reset releases them.
+    await backend.reset();
+  }
 }
 
 /** `/tmp/nax/confined-<pid>-<random>`, under the shared temp parent the session temp dirs use. */

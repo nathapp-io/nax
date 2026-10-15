@@ -26,6 +26,7 @@ import {
   confinedTestCommand,
   confinedTestPolicy,
   DEFAULT_TEST_TIMEOUT_MS,
+  probeConfinedSandbox,
   runConfinedTests,
   SANDBOX_UNAVAILABLE_EXIT,
   USAGE_EXIT,
@@ -403,6 +404,33 @@ describe("runConfinedTests", () => {
 });
 
 // ── isConfinedTestRun ───────────────────────────────────────────────────────
+
+describe("probeConfinedSandbox lifecycle", () => {
+  withDepsRestore(_confinedRunDeps);
+
+  test("releases the standalone probe's backend before returning its result", async () => {
+    const record = installSeam();
+    expect(await probeConfinedSandbox()).toEqual({ available: true });
+    expect(record.events).toEqual(["reset"]);
+  });
+
+  test("releases the standalone probe's backend when probing rejects", async () => {
+    const record = installSeam({
+      probe: async () => {
+        throw new Error("probe failed");
+      },
+    });
+    await expect(probeConfinedSandbox()).rejects.toThrow("probe failed");
+    expect(record.events).toEqual(["reset"]);
+  });
+
+  test("releases the standalone probe's backend when the sandbox is unavailable", async () => {
+    const result: ProbeResult = { available: false, reason: "no bwrap" };
+    const record = installSeam({ probe: async () => result });
+    expect(await probeConfinedSandbox()).toEqual(result);
+    expect(record.events).toEqual(["reset"]);
+  });
+});
 
 describe("isConfinedTestRun", () => {
   const saved = process.env[CONFINED_TEST_ENV];

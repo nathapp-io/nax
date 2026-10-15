@@ -130,8 +130,8 @@ describe("buildPlanForStrategy — AC1: triage scope NBF strategy assembly (US-0
   }
 
   function makeCtxWithRuntime(config = makeNaxConfig()) {
-    runtime = makeTestRuntime({ config });
-    return makeMockCallContext({ runtime });
+    runtime = makeTestRuntime({ config, workdir });
+    return makeMockCallContext({ runtime, packageDir: workdir });
   }
 
   function withTriageNbf(extra: Record<string, unknown> = {}): ReturnType<typeof makeNaxConfig> {
@@ -456,8 +456,8 @@ describe("buildPlanForStrategy — AC2/AC3/AC4: triage strategy predicate behavi
   });
 
   function makeCtxWithRuntime(config = makeNaxConfig()) {
-    runtime = makeTestRuntime({ config });
-    return makeMockCallContext({ runtime });
+    runtime = makeTestRuntime({ config, workdir });
+    return makeMockCallContext({ runtime, packageDir: workdir });
   }
 
   function withTriageNbf(): ReturnType<typeof makeNaxConfig> {
@@ -608,8 +608,8 @@ describe("buildPlanForStrategy — AC5/AC6: default-preserving factory options +
         execution: { rectification: { enabled: true, maxAttemptsTotal: 2 } },
       });
       const story = makeStory({ attempts: 1 });
-      localRuntime = makeTestRuntime({ config });
-      const ctx = makeMockCallContext({ runtime: localRuntime });
+      localRuntime = makeTestRuntime({ config, workdir });
+      const ctx = makeMockCallContext({ runtime: localRuntime, packageDir: workdir });
       const inputs = makeTddRetryInputs(story, {
         rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false },
       });
