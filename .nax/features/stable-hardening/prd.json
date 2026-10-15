@@ -3,7 +3,7 @@
   "feature": "stable-hardening",
   "branchName": "feat/stable-hardening",
   "createdAt": "2026-10-16T00:00:00.000Z",
-  "updatedAt": "2026-10-15T16:23:39.915Z",
+  "updatedAt": "2026-10-15T16:29:06.154Z",
   "userStories": [
     {
       "id": "US-001",
@@ -278,14 +278,17 @@
         "hardening"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Adds a focused git-verb refusal helper and extends existing operand, exclusion and stash checks across four source modules using established guard patterns; access-control changes still require strict security test isolation."
+        "reasoning": "Adds a focused git-verb refusal helper and extends existing operand, exclusion and stash checks across four source modules using established guard patterns; access-control changes still require strict security test isolation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/tools/nax-state-guard.ts",
@@ -306,7 +309,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "02d98f7a78db8cc2095a2487364ed476bbdd288d"
     },
     {
       "id": "US-005",
