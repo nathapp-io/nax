@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, readdir, readFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { CodingTool } from "@nathapp/nax-agent/internal";
 import {
@@ -17,9 +16,21 @@ import {
 } from "@nathapp/nax-agent/internal";
 import { assertDefined, cleanupTempDir, makeTempDir, withWarnSpy } from "#test/helpers/index";
 
+const tempDirs: string[] = [];
+
+function makeTestDir(prefix: string): string {
+  const dir = makeTempDir(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+});
+
 describe("createToolAuditSink", () => {
   test("writes one file holding every recorded call", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "tool-audit-"));
+    const dir = makeTestDir("tool-audit-");
     const sink = createToolAuditSink({ dir, sessionName: "s1" });
     sink.record({
       tool: "Read",
@@ -47,7 +58,7 @@ describe("createToolAuditSink", () => {
   });
 
   test("a denial is persisted, not only logged", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "tool-audit-"));
+    const dir = makeTestDir("tool-audit-");
     const sink = createToolAuditSink({ dir, sessionName: "s2" });
     sink.record({
       tool: "Write",
@@ -65,13 +76,13 @@ describe("createToolAuditSink", () => {
   });
 
   test("flushing with no calls writes nothing -- an empty file is not evidence", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "tool-audit-"));
+    const dir = makeTestDir("tool-audit-");
     await createToolAuditSink({ dir, sessionName: "s3" }).flush();
     expect(await readdir(dir)).toHaveLength(0);
   });
 
   test("a surface with zero calls still writes the file (#2410: the never-called session is the point)", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "tool-audit-"));
+    const dir = makeTestDir("tool-audit-");
     const surface: ToolSurfaceRecord = {
       stage: "review",
       transport: "acp",
@@ -92,7 +103,7 @@ describe("createToolAuditSink", () => {
   });
 
   test("calls and surface land in the same file", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "tool-audit-"));
+    const dir = makeTestDir("tool-audit-");
     const sink = createToolAuditSink({
       dir,
       sessionName: "impl",
@@ -122,7 +133,7 @@ describe("createToolAuditSink", () => {
   });
 
   test("a denied row carries the reason", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "tool-audit-"));
+    const dir = makeTestDir("tool-audit-");
     const sink = createToolAuditSink({ dir, sessionName: "US-001-implementer" });
     sink.record({
       tool: "Exec",
@@ -139,7 +150,7 @@ describe("createToolAuditSink", () => {
   });
 
   test("an executed row carries both the requested and the executed argv", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "tool-audit-"));
+    const dir = makeTestDir("tool-audit-");
     const sink = createToolAuditSink({ dir, sessionName: "US-001-implementer" });
     sink.record({
       tool: "Exec",
@@ -161,7 +172,7 @@ describe("createToolAuditSink", () => {
   });
 
   test("review #9: a secret in the ledger row is redacted", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "tool-audit-"));
+    const dir = makeTestDir("tool-audit-");
     const sink = createToolAuditSink({ dir, sessionName: "US-001-implementer" });
     sink.record({
       tool: "Exec",
@@ -180,7 +191,7 @@ describe("createToolAuditSink", () => {
   });
 
   test("records the correlation ids supplied to the runtime", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "tool-audit-"));
+    const dir = makeTestDir("tool-audit-");
     const sink = createToolAuditSink({ dir, sessionName: "s1" });
     sink.record({
       tool: "Read",
@@ -200,7 +211,7 @@ describe("createToolAuditSink", () => {
   });
 
   test("records turn context alongside the tool call", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "tool-audit-"));
+    const dir = makeTestDir("tool-audit-");
     const sink = createToolAuditSink({ dir, sessionName: "s1" });
     sink.record({
       tool: "Read",
@@ -222,7 +233,7 @@ describe("createToolAuditSink", () => {
   });
 
   test("a Bash row's exitCode round-trips through the ledger file (nax#2227)", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "tool-audit-"));
+    const dir = makeTestDir("tool-audit-");
     const sink = createToolAuditSink({ dir, sessionName: "US-001-implementer" });
     sink.record({
       tool: "Bash",
@@ -240,7 +251,7 @@ describe("createToolAuditSink", () => {
   });
 
   test('the runtime writes tool "Exec" for an argv call all the way into the ledger file', async () => {
-    const dir = await mkdtemp(join(tmpdir(), "tool-audit-"));
+    const dir = makeTestDir("tool-audit-");
     const sink = createToolAuditSink({ dir, sessionName: "US-001-implementer" });
     const execTool: CodingTool = {
       name: "RunCommand",
@@ -281,7 +292,7 @@ test("the runtime records a denial through the sink, not only the logger", async
 });
 
 test("writes schemaVersion and the header fields", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "tool-audit-"));
+  const dir = makeTestDir("tool-audit-");
   const sink = createToolAuditSink({
     dir,
     sessionName: "US-001-implementer",
@@ -312,7 +323,7 @@ test("writes schemaVersion and the header fields", async () => {
 });
 
 test("the filename carries the runId when one is known", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "tool-audit-"));
+  const dir = makeTestDir("tool-audit-");
   const sink = createToolAuditSink({ dir, sessionName: "s1", header: { runId: "run-fn" } });
   sink.record({ tool: "Read", outcome: "ok", input: {}, resultBytes: 1, at: "2026-09-20T00:00:00.000Z" });
   await sink.flush();
@@ -322,7 +333,7 @@ test("the filename carries the runId when one is known", async () => {
 });
 
 test("falls back to the unprefixed name when no runId is known", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "tool-audit-"));
+  const dir = makeTestDir("tool-audit-");
   const sink = createToolAuditSink({ dir, sessionName: "s2" });
   sink.record({ tool: "Read", outcome: "ok", input: {}, resultBytes: 1, at: "2026-09-20T00:00:00.000Z" });
   await sink.flush();
@@ -332,7 +343,7 @@ test("falls back to the unprefixed name when no runId is known", async () => {
 });
 
 test("omits header keys that were not supplied", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "tool-audit-"));
+  const dir = makeTestDir("tool-audit-");
   const sink = createToolAuditSink({ dir, sessionName: "s1" });
   sink.record({ tool: "Read", outcome: "ok", input: {}, resultBytes: 1, at: "2026-09-20T00:00:00.000Z" });
   await sink.flush();

@@ -5,10 +5,10 @@
  * override file path does not exist. Non-blocking: run continues regardless.
  */
 
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { type DeepPartial, makeNaxConfig, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, type DeepPartial, makeNaxConfig, makeTempDir } from "@test/helpers";
 import type { NaxConfig } from "@/config/types";
 import {
   _checkDiskSpaceDeps,
@@ -19,8 +19,20 @@ import {
   parseDiskSpaceOutput,
 } from "@/precheck";
 
+const tempDirs: string[] = [];
+
+function makeTestDir(prefix: string): string {
+  const dir = makeTempDir(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+});
+
 function makeTmpDir(): string {
-  return makeTempDir("nax-test-");
+  return makeTestDir("nax-test-");
 }
 
 function makeMinimalConfig(overrides?: Record<string, string>): NaxConfig {
@@ -127,7 +139,7 @@ describe("checkGitignoreCoversNax", () => {
   let workdir: string;
 
   beforeEach(() => {
-    workdir = makeTempDir("nax-gitignore-test-");
+    workdir = makeTestDir("nax-gitignore-test-");
   });
 
   test("passes when .gitignore has all required patterns but omits .nax/features/*/status.json", async () => {
@@ -176,7 +188,7 @@ describe("checkGitignoreCoversNax — retired acceptance-test patterns", () => {
   ];
 
   test("no longer requires the acceptance-test patterns", async () => {
-    const workdir = makeTempDir("nax-gitignore-test-");
+    const workdir = makeTestDir("nax-gitignore-test-");
     writeFileSync(join(workdir, ".gitignore"), COVERING.join("\n"));
 
     const result = await checkGitignoreCoversNax(workdir);
@@ -184,7 +196,7 @@ describe("checkGitignoreCoversNax — retired acceptance-test patterns", () => {
   });
 
   test("warns and names a retired pattern still present, since it hides the committed acceptance tests", async () => {
-    const workdir = makeTempDir("nax-gitignore-test-");
+    const workdir = makeTestDir("nax-gitignore-test-");
     writeFileSync(join(workdir, ".gitignore"), [...COVERING, "**/.nax-acceptance*"].join("\n"));
 
     const result = await checkGitignoreCoversNax(workdir);
@@ -194,7 +206,7 @@ describe("checkGitignoreCoversNax — retired acceptance-test patterns", () => {
   });
 
   test("a commented-out retired pattern is not active and does not warn", async () => {
-    const workdir = makeTempDir("nax-gitignore-test-");
+    const workdir = makeTestDir("nax-gitignore-test-");
     writeFileSync(join(workdir, ".gitignore"), [...COVERING, "# **/.nax-acceptance*"].join("\n"));
 
     const result = await checkGitignoreCoversNax(workdir);

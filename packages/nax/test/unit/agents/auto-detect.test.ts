@@ -6,8 +6,20 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { autoDetectContextFiles, extractKeywords } from "@/context/auto-detect";
+
+const tempDirs: string[] = [];
+
+function makeTestDir(prefix: string): string {
+  const dir = makeTempDir(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+});
 
 describe("Context Auto-Detection", () => {
   describe("extractKeywords", () => {
@@ -69,7 +81,7 @@ describe("Context Auto-Detection", () => {
 
     beforeEach(async () => {
       // Create temp git repo
-      tempDir = makeTempDir("nax-autodetect-test-");
+      tempDir = makeTestDir("nax-autodetect-test-");
       await Bun.spawn(["git", "init"], { cwd: tempDir }).exited;
       await Bun.spawn(["git", "config", "user.email", "test@test.com"], { cwd: tempDir }).exited;
       await Bun.spawn(["git", "config", "user.name", "Test User"], { cwd: tempDir }).exited;
@@ -191,7 +203,7 @@ describe("Context Auto-Detection", () => {
 
     test("should handle non-git directory gracefully", async () => {
       // Create non-git temp dir
-      const nonGitDir = makeTempDir("nax-nongit-");
+      const nonGitDir = makeTestDir("nax-nongit-");
       await fs.mkdir(path.join(nonGitDir, "src"), { recursive: true });
       await fs.writeFile(path.join(nonGitDir, "src/file.ts"), "export function test() {}");
 

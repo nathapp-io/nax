@@ -51,8 +51,8 @@ export const _authDeps = {
   ambientAuthAvailable,
   providerIds: async (): Promise<string[]> => (await defaultProviders()).map((provider) => provider.id),
   /**
-   * Injectable timer pair — lets tests drive `anyAmbientCredential`'s
-   * expiry branch off a virtual clock instead of waiting the full 2s
+   * Injectable timer pair — lets tests drive ambient credential probes'
+   * expiry branches off a virtual clock instead of waiting the full 2s
    * production timeout. Mirrors `_heartbeatDeps` / `_idleWatchdogDeps`.
    *
    * @internal
@@ -345,14 +345,14 @@ export async function providersWithoutCredentials(providerIds: readonly string[]
       }),
   ).then((missing) => missing.filter((id): id is string => id !== undefined));
 
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  let timer: unknown;
   const expiry = new Promise<string[]>((resolve) => {
-    timer = setTimeout(() => resolve([]), AMBIENT_PROBE_TIMEOUT_MS);
+    timer = _authDeps.setTimeout(() => resolve([]), AMBIENT_PROBE_TIMEOUT_MS);
   });
   try {
     return await Promise.race([sweep, expiry]);
   } finally {
-    if (timer !== undefined) clearTimeout(timer);
+    if (timer !== undefined) _authDeps.clearTimeout(timer);
   }
 }
 

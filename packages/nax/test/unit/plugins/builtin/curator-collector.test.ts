@@ -2,13 +2,29 @@
  * Curator Observation Collector Tests
  */
 
-import { describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { makeNaxConfig } from "@test/helpers";
+import { cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
 import type { CuratorPostRunContext } from "@/plugins/builtin/curator";
 import { collectObservations } from "@/plugins/builtin/curator";
+
+const tempDirs: string[] = [];
+let contextRoot: string;
+
+beforeEach(() => {
+  contextRoot = makeTestDir("curator-context-");
+});
+
+function makeTestDir(prefix: string): string {
+  const dir = makeTempDir(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+});
 
 /** Minimal context pointing the collector at a temp workdir. */
 function makeContext(root: string, workdir: string): CuratorPostRunContext {
@@ -38,8 +54,8 @@ describe("collectObservations", () => {
     const context: CuratorPostRunContext = {
       runId: "run-123",
       feature: "test-feature",
-      workdir: "/tmp/test",
-      prdPath: "/tmp/test/prd.json",
+      workdir: join(contextRoot, "work"),
+      prdPath: join(contextRoot, "work/prd.json"),
       branch: "main",
       totalDurationMs: 1000,
       totalCost: 10,
@@ -49,10 +65,10 @@ describe("collectObservations", () => {
       pluginConfig: {},
       logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
       config: makeNaxConfig(),
-      outputDir: "/tmp/output",
-      globalDir: "/tmp/global",
+      outputDir: join(contextRoot, "out"),
+      globalDir: join(contextRoot, "global"),
       projectKey: "test-project",
-      curatorRollupPath: "/tmp/rollup.jsonl",
+      curatorRollupPath: join(contextRoot, "rollup.jsonl"),
     };
 
     const observations = await collectObservations(context);
@@ -63,8 +79,8 @@ describe("collectObservations", () => {
     const context: CuratorPostRunContext = {
       runId: "run-456",
       feature: "test-feature",
-      workdir: "/tmp/test",
-      prdPath: "/tmp/test/prd.json",
+      workdir: join(contextRoot, "work"),
+      prdPath: join(contextRoot, "work/prd.json"),
       branch: "main",
       totalDurationMs: 1000,
       totalCost: 10,
@@ -74,10 +90,10 @@ describe("collectObservations", () => {
       pluginConfig: {},
       logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
       config: makeNaxConfig(),
-      outputDir: "/tmp/output",
-      globalDir: "/tmp/global",
+      outputDir: join(contextRoot, "out"),
+      globalDir: join(contextRoot, "global"),
       projectKey: "test-project",
-      curatorRollupPath: "/tmp/rollup.jsonl",
+      curatorRollupPath: join(contextRoot, "rollup.jsonl"),
     };
 
     const observations = await collectObservations(context);
@@ -91,8 +107,8 @@ describe("collectObservations", () => {
     const context: CuratorPostRunContext = {
       runId,
       feature: "test-feature",
-      workdir: "/tmp/test",
-      prdPath: "/tmp/test/prd.json",
+      workdir: join(contextRoot, "work"),
+      prdPath: join(contextRoot, "work/prd.json"),
       branch: "main",
       totalDurationMs: 1000,
       totalCost: 10,
@@ -102,10 +118,10 @@ describe("collectObservations", () => {
       pluginConfig: {},
       logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
       config: makeNaxConfig(),
-      outputDir: "/tmp/output",
-      globalDir: "/tmp/global",
+      outputDir: join(contextRoot, "out"),
+      globalDir: join(contextRoot, "global"),
       projectKey: "test-project",
-      curatorRollupPath: "/tmp/rollup.jsonl",
+      curatorRollupPath: join(contextRoot, "rollup.jsonl"),
     };
 
     const observations = await collectObservations(context);
@@ -118,8 +134,8 @@ describe("collectObservations", () => {
     const context: CuratorPostRunContext = {
       runId: "run-101",
       feature: "test-feature",
-      workdir: "/tmp/test",
-      prdPath: "/tmp/test/prd.json",
+      workdir: join(contextRoot, "work"),
+      prdPath: join(contextRoot, "work/prd.json"),
       branch: "main",
       totalDurationMs: 1000,
       totalCost: 10,
@@ -129,10 +145,10 @@ describe("collectObservations", () => {
       pluginConfig: {},
       logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
       config: makeNaxConfig(),
-      outputDir: "/tmp/output",
-      globalDir: "/tmp/global",
+      outputDir: join(contextRoot, "out"),
+      globalDir: join(contextRoot, "global"),
       projectKey: "test-project",
-      curatorRollupPath: "/tmp/rollup.jsonl",
+      curatorRollupPath: join(contextRoot, "rollup.jsonl"),
     };
 
     const observations = await collectObservations(context);
@@ -153,8 +169,8 @@ describe("collectObservations", () => {
     const context: CuratorPostRunContext = {
       runId: "run-202",
       feature: "test-feature",
-      workdir: "/tmp/test",
-      prdPath: "/tmp/test/prd.json",
+      workdir: join(contextRoot, "work"),
+      prdPath: join(contextRoot, "work/prd.json"),
       branch: "main",
       totalDurationMs: 1000,
       totalCost: 10,
@@ -165,9 +181,9 @@ describe("collectObservations", () => {
       logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
       config: makeNaxConfig(),
       outputDir: "/nonexistent/path",
-      globalDir: "/tmp/global",
+      globalDir: join(contextRoot, "global"),
       projectKey: "test-project",
-      curatorRollupPath: "/tmp/rollup.jsonl",
+      curatorRollupPath: join(contextRoot, "rollup.jsonl"),
     };
 
     // Should not throw
@@ -179,8 +195,8 @@ describe("collectObservations", () => {
     const context: CuratorPostRunContext = {
       runId: "run-303",
       feature: "test-feature",
-      workdir: "/tmp/test",
-      prdPath: "/tmp/test/prd.json",
+      workdir: join(contextRoot, "work"),
+      prdPath: join(contextRoot, "work/prd.json"),
       branch: "main",
       totalDurationMs: 1000,
       totalCost: 10,
@@ -190,10 +206,10 @@ describe("collectObservations", () => {
       pluginConfig: {},
       logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
       config: makeNaxConfig(),
-      outputDir: "/tmp/output",
-      globalDir: "/tmp/global",
+      outputDir: join(contextRoot, "out"),
+      globalDir: join(contextRoot, "global"),
       projectKey: "test-project",
-      curatorRollupPath: "/tmp/rollup.jsonl",
+      curatorRollupPath: join(contextRoot, "rollup.jsonl"),
       logFilePath: undefined,
     };
 
@@ -206,8 +222,8 @@ describe("collectObservations", () => {
     const context: CuratorPostRunContext = {
       runId: "run-404",
       feature: "test-feature",
-      workdir: "/tmp/nonexistent",
-      prdPath: "/tmp/test/prd.json",
+      workdir: join(contextRoot, "nonexistent"),
+      prdPath: join(contextRoot, "work/prd.json"),
       branch: "main",
       totalDurationMs: 1000,
       totalCost: 10,
@@ -217,10 +233,10 @@ describe("collectObservations", () => {
       pluginConfig: {},
       logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
       config: makeNaxConfig(),
-      outputDir: "/tmp/output",
-      globalDir: "/tmp/global",
+      outputDir: join(contextRoot, "out"),
+      globalDir: join(contextRoot, "global"),
       projectKey: "test-project",
-      curatorRollupPath: "/tmp/rollup.jsonl",
+      curatorRollupPath: join(contextRoot, "rollup.jsonl"),
     };
 
     // Should not throw
@@ -232,8 +248,8 @@ describe("collectObservations", () => {
     const context: CuratorPostRunContext = {
       runId: "run-505",
       feature: "test-feature",
-      workdir: "/tmp/test",
-      prdPath: "/tmp/test/prd.json",
+      workdir: join(contextRoot, "work"),
+      prdPath: join(contextRoot, "work/prd.json"),
       branch: "main",
       totalDurationMs: 1000,
       totalCost: 10,
@@ -243,10 +259,10 @@ describe("collectObservations", () => {
       pluginConfig: {},
       logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
       config: makeNaxConfig(),
-      outputDir: "/tmp/output",
-      globalDir: "/tmp/global",
+      outputDir: join(contextRoot, "out"),
+      globalDir: join(contextRoot, "global"),
       projectKey: "test-project",
-      curatorRollupPath: "/tmp/rollup.jsonl",
+      curatorRollupPath: join(contextRoot, "rollup.jsonl"),
     };
 
     const observations = await collectObservations(context);
@@ -258,8 +274,8 @@ describe("collectObservations", () => {
     const context: CuratorPostRunContext = {
       runId: "run-606",
       feature: "test-feature",
-      workdir: "/tmp/test",
-      prdPath: "/tmp/test/prd.json",
+      workdir: join(contextRoot, "work"),
+      prdPath: join(contextRoot, "work/prd.json"),
       branch: "main",
       totalDurationMs: 1000,
       totalCost: 10,
@@ -269,10 +285,10 @@ describe("collectObservations", () => {
       pluginConfig: {},
       logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
       config: makeNaxConfig(),
-      outputDir: "/tmp/output",
-      globalDir: "/tmp/global",
+      outputDir: join(contextRoot, "out"),
+      globalDir: join(contextRoot, "global"),
       projectKey: "test-project",
-      curatorRollupPath: "/tmp/rollup.jsonl",
+      curatorRollupPath: join(contextRoot, "rollup.jsonl"),
     };
 
     const observations = await collectObservations(context);
@@ -281,7 +297,7 @@ describe("collectObservations", () => {
   });
 
   test("projects real metrics, review-audit, manifest, and JSONL shapes", async () => {
-    const root = await mkdtemp(join(tmpdir(), "curator-collector-"));
+    const root = makeTestDir("curator-collector-");
     const workdir = join(root, "work");
     const outputDir = join(root, "out");
     const storyDir = join(workdir, ".nax", "features", "feat-auth", "stories", "US-001");
@@ -417,7 +433,7 @@ describe("collectObservations", () => {
   });
 
   test("chunk-included carries the manifest's real per-chunk token count (#1421)", async () => {
-    const root = await mkdtemp(join(tmpdir(), "curator-chunk-tokens-"));
+    const root = makeTestDir("curator-chunk-tokens-");
     const workdir = join(root, "work");
     const storyDir = join(workdir, ".nax", "features", "feat-auth", "stories", "US-001");
     await mkdir(storyDir, { recursive: true });
@@ -441,7 +457,7 @@ describe("collectObservations", () => {
   });
 
   test("chunk-included falls back to 0 tokens for manifests written before chunkTokens existed", async () => {
-    const root = await mkdtemp(join(tmpdir(), "curator-chunk-tokens-legacy-"));
+    const root = makeTestDir("curator-chunk-tokens-legacy-");
     const workdir = join(root, "work");
     const storyDir = join(workdir, ".nax", "features", "feat-auth", "stories", "US-001");
     await mkdir(storyDir, { recursive: true });
@@ -463,7 +479,7 @@ describe("collectObservations", () => {
   });
 
   test("AC-4: legacy on-disk LLM-shape audits remain readable", async () => {
-    const root = await mkdtemp(join(tmpdir(), "curator-llm-finding-"));
+    const root = makeTestDir("curator-llm-finding-");
     const outputDir = join(root, "out");
     const auditDir = join(outputDir, "review-audit", "feat-x");
     await mkdir(auditDir, { recursive: true });
@@ -537,7 +553,7 @@ describe("collectObservations", () => {
   });
 
   test("AC-3: canonical-shape audits pass through without fallback logic", async () => {
-    const root = await mkdtemp(join(tmpdir(), "curator-canonical-pass-"));
+    const root = makeTestDir("curator-canonical-pass-");
     const outputDir = join(root, "out");
     const auditDir = join(outputDir, "review-audit", "feat-z");
     await mkdir(auditDir, { recursive: true });
@@ -595,7 +611,7 @@ describe("collectObservations", () => {
   });
 
   test("prefers canonical `message` field when both message and issue are present", async () => {
-    const root = await mkdtemp(join(tmpdir(), "curator-canonical-finding-"));
+    const root = makeTestDir("curator-canonical-finding-");
     const outputDir = join(root, "out");
     const auditDir = join(outputDir, "review-audit", "feat-y");
     await mkdir(auditDir, { recursive: true });
@@ -687,7 +703,7 @@ describe("collectObservations — escalation log entries (US-001)", () => {
   }
 
   test("AC-4: fromTier/nextTier log entry yields escalation observation with payload.from 'fast'", async () => {
-    const root = await mkdtemp(join(tmpdir(), "us001-collector-fromnext-"));
+    const root = makeTestDir("us001-collector-fromnext-");
     const entry = {
       timestamp: "2026-05-04T00:00:00.000Z",
       level: "warn",
@@ -707,7 +723,7 @@ describe("collectObservations — escalation log entries (US-001)", () => {
   });
 
   test("AC-5: legacy currentTier log entry (no fromTier) yields payload.from 'fast'", async () => {
-    const root = await mkdtemp(join(tmpdir(), "us001-collector-current-"));
+    const root = makeTestDir("us001-collector-current-");
     const entry = {
       timestamp: "2026-05-04T00:00:00.000Z",
       level: "warn",
@@ -727,7 +743,7 @@ describe("collectObservations — escalation log entries (US-001)", () => {
   });
 
   test("AC-8: escalation observation payload.from is a non-empty string", async () => {
-    const root = await mkdtemp(join(tmpdir(), "us001-collector-nonempty-"));
+    const root = makeTestDir("us001-collector-nonempty-");
     const entry = {
       timestamp: "2026-05-04T00:00:00.000Z",
       level: "warn",

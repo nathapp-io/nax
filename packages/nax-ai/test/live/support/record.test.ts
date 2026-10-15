@@ -1,9 +1,15 @@
 import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type { Api, AssistantMessageEvent, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { PiDeps } from "../../../src/protocols/pi-client.ts";
 import { recordingDeps } from "./record.ts";
+
+const paths: string[] = [];
+
+afterEach(() => {
+  for (const path of paths.splice(0)) rmSync(path, { force: true });
+});
 
 const META = { provider: "p", protocol: "openai-completions", model: "m", api: "openai-completions", note: "test" };
 
@@ -50,13 +56,13 @@ describe("recordingDeps", () => {
     for await (const _ of rec.deps.stream({} as unknown as Model<Api>, {} as unknown as Context, {}, () => {})) {
       // drain
     }
-    rec.write("unit-probe");
     const path = join(import.meta.dirname, "..", "..", "fixtures", "recorded", "unit-probe.json");
+    paths.push(path);
+    rec.write("unit-probe");
     const f = JSON.parse(readFileSync(path, "utf8"));
     expect(f.events).toEqual([doneEvent]);
     expect(f.response.status).toBe(200);
     expect(f.meta.recordedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    rmSync(path);
   });
 
   it("drops headers outside the allowlist before they can be committed", async () => {
@@ -85,11 +91,11 @@ describe("recordingDeps", () => {
     for await (const _ of rec.deps.stream({} as unknown as Model<Api>, {} as unknown as Context, {}, () => {})) {
       // drain
     }
-    rec.write("unit-headers");
     const path = join(import.meta.dirname, "..", "..", "fixtures", "recorded", "unit-headers.json");
+    paths.push(path);
+    rec.write("unit-headers");
     const f = JSON.parse(readFileSync(path, "utf8"));
     expect(f.response.headers).toEqual({ "retry-after": "30" });
-    rmSync(path);
   });
 
   it("still forwards the response to the caller's onResponse", async () => {

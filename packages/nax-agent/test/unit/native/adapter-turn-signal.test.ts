@@ -1,3 +1,4 @@
+import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
 /**
  * US-002 — the native adapter's one per-turn signal reaching in-flight work.
  *
@@ -21,9 +22,6 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { Client, ResolvedModel } from "@nathapp/nax-ai";
 import { _adapterDeps } from "#src/native/adapter-deps";
 import { _clientDeps, _resetNativeClient } from "#src/native/client";
@@ -33,19 +31,48 @@ import type { CodingTool } from "#src/tools/index";
 import { compileToolPolicy, createCodingToolRuntime } from "#src/tools/index";
 import { makeFakeClock, waitForCondition, withDerivedStream } from "#test/helpers/index";
 
+const tempDirs: string[] = [];
+const sessionCleanups: (() => Promise<void>)[] = [];
+
+function makeTestDir(prefix: string): string {
+  const dir = makeTempDir(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+
+async function closeTestSessions(): Promise<void> {
+  const closed = await Promise.allSettled(sessionCleanups.splice(0).map(async (close) => close()));
+  const errors = closed.flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
+  if (errors.length > 0) throw new AggregateError(errors, "Failed to close test sessions");
+}
+
+async function openTestSession(
+  adapter: NativeSessionAdapter,
+  ...args: Parameters<NativeSessionAdapter["openSession"]>
+) {
+  const handle = await adapter.openSession(...args);
+  sessionCleanups.push(() => adapter.closeSession(handle));
+  return handle;
+}
+
 const REAL_BUILD = _clientDeps.build;
 const REAL_LIST = _adapterDeps.listStoredProviders;
 const REAL_SWEEP = _adapterDeps.anyAmbientCredential;
 const REAL_SET_TIMEOUT = _adapterDeps.setTimeout;
 const REAL_CLEAR_TIMEOUT = _adapterDeps.clearTimeout;
 
-afterEach(() => {
-  _clientDeps.build = REAL_BUILD;
-  _resetNativeClient();
-  _adapterDeps.listStoredProviders = REAL_LIST;
-  _adapterDeps.anyAmbientCredential = REAL_SWEEP;
-  _adapterDeps.setTimeout = REAL_SET_TIMEOUT;
-  _adapterDeps.clearTimeout = REAL_CLEAR_TIMEOUT;
+afterEach(async () => {
+  try {
+    await closeTestSessions();
+  } finally {
+    for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+    _clientDeps.build = REAL_BUILD;
+    _resetNativeClient();
+    _adapterDeps.listStoredProviders = REAL_LIST;
+    _adapterDeps.anyAmbientCredential = REAL_SWEEP;
+    _adapterDeps.setTimeout = REAL_SET_TIMEOUT;
+    _adapterDeps.clearTimeout = REAL_CLEAR_TIMEOUT;
+  }
 });
 
 const MODEL = {
@@ -130,7 +157,7 @@ function toolInteractionHandler(runtime: ReturnType<typeof createCodingToolRunti
 
 describe("NativeSessionAdapter — turn signal following an in-flight call (US-002)", () => {
   test("AC10: onActiveCall cancel during a coding tool's execution aborts the signal that tool received", async () => {
-    const root = await mkdtemp(join(tmpdir(), "nax-turn-signal-root-"));
+    const root = makeTestDir("nax-turn-signal-root-");
     const captured: { signal?: AbortSignal } = {};
     let release: (() => void) | undefined;
     const gate = new Promise<void>((resolve) => {
@@ -144,8 +171,8 @@ describe("NativeSessionAdapter — turn signal following an in-flight call (US-0
     let cancel: (() => Promise<void>) | undefined;
     _clientDeps.build = async () => toolTurnClient();
     const adapter = new NativeSessionAdapter();
-    const transcriptDir = await mkdtemp(join(tmpdir(), "nax-adapter-turn-signal-"));
-    const handle = await adapter.openSession("sess-turn-signal-10", {
+    const transcriptDir = makeTestDir("nax-adapter-turn-signal-");
+    const handle = await openTestSession(adapter, "sess-turn-signal-10", {
       agentName: "native",
       workdir: root,
       resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
@@ -176,7 +203,7 @@ describe("NativeSessionAdapter — turn signal following an in-flight call (US-0
   });
 
   test("AC11: aborting caller opts.signal during a coding tool's execution aborts the signal that tool received", async () => {
-    const root = await mkdtemp(join(tmpdir(), "nax-turn-signal-root-"));
+    const root = makeTestDir("nax-turn-signal-root-");
     const captured: { signal?: AbortSignal } = {};
     let release: (() => void) | undefined;
     const gate = new Promise<void>((resolve) => {
@@ -190,8 +217,8 @@ describe("NativeSessionAdapter — turn signal following an in-flight call (US-0
     const callerController = new AbortController();
     _clientDeps.build = async () => toolTurnClient();
     const adapter = new NativeSessionAdapter();
-    const transcriptDir = await mkdtemp(join(tmpdir(), "nax-adapter-turn-signal-"));
-    const handle = await adapter.openSession("sess-turn-signal-11", {
+    const transcriptDir = makeTestDir("nax-adapter-turn-signal-");
+    const handle = await openTestSession(adapter, "sess-turn-signal-11", {
       agentName: "native",
       workdir: root,
       resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
@@ -228,7 +255,7 @@ describe("NativeSessionAdapter — turn signal following an in-flight call (US-0
     _adapterDeps.setTimeout = clock.setTimeout as typeof _adapterDeps.setTimeout;
     _adapterDeps.clearTimeout = clock.clearTimeout as typeof _adapterDeps.clearTimeout;
 
-    const root = await mkdtemp(join(tmpdir(), "nax-turn-signal-root-"));
+    const root = makeTestDir("nax-turn-signal-root-");
     const captured: { signal?: AbortSignal } = {};
     // The tool never finishes; only the turn's whole-turn deadline can
     // interrupt it.
@@ -240,8 +267,8 @@ describe("NativeSessionAdapter — turn signal following an in-flight call (US-0
     });
     _clientDeps.build = async () => toolTurnClient();
     const adapter = new NativeSessionAdapter();
-    const transcriptDir = await mkdtemp(join(tmpdir(), "nax-adapter-turn-signal-"));
-    const handle = await adapter.openSession("sess-turn-signal-12", {
+    const transcriptDir = makeTestDir("nax-adapter-turn-signal-");
+    const handle = await openTestSession(adapter, "sess-turn-signal-12", {
       agentName: "native",
       workdir: root,
       resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
@@ -271,7 +298,7 @@ describe("NativeSessionAdapter — turn signal following an in-flight call (US-0
   });
 
   test("AC13: onActiveCall cancel during a complete request aborts the signal that request receives", async () => {
-    const root = await mkdtemp(join(tmpdir(), "nax-turn-signal-root-"));
+    const root = makeTestDir("nax-turn-signal-root-");
     let capturedSignal: AbortSignal | undefined;
     let release: (() => void) | undefined;
     const gate = new Promise<void>((resolve) => {
@@ -287,8 +314,8 @@ describe("NativeSessionAdapter — turn signal following an in-flight call (US-0
       });
     let cancel: (() => Promise<void>) | undefined;
     const adapter = new NativeSessionAdapter();
-    const transcriptDir = await mkdtemp(join(tmpdir(), "nax-adapter-turn-signal-"));
-    const handle = await adapter.openSession("sess-turn-signal-13", {
+    const transcriptDir = makeTestDir("nax-adapter-turn-signal-");
+    const handle = await openTestSession(adapter, "sess-turn-signal-13", {
       agentName: "native",
       workdir: root,
       resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },

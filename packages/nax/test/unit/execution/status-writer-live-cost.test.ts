@@ -9,12 +9,24 @@
  * latest value for the runner's getter to fall back on.
  */
 
-import { describe, expect, test } from "bun:test";
-import { makeNaxConfig, makeTempDir } from "@test/helpers";
+import { afterEach, describe, expect, test } from "bun:test";
+import { cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
 import { StatusWriter } from "@/execution/status-writer";
 
+const tempDirs: string[] = [];
+
+function makeTestDir(prefix: string): string {
+  const dir = makeTempDir(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+});
+
 function makeWriter(): StatusWriter {
-  const workdir = makeTempDir("nax-test-status-writer-live-cost-");
+  const workdir = makeTestDir("nax-test-status-writer-live-cost-");
   const writer = new StatusWriter(`${workdir}/status.json`, makeNaxConfig(), {
     runId: "run-live-cost-test",
     feature: "live-cost-feature",

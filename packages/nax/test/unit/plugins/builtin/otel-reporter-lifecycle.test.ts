@@ -1,7 +1,8 @@
-import { describe, expect, spyOn, test } from "bun:test";
-import { assertDefined, mockFetch, withWarnSpy } from "@test/helpers";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { assertDefined, type FakeClock, makeFakeClock, mockFetch, withWarnSpy } from "@test/helpers";
 import type { OtelReporterConfig } from "@/config/schemas-reporters";
 import { createOtelReporterPlugin, type PostJsonDeps } from "@/plugins";
+import { _heartbeatDeps } from "@/plugins/builtin/otel-reporter/heartbeat";
 import {
   attr,
   type KeyValue,
@@ -89,10 +90,6 @@ function findMetric(metrics: OtlpMetric[], name: string) {
   return metrics.find((m) => m.name === name);
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 function reporterOf(p: ReturnType<typeof createOtelReporterPlugin>) {
   const r = p.extensions.reporter;
   assertDefined(r, "extensions.reporter");
@@ -100,9 +97,34 @@ function reporterOf(p: ReturnType<typeof createOtelReporterPlugin>) {
 }
 
 describe("otel-reporter heartbeat", () => {
+  let clock: FakeClock;
+  const originalTimers = { ..._heartbeatDeps };
+  const plugins: ReturnType<typeof createOtelReporterPlugin>[] = [];
+
+  beforeEach(() => {
+    clock = makeFakeClock();
+    _heartbeatDeps.setTimeout = clock.setTimeout;
+    _heartbeatDeps.clearTimeout = (id) => clock.clearTimeout(id as number);
+  });
+
+  afterEach(async () => {
+    try {
+      for (const plugin of plugins.splice(0)) await plugin.teardown?.();
+      expect(clock.pending()).toBe(0);
+    } finally {
+      Object.assign(_heartbeatDeps, originalTimers);
+    }
+  });
+
+  function createReporter(cfg: OtelReporterConfig, deps: PostJsonDeps) {
+    const plugin = createOtelReporterPlugin(cfg, deps);
+    plugins.push(plugin);
+    return plugin;
+  }
+
   test("AC1-AC5: heartbeat gauges are exported once the interval elapses, carrying phase_elapsed_ms, cost_usd, and the full attribute set from the most recently completed phase", async () => {
     const { posts, deps } = capturing();
-    const plugin = createOtelReporterPlugin({ ...baseCfg, heartbeatIntervalMs: 40 }, deps);
+    const plugin = createReporter({ ...baseCfg, heartbeatIntervalMs: 40 }, deps);
     const r = reporterOf(plugin);
 
     try {
@@ -136,10 +158,12 @@ describe("otel-reporter heartbeat", () => {
         testStrategy: "tdd-simple",
       });
 
-      await sleep(200); // > heartbeatIntervalMs (40ms)
+      await clock.advance(39);
+      expect(metricsPosts(posts)).toHaveLength(0);
+      await clock.advance(1);
 
       const hbPosts = metricsPosts(posts);
-      expect(hbPosts.length).toBeGreaterThan(0); // AC1
+      expect(hbPosts).toHaveLength(1); // AC1
 
       const metrics = hbPosts[0].body.resourceMetrics[0].scopeMetrics[0].metrics;
       const active = findMetric(metrics, "nax.run.active");
@@ -172,7 +196,7 @@ describe("otel-reporter heartbeat", () => {
     await withWarnSpy(async (warnSpy) => {
       delete process.env.OTLP_TOKEN;
       const { deps } = capturing();
-      const plugin = createOtelReporterPlugin(
+      const plugin = createReporter(
         { ...baseCfg, heartbeatIntervalMs: 40, headers: { Authorization: `Bearer \${OTLP_TOKEN}` } },
         deps,
       );
@@ -186,7 +210,7 @@ describe("otel-reporter heartbeat", () => {
           startTime: new Date().toISOString(),
           project: "nax",
         });
-        await sleep(150); // > heartbeatIntervalMs (40ms) — allow at least one tick
+        await clock.advance(40);
 
         const otelWarnings = warnSpy.mock.calls.filter((c) => c[0] === "otel-reporter");
         expect(otelWarnings.length).toBeGreaterThan(0);
@@ -198,7 +222,7 @@ describe("otel-reporter heartbeat", () => {
 
   test("AC6: heartbeatIntervalMs=0 issues no heartbeat export regardless of elapsed time", async () => {
     const { posts, deps } = capturing();
-    const plugin = createOtelReporterPlugin({ ...baseCfg, heartbeatIntervalMs: 0 }, deps);
+    const plugin = createReporter({ ...baseCfg, heartbeatIntervalMs: 0 }, deps);
     const r = reporterOf(plugin);
 
     await r.onRunStart?.({
@@ -208,14 +232,14 @@ describe("otel-reporter heartbeat", () => {
       startTime: new Date().toISOString(),
       project: "nax",
     });
-    await sleep(150);
+    await clock.advance(150);
 
     expect(metricsPosts(posts)).toHaveLength(0);
   });
 
   test("AC7/AC14: after onRunEnd (with no preceding run:completed bus event), no further heartbeat export is issued", async () => {
     const { posts, deps } = capturing();
-    const plugin = createOtelReporterPlugin({ ...baseCfg, heartbeatIntervalMs: 40 }, deps);
+    const plugin = createReporter({ ...baseCfg, heartbeatIntervalMs: 40 }, deps);
     const r = reporterOf(plugin);
 
     await r.onRunStart?.({
@@ -225,7 +249,8 @@ describe("otel-reporter heartbeat", () => {
       startTime: new Date().toISOString(),
       project: "nax",
     });
-    await sleep(150); // allow at least one heartbeat tick to have a chance to fire
+    await clock.advance(40);
+    expect(metricsPosts(posts)).toHaveLength(1);
 
     await r.onRunEnd?.({
       runId: "hb7",
@@ -235,7 +260,7 @@ describe("otel-reporter heartbeat", () => {
     });
     const countAtEnd = metricsPosts(posts).length;
 
-    await sleep(150); // several more heartbeat intervals worth of time
+    await clock.advance(150); // several more heartbeat intervals worth of time
     expect(metricsPosts(posts).length).toBe(countAtEnd);
   });
 });

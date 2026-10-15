@@ -1,16 +1,18 @@
-import { beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DEFAULT_TOOL_MAX_FILE_BYTES, editTool, writeTool } from "#src/tools/index";
+import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
 
 let root: string;
 
 beforeEach(() => {
-  root = mkdtempSync(join(tmpdir(), "nax-write-"));
+  root = makeTempDir("nax-write-");
   mkdirSync(join(root, "src"), { recursive: true });
   writeFileSync(join(root, "src", "a.ts"), "const a = 1;\nconst b = 2;\n");
 });
+
+afterEach(() => cleanupTempDir(root));
 
 function ctx(paths: string[]) {
   return { root, resolvedPaths: paths, maxBytes: 10_000, maxFileBytes: DEFAULT_TOOL_MAX_FILE_BYTES };

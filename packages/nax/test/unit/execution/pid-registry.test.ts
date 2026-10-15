@@ -25,16 +25,14 @@ function _makeStream(text = ""): ReadableStream<Uint8Array> {
   });
 }
 
+beforeEach(() => {
+  TEST_WORKDIR = makeTempDir("nax-pid-registry-test-");
+  PID_FILE = join(TEST_WORKDIR, ".nax-pids");
+});
+
+afterEach(() => cleanupTempDir(TEST_WORKDIR));
+
 describe("PidRegistry", () => {
-  beforeEach(() => {
-    TEST_WORKDIR = makeTempDir("nax-pid-registry-test-");
-    PID_FILE = join(TEST_WORKDIR, ".nax-pids");
-  });
-
-  afterEach(() => {
-    cleanupTempDir(TEST_WORKDIR);
-  });
-
   test("register() adds PID to in-memory set and writes to file", async () => {
     const registry = new PidRegistry(TEST_WORKDIR);
 

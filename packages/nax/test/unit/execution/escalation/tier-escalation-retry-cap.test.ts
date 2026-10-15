@@ -10,8 +10,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   cleanupTempDir,
@@ -528,7 +527,8 @@ describe("US-001: escalation log entries from both emitters round-trip to collec
 
     // Reconstruct JSONL lines identical to what the real logger would write,
     // then feed them to collectObservations to verify the round-trip.
-    const root = await mkdtemp(join(tmpdir(), "us001-handle-"));
+    const root = join(fixtureDir, "us001-handle");
+    await mkdir(root);
     const logFilePath = join(root, "run.jsonl");
     const lines = escalationCalls.map((c) =>
       JSON.stringify({
@@ -593,7 +593,8 @@ describe("US-001: escalation log entries from both emitters round-trip to collec
     expect(escalationCalls.length).toBeGreaterThan(0);
 
     // Round-trip through the JSONL collector.
-    const root = await mkdtemp(join(tmpdir(), "us001-pre-iter-"));
+    const root = join(fixtureDir, "us001-pre-iter");
+    await mkdir(root);
     const logFilePath = join(root, "run.jsonl");
     const lines = escalationCalls.map((c) =>
       JSON.stringify({

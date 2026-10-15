@@ -6,10 +6,12 @@ import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
 import { type ModelPorts, mergeBalancedModel, NODE_CONFIG_WRITER, offerDefaultModel } from "#src/server/default-model";
 
 let dir: string;
+let fixtureRoot: string;
 beforeEach(() => {
-  dir = makeTempDir("acp-default-model-");
+  fixtureRoot = makeTempDir("acp-default-model-");
+  dir = fixtureRoot;
 });
-afterEach(() => cleanupTempDir(dir));
+afterEach(() => cleanupTempDir(fixtureRoot));
 
 const path = () => join(dir, "config.json");
 const readText: (p: string, e: "utf8") => Promise<string> = (p) => readFile(p, "utf8");

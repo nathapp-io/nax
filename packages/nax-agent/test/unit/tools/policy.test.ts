@@ -1,17 +1,29 @@
-import { beforeAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ToolScope } from "#src/tools/index";
 import { compileToolPolicy } from "#src/tools/index";
+import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
 import { naxOwnedPathsPolicy } from "#test/helpers/nax-owned-paths";
+
+const tempDirs: string[] = [];
+
+function makeTestDir(prefix: string): string {
+  const dir = makeTempDir(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterAll(() => {
+  for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+});
 
 const PATH_SCOPE: ToolScope = { pathFields: ["path"] };
 let root: string;
 let outside: string;
 
 beforeAll(() => {
-  const base = mkdtempSync(join(tmpdir(), "nax-policy-"));
+  const base = makeTestDir("nax-policy-");
   root = join(base, "repo");
   outside = join(base, "elsewhere");
   mkdirSync(join(root, "src"), { recursive: true });

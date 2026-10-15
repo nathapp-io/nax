@@ -8,9 +8,6 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { CodingTool } from "@nathapp/nax-agent";
 import {
   _adapterDeps,
@@ -21,19 +18,36 @@ import {
   saveTranscript,
 } from "@nathapp/nax-agent/internal";
 import type { Client, ClientRequest, ResolvedModel } from "@nathapp/nax-ai";
-import { waitForCondition, withDerivedStream } from "@test/helpers";
+import { cleanupTempDir, makeTempDir, waitForCondition, withDerivedStream } from "@test/helpers";
 import { NativeAgentAdapter } from "@/agents/native-agent";
 import type { ResolvedCompleteOptions } from "@/agents/types";
+
+const tempDirs: string[] = [];
+
+function makeTestDir(prefix: string): string {
+  const dir = makeTempDir(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+
+const sessionCleanups: (() => Promise<void>)[] = [];
 
 const REAL_BUILD = _clientDeps.build;
 const REAL_LIST = _adapterDeps.listStoredProviders;
 const REAL_SWEEP = _adapterDeps.anyAmbientCredential;
 
-afterEach(() => {
-  _clientDeps.build = REAL_BUILD;
-  _resetNativeClient();
-  _adapterDeps.listStoredProviders = REAL_LIST;
-  _adapterDeps.anyAmbientCredential = REAL_SWEEP;
+afterEach(async () => {
+  const closed = await Promise.allSettled(sessionCleanups.splice(0).map(async (close) => close()));
+  try {
+    const errors = closed.flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
+    if (errors.length > 0) throw new AggregateError(errors, "Failed to close test sessions");
+  } finally {
+    for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+    _clientDeps.build = REAL_BUILD;
+    _resetNativeClient();
+    _adapterDeps.listStoredProviders = REAL_LIST;
+    _adapterDeps.anyAmbientCredential = REAL_SWEEP;
+  }
 });
 
 const MODEL = {
@@ -229,8 +243,9 @@ describe("NativeAgentAdapter shape", () => {
       resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
       modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
       timeoutSeconds: 60,
-      transcriptDir: await mkdtemp(join(tmpdir(), "nax-adapter-turn-")),
+      transcriptDir: makeTestDir("nax-adapter-turn-"),
     });
+    sessionCleanups.push(() => adapter.closeSession(handle));
 
     const result = await adapter.sendTurn(handle, "hi", {
       interactionHandler: { onInteraction: async () => ({ answer: "" }) },
@@ -276,8 +291,9 @@ describe("NativeAgentAdapter shape", () => {
       // 50ms comfortably survives that setup while still firing well inside
       // the assertion's poll window.
       timeoutSeconds: 0.05,
-      transcriptDir: await mkdtemp(join(tmpdir(), "nax-adapter-deadline-")),
+      transcriptDir: makeTestDir("nax-adapter-deadline-"),
     });
+    sessionCleanups.push(() => adapter.closeSession(handle));
 
     const sendTurnPromise = adapter.sendTurn(handle, "hi", {
       interactionHandler: { onInteraction: async () => ({ answer: "" }) },
@@ -306,8 +322,9 @@ describe("NativeAgentAdapter shape", () => {
       modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
       // Long enough that the deadline itself never fires during this test.
       timeoutSeconds: 60,
-      transcriptDir: await mkdtemp(join(tmpdir(), "nax-adapter-caller-signal-")),
+      transcriptDir: makeTestDir("nax-adapter-caller-signal-"),
     });
+    sessionCleanups.push(() => adapter.closeSession(handle));
 
     const callerController = new AbortController();
     callerController.abort();
@@ -434,8 +451,9 @@ describe("NativeAgentAdapter session identity", () => {
       resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
       modelDef: { provider: "unknown", model: "opencode-go/deepseek-v4-flash" },
       timeoutSeconds: 60,
-      transcriptDir: await mkdtemp(join(tmpdir(), "nax-adapter-affinity-")),
+      transcriptDir: makeTestDir("nax-adapter-affinity-"),
     });
+    sessionCleanups.push(() => adapter.closeSession(handle));
 
     const turn = { interactionHandler: { onInteraction: async () => ({ answer: "" }) } };
     await adapter.sendTurn(handle, "one", turn);
@@ -462,8 +480,9 @@ describe("NativeAgentAdapter session identity", () => {
       resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
       modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini[high]" },
       timeoutSeconds: 60,
-      transcriptDir: await mkdtemp(join(tmpdir(), "nax-adapter-thinking-")),
+      transcriptDir: makeTestDir("nax-adapter-thinking-"),
     });
+    sessionCleanups.push(() => adapter.closeSession(handle));
 
     await adapter.sendTurn(handle, "hi", {
       interactionHandler: { onInteraction: async () => ({ answer: "" }) },
@@ -482,8 +501,9 @@ describe("NativeAgentAdapter session identity", () => {
       resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
       modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
       timeoutSeconds: 60,
-      transcriptDir: await mkdtemp(join(tmpdir(), "nax-adapter-no-thinking-")),
+      transcriptDir: makeTestDir("nax-adapter-no-thinking-"),
     });
+    sessionCleanups.push(() => adapter.closeSession(handle));
 
     await adapter.sendTurn(handle, "hi", {
       interactionHandler: { onInteraction: async () => ({ answer: "" }) },
@@ -502,8 +522,9 @@ describe("NativeAgentAdapter session identity", () => {
       resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
       modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
       timeoutSeconds: 60,
-      transcriptDir: await mkdtemp(join(tmpdir(), "nax-adapter-before-request-options-")),
+      transcriptDir: makeTestDir("nax-adapter-before-request-options-"),
     });
+    sessionCleanups.push(() => adapter.closeSession(handle));
     const loopEvents = createLoopEventRegistry();
     loopEvents.register("before_request", () => ({ options: { temperature: 0.2 } }));
 
@@ -525,8 +546,9 @@ describe("NativeAgentAdapter session identity", () => {
       resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
       modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini[high]" },
       timeoutSeconds: 60,
-      transcriptDir: await mkdtemp(join(tmpdir(), "nax-adapter-before-request-thinking-")),
+      transcriptDir: makeTestDir("nax-adapter-before-request-thinking-"),
     });
+    sessionCleanups.push(() => adapter.closeSession(handle));
     const loopEvents = createLoopEventRegistry();
     loopEvents.register("before_request", () => ({ options: { thinking: false } }));
 
@@ -557,7 +579,7 @@ describe("NativeAgentAdapter compaction wiring", () => {
   async function openWithSeededTranscript(name: string, client: Client) {
     _clientDeps.build = async () => client;
     const adapter = new NativeAgentAdapter();
-    const transcriptDir = await mkdtemp(join(tmpdir(), `nax-adapter-${name}-`));
+    const transcriptDir = makeTestDir(`nax-adapter-${name}-`);
     const handle = await adapter.openSession(name, {
       agentName: "native",
       workdir: process.cwd(),
@@ -567,6 +589,7 @@ describe("NativeAgentAdapter compaction wiring", () => {
       transcriptDir,
       compaction: settings,
     });
+    sessionCleanups.push(() => adapter.closeSession(handle));
     await saveTranscript(transcriptDir, name, [
       { role: "user", content: "the task" },
       { role: "assistant", content: "a".repeat(20_000) },

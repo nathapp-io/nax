@@ -400,7 +400,7 @@ describe("testPatterns", () => {
   });
 
   test("a non-nax dir resolves without testPatterns rather than throwing", async () => {
-    const r = await resolveFeatureSpec("feat-x", makeTempDir("nax-not-a-repo-"));
+    const r = await resolveFeatureSpec("feat-x", join(tempDir, "not-a-repo"));
     expect(r.status).toBe("not-a-nax-repo");
     expect(r.testPatterns).toBeUndefined();
   });

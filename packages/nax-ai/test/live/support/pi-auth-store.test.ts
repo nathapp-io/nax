@@ -1,11 +1,18 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { piAuthStore } from "./pi-auth-store.ts";
+
+const dirs: string[] = [];
+
+afterEach(() => {
+  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 function fixtureFile(contents: unknown): string {
   const dir = mkdtempSync(join(tmpdir(), "nax-ai-auth-"));
+  dirs.push(dir);
   const file = join(dir, "auth.json");
   writeFileSync(file, JSON.stringify(contents), "utf8");
   return file;

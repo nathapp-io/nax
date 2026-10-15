@@ -1,14 +1,26 @@
-import { afterEach, beforeAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, unlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
+import { mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { _grepDeps, buildGrepArgv, DEFAULT_TOOL_MAX_FILE_BYTES, grepTool } from "#src/tools/index";
+import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
+
+const tempDirs: string[] = [];
+
+function makeTestDir(prefix: string): string {
+  const dir = makeTempDir(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterAll(() => {
+  for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+});
 
 let root: string;
 const realWhich = _grepDeps.which;
 
 beforeAll(() => {
-  root = mkdtempSync(join(tmpdir(), "nax-grep-"));
+  root = makeTestDir("nax-grep-");
   mkdirSync(join(root, "src"), { recursive: true });
   writeFileSync(join(root, "src", "a.ts"), "export const needle = 1;\n");
   writeFileSync(join(root, "src", "b.ts"), "export const other = 2;\n");

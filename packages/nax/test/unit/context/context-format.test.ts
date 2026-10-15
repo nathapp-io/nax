@@ -3,13 +3,25 @@
  * Tests for context builder module — formatContextAsMarkdown
  */
 
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { makeNaxConfig, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
 import { buildContext, formatContextAsMarkdown } from "@/context";
 import type { BuiltContext, ContextBudget, StoryContext } from "@/context/types";
 import type { PRD, UserStory } from "@/prd";
+
+const tempDirs: string[] = [];
+
+function makeTestDir(prefix: string): string {
+  const dir = makeTempDir(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+});
 
 // Helper to create test PRD
 const createTestPRD = (stories: Partial<UserStory>[]): PRD => ({
@@ -133,7 +145,7 @@ describe("Context Builder", () => {
     });
 
     test("should format context with file elements", async () => {
-      const tempDir = makeTempDir("nax-test-");
+      const tempDir = makeTestDir("nax-test-");
 
       try {
         await fs.writeFile(path.join(tempDir, "helper.ts"), "export function helper() {}");

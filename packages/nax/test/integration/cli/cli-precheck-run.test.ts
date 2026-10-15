@@ -3,12 +3,13 @@
  * Integration tests for precheck: US-002 acceptance criteria and nax run integration
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { cpSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   assertCaughtInstanceOf,
   assertDefined,
+  cleanupTempDir,
   fullTest,
   makeNaxConfig,
   makePRD,
@@ -26,7 +27,7 @@ import { EXIT_CODES, runPrecheck } from "@/precheck";
 const skipInCI = fullTest;
 
 /**
- * One-shot git template built at module load. `setupGitRepo` copies this dir's
+ * One-shot git template built before the tests. `setupGitRepo` copies this dir's
  * `.git` into each test's temp dir instead of running `git init` + two
  * `git config` spawns per call. Cold-start `git` invocations were ~150-250ms
  * each on Linux; copying a fully-initialised `.git` is ~5-10ms, so this turns
@@ -34,20 +35,22 @@ const skipInCI = fullTest;
  * the test process and is never modified after construction, so it is safe
  * to share across sequential tests.
  */
-const GIT_TEMPLATE = await (async (): Promise<string> => {
+let gitTemplate: string;
+beforeAll(async () => {
   const dir = makeTempDir("nax-precheck-git-template-");
+  gitTemplate = dir;
   await Bun.spawn(["git", "init", "-q"], { cwd: dir, stdout: "ignore", stderr: "ignore" }).exited;
   await Bun.spawn(["git", "config", "user.name", "Test"], { cwd: dir, stdout: "ignore", stderr: "ignore" }).exited;
   await Bun.spawn(["git", "config", "user.email", "test@test.com"], { cwd: dir, stdout: "ignore", stderr: "ignore" })
     .exited;
-  return dir;
-})();
+});
+afterAll(() => cleanupTempDir(gitTemplate));
 
 async function setupGitRepo(dir: string): Promise<void> {
   // Copy the shared template's `.git` instead of re-running `git init` +
   // `git config` cold-start. Tests in this file run sequentially (no
   // `.concurrent` modifier), so the template is safe to read concurrently.
-  cpSync(join(GIT_TEMPLATE, ".git"), join(dir, ".git"), { recursive: true });
+  cpSync(join(gitTemplate, ".git"), join(dir, ".git"), { recursive: true });
 }
 
 const createConfig = (_workdir: string): NaxConfig =>

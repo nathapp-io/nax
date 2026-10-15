@@ -4,16 +4,27 @@
  * Tests for built-in plugin registration in PluginRegistry.
  */
 
-import { describe, expect, test } from "bun:test";
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { afterEach, describe, expect, test } from "bun:test";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { makeNaxConfig } from "@test/helpers";
+import { cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
 import type { CuratorPostRunContext } from "@/plugins/builtin/curator";
 import { collectObservations, curatorPlugin } from "@/plugins/builtin/curator";
 import { loadPlugins } from "@/plugins/loader";
 import { PluginRegistry } from "@/plugins/registry";
 import type { NaxPlugin } from "@/plugins/types";
+
+const tempDirs: string[] = [];
+
+function makeTestDir(prefix: string): string {
+  const dir = makeTempDir(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+});
 
 describe("Curator Plugin Registration", () => {
   test("should be available as a built-in plugin", () => {
@@ -30,7 +41,7 @@ describe("Curator Plugin Registration", () => {
   });
 
   test("loadPlugins registers curator by default and honors disabledPlugins", async () => {
-    const root = await mkdtemp(join(tmpdir(), "curator-registration-"));
+    const root = makeTestDir("curator-registration-");
     const enabled = await loadPlugins(join(root, "global"), join(root, "project"), [], root, []);
     expect(enabled.getPostRunActions().some((a) => a.name === "nax-curator")).toBe(true);
 
@@ -152,7 +163,7 @@ describe("collectObservations — fix-cycle iteration spend (#1948)", () => {
   };
 
   test("failed-dispatch spend reaches the observation as its own field", async () => {
-    const root = await mkdtemp(join(tmpdir(), "curator-fix-cycle-error-cost-"));
+    const root = makeTestDir("curator-fix-cycle-error-cost-");
 
     const obs = await collectFromIterationLog(root, { ...baseIteration, costUsd: 0.5, errorCostUsd: 3.25 });
 
@@ -164,7 +175,7 @@ describe("collectObservations — fix-cycle iteration spend (#1948)", () => {
   });
 
   test("an iteration log written before the field existed reports zero, not undefined", async () => {
-    const root = await mkdtemp(join(tmpdir(), "curator-fix-cycle-error-cost-legacy-"));
+    const root = makeTestDir("curator-fix-cycle-error-cost-legacy-");
 
     const obs = await collectFromIterationLog(root, baseIteration);
 

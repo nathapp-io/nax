@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   _gitDeps,
@@ -12,10 +11,17 @@ import {
   gitCommitTool,
   registerBuiltinCodingTools,
 } from "@nathapp/nax-agent/internal";
-import { makeSpawn, makeSpawnResult, testProtectedPaths } from "#test/helpers/index";
+import { cleanupTempDir, makeSpawn, makeSpawnResult, makeTempDir, testProtectedPaths } from "#test/helpers/index";
+
+const repoRoots: string[] = [];
+
+afterEach(() => {
+  for (const repo of repoRoots.splice(0)) cleanupTempDir(repo);
+});
 
 async function makeRepo(): Promise<string> {
-  const repo = mkdtempSync(join(tmpdir(), "nax-git-commit-"));
+  const repo = makeTempDir("nax-git-commit-");
+  repoRoots.push(repo);
   writeFileSync(join(repo, "a.ts"), "export const a = 1;\n");
   const run = async (args: string[]) =>
     _gitDeps.spawn(["git", ...args], { cwd: repo, stdout: "pipe", stderr: "pipe" }).exited;

@@ -7,14 +7,26 @@
  * so the port consumption itself (compileToolPolicy's `ownedPaths` option and
  * resolveWithin's third parameter) is pinned here too.
  */
-import { beforeAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { existsSync, mkdirSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { EMPTY_OWNED_PATHS_POLICY, type OwnedPathsPolicy } from "#src/tools/owned-paths";
 import { compileToolPolicy, resolveWithin } from "#src/tools/policy";
 import type { PolicyVerdict, ToolScope } from "#src/tools/types";
+import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
 import { naxOwnedPathsPolicy } from "#test/helpers/nax-owned-paths";
+
+const tempDirs: string[] = [];
+
+function makeTestDir(prefix: string): string {
+  const dir = makeTempDir(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterAll(() => {
+  for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+});
 
 const PATH_SCOPE: ToolScope = { pathFields: ["path"] };
 let root: string;
@@ -24,7 +36,7 @@ beforeAll(() => {
   // realpathSync: on macOS mkdtemp sits behind a /var -> /private/var symlink,
   // and the port-consumption pins compare join(root, ...) spellings against
   // resolveWithin's symlink-resolved output.
-  const base = realpathSync(mkdtempSync(join(tmpdir(), "policy-owned-")));
+  const base = realpathSync(makeTestDir("policy-owned-"));
   root = join(base, "repo");
   outside = join(base, "elsewhere");
   mkdirSync(join(root, "src"), { recursive: true });

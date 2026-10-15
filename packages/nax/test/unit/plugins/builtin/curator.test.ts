@@ -4,17 +4,33 @@
  * Tests for the built-in curator post-run action plugin.
  */
 
-import { describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { assertDefined, makeNaxConfig } from "@test/helpers";
+import { assertDefined, cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
 import type { CuratorPostRunContext } from "@/plugins/builtin/curator";
 import { collectObservations, curatorPlugin, readHeuristicWindow } from "@/plugins/builtin/curator";
 import type { CuratorThresholds } from "@/plugins/builtin/curator/heuristics";
 import { runHeuristics } from "@/plugins/builtin/curator/heuristics";
 import { appendToRollup } from "@/plugins/builtin/curator/rollup";
 import type { PostRunContext } from "@/plugins/extensions";
+
+const tempDirs: string[] = [];
+let contextRoot: string;
+
+beforeEach(() => {
+  contextRoot = makeTestDir("curator-context-");
+});
+
+function makeTestDir(prefix: string): string {
+  const dir = makeTempDir(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+});
 
 describe("curatorPlugin", () => {
   test("should have correct plugin metadata", () => {
@@ -41,8 +57,8 @@ describe("curatorPlugin.shouldRun", () => {
     const context: PostRunContext = {
       runId: "test-run",
       feature: "test-feature",
-      workdir: "/tmp/test",
-      prdPath: "/tmp/test/prd.json",
+      workdir: join(contextRoot, "work"),
+      prdPath: join(contextRoot, "work/prd.json"),
       branch: "main",
       totalDurationMs: 1000,
       totalCost: 10,
@@ -64,8 +80,8 @@ describe("curatorPlugin.shouldRun", () => {
     const context: PostRunContext = {
       runId: "test-run",
       feature: "test-feature",
-      workdir: "/tmp/test",
-      prdPath: "/tmp/test/prd.json",
+      workdir: join(contextRoot, "work"),
+      prdPath: join(contextRoot, "work/prd.json"),
       branch: "main",
       totalDurationMs: 1000,
       totalCost: 10,
@@ -86,8 +102,8 @@ describe("curatorPlugin.shouldRun", () => {
     const context: PostRunContext = {
       runId: "test-run",
       feature: "test-feature",
-      workdir: "/tmp/test",
-      prdPath: "/tmp/test/prd.json",
+      workdir: join(contextRoot, "work"),
+      prdPath: join(contextRoot, "work/prd.json"),
       branch: "main",
       totalDurationMs: 1000,
       totalCost: 10,
@@ -109,8 +125,8 @@ describe("curatorPlugin.shouldRun", () => {
     const context: PostRunContext = {
       runId: "test-run",
       feature: "test-feature",
-      workdir: "/tmp/test",
-      prdPath: "/tmp/test/prd.json",
+      workdir: join(contextRoot, "work"),
+      prdPath: join(contextRoot, "work/prd.json"),
       branch: "main",
       totalDurationMs: 1000,
       totalCost: 10,
@@ -132,8 +148,8 @@ describe("curatorPlugin.shouldRun", () => {
     const context: PostRunContext = {
       runId: "test-run",
       feature: "test-feature",
-      workdir: "/tmp/test",
-      prdPath: "/tmp/test/prd.json",
+      workdir: join(contextRoot, "work"),
+      prdPath: join(contextRoot, "work/prd.json"),
       branch: "main",
       totalDurationMs: 1000,
       totalCost: 10,
@@ -164,8 +180,8 @@ describe("curatorPlugin.execute", () => {
     const context: PostRunContext = {
       runId: "test-run",
       feature: "test-feature",
-      workdir: "/tmp/test",
-      prdPath: "/tmp/test/prd.json",
+      workdir: join(contextRoot, "work"),
+      prdPath: join(contextRoot, "work/prd.json"),
       branch: "main",
       totalDurationMs: 1000,
       totalCost: 10,
@@ -187,8 +203,8 @@ describe("curatorPlugin.execute", () => {
     const context: PostRunContext = {
       runId: "test-run-123",
       feature: "test-feature",
-      workdir: "/tmp/test",
-      prdPath: "/tmp/test/prd.json",
+      workdir: join(contextRoot, "work"),
+      prdPath: join(contextRoot, "work/prd.json"),
       branch: "main",
       totalDurationMs: 1000,
       totalCost: 10,
@@ -197,10 +213,10 @@ describe("curatorPlugin.execute", () => {
       version: "0.1.0",
       pluginConfig: {},
       logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
-      outputDir: "/tmp/output",
-      globalDir: "/tmp/global",
+      outputDir: join(contextRoot, "out"),
+      globalDir: join(contextRoot, "global"),
       projectKey: "test-project",
-      curatorRollupPath: "/tmp/rollup.jsonl",
+      curatorRollupPath: join(contextRoot, "rollup.jsonl"),
       config: { curator: { enabled: true } },
     };
 
@@ -214,8 +230,8 @@ describe("curatorPlugin.execute", () => {
     const context: PostRunContext = {
       runId: "test-run",
       feature: "test-feature",
-      workdir: "/tmp/test",
-      prdPath: "/tmp/test/prd.json",
+      workdir: join(contextRoot, "work"),
+      prdPath: join(contextRoot, "work/prd.json"),
       branch: "main",
       totalDurationMs: 1000,
       totalCost: 10,
@@ -224,10 +240,10 @@ describe("curatorPlugin.execute", () => {
       version: "0.1.0",
       pluginConfig: {},
       logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
-      outputDir: "/tmp/output",
-      globalDir: "/tmp/global",
+      outputDir: join(contextRoot, "out"),
+      globalDir: join(contextRoot, "global"),
       projectKey: "test-project",
-      curatorRollupPath: "/tmp/rollup.jsonl",
+      curatorRollupPath: join(contextRoot, "rollup.jsonl"),
     };
 
     const postRunAction = curatorPlugin.extensions.postRunAction;
@@ -310,7 +326,7 @@ async function windowFor(ctx: CuratorPostRunContext, runs: number) {
 
 describe("collector → heuristics seam", () => {
   test("a single run's own observations carry exactly one featureId", async () => {
-    const root = await mkdtemp(join(tmpdir(), "curator-seam-single-"));
+    const root = makeTestDir("curator-seam-single-");
     const ctx = await runOnce(root, "feat-a", "run-1", "src/a.ts", "2026-08-01T12:05:00.000Z");
     const observations = await collectObservations(ctx);
     const features = new Set(observations.filter((o) => o.kind === "review-finding").map((o) => o.featureId));
@@ -319,7 +335,7 @@ describe("collector → heuristics seam", () => {
   });
 
   test("H1 fires on the accumulated window across runs and features", async () => {
-    const root = await mkdtemp(join(tmpdir(), "curator-seam-window-"));
+    const root = makeTestDir("curator-seam-window-");
     let ctx = await runOnce(root, "feat-a", "run-1", "src/a.ts", "2026-08-01T10:00:00.000Z");
     ctx = await runOnce(root, "feat-b", "run-2", "src/b.ts", "2026-08-01T11:00:00.000Z");
     ctx = await runOnce(root, "feat-c", "run-3", "src/c.ts", "2026-08-01T12:00:00.000Z");
@@ -334,7 +350,7 @@ describe("collector → heuristics seam", () => {
   });
 
   test("each run contributes its findings to the window exactly once", async () => {
-    const root = await mkdtemp(join(tmpdir(), "curator-seam-once-"));
+    const root = makeTestDir("curator-seam-once-");
     let ctx = await runOnce(root, "feat-a", "run-1", "src/a.ts", "2026-08-01T10:00:00.000Z");
     ctx = await runOnce(root, "feat-b", "run-2", "src/b.ts", "2026-08-01T11:00:00.000Z");
 
@@ -343,7 +359,7 @@ describe("collector → heuristics seam", () => {
   });
 
   test("the window keeps only the most recent runs", async () => {
-    const root = await mkdtemp(join(tmpdir(), "curator-seam-bound-"));
+    const root = makeTestDir("curator-seam-bound-");
     let ctx = await runOnce(root, "feat-a", "run-1", "src/a.ts", "2026-08-01T10:00:00.000Z");
     ctx = await runOnce(root, "feat-b", "run-2", "src/b.ts", "2026-08-01T11:00:00.000Z");
     ctx = await runOnce(root, "feat-c", "run-3", "src/c.ts", "2026-08-01T12:00:00.000Z");
@@ -355,7 +371,7 @@ describe("collector → heuristics seam", () => {
   });
 
   test("a missing or empty rollup yields an empty window rather than throwing", async () => {
-    const root = await mkdtemp(join(tmpdir(), "curator-seam-empty-"));
+    const root = makeTestDir("curator-seam-empty-");
     const opts = { projectKey: "p" };
     expect((await readHeuristicWindow(join(root, "nope.jsonl"), 5, opts)).observations).toEqual([]);
     const empty = join(root, "empty.jsonl");
@@ -364,7 +380,7 @@ describe("collector → heuristics seam", () => {
   });
 
   test("malformed rollup lines are skipped, not fatal", async () => {
-    const root = await mkdtemp(join(tmpdir(), "curator-seam-malformed-"));
+    const root = makeTestDir("curator-seam-malformed-");
     const p = join(root, "rollup.jsonl");
     await writeFile(p, ["{not json", JSON.stringify(rollupRow("run-1", "p")), ""].join("\n"));
     const { observations } = await readHeuristicWindow(p, 5, { projectKey: "p" });
@@ -389,7 +405,7 @@ function rollupRow(runId: string, projectKey: string | undefined, featureId = "f
 
 describe("the rollup is shared by every project (#1429)", () => {
   test("a project's window excludes another project's rows", async () => {
-    const root = await mkdtemp(join(tmpdir(), "curator-scope-window-"));
+    const root = makeTestDir("curator-scope-window-");
     await runOnce(root, "feat-a", "run-1", "src/a.ts", "2026-08-01T10:00:00.000Z", "alpha");
     await runOnce(root, "feat-b", "run-2", "src/b.ts", "2026-08-01T11:00:00.000Z", "beta");
     const ctx = await runOnce(root, "feat-c", "run-3", "src/c.ts", "2026-08-01T12:00:00.000Z", "alpha");
@@ -400,7 +416,7 @@ describe("the rollup is shared by every project (#1429)", () => {
   });
 
   test("H1 never counts a foreign project's features toward cross-feature recurrence", async () => {
-    const root = await mkdtemp(join(tmpdir(), "curator-scope-h1-"));
+    const root = makeTestDir("curator-scope-h1-");
     await runOnce(root, "feat-a", "run-1", "src/a.ts", "2026-08-01T10:00:00.000Z", "alpha");
     await runOnce(root, "feat-b", "run-2", "src/b.ts", "2026-08-01T11:00:00.000Z", "beta");
     await runOnce(root, "feat-c", "run-3", "src/c.ts", "2026-08-01T12:00:00.000Z", "beta");
@@ -415,7 +431,7 @@ describe("the rollup is shared by every project (#1429)", () => {
   });
 
   test("a run's own window still spans its own features", async () => {
-    const root = await mkdtemp(join(tmpdir(), "curator-scope-own-"));
+    const root = makeTestDir("curator-scope-own-");
     await runOnce(root, "feat-a", "run-1", "src/a.ts", "2026-08-01T10:00:00.000Z", "alpha");
     await runOnce(root, "feat-b", "run-2", "src/b.ts", "2026-08-01T11:00:00.000Z", "alpha");
     const ctx = await runOnce(root, "feat-c", "run-3", "src/c.ts", "2026-08-01T12:00:00.000Z", "alpha");
@@ -426,7 +442,7 @@ describe("the rollup is shared by every project (#1429)", () => {
   });
 
   test("rows written before project scoping are dropped, not attributed to the caller", async () => {
-    const root = await mkdtemp(join(tmpdir(), "curator-scope-legacy-"));
+    const root = makeTestDir("curator-scope-legacy-");
     const p = join(root, "rollup.jsonl");
     await writeFile(
       p,
@@ -450,7 +466,7 @@ describe("the window's byte ceiling must not masquerade as its run policy (#1429
   }
 
   test("reads further back when the initial tail holds fewer runs than requested", async () => {
-    const root = await mkdtemp(join(tmpdir(), "curator-window-expand-"));
+    const root = makeTestDir("curator-window-expand-");
     const p = await bigRollup(root, 10, 500);
     const { runIds, truncated } = await readHeuristicWindow(p, 10, {
       projectKey: "alpha",
@@ -462,7 +478,7 @@ describe("the window's byte ceiling must not masquerade as its run policy (#1429
   });
 
   test("reports the shortfall when the hard ceiling is reached", async () => {
-    const root = await mkdtemp(join(tmpdir(), "curator-window-cap-"));
+    const root = makeTestDir("curator-window-cap-");
     const p = await bigRollup(root, 10, 500);
     const { runIds, truncated } = await readHeuristicWindow(p, 10, {
       projectKey: "alpha",
@@ -474,14 +490,14 @@ describe("the window's byte ceiling must not masquerade as its run policy (#1429
   });
 
   test("a degenerate byte bound terminates instead of spinning", async () => {
-    const root = await mkdtemp(join(tmpdir(), "curator-window-zero-"));
+    const root = makeTestDir("curator-window-zero-");
     const p = await bigRollup(root, 3, 10);
     const { runIds } = await readHeuristicWindow(p, 5, { projectKey: "alpha", tailBytes: 0 });
     expect(runIds).toHaveLength(3);
   });
 
   test("counts rows belonging to no project, so an empty window is legible", async () => {
-    const root = await mkdtemp(join(tmpdir(), "curator-window-legacy-"));
+    const root = makeTestDir("curator-window-legacy-");
     const p = join(root, "rollup.jsonl");
     const rows = [rollupRow("old-1", undefined), rollupRow("old-2", undefined), rollupRow("new-1", "alpha")];
     await writeFile(p, `${rows.map((r) => JSON.stringify(r)).join("\n")}\n`);
@@ -492,7 +508,7 @@ describe("the window's byte ceiling must not masquerade as its run policy (#1429
   });
 
   test("rows spanning a stream-chunk boundary survive intact", async () => {
-    const root = await mkdtemp(join(tmpdir(), "curator-window-chunked-"));
+    const root = makeTestDir("curator-window-chunked-");
     const p = await bigRollup(root, 6, 300_000);
     const { observations, runIds } = await readHeuristicWindow(p, 6, {
       projectKey: "alpha",
@@ -506,7 +522,7 @@ describe("the window's byte ceiling must not masquerade as its run policy (#1429
   });
 
   test("a window that fits reports no truncation even when fewer runs exist than requested", async () => {
-    const root = await mkdtemp(join(tmpdir(), "curator-window-short-"));
+    const root = makeTestDir("curator-window-short-");
     const p = await bigRollup(root, 3, 10);
     const { runIds, truncated } = await readHeuristicWindow(p, 20, { projectKey: "alpha" });
     expect(runIds).toHaveLength(3);
@@ -557,7 +573,7 @@ describe("curator plugin — end to end", () => {
   }
 
   test("three runs over three features produce one cross-feature proposal", async () => {
-    const root = await mkdtemp(join(tmpdir(), "curator-plugin-e2e-"));
+    const root = makeTestDir("curator-plugin-e2e-");
     await executeRun(root, "feat-a", "run-1", "src/a.ts", "2026-08-01T10:00:00.000Z");
     await executeRun(root, "feat-b", "run-2", "src/b.ts", "2026-08-01T11:00:00.000Z");
     const proposalsPath = await executeRun(root, "feat-c", "run-3", "src/c.ts", "2026-08-01T12:00:00.000Z");
@@ -570,7 +586,7 @@ describe("curator plugin — end to end", () => {
   });
 
   test("a busy neighbour project cannot crowd out or contaminate this project's proposals", async () => {
-    const root = await mkdtemp(join(tmpdir(), "curator-plugin-neighbour-"));
+    const root = makeTestDir("curator-plugin-neighbour-");
     await executeRun(root, "feat-a", "run-1", "src/a.ts", "2026-08-01T10:00:00.000Z", "alpha");
     await executeRun(root, "beta-x", "run-2", "src/x.ts", "2026-08-01T10:30:00.000Z", "beta");
     await executeRun(root, "feat-b", "run-3", "src/b.ts", "2026-08-01T11:00:00.000Z", "alpha");
@@ -585,7 +601,7 @@ describe("curator plugin — end to end", () => {
   });
 
   test("the first run of a project proposes nothing, rather than erroring", async () => {
-    const root = await mkdtemp(join(tmpdir(), "curator-plugin-first-"));
+    const root = makeTestDir("curator-plugin-first-");
     const proposalsPath = await executeRun(root, "feat-a", "run-1", "src/a.ts", "2026-08-01T10:00:00.000Z");
     const markdown = await Bun.file(proposalsPath).text();
     expect(markdown).toContain("Curator Proposals");

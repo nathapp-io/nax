@@ -1,5 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { waitForCondition } from "@test/helpers";
+import { afterEach, beforeEach, describe, expect, jest, mock, test } from "bun:test";
 import { withProcessTimeout } from "@/execution/timeout-handler";
 
 const SHORT_DELAY_MS = 25;
@@ -19,6 +18,7 @@ describe("withProcessTimeout", () => {
   let exitPromise: Promise<number>;
 
   beforeEach(() => {
+    jest.useFakeTimers();
     resolveExit = () => {};
     exitPromise = new Promise((resolve) => {
       resolveExit = resolve;
@@ -32,14 +32,19 @@ describe("withProcessTimeout", () => {
   });
 
   afterEach(() => {
-    mock.restore();
-    // Clear any pending timers
-    Bun.gc(true);
+    try {
+      expect(jest.getTimerCount()).toBe(0);
+    } finally {
+      jest.useRealTimers();
+      mock.restore();
+    }
   });
 
   test("returns exit code when process exits normally before timeout", async () => {
     setTimeout(() => resolveExit(0), SHORT_DELAY_MS);
-    const finalResult = await withProcessTimeout(mockProc, 1000);
+    const result = withProcessTimeout(mockProc, 1000);
+    jest.advanceTimersByTime(SHORT_DELAY_MS);
+    const finalResult = await result;
 
     expect(finalResult.timedOut).toBe(false);
     expect(finalResult.exitCode).toBe(0);
@@ -58,6 +63,7 @@ describe("withProcessTimeout", () => {
       onTimeout: onTimeoutResolve,
     });
 
+    jest.advanceTimersByTime(timeoutMs);
     await onTimeoutReached;
     resolveExit(-1); // Exit the process to allow the test to complete
 
@@ -74,7 +80,9 @@ describe("withProcessTimeout", () => {
       onTimeout: onTimeoutMock,
     });
 
-    await waitForCondition(() => onTimeoutMock.mock.calls.length > 0);
+    jest.advanceTimersByTime(timeoutMs - 1);
+    expect(onTimeoutMock).not.toHaveBeenCalled();
+    jest.advanceTimersByTime(1);
     resolveExit(-1); // Exit the process
 
     await result;
@@ -93,7 +101,9 @@ describe("withProcessTimeout", () => {
       killFn,
     });
 
-    await waitForCondition(() => killCalls.some((call) => call.signal === "SIGTERM"));
+    jest.advanceTimersByTime(timeoutMs - 1);
+    expect(killCalls).toEqual([]);
+    jest.advanceTimersByTime(1);
     resolveExit(-1);
 
     await result;
@@ -114,8 +124,11 @@ describe("withProcessTimeout", () => {
       killFn,
     });
 
-    await waitForCondition(() => killCalls.some((call) => call.signal === "SIGTERM"));
-    await waitForCondition(() => killCalls.some((call) => call.signal === "SIGKILL"));
+    jest.advanceTimersByTime(timeoutMs);
+    expect(killCalls).toEqual([{ pid: mockProc.pid, signal: "SIGTERM" }]);
+    jest.advanceTimersByTime(customGraceMs - 1);
+    expect(killCalls).toHaveLength(1);
+    jest.advanceTimersByTime(1);
     resolveExit(-1);
 
     await result;
@@ -126,10 +139,12 @@ describe("withProcessTimeout", () => {
   test("returns -1 when hard deadline is exceeded", async () => {
     const timeoutMs = TIMEOUT_MS;
     // Simulate a process that never exits
-    const finalResult = await withProcessTimeout(mockProc, timeoutMs, {
+    const result = withProcessTimeout(mockProc, timeoutMs, {
       graceMs: GRACE_MS,
       hardDeadlineBufferMs: HARD_DEADLINE_BUFFER_MS,
     });
+    jest.advanceTimersByTime(timeoutMs + GRACE_MS + HARD_DEADLINE_BUFFER_MS);
+    const finalResult = await result;
 
     expect(finalResult.exitCode).toBe(-1);
     expect(finalResult.timedOut).toBe(true);
@@ -146,6 +161,7 @@ describe("withProcessTimeout", () => {
     });
 
     // Should not throw - error should be caught
+    jest.advanceTimersByTime(timeoutMs + GRACE_MS + HARD_DEADLINE_BUFFER_MS);
     const finalResult = await result;
     expect(finalResult).toBeDefined();
   });

@@ -21,13 +21,10 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { ResolvedCompaction } from "@nathapp/nax-agent/internal";
 import { _adapterDeps, _clientDeps, _resetNativeClient } from "@nathapp/nax-agent/internal";
 import type { Client, ClientRequest, Pricing, ResolvedModel } from "@nathapp/nax-ai";
-import { withDerivedStream } from "@test/helpers";
+import { cleanupTempDir, makeTempDir, withDerivedStream } from "@test/helpers";
 import { NativeAgentAdapter } from "@/agents/native-agent";
 import { toSessionModel } from "@/agents/session-model-mapping";
 import type { ResolvedCompleteOptions } from "@/agents/types";
@@ -37,15 +34,32 @@ import type { AdapterFailure } from "@/context/engine";
 import { SessionManager } from "@/session/manager";
 import type { OpenSessionRequest } from "@/session/types";
 
+const tempDirs: string[] = [];
+
+function makeTestDir(prefix: string): string {
+  const dir = makeTempDir(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+
+const sessionCleanups: (() => Promise<void>)[] = [];
+
 const REAL_BUILD = _clientDeps.build;
 const REAL_LIST = _adapterDeps.listStoredProviders;
 const REAL_SWEEP = _adapterDeps.anyAmbientCredential;
 
-afterEach(() => {
-  _clientDeps.build = REAL_BUILD;
-  _resetNativeClient();
-  _adapterDeps.listStoredProviders = REAL_LIST;
-  _adapterDeps.anyAmbientCredential = REAL_SWEEP;
+afterEach(async () => {
+  const closed = await Promise.allSettled(sessionCleanups.splice(0).map(async (close) => close()));
+  try {
+    const errors = closed.flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
+    if (errors.length > 0) throw new AggregateError(errors, "Failed to close test sessions");
+  } finally {
+    for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+    _clientDeps.build = REAL_BUILD;
+    _resetNativeClient();
+    _adapterDeps.listStoredProviders = REAL_LIST;
+    _adapterDeps.anyAmbientCredential = REAL_SWEEP;
+  }
 });
 
 function makeOptions(): ResolvedCompleteOptions {
@@ -254,8 +268,9 @@ describe("NativeAgentAdapter.sendTurn failure classification", () => {
       resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
       modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
       timeoutSeconds: 60,
-      transcriptDir: await mkdtemp(join(tmpdir(), `nax-adapter-${name}-`)),
+      transcriptDir: makeTestDir(`nax-adapter-${name}-`),
     });
+    sessionCleanups.push(() => adapter.closeSession(handle));
     return { adapter, handle };
   }
 
@@ -400,7 +415,7 @@ async function openSessionWithModelDef(
   handle: Awaited<ReturnType<NativeAgentAdapter["openSession"]>>;
   dir: string;
 }> {
-  const dir = await mkdtemp(join(tmpdir(), `nax-ctxwin-${name}-`));
+  const dir = makeTestDir(`nax-ctxwin-${name}-`);
   const adapter = new NativeAgentAdapter();
   const handle = await adapter.openSession(name, {
     agentName: "native",
@@ -411,6 +426,7 @@ async function openSessionWithModelDef(
     transcriptDir: dir,
     compaction: COMPACTION_CFG,
   });
+  sessionCleanups.push(() => adapter.closeSession(handle));
   return { adapter, handle, dir };
 }
 
@@ -525,8 +541,9 @@ describe("catalog cache rates reach cost through the adapter, not just estimateC
       resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
       modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
       timeoutSeconds: 60,
-      transcriptDir: await mkdtemp(join(tmpdir(), "nax-adapter-cost-rates-")),
+      transcriptDir: makeTestDir("nax-adapter-cost-rates-"),
     });
+    sessionCleanups.push(() => adapter.closeSession(handle));
     const result = await adapter.sendTurn(handle, "hi", {
       interactionHandler: { onInteraction: async () => ({ answer: "" }) },
     });
@@ -583,8 +600,9 @@ describe("NativeAgentAdapter cacheRetention wiring", () => {
       resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
       modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
       timeoutSeconds: 60,
-      transcriptDir: await mkdtemp(join(tmpdir(), "nax-adapter-cache-retention-")),
+      transcriptDir: makeTestDir("nax-adapter-cache-retention-"),
     });
+    sessionCleanups.push(() => adapter.closeSession(handle));
     await adapter.sendTurn(handle, "hi", {
       interactionHandler: { onInteraction: async () => ({ answer: "" }) },
     });
@@ -604,7 +622,7 @@ describe("cacheRetention through the production SessionManager path", () => {
     _clientDeps.build = async () => client;
     const adapter = new NativeAgentAdapter();
     const sm = new SessionManager({ getAdapter: () => adapter });
-    const transcriptDir = await mkdtemp(join(tmpdir(), "nax-session-manager-cache-retention-"));
+    const transcriptDir = makeTestDir("nax-session-manager-cache-retention-");
     const req: OpenSessionRequest = {
       agentName: "native",
       workdir: process.cwd(),
@@ -614,6 +632,7 @@ describe("cacheRetention through the production SessionManager path", () => {
       transcriptDir,
     };
     const handle = await sm.openSession("nax-cache-retention-e2e", req);
+    sessionCleanups.push(() => sm.closeSession(handle));
     await sm.sendPrompt(handle, "hi", {
       interactionHandler: { onInteraction: async () => ({ answer: "" }) },
     });

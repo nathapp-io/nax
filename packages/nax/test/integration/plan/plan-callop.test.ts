@@ -475,7 +475,7 @@ describe("planCommand callOp migration (US-003)", () => {
     _planDeps.initInteractionChain = mock(async () => null);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     mock.restore();
     _planDeps.readFile = origReadFile;
     _planDeps.writeFile = origWriteFile;
@@ -489,6 +489,7 @@ describe("planCommand callOp migration (US-003)", () => {
     _planDeps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
     _planDeps.createInteractionBridge = origCreateInteractionBridge;
     _planDeps.initInteractionChain = origInitInteractionChain;
+    await rm(tmpDir, { recursive: true, force: true });
   });
 
   // Test that basic parameters are accepted

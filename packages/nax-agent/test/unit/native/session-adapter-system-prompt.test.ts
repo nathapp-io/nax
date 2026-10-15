@@ -4,19 +4,46 @@
  * the prompt is forgotten on close.
  */
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { Client, ClientRequest, ProtocolEvent, ResolvedModel } from "@nathapp/nax-ai";
 import { _clientDeps, _resetNativeClient } from "#src/native/client";
 import { NativeSessionAdapter, nativeSessionStateOf } from "#src/native/session-adapter";
 import type { OpenSessionOpts } from "#src/session/session-types";
 import type { CodingTool } from "#src/tools/registry";
+import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
+
+const tempDirs: string[] = [];
+const sessionCleanups: (() => Promise<void>)[] = [];
+
+function makeTestDir(prefix: string): string {
+  const dir = makeTempDir(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+
+async function closeTestSessions(): Promise<void> {
+  const closed = await Promise.allSettled(sessionCleanups.splice(0).map(async (close) => close()));
+  const errors = closed.flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
+  if (errors.length > 0) throw new AggregateError(errors, "Failed to close test sessions");
+}
+
+async function openTestSession(
+  adapter: NativeSessionAdapter,
+  ...args: Parameters<NativeSessionAdapter["openSession"]>
+) {
+  const handle = await adapter.openSession(...args);
+  sessionCleanups.push(() => adapter.closeSession(handle));
+  return handle;
+}
 
 const REAL_BUILD = _clientDeps.build;
-afterEach(() => {
-  _clientDeps.build = REAL_BUILD;
-  _resetNativeClient();
+afterEach(async () => {
+  try {
+    await closeTestSessions();
+  } finally {
+    for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+    _clientDeps.build = REAL_BUILD;
+    _resetNativeClient();
+  }
 });
 
 const model: ResolvedModel = {
@@ -70,7 +97,7 @@ const fakeRead: CodingTool = {
 };
 
 async function openOpts(extra: Partial<OpenSessionOpts>): Promise<OpenSessionOpts> {
-  const dir = await mkdtemp(join(tmpdir(), "nax-system-prompt-"));
+  const dir = makeTestDir("nax-system-prompt-");
   return {
     agentName: "native",
     workdir: dir,
@@ -87,7 +114,7 @@ async function turnWith(extra: Partial<OpenSessionOpts>): Promise<ClientRequest[
   _resetNativeClient();
   _clientDeps.build = async () => recordingClient(requests);
   const adapter = new NativeSessionAdapter();
-  const handle = await adapter.openSession("system-prompt", await openOpts(extra));
+  const handle = await openTestSession(adapter, "system-prompt", await openOpts(extra));
   await adapter.sendTurn(handle, "read a.ts", {
     interactionHandler: { onInteraction: async () => ({ answer: "contents" }) },
     codingTools: [fakeRead],
@@ -113,11 +140,11 @@ describe("OpenSessionOpts.systemPrompt", () => {
     _resetNativeClient();
     _clientDeps.build = async () => recordingClient([]);
     const adapter = new NativeSessionAdapter();
-    const first = await adapter.openSession("reused", await openOpts({ systemPrompt: "first" }));
+    const first = await openTestSession(adapter, "reused", await openOpts({ systemPrompt: "first" }));
     expect(nativeSessionStateOf(adapter).systemPrompts.get("reused")).toBe("first");
     await adapter.closeSession(first);
     expect(nativeSessionStateOf(adapter).systemPrompts.has("reused")).toBe(false);
-    await adapter.openSession("reused", await openOpts({}));
+    await openTestSession(adapter, "reused", await openOpts({}));
     expect(nativeSessionStateOf(adapter).systemPrompts.has("reused")).toBe(false);
   });
 });

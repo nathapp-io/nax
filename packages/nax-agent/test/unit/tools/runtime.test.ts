@@ -1,6 +1,5 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ASK_DENIED_REASON, ASK_NO_CHANNEL_REASON, ASK_TIMEOUT_REASON, type AskResolver } from "@nathapp/nax-agent";
 import type { ToolCallRecord } from "@nathapp/nax-agent/internal";
@@ -14,13 +13,25 @@ import {
   createCodingToolRuntime,
   registerCodingTool,
 } from "@nathapp/nax-agent/internal";
-import { makeLogger } from "#test/helpers/index";
+import { cleanupTempDir, makeLogger, makeTempDir } from "#test/helpers/index";
+
+const tempDirs: string[] = [];
+
+function makeTestDir(prefix: string): string {
+  const dir = makeTempDir(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterAll(() => {
+  for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+});
 
 let root: string;
 let gitRoot: string;
 
 beforeAll(async () => {
-  root = mkdtempSync(join(tmpdir(), "nax-runtime-"));
+  root = makeTestDir("nax-runtime-");
   mkdirSync(join(root, "src"), { recursive: true });
   writeFileSync(join(root, "src", "a.ts"), "const a = 1;\n");
   // The ask-resolution tests below read `file.txt`; without it a missing file
@@ -30,7 +41,7 @@ beforeAll(async () => {
   // A real git repo, for the Git-tool hard-boundary and no-regression tests
   // below — status/log/show run for real rather than through a mock, so a
   // regression in the argv builder would surface as a genuine git failure.
-  gitRoot = mkdtempSync(join(tmpdir(), "nax-runtime-git-"));
+  gitRoot = makeTestDir("nax-runtime-git-");
   mkdirSync(join(gitRoot, "src"), { recursive: true });
   writeFileSync(join(gitRoot, "src", "a.ts"), "const a = 1;\n");
   const run = (args: string[]) => _gitDeps.spawn(["git", ...args], { cwd: gitRoot, stdout: "pipe", stderr: "pipe" });

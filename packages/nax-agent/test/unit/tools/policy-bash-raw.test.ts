@@ -1,11 +1,23 @@
-import { beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, realpathSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdirSync, realpathSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { EMPTY_OWNED_PATHS_POLICY, type OwnedBashCandidate, type OwnedPathsPolicy } from "#src/tools/owned-paths";
 import { resolveWithin } from "#src/tools/policy";
 import { type RawScreenArgs, screenRawBashCommand } from "#src/tools/policy-bash-raw";
+import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
 import { naxOwnedBashRefusal, naxOwnedPathsPolicy } from "#test/helpers/nax-owned-paths";
+
+const tempDirs: string[] = [];
+
+function makeTestDir(prefix: string): string {
+  const dir = makeTempDir(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+});
 
 const ROOT = "/tmp/raw-screen-root";
 
@@ -502,7 +514,7 @@ describe("screenRawBashCommand — US-002: sandbox-wrapped PRD reads", () => {
 describe("screenRawBashCommand reads owned paths from the port (S3-2)", () => {
   let rawRoot = "";
   beforeEach(() => {
-    rawRoot = realpathSync(mkdtempSync(join(tmpdir(), "raw-screen-owned-")));
+    rawRoot = realpathSync(makeTestDir("raw-screen-owned-"));
     mkdirSync(join(rawRoot, ".nax", "features", "f"), { recursive: true });
   });
 
