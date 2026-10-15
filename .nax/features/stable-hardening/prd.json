@@ -3,7 +3,7 @@
   "feature": "stable-hardening",
   "branchName": "feat/stable-hardening",
   "createdAt": "2026-10-16T00:00:00.000Z",
-  "updatedAt": "2026-10-15T15:58:09.096Z",
+  "updatedAt": "2026-10-15T16:15:15.209Z",
   "userStories": [
     {
       "id": "US-001",
@@ -113,14 +113,17 @@
         "hardening"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Coordinates durable workflow records, state-machine resume, review coverage and publish evidence across multiple modules; no user authorization or credential decisions are introduced."
+        "reasoning": "Coordinates durable workflow records, state-machine resume, review coverage and publish evidence across multiple modules; no user authorization or credential decisions are introduced.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/preflight-run.ts",
@@ -158,7 +161,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "ad94f606f7ff9f1854ec65b7fb35d15d8ccaac45"
     },
     {
       "id": "US-003",
