@@ -169,6 +169,19 @@ describe("NativeSessionAdapter round trips stream (S3-3)", () => {
     expect(err).toHaveProperty("message", "bad key");
   });
 
+  test("a request that bills usage and then fails carries that spend on the thrown error", async () => {
+    const failing: ProtocolEvent[] = [
+      { type: "usage", usage: { inputTokens: 1_000_000, outputTokens: 0 } },
+      { type: "error", error: { kind: "auth", message: "bad key" } },
+    ];
+    _clientDeps.build = async () => streamingClient(() => failing, { stream: 0, complete: 0 });
+    const adapter = new NativeSessionAdapter();
+    const { handle } = await open(adapter, "billed-failure");
+    const err = await adapter.sendTurn(handle, "hi", turn).catch((e: unknown) => e);
+    expect(err).toHaveProperty("tokenUsage", expect.objectContaining({ inputTokens: 1_000_000, outputTokens: 0 }));
+    expect(err).toHaveProperty("estimatedCostUsd", 3);
+  });
+
   test("a synchronous throw from stream() rejects sendTurn", async () => {
     _clientDeps.build = async () => ({
       ...streamingClient(() => [], { stream: 0, complete: 0 }),
