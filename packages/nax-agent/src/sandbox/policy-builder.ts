@@ -209,5 +209,17 @@ export function buildSandboxPolicy(input: SandboxPolicyInput): SandboxPolicy {
     ...config.filesystem.denyRead.map((p) => resolve(root, expandHome(p, home))),
   ]);
   const allowed = config.network.allowedDomains;
-  return { writeRoots, denyWrite, denyRead, network: allowed === undefined ? {} : { allowedDomains: [...allowed] } };
+  // US-002: the flag is carried only when the config asks for it, so an absent
+  // -- or explicitly false -- config leaves `network` without the key. The type
+  // only admits `true` (see SandboxNetworkPolicy), and srt treats absent as off.
+  const loopback = config.network.allowLocalBinding === true;
+  return {
+    writeRoots,
+    denyWrite,
+    denyRead,
+    network: {
+      ...(allowed === undefined ? {} : { allowedDomains: [...allowed] }),
+      ...(loopback ? { allowLocalBinding: true as const } : {}),
+    },
+  };
 }
