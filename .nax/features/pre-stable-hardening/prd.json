@@ -3,7 +3,7 @@
   "feature": "pre-stable-hardening",
   "branchName": "feat/pre-stable-hardening",
   "createdAt": "2026-10-15T00:00:00.000Z",
-  "updatedAt": "2026-10-15T04:52:43.299Z",
+  "updatedAt": "2026-10-15T07:33:27.673Z",
   "userStories": [
     {
       "id": "US-001",
@@ -40,8 +40,8 @@
         "git"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -53,7 +53,9 @@
         "profileModelTier": "powerful",
         "initialAgent": "native",
         "initialProfileId": "native-sol",
-        "initialModelTier": "powerful"
+        "initialModelTier": "powerful",
+        "initialComplexity": "complex",
+        "modelTier": "powerful"
       },
       "contextFiles": [
         "packages/nax-agent/src/tools/nax-state-guard.ts",
@@ -70,10 +72,6 @@
         "`naxStateRefusalInText(\"git stash branch b\", ctx)` still returns a defined refusal.",
         "`naxStateRefusalInText(\"git stash save x\", ctx)` still returns a defined refusal."
       ],
-      "outOfScope": [
-        "Allowing `pop`/`apply` of a stash that touches `.nax`, `git stash branch`, `stash save`, or an unquoted `stash@{N}` ref; they stay refused.",
-        "Rewording the guard's backstop refusal: a stash command whose git invocation the guard cannot classify (`time git stash pop`) is still refused with `STASH_REFUSAL`."
-      ],
       "modifiedFiles": [
         {
           "path": "packages/nax-agent/test/unit/tools/nax-state-guard.test.ts",
@@ -81,7 +79,14 @@
         }
       ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "f857b6aa6c0b480cf333a0a4aff22150bdf90248",
+      "outOfScope": [
+        "Allowing `pop`/`apply` of a stash that touches `.nax`, `git stash branch`, `stash save`, or an unquoted `stash@{N}` ref; they stay refused."
+      ]
     },
     {
       "id": "US-002",
@@ -104,8 +109,8 @@
         "config"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -117,7 +122,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "native",
         "initialProfileId": "native-deepseek",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/config/schemas-sandbox.ts",
@@ -128,14 +135,15 @@
       "expectedFiles": [
         "packages/nax-agent/test/unit/sandbox/allow-local-binding.test.ts"
       ],
-      "outOfScope": [
-        "A per-port loopback grant; srt grants every loopback port when `allowLocalBinding` is on.",
-        "A per-package `allowLocalBinding`: srt reads it once per process, so the first backend's value applies to the whole run.",
-        "Linux behaviour of `allowLocalBinding` (bwrap uses its own network namespace); the flag is passed through unverified there.",
-        "Bumping `@anthropic-ai/sandbox-runtime` past 0.0.77."
-      ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "fc32be4c7318bfec90414b6b48927f8d5bdbf6d5",
+      "outOfScope": [
+        "Bumping `@anthropic-ai/sandbox-runtime` past 0.0.77."
+      ]
     },
     {
       "id": "US-003",
@@ -169,8 +177,8 @@
         "api"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -182,7 +190,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "native",
         "initialProfileId": "native-deepseek",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/mcp/connect.ts",
@@ -195,11 +205,6 @@
         "packages/nax-agent/src/tools/provider-instructions.ts",
         "packages/nax-agent/test/unit/tools/provider-instructions.test.ts"
       ],
-      "outOfScope": [
-        "MCP instructions on nax-agent's own `createAgentSession` path (the nax-agent ACP server); only nax's sessions get them.",
-        "Pinning MCP server instructions in `.nax/mcp-lock.json`; the text is sanitised for control characters and capped, not locked.",
-        "Filtering MCP instructions per tool after deny or ask rules; a provider with at least one advertised tool gets its instructions delivered."
-      ],
       "modifiedFiles": [
         {
           "path": "packages/nax-agent/api/nax-agent.api.txt",
@@ -207,7 +212,11 @@
         }
       ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "7376448dff31fed143bff8753bd0676fc5f40761"
     },
     {
       "id": "US-004",
@@ -233,8 +242,8 @@
         "US-002",
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -246,7 +255,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "native",
         "initialProfileId": "native-deepseek",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent-acp/src/client/tool-host.ts",
@@ -256,11 +267,15 @@
       "expectedFiles": [
         "packages/nax-agent-acp/test/unit/client/tool-host-instructions.test.ts"
       ],
+      "workdir": "packages/nax-agent-acp",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "e0fdf3de2040762091ced3d9718139dd55fc7870",
       "outOfScope": [
         "Verifying against the Claude Agent SDK that `SandboxSettings.network.allowLocalBinding` is honoured; this story pins only the options nax sends."
-      ],
-      "workdir": "packages/nax-agent-acp",
-      "workdirSource": "stated"
+      ]
     },
     {
       "id": "US-005",
@@ -298,8 +313,8 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -311,7 +326,9 @@
         "profileModelTier": "powerful",
         "initialAgent": "native",
         "initialProfileId": "native-sol",
-        "initialModelTier": "powerful"
+        "initialModelTier": "powerful",
+        "initialComplexity": "complex",
+        "modelTier": "powerful"
       },
       "contextFiles": [
         "packages/nax/src/agents/acp/open-context.ts",
@@ -324,14 +341,12 @@
       "expectedFiles": [
         "packages/nax/test/unit/mcp/provider-instructions.test.ts"
       ],
-      "outOfScope": [
-        "Substituting `{workdir}` in the server's own instructions; only the config text is substituted.",
-        "Recording MCP instructions in prompt-audit; the `info` attach log line is the visibility signal.",
-        "MCP instructions for sessions opened by `runtime/session-run-hop.ts` outside the op hop path; only `build-hop-callback-hop.ts` hops carry them.",
-        "Pinning MCP server instructions in `.nax/mcp-lock.json`; the text is sanitised for control characters and capped, not locked."
-      ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "7b3b332b671922e194190968bdee6bdee51b06ab"
     },
     {
       "id": "US-006",
@@ -364,8 +379,8 @@
         "pipeline"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -377,7 +392,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "native",
         "initialProfileId": "native-deepseek",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/pipeline/stages/completion.ts",
@@ -394,12 +411,12 @@
         "`queueCheckStage.execute` handling a `PRIORITY` command calls `_queueCheckDeps.savePrdProgress` with label `priority`.",
         "`queueCheckStage.execute` handling an `INJECT` command calls `_queueCheckDeps.savePrdProgress` with label `inject`."
       ],
-      "outOfScope": [
-        "A dry-run-specific branch in `commitPrdProgress`.",
-        "Committing `prd.json` from the parallel worktree executor; its unified executor stays the single writer."
-      ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "9c2c9f3d7b9c17c3503adace60b3e73cf32a4598"
     },
     {
       "id": "US-007",
@@ -432,8 +449,8 @@
         "precheck"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -445,7 +462,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "native",
         "initialProfileId": "native-deepseek",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/git.ts",
@@ -462,12 +481,12 @@
       "suggestedCriteria": [
         "`commitLedger` in a repository whose `.gitignore` does not ignore the ledger still commits it and returns `true`."
       ],
-      "outOfScope": [
-        "Removing broad `.gitignore` rules automatically; precheck and `nax init` only report them.",
-        "A loud failed-ledger signal in pipeline-mode finish (`finish/advise.ts`), which ignores git exit codes today."
-      ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "fac0e7385fbbfa392c71da385e490031a4a45de6"
     },
     {
       "id": "US-008",
@@ -497,8 +516,8 @@
         "e2e"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -510,7 +529,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "native",
         "initialProfileId": "native-deepseek",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/finish/gates/quality.ts",
@@ -526,13 +547,12 @@
         "`resolveGateCommands` for root commands `build`, `typecheck`, `lint` and `test` with no `e2e` returns the same gate names as before, with no `e2e` gate.",
         "`runQualityGates` for a gate with no `setup` calls `_qualityGateDeps.run` once, for the gate command only."
       ],
-      "outOfScope": [
-        "Running e2e inside an agent's Bash sandbox, or an unsandboxed Bash allowlist for `playwright test`.",
-        "A blocking host-side pre-run setup step for the whole run (#2521); `e2eSetup` runs only before the `e2e` gate.",
-        "E2e result parsing into per-test findings; a red e2e gate carries the output tail like every repo gate."
-      ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "73c99d1acaaca0cc294d0b172da0d66c53ddc9fc"
     },
     {
       "id": "US-009",
@@ -564,8 +584,8 @@
       "dependencies": [
         "US-008"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -577,7 +597,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "native",
         "initialProfileId": "native-deepseek",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/prompts/builders/workflow-implementer-builder.ts",
@@ -592,12 +614,12 @@
         "The workflow fix prompt does not include \"capture the failing run before you write the implementation for that criterion\".",
         "`runStoryReview` with no `e2e` command sends a prompt without \"do not list e2e journeys in cannotVerify\"."
       ],
-      "outOfScope": [
-        "Changing the workflow fix prompt's TDD wording; only the implement and fresh restart prompts change.",
-        "Running e2e inside an agent's Bash sandbox, or an unsandboxed Bash allowlist for `playwright test`."
-      ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "19516fc8d49d6492aaa15e888a59d9464e1e1750"
     }
   ],
   "analysis": "Seven independent fixes (#2539 #2540 #2534 #2533 #2517 #2538 #2530) landing before stable 0.88.0, split into nine binding stories across packages/nax-agent (US-001..003), packages/nax-agent-acp (US-004) and packages/nax (US-005..009). Dependency direction is nax-ai -> nax-agent -> nax and nax-agent -> nax-agent-acp (peer); US-004 depends on US-002 (SandboxNetworkPolicy.allowLocalBinding) and US-003 (BackendOpenContext.providerInstructions); US-005 depends on US-003 (ToolProvider.instructions, ResolvedProviderTools.instructions, renderProviderInstructions, OpenSessionOpts.providerInstructions, buildCodingToolSupport); US-009 depends on US-008 (quality.commands.e2e config key).\n\nKey files and constraints:\n- US-001: packages/nax-agent/src/tools/nax-state-guard.ts is 514 of 600 lines, so new logic goes in the new packages/nax-agent/src/tools/nax-stash-restore.ts and stashRefusal stays a thin dispatch. nax-agent src/ has no spawnSync today; Bun.* is banned by check:no-bun-apis; every git argv must use gitSpawnEnv() (packages/nax-agent/src/internal/git-env.ts) for check-git-spawn-env; GIT_TIMEOUT_MS lives in src/internal/git-exec.ts. The existing test packages/nax-agent/test/unit/tools/nax-state-guard.test.ts has a 'git stash push -- src' deny row that US-001 must remove, and must stub _naxStateGuardDeps.git to undefined in beforeEach (restore in afterEach). The shell tokenizer in naxStateRefusalInText ends a segment at { and }, so an unquoted stash@{1} becomes ref 'stash@' and is refused; quoted form is allowed. Every working-directory frame (ctx.frames) must list cleanly. The directory-pathspec allow decision replaces the bounded scanNaxDirs walk (nax-dirs.ts).\n- US-002: srt reads allowLocalBinding only from process-wide SandboxManager.initialize config (sandbox-runtime 0.0.77), never from customConfig, so createSrtBackend(network) must pass it via srtNetwork(allowedDomains, allowLocalBinding) to initialize while customConfig stays unchanged. buildSandboxPolicy sets network.allowLocalBinding: true only when config is true (no key otherwise). Files: config/schemas-sandbox.ts, sandbox/policy-builder.ts, sandbox/srt-backend.ts, sandbox/types.ts.\n- US-003: connectMcp (mcp/connect.ts) reads client.getInstructions() after tool listing; set only for non-empty string. ToolProvider (tools/provider-types.ts) gains optional instructions(workdir); resolveProviderTools (tools/provider-advertise.ts) calls it only for attached providers with >=1 tool after admits. New tools/provider-instructions.ts with renderProviderInstructions and caps; export from package entry AND regenerate packages/nax-agent/api/nax-agent.api.txt via api:update (check:api). Native session folds providerInstructions into the existing systemPrompts entry via recordSystemPrompt (NO new state map; session-adapter.test.ts asserts every state collection holds the session). systemFieldFor returns { system }.\n- US-004: createToolHost(calls, token, opts?) and serveMcp Server construction with instructions; toolHostFor passes ctx.providerInstructions; claudeSandboxOptions sends network.allowLocalBinding (with allowedDomains when present, no network key when policy network is empty).\n- US-005: nax McpServerSchema (config/schemas-mcp.ts, .strict() kept) and hand-written McpServerConfig interface (config/runtime-types-mcp.ts) both need instructions. McpPool.instructions is optional on the type so hand-built fixtures still typecheck. The provider combines pool text + blank line + config text with {workdir} substituted; withheld-tool warn fires once per server id on the first tools(workdir) listing. resolveCodingToolSupport renders and logs one info on the mcp channel. OpenSessionRequest (session/types.ts), build-hop-callback-hop.ts, open-session-extras.ts and agents/acp/open-context.ts (only when finalizeAcpSurface delivered at least one tool) forward it.\n- US-006: packages/nax/src/execution/pipeline-result-handler.ts is 598 of 600 lines and must NOT grow: replace savePRD lines one-for-one with savePrdProgress via a new _resultHandlerDeps.savePrdProgress. New src/prd/progress-commit.ts exported from @/prd. Completion stage keeps _completionDeps.savePRD and adds _completionDeps.commitPrdProgress only when persistPrd. queue-check.ts gets a new exported _queueCheckDeps = { savePrdProgress }. No [skip ci]; --no-verify; never throws.\n- US-007: workflow/git.ts commitLedger -> add -f; finish/advise.ts ledger add -> add -f; new utils/ignored-nax-paths.ts (findIgnoredNaxTrackedPaths via git check-ignore -v --no-index, no -z); precheck/checks-warnings.ts checkGitignoreCoversNax and cli/init.ts report; workflow/finalize.ts ledgerCommit returns { committed, missingRulings } and pushLedger reads .committed; first ledger commit of each publishing mode (none, local-only, push, pr) appends the readiness reason; pushLedger second commit only logs. Pipeline-mode finish stays silent.\n- US-008: finish/gates/quality.ts GATE_ORDER adds e2e, GateCommand.setup, dedupe key includes setup, setup runs first as <name>:setup; workflow/repo-gates.ts reaches e2e through resolveGateCommands/runQualityGates; agents/dispatch-config-fields.ts drops e2eSetup from commands and adds e2e to SUITE_COMMAND_NAMES; QualityConfigSchema.commands (config/schemas-execution.ts) and hand-written QualityConfig.commands (config/runtime-types.ts) both need e2e?/e2eSetup?.\n- US-009: prompt builders workflow-implementer-builder.ts and workflow-story-review-builder.ts take e2eGate?: boolean; callers workflow/implement.ts promptFor (implement arm and fresh restart arm) and workflow/story-review.ts runStoryReview pass sc.config.quality?.commands?.e2e !== undefined. The workflow fix prompt's TDD wording must not change.\n\nRisks: file-size caps (600 source lines) on nax-state-guard.ts and pipeline-result-handler.ts; dual type declarations (zod schema + hand-written interfaces) for mcp and quality config must be kept in sync; public API snapshot for nax-agent; barrel/circular import init-order (import new symbols from leaf modules); existing tests that assert state collections or gate lists must stay unchanged because all new fields are optional. Run package commands from the package directory; never bare bun test.",
