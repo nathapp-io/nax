@@ -117,6 +117,14 @@ function classifyGh(r: ForgeRunResult): Poll {
   return checks.every((c) => GH_OK.has(c.bucket)) ? { state: "green", summary } : { state: "waiting", summary };
 }
 
+/** GitLab can expose the commit on either pipeline object. */
+function glabPipelineSha(mr: Record<string, unknown>): string | undefined {
+  const head = mr.head_pipeline;
+  const fallback = mr.pipeline;
+  const sha = (isRecord(head) ? head.sha : undefined) ?? (isRecord(fallback) ? fallback.sha : undefined);
+  return typeof sha === "string" ? sha : undefined;
+}
+
 function classifyGlab(r: ForgeRunResult): Poll {
   if (r.exitCode !== 0) return cliError(r);
   const parsed = parseJson(r.stdout.trim());
@@ -133,12 +141,8 @@ function classifyGlab(r: ForgeRunResult): Poll {
   // A green pipeline does not make a conflicting MR mergeable.
   if (status === "success" || status === "skipped") {
     const waiting = glabWaiting(parsed.value, summary);
-    const head = parsed.value.head_pipeline;
-    const fallback = parsed.value.pipeline;
-    const sha = (isRecord(head) ? head.sha : undefined) ?? (isRecord(fallback) ? fallback.sha : undefined);
-    return waiting.state === "conflicting"
-      ? waiting
-      : { state: "green", summary, ...(typeof sha === "string" ? { sha } : {}) };
+    const sha = glabPipelineSha(parsed.value);
+    return waiting.state === "conflicting" ? waiting : { state: "green", summary, sha };
   }
   return GL_FAILED.has(status) ? { state: "failed", summary } : glabWaiting(parsed.value, summary);
 }
