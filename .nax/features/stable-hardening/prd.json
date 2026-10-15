@@ -3,7 +3,7 @@
   "feature": "stable-hardening",
   "branchName": "feat/stable-hardening",
   "createdAt": "2026-10-16T00:00:00.000Z",
-  "updatedAt": "2026-10-15T16:15:15.209Z",
+  "updatedAt": "2026-10-15T16:23:39.915Z",
   "userStories": [
     {
       "id": "US-001",
@@ -201,14 +201,17 @@
         "hardening"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Recursive canonicalization and wrapper option parsing affect explicit access-control decisions; strict security isolation overrides the complex-story default."
+        "reasoning": "Recursive canonicalization and wrapper option parsing affect explicit access-control decisions; strict security isolation overrides the complex-story default.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/permissions/bash-lex.ts",
@@ -236,7 +239,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "27afd77a1ff0340ac7d7759b8d6ad698884f045c"
     },
     {
       "id": "US-004",
