@@ -15,7 +15,7 @@ const priced: Script = async function* () {
   yield turnEnd("completed");
 };
 
-function setup(first: ReturnType<typeof fakeAgentSession>, onTurnEnd?: (m: string) => Promise<void>) {
+function setup(first: ReturnType<typeof fakeAgentSession>, onTurnEnd?: (m: string, cost: number) => Promise<void>) {
   const port = fakePort();
   const { logger, lines } = recordingLogger();
   const session = createServerSession({
@@ -73,6 +73,7 @@ describe("switchTo (spec §3.3)", () => {
       )
       .catch((e: unknown) => e);
     expect(failure instanceof Error ? failure.message : "").toBe("bad model");
+    expect(s.session.isClosed()).toBe(true);
     expect(s.lines.some((l) => l.level === "error" && l.data?.error === "still bad")).toBe(true);
   });
 
@@ -139,4 +140,58 @@ describe("onTurnEnd", () => {
     await s.session.prompt([]).catch(() => undefined);
     expect(seen).toEqual([]);
   });
+});
+
+test("close failure still attempts open and restore and preserves the open error", async () => {
+  const a = fakeAgentSession("s1", []);
+  a.session.close = async () => {
+    throw new Error("close failed");
+  };
+  const s = setup(a);
+  const error = new Error("open failed");
+  let restored = false;
+  await expect(
+    s.session.switchTo(
+      async () => {
+        throw error;
+      },
+      async () => {
+        restored = true;
+        throw new Error("restore failed");
+      },
+    ),
+  ).rejects.toBe(error);
+  expect(restored).toBe(true);
+  expect(s.session.isClosed()).toBe(true);
+});
+
+test("turn callback receives cumulative cost", async () => {
+  const costs: number[] = [];
+  const s = setup(fakeAgentSession("s1", [priced]), async (_message, cost) => {
+    costs.push(cost);
+  });
+  await s.session.prompt(text("go"));
+  expect(costs).toEqual([0.5]);
+});
+
+test("prior cost seeds the next usage update", async () => {
+  const port = fakePort();
+  const quarter: Script = async function* () {
+    yield { type: "usage", round: 1, inputTokens: 1, outputTokens: 1, costUsd: 0.25 };
+    yield turnEnd("completed");
+  };
+  const session = createServerSession({
+    session: fakeAgentSession("s1", [quarter]).session,
+    port: port.port,
+    cwd: "/w",
+    contextWindow: 1000,
+    priorCostUsd: 0.5,
+    readOldText: missing,
+    logger: recordingLogger().logger,
+    turnTimeoutSeconds: TURN_TIMEOUT_SECONDS,
+  });
+  await session.prompt(text("go"));
+  expect(port.updates.filter((u) => u.sessionUpdate === "usage_update")).toContainEqual(
+    expect.objectContaining({ cost: { amount: 0.75, currency: "USD" } }),
+  );
 });

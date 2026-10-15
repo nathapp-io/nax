@@ -29,8 +29,9 @@ export interface ServerSessionDeps {
   readonly logger: AgentLogger;
   readonly turnTimeoutSeconds: number;
   readonly now?: () => number;
-  /** After every prompt that reached send() (S5-3: title and updatedAt). A rejection is logged, never thrown. */
-  readonly onTurnEnd?: (message: string) => Promise<void>;
+  readonly priorCostUsd?: number;
+  /** After each turn: title, timestamp and cumulative cost. A rejection is logged, never thrown. */
+  readonly onTurnEnd?: (message: string, costUsd: number) => Promise<void>;
   /** S5-5 (wired in S5-5b Task 10): a display title for an MCP tool call's model name. */
   readonly titleFor?: (name: string) => string | undefined;
 }
@@ -49,6 +50,7 @@ export interface ServerSession {
   prompt(blocks: readonly ContentBlock[]): Promise<PromptResponse>;
   /** Close-and-reopen for a mode or config change (spec §3.3); `restore` reopens the old settings when `open` fails. */
   switchTo(open: () => Promise<SwitchTarget>, restore: () => Promise<SwitchTarget>): Promise<void>;
+  isClosed(): boolean;
   cancel(): void;
   close(): Promise<void>;
 }
@@ -130,7 +132,8 @@ async function forwardEvent(event: SessionEvent, ctx: TurnContext): Promise<Prom
 export function createServerSession(deps: ServerSessionDeps): ServerSession {
   const memory = new Map<string, Decision>();
   let queued: readonly SessionUpdate[] = [];
-  let costUsd = 0;
+  let costUsd = deps.priorCostUsd ?? 0;
+  let closed = false;
   let running = false;
   /** A cancel before send() claimed the S3 turn, where AgentSession.cancel() is a no-op. */
   let cancelBeforeSend = false;
@@ -146,7 +149,7 @@ export function createServerSession(deps: ServerSessionDeps): ServerSession {
   async function reportTurnEnd(message: string): Promise<void> {
     if (deps.onTurnEnd === undefined) return;
     try {
-      await deps.onTurnEnd(message);
+      await deps.onTurnEnd(message, costUsd);
     } catch (error) {
       deps.logger.warn("session", "turn bookkeeping failed", { sessionId: deps.session.id, error: messageOf(error) });
     }
@@ -201,6 +204,7 @@ export function createServerSession(deps: ServerSessionDeps): ServerSession {
 
   return {
     id: deps.session.id,
+    isClosed: () => closed,
     get running() {
       return running;
     },
@@ -230,14 +234,24 @@ export function createServerSession(deps: ServerSessionDeps): ServerSession {
       running = true;
       try {
         stopWaiting();
-        await agent.close();
+        closed = true;
+        try {
+          await agent.close();
+        } catch (error) {
+          deps.logger.warn("session", "session close failed during switch", {
+            sessionId: deps.session.id,
+            error: messageOf(error),
+          });
+        }
         try {
           const next = await open();
+          closed = false;
           agent = next.session;
           contextWindow = next.contextWindow;
         } catch (error) {
           try {
             const back = await restore();
+            closed = false;
             agent = back.session;
             contextWindow = back.contextWindow;
           } catch (restoreError) {
@@ -259,6 +273,8 @@ export function createServerSession(deps: ServerSessionDeps): ServerSession {
     },
     async close() {
       stopWaiting();
+      if (closed) return;
+      closed = true;
       await agent.close();
     },
   };

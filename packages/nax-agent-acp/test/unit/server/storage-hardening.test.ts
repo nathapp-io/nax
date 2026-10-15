@@ -1,0 +1,149 @@
+import { afterEach, expect, test } from "bun:test";
+import { readFileSync, renameSync, writeFileSync } from "node:fs";
+import { readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
+import { _lockDeps } from "#src/server/session-lock";
+import { createSessionStorage, LOCK_HEARTBEAT_MS, LOCK_STALE_MS, type StorageDeps } from "#src/server/storage";
+import { recordingLogger } from "#test/helpers/recording-logger";
+
+const dirs: string[] = [];
+afterEach(() => {
+  for (const dir of dirs.splice(0)) cleanupTempDir(dir);
+});
+function setup() {
+  const dir = makeTempDir("lock-hardening-");
+  dirs.push(dir);
+  let now = Date.parse("2026-10-09T00:00:00Z");
+  let tick: () => void | Promise<void> = () => {};
+  let interval = 0;
+  const deps: StorageDeps = {
+    dir,
+    pid: 1000,
+    now: () => new Date(now),
+    isAlive: () => true,
+    logger: recordingLogger().logger,
+    setInterval: (fn, ms) => {
+      tick = fn;
+      interval = ms;
+      return setInterval(() => {}, 2 ** 30);
+    },
+  };
+  const path = join(dir, "a.lock");
+  return {
+    deps,
+    path,
+    store: createSessionStorage(deps),
+    read: async () => JSON.parse(await readFile(path, "utf8")),
+    advance: async () => {
+      now += 30_000;
+      await tick();
+    },
+    interval: () => interval,
+  };
+}
+
+test("unique nonces, atomic heartbeat, owned release and loss of ownership", async () => {
+  const s = setup();
+  const release = await s.store.acquireLock("a");
+  const first = await s.read();
+  expect(first.nonce).toEqual(expect.any(String));
+  expect(s.interval()).toBe(LOCK_HEARTBEAT_MS);
+  await s.advance();
+  expect((await s.read()).heartbeatAt).not.toBe(first.heartbeatAt);
+  const otherRelease = await s.store.acquireLock("b");
+  const other = JSON.parse(await readFile(join(s.deps.dir, "b.lock"), "utf8"));
+  expect(other.nonce).not.toBe(first.nonce);
+  await writeFile(s.path, JSON.stringify({ ...first, nonce: "replacement" }));
+  await release();
+  expect((await s.read()).nonce).toBe("replacement");
+  await otherRelease();
+  await expect(readFile(join(s.deps.dir, "b.lock"))).rejects.toMatchObject({ code: "ENOENT" });
+});
+
+test.each(["stale", "fresh", "own"])("handles %s live lock", async (kind) => {
+  const s = setup();
+  const now = s.deps.now().getTime();
+  await writeFile(
+    s.path,
+    JSON.stringify({
+      pid: kind === "own" ? 1000 : 2000,
+      startedAt: "x",
+      nonce: "old",
+      heartbeatAt: new Date(now - (kind === "stale" ? LOCK_STALE_MS + 1 : 0)).toISOString(),
+    }),
+  );
+  if (kind === "fresh") await expect(s.store.acquireLock("a")).rejects.toThrow("session in use");
+  else {
+    const release = await s.store.acquireLock("a");
+    expect((await s.read()).nonce).not.toBe("old");
+    await release();
+  }
+});
+
+test("distinct process identities racing a stale lock have one winner and one rejection", async () => {
+  const s = setup();
+  await writeFile(
+    s.path,
+    JSON.stringify({ pid: 3000, startedAt: "x", nonce: "old", heartbeatAt: "2000-01-01T00:00:00Z" }),
+  );
+  const second = createSessionStorage({ ...s.deps, pid: 2000 });
+  const results = await Promise.allSettled([s.store.acquireLock("a"), second.acquireLock("a")]);
+  expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+  expect(results.filter((r) => r.status === "rejected")).toHaveLength(1);
+  for (const r of results) if (r.status === "fulfilled") await r.value();
+});
+
+test("heartbeat never recreates a missing lock", async () => {
+  const s = setup();
+  const release = await s.store.acquireLock("a");
+  await rm(s.path);
+  await s.advance();
+  await expect(readFile(s.path)).rejects.toMatchObject({ code: "ENOENT" });
+  await release();
+});
+
+test.each(["restore", "newer", "lost-rename"])("takeover protects a raced holder: %s", async (kind) => {
+  const s = setup();
+  const old = { pid: 3000, startedAt: "x", nonce: "old", heartbeatAt: "2000-01-01T00:00:00.000Z" };
+  const winner = { ...old, pid: 2000, nonce: "winner", heartbeatAt: s.deps.now().toISOString() };
+  await writeFile(s.path, JSON.stringify(old));
+  const original = _lockDeps.rename;
+  _lockDeps.rename = (from, to) => {
+    writeFileSync(s.path, JSON.stringify(winner));
+    if (kind === "lost-rename") throw Object.assign(new Error("lost"), { code: "ENOENT" });
+    renameSync(from, to);
+    if (kind === "newer") writeFileSync(s.path, JSON.stringify({ ...winner, nonce: "newest" }));
+  };
+  try {
+    await expect(s.store.acquireLock("a")).rejects.toThrow("session in use");
+    expect((await s.read()).nonce).toBe(kind === "newer" ? "newest" : "winner");
+    if (kind === "newer") {
+      const saved = (await readdir(s.deps.dir)).find((name) => name.endsWith(".stale"));
+      expect(saved).toBeDefined();
+      expect(JSON.parse(await readFile(join(s.deps.dir, saved ?? "missing"), "utf8")).nonce).toBe("winner");
+    }
+  } finally {
+    _lockDeps.rename = original;
+  }
+});
+
+test("creation links a fully written body, never an empty lock", async () => {
+  const s = setup();
+  const original = _lockDeps.link;
+  let checked = false;
+  _lockDeps.link = (from, to) => {
+    const body = JSON.parse(readFileSync(from, "utf8"));
+    expect(body.nonce).toEqual(expect.any(String));
+    expect(body.heartbeatAt).toBe(s.deps.now().toISOString());
+    checked = true;
+    original(from, to);
+  };
+  try {
+    const release = await s.store.acquireLock("a");
+    expect(checked).toBe(true);
+    await release();
+  } finally {
+    _lockDeps.link = original;
+  }
+});
