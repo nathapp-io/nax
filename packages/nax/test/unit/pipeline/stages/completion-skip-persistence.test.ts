@@ -20,12 +20,14 @@ import {
 import { pipelineEventBus } from "@/pipeline";
 import { _completionDeps, completionStage } from "@/pipeline/stages/completion";
 import type { PipelineContext } from "@/pipeline/types";
+import type { PrdProgressCommitOptions } from "@/prd/progress-commit";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Save originals for restoration
 // ─────────────────────────────────────────────────────────────────────────────
 
 const origSavePRD = _completionDeps.savePRD;
+const origCommitPrdProgress = _completionDeps.commitPrdProgress;
 const origGetDiffText = _completionDeps.getDiffText;
 const origCheckReviewGate = _completionDeps.checkReviewGate;
 const origSpawn = _completionDeps.spawn;
@@ -33,6 +35,9 @@ const origSpawn = _completionDeps.spawn;
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
+
+/** The `ctx.prdPath` these tests use — asserted on so the commit targets it. */
+const PRD_PATH = "/tmp/x/prd.json";
 
 function makeCtx(overrides: Partial<PipelineContext>): PipelineContext {
   const story = makeStory({ id: "US-001", status: "in-progress" });
@@ -67,6 +72,7 @@ function makeCtx(overrides: Partial<PipelineContext>): PipelineContext {
 
 afterEach(() => {
   _completionDeps.savePRD = origSavePRD;
+  _completionDeps.commitPrdProgress = origCommitPrdProgress;
   _completionDeps.getDiffText = origGetDiffText;
   _completionDeps.checkReviewGate = origCheckReviewGate;
   _completionDeps.spawn = origSpawn;
@@ -86,6 +92,23 @@ describe("completionStage skipPrdPersistence", () => {
     await completionStage.execute(ctx);
 
     expect(saveSpy).not.toHaveBeenCalled();
+  });
+
+  test("calls NEITHER savePRD NOR commitPrdProgress when skipPrdPersistence is true", async () => {
+    // Both halves of the write: a commit without a save would be an empty one,
+    // and a save without a commit is the state #2533 removes. In parallel
+    // worktree mode neither belongs to this pipeline at all.
+    const saveSpy = mock(async () => {});
+    const commitSpy = mock(async () => true);
+    _completionDeps.savePRD = saveSpy;
+    _completionDeps.commitPrdProgress = commitSpy;
+    _completionDeps.getDiffText = mock(async () => "");
+    const ctx = makeCtx({ skipPrdPersistence: true });
+
+    await completionStage.execute(ctx);
+
+    expect(saveSpy).not.toHaveBeenCalled();
+    expect(commitSpy).not.toHaveBeenCalled();
   });
 
   test("does NOT mutate story status to passed when skipPrdPersistence is true", async () => {
@@ -109,6 +132,33 @@ describe("completionStage skipPrdPersistence", () => {
 
     expect(saveSpy).toHaveBeenCalledTimes(1);
     expect(ctx.prd.userStories[0].status).toBe("passed");
+  });
+
+  test("commits the PRD once, after saving it, with the story id and label 'passed'", async () => {
+    // Order matters, not just the count: a commit that ran before the write
+    // would commit the previous status and leave the new one dirty again —
+    // which is the state this story exists to remove.
+    const order: string[] = [];
+    const commits: PrdProgressCommitOptions[] = [];
+    _completionDeps.savePRD = async () => {
+      order.push("save");
+    };
+    _completionDeps.commitPrdProgress = async (options) => {
+      order.push("commit");
+      commits.push(options);
+      return true;
+    };
+    _completionDeps.getDiffText = async () => "";
+    const ctx = makeCtx({ prdPath: PRD_PATH });
+
+    await completionStage.execute(ctx);
+
+    expect(order).toEqual(["save", "commit"]);
+    expect(commits).toHaveLength(1);
+    expect(commits[0]?.prdPath).toBe(PRD_PATH);
+    expect(commits[0]?.feature).toBe("test-feature");
+    expect(commits[0]?.storyId).toBe("US-001");
+    expect(commits[0]?.label).toBe("passed");
   });
 
   test("still returns { action: continue } when skipPrdPersistence is true", async () => {

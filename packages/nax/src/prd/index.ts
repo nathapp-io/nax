@@ -5,8 +5,7 @@
 import { existsSync, statSync } from "node:fs";
 import { NaxError } from "../errors";
 import type { FailureCategory } from "../tdd/types";
-import { saveJsonFile } from "../utils/json-file";
-import { propagateOutOfScopeToStories, stripPropagatedOutOfScope } from "./out-of-scope";
+import { propagateOutOfScopeToStories } from "./out-of-scope";
 import type { PRD, UserStory } from "./types";
 
 export type { FailureCategory } from "../tdd/types";
@@ -33,6 +32,8 @@ export {
   extractStoryScopedOutOfScope,
   MAX_OUT_OF_SCOPE_ITEMS,
 } from "./out-of-scope-extract";
+export { _prdCommitDeps, commitPrdProgress, savePrdProgress } from "./progress-commit";
+export { savePRD } from "./save";
 export type { SpecDriftViolation } from "./spec-drift";
 export { findSpecDriftViolations } from "./spec-drift";
 export type { SpecLintFinding, SpecLintOptions } from "./spec-lint";
@@ -141,12 +142,6 @@ export async function loadPRD(path: string): Promise<PRD> {
   // would be invisible to them. savePRD strips the mirrored copies back out so
   // the root field stays the single source of truth on disk.
   return propagateOutOfScopeToStories(prd);
-}
-
-/** Save PRD to file */
-export async function savePRD(prd: PRD, path: string): Promise<void> {
-  prd.updatedAt = new Date().toISOString();
-  await saveJsonFile(path, stripPropagatedOutOfScope(prd), "prd");
 }
 
 function hasSatisfiedDependencies(story: UserStory, storyIds: Set<string>, completedIds: Set<string>): boolean {
