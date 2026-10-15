@@ -32,7 +32,11 @@ async function ensureReport(fc: FeatureContext): Promise<void> {
   await Bun.write(fc.reportPath, `# Feature report — ${fc.feature}\n\nThe branch fix appends its section below.\n`);
 }
 
-/** Best-effort: a failed commit is logged and reported as dirty, never thrown (abort excepted). */
+/**
+ * Best-effort: a failed commit is logged and reported as dirty, never thrown (abort excepted). An
+ * unreadable tree (`listUncommitted` throws, nax#2550) lands in the same catch: it is logged and not
+ * reported as dirty, because nothing is known to be left; `publish` fails closed on the same read.
+ */
 async function commitLeftovers(fc: FeatureContext): Promise<{ autoCommitted: boolean; dirty: boolean }> {
   let hasEdits = false;
   try {

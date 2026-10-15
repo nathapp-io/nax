@@ -37,7 +37,10 @@ function isNaxOwned(path: string): boolean {
   return path.startsWith(".nax/") || path.startsWith(".nax-");
 }
 
-/** The real work-evidence check; `buildStoryEnv` wires this as `steps.workProduced`. Throws on a git error. */
+/**
+ * The real work-evidence check; `buildStoryEnv` wires this as `steps.workProduced`. Throws on a git
+ * error, from `changedFilesSince` and (nax#2550) `listUncommitted` alike; `producedWork` reads a throw as work.
+ */
 export async function storyWorkEvidence(sc: StepContext): Promise<boolean> {
   const [changed, uncommitted] = await Promise.all([
     changedFilesSince(sc.projectDir, sc.base),

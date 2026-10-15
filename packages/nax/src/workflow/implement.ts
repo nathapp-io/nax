@@ -1,6 +1,7 @@
 /** Implementer turns (spec §6 steps 2, 5): the first turn, fix rounds and advisor answers, all on workflowImplementOp. */
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { ConfiguredModel } from "@/config";
+import { getSafeLogger } from "@/logger";
 import { workflowImplementOp } from "@/operations";
 import {
   buildWorkflowAnswerPrompt,
@@ -72,6 +73,24 @@ function closesSessionFirst(turn: ImplementTurn): boolean {
   return (turn.kind === "restart" || turn.kind === "fix") && turn.fresh;
 }
 
+/**
+ * The edits a finished turn left behind. Fail-open on purpose (nax#2550): `listUncommitted` throws when
+ * the repo cannot be read, and the auto-commit is best effort, so an unreadable tree skips it with a
+ * warning rather than failing a turn that did its work. The gates and `publish`'s clean-tree check
+ * still see the tree.
+ */
+async function dirtyAfterTurn(sc: StepContext): Promise<string[]> {
+  try {
+    return await listUncommitted(sc.projectDir);
+  } catch (err) {
+    getSafeLogger()?.warn("workflow", "Could not read the working tree after the turn; skipping the auto-commit", {
+      storyId: sc.story.id,
+      error: errorMessage(err),
+    });
+    return [];
+  }
+}
+
 export async function runImplementerTurn(sc: StepContext, turn: ImplementTurn): Promise<ImplementOutcome> {
   if (closesSessionFirst(turn)) await closeImplementerSession(sc.sessionManager, sc.story.id);
   const model = implementerModelFor(sc, turn);
@@ -94,7 +113,7 @@ export async function runImplementerTurn(sc: StepContext, turn: ImplementTurn): 
   }
   if (reply.failure) return { reply, failure: reply.failure, autoCommitted: false };
   if (reply.interrupted) return { reply, autoCommitted: false };
-  const dirty = await listUncommitted(sc.projectDir);
+  const dirty = await dirtyAfterTurn(sc);
   if (dirty.length === 0) return { reply, autoCommitted: false };
   await _workflowDeps.autoCommitIfDirty(sc.projectDir, "workflow", "wf-implementer", sc.story.id, undefined, sc.dryRun);
   return { reply, autoCommitted: true };

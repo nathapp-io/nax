@@ -125,4 +125,28 @@ describe("publish CI draft gate (US-002)", () => {
       "cost limit reached: the feature workflow stopped before its review and fix steps finished",
     ]);
   });
+
+  // nax#2550: a tree whose state could not be read is not a verified clean tree.
+  test("a failing git status keeps the draft with a could-not-verify reason, never asks the advisor", async () => {
+    const { input, asked, updated } = wire({ outcome: "green", detail: "all checks passed" });
+    _workflowDeps.git = async () => ({ exitCode: 128, stdout: "", stderr: "fatal: index file corrupt" });
+    const result = await publish(makeFeatureContext(), input);
+    expect(asked).toEqual([]);
+    expect(updated[0]?.keepDraft).toBe(true);
+    expect(result.reasons).toHaveLength(1);
+    expect(result.reasons[0]).toStartWith("could not verify a clean working tree: ");
+    expect(result.reasons[0]).toContain("fatal: index file corrupt");
+  });
+
+  // nax#2550: fix commits no re-review looked at never go ready.
+  test("a skipped branch re-review keeps the draft and never asks the advisor", async () => {
+    const { input, asked, updated } = wire({ outcome: "green", detail: "all checks passed" });
+    const result = await publish(makeFeatureContext(), {
+      ...input,
+      record: { ...input.record, reReviewSkipped: true },
+    });
+    expect(asked).toEqual([]);
+    expect(updated[0]?.keepDraft).toBe(true);
+    expect(result.reasons).toEqual(["branch re-review did not run: the fix commits are unreviewed"]);
+  });
 });

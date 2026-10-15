@@ -55,6 +55,8 @@ export async function buildStoryEnv(
   const runDir = workflowRunDir(ctx.projectDir, feature, runId);
   const storyDir = workflowStoryDir(runDir, ctx.story.id);
   const workflow = resolveWorkflowConfig(ctx.rootConfig);
+  // nax#2550: an unreadable HEAD throws here, into the stage's catch, which closes the story gate-open.
+  // A story with no base would only fail later, in every diff and work check built on it.
   const base = ctx.storyGitRef ?? (await readHead(ctx.projectDir));
   const sc: StepContext = {
     callCtx,
@@ -122,6 +124,8 @@ export async function buildStoryEnv(
     reReview: timed("re-review", addTiming, (round, findings, fixBase) =>
       toolErrors(`re-review r${round}`, () => runReReview(sc, round, findings, fixBase)),
     ),
+    // nax#2550: both throw on a git failure. The story loop does not catch them, so the stage closes the
+    // story gate-open rather than fix against a base or a dirty list that git never reported.
     head: () => readHead(sc.projectDir),
     uncommitted: () => listUncommitted(sc.projectDir),
     workProduced: () => storyWorkEvidence(sc),

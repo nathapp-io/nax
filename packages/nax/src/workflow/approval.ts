@@ -22,6 +22,8 @@ export interface ReadinessFacts {
   readonly branchReviewUnread?: readonly string[];
   /** nax#2550: the feature workflow skipped an agent step at the cost limit. */
   readonly costLimited?: boolean;
+  /** nax#2550: a branch re-review did not run, so the fix commits went unreviewed. */
+  readonly reReviewSkipped?: boolean;
 }
 
 const NOTHING_VERIFIED = "no quality commands configured — nothing was verified";
@@ -50,6 +52,7 @@ function gateReasons(gates: RepoGateSummary | undefined): string[] {
   return gates.failing.length > 0 ? [`gates red: ${gates.failing.join(", ")}`] : [];
 }
 
+const RE_REVIEW_SKIPPED = "branch re-review did not run: the fix commits are unreviewed";
 const COST_LIMITED = "cost limit reached: the feature workflow stopped before its review and fix steps finished";
 
 /**
@@ -71,6 +74,7 @@ export function readinessReasons(f: ReadinessFacts): string[] {
     ...(f.flagged > 0 ? [`${f.flagged} ruling(s) flagged for a human`] : []),
     ...(f.branchReviewRan ? [] : ["branch review did not run"]),
     ...(unread.length > 0 ? [describeUnread(unread)] : []),
+    ...(f.reReviewSkipped ? [RE_REVIEW_SKIPPED] : []),
     ...(f.costLimited ? [COST_LIMITED] : []),
   ];
 }

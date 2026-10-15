@@ -25,10 +25,13 @@ export function newFeatureRecord(input: {
   readonly now: string;
   readonly seed: string | null;
   readonly minors: readonly MinorItem[];
+  /** HEAD at the start (nax#2550); absent when it could not be read. */
+  readonly head?: string;
 }): WorkflowFeatureRecord {
   return {
     step: "repo-gates",
     startedAt: input.now,
+    ...(input.head ? { startHead: input.head } : {}),
     seed: input.seed,
     gateFindings: [],
     reviewRan: false,
