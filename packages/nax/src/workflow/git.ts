@@ -3,6 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { dirname, relative } from "node:path";
 import { ledgerPath } from "@/advisor";
 import { NaxError } from "@/errors";
+import { buildBranchPackageReadingNote } from "@/prompts";
 import { ALWAYS_EXCLUDED, truncateDiff } from "@/review";
 import { _workflowDeps } from "./step-context";
 
@@ -91,6 +92,84 @@ function omittedFilesSection(names: string, body: string): string {
   const partial = headers > 0 ? all[headers - 1] : undefined;
   const lines = [...(partial ? [`- ${partial} (partially shown)`] : []), ...all.slice(headers).map((n) => `- ${n}`)];
   return lines.length > 0 ? `\n## Files not shown in the diff (read them yourself)\n${lines.join("\n")}\n` : "";
+}
+
+/** One `git diff --name-status` record, with the score dropped: status letter plus its paths. */
+interface NameStatusRecord {
+  readonly status: string;
+  readonly paths: readonly string[];
+}
+
+/** Parse `git diff --name-status -z` stdout into records. Empty output is no records. */
+function parseNameStatus(stdout: string): NameStatusRecord[] {
+  const tokens = stdout.replace(/\0+$/, "").split("\0");
+  const records: NameStatusRecord[] = [];
+  let i = 0;
+  while (i < tokens.length) {
+    const status = (tokens[i] ?? "").charAt(0);
+    // A token that is empty (no changes at all, or the terminator after the last path) is no record.
+    if (status === "") {
+      i++;
+      continue;
+    }
+    // R (rename) and C (copy) carry two paths; every other status carries one.
+    const count = status === "R" || status === "C" ? 2 : 1;
+    records.push({ status, paths: tokens.slice(i + 1, i + 1 + count) });
+    i += count + 1;
+  }
+  return records;
+}
+
+/** `M src/a.ts`, `R src/old.ts -> src/new.ts` — the line the package lists for one record. */
+function nameStatusLine(record: NameStatusRecord): string {
+  return `- ${record.status} ${record.paths.join(" -> ")}`;
+}
+
+/**
+ * The paths a record leaves at HEAD: a deletion leaves none, a rename or copy contributes its new
+ * path, and a type change (T) is an edit like M (nax#2622).
+ */
+function survivingPaths(record: NameStatusRecord): string[] {
+  if (record.status === "D") return [];
+  const last = record.paths[record.paths.length - 1];
+  return last === undefined || last === "" ? [] : [last];
+}
+
+/**
+ * The whole-branch review package: commits, --stat and every changed file, **without a diff body**
+ * (SPEC-workflow-review-depth § Approach 2, nax#2622). The inline diff kept only the first few of a
+ * large branch's files in diff order, so the reviewer could not see most of what changed. The
+ * reading note tells the reviewer to pull each file itself.
+ *
+ * Resolves to the changed paths that still exist at HEAD, which is what the required set is built
+ * from. A git failure throws `WORKFLOW_REVIEW_PACKAGE_FAILED`, as `writeReviewPackage` does.
+ */
+export async function writeBranchReviewPackage(projectDir: string, from: string, path: string): Promise<string[]> {
+  const range = `${from}..HEAD`;
+  const pathspec = ["--", ".", ...ALWAYS_EXCLUDED];
+  const [log, stat, changes] = await Promise.all([
+    _workflowDeps.git(["log", "--oneline", range], projectDir),
+    _workflowDeps.git(["diff", "--stat", range, ...pathspec], projectDir),
+    _workflowDeps.git(["diff", "--name-status", "-z", range, ...pathspec], projectDir),
+  ]);
+  const failed = [log, stat, changes].find((r) => r.exitCode !== 0);
+  if (failed) {
+    const detail = (failed.stderr ?? failed.stdout).trim();
+    throw new NaxError(
+      `git failed building review package ${range}${detail ? `: ${detail}` : ""}`,
+      "WORKFLOW_REVIEW_PACKAGE_FAILED",
+      { stage: "workflow", from, path },
+    );
+  }
+  const records = parseNameStatus(changes.stdout);
+  const lines = records.map(nameStatusLine);
+  const changedSection = `## Changed files (${records.length})${lines.length > 0 ? `\n${lines.join("\n")}` : ""}`;
+  await mkdir(dirname(path), { recursive: true });
+  await Bun.write(
+    path,
+    `## Commits (${range})\n${log.stdout.trim() || "(none)"}\n\n## Stat\n${stat.stdout.trim() || "(no changes)"}\n\n${changedSection}\n\n${buildBranchPackageReadingNote(range)}\n`,
+  );
+  return records.flatMap(survivingPaths);
 }
 
 /** One file: commit list, --stat, and the full -U10 diff for from..HEAD (truncated past the review cap). */

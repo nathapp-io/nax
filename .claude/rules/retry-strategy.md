@@ -102,3 +102,5 @@ directly inside a retry loop.
 | Hand-rolled parse-retry loops inside an `op.hopBody` | `ctx.sendWithParseRetry` — declare `op.retry` and call `sendWithParseRetry` in the body; the loop is already there |
 | Strategy `validate` and `op.parse` having different acceptance criteria | Define a shared validator helper (e.g. `validateLLMShape`) and call it from both |
 | Run-kind op with strict (throwing) `parse()` and `op.retry` but no `exhaustedFallback` AND no `op.recover` that returns a non-null value | Provide `exhaustedFallback` on the strategy, OR a graceful-degradation `parse()`, OR `op.recover` — see *Every op must have an exhaustion path* |
+
+Ruled exception (nax#2532): `workflowBranchReviewOp`'s strategy `validate` also requires full file coverage, while `op.parse` stays the lenient shape check. Coverage decides only whether to ask again, never whether the verdict is usable, so an incomplete verdict is kept. Both still share `parseBranchReviewReply` for the shape.

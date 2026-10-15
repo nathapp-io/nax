@@ -381,6 +381,38 @@ describe("runFeatureMachine", () => {
   });
 });
 
+// US-003 (nax#2532): what the branch reviewer did not read reaches the record, the ledger and publish.
+describe("branch review coverage (US-003)", () => {
+  const BRANCH_REVIEW_STEP: WorkflowFeatureRecord = {
+    ...newFeatureRecord({ now: "t", seed: "seed0", minors: [] }),
+    step: "branch-review",
+  };
+
+  test("an incomplete verdict is persisted as reviewUnread (AC-20)", async () => {
+    const h = harness({ review: { ...PASS, unreadFiles: ["src/b.ts"] } }, { record: BRANCH_REVIEW_STEP });
+    const final = await runFeatureMachine(h.env);
+
+    expect(final.reviewUnread).toEqual(["src/b.ts"]);
+    expect(h.updates.at(-1)?.reviewUnread).toEqual(["src/b.ts"]);
+  });
+
+  test("the unread files are written to the ledger once, in the shared phrasing (AC-21)", async () => {
+    const h = harness({ review: { ...PASS, unreadFiles: ["src/b.ts"] } }, { record: BRANCH_REVIEW_STEP });
+    await runFeatureMachine(h.env);
+
+    const notes = h.ledger.filter((line) => line.includes("branch review did not read"));
+    expect(notes).toEqual(["branch review did not read 1 changed file(s): src/b.ts"]);
+  });
+
+  test("a verdict with no unread files leaves the record without reviewUnread (AC-22)", async () => {
+    const h = harness({}, { record: BRANCH_REVIEW_STEP });
+    const final = await runFeatureMachine(h.env);
+
+    expect(final).not.toHaveProperty("reviewUnread");
+    expect(h.ledger.some((line) => line.includes("branch review did not read"))).toBe(false);
+  });
+});
+
 const REVIEW_B1: BranchReviewVerdict = {
   ...PASS,
   spec: "fail",

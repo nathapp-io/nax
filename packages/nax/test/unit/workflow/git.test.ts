@@ -1,7 +1,15 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { assertNaxError, cleanupTempDir, makeTempDir } from "@test/helpers";
-import { changedFilesSince, listUncommitted, readHead, writeReviewPackage } from "@/workflow/git";
+import { buildBranchPackageReadingNote } from "@/prompts";
+import { ALWAYS_EXCLUDED } from "@/review";
+import {
+  changedFilesSince,
+  listUncommitted,
+  readHead,
+  writeBranchReviewPackage,
+  writeReviewPackage,
+} from "@/workflow/git";
 import { _workflowDeps } from "@/workflow/step-context";
 
 const dirs: string[] = [];
@@ -150,5 +158,126 @@ describe("workflow git helpers", () => {
     await Bun.write(join(dir, "b.txt"), "new\n");
     await Bun.write(join(dir, ".nax", "y.json"), "{}");
     expect((await listUncommitted(dir)).sort((a, b) => a.localeCompare(b))).toEqual(["a.txt", "b.txt"]);
+  });
+});
+
+/** The `## <heading>` block of a written package, up to the next `## ` heading. */
+function section(text: string, heading: string): string {
+  const start = text.indexOf(heading);
+  if (start === -1) throw new Error(`no ${heading} section in:\n${text}`);
+  const rest = text.slice(start + heading.length);
+  const end = rest.search(/\n## /);
+  return end === -1 ? rest : rest.slice(0, end);
+}
+
+/**
+ * Stub `_workflowDeps.git` for the branch package writer, recording every argv.
+ * `nameStatus` is the raw `--name-status -z` stdout; log/stat default to empty.
+ */
+function stubBranchGit(nameStatus: string, over: { log?: string; stat?: string; exitCode?: number } = {}): string[][] {
+  const calls: string[][] = [];
+  _workflowDeps.git = async (args) => {
+    calls.push(args);
+    const exitCode = over.exitCode ?? 0;
+    const stderr = exitCode === 0 ? undefined : "bad revision";
+    if (args[0] === "log") return { stdout: over.log ?? "", ...(stderr ? { stderr } : {}), exitCode };
+    if (args.includes("--name-status")) return { stdout: nameStatus, ...(stderr ? { stderr } : {}), exitCode };
+    return { stdout: over.stat ?? "", ...(stderr ? { stderr } : {}), exitCode };
+  };
+  return calls;
+}
+
+function tempPackagePath(): string {
+  const dir = makeTempDir("wf-branch-pkg-");
+  dirs.push(dir);
+  return join(dir, "package-branch.diff");
+}
+
+describe("writeBranchReviewPackage", () => {
+  test("lists each changed file with its status letter and no diff body (AC-1)", async () => {
+    const path = tempPackagePath();
+    const calls = stubBranchGit("M\0src/a.ts\0A\0src/b.ts\0");
+    const paths = await writeBranchReviewPackage("/repo", "seed0", path);
+    const text = await Bun.file(path).text();
+    const changed = section(text, "## Changed files (2)");
+    expect(changed).toContain("- M src/a.ts");
+    expect(changed).toContain("- A src/b.ts");
+    expect(paths).toEqual(["src/a.ts", "src/b.ts"]);
+    expect(text).not.toContain("## Diff");
+    expect(calls.length).toBeGreaterThan(0);
+  });
+
+  test("a rename record prints its old and new path (AC-2)", async () => {
+    const path = tempPackagePath();
+    stubBranchGit("R087\0src/old.ts\0src/new.ts\0");
+    await writeBranchReviewPackage("/repo", "seed0", path);
+    const text = await Bun.file(path).text();
+    expect(section(text, "## Changed files (1)")).toContain("- R src/old.ts -> src/new.ts");
+  });
+
+  test("the commit list follows the range heading (AC-3)", async () => {
+    const path = tempPackagePath();
+    stubBranchGit("", { log: "abc1234 feat: one\ndef5678 feat: two\n" });
+    await writeBranchReviewPackage("/repo", "seed0", path);
+    const text = await Bun.file(path).text();
+    expect(section(text, "## Commits (seed0..HEAD)")).toContain("abc1234 feat: one\ndef5678 feat: two");
+  });
+
+  test("never asks git for a unified diff (AC-4)", async () => {
+    const path = tempPackagePath();
+    const calls = stubBranchGit("M\0src/a.ts\0");
+    await writeBranchReviewPackage("/repo", "seed0", path);
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls.flat().filter((arg) => arg.startsWith("--unified="))).toEqual([]);
+  });
+
+  test("every diff call excludes the nax-owned paths (AC-5)", async () => {
+    const path = tempPackagePath();
+    const calls = stubBranchGit("M\0src/a.ts\0");
+    await writeBranchReviewPackage("/repo", "seed0", path);
+    const diffCalls = calls.filter((args) => args[0] === "diff");
+    expect(diffCalls.length).toBeGreaterThan(0);
+    for (const args of diffCalls) {
+      for (const excluded of ALWAYS_EXCLUDED) expect(args).toContain(excluded);
+    }
+  });
+
+  test("a copy record prints its source and destination (AC-6)", async () => {
+    const path = tempPackagePath();
+    stubBranchGit("C075\0src/base.ts\0src/copy.ts\0M\0src/a.ts\0");
+    await writeBranchReviewPackage("/repo", "seed0", path);
+    const text = await Bun.file(path).text();
+    expect(section(text, "## Changed files (2)")).toContain("- C src/base.ts -> src/copy.ts");
+  });
+
+  test("returns the surviving changed paths, a copy as its new path (AC-7)", async () => {
+    const path = tempPackagePath();
+    stubBranchGit("C075\0src/base.ts\0src/copy.ts\0M\0src/a.ts\0");
+    expect(await writeBranchReviewPackage("/repo", "seed0", path)).toEqual(["src/copy.ts", "src/a.ts"]);
+  });
+
+  test("drops deletions and returns a rename under its new path (AC-8)", async () => {
+    const path = tempPackagePath();
+    stubBranchGit("M\0src/a.ts\0D\0src/c.ts\0R100\0src/old.ts\0src/new.ts\0");
+    expect(await writeBranchReviewPackage("/repo", "seed0", path)).toEqual(["src/a.ts", "src/new.ts"]);
+  });
+
+  test("a failing git call rejects with WORKFLOW_REVIEW_PACKAGE_FAILED (AC-9)", async () => {
+    const path = tempPackagePath();
+    stubBranchGit("", { exitCode: 128 });
+    const err = await writeBranchReviewPackage("/repo", "seed0", path).then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    assertNaxError(err);
+    expect(err.code).toBe("WORKFLOW_REVIEW_PACKAGE_FAILED");
+  });
+
+  test("carries the shared how-to-read-the-diff note (AC-15)", async () => {
+    const path = tempPackagePath();
+    stubBranchGit("M\0src/a.ts\0");
+    await writeBranchReviewPackage("/repo", "seed0", path);
+    const text = await Bun.file(path).text();
+    expect(text).toContain(buildBranchPackageReadingNote("seed0..HEAD"));
   });
 });

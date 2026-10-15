@@ -1,7 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { makeAdviceDecision } from "@test/helpers";
 import type { Advisor, QuestionDraft } from "@/advisor";
-import { askApproval, featurePassed, flaggedCount, type ReadinessFacts, readinessReasons } from "@/workflow/approval";
+import {
+  askApproval,
+  describeUnread,
+  featurePassed,
+  flaggedCount,
+  type ReadinessFacts,
+  readinessReasons,
+} from "@/workflow/approval";
 import type { StorySummary } from "@/workflow/types";
 
 const story = (id: string, over: Partial<StorySummary> = {}): StorySummary => ({
@@ -37,6 +44,43 @@ describe("readinessReasons (spec §7.8, P4-R6)", () => {
     [{ branchReviewRan: false }, "branch review did not run"],
   ])("%p -> %s", (over, reason) => {
     expect(readinessReasons({ ...READY, ...over })).toEqual([reason]);
+  });
+
+  // US-003 (nax#2532): the branch review ran but did not read every changed file — a draft, not a ready PR.
+  test("an incomplete branch review keeps the PR a draft (AC-18)", () => {
+    expect(readinessReasons({ ...READY, branchReviewUnread: ["a.ts"] })).toEqual([
+      "branch review did not read 1 changed file(s): a.ts",
+    ]);
+  });
+
+  test("an empty unread list adds no reason (AC-19)", () => {
+    expect(readinessReasons({ ...READY, branchReviewUnread: [] })).toEqual([]);
+  });
+
+  test("the unread reason comes after the branch-review-did-not-run reason", () => {
+    expect(readinessReasons({ ...READY, branchReviewRan: false, branchReviewUnread: ["a.ts"] })).toEqual([
+      "branch review did not run",
+      "branch review did not read 1 changed file(s): a.ts",
+    ]);
+  });
+});
+
+describe("describeUnread (US-003)", () => {
+  test("names the count and every path (AC-16)", () => {
+    expect(describeUnread(["a.ts", "b.ts"])).toBe("branch review did not read 2 changed file(s): a.ts, b.ts");
+  });
+
+  test("lists at most five paths and counts the rest (AC-17)", () => {
+    const seven = ["p1.ts", "p2.ts", "p3.ts", "p4.ts", "p5.ts", "p6.ts", "p7.ts"];
+    expect(describeUnread(seven)).toBe(
+      "branch review did not read 7 changed file(s): p1.ts, p2.ts, p3.ts, p4.ts, p5.ts, +2 more",
+    );
+  });
+
+  test("exactly five paths need no remainder", () => {
+    expect(describeUnread(["p1.ts", "p2.ts", "p3.ts", "p4.ts", "p5.ts"])).toBe(
+      "branch review did not read 5 changed file(s): p1.ts, p2.ts, p3.ts, p4.ts, p5.ts",
+    );
   });
 });
 

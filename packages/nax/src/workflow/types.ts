@@ -177,6 +177,13 @@ export interface WorkflowFeatureRecord {
   /** Red repo gates and gate-open stories (step 1), handed to the branch fix. */
   readonly gateFindings: readonly WorkflowFinding[];
   readonly reviewRan: boolean;
+  /**
+   * US-003 (nax#2532): the changed files the branch review's verdict did not read, from the
+   * verdict `runBranchReview` annotated. Absent when the review read everything (and on every
+   * record written before this field existed), so its presence alone means the review was
+   * incomplete — `publish` turns it into the reason that keeps the PR a draft.
+   */
+  readonly reviewUnread?: readonly string[];
   /** The branch review's cannot-verify items (#2496: listed as open items, never blocking). */
   readonly cannotVerify?: readonly string[];
   /** Blocking branch-review findings still open. */

@@ -13,9 +13,30 @@ export interface ReadinessFacts {
   readonly stories: readonly StorySummary[];
   readonly flagged: number;
   readonly branchReviewRan: boolean;
+  /**
+   * US-003 (nax#2532): the changed files the whole-branch review never read, from the verdict
+   * `runBranchReview` annotated. Non-empty means the review is incomplete, so the PR stays a
+   * draft — an unread file is a file no one reviewed. Absent or empty adds no reason.
+   */
+  readonly branchReviewUnread?: readonly string[];
 }
 
 const NOTHING_VERIFIED = "no quality commands configured — nothing was verified";
+
+/** How many unread paths the reason names before it counts the rest instead. */
+const UNREAD_PATHS_SHOWN = 5;
+
+/**
+ * The one phrasing of an incomplete branch review, shared by the readiness reason that keeps the PR
+ * a draft and the ledger note that says why (US-003). At most five paths are listed — the reason is
+ * a draft marker a human reads, and a branch review that missed forty files needs the count, not the
+ * list.
+ */
+export function describeUnread(files: readonly string[]): string {
+  const shown = files.slice(0, UNREAD_PATHS_SHOWN).join(", ");
+  const rest = files.length - UNREAD_PATHS_SHOWN;
+  return `branch review did not read ${files.length} changed file(s): ${shown}${rest > 0 ? `, +${rest} more` : ""}`;
+}
 
 function idsIn(stories: readonly StorySummary[], state: StoryState): string[] {
   return stories.filter((s) => s.state === state).map((s) => s.id);
@@ -30,6 +51,7 @@ function gateReasons(gates: RepoGateSummary | undefined): string[] {
 export function readinessReasons(f: ReadinessFacts): string[] {
   const gateOpen = idsIn(f.stories, "complete-gate-open");
   const notRun = idsIn(f.stories, "not-run");
+  const unread = f.branchReviewUnread ?? [];
   return [
     ...gateReasons(f.finalGates),
     ...(f.ci === "failed" ? ["CI failed"] : []),
@@ -37,6 +59,7 @@ export function readinessReasons(f: ReadinessFacts): string[] {
     ...(notRun.length > 0 ? [`stories not run: ${notRun.join(", ")}`] : []),
     ...(f.flagged > 0 ? [`${f.flagged} ruling(s) flagged for a human`] : []),
     ...(f.branchReviewRan ? [] : ["branch review did not run"]),
+    ...(unread.length > 0 ? [describeUnread(unread)] : []),
   ];
 }
 

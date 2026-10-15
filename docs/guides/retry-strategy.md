@@ -99,6 +99,8 @@ Never write a hand-rolled retry loop inside `op.hopBody`. Use `ctx.sendWithParse
 
 `makeParseRetryStrategy` strategies parse output internally (default: `tryParseLLMJson`). Strategies do NOT receive `lastParsed` from `callOp` because parsing is operation- and strategy-specific. `callOp` passes only `lastOutput`, and the strategy decides whether to re-parse, re-format, or change the prompt.
 
+`prompts.invalid` receives that same last output — `invalid: (lastOutput: string) => string` — so an op can say *what* was wrong with a reply that parsed (`workflowBranchReviewOp` names the changed files its verdict did not cover). A zero-argument `invalid` is still assignable and stays the common case. The condensed `prompts.truncated` prompt is used only for a reply that did not parse at all: an output the op's parser accepted is complete, so a dangling brace after it is not truncation.
+
 Example usage on a `RunOperation`:
 
 ```typescript

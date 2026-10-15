@@ -49,7 +49,14 @@ export function storyModelFor(sc: StepContext): NonNullable<StoryLoopSteps["mode
 export function featureModelFor(fc: FeatureContext): NonNullable<FeatureSteps["modelFor"]> {
   return (step) => {
     if (step === "branch-review") {
-      return previewOpModel(fc.callCtx, workflowBranchReviewOp, { prompt: "", timeoutMs: NO_TIMEOUT, minorIds: [] });
+      // The preview only resolves the op's model, which reads no input field but `model`.
+      return previewOpModel(fc.callCtx, workflowBranchReviewOp, {
+        prompt: "",
+        timeoutMs: NO_TIMEOUT,
+        minorIds: [],
+        requiredFiles: [],
+        range: "",
+      });
     }
     if (step === "branch-fix") {
       return previewOpModel(fc.callCtx, workflowBranchFixOp, {

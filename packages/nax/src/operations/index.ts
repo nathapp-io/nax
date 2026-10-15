@@ -167,6 +167,7 @@ export {
   parseStoryReviewReply,
   WORKFLOW_INTERRUPT_MARKER,
 } from "./workflow-replies";
+export { isCompleteBranchVerdict, unreadFiles } from "./workflow-review-coverage";
 export type { WorkflowReviewInput } from "./workflow-story-review";
 export { WORKFLOW_REVIEW_TOOLS, workflowStoryReviewOp } from "./workflow-story-review";
 export type {
