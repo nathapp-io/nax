@@ -3,7 +3,7 @@
   "feature": "stable-hardening",
   "branchName": "feat/stable-hardening",
   "createdAt": "2026-10-16T00:00:00.000Z",
-  "updatedAt": "2026-10-15T17:03:21.237Z",
+  "updatedAt": "2026-10-15T17:19:04.090Z",
   "userStories": [
     {
       "id": "US-001",
@@ -508,14 +508,17 @@
       "dependencies": [
         "US-009"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Coordinates repository snapshot safety, keeper ownership, layered gate resolution and abortable subprocess connection ownership; reviewer/run-state protections warrant security isolation."
+        "reasoning": "Coordinates repository snapshot safety, keeper ownership, layered gate resolution and abortable subprocess connection ownership; reviewer/run-state protections warrant security isolation.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/review/reviewer-guard/snapshot.ts",
@@ -543,7 +546,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "047636ee50dcd5c76ae7083a1b6f7a9bff7980ae"
     },
     {
       "id": "US-008",
