@@ -53,3 +53,23 @@ describe("optimizerStage — no-prompt path logs at debug not warn", () => {
     expect(logger.calls.some((c) => c.level === "debug")).toBe(true);
   });
 });
+
+describe("optimizerStage — prompt present", () => {
+  test("runs the noop optimizer: prompt unchanged, one info line reporting 0% savings", async () => {
+    const logger = makeLogger();
+    _optimizerDeps.getLogger = () => logger;
+    const ctx = makeMinimalCtx("implement the story");
+
+    const result = await optimizerStage.execute(ctx);
+
+    expect(result.action).toBe("continue");
+    expect(ctx.prompt).toBe("implement the story");
+    const info = logger.calls.filter((c) => c.level === "info");
+    expect(info).toHaveLength(1);
+    expect(info[0]?.message).toBe("noop: 0% savings");
+  });
+
+  test("is always enabled", () => {
+    expect(optimizerStage.enabled(makeMinimalCtx(undefined))).toBe(true);
+  });
+});

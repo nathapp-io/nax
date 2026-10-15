@@ -119,7 +119,7 @@ describe("runIteration", () => {
     expect(result.costDelta).toBe(0);
   });
 
-  test("pipeline selection: workflow mode runs the workflow pipeline, default mode runs defaultPipeline", async () => {
+  test("pipeline selection: workflow mode runs the workflow pipeline, pipeline mode runs defaultPipeline", async () => {
     const seen: string[][] = [];
     _iterationRunnerDeps.runPipeline = mock(async (stages: PipelineStage[]) => {
       seen.push(stages.map((s) => s.name));
@@ -130,7 +130,10 @@ describe("runIteration", () => {
       config: makeNaxConfig({ execution: { storyIsolation: "shared", mode: "workflow" } }),
     });
     await runIteration(workflowCtx, prd, selection, 1, 0, []);
-    await runIteration(makeCtx(tempDir), prd, selection, 1, 0, []);
+    const pipelineCtx = makeCtx(tempDir, {
+      config: makeNaxConfig({ execution: { storyIsolation: "shared", mode: "pipeline" } }),
+    });
+    await runIteration(pipelineCtx, prd, selection, 1, 0, []);
 
     expect(seen[0]).toContain("workflow");
     expect(seen[0]).not.toContain("execution");

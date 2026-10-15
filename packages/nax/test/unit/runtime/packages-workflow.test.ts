@@ -17,7 +17,7 @@ describe("PackageRegistry.hydrate - workflow-mode normalisation", () => {
   });
 
   test("outside workflow mode the package override still enables acceptance", async () => {
-    const root = makeNaxConfig({ acceptance: { enabled: false } });
+    const root = makeNaxConfig({ execution: { mode: "pipeline" }, acceptance: { enabled: false } });
     const registry = createPackageRegistry(createConfigLoader(root), "/repo");
 
     await registry.hydrate(["packages/lib"], async () => override);

@@ -67,6 +67,7 @@ function makeConfig(acceptanceEnabled = true): NaxConfig {
       maxRetries: 3,
     },
     execution: {
+      mode: "pipeline",
       regressionGate: {
         enabled: true,
         mode: "deferred",

@@ -78,3 +78,15 @@ describe("resolveOptimizer", () => {
     expect("RuleBasedOptimizer" in mod).toBe(false);
   });
 });
+
+describe("NoopOptimizer", () => {
+  test("returns the prompt unchanged with equal token counts and no savings", async () => {
+    const prompt = "a prompt of some length";
+    const result = await new NoopOptimizer().optimize({ prompt, stories: [], config: makeNaxConfig() });
+    expect(result.prompt).toBe(prompt);
+    expect(result.originalTokens).toBeGreaterThan(0);
+    expect(result.optimizedTokens).toBe(result.originalTokens);
+    expect(result.savings).toBe(0);
+    expect(result.appliedRules).toEqual([]);
+  });
+});

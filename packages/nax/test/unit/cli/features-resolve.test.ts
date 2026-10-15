@@ -22,7 +22,7 @@ afterEach(() => {
 function initNaxRepo(base = tempDir): string {
   const naxDir = join(base, ".nax");
   mkdirSync(join(naxDir, "features"), { recursive: true });
-  writeFileSync(join(naxDir, "config.json"), JSON.stringify({ name: "test-project" }));
+  writeFileSync(join(naxDir, "config.json"), JSON.stringify({ name: "test-project", execution: { mode: "pipeline" } }));
   return naxDir;
 }
 

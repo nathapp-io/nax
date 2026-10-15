@@ -16,13 +16,15 @@ import { runExecutionPhase } from "@/execution/runner-execution";
 import { _unifiedExecutorDeps } from "@/execution/unified-executor";
 import { effectiveUseBatch } from "@/execution/workflow-parallel";
 
+const pipelineConfig = { ...DEFAULT_CONFIG, execution: { ...DEFAULT_CONFIG.execution, mode: "pipeline" as const } };
+
 const workflowConfig = { ...DEFAULT_CONFIG, execution: { ...DEFAULT_CONFIG.execution, mode: "workflow" as const } };
 
 describe("effectiveUseBatch", () => {
   test("pipeline mode passes the request through silently", () => {
     const warnings: string[] = [];
-    expect(effectiveUseBatch(DEFAULT_CONFIG, true, (m) => warnings.push(m))).toBe(true);
-    expect(effectiveUseBatch(DEFAULT_CONFIG, false, (m) => warnings.push(m))).toBe(false);
+    expect(effectiveUseBatch(pipelineConfig, true, (m) => warnings.push(m))).toBe(true);
+    expect(effectiveUseBatch(pipelineConfig, false, (m) => warnings.push(m))).toBe(false);
     expect(warnings).toEqual([]);
   });
   test("workflow mode forces false and warns once when batching was requested", () => {
@@ -108,7 +110,7 @@ async function firstBatchSize(config: RunnerExecutionOptions["config"]): Promise
 
 describe("runExecutionPhase batching", () => {
   test("pipeline mode batches consecutive simple stories (control)", async () => {
-    expect(await firstBatchSize(makeNaxConfig({ execution: { iterationDelayMs: 0 } }))).toBe(2);
+    expect(await firstBatchSize(makeNaxConfig({ execution: { mode: "pipeline", iterationDelayMs: 0 } }))).toBe(2);
   });
   test("workflow mode dispatches one story at a time", async () => {
     expect(await firstBatchSize(makeNaxConfig({ execution: { mode: "workflow", iterationDelayMs: 0 } }))).toBe(1);

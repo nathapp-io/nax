@@ -25,6 +25,9 @@ import type { RoutingDecision } from "@/routing/decision";
 import { storyExecRoot } from "@/runtime";
 import type { WorktreeDependencyContext } from "@/worktree/types";
 
+/** These tests drive the pipeline-mode worker; workflow is the shipped default. */
+const PIPELINE_CONFIG: NaxConfig = { ...DEFAULT_CONFIG, execution: { ...DEFAULT_CONFIG.execution, mode: "pipeline" } };
+
 function makeWorkerStory(id: string): UserStory {
   return {
     id,
@@ -42,7 +45,7 @@ function makeWorkerStory(id: string): UserStory {
 }
 
 function makeContext(
-  config: NaxConfig = DEFAULT_CONFIG as NaxConfig,
+  config: NaxConfig = PIPELINE_CONFIG,
   workdir = "/tmp/test",
 ): Omit<PipelineContext, "story" | "stories" | "workdir" | "routing"> {
   return {
@@ -71,7 +74,7 @@ afterEach(() => {
 describe("executeParallelBatch", () => {
   test("routes each story with its effective per-story config when provided", async () => {
     const story = makeWorkerStory("US-001");
-    const rootConfig = DEFAULT_CONFIG as NaxConfig;
+    const rootConfig = PIPELINE_CONFIG;
     const storyConfig = {
       ...rootConfig,
       routing: {
@@ -124,7 +127,7 @@ describe("executeParallelBatch", () => {
   // and the rejection surfaced as an unhandled rejection.
   test("records a rejected story as failed instead of aborting the batch", async () => {
     const stories = ["US-001", "US-002", "US-003"].map(makeWorkerStory);
-    const config = DEFAULT_CONFIG as NaxConfig;
+    const config = PIPELINE_CONFIG;
 
     _parallelWorkerDeps.routeTask = mock(
       (): RoutingDecision => ({
@@ -162,7 +165,7 @@ describe("executeParallelBatch", () => {
 
   test("marks a story with no prepared worktree as failed without invoking the executor", async () => {
     const story = makeWorkerStory("US-no-worktree");
-    const config: NaxConfig = DEFAULT_CONFIG;
+    const config: NaxConfig = PIPELINE_CONFIG;
     const executeStoryMock = mock(async () => ({ success: true, cost: 0 }));
     _parallelWorkerDeps.executeStoryInWorktree = executeStoryMock as typeof _parallelWorkerDeps.executeStoryInWorktree;
 
@@ -182,7 +185,7 @@ describe("executeParallelBatch", () => {
 
   test("marks a story with no prepared dependency context as failed without invoking the executor", async () => {
     const story = makeWorkerStory("US-no-dep-context");
-    const config: NaxConfig = DEFAULT_CONFIG;
+    const config: NaxConfig = PIPELINE_CONFIG;
     const executeStoryMock = mock(async () => ({ success: true, cost: 0 }));
     _parallelWorkerDeps.executeStoryInWorktree = executeStoryMock as typeof _parallelWorkerDeps.executeStoryInWorktree;
 
@@ -202,7 +205,7 @@ describe("executeParallelBatch", () => {
 
   test("records a story whose executor resolves with success: false as failed", async () => {
     const story = makeWorkerStory("US-pipeline-failed");
-    const config: NaxConfig = DEFAULT_CONFIG;
+    const config: NaxConfig = PIPELINE_CONFIG;
 
     _parallelWorkerDeps.routeTask = mock(
       (): RoutingDecision => ({
@@ -484,8 +487,8 @@ describe("buildWorktreePipelineContext", () => {
   test("deep-clones prd so concurrent stories never share one object", () => {
     const base: Parameters<typeof buildWorktreePipelineContext>[0] = {
       ...makeDispatchContext(),
-      config: DEFAULT_CONFIG,
-      rootConfig: DEFAULT_CONFIG,
+      config: PIPELINE_CONFIG,
+      rootConfig: PIPELINE_CONFIG,
       prd: makePRD({
         feature: "f",
         userStories: [makeStory({ id: "US-001", title: "t", status: "pending" })],

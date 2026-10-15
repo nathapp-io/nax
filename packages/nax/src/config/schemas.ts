@@ -134,7 +134,7 @@ export const NaxConfigSchema = z
       agents: { enabled: true, strategy: "off", profiles: [] },
     }),
     execution: ExecutionConfigSchema.default({
-      mode: "pipeline",
+      mode: "workflow",
       maxIterations: 20,
       iterationDelayMs: 2000,
       costLimit: 30.0,

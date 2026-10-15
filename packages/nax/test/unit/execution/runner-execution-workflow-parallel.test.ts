@@ -2,9 +2,11 @@ import { describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG } from "@/config";
 import { assertPipelineMode, effectiveParallelCount } from "@/execution/workflow-parallel";
 
+const pipelineConfig = { ...DEFAULT_CONFIG, execution: { ...DEFAULT_CONFIG.execution, mode: "pipeline" as const } };
+
 describe("effectiveParallelCount", () => {
   test("pipeline mode passes the CLI value through", () => {
-    expect(effectiveParallelCount(DEFAULT_CONFIG, 4, () => {})).toBe(4);
+    expect(effectiveParallelCount(pipelineConfig, 4, () => {})).toBe(4);
   });
   test("workflow mode forces 0 and warns once when parallel was requested", () => {
     const warnings: string[] = [];
@@ -23,7 +25,7 @@ describe("effectiveParallelCount", () => {
 describe("assertPipelineMode", () => {
   test("throws only in workflow mode", () => {
     const cfg = { ...DEFAULT_CONFIG, execution: { ...DEFAULT_CONFIG.execution, mode: "workflow" as const } };
-    expect(() => assertPipelineMode(DEFAULT_CONFIG, "parallel-worker")).not.toThrow();
+    expect(() => assertPipelineMode(pipelineConfig, "parallel-worker")).not.toThrow();
     expect(() => assertPipelineMode(cfg, "parallel-worker")).toThrow(/parallel-worker/);
   });
 });
