@@ -1,7 +1,4 @@
-import { describe, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createBashTool } from "#src/tools/bash";
 import { redirectForArgv, redirectForCommand, redirectForVerb } from "#src/tools/denial-redirect";
 import { compileToolPolicy } from "#src/tools/policy";
@@ -191,7 +188,11 @@ describe("one table answers both entry points", () => {
 });
 
 describe("runtime appends the redirect to a denial", () => {
-  const root = mkdtempSync(join(tmpdir(), "nax-redirect-"));
+  let root: string;
+  beforeAll(() => {
+    root = makeTempDir("nax-redirect-");
+  });
+  afterAll(() => cleanupTempDir(root));
 
   test("a denied ls names Glob once Glob has been advertised", async () => {
     const policy = compileToolPolicy(

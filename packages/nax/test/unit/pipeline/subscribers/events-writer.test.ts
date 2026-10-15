@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { assertDefined, makeStory, makeTempDir, waitForFile } from "@test/helpers";
+import { assertDefined, cleanupTempDir, makeStory, makeTempDir, waitForFile } from "@test/helpers";
 import { globalConfigDir } from "@/config/paths";
 import { PipelineEventBus } from "@/pipeline/event-bus";
 import { wireEventsWriter } from "@/pipeline/subscribers/events-writer";
@@ -26,8 +26,12 @@ describe("wireEventsWriter", () => {
     const project = workdir.split("/").pop();
     assertDefined(project, "workdir basename");
     const dir = join(globalConfigDir(), "events", project);
-    await rm(dir, { recursive: true, force: true });
-    mock.restore();
+    try {
+      await rm(dir, { recursive: true, force: true });
+    } finally {
+      cleanupTempDir(workdir);
+      mock.restore();
+    }
   });
 
   async function readLines(): Promise<object[]> {

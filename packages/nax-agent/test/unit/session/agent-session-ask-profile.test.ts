@@ -5,8 +5,6 @@
  */
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { mkdtemp } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createAgentSession } from "@nathapp/nax-agent";
 import { _sessionSandboxDeps } from "#src/coding-tools/coding-tool-sandbox";
@@ -23,9 +21,43 @@ import {
   toolRound,
   turnEndOf,
 } from "#test/helpers/agent-session";
-import { stubSessionSandboxDeps, withDepsRestore, withSessionSandboxSeam } from "#test/helpers/index";
+import {
+  cleanupTempDir,
+  makeTempDir,
+  stubSessionSandboxDeps,
+  withDepsRestore,
+  withSessionSandboxSeam,
+} from "#test/helpers/index";
 
-afterEach(resetScriptedProvider);
+const tempDirs: string[] = [];
+const sessionCleanups: (() => Promise<void>)[] = [];
+
+function makeTestDir(prefix: string): string {
+  const dir = makeTempDir(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+
+async function closeTestSessions(): Promise<void> {
+  const closed = await Promise.allSettled(sessionCleanups.splice(0).map(async (close) => close()));
+  const errors = closed.flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
+  if (errors.length > 0) throw new AggregateError(errors, "Failed to close test sessions");
+}
+
+async function createTestSession(...args: Parameters<typeof createAgentSession>) {
+  const session = await createAgentSession(...args);
+  sessionCleanups.push(() => session.close());
+  return session;
+}
+
+afterEach(async () => {
+  try {
+    await closeTestSessions();
+  } finally {
+    for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+    resetScriptedProvider();
+  }
+});
 
 describe("agent session: the ask profile", () => {
   withDepsRestore(_agentSessionDeps);
@@ -33,7 +65,7 @@ describe("agent session: the ask profile", () => {
   withSessionSandboxSeam(_sessionSandboxDeps);
 
   async function askSession(workdir: string) {
-    return createAgentSession(sessionOptions({ profile: "ask", workdir, allowUnsandboxed: true }));
+    return createTestSession(sessionOptions({ profile: "ask", workdir, allowUnsandboxed: true }));
   }
 
   function noSandbox(): void {
@@ -46,7 +78,7 @@ describe("agent session: the ask profile", () => {
     noSandbox();
     const provider = installScriptedProvider();
     provider.push(toolRound([{ id: "w1", name: "Write", input: { path: "a.txt", content: "hi" } }]), textRound("done"));
-    const workdir = await mkdtemp(join(tmpdir(), "nax-agent-ask-"));
+    const workdir = makeTestDir("nax-agent-ask-");
     const session = await askSession(workdir);
     const events = reader(session.send("write a.txt"));
     const [request] = eventsOf(await events.until("approval_requested"), "approval_requested");
@@ -61,7 +93,7 @@ describe("agent session: the ask profile", () => {
 
   test("a denied Edit does not change the file", async () => {
     noSandbox();
-    const workdir = await mkdtemp(join(tmpdir(), "nax-agent-ask-"));
+    const workdir = makeTestDir("nax-agent-ask-");
     writeFileSync(join(workdir, "b.txt"), "old");
     const provider = installScriptedProvider();
     provider.push(
@@ -81,7 +113,7 @@ describe("agent session: the ask profile", () => {
 
   test("a Delete asks and a denied Delete keeps the file", async () => {
     noSandbox();
-    const workdir = await mkdtemp(join(tmpdir(), "nax-agent-ask-"));
+    const workdir = makeTestDir("nax-agent-ask-");
     writeFileSync(join(workdir, "c.txt"), "keep");
     const provider = installScriptedProvider();
     provider.push(toolRound([{ id: "d1", name: "Delete", input: { path: "c.txt" } }]), textRound("done"));
@@ -97,7 +129,7 @@ describe("agent session: the ask profile", () => {
 
   test("a Bash command asks before any tool result", async () => {
     noSandbox();
-    const workdir = await mkdtemp(join(tmpdir(), "nax-agent-ask-"));
+    const workdir = makeTestDir("nax-agent-ask-");
     const provider = installScriptedProvider();
     provider.push(toolRound([{ id: "b1", name: "Bash", input: { command: "echo hi" } }]), textRound("done"));
     const session = await askSession(workdir);
@@ -113,10 +145,10 @@ describe("agent session: the ask profile", () => {
 
   test("full does not ask for a Write", async () => {
     noSandbox();
-    const workdir = await mkdtemp(join(tmpdir(), "nax-agent-ask-"));
+    const workdir = makeTestDir("nax-agent-ask-");
     const provider = installScriptedProvider();
     provider.push(toolRound([{ id: "w2", name: "Write", input: { path: "f.txt", content: "x" } }]), textRound("done"));
-    const session = await createAgentSession(sessionOptions({ profile: "full", workdir, allowUnsandboxed: true }));
+    const session = await createTestSession(sessionOptions({ profile: "full", workdir, allowUnsandboxed: true }));
     const all = await collect(session.send("write f.txt"));
     expect(eventsOf(all, "approval_requested")).toEqual([]);
     expect(readFileSync(join(workdir, "f.txt"), "utf8")).toBe("x");

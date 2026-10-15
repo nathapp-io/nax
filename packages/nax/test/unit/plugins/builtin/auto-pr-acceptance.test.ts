@@ -18,15 +18,25 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { mkdtemp } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
-import { assertDefined, makeStory } from "@test/helpers";
+import { assertDefined, cleanupTempDir, makeStory, makeTempDir } from "@test/helpers";
 import { loadPlugins } from "@/plugins";
 import { _autoPrDeps, autoPrPlugin } from "@/plugins/builtin/auto-pr";
 import { buildBody, buildTitle } from "@/plugins/builtin/auto-pr/pr-body";
 import type { AutoPrDeps } from "@/plugins/builtin/auto-pr/types";
 import type { PostRunContext } from "@/plugins/extensions";
+
+const tempDirs: string[] = [];
+
+function makeTestDir(prefix: string): string {
+  const dir = makeTempDir(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+});
 
 const PLUGIN_NAME = "nax-auto-pr";
 
@@ -362,7 +372,7 @@ describe("autoPrPlugin.execute", () => {
 
 describe("loadPlugins — autoPr registration", () => {
   test("AC11 — getPostRunActions() includes 'nax-auto-pr' exactly once when not disabled", async () => {
-    const root = await mkdtemp(join(tmpdir(), "autopr-registration-"));
+    const root = makeTestDir("autopr-registration-");
     const registry = await loadPlugins(join(root, "global"), join(root, "project"), [], root, []);
     const actions = registry.getPostRunActions();
     // Regression: auto-pr must be a side-channel action only (like auto-route),
@@ -376,7 +386,7 @@ describe("loadPlugins — autoPr registration", () => {
   });
 
   test("autoPr is excluded from getPostRunActions() when 'nax-auto-pr' is in disabledPlugins", async () => {
-    const root = await mkdtemp(join(tmpdir(), "autopr-registration-"));
+    const root = makeTestDir("autopr-registration-");
     const registry = await loadPlugins(join(root, "global"), join(root, "project"), [], root, [PLUGIN_NAME]);
     const actions = registry.getPostRunActions();
     expect(actions.some((a) => a.name === PLUGIN_NAME)).toBe(false);

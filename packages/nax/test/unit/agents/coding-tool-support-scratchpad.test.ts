@@ -31,12 +31,11 @@
  * `<outputDir>/tool-audit/<feature>/` directory (ADR-029's parity evidence).
  */
 
-import { afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { realpath as realpathAsync } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ToolProvider } from "@nathapp/nax-agent";
+import { resetSandboxBackend, type ToolProvider } from "@nathapp/nax-agent";
 import {
   _argvExecDeps,
   _resetSandboxRegistryForTests,
@@ -49,9 +48,10 @@ import { resolvePackageName } from "@/agents/exec-package-name";
 import { DEFAULT_CODING_TOOLS } from "@/config/permissions";
 
 let scratchpadRoot: string;
+afterAll(() => cleanupTempDir(scratchpadRoot));
 
 beforeAll(() => {
-  scratchpadRoot = mkdtempSync(join(tmpdir(), "nax-support-scratchpad-"));
+  scratchpadRoot = makeTempDir("nax-support-scratchpad-");
   // Read on a missing path returns kind "error"; the AC5 reviewer-declared
   // test does NOT exercise Read, but having a writable fs surface means
   // resolved-paths are real paths and AC4's denied-outcome reflects the
@@ -69,15 +69,19 @@ beforeEach(() => {
   rootB = makeTempDir("nax-providers-b-");
 });
 
-afterEach(() => {
-  cleanupTempDir(bashRoot);
-  cleanupTempDir(rootA);
-  cleanupTempDir(rootB);
+afterEach(async () => {
   // The sandbox (on by default) is a process-wide singleton — several tests
   // here build coding-tool support without disabling it, and an uncleared
   // cached backend would leak into unrelated files sharing the bun test
   // process (e.g. test/unit/sandbox/registry.test.ts).
-  _resetSandboxRegistryForTests();
+  try {
+    await resetSandboxBackend();
+  } finally {
+    _resetSandboxRegistryForTests();
+    cleanupTempDir(bashRoot);
+    cleanupTempDir(rootA);
+    cleanupTempDir(rootB);
+  }
 });
 
 function staticProvider(): ToolProvider {
@@ -507,9 +511,10 @@ describe("buildCodingToolSupport with Exec", () => {
 
 describe("resolvePackageName", () => {
   let root: string;
+  afterAll(() => cleanupTempDir(root));
 
   beforeAll(() => {
-    root = mkdtempSync(join(tmpdir(), "nax-exec-package-name-"));
+    root = makeTempDir("nax-exec-package-name-");
   });
 
   afterEach(() => {

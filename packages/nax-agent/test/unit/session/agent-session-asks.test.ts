@@ -5,9 +5,6 @@
  * the iterator; close during a turn; and the stalled-consumer cap.
  */
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { createAgentSession, type EmbedderTool, type EmbedderToolContext } from "@nathapp/nax-agent";
 import { _sessionSandboxDeps } from "#src/coding-tools/coding-tool-sandbox";
 import { createMemoryTranscriptStore } from "#src/native/session/memory-transcript-store";
@@ -26,11 +23,46 @@ import {
   types,
   untilSettled,
 } from "#test/helpers/agent-session";
-import { assertNaxError, stubSessionSandboxDeps, withDepsRestore, withSessionSandboxSeam } from "#test/helpers/index";
+import {
+  assertNaxError,
+  cleanupTempDir,
+  makeTempDir,
+  stubSessionSandboxDeps,
+  withDepsRestore,
+  withSessionSandboxSeam,
+} from "#test/helpers/index";
+
+const tempDirs: string[] = [];
+const sessionCleanups: (() => Promise<void>)[] = [];
+
+function makeTestDir(prefix: string): string {
+  const dir = makeTempDir(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+
+async function closeTestSessions(): Promise<void> {
+  const closed = await Promise.allSettled(sessionCleanups.splice(0).map(async (close) => close()));
+  const errors = closed.flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
+  if (errors.length > 0) throw new AggregateError(errors, "Failed to close test sessions");
+}
+
+async function createTestSession(...args: Parameters<typeof createAgentSession>) {
+  const session = await createAgentSession(...args);
+  sessionCleanups.push(() => session.close());
+  return session;
+}
 
 const APPROVAL_MS = 600_000;
 
-afterEach(resetScriptedProvider);
+afterEach(async () => {
+  try {
+    await closeTestSessions();
+  } finally {
+    for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+    resetScriptedProvider();
+  }
+});
 
 function expectCode(fn: () => unknown, code: string): void {
   let caught: unknown;
@@ -80,7 +112,7 @@ describe("agent session: approvals", () => {
     const provider = installScriptedProvider();
     provider.push(toolRound([{ id: "c1", name: "lookup", input: { id: 42 } }]), textRound("found it"));
     const runs: unknown[] = [];
-    const session = await createAgentSession(sessionOptions({ tools: [lookupTool("always", runs)] }));
+    const session = await createTestSession(sessionOptions({ tools: [lookupTool("always", runs)] }));
     const events = reader(session.send("find 42"));
     const upTo = await events.until("approval_requested");
     expect(types(upTo).slice(-2)).toEqual(["tool_call", "approval_requested"]);
@@ -102,7 +134,7 @@ describe("agent session: approvals", () => {
     const provider = installScriptedProvider();
     provider.push(toolRound([{ id: "c1", name: "lookup", input: { id: 1 } }]), textRound("ok"));
     const runs: unknown[] = [];
-    const session = await createAgentSession(sessionOptions({ tools: [lookupTool("always", runs)] }));
+    const session = await createTestSession(sessionOptions({ tools: [lookupTool("always", runs)] }));
     const events = reader(session.send("find 1"));
     const [request] = eventsOf(await events.until("approval_requested"), "approval_requested");
     session.answer(request?.requestId ?? "", { decision: "deny" });
@@ -118,7 +150,7 @@ describe("agent session: approvals", () => {
     const provider = installScriptedProvider();
     provider.push(toolRound([{ id: "c1", name: "lookup", input: {} }]), textRound("ok"));
     const runs: unknown[] = [];
-    const session = await createAgentSession(sessionOptions({ tools: [lookupTool("always", runs)] }));
+    const session = await createTestSession(sessionOptions({ tools: [lookupTool("always", runs)] }));
     const events = reader(session.send("find"));
     const [request] = eventsOf(await events.until("approval_requested"), "approval_requested");
     expect(timers.fire(APPROVAL_MS)).toBe(1);
@@ -145,8 +177,8 @@ describe("agent session: built-in approvals under full + gated", () => {
       toolRound([{ id: "b1", name: "Bash", input: { command: `git push https://${token}@github.com/o/r` } }]),
       textRound("ok"),
     );
-    const workdir = await mkdtemp(join(tmpdir(), "nax-agent-session-full-"));
-    const session = await createAgentSession(sessionOptions({ profile: "full", workdir, allowUnsandboxed: true }));
+    const workdir = makeTestDir("nax-agent-session-full-");
+    const session = await createTestSession(sessionOptions({ profile: "full", workdir, allowUnsandboxed: true }));
     const events = reader(session.send("push it"));
     const [request] = eventsOf(await events.until("approval_requested"), "approval_requested");
     expect(request).toMatchObject({ callId: "b1", tool: "Bash" });
@@ -167,7 +199,7 @@ describe("agent session: questions", () => {
     installManualTimers();
     const provider = installScriptedProvider();
     provider.push(toolRound([{ id: "q1", name: "ask_human", input: { text: "Which env?" } }]), textRound("ok"));
-    const session = await createAgentSession(sessionOptions());
+    const session = await createTestSession(sessionOptions());
     const events = reader(session.send("deploy"));
     const [question] = eventsOf(await events.until("question"), "question");
     expect(question?.text).toBe("Which env?");
@@ -183,7 +215,7 @@ describe("agent session: questions", () => {
     const timers = installManualTimers();
     const provider = installScriptedProvider();
     provider.push(toolRound([{ id: "q1", name: "ask_human", input: { text: "?" } }]), textRound("ok"));
-    const session = await createAgentSession(sessionOptions());
+    const session = await createTestSession(sessionOptions());
     const events = reader(session.send("deploy"));
     await events.until("question");
     timers.fire(APPROVAL_MS);
@@ -203,7 +235,7 @@ describe("agent session: cancellation and teardown", () => {
     const provider = installScriptedProvider();
     provider.push(toolRound([{ id: "c1", name: "wait", input: {} }]));
     const seen: EmbedderToolContext[] = [];
-    const session = await createAgentSession(sessionOptions({ tools: [stuckTool(seen)] }));
+    const session = await createTestSession(sessionOptions({ tools: [stuckTool(seen)] }));
     const events = reader(session.send("go"));
     await events.until("tool_call");
     await tick();
@@ -221,7 +253,7 @@ describe("agent session: cancellation and teardown", () => {
     installManualTimers();
     const provider = installScriptedProvider();
     provider.push(toolRound([{ id: "c1", name: "lookup", input: {} }]));
-    const session = await createAgentSession(sessionOptions({ tools: [lookupTool("always", [])] }));
+    const session = await createTestSession(sessionOptions({ tools: [lookupTool("always", [])] }));
     const events = reader(session.send("go"));
     const [request] = eventsOf(await events.until("approval_requested"), "approval_requested");
     session.cancel();
@@ -237,7 +269,7 @@ describe("agent session: cancellation and teardown", () => {
     const provider = installScriptedProvider();
     provider.push(toolRound([{ id: "c1", name: "wait", input: {} }]));
     const store = createMemoryTranscriptStore();
-    const session = await createAgentSession(sessionOptions({ transcriptStore: store, tools: [stuckTool([])] }));
+    const session = await createTestSession(sessionOptions({ transcriptStore: store, tools: [stuckTool([])] }));
     for await (const event of session.send("first")) {
       if (event.type === "tool_call") break;
     }
@@ -255,7 +287,7 @@ describe("agent session: cancellation and teardown", () => {
     const provider = installScriptedProvider();
     provider.push(toolRound([{ id: "c1", name: "wait", input: {} }]));
     const store = createMemoryTranscriptStore();
-    const session = await createAgentSession(sessionOptions({ transcriptStore: store, tools: [stuckTool([])] }));
+    const session = await createTestSession(sessionOptions({ transcriptStore: store, tools: [stuckTool([])] }));
     const events = reader(session.send("go"));
     await events.until("tool_call");
     const closing = session.close();
@@ -269,7 +301,7 @@ describe("agent session: cancellation and teardown", () => {
     const timers = installManualTimers();
     const provider = installScriptedProvider();
     provider.push(toolRound([{ id: "q1", name: "ask_human", input: { text: "?" } }]));
-    const session = await createAgentSession(sessionOptions({ turnTimeoutSeconds: 120 }));
+    const session = await createTestSession(sessionOptions({ turnTimeoutSeconds: 120 }));
     const events = reader(session.send("deploy"));
     await events.until("question");
     expect(timers.fire(120_000)).toBe(1);
@@ -288,7 +320,7 @@ describe("agent session: cancellation and teardown", () => {
       ]),
       textRound("done"),
     );
-    const session = await createAgentSession(sessionOptions({ tools: [lookupTool("never", [])] }));
+    const session = await createTestSession(sessionOptions({ tools: [lookupTool("never", [])] }));
     const events = reader(session.send("go"));
     await events.until("turn_start");
     await untilSettled(session, undefined);
@@ -305,7 +337,7 @@ describe("agent session: answer statuses", () => {
   test("an answer to a request the session never issued is refused while the session is open", async () => {
     installManualTimers();
     installScriptedProvider();
-    const session = await createAgentSession(sessionOptions());
+    const session = await createTestSession(sessionOptions());
     expectCode(() => session.answer("no-such-id", { decision: "allow" }), "AGENT_SESSION_INVALID_ANSWER");
     await session.close();
   });
@@ -314,7 +346,7 @@ describe("agent session: answer statuses", () => {
     installManualTimers();
     const provider = installScriptedProvider();
     provider.push(toolRound([{ id: "c1", name: "lookup", input: {} }]));
-    const session = await createAgentSession(sessionOptions({ tools: [lookupTool("always", [])] }));
+    const session = await createTestSession(sessionOptions({ tools: [lookupTool("always", [])] }));
     const events = reader(session.send("go"));
     const [request] = eventsOf(await events.until("approval_requested"), "approval_requested");
     const closing = session.close();

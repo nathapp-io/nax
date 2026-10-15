@@ -16,17 +16,20 @@
  */
 
 import "../src/agent-runtime/install";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { afterAll } from "bun:test";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { _clientDeps } from "@nathapp/nax-agent/internal";
+import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
 import { _acpDeps } from "../src/agents/acp/session";
 import { configureNaxCredentials } from "../src/config";
 import { _notifyDeps } from "../src/finish/notify";
 import { _nativeCredentialDeps } from "../src/precheck/checks-native-credentials";
 import { markTrusted } from "../src/trust";
 
-const isolatedGlobalDir = mkdtempSync(join(tmpdir(), "nax-test-global-"));
+const isolatedGlobalDir = makeTempDir("nax-test-global-");
+afterAll(() => cleanupTempDir(isolatedGlobalDir));
+process.once("exit", () => cleanupTempDir(isolatedGlobalDir));
 
 process.env.NAX_GLOBAL_CONFIG_DIR = isolatedGlobalDir;
 configureNaxCredentials();

@@ -3,10 +3,7 @@
  * (spec 5.2). The facade's own native assembly still exists until Task 5; this
  * suite covers the parallel backend's contract only.
  */
-import { describe, expect, test } from "bun:test";
-import { mkdtemp } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { afterEach, describe, expect, test } from "bun:test";
 import type { BackendOpenContext } from "@nathapp/nax-agent";
 import { _clientDeps } from "#src/native/client";
 import { createMemoryTranscriptStore } from "#src/native/session/memory-transcript-store";
@@ -14,12 +11,47 @@ import { NATIVE_BACKEND_KIND, nativeBackend } from "#src/session/native-backend"
 import { createPendingAskTable } from "#src/session/pending-asks";
 import { createSessionAskPort } from "#src/session/session-ask-port";
 import { MODEL } from "#test/helpers/agent-session";
-import { assertNaxError } from "#test/helpers/index";
+import { assertNaxError, cleanupTempDir, makeTempDir } from "#test/helpers/index";
+
+const tempDirs: string[] = [];
+const sessionCleanups: (() => Promise<void>)[] = [];
+
+function makeTestDir(prefix: string): string {
+  const dir = makeTempDir(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+
+async function closeTestSessions(): Promise<void> {
+  const closed = await Promise.allSettled(sessionCleanups.splice(0).map(async (close) => close()));
+  const errors = closed.flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
+  if (errors.length > 0) throw new AggregateError(errors, "Failed to close test sessions");
+}
+
+async function openBackend(backend: ReturnType<typeof nativeBackend>, context: BackendOpenContext) {
+  const opened = await backend.open(context);
+  sessionCleanups.push(async () => {
+    try {
+      await opened.adapter.closeSession(opened.handle);
+    } finally {
+      await opened.close();
+    }
+  });
+  return opened;
+}
+
+afterEach(async () => {
+  try {
+    await closeTestSessions();
+  } finally {
+    for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+  }
+});
 
 const IDLE = new AbortController().signal;
 
 async function ctx(extra: Partial<BackendOpenContext> = {}): Promise<BackendOpenContext> {
-  const workdir = await mkdtemp(join(tmpdir(), "nax-native-backend-"));
+  const workdir = makeTestDir("nax-native-backend-");
   const table = createPendingAskTable(30_000);
   return {
     sessionId: "s1",
@@ -43,7 +75,7 @@ describe("nativeBackend", () => {
   test("has kind native and opens with the read tool set", async () => {
     const backend = nativeBackend({ model: MODEL });
     expect(backend.kind).toBe(NATIVE_BACKEND_KIND);
-    const opened = await backend.open(await ctx());
+    const opened = await openBackend(backend, await ctx());
     expect(opened.info).toEqual({ kind: "native", capabilities: {} });
     const names = (opened.turnOpts().codingTools ?? []).map((tool) => tool.name);
     expect(names).toEqual(expect.arrayContaining(["Read", "Glob", "Grep", "Git"]));
@@ -69,7 +101,7 @@ describe("nativeBackend", () => {
     const doc = { savedAt: new Date(0).toISOString(), messages: [], model: "anthropic/other" };
     let caught: unknown;
     try {
-      await backend.open(await ctx({ resume: { doc } }));
+      await openBackend(backend, await ctx({ resume: { doc } }));
     } catch (err) {
       caught = err;
     }
@@ -80,7 +112,7 @@ describe("nativeBackend", () => {
   test("carryHistoryAcrossModels lets a resume read another model's document", async () => {
     const backend = nativeBackend({ model: MODEL, carryHistoryAcrossModels: true });
     const doc = { savedAt: new Date(0).toISOString(), messages: [], model: "anthropic/other" };
-    const opened = await backend.open(await ctx({ resume: { doc } }));
+    const opened = await openBackend(backend, await ctx({ resume: { doc } }));
     await opened.close();
   });
 
@@ -92,7 +124,7 @@ describe("nativeBackend", () => {
       approval: "never" as const,
       run: async () => ({ content: "x" }),
     };
-    const opened = await nativeBackend({ model: MODEL }).open(await ctx({ profile: "none", tools: [tool] }));
+    const opened = await openBackend(nativeBackend({ model: MODEL }), await ctx({ profile: "none", tools: [tool] }));
     const names = (opened.turnOpts().codingTools ?? []).map((t) => t.name);
     expect(names.at(-1)).toBe("lookup");
     await opened.adapter.closeSession(opened.handle);

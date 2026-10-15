@@ -7,7 +7,7 @@
  * queries continue to match.
  */
 
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, jest, test } from "bun:test";
 import { assertDefined, mockFetch } from "@test/helpers";
 import type { OtelReporterConfig } from "@/config/schemas-reporters";
 import { createOtelReporterPlugin } from "@/plugins";
@@ -330,13 +330,24 @@ describe("US-007 AC6: incremental span flush request carries nax.run_id resource
     logs: { enabled: false, level: "info" },
   };
 
-  function sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
+  const plugins: ReturnType<typeof createOtelReporterPlugin>[] = [];
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(async () => {
+    try {
+      for (const plugin of plugins.splice(0)) await plugin.teardown?.();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 
   test("success: an incremental flush before run end emits nax.run_id on its resource block", async () => {
     const { posts, deps } = capturingPosts();
     const plugin = createOtelReporterPlugin(baseCfg, deps);
+    plugins.push(plugin);
     const r = plugin.extensions.reporter;
     assertDefined(r, "plugin.extensions.reporter");
 
@@ -359,8 +370,9 @@ describe("US-007 AC6: incremental span flush request carries nax.run_id resource
       testStrategy: "tdd-simple",
     });
 
-    // Allow the flushIntervalMs timer to fire before run end.
-    await sleep(120);
+    jest.advanceTimersByTime(49);
+    expect(posts.filter((p) => p.url.endsWith("/v1/traces"))).toHaveLength(0);
+    jest.advanceTimersByTime(1);
 
     const traces = posts.filter((p) => p.url.endsWith("/v1/traces"));
     expect(traces.length).toBeGreaterThan(0);
@@ -379,6 +391,7 @@ describe("US-007 AC6: incremental span flush request carries nax.run_id resource
   test("success: the incremental resource block also carries nax.feature and nax.project", async () => {
     const { posts, deps } = capturingPosts();
     const plugin = createOtelReporterPlugin(baseCfg, deps);
+    plugins.push(plugin);
     const r = plugin.extensions.reporter;
     assertDefined(r, "plugin.extensions.reporter");
 
@@ -400,7 +413,7 @@ describe("US-007 AC6: incremental span flush request carries nax.run_id resource
       tier: "balanced",
       testStrategy: "tdd-simple",
     });
-    await sleep(120);
+    jest.advanceTimersByTime(50);
 
     const traces = posts.filter((p) => p.url.endsWith("/v1/traces"));
     expect(traces.length).toBeGreaterThan(0);
@@ -415,6 +428,7 @@ describe("US-007 AC6: incremental span flush request carries nax.run_id resource
   test("boundary: no incremental flush when no spans have been enqueued", async () => {
     const { posts, deps } = capturingPosts();
     const plugin = createOtelReporterPlugin(baseCfg, deps);
+    plugins.push(plugin);
     const r = plugin.extensions.reporter;
     assertDefined(r, "plugin.extensions.reporter");
 
@@ -425,7 +439,7 @@ describe("US-007 AC6: incremental span flush request carries nax.run_id resource
       totalStories: 1,
       startTime: new Date().toISOString(),
     });
-    await sleep(120);
+    jest.advanceTimersByTime(50);
 
     const traces = posts.filter((p) => p.url.endsWith("/v1/traces"));
     expect(traces).toHaveLength(0);

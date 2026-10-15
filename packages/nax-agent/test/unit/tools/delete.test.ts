@@ -1,6 +1,5 @@
-import { beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   compileToolPolicy,
@@ -9,12 +8,24 @@ import {
   deleteTool,
 } from "@nathapp/nax-agent";
 import { gitWithTimeout } from "@nathapp/nax-agent/internal";
-import { testProtectedPaths } from "#test/helpers/index";
+import { cleanupTempDir, makeTempDir, testProtectedPaths } from "#test/helpers/index";
+
+const tempDirs: string[] = [];
+
+function makeTestDir(prefix: string): string {
+  const dir = makeTempDir(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+});
 
 let root: string;
 
 beforeEach(async () => {
-  root = mkdtempSync(join(tmpdir(), "nax-delete-"));
+  root = makeTestDir("nax-delete-");
   mkdirSync(join(root, "src"), { recursive: true });
   writeFileSync(join(root, "src", "tracked.ts"), "export const a = 1;\n");
   writeFileSync(join(root, "src", "also-tracked.ts"), "export const b = 2;\n");
@@ -112,7 +123,7 @@ describe("deleteTool", () => {
   // and "git failed" shared one refusal on purpose -- and that survives the
   // three-class rewrite: only a definitive "not ignored" is an allow.
   test("refuses an untracked file when git cannot answer, rather than failing open", async () => {
-    const outside = mkdtempSync(join(tmpdir(), "nax-delete-nogit-"));
+    const outside = makeTestDir("nax-delete-nogit-");
     const target = join(outside, "scratch.ts");
     writeFileSync(target, "export const x = 1;\n");
 

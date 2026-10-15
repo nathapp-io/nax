@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { chmodSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -13,11 +13,14 @@ import {
   removeStoredProvider,
 } from "@nathapp/nax-agent/internal";
 import { getSafeLogger, setAgentLogger } from "#src/infra/index";
-import { cleanupTempDir, makeLogger, makeTempDir } from "#test/helpers/index";
+import { _execSourceDeps } from "#src/native/credentials/helper-process";
+import { cleanupTempDir, makeFakeClock, makeLogger, makeSpawnResult, makeTempDir } from "#test/helpers/index";
 
 let dir: string;
 let piPath: string;
 const realAmbient = _authDeps.ambientAuthAvailable;
+const realAuthTimers = { setTimeout: _authDeps.setTimeout, clearTimeout: _authDeps.clearTimeout };
+const realExecDeps = { ..._execSourceDeps };
 const originalGlobalDir = process.env.NAX_GLOBAL_CONFIG_DIR;
 
 const PI_FILE = {
@@ -36,9 +39,12 @@ beforeEach(() => {
 
 afterEach(() => {
   _authDeps.ambientAuthAvailable = realAmbient;
+  Object.assign(_authDeps, realAuthTimers);
+  Object.assign(_execSourceDeps, realExecDeps);
   process.env.NAX_GLOBAL_CONFIG_DIR = originalGlobalDir;
   _resetCredentialStore();
   cleanupTempDir(dir);
+  mock.restore();
 });
 
 describe("importPiCredentials", () => {
@@ -135,6 +141,34 @@ describe("ambientShadows", () => {
 });
 
 describe("providersWithoutCredentials", () => {
+  test("a hung ambient sweep waits for its deadline, then reports nothing missing", async () => {
+    const clock = makeFakeClock();
+    _authDeps.setTimeout = clock.setTimeout;
+    _authDeps.clearTimeout = (id) => clock.clearTimeout(id as number);
+    const started = Promise.withResolvers<void>();
+    const probe = Promise.withResolvers<boolean>();
+    _authDeps.ambientAuthAvailable = () => {
+      started.resolve();
+      return probe.promise;
+    };
+    let settled = false;
+    const pending = providersWithoutCredentials(["anthropic"]).finally(() => {
+      settled = true;
+    });
+    await started.promise;
+    try {
+      expect(clock.pending()).toBe(1);
+      await clock.advance(1_999);
+      expect(settled).toBe(false);
+      await clock.advance(1);
+      expect(await pending).toEqual([]);
+      expect(clock.pending()).toBe(0);
+    } finally {
+      probe.resolve(false);
+      await pending;
+    }
+  });
+
   test("names a provider with neither a stored nor an ambient credential", async () => {
     await importPiCredentials({ from: piPath });
     _authDeps.ambientAuthAvailable = mock(async (id: string) => id === "openrouter");
@@ -228,14 +262,63 @@ describe("providersWithoutCredentials — reading through the store (US-004)", (
     });
   });
 
-  test("AC15: given auth.source exec and a helper that sleeps 2.5 seconds, it returns []", async () => {
+  test("AC15: a real configured exec helper supplies its provider's credential", async () => {
     const reply = JSON.stringify({ version: 1, kind: "api-key", key: "HELPER-KEY" });
-    execAuth(writeHelper(`sleep 2.5\nprintf '%s' '${reply}'`));
+    execAuth(writeHelper(`printf '%s' '${reply}'`));
     _authDeps.ambientAuthAvailable = mock(async () => false);
 
-    // Outside the 2000ms AMBIENT_PROBE_TIMEOUT_MS race, so a helper slower
-    // than that is still asked, and its answer is still "credentialed".
     expect(await providersWithoutCredentials(["anthropic"])).toEqual([]);
+  });
+
+  test("AC15: a helper read outliving the ambient deadline is awaited before returning", async () => {
+    const clock = makeFakeClock();
+    _authDeps.setTimeout = _execSourceDeps.setTimeout = clock.setTimeout;
+    _authDeps.clearTimeout = _execSourceDeps.clearTimeout = (id) => clock.clearTimeout(id as number);
+    const helper = writeHelper("exit 1");
+    execAuth(helper);
+    _authDeps.ambientAuthAvailable = mock(async () => false);
+    const started = Promise.withResolvers<void>();
+    const exit = Promise.withResolvers<number>();
+    let exitCode: number | null = null;
+    const requests: unknown[] = [];
+    const spawned = makeSpawnResult({
+      stdout: JSON.stringify({ version: 1, kind: "api-key", key: "HELPER-KEY" }),
+      hang: true,
+    });
+    if (!(spawned.stdout instanceof ReadableStream) || !(spawned.stderr instanceof ReadableStream)) {
+      throw new Error("credential helper fixture requires piped streams");
+    }
+    const proc = {
+      ...spawned,
+      stdout: spawned.stdout,
+      stderr: spawned.stderr,
+      stdin: { write: (request: string) => void requests.push(JSON.parse(request)), end: () => {} },
+      exited: exit.promise,
+      get exitCode() {
+        return exitCode;
+      },
+    };
+    spyOn(_execSourceDeps, "spawn").mockImplementation((argv) => {
+      expect(argv).toEqual([helper, "get"]);
+      clock.setTimeout(() => {
+        exitCode = 0;
+        exit.resolve(0);
+      }, 2_500);
+      started.resolve();
+      return proc;
+    });
+    let settled = false;
+    const pending = providersWithoutCredentials(["anthropic"]).finally(() => {
+      settled = true;
+    });
+    await started.promise;
+    await clock.advance(2_000);
+    expect(settled).toBe(false);
+    await clock.advance(500);
+    expect(await pending).toEqual([]);
+    expect(requests).toEqual([{ version: 1, providerId: "anthropic" }]);
+    expect(spawned.killed).toBe(false);
+    expect(clock.pending()).toBe(0);
   });
 
   test("AC16: invalid JSON in ~/.nax/credentials returns [] rather than CREDENTIAL_FILE_UNREADABLE", async () => {

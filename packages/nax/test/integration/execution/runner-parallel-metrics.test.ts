@@ -28,7 +28,9 @@ import type { RunParallelBatchResult } from "@/execution/parallel-batch";
 import { initLogger, resetLogger } from "@/logger";
 import type { PipelineEvent } from "@/pipeline/event-bus";
 import type { UserStory } from "@/prd/types";
-import { makeCtx, makePendingStory, makePrd } from "./_parallel-metrics-helpers";
+import { makeCtx, makePendingStory, makePrd, setupParallelMetricsFixtures } from "./_parallel-metrics-helpers";
+
+setupParallelMetricsFixtures();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Local helpers

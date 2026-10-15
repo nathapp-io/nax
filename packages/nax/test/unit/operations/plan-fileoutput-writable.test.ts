@@ -10,30 +10,36 @@
  *
  * This asserts the pair, which is the only form that catches the class.
  */
-import { describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { ToolScope } from "@nathapp/nax-agent";
 import { compileToolPolicy } from "@nathapp/nax-agent";
 import { buildCodingToolSupport } from "@nathapp/nax-agent/internal";
-import { makeNaxConfig } from "@test/helpers";
+import { cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
 import { resolveCodingToolSupport } from "@/agents/coding-tool-support-resolve";
 import { naxOwnedPathsPolicy } from "@/agents/nax-owned-writes";
 import type { PlanInteractiveInput, PlanRefineInput } from "@/operations";
 import { planInteractiveOp, planRefineOp } from "@/operations";
 
 const PATH_SCOPE: ToolScope = { pathFields: ["path"] };
-const root = mkdtempSync(join(tmpdir(), "nax-2115-"));
+let root: string;
 const OWNED_REL = ".nax/features/auth/prd.json";
-const outputPath = join(root, OWNED_REL);
+let outputPath: string;
+beforeEach(() => {
+  root = makeTempDir("nax-2115-");
+  outputPath = join(root, OWNED_REL);
+  planInput.outputPath = outputPath;
+  refineInput.outputPath = outputPath;
+});
+afterEach(() => cleanupTempDir(root));
 
 const planInput: PlanInteractiveInput = {
   specContent: "spec",
   codebaseContext: "context",
   featureName: "auth",
   branchName: "feat/auth",
-  outputPath,
+  outputPath: "",
 };
 
 const refineInput: PlanRefineInput = { ...planInput };
@@ -42,8 +48,8 @@ const refineInput: PlanRefineInput = { ...planInput };
  * The ops that actually name the guarded feature PRD.
  */
 const PRD_WRITING_OPS = [
-  ["plan-interactive", planInteractiveOp.tools ?? [], planInteractiveOp.fileOutput?.(planInput)],
-  ["plan-refine", planRefineOp.tools ?? [], planRefineOp.fileOutput?.(refineInput)],
+  ["plan-interactive", planInteractiveOp.tools ?? [], () => planInteractiveOp.fileOutput?.(planInput)],
+  ["plan-refine", planRefineOp.tools ?? [], () => planRefineOp.fileOutput?.(refineInput)],
 ] as const;
 
 describe("plan ops can write their own declared fileOutput (nax#2115)", () => {
@@ -52,7 +58,7 @@ describe("plan ops can write their own declared fileOutput (nax#2115)", () => {
 
     test(`${name} declares Write and names the PRD as its fileOutput`, () => {
       expect(tools).toContain("Write");
-      expect(declaredOutput).toBe(outputPath);
+      expect(declaredOutput()).toBe(outputPath);
     });
 
     test(`${name} may write that path under its own compiled policy, but not a PRD it does not own`, () => {

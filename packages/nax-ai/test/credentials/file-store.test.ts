@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -14,7 +14,7 @@ function tempPath(name = "credentials.json"): string {
 }
 
 afterEach(() => {
-  dirs.length = 0;
+  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
 const KEY: StoredCredential = { kind: "api-key", key: "s3cret", env: { REGION: "eu" } };

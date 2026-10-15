@@ -10,17 +10,18 @@ import { API } from "typescript/unstable/async";
  * v4 (path-frame follow-up) resolves the REAL type at each candidate site via
  * `typescript/unstable/async`'s Program/Checker, not a rendered-type-string
  * comparison. That needs a real `Project`, which needs a real file on disk
- * inside a tsconfig-included tree -- the API refused to attach a file outside
- * `tsconfig.test.json`'s `include` globs even when told it was "created"
- * (verified: `getSourceFile` returned undefined for a file under the OS temp
- * dir). `test/helpers/temp.ts`'s `withTempDir()` uses `os.tmpdir()` for
- * portability, which is exactly the directory that does NOT work here, so
- * this file manages its own scratch directory under the already-gitignored
- * `test/tmp/` instead (`.gitignore:59`) rather than reaching for that helper.
+ * inside a tsconfig-included tree. A fixture config extends the real package
+ * test config (including its aliases and compiler settings), but includes only
+ * these fixtures. Their imports still resolve to the genuine production types;
+ * unrelated test files do not need to be loaded or invalidated on each update.
+ * The scratch directory stays under the already-gitignored `test/tmp/` so it
+ * shares package resolution with the real tree.
  *
- * Each fixture gets its own file (`fixture-<n>.ts`) rather than one file
- * rewritten per test: a "created" file change is unambiguous, and a
- * "changed" one on a file the snapshot has not seen yet is not.
+ * Each distinct source gets its own immutable file (`fixture-<n>.ts`) rather
+ * than one file rewritten per test. The differential corpus is loaded together
+ * in beforeAll; repeated sources reuse their file, but every check still calls
+ * the real findViolations. This avoids rebuilding the project for unchanged
+ * fixtures without caching checker results.
  *
  * PREVIOUS REVISION'S WEAKNESS, FIXED HERE: most fixtures in the prior
  * version of this file declared `declare const story: UserStory;` with NO
@@ -40,10 +41,12 @@ import { API } from "typescript/unstable/async";
  */
 
 const FIXTURE_DIR = join(process.cwd(), "test", "tmp", "story-workdir-access-fixtures");
+const FIXTURE_CONFIG = join(FIXTURE_DIR, "tsconfig.json");
 
 let api: API;
 let project: Project;
 let fixtureCounter = 0;
+const fixtureFiles = new Map<string, { abs: string; rel: string }>();
 
 beforeAll(async () => {
   // A crashed prior run can leave stale fixtures in test/tmp/, which
@@ -51,8 +54,12 @@ beforeAll(async () => {
   // `bun run typecheck` before a single test runs. Sweep before, not just
   // after (previous revision's weakness #3).
   await rm(FIXTURE_DIR, { recursive: true, force: true });
+  fixtureFiles.clear();
+  fixtureCounter = 0;
   api = new API({ cwd: process.cwd() });
-  await Bun.write(join(FIXTURE_DIR, ".keep"), "");
+  await Bun.write(FIXTURE_CONFIG, JSON.stringify({ extends: "../../../tsconfig.test.json", include: ["./*.ts"] }));
+  const files = await Promise.all(CORPUS.map((entry) => writeFixture(entry.source)));
+  await updateProject(files.map((file) => file.abs));
 });
 
 afterAll(async () => {
@@ -60,8 +67,8 @@ afterAll(async () => {
   await rm(FIXTURE_DIR, { recursive: true, force: true });
 });
 
-/** Write `source` to a fresh fixture file and return its violations. */
-async function check(source: string): Promise<Violation[]> {
+/** Write a distinct source once; each file remains an isolated module. */
+async function writeFixture(source: string): Promise<{ abs: string; rel: string }> {
   fixtureCounter++;
   const abs = join(FIXTURE_DIR, `fixture-${fixtureCounter}.ts`);
   const rel = `test/tmp/story-workdir-access-fixtures/fixture-${fixtureCounter}.ts`;
@@ -75,14 +82,29 @@ async function check(source: string): Promise<Violation[]> {
   // `import` is already a module and does not need it.
   const isolated = /^\s*(export|import)\b/m.test(source) ? source : `${source}\nexport {};`;
   await Bun.write(abs, isolated);
+  const file = { abs, rel };
+  fixtureFiles.set(source, file);
+  return file;
+}
+
+async function updateProject(created: string[]): Promise<void> {
   const snapshot = await api.updateSnapshot({
-    openProjects: ["tsconfig.test.json"],
-    fileChanges: { created: [abs] },
+    openProjects: [FIXTURE_CONFIG],
+    fileChanges: { created },
   });
-  const p = snapshot.getProject("tsconfig.test.json");
-  if (p === undefined) throw new Error("tsconfig.test.json project failed to load");
+  const p = snapshot.getProject(FIXTURE_CONFIG);
+  if (p === undefined) throw new Error("fixture TypeScript project failed to load");
   project = p;
-  return findViolations(project, abs, rel);
+}
+
+/** Reuse immutable inputs, never the checker's answer. */
+async function check(source: string): Promise<Violation[]> {
+  let file = fixtureFiles.get(source);
+  if (!file) {
+    file = await writeFixture(source);
+    await updateProject([file.abs]);
+  }
+  return findViolations(project, file.abs, file.rel);
 }
 
 /** The two real imports every story-typed fixture below needs. */

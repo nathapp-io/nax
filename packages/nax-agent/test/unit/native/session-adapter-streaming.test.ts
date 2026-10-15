@@ -5,19 +5,45 @@
  * chunks its reply.
  */
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { AgentStreamEvent, OpenSessionOpts, SessionModel, TurnResult } from "@nathapp/nax-agent";
 import { _clientDeps, _resetNativeClient, saveTranscript } from "@nathapp/nax-agent/internal";
 import type { Client, CompleteResult, ProtocolEvent, ResolvedModel } from "@nathapp/nax-ai";
 import { NativeSessionAdapter } from "#src/native/session-adapter";
-import { eventsFromResult } from "#test/helpers/index";
+import { cleanupTempDir, eventsFromResult, makeTempDir } from "#test/helpers/index";
+
+const tempDirs: string[] = [];
+const sessionCleanups: (() => Promise<void>)[] = [];
+
+function makeTestDir(prefix: string): string {
+  const dir = makeTempDir(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+
+async function closeTestSessions(): Promise<void> {
+  const closed = await Promise.allSettled(sessionCleanups.splice(0).map(async (close) => close()));
+  const errors = closed.flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
+  if (errors.length > 0) throw new AggregateError(errors, "Failed to close test sessions");
+}
+
+async function openTestSession(
+  adapter: NativeSessionAdapter,
+  ...args: Parameters<NativeSessionAdapter["openSession"]>
+) {
+  const handle = await adapter.openSession(...args);
+  sessionCleanups.push(() => adapter.closeSession(handle));
+  return handle;
+}
 
 const REAL_BUILD = _clientDeps.build;
-afterEach(() => {
-  _clientDeps.build = REAL_BUILD;
-  _resetNativeClient();
+afterEach(async () => {
+  try {
+    await closeTestSessions();
+  } finally {
+    for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+    _clientDeps.build = REAL_BUILD;
+    _resetNativeClient();
+  }
 });
 
 const model: ResolvedModel = {
@@ -60,9 +86,9 @@ function streamingClient(events: () => readonly ProtocolEvent[], counts: Counts)
 }
 
 async function open(adapter: NativeSessionAdapter, name: string, over: Partial<OpenSessionOpts> = {}) {
-  const dir = await mkdtemp(join(tmpdir(), `nax-adapter-streaming-${name}-`));
+  const dir = makeTestDir(`nax-adapter-streaming-${name}-`);
   const activity: AgentStreamEvent[] = [];
-  const handle = await adapter.openSession(name, {
+  const handle = await openTestSession(adapter, name, {
     agentName: "native",
     workdir: dir,
     resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },

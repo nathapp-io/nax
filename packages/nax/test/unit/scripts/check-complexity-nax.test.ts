@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
 import { deriveStoryWorktreeId, storyWorktreePath } from "@/worktree";
@@ -19,70 +19,92 @@ describe("biome.json", () => {
 });
 
 /**
- * End to end: the real script against the real tree, with a fixture baseline
- * derived from the committed one. Pins the exit codes and the refusal to raise,
- * which the pure functions above cannot see.
+ * End to end: keep one real-tree baseline check, then exercise ratchet failures
+ * against a tiny package with the real script and Biome. Pins CLI exit codes and
+ * refusal to raise or overwrite a baseline without repeatedly scanning nax.
  */
 describe("check-complexity script", () => {
   const REPO = join(import.meta.dir, "..", "..", "..");
   const SCRIPT = join(REPO, "..", "repo-tooling", "scripts", "check-complexity.ts");
-  const committed: { byFile: Record<string, Record<string, number>> } = JSON.parse(
-    readFileSync(join(REPO, "scripts", "baselines", "complexity-baseline.json"), "utf8"),
-  );
-  const [probeFile, probeScores] = Object.entries(committed.byFile)[0] ?? ["", {}];
-  const [probeLabel, worst] = Object.entries(probeScores)[0] ?? ["", 0];
+  const BASELINE = join(REPO, "scripts", "baselines", "complexity-baseline.json");
+  const PROBE_FILE = "src/probe.ts";
+  // Six nested ifs contribute 1 + 2 + 3 + 4 + 5 + 6 = 21, above the strict limit of 20.
+  const PROBE_SCORE = 21;
   let dir: string;
 
   beforeAll(() => {
     dir = makeTempDir();
+    mkdirSync(join(dir, "src"));
+    symlinkSync(join(REPO, "node_modules"), join(dir, "node_modules"), "dir");
+    writeFileSync(join(dir, "biome.json"), JSON.stringify({ files: { includes: ["**"] } }));
+    writeFileSync(
+      join(dir, PROBE_FILE),
+      `export function probe(value: number): number {
+  if (value > 0) {
+    if (value > 1) {
+      if (value > 2) {
+        if (value > 3) {
+          if (value > 4) {
+            if (value > 5) {
+              return value;
+            }
+          }
+        }
+      }
+    }
+  }
+  return 0;
+}
+`,
+    );
   });
   afterAll(() => cleanupTempDir(dir));
 
-  /** Writes a baseline where `probeFile`'s worst function is recorded at `value`. */
+  /** Writes a baseline for the fixture's single over-limit function. */
   function fixture(name: string, value: number): string {
     const path = join(dir, name);
-    const byFile = { ...committed.byFile, [probeFile]: { ...probeScores, [probeLabel]: value } };
-    writeFileSync(path, JSON.stringify({ ...committed, byFile }));
+    writeFileSync(path, JSON.stringify({ byFile: { [PROBE_FILE]: { probe: value } } }));
     return path;
   }
 
-  async function run(...args: string[]) {
-    const proc = Bun.spawn(["bun", SCRIPT, ...args], { cwd: REPO, stdout: "pipe", stderr: "pipe" });
+  async function run(packageRoot: string, ...args: string[]) {
+    const proc = Bun.spawn(["bun", SCRIPT, `--package=${packageRoot}`, ...args], {
+      cwd: packageRoot,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
     const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
     return { exitCode: await proc.exited, stdout, stderr };
   }
 
-  // The script runs biome against the full source tree each invocation; the 6
-  // scenarios are independent of each other (unique fixture files, no shared
-  // state mutation), so run them concurrently to collapse ~2.8 s of serial
-  // biome scans into ~470 ms of wall-clock.
+  // Fixture baselines have unique paths, so the scenarios can run concurrently.
   test.concurrent("passes against a baseline that matches the tree", async () => {
-    const result = await run(`--baseline=${fixture("match.json", worst)}`);
+    const result = await run(REPO, `--baseline=${BASELINE}`);
 
     expect(result.stderr).toBe("");
     expect(result.exitCode).toBe(0);
   }, 30_000);
 
   test.concurrent("fails when a function scores higher than its baseline", async () => {
-    const result = await run(`--baseline=${fixture("grown.json", worst - 1)}`);
+    const result = await run(dir, `--baseline=${fixture("grown.json", PROBE_SCORE - 1)}`);
 
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("ratchet breached");
-    expect(result.stderr).toContain(probeFile);
+    expect(result.stderr).toContain(`${PROBE_FILE}: probe ${PROBE_SCORE} (baseline probe ${PROBE_SCORE - 1})`);
   }, 30_000);
 
   test.concurrent("fails when the baseline is looser than the tree, so the slack cannot be re-spent", async () => {
-    const result = await run(`--baseline=${fixture("stale.json", worst + 1)}`);
+    const result = await run(dir, `--baseline=${fixture("stale.json", PROBE_SCORE + 1)}`);
 
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("baseline is stale");
   }, 30_000);
 
   test.concurrent("--update-baseline refuses to raise a baseline and leaves the file untouched", async () => {
-    const path = fixture("refuse.json", worst - 1);
+    const path = fixture("refuse.json", PROBE_SCORE - 1);
     const before = readFileSync(path, "utf8");
 
-    const result = await run(`--baseline=${path}`, "--update-baseline");
+    const result = await run(dir, `--baseline=${path}`, "--update-baseline");
 
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("only ever goes down");
@@ -90,17 +112,17 @@ describe("check-complexity script", () => {
   }, 30_000);
 
   test.concurrent("fails when the baseline file is missing", async () => {
-    const result = await run(`--baseline=${join(dir, "absent.json")}`);
+    const result = await run(dir, `--baseline=${join(dir, "absent.json")}`);
 
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("missing");
   }, 30_000);
 
   test.concurrent("--init-baseline refuses to overwrite an existing baseline", async () => {
-    const path = fixture("existing.json", worst);
+    const path = fixture("existing.json", PROBE_SCORE);
     const before = readFileSync(path, "utf8");
 
-    const result = await run(`--baseline=${path}`, "--init-baseline");
+    const result = await run(dir, `--baseline=${path}`, "--init-baseline");
 
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("never overwrites");

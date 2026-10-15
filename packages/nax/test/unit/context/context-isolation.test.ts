@@ -3,13 +3,25 @@
  * Tests for context builder module — isolation, test coverage scoping, and analysis injection
  */
 
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { makeNaxConfig, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
 import { buildContext, formatContextAsMarkdown } from "@/context";
 import type { ContextBudget, StoryContext } from "@/context/types";
 import type { PRD, UserStory } from "@/prd";
+
+const tempDirs: string[] = [];
+
+function makeTestDir(prefix: string): string {
+  const dir = makeTempDir(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+});
 
 // Helper to create test PRD
 const createTestPRD = (stories: Partial<UserStory>[]): PRD => ({
@@ -40,7 +52,7 @@ const createTestPRD = (stories: Partial<UserStory>[]): PRD => ({
 describe("Context Builder", () => {
   describe("test coverage scoping", () => {
     test("should scope test coverage to story contextFiles", async () => {
-      const tempDir = makeTempDir("nax-test-");
+      const tempDir = makeTestDir("nax-test-");
 
       try {
         const testDir = path.join(tempDir, "test");
@@ -102,7 +114,7 @@ describe("Context Builder", () => {
     });
 
     test("should scan all tests when scopeToStory=false", async () => {
-      const tempDir = makeTempDir("nax-test-");
+      const tempDir = makeTestDir("nax-test-");
 
       try {
         const testDir = path.join(tempDir, "test");
@@ -155,7 +167,7 @@ describe("Context Builder", () => {
     });
 
     test("should fall back to full scan when no contextFiles provided", async () => {
-      const tempDir = makeTempDir("nax-test-");
+      const tempDir = makeTestDir("nax-test-");
 
       try {
         const testDir = path.join(tempDir, "test");
@@ -412,7 +424,7 @@ describe("Context Builder", () => {
   // BUG-006
   describe("context auto-detection when contextFiles is empty", () => {
     test("should auto-detect files when contextFiles is empty", async () => {
-      const tempDir = makeTempDir("nax-test-");
+      const tempDir = makeTestDir("nax-test-");
 
       try {
         await Bun.spawn(["git", "init"], { cwd: tempDir }).exited;
@@ -476,7 +488,7 @@ describe("Context Builder", () => {
     });
 
     test("should skip auto-detection when contextFiles is provided", async () => {
-      const tempDir = makeTempDir("nax-test-");
+      const tempDir = makeTestDir("nax-test-");
 
       try {
         await Bun.spawn(["git", "init"], { cwd: tempDir }).exited;
@@ -536,7 +548,7 @@ describe("Context Builder", () => {
     });
 
     test("should skip auto-detection when disabled in config", async () => {
-      const tempDir = makeTempDir("nax-test-");
+      const tempDir = makeTestDir("nax-test-");
 
       try {
         await Bun.spawn(["git", "init"], { cwd: tempDir }).exited;
@@ -592,7 +604,7 @@ describe("Context Builder", () => {
     });
 
     test("should handle auto-detection failure gracefully", async () => {
-      const tempDir = makeTempDir("nax-test-");
+      const tempDir = makeTestDir("nax-test-");
 
       try {
         await fs.mkdir(path.join(tempDir, "src"), { recursive: true });

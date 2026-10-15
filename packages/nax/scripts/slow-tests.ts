@@ -2,11 +2,14 @@
 /**
  * slow-tests.ts — identify slow tests from bun JUnit XML output
  *
- * Usage:
- *   bun test --reporter=junit 2>/dev/null | bun run scripts/slow-tests.ts
- *   bun test --reporter=junit 2>/dev/null | bun run scripts/slow-tests.ts --top=30
- *   bun test --reporter=junit 2>/dev/null | bun run scripts/slow-tests.ts --min=500
- *   bun run scripts/slow-tests.ts test-results.xml --top=20 --min=100
+ * Collect timings from the package directory so Bun loads its config/preload:
+ *   cd packages/nax
+ *   timeout 240 bun test ./test/unit/ --reporter=junit --reporter-outfile=/tmp/nax-unit.xml
+ *   bun scripts/slow-tests.ts /tmp/nax-unit.xml --top=30 --min=100
+ *
+ * From the monorepo root, parse an existing report with:
+ *   bun packages/nax/scripts/slow-tests.ts /tmp/nax-unit.xml --top=20 --min=500
+ * XML may also be piped to stdin. This script parses reports; it does not run tests.
  *
  * Flags:
  *   --top=N     Show top N slowest tests (default: 20)
@@ -76,9 +79,9 @@ function parseJUnit(xml: string): TestCase[] {
 
     const durationMs = Math.round(parseFloat(timeStr) * 1000);
 
-    // Derive file from classname (bun uses file path as classname)
-    // e.g. "test/unit/agents/acp/adapter.test.ts" or "test > unit > ..."
-    const file = classnameToFile(classname);
+    // Current Bun uses classname for the describe hierarchy and file for the path.
+    // Older reports used the path as classname, so retain that fallback.
+    const file = extractAttr(attrs, "file") || classnameToFile(classname);
 
     // Determine status
     let status: TestCase["status"] = "pass";
@@ -110,7 +113,7 @@ function classnameToFile(classname: string): string {
   // Strip any leading path prefix noise
   if (classname.includes(".test.ts") || classname.includes(".spec.ts")) {
     // Extract just the path portion
-    const m = classname.match(/((?:test|src)\/[\w/.-]+\.(?:test|spec)\.ts)/);
+    const m = classname.match(/((?:packages\/[\w.-]+\/)?(?:test|src)\/[\w/.-]+\.(?:test|spec)\.tsx?)/);
     if (m) return m[1];
   }
   // Fallback: truncate to last 60 chars if too long
@@ -184,7 +187,9 @@ if (!xml.trim()) {
 
 if (!xml.includes("<testcase")) {
   console.error("Error: input does not appear to be JUnit XML (no <testcase> elements found).");
-  console.error("Make sure to run: bun test --reporter=junit 2>/dev/null | bun run scripts/slow-tests.ts");
+  console.error(
+    "Collect a report from the package directory with bun test ./test/unit/ --reporter=junit --reporter-outfile=<xml>.",
+  );
   process.exit(1);
 }
 

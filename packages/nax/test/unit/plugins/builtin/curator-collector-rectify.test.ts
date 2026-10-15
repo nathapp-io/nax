@@ -2,16 +2,27 @@
  * The rectify-cycle observation (curator H3) is built from the rectification
  * loop's real per-cycle summary line.
  */
-import { describe, expect, test } from "bun:test";
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { afterEach, describe, expect, test } from "bun:test";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { makeNaxConfig } from "@test/helpers";
+import { cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
 import type { CuratorPostRunContext } from "@/plugins/builtin/curator";
 import { collectObservations } from "@/plugins/builtin/curator";
 
+const tempDirs: string[] = [];
+
+function makeTestDir(prefix: string): string {
+  const dir = makeTempDir(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+});
+
 async function runWithLogEntries(entries: Record<string, unknown>[]) {
-  const root = await mkdtemp(join(tmpdir(), "curator-rectify-"));
+  const root = makeTestDir("curator-rectify-");
   const logFilePath = join(root, "run.jsonl");
   await writeFile(logFilePath, `${entries.map((e) => JSON.stringify(e)).join("\n")}\n`);
   const context: CuratorPostRunContext = {

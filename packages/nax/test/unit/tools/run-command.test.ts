@@ -1,6 +1,5 @@
-import { describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, realpath, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdir, realpath, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   compileToolPolicy,
@@ -8,9 +7,19 @@ import {
   createCodingToolRuntime,
   substituteCommand,
 } from "@nathapp/nax-agent/internal";
-import { withTempDir } from "@test/helpers";
+import { cleanupTempDir, makeTempDir, withTempDir } from "@test/helpers";
 import { runQualityCommand } from "@/quality";
 import { buildScopedCommand } from "@/test-runners/scoped-selection";
+
+const tempDirs: string[] = [];
+function makeTestDir(prefix: string): string {
+  const dir = makeTempDir(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+});
 
 /** Production wires nax's quality runner (S1 spec port 7); every tool here gets it. */
 const createRunCommandTool = (...[declared, opts]: Parameters<typeof createBareRunCommandTool>) =>
@@ -689,8 +698,8 @@ describe("RunCommand — target is argv-only", () => {
 // package's declared "test" into a whole-repo run.
 describe("run() executes declared commands at commandCwd, not ctx.root", () => {
   test("commandCwd wins over ctx.root when both are supplied", async () => {
-    const containmentRoot = await realpath(await mkdtemp(join(tmpdir(), "nax-runcmd-root-")));
-    const packageCwd = await realpath(await mkdtemp(join(tmpdir(), "nax-runcmd-pkg-")));
+    const containmentRoot = await realpath(makeTestDir("nax-runcmd-root-"));
+    const packageCwd = await realpath(makeTestDir("nax-runcmd-pkg-"));
     const tool = createRunCommandTool(new Map([["where", "pwd"]]), { commandCwd: packageCwd });
 
     const result = await tool.run(
@@ -704,7 +713,7 @@ describe("run() executes declared commands at commandCwd, not ctx.root", () => {
   });
 
   test("falls back to ctx.root when commandCwd is not supplied (back-compat)", async () => {
-    const containmentRoot = await realpath(await mkdtemp(join(tmpdir(), "nax-runcmd-fallback-")));
+    const containmentRoot = await realpath(makeTestDir("nax-runcmd-fallback-"));
     const tool = createRunCommandTool(new Map([["where", "pwd"]]));
 
     const result = await tool.run(

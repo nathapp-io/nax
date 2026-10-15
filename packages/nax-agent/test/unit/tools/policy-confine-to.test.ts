@@ -1,3 +1,4 @@
+import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
 /**
  * Tool-declared path confinement (`ToolScope.confineTo`).
  *
@@ -14,19 +15,30 @@
  * absolute-path tests.
  */
 
-import { beforeAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ToolScope } from "#src/tools/index";
 import { compileToolPolicy, resolveWithin } from "#src/tools/index";
 import { EMPTY_OWNED_PATHS_POLICY } from "#src/tools/owned-paths";
 
+const tempDirs: string[] = [];
+
+function makeTestDir(prefix: string): string {
+  const dir = makeTempDir(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterAll(() => {
+  for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+});
+
 let root: string;
 let outside: string;
 
 beforeAll(() => {
-  const base = mkdtempSync(join(tmpdir(), "nax-policy-confine-to-"));
+  const base = makeTestDir("nax-policy-confine-to-");
   root = join(base, "repo");
   const scratchpad = join(root, ".nax", "scratchpad");
   outside = join(base, "elsewhere");
@@ -370,7 +382,7 @@ describe("compileToolPolicy — root move retires the execTouchedPaths carve-out
   let rootMoveOutside: string;
 
   beforeAll(() => {
-    const base = mkdtempSync(join(tmpdir(), "nax-policy-root-move-"));
+    const base = makeTestDir("nax-policy-root-move-");
     rootMoveRoot = join(base, "repo");
     rootMoveOutside = join(base, "elsewhere");
     mkdirSync(rootMoveRoot, { recursive: true });

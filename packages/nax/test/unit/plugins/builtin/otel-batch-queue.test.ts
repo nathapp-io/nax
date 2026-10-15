@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, jest, test } from "bun:test";
 import { waitForCondition, withTimerSpy, withWarnSpy } from "@test/helpers";
 import { type BatchQueue, createBatchQueue } from "@/plugins/builtin/otel-reporter/batch-queue";
 
@@ -50,8 +50,16 @@ function track(queue: BatchQueue<Span>): BatchQueue<Span> {
   return queue;
 }
 
+beforeEach(() => {
+  jest.useFakeTimers();
+});
+
 afterEach(() => {
-  for (const q of liveQueues.splice(0)) q.teardown();
+  try {
+    for (const q of liveQueues.splice(0)) q.teardown();
+  } finally {
+    jest.useRealTimers();
+  }
 });
 
 describe("createBatchQueue", () => {
@@ -78,10 +86,11 @@ describe("createBatchQueue", () => {
     const queue = track(createBatchQueue<Span>({ maxBatchSize: 64, flushIntervalMs: 100, maxQueueSize: 2048, send }));
 
     for (const s of makeSpans(10)) queue.enqueue(s);
-    // boundary: nothing exported before the interval elapses
-    expect(calls.length).toBe(0);
+    jest.advanceTimersByTime(99);
+    expect(calls).toHaveLength(0);
 
-    await waitForCondition(() => calls.length === 1, 1_000, 10);
+    jest.advanceTimersByTime(1);
+    expect(calls).toHaveLength(1);
     expect(calls[0]).toHaveLength(10);
   });
 
@@ -224,6 +233,20 @@ describe("createBatchQueue", () => {
 
   test("AC11: after teardown no export is issued even once flushIntervalMs has elapsed", async () => {
     const { calls, send } = capturingSend(true);
+    const queue = track(createBatchQueue<Span>({ maxBatchSize: 64, flushIntervalMs: 100, maxQueueSize: 2048, send }));
+    for (const s of makeSpans(3)) queue.enqueue(s);
+    jest.advanceTimersByTime(100);
+    expect(calls).toHaveLength(1);
+
+    for (const s of makeSpans(3, 100)) queue.enqueue(s);
+    queue.teardown();
+    jest.advanceTimersByTime(300);
+    expect(calls).toHaveLength(1);
+  });
+
+  test("AC11: teardown clears the real timer handle", async () => {
+    jest.useRealTimers();
+    const { calls, send } = capturingSend(true);
 
     const { result: queue, leaked } = await withTimerSpy(async () => {
       const q = createBatchQueue<Span>({ maxBatchSize: 64, flushIntervalMs: 100, maxQueueSize: 2048, send });
@@ -235,7 +258,6 @@ describe("createBatchQueue", () => {
 
     expect(leaked).toHaveLength(0); // teardown clears the re-armed flush timer
 
-    await new Promise((resolve) => setTimeout(resolve, 300));
     expect(calls).toHaveLength(0);
   });
 

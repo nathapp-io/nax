@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import {
   buildGitArgv,
@@ -13,6 +12,18 @@ import {
 } from "@nathapp/nax-agent";
 import { _gitDeps, GIT_DIFF_FILTERS } from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeTempDir, TEST_GIT_EXCLUDE_PATHSPECS, testProtectedPaths } from "#test/helpers/index";
+
+const tempDirs: string[] = [];
+
+function makeTestDir(prefix: string): string {
+  const dir = makeTempDir(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+});
 
 const GIT_EXCLUDES = [...TEST_GIT_EXCLUDE_PATHSPECS];
 
@@ -174,7 +185,7 @@ describe("gitTool — the default view hides nested and root .nax run state", ()
 
   /** Commits the three seed files, then dirties all three. */
   async function makeRepo(): Promise<string> {
-    const repo = mkdtempSync(join(tmpdir(), "nax-git-nax-exclude-"));
+    const repo = makeTestDir("nax-git-nax-exclude-");
     repos.push(repo);
     for (const relativePath of [...NAX_PATHS, "src/a.ts"]) {
       const full = join(repo, relativePath);
@@ -381,7 +392,7 @@ describe("gitTool — the permitted root bounds the repository view", () => {
   const outside = "SECRET-DATA";
 
   async function makeRepo(): Promise<{ repo: string; root: string }> {
-    const repo = mkdtempSync(join(tmpdir(), "nax-git-bound-"));
+    const repo = makeTestDir("nax-git-bound-");
     mkdirSync(join(repo, "inside", "sub"), { recursive: true });
     mkdirSync(join(repo, "outside"), { recursive: true });
     writeFileSync(join(repo, "inside", "sub", "f.txt"), "public\n");
@@ -459,7 +470,7 @@ describe("gitTool — the permitted root bounds the repository view", () => {
 describe("gitTool — output paths are repo-rooted when the root is the repository root", () => {
   async function makeRepoWithFileInPackage(opts?: { fileName?: string }): Promise<{ repo: string; root: string }> {
     const fileName = opts?.fileName ?? "f.txt";
-    const repo = mkdtempSync(join(tmpdir(), "nax-git-frame-"));
+    const repo = makeTestDir("nax-git-frame-");
     mkdirSync(join(repo, "packages", "pkg-a"), { recursive: true });
     writeFileSync(join(repo, "packages", "pkg-a", fileName), "one\n");
     const run = (args: string[]) => _gitDeps.spawn(["git", ...args], { cwd: repo, stdout: "pipe", stderr: "pipe" });
@@ -501,7 +512,7 @@ describe("gitTool — output paths are repo-rooted when the root is the reposito
   });
 
   test("is a no-op when the permitted root is the repository root", async () => {
-    const repo = mkdtempSync(join(tmpdir(), "nax-git-frame-root-"));
+    const repo = makeTestDir("nax-git-frame-root-");
     writeFileSync(join(repo, "f.txt"), "one\n");
     const run = (args: string[]) => _gitDeps.spawn(["git", ...args], { cwd: repo, stdout: "pipe", stderr: "pipe" });
     await run(["init", "-q"]).exited;

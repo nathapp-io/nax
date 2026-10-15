@@ -1,28 +1,37 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, jest, test } from "bun:test";
 import { connectMcp } from "#src/mcp/connect";
 import { McpCallError, McpConnectError } from "#src/mcp/errors";
 import { _mcpTransportDeps, type TransportHandle } from "#src/mcp/transport";
 import type { McpTransportConfig } from "#src/mcp/types";
 import { assertCaughtInstanceOf } from "#test/helpers/index";
-import { type FixtureTool, inMemoryServer } from "#test/helpers/mcp-servers";
+import { type FixtureCtx, type FixtureTool, inMemoryServer } from "#test/helpers/mcp-servers";
 
 const CONFIG: McpTransportConfig = { kind: "http", url: "http://fixture.invalid/mcp", headers: {} };
 const OPTS = { signal: new AbortController().signal, timeoutMs: 2000, clientInfo: { name: "t", version: "0" } };
 const CALL = { signal: new AbortController().signal, timeoutMs: 2000, maxBytes: 10_000 };
 
 const original = _mcpTransportDeps.create;
-afterEach(() => {
-  _mcpTransportDeps.create = original;
+const cleanups: (() => Promise<void>)[] = [];
+afterEach(async () => {
+  try {
+    await Promise.all(cleanups.splice(0).map((close) => close()));
+  } finally {
+    _mcpTransportDeps.create = original;
+    jest.useRealTimers();
+  }
 });
 
 async function connectTo(tools: readonly FixtureTool[], pageSize?: number, instructions?: string) {
   const fixture = await inMemoryServer(tools, pageSize, instructions);
+  cleanups.push(() => fixture.server.close());
   _mcpTransportDeps.create = (): TransportHandle => ({
     transport: fixture.clientTransport,
     pid: () => null,
     stderrTail: () => "",
   });
-  return { fixture, connection: await connectMcp(CONFIG, OPTS) };
+  const connection = await connectMcp(CONFIG, OPTS);
+  cleanups.push(() => connection.close());
+  return { fixture, connection };
 }
 
 describe("connectMcp", () => {
@@ -95,26 +104,76 @@ describe("connectMcp", () => {
   });
 
   test("a call past timeoutMs throws McpCallError", async () => {
-    const { connection } = await connectTo([{ name: "hang", run: () => new Promise(() => {}) }]);
-    await expect(connection.call("hang", {}, { ...CALL, timeoutMs: 50 })).rejects.toBeInstanceOf(McpCallError);
+    const started = Promise.withResolvers<void>();
+    const { connection } = await connectTo([
+      {
+        name: "hang",
+        run: () => {
+          started.resolve();
+          return new Promise(() => {});
+        },
+      },
+    ]);
+    // The SDK owns the request timers and has no injectable clock seam.
+    jest.useFakeTimers();
+    let settled = false;
+    const pending = connection.call("hang", {}, { ...CALL, timeoutMs: 50 }).catch((error: unknown) => {
+      settled = true;
+      return error;
+    });
+    await started.promise;
+    jest.advanceTimersByTime(49);
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    expect(jest.getTimerCount()).toBeGreaterThan(0);
+    jest.advanceTimersByTime(1);
+    const error = await pending;
+    assertCaughtInstanceOf(error, McpCallError);
+    expect(error.message).toContain("Request timed out");
     await connection.close();
+    expect(jest.getTimerCount()).toBe(0);
   });
 
   test("progress notifications keep a slow call alive past timeoutMs", async () => {
+    const started = Promise.withResolvers<FixtureCtx>();
+    const finish = Promise.withResolvers<void>();
     const { connection } = await connectTo([
       {
         name: "slow",
         run: async (_args, ctx) => {
-          for (let i = 1; i <= 3; i += 1) {
-            await new Promise((resolve) => setTimeout(resolve, 100));
-            await ctx.progress(i);
-          }
+          started.resolve(ctx);
+          await finish.promise;
           return { content: [{ type: "text", text: "done" }] };
         },
       },
     ]);
-    expect((await connection.call("slow", {}, { ...CALL, timeoutMs: 150 })).text).toBe("done");
+    jest.useFakeTimers();
+    let settled = false;
+    const pending = connection.call("slow", {}, { ...CALL, timeoutMs: 150 }).then(
+      (result) => {
+        settled = true;
+        return result;
+      },
+      (error: unknown) => {
+        settled = true;
+        return error;
+      },
+    );
+    const ctx = await started.promise;
+    try {
+      for (let i = 1; i <= 3; i += 1) {
+        jest.advanceTimersByTime(100);
+        // Await delivery through the real SDK transport before moving time again.
+        await ctx.progress(i);
+        expect(settled).toBe(false);
+        expect(jest.getTimerCount()).toBeGreaterThan(0);
+      }
+    } finally {
+      finish.resolve();
+    }
+    expect(await pending).toEqual({ text: "done", isError: false, bytesBeforeCap: 4 });
     await connection.close();
+    expect(jest.getTimerCount()).toBe(0);
   });
 
   test("a call after close throws McpCallError", async () => {
@@ -127,19 +186,39 @@ describe("connectMcp", () => {
   test("a server that never answers initialize fails with McpConnectError within timeoutMs", async () => {
     const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    cleanups.push(
+      () => clientTransport.close(),
+      () => serverTransport.close(),
+    );
     await serverTransport.start(); // accepts messages, never replies
+    const started = Promise.withResolvers<void>();
+    serverTransport.onmessage = (message) => {
+      if ("method" in message && message.method === "initialize") started.resolve();
+    };
     _mcpTransportDeps.create = () => ({ transport: clientTransport, pid: () => null, stderrTail: () => "" });
-    const started = Date.now();
-    const error = await connectMcp(CONFIG, { ...OPTS, timeoutMs: 100 }).catch((e: unknown) => e);
+    jest.useFakeTimers();
+    let settled = false;
+    const pending = connectMcp(CONFIG, { ...OPTS, timeoutMs: 100 }).catch((error: unknown) => {
+      settled = true;
+      return error;
+    });
+    await started.promise;
+    jest.advanceTimersByTime(99);
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    // Advance the SDK request timeout even on runtimes with native abort timers.
+    jest.advanceTimersByTime(1);
+    const error = await pending;
     assertCaughtInstanceOf(error, McpConnectError);
     expect(error.message).toContain("timed out after 100 ms");
-    expect(Date.now() - started).toBeLessThan(1500);
+    expect(jest.getTimerCount()).toBe(0);
   });
 
   test("an already-aborted signal fails connect with McpConnectError", async () => {
     const controller = new AbortController();
     controller.abort();
     const fixture = await inMemoryServer([]);
+    cleanups.push(() => fixture.server.close());
     _mcpTransportDeps.create = () => ({ transport: fixture.clientTransport, pid: () => null, stderrTail: () => "" });
     await expect(connectMcp(CONFIG, { ...OPTS, signal: controller.signal })).rejects.toBeInstanceOf(McpConnectError);
   });
