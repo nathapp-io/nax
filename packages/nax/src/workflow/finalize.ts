@@ -416,6 +416,7 @@ export async function publish(fc: FeatureContext, input: PublishInput): Promise<
     // US-003 (nax#2532): a review that did not read every changed file is an incomplete review, so
     // its reason keeps the PR a draft and the advisor is never asked (reasons non-empty).
     ...(input.record.reviewUnread ? { branchReviewUnread: input.record.reviewUnread } : {}),
+    ...(input.record.costLimited ? { costLimited: true } : {}),
   };
   const dirty = await dirtyTreeReasons(fc);
   const base = [...readinessReasons({ ...facts, ci: "skipped" }), ...dirty];

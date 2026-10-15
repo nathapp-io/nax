@@ -4,6 +4,7 @@ import { createLiveWorkflowAdvisor, FEATURE_SCOPE } from "./advisor-live";
 import { flaggedCount } from "./approval";
 import { runBranchFix } from "./branch-fix";
 import { runBranchReReview, runBranchReview, writeFeatureArtifact } from "./branch-review";
+import { costLimitReached } from "./cost-limit";
 import type { FeatureContext, WorkflowFeatureInput } from "./feature-context";
 import type { FeatureEnv, FeatureSink, FeatureSteps } from "./feature-machine";
 import { publish } from "./finalize";
@@ -102,6 +103,8 @@ export function buildFeatureEnv(fc: FeatureContext, input: WorkflowFeatureInput,
     facts: { stories: ctx.stories, parked: ctx.ledgerItems.parked, cannotVerify: ctx.ledgerItems.cannotVerify },
     record: ctx.record,
     aborted: () => fc.runSignal?.aborted === true,
+    // nax#2550: the story loop's cost check, so no agent step of the feature workflow runs past the limit.
+    costExceeded: () => costLimitReached(fc.config.execution.costLimit, fc.callCtx.runtime),
     now: () => _workflowDeps.now(),
     limits: {
       maxBranchFixRounds: fc.workflow.maxBranchFixRounds,

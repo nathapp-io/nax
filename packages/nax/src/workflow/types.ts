@@ -141,7 +141,7 @@ export interface RepoGateSummary {
   readonly failing: readonly string[];
 }
 
-export type FeatureCiState = "green" | "failed" | "pending" | "skipped" | "conflicting" | "no-checks";
+export type FeatureCiState = "green" | "failed" | "pending" | "skipped" | "conflicting" | "no-checks" | "unavailable";
 export type FeatureOutcome = "ready" | "draft" | "local-only" | "pushed";
 
 /** A story loop's deferred minor, numbered for the branch review's triage (P4-R7, P4-R8). */
@@ -185,6 +185,8 @@ export interface WorkflowFeatureRecord {
    * incomplete — `publish` turns it into the reason that keeps the PR a draft.
    */
   readonly reviewUnread?: readonly string[];
+  /** nax#2550: an agent step was skipped because the run reached `execution.costLimit`. */
+  readonly costLimited?: true;
   /** The branch review's cannot-verify items (#2496: listed as open items, never blocking). */
   readonly cannotVerify?: readonly string[];
   /** Blocking branch-review findings still open. */

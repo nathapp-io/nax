@@ -3,7 +3,8 @@
  * steps, persisted after every step (P4-R1), so a crash resumes at `record.step`.
  * One branch review, up to `workflow.maxBranchFixRounds` fix passes (#2496, nax#2547) with one scoped
  * re-review each, one adjudication, then the final gates with up to `workflow.finalGateRepairRounds`
- * repair passes when the branch fix turned green gates red (nax#2548).
+ * repair passes when the branch fix turned green gates red (nax#2548). Past `execution.costLimit`
+ * no agent step runs: the machine goes to the final gates and publishes a draft (nax#2550).
  */
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { WORKFLOW_DEFAULTS } from "@/config";
@@ -72,6 +73,8 @@ export interface FeatureEnv {
   readonly facts: FeatureFacts;
   readonly record: WorkflowFeatureRecord;
   readonly aborted: () => boolean;
+  /** nax#2550: the run's `execution.costLimit` check, read before every agent step; absent = no limit. */
+  readonly costExceeded?: () => boolean;
   readonly now: () => number;
   /** The round caps; absent reads as the `workflow` schema defaults. */
   readonly limits?: FeatureLimits;
@@ -347,7 +350,7 @@ async function finalGatesStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Prom
  */
 function gateRepairAllowed(env: FeatureEnv, rec: WorkflowFeatureRecord): boolean {
   const wasGreen = rec.repoGates !== undefined && rec.repoGates.failing.length === 0;
-  return wasGreen && (rec.gateRepairRounds ?? 0) < limitsOf(env).finalGateRepairRounds;
+  return wasGreen && (rec.gateRepairRounds ?? 0) < limitsOf(env).finalGateRepairRounds && !costExceeded(env);
 }
 
 async function gateRepairStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Promise<Patch> {
@@ -419,6 +422,49 @@ async function publishStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Promise
   };
 }
 
+const costExceeded = (env: FeatureEnv): boolean => env.costExceeded?.() === true;
+
+/** nax#2550: the steps that run an agent session, and so spend. Gates and publish run past the limit. */
+const AGENT_STEPS: ReadonlySet<FeatureStep> = new Set([
+  "branch-review",
+  "branch-fix",
+  "branch-rereview",
+  "adjudicate",
+  "gate-repair",
+]);
+
+/**
+ * Whether the step would open an agent session — the same emptiness checks each step makes first.
+ * A step that would return without one is no spend to stop, so it never marks the record cost-limited.
+ */
+function hasAgentWork(step: FeatureStep, rec: WorkflowFeatureRecord): boolean {
+  if (step === "branch-review") return rec.seed !== null && rec.seed !== "";
+  if (step === "branch-fix") {
+    const toFix = isFollowUpRound(rec)
+      ? roundTargets(rec)
+      : [...rec.reviewOpen, ...fixNowMinors(rec), ...rec.gateFindings];
+    return toFix.length > 0;
+  }
+  if (step === "branch-rereview") {
+    const items = isFollowUpRound(rec) ? roundTargets(rec) : [...rec.reviewOpen, ...fixNowMinors(rec)];
+    return items.length > 0 && Boolean(rec.fixBase);
+  }
+  if (step === "adjudicate") return rec.reviewOpen.length > 0;
+  return (rec.gateRepairFindings?.length ?? 0) > 0;
+}
+
+/**
+ * Past the cost limit an agent step is skipped for the final gates — which reuse the repo gates
+ * when no fix ran, and never route to a repair past the limit — so the feature still publishes,
+ * as a draft, with `costLimited` as its reason.
+ */
+async function costStop(env: FeatureEnv, rec: WorkflowFeatureRecord, step: FeatureStep): Promise<Patch | undefined> {
+  if (!AGENT_STEPS.has(step) || !hasAgentWork(step, rec) || !costExceeded(env)) return undefined;
+  featureStep(step, false).done("skipped (cost limit reached)");
+  await env.sink.ledger(ledgerText.note(`cost limit reached: ${step} skipped`), NO_MIRROR);
+  return { costLimited: true, step: "final-gates" };
+}
+
 const STEPS: Readonly<Record<Exclude<FeatureStep, "done">, StepFn>> = {
   "repo-gates": repoGatesStep,
   "branch-review": branchReviewStep,
@@ -444,7 +490,7 @@ export async function runFeatureMachine(env: FeatureEnv): Promise<WorkflowFeatur
     }
     env.sink.step(step, rec);
     const started = env.now();
-    const patch = await STEPS[step](env, rec);
+    const patch = (await costStop(env, rec, step)) ?? (await STEPS[step](env, rec));
     rec = { ...rec, ...patch, timings: { ...rec.timings, [step]: (rec.timings[step] ?? 0) + (env.now() - started) } };
     await env.sink.update(rec);
   }

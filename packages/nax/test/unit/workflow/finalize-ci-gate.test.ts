@@ -98,4 +98,31 @@ describe("publish CI draft gate (US-002)", () => {
     expect(asked).toEqual([]);
     expect(updated[0]?.keepDraft).toBe(true);
   });
+
+  // nax#2550: CI that could not be read is a reason, not a quiet pending.
+  test("CI unavailable keeps the draft with the wait's detail, never asks the advisor", async () => {
+    const detail = "CI status unavailable: gh: auth required";
+    const { input, asked, updated } = wire({ outcome: "unavailable", detail });
+    const result = await publish(makeFeatureContext(), input);
+    expect(asked).toEqual([]);
+    expect(updated[0]?.keepDraft).toBe(true);
+    expect(result).toMatchObject({ outcome: "draft", ci: "unavailable", reasons: [detail] });
+  });
+
+  test("slow CI (pending) still asks the advisor (W-R9)", async () => {
+    const { input, asked } = wire({ outcome: "pending", detail: "no CI result within 1200000ms" });
+    await publish(makeFeatureContext(), input);
+    expect(asked).toEqual(["finish-approval"]);
+  });
+
+  // nax#2550: a feature workflow stopped at the cost limit never goes ready.
+  test("a cost-limited record keeps the draft and never asks the advisor", async () => {
+    const { input, asked, updated } = wire({ outcome: "green", detail: "all checks passed" });
+    const result = await publish(makeFeatureContext(), { ...input, record: { ...input.record, costLimited: true } });
+    expect(asked).toEqual([]);
+    expect(updated[0]?.keepDraft).toBe(true);
+    expect(result.reasons).toEqual([
+      "cost limit reached: the feature workflow stopped before its review and fix steps finished",
+    ]);
+  });
 });

@@ -1,7 +1,9 @@
 /**
  * CI wait (spec §7.1, P4-R4). Polls the branch's PR/MR checks until they are green,
- * one fails, a conflict is detected, or `timeoutMs` passes. A CLI error is `pending`, never
- * `failed`; a check-less timeout is `no-checks` (W-R9). `_ciWaitDeps` is the test seam (spawn, sleep, clock).
+ * one fails, a conflict is detected, or `timeoutMs` passes. A CLI error is retried; a run of
+ * `CI_ERROR_POLL_LIMIT` unreadable polls, or a deadline reached on one, is `unavailable` (nax#2550),
+ * never `failed`. A check-less timeout is `no-checks`; slow CI is `pending` (W-R9). `_ciWaitDeps`
+ * is the test seam (spawn, sleep, clock).
  *
  * US-005 (nax#2526): the wait reports its own progress — a start line, a line whenever the check
  * summary changes, a heartbeat at least every `CI_WAIT_HEARTBEAT_MS`, and an end line — so a long
@@ -14,12 +16,15 @@ import { defaultForgeDeps, type ForgeKind, type ForgeRunResult } from "@/forge";
 import { formatDuration } from "@/log-format";
 import { getSafeLogger } from "@/logger";
 
-export type CiWaitOutcome = "green" | "failed" | "pending" | "conflicting" | "no-checks";
+export type CiWaitOutcome = "green" | "failed" | "pending" | "conflicting" | "no-checks" | "unavailable";
 
 export interface CiWaitResult {
   readonly outcome: CiWaitOutcome;
   readonly detail: string;
 }
+
+/** Consecutive unreadable polls (CLI error, spawn failure, unparseable output) that end the wait (nax#2550). */
+export const CI_ERROR_POLL_LIMIT = 3;
 
 /** How long the wait may go without an info line before it says it is still waiting (US-005). */
 export const CI_WAIT_HEARTBEAT_MS = 60_000;
@@ -117,11 +122,14 @@ function classifyGlab(r: ForgeRunResult): Poll {
   const status = isRecord(pipeline) && typeof pipeline.status === "string" ? pipeline.status : undefined;
   if (status === undefined) return glabWaiting(parsed.value);
   const summary = `CI pipeline: ${status}`;
-  if (status === "success") return { state: "green", summary };
+  // nax#2550: a green pipeline does not make a conflicting MR mergeable.
+  if (status === "success") {
+    const waiting = glabWaiting(parsed.value, summary);
+    return waiting.state === "conflicting" ? waiting : { state: "green", summary };
+  }
   return GL_FAILED.has(status) ? { state: "failed", summary } : glabWaiting(parsed.value, summary);
 }
 
-/** Only waiting polls inspect conflicts: completed CI retains its existing meaning. */
 function conflictPoll(base: unknown): Poll {
   const target = typeof base === "string" && base !== "" ? base : "its base branch";
   return { state: "conflicting", detail: `PR has merge conflicts with ${target}` };
@@ -133,9 +141,13 @@ function glabWaiting(mr: Record<string, unknown>, summary?: string): Poll {
     : { state: "waiting", summary };
 }
 
-/** Auxiliary GitHub reads fail open silently, unlike failures of the main checks command. */
+/**
+ * Waiting and green polls read GitHub mergeability: push-triggered checks run (and can pass) on a
+ * conflicting PR, so reported checks do not rule a conflict out (nax#2550). A failed check keeps its
+ * meaning. Auxiliary reads fail open silently, unlike failures of the main checks command.
+ */
 async function githubWaiting(poll: Poll, prRef: string, cwd: string): Promise<Poll> {
-  if (poll.state !== "waiting" || poll.summary !== undefined) return poll;
+  if (poll.state !== "waiting" && poll.state !== "green") return poll;
   try {
     const r = await _ciWaitDeps.run(["gh", "pr", "view", prRef, "--json", "mergeable,mergeStateStatus,baseRefName"], {
       cwd,
@@ -228,23 +240,51 @@ async function waitWithHeartbeat(ms: number, startedAt: number, progress: Progre
   }
 }
 
-function terminalPoll(poll: Poll, forge: ForgeKind): CiWaitResult | undefined {
+function terminalPoll(poll: Poll): CiWaitResult | undefined {
   if (poll.state === "green") return { outcome: "green", detail: "all checks passed" };
   if (poll.state === "failed") return { outcome: "failed", detail: "a check failed" };
-  if (poll.state === "waiting") return undefined;
   if (poll.state === "conflicting") {
     getSafeLogger()?.info("workflow", `CI wait: ${poll.detail} — CI cannot start`, { storyId: RUN_SCOPE });
     return { outcome: "conflicting", detail: poll.detail };
   }
-  if (poll.state === "error") {
-    getSafeLogger()?.warn("workflow", "CI status unavailable — treated as pending", {
-      storyId: RUN_SCOPE,
-      forge,
-      error: poll.detail,
-    });
-    return { outcome: "pending", detail: `CI status unavailable: ${poll.detail}` };
-  }
   return undefined;
+}
+
+/**
+ * The run of unreadable polls (nax#2550). One error is retried — a rate limit or network blip must
+ * not end the wait — and any readable poll resets the run. `CI_ERROR_POLL_LIMIT` in a row, or a
+ * deadline reached while the latest poll errored, is `unavailable`: a readiness reason, because CI
+ * was never observed.
+ */
+function errorRun(forge: ForgeKind) {
+  let consecutive = 0;
+  let last: string | undefined;
+  const unavailable = (detail: string): CiWaitResult => ({
+    outcome: "unavailable",
+    detail: `CI status unavailable: ${detail}`,
+  });
+  return {
+    note(poll: Poll): CiWaitResult | undefined {
+      if (poll.state !== "error") {
+        consecutive = 0;
+        last = undefined;
+        return undefined;
+      }
+      consecutive += 1;
+      last = poll.detail;
+      getSafeLogger()?.warn("workflow", "CI status unavailable", {
+        storyId: RUN_SCOPE,
+        forge,
+        error: poll.detail,
+        attempt: consecutive,
+        limit: CI_ERROR_POLL_LIMIT,
+      });
+      return consecutive >= CI_ERROR_POLL_LIMIT ? unavailable(poll.detail) : undefined;
+    },
+    timeout(): CiWaitResult | undefined {
+      return last === undefined ? undefined : unavailable(last);
+    },
+  };
 }
 
 /** A summary exists exactly when this poll reported checks (GitHub) or a pipeline status (GitLab). */
@@ -270,6 +310,7 @@ export async function waitForChecks(
   const startedAt = _ciWaitDeps.now();
   const deadline = startedAt + opts.timeoutMs;
   const history = checkHistory();
+  const errors = errorRun(forge);
   let cancelHeartbeat = (): void => {};
   const progress = progressLog(() => {
     // Every info line starts a fresh deadline. A fixed interval could skip a
@@ -291,10 +332,10 @@ export async function waitForChecks(
       const poll = await pollOnce(forge, prRef, opts.cwd);
       history.note(poll);
       if ("summary" in poll) progress.note(poll.summary);
-      const terminal = terminalPoll(poll, forge);
+      const terminal = terminalPoll(poll) ?? errors.note(poll);
       if (terminal) return end(terminal.outcome, terminal.detail);
       if (_ciWaitDeps.now() + opts.pollMs > deadline) {
-        const timeout = history.timeout(opts.timeoutMs);
+        const timeout = errors.timeout() ?? history.timeout(opts.timeoutMs);
         return end(timeout.outcome, timeout.detail);
       }
       // Both sides of the wait: `_ciWaitDeps.now` may move during a slow forge call or during the
