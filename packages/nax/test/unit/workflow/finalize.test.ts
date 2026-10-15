@@ -136,7 +136,8 @@ function input(over: Partial<PublishInput> = {}): PublishInput {
 
 /** A workflow block with no `publish` key at all (a config written before US-002). */
 function workflowWithoutPublish(w: WorkflowConfig): WorkflowConfig {
-  return { models: w.models, maxFixRounds: w.maxFixRounds, preflight: w.preflight, timeouts: w.timeouts };
+  const { publish: _publish, ...rest } = w;
+  return rest;
 }
 
 /** `fc` with `workflow.publish` set to `mode`, or absent when `mode` is null. */

@@ -131,6 +131,7 @@ export type FeatureStep =
   | "branch-rereview"
   | "adjudicate"
   | "final-gates"
+  | "gate-repair"
   | "publish"
   | "done";
 
@@ -194,14 +195,21 @@ export interface WorkflowFeatureRecord {
   readonly nextFindingId: number;
   readonly fixBase?: string;
   readonly fixRan: boolean;
-  /** Branch fix sessions run so far (#2496: at most 2). Absent on records written before #2496. */
+  /**
+   * Branch fix sessions run so far (#2496), at most `workflow.maxBranchFixRounds` (nax#2547).
+   * Absent on records written before #2496.
+   */
   readonly fixRounds?: number;
-  /** Round 2 only: the ids of the new findings the second fix targets. */
+  /** Rounds 2+ only: the ids of the findings the next fix targets (still open or introduced by the last fix). */
   readonly fixTargets?: readonly string[];
   readonly rulings: readonly WorkflowRuling[];
   readonly finalGates?: RepoGateSummary;
   /** The excerpts from a red final gate pass, one per failing gate (nax#2484). Absent when the pass is green. */
   readonly finalGateFindings?: readonly WorkflowFindingDraft[];
+  /** nax#2548: the red final-gate excerpts the next repair round targets. */
+  readonly gateRepairFindings?: readonly WorkflowFindingDraft[];
+  /** nax#2548: repair rounds run for final gates the branch fix turned red. Absent when none ran. */
+  readonly gateRepairRounds?: number;
   readonly ci?: FeatureCiState;
   readonly outcome?: FeatureOutcome;
   readonly reasons: readonly string[];

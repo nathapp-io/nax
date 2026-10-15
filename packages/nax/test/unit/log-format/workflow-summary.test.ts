@@ -55,6 +55,15 @@ describe("formatWorkflowSummary", () => {
     expect(text).toContain("Publish:  local-only - no forge (origin is not GitHub or GitLab)");
   });
 
+  test("fix and gate-repair rounds are named when they ran (nax#2547, nax#2548)", () => {
+    const out = formatWorkflowSummary(
+      { ...VIEW, branch: { found: 4, fixed: 3, left: 1, minorsLeft: 2, fixRounds: 2 }, gateRepairRounds: 1 },
+      { useColor: false },
+    );
+    expect(out).toContain("4 found, 3 fixed, 1 left (minors left 2, fix rounds 2)");
+    expect(out).toContain("Final gates: green (after 1 repair round)");
+  });
+
   test("a view without a branch section or publish omits those lines", () => {
     const bare = formatWorkflowSummary(
       { ...VIEW, branch: undefined, publish: undefined, finalGates: undefined },

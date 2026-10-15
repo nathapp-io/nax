@@ -1,8 +1,8 @@
 /**
- * The one branch fix (spec §7 step 3). Fresh session, write tools, the fix time limit.
- * Leftover edits are always committed on every non-abort path (even after an interrupt or a
- * failure: the branch fix is the only pass, so no later round picks them up), and the fix
- * appends its section to feature-report.md.
+ * One branch fix session (spec §7 step 3): a branch-fix round (nax#2547) or a final-gate repair
+ * (nax#2548). Fresh session, write tools, the fix time limit. Leftover edits are always committed on
+ * every non-abort path (even after an interrupt or a failure: a later round only re-checks what is
+ * still open, so it may never pick them up), and the fix appends its section to feature-report.md.
  */
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "@/logger";

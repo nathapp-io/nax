@@ -48,14 +48,18 @@ export function formatWorkflowSummary(view: WorkflowSummaryView, options: { useC
   if (view.branch) {
     const b = view.branch;
     lines.push(
-      `  ${c.gray("Branch findings:")} ${b.found} found, ${b.fixed} fixed, ${b.left} left (minors left ${b.minorsLeft})`,
+      `  ${c.gray("Branch findings:")} ${b.found} found, ${b.fixed} fixed, ${b.left} left (minors left ${b.minorsLeft}${b.fixRounds ? `, fix rounds ${b.fixRounds}` : ""})`,
     );
   }
   if (view.branchReviewSkipped) {
     const left = view.branchReviewSkipped.minorsLeft;
     lines.push(`  ${c.gray("Branch findings:")} branch review skipped (minors left ${left})`);
   }
-  if (view.finalGates) lines.push(`  ${c.gray("Final gates:")} ${view.finalGates}`);
+  if (view.finalGates) {
+    const n = view.gateRepairRounds ?? 0;
+    const repaired = n > 0 ? ` (after ${n} repair round${n === 1 ? "" : "s"})` : "";
+    lines.push(`  ${c.gray("Final gates:")} ${view.finalGates}${repaired}`);
+  }
   if (view.publish) {
     const why = view.publish.reasons.length > 0 ? ` - ${view.publish.reasons.join("; ")}` : "";
     const url = view.publish.url ? ` ${view.publish.url}` : "";

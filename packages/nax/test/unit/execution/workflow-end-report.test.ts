@@ -44,6 +44,19 @@ describe("reportWorkflowRun", () => {
     expect(Object.keys(line?.data ?? {})[0]).toBe("storyId");
   });
 
+  test("the line names the branch fix rounds and any gate repair (nax#2547, nax#2548)", async () => {
+    _workflowEndReportDeps.readSummary = async () => ({
+      ...view,
+      branch: { found: 4, fixed: 3, left: 1, minorsLeft: 1, fixRounds: 2 },
+      gateRepairRounds: 1,
+    });
+    await reportWorkflowRun(opts, timing);
+    const line = logs.find((e) => e.message.startsWith("Workflow summary:"));
+    expect(line?.message).toContain(
+      "branch findings 4 found, 3 fixed, 1 left over 2 fix rounds; gate repair rounds 1;",
+    );
+  });
+
   test("no result.json: nothing logged, nothing returned", async () => {
     _workflowEndReportDeps.readSummary = async () => null;
     expect(await reportWorkflowRun(opts, timing)).toBeUndefined();

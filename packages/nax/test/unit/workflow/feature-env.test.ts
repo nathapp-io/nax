@@ -103,6 +103,14 @@ describe("buildFeatureEnv", () => {
     expect(file?.featureWorkflow?.tokensByRole["wf-implementer"]?.calls).toBe(1);
   });
 
+  // nax#2547 / nax#2548: the machine's round caps come from the run's workflow config.
+  test("limits carry workflow.maxBranchFixRounds and workflow.finalGateRepairRounds", () => {
+    const { env } = setup(() => ({
+      workflow: { ...makeFeatureContext().workflow, maxBranchFixRounds: 4, finalGateRepairRounds: 0 },
+    }));
+    expect(env.limits).toEqual({ maxBranchFixRounds: 4, finalGateRepairRounds: 0 });
+  });
+
   test("sink.step sets the status.json workflow block", () => {
     const { env, blocks } = setup();
     env.sink.step("publish", { ...env.record, outcome: "draft", url: "u" });

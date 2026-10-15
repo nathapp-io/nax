@@ -103,5 +103,9 @@ export function buildFeatureEnv(fc: FeatureContext, input: WorkflowFeatureInput,
     record: ctx.record,
     aborted: () => fc.runSignal?.aborted === true,
     now: () => _workflowDeps.now(),
+    limits: {
+      maxBranchFixRounds: fc.workflow.maxBranchFixRounds,
+      finalGateRepairRounds: fc.workflow.finalGateRepairRounds,
+    },
   };
 }

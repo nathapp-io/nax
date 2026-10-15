@@ -82,10 +82,12 @@ export interface WorkflowSummaryView {
   roles: readonly WorkflowRoleUsage[];
   stories: readonly { id: string; rounds: number; maxRounds: number; state?: string }[];
   /** Absent when the feature workflow never ran. */
-  branch?: { found: number; fixed: number; left: number; minorsLeft: number } | undefined;
+  branch?: { found: number; fixed: number; left: number; minorsLeft: number; fixRounds?: number } | undefined;
   /** The feature workflow ran but its branch review did not. */
   branchReviewSkipped?: { minorsLeft: number } | undefined;
   finalGates?: "green" | "red" | undefined;
+  /** nax#2548: repair rounds run for final gates the branch fix turned red. Absent when none ran. */
+  gateRepairRounds?: number | undefined;
   publish?: { outcome: string; url?: string; reasons: readonly string[] } | undefined;
   /** US-005: the rulings flagged for a human, plus the command that lists them. Absent when none. */
   flagged?: { ids: readonly string[]; hint: string } | undefined;

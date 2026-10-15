@@ -1,15 +1,18 @@
 /**
  * The feature workflow (spec §7) as a state machine. Pure orchestration over injected
  * steps, persisted after every step (P4-R1), so a crash resumes at `record.step`.
- * One branch review, one fix pass (plus one targeted second pass for defects the fix introduced, #2496),
- * one scoped re-review per pass, one adjudication.
+ * One branch review, up to `workflow.maxBranchFixRounds` fix passes (#2496, nax#2547) with one scoped
+ * re-review each, one adjudication, then the final gates with up to `workflow.finalGateRepairRounds`
+ * repair passes when the branch fix turned green gates red (nax#2548).
  */
 import { errorMessage } from "@nathapp/nax-agent/internal";
+import { WORKFLOW_DEFAULTS } from "@/config";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import { FEATURE_SCOPE } from "./advisor-live";
 import { describeUnread, featurePassed } from "./approval";
 import type { BranchFixOutcome } from "./branch-fix";
+import { dropKnownRestatements, type FeatureLimits, nextBranchFixRound } from "./branch-fix-rounds";
 import type { BranchReviewFacts } from "./branch-review";
 import type { PublishOutcome } from "./finalize";
 import { type LedgerWriteOptions, ledgerText } from "./ledger";
@@ -70,7 +73,17 @@ export interface FeatureEnv {
   readonly record: WorkflowFeatureRecord;
   readonly aborted: () => boolean;
   readonly now: () => number;
+  /** The round caps; absent reads as the `workflow` schema defaults. */
+  readonly limits?: FeatureLimits;
 }
+
+export type { FeatureLimits };
+
+const DEFAULT_LIMITS: FeatureLimits = {
+  maxBranchFixRounds: WORKFLOW_DEFAULTS.maxBranchFixRounds,
+  finalGateRepairRounds: WORKFLOW_DEFAULTS.finalGateRepairRounds,
+};
+const limitsOf = (env: FeatureEnv): FeatureLimits => env.limits ?? DEFAULT_LIMITS;
 
 type Patch = Partial<WorkflowFeatureRecord>;
 type StepFn = (env: FeatureEnv, rec: WorkflowFeatureRecord) => Promise<Patch>;
@@ -98,37 +111,15 @@ function fixNowMinors(rec: WorkflowFeatureRecord): WorkflowFinding[] {
   return rec.minors.filter((m) => m.triage === "fix-now").map(minorFinding);
 }
 
-const MAX_BRANCH_FIX_ROUNDS = 2;
 const fixRoundsOf = (rec: WorkflowFeatureRecord): number => rec.fixRounds ?? (rec.fixRan ? 1 : 0);
-const isSecondRound = (rec: WorkflowFeatureRecord): boolean =>
+/** Rounds 2+ fix only `fixTargets`; round 1 fixes the whole review. */
+const isFollowUpRound = (rec: WorkflowFeatureRecord): boolean =>
   fixRoundsOf(rec) >= 1 && (rec.fixTargets?.length ?? 0) > 0;
-const repoPath = (file: string): string => file.replace(/^\.\//, "");
+const roundLabel = (base: string, round: number): string => (round > 1 ? `${base} r${round}` : base);
 
-function secondRoundTargets(rec: WorkflowFeatureRecord): WorkflowFinding[] {
+function roundTargets(rec: WorkflowFeatureRecord): WorkflowFinding[] {
   const ids = new Set(rec.fixTargets ?? []);
   return rec.reviewOpen.filter((f) => ids.has(f.id));
-}
-
-/** #2496: one more fix only when the first fix is clean and its own diff introduced the new defects. */
-async function secondFixEligible(
-  env: FeatureEnv,
-  rec: WorkflowFeatureRecord,
-  stillOpen: ReadonlySet<string>,
-  added: readonly WorkflowFinding[],
-): Promise<boolean> {
-  if (fixRoundsOf(rec) >= MAX_BRANCH_FIX_ROUNDS || stillOpen.size > 0 || added.length === 0 || !rec.fixBase)
-    return false;
-  if (added.some((f) => !f.file)) return false;
-  try {
-    const changed = new Set((await env.steps.changedFiles(rec.fixBase)).map(repoPath));
-    return added.every((f) => f.file !== undefined && changed.has(repoPath(f.file)));
-  } catch (err) {
-    await env.sink.ledger(
-      ledgerText.note(`second branch fix skipped: could not list the fix diff (${errorMessage(err)})`),
-      NO_MIRROR,
-    );
-    return false;
-  }
 }
 
 function storyNote(s: StorySummary): string | undefined {
@@ -216,23 +207,27 @@ async function branchReviewStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Pr
 
 async function branchFixStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Promise<Patch> {
   const round = fixRoundsOf(rec) + 1;
-  const toFix = isSecondRound(rec)
-    ? secondRoundTargets(rec)
+  const toFix = isFollowUpRound(rec)
+    ? roundTargets(rec)
     : [...rec.reviewOpen, ...fixNowMinors(rec), ...rec.gateFindings];
   if (toFix.length === 0) return { step: "branch-rereview" };
-  const fixBase = await env.steps.head();
+  const max = limitsOf(env).maxBranchFixRounds;
+  if (round > max) {
+    // A resume can find a cap lowered under a pending round; the cap wins.
+    const why =
+      max === 0 ? "workflow.maxBranchFixRounds is 0" : `round ${round} is past workflow.maxBranchFixRounds (${max})`;
+    await env.sink.ledger(ledgerText.note(`branch fix skipped: ${why}`), NO_MIRROR);
+    return { step: "adjudicate" };
+  }
+  // A follow-up round keeps round 1's base, so its re-review sees the whole fix, not just the last edit.
+  const fixBase = round > 1 && rec.fixBase ? rec.fixBase : await env.steps.head();
   await env.sink.ledger(
     ledgerText.note(
-      `${round > 1 ? `branch fix r${round}` : "branch fix"}: ${toFix.length} item(s): ${toFix.map((f) => f.id).join(", ")}`,
+      `${roundLabel("branch fix", round)}: ${toFix.length} item(s): ${toFix.map((f) => f.id).join(", ")}`,
     ),
     NO_MIRROR,
   );
-  const log = featureStep(
-    round > 1 ? `branch-fix r${round}` : "branch-fix",
-    true,
-    false,
-    env.steps.modelFor?.("branch-fix"),
-  );
+  const log = featureStep(roundLabel("branch-fix", round), true, false, env.steps.modelFor?.("branch-fix"));
   const out = await env.steps.branchFix(toFix);
   log.done(`${toFix.map((f) => f.id).join(" ")}${out.failure ? ` (session failed: ${out.failure})` : ""}`);
   if (out.failure) await env.sink.ledger(ledgerText.note(`branch fix session failed: ${out.failure}`), NO_MIRROR);
@@ -266,15 +261,11 @@ function reReviewText(input: {
 }
 
 async function branchReReviewStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Promise<Patch> {
-  const second = isSecondRound(rec);
-  const items = second ? secondRoundTargets(rec) : [...rec.reviewOpen, ...fixNowMinors(rec)];
+  const round = fixRoundsOf(rec);
+  const followUp = isFollowUpRound(rec);
+  const items = followUp ? roundTargets(rec) : [...rec.reviewOpen, ...fixNowMinors(rec)];
   if (items.length === 0 || !rec.fixBase) return { step: "adjudicate" };
-  const log = featureStep(
-    second ? "branch-rereview r2" : "branch-rereview",
-    true,
-    false,
-    env.steps.modelFor?.("branch-rereview"),
-  );
+  const log = featureStep(roundLabel("branch-rereview", round), true, false, env.steps.modelFor?.("branch-rereview"));
   const out = await env.steps.branchReReview(items, rec.fixBase);
   if (!out.ran) {
     log.done(`skipped (${out.why})`);
@@ -285,9 +276,10 @@ async function branchReReviewStep(env: FeatureEnv, rec: WorkflowFeatureRecord): 
   const addressed = new Set(out.verdict.verdicts.filter((v) => v.addressed).map((v) => v.id));
   const stillOpen = new Set(items.map((f) => f.id).filter((id) => !addressed.has(id)));
   // US-004: only the review findings are absorbed — the fix-now minors keep their own triage handling.
-  const absorbed = absorbReReviewVerdict(rec.reviewOpen, out.verdict);
+  const absorbedRaw = absorbReReviewVerdict(rec.reviewOpen, out.verdict);
+  const absorbed = { ...absorbedRaw, newDrafts: dropKnownRestatements(absorbedRaw.newDrafts, absorbedRaw.open) };
   const { findings, nextFindingId } = assign(rec, absorbed.newDrafts.filter(isBlocking));
-  await env.sink.artifact(second ? "branch-rereview-r2.json" : "branch-rereview.json", {
+  await env.sink.artifact(round > 1 ? `branch-rereview-r${round}.json` : "branch-rereview.json", {
     ...out.verdict,
     newFindings: [...findings, ...absorbed.newDrafts.filter((f) => !isBlocking(f))],
   });
@@ -297,19 +289,25 @@ async function branchReReviewStep(env: FeatureEnv, rec: WorkflowFeatureRecord): 
   const newMinors = [...rec.newMinors, ...minorIssues(absorbed.newDrafts)];
   const minorsLeft = minors.filter((m) => m.triage === "leave").length + newMinors.length;
   log.done(reReviewText({ items, verdicts: out.verdict.verdicts, stillOpen, added: findings, minorsLeft }));
-  const again = !second && (await secondFixEligible(env, rec, stillOpen, findings));
-  if (again) {
-    await env.sink.ledger(
-      ledgerText.note(`second branch fix: ${findings.map((f) => f.id).join(", ")} introduced by the fix`),
-      NO_MIRROR,
-    );
-  }
+  const next = await nextBranchFixRound({
+    round,
+    max: limitsOf(env).maxBranchFixRounds,
+    followUp,
+    items,
+    addressed,
+    open: absorbed.open,
+    added: findings,
+    fixBase: rec.fixBase,
+    changedFiles: (base) => env.steps.changedFiles(base),
+  });
+  for (const note of next.notes) await env.sink.ledger(ledgerText.note(note), NO_MIRROR);
+  const again = next.targets.length > 0;
   return {
     reviewOpen: [...absorbed.open, ...findings],
     nextFindingId,
     minors,
     newMinors,
-    ...(again ? { fixTargets: findings.map((f) => f.id) } : {}),
+    fixTargets: again ? next.targets : undefined,
     step: again ? "branch-fix" : "adjudicate",
   };
 }
@@ -329,13 +327,55 @@ async function finalGatesStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Prom
   const log = featureStep("final-gates", false, true);
   const run = await env.steps.repoGates();
   log.done(gatesText(run.summary.failing));
-  if (run.summary.failing.length === 0) return { finalGates: run.summary, step: "publish" };
+  if (run.summary.failing.length === 0)
+    return { finalGates: run.summary, gateRepairFindings: undefined, step: "publish" };
   const names = run.summary.failing.join(", ");
+  if (run.findings.length > 0 && gateRepairAllowed(env, rec)) {
+    await env.sink.ledger(ledgerText.note(`final gates red: ${names} (repairing)`), NO_MIRROR);
+    return { gateRepairFindings: run.findings, step: "gate-repair" };
+  }
   await env.sink.ledger(
     ledgerText.note(`final gates red: ${names} (output in result.json featureWorkflow.finalGateFindings)`),
     NO_MIRROR,
   );
-  return { finalGates: run.summary, finalGateFindings: run.findings, step: "publish" };
+  return { finalGates: run.summary, finalGateFindings: run.findings, gateRepairFindings: undefined, step: "publish" };
+}
+
+/**
+ * nax#2548: the branch fix turned green repo gates red, so a repair may still take them back. Repo
+ * gates already red before the fix were the branch fix's own targets, and get no second chance here.
+ */
+function gateRepairAllowed(env: FeatureEnv, rec: WorkflowFeatureRecord): boolean {
+  const wasGreen = rec.repoGates !== undefined && rec.repoGates.failing.length === 0;
+  return wasGreen && (rec.gateRepairRounds ?? 0) < limitsOf(env).finalGateRepairRounds;
+}
+
+async function gateRepairStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Promise<Patch> {
+  const round = (rec.gateRepairRounds ?? 0) + 1;
+  const max = limitsOf(env).finalGateRepairRounds;
+  if (round > max) {
+    // A resume can find the cap lowered under a pending repair; the gates run again unrepaired.
+    await env.sink.ledger(
+      ledgerText.note(`gate repair skipped: round ${round} is past workflow.finalGateRepairRounds (${max})`),
+      NO_MIRROR,
+    );
+    return { step: "final-gates" };
+  }
+  // `G` ids: a gate excerpt is no branch finding, so it never spends the B counter the summary counts.
+  const findings = (rec.gateRepairFindings ?? []).map((d, i) => ({ ...d, id: `G${i + 1}` }));
+  if (findings.length === 0) return { gateRepairRounds: round, step: "final-gates" };
+  const list = findings.map((f) => f.id);
+  await env.sink.ledger(
+    ledgerText.note(`gate repair r${round}: ${findings.length} item(s): ${list.join(", ")}`),
+    NO_MIRROR,
+  );
+  const log = featureStep(roundLabel("gate-repair", round), true, false, env.steps.modelFor?.("branch-fix"));
+  const out = await env.steps.branchFix(findings);
+  log.done(`${list.join(" ")}${out.failure ? ` (session failed: ${out.failure})` : ""}`);
+  if (out.failure) await env.sink.ledger(ledgerText.note(`gate repair session failed: ${out.failure}`), NO_MIRROR);
+  if (out.autoCommitted) await env.sink.ledger(ledgerText.note("auto-committed the gate repair's edits"));
+  if (out.dirty) await env.sink.ledger(ledgerText.note("gate repair left uncommitted edits: the auto-commit failed"));
+  return { gateRepairRounds: round, step: "final-gates" };
 }
 
 /**
@@ -386,6 +426,7 @@ const STEPS: Readonly<Record<Exclude<FeatureStep, "done">, StepFn>> = {
   "branch-rereview": branchReReviewStep,
   adjudicate: adjudicateStep,
   "final-gates": finalGatesStep,
+  "gate-repair": gateRepairStep,
   publish: publishStep,
 };
 
