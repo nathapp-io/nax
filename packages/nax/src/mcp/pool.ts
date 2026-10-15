@@ -33,6 +33,7 @@ export type McpServerEvent = { readonly serverId: string; readonly workdir: stri
 );
 
 export interface McpPool {
+  instructions?(serverId: string, workdir: string): Promise<string | undefined>;
   listTools(serverId: string, workdir: string): Promise<readonly McpToolDescriptor[]>;
   call(
     serverId: string,
@@ -150,6 +151,10 @@ export function createMcpPool(opts: {
   }
 
   return {
+    async instructions(serverId, workdir) {
+      return (await entry(serverId, workdir))?.connection.instructions;
+    },
+
     async listTools(serverId, workdir) {
       return (await entry(serverId, workdir))?.tools ?? [];
     },

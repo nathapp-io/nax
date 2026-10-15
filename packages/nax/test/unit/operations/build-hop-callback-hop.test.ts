@@ -91,6 +91,29 @@ describe("prepareHopSession: toolAudit (S4b spec §7.4)", () => {
 });
 
 describe("prepareHopSession: ACP provider-tool delivery (nax#2444)", () => {
+  test("AC-19 provider instructions ride the captured hop open request", async () => {
+    const request = await openRequestFor({
+      codingToolRoot: root,
+      providers: [
+        {
+          id: "memory",
+          kind: "discovered",
+          stages: ["*"],
+          instructions: async () => "Use the repo root",
+          tools: async () => [
+            {
+              localName: "search",
+              description: "Search",
+              inputSchema: { type: "object" },
+              run: async () => ({ content: "ok" }),
+            },
+          ],
+        },
+      ],
+    });
+    expect(request?.providerInstructions).toContain("Use the repo root");
+    expect(request?.providerInstructions).toContain("memory");
+  });
   test("provider tools, the declaration and the surface draft ride the open request", async () => {
     const request = await openRequestFor({
       codingToolRoot: root,

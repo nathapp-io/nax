@@ -25,6 +25,7 @@ export function openSessionExtras(
     | "instructionProtectedPaths"
     | "instructionDenyPaths"
     | "providerTools"
+    | "providerInstructions"
     | "declaredTools"
     | "sandbox"
     | "toolSurface"
@@ -42,6 +43,7 @@ export function openSessionExtras(
   | "instructionProtectedPaths"
   | "instructionDenyPaths"
   | "providerTools"
+  | "providerInstructions"
   | "declaredTools"
   | "sandbox"
   | "toolSurface"
@@ -52,6 +54,7 @@ export function openSessionExtras(
     ...(opts.toolAudit !== undefined ? { toolAudit: opts.toolAudit } : {}),
     ...transcriptArchiveFor(opts.featureName, transcriptRoot, config),
     ...(opts.providerTools !== undefined ? { providerTools: opts.providerTools } : {}),
+    ...(opts.providerInstructions !== undefined ? { providerInstructions: opts.providerInstructions } : {}),
     ...(opts.declaredTools !== undefined ? { declaredTools: opts.declaredTools } : {}),
     ...(opts.sandbox !== undefined ? { sandbox: opts.sandbox } : {}),
     ...(opts.toolSurface !== undefined ? { toolSurface: opts.toolSurface } : {}),

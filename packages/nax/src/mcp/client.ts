@@ -63,6 +63,7 @@ export async function connectMcpServer(args: {
     );
   });
   return {
+    ...(shared.instructions === undefined ? {} : { instructions: shared.instructions }),
     serverId: args.serverId,
     workdir: args.workdir,
     get pid() {

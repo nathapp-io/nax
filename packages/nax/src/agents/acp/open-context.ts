@@ -123,6 +123,9 @@ export function openContext(input: OpenContextInput): BackendOpenContext {
     profile,
     instructions: undefined,
     tools: delivery.tools,
+    ...(delivery.tools.length > 0 && opts.providerInstructions !== undefined
+      ? { providerInstructions: opts.providerInstructions }
+      : {}),
     transcriptStore: input.store,
     resume: input.resume === undefined ? undefined : { doc: input.resume },
     asks: input.asks,

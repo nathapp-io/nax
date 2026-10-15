@@ -45,6 +45,7 @@ export const McpStageSchema = z.enum([
 export const McpServerSchema = z
   .object({
     command: z.string().min(1),
+    instructions: z.string().min(1).optional(),
     args: z.array(z.string()).default([]),
     env: z.record(z.string(), z.string()).default({}),
     stages: z.array(McpStageSchema).default([]),
