@@ -3,7 +3,7 @@
   "feature": "stable-hardening",
   "branchName": "feat/stable-hardening",
   "createdAt": "2026-10-16T00:00:00.000Z",
-  "updatedAt": "2026-10-15T16:45:48.563Z",
+  "updatedAt": "2026-10-15T16:54:25.213Z",
   "userStories": [
     {
       "id": "US-001",
@@ -566,14 +566,17 @@
         "hardening"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "A process-scoped deduplicated queue, two injected exit-output seams and an unchanged-signature config sink use standard additive lifecycle patterns across four existing modules, so medium/tdd-simple is sufficient."
+        "reasoning": "A process-scoped deduplicated queue, two injected exit-output seams and an unchanged-signature config sink use standard additive lifecycle patterns across four existing modules, so medium/tdd-simple is sufficient.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/logger/logger.ts",
@@ -593,7 +596,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "956b21b30356f397689cef02dea7f798af1a72cc"
     },
     {
       "id": "US-009",
