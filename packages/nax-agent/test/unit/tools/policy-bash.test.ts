@@ -404,3 +404,19 @@ describe("bashApproval modes", () => {
     if (!result.allowed) expect(result.outcome).not.toBe("ask");
   });
 });
+
+// nax#2551: a line continuation must not hide a command or path from the policy.
+describe("line continuation does not bypass the policy (nax#2551)", () => {
+  test("a deny rule matches the command sh runs", () => {
+    expect(check(policyFor(["*"], { deny: ["rm *"] }), "r\\\nm -rf x").allowed).toBe(false);
+  });
+
+  test(".git metadata stays refused", () => {
+    expect(check(policyFor(["cat *"]), "cat .g\\\nit/config").allowed).toBe(false);
+    expect(check(policyFor(["echo *"]), "echo x > .g\\\nit/hooks/pre-commit").allowed).toBe(false);
+  });
+
+  test("root containment holds", () => {
+    expect(check(policyFor(["cat *"]), "cat .\\\n./.\\\n./etc/hosts").allowed).toBe(false);
+  });
+});

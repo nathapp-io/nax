@@ -195,19 +195,50 @@ function lexDoubleQuote(state: LexerState, i: number): LexStep | undefined {
   if (state.command[i] !== '"') return undefined;
   const end = doubleQuoteEnd(state.command, i + 1);
   if (end === -1) return { kind: "refuse", construct: "an unbalanced double quote" };
+  // The checks read the text with line continuations joined, as sh does: `"$\<NL>(id)"` runs `id`.
+  // Joining over-matches only after an escaped backslash, which errs toward refusing.
   const inner = state.command.slice(i + 1, end);
-  if (inner.includes("$(")) return { kind: "refuse", construct: "a command substitution `$(...)`" };
-  if (inner.includes("`")) return { kind: "refuse", construct: "a backtick command substitution" };
-  if (inner.includes("$")) state.opaque = true;
-  state.word += inner;
+  const joined = inner.replaceAll("\\\n", "");
+  if (joined.includes("$(")) return { kind: "refuse", construct: "a command substitution `$(...)`" };
+  if (joined.includes("`")) return { kind: "refuse", construct: "a backtick command substitution" };
+  if (joined.includes("$")) state.opaque = true;
+  state.word += doubleQuotedWord(inner);
   state.started = true;
   return { kind: "advance", by: end + 1 - i };
+}
+
+/** The characters a backslash escapes inside double quotes; before any other, it is literal. */
+const DQ_ESCAPABLE = new Set(["$", "`", '"', "\\"]);
+
+/**
+ * The word sh reads from double-quoted text (nax#2551): `\<newline>` is removed, `\$ \` \" \\`
+ * keep only the escaped character, and any other backslash stays. A scan, not a replace: in
+ * `\\<newline>` the first backslash escapes the second, so the newline stays.
+ */
+function doubleQuotedWord(inner: string): string {
+  let out = "";
+  for (let i = 0; i < inner.length; i++) {
+    const c = inner[i];
+    const next = inner[i + 1] ?? "";
+    if (c !== "\\" || next === "") {
+      out += c;
+    } else if (next === "\n") {
+      i++;
+    } else {
+      out += DQ_ESCAPABLE.has(next) ? next : c + next;
+      i++;
+    }
+  }
+  return out;
 }
 
 function lexEscape(state: LexerState, i: number): LexStep | undefined {
   if (state.command[i] !== "\\") return undefined;
   const next = state.command[i + 1];
   if (next === undefined) return { kind: "refuse", construct: "a trailing backslash" };
+  // nax#2551: a line continuation contributes nothing — `r\<NL>m` is the word `rm` to sh, so it
+  // must be to the policy too. It starts no word, so between words it adds no empty token.
+  if (next === "\n") return { kind: "advance", by: 2 };
   state.word += next;
   state.started = true;
   return { kind: "advance", by: 2 };
