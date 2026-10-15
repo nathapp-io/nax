@@ -46,14 +46,17 @@ describe("runBranchReview", () => {
       minorTriage: [{ id: "M1", decision: "fix-now" }],
     };
     const inputs: unknown[] = [];
+    const prompts: string[] = [];
     _workflowDeps.callOp = makeScriptedCallOp((op, input) => {
       expect(op.name).toBe(workflowBranchReviewOp.name);
       inputs.push(input);
+      prompts.push((input as { prompt: string }).prompt);
       return verdict;
     });
     const out = await runBranchReview(ctx, { seed: "seed0", specPath: "spec.md", facts });
     expect(out).toEqual({ ran: true, verdict });
     expect(gitCalls.some((a) => a.includes("seed0..HEAD"))).toBe(true);
+    expect(prompts[0]).toContain("git diff seed0..HEAD -- <path>");
     expect(await Bun.file(join(ctx.runDir, "package-branch.diff")).exists()).toBe(true);
     expect(await Bun.file(join(ctx.runDir, "branch-review.json")).exists()).toBe(false);
     expect(inputs[0]).toMatchObject({ minorIds: ["M1"], timeoutMs: ctx.workflow.timeouts.reviewMs });

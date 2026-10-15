@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import {
+  buildBranchPackageReadingNote,
   buildWorkflowBranchFixPrompt,
   buildWorkflowBranchReReviewPrompt,
   buildWorkflowBranchReviewPrompt,
+  WORKFLOW_ENUMERATION_INSTRUCTION,
+  WORKFLOW_QUALITY_CHECKLIST,
   WORKFLOW_REPLY_CONTRACT,
 } from "@/prompts";
 
@@ -14,6 +17,7 @@ describe("buildWorkflowBranchReviewPrompt", () => {
     prdPath: "/repo/.nax/features/f/prd.json",
     preflightPath: "/out/workflow/f/r1/preflight.json",
     packagePath: "/out/workflow/f/r1/package-branch.diff",
+    range: "seed0..HEAD",
     stories: [
       { id: "US-001", state: "complete" },
       { id: "US-002", state: "complete-gate-open", note: "red: lint" },
@@ -38,24 +42,43 @@ describe("buildWorkflowBranchReviewPrompt", () => {
     expect(prompt).toContain("[B1] [important/gate] repo gate lint failed");
   });
 
-  test("states the remit, no per-function walk, and the reply shape with minorTriage", () => {
+  test("states the remit, the shared checklist and the reply shape with minorTriage", () => {
     expect(prompt).toContain("Cross-story integration");
     expect(prompt).toContain("Reachability");
-    expect(prompt).toContain("Do not re-review each story line by line");
+    expect(prompt).toContain(WORKFLOW_QUALITY_CHECKLIST);
+    expect(prompt).toContain(WORKFLOW_ENUMERATION_INSTRUCTION);
     expect(prompt).toContain('"minorTriage": [{"id": "M1", "decision": "fix-now|leave"}]');
   });
 
-  test("checks storage against every declared limit and points at omitted files (nax#2486)", () => {
+  test("checks storage against every declared limit and gives the per-file diff command (nax#2486)", () => {
     expect(prompt).toContain("Storage against contracts");
     expect(prompt).toMatch(/column type and width/);
-    expect(prompt).toContain("Files not shown in the diff");
+    expect(prompt).toContain("git diff seed0..HEAD -- <path>");
     expect(prompt).toContain("migration");
+  });
+
+  test("reviews its own files: no inlined diff, no truncation list, no do-not-re-review sentence (AC-9, AC-10, AC-15)", () => {
+    expect(prompt).not.toContain("Do not re-review each story line by line");
+    expect(prompt).not.toContain("full diff with context");
+    expect(prompt).not.toContain("Files not shown in the diff");
+  });
+
+  test("asks for the most severe findings first, the inspected files and the observed excerpt (AC-11 to AC-14)", () => {
+    expect(prompt).toContain("Put the most severe findings first");
+    expect(prompt).toContain("List in inspectedFiles every file you read or diffed.");
+    expect(prompt).toContain('"inspectedFiles": ["path"]');
+    expect(prompt).toContain('"observed"');
+  });
+
+  test("the reading note carries the supplied range (AC-23)", () => {
+    expect(buildBranchPackageReadingNote("seed0..HEAD")).toContain("git diff seed0..HEAD -- <path>");
   });
 
   test("empty sections read as none", () => {
     const empty = buildWorkflowBranchReviewPrompt({
       prdPath: "p",
       packagePath: "k",
+      range: "seed0..HEAD",
       stories: [],
       minors: [],
       parked: [],
@@ -71,6 +94,7 @@ describe("buildWorkflowBranchReviewPrompt", () => {
   const gateBase = {
     prdPath: "p",
     packagePath: "k",
+    range: "seed0..HEAD",
     stories: [],
     minors: [],
     parked: [],

@@ -72,6 +72,7 @@ export { timeoutRetry } from "./builders/timeout-retry-builder";
 // A5 workflow mode — story brief and implementer-session prompts (spec §6).
 export type { BranchReviewPromptInput } from "./builders/workflow-branch-builder";
 export {
+  buildBranchPackageReadingNote,
   buildWorkflowBranchFixPrompt,
   buildWorkflowBranchReReviewPrompt,
   buildWorkflowBranchReviewPrompt,
@@ -85,6 +86,11 @@ export {
   buildWorkflowRestartPrompt,
   WORKFLOW_REPLY_CONTRACT,
 } from "./builders/workflow-implementer-builder";
+// A5 workflow mode — the shared code-quality checklist both reviewer prompts embed (US-001).
+export {
+  WORKFLOW_ENUMERATION_INSTRUCTION,
+  WORKFLOW_QUALITY_CHECKLIST,
+} from "./builders/workflow-quality-checklist";
 export { buildWorkflowReReviewPrompt } from "./builders/workflow-re-review-builder";
 export type { WorkflowStoryGateStates } from "./builders/workflow-story-review-builder";
 export {

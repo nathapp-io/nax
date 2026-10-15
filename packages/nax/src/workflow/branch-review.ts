@@ -45,6 +45,7 @@ export async function runBranchReview(
     prdPath: fc.prdPath,
     ...(input.preflightPath ? { preflightPath: input.preflightPath } : {}),
     packagePath,
+    range: `${input.seed}..HEAD`,
     ...input.facts,
   });
   const outcome = await underReviewLimit(

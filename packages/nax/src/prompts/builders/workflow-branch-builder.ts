@@ -5,12 +5,15 @@ import {
   WORKFLOW_REPLY_CONTRACT,
   type WorkflowPromptFinding,
 } from "./workflow-implementer-builder";
+import { WORKFLOW_ENUMERATION_INSTRUCTION, WORKFLOW_QUALITY_CHECKLIST } from "./workflow-quality-checklist";
 
 export interface BranchReviewPromptInput {
   readonly specPath?: string;
   readonly prdPath: string;
   readonly preflightPath?: string;
   readonly packagePath: string;
+  /** `<seed>..HEAD`: the commit range every changed file is read through (US-001). */
+  readonly range: string;
   readonly stories: readonly { readonly id: string; readonly state: string; readonly note?: string }[];
   readonly minors: readonly { readonly id: string; readonly storyId: string; readonly text: string }[];
   readonly parked: readonly { readonly storyId: string; readonly text: string }[];
@@ -48,8 +51,18 @@ function storyLines(input: BranchReviewPromptInput): string {
   return bullets(input.stories.map((s) => `${s.id}: ${s.state}${s.note ? ` (${s.note})` : ""}`));
 }
 
+/**
+ * The branch package's "How to read the diff" section: the package holds no diff body, so the
+ * reviewer pulls each changed file itself (SPEC-workflow-review-depth § Approach 2). `writeBranchReviewPackage`
+ * appends the same text to the package it writes, so prompt and package give one instruction.
+ */
+export function buildBranchPackageReadingNote(range: string): string {
+  return `## How to read the diff
+No diff is inlined. For each changed file run \`git diff ${range} -- <path>\`, or Read a file the branch added. Start with production source, then migrations and schema, then tests.`;
+}
+
 const REVIEW_JSON =
-  '{"spec": "pass|fail", "quality": "approved|changes", "findings": [{"severity": "critical|important|minor", "kind": "spec|quality", "file": "path", "line": 0, "acId": "AC-3", "issue": "what is wrong", "suggestion": "how to fix"}], "cannotVerify": ["..."], "minorTriage": [{"id": "M1", "decision": "fix-now|leave"}]}';
+  '{"spec": "pass|fail", "quality": "approved|changes", "inspectedFiles": ["path"], "findings": [{"severity": "critical|important|minor", "kind": "spec|quality", "file": "path", "line": 0, "acId": "AC-3", "issue": "what is wrong", "observed": "verbatim excerpt", "suggestion": "how to fix"}], "cannotVerify": ["..."], "minorTriage": [{"id": "M1", "decision": "fix-now|leave"}]}';
 
 export function buildWorkflowBranchReviewPrompt(input: BranchReviewPromptInput): string {
   const preflight = input.preflightPath ? `\n- the pre-flight rulings: ${input.preflightPath}` : "";
@@ -57,7 +70,9 @@ export function buildWorkflowBranchReviewPrompt(input: BranchReviewPromptInput):
   return `You are reviewing a whole feature branch. Every story was implemented and reviewed on its own already. Read:
 - the feature spec: ${input.specPath ?? "(no spec file found)"}
 - the PRD (stories and acceptance criteria): ${input.prdPath}${preflight}
-- the branch review package (commits, --stat, full diff with context): ${input.packagePath}. When the diff is truncated, the package ends with "Files not shown in the diff": read those yourself, schema, migration and shared-contract files first.
+- the branch review package (commits, --stat, changed files; no diff is inlined): ${input.packagePath}
+
+${buildBranchPackageReadingNote(input.range)}
 
 ## Stories
 ${storyLines(input)}
@@ -82,9 +97,15 @@ ${naxCheckedBlock(input.repoGates)}
 - Consistency and duplication across stories.
 - Storage against contracts: for every field one story persists and another story reads, writes or validates, the column type and width (as the migration declares it, not only the schema) must hold every value the DTOs, acceptance criteria and API contracts accept.
 - Triage each deferred minor as "fix-now" (cheap and worth doing before the PR) or "leave".
-Do not re-review each story line by line; the story reviews did that, each from its own diff, so a contract that spans two stories is yours to check.
+Judge every changed file you read against the checklist below, as well as against the cross-story contracts.
 
-Severity: "critical" (wrong or unsafe behaviour), "important" (must fix before the PR), "minor" (worth noting, not blocking). ${CANNOT_VERIFY_RULE}
+${WORKFLOW_QUALITY_CHECKLIST}
+
+${WORKFLOW_ENUMERATION_INSTRUCTION}
+
+Severity: "critical" (wrong or unsafe behaviour), "important" (must fix before the PR), "minor" (worth noting, not blocking). Put the most severe findings first. A critical or important finding about what the code does carries "observed": a verbatim excerpt from the file that proves it. ${CANNOT_VERIFY_RULE}
+
+List in inspectedFiles every file you read or diffed.
 
 Reply with only this JSON object:
 ${REVIEW_JSON}`;

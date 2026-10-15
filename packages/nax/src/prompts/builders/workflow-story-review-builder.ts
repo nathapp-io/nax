@@ -1,5 +1,7 @@
 /** A5 workflow mode: the story review prompt (spec §6 step 4) and the JSON retries shared with the re-review. */
 
+import { WORKFLOW_ENUMERATION_INSTRUCTION, WORKFLOW_QUALITY_CHECKLIST } from "./workflow-quality-checklist";
+
 /**
  * US-006 (nax#2527): the story's recorded gate states, declared here rather than imported from
  * `@/workflow` — this builder must keep reaching nothing outside `src/prompts`. Structurally the
@@ -41,6 +43,10 @@ export function buildWorkflowStoryReviewPrompt(input: {
 For each acceptance criterion, verify the current code implements it correctly. Use the diff to find the changed paths, not as the only source of truth. Follow each criterion's data and contract to where it is declared or stored (schema, migrations, DTOs, shared types), including code an earlier story created that this diff does not touch: a limit the story accepts must fit the storage and contracts it writes to. Read a file before you flag it.
 
 ${naxCheckedBlock(input.gates ?? {})}
+
+${WORKFLOW_QUALITY_CHECKLIST}
+
+${WORKFLOW_ENUMERATION_INSTRUCTION}
 
 Give two verdicts:
 - **spec**: "pass" only if every acceptance criterion is implemented and covered by a test that would fail without it. Check the report's TDD evidence: missing evidence for an AC, or a test that asserts nothing, is a spec failure.
