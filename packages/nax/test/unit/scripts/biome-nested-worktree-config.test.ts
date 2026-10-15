@@ -67,5 +67,7 @@ describe("nested worktree biome.json (nax#1934)", () => {
     expect(exitCode).toBe(0);
     expect(stdout).toContain("Checked");
     expect(stderr).not.toContain("nested root configuration");
-  });
+    // Spawns `bun x biome check`: ~1.2s alone, but past the confined run's 5s
+    // per-test budget on a 4-core CI runner with 4 parallel test workers busy.
+  }, 20_000);
 });
