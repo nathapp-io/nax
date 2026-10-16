@@ -1,0 +1,291 @@
+{
+  "project": "nax-monorepo",
+  "feature": "auth-relogin-recovery",
+  "branchName": "feat/auth-relogin-recovery",
+  "createdAt": "2026-10-16T00:00:00.000Z",
+  "updatedAt": "2026-10-16T02:28:53.219Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Move completeAsWithFallback out of the agent manager",
+      "description": "**Goal** — Move the body of `AgentManager.completeAsWithFallback` into `completeAsWithFallback(input, agentName, prompt, options)` in a new module, leaving a one-line delegation, with no behaviour change.\n\n**Motivation** — `packages/nax/src/agents/manager.ts` is at exactly 600 lines (the source limit, no `file-sizes-baseline.json` entry), so any net growth fails `check:file-sizes`; this frees the budget US-002 and US-003 need.\n\n**Approach** — Refactor only. `AgentManager.completeAsWithFallback(agentName, prompt, options)` (about lines 512-566 of manager.ts) currently builds the complete-call preamble, awaits `this.completeWithFallback`, and emits the dispatch event or the dispatch-error event. The body moves unchanged into `completeAsWithFallback(input, agentName, prompt, options)` in `packages/nax/src/agents/manager-complete-as.ts`. `input` is `{ config, dispatchEvents, completeWithFallback }`. The method stays on `AgentManager` as a one-line delegation with the same signature. This mirrors how `runWithFallback` lives in `manager-run-fallback.ts`. Verification: `bun run typecheck` and `bun run check:all` in `packages/nax` pass; `check:file-sizes` reports `src/agents/manager.ts` at or below 565 lines; the existing `completeAs` and `completeAsWithFallback` tests (for example `manager-complete.test.ts`) pass unchanged.\n\n**Scope** — In: new `manager-complete-as.ts`, one-line delegation in `manager.ts`. Out: any cooldown/auth logic (US-002, US-003); any signature change on `AgentManager`.\n\n**Interface**\n```ts\n// packages/nax/src/agents/manager-complete-as.ts\nexport async function completeAsWithFallback(\n  input: { config; dispatchEvents; completeWithFallback },\n  agentName: string,\n  prompt: string,\n  options,\n): Promise</* same outcome type as AgentManager.completeAsWithFallback today */ unknown>;\n// AgentManager.completeAsWithFallback(agentName, prompt, options) keeps its signature and delegates.\n```",
+      "acceptanceCriteria": [
+        "`completeAsWithFallback` imported from `@/agents/manager-complete-as`, called with an input whose `completeWithFallback` stub resolves an outcome with output `ok`, returns that outcome.",
+        "That call invokes the input's `dispatchEvents.emitDispatch` exactly once.",
+        "When the input's `completeWithFallback` stub rejects with a `NaxError`, `completeAsWithFallback` rejects with that same error and invokes `dispatchEvents.emitDispatchError` exactly once."
+      ],
+      "tags": [
+        "refactor",
+        "agents"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Mechanical extraction of one method body into a new module with a one-line delegation; no behaviour change and no credential logic itself.",
+        "agentProfileId": "native-luna",
+        "agent": "native",
+        "profileModelTier": "fast",
+        "initialAgent": "native",
+        "initialProfileId": "native-luna",
+        "initialModelTier": "fast"
+      },
+      "contextFiles": [
+        "packages/nax/src/agents/manager.ts",
+        "packages/nax/src/agents/manager-run-fallback.ts",
+        "packages/nax/test/unit/agents/manager-complete.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/agents/manager-complete-as.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-002",
+      "title": "Provider-scoped fail-auth that recovers when the credential changes",
+      "description": "**Goal** — Park only the failing provider on a native `fail-auth` (keyed by provider, stamped with the failing credential fingerprint), and release that cooldown automatically at the start of every agent call once the credential's fingerprint has changed.\n\n**Motivation** — `fail-auth` has `cooldown: \"run\"` and `cooldownScope: \"agent\"`, so one provider's bad login retires every native tier for the rest of the run and a mid-run re-login can never bring native back (#2529).\n\n**Approach** (verbatim from spec)\n\nSize/complexity budget: `manager.ts` is at exactly 600 lines (source limit, no baseline entry; net growth fails `check:file-sizes`). `complexity-baseline.json` pins `runWithFallback` at 52 and `completeWithFallback` at 40; a higher score fails `check:complexity`. So the logic lives in new modules and `AgentManager`'s new members are one-line delegations to an `AuthCoordinator` in `auth-cooldown.ts`. The pinned functions gain only plain calls, with no new `if`, ternary, or `&&` / `||` / `??`. Biome's cognitive complexity does not count `?.` or `await`.\n\nSymbols only READ: `providerOf(modelId?: string): string | undefined` (`packages/nax/src/agents/cooldown-provider.ts`; returns the first non-`unknown` path segment followed by a model segment, so `openai-codex/gpt-6.1-sol` gives `openai-codex`, `unknown/sonnet` gives `undefined`). `servedAuth(providerId): AuthStamp | undefined` and `naxCredentialStore()` from `@nathapp/nax-agent`; `AuthStamp` is `{ fingerprint, source, account? }`. The native client reads `naxCredentialStore()` before each request, so after a `fail-auth` `servedAuth(P)` is the identity that failed; it is `undefined` only when the read itself failed. An OAuth fingerprint is computed from the refresh token, so a re-login changes it. Under `auth.onChange: \"refuse\"`, a read of a changed credential throws. `DEFAULT_AGENT_NAME = \"native\"` (`packages/nax/src/config/agent-defaults.ts`).\n\nSymbols CHANGED (the baseline only locates the code; it is never the interface to implement):\n\n`CooldownStore` (`packages/nax/src/agents/cooldown-store.ts`). Baseline: `mark(agent, failure, tier?, modelId?)`; `CooldownEntry` is `{ failure, expiresAt }`. Target: `mark(agent, failure, tier?, modelId?, auth?: AuthCooldownStamp)`, where `AuthCooldownStamp = { providerId: string; fingerprint?: string }` (imported with `import type`). `CooldownEntry` gains `auth?: AuthCooldownStamp`. With `auth`, the entry is keyed `<agent>::provider::<auth.providerId>`. Without it, keying is exactly today's, so the `fail-auth` policy row stays `cooldownScope: \"agent\"` and ACP agents and every other outcome keep their current keys. `_live`: when the probe names no tier and no model (the narrow key equals the agent), it also returns any live auth-stamped entry of that agent. This keeps today's agent-wide answer for identity-less probes, such as a flat `[\"native\"]` fallback target. A probe that names a tier or model on another provider does not match the stamped entry. Two new methods: `authCooldowns(): readonly { key: string; agent: string; auth: AuthCooldownStamp }[]` lists live entries that carry `auth`; `release(key: string): boolean` deletes one entry and returns whether it existed.\n\n`AgentManager` (`manager.ts`) and `IAgentManager` (`manager-types.ts`); each change is a delegation into the new module `packages/nax/src/agents/auth-cooldown.ts`:\n- `markUnavailable(agent, reason, tier?, model?, authModel?)` gains an optional `authModel`, used only to resolve the stamp's provider and never as the cooldown key. It passes `authStampFor(agent, reason, authModel ?? modelId, deps)` as `mark`'s new `auth` argument; the `??` sits in `markUnavailable`, which is not ratcheted. `authStampFor` returns `{ providerId: P, fingerprint: deps.servedAuth(P)?.fingerprint }` for a `fail-auth` on agent `native` whose model id names provider P (by `providerOf`), and `undefined` otherwise.\n- `refreshAuthCooldowns(): Promise<void>` (new). Delegates to `refreshAuthCooldowns(store, tracker, deps, logger)`: it checks each `authCooldowns()` entry (and, once US-003 lands, each provider that has a notice but no cooldown). For each, it awaits `deps.readCredential(providerId)` and then reads `deps.servedAuth(providerId)?.fingerprint`. When that is defined and differs from the recorded fingerprint (including when none was recorded), it calls `release(key)`. Only when `release` returns `true` does it log `info` on scope `agent-manager`: `Credential changed for <providerId> — <agent> available again`, with data `{ storyId: \"_agent\", agent, providerId, previousFingerprint, fingerprint }`. It also drops that provider's notice (the tracker's `drop(providerId)` can be a stub until US-003). A read that throws (logged at `debug`) or an unchanged fingerprint keeps the entry.\n- `_agentManagerDeps` gains `servedAuth`, `readCredential(providerId): Promise<void>` (defaulting to `naxCredentialStore().read(providerId)`) and `listStoredProviders`. The auth module reaches the credential store only through these, so tests never touch the real `~/.nax`.\n- `refreshAuthCooldowns` is added to `IAgentManager`.\n\n`runWithFallback(input: RunFallbackInput)` (`manager-run-fallback.ts`). Baseline: calls `resolveStartAgent` first and calls `input.markUnavailable(...)` only on the swap path. Target: `RunFallbackInput` gains `refreshAuthCooldowns: () => Promise<void>`; `runWithFallback` awaits `input.refreshAuthCooldowns()` before `resolveStartAgent`. Both are plain calls. `AgentManager.runWithFallback` wires it.\n\n`AgentManager.completeWithFallback`. Baseline: starts on `primaryAgent` without an availability probe; cooldowns only affect it through `nextCandidate` after a failure; on an availability failure it calls `this.markUnavailable(currentAgent, result.adapterFailure, currentTier, undefined)`. Target: it awaits `this.refreshAuthCooldowns()` before its loop, so `nextCandidate` sees released providers. Its `markUnavailable` call keeps `undefined` as the model, so cooldown keys on the complete path are unchanged, and passes `authModelOf(hopOptions.modelDef)` as the new `authModel`. `authModelOf` (in `auth-cooldown.ts`) returns `<provider>/<model>` for a model def, or `undefined`.\n\n`auth-cooldown.ts` holds `authStampFor`, `authModelOf`, `refreshAuthCooldowns`, and (US-003) the `AuthReloginTracker` class and an `AuthCoordinator` that owns the tracker and binds the store and deps. `AgentManager` holds one `AuthCoordinator`; its members are one-line delegations. The module never imports `manager.ts`; deps are passed in.\n\nOrder of checks at the start of every agent call: (1) `refreshAuthCooldowns` releases any `fail-auth` provider whose credential changed; (2) start selection (`resolveStartAgent`) and `nextCandidate` then see the updated store; (3) after a hop fails with `fail-auth`, `markUnavailable` records the cooldown with its fingerprint (swap path only).\n\nFailure handling: credential read throws (exec helper failure or refused change under `onChange: \"refuse\"`) -> entry kept, one `debug` line, no throw. Current fingerprint equals recorded -> entry kept, nothing logged. No fingerprint recorded and a credential now resolves -> entry released and `available again` logged. Two concurrent refreshes releasing the same entry -> only the call whose `release` returned `true` logs. `fail-auth` on a non-native agent or with no provider in the model id -> today's cooldown and key, no fingerprint, never released by refresh. Accepted trade-offs: an OAuth refresh-token rotation changes the fingerprint without a re-login (one more failing call, then cooldown returns); under `onChange: \"refuse\"` recovery never happens in that run.\n\nVerification: `check:file-sizes` keeps `src/agents/manager.ts` at or below 600 lines, and `check:complexity` passes with the `runWithFallback` and `completeWithFallback` baselines unchanged.\n\n**Scope** — In: CooldownStore stamp/keying/`_live` rule/`authCooldowns`/`release`; `auth-cooldown.ts` with `authStampFor`, `authModelOf`, `refreshAuthCooldowns`, `AuthCooldownStamp` (tracker `drop` may be a stub); the three `_agentManagerDeps` members; `markUnavailable` stamp; `refreshAuthCooldowns` on `AgentManager`/`IAgentManager`; calls at the start of `runWithFallback` and `completeWithFallback`; no-op `refreshAuthCooldowns` in the mock and fake agent managers. Out: `reportAuthFailure`, `authRelogins`, hint text, notices, run-end footer (US-003); start-line preview (US-004); recovering ACP agents; any change to the `fail-auth` policy row.\n\n**Interface**\n```ts\nexport type AuthCooldownStamp = { providerId: string; fingerprint?: string };\n// CooldownStore\nmark(agent, failure, tier?, modelId?, auth?: AuthCooldownStamp): void;\nauthCooldowns(): readonly { key: string; agent: string; auth: AuthCooldownStamp }[];\nrelease(key: string): boolean;\n// AgentManager / IAgentManager\nmarkUnavailable(agent, reason, tier?, model?, authModel?): void;\nrefreshAuthCooldowns(): Promise<void>;\n// auth-cooldown.ts\nauthStampFor(agent, reason, modelId, deps): AuthCooldownStamp | undefined;\nauthModelOf(modelDef): string | undefined; // `<provider>/<model>`\nrefreshAuthCooldowns(store, tracker, deps, logger): Promise<void>;\n// RunFallbackInput\nrefreshAuthCooldowns: () => Promise<void>;\n```",
+      "acceptanceCriteria": [
+        "`failurePolicyFor(\"fail-auth\").cooldownScope` is still `\"agent\"`.",
+        "On an `AgentManager` whose `native` tiers `balanced` and `fast` resolve to `openai-codex/...` and `minimax/...` models, `markUnavailable(\"native\", <fail-auth>, \"balanced\")` makes `isUnavailable(\"native\", \"balanced\")` true.",
+        "After that call, `isUnavailable(\"native\", \"fast\")` is false.",
+        "`markUnavailable(\"claude\", <fail-auth>, \"fast\", \"claude-sonnet-4-6\")` on a manager with no `claude` models config still makes `isUnavailable(\"claude\", \"balanced\")` true.",
+        "A `fail-auth` cooldown marked for `native` on `openai-codex` survives `resetTransientUnavailable()`.",
+        "After that `fail-auth` on `native`, `isUnavailable(\"native\")`, a probe with no tier and no model, is true.",
+        "After that `fail-auth`, on a manager whose fallback map for `claude` is the flat list `[\"native\"]`, `nextCandidate(\"claude\", 0, \"claude\")` returns `null`.",
+        "With `_agentManagerDeps.servedAuth` stubbed to return fingerprint `aaa` for `openai-codex`, `markUnavailable(\"native\", <fail-auth>, \"balanced\")` leaves an `authCooldowns()` entry whose `auth` is `{ providerId: \"openai-codex\", fingerprint: \"aaa\" }`.",
+        "`markUnavailable(\"native\", <fail-rate-limit>, \"balanced\")` leaves no `authCooldowns()` entry.",
+        "`markUnavailable(\"claude\", <fail-auth>)` leaves no `authCooldowns()` entry.",
+        "`refreshAuthCooldowns()`, after `_agentManagerDeps.readCredential` resolves and `servedAuth` now returns fingerprint `bbb`, makes `isUnavailable(\"native\", \"balanced\")` false.",
+        "That refresh logs one `info` entry on scope `agent-manager` with message `Credential changed for openai-codex — native available again` and data `previousFingerprint` `aaa` and `fingerprint` `bbb`.",
+        "Two `refreshAuthCooldowns()` calls started together, in that changed-fingerprint state, log the `available again` line once in total.",
+        "`refreshAuthCooldowns()` while `servedAuth` still returns `aaa` keeps `isUnavailable(\"native\", \"balanced\")` true and logs no `info` entry.",
+        "`refreshAuthCooldowns()` when `_agentManagerDeps.readCredential` rejects keeps `isUnavailable(\"native\", \"balanced\")` true and resolves without throwing.",
+        "A `fail-auth` marked while `servedAuth` returned `undefined` for `openai-codex` is released by `refreshAuthCooldowns()` once `servedAuth` returns any fingerprint.",
+        "`refreshAuthCooldowns()` never calls `_agentManagerDeps.readCredential` for an agent-wide `claude` `fail-auth` entry.",
+        "`AgentManager.runWithFallback`, on a request for agent `native` at tier `balanced` (fallback enabled, `claude` in the fallback map), after a `fail-auth` on `native` and a fingerprint change from `aaa` to `bbb`, dispatches its first hop to `native`.",
+        "`AgentManager.runWithFallback` under the same setup, with the fingerprint unchanged, dispatches its first hop to `claude` and logs `Primary agent already unavailable — starting on fallback`.",
+        "`AgentManager.completeWithFallback`, with primary `claude` and `{ agent: \"native\", tier: \"balanced\" }` in its fallback map, after `native` was cooled by a `fail-auth` with fingerprint `aaa` that has since changed to `bbb`, swaps to `native` when `claude` fails with `fail-rate-limit`.",
+        "`AgentManager.completeWithFallback`, when its first hop on `native` with model def `{ provider: \"openai-codex\", model: \"gpt-6.1-sol\" }` returns `fail-auth`, leaves an `authCooldowns()` entry with `providerId` `openai-codex`.",
+        "`AgentManager.completeWithFallback`, when a `claude` hop with model def `{ provider: \"anthropic\", model: \"claude-sonnet-4-6\" }` throws an auth error, makes `isUnavailable(\"claude\")` true."
+      ],
+      "tags": [
+        "feature",
+        "security",
+        "agents",
+        "auth",
+        "cooldown"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Cross-module change (cooldown store, manager, fallback loop, new auth module) handling credential fingerprints with concurrency-sensitive release logging and tight size/complexity ratchets; credential handling triggers the security override to three-session-tdd.",
+        "agentProfileId": "native-sol",
+        "agent": "native",
+        "profileModelTier": "powerful",
+        "initialAgent": "native",
+        "initialProfileId": "native-sol",
+        "initialModelTier": "powerful"
+      },
+      "contextFiles": [
+        "packages/nax/src/agents/retry/failure-policy.ts",
+        "packages/nax/src/agents/cooldown-store.ts",
+        "packages/nax/src/agents/manager.ts",
+        "packages/nax/src/agents/manager-run-fallback.ts",
+        "packages/nax/test/unit/agents/fallback-model-targets.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/agents/auth-cooldown.ts",
+        "packages/nax/test/unit/agents/auth-cooldown-refresh.test.ts"
+      ],
+      "suggestedCriteria": [
+        "`CooldownStore.release(key)` returns false when no entry exists for that key.",
+        "`CooldownStore.authCooldowns()` omits an auth-stamped entry whose cooldown has expired."
+      ],
+      "outOfScope": [
+        "Recovering an ACP agent (`claude`, `codex`, ...) after `fail-auth`; nax does not manage those credentials.",
+        "Retrying a `fail-auth` within the same agent call; the swap still happens immediately.",
+        "Re-checking credentials on a timer; the check runs only at the start of an agent call.",
+        "Hint text, notices and run-end footer (US-003)."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/helpers/mock-agent-manager.ts",
+          "reason": "the mock implements `IAgentManager`, which gains `refreshAuthCooldowns`. The replacing invariant is a mock whose `refreshAuthCooldowns` resolves without doing anything."
+        },
+        {
+          "path": "packages/nax/test/helpers/fake-agent-manager.ts",
+          "reason": "the fake implements `IAgentManager`, which gains `refreshAuthCooldowns`. The replacing invariant is a fake whose `refreshAuthCooldowns` resolves without doing anything."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-003",
+      "title": "Re-login hints at the failure and at run end",
+      "description": "**Goal** — On a native `fail-auth`, log one `warn` naming the provider and the `nax auth login <provider>` fix (including when no fallback is configured), keep it as a notice, and repeat any still-relevant notice in the end-of-run summary.\n\n**Motivation** — Nothing in the run log or summary pointed at `nax auth login openai-codex`, the actual fix, and `nax auth list` still showed an expiry a week away (#2528).\n\n**Approach** (verbatim from spec)\n\n`packages/nax/src/agents/auth-relogin.ts` holds the pure hint text and the notice type:\n```ts\nexport interface AuthReloginNotice {\n  readonly providerId: string;\n  readonly agent: string;\n  readonly message: string;\n}\n\n/** `credential` is the stored entry for `providerId`, or undefined when none is stored (env var, exec helper). */\nexport function authReloginHint(providerId: string, credential: StoredEntry | undefined, now: number): string {\n  if (credential?.kind === \"oauth\" && credential.expires !== undefined && credential.expires > now)\n    return `Login for ${providerId} was rejected before its recorded expiry (expires ${new Date(credential.expires).toISOString()}). Run: nax auth login ${providerId}`;\n  if (credential?.kind === \"oauth\") return `Login for ${providerId} was rejected. Run: nax auth login ${providerId}`;\n  if (credential?.kind === \"api-key\")\n    return `API key for ${providerId} was rejected. Check or replace it: nax auth login ${providerId} (or nax auth import)`;\n  return `Credentials for ${providerId} were rejected. Check where they come from with: nax auth list`;\n}\n```\n`StoredEntry` is `{ providerId, kind: \"api-key\" | \"oauth\", expires?: number }` from `listStoredProviders(): Promise<StoredEntry[]>` (`@nathapp/nax-agent`).\n\n`packages/nax/src/agents/auth-cooldown.ts` (created by US-002) is extended with the `AuthReloginTracker` class (claimed keys, notices by provider with their fingerprints, `report`, `notices`, `drop(providerId)`, `clear`) and an `AuthCoordinator` that owns the tracker and binds the store and deps. `AgentManager` holds one `AuthCoordinator`; `refreshAuthCooldowns`, `reportAuthFailure` and `authRelogins` are one-line delegations to it. It never imports `manager.ts`.\n\n`AgentManager` / `IAgentManager` additions:\n- `reportAuthFailure(agent, failure: AdapterFailure | undefined, tier?, model?): Promise<void>` (new). Delegates to `AuthReloginTracker.report(...)`. It returns at once unless `failure?.outcome` is `fail-auth`, the agent is `native`, and the model id (resolved as `markUnavailable` resolves it, through the fallback identity) names provider P. Synchronously, before any `await`, it claims the key `P` plus `deps.servedAuth(P)?.fingerprint`. A key already claimed returns without logging, so concurrent callers log once. It then awaits `deps.listStoredProviders()`, builds the text with `authReloginHint`, and logs it once as a `warn` on scope `agent-manager`, with data `{ storyId: \"_agent\", agent, providerId, kind?, expires? }`. It stores the notice, with its fingerprint, under P, replacing any earlier notice for P.\n- `authRelogins(): readonly AuthReloginNotice[]` (new). Returns the stored notices, one per provider, in first-report order. A provider's notice is removed when `refreshAuthCooldowns` releases that provider.\n- `reset()` also clears the tracker's notices and claimed keys.\n- `refreshAuthCooldowns` (US-002) now also checks each provider that has a notice but no cooldown (a declined-swap failure); a notice with no cooldown is dropped, without the `available again` log line, when its recorded fingerprint differs from the current one. A released provider's notice is dropped.\n\n`runWithFallback(input: RunFallbackInput)` (`manager-run-fallback.ts`). `RunFallbackInput` gains `reportAuthFailure: (agent, failure, tier?, model?) => Promise<void>`. It makes one plain call, `await input.reportAuthFailure(currentAgent, result.adapterFailure, currentHopKind.tier, dispatchedModel)`, between the same-agent retry block and the `request.noFallback` check. That single call covers the `noFallback` return, every exit of the `!swap.swap` block (fallback disabled, the hop cap), and the swap path. The claimed key dedupes a repeat. The `fail-auth` test lives inside `reportAuthFailure`. `AgentManager.runWithFallback` wires it.\n\n`AgentManager.completeWithFallback`: one plain call, `await this.reportAuthFailure(currentAgent, result.adapterFailure, currentTier, authModelOf(hopOptions.modelDef))`, immediately before its `decideSwap` call. That covers both the declined branch and the swap path.\n\n`RunSummary` (`packages/nax/src/log-format/types.ts`), `RunFooterOptions` (`packages/nax/src/execution/lifecycle/headless-formatter.ts`) and `formatRunSummary` (`packages/nax/src/log-format/summary.ts`): both types gain `authRelogins?: readonly string[]`. `outputRunFooter` copies it into the `RunSummary`. In non-json modes, `formatRunSummary` prints a `Re-login needed:` line after the counts block, followed by one indented line per hint, when the array is non-empty.\n\n`runCompletionPhase(options)` (`packages/nax/src/execution/runner-completion.ts`): after `finishRun` returns (`finishRun` dispatches agents, so notices can still arrive during it), it calls `reportAuthRelogins(options.agentManager, logger)` from the new module `packages/nax/src/execution/auth-relogin-report.ts`. That helper reads `agentManager?.authRelogins()` once, logs each message as a `warn` on scope `execution` with data `{ storyId: \"_run\", providerId }` whatever the formatter mode, and returns the messages. `runCompletionPhase` passes the returned array as `authRelogins` to its existing `outputRunFooter` call.\n\nOrder of checks: after a hop fails with `fail-auth`, `markUnavailable` records the cooldown (swap path only); `reportAuthFailure` builds the hint from one call placed before the swap decision, so it runs whether or not the swap happens.\n\nFailure handling: two concurrent `reportAuthFailure` calls for the same provider and fingerprint -> one `warn`. `listStoredProviders` throws -> hint built with no stored entry (the `nax auth list` wording), still one `warn`. `fail-auth` on a non-native agent or with no provider in the model id -> no hint. `fail-auth` whose swap is declined (no fallback, hop cap) -> hint logged and kept as a notice, no cooldown (as today); a later credential change drops the notice. A released provider that fails again -> a new cooldown with the new fingerprint; the claimed key differs, so the hint is logged again and replaces the notice.\n\nVerification: `check:file-sizes` keeps `src/agents/manager.ts` at or below 600 lines and `src/execution/runner-completion.ts` at or below 600, and `check:complexity` passes with all three pinned baselines (`runWithFallback` 52, `completeWithFallback` 40, `runCompletionPhase` 34) unchanged. The new call sites add plain calls only - no new `if`, ternary, `&&`/`||`/`??`.\n\n**Scope** — In: `auth-relogin.ts`; tracker/coordinator in `auth-cooldown.ts`; `reportAuthFailure`/`authRelogins` on `AgentManager` and `IAgentManager`; `reset()` clearing; the two call sites; `auth-relogin-report.ts`; `runCompletionPhase` wiring; `RunSummary`/`RunFooterOptions`/`formatRunSummary` footer block; mock/fake agent manager members. Out: the cooldown stamp, release and refresh mechanism (US-002); start-line preview (US-004); recording a cooldown when a swap is declined; a TUI hint.\n\n**Interface**\n```ts\nexport interface AuthReloginNotice { readonly providerId: string; readonly agent: string; readonly message: string }\nexport function authReloginHint(providerId: string, credential: StoredEntry | undefined, now: number): string;\nreportAuthFailure(agent, failure: AdapterFailure | undefined, tier?, model?): Promise<void>;\nauthRelogins(): readonly AuthReloginNotice[];\nexport function reportAuthRelogins(agentManager: IAgentManager | undefined, logger): readonly string[]; // execution/auth-relogin-report.ts\n// RunSummary and RunFooterOptions: authRelogins?: readonly string[]\n```",
+      "acceptanceCriteria": [
+        "`authReloginHint(\"openai-codex\", { providerId: \"openai-codex\", kind: \"oauth\", expires: <now + 1 day> }, <now>)` returns `Login for openai-codex was rejected before its recorded expiry (expires <that ISO time>). Run: nax auth login openai-codex`.",
+        "`authReloginHint` with an `oauth` entry whose `expires` is at or before `now` returns `Login for openai-codex was rejected. Run: nax auth login openai-codex`.",
+        "`authReloginHint` with an `oauth` entry that has no `expires` returns the same `Login for openai-codex was rejected. Run: nax auth login openai-codex` text.",
+        "`authReloginHint` with an `api-key` entry returns `API key for openai-codex was rejected. Check or replace it: nax auth login openai-codex (or nax auth import)`.",
+        "`authReloginHint` with no entry returns `Credentials for openai-codex were rejected. Check where they come from with: nax auth list`.",
+        "`reportAuthFailure(\"native\", <fail-auth>, \"balanced\")` for an `openai-codex` tier, with `_agentManagerDeps.listStoredProviders` stubbed to return a future-dated `oauth` entry for `openai-codex`, logs one `warn` on scope `agent-manager` whose message is the `before its recorded expiry` hint.",
+        "Two `reportAuthFailure` calls for the same provider and fingerprint, started together, log one `warn` in total.",
+        "`reportAuthFailure` when the `listStoredProviders` stub rejects logs one `warn` with the `Check where they come from with: nax auth list` hint.",
+        "`reportAuthFailure(\"native\", <fail-rate-limit>, \"balanced\")` logs nothing and records no notice.",
+        "`reportAuthFailure(\"claude\", <fail-auth>, \"fast\")` logs nothing and records no notice.",
+        "`authRelogins()` after one reported `openai-codex` failure returns one notice with `providerId` `openai-codex`, `agent` `native` and the hint as `message`.",
+        "After a second report for `openai-codex` with a different fingerprint, `authRelogins()` returns one notice for `openai-codex`, whose `message` is the second report's hint.",
+        "`authRelogins()` after `refreshAuthCooldowns()` releases `openai-codex` returns an empty array.",
+        "`authRelogins()` after `reset()` returns an empty array.",
+        "`AgentManager.runWithFallback`, on a `native` request whose first hop returns a `fail-auth` adapter failure for an `openai-codex` model, logs the re-login `warn` before the swap to the fallback agent dispatches.",
+        "`AgentManager.runWithFallback`, on the same request with `agent.fallback.enabled` false, logs the re-login `warn`.",
+        "`AgentManager.runWithFallback`, on the same request with `noFallback: true`, logs the re-login `warn`.",
+        "`AgentManager.completeWithFallback`, on a `native` first hop returning `fail-auth` for an `openai-codex` model def with fallback disabled, logs the re-login `warn`.",
+        "A notice recorded on a declined swap, with no cooldown, is gone from `authRelogins()` after `refreshAuthCooldowns()` sees a changed fingerprint for that provider.",
+        "`runCompletionPhase`, in headless `normal` mode with an agent manager whose `authRelogins()` returns one notice, prints run-footer output containing `Re-login needed:` followed by that notice's message.",
+        "That `runCompletionPhase` call logs one `warn` on scope `execution` whose message is the notice's message and whose data carries `providerId`.",
+        "`runCompletionPhase`, with an agent manager whose `authRelogins()` returns an empty array, prints no `Re-login needed:` line.",
+        "`formatRunSummary` in `normal` mode with `authRelogins: [\"Login for openai-codex was rejected. Run: nax auth login openai-codex\"]` returns text in which a `Re-login needed:` line is followed by a line containing that hint.",
+        "When a provider released by `refreshAuthCooldowns()` fails `fail-auth` again with a new fingerprint, `reportAuthFailure` logs the re-login `warn` again and `authRelogins()` returns a single notice for that provider carrying the new hint."
+      ],
+      "tags": [
+        "feature",
+        "security",
+        "agents",
+        "auth",
+        "reporting"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Spans agents, execution and log-format modules with synchronous claim-before-await concurrency and pinned complexity/size ratchets; handles credential-failure reporting so the security override applies.",
+        "agentProfileId": "native-sol",
+        "agent": "native",
+        "profileModelTier": "powerful",
+        "initialAgent": "native",
+        "initialProfileId": "native-sol",
+        "initialModelTier": "powerful"
+      },
+      "contextFiles": [
+        "packages/nax/src/agents/auth-cooldown.ts",
+        "packages/nax/src/agents/manager-run-fallback.ts",
+        "packages/nax/src/execution/runner-completion.ts",
+        "packages/nax/src/log-format/summary.ts",
+        "packages/nax/src/cli/auth-list.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/agents/auth-relogin.ts",
+        "packages/nax/src/execution/auth-relogin-report.ts",
+        "packages/nax/test/unit/agents/auth-relogin.test.ts",
+        "packages/nax/test/unit/execution/runner-completion-auth-relogin.test.ts"
+      ],
+      "suggestedCriteria": [
+        "`reportAuthRelogins(undefined, logger)` returns an empty array and logs nothing.",
+        "A notice for a declined-swap provider whose fingerprint is unchanged survives `refreshAuthCooldowns()`."
+      ],
+      "outOfScope": [
+        "Changing `nax auth list` output.",
+        "A `fail-auth` hint in the TUI, other than through the log; the footer is printed in headless mode.",
+        "Recording a cooldown when a `fail-auth` swap is declined; only the hint is new on that path."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/helpers/mock-agent-manager.ts",
+          "reason": "`IAgentManager` gains `reportAuthFailure` and `authRelogins`. The replacing invariant is a mock whose `reportAuthFailure` resolves without doing anything and whose `authRelogins` returns an empty array."
+        },
+        {
+          "path": "packages/nax/test/helpers/fake-agent-manager.ts",
+          "reason": "`IAgentManager` gains `reportAuthFailure` and `authRelogins`. The replacing invariant is a fake whose `reportAuthFailure` resolves without doing anything and whose `authRelogins` returns an empty array."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-004",
+      "title": "Workflow start lines name the fallback when the primary is unavailable",
+      "description": "**Goal** — Make `previewOpModel` name the first fallback candidate and its model, for a run-kind op whose primary endpoint is already unavailable when fallback is enabled.\n\n**Motivation** — In the 2026-10-14 log, `branch-review start`, `branch-fix start` and `branch-rereview start` named `openai-codex/...` models while each step actually ran on `claude`.\n\n**Approach** (verbatim from spec)\n\n`previewOpModel(ctx, op, input)` (`packages/nax/src/operations/op-model-preview.ts`). Baseline: returns `{ agentName: target.agent, model: target.modelDef.model }` from `resolveOpEndpoint`. Target: it destructures `target`, `effectiveTier`, `effectiveModels` and `defaultAgent` from `resolveOpEndpoint`. When `op.kind === \"run\"` (the only kind whose dispatch probes the start agent), `config.agent.fallback.enabled` is true, and `ctx.runtime.agentManager.isUnavailable(target.agent, effectiveTier, target.modelDef.model)` is true, it takes `candidate = ctx.runtime.agentManager.nextCandidate(target.agent, 0)`:\n- If there is a candidate, the preview is `{ agentName: candidate.agent, model }`. `model` is `candidate.model` when the candidate has a literal pin. Otherwise it is `resolveModelForAgent(effectiveModels, candidate.agent, candidate.tier ?? effectiveTier, defaultAgent).model`.\n- A model that throws while resolving gives `undefined`, through the existing catch.\n- With no candidate, the primary preview is unchanged.\n\nRead-only symbols: `resolveOpEndpoint(...)` (`packages/nax/src/operations/call-dispatch-prologue.ts`) returns `{ defaultAgent, effectiveModels, resolved, effectiveTier, sessionRole, target }`; `resolveModelForAgent(models, agent, tier, defaultAgent)` (`packages/nax/src/config/schema-types.ts`) returns a model def with `.model` and throws when nothing resolves; `startStep(storyId, label, { model })` (`packages/nax/src/workflow/run-log.ts`) logs `<label> start` with the `agentName` and `model` the step model function returned.\n\nThe existing `previewOpModel` cases run with every agent available, so their expected previews are unchanged. Test helper note: `packages/nax/test/helpers/mock-agent-manager.ts` hard-codes `isUnavailable: () => false` and `nextCandidate: () => null`; the new tests override both.\n\n**Scope** — In: `previewOpModel` change and its new test file. Out: auth cooldown/hint work (US-002/US-003); complete-kind ops; pipeline-mode stage start lines; credentials changing between the start line and dispatch.\n\n**Interface**\n```ts\n// packages/nax/src/operations/op-model-preview.ts\n// previewOpModel(ctx, op, input) -> { agentName: string; model: string } | undefined\n// candidate = ctx.runtime.agentManager.nextCandidate(target.agent, 0)\n// model = candidate.model ?? resolveModelForAgent(effectiveModels, candidate.agent, candidate.tier ?? effectiveTier, defaultAgent).model\n```",
+      "acceptanceCriteria": [
+        "`previewOpModel` for a run-kind op whose endpoint is `native` at tier `balanced`, with fallback enabled, `agentManager.isUnavailable` returning true for that endpoint, and `nextCandidate` returning `{ agent: \"claude\", tier: \"balanced\" }`, returns `agentName` `claude` and the model that `models.claude.balanced` resolves to.",
+        "The same preview with `nextCandidate` returning `{ agent: \"claude\", model: \"opus\" }` (a literal pin) returns `agentName` `claude` and model `opus`.",
+        "The same preview with `agent.fallback.enabled` false returns the primary endpoint's `agentName` and model.",
+        "The same preview with `nextCandidate` returning `null` returns the primary endpoint's `agentName` and model.",
+        "The same preview, when the candidate's tier resolves no model for that agent and the candidate has no pin, returns `undefined`.",
+        "When `isUnavailable` returns false, `previewOpModel` never calls `nextCandidate`.",
+        "For a complete-kind op with an unavailable primary and fallback enabled, `previewOpModel` returns the primary endpoint's `agentName` and model and never calls `nextCandidate`."
+      ],
+      "tags": [
+        "fix",
+        "operations",
+        "logging"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Single-function change in one source file with clear branches and no credential handling; standard pattern with a new test file.",
+        "agentProfileId": "native-deepseek",
+        "agent": "native",
+        "profileModelTier": "balanced",
+        "initialAgent": "native",
+        "initialProfileId": "native-deepseek",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/operations/op-model-preview.ts",
+        "packages/nax/src/operations/call-dispatch-prologue.ts",
+        "packages/nax/test/unit/operations/op-model-preview.test.ts",
+        "packages/nax/test/helpers/mock-agent-manager.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/operations/op-model-preview-fallback.test.ts"
+      ],
+      "outOfScope": [
+        "A credential that changes between a step's start line and its dispatch; the start line may name the fallback, and the `available again` line follows.",
+        "Start lines of pipeline-mode stages; pipeline mode is frozen.",
+        "Complete-kind ops, whose dispatch never skips an unavailable primary at start."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    }
+  ],
+  "analysis": "Feature: when a native provider rejects its credential (fail-auth), park only that provider (not every native tier), release the cooldown automatically when the stored credential's fingerprint changes (re-login / new key), warn once with a `nax auth login <provider>` hint (also repeated in the end-of-run summary), and make workflow start lines name the fallback agent/model when the primary is unavailable.\n\nKey files (all under packages/nax unless noted): src/agents/manager.ts (exactly 600 lines = source limit, NO file-sizes-baseline entry: any net growth fails check:file-sizes); src/agents/manager-run-fallback.ts (runWithFallback, complexity baseline 52; precedent for a manager loop in its own module); src/agents/cooldown-store.ts (CooldownStore.mark/_live/sweepTransient); src/agents/cooldown-provider.ts (providerOf, read-only); src/agents/retry/failure-policy.ts (fail-auth: cooldown 'run', cooldownScope 'agent' - must stay 'agent'); src/agents/manager-types.ts (IAgentManager); src/execution/runner-completion.ts (runCompletionPhase, complexity baseline 34, must stay <=600 lines); src/log-format/summary.ts + types.ts + src/execution/lifecycle/headless-formatter.ts (RunSummary/RunFooterOptions/formatRunSummary); src/operations/op-model-preview.ts + call-dispatch-prologue.ts (previewOpModel / resolveOpEndpoint); src/workflow/run-log.ts (startStep, read-only). Read-only externals: servedAuth, naxCredentialStore, listStoredProviders from @nathapp/nax-agent; DEFAULT_AGENT_NAME in src/config/agent-defaults.ts; resolveModelForAgent in src/config/schema-types.ts.\n\nRatchets enforced by check:all: file-sizes (manager.ts, runner-completion.ts <=600) and complexity (runWithFallback 52, completeWithFallback 40, runCompletionPhase 34 must not rise). Therefore: logic lives in new modules (auth-cooldown.ts, auth-relogin.ts, auth-relogin-report.ts, manager-complete-as.ts); AgentManager members are one-line delegations to an AuthCoordinator; the three pinned functions gain only plain calls (no new if / ternary / && / || / ??). Biome cognitive complexity ignores `?.` and `await`. The `??` for authModel lives in markUnavailable (not ratcheted).\n\nStory order: US-001 (pure refactor freeing manager.ts lines) -> US-002 (cooldown stamp + refresh) -> US-003 (hints, notices, footer); US-004 (preview of fallback in start lines) is independent.\n\nTest touchpoints: test/unit/agents/manager-complete.test.ts, fallback-model-targets.test.ts, test/unit/operations/op-model-preview.test.ts; helpers test/helpers/mock-agent-manager.ts and fake-agent-manager.ts implement IAgentManager and must gain the new members (no-op refreshAuthCooldowns/reportAuthFailure, authRelogins returning []). mock-agent-manager hard-codes isUnavailable:()=>false and nextCandidate:()=>null; US-004 tests override both. Tests must stub _agentManagerDeps (servedAuth, readCredential, listStoredProviders) and never touch the real ~/.nax.\n\nRisks: (1) CooldownStore key change only when `auth` stamp is passed - ACP agents and all other outcomes must keep today's keys; identity-less probes (no tier, no model) must still see a live stamped entry of that agent. (2) Concurrency: refresh must log 'available again' only when release() returned true; reportAuthFailure must claim its key synchronously before any await. (3) auth-cooldown.ts must never import manager.ts (deps passed in). (4) Accepted trade-offs: OAuth refresh-token rotation changes the fingerprint (one extra failing call); under auth.onChange 'refuse' recovery never happens in that run but the hint still names `nax auth login`. (5) Never log secrets - only fingerprints and provider ids. Never run bare `bun test` or `bun run nax`; run package commands from packages/nax.",
+  "outOfScope": [
+    "Recovering an ACP agent (`claude`, `codex`, ...) after `fail-auth`; nax does not manage those credentials.",
+    "Retrying a `fail-auth` within the same agent call; the swap still happens immediately.",
+    "Refreshing an OAuth token earlier than its stored expiry.",
+    "Re-checking credentials on a timer; the check runs only at the start of an agent call.",
+    "Changing `nax auth list` output.",
+    "A `fail-auth` hint in the TUI, other than through the log; the footer is printed in headless mode.",
+    "Recording a cooldown when a `fail-auth` swap is declined; only the hint is new on that path.",
+    "US-004 only: a credential that changes between a step's start line and its dispatch; the start line may name the fallback, and the `available again` line follows.",
+    "US-004 only: start lines of pipeline-mode stages; pipeline mode is frozen.",
+    "US-004 only: complete-kind ops, whose dispatch never skips an unavailable primary at start."
+  ],
+  "routingProfile": "cross-agent+cc-plan"
+}
