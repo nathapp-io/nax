@@ -3,7 +3,7 @@
   "feature": "post-088-fixes",
   "branchName": "feat/post-088-fixes",
   "createdAt": "2026-10-20T00:00:00Z",
-  "updatedAt": "2026-10-16T09:02:23.815Z",
+  "updatedAt": "2026-10-16T09:22:00.138Z",
   "userStories": [
     {
       "id": "US-001",
@@ -172,8 +172,8 @@
         "concurrency"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -185,7 +185,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "native",
         "initialProfileId": "native-deepseek",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/test/helpers/timer-spy.ts",
@@ -217,7 +219,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "ddfc0801b4340627ae5d516f8a38ecaf96581b58"
     },
     {
       "id": "US-004",
