@@ -209,14 +209,24 @@ function wire(opts: WireOptions) {
 
 const GREEN: CiWaitResult = { outcome: "green", detail: "all checks passed" };
 const TWO_FILES = "src/a.ts\nsrc/b.ts\n";
+/** The one diff the resolved seed asks for (AC-9): any other base is answered as if the diff were empty. */
+const DIFF_ARGS = ["diff", "--name-only", "abc123..HEAD"] as const;
+const DIFF_CALL = [...DIFF_ARGS];
+
+function answersDiff(args: readonly string[]): boolean {
+  return args.length === DIFF_ARGS.length && args.every((a, i) => a === DIFF_ARGS[i]);
+}
+
 const diffAnswer = (args: readonly string[]): GitResult =>
-  args[0] === "diff" && args[1] === "--name-only" ? { exitCode: 0, stdout: TWO_FILES, stderr: "" } : CLEAN_GIT;
+  answersDiff(args) ? { exitCode: 0, stdout: TWO_FILES, stderr: "" } : CLEAN_GIT;
 
 describe("publish finish-approval evidence (US-001)", () => {
-  // AC-9/AC-10: the advisor is handed the files behind the resolved base.
+  // AC-9/AC-10: the advisor is handed the files behind the resolved base, and the diff is asked for
+  // that seed and no other — `diffAnswer` only answers `abc123..HEAD`.
   test("the question carries the inventory of the resolved base", async () => {
-    const { input, asked, evidence } = wire({ ci: GREEN, seed: "abc123", git: diffAnswer });
+    const { input, asked, evidence, gitCalls } = wire({ ci: GREEN, seed: "abc123", git: diffAnswer });
     await publish(makeFeatureContext(), input);
+    expect(gitCalls.filter((args) => args[0] === "diff" && args[1] === "--name-only")).toEqual([DIFF_CALL]);
     expect(asked).toEqual(["finish-approval"]);
     expect(evidence).toContain("Changed files since the base commit (2): src/a.ts, src/b.ts");
     expect(evidence).toContain(BASE_LINE);
