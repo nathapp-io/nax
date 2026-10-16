@@ -1,8 +1,17 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config";
-import type { FinishPhaseState } from "@/finish";
-import { _qualityGateDeps, resolveGateCommands, routeQualityGates, runQualityGates } from "@/finish";
+import type { FinishPhaseState, GateRunRecord, GateRunStatus } from "@/finish";
+import {
+  _qualityGateDeps,
+  classifyGateExit,
+  GATE_ORDER,
+  gateOutputTail,
+  resolveGateCommands,
+  routeQualityGates,
+  runQualityGates,
+} from "@/finish";
+import type { QualityCommandResult } from "@/quality";
 
 const original = { ..._qualityGateDeps };
 afterEach(() => {
@@ -102,6 +111,50 @@ describe("resolveGateCommands", () => {
     const commands = await resolveGateCommands("/repo", ["."]);
 
     expect(commands).toEqual([{ name: "build", command: "echo root", cwd: "/repo" }]);
+  });
+
+  test("review B1: two root gate keys with the same command string are two gates", async () => {
+    // `build` and `typecheck` both running `tsc --noEmit` is a real config. The
+    // dedupe used to key on (cwd, command, setup) alone, so `typecheck`
+    // vanished -- and `nax gates run --gate typecheck` then answered "gate
+    // typecheck is not configured" for a gate the config sets.
+    _qualityGateDeps.loadConfig = async () => configWithCommands({ build: "tsc --noEmit", typecheck: "tsc --noEmit" });
+    _qualityGateDeps.loadPackageOverride = async () => null;
+
+    expect(await resolveGateCommands("/repo", [])).toEqual([
+      { name: "build", command: "tsc --noEmit", cwd: "/repo" },
+      { name: "typecheck", command: "tsc --noEmit", cwd: "/repo" },
+    ]);
+  });
+
+  test("review B1 residual: an overlay's own two gate keys sharing one command are one run", async () => {
+    // Overlay gates dedupe on the run they make -- cwd, command and setup --
+    // never on the gate key: a package whose `build` and `typecheck` are the
+    // same command runs it once, not twice.
+    _qualityGateDeps.loadConfig = async () => configWithCommands({});
+    _qualityGateDeps.loadPackageOverride = async () => ({
+      quality: { ...DEFAULT_CONFIG.quality, commands: { build: "bun run tsc", typecheck: "bun run tsc" } },
+    });
+
+    const commands = await resolveGateCommands("/repo", ["pkg"]);
+
+    expect(commands).toEqual([{ name: "build@pkg", command: "bun run tsc", cwd: "/repo/pkg" }]);
+  });
+
+  test("review B1 residual: an overlay gate repeating a run the root already schedules is one run", async () => {
+    // "." resolves to the root's own cwd, and the overlay's `typecheck` command
+    // is the run the root `build` gate already schedules -- one run, not two.
+    // Distinct *root* gate keys stay distinct (the test above); distinct
+    // overlay keys do not, because an overlay gate is identified by the run it
+    // makes rather than by its `quality.commands` key.
+    _qualityGateDeps.loadConfig = async () => configWithCommands({ build: "tsc --noEmit" });
+    _qualityGateDeps.loadPackageOverride = async () => ({
+      quality: { ...DEFAULT_CONFIG.quality, commands: { typecheck: "tsc --noEmit" } },
+    });
+
+    const commands = await resolveGateCommands("/repo", ["."]);
+
+    expect(commands).toEqual([{ name: "build", command: "tsc --noEmit", cwd: "/repo" }]);
   });
 
   test("filters out the empty-string package dir -- the root package is the root run", async () => {
@@ -232,5 +285,266 @@ describe("runQualityGates", () => {
     });
 
     expect(calls).toEqual([{ workdir: "/repo/apps/web", timeoutMs: 42 }]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// US-001 — per-gate run records
+// ---------------------------------------------------------------------------
+
+/** A `_qualityGateDeps.run` result for `commandName`. */
+function stubResult(
+  commandName: string,
+  exitCode: number,
+  output: string,
+  durationMs = 7,
+  timedOut = false,
+): QualityCommandResult {
+  return {
+    commandName,
+    command: "cmd",
+    success: exitCode === 0,
+    exitCode,
+    output,
+    durationMs,
+    timedOut,
+  };
+}
+
+/** The three gates AC-9..AC-12 stub: pass, "not found" (127), real failure (1). */
+const STUBBED_GATES = [
+  { name: "build", command: "cmd", cwd: "/repo", exitCode: 0, output: "build ok", durationMs: 11 },
+  { name: "lint", command: "cmd", cwd: "/repo", exitCode: 127, output: "lint: command not found", durationMs: 12 },
+  { name: "test", command: "cmd", cwd: "/repo", exitCode: 1, output: "2 tests failed", durationMs: 13 },
+];
+
+/** Stub `_qualityGateDeps.run` with `STUBBED_GATES`. */
+function stubStubbedGates(): void {
+  _qualityGateDeps.run = async (opts) => {
+    const gate = STUBBED_GATES.find((g) => g.name === opts.commandName);
+    if (gate === undefined) throw new Error(`unexpected gate ${opts.commandName}`);
+    return stubResult(gate.name, gate.exitCode, gate.output, gate.durationMs);
+  };
+}
+
+describe("classifyGateExit", () => {
+  const CASES: { exitCode: number; timedOut: boolean; expected: GateRunStatus }[] = [
+    { exitCode: 0, timedOut: false, expected: "passed" },
+    { exitCode: 1, timedOut: false, expected: "failed" },
+    { exitCode: 2, timedOut: false, expected: "failed" },
+    { exitCode: 127, timedOut: false, expected: "not-run" },
+    { exitCode: 126, timedOut: false, expected: "not-run" },
+    { exitCode: -1, timedOut: false, expected: "not-run" },
+    { exitCode: -1, timedOut: true, expected: "timed-out" },
+    { exitCode: 0, timedOut: true, expected: "timed-out" },
+  ];
+
+  test.each(CASES)(
+    "US-001 AC-1..8: exit=$exitCode timedOut=$timedOut -> $expected",
+    ({ exitCode, timedOut, expected }) => {
+      expect(classifyGateExit({ exitCode, timedOut })).toBe(expected);
+    },
+  );
+
+  test("US-001 AC-18: the barrel's classifyGateExit classifies 127 as not-run", async () => {
+    const barrel = await import("@/finish");
+    expect(barrel.classifyGateExit({ exitCode: 127, timedOut: false })).toBe("not-run");
+  });
+});
+
+describe("gateOutputTail", () => {
+  const hundred = Array.from({ length: 100 }, (_, i) => `line${i + 1}`).join("\n");
+
+  test("US-001 AC-19: 100 lines with a trailing newline -> the last 40, no trailing newline", () => {
+    const tail = gateOutputTail(`${hundred}\n`);
+    expect(tail.split("\n")).toHaveLength(40);
+    expect(tail.startsWith("line61\n")).toBe(true);
+    expect(tail.endsWith("line100")).toBe(true);
+  });
+
+  test("US-001 AC-20: whitespace-only and empty output gives the empty string", () => {
+    expect(gateOutputTail("")).toBe("");
+    expect(gateOutputTail("\n\n")).toBe("");
+  });
+
+  test("an explicit line count keeps only that many lines, and short output is returned whole", () => {
+    expect(gateOutputTail(`${hundred}\n`, 2)).toBe("line99\nline100");
+    expect(gateOutputTail("only one line\n")).toBe("only one line");
+  });
+});
+
+describe("GATE_ORDER", () => {
+  test("US-001 AC-21: the barrel exports the gate order", () => {
+    expect(GATE_ORDER).toEqual(["build", "typecheck", "lint", "test", "e2e"]);
+  });
+});
+
+describe("runQualityGates — onGate", () => {
+  test("US-001 AC-9 + AC-10: one record per gate, in run order, with that gate's result", async () => {
+    stubStubbedGates();
+    const records: GateRunRecord[] = [];
+
+    await runQualityGates("/repo", STUBBED_GATES, { onGate: (record) => records.push(record) });
+
+    expect(records.map((r) => r.name)).toEqual(["build", "lint", "test"]);
+    expect(records.map((r) => r.status)).toEqual(["passed", "not-run", "failed"]);
+    expect(records).toEqual([
+      { name: "build", cwd: "/repo", status: "passed", exitCode: 0, durationMs: 11, output: "build ok" },
+      {
+        name: "lint",
+        cwd: "/repo",
+        status: "not-run",
+        exitCode: 127,
+        durationMs: 12,
+        output: "lint: command not found",
+      },
+      { name: "test", cwd: "/repo", status: "failed", exitCode: 1, durationMs: 13, output: "2 tests failed" },
+    ]);
+  });
+
+  test("US-001 AC-12: the returned QualityGateResult is identical with and without onGate", async () => {
+    stubStubbedGates();
+    const without = await runQualityGates("/repo", STUBBED_GATES);
+
+    stubStubbedGates();
+    const withOnGate = await runQualityGates("/repo", STUBBED_GATES, { onGate: () => {} });
+
+    expect(without).toEqual({
+      passed: false,
+      ran: ["build", "lint", "test"],
+      failing: ["lint", "test"],
+      output: expect.any(String),
+    });
+    expect(withOnGate).toEqual(without);
+    expect(withOnGate.output).toBe(without.output);
+  });
+
+  test("US-001 AC-11: each record arrives before the next gate's command starts", async () => {
+    const events: string[] = [];
+    _qualityGateDeps.run = async (opts) => {
+      events.push(`run:${opts.commandName}`);
+      return stubResult(opts.commandName, 0, "ok");
+    };
+    const gates = [
+      { name: "build", command: "cmd", cwd: "/repo" },
+      { name: "test", command: "cmd", cwd: "/repo" },
+    ];
+
+    await runQualityGates("/repo", gates, { onGate: (record) => events.push(`onGate:${record.name}`) });
+
+    expect(events).toEqual(["run:build", "onGate:build", "run:test", "onGate:test"]);
+  });
+
+  test("an onGate exception propagates and stops the later gates", async () => {
+    const calls: string[] = [];
+    _qualityGateDeps.run = async (opts) => {
+      calls.push(opts.commandName);
+      return stubResult(opts.commandName, 0, "ok");
+    };
+    const boom = new Error("onGate boom");
+    const gates = [
+      { name: "build", command: "cmd", cwd: "/repo" },
+      { name: "test", command: "cmd", cwd: "/repo" },
+    ];
+
+    await expect(
+      runQualityGates("/repo", gates, {
+        onGate: () => {
+          throw boom;
+        },
+      }),
+    ).rejects.toBe(boom);
+    expect(calls).toEqual(["build"]);
+  });
+
+  test("US-001 AC-13: a failed setup gives one e2e record from the setup result and never runs e2e", async () => {
+    const calls: string[] = [];
+    _qualityGateDeps.run = async (opts) => {
+      calls.push(opts.commandName);
+      return stubResult(opts.commandName, 1, "docker: command not found", 21);
+    };
+    const records: GateRunRecord[] = [];
+
+    await runQualityGates(
+      "/repo",
+      [{ name: "e2e", command: "bunx playwright test", cwd: "/repo", setup: "docker compose up -d" }],
+      { onGate: (record) => records.push(record) },
+    );
+
+    expect(calls).toEqual(["e2e:setup"]);
+    expect(records).toEqual([
+      {
+        name: "e2e",
+        cwd: "/repo",
+        status: "failed",
+        exitCode: 1,
+        durationMs: 21,
+        failedPhase: "setup",
+        output: "docker: command not found",
+      },
+    ]);
+  });
+
+  test("US-001 AC-14: a setup the shell cannot execute reports not-run", async () => {
+    _qualityGateDeps.run = async (opts) => stubResult(opts.commandName, 127, "docker: command not found");
+    const records: GateRunRecord[] = [];
+
+    await runQualityGates(
+      "/repo",
+      [{ name: "e2e", command: "bunx playwright test", cwd: "/repo", setup: "docker compose up -d" }],
+      { onGate: (record) => records.push(record) },
+    );
+
+    expect(records).toHaveLength(1);
+    expect(records[0]?.status).toBe("not-run");
+    expect(records[0]?.failedPhase).toBe("setup");
+  });
+
+  test("US-001 AC-15: a passing setup followed by a green command gives a record with no failedPhase", async () => {
+    _qualityGateDeps.run = async (opts) => stubResult(opts.commandName, 0, "ok", 5);
+    const records: GateRunRecord[] = [];
+
+    await runQualityGates(
+      "/repo",
+      [{ name: "e2e", command: "bunx playwright test", cwd: "/repo", setup: "docker compose up -d" }],
+      { onGate: (record) => records.push(record) },
+    );
+
+    const [record] = records;
+    expect(record).toEqual({
+      name: "e2e",
+      cwd: "/repo",
+      status: "passed",
+      exitCode: 0,
+      durationMs: 5,
+      output: "ok",
+    });
+    expect(Object.hasOwn(record ?? {}, "failedPhase")).toBe(false);
+  });
+
+  test("US-001 AC-16: a timed-out gate reports timed-out with exit code -1", async () => {
+    _qualityGateDeps.run = async (opts) => stubResult(opts.commandName, -1, "killed after 900s", 900_000, true);
+    const records: GateRunRecord[] = [];
+
+    await runQualityGates("/repo", [{ name: "test", command: "bun test", cwd: "/repo" }], {
+      onGate: (record) => records.push(record),
+    });
+
+    expect(records[0]?.status).toBe("timed-out");
+    expect(records[0]?.exitCode).toBe(-1);
+  });
+
+  test("US-001 AC-17: no gates configured calls onGate zero times and still fails", async () => {
+    let calls = 0;
+
+    const result = await runQualityGates("/repo", [], {
+      onGate: () => {
+        calls += 1;
+      },
+    });
+
+    expect(calls).toBe(0);
+    expect(result.passed).toBe(false);
+    expect(result.ran).toEqual([]);
   });
 });

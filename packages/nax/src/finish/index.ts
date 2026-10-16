@@ -76,7 +76,16 @@ export { readFinishConfig } from "./config";
 export type { FinishContext, LoadFinishContextOptions } from "./context";
 export { _finishContextDeps, loadFinishContext } from "./context";
 export { _acceptanceGateDeps, runAcceptanceGate } from "./gates/acceptance";
-export { _qualityGateDeps, resolveGateCommands, runQualityGates } from "./gates/quality";
+export type { GateRunRecord, GateRunStatus } from "./gates/quality";
+export {
+  _qualityGateDeps,
+  classifyGateExit,
+  DEFAULT_GATE_TAIL_LINES,
+  GATE_ORDER,
+  gateOutputTail,
+  resolveGateCommands,
+  runQualityGates,
+} from "./gates/quality";
 export type { LedgerEntry, LedgerState } from "./ledger";
 export type { FinishMachineDeps } from "./machine";
 export { runFinishMachine } from "./machine";

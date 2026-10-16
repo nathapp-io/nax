@@ -232,6 +232,60 @@ All three flags are required: `-f, --feature <name>`, `--override <ac-id>`, `-r,
 
 ---
 
+### `nax gates run`
+
+Run the project's own root quality commands — `build`, `typecheck`, `lint`, `test`, `e2e` from `quality.commands` — through the same resolver and runner the workflow and finish phases use, one gate at a time, and report how each one ended.
+
+```bash
+nax gates run                             # every configured gate
+nax gates run --gate test --gate lint     # only these two
+nax gates run --json                      # one machine-readable JSON document
+nax gates run -d packages/api             # any directory inside the project
+```
+
+| Flag | Description |
+|:-----|:------------|
+| `-d, --dir <path>` | Any directory inside the project (default: the current directory). The project root is the nearest ancestor holding a `.nax/config.json` |
+| `--gate <name>` | Run only this gate; repeatable. One of `build`, `typecheck`, `lint`, `test`, `e2e` |
+| `--json` | Print exactly one JSON document to stdout — the report, or `{"error": "<message>"}` when the command fails |
+
+Gates run in a fixed order (`build` → `typecheck` → `lint` → `test` → `e2e`) whatever order the `--gate` flags come in, and a repeated value runs once. Each root gate is identified by its `quality.commands` key, so two keys holding the same command string — `build` and `typecheck` both `tsc --noEmit` — are two gates, and `--gate typecheck` runs it. A red gate does not stop the gates after it. Only the root `quality.commands` are run: package overlay gates are not, and `formatFix`, `formatFixScoped`, `lintFix` and every `*Scoped` command are never run by this command.
+
+**Statuses** — one per gate:
+
+| Status | Meaning |
+|:-------|:--------|
+| `passed` | The command exited 0 |
+| `failed` | The command ran and exited non-zero |
+| `not-run` | The shell could not run the command at all: exit 127 (not found), 126 (not executable) or a spawn error. A red bar, but not a failing code under test |
+| `timed-out` | The gate hit the gate timeout (15 minutes) and was killed |
+
+A gate with a setup bootstrap (`e2eSetup`, run only for `e2e`) reports `failedPhase: "setup"` when the bootstrap fails, and its `e2e` command is then not run.
+
+**Exit codes:**
+
+| Exit | Meaning |
+|:-----|:--------|
+| `0` | At least one gate ran and every gate is `passed` |
+| `1` | nax could not answer: no nax project at or above `--dir`, an untrusted project, an unreadable trust store, an invalid config, an unknown or unconfigured `--gate`, or any other error. Validation errors occur before any gate runs; an error thrown mid-run can occur after some gates have already finished, and their results are discarded |
+| `2` | The gates ran and at least one is `failed`, `not-run` or `timed-out` — or no gate is configured at all, so nothing was verified |
+
+Plain output is one line per gate, then the last 40 lines of every gate that did not pass, then a summary:
+
+```
+passed     build      12.3s
+not-run    lint       exit=127  0.0s  (command not found or not executable; the gate did not run)
+
+--- lint (last 40 lines) ---
+/bin/sh: biome: command not found
+
+gates: 1 passed, 0 failed, 1 not run, 0 timed out
+```
+
+The command is mode-independent — it reads config and runs commands, and touches no workflow or PRD state. Like every other command that runs repository-controlled code it is gated by the project trust store, and an untrusted project exits `1` rather than `2`, so a finishing script can tell "nax could not run the gates" from "the gates are red".
+
+---
+
 ### `nax precheck -f <name>`
 
 Validate your project is ready to run — checks git, PRD, CLI tools, deps, test/lint/typecheck scripts.

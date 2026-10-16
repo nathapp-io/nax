@@ -60,6 +60,7 @@ import {
   promptsInitCommand,
   registerAdvisorCommand,
   registerApprovalsCommand,
+  registerGatesCommand,
   registerTrustCommand,
   registerWorkflowCommand,
   rulesExportCommand,
@@ -965,6 +966,12 @@ registerTrustCommand(program);
 // ── workflow ──────────────────────────────────────────
 // Read-only: it reports the verdict a finished run wrote, and reads no config.
 registerWorkflowCommand(program);
+
+// ── gates ─────────────────────────────────────────────
+// Runs the project's configured root quality gates. It gates itself through
+// `ensureProjectTrusted` (exit 1 on refusal), not `runTrustGate` — exit 2 means
+// "the gates ran and something is not green" here.
+registerGatesCommand(program);
 
 const mcpCmd = program.command("mcp").description("Manage MCP servers the native agent may call tools on");
 
