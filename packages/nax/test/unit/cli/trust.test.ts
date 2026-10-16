@@ -282,19 +282,31 @@ async function runNax(args: string[], globalConfigDir: string): Promise<{ code: 
   return { code, stdout: output };
 }
 
-describe("trust CLI process behavior", () => {
-  test("US-004 AC22: trust check --json exits 1 and prints JSON for an empty isolated store", async () => {
-    const result = await runNax(["trust", "check", projectDir, "--json"], globalDir);
-    expect(result.code).toBe(1);
-    expect(parseJsonOrNull(result.stdout)).toMatchObject({ trusted: false });
-  });
+// Each runNax call cold-starts bin/nax.ts (both tests take ~1s locally); under full-suite CI load
+// two sequential starts exceeded bun's 5s default (PR #2570).
+const CLI_PROCESS_TIMEOUT_MS = 30_000;
 
-  test("US-004 AC23: trust add --yes persists trust for a subsequent CLI check", async () => {
-    const add = await runNax(["trust", "add", projectDir, "--yes"], globalDir);
-    const check = await runNax(["trust", "check", projectDir], globalDir);
-    expect(add.code).toBe(0);
-    expect(check.code).toBe(0);
-  });
+describe("trust CLI process behavior", () => {
+  test(
+    "US-004 AC22: trust check --json exits 1 and prints JSON for an empty isolated store",
+    async () => {
+      const result = await runNax(["trust", "check", projectDir, "--json"], globalDir);
+      expect(result.code).toBe(1);
+      expect(parseJsonOrNull(result.stdout)).toMatchObject({ trusted: false });
+    },
+    CLI_PROCESS_TIMEOUT_MS,
+  );
+
+  test(
+    "US-004 AC23: trust add --yes persists trust for a subsequent CLI check",
+    async () => {
+      const add = await runNax(["trust", "add", projectDir, "--yes"], globalDir);
+      const check = await runNax(["trust", "check", projectDir], globalDir);
+      expect(add.code).toBe(0);
+      expect(check.code).toBe(0);
+    },
+    CLI_PROCESS_TIMEOUT_MS,
+  );
 });
 
 describe("trust CLI registration and refusal branches", () => {
