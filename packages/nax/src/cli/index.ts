@@ -68,6 +68,15 @@ export type {
 export { resolveFeatureAcceptance } from "./features-acceptance";
 export type { ResolveResult, ResolveStatus, SpecSource, SpecSourceKind } from "./features-resolve";
 export { resolveFeatureSpec } from "./features-resolve";
+export {
+  _gatesCliDeps,
+  type GateReportEntry,
+  type GatesCliDeps,
+  type GatesRunOptions,
+  type GatesRunReport,
+  gatesRunCommand,
+  registerGatesCommand,
+} from "./gates";
 export { type GenerateCommandOptions, generateCommand } from "./generate";
 export { type InitOptions, initCommand } from "./init";
 export type { PlanCommandOptions } from "./plan";
