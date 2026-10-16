@@ -148,9 +148,12 @@ export async function runDirsNewestFirst(featureDir: string): Promise<string[]> 
  * written before that field existed (or by a caller that never published). The run's own story
  * records still name each story's end state, so the verdict reads them rather than dropping the
  * story items. An empty array is a statement of its own and is kept as it is.
+ *
+ * Exported for `nax workflow status` (US-003), which fills the same field from the same
+ * `result.stories` before it builds the verdict (AC-5, AC-13).
  */
-function storyStatesFrom(current: WorkflowResultFile | null): readonly StoryStateItem[] {
-  return Object.values(current?.stories ?? {}).map((s) => ({
+export function storyStatesFrom(stories: Readonly<Record<string, WorkflowStoryRecord>>): StoryStateItem[] {
+  return Object.values(stories).map((s) => ({
     id: s.storyId,
     state: s.state ?? "not-run",
     ...(s.reason !== undefined ? { reason: s.reason } : {}),
@@ -164,7 +167,7 @@ export async function upsertFeatureRecord(
   record: WorkflowFeatureRecord,
 ): Promise<void> {
   const current = await readResult(runDir);
-  const filled = record.storyStates ? record : { ...record, storyStates: storyStatesFrom(current) };
+  const filled = record.storyStates ? record : { ...record, storyStates: storyStatesFrom(current?.stories ?? {}) };
   const verdict = buildVerdict(filled);
   await writeResult(runDir, {
     schemaVersion: 1,
