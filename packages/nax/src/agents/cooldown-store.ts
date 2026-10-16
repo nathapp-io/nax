@@ -81,7 +81,7 @@ export class CooldownStore {
     const entries: { key: string; agent: string; auth: AuthCooldownStamp }[] = [];
     for (const key of this._entries.keys()) {
       const entry = this._at(key);
-      if (entry?.auth) entries.push({ key, agent: key.split(PROVIDER_SLOT)[0] ?? key, auth: entry.auth });
+      if (entry?.auth) entries.push({ key, agent: key.slice(0, key.indexOf(PROVIDER_SLOT)), auth: entry.auth });
     }
     return entries;
   }
@@ -173,7 +173,7 @@ function identityKey(agent: string, tier?: string, modelId?: string): string {
  * this exact key, so the two spellings must not drift apart.
  */
 function providerSlotKey(agent: string, providerId: string): string {
-  return `${agent}::provider::${providerId}`;
+  return `${agent}${PROVIDER_SLOT}${providerId}`;
 }
 
 /** Provider-scoped cooldown key; the bare agent when the model id names no provider. */

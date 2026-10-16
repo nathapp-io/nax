@@ -60,8 +60,12 @@ export class AuthReloginTracker {
     let credential: StoredEntry | undefined;
     try {
       credential = (await deps.listStoredProviders()).find((entry) => entry.providerId === providerId);
-    } catch {
+    } catch (error) {
       // Metadata failure must not hide the actionable fallback hint.
+      logger.debug?.("agent-manager", "[auth-cooldown] Credential metadata read failed; using the generic hint", {
+        providerId,
+        error: String(error),
+      });
     }
     if (this._pending.get(providerId) !== report) return;
     const message = authReloginHint(providerId, credential, deps.now());

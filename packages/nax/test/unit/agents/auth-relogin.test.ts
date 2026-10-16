@@ -107,6 +107,11 @@ test("AC-8 list failure still warns", async () => {
     UNKNOWN,
     expect.objectContaining({ providerId: "openai-codex" }),
   );
+  expect(logger.debug).toHaveBeenCalledWith(
+    "agent-manager",
+    expect.stringContaining("Credential metadata read failed"),
+    expect.objectContaining({ providerId: "openai-codex", error: "Error: unavailable" }),
+  );
 });
 test.each([
   ["AC-9", "native", { ...AUTH, outcome: "fail-rate-limit" } as AdapterFailure, "balanced", undefined],
@@ -255,4 +260,14 @@ test("AC-18 complete warns with fallback disabled", async () => {
   });
   expect(logger.warn.mock.calls.filter((c) => c[1] === FUTURE_HINT)).toHaveLength(1);
   expect(manager.authRelogins()).toEqual([notice()]);
+});
+test("a dispatched authModel names the notice's provider, as it names the cooldown stamp", async () => {
+  stored = [];
+  const { manager } = setup();
+  await manager.reportAuthFailure("native", AUTH, "balanced", undefined, "minimax/m3");
+  manager.markUnavailable("native", AUTH, "balanced", undefined, "minimax/m3");
+  expect(manager.authRelogins().map((n) => n.providerId)).toEqual(["minimax"]);
+  fingerprint = "bbb";
+  await manager.refreshAuthCooldowns();
+  expect(manager.authRelogins()).toEqual([]);
 });

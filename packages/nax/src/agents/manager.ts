@@ -169,8 +169,19 @@ export class AgentManager implements IAgentManager {
     return this._auth.refreshAuthCooldowns();
   }
 
-  reportAuthFailure(agent: string, failure: AdapterFailure | undefined, tier?: string, model?: string): Promise<void> {
-    return this._auth.reportAuthFailure(agent, failure, this._fallbackIdentity.modelId(agent, tier, model));
+  reportAuthFailure(
+    agent: string,
+    failure: AdapterFailure | undefined,
+    tier?: string,
+    model?: string,
+    authModel?: string,
+  ): Promise<void> {
+    // `authModel` wins as it does in `markUnavailable`, so the notice and the stamp name one provider.
+    return this._auth.reportAuthFailure(
+      agent,
+      failure,
+      authModel ?? this._fallbackIdentity.modelId(agent, tier, model),
+    );
   }
   authRelogins(): readonly AuthReloginNotice[] {
     return this._auth.authRelogins();
@@ -330,12 +341,8 @@ export class AgentManager implements IAgentManager {
           continue;
         }
 
-        await this.reportAuthFailure(
-          currentAgent,
-          result.adapterFailure,
-          currentTier,
-          authModelOf(hopOptions.modelDef),
-        );
+        const authModel = authModelOf(hopOptions.modelDef);
+        await this.reportAuthFailure(currentAgent, result.adapterFailure, currentTier, undefined, authModel);
         const dec = decideSwap(result.adapterFailure, hopsSoFar, this._config.agent?.fallback);
         if (!dec.swap) {
           logSwapDecline(logger, dec.reason, {
@@ -367,13 +374,7 @@ export class AgentManager implements IAgentManager {
           return buildCompleteOutcome(result, fallbacks, didSwap, currentTier, currentTarget, dispatchesCompleted);
         }
 
-        this.markUnavailable(
-          currentAgent,
-          result.adapterFailure,
-          currentTier,
-          undefined,
-          authModelOf(hopOptions.modelDef),
-        );
+        this.markUnavailable(currentAgent, result.adapterFailure, currentTier, undefined, authModel);
         const next = this.nextCandidate(primaryAgent, depth, currentAgent, currentTier, undefined);
         if (!next) {
           const outcome = await this._resolveExhaustion({

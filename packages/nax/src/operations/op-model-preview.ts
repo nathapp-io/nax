@@ -8,6 +8,7 @@
  * that call still logs the model it ran on in its own agent-call lines. Fail-open: any
  * resolution error returns undefined, because a log label must never fail a step.
  */
+import { resolveStartAgent } from "../agents";
 import type { NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config";
 import type { OpEndpoint } from "./call-dispatch-prologue";
@@ -51,14 +52,22 @@ export function previewOpModel<I, O, C>(
  * caller, which is why this is called inside the preview's try block).
  */
 function startCandidatePreview(ctx: CallContext, config: NaxConfig, endpoint: OpEndpoint): OpModelPreview | undefined {
-  if (config.agent?.fallback?.enabled !== true) return undefined;
   const { target, effectiveModels, effectiveTier, defaultAgent } = endpoint;
-  const agentManager = ctx.runtime.agentManager;
-  if (!agentManager.isUnavailable(target.agent, effectiveTier, target.modelDef.model)) return undefined;
-  const candidate = agentManager.nextCandidate(target.agent, 0);
-  if (candidate === null) return undefined;
+  // The same start decision `runWithFallback` makes, so the line and the dispatch cannot drift.
+  // No logger: a preview is not a dispatch, so it must not log the fallback start itself.
+  const start = resolveStartAgent(
+    ctx.runtime.agentManager,
+    target.agent,
+    config.agent?.fallback?.enabled,
+    undefined,
+    null,
+    {
+      tier: effectiveTier,
+      model: target.modelDef.model,
+    },
+  );
+  if (start.agent === target.agent && start.tier === undefined && start.model === undefined) return undefined;
   const model =
-    candidate.model ??
-    resolveModelForAgent(effectiveModels, candidate.agent, candidate.tier ?? effectiveTier, defaultAgent).model;
-  return { agentName: candidate.agent, model };
+    start.model ?? resolveModelForAgent(effectiveModels, start.agent, start.tier ?? effectiveTier, defaultAgent).model;
+  return { agentName: start.agent, model };
 }

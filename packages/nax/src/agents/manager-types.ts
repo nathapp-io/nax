@@ -6,6 +6,7 @@
 import type { ContextBundle } from "../context/engine";
 import type { AdapterFailure } from "../context/engine/types";
 import type { SessionRole } from "../runtime/session-role";
+import type { AuthReloginNotice } from "./auth-relogin";
 import type { FallbackTarget } from "./swap-decision";
 
 /**
@@ -222,8 +223,23 @@ export interface IAgentManager {
 
   /** Release native provider cooldowns after a credential change. */
   refreshAuthCooldowns(): Promise<void>;
-  reportAuthFailure(agent: string, failure: AdapterFailure | undefined, tier?: string, model?: string): Promise<void>;
-  authRelogins(): readonly import("./auth-relogin").AuthReloginNotice[];
+  /**
+   * Warn once that a native provider needs a re-login, and keep the hint for the run-end
+   * summary. Accepts an undefined failure and ignores anything but a native `fail-auth`.
+   * Deduplicated per provider and credential fingerprint for the run. Call it before the
+   * swap decision, so the hint is logged even when no fallback is configured. `authModel`, the
+   * dispatched `provider/model`, names the provider over `tier`/`model`, as in `markUnavailable`.
+   */
+  reportAuthFailure(
+    agent: string,
+    failure: AdapterFailure | undefined,
+    tier?: string,
+    model?: string,
+    authModel?: string,
+  ): Promise<void>;
+
+  /** The re-login notices still standing, in first-report order; a credential change drops its provider's. */
+  authRelogins(): readonly AuthReloginNotice[];
 
   /** Reset per-run state. Called at run boundary. */
   reset(): void;
