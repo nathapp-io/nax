@@ -5,6 +5,8 @@ description: Strict role separation for complex stories
 
 ## Three-Session TDD
 
+> **Pipeline mode only.** The three-session flow below runs in the pipeline (`execution.mode: "pipeline"`, deprecated). In workflow mode (the default since 0.88.0) each story starts with one implementer session, then a story review and bounded fix rounds that reuse or restart that session. There is no separate test-writer or verifier session. See [Retry Strategy](retry-strategy.md) for the workflow round limits.
+
 For complex or security-critical stories, nax enforces strict role separation:
 
 | Session | Role | Allowed Files |

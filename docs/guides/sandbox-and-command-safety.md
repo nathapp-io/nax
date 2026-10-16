@@ -8,9 +8,9 @@ description: The OS sandbox around agent-authored commands, and the command-safe
 Two runtime layers around the commands a **native** agent writes itself — `Bash` command
 strings and `RunCommand` `Exec` argv:
 
-- **The OS sandbox** (`src/sandbox/`, `execution.sandbox`) changes *how* such a command runs:
+- **The OS sandbox** (`packages/nax-agent/src/sandbox/`, `execution.sandbox`) changes *how* such a command runs:
   it is wrapped so writes and credential reads are confined. **On by default.**
-- **The command-safety shadow** (`src/command-safety/`, `execution.commandSafety`) records a
+- **The command-safety shadow** (`packages/nax-agent/src/command-safety/`, `execution.commandSafety`) records a
   classification of every such command beside the verdict the policy actually reached. On its
   own it decides nothing; the opt-in **guard** layered on it turns a flagged *allowed* call
   into an ask (see [The flag-for-review guard](#the-flag-for-review-guard-opt-in)). **Off by
@@ -39,7 +39,7 @@ declared commands — `quality.commands`, `acceptance.command`, worktree depende
 per-story gates — are never wrapped. The launcher is only handed to the two agent-authored
 sites, so this holds by construction.
 
-The sandbox is set up per session only when the operation declares `Bash` or `Exec`.
+The sandbox is set up per session only when the operation declares `Bash` or `Exec`. Operations that declare `Bash` include the implementers and rectifiers, and the reviewers: semantic review, adversarial review, the workflow story review, and the finish branch and spec reviews. Those reviewers get their read tools plus `Bash`, which runs inside the sandbox whenever the sandbox is enabled and available (see the posture table).
 
 ### Posture by bash approval mode
 
@@ -181,7 +181,7 @@ proof; `argv` is the wrapper argv that actually ran, beside the logical `execute
 ### What it does
 
 For every agent-authored `Bash` and `Exec` command dispatched with the ask wiring (the execution
-stage, the acceptance-fix loop, the deferred regression gate and `nax finish`), the shadow:
+stage, the workflow steps, the acceptance-fix loop, the deferred regression gate and `nax finish`), the shadow:
 
 1. scores the command with a deterministic **rule scorer** (regex families; `RULE_SET_VERSION`
    2), and

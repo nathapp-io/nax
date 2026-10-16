@@ -11,7 +11,7 @@
 
 ### Architecture
 
-All permission decisions flow through one function: `resolvePermissions(config, stage)` in `src/config/permissions.ts`. Under ADR-019 it is called at the resource openers — `SessionManager.openSession` and `AgentManager.completeAs` (via `buildCompleteCallPreamble` in `src/agents/manager-dispatch.ts`), plus the manager's own `runAs` / `runAsSession` — and never by the orchestrators, ops or middleware above them. Two read-only consumers also call it so they cannot disagree with the tool offer: `resolveCodingToolSupport` (`src/agents/coding-tool-support.ts`, compiles the native tool policy) and the inert-Bash warning (`src/config/inert-bash-stages.ts`).
+All permission decisions flow through one function: `resolvePermissions(config, stage)` in `src/config/permissions.ts`. Under ADR-019 it is called at the resource openers — `SessionManager.openSession` and `AgentManager.completeAs` (via `buildCompleteCallPreamble` in `src/agents/manager-dispatch.ts`), plus the manager's own `runAs` / `runAsSession` — and never by the orchestrators, ops or middleware above them. Two read-only consumers also call it so they cannot disagree with the tool offer: `resolveCodingToolSupport` (`src/agents/coding-tool-support-resolve.ts`, compiles the native tool policy) and the inert-Bash warning (`src/config/inert-bash-stages.ts`).
 
 ```
 ┌─────────────┐     ┌──────────────────────┐     ┌──────────────────────┐
@@ -33,7 +33,7 @@ All permission decisions flow through one function: `resolvePermissions(config, 
         receives resolvedPermissions in opts ←──────────────────┘
 ```
 
-`mode` is the ACP permission mode (`approve-all` | `approve-reads` | `default`). `toolGrants` / `denyRules` / `askRules` are declarative `{tool, patterns}` data compiled into an enforceable policy by `src/tools/` (`compileToolPolicy`); `providerScope` (`all` | `rules` | `none`) bounds MCP provider tools; `bashApproval` is always present (ADR-030, below).
+`mode` is the ACP permission mode (`approve-all` | `approve-reads` | `default`). `toolGrants` / `denyRules` / `askRules` are declarative `{tool, patterns}` data compiled into an enforceable policy by `packages/nax-agent/src/tools/` (`compileToolPolicy`); `providerScope` (`all` | `rules` | `none`) bounds MCP provider tools; `bashApproval` is always present (ADR-030, below).
 
 ### Permission Profiles
 
@@ -89,12 +89,12 @@ The profile's mode is the same for every stage; per-stage differences come only 
 
 ### Bash approval modes (ADR-030)
 
-`bashApproval` decides how a model-authored shell command string is adjudicated. Global `execution.bashApproval` (default `raw`), overridable per stage in `permissions.<stage>.bashApproval`; resolved by `resolveBashApproval` (`src/config/bash-approval.ts`) inside `resolvePermissions`.
+`bashApproval` decides how a model-authored shell command string is adjudicated. Global `execution.bashApproval` (default `raw`), overridable per stage in `permissions.<stage>.bashApproval`; resolved by `resolveBashApproval` (`packages/nax-agent/src/config/bash-approval.ts`) inside `resolvePermissions`.
 
 | Mode | Behaviour |
 |:-----|:----------|
-| `raw` (default) | Pass-through: no lexer refusal, no per-segment grant matching, no root containment. Only an advisory protected-path screen (`src/tools/policy-bash-raw.ts`) refuses a *parseable* write to `.nax/config.json`, `.nax/mono/*/config.json`, `.nax/features/**/prd.json` or the queue-control files. Requires the OS sandbox when it is enabled (below). |
-| `gated` | Mechanical gate (`src/tools/policy-bash.ts`): lexer refusals, deny rules, per-segment allow matching, containment. |
+| `raw` (default) | Pass-through: no lexer refusal, no per-segment grant matching, no root containment. Only an advisory protected-path screen (`packages/nax-agent/src/tools/policy-bash-raw.ts`) refuses a *parseable* write to `.nax/config.json`, `.nax/mono/*/config.json`, `.nax/features/**/prd.json` or the queue-control files. Requires the OS sandbox when it is enabled (below). |
+| `gated` | Mechanical gate (`packages/nax-agent/src/tools/policy-bash.ts`): lexer refusals, deny rules, per-segment allow matching, containment. |
 | `escalate` | `gated`, but a denial the gate could not adjudicate (lexer refusal, no covering allow rule) goes to the `ask` tier instead of `deny`. Affirmative out-of-bounds denials never escalate. |
 
 Under `gated`/`escalate` the Bash tool is offered only when the stage's allow list holds exactly one human-written `Bash(...)` rule — no profile grants Bash. A stage that declares Bash without one is *inert*; `warnInertBashStages` (`src/execution/lifecycle/run-setup-warnings.ts`) logs one warning per inert stage at run start. Separately, nax's `src/agents/nax-owned-writes.ts`, injected through nax-agent's `OwnedPathsPolicy` port, keeps coding tools off nax's own files: `.nax/config.json` / `.nax/mono/*/config.json` for every tool (`quality.commands` run ungated on the strength of a human having written them), and feature `prd.json` plus the root queue-control files for write tools (the plan session may write only the one PRD path its op declares).
@@ -103,12 +103,12 @@ Under `gated`/`escalate` the Bash tool is offered only when the stage's allow li
 
 ### Ask tier and approvals
 
-The `AskResolver` is a chain (`chainAskLinks`, `src/permissions/ask-chain.ts`) built per dispatch scope by `buildDispatchAskWiring` (`src/interaction/dispatch-ask.ts`): the **approvals cache** link (`approvals.json`, `src/permissions/approvals-store.ts`) → the **human** link over the interaction chain → a terminal deny. A prompt waits `execution.approvalTimeout` (default 600000 ms, min 30000, max 3600000) and then denies. With no channel the run gets `headlessAskResolver()`, which denies; every refusal records the tool-ledger outcome `denied:ask`. Remembered approvals are managed with `nax approvals list [--json]` and `nax approvals rm [ids...] [--stage <stage>] [--all] [--yes]` (`src/cli/approvals.ts`). A run that could forge cache entries (a `raw` stage with the sandbox off) taints the store so later runs ignore those entries (`src/permissions/approvals-taint.ts`).
+The `AskResolver` is a chain (`chainAskLinks`, `packages/nax-agent/src/permissions/ask-chain.ts`) built per dispatch scope by `buildDispatchAskWiring` (`src/interaction/dispatch-ask.ts`): the **approvals cache** link (`approvals.json`, `packages/nax-agent/src/permissions/approvals-store.ts`) → the **human** link over the interaction chain → a terminal deny. A prompt waits `execution.approvalTimeout` (default 600000 ms, min 30000, max 3600000) and then denies. With no channel the run gets `headlessAskResolver()`, which denies; every refusal records the tool-ledger outcome `denied:ask`. Remembered approvals are managed with `nax approvals list [--json]` and `nax approvals rm [ids...] [--stage <stage>] [--all] [--yes]` (`src/cli/approvals.ts`). A run that could forge cache entries (a `raw` stage with the sandbox off) taints the store so later runs ignore those entries (`packages/nax-agent/src/permissions/approvals-taint.ts`).
 
 ### OS sandbox and command safety
 
-- **`execution.sandbox`** (`src/sandbox/`, schema `src/config/schemas-sandbox.ts`) wraps the two agent-authored spawn sites — Bash and RunCommand `Exec` — in an OS sandbox. Defaults: `enabled: true`, `backend: "srt"` (`@anthropic-ai/sandbox-runtime`), `filesystem.allowWrite: []`, `filesystem.denyRead: []`, `network.allowedDomains` absent (unrestricted egress). Paths must be literal (no glob characters). When enabled but the probe finds it unavailable, `raw` Bash is refused with a reason naming `gated`/`escalate`; those modes run unwrapped with a warning. nax's own declared commands (quality, acceptance, installs) are never wrapped. It limits the blast radius of agent mistakes; it is not a boundary against a hostile repo (see §17).
-- **`execution.commandSafety.shadow`** (`src/command-safety/`) is a shadow classifier: it scores and classifies every agent command and writes a row per call, but **decides nothing**. Off unless `shadow.url` is set; the URL must be loopback unless `allowRemote: true`.
+- **`execution.sandbox`** (`packages/nax-agent/src/sandbox/`, schema `packages/nax-agent/src/config/schemas-sandbox.ts`) wraps the two agent-authored spawn sites — Bash and RunCommand `Exec` — in an OS sandbox. Defaults: `enabled: true`, `backend: "srt"` (`@anthropic-ai/sandbox-runtime`), `filesystem.allowWrite: []`, `filesystem.denyRead: []`, `network.allowedDomains` absent (unrestricted egress). Paths must be literal (no glob characters). When enabled but the probe finds it unavailable, `raw` Bash is refused with a reason naming `gated`/`escalate`; those modes run unwrapped with a warning. nax's own declared commands (quality, acceptance, installs) are never wrapped. It limits the blast radius of agent mistakes; it is not a boundary against a hostile repo (see §17).
+- **`execution.commandSafety.shadow`** (`packages/nax-agent/src/command-safety/`) is a shadow classifier: it scores and classifies every agent command and writes a row per call, but **decides nothing**. Off unless `shadow.url` is set; the URL must be loopback unless `allowRemote: true`.
 - `bashApproval`, `approvalTimeout`, `sandbox` and `commandSafety` are **root-scoped** (ADR-031, `src/config/root-only-keys.ts`): a package config that sets one is warned about and ignored. `permissionProfile` and `permissions` stay per-package.
 
 ### Rules (Mandatory)
@@ -135,7 +135,7 @@ Above those entry points, callers pass `pipelineStage`, never raw permission
 values:
 
 ```typescript
-// ✅ Correct — sessionless one-shot
+// Correct — sessionless one-shot
 await ctx.runtime.agentManager.completeAs(agentName, prompt, {
   modelDef,
   workdir,
@@ -143,7 +143,7 @@ await ctx.runtime.agentManager.completeAs(agentName, prompt, {
   config,
 });
 
-// ✅ Correct — session-bound (orchestrator opens its own handle)
+// Correct — session-bound (orchestrator opens its own handle)
 const handle = await ctx.runtime.sessionManager.openSession(name, {
   agentName,
   workdir,
@@ -153,16 +153,16 @@ const handle = await ctx.runtime.sessionManager.openSession(name, {
   signal: ctx.signal,
 });
 
-// ✅ Correct — through callOp (most ops): Operation.stage drives the stage,
+// Correct — through callOp (most ops): Operation.stage drives the stage,
 // no manual permission threading
 await callOp(ctx, semanticReviewOp, input);
 ```
 
 ```typescript
-// ❌ Wrong: hardcoded
+// Wrong: hardcoded
 const args = ["--dangerously-skip-permissions", ...rest];
 
-// ❌ Wrong: resolving permissions in a middle layer
+// Wrong: resolving permissions in a middle layer
 // (only resource openers — SessionManager.openSession / AgentManager — resolve)
 const perms = resolvePermissions(config, "run");
 await sessionManager.openSession(name, { resolvedPermissions: perms, ... });
@@ -175,8 +175,8 @@ middleware, and ops never call `resolvePermissions` themselves.
 
 - **Resolver:** `src/config/permissions.ts` — `resolvePermissions()`, `DEFAULT_PERMISSION_PROFILE`, `SESSION_CLOSE_PERMISSION_MODE`, `DEFAULT_CODING_TOOLS`, `BUILT_IN_EXEC_PATTERNS`
 - **Schema:** `src/config/schemas-execution.ts` — `permissionProfile`, `bashApproval`, `approvalTimeout`, `sandbox`, `commandSafety`, `permissions`
-- **Policy compilation / enforcement:** `src/tools/policy.ts`, `src/tools/policy-bash.ts`, `src/tools/policy-bash-raw.ts`, `src/tools/runtime.ts`; per-call audit rows in `src/tools/tool-audit.ts`
-- **Ask tier:** `src/permissions/` (`ask-chain.ts`, `ask.ts`, `approvals-store.ts`, `approvals-taint.ts`), `src/interaction/dispatch-ask.ts`
+- **Policy compilation / enforcement:** `packages/nax-agent/src/tools/policy.ts`, `packages/nax-agent/src/tools/policy-bash.ts`, `packages/nax-agent/src/tools/policy-bash-raw.ts`, `packages/nax-agent/src/tools/runtime.ts`; per-call audit rows in `packages/nax-agent/src/tools/tool-audit.ts`
+- **Ask tier:** `packages/nax-agent/src/permissions/` (`ask-chain.ts`, `ask.ts`, `approvals-store.ts`, `approvals-taint.ts`), `src/interaction/dispatch-ask.ts`
 - **ACP adapter:** `src/agents/acp/adapter.ts`
 - **Resource openers:** `src/session/manager.ts` (`openSession`), `src/agents/manager.ts` (`completeAs`, `runAs`, `runAsSession`)
 - **Specs / ADRs:** `docs/specs/scoped-permissions.md` (PERM-001 + PERM-002), ADR-029 (Phase C scope), ADR-030 (bash approval modes, sandbox amendments), ADR-031 (root-scoped keys)
@@ -285,23 +285,33 @@ Two transports, selected by agent **name** (ADR-027): `createAgentRegistry` (`sr
 
 | Adapter / concern | Folder | Contents |
 |:--------|:-------|:------|
-| ACP protocol (every CLI agent, over `@nathapp/nax-agent-acp`) | `acp/` | adapter, session (open with the crash-leftover policy, close), open-context, profile-map, ask-port, turn-slot, turn-loop, stream-bridge (watchdog events, usage), tool-audit, pricing, failure-map, prompt-retry, complete (throwaway one-shot session), entries, index |
-| Native in-process path over `@nathapp/nax-ai` | `native/` | adapter, client (memoised nax-ai client), models (rate card, context window, catalog overrides), model-resolver, auth / credentials, errors, session-affinity, index |
-| Native session + tool loop (ADR-028/029) | `native/session/` | `turn-loop` (plus `turn-*` steps: tool batch, compaction, retry, ask-human, completion), `loop-events/` (before/after-tool event registry), `tool-result` (the single tool-result constructor), `transcript-store` (persisted conversation; a transcript written by another model or op invocation reads as a new conversation), compaction, nudge, truncation-handler |
+| ACP protocol (every CLI agent, over `@nathapp/nax-agent-acp/client`) | `acp/` | adapter, session (open with the crash-leftover policy, close), open-context, profile-map, ask-port, turn-slot, turn-loop, stream-bridge (watchdog events, usage), tool-audit, pricing, failure-map, prompt-retry, complete (throwaway one-shot session), entries, index |
+| nax's native adapter (over the nax-agent package) | `native-agent/` | `NativeAgentAdapter`: composes the nax-agent `NativeSessionAdapter` and `nativeComplete`, and answers the process-shaped members honestly (no binary, no pid) |
+| Native in-process path (`@nathapp/nax-agent`) | `packages/nax-agent/src/native/` | client (memoised nax-ai client), models (rate card, context window, catalog overrides), model-resolver, auth and credentials, errors, session-affinity, complete, session-adapter |
+| Native session + tool loop (ADR-028/029) | `packages/nax-agent/src/native/session/` | `turn-loop` (plus `turn-*` steps: tool batch, compaction, retry, ask-human, completion), `loop-events/` (before/after-tool event registry), `tool-result` (the single tool-result constructor), `transcript-store` (persisted conversation; a transcript written by another model or op invocation reads as a new conversation), compaction, nudge, truncation-handler |
 | nax-ai catalog boundary (non-native side) | `catalog/` | `lookupPricing()` — returns nax-ai's `Pricing` |
 | Centralized cost | `cost/` | calculate, estimate (`priceCall`, tier selection), rate-card (`resolveRateCard`, `FALLBACK_RATES`), model-aliases.json, token-mapper, types, index |
 | Retry policy | `retry/` | `RetryStrategy`, default strategy, hop retry policy, presets |
 | Cross-adapter helpers | `shared/` | see below |
 
-The `src/agents/` root holds the transport-neutral layer: `AgentManager` (`manager*.ts`), the registry, the coding-tool wiring for native runs (`coding-tool-*.ts`, `universal-coding-tools.ts`), and shared types. `agent.protocol` (`acp` | `native` | `hybrid`, default `hybrid`) is a capability gate that decides which transports are permitted, not a router; `agent.default` defaults to `native` (`src/config/agent-defaults.ts`). `protocol: "acp"` with the `native` default is rejected at config load (`src/config/schemas-protocol-gate.ts`).
+The `src/agents/` root holds the transport-neutral layer: `AgentManager` (`manager*.ts`), the registry, the coding-tool wiring for native runs (`coding-tool-support-resolve.ts`; the tool sets are in `packages/nax-agent/src/coding-tools/`), and shared types. `agent.protocol` (`acp` | `native` | `hybrid`, default `hybrid`) is a capability gate that decides which transports are permitted, not a router; `agent.default` defaults to `native` (`src/config/agent-defaults.ts`). `protocol: "acp"` with the `native` default is rejected at config load (`src/config/schemas-protocol-gate.ts`).
+
+### ACP Client and nax-agent ACP Server
+
+Two packages implement the Agent Client Protocol. `@nathapp/nax-agent-acp` is versioned in lockstep with nax and has two entry points:
+
+- **`./client`** (`packages/nax-agent-acp/src/client/`) — the ACP client that nax's `acp/` adapter drives for every CLI agent (`claude`, `codex`, `opencode`, `gemini`, `aider`, `pi`). It covers launch and the agent registry (`launch.ts`, `registry.ts`, `launchable.ts`), the connection and turns (`connection.ts`, `turn.ts`, `open.ts`, `resume.ts`), permissions and session profiles (`permissions.ts`, `capabilities.ts`), tool-call events (`tool-calls.ts`, `tool-events.ts`), usage (`usage.ts`) and the Claude sandbox mapping (`claude-sandbox.ts`). nax does not spawn these agents directly; it goes through this client.
+- **`./server`** (`packages/nax-agent-acp/src/server/`) — the nax-agent ACP server. `runCli()` is what the `nax-agent` server bin runs (`bin/nax-agent.js`; the `bin` entry is added to the staged npm manifest by `scripts/lib/stage-manifest.ts`, not the workspace `package.json`). It serves ACP clients with its session registry and storage (`registry*.ts`, `storage.ts`, `session-lock*.ts`), login and auth methods (`login.ts`, `auth.ts`), an MCP bridge for the `mcpServers` a client supplies (`mcp/`, built on `@nathapp/nax-agent/mcp`), translation of tool and stop events (`translate/`), and session config options including the mode option (`session-config.ts`, `permissions.ts`).
+
+The package depends on `@nathapp/nax-agent` as a peer. nax reaches it only through `@nathapp/nax-agent-acp/client`. The nax-agent native agent (§52) is not an ACP agent: it runs in-process with no child process.
 
 ### Rules
 
 1. **Adapter-specific code lives in the adapter's subfolder** — the `src/agents/` root is for the transport-neutral manager/registry/coding-tool layer, never for one adapter's internals
 2. **Each multi-file adapter needs `index.ts`** — re-exports everything external callers need; internal modules import directly without going through the barrel
 3. **Cross-adapter code goes in `shared/`** — if two different adapters import the same module, that module belongs in `shared/`, not inside either adapter's folder
-4. **Cost is centralized** — rate cards and pricing live in `src/agents/cost/` (`resolveRateCard` on the ACP side, `buildRateCard` in `native/models.ts` on the native side, both priced by `priceCall`). Adapters stamp `pricingSource` and `rates` on their results; recording flows through the cost middleware (`DispatchEvent` → `CostAggregator`), per `.claude/rules/adapter-wiring.md`
-5. **nax-ai stays behind the allow-listed sites** — `@nathapp/nax-ai` may be imported only from `native/`, `catalog/` and the `cost/standard-types.ts` staging re-export (`bun run check:nax-ai-imports`); `acp/` may not import `NaxConfig` (`check:adapter-no-config-import`)
+4. **Cost is centralized** — rate cards and pricing live in `src/agents/cost/` (`resolveRateCard` on the ACP side) and in the nax-agent package (`buildRateCard` in `packages/nax-agent/src/native/models.ts` on the native side); both are priced by `priceCall`. Adapters stamp `pricingSource` and `rates` on their results; recording flows through the cost middleware (`DispatchEvent` → `CostAggregator`), per `.claude/rules/adapter-wiring.md`
+5. **nax-ai stays behind the allow-listed sites** — `@nathapp/nax-ai` may be imported only from nax-agent's `src/native/`, nax's `src/agents/catalog/` and nax-agent's `src/cost/standard-types.ts` re-export (`check:nax-ai-imports`); `acp/` may not import `NaxConfig` (`check:adapter-no-config-import`)
 
 ### `shared/` Contents
 
@@ -309,7 +319,7 @@ The `src/agents/` root holds the transport-neutral layer: `AgentManager` (`manag
 |:-----|:--------|:--------|
 | `shared/decompose.ts` | Decompose output parser (`parseDecomposeOutput`, `coerceComplexity`) | `operations/decompose.ts` |
 | `shared/agent-profile-resolver.ts` | `resolveAgentAssignment()` — per-story agent/model assignment | `plan/strategies/finalize-routing.ts` |
-| `shared/env.ts` | `buildAllowedEnv()` — env allowlist for spawned processes | `acp/spawn-client.ts`, `hooks/runner.ts`, `utils/command-argv.ts` |
+| `shared/env.ts` | `buildAllowedEnv()` — env allowlist for spawned processes | `acp/adapter.ts`, `acp/open-context.ts`, `hooks/runner.ts`, `utils/command-argv.ts` |
 | `shared/model-resolution.ts` | `resolveBalancedModelDef()` | (no `src/` consumer today) |
 | `shared/validation.ts` | Agent capability + tier validation | re-exported from `agents/index.ts` |
 | `shared/version-detection.ts` | Binary version detection | `cli/agents.ts`, `precheck/checks-agents.ts` |
@@ -336,7 +346,7 @@ nax has three independent retry layers, each targeting a different failure class
 **The first layer has one meaning and two implementations**, because the two transports put the agent in different places:
 
 - **ACP** — nax's ACP turn loop (`src/agents/acp/turn-loop.ts`, `prompt-retry.ts`) re-issues the prompt up to `promptRetries` times with backoff `min(1000 * 2^n, 10000)` ms, and only when the failed attempt produced no turn event, so a retry never repeats side effects. The agent process may also absorb transient faults on its own.
-- **Native** — there is no child process; nax *is* the agent. The equivalent retry therefore lives in nax, in the native turn loop (`src/agents/native/session/turn-retry.ts`, nax#1870). It re-issues a single round trip on a `transport` or `overloaded` fault, with equal-jitter backoff capped by the turn's remaining budget.
+- **Native** — there is no child process; nax *is* the agent. The equivalent retry therefore lives in nax, in the native turn loop (`packages/nax-agent/src/native/session/turn-retry.ts`, nax#1870). It re-issues a single round trip on a `transport` or `overloaded` fault, with equal-jitter backoff capped by the turn's remaining budget.
 
 This is why neither one is a `RetryStrategy`: the op/manager tiers govern nax's **dispatch** — whether to re-dispatch a call — while this layer sits underneath both, inside the execution of a single call.
 
@@ -351,7 +361,7 @@ This is why neither one is a `RetryStrategy`: the op/manager tiers govern nax's 
 
 ### Cost Recording
 
-Both adapters price a call the same way: a `Pricing` rate card → `priceCall(usage, rates)` (`src/agents/cost/estimate.ts`), which selects a threshold tier (`tiers[].inputTokensAbove`, the whole request reprices) and falls back to `input` for cache rates the card does not publish. The result carries `estimatedCostUsd`, `pricingSource` and the resolved per-1M `rates` (omitted when usage is zero, so "did not price" stays distinguishable from "priced at zero").
+Both adapters price a call the same way: a `Pricing` rate card → `priceCall(usage, rates)` (`packages/nax-agent/src/cost/estimate.ts`), which selects a threshold tier (`tiers[].inputTokensAbove`, the whole request reprices) and falls back to `input` for cache rates the card does not publish. The result carries `estimatedCostUsd`, `pricingSource` and the resolved per-1M `rates` (omitted when usage is zero, so "did not price" stays distinguishable from "priced at zero").
 
 | Path | Rate card | `pricingSource` |
 |:-----|:----------|:----------------|
@@ -383,7 +393,7 @@ not a defect.
 | Run arbitrary commands | `quality.commands.*` (`src/quality/runner.ts`) | Equivalent to running the repo's own `npm test` — the repo's own commands with the repo's own env |
 | Execute hooks | `src/hooks/runner.ts` | Hooks are repo-authored code the user opted into running |
 | Load plugins in-process | `src/plugins/loader.ts` | Plugin loading is the granted authority |
-| Provide tool-result content | `src/agents/acp/adapter-output.ts` | File contents are the repo's own — no prompt-injection delimiter escaping |
+| Provide tool-result content | `packages/nax-agent/src/native/session/tool-result.ts` (native) and the ACP client in `packages/nax-agent-acp/src/client/` | File contents are the repo's own — no prompt-injection delimiter escaping |
 | Override security-sensitive config | project `.nax/config.json` (warned, not blocked — see SEC-2 / D-2) | Project layer wins the merge; the loader warns when a project layer changes `execution.permissionProfile` or `quality.stripEnvVars` from their global values |
 
 ### Explicitly NOT being built

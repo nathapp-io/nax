@@ -6,7 +6,7 @@
 
 Static rules are short, project-specific guidance that the Context Engine prepends to every agent prompt — coding standards, forbidden patterns, error-handling conventions, testing rules. They are agent-agnostic by design (no `CLAUDE.md`, no `<system-reminder>`, no "the X tool" phrasing) so a fallback agent reads the same guidance as the primary.
 
-The provider that loads them is `StaticRulesProvider` ([src/context/engine/providers/static-rules.ts](../../src/context/engine/providers/static-rules.ts)). Every chunk it emits is a budget-floor chunk — included regardless of stage budget pressure (subject only to the rules-specific budget). Each rule is split into its `## ` (H2) sections, and each section becomes its own chunk.
+The provider that loads them is `StaticRulesProvider` ([src/context/engine/providers/static-rules.ts](../../packages/nax/src/context/engine/providers/static-rules.ts)). Every chunk it emits is a budget-floor chunk — included regardless of stage budget pressure (subject only to the rules-specific budget). Each rule is split into its `## ` (H2) sections, and each section becomes its own chunk.
 
 ## Where rules live
 
@@ -46,7 +46,7 @@ Frontmatter keys (all optional):
 | `priority` | int | `100` | Lower = more important. Drives sort order and budget-truncation tail bias. Use `50-80` for must-have rules, `100` for normal, `150+` for nice-to-have. |
 | `paths` | string \| string[] | none | Globs against the story's package-relative workdir (`request.storyWorkdir`). Rule loads only when the **package** matches. Always-true in single-package repos. |
 | `appliesTo` | string[] | none | Globs against `request.scopeFiles` (see below). Rule loads only when the story touches a matching file. Must be a list. |
-| `stages` | string[] | none | Pipeline stages the rule applies to (e.g. `single-session`, `tdd-test-writer`, `review-semantic`). Rule loads only when `request.stage` is listed. Unknown stage names warn but do not reject the rule. |
+| `stages` | string[] | none | Pipeline stages the rule applies to (e.g. `single-session`, `tdd-test-writer`, `review-semantic`; keys of `STAGE_CONTEXT_MAP` in `src/context/engine/stage-config.ts`). Rule loads only when `request.stage` is listed. Unknown stage names warn but do not reject the rule. In workflow mode the context stage assembles with the stage name `context`, so a rule scoped to strategy stage names may not load there. |
 | `description` | string | none | Free-text label; not used for filtering. |
 
 Any other key rejects the file (`RULES_FRONTMATTER_INVALID`). At run time the file is logged as `Invalid rule frontmatter — skipping file` and dropped so one bad rule never aborts a run; `nax rules lint` instead loads strictly, reports every invalid file as an error, and exits non-zero (`RULES_LINT_FAILED`), and the run-start precheck blocks on it. Frontmatter preceded by a BOM, a blank line, or an HTML comment is warned about as *displaced*; an HTML-comment-displaced block is not honored. `nax rules lint` checks a store without running a story.
@@ -57,7 +57,7 @@ Body must pass the neutrality linter — see below.
 
 Three filter axes apply in order, all inside `StaticRulesProvider.fetch`:
 
-1. **`paths:` (package-scope)** — drops the rule if the story's package-relative workdir doesn't match (`ruleMatchesPackage` in [scope-path-match.ts](../../src/context/engine/scope-path-match.ts)).
+1. **`paths:` (package-scope)** — drops the rule if the story's package-relative workdir doesn't match (`ruleMatchesPackage` in [scope-path-match.ts](../../packages/nax/src/context/engine/scope-path-match.ts)).
 2. **`stages:`** — drops the rule if the current stage isn't listed.
 3. **`appliesTo:` (scope files)** — drops the rule if no entry of `request.scopeFiles` matches (`ruleMatchesScopeFiles`).
 
@@ -79,7 +79,7 @@ If a story's scope-file set is empty, `appliesTo:` filtering is bypassed — eve
 
 ## Where `request.scopeFiles` comes from
 
-`scopeFiles` is resolved by `resolveScopeFiles(ctx)` ([src/pipeline/scope-files.ts](../../src/pipeline/scope-files.ts)) as the deduped union of:
+`scopeFiles` is resolved by `resolveScopeFiles(ctx)` ([src/pipeline/scope-files.ts](../../packages/nax/src/pipeline/scope-files.ts)) as the deduped union of:
 
 - the PRD's `contextFiles` (legacy `relevantFiles`) — `getContextFiles(story)`
 - the PRD's `expectedFiles` — `getExpectedFiles(story)`
@@ -183,7 +183,7 @@ The rules budget is per stage: `min(rulesShare × stage budgetTokens, rules.budg
 | `rulesShare` | `0.4` | Share of the stage's `budgetTokens` reserved for rules |
 | `enforceBudget` | `true` | When `false`, every rule is kept and the overage is only reported (`budgetPressure`) |
 
-Budgeting works on H2 sections, sorted by `priority` ascending, then by rule, then by section order within the rule. Each rule contributes its longest leading run of sections that fits; the first section that doesn't fit closes that rule, and the walk continues with the next rule. Lower priority number survives. When sections are dropped, a standalone notice chunk lists what was cut. ([rule-budget/index.ts](../../src/context/rules/rule-budget/index.ts))
+Budgeting works on H2 sections, sorted by `priority` ascending, then by rule, then by section order within the rule. Each rule contributes its longest leading run of sections that fits; the first section that doesn't fit closes that rule, and the walk continues with the next rule. Lower priority number survives. When sections are dropped, a standalone notice chunk lists what was cut. ([rule-budget/index.ts](../../packages/nax/src/context/rules/rule-budget/index.ts))
 
 Use priority to defend critical rules:
 
@@ -203,7 +203,7 @@ The provider emits a warning at 75% of budget (`Canonical rules are approaching/
 
 ## Neutrality linter
 
-The loader rejects files containing agent-specific markers ([canonical-loader/index.ts](../../src/context/rules/canonical-loader/index.ts)):
+The loader rejects files containing agent-specific markers ([canonical-loader/index.ts](../../packages/nax/src/context/rules/canonical-loader/index.ts)):
 
 | Pattern | Why banned |
 |:---|:---|
@@ -214,7 +214,7 @@ The loader rejects files containing agent-specific markers ([canonical-loader/in
 | `IMPORTANT:` | shouting style |
 | emoji | non-portable formatting |
 
-Lint failure throws `NeutralityLintError` and **blocks all rule loading** — fail-fast, no silent skip.
+Lint failure throws `NeutralityLintError` (`NEUTRALITY_LINT_FAILED`). The failure is not skipped silently: the context stage logs an error and the story falls back to the v1 context path (`CLAUDE.md` / `.nax/context.md`) with zero canonical-rule chunks. `nax rules lint` reports the same failure before a run.
 
 Per-line allow markers exist for legitimate references (e.g. a rule that has to mention `.claude/` because that's its subject):
 
@@ -277,8 +277,8 @@ Useful events:
 
 ## Reference
 
-- Provider: [src/context/engine/providers/static-rules.ts](../../src/context/engine/providers/static-rules.ts)
-- Loader: [src/context/rules/canonical-loader/index.ts](../../src/context/rules/canonical-loader/index.ts)
-- Frontmatter parser: [src/context/rules/rules-frontmatter.ts](../../src/context/rules/rules-frontmatter.ts)
+- Provider: [src/context/engine/providers/static-rules.ts](../../packages/nax/src/context/engine/providers/static-rules.ts)
+- Loader: [src/context/rules/canonical-loader/index.ts](../../packages/nax/src/context/rules/canonical-loader/index.ts)
+- Frontmatter parser: [src/context/rules/rules-frontmatter.ts](../../packages/nax/src/context/rules/rules-frontmatter.ts)
 - Spec: [docs/specs/SPEC-context-engine-canonical-rules.md](../specs/SPEC-context-engine-canonical-rules.md)
 - Engine guide: [docs/guides/context-engine.md](./context-engine.md)

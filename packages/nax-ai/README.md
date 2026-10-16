@@ -39,8 +39,8 @@ unchanged. Rename locally stored Azure credentials to the new provider key
 before using them.
 
 The refreshed catalog changes pricing, context windows, output limits, and
-thinking capabilities. On `opencode-go`, `qwen3.7-plus` and `qwen3.8-max` now
-use `anthropic-messages`; review any overrides that pin their old protocol.
+thinking capabilities, and some models may now use a different protocol. Check
+any override that pins a protocol against the refreshed catalog.
 Only chat models and providers with chat models are exposed. Image generation,
 classifiers, and the new `openai` ChatGPT OAuth flow are outside this client's
 current API; permitted OAuth flows remain `openai-codex` and `openrouter`.
@@ -134,7 +134,7 @@ A `ToolDefinition` can carry an optional `constrainedSampling: { type: "json_sch
 
 `ResolvedModel.supportsStrictToolSampling === true` identifies a model whose catalog explicitly declares strict JSON Schema tool-argument sampling support; an absent value means nax-ai has no declaration and is not a statement about pi-ai's runtime defaults. This capability constrains arguments only when a tool is called: it does not require a tool call and does not provide structured completion output.
 
-Do not filter models on an absent value. Whether an undeclared model behaves as supported is a property of the protocol, and pi-ai 0.85.1 defaults the two opposite ways: `anthropic-messages` treats an undeclared model as unsupported, while `openai-completions` falls back to endpoint detection that accepts most endpoints. Skipping every model without a declaration is therefore correct for the former and needlessly discards working models for the latter, where a `strict: "require"` call against an undeclared model succeeds whenever pi-ai's detection accepts the endpoint. Only `true` is a positive statement; the field records what the catalog declared, not what a request will do.
+Do not filter models on an absent value. Whether an undeclared model behaves as supported is a property of the protocol. When this was last checked (pi-ai 0.85.1; the package now pins 1.1.0, so re-check on a bump), pi-ai defaulted the two opposite ways: `anthropic-messages` treats an undeclared model as unsupported, while `openai-completions` falls back to endpoint detection that accepts most endpoints. Skipping every model without a declaration is therefore correct for the former and needlessly discards working models for the latter, where a `strict: "require"` call against an undeclared model succeeds whenever pi-ai's detection accepts the endpoint. Only `true` is a positive statement; the field records what the catalog declared, not what a request will do.
 
 ### Logging in
 
@@ -175,7 +175,7 @@ That constraint is what lets the implementation underneath this surface be repla
 
 ## Requirements
 
-- **Node >= 22.19** — the compatibility target. Runs unmodified on Bun and Deno.
+- **Node >= 22.19** — the compatibility target. The built package is also smoke-tested on Bun in CI.
 - ESM only. There is no CommonJS build.
 
 The package must not use runtime-specific APIs. `Bun.*` and `bun:` imports are rejected by a build gate (`scripts/check-no-bun-apis.ts`) because the primary consumer runs on Bun, so nothing would fail there — the breakage would surface only for someone else, on install.

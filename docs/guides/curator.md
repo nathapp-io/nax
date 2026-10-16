@@ -204,7 +204,7 @@ The curator uses six deterministic heuristics. Each has a traceability ID (H1–
 
 | ID | Heuristic | Threshold | Meaning | Action |
 |:---|:---|:---|:---|:---|
-| **H1** | Repeated review finding | `≥ N occurrences across stories` | Same lint/test finding fired repeatedly — anti-pattern | Add to rules |
+| **H1** | Repeated review finding | `≥ N occurrences across features` | Same lint/test finding fired repeatedly — anti-pattern | Add to rules |
 | **H2** | Pull-tool empty result | `≥ N empty results for same keyword` | Context query returned nothing multiple times — missing docs. Sites deliberately span features, so the target is project-level, not one feature's context.md | Add to rules |
 | **H3** | Repeated rectification cycle | `≥ N cycles for same story` | Story needed multiple fix attempts — context likely incomplete for that story's own feature | Add to context |
 | **H4** | Escalation chain | `≥ N escalations for same story type` | Repeated model-tier escalation — context may be insufficient. Sites deliberately span features, so the target is project-level, not one feature's context.md | Add to rules |
@@ -213,11 +213,12 @@ The curator uses six deterministic heuristics. Each has a traceability ID (H1–
 
 ### Severity Levels
 
-Proposals are tagged with severity to help prioritize:
+Each proposal is tagged `HIGH`, `MED` or `LOW` by its heuristic (`packages/nax/src/plugins/builtin/curator/heuristics.ts`):
 
-- **HIGH** — Strong signal, high confidence (≥ 3–4 occurrences, or high-impact finding)
-- **MED** — Moderate signal (2–3 occurrences)
-- **LOW** — Weak signal or advisory (single confirmed case, optional action)
+- **H1** (repeated review finding): `MED`, or `HIGH` once it recurs across at least twice its threshold (4 with the defaults)
+- **H2** and **H4**: `MED`
+- **H3** (repeated rectification cycle): `HIGH`
+- **H5** (stale chunk) and **H6** (unchanged fix-cycle outcome): `LOW`
 
 ## Threshold Tuning
 
@@ -367,10 +368,10 @@ Curator depends on `review.audit.enabled: true` for its highest-fidelity signal.
 | Run completes | Curator reads audit files and counts repeated findings across stories |
 | Same finding ≥ N times | Curator proposes adding a rule to `.nax/rules/` |
 
-**Example:** If the review found "missing null check" in 4 different stories, curator proposes a rule like:
+**Example:** If the review found "missing null check" in 4 different features, curator proposes a rule like:
 
 ```markdown
-- [ ] [HIGH] (H1) "always null-check before dereferencing" — review finding fired in 4 stories
+- [ ] [HIGH] H1: "always null-check before dereferencing" — review finding fired in 4 features
 ```
 
 You can then accept it, and the next run's agent will see this rule in the codebase context.

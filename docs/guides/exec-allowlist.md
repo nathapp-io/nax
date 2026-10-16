@@ -31,9 +31,9 @@ requirement from `tsconfig.json` instead and the story passed.
 An `Exec` call runs only when **both** hold:
 
 1. **The operation declares it.** `Exec` is a capability marker in an op's `tools` list.
-   The ops that declare it are the ones that write code: `implement`, `write-test`,
-   `rectify`, `autofix-implementer`, `autofix-test-writer`, `full-suite-rectify`,
-   `finish-fix`, and the two acceptance-fix ops (source and test). A review, verification or
+   The ops that declare it are the ones that write code: `implement`, `workflow-implement`,
+   `write-test`, `rectify`, `autofix-implementer`, `autofix-test-writer`,
+   `full-suite-rectify-op`, `finish-fix`, and the two acceptance-fix ops (source and test). A review, verification or
    planning op cannot install anything, whatever config says.
 2. **The policy grants it.** Either the built-in list below, or an `Exec(...)` expression
    you write.
@@ -45,7 +45,7 @@ within the root". `Exec` is deliberately **excluded** from that blanket grant â€
 `unrestricted` also mean "any command" would ship a general exec to every run, which
 [ADR-029](../adr/ADR-029-phase-c-native-coding-agent-scope.md) section 3 forbids.
 
-Instead it gets `BUILT_IN_EXEC_PATTERNS` (`src/config/permissions.ts`):
+Instead it gets `BUILT_IN_EXEC_PATTERNS` (`packages/nax/src/config/permissions.ts`):
 
 ```
 bun install      npm ci            pnpm install*    yarn install*
@@ -113,7 +113,7 @@ And after the match:
 - **Package runners** `npx`, `bunx`, `pnpx`, and the `dlx` verb â€” always denied. They
   execute an arbitrary model-named package, outside the hardening model entirely.
 - **Flags that change where code comes from, or whether an untrusted source is accepted**
-  (`DENIED_FLAGS` in `src/tools/exec-guard.ts`): `--registry`, `--index-url`,
+  (`DENIED_FLAGS` in `packages/nax-agent/src/tools/exec-guard.ts`): `--registry`, `--index-url`,
   `--extra-index-url`, `--index`, `-i`, `--trusted-host`, `--cert`, `--strict-ssl`,
   `--cafile`, `--ca`, `--proxy`, `--https-proxy`, `--noproxy`, `--config`, `--userconfig`,
   `--global`, `-g`, `--prefix`, `--unsafe-perm`.

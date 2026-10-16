@@ -9,6 +9,9 @@
 
 ## The four-stage workflow
 
+> Workflow mode (the default, ADR-034) and pipeline mode both consume `prd.json` and the file roles below.
+> The parallel-mode notes in this document apply to pipeline mode only: workflow mode runs stories one at a time.
+
 ```
 brainstorming      → spec-writing          → spec-review         → nax plan
 (intent)             (intent → SPEC.md)       (codebase audit)      (spec-lint gate → decompose → prd.json)
@@ -98,11 +101,11 @@ order**, not plan-time existence. A file produced by an upstream dependency
 
 - **Sequential mode** — stories share one workdir; the producer ran first, so
   the file is on disk.
-- **Parallel mode** — `selectIndependentBatch` (`src/execution/story-selector.ts`,
-  called from `src/execution/unified-executor.ts`) only admits a story whose
+- **Parallel mode** (pipeline only) — `selectIndependentBatch` (`src/execution/story-selector.ts`,
+  called from `src/execution/unified-executor-parallel-dispatch.ts`) only admits a story whose
   dependencies have all passed, so the consumer lands in a **later batch**;
   successful stories **merge back to the project root** in topological order
-  (`MergeEngine.mergeAll`, `src/execution/parallel-batch.ts`) before the batch
+  (`MergeEngine.mergeAll`, `src/worktree/merge.ts`, called from `src/execution/parallel-batch-phases.ts`) before the batch
   returns; the consumer's worktree is then created with `git worktree add <path> -b <branch>`
   **with no commit-ish**, which branches from the current `HEAD` — now containing
   the producer's file (`src/worktree/manager.ts`).
@@ -251,10 +254,10 @@ heading:
 
 | Declaration | Feature-level? |
 |---|---|
-| `## Out of Scope` section (top-level `#`/`##`), anywhere in the document | ✅ yes |
-| `**Out of scope …:**` inline marker **before** the story sections (Summary/Design) | ✅ yes |
-| `**Out of scope:**` under a story's AC block | ❌ no — story-scoped |
-| `### Out of scope` sub-heading after the story sections begin | ❌ no — story-scoped |
+| `## Out of Scope` section (top-level `#`/`##`), anywhere in the document | yes |
+| `**Out of scope …:**` inline marker **before** the story sections (Summary/Design) | yes |
+| `**Out of scope:**` under a story's AC block | no — story-scoped |
+| `### Out of scope` sub-heading after the story sections begin | no — story-scoped |
 
 Story-scoped deferrals still do their job: spec-review Phase 4's adversarial-scope
 check reads them per-story, and they belong in that story's `**Scope** — Out:`
@@ -282,11 +285,11 @@ Phase-0 telemetry (`review.adversarial.scope_finding_accepted` /
 
 | Situation | `contextFiles`? | `expectedFiles`? | spec-review verdict |
 |---|---|---|---|
-| Existing file, read only | ✅ | — | drop = major (lost context) |
-| File this story creates | ❌ | ✅ | in `contextFiles` = blocker |
-| File an upstream dep creates, read/modified here | ✅ (annotated) | ❌ | kept = correct; dropped or mis-moved to `expectedFiles` = major |
-| Absent, produced by no story | ❌ | ✅ (best-effort) | move is correct |
-| Existing file this story's correct change breaks (e.g. a test assertion) | optional | ❌ | missing from spec `### Modifies` = blocker; lands in `modifiedFiles` |
+| Existing file, read only | | — | drop = major (lost context) |
+| File this story creates | | | in `contextFiles` = blocker |
+| File an upstream dep creates, read/modified here | (annotated) | | kept = correct; dropped or mis-moved to `expectedFiles` = major |
+| Absent, produced by no story | | (best-effort) | move is correct |
+| Existing file this story's correct change breaks (e.g. a test assertion) | optional | | missing from spec `### Modifies` = blocker; lands in `modifiedFiles` |
 
 | Scope situation | Where it belongs | spec-review verdict |
 |---|---|---|

@@ -39,9 +39,9 @@ export default {
 
 The plugin is the module's default export (nax falls back to the module's own
 exports when there is none). When authoring inside the nax source tree, the types
-are `NaxPlugin` / `ILoopHandlerProvider` from `src/plugins` and
+are `NaxPlugin` / `ILoopHandlerProvider` from `packages/nax/src/plugins` and
 `LoopHandlerContext` / `PayloadOf<E>` / `PatchOf<E>` from
-`src/agents/native/session/loop-events`.
+`packages/nax-agent/src/native/session/loop-events`.
 
 Save it in one of the directories nax loads plugins from:
 
@@ -185,13 +185,12 @@ runtime (`src/runtime/index.ts`) and never calls `loadPlugins`, so plan sessions
 receive no plugin loop handlers at all. Plugin handlers reach the native turns of
 a `nax run`.
 
-Plugin handlers are also native-only in a second sense: `src/agents/native/`
-never imports `src/plugins`. A plugin handler is handed nax-owned payload and
-context **types** from
-`src/agents/native/session/loop-events/`, and the boundary gate
-(`scripts/check-adapter-no-config-import.sh`) fails the build if anything under
-`src/agents/native/` reaches into the plugin system. That keeps the coding agent
-extractable as a standalone package.
+Plugin handlers are also native-only in a second sense: the native loop lives in
+`@nathapp/nax-agent` (`packages/nax-agent/src/native/`) and never imports nax's
+plugin system. A plugin handler is handed nax-owned payload and context **types**
+from `packages/nax-agent/src/native/session/loop-events/`. The
+`check-package-boundaries` gate keeps `nax-agent` free of nax imports, which is
+what keeps the coding agent extractable as a standalone package.
 
 ## Plugin code runs in the nax process, outside the sandbox
 

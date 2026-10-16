@@ -39,7 +39,7 @@ Dependency direction: `nax-ai` → `nax-agent` → `nax`, and `nax-agent` → `n
 ## Tooling
 
 - All packages are TypeScript (ESM). The root `package.json` declares `typescript` so tooling detects the language at the workspace root.
-- Bun 1.4.0 (pinned in CI). Workspaces with `linker = "isolated"` (root `bunfig.toml`).
+- Bun 1.4.3 (pinned in CI). Workspaces with `linker = "isolated"` (root `bunfig.toml`).
 - Root scripts run every package in dependency order: `bun run build | typecheck | lint | check:all | test`.
 - Every package must define `check:all`; root `check:all` (the repo-level lint gate) silently skips a package without one.
 - Package commands run from the package directory (`cd packages/nax`).

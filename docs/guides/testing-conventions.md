@@ -8,14 +8,13 @@ Test files must respect the following size constraints:
 
 | Limit | Lines | Action |
 |-------|-------|--------|
-| **Soft Limit** | 500 | Review guideline — not gated |
 | **Hard Limit** | 800 | `bun run lint` fails for new files over the limit and for grandfathered files that grow |
 
-Source files (`src/**/*.ts`) have a 600-line hard limit enforced by the same check.
+Source files (`src/**/*.ts`) have a 600-line hard limit enforced by the same check. There is no separate soft limit; the check has only the two limits above.
 
 ### Rationale
 
-Test files exceeding these limits become difficult to navigate and maintain. Large test files indicate:
+Test files approaching these limits become difficult to navigate and maintain. Large test files indicate:
 - Test logic should be split across multiple files
 - Setup/helper code should be extracted to `test/helpers/`
 - Test cases may be duplicated and could benefit from consolidation
@@ -28,10 +27,10 @@ Run the size checker with:
 bun run check:file-sizes
 ```
 
-This script (`scripts/check-file-sizes.ts`):
-- Scans `src/**/*.ts` (600-line limit) and `test/**/*.test.ts` (800-line limit)
-- Ratchets against `scripts/baselines/file-sizes-baseline.json`: files already over the limit are grandfathered but may not grow, and new files must be under the limit
-- Runs inside `bun run lint` (via `lint:checks`), so CI and the pre-commit hook (`.githooks/pre-commit`, which runs `check:all`) both enforce it
+The script lives at `packages/repo-tooling/scripts/check-file-sizes.ts` and is wired into `packages/nax` as `check:file-sizes`. It:
+- Scans `src/**/*.ts` (600-line limit) and `test/**/*.test.ts` (800-line limit) in the package
+- Ratchets against `packages/nax/scripts/baselines/file-sizes-baseline.json`: files already over the limit are grandfathered but may not grow, and new files must be under the limit
+- Runs inside `bun run lint` (via `lint:checks`), so CI enforces it
 
 There is no bypass flag — split the file instead.
 
@@ -49,7 +48,7 @@ Grandfathered files that GREW past their recorded size — do not add more code:
 
 ## Reducing Test File Size
 
-When a test file exceeds the soft limit, consider these strategies:
+When a test file approaches the 800-line limit, consider these strategies:
 
 ### 1. Use `test.each()` for Parametric Tests
 
@@ -143,15 +142,14 @@ describe("user creation", () => {
 
 ## Continuous Monitoring
 
-`bun run check:file-sizes` runs as part of `bun run lint`, so the hard limits are enforced in CI
-and by the pre-commit hook. For local development:
+`bun run check:file-sizes` runs as part of `bun run lint`, so the hard limits are enforced in CI. For local development:
 
 ```bash
-# Run the size check on its own
+# Run the size check on its own (from packages/nax)
 bun run check:file-sizes
 
 # List every oversized file, grandfathered or not
-bun run scripts/check-file-sizes.ts --list
+bun run ../repo-tooling/scripts/check-file-sizes.ts --list
 ```
 
 After splitting a grandfathered file, lower the baseline with

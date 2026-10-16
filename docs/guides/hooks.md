@@ -41,6 +41,8 @@ Integrate notifications, CI triggers, or custom scripts via lifecycle hooks.
 | `on-error` | Unhandled error terminates the run |
 | `on-post-run-action` | A post-run plugin action succeeds, fails, skips, or throws |
 
+> **Note (workflow mode):** Workflow mode, the default since 0.88.0, runs inside the same story executor: the story pipeline becomes `queue-check -> routing -> constitution -> context -> workflow -> completion` (`getWorkflowPipeline()` in `src/pipeline/stages/index.ts`). The run and story events come from that shared executor (`run:started` in `src/execution/unified-executor.ts`, `story:started` in `src/execution/unified-executor-dispatch-phases.ts`, `story:completed` in the completion stage, `story:failed` in `src/execution/pipeline-result-handler.ts`, `run:completed` in `src/execution/lifecycle/run-completion-phases.ts`), so the hooks subscribed in `src/pipeline/subscribers/hooks.ts` fire in both modes. The steps inside a workflow story (implement, review, fix rounds) and the feature workflow (branch review, final gates, publish) emit no hook events of their own.
+
 **Hook lifecycle:**
 
 ```

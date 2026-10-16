@@ -14,13 +14,20 @@ They share no code and can be enabled independently.
 
 ## The prerequisite that governs both
 
-**Both features reach the native agent only.** Neither works under ACP.
+**The interceptor reaches the native agent only. MCP reaches the native agent, and ACP agents that have a pre-approval channel.**
 
-Coding tools — `Git` included — are consumed by the native turn loop
-(`src/agents/native/session/turn-loop.ts`). The ACP adapter accepts a `codingTools`
-argument in its `sendTurn` signature but never consumes it: an ACP agent (`claude`,
-`codex`, `opencode`, `gemini`) brings its own tool implementations, so nax's `Git` tool is
-never invoked and no MCP-provided tool is ever advertised.
+Coding tools (`Git`, `Bash`, and the rest) are consumed by the native turn loop
+(`packages/nax-agent/src/native/session/turn-loop.ts`). The ACP adapter accepts a
+`codingTools` argument in its `sendTurn` signature but never consumes it: an ACP agent
+(`claude`, `codex`, `opencode`, `gemini`, `pi`) brings its own tool implementations, so nax's
+`Git` and `Bash` tools are never invoked, and `execution.commandInterceptor` has no effect on
+it.
+
+MCP provider tools cross into ACP sessions only where the agent's registry entry declares a
+pre-approval channel. Today that is `claude` (`claudeCode.allowedTools`). Those tools are
+served through a loopback host as `mcp__nax__<name>` and pre-approved at open
+(`packages/nax/src/agents/acp/provider-embedder.ts`). Any other ACP agent receives no provider
+tools, and its session records `mcp-pre-approval-unsupported` in `toolSurface.skippedProviders`.
 
 Before either block does anything, the project must dispatch to `native`:
 
@@ -33,13 +40,13 @@ Before either block does anything, the project must dispatch to `native`:
 }
 ```
 
-A project left on `"protocol": "acp"` can carry a complete, valid `mcp` and
+A project left on `"protocol": "acp"` with a non-claude agent can carry a complete, valid `mcp` and
 `commandInterceptor` config and get **zero** effect from both, with no error. Config
 validity is not activation — verify with the evidence checks below rather than assuming.
 
 > The built-in defaults are `"protocol": "hybrid"` / `"default": "native"`, so neither block is
 > gated off by the protocol out of the box; they go dormant only when a config switches to an ACP
-> agent. The interceptor itself still ships disabled (`commandInterceptor.enabled: false`).
+> agent without a pre-approval channel (for the interceptor, any ACP agent). The interceptor itself still ships disabled (`commandInterceptor.enabled: false`).
 
 Second gate, for MCP only: `unrestricted` resolves every attached provider; `scoped`
 resolves exactly the provider tools its stage's `Mcp(...)` rules name; `safe` resolves
@@ -78,6 +85,7 @@ none. See the profile table in [Permissions](permissions.md#profiles).
 | `allowedTools` | *(omitted)* | Subset of locked tools that is grantable. Omitted means every locked tool is. |
 | `timeoutMs` | `60000` | Per-call ceiling. A wedged call is bounded so it cannot consume a hop. |
 | `enabled` | `true` | Kill switch. Needs no lock entry and invalidates no lock. |
+| `instructions` | *(omitted)* | Optional server instructions text. `{workdir}` is replaced with the story's workdir. |
 
 The schema is `.strict()` — a typo'd key is a load error, not a silent drop. In particular
 `stage:` for `stages:` would otherwise leave a server attached to nothing.
@@ -388,7 +396,7 @@ them by `runId` or timestamp before comparing.
 
 | Symptom | Cause | Fix |
 |:---|:---|:---|
-| No `[provider] advertised` lines at all | Project dispatches to ACP | Set `agent.protocol: "hybrid"`, `agent.default: "native"` |
+| No `[provider] advertised` lines at all | Project dispatches to an ACP agent without a pre-approval channel (only `claude` has one) | Set `agent.protocol: "hybrid"`, `agent.default: "native"`, or use `claude` |
 | Server connects, zero tool calls | Model chose not to use it | Expected on small repos — `Grep` is cheaper there. Not a defect. The run's `mcpAdoption` status block and the end-of-run `[WARN]` make this visible per server |
 | Tools never grantable | No lockfile, or tool absent from it | Run `nax mcp lock`, commit the result |
 | Provider tools silently absent | `safe` profile, or `scoped` with no `Mcp(...)` rule naming them | Set `execution.permissionProfile: "unrestricted"`, or add the stage's `Mcp(...)` rule under `scoped` |

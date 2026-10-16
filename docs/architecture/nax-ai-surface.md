@@ -1,8 +1,8 @@
 # The nax-ai surface the native adapter consumes
 
-Reference for `@nathapp/nax-ai` (pinned at **0.1.16**, exact — see `package.json`). It exists so a change to the native path does not start by reading `node_modules/@nathapp/nax-ai/dist/**`. Everything below was probed against the real bundled catalog, not inferred from the type declarations.
+Reference for `@nathapp/nax-ai`. The package now lives in this repository (`packages/nax-ai`, lockstep version 0.88.0; nax and nax-agent pin it exactly). The figures below were probed against the 0.1.x catalog, before nax-ai moved in-repo. They have **not** been re-probed at this revision: re-run the probe in *Re-probing* before relying on any count, rate or window. It exists so a change to the native path does not start by reading `node_modules/@nathapp/nax-ai/dist/**`. Everything below was probed against the real bundled catalog, not inferred from the type declarations.
 
-`src/agents/native/` (the client and its siblings) and `src/agents/catalog/` (the catalog-backed pricing lookup for the non-native side) are the ONLY places in `src/` permitted to import nax-ai (`scripts/check-nax-ai-imports.ts` enforces it).
+`packages/nax-agent/src/native/` (the client and its siblings) and `packages/nax/src/agents/catalog/` (the catalog-backed pricing lookup for the non-native side) are the only places permitted to import nax-ai. `packages/repo-tooling/scripts/check-nax-ai-imports.ts` enforces it (`check:nax-ai-imports`), and nax-agent's `src/cost/standard-types.ts` re-export is also allow-listed.
 
 ## Pricing: rates, cache rates, and tiers
 
@@ -37,7 +37,7 @@ anthropic/claude-sonnet-5  window=1000000   {input:2, output:10, cacheRead:0.2, 
 
 ### Tiers are real, and nax honours them
 
-Exactly **24 of 1354** catalogued models price in tiers (count from the last probe; re-derive per release). nax-ai's own doc comment is explicit: *"A consumer that ignores this bills the base rates and will under-report a long-context request; one that honours it is correct."* nax honours them since nax#1847: `Pricing.tiers` (`src/agents/cost/standard-types.ts`) mirrors `PricingTier`, and `priceCall` in `src/agents/cost/estimate.ts` applies the tier with the greatest `inputTokensAbove` strictly below the request's input-class usage to the **whole** request, matching nax-ai's `> inputTokensAbove`.
+Exactly **24 of 1354** catalogued models price in tiers (count from the last probe; re-derive per release). nax-ai's own doc comment is explicit: *"A consumer that ignores this bills the base rates and will under-report a long-context request; one that honours it is correct."* nax honours them since nax#1847: `Pricing.tiers` (`packages/nax-agent/src/cost/standard-types.ts`) mirrors `PricingTier`, and `priceCall` in `packages/nax-agent/src/cost/estimate.ts` applies the tier with the greatest `inputTokensAbove` strictly below the request's input-class usage to the **whole** request, matching nax-ai's `> inputTokensAbove`.
 
 Every tiered model, with its threshold:
 
@@ -50,7 +50,7 @@ Above the threshold the whole request reprices — `gpt-5.6-terra` doubles input
 
 ### How the rates reach cost today
 
-Both native call sites price through `buildRateCard` (`src/agents/native/models.ts`) — the one-shot `nativeComplete()` (`src/agents/native/complete.ts`) and the session turn `NativeSessionAdapter.sendTurn()` (`src/agents/native/session-adapter.ts`). The session half reads:
+Both native call sites price through `buildRateCard` (`packages/nax-agent/src/native/models.ts`) — the one-shot `nativeComplete()` (`packages/nax-agent/src/native/complete.ts`) and the session turn `NativeSessionAdapter.sendTurn()` (`packages/nax-agent/src/native/session-adapter.ts`). The session half reads:
 
 ```ts
 const catalog = client.pricing(resolved);
@@ -62,13 +62,13 @@ With no config override, `buildRateCard` returns the catalog's nax-ai `Pricing` 
 
 ## Context window
 
-`ResolvedModel.contextWindow`, reached via `client.model(provider, model)`, is the real window. A per-model `ModelDef.contextWindow` override (nax#1848) may **lower** it: `resolveContextWindow` (`src/agents/native/models.ts`) returns the override, and throws `CONTEXT_WINDOW_OVERRIDE_EXCEEDS_REAL_WINDOW` if it is larger than the real window. The resolved value feeds the turn loop's compaction math (`session/turn-loop.ts`, `turn-compaction-step.ts`) and nothing else.
+`ResolvedModel.contextWindow`, reached via `client.model(provider, model)`, is the real window. A per-model `ModelDef.contextWindow` override (nax#1848) may **lower** it: `resolveContextWindow` (`packages/nax-agent/src/native/models.ts`) returns the override, and throws `CONTEXT_WINDOW_OVERRIDE_EXCEEDS_REAL_WINDOW` if it is larger than the real window. The resolved value feeds the turn loop's compaction math (`packages/nax-agent/src/native/session/turn-loop.ts`, `turn-compaction-step.ts`) and nothing else.
 
 Windows are large: `claude-sonnet-5` is **1,000,000**, `gpt-5.6-terra` **272,000**. `execution.compaction.compactAtPercent` (default 90) floors at 50, so on a million-token window compaction cannot fire below 500k tokens — a normal story will never trigger it unless `ModelDef.contextWindow` lowers the window.
 
 **The override seam is wired, via `agent.native.catalogOverrides`** (nax#1982).
 `buildNativeClient` maps the configured list through `toProviderOverrides`
-(`src/agents/native/models.ts`) into `createClient`, and nax-ai applies override
+(`packages/nax-agent/src/native/models.ts`) into `createClient`, and nax-ai applies override
 models last in `normaliseCatalog`, replacing any same-id entry and lazily
 creating the provider bucket, so an id absent from the bundled pi-ai snapshot
 resolves after the override.
@@ -162,7 +162,7 @@ Credentials reach nax-ai through one inlet only — the `credentials` option on 
 rate-limit | auth | overloaded | bad-request | context-overflow | transport | unknown
 ```
 
-`context-overflow` is a refinement of `bad-request`, added in 0.1.7 (nax-ai#26). `src/agents/native/errors.ts` maps it to `category: "availability"` so an overflow is swap-eligible rather than terminal. `PROTOCOL_ERROR_KINDS` and `ProtocolErrorKind` are **not** re-exported from the barrel — reach the union as `ProtocolError["kind"]`.
+`context-overflow` is a refinement of `bad-request`, added in 0.1.7 (nax-ai#26). `packages/nax-agent/src/native/errors.ts` maps it to `category: "availability"` so an overflow is swap-eligible rather than terminal. `PROTOCOL_ERROR_KINDS` and `ProtocolErrorKind` are **not** re-exported from the barrel — reach the union as `ProtocolError["kind"]`.
 
 Overflow marker phrasings inside nax-ai come from provider documentation, not live captures, so a reworded provider error can silently stop matching. That is why compaction has a proactive threshold and does not rely on the reactive backstop alone.
 

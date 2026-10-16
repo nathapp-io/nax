@@ -13,7 +13,12 @@ Config is layered — project overrides global:
 | `.nax/config.json` | Project-level override |
 | `.nax/mono/<package>/config.json` | Per-package override (monorepos) |
 
-Every key has a default — the authoritative source is the Zod schema (`src/config/schemas*.ts`); `DEFAULT_CONFIG` is `NaxConfigSchema.parse({})`. Run `nax config --explain` to see the merged result with field descriptions. Profiles (`profile`, `--profile`, `NAX_PROFILE`) overlay on top — see `nax config profile` in the [CLI reference](cli-reference.md).
+The authoritative source is the Zod schema (`packages/nax/src/config/schemas*.ts`); `DEFAULT_CONFIG` is `NaxConfigSchema.parse({})`. Most keys have a schema default. A few are unset until you add them (`project`, `curator`, `plugins`, `disabledPlugins`, `optimizer`, `generate`). Run `nax config --explain` to see the merged result with field descriptions.
+
+Some blocks are restricted by layer:
+
+- **Root-only** (a package config or package profile that sets them is ignored, and the root value applies): `execution.mode`, `execution.bashApproval`, `execution.approvalTimeout`, `execution.sandbox`, `execution.commandSafety`, `advisor` and `workflow` ([ADR-031](../adr/ADR-031-root-scoped-command-safety-config.md)).
+- **Global-only** (`~/.nax/config.json` only; a project, profile or package value fails the load): `auth`. Profiles (`profile`, `--profile`, `NAX_PROFILE`) overlay on top — see `nax config profile` in the [CLI reference](cli-reference.md).
 
 **Key options:**
 
@@ -52,7 +57,10 @@ Every key has a default — the authoritative source is the Zod schema (`src/con
 | `autoMode` | `complexityRouting`: simple→fast, medium→balanced, complex/expert→powerful; `escalation.enabled: true`, 2 attempts per tier | Tier routing and escalation (fast → balanced → powerful) |
 | `autoRoute` | `enabled: false`, `minSamples: 8` | Adjust complexity→tier mapping from run history (see `nax routing calibrate`) |
 | `routing` | `strategy: "keyword"` | Story classification — [below](#routing) |
-| `execution` | `maxIterations: 20`, `costLimit: 30`, `sessionTimeoutSeconds: 3600`, `storyIsolation: "shared"`, `permissionProfile: "unrestricted"` | Run loop, rectification, regression gate, permissions, sandbox |
+| `execution` | `mode: "workflow"`, `maxIterations: 20`, `costLimit: 30`, `sessionTimeoutSeconds: 3600`, `storyIsolation: "shared"`, `permissionProfile: "unrestricted"` | Run loop, rectification, regression gate, permissions, sandbox. `mode` selects the run loop — [below](#execution-mode) |
+| `auth` | unset | Global-only credential source for the `native` agent (`source`: `file`/`exec`, `onChange`: `warn`/`refuse`). See [CLI reference](cli-reference.md) (`nax auth`) |
+| `advisor` | `enabled: false`, every caller off, `model: "powerful"`, `memory: "stateless"` | Advisor rules on judgment calls instead of stopping the run — [below](#advisor) |
+| `workflow` | `publish: "pr"`, `maxFixRounds: 5`, `maxBranchFixRounds: 2`, `finalGateRepairRounds: 1`, `preflight: true` | Workflow-mode loop, fix rounds, publish and CI wait — [below](#workflow) |
 | `quality` | `commands: {}`, `autofix.enabled: true`, `shell: "/bin/sh"`, `testing.hermetic: true` | Project lint/typecheck/test commands and gates |
 | `tdd` | `strategy: "auto"`, `sessionTiers` fast/fast | TDD strategy — [options](#tdd-strategy-options) |
 | `review` | `enabled: true`, `checks: ["typecheck", "lint"]`, `pluginMode: "observational"` | Review checks (`typecheck`, `lint`, `test`, `build`, `semantic`, `adversarial`) |
@@ -72,6 +80,25 @@ Every key has a default — the authoritative source is the Zod schema (`src/con
 | `curator` | unset (`enabled: true` when present) | Curator thresholds, rollup path, retention — see [Curator](curator.md) |
 | `plugins` / `disabledPlugins` / `optimizer` / `generate` | unset | Plugin entries, prompt optimizer, `nax generate` agent list. Lifecycle hooks are **not** read from `config.json` — they load from `.nax/hooks.json` / `~/.nax/hooks.json` (see [Hooks](hooks.md)) |
 | `profile` | `"default"` | Active config profile |
+
+---
+
+### Execution Mode
+
+```json
+{
+  "execution": {
+    "mode": "workflow"
+  }
+}
+```
+
+| Value | Behaviour |
+|:------|:----------|
+| `"workflow"` | **Default** (since 0.88.0). Runs the workflow loop: a story loop with advisor rulings, a branch review, final gates with a repair round, configurable branch-fix rounds, a draft PR that is promoted to ready, and a CI wait. Issues to close are taken from `Closes: #n` lines in the spec. |
+| `"pipeline"` | **Deprecated.** Runs the older story pipeline. Config load logs a deprecation warning (`execution.mode "pipeline" is deprecated and will be removed in a future release`). New work goes to workflow mode. |
+
+`execution.mode` is root-only. Omitting it means `"workflow"`. Set `"pipeline"` explicitly only while you migrate. See [Workflow mode](workflow-mode.md) for how the loop works.
 
 ---
 
@@ -113,6 +140,10 @@ The `agent` block is the canonical source of truth for agent selection and avail
 | `agent.fallback.onQualityFailure` | `false` | Also swap on review / verify reject, not just availability. Use with care — often masks real regressions. |
 | `agent.idleWatchdog` | `enabled: true`, `mode: "warn-then-cancel"`, `idleTimeoutSeconds: 900` | Cancels a session that stops producing activity (`mode`: `off`/`observe`/`warn-then-cancel`/`cancel`). |
 | `agent.spinBreaker` | `enabled: true`, `nudgeAfterRepeats: 25`, `stopAfterRepeats: 50` | Nudges, then stops, an agent repeating the same tool call. |
+| `agent.timeoutRetry` | `maxAttempts: 1`, `budgetMultiplier: 0.5` | Same-agent retry after a wall-clock timeout. The retry's session timeout is the prior one scaled by `budgetMultiplier`. |
+| `agent.promptAudit` | `enabled: false` | Writes every ACP prompt to a file (default dir `<workdir>/.nax/prompt-audit/`). |
+| `agent.usageAudit` | `enabled: false` | Writes every agent round trip's usage to a file (default dir `<outputDir>/usage`). |
+| `agent.transcriptAudit` | `enabled: false`, `maxRetained: 200` | Archives each native session transcript on close, keeping the newest `maxRetained` per feature. `dir` must be absolute (default `<outputDir>/transcript-audit`). |
 | `agent.acp.promptRetries` | `0` | ACP only. Retries a prompt on a transient fault inside nax's ACP turn loop, only when the failed attempt produced no output; backoff `min(1000 * 2^n, 10000)` ms. |
 | `agent.native.transportRetry.maxAttempts` | `3` | Native only. Total attempts for one round trip when the provider stalls or reports itself overloaded. `1` disables retry. |
 | `agent.native.transportRetry.baseDelayMs` | `2000` | Native only. Equal-jitter exponential backoff base, capped by the turn's remaining budget. |
@@ -267,7 +298,7 @@ nax still runs such a chain, but logs a one-line warning at config load naming t
 
 ### List Form — Multiple Commands per Gate
 
-Every entry under `quality.commands` (`test`, `typecheck`, `lint`, `lintScoped`, `build`, `coverage`, `testScoped`, `lintFix`, `lintFixScoped`, `formatFix`, `formatFixScoped`, `setup`) accepts **either shape**:
+Every entry under `quality.commands` (`test`, `typecheck`, `lint`, `lintScoped`, `build`, `coverage`, `testScoped`, `lintFix`, `lintFixScoped`, `formatFix`, `formatFixScoped`, `setup`, `e2e`, `e2eSetup`) accepts **either shape**:
 
 | Shape | Example | Behavior |
 |:------|:--------|:---------|
@@ -569,6 +600,32 @@ See [Parallel Execution — Sequential Worktree Isolation](parallel-execution.md
 
 ---
 
+### Regression Gate and Agent Test-Run Timeout
+
+The regression gate runs the full test suite. Its budget is `execution.regressionGate`:
+
+```json
+{
+  "execution": {
+    "regressionGate": {
+      "enabled": true,
+      "timeoutSeconds": 600,
+      "acceptOnTimeout": true,
+      "mode": "deferred"
+    }
+  }
+}
+```
+
+| Key | Default | Description |
+|:----|:--------|:------------|
+| `enabled` | `true` | Master switch for the regression gate |
+| `timeoutSeconds` | `600` | Per-run budget for the full suite, 10–3600 |
+| `acceptOnTimeout` | `true` | A gate timeout is reported as `passed-on-timeout` rather than a failure |
+| `mode` | `"deferred"` | `deferred`, `per-story` or `disabled`. Applies to pipeline mode; workflow mode does not use it |
+
+The same budget is the hard timeout for a suite-running command the agent runs itself (its `RunCommand` tool, for example a full test run). The agent is therefore never held to a shorter limit than the gate that judges its work (nax#2536). See [Regression gate](regression-gate.md).
+
 ### Build Command
 
 The `build` command is used by the review stage to catch compilation or build errors that typecheck alone might miss.
@@ -743,7 +800,7 @@ draft PR -> acceptance -> review loop (spec || branch) -> acceptance re-check ->
 |:---|:---|:---|
 | `enabled` | `false` | Master gate. Finish never fires unless this is true. |
 | `prBody.template` | `"merge"` | How the repo's own PR/MR template is honoured: `merge` fills matching headings and drops the rest, `strict` keeps unfillable headings empty, `ignore` skips the template entirely. |
-| `prBody.sectionMap` | `{}` | Template heading → body-section key overrides, layered over the defaults in `src/forge/template-merge.ts`. Known keys: `narrative`, `stories`, `verification`, `rounds`, `outOfScope`, `unresolved`. |
+| `prBody.sectionMap` | `{}` | Template heading → body-section key overrides, layered over the defaults in `src/forge/template-merge.ts`. Known keys: `narrative`, `stories`, `verification`, `rounds`, `outOfScope`, `unresolved`, `advisor`. |
 | `reviewers.spec` / `reviewers.quality` / `reviewers.fix` | `null` | `spec` drives the spec review, `quality` drives the branch review (which also supplies the PR title and summary). A model tier name (e.g. `"balanced"`) or `{ agent, model }` object, resolved the same way every other operation's model is. `null` falls through to the op's own default. |
 | `escalate.telegram` | `true` | Whether draft and failed results are sent to Telegram (subject to `notify.mode`). Telegram needs `interaction.plugin: "telegram"` or `NAX_TELEGRAM_TOKEN` + `NAX_TELEGRAM_CHAT_ID`; with no credentials, or with this set to `false`, nothing is sent and the PR itself (draft, with its Unresolved section) is the report. Clean outcomes reported by `notify.mode: "always"` are not affected. |
 | `notify.mode` | `"draft"` | `draft` notifies when the PR ends up draft or the phase fails; `always` also reports clean outcomes; `off` disables notifications. `escalation` is a deprecated alias for `draft`. |
@@ -812,11 +869,101 @@ to the default model selection) rather than rejected.
 The interactive, approval-gated `nax-finish` skill still exists for manual
 finishes — this is the autonomous path, not a replacement.
 
+### Advisor
+
+<a name="advisor"></a>
+
+The advisor (`advisor` block) rules on judgment calls that would otherwise stop a run, instead of
+stopping it. It is off by default. Each caller runs only when the master switch `enabled` and its own
+flag are both on.
+
+```json
+{
+  "advisor": {
+    "enabled": true,
+    "model": "powerful",
+    "fallbackModels": [],
+    "memory": "stateless",
+    "callers": {
+      "finishJudgment": true,
+      "fixCycleGiveUp": false,
+      "uncategorisedFailure": false,
+      "finishApproval": false
+    },
+    "maxRulingsPerStory": 2,
+    "notify": { "headsUp": true }
+  }
+}
+```
+
+| Key | Default | Description |
+|:----|:--------|:------------|
+| `enabled` | `false` | Master switch |
+| `model` | `"powerful"` | Tier name or `{ agent, model }` pin used for rulings |
+| `fallbackModels` | `[]` | Tried in order after `model` fails (quota, error, timeout, unparseable answer) |
+| `memory` | `"stateless"` | `stateless` or `warm` |
+| `callers.finishJudgment` / `fixCycleGiveUp` / `uncategorisedFailure` / `finishApproval` | all `false` | Which decision points consult the advisor |
+| `maxRulingsPerStory` | `2` | Rulings allowed per story (judgment rulings of kinds 2 and 3) |
+| `notify.headsUp` | `true` | Heads-up notification when the advisor flags a decision |
+| `timeoutMs` | unset | Optional per-call timeout in milliseconds |
+
+`advisor` is root-only. The `nax advisor` commands (`list`, `label`, `replay`, `import-finish`) inspect and replay its decisions. See [CLI reference](cli-reference.md#nax-advisor).
+
+### Workflow
+
+<a name="workflow"></a>
+
+The `workflow` block configures workflow mode (`execution.mode: "workflow"`, the default). It is root-only.
+
+```json
+{
+  "workflow": {
+    "models": {
+      "storyReview": "balanced",
+      "branchReview": "powerful",
+      "branchFix": "balanced"
+    },
+    "maxFixRounds": 5,
+    "maxBranchFixRounds": 2,
+    "finalGateRepairRounds": 1,
+    "preflight": true,
+    "publish": "pr",
+    "timeouts": {
+      "implementMs": 3600000,
+      "fixMs": 3600000,
+      "reviewMs": 1800000,
+      "ciWaitMs": 1200000,
+      "ciPollMs": 30000
+    }
+  }
+}
+```
+
+| Key | Default | Description |
+|:----|:--------|:------------|
+| `models.storyReview` | unset | Per-story review model. Unset falls back to `review.semantic.model` |
+| `models.branchReview` | unset | Branch review model. Unset falls back to `finish.reviewers.quality` |
+| `models.branchFix` | unset | Branch fix model. Unset falls back to `finish.reviewers.fix` |
+| `maxFixRounds` | `5` | Max review-fix rounds per story (minimum 1) |
+| `maxBranchFixRounds` | `2` | Max branch-fix rounds after the feature's branch review. `0` skips the branch fix |
+| `finalGateRepairRounds` | `1` | Max repair rounds when the final repo gates turn red after a branch fix. `0` publishes the red gates without repair |
+| `preflight` | `true` | Run the workflow preflight checks before implementing |
+| `publish` | `"pr"` | `pr`: push, open or promote the PR, and wait for CI. `push`: push and wait for CI, but open no PR. `none`: push nothing and stay local. nax never merges |
+| `timeouts.implementMs` | `3600000` | Timeout for the implement phase |
+| `timeouts.fixMs` | `3600000` | Timeout for each fix phase |
+| `timeouts.reviewMs` | `1800000` | Timeout for each review phase |
+| `timeouts.ciWaitMs` | `1200000` | Max time to wait for CI |
+| `timeouts.ciPollMs` | `30000` | Interval between CI status polls |
+
+Issues the PR closes come from `Closes: #n` lines in the spec. See [CLI reference](cli-reference.md) for `nax run`, and [Autonomous finish](#autonomous-finish-finish) for the older finish phase.
+
+---
+
 ## Bash Approval, Sandbox and Command Safety
 
 Four `execution.*` keys decide how agent-run shell commands are approved, sandboxed and
-classified. They are **root-only** — a package config or package profile that sets one is
-warned about and ignored, and the root config's value always applies
+classified. They are **root-only** (as is `execution.mode`) — a package config or package profile that sets one is
+ignored, and the root config's value always applies
 ([ADR-031](../adr/ADR-031-root-scoped-command-safety-config.md)).
 
 | Key | Default | Description |
@@ -881,6 +1028,7 @@ The `mcp` block declares external MCP servers whose tools the `native` agent may
 |:----|:--------|:------------|
 | `servers.<id>` | — | Server id: lowercase `[a-z0-9][a-z0-9_-]*`, no `__` (it namespaces tool names) |
 | `command` / `args` / `env` | — / `[]` / `{}` | How to launch the server |
+| `instructions` | unset | Text given to the agent about this server, appended after any instructions the server reports itself. `{workdir}` is replaced with the working directory |
 | `stages` | `[]` | Pipeline stages it attaches to (`plan`, `run`, `setup`, `verify`, `review`, `rectification`, `regression`, `acceptance`, `complete`, or `"*"`). Exact, not inherited: a server is visible only in the stages listed, so `run` does not reach review/verify/rectification sessions |
 | `allowedTools` | unset | Unset = every locked tool is grantable |
 | `timeoutMs` | `60000` | Per-call ceiling |

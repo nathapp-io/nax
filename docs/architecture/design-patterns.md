@@ -19,10 +19,10 @@ nax is primarily functional (~90% exported functions, ~10% classes). Use pattern
 | Multi-step construction with optional config | **Builder** | `TddPromptBuilder.for(role)`, `OneShotPromptBuilder.for(role)` |
 | Multiple backends sharing a contract | **Adapter** | `AgentAdapter` → `AcpAgentAdapter` (claude, codex, …), `NativeAgentAdapter`; `SandboxBackend` → srt |
 | Collection with typed lookup/lifecycle | **Registry** | `PluginRegistry`, agent registry |
-| Interchangeable algorithms for same task | **Strategy** | Verification strategies, routing strategies |
+| Interchangeable algorithms for same task | **Strategy** | Routing strategies, fix strategies (`FixStrategy`) |
 | Ordered handler dispatch with fallback | **Chain** | `InteractionChain`, ask-resolver chain (`chainAskLinks`) |
 | Global service with init-once semantics | **Singleton** | Logger |
-| Stateful object managing resources (PIDs, connections) | **Class** | `PidRegistry`, `StatusWriter` |
+| Stateful object managing resources (PIDs, connections) | **Class** | `PidRegistry` (`src/execution/pid-registry.ts`), `StatusWriter` (`src/execution/status-writer.ts`) |
 
 **Rule: prefer plain functions.** Only introduce a class/pattern when you need state, multiple implementations, or complex construction. Never wrap a simple function in a class just to "follow patterns."
 
@@ -31,14 +31,14 @@ nax is primarily functional (~90% exported functions, ~10% classes). Use pattern
 Domain-specific prompt construction using composable section functions. Replaces the former monolithic `PromptBuilder` class (deleted).
 
 ```typescript
-// ✅ Each domain has its own builder — composed from reusable sections
+// Each domain has its own builder — composed from reusable sections
 const prompt = await TddPromptBuilder.for("implementer", options)
   .story(story)
   .constitution(constitution)
   .context(contextMd)
   .build();
 
-// ✅ One-shot prompts for routing, decomposition
+// One-shot prompts for routing, decomposition
 const oneShot = OneShotPromptBuilder.for("router")
   .instructions(routingInstruction)
   .jsonSchema(routingSchema)
@@ -99,7 +99,7 @@ const prompt = await TddPromptBuilder.for(role, options)
 For extensible subsystems where multiple backends share a common contract:
 
 ```typescript
-// ✅ Interface defines the contract — 4 primitives (ADR-019) plus descriptive members
+// Interface defines the contract — 4 primitives (ADR-019) plus descriptive members
 export interface AgentAdapter {
   readonly name: string;
   readonly capabilities: AgentCapabilities;
@@ -110,7 +110,7 @@ export interface AgentAdapter {
   complete(prompt: string, opts: ResolvedCompleteOptions): Promise<CompleteResult>;
 }
 
-// ✅ Two production implementations, selected by agent name (ADR-027)
+// Two production implementations, selected by agent name (ADR-027)
 export class AcpAgentAdapter implements AgentAdapter { ... }    // ACP over @nathapp/nax-agent-acp
 export class NativeAgentAdapter implements AgentAdapter { ... } // in-process over @nathapp/nax-ai
 ```
@@ -118,11 +118,11 @@ export class NativeAgentAdapter implements AgentAdapter { ... } // in-process ov
 `adapter.run` / `plan` / `decompose` were deleted in ADR-019 — `run` is now `SessionManager.runInSession` (composes the three session primitives), and `plan`/`decompose` are Operations dispatched via `callOp` (`planInteractiveOp` / `planRefineOp` are `kind:"run"`, `decomposeOp` is `kind:"complete"`) (§37, `.claude/rules/adapter-wiring.md`).
 
 **Rules:**
-- Interface in `types.ts` (process description + `complete()`), session half in `session-types.ts`; implementations in `src/agents/acp/adapter.ts` and the native adapter (`src/agents/native-agent/index.ts` composed with `src/agents/native/session-adapter.ts`)
+- Interface in `types.ts` (process description + `complete()`), session half in `packages/nax-agent/src/session/session-types.ts`; implementations in `src/agents/acp/adapter.ts` and the native adapter (`src/agents/native-agent/index.ts` composed with `packages/nax-agent/src/native/session-adapter.ts`)
 - Implementations are classes (stateful — may hold config, PID registries, etc.)
 - Capabilities declared as data, not methods — enables routing decisions without instantiation
 
-**Reference:** `src/agents/types.ts`, `src/agents/session-types.ts`, `src/agents/acp/adapter.ts`, `src/agents/native-agent/index.ts`, [agent-adapters.md §16](agent-adapters.md#16-agent-adapter-conventions)
+**Reference:** `src/agents/types.ts`, `packages/nax-agent/src/session/session-types.ts`, `src/agents/acp/adapter.ts`, `src/agents/native-agent/index.ts`, [agent-adapters.md §16](agent-adapters.md#16-agent-adapter-conventions)
 
 #### Agent Protocol
 
@@ -137,7 +137,7 @@ All pipeline stages, routing, TDD, and acceptance generators dispatch through th
 **Any code that needs LLM capabilities MUST resolve the default agent adapter — never use inline stubs.**
 
 ```typescript
-// ✅ Correct: dispatch a one-shot through the manager (resolves the default agent)
+// Correct: dispatch a one-shot through the manager (resolves the default agent)
 const agentName = ctx.agentManager?.getDefault() ?? "claude"; // or resolveDefaultAgent(config) in standalone modules
 const result = await ctx.runtime.agentManager.completeAs(agentName, prompt, {
   modelDef,
@@ -146,10 +146,10 @@ const result = await ctx.runtime.agentManager.completeAs(agentName, prompt, {
   config,
 });
 
-// ✅ Better still — wrap it as an Operation and dispatch via callOp
+// Better still — wrap it as an Operation and dispatch via callOp
 await callOp(ctx, decomposeOp, input);
 
-// ❌ Wrong: inline stub that throws
+// Wrong: inline stub that throws
 const adapter = {
   async complete(_prompt: string): Promise<string> {
     throw new Error("No LLM adapter configured");
@@ -168,14 +168,14 @@ const adapter = {
 For collecting and retrieving instances by name or capability:
 
 ```typescript
-// ✅ Registry wraps a collection with typed accessors
+// Registry wraps a collection with typed accessors
 export class PluginRegistry {
   getReviewers(): IReviewPlugin[] { ... }
   getReporters(): IReporter[] { ... }
   getOptimizers(): IPromptOptimizer[] { ... }
 }
 
-// ✅ Factory-based registry for the agent collection
+// Factory-based registry for the agent collection
 export function createAgentRegistry(config: AgentManagerConfig): AgentRegistry { ... }
 const registry = createAgentRegistry(config);
 const agent = registry.getAgent(name); // AgentAdapter | undefined
@@ -193,13 +193,13 @@ const agent = registry.getAgent(name); // AgentAdapter | undefined
 For subsystems with multiple interchangeable algorithms:
 
 ```typescript
-// ✅ Interface defines the strategy contract
+// Interface defines the strategy contract
 export interface RoutingStrategy {
   readonly name: string;
   route(story: UserStory, context: RoutingContext): RoutingDecision | null | Promise<RoutingDecision | null>;
 }
 
-// ✅ Each strategy implements the interface; the Router walks them in order
+// Each strategy implements the interface; the Router walks them in order
 // (keyword, LLM, plugin-provided), first non-null decision wins.
 ```
 
@@ -217,7 +217,7 @@ export interface RoutingStrategy {
 For processing requests through prioritized handlers:
 
 ```typescript
-// ✅ Register handlers with priority, first response wins
+// Register handlers with priority, first response wins
 const chain = new InteractionChain({ defaultTimeout: 30_000, defaultFallback: "abort" });
 chain.register(telegramPlugin, 50);  // higher number = earlier in chain
 chain.register(autoPlugin, 10);      // fallback
@@ -228,16 +228,16 @@ const response = await chain.prompt(request);
 - Higher priority number = higher precedence (chain sorts descending)
 - Chain handles timeout and fallback — consumers don't
 - Used for interaction (human-in-the-loop). Routing uses the analogous "first non-null wins" walk inside `Router` (plugin routers → LLM → keyword), not a separate chain class.
-- The permission ask tier is a chain too: `chainAskLinks([approvalsCacheLink, humanLink])` (`src/permissions/ask-chain.ts`) — each link may `allow`, `deny` or `abstain`, and the chain appends a terminal deny so an exhausted chain fails closed.
+- The permission ask tier is a chain too: `chainAskLinks([approvalsCacheLink, humanLink])` (`packages/nax-agent/src/permissions/ask-chain.ts`) — each link may `allow`, `deny` or `abstain`, and the chain appends a terminal deny so an exhausted chain fails closed.
 
-**Reference:** `src/interaction/chain.ts`, `src/routing/router.ts`, `src/permissions/ask-chain.ts`
+**Reference:** `src/interaction/chain.ts`, `src/routing/router.ts`, `packages/nax-agent/src/permissions/ask-chain.ts`
 
 ### Singleton (Module-Level Instance)
 
 For global services with one-time initialization:
 
 ```typescript
-// ✅ Module-scoped instance with getter
+// Module-scoped instance with getter
 let _instance: Logger | null = null;
 
 export function initLogger(options: LoggerOptions): Logger {
@@ -250,7 +250,7 @@ export function getLogger(): Logger {
   return _instance ?? noopLogger; // silent no-op logger before init
 }
 
-// ✅ Safe variant — null only if getLogger() itself throws
+// Safe variant — null only if getLogger() itself throws
 export function getSafeLogger(): Logger | null {
   try {
     return getLogger();
@@ -278,7 +278,7 @@ export function getSafeLogger(): Logger | null {
 | Rule | Rationale |
 |:-----|:----------|
 | **Always `realpathSync()` before path containment checks** | Lexical `normalize()` does not follow symlinks — a symlink inside an allowed root can point anywhere (SEC-1 fix, 2026-03-15) |
-| **Use `realOrRaw()` (`src/utils/realpath.ts`) for paths that may not exist** | Walks up to the nearest existing ancestor, resolves it, and re-attaches the missing segments — a half-resolved path compares unequal to a resolved root and silently fails containment |
+| **Use `realOrRaw()` (`packages/nax-agent/src/internal/realpath.ts`) for paths that may not exist** | Walks up to the nearest existing ancestor, resolves it, and re-attaches the missing segments — a half-resolved path compares unequal to a resolved root and silently fails containment |
 | **`O_CREAT \| O_EXCL` for atomic lock creation** | Prevents TOCTOU race between check-and-create (BUG-2 fix) |
 | **Use `fs.unlink()` for file deletion, never `Bun.spawn(["rm", ...])`** | Subprocess for a single syscall is ~1000x slower and adds unnecessary complexity (BUG-3 fix) |
 
@@ -289,7 +289,7 @@ export function getSafeLogger(): Logger | null {
 | **Always use argv arrays for subprocess spawning** | String interpolation enables argument injection |
 | **Validate user-editable config values before interpolating into command strings** | Model names, paths, hook commands from config.json are user-controlled (SEC-2) |
 | **Use `buildAllowedEnv()` for all spawned processes** | Never pass full `process.env` — prevents credential leakage to agent subprocesses |
-| **Agent-authored commands go through the tool policy, once** | Model-authored Bash/`Exec` is adjudicated only in `src/tools/policy*.ts` under the stage's resolved `bashApproval` (ADR-030); the OS sandbox launcher (`src/sandbox/`) changes *how* a command runs, never *whether*. Never add a second gate or wrap nax's own declared commands |
+| **Agent-authored commands go through the tool policy, once** | Model-authored Bash/`Exec` is adjudicated only in `packages/nax-agent/src/tools/policy*.ts` under the stage's resolved `bashApproval` (ADR-030); the OS sandbox launcher (`packages/nax-agent/src/sandbox/`) changes *how* a command runs, never *whether*. Never add a second gate or wrap nax's own declared commands |
 
 ### 12.3 Process & Handler Lifecycle
 
@@ -307,7 +307,7 @@ export function getSafeLogger(): Logger | null {
 | **Keep agents off nax-owned files** | nax's `src/agents/nax-owned-writes.ts`, injected through nax-agent's `OwnedPathsPolicy` port, refuses coding tools on `.nax/config.json` (and package configs), feature `prd.json` and the queue-control files — a writable config hands the agent an ungated `quality.commands` shell |
 | **Sandbox policy paths are literal** | srt on Linux silently drops glob entries, so `execution.sandbox` paths reject `* ? [ ] { }` at config load and the policy builder resolves every path with `realOrRaw()` |
 | **Security knobs are root-scoped** | `bashApproval`, `approvalTimeout`, `sandbox`, `commandSafety` are pinned to the root config (ADR-031, `src/config/root-only-keys.ts`); a package cannot loosen them |
-| **Audit every tool call** | `src/tools/tool-audit.ts` persists one row per coding-tool call (outcome incl. `denied` / `denied:ask`, reason, approval verdict, sandbox record, Bash `exitCode`, and `callId` / `scopeId` / `turnId` for correlation); logger calls are for operators and never replace the durable row |
+| **Audit every tool call** | `packages/nax-agent/src/tools/tool-audit.ts` persists one row per coding-tool call (outcome incl. `denied` / `denied:ask`, reason, approval verdict, sandbox record, Bash `exitCode`, and `callId` / `scopeId` / `turnId` for correlation); logger calls are for operators and never replace the durable row |
 
 ### 12.5 Type Safety for Security
 
@@ -330,7 +330,7 @@ export function getSafeLogger(): Logger | null {
 **Solution:** Export `_moduleDeps.sleep` as an injectable, override with instant spy in tests.
 
 ```typescript
-// ✅ Production code — injectable sleep
+// Production code — injectable sleep
 export const _myModuleDeps = {
   sleep: (ms: number) => Bun.sleep(ms),
 };
@@ -339,7 +339,7 @@ async function retryWithBackoff() {
   await _myModuleDeps.sleep(2000); // 2s in prod
 }
 
-// ✅ Test — instant spy, assert correct values
+// Test — instant spy, assert correct values
 const sleepCalls: number[] = [];
 _myModuleDeps.sleep = async (ms: number) => { sleepCalls.push(ms); };
 
@@ -358,13 +358,13 @@ test("retries with exponential backoff", async () => {
 **Solution:** Define `TEST_CONFIG` with `iterationDelayMs: 0` at top of each integration test file.
 
 ```typescript
-// ✅ Test config — zero delay
+// Test config — zero delay
 const TEST_CONFIG = {
   ...DEFAULT_CONFIG,
   execution: { ...DEFAULT_CONFIG.execution, iterationDelayMs: 0 },
 };
 
-// ❌ Don't use DEFAULT_CONFIG in tests — you'll sleep 2s per iteration
+// Don't use DEFAULT_CONFIG in tests — you'll sleep 2s per iteration
 ```
 
 **Applied in:** `execution.test.ts` (12 tests: ~20s → 435ms), `cli-precheck.test.ts` (~2.7s → 50ms)
@@ -376,7 +376,7 @@ const TEST_CONFIG = {
 **Solution:** Run once in `beforeAll`, share the result across tests.
 
 ```typescript
-// ✅ Shared expensive setup
+// Shared expensive setup
 describe("scanCodebase", () => {
   let result: ScanResult;
   beforeAll(async () => {
@@ -387,7 +387,7 @@ describe("scanCodebase", () => {
   test("respects gitignore", () => expect(result.files).not.toContainEqual(expect.stringContaining("node_modules")));
 });
 
-// ❌ Each test calls scanCodebase independently (10s × 5 = 50s)
+// Each test calls scanCodebase independently (10s × 5 = 50s)
 ```
 
 **Applied in:** `scanner.ts` tests (7 tests: ~53s → 43ms)
@@ -399,14 +399,14 @@ describe("scanCodebase", () => {
 **Solution:** Wait for the actual event (first data chunk, file write, etc.) with a timeout fallback.
 
 ```typescript
-// ✅ Event-driven wait
+// Event-driven wait
 const firstChunk = new Promise<void>((resolve) => {
   stream.on("data", () => resolve());
   setTimeout(() => resolve(), 5000); // fallback
 });
 await firstChunk;
 
-// ❌ Fixed sleep — wastes 1s or flakes if operation takes longer
+// Fixed sleep — wastes 1s or flakes if operation takes longer
 await Bun.sleep(1000);
 ```
 
@@ -419,12 +419,12 @@ await Bun.sleep(1000);
 **Solution:** Export `_sessionRunnerDeps = { autoCommitIfDirty }` and mock the injectable directly.
 
 ```typescript
-// ✅ Mock at the call site
+// Mock at the call site
 _sessionRunnerDeps.autoCommitIfDirty = async (dir, msg) => {
   commitCalls.push({ dir, msg });
 };
 
-// ❌ Mock deep inside the callee's internal deps
+// Mock deep inside the callee's internal deps
 _gitDeps.spawn = (cmd) => { /* fragile — depends on every internal code path */ };
 ```
 

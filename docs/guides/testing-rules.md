@@ -53,10 +53,10 @@ Each test file must be independently runnable. Never assume another file ran fir
 `nax run` in a temp dir fails prechecks. Use direct function imports instead of `bun run bin/nax.ts <cmd>`.
 
 ```typescript
-// ❌ WRONG — spawns subprocess, cold-start delay, fails prechecks
+// WRONG — spawns subprocess, cold-start delay, fails prechecks
 const proc = Bun.spawn(["bun", "run", "bin/nax.ts", "logs", "--feature", "foo"]);
 
-// ✅ CORRECT — direct call, instant
+// CORRECT — direct call, instant
 import { logsCommand } from "../../../src/commands/logs";
 await logsCommand({ feature: "foo" });
 ```
@@ -66,10 +66,10 @@ await logsCommand({ feature: "foo" });
 `Bun.spawn` is a global shared reference. Mutating it directly leaks between test files.
 
 ```typescript
-// ❌ WRONG — leaks globally
+// WRONG — leaks globally
 (Bun as any).spawn = mock((cmd) => fakeResult);
 
-// ✅ CORRECT — use the module's _deps object
+// CORRECT — use the module's _deps object
 import { _myModuleDeps } from "../../../src/mymodule";
 let orig: typeof _myModuleDeps.spawn;
 beforeEach(() => { orig = _myModuleDeps.spawn; _myModuleDeps.spawn = mock(...); });
@@ -83,12 +83,12 @@ afterEach(() => { _myModuleDeps.spawn = orig; });
 **Use `node:fs/promises` APIs instead:**
 
 ```typescript
-// ❌ WRONG
+// WRONG
 await Bun.spawn(["mv", src, dest], { stdout: "pipe" }).exited;
 await Bun.spawn(["rm", "-rf", dir], { stdout: "pipe" }).exited;
 await Bun.spawn(["mkdir", "-p", dir], { stdout: "pipe" }).exited;
 
-// ✅ CORRECT
+// CORRECT
 import { rename, rm, mkdir } from "node:fs/promises";
 await rename(src, dest);
 await rm(dir, { recursive: true, force: true });
@@ -122,12 +122,12 @@ case still burns real wall-clock and still races — the fix there is to stop
 using the real clock at all.
 
 ```typescript
-// ❌ WRONG — may not be enough time under load
+// WRONG — may not be enough time under load
 bus.emit({ type: "run:started", ... });
 await Bun.sleep(50);
 const meta = JSON.parse(await readFile(metaFile, "utf8"));
 
-// ✅ CORRECT — poll with a cap
+// CORRECT — poll with a cap
 import { waitForFile } from "../../helpers/fs";
 bus.emit({ type: "run:started", ... });
 await waitForFile(metaFile, 500);
@@ -155,7 +155,7 @@ export async function waitForFile(path: string, timeoutMs = 500, pollIntervalMs 
 }
 ```
 
-`waitForCondition` is in `test/helpers/timeout.ts`, `makeFakeClock` in `test/helpers/fake-clock.ts`, and `withTimerSpy` in `test/helpers/timer-spy.ts`.
+`waitForCondition` is in `test/helpers/timeout.ts`, `makeFakeClock` in `test/helpers/fake-clock.ts`, and `withTimerSpy` in `test/helpers/timer-spy.ts`. The first three re-export from `@nathapp/nax-test-kit` (`packages/test-kit`).
 
 ### Timer-driven code: inject the clock, never sleep past the threshold
 
@@ -169,14 +169,14 @@ module's `_deps` object and drive it from `makeFakeClock()` in `test/helpers/`.
 Time then moves only when the test says so.
 
 ```typescript
-// ✅ Source — timers reach the module through _deps
+// Source — timers reach the module through _deps
 export const _heartbeatDeps = {
   setTimeout: ((fn: () => void, ms: number) => setTimeout(fn, ms)) as (fn: () => void, ms: number) => unknown,
   clearTimeout: ((id: unknown) => clearTimeout(id as ReturnType<typeof setTimeout>)) as (id: unknown) => void,
   now: (): number => Date.now(),
 };
 
-// ✅ Test — exact, instant, and independent of machine load
+// Test — exact, instant, and independent of machine load
 const clock = makeFakeClock();
 _heartbeatDeps.setTimeout = clock.setTimeout as typeof _heartbeatDeps.setTimeout;
 _heartbeatDeps.clearTimeout = clock.clearTimeout as typeof _heartbeatDeps.clearTimeout;
@@ -267,12 +267,11 @@ Never send real signals in tests — mock `process.on()` instead.
 
 | Limit | Lines | Action |
 |:------|:------|:-------|
-| Soft | 500 | Review guideline — not gated |
 | Hard | 800 | `bun run lint` fails |
 
-Run `bun run check:file-sizes` to check. It runs inside `bun run lint`, and ratchets against
-`scripts/baselines/file-sizes-baseline.json`: files already over the limit are grandfathered but
-may not grow, and new files must be under it.
+Run `bun run check:file-sizes` (from `packages/nax`) to check. It runs inside `bun run lint`, and ratchets against
+`packages/nax/scripts/baselines/file-sizes-baseline.json`: files already over the limit are grandfathered but
+may not grow, and new files must be under it. See [Testing Conventions](testing-conventions.md).
 
 ---
 
@@ -337,11 +336,11 @@ test("writes output file", async () => {
 If your test writes to `<tempDir>/.nax/config.json`, you **must** explicitly create the `.nax` subdirectory:
 
 ```typescript
-// ✅ CORRECT — explicit subdirectory
+// CORRECT — explicit subdirectory
 tempDir = makeTempDir("nax-config-test-");
 mkdirSync(join(tempDir, ".nax"), { recursive: true });
 
-// ❌ WRONG — makeTempDir only creates the root temp directory
+// WRONG — makeTempDir only creates the root temp directory
 tempDir = makeTempDir("nax-config-test-");
 // .nax/ does NOT exist — writeFileSync to .nax/config.json will ENOENT
 ```

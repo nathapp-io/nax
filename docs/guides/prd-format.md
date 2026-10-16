@@ -68,6 +68,8 @@ User stories are defined in `.nax/features/<name>/prd.json`:
 | `routing.noTestJustification` | `string` | No | Required when `testStrategy` is `no-test` |
 | `routing.agent` | `string` | No | Agent assigned at plan time (overrides the default agent; see ADR-025) |
 
+> **Pipeline-only fields.** `routing.testStrategy` chooses the TDD session layout (three-session, `tdd-simple` and so on) only in pipeline mode (`execution.mode: "pipeline"`, deprecated). Workflow mode (the default since 0.88.0) runs one implementer session per story and does not read it. `routing.complexity` still drives the model tier. See [TDD Strategies](tdd/strategies.md).
+
 > **PRD routing always wins.** When `routing.complexity` and `routing.testStrategy` are present (which `nax plan` always generates), runtime routing (keyword/LLM/plugin) is skipped entirely. To change routing for a story, edit these fields directly in `prd.json` before running `nax run`.
 
 [Back to README](../../README.md)

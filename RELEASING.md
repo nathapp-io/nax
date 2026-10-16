@@ -47,8 +47,6 @@ bun run release tag
    notify Telegram.
 
 Stable versions publish under `latest` and `-canary.N` versions under `canary`.
-A canary pins nax-ai to a prerelease version, so that build's cost rows omit
-`catalogVersion`.
 
 ## Trusted publishing
 

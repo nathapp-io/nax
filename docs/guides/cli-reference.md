@@ -168,7 +168,7 @@ nax run -f my-feature
 | `--skip-precheck` | Skip precheck validations (advanced users only) |
 | `--no-context` | Disable context builder (skip file context in prompts) |
 | `--no-batch` | Execute all stories individually (disable batching) |
-| `-m, --max-iterations <n>` | Max iterations (default: `20`). Overrides `execution.maxIterations` only when the flag is passed |
+| `-m, --max-iterations <n>` | Max iterations. When the flag is omitted, `execution.maxIterations` applies (default `20`) |
 | `--profile <name>` | Profile(s) to overlay on config (overrides `config.json` profile). Repeatable and comma-separated for a chain — `--profile a,b` or `--profile a --profile b` — where a later profile overrides an earlier one (`b` over `a` over project + global). Accepts the comma form in `NAX_PROFILE` and `config.json` too. |
 | `-d, --dir <path>` | Working directory |
 
@@ -253,6 +253,19 @@ nax precheck --light
 ```
 
 Use this **before `nax plan`** to catch blockers (missing tools, git not initialized, etc.) before spending tokens on planning. It runs only the environment tier of checks (the project tier needs a PRD).
+
+---
+
+### `nax doctor`
+
+Alias for `nax precheck --light`: runs the environment tier of checks. The trust gate runs first, so an untrusted project exits before any check runs.
+
+```bash
+nax doctor
+nax doctor --json
+```
+
+Flags: `-d, --dir <path>`, `--json` (machine-readable output).
 
 ---
 
@@ -563,6 +576,26 @@ and exits 1.
 
 ---
 
+### `nax advisor`
+
+Inspect, label and replay advisor decisions (the advisor rules on judgment calls during a workflow run; see [Configuration](configuration.md#advisor)).
+
+```bash
+nax advisor list [-f <feature>] [--json]
+nax advisor label <id> agree|disagree -f <feature> [--expected <type>] [--unsafe-types <types>] [--note <text>]
+nax advisor replay [id] -f <feature> [--model <tier|agent:model>] [--memory stateless|warm] [--eval] [--json]
+nax advisor import-finish <result.json> --sha <sha> [--all-findings]
+```
+
+- `list` shows decisions, flagged first. `-f` narrows to one feature; without it every feature is listed.
+- `label` records a human verdict on one decision for the go-live replay.
+- `replay` re-runs recorded advisor questions. This makes billed model calls. `--eval` scores replays against the labels and exits 1 on any unsafe replay.
+- `import-finish` turns a recorded finish escalation (a finish-audit `<runId>.result.json`) into advisor questions for the replay.
+
+`-d, --dir <path>` selects the project for every subcommand.
+
+---
+
 ### `nax agents`
 
 List installed coding agents and which models they support.
@@ -580,9 +613,11 @@ Manage provider credentials for the `native` agent. A stored credential takes pr
 ```bash
 nax auth login <provider>              # Interactive; --method api-key|oauth skips the prompt
 nax auth import                        # Import from pi's ~/.pi/agent/auth.json (--from <path>, --force)
-nax auth list
+nax auth list [provider...] [--json]
 nax auth rm <provider>                 # Local removal only; does not revoke at the provider
 ```
+
+Credentials are global: `auth` is read only from `~/.nax/config.json` and setting it in a project or package config fails the load.
 
 ---
 
@@ -666,6 +701,9 @@ nax config --explain
 
 # Show only fields where project overrides global
 nax config --diff
+
+# Machine-readable JSON
+nax config --json
 ```
 
 **Profiles:**

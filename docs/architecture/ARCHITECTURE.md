@@ -54,15 +54,15 @@ Pricing rates and tiers, context windows and the provider-override seam, the pro
 error kinds, cache retention. Every figure probed against the real catalog, with the probe script
 included so it can be re-derived after a version bump.
 
-### [subsystems.md](subsystems.md) — System Architecture & Subsystem Reference (§17–§57)
+### [subsystems.md](subsystems.md) — System Architecture & Subsystem Reference (§17–§64)
 
 Deep reference for each subsystem — consult when working on a specific module.
 
-- **§17 Pipeline Architecture** — 8 default stages (+1 pre-run, +1 post-run); per-story phases run inside `executionStage` via `StoryOrchestratorBuilder` `CANONICAL_ORDER`; stage contract, `PipelineContext`, `StageResult` actions
-- **§18 Execution Modes & Batching** — Parallel/batch, sequential worktree isolation, escalation, crash recovery, lifecycle phases
-- **§19 TDD Orchestration** — Three-session workflow, session roles, isolation, failure categories, verdict
-- **§20 Acceptance Test System** — Generator, refinement, fix stories, templates, RED gate
-- **§21 Verification & Test Runners** — Orchestrator, strategies (scoped/regression/acceptance), smart runner, rectification, test-runners module (framework detection, output parsing SSOT)
+- **§17 Pipeline Architecture** (deprecated pipeline mode) — 8 default stages (+1 pre-run, +1 post-run); per-story phases run inside `executionStage` via `StoryOrchestratorBuilder` `CANONICAL_ORDER`; stage contract, `PipelineContext`, `StageResult` actions
+- **§18 Execution Modes & Batching** (pipeline mode) — Parallel/batch, sequential worktree isolation, escalation, crash recovery, lifecycle phases
+- **§19 TDD Orchestration** (pipeline mode) — Three-session workflow, session roles, isolation, failure categories, verdict
+- **§20 Acceptance Test System** (pipeline mode) — Generator, refinement, fix diagnosis, hardening, RED gate
+- **§21 Verification & Test Runners** — flat verification utilities (executor, runners, smart runner, rectification), mutation testing, test-runners module (framework detection, output parsing SSOT)
 - **§22 Routing & Classification** — `classifyComplexity()`, `determineTestStrategy()`, pluggable strategies
 - **§23 Plugin System** — Plugin interface, 7 extension points, lifecycle
 - **§24 Context Engine & Constitution** — Context Engine v2 (ADR-010): `ContextOrchestrator`, providers, scoring/dedup/packing, push/pull model, `rebuildForAgent`; legacy v1 builder; per-agent generators; constitution
@@ -91,27 +91,56 @@ Deep reference for each subsystem — consult when working on a specific module.
 - **§48 Findings** — ADR-021/022 SSOT: `Finding` wire type, per-producer adapter converters, `runFixCycle` fix-loop orchestration, `classifyOutcome`.
 - **§49 Prompts** — All LLM prompt construction: eight builder classes (`TddPromptBuilder`, `RectifierPromptBuilder`, `ReviewPromptBuilder`, `AdversarialReviewPromptBuilder`, `AcceptancePromptBuilder`, `OneShotPromptBuilder`, `PlanPromptBuilder`, `SetupPromptBuilder`); `composeSections`; `SectionAccumulator`. No prompt literals outside this module.
 - **§50 Analyze** — Codebase scanner used by `nax plan` (there is no `nax analyze` command); `scanCodebase` → `CodebaseScan` / `SourceRoot[]`; delegates to workspace discovery (§21) and language detection (§47).
-- **§51 Utils** — Single-purpose leaf utilities (no barrel): `parseLLMJson` (LLM JSON SSOT), `git.ts`, `path-filters.ts`, `path-security.ts`, `json-file.ts`, `errorMessage`, `killProcessTree`, `bun-deps.ts`, `writeQueueCommand`.
+- **§51 Utils** — Single-purpose leaf utilities (no barrel): `parseLLMJson` (LLM JSON SSOT), `git.ts`, `path-filters.ts`, `path-security.ts`, `json-file.ts`, `errorMessage` (re-exported from `@nathapp/nax-agent/internal`), `bun-deps.ts`, `writeQueueCommand`.
 
 ### Agent Tools, Permissions & Safety (subsystems.md §52–§57)
 
 The native agent's tool loop and the controls around the commands it runs are §52–§57 of [subsystems.md](subsystems.md):
 
-- **§52 Native agent** — `src/agents/native/` (session, turn loop, loop events, tool-result policy, transcript store, compaction). ADR-027 (protocol split), ADR-028 (native sessions and the pull-tool loop), ADR-029 (native coding-agent scope). See [nax-ai-surface.md](nax-ai-surface.md).
-- **§53 Coding tools** — `src/tools/` (`Read`, `Write`, `Edit`, `Delete`, `Glob`, `Grep`, `Git`, `GitCommit`, `Bash`, `RunCommand`, scratchpad and `RequestCapability`; policy compilation, raw-Bash screen `policy-bash-raw.ts`, nax-owned write protection `nax-owned-writes.ts` (nax's `src/agents/nax-owned-writes.ts`, injected through nax-agent's `OwnedPathsPolicy` port), per-call audit rows `tool-audit.ts`). Guides: [The Bash Tool](../guides/bash-tool.md), [Exec Allowlist](../guides/exec-allowlist.md).
-- **§54 Permissions** — grants are resolved by `resolvePermissions(config, stage)` (§14); `src/permissions/` holds the rule grammar, Bash lexing, the ask/ask-chain resolvers and the remembered-approvals store behind `nax approvals`. ADR-030 (bash approval modes). Guides: [Permissions](../guides/permissions.md), [Approvals](../guides/approvals.md).
-- **§55 OS sandbox** — `src/sandbox/` (`srt` backend, policy builder, probe) wraps agent-authored Bash and `RunCommand` exec commands; `execution.sandbox`, on by default. Guide: [Sandbox & Command Safety](../guides/sandbox-and-command-safety.md).
-- **§56 Command safety** — `src/command-safety/`: a shadow classifier that scores every agent command and records a row, deciding nothing (`execution.commandSafety`). ADR-031 (root-scoped config).
+- **§52 Native agent** — `packages/nax-agent/src/native/` (session, turn loop, loop events, tool-result policy, transcript store, compaction); nax's adapter is `src/agents/native-agent/`. ADR-027 (protocol split), ADR-028 (native sessions and the pull-tool loop), ADR-029 (native coding-agent scope). See [nax-ai-surface.md](nax-ai-surface.md).
+- **§53 Coding tools** — `packages/nax-agent/src/tools/` (`Read`, `Write`, `Edit`, `Delete`, `Glob`, `Grep`, `Git`, `GitCommit`, `Bash`, `RunCommand`, scratchpad and `RequestCapability`; policy compilation, raw-Bash screen `policy-bash-raw.ts`, nax-owned write protection `nax-owned-writes.ts` (nax's `src/agents/nax-owned-writes.ts`, injected through nax-agent's `OwnedPathsPolicy` port), per-call audit rows `tool-audit.ts`). Guides: [The Bash Tool](../guides/bash-tool.md), [Exec Allowlist](../guides/exec-allowlist.md).
+- **§54 Permissions** — grants are resolved by `resolvePermissions(config, stage)` (§14); `packages/nax-agent/src/permissions/` holds the rule grammar, Bash lexing, the ask/ask-chain resolvers and the remembered-approvals store behind `nax approvals`. ADR-030 (bash approval modes). Guides: [Permissions](../guides/permissions.md), [Approvals](../guides/approvals.md).
+- **§55 OS sandbox** — `packages/nax-agent/src/sandbox/` (`srt` backend, policy builder, probe) wraps agent-authored Bash and `RunCommand` exec commands; `execution.sandbox`, on by default. Guide: [Sandbox & Command Safety](../guides/sandbox-and-command-safety.md).
+- **§56 Command safety** — `packages/nax-agent/src/command-safety/`: a shadow classifier that scores every agent command and records a row, deciding nothing (`execution.commandSafety`). ADR-031 (root-scoped config).
 - **§57 MCP** — `src/mcp/` (client, pool, lockfile). Guide: [MCP & Command Interception](../guides/mcp-and-interception.md).
 - **Paths** — ADR-032: a single repo-rooted frame for agent and PRD paths.
 
-### [story-orchestrator-flow.md](story-orchestrator-flow.md) — Per-Story Control Flow
+### Workflow, Advisor & Other Modules (subsystems.md §58–§64)
+
+- **§58 Workflow mode** — the default execution mode since v0.88.0 (`src/workflow/`): one implementer session per story, a story review and bounded fix rounds, then a feature workflow (branch review, branch fix, adjudication, final gates, publish). ADR-034; guide: [workflow-mode.md](../guides/workflow-mode.md).
+- **§59 Advisor** (`src/advisor/`) — rules on judgment calls instead of stopping the run; ledger, audit, batching and the `nax advisor` CLI.
+- **§60 Finish** (`src/finish/`) — the pipeline-mode end phase, and the PR and gate helpers that workflow mode reuses.
+- **§61 Forge** (`src/forge/`) — GitHub and GitLab detection, PR or MR creation, and PR template merging.
+- **§62 Trust** (`src/trust/`) — per-folder trust for repository-controlled code (`nax trust`).
+- **§63 Replay** (`src/replay/`) — `nax replay`, which reconstructs a past run from its artifacts.
+- **§64 Other modules** — `prd/`, `runstate/`, `schedule/`, `bakeoff/` and `agent-runtime/`.
+
+### [story-orchestrator-flow.md](story-orchestrator-flow.md) — Per-Story Control Flow (pipeline mode)
 
 How a single story executes inside `executionStage`: the `CANONICAL_ORDER` phase list, three-session vs single-session mode selection (`routing.testStrategy`), the phase taxonomy (agent sessions / gates / mechanical checks / LLM reviews), and the review → fix → revalidation cycle (`STRATEGY_TO_REVALIDATION_PHASES`). Includes the `mechanical-lintfix` soundness note — why `full-suite-gate` is not re-run after a lint-fix, and why Biome safe-fix mode keeps that sound.
 
 ### [spec-to-prd-pipeline.md](spec-to-prd-pipeline.md) — Spec → PRD → Execution Workflow
 
 The four-stage workflow contract: brainstorming → spec-writing → spec-review → `nax plan`. SSOT for how `contextFiles` / `expectedFiles` / `expectedOutput` flow from `SPEC-*.md` through `prd.json` into per-story execution. Covers the `nax plan` decomposition step (`src/operations/plan-refine.ts`, `src/prompts/builders/plan-builder.ts`), the spec-review fidelity gate (Phase 9), and the cross-story produced-file rule.
+
+---
+
+## Execution Modes
+
+`execution.mode` selects how `nax run` executes stories. The default since v0.88.0 is `"workflow"`: one implementer session per story, a bounded story review and fix loop, then one feature-level branch review and publishing (ADR-034, §58, [workflow-mode guide](../guides/workflow-mode.md)). `"pipeline"` runs the stage pipeline and the story orchestrator described in §17–§22 and [story-orchestrator-flow.md](story-orchestrator-flow.md). Pipeline mode is deprecated and frozen, and will be removed in a future release. Docs that describe only pipeline mode say so at the top.
+
+## Packages
+
+| Package | Name | Role |
+|:--------|:-----|:-----|
+| `packages/nax` | `@nathapp/nax` | CLI orchestrator (`dist/nax.js`). Bundles nax-agent and nax-agent-acp at build time; depends on `@nathapp/nax-ai` at runtime |
+| `packages/nax-ai` | `@nathapp/nax-ai` | Provider-agnostic LLM client: completions, streaming, tool calls, usage, auth, bundled model catalog |
+| `packages/nax-agent` | `@nathapp/nax-agent` | Native agent library: session contract, turn loop, coding tools, permissions, Bash approval, OS sandbox, command-safety shadow, shared MCP layer (`./mcp`) |
+| `packages/nax-agent-acp` | `@nathapp/nax-agent-acp` | ACP client (`./client`, used by nax for CLI agents) and the nax-agent ACP server (`./server`); `@nathapp/nax-agent` is a peer dependency |
+| `packages/repo-tooling` | `@nathapp/nax-repo-tooling` | Shared check scripts and release tooling (private) |
+| `packages/test-kit` | `@nathapp/nax-test-kit` | Shared bun:test helpers (private) |
+
+Dependency graph, from the package manifests: `nax-ai` ← `nax-agent` (depends on `@nathapp/nax-ai`) ← `nax-agent-acp` (peer on `@nathapp/nax-agent`), and `nax` depends on `@nathapp/nax-ai` and bundles `nax-agent` and `nax-agent-acp`. nax imports nax-agent-acp only through `@nathapp/nax-agent-acp/client`, and nax-agent-acp reaches nax-agent only through its public entry. `check:package-boundaries` (packages/nax) enforces both rules. nax-ai, nax-agent, nax-agent-acp and nax share one version (lockstep, `bun run release`).
 
 ---
 
@@ -132,7 +161,7 @@ The four-stage workflow contract: brainstorming → spec-writing → spec-review
 | `process.on` handlers | Must store named ref for removal |
 | Permission resolution | `resolvePermissions(config, stage)` only — no local fallbacks |
 | Permission mode literals | Never hardcode `"approve-all"` / `"approve-reads"` (`check-permission-mode-ssot`); `dangerouslySkipPermissions` is removed — never reintroduce |
-| `pipelineStage` on adapter calls | Required on all `run()`, `complete()`, `plan()`, `decompose()` |
+| `pipelineStage` on manager and session calls | Required on `completeAs()` and `openSession()` callers; permissions are resolved once at the resource opener |
 | Test sleep | Injectable `_deps.sleep`, never real `Bun.sleep` |
 | Integration test config | `iterationDelayMs: 0` (never DEFAULT_CONFIG) |
 
@@ -160,8 +189,8 @@ The four-stage workflow contract: brainstorming → spec-writing → spec-review
 
 The ADR sequence starts at **ADR-005**. ADR-001–004 were never filed — the project began formal ADR tracking mid-development, at the point of the pipeline re-architecture. There are no tombstone files for 001–004; the gap is intentional.
 
-The ADR index lives in `docs/adr/`. Key ADRs: 005 (pipeline re-arch), 009 (test-pattern SSOT), 010 (context engine), 011–013 (session/agent ownership), 018 (runtime layering), 019 (adapter primitives), 020 (dispatch boundary), 023 (execution unification), 027 (adapter-protocol split), 028–029 (native sessions, tool loop and coding-agent scope), 030 (bash approval modes), 031 (root-scoped command-safety config), 032 (single-frame repo-rooted paths).
+The ADR index lives in `docs/adr/`. Key ADRs: 005 (pipeline re-arch), 009 (test-pattern SSOT), 010 (context engine), 011–013 (session/agent ownership), 018 (runtime layering), 019 (adapter primitives), 020 (dispatch boundary), 023 (execution unification), 027 (adapter-protocol split), 028–029 (native sessions, tool loop and coding-agent scope), 030 (bash approval modes), 031 (root-scoped command-safety config), 032 (single-frame repo-rooted paths), 033 (scoped fix review), 034 (workflow execution mode, default since v0.88.0).
 
 ---
 
-*Created: 2026-03-10. Last updated: 2026-09-25 (agent tools/permissions/safety pointers, ADR-027–032, runtime middleware, quick-reference corrections). Maintained by nax-dev.*
+*Created: 2026-03-10. Last updated: 2026-10-16 (v0.88.0: workflow mode as the default execution mode, the ACP client and nax-agent packages, subsystems §58–§64, package graph). Maintained by nax-dev.*

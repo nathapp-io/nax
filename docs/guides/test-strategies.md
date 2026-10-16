@@ -7,6 +7,8 @@ description: Choosing a TDD strategy
 
 nax selects a test strategy per story based on complexity, content, and security classification. Valid values and the planner guidance live in `src/config/test-strategy.ts` (SSOT); run-time classification lives in `determineTestStrategy()` (`src/routing/classify.ts`).
 
+> **Pipeline mode.** The session counts below describe the pipeline (`execution.mode: "pipeline"`, deprecated). In workflow mode (the default since 0.88.0) every story runs one implementer session with a story review and bounded fix rounds, and the implementer prompt requires per-AC TDD evidence. The strategy value is still stored and routed, but it does not select the session layout.
+
 ### Strategy Reference
 
 | Strategy | Sessions | When | Description |
@@ -62,6 +64,7 @@ Configure the default TDD behavior in `.nax/config.json`:
 | `auto` (default) | Per-story selection using the complexity-based routing above |
 | `strict` | Always `three-session-tdd` |
 | `lite` | Always `three-session-tdd-lite` |
+| `simple` | Always `tdd-simple` |
 | `off` | Always `test-after` |
 
 `tdd.strategy` applies only when runtime routing classifies a story. A story whose `prd.json` already carries `routing.testStrategy` (which `nax plan` always writes) keeps that value — edit `prd.json` to change it.

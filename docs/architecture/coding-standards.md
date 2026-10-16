@@ -16,7 +16,7 @@
 ### Principles
 
 ```typescript
-// ✅ Small, focused functions
+// Small, focused functions
 function resolveAgentName(config: NaxConfig): string {
   const agentName = resolveDefaultAgent(config);
   if (!KNOWN_AGENT_NAMES.includes(agentName)) {
@@ -25,7 +25,7 @@ function resolveAgentName(config: NaxConfig): string {
   return agentName;
 }
 
-// ❌ God function doing everything
+// God function doing everything
 async function routeAndExecuteAndVerify(ctx: PipelineContext): Promise<void> {
   // 200 lines of mixed concerns...
 }
@@ -37,7 +37,7 @@ async function routeAndExecuteAndVerify(ctx: PipelineContext): Promise<void> {
 - **>3 params:** use an options object
 
 ```typescript
-// ✅ Options object for many params
+// Options object for many params
 interface RunOptions {
   workdir: string;
   prompt: string;
@@ -46,7 +46,7 @@ interface RunOptions {
 }
 async function run(options: RunOptions): Promise<AgentResult> { ... }
 
-// ❌ Too many positional params
+// Too many positional params
 async function run(workdir: string, prompt: string, tier: string, timeout: number): Promise<AgentResult> { ... }
 ```
 
@@ -59,7 +59,7 @@ async function run(workdir: string, prompt: string, tier: string, timeout: numbe
 **Always read stdout/stderr concurrently with `proc.exited`:**
 
 ```typescript
-// ✅ Concurrent — no deadlock
+// Concurrent — no deadlock
 const proc = Bun.spawn(cmd, { stdout: "pipe", stderr: "pipe" });
 const [exitCode, stdout, stderr] = await Promise.all([
   proc.exited,
@@ -67,7 +67,7 @@ const [exitCode, stdout, stderr] = await Promise.all([
   new Response(proc.stderr).text(),
 ]);
 
-// ❌ Sequential — deadlocks on >64KB output
+// Sequential — deadlocks on >64KB output
 const proc = Bun.spawn(cmd, { stdout: "pipe", stderr: "pipe" });
 const exitCode = await proc.exited;
 const stdout = await new Response(proc.stdout).text(); // hangs!
@@ -80,17 +80,17 @@ const stdout = await new Response(proc.stdout).text(); // hangs!
 ```typescript
 import { cancellableDelay } from "../utils/bun-deps";
 
-// ✅ Canonical cancellable delay — drop-in for Bun.sleep with optional abort
+// Canonical cancellable delay — drop-in for Bun.sleep with optional abort
 const controller = new AbortController();
 await cancellableDelay(5000, controller.signal); // rejects on abort
 
-// ✅ Without a signal, behaves identically to Bun.sleep(ms)
+// Without a signal, behaves identically to Bun.sleep(ms)
 await cancellableDelay(5000);
 
-// ❌ Cannot cancel Bun.sleep()
+// Cannot cancel Bun.sleep()
 await Bun.sleep(5000); // blocks for full 5s even if no longer needed
 
-// ❌ Don't re-roll the pattern at every call site
+// Don't re-roll the pattern at every call site
 const delay = new Promise<void>((resolve) => {
   const timer = setTimeout(resolve, ms);
   controller.signal.addEventListener("abort", () => clearTimeout(timer));
@@ -106,24 +106,24 @@ Use plain `Bun.sleep()` (or `_deps.sleep` in tests) only for short uninterruptib
 ### Promise.race Safety
 
 ```typescript
-// ✅ Always .catch() the losing promise
+// Always .catch() the losing promise
 const result = await Promise.race([
   actualWork(),
   timeout(30_000).then(() => { throw new Error("timeout"); }),
 ]);
 // The losing promise's rejection must be caught
 
-// ❌ Unhandled rejection from losing promise
+// Unhandled rejection from losing promise
 const result = await Promise.race([actualWork(), timeout(30_000)]);
 ```
 
 ### Batch Over Loop
 
 ```typescript
-// ✅ Concurrent
+// Concurrent
 const results = await Promise.all(items.map((item) => processItem(item)));
 
-// ❌ Sequential when not needed
+// Sequential when not needed
 for (const item of items) {
   await processItem(item); // one at a time
 }
@@ -140,13 +140,13 @@ for (const item of items) {
 - **Discriminated unions** over string enums for state machines
 
 ```typescript
-// ✅ Discriminated union
+// Discriminated union
 type StageResult =
   | { action: "continue"; data: RoutingResult }
   | { action: "skip"; reason: string }
   | { action: "abort"; error: Error };
 
-// ❌ Stringly-typed
+// Stringly-typed
 interface StageResult {
   action: string; // "continue" | "skip" | "abort" — easy to typo
   data?: unknown;
@@ -156,7 +156,7 @@ interface StageResult {
 ### Type Guards
 
 ```typescript
-// ✅ Type guard for runtime validation
+// Type guard for runtime validation
 function isAgentResult(value: unknown): value is AgentResult {
   return (
     typeof value === "object" &&
@@ -170,7 +170,7 @@ function isAgentResult(value: unknown): value is AgentResult {
 ### `satisfies` for Config Objects
 
 ```typescript
-// ✅ Type-checked but inferred
+// Type-checked but inferred
 const DEFAULT_CONFIG = {
   timeout: 60_000,
   retries: 3,
@@ -192,7 +192,8 @@ test/
 ├── e2e/         # *.e2e.test.ts — excluded from `bun run test`; run via `bun run test:e2e`
 ├── helpers/     # Shared mocks/builders (import via `@test/helpers` barrel)
 ├── contracts/   # *.contract.ts — type-level shape checks, compiled by typecheck
-└── fixtures/    # Static fixture data
+├── fixtures/    # Static fixture data
+└── tmp/         # Scratch space used by tests
 ```
 
 Placement, naming and the shared-helper catalogue are in `.nax/rules/test-architecture.md`
@@ -206,11 +207,11 @@ enforced by `bun run check:file-sizes`.
 - **Use `test.each()`** for parametric tests (3+ similar cases)
 
 ```typescript
-// ✅ Descriptive test names
+// Descriptive test names
 test("returns null when verdict file is missing", async () => { ... });
 test("coerces free-form 'PASS' string to approved: true", () => { ... });
 
-// ❌ Vague names
+// Vague names
 test("should work", () => { ... });
 test("handles edge case", () => { ... });
 ```
@@ -218,7 +219,7 @@ test("handles edge case", () => { ... });
 ### Mocking via `_deps`
 
 ```typescript
-// ✅ Injectable deps — clean, isolated
+// Injectable deps — clean, isolated
 const origDeps = { ..._moduleDeps };
 afterEach(() => Object.assign(_moduleDeps, origDeps));
 
@@ -227,7 +228,7 @@ test("handles spawn failure", async () => {
   // ...
 });
 
-// ❌ Global monkey-patching
+// Global monkey-patching
 test("handles spawn failure", async () => {
   const origSpawn = Bun.spawn;
   Bun.spawn = () => { throw new Error("spawn failed"); };
@@ -238,7 +239,7 @@ test("handles spawn failure", async () => {
 ### Table-Driven Tests
 
 ```typescript
-// ✅ test.each for repeated patterns
+// test.each for repeated patterns
 test.each([
   { input: "PASS", expected: true },
   { input: "APPROVED", expected: true },
@@ -249,7 +250,7 @@ test.each([
   expect(result?.approved).toBe(expected);
 });
 
-// ❌ Copy-paste tests differing by one param
+// Copy-paste tests differing by one param
 test("coerces PASS", () => { ... });
 test("coerces APPROVED", () => { ... });
 test("coerces FAIL", () => { ... });
