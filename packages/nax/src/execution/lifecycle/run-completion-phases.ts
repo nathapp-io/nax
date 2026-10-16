@@ -404,7 +404,12 @@ export async function summarizeMcpAdoptionPhase(input: {
   config: NaxConfig;
   /** The run output dir: the audit files' primary location (paths precedence). */
   outputDir: string | undefined;
-  runId: string | undefined;
+  /**
+   * The prefix the tool-audit files carry: `runtime.runId`, the dispatch UUID the
+   * coding tool writes under. NOT the nax run id (`run-<hash>-<ts>`), which no
+   * audit file starts with — passing it scoped the summary to zero files.
+   */
+  toolAuditRunId: string | undefined;
   logger: Logger | undefined;
 }): Promise<McpAdoptionSummary | undefined> {
   const servers = input.config.mcp?.servers ?? {};
@@ -413,7 +418,7 @@ export async function summarizeMcpAdoptionPhase(input: {
     .map(([id]) => id);
   if (serverIds.length === 0) return undefined;
   const auditDir = toolAuditDir({ root: input.workdir, outputDir: input.outputDir }, input.feature);
-  const summary = await summarizeMcpAdoption({ serverIds, auditDir, runId: input.runId });
+  const summary = await summarizeMcpAdoption({ serverIds, auditDir, runId: input.toolAuditRunId });
   warnZeroAdoption(summary, input.logger);
   return summary;
 }
