@@ -7,6 +7,7 @@ import { NaxConfigSchema } from "@/config/schemas";
 import type { AdapterFailure } from "@/context/engine";
 
 const AUTH: AdapterFailure = { outcome: "fail-auth", category: "availability", retriable: false, message: "401" };
+const QUOTA: AdapterFailure = { ...AUTH, outcome: "fail-quota", retriable: false };
 const RATE: AdapterFailure = { ...AUTH, outcome: "fail-rate-limit", retriable: true };
 const originalDeps = { ..._agentManagerDeps };
 let fingerprint: string | undefined;
@@ -178,6 +179,27 @@ test("AC-17 ACP credential is never read", async () => {
   await m.refreshAuthCooldowns();
   expect(readCredential).not.toHaveBeenCalled();
   expect(m.isUnavailable("claude")).toBe(true);
+});
+
+// M1: a fail-quota for the same provider (a parallel story's hop still in
+// flight when the auth cooldown was written) shares the stamped entry's key.
+// Keep the stamp, or `authCooldowns()` stops reporting the provider and a
+// re-login never releases the run-long park this story exists to undo.
+test("a fail-quota for the parked provider still recovers on a credential change", async () => {
+  const { manager: m } = setup();
+  park(m);
+  m.markUnavailable("native", QUOTA, "balanced");
+
+  expect(entries(m)).toHaveLength(1);
+  fingerprint = "bbb";
+  await m.refreshAuthCooldowns();
+
+  expect(m.isUnavailable("native", "balanced")).toBe(false);
+  expect(logger.info).toHaveBeenCalledWith(
+    "agent-manager",
+    "Credential changed for openai-codex — native available again",
+    { storyId: "_agent", agent: "native", providerId: "openai-codex", previousFingerprint: "aaa", fingerprint: "bbb" },
+  );
 });
 
 test.each([

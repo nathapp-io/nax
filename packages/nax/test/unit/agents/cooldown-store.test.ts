@@ -125,4 +125,41 @@ describe("CooldownStore", () => {
     store.mark("claude", failure("fail-quota"), "balanced", "sonnet");
     expect(store.isCooling("claude", "fast", "haiku")).toBe(true);
   });
+
+  // M1: an auth stamp and a provider-scoped fault (fail-quota) write the SAME
+  // key, because the narrowed probe in `_live` and the release path both find
+  // the provider's cooldown by it. An unstamped mark therefore must not erase
+  // the stamp: `authCooldowns()` would stop reporting the provider and a later
+  // re-login could never release it — the run-long park this store's recovery
+  // path exists to undo.
+  test("a later fail-quota for the same provider keeps the stored auth stamp", () => {
+    const store = new CooldownStore(fakeClock().now);
+    store.mark("native", failure("fail-auth"), "balanced", "openai-codex/gpt-6.1-sol", {
+      providerId: "openai-codex",
+      fingerprint: "aaa",
+    });
+    // A parallel story's in-flight hop reports the exhausted quota after the
+    // auth cooldown was written.
+    store.mark("native", failure("fail-quota"), "balanced", "openai-codex/gpt-6.1-sol");
+
+    expect(store.authCooldowns()).toEqual([
+      {
+        key: "native::provider::openai-codex",
+        agent: "native",
+        auth: { providerId: "openai-codex", fingerprint: "aaa" },
+      },
+    ]);
+    expect(store.isCooling("native", "fast", "openai-codex/gpt-6.1-sol")).toBe(true);
+    // The slot is the provider's, so releasing it on a credential change frees
+    // the provider for every tier that reaches it.
+    expect(store.release("native::provider::openai-codex")).toBe(true);
+    expect(store.isCooling("native", "balanced", "openai-codex/gpt-6.1-sol")).toBe(false);
+  });
+
+  test("the merged entry still records the newest failure", () => {
+    const store = new CooldownStore(fakeClock().now);
+    store.mark("native", failure("fail-auth"), "balanced", "openai-codex/gpt-6.1-sol", { providerId: "openai-codex" });
+    store.mark("native", failure("fail-quota"), "balanced", "openai-codex/gpt-6.1-sol");
+    expect(store.failureFor("native", "balanced", "openai-codex/gpt-6.1-sol")?.outcome).toBe("fail-quota");
+  });
 });
