@@ -55,6 +55,7 @@ export const _runCompletionDeps = {
   fireHook,
   closeAllRunSessions,
   purgeStaleManifests,
+  summarizeMcpAdoptionPhase,
 };
 
 export interface RunCompletionOptions extends DispatchContext {
@@ -233,12 +234,12 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
   try {
     // Phase 7.5 — MCP adoption summary (nax#2410 D6): per-server offered/called
     // counts plus the zero-adoption WARN. Undefined when MCP is unconfigured.
-    mcpAdoption = await summarizeMcpAdoptionPhase({
+    mcpAdoption = await _runCompletionDeps.summarizeMcpAdoptionPhase({
       workdir,
       feature,
       config,
       outputDir: options.runtime.outputDir,
-      runId,
+      toolAuditRunId: options.runtime.runId,
       logger,
     });
 

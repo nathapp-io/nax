@@ -16,6 +16,7 @@ import type {
   GateName,
   GateRunResult,
   GateState,
+  ImplementerReply,
   ReReviewVerdict,
   StoryReviewVerdict,
   WorkflowEndState,
@@ -174,11 +175,17 @@ async function absorbTurn(
         continue;
       }
     }
-    if (reply.status !== "DONE" || reply.interrupted) {
-      s.concerns = [...s.concerns, `${reply.status}: ${reply.concerns ?? ""}`.trim()];
-    }
+    if (reply.status !== "DONE" || reply.interrupted) await recordConcern(env, s, reply);
     return;
   }
+}
+
+/** The story review is told; the ledger and run log keep it for whoever finishes the branch. */
+async function recordConcern(env: StoryLoopEnv, s: LoopState, reply: ImplementerReply): Promise<void> {
+  const concern = `${reply.status}: ${reply.concerns ?? ""}`.trim();
+  s.concerns = [...s.concerns, concern];
+  const marker = reply.interrupted ? " (interrupted)" : "";
+  await env.sink.ledger(ledgerText.note(`implementer${marker} ${concern}`));
 }
 
 async function review(env: StoryLoopEnv, s: LoopState): Promise<void> {

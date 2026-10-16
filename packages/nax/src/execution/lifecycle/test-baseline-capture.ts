@@ -357,10 +357,20 @@ async function captureRunBaselineInner(opts: CaptureRunBaselineOptions): Promise
   };
 
   // AC9 — runner exited non-zero but parser produced zero structured failures
-  // (across every command in the list).
-  if (!aggregateSuccess && summary.failed === 0) {
+  // (across every command in the list). Keyed on the named failures, not the
+  // count: a parser that reads "990 failed" but names none would otherwise write
+  // a captured baseline with no entries, and every pre-existing failure would
+  // later be labelled as introduced.
+  if (!aggregateSuccess && summary.failures.length === 0) {
     await writeNoBaseline("run", root, featureId, undefined, "unparseable");
     return;
+  }
+
+  if (summary.failures.length < summary.failed) {
+    getSafeLogger()?.warn("execution", "Run-start test baseline names fewer failures than were counted", {
+      failed: summary.failed,
+      named: summary.failures.length,
+    });
   }
 
   // AC1 + AC5 — green suite (success + zero failures) writes a captured

@@ -174,6 +174,33 @@ describe("buildWorkflowPrBody", () => {
     );
   });
 
+  // A ready PR has no "Before marking ready" section, which used to drop what nax could not verify.
+  test("a ready PR still lists what nax could not verify", () => {
+    const cv: OpenItem = { id: "_run:cv1", kind: "cannot-verify", issue: "live GitHub App mint was not attempted" };
+    const body = buildWorkflowPrBody({ ...input, outcome: "ready", openItems: [held, cv] });
+    expect(body).toContain("## Not verified by nax\n\n- live GitHub App mint was not attempted");
+    expect(body).not.toContain(held.issue);
+    expect(body.indexOf("## Not verified by nax")).toBeGreaterThan(body.indexOf("## Stories"));
+  });
+
+  test("the Not verified section is capped like the other lists", () => {
+    const many: OpenItem[] = Array.from({ length: 52 }, (_, i) => ({
+      id: `_run:cv${i + 1}`,
+      kind: "cannot-verify",
+      issue: `${"z".repeat(400)} ${i}`,
+    }));
+    const body = buildWorkflowPrBody({ ...input, outcome: "ready", openItems: many });
+    expect(body).toContain("- …and 2 more");
+    expect(body).not.toContain("z".repeat(400));
+  });
+
+  test("a draft keeps cannot-verify items in Before marking ready, not a second section", () => {
+    const cv: OpenItem = { id: "_run:cv1", kind: "cannot-verify", issue: "live mint not attempted" };
+    const body = buildWorkflowPrBody({ ...input, openItems: [cv] });
+    expect(body).toContain("## Before marking ready");
+    expect(body).not.toContain("## Not verified by nax");
+  });
+
   test("more than 50 open items: cap with a pointer to result.json", () => {
     const many = Array.from({ length: 52 }, (_, i) => ({ ...held, id: `B${i}` }));
     expect(buildWorkflowPrBody({ ...input, openItems: many })).toContain(

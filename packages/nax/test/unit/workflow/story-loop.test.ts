@@ -189,6 +189,30 @@ describe("runStoryLoop", () => {
     expect(h.ledger).toContain("deferred-minor: nit");
   });
 
+  // The concern text reached only the story-review prompt; the ledger kept no trace of it.
+  test("an implementer DONE_WITH_CONCERNS lands in the ledger with its text", async () => {
+    const h = harness({
+      implement: () => ({
+        reply: {
+          status: "DONE_WITH_CONCERNS",
+          commits: [],
+          testSummary: "",
+          concerns: "deleted AC5 and AC7 tests the brief said to keep",
+          interrupted: false,
+        },
+        autoCommitted: false,
+      }),
+    });
+    await runStoryLoop(h.env);
+    expect(h.ledger).toContain("implementer DONE_WITH_CONCERNS: deleted AC5 and AC7 tests the brief said to keep");
+  });
+
+  test("a plain DONE writes no implementer concern note", async () => {
+    const h = harness({});
+    await runStoryLoop(h.env);
+    expect(h.ledger.some((l) => l.startsWith("implementer "))).toBe(false);
+  });
+
   test.each([
     [1, [false], 1],
     [3, [false, false, false], 3],

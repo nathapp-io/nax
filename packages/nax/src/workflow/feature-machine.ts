@@ -20,6 +20,7 @@ import { type LedgerWriteOptions, ledgerText } from "./ledger";
 import type { LedgerItem } from "./ledger-items";
 import { absorbReReviewVerdict } from "./re-review-absorb";
 import type { RepoGateRun } from "./repo-gates";
+import { type RestatedMinor, splitRestatedMinors } from "./restated-minors";
 import { describeFindings, type StepModel, startStep } from "./run-log";
 import type { ReviewOutcome } from "./story-review";
 import type {
@@ -97,6 +98,12 @@ const NO_MIRROR: LedgerWriteOptions = { mirror: false };
 const isBlocking = (f: WorkflowFindingDraft): boolean => f.severity !== "minor";
 const minorIssues = (drafts: readonly WorkflowFindingDraft[]): string[] =>
   drafts.filter((f) => !isBlocking(f)).map((f) => f.issue);
+
+/** A dropped restatement still leaves a trace, in case the copy was a new minor after all. */
+async function noteRestated(env: FeatureEnv, dropped: readonly RestatedMinor[]): Promise<void> {
+  for (const d of dropped)
+    await env.sink.ledger(ledgerText.note(`restated deferred minor ${d.id} dropped: ${d.issue}`));
+}
 
 function assign(
   rec: WorkflowFeatureRecord,
@@ -203,6 +210,8 @@ async function branchReviewStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Pr
   const unread = out.verdict.unreadFiles ?? [];
   if (unread.length > 0) await env.sink.ledger(ledgerText.note(describeUnread(unread)));
   const triage = new Map(out.verdict.minorTriage.map((t) => [t.id, t.decision]));
+  const restated = splitRestatedMinors(out.verdict.findings, rec.minors);
+  await noteRestated(env, restated.dropped);
   const { findings, nextFindingId } = assign(rec, withQualityFloor(out.verdict));
   const minors = out.verdict.findings.filter((f) => !isBlocking(f));
   // #2496: written here, after assign(), so the file and result.json name findings the same way.
@@ -215,7 +224,7 @@ async function branchReviewStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Pr
     reviewOpen: findings,
     nextFindingId,
     minors: rec.minors.map((m) => ({ ...m, triage: triage.get(m.id) ?? "leave" })),
-    newMinors: [...rec.newMinors, ...minorIssues(out.verdict.findings)],
+    newMinors: [...rec.newMinors, ...minorIssues(restated.kept)],
     step: "branch-fix",
   };
 }
@@ -308,7 +317,13 @@ async function branchReReviewStep(env: FeatureEnv, rec: WorkflowFeatureRecord): 
   const minors = rec.minors.map((m) =>
     m.triage === "fix-now" && stillOpen.has(m.id) ? { ...m, triage: "leave" as const } : m,
   );
-  const newMinors = [...rec.newMinors, ...minorIssues(absorbed.newDrafts)];
+  // The re-reviewer was shown only the fix-now minors; a "leave" id in its reply is its own numbering.
+  const restated = splitRestatedMinors(
+    absorbed.newDrafts,
+    fixNowMinors(rec).map((f) => ({ id: f.id, text: f.issue })),
+  );
+  await noteRestated(env, restated.dropped);
+  const newMinors = [...rec.newMinors, ...minorIssues(restated.kept)];
   const minorsLeft = minors.filter((m) => m.triage === "leave").length + newMinors.length;
   log.done(reReviewText({ items, verdicts: out.verdict.verdicts, stillOpen, added: findings, minorsLeft }));
   const next = await nextBranchFixRound({

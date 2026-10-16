@@ -125,7 +125,7 @@ describe("summarizeMcpAdoptionPhase (run-completion phase)", () => {
     feature: "feat",
     config: makeNaxConfig({ mcp: { servers } }),
     outputDir: "/out" as string | undefined,
-    runId: "run-2" as string | undefined,
+    toolAuditRunId: "6cfd58a2-ad7d-4548-bdbc-713cb17dc1e2" as string | undefined,
   });
 
   test("no servers configured: undefined, nothing aggregated", async () => {
@@ -138,7 +138,7 @@ describe("summarizeMcpAdoptionPhase (run-completion phase)", () => {
     Object.assign(
       _mcpAdoptionDeps,
       fsWith({
-        "run-2-1-adv.json": {
+        "6cfd58a2-ad7d-4548-bdbc-713cb17dc1e2-1792118252469-adv.json": {
           sessionName: "adv",
           toolSurface: { advertised: [{ providerId: "cg", names: ["search"] }] },
           calls: [],

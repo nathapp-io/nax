@@ -127,6 +127,17 @@ function beforeReady(input: WorkflowPrBodyInput, chars = FULL_TEXT): string | nu
   ].join("\n");
 }
 
+/**
+ * A ready PR carries no "Before marking ready" section, which is where a draft shows the
+ * cannot-verify items. Without this one, an advisor-approved PR dropped what nax never verified.
+ */
+function notVerified(input: WorkflowPrBodyInput): string | null {
+  if (input.outcome !== "ready") return null;
+  const items = input.openItems.filter((i) => i.kind === "cannot-verify");
+  if (items.length === 0) return null;
+  return `## Not verified by nax\n\n${list(items.map((i) => i.issue))}`;
+}
+
 /** The `## Closes` section, right after Summary: the body's tail is what gets cut (US-007). */
 function closesSection(closes: readonly number[] | undefined): string[] {
   if (!closes || closes.length === 0) return [];
@@ -134,11 +145,13 @@ function closesSection(closes: readonly number[] | undefined): string[] {
 }
 
 function assemble(input: WorkflowPrBodyInput, ready: string | null): string {
+  const unverified = notVerified(input);
   return [
     `## Summary\n\n${summary(input)}`,
     ...closesSection(input.closes),
     `## Stories\n\n${storiesTable(input.stories)}`,
     ...(ready ? [ready] : []),
+    ...(unverified ? [unverified] : []),
     `## Pre-flight rulings\n\n${list(preflightLines(input.preflight))}`,
     `## Advisor decisions\n\n${safeBlock(buildAdvisorSection([...input.decisions]) ?? NONE)}`,
     `## Parked findings\n\n${list(input.rulings.map((r) => `${r.findingId ?? "?"} ${r.action}: ${r.text} — ${r.why}`))}`,
