@@ -267,6 +267,7 @@ export function makeMockAgentManager(opts: MockAgentManagerOptions = {}): IAgent
     getDefault: () => opts.getDefaultAgent ?? "claude",
     isUnavailable: () => false,
     markUnavailable: () => {},
+    refreshAuthCooldowns: async () => {},
     reset: () => {},
     validateCredentials: async () => {},
     resolveFallbackChain: () => [],

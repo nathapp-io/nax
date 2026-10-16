@@ -14,11 +14,13 @@
  */
 
 import type { AdapterFailure } from "@/context/engine";
+import type { AuthCooldownStamp } from "./auth-cooldown";
 import { providerOf } from "./cooldown-provider";
 import { failurePolicyFor, resolveCooldownExpiry } from "./retry/failure-policy";
 
 /** `"run"` means no expiry — cleared only by a story-boundary sweep or `clear()`. */
 interface CooldownEntry {
+  readonly auth?: AuthCooldownStamp;
   readonly failure: AdapterFailure;
   readonly expiresAt: number | "run";
 }
@@ -44,22 +46,36 @@ export class CooldownStore {
    * tier/agent key otherwise, so an unresolvable model degrades to the
    * pre-existing tier-scoped identity, never to bare-agent.
    */
-  mark(agent: string, failure: AdapterFailure, tier?: string, modelId?: string): void {
+  mark(agent: string, failure: AdapterFailure, tier?: string, modelId?: string, auth?: AuthCooldownStamp): void {
     const expiresAt = resolveCooldownExpiry(failure, this._now());
     if (expiresAt === null) return;
-    // The policy decides the SCOPE; this only chooses the key that expresses it.
-    // An agent-scoped fault (bad credentials) is shared by every model the agent
-    // serves, so it is keyed on the bare agent name and `_live` finds it from any lookup.
+    // A native auth stamp narrows credential retirement to its provider.
+    // Otherwise the policy decides scope, preserving ACP and other failure keys.
+    // An agent-scoped fault uses the bare agent name, found from any lookup.
     // A provider-scoped fault (exhausted plan quota) parks every model of that
     // provider; with no provider in the model id it degrades to the bare agent.
     const scope = failurePolicyFor(failure.outcome).cooldownScope;
-    const key =
-      scope === "agent"
+    const key = auth
+      ? `${agent}::provider::${auth.providerId}`
+      : scope === "agent"
         ? agent
         : scope === "provider"
           ? providerKey(agent, modelId)
           : identityKey(agent, tier, modelId);
-    this._entries.set(key, { failure, expiresAt });
+    this._entries.set(key, { failure, expiresAt, auth });
+  }
+
+  authCooldowns(): readonly { key: string; agent: string; auth: AuthCooldownStamp }[] {
+    const entries: { key: string; agent: string; auth: AuthCooldownStamp }[] = [];
+    for (const key of this._entries.keys()) {
+      const entry = this._at(key);
+      if (entry?.auth) entries.push({ key, agent: key.split("::provider::")[0], auth: entry.auth });
+    }
+    return entries;
+  }
+
+  release(key: string): boolean {
+    return this._entries.delete(key);
   }
 
   isCooling(agent: string, tier?: string, modelId?: string): boolean {
@@ -101,7 +117,11 @@ export class CooldownStore {
   private _live(agent: string, tier?: string, modelId?: string): CooldownEntry | undefined {
     const narrow = identityKey(agent, tier, modelId);
     const own = this._at(narrow);
-    if (own || narrow === agent) return own;
+    if (own) return own;
+    if (narrow === agent) {
+      const stamped = this.authCooldowns().find((entry) => entry.agent === agent);
+      return stamped ? this._at(stamped.key) : undefined;
+    }
     const provider = providerKey(agent, modelId);
     const byProvider = provider === agent ? undefined : this._at(provider);
     if (byProvider) return byProvider;

@@ -218,7 +218,10 @@ export interface IAgentManager {
   isUnavailable(agent: string, tier?: string, model?: string): boolean;
 
   /** Mark an agent unavailable for this run (auth/quota/service-down). `tier` scopes the cooldown to that tier alone. */
-  markUnavailable(agent: string, reason: AdapterFailure, tier?: string): void;
+  markUnavailable(agent: string, reason: AdapterFailure, tier?: string, model?: string, authModel?: string): void;
+
+  /** Release native provider cooldowns after a credential change. */
+  refreshAuthCooldowns(): Promise<void>;
 
   /** Reset per-run state. Called at run boundary. */
   reset(): void;
@@ -366,6 +369,7 @@ export type { SessionRunHopFn };
 
 /** Minimal logger surface AgentManager and its collaborators need. */
 export type LoggerLike = {
+  debug?: (scope: string, msg: string, data?: Record<string, unknown>) => void;
   warn: (scope: string, msg: string, data?: Record<string, unknown>) => void;
   info: (scope: string, msg: string, data?: Record<string, unknown>) => void;
 };

@@ -62,6 +62,7 @@ export function fakeAgentManager(
     getDefault: () => defaultAgentName ?? adapter.name,
     isUnavailable: () => false,
     markUnavailable: () => {},
+    refreshAuthCooldowns: async () => {},
     reset: () => {},
     validateCredentials: async () => {},
     resolveFallbackChain: () => [],

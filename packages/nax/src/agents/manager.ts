@@ -1,6 +1,7 @@
 /** AgentManager owns agent lifecycle and fallback policy (ADR-012). */
 
 import { EventEmitter } from "node:events";
+import { listStoredProviders, naxCredentialStore, servedAuth } from "@nathapp/nax-agent";
 import { DEFAULT_AGENT_NAME } from "@/config";
 import type { ModelsConfig } from "@/config/schema-types";
 import type { AgentManagerConfig } from "@/config/selectors";
@@ -19,6 +20,7 @@ import { DispatchEventBus, type IDispatchEventBus } from "../runtime/dispatch-ev
 // Nested-barrel alias, not the parent barrel — the parent closes a runtime import cycle (check:import-cycles).
 import { resolveIdleWatchdogSettings } from "../runtime/middleware/idle-watchdog";
 import { knownSessionRole } from "../runtime/session-role";
+import { AuthCoordinator, authModelOf, authStampFor } from "./auth-cooldown";
 import { classifyCompleteException } from "./complete-exception-classifier";
 import { CooldownStore } from "./cooldown-store";
 import { StoryHopBudget } from "./hop-budget";
@@ -65,6 +67,11 @@ export const _agentManagerDeps = {
   sleep: (ms: number, signal?: AbortSignal) => cancellableDelay(ms, signal),
   /** Injectable clock for cooldown expiry tests. */
   now: () => Date.now(),
+  servedAuth,
+  readCredential: async (providerId: string): Promise<void> => {
+    await naxCredentialStore().read(providerId);
+  },
+  listStoredProviders,
 };
 
 export class AgentManager implements IAgentManager {
@@ -89,6 +96,7 @@ export class AgentManager implements IAgentManager {
   private readonly _retryStrategy: RetryStrategy;
   private _models: ModelsConfig | undefined;
   private readonly _fallbackIdentity: FallbackIdentityBindings;
+  private readonly _auth: AuthCoordinator;
   readonly events: AgentManagerEvents;
 
   constructor(config: AgentManagerConfig, registry?: AgentRegistry, opts?: AgentManagerCtorOpts) {
@@ -96,6 +104,7 @@ export class AgentManager implements IAgentManager {
     this._registry = registry;
     this._loggerOverride = opts?.logger;
     this._logger = opts?.logger ?? getSafeLogger() ?? { warn: () => {}, info: () => {} };
+    this._auth = new AuthCoordinator(this._cooldowns, _agentManagerDeps, this._logger);
     this._middleware = opts?.middleware ?? MiddlewareChain.empty();
     this._runId = opts?.runId ?? crypto.randomUUID();
     this._sendPrompt = opts?.sendPrompt;
@@ -143,9 +152,20 @@ export class AgentManager implements IAgentManager {
     return this._cooldowns.isCooling(agent, tier, this._fallbackIdentity.modelId(agent, tier, model));
   }
 
-  markUnavailable(agent: string, reason: AdapterFailure, tier?: string, model?: string): void {
-    this._cooldowns.mark(agent, reason, tier, this._fallbackIdentity.modelId(agent, tier, model));
+  markUnavailable(agent: string, reason: AdapterFailure, tier?: string, model?: string, authModel?: string): void {
+    const modelId = this._fallbackIdentity.modelId(agent, tier, model);
+    this._cooldowns.mark(
+      agent,
+      reason,
+      tier,
+      modelId,
+      authStampFor(agent, reason, authModel ?? modelId, _agentManagerDeps),
+    );
     this._emitter.emit("onAgentUnavailable", { agent, tier, failure: reason });
+  }
+
+  refreshAuthCooldowns(): Promise<void> {
+    return this._auth.refreshAuthCooldowns();
   }
 
   reset(): void {
@@ -190,6 +210,7 @@ export class AgentManager implements IAgentManager {
       runHop: this._runHop,
       dispatchEvents: this._dispatchEvents,
       logger: this._loggerOverride ?? getSafeLogger(),
+      refreshAuthCooldowns: () => this.refreshAuthCooldowns(),
       getDefault: () => this.getDefault(),
       isUnavailable: (agent, tier, model) => this.isUnavailable(agent, tier, model),
       markUnavailable: (agent, failure, tier, model) => this.markUnavailable(agent, failure, tier, model),
@@ -205,6 +226,7 @@ export class AgentManager implements IAgentManager {
     options: ResolvedCompleteOptions,
     primaryAgentOverride?: string,
   ): Promise<AgentCompleteOutcome> {
+    await this.refreshAuthCooldowns();
     const logger = this._loggerOverride ?? getSafeLogger();
     const fallbacks: AgentFallbackRecord[] = [];
     const primaryAgent = primaryAgentOverride ?? this.getDefault();
@@ -334,7 +356,13 @@ export class AgentManager implements IAgentManager {
           return buildCompleteOutcome(result, fallbacks, didSwap, currentTier, currentTarget, dispatchesCompleted);
         }
 
-        this.markUnavailable(currentAgent, result.adapterFailure, currentTier, undefined);
+        this.markUnavailable(
+          currentAgent,
+          result.adapterFailure,
+          currentTier,
+          undefined,
+          authModelOf(hopOptions.modelDef),
+        );
         const next = this.nextCandidate(primaryAgent, depth, currentAgent, currentTier, undefined);
         if (!next) {
           const outcome = await this._resolveExhaustion({
