@@ -3,7 +3,7 @@
   "feature": "auth-relogin-recovery",
   "branchName": "feat/auth-relogin-recovery",
   "createdAt": "2026-10-16T00:00:00.000Z",
-  "updatedAt": "2026-10-16T04:18:30.824Z",
+  "updatedAt": "2026-10-16T04:35:23.649Z",
   "userStories": [
     {
       "id": "US-001",
@@ -89,8 +89,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -102,7 +102,9 @@
         "profileModelTier": "powerful",
         "initialAgent": "native",
         "initialProfileId": "native-sol",
-        "initialModelTier": "powerful"
+        "initialModelTier": "powerful",
+        "initialComplexity": "complex",
+        "modelTier": "powerful"
       },
       "contextFiles": [
         "packages/nax/src/agents/retry/failure-policy.ts",
@@ -134,6 +136,7 @@
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
+      "storyGitRef": "2eccba4ffea40af8b3efb297eed874fe5ab5dc1e",
       "outOfScope": [
         "Hint text, notices and run-end footer (US-003)."
       ]
