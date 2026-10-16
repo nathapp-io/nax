@@ -24,6 +24,20 @@ describe("withTimerSpy", () => {
     clearTimeout(id);
   });
 
+  test("AC-2: an armed timer that never fires and is never cleared is reported in leaked", async () => {
+    let id: ReturnType<typeof setTimeout> | undefined;
+    const { armed, fired, leaked } = await withTimerSpy(async () => {
+      id = setTimeout(() => {}, 60_000);
+      return id;
+    });
+
+    expect(armed).toContain(id);
+    // The fired-timer exclusion must not swallow a timer that never fired.
+    expect(fired.has(id)).toBe(false);
+    expect(leaked).toContain(id);
+    clearTimeout(id);
+  });
+
   test("AC-1: a timer whose handler ran is reported in armed and fired, and is not leaked", async () => {
     let ran = false;
     const { result, armed, fired, leaked } = await withTimerSpy(async () => {
@@ -41,8 +55,9 @@ describe("withTimerSpy", () => {
 
   test("AC-3: a function handler receives the extra arguments passed after the delay", async () => {
     let received: unknown[] = [];
-    await withTimerSpy(async () => {
-      setTimeout(
+    let id: ReturnType<typeof setTimeout> | undefined;
+    const { fired } = await withTimerSpy(async () => {
+      id = setTimeout(
         (...args: unknown[]) => {
           received = args;
         },
@@ -54,6 +69,10 @@ describe("withTimerSpy", () => {
     });
 
     expect(received).toEqual(["alpha", 42]);
+    // The wrapper this story introduces is the only thing that records a timer
+    // as fired, so this pins that it forwards the extra arguments instead of
+    // dropping them on the way to the handler.
+    expect(fired.has(id)).toBe(true);
   });
 
   test("AC-4: a string handler is passed through unwrapped and cleared, so nothing leaks", async () => {
