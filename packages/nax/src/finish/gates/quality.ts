@@ -19,7 +19,7 @@
 import { join } from "node:path";
 import type { QualityCommandSpec } from "@nathapp/nax-agent/internal";
 import { loadConfig, loadPackageOverride, type NaxConfig, PROJECT_NAX_DIR } from "@/config";
-import { runQualityCommand } from "@/quality";
+import { type QualityCommandResult, runQualityCommand } from "@/quality";
 import type { QualityGateResult } from "../types";
 
 export const _qualityGateDeps = {
@@ -38,10 +38,80 @@ export const _qualityGateDeps = {
  * inside the agent's srt sandbox, so the gate that judges it must live outside
  * one. It is gated by its own `e2eSetup` bootstrap, run immediately before it.
  */
-const GATE_ORDER = ["build", "typecheck", "lint", "test", "e2e"] as const;
+export const GATE_ORDER = ["build", "typecheck", "lint", "test", "e2e"] as const;
 
 /** Default timeout for one gate command, mirroring the flow original. */
 export const DEFAULT_GATE_TIMEOUT_MS = 900_000;
+
+/** Default line count for `gateOutputTail`. */
+export const DEFAULT_GATE_TAIL_LINES = 40;
+
+/** How one gate ended. */
+export type GateRunStatus = "passed" | "failed" | "not-run" | "timed-out";
+
+/**
+ * What one gate actually did, in a form a caller can report without parsing
+ * the combined `output` text of `QualityGateResult` — where a 127 ("the shell
+ * could not run the command at all") and a real failure both sit in `failing`.
+ */
+export interface GateRunRecord {
+  /** The GateCommand name: "build", "test", ... */
+  readonly name: string;
+  /** Absolute directory the command was spawned from. */
+  readonly cwd: string;
+  readonly status: GateRunStatus;
+  /**
+   * The exit code that decided the status: -1 for a single command's timeout or
+   * spawn error; for a list-valued command, the first non-zero step's code.
+   */
+  readonly exitCode: number;
+  readonly durationMs: number;
+  /** Present, as "setup", only when the gate's setup bootstrap failed and the command never ran. */
+  readonly failedPhase?: "setup";
+  /** The raw output of whichever run decided the status (setup or command). */
+  readonly output: string;
+}
+
+/**
+ * The status for one `QualityCommandResult`, in decision order: a timeout wins
+ * over any exit code (a killed process reports -1, which would otherwise read
+ * as "never ran"); then success; then the exit codes that mean the shell could
+ * not find or execute the command at all — 127/126 from the shell, -1 from a
+ * spawn error — which is "not-run", the third state a caller could previously
+ * only recover by parsing the combined output text (#2569); everything else
+ * failed.
+ */
+export function classifyGateExit(res: { readonly exitCode: number; readonly timedOut: boolean }): GateRunStatus {
+  if (res.timedOut) return "timed-out";
+  if (res.exitCode === 0) return "passed";
+  if (res.exitCode === 127 || res.exitCode === 126 || res.exitCode === -1) return "not-run";
+  return "failed";
+}
+
+/**
+ * The last `lines` lines of `output`, with trailing newlines removed first and
+ * joined with "\n" — "" when nothing is left. The caller decides how many lines
+ * a report can afford (`src/cli/gates.ts`); `40` matches the workflow's own
+ * red-gate excerpt.
+ */
+export function gateOutputTail(output: string, lines: number = DEFAULT_GATE_TAIL_LINES): string {
+  const all = output.replace(/\n+$/, "").split("\n");
+  return all.slice(Math.max(0, all.length - Math.max(0, lines))).join("\n");
+}
+
+/** The record for one gate, from whichever run decided its status. */
+function gateRecord(gate: GateCommand, res: QualityCommandResult, failedPhase?: "setup"): GateRunRecord {
+  return {
+    name: gate.name,
+    cwd: gate.cwd,
+    status: classifyGateExit(res),
+    exitCode: res.exitCode,
+    durationMs: res.durationMs,
+    // Spread, not `failedPhase: undefined`: AC-15 pins the key's absence.
+    ...(failedPhase === undefined ? {} : { failedPhase }),
+    output: res.output,
+  };
+}
 
 export interface GateCommand {
   /** `<gate>` at the root, `<gate>@<packageDir>` for a package overlay. */
@@ -146,12 +216,13 @@ export async function resolveGateCommands(repoRoot: string, packageDirs: string[
 
 /**
  * Run a gate's `setup` when it has one, under the gate's own cwd and timeout.
- * Returns the failure chunk to report, or `null` when there is no setup or it
- * passed. A setup that never came up fails the gate untouched — the command is
- * never run, because a journey run against a half-started stack reports noise
- * rather than the real failure.
+ * Returns the setup's `QualityCommandResult` when the setup ran and failed —
+ * the caller reports the failure and builds the gate's record from it — or
+ * `null` when there is no setup or it passed. A setup that never came up fails
+ * the gate untouched: the command is never run, because a journey run against a
+ * half-started stack reports noise rather than the real failure.
  */
-async function runGateSetup(gate: GateCommand, timeoutMs: number): Promise<string | null> {
+async function runGateSetup(gate: GateCommand, timeoutMs: number): Promise<QualityCommandResult | null> {
   if (gate.setup === undefined) return null;
   const res = await _qualityGateDeps.run({
     commandName: `${gate.name}:setup`,
@@ -159,7 +230,7 @@ async function runGateSetup(gate: GateCommand, timeoutMs: number): Promise<strin
     workdir: gate.cwd,
     timeoutMs,
   });
-  return res.exitCode === 0 ? null : `[${gate.name}] exit=${res.exitCode}\nsetup failed:\n${res.output}`;
+  return res.exitCode === 0 ? null : res;
 }
 
 /**
@@ -171,11 +242,17 @@ async function runGateSetup(gate: GateCommand, timeoutMs: number): Promise<strin
  * `passed: false, ran: []`. An LLM fix step cannot invent the repo's build
  * commands, so "nothing ran" must never read as "everything passed" —
  * `routeQualityGates` (../route) turns this into an escalation.
+ *
+ * `opts.onGate`, when given, receives one `GateRunRecord` per gate,
+ * synchronously, after that gate has finished and before the next one starts.
+ * It is an observer: the returned `QualityGateResult` is the same with or
+ * without it, and an exception it throws propagates out of here (stopping the
+ * remaining gates) rather than being read as a gate failure.
  */
 export async function runQualityGates(
   repoRoot: string,
   commands: GateCommand[],
-  opts: { timeoutMs?: number } = {},
+  opts: { timeoutMs?: number; onGate?: (record: GateRunRecord) => void } = {},
 ): Promise<QualityGateResult> {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_GATE_TIMEOUT_MS;
   const ran: string[] = [];
@@ -187,8 +264,9 @@ export async function runQualityGates(
 
     const setupFailure = await runGateSetup(gate, timeoutMs);
     if (setupFailure !== null) {
-      chunks.push(setupFailure);
+      chunks.push(`[${gate.name}] exit=${setupFailure.exitCode}\nsetup failed:\n${setupFailure.output}`);
       failing.push(gate.name);
+      opts.onGate?.(gateRecord(gate, setupFailure, "setup"));
       continue;
     }
 
@@ -200,6 +278,7 @@ export async function runQualityGates(
     });
     chunks.push(`[${gate.name}] exit=${res.exitCode}\n${res.output}`);
     if (res.exitCode !== 0) failing.push(gate.name);
+    opts.onGate?.(gateRecord(gate, res));
   }
 
   if (ran.length === 0) {
