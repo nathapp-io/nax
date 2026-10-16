@@ -190,4 +190,7 @@ None. The feature adds no externally visible symbol. `MIGRATE_NO_MODE` is a new 
 
 ### US-003
 
-No behavioural acceptance criteria: this story only deletes code. Verification note: `bun run typecheck` and `bun run check:all` in `packages/nax` pass. The compiler rejects any remaining import of a removed symbol, and the complexity ratchet rejects a stale `src/commands/migrate.ts` baseline row.
+1. [unit] Importing `@/commands` at runtime yields a module that exports `migrateCommand` as a function, and has no `autoMigrateGeneratedContent`, `detectGeneratedContent` or `partitionTrackedCandidates` export.
+2. [unit] Importing `@/commands/migrate` at runtime yields a module with no `_gitDeps`, `detectGeneratedContent`, `partitionTrackedCandidates` or `autoMigrateGeneratedContent` export.
+
+Verification note: `bun run typecheck` and `bun run check:all` in `packages/nax` pass. The compiler rejects any remaining import of a removed symbol, and the complexity ratchet rejects a stale `src/commands/migrate.ts` baseline row.
