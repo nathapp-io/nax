@@ -14,14 +14,19 @@
  */
 
 import type { AdapterFailure } from "@/context/engine";
+import type { AuthCooldownStamp } from "./auth-cooldown";
 import { providerOf } from "./cooldown-provider";
 import { failurePolicyFor, resolveCooldownExpiry } from "./retry/failure-policy";
 
 /** `"run"` means no expiry — cleared only by a story-boundary sweep or `clear()`. */
 interface CooldownEntry {
+  readonly auth?: AuthCooldownStamp;
   readonly failure: AdapterFailure;
   readonly expiresAt: number | "run";
 }
+
+/** The one spelling of the provider slot's namespace; the key and its reader must agree. */
+const PROVIDER_SLOT = "::provider::";
 
 export class CooldownStore {
   private readonly _entries = new Map<string, CooldownEntry>();
@@ -44,22 +49,45 @@ export class CooldownStore {
    * tier/agent key otherwise, so an unresolvable model degrades to the
    * pre-existing tier-scoped identity, never to bare-agent.
    */
-  mark(agent: string, failure: AdapterFailure, tier?: string, modelId?: string): void {
+  mark(agent: string, failure: AdapterFailure, tier?: string, modelId?: string, auth?: AuthCooldownStamp): void {
     const expiresAt = resolveCooldownExpiry(failure, this._now());
     if (expiresAt === null) return;
-    // The policy decides the SCOPE; this only chooses the key that expresses it.
-    // An agent-scoped fault (bad credentials) is shared by every model the agent
-    // serves, so it is keyed on the bare agent name and `_live` finds it from any lookup.
+    // A native auth stamp narrows credential retirement to its provider.
+    // Otherwise the policy decides scope, preserving ACP and other failure keys.
+    // An agent-scoped fault uses the bare agent name, found from any lookup.
     // A provider-scoped fault (exhausted plan quota) parks every model of that
     // provider; with no provider in the model id it degrades to the bare agent.
     const scope = failurePolicyFor(failure.outcome).cooldownScope;
-    const key =
-      scope === "agent"
+    const key = auth
+      ? providerSlotKey(agent, auth.providerId)
+      : scope === "agent"
         ? agent
         : scope === "provider"
           ? providerKey(agent, modelId)
           : identityKey(agent, tier, modelId);
-    this._entries.set(key, { failure, expiresAt });
+    // One slot per provider, shared by the two marks that key on it: an auth
+    // stamp and a provider-scoped fault (`fail-quota`). The key is deliberately
+    // the same string — `_live`'s narrowed probe finds the provider's cooldown
+    // by it — so an unstamped mark must not erase a stamp it lands on. Were it
+    // to, `authCooldowns()` would stop reporting that provider and a re-login
+    // could never release it: the run-long park the auth release path exists to
+    // undo would survive. The incoming failure and its expiry still win, so the
+    // slot always describes the newest fault.
+    const stamped = auth ?? this._at(key)?.auth;
+    this._entries.set(key, { failure, expiresAt, ...(stamped ? { auth: stamped } : {}) });
+  }
+
+  authCooldowns(): readonly { key: string; agent: string; auth: AuthCooldownStamp }[] {
+    const entries: { key: string; agent: string; auth: AuthCooldownStamp }[] = [];
+    for (const key of this._entries.keys()) {
+      const entry = this._at(key);
+      if (entry?.auth) entries.push({ key, agent: key.slice(0, key.indexOf(PROVIDER_SLOT)), auth: entry.auth });
+    }
+    return entries;
+  }
+
+  release(key: string): boolean {
+    return this._entries.delete(key);
   }
 
   isCooling(agent: string, tier?: string, modelId?: string): boolean {
@@ -101,7 +129,11 @@ export class CooldownStore {
   private _live(agent: string, tier?: string, modelId?: string): CooldownEntry | undefined {
     const narrow = identityKey(agent, tier, modelId);
     const own = this._at(narrow);
-    if (own || narrow === agent) return own;
+    if (own) return own;
+    if (narrow === agent) {
+      const stamped = this.authCooldowns().find((entry) => entry.agent === agent);
+      return stamped ? this._at(stamped.key) : undefined;
+    }
     const provider = providerKey(agent, modelId);
     const byProvider = provider === agent ? undefined : this._at(provider);
     if (byProvider) return byProvider;
@@ -133,8 +165,19 @@ function identityKey(agent: string, tier?: string, modelId?: string): string {
   return tier ? `${agent}::${tier}` : agent;
 }
 
+/**
+ * The provider's slot, shared on purpose by the two marks that key on it: an
+ * auth stamp (`AuthCooldownStamp.providerId`) and a provider-scoped fault
+ * (`fail-quota`, via `providerKey`). One slot per provider means one release
+ * frees every tier that reaches it, and `_live`'s narrowed probe finds it by
+ * this exact key, so the two spellings must not drift apart.
+ */
+function providerSlotKey(agent: string, providerId: string): string {
+  return `${agent}${PROVIDER_SLOT}${providerId}`;
+}
+
 /** Provider-scoped cooldown key; the bare agent when the model id names no provider. */
 function providerKey(agent: string, modelId?: string): string {
   const provider = providerOf(modelId);
-  return provider ? `${agent}::provider::${provider}` : agent;
+  return provider ? providerSlotKey(agent, provider) : agent;
 }

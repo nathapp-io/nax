@@ -8,6 +8,7 @@ export {
 } from "./config-read-gate";
 export type { CostEstimate, ModelCostRates, TokenUsage, TokenUsageWithConfidence } from "./cost";
 export { formatCostWithConfidence, resolvePricingSource } from "./cost";
+export { resolveStartAgent } from "./hop-budget";
 export { _agentManagerDeps, AgentManager } from "./manager";
 export type {
   AgentCompleteOutcome,

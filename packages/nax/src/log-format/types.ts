@@ -37,6 +37,7 @@ export const EMOJI = {
  * Run summary statistics
  */
 export interface RunSummary {
+  authRelogins?: readonly string[];
   /** Total stories in run */
   total: number;
   /** Stories that passed */

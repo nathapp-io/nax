@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { _agentOutputEnvDeps } from "#src/internal/agent-output-env";
+import type { RunArgvOptions } from "#src/internal/argv-exec";
 import { _launcherDeps, createCommandLauncher } from "#src/sandbox/index";
 import { createRunCommandTool } from "#src/tools/index";
 import { _runCommandToolDeps } from "#src/tools/run-command";
@@ -19,6 +20,8 @@ const ctx = () => ({ root, resolvedPaths: [], maxBytes: 40_000, maxFileBytes: 2_
 const policyFor = async (r: string) => ({ writeRoots: [r], denyWrite: [], denyRead: [], network: {} });
 
 describe("Exec through the launcher", () => {
+  withDepsRestore(_launcherDeps, ["runArgv"]);
+
   test("Review Focus 5: package target runs in the package dir, roots derive from ctx.root, audit carries the record", async () => {
     const backend = makeFakeSandboxBackend();
     const launcher = createCommandLauncher({
@@ -26,6 +29,19 @@ describe("Exec through the launcher", () => {
       backend,
       policyFor: async (r) => ({ writeRoots: [r], denyWrite: [], denyRead: [], network: {} }),
     });
+    // B1: the spawn is stubbed, and every assertion below is about the
+    // launcher's wiring — the cwd it hands over, the policy roots, and the
+    // wrapped argv it records — never about the child's output. Running a real
+    // `sh` here gave those assertions nothing to read and, when the host was
+    // loaded, could stall on it: the `runArgv` deadline is 300s, so the whole
+    // suite sat on this one test until bun's own 60s timeout failed the package
+    // gate. The stub still drives the real wrapping path, and records the
+    // request so the wrapped argv is asserted end to end.
+    const seen: RunArgvOptions[] = [];
+    _launcherDeps.runArgv = async (o) => {
+      seen.push(o);
+      return { exitCode: 0, stdout: "1.4.3\n", stderr: "", timedOut: false };
+    };
     const result = await runExecBranch({ argv: ["bun", "--version"], target: "package" }, ctx(), {
       exec: {
         repoRoot: root,
@@ -43,6 +59,9 @@ describe("Exec through the launcher", () => {
       wrapped: true,
       argv: ["/bin/sh", "-c", "'bun' '--version'"],
     });
+    // The wrapped argv the backend built is the argv that was handed to the spawn.
+    expect(seen[0]?.argv).toEqual(["/bin/sh", "-c", "'bun' '--version'"]);
+    expect(seen[0]?.cwd).toBe(join(root, "packages", "app"));
   });
 });
 

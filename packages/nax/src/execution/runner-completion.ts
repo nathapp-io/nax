@@ -27,6 +27,7 @@ import { autoCommitIfDirty } from "@/utils/git";
 import type { WorkflowFeatureInput, WorkflowFeatureResult } from "@/workflow";
 import { repairRunState } from "../runstate";
 import { recordAdvisorSummary } from "./advisor-summary";
+import { reportAuthRelogins } from "./auth-relogin-report";
 import { stopHeartbeat, writeExitSummary } from "./crash-recovery";
 import type { DeferredReviewResult } from "./deferred-review";
 import type { ExitReason } from "./executor-types";
@@ -402,6 +403,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
   let durationMs = completionResult.durationMs;
 
   const { advisoryFindings, mutationSummaries, endReport } = await finishRun(options, completionResult, logger);
+  const authRelogins = reportAuthRelogins(options.agentManager, logger);
   const { workflowPassed } = endReport;
   durationMs = endReport.durationMs;
 
@@ -437,6 +439,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
       completedAt: runCompletedAt,
       formatterMode: options.formatterMode,
       ...endReport.footer,
+      authRelogins,
     });
   }
 

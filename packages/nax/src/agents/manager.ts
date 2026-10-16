@@ -1,6 +1,7 @@
 /** AgentManager owns agent lifecycle and fallback policy (ADR-012). */
 
 import { EventEmitter } from "node:events";
+import { listStoredProviders, naxCredentialStore, servedAuth } from "@nathapp/nax-agent";
 import { DEFAULT_AGENT_NAME } from "@/config";
 import type { ModelsConfig } from "@/config/schema-types";
 import type { AgentManagerConfig } from "@/config/selectors";
@@ -19,19 +20,18 @@ import { DispatchEventBus, type IDispatchEventBus } from "../runtime/dispatch-ev
 // Nested-barrel alias, not the parent barrel — the parent closes a runtime import cycle (check:import-cycles).
 import { resolveIdleWatchdogSettings } from "../runtime/middleware/idle-watchdog";
 import { knownSessionRole } from "../runtime/session-role";
+import { AuthCoordinator, authModelOf, authStampFor } from "./auth-cooldown";
+import type { AuthReloginNotice } from "./auth-relogin";
 import { classifyCompleteException } from "./complete-exception-classifier";
 import { CooldownStore } from "./cooldown-store";
 import { StoryHopBudget } from "./hop-budget";
+import { completeAsWithFallback } from "./manager-complete-as";
 import {
-  buildCompleteCallPreamble,
-  buildCompleteEvent,
   buildCompleteOutcome,
   buildDispatchErrorEvent,
   buildFallbackRecord,
   buildSessionTurnEvent,
-  completeResultProvenance,
   dispatchCompleteHop,
-  resolveFinalDispatch,
   resolveHopCompleteOptions,
   validateAgentCredentials,
 } from "./manager-dispatch";
@@ -68,6 +68,11 @@ export const _agentManagerDeps = {
   sleep: (ms: number, signal?: AbortSignal) => cancellableDelay(ms, signal),
   /** Injectable clock for cooldown expiry tests. */
   now: () => Date.now(),
+  servedAuth,
+  readCredential: async (providerId: string): Promise<void> => {
+    await naxCredentialStore().read(providerId);
+  },
+  listStoredProviders,
 };
 
 export class AgentManager implements IAgentManager {
@@ -92,6 +97,7 @@ export class AgentManager implements IAgentManager {
   private readonly _retryStrategy: RetryStrategy;
   private _models: ModelsConfig | undefined;
   private readonly _fallbackIdentity: FallbackIdentityBindings;
+  private readonly _auth: AuthCoordinator;
   readonly events: AgentManagerEvents;
 
   constructor(config: AgentManagerConfig, registry?: AgentRegistry, opts?: AgentManagerCtorOpts) {
@@ -99,6 +105,7 @@ export class AgentManager implements IAgentManager {
     this._registry = registry;
     this._loggerOverride = opts?.logger;
     this._logger = opts?.logger ?? getSafeLogger() ?? { warn: () => {}, info: () => {} };
+    this._auth = new AuthCoordinator(this._cooldowns, _agentManagerDeps, this._logger);
     this._middleware = opts?.middleware ?? MiddlewareChain.empty();
     this._runId = opts?.runId ?? crypto.randomUUID();
     this._sendPrompt = opts?.sendPrompt;
@@ -146,12 +153,42 @@ export class AgentManager implements IAgentManager {
     return this._cooldowns.isCooling(agent, tier, this._fallbackIdentity.modelId(agent, tier, model));
   }
 
-  markUnavailable(agent: string, reason: AdapterFailure, tier?: string, model?: string): void {
-    this._cooldowns.mark(agent, reason, tier, this._fallbackIdentity.modelId(agent, tier, model));
+  markUnavailable(agent: string, reason: AdapterFailure, tier?: string, model?: string, authModel?: string): void {
+    const modelId = this._fallbackIdentity.modelId(agent, tier, model);
+    this._cooldowns.mark(
+      agent,
+      reason,
+      tier,
+      modelId,
+      authStampFor(agent, reason, authModel ?? modelId, _agentManagerDeps),
+    );
     this._emitter.emit("onAgentUnavailable", { agent, tier, failure: reason });
   }
 
+  refreshAuthCooldowns(): Promise<void> {
+    return this._auth.refreshAuthCooldowns();
+  }
+
+  reportAuthFailure(
+    agent: string,
+    failure: AdapterFailure | undefined,
+    tier?: string,
+    model?: string,
+    authModel?: string,
+  ): Promise<void> {
+    // `authModel` wins as it does in `markUnavailable`, so the notice and the stamp name one provider.
+    return this._auth.reportAuthFailure(
+      agent,
+      failure,
+      authModel ?? this._fallbackIdentity.modelId(agent, tier, model),
+    );
+  }
+  authRelogins(): readonly AuthReloginNotice[] {
+    return this._auth.authRelogins();
+  }
+
   reset(): void {
+    this._auth.clear();
     this._cooldowns.clear();
     this._prunedFallback.clear();
     this._budget.clear();
@@ -193,6 +230,8 @@ export class AgentManager implements IAgentManager {
       runHop: this._runHop,
       dispatchEvents: this._dispatchEvents,
       logger: this._loggerOverride ?? getSafeLogger(),
+      refreshAuthCooldowns: () => this.refreshAuthCooldowns(),
+      reportAuthFailure: this.reportAuthFailure.bind(this),
       getDefault: () => this.getDefault(),
       isUnavailable: (agent, tier, model) => this.isUnavailable(agent, tier, model),
       markUnavailable: (agent, failure, tier, model) => this.markUnavailable(agent, failure, tier, model),
@@ -208,6 +247,7 @@ export class AgentManager implements IAgentManager {
     options: ResolvedCompleteOptions,
     primaryAgentOverride?: string,
   ): Promise<AgentCompleteOutcome> {
+    await this.refreshAuthCooldowns();
     const logger = this._loggerOverride ?? getSafeLogger();
     const fallbacks: AgentFallbackRecord[] = [];
     const primaryAgent = primaryAgentOverride ?? this.getDefault();
@@ -226,13 +266,8 @@ export class AgentManager implements IAgentManager {
     const _agentChain: string[] = [primaryAgent];
     let _finalStatus: "ok" | "exhausted" | "cancelled" | "error" = "error";
     let _totalCostUsd = 0;
-    // US-001: count of hops that returned a turn. Mirrors runWithFallback's
-    // semantics: a successful `adapter.complete()` return counts (even empty,
-    // because `sendWithFileOutput` synthesises a fail-stale failure for that
-    // case and empty IS a turn the adapter returned); a throw does NOT count
-    // (no turn was returned — analog of buildHopCallback's catch path setting
-    // `dispatched: false`). The AGENT_NOT_FOUND throw above this loop also
-    // doesn't count: no adapter was reached.
+    // Count returned turns (including empty output), not throws or missing adapters.
+    // Mirrors runWithFallback's `dispatched` flag semantics.
     let dispatchesCompleted = 0;
 
     try {
@@ -306,6 +341,8 @@ export class AgentManager implements IAgentManager {
           continue;
         }
 
+        const authModel = authModelOf(hopOptions.modelDef);
+        await this.reportAuthFailure(currentAgent, result.adapterFailure, currentTier, undefined, authModel);
         const dec = decideSwap(result.adapterFailure, hopsSoFar, this._config.agent?.fallback);
         if (!dec.swap) {
           logSwapDecline(logger, dec.reason, {
@@ -337,7 +374,7 @@ export class AgentManager implements IAgentManager {
           return buildCompleteOutcome(result, fallbacks, didSwap, currentTier, currentTarget, dispatchesCompleted);
         }
 
-        this.markUnavailable(currentAgent, result.adapterFailure, currentTier, undefined);
+        this.markUnavailable(currentAgent, result.adapterFailure, currentTier, undefined, authModel);
         const next = this.nextCandidate(primaryAgent, depth, currentAgent, currentTier, undefined);
         if (!next) {
           const outcome = await this._resolveExhaustion({
@@ -515,54 +552,16 @@ export class AgentManager implements IAgentManager {
     prompt: string,
     options: CompleteOptions,
   ): Promise<AgentCompleteOutcome> {
-    const stage = options.pipelineStage ?? "complete";
-    const { resolvedPermissions, augmented, sessionName } = buildCompleteCallPreamble({
+    return completeAsWithFallback(
+      {
+        config: this._config,
+        dispatchEvents: this._dispatchEvents,
+        completeWithFallback: this.completeWithFallback.bind(this),
+      },
+      agentName,
+      prompt,
       options,
-      config: this._config,
-      stage,
-    });
-    const start = Date.now();
-    try {
-      const outcome = await this.completeWithFallback(prompt, augmented, agentName);
-      const event = buildCompleteEvent({
-        sessionName,
-        prompt,
-        response: outcome.result.output,
-        ...resolveFinalDispatch(augmented, agentName, outcome),
-        stage,
-        resolvedPermissions,
-        tokenUsage: outcome.result.tokenUsage,
-        estimatedCostUsd: outcome.result.estimatedCostUsd,
-        exactCostUsd: outcome.result.exactCostUsd,
-        profile: this._config.profile,
-        startedAt: start,
-        sessionId: outcome.result.sessionId,
-        ...completeResultProvenance(outcome.result),
-      });
-      this._dispatchEvents.emitDispatch(event);
-      return outcome;
-    } catch (err) {
-      const errorContext = err instanceof NaxError ? err.context : undefined;
-      const dispatch = errorContext as
-        | { agentName?: string; modelDef?: ResolvedCompleteOptions["modelDef"]; modelTier?: string }
-        | undefined;
-      const errEvent = buildDispatchErrorEvent({
-        origin: "completeAs",
-        agentName: dispatch?.agentName ?? agentName,
-        stage,
-        error: err,
-        prompt,
-        resolvedPermissions,
-        startedAt: start,
-        dispatchOptions: {
-          ...options,
-          ...(dispatch?.modelDef !== undefined ? { modelDef: dispatch.modelDef } : {}),
-          ...(dispatch?.modelTier !== undefined ? { modelTier: dispatch.modelTier } : {}),
-        },
-      });
-      this._dispatchEvents.emitDispatchError(errEvent);
-      throw err;
-    }
+    );
   }
 
   async completeAs(agentName: string, prompt: string, options: CompleteOptions): Promise<CompleteResult> {

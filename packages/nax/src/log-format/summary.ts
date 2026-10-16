@@ -76,6 +76,10 @@ export function formatRunSummary(summary: RunSummary, options: FormatterOptions)
   }
 
   lines.push(`  ${c.gray("Success:")}  ${statusColor(c.bold(`${successRate}%`))}`);
+  if (summary.authRelogins?.length) {
+    lines.push("  Re-login needed:");
+    for (const hint of summary.authRelogins) lines.push(`    ${hint}`);
+  }
   lines.push(c.blue("─".repeat(60)));
   const split = durationSplit(summary);
   lines.push(`  ${EMOJI.duration} Duration: ${c.bold(formatDuration(summary.durationMs))}${split}`);

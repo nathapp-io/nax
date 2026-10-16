@@ -28,6 +28,13 @@ export interface RunFallbackInput {
   readonly runHop: SessionRunHopFn | undefined;
   readonly dispatchEvents: IDispatchEventBus;
   readonly logger: LoggerLike | null | undefined;
+  readonly refreshAuthCooldowns: () => Promise<void>;
+  readonly reportAuthFailure: (
+    agent: string,
+    failure: AdapterFailure | undefined,
+    tier?: string,
+    model?: string,
+  ) => Promise<void>;
   readonly getDefault: () => string;
   readonly isUnavailable: (agent: string, tier?: string, model?: string) => boolean;
   readonly markUnavailable: (agent: string, failure: AdapterFailure, tier?: string, model?: string) => void;
@@ -48,6 +55,7 @@ export interface RunFallbackInput {
 }
 
 export async function runWithFallback(input: RunFallbackInput): Promise<AgentRunOutcome> {
+  await input.refreshAuthCooldowns();
   const { request, config, budget, logger } = input;
   const fallbacks: AgentFallbackRecord[] = [];
   const primaryAgent = input.primaryAgentOverride ?? input.getDefault();
@@ -162,6 +170,7 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
         currentHopKind = retry.kind;
         continue;
       }
+      await input.reportAuthFailure(currentAgent, result.adapterFailure, currentHopKind.tier, dispatchedModel);
       if (request.noFallback) {
         finalStatus = "error";
         return {
