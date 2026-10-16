@@ -17,13 +17,7 @@ export {
 export { _doctorDeps, doctorCommand } from "./doctor";
 export { type LogsOptions, logsCommand } from "./logs";
 export { type FollowLogsDeps, followLogs } from "./logs-formatter";
-export type { MigrateCandidate, MigrateOptions } from "./migrate";
-export {
-  autoMigrateGeneratedContent,
-  detectGeneratedContent,
-  migrateCommand,
-  partitionTrackedCandidates,
-} from "./migrate";
+export { type MigrateOptions, migrateCommand } from "./migrate";
 export { type PrecheckOptions, precheckCommand } from "./precheck";
 export {
   _replayCmdDeps,

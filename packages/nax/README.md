@@ -108,7 +108,7 @@ See [docs/](docs/) for full guides on configuration, test strategies, monorepo s
 | [`nax curator`](docs/guides/cli-reference.md#nax-curator-status) | Inspect, commit, or garbage-collect curator proposals |
 | `nax routing calibrate` | Propose complexity→tier mapping adjustments from run history |
 | `nax plugins list` | List installed plugins |
-| `nax migrate` | Move generated content from `.nax/` to the output directory (`~/.nax/<project>/`) |
+| `nax migrate` | Recover a project-name collision: `--reclaim <name>` or `--merge <name>` |
 
 For full flag details, see the [CLI Reference](docs/guides/cli-reference.md).
 

@@ -1742,7 +1742,7 @@ Thin wrappers and shared resolution utilities that sit between `bin/nax.ts` and 
 - `precheckCommand(opts)` — wires `src/precheck/` (§46) to the CLI
 - `runsCommand(opts)` — run history listing
 - `unlockCommand(opts)` — releases stale locks (checkout lock and `<outputDir>/features/<feature>/nax.lock`; `-f` scopes to one feature, `--force` skips the liveness check)
-- `migrateCommand(opts)` / `detectGeneratedContent()` — migrates legacy PRD/config formats; `--reclaim` / `--merge` resolve project-identity collisions (§30)
+- `migrateCommand(opts)` — `--reclaim` / `--merge` project-identity collision recovery only (§30)
 - `registerReplayCommand()` / `runReplay()` — `nax replay` (reconstruct a past run from `src/replay/`)
 - `registerResumeCommand()` / `runResume()` — `nax resume`
 

@@ -63,10 +63,9 @@ nax setup --dry-run
 
 ### `nax migrate`
 
-Move generated content (runs, metrics, prompt audits, …) out of a legacy `.nax/` into the output directory (`~/.nax/<project>/`, or `outputDir`), and resolve project-name collisions.
+Recover a project-name collision: `--reclaim <name>` archives `~/.nax/<name>/` so the name is free again, and `--merge <name>` repoints that name's stored identity at the current workdir. With neither flag the command refuses.
 
 ```bash
-nax migrate --dry-run
 nax migrate --reclaim my-project   # Archive ~/.nax/my-project/ to free the name
 nax migrate --merge my-project     # Point the identity for my-project at this workdir
 ```
@@ -74,7 +73,6 @@ nax migrate --merge my-project     # Point the identity for my-project at this w
 | Flag | Description |
 |:-----|:------------|
 | `-d, --dir <path>` | Project directory |
-| `--dry-run` | Preview moves without touching the filesystem |
 | `--reclaim <name>` | Archive `~/.nax/<name>/` to free the project name |
 | `--merge <name>` | Rewrite the identity for `<name>` to point to this workdir |
 
