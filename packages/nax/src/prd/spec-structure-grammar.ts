@@ -15,11 +15,13 @@
  *
  * `Workdir` is read from declaring lines, their prose, and the `### Context
  * Files` / `### Creates` subsections, in two forms: `Workdir:` followed by a
- * path, or `Workdir` followed by a backticked one. `Depends on` is read from
+ * path, or `Workdir` followed by a backticked one. A dependency is read from
  * declaring lines and their prose ONLY — `### Modifies`, `### Seams`,
  * `### Context Files` and `### Creates` are free text about other things, and
  * their reasons routinely mention another story ("the count test depends on
- * US-003's registration").
+ * US-003's registration"). It is stated either as the `Depends on` phrase or as
+ * the `Dependencies:` label, and both forms carry the same value syntax (ids
+ * separated by `,` / `;` / `and`, or `none`).
  *
  * Pure and deterministic: no I/O, no PRD, no LLM.
  */
@@ -129,6 +131,20 @@ function workdirStatements(line: string): string[] {
 
 const NO_DEPENDENCIES = /(?<![A-Za-z0-9])no\s+dependencies(?![A-Za-z0-9])/i;
 const DEPENDS_ON_MENTION = /(?<![A-Za-z0-9])depends\s+on(?![A-Za-z0-9])/gi;
+/**
+ * `Dependencies` — the label form of the same statement (`Dependencies: US-001`,
+ * `**Dependencies:** US-001`, `**Dependencies**: none`). The keyword alone is
+ * not enough: a `### Dependencies` heading and the words "no dependencies" both
+ * carry it without stating anything.
+ */
+const DEPENDENCIES_MENTION = /(?<![A-Za-z0-9])dependencies(?![A-Za-z0-9])/gi;
+/**
+ * The colon that makes a `Dependencies` mention a label — past the emphasis and
+ * whitespace authors put between the word and it (`**Dependencies:**`). Only
+ * `*` and `_` are skipped: a quoted `"dependencies": [...]` from a documented
+ * PRD shape is data, not a statement.
+ */
+const DEPENDENCIES_LABEL = /^[\s*_]*:/;
 /** `none` after the label, past optional `:`, `*`, `_`, `(` and whitespace. */
 const DEPENDS_ON_NONE = /^[\s:*_(]*none\b/i;
 /** One id, ending on a whole-token boundary so `US-003's` is not read as a list member. */
@@ -157,15 +173,48 @@ function readDependencyValue(rest: string): "none" | string[] | null {
   return ids.length > 0 ? ids : null;
 }
 
-/** The dependency statements one line carries. */
+/** One dependency mention on a line: where it starts, what it says, and whether it needs a colon. */
+interface DependencyMention {
+  readonly index: number;
+  readonly text: string;
+  /** A `Dependencies` label: the mention only states something when a colon follows it. */
+  readonly label: boolean;
+}
+
+/** Every dependency mention a line carries, in the order it writes them. */
+function dependencyMentions(line: string): DependencyMention[] {
+  const mentions: DependencyMention[] = [];
+  for (const [pattern, label] of [
+    [DEPENDS_ON_MENTION, false],
+    [DEPENDENCIES_MENTION, true],
+  ] as const) {
+    pattern.lastIndex = 0;
+    let match = pattern.exec(line);
+    while (match !== null) {
+      mentions.push({ index: match.index, text: match[0], label });
+      match = pattern.exec(line);
+    }
+  }
+  return mentions.sort((a, b) => a.index - b.index);
+}
+
+/**
+ * The dependency statements one line carries.
+ *
+ * Two phrasings state the same thing — the `depends on` phrase and the
+ * `Dependencies:` label — and both hand the text after them to the SAME reader,
+ * so `Dependencies: US-001.` and `depends on US-001` cannot drift apart on what
+ * an id list, a separator or `none` is. A label whose value is neither (a path,
+ * a package name, prose) states nothing: the story's dependencies are then
+ * whatever else it states.
+ */
 function dependencyStatements(line: string): Array<"none" | string[]> {
   const stated: Array<"none" | string[]> = [];
-  DEPENDS_ON_MENTION.lastIndex = 0;
-  let mention = DEPENDS_ON_MENTION.exec(line);
-  while (mention !== null) {
-    const value = readDependencyValue(line.slice(mention.index + mention[0].length));
+  for (const mention of dependencyMentions(line)) {
+    const rest = line.slice(mention.index + mention.text.length);
+    if (mention.label && !DEPENDENCIES_LABEL.test(rest)) continue;
+    const value = readDependencyValue(rest);
     if (value !== null) stated.push(value);
-    mention = DEPENDS_ON_MENTION.exec(line);
   }
   return stated;
 }

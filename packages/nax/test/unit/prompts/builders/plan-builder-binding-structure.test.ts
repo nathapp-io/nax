@@ -32,6 +32,17 @@ const SPEC_WITH_STORIES = `# Checkout flow
 2. **US-002: API** — \`Workdir: apps/api\` — depends on US-001
 `;
 
+/** US-005: a spec that states the dependency with a `Dependencies:` label instead of `depends on`. */
+const SPEC_WITH_DEPENDENCIES_LABEL = `# Checkout flow
+
+## Stories
+
+1. **US-001: Core** — \`Workdir: packages/core\` — no dependencies
+2. **US-002: API** — \`Workdir: apps/api\`
+
+Dependencies: US-001.
+`;
+
 /** A spec story that states neither a workdir nor its dependencies. */
 const SPEC_WITH_UNSTATED_STORY = `# Checkout flow
 
@@ -114,6 +125,17 @@ describe("PlanPromptBuilder.build — binding story structure table (US-003)", (
 
     expect(bindingRow(taskContext, "US-003")).toEqual(["US-003", "(not stated)", "(not stated)"]);
     // The stated sibling is unaffected — only the unstated columns fall back.
+    expect(bindingRow(taskContext, "US-001")).toEqual(["US-001", "packages/core", "none"]);
+  });
+
+  test("AC10 (US-005): renders a `Dependencies:` label as the dependency, not (not stated)", () => {
+    const taskContext = taskContextOf(SPEC_WITH_DEPENDENCIES_LABEL);
+
+    // The cell is the PRD's dependency list once planned, so a label the
+    // grammar cannot read writes `"dependencies": []` on a story that declares
+    // one — and then deadlocks it behind an unbuilt dependency (#2459).
+    expect(bindingRow(taskContext, "US-002")).toEqual(["US-002", "apps/api", "US-001"]);
+    // The sibling stating `no dependencies` still renders `none`, not (not stated).
     expect(bindingRow(taskContext, "US-001")).toEqual(["US-001", "packages/core", "none"]);
   });
 });

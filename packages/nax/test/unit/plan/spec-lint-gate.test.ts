@@ -42,6 +42,29 @@ function caughtNaxError(run: () => void): NaxError {
 
 const OPTIONS = { specPath: "docs/specs/SPEC-fixture.md", featureName: "fixture", workdir: "/tmp/nonexistent-workdir" };
 
+/**
+ * US-005: two stories that state nothing about their dependencies, and are
+ * otherwise clean — no path-bearing section, so nothing here needs a real file.
+ */
+const TWO_STORIES_NO_DEPENDENCIES = `# SPEC: Fixture
+
+## Stories
+
+### US-001 — Do the thing
+
+### US-002 — Do the other thing
+
+## Acceptance Criteria
+
+### US-001 — Do the thing
+
+1. \`[unit]\` calling \`doThing()\` returns \`true\`.
+
+### US-002 — Do the other thing
+
+1. \`[unit]\` calling \`doOtherThing()\` returns \`true\`.
+`;
+
 describe("assertSpecLintClean", () => {
   test("throws on a Modifies block that declares intent but extracts nothing; skips every check when the caller opted out", () => {
     const dropped = `Modifies:
@@ -86,5 +109,15 @@ describe("assertSpecLintClean", () => {
     const numericRefs = findings.filter((f) => f.code === "ac-numeric-reference");
     expect(numericRefs).toHaveLength(1);
     expect(numericRefs[0].level).toBe("warn");
+  });
+
+  test("US-005 AC-17: does not throw on an otherwise-clean two-story spec that states no dependency", () => {
+    // The gate refuses only `BLOCKING_SPEC_LINT_CODES`; an unstated dependency
+    // is legal on a spec whose stories are genuinely unordered, so it must
+    // reach the caller as a finding rather than fail the plan.
+    expect(() => assertSpecLintClean(TWO_STORIES_NO_DEPENDENCIES, OPTIONS)).not.toThrow();
+
+    const findings = assertSpecLintClean(TWO_STORIES_NO_DEPENDENCIES, OPTIONS);
+    expect(findings.map((f) => f.code)).toEqual(["story-dependencies-not-stated", "story-dependencies-not-stated"]);
   });
 });

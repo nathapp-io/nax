@@ -38,6 +38,7 @@ export type { SpecDriftViolation } from "./spec-drift";
 export { findSpecDriftViolations } from "./spec-drift";
 export type { SpecLintFinding, SpecLintOptions } from "./spec-lint";
 export { BLOCKING_SPEC_LINT_CODES, lintSpecContent } from "./spec-lint";
+export { checkStoryDependencies } from "./spec-lint-dependencies";
 export type {
   SpecStoryStructure,
   SpecStructure,
