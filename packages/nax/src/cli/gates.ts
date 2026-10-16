@@ -163,10 +163,12 @@ function assertKnownGates(gates: readonly string[]): void {
  * same gate whichever order the flags came in.
  *
  * Membership is read off the resolved commands' *names*, which is only sound
- * because `resolveGateCommands` yields one gate per configured `quality.commands`
- * key: it deduplicates whole identities (gate key, cwd, command, setup), not
- * command strings, so two keys sharing a command — `build` and `typecheck` both
- * `tsc --noEmit` — still arrive as two named gates (whole-branch review B1).
+ * because `resolveGateCommands` yields one *root* gate per configured
+ * `quality.commands` key — a root gate is never deduplicated away, so two keys
+ * sharing a command (`build` and `typecheck` both `tsc --noEmit`) arrive as two
+ * named gates (whole-branch review B1). Only overlay gates (`<gate>@<pkg>`,
+ * which this command never resolves — it passes `packageDirs: []`) collapse,
+ * and they collapse on the run they make, not on the key.
  */
 function assertGatesConfigured(gates: readonly string[], commands: readonly GateCommand[]): void {
   const configured = commands.map((command) => command.name);

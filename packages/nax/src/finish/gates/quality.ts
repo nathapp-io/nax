@@ -151,42 +151,43 @@ function overlayCommandsOf(override: Partial<NaxConfig> | null): QualityCommands
  * (the root package) is filtered — the root run already covers it.
  *
  * Ordering: root gates first (`GATE_ORDER`), then each package's gates
- * (`GATE_ORDER`), packages in the order given. Deduped on the run's whole
- * identity — gate key, `cwd`, `command` and `setup` — so an overlay that
- * repeats an already-resolved gate of the *same* key from the same directory
- * counts as one gate, while two different gate keys that happen to share a
- * command string (`build` and `typecheck` both `tsc --noEmit`) stay two gates.
- * A gate key is part of the identity because callers select and report gates
- * by key: collapsing `typecheck` into `build` made `nax gates run --gate
- * typecheck` answer "gate typecheck is not configured" for a gate the config
- * sets, and silently dropped it from a full run (whole-branch review B1).
+ * (`GATE_ORDER`), packages in the order given.
+ *
+ * A *root* gate is identified by its `quality.commands` key — one gate per
+ * configured key. Two keys that happen to hold the same command string
+ * (`build` and `typecheck` both `tsc --noEmit`) are two gates, because callers
+ * select and report root gates by key: deduplicating them by command string
+ * made `nax gates run --gate typecheck` answer "gate typecheck is not
+ * configured" for a gate the config sets, and silently dropped it from a full
+ * run (whole-branch review B1).
+ *
+ * An *overlay* gate is identified by the run it makes instead — `cwd`,
+ * `command` and `setup`, never the gate key — so an overlay that repeats a run
+ * already scheduled (the same key verbatim from the same directory, an
+ * overlay's own `build` and `typecheck` sharing one command, or a run a root
+ * gate already makes) counts as one run, while a different command or a
+ * different `e2eSetup` from the same directory is a genuinely different gate
+ * and both survive (whole-branch review B1 residual).
  */
 export async function resolveGateCommands(repoRoot: string, packageDirs: string[]): Promise<GateCommand[]> {
-  const seen = new Set<string>();
+  /**
+   * The runs already scheduled, keyed by what actually gets spawned — `cwd`,
+   * `command` and `setup` — never by gate key. Root gates add to it; overlay
+   * gates are matched against it.
+   */
+  const seenRuns = new Set<string>();
   const out: GateCommand[] = [];
 
-  /**
-   * One candidate gate, at the root or from a package overlay. `gateKey` is
-   * the `quality.commands` key it belongs to — `build` for the root gate and
-   * for an overlay's `build@pkg` — while `name` is what the gate is reported
-   * under.
-   */
-  const add = (candidate: {
-    gateKey: string;
-    name: string;
-    command: QualityCommandSpec | undefined;
-    cwd: string;
-    setup?: QualityCommandSpec;
-  }): void => {
-    const { gateKey, name, command, cwd, setup } = candidate;
-    if (command === undefined || !(typeof command === "string" ? [command] : command).some((part) => part.trim()))
-      return;
-    // Key includes `command` AND `setup`: two layers can declare the same e2e
-    // command from the same directory while bootstrapping different stacks
-    // (a per-package compose file, say), and both gates must survive.
-    const key = `${gateKey}::${cwd}::${JSON.stringify(command)}::${JSON.stringify(setup ?? null)}`;
-    if (seen.has(key)) return;
-    seen.add(key);
+  /** `command` AND `setup`: the same command bootstrapping a different stack is a different run. */
+  const runKey = (cwd: string, command: QualityCommandSpec, setup?: QualityCommandSpec): string =>
+    `${cwd}::${JSON.stringify(command)}::${JSON.stringify(setup ?? null)}`;
+
+  const isConfigured = (command: QualityCommandSpec | undefined): command is QualityCommandSpec =>
+    command !== undefined && (typeof command === "string" ? [command] : command).some((part) => part.trim());
+
+  /** Schedule one run, and record it as already scheduled. */
+  const schedule = (name: string, command: QualityCommandSpec, cwd: string, setup?: QualityCommandSpec): void => {
+    seenRuns.add(runKey(cwd, command, setup));
     out.push(setup === undefined ? { name, command, cwd } : { name, command, cwd, setup });
   };
 
@@ -200,7 +201,11 @@ export async function resolveGateCommands(repoRoot: string, packageDirs: string[
   const rootConfig = await _qualityGateDeps.loadConfig(repoRoot);
   const rootCommands: QualityCommands = rootConfig.quality?.commands ?? {};
   for (const gate of GATE_ORDER) {
-    add({ gateKey: gate, name: gate, command: rootCommands[gate], cwd: repoRoot, setup: setupFor(rootCommands, gate) });
+    const command = rootCommands[gate];
+    // A root gate goes in per key, whatever any other key's command string
+    // says: `seenRuns` only ever absorbs the overlays below.
+    if (!isConfigured(command)) continue;
+    schedule(gate, command, repoRoot, setupFor(rootCommands, gate));
   }
 
   for (const packageDir of packageDirs) {
@@ -216,17 +221,16 @@ export async function resolveGateCommands(repoRoot: string, packageDirs: string[
       // config, which would silently re-add the root's inherited commands
       // (loadConfigForWorkdir deep-merges quality.commands) and fan out a
       // second run of every gate the package never actually overrode.
-      if (overlayCommands[gate] === undefined) continue;
+      const command = overlayCommands[gate];
+      if (!isConfigured(command)) continue;
       const setupCommands = Object.hasOwn(overlayCommands, "e2eSetup")
         ? overlayCommands
         : { ...overlayCommands, e2eSetup: rootCommands.e2eSetup };
-      add({
-        gateKey: gate,
-        name: `${gate}@${packageDir}`,
-        command: overlayCommands[gate],
-        cwd: packageCwd,
-        setup: setupFor(setupCommands, gate),
-      });
+      const setup = setupFor(setupCommands, gate);
+      // The package's own gate key is not part of the identity: an overlay
+      // asking for a run the repo is already about to make is one run.
+      if (seenRuns.has(runKey(packageCwd, command, setup))) continue;
+      schedule(`${gate}@${packageDir}`, command, packageCwd, setup);
     }
   }
 

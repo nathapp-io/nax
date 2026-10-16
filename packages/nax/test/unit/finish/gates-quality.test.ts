@@ -127,18 +127,34 @@ describe("resolveGateCommands", () => {
     ]);
   });
 
-  test("review B1: an overlay gate whose key differs from the root gate sharing its command is kept", async () => {
+  test("review B1 residual: an overlay's own two gate keys sharing one command are one run", async () => {
+    // Overlay gates dedupe on the run they make -- cwd, command and setup --
+    // never on the gate key: a package whose `build` and `typecheck` are the
+    // same command runs it once, not twice.
+    _qualityGateDeps.loadConfig = async () => configWithCommands({});
+    _qualityGateDeps.loadPackageOverride = async () => ({
+      quality: { ...DEFAULT_CONFIG.quality, commands: { build: "bun run tsc", typecheck: "bun run tsc" } },
+    });
+
+    const commands = await resolveGateCommands("/repo", ["pkg"]);
+
+    expect(commands).toEqual([{ name: "build@pkg", command: "bun run tsc", cwd: "/repo/pkg" }]);
+  });
+
+  test("review B1 residual: an overlay gate repeating a run the root already schedules is one run", async () => {
+    // "." resolves to the root's own cwd, and the overlay's `typecheck` command
+    // is the run the root `build` gate already schedules -- one run, not two.
+    // Distinct *root* gate keys stay distinct (the test above); distinct
+    // overlay keys do not, because an overlay gate is identified by the run it
+    // makes rather than by its `quality.commands` key.
     _qualityGateDeps.loadConfig = async () => configWithCommands({ build: "tsc --noEmit" });
     _qualityGateDeps.loadPackageOverride = async () => ({
       quality: { ...DEFAULT_CONFIG.quality, commands: { typecheck: "tsc --noEmit" } },
     });
 
-    // Two *different* gate keys are two gates whatever their command strings
-    // say; only a repeat of the same gate key from the same cwd with the same
-    // command and setup is the same run.
     const commands = await resolveGateCommands("/repo", ["."]);
 
-    expect(commands.map((c) => c.name)).toEqual(["build", "typecheck@."]);
+    expect(commands).toEqual([{ name: "build", command: "tsc --noEmit", cwd: "/repo" }]);
   });
 
   test("filters out the empty-string package dir -- the root package is the root run", async () => {
