@@ -3,7 +3,7 @@
   "feature": "auth-relogin-recovery",
   "branchName": "feat/auth-relogin-recovery",
   "createdAt": "2026-10-16T00:00:00.000Z",
-  "updatedAt": "2026-10-16T05:00:03.174Z",
+  "updatedAt": "2026-10-16T05:22:26.595Z",
   "userStories": [
     {
       "id": "US-001",
@@ -251,8 +251,8 @@
         "logging"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -264,7 +264,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "native",
         "initialProfileId": "native-deepseek",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/operations/op-model-preview.ts",
@@ -280,6 +282,7 @@
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
+      "storyGitRef": "aec2944b16b9afcd23618bb2dd466d63f60ff4ce",
       "outOfScope": [
         "A credential that changes between a step's start line and its dispatch; the start line may name the fallback, and the `available again` line follows.",
         "Start lines of pipeline-mode stages; pipeline mode is frozen.",
