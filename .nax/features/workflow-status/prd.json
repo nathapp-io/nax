@@ -3,7 +3,7 @@
   "feature": "workflow-status",
   "branchName": "feat/workflow-status",
   "createdAt": "2026-10-16T00:00:00.000Z",
-  "updatedAt": "2026-10-16T11:17:43.547Z",
+  "updatedAt": "2026-10-16T11:41:21.764Z",
   "userStories": [
     {
       "id": "US-001",
@@ -137,8 +137,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -150,7 +150,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "native",
         "initialProfileId": "native-deepseek",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/open-items.ts",
@@ -199,7 +201,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "6016d3e414ea16283c17bc2fd631474dc3e73b5d"
     },
     {
       "id": "US-003",
