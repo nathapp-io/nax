@@ -1,4 +1,3 @@
-<!-- spec-writing: completed-through-phase-5 -->
 # SPEC: Remove Generated-Content Migration
 
 Closes: #2457
@@ -50,7 +49,7 @@ Symbols this feature **changes**. The baseline only locates the code; it is neve
   - Baseline: exports `autoMigrateGeneratedContent`, `detectGeneratedContent`, `migrateCommand`, `partitionTrackedCandidates`, and the types `MigrateCandidate` and `MigrateOptions`.
   - Target: exports `migrateCommand` and the type `MigrateOptions` only.
 
-Removed outright, by the terminal story: `GENERATED_NAMES`, `GENERATED_FEATURE_SUBNAMES`, `detectGeneratedContent`, `partitionTrackedCandidates`, `autoMigrateGeneratedContent`, `MigrateCandidate`, and the `_gitDeps` re-export in `migrate.ts`. No source file outside `migrate.ts` and `commands/index.ts` imports any of them, so `migrate.ts` no longer needs its `gitWithTimeout` import. The file's module doc comment changes to describe project-name collision recovery.
+Removed outright, by the terminal story: `GENERATED_NAMES`, `GENERATED_FEATURE_SUBNAMES`, `detectGeneratedContent`, `partitionTrackedCandidates`, `autoMigrateGeneratedContent`, `MigrateCandidate`, and the `_gitDeps` re-export in `migrate.ts`. No source file outside `migrate.ts` and `commands/index.ts` imports any of them. Once they are gone, `migrate.ts` no longer uses its `gitWithTimeout`, `readdir`, `getSafeLogger` or `projectOutputDir` imports, and those are removed; `mkdir` and `rename` stay, because `--reclaim` uses them. `lint:biome` runs first in `check:all` and rejects unused imports. The file's module doc comment changes to describe project-name collision recovery.
 
 Pattern to follow: the `--reclaim` and `--merge` branches already validate their input and throw a `NaxError` with a `MIGRATE_*` code and a `stage: "migrate"` context. `MIGRATE_NO_MODE` follows the same shape.
 
@@ -99,9 +98,11 @@ Remove the `autoMigrateGeneratedContent` call from `setupRun` and its `_runSetup
 
 Workdir: `packages/nax`
 
-Depends on US-001.
+No dependencies.
 
 With neither `reclaim` nor `merge`, `migrateCommand` throws `MIGRATE_NO_MODE`, and the generated-content move branch goes. `MigrateOptions` loses `dryRun`, and the `migrate` command loses `--dry-run` and gets its new description. The content-migration cases of `migrate.test.ts`, and the `migrateCommand` cases of the tracked-candidates integration test, are removed with the branch they cover.
+
+The CLI ACs spawn `bun bin/nax.ts`. This is a deliberate exception to the "Spawning full `nax` process in tests" rule in `.nax/rules/forbidden-patterns-tests.md`. The `migrate` command and its commander options are defined inline in `bin/nax.ts` and cannot be imported, and `test/unit/cli/trust.test.ts` already spawns the CLI this way. Every spawn sets `NAX_GLOBAL_CONFIG_DIR` to a temp dir, so no spawn reaches the real `~/.nax`.
 
 ### US-003 — Remove the migration helpers
 
@@ -121,6 +122,7 @@ Story split rationale: US-001 changes run behaviour, US-002 changes the CLI cont
 - `packages/nax/src/execution/lifecycle/run-setup.ts`
 - `packages/nax/test/unit/execution/lifecycle/run-setup.test.ts`
 - `packages/nax/test/unit/execution/lifecycle/run-setup-auto-migrate.test.ts`
+- `packages/nax/test/integration/commands/migrate-tracked-candidates.test.ts` — defines the local `captureLogs` helper; copy it into the new test, because US-003 deletes this file
 
 **US-002**
 - `packages/nax/src/commands/migrate.ts`
@@ -148,15 +150,17 @@ Story split rationale: US-001 changes run behaviour, US-002 changes the CLI cont
 - `packages/nax/test/unit/execution/lifecycle/run-setup-auto-migrate.test.ts` — delete the file. It pins that `setupRun` calls `_runSetupDeps.autoMigrateGeneratedContent` exactly once, and that is the call this story removes. The replacing invariant, in the new run-setup-no-migration test this story creates, is that `setupRun` leaves in-repo feature artifacts in place.
 
 **US-002**
-- `packages/nax/test/unit/commands/migrate.test.ts` — remove the `describe("migrateCommand — full migration flow")` block. Its cases pin the generated-content move: `MIGRATE_NO_CONFIG`, `MIGRATE_CONFIG_READ_FAILED`, "nothing to migrate", dry-run, the move with its `.migrated-from` marker, the basename project key, `MIGRATE_CONFLICT` and `MIGRATE_MOVE_FAILED`. The replacing invariant is that a call with neither `reclaim` nor `merge` rejects with `MIGRATE_NO_MODE` and touches no file. The `--reclaim` and `--merge` describe blocks stay unchanged.
+- `packages/nax/test/unit/commands/migrate.test.ts` — remove the `describe("migrateCommand — full migration flow")` block. Its cases pin the generated-content move: `MIGRATE_NO_CONFIG`, `MIGRATE_CONFIG_READ_FAILED`, "nothing to migrate", dry-run, the move with its `.migrated-from` marker, the basename project key, `MIGRATE_CONFLICT` and `MIGRATE_MOVE_FAILED`. The replacing invariant is that a call with neither `reclaim` nor `merge` rejects with `MIGRATE_NO_MODE` and touches no file. The `--reclaim` and `--merge` describe blocks stay unchanged. The `chmod` import, used only by the removed block, is removed too. `mkdir` stays, because the `detectGeneratedContent` block still uses it until US-003.
 - `packages/nax/test/integration/commands/migrate-tracked-candidates.test.ts` — remove the `describe("US-003 migrateCommand")` block. Its cases call `migrateCommand({ workdir })` and `migrateCommand({ workdir, dryRun: true })` and expect the tracked-candidate move logs. The replacing invariant is the `MIGRATE_NO_MODE` rejection. The other describe blocks stay until US-003.
 - `packages/nax/scripts/baselines/complexity-baseline.json` — regenerate it with `bun run check:complexity:update`. Removing the move branch lowers `migrateCommand` below its recorded score of 41, and the ratchet fails a stale row. The replacing invariant is whatever the regenerated row for the migrate command file records.
 
 **US-003**
 - `packages/nax/src/commands/index.ts` — remove the `autoMigrateGeneratedContent`, `detectGeneratedContent` and `partitionTrackedCandidates` exports and the `MigrateCandidate` type export. `migrateCommand` and `MigrateOptions` stay.
 - `packages/nax/test/integration/commands/migrate-tracked-candidates.test.ts` — delete the file. Every remaining case exercises `detectGeneratedContent`, `partitionTrackedCandidates` or `autoMigrateGeneratedContent`, which this story deletes. Nothing replaces it, because the behaviour no longer exists.
-- `packages/nax/test/unit/commands/migrate.test.ts` — remove the `describe("detectGeneratedContent")` block and its import, because the function is deleted. The `--reclaim` and `--merge` blocks and the US-002 `MIGRATE_NO_MODE` cases stay.
+- `packages/nax/test/unit/commands/migrate.test.ts` — remove the `describe("detectGeneratedContent")` block, its import and the `mkdir` import, because the function is deleted and nothing else in the file uses `mkdir`. The `--reclaim` and `--merge` blocks and the US-002 `MIGRATE_NO_MODE` cases stay.
 - `packages/nax/scripts/baselines/complexity-baseline.json` — regenerate it with `bun run check:complexity:update`. Deleting `detectGeneratedContent` (recorded at 54) leaves a stale row for the migrate command file. The replacing invariant is whatever the regenerated row records; the row is gone if no function in the file is over the limit.
+- `docs/guides/cli-reference.md` — the `nax migrate` section describes moving generated content out of the project's nax directory, shows a `nax migrate --dry-run` example, and has a `--dry-run` row in its flag table. The replacing text drops the example and the flag-table row, describes project-name collision recovery only, and keeps the `--reclaim` and `--merge` examples.
+- `packages/nax/README.md` — the `nax migrate` table row reads "Move generated content from the project nax directory to the output directory". The replacing row reads "Recover a project-name collision: `--reclaim <name>` or `--merge <name>`".
 - `docs/architecture/subsystems.md` — line 1745 describes `migrateCommand(opts)` / `detectGeneratedContent()` as migrating legacy formats. The replacing text is that `migrateCommand` handles `--reclaim` / `--merge` project-identity collision recovery only.
 
 ### Seams
@@ -167,21 +171,21 @@ None. The feature adds no externally visible symbol. `MIGRATE_NO_MODE` is a new 
 
 ### US-001
 
-1. [unit] `setupRun` with a valid PRD, in a temp project whose `.nax/` holds `features/demo/sessions/s1.json`, `features/demo/status.json` and `features/demo/stories/US-001/context-manifest-a.json`, leaves all three files at their original paths with their original contents.
-2. [unit] That `setupRun` call, with `.nax/config.json` setting `outputDir` to a directory inside the temp dir, creates no `features` directory under that output directory.
-3. [unit] That `setupRun` call records no log entry whose message starts with `Auto-migration` or with `Found generated content`.
-4. [unit] Calling `setupRun` a second time on the same temp project records no `warn` entry whose message or `error` data contains `Migration conflict`.
+1. [unit] `setupRun` with a valid PRD, in a temp project whose `.nax/config.json` sets `outputDir` equal to the mocked `runtime.outputDir` and whose `.nax/` holds `features/demo/sessions/s1.json`, `features/demo/status.json` and `features/demo/stories/US-001/context-manifest-a.json`, leaves all three files at their original paths with their original contents.
+2. [unit] After that `setupRun` call, with the mocked `runtime.outputDir` set to a directory inside the temp dir, `<runtime.outputDir>/features/demo/` holds no `sessions` entry, no `status.json` and no `stories` entry. Its only entry is the `nax.lock` that `acquireFeatureLock` writes.
+3. [unit] That `setupRun` call, with log entries captured through a copy of the local `captureLogs` helper from the tracked-candidates integration test, records no entry whose message starts with `Auto-migration` or with `Found generated content`.
+4. [unit] After releasing both locks the first call took (`releaseLock(workdir)` and the feature lock release), a second `setupRun` on the same temp project records no `warn` entry whose message or `error` data contains `Migration conflict`.
 
 ### US-002
 
 1. [unit] `migrateCommand({ workdir })` with neither `reclaim` nor `merge` rejects with a `NaxError` whose `code` is `MIGRATE_NO_MODE`.
 2. [unit] That rejection's message is `nax migrate needs --reclaim <name> or --merge <name>`.
-3. [unit] That call, in a temp project whose `.nax/config.json` sets `outputDir` inside the temp dir and which holds `.nax/metrics.json`, leaves `.nax/metrics.json` in place and creates no output directory.
+3. [unit] That call, in a temp project whose `.nax/config.json` sets `outputDir` to `<temp dir>/out` and which holds `.nax/metrics.json`, leaves `.nax/metrics.json` in place, and `<temp dir>/out` (the configured `outputDir`) does not exist afterwards.
 4. [unit] That call, in a temp dir with no `.nax/config.json`, rejects with `MIGRATE_NO_MODE`, not with `MIGRATE_NO_CONFIG`.
-5. [cli] Spawning `bun bin/nax.ts migrate -d <temp project>` exits with code 1.
+5. [cli] Spawning `bun bin/nax.ts migrate -d <temp project>`, with `NAX_GLOBAL_CONFIG_DIR` set to a temp dir, exits with code 1.
 6. [cli] That spawn's stderr contains `nax migrate needs --reclaim <name> or --merge <name>`.
-7. [cli] Spawning `bun bin/nax.ts migrate --dry-run -d <temp project>` exits with a non-zero code, and its stderr contains `unknown option '--dry-run'`.
-8. [cli] Spawning `bun bin/nax.ts migrate --help` prints `Recover a project-name collision: --reclaim or --merge`.
+7. [cli] Spawning `bun bin/nax.ts migrate --dry-run -d <temp project>`, with `NAX_GLOBAL_CONFIG_DIR` set to a temp dir, exits with a non-zero code, and its stderr contains `unknown option '--dry-run'`.
+8. [cli] Spawning `bun bin/nax.ts migrate --help`, with `NAX_GLOBAL_CONFIG_DIR` set to a temp dir, prints `Recover a project-name collision: --reclaim or --merge`.
 9. [cli] Spawning `bun bin/nax.ts migrate --reclaim <name>`, with `NAX_GLOBAL_CONFIG_DIR` pointing at a temp dir that holds a `<name>/` directory, exits 0 and leaves a `_archive/<name>-<timestamp>/` directory under that config dir.
 
 ### US-003
