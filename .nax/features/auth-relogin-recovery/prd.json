@@ -3,7 +3,7 @@
   "feature": "auth-relogin-recovery",
   "branchName": "feat/auth-relogin-recovery",
   "createdAt": "2026-10-16T00:00:00.000Z",
-  "updatedAt": "2026-10-16T04:35:23.649Z",
+  "updatedAt": "2026-10-16T05:00:03.174Z",
   "userStories": [
     {
       "id": "US-001",
@@ -181,8 +181,8 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -194,7 +194,9 @@
         "profileModelTier": "powerful",
         "initialAgent": "native",
         "initialProfileId": "native-sol",
-        "initialModelTier": "powerful"
+        "initialModelTier": "powerful",
+        "initialComplexity": "complex",
+        "modelTier": "powerful"
       },
       "contextFiles": [
         "packages/nax/src/agents/auth-cooldown.ts",
@@ -227,7 +229,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "5047ca8e99510b4865dcb913240bc022e1585e3c"
     },
     {
       "id": "US-004",
