@@ -193,3 +193,9 @@ export {
   type WorkflowStatusReport,
   workflowStatusCommand,
 } from "./workflow";
+export { _workflowForgeDeps, type WorkflowForgeDeps } from "./workflow-forge";
+export {
+  type WorkflowRecordOptions,
+  type WorkflowRecordReport,
+  workflowRecordCommand,
+} from "./workflow-record";

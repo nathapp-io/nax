@@ -1,9 +1,9 @@
 /**
- * `nax workflow status` — the verdict of a feature's newest workflow run (spec US-003).
+ * The `nax workflow` group — `status` lives here, `record` in `./workflow-record`.
  *
- * Read-only: it reads the feature's `workflow/<runId>/result.json` files and writes nothing. A
- * finishing tool reads one list here instead of rebuilding it from `result.json`, the branch
- * re-review, the ledger and the advisor ledger.
+ * `status` is read-only: it reads the feature's `workflow/<runId>/result.json` files and writes
+ * nothing. A finishing tool reads one list here instead of rebuilding it from `result.json`, the
+ * branch re-review, the ledger and the advisor ledger.
  *
  * The workflow leaves below are reached by relative path rather than through the `@/workflow`
  * barrel on purpose: that barrel loads `step-context`, which imports `@/cli`, and `@/cli` re-exports
@@ -11,22 +11,14 @@
  * (`bun run check:import-cycles`). Types are imported from the barrel; type-only imports are erased
  * and cannot take part in module initialisation.
  */
-import { basename, relative } from "node:path";
+import { relative } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { Command } from "commander";
-import { NaxError } from "@/errors";
-import { validateFeatureName } from "@/utils/feature-name";
-import type {
-  FeatureCiState,
-  FeatureOutcome,
-  FeatureStep,
-  OpenItem,
-  WorkflowFeatureRecord,
-  WorkflowResultFile,
-} from "@/workflow";
-import { buildOpenItems, buildVerdict } from "../workflow/open-items";
-import { workflowFeatureDir } from "../workflow/paths";
-import { readResult, runDirsNewestFirst, storyStatesFrom } from "../workflow/result";
+import type { FeatureCiState, FeatureOutcome, FeatureStep, OpenItem } from "@/workflow";
+import { buildVerdict } from "../workflow/open-items";
+import { fillStoryStates, type LoadedRun, loadRunVerdict } from "../workflow/run-verdict";
+import { _workflowForgeDeps, type WorkflowForgeDeps } from "./workflow-forge";
+import { workflowRecordCommand } from "./workflow-record";
 
 export interface WorkflowCliDeps {
   log: (msg: string) => void;
@@ -72,73 +64,29 @@ const NOT_PUBLISHED = "not published";
 const NO_ITEMS = "No open items.";
 
 /**
- * The newest run directory whose `result.json` parses. `runDirsNewestFirst` already drops the
- * directories holding no `result.json`; an unreadable or non-JSON one is skipped for the next.
+ * The report of the newest readable run. The run, its record and the open items all come from
+ * `loadRunVerdict` (US-002 moved that loading out of this file); the verdict is rebuilt here only
+ * for the two fields it owns, which the run's loader does not carry.
  */
-async function newestResult(
-  dir: string,
-  feature: string,
-): Promise<{ runId: string; runDir: string; result: WorkflowResultFile } | null> {
-  for (const runDir of await runDirsNewestFirst(workflowFeatureDir(dir, feature))) {
-    const result = await readResult(runDir);
-    if (result) return { runId: basename(runDir), runDir, result };
-  }
-  return null;
-}
-
-/**
- * US-002/US-003: the record carries its own `storyStates` when `publish` wrote them; a record from
- * an older nax (or a run that never reached publish) leaves the stories to `result.stories`, read
- * here with the same rule `upsertFeatureRecord` applies — so both report the same items.
- */
-function fillStoryStates(record: WorkflowFeatureRecord, result: WorkflowResultFile): WorkflowFeatureRecord {
-  return record.storyStates ? record : { ...record, storyStates: storyStatesFrom(result.stories) };
-}
-
-function reportFor(
-  dir: string,
-  feature: string,
-  found: { runId: string; runDir: string; result: WorkflowResultFile },
-): WorkflowStatusReport {
-  const record = found.result.featureWorkflow;
-  if (!record) throw notStarted(feature, found.runId);
-  const filled = fillStoryStates(record, found.result);
-  const verdict = buildVerdict(filled);
+function reportFor(dir: string, feature: string, loaded: LoadedRun): WorkflowStatusReport {
+  const { record } = loaded;
+  const verdict = buildVerdict(fillStoryStates(record, loaded.result));
   return {
     feature,
-    runId: found.runId,
-    runDir: relative(dir, found.runDir),
+    runId: loaded.runId,
+    runDir: relative(dir, loaded.runDir),
     step: record.step,
     ...(verdict ? { outcome: verdict.outcome, workflowPassed: verdict.workflowPassed } : {}),
     ...(record.ci === undefined ? {} : { ci: record.ci }),
     ...(record.url === undefined ? {} : { url: record.url }),
     reasons: record.reasons,
-    // A run that never published has no verdict, but its stories still say what is open (AC-13).
-    openItems: verdict?.openItems ?? buildOpenItems(filled),
+    openItems: loaded.openItems,
   };
-}
-
-function notStarted(feature: string, runId: string): NaxError {
-  return new NaxError(
-    `workflow for ${feature} has not started its feature steps (run ${runId})`,
-    "WORKFLOW_NOT_STARTED",
-    { stage: "workflow-status", feature, runId },
-  );
-}
-
-function noResult(feature: string): NaxError {
-  return new NaxError(`no workflow result for feature ${feature}`, "WORKFLOW_RESULT_MISSING", {
-    stage: "workflow-status",
-    feature,
-  });
 }
 
 /** The verdict of the newest readable run, or the error that says why there is none. */
 async function buildReport(dir: string, feature: string): Promise<WorkflowStatusReport> {
-  validateFeatureName(feature);
-  const found = await newestResult(dir, feature);
-  if (!found) throw noResult(feature);
-  return reportFor(dir, feature, found);
+  return reportFor(dir, feature, await loadRunVerdict(dir, feature));
 }
 
 /** 0 only when the feature is ready with nothing open; anything else needs a human. */
@@ -183,8 +131,12 @@ async function guarded(deps: WorkflowCliDeps, body: () => Promise<number>): Prom
   }
 }
 
-/** Register `nax workflow status`. */
-export function registerWorkflowCommand(program: Command, deps: WorkflowCliDeps = _workflowCliDeps): Command {
+/** Register `nax workflow status` and `nax workflow record`. */
+export function registerWorkflowCommand(
+  program: Command,
+  deps: WorkflowCliDeps = _workflowCliDeps,
+  forgeDeps: WorkflowForgeDeps = _workflowForgeDeps,
+): Command {
   const group = program.command("workflow").description("Inspect a feature's workflow run");
   group
     .command("status")
@@ -194,6 +146,29 @@ export function registerWorkflowCommand(program: Command, deps: WorkflowCliDeps 
     .option("--json", "Emit one machine-readable JSON document", false)
     .action((o: { dir: string; feature: string; json?: boolean }) =>
       guarded(deps, () => workflowStatusCommand({ dir: o.dir, feature: o.feature, json: o.json === true }, deps)),
+    );
+  group
+    .command("record")
+    .description("Record a human's rulings and the run's outcome in the decisions sidecar")
+    .requiredOption("-f, --feature <name>", "Feature name")
+    .option("--decisions <file>", "A JSON array of decision entries")
+    .option("--outcome <outcome>", "One of pending, promoted, verified-ready, abandoned")
+    .option("-d, --dir <path>", "Project directory", process.cwd())
+    .option("--json", "Emit one machine-readable JSON document", false)
+    .action((o: { dir: string; feature: string; decisions?: string; outcome?: string; json?: boolean }) =>
+      guarded(deps, () =>
+        workflowRecordCommand(
+          {
+            dir: o.dir,
+            feature: o.feature,
+            decisions: o.decisions,
+            outcome: o.outcome,
+            json: o.json === true,
+          },
+          deps,
+          forgeDeps,
+        ),
+      ),
     );
   return group;
 }
