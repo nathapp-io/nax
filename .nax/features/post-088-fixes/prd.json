@@ -3,7 +3,7 @@
   "feature": "post-088-fixes",
   "branchName": "feat/post-088-fixes",
   "createdAt": "2026-10-20T00:00:00Z",
-  "updatedAt": "2026-10-16T08:07:35.052Z",
+  "updatedAt": "2026-10-16T08:43:41.589Z",
   "userStories": [
     {
       "id": "US-001",
@@ -33,8 +33,8 @@
         "integration"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -46,7 +46,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "native",
         "initialProfileId": "native-deepseek",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/finalize.ts",
@@ -70,7 +72,11 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "6bef46177effebd993cf0f49d7b4381629073b3c"
     },
     {
       "id": "US-002",
@@ -139,7 +145,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -202,7 +211,10 @@
         }
       ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -295,7 +307,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-005",
@@ -384,7 +399,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "Exploration and architecture: codebase-memory MCP is unavailable in this session, so the findings below come from direct reads and repository text searches, not an assumed graph index. This is an existing Bun/TypeScript monorepo, not greenfield. Read docs/architecture/ARCHITECTURE.md before implementation; its package architecture separates nax orchestration from nax-agent's injected tool-policy port, and its quick reference documents dependency seams, file-size limits and permission resolution (docs/architecture/ARCHITECTURE.md:121, docs/architecture/ARCHITECTURE.md:151). Exactly five independent stories are binding. US-001, US-002, US-004 and US-005 run in packages/nax; US-003 runs in packages/nax-agent; all dependencies are empty. US-004 deliberately retains packages/nax as its workdir despite the explicitly authorized nax-agent test-helper edits. No release, package version bump, published API change or data migration is required. The two timer-helper stories are implementation changes to executable tooling, not separate coverage stories.\n\nUS-001 / workflow approval: packages/nax/src/workflow/finalize.ts:129 already constructs body.minorsLeft from triage=leave minors as storyId-prefixed text followed by newMinors, so reuse these strings rather than rebuilding or truncating them. approvalEvidence at finalize.ts:148 currently takes a numeric minor count and emits four readiness summaries, the count and optional gate-repair evidence. prMode at finalize.ts:404 computes deterministic reasons and only asks approval if that array is empty (finalize.ts:414); compute the inventory inside that same branch, after readiness is established. publish at finalize.ts:426 also serves push/none/local-only modes; those must not acquire the new diff read. resolveSeed already selects an origin merge base, local-main merge base or story ref, and returns null if none exists (packages/nax/src/workflow/seed.ts:21); WorkflowFeatureRecord.seed remains string|null (packages/nax/src/workflow/types.ts:190). Do not resolve a second base or infer a branch-name provenance. changedFilesSince at packages/nax/src/workflow/git.ts:74 uses _workflowDeps.git with [diff,--name-only,<base>..HEAD], preserves output order and throws WORKFLOW_GIT_FAILED on a nonzero exit. Import and consume it unchanged. errorMessage is already imported in finalize.ts:9. askApproval converts each evidence string to {source:review-round,text} at packages/nax/src/workflow/approval.ts:98; capture the actual Advisor question at publish in tests rather than bypassing that integration. New evidence is advisory: inventory failure or an unresolved seed never adds a readiness reason or suppresses the question. Cap only the file list, not minors or the base line, and preserve all existing gate-repair wording. The signature change requires updating both numeric calls in existing packages/nax/test/unit/workflow/finalize-evidence.test.ts:15 and :22 to [] plus {kind:files,files:[]}, preserving their assertions. That existing file is the right place for the added unit and publish-level cases; it is not a new output file. Follow the dependency-save/restore and wire() harness in packages/nax/test/unit/workflow/finalize-ci-gate.test.ts:12 and :19. Do not enlarge finalize.test.ts, which the spec identifies as nearly at its 800-line cap.\n\nUS-002 / nax timer instrumentation: packages/nax/test/helpers/timer-spy.ts:16 defines TimerSpyResult; :27 patches global setTimeout/clearTimeout while awaiting fn; :46 currently computes leaks using cleared ids only. Preserve its finally restoration when fn throws. Add an optional origin argument, fired-id tracking and handler forwarding without changing production executor signatures. Stack filtering must normalize backslashes and match the supplied substring at arming time. Foreign timers must still run normally and return their real handles. cleared continues to collect every defined cleared id, including unrecorded timers. String handlers are passed through without wrapping. packages/nax/test/helpers/index.ts:141 currently exports withTimerSpy only, so add the TimerSpyOptions type there. packages/nax/src/verification/executor.ts:16 defines the _executorDeps.setTimeout wrapper, and :32 defines raceWithDeadline; both arming paths contain src/verification/executor in their stacks. The existing kill-path regression at packages/nax/test/unit/verification/executor.test.ts:161 uses an unfiltered spy around sleep 30 with a 0.1s deadline and 200/500ms grace/drain budgets. Add the precise src/verification/executor filter there; do not use the broader substring that also matches the test file. Preserve its timeout/leaked assertions and include a deliberately foreign 60s timer in the regression setup, with cleanup afterwards. Other existing consumers include MCP pool, timeout, OTEL heartbeat/batch queue and plugin-cache tests, so omission of options must retain record-all behavior. Add dedicated helper tests and a fixture-origin module; use waitForCondition rather than fixed sleeps and always clear intentionally leaked 60s timers outside the observation window. Global patches are process-wide, so restore them and avoid interleaving multiple spy windows inside the helper's tests.\n\nUS-003 / nax-agent timer instrumentation: packages/nax-agent/test/helpers/timer-spy.ts:1 documents the sanctioned duplicate; :17 and :28 hold the same result type and implementation as nax. Apply the same semantics independently without introducing a dependency on US-002 or sharing a new package. packages/nax-agent/test/helpers/index.ts:62 already exports TimerSpyResult and withTimerSpy; add TimerSpyOptions without dropping either. Existing packages/nax-agent/test/unit/helpers/timer-spy.test.ts:4 contains two cleared/leaked regression cases that remain unchanged; extend the block and add the fixture module. Existing consumers in native session external-handler and native credential exec-source tests must continue to work with no options. No nax-agent shipped source or root API snapshot changes are needed. Use #test/#src imports here, never nax's @ aliases, and show the regression failing against the old implementation as required by the package instructions.\n\nUS-004 / access-control hardening: this is security-critical, so use three-session-tdd regardless of complexity. packages/nax/src/agents/nax-owned-writes.ts:82 recognizes exact-case config segments, :104 applies that reader to root-relative resolved paths, :154 exposes the typed-write predicate, :167 classifies PRDs/queues, :242 refuses typed writes, :288 protects other .nax state and :315 performs lexical-config then PRD/queue matching for Bash. Add the root-keyed stat probe as a separate module rather than changing nax-agent containment or realpath behavior. Canonicalize root with the existing realOrRaw exported through @nathapp/nax-agent/internal (packages/nax-agent/src/internal.ts:44; implementation packages/nax-agent/src/internal/realpath.ts:31). Probe only the nearest cased basename and compare dev and ino; inaccessible original roots and unexpected swapped-path errors must fail closed. An ENOENT/ENOTDIR for only the swapped spelling means case-sensitive. Cache by canonical root, and expose/reset the seam so simulations do not depend on the host filesystem. The root-aware config/Bash paths fold only when the probe says case-insensitive; typed-write paths have no root and always fold. Preserve segment-exact matching, queue-at-root-only behavior, the exact PRD exemption, exact-case scratchpad entry and exact-case config-skip checks on typed writes. packages/nax/src/agents/config-read-gate.ts:21 screens Bash candidates for read-only config access, and :35 wraps the base policy; thread the same probe into its PRD/queue classifier, preserving its exact-case typed config check at :46 and sandboxed config-read allowance. The outer path-resolver seam is packages/nax-agent/src/tools/policy-paths-branch.ts:102: resolveWithin canonicalizes a candidate and invokes owned.configRefusal. Test that seam with the injected nax policy rather than changing this function. Existing policy coverage lives in packages/nax/test/unit/agents/nax-owned-writes.test.ts:22 and :61. Add separate probe and case-fold test files to keep concerns and size isolated; both restore _caseFsDeps.stat and clear cache after each test, particularly when the same root is simulated with opposite answers. Darwin-only real-filesystem verification canonicalizes the temp root and compares the probe to existence of a case-swapped spelling.\n\nUS-004 cross-package synchronization: packages/nax-agent/test/helpers/nax-owned-paths.ts:1 is the sanctioned verbatim owned-writes copy with local imports. Update its body in the same commit as the source; create the case-insensitive-fs test-helper copy with the required provenance header and #src/internal/realpath import. packages/nax/test/unit/agents/nax-owned-writes-copy.test.ts:11 normalizes only import lines and the provenance header; retain its original comparison and add a second probe comparison using the same normalizer. This copy mechanism avoids forbidden nax-agent -> nax imports while exercising real orchestration policy in engine tests. Validate nax-agent typecheck and tests as well as nax's gates because the copies are compiled and imported there. Do not broaden the change to .git matching, sandbox deny lists, policy port context or config opt-in semantics.\n\nUS-005 / deterministic spec parsing and nonblocking lint: packages/nax/src/prd/spec-structure-grammar.ts:132 currently recognizes no dependencies and depends on only; :141 reads none/normalized id lists and :164 collects dependency statements. Extend that grammar, not a parallel parser in the linter. collectStoryDeclarations at :218 already skips fenced lines and restricts dependency prose to the correct subsections; label parsing must preserve those boundaries. packages/nax/src/prd/spec-structure.ts:28 distinguishes undefined from [] and :120 reports contradictions between none and id declarations; :153 exposes extractSpecStructure. The new checker must use this result and suppress only stories with a dependsOn warning, not every warning. packages/nax/src/prd/spec-lint.ts:80 defines BLOCKING_SPEC_LINT_CODES, :89 defines the finding type and :426 assembles lint findings. Import the new checker there and append its findings without changing the blocking-code set. Use a type-only SpecLintFinding import in the new module so consuming it from spec-lint does not introduce a runtime cycle. The label will automatically feed PlanPromptBuilder via extractSpecStructure at packages/nax/src/prompts/builders/plan-builder.ts:347; no builder behavior rewrite is needed. Add binding-table regression coverage in packages/nax/test/unit/prompts/builders/plan-builder-binding-structure.test.ts:67, CLI seam coverage using the injected fixture harness in packages/nax/test/unit/cli/spec-lint-command.test.ts:54 and plan-gate coverage in packages/nax/test/unit/plan/spec-lint-gate.test.ts:44. Preserve existing single-story clean fixtures. New grammar cases belong in spec-structure-dependency-label.test.ts, not the already-large spec-structure.test.ts; new checker cases belong in spec-lint-dependencies.test.ts. The warning is intentionally advisory in ordinary CLI/plan mode; do not accidentally make it blocking or surface existing structural-conflict warnings.\n\nVerification and migration: implementation should first establish failing behavioral regressions at the specified seams, then change code in each independent story. Use targeted Bun tests with explicit paths/timeouts, never bare bun test or bun run nax. Run package-scoped typecheck, check:all and normal test gates; run coverage separately after adding tests because per-file floors are independent of ordinary suite success. packages/nax/package.json:15 includes file-size and complexity ratchets; :33 provides check:complexity:update. Refresh only a stale complexity-baseline row reported by the ratchet, never blanket-relax baselines. packages/nax/package.json:59 confirms the confined suite uses four parallel workers, reinforcing the need for origin filtering. No execution or tests were run during this PRD-only drafting session. Compatibility is additive except the internal approvalEvidence signature and intentional security refusals: root-aware policy retains exact-case behavior on case-sensitive filesystems, while rootless typed writes conservatively refuse stray case variants on every filesystem. The new spec label can enforce previously silent dependencies through existing binding machinery, so retain the distinction between unstated, explicitly empty and conflicting declarations throughout.\n\nRefine-pass audit: enumerated and retained all 69 numbered spec criteria in their original stories: US-001 ACs 1-13, US-002 ACs 1-9, US-003 ACs 1-6, US-004 ACs 1-24 and US-005 ACs 1-17. US-001 additionally retains two explicit failure-table elaborations for null seed at publish and a thrown inventory read; every other failure-table row is already covered. The original regression qualifiers survive, including timer no-options behavior 'as before', resolver canonical-root/on-disk prerequisites, sandboxed-read equivalence, Darwin-only real-stat comparison and otherwise-clean CLI/plan fixtures. Each story already has negative-path criteria (inventory failure/failed CI; leaked and excluded timers; stat errors/refused writes; invalid/conflicting/fenced dependency declarations), so no new scope was added for that audit. Made barrel-import criteria observable through typed invocations and return values and expanded abbreviated seam setups without changing their assertions. Restored the complete five-file spec-recommended context sets for US-004 and US-005; copy-guard/helper and binding-test implementation instructions remain in their descriptions. Reclassified US-005 as medium/tdd-simple because existing extractor and lint consumers provide the integration, while retaining US-004's complex/three-session-tdd security routing. All five binding ids/workdirs and empty dependency arrays remain unchanged. All 14 feature-level out-of-scope items remain verbatim at top level and are echoed verbatim at adjacent story boundaries. No story-local exclusion was hoisted.",
