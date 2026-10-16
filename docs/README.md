@@ -9,8 +9,8 @@ description: User guides, architecture references, and specs for nax
 
 | Guide | Description |
 |:------|:------------|
-| [Quick Start](../README.md#quick-start) | Run nax in 5 minutes |
-| [Installation](../README.md#install) | Install via npm or bun |
+| [Quick Start](../packages/nax/README.md#quick-start) | Run nax in 5 minutes |
+| [Installation](../packages/nax/README.md#install) | Install via npm or bun |
 
 ## Guides
 
@@ -18,6 +18,7 @@ description: User guides, architecture references, and specs for nax
 
 | Guide | Description |
 |:------|:------------|
+| [Workflow Mode](guides/workflow-mode.md) | The default `nax run` mode: per-story loop, feature workflow, publishing, and the `workflow` config block ([ADR-034](adr/ADR-034-workflow-execution-mode.md)) |
 | [CLI Reference](guides/cli-reference.md) | Complete `nax` CLI command reference |
 | [Configuration](guides/configuration.md) | Config file locations, key options, shell operator limitations, incl. [Autonomous Finish](guides/configuration.md#autonomous-finish-finish) (`finish.*` — review, verify and open a PR after a run) |
 | [Agents](guides/agents.md) | Configuring coding agents — the native agent, ACP agents, fallback, and custom adapters |
@@ -57,6 +58,7 @@ description: User guides, architecture references, and specs for nax
 | [Sandbox & Command Safety](guides/sandbox-and-command-safety.md) | The OS sandbox around agent-authored commands (`execution.sandbox`, on by default) and the command-safety shadow classifier (`execution.commandSafety`) |
 | [Approvals](guides/approvals.md) | Interactive approval prompts, remembered approvals, and revoking them with `nax approvals list` / `nax approvals rm` |
 | [Exec Allowlist](guides/exec-allowlist.md) | What an agent may execute via `RunCommand`'s argv branch — the default install-only list, writing an `Exec(...)` grant, and install hardening |
+| [OpenRouter Routing](guides/openrouter-routing.md) | Overriding OpenRouter provider routing per model (native agent) |
 | [MCP & Command Interception](guides/mcp-and-interception.md) | Attaching MCP servers as tools (`mcp`, `nax mcp lock`) and rewriting the native agent's `Git` argv and model-authored `Bash` commands through `rtk` (`execution.commandInterceptor`) — both native-agent only |
 
 ### Contributing to nax
@@ -117,6 +119,8 @@ Architecture Decision Records live in [`adr/`](adr/). The sequence starts at ADR
 | [ADR-030](adr/ADR-030-bash-approval-modes.md) | Bash approval modes (`raw` / `gated` / `escalate`) |
 | [ADR-031](adr/ADR-031-root-scoped-command-safety-config.md) | Root-scoped command-safety config |
 | [ADR-032](adr/ADR-032-single-frame-repo-rooted-paths.md) | Single frame — repo-rooted agent and PRD |
+| [ADR-033](adr/ADR-033-scoped-fix-review.md) | Scoped fix review |
+| [ADR-034](adr/ADR-034-workflow-execution-mode.md) | Workflow execution mode (default since v0.88.0) |
 
 ## Specs
 
@@ -139,4 +143,4 @@ Detailed technical specifications for specific features and subsystems. A select
 
 ---
 
-Back to [README](../README.md)
+Back to [README](../packages/nax/README.md)

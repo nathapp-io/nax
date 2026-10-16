@@ -37,18 +37,15 @@ a grant is told the session already holds `Glob` rather than simply refused.
 
 ## Turning it on
 
-**1. The operation must declare it** (every mode) — a code-owned ceiling, not config. Nine declarations
-across eight fix-shaped operations hold `Bash`:
-
-```
-implement.ts  write-test.ts  rectify.ts  autofix-implementer.ts  autofix-test-writer.ts
-full-suite-rectify-op.ts  acceptance-fix.ts (x2)  finish-fix.ts
-```
-
-Review, planning and verification operations do **not** declare it, so no config rule can
-reach them. The verifier is deliberately on that list: it declares no `Exec`, so it cannot
-install packages while judging the implementer's work, and a `Bash(...)` rule covering an
-install command would hand that back by another route.
+**1. The operation must declare it** (every mode) — a code-owned ceiling, not config. The
+operations that declare `Bash` are the code-writing ones: `implement`, `workflow-implement`,
+`write-test`, `rectify`, `full-suite-rectify-op`, `autofix-implementer`, `autofix-test-writer`,
+`acceptance-fix` (x2) and `finish-fix`. The reviewers (`adversarial-review`, `semantic-review`,
+`finish-branch-review`, `finish-spec-review`, `workflow-story-review`) declare it too, but their
+command tools are withheld unless the dispatch sandbox is usable (`reviewer-command-withhold.ts`).
+The verifier (`verify.ts`) does not declare `Bash` or `Exec`, so it cannot install packages while
+judging the implementer's work, and a `Bash(...)` rule covering an install command would hand that
+back by another route.
 
 **2. Under `raw` (the default), that is all.** The op receives a synthetic `Bash(*)` grant, and
 every call runs inside the OS sandbox. If the sandbox is enabled but unavailable on the host

@@ -28,7 +28,7 @@ You should receive an acknowledgment within 48 hours. We aim to release a fix wi
 
 nax orchestrates AI coding agents that execute code on your machine. Security-relevant areas include:
 
-- **Environment variable filtering** — nax filters sensitive env vars before passing them to agent subprocesses
-- **File system access** — agents operate within the project directory
-- **Configuration injection** — nax config files are parsed with strict Zod schemas
-- **Agent permissions** — the `dangerouslySkipPermissions` flag controls whether agents can auto-approve tool use
+- **Environment variables** — ACP agents launched through `@nathapp/nax-agent-acp` get an allowlisted environment (`inheritEnv` hands them the whole environment instead), and values of secret-named variables are scrubbed from streamed agent text
+- **File system access** — the native agent's tools work inside the session's workdir and respect protected paths and its OS sandbox; ACP agent processes run unsandboxed on the host
+- **Configuration injection** — nax config files are parsed and validated with Zod schemas
+- **Agent permissions** — the permission mode (`approve-all`, `approve-reads` or `scoped`) controls whether agents can auto-approve tool use

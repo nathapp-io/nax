@@ -34,9 +34,9 @@ The host installs these once, near startup. They are module-level, so they apply
 
 Three pieces of host knowledge are passed in as data or functions, because the package cannot know them. Their behaviour when you omit them differs, so check each one.
 
-- **`runDeclaredCommand`** runs a command your project declared (a test or lint command), never one the model wrote. If you do not supply it, the `RunCommand` tool answers `exit 1` with "no declared-command runner is configured for this session" and starts no process. It fails closed.
-- **`ProtectedPathsPolicy`** names the paths you own and want kept away from the agent: git pathspecs the Git tool excludes from its default view, gitignore patterns `GitCommit` refuses to stage, the project state directory, the credential directory and the trust-store file the sandbox protects. If you do not supply it, the Git tool excludes nothing from its default view, and `GitCommit` fails closed: it refuses every path and stages nothing until the policy supplies a non-empty `gitIgnorePatterns` (an empty list refuses the same way). Supply it whenever the agent works in a directory that holds files you own. Building a sandboxed session requires it.
-- **`commandInterceptor`** may rewrite a command before it runs (for example to prefix a wrapper binary). Rewrites are validated: an argv rewrite may only prefix the original argv with the provider's own binary, and a shell rewrite goes through the same narrowing. If you do not supply one, commands run unchanged. An interceptor that throws, or returns a rewrite that fails validation, is treated as a decline, and the original command runs.
+- **`runDeclaredCommand`** runs a command your project declared (a test or lint command), never one the model wrote. If you do not supply it, the `RunCommand` tool answers `exit 1` with "no declared-command runner is configured for this session" and starts no process. It fails closed. `createAgentSession` does not accept a runner yet: `hostPorts.runDeclaredCommand` throws `AGENT_SESSION_INVALID_OPTIONS`, so a session's `RunCommand` always refuses.
+- **`ProtectedPathsPolicy`** (`hostPorts.protectedPaths` on the facade) names the paths you own and want kept away from the agent: git pathspecs the Git tool excludes from its default view, gitignore patterns `GitCommit` refuses to stage, the project state directory, the credential directory and the trust-store file the sandbox protects. If you do not supply it, the Git tool excludes nothing from its default view, and `GitCommit` fails closed: it refuses every path and stages nothing until the policy supplies a non-empty `gitIgnorePatterns` (an empty list refuses the same way). Supply it whenever the agent works in a directory that holds files you own. Building a sandboxed session requires it.
+- **`commandInterceptor`** (`hostPorts.commandInterceptor` on the facade) may rewrite a command before it runs (for example to prefix a wrapper binary). Rewrites are validated: an argv rewrite may only prefix the original argv with the provider's own binary, and a shell rewrite goes through the same narrowing. If you do not supply one, commands run unchanged. An interceptor that throws, or returns a rewrite that fails validation, is treated as a decline, and the original command runs.
 
 ## Repository instructions
 
@@ -62,7 +62,7 @@ const lookupOrder: EmbedderTool = {
 };
 
 const session = await createAgentSession({
-  backend: nativeBackend({ model: "anthropic/claude-sonnet-5-5" }),
+  backend: nativeBackend({ model: "openai/gpt-5.4-mini" }),
   profile: "ask",
   workdir: "/abs/project",
   tools: [lookupOrder],
@@ -82,8 +82,9 @@ Profiles set what a session may do:
 | Profile | Side effects |
 |:--------|:-------------|
 | `none` | no side effects; |
-| `read` | read-only; |
-| `ask` | every Write, Edit, Delete, GitCommit and Bash is put to `answer()`; |
+| `read` | read-only tools (Read, Glob, Grep, Git); |
+| `review` | the read tools plus Bash; `bashApproval` and the sandbox floor apply; |
+| `ask` | Write, Edit, Delete and GitCommit are put to `answer()`; Bash follows `bashApproval`; |
 | `full` | no prompts; `bashApproval` and the sandbox floor apply. |
 
 `createAgentSession` takes a `SessionBackend`. `nativeBackend(opts)` takes `instructionFileName` (default `AGENTS.md`), `model`, `credentials`, `catalogOverrides`, `loopHandlers`, `hostPorts`, `bashApproval`, `allowUnsandboxed` and `compaction`. The ACP backend ships in `@nathapp/nax-agent-acp`.
@@ -97,7 +98,7 @@ Profiles set what a session may do:
 - **Approvals and questions.** Answer them with `session.answer(requestId, { decision: "allow" | "deny" })` or `{ text }`. An unanswered one is denied after `approvalTimeoutMs` (default 600000, range 30000..3600000). `answer` returns `"accepted"`, `"expired"`, `"cancelled"` or `"unknown"`.
 - **Credentials.** A session's `credentials` (`memory` or `exec`) and `catalogOverrides` give it its own client. Without them it uses the process-wide `configureCredentials` slot.
 - **History and restarts.** The store holds one document per session, saved at the end of every turn. `close()` keeps it. After a restart, `resumeAgentSession(sessionId, options)` reopens it with the same options you created it with; pass `instructions` and `tools` again, since they are not stored. If the process died mid-turn, `session.lastTurn` is `{ turnId, status: "interrupted" }`, and that turn's message is not in history. A resume with a different model throws `AGENT_SESSION_MODEL_MISMATCH`; a different reasoning effort (`[high]`) is the same model. Resuming with a different backend kind throws `AGENT_SESSION_BACKEND_MISMATCH`; a stored document with no `backend` field is native. Do not open one session id twice at once: the store has no lock.
-- **Errors.** Every error is an `AgentSessionError` with a code `AGENT_SESSION_*`: `INVALID_OPTIONS`, `EXISTS`, `BUSY`, `CLOSED`, `INVALID_ANSWER`, `NOT_FOUND`, `SCHEMA_UNSUPPORTED`, `MODEL_MISMATCH`, `SANDBOX_UNAVAILABLE`, `TOOL_NAME_RESERVED`, `BACKEND_UNAVAILABLE`, `AUTH_REQUIRED`, `CAPABILITY_UNSUPPORTED` or `BACKEND_MISMATCH`. A stored document that cannot be read is a `NaxError` with `TRANSCRIPT_CORRUPT`.
+- **Errors.** Every error is an `AgentSessionError` with a code `AGENT_SESSION_*`: `INVALID_OPTIONS`, `EXISTS`, `BUSY`, `CLOSED`, `INVALID_ANSWER`, `NOT_FOUND`, `SCHEMA_UNSUPPORTED`, `MODEL_MISMATCH`, `SANDBOX_UNAVAILABLE`, `TOOL_NAME_RESERVED`, `BACKEND_UNAVAILABLE`, `AUTH_REQUIRED`, `RATE_LIMITED`, `CAPABILITY_UNSUPPORTED` or `BACKEND_MISMATCH`. A stored document that cannot be read is a `NaxError` with `TRANSCRIPT_CORRUPT`.
 
 ## MCP connections (`@nathapp/nax-agent/mcp`)
 
@@ -127,10 +128,10 @@ await connection.close();                           // waits for the process; SI
 
 ## Status and roadmap
 
-`0.x` may reshape `.` with a minor bump. `@nathapp/nax-agent-acp` provides an ACP backend for the same API (0.3.0). See [`CHANGELOG.md`](CHANGELOG.md).
+`0.x` may reshape `.` with a minor bump. `@nathapp/nax-agent-acp` provides an ACP backend for the same API. Both packages share one version. See [`CHANGELOG.md`](CHANGELOG.md).
 
-Maintainers: see the [release procedure](https://github.com/nathapp-io/nax/blob/main/packages/nax-agent/RELEASING.md)
-for the manual 0.1.0 publish and OTP step, trusted-publisher setup and subsequent tagged releases.
+Maintainers: releases are lockstep and tag-driven; see the [repo-root release procedure](https://github.com/nathapp-io/nax/blob/main/RELEASING.md).
+The package's [`RELEASING.md`](RELEASING.md) keeps its acceptance records.
 
 ## License
 

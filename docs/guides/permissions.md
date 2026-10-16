@@ -3,7 +3,7 @@
 The single page for nax's permission surface: which tools an agent may use, in which
 pipeline stage, against which paths and patterns. Everything below is resolved by one
 function — `resolvePermissions(config, stage)` in `src/config/permissions.ts` — and enforced
-for native coding tools by `src/tools/`.
+for native coding tools by `packages/nax-agent/src/tools/` (the `@nathapp/nax-agent` package).
 
 Two consumers read that one resolution:
 
@@ -27,8 +27,8 @@ arm also resolves `bashApproval` to `gated`, never `raw`.
 
 | Profile | ACP mode | Provider (MCP) tools | Native grants | An UNMATCHED call |
 |:--|:--|:--|:--|:--|
-| `unrestricted` | `approve-all` | all attached | `Read` `Glob` `Grep` `Write` `Edit` `Delete` `Git` `GitCommit` `RunCommand` `RequestCapability`, each at `["*"]`; `Exec` limited to the built-in install list; **`Bash` nothing at all** | an unmatched built-in is allowed by its blanket `["*"]`; `Exec` and `Bash` are denied — they are excluded from the blanket |
-| `safe` | `approve-reads` | none | `Read` `Glob` `Grep` only | denied |
+| `unrestricted` | `approve-all` | all attached | `Read` `Glob` `Grep` `ScratchpadWrite` `ScratchpadRead` `ScratchpadList` `Write` `Edit` `Delete` `Git` `GitCommit` `RunCommand` `RequestCapability`, each at `["*"]`; `Exec` limited to the built-in install list; **`Bash` nothing at all** | an unmatched built-in is allowed by its blanket `["*"]`; `Exec` and `Bash` are denied — they are excluded from the blanket |
+| `safe` | `approve-reads` | none | `Read` `Glob` `Grep` and the `Scratchpad*` tools | denied |
 | `scoped` | `approve-reads` | only what the stage's `Mcp(...)` rules name | only the stage block's `allow` rules; no baseline | denied |
 
 ```json
@@ -40,11 +40,11 @@ whether the profile is `unrestricted`, `safe` or `scoped`, and an `allow` rule i
 whatever grant set the profile already carries. That is how an `allow` rule grants `Bash`
 even under `unrestricted`, which grants no `Bash` on its own.
 
-The one exception is the default `raw` bash mode: an operation that declares `Bash` receives a
-synthetic `Bash(*)` grant when no human rule names `Bash` — under **every** profile, `safe` and
-`scoped` included, so the table's "Native grants" column does not bound `Bash` under `raw` (set
-`bashApproval: "gated"` for that) — and pattern `deny` / `ask` rules for
-`Bash` are not consulted (only a bare, unconditional `Bash` deny still applies). See
+The one exception is the default `raw` bash mode: an operation that declares `Bash` is offered the
+tool under **every** profile, `safe` and `scoped` included, and the raw branch admits its commands
+without consulting the grant table, so the table's "Native grants" column does not bound `Bash` under
+`raw` (set `bashApproval: "gated"` for that). Pattern `deny` / `ask` rules for `Bash` are not consulted
+(only a bare, unconditional `Bash` deny and the advisory screen still apply). See
 [Bash approval modes](#bash-approval-modes).
 
 ## Per-stage blocks
@@ -223,7 +223,7 @@ stage; under the default `raw`, the op's own `Bash` declaration is what admits i
 ## `ask`, and the approval gate
 
 An `ask` rule names a call that is not forbidden, only unapprovable without a human. It is
-checked last; a match hands off to the ask resolver chain (`src/permissions/ask-chain.ts`):
+checked last; a match hands off to the ask resolver chain (`packages/nax-agent/src/permissions/ask-chain.ts`):
 the **approvals cache** (a remembered human decision, byte-exact on stage and command), then
 the **human** link (a prompt through the run's interaction channel), then a terminal deny.
 With no human reachable — for example the default `cli` plugin in a headless run or without a
@@ -254,10 +254,11 @@ the prompt, remembered approvals and `nax approvals` are covered in [Approvals](
   `rtk` to cut tokens. It is a transformation, not a permission decision — it never grants or
   denies anything. See [MCP & Command Interception](mcp-and-interception.md).
 - **Operation tool declarations.** Which tools an operation may hold is a **code-owned
-  ceiling** (spec R5): review and planning ops do not declare `Bash` or `Exec`, so no config
-  rule can reach them. Config can *narrow* a ceiling (deny more, allow less), never *widen*
+  ceiling** (spec R5). Planning ops do not declare `Bash` or `Exec`. The reviewers do declare
+  `Bash` (sandboxed; see [Sandbox and Command Safety](sandbox-and-command-safety.md)). Config can
+  still narrow a grant, but it cannot add a tool the operation does not declare. Config can *narrow* a ceiling (deny more, allow less), never *widen*
   it.
-- **Containment.** The permitted root is a hard boundary enforced in `src/tools/policy.ts`.
+- **Containment.** The permitted root is a hard boundary enforced in `packages/nax-agent/src/tools/policy.ts`.
   It is deliberately not config-expressible: no profile, and no rule, widens it. (`raw` Bash
   is the one tool it does not bind; there the OS sandbox limits writes instead.)
 - **The OS sandbox and the command-safety shadow.** The sandbox changes *how* an

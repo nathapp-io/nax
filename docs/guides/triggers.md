@@ -30,7 +30,9 @@ nax can pause execution and prompt you for decisions at critical points. Configu
 }
 ```
 
-Out of the box (no `interaction` block), nax uses the `cli` plugin with a 600000 ms (10 min) timeout, and only `security-review` and `cost-warning` are enabled. A trigger absent from `triggers` is disabled. Each trigger takes either `true`/`false` or an object with a per-trigger override:
+> **Pipeline mode.** The story and run triggers below fire only in the pipeline (`execution.mode: "pipeline"`, deprecated). Workflow mode (the default since 0.88.0) has no trigger call sites for them. The interaction plugin still serves the Bash approval prompts (see below) and the other workflow asks. Run triggers that fire in the pipeline are `cost-warning`, `cost-exceeded` and `merge-conflict` (run-level), and `max-retries`, `human-review`, `pre-merge` and `review-gate` (story-level). `security-review` and `story-oversized` have no runtime caller in 0.88.0, so enabling them has no effect yet.
+
+Out of the box (no `interaction` block), nax uses the `cli` plugin with a 600000 ms (10 min) timeout, and only `security-review` and `cost-warning` are enabled. Of those two, only `cost-warning` fires (pipeline only); see the note above. A trigger absent from `triggers` is disabled. Each trigger takes either `true`/`false` or an object with a per-trigger override:
 
 ```json
 "triggers": {
@@ -42,20 +44,20 @@ Out of the box (no `interaction` block), nax uses the `cli` plugin with a 600000
 
 | Trigger | Safety | Default Fallback | Description |
 |:--------|:------:|:----------------:|:------------|
-| `security-review` | 🔴 Red | `abort` | Critical security issues found during review |
-| `cost-exceeded` | 🔴 Red | `abort` | Run cost exceeded the configured limit |
-| `merge-conflict` | 🔴 Red | `abort` | Git merge conflict detected |
-| `cost-warning` | 🟡 Yellow | `escalate` | Approaching cost limit — escalate to higher model tier? |
-| `max-retries` | 🟡 Yellow | `skip` | Story exhausted all retry attempts — skip and continue? |
-| `pre-merge` | 🟡 Yellow | `escalate` | Checkpoint before merging to main branch |
-| `human-review` | 🟡 Yellow | `skip` | Human review required on critical failure |
-| `story-oversized` | 🟡 Yellow | `continue` | Story too complex — decompose into sub-stories? |
-| `review-gate` | 🟢 Green | `continue` | Code review checkpoint before proceeding |
+| `security-review` | Red | `abort` | Critical security issues found during review |
+| `cost-exceeded` | Red | `abort` | Run cost exceeded the configured limit |
+| `merge-conflict` | Red | `abort` | Git merge conflict detected |
+| `cost-warning` | Yellow | `escalate` | Approaching cost limit — escalate to higher model tier? |
+| `max-retries` | Yellow | `skip` | Story exhausted all retry attempts — skip and continue? |
+| `pre-merge` | Yellow | `escalate` | Checkpoint before merging to main branch |
+| `human-review` | Yellow | `skip` | Human review required on critical failure |
+| `story-oversized` | Yellow | `continue` | Story too complex — decompose into sub-stories? |
+| `review-gate` | Green | `continue` | Code review checkpoint before proceeding |
 
 **Safety tiers:**
-- 🔴 **Red** — Critical; defaults to aborting if no response
-- 🟡 **Yellow** — Caution; defaults to escalating or skipping
-- 🟢 **Green** — Informational; defaults to continuing
+- **Red** — Critical; defaults to aborting if no response
+- **Yellow** — Caution; defaults to escalating or skipping
+- **Green** — Informational; defaults to continuing
 
 **Fallback behaviors** (when interaction times out). Each trigger uses its own default fallback (table above) unless `interaction.defaults.fallback` or a per-trigger `fallback` is set. Red-tier triggers ignore `interaction.defaults.fallback` — only a per-trigger `fallback` changes them, so a blanket `"continue"` cannot turn a security or cost gate into approve-on-timeout:
 - `continue` — proceed as normal

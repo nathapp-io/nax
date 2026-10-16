@@ -36,11 +36,11 @@ The values above are the defaults. A pending story is flagged when **any** signa
 
 | Value | Behaviour |
 |:------|:----------|
-| `block` | Precheck reports a blocker naming the `nax plan --decompose` command for each flagged story. Under `nax run --plan --from <spec>`, the replan loop decomposes flagged stories automatically (up to `maxReplanAttempts` rounds) before the confirmation gate |
+| `block` | Precheck reports a blocker naming the `nax plan --decompose <storyId>` command for each flagged story. Decompose the stories by hand; the automatic replan loop (`runReplanLoop` in `src/cli/plan-decompose.ts`) has no production call site in 0.88.0 |
 | `warn` | Report a warning but continue |
 | `skip` | Skip the size check entirely |
 
-> **Note:** `storySizeGate` (under `precheck`) is the pre-run guard that detects oversized stories before execution starts (`src/precheck/story-size-gate.ts`). Decomposition is the remedy — run `nax plan -f <feature> --decompose <storyId>`, or let the `block` action drive the replan loop (`runReplanLoop` in `src/cli/plan-decompose.ts`).
+> **Note:** `storySizeGate` (under `precheck`) is the pre-run guard that detects oversized stories before execution starts (`src/precheck/story-size-gate.ts`). Decomposition is the remedy — run `nax plan -f <feature> --decompose <storyId>`. `maxReplanAttempts` is the retry budget for the decompose AC-repair loop (see below).
 
 **How it works:**
 

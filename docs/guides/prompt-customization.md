@@ -26,6 +26,8 @@ nax orchestrates your work across 5 specialized roles. Each role has a distinct 
 
 `no-test` accepts a `prompts.overrides` entry but has no `nax prompts --init` template or `--export` support — author its file by hand.
 
+> **Pipeline mode only.** `prompts.overrides` is read by the pipeline's TDD prompt builder. In workflow mode (the default since 0.88.0) the implementer and fix-round prompts come from the workflow prompt builders (`src/prompts/builders/workflow-implementer-builder.ts`), which do not read `prompts.overrides`. The templates and `nax prompts` commands below still apply to pipeline runs.
+
 > **Note:** the prompt stage builds single-session stories with the `no-test` role (strategy `no-test`) or the `tdd-simple` role (everything else), and batched stories with the internal `batch` role. `test-after` stories are customised through `tdd-simple`. The `single-session` role was retired: no run reads it, so `prompts.overrides.single-session` is stripped with a warning and any existing `single-session.md` template is inert.
 
 **Test Strategies** (valid `testStrategy` values):
@@ -141,7 +143,7 @@ diff .nax/templates/implementer.md <(nax prompts --export implementer)
 
 ## What Can and Cannot Be Overridden
 
-### ✅ Overridable Sections
+### Overridable Sections
 
 The **role-body** section (the main task instructions) can be customized:
 
@@ -156,7 +158,7 @@ Instructions:
 - ...
 ```
 
-### ❌ Non-Overridable Sections
+### Non-Overridable Sections
 
 These sections are **always injected by nax** and cannot be changed in templates:
 
@@ -352,6 +354,6 @@ See [design-patterns.md §11](../architecture/design-patterns.md) for the full p
 
 ## See Also
 
-- [Test Strategies](../../README.md#test-strategies) — How nax selects a test strategy per story
+- [Test Strategies](test-strategies.md) — How nax selects a test strategy per story
 - [Three-Session TDD](three-session-tdd.md) — Role separation and isolation rules
-- [Configuration Reference](../../README.md#configuration) — All nax config options
+- [Configuration Reference](configuration.md) — All nax config options

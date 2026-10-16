@@ -9,6 +9,8 @@ Semantic review uses an LLM to compare the actual git diff against a story's acc
 
 **Status:** Built-in (v0.54.0) — opt-in via config.
 
+> **Pipeline vs workflow mode.** The semantic review op described on this page runs in the pipeline (`execution.mode: "pipeline"`, deprecated). In workflow mode (the default since 0.88.0) each story gets a fresh story review (`workflow-story-review`) after its implementer session. That reviewer has `Read`, `Glob`, `Grep`, `Git` and `Bash`, and its `Bash` runs inside the sandbox (see [Sandbox and Command Safety](sandbox-and-command-safety.md)). Its model comes from `workflow.models.storyReview`, falling back to `review.semantic.model`. Its timeout is `workflow.timeouts.reviewMs`. The reviewer reads a review package file (the commits, the diff stat and the diff; a truncated diff ends with a list of files it does not show, which the reviewer reads itself). A reply that does not parse after one retry skips the review rather than failing open. The pipeline keys below (`diffMode`, `resetRefOnRerun`, `substantiation`, `recurrenceDemotion`, `demandInspectionTrail`, `acRegroundOnDrop`, `parseRetryMaxAttempts`, `review.checks`, `review.nonBlockingFix`, `review.pluginMode`) configure the pipeline op and do not change the workflow story review. Workflow branch-level review is covered by the feature workflow (see [Retry Strategy](retry-strategy.md)).
+
 ---
 
 ## How It Works
@@ -22,7 +24,7 @@ Story ACs + production diff → LLM prompt → { passed: bool, findings: [...] }
 3. Calls the LLM to verify each AC is correctly implemented
 4. Parses the structured JSON response and reports findings
 
-Semantic review runs **after** the story passes all other checks (typecheck, lint, test). It is a final behavioral gate.
+In pipeline mode, semantic review runs **after** the story passes all other checks (typecheck, lint, test). It is a final behavioral gate.
 
 ---
 
@@ -244,7 +246,7 @@ Semantic review failed:
 
 ## Mechanical vs LLM Check Splitting
 
-The review runner classifies checks into two categories:
+Pipeline mode only. The review runner classifies checks into two categories:
 
 | Category | Checks | Runs when |
 |:---------|:-------|:----------|

@@ -30,8 +30,8 @@ rules are not consulted. See [The Bash Tool](bash-tool.md).
 
 ## The resolver chain
 
-Every ask is resolved by one chain (`src/permissions/ask-chain.ts`); the first link that does
-not abstain answers:
+Every ask is resolved by one chain (`packages/nax-agent/src/permissions/ask-chain.ts`, composed in
+`packages/nax/src/interaction/dispatch-ask.ts`); the first link that does not abstain answers:
 
 1. **Approvals cache** — a remembered human decision for this exact stage and command.
 2. *(reserved)* — the slot a future classifier would occupy. Empty today.
@@ -50,14 +50,15 @@ The verdict carries `decidedBy`:
 | `cancelled` | The turn was cancelled while the prompt was waiting. |
 | `unshowable` | The command holds a secret whose masked form could hide shell syntax; denied without prompting. |
 | `model` | Reserved for the classifier slot. |
+| `profile` | Recorded automatically by the session's permission profile (ACP session asks). Informational: no prompt was shown. |
 
 A denied ask is recorded in the tool-audit ledger as `outcome: "denied:ask"`; an approved call
 runs, and its ledger row carries `approval: { decidedBy, remembered, latencyMs }`.
 
 ## Reaching a human
 
-The human link talks to the run's interaction chain (`interaction.plugin`: `cli` by default,
-`telegram`, or `webhook`). With the `cli` plugin, a headless run or a stdin that is not a TTY
+The human link talks to the run's interaction chain (`interaction.plugin`: `cli` by default;
+`telegram` and `webhook` are the other plugins). With the `cli` plugin, a headless run or a stdin that is not a TTY
 has no one to ask, and every ask resolves `unavailable`. Telegram and webhook work without a
 TTY. Under `escalate`, the `Bash` tool description tells
 the model a human can approve only when one is reachable; otherwise it reads exactly like

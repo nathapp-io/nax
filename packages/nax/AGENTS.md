@@ -28,7 +28,7 @@ Bun + TypeScript CLI that orchestrates AI coding agents (Claude Code) with model
 
 | Layer | Choice |
 |:------|:-------|
-| Runtime | **Bun 1.4.0** (pinned in CI) — Bun-native APIs only, no Node.js equivalents |
+| Runtime | **Bun 1.4.3** (pinned in CI) — Bun-native APIs only, no Node.js equivalents |
 | Language | **TypeScript strict** — no `any` without explicit justification |
 | Test | **`bun:test`** — describe/test/expect |
 | Lint/Format | **Biome** (`bun run lint`) |

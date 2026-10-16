@@ -7,6 +7,8 @@ description: Running multiple stories concurrently with git worktrees
 
 nax can run multiple stories concurrently using git worktrees — each story gets an isolated worktree so agents don't step on each other.
 
+> **Pipeline mode only.** Since 0.88.0 `execution.mode` defaults to `"workflow"`, which runs stories one at a time. In workflow mode `--parallel` is ignored with a warning, and `execution.storyIsolation: "worktree"` is forced back to `"shared"`. Everything on this page (batching, `--parallel`, per-story worktrees) applies only when `execution.mode` is `"pipeline"`, which is deprecated and frozen.
+
 ```bash
 # Up to 3 stories at a time
 nax run -f my-feature --parallel 3

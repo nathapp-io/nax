@@ -8,12 +8,14 @@
 > It complements §17 (Pipeline), §19 (TDD), §21 (Verification), and §25 (Review) in
 > [subsystems.md](subsystems.md) — those describe the subsystems; this describes the **control flow**
 > that wires them together per story.
+>
+> **Pipeline mode only.** Since v0.88.0 the default execution mode is workflow mode (ADR-034, [workflow-mode guide](../guides/workflow-mode.md)). Workflow mode runs one implementer session per story, a story review, a bounded fix loop and one full-suite gate run after review, with no per-phase orchestrator. This document describes `execution.mode: "pipeline"`, which is deprecated and frozen.
 
 ---
 
 ## 1. Where this fits
 
-Each story runs inside the pipeline's `executionStage`
+In pipeline mode, each story runs inside the pipeline's `executionStage`
 (`src/pipeline/stages/execution.ts`). That stage delegates per-story work to the
 **Story Orchestrator** (`src/execution/story-orchestrator/` — a directory; `index.ts` is
 the public barrel), which executes an ordered list of **phases** and, on failure, drives a

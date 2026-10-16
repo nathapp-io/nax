@@ -45,7 +45,7 @@ backend needs must be exported from `.`, never `./internal`.
 
 | Layer | Choice |
 |:------|:-------|
-| Runtime | **Bun 1.4.0** for dev and tests; the shipped source is Node-compatible (>=22.19.0) and uses no Bun API (`bun run check:no-bun-apis`) |
+| Runtime | **Bun 1.4.3** for dev and tests; the shipped source is Node-compatible (>=22.19.0) and uses no Bun API (`bun run check:no-bun-apis`) |
 | Language | **TypeScript strict** — no `any` without explicit justification |
 | Test | **`bun:test`** for unit/integration coverage; **vitest on real Node 22/24** for runtime contracts and packed-tarball smoke |
 | Lint/Format | **Biome** (`bun run lint:biome`), plus nax's own gate scripts |

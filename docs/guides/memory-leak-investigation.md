@@ -4,17 +4,19 @@
 
 ## Background
 
-The unit suite has roughly 1,300 test files that run in a single Bun process. Three known classes of leak make this hang/RAM-bloat possible:
+The unit suite (`packages/nax/test/unit/`, about 1,500 `*.test.ts` files) runs in a single Bun process. Three known classes of leak make this hang/RAM-bloat possible:
 
 1. **Unclosed `NaxRuntime` instances** — each runtime registers an idle-watchdog `setTimeout` that keeps the event loop alive. `test/helpers/runtime.ts` auto-tracks runtimes created via `makeTestRuntime` / `makeMockRuntime` and closes them in an `afterEach`. Runtimes built any other way (a direct `createRuntime` call) are not tracked and must be closed by the test itself.
 2. **Naked `setTimeout` in tests** — `await new Promise(r => setTimeout(r, N))` with no `AbortController` keeps timers pending if the surrounding test throws or aborts.
 3. **`attachAgentIdleWatchdog` / `setInterval`-like APIs** — these return an `unsubscribe` callback. If a test creates one and the test then throws before `unsubscribe()` is reached, the internal tick timer keeps firing.
 
-The wrapper `scripts/run-tests.ts` time-boxes phases and kills the process group on hang, abnormal exit (Bun panic / SIGSEGV / SIGABRT), and forwarded SIGINT/SIGTERM. Bare `bun test <dir>` invocations bypass it — a Bun panic there leaves the test-spawned descendants (agent procs, shells) orphaned.
+The wrapper `packages/nax/scripts/run-tests.ts` time-boxes phases and kills the process group on hang, abnormal exit (Bun panic / SIGSEGV / SIGABRT), and forwarded SIGINT/SIGTERM. Bare `bun test <dir>` invocations bypass it — a Bun panic there leaves the test-spawned descendants (agent procs, shells) orphaned.
 
 ## Investigation Phases
 
 Run phases A and C in parallel. B and D follow once suspects are identified.
+
+Run every command in this guide from `packages/nax/`, where `scripts/`, `test/unit/` and `test/helpers/` live.
 
 ---
 
@@ -22,7 +24,7 @@ Run phases A and C in parallel. B and D follow once suspects are identified.
 
 Run every test file in its own short-lived child process; record exit code, duration, and peak RSS. Hangs become `exit 124`; runaway memory shows as a high `peak_rss_mb`.
 
-**Tool:** [`scripts/find-memory-leak.ts`](../../scripts/find-memory-leak.ts)
+**Tool:** [`packages/nax/scripts/find-memory-leak.ts`](../../packages/nax/scripts/find-memory-leak.ts)
 
 **Usage:**
 
@@ -127,12 +129,12 @@ Cross-reference grep hits with Phase A's CSV — overlaps are highest-priority t
 
 ### Phase D — Extend the regression gate
 
-`scripts/check-runtime-cleanup.sh` (`bun run check:runtime-cleanup`) already guards the most common leak. It fails when:
+`scripts/check-runtime-cleanup.sh` (`bun run check:runtime-cleanup` in `packages/nax`) already guards the most common leak. It fails when:
 
 1. `test/helpers/runtime.ts` no longer provides the centralized `afterEach` teardown (`runtime.close()` / `Promise.allSettled`).
 2. A `*.test.ts` file calls `createRuntime(` without any `.close(` call.
 
-It runs in `check:all-without-biome`, so the pre-commit hook (`.githooks/pre-commit` → `check:all`) and CI enforce it. The rule itself lives in `.nax/rules/forbidden-patterns-source.md`.
+It runs in `check:all-without-biome`, so `check:all` and CI enforce it. The rule itself lives in `.nax/rules/forbidden-patterns-source.md`.
 
 Once Phase B identifies a new failure mode, extend the script (or add a sibling `check:*` gate wired into `check:all-without-biome`) so the same leak cannot regress. Candidates the script does not yet enforce:
 
@@ -165,6 +167,6 @@ bun test test/unit/ hangs / OOMs
 
 - [.nax/rules/testing-commands.md](../../.nax/rules/testing-commands.md) — Why bare `bun test` is banned
 - [.nax/rules/forbidden-patterns-source.md](../../.nax/rules/forbidden-patterns-source.md) — Runtime cleanup rule
-- [scripts/check-runtime-cleanup.sh](../../scripts/check-runtime-cleanup.sh) — Runtime cleanup gate
-- [test/helpers/runtime.ts](../../test/helpers/runtime.ts) — Auto-tracking afterEach
-- [scripts/run-tests.ts](../../scripts/run-tests.ts) — Phase-capped wrapper for full suite
+- [packages/nax/scripts/check-runtime-cleanup.sh](../../packages/nax/scripts/check-runtime-cleanup.sh) — Runtime cleanup gate
+- [packages/nax/test/helpers/runtime.ts](../../packages/nax/test/helpers/runtime.ts) — Auto-tracking afterEach
+- [packages/nax/scripts/run-tests.ts](../../packages/nax/scripts/run-tests.ts) — Phase-capped wrapper for full suite

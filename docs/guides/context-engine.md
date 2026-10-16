@@ -39,7 +39,7 @@ The engine is **off by default**. Opt in per-project:
 }
 ```
 
-That's the minimum. With just `enabled: true`, you get the built-in providers — `static-rules`, `feature-context`, `session-scratch`, `git-history`, `code-neighbor`, `test-coverage`, `tool-diagnostics`, `prior-run-failure`, `lint-config` — each active on the stages whose default provider set lists it (see `STAGE_CONTEXT_MAP` in `src/context/engine/stage-config.ts`; e.g. `prior-run-failure` and `lint-config` run only on `rectify`).
+That's the minimum. With just `enabled: true`, you get the built-in providers — `static-rules`, `feature-context`, `session-scratch`, `git-history`, `code-neighbor`, `test-coverage`, `tool-diagnostics`, `prior-run-failure`, `lint-config`, `advisor-decisions` — each active on the stages whose default provider set lists it (see `STAGE_CONTEXT_MAP` in `src/context/engine/stage-config.ts`; e.g. `prior-run-failure` and `lint-config` run only on `rectify`).
 
 Verify it's on:
 
@@ -280,7 +280,7 @@ The loader validates the shape structurally (duck-typed — `id`, `kind`, `fetch
 
 #### Scoping a provider to specific stages
 
-A common question is "how do I run my provider only on `tdd-test-writer`?" or "only on `review-semantic`?" A plugin provider runs only on stages that list its ID in `stages.<name>.extraProviderIds` ([below](#wire-the-plugin-to-specific-stages)); the built-in stage-to-provider mapping stays hardcoded in `STAGE_CONTEXT_MAP` ([src/context/engine/stage-config.ts](../../src/context/engine/stage-config.ts)).
+A common question is "how do I run my provider only on `tdd-test-writer`?" or "only on `review-semantic`?" A plugin provider runs only on stages that list its ID in `stages.<name>.extraProviderIds` ([below](#wire-the-plugin-to-specific-stages)); the built-in stage-to-provider mapping stays hardcoded in `STAGE_CONTEXT_MAP` ([src/context/engine/stage-config.ts](../../packages/nax/src/context/engine/stage-config.ts)).
 
 Within the stages a provider runs on, three patterns narrow what it emits:
 
@@ -440,7 +440,7 @@ Per-package overrides live in `.nax/mono/<packageDir>/config.json` — use them 
 
 If `context.v2.enabled: false` (default), the pipeline falls back to v1:
 
-- `featureContextMarkdown()` reads `context.md` directly and inlines it.
+- Feature context reaches the prompts through the v1 compat path (`ctx.featureContextMarkdown`), not through the engine.
 - No providers, no manifests, no pull tools, no session scratch.
 - Agent-specific files (`CLAUDE.md`) are the only rules path.
 - Everything goes into every stage's prompt — no budgets, no scoring.

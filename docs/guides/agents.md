@@ -29,7 +29,7 @@ nax agents
 | Pi Coding Agent | `pi-acp` (or `npx pi-acp`) | Set `agent.default: "pi"` |
 | Aider | — | Known name with no ACP launcher; it fails at session open |
 
-Every agent except `native` runs as a persistent ACP session — nax sends prompts and receives structured JSON-RPC responses including token counts and the reported USD cost per turn. A configured model id must be one the agent offers verbatim (for Claude: `default`, `sonnet`, `haiku`, `opus`, `fable`); any other id fails the session open with the list the agent does offer.
+Every agent except `native` runs as a persistent ACP session — nax sends prompts and receives structured JSON-RPC responses including token counts and the reported USD cost per turn. A configured model id must be one the agent offers verbatim (the ids in its model option). Any other id fails the session open, and the refusal names the ids the agent does offer.
 
 **Upgrading from acpx (nax 0.83.6):** `acpx` is no longer used and can be uninstalled. Install the ACP launcher for each agent you run (table above). Remove `agent.acp.transport` from your config: it now has no effect and the config load warns about it. `ACPX_*` environment variables are no longer passed to agent processes.
 
@@ -97,7 +97,7 @@ nax has four independent retry layers. Only one of them swaps the agent; the res
 |:------|:--------|:------|:-------------|
 | **Availability** | Auth (401), rate-limit (429), service down | `AgentManager` | Yes — walks `agent.fallback.map` |
 | **Transport** | Broken socket, agent crash, stale session | `AcpAgentAdapter` | No — same agent, new protocol session |
-| **Agent-internal** | A transient provider fault inside one call — stalled stream, 502/503 | ACP turn loop (`agent.acp.promptRetries`) / native turn loop (native) | No — same agent, same call re-issued |
+| **Agent-internal** | A transient provider fault inside one call — stalled stream, 502/503 | ACP turn loop (`agent.acp.promptRetries`) / native turn loop (`agent.native.transportRetry`) | No — same agent, same call re-issued |
 | **Payload** | JSON parse / schema mismatch on LLM reply | Caller (e.g. semantic / adversarial review) | No — same agent, re-ask |
 
 The agent-internal layer is one idea with two implementations. On ACP,

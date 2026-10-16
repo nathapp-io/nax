@@ -5,6 +5,8 @@ description: How acceptance testing, semantic review, and diagnose/fix connect
 
 ## Acceptance & Review End-to-End Flow
 
+> **Pipeline mode.** This guide describes the story pipeline stages, which run under `execution.mode: "pipeline"` (deprecated since 0.88.0). Workflow mode, the default, runs story review and final gates through `packages/nax/src/workflow/`. Workflow mode forces `acceptance.enabled` to `false` on every config layer (`applyWorkflowMode` in `src/config/workflow-mode.ts`), so the acceptance loop described here never runs there; see [workflow-mode.md](workflow-mode.md) and [ADR-034](../adr/ADR-034-workflow-execution-mode.md).
+
 This document maps how four subsystems connect across the nax pipeline:
 
 1. **Acceptance test generation** — creates tests from acceptance criteria
@@ -36,7 +38,7 @@ PRD loaded (stories with acceptance criteria)
  │   │   ├─ SEMANTIC REVIEW (behavioral AC check)
  │   │   │   └─ stateless → agent.run() or agent.complete()
  │   │   │
- │   │   ├─ ADVERSARIAL REVIEW (REVIEW-003, own ACP session)
+ │   │   ├─ ADVERSARIAL REVIEW (REVIEW-003, own fresh session, role `reviewer-adversarial`)
  │   │   │   ├─ Checks: input handling, error paths, abandonment, test gaps, conventions, assumptions
  │   │   │   ├─ Default diffMode: "ref" (no 50KB cap)
  │   │   │   └─ Parallel/sequential execution (configurable)
@@ -100,7 +102,7 @@ PRD loaded (stories with acceptance criteria)
 - `src/review/diff-utils.ts` — shared diff utilities (collectDiff, truncateDiff, resolveEffectiveRef)
 - `src/review/runner/` — check orchestration (lint, typecheck, semantic, adversarial)
 
-Semantic review runs as a single stateless LLM pass (`semanticReviewOp`). The dialogue / `ReviewerSession` path was removed (2026-05-29), and the debate panel path was removed with the debate subsystem (2026-09-20) — `review.dialogue.enabled` is a rejected legacy config key.
+Semantic review runs as a single stateless LLM pass (`semanticReviewOp`). The dialogue / `ReviewerSession` path was removed (2026-05-29), and the debate panel path was removed with the debate subsystem (2026-09-20) — `review.dialogue.enabled: true` is a removed legacy key: config load warns and strips it.
 
 **Re-review behavior:** The review re-runs from scratch on the next fix-cycle iteration — there is no persistent reviewer session to carry delta context.
 
@@ -111,7 +113,8 @@ Semantic review runs as a single stateless LLM pass (`semanticReviewOp`). The di
 Restructured per [ADR-006](../adr/ADR-006-acceptance-retry-restructure.md), then moved onto the shared fix cycle (`runFixCycle`, [ADR-022](../adr/ADR-022-fix-strategy-and-cycle.md)). The outer loop owns the stub guard and the per-package fan-out; `runFixCycle` owns the per-package fix retries.
 
 **Files:**
-- `src/execution/lifecycle/acceptance-loop.ts` — outer loop (`runAcceptanceLoop`) + `runAcceptanceFixCycle()`
+- `src/execution/lifecycle/acceptance-loop.ts` — outer loop (`runAcceptanceLoop`); re-exports `runAcceptanceFixCycle()`
+- `src/execution/lifecycle/acceptance-fix-cycle.ts` — `runAcceptanceFixCycle()` (per-package fix cycle, built on `runFixCycle` in `src/findings/cycle.ts`)
 - `src/execution/lifecycle/acceptance-fix.ts` — `resolveAcceptanceDiagnosis()`
 - `src/execution/lifecycle/acceptance-fix-scope.ts` — per-cycle scope carrying the Bash ask resolver + command-safety shadow for the fix ops
 - `src/execution/lifecycle/acceptance-helpers.ts` — `isStubTestFile`, `isTestLevelFailure`, `regenerateAcceptanceTest`

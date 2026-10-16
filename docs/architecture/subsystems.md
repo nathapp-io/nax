@@ -1,17 +1,25 @@
 # Subsystems — nax
 
-> §17–§57: Pipeline, execution, TDD, acceptance, verification, routing, plugins,
+> §17–§64: Pipeline (deprecated mode), execution, TDD, acceptance, verification, routing, plugins,
 > runtime, managers, operations, post-run curator, config, logger, log-format,
 > CLI, commands, optimizer, plan, precheck, project, findings, prompts, analyze, utils,
 > native agent loop, coding tools, permissions & approvals, OS sandbox,
-> command-safety shadow, MCP.
+> command-safety shadow, MCP, workflow mode (the default execution mode), advisor,
+> finish, forge, trust, replay, and other modules.
 > Part of the [Architecture Documentation](ARCHITECTURE.md).
 >
-> _Last updated: 2026-09-25 (v0.82.1)._
+> _Last updated: 2026-10-16 (v0.88.0)._
 
 ---
 
 ## §17 Pipeline Architecture
+
+> **Pipeline mode is deprecated (v0.88.0).** `execution.mode` now defaults to `"workflow"`
+> (ADR-034, §58). Everything in §17–§22 describes `execution.mode: "pipeline"`: the per-story stage
+> pipeline, the story orchestrator, the three-session TDD flow, acceptance tests, the regression gate
+> and parallel execution. Pipeline mode is frozen and will be removed. Workflow mode builds a different
+> stage list (`buildWorkflowPipeline()` in `src/pipeline/stages/index.ts`) in which `workflowStage`
+> replaces `executionStage`.
 
 ### Execution Flow
 
@@ -114,6 +122,10 @@ For three-session TDD, the full-suite gate runs after implementer and before ver
 
 ## §18 Execution Modes & Batching
 
+> Parallel execution and story batching are pipeline-mode features. Workflow mode runs stories one at
+> a time: `--parallel` is ignored, batching is disabled and `execution.storyIsolation` is forced to
+> `shared` (`applyWorkflowMode`, `src/config/workflow-mode.ts`).
+
 ### Execution Strategies
 
 | Strategy | Description | Key file |
@@ -186,6 +198,10 @@ UnifiedExecutor → runParallelBatch()        [parallel-batch.ts]
 
 ## §19 TDD Orchestration
 
+> Pipeline mode only. Workflow mode has no separate test-writer or verifier session: one implementer
+> session writes the tests and the code, and the story review and the deterministic gates check them
+> (ADR-034).
+
 ### Three-Session TDD Workflow
 
 The three TDD sessions are typed Operations (`testWriterOp`, `implementerOp`,
@@ -247,6 +263,8 @@ Skips strict file isolation for performance. Test-writer may add src/ stubs; imp
 
 ## §20 Acceptance Test System
 
+> Pipeline mode only. Workflow mode forces `acceptance.enabled` to `false`.
+
 ### Overview
 
 `src/acceptance/` holds the deterministic helpers; every LLM call is an Operation in `src/operations/` (§37):
@@ -293,7 +311,7 @@ The `acceptanceSetupStage` generates tests and verifies they fail (RED) before i
 
 ### Test Runners Module (SSOT)
 
-`src/test-runners/` — centralized test output parsing extracted from `src/verification/parser.ts`:
+`src/test-runners/` — centralized test output parsing (the former `src/verification/parser.ts` was split into it):
 
 | File | Purpose |
 |:-----|:--------|
@@ -876,7 +894,7 @@ interface TokenUsage {
 
 `src/agents/cost/`:
 - `rate-card.ts` — `resolveRateCard()` maps a configured model id to a `Pricing` card: alias file (`model-aliases.json`) → nax-ai model catalog (`src/agents/catalog/`, `catalog-rates`) → `FALLBACK_RATES` (`fallback-rates`, with a warning)
-- `estimate.ts` — `priceCall()` / `estimateCostUsd()`, tier-aware (cache read/creation fall back to input price)
+- `estimate.ts` (`packages/nax-agent/src/cost/estimate.ts`) — `priceCall()` / `estimateCostUsd()`, tier-aware (cache read/creation fall back to input price)
 - `calculate.ts` — `addTokenUsage()`, `inputClassTokens()`, `formatCostWithConfidence()`, `resolvePricingSource()`
 - `token-mapper.ts` — maps adapter usage payloads onto `TokenUsage`
 - ACP sessions emit exact USD via `usage_update` events (preferred over estimation); the native path prices each round trip from the rate card
@@ -1658,7 +1676,7 @@ Layered configuration system — the single source of truth for all nax settings
 - `NaxConfig`, `NaxConfigSchema`, `DEFAULT_CONFIG` — main config type + Zod schema + schema-derived default (never a hand-maintained literal)
 - `loadConfig(workdir)` / `createConfigLoader()` / `ConfigLoader` — entry points; return fully merged, validated config; `ConfigLoader` is the runtime accessor for live-reload awareness
 - `findProjectDir(startDir)`, `globalConfigPath()`, `globalConfigDir()`, `projectConfigDir()` — config filesystem discovery helpers (`getRunsDir` / `getEventsRootDir` live in `src/utils/paths.ts`, not here)
-- `resolvePermissions(config, stage)` / `PipelineStage` / `ResolvedPermissions` — permission SSOT (see §14 in `agent-adapters.md`); lives in `src/config/permissions.ts` and is imported directly by callers, not via the config barrel. It also resolves the stage's bash approval mode (`resolveBashApproval()`, `src/config/bash-approval.ts`); `inert-bash-stages.ts` warns about stages that declare Bash under `gated`/`escalate` but hold no `Bash(...)` allow rule
+- `resolvePermissions(config, stage)` / `PipelineStage` / `ResolvedPermissions` — permission SSOT (see §14 in `agent-adapters.md`); lives in `src/config/permissions.ts` and is imported directly by callers, not via the config barrel. It also resolves the stage's bash approval mode (`resolveBashApproval()`, `packages/nax-agent/src/config/bash-approval.ts`); `inert-bash-stages.ts` warns about stages that declare Bash under `gated`/`escalate` but hold no `Bash(...)` allow rule
 - Named selectors (20+): `tddConfigSelector`, `planConfigSelector`, `routingConfigSelector`, … — typed config slices consumed by `callOp` via `packageView.select`
 - `resolveTestStrategy()`, `isThreeSessionStrategy()` — test-strategy resolution (ADR-015)
 - `deepMergeConfig()`, `mergePackageConfig()` — merge primitives for the layering order
@@ -1666,7 +1684,7 @@ Layered configuration system — the single source of truth for all nax settings
 
 **Entry point:** `src/config/index.ts` (barrel); slice types are imported from the leaf `src/config/selectors` (see `config-patterns.md`).
 
-**Called by:** almost everything. Wired at bootstrap by `loadConfig` in `src/execution/lifecycle/run-setup.ts`. `resolvePermissions` is called inside `src/agents/manager.ts`, `src/agents/manager-dispatch.ts`, `src/agents/coding-tool-support.ts`, and `src/session/manager.ts`.
+**Called by:** almost everything. Wired at bootstrap by `loadConfig` in `src/execution/lifecycle/run-setup.ts`. `resolvePermissions` is called inside `src/agents/manager.ts`, `src/agents/manager-dispatch.ts`, `src/agents/coding-tool-support-resolve.ts`, and `src/session/manager.ts`.
 
 ---
 
@@ -1725,6 +1743,7 @@ High-level CLI command implementations. Each file maps to one user-facing comman
 - `authLoginCommand()` / `authImportCommand()` / `authListCommand()` / `authRmCommand()` — `nax auth`: provider credentials for the native agent
 - `runMcpLockCommand(workdir)` (`mcp.ts`) — `nax mcp lock`: refresh `.nax/mcp-lock.json` (§57)
 - `registerApprovalsCommand()` / `approvalsListCommand()` / `approvalsRmCommand()` (`approvals.ts`) — `nax approvals list [--json]` and `nax approvals rm [ids...] [--stage <s>] [--all] [--yes]` over remembered approvals (§54)
+- `registerAdvisorCommand()` (`advisor.ts`) — `nax advisor list|label|replay|import-finish` over recorded advisor decisions (§59); `registerTrustCommand()` (`trust.ts`) — `nax trust list|add|rm|check` (§62)
 - `specLintCommand()` — `nax spec lint`; `contextInspectCommand()`, `fragmentsInspectCommand()` / `fragmentsPruneCommand()`, `effectivenessEvalCommand()` — `nax context …`; `routingCalibrateCommand()` — `nax routing calibrate`; `agentsListCommand()`, `pluginsListCommand()`, `promptsCommand()`
 
 **Entry point:** `src/cli/index.ts`
@@ -1856,7 +1875,7 @@ Single home for all LLM prompt construction. No prompt template literals are per
 | `PlanPromptBuilder` | `nax plan` decomposition prompts |
 | `SetupPromptBuilder` | `nax setup` LLM fill |
 
-Function-style builders sit alongside: `buildDecomposePromptSync()` (decompose), `buildPriorIterationsBlock()`, `timeoutRetry()`.
+Function-style builders sit alongside: `buildDecomposePromptSync()` (decompose), `buildPriorIterationsBlock()`, `timeoutRetry()`. Workflow mode and the advisor add their own builders (`workflow-*-builder.ts`, `advisor-builder.ts`, `advisor-batch-builder.ts`, `finish-review-builder.ts`, `fix-review-builder.ts`, `nbf-worth-check-builder.ts`).
 
 **Key infrastructure exports:**
 - `composeSections(sections)` → assembled prompt string — used by `callOp` (§37)
@@ -1889,7 +1908,7 @@ Codebase scanner used by the planning pipeline (`nax plan`); there is no `nax an
 
 ## §51 Utils (`src/utils/`)
 
-General-purpose utilities with no shared subsystem home. Cross-dependencies within `src/utils/` are few and local (e.g. the lock files share `file-lock.ts`, `git.ts` uses `porcelain.ts`). Each file is independently importable from its leaf path (no barrel — `import from "src/utils/llm-json"`, not `"src/utils"`).
+General-purpose utilities with no shared subsystem home. Cross-dependencies within `src/utils/` are few and local (e.g. `git.ts` uses `porcelain.ts`). Each file is independently importable from its leaf path (no barrel — `import from "src/utils/llm-json"`, not `"src/utils"`).
 
 **Key files:**
 | File | Key Exports | Purpose |
@@ -1900,59 +1919,62 @@ General-purpose utilities with no shared subsystem home. Cross-dependencies with
 | `path-frame.ts` | `toRepoFrame()`, `normalizeWorkdir()`, `storyWorkdir()`, `storyPackageDir()`, `storyAbsWorkdir()` | **Path-frame SSOT (ADR-032):** every nax-internal relative path is held in one repo-rooted frame; agent file tools are rooted at the story execution root. |
 | `nax-owned-paths.ts` | `NAX_OWNED_GIT_EXCLUDE_PATHSPECS`, `NAX_OWNED_REVIEW_EXCLUDE_PATHSPECS`, `NAX_OWNED_TOP_EXCLUDE_PATHSPECS` | Pathspecs that hide nax's own run state from `git status` / review diffs. |
 | `path-security.ts` | `isRelativeAndSafe()`, `validateModulePath()` | Path validation (see §12 in `design-patterns.md`; config-side guards live in `src/config/path-security.ts`). |
-| `realpath.ts` | `realOrRaw()`, `isInside()` | Symlink-tolerant path comparison (e.g. macOS `/tmp` vs `/private/tmp`). |
+| `realpath` (`@nathapp/nax-agent/internal`) | `realOrRaw()`, `isInside()` | Symlink-tolerant path comparison (e.g. macOS `/tmp` vs `/private/tmp`). Implemented in `packages/nax-agent/src/internal/realpath.ts`. |
 | `json-file.ts` | `loadJsonFile<T>()`, `loadJsonFileStrict<T>()`, `saveJsonFile()`, `atomicWriteText()` | Typed JSON read/write wrappers over `Bun.file` / `Bun.write`. |
-| `errors.ts` | `errorMessage(err)` | Safely extracts a string from `unknown` thrown values. |
-| `process-kill.ts` | `killProcessGroup(pid)` | Process-group kill used by crash recovery and spawned-command deadlines. |
-| `argv-exec.ts` | `runArgv()` | Run an argv with no shell, a deadline, concurrent drain and a process-group kill. |
-| `file-lock.ts` / `path-file-lock.ts` / `queue-file-lock.ts` | `withFileLock()`, `withPathFileLock()`, `withQueueFileLock()` | Exclusive-create single-file locks (`<target>.lock`). |
+| `errorMessage` (`@nathapp/nax-agent/internal`) | `errorMessage(err)` | Safely extracts a string from `unknown` thrown values. |
+| `argv-exec.ts` (`@nathapp/nax-agent/internal`) | `runArgv()` | Run an argv with no shell, a deadline, concurrent drain and a process-group kill. |
+| `queue-file-lock.ts` | `withQueueFileLock()` | Exclusive-create lock around the queue control file. |
 | `bun-deps.ts` | `typedSpawn`, `which`, `sleep`, `cancellableDelay`, `file`, `spawn` | Injectable wrappers over Bun built-ins for test mocking. |
 | `queue-writer.ts` | `writeQueueCommand()`, `writeRetryCommand()` | Writes queue control commands (§31). |
 | `paths.ts` | `packageDirRelative()`, `getRunsDir()`, `getEventsRootDir()` | Shared run/event path helpers. |
 
-Other files (`gitignore.ts`, `diff-files.ts`, `feature-name.ts`, `command-argv.ts`, `nax-project-root.ts`, `porcelain.ts`, `git-add.ts`, `git-env.ts`, `jsonl-tail.ts`, `process-alive.ts`, `log-test-output.ts`, …) are single-purpose helpers — consult their source for details.
+Other files (`gitignore.ts`, `diff-files.ts`, `feature-name.ts`, `command-argv.ts`, `nax-project-root.ts`, `porcelain.ts`, `jsonl-tail.ts`, `log-test-output.ts`, `hardened-git.ts`, `markdown-fence.ts`, `drain-within.ts`, `step-signal.ts`, …) are single-purpose helpers — consult their source for details.
 
 ---
 
-## §52 Native Agent & Turn Loop (`src/agents/native/`)
+## §52 Native Agent & Turn Loop (`packages/nax-agent/src/native/`)
 
 The in-process transport for the `native` agent (ADR-027), the built-in default
-(`agent.default: "native"` under `agent.protocol: "hybrid"`). Decision records:
-ADR-028 (native sessions and the tool loop), ADR-029 (Phase C coding-agent scope).
-`@nathapp/nax-ai` may be imported only from `src/agents/native/`, `src/agents/catalog/`
-and the `src/agents/cost/standard-types.ts` staging re-export
-(`bun run check:nax-ai-imports`).
+(`agent.default: "native"` under `agent.protocol: "hybrid"`). The turn loop, sessions, tool
+loop and credentials live in the `@nathapp/nax-agent` package. nax wraps them in its own
+`NativeAgentAdapter` (`src/agents/native-agent/index.ts`), which composes the package's
+`NativeSessionAdapter` and `nativeComplete` and answers the process-shaped members honestly.
+Decision records: ADR-028 (native sessions and the tool loop), ADR-029 (Phase C coding-agent scope).
 
-- `adapter.ts` — the native `AgentAdapter`. `complete()` is a one-shot nax-ai call;
-  there is no binary, command or pid. `openSession` / `closeSession` are
-  transcript-file bookkeeping and `sendTurn` runs the turn loop. Each round trip is
-  priced with `priceCall()` (§28).
-- `auth.ts` / `credentials.ts` — provider credentials, managed by `nax auth
+`@nathapp/nax-ai` may be imported only from `packages/nax-agent/src/native/`,
+`packages/nax/src/agents/catalog/` and the `packages/nax-agent/src/cost/standard-types.ts`
+re-export. The allow-list is enforced by `check:nax-ai-imports`
+(`packages/repo-tooling/scripts/check-nax-ai-imports.ts`).
+
+- `native/session-adapter.ts` (`NativeSessionAdapter`) and `native/complete.ts` (`nativeComplete`).
+  `complete()` is a one-shot nax-ai call; there is no binary, command or pid. `openSession` /
+  `closeSession` are transcript-file bookkeeping and `sendTurn` runs the turn loop. Each round trip
+  is priced with `priceCall()` (§28).
+- `native/auth.ts` / `native/credentials/` — provider credentials, managed by `nax auth
   login|import|list|rm`; checked by the `checkNativeCredentials` precheck.
-- `session/turn-loop.ts` (`runNativeTurn`) — nax owns the conversation: append the
+- `native/session/turn-loop.ts` (`runNativeTurn`) — nax owns the conversation: append the
   prompt, call the model, and while it requests tools execute them through the
-  `InteractionHandler` and call again. Split into steps: `turn-complete-step.ts`
-  (one round trip with a bounded transport-fault retry and a context-overflow
-  compaction backstop), `turn-compaction-step.ts` (proactive compaction —
-  `execution.compaction`, default `{ enabled: true, compactAtPercent: 90,
-  keepRecentPercent: 30 }`), `turn-tool-batch.ts`, and `turn-ask-human.ts` (the
-  `ask_human` channel, bounded by `agent.maxInteractionTurns`, default 20).
-- **Loop events** (`session/loop-events/`) — a typed in-process handler seam,
+  `InteractionHandler` and call again. Split into steps: `turn-complete-step.ts` (one round trip
+  with a bounded transport-fault retry and a context-overflow compaction backstop),
+  `turn-compaction-step.ts` (proactive compaction — `execution.compaction`, default
+  `{ enabled: true, compactAtPercent: 90, keepRecentPercent: 30 }`), `turn-tool-batch.ts`, and
+  `turn-ask-human.ts` (the `ask_human` channel, bounded by `agent.maxInteractionTurns`, default 20).
+- **Loop events** (`native/session/loop-events/`) — a typed in-process handler seam,
   distinct from shell hooks (§27): `before_turn`, `transform_context`
   (shapes the wire copy of history only), `before_request`,
   `after_response`, `before_tool`, `after_tool`, `before_compaction`,
-  `before_turn_end`. Built-in handlers (`session/loop-handlers.ts`): invalid-tool-call
+  `before_turn_end`. Built-in handlers (`native/session/loop-handlers.ts`): invalid-tool-call
   repair and the spin breaker on `before_tool`; model-facing truncation on
   `after_tool`, registered last. Dispatch snapshots array fields so a handler cannot
   rewrite history in place.
-- **Tool-result policy** — `session/tool-result.ts` is the only place a
+- **Tool-result policy** — `native/session/tool-result.ts` is the only place a
   `tool-result` message is built, so `after_tool` shapes a result *before* it
   enters the message array (no history rewrite, no prompt-cache re-bill).
-  Truncation is `src/tools/truncate.ts` (per-line, line-count and byte caps); the
+  Truncation is `packages/nax-agent/src/tools/truncate.ts` (per-line, line-count and byte caps); the
   untruncated body spills to the session scratchpad (`spill/<tool>-<callId>.txt`,
-  `src/tools/spill.ts`). Refusals are structural denial markers (ADR-029 §5), never
+  `packages/nax-agent/src/tools/spill.ts`). Refusals are structural denial markers (ADR-029 §5), never
   string conventions.
-- **Transcript store** (`session/transcript-store.ts`) — nax-ai's client is
+- **Transcript store** (`native/session/transcript-store.ts`) — nax-ai's client is
   stateless, so nax persists the message array under the run output dir
   (`<outputDir>/features/<feature>/sessions/`), never the project tree. A transcript
   records its owner (the op invocation) and the model that wrote it; a different
@@ -1965,14 +1987,14 @@ and the `src/agents/cost/standard-types.ts` staging re-export
 
 ---
 
-## §53 Coding Tools (`src/tools/`)
+## §53 Coding Tools (`packages/nax-agent/src/tools/`)
 
 The tools an operation hands a native session (ADR-029). An op declares its tools
 (`RunOperation.tools`, §37); `resolveCodingToolSupport()`
-(`src/agents/coding-tool-support.ts`) intersects that declaration with the grants
+(`src/agents/coding-tool-support-resolve.ts`) intersects that declaration with the grants
 `resolvePermissions(config, stage)` resolved and builds the session's
-`CodingToolRuntime` (`runtime.ts`). `policy.ts`, `runtime.ts` and
-`coding-tool-support.ts` carry `nax-permission-mode-allow` markers: they consume resolved grants and decide no
+`CodingToolRuntime` (`runtime.ts`). `tools/policy.ts`, `tools/runtime.ts` and
+`coding-tools/coding-tool-support.ts` carry `nax-permission-mode-allow` markers: they consume resolved grants and decide no
 permission of their own.
 
 - **Built-in tools** (`CodingToolName`, `types.ts`): `Read`, `Glob`, `Grep`,
@@ -2018,10 +2040,10 @@ permission of their own.
 
 ---
 
-## §54 Permissions, Bash Approval & Approvals (`src/permissions/`)
+## §54 Permissions, Bash Approval & Approvals (`packages/nax-agent/src/permissions/`)
 
 Permission resolution itself stays in `resolvePermissions()`
-(`src/config/permissions.ts`, §14 in `agent-adapters.md`); `src/permissions/`
+(`src/config/permissions.ts`, §14 in `agent-adapters.md`); `packages/nax-agent/src/permissions/`
 holds the rule grammar, the Bash lexer, and the interactive ask tier.
 
 - `grammar.ts` — `parseToolExpression()` / `parseRuleList()` for
@@ -2075,12 +2097,12 @@ unavailable | cancelled | unshowable`) to `<outputDir>/approval-audit/<runId>.js
 
 ---
 
-## §55 OS Sandbox (`src/sandbox/`)
+## §55 OS Sandbox (`packages/nax-agent/src/sandbox/`)
 
 Wraps **agent-authored** commands — the `Bash` tool and `RunCommand`'s `Exec`
 branch — in an OS sandbox. Project-declared commands (`quality.commands`,
 `RunCommand` verbs) are never wrapped. Config `execution.sandbox`
-(`src/config/schemas-sandbox.ts`):
+(`packages/nax-agent/src/config/schemas-sandbox.ts`):
 
 | Key | Default | Meaning |
 |:---|:---|:---|
@@ -2122,7 +2144,7 @@ once-per-process warning. Each Bash / Exec tool-audit row records a `sandbox` en
 
 ---
 
-## §56 Command-Safety Shadow (`src/command-safety/`)
+## §56 Command-Safety Shadow (`packages/nax-agent/src/command-safety/`)
 
 An **observational** classifier for every agent-authored `Bash` / `Exec` command
 (P5; ADR-030 single-gate rule). It decides nothing: it never changes a verdict,
@@ -2157,6 +2179,10 @@ delays a call or fails a call. Config `execution.commandSafety.shadow`
 
 ## §57 MCP (`src/mcp/`)
 
+> The MCP SDK wrapper shared by the native agent and the ACP server's MCP bridge lives in
+> `packages/nax-agent/src/mcp/` (`connectMcp`, exposed as `@nathapp/nax-agent/mcp`). The pool, lock,
+> adoption and rollup code described below is in `packages/nax/src/mcp/`.
+
 External MCP servers whose tools the native agent may call, surfaced as
 `discovered` tool providers (§53). Config `mcp.servers.<id>` (`src/config/schemas-mcp.ts`,
 `.strict()`):
@@ -2180,3 +2206,197 @@ External MCP servers whose tools the native agent may call, surfaced as
 - `client.ts` — the only SDK wrapper (stdio transport, explicit env).
 - `rollup.ts` — per-run server lifecycle rollup at
   `<outputDir>/mcp/<runId>-servers.json`, including withheld tools.
+
+---
+
+## §58 Workflow Mode (`src/workflow/`)
+
+The default execution mode since v0.88.0 (`execution.mode: "workflow"`). Decision: ADR-034.
+User guide: [workflow-mode.md](../guides/workflow-mode.md). Gates stay deterministic. The
+advisor (§59) rules on judgment calls, and nothing in the workflow merges a pull request.
+
+**Config.** `execution.mode` (`ExecutionModeSchema` in `src/config/schemas-workflow.ts`).
+Absent or `"workflow"` runs workflow mode; `"pipeline"` runs the deprecated §17–§22 pipeline.
+The root-only `workflow` block (`WorkflowConfigObjectSchema`) sets `maxFixRounds` (5),
+`maxBranchFixRounds` (2), `finalGateRepairRounds` (1), `preflight` (true), `publish` (`"pr"`),
+`models.*` and `timeouts.*`. `isWorkflowMode()` and `resolveWorkflowConfig()` read it. The
+`applyWorkflowMode` helper (`src/config/workflow-mode.ts`) runs on every merged config layer and
+forces `acceptance.enabled` off, `execution.storyIsolation` to `shared`, and the advisor on when
+an `advisor` block is present.
+
+**Dispatch.** `buildWorkflowPipeline()` (`src/pipeline/stages/index.ts`) is
+`queueCheck → routing → constitution → context → workflow → completion`. The `workflow` stage
+loads `workflowStage` (`src/workflow/stage.ts`) through a dynamic import. `iteration-runner.ts`
+picks this pipeline when `isWorkflowMode()` is true. `end-phase.ts` runs the feature workflow
+(`runWorkflowEnd`) where pipeline mode runs finish (§60).
+
+**Per-story loop.** `story-loop.ts` is a pure state machine over injected steps; it always returns
+an end state and never fails or pauses a story. Its steps are `implement.ts` (one implementer
+session writes tests and code and commits), `no-work.ts` (the no-work ladder), `story-review.ts`
+(one review session returns a spec verdict and a quality verdict), `re-review.ts` and
+`re-review-absorb.ts` (scoped re-review after each fix round), the fix rounds (`fix-round.ts`),
+`gates.ts` (`lint`, `typecheck`, `scoped`, `full-suite`), and `adjudicate.ts` for the residual
+items. `close.ts` (`deriveEndState`) returns `WorkflowEndState` = `complete` |
+`complete-with-rulings` | `complete-gate-open`.
+
+**Feature workflow.** `feature-machine.ts` is a pure state machine persisted after every step, so
+a crash resumes at `record.step`. `FeatureStep` (`src/workflow/types.ts`) runs in order:
+`repo-gates` → `branch-review` (`branch-review.ts`) → `branch-fix` (`branch-fix.ts`,
+`branch-fix-rounds.ts`) → `branch-rereview` → `adjudicate` → `final-gates` → `gate-repair` →
+`publish` → `done`. The branch-fix rounds are bounded by `workflow.maxBranchFixRounds`, and
+`gate-repair` runs only when a branch fix turned a green gate red. Past `execution.costLimit`
+(`cost-limit.ts`) the machine skips the agent steps, runs the final gates and publishes a draft.
+`FeatureOutcome` is `ready` | `draft` | `local-only` | `pushed`.
+
+**Publishing.** `finalize.ts` and `ci-wait.ts` handle publishing and the CI wait
+(`workflow.timeouts.ciWaitMs`, `ciPollMs`). `open-items.ts` (`buildOpenItems`, `buildVerdict`)
+builds the open-items list and top-level verdict. `pr-body.ts` and `closing-issues.ts` build the PR
+body and read the `Closes:` line from the spec. The publish path reuses the finish helpers
+(`openOrPromotePr`, `commitAndPush`, `runQualityGates` from `src/finish/`) and the forge module
+(§61).
+
+**Artifacts.** `ledger.ts` writes `<feature>/workflow/<runId>/ledger.md`; `preflight.ts` writes
+`preflight.json`; `result.ts` and `run-summary.ts` write and read the run result. Per-story
+briefs and reports live in `<runId>/<storyId>/`. The path helpers are in `paths.ts`. The workflow
+tree is inside the repo so agents' file tools can read it.
+
+**Advisor and prompts.** `advisor.ts` (`defaultWorkflowAdvisor`) and `advisor-live.ts` connect the
+workflow to the advisor service (§59). Workflow prompts come from the `workflow-*-builder.ts` files in
+`src/prompts/builders/`.
+
+**Not used in workflow mode.** The test-writer and verifier sessions, the semantic and adversarial
+review pair, the NBF and worth-check stage, the acceptance stage, parallel dispatch and per-story
+worktrees (ADR-034 §4).
+
+---
+
+## §59 Advisor (`src/advisor/`)
+
+The advisor rules on judgment calls instead of stopping the run (A1, extended to workflow mode).
+Entry point: `createAdvisor()` in `service.ts`; `advise(question)` runs ledger lookup → worktree
+snapshot → `adviseOp` (stateless or warm) → menu validation → action and forced-confirm guardrails
+→ ledger append → audit artifact → heads-up. Every failure returns `decision: null` with a reason,
+and the caller does what it did before the advisor existed.
+
+- **Question kinds** (`AdviceQuestionKind`, `src/advisor/types.ts`): `finish-judgment`,
+  `fix-cycle-give-up`, `uncategorised-failure`, `finish-approval`, `preflight`,
+  `implementer-question`, `residual`. The first four are the pipeline and finish call sites, and
+  each one runs only when `advisor.enabled` and its `advisor.callers.*` flag are both on
+  (`isAdvisorCallerEnabled`). Workflow mode uses `preflight`, `implementer-question`, `residual` and
+  `finish-approval` (ADR-034).
+- **Actions** (`AdviceAction`): `fix`, `waive`, `supersede`, `retry`, `retarget`, `retry-as-lite`,
+  `escalate-tier`, `defer`, `approve`, `re-review`, `hold`.
+- **Config** (`advisor` block, `src/config/schemas-advisor.ts`): `enabled` (false), `model`
+  (`"powerful"`), `fallbackModels`, `memory` (`"stateless"` or `"warm"`, default `"stateless"`),
+  `callers.{finishJudgment, fixCycleGiveUp, uncategorisedFailure, finishApproval}` (all false),
+  `maxRulingsPerStory` (2), `notify.headsUp` (true), `timeoutMs`.
+- **Ledger.** `ledgerPath()` is `decisions.jsonl` in the feature directory; `readTrustedDecisions()`
+  and `findReusable()` read it, and `appendDecision()` writes it. Audit artifacts go to
+  `<outputDir>/advisor-audit/<feature>/` (`adviceAuditDir()`). Human labels are appended to
+  the audit records (`appendLabel()`, `readLabels()` in `audit.ts`); `advisor/store/` is a read-side
+  facade over the ledger.
+- **Batching and menus.** `batch.ts` (`adviseBatch`) answers several residual items in one call;
+  `ladder.ts` (`ladderModels`) gives the fallback model order; `menus.ts` builds the allowed action
+  menu per question; `dedupe.ts` and `format.ts` support prompts and summaries; `decision-log.ts`
+  logs each decision.
+- **Heads-up.** `src/runtime/advisor-heads-up-queue.ts` (`AdvisorHeadsUpQueue`) carries the
+  notifications; `heads-up.ts` formats them.
+- **CLI.** `nax advisor list`, `label`, `replay` and `import-finish` (`src/cli/advisor.ts`).
+
+---
+
+## §60 Finish (`src/finish/`)
+
+The pipeline-mode end phase (`runFinishPhase()` in `phase.ts`, called from `end-phase.ts` when
+`isWorkflowMode()` is false). The feature workflow (§58) replaces it in workflow mode, but the
+helpers it exports are shared with the workflow. Config: `finish` (`src/config/schemas.ts`);
+`finish.enabled` defaults to `false`.
+
+- **Machine.** `runFinishMachine()` (`machine.ts`) runs the branch review, one shared fix loop
+  (`review-loop.ts`, `review-round.ts`, `fix-step.ts`, `fix/`), the gates (`gates-loop.ts`,
+  `gates/`), the acceptance loop (`acceptance-loop.ts`), the optional advisor (`advise.ts`), the
+  commit (`commit.ts`, `commit-message.ts`) and the PR (`pr/`). It always ends in a ready or draft
+  PR. A `failed` result is used only when the run was cancelled or the forge failed (`machine.ts`
+  header).
+- **Fail-open.** `runFinishPhase()` treats a throw during setup as a failed phase and does not fail
+  a run whose stories all passed.
+- **PR body.** `finish.prBody.template` (`merge` default, `strict`, `ignore`) controls how the
+  repository's own PR template is used (`merge` keeps headings the body can fill, and appends the
+  rest under nax's own).
+- **Shared helpers** (exported from `src/finish/index.ts`): `openOrPromotePr`, `openDraftFinishPr`,
+  `commitAndPush`, `runQualityGates`, `resolveGateCommands`, `escapeInline`, `sanitizeTitle`,
+  `buildAdvisorSection`.
+- **Operations.** `finishSpecReviewOp`, `finishBranchReviewOp` and `finishFixOp` (§37).
+- **State.** `state.ts`, `ledger.ts`, `audit.ts`, `checkpoint.ts`, `set-aside*.ts` and
+  `untracked-snapshot.ts` record progress and snapshot the working tree.
+
+---
+
+## §61 Forge (`src/forge/`)
+
+Git-forge integration shared by finish and workflow. Public entry: `src/forge/index.ts`.
+
+- **Detection** (`detect.ts`): `detectForge()` classifies the remote by its parsed host, not by a
+  substring of the URL (`forgeFromRemoteUrl`, `remoteHost`). The kind is `"github"` or `"gitlab"`
+  (`ForgeKind`). The CLI probe runs `gh --version` and `glab --version`.
+- **Pull requests** (`pr.ts`): `openPr()` runs `gh pr create` or `glab mr create`; `hasOpenPr()` and
+  `viewArgv()` run `gh pr view` or `glab mr view`; `extractUrl()` reads the result.
+- **Templates** (`template.ts`, `template-merge.ts`): `findPrTemplate()` finds the repository's PR
+  template; `mergeTemplate()` applies the `merge`, `strict` or `ignore` mode.
+- **Injection.** `defaultForgeDeps` (`deps.ts`) is the injectable seam for process calls.
+
+---
+
+## §62 Trust (`src/trust/`)
+
+The folder-level gate for repository-controlled code. The trust model itself (nax trusts the
+repository it is pointed at) is in [agent-adapters.md §17](agent-adapters.md#17-trust-boundary).
+
+- **Store.** `trustStorePath()` is `trust.json` in the global config directory. An entry trusts a
+  folder and everything beneath it (`findCoveringEntry()`, `normalizeTrustPath()`). The filesystem
+  root and the home directory are protected (`isProtectedFolder()`): a prompt cannot grant them, and
+  only `nax trust add <root> --force` can.
+- **Surfaces** (`TrustSurface`): `plugins`, `context-plugin-providers`, `hooks`, `mcp`,
+  `quality-command`, `test-command`, `acceptance-command`, `package-setup`, `worktree-setup`.
+- **Gate.** `ensureProjectTrusted()` (`gate.ts`) asks `promptTrustChoice()` (`yes`, `parent` or
+  `no`) when the invocation is interactive, persists the answer and records it in the process
+  registry (`markTrusted()`). The CLI wrapper `runTrustGate()` (`src/cli/trust-gate.ts`) is used by
+  `nax doctor`, `nax resume` and `nax advisor replay`.
+- **Backstops.** Execution sites call `assertTrusted()` (or `assertTrustedSync()`) before running
+  repository-controlled code: `quality/runner.ts`, `hooks/runner.ts`, `plugins/loader.ts`, the
+  context plugin-provider loader, `mcp/pool.ts`, `verification/executor.ts`,
+  `acceptance/hardening.ts`, `worktree/dependencies.ts` and `execution/new-package-setup.ts`.
+- **CLI.** `nax trust list`, `add [path]`, `rm <path>` and `check [path]` (`src/cli/trust.ts`).
+
+---
+
+## §63 Replay (`src/replay/`)
+
+`nax replay [run-id]` reconstructs a past run from its artifacts (`src/commands/replay.ts`).
+Options: `-j/--json`, `--all` (include passed stories) and `-s/--story <id>`.
+
+- **Discovery** (`discovery.ts`): `discoverRun()` scans the central run registry and matches the run
+  id by prefix. Missing and ambiguous runs raise `NaxError` codes.
+- **Reconstruction** (`reconstruct.ts`, pure): `reconstructTimeline()` builds a `RunTimeline` from the
+  run's JSONL log, metrics and `status.json`. `phase-infer.ts` infers per-story phases.
+- **Output.** `report.ts` (`renderReport()`) renders the human report; `json.ts` (`toReplayJson()`)
+  serialises the timeline.
+- **Injection.** The command's I/O flows through `ReplayCommandDeps`, so the orchestrator is hermetic.
+
+---
+
+## §64 Other Modules
+
+- **`src/prd/`** — PRD schema, story validation, out-of-scope extraction, spec lint and spec drift.
+  See [spec-to-prd-pipeline.md](spec-to-prd-pipeline.md).
+- **`src/runstate/`** — `activateRunState()` (`activate.ts`) and `repairRunState()` (`repair.ts`)
+  activate and repair the run-state store. `execution/runner.ts` calls `activateRunState()`.
+- **`src/schedule/`** — `parseSchedule()` accepts a relative duration (`30m`, `2h`), a time of day
+  (`17:00`) or an ISO datetime; `waitForSchedule()` waits for it. This is a library module: no
+  caller outside `src/schedule/` exists in `src/` at this revision.
+- **`src/bakeoff/`** — sequential multi-contestant runs. `coordinator.ts` runs each contestant, ranks
+  them with `rankContestants()` (`ranking.ts`) and persists a `BakeoffResult`. This is a library
+  module: no CLI entry point in `src/cli/` or `src/commands/` calls it at this revision.
+- **`src/agent-runtime/`** — `bun-runtime.ts` is nax's `AgentRuntime` for nax-agent (`Bun.spawn`).
+  `install.ts` is a side-effect module that installs it into nax-agent's runtime slot. It is imported
+  first by `bin/nax.ts` and `test/preload.ts`.

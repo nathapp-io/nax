@@ -19,8 +19,9 @@ explicit approval **at launch**.
    ```
 
    Then pack both at one version, as `test/node/pack-smoke.test.ts` does. Both
-   packages already share one version (lockstep), so `rtk bun run stage-publish`
-   works for both directly. Install both
+   packages share one version (lockstep), and `stage-publish` in
+   `packages/nax-agent-acp` reads the nax-agent peer range from
+   `../nax-agent/package.json`. Install both
    tarballs into a fresh `npm init -y` project, copy
    `packages/nax-agent-acp/test/node/fixtures/live-claude-smoke.mjs` into it, and run:
 

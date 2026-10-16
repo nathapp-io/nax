@@ -2,15 +2,17 @@
 
 nax resolves each story to one of five test strategies (`no-test`, `test-after`, `tdd-simple`, `three-session-tdd`, `three-session-tdd-lite`) — driven by `config.tdd.strategy` or a per-story override. This page compares the two three-session modes with single-session `test-after`; see [Test Strategies](../test-strategies.md) for the full table.
 
+> **Pipeline mode.** The separate test-writer, implementer and verifier sessions described on this page run only in the pipeline (`execution.mode: "pipeline"`, deprecated). In workflow mode (the default since 0.88.0) a story gets one implementer session. Its prompt requires TDD evidence per acceptance criterion (the failing run, then the passing run), and the story review checks that evidence. The story's `testStrategy` does not choose sessions there.
+
 ## Strategy Comparison
 
 | Aspect | `three-session-tdd` | `three-session-tdd-lite` | `test-after` |
 |---|---|---|---|
 | **Sessions** | 3 separate sessions | 3 separate sessions | 1 session |
-| **Session 1 (Test Writer)** | Strict — test files only; no `src/` writes outside `tdd.testWriterAllowedPaths` | Relaxed — may read `src/` and create minimal stubs | ❌ No dedicated test writer |
+| **Session 1 (Test Writer)** | Strict — test files only; no `src/` writes outside `tdd.testWriterAllowedPaths` | Relaxed — may read `src/` and create minimal stubs | No dedicated test writer |
 | **Session 2 (Implementer)** | Implements against pre-written tests; must not modify tests | Same, and may add tests for uncovered ACs (never weaken existing ones) | Implements + writes tests |
-| **Session 3 (Verifier)** | Read-only TDD-integrity review, writes a verdict | Same | ❌ No verifier |
-| **Isolation check** | Mechanical `git diff` check — advisory (logged) | Same, stub-sized `src/` writes treated as soft | ❌ None |
+| **Session 3 (Verifier)** | Read-only TDD-integrity review, writes a verdict | Same | No verifier |
+| **Isolation check** | Mechanical `git diff` check — advisory (logged) | Same, stub-sized `src/` writes treated as soft | None |
 | **Isolation-violation fallback** | Escalation with lite-mode retry (dormant — see below) | N/A (already lite) | N/A |
 
 ---
@@ -24,9 +26,10 @@ Controlled by `config.tdd.strategy`:
 | `"auto"` | LLM/keyword router decides (see routing rules below) |
 | `"strict"` | Always `three-session-tdd` |
 | `"lite"` | Always `three-session-tdd-lite` |
+| `"simple"` | Always `tdd-simple` |
 | `"off"` | Always `test-after` |
 
-> The `config.tdd.strategy` schema enum accepts `"auto"`, `"strict"`, `"lite"`, and `"off"` (default `"auto"`). `determineTestStrategy()` (`src/routing/classify.ts`) additionally recognises `"simple"` → `tdd-simple`, but that value is not in the config schema enum — set `routing.testStrategy: "tdd-simple"` (together with `routing.complexity`) on a story to pin single-session TDD.
+> The `config.tdd.strategy` schema enum accepts `"auto"` (default), `"strict"`, `"lite"`, `"simple"` and `"off"` (`src/config/schemas-execution.ts`).
 
 ### Auto-Routing Rules
 
@@ -105,4 +108,4 @@ Supported values (`VALID_TEST_STRATEGIES` in `src/config/test-strategy.ts`): `"n
 
 ---
 
-*Last updated: 2026-09-25*
+*Last updated: 2026-10-16*

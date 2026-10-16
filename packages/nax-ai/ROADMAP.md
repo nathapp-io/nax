@@ -1,6 +1,6 @@
 # nax-ai roadmap
 
-**Last updated:** 2026-09-01 · **Current milestone:** M4 — hardening is **done** (transport retry, thinking round-trip, transport pass-through and the file-backed `CredentialStore`); the scheduled live-provider drift detector was deferred out of M4 rather than built — see Deferred items. Per-tool constrained sampling is in flight on a branch. M5 — login flows is done, verified live 2026-09-01. M3 — recorded fixtures is done. M2 — real transport is done, publish pending. M1 merged to `main` in [#1](https://github.com/nathapp-io/nax-ai/pull/1) (`d3a3968`).
+**Last updated:** 2026-10-16 · **Status:** M0-M5 are done and no milestone is open. The scheduled live-provider drift detector was deferred out of M4 and is still unbuilt — see Deferred items. Per-tool constrained sampling is merged and ships in the lockstep v0.88.0 release. The package pins `@earendil-works/pi-ai` 1.1.0. The milestone notes below record how each piece was delivered; M1 merged to `main` in [#1](https://github.com/nathapp-io/nax-ai/pull/1) (`d3a3968`).
 
 This file records where the project is and what comes next. It is the entry point for anyone — human or agent — picking the work up cold.
 
@@ -24,29 +24,29 @@ The artifact is a point-in-time analysis and does not track progress — it is t
 
 | Milestone | State | Delivers | Can it call a provider? |
 |---|---|---|---|
-| **M0 — scaffold** | ✅ done | Package, toolchain, two working gates | no |
-| **M1 — protocol architecture** | ✅ done | `Protocol`, registry, catalog, client, 4 protocol backends | **no** |
-| **M2 — real transport** | ✅ done (publish pending) | `createPiClient`, auth wiring, first real LLM call | yes |
-| **M3 — recorded fixtures** | ✅ done | The suite that gates merges | yes |
-| **M4 — hardening** | ✅ done | Transport retry, thinking-block round-trip, transport pass-through, file-backed `CredentialStore` | yes |
-| **M5 — login flows** | ✅ done | `login()` for api-key and OAuth entry, behind the existing allowlist gate | n/a — obtains credentials |
+| **M0 — scaffold** | done | Package, toolchain, two working gates | no |
+| **M1 — protocol architecture** | done | `Protocol`, registry, catalog, client, 4 protocol backends | **no** |
+| **M2 — real transport** | done (published) | `createPiClient`, auth wiring, first real LLM call | yes |
+| **M3 — recorded fixtures** | done | The suite that gates merges | yes |
+| **M4 — hardening** | done | Transport retry, thinking-block round-trip, transport pass-through, file-backed `CredentialStore` | yes |
+| **M5 — login flows** | done | `login()` for api-key and OAuth entry, behind the existing allowlist gate | n/a — obtains credentials |
 
 ## Milestones
 
-### M0 — scaffold ✅
+### M0 — scaffold (done)
 
 Package skeleton, toolchain decisions, and two gates that fail on real violations rather than existing decoratively:
 
 - `src/auth/oauth-policy.ts` — OAuth allowlist. Anthropic is prohibited and the reason is recorded in the code.
 - `scripts/check-no-bun-apis.ts` — rejects `Bun.*` in `src/`, because the primary consumer runs on Bun and would never notice the breakage.
 
-### M1 — protocol architecture ✅
+### M1 — protocol architecture (done)
 
 The seam that lets a wire protocol be replaced later without consumers noticing. Eleven tasks; see the plan.
 
 Merged in #1 (`d3a3968`), all eleven tasks complete and the plan's Definition of Done passing. Note that the definition covers *verification*, not *capability* — see the warning above.
 
-### M2 — real transport ✅ (publish pending)
+### M2 — real transport (done)
 
 The critical path to a usable package, and the piece the M1 plan explicitly defers because it needs knowledge no document currently holds.
 
@@ -82,7 +82,7 @@ Rulings and follow-ups made during M1 that land in M2, recorded here because the
 - Optional: the four `classify()` implementations are near-duplicates; the seam permits a shared interior helper.
 - Parked minor: the comment at `test/protocols/thinking.test.ts:25` misstates the rank distance ("low" is 1 rank from each neighbour, not 3). Comment-only; correct at first touch.
 
-### M3 — recorded fixtures ✅
+### M3 — recorded fixtures (done)
 
 **Designed and planned:** [design](docs/superpowers/specs/2026-08-31-nax-ai-m3-recorded-fixtures-design.md) · [plan](docs/superpowers/plans/2026-08-31-nax-ai-m3-recorded-fixtures.md), 8 tasks, all complete (`55ca89c` through `83ac4d2`). Planning found that M2's recorder captured the mapper's *output* rather than its input, so replaying it could not catch a mapping regression — the two fixtures it produced are superseded, not extended.
 
@@ -102,7 +102,7 @@ Two follow-ups surfaced while executing this plan, out of M3's evidence-only sco
 1. ~~**`openai-codex-responses`'s error-classification path may be blind in production.**~~ **Closed in M4** — `PiProtocolOptions.transport`, defaulting to `"sse"`. The original finding: pi-ai defaults that backend to WebSocket, which has no HTTP response for `onResponse` to observe, so `classifyHttpError`/`parseRetryAfter` saw no status and no headers and every failure classified as `"unknown"`. Recording the `openai-codex-responses-text` fixture had to bypass `createPiProtocol` and force `transport: "sse"` on `PiDeps.stream`; that bypass is now deleted and the target records through the normal path like the other three.
 2. **The replay suite's tool-call excusal branch is exercised but not load-bearing.** `test/protocols/replay.test.ts` excuses "emitted no text delta" when a fixture contains a tool call, since a pure tool-call turn legitimately has no prose. The `opencode-go-anthropic-messages-thinking.json` fixture does contain a tool-call event, so the excusal runs and is exercised during every test run; however, that same fixture also emits 28 text-delta events, so it would pass the "must emit text" check regardless of whether the excusal applies. The real gap is a pure tool-call-only turn (no prose at all) — no fixture in the current corpus exercises the excusal in a load-bearing way (one where the excusal actually changes the pass/fail outcome). Not a bug; closing it needs a future re-recording that successfully elicits a tool call with no accompanying prose.
 
-### M4 — hardening ✅
+### M4 — hardening (done)
 
 - ✅ Transport retry (`transportRetries`) — `src/protocols/retry.ts` retries transport faults only, and only before the first event is emitted. Threaded through `src/client.ts`; `src/protocols/pi-client.ts` normalises a raw stream throw (connection reset, DNS failure) into a transport `error` event via `classifyThrown`, without relabelling the caller's own abort. Spec §10.1.
 - ✅ Thinking-block round-trip — `ConversationMessage`'s assistant variant had nowhere to carry a thinking block, so extended thinking combined with tool use could not round-trip: the next request must replay the thinking block (text plus opaque signature) or the tool call cannot be verified server-side. Fixed by a new `ThinkingBlock` type (`src/protocols/types.ts`), a `"thinking"` `ProtocolEvent` durable-complete-block counterpart to the existing display-only `"thinking-delta"`, `pi-client.ts` emitting it from `thinking_end` (signature/redacted read defensively off `partial.content[contentIndex]`, the same shape trap `toolCallAt` already handles), `toPiMessages` placing thinking blocks first in the assistant content array (Anthropic's wire ordering requirement), and `CompleteResult.thinking` accumulated by `collectStream` so a `complete()` caller can construct the following turn.
@@ -116,9 +116,9 @@ Two follow-ups surfaced while executing this plan, out of M3's evidence-only sco
   - **Proven load-bearing**: with the lock disabled, six concurrent child processes leave the counter at 1 — five of six updates lost. The test spawns real child processes, because in-process serialisation would pass a same-process version of it while the cross-process bug remained. The memory store's serialisation was probed the same way, with the same result: 6 concurrent modifies collapse to 1 without it.
 The scheduled live-provider drift detector (spec §10.3) was **deferred out of M4**, not delivered. It is not a hardening prerequisite and nothing in M4 depends on it; the recorded-fixture suite from §9 remains what gates merges. See Deferred items.
 
-### In flight — per-tool constrained sampling 🚧
+### Per-tool constrained sampling (done)
 
-On branch `feat/tool-constrained-sampling` (`134077f`) — **implemented and green, not merged and not published.**
+Merged to `main` and released in v0.88.0.
 
 `ToolDefinition` gains an optional `constrainedSampling` field (`src/protocols/types.ts`), forwarded by `toPiTool` through a conditional spread (`src/protocols/pi-client.ts`) so the key is absent rather than present-and-`undefined` when unset — pi-ai branches on `if (!config)`.
 
@@ -131,9 +131,9 @@ Two properties a consumer must not assume away, documented on the type:
 
 Deliberately not in scope: widening `ProtocolRequest.toolChoice`, which stays `"auto" | "none"`. Neither value means "must" — constrained sampling makes the arguments valid when a tool is called, and nothing here makes the model call one. Consumers are expected to own that with their own retry.
 
-Reaching nax requires a `0.2.0` publish; until then the field exists only on the branch.
+The field is on `main` (`src/protocols/types.ts`) and reaches nax through the lockstep release.
 
-### M5 — login flows ✅
+### M5 — login flows (done)
 
 **Design & plan:** [`docs/superpowers/specs/2026-09-01-nax-ai-m5-login-flows-design.md`](docs/superpowers/specs/2026-09-01-nax-ai-m5-login-flows-design.md).
 
@@ -155,10 +155,10 @@ Carried from the M1 plan so they are not lost when it is merged:
 |---|---|---|
 | Real `createPiClient` | M2 | §5 |
 | `CredentialStore` wiring | M2 | §5 |
-| Recorded-fixture tests | M3 — ✅ done | §9 |
-| Transport retry | M4 — ✅ done | §10.1 |
+| Recorded-fixture tests | M3 — done | §9 |
+| Transport retry | M4 — done | §10.1 |
 | Live-provider drift detector | **deferred out of M4** — unscheduled | §10.3 |
-| `CredentialStore` locking | M4 — ✅ done | §5 |
+| `CredentialStore` locking | M4 — done | §5 |
 
 ### The deferred live-provider drift detector
 
@@ -166,23 +166,16 @@ Spec §10.3 calls for a job that runs **on a schedule and by manual dispatch, ne
 
 It is unbuilt: `.github/workflows/ci.yml` has no `schedule:` trigger and never invokes `test:live`, and no provider secrets or spend cap are configured. `test/live/` is the M3 **fixture recorder** (`describe("record fixtures from live providers")`), which is a different thing — it writes fixtures on demand rather than detecting drift on a schedule.
 
-**Naming caution.** This is unrelated to `bun run release canary` from the repo root, which produces an npm dist-tag prerelease (`0.1.1-canary.2`). Publishing a canary version does not satisfy this row. The row is named "drift detector" here for that reason.
+**Naming caution.** This is unrelated to `bun run release canary` from the repo root, which produces a lockstep npm dist-tag prerelease (`X.Y.Z-canary.N`). Publishing a canary version does not satisfy this row. The row is named "drift detector" here for that reason.
 
 Worth knowing before it is picked up: the tool round-trip this detector would assert has **never been proven against a live provider** — every tool-call test in the suite runs off recorded fixtures.
 
 ## How this maps onto nax
 
-nax's own phasing lives in the artifact (§9). The dependency runs one way — nax consumes nax-ai, never the reverse.
-
-| nax phase | Needs from nax-ai | Earliest |
-|---|---|---|
-| **Phase A** — 9 one-shot `complete` ops | A working client with exact usage | after **M2** |
-| **Phase B** — read-only agentic ops, native pull tools | Streaming + native tool calls | after **M2** (tools ship in M1's design) |
-| **Phase C** — full native coding agent | Nothing further; the work is nax-side | — |
-
-**The nax-side spec and plan are deliberately unwritten.** Writing them now would target an API that does not exist and will shift during M2 — the same reason the M1 plan defers `createPiClient`. The moment to write them is when M2 publishes and the surface is real.
-
-When that time comes, nax's side involves: `NativeAgentAdapter` implementing nax's `AgentAdapter` and mapping to its 7 `AgentStreamEvent` kinds; changing `src/agents/registry.ts` (which currently hard-codes `new AcpAgentAdapter(name)`); deleting `src/agents/cost/pricing.ts` in favour of nax-ai's rates; and a fence gate for `src/agents/native/`.
+The dependency runs one way: nax consumes nax-ai, never the reverse. The native
+agent reaches nax-ai through `@nathapp/nax-agent`, which depends on `@nathapp/nax-ai`
+at the same lockstep version. nax-ai's public surface is its `.` entry
+(`src/index.ts`). The nax-side phase plan is not tracked in this file.
 
 ## Should the pi-ai delegation end?
 
@@ -196,6 +189,10 @@ recorded *through* pi-ai, so validating a replacement against them is circular.
 Recommended order before any hand-roll: diagnose nax#1878, bump pi-ai `0.84.4`
 → `0.85.1`, build the deferred drift detector against the real traffic corpus,
 then hand-roll `openai-completions` alone in shadow.
+
+Status (2026-10-16): the pi-ai bump has landed, and the package now pins 1.1.0.
+The drift detector is still unbuilt, and pi-ai remains the only wire implementation
+(`src/protocols/pi-client.ts`), so the hand-roll step has not started in this repo.
 
 Full record, with reproduction probes and the conditions that would reverse it:
 [`docs/2026-09-06-pi-ai-migration-assessment.md`](docs/2026-09-06-pi-ai-migration-assessment.md).
