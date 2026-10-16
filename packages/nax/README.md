@@ -124,7 +124,7 @@ Selected with `execution.mode: "pipeline"`. Each story runs through a staged pip
 | [`nax curator`](https://github.com/nathapp-io/nax/blob/main/docs/guides/cli-reference.md#nax-curator-status) | Inspect, commit, or garbage-collect curator proposals |
 | `nax routing calibrate` | Propose complexity→tier mapping adjustments from run history |
 | `nax plugins list` | List installed plugins |
-| `nax migrate` | Move generated content from `.nax/` to the output directory (`~/.nax/<project>/`) |
+| `nax migrate` | Recover a project-name collision: `--reclaim <name>` or `--merge <name>` |
 
 For full flag details, see the [CLI Reference](https://github.com/nathapp-io/nax/blob/main/docs/guides/cli-reference.md).
 

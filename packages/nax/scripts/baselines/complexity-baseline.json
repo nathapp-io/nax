@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-10-15T17:11:19.635Z",
+  "updatedAt": "2026-10-16T03:07:11.628Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": { "collectStats": 27 },
@@ -34,7 +34,6 @@
     "src/commands/curator.ts": { "curatorCommit": 46, "parseCheckedProposals": 27 },
     "src/commands/detect.ts": { "detectCommand": 36 },
     "src/commands/logs-reader.ts": { "extractRunSummary": 29 },
-    "src/commands/migrate.ts": { "detectGeneratedContent": 54, "migrateCommand": 41 },
     "src/commands/runs.ts": { "runsCommand": 21 },
     "src/commands/unlock.ts": { "unlockCommand": 58 },
     "src/config/config-guards.ts": { "validatePermissionsBlock": 49 },

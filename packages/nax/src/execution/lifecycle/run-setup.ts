@@ -79,13 +79,6 @@ export const _runSetupDeps = {
   // record ordering; the acquisition sequence itself is the implementer's work.
   acquireLock,
   acquireFeatureLock,
-  // US-003 seam: the `.nax/` auto-migration `setupRun` runs once, right after
-  // the PRD loads. Dynamic import so run-setup does not pull the whole command
-  // surface in at module load.
-  async autoMigrateGeneratedContent(workdir: string): Promise<void> {
-    const { autoMigrateGeneratedContent } = await import("@/commands");
-    await autoMigrateGeneratedContent(workdir);
-  },
 };
 
 export interface RunSetupOptions {
@@ -274,7 +267,7 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
   // MEM-1 (nax review 20260829): everything from crash-handler installation onward is
   // wrapped in this try/catch. runner.ts's own finally (which calls cleanupCrashHandlers()
   // and runtime.close()) only runs once setupRun has RESOLVED — a throw from any setup
-  // step (loadPRD, initInteractionChain, the .nax/ auto-migration, sweepOrphans, or
+  // step (loadPRD, initInteractionChain, sweepOrphans, or
   // anything in the post-lock try below) used to leave SIGTERM/SIGINT/SIGHUP/
   // uncaughtException/unhandledRejection handlers installed and bound to a run that
   // never started, and never closed the runtime (agentManager/sessionManager teardown).
@@ -350,11 +343,6 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     // ── Prime StatusWriter with PRD so precheck-failed can be recorded ─────────
     statusWriter.setPrd(prd);
 
-    // US-003: auto-migrate generated content out of .nax/ if needed. Routed
-    // through `_runSetupDeps.autoMigrateGeneratedContent` so tests can observe
-    // the seam (US-003 AC14); the helper itself never rejects.
-    await _runSetupDeps.autoMigrateGeneratedContent(workdir);
-
     // Claim project identity on first run (no-op if already claimed for this workdir)
     {
       const { claimProjectIdentity } = await import("@/runtime");
@@ -413,7 +401,7 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     const checkoutLock = await _runSetupDeps.acquireLock(workdir);
     if (!checkoutLock.acquired) {
       // `storyId: "_setup"` follows the convention every other log call in
-      // this file uses (e.g. the auto-migration call below at line ~313).
+      // this file uses.
       // Replay/reconstruct (src/replay/reconstruct.ts) falls back to
       // `entry.data?.storyId` when the top-level `entry.storyId` is absent,
       // so a missing data.storyId would orphan the refusal from the run's
