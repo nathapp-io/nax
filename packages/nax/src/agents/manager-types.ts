@@ -222,6 +222,8 @@ export interface IAgentManager {
 
   /** Release native provider cooldowns after a credential change. */
   refreshAuthCooldowns(): Promise<void>;
+  reportAuthFailure(agent: string, failure: AdapterFailure | undefined, tier?: string, model?: string): Promise<void>;
+  authRelogins(): readonly import("./auth-relogin").AuthReloginNotice[];
 
   /** Reset per-run state. Called at run boundary. */
   reset(): void;

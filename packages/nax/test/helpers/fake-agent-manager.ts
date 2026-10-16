@@ -63,6 +63,8 @@ export function fakeAgentManager(
     isUnavailable: () => false,
     markUnavailable: () => {},
     refreshAuthCooldowns: async () => {},
+    reportAuthFailure: async () => {},
+    authRelogins: () => [],
     reset: () => {},
     validateCredentials: async () => {},
     resolveFallbackChain: () => [],

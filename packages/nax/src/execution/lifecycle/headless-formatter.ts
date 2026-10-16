@@ -25,6 +25,7 @@ export interface RunHeaderOptions {
 }
 
 export interface RunFooterOptions {
+  authRelogins?: readonly string[];
   finalCounts: {
     total: number;
     passed: number;
@@ -85,6 +86,7 @@ export function outputRunFooter(options: RunFooterOptions): void {
   }
 
   const runSummary: RunSummary = {
+    authRelogins: options.authRelogins,
     total: finalCounts.total,
     passed: finalCounts.passed,
     failed: finalCounts.failed,

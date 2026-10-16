@@ -21,6 +21,7 @@ import { DispatchEventBus, type IDispatchEventBus } from "../runtime/dispatch-ev
 import { resolveIdleWatchdogSettings } from "../runtime/middleware/idle-watchdog";
 import { knownSessionRole } from "../runtime/session-role";
 import { AuthCoordinator, authModelOf, authStampFor } from "./auth-cooldown";
+import type { AuthReloginNotice } from "./auth-relogin";
 import { classifyCompleteException } from "./complete-exception-classifier";
 import { CooldownStore } from "./cooldown-store";
 import { StoryHopBudget } from "./hop-budget";
@@ -168,7 +169,15 @@ export class AgentManager implements IAgentManager {
     return this._auth.refreshAuthCooldowns();
   }
 
+  reportAuthFailure(agent: string, failure: AdapterFailure | undefined, tier?: string, model?: string): Promise<void> {
+    return this._auth.reportAuthFailure(agent, failure, this._fallbackIdentity.modelId(agent, tier, model));
+  }
+  authRelogins(): readonly AuthReloginNotice[] {
+    return this._auth.authRelogins();
+  }
+
   reset(): void {
+    this._auth.clear();
     this._cooldowns.clear();
     this._prunedFallback.clear();
     this._budget.clear();
@@ -211,6 +220,7 @@ export class AgentManager implements IAgentManager {
       dispatchEvents: this._dispatchEvents,
       logger: this._loggerOverride ?? getSafeLogger(),
       refreshAuthCooldowns: () => this.refreshAuthCooldowns(),
+      reportAuthFailure: this.reportAuthFailure.bind(this),
       getDefault: () => this.getDefault(),
       isUnavailable: (agent, tier, model) => this.isUnavailable(agent, tier, model),
       markUnavailable: (agent, failure, tier, model) => this.markUnavailable(agent, failure, tier, model),
@@ -245,13 +255,8 @@ export class AgentManager implements IAgentManager {
     const _agentChain: string[] = [primaryAgent];
     let _finalStatus: "ok" | "exhausted" | "cancelled" | "error" = "error";
     let _totalCostUsd = 0;
-    // US-001: count of hops that returned a turn. Mirrors runWithFallback's
-    // semantics: a successful `adapter.complete()` return counts (even empty,
-    // because `sendWithFileOutput` synthesises a fail-stale failure for that
-    // case and empty IS a turn the adapter returned); a throw does NOT count
-    // (no turn was returned — analog of buildHopCallback's catch path setting
-    // `dispatched: false`). The AGENT_NOT_FOUND throw above this loop also
-    // doesn't count: no adapter was reached.
+    // Count returned turns (including empty output), not throws or missing adapters.
+    // Mirrors runWithFallback's `dispatched` flag semantics.
     let dispatchesCompleted = 0;
 
     try {
@@ -325,6 +330,12 @@ export class AgentManager implements IAgentManager {
           continue;
         }
 
+        await this.reportAuthFailure(
+          currentAgent,
+          result.adapterFailure,
+          currentTier,
+          authModelOf(hopOptions.modelDef),
+        );
         const dec = decideSwap(result.adapterFailure, hopsSoFar, this._config.agent?.fallback);
         if (!dec.swap) {
           logSwapDecline(logger, dec.reason, {
