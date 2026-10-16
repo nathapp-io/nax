@@ -1,0 +1,182 @@
+{
+  "project": "nax-monorepo",
+  "feature": "gates-run",
+  "branchName": "feat/gates-run",
+  "createdAt": "2026-10-16T00:00:00.000Z",
+  "updatedAt": "2026-10-16T13:17:40.820Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Per-gate run records from runQualityGates",
+      "description": "**Goal** — Add `GateRunStatus`, `GateRunRecord`, `classifyGateExit` and `gateOutputTail` to `src/finish/gates/quality.ts`, export `GATE_ORDER`, re-export all of them from `src/finish/index.ts`, and add the optional `onGate` callback to `runQualityGates`'s options.\n\n**Motivation** — `runQualityGates` returns `{ passed, ran, failing, output }`, where `failing` lumps a 127 with a real test failure and per-gate exit codes exist only as `[<name>] exit=<n>` headers inside the combined `output` text; a caller wanting `not-run` vs `failed` would have to parse that text, and a per-gate record removes the parse.\n\n**Approach** — `runQualityGates` builds one record per gate from the `QualityCommandResult` that decided it (the setup result when setup failed, otherwise the command result) and passes it to `onGate`. When `onGate` is given it is called exactly once per gate, synchronously, after that gate finishes and before the next gate starts, in run order. An exception thrown by `onGate` propagates out of `runQualityGates`. The returned `QualityGateResult` (`{ passed, ran, failing, output }`) is byte-for-byte what it is today, with or without `onGate`: a `not-run` or `timed-out` gate is still in `failing`. `runGateSetup` (`quality.ts`, file-local, baseline returns the failure chunk string or `null`) is free to change shape so `runQualityGates` can build a `GateRunRecord` from the setup's `QualityCommandResult` when the setup fails; the failure chunk written to `output` is unchanged. `GATE_ORDER` (baseline file-local `const GATE_ORDER = [\"build\", \"typecheck\", \"lint\", \"test\", \"e2e\"] as const`) keeps the same value but is exported and re-exported from `src/finish/index.ts`.\n\n`classifyGateExit` rules, applied in this order: `timedOut === true` -> `timed-out`; `exitCode === 0` -> `passed`; `exitCode` is `127`, `126` or `-1` -> `not-run`; any other exit code -> `failed`.\n\nQuality command facts: a timeout returns `exitCode: -1, timedOut: true`; a spawn error returns `exitCode: -1, timedOut: false`; a shell that cannot find or execute the command returns 127 or 126; a list-valued spec reports the first non-zero exit code (`aggregateResults`).\n\n**Scope** — In: the new types/functions, the `GATE_ORDER` export, barrel re-exports, the `onGate` option, unchanged `QualityGateResult`. Out: the `nax gates run` CLI command and its report (US-002); the workflow's `runRepoGates` does not adopt `GateRunStatus`.\n\n**Interface**\n```typescript\nexport type GateRunStatus = \"passed\" | \"failed\" | \"not-run\" | \"timed-out\";\n\nexport interface GateRunRecord {\n  /** The GateCommand name: \"build\", \"test\", ... */\n  readonly name: string;\n  /** Absolute directory the command was spawned from. */\n  readonly cwd: string;\n  readonly status: GateRunStatus;\n  /** The exit code that decided the status: -1 for a single command's timeout or spawn error; for a list-valued command, the first non-zero step's code. */\n  readonly exitCode: number;\n  readonly durationMs: number;\n  /** Present, as \"setup\", only when the gate's setup bootstrap failed and the command never ran. */\n  readonly failedPhase?: \"setup\";\n  /** The raw output of whichever run decided the status (setup or command). */\n  readonly output: string;\n}\n\n/** The status for one QualityCommandResult. */\nexport function classifyGateExit(res: { readonly exitCode: number; readonly timedOut: boolean }): GateRunStatus;\n\n/** The last `lines` lines of `output` after trailing newlines are removed, joined with \"\\n\"; \"\" when nothing is left. */\nexport function gateOutputTail(output: string, lines?: number): string; // lines defaults to 40\n\n// runQualityGates opts target:\n// opts: { timeoutMs?: number; onGate?: (record: GateRunRecord) => void }\n```\nAll of these are exported from `src/finish/gates/quality.ts` and re-exported from `src/finish/index.ts`, together with `GATE_ORDER`.",
+      "acceptanceCriteria": [
+        "classifyGateExit({ exitCode: 0, timedOut: false }) returns \"passed\".",
+        "classifyGateExit({ exitCode: 1, timedOut: false }) returns \"failed\".",
+        "classifyGateExit({ exitCode: 2, timedOut: false }) returns \"failed\".",
+        "classifyGateExit({ exitCode: 127, timedOut: false }) returns \"not-run\".",
+        "classifyGateExit({ exitCode: 126, timedOut: false }) returns \"not-run\".",
+        "classifyGateExit({ exitCode: -1, timedOut: false }) returns \"not-run\".",
+        "classifyGateExit({ exitCode: -1, timedOut: true }) returns \"timed-out\".",
+        "classifyGateExit({ exitCode: 0, timedOut: true }) returns \"timed-out\", because the timeout check comes before the exit-code check.",
+        "With _qualityGateDeps.run stubbed to return exit codes 0, 127 and 1 for gates build, lint and test (each from cwd /repo), runQualityGates(\"/repo\", commands, { onGate }) calls onGate exactly three times, with records whose name values are build, lint, test in that order and whose status values are passed, not-run, failed.",
+        "In the same run, each record's exitCode, durationMs and output equal the stubbed QualityCommandResult's exitCode, durationMs and output for that gate, and its cwd equals the gate's GateCommand.cwd.",
+        "onGate for a gate is called before _qualityGateDeps.run is called for the next gate: with two gates, the stub records the order of calls, and the first onGate call comes before the second run call.",
+        "The QualityGateResult returned by runQualityGates for the same three stubbed gates is identical with and without onGate: passed false, ran [\"build\", \"lint\", \"test\"], failing [\"lint\", \"test\"], and the same output text.",
+        "When an e2e gate's setup command returns exit code 1, onGate receives one record for e2e with status \"failed\", failedPhase \"setup\", exitCode 1 and the setup result's output, and _qualityGateDeps.run is never called with the e2e command itself.",
+        "When an e2e gate's setup command returns exit code 127, its record's status is \"not-run\" and failedPhase is \"setup\".",
+        "When a gate's setup passes and its command returns exit code 0, the record's status is \"passed\" and the record has no failedPhase key.",
+        "When _qualityGateDeps.run returns { exitCode: -1, timedOut: true } for test, the test record's status is \"timed-out\" and exitCode is -1.",
+        "runQualityGates(\"/repo\", [], { onGate }) never calls onGate and still returns passed false with ran [].",
+        "classifyGateExit imported from @/finish (not from src/finish/gates/quality.ts) returns \"not-run\" for exit code 127.",
+        "gateOutputTail called with 100 lines line1 to line100 followed by a trailing newline returns line61 to line100 joined with \\n, with no trailing newline.",
+        "gateOutputTail(\"\") and gateOutputTail(\"\\n\\n\") both return the empty string.",
+        "GATE_ORDER imported from @/finish equals [\"build\", \"typecheck\", \"lint\", \"test\", \"e2e\"]."
+      ],
+      "tags": [
+        "feature",
+        "finish",
+        "quality-gates"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Two source files and one test file, additive types and a callback in an existing runner; the returned result must stay byte-identical, which is a regression anchor but standard pattern work.",
+        "agentProfileId": "native-deepseek",
+        "agent": "native",
+        "profileModelTier": "balanced",
+        "initialAgent": "native",
+        "initialProfileId": "native-deepseek",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/finish/gates/quality.ts",
+        "packages/nax/src/quality/runner.ts",
+        "packages/nax/src/quality/aggregate.ts",
+        "packages/nax/src/finish/index.ts",
+        "packages/nax/test/unit/finish/gates-quality.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When onGate throws an Error, runQualityGates rejects with that same error and does not run later gates.",
+        "gateOutputTail(output, 2) returns only the last two lines of output."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/finish/gates/quality.ts",
+          "reason": "adds `GateRunStatus`, `GateRunRecord`, `classifyGateExit`, `gateOutputTail`, exports `GATE_ORDER`, and adds the optional `onGate` option on `runQualityGates`; `runGateSetup` may change shape so a failed setup yields its `QualityCommandResult`. The returned `QualityGateResult` and the `output` text are unchanged, so no existing gate-runner or workflow repo-gate test assertion breaks."
+        },
+        {
+          "path": "packages/nax/src/finish/index.ts",
+          "reason": "re-exports `GateRunStatus`, `GateRunRecord`, `classifyGateExit`, `gateOutputTail` and `GATE_ORDER` next to the existing `runQualityGates` export."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/gates-quality.test.ts",
+          "reason": "US-001's acceptance tests are added to this file (the project's test-architecture rule: an existing file under ~650 lines takes new tests); no existing test in it changes."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-002",
+      "title": "The nax gates run command",
+      "description": "**Goal** — Add `src/cli/gates.ts` with `gatesRunCommand`, `registerGatesCommand`, `_gatesCliDeps` and the report types, following the `src/cli/workflow.ts` pattern; register it in `bin/nax.ts` next to `registerWorkflowCommand(program)`, re-export it from `src/cli/index.ts`, and add a `### nax gates run` section to the repo-root `docs/guides/cli-reference.md` (outside the package workdir) describing the flags, the four statuses and the exit codes.\n\n**Motivation** — The nax-finish skill's Step 6 runs the gates by hand and one finish session reported gates as having run when a zsh shell loop returned exit 127 for every gate; nax already does all of this correctly in `runQualityGates` but has no CLI entry to it.\n\n**Approach** — `nax gates run [-d, --dir <path>] [--gate <name>]... [--json]`. The command is mode-independent: it reads config and runs commands, touching no workflow or PRD state.\n\n- `-d, --dir <path>` (default `process.cwd()`): any directory inside the project. `naxDir = findProjectDir(dir)`. When `naxDir` is `null`, or `realOrRaw(naxDir)` equals `realOrRaw(globalConfigDir())`, there is no project `.nax/config.json` at or above `dir` and the command fails with `no nax project found at or above <dir>`. Otherwise `projectDir = await normalizeTrustPath(dirname(naxDir))`; every later step (trust, `resolveGateCommands`, `runQualityGates`, the report's `projectDir`) uses that value. `realOrRaw` is imported from `@nathapp/nax-agent/internal`. Do not call `resolveTrustRoot`.\n- `--gate <name>`: repeatable. Each value must be one of `build`, `typecheck`, `lint`, `test`, `e2e` (validate against the exported `GATE_ORDER`). Gates run in `GATE_ORDER` whatever order the flags were given in, and a repeated value runs once. A value outside that list fails with `unknown gate <name>; expected one of build, typecheck, lint, test, e2e`. A known gate that the project does not configure fails with `gate <name> is not configured; configured gates: <names>` (`configured gates: none` when there are none). No gate runs in either case.\n- `--json`: stdout carries exactly one JSON document, the `GatesRunReport`, or `{\"error\": \"<message>\"}` when the command fails before reporting. Nothing else is written to stdout.\n- Trust: before any config is loaded or command spawned, the command calls `ensureProjectTrusted(projectDir, { interactive })`, where `interactive` is `deps.isInteractive()` and `--json` is not set. `PROJECT_UNTRUSTED` fails the command with the two lines `Project not trusted: <projectDir>` and the error's `context.hint` (or `run: nax trust add <projectDir>` when the hint is absent); `TRUST_STORE_UNREADABLE` fails it with the error's message. Do NOT call `runTrustGate` (it exits the process with code 2; here an untrusted project is exit 1).\n- Validation order, each step running only when every earlier one passed: (1) every `--gate` value is a known gate key (pure, no I/O); (2) project root resolution; (3) trust; (4) `resolveGateCommands(projectDir, [])`; (5) every `--gate` value is configured; (6) the gates run. A failure at any step returns before the next step starts.\n- Sequence: the gates run one at a time, through `runQualityGates(projectDir, commands, { onGate })`, with the default timeout. The run is not stopped by a red gate; every selected gate runs.\n- Error output: `gatesRunCommand` wraps steps 1-6 in one try/catch, like `workflowStatusCommand`, so any failure in any step (including an error thrown by `runQualityGates` mid-run, such as `assertTrusted` refusing inside `runQualityCommand`) returns 1 and is reported, and records of gates that already finished are discarded. Without `--json` the message lines go to stderr through `deps.logErr`, one call per line, with no prefix, and nothing goes to stdout. With `--json` stdout gets one line, `JSON.stringify({ error: message })`, where a two-line message (the untrusted case) is joined with `\"; \"`, and nothing goes to stderr. `guarded` (as in `src/cli/workflow.ts`) only catches what escapes that try/catch.\n- Logging: `registerGatesCommand` does not call `initLogger`, so `runQualityCommand`'s log records never reach stdout and the `--json` single-document guarantee holds.\n- Import cycles: `src/cli/gates.ts` imports `resolveGateCommands`, `runQualityGates` and the new types from `../finish/gates/quality` by relative path, not through the `@/finish` barrel, and does NOT import `src/workflow/repo-gates.ts`; `bun run check:import-cycles` must stay clean. `gateOutputTail` (US-001) supplies the 40-line tail.\n\nExit codes: 0 = at least one gate ran and every gate is `passed`; 1 = the command failed before reporting (no project, untrusted project, unreadable trust store, invalid config, unknown or unconfigured `--gate`, or any other thrown error); 2 = the gates were resolved and run and at least one is `failed`, `not-run` or `timed-out`, or no gate is configured at all (nothing was verified).\n\nPlain output (stdout), one line per gate in run order, then the tail of each gate that did not pass, then a summary line:\n```\npassed     build      12.3s\nfailed     test       exit=1    48.0s\nnot-run    lint       exit=127  0.0s  (command not found or not executable; the gate did not run)\ntimed-out  e2e        900.0s\n\n--- test (last 40 lines) ---\n<outputTail>\n\n--- lint (last 40 lines) ---\n<outputTail>\n\n--- e2e (last 40 lines) ---\n<outputTail>\n\ngates: 1 passed, 1 failed, 1 not run, 1 timed out\n```\nEvery non-passed gate, `timed-out` included, gets a tail block. The column widths and duration format are illustrative and left to the builder. A gate line shows `exit=<n>` for every status except `passed` and `timed-out`; the `not-run` line always carries the same note, whatever the code (127, 126 or -1). A setup failure appends `(setup failed)` to its gate line. With nothing configured, plain output is the single line `no quality.commands configured in <projectDir>/.nax/config.json; nothing was verified`. `outputTail` is `gateOutputTail(record.output)`; an `output` that is empty after trimming gives an empty `outputTail` string, which is still present on a non-passed entry. A list-valued command reports the first non-zero exit code among its steps, so a list whose first step exits 127 is `not-run` even when a later step ran and failed.\n\n`--json` example:\n```json\n{\n  \"projectDir\": \"/repo\",\n  \"passed\": false,\n  \"gates\": [\n    { \"name\": \"build\", \"status\": \"passed\", \"exitCode\": 0, \"durationMs\": 12300 },\n    { \"name\": \"lint\", \"status\": \"not-run\", \"exitCode\": 127, \"durationMs\": 4, \"outputTail\": \"/bin/sh: biome: command not found\" }\n  ],\n  \"summary\": { \"passed\": 1, \"failed\": 0, \"notRun\": 1, \"timedOut\": 0 }\n}\n```\n\nFailure handling: no `.nax/config.json` at or above `--dir` => exit 1, nothing loaded or spawned; untrusted project => exit 1 with the grant hint, fail-closed; trust store unreadable => exit 1 with the store error's message; invalid config (`resolveGateCommands` throws) => exit 1 with the thrown message; unknown or unconfigured `--gate` => exit 1, no gate runs; no gate configured => exit 2 with `passed: false`, `gates: []`; gate exits 127/126 or fails to spawn (-1, not timed out) => `not-run`, counted in `summary.notRun`, exit 2; gate times out => `timed-out`, exit 2; `e2e` setup fails => status is `classifyGateExit` of the setup result with `failedPhase: \"setup\"` and the `e2e` command is not run; a red gate => later gates still run, no retry.\n\n**Scope** — In: `src/cli/gates.ts`, its registration in `bin/nax.ts` (verified by `bun run build`, `bun run typecheck` and `bun run check:import-cycles`, not by an AC), the `src/cli/index.ts` re-exports, and the cli-reference docs section. Out: changes to `runQualityGates`, `GateRunRecord`, `classifyGateExit`, `gateOutputTail` or `GATE_ORDER` themselves (US-001); package overlay gates, `*Fix`/`*Scoped` commands, `--profile`, `--timeout`, parallel runs, `nax workflow record|promote`.\n\n**Interface**\n```typescript\nexport interface GatesCliDeps {\n  log: (msg: string) => void;\n  logErr: (msg: string) => void;\n  exit: (code: number) => void;\n  isInteractive: () => boolean;\n  ensureProjectTrusted: typeof ensureProjectTrusted;\n  resolveGateCommands: typeof resolveGateCommands;\n  runQualityGates: typeof runQualityGates;\n}\nexport const _gatesCliDeps: GatesCliDeps;\n\nexport interface GatesRunOptions {\n  readonly dir: string;\n  /** Gate keys to run; empty means every configured root gate. */\n  readonly gates: readonly string[];\n  readonly json: boolean;\n}\n\nexport interface GatesRunReport {\n  /** Absolute project root the gates ran from. */\n  readonly projectDir: string;\n  /** True only when at least one gate ran and every gate is \"passed\". */\n  readonly passed: boolean;\n  readonly gates: readonly GateReportEntry[];\n  readonly summary: { readonly passed: number; readonly failed: number; readonly notRun: number; readonly timedOut: number };\n}\n\nexport interface GateReportEntry {\n  readonly name: string;\n  readonly status: GateRunStatus;\n  readonly exitCode: number;\n  readonly durationMs: number;\n  readonly failedPhase?: \"setup\";\n  /** `gateOutputTail(record.output)`; absent for a \"passed\" gate. */\n  readonly outputTail?: string;\n}\n\n/** Runs the gates, prints the report, and returns the exit code. */\nexport function gatesRunCommand(opts: GatesRunOptions, deps?: GatesCliDeps): Promise<number>;\n\n/** Registers `nax gates` with its `run` subcommand. */\nexport function registerGatesCommand(program: Command, deps?: GatesCliDeps): Command;\n```\n\n**Seams** — Consumes `runQualityGates`'s `onGate` callback and `classifyGateExit`'s statuses from US-001. Tests stub `runQualityGates` through `_gatesCliDeps` and drive `onGate` with `GateRunRecord`s; one test runs the real `runQualityGates` with a stubbed `_qualityGateDeps.run` so the exit code reaching the report comes from the runner.",
+      "acceptanceCriteria": [
+        "With resolveGateCommands stubbed to return build, lint and test and runQualityGates stubbed to call onGate with records of status passed, not-run (exit 127) and failed (exit 1), gatesRunCommand({ dir, gates: [], json: true }, deps) returns 2 and logs exactly one line to stdout that parses as JSON with passed false and summary { passed: 1, failed: 1, notRun: 1, timedOut: 0 }.",
+        "In that JSON report, the gates entries carry name, status, exitCode and durationMs from their records in run order, the lint entry has status \"not-run\" and exitCode 127, and the build entry (status passed) has no outputTail key.",
+        "When a failed record's output is 100 lines line1 to line100 followed by a trailing newline, its report entry's outputTail is line61 to line100 joined with \\n, with no trailing newline.",
+        "When every record is passed, gatesRunCommand returns 0 and the JSON report has passed true.",
+        "When one record is timed-out and the rest are passed, gatesRunCommand returns 2 and summary.timedOut is 1.",
+        "When resolveGateCommands returns [], gatesRunCommand returns 2 without calling runQualityGates, and the JSON report has passed false and gates [].",
+        "When resolveGateCommands returns [] and json is false, the only stdout line is `no quality.commands configured in /repo/.nax/config.json; nothing was verified`.",
+        "gatesRunCommand calls resolveGateCommands with the project root /repo and an empty packageDirs array, and calls runQualityGates with /repo as its first argument.",
+        "With gates: [\"test\", \"build\", \"test\"] and build, lint and test configured, runQualityGates receives exactly the build and test GateCommands, in that order, each once.",
+        "With gates: [\"format\"] and json true, gatesRunCommand returns 1, calls none of ensureProjectTrusted, resolveGateCommands and runQualityGates, and logs exactly one stdout line, which parses as JSON equal to { error: \"unknown gate format; expected one of build, typecheck, lint, test, e2e\" }.",
+        "With gates: [\"e2e\"] and only build and test configured, gatesRunCommand returns 1, never calls runQualityGates, and with json true the error message is `gate e2e is not configured; configured gates: build, test`.",
+        "When ensureProjectTrusted throws a NaxError with code PROJECT_UNTRUSTED and context.hint `run: nax trust add /repo`, and json is false, gatesRunCommand returns 1, never calls resolveGateCommands, calls logErr with `Project not trusted: /repo` and then with `run: nax trust add /repo`, and logs nothing to stdout.",
+        "In the same untrusted case with json true, the only stdout line parses as JSON equal to { error: \"Project not trusted: /repo; run: nax trust add /repo\" } and logErr is never called.",
+        "When ensureProjectTrusted throws a NaxError with code TRUST_STORE_UNREADABLE, gatesRunCommand returns 1 and never calls resolveGateCommands.",
+        "gatesRunCommand calls ensureProjectTrusted with { interactive: false } when json is true, even when isInteractive() returns true, and with { interactive: true } when json is false and isInteractive() returns true.",
+        "When resolveGateCommands throws Error(\"invalid config: quality.commands.test\"), gatesRunCommand returns 1 and with json true logs exactly one stdout line, which parses as JSON equal to { error: \"invalid config: quality.commands.test\" }.",
+        "With json false and records passed for build and not-run (exit 126) for lint, stdout includes a lint line containing not-run, exit=126 and the gate did not run, a `--- lint (last 40 lines) ---` line, and the summary line `gates: 1 passed, 0 failed, 1 not run, 0 timed out`.",
+        "With json false and an e2e record with status failed and failedPhase \"setup\", the e2e gate line ends with `(setup failed)`.",
+        "When dir is a temporary directory with no .nax/config.json at or above it and json is false, gatesRunCommand returns 1, never calls ensureProjectTrusted, calls logErr once with `no nax project found at or above <dir>`, and logs nothing to stdout.",
+        "When the global config directory env override (GLOBAL_CONFIG_DIR_ENV) points at <tmp>/home/.nax, that directory holds a config.json, and dir is <tmp>/home, gatesRunCommand returns 1 with `no nax project found at or above <tmp>/home` and never calls ensureProjectTrusted.",
+        "When dir is <root>/packages/a inside a temporary project whose .nax/config.json sits at <root>, ensureProjectTrusted and resolveGateCommands both receive await normalizeTrustPath(<root>), not <root>/packages/a.",
+        "In a temporary project whose .nax/config.json exists, with _qualityGateDeps.loadConfig stubbed to configure lint: \"biome check .\" and formatFix: \"biome format --write .\", _qualityGateDeps.run stubbed to return exit code 127, and ensureProjectTrusted stubbed to resolve, gatesRunCommand run with the real resolveGateCommands and runQualityGates returns 2, reports lint as not-run with exitCode 127, and _qualityGateDeps.run is called exactly once, with commandName lint, never with the formatFix command.",
+        "registerGatesCommand(program, deps) imported from @/cli registers a gates command whose only subcommand is run, and parsing `gates run --gate test --gate build --json -d <dir>` calls deps.exit with the code gatesRunCommand returns for { dir: <dir>, gates: [\"test\", \"build\"], json: true }.",
+        "When runQualityGates throws Error(\"spawn refused\") after calling onGate once with a passed record, gatesRunCommand with json true returns 1 and logs exactly one stdout line, which parses as JSON equal to { error: \"spawn refused\" }."
+      ],
+      "tags": [
+        "feature",
+        "cli",
+        "quality-gates"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "One new module that mirrors the existing src/cli/workflow.ts pattern with all collaborators injected, plus a registration line, re-exports and a docs section; no new abstractions, and trust handling is a call to an existing gate rather than credential logic, so no security override.",
+        "agentProfileId": "native-deepseek",
+        "agent": "native",
+        "profileModelTier": "balanced",
+        "initialAgent": "native",
+        "initialProfileId": "native-deepseek",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/cli/workflow.ts",
+        "packages/nax/src/finish/gates/quality.ts",
+        "packages/nax/src/trust/gate.ts",
+        "packages/nax/bin/nax.ts",
+        "packages/nax/test/unit/cli/workflow-status.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/cli/gates.ts",
+        "packages/nax/test/unit/cli/gates.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When --dir is omitted, gatesRunCommand is invoked with dir equal to process.cwd().",
+        "A timed-out gate's report entry includes an outputTail key even when the record's output is empty."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/bin/nax.ts",
+          "reason": "registers the `gates` command group with `registerGatesCommand(program)` next to `registerWorkflowCommand(program)`."
+        },
+        {
+          "path": "packages/nax/src/cli/index.ts",
+          "reason": "re-exports `registerGatesCommand`, `gatesRunCommand`, `_gatesCliDeps` and the `GatesCliDeps`, `GatesRunOptions`, `GatesRunReport` and `GateReportEntry` types."
+        },
+        {
+          "path": "docs/guides/cli-reference.md",
+          "reason": "adds a `### nax gates run` section: the flags, the four statuses and the exit codes."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    }
+  ],
+  "analysis": "Phase 2 of #2569. Adds `nax gates run [--gate <name>]... [--json]`, which reuses resolveGateCommands + runQualityGates (packages/nax/src/finish/gates/quality.ts) so a finishing tool no longer hand-spawns quality commands. Key files: packages/nax/src/finish/gates/quality.ts (GATE_ORDER at ~41, DEFAULT_GATE_TIMEOUT_MS 900_000, GateCommand ~46, resolveGateCommands ~89, runGateSetup ~155 file-local, runQualityGates ~175), packages/nax/src/quality/runner.ts (QualityCommandResult ~75, runQualityCommand ~326; timeout => exitCode -1 timedOut true; spawn error => -1 timedOut false; shell 127/126), packages/nax/src/quality/aggregate.ts (list-valued command reports first non-zero exit), packages/nax/src/finish/index.ts (barrel), packages/nax/src/trust/gate.ts (ensureProjectTrusted, codes PROJECT_UNTRUSTED / TRUST_STORE_UNREADABLE), packages/nax/src/trust/match.ts (normalizeTrustPath, resolveTrustRoot precedent; realOrRaw from @nathapp/nax-agent/internal), packages/nax/src/config (findProjectDir), packages/nax/src/config/paths/index.ts (globalConfigDir, GLOBAL_CONFIG_DIR_ENV), packages/nax/src/cli/workflow.ts (command-group pattern: _workflowCliDeps, guarded, --json single document, {error} on stdout), packages/nax/src/cli/trust-gate.ts (runTrustGate exits 2 - NOT used here; this command maps refusals to exit 1), packages/nax/bin/nax.ts, packages/nax/src/cli/index.ts.\n\nUS-001 (dependency-free): add GateRunStatus, GateRunRecord, classifyGateExit, gateOutputTail to quality.ts; export GATE_ORDER; re-export all from src/finish/index.ts; add optional `onGate` to runQualityGates opts. onGate is called once per gate, synchronously, after the gate finishes and before the next gate starts; an exception from onGate propagates. The returned QualityGateResult and `output` text must stay byte-for-byte identical (existing gate-runner and workflow repo-gate tests must not change). runGateSetup is file-local and may change shape so a failed setup yields its QualityCommandResult; the failure chunk text written to output is unchanged. When setup fails the record is built from the setup result with failedPhase 'setup' and the command itself is never run. Tests go into the existing packages/nax/test/unit/finish/gates-quality.test.ts (stub _qualityGateDeps.run).\n\nUS-002 (depends on US-001): new packages/nax/src/cli/gates.ts. IMPORT-CYCLE RISK: import resolveGateCommands/runQualityGates/types from '../finish/gates/quality' by relative path, never from the '@/finish' barrel or src/workflow/repo-gates.ts (that module imports ./feature-deps -> @/finish barrel -> context.ts -> @/cli -> cli/gates.ts: a runtime cycle). `bun run check:import-cycles` must stay clean. Validate --gate against the exported GATE_ORDER (no second copy). Validation order: (1) --gate values known (pure), (2) project root via findProjectDir + realOrRaw vs globalConfigDir exclusion + normalizeTrustPath(dirname(naxDir)), (3) ensureProjectTrusted(projectDir,{interactive: deps.isInteractive() && !json}), (4) resolveGateCommands(projectDir, []), (5) every --gate configured, (6) runQualityGates(projectDir, selectedCommands, { onGate }). Whole of steps 1-6 sits in one try/catch returning 1; records collected so far are discarded on a throw. Non-json errors go to deps.logErr one call per line, nothing on stdout; json errors are one stdout line JSON.stringify({error}) with multi-line messages joined by '; '. Do not call initLogger. Exit: 0 only when >=1 gate ran and all passed; 2 when any non-passed or nothing configured; 1 for failure before reporting. Register in bin/nax.ts next to registerWorkflowCommand(program) (verified by build/typecheck/check:import-cycles, not an AC), re-export from src/cli/index.ts, and add a '### nax gates run' section to docs/guides/cli-reference.md. Tests: packages/nax/test/unit/cli/gates.test.ts mirroring test/unit/cli/workflow-status.test.ts with injected GatesCliDeps; one integration test runs the real resolveGateCommands/runQualityGates with stubbed _qualityGateDeps.loadConfig/run and stubbed ensureProjectTrusted.\n\nRisks: temp dirs on macOS resolve /var -> /private/var, so compare against normalizeTrustPath output; the global config dir can contain a config.json and must be rejected as 'no project'; never run formatFix/formatFixScoped/lintFix (resolveGateCommands already omits them); plain-output wording and --json shape are specified exactly in the story descriptions.",
+  "outOfScope": [
+    "Package overlay gates (`<gate>@<packageDir>` from `.nax/mono/<pkg>/config.json`) are not run by `nax gates run`; it runs the root `quality.commands` only, matching the nax-finish Step 6 contract that root commands delegate to the workspace orchestrator.",
+    "`formatFix`, `formatFixScoped`, `lintFix` and every `*Scoped` command are never run by `nax gates run`, and no flag enables them.",
+    "A `--profile` flag on `nax gates run` is out of scope; the profile chain applies through `NAX_PROFILE` and the config files, as `loadConfig` already resolves it.",
+    "A `--timeout` flag is out of scope; each gate uses `DEFAULT_GATE_TIMEOUT_MS`.",
+    "Running gates in parallel is out of scope; they run sequentially in `GATE_ORDER`.",
+    "The workflow's own repo and final gates (`runRepoGates`, `src/workflow/repo-gates.ts`) keep their current behaviour; they do not adopt `GateRunStatus`, and a 127 there stays a red gate.",
+    "`nax workflow record` and `nax workflow promote` are phase 3 of #2569 and are not part of this spec.",
+    "Updating the nax-finish skill to call `nax gates run` happens in the nax-toolkit-skills repo, outside this run."
+  ],
+  "routingProfile": "cross-agent+cc-plan"
+}
