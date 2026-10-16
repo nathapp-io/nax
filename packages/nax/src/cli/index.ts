@@ -195,6 +195,13 @@ export {
 } from "./workflow";
 export { _workflowForgeDeps, type WorkflowForgeDeps } from "./workflow-forge";
 export {
+  type PromoteAction,
+  type PromoteCheck,
+  type WorkflowPromoteOptions,
+  type WorkflowPromoteReport,
+  workflowPromoteCommand,
+} from "./workflow-promote";
+export {
   type WorkflowRecordOptions,
   type WorkflowRecordReport,
   workflowRecordCommand,

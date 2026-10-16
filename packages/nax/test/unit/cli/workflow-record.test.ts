@@ -512,9 +512,9 @@ describe("nax workflow record (plain)", () => {
 });
 
 describe("nax workflow registration", () => {
-  test("AC-22: the workflow group registers status then record", () => {
+  test("AC-22: the workflow group registers status, record then promote", () => {
     const group = registerWorkflowCommand(new Command());
     expect(group.name()).toBe("workflow");
-    expect(group.commands.map((c) => c.name())).toEqual(["status", "record"]);
+    expect(group.commands.map((c) => c.name())).toEqual(["status", "record", "promote"]);
   });
 });

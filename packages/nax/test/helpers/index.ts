@@ -146,5 +146,26 @@ export { withDebugSpy, withInfoSpy, withWarnSpy } from "./warn-spy";
 export { makeFeatureContext } from "./workflow-feature-context";
 export type { FeatureMachineHarnessOpts, FeatureMachineScript } from "./workflow-feature-machine";
 export { featureMachineFixtures, makeDoneStory, makeFeatureMachineHarness } from "./workflow-feature-machine";
+export {
+  checkOf,
+  emittedError,
+  emittedJson,
+  makePromoteFixture,
+  PR_WRITE_ARGV,
+  PROMOTE_FEATURE,
+  PROMOTE_GREEN,
+  PROMOTE_HEAD,
+  PROMOTE_HEAD_STDOUT,
+  PROMOTE_NOW,
+  PROMOTE_REMOTE,
+  PROMOTE_RUN_ID,
+  PROMOTE_SHA,
+  PROMOTE_SIDECAR_NAME,
+  PROMOTE_URL,
+  type PromoteCheckCall,
+  type PromoteFixture,
+  type PromoteFixtureOptions,
+  prWrites,
+} from "./workflow-promote-fixture";
 export { makeStepContext } from "./workflow-step-context";
 export { type MockWorktreeManager, makeWorktreeManager } from "./worktree-manager";

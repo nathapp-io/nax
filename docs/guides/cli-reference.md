@@ -288,9 +288,10 @@ The command is mode-independent — it reads config and runs commands, and touch
 
 ### `nax workflow`
 
-Read the verdict of a feature's newest workflow run, and record a human's rulings for the items the
-run left open. Both subcommands read the same tree a workflow-mode run writes —
-`.nax/features/<feature>/workflow/<runId>/` — and take the same two global flags:
+Read the verdict of a feature's newest workflow run, record a human's rulings for the items the run
+left open, and check whether the run's draft PR can be promoted. All three subcommands read the same
+tree a workflow-mode run writes — `.nax/features/<feature>/workflow/<runId>/` — and take the same two
+global flags:
 
 | Flag | Description |
 |:-----|:------------|
@@ -386,7 +387,62 @@ exit code.
 unreadable or invalid decisions file, an entry naming no open item or the wrong kind, no decisions
 sidecar to apply an outcome to, and the `promoted` / `verified-ready` PR refusals.
 
-The sidecar is git-ignored and left uncommitted. Neither subcommand commits, pushes or waits for CI.
+#### `nax workflow promote -f <name> [--yes]`
+
+Check whether the feature's draft PR can be promoted, and report what stops it when it cannot. The
+rules a finishing tool would otherwise re-derive on every run live here: the run must still be a
+draft, its PR must still be a draft, every open item must carry a ruling, and the checks on the
+pushed head must be green.
+
+```bash
+nax workflow promote -f auth             # report the two checks
+nax workflow promote -f auth --json
+nax workflow promote -f auth --yes       # promote, once every check passes
+```
+
+| Flag | Description |
+|:-----|:------------|
+| `--yes` | Promote the PR once every check passes. Without it `promote` reports the checks and stops |
+
+Validation, in order, each refusing with exit `1` and writing nothing: the feature name; the newest
+readable run; the record's `outcome` must be `draft`; the record must carry a PR url; a forge must be
+detected for `--dir`; and the forge must report the PR as a draft — an already-ready PR is refused,
+never promoted twice. `promote` reads the PR but ignores the sidecar's own outcome, `abandoned`
+included: the sidecar records what a human decided, not what the forge now holds.
+
+Then both checks run, and neither short-circuits the other:
+
+| Check | Passes when | Fails with |
+|:------|:------------|:-----------|
+| `items-ruled` | Every open item id of the run's verdict has an entry in the run's newest decisions sidecar — vacuously, when nothing is open | `no ruling recorded for <ids>`, or `no decisions recorded; run nax workflow record` when the run has no sidecar at all |
+| `ci-green` | The checks on the pushed head are green | `ci <outcome>: <detail>`. `no-checks`, `pending`, `unavailable`, `failed` and `conflicting` all fail |
+
+The open items come from the run's own verdict, so a `ci` item written at publish time still needs a
+ruling even when the checks are green now. `ci-green` reads HEAD (`git rev-parse HEAD`) and binds the
+report to it: a green poll for a different commit is `unavailable`, never green. A HEAD that cannot be
+read is a `1`, not a check failure.
+
+Plain output is one line per check, then the dry-run line when both passed:
+
+```
+pass  items-ruled
+pass  ci-green
+ready to promote; rerun with --yes
+```
+
+`--json` prints `{ "feature", "runId", "url", "dryRun", "promoted", "checks", "actions" }`, where
+`checks` holds the two checks in the order above with their `passed` flag and their `detail`.
+
+**Exit codes:**
+
+| Exit | Meaning |
+|:-----|:--------|
+| `0` | Both checks passed |
+| `1` | nax could not answer: invalid feature name, no workflow result for the feature, a run that never started its feature steps, a record that is not a draft, no PR url, no forge, an already-ready PR, or a HEAD that cannot be read |
+| `2` | A check failed — an open item has no ruling, or CI is not green on the pushed head. Nothing is written, even with `--yes` |
+
+The sidecar is git-ignored and left uncommitted. None of the three subcommands commits, pushes or
+waits for CI.
 
 ---
 

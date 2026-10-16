@@ -12,16 +12,24 @@
  * instead (US-004).
  */
 import { defaultForgeDeps, type ForgeDeps } from "@/forge";
+import { waitForChecks } from "../workflow/ci-wait";
 
 export interface WorkflowForgeDeps {
   /** Runs `git`, `gh` and `glab` for the command. */
   readonly forge: ForgeDeps;
   /** The clock behind the sidecar's `resumedAt` and its file name. */
   readonly now: () => Date;
+  /**
+   * The CI wait `promote` binds the pushed head to (US-004). It arrives here rather than being
+   * imported at the call site so a test stubs the wait — and the clock inside it — without a real
+   * poll loop.
+   */
+  readonly waitForChecks: typeof waitForChecks;
 }
 
-/** The real forge and clock: the running process's CLIs and the wall clock. */
+/** The real forge, clock and CI wait: the running process's CLIs, the wall clock and a live poll. */
 export const _workflowForgeDeps: WorkflowForgeDeps = {
   forge: defaultForgeDeps,
   now: () => new Date(),
+  waitForChecks,
 };

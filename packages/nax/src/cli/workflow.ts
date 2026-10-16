@@ -1,5 +1,6 @@
 /**
- * The `nax workflow` group — `status` lives here, `record` in `./workflow-record`.
+ * The `nax workflow` group — `status` lives here, `record` in `./workflow-record` and `promote` in
+ * `./workflow-promote`.
  *
  * `status` is read-only: it reads the feature's `workflow/<runId>/result.json` files and writes
  * nothing. A finishing tool reads one list here instead of rebuilding it from `result.json`, the
@@ -18,6 +19,7 @@ import type { FeatureCiState, FeatureOutcome, FeatureStep, OpenItem } from "@/wo
 import { buildVerdict } from "../workflow/open-items";
 import { fillStoryStates, type LoadedRun, loadRunVerdict } from "../workflow/run-verdict";
 import { _workflowForgeDeps, type WorkflowForgeDeps } from "./workflow-forge";
+import { workflowPromoteCommand } from "./workflow-promote";
 import { workflowRecordCommand } from "./workflow-record";
 
 export interface WorkflowCliDeps {
@@ -131,7 +133,7 @@ async function guarded(deps: WorkflowCliDeps, body: () => Promise<number>): Prom
   }
 }
 
-/** Register `nax workflow status` and `nax workflow record`. */
+/** Register `nax workflow status`, `nax workflow record` and `nax workflow promote`. */
 export function registerWorkflowCommand(
   program: Command,
   deps: WorkflowCliDeps = _workflowCliDeps,
@@ -165,6 +167,22 @@ export function registerWorkflowCommand(
             outcome: o.outcome,
             json: o.json === true,
           },
+          deps,
+          forgeDeps,
+        ),
+      ),
+    );
+  group
+    .command("promote")
+    .description("Check a draft run and report whether its PR can be promoted")
+    .requiredOption("-f, --feature <name>", "Feature name")
+    .option("--yes", "Promote for real once every check passes", false)
+    .option("-d, --dir <path>", "Project directory", process.cwd())
+    .option("--json", "Emit one machine-readable JSON document", false)
+    .action((o: { dir: string; feature: string; yes?: boolean; json?: boolean }) =>
+      guarded(deps, () =>
+        workflowPromoteCommand(
+          { dir: o.dir, feature: o.feature, yes: o.yes === true, json: o.json === true },
           deps,
           forgeDeps,
         ),
