@@ -285,6 +285,35 @@ interface PrParts {
   readonly pr: { workdir: string; branch: string; title: string; forge: ForgeKind };
   readonly body: WorkflowPrBodyFacts;
   readonly draftUrl?: string;
+  /** US-002: the record and the stories `publish` holds, for the body's open items. */
+  readonly record: WorkflowFeatureRecord;
+  readonly stories: readonly StorySummary[];
+}
+
+/**
+ * US-002: the record the final body's open items are built from. `publish` holds no reasons of its own
+ * (`publishStep` is their only writer) and an older record carries no story states, so the approval,
+ * the CI state and the stories this run saw fill them in. `ciDetail` is the CI wait's own detail only
+ * for the three states whose reason is built from it.
+ */
+function openItemRecord(
+  parts: PrParts,
+  ci: CiWaitResult,
+  approval: ApprovalOutcome | null,
+  reasons: readonly string[],
+): WorkflowFeatureRecord {
+  return {
+    ...parts.record,
+    ...(approval ? { approval } : {}),
+    ci: ci.outcome,
+    ...ciDetailFields(ci),
+    storyStates: parts.stories.map((s) => ({
+      id: s.id,
+      state: s.state,
+      ...(s.reason !== undefined ? { reason: s.reason } : {}),
+    })),
+    reasons,
+  };
 }
 
 async function finishPr(
@@ -301,6 +330,7 @@ async function finishPr(
     outcome: ready ? "ready" : "draft",
     ci: ci.outcome,
     reasons: finalReasons,
+    openItems: buildOpenItems(openItemRecord(parts, ci, approval, finalReasons)),
   });
   try {
     const res = await _featureDeps.openOrPromotePr(
@@ -519,7 +549,14 @@ async function prMode(plan: PublishPlan, input: PublishInput): Promise<PublishOu
   }
   // A deterministic reason means the advisor is never asked, so there is no second ledger line either.
   if (approval) await pushLedger(fc);
-  return finishPr(fc, { pr, body, ...(draft?.url ? { draftUrl: draft.url } : {}) }, ci, reasons, approval);
+  const parts: PrParts = {
+    pr,
+    body,
+    record: input.record,
+    stories: input.stories,
+    ...(draft?.url ? { draftUrl: draft.url } : {}),
+  };
+  return finishPr(fc, parts, ci, reasons, approval);
 }
 
 export async function publish(fc: FeatureContext, input: PublishInput): Promise<PublishOutcome> {

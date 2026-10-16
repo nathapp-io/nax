@@ -10,6 +10,7 @@ import type {
   FeatureCiState,
   RepoGateSummary,
   StoryState,
+  StoryStateItem,
   StorySummary,
   WorkflowRuling,
 } from "./types";
@@ -33,7 +34,8 @@ export interface ReadinessFacts {
   readonly reReviewSkipped?: boolean;
 }
 
-const NOTHING_VERIFIED = "no quality commands configured — nothing was verified";
+/** Exported (US-002): the one text that means nothing was verified, which no gate item ever carries. */
+export const NOTHING_VERIFIED = "no quality commands configured — nothing was verified";
 
 /** How many unread paths the reason names before it counts the rest instead. */
 const UNREAD_PATHS_SHOWN = 5;
@@ -69,11 +71,26 @@ export function describeUnread(files: readonly string[]): string {
   return `branch review did not read ${files.length} changed file(s): ${shown}${rest > 0 ? `, +${rest} more` : ""}`;
 }
 
-function idsIn(stories: readonly StorySummary[], state: StoryState): string[] {
-  return stories.filter((s) => s.state === state).map((s) => s.id);
+function idsIn(states: readonly StoryStateItem[], state: StoryState): string[] {
+  return states.filter((s) => s.state === state).map((s) => s.id);
 }
 
-function gateReasons(gates: RepoGateSummary | undefined): string[] {
+/**
+ * The two incomplete-story reason texts, in the order `readinessReasons` writes them. Exported
+ * (US-002) so `open-items.ts` matches the exact text a story item already carries instead of
+ * re-spelling it.
+ */
+export function storyReasons(states: readonly StoryStateItem[]): string[] {
+  const gateOpen = idsIn(states, "complete-gate-open");
+  const notRun = idsIn(states, "not-run");
+  return [
+    ...(gateOpen.length > 0 ? [`stories gate-open: ${gateOpen.join(", ")}`] : []),
+    ...(notRun.length > 0 ? [`stories not run: ${notRun.join(", ")}`] : []),
+  ];
+}
+
+/** The red-gate reason text, or the nothing-verified one when no gate ran. Exported for US-002. */
+export function gateReasons(gates: RepoGateSummary | undefined): string[] {
   if (!gates || gates.ran.length === 0) return [NOTHING_VERIFIED];
   return gates.failing.length > 0 ? [`gates red: ${gates.failing.join(", ")}`] : [];
 }
@@ -86,15 +103,12 @@ const COST_LIMITED = "cost limit reached: the feature workflow stopped before it
  * blocks (W-R9); CI that could not be read (`unavailable`) does, since it was never observed (nax#2550).
  */
 export function readinessReasons(f: ReadinessFacts): string[] {
-  const gateOpen = idsIn(f.stories, "complete-gate-open");
-  const notRun = idsIn(f.stories, "not-run");
   const unread = f.branchReviewUnread ?? [];
   const ci = ciReason(f.ci, f.ciDetail);
   return [
     ...gateReasons(f.finalGates),
     ...(ci === undefined ? [] : [ci]),
-    ...(gateOpen.length > 0 ? [`stories gate-open: ${gateOpen.join(", ")}`] : []),
-    ...(notRun.length > 0 ? [`stories not run: ${notRun.join(", ")}`] : []),
+    ...storyReasons(f.stories),
     ...(f.flagged > 0 ? [`${f.flagged} ruling(s) flagged for a human`] : []),
     ...(f.branchReviewRan ? [] : ["branch review did not run"]),
     ...(unread.length > 0 ? [describeUnread(unread)] : []),

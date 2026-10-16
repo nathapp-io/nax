@@ -108,7 +108,58 @@ describe("verdict in result.json (#2496)", () => {
       await upsertFeatureRecord(runDir, { runId: "r1", feature: "f" }, record);
       await upsertStoryRecord(runDir, { runId: "r1", feature: "f" }, newStoryRecord("US-001", 3, "t"));
       const file = await readResult(runDir);
-      expect(file?.verdict).toEqual({ workflowPassed: true, outcome: "draft", reasons: ["r"], openItems: [] });
+      expect(file?.verdict).toEqual({
+        workflowPassed: true,
+        outcome: "draft",
+        reasons: ["r"],
+        openItems: [{ id: "_run:reason1", kind: "reason", issue: "r" }],
+      });
+    });
+  });
+
+  /** US-002: a record with no storyStates of its own still tells the verdict which stories are open. */
+  test("AC-18: the verdict takes storyStates from the run's story records when the record has none", async () => {
+    await withTempDir(async (runDir) => {
+      await upsertStoryRecord(
+        runDir,
+        { runId: "r1", feature: "f" },
+        {
+          ...newStoryRecord("US-002", 3, "t"),
+          state: "complete-gate-open",
+          reason: "red: lint",
+          phase: "closed",
+        },
+      );
+      await upsertFeatureRecord(
+        runDir,
+        { runId: "r1", feature: "f" },
+        {
+          ...newFeatureRecord({ now: "t", seed: "s", minors: [] }),
+          outcome: "draft" as const,
+        },
+      );
+      const openItems = (await readResult(runDir))?.verdict?.openItems ?? [];
+      expect(openItems).toContainEqual({
+        id: "US-002",
+        kind: "story",
+        issue: "US-002 ended complete-gate-open: red: lint",
+      });
+    });
+  });
+
+  test("AC-19: a held approval reaches the verdict the upsert writes", async () => {
+    await withTempDir(async (runDir) => {
+      await upsertFeatureRecord(
+        runDir,
+        { runId: "r1", feature: "f" },
+        {
+          ...newFeatureRecord({ now: "t", seed: "s", minors: [] }),
+          outcome: "draft" as const,
+          approval: { approved: false, rationale: "advisor held: x", decisionId: "D-1" },
+        },
+      );
+      const openItems = (await readResult(runDir))?.verdict?.openItems ?? [];
+      expect(openItems).toContainEqual({ id: "D-1", kind: "advisor", issue: "advisor held: x" });
     });
   });
 });

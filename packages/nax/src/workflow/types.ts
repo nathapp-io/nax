@@ -92,10 +92,15 @@ export interface WorkflowResultFile {
   readonly preflightTokensByRole?: Readonly<Record<string, RoleTokens>>;
 }
 
-/** #2496: one thing still open on a workflow feature, with its evidence in full. */
+/**
+ * #2496: one thing still open on a workflow feature, with its evidence in full. US-002 adds the four
+ * kinds a finishing tool had to rebuild by hand: the advisor's hold (`advisor`), a story that did not
+ * finish (`story`), the CI state that blocks (`ci`) and a reason no other item explains (`reason`).
+ * Only `finding`, `ruling` and `gate` block the verdict.
+ */
 export interface OpenItem {
   readonly id: string;
-  readonly kind: "finding" | "ruling" | "cannot-verify" | "gate";
+  readonly kind: "finding" | "ruling" | "cannot-verify" | "gate" | "advisor" | "story" | "ci" | "reason";
   readonly severity?: WorkflowSeverity;
   readonly file?: string;
   readonly line?: number;

@@ -159,6 +159,46 @@ describe("publish CI draft gate (US-002)", () => {
   });
 });
 
+/** US-002: the body written at the end of `publish` lists what the verdict lists, under the same ids. */
+describe("publish rebuilds the body's open items (US-002)", () => {
+  /** The lines of the body's "Before marking ready" section, or none when the section is absent. */
+  function readyLines(body: string): string[] {
+    const [, section] = body.split("## Before marking ready");
+    return section === undefined ? [] : section.split("\n");
+  }
+
+  function expectReadyLine(body: string, prefix: string): void {
+    expect(readyLines(body).find((l) => l.startsWith(prefix))).toBeDefined();
+  }
+
+  test("AC-20: an advisor hold is an advisor line, cited by its decision id", async () => {
+    const { input, updated } = wire({ outcome: "green", detail: "ok" }, { hold: { id: "D-1", rationale: "risky" } });
+    await publish(makeFeatureContext(), input);
+    expectReadyLine(String(updated[0]?.body), "- [ ] **D-1** (advisor) — advisor held:");
+  });
+
+  test("AC-21: a failed CI is a ci line", async () => {
+    const { input, updated } = wire({ outcome: "failed", detail: "1 check failed" });
+    await publish(makeFeatureContext(), input);
+    expectReadyLine(String(updated[0]?.body), "- [ ] **_run:ci** (ci) — CI failed");
+  });
+
+  test("AC-22: a story that did not finish is a story line", async () => {
+    const { input, updated } = wire({ outcome: "green", detail: "ok" });
+    await publish(makeFeatureContext(), {
+      ...input,
+      stories: [{ id: "US-002", title: "B", state: "complete-gate-open", rounds: 1, unreviewed: false, flagged: 0 }],
+    });
+    expectReadyLine(String(updated[0]?.body), "- [ ] **US-002** (story)");
+  });
+
+  test("AC-23: a reason nothing else explains is a reason line, numbered by its position", async () => {
+    const { input, updated } = wire({ outcome: "green", detail: "ok" });
+    await publish(makeFeatureContext(), { ...input, record: { ...input.record, reviewRan: false } });
+    expectReadyLine(String(updated[0]?.body), "- [ ] **_run:reason1** (reason) — branch review did not run");
+  });
+});
+
 /** US-001: the publish result keeps the approval outcome and the CI wait's detail for the verdict. */
 describe("publish keeps the approval and the CI detail (US-001)", () => {
   test("AC-10: an advisor that holds returns its outcome with the decision id", async () => {
