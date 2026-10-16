@@ -59,4 +59,4 @@ export {
 export { eventsFromResult, streamFromComplete, withDerivedStream } from "./stream-from-complete";
 export type { StubMode } from "./systemone-stub";
 export { startSystemOneStub, stubAnswerBody } from "./systemone-stub";
-export { type TimerSpyResult, withTimerSpy } from "./timer-spy";
+export { type TimerSpyOptions, type TimerSpyResult, withTimerSpy } from "./timer-spy";
