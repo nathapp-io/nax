@@ -13,6 +13,7 @@ import { describe, expect, test } from "bun:test";
 import { assertNaxError } from "@test/helpers";
 import type { ModelDef, ModelsConfig, TierConfig } from "@/config/schema-types";
 import {
+  classifyModelSelector,
   isUnrecognizedLiteralModel,
   resolveConfiguredModel,
   resolveModelForAgent,
@@ -209,12 +210,12 @@ describe("resolveConfiguredModel", () => {
     expect(result.modelDef).toEqual({ provider: "openai", model: "gpt-5.4-mini" });
   });
 
-  test("resolves shorthand aliases to builtin tiers", () => {
+  test("a shorthand name is a model the agent dispatches, not a tier (nax#2571)", () => {
     const result = resolveConfiguredModel(models, "claude", { agent: "claude", model: "sonnet" }, "claude");
 
     expect(result.agent).toBe("claude");
-    expect(result.modelTier).toBe("balanced");
-    expect(result.modelDef).toEqual({ provider: "anthropic", model: "claude-sonnet-4-5" });
+    expect(result.modelTier).toBeUndefined();
+    expect(result.modelDef.model).toBe("sonnet");
   });
 
   test("passes through raw model ids from object selectors", () => {
@@ -317,10 +318,10 @@ describe("resolveTierMembership (spec §3)", () => {
   });
 
   test("isUnrecognizedLiteralModel", () => {
-    expect(isUnrecognizedLiteralModel("turbo")).toBe(true);
-    expect(isUnrecognizedLiteralModel("opencode-go/qwen-4")).toBe(false);
-    expect(isUnrecognizedLiteralModel("claude-opus-5")).toBe(false);
-    expect(isUnrecognizedLiteralModel("gpt-5")).toBe(false);
+    expect(isUnrecognizedLiteralModel("turbo", "claude")).toBe(true);
+    expect(isUnrecognizedLiteralModel("opencode-go/qwen-4", "native")).toBe(false);
+    expect(isUnrecognizedLiteralModel("claude-opus-5", "claude")).toBe(false);
+    expect(isUnrecognizedLiteralModel("gpt-5", "codex")).toBe(false);
   });
 });
 
@@ -347,35 +348,29 @@ describe("resolveConfiguredModel — effort suffix (US-001)", () => {
     return messages;
   }
 
-  test("AC-1: shorthand sonnet[medium] resolves via balanced and keeps the suffix", () => {
+  test("AC-1: shorthand sonnet[medium] dispatches as that model and keeps the suffix", () => {
     const r = resolveConfiguredModel(models, "claude", { agent: "claude", model: "sonnet[medium]" }, "claude");
-    expect(r.modelTier).toBe("balanced");
-    expect(r.modelDef.model).toBe("claude-sonnet-5[medium]");
+    expect(r.modelTier).toBeUndefined();
+    expect(r.modelDef.model).toBe("sonnet[medium]");
   });
 
-  test("AC-2: shorthand haiku[low] resolves via fast and keeps the suffix", () => {
+  test("AC-2: shorthand haiku[low] dispatches as that model and keeps the suffix", () => {
     const r = resolveConfiguredModel(models, "claude", { agent: "claude", model: "haiku[low]" }, "claude");
-    expect(r.modelTier).toBe("fast");
-    expect(r.modelDef.model).toBe("claude-haiku-5[low]");
+    expect(r.modelTier).toBeUndefined();
+    expect(r.modelDef.model).toBe("haiku[low]");
   });
 
-  test("AC-3: shorthand opus[high] resolves via powerful and keeps the suffix", () => {
+  test("AC-3: shorthand opus[high] dispatches as that model and keeps the suffix", () => {
     const r = resolveConfiguredModel(models, "claude", { agent: "claude", model: "opus[high]" }, "claude");
-    expect(r.modelTier).toBe("powerful");
-    expect(r.modelDef.model).toBe("claude-opus-5[high]");
-  });
-
-  test("AC-4: the alias lookup stays case-insensitive with a suffix", () => {
-    const r = resolveConfiguredModel(models, "claude", { agent: "claude", model: "Sonnet[high]" }, "claude");
-    expect(r.modelTier).toBe("balanced");
-    expect(r.modelDef.model).toBe("claude-sonnet-5[high]");
+    expect(r.modelTier).toBeUndefined();
+    expect(r.modelDef.model).toBe("opus[high]");
   });
 
   test("AC-5: the selection's suffix replaces the one on the tier entry", () => {
     const suffixed: ModelsConfig = {
       claude: { fast: "claude-haiku-5", balanced: "claude-sonnet-5[high]", powerful: "claude-opus-5" },
     };
-    const r = resolveConfiguredModel(suffixed, "claude", { agent: "claude", model: "sonnet[low]" }, "claude");
+    const r = resolveConfiguredModel(suffixed, "claude", { agent: "claude", model: "balanced[low]" }, "claude");
     expect(r.modelDef.model).toBe("claude-sonnet-5[low]");
   });
 
@@ -383,7 +378,7 @@ describe("resolveConfiguredModel — effort suffix (US-001)", () => {
     const suffixed: ModelsConfig = {
       claude: { fast: "claude-haiku-5", balanced: "claude-sonnet-5[high]", powerful: "claude-opus-5" },
     };
-    const r = resolveConfiguredModel(suffixed, "claude", { agent: "claude", model: "sonnet" }, "claude");
+    const r = resolveConfiguredModel(suffixed, "claude", { agent: "claude", model: "balanced" }, "claude");
     expect(r.modelDef.model).toBe("claude-sonnet-5[high]");
   });
 
@@ -392,7 +387,7 @@ describe("resolveConfiguredModel — effort suffix (US-001)", () => {
     const r = resolveConfiguredModel(
       { claude: { fast: "claude-haiku-5", balanced: entry, powerful: "claude-opus-5" } },
       "claude",
-      { agent: "claude", model: "sonnet[medium]" },
+      { agent: "claude", model: "balanced[medium]" },
       "claude",
     );
     expect(r.modelDef.provider).toBe("anthropic");
@@ -427,9 +422,128 @@ describe("resolveConfiguredModel — effort suffix (US-001)", () => {
   });
 
   test("AC-11..14: isUnrecognizedLiteralModel evaluates the base of a suffixed id", () => {
-    expect(isUnrecognizedLiteralModel("sonnet[medium]")).toBe(false);
-    expect(isUnrecognizedLiteralModel("sonet[medium]")).toBe(true);
-    expect(isUnrecognizedLiteralModel("claude-opus-5[high]")).toBe(false);
-    expect(isUnrecognizedLiteralModel("turbo[high]")).toBe(true);
+    expect(isUnrecognizedLiteralModel("sonnet[medium]", "claude")).toBe(false);
+    expect(isUnrecognizedLiteralModel("sonet[medium]", "claude")).toBe(true);
+    expect(isUnrecognizedLiteralModel("claude-opus-5[high]", "claude")).toBe(false);
+    expect(isUnrecognizedLiteralModel("turbo[high]", "claude")).toBe(true);
+  });
+});
+
+describe("nax#2571: a shorthand name in { agent, model } is a model, never a tier", () => {
+  const models: ModelsConfig = {
+    claude: { fast: "haiku", balanced: "sonnet[medium]", powerful: "sonnet[medium]" },
+    native: { fast: "openai-codex/gpt-6-luna[high]", powerful: "openai-codex/gpt-6.1-sol[medium]" },
+    opencode: { balanced: "minimax/MiniMax-M2.7", powerful: "minimax/MiniMax-M2.7" },
+    pi: { balanced: "huggingface/MiniMaxAI/MiniMax-M2.7", powerful: "huggingface/MiniMaxAI/MiniMax-M2.7" },
+    codex: { balanced: "gpt-6.1-sol[medium]", powerful: "gpt-6.1-sol[medium]" },
+  };
+  const LITERAL_WARN = "Configured model is neither a tier nor a recognizable model id — dispatching as a literal";
+
+  function warnMessages(fn: () => void): string[] {
+    const messages: string[] = [];
+    resetLogger();
+    initLogger({ level: "warn" });
+    const removeSink = addSink((entry) => {
+      if (entry.level === "warn") messages.push(entry.message);
+    });
+    try {
+      fn();
+    } finally {
+      removeSink();
+      resetLogger();
+    }
+    return messages;
+  }
+
+  test("claude opus[medium] dispatches opus even when the powerful tier holds sonnet", () => {
+    let r: ReturnType<typeof resolveConfiguredModel> | undefined;
+    const messages = warnMessages(() => {
+      r = resolveConfiguredModel(models, "claude", { agent: "claude", model: "opus[medium]" }, "claude");
+    });
+    expect(r?.agent).toBe("claude");
+    expect(r?.modelTier).toBeUndefined();
+    expect(r?.modelDef.model).toBe("opus[medium]");
+    expect(messages).not.toContain(LITERAL_WARN);
+  });
+
+  for (const agent of ["opencode", "pi", "codex", "native"]) {
+    test(`${agent}: opus is not mapped to that agent's powerful tier, and warns`, () => {
+      let r: ReturnType<typeof resolveConfiguredModel> | undefined;
+      const messages = warnMessages(() => {
+        r = resolveConfiguredModel(models, "claude", { agent, model: "opus" }, "claude");
+      });
+      expect(r?.agent).toBe(agent);
+      expect(r?.modelTier).toBeUndefined();
+      expect(r?.modelDef.model).toBe("opus");
+      expect(messages).toContain(LITERAL_WARN);
+    });
+  }
+
+  test("a tier name still resolves as a tier, with the suffix carried over", () => {
+    const r = resolveConfiguredModel(models, "claude", { agent: "native", model: "powerful[high]" }, "claude");
+    expect(r.modelTier).toBe("powerful");
+    expect(r.modelDef.model).toBe("openai-codex/gpt-6.1-sol[high]");
+  });
+
+  test("a tier the user named after a shorthand is a tier (tier-first precedence)", () => {
+    const custom: ModelsConfig = { claude: { opus: "claude-opus-5-5" } };
+    const r = resolveConfiguredModel(custom, "claude", { agent: "claude", model: "opus[low]" }, "claude");
+    expect(r.modelTier).toBe("opus");
+    expect(r.modelDef.model).toBe("claude-opus-5-5[low]");
+  });
+
+  test("isUnrecognizedLiteralModel recognises a shorthand only for the claude agent", () => {
+    expect(isUnrecognizedLiteralModel("opus[medium]", "claude")).toBe(false);
+    expect(isUnrecognizedLiteralModel("opus[medium]", "opencode")).toBe(true);
+    expect(isUnrecognizedLiteralModel("sonnet", "pi")).toBe(true);
+    expect(isUnrecognizedLiteralModel("haiku", "codex")).toBe(true);
+  });
+
+  test("shorthand recognition is case-sensitive: Opus is not a name the Claude CLI knows", () => {
+    expect(isUnrecognizedLiteralModel("Opus[high]", "claude")).toBe(true);
+    expect(isUnrecognizedLiteralModel("opus[high]", "claude")).toBe(false);
+  });
+});
+
+describe("classifyModelSelector (nax#2571)", () => {
+  const models: ModelsConfig = {
+    claude: { balanced: "sonnet[medium]", powerful: "sonnet[medium]" },
+    native: { cheap: "opencode-go/deepseek-v4-flash" },
+  };
+
+  test("a shorthand name is a model, suffix and all", () => {
+    expect(classifyModelSelector(models, "claude", "opus[medium]", "claude")).toEqual({
+      kind: "model",
+      model: "opus[medium]",
+    });
+  });
+
+  test("a tier name is a tier; the suffix is split off as effort", () => {
+    expect(classifyModelSelector(models, "claude", "powerful[high]", "claude")).toEqual({
+      kind: "tier",
+      tier: "powerful",
+      effort: "high",
+      viaDefaultAgentFallback: false,
+    });
+  });
+
+  test("a custom tier and a default-agent fallback tier are tiers", () => {
+    expect(classifyModelSelector(models, "native", "cheap", "claude")).toEqual({
+      kind: "tier",
+      tier: "cheap",
+      viaDefaultAgentFallback: false,
+    });
+    expect(classifyModelSelector(models, "native", "balanced", "claude")).toEqual({
+      kind: "tier",
+      tier: "balanced",
+      viaDefaultAgentFallback: true,
+    });
+  });
+
+  test("a provider-qualified id is a model", () => {
+    expect(classifyModelSelector(models, "native", "openai-codex/gpt-6.1-sol[high]", "claude")).toEqual({
+      kind: "model",
+      model: "openai-codex/gpt-6.1-sol[high]",
+    });
   });
 });

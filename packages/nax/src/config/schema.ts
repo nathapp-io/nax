@@ -52,6 +52,7 @@ export type {
   ModelDef,
   ModelEntry,
   ModelMap,
+  ModelSelectorClass,
   ModelsConfig,
   ModelTier,
   NaxConfig,
@@ -77,9 +78,10 @@ export type {
   TierConfig,
 } from "./types";
 export {
+  CLAUDE_MODEL_SHORTHANDS,
+  classifyModelSelector,
   isBuiltinModelTier,
   isUnrecognizedLiteralModel,
-  MODEL_SHORTHAND_TIERS,
   resolveConfiguredModel,
   resolveModel,
   resolveModelForAgent,

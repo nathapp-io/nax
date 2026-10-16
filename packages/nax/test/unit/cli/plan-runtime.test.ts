@@ -180,7 +180,7 @@ describe("resolvePlanModelSelection unknown-literal guard (spec §3)", () => {
     expect(r.modelDef.model).toBe("opencode-go/qwen-4");
   });
 
-  test("AC-15: a suffixed shorthand plan.model resolves through its tier, no fallback warning", () => {
+  test("AC-15: a suffixed shorthand plan.model dispatches as that claude model, no fallback warning (nax#2571)", () => {
     const messages: string[] = [];
     resetLogger();
     initLogger({ level: "warn" });
@@ -193,8 +193,8 @@ describe("resolvePlanModelSelection unknown-literal guard (spec §3)", () => {
         plan: { model: { agent: "claude", model: "sonnet[high]" } },
       });
       const r = resolvePlanModelSelection(config, "claude");
-      expect(r.modelTier).toBe("balanced");
-      expect(r.modelDef.model).toBe("claude-sonnet-5[high]");
+      expect(r.modelTier).toBeUndefined();
+      expect(r.modelDef.model).toBe("sonnet[high]");
       expect(messages).not.toContain(
         "plan.model is neither a tier nor a recognizable model id — using default balanced model",
       );

@@ -102,6 +102,8 @@ Symbols the feature changes. The baseline is listed only to locate the code; imp
   - Baseline: `!model.includes("/") && resolveModel(model).provider === "unknown"`.
   - Target: same signature; evaluates the base from `parseModelSpec(model)`, and returns `false` for a
     base that is a `MODEL_SHORTHAND_TIERS` key (case-insensitive).
+    **Superseded by nax#2571:** `MODEL_SHORTHAND_TIERS` is removed; the signature gains `agent`,
+    and haiku/sonnet/opus are recognised (case-sensitively) only for the `claude` agent.
 - `WorkflowConfig` (`src/config/runtime-types-workflow.ts`) and `WorkflowConfigObjectSchema`
   (`src/config/schemas-workflow.ts`)
   - Target: new optional field `publish?: WorkflowPublishMode`, where

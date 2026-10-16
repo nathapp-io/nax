@@ -12,7 +12,8 @@ import {
 } from "@nathapp/nax-agent/internal";
 import { z } from "zod";
 import { DEFAULT_AGENT_NAME, DEFAULT_AGENT_PROTOCOL, DEFAULT_MODEL_MAPS } from "./agent-defaults";
-import { MODEL_SHORTHAND_TIERS, resolveTierMembership } from "./schema-types";
+import type { ModelsConfig } from "./schema-types";
+import { classifyModelSelector } from "./schema-types";
 import { AdvisorConfigObjectSchema } from "./schemas-advisor";
 import { AuthConfigSchema } from "./schemas-auth";
 import { ContextConfigSchema } from "./schemas-context";
@@ -70,6 +71,17 @@ export {
   NonBlockingFixConfigSchema,
   SemanticReviewConfigSchema,
 } from "./schemas-review";
+
+/** The tier a profile target names, or undefined for a model pin — classified exactly as dispatch does (nax#2571). */
+function profileTargetTier(
+  models: ModelsConfig,
+  agent: string,
+  model: string,
+  defaultAgent: string,
+): string | undefined {
+  const selected = classifyModelSelector(models, agent, model, defaultAgent);
+  return selected.kind === "tier" ? selected.tier : undefined;
+}
 
 export const NaxConfigSchema = z
   .object({
@@ -523,15 +535,15 @@ export const NaxConfigSchema = z
     const profiles = data.routing.agents?.profiles ?? [];
     for (const [pi, profile] of profiles.entries()) {
       const { agent: pAgent, model: pModel } = profile.target;
-      const targetTier = MODEL_SHORTHAND_TIERS[pModel.toLowerCase()] ?? pModel;
       // Plan C (spec §4): a target that names a tier must bind to a rung; a target that names a
       // literal model is a pin — exempt from binding, and exempt from tier escalation.
-      const namesTier = resolveTierMembership(
+      const targetTier = profileTargetTier(
         data.models ?? {},
         pAgent,
-        targetTier,
+        pModel,
         data.agent?.default ?? DEFAULT_AGENT_NAME,
-      ).isTier;
+      );
+      const namesTier = targetTier !== undefined;
       const hasMatchingRung = tierOrder.some((r) => r.tier === targetTier && r.agent === pAgent);
       if (namesTier && !hasMatchingRung) {
         ctx.addIssue({
