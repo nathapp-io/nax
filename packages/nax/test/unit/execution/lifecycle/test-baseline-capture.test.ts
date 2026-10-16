@@ -600,6 +600,28 @@ describe("captureRunBaseline — AC9 (unparseable)", () => {
     }
   });
 
+  // The counts parsed (failed: 990) but no failure was named, so a "captured" baseline held zero
+  // entries and every pre-existing failure would later be labelled as introduced by the story.
+  test("AC9: a failed count with no named failures is unparseable, not an empty capture", async () => {
+    const writes: TestBaseline[] = [];
+    _captureDeps.writeRunBaseline = async (_root, _featureId, baseline) => {
+      writes.push(baseline);
+    };
+    _captureDeps.resolveTestCommands = async () => "uv run pytest";
+    _captureDeps.runCommand = async () => ({ success: false, output: "990 failed", timedOut: false, exitCode: 1 });
+    _captureDeps.parseTestOutput = () => ({ passed: 3500, failed: 990, failures: [] });
+    _captureDeps.resolveGateTimeoutSeconds = () => 60;
+    _captureDeps.captureGitRef = async () => "abc";
+
+    await captureRunBaseline(makeOptions());
+
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.kind).toBe("no-baseline");
+    if (writes[0]?.kind === "no-baseline") {
+      expect(writes[0].reason).toBe("unparseable");
+    }
+  });
+
   test("AC9 boundary: nonzero runner with parseable failures does NOT produce unparseable", async () => {
     const writes: TestBaseline[] = [];
     _captureDeps.writeRunBaseline = async (_root, _featureId, baseline) => {

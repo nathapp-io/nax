@@ -67,6 +67,25 @@ describe("captureRunBaseline — issue #2152 logging", () => {
     expect(typeof logs[1]?.data?.durationMs).toBe("number");
   });
 
+  // Failures the parser counted but did not name are absent from the baseline, so they would be
+  // labelled as introduced later. The capture is still useful for the named ones; say what is missing.
+  test("warns when the parser named fewer failures than it counted", async () => {
+    const logs = installInfoLogSpy();
+    _captureDeps.resolveTestCommands = async () => "bun test";
+    _captureDeps.runCommand = async () => ({ success: false, output: "", timedOut: false });
+    _captureDeps.parseTestOutput = () => ({ passed: 1, failed: 5, failures: [{ file: "a.test.ts", testName: "t" }] });
+    _captureDeps.captureGitRef = async () => "base-ref";
+
+    await captureRunBaseline(makeOptions());
+
+    expect(logs).toContainEqual({
+      level: "warn",
+      stage: "execution",
+      message: "Run-start test baseline names fewer failures than were counted",
+      data: { failed: 5, named: 1 },
+    });
+  });
+
   test.each([
     { reason: "gate-disabled", arrange: () => (_captureDeps.regressionGateEnabled = () => false) },
     { reason: "no-test-command", arrange: () => (_captureDeps.resolveTestCommands = async () => undefined) },
