@@ -336,6 +336,7 @@ Verification note: `bun run typecheck` and `bun run check:all` in `packages/nax`
 21. [integration] That `runCompletionPhase` call logs one `warn` on scope `execution` whose message is the notice's message and whose data carries `providerId`.
 22. [integration] `runCompletionPhase`, with an agent manager whose `authRelogins()` returns an empty array, prints no `Re-login needed:` line.
 23. [unit] `formatRunSummary` in `normal` mode with `authRelogins: ["Login for openai-codex was rejected. Run: nax auth login openai-codex"]` returns text in which a `Re-login needed:` line is followed by a line containing that hint.
+24. [unit] When a provider released by `refreshAuthCooldowns()` fails `fail-auth` again with a new fingerprint, `reportAuthFailure` logs the re-login `warn` again and `authRelogins()` returns a single notice for that provider carrying the new hint.
 
 ### US-004
 
