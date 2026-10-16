@@ -249,7 +249,7 @@ nax gates run -d packages/api             # any directory inside the project
 | `--gate <name>` | Run only this gate; repeatable. One of `build`, `typecheck`, `lint`, `test`, `e2e` |
 | `--json` | Print exactly one JSON document to stdout — the report, or `{"error": "<message>"}` when the command fails |
 
-Gates run in a fixed order (`build` → `typecheck` → `lint` → `test` → `e2e`) whatever order the `--gate` flags come in, and a repeated value runs once. A red gate does not stop the gates after it. Only the root `quality.commands` are run: package overlay gates are not, and `formatFix`, `formatFixScoped`, `lintFix` and every `*Scoped` command are never run by this command.
+Gates run in a fixed order (`build` → `typecheck` → `lint` → `test` → `e2e`) whatever order the `--gate` flags come in, and a repeated value runs once. Gates are identified by their `quality.commands` key, so two keys holding the same command string — `build` and `typecheck` both `tsc --noEmit` — are two gates, and `--gate typecheck` runs it. A red gate does not stop the gates after it. Only the root `quality.commands` are run: package overlay gates are not, and `formatFix`, `formatFixScoped`, `lintFix` and every `*Scoped` command are never run by this command.
 
 **Statuses** — one per gate:
 

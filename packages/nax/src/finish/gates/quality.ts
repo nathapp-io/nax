@@ -151,27 +151,40 @@ function overlayCommandsOf(override: Partial<NaxConfig> | null): QualityCommands
  * (the root package) is filtered — the root run already covers it.
  *
  * Ordering: root gates first (`GATE_ORDER`), then each package's gates
- * (`GATE_ORDER`), packages in the order given. Deduped on
- * `(cwd, command, setup)` — an overlay that repeats the root command verbatim
- * from the same directory counts as one gate, unless it bootstraps a different
- * `e2eSetup`, which makes it a genuinely different run.
+ * (`GATE_ORDER`), packages in the order given. Deduped on the run's whole
+ * identity — gate key, `cwd`, `command` and `setup` — so an overlay that
+ * repeats an already-resolved gate of the *same* key from the same directory
+ * counts as one gate, while two different gate keys that happen to share a
+ * command string (`build` and `typecheck` both `tsc --noEmit`) stay two gates.
+ * A gate key is part of the identity because callers select and report gates
+ * by key: collapsing `typecheck` into `build` made `nax gates run --gate
+ * typecheck` answer "gate typecheck is not configured" for a gate the config
+ * sets, and silently dropped it from a full run (whole-branch review B1).
  */
 export async function resolveGateCommands(repoRoot: string, packageDirs: string[]): Promise<GateCommand[]> {
   const seen = new Set<string>();
   const out: GateCommand[] = [];
 
-  const add = (
-    name: string,
-    command: QualityCommandSpec | undefined,
-    cwd: string,
-    setup?: QualityCommandSpec,
-  ): void => {
+  /**
+   * One candidate gate, at the root or from a package overlay. `gateKey` is
+   * the `quality.commands` key it belongs to — `build` for the root gate and
+   * for an overlay's `build@pkg` — while `name` is what the gate is reported
+   * under.
+   */
+  const add = (candidate: {
+    gateKey: string;
+    name: string;
+    command: QualityCommandSpec | undefined;
+    cwd: string;
+    setup?: QualityCommandSpec;
+  }): void => {
+    const { gateKey, name, command, cwd, setup } = candidate;
     if (command === undefined || !(typeof command === "string" ? [command] : command).some((part) => part.trim()))
       return;
     // Key includes `command` AND `setup`: two layers can declare the same e2e
     // command from the same directory while bootstrapping different stacks
     // (a per-package compose file, say), and both gates must survive.
-    const key = `${cwd}::${JSON.stringify(command)}::${JSON.stringify(setup ?? null)}`;
+    const key = `${gateKey}::${cwd}::${JSON.stringify(command)}::${JSON.stringify(setup ?? null)}`;
     if (seen.has(key)) return;
     seen.add(key);
     out.push(setup === undefined ? { name, command, cwd } : { name, command, cwd, setup });
@@ -187,7 +200,7 @@ export async function resolveGateCommands(repoRoot: string, packageDirs: string[
   const rootConfig = await _qualityGateDeps.loadConfig(repoRoot);
   const rootCommands: QualityCommands = rootConfig.quality?.commands ?? {};
   for (const gate of GATE_ORDER) {
-    add(gate, rootCommands[gate], repoRoot, setupFor(rootCommands, gate));
+    add({ gateKey: gate, name: gate, command: rootCommands[gate], cwd: repoRoot, setup: setupFor(rootCommands, gate) });
   }
 
   for (const packageDir of packageDirs) {
@@ -207,7 +220,13 @@ export async function resolveGateCommands(repoRoot: string, packageDirs: string[
       const setupCommands = Object.hasOwn(overlayCommands, "e2eSetup")
         ? overlayCommands
         : { ...overlayCommands, e2eSetup: rootCommands.e2eSetup };
-      add(`${gate}@${packageDir}`, overlayCommands[gate], packageCwd, setupFor(setupCommands, gate));
+      add({
+        gateKey: gate,
+        name: `${gate}@${packageDir}`,
+        command: overlayCommands[gate],
+        cwd: packageCwd,
+        setup: setupFor(setupCommands, gate),
+      });
     }
   }
 

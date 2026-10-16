@@ -161,6 +161,12 @@ function assertKnownGates(gates: readonly string[]): void {
  * Every requested gate must be one the project configures. Reported in
  * `GATE_ORDER` rather than flag order, so the same command always names the
  * same gate whichever order the flags came in.
+ *
+ * Membership is read off the resolved commands' *names*, which is only sound
+ * because `resolveGateCommands` yields one gate per configured `quality.commands`
+ * key: it deduplicates whole identities (gate key, cwd, command, setup), not
+ * command strings, so two keys sharing a command — `build` and `typecheck` both
+ * `tsc --noEmit` — still arrive as two named gates (whole-branch review B1).
  */
 function assertGatesConfigured(gates: readonly string[], commands: readonly GateCommand[]): void {
   const configured = commands.map((command) => command.name);

@@ -113,6 +113,34 @@ describe("resolveGateCommands", () => {
     expect(commands).toEqual([{ name: "build", command: "echo root", cwd: "/repo" }]);
   });
 
+  test("review B1: two root gate keys with the same command string are two gates", async () => {
+    // `build` and `typecheck` both running `tsc --noEmit` is a real config. The
+    // dedupe used to key on (cwd, command, setup) alone, so `typecheck`
+    // vanished -- and `nax gates run --gate typecheck` then answered "gate
+    // typecheck is not configured" for a gate the config sets.
+    _qualityGateDeps.loadConfig = async () => configWithCommands({ build: "tsc --noEmit", typecheck: "tsc --noEmit" });
+    _qualityGateDeps.loadPackageOverride = async () => null;
+
+    expect(await resolveGateCommands("/repo", [])).toEqual([
+      { name: "build", command: "tsc --noEmit", cwd: "/repo" },
+      { name: "typecheck", command: "tsc --noEmit", cwd: "/repo" },
+    ]);
+  });
+
+  test("review B1: an overlay gate whose key differs from the root gate sharing its command is kept", async () => {
+    _qualityGateDeps.loadConfig = async () => configWithCommands({ build: "tsc --noEmit" });
+    _qualityGateDeps.loadPackageOverride = async () => ({
+      quality: { ...DEFAULT_CONFIG.quality, commands: { typecheck: "tsc --noEmit" } },
+    });
+
+    // Two *different* gate keys are two gates whatever their command strings
+    // say; only a repeat of the same gate key from the same cwd with the same
+    // command and setup is the same run.
+    const commands = await resolveGateCommands("/repo", ["."]);
+
+    expect(commands.map((c) => c.name)).toEqual(["build", "typecheck@."]);
+  });
+
   test("filters out the empty-string package dir -- the root package is the root run", async () => {
     _qualityGateDeps.loadConfig = async () => configWithCommands({ lint: "biome lint" });
     _qualityGateDeps.loadPackageOverride = async () => {

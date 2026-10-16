@@ -601,6 +601,69 @@ describe("nax gates run (real resolver and runner)", () => {
       expect(spawned.map((call) => call.command)).not.toContain("biome format --write .");
     });
   });
+
+  test("review B1: --gate typecheck runs, and is not reported as unconfigured, when build runs the same command", async () => {
+    await withTempDir(async (dir) => {
+      await mkdir(join(dir, ".nax"), { recursive: true });
+      await Bun.write(join(dir, ".nax", "config.json"), "{}\n");
+
+      const spawned: string[] = [];
+      // Two root gate keys, one command string -- the config a monorepo with a
+      // single `tsc --noEmit` build actually has.
+      _qualityGateDeps.loadConfig = async () =>
+        configWithCommands({ build: "tsc --noEmit", typecheck: "tsc --noEmit" });
+      _qualityGateDeps.run = async (opts): Promise<QualityCommandResult> => {
+        spawned.push(opts.commandName);
+        return {
+          commandName: opts.commandName,
+          command: "tsc --noEmit",
+          success: true,
+          exitCode: 0,
+          output: "",
+          durationMs: 7,
+          timedOut: false,
+        };
+      };
+
+      const h = harness({ overrides: { ensureProjectTrusted: async () => {}, resolveGateCommands, runQualityGates } });
+      const code = await gatesRunCommand({ dir, gates: ["typecheck"], json: true }, h.deps);
+
+      expect(code).toBe(0);
+      expect(spawned).toEqual(["typecheck"]);
+      expect(reportOf(h.out).gates).toEqual([{ name: "typecheck", status: "passed", exitCode: 0, durationMs: 7 }]);
+    });
+  });
+
+  test("review B1: a full run reports every configured gate key, identical command strings included", async () => {
+    await withTempDir(async (dir) => {
+      await mkdir(join(dir, ".nax"), { recursive: true });
+      await Bun.write(join(dir, ".nax", "config.json"), "{}\n");
+
+      const spawned: string[] = [];
+      _qualityGateDeps.loadConfig = async () =>
+        configWithCommands({ build: "tsc --noEmit", typecheck: "tsc --noEmit" });
+      _qualityGateDeps.run = async (opts): Promise<QualityCommandResult> => {
+        spawned.push(opts.commandName);
+        return {
+          commandName: opts.commandName,
+          command: "tsc --noEmit",
+          success: true,
+          exitCode: 0,
+          output: "",
+          durationMs: 7,
+          timedOut: false,
+        };
+      };
+
+      const h = harness({ overrides: { ensureProjectTrusted: async () => {}, resolveGateCommands, runQualityGates } });
+      const code = await gatesRunCommand({ dir, gates: [], json: true }, h.deps);
+
+      expect(code).toBe(0);
+      expect(spawned).toEqual(["build", "typecheck"]);
+      expect(reportOf(h.out).gates.map((entry) => entry.name)).toEqual(["build", "typecheck"]);
+      expect(reportOf(h.out).summary.passed).toBe(2);
+    });
+  });
 });
 
 // ─── registration ────────────────────────────────────────────────────────────
