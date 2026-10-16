@@ -24,7 +24,7 @@ import { workflowStoryDir } from "./paths";
 import { buildWorkflowPrBody, extractAssumptions, type WorkflowPrBodyFacts } from "./pr-body";
 import type { PreflightFile } from "./preflight";
 import { _workflowDeps } from "./step-context";
-import type { FeatureCiState, FeatureOutcome, StorySummary, WorkflowFeatureRecord } from "./types";
+import type { ApprovalOutcome, FeatureCiState, FeatureOutcome, StorySummary, WorkflowFeatureRecord } from "./types";
 
 export interface PublishInput {
   readonly record: WorkflowFeatureRecord;
@@ -39,6 +39,32 @@ export interface PublishOutcome {
   readonly ci: FeatureCiState;
   readonly url?: string;
   readonly reasons: readonly string[];
+  /**
+   * US-001 (nax#2569): the advisor's own outcome, with the decision id, present only when the advisor
+   * was asked. A deterministic reason means it never was, so the key is absent rather than null.
+   */
+  readonly approval?: ApprovalOutcome;
+  /**
+   * US-001 (nax#2569): the CI wait's `detail` for `conflicting`, `no-checks` and `unavailable` — the
+   * three states whose reason is built from it. Absent for every other state.
+   */
+  readonly ciDetail?: string;
+}
+
+/** The CI states whose readiness reason is the wait's own `detail` rather than a fixed sentence. */
+const DETAILED_CI_STATES: ReadonlySet<FeatureCiState> = new Set<FeatureCiState>([
+  "conflicting",
+  "no-checks",
+  "unavailable",
+]);
+
+/**
+ * US-001: the `ciDetail` a result carries, so the verdict keeps the text the draft marker used. An
+ * absent key (not an empty one) for `green`, `pending`, `skipped` and `failed`, whose reasons are
+ * fixed sentences — `buildOpenItems` reads presence, not value.
+ */
+function ciDetailFields(ci: CiWaitResult): Pick<PublishOutcome, "ciDetail"> {
+  return DETAILED_CI_STATES.has(ci.outcome) ? { ciDetail: ci.detail } : {};
 }
 
 const PROTECTED_BRANCHES = new Set(["", "main", "master"]);
@@ -266,7 +292,7 @@ async function finishPr(
   parts: PrParts,
   ci: CiWaitResult,
   reasons: readonly string[],
-  approval: { approved: boolean; rationale: string } | null,
+  approval: ApprovalOutcome | null,
 ): Promise<PublishOutcome> {
   const ready = approval?.approved === true;
   const finalReasons = ready ? [] : approval ? [...reasons, approval.rationale] : [...reasons];
@@ -284,7 +310,14 @@ async function finishPr(
     const url = res.url ?? parts.draftUrl;
     const kept = !ready && res.status === "already-ready" ? [...finalReasons, ALREADY_READY_REASON] : finalReasons;
     logFinishPr(ready, url, kept);
-    return { outcome: ready ? "ready" : "draft", ci: ci.outcome, ...(url ? { url } : {}), reasons: kept };
+    return {
+      outcome: ready ? "ready" : "draft",
+      ci: ci.outcome,
+      ...(url ? { url } : {}),
+      reasons: kept,
+      ...(approval ? { approval } : {}),
+      ...ciDetailFields(ci),
+    };
   } catch (err) {
     if (fc.runSignal?.aborted) throw err;
     return {
@@ -292,6 +325,8 @@ async function finishPr(
       ci: ci.outcome,
       ...(parts.draftUrl ? { url: parts.draftUrl } : {}),
       reasons: [...finalReasons, `PR update failed: ${errorMessage(err)}`],
+      ...(approval ? { approval } : {}),
+      ...ciDetailFields(ci),
     };
   }
 }
@@ -430,7 +465,7 @@ async function pushMode(plan: PublishPlan): Promise<PublishOutcome> {
     ...plan.dirty,
     ...ledgerReasons(ledger),
   ];
-  return { outcome: "pushed", ci: ci.outcome, reasons };
+  return { outcome: "pushed", ci: ci.outcome, reasons, ...ciDetailFields(ci) };
 }
 
 /**
@@ -474,7 +509,7 @@ async function prMode(plan: PublishPlan, input: PublishInput): Promise<PublishOu
   ];
   // A deterministic reason means the advisor is never asked: nothing is diffed for it (US-001) and
   // no second ledger line is written for it.
-  let approval: { approved: boolean; rationale: string } | null = null;
+  let approval: ApprovalOutcome | null = null;
   if (reasons.length === 0) {
     const changed = await changedFilesEvidence(fc.projectDir, input.record.seed);
     approval = await askApproval(input.advisor, {

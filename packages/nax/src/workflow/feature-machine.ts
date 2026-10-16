@@ -465,6 +465,14 @@ async function publishStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Promise
     ci: out.ci,
     reasons: out.reasons,
     ...(out.url ? { url: out.url } : {}),
+    // US-001: the approval, its decision id and the CI detail survive so the verdict can read them.
+    ...(out.approval ? { approval: out.approval } : {}),
+    ...(out.ciDetail !== undefined ? { ciDetail: out.ciDetail } : {}),
+    storyStates: env.facts.stories.map((s) => ({
+      id: s.id,
+      state: s.state,
+      ...(s.reason !== undefined ? { reason: s.reason } : {}),
+    })),
     ...(head ? { head } : {}),
     passed: featurePassed({ ...(rec.finalGates ? { finalGates: rec.finalGates } : {}), stories: env.facts.stories }),
     ...(flagged.length > 0 ? { flaggedDecisions: flagged } : {}),

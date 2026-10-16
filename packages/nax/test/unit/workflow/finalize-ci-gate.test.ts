@@ -16,7 +16,7 @@ afterEach(() => {
   Object.assign(_ciWaitDeps, saved.ci);
 });
 
-function wire(ci: CiWaitResult) {
+function wire(ci: CiWaitResult, opts: { hold?: { id: string; rationale: string } } = {}) {
   const updated: OpenOrPromoteArgs[] = [];
   const asked: string[] = [];
   _featureDeps.detectForge = async () => "github";
@@ -43,7 +43,14 @@ function wire(ci: CiWaitResult) {
   const advisor: Advisor = {
     advise: async (q) => {
       asked.push(q.kind);
-      return { decision: makeAdviceDecision({ action: { type: "approve" }, rationale: "clean" }) };
+      const { hold } = opts;
+      return {
+        decision: makeAdviceDecision(
+          hold
+            ? { id: hold.id, action: { type: "hold", reason: "not yet" }, rationale: hold.rationale }
+            : { action: { type: "approve" }, rationale: "clean" },
+        ),
+      };
     },
     recordReuse: async () => null,
     adviseBatch: async () => ({ kind: "residual", items: [], diagnoses: {} }),
@@ -76,6 +83,7 @@ describe("publish CI draft gate (US-002)", () => {
       ci: "conflicting",
       url: "https://gh/pr/7",
       reasons: ["PR has merge conflicts with main"],
+      ciDetail: "PR has merge conflicts with main",
     });
   });
 
@@ -148,5 +156,38 @@ describe("publish CI draft gate (US-002)", () => {
     expect(asked).toEqual([]);
     expect(updated[0]?.keepDraft).toBe(true);
     expect(result.reasons).toEqual(["branch re-review did not run: the fix commits are unreviewed"]);
+  });
+});
+
+/** US-001: the publish result keeps the approval outcome and the CI wait's detail for the verdict. */
+describe("publish keeps the approval and the CI detail (US-001)", () => {
+  test("AC-10: an advisor that holds returns its outcome with the decision id", async () => {
+    const { input, asked } = wire({ outcome: "green", detail: "ok" }, { hold: { id: "D-1", rationale: "risky" } });
+    const result = await publish(makeFeatureContext(), input);
+    expect(asked).toEqual(["finish-approval"]);
+    expect(result.approval).toEqual({ approved: false, rationale: "advisor held: risky", decisionId: "D-1" });
+    expect(result.outcome).toBe("draft");
+  });
+
+  test("AC-11: a failed CI never asks the advisor, so there is no approval key", async () => {
+    const { input, asked } = wire({ outcome: "failed", detail: "1 check failed" });
+    const result = await publish(makeFeatureContext(), input);
+    expect(asked).toEqual([]);
+    expect(result.outcome).toBe("draft");
+    expect("approval" in result).toBe(false);
+  });
+
+  test("AC-12: a conflicting CI records the wait's detail", async () => {
+    const { input } = wire({ outcome: "conflicting", detail: "PR #9 has merge conflicts" });
+    const result = await publish(makeFeatureContext(), input);
+    expect(result.ciDetail).toBe("PR #9 has merge conflicts");
+  });
+
+  test("AC-13: a green CI records no detail", async () => {
+    const { input } = wire({ outcome: "green", detail: "3 checks passed" });
+    const result = await publish(makeFeatureContext(), input);
+    expect(result.outcome).toBe("ready");
+    expect("ciDetail" in result).toBe(false);
+    expect("approval" in result).toBe(true);
   });
 });

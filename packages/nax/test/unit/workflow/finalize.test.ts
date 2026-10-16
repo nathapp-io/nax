@@ -166,7 +166,9 @@ describe("publish (P4-R3, P4-R11)", () => {
     expect(asked).toEqual(["finish-approval"]);
     expect(calls.at(-1)?.keepDraft).toBe(false);
     expect(calls.at(-1)?.body).toContain("Outcome: **ready**");
-    expect(out).toEqual({ outcome: "ready", ci: "pending", url: "https://gh/pr/7", reasons: [] });
+    // US-001: the approval outcome, with its decision id, joins the result of a promoted PR.
+    const approval = { approved: true, rationale: "clean", decisionId: "D-1" };
+    expect(out).toEqual({ outcome: "ready", ci: "pending", url: "https://gh/pr/7", reasons: [], approval });
   });
 
   test("a deterministic reason keeps the draft and never asks the advisor (P4-R10)", async () => {

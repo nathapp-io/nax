@@ -168,6 +168,24 @@ export interface StorySummary {
   readonly runDir?: string;
 }
 
+/**
+ * US-001 (nax#2569): the finish-approval advisor's outcome, with the decision behind it. The record
+ * keeps the decision id so the verdict can cite the ruling, not only the prose it produced.
+ */
+export interface ApprovalOutcome {
+  readonly approved: boolean;
+  readonly rationale: string;
+  /** The `AdviceDecision.id` the outcome came from; absent when the advisor answered nothing or threw. */
+  readonly decisionId?: string;
+}
+
+/** US-001 (nax#2569): one story's end state, as `publish` saw it, for the verdict's open items. */
+export interface StoryStateItem {
+  readonly id: string;
+  readonly state: StoryState;
+  readonly reason?: string;
+}
+
 /** The feature workflow's persisted state (spec §7, §10, P4-R1). `step` is the NEXT step to run. */
 export interface WorkflowFeatureRecord {
   readonly step: FeatureStep;
@@ -244,6 +262,20 @@ export interface WorkflowFeatureRecord {
    * before the step existed.
    */
   readonly flaggedDecisions?: readonly string[];
+  /**
+   * US-001 (nax#2569): the advisor's approval outcome, decision id included. Absent when the advisor
+   * was never asked — a deterministic reason already kept the PR a draft — and on records written
+   * before this field existed.
+   */
+  readonly approval?: ApprovalOutcome;
+  /**
+   * US-001 (nax#2569): the CI wait's own `detail` for the three states whose reason is built from it
+   * (`conflicting`, `no-checks`, `unavailable`). Absent for every other state, and on records written
+   * before this field existed.
+   */
+  readonly ciDetail?: string;
+  /** US-001 (nax#2569): each story's end state as `publish` saw it. Absent on older records. */
+  readonly storyStates?: readonly StoryStateItem[];
   readonly timings: Readonly<Record<string, number>>;
   readonly tokensByRole: Readonly<Record<string, RoleTokens>>;
 }

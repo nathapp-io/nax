@@ -3,6 +3,7 @@ import { makeAdviceDecision } from "@test/helpers";
 import type { Advisor, QuestionDraft } from "@/advisor";
 import {
   askApproval,
+  ciReason,
   describeUnread,
   featurePassed,
   flaggedCount,
@@ -69,6 +70,43 @@ describe("readinessReasons (spec §7.8, P4-R6)", () => {
       "branch review did not run",
       "branch review did not read 1 changed file(s): a.ts",
     ]);
+  });
+
+  // US-001: an unreadable CI state whose wait reported its own detail carries that detail alone.
+  test("AC-9: an unavailable CI with a detail is the only reason", () => {
+    expect(readinessReasons({ ...READY, ci: "unavailable", ciDetail: "gh: 502" })).toEqual(["gh: 502"]);
+  });
+});
+
+/** US-001: the CI sentence extracted from `readinessReasons`, so the verdict names the same text. */
+describe("ciReason (US-001)", () => {
+  test("AC-5: failed is always the same sentence, whatever the wait said", () => {
+    expect(ciReason("failed")).toBe("CI failed");
+    expect(ciReason("failed", "1 check failed")).toBe("CI failed");
+  });
+
+  test("AC-6: a detail-bearing state returns the wait's own text", () => {
+    expect(ciReason("conflicting", "PR #9 has merge conflicts")).toBe("PR #9 has merge conflicts");
+  });
+
+  test("AC-7: conflicting with no detail falls back to its default sentence", () => {
+    expect(ciReason("conflicting")).toBe("PR has merge conflicts with its base branch");
+  });
+
+  test("the other detail-bearing states keep their defaults too", () => {
+    expect(ciReason("no-checks")).toBe("no CI check was reported");
+    expect(ciReason("no-checks", "no CI check reported within 2m 0s")).toBe("no CI check reported within 2m 0s");
+    expect(ciReason("unavailable")).toBe("CI status unavailable");
+    expect(ciReason("unavailable", "gh: auth required")).toBe("gh: auth required");
+  });
+
+  test.each(["green", "pending", "skipped"] as const)("AC-8: %s blocks nothing", (ci) => {
+    expect(ciReason(ci)).toBeUndefined();
+  });
+
+  test("no CI state at all blocks nothing", () => {
+    expect(ciReason(undefined)).toBeUndefined();
+    expect(ciReason(undefined, "ignored")).toBeUndefined();
   });
 });
 
@@ -153,7 +191,7 @@ describe("askApproval (P4-R10)", () => {
       advisor({ decision: makeAdviceDecision({ action: { type: "approve" }, rationale: "clean" }) }, seen),
       { feature: "f", evidence: ["Stories: US-001 complete"] },
     );
-    expect(out).toEqual({ approved: true, rationale: "clean" });
+    expect(out).toEqual({ approved: true, rationale: "clean", decisionId: "D-1" });
     expect(seen[0]?.kind).toBe("finish-approval");
     expect(seen[0]?.options.map((o) => o.type)).toEqual(["approve", "hold"]);
     expect(seen[0]?.evidence.map((e) => e.text)).toEqual(["Stories: US-001 complete"]);
@@ -164,7 +202,7 @@ describe("askApproval (P4-R10)", () => {
       advisor({ decision: makeAdviceDecision({ action: { type: "hold", reason: "x" }, rationale: "risky" }) }),
       { feature: "f", evidence: [] },
     );
-    expect(held).toEqual({ approved: false, rationale: "advisor held: risky" });
+    expect(held).toEqual({ approved: false, rationale: "advisor held: risky", decisionId: "D-1" });
     expect(
       await askApproval(advisor({ decision: null, fallbackReason: "all models failed" }), {
         feature: "f",
@@ -177,5 +215,55 @@ describe("askApproval (P4-R10)", () => {
     expect((await askApproval(advisor(new Error("boom")), { feature: "f", evidence: [] })).rationale).toBe(
       "advisor unavailable: boom",
     );
+  });
+});
+
+/**
+ * US-001: the outcome carries the advisor's decision id, so a later stage can cite the ruling behind
+ * the hold instead of only its prose. A decision that never existed carries no id at all.
+ */
+describe("askApproval returns the advisor decision (US-001)", () => {
+  function answering(result: Awaited<ReturnType<Advisor["advise"]>> | Error): Advisor {
+    return {
+      advise: async () => {
+        if (result instanceof Error) throw result;
+        return result;
+      },
+      recordReuse: async () => null,
+      adviseBatch: async () => ({ kind: "residual", items: [], diagnoses: {} }),
+    };
+  }
+
+  test("AC-1: an approve decision returns its id", async () => {
+    const out = await askApproval(
+      answering({ decision: makeAdviceDecision({ id: "D-7", action: { type: "approve" }, rationale: "clean" }) }),
+      { feature: "f", evidence: [] },
+    );
+    expect(out).toEqual({ approved: true, rationale: "clean", decisionId: "D-7" });
+  });
+
+  test("AC-2: a hold decision returns its id with the held rationale", async () => {
+    const out = await askApproval(
+      answering({
+        decision: makeAdviceDecision({ id: "D-1", action: { type: "hold", reason: "x" }, rationale: "risky" }),
+      }),
+      { feature: "f", evidence: [] },
+    );
+    expect(out).toEqual({ approved: false, rationale: "advisor held: risky", decisionId: "D-1" });
+  });
+
+  test("AC-3: no decision carries no decisionId key", async () => {
+    const out = await askApproval(answering({ decision: null, fallbackReason: "all models failed" }), {
+      feature: "f",
+      evidence: [],
+    });
+    expect(out).toEqual({ approved: false, rationale: "advisor unavailable: all models failed" });
+    expect("decisionId" in out).toBe(false);
+  });
+
+  test("AC-4: a throwing advisor carries no decisionId key", async () => {
+    const out = await askApproval(answering(new Error("boom")), { feature: "f", evidence: [] });
+    expect(out.rationale).toBe("advisor unavailable: boom");
+    expect("decisionId" in out).toBe(false);
   });
 });
