@@ -3,7 +3,7 @@
   "feature": "workflow-record-promote",
   "branchName": "feat/workflow-record-promote",
   "createdAt": "2026-10-16T00:00:00.000Z",
-  "updatedAt": "2026-10-16T16:08:10.606Z",
+  "updatedAt": "2026-10-16T16:35:26.018Z",
   "userStories": [
     {
       "id": "US-001",
@@ -109,8 +109,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -122,7 +122,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "native",
         "initialProfileId": "native-deepseek",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/cli/workflow.ts",
@@ -167,7 +169,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "c66e76f023f954ebf48ae874c8b5b5ceb974ccf8"
     },
     {
       "id": "US-003",
