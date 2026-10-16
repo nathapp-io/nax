@@ -137,7 +137,7 @@ export { type MockStatusWriter, makeStatusWriter } from "./status-writer";
 export { eventsFromResult, streamFromComplete, withDerivedStream } from "./stream-from-complete";
 export { cleanupTempDir, makeTempDir, withTempDir } from "./temp";
 export { waitForCondition, withTimeout } from "./timeout";
-export type { TimerSpyResult } from "./timer-spy";
+export type { TimerSpyOptions, TimerSpyResult } from "./timer-spy";
 export { withTimerSpy } from "./timer-spy";
 export { useUntrustedRegistry } from "./trust";
 export { loadTrustModule, type TrustModule, trustFn } from "./trust-module";

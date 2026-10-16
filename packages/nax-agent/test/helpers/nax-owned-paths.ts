@@ -16,11 +16,18 @@
  * Segment-exact, never a prefix or substring match: `.naxignore`,
  * `docs/nax/config.json` and `.nax/mono/api/notes.md` are ordinary paths a
  * tool must still reach.
+ *
+ * Exact CASE too, except where the caller has established that the filesystem
+ * folds case (#2347): there `.NAX/CONFIG.JSON` reaches the very file
+ * `.nax/config.json` names, so a case-exact segment match is a hole. See
+ * `case-insensitive-fs.ts` for the probe and `foldCase` below for where it is
+ * threaded.
  */
 
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { realOrRaw } from "#src/internal/realpath";
 import type { OwnedBashCandidate, OwnedPathsPolicy } from "#src/tools/owned-paths";
+import { isCaseInsensitiveFs } from "./case-insensitive-fs";
 
 /**
  * The one top-level `.nax/` entry agents may write freely: the scratchpad.
@@ -79,10 +86,30 @@ export function naxWriteOptIns(root: string, allowWrite: readonly string[]): Rea
   return new Set(names);
 }
 
-/** `.nax/config.json`, or `.nax/mono/<package...>/config.json`, as root-relative segments. */
-export function isNaxConfigSegments(segments: readonly string[]): boolean {
-  if (segments[0] !== ".nax" || segments[segments.length - 1] !== "config.json") return false;
-  return segments.length === 2 || (segments.length >= 4 && segments[1] === "mono");
+/** Exact-case segment comparison: the default for every caller with no filesystem to probe. */
+const sameCase = (a: string, b: string): boolean => a === b;
+
+/** Case-insensitive comparison, for a filesystem that folds case (see `isCaseInsensitiveFs`). */
+const sameIgnoringCase = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
+
+/** The one comparison a matcher uses, chosen by its `foldCase` flag. */
+type SegmentMatch = (a: string, b: string) => boolean;
+
+/**
+ * `.nax/config.json`, or `.nax/mono/<package...>/config.json`, as root-relative segments.
+ *
+ * `foldCase` relaxes all three comparisons; it is on only where the caller has
+ * established that the filesystem holding the path folds case. Every existing
+ * caller passes nothing and keeps exact-case behaviour -- including the
+ * dispatch-specific wrapper in `config-read-gate.ts`, which folds the file this
+ * matches through `isNaxConfigFile` instead.
+ */
+export function isNaxConfigSegments(segments: readonly string[], foldCase = false): boolean {
+  const matches = foldCase ? sameIgnoringCase : sameCase;
+  const first = segments[0] ?? "";
+  const last = segments[segments.length - 1] ?? "";
+  if (!matches(first, ".nax") || !matches(last, "config.json")) return false;
+  return segments.length === 2 || (segments.length >= 4 && matches(segments[1] ?? "", "mono"));
 }
 
 /**
@@ -111,7 +138,7 @@ export function isNaxConfigFile(root: string, resolved: string): boolean {
   // repo-relative package path (nax's `src/config/loader.ts:382`), so a normal
   // `packages/*` layout is 5 segments, not 4. A length-exact rule left every
   // such override writable whenever the story's root was the repo root.
-  return isNaxConfigSegments(rel.split(sep));
+  return isNaxConfigSegments(rel.split(sep), isCaseInsensitiveFs(root));
 }
 
 /**
@@ -151,9 +178,16 @@ export type NaxOwnedKind = "prd" | "queue" | "config";
  * without being in `NAX_OWNED_WRITE_TOOLS`. One definition, two callers.
  *
  * @param rel - Path relative to the permitted root, `/`-joined.
+ *
+ * Folds case unconditionally: this path is consulted with no root in hand
+ * (`OwnedPathsPolicy.writeRefusal`'s context carries none), so there is nothing
+ * to probe. On a case-sensitive volume that also refuses a typed write to a
+ * stray `.QUEUE.TXT`, which is never nax's own file there -- refusing it costs
+ * nothing, while missing the queue on a volume that DOES fold case costs the
+ * run.
  */
 export function isNaxOwnedWritePath(rel: string): boolean {
-  return naxOwnedKind(rel) !== undefined;
+  return naxOwnedKind(rel, true) !== undefined;
 }
 
 /**
@@ -164,17 +198,30 @@ export function isNaxOwnedWritePath(rel: string): boolean {
  * `isNaxConfigFile` pass, which `bashRefusal` below runs FIRST over the raw
  * screen's candidates. Keeping the two apart is what lets the policy name the
  * kind it matched without duplicating the config rule here.
+ *
+ * `foldCase` is the caller's answer to "does the filesystem holding this path
+ * fold case?", which only a caller with a root can obtain (see
+ * `isCaseInsensitiveFs`). The typed-write path passes `true` with no probe.
  */
-export function naxOwnedKind(rel: string): "prd" | "queue" | undefined {
+export function naxOwnedKind(rel: string, foldCase = false): "prd" | "queue" | undefined {
   const segments = rel.split("/");
+  const matches = foldCase ? sameIgnoringCase : sameCase;
   // SEC-5: the run-control file lives at the root, so match it exactly there
   // and not at any other depth -- a nested `sub/.queue.txt` is an ordinary
   // file, not the queue nax reads.
-  if (segments.length === 1 && QUEUE_CONTROL_FILES.has(segments[0] ?? "")) return "queue";
-  if (segments[0] === ".nax" && segments[1] === "features" && segments[segments.length - 1] === "prd.json") {
+  if (segments.length === 1 && isQueueControlName(segments[0] ?? "", matches)) return "queue";
+  const first = segments[0] ?? "";
+  const last = segments[segments.length - 1] ?? "";
+  if (matches(first, ".nax") && matches(segments[1] ?? "", "features") && matches(last, "prd.json")) {
     return "prd";
   }
   return undefined;
+}
+
+/** Is `name` one of the root run-control files, under the caller's comparison? */
+function isQueueControlName(name: string, matches: SegmentMatch): boolean {
+  for (const file of QUEUE_CONTROL_FILES) if (matches(file, name)) return true;
+  return false;
 }
 
 /**
@@ -288,7 +335,13 @@ export function naxOwnedWriteRefusal(
  */
 function naxStateRefusal(rel: string, optIns: ReadonlySet<string>): string | undefined {
   const segments = rel.split("/");
-  if (segments[0] !== ".nax" || isNaxConfigSegments(segments)) return undefined;
+  // #2347: the leading `.nax/` segment folds, so `.NAX/config.json` is refused.
+  // The two compares below it stay EXACT, and both fail closed:
+  //   - `isNaxConfigSegments` runs with no fold, so a case-variant config file is
+  //     refused with this state text instead of being skipped for the config
+  //     refusal (which on this path has no root to probe either);
+  //   - the scratchpad entry stays exact, so `.NAX/SCRATCHPAD/x` is refused.
+  if (!sameIgnoringCase(segments[0] ?? "", ".nax") || isNaxConfigSegments(segments)) return undefined;
   const entry = segments[1];
   if (segments.length > 2 && (entry === NAX_SCRATCHPAD_ENTRY || optIns.has(entry ?? ""))) return undefined;
   if (segments.length === 4 && entry === "features" && FEATURE_TEST_FILE.test(segments[3] ?? "")) return undefined;
@@ -311,12 +364,14 @@ export const NAX_CONFIG_REFUSAL =
 /**
  * The first frame that hits, in today's two-pass order per frame (see the raw
  * Bash screen in policy-bash-raw.ts): the lexical config check, then the
- * resolver's PRD/queue check.
+ * resolver's PRD/queue check. Both fold case when the root's filesystem does
+ * (#2347), probed once here rather than per candidate.
  */
 function firstOwnedHit(root: string, candidates: readonly OwnedBashCandidate[]): NaxOwnedKind | undefined {
+  const foldCase = isCaseInsensitiveFs(root);
   for (const candidate of candidates) {
     if (isNaxConfigFile(root, candidate.lexical)) return "config";
-    const kind = candidate.rel === null ? undefined : naxOwnedKind(candidate.rel);
+    const kind = candidate.rel === null ? undefined : naxOwnedKind(candidate.rel, foldCase);
     if (kind !== undefined) return kind;
   }
   return undefined;

@@ -159,16 +159,32 @@ describe("executeWithTimeout", () => {
   // Asserted on the timers themselves rather than on process exit time: a
   // wall-clock assertion needs a nested runtime and is hostage to CI scheduling.
   test("clears every timer it arms on the kill path", async () => {
-    const { result, leaked } = await withTimerSpy(() =>
-      // Short grace/drain deliberately: the leak is structural (a timer that is
-      // never passed to clearTimeout), not durational, so the assertion does not
-      // need a long window — and CI cannot be relied on to make SIGTERM reap the
-      // child, which would otherwise stall the test for the full grace period.
-      executeWithTimeout("sleep 30", 0.1, undefined, { gracePeriodMs: 200, drainTimeoutMs: 500 }),
+    // The spy's origin filter is what makes this deterministic. Without it the
+    // spy also records whatever arms a timer while the 300ms subprocess wait
+    // runs — another suite's helper, a Bun internal, a foreign callback — and
+    // any of those shows up as a leak that `executeWithTimeout` never armed.
+    // `src/verification/executor` is the narrow prefix that names this module:
+    // the test file's own path (`test/unit/verification/executor.test.ts`)
+    // contains `verification/executor` but not `src/verification/executor`.
+    let foreign: ReturnType<typeof setTimeout> | undefined;
+    const { result, armed, leaked } = await withTimerSpy(
+      async () => {
+        // A 60s timer this test arms itself, deliberately never cleared during
+        // the call: it is foreign to the origin, so it must not be recorded.
+        foreign = setTimeout(() => {}, 60_000);
+        // Short grace/drain deliberately: the leak is structural (a timer that is
+        // never passed to clearTimeout), not durational, so the assertion does not
+        // need a long window — and CI cannot be relied on to make SIGTERM reap the
+        // child, which would otherwise stall the test for the full grace period.
+        return executeWithTimeout("sleep 30", 0.1, undefined, { gracePeriodMs: 200, drainTimeoutMs: 500 });
+      },
+      { origin: "src/verification/executor" },
     );
+    clearTimeout(foreign);
 
     expect(result.timeout).toBe(true);
     expect(leaked).toEqual([]);
+    expect(armed).not.toContain(foreign);
   }, 20_000);
 });
 

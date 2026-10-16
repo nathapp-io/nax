@@ -51,6 +51,29 @@ const CLEAN = `# SPEC: Fixture
 1. \`[unit]\` calling \`doThing()\` returns \`true\`.
 `;
 
+/**
+ * US-005: two stories that state nothing about their dependencies, and are
+ * otherwise clean. The unstated-dependency warn is the only finding.
+ */
+const TWO_STORIES_NO_DEPENDENCIES = `# SPEC: Fixture
+
+## Stories
+
+### US-001 — Do the thing
+
+### US-002 — Do the other thing
+
+## Acceptance Criteria
+
+### US-001 — Do the thing
+
+1. \`[unit]\` calling \`doThing()\` returns \`true\`.
+
+### US-002 — Do the other thing
+
+1. \`[unit]\` calling \`doOtherThing()\` returns \`true\`.
+`;
+
 function depsFor(specs: Record<string, string>, lines: string[], resolution?: ResolveResult) {
   return {
     readFile: async (path: string): Promise<string> => {
@@ -200,5 +223,20 @@ describe("specLintCommand", () => {
       depsFor({ "/repo/s.md": CLEAN }, out),
     );
     expect(result.reports[0].findings.map((f) => f.code)).toContain("ac-count-over-cap");
+  });
+
+  test("US-005 AC-16: reports the unstated-dependency warn without failing the command", async () => {
+    const out: string[] = [];
+    const result = await specLintCommand(
+      { dir: "/repo", paths: ["/repo/s.md"] },
+      depsFor({ "/repo/s.md": TWO_STORIES_NO_DEPENDENCIES }, out),
+    );
+
+    // Non-blocking: the exit code mirrors what `nax plan` would do, and the
+    // plan gate only refuses on `BLOCKING_SPEC_LINT_CODES` — which this code is
+    // deliberately not a member of.
+    expect(result.exitCode).toBe(0);
+    expect(result.reports[0].findings.map((f) => f.code)).toContain("story-dependencies-not-stated");
+    expect(result.reports[0].blocking).toEqual([]);
   });
 });

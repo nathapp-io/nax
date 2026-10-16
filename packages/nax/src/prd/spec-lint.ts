@@ -42,6 +42,9 @@ import { findAcNumericReferences } from "./ac-references";
 import { extractSpecContextFiles } from "./context-files-extract";
 import { extractSpecModifiedFiles, MAX_MODIFIED_FILES } from "./modifies-extract";
 import { extractSpecOutOfScope } from "./out-of-scope-extract";
+// US-005: the unstated-dependency check lives in its own module — it reads the
+// structure the plan gate reads rather than re-implementing the grammar here.
+import { checkStoryDependencies } from "./spec-lint-dependencies";
 // US-002: story-id reading moved to ./spec-structure so the linter's
 // unknown-story check and the plan-time structure gate cannot disagree on what
 // the spec declares.
@@ -435,6 +438,9 @@ export function lintSpecContent(text: string, options: SpecLintOptions = {}): Sp
     ...checkOutOfScope(text, storyIds),
     ...checkContextFiles(text, lines, pathExists),
     ...checkAcceptanceCriteria(lines, maxAcCount),
+    // US-005: advisory only — a story that states no dependencies is legal, and
+    // the code is deliberately outside BLOCKING_SPEC_LINT_CODES.
+    ...checkStoryDependencies(text),
   ];
 
   if (storyIds.length > SOFT_MAX_STORIES) {

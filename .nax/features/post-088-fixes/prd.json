@@ -1,0 +1,438 @@
+{
+  "project": "nax-monorepo",
+  "feature": "post-088-fixes",
+  "branchName": "feat/post-088-fixes",
+  "createdAt": "2026-10-20T00:00:00Z",
+  "updatedAt": "2026-10-16T10:10:18.666Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Finish-approval evidence carries the base, file inventory and minors",
+      "description": "**Goal** — Give workflow finish-approval the resolved base sha, bounded changed-file inventory and every deferred minor's text, closing #2567.\n\n**Motivation** — On run `auth-relogin-recovery` (PR #2566) it diffed against the local `main` branch, which was out of date: it saw 110 changed files instead of the PR's 26 and held a PR that met every deterministic ready condition.\n\n**Approach** — Approval evidence\n\n`approvalEvidence` returns these lines, in this order:\n\n1. `Stories: …` (unchanged)\n2. `Final gates: …, all green` (unchanged)\n3. `CI: <outcome> (<detail>)` (unchanged)\n4. `Branch review ran; open findings after the fix pass: <n>; branch rulings: <n>` (unchanged)\n5. The base line:\n   - `input.record.seed` set: `Base commit: <seed>. Diff against this sha (git diff <seed>..HEAD), never against a branch name such as main.`\n   - `input.record.seed` null: `Base commit: unresolved. Establish the diff base from the pull request itself, never from a local branch.`\n6. The inventory line:\n   - `changed.kind === \"files\"`: `Changed files since the base commit (<count>): <path>, <path>, …`. It lists at most `MAX_EVIDENCE_FILES = 300` paths in the order given. When there are more, it ends with `, and <count - 300> more`. With zero files it reads `Changed files since the base commit (0): none`.\n   - `changed.kind === \"unavailable\"`: `Changed files since the base commit: unavailable (<reason>)`\n7. `Deferred minors left: <minorsLeft.length>` (unchanged text)\n8. One line per `minorsLeft` entry, in order: `Deferred minor: <entry>`\n9. `Gate repair: …` when `gateRepairRounds` is set (unchanged)\n\n`MAX_EVIDENCE_FILES` is the only cap. The base line and the inventory line are independent: the base line reads only `record.seed`, and the inventory line reads only `changed`.\n\nThe `prMode` call site: it builds `changed` first. With `input.record.seed === null`, `changed` is `{ kind: \"unavailable\", reason: \"no base commit was resolved\" }`. Otherwise it awaits `changedFilesSince(fc.projectDir, input.record.seed)`; on success `changed` is `{ kind: \"files\", files }`, and on a throw it is `{ kind: \"unavailable\", reason: errorMessage(err) }`. Then it calls `approvalEvidence(input, ci, body.minorsLeft, changed)`. `changed` is computed only on the branch where the advisor is asked (`reasons.length === 0`).\n\nIntegration symbols are read-only: `resolveSeed(projectDir: string, prd: PRD): Promise<string | null>` already stores its result on `WorkflowFeatureRecord.seed`; `changedFilesSince(projectDir: string, base: string): Promise<string[]>` runs `git diff --name-only <base>..HEAD` through `_workflowDeps.git` and throws `NaxError` `WORKFLOW_GIT_FAILED` on a git failure. `askApproval(advisor, { feature, evidence })` maps each evidence string to one `{ source: \"review-round\", text }` item on the `finish-approval` question. `bodyFacts` already builds `minorsLeft: string[]` as `\"<storyId>: <text>\"` for every `triage === \"leave\"` minor, followed by `record.newMinors`.\n\nFailure handling: `record.seed` is null at approval time — Base line reads `unresolved`; inventory line reads `unavailable (no base commit was resolved)`; the advisor is still asked. `changedFilesSince` throws at approval time — Inventory line reads `unavailable (<error message>)`; base line still names the seed; the advisor is still asked.\n\nImplementation/test notes: modify only workflow finalize.ts and its existing finalize-evidence.test.ts. Both existing cases call `approvalEvidence(…, ci, 0)` with a numeric third argument. The target signature takes `minorsLeft: readonly string[]` and a fourth `changed: ChangedFilesEvidence`. The replacing calls pass `[]` and `{ kind: \"files\", files: [] }`; the two gate-repair assertions are unchanged. The new publish-level evidence tests go in `finalize-evidence.test.ts`, following the `wire()` harness pattern of `finalize-ci-gate.test.ts`; do not enlarge finalize.test.ts, already at 795 of its 800-line limit.\n\n**Scope** — In: workflow evidence formatting and ready-branch inventory collection, unit tests and actual publish-to-question seam tests. Out: timer spies (US-002/US-003), owned-path security (US-004), spec dependencies (US-005). Feature-level boundaries also apply verbatim:\n- Naming which ref the approval base commit came from (`origin/HEAD` merge-base, local `main` merge-base, or a story git ref): `resolveSeed` returns only a sha, and the sha is what the advisor diffs against.\n- Changing the advisor decision policy text (`ADVISOR_POLICY` in `src/prompts/builders/advisor-builder.ts`) or the finish state machine's own `approvalEvidence` in `src/finish/advise.ts`.\n- Making a changed-file inventory failure a readiness reason that keeps the PR a draft without asking the advisor.\n\n**Interface** — declare the exported union in finalize.ts and replace the existing signature:\n```typescript\nexport type ChangedFilesEvidence = { readonly kind: \"files\"; readonly files: readonly string[] } | { readonly kind: \"unavailable\"; readonly reason: string };\n\napprovalEvidence(input: Pick<PublishInput, \"record\" | \"stories\">, ci: Pick<CiWaitResult, \"outcome\" | \"detail\">, minorsLeft: readonly string[], changed: ChangedFilesEvidence): string[]\n```",
+      "acceptanceCriteria": [
+        "[unit] approvalEvidence with record.seed 'abc123', minorsLeft [] and changed { kind: 'files', files: ['a.ts', 'b.ts'] } returns a list containing 'Base commit: abc123. Diff against this sha (git diff abc123..HEAD), never against a branch name such as main.'.",
+        "[unit] approvalEvidence with record.seed 'abc123', minorsLeft [] and changed { kind: 'files', files: ['a.ts', 'b.ts'] } returns a list containing 'Changed files since the base commit (2): a.ts, b.ts'.",
+        "[unit] approvalEvidence with record.seed null and changed { kind: 'unavailable', reason: 'no base commit was resolved' } returns a list containing 'Base commit: unresolved. Establish the diff base from the pull request itself, never from a local branch.'.",
+        "[unit] approvalEvidence with record.seed null and changed { kind: 'unavailable', reason: 'no base commit was resolved' } returns a list containing 'Changed files since the base commit: unavailable (no base commit was resolved)'.",
+        "[unit] approvalEvidence with changed { kind: 'files', files } where files holds 302 distinct paths returns an inventory line that names the first 300 paths and ends with ', and 2 more', and does not name the 301st path.",
+        "[unit] approvalEvidence with changed { kind: 'files', files: [] } returns a list containing 'Changed files since the base commit (0): none'.",
+        "[unit] approvalEvidence with minorsLeft ['US-001: rename x', 'unused import in y.ts'] returns a list containing 'Deferred minors left: 2', followed directly by 'Deferred minor: US-001: rename x' and then 'Deferred minor: unused import in y.ts'.",
+        "[unit] In every approvalEvidence result, the base line comes directly after the 'Branch review ran;' line, and the inventory line comes directly after the base line.",
+        "[unit] publish, wired as in finalize-ci-gate.test.ts with CI green, every ready condition met, record.seed 'abc123', and _workflowDeps.git answering ['diff', '--name-only', 'abc123..HEAD'] with stdout 'src/a.ts\\nsrc/b.ts\\n', sends a finish-approval question whose evidence texts include 'Changed files since the base commit (2): src/a.ts, src/b.ts'.",
+        "[unit] publish, wired as in finalize-ci-gate.test.ts with CI green, every ready condition met, record.seed 'abc123' and _workflowDeps.git answering ['diff', '--name-only', 'abc123..HEAD'] with stdout 'src/a.ts\\nsrc/b.ts\\n', sends finish-approval evidence texts including 'Base commit: abc123. Diff against this sha (git diff abc123..HEAD), never against a branch name such as main.'.",
+        "[unit] publish, wired as in finalize-ci-gate.test.ts with CI green, every ready condition met, record.seed 'abc123' and _workflowDeps.git answering ['diff', '--name-only', 'abc123..HEAD'] with exit code 128 and stderr 'bad revision', still asks the finish-approval question, and its evidence includes a line starting 'Changed files since the base commit: unavailable ('.",
+        "[unit] publish, wired as in finalize-ci-gate.test.ts with CI green, every ready condition met, record.seed 'abc123', a successful diff --name-only response, record.minors holding one item { storyId: 'US-002', text: 'tidy helper', triage: 'leave' } and record.newMinors ['late note'], sends evidence containing 'Deferred minor: US-002: tidy helper' and 'Deferred minor: late note'.",
+        "[unit] publish with CI failed (a deterministic readiness reason) never calls _workflowDeps.git with a diff --name-only argument list.",
+        "[unit] When publish has record.seed null and every deterministic ready condition met, it still asks finish-approval with 'Base commit: unresolved. Establish the diff base from the pull request itself, never from a local branch.' and 'Changed files since the base commit: unavailable (no base commit was resolved)'.",
+        "[unit] When changedFilesSince throws at approval time for record.seed 'abc123', publish still asks finish-approval with an inventory line 'Changed files since the base commit: unavailable (<error message>)' using errorMessage(err), and the base line still names abc123."
+      ],
+      "tags": [
+        "fix",
+        "workflow",
+        "advisor",
+        "integration"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Localized evidence formatting and publish wiring reuse existing git, advisor and dependency seams; exercise formatter and outer publish question behavior with failing tests first.",
+        "agentProfileId": "native-deepseek",
+        "agent": "native",
+        "profileModelTier": "balanced",
+        "initialAgent": "native",
+        "initialProfileId": "native-deepseek",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/finalize.ts",
+        "packages/nax/src/workflow/git.ts",
+        "packages/nax/src/workflow/approval.ts",
+        "packages/nax/test/unit/workflow/finalize-ci-gate.test.ts",
+        "packages/nax/test/unit/workflow/finalize-evidence.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When approvalEvidence receives record.seed null and changed { kind: 'files', files: ['x.ts'] }, it returns the unresolved-base line and 'Changed files since the base commit (1): x.ts' independently.",
+        "When publish is configured with workflow.publish 'push' or 'none', it does not run a diff --name-only inventory request."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/workflow/finalize.ts",
+          "reason": "`approvalEvidence` takes `minorsLeft: readonly string[]` and `changed: ChangedFilesEvidence` instead of a minor count, and the `prMode` call site builds `changed` from `record.seed`, as the Design states."
+        },
+        {
+          "path": "packages/nax/test/unit/workflow/finalize-evidence.test.ts",
+          "reason": "both existing cases call `approvalEvidence(…, ci, 0)` with a numeric third argument. The target signature takes `minorsLeft: readonly string[]` and a fourth `changed: ChangedFilesEvidence`. The replacing calls pass `[]` and `{ kind: \"files\", files: [] }`; the two gate-repair assertions are unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "6bef46177effebd993cf0f49d7b4381629073b3c"
+    },
+    {
+      "id": "US-002",
+      "title": "nax timer spy ignores fired and foreign timers",
+      "description": "**Goal** — Give nax's timer spy fired-id tracking and an optional arming-origin filter, fixing the nax half of #2563.\n\n**Motivation** — The executor kill-path test failed in CI run 38782674709 with 7 consecutive foreign timer ids and passed on rerun.\n\n**Approach** — Timer spy\n\nBoth copies of `withTimerSpy` get the same target behaviour:\n\n- **Fired timers are not leaks.** When the handler is a function, the spy arms a wrapper that adds the timer's id to `fired` and then calls the original handler with its arguments. `leaked` is `armed` minus `cleared` minus `fired`. A string handler is passed through unwrapped.\n- **Origin filter.** With `options.origin` set, a timer is pushed to `armed` only when the stack captured at arm time (`new Error().stack`, with `\\` normalised to `/`) contains `options.origin`. A timer that doesn't match is still armed through the real `setTimeout` and still returned to its caller, but it is not recorded. With `origin` unset, every timer is recorded, as today.\n- `cleared` keeps recording every id passed to `clearTimeout` (unchanged).\n\nThe nax executor test `executeWithTimeout > clears every timer it arms on the kill path` passes `{ origin: \"src/verification/executor\" }`. `executeWithTimeout` arms timers through `_executorDeps.setTimeout`, whose wrapper is defined in `src/verification/executor.ts`, and through `raceWithDeadline` in the same file, so both appear in the arming stack. The narrower `src/` prefix matters: the test file's own path, `test/unit/verification/executor.test.ts`, contains `verification/executor`, so a bare `verification/executor` would record the test's own timers too.\n\nModify packages/nax/test/helpers/timer-spy.ts and its helper-barrel export. Preserve finally-based global restoration, real timer return ids, generic fn result and existing armed/cleared result fields. Add packages/nax/test/unit/helpers/timer-spy.test.ts and packages/nax/test/unit/helpers/fixtures/timer-spy-origin-fixture.ts. The fixture exports one function that arms a timer with the handler and delay it is given and returns the id; ACs 5-6 import it so its frames carry `timer-spy-origin-fixture` in their path. Use waitForCondition for handler completion and clean up intentionally leaked timers after observation.\n\nUpdate the existing executor kill-path test to pass the exact origin option; the result.timeout and leaked assertions are unchanged. Include a 60s foreign timer armed by fn itself in that scenario and clear it afterwards. No production executor changes are required.\n\n**Scope** — In: the nax helper implementation, TimerSpyOptions barrel export, helper fixture/tests and executor kill-path call site. Out: the nax-agent copy (US-003), workflow evidence (US-001), owned-path rules (US-004) and spec grammar/lint (US-005). Feature-level boundaries also apply verbatim:\n- Tracking fired string-handler timers in `withTimerSpy`: a string handler is passed through unwrapped and, if it fires uncleared, still counts as leaked. No current call site arms one.\n- Moving `withTimerSpy` into `@nathapp/nax-test-kit` or merging the two copies.\n- Adding an `origin` filter to the `withTimerSpy` call sites other than the executor kill-path test.\n\n**Interface** —\n```typescript\nexport interface TimerSpyOptions { readonly origin?: string }\nwithTimerSpy<T>(fn: () => Promise<T>, options?: TimerSpyOptions): Promise<TimerSpyResult<T>>\n```\n`TimerSpyResult<T>` gains `fired: Set<unknown>` alongside `result`, `armed`, `cleared` and `leaked`.",
+      "acceptanceCriteria": [
+        "[unit] withTimerSpy around a function that arms a 1ms timer with a function handler and waits for that handler to run with waitForCondition reports the timer's id in armed and in fired, and leaked is [].",
+        "[unit] withTimerSpy around a function that arms a 60s timer and returns without clearing it reports that id in leaked.",
+        "[unit] A function handler armed through the spy is called with the extra arguments passed to setTimeout after the delay.",
+        "[unit] withTimerSpy around a function that arms a timer with a string handler and clears it reports leaked [] and does not throw.",
+        "[unit] withTimerSpy(fn, { origin: 'timer-spy-origin-fixture' }), where fn arms one timer from a function declared in a fixture module whose path contains timer-spy-origin-fixture and one timer directly in the test file, records only the fixture's timer in armed.",
+        "[unit] In that origin-filtered call with one fixture timer and one timer armed directly in the test file, the timer armed directly in the test file still fires its handler.",
+        "[unit] withTimerSpy(fn) with no options records every timer fn arms, as before.",
+        "[unit] Given withTimerSpy and the type TimerSpyOptions imported from the nax test helpers barrel and options: TimerSpyOptions = {}, awaiting withTimerSpy(async () => 'done', options) returns a TimerSpyResult whose result is 'done', demonstrating successful barrel imports and the (fn, options) call signature.",
+        "[unit] withTimerSpy(fn, { origin: 'src/verification/executor' }), where fn arms a 60s timer itself and then returns executeWithTimeout('sleep 30', 0.1, undefined, { gracePeriodMs: 200, drainTimeoutMs: 500 }), reports result.timeout true and leaked []; the test clears the 60s timer afterwards."
+      ],
+      "tags": [
+        "fix",
+        "tooling",
+        "timers",
+        "concurrency"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A bounded helper algorithm plus a precise executor-test integration uses existing patterns; failing timer lifecycle and fixture-origin tests establish behavior before implementation.",
+        "agentProfileId": "native-deepseek",
+        "agent": "native",
+        "profileModelTier": "balanced",
+        "initialAgent": "native",
+        "initialProfileId": "native-deepseek",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/test/helpers/timer-spy.ts",
+        "packages/nax/test/helpers/index.ts",
+        "packages/nax/src/verification/executor.ts",
+        "packages/nax/test/unit/verification/executor.test.ts",
+        "packages/nax/test/unit/helpers/fake-clock.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/helpers/timer-spy.test.ts",
+        "packages/nax/test/unit/helpers/fixtures/timer-spy-origin-fixture.ts"
+      ],
+      "suggestedCriteria": [
+        "When fn throws inside withTimerSpy, the returned promise rejects with that error and the original global setTimeout and clearTimeout functions are restored.",
+        "When an origin-filtered timer is not recorded in armed but its id is passed to clearTimeout, cleared still contains that id."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/helpers/timer-spy.ts",
+          "reason": "`withTimerSpy` gains the options argument, the `fired` set, and the fired-timer exclusion from `leaked`, as the Design states."
+        },
+        {
+          "path": "packages/nax/test/helpers/index.ts",
+          "reason": "also export the type `TimerSpyOptions` beside `withTimerSpy`."
+        },
+        {
+          "path": "packages/nax/test/unit/verification/executor.test.ts",
+          "reason": "the \"clears every timer it arms on the kill path\" case calls `withTimerSpy(fn)` with no options, so foreign timers armed during the 300ms subprocess wait count against `executeWithTimeout`. The replacing call passes an options object whose origin is \"src/verification/executor\"; the result.timeout and leaked assertions are unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "e5637bad8421f6e62541eb928e2a27344b193917"
+    },
+    {
+      "id": "US-003",
+      "title": "nax-agent timer spy ignores fired and foreign timers",
+      "description": "**Goal** — Give nax-agent's independent timer-spy copy fired-id tracking and the same optional origin filter, fixing the nax-agent half of #2563.\n\n**Motivation** — The spy also counts a timer that fired on its own as leaked, though a fired timer no longer holds the event loop open.\n\n**Approach** — Timer spy\n\nBoth copies of `withTimerSpy` get the same target behaviour:\n\n- **Fired timers are not leaks.** When the handler is a function, the spy arms a wrapper that adds the timer's id to `fired` and then calls the original handler with its arguments. `leaked` is `armed` minus `cleared` minus `fired`. A string handler is passed through unwrapped.\n- **Origin filter.** With `options.origin` set, a timer is pushed to `armed` only when the stack captured at arm time (`new Error().stack`, with `\\` normalised to `/`) contains `options.origin`. A timer that doesn't match is still armed through the real `setTimeout` and still returned to its caller, but it is not recorded. With `origin` unset, every timer is recorded, as today.\n- `cleared` keeps recording every id passed to `clearTimeout` (unchanged).\n\nModify packages/nax-agent/test/helpers/timer-spy.ts and export TimerSpyOptions alongside TimerSpyResult and withTimerSpy in packages/nax-agent/test/helpers/index.ts. Preserve the sanctioned-copy provenance, generic return value and finally restoration of global timer functions. The existing two cases stay as they are; this story adds the fired-timer, string-handler and origin cases to the same `describe(\"withTimerSpy\")` block in packages/nax-agent/test/unit/helpers/timer-spy.test.ts. Add packages/nax-agent/test/unit/helpers/fixtures/timer-spy-origin-fixture.ts — the same one-function fixture for nax-agent's AC 5: it arms a timer with the handler and delay given and returns its id. Use waitForCondition, clean up long-lived timers after observation, use package-local #test imports and demonstrate regressions against the old code. This story is independent of US-002 and must not import from nax.\n\n**Scope** — In: nax-agent's helper, helper barrel, existing helper tests and fixture. Out: the nax helper and executor call site (US-002), workflow evidence (US-001), owned-path policy/copies (US-004) and spec parsing/lint (US-005). Feature-level boundaries also apply verbatim:\n- Tracking fired string-handler timers in `withTimerSpy`: a string handler is passed through unwrapped and, if it fires uncleared, still counts as leaked. No current call site arms one.\n- Moving `withTimerSpy` into `@nathapp/nax-test-kit` or merging the two copies.\n- Adding an `origin` filter to the `withTimerSpy` call sites other than the executor kill-path test.\n\n**Interface** —\n```typescript\nexport interface TimerSpyOptions { readonly origin?: string }\nwithTimerSpy<T>(fn: () => Promise<T>, options?: TimerSpyOptions): Promise<TimerSpyResult<T>>\n```\n`TimerSpyResult<T>` gains `fired: Set<unknown>` alongside `result`, `armed`, `cleared` and `leaked`.",
+      "acceptanceCriteria": [
+        "[unit] nax-agent's withTimerSpy around a function that arms a 1ms timer with a function handler and waits for that handler to run with waitForCondition reports the timer's id in armed and in fired, and leaked is [].",
+        "[unit] nax-agent's withTimerSpy around a function that arms a 60s timer and returns without clearing it reports that id in leaked.",
+        "[unit] A function handler armed through nax-agent's spy is called with the extra arguments passed to setTimeout after the delay.",
+        "[unit] nax-agent's withTimerSpy around a function that arms a timer with a string handler and clears it reports leaked [] and does not throw.",
+        "[unit] nax-agent's withTimerSpy(fn, { origin: 'timer-spy-origin-fixture' }), where fn arms one timer from a function declared in a fixture module whose path contains timer-spy-origin-fixture and one timer directly in the test file, records only the fixture's timer in armed.",
+        "[unit] Given withTimerSpy and the type TimerSpyOptions imported from #test/helpers/index and options: TimerSpyOptions = {}, awaiting withTimerSpy(async () => 'done', options) returns a TimerSpyResult whose result is 'done', demonstrating successful barrel imports and the (fn, options) call signature."
+      ],
+      "tags": [
+        "fix",
+        "tooling",
+        "timers",
+        "concurrency"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "The duplicated timer-instrumentation algorithm is small but changes asynchronous callback and origin behavior across a helper and barrel; extend existing regressions before implementing.",
+        "agentProfileId": "native-deepseek",
+        "agent": "native",
+        "profileModelTier": "balanced",
+        "initialAgent": "native",
+        "initialProfileId": "native-deepseek",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/test/helpers/timer-spy.ts",
+        "packages/nax-agent/test/helpers/index.ts",
+        "packages/nax-agent/test/unit/helpers/timer-spy.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/test/unit/helpers/fixtures/timer-spy-origin-fixture.ts"
+      ],
+      "suggestedCriteria": [
+        "When fn throws inside nax-agent's withTimerSpy, the returned promise rejects with that error and the original global setTimeout and clearTimeout functions are restored.",
+        "When nax-agent's withTimerSpy excludes a timer by origin, that timer still invokes its handler normally."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/test/helpers/timer-spy.ts",
+          "reason": "`withTimerSpy` gains the options argument, the `fired` set, and the fired-timer exclusion from `leaked`, as the Design states."
+        },
+        {
+          "path": "packages/nax-agent/test/helpers/index.ts",
+          "reason": "also export the type `TimerSpyOptions` beside `withTimerSpy`."
+        },
+        {
+          "path": "packages/nax-agent/test/unit/helpers/timer-spy.test.ts",
+          "reason": "the existing two cases stay as they are; this story adds the fired-timer, string-handler and origin cases to the same `describe(\"withTimerSpy\")` block."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "ddfc0801b4340627ae5d516f8a38ecaf96581b58"
+    },
+    {
+      "id": "US-004",
+      "title": "Owned-path protection recognizes case variants on case-insensitive filesystems",
+      "description": "**Goal** — Close #2347 by recognizing case-variant nax config, PRD and queue names in root-aware policy screens and conservatively folding rootless typed-write paths.\n\n**Motivation** — A nax config file sets commands nax runs without the permission gate, so a planted or rewritten config changes what nax executes.\n\n**Approach** — New, in `packages/nax/src/agents/case-insensitive-fs.ts`:\n\n```ts\nimport { statSync } from \"node:fs\";\nimport { basename, dirname, join } from \"node:path\";\nimport { realOrRaw } from \"@nathapp/nax-agent/internal\";\n\nexport const _caseFsDeps = {\n  stat: (p: string): { dev: number; ino: number } => statSync(p),\n};\n\nconst cache = new Map<string, boolean>();\n\n/** Test hook: forget every probed root. */\nexport function _resetCaseFsCache(): void {\n  cache.clear();\n}\n\n/**\n * Is the filesystem holding `root` case-insensitive? Probed once per canonical\n * root: stat the nearest path (root or an ancestor) whose last segment has a\n * cased letter, and stat the same path with that segment's case swapped. The\n * same dev+ino means case-insensitive. Fails closed (true) when no cased\n * segment exists or the original path cannot be stat'ed.\n */\nexport function isCaseInsensitiveFs(root: string): boolean; // signature only\n```\n\nThe probe stats the original path first. If that stat throws, it returns `true` without stat'ing the swapped spelling. Otherwise it stats the swapped spelling: `ENOENT` or `ENOTDIR` returns `false`, any other error returns `true`, and a successful stat returns `true` only when dev and ino both match. The probe path is the nearest of `realOrRaw(root)` and its ancestors whose last segment has a cased letter, so when the root's own last segment has one, the probe path is the root itself. The cache is keyed by `realOrRaw(root)`.\n\nChanged interfaces and algorithms:\n\n- `isNaxConfigSegments`: `(segments: readonly string[], foldCase = false): boolean`. With `foldCase` true, the `.nax`, `mono` and `config.json` segments are compared case-insensitively. Every existing caller passes nothing and keeps exact-case behaviour.\n- `isNaxConfigFile(root: string, resolved: string): boolean`: `isNaxConfigSegments(rel.split(sep), isCaseInsensitiveFs(root))`.\n- `naxOwnedKind`: `(rel: string, foldCase = false): \"prd\" | \"queue\" | undefined`. With `foldCase` true, the `.nax`, `features` and `prd.json` segments and the `QUEUE_CONTROL_FILES` names are compared case-insensitively.\n- `isNaxOwnedWritePath(rel)` / `naxOwnedWriteRefusal` / `naxStateRefusal`: the typed-write path always folds case, because `OwnedPathsPolicy.writeRefusal`'s context carries no root to probe. `isNaxOwnedWritePath(rel)` calls `naxOwnedKind(rel, true)`, and `naxStateRefusal` compares the first segment with `.nax` case-insensitively. On a case-sensitive filesystem this also refuses a typed write to a stray `.QUEUE.TXT` or `.NAX/...`; such a path is never nax's own file there, but refusing it is harmless. The PRD path-exact exemption (`rel === exemptRel`) is unchanged. Two compares on this path stay exact-case, and both fail closed: `naxStateRefusal`'s own `isNaxConfigSegments(segments)` call (so `.NAX/config.json` is refused with the state text rather than skipped for `configRefusal`), and its `scratchpad` entry compare (so `.NAX/SCRATCHPAD/x` is refused). `createConfigReadGatePolicy`'s `writeRefusal` keeps calling `isNaxConfigSegments` with no fold for the same reason.\n- `firstOwnedHit(root, candidates)` and `configCandidatesOnly(root, candidates)`: `naxOwnedKind(candidate.rel, isCaseInsensitiveFs(root))`.\n\n`naxOwnedWriteRefusal(tool, rel, exemptRel?, optIns = NO_OPT_INS)`'s signature is unchanged; its behaviour changes only through `isNaxOwnedWritePath` and `naxStateRefusal`, listed above. `realOrRaw(p: string): string` from `@nathapp/nax-agent/internal` is only read.\n\nFailure handling: no ancestor segment of the root has a cased letter — `isCaseInsensitiveFs` returns `true` (fail closed). Stat of the original path throws — returns `true` (fail closed). Stat of the swapped path throws `ENOENT` / `ENOTDIR` — returns `false`. Stat of the swapped path throws any other error — returns `true` (fail closed).\n\nCross-package edits in this story: mirror both changed modules into nax-agent's test helpers verbatim and extend nax's copy-guard test to the probe, so nax-agent's engine tests keep running on nax's real rules. This is the one cross-package edit in a `packages/nax` story: the copies are test helpers that nax's own guard test pins, so they must change in the same commit. Replace the body of packages/nax-agent/test/helpers/nax-owned-paths.ts with the changed owned-writes module verbatim apart from import lines and its one-line provenance header. Its import of isCaseInsensitiveFs points at the nax-agent copy of the probe; its realOrRaw import stays on the nax-agent internal realpath module. Create packages/nax-agent/test/helpers/case-insensitive-fs.ts as a verbatim copy of the new probe, with the first line `// Verbatim copy of nax's src/agents/case-insensitive-fs.ts (post-088 US-004).` and its realOrRaw import pointed at `#src/internal/realpath`. nax-agent cannot import nax. Add a second case to packages/nax/test/unit/agents/nax-owned-writes-copy.test.ts with the same normalisation comparing the probe source/helper pair; the existing case is unchanged.\n\nTest seams and placement: create packages/nax/test/unit/agents/case-insensitive-fs.test.ts for ACs 1-9 and 24, and packages/nax/test/unit/agents/nax-owned-writes-case-fold.test.ts for ACs 10-23. Both afterEach hooks call _resetCaseFsCache() and restore _caseFsDeps.stat; ACs 14 and 17 give one root opposite answers. The seam ACs enter at `naxOwnedPathsPolicy.bashRefusal` and at nax-agent's `resolveWithin`, the outermost entries of the raw Bash screen and the path resolver, with `_caseFsDeps.stat` stubbed. Canonicalize temp roots; the Darwin-only real probe uses the real stat dependency. Verification note: `bun run typecheck` and `bun run test` in `packages/nax-agent` also pass, since its policy tests import the copy. Only regenerate a stale complexity row if the ratchet reports it.\n\n**Scope** — In: probe/cache/seam, owned-writes and config-read-gate integration, the two nax-agent helper copies and copy guard, and outer-policy regressions. Out: workflow evidence (US-001), timer helpers (US-002/US-003), spec dependency parsing/lint (US-005). Feature-level boundaries also apply verbatim:\n- Switching nax-agent's `realOrRaw` or `resolveWithin` to `realpathSync.native`. nax runs on Bun, where `realpathSync` already returns on-disk casing for existing paths, and `naxOwnedPathsPolicy` is only installed by nax.\n- Case-folding the `.git` metadata check (`entersGitMetadata` in nax-agent).\n- Adding a `root` to `OwnedPathsPolicy.writeRefusal`'s context so the typed-write path can probe instead of always folding.\n- Case-folding the sandbox's `rootWriteDenies` / `deniedEntries` lists.\n- Whether the macOS sandbox profile matches the denied `.nax/` entries case-insensitively.\n\n**Interface** — implement the probe API shown above; extend only the optional foldCase parameters specified above, and keep `naxOwnedWriteRefusal(tool, rel, exemptRel?, optIns = NO_OPT_INS)` unchanged.",
+      "acceptanceCriteria": [
+        "[unit] isCaseInsensitiveFs(root) returns true when _caseFsDeps.stat returns the same { dev, ino } for the root and for the root with its last segment's case swapped.",
+        "[unit] isCaseInsensitiveFs(root) returns false when _caseFsDeps.stat succeeds for the root and throws an error with code 'ENOENT' for the case-swapped root.",
+        "[unit] isCaseInsensitiveFs(root) returns false when _caseFsDeps.stat succeeds for the root and throws an error with code 'ENOTDIR' for the case-swapped root.",
+        "[unit] isCaseInsensitiveFs(root) returns false when _caseFsDeps.stat returns a different ino for the case-swapped root.",
+        "[unit] isCaseInsensitiveFs(root) returns true when _caseFsDeps.stat succeeds for the root and throws an error with code 'EACCES' for the case-swapped root.",
+        "[unit] isCaseInsensitiveFs(root) returns true when _caseFsDeps.stat throws for the original root.",
+        "[unit] isCaseInsensitiveFs('/1/2') (no segment with a cased letter, root '/') returns true.",
+        "[unit] isCaseInsensitiveFs('/probe-x/Work/123'), with _caseFsDeps.stat stubbed to return the same { dev, ino } for every path, calls _caseFsDeps.stat with '/probe-x/Work' and with '/probe-x/wORK', and never with a path ending in 123.",
+        "[unit] Two isCaseInsensitiveFs calls on the same root call _caseFsDeps.stat for the first call only; after _resetCaseFsCache() a third call stats again.",
+        "[unit] isNaxConfigSegments(['.NAX', 'mono', 'api', 'CONFIG.JSON'], true) returns true.",
+        "[unit] isNaxConfigSegments(['.NAX', 'mono', 'api', 'CONFIG.JSON']) returns false.",
+        "[unit] naxOwnedKind('.NAX/Features/x/PRD.JSON', true) returns 'prd', and naxOwnedKind('.QUEUE.TXT', true) returns 'queue'.",
+        "[unit] naxOwnedKind('.NAX/Features/x/PRD.JSON') returns undefined.",
+        "[unit] naxOwnedPathsPolicy.bashRefusal('Bash', token, [{ lexical: join(root, '.NAX/config.json'), rel: '.NAX/config.json' }], { root, verb: 'redirects into', sandboxWrapped: false }), with _caseFsDeps.stat stubbed to report root as case-insensitive, returns a refusal string.",
+        "[unit] naxOwnedPathsPolicy.bashRefusal('Bash', token, [{ lexical: join(root, '.nax/mono/api/CONFIG.JSON'), rel: '.nax/mono/api/CONFIG.JSON' }], { root, verb: 'redirects into', sandboxWrapped: false }), with _caseFsDeps.stat stubbed to report root as case-insensitive, returns a refusal string.",
+        "[unit] naxOwnedPathsPolicy.bashRefusal('Bash', token, [{ lexical: join(root, '.nax/features/x/PRD.JSON'), rel: '.nax/features/x/PRD.JSON' }], { root, verb: 'redirects into', sandboxWrapped: false }), with _caseFsDeps.stat stubbed to report root as case-insensitive, returns a refusal string.",
+        "[unit] naxOwnedPathsPolicy.bashRefusal('Bash', token, [{ lexical: join(root, '.NAX/config.json'), rel: '.NAX/config.json' }], { root, verb: 'redirects into', sandboxWrapped: false }), with _caseFsDeps.stat stubbed to report root as case-sensitive, returns undefined.",
+        "[unit] nax-agent's resolveWithin(root, '.nax/mono/api/CONFIG.JSON', naxOwnedPathsPolicy) with root canonical, .nax/mono/api/ present on disk and _caseFsDeps.stat stubbed to report root as case-insensitive returns null.",
+        "[unit] nax-agent's resolveWithin(root, '.nax/mono/api/CONFIG.JSON', naxOwnedPathsPolicy) with root canonical, .nax/mono/api/ present on disk and _caseFsDeps.stat stubbed to report root as case-sensitive returns the resolved path.",
+        "[unit] createConfigReadGatePolicy(naxOwnedPathsPolicy, true).bashRefusal('Bash', token, [{ lexical: join(root, '.NAX/config.json'), rel: '.NAX/config.json' }], { root, verb: 'names', sandboxWrapped: true }), with root reported case-insensitive, returns undefined: a sandboxed read that only names a case-variant config is treated like one naming .nax/config.json.",
+        "[unit] naxOwnedWriteRefusal('Write', '.QUEUE.TXT') returns a refusal string.",
+        "[unit] naxOwnedWriteRefusal('Write', '.NAX/config.json') returns a refusal string.",
+        "[unit] naxOwnedWriteRefusal('Write', '.NAX/scratchpad/notes.md') returns undefined.",
+        "[unit] On darwin only, isCaseInsensitiveFs on a fresh real temp directory (canonicalised with realpathSync), with the real _caseFsDeps.stat, returns the same answer as checking whether the directory's case-swapped spelling exists."
+      ],
+      "tags": [
+        "fix",
+        "security",
+        "access-control",
+        "filesystem",
+        "integration"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Security-critical access-control hardening crosses typed writes, raw Bash, resolver and config-read policy with a new cached filesystem probe and synchronized cross-package helper copies; strict test/implementation isolation is mandatory.",
+        "agentProfileId": "native-deepseek",
+        "agent": "native",
+        "profileModelTier": "balanced",
+        "initialAgent": "native",
+        "initialProfileId": "native-deepseek",
+        "initialModelTier": "balanced",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/agents/nax-owned-writes.ts",
+        "packages/nax/src/agents/config-read-gate.ts",
+        "packages/nax/test/unit/agents/nax-owned-writes.test.ts",
+        "packages/nax-agent/src/tools/policy-paths-branch.ts",
+        "packages/nax-agent/test/unit/tools/credential-read-deny.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/agents/case-insensitive-fs.ts",
+        "packages/nax/test/unit/agents/case-insensitive-fs.test.ts",
+        "packages/nax-agent/test/helpers/case-insensitive-fs.ts",
+        "packages/nax/test/unit/agents/nax-owned-writes-case-fold.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When the original and case-swapped probe paths have equal ino but different dev values, isCaseInsensitiveFs returns false.",
+        "When stat of the original probe path throws, isCaseInsensitiveFs never stats the swapped spelling.",
+        "naxOwnedWriteRefusal('Write', '.NAX/SCRATCHPAD/x') returns a refusal string.",
+        "When a PRD write's rel differs in case from exemptRel, naxOwnedWriteRefusal refuses the write rather than applying the exemption."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/agents/nax-owned-writes.ts",
+          "reason": "`isNaxConfigSegments` and `naxOwnedKind` gain `foldCase`; `isNaxConfigFile` and `firstOwnedHit` pass `isCaseInsensitiveFs(root)`; the typed-write path folds unconditionally, as the Design states."
+        },
+        {
+          "path": "packages/nax/src/agents/config-read-gate.ts",
+          "reason": "`configCandidatesOnly` passes `isCaseInsensitiveFs(root)` to `naxOwnedKind`."
+        },
+        {
+          "path": "packages/nax-agent/test/helpers/nax-owned-paths.ts",
+          "reason": "nax's owned-writes copy-guard test requires this file to stay a verbatim copy of nax's owned-writes source module, apart from import lines and its one-line provenance header. Replace its body with the US-004 version of that module verbatim; its import of isCaseInsensitiveFs points at the nax-agent copy of the probe this story creates, and its realOrRaw import stays on the nax-agent internal realpath module."
+        },
+        {
+          "path": "packages/nax/test/unit/agents/nax-owned-writes-copy.test.ts",
+          "reason": "the guard compares only the owned-writes pair. Add a second case, with the same normalisation, that compares nax-agent's case-insensitive-fs test helper with nax's case-insensitive-fs source module. The existing case is unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "ce194844ca27aa082565818e9ace46a56936df60"
+    },
+    {
+      "id": "US-005",
+      "title": "Parse Dependencies labels and warn on unstated story dependencies",
+      "description": "**Goal** — Close #2459 by reading Dependencies labels in the existing spec grammar and emitting a nonblocking multi-story lint warning when dependencies remain unstated.\n\n**Motivation** — A `Dependencies: US-001.` label matches neither, so the story's `dependsOn` is undefined, the binding table renders `(not stated)`, and `nax plan` writes `\"dependencies\": []`.\n\n**Approach** — Dependency label\n\nThe grammar reads a dependency label in these forms, case-insensitively, followed by the same value syntax `depends on` already takes (story ids with `,` / `;` / `and` separators, or `none`):\n\n- `Dependencies: US-001` / `Dependencies: US-001, US-002` / `Dependencies: none`\n- `**Dependencies:** US-001`\n- `**Dependencies**: none`\n\nA trailing `.` after the value is accepted, as it is today after `depends on`. A label whose value is neither story ids nor `none` (for example `Dependencies: zod`) is not a declaration. A `### Dependencies` heading is not a label.\n\nThe label's value goes through the existing `readDependencyValue`: ids join the story's `dependencyLists`, `none` sets `statesNone`, and a value with neither leaves the story unchanged. The scope is the same as `depends on`: outside fences and outside `### Modifies` / `### Seams` / `### Context Files` / `### Creates`.\n\nSpec lint dependency check\n\n`checkStoryDependencies(text: string): SpecLintFinding[]` runs `extractSpecStructure(text)`. With fewer than two stories it returns `[]`. Otherwise it returns one finding per story whose `dependsOn` is `undefined` and that has no `dependsOn` entry in the structure's `warnings`, in story order. A story with a conflicting declaration (both `none` and ids) has `dependsOn` `undefined` and a warning, so it gets no finding:\n\n```\n{ level: \"warn\", code: \"story-dependencies-not-stated\",\n  message: `${id} states no dependencies: write \"Depends on US-00N\", \"No dependencies.\" or \"Dependencies: US-00N\" on its story line` }\n```\n\n`story-dependencies-not-stated` is not added to `BLOCKING_SPEC_LINT_CODES`, so `nax spec lint` still exits 0 and `nax plan`'s lint gate still passes when it is the only finding.\n\nCreate the checker in packages/nax/src/prd/spec-lint-dependencies.ts, and have lintSpecContent append checkStoryDependencies(text) findings without reimplementing extraction. SpecLintFinding stays `{ level: \"error\" | \"warn\"; code: string; message: string }`; use a type-only import into the checker to avoid a runtime import cycle. `SpecStoryStructure.dependsOn` is `undefined` when nothing is stated and `[]` for \"no dependencies\". Existing collectStoryDeclarations, readDependencyValue, DEPENDS_ON_NONE, DEPENDENCY_ID and extractSpecStructure provide the common parsing/binding path.\n\nFailure handling: a `Dependencies:` label with a value that names no story id and is not `none` — Not a declaration; the story's dependencies are whatever else it states.\n\nModify packages/nax/src/prd/spec-structure-grammar.ts and packages/nax/src/prd/spec-lint.ts. No existing grammar test uses a Dependencies label, so no existing assertion needs changing. Create packages/nax/test/unit/prd/spec-structure-dependency-label.test.ts for ACs 1-9, split by concern because spec-structure.test.ts is at 547 lines. Create packages/nax/test/unit/prd/spec-lint-dependencies.test.ts for ACs 11-15. Add the binding-table case for AC 10 to packages/nax/test/unit/prompts/builders/plan-builder-binding-structure.test.ts; existing cases are unchanged. Add AC 16 to packages/nax/test/unit/cli/spec-lint-command.test.ts, entering at specLintCommand on an otherwise-clean two-story spec, and AC 17 to packages/nax/test/unit/plan/spec-lint-gate.test.ts for the same spec; existing cases are unchanged. Every existing empty-finding assertion uses a single-story fixture, for which the new check returns nothing. Keep spec-lint.ts under its 600-line limit; only regenerate a stale complexity row if the ratchet reports it.\n\n**Scope** — In: label grammar, extraction-backed advisory lint, binding-table regression, CLI and plan-gate seam tests. Out: workflow evidence (US-001), timer instrumentation (US-002/US-003), owned-path protection (US-004). Feature-level boundaries also apply verbatim:\n- Reading a `Depends:` label, or a dependency list under a separate `### Dependencies` section.\n- Surfacing the grammar's existing `dependsOn` and `workdir` conflict warnings through `nax spec lint`.\n- Updating the external spec-writing guide in nathapp-io/nax-spec-kit-skills.\n\n**Interface** —\n```typescript\ncheckStoryDependencies(text: string): SpecLintFinding[]\nextractSpecStructure(specContent: string): SpecStructure\n```\nThe first function is new; the second is consumed unchanged. lintSpecContent(text, options) keeps its existing interface and adds the new findings.",
+      "acceptanceCriteria": [
+        "[unit] extractSpecStructure on a two-story spec whose US-002 story line is followed by 'Dependencies: US-001.' returns US-002 with dependsOn ['US-001'].",
+        "[unit] extractSpecStructure on a spec where US-001 states 'Dependencies: none.' returns US-001 with dependsOn [].",
+        "[unit] extractSpecStructure on a spec where US-003 states '**Dependencies:** US-001, US-002' returns US-003 with dependsOn ['US-001', 'US-002'].",
+        "[unit] extractSpecStructure on a spec where US-002 states '**Dependencies**: none' returns US-002 with dependsOn [].",
+        "[unit] extractSpecStructure on a spec where US-002 states 'dependencies: us-001' returns US-002 with dependsOn ['US-001'].",
+        "[unit] extractSpecStructure on a spec where US-002 states only 'Dependencies: zod' returns US-002 with dependsOn undefined.",
+        "[unit] extractSpecStructure on a spec where US-002 states both 'Dependencies: none' and 'Depends on US-001' returns US-002 with dependsOn undefined and a dependsOn warning for US-002.",
+        "[unit] extractSpecStructure on a spec where 'Dependencies: US-001' appears only inside a fenced block under US-002 returns US-002 with dependsOn undefined.",
+        "[unit] extractSpecStructure on a spec where 'Dependencies: US-001' appears only in a ### Modifies entry's reason under **US-002** returns US-002 with dependsOn undefined.",
+        "[unit] PlanPromptBuilder's binding structure section for a two-story spec whose US-002 states 'Dependencies: US-001.' renders US-002's Depends on cell as US-001, not '(not stated)'.",
+        "[unit] checkStoryDependencies on a two-story spec where neither story states a dependency returns two findings, with level warn and code story-dependencies-not-stated, the first for US-001 and the second for US-002.",
+        "[unit] checkStoryDependencies on a two-story spec where neither US-001 nor US-002 states dependencies returns the US-002 finding with message 'US-002 states no dependencies: write \"Depends on US-00N\", \"No dependencies.\" or \"Dependencies: US-00N\" on its story line'.",
+        "[unit] checkStoryDependencies on a two-story spec where US-001 states 'No dependencies.' and US-002 states 'Dependencies: US-001.' returns [].",
+        "[unit] checkStoryDependencies on a two-story spec where US-001 states 'No dependencies.' and US-002 states both 'Dependencies: none' and 'Depends on US-001' returns [].",
+        "[unit] checkStoryDependencies on a single-story spec that states no dependency returns [].",
+        "[unit] specLintCommand over a two-story spec whose stories state no dependency (otherwise clean) returns exitCode 0, reports[0].findings codes containing story-dependencies-not-stated, and reports[0].blocking [].",
+        "[unit] assertSpecLintClean over that same otherwise-clean two-story spec whose stories state no dependency does not throw."
+      ],
+      "tags": [
+        "fix",
+        "grammar",
+        "tooling",
+        "spec-lint",
+        "integration"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This bounded change extends an existing dependency reader and adds one pure extraction-backed lint check; prompt binding and CLI/plan gates already consume those APIs, so ordinary failing-first unit and seam tests suffice without a new abstraction or heavier isolation.",
+        "agentProfileId": "native-deepseek",
+        "agent": "native",
+        "profileModelTier": "balanced",
+        "initialAgent": "native",
+        "initialProfileId": "native-deepseek",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/prd/spec-structure-grammar.ts",
+        "packages/nax/src/prd/spec-structure.ts",
+        "packages/nax/src/prd/spec-lint.ts",
+        "packages/nax/test/unit/prd/spec-structure.test.ts",
+        "packages/nax/test/unit/cli/spec-lint-command.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/prd/spec-lint-dependencies.ts",
+        "packages/nax/test/unit/prd/spec-lint-dependencies.test.ts",
+        "packages/nax/test/unit/prd/spec-structure-dependency-label.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When US-002 states 'Dependencies: US-001; US-003 and US-004.', extractSpecStructure returns its dependsOn as ['US-001', 'US-003', 'US-004'].",
+        "When US-002 has only a '### Dependencies' heading followed by 'US-001', extractSpecStructure returns US-002 with dependsOn undefined.",
+        "When a story has conflicting workdir declarations but no dependency declaration in a multi-story spec, checkStoryDependencies still emits its story-dependencies-not-stated finding.",
+        "When US-002 states 'Dependencies: zod' and also 'Depends on US-001', extractSpecStructure returns US-002 with dependsOn ['US-001']."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/prd/spec-structure-grammar.ts",
+          "reason": "`collectStoryDeclarations` also reads the `Dependencies` label forms. No existing grammar test uses a `Dependencies:` label, so no test assertion changes."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/builders/plan-builder-binding-structure.test.ts",
+          "reason": "add AC 10, a binding-table case for a spec using the `Dependencies:` label; existing cases are unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/spec-lint-command.test.ts",
+          "reason": "add AC 16, a two-story spec with no dependency statements; existing cases are unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/plan/spec-lint-gate.test.ts",
+          "reason": "add AC 17 for the same spec; existing cases are unchanged."
+        },
+        {
+          "path": "packages/nax/src/prd/spec-lint.ts",
+          "reason": "`lintSpecContent` appends the findings of `checkStoryDependencies(text)`. Every empty-finding assertion in the spec-lint, spec-lint-command and spec-lint-gate tests uses a single-story fixture, for which the new check returns nothing, so no test assertion changes."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "0e41b5c4c0687f7ba63e4b6726ef57eafe5f9b7b"
+    }
+  ],
+  "analysis": "Exploration and architecture: codebase-memory MCP is unavailable in this session, so the findings below come from direct reads and repository text searches, not an assumed graph index. This is an existing Bun/TypeScript monorepo, not greenfield. Read docs/architecture/ARCHITECTURE.md before implementation; its package architecture separates nax orchestration from nax-agent's injected tool-policy port, and its quick reference documents dependency seams, file-size limits and permission resolution (docs/architecture/ARCHITECTURE.md:121, docs/architecture/ARCHITECTURE.md:151). Exactly five independent stories are binding. US-001, US-002, US-004 and US-005 run in packages/nax; US-003 runs in packages/nax-agent; all dependencies are empty. US-004 deliberately retains packages/nax as its workdir despite the explicitly authorized nax-agent test-helper edits. No release, package version bump, published API change or data migration is required. The two timer-helper stories are implementation changes to executable tooling, not separate coverage stories.\n\nUS-001 / workflow approval: packages/nax/src/workflow/finalize.ts:129 already constructs body.minorsLeft from triage=leave minors as storyId-prefixed text followed by newMinors, so reuse these strings rather than rebuilding or truncating them. approvalEvidence at finalize.ts:148 currently takes a numeric minor count and emits four readiness summaries, the count and optional gate-repair evidence. prMode at finalize.ts:404 computes deterministic reasons and only asks approval if that array is empty (finalize.ts:414); compute the inventory inside that same branch, after readiness is established. publish at finalize.ts:426 also serves push/none/local-only modes; those must not acquire the new diff read. resolveSeed already selects an origin merge base, local-main merge base or story ref, and returns null if none exists (packages/nax/src/workflow/seed.ts:21); WorkflowFeatureRecord.seed remains string|null (packages/nax/src/workflow/types.ts:190). Do not resolve a second base or infer a branch-name provenance. changedFilesSince at packages/nax/src/workflow/git.ts:74 uses _workflowDeps.git with [diff,--name-only,<base>..HEAD], preserves output order and throws WORKFLOW_GIT_FAILED on a nonzero exit. Import and consume it unchanged. errorMessage is already imported in finalize.ts:9. askApproval converts each evidence string to {source:review-round,text} at packages/nax/src/workflow/approval.ts:98; capture the actual Advisor question at publish in tests rather than bypassing that integration. New evidence is advisory: inventory failure or an unresolved seed never adds a readiness reason or suppresses the question. Cap only the file list, not minors or the base line, and preserve all existing gate-repair wording. The signature change requires updating both numeric calls in existing packages/nax/test/unit/workflow/finalize-evidence.test.ts:15 and :22 to [] plus {kind:files,files:[]}, preserving their assertions. That existing file is the right place for the added unit and publish-level cases; it is not a new output file. Follow the dependency-save/restore and wire() harness in packages/nax/test/unit/workflow/finalize-ci-gate.test.ts:12 and :19. Do not enlarge finalize.test.ts, which the spec identifies as nearly at its 800-line cap.\n\nUS-002 / nax timer instrumentation: packages/nax/test/helpers/timer-spy.ts:16 defines TimerSpyResult; :27 patches global setTimeout/clearTimeout while awaiting fn; :46 currently computes leaks using cleared ids only. Preserve its finally restoration when fn throws. Add an optional origin argument, fired-id tracking and handler forwarding without changing production executor signatures. Stack filtering must normalize backslashes and match the supplied substring at arming time. Foreign timers must still run normally and return their real handles. cleared continues to collect every defined cleared id, including unrecorded timers. String handlers are passed through without wrapping. packages/nax/test/helpers/index.ts:141 currently exports withTimerSpy only, so add the TimerSpyOptions type there. packages/nax/src/verification/executor.ts:16 defines the _executorDeps.setTimeout wrapper, and :32 defines raceWithDeadline; both arming paths contain src/verification/executor in their stacks. The existing kill-path regression at packages/nax/test/unit/verification/executor.test.ts:161 uses an unfiltered spy around sleep 30 with a 0.1s deadline and 200/500ms grace/drain budgets. Add the precise src/verification/executor filter there; do not use the broader substring that also matches the test file. Preserve its timeout/leaked assertions and include a deliberately foreign 60s timer in the regression setup, with cleanup afterwards. Other existing consumers include MCP pool, timeout, OTEL heartbeat/batch queue and plugin-cache tests, so omission of options must retain record-all behavior. Add dedicated helper tests and a fixture-origin module; use waitForCondition rather than fixed sleeps and always clear intentionally leaked 60s timers outside the observation window. Global patches are process-wide, so restore them and avoid interleaving multiple spy windows inside the helper's tests.\n\nUS-003 / nax-agent timer instrumentation: packages/nax-agent/test/helpers/timer-spy.ts:1 documents the sanctioned duplicate; :17 and :28 hold the same result type and implementation as nax. Apply the same semantics independently without introducing a dependency on US-002 or sharing a new package. packages/nax-agent/test/helpers/index.ts:62 already exports TimerSpyResult and withTimerSpy; add TimerSpyOptions without dropping either. Existing packages/nax-agent/test/unit/helpers/timer-spy.test.ts:4 contains two cleared/leaked regression cases that remain unchanged; extend the block and add the fixture module. Existing consumers in native session external-handler and native credential exec-source tests must continue to work with no options. No nax-agent shipped source or root API snapshot changes are needed. Use #test/#src imports here, never nax's @ aliases, and show the regression failing against the old implementation as required by the package instructions.\n\nUS-004 / access-control hardening: this is security-critical, so use three-session-tdd regardless of complexity. packages/nax/src/agents/nax-owned-writes.ts:82 recognizes exact-case config segments, :104 applies that reader to root-relative resolved paths, :154 exposes the typed-write predicate, :167 classifies PRDs/queues, :242 refuses typed writes, :288 protects other .nax state and :315 performs lexical-config then PRD/queue matching for Bash. Add the root-keyed stat probe as a separate module rather than changing nax-agent containment or realpath behavior. Canonicalize root with the existing realOrRaw exported through @nathapp/nax-agent/internal (packages/nax-agent/src/internal.ts:44; implementation packages/nax-agent/src/internal/realpath.ts:31). Probe only the nearest cased basename and compare dev and ino; inaccessible original roots and unexpected swapped-path errors must fail closed. An ENOENT/ENOTDIR for only the swapped spelling means case-sensitive. Cache by canonical root, and expose/reset the seam so simulations do not depend on the host filesystem. The root-aware config/Bash paths fold only when the probe says case-insensitive; typed-write paths have no root and always fold. Preserve segment-exact matching, queue-at-root-only behavior, the exact PRD exemption, exact-case scratchpad entry and exact-case config-skip checks on typed writes. packages/nax/src/agents/config-read-gate.ts:21 screens Bash candidates for read-only config access, and :35 wraps the base policy; thread the same probe into its PRD/queue classifier, preserving its exact-case typed config check at :46 and sandboxed config-read allowance. The outer path-resolver seam is packages/nax-agent/src/tools/policy-paths-branch.ts:102: resolveWithin canonicalizes a candidate and invokes owned.configRefusal. Test that seam with the injected nax policy rather than changing this function. Existing policy coverage lives in packages/nax/test/unit/agents/nax-owned-writes.test.ts:22 and :61. Add separate probe and case-fold test files to keep concerns and size isolated; both restore _caseFsDeps.stat and clear cache after each test, particularly when the same root is simulated with opposite answers. Darwin-only real-filesystem verification canonicalizes the temp root and compares the probe to existence of a case-swapped spelling.\n\nUS-004 cross-package synchronization: packages/nax-agent/test/helpers/nax-owned-paths.ts:1 is the sanctioned verbatim owned-writes copy with local imports. Update its body in the same commit as the source; create the case-insensitive-fs test-helper copy with the required provenance header and #src/internal/realpath import. packages/nax/test/unit/agents/nax-owned-writes-copy.test.ts:11 normalizes only import lines and the provenance header; retain its original comparison and add a second probe comparison using the same normalizer. This copy mechanism avoids forbidden nax-agent -> nax imports while exercising real orchestration policy in engine tests. Validate nax-agent typecheck and tests as well as nax's gates because the copies are compiled and imported there. Do not broaden the change to .git matching, sandbox deny lists, policy port context or config opt-in semantics.\n\nUS-005 / deterministic spec parsing and nonblocking lint: packages/nax/src/prd/spec-structure-grammar.ts:132 currently recognizes no dependencies and depends on only; :141 reads none/normalized id lists and :164 collects dependency statements. Extend that grammar, not a parallel parser in the linter. collectStoryDeclarations at :218 already skips fenced lines and restricts dependency prose to the correct subsections; label parsing must preserve those boundaries. packages/nax/src/prd/spec-structure.ts:28 distinguishes undefined from [] and :120 reports contradictions between none and id declarations; :153 exposes extractSpecStructure. The new checker must use this result and suppress only stories with a dependsOn warning, not every warning. packages/nax/src/prd/spec-lint.ts:80 defines BLOCKING_SPEC_LINT_CODES, :89 defines the finding type and :426 assembles lint findings. Import the new checker there and append its findings without changing the blocking-code set. Use a type-only SpecLintFinding import in the new module so consuming it from spec-lint does not introduce a runtime cycle. The label will automatically feed PlanPromptBuilder via extractSpecStructure at packages/nax/src/prompts/builders/plan-builder.ts:347; no builder behavior rewrite is needed. Add binding-table regression coverage in packages/nax/test/unit/prompts/builders/plan-builder-binding-structure.test.ts:67, CLI seam coverage using the injected fixture harness in packages/nax/test/unit/cli/spec-lint-command.test.ts:54 and plan-gate coverage in packages/nax/test/unit/plan/spec-lint-gate.test.ts:44. Preserve existing single-story clean fixtures. New grammar cases belong in spec-structure-dependency-label.test.ts, not the already-large spec-structure.test.ts; new checker cases belong in spec-lint-dependencies.test.ts. The warning is intentionally advisory in ordinary CLI/plan mode; do not accidentally make it blocking or surface existing structural-conflict warnings.\n\nVerification and migration: implementation should first establish failing behavioral regressions at the specified seams, then change code in each independent story. Use targeted Bun tests with explicit paths/timeouts, never bare bun test or bun run nax. Run package-scoped typecheck, check:all and normal test gates; run coverage separately after adding tests because per-file floors are independent of ordinary suite success. packages/nax/package.json:15 includes file-size and complexity ratchets; :33 provides check:complexity:update. Refresh only a stale complexity-baseline row reported by the ratchet, never blanket-relax baselines. packages/nax/package.json:59 confirms the confined suite uses four parallel workers, reinforcing the need for origin filtering. No execution or tests were run during this PRD-only drafting session. Compatibility is additive except the internal approvalEvidence signature and intentional security refusals: root-aware policy retains exact-case behavior on case-sensitive filesystems, while rootless typed writes conservatively refuse stray case variants on every filesystem. The new spec label can enforce previously silent dependencies through existing binding machinery, so retain the distinction between unstated, explicitly empty and conflicting declarations throughout.\n\nRefine-pass audit: enumerated and retained all 69 numbered spec criteria in their original stories: US-001 ACs 1-13, US-002 ACs 1-9, US-003 ACs 1-6, US-004 ACs 1-24 and US-005 ACs 1-17. US-001 additionally retains two explicit failure-table elaborations for null seed at publish and a thrown inventory read; every other failure-table row is already covered. The original regression qualifiers survive, including timer no-options behavior 'as before', resolver canonical-root/on-disk prerequisites, sandboxed-read equivalence, Darwin-only real-stat comparison and otherwise-clean CLI/plan fixtures. Each story already has negative-path criteria (inventory failure/failed CI; leaked and excluded timers; stat errors/refused writes; invalid/conflicting/fenced dependency declarations), so no new scope was added for that audit. Made barrel-import criteria observable through typed invocations and return values and expanded abbreviated seam setups without changing their assertions. Restored the complete five-file spec-recommended context sets for US-004 and US-005; copy-guard/helper and binding-test implementation instructions remain in their descriptions. Reclassified US-005 as medium/tdd-simple because existing extractor and lint consumers provide the integration, while retaining US-004's complex/three-session-tdd security routing. All five binding ids/workdirs and empty dependency arrays remain unchanged. All 14 feature-level out-of-scope items remain verbatim at top level and are echoed verbatim at adjacent story boundaries. No story-local exclusion was hoisted.",
+  "outOfScope": [
+    "Naming which ref the approval base commit came from (`origin/HEAD` merge-base, local `main` merge-base, or a story git ref): `resolveSeed` returns only a sha, and the sha is what the advisor diffs against.",
+    "Changing the advisor decision policy text (`ADVISOR_POLICY` in `src/prompts/builders/advisor-builder.ts`) or the finish state machine's own `approvalEvidence` in `src/finish/advise.ts`.",
+    "Making a changed-file inventory failure a readiness reason that keeps the PR a draft without asking the advisor.",
+    "Tracking fired string-handler timers in `withTimerSpy`: a string handler is passed through unwrapped and, if it fires uncleared, still counts as leaked. No current call site arms one.",
+    "Moving `withTimerSpy` into `@nathapp/nax-test-kit` or merging the two copies.",
+    "Adding an `origin` filter to the `withTimerSpy` call sites other than the executor kill-path test.",
+    "Switching nax-agent's `realOrRaw` or `resolveWithin` to `realpathSync.native`. nax runs on Bun, where `realpathSync` already returns on-disk casing for existing paths, and `naxOwnedPathsPolicy` is only installed by nax.",
+    "Case-folding the `.git` metadata check (`entersGitMetadata` in nax-agent).",
+    "Adding a `root` to `OwnedPathsPolicy.writeRefusal`'s context so the typed-write path can probe instead of always folding.",
+    "Case-folding the sandbox's `rootWriteDenies` / `deniedEntries` lists.",
+    "Whether the macOS sandbox profile matches the denied `.nax/` entries case-insensitively.",
+    "Reading a `Depends:` label, or a dependency list under a separate `### Dependencies` section.",
+    "Surfacing the grammar's existing `dependsOn` and `workdir` conflict warnings through `nax spec lint`.",
+    "Updating the external spec-writing guide in nathapp-io/nax-spec-kit-skills."
+  ],
+  "routingProfile": "cross-agent"
+}

@@ -1,5 +1,6 @@
 import type { OwnedBashCandidate, OwnedPathsPolicy } from "@nathapp/nax-agent";
 import { realOrRaw } from "@nathapp/nax-agent/internal";
+import { isCaseInsensitiveFs } from "./case-insensitive-fs";
 import { isNaxConfigFile, isNaxConfigSegments, naxOwnedKind } from "./nax-owned-writes";
 
 export const NAX_CONFIG_READ_TOOLS: ReadonlySet<string> = new Set([
@@ -18,14 +19,21 @@ export const NAX_CONFIG_WRITE_REFUSAL =
 export const NAX_CONFIG_READ_DISABLED_SUFFIX =
   " -- reads are disabled for this dispatch; run `nax doctor` for details.";
 
+/**
+ * Every candidate is one of nax's config files: at least one names one, and none
+ * names a PRD or the queue. Folds case where the root's filesystem does (#2347),
+ * so a sandboxed read that only NAMES `.NAX/config.json` is treated exactly like
+ * one naming `.nax/config.json`.
+ */
 function configCandidatesOnly(root: string, candidates: readonly OwnedBashCandidate[]): boolean {
+  const foldCase = isCaseInsensitiveFs(root);
   let foundConfig = false;
   for (const candidate of candidates) {
     if (isNaxConfigFile(root, realOrRaw(candidate.lexical))) {
       foundConfig = true;
       continue;
     }
-    const kind = candidate.rel === null ? undefined : naxOwnedKind(candidate.rel);
+    const kind = candidate.rel === null ? undefined : naxOwnedKind(candidate.rel, foldCase);
     if (kind !== undefined) return false;
   }
   return foundConfig;
