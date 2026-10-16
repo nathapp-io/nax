@@ -1,7 +1,7 @@
 // test/unit/commands/migrate.test.ts
 import { describe, expect, it } from "bun:test";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, readdir } from "node:fs/promises";
+import { mkdir, readdir } from "node:fs/promises";
 import path from "node:path";
 import { assertNaxError, withTempDir } from "@test/helpers";
 import { detectGeneratedContent, migrateCommand } from "@/commands/migrate";
@@ -163,106 +163,43 @@ describe("migrateCommand --merge", () => {
   });
 });
 
-describe("migrateCommand — full migration flow", () => {
-  it("throws MIGRATE_NO_CONFIG when .nax/config.json is absent", async () => {
+describe("migrateCommand — no mode", () => {
+  it("rejects with MIGRATE_NO_MODE when neither reclaim nor merge is set", async () => {
     await withTempDir(async (dir) => {
       const err = await migrateCommand({ workdir: dir }).catch((e) => e);
       assertNaxError(err);
-      expect(err.code).toBe("MIGRATE_NO_CONFIG");
+      expect(err.code).toBe("MIGRATE_NO_MODE");
     });
   });
 
-  it("throws MIGRATE_CONFIG_READ_FAILED when config.json is malformed", async () => {
+  it("names both flags in the rejection message", async () => {
     await withTempDir(async (dir) => {
-      await Bun.write(path.join(dir, ".nax", "config.json"), "{not valid json");
       const err = await migrateCommand({ workdir: dir }).catch((e) => e);
       assertNaxError(err);
-      expect(err.code).toBe("MIGRATE_CONFIG_READ_FAILED");
+      expect(err.message).toBe("nax migrate needs --reclaim <name> or --merge <name>");
     });
   });
 
-  it("logs and returns without touching disk when there is nothing to migrate", async () => {
+  it("leaves .nax/metrics.json in place and never creates the configured outputDir", async () => {
     await withTempDir(async (dir) => {
       const outputDir = path.join(dir, "out");
+      const metricsPath = path.join(dir, ".nax", "metrics.json");
       await Bun.write(path.join(dir, ".nax", "config.json"), JSON.stringify({ name: "demo", outputDir }));
-      await migrateCommand({ workdir: dir });
+      await Bun.write(metricsPath, '{"x":1}');
+
+      await migrateCommand({ workdir: dir }).catch(() => undefined);
+
+      expect(existsSync(metricsPath)).toBe(true);
+      expect(await Bun.file(metricsPath).text()).toBe('{"x":1}');
       expect(existsSync(outputDir)).toBe(false);
     });
   });
 
-  it("dry-run reports intended moves without moving anything", async () => {
+  it("rejects with MIGRATE_NO_MODE (not MIGRATE_NO_CONFIG) when .nax/config.json is absent", async () => {
     await withTempDir(async (dir) => {
-      const outputDir = path.join(dir, "out");
-      await Bun.write(path.join(dir, ".nax", "config.json"), JSON.stringify({ name: "demo", outputDir }));
-      await Bun.write(path.join(dir, ".nax", "metrics.json"), "{}");
-
-      await migrateCommand({ workdir: dir, dryRun: true });
-
-      expect(existsSync(path.join(dir, ".nax", "metrics.json"))).toBe(true);
-      expect(existsSync(outputDir)).toBe(false);
-    });
-  });
-
-  it("moves generated content to outputDir and writes .migrated-from", async () => {
-    await withTempDir(async (dir) => {
-      const outputDir = path.join(dir, "out");
-      await Bun.write(path.join(dir, ".nax", "config.json"), JSON.stringify({ name: "demo", outputDir }));
-      await Bun.write(path.join(dir, ".nax", "metrics.json"), '{"x":1}');
-      await Bun.write(path.join(dir, ".nax", "runs", "run-1", "log.jsonl"), "{}");
-
-      await migrateCommand({ workdir: dir });
-
-      expect(existsSync(path.join(dir, ".nax", "metrics.json"))).toBe(false);
-      expect(existsSync(path.join(outputDir, "metrics.json"))).toBe(true);
-      expect(existsSync(path.join(outputDir, "runs", "run-1", "log.jsonl"))).toBe(true);
-      const marker = await Bun.file(path.join(outputDir, ".migrated-from")).json();
-      expect(marker.from).toBe(dir);
-      expect(typeof marker.migratedAt).toBe("string");
-    });
-  });
-
-  it("falls back to the workdir basename as projectKey when config.name is blank", async () => {
-    await withTempDir(async (dir) => {
-      const outputDir = path.join(dir, "out");
-      await Bun.write(path.join(dir, ".nax", "config.json"), JSON.stringify({ name: "  ", outputDir }));
-      await Bun.write(path.join(dir, ".nax", "metrics.json"), "{}");
-
-      await migrateCommand({ workdir: dir });
-
-      expect(existsSync(path.join(outputDir, "metrics.json"))).toBe(true);
-    });
-  });
-
-  it("throws MIGRATE_CONFLICT when the destination already exists", async () => {
-    await withTempDir(async (dir) => {
-      const outputDir = path.join(dir, "out");
-      await Bun.write(path.join(dir, ".nax", "config.json"), JSON.stringify({ name: "demo", outputDir }));
-      await Bun.write(path.join(dir, ".nax", "metrics.json"), "{}");
-      await Bun.write(path.join(outputDir, "metrics.json"), "already here");
-
       const err = await migrateCommand({ workdir: dir }).catch((e) => e);
       assertNaxError(err);
-      expect(err.code).toBe("MIGRATE_CONFLICT");
-    });
-  });
-
-  it("throws MIGRATE_MOVE_FAILED (non-EXDEV) when rename fails for another reason", async () => {
-    await withTempDir(async (dir) => {
-      const outputDir = path.join(dir, "out");
-      await Bun.write(path.join(dir, ".nax", "config.json"), JSON.stringify({ name: "demo", outputDir }));
-      await Bun.write(path.join(dir, ".nax", "metrics.json"), "{}");
-      // Pre-create outputDir read-only so the rename into it fails with EACCES,
-      // exercising the generic (non-EXDEV) move-failure branch.
-      await mkdir(outputDir, { recursive: true });
-      await chmod(outputDir, 0o555);
-
-      try {
-        const err = await migrateCommand({ workdir: dir }).catch((e) => e);
-        assertNaxError(err);
-        expect(err.code).toBe("MIGRATE_MOVE_FAILED");
-      } finally {
-        await chmod(outputDir, 0o755);
-      }
+      expect(err.code).toBe("MIGRATE_NO_MODE");
     });
   });
 });

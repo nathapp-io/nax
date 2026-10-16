@@ -1,10 +1,16 @@
 /**
- * nax migrate — moves generated content out of .nax/ into the output directory.
+ * nax migrate — project-name collision recovery.
  *
- * Generated artefacts (runs/, metrics.json, prompt-audit/, etc.) accumulate under
- * .nax/ in legacy installations. This command moves them to ~/.nax/<projectKey>/
- * (or the path configured in outputDir) so that .nax/ can be treated as input-only
- * and checked into version control safely.
+ * Two operator modes, both global-state operations keyed on a project name:
+ * `--reclaim <name>` archives `~/.nax/<name>/` so the name is free again, and
+ * `--merge <name>` repoints that name's stored identity at the current workdir.
+ * With neither flag `migrateCommand` refuses with `MIGRATE_NO_MODE`.
+ *
+ * The module also still carries the generated-content helpers
+ * (`detectGeneratedContent`, `partitionTrackedCandidates`,
+ * `autoMigrateGeneratedContent`); `migrateCommand` no longer calls them, because
+ * moving live in-repo `.nax/` artifacts to the output directory took them away
+ * from the readers inside the project.
  */
 
 import { existsSync } from "node:fs";
@@ -15,7 +21,7 @@ import { validateProjectName } from "../cli/init";
 import { globalConfigDir } from "../config/paths";
 import { NaxError } from "../errors";
 import { getLogger, getSafeLogger } from "../logger";
-import { projectOutputDir, readProjectIdentity, writeProjectIdentity } from "../runtime";
+import { readProjectIdentity, writeProjectIdentity } from "../runtime";
 import { gitWithTimeout } from "../utils/git";
 
 /**
@@ -239,11 +245,11 @@ export async function partitionTrackedCandidates(
  * Startup auto-migration: move generated `.nax/` content to the output dir,
  * skipping everything git still tracks, and never reject.
  *
- * The full-migration CLI path uses the same partition, so anything moved
- * here is moved by `nax migrate` too — and anything skipped here is skipped
- * there. The two paths only differ in their reporting (auto logs the
- * tracked-content warn and never rejects; CLI logs a per-candidate info line
- * for each skip and lets `migrateCommand`'s existing error semantics stand).
+ * The partition is shared with the `nax migrate` CLI path, so anything skipped
+ * here is skipped there. Since that CLI path no longer performs a move, this
+ * helper's own `migrateCommand({ workdir })` call always refuses with
+ * `MIGRATE_NO_MODE` and is swallowed by the warn branch below — the tracked
+ * classification and its reporting are all this function still contributes.
  *
  * Detection, partition, and `migrateCommand` failures are swallowed: the run
  * must keep going even if `.nax/config.json` is missing or the output dir
@@ -320,8 +326,6 @@ export async function autoMigrateGeneratedContent(workdir: string): Promise<void
 
 export interface MigrateOptions {
   workdir: string;
-  /** When true, log intended moves without touching the filesystem. */
-  dryRun?: boolean;
   /** Project name to archive-and-free from ~/.nax/<name>/. */
   reclaim?: string;
   /** Project name to rewrite identity for current workdir. */
@@ -329,7 +333,13 @@ export interface MigrateOptions {
 }
 
 /**
- * Execute the migration: move generated content from .nax/ to the output directory.
+ * Recover a project-name collision: archive the named global project directory
+ * (`--reclaim`) or repoint its identity at this workdir (`--merge`).
+ *
+ * With neither mode set the command refuses with `MIGRATE_NO_MODE` before
+ * touching anything. It used to move generated `.nax/` content into the output
+ * directory by default, which renamed live in-repo artifacts out from under the
+ * readers that need them.
  */
 export async function migrateCommand(options: MigrateOptions): Promise<void> {
   const logger = getLogger();
@@ -401,124 +411,8 @@ export async function migrateCommand(options: MigrateOptions): Promise<void> {
     return;
   }
 
-  const naxDir = path.join(options.workdir, ".nax");
-
-  const configPath = path.join(naxDir, "config.json");
-  if (!existsSync(configPath)) {
-    throw new NaxError("No .nax/config.json found — run nax init first", "MIGRATE_NO_CONFIG", {
-      stage: "migrate",
-      workdir: options.workdir,
-    });
-  }
-
-  let config: { name?: string; outputDir?: string } = {};
-  try {
-    config = await Bun.file(configPath).json();
-  } catch (e) {
-    throw new NaxError("Failed to read .nax/config.json", "MIGRATE_CONFIG_READ_FAILED", {
-      stage: "migrate",
-      cause: e,
-    });
-  }
-
-  const projectKey = config.name?.trim() || path.basename(options.workdir);
-  const destBase = projectOutputDir(projectKey, config.outputDir);
-  const candidates = await detectGeneratedContent(naxDir);
-
-  if (candidates.length === 0) {
-    logger.info("migrate", "Nothing to migrate — already up to date", { storyId: "_migrate" });
-    return;
-  }
-
-  // US-003: git-tracked generated content cannot be moved out of .nax/ — the
-  // next auto-commit would restore it, log a per-file error, and leave the
-  // destination behind. Partition here so the CLI path matches the startup
-  // helper; tracked candidates are surfaced per-file, migratable ones are moved
-  // (or reported as moves, under --dry-run).
-  const { migratable, tracked } = await partitionTrackedCandidates(options.workdir, candidates);
-
-  if (migratable.length === 0) {
-    // Every candidate was tracked — log each skip so the operator sees which
-    // paths the migration refused, then return. No `Nothing to migrate` line
-    // here: there IS something to migrate, the repo just blocks it.
-    for (const c of tracked) {
-      const rel = path.relative(options.workdir, c.srcPath);
-      const msg = options.dryRun ? `[dry-run] Skip (git-tracked): ${rel}` : `Skipping git-tracked: ${rel}`;
-      logger.info("migrate", msg, { storyId: "_migrate" });
-    }
-    return;
-  }
-
-  if (options.dryRun) {
-    for (const c of tracked) {
-      const rel = path.relative(options.workdir, c.srcPath);
-      logger.info("migrate", `[dry-run] Skip (git-tracked): ${rel}`, { storyId: "_migrate" });
-    }
-    for (const c of migratable) {
-      logger.info("migrate", `[dry-run] Would move: ${c.srcPath} -> ${path.join(destBase, c.name)}`, {
-        storyId: "_migrate",
-      });
-    }
-    return;
-  }
-
-  for (const c of tracked) {
-    const rel = path.relative(options.workdir, c.srcPath);
-    logger.info("migrate", `Skipping git-tracked: ${rel}`, { storyId: "_migrate" });
-  }
-
-  await mkdir(destBase, { recursive: true });
-
-  let moved = 0;
-  for (const candidate of migratable) {
-    const dest = path.join(destBase, candidate.name);
-    await mkdir(path.dirname(dest), { recursive: true });
-
-    if (existsSync(dest)) {
-      throw new NaxError(
-        `Migration conflict: destination already exists.\n  Source:      ${candidate.srcPath}\n  Destination: ${dest}\n  Remove the destination or run nax migrate --dry-run to inspect.`,
-        "MIGRATE_CONFLICT",
-        { stage: "migrate", src: candidate.srcPath, dest },
-      );
-    }
-
-    try {
-      await rename(candidate.srcPath, dest);
-    } catch (err: unknown) {
-      const isXdev = err instanceof Error && "code" in err && (err as NodeJS.ErrnoException).code === "EXDEV";
-      if (isXdev) {
-        throw new NaxError(
-          [
-            "Cross-filesystem migration detected.",
-            `  Source:      ${candidate.srcPath}`,
-            `  Destination: ${dest}`,
-            "  Set outputDir in .nax/config.json to a path on the same filesystem as .nax/.",
-          ].join("\n"),
-          "MIGRATE_CROSS_FS",
-          { stage: "migrate", src: candidate.srcPath, dest },
-        );
-      }
-      throw new NaxError(`Failed to move ${candidate.srcPath}`, "MIGRATE_MOVE_FAILED", {
-        stage: "migrate",
-        src: candidate.srcPath,
-        dest,
-        cause: err,
-      });
-    }
-
-    moved++;
-    logger.info("migrate", `Moved: ${candidate.name}`, { storyId: "_migrate" });
-  }
-
-  if (moved > 0) {
-    await Bun.write(
-      path.join(destBase, ".migrated-from"),
-      JSON.stringify({ from: options.workdir, migratedAt: new Date().toISOString() }, null, 2),
-    );
-
-    logger.info("migrate", `Migration complete: ${moved} entries moved`, {
-      storyId: "_migrate",
-      destBase,
-    });
-  }
+  throw new NaxError("nax migrate needs --reclaim <name> or --merge <name>", "MIGRATE_NO_MODE", {
+    stage: "migrate",
+    workdir: options.workdir,
+  });
 }

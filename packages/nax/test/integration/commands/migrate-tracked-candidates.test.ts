@@ -6,7 +6,7 @@
  * auto-commit restores it, logs a per-file error, and leaves the destination
  * behind — so the run after that refuses with `MIGRATE_CONFLICT`, stranding
  * every other candidate. `partitionTrackedCandidates` splits the candidates so
- * both the startup helper and the `nax migrate` CLI move untracked content only.
+ * only untracked content is ever a migration candidate.
  *
  * Every fixture is a real git repo built inside a `makeTempDir()` directory:
  * the feature's whole input is `git ls-files` output, so a stubbed git could
@@ -24,7 +24,6 @@ import {
   autoMigrateGeneratedContent,
   detectGeneratedContent,
   type MigrateCandidate,
-  migrateCommand,
   partitionTrackedCandidates,
 } from "@/commands/migrate";
 import { initLogger, resetLogger } from "@/logger";
@@ -364,7 +363,6 @@ interface AutoMigrateFixture {
   readonly dir: string;
   readonly outputDir: string;
   readonly manifestAbsPath: string;
-  readonly runsAbsPath: string;
 }
 
 /**
@@ -381,20 +379,15 @@ async function makeAutoMigrateFixture(): Promise<AutoMigrateFixture> {
   await writeFixture(dir, MANIFEST_REL);
   await writeFixture(dir, RUNS_REL);
   commitPaths(dir, [MANIFEST_REL]);
-  return { dir, outputDir, manifestAbsPath: join(dir, MANIFEST_REL), runsAbsPath: join(dir, RUNS_REL) };
+  return { dir, outputDir, manifestAbsPath: join(dir, MANIFEST_REL) };
 }
 
 describe("US-003 autoMigrateGeneratedContent", () => {
-  test("US-003 AC5: the untracked entry is moved and the committed one stays put", async () => {
-    const fixture = await makeAutoMigrateFixture();
-
-    await autoMigrateGeneratedContent(fixture.dir);
-
-    expect(existsSync(join(fixture.outputDir, RUNS_NAME, "r.json"))).toBe(true);
-    expect(existsSync(join(fixture.dir, ".nax", RUNS_NAME))).toBe(false);
-    expect(existsSync(fixture.manifestAbsPath)).toBe(true);
-  });
-
+  // US-002 removed the generated-content move from `migrateCommand`, so
+  // `autoMigrateGeneratedContent` can no longer complete a migration (it calls
+  // that command) and the two cases that asserted content was moved are gone
+  // with the branch they covered. What remains here is the classification
+  // behaviour the partition owns.
   test("US-003 AC6: the tracked candidate is reported once, with the git rm fix", async () => {
     const fixture = await makeAutoMigrateFixture();
 
@@ -410,23 +403,6 @@ describe("US-003 autoMigrateGeneratedContent", () => {
     expect(data.count).toBe(1);
     expect(data.paths).toEqual([MANIFEST_REL]);
     expect(data.fix).toBe(`git rm -r --cached ${MANIFEST_REL}`);
-  });
-
-  test("US-003 AC7: a second run reports no migration failure and leaves the tracked file alone", async () => {
-    const fixture = await makeAutoMigrateFixture();
-
-    const first = await captureLogs(() => autoMigrateGeneratedContent(fixture.dir));
-    // The first run moved the untracked candidate, so the second run has only
-    // the tracked one left — which is exactly the state that used to abort.
-    expect(atLevel(first.entries, "info", FOUND_GENERATED_MSG)).toHaveLength(1);
-    expect(existsSync(join(fixture.outputDir, RUNS_NAME, "r.json"))).toBe(true);
-
-    const second = await captureLogs(() => autoMigrateGeneratedContent(fixture.dir));
-
-    expect(atLevel(second.entries, "warn", AUTO_MIGRATION_FAILED_MSG)).toEqual([]);
-    // …and the tracked candidate is still detected and skipped, not silently ignored.
-    expect(atLevel(second.entries, "warn", SKIP_TRACKED_MSG)).toHaveLength(1);
-    expect(existsSync(fixture.manifestAbsPath)).toBe(true);
   });
 
   test("US-003 AC8: when every candidate is committed nothing is migrated and nothing is deleted", async () => {
@@ -498,50 +474,5 @@ describe("US-003 autoMigrateGeneratedContent", () => {
 
     expect(result).toBe("resolved");
     expect(atLevel(entries, "warn", AUTO_MIGRATION_FAILED_MSG)).toHaveLength(1);
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// migrateCommand — the CLI path shares the same partition
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("US-003 migrateCommand", () => {
-  test("US-003 AC11: only the untracked candidate is moved", async () => {
-    const fixture = await makeAutoMigrateFixture();
-
-    const { entries } = await captureLogs(() => migrateCommand({ workdir: fixture.dir }));
-
-    expect(existsSync(join(fixture.outputDir, RUNS_NAME, "r.json"))).toBe(true);
-    expect(existsSync(join(fixture.dir, ".nax", RUNS_NAME))).toBe(false);
-    expect(existsSync(fixture.manifestAbsPath)).toBe(true);
-    expect(existsSync(join(fixture.outputDir, "features"))).toBe(false);
-    // The skipped candidate is still surfaced on the CLI path.
-    expect(
-      entries.some(
-        (entry) =>
-          entry.level === "info" && (entry.message.includes(MANIFEST_NAME) || entry.message.includes(MANIFEST_REL)),
-      ),
-    ).toBe(true);
-  });
-
-  test("US-003 AC12: dry-run skips the tracked candidate and would move only the untracked one", async () => {
-    const fixture = await makeAutoMigrateFixture();
-
-    const { entries } = await captureLogs(() => migrateCommand({ workdir: fixture.dir, dryRun: true }));
-
-    const skips = entries.filter((entry) => entry.message.startsWith("[dry-run] Skip (git-tracked)"));
-    expect(skips).toHaveLength(1);
-    // The skip line names the candidate relative to the workdir — an absolute
-    // srcPath would not be actionable in the operator's shell.
-    expect(skips[0]?.message).toContain(`[dry-run] Skip (git-tracked): ${join(".nax", MANIFEST_NAME)}`);
-
-    const moves = entries.filter((entry) => entry.message.includes("[dry-run] Would move"));
-    expect(moves).toHaveLength(1);
-    expect(moves[0]?.message).toContain(join(".nax", RUNS_NAME));
-    expect(moves[0]?.message).not.toContain(MANIFEST_REL);
-
-    expect(existsSync(fixture.manifestAbsPath)).toBe(true);
-    expect(existsSync(fixture.runsAbsPath)).toBe(true);
-    expect(existsSync(fixture.outputDir)).toBe(false);
   });
 });

@@ -401,9 +401,8 @@ program
 // ── migrate ───────────────────────────────────────────
 program
   .command("migrate")
-  .description("Migrate generated content from .nax/ to the output directory (~/.nax/<project>/)")
+  .description("Recover a project-name collision: --reclaim or --merge")
   .option("-d, --dir <path>", "Project directory", process.cwd())
-  .option("--dry-run", "Preview moves without touching the filesystem", false)
   .option("--reclaim <name>", "Archive ~/.nax/<name>/ to free the project name")
   .option("--merge <name>", "Rewrite the identity for <name> to point to this workdir")
   .action(async (options) => {
@@ -420,7 +419,6 @@ program
     try {
       await migrateCommand({
         workdir,
-        dryRun: options.dryRun,
         reclaim: options.reclaim,
         merge: options.merge,
       });
