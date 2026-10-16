@@ -3,7 +3,7 @@
   "feature": "remove-content-migration",
   "branchName": "feat/remove-content-migration",
   "createdAt": "2026-10-16T00:00:00.000Z",
-  "updatedAt": "2026-10-16T03:02:29.171Z",
+  "updatedAt": "2026-10-16T03:20:05.657Z",
   "userStories": [
     {
       "id": "US-001",
@@ -157,8 +157,8 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -170,7 +170,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "native",
         "initialProfileId": "native-deepseek",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "simple",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/commands/migrate.ts",
@@ -217,7 +219,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "1bc6e661eb198072bb06360fcadb7591fec27637"
     }
   ],
   "analysis": "Goal: remove nax's generated-content migration (the auto-migration at the start of every `nax run` and the default `nax migrate` move). `nax migrate --reclaim <name>` and `--merge <name>` stay unchanged; they recover project-name collisions. Bare `nax migrate` becomes a usage error (NaxError MIGRATE_NO_MODE), and `--dry-run` is removed. Why: the scan matches live in-repo data (.nax/features/<f>/sessions/, status.json, stories/<s>/context-manifest-*.json) that current nax writes and reads. The next run's auto-migration (setupRun -> _runSetupDeps.autoMigrateGeneratedContent) renames them into ~/.nax/<project>/features/..., conflicts with an earlier move, throws MIGRATE_CONFLICT and logs 'Auto-migration failed'. A successful move also takes live data away from in-repo readers. Key files (all under packages/nax unless noted): src/execution/lifecycle/run-setup.ts (setupRun, _runSetupDeps; remove the autoMigrateGeneratedContent member and its call between status-writer priming and project-identity claim); src/commands/migrate.ts (MigrateOptions, migrateCommand, GENERATED_NAMES, GENERATED_FEATURE_SUBNAMES, detectGeneratedContent, partitionTrackedCandidates, autoMigrateGeneratedContent, MigrateCandidate, _gitDeps re-export; keep --reclaim and --merge branches in that order; mkdir and rename imports stay, gitWithTimeout/readdir/getSafeLogger/projectOutputDir imports go because biome rejects unused imports); src/commands/index.ts (exports); bin/nax.ts (~line 400, migrate command definition: drop --dry-run, new description 'Recover a project-name collision: --reclaim or --merge'; existing catch prints 'Error: <message>' in red and exits 1); scripts/baselines/complexity-baseline.json (records src/commands/migrate.ts at detectGeneratedContent: 54, migrateCommand: 41; the ratchet fails stale rows, so regenerate with `bun run check:complexity:update` in both US-002 and US-003); scripts/check-worktree-id-ssot.ts keeps migrate.ts in ALLOWED_FILES and needs no change. Tests: delete test/unit/execution/lifecycle/run-setup-auto-migrate.test.ts (US-001); create test/unit/execution/lifecycle/run-setup-no-migration.test.ts (US-001), copying the local captureLogs helper from test/integration/commands/migrate-tracked-candidates.test.ts because US-003 deletes that file; remove the 'migrateCommand — full migration flow' describe block and the chmod import from test/unit/commands/migrate.test.ts (US-002), and later the detectGeneratedContent block plus its import and the mkdir import (US-003); remove the 'US-003 migrateCommand' describe block from migrate-tracked-candidates.test.ts (US-002) then delete the whole file (US-003); create test/unit/cli/migrate-cli.test.ts (US-002), which spawns `bun bin/nax.ts` with NAX_GLOBAL_CONFIG_DIR set to a temp dir (deliberate exception to the forbidden-patterns-tests rule; precedent test/unit/cli/trust.test.ts; bin/nax.ts defines the command inline and cannot be imported). Docs (US-003): docs/guides/cli-reference.md nax migrate section (drop the --dry-run example and flag-table row, describe collision recovery only, keep --reclaim/--merge examples), packages/nax/README.md migrate table row ('Recover a project-name collision: `--reclaim <name>` or `--merge <name>`'), docs/architecture/subsystems.md ~line 1745 (migrateCommand handles --reclaim/--merge project-identity collision recovery only). No source file outside migrate.ts and commands/index.ts imports the removed symbols, so the compiler is the dependency check. Risks: leaving a stale complexity baseline row fails check:all; leaving an unused import fails lint:biome; the MIGRATE_NO_MODE throw must happen before any file access (no config read, no mkdir) so that a missing .nax/config.json still yields MIGRATE_NO_MODE and a configured outputDir is never created. In US-001 tests, mock runtime.outputDir to a dir inside the temp dir and release both locks (releaseLock(workdir) and the feature lock) before a second setupRun. Never run bare `bun test` and never `bun run nax`; run package commands from packages/nax. The tracked .nax/features/run-hygiene-bugs/.nax-acceptance.test.ts imports removed functions but is out of scope (.nax/ is read-only to the run).",
