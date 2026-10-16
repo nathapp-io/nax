@@ -402,7 +402,7 @@ nax workflow promote -f auth --yes       # promote, once every check passes
 
 | Flag | Description |
 |:-----|:------------|
-| `--yes` | Promote the PR once every check passes. Without it `promote` reports the checks and stops |
+| `--yes` | Promote the PR once every check passes — the four actions below. Without it `promote` reports the checks and writes nothing, and so does a `--yes` run whose checks fail |
 
 Validation, in order, each refusing with exit `1` and writing nothing: the feature name; the newest
 readable run; the record's `outcome` must be `draft`; the record must carry a PR url; a forge must be
@@ -422,23 +422,55 @@ ruling even when the checks are green now. `ci-green` reads HEAD (`git rev-parse
 report to it: a green poll for a different commit is `unavailable`, never green. A HEAD that cannot be
 read is a `1`, not a check failure.
 
-Plain output is one line per check, then the dry-run line when both passed:
+##### With `--yes`
+
+`--yes` with both checks passing is what promotes. The four actions run in this order, each awaited
+before the next starts and stopping at the first forge command that exits non-zero:
+
+| Action | What it does | Skipped when |
+|:-------|:-------------|:-------------|
+| `tick` | Reads the PR body again immediately before writing — so an edit made while the checks ran is not reverted — ticks every ruled item's checklist line and rewrites the body | No line ticked: no ruled item still has its `- [ ] **<id>**` line in the body |
+| `comment` | Posts one evidence comment built from the sidecar's entries | The sidecar has no entries |
+| `ready` | Marks the PR ready: `gh pr ready` / `glab mr update --ready` | Never |
+| `record` | Rewrites the run's newest decisions sidecar to `outcome: "promoted"` with the PR url, creating an empty-decisions one when the run has none | Never |
+
+`tick` changes only the first line of each matched checklist entry; every other line of the body,
+indented continuations included, is written back verbatim. The sidecar's own `outcome` is overwritten
+whatever it was, `abandoned` included, and a sidecar the run already has keeps its entries, its
+reasons and its file name.
+
+A forge command that fails stops the promotion there: exit `1` with
+`promote stopped at <action>: <stderr or exit code>`, the earlier actions already applied. Only the
+last action writes the sidecar, so a run that stops earlier leaves its `outcome` as it was, and the
+recovery for a failure at `ready` is `nax workflow record --outcome promoted` once the PR really is
+ready. A re-run before that ticks idempotently — an already-ticked line is left alone — and posts a
+second evidence comment: the actions are not de-duplicated.
+
+Plain output is one line per check, one line per action when `--yes` ran, then the result line:
 
 ```
 pass  items-ruled
 pass  ci-green
-ready to promote; rerun with --yes
+tick  done
+comment  done
+ready  done
+record  done
+promoted https://github.com/acme/app/pull/7
 ```
 
+Without `--yes` the action lines do not appear and the result line is the dry run's
+`ready to promote; rerun with --yes`.
+
 `--json` prints `{ "feature", "runId", "url", "dryRun", "promoted", "checks", "actions" }`, where
-`checks` holds the two checks in the order above with their `passed` flag and their `detail`.
+`checks` holds the two checks in the order above with their `passed` flag and their `detail`, and
+`actions` holds each action with its `done` / `skipped` status in the order it ran.
 
 **Exit codes:**
 
 | Exit | Meaning |
 |:-----|:--------|
 | `0` | Both checks passed |
-| `1` | nax could not answer: invalid feature name, no workflow result for the feature, a run that never started its feature steps, a record that is not a draft, no PR url, no forge, an already-ready PR, or a HEAD that cannot be read |
+| `1` | nax could not answer: invalid feature name, no workflow result for the feature, a run that never started its feature steps, a record that is not a draft, no PR url, no forge, an already-ready PR, a HEAD that cannot be read, or a `--yes` forge write that failed (`promote stopped at <action>: <detail>`) |
 | `2` | A check failed — an open item has no ruling, or CI is not green on the pushed head. Nothing is written, even with `--yes` |
 
 The sidecar is git-ignored and left uncommitted. None of the three subcommands commits, pushes or

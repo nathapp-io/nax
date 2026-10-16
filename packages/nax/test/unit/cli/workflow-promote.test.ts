@@ -46,12 +46,10 @@ describe("nax workflow promote --json (the dry run)", () => {
     });
   });
 
-  test("AC-2: the run reads the PR and writes none of it back, with or without --yes", async () => {
+  test("AC-2: the dry run reads the PR and writes none of it back", async () => {
     await withTempDir(async (dir) => {
       const fx = await makePromoteFixture(dir);
       await fx.run(["--json"]);
-      fx.reset();
-      await fx.run(["--yes", "--json"]);
       expect(fx.forgeCalls).toContainEqual(["gh", "pr", "view", PROMOTE_URL, "--json", "isDraft,body,url"]);
       expect(prWrites(fx.forgeCalls)).toEqual([]);
       expect(emittedJson(fx.out).dryRun).toBe(true);
@@ -282,7 +280,7 @@ describe("nax workflow promote registration", () => {
         fx.deps,
         fx.forgeDeps,
       );
-      expect(emittedJson(fx.out).dryRun).toBe(true);
+      expect(emittedJson(fx.out).promoted).toBe(true);
       fx.reset();
       await fx.run(["--yes", "--json"]);
       expect(fx.codes).toEqual([code]);

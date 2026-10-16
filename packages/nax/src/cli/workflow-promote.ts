@@ -1,28 +1,38 @@
 /**
- * `nax workflow promote` (SPEC-workflow-record-promote, US-004) — the validation steps, the
- * `items-ruled` and `ci-green` checks, and the dry run.
+ * `nax workflow promote` (SPEC-workflow-record-promote, US-004 + US-005) — the validation steps, the
+ * `items-ruled` and `ci-green` checks, the dry run, and the four forge writes `--yes` runs.
  *
  * Promotion has rules a finishing tool would otherwise re-derive on every run: the record must still
  * be a draft, the PR it names must still be a draft, and every item the run left open must carry a
  * ruling and the pushed head's checks must be green. `promote` states them once and reports them as
  * two named checks, so a caller reads which rule refused instead of parsing a message.
  *
- * This story writes nothing to the forge: with every check passing it prints the dry-run result
- * whether or not `--yes` was given, and the `--yes` writes (tick, comment, ready, record) are
- * US-005's. Every refusal happens before that point, so a failed call leaves the run directory and
- * the PR exactly as they were.
+ * With `--yes` and both checks passed (US-005) the four actions run in order, each awaited before the
+ * next and stopping at the first forge write that fails: `tick` rewrites the PR body's checklist
+ * lines, `comment` posts one evidence comment built from the sidecar, `ready` marks the PR ready and
+ * `record` rewrites the sidecar's own `outcome` to `promoted`. Everything before that point performs
+ * no write, so a refusal leaves the run directory and the PR exactly as they were.
  *
  * The workflow leaves are reached by relative path, not through the `@/workflow` barrel, for the
  * reason `src/cli/workflow.ts` gives: that barrel loads `step-context`, which imports `@/cli`. HEAD
  * is read through `forgeDeps.forge.run` rather than `readHead` (`src/workflow/git.ts`) for the same
  * reason, and `src/cli/workflow.ts` is imported type-only, which is erased.
  */
+import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
-import { detectForge, type ForgeDeps, type ForgeKind } from "@/forge";
+import { detectForge, type ForgeDeps, type ForgeKind, type ForgeRunResult } from "@/forge";
 import { validateFeatureName } from "@/utils/feature-name";
-import { newestSidecar } from "../workflow/decisions-sidecar";
+import {
+  type DecisionEntry,
+  type DecisionsSidecar,
+  isoStamp,
+  newestSidecar,
+  sidecarFileName,
+  writeSidecar,
+} from "../workflow/decisions-sidecar";
 import { readPrState } from "../workflow/pr-state";
+import { commentArgv, editBodyArgv, evidenceComment, markReadyArgv, tickChecklist } from "../workflow/promote";
 import { type LoadedRun, loadRunVerdict } from "../workflow/run-verdict";
 import type { WorkflowCliDeps } from "./workflow";
 import type { WorkflowForgeDeps } from "./workflow-forge";
@@ -31,10 +41,7 @@ export interface WorkflowPromoteOptions {
   /** The project directory, as for `status`. */
   readonly dir: string;
   readonly feature: string;
-  /**
-   * The promotion itself. US-004 performs no forge write, so this changes no output; US-005 runs the
-   * tick, comment, ready and record actions behind it.
-   */
+  /** The promotion itself: with both checks passed, run the four actions. */
   readonly yes: boolean;
   readonly json: boolean;
 }
@@ -110,11 +117,16 @@ async function headSha(forge: ForgeDeps, cwd: string): Promise<string> {
   return result.stdout.trim();
 }
 
+/** The run's newest sidecar as `newestSidecar` returns it, or null when the run has none. */
+interface FoundSidecar {
+  readonly path: string;
+  readonly sidecar: DecisionsSidecar;
+}
+
 /** `items-ruled`: every open item id carries a ruling in the run's newest sidecar. */
-async function itemsRuled(loaded: LoadedRun): Promise<PromoteCheck> {
+function itemsRuled(loaded: LoadedRun, found: FoundSidecar | null): PromoteCheck {
   const ids = loaded.openItems.map((item) => item.id);
   if (ids.length === 0) return { name: "items-ruled", passed: true, detail: "" };
-  const found = await newestSidecar(loaded.runDir);
   if (found === null) {
     return { name: "items-ruled", passed: false, detail: "no decisions recorded; run nax workflow record" };
   }
@@ -146,21 +158,116 @@ async function ciGreen(input: {
 
 const allPassed = (checks: readonly PromoteCheck[]): boolean => checks.every((check) => check.passed);
 
-/** The report. US-004 performs no forge write, so the run is always the dry run. */
-function reportOf(
-  opts: WorkflowPromoteOptions,
-  loaded: LoadedRun,
-  url: string,
-  checks: PromoteCheck[],
-): WorkflowPromoteReport {
+/** Everything the four actions write with: the run, its PR, the forge, and the sidecar read once. */
+interface PromoteTarget {
+  readonly opts: WorkflowPromoteOptions;
+  readonly loaded: LoadedRun;
+  readonly url: string;
+  readonly forge: ForgeKind;
+  readonly forgeDeps: WorkflowForgeDeps;
+  /** One read serves the `items-ruled` check and all three actions that need the entries. */
+  readonly found: FoundSidecar | null;
+}
+
+/** The three actions that are a forge command; `record` writes to disk instead. */
+type ForgeAction = "tick" | "comment" | "ready";
+
+/** The action line the failure names, and what the forge said: its stderr, or its bare exit code. */
+function stopped(action: ForgeAction, result: ForgeRunResult): NaxError {
+  return invalid(`promote stopped at ${action}: ${result.stderr.trim() || `exit ${result.exitCode}`}`);
+}
+
+/** Runs one forge write. A non-zero exit stops the promotion there; the later actions never run. */
+async function forgeWrite(target: PromoteTarget, action: ForgeAction, argv: string[]): Promise<void> {
+  const result = await target.forgeDeps.forge.run(argv, { cwd: target.opts.dir });
+  if (result.exitCode !== 0) throw stopped(action, result);
+}
+
+/**
+ * `tick`: the body as the forge holds it *now* — read again immediately before the write, so an edit
+ * a human made while the checks ran is not reverted — with every ruled entry's line ticked. Nothing
+ * to tick is `skipped`, not a failure: a checklist line may have been edited away.
+ */
+async function tickAction(target: PromoteTarget, entries: readonly DecisionEntry[]): Promise<PromoteAction> {
+  const state = await readPrState(target.forge, target.url, target.forgeDeps.forge, target.opts.dir);
+  const { body, ticked } = tickChecklist(state.body, entries);
+  if (ticked.length === 0) return { name: "tick", status: "skipped" };
+  await forgeWrite(target, "tick", editBodyArgv(target.forge, target.url, body));
+  return { name: "tick", status: "done" };
+}
+
+/** `comment`: the one evidence comment the sidecar's entries produce; a run with none posts nothing. */
+async function commentAction(target: PromoteTarget, entries: readonly DecisionEntry[]): Promise<PromoteAction> {
+  if (entries.length === 0) return { name: "comment", status: "skipped" };
+  await forgeWrite(target, "comment", commentArgv(target.forge, target.url, evidenceComment(entries)));
+  return { name: "comment", status: "done" };
+}
+
+/** `ready`: the PR itself, once its body and the evidence comment are in place. */
+async function readyAction(target: PromoteTarget): Promise<PromoteAction> {
+  await forgeWrite(target, "ready", markReadyArgv(target.forge, target.url));
+  return { name: "ready", status: "done" };
+}
+
+/** The sidecar a run with none gets: no rulings to carry, and the outcome this run just produced. */
+function promotedSidecar(target: PromoteTarget, now: Date): DecisionsSidecar {
   return {
-    feature: opts.feature,
-    runId: loaded.runId,
-    url,
-    dryRun: true,
-    promoted: false,
-    checks,
-    actions: [],
+    artifact: `${target.loaded.runId}/result.json`,
+    feature: target.opts.feature,
+    resumedAt: isoStamp(now),
+    reasons: target.loaded.reasons,
+    decisions: [],
+    outcome: "promoted",
+    url: target.url,
+  };
+}
+
+/**
+ * `record`: the run's newest sidecar — or a new empty one — rewritten to say `promoted`. A sidecar
+ * the run already has keeps every other field (its entries, its reasons, its file name), so the
+ * ruling a human recorded survives; its `outcome` is overwritten whatever it was, `abandoned`
+ * included.
+ */
+async function recordAction(target: PromoteTarget): Promise<PromoteAction> {
+  const now = target.forgeDeps.now();
+  const found = target.found;
+  const path = found?.path ?? join(target.loaded.runDir, sidecarFileName(now));
+  const sidecar: DecisionsSidecar = found
+    ? { ...found.sidecar, outcome: "promoted", url: target.url }
+    : promotedSidecar(target, now);
+  await writeSidecar(path, sidecar);
+  return { name: "record", status: "done" };
+}
+
+/**
+ * The four actions, in the spec's order, each awaited before the next starts: a failure throws out of
+ * here, so the actions after it never run — `ready` is never issued for a body that was not ticked.
+ */
+async function promoteActions(target: PromoteTarget): Promise<PromoteAction[]> {
+  const entries = target.found?.sidecar.decisions ?? [];
+  const actions: PromoteAction[] = [];
+  actions.push(await tickAction(target, entries));
+  actions.push(await commentAction(target, entries));
+  actions.push(await readyAction(target));
+  actions.push(await recordAction(target));
+  return actions;
+}
+
+/** The report. `promoted` is true only when the actions ran; a dry run is a report, not a promotion. */
+function reportOf(input: {
+  readonly target: PromoteTarget;
+  readonly checks: readonly PromoteCheck[];
+  readonly promoted: boolean;
+  readonly actions: readonly PromoteAction[];
+}): WorkflowPromoteReport {
+  return {
+    feature: input.target.opts.feature,
+    runId: input.target.loaded.runId,
+    url: input.target.url,
+    dryRun: !input.promoted,
+    promoted: input.promoted,
+    checks: input.checks,
+    actions: input.actions,
   };
 }
 
@@ -171,8 +278,11 @@ async function promote(opts: WorkflowPromoteOptions, forgeDeps: WorkflowForgeDep
   const url = draftUrl(loaded, opts.feature);
   const forge = await draftForge(forgeDeps, opts.dir, url);
   const expectedSha = await headSha(forgeDeps.forge, opts.dir);
-  const checks = [await itemsRuled(loaded), await ciGreen({ forgeDeps, forge, url, dir: opts.dir, expectedSha })];
-  return reportOf(opts, loaded, url, checks);
+  const found = await newestSidecar(loaded.runDir);
+  const checks = [itemsRuled(loaded, found), await ciGreen({ forgeDeps, forge, url, dir: opts.dir, expectedSha })];
+  const target: PromoteTarget = { opts, loaded, url, forge, forgeDeps, found };
+  if (!opts.yes || !allPassed(checks)) return reportOf({ target, checks, promoted: false, actions: [] });
+  return reportOf({ target, checks, promoted: true, actions: await promoteActions(target) });
 }
 
 /** `pass  <name>` / `FAIL  <name>  <detail>` — a passing check has no detail to print. */
@@ -180,9 +290,15 @@ function checkLine(check: PromoteCheck): string {
   return check.passed ? `pass  ${check.name}` : `FAIL  ${check.name}  ${check.detail}`;
 }
 
+/** `tick  done` / `comment  skipped` — one line per action, in the order the actions ran. */
+function actionLine(action: PromoteAction): string {
+  return `${action.name}  ${action.status}`;
+}
+
 function printPlain(report: WorkflowPromoteReport, deps: WorkflowCliDeps): void {
   for (const check of report.checks) deps.log(checkLine(check));
-  if (allPassed(report.checks)) deps.log(READY_LINE);
+  for (const action of report.actions) deps.log(actionLine(action));
+  if (allPassed(report.checks)) deps.log(report.promoted ? `promoted ${report.url}` : READY_LINE);
 }
 
 /** Prints the report (or, with `--json`, `{"error": …}`) and returns the exit code. */
