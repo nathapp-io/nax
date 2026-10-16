@@ -161,10 +161,15 @@ function updatedSidecar(existing: DecisionsSidecar, input: WriteInput): Decision
 /**
  * Step 7: the write. An existing sidecar is rewritten in place; a run with none gets exactly one,
  * named by the clock. `--outcome` alone cannot create one — there would be nothing to rule.
+ *
+ * The existing sidecar's own entries are cross-checked against the run before the merge (B2): the
+ * file may have been hand-written or left by an earlier run, and a ruling the run does not own must
+ * not ride into the rewrite just because it sat in the file.
  */
 async function writeRecorded(input: WriteInput): Promise<Written> {
   const found = await newestSidecar(input.loaded.runDir);
   if (found) {
+    checkEntriesAgainstItems(found.sidecar.decisions, input.loaded.openItems);
     const sidecar = updatedSidecar(found.sidecar, input);
     await writeSidecar(found.path, sidecar);
     return { path: found.path, sidecar };

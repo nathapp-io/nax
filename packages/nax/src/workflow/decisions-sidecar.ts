@@ -5,17 +5,20 @@
  * that run's `result.json` — and the file is git-ignored, so the commands leave it uncommitted.
  *
  * Every entry is validated before anything is written: the vocabulary, the one-line reason, the sha
- * `fixed` requires, and the open item an id names. Writes go to a temporary sibling and are renamed
- * over the target (the `result.ts` pattern), so a reader never sees a partial file. The two I/O
- * helpers go through `_sidecarDeps`, mirroring that module's injectable seam.
+ * `fixed` requires, and the open item an id names. A sidecar read back is validated the same way
+ * before it is trusted: a hand-edited or truncated file is refused rather than read as a run with no
+ * rulings, and a caller cross-checks the entries it holds against the run's open items
+ * (`checkEntriesAgainstItems`). Writes go to a temporary sibling unique to the call and are renamed
+ * over the target, so two writers never publish each other's file and a reader never sees a partial
+ * one. The two I/O helpers go through `_sidecarDeps`, mirroring the `result.ts` seam.
  */
-import { mkdir, readdir, rename } from "node:fs/promises";
+import { mkdir, readdir, rename, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { byCodePoint } from "@nathapp/nax-agent/internal";
+import { byCodePoint, errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import type { OpenItem } from "./types";
 
-export const _sidecarDeps = { mkdir, readdir, rename };
+export const _sidecarDeps = { mkdir, readdir, rename, unlink };
 
 export const DISPOSITIONS = ["fixed", "waived", "confirmed", "overridden", "verified"] as const;
 export type Disposition = (typeof DISPOSITIONS)[number];
@@ -56,10 +59,12 @@ interface FoundSidecar {
 const DECISIONS_INVALID = "WORKFLOW_DECISIONS_INVALID";
 const SIDECAR_PREFIX = "decisions-";
 const SIDECAR_SUFFIX = ".json";
-const TMP_SUFFIX = ".tmp";
+/** Temporary siblings are named `<sidecar>.tmp-<uuid>`: unique per call, and never read as a sidecar. */
+const TMP_INFIX = ".tmp-";
 const SHA_PATTERN = /^[0-9a-fA-F]{7,40}$/;
 const KIND_NAMES: ReadonlySet<string> = new Set(SIDECAR_KINDS);
 const DISPOSITION_NAMES: ReadonlySet<string> = new Set(DISPOSITIONS);
+const OUTCOME_NAMES: ReadonlySet<string> = new Set(SIDECAR_OUTCOMES);
 
 function invalid(message: string): NaxError {
   return new NaxError(message, DECISIONS_INVALID, { stage: "workflow" });
@@ -69,6 +74,13 @@ const isSidecarKind = (value: unknown): value is SidecarKind => typeof value ===
 
 const isDisposition = (value: unknown): value is Disposition =>
   typeof value === "string" && DISPOSITION_NAMES.has(value);
+
+const isOutcome = (value: unknown): value is SidecarOutcome => typeof value === "string" && OUTCOME_NAMES.has(value);
+
+const isNonEmptyString = (value: unknown): value is string => typeof value === "string" && value !== "";
+
+const isStringArray = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((item) => typeof item === "string");
 
 /** `line two` after a newline is a second line, and a blank or spaces-only reason is no line at all. */
 const isOneLine = (value: unknown): value is string =>
@@ -185,17 +197,49 @@ export function sidecarFileName(date: Date): string {
   return `${SIDECAR_PREFIX}${isoStamp(date)}${SIDECAR_SUFFIX}`;
 }
 
-const isSidecar = (value: unknown): value is DecisionsSidecar =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
+/** A persisted file that carries the sidecar name but not a sidecar: the path makes it actionable. */
+function invalidSidecar(path: string, detail: string): NaxError {
+  return invalid(`invalid decisions sidecar ${path}: ${detail}`);
+}
 
-/** The parsed sidecar, or null when the file is unreadable or is not a JSON object. */
-async function readSidecar(path: string): Promise<DecisionsSidecar | null> {
+/** The entries of a persisted sidecar, with the entry's own message kept and the file it sits in named. */
+function parsePersistedEntries(raw: unknown, path: string): DecisionEntry[] {
   try {
-    const parsed: unknown = await Bun.file(path).json();
-    return isSidecar(parsed) ? parsed : null;
-  } catch {
-    return null;
+    return parseDecisionEntries(raw);
+  } catch (err) {
+    throw invalidSidecar(path, errorMessage(err));
   }
+}
+
+/**
+ * A persisted sidecar, every field checked before it is trusted. `newestSidecar` publishes what this
+ * returns as a `DecisionsSidecar`, so a file that only looks like one — a hand-written entry, a
+ * truncated write — must fail here: reading it back with a field missing would silently drop a
+ * ruling, and reading an unchecked entry would let one reach the forge.
+ */
+function parseSidecar(raw: unknown, path: string): DecisionsSidecar {
+  const fields = fieldsOf(raw);
+  if (fields === null) throw invalidSidecar(path, "not a JSON object");
+  const { artifact, feature, resumedAt, reasons, outcome, url } = fields;
+  if (!isNonEmptyString(artifact)) throw invalidSidecar(path, "artifact must be a non-empty string");
+  if (!isNonEmptyString(feature)) throw invalidSidecar(path, "feature must be a non-empty string");
+  if (!isNonEmptyString(resumedAt)) throw invalidSidecar(path, "resumedAt must be a non-empty string");
+  if (!isStringArray(reasons)) throw invalidSidecar(path, "reasons must be an array of strings");
+  if (url !== undefined && typeof url !== "string") throw invalidSidecar(path, "url must be a string");
+  if (!isOutcome(outcome)) throw invalidSidecar(path, `outcome must be one of ${SIDECAR_OUTCOMES.join(", ")}`);
+  const decisions = parsePersistedEntries(fields.decisions, path);
+  return { artifact, feature, resumedAt, reasons, decisions, outcome, ...(url === undefined ? {} : { url }) };
+}
+
+/** The parsed sidecar. Anything a matching file holds that is not one throws, rather than reading empty. */
+async function readSidecar(path: string): Promise<DecisionsSidecar> {
+  let parsed: unknown;
+  try {
+    parsed = await Bun.file(path).json();
+  } catch {
+    throw invalidSidecar(path, "unreadable or not valid JSON");
+  }
+  return parseSidecar(parsed, path);
 }
 
 /** The run's `decisions-*.json` names, newest first — the timestamp the name encodes is the order. */
@@ -211,22 +255,45 @@ async function sidecarNames(runDir: string): Promise<string[]> {
 }
 
 /**
- * The newest readable sidecar of a run, or null when it has none. A candidate that does not parse is
- * skipped rather than returned: a truncated file must not read as a run with no rulings.
+ * The newest sidecar of a run, or null when the run has none. The name carries the order, so the
+ * newest match is the run's current sidecar and is the one read: a file that wears the name but
+ * holds no valid sidecar is refused, never skipped — falling back to an older file would report
+ * rulings the run no longer stands behind, and reading a broken one would hide a ruling that is
+ * there. A caller that needs the entries checked against the run's own items calls
+ * `checkEntriesAgainstItems` on what this returns.
  */
 export async function newestSidecar(runDir: string): Promise<FoundSidecar | null> {
-  for (const name of await sidecarNames(runDir)) {
-    const path = join(runDir, name);
-    const sidecar = await readSidecar(path);
-    if (sidecar !== null) return { path, sidecar };
-  }
-  return null;
+  const newest = (await sidecarNames(runDir))[0];
+  if (newest === undefined) return null;
+  const path = join(runDir, newest);
+  return { path, sidecar: await readSidecar(path) };
 }
 
-/** Writes the sidecar through a temporary sibling and renames it over `path`. */
+/** No two writes may share a temporary name: one rename would publish the file the other is writing. */
+const tempSibling = (path: string): string => `${path}${TMP_INFIX}${crypto.randomUUID()}`;
+
+/** Best-effort removal of this call's temporary file; the write's own error is the one to report. */
+async function discard(path: string): Promise<void> {
+  try {
+    await _sidecarDeps.unlink(path);
+  } catch {
+    // already gone, or the rename published it
+  }
+}
+
+/**
+ * Writes the sidecar through a temporary sibling and renames it over `path`. The sibling is unique
+ * to this call, so concurrent writers never share a file — each publishes its own, whole — and a
+ * failed write removes its own temporary file instead of leaving it in the run directory.
+ */
 export async function writeSidecar(path: string, sidecar: DecisionsSidecar): Promise<void> {
   await _sidecarDeps.mkdir(dirname(path), { recursive: true });
-  const tmp = `${path}${TMP_SUFFIX}`;
-  await Bun.write(tmp, `${JSON.stringify(sidecar, null, 2)}\n`);
-  await _sidecarDeps.rename(tmp, path);
+  const tmp = tempSibling(path);
+  try {
+    await Bun.write(tmp, `${JSON.stringify(sidecar, null, 2)}\n`);
+    await _sidecarDeps.rename(tmp, path);
+  } catch (err) {
+    await discard(tmp);
+    throw err;
+  }
 }

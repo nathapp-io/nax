@@ -123,6 +123,24 @@ async function writeDecisions(dir: string, entries: readonly DecisionEntry[] | s
   return path;
 }
 
+/** The sidecar a hand-written file holds: the shape the command writes, with no entries. */
+const SIDECAR_BASE: DecisionsSidecar = {
+  artifact: `${RUN_ID}/result.json`,
+  feature: FEATURE,
+  resumedAt: ISO_STAMP,
+  reasons: [],
+  decisions: [],
+  outcome: "pending",
+  url: PR_URL,
+};
+
+/** Writes a sidecar file verbatim — a hand-written one the command must validate, not trust. */
+async function writeSidecarFile(runDir: string, body: Partial<DecisionsSidecar> | string): Promise<string> {
+  const path = join(runDir, SIDECAR_NAME);
+  await Bun.write(path, typeof body === "string" ? body : JSON.stringify({ ...SIDECAR_BASE, ...body }, null, 2));
+  return path;
+}
+
 /** The run's `decisions-*.json` names, sorted. */
 async function sidecarNames(runDir: string): Promise<string[]> {
   return (await readdir(runDir)).filter((name) => name.startsWith("decisions-") && name.endsWith(".json")).sort();
@@ -478,6 +496,90 @@ describe("nax workflow record errors", () => {
       expect(h.out).toEqual([]);
       expect(h.err).toEqual(["nothing to record: pass --decisions or --outcome"]);
       expect(h.codes).toEqual([1]);
+    });
+  });
+});
+
+describe("nax workflow record validates the sidecar it loads", () => {
+  test("an existing sidecar with an entry the command cannot trust is refused, byte for byte", async () => {
+    await withTempDir(async (dir) => {
+      const runDir = await writeRun(dir, open(["B1"]));
+      const handWritten = JSON.stringify(
+        { ...SIDECAR_BASE, decisions: [{ ...ENTRY_B1, disposition: "accepted" }] },
+        null,
+        2,
+      );
+      await writeSidecarFile(runDir, handWritten);
+      const h = harness();
+
+      await record(h.deps, wfDeps(), ["-f", FEATURE, "--outcome", "abandoned", "--json", "-d", dir]);
+
+      expect(emittedError(h.out)).toBe(
+        `invalid decisions sidecar ${join(runDir, SIDECAR_NAME)}: decision B1: disposition must be one of fixed, waived, confirmed, overridden, verified`,
+      );
+      expect(h.codes).toEqual([1]);
+      expect(await Bun.file(join(runDir, SIDECAR_NAME)).text()).toBe(handWritten);
+    });
+  });
+
+  test("an existing sidecar naming no open item is refused, and the incoming entry is not written", async () => {
+    await withTempDir(async (dir) => {
+      const runDir = await writeRun(dir, open(["B1"]));
+      const handWritten = JSON.stringify({ ...SIDECAR_BASE, decisions: [{ ...ENTRY_B1, id: "B9" }] }, null, 2);
+      await writeSidecarFile(runDir, handWritten);
+      const h = harness();
+
+      await record(h.deps, wfDeps(), [
+        "-f",
+        FEATURE,
+        "--decisions",
+        await writeDecisions(dir, [ENTRY_B1]),
+        "--json",
+        "-d",
+        dir,
+      ]);
+
+      expect(emittedError(h.out)).toBe("unknown item B9; open items: B1");
+      expect(h.codes).toEqual([1]);
+      expect(await Bun.file(join(runDir, SIDECAR_NAME)).text()).toBe(handWritten);
+    });
+  });
+
+  test("a sidecar whose entries the run still owns is merged as before", async () => {
+    await withTempDir(async (dir) => {
+      const runDir = await writeRun(dir, open(["B1", "B2"]));
+      await writeSidecarFile(runDir, { decisions: [ENTRY_B1] });
+      const h = harness();
+
+      await record(h.deps, wfDeps(), ["-f", FEATURE, "--decisions", await writeDecisions(dir, [ENTRY_B2]), "-d", dir]);
+
+      expect(h.codes).toEqual([0]);
+      expect((await readSidecar(runDir)).decisions).toEqual([ENTRY_B1, ENTRY_B2]);
+    });
+  });
+
+  test("a forge that reports no draft flag cannot record promoted", async () => {
+    await withTempDir(async (dir) => {
+      const runDir = await writeRun(dir, open(["B1"]));
+      const h = harness();
+      await record(h.deps, wfDeps(), ["-f", FEATURE, "--decisions", await writeDecisions(dir, [ENTRY_B1]), "-d", dir]);
+      const path = join(runDir, SIDECAR_NAME);
+      const before = await Bun.file(path).text();
+      const failed = harness();
+
+      await record(failed.deps, wfDeps(forgeStub({ prView: { stdout: "{}" } })), [
+        "-f",
+        FEATURE,
+        "--outcome",
+        "promoted",
+        "--json",
+        "-d",
+        dir,
+      ]);
+
+      expect(emittedError(failed.out)).toBe(`cannot read PR ${PR_URL}: the forge reported no isDraft boolean`);
+      expect(failed.codes).toEqual([1]);
+      expect(await Bun.file(path).text()).toBe(before);
     });
   });
 });

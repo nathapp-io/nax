@@ -359,8 +359,11 @@ nax workflow record -f auth --outcome promoted --json         # after the PR is 
 `--outcome` is one of `pending`, `promoted`, `verified-ready` or `abandoned` and is written to the
 sidecar as-is. `promoted` and `verified-ready` claim the PR itself is where it should be, so they are
 refused unless the run's record has a PR url, a forge is detected and the forge reports the PR as
-**not** a draft. Neither outcome re-runs the checks `nax workflow promote` makes: recording an
-outcome is a human's statement, and those checks gate the writes to the forge.
+**not** a draft. The forge must report a boolean draft flag — `isDraft` on GitHub, `draft` (or
+GitLab's older `work_in_progress`) on GitLab; an answer that carries none is a read failure
+(`cannot read PR <ref>: the forge reported no <flag> boolean`), never a ready PR. Neither outcome
+re-runs the checks `nax workflow promote` makes: recording an outcome is a human's statement, and
+those checks gate the writes to the forge.
 
 Everything is validated before the first byte is written, and every refusal leaves the run directory
 exactly as it was. Validation order: the feature name; that at least one of `--decisions` and
@@ -368,7 +371,11 @@ exactly as it was. Validation order: the feature name; that at least one of `--d
 parsed, and every entry checked against the run's open items); the PR read for `promoted` and
 `verified-ready`; and only then the write. A run with no sidecar gets exactly one, created from the
 entries; a run with one has the incoming entries merged into it by id — a re-ruled entry replaces
-itself in place, keeping its position — and the same file is rewritten. `--outcome` alone cannot
+itself in place, keeping its position — and the same file is rewritten. A sidecar the command reads
+back is validated as a whole before it is trusted or rewritten: a file that is not a decisions
+sidecar, whose entries do not validate, or whose entries name an item the run does not own (except a
+`ci` or `minor` entry) is refused with `invalid decisions sidecar <path>: <detail>` or
+`unknown item <id>; open items: <ids>`, and the file is left byte for byte. `--outcome` alone cannot
 create a sidecar: there would be nothing to rule.
 
 Plain output names the file that changed, then lists whatever is still unruled:
@@ -407,8 +414,12 @@ nax workflow promote -f auth --yes       # promote, once every check passes
 Validation, in order, each refusing with exit `1` and writing nothing: the feature name; the newest
 readable run; the record's `outcome` must be `draft`; the record must carry a PR url; a forge must be
 detected for `--dir`; and the forge must report the PR as a draft — an already-ready PR is refused,
-never promoted twice. `promote` reads the PR but ignores the sidecar's own outcome, `abandoned`
-included: the sidecar records what a human decided, not what the forge now holds.
+never promoted twice. The forge must report a boolean draft flag (`isDraft` on GitHub, `draft` or
+GitLab's older `work_in_progress` on GitLab); an answer that carries none is a read failure, not a
+ready PR. The run's newest decisions sidecar is then validated and its entries checked against the
+run's open items — a hand-edited or unowned ruling is refused before any check runs, so it can never
+reach the PR body or the evidence comment. `promote` reads the PR but ignores the sidecar's own
+outcome, `abandoned` included: the sidecar records what a human decided, not what the forge now holds.
 
 Then both checks run, and neither short-circuits the other:
 

@@ -9,6 +9,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import {
+  assertDefined,
   checkOf,
   emittedError,
   emittedJson,
@@ -16,6 +17,7 @@ import {
   PROMOTE_FEATURE,
   PROMOTE_HEAD,
   PROMOTE_RUN_ID,
+  PROMOTE_SHA,
   PROMOTE_URL,
   prWrites,
   withTempDir,
@@ -205,6 +207,19 @@ describe("nax workflow promote refusals", () => {
     });
   });
 
+  test("a forge that reports no draft flag is a read failure, not a ready PR", async () => {
+    await withTempDir(async (dir) => {
+      const fx = await makePromoteFixture(dir, { prViews: [{ stdout: "{}" }] });
+
+      await fx.run(["--yes", "--json"]);
+
+      expect(emittedError(fx.out)).toBe(`cannot read PR ${PROMOTE_URL}: the forge reported no isDraft boolean`);
+      expect(fx.codes).toEqual([1]);
+      expect(fx.checkCalls).toEqual([]);
+      expect(prWrites(fx.forgeCalls)).toEqual([]);
+    });
+  });
+
   test("AC-15: a HEAD that cannot be read is refused, and no CI wait runs", async () => {
     await withTempDir(async (dir) => {
       const fx = await makePromoteFixture(dir, { head: { exitCode: 128, stderr: "not a git repository" } });
@@ -232,6 +247,45 @@ describe("nax workflow promote refusals", () => {
         `workflow for ${FEATURE} has not started its feature steps (run ${PROMOTE_RUN_ID})`,
       );
       expect(fx.codes).toEqual([1]);
+    });
+  });
+});
+
+describe("nax workflow promote validates the sidecar it loads", () => {
+  test("a ruling that names no open item is refused before any check runs or forge write", async () => {
+    await withTempDir(async (dir) => {
+      const fx = await makePromoteFixture(dir, { rulings: ["B9"] });
+
+      await fx.run(["--yes", "--json"]);
+
+      expect(emittedError(fx.out)).toBe("unknown item B9; open items: B1");
+      expect(fx.codes).toEqual([1]);
+      expect(fx.checkCalls).toEqual([]);
+      expect(prWrites(fx.forgeCalls)).toEqual([]);
+      expect((await fx.sidecar())?.outcome).toBe("pending");
+    });
+  });
+
+  test("a hand-edited ruling the command cannot trust is refused, not ticked into the body", async () => {
+    await withTempDir(async (dir) => {
+      const fx = await makePromoteFixture(dir);
+      assertDefined(fx.sidecarPath, "the fixture wrote a sidecar");
+      const current = await fx.sidecar();
+      assertDefined(current, "the fixture wrote a sidecar");
+      const handWritten = JSON.stringify({
+        ...current,
+        decisions: [{ id: "B1", kind: "finding", disposition: "accepted", reason: "hand written", sha: PROMOTE_SHA }],
+      });
+      await Bun.write(fx.sidecarPath, handWritten);
+
+      await fx.run(["--yes", "--json"]);
+
+      expect(emittedError(fx.out)).toBe(
+        `invalid decisions sidecar ${fx.sidecarPath}: decision B1: disposition must be one of fixed, waived, confirmed, overridden, verified`,
+      );
+      expect(fx.codes).toEqual([1]);
+      expect(prWrites(fx.forgeCalls)).toEqual([]);
+      expect(await Bun.file(fx.sidecarPath).text()).toBe(handWritten);
     });
   });
 });

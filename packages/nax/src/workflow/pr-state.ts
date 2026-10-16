@@ -40,8 +40,24 @@ function readFailed(prRef: string, detail: string, context: Record<string, unkno
 }
 
 /** GitHub, GitLab's `draft`, and GitLab's older `work_in_progress` all mean the same thing. */
-function isDraft(fields: Record<string, unknown>): boolean {
-  return fields.isDraft === true || fields.draft === true || fields.work_in_progress === true;
+const DRAFT_FLAGS: Readonly<Record<ForgeKind, readonly string[]>> = {
+  github: ["isDraft"],
+  gitlab: ["draft", "work_in_progress"],
+};
+
+/**
+ * The PR/MR's draft state, from the flags its own forge reports. Only a boolean counts, and only a
+ * name that forge uses: a missing or malformed flag means the forge did not report readiness, and
+ * reading that as "ready" would let a caller record `promoted` — or promote — a PR nobody confirmed.
+ * GitLab's older `work_in_progress` is the fallback for an MR that predates `draft`.
+ */
+function isDraft(fields: Record<string, unknown>, prRef: string, forge: ForgeKind): boolean {
+  const names = DRAFT_FLAGS[forge];
+  for (const name of names) {
+    const value = fields[name];
+    if (typeof value === "boolean") return value;
+  }
+  throw readFailed(prRef, `the forge reported no ${names.join(" or ")} boolean`, { forge });
 }
 
 function parseOutput(stdout: string, prRef: string, forge: ForgeKind): Record<string, unknown> {
@@ -63,8 +79,8 @@ function parseOutput(stdout: string, prRef: string, forge: ForgeKind): Record<st
 
 /**
  * The PR/MR's draft state, body and url. Throws a `WORKFLOW_PR_READ_FAILED` `NaxError` when the
- * forge CLI exits non-zero or answers something that is not a JSON object — a caller must never
- * read a failure as "ready".
+ * forge CLI exits non-zero, answers something that is not a JSON object, or reports no usable draft
+ * flag — a caller must never read a failure as "ready".
  */
 export async function readPrState(forge: ForgeKind, prRef: string, deps: ForgeDeps, cwd: string): Promise<PrState> {
   const result = await deps.run(viewArgv(forge, prRef, GITHUB_FIELDS), { cwd });
@@ -77,7 +93,7 @@ export async function readPrState(forge: ForgeKind, prRef: string, deps: ForgeDe
   const fields = parseOutput(result.stdout, prRef, forge);
   const url = text(fields.url) ?? text(fields.web_url);
   return {
-    isDraft: isDraft(fields),
+    isDraft: isDraft(fields, prRef, forge),
     body: text(fields.body) ?? text(fields.description) ?? "",
     ...(url === undefined ? {} : { url }),
   };

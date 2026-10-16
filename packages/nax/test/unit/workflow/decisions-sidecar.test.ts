@@ -4,10 +4,10 @@
  * file helpers.
  */
 import { describe, expect, test } from "bun:test";
-import { readdir } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, readdir } from "node:fs/promises";
+import { basename, join } from "node:path";
 import { byCodePoint } from "@nathapp/nax-agent/internal";
-import { assertNaxError, withTempDir } from "@test/helpers";
+import { assertDefined, assertNaxError, withTempDir } from "@test/helpers";
 import {
   checkEntriesAgainstItems,
   type DecisionEntry,
@@ -71,6 +71,24 @@ function invalidMessage(run: () => unknown): string {
   assertNaxError(caught);
   expect(caught.code).toBe("WORKFLOW_DECISIONS_INVALID");
   return caught.message;
+}
+
+/** The async twin of `invalidMessage`, for the file helpers: the refusal, as its message. */
+async function invalidMessageOf(run: () => Promise<unknown>): Promise<string> {
+  let caught: unknown;
+  try {
+    await run();
+  } catch (err) {
+    caught = err;
+  }
+  assertNaxError(caught);
+  expect(caught.code).toBe("WORKFLOW_DECISIONS_INVALID");
+  return caught.message;
+}
+
+/** The refusal `newestSidecar` gives for this run directory, as its message. */
+async function sidecarFailure(runDir: string): Promise<string> {
+  return invalidMessageOf(() => newestSidecar(runDir));
 }
 
 describe("parseDecisionEntries", () => {
@@ -282,16 +300,57 @@ describe("newestSidecar and writeSidecar", () => {
     });
   });
 
-  test("an unreadable or non-object newest sidecar falls back to the newest readable one", async () => {
+  test("the newest sidecar is validated rather than trusted: an invalid entry is refused", async () => {
+    await withTempDir(async (runDir) => {
+      const path = join(runDir, "decisions-2026-10-14T10-00-00-000Z.json");
+      const handWritten = { ...sidecar(), decisions: [{ ...entry(), disposition: "accepted" }] };
+      await Bun.write(path, JSON.stringify(handWritten));
+
+      expect(await sidecarFailure(runDir)).toBe(
+        `invalid decisions sidecar ${path}: decision B1: disposition must be one of fixed, waived, confirmed, overridden, verified`,
+      );
+    });
+  });
+
+  test("a persisted sidecar missing a field is refused, naming the field", async () => {
+    await withTempDir(async (runDir) => {
+      const path = join(runDir, "decisions-2026-10-14T10-00-00-000Z.json");
+      const cases: readonly { readonly body: string; readonly detail: string }[] = [
+        {
+          body: JSON.stringify({ ...sidecar(), outcome: "done" }),
+          detail: "outcome must be one of pending, promoted, verified-ready, abandoned",
+        },
+        { body: JSON.stringify({ ...sidecar(), artifact: "" }), detail: "artifact must be a non-empty string" },
+        { body: JSON.stringify({ ...sidecar(), feature: 7 }), detail: "feature must be a non-empty string" },
+        {
+          body: JSON.stringify({ ...sidecar(), resumedAt: undefined }),
+          detail: "resumedAt must be a non-empty string",
+        },
+        { body: JSON.stringify({ ...sidecar(), reasons: "none" }), detail: "reasons must be an array of strings" },
+        { body: JSON.stringify({ ...sidecar(), url: 7 }), detail: "url must be a string" },
+        {
+          body: JSON.stringify({ ...sidecar(), decisions: { B1: "fixed" } }),
+          detail: "decisions must be a JSON array",
+        },
+      ];
+      for (const one of cases) {
+        await Bun.write(path, one.body);
+        expect(await sidecarFailure(runDir)).toBe(`invalid decisions sidecar ${path}: ${one.detail}`);
+      }
+    });
+  });
+
+  test("the newest candidate is authoritative: an unparsable one is refused, not skipped", async () => {
     await withTempDir(async (runDir) => {
       const older = join(runDir, "decisions-2026-10-13T09-12-00-000Z.json");
+      const newest = join(runDir, "decisions-2026-10-14T10-00-00-000Z.json");
       await Bun.write(older, JSON.stringify(sidecar({ resumedAt: "2026-10-13T09-12-00-000Z" })));
-      await Bun.write(join(runDir, "decisions-2026-10-14T10-00-00-000Z.json"), "{not json");
 
-      expect((await newestSidecar(runDir))?.path).toBe(older);
+      await Bun.write(newest, "{not json");
+      expect(await sidecarFailure(runDir)).toBe(`invalid decisions sidecar ${newest}: unreadable or not valid JSON`);
 
-      await Bun.write(join(runDir, "decisions-2026-10-14T10-00-00-000Z.json"), "[]");
-      expect((await newestSidecar(runDir))?.path).toBe(older);
+      await Bun.write(newest, "[]");
+      expect(await sidecarFailure(runDir)).toBe(`invalid decisions sidecar ${newest}: not a JSON object`);
     });
   });
 
@@ -306,6 +365,42 @@ describe("newestSidecar and writeSidecar", () => {
       const path = join(runDir, "run-9", sidecarFileName(new Date("2026-10-13T09:12:00.417Z")));
       await writeSidecar(path, sidecar());
       expect((await newestSidecar(join(runDir, "run-9")))?.path).toBe(path);
+    });
+  });
+});
+
+describe("writeSidecar under concurrent writers", () => {
+  test("every concurrent write to one sidecar publishes whole, and no temporary file is left behind", async () => {
+    await withTempDir(async (runDir) => {
+      const path = join(runDir, sidecarFileName(new Date("2026-10-13T09:12:00.417Z")));
+      await Bun.write(join(runDir, "result.json"), "{}\n");
+      // One distinct sidecar per writer, so the winner is identifiable and every writer is observable.
+      const writers = Array.from({ length: 16 }, (_, i) =>
+        sidecar({ decisions: [entry({ reason: `ruling ${i}`, sha: `a1b2c3${i.toString(16)}` })] }),
+      );
+
+      const settled = await Promise.allSettled(writers.map((one) => writeSidecar(path, one)));
+
+      expect(settled.map((one) => (one.status === "rejected" ? String(one.reason) : "ok"))).toEqual(
+        writers.map(() => "ok"),
+      );
+      const after = await readdir(runDir);
+      expect([...after].sort(byCodePoint)).toEqual(["result.json", basename(path)].sort(byCodePoint));
+      const found = await newestSidecar(runDir);
+      assertDefined(found, "the sidecar the writers published");
+      expect(writers).toContainEqual(found.sidecar);
+    });
+  });
+
+  test("a write that cannot be published removes its own temporary file", async () => {
+    await withTempDir(async (runDir) => {
+      // Renaming a file over a directory fails; the temporary sibling must not survive the attempt.
+      const target = join(runDir, "decisions-target");
+      await mkdir(target);
+
+      await expect(writeSidecar(target, sidecar())).rejects.toThrow();
+      expect(await readdir(runDir)).toEqual(["decisions-target"]);
+      expect(await readdir(target)).toEqual([]);
     });
   });
 });

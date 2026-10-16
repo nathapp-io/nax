@@ -11,7 +11,9 @@
  * next and stopping at the first forge write that fails: `tick` rewrites the PR body's checklist
  * lines, `comment` posts one evidence comment built from the sidecar, `ready` marks the PR ready and
  * `record` rewrites the sidecar's own `outcome` to `promoted`. Everything before that point performs
- * no write, so a refusal leaves the run directory and the PR exactly as they were.
+ * no write, so a refusal leaves the run directory and the PR exactly as they were — and the sidecar
+ * the checks and the actions read is validated first, with its entries cross-checked against the
+ * run's open items, so a hand-written file cannot smuggle a ruling onto the PR (B2).
  *
  * The workflow leaves are reached by relative path, not through the `@/workflow` barrel, for the
  * reason `src/cli/workflow.ts` gives: that barrel loads `step-context`, which imports `@/cli`. HEAD
@@ -24,6 +26,7 @@ import { NaxError } from "@/errors";
 import { detectForge, type ForgeDeps, type ForgeKind, type ForgeRunResult } from "@/forge";
 import { validateFeatureName } from "@/utils/feature-name";
 import {
+  checkEntriesAgainstItems,
   type DecisionEntry,
   type DecisionsSidecar,
   isoStamp,
@@ -279,6 +282,9 @@ async function promote(opts: WorkflowPromoteOptions, forgeDeps: WorkflowForgeDep
   const forge = await draftForge(forgeDeps, opts.dir, url);
   const expectedSha = await headSha(forgeDeps.forge, opts.dir);
   const found = await newestSidecar(loaded.runDir);
+  // B2: a sidecar the run's own items do not own is refused before a check runs and before any write:
+  // its entries are what the tick, the evidence comment and the `promoted` record are built from.
+  if (found) checkEntriesAgainstItems(found.sidecar.decisions, loaded.openItems);
   const checks = [itemsRuled(loaded, found), await ciGreen({ forgeDeps, forge, url, dir: opts.dir, expectedSha })];
   const target: PromoteTarget = { opts, loaded, url, forge, forgeDeps, found };
   if (!opts.yes || !allPassed(checks)) return reportOf({ target, checks, promoted: false, actions: [] });
