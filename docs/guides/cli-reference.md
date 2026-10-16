@@ -267,7 +267,7 @@ A gate with a setup bootstrap (`e2eSetup`, run only for `e2e`) reports `failedPh
 | Exit | Meaning |
 |:-----|:--------|
 | `0` | At least one gate ran and every gate is `passed` |
-| `1` | nax could not answer: no nax project at or above `--dir`, an untrusted project, an unreadable trust store, an invalid config, an unknown or unconfigured `--gate`, or any other error. No gate runs |
+| `1` | nax could not answer: no nax project at or above `--dir`, an untrusted project, an unreadable trust store, an invalid config, an unknown or unconfigured `--gate`, or any other error. Validation errors occur before any gate runs; an error thrown mid-run can occur after some gates have already finished, and their results are discarded |
 | `2` | The gates ran and at least one is `failed`, `not-run` or `timed-out` — or no gate is configured at all, so nothing was verified |
 
 Plain output is one line per gate, then the last 40 lines of every gate that did not pass, then a summary:
