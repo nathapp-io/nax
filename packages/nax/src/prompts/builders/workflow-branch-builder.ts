@@ -47,6 +47,10 @@ nax runs them again after the branch fix. Do not list any of these as something 
 const CANNOT_VERIFY_RULE = `Put in "cannotVerify" only what neither nax's gates nor a scoped command can check, such as behaviour that needs a live external service.
 Say a tool or service is unavailable only together with the command you ran and the error it returned; otherwise say what you did not try.`;
 
+/** Story-level cannot-verify items reach the record only through the branch verdict. */
+const CARRY_CANNOT_VERIFY =
+  'Check each item above that the code or a scoped command can settle. Repeat in your "cannotVerify" every one you still cannot verify: an item you leave out is reported as verified.';
+
 function storyLines(input: BranchReviewPromptInput): string {
   return bullets(input.stories.map((s) => `${s.id}: ${s.state}${s.note ? ` (${s.note})` : ""}`));
 }
@@ -85,7 +89,7 @@ ${bullets(input.parked.map((p) => `${p.storyId}: ${p.text}`))}
 
 ## What the story reviewers could not verify
 ${bullets(input.cannotVerify.map((c) => `${c.storyId}: ${c.text}`))}
-
+${input.cannotVerify.length > 0 ? `\n${CARRY_CANNOT_VERIFY}\n` : ""}
 ## Deferred minor findings (triage each one)
 ${input.minors.length > 0 ? input.minors.map((m) => `[${m.id}] ${m.storyId}: ${m.text}`).join("\n") : NONE}
 

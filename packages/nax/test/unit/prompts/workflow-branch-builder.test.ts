@@ -89,6 +89,13 @@ describe("buildWorkflowBranchReviewPrompt", () => {
     expect(empty).toContain("(no spec file found)");
     expect(empty).toContain("(none)");
     expect(empty).not.toContain("preflight.json");
+    expect(empty).not.toContain("an item you leave out is reported as verified");
+  });
+
+  // Story-level cannot-verify items reach the record only through the branch verdict.
+  test("asks the reviewer to settle or carry each story cannot-verify item", () => {
+    expect(prompt).toContain('Repeat in your "cannotVerify" every one you still cannot verify');
+    expect(prompt).toContain("an item you leave out is reported as verified");
   });
 
   test("tells the reviewer a deferred minor is triaged, never repeated as a finding", () => {
