@@ -3,7 +3,7 @@
   "feature": "workflow-status",
   "branchName": "feat/workflow-status",
   "createdAt": "2026-10-16T00:00:00.000Z",
-  "updatedAt": "2026-10-16T10:20:40.047Z",
+  "updatedAt": "2026-10-16T11:17:43.547Z",
   "userStories": [
     {
       "id": "US-001",
@@ -33,8 +33,8 @@
         "workflow"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -46,7 +46,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "native",
         "initialProfileId": "native-deepseek",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/approval.ts",
@@ -93,7 +95,11 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "d5667f19761e1ba2bd77821359af8c24400aa627"
     },
     {
       "id": "US-002",
@@ -190,7 +196,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -258,7 +267,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "Phase 1 of #2569. verdict.openItems in a workflow result.json must become the complete list of what keeps a feature from ready, and a new read-only command `nax workflow status -f <feature> [--json]` prints it for the newest run.\n\nKey files (all under packages/nax, verified by the spec on main 1421eacde):\n- src/workflow/approval.ts: readinessReasons (:62) builds the reason texts in order (gates red / NOTHING_VERIFIED, CI failed, conflicting/no-checks/unavailable via f.ciDetail ?? default, stories gate-open, stories not run, N ruling(s) flagged for a human, branch review did not run, describeUnread, RE_REVIEW_SKIPPED, COST_LIMITED). askApproval (:98) returns { approved, rationale } with no decision id. US-001 changes it to ApprovalOutcome and extracts ciReason; US-002 exports NOTHING_VERIFIED, gateReasons and storyReasons. readinessReasons output must stay unchanged in both.\n- src/workflow/finalize.ts: PublishOutcome (:37), PrParts (:194), finishPr (:200), publish. US-001 adds approval/ciDetail to PublishOutcome; US-002 adds record/stories to PrParts and rebuilds the PR body openItems in finishPr.\n- src/workflow/feature-machine.ts: publishStep (:453) copies approval/ciDetail from the outcome and builds storyStates from env.facts.stories ({id,state,reason?} in that key order, reason omitted when absent).\n- src/workflow/types.ts: WorkflowFeatureRecord (:172), OpenItem.kind (:96), StorySummary (:159), WorkflowStoryRecord (:54). Add ApprovalOutcome, StoryStateItem, three optional record fields, and the new OpenItem kinds.\n- src/workflow/open-items.ts: buildOpenItems (:31) composes per-kind helpers (advisorItems, storyItems, ciItem, reasonItems, isExplained), each under complexity 20. BLOCKING_KINDS stays finding/ruling/gate so workflowPassed is unchanged.\n- src/workflow/result.ts: upsertFeatureRecord (:141), readResult (:33), runDirsNewestFirst (:121). upsertFeatureRecord fills storyStates from result.stories when the record has none (empty array is kept).\n- src/workflow/paths.ts workflowFeatureDir; src/workflow/ci-wait.ts CiWaitResult; src/workflow/pr-body.ts openItemLine renders non-gate kinds generically so no rendering change.\n- src/cli/advisor.ts (registerAdvisorCommand, _advisorCliDeps, guarded) is the pattern for src/cli/workflow.ts; src/cli/index.ts barrel; bin/nax.ts registers commands; src/utils/feature-name.ts validateFeatureName; src/config/path-security.ts validateDirectory.\n\nTests to touch: test/unit/workflow/approval.test.ts, finalize.test.ts, finalize-ci-gate.test.ts (wire() gains optional second arg { hold }), result.test.ts, open-items.test.ts, test/helpers/workflow-feature-machine.ts (add optional `published?: PublishOutcome` script field; default stays PUBLISHED), test/unit/cli/advisor-list-label.test.ts (CLI harness to mirror). Existing tests whose exact-equality expectations change: finalize-ci-gate 'conflict keeps draft' (adds ciDetail), approval.test askApproval cases (add decisionId on decision paths only), finalize.test 'happy path' (adds approval), result.test 'writes a top-level verdict' (openItems becomes [{id:'_run:reason1',kind:'reason',issue:'r'}]).\n\nRisks: (1) readinessReasons output must not change when ciReason/storyReasons are extracted. (2) The explained-reason rule must match exact texts nax produces; reason ids are 1-based positions in rec.reasons and explained reasons keep their positions. (3) Flagged-decision advisor items appear only in result.json, never in the PR body (publishStep collects ids after publish returns); there the flagged count is a reason item. Reasons appended after the body is written reach only the verdict. (4) Old result.json records lack approval/ciDetail/storyStates; CLI and upsertFeatureRecord fall back to result.stories. (5) nax exits 0 on failure elsewhere, but this command has its own exit codes: 0 ready+no items, 2 otherwise, 1 on error. (6) Optional keys must be absent (not undefined) where ACs say 'no key'. (7) Follow repo rules: immutable updates, files under 800 lines, no console.log outside the injectable deps, never run bare `bun test` or `bun run nax`; package commands run from packages/nax. No test spawns the nax binary.\n\nMigration: all new record fields are optional; no data migration needed.",
