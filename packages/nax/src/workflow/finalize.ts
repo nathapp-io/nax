@@ -153,7 +153,9 @@ async function specClosingIssues(fc: FeatureContext): Promise<readonly number[] 
 }
 
 async function bodyFacts(fc: FeatureContext, input: PublishInput): Promise<WorkflowPrBodyFacts> {
-  const r = input.record;
+  // F1: the draft body lists no approval either — at this point no advisor has been asked, and a
+  // record resumed into a re-publish may still carry the earlier run's hold.
+  const { approval: _priorApproval, ...r } = input.record;
   const closes = await specClosingIssues(fc);
   return {
     feature: fc.feature,
@@ -290,28 +292,24 @@ interface PrParts {
   readonly stories: readonly StorySummary[];
 }
 
-/**
- * US-002: the record the final body's open items are built from. `publish` holds no reasons of its own
- * (`publishStep` is their only writer) and an older record carries no story states, so the approval,
- * the CI state and the stories this run saw fill them in. `ciDetail` is the CI wait's own detail only
- * for the three states whose reason is built from it.
- */
+/** US-002: the record the final body's open items read: `publish` holds no reasons (`publishStep`
+ * writes them) and an older record carries no story states, so this run's approval, CI state and
+ * stories fill them in. F1: the record's own `approval` is dropped first, so a resumed record's
+ * earlier hold is never cited by a publish that asked no one. */
 function openItemRecord(
   parts: PrParts,
   ci: CiWaitResult,
   approval: ApprovalOutcome | null,
   reasons: readonly string[],
 ): WorkflowFeatureRecord {
+  const { approval: _priorApproval, ...record } = parts.record;
   return {
-    ...parts.record,
+    ...record,
     ...(approval ? { approval } : {}),
     ci: ci.outcome,
     ...ciDetailFields(ci),
-    storyStates: parts.stories.map((s) => ({
-      id: s.id,
-      state: s.state,
-      ...(s.reason !== undefined ? { reason: s.reason } : {}),
-    })),
+    // A summary already carries the id, state and reason a story item reads; this record is transient.
+    storyStates: parts.stories,
     reasons,
   };
 }

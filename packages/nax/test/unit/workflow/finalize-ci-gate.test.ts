@@ -18,11 +18,15 @@ afterEach(() => {
 
 function wire(ci: CiWaitResult, opts: { hold?: { id: string; rationale: string } } = {}) {
   const updated: OpenOrPromoteArgs[] = [];
+  const drafted: string[] = [];
   const asked: string[] = [];
   _featureDeps.detectForge = async () => "github";
   _featureDeps.commitLedger = async () => false;
   _featureDeps.commitAndPush = async () => ({ committed: false, pushed: true });
-  _featureDeps.openDraftFinishPr = async () => ({ url: "https://gh/pr/7" });
+  _featureDeps.openDraftFinishPr = async (args) => {
+    drafted.push(args.body);
+    return { url: "https://gh/pr/7" };
+  };
   _featureDeps.waitForChecks = async () => ci;
   _featureDeps.forge = { run: async () => ({ exitCode: 0, stdout: "", stderr: "" }), readText: async () => null };
   _workflowDeps.git = async () => ({ exitCode: 0, stdout: "", stderr: "" });
@@ -66,7 +70,7 @@ function wire(ci: CiWaitResult, opts: { hold?: { id: string; rationale: string }
     advisor,
     preflight: null,
   };
-  return { input, asked, updated };
+  return { input, asked, updated, drafted };
 }
 
 describe("publish CI draft gate (US-002)", () => {
@@ -196,6 +200,23 @@ describe("publish rebuilds the body's open items (US-002)", () => {
     const { input, updated } = wire({ outcome: "green", detail: "ok" });
     await publish(makeFeatureContext(), { ...input, record: { ...input.record, reviewRan: false } });
     expectReadyLine(String(updated[0]?.body), "- [ ] **_run:reason1** (reason) — branch review did not run");
+  });
+
+  // F1: the record a resumed publish holds may carry an earlier run's hold; this publish asked no one.
+  test("F1: a record's earlier hold is not cited when this publish never asked the advisor", async () => {
+    const { input, asked, updated, drafted } = wire({ outcome: "failed", detail: "1 check failed" });
+    const record = {
+      ...input.record,
+      approval: { approved: false, rationale: "advisor held: stale", decisionId: "D-0" },
+    };
+    await publish(makeFeatureContext(), { ...input, record });
+    const body = String(updated[0]?.body);
+    expect(asked).toEqual([]);
+    expectReadyLine(body, "- [ ] **_run:ci** (ci) — CI failed");
+    expect(body).not.toContain("D-0");
+    expect(body).not.toContain("advisor held: stale");
+    // The draft body is written before the advisor is asked, so it cites no hold of its own either.
+    expect(String(drafted[0])).not.toContain("D-0");
   });
 });
 
