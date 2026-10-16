@@ -3,7 +3,7 @@
   "feature": "workflow-record-promote",
   "branchName": "feat/workflow-record-promote",
   "createdAt": "2026-10-16T00:00:00.000Z",
-  "updatedAt": "2026-10-16T17:13:08.773Z",
+  "updatedAt": "2026-10-16T17:27:24.256Z",
   "userStories": [
     {
       "id": "US-001",
@@ -366,8 +366,8 @@
         "US-003",
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -379,7 +379,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "native",
         "initialProfileId": "native-deepseek",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/cli/workflow-promote.ts",
@@ -405,7 +407,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "3ee28208345ef2241b0012b5d3cebe6cc38b5397"
     }
   ],
   "analysis": "Phase 3 of #2569 (phases 1 `nax workflow status` #2574 and 2 `nax gates run` #2575 are merged). Adds `nax workflow record` and `nax workflow promote` to the `nax workflow` group in packages/nax.\n\nKey existing code (all under packages/nax/src): `cli/workflow.ts` (registerWorkflowCommand, WorkflowCliDeps, _workflowCliDeps, file-local newestResult/fillStoryStates/reportFor/notStarted/noResult - these move to workflow/run-verdict.ts as loadRunVerdict with unchanged behaviour and error messages `no workflow result for feature <feature>` and `workflow for <feature> has not started its feature steps (run <runId>)`); `workflow/result.ts` (readResult, runDirsNewestFirst, storyStatesFrom, `_resultDeps = { mkdir, readdir, rename, stat }` file-system seam and temp-file-then-rename write pattern); `workflow/open-items.ts` (buildOpenItems, buildVerdict); `workflow/types.ts` (OpenItem at ~line 101, WorkflowFeatureRecord with outcome/url/head/reasons); `workflow/paths.ts` (workflowFeatureDir); `workflow/ci-wait.ts` (waitForChecks ~line 337, CiWaitResult); `workflow/pr-body.ts` (non-exported openItemLine renders `- [ ] **<id>** (<tags>) ...` with optional indented `  Suggestion:` / `  Advisor:` lines; gate items render `- [ ] **<id>** (gate) — ...`); `workflow/pr-body-safe.ts` (safeInline; currently imports escapeInline/escapeTableCell from the `@/finish` barrel); `forge/` (detectForge, viewArgv, defaultForgeDeps, ForgeDeps; barrel `@/forge`); `finish/pr/open.ts` (existing `gh pr ready` / `glab mr update --ready` argv); `utils/feature-name.ts` (validateFeatureName).\n\nCRITICAL import-cycle constraint: the `@/workflow` barrel and `workflow/git.ts` load `step-context`, which imports `@/cli`. So new modules in `src/cli/` (workflow-forge.ts, workflow-record.ts, workflow-promote.ts) must import workflow leaves by relative path, import `src/cli/workflow.ts` only via `import type`, and must NOT value-import `workflow/git.ts` (`readHead`). HEAD is read via `forgeDeps.forge.run([\"git\",\"rev-parse\",\"HEAD\"], { cwd: dir })`. `workflow/pr-body-safe.ts` must switch its import from the `@/finish` barrel to the leaf `../finish/pr/escape` (no imports) so `workflow/promote.ts` can use safeInline without closing a cycle. `bun run check:import-cycles` must stay clean.\n\nDependency order: US-001 (decisions-sidecar data contract) -> US-002 (loadRunVerdict move, readPrState, WorkflowForgeDeps{forge,now}, `record`) and US-003 (pure tick/comment/argv text; also the pr-body-safe import fix) in parallel -> US-004 (promote validation + dry run; adds waitForChecks to WorkflowForgeDeps; creates shared test fixture test/helpers/workflow-promote-fixture.ts) -> US-005 (--yes writes: tick, comment, ready, record). US-004 performs no forge write even with --yes; US-005 adds the writes in the same PR.\n\nRisks: (1) refactoring status's loader must keep output and exit codes byte-identical - test/unit/cli/workflow-status.test.ts covers it; its AC-15 subcommand-names assertion must be updated to [\"status\",\"record\"] in US-002 and [\"status\",\"record\",\"promote\"] in US-004. (2) registerWorkflowCommand gains an optional third param forgeDeps; callers passing only deps keep working. (3) record tests build WorkflowForgeDeps by spreading _workflowForgeDeps and overriding forge/now so US-004's added waitForChecks field needs no test change. (4) Sidecar writes must be atomic (temp file in same directory, then rename); use _resultDeps-style injectable seam. (5) tickChecklist must compare ids as plain strings (B1 must not match **B10**; ids like `_run:ci` need no escaping) and modify only the first line of a matched `- [ ] **<id>**` entry. (6) promote tests stub waitForChecks rather than freeze the clock. (7) Docs: add `### nax workflow` section to docs/guides/cli-reference.md in US-002, extend in US-004 and US-005. (8) The decisions sidecar is git-ignored (`**/.nax/features/*/workflow/`) and left uncommitted. (9) Exit codes: record 0/1; promote 0 (all checks pass / promoted), 2 (a check failed), 1 (any error). --json prints exactly one JSON object; errors print {\"error\":\"<message>\"} on stdout, otherwise message goes to stderr via deps.logErr. Neither command calls the project trust gate (they run git/gh/glab only). Do not use mutation in new code; prefer many small files.",
