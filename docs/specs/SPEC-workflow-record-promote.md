@@ -263,7 +263,7 @@ Story split rationale: US-001 is the data contract both commands share, US-002 a
 - `packages/nax/test/helpers/workflow-promote-fixture.ts` — the draft-run fixture (a run directory with open item `B1`, a ruling sidecar, a stubbed forge reporting a draft PR whose body holds the `B1` checklist line, and `waitForChecks` returning `green`); US-004 and US-005 tests both import it.
 
 **US-005**
-- `packages/nax/test/unit/cli/workflow-promote-yes.test.ts` — ACs 1-8.
+- `packages/nax/test/unit/cli/workflow-promote-yes.test.ts` — ACs 1-10.
 
 ### Modifies
 
@@ -395,3 +395,5 @@ All US-005 tests use the draft-run fixture from `test/helpers/workflow-promote-f
 6. [cli] `workflow promote -f auth --yes` with CI `failed` exits 2 and the forge stub receives none of `gh pr edit`, `gh pr comment`, `gh pr ready`, `glab mr update` or `glab mr note create`.
 7. [cli] When the forge's comment command exits 1 with stderr `rate limited`, `promote --yes` exits 1 with error `promote stopped at comment: rate limited` and the forge stub receives no `gh pr ready` or `glab mr update --ready` command.
 8. [cli] When the forge's ready command exits 1 with stderr `not mergeable`, `promote --yes` exits 1 with error `promote stopped at ready: not mergeable`, the body-edit and comment commands were already issued, and the sidecar's `outcome` is not `promoted`.
+9. [cli] `workflow promote -f auth --yes` on a run with no sidecar and every check passing creates a sidecar with empty `decisions` whose `outcome` is `promoted` and whose `url` is the record's `url`.
+10. [cli] `workflow promote -f auth --yes` with an existing sidecar whose `outcome` is `abandoned` rewrites that sidecar's `outcome` to `promoted`.
