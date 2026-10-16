@@ -3,7 +3,7 @@
   "feature": "gates-run",
   "branchName": "feat/gates-run",
   "createdAt": "2026-10-16T00:00:00.000Z",
-  "updatedAt": "2026-10-16T13:37:16.568Z",
+  "updatedAt": "2026-10-16T13:59:19.555Z",
   "userStories": [
     {
       "id": "US-001",
@@ -125,8 +125,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -138,7 +138,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "native",
         "initialProfileId": "native-deepseek",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/cli/workflow.ts",
@@ -173,7 +175,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "8bd8d1d1b6081c0c8368c7cb9aa7fb8c4614d5b2"
     }
   ],
   "analysis": "Phase 2 of #2569. Adds `nax gates run [--gate <name>]... [--json]`, which reuses resolveGateCommands + runQualityGates (packages/nax/src/finish/gates/quality.ts) so a finishing tool no longer hand-spawns quality commands. Key files: packages/nax/src/finish/gates/quality.ts (GATE_ORDER at ~41, DEFAULT_GATE_TIMEOUT_MS 900_000, GateCommand ~46, resolveGateCommands ~89, runGateSetup ~155 file-local, runQualityGates ~175), packages/nax/src/quality/runner.ts (QualityCommandResult ~75, runQualityCommand ~326; timeout => exitCode -1 timedOut true; spawn error => -1 timedOut false; shell 127/126), packages/nax/src/quality/aggregate.ts (list-valued command reports first non-zero exit), packages/nax/src/finish/index.ts (barrel), packages/nax/src/trust/gate.ts (ensureProjectTrusted, codes PROJECT_UNTRUSTED / TRUST_STORE_UNREADABLE), packages/nax/src/trust/match.ts (normalizeTrustPath, resolveTrustRoot precedent; realOrRaw from @nathapp/nax-agent/internal), packages/nax/src/config (findProjectDir), packages/nax/src/config/paths/index.ts (globalConfigDir, GLOBAL_CONFIG_DIR_ENV), packages/nax/src/cli/workflow.ts (command-group pattern: _workflowCliDeps, guarded, --json single document, {error} on stdout), packages/nax/src/cli/trust-gate.ts (runTrustGate exits 2 - NOT used here; this command maps refusals to exit 1), packages/nax/bin/nax.ts, packages/nax/src/cli/index.ts.\n\nUS-001 (dependency-free): add GateRunStatus, GateRunRecord, classifyGateExit, gateOutputTail to quality.ts; export GATE_ORDER; re-export all from src/finish/index.ts; add optional `onGate` to runQualityGates opts. onGate is called once per gate, synchronously, after the gate finishes and before the next gate starts; an exception from onGate propagates. The returned QualityGateResult and `output` text must stay byte-for-byte identical (existing gate-runner and workflow repo-gate tests must not change). runGateSetup is file-local and may change shape so a failed setup yields its QualityCommandResult; the failure chunk text written to output is unchanged. When setup fails the record is built from the setup result with failedPhase 'setup' and the command itself is never run. Tests go into the existing packages/nax/test/unit/finish/gates-quality.test.ts (stub _qualityGateDeps.run).\n\nUS-002 (depends on US-001): new packages/nax/src/cli/gates.ts. IMPORT-CYCLE RISK: import resolveGateCommands/runQualityGates/types from '../finish/gates/quality' by relative path, never from the '@/finish' barrel or src/workflow/repo-gates.ts (that module imports ./feature-deps -> @/finish barrel -> context.ts -> @/cli -> cli/gates.ts: a runtime cycle). `bun run check:import-cycles` must stay clean. Validate --gate against the exported GATE_ORDER (no second copy). Validation order: (1) --gate values known (pure), (2) project root via findProjectDir + realOrRaw vs globalConfigDir exclusion + normalizeTrustPath(dirname(naxDir)), (3) ensureProjectTrusted(projectDir,{interactive: deps.isInteractive() && !json}), (4) resolveGateCommands(projectDir, []), (5) every --gate configured, (6) runQualityGates(projectDir, selectedCommands, { onGate }). Whole of steps 1-6 sits in one try/catch returning 1; records collected so far are discarded on a throw. Non-json errors go to deps.logErr one call per line, nothing on stdout; json errors are one stdout line JSON.stringify({error}) with multi-line messages joined by '; '. Do not call initLogger. Exit: 0 only when >=1 gate ran and all passed; 2 when any non-passed or nothing configured; 1 for failure before reporting. Register in bin/nax.ts next to registerWorkflowCommand(program) (verified by build/typecheck/check:import-cycles, not an AC), re-export from src/cli/index.ts, and add a '### nax gates run' section to docs/guides/cli-reference.md. Tests: packages/nax/test/unit/cli/gates.test.ts mirroring test/unit/cli/workflow-status.test.ts with injected GatesCliDeps; one integration test runs the real resolveGateCommands/runQualityGates with stubbed _qualityGateDeps.loadConfig/run and stubbed ensureProjectTrusted.\n\nRisks: temp dirs on macOS resolve /var -> /private/var, so compare against normalizeTrustPath output; the global config dir can contain a config.json and must be rejected as 'no project'; never run formatFix/formatFixScoped/lintFix (resolveGateCommands already omits them); plain-output wording and --json shape are specified exactly in the story descriptions.",
