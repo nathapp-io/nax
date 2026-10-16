@@ -39,6 +39,17 @@ const policy = () => ({
 });
 
 describe("editTargets", () => {
+  test.each(["edit", "delete", "move"])("%s extracts write-specific raw paths", (kind) => {
+    expect(editTargets({ kind, rawInput: { path: "/a", filePath: "/b", old_path: "/c", new_path: "/d" } })).toEqual([
+      "/a",
+      "/b",
+      "/c",
+      "/d",
+    ]);
+  });
+  test("other ignores rawInput.path", () => {
+    expect(editTargets({ kind: "other", rawInput: { path: "/a" } })).toEqual([]);
+  });
   test("locations, file_path and notebook_path, de-duplicated", () => {
     expect(
       editTargets({ locations: [{ path: "/a" }, { path: "/b" }], rawInput: { file_path: "/a", notebook_path: "/c" } }),

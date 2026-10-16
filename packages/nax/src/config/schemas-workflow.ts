@@ -40,5 +40,6 @@ export function resolveWorkflowConfig(config: { workflow?: WorkflowConfig } | un
 }
 
 export function isWorkflowMode(config: { execution?: { mode?: ExecutionMode } } | undefined): boolean {
-  return config?.execution?.mode === "workflow";
+  // Direct runner callers can supply an unparsed config; omission still means the schema's default.
+  return config !== undefined && (config.execution?.mode ?? "workflow") === "workflow";
 }

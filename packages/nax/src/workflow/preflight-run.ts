@@ -57,10 +57,17 @@ async function storePreflightTokens(
 }
 
 /** Copy the newest reusable preflight.json of an earlier run into this run dir, unless it already has one. */
-export async function adoptPriorPreflight(featureDir: string, runDir: string): Promise<boolean> {
+export async function adoptPriorPreflight(
+  featureDir: string,
+  runDir: string,
+  storyIds: readonly string[],
+): Promise<boolean> {
   if (await Bun.file(preflightPath(runDir)).exists()) return false;
   const prior = await newestPreflight(featureDir);
   if (!prior) return false;
+  const covered = new Set(prior.file.storyIds);
+  const pending = new Set(storyIds);
+  if (covered.size !== pending.size || [...pending].some((id) => !covered.has(id))) return false;
   await mkdir(runDir, { recursive: true });
   await Bun.write(preflightPath(runDir), `${JSON.stringify(prior.file, null, 2)}\n`);
   return true;
@@ -80,7 +87,7 @@ export async function runWorkflowPreflight(input: WorkflowRunStartInput): Promis
     const { fc } = built;
     here = { runDir: fc.runDir, header: { runId: fc.runId, feature: fc.feature } };
     await ensureLedger(fc.runDir, fc.runId, fc.feature);
-    if (await adoptPriorPreflight(fc.featureDir, fc.runDir)) {
+    if (await adoptPriorPreflight(fc.featureDir, fc.runDir, storyIds)) {
       getSafeLogger()?.info("workflow", "Reusing the pre-flight of an earlier run", { storyId: "_run" });
     }
     const advisor = _workflowDeps.createAdvisor({

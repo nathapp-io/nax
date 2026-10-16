@@ -40,6 +40,46 @@ let instance: Logger | null = null;
  */
 let exitFlushRegistered = false;
 
+/** Injectable exit fallback for warnings raised before logging starts. */
+export const _loggerDeps = {
+  onExit: (handler: () => void): void => {
+    process.once("exit", handler);
+  },
+  writeStderr: (text: string): void => {
+    process.stderr.write(text);
+  },
+};
+
+const deferredWarnings: { stage: string; message: string }[] = [];
+let warningExitRegistered = false;
+
+function flushDeferredWarnings(): void {
+  for (const { stage, message } of deferredWarnings.splice(0)) {
+    _loggerDeps.writeStderr(`nax warning (${stage}): ${message}\n`);
+  }
+}
+
+/** Log immediately when initialized; otherwise preserve distinct warnings in order. */
+export function warnOrDefer(stage: string, message: string): void {
+  if (instance !== null) {
+    instance.warn(stage, message);
+    return;
+  }
+  if (deferredWarnings.some((item) => item.stage === stage && item.message === message)) return;
+  deferredWarnings.push({ stage, message });
+  if (!warningExitRegistered) {
+    warningExitRegistered = true;
+    _loggerDeps.onExit(flushDeferredWarnings);
+  }
+}
+
+/** Clear process-scoped warnings separately from the run-scoped logger. @internal */
+export function _resetDeferredWarnings(): void {
+  deferredWarnings.length = 0;
+  process.removeListener("exit", flushDeferredWarnings);
+  warningExitRegistered = false;
+}
+
 /**
  * Structured logger with level gating and dual output (console + JSONL file)
  *
@@ -422,6 +462,9 @@ export function initLogger(options: LoggerOptions = { level: "silent" }): Logger
   }
   instance = new Logger(options);
   setAgentLogger(instance);
+  for (const { stage, message } of deferredWarnings.splice(0)) {
+    instance.warn(stage, message);
+  }
   // MED-05 — catch-all for every process.exit() call site in the CLI: a
   // synchronous exit-time drain of whatever's still buffered, since none of
   // those call sites can be relied on to individually await flush() first.

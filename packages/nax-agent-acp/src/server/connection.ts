@@ -10,8 +10,14 @@ import type { AgentLogger } from "@nathapp/nax-agent";
 import { NO_SERVER_AUTH, type ServerAuth } from "#src/server/auth";
 import { initializeResponse } from "#src/server/capabilities";
 import { type ClientFeatures, clientFeatures, clientPort, NO_CLIENT_FEATURES } from "#src/server/client-port";
-import { guard } from "#src/server/errors";
+import { guard, invalidParams } from "#src/server/errors";
 import type { SessionRegistry } from "#src/server/registry";
+import { SESSION_ID_PATTERN } from "#src/server/storage";
+
+function validatedSessionId(sessionId: string): string {
+  if (!SESSION_ID_PATTERN.test(sessionId)) throw invalidParams("invalid session id");
+  return sessionId;
+}
 
 export interface AppDeps {
   readonly version: string;
@@ -40,7 +46,7 @@ export function buildAgentApp(deps: AppDeps): AgentApp {
     )
     .onRequest("session/load", (ctx) =>
       guard(deps.logger, () =>
-        deps.registry.load(ctx.params.sessionId, {
+        deps.registry.load(validatedSessionId(ctx.params.sessionId), {
           cwd: ctx.params.cwd,
           mcpServers: ctx.params.mcpServers,
           port: (sessionId) => clientPort(ctx.client, sessionId, features),
@@ -49,7 +55,7 @@ export function buildAgentApp(deps: AppDeps): AgentApp {
     )
     .onRequest("session/resume", (ctx) =>
       guard(deps.logger, () =>
-        deps.registry.resume(ctx.params.sessionId, {
+        deps.registry.resume(validatedSessionId(ctx.params.sessionId), {
           cwd: ctx.params.cwd,
           mcpServers: ctx.params.mcpServers ?? [],
           port: (sessionId) => clientPort(ctx.client, sessionId, features),
@@ -58,7 +64,9 @@ export function buildAgentApp(deps: AppDeps): AgentApp {
     )
     .onRequest("session/list", (ctx) => guard(deps.logger, () => deps.registry.list(ctx.params)))
     .onRequest("session/close", (ctx) => guard(deps.logger, () => deps.registry.close(ctx.params.sessionId)))
-    .onRequest("session/delete", (ctx) => guard(deps.logger, () => deps.registry.delete(ctx.params.sessionId)))
+    .onRequest("session/delete", (ctx) =>
+      guard(deps.logger, () => deps.registry.delete(validatedSessionId(ctx.params.sessionId))),
+    )
     .onRequest("session/set_mode", (ctx) =>
       guard(deps.logger, () => deps.registry.setMode(ctx.params.sessionId, ctx.params.modeId)),
     )

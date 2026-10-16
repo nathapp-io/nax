@@ -13,7 +13,7 @@
  */
 import type { RequestPermissionRequest, RequestPermissionResponse } from "@agentclientprotocol/sdk";
 import type { AgentSessionProfile, SandboxPolicy, SessionAskPort } from "@nathapp/nax-agent";
-import { editTargets, firstOutsidePolicy, OUTSIDE_WRITE_ROOTS_REASON } from "#src/client/edit-targets";
+import { editTargets, firstOutsidePolicy, OUTSIDE_WRITE_ROOTS_REASON, WRITE_KINDS } from "#src/client/edit-targets";
 import { isRecord } from "#src/client/text";
 import { describeToolCall, type ToolCallDisplay } from "#src/client/tool-display";
 
@@ -166,11 +166,13 @@ async function decideFull(
   ctx: PermissionContext,
 ): Promise<RequestPermissionResponse> {
   if (offered.allowOnce === undefined) return denyNoAllowOnce(offered, auto);
+  const targets = editTargets(request.toolCall);
+  const unknownWrite = ctx.sandbox !== undefined && WRITE_KINDS.has(display.tool) && targets.length === 0;
   const outside =
     ctx.sandbox !== undefined && display.tool !== "execute" && !READ_ONLY_KINDS.has(display.tool)
-      ? await firstOutsidePolicy(editTargets(request.toolCall), ctx.sandbox, ctx.cwd)
+      ? await firstOutsidePolicy(targets, ctx.sandbox, ctx.cwd)
       : undefined;
-  if (outside !== undefined) {
+  if (unknownWrite || outside !== undefined) {
     auto(OUTSIDE_WRITE_ROOTS_REASON, "deny");
     return rejectWith(offered);
   }

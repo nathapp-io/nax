@@ -18,7 +18,7 @@ import type { CiWaitResult } from "./ci-wait";
 import { parseClosingIssues } from "./closing-issues";
 import type { FeatureContext } from "./feature-context";
 import { _featureDeps } from "./feature-deps";
-import { ledgerCommitMessage, listUncommitted } from "./git";
+import { ledgerCommitMessage, listUncommitted, readDefaultBranch, readHead } from "./git";
 import { buildOpenItems } from "./open-items";
 import { workflowStoryDir } from "./paths";
 import { buildWorkflowPrBody, extractAssumptions, type WorkflowPrBodyFacts } from "./pr-body";
@@ -43,8 +43,8 @@ export interface PublishOutcome {
 
 const PROTECTED_BRANCHES = new Set(["", "main", "master"]);
 
-export function isPublishableBranch(branch: string): boolean {
-  return !PROTECTED_BRANCHES.has(branch);
+export function isPublishableBranch(branch: string, defaultBranch?: string): boolean {
+  return !PROTECTED_BRANCHES.has(branch) && branch !== defaultBranch;
 }
 
 export function workflowPrTitle(fc: FeatureContext): string {
@@ -54,7 +54,9 @@ export function workflowPrTitle(fc: FeatureContext): string {
 
 async function publishTarget(fc: FeatureContext): Promise<{ forge: ForgeKind } | { reason: string }> {
   if (fc.dryRun) return { reason: "dry run" };
-  if (!isPublishableBranch(fc.branch)) return { reason: `branch "${fc.branch || "(empty)"}" is not a feature branch` };
+  const defaultBranch = await readDefaultBranch(fc.projectDir);
+  if (!isPublishableBranch(fc.branch, defaultBranch))
+    return { reason: `branch "${fc.branch || "(empty)"}" is not a feature branch` };
   const forge = await _featureDeps.detectForge(fc.projectDir);
   return forge ? { forge } : { reason: "no forge detected (origin is not GitHub or GitLab)" };
 }
@@ -318,9 +320,19 @@ async function pushLedger(fc: FeatureContext): Promise<void> {
 }
 
 /** The CI wait both publishing modes share; the timeout and poll interval come from the workflow config. */
-function waitForCi(fc: FeatureContext, forge: ForgeKind): Promise<CiWaitResult> {
+async function waitForCi(fc: FeatureContext, forge: ForgeKind): Promise<CiWaitResult> {
+  let expectedSha: string | undefined;
+  try {
+    expectedSha = (await readHead(fc.projectDir)) || undefined;
+  } catch (err) {
+    getSafeLogger()?.warn("workflow", "Could not read pushed HEAD — CI SHA comparison unavailable", {
+      storyId: "_run",
+      error: errorMessage(err),
+    });
+  }
   return _featureDeps.waitForChecks(forge, fc.branch, {
     cwd: fc.projectDir,
+    ...(expectedSha ? { expectedSha } : {}),
     timeoutMs: fc.workflow.timeouts.ciWaitMs,
     pollMs: fc.workflow.timeouts.ciPollMs,
     ...(fc.runSignal ? { signal: fc.runSignal } : {}),

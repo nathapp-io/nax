@@ -96,7 +96,8 @@ export async function resolveGateCommands(repoRoot: string, packageDirs: string[
     cwd: string,
     setup?: QualityCommandSpec,
   ): void => {
-    if (command === undefined) return;
+    if (command === undefined || !(typeof command === "string" ? [command] : command).some((part) => part.trim()))
+      return;
     // Key includes `command` AND `setup`: two layers can declare the same e2e
     // command from the same directory while bootstrapping different stacks
     // (a per-package compose file, say), and both gates must survive.
@@ -107,9 +108,8 @@ export async function resolveGateCommands(repoRoot: string, packageDirs: string[
   };
 
   /**
-   * The setup a gate carries: only `e2e` has one, and only from the layer that
-   * declares the gate itself. `e2eSetup` without `e2e` in the same layer
-   * declares no gate at all — there is nothing for it to bootstrap.
+   * Only `e2e` carries setup. Package gates inherit root setup unless their
+   * overlay explicitly names e2eSetup. Setup alone never declares a gate.
    */
   const setupFor = (commands: QualityCommands, gate: string): QualityCommandSpec | undefined =>
     gate === "e2e" ? commands.e2eSetup : undefined;
@@ -134,7 +134,10 @@ export async function resolveGateCommands(repoRoot: string, packageDirs: string[
       // (loadConfigForWorkdir deep-merges quality.commands) and fan out a
       // second run of every gate the package never actually overrode.
       if (overlayCommands[gate] === undefined) continue;
-      add(`${gate}@${packageDir}`, overlayCommands[gate], packageCwd, setupFor(overlayCommands, gate));
+      const setupCommands = Object.hasOwn(overlayCommands, "e2eSetup")
+        ? overlayCommands
+        : { ...overlayCommands, e2eSetup: rootCommands.e2eSetup };
+      add(`${gate}@${packageDir}`, overlayCommands[gate], packageCwd, setupFor(setupCommands, gate));
     }
   }
 

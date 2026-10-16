@@ -135,6 +135,7 @@ async function startRecord(
   prior: WorkflowFeatureRecord | null,
   head: string | undefined,
 ): Promise<WorkflowFeatureRecord> {
+  if (isFinishedAtHead(prior, head) && isTransientDraft(prior)) return { ...prior, step: "publish" };
   return prior && prior.step !== "done" ? resumeOrRestart(fc, prior, head) : freshRecord(fc, head);
 }
 
@@ -155,10 +156,14 @@ function logHandOff(stories: readonly StorySummary[], storiesDurationMs: number 
   logWorkflow(FEATURE_SCOPE, `stories done ${ran}/${stories.length}${took} - feature workflow start`);
 }
 
-/**
- * Ready, draft and pushed all published something; a local-only prior published nothing, so it runs
- * again (P4-R1 ruling). `pushed` counts only with `workflow.publish: "push"`: the branch is on origin.
- */
+/** Only transport failures retry publishing without spending another review at the same HEAD. */
+function isTransientDraft(prior: WorkflowFeatureRecord): boolean {
+  return (
+    prior.outcome === "draft" &&
+    (prior.ci === "unavailable" || prior.reasons.some((reason) => reason.startsWith("PR update failed:")))
+  );
+}
+
 function isFinishedAtHead(
   prior: WorkflowFeatureRecord | null,
   head: string | undefined,
@@ -177,7 +182,7 @@ async function runInContext(
   const stories = summariseStories(fc.prd, await collectStoryRecords(fc.featureDir));
   const prior = await loadPriorFeature(fc.featureDir, fc.runId);
   const head = await currentHead(fc);
-  if (isFinishedAtHead(prior, head)) {
+  if (isFinishedAtHead(prior, head) && !isTransientDraft(prior)) {
     // nax#2550: the prior `passed` described the stories of that run; the verdict is the current ones'.
     const current = {
       ...prior,

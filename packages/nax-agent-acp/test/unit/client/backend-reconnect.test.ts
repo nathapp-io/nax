@@ -193,7 +193,7 @@ describe("cancel or close while reconnecting (Review Focus 2)", () => {
     const iterator = await startTurn(session, () => fake.callsTo("initialize").length === 2);
     session.cancel();
     expect(endOf(await rest(iterator)).status).toBe("cancelled");
-    // The in-memory launcher counts every kill: the dead process's (a no-op on a real one) and the half-started one.
+    // The in-memory launcher counts every kill: the dead process's (signals surviving group members) and the half-started one.
     expect(fake.kills()).toBe(2);
     const again = await startTurn(session, () => fake.callsTo("initialize").length === 3);
     session.cancel();
@@ -208,7 +208,7 @@ describe("cancel or close while reconnecting (Review Focus 2)", () => {
     const iterator = await startTurn(session, () => fake.callsTo("initialize").length === 2);
     await session.close();
     expect(endOf(await rest(iterator)).status).toBe("cancelled");
-    // The dead process's kill (a no-op on a real one) and the half-started one's.
+    // The dead process's kill (signals surviving group members) and the half-started one's.
     expect(fake.kills()).toBe(2);
   });
 });

@@ -154,10 +154,19 @@ describe("minorsFrom and newestPreflight", () => {
     dirs.push(feature);
     const good = await writeRun(feature, "run-1", 100, [closed("US-001")]);
     const failed = await writeRun(feature, "run-2", 200, [closed("US-001")]);
-    await Bun.write(preflightPath(good), JSON.stringify({ schemaVersion: 1, overlap: [], conflicts: [] }));
+    await Bun.write(
+      preflightPath(good),
+      JSON.stringify({ schemaVersion: 1, storyIds: ["US-001"], overlap: [], conflicts: [] }),
+    );
     await Bun.write(
       preflightPath(failed),
-      JSON.stringify({ schemaVersion: 1, overlap: [], conflicts: [], fallbackReason: "all models failed" }),
+      JSON.stringify({
+        schemaVersion: 1,
+        storyIds: ["US-001"],
+        overlap: [],
+        conflicts: [],
+        fallbackReason: "all models failed",
+      }),
     );
     expect((await newestPreflight(feature))?.path).toBe(preflightPath(good));
   });

@@ -83,6 +83,8 @@ describe("workflow config", () => {
     expect(resolveWorkflowConfig(undefined)).toEqual(WORKFLOW_DEFAULTS);
     expect(isWorkflowMode(undefined)).toBe(false);
     expect(isWorkflowMode({ execution: { mode: "workflow" } })).toBe(true);
+    expect(isWorkflowMode({ execution: {} })).toBe(true);
+    expect(isWorkflowMode({ execution: { mode: "pipeline" } })).toBe(false);
   });
 
   test("workflow and execution.mode are root-only: a package value is ignored with a warning", () => {

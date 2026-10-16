@@ -7,8 +7,14 @@ import { NaxError } from "@/errors";
 import { isKeeperOwnedPath, restoreRepoSnapshot, takeRepoSnapshot } from "@/review/reviewer-guard";
 import { _snapshotDeps } from "@/review/reviewer-guard/snapshot";
 
+import { RunStateKeeper, registerKeeper, runStateWrite, unregisterKeeper } from "@/runstate/store";
+
+const deps = { ..._snapshotDeps };
+const keepers: RunStateKeeper[] = [];
 const dirs: string[] = [];
 afterEach(async () => {
+  Object.assign(_snapshotDeps, deps);
+  for (const keeper of keepers.splice(0)) unregisterKeeper(keeper);
   await Promise.all(dirs.splice(0).map((d) => rm(d, { recursive: true, force: true })));
 });
 
@@ -40,7 +46,7 @@ async function repo(): Promise<string> {
   await writeFile(join(d, "pkg", "b.txt"), "b\n");
   await git(d, "add", "-A");
   await git(d, "commit", "-q", "-m", "seed");
-  return d;
+  return git(d, "rev-parse", "--show-toplevel");
 }
 
 describe("reviewer tree snapshot (nax#2500)", () => {
@@ -98,8 +104,13 @@ describe("reviewer tree snapshot (nax#2500)", () => {
     await writeFile(join(d, ".nax", "config.json"), '{"evil":true}\n');
     await writeFile(join(d, ".nax", "rules", "r.md"), "evil\n");
     await mkdir(join(d, ".nax", "features", "f"), { recursive: true });
-    await writeFile(join(d, ".nax", "features", "f", "prd.json"), "{}\n");
-    await writeFile(join(d, ".nax", "features", "f", "status.json"), "{}\n");
+    const keeper = new RunStateKeeper("test", "f");
+    keepers.push(keeper);
+    registerKeeper(keeper);
+    for (const name of ["prd.json", "status.json"]) {
+      const path = join(d, ".nax", "features", "f", name);
+      await runStateWrite(path, { content: "{}\n" }, () => writeFile(path, "{}\n"));
+    }
     const report = await restoreRepoSnapshot(snap);
     expect([...report.paths].sort()).toEqual([".nax/config.json", ".nax/rules/r.md"]);
     expect(await readFile(join(d, ".nax", "config.json"), "utf8")).toBe("{}\n");
@@ -373,5 +384,87 @@ describe("reviewer ignore-rule edits cannot hide files from the restore (#2552)"
     const report = await restoreRepoSnapshot(snap);
     expect(report.paths).toEqual([]);
     expect(existsSync(join(d, "ignored", "cache"))).toBe(true);
+  });
+});
+
+describe("US-007 defensive restore", () => {
+  test.each(["snapshotWorkingTree", "changedPathsBetween"] as const)(
+    "AC1-5: %s failure restores snapshot blobs only and retains diagnostics",
+    async (seam) => {
+      const d = await repo();
+      const held = "packages/x/.nax/features/f/prd.json";
+      await mkdir(join(d, "packages/x/.nax/features/f"), { recursive: true });
+      await writeFile(join(d, held), "snapshot state");
+      await git(d, "add", "-A");
+      await git(d, "update-index", "--add", "--cacheinfo", `160000,${await git(d, "rev-parse", "HEAD")},nest`);
+      const snap = { ...(await takeRepoSnapshot(d)), tree: await git(d, "write-tree") };
+      const keeper = new RunStateKeeper("test", "f");
+      keepers.push(keeper);
+      registerKeeper(keeper);
+      await runStateWrite(join(d, held), { content: "live state" }, () => writeFile(join(d, held), "live state"));
+      await writeFile(join(d, "a.txt"), "reviewer edit");
+      await writeFile(join(d, "new.txt"), "untracked");
+      const checkouts: string[] = [];
+      _snapshotDeps.git = async (args, cwd) => {
+        if (args[0] === "checkout") checkouts.push(...args.slice(3));
+        return deps.git(args, cwd);
+      };
+      _snapshotDeps[seam] = async () => {
+        throw new Error("snapshot comparison failed");
+      };
+      const report = await restoreRepoSnapshot(snap);
+      expect(await readFile(join(d, "a.txt"), "utf8")).toBe("a\n");
+      expect(report).toMatchObject({ fallback: "tracked-only", paths: [".gitignore", "a.txt", "pkg/b.txt"] });
+      expect(report.failures).toContain("tree: snapshot comparison failed");
+      expect(checkouts).toContain(":(top,literal)a.txt");
+      expect(checkouts).not.toContain(`:(top,literal)${held}`);
+      expect(checkouts).not.toContain(":(top,literal)nest");
+      expect(await readFile(join(d, held), "utf8")).toBe("live state");
+      expect(existsSync(join(d, "new.txt"))).toBe(true);
+      expect(isKeeperOwnedPath(d, held)).toBe(true);
+    },
+  );
+
+  test("AC8-9: only a live keeper entry exempts a path, not its shape or feature", () => {
+    const rel = "packages/x/.nax/features/f/prd.json";
+    expect(isKeeperOwnedPath("/repo", rel)).toBe(false);
+    const keeper = new RunStateKeeper("test", "f");
+    keepers.push(keeper);
+    registerKeeper(keeper);
+    expect(isKeeperOwnedPath("/repo", rel)).toBe(false);
+    keeper.record(
+      join("/repo", rel),
+      { root: "/repo/packages/x", feature: "f", kind: "prd", rel: ".nax/features/f/prd.json" },
+      "{}",
+    );
+    expect(isKeeperOwnedPath("/repo", rel)).toBe(true);
+    unregisterKeeper(keeper);
+    expect(isKeeperOwnedPath("/repo", rel)).toBe(false);
+  });
+
+  test.each([false, true])("AC6-7: index.lock wait, held through deadline=%s", async (held) => {
+    const d = await repo();
+    const snap = await takeRepoSnapshot(d);
+    await writeFile(join(d, "a.txt"), "reviewer");
+    const lock = join(d, await git(d, "rev-parse", "--git-path", "index.lock"));
+    await writeFile(lock, "locked");
+    let now = 0;
+    const sleeps: number[] = [];
+    Object.assign(_snapshotDeps, {
+      now: () => now,
+      sleep: async (ms: number) => {
+        sleeps.push(ms);
+        now += ms;
+        if (!held && now === 200) await rm(lock);
+      },
+    });
+    const report = await restoreRepoSnapshot(snap);
+    expect(sleeps.length).toBe(held ? 50 : 2);
+    expect(sleeps.every((ms) => ms === 100)).toBe(true);
+    expect(report.failures.includes("index.lock held")).toBe(held);
+    if (!held) {
+      expect(report.failures).toEqual([]);
+      expect(await readFile(join(d, "a.txt"), "utf8")).toBe("a\n");
+    }
   });
 });

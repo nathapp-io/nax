@@ -179,7 +179,7 @@ describe("US-002 conflict and missing CI", () => {
     expect(sleeps).toEqual([]);
     expect(calls).toEqual([
       ["gh", "pr", "checks", "feat/x", "--json", "name,state,bucket"],
-      ["gh", "pr", "view", "feat/x", "--json", "mergeable,mergeStateStatus,baseRefName"],
+      ["gh", "pr", "view", "feat/x", "--json", "mergeable,mergeStateStatus,baseRefName,headRefOid"],
     ]);
     const conflict = logs.find((e) => e.message === "CI wait: PR has merge conflicts with main — CI cannot start");
     expect(conflict).toMatchObject({ level: "info", stage: "workflow" });

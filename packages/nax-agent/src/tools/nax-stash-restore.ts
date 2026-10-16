@@ -68,7 +68,7 @@ function restoreIsExempt(args: readonly string[], ctx: NaxGuardContext): boolean
 }
 
 /** Literal existing files or directories only; never symlinks, magic or globs. */
-function pathIsClean(spec: string, ctx: NaxGuardContext): boolean {
+export function pathIsClean(spec: string, ctx: NaxGuardContext): boolean {
   if (spec.startsWith(":") || /[*?[]/.test(spec) || operandTouchesNax(spec, ctx)) return false;
   return ctx.frames.every((frame) => {
     try {
@@ -86,9 +86,19 @@ function pathIsClean(spec: string, ctx: NaxGuardContext): boolean {
 /** Stash mutations that can be proved not to capture or replay nax state. */
 export function stashIsExempt(args: readonly string[], ctx: NaxGuardContext): boolean {
   if (args[0] === "pop" || args[0] === "apply") return restoreIsExempt(args.slice(1), ctx);
+  if (args[0] !== "push") return false;
   const separator = args.indexOf("--");
-  if (args[0] !== "push" || separator === -1) return false;
-  const specs = args.slice(separator + 1);
+  const options = args.slice(1, separator === -1 ? args.length : separator);
+  if (options.some((word) => word === "--pathspec-from-file" || word.startsWith("--pathspec-from-file="))) {
+    return false;
+  }
+  const specs: string[] = [];
+  for (let i = 0; i < options.length; i += 1) {
+    const word = options[i] as string;
+    if (word === "-m" || word === "--message") i += 1;
+    else if (!word.startsWith("-")) specs.push(word);
+  }
+  if (separator !== -1) specs.push(...args.slice(separator + 1));
   if (specs.some((spec) => isFullNaxExclusion(spec, ctx))) return true;
   return specs.length > 0 && specs.every((spec) => pathIsClean(spec, ctx));
 }

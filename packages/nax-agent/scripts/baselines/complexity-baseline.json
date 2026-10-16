@@ -12,7 +12,6 @@
     "src/tools/git-commit.ts": { "run": 22 },
     "src/tools/git.ts": { "buildGitArgv": 46 },
     "src/tools/policy-bash-raw.ts": { "screenRawBashCommand": 24 },
-    "src/tools/policy-bash.ts": { "checkBashCommand": 21 },
     "src/tools/policy.ts": { "verbBranch": 29, "argvBranch": 23 },
     "src/tools/run-command.ts": { "run": 56 },
     "src/tools/runtime.ts": { "log": 40, "runTool": 24 },

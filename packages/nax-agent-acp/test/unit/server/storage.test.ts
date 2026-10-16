@@ -71,6 +71,8 @@ describe("lock (spec §5.1 lock rule)", () => {
     const release = await store.acquireLock("a");
     expect(JSON.parse(await readFile(join(dir, "a.lock"), "utf8"))).toEqual({
       pid: 1000,
+      nonce: expect.any(String),
+      heartbeatAt: "2026-10-09T00:00:00.000Z",
       startedAt: "2026-10-09T00:00:00.000Z",
     });
     await release();

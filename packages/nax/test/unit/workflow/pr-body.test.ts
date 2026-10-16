@@ -27,6 +27,7 @@ const input: WorkflowPrBodyInput = {
   ],
   preflight: {
     schemaVersion: 1,
+    storyIds: ["US-001", "US-002"],
     overlap: [],
     conflicts: [
       { questionId: "Q1", storyIds: ["US-002"], summary: "30d vs 14d", decisionId: "D-1", action: "supersede" },

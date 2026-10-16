@@ -4,10 +4,19 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { isKeeperOwnedPath, restoreRepoSnapshot, takeRepoSnapshot } from "@/review/reviewer-guard";
+import {
+  classifyRunStatePath,
+  RunStateKeeper,
+  registerKeeper,
+  runStateWrite,
+  unregisterKeeper,
+} from "@/runstate/store";
 import { NAX_GITIGNORE_ENTRIES } from "@/utils/gitignore";
 
 const dirs: string[] = [];
+const keepers: RunStateKeeper[] = [];
 afterEach(async () => {
+  for (const keeper of keepers.splice(0)) unregisterKeeper(keeper);
   await Promise.all(dirs.splice(0).map((d) => rm(d, { recursive: true, force: true })));
 });
 
@@ -28,7 +37,10 @@ async function git(cwd: string, ...args: string[]): Promise<void> {
 }
 
 describe("reviewer guard vs files nax itself writes during a turn (nax#2500 F4)", () => {
-  test("keeper predicate covers every tracked run-state file nax writes in a feature dir", () => {
+  test("keeper predicate covers run-state files only after a live keeper records them", () => {
+    const keeper = new RunStateKeeper("test", "f");
+    keepers.push(keeper);
+    registerKeeper(keeper);
     const feat = ".nax/features/f";
     for (const rel of [
       `${feat}/prd.json`,
@@ -38,6 +50,11 @@ describe("reviewer guard vs files nax itself writes during a turn (nax#2500 F4)"
       `${feat}/workflow/run-1/ledger.md`,
       `packages/api/${feat}/prd.json`,
     ]) {
+      expect(isKeeperOwnedPath("/repo", rel)).toBe(false);
+      const abs = join("/repo", rel);
+      const classified = classifyRunStatePath(abs);
+      if (!classified) throw new Error(`invalid fixture ${rel}`);
+      keeper.record(abs, classified, "{}");
       expect(isKeeperOwnedPath("/repo", rel)).toBe(true);
     }
   });
@@ -52,7 +69,10 @@ describe("reviewer guard vs files nax itself writes during a turn (nax#2500 F4)"
     await git(d, "commit", "-q", "-m", "seed");
     const snap = await takeRepoSnapshot(d);
 
-    const feat = join(d, ".nax", "features", "f");
+    const keeper = new RunStateKeeper("test", "f");
+    keepers.push(keeper);
+    registerKeeper(keeper);
+    const feat = join(snap.toplevel, ".nax", "features", "f");
     await mkdir(join(feat, "stories", "US-1"), { recursive: true });
     await mkdir(join(feat, "sessions"), { recursive: true });
     const written = [
@@ -68,7 +88,8 @@ describe("reviewer guard vs files nax itself writes during a turn (nax#2500 F4)"
       join(d, ".nax", "status.json"),
     ];
     for (const p of written) await writeFile(p, "x\n");
-    await writeFile(join(feat, "prd.json"), "{}\n");
+    const prd = join(feat, "prd.json");
+    await runStateWrite(prd, { content: "{}\n" }, () => writeFile(prd, "{}\n"));
     await writeFile(join(d, "a.txt"), "reviewer\n");
 
     const report = await restoreRepoSnapshot(snap);

@@ -90,9 +90,12 @@ function stubBranchPackageGit(): void {
 }
 
 /** Script `callOp` to answer the branch op with `verdict`, recording the input it received. */
-function scriptVerdict(verdict: unknown, inputs: { requiredFiles?: readonly string[]; range?: string }[] = []) {
+function scriptVerdict(
+  verdict: unknown,
+  inputs: { requiredFiles?: readonly string[]; range?: string; repoRoot?: string }[] = [],
+) {
   _workflowDeps.callOp = makeScriptedCallOp((_op, input) => {
-    inputs.push(input as { requiredFiles?: readonly string[]; range?: string });
+    inputs.push(input as { requiredFiles?: readonly string[]; range?: string; repoRoot?: string });
     return verdict;
   });
   return inputs;
@@ -115,6 +118,7 @@ describe("runBranchReview required set and coverage", () => {
     const out = await runBranchReview(ctx, { seed: "seed0", facts });
     expect(out.ran).toBe(true);
     expect(inputs[0]?.requiredFiles).toEqual(["src/a.ts"]);
+    expect(inputs[0]?.repoRoot).toBe(ctx.projectDir);
   });
 
   test("the op input carries the branch range (AC-18)", async () => {

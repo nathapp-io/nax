@@ -9,7 +9,7 @@
 export type { SecretValuePattern } from "@nathapp/nax-agent/internal";
 export { redactSecrets, SECRET_VALUE_PATTERNS } from "@nathapp/nax-agent/internal";
 export { formatConsole, formatJsonl } from "./formatters.js";
-export { addSink, getLogger, getSafeLogger, initLogger, Logger, resetLogger } from "./logger.js";
+export { addSink, getLogger, getSafeLogger, initLogger, Logger, resetLogger, warnOrDefer } from "./logger.js";
 export type {
   LogEntry,
   LoggerOptions,

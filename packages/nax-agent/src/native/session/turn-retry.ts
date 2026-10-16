@@ -134,8 +134,8 @@ export function turnRetryFitsBudget(delayMs: number, remainingMs: number | undef
   return remainingMs === undefined || delayMs <= remainingMs;
 }
 
-function abortError(signal: AbortSignal): unknown {
-  return signal.reason ?? new DOMException("Aborted", "AbortError");
+function abortError(signal?: AbortSignal): unknown {
+  return signal?.reason ?? new DOMException("Aborted", "AbortError");
 }
 
 /**
@@ -143,22 +143,47 @@ function abortError(signal: AbortSignal): unknown {
  * nax-ai's retry.ts `abortableSleep` so a pending backoff cannot outlive the
  * caller's own cancellation and go on to start a request nobody wants.
  */
-export function abortableSleep(ms: number, sleep: (ms: number) => Promise<void>, signal?: AbortSignal): Promise<void> {
-  if (signal === undefined) return sleep(ms);
+export function abortableSleep(
+  ms: number,
+  sleep: (ms: number, signal?: AbortSignal) => Promise<void>,
+  signal?: AbortSignal,
+): Promise<void> {
+  if (signal === undefined) return sleep(ms, signal);
   if (signal.aborted) return Promise.reject(abortError(signal));
-  return new Promise((resolve, reject) => {
+  return new Promise<void>((resolve, reject) => {
     const onAbort = () => reject(abortError(signal));
     signal.addEventListener("abort", onAbort, { once: true });
-    sleep(ms).then(() => {
-      signal.removeEventListener("abort", onAbort);
-      resolve();
-    }, reject);
+    // Keep the race for injected sleeps that do not honour cancellation.
+    Promise.resolve()
+      .then(() => sleep(ms, signal))
+      .then(
+        () => {
+          signal.removeEventListener("abort", onAbort);
+          resolve();
+        },
+        (error: unknown) => {
+          signal.removeEventListener("abort", onAbort);
+          reject(error);
+        },
+      );
   });
 }
 
 /** The real timer. Named and exported so the only production wiring of it is one reference. */
-export function realSleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+export function realSleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return Promise.reject(abortError(signal));
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(abortError(signal));
+    };
+    // Cancellable timer: abort must release the pending backoff immediately.
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 export interface TurnRetryDeps<T> {
@@ -174,7 +199,7 @@ export interface TurnRetryDeps<T> {
    * and leaving it optional let a test omit it and silently wait out a real
    * multi-second backoff. Required makes that a compile error instead.
    */
-  readonly sleep: (ms: number) => Promise<void>;
+  readonly sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
   /** Injectable jitter source, for deterministic tests. Defaults to Math.random. */
   readonly random?: () => number;
   /** Fired once per retry, before the backoff delay, with a 1-based retry number. */

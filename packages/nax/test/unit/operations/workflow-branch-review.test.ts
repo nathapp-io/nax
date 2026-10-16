@@ -31,6 +31,7 @@ const input: WorkflowBranchReviewInput = {
   prompt: "review the branch",
   timeoutMs: 1000,
   minorIds: ["M1"],
+  repoRoot: "/repo",
   requiredFiles: [],
   range: "seed0..HEAD",
 };
@@ -227,7 +228,14 @@ describe("workflowBranchReviewOp coverage retry through callOp (AC-14)", () => {
     const verdict = await callOp(
       { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "_run" },
       workflowBranchReviewOp,
-      { prompt: "review the branch", timeoutMs: 1000, minorIds: [], requiredFiles: ["src/a.ts"], range: "seed0..HEAD" },
+      {
+        repoRoot: "/tmp",
+        prompt: "review the branch",
+        timeoutMs: 1000,
+        minorIds: [],
+        requiredFiles: ["src/a.ts"],
+        range: "seed0..HEAD",
+      },
     );
 
     expect(turns).toHaveLength(2);

@@ -110,6 +110,7 @@ describe("flaggedCount", () => {
       [story("US-1", { flagged: 1 }), story("US-2", { flagged: 2 })],
       {
         schemaVersion: 1,
+        storyIds: ["US-1", "US-2"],
         overlap: [],
         conflicts: [
           { questionId: "Q1", storyIds: ["US-1"], summary: "s", decisionId: "D-1", action: "hold" },

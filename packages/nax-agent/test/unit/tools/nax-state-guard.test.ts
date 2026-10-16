@@ -122,7 +122,7 @@ describe("stash", () => {
     expect(naxStateRefusal(["git", "stash", "push", "--", "src/x.ts"], withNax)).toBeUndefined();
     expect(naxStateRefusal(["git", "stash", "push", "--", "src/x.ts", ".nax/a"], withNax)).toBeDefined();
     expect(naxStateRefusal(["git", "stash", "push", "--", "."], withNax)).toBeDefined();
-    expect(naxStateRefusal(["git", "stash", "push", "src/x.ts"], withNax)).toBeDefined();
+    expect(naxStateRefusal(["git", "stash", "push", "src/x.ts"], withNax)).toBeUndefined();
   });
 
   test("an exclusion must name <root>/.nax from every frame", () => {

@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-10-15T03:17:52.797Z",
+  "updatedAt": "2026-10-15T17:11:19.635Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": { "collectStats": 27 },
@@ -92,7 +92,7 @@
     "src/interaction/plugins/telegram.ts": { "send": 21 },
     "src/log-format/formatter.ts": { "formatStoryComplete": 26, "formatDefault": 22 },
     "src/logger/logger.ts": { "log": 22 },
-    "src/mcp/pool.ts": { "open": 29 },
+    "src/mcp/pool.ts": { "open": 26 },
     "src/metrics/aggregator.ts": { "calculateAggregateMetrics": 28 },
     "src/metrics/tracker.ts": { "deriveContextMetrics": 40, "collectStoryMetrics": 26 },
     "src/operations/adversarial-review.ts": { "verify": 21 },

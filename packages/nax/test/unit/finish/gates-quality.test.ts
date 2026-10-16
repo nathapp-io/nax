@@ -26,6 +26,27 @@ function configWithCommands(commands: NaxConfig["quality"]["commands"]): NaxConf
 }
 
 describe("resolveGateCommands", () => {
+  test.each([{ lint: "" }, { lint: "   " }, { lint: ["  "] }, { lint: [] }])(
+    "US-007 AC10-11: blank command %j produces no gate",
+    async ({ lint }) => {
+      _qualityGateDeps.loadConfig = async () =>
+        configWithCommands({ lint: typeof lint === "string" ? lint : [...lint] });
+      expect(await resolveGateCommands("/repo", [])).toEqual([]);
+    },
+  );
+
+  test.each([undefined, "package setup"])("US-007 AC12-13: e2e setup layering %s", async (setup) => {
+    _qualityGateDeps.loadConfig = async () => configWithCommands({ e2eSetup: "root setup" });
+    _qualityGateDeps.loadPackageOverride = async () => ({
+      quality: {
+        ...DEFAULT_CONFIG.quality,
+        commands: { e2e: "journey", ...(setup === undefined ? {} : { e2eSetup: setup }) },
+      },
+    });
+    expect(await resolveGateCommands("/repo", ["pkg"])).toEqual([
+      { name: "e2e@pkg", command: "journey", cwd: "/repo/pkg", setup: setup ?? "root setup" },
+    ]);
+  });
   test("F2 regression: no root quality.commands, but a package overlay sets `test` -- resolved and included", async () => {
     _qualityGateDeps.loadConfig = async () => configWithCommands({});
     _qualityGateDeps.loadPackageOverride = async (_repoRoot, packageDir) => {

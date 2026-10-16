@@ -99,6 +99,7 @@ class LoopState {
   costStop = false;
 
   constructor(resume: WorkflowStoryRecord | null) {
+    this.fixBase = resume?.fixBase;
     this.round = resume?.round ?? 0;
     this.reviewed = resume?.reviewed ?? false;
     this.unreviewed = resume?.unreviewed ?? false;
@@ -280,6 +281,8 @@ export async function runStoryLoop(env: StoryLoopEnv): Promise<StoryLoopOutcome>
     s.pendingSession = [];
     await env.sink.update({
       openFindings: open,
+      // Retire the fix base with its re-reviewed findings, never leaving stale findings without their base.
+      fixBase: s.fixBase,
       reviewed: s.reviewed,
       unreviewed: s.unreviewed,
       nextFindingId: s.nextId,
@@ -312,7 +315,7 @@ export async function runStoryLoop(env: StoryLoopEnv): Promise<StoryLoopOutcome>
         `${open.length} open: ${open.map((f) => f.id).join(", ")}${fresh ? ", fresh" : ""}`,
       ),
     );
-    await env.sink.update({ phase: "fix", round: s.round });
+    await env.sink.update({ phase: "fix", round: s.round, fixBase: s.fixBase });
     const turn: ImplementTurn = {
       kind: "fix",
       round: s.round,

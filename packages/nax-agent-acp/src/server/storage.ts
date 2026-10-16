@@ -1,18 +1,22 @@
 /**
  * Session files beside the S3 transcript (S5 spec §5.1): `<id>.session.json`
  * metadata, written as a temp file then renamed, and `<id>.lock`, created
- * exclusively. A lock whose pid is dead, or that cannot be read, is stale and
- * taken over; a live one refuses the open. Listing scans the metadata files.
+ * exclusively. Nonce-owned locks use heartbeats to detect stale live pids;
+ * legacy locks remain pid-based. Listing scans the metadata files.
  * Files that cannot be read are never rewritten or deleted here.
  */
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { type ListSessionsResponse, RequestError, type SessionInfo } from "@agentclientprotocol/sdk";
+import type { ListSessionsResponse, SessionInfo } from "@agentclientprotocol/sdk";
 import { type AgentLogger, NaxError } from "@nathapp/nax-agent";
 import { z } from "zod";
 import { invalidParams, messageOf } from "#src/server/errors";
 import { BASH_APPROVALS, MODES } from "#src/server/nax-config";
+import { acquireSessionLock } from "#src/server/session-lock";
 
+export { LOCK_HEARTBEAT_MS, LOCK_STALE_MS } from "#src/server/session-lock";
+
+export const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 export const LIST_PAGE_SIZE = 50;
 const META_SUFFIX = ".session.json";
 
@@ -26,11 +30,10 @@ const MetaSchema = z.object({
   title: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string().nullable(),
+  costUsd: z.number().optional(),
 });
 
 export type SessionMeta = Readonly<z.infer<typeof MetaSchema>>;
-
-const LockSchema = z.object({ pid: z.number().int().positive(), startedAt: z.string() });
 
 export interface SessionStorage {
   readonly dir: string;
@@ -48,6 +51,7 @@ export interface StorageDeps {
   readonly pid: number;
   readonly now: () => Date;
   readonly logger: AgentLogger;
+  readonly setInterval?: (callback: () => void, ms: number) => ReturnType<typeof setInterval>;
   readonly isAlive?: (pid: number) => boolean;
 }
 
@@ -119,42 +123,9 @@ export function createSessionStorage(deps: StorageDeps): SessionStorage {
     return parsed.data;
   }
 
-  /** The pid holding the lock, or undefined when the lock cannot be read (stale). */
-  async function lockHolder(path: string): Promise<number | undefined> {
-    try {
-      const parsed = LockSchema.safeParse(JSON.parse(await readFile(path, "utf8")));
-      return parsed.success ? parsed.data.pid : undefined;
-    } catch {
-      return undefined;
-    }
-  }
-
-  async function tryLock(path: string): Promise<boolean> {
-    const body = JSON.stringify({ pid: deps.pid, startedAt: deps.now().toISOString() });
-    try {
-      await writeFile(path, body, { flag: "wx" });
-      return true;
-    } catch (error) {
-      if (codeOf(error) === "EEXIST") return false;
-      throw error;
-    }
-  }
-
   async function acquireLock(sessionId: string): Promise<() => Promise<void>> {
     await mkdir(deps.dir, { recursive: true });
-    const path = lockPath(sessionId);
-    const release = async (): Promise<void> => {
-      await rm(path, { force: true });
-    };
-    if (await tryLock(path)) return release;
-    const holder = await lockHolder(path);
-    if (holder !== undefined && holder !== deps.pid && isAlive(holder)) {
-      throw RequestError.invalidRequest(undefined, `session in use by pid ${holder}`);
-    }
-    deps.logger.info("session", "taking over a stale session lock", { sessionId, pid: holder });
-    await rm(path, { force: true });
-    if (await tryLock(path)) return release;
-    throw RequestError.invalidRequest(undefined, "session in use by another process");
+    return acquireSessionLock(lockPath(sessionId), deps, isAlive);
   }
 
   async function list(query: {

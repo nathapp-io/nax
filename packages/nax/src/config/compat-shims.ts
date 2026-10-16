@@ -9,7 +9,7 @@
  * file under the source-file size limit and to give the shim chain one home.
  */
 
-import { getLogger } from "../logger";
+import { type getLogger, warnOrDefer } from "../logger";
 import { _applyFinishStepTimeoutShim } from "./finish-timeouts-shim";
 import {
   type ConfigWarnLogger,
@@ -25,11 +25,7 @@ import {
  * logger must not break config loading — hence the swallowed throw.
  */
 export function defaultConfigWarn(msg: string): void {
-  try {
-    getLogger().warn("config", msg);
-  } catch {
-    /* logger may not be init yet */
-  }
+  warnOrDefer("config", msg);
 }
 
 /**

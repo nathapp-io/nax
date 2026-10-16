@@ -13,7 +13,7 @@ import type { WorkflowStatusBlock } from "@/execution";
 import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import type { NaxRuntime } from "@/runtime";
 import { _featureRunDeps, runWorkflowFeature } from "@/workflow/feature";
-import type { FeatureEnv } from "@/workflow/feature-machine";
+import { type FeatureEnv, runFeatureMachine } from "@/workflow/feature-machine";
 import { newFeatureRecord } from "@/workflow/feature-record";
 import { newStoryRecord, upsertFeatureRecord, upsertStoryRecord } from "@/workflow/result";
 import { _workflowDeps } from "@/workflow/step-context";
@@ -394,5 +394,55 @@ describe("runWorkflowFeature", () => {
       resetLogger();
     }
     expect(logs.map((e) => e.message)).toContain("stories done 1/1 (139m 53s) - feature workflow start");
+  });
+});
+
+describe("US-002 transient drafts", () => {
+  test.each([
+    ["AC-6/7", "unavailable", []],
+    ["AC-8", "green", ["PR update failed: timeout"]],
+    ["AC-9", "green", ["review unread: src/a.ts"]],
+  ] as const)("%s", async (_ac, ci, reasons) => {
+    const { input, featureDir } = setup();
+    const prior = {
+      ...newFeatureRecord({ now: "original", seed: "s", minors: [] }),
+      step: "done" as const,
+      outcome: "draft" as const,
+      ci,
+      reasons,
+      head: "headX",
+      url: "old-url",
+      reviewRan: true,
+      repoGates: { ran: ["test"], failing: [] },
+      timings: { "branch-review": 7 },
+    };
+    await upsertFeatureRecord(join(featureDir, "r-old"), { runId: "r-old", feature: input.feature }, prior);
+    const calls: string[] = [];
+    _featureRunDeps.runFeatureMachine = async (env) => {
+      expect(env.record).toEqual({ ...prior, step: "publish" });
+      return runFeatureMachine({
+        ...env,
+        steps: {
+          ...env.steps,
+          branchReview: async () => {
+            calls.push("review");
+            throw new Error("unexpected review");
+          },
+          publish: async () => {
+            calls.push("publish");
+            return { outcome: "draft", ci: "green", reasons: [] };
+          },
+          head: async () => "headX",
+        },
+      });
+    };
+    const result = await runWorkflowFeature(input);
+    if (_ac === "AC-9") {
+      expect(result?.outcome).toBe("already-finished");
+      expect(calls).toEqual([]);
+    } else {
+      expect(calls).toEqual(["publish"]);
+      expect(result?.url).toBe("old-url");
+    }
   });
 });
