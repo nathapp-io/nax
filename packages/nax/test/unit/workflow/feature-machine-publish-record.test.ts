@@ -2,6 +2,10 @@
 import { describe, expect, test } from "bun:test";
 import { featureMachineFixtures, makeDoneStory, makeFeatureMachineHarness } from "@test/helpers";
 import { runFeatureMachine } from "@/workflow/feature-machine";
+import { newFeatureRecord } from "@/workflow/feature-record";
+import type { PublishOutcome } from "@/workflow/finalize";
+import { buildOpenItems } from "@/workflow/open-items";
+import type { WorkflowFeatureRecord } from "@/workflow/types";
 
 const { PUBLISHED } = featureMachineFixtures;
 const harness = makeFeatureMachineHarness;
@@ -64,5 +68,51 @@ describe("the record keeps each story's end state (US-001)", () => {
     const h = harness({}, { stories: [makeDoneStory("US-001"), makeDoneStory("US-002", { state: "not-run" })] });
     const final = await runFeatureMachine(h.env);
     expect(final.storyStates?.map((s) => s.state)).toEqual(["complete", "not-run"]);
+  });
+});
+
+describe("a resumed transient draft re-publishes onto a clean slate (US-001, B1)", () => {
+  const HELD = { approved: false, rationale: "advisor held: earlier", decisionId: "D-1" } as const;
+  /** A publish whose CI failed: a deterministic reason, so no advisor was asked and there is no detail. */
+  const FAILED: PublishOutcome = { outcome: "draft", ci: "failed", reasons: ["CI failed"] };
+
+  /** What an interrupted publish leaves behind: its own hold, its own CI detail, the PR it opened. */
+  const resumedDraft = (): WorkflowFeatureRecord => ({
+    ...newFeatureRecord({ now: "t", seed: "seed0", minors: [] }),
+    step: "publish",
+    outcome: "draft",
+    ci: "unavailable",
+    ciDetail: "gh: 502",
+    approval: HELD,
+    url: "https://gh/pr/1",
+    reasons: ["PR update failed: timeout"],
+  });
+
+  test("B1: a publish that asked no advisor drops the earlier hold", async () => {
+    const final = await runFeatureMachine(harness({ published: FAILED }, { record: resumedDraft() }).env);
+    // The premise: this publish did produce a record, with a deterministic draft reason.
+    expect(final.outcome).toBe("draft");
+    expect(final.reasons).toEqual(["CI failed"]);
+    expect("approval" in final).toBe(false);
+    // What the finding observed: the verdict listed the hold of a publish that asked no advisor.
+    expect(buildOpenItems(final).filter((i) => i.kind === "advisor")).toEqual([]);
+  });
+
+  test("B1: the earlier CI detail goes with the approval", async () => {
+    const final = await runFeatureMachine(harness({ published: FAILED }, { record: resumedDraft() }).env);
+    expect("ciDetail" in final).toBe(false);
+  });
+
+  test("a publish that does ask the advisor replaces the earlier hold rather than keeping both", async () => {
+    const LATER = { approved: false, rationale: "advisor held: later", decisionId: "D-2" } as const;
+    const final = await runFeatureMachine(
+      harness({ published: { ...FAILED, approval: LATER } }, { record: resumedDraft() }).env,
+    );
+    expect(final.approval).toEqual({ approved: false, rationale: "advisor held: later", decisionId: "D-2" });
+  });
+
+  test("the transient draft keeps the PR url the re-publish did not return again", async () => {
+    const final = await runFeatureMachine(harness({ published: FAILED }, { record: resumedDraft() }).env);
+    expect(final.url).toBe("https://gh/pr/1");
   });
 });
