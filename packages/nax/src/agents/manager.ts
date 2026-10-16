@@ -22,16 +22,13 @@ import { knownSessionRole } from "../runtime/session-role";
 import { classifyCompleteException } from "./complete-exception-classifier";
 import { CooldownStore } from "./cooldown-store";
 import { StoryHopBudget } from "./hop-budget";
+import { completeAsWithFallback } from "./manager-complete-as";
 import {
-  buildCompleteCallPreamble,
-  buildCompleteEvent,
   buildCompleteOutcome,
   buildDispatchErrorEvent,
   buildFallbackRecord,
   buildSessionTurnEvent,
-  completeResultProvenance,
   dispatchCompleteHop,
-  resolveFinalDispatch,
   resolveHopCompleteOptions,
   validateAgentCredentials,
 } from "./manager-dispatch";
@@ -515,54 +512,16 @@ export class AgentManager implements IAgentManager {
     prompt: string,
     options: CompleteOptions,
   ): Promise<AgentCompleteOutcome> {
-    const stage = options.pipelineStage ?? "complete";
-    const { resolvedPermissions, augmented, sessionName } = buildCompleteCallPreamble({
+    return completeAsWithFallback(
+      {
+        config: this._config,
+        dispatchEvents: this._dispatchEvents,
+        completeWithFallback: this.completeWithFallback.bind(this),
+      },
+      agentName,
+      prompt,
       options,
-      config: this._config,
-      stage,
-    });
-    const start = Date.now();
-    try {
-      const outcome = await this.completeWithFallback(prompt, augmented, agentName);
-      const event = buildCompleteEvent({
-        sessionName,
-        prompt,
-        response: outcome.result.output,
-        ...resolveFinalDispatch(augmented, agentName, outcome),
-        stage,
-        resolvedPermissions,
-        tokenUsage: outcome.result.tokenUsage,
-        estimatedCostUsd: outcome.result.estimatedCostUsd,
-        exactCostUsd: outcome.result.exactCostUsd,
-        profile: this._config.profile,
-        startedAt: start,
-        sessionId: outcome.result.sessionId,
-        ...completeResultProvenance(outcome.result),
-      });
-      this._dispatchEvents.emitDispatch(event);
-      return outcome;
-    } catch (err) {
-      const errorContext = err instanceof NaxError ? err.context : undefined;
-      const dispatch = errorContext as
-        | { agentName?: string; modelDef?: ResolvedCompleteOptions["modelDef"]; modelTier?: string }
-        | undefined;
-      const errEvent = buildDispatchErrorEvent({
-        origin: "completeAs",
-        agentName: dispatch?.agentName ?? agentName,
-        stage,
-        error: err,
-        prompt,
-        resolvedPermissions,
-        startedAt: start,
-        dispatchOptions: {
-          ...options,
-          ...(dispatch?.modelDef !== undefined ? { modelDef: dispatch.modelDef } : {}),
-          ...(dispatch?.modelTier !== undefined ? { modelTier: dispatch.modelTier } : {}),
-        },
-      });
-      this._dispatchEvents.emitDispatchError(errEvent);
-      throw err;
-    }
+    );
   }
 
   async completeAs(agentName: string, prompt: string, options: CompleteOptions): Promise<CompleteResult> {
