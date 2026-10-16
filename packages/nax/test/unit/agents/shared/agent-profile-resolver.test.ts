@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { resolveAgentAssignment } from "@/agents";
 import type { AgentRoutingConfig, ModelsConfig } from "@/config";
+import { addSink, initLogger, resetLogger } from "@/logger";
 
 const models: ModelsConfig = {
   native: { cheap: "nax-ai-cheap" },
@@ -78,7 +79,7 @@ describe("resolveAgentAssignment", () => {
     expect(a).toEqual({ agent: "native", agentProfileId: "p1", profileModelTier: "cheap" });
   });
 
-  test("shorthand target resolves to its canonical tier (spec §2)", () => {
+  test("a shorthand target is a model pin, not a tier (nax#2571)", () => {
     const shorthandRouting: AgentRoutingConfig = {
       enabled: true,
       strategy: "off",
@@ -89,7 +90,7 @@ describe("resolveAgentAssignment", () => {
     expect(resolveAgentAssignment("p1", shorthandRouting, "US-001", models, "claude")).toEqual({
       agent: "claude",
       agentProfileId: "p1",
-      profileModelTier: "balanced",
+      profileModelPin: "sonnet",
     });
   });
 
@@ -102,5 +103,56 @@ describe("resolveAgentAssignment", () => {
     };
     const a = resolveAgentAssignment("p1", pinRouting, "US-001", models, "claude");
     expect(a).toEqual({ agent: "claude", agentProfileId: "p1", profileModelPin: "claude-opus-5-1" });
+  });
+});
+
+describe("resolveAgentAssignment: shorthand names and effort suffixes (nax#2571)", () => {
+  const shorthandModels: ModelsConfig = {
+    claude: { fast: "haiku", balanced: "sonnet[medium]", powerful: "sonnet[medium]" },
+    opencode: { fast: "oc-fast", powerful: "oc-powerful" },
+  };
+  const routingTo = (target: { agent: string; model: string }): AgentRoutingConfig => ({
+    enabled: true,
+    strategy: "off",
+    default: "p",
+    profiles: [{ id: "p", target, strengths: ["impl"] }],
+  });
+
+  test("a claude opus target is a model pin, not the powerful tier", () => {
+    expect(
+      resolveAgentAssignment("p", routingTo({ agent: "claude", model: "opus" }), "US-001", shorthandModels, "claude"),
+    ).toEqual({ agent: "claude", agentProfileId: "p", profileModelPin: "opus" });
+  });
+
+  test("an opencode opus target is a model pin, not the opencode powerful tier", () => {
+    expect(
+      resolveAgentAssignment("p", routingTo({ agent: "opencode", model: "opus" }), "US-001", shorthandModels, "claude"),
+    ).toEqual({ agent: "opencode", agentProfileId: "p", profileModelPin: "opus" });
+  });
+
+  test("a suffixed tier name is still that tier, and the dropped effort is reported", () => {
+    const messages: string[] = [];
+    resetLogger();
+    initLogger({ level: "warn" });
+    const removeSink = addSink((entry) => {
+      if (entry.level === "warn") messages.push(entry.message);
+    });
+    try {
+      expect(
+        resolveAgentAssignment(
+          "p",
+          routingTo({ agent: "opencode", model: "fast[high]" }),
+          "US-001",
+          shorthandModels,
+          "claude",
+        ),
+      ).toEqual({ agent: "opencode", agentProfileId: "p", profileModelTier: "fast" });
+    } finally {
+      removeSink();
+      resetLogger();
+    }
+    expect(messages).toContain(
+      "Profile target effort suffix is ignored: a profile assigns a tier rung, which carries no effort",
+    );
   });
 });

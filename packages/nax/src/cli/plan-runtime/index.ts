@@ -37,7 +37,7 @@ export function resolvePlanModelSelection(config: NaxConfig, preferredAgent: str
       selection,
       defaultAgent,
     );
-    if (resolved.modelTier === undefined && isUnrecognizedLiteralModel(resolved.modelDef.model)) {
+    if (resolved.modelTier === undefined && isUnrecognizedLiteralModel(resolved.modelDef.model, resolved.agent)) {
       getLogger()?.warn(
         "plan",
         "plan.model is neither a tier nor a recognizable model id — using default balanced model",

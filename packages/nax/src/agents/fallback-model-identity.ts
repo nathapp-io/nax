@@ -36,8 +36,9 @@
  * "provider/model"). Keying on the pin string in that case broke that symmetry.
  */
 
-import { MODEL_SHORTHAND_TIERS, resolveModel, resolveModelForAgent, resolveTierMembership } from "@/config";
+import { classifyModelSelector, isUnrecognizedLiteralModel, resolveModel, resolveModelForAgent } from "@/config";
 import type { ModelsConfig } from "@/config/schema-types";
+import { getSafeLogger } from "@/logger";
 import type { FallbackTarget } from "./swap-decision";
 
 /**
@@ -116,12 +117,19 @@ export function sameFallbackHop(
 /**
  * Convert a `{ agent, model }` fallback target into its dispatchable shape.
  *
- * `model` may name a tier (shorthand alias or a real tier key) or a literal
- * model id (`ConfiguredModel` semantics — mirrors `resolveTierMembership` in
- * `agent-profile-resolver.ts`). When it names a tier, this returns an
- * equivalent `{ agent, tier }` target — from here on indistinguishable from a
- * target that was always spelled with `tier`, so it dispatches and gets
- * model-identity-keyed exclusion exactly like one.
+ * `model` may name a tier (a key of `models.<agent>`) or a literal model id,
+ * classified by `classifyModelSelector` exactly as dispatch classifies it
+ * (nax#2571 — a Claude shorthand such as `opus` is a model, never a tier).
+ * When it names a tier, this returns an equivalent `{ agent, tier }` target —
+ * from here on indistinguishable from a target that was always spelled with
+ * `tier`, so it dispatches and gets model-identity-keyed exclusion exactly like
+ * one. The tier spelling carries no effort, so a suffixed tier (`powerful[high]`)
+ * keeps its tier and drops the effort with a warning — the same policy as a
+ * routing profile target (`agent-profile-resolver.ts`).
+ *
+ * A model id this agent cannot be expected to know (e.g. `opus` on `opencode`)
+ * still dispatches as written, but warns once: before nax#2571 it silently
+ * meant the agent's `powerful` tier.
  *
  * A literal (non-tier) `model` is returned unchanged, and stays a pin all the way
  * to dispatch: `HopKind` carries it, and both seams resolve it directly rather
@@ -137,8 +145,25 @@ export function resolveFallbackDispatchTarget(
   target: FallbackTarget,
 ): FallbackTarget {
   if (target.model === undefined || !models) return target;
-  const aliased = MODEL_SHORTHAND_TIERS[target.model.toLowerCase()] ?? target.model;
-  const membership = resolveTierMembership(models, target.agent, aliased, defaultAgent);
-  if (membership.isTier) return { agent: target.agent, tier: aliased };
-  return target;
+  const selected = classifyModelSelector(models, target.agent, target.model, defaultAgent);
+  if (selected.kind === "model") {
+    if (isUnrecognizedLiteralModel(target.model, target.agent)) {
+      getSafeLogger()?.warnOnce(
+        "fallback",
+        "Fallback target model is neither a tier nor a recognizable model id — dispatching as a literal",
+        { agent: target.agent, model: target.model },
+        `fallback-literal|${target.agent}|${target.model}`,
+      );
+    }
+    return target;
+  }
+  if (selected.effort !== undefined) {
+    getSafeLogger()?.warnOnce(
+      "fallback",
+      "Fallback target effort suffix is ignored: a fallback tier carries no effort",
+      { agent: target.agent, tier: selected.tier, effort: selected.effort },
+      `fallback-effort|${target.agent}|${target.model}`,
+    );
+  }
+  return { agent: target.agent, tier: selected.tier };
 }

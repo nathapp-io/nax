@@ -278,6 +278,27 @@ from the model **string**, so the declared id is the whole address:
 "review": { "semantic": { "model": { "agent": "native", "model": "opencode-go/deepseek-flash" } } }
 ```
 
+**How `{ agent, model }` is read.** `model` names a tier when its base (the
+part before any `[effort]` suffix) is a key of `models.<agent>` (or of the
+default agent's map); otherwise it is a model id, dispatched as written.
+`haiku`, `sonnet` and `opus` are model ids, not tier aliases (nax#2571):
+`{ "agent": "claude", "model": "opus[medium]" }` runs opus at medium effort
+whatever `models.claude.powerful` holds. On any agent other than `claude` the
+three names are unrecognised ids and log a warning (for `plan.model`, an
+unrecognised id falls back to the default `balanced` model instead). To select
+a tier, name it:
+`{ "agent": "claude", "model": "powerful" }`.
+
+A model id is a pin, and pins behave differently from tiers: a pinned routing
+profile does not escalate up the tier ladder, and an op pinned to a model swaps
+to its fallback agent at `balanced`. A config that relied on `opus` meaning
+`powerful` for escalation should name the tier. A suffixed tier name
+(`powerful[high]`) is that tier; in a routing profile or a fallback target the
+suffix is ignored with a warning, since a ladder rung carries no effort. Before
+nax#2571 a profile target such as `fast[high]` was a pin that dispatched with its
+effort; it now binds to the `(agent, fast)` rung, so config load fails when that
+rung is missing. Use a literal model id to keep the effort.
+
 **Legacy keys are rejected, not stripped.** `autoMode.defaultAgent`, `autoMode.fallbackOrder`, and `context.v2.fallback` were removed in ADR-012 Phase 6. Loading a config with them throws `NaxError code: CONFIG_LEGACY_AGENT_KEYS` with a migration hint. This is intentional — silently stripping would mask the migration.
 
 ---

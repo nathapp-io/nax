@@ -1,5 +1,5 @@
 import type { AgentRoutingConfig, AgentRoutingProfile, ModelsConfig, ModelTier } from "@/config";
-import { MODEL_SHORTHAND_TIERS, resolveTierMembership } from "@/config";
+import { classifyModelSelector } from "@/config";
 import { getSafeLogger } from "@/logger";
 
 const NATIVE_AGENT = "native";
@@ -44,12 +44,21 @@ export function resolveAgentAssignment(
 }
 
 function toAssignment(p: AgentRoutingProfile, models: ModelsConfig, defaultAgent: string): ResolvedAgentAssignment {
-  const targetModel = MODEL_SHORTHAND_TIERS[p.target.model.toLowerCase()] ?? p.target.model;
-  const membership = resolveTierMembership(models, p.target.agent, targetModel, defaultAgent);
-  if (!membership.isTier) {
+  const selected = classifyModelSelector(models, p.target.agent, p.target.model, defaultAgent);
+  if (selected.kind === "model") {
     return { agent: p.target.agent, agentProfileId: p.id, profileModelPin: p.target.model };
   }
-  if (membership.viaDefaultAgentFallback && (p.target.agent === NATIVE_AGENT) !== (defaultAgent === NATIVE_AGENT)) {
+  const targetModel = selected.tier;
+  if (selected.effort !== undefined) {
+    // A profile assigns a ladder rung, and a rung carries no effort (nax#2571).
+    getSafeLogger()?.warnOnce(
+      "routing",
+      "Profile target effort suffix is ignored: a profile assigns a tier rung, which carries no effort",
+      { profileId: p.id, agent: p.target.agent, tier: targetModel, effort: selected.effort },
+      `profile-effort|${p.id}`,
+    );
+  }
+  if (selected.viaDefaultAgentFallback && (p.target.agent === NATIVE_AGENT) !== (defaultAgent === NATIVE_AGENT)) {
     // Spec §2 step 2: the fallback-resolved entry may name a provider this agent's protocol cannot serve.
     getSafeLogger()?.warn("routing", "Profile tier resolves only via the default agent across a protocol boundary", {
       profileId: p.id,

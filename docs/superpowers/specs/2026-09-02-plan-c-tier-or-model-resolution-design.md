@@ -59,6 +59,8 @@ model string appears:
 1. **Shorthand alias.** `MODEL_SHORTHAND_TIERS` (haiku/sonnet/opus →
    fast/balanced/powerful, `src/config/schema-types.ts:66`) maps `S` to a tier
    name first, exactly as today. Alias check stays ahead of membership.
+   **Superseded by nax#2571:** step 1 is removed. A shorthand is a model id,
+   and resolution starts at step 2 (`classifyModelSelector`).
 2. **Tier membership.** `S` is a tier for `A` iff `models[A][S]` exists, else
    iff `models[defaultAgent][S]` exists. Membership is **fallback-inclusive**,
    mirroring `resolveModelForAgent`'s own two-step lookup — the string form

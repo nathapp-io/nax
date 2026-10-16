@@ -162,12 +162,17 @@ export type RoutingStrategyName = "keyword" | "llm";
 
 export type LlmRoutingMode = "one-shot" | "per-story" | "hybrid";
 
-/** Common model shorthand aliases → tier mapping for config convenience. */
-export const MODEL_SHORTHAND_TIERS: Record<string, ModelTier> = {
-  haiku: "fast",
-  sonnet: "balanced",
-  opus: "powerful",
-};
+/**
+ * Model names the `claude` agent resolves itself (the Claude CLI's own aliases).
+ *
+ * They are MODEL names, never tier aliases (nax#2571). They used to map to
+ * fast/balanced/powerful, which only held while those tiers carried the
+ * haiku/sonnet/opus family; with an open tier keyspace (ADR-027) a tier holds
+ * any model, so `opus` silently dispatched whatever `powerful` held.
+ */
+export const CLAUDE_MODEL_SHORTHANDS: ReadonlySet<string> = new Set(["haiku", "sonnet", "opus"]);
+
+const CLAUDE_AGENT = "claude";
 
 export function isBuiltinModelTier(value: string): value is "fast" | "balanced" | "powerful" {
   return value === "fast" || value === "balanced" || value === "powerful";
@@ -191,15 +196,59 @@ export function resolveTierMembership(
   return { isTier: false, viaDefaultAgentFallback: false };
 }
 
-/** A literal id resolveModel cannot attribute to a provider and that is not provider-qualified. */
-export function isUnrecognizedLiteralModel(model: string): boolean {
+/**
+ * A literal id resolveModel cannot attribute to a provider and that is not provider-qualified.
+ *
+ * `agent` matters only for the Claude shorthands: `opus` is a model the `claude`
+ * agent knows, and an unknown name to every other agent (nax#2571).
+ */
+export function isUnrecognizedLiteralModel(model: string, agent: string): boolean {
   // A nax profile model carries a trailing `[effort]` suffix (`parseModelSpec`).
-  // It is not part of the id, so recognition runs on the base: `sonnet[medium]`
-  // is the `sonnet` alias, not an id no heuristic knows.
+  // It is not part of the id, so recognition runs on the base.
   const { model: base } = parseModelSpec(model);
   if (base.includes("/")) return false;
-  if (MODEL_SHORTHAND_TIERS[base.toLowerCase()] !== undefined) return false;
+  // Case-sensitive: the Claude CLI knows `opus`, not `Opus`, so `Opus` must warn.
+  if (agent === CLAUDE_AGENT && CLAUDE_MODEL_SHORTHANDS.has(base)) return false;
   return resolveModel(base).provider === "unknown";
+}
+
+/** What a `{ agent, model }` selector's `model` names. */
+export type ModelSelectorClass =
+  | {
+      kind: "tier";
+      tier: ModelTier;
+      /** The `[effort]` suffix the selector carried, split off the tier name. */
+      effort?: string;
+      /** Tier exists only on the default agent's map, not the target agent's. */
+      viaDefaultAgentFallback: boolean;
+    }
+  | { kind: "model"; model: string };
+
+/**
+ * Classify the `model` of a `{ agent, model }` selector: the one place that
+ * answers "tier or model?" (nax#2571). Every site that reads the object form
+ * calls it, so they cannot drift apart.
+ *
+ * A trailing `[effort]` suffix is split off first. The base is a tier when it
+ * names one for `agent` (fallback-inclusive, `resolveTierMembership`);
+ * otherwise the whole string, suffix included, is a model id. No name is
+ * aliased to a tier: `opus` is a model, never `powerful`.
+ */
+export function classifyModelSelector(
+  models: ModelsConfig,
+  agent: string,
+  model: string,
+  defaultAgent: string,
+): ModelSelectorClass {
+  const { model: base, effort } = parseModelSpec(model);
+  const membership = resolveTierMembership(models, agent, base, defaultAgent);
+  if (!membership.isTier) return { kind: "model", model };
+  return {
+    kind: "tier",
+    tier: base,
+    ...(effort === undefined ? {} : { effort }),
+    viaDefaultAgentFallback: membership.viaDefaultAgentFallback,
+  };
 }
 
 /**
@@ -219,13 +268,14 @@ function withEffort(modelDef: ModelDef, effort: string | undefined): ModelDef {
  * Resolve a config-level model selector into an effective agent + model definition.
  *
  * String selectors are always treated as tier labels and resolved through config.models.
- * Object selectors use the embedded agent and interpret `model` as:
- * - shorthand alias (haiku/sonnet/opus) -> mapped tier via config.models
- * - builtin tier (fast/balanced/powerful) -> resolved via config.models
- * - otherwise -> raw model id via resolveModel()
+ * Object selectors use the embedded agent and classify `model` with
+ * `classifyModelSelector`:
+ * - a tier for that agent (builtin or custom) -> resolved via config.models
+ * - otherwise -> raw model id via resolveModel(), including the Claude
+ *   shorthands haiku/sonnet/opus (nax#2571)
  *
- * A trailing `[effort]` suffix (`parseModelSpec`) is not part of the id: every
- * lookup above runs on the base, and the suffix is carried onto the resolved
+ * A trailing `[effort]` suffix (`parseModelSpec`) is not part of a tier name:
+ * the tier lookup runs on the base, and the suffix is carried onto the resolved
  * model id so the selected effort survives resolution (US-001). The suffix the
  * selector names replaces one the tier entry already carries.
  */
@@ -243,20 +293,10 @@ export function resolveConfiguredModel(
     };
   }
 
-  const { model: base, effort } = parseModelSpec(selection.model);
-
-  const aliasedTier = MODEL_SHORTHAND_TIERS[base.toLowerCase()];
-  if (aliasedTier) {
-    return {
-      agent: selection.agent,
-      modelDef: withEffort(resolveModelForAgent(models, selection.agent, aliasedTier, defaultAgent), effort),
-      modelTier: aliasedTier,
-    };
-  }
-
-  const membership = resolveTierMembership(models, selection.agent, base, defaultAgent);
-  if (membership.isTier) {
-    if (membership.viaDefaultAgentFallback && (selection.agent === "native") !== (defaultAgent === "native")) {
+  const selected = classifyModelSelector(models, selection.agent, selection.model, defaultAgent);
+  if (selected.kind === "tier") {
+    const { tier, effort } = selected;
+    if (selected.viaDefaultAgentFallback && (selection.agent === "native") !== (defaultAgent === "native")) {
       // warnOnce: resolution runs on every call, so the same boundary would warn per call (nax#2491 P7).
       // The first occurrence of each agent/tier pair warns; its repeats go to debug with their data.
       getSafeLogger()?.warnOnce(
@@ -264,23 +304,24 @@ export function resolveConfiguredModel(
         "Configured tier resolves via the default agent across a protocol boundary",
         {
           agent: selection.agent,
-          tier: base,
+          tier,
           defaultAgent,
         },
-        `${selection.agent}|${base}`,
+        `${selection.agent}|${tier}`,
       );
     }
     return {
       agent: selection.agent,
-      modelDef: withEffort(resolveModelForAgent(models, selection.agent, base, defaultAgent), effort),
-      modelTier: base,
+      modelDef: withEffort(resolveModelForAgent(models, selection.agent, tier, defaultAgent), effort),
+      modelTier: tier,
     };
   }
 
-  if (isUnrecognizedLiteralModel(selection.model)) {
+  if (isUnrecognizedLiteralModel(selection.model, selection.agent)) {
     // Loud, not fatal: an acp agent may advertise ids no static heuristic recognizes
     // (spec §2 step 4) — so this cannot throw, but it must not stay silent either.
-    getSafeLogger()?.warn(
+    // warnOnce: resolution runs on every dispatch, so the same selector would warn per call.
+    getSafeLogger()?.warnOnce(
       "config",
       "Configured model is neither a tier nor a recognizable model id — dispatching as a literal",
       {
@@ -288,6 +329,7 @@ export function resolveConfiguredModel(
         model: selection.model,
         availableTiers: Object.keys(models[selection.agent] ?? models[defaultAgent] ?? {}),
       },
+      `literal|${selection.agent}|${selection.model}`,
     );
   }
   return { agent: selection.agent, modelDef: resolveModel(selection.model) };

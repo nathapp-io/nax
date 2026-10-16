@@ -60,6 +60,7 @@ export type {
   ModelDef,
   ModelEntry,
   ModelMap,
+  ModelSelectorClass,
   ModelsConfig,
   ModelTier,
   ResolvedConfiguredModel,
@@ -69,9 +70,10 @@ export type {
   TierConfig,
 } from "./schema-types";
 export {
+  CLAUDE_MODEL_SHORTHANDS,
+  classifyModelSelector,
   isBuiltinModelTier,
   isUnrecognizedLiteralModel,
-  MODEL_SHORTHAND_TIERS,
   resolveConfiguredModel,
   resolveModel,
   resolveModelForAgent,

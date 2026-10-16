@@ -200,7 +200,8 @@ not, and native needs no schema change to carry five models or fifty:
   (`src/config/schemas-model.ts:33`) — **tier keys are arbitrary non-empty
   strings**, per agent.
 - `MODEL_SHORTHAND_TIERS` and `isBuiltinModelTier` (`schema-types.ts:66,72`)
-  special-case the three for *shorthand convenience* only.
+  special-case the three for *shorthand convenience* only. (Superseded:
+  nax#2571 removed `MODEL_SHORTHAND_TIERS`; see open question 5.)
 
 **`tierOrder` is the ranking SSOT** (ADR-025 §4), and its rungs are
 agent-qualified: `TierConfig` is `{tier, attempts, agent?}`
@@ -508,6 +509,11 @@ As a gate (§2) the same field is useful without being a second router.
 5. **Should `MODEL_SHORTHAND_TIERS` gain native-shaped shorthands?** Today
    `haiku`/`sonnet`/`opus` map to the three builtin tiers, which is
    Anthropic-shaped. Cosmetic, and safe to defer.
+   **Superseded (nax#2571):** the alias table is removed. With tier keys open,
+   `opus -> powerful` silently dispatched whatever `powerful` held (sonnet, in
+   practice). The three names are now Claude model ids, recognised only for
+   the `claude` agent; `classifyModelSelector` is the one tier-or-model
+   classifier.
 
 ## Implementation
 

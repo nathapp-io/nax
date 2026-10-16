@@ -65,6 +65,7 @@ export type {
   ModelDef,
   ModelEntry,
   ModelMap,
+  ModelSelectorClass,
   ModelsConfig,
   ModelTier,
   NaxConfig,
@@ -79,12 +80,13 @@ export type {
 } from "./schema";
 export {
   AcceptanceConfigSchema,
+  CLAUDE_MODEL_SHORTHANDS,
   ContextConfigSchema,
   ContextV2ConfigSchema,
+  classifyModelSelector,
   DEFAULT_CONFIG,
   isUnrecognizedLiteralModel,
   McpConfigSchema,
-  MODEL_SHORTHAND_TIERS,
   NaxConfigSchema,
   PlanConfigSchema,
   resolveConfiguredModel,
