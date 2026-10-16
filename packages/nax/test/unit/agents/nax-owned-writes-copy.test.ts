@@ -22,3 +22,14 @@ describe("nax-agent's nax-owned-paths test helper", () => {
     expect(normalise(copy)).toBe(normalise(original));
   });
 });
+
+describe("nax-agent's case-insensitive-fs test helper", () => {
+  test("is a verbatim copy of src/agents/case-insensitive-fs.ts", () => {
+    const original = readFileSync(join(import.meta.dir, "../../../src/agents/case-insensitive-fs.ts"), "utf8");
+    const copy = readFileSync(
+      join(import.meta.dir, "../../../../nax-agent/test/helpers/case-insensitive-fs.ts"),
+      "utf8",
+    );
+    expect(normalise(copy)).toBe(normalise(original));
+  });
+});
