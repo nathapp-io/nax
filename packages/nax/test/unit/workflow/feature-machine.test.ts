@@ -137,6 +137,78 @@ describe("runFeatureMachine", () => {
     expect(final.reviewRan).toBe(false);
   });
 
+  // A branch reviewer that repeats a deferred minor as its own minor finding ("M2: …", "DEFERRED M4 …")
+  // listed that minor twice, and kept the copy listed after the branch fix addressed the original.
+  test("a branch-review minor restating a deferred minor by its id never reaches newMinors", async () => {
+    const h = harness(
+      {
+        review: {
+          ...PASS,
+          findings: [
+            { kind: "quality", severity: "minor", issue: "M2: every lexical failure rebuilds the index" },
+            { kind: "quality", severity: "minor", issue: "DEFERRED M4 (reported, not blocking): no doc comment" },
+            { kind: "quality", severity: "minor", issue: "M7: an id nax never assigned stays a new minor" },
+            { kind: "quality", severity: "minor", issue: "providerSlotKey hard-codes the literal" },
+          ],
+          minorTriage: [
+            { id: "M2", decision: "fix-now" },
+            { id: "M4", decision: "leave" },
+          ],
+        },
+        reReview: { verdicts: [{ id: "M2", addressed: true, note: "fixed" }], newFindings: [] },
+      },
+      {
+        record: newFeatureRecord({
+          now: "t",
+          seed: "seed0",
+          minors: [
+            { id: "M2", storyId: "US-002", text: "lexical rebuilds on any failure", triage: "leave" },
+            { id: "M4", storyId: "US-003", text: "no doc comment", triage: "leave" },
+          ],
+        }),
+        limits: ONE_ROUND,
+      },
+    );
+    const final = await runFeatureMachine(h.env);
+    expect(final.newMinors).toEqual([
+      "M7: an id nax never assigned stays a new minor",
+      "providerSlotKey hard-codes the literal",
+    ]);
+    expect(final.minors.map((m) => [m.id, m.triage])).toEqual([
+      ["M2", "fix-now"],
+      ["M4", "leave"],
+    ]);
+    expect(h.ledger).toContain("restated deferred minor M2 dropped: M2: every lexical failure rebuilds the index");
+  });
+
+  test("the re-review drops only restatements of the fix-now minors it was shown", async () => {
+    const h = harness(
+      {
+        review: { ...PASS, minorTriage: [{ id: "M1", decision: "fix-now" }] },
+        reReview: {
+          verdicts: [{ id: "M1", addressed: true, note: "fixed" }],
+          newFindings: [
+            { kind: "quality", severity: "minor", issue: "M1: the cache key still collides with the cooldown key" },
+            { kind: "quality", severity: "minor", issue: "M2: the retry log line has a typo" },
+          ],
+        },
+      },
+      {
+        record: newFeatureRecord({
+          now: "t",
+          seed: "seed0",
+          minors: [
+            { id: "M1", storyId: "US-001", text: "cache key collides with the cooldown key", triage: "leave" },
+            { id: "M2", storyId: "US-002", text: "retry backoff is not jittered", triage: "leave" },
+          ],
+        }),
+        limits: ONE_ROUND,
+      },
+    );
+    const final = await runFeatureMachine(h.env);
+    expect(final.newMinors).toEqual(["M2: the retry log line has a typo"]);
+  });
+
   test("an unparseable branch review: skipped, but red gates still go to the fix", async () => {
     const h = harness({ gates: [RED_LINT, GREEN], review: null });
     const final = await runFeatureMachine(h.env);

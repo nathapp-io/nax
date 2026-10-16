@@ -91,6 +91,10 @@ describe("buildWorkflowBranchReviewPrompt", () => {
     expect(empty).not.toContain("preflight.json");
   });
 
+  test("tells the reviewer a deferred minor is triaged, never repeated as a finding", () => {
+    expect(prompt).toContain("do not repeat a deferred minor as a finding");
+  });
+
   // US-006 (nax#2527): the branch reviewer sees the repo-gate summary nax already recorded.
   const gateBase = {
     prdPath: "p",
