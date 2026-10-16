@@ -18,7 +18,7 @@ import type { CiWaitResult } from "./ci-wait";
 import { parseClosingIssues } from "./closing-issues";
 import type { FeatureContext } from "./feature-context";
 import { _featureDeps } from "./feature-deps";
-import { ledgerCommitMessage, listUncommitted, readDefaultBranch, readHead } from "./git";
+import { changedFilesSince, ledgerCommitMessage, listUncommitted, readDefaultBranch, readHead } from "./git";
 import { buildOpenItems } from "./open-items";
 import { workflowStoryDir } from "./paths";
 import { buildWorkflowPrBody, extractAssumptions, type WorkflowPrBodyFacts } from "./pr-body";
@@ -144,11 +144,58 @@ async function bodyFacts(fc: FeatureContext, input: PublishInput): Promise<Workf
   };
 }
 
+/**
+ * US-001 (nax#2567): the changed-file inventory the approval evidence carries, or the reason there is
+ * none. A missing base or a failed diff is reported to the advisor, never thrown — an inventory nax
+ * could not build must not become a readiness reason that keeps the PR a draft.
+ */
+export type ChangedFilesEvidence =
+  | { readonly kind: "files"; readonly files: readonly string[] }
+  | { readonly kind: "unavailable"; readonly reason: string };
+
+/** How many changed paths the inventory names before it counts the rest instead. */
+const MAX_EVIDENCE_FILES = 300;
+
+/** Why there is no inventory when the run resolved no base commit at all. */
+const NO_BASE_COMMIT = "no base commit was resolved";
+
+const NO_SEED_LINE =
+  "Base commit: unresolved. Establish the diff base from the pull request itself, never from a local branch.";
+
+/** A resolved seed, which is a sha and never a branch name: a stale `main` showed 110 files for a 26-file PR. */
+function baseCommitLine(seed: string | null): string {
+  return seed === null
+    ? NO_SEED_LINE
+    : `Base commit: ${seed}. Diff against this sha (git diff ${seed}..HEAD), never against a branch name such as main.`;
+}
+
+/** The tail of a bounded inventory: how many named paths the line left out. */
+function moreSuffix(total: number): string {
+  const rest = total - MAX_EVIDENCE_FILES;
+  return rest > 0 ? `, and ${rest} more` : "";
+}
+
+function inventoryLine(changed: ChangedFilesEvidence): string {
+  if (changed.kind === "unavailable") return `Changed files since the base commit: unavailable (${changed.reason})`;
+  const { files } = changed;
+  if (files.length === 0) return "Changed files since the base commit (0): none";
+  return `Changed files since the base commit (${files.length}): ${files.slice(0, MAX_EVIDENCE_FILES).join(", ")}${moreSuffix(files.length)}`;
+}
+
+/**
+ * US-001 (nax#2567): the advisor sees every deferred minor's text, not only how many were left — a
+ * count tells it nothing about what was deferred.
+ */
+function minorLines(minorsLeft: readonly string[]): string[] {
+  return [`Deferred minors left: ${minorsLeft.length}`, ...minorsLeft.map((m) => `Deferred minor: ${m}`)];
+}
+
 /** What the approval advisor reads before ruling on readiness. Exported for its own test. */
 export function approvalEvidence(
   input: Pick<PublishInput, "record" | "stories">,
   ci: Pick<CiWaitResult, "outcome" | "detail">,
-  minorsLeft: number,
+  minorsLeft: readonly string[],
+  changed: ChangedFilesEvidence,
 ): string[] {
   const r = input.record;
   // nax#2548: a repair commits after the re-review, so its diff reaches the PR unreviewed.
@@ -162,9 +209,26 @@ export function approvalEvidence(
     `Final gates: ${r.finalGates?.ran.join(", ") || "none"}, all green`,
     `CI: ${ci.outcome} (${ci.detail})`,
     `Branch review ran; open findings after the fix pass: ${r.reviewOpen.length}; branch rulings: ${r.rulings.length}`,
-    `Deferred minors left: ${minorsLeft}`,
+    baseCommitLine(r.seed),
+    inventoryLine(changed),
+    ...minorLines(minorsLeft),
     ...repaired,
   ];
+}
+
+/**
+ * The inventory for the approval question (US-001, nax#2567). The diff is taken from the sha
+ * `resolveSeed` resolved — the advisor may not guess a base from a local branch. A null seed reads as
+ * an unavailable inventory with that reason, and a failed diff as one carrying git's message, because
+ * in both cases the advisor is still the one that decides.
+ */
+async function changedFilesEvidence(projectDir: string, seed: string | null): Promise<ChangedFilesEvidence> {
+  if (seed === null) return { kind: "unavailable", reason: NO_BASE_COMMIT };
+  try {
+    return { kind: "files", files: await changedFilesSince(projectDir, seed) };
+  } catch (err) {
+    return { kind: "unavailable", reason: errorMessage(err) };
+  }
 }
 
 const DIRTY_REASON = "uncommitted changes after the branch fix";
@@ -408,14 +472,17 @@ async function prMode(plan: PublishPlan, input: PublishInput): Promise<PublishOu
     ...plan.dirty,
     ...ledgerReason,
   ];
-  const approval =
-    reasons.length === 0
-      ? await askApproval(input.advisor, {
-          feature: fc.feature,
-          evidence: approvalEvidence(input, ci, body.minorsLeft.length),
-        })
-      : null;
-  // A deterministic reason means the advisor was never asked, so there is no second ledger line either.
+  // A deterministic reason means the advisor is never asked: nothing is diffed for it (US-001) and
+  // no second ledger line is written for it.
+  let approval: { approved: boolean; rationale: string } | null = null;
+  if (reasons.length === 0) {
+    const changed = await changedFilesEvidence(fc.projectDir, input.record.seed);
+    approval = await askApproval(input.advisor, {
+      feature: fc.feature,
+      evidence: approvalEvidence(input, ci, body.minorsLeft, changed),
+    });
+  }
+  // A deterministic reason means the advisor is never asked, so there is no second ledger line either.
   if (approval) await pushLedger(fc);
   return finishPr(fc, { pr, body, ...(draft?.url ? { draftUrl: draft.url } : {}) }, ci, reasons, approval);
 }
