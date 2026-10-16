@@ -1,0 +1,278 @@
+{
+  "project": "nax-monorepo",
+  "feature": "workflow-status",
+  "branchName": "feat/workflow-status",
+  "createdAt": "2026-10-16T00:00:00.000Z",
+  "updatedAt": "2026-10-16T10:20:40.047Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "The feature record keeps the approval outcome, the CI detail and the story states",
+      "description": "**Goal** — Make the workflow feature record store the advisor approval outcome (with decision id), the CI wait detail and the per-story states, so later stages can build a complete open-items list.\n\n**Motivation** — The facts are lost before the verdict is built: `askApproval` returns `{ approved, rationale }` with no decision id; `publish` folds the rationale into `reasons` and drops the rest; the CI wait's `detail` text (the source of the conflicting, no-checks and unavailable reasons) is not stored; and the story states live in `result.stories` and in the run's story summaries, which `buildVerdict(record)` never sees.\n\n**Approach**\n- `askApproval` (`src/workflow/approval.ts:98`): Baseline `Promise<{ approved: boolean; rationale: string }>`. Target `Promise<ApprovalOutcome>`. `decisionId` is the returned `AdviceDecision.id`; it is absent (no key) when the advisor returned no decision or threw.\n- The CI reason in `readinessReasons`: Baseline inline per-state ternaries. Target `export function ciReason(ci: FeatureCiState | undefined, detail?: string): string | undefined` in `approval.ts`, returning `CI failed` for `failed`, `detail ?? <the existing default>` for `conflicting` / `no-checks` / `unavailable`, and `undefined` for `green` / `pending` / `skipped` / `undefined`. `readinessReasons` calls it, so its output is unchanged. (The default for `conflicting` is `PR has merge conflicts with its base branch`.)\n- `PublishOutcome` (`src/workflow/finalize.ts:37`): Baseline `{ outcome; ci; url?; reasons }`. Target adds `approval?: ApprovalOutcome` (present only when the advisor was asked) and `ciDetail?: string` (present only when `ci` is `conflicting`, `no-checks` or `unavailable`).\n- `WorkflowFeatureRecord` (`src/workflow/types.ts:172`): adds `approval?: ApprovalOutcome`, `ciDetail?: string` and `storyStates?: readonly StoryStateItem[]`. All three are absent on records written before this feature.\n- `publishStep` (`src/workflow/feature-machine.ts:453`): also returns `approval` and `ciDetail` when the outcome carries them, and `storyStates` built from `env.facts.stories` (`{ id, state, reason? }`, in that order).\n- Test harness: `test/helpers/workflow-feature-machine.ts` publish step returns the fixed `PUBLISHED` outcome; add an optional `published?: PublishOutcome` script field that it returns instead when set (existing callers unchanged). `finalize-ci-gate.test.ts` `wire(ci)` gains an optional second argument `{ hold?: { id: string; rationale: string } }` that makes its advisor return a `hold` decision with that id and rationale; existing tests update: 'conflict keeps draft' now also carries `ciDetail: \"PR has merge conflicts with main\"`; approval.test askApproval expectations carry `decisionId` on decision paths (no-decision and throw cases carry none); finalize.test 'happy path' now also carries `approval: { approved: true, rationale, decisionId }`.\n\n**Scope** — In: ApprovalOutcome/StoryStateItem types, askApproval, ciReason, PublishOutcome fields, publish wiring, publishStep record fields, test harness changes. Out: any change to buildOpenItems, OpenItem.kind, upsertFeatureRecord, finishPr/PrParts, and the NOTHING_VERIFIED/gateReasons/storyReasons exports (US-002) and the CLI command (US-003). Feature-level: BLOCKING_KINDS and approvalEvidence/finish-approval question are unchanged.\n\n**Interface**\n```typescript\n// src/workflow/types.ts\nexport interface ApprovalOutcome { readonly approved: boolean; readonly rationale: string; readonly decisionId?: string }\nexport interface StoryStateItem { readonly id: string; readonly state: StoryState; readonly reason?: string }\n// WorkflowFeatureRecord gains:\n//   approval?: ApprovalOutcome; ciDetail?: string; storyStates?: readonly StoryStateItem[]\n// src/workflow/approval.ts\nexport function askApproval(...): Promise<ApprovalOutcome>\nexport function ciReason(ci: FeatureCiState | undefined, detail?: string): string | undefined\n// src/workflow/finalize.ts PublishOutcome gains: approval?: ApprovalOutcome; ciDetail?: string\n```",
+      "acceptanceCriteria": [
+        "`askApproval` with an advisor whose decision is `{ id: \"D-7\", action: { type: \"approve\" }, rationale: \"clean\" }` returns `{ approved: true, rationale: \"clean\", decisionId: \"D-7\" }`.",
+        "`askApproval` with an advisor whose decision is `{ id: \"D-1\", action: { type: \"hold\", reason: \"x\" }, rationale: \"risky\" }` returns `{ approved: false, rationale: \"advisor held: risky\", decisionId: \"D-1\" }`.",
+        "`askApproval` with an advisor that returns no decision and `fallbackReason` `\"all models failed\"` returns `{ approved: false, rationale: \"advisor unavailable: all models failed\" }` with no `decisionId` key.",
+        "`askApproval` with an advisor whose `advise` throws `Error(\"boom\")` returns an outcome with no `decisionId` key.",
+        "`ciReason(\"failed\")` returns `\"CI failed\"`.",
+        "`ciReason(\"conflicting\", \"PR #9 has merge conflicts\")` returns `\"PR #9 has merge conflicts\"`.",
+        "`ciReason(\"conflicting\")` with no detail returns `\"PR has merge conflicts with its base branch\"`.",
+        "`ciReason` returns `undefined` for each of `\"green\"`, `\"pending\"` and `\"skipped\"`.",
+        "`readinessReasons` with the `READY` facts of `approval.test.ts` overridden by `ci` `\"unavailable\"` and `ciDetail` `\"gh: 502\"` returns exactly `[\"gh: 502\"]`.",
+        "`publish`, wired with `wire({ outcome: \"green\", detail: \"ok\" }, { hold: { id: \"D-1\", rationale: \"risky\" } })` (every ready condition met), returns an outcome whose `approval` is `{ approved: false, rationale: \"advisor held: risky\", decisionId: \"D-1\" }`.",
+        "`publish`, wired with `wire({ outcome: \"failed\", detail: \"1 check failed\" })`, returns an outcome with no `approval` key and never asks the advisor.",
+        "`publish`, wired with `wire({ outcome: \"conflicting\", detail: \"PR #9 has merge conflicts\" })`, returns an outcome whose `ciDetail` is `\"PR #9 has merge conflicts\"`.",
+        "`publish`, wired with `wire({ outcome: \"green\", detail: \"3 checks passed\" })`, returns an outcome with no `ciDetail` key.",
+        "`runFeatureMachine`, with a harness whose `published` script field holds an outcome with `approval` `{ approved: false, rationale: \"advisor held: r\", decisionId: \"D-1\" }`, ends with a record whose `approval` equals that object.",
+        "`runFeatureMachine`, with a harness whose `published` script field holds an outcome with `ciDetail` `\"PR #9 has merge conflicts\"`, ends with a record whose `ciDetail` is `\"PR #9 has merge conflicts\"`.",
+        "`runFeatureMachine` with `facts.stories` `US-001` `complete` and `US-002` `complete-gate-open` with reason `red: lint` ends with a record whose `storyStates` is `[{ id: \"US-001\", state: \"complete\" }, { id: \"US-002\", state: \"complete-gate-open\", reason: \"red: lint\" }]`.",
+        "`runFeatureMachine` with no `published` script field (the default `PUBLISHED` outcome, which has no `approval`) ends with a record that has no `approval` key."
+      ],
+      "tags": [
+        "feature",
+        "workflow"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Multi-file but standard additive changes (types, return shape, extracted helper, record fields) with a small harness extension; no new abstractions beyond two interfaces.",
+        "agentProfileId": "native-deepseek",
+        "agent": "native",
+        "profileModelTier": "balanced",
+        "initialAgent": "native",
+        "initialProfileId": "native-deepseek",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/approval.ts",
+        "packages/nax/src/workflow/finalize.ts",
+        "packages/nax/src/workflow/feature-machine.ts",
+        "packages/nax/test/unit/workflow/finalize-ci-gate.test.ts",
+        "packages/nax/test/helpers/workflow-feature-machine.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/workflow/feature-machine-publish-record.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/workflow/approval.ts",
+          "reason": "`askApproval` returns `ApprovalOutcome` with the decision id, and `ciReason` is extracted from `readinessReasons` with its output unchanged, as the Design states."
+        },
+        {
+          "path": "packages/nax/src/workflow/finalize.ts",
+          "reason": "`PublishOutcome` gains `approval` and `ciDetail`, set where the advisor is asked and where the CI wait reported a detail-bearing state."
+        },
+        {
+          "path": "packages/nax/src/workflow/feature-machine.ts",
+          "reason": "`publishStep` copies `approval` and `ciDetail` from the outcome and writes `storyStates` from `env.facts.stories`."
+        },
+        {
+          "path": "packages/nax/src/workflow/types.ts",
+          "reason": "adds `ApprovalOutcome`, `StoryStateItem` and the three optional record fields."
+        },
+        {
+          "path": "packages/nax/test/helpers/workflow-feature-machine.ts",
+          "reason": "the harness's `publish` step always returns the fixed `PUBLISHED` outcome. Add an optional `published?: PublishOutcome` script field that the `publish` step returns instead when set; every existing caller leaves it unset and keeps `PUBLISHED`."
+        },
+        {
+          "path": "packages/nax/test/unit/workflow/finalize-ci-gate.test.ts",
+          "reason": "\"AC-21/22/23/24/25: conflict keeps draft\" expects the `publish` result to equal exactly `{ outcome: \"draft\", ci: \"conflicting\", url, reasons: [...] }`; it now also carries `ciDetail: \"PR has merge conflicts with main\"`. `wire(ci)` gains an optional second argument `{ hold?: { id: string; rationale: string } }` that makes its advisor return a `hold` decision with that id and rationale instead of the approval; every existing call passes nothing. ACs 10-13 are added to this file."
+        },
+        {
+          "path": "packages/nax/test/unit/workflow/approval.test.ts",
+          "reason": "ACs 1-9 are added here, and \"asks finish-approval with an approve/hold menu and the evidence\" expects exactly `{ approved: true, rationale: \"clean\" }` and \"hold, no decision, or a throw\" expects exactly `{ approved: false, rationale: \"advisor held: risky\" }`. Both now also carry `decisionId`, the id of the decision `makeAdviceDecision` returned; the no-decision and throw cases still carry no `decisionId`."
+        },
+        {
+          "path": "packages/nax/test/unit/workflow/finalize.test.ts",
+          "reason": "\"happy path: push, draft PR, CI pending, advisor approves -> promoted, ready\" expects the outcome to equal exactly `{ outcome: \"ready\", ci: \"pending\", url, reasons: [] }`. It now also carries `approval: { approved: true, rationale, decisionId }` from the stub advisor's decision; the other fields are unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-002",
+      "title": "verdict.openItems lists advisor, story, CI and reason items",
+      "description": "**Goal** — Make `buildOpenItems` return the complete list of what keeps a feature from ready (advisor hold, flagged decisions, incomplete stories, blocking CI, unexplained reasons), and have the verdict and the draft PR body use it.\n\n**Motivation** — `buildOpenItems` returns only `reviewOpen` findings, the branch review's cannot-verify items and red final gates; on run `auth-relogin-recovery` the only draft reason was the advisor's finish-approval hold and `verdict.openItems` held nothing explaining it, so a finishing tool had to rebuild the list by hand from four artifacts.\n\n**Approach**\n`OpenItem.kind` (`src/workflow/types.ts:96`): Baseline `\"finding\" | \"ruling\" | \"cannot-verify\" | \"gate\"`; Target adds `\"advisor\" | \"story\" | \"ci\" | \"reason\"`.\n\n`buildOpenItems(rec: WorkflowFeatureRecord): OpenItem[]` (`src/workflow/open-items.ts:31`). Signature unchanged. `BLOCKING_KINDS` is unchanged (`finding`, `ruling`, `gate`), so `workflowPassed` keeps its meaning. It stays a short composition of per-kind helpers in `open-items.ts` (`advisorItems`, `storyItems`, `ciItem`, `reasonItems`, and `isExplained` for the rule below), each under the complexity limit of 20. It returns, in this order: the existing finding / ruling items, cannot-verify items and gate items, then:\n\n| Kind | Source | `id` | `issue` |\n|:--|:--|:--|:--|\n| `advisor` | `rec.approval` with `approved: false` | `approval.decisionId`, else `_run:approval` | `approval.rationale` |\n| `advisor` | each id in `rec.flaggedDecisions` not already an advisor item | the decision id | `advisor decision <id> needs a human: see nax advisor list` |\n| `story` | each `rec.storyStates` entry whose `state` is not `complete` or `complete-with-rulings` | the story id | `<id> did not finish` for `not-run`; otherwise `<id> ended <state>`, followed by `: <reason>` when a reason is set |\n| `ci` | `ciReason(rec.ci, rec.ciDetail)` is defined | `_run:ci` | that reason text |\n| `reason` | each `rec.reasons` entry not explained (below) | `_run:reason<n>`, where `<n>` is the reason's 1-based position in `rec.reasons` (explained reasons keep their positions, so an id is stable when later reasons are appended) | the reason text |\n\nA reason is **explained** when it equals a text nax produced for a fact that already has an item: a gate reason (`gates red: …`) while a gate item exists; the `ciReason` text while the `ci` item exists; `stories gate-open: <ids>` / `stories not run: <ids>` while a story item exists for every id it names; `approval.rationale` while the approval's advisor item exists; and `<n> ruling(s) flagged for a human` while `flaggedDecisions` yields at least `<n>` advisor items (counting the ids in `flaggedDecisions`, which span every run of the feature, and not the approval item). A flagged count with fewer such items (story flags and pre-flight holds are counted but are not always ledger decisions, and `flaggedDecisions` is absent when the ledger could not be read) is a `reason` item. `NOTHING_VERIFIED` has no gate item, so it is a `reason` item. `approval.ts` also exports `NOTHING_VERIFIED`, `gateReasons` and a `storyReasons(states)` helper producing the `stories gate-open: …` / `stories not run: …` texts, so `open-items.ts` matches the exact texts `readinessReasons` writes; `readinessReasons` uses `storyReasons`, so its output is unchanged.\n\nAdvisor items for `flaggedDecisions` appear in `result.json` only: `publishStep` collects those ids after `publish` returns, so the PR body, written inside `publish`, does not list them, and there the flagged count is a `reason` item. Its \"Advisor decisions\" section already names every decision.\n\n`upsertFeatureRecord` (`src/workflow/result.ts:141`): builds the verdict from the record with `storyStates` taken from `result.stories` (`{ id, state: state ?? \"not-run\", reason? }`) when the record's `storyStates` is undefined; an empty array is kept as it is.\n\n`PrParts` and `finishPr` (`finalize.ts:194`, `:200`): Baseline `PrParts { pr; body; draftUrl? }`; `finishPr(fc, parts, ci, reasons, approval: { approved; rationale } | null)`. Target: `PrParts` gains `record: WorkflowFeatureRecord` and `stories: readonly StorySummary[]` (set by `prMode` from `input`), and `finishPr`'s `approval` parameter is `ApprovalOutcome | null`. The record's `reasons` is still empty at publish (`publishStep` is its only writer), so `finishPr` rebuilds the body's `openItems` from `buildOpenItems({ ...parts.record, approval, ci: ci.outcome, ciDetail, storyStates, reasons: finalReasons })`, where `ciDetail` is `ci.detail` only for `conflicting`, `no-checks` and `unavailable`, and `storyStates` comes from `parts.stories`. The draft's \"Before marking ready\" list then carries the advisor, story, CI and reason items the verdict does, under the same ids. Two exceptions: the flagged-decision items, and reasons `publish` appends after the body is written (`a human already marked the PR ready; nax left it as is`, `PR update failed: …`), which reach only the verdict. Those are always appended after `finalReasons`, so they never shift an earlier reason's position. `buildWorkflowPrBody`'s `openItemLine` renders any non-`gate` kind as `- [ ] **<id>** (<severity>, <kind>)` or `(<kind>)`; no rendering change is needed.\n\nTest changes: `result.test.ts` 'upsertFeatureRecord writes a top-level verdict once the outcome is set' (record `reasons` `[\"r\"]`) now expects `openItems: [{ id: \"_run:reason1\", kind: \"reason\", issue: \"r\" }]`; `workflowPassed`, `outcome` and `reasons` unchanged. ACs 20-23 use `wire()` with the `hold` option US-001 adds.\n\n**Scope** — In: OpenItem.kind, buildOpenItems and helpers, upsertFeatureRecord storyStates fallback, PrParts/finishPr body rebuild, approval.ts exports (NOTHING_VERIFIED, gateReasons, storyReasons). Out: recording approval/ciDetail/storyStates on the record (US-001) and the CLI command (US-003). Feature-level: no new kind is blocking; flagged decisions are not listed in the PR body's \"Before marking ready\" list; minors are not open items.\n\n**Interface**\n```typescript\nexport type OpenItemKind = \"finding\" | \"ruling\" | \"cannot-verify\" | \"gate\" | \"advisor\" | \"story\" | \"ci\" | \"reason\";\nexport function buildOpenItems(rec: WorkflowFeatureRecord): OpenItem[];\n// finalize.ts\ninterface PrParts { pr; body; draftUrl?; record: WorkflowFeatureRecord; stories: readonly StorySummary[] }\nfinishPr(fc, parts, ci, reasons, approval: ApprovalOutcome | null)\n```",
+      "acceptanceCriteria": [
+        "`buildOpenItems` on a record with `approval` `{ approved: false, rationale: \"advisor held: x\", decisionId: \"D-1\" }` returns a list containing `{ id: \"D-1\", kind: \"advisor\", issue: \"advisor held: x\" }`.",
+        "`buildOpenItems` on a record with `approval` `{ approved: false, rationale: \"advisor unavailable: boom\" }` and no `decisionId` returns a list containing `{ id: \"_run:approval\", kind: \"advisor\", issue: \"advisor unavailable: boom\" }`.",
+        "`buildOpenItems` on a record with `approval` `{ approved: true, rationale: \"clean\", decisionId: \"D-7\" }` returns no item with kind `advisor`.",
+        "`buildOpenItems` on a record with `approval` `{ approved: false, rationale: \"advisor held: x\", decisionId: \"D-1\" }` and `flaggedDecisions` `[\"D-1\", \"D-3\"]` returns exactly two `advisor` items, ids `D-1` then `D-3`, and the `D-3` item's `issue` starts with `advisor decision D-3 needs a human`.",
+        "`buildOpenItems` on a record with `storyStates` `US-001` `complete`, `US-002` `complete-with-rulings`, `US-003` `complete-gate-open` with reason `red: lint` and `US-004` `not-run` returns `story` items for exactly `US-003` and `US-004`, with issues `US-003 ended complete-gate-open: red: lint` and `US-004 did not finish`.",
+        "`buildOpenItems` on a record with `ci` `\"failed\"` returns a list containing `{ id: \"_run:ci\", kind: \"ci\", issue: \"CI failed\" }`.",
+        "`buildOpenItems` on a record with `ci` `\"conflicting\"` and `ciDetail` `\"PR #9 has merge conflicts\"` returns a `ci` item whose `issue` is `PR #9 has merge conflicts`.",
+        "`buildOpenItems` on records with `ci` `\"green\"`, `\"pending\"` and `\"skipped\"` returns no item with kind `ci` for any of them.",
+        "`buildOpenItems` on a record with `reasons` `[\"uncommitted changes after the branch fix\", \"branch review did not run\"]` and no other facts returns `reason` items `_run:reason1` and `_run:reason2` carrying those two texts in that order.",
+        "`buildOpenItems` on a record with `finalGates` `{ ran: [\"lint\"], failing: [\"lint\"] }`, `reasons` `[\"gates red: lint\"]` returns the `lint` gate item and no `reason` item.",
+        "`buildOpenItems` on a record with `ci` `\"failed\"`, a `storyStates` entry `US-003` in state `complete-gate-open`, `approval` `{ approved: false, rationale: \"advisor held: x\", decisionId: \"D-1\" }` and `reasons` `[\"CI failed\", \"stories gate-open: US-003\", \"advisor held: x\"]` returns no `reason` item.",
+        "`buildOpenItems` on a record with `reasons` `[\"2 ruling(s) flagged for a human\"]` and `flaggedDecisions` `[\"D-3\", \"D-4\"]` returns no `reason` item.",
+        "`buildOpenItems` on a record with `reasons` `[\"2 ruling(s) flagged for a human\"]` and no `flaggedDecisions` returns one `reason` item `_run:reason1` carrying that text.",
+        "`buildOpenItems` on a record with `finalGates` `{ ran: [\"lint\"], failing: [\"lint\"] }` and `reasons` `[\"gates red: lint\", \"branch review did not run\"]` returns one `reason` item, with id `_run:reason2`.",
+        "`buildOpenItems` on a record whose `finalGates` is `{ ran: [], failing: [] }` and whose `reasons` holds the nothing-verified text `readinessReasons` produces for it returns one `reason` item carrying that text.",
+        "`buildOpenItems` on a record with a `reviewOpen` finding, a cannot-verify item, a red gate, a held approval, a story state, a failed CI and an unexplained reason returns kinds in the order `finding`, `cannot-verify`, `gate`, `advisor`, `story`, `ci`, `reason`.",
+        "`buildVerdict` on a record with `passed` `true`, `outcome` `\"draft\"` and `approval` `{ approved: false, rationale: \"advisor held: x\", decisionId: \"D-1\" }` returns `workflowPassed` `true`.",
+        "`upsertFeatureRecord` on a record with `outcome` `\"draft\"` and no `storyStates`, into a run directory whose `result.json` already holds a story record `US-002` with state `complete-gate-open`, writes a `verdict.openItems` containing a `story` item with id `US-002`.",
+        "`upsertFeatureRecord` on a record with `outcome` `\"draft\"` and `approval` `{ approved: false, rationale: \"advisor held: x\", decisionId: \"D-1\" }` writes a `verdict.openItems` containing `{ id: \"D-1\", kind: \"advisor\", issue: \"advisor held: x\" }`.",
+        "`publish`, wired with `wire({ outcome: \"green\", detail: \"ok\" }, { hold: { id: \"D-1\", rationale: \"risky\" } })`, writes a final PR body whose \"Before marking ready\" section contains a line starting `- [ ] **D-1** (advisor) — advisor held:`.",
+        "`publish`, wired with `wire({ outcome: \"failed\", detail: \"1 check failed\" })`, writes a final PR body whose \"Before marking ready\" section contains a line starting `- [ ] **_run:ci** (ci) — CI failed`.",
+        "`publish`, wired with `wire({ outcome: \"green\", detail: \"ok\" })` and `input.stories` holding one summary `US-002` in state `complete-gate-open`, writes a final PR body whose \"Before marking ready\" section contains a line starting `- [ ] **US-002** (story)`.",
+        "`publish`, wired with `wire({ outcome: \"green\", detail: \"ok\" })` and `input.record.reviewRan` `false`, writes a final PR body whose \"Before marking ready\" section contains a line starting `- [ ] **_run:reason1** (reason) — branch review did not run`."
+      ],
+      "tags": [
+        "feature",
+        "workflow"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Four existing source files change with no new abstractions; the explained-reason rule is the only subtle part and is pinned by exact-text ACs that a single tdd-simple session can drive.",
+        "agentProfileId": "native-deepseek",
+        "agent": "native",
+        "profileModelTier": "balanced",
+        "initialAgent": "native",
+        "initialProfileId": "native-deepseek",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/open-items.ts",
+        "packages/nax/src/workflow/approval.ts",
+        "packages/nax/src/workflow/result.ts",
+        "packages/nax/src/workflow/finalize.ts",
+        "packages/nax/test/unit/workflow/open-items.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/workflow/open-items-kinds.test.ts"
+      ],
+      "suggestedCriteria": [
+        "`upsertFeatureRecord` on a record whose `storyStates` is an empty array writes a `verdict.openItems` with no `story` item even when `result.json` holds an unfinished story record."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/workflow/open-items.ts",
+          "reason": "adds the advisor, story, CI and reason items and the explained-reason rule."
+        },
+        {
+          "path": "packages/nax/src/workflow/types.ts",
+          "reason": "`OpenItem.kind` gains `advisor`, `story`, `ci` and `reason`."
+        },
+        {
+          "path": "packages/nax/src/workflow/result.ts",
+          "reason": "`upsertFeatureRecord` passes `storyStates` from `result.stories` to `buildVerdict` when the record has none."
+        },
+        {
+          "path": "packages/nax/src/workflow/finalize.ts",
+          "reason": "`PrParts` gains `record` and `stories`, `finishPr` takes `ApprovalOutcome | null` and rebuilds the body's `openItems` with the approval, CI, story and reason facts, as the Design states."
+        },
+        {
+          "path": "packages/nax/src/workflow/approval.ts",
+          "reason": "also exports `NOTHING_VERIFIED`, `gateReasons` and `storyReasons`; `readinessReasons` uses `storyReasons`, so its output is unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/workflow/finalize-ci-gate.test.ts",
+          "reason": "ACs 20-23 are added here, using `wire()` with the `hold` option US-001 adds."
+        },
+        {
+          "path": "packages/nax/test/unit/workflow/result.test.ts",
+          "reason": "ACs 18-19 are added here, and \"upsertFeatureRecord writes a top-level verdict once the outcome is set\" expects `openItems: []` for a record whose `reasons` is `[\"r\"]`. `r` is now an unexplained reason, so the expected `openItems` is `[{ id: \"_run:reason1\", kind: \"reason\", issue: \"r\" }]`; `workflowPassed`, `outcome` and `reasons` are unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-003",
+      "title": "nax workflow status",
+      "description": "**Goal** — Add the read-only command `nax workflow status -f <feature> [--json]` that prints the verdict for the feature's newest workflow run.\n\n**Motivation** — A finishing tool (the nax-finish skill today) rebuilds the open-items list by hand from `result.json`, `branch-rereview.json`, the ledger and the advisor ledger, parsing shapes that failed in practice; one command should print the list instead.\n\n**Approach**\n`nax workflow status -f <feature> [--json] [-d <dir>]`, registered by `registerWorkflowCommand(program, deps?)` in `src/cli/workflow.ts` with `_workflowCliDeps = { log, logErr, exit }` (writing through `console.log` / `console.error` inside the deps, as `_advisorCliDeps` does), exported from `src/cli/index.ts` and called from `bin/nax.ts` beside `registerAdvisorCommand`. Mirror the command-group pattern of `src/cli/advisor.ts` (injectable `log` / `logErr` / `exit`, `guarded` action). Read-only: it reads `.nax/features/<feature>/workflow/*/result.json` and writes nothing.\n\nIt validates the feature name with `validateFeatureName` (`src/utils/feature-name.ts`, throws a `NaxError`, e.g. `Feature name must be a single path segment: ../x`) before building any path, takes the newest run directory from `runDirsNewestFirst(workflowFeatureDir(dir, feature))`, and reads its `result.json` via `readResult`. It builds `openItems` with `buildOpenItems` from `featureWorkflow`, with `storyStates` filled from `result.stories` when the record has none (the same rule as `upsertFeatureRecord`: `{ id, state: state ?? \"not-run\", reason? }`), so a `result.json` written by an older nax reports the same items a fresh run would, and a run that never reached publish still reports its items. `workflowPassed` comes from `buildVerdict` and is omitted when the record has no `outcome`. `runId` is the run directory's name. `validateDirectory(dirPath, baseDir?)` (`src/config/path-security.ts`) is available for the `-d` option.\n\n`--json` prints one object on stdout:\n```json\n{\n  \"feature\": \"auth-relogin-recovery\",\n  \"runId\": \"336c1511-13b3-42b4-9924-7b8015d4c4f9\",\n  \"runDir\": \".nax/features/auth-relogin-recovery/workflow/336c1511-13b3-42b4-9924-7b8015d4c4f9\",\n  \"step\": \"done\",\n  \"outcome\": \"draft\",\n  \"ci\": \"green\",\n  \"url\": \"https://github.com/nathapp-io/nax/pull/2566\",\n  \"workflowPassed\": true,\n  \"reasons\": [\"advisor held: …\"],\n  \"openItems\": [{ \"id\": \"D-1\", \"kind\": \"advisor\", \"issue\": \"advisor held: …\" }]\n}\n```\n`runDir` is relative to the project directory. `outcome`, `ci`, `url` and `workflowPassed` are omitted when the record has none (a run that never reached publish).\n\nWithout `--json` it prints `<feature>: <outcome> <url>` on the first line (`<outcome>` is `not published` when absent), then one line per open item, `- [<kind>] <id> — <issue>`, and `No open items.` when the list is empty.\n\nExit codes: `0` when the outcome is `ready` and `openItems` is empty; `2` otherwise, including a record with no `outcome` (something needs a human); `1` on an error: an invalid feature name, no `.nax/` directory, no workflow run with a readable `result.json`, or a `result.json` with no `featureWorkflow`. On an error, `--json` prints `{\"error\":\"<message>\"}` on stdout and plain mode prints the message on stderr.\n\nFailure handling:\n| Situation | Behaviour |\n|:--|:--|\n| `validateFeatureName` rejects the feature name | exit 1 with its message, no file read |\n| No run directory holds a `result.json` | exit 1 with `no workflow result for feature <feature>` |\n| The newest `result.json` has no `featureWorkflow` | exit 1 with `workflow for <feature> has not started its feature steps (run <runId>)` |\n| The newest `result.json` is unreadable or not JSON | `readResult` returns null for it; the command moves to the next-newest run directory |\n\nVerification note: the `bin/nax.ts` registration line (`registerWorkflowCommand(program)` after `registerAdvisorCommand`) is checked by `bun run typecheck` and `bun run build`; no unit test spawns the `nax` binary (forbidden by the test rules), so a missing registration is a known gap that review of the `bin/nax.ts` diff covers. CLI tests mirror `test/unit/cli/advisor-list-label.test.ts`.\n\n**Scope** — In: `src/cli/workflow.ts`, barrel exports (`registerWorkflowCommand`, `_workflowCliDeps`, `WorkflowCliDeps`, `workflowStatusCommand`), `bin/nax.ts` registration. Out: any change to buildOpenItems/record shape (US-001/US-002). Feature-level: no forge reads (CI state is the one recorded at publish), no `nax gates run` / `workflow record` / `workflow promote`, no full advisor decision objects in the output, and the command writes nothing.\n\n**Interface**\n```typescript\nexport interface WorkflowCliDeps { log: (msg: string) => void; logErr: (msg: string) => void; exit: (code: number) => void }\nexport const _workflowCliDeps: WorkflowCliDeps;\nexport function registerWorkflowCommand(program: Command, deps?: WorkflowCliDeps): Command; // group named \"workflow\", subcommand \"status\"\nexport function workflowStatusCommand(...): Promise<void>;\n```",
+      "acceptanceCriteria": [
+        "`workflow status -f auth --json -d <dir>`, where `<dir>/.nax/features/auth/workflow/r1/result.json` holds a `featureWorkflow` with `outcome` `\"draft\"`, `url` `\"https://gh/pr/7\"`, `ci` `\"green\"` and `approval` `{ approved: false, rationale: \"advisor held: x\", decisionId: \"D-1\" }`, prints one JSON object whose `feature` is `auth`, `runId` is `r1`, `outcome` is `draft`, `url` is `https://gh/pr/7` and `openItems` contains the `D-1` advisor item.",
+        "`workflow status -f auth --json` on a `result.json` whose `featureWorkflow` has `outcome` `\"draft\"` and `approval` `{ approved: false, rationale: \"advisor held: x\", decisionId: \"D-1\" }` exits with code 2.",
+        "`workflow status -f auth --json` on a `result.json` whose `featureWorkflow` has `outcome` `\"ready\"`, `passed` `true` and nothing open prints `openItems` `[]` and exits with code 0.",
+        "`workflow status -f auth --json` on a `result.json` whose `featureWorkflow` has `outcome` `\"ready\"` and one `cannotVerify` entry exits with code 2.",
+        "`workflow status -f auth --json` on a `result.json` with no `verdict` key, whose `featureWorkflow` has `outcome` `\"draft\"` and no `storyStates`, and whose `stories` holds `US-002` with state `complete-gate-open`, prints `openItems` containing a `story` item with id `US-002`.",
+        "With two run directories `r-old` and `r-new` under `.nax/features/auth/workflow/`, where `r-new/result.json` has the later modification time, `workflow status -f auth --json` prints `runId` `r-new`.",
+        "When the newer run directory's `result.json` is not valid JSON, `workflow status -f auth --json` prints the older run directory's `runId`.",
+        "`workflow status -f auth --json` with no `.nax/features/auth/workflow/` directory prints `{\"error\":\"no workflow result for feature auth\"}` and exits with code 1.",
+        "`workflow status -f ../x --json` prints an object whose `error` is `Feature name must be a single path segment: ../x`, exits with code 1, and reads no file.",
+        "`workflow status -f auth --json` on a `result.json` with no `featureWorkflow` prints an object whose `error` starts with `workflow for auth has not started its feature steps` and exits with code 1.",
+        "`workflow status -f auth` without `--json`, on a `result.json` whose `featureWorkflow` has `outcome` `\"draft\"`, `url` `\"https://gh/pr/7\"` and `approval` `{ approved: false, rationale: \"advisor held: x\", decisionId: \"D-1\" }`, prints `auth: draft https://gh/pr/7` as its first line and a line `- [advisor] D-1 — advisor held: x`.",
+        "`workflow status -f auth` without `--json`, on a `result.json` whose `featureWorkflow` has `outcome` `\"ready\"`, `passed` `true` and nothing open, prints a line `No open items.`.",
+        "`workflow status -f auth --json` on a `result.json` whose `featureWorkflow` has no `outcome` and whose `stories` holds `US-002` with state `complete-gate-open` prints `openItems` containing a `story` item with id `US-002`, prints an object with no `outcome` and no `workflowPassed` key, and exits with code 2.",
+        "After `workflow status -f auth --json` runs, the bytes of every `result.json` under `.nax/features/auth/workflow/` and the list of entries in that directory are unchanged.",
+        "Importing `registerWorkflowCommand` and `workflowStatusCommand` from the nax `cli` barrel succeeds, and `registerWorkflowCommand(new Command())` returns a command group named `workflow` with a subcommand `status`."
+      ],
+      "tags": [
+        "feature",
+        "cli",
+        "workflow"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "New CLI command following an existing in-repo pattern (advisor.ts) that composes already-built helpers; 2-5 files, no new abstractions.",
+        "agentProfileId": "native-deepseek",
+        "agent": "native",
+        "profileModelTier": "balanced",
+        "initialAgent": "native",
+        "initialProfileId": "native-deepseek",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/cli/advisor.ts",
+        "packages/nax/test/unit/cli/advisor-list-label.test.ts",
+        "packages/nax/src/workflow/result.ts",
+        "packages/nax/src/workflow/open-items.ts",
+        "packages/nax/bin/nax.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/cli/workflow.ts",
+        "packages/nax/test/unit/cli/workflow-status.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/cli/index.ts",
+          "reason": "also export `registerWorkflowCommand`, `_workflowCliDeps`, `WorkflowCliDeps` and `workflowStatusCommand`."
+        },
+        {
+          "path": "packages/nax/bin/nax.ts",
+          "reason": "calls `registerWorkflowCommand(program)` after `registerAdvisorCommand`."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    }
+  ],
+  "analysis": "Phase 1 of #2569. verdict.openItems in a workflow result.json must become the complete list of what keeps a feature from ready, and a new read-only command `nax workflow status -f <feature> [--json]` prints it for the newest run.\n\nKey files (all under packages/nax, verified by the spec on main 1421eacde):\n- src/workflow/approval.ts: readinessReasons (:62) builds the reason texts in order (gates red / NOTHING_VERIFIED, CI failed, conflicting/no-checks/unavailable via f.ciDetail ?? default, stories gate-open, stories not run, N ruling(s) flagged for a human, branch review did not run, describeUnread, RE_REVIEW_SKIPPED, COST_LIMITED). askApproval (:98) returns { approved, rationale } with no decision id. US-001 changes it to ApprovalOutcome and extracts ciReason; US-002 exports NOTHING_VERIFIED, gateReasons and storyReasons. readinessReasons output must stay unchanged in both.\n- src/workflow/finalize.ts: PublishOutcome (:37), PrParts (:194), finishPr (:200), publish. US-001 adds approval/ciDetail to PublishOutcome; US-002 adds record/stories to PrParts and rebuilds the PR body openItems in finishPr.\n- src/workflow/feature-machine.ts: publishStep (:453) copies approval/ciDetail from the outcome and builds storyStates from env.facts.stories ({id,state,reason?} in that key order, reason omitted when absent).\n- src/workflow/types.ts: WorkflowFeatureRecord (:172), OpenItem.kind (:96), StorySummary (:159), WorkflowStoryRecord (:54). Add ApprovalOutcome, StoryStateItem, three optional record fields, and the new OpenItem kinds.\n- src/workflow/open-items.ts: buildOpenItems (:31) composes per-kind helpers (advisorItems, storyItems, ciItem, reasonItems, isExplained), each under complexity 20. BLOCKING_KINDS stays finding/ruling/gate so workflowPassed is unchanged.\n- src/workflow/result.ts: upsertFeatureRecord (:141), readResult (:33), runDirsNewestFirst (:121). upsertFeatureRecord fills storyStates from result.stories when the record has none (empty array is kept).\n- src/workflow/paths.ts workflowFeatureDir; src/workflow/ci-wait.ts CiWaitResult; src/workflow/pr-body.ts openItemLine renders non-gate kinds generically so no rendering change.\n- src/cli/advisor.ts (registerAdvisorCommand, _advisorCliDeps, guarded) is the pattern for src/cli/workflow.ts; src/cli/index.ts barrel; bin/nax.ts registers commands; src/utils/feature-name.ts validateFeatureName; src/config/path-security.ts validateDirectory.\n\nTests to touch: test/unit/workflow/approval.test.ts, finalize.test.ts, finalize-ci-gate.test.ts (wire() gains optional second arg { hold }), result.test.ts, open-items.test.ts, test/helpers/workflow-feature-machine.ts (add optional `published?: PublishOutcome` script field; default stays PUBLISHED), test/unit/cli/advisor-list-label.test.ts (CLI harness to mirror). Existing tests whose exact-equality expectations change: finalize-ci-gate 'conflict keeps draft' (adds ciDetail), approval.test askApproval cases (add decisionId on decision paths only), finalize.test 'happy path' (adds approval), result.test 'writes a top-level verdict' (openItems becomes [{id:'_run:reason1',kind:'reason',issue:'r'}]).\n\nRisks: (1) readinessReasons output must not change when ciReason/storyReasons are extracted. (2) The explained-reason rule must match exact texts nax produces; reason ids are 1-based positions in rec.reasons and explained reasons keep their positions. (3) Flagged-decision advisor items appear only in result.json, never in the PR body (publishStep collects ids after publish returns); there the flagged count is a reason item. Reasons appended after the body is written reach only the verdict. (4) Old result.json records lack approval/ciDetail/storyStates; CLI and upsertFeatureRecord fall back to result.stories. (5) nax exits 0 on failure elsewhere, but this command has its own exit codes: 0 ready+no items, 2 otherwise, 1 on error. (6) Optional keys must be absent (not undefined) where ACs say 'no key'. (7) Follow repo rules: immutable updates, files under 800 lines, no console.log outside the injectable deps, never run bare `bun test` or `bun run nax`; package commands run from packages/nax. No test spawns the nax binary.\n\nMigration: all new record fields are optional; no data migration needed.",
+  "outOfScope": [
+    "`nax gates run`, `nax workflow record` and `nax workflow promote` (phases 2 and 3 of #2569).",
+    "Reading live PR checks or mergeability from the forge: `nax workflow status` reports the CI state recorded at publish time.",
+    "Making any of the new kinds blocking for `workflowPassed`: `BLOCKING_KINDS` stays `finding`, `ruling`, `gate`.",
+    "Listing `leave` minors, `newMinors` or fix-now minors as open items.",
+    "Listing flagged advisor decisions in the PR body's \"Before marking ready\" list.",
+    "Including the full advisor decision objects in the `nax workflow status` output; `nax advisor list -f <feature> --json` stays the source for them.",
+    "Changing `approvalEvidence` or the finish-approval question.",
+    "Pipeline execution mode, which is frozen.",
+    "A test that the built `nax` binary registers the `workflow` group: no test spawns the binary (the test rules forbid it). The `bin/nax.ts` diff review and a `bun run dev workflow status --help` check after merge cover it.",
+    "Updating the nax-finish skill to call `nax workflow status`; that change lands in nathapp-io/nax-toolkit-skills."
+  ],
+  "routingProfile": "cross-agent+cc-plan"
+}
