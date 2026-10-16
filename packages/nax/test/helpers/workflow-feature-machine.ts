@@ -43,6 +43,11 @@ export interface FeatureMachineScript {
   reReviews?: (ReReviewVerdict | null)[];
   changed?: string[] | Error;
   fix?: BranchFixOutcome;
+  /**
+   * US-001: the outcome the `publish` step returns. Absent leaves the fixed `PUBLISHED`, so every
+   * caller that predates the field keeps the outcome it had.
+   */
+  published?: PublishOutcome;
 }
 
 export interface FeatureMachineHarnessOpts {
@@ -110,7 +115,7 @@ export function makeFeatureMachineHarness(script: FeatureMachineScript, over: Fe
     },
     publish: async () => {
       calls.push("publish");
-      return PUBLISHED;
+      return script.published ?? PUBLISHED;
     },
     head: async () => `h${calls.length}`,
     changedFiles: async () => {

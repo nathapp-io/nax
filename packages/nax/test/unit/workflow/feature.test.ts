@@ -15,7 +15,7 @@ import type { NaxRuntime } from "@/runtime";
 import { _featureRunDeps, runWorkflowFeature } from "@/workflow/feature";
 import { type FeatureEnv, runFeatureMachine } from "@/workflow/feature-machine";
 import { newFeatureRecord } from "@/workflow/feature-record";
-import { newStoryRecord, upsertFeatureRecord, upsertStoryRecord } from "@/workflow/result";
+import { newStoryRecord, readResult, upsertFeatureRecord, upsertStoryRecord } from "@/workflow/result";
 import { _workflowDeps } from "@/workflow/step-context";
 import { toolErrorClaimsHeld, withToolErrorOutcome } from "@/workflow/tool-error-outcome";
 
@@ -444,5 +444,41 @@ describe("US-002 transient drafts", () => {
       expect(calls).toEqual(["publish"]);
       expect(result?.url).toBe("old-url");
     }
+  });
+
+  test("B1: the verdict of a re-publish that asked no advisor lists no earlier hold", async () => {
+    const { input, featureDir } = setup();
+    const prior = {
+      ...newFeatureRecord({ now: "original", seed: "s", minors: [] }),
+      step: "done" as const,
+      outcome: "draft" as const,
+      ci: "unavailable" as const,
+      reasons: ["PR update failed: timeout"],
+      head: "headX",
+      url: "old-url",
+      reviewRan: true,
+      repoGates: { ran: ["test"], failing: [] },
+      approval: { approved: false, rationale: "advisor held: earlier", decisionId: "D-1" },
+      ciDetail: "gh: 502",
+    };
+    await upsertFeatureRecord(join(featureDir, "r-old"), { runId: "r-old", feature: input.feature }, prior);
+    _featureRunDeps.runFeatureMachine = async (env) => {
+      // The premise: the resume hands the earlier publish's own facts to this one.
+      expect(env.record.approval).toEqual(prior.approval);
+      return runFeatureMachine({
+        ...env,
+        steps: {
+          ...env.steps,
+          // This publish asked no advisor: a failed CI is a deterministic reason.
+          publish: async () => ({ outcome: "draft", ci: "failed", reasons: ["CI failed"] }),
+          head: async () => "headX",
+        },
+      });
+    };
+    await runWorkflowFeature(input);
+    const written = await readResult(join(featureDir, "r-now"));
+    expect("approval" in (written?.featureWorkflow ?? {})).toBe(false);
+    expect("ciDetail" in (written?.featureWorkflow ?? {})).toBe(false);
+    expect(written?.verdict?.openItems.filter((i) => i.kind === "advisor")).toEqual([]);
   });
 });

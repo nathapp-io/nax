@@ -61,6 +61,7 @@ import {
   registerAdvisorCommand,
   registerApprovalsCommand,
   registerTrustCommand,
+  registerWorkflowCommand,
   rulesExportCommand,
   rulesLintCommand,
   rulesMigrateCommand,
@@ -960,6 +961,10 @@ registerAdvisorCommand(program).hook("preAction", (_group, action) => {
 // Not gated by `runTrustGate`: managing trust is what the operator runs when
 // the gate has already refused them.
 registerTrustCommand(program);
+
+// ── workflow ──────────────────────────────────────────
+// Read-only: it reports the verdict a finished run wrote, and reads no config.
+registerWorkflowCommand(program);
 
 const mcpCmd = program.command("mcp").description("Manage MCP servers the native agent may call tools on");
 

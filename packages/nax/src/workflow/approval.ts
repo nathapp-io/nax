@@ -5,7 +5,15 @@ import { buildMenu } from "@/advisor";
 import { getSafeLogger } from "@/logger";
 import { isFlaggedRuling } from "./advisor";
 import type { PreflightFile } from "./preflight";
-import type { FeatureCiState, RepoGateSummary, StoryState, StorySummary, WorkflowRuling } from "./types";
+import type {
+  ApprovalOutcome,
+  FeatureCiState,
+  RepoGateSummary,
+  StoryState,
+  StoryStateItem,
+  StorySummary,
+  WorkflowRuling,
+} from "./types";
 
 export interface ReadinessFacts {
   readonly finalGates?: RepoGateSummary;
@@ -26,10 +34,30 @@ export interface ReadinessFacts {
   readonly reReviewSkipped?: boolean;
 }
 
-const NOTHING_VERIFIED = "no quality commands configured — nothing was verified";
+/** Exported (US-002): the one text that means nothing was verified, which no gate item ever carries. */
+export const NOTHING_VERIFIED = "no quality commands configured — nothing was verified";
 
 /** How many unread paths the reason names before it counts the rest instead. */
 const UNREAD_PATHS_SHOWN = 5;
+
+/** The sentence `conflicting` uses when the CI wait reported no detail of its own. */
+const CONFLICTING_DEFAULT = "PR has merge conflicts with its base branch";
+const NO_CHECKS_DEFAULT = "no CI check was reported";
+const UNAVAILABLE_DEFAULT = "CI status unavailable";
+
+/**
+ * US-001 (nax#2569): the reason one CI state contributes, or `undefined` when it blocks nothing. The
+ * three states nax could not observe, or observed as unresolved, carry the CI wait's own `detail` —
+ * the wait knows what gh said, and a fixed sentence would lose it. `readinessReasons` and the verdict
+ * both call this, so a draft marker and its open item read the same text.
+ */
+export function ciReason(ci: FeatureCiState | undefined, detail?: string): string | undefined {
+  if (ci === "failed") return "CI failed";
+  if (ci === "conflicting") return detail ?? CONFLICTING_DEFAULT;
+  if (ci === "no-checks") return detail ?? NO_CHECKS_DEFAULT;
+  if (ci === "unavailable") return detail ?? UNAVAILABLE_DEFAULT;
+  return undefined;
+}
 
 /**
  * The one phrasing of an incomplete branch review, shared by the readiness reason that keeps the PR
@@ -43,11 +71,26 @@ export function describeUnread(files: readonly string[]): string {
   return `branch review did not read ${files.length} changed file(s): ${shown}${rest > 0 ? `, +${rest} more` : ""}`;
 }
 
-function idsIn(stories: readonly StorySummary[], state: StoryState): string[] {
-  return stories.filter((s) => s.state === state).map((s) => s.id);
+function idsIn(states: readonly StoryStateItem[], state: StoryState): string[] {
+  return states.filter((s) => s.state === state).map((s) => s.id);
 }
 
-function gateReasons(gates: RepoGateSummary | undefined): string[] {
+/**
+ * The two incomplete-story reason texts, in the order `readinessReasons` writes them. Exported
+ * (US-002) so `open-items.ts` matches the exact text a story item already carries instead of
+ * re-spelling it.
+ */
+export function storyReasons(states: readonly StoryStateItem[]): string[] {
+  const gateOpen = idsIn(states, "complete-gate-open");
+  const notRun = idsIn(states, "not-run");
+  return [
+    ...(gateOpen.length > 0 ? [`stories gate-open: ${gateOpen.join(", ")}`] : []),
+    ...(notRun.length > 0 ? [`stories not run: ${notRun.join(", ")}`] : []),
+  ];
+}
+
+/** The red-gate reason text, or the nothing-verified one when no gate ran. Exported for US-002. */
+export function gateReasons(gates: RepoGateSummary | undefined): string[] {
   if (!gates || gates.ran.length === 0) return [NOTHING_VERIFIED];
   return gates.failing.length > 0 ? [`gates red: ${gates.failing.join(", ")}`] : [];
 }
@@ -60,17 +103,12 @@ const COST_LIMITED = "cost limit reached: the feature workflow stopped before it
  * blocks (W-R9); CI that could not be read (`unavailable`) does, since it was never observed (nax#2550).
  */
 export function readinessReasons(f: ReadinessFacts): string[] {
-  const gateOpen = idsIn(f.stories, "complete-gate-open");
-  const notRun = idsIn(f.stories, "not-run");
   const unread = f.branchReviewUnread ?? [];
+  const ci = ciReason(f.ci, f.ciDetail);
   return [
     ...gateReasons(f.finalGates),
-    ...(f.ci === "failed" ? ["CI failed"] : []),
-    ...(f.ci === "conflicting" ? [f.ciDetail ?? "PR has merge conflicts with its base branch"] : []),
-    ...(f.ci === "no-checks" ? [f.ciDetail ?? "no CI check was reported"] : []),
-    ...(f.ci === "unavailable" ? [f.ciDetail ?? "CI status unavailable"] : []),
-    ...(gateOpen.length > 0 ? [`stories gate-open: ${gateOpen.join(", ")}`] : []),
-    ...(notRun.length > 0 ? [`stories not run: ${notRun.join(", ")}`] : []),
+    ...(ci === undefined ? [] : [ci]),
+    ...storyReasons(f.stories),
     ...(f.flagged > 0 ? [`${f.flagged} ruling(s) flagged for a human`] : []),
     ...(f.branchReviewRan ? [] : ["branch review did not run"]),
     ...(unread.length > 0 ? [describeUnread(unread)] : []),
@@ -98,7 +136,7 @@ export function flaggedCount(
 export async function askApproval(
   advisor: Advisor,
   input: { readonly feature: string; readonly evidence: readonly string[] },
-): Promise<{ approved: boolean; rationale: string }> {
+): Promise<ApprovalOutcome> {
   const draft: QuestionDraft = {
     kind: "finish-approval",
     feature: input.feature,
@@ -114,10 +152,11 @@ export async function askApproval(
   };
   try {
     const { decision, fallbackReason } = await advisor.advise(draft);
+    // US-001: a decision that exists carries its id; neither an unavailable advisor nor a throw does.
     if (!decision) return { approved: false, rationale: `advisor unavailable: ${fallbackReason ?? "no decision"}` };
     return decision.action.type === "approve"
-      ? { approved: true, rationale: decision.rationale }
-      : { approved: false, rationale: `advisor held: ${decision.rationale}` };
+      ? { approved: true, rationale: decision.rationale, decisionId: decision.id }
+      : { approved: false, rationale: `advisor held: ${decision.rationale}`, decisionId: decision.id };
   } catch (err) {
     getSafeLogger()?.warn("workflow", "Approval advisor failed — the PR stays a draft", {
       storyId: "_run",

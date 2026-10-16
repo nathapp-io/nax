@@ -176,3 +176,11 @@ export {
   trustRmCommand,
 } from "./trust";
 export { _trustGateCliDeps, runTrustGate } from "./trust-gate";
+export {
+  _workflowCliDeps,
+  registerWorkflowCommand,
+  type WorkflowCliDeps,
+  type WorkflowStatusOptions,
+  type WorkflowStatusReport,
+  workflowStatusCommand,
+} from "./workflow";

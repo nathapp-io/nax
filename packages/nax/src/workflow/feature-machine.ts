@@ -92,6 +92,24 @@ const limitsOf = (env: FeatureEnv): FeatureLimits => env.limits ?? DEFAULT_LIMIT
 type Patch = Partial<WorkflowFeatureRecord>;
 type StepFn = (env: FeatureEnv, rec: WorkflowFeatureRecord) => Promise<Patch>;
 
+/**
+ * B1 (nax#2569): apply a step's patch key by key, so a key a patch states as `undefined` is *cleared*
+ * rather than merged in. A spread cannot drop a key, and `publishStep` has to drop the facts an
+ * *earlier* publish left: a transient draft resumes straight into `publish` with the prior record in
+ * hand, and a stale advisor hold would then outlive a publish that never asked the advisor — an open
+ * item nothing in this run produced. Every optional key built with a spread is left out entirely, so
+ * this rule fires only on the patches that state `undefined` on purpose: `publishStep`'s `approval`
+ * and `ciDetail`, `fixTargets` and `gateRepairFindings`.
+ */
+function applyPatch(rec: WorkflowFeatureRecord, patch: Patch): WorkflowFeatureRecord {
+  const next: Record<string, unknown> = { ...rec };
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) delete next[key];
+    else next[key] = value;
+  }
+  return next as unknown as WorkflowFeatureRecord;
+}
+
 /** The step line in the log already says it; ledger.md still records it. */
 const NO_MIRROR: LedgerWriteOptions = { mirror: false };
 
@@ -465,6 +483,17 @@ async function publishStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Promise
     ci: out.ci,
     reasons: out.reasons,
     ...(out.url ? { url: out.url } : {}),
+    // US-001/B1: these two are *this* publish's facts, so they are written unconditionally. An
+    // absent approval means this publish asked no advisor, and a CI state with no detail is no
+    // detail — `applyPatch` clears what the earlier publish recorded instead of leaving it behind
+    // (the url is deliberately not cleared: the re-publish keeps the PR an earlier one opened).
+    approval: out.approval,
+    ciDetail: out.ciDetail,
+    storyStates: env.facts.stories.map((s) => ({
+      id: s.id,
+      state: s.state,
+      ...(s.reason !== undefined ? { reason: s.reason } : {}),
+    })),
     ...(head ? { head } : {}),
     passed: featurePassed({ ...(rec.finalGates ? { finalGates: rec.finalGates } : {}), stories: env.facts.stories }),
     ...(flagged.length > 0 ? { flaggedDecisions: flagged } : {}),
@@ -550,7 +579,11 @@ export async function runFeatureMachine(env: FeatureEnv): Promise<WorkflowFeatur
     // A failed read keeps the previous `lastHead`: dropping it would make a resume restart over our own commits.
     const head = !stopped && COMMIT_STEPS.has(step) ? await readHeadSoft(env) : undefined;
     const patch = head ? { ...stepPatch, lastHead: head } : stepPatch;
-    rec = { ...rec, ...patch, timings: { ...rec.timings, [step]: (rec.timings[step] ?? 0) + (env.now() - started) } };
+    // B1: applied key by key, so a `patch` value of `undefined` clears a key the prior record kept.
+    rec = {
+      ...applyPatch(rec, patch),
+      timings: { ...rec.timings, [step]: (rec.timings[step] ?? 0) + (env.now() - started) },
+    };
     await env.sink.update(rec);
   }
   env.sink.step("done", rec);

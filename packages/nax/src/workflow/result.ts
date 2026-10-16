@@ -6,7 +6,13 @@ import { mkdir, readdir, rename, stat } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { runStateWrite } from "@/runstate/store";
 import { buildVerdict } from "./open-items";
-import type { RoleTokens, WorkflowFeatureRecord, WorkflowResultFile, WorkflowStoryRecord } from "./types";
+import type {
+  RoleTokens,
+  StoryStateItem,
+  WorkflowFeatureRecord,
+  WorkflowResultFile,
+  WorkflowStoryRecord,
+} from "./types";
 
 export const _resultDeps = { mkdir, readdir, rename, stat };
 
@@ -137,6 +143,23 @@ export async function runDirsNewestFirst(featureDir: string): Promise<string[]> 
   return [...dated].sort((a, b) => b.mtimeMs - a.mtimeMs).map((d) => d.runDir);
 }
 
+/**
+ * US-002: `publishStep` writes `storyStates` from the stories it saw, so a record that has none was
+ * written before that field existed (or by a caller that never published). The run's own story
+ * records still name each story's end state, so the verdict reads them rather than dropping the
+ * story items. An empty array is a statement of its own and is kept as it is.
+ *
+ * Exported for `nax workflow status` (US-003), which fills the same field from the same
+ * `result.stories` before it builds the verdict (AC-5, AC-13).
+ */
+export function storyStatesFrom(stories: Readonly<Record<string, WorkflowStoryRecord>>): StoryStateItem[] {
+  return Object.values(stories).map((s) => ({
+    id: s.storyId,
+    state: s.state ?? "not-run",
+    ...(s.reason !== undefined ? { reason: s.reason } : {}),
+  }));
+}
+
 /** Writes the feature workflow's state into this run's result.json, keeping the story records (P4-R1). */
 export async function upsertFeatureRecord(
   runDir: string,
@@ -144,7 +167,8 @@ export async function upsertFeatureRecord(
   record: WorkflowFeatureRecord,
 ): Promise<void> {
   const current = await readResult(runDir);
-  const verdict = buildVerdict(record);
+  const filled = record.storyStates ? record : { ...record, storyStates: storyStatesFrom(current?.stories ?? {}) };
+  const verdict = buildVerdict(filled);
   await writeResult(runDir, {
     schemaVersion: 1,
     runId: header.runId,
