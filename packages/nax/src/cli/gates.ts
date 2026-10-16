@@ -266,6 +266,12 @@ export async function gatesRunCommand(opts: GatesRunOptions, deps: GatesCliDeps 
     await ensureTrusted(projectDir, deps, opts.json ? false : deps.isInteractive());
 
     const commands = await deps.resolveGateCommands(projectDir, []);
+    // The requested-gate check comes BEFORE the nothing-configured branch: asking
+    // for a gate the project does not configure is a usage error (exit 1), even
+    // when the project configures nothing at all — "configured gates: none" says
+    // so. Only a request with no gate names falls through to "nothing was
+    // verified" (exit 2).
+    assertGatesConfigured(opts.gates, commands);
     if (commands.length === 0) {
       const empty: GatesRunReport = {
         projectDir,
@@ -280,7 +286,6 @@ export async function gatesRunCommand(opts: GatesRunOptions, deps: GatesCliDeps 
         );
       return 2;
     }
-    assertGatesConfigured(opts.gates, commands);
 
     const records: GateRunRecord[] = [];
     await deps.runQualityGates(projectDir, selectGates(opts.gates, commands), {

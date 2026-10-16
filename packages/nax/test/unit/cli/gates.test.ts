@@ -444,6 +444,17 @@ describe("nax gates run validation", () => {
     });
   });
 
+  test("AC-11: a known gate is unconfigured even when nothing at all is configured", async () => {
+    await inProject(async (dir) => {
+      const h = harness({ commands: [] });
+      const code = await gatesRunCommand({ dir, gates: ["build"], json: true }, h.deps);
+
+      expect(code).toBe(1);
+      expect(errorOf(h.out)).toEqual({ error: "gate build is not configured; configured gates: none" });
+      expect(h.ran).toEqual([]);
+    });
+  });
+
   test("AC-16: an invalid config fails with the resolver's message", async () => {
     await inProject(async (dir) => {
       const h = harness({
