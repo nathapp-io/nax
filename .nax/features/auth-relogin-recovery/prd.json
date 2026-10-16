@@ -3,7 +3,7 @@
   "feature": "auth-relogin-recovery",
   "branchName": "feat/auth-relogin-recovery",
   "createdAt": "2026-10-16T00:00:00.000Z",
-  "updatedAt": "2026-10-16T02:28:53.219Z",
+  "updatedAt": "2026-10-16T04:18:30.824Z",
   "userStories": [
     {
       "id": "US-001",
@@ -19,8 +19,8 @@
         "agents"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -32,7 +32,9 @@
         "profileModelTier": "fast",
         "initialAgent": "native",
         "initialProfileId": "native-luna",
-        "initialModelTier": "fast"
+        "initialModelTier": "fast",
+        "initialComplexity": "simple",
+        "modelTier": "fast"
       },
       "contextFiles": [
         "packages/nax/src/agents/manager.ts",
@@ -43,7 +45,11 @@
         "packages/nax/src/agents/manager-complete-as.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "8ca7fc9f1539550550e6ec94f20d48b29ffa0533"
     },
     {
       "id": "US-002",
@@ -113,12 +119,6 @@
         "`CooldownStore.release(key)` returns false when no entry exists for that key.",
         "`CooldownStore.authCooldowns()` omits an auth-stamped entry whose cooldown has expired."
       ],
-      "outOfScope": [
-        "Recovering an ACP agent (`claude`, `codex`, ...) after `fail-auth`; nax does not manage those credentials.",
-        "Retrying a `fail-auth` within the same agent call; the swap still happens immediately.",
-        "Re-checking credentials on a timer; the check runs only at the start of an agent call.",
-        "Hint text, notices and run-end footer (US-003)."
-      ],
       "modifiedFiles": [
         {
           "path": "packages/nax/test/helpers/mock-agent-manager.ts",
@@ -130,7 +130,13 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "outOfScope": [
+        "Hint text, notices and run-end footer (US-003)."
+      ]
     },
     {
       "id": "US-003",
@@ -204,11 +210,6 @@
         "`reportAuthRelogins(undefined, logger)` returns an empty array and logs nothing.",
         "A notice for a declined-swap provider whose fingerprint is unchanged survives `refreshAuthCooldowns()`."
       ],
-      "outOfScope": [
-        "Changing `nax auth list` output.",
-        "A `fail-auth` hint in the TUI, other than through the log; the footer is printed in headless mode.",
-        "Recording a cooldown when a `fail-auth` swap is declined; only the hint is new on that path."
-      ],
       "modifiedFiles": [
         {
           "path": "packages/nax/test/helpers/mock-agent-manager.ts",
@@ -220,7 +221,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -265,13 +269,16 @@
       "expectedFiles": [
         "packages/nax/test/unit/operations/op-model-preview-fallback.test.ts"
       ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
       "outOfScope": [
         "A credential that changes between a step's start line and its dispatch; the start line may name the fallback, and the `available again` line follows.",
         "Start lines of pipeline-mode stages; pipeline mode is frozen.",
         "Complete-kind ops, whose dispatch never skips an unavailable primary at start."
-      ],
-      "workdir": "packages/nax",
-      "workdirSource": "stated"
+      ]
     }
   ],
   "analysis": "Feature: when a native provider rejects its credential (fail-auth), park only that provider (not every native tier), release the cooldown automatically when the stored credential's fingerprint changes (re-login / new key), warn once with a `nax auth login <provider>` hint (also repeated in the end-of-run summary), and make workflow start lines name the fallback agent/model when the primary is unavailable.\n\nKey files (all under packages/nax unless noted): src/agents/manager.ts (exactly 600 lines = source limit, NO file-sizes-baseline entry: any net growth fails check:file-sizes); src/agents/manager-run-fallback.ts (runWithFallback, complexity baseline 52; precedent for a manager loop in its own module); src/agents/cooldown-store.ts (CooldownStore.mark/_live/sweepTransient); src/agents/cooldown-provider.ts (providerOf, read-only); src/agents/retry/failure-policy.ts (fail-auth: cooldown 'run', cooldownScope 'agent' - must stay 'agent'); src/agents/manager-types.ts (IAgentManager); src/execution/runner-completion.ts (runCompletionPhase, complexity baseline 34, must stay <=600 lines); src/log-format/summary.ts + types.ts + src/execution/lifecycle/headless-formatter.ts (RunSummary/RunFooterOptions/formatRunSummary); src/operations/op-model-preview.ts + call-dispatch-prologue.ts (previewOpModel / resolveOpEndpoint); src/workflow/run-log.ts (startStep, read-only). Read-only externals: servedAuth, naxCredentialStore, listStoredProviders from @nathapp/nax-agent; DEFAULT_AGENT_NAME in src/config/agent-defaults.ts; resolveModelForAgent in src/config/schema-types.ts.\n\nRatchets enforced by check:all: file-sizes (manager.ts, runner-completion.ts <=600) and complexity (runWithFallback 52, completeWithFallback 40, runCompletionPhase 34 must not rise). Therefore: logic lives in new modules (auth-cooldown.ts, auth-relogin.ts, auth-relogin-report.ts, manager-complete-as.ts); AgentManager members are one-line delegations to an AuthCoordinator; the three pinned functions gain only plain calls (no new if / ternary / && / || / ??). Biome cognitive complexity ignores `?.` and `await`. The `??` for authModel lives in markUnavailable (not ratcheted).\n\nStory order: US-001 (pure refactor freeing manager.ts lines) -> US-002 (cooldown stamp + refresh) -> US-003 (hints, notices, footer); US-004 (preview of fallback in start lines) is independent.\n\nTest touchpoints: test/unit/agents/manager-complete.test.ts, fallback-model-targets.test.ts, test/unit/operations/op-model-preview.test.ts; helpers test/helpers/mock-agent-manager.ts and fake-agent-manager.ts implement IAgentManager and must gain the new members (no-op refreshAuthCooldowns/reportAuthFailure, authRelogins returning []). mock-agent-manager hard-codes isUnavailable:()=>false and nextCandidate:()=>null; US-004 tests override both. Tests must stub _agentManagerDeps (servedAuth, readCredential, listStoredProviders) and never touch the real ~/.nax.\n\nRisks: (1) CooldownStore key change only when `auth` stamp is passed - ACP agents and all other outcomes must keep today's keys; identity-less probes (no tier, no model) must still see a live stamped entry of that agent. (2) Concurrency: refresh must log 'available again' only when release() returned true; reportAuthFailure must claim its key synchronously before any await. (3) auth-cooldown.ts must never import manager.ts (deps passed in). (4) Accepted trade-offs: OAuth refresh-token rotation changes the fingerprint (one extra failing call); under auth.onChange 'refuse' recovery never happens in that run but the hint still names `nax auth login`. (5) Never log secrets - only fingerprints and provider ids. Never run bare `bun test` or `bun run nax`; run package commands from packages/nax.",
