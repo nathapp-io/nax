@@ -3,7 +3,7 @@
   "feature": "cursor-pi-acp-read-only",
   "branchName": "feat/cursor-pi-acp-read-only",
   "createdAt": "2026-10-17T00:00:00.000Z",
-  "updatedAt": "2026-10-17T12:47:07.931Z",
+  "updatedAt": "2026-10-17T13:03:05.712Z",
   "userStories": [
     {
       "id": "US-001",
@@ -131,8 +131,8 @@
         "api"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -144,7 +144,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "native",
         "initialProfileId": "native-deepseek",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent-acp/src/client/options.ts",
@@ -174,7 +176,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "57843b8ce30eefd91fcd4713d32b8740900c3daf"
     },
     {
       "id": "US-003",
