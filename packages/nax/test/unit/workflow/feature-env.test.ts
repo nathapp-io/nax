@@ -1,9 +1,10 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeFeatureContext, makeScriptedCallOp, makeTempDir } from "@test/helpers";
 import type { Advisor } from "@/advisor";
 import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
+import { type PipelineEvent, pipelineEventBus } from "@/pipeline/event-bus";
 import { buildFeatureEnv } from "@/workflow/feature-env";
 import { newFeatureRecord } from "@/workflow/feature-record";
 import { readResult } from "@/workflow/result";
@@ -125,5 +126,52 @@ describe("buildFeatureEnv", () => {
     expect(rulings).toHaveLength(1);
     expect(rulings[0]?.action).toBe("hold");
     expect(await Bun.file(join(fc.runDir, "ledger.md")).text()).toContain("_run: Ruling: hold B1: drift");
+  });
+});
+
+// US-003: the real sink emits `workflow:step` for every step but the terminal `done`, alongside the
+// status block it already wrote. No hook is wired yet (US-004), so these read the singleton bus.
+describe("buildFeatureEnv sink step events (US-003)", () => {
+  let events: PipelineEvent[] = [];
+  let off: (() => void) | undefined;
+
+  beforeEach(() => {
+    pipelineEventBus.clear();
+    events = [];
+    off = pipelineEventBus.onAll((event) => {
+      events.push(event);
+    });
+  });
+
+  afterEach(() => {
+    off?.();
+    off = undefined;
+    pipelineEventBus.clear();
+  });
+
+  const stepEvents = (): PipelineEvent[] => events.filter((e) => e.type === "workflow:step");
+
+  test("AC-9: sink.step('branch-review', record) emits exactly one workflow:step", () => {
+    const { env } = setup();
+    env.sink.step("branch-review", env.record);
+    expect(stepEvents()).toEqual([{ type: "workflow:step", step: "branch-review" }]);
+  });
+
+  test("AC-10: sink.step('done', record) emits no workflow:step", () => {
+    const { env } = setup();
+    // The control: the same sink does emit for a real step, so the single event below is that one —
+    // the terminal `done` call added nothing.
+    env.sink.step("branch-review", env.record);
+    env.sink.step("done", env.record);
+    expect(stepEvents()).toEqual([{ type: "workflow:step", step: "branch-review" }]);
+  });
+
+  test("AC-15: sink.step('publish', record) keeps the status-block update alongside the step event", () => {
+    const { env, blocks } = setup();
+    env.sink.step("publish", { ...env.record, outcome: "draft", url: "u" });
+    expect(blocks).toEqual([
+      { step: "publish", stories: { "US-001": { state: "complete", round: 2 } }, outcome: "draft", url: "u" },
+    ]);
+    expect(stepEvents()).toEqual([{ type: "workflow:step", step: "publish" }]);
   });
 });

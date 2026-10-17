@@ -65,7 +65,7 @@ export interface ClosedWorkflowRun {
   readonly summary: WorkflowSummaryView | undefined;
 }
 
-/** Writes the held-back `run.complete` line at most once, whichever path reaches it first (nax#2491). */
+/** Writes the held-back `run.complete` line and `run:completed` event at most once, whichever path reaches it first (nax#2491). */
 export interface RunCompleteGate {
   log(final: RunCompleteFinal): void;
   /**
@@ -130,6 +130,8 @@ function wholeRunFinal(
   input: {
     readonly split: Pick<RunCompleteFinal, "featureWorkflowDurationMs" | "endPhaseDurationMs">;
     readonly workflowPassed: boolean;
+    readonly url?: string;
+    readonly reasons: readonly string[];
     readonly fallbackCost: number;
     readonly endStartedAt: number;
     readonly endedAt: number;
@@ -142,12 +144,16 @@ function wholeRunFinal(
     ...input.split,
     totalCost: options.runtime ? totalSpendUsd(options.runtime.costAggregator.snapshot()) : input.fallbackCost,
     workflowPassed: input.workflowPassed,
+    ...(input.url !== undefined ? { url: input.url } : {}),
+    reasons: input.reasons,
   };
 }
 
 interface CloseInput {
   readonly gate: RunCompleteGate;
   readonly workflowPassed: boolean;
+  readonly url?: string;
+  readonly reasons: readonly string[];
   readonly fallbackCost: number;
   readonly endStartedAt: number;
   readonly endedAt: number;
@@ -156,8 +162,8 @@ interface CloseInput {
 /**
  * Called once the end phase is done: derives the whole-run duration (start to now) and the end-phase
  * part, writes the held-back run.complete line, rewrites the saved metrics record, and (workflow mode)
- * reports. `run:completed` (reporters, on-complete hook) has already fired by now with the
- * stories-only figures; it is deliberately not re-fired, in either mode.
+ * reports. The gate's write also emits the deferred `run:completed` (reporters, on-complete hook),
+ * so that event carries these whole-run figures and fires once, in either mode.
  */
 async function closeWorkflowRun(options: RunnerCompletionOptions, input: CloseInput): Promise<ClosedWorkflowRun> {
   const featureWorkflowDurationMs = input.endedAt - input.endStartedAt;
@@ -196,8 +202,8 @@ export interface EndPhaseReport {
  * runEndPhase, timed. It also closes the run in both modes (nax#2491, nax#2494): Duration runs through
  * the end of the end phase (finish in pipeline mode, the feature workflow in workflow mode), `run.complete`
  * is written once with the split, and the saved metrics record is rewritten.
- * `run:completed` (reporters, the on-complete hook) is NOT moved: it fires inside handleRunCompletion,
- * before the end phase, in both modes, so it carries the stories-only duration and cost.
+ * `run:completed` (reporters, the on-complete hook) is deferred to the same gate write, so it fires
+ * after the end phase with the whole-run duration and cost, the verdict, the PR url and the reasons.
  */
 export async function runEndPhaseReported(
   options: RunnerCompletionOptions,
@@ -206,10 +212,13 @@ export async function runEndPhaseReported(
   clock: { readonly now: () => number; readonly gate: RunCompleteGate },
 ): Promise<EndPhaseReport> {
   const endStartedAt = clock.now();
-  const workflowPassed = await runEndPhase(options, deps);
+  const outcome = await runEndPhase(options, deps);
+  const workflowPassed = outcome?.passed;
   const input: CloseInput = {
     gate: clock.gate,
     workflowPassed: workflowPassed ?? true,
+    ...(outcome?.url !== undefined ? { url: outcome.url } : {}),
+    reasons: outcome?.reasons ?? [],
     fallbackCost: completion.reportedTotal,
     endStartedAt,
     endedAt: clock.now(),

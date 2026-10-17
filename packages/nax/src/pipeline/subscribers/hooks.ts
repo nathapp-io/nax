@@ -126,9 +126,45 @@ export function wireHooks(
   // run:completed → on-complete
   unsubs.push(
     bus.on("run:completed", (ev) => {
-      return safe("on-complete", () =>
-        fireHook(hooks, "on-complete", hookCtx(feature, { status: "complete", cost: ev.totalCost ?? 0 }), workdir),
+      // Emitted after the end phase: a workflow that did not pass reports failed, with why and the PR.
+      const ctx = hookCtx(feature, {
+        status: ev.workflowPassed === false ? "failed" : "complete",
+        cost: ev.totalCost ?? 0,
+        ...(ev.reasons?.length ? { reason: ev.reasons.join("; ") } : {}),
+        ...(ev.url !== undefined ? { url: ev.url } : {}),
+      });
+      return safe("on-complete", () => fireHook(hooks, "on-complete", ctx, workdir));
+    }),
+  );
+
+  // workflow:started → on-workflow-start
+  unsubs.push(
+    bus.on("workflow:started", (ev) => {
+      return safe("on-workflow-start", () =>
+        fireHook(hooks, "on-workflow-start", hookCtx(feature, { status: "running", step: ev.step }), workdir),
       );
+    }),
+  );
+
+  // workflow:step → on-workflow-step. No status: the step hook says which step began, not how it went.
+  unsubs.push(
+    bus.on("workflow:step", (ev) => {
+      return safe("on-workflow-step", () =>
+        fireHook(hooks, "on-workflow-step", hookCtx(feature, { step: ev.step }), workdir),
+      );
+    }),
+  );
+
+  // workflow:published → on-workflow-publish
+  unsubs.push(
+    bus.on("workflow:published", (ev) => {
+      const ctx = hookCtx(feature, {
+        status: ev.outcome,
+        ...(ev.ci !== undefined ? { ci: ev.ci } : {}),
+        ...(ev.url !== undefined ? { url: ev.url } : {}),
+        ...(ev.reasons.length > 0 ? { reason: ev.reasons.join("; ") } : {}),
+      });
+      return safe("on-workflow-publish", () => fireHook(hooks, "on-workflow-publish", ctx, workdir));
     }),
   );
 

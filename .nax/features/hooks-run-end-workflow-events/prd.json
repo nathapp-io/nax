@@ -1,0 +1,390 @@
+{
+  "project": "nax-monorepo",
+  "feature": "hooks-run-end-workflow-events",
+  "branchName": "feat/hooks-run-end-workflow-events",
+  "createdAt": "2026-10-18T00:00:00Z",
+  "updatedAt": "2026-10-17T11:39:15.706Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Defer run:completed and return the end-phase outcome",
+      "description": "**Goal** — Add independently deferred run-completion emission and a structured workflow end-phase outcome, preserving immediate behavior for existing callers.\n\n**Motivation** — Reporter `onRunEnd`, the events log and the TUI subscribe to the same early event and get the same partial figures.\n\n**Approach** — Relevant Design / Integration requirements, verbatim:\n\n- `RunCompletedEvent` (`src/pipeline/event-bus/index.ts`)\n  - Target: the same fields plus `workflowPassed?: boolean`, `url?: string`, `reasons?: readonly string[]`.\n- `RunCompletionOptions` / `RunCompletionResult` (`src/execution/lifecycle/run-completion.ts`)\n  - Target: option `deferRunCompletedEvent?: boolean`. When set, `handleRunCompletion` emits no `run:completed`; its result carries `emitRunCompleted: (final: RunCompleteFinal) => void`, which emits it with the story counts and `fallback` that phase 5 computed and the `errorCostUsd` from the phase-3 cost snapshot (`snapshotCostsAndBackfill`, passed into phase 5), and the `durationMs`, `totalCost`, `workflowPassed`, `url` and `reasons` of `final`. `emitRunCompletedAndSaveMetrics` returns the payload it would have emitted (today it receives `errorCostField`, computes the fallback aggregate inline and returns only `finalCounts`), and `emitRunCompleted` overlays `final` on it. When unset, behaviour is unchanged and the result has no `emitRunCompleted`. `deferRunCompletedEvent` and the existing `deferRunCompleteLog` are independent: either may be set without the other, and `runCompletionPhase` sets both. When phase 7.5 (MCP adoption summary) or phase 8 (final status) rejects and the event is deferred, `handleRunCompletion` emits it in the same `catch` that already writes the held-back `run.complete` line, with the figures it holds and `workflowPassed` `false` when `isWorkflowMode(config)` (`true` in pipeline mode), and awaits `pipelineEventBus.drain()` before the error propagates. Phase 6 (stale-artifact purge) is fail-open and never reaches that `catch`.\n- `RunCompleteFinal` (same file)\n  - Target: adds `url?: string` and `reasons?: readonly string[]`. Once the end phase is closed, `reasons` is always set (`[]` on a pass) and `url` only when the end phase produced one.\n- `runEndPhase` (`src/execution/end-phase.ts`)\n  - Target: `runEndPhase(options, deps): Promise<EndPhaseOutcome | undefined>`, with `EndPhaseOutcome { passed: boolean; url?: string; reasons: readonly string[] }` exported from the same file. Pipeline mode still returns `undefined`.\n\nUS-001 story requirements, verbatim: Add the `deferRunCompletedEvent` option and the `emitRunCompleted` result member to `handleRunCompletion`, independent of `deferRunCompleteLog`; extend `RunCompletedEvent` and `RunCompleteFinal` with `workflowPassed`, `url` and `reasons`; emit the deferred event (and drain) in the existing phase 7.5/8 `catch`. Change `runEndPhase` to return `EndPhaseOutcome`, with the reasons `feature workflow failed: <message>` and `run aborted`. Update the stale header comment on `emitRunCompletedAndSaveMetrics`. Nothing calls `emitRunCompleted` yet; US-002 wires it.\n\nImplementation boundaries: RunCompleteFinal already has workflowPassed; retain it. The callback is exposed to the caller only on successful deferred completion; on phase-7.5/8 rejection emit within handleRunCompletion before rethrowing. Keep metric saving best-effort even when event emission is deferred. runWorkflowEnd maps a null result to passed true, reasons [], and no URL; passes successful result metadata through; maps WORKFLOW_ABORTED or pre-aborted execution to passed false with ['run aborted']; maps any other exception to passed false with ['feature workflow failed: <message>']. Keep pipeline finish fail-open. Adapt runEndPhaseReported to read the outcome's passed so this story compiles, but leave URL/reasons threading to US-002. Modify end-phase.test.ts's boolean assertions to outcome assertions and retain existing logging expectations. Create test/unit/execution/lifecycle/run-completed-deferred.test.ts.\n\n**Scope** — In: event payload extension, lifecycle deferral/late-phase fallback, end-phase outcome and its immediate consumer's type adaptation. Out: runner/gate wiring and on-complete hook projection (US-002); workflow bus producers (US-003); new workflow hooks (US-004). Renaming test titles that describe the old timing is excluded.\n\n**Interface** — Target declarations from the spec: `deferRunCompletedEvent?: boolean`; `emitRunCompleted: (final: RunCompleteFinal) => void`; `workflowPassed?: boolean`, `url?: string`, `reasons?: readonly string[]`; `runEndPhase(options, deps): Promise<EndPhaseOutcome | undefined>`; `EndPhaseOutcome { passed: boolean; url?: string; reasons: readonly string[] }`. The result member is absent unless deferral was requested.",
+      "acceptanceCriteria": [
+        "[unit] handleRunCompletion called with deferRunCompletedEvent: true emits no run:completed on pipelineEventBus before it resolves, and its result's emitRunCompleted is a function.",
+        "[unit] (regression anchor) handleRunCompletion called without deferRunCompletedEvent emits exactly one run:completed before it resolves, and its result has no emitRunCompleted.",
+        "[unit] handleRunCompletion called with deferRunCompletedEvent: true and deferRunCompleteLog unset writes the run.complete log line before it resolves and emits no run:completed.",
+        "[unit] Calling the deferred result's emitRunCompleted with a RunCompleteFinal of durationMs 9000, totalCost 4.94, workflowPassed true, url 'https://github.com/o/r/pull/295' and reasons [] emits exactly one run:completed whose durationMs is 9000, totalCost is 4.94, workflowPassed is true, url is that URL, and whose passedStories, failedStories, skippedStories and pausedStories equal countStories of the run's PRD.",
+        "[unit] Calling emitRunCompleted with workflowPassed false and reasons ['final gates red: lint'] emits a run:completed whose workflowPassed is false and whose reasons equal ['final gates red: lint'].",
+        "[unit] handleRunCompletion called with deferRunCompletedEvent: true, whose _runCompletionDeps.summarizeMcpAdoptionPhase rejects with Error('mcp down'), rejects with 'mcp down' and has emitted exactly one run:completed before rejecting.",
+        "[unit] handleRunCompletion called with deferRunCompletedEvent: true in workflow mode, whose statusWriter.update rejects with Error('status down'), rejects with 'status down' and has emitted exactly one run:completed, with workflowPassed false, before rejecting.",
+        "[unit] runEndPhase in workflow mode, with runWorkflowFeature resolving { passed: true, outcome: 'ready', url: 'https://github.com/o/r/pull/295', reasons: [] }, returns { passed: true, url: 'https://github.com/o/r/pull/295', reasons: [] }.",
+        "[unit] runEndPhase in workflow mode, with runWorkflowFeature resolving null, returns passed true, reasons [] and no url.",
+        "[unit] runEndPhase in workflow mode, with runWorkflowFeature rejecting with Error('boom'), returns passed false and reasons ['feature workflow failed: boom'].",
+        "[unit] runEndPhase in workflow mode, with runWorkflowFeature rejecting with a NaxError of code WORKFLOW_ABORTED, returns passed false and reasons ['run aborted'].",
+        "[unit] runEndPhase in workflow mode with exitReason 'aborted' returns passed false and reasons ['run aborted'], and does not call runWorkflowFeature.",
+        "[unit] When deferred handleRunCompletion encounters a phase-7.5 or phase-8 rejection in workflow mode, its emitted run:completed has workflowPassed false.",
+        "[unit] When deferred handleRunCompletion encounters a phase-7.5 or phase-8 rejection in pipeline mode, its emitted run:completed has workflowPassed true.",
+        "[unit] When deferred handleRunCompletion emits run:completed from its phase-7.5/8 catch and a subscriber returns an unsettled promise that settles within the bus deadline, the original rejection is observable only after that subscriber settles."
+      ],
+      "tags": [
+        "fix",
+        "lifecycle",
+        "events",
+        "backend"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Cross-module lifecycle API change with independent deferral controls, captured cost/count payloads and asynchronous rejection-path delivery; well-specified integration suits the balanced implementation profile.",
+        "agentProfileId": "native-deepseek",
+        "agent": "native",
+        "profileModelTier": "balanced",
+        "initialAgent": "native",
+        "initialProfileId": "native-deepseek",
+        "initialModelTier": "balanced",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/execution/lifecycle/run-completion.ts",
+        "packages/nax/src/execution/lifecycle/run-completion-phases.ts",
+        "packages/nax/src/execution/end-phase.ts",
+        "packages/nax/test/unit/execution/lifecycle-completion.test.ts",
+        "packages/nax/test/unit/execution/end-phase.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/execution/lifecycle/run-completed-deferred.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/pipeline/event-bus/index.ts",
+          "reason": "`RunCompletedEvent` gains `workflowPassed?`, `url?` and `reasons?`."
+        },
+        {
+          "path": "packages/nax/src/execution/lifecycle/run-completion.ts",
+          "reason": "adds the `deferRunCompletedEvent` option, the `emitRunCompleted` result member, `url?` / `reasons?` on `RunCompleteFinal`, and the deferred emit plus drain in the phase 7.5/8 `catch`."
+        },
+        {
+          "path": "packages/nax/src/execution/lifecycle/run-completion-phases.ts",
+          "reason": "`emitRunCompletedAndSaveMetrics` skips the emit when deferred, still saves the metrics, and returns the payload; its comment no longer says the event fires before the feature workflow."
+        },
+        {
+          "path": "packages/nax/src/execution/end-phase.ts",
+          "reason": "`runEndPhase` returns `EndPhaseOutcome | undefined`; `runWorkflowEnd` returns `passed`, `url` and `reasons`."
+        },
+        {
+          "path": "packages/nax/src/execution/workflow-end-report.ts",
+          "reason": "`runEndPhaseReported` reads `passed` from the `EndPhaseOutcome` so it still compiles against the new `runEndPhase` return type; threading `url` and `reasons` is US-002's."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/end-phase.test.ts",
+          "reason": "the `runEndPhase (P4-R16)` tests assert workflow mode returns the booleans `true` / `false`; they assert the `passed` field of the returned `EndPhaseOutcome` instead (pipeline mode still `undefined`), and the rejection and aborted cases also assert the new `reasons`. US-001's `runEndPhase` acceptance tests may be added to this file."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "6c12b159f364f8a18d944cfad67997166dd4ab90"
+    },
+    {
+      "id": "US-002",
+      "title": "Emit on-complete after the end phase with whole-run figures",
+      "description": "**Goal** — Wire deferred run completion to the existing exactly-once gate after finish or the feature workflow, delivering whole-run totals and workflow verdict metadata to on-complete.\n\n**Motivation** — A notification hook therefore reports \"complete\" about 25 minutes early, with a stories-only cost, and never reports the PR or a failed workflow.\n\n**Approach** — Relevant Design / Integration requirements, verbatim:\n\n- `runEndPhaseReported` / `EndPhaseReport` (`src/execution/workflow-end-report.ts`): passes `url` and `reasons` from the `EndPhaseOutcome` into the `RunCompleteFinal` handed to `gate.log`. `EndPhaseReport.workflowPassed` keeps its meaning.\n- `finishRun` (`src/execution/runner-completion.ts`): the gate's write callback calls both `completionResult.logRunComplete?.(final)` and `completionResult.emitRunCompleted?.(final)`, so the event inherits the gate's exactly-once guarantee on the success path and the `finally` path. `runCompletionPhase` passes `deferRunCompletedEvent: true` and awaits `pipelineEventBus.drain()` in a `finally` around `finishRun`, so hook delivery is awaited on the rejection path too. `drain()` is bounded by the bus's existing 5-second settle deadline (`DRAIN_SETTLE_DEADLINE_MS`); a hook still running past it is not awaited. The `finally` fallback of `finishRun` sets no `reasons` and no `url`, so `on-complete` then carries neither `NAX_REASON` nor `NAX_RESULT_URL`. `runner-completion.ts` is 585 lines against the 600-line limit: its net growth stays at or under 10 lines, and any further logic goes in `workflow-end-report.ts` or `end-phase.ts`. `runCompletionPhase` is at its complexity baseline (34, `scripts/baselines/complexity-baseline.json`), so the new calls add no branches to it; the route for this constraint is the existing `bun run check:complexity` gate (part of `bun run lint`), not an AC.\n- `wireHooks`: the `run:completed` mapping sends status `failed` when `ev.workflowPassed === false`, otherwise `complete`; `reason` is `ev.reasons` joined with `\"; \"` when non-empty; `url` is `ev.url`.\n\nAdditional applicable Design prose, verbatim:\nThe events writer (`src/pipeline/subscribers/events-writer.ts`), the reporters subscriber and the TUI (`src/tui/hooks/usePipelineBusEvents.ts`) subscribe to `run:completed` unchanged; they observe it after the end phase, with the whole-run figures, and need no code change. The TUI disarms its retry key on `run:completed`, so the key now stays armed through the end phase, where a retry is a silent no-op (accepted; see Out of Scope). The events log's `on-complete` line, which an external watchdog reads as the graceful-exit signal (`events-writer.ts` header), therefore lands after the feature workflow instead of before it; it is still written before the process exits, so the graceful-exit meaning holds. A watchdog that bounds the gap between the last story and that line must allow for the feature workflow's duration (accepted).\n\nTests that assert a hook command's environment await `pipelineEventBus.drain()` after emitting, since hook delivery is asynchronous.\n\nUS-002 story requirements, verbatim: In `runCompletionPhase`, pass `deferRunCompletedEvent: true`, give the `run.complete` gate in `finishRun` a write callback that calls both `logRunComplete` and `emitRunCompleted`, thread `url` and `reasons` from `EndPhaseOutcome` into `RunCompleteFinal` in `runEndPhaseReported`, and drain the bus in a `finally` around `finishRun`. Map `workflowPassed`, `reasons` and `url` onto the `on-complete` hook in `wireHooks`. Correct the comments on `runEndPhaseReported`, `closeWorkflowRun`, `src/metrics/run-duration.ts` and `run-cleanup.ts` that place `run:completed` before the end phase. In `docs/guides/hooks.md`, state that `on-complete` fires after the end phase with whole-run cost and document the `failed` status, `NAX_REASON` and `NAX_RESULT_URL` on it.\n\nPreserve the existing gate's success/finally behavior, use the end-closure clock and aggregator snapshot for durationMs/totalCost, and retain phase-5 counts/fallback/errorCostUsd from US-001. A closed end phase always sets reasons (including [] in pipeline mode) and only supplies a URL it actually produced. An already-finished workflow carries its prior URL and current verdict. An ordinary workflow throw is converted by runEndPhase into a failed outcome with 'feature workflow failed: <message>'; abort becomes 'run aborted'. A rejecting finishRun emits once through the finally fallback and propagates its error after draining; do not fabricate metadata for that fallback. A rejection after finishRun preserves the already-emitted verdict and propagates without a second event. Modify whole-object RunCompleteFinal expectations in both runner-completion-workflow-duration.test.ts and runner-completion-pipeline-duration.test.ts to include reasons: []. Create test/unit/execution/run-completed-after-end-phase.test.ts and test/unit/pipeline/subscribers/hooks-on-complete.test.ts.\n\n**Scope** — In: runner/gate wiring, end-outcome metadata threading, final hook projection, duration-test updates and timing documentation. Out: deferred lifecycle API construction (US-001), workflow event production (US-003), and new workflow hook registration/mappings (US-004). No pipeline PR URL threading, reporter API additions, TUI/watchdog changes, second event on post-finish failure, duplicate cleanup reporter repair, or drain-deadline increase.\n\n**Interface** — Existing interfaces used unchanged: `createRunCompleteGate(write)` / `RunCompleteGate`; `runEndPhase(options, deps): Promise<EndPhaseOutcome | undefined>` from US-001. New callback consumed: `emitRunCompleted: (final: RunCompleteFinal) => void`; final metadata: `url?: string` and `reasons?: readonly string[]`. `EndPhaseReport.workflowPassed` remains undefined in pipeline mode; `RunCompleteFinal.workflowPassed` is true there.",
+      "acceptanceCriteria": [
+        "[integration] runCompletionPhase in workflow mode passes deferRunCompletedEvent: true to handleRunCompletion.",
+        "[integration] runCompletionPhase in workflow mode, with _runnerCompletionDeps.handleRunCompletion stubbed to return a spy emitRunCompleted and _runnerCompletionDeps.runWorkflowFeature stubbed to resolve { passed: true, outcome: 'ready', url: 'https://github.com/o/r/pull/295', reasons: [] }, calls emitRunCompleted exactly once, after runWorkflowFeature resolved, with workflowPassed true and url 'https://github.com/o/r/pull/295'.",
+        "[integration] runCompletionPhase in workflow mode, with runWorkflowFeature stubbed to resolve { passed: false, outcome: 'draft', reasons: ['final gates red: lint'] }, calls emitRunCompleted exactly once with workflowPassed false and reasons ['final gates red: lint'].",
+        "[integration] runCompletionPhase in workflow mode, with runWorkflowFeature stubbed to reject with Error('boom'), calls emitRunCompleted exactly once with workflowPassed false and reasons ['feature workflow failed: boom'].",
+        "[integration] runCompletionPhase in workflow mode, with runWorkflowFeature stubbed to resolve { passed: true, outcome: 'already-finished', url: 'https://github.com/o/r/pull/295', reasons: [] }, calls emitRunCompleted exactly once with url 'https://github.com/o/r/pull/295' and workflowPassed true.",
+        "[integration] runCompletionPhase in pipeline mode, with _runnerCompletionDeps.runFinishPhase stubbed, calls emitRunCompleted exactly once, after runFinishPhase resolved, with workflowPassed true and no url.",
+        "[integration] runCompletionPhase in workflow mode with featureDir set, whose statusWriter.writeFeatureStatus rejects with Error('disk full'), rejects with 'disk full' and has called emitRunCompleted exactly once, with workflowPassed false.",
+        "[integration] runCompletionPhase in workflow mode, with a run:completed subscriber on pipelineEventBus that returns a promise resolving 50 ms later and with emitRunCompleted taken from a stubbed result that emits on pipelineEventBus, resolves only after that subscriber's promise has settled.",
+        "[unit] With wireHooks subscribed to a PipelineEventBus and an on-complete hook whose command records its environment, emitting run:completed with workflowPassed false, reasons ['final gates red: lint', 'CI failed'] and url 'https://github.com/o/r/pull/295' and draining runs the command with NAX_STATUS failed, NAX_REASON 'final gates red: lint; CI failed' and NAX_RESULT_URL 'https://github.com/o/r/pull/295'.",
+        "[unit] With the same wiring, emitting run:completed with workflowPassed true, reasons [] and no url and draining runs the on-complete command with NAX_STATUS complete and with neither NAX_REASON nor NAX_RESULT_URL set.",
+        "[unit] With the same wiring, emitting run:completed with no workflowPassed field and totalCost 4.9449 and draining runs the on-complete command with NAX_STATUS complete and NAX_COST '4.9449'.",
+        "[integration] When a finishRun step rejects before the end phase closes in workflow mode, runCompletionPhase emits run:completed exactly once with durationMs equal to the injected current time minus startTime, totalCost equal to completionResult.reportedTotal and workflowPassed false before propagating the original rejection.",
+        "[integration] When finishRun rejects and its fallback emission starts an asynchronous run:completed subscriber that settles within the bus deadline, runCompletionPhase propagates the rejection only after that subscriber settles.",
+        "[integration] When runCompletionPhase emits on-complete through finishRun's finally fallback, the hook command receives neither NAX_REASON nor NAX_RESULT_URL.",
+        "[integration] When runCompletionPhase's feature workflow is skipped because the run was aborted, its single deferred completion emission has workflowPassed false and reasons ['run aborted'].",
+        "[integration] When runCompletionPhase's runWorkflowFeature rejects with NaxError code WORKFLOW_ABORTED, its single deferred completion emission has workflowPassed false and reasons ['run aborted'].",
+        "[integration] When recordAdvisorSummary, persistFinishStatus, writeExitSummary or runtime.close rejects after finishRun has emitted run:completed, runCompletionPhase propagates that rejection without emitting another run:completed or changing the emitted end-phase verdict."
+      ],
+      "tags": [
+        "fix",
+        "integration",
+        "lifecycle",
+        "convention-critical"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Exactly-once success/failure integration spans runner, reporting gate, async draining and hook projection under tight line-growth and complexity-baseline constraints; convention-critical placement warrants the Claude architecture profile.",
+        "agentProfileId": "claude-sonnet",
+        "agent": "claude",
+        "profileModelTier": "balanced",
+        "initialAgent": "claude",
+        "initialProfileId": "claude-sonnet",
+        "initialModelTier": "balanced",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/execution/workflow-end-report.ts",
+        "packages/nax/src/execution/runner-completion.ts",
+        "packages/nax/src/pipeline/subscribers/hooks.ts",
+        "packages/nax/test/unit/execution/runner-completion-workflow-duration.test.ts",
+        "packages/nax/test/integration/pipeline/hooks.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/execution/run-completed-after-end-phase.test.ts",
+        "packages/nax/test/unit/pipeline/subscribers/hooks-on-complete.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/execution/workflow-end-report.ts",
+          "reason": "threads `url` and `reasons` into `RunCompleteFinal`; the comments on `runEndPhaseReported` and `closeWorkflowRun` that say `run:completed` is not moved are corrected."
+        },
+        {
+          "path": "packages/nax/src/execution/runner-completion.ts",
+          "reason": "passes `deferRunCompletedEvent: true`, gives the gate a write callback that calls `logRunComplete` and `emitRunCompleted`, and drains the bus in a `finally` around `finishRun`; net growth at most 10 lines (600-line limit)."
+        },
+        {
+          "path": "packages/nax/src/pipeline/subscribers/hooks.ts",
+          "reason": "the `run:completed` mapping sends status, reason and url as in Design."
+        },
+        {
+          "path": "packages/nax/src/metrics/run-duration.ts",
+          "reason": "header comment only: the metrics record is still saved before the end phase, but `run:completed` now fires after it."
+        },
+        {
+          "path": "packages/nax/src/execution/lifecycle/run-cleanup.ts",
+          "reason": "comment only, at the `if (!options.runCompleted)` block: `run:completed` is emitted after the end phase by `finishRun`, not by run-completion.ts."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-completion-workflow-duration.test.ts",
+          "reason": "the test \"durationMs spans the feature workflow and the run.complete line gets the split\" asserts `toEqual` on the whole `RunCompleteFinal`; its expected object gains `reasons: []`, since a closed end phase always sets `reasons`. US-002's `runCompletionPhase` acceptance tests may be added to this file."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-completion-pipeline-duration.test.ts",
+          "reason": "the test \"durationMs spans the end phase and the run.complete line gets the split\" asserts `toEqual` on the whole `RunCompleteFinal`; its expected object gains `reasons: []`, since a closed end phase always sets `reasons` in pipeline mode too."
+        },
+        {
+          "path": "docs/guides/hooks.md",
+          "reason": "`on-complete` timing, cost and the `failed` status, `NAX_REASON` and `NAX_RESULT_URL` on it."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "3e8aa296b77d222f45e71f2dfd2e580d614967cd"
+    },
+    {
+      "id": "US-003",
+      "title": "Emit feature-workflow start, step and publish bus events",
+      "description": "**Goal** — Add typed workflow bus events at the existing feature-run and real sink boundaries without wiring hooks yet.\n\n**Motivation** — The feature workflow then ran for 24 minutes — repo gates, branch review, publish, an 8-minute CI wait, an advisor approval — and marked PR #295 ready at 08:58:34 with a total of $4.94.\n\n**Approach** — Relevant Design / Integration requirements, verbatim:\n\n- `PipelineEvent` union (same file)\n  - Target: adds `WorkflowStartedEvent { type: \"workflow:started\"; step: string }`, `WorkflowStepEvent { type: \"workflow:step\"; step: string }`, `WorkflowPublishedEvent { type: \"workflow:published\"; outcome: string; ci?: string; url?: string; passed: boolean; reasons: readonly string[] }`. `step`, `outcome` and `ci` are typed `string` so the bus takes no dependency on `@/workflow`.\n- `runWorkflowFeature` / `runInContext` (`src/workflow/feature.ts`): emits `workflow:started` with the record's starting step immediately before it calls `runFeatureMachine`, and `workflow:published` from the final record after `runFeatureMachine` returns, with `outcome` defaulting to `\"local-only\"` and `passed` to `false` when the record has none (the defaults `resultOf` uses). The already-finished, dry-run and aborted early returns emit neither.\n- `buildFeatureEnv`'s sink (`src/workflow/feature-env.ts`): `sink.step(step, record)` emits `workflow:step` for every step except `\"done\"`, alongside the existing status-block update. The starting step therefore sends both `on-workflow-start` and `on-workflow-step`, and a step the cost limit then skips (`costStop` runs after `sink.step`) still sends `on-workflow-step`.\n\nRead-only integration declarations from the spec:\n- `runFeatureMachine(env: FeatureEnv): Promise<WorkflowFeatureRecord>` — `src/workflow/feature-machine.ts`; calls `env.sink.step(step, rec)` before each step and `env.sink.step(\"done\", rec)` at the end. `publishStep` always returns `step: \"done\"`.\n- `FeatureStep` = `\"repo-gates\" | \"branch-review\" | \"branch-fix\" | \"branch-rereview\" | \"adjudicate\" | \"final-gates\" | \"gate-repair\" | \"publish\" | \"done\"`; `FeatureOutcome` = `\"ready\" | \"draft\" | \"local-only\" | \"pushed\"`; `FeatureCiState` = `\"green\" | \"failed\" | \"pending\" | \"skipped\" | \"conflicting\" | \"no-checks\" | \"unavailable\"` — `src/workflow/types.ts`.\n\nUS-003 story requirements, verbatim: Add `WorkflowStartedEvent`, `WorkflowStepEvent` and `WorkflowPublishedEvent` to `PipelineEvent`. Emit `workflow:started` and `workflow:published` from `runInContext` in `src/workflow/feature.ts`, and `workflow:step` from the sink `buildFeatureEnv` returns, for every step but `done`. No hook is wired yet; US-004 does that.\n\nUse the singleton pipelineEventBus; preserve early returns and context disposal. Emit started only once preparation succeeded, using the resumed record's actual starting step (not a hardcoded repo-gates). Emit published only after successful machine return, carrying final record outcome/ci/url/passed/reasons and the stated defaults, including local-only with no URL. A machine throw leaves start and any already-emitted step events unmatched; it emits no published event and propagates to runEndPhase, which US-001 converts to the failed completion verdict. A prior record truly finished at current HEAD emits none of the three workflow events; keep the existing current-verdict/prior-URL return. Do not confuse a transient draft that resumes publishing with the already-finished skip. Keep the sink's status update, done suppression and cost-stop order; no machine API change is required. Create test/unit/workflow/feature-events.test.ts and extend feature-env.test.ts for the real sink assertions.\n\n**Scope** — In: three event interfaces/union members, feature start/publish production, real-sink step production and associated unit behavior. Out: completion deferral (US-001), runner final emission (US-002), hook definitions/environment/mappings/docs (US-004). No events-log/TUI support, per-poll CI events, step-finished events or story-loop hooks.\n\n**Interface** — Verbatim target shapes: `WorkflowStartedEvent { type: \"workflow:started\"; step: string }`, `WorkflowStepEvent { type: \"workflow:step\"; step: string }`, `WorkflowPublishedEvent { type: \"workflow:published\"; outcome: string; ci?: string; url?: string; passed: boolean; reasons: readonly string[] }`; existing `runFeatureMachine(env: FeatureEnv): Promise<WorkflowFeatureRecord>` stays unchanged.",
+      "acceptanceCriteria": [
+        "[unit] runWorkflowFeature, with _featureRunDeps.buildFeatureContext and _featureRunDeps.runFeatureMachine stubbed and no prior record, emits exactly one workflow:started on pipelineEventBus with step 'repo-gates', before runFeatureMachine is called.",
+        "[unit] runWorkflowFeature, with _featureRunDeps.buildFeatureContext stubbed to reject, rejects and emits no workflow:started.",
+        "[unit] runWorkflowFeature, with runFeatureMachine stubbed to resolve a record of outcome 'ready', ci 'green', url 'https://github.com/o/r/pull/295', passed true and reasons [], emits exactly one workflow:published with those five values, after runFeatureMachine resolved.",
+        "[unit] runWorkflowFeature, with runFeatureMachine stubbed to resolve a record of outcome 'local-only', no url and reasons ['no forge detected'], emits a workflow:published with outcome 'local-only', no url and reasons ['no forge detected'].",
+        "[unit] runWorkflowFeature, with runFeatureMachine stubbed to resolve a record with no outcome and no passed, emits a workflow:published with outcome 'local-only' and passed false.",
+        "[unit] runWorkflowFeature, with runFeatureMachine stubbed to reject, rejects and emits no workflow:published.",
+        "[unit] runWorkflowFeature when the prior record is finished at the current HEAD (the already-finished path) emits no workflow:started and no workflow:published.",
+        "[unit] runWorkflowFeature with runtime.dryRun true returns null and emits no workflow:* event.",
+        "[unit] The sink returned by buildFeatureEnv, called as step('branch-review', record), emits exactly one workflow:step with step 'branch-review'.",
+        "[unit] The sink returned by buildFeatureEnv, called as step('done', record), emits no workflow:step.",
+        "[unit] When runWorkflowFeature returns early because abortSignal is already aborted, it emits no workflow:started, workflow:step or workflow:published event.",
+        "[unit] When runFeatureMachine rejects with an ordinary error after a workflow:started emission, runWorkflowFeature leaves that started event and any already-emitted workflow:step events unmatched and emits no workflow:published.",
+        "[unit] When runFeatureMachine rejects with NaxError code WORKFLOW_ABORTED, runWorkflowFeature emits no workflow:published and propagates the rejection.",
+        "[unit] When runWorkflowFeature takes its already-finished-at-current-HEAD early return, it emits no workflow:step event.",
+        "[unit] Given buildFeatureEnv with ctx.stories containing one StorySummary with id 'US-001', state 'complete' and rounds 2, when its sink.step('publish', record) receives a record with outcome 'draft' and url 'u', statusWriter.setWorkflowStatus receives { step: 'publish', stories: { 'US-001': { state: 'complete', round: 2 } }, outcome: 'draft', url: 'u' }, preserving the existing status-block update alongside the new event."
+      ],
+      "tags": [
+        "feat",
+        "events",
+        "workflow",
+        "backend"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Three existing modules gain additive typed event production at explicit boundaries; no new orchestration abstraction or security control changes are required.",
+        "agentProfileId": "native-deepseek",
+        "agent": "native",
+        "profileModelTier": "balanced",
+        "initialAgent": "native",
+        "initialProfileId": "native-deepseek",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/feature.ts",
+        "packages/nax/src/workflow/feature-env.ts",
+        "packages/nax/src/workflow/feature-machine.ts",
+        "packages/nax/test/unit/workflow/feature.test.ts",
+        "packages/nax/test/unit/workflow/feature-env.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/workflow/feature-events.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/pipeline/event-bus/index.ts",
+          "reason": "adds `WorkflowStartedEvent`, `WorkflowStepEvent` and `WorkflowPublishedEvent` to `PipelineEvent`."
+        },
+        {
+          "path": "packages/nax/src/workflow/feature.ts",
+          "reason": "`runInContext` emits `workflow:started` and `workflow:published`."
+        },
+        {
+          "path": "packages/nax/src/workflow/feature-env.ts",
+          "reason": "the sink's `step` emits `workflow:step` for every step but `done`."
+        },
+        {
+          "path": "packages/nax/test/unit/workflow/feature-env.test.ts",
+          "reason": "US-003's `buildFeatureEnv` sink acceptance tests (the `workflow:step` emit and the existing status-block update) may be added to this file; no existing test in it changes."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "778273412dbf8f60a104ed8ef41799baf9cc4c6d"
+    },
+    {
+      "id": "US-004",
+      "title": "Expose workflow start, step and publish hooks",
+      "description": "**Goal** — Expose the feature-workflow bus events as configurable hooks with sanitized step/CI environment variables and document their lifecycle.\n\n**Motivation** — No hook fired for any of it.\n\n**Approach** — Relevant Design / Integration requirements, verbatim:\n\n- `HookEvent` / `HOOK_EVENTS` (`src/hooks/types.ts`): adds `\"on-workflow-start\"`, `\"on-workflow-step\"`, `\"on-workflow-publish\"`. `HookContext` adds `step?: string` and `ci?: string`; `buildEnv` maps them to `NAX_STEP` and `NAX_CI`.\n- `wireHooks`: the `run:completed` mapping sends status `failed` when `ev.workflowPassed === false`, otherwise `complete`; `reason` is `ev.reasons` joined with `\"; \"` when non-empty; `url` is `ev.url`. New mappings: `workflow:started` to `on-workflow-start` (status `running`, `step`), `workflow:step` to `on-workflow-step` (`step`), `workflow:published` to `on-workflow-publish` (status = outcome, `ci`, `url`, `reason` = reasons joined with `\"; \"`).\n\nThe run:completed portion is already implemented by US-002; preserve it rather than reimplementing it. Read-only integration declarations, verbatim:\n- `wireHooks(bus: PipelineEventBus, hooks: LoadedHooksConfig, workdir: string, feature: string): UnsubscribeFn` — `src/pipeline/subscribers/hooks.ts`; each subscription calls `fireHook` through a local `safe(name, fn)` that logs a failure at warn and never rethrows.\n- `hookCtx(feature: string, opts?: Partial<Omit<HookContext, \"event\" | \"feature\">>): HookContext` — `src/execution/story-context`.\n- `fireHook(config, event, ctx, workdir)` — `src/hooks/runner.ts`; `buildEnv(ctx)` maps context fields to `NAX_*` variables, `ctx.url` to `NAX_RESULT_URL`.\n\nTests that assert a hook command's environment await `pipelineEventBus.drain()` after emitting, since hook delivery is asynchronous.\n\nUS-004 story requirements, verbatim: Add `on-workflow-start`, `on-workflow-step` and `on-workflow-publish` to `HOOK_EVENTS`, `step` and `ci` to `HookContext`, and `NAX_STEP` / `NAX_CI` to `buildEnv`; map the three `workflow:*` bus events in `wireHooks`. Document the three hooks and the two variables in `docs/guides/hooks.md`, including the event-order diagram, add them to the hook table in `docs/architecture/subsystems.md` and the Hooks list in `packages/nax/README.md`. US-002 must land first because both stories edit `wireHooks` and `docs/guides/hooks.md`.\n\nHook timing contract from the spec:\n| Hook | When | `NAX_STATUS` | Other variables |\n|:---|:---|:---|:---|\n| `on-all-stories-complete` | Unchanged: every story passed, before the regression gate | `passed` | `NAX_COST` (stories) |\n| `on-workflow-start` | Feature workflow begins (workflow mode) | `running` | `NAX_STEP` = starting step |\n| `on-workflow-step` | Each feature-workflow step begins, including the starting step and a step the cost limit then skips | — | `NAX_STEP` |\n| `on-workflow-publish` | Publish finished | outcome: `ready`, `draft`, `pushed`, `local-only` | `NAX_CI`, `NAX_RESULT_URL` (when a URL exists), `NAX_REASON` |\n| `on-complete` | End phase done, both modes | `complete`, or `failed` when the feature workflow did not pass | `NAX_COST` (whole run), `NAX_REASON`, `NAX_RESULT_URL` |\n\nKeep empty reasons absent from NAX_REASON, omit NAX_RESULT_URL without a URL (including no-forge/local-only publish), and do not set a status on the step hook. New environment fields must use existing escapeEnvValue projection and buildAllowedEnv flow, retaining trust checks, argv execution, global/project behavior, timeout controls and JSON stdin; no security policy changes are requested. Nonzero exit/timeout remains warn-and-resolve with the event name in 'Global hook <event> failed' / 'Project hook <event> failed'. Reuse local safe for subscribers and collect their unsubscribe functions. Preserve existing hook definitions when new workflow definitions coexist in hooks.json. In producer-seam fixtures, return a complete WorkflowFeatureRecord by extending the input record and overriding the stated fields; supply required event fields even when an AC names only the fields under assertion. runFeatureMachine takes exactly one FeatureEnv argument: configure ctx.record.step as 'publish' before buildFeatureEnv constructs env, keep env.sink unchanged, and replace only env.steps.publish for the step seam. The added environment fields use the existing escaping path; do not edit trust, permission or command-validation policy. Add test/unit/pipeline/subscribers/hooks-workflow.test.ts; prove real producer-to-hook seams through runWorkflowFeature with only context/machine stubbed and through runFeatureMachine with buildFeatureEnv's sink unchanged and only steps.publish stubbed. Show workflow-start -> first workflow-step -> further steps -> publish -> on-complete in workflow mode, finish -> on-complete in pipeline mode, and preserve cleanup post-run actions after on-complete in the guide. No event is invented for done, already-finished, dry-run or aborted early returns.\n\n**Scope** — In: workflow hook registration, context/env projection, bus-to-hook wiring, end-to-end seam tests and the guide/architecture/README updates. Out: event production (US-003) and final-completion timing/gate wiring (US-001/US-002). No story-loop hooks, events-log/TUI additions, per-poll CI, step-finished/duration events, user hook config/script changes, billed live run or longer drain deadline.\n\n**Interface** — Existing `wireHooks(bus: PipelineEventBus, hooks: LoadedHooksConfig, workdir: string, feature: string): UnsubscribeFn` and `hookCtx(feature: string, opts?: Partial<Omit<HookContext, \"event\" | \"feature\">>): HookContext` are unchanged. Context additions: `step?: string` and `ci?: string`. Event shapes consumed from US-003: `WorkflowStartedEvent { type: \"workflow:started\"; step: string }`, `WorkflowStepEvent { type: \"workflow:step\"; step: string }`, `WorkflowPublishedEvent { type: \"workflow:published\"; outcome: string; ci?: string; url?: string; passed: boolean; reasons: readonly string[] }`.",
+      "acceptanceCriteria": [
+        "[unit] HOOK_EVENTS contains 'on-workflow-start', 'on-workflow-step' and 'on-workflow-publish', and a hooks.json declaring on-workflow-step loaded with loadHooksConfig keeps that hook definition.",
+        "[unit] fireHook for 'on-workflow-step' with a context whose step is 'publish' runs the configured command with NAX_EVENT 'on-workflow-step' and NAX_STEP 'publish'.",
+        "[unit] fireHook for 'on-workflow-publish' with a context whose ci is 'pending' runs the configured command with NAX_CI 'pending'.",
+        "[unit] With wireHooks subscribed to a PipelineEventBus and an on-workflow-start hook whose command records its environment, emitting workflow:started with step 'branch-fix' and draining runs the command with NAX_STATUS 'running' and NAX_STEP 'branch-fix'.",
+        "[unit] With the same wiring and an on-workflow-step hook, emitting workflow:step with step 'final-gates' and draining runs the command with NAX_STEP 'final-gates'.",
+        "[unit] With the same wiring and an on-workflow-publish hook, emitting workflow:published with outcome 'ready', ci 'green', url 'https://github.com/o/r/pull/295', passed true and reasons [] and draining runs the command with NAX_STATUS 'ready', NAX_CI 'green', NAX_RESULT_URL 'https://github.com/o/r/pull/295' and no NAX_REASON.",
+        "[unit] With the same wiring, emitting workflow:published with outcome 'draft', no url and reasons ['CI failed', 'approval withheld'] and draining runs the on-workflow-publish command with NAX_STATUS 'draft', NAX_REASON 'CI failed; approval withheld' and no NAX_RESULT_URL.",
+        "[unit] With the same wiring and an on-workflow-step hook whose command exits non-zero, emitting workflow:step and draining does not throw, and fireHook logs one warn whose message names on-workflow-step.",
+        "[integration] With wireHooks subscribed to pipelineEventBus and on-workflow-start and on-workflow-publish hooks whose commands record their environment, calling runWorkflowFeature with buildFeatureContext and runFeatureMachine stubbed (the machine resolving outcome 'ready' with url 'https://github.com/o/r/pull/295') and draining runs the on-workflow-start command with NAX_STEP 'repo-gates' and the on-workflow-publish command with NAX_RESULT_URL 'https://github.com/o/r/pull/295'; the test asserts each command's recorded environment and makes no assertion about the order in which the two commands finish.",
+        "[integration] With wireHooks subscribed to pipelineEventBus and an on-workflow-step hook whose command records its environment, calling runFeatureMachine(env) with the env returned by buildFeatureEnv (its sink unchanged, its steps.publish replaced by a stub resolving outcome 'ready') with env.record.step set to 'publish', then draining, runs the on-workflow-step command exactly once, with NAX_STEP 'publish'.",
+        "[unit] With wireHooks subscribed and an on-workflow-publish hook configured, emitting workflow:published for outcome 'local-only' without a URL and draining runs the hook with NAX_STATUS 'local-only' and no NAX_RESULT_URL.",
+        "[unit] When an on-workflow-step hook command times out, fireHook resolves and logs a warn named 'Global hook on-workflow-step failed' or 'Project hook on-workflow-step failed' for the configured hook scope without propagating the timeout to the emitter.",
+        "[unit] When loadHooksConfig loads a project hooks.json containing both an existing on-start definition and a new on-workflow-step definition, its hooks map retains both definitions unchanged, preserving existing hook configuration alongside the new event."
+      ],
+      "tags": [
+        "feat",
+        "integration",
+        "hooks",
+        "workflow"
+      ],
+      "dependencies": [
+        "US-002",
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Three existing source modules gain additive hook names, context-to-environment fields and subscriptions using established helpers; the two producer-to-hook seams need behavioral tests, but no authentication, access-control, session or subprocess-security policy changes justify strict isolation.",
+        "agentProfileId": "native-deepseek",
+        "agent": "native",
+        "profileModelTier": "balanced",
+        "initialAgent": "native",
+        "initialProfileId": "native-deepseek",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/pipeline/subscribers/hooks.ts",
+        "packages/nax/src/hooks/runner.ts",
+        "packages/nax/src/hooks/types.ts",
+        "packages/nax/test/integration/pipeline/hooks.test.ts",
+        "packages/nax/test/unit/workflow/feature-env.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/pipeline/subscribers/hooks-workflow.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/hooks/types.ts",
+          "reason": "adds the three hook events to `HOOK_EVENTS`, and `step?` / `ci?` to `HookContext`."
+        },
+        {
+          "path": "packages/nax/src/hooks/runner.ts",
+          "reason": "`buildEnv` maps `step` to `NAX_STEP` and `ci` to `NAX_CI`."
+        },
+        {
+          "path": "packages/nax/src/pipeline/subscribers/hooks.ts",
+          "reason": "subscribes the three workflow events."
+        },
+        {
+          "path": "docs/guides/hooks.md",
+          "reason": "the three new hooks, `NAX_STEP`, `NAX_CI`, and the event-order diagram."
+        },
+        {
+          "path": "docs/architecture/subsystems.md",
+          "reason": "the hook-event table gains rows for `on-workflow-start`, `on-workflow-step` and `on-workflow-publish`."
+        },
+        {
+          "path": "packages/nax/README.md",
+          "reason": "the Hooks section's list of key hook points names the three new workflow hooks."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "df68501dc065f9850f66cc3b25ae79ed0f0bf335"
+    }
+  ],
+  "analysis": "Enhancement/bug fix for #2586, not greenfield. Navigation: codebase-memory MCP is unavailable in this host; findings were verified using direct source reads and targeted searches rooted at /Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax-on-complete. No implementation or tests were run while drafting. All four binding stories have workdir packages/nax, including the explicitly assigned repository-root documentation edits. No other package implementation, dependency changes, releases, config migration, or user hook-script modification is needed.\n\nArchitecture and conventions: packages/nax is the Bun/TypeScript CLI; use bun:test, existing @test/helpers fixtures, injectable dependency objects, structured logging and type-only imports. Read docs/architecture/ARCHITECTURE.md:20 for _deps/error conventions and docs/architecture/ARCHITECTURE.md:162 for hard file-size limits. Existing mutable seams must be restored in afterEach; avoid mock.module leakage. This change concerns run lifecycle events, not native/ACP sessions or permission resolution. Hook execution already enforces trust, argv-mode execution, filtered environments and escaping; preserve those controls, do not replace them for test convenience.\n\nUS-001 producer seam: packages/nax/src/pipeline/event-bus/index.ts:87 defines RunCompletedEvent, with counts, duration, optional totalCost, errorCostUsd and fallback. packages/nax/src/execution/lifecycle/run-completion.ts:61 defines RunCompletionOptions; :115 defines RunCompleteFinal, whose workflowPassed already exists; :129 defines RunCompletionResult. Add only the target fields, not a duplicate workflowPassed on RunCompleteFinal. handleRunCompletion sequences regression, review, phase-3 cost snapshot, teardown, phase-5 event/metrics, fail-open purge, logging, MCP summary and final status (same file :159 onward). Its existing catch surrounds only phase 7.5 and phase 8 (:232 onward); preserve that boundary. packages/nax/src/execution/lifecycle/run-completion-phases.ts:121 snapshots the authoritative total and error-cost component; :175 emits the current early run event and saves metrics; :192 derives fallback once from backfilled story metrics. Return both finalCounts and the captured event payload, suppress only event emission when deferred, and keep metric persistence best-effort. The deferred callback must preserve captured counts, fallback and phase-3 errorCostUsd while overlaying final duration, total cost and workflow fields. Event deferral and log deferral are independent; direct callers without the new option keep existing timing and no callback. The late-phase catch emits and drains the deferred event before rethrowing, with workflowPassed false for workflow mode and true for pipeline mode. Phase-6 purge already catches its failures (run-completion-phases.ts:250 onward). Keep run-completion-phases.ts's import of run-completion.ts type-only to avoid a cycle, as its header explains (:18).\n\nEnd-phase compatibility: packages/nax/src/execution/end-phase.ts:107 currently returns a boolean from runWorkflowEnd and :146 exposes Promise<boolean | undefined>. It already skips aborted runs, distinguishes WORKFLOW_ABORTED via instanceof NaxError, warns for other exceptions, treats null workflow results as a pass, and keeps pipeline finish fail-open (:82). Replace workflow booleans with EndPhaseOutcome { passed, url?, reasons }, preserving pipeline undefined. Abort reasons must be exactly 'run aborted'; generic workflow errors exactly 'feature workflow failed: <message>' using the existing errorMessage utility. The only production direct runEndPhase consumer found is packages/nax/src/execution/workflow-end-report.ts:209, so US-001 must adapt its passed extraction immediately even though US-002 threads metadata later. Existing packages/nax/test/unit/execution/end-phase.test.ts:80-120 expects booleans and must change to outcome assertions while preserving logger expectations and pipeline behavior. packages/nax/test/unit/execution/lifecycle-completion.test.ts:95 provides completion fixtures using makeDispatchContext/makeStatusWriter; :126 subscribes to the singleton bus and restores _runCompletionDeps. Its old describe/title text can stay because its non-deferred assertions remain valid. Create the deferred-lifecycle test file rather than inflating the existing 789-line test file.\n\nUS-002 consumer seam and exactly-once delivery: packages/nax/src/execution/runner-completion.ts:363 invokes handleRunCompletion with deferRunCompleteLog true (:400), then calls finishRun (:406). finishRun currently constructs createRunCompleteGate(completionResult.logRunComplete) at :498, runs feature-status write, warnings, heartbeat stop, run-state repair and autocommit, then runEndPhaseReported; :569 supplies the finally fallback. Reuse this gate for both the held-back log and event; do not create a second independent success emitter. Gate state is set before its writer is invoked (packages/nax/src/execution/workflow-end-report.ts:80-87); ensureSafely suppresses fallback faults so the original rejection survives. Normal closure produces reasons [] even in pipeline mode; the finishRun fallback deliberately has no reasons or URL and carries its existing figures-so-far semantics. runCompletionPhase must pass both defer flags and await drain in a finally around finishRun, not only on success. Do this without adding branches: runner-completion.ts is 585 lines, its net growth must not exceed 10 lines, and runCompletionPhase has complexity baseline 34. Put extra logic in workflow-end-report.ts/end-phase.ts rather than raising limits or baselines. packages/nax/src/execution/workflow-end-report.ts:129 derives whole-run duration and rereads the aggregator at end closure; :162 and :174 close workflow/pipeline runs; :202 times the end phase. Preserve EndPhaseReport.workflowPassed undefined in pipeline mode while giving RunCompleteFinal.workflowPassed true. Thread EndPhaseOutcome URL/reasons through CloseInput/wholeRunFinal to gate.log; saved metric rewrite behavior remains. Correct stale timing comments in that file (:156, :195), packages/nax/src/metrics/run-duration.ts:1, and packages/nax/src/execution/lifecycle/run-cleanup.ts:256.\n\nAsynchronous bus semantics: packages/nax/src/pipeline/event-bus/index.ts:309 emit invokes subscribers synchronously but tracks returned promises without awaiting them; :246 fixes the drain deadline at 5000 ms, and :366 drain races pending subscribers against it. Keep this deadline; delivery beyond it is explicitly not guaranteed to be awaited. Tests inspecting command environments must drain after emission; rejection-path tests must prove draining happens before rejection becomes observable. Use controlled subscriber promises rather than arbitrary sleeps where possible.\n\nHook mapping and downstream impact: packages/nax/src/pipeline/subscribers/hooks.ts:33 wireHooks uses local safe (:41) and returns all unsubscribe functions. Its :126 run:completed mapping always sets complete and uses totalCost ?? 0 today. US-002 changes only that mapping to failed iff workflowPassed === false, non-empty reasons joined by '; ', URL and whole-run cost. Backward-compatible legacy payloads without workflowPassed remain complete. packages/nax/src/hooks/runner.ts:104 buildEnv omits absent/empty context fields and formats costs to four decimal places; preserve 4.9449 -> '4.9449'. packages/nax/src/pipeline/subscribers/reporters.ts:253 already consumes run:completed, reporting its totalCost and wall-clock duration, so no API expansion is needed. packages/nax/src/pipeline/subscribers/events-writer.ts:121 writes the watchdog's on-complete graceful-exit line from the same event; it moves later automatically. packages/nax/src/tui/hooks/usePipelineBusEvents.ts:211 sets the run summary/cost and disarms retry at this event; no TUI edit is needed, and the armed-but-no-op retry during the end phase is accepted. Do not add workflow events to events-writer or TUI. The cleanup fallback reporter call can still duplicate onRunEnd after a rejected completion; explicitly out of scope. Errors after finishRun (advisor summary, final status persistence, exit summary, runtime.close) do not cause a second event or revised verdict.\n\nUS-003 workflow event producers: packages/nax/src/workflow/feature.ts:40 exposes runWorkflowFeature with dry-run/aborted early return before context creation; :69 resultOf defaults passed to false and outcome to local-only. :174 runInContext loads stories/prior record and current HEAD. Its already-finished branch recomputes the verdict against current stories and preserves prior URL; transient drafts may instead resume at publish (:141-172), so do not treat every prior done record as the eventless skip. After startRecord/buildFeatureEnv succeed, emit started with the actual starting step immediately before the machine call (:208), and published from the returned final record immediately after it resolves. Do not emit published in finally, on throws, or on early returns. A started event can remain unmatched on machine failure. packages/nax/src/workflow/feature-env.ts:89 builds the real sink; :98 currently only updates the status block for step notifications. Emit workflow:step there for each non-done step without removing the status update; do not modify the machine to emit directly. packages/nax/src/workflow/feature-machine.ts:574 invokes sink.step before costStop (:576), and :589 invokes done after completion; this intentionally means the starting step has start plus step events and a cost-skipped step is still announced. Add string-valued workflow event interfaces/union arms to event-bus/index.ts:210 without importing workflow types into the bus. Existing pipeline/index.ts:12 exports RunCompletedEvent and :20 exports the bus; direct event-bus imports are available and no new barrel API is mandated.\n\nUS-004 hook consumers: packages/nax/src/hooks/types.ts:8 HOOK_EVENTS is the const runtime array from which HookEvent is derived; :54 HookContext lacks step and ci. Add the three workflow hooks there, optional step/ci context fields, and sanitized NAX_STEP/NAX_CI projections in runner.ts's existing buildEnv. loadHooksConfig (:54) preserves hook definitions rather than deriving a second event list. wireHooks must map started -> running + step, step -> step only, and published -> outcome as status + ci/url + joined non-empty reasons, using safe and the unsubscribe collection. fireHook already warns with 'Global hook <event> failed' or 'Project hook <event> failed' and resolves on nonzero exit/timeout (runner.ts:295 onward); preserve this behavior rather than adding emitter-side failures. Trust refusal is a separate pre-existing path (assertTrusted outside the project execution try at :324), not something to weaken. Runtime-to-hook seam tests must enter runWorkflowFeature for start/publish and runFeatureMachine with the real buildFeatureEnv sink for step. Because the bus is fire-and-forget, assert hook invocation ordering with deterministic command capture; do not infer general subprocess completion serialization.\n\nTest anchors: packages/nax/test/unit/execution/runner-completion-workflow-duration.test.ts:34 builds full runner options; :89 stubs _runnerCompletionDeps and the injected clock; :126 asserts an entire RunCompleteFinal and must gain reasons: []; :172 tests rejecting writeFeatureStatus. Mirror these seams in the new run-completed-after-end-phase tests, cover pipeline finish and async drain on both resolve/reject paths, and also update the whole-object expectation in runner-completion-pipeline-duration.test.ts. packages/nax/test/unit/workflow/feature.test.ts:33 uses temporary output dirs, makeFeatureContext/makeTestRuntime, _featureRunDeps and _workflowDeps.git; :85 seeds finished records, :124 covers early/fresh paths. packages/nax/test/unit/workflow/feature-env.test.ts:28 constructs the real sink and :117 asserts the workflow status update. New event tests should mirror these fixtures and clean up runtimes, directories and bus subscriptions. Existing packages/nax/test/unit/pipeline/subscribers/hooks.test.ts and packages/nax/test/integration/pipeline/hooks.test.ts are available; the latter's initial security tests mainly assert non-throwing behavior, so new environment-capture tests must assert actual subprocess NAX_* values, omitted values, and drained delivery rather than copying weak assertions. Five new test files are assigned explicitly across the four stories. Use package-scoped targeted bun test paths with timeout; never bare bun test or bun run nax. Validation/coverage are normal pipeline responsibilities, not separate stories or ACs.\n\nDocumentation/migration: docs/guides/hooks.md:40 currently says Everything finished and verified; :44 claims feature workflow emits no hook events, :48 has the old event diagram, and :68 onward lists environment fields. US-002 corrects final timing/status/cost/URL/reason; US-004 adds start/step/publish, NAX_STEP/NAX_CI and both modes' event order while preserving workflow story-loop exclusions. docs/architecture/subsystems.md:773 has the hook table (on-complete currently described as successful only at :789); keep its meaning consistent while adding rows. packages/nax/README.md:271 has the Hooks list. No persisted workflow schema migration is required: new event fields are optional and new hooks opt in. Existing notification hooks intentionally run later and receive whole-run totals; users must manually subscribe to workflow hooks and watchdogs must tolerate the feature-workflow gap. Binding dependency order is US-001 first; US-002 and US-003 can follow it; US-004 follows both to avoid overlap in wireHooks and hooks.md. Preserve all feature exclusions and failure-table behavior, including closed-phase metadata versus metadata-free finally fallback, already-finished current verdict, no publish on abort/error, local-only URL omission, and bounded delivery.\n\nRefine-pass audit: enumerated and retained all 43 explicit spec ACs in their original stories (US-001 1-12, US-002 1-11, US-003 1-10, US-004 1-10); the regression anchor on immediate completion, already-finished-at-current-HEAD condition, after-resolution ordering, 50-ms drain subscriber, stub boundaries, unchanged sink and replaced publish step qualifiers all remain. No deprecated grep/file/verbatim AC tags occur. Every story already has negative-path assertions. All ten failure-table rows remain covered, and all 17 top-level exclusions remain verbatim. Existing binding dependencies and workdirs are unchanged. Context-file audit confirmed all spec recommendations are present: US-001's four plus run-completion.ts, US-002's four plus hooks.ts, US-003's five, US-004's four plus types.ts; no context file is an output of its own story. Rereading packages/nax/src/workflow/feature-machine.ts:562 confirmed the machine takes one FeatureEnv argument; US-004's step-seam AC now explicitly selects env.record.step rather than suggesting a separate record argument, retaining its unchanged-sink and stubbed-publish clauses. Stub records and event fixtures must include their other required fields. Rereading packages/nax/src/workflow/feature-env.ts:98 and test/unit/workflow/feature-env.test.ts:117 identified a concrete status-block regression assertion, now included in US-003. US-004 also protects existing on-start configuration when loaded alongside a new workflow hook. The extra US-002 fallback AC now states observable duration and cost expressions rather than vague figures held. US-004 routing is reduced to medium/tdd-simple: its three source edits are additive event/env projection and existing subscription patterns; packages/nax/src/hooks/runner.ts:100 and :298 show that escaping, trust checks and subprocess policy already exist and must remain untouched, so there is no authentication/access-control change requiring strict isolation. US-001 and US-002 retain complex/lite because independent log/event deferral, captured phase-3 costs and asynchronous exactly-once rejection paths cross lifecycle boundaries under existing gate and line-limit constraints. No source implementation changes or tests were run during this audit.",
+  "outOfScope": [
+    "A PR URL on `on-complete` in pipeline mode: the `finish` phase result is not threaded, so pipeline-mode `on-complete` carries no `NAX_RESULT_URL`.",
+    "Per-poll CI-wait events: CI state is reported only once, on `on-workflow-publish`.",
+    "A step-finished event or per-step durations: `on-workflow-step` fires when a step begins.",
+    "Recording `workflow:*` events in the events log (`~/.nax/events`) or showing them in the TUI.",
+    "New fields on the reporter plugin API: `onRunEnd` gets the later timing and whole-run cost but no workflow outcome or URL.",
+    "`errorCostUsd` on the moved `run:completed`: it stays the figure computed in `handleRunCompletion` phase 5.",
+    "The duplicate `onRunEnd` that `cleanupRun` sends when the completion phase rejects after `run:completed` was emitted (the `finishRun` and `handleRunCompletion` rejection paths, where `runCompleted` stays false): pre-existing behaviour on the same paths, not changed here.",
+    "A second `run:completed` or a changed verdict when a step of `runCompletionPhase` after `finishRun` rejects: the event already went out with the end phase's verdict.",
+    "Renaming test titles that describe the old timing (for example the `describe` in `test/unit/execution/lifecycle-completion.test.ts`); their assertions call `handleRunCompletion` without the new option and stay true.",
+    "The TUI retry key staying armed while the end phase runs: pressing `r` then is a silent no-op, as it was not before; the TUI is not changed.",
+    "Raising the bus's 5-second drain deadline: a hook command running longer than it is not awaited at run end.",
+    "Telling apart a step the cost limit skips: `on-workflow-step` fires for it like any other step.",
+    "Changing an external watchdog that reads the events log's `on-complete` line: that line now lands after the feature workflow.",
+    "Workflow-mode story-loop events (implementer, story review, fix rounds) as hooks.",
+    "The meaning of `on-all-stories-complete` and the stories-only cost on `on-story-complete`.",
+    "Updating a user's own `~/.nax/hooks.json` or hook scripts to subscribe to the new events: a manual step.",
+    "A billed live run that observes the new hooks end to end: a maintainer step after merge."
+  ],
+  "routingProfile": "cross-agent"
+}

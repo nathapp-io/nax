@@ -1,8 +1,8 @@
 /**
- * The run's metrics record is saved when `run:completed` fires, before the end phase (finish, or the
+ * The run's metrics record is saved by handleRunCompletion before the end phase (finish, or the
  * feature workflow) runs, so its duration is stories-only. This rewrites the record with the whole-run
  * duration and its two parts once the end phase is done (nax#2491 workflow mode, nax#2494 pipeline
- * mode). The `run:completed` event is NOT re-fired.
+ * mode). `run:completed` is deferred until then and emitted once, with the whole-run figures.
  */
 import { withPathFileLock } from "@nathapp/nax-agent/internal";
 import { saveJsonFile } from "../utils/json-file";

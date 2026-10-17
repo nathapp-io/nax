@@ -270,7 +270,7 @@ See [Monorepo Guide](https://github.com/nathapp-io/nax/blob/main/docs/guides/mon
 
 ### Hooks
 
-Lifecycle hooks, defined in `.nax/hooks.json` (project) and `~/.nax/hooks.json` (global) — not in `config.json` — fire at key points (`on-start`, `on-story-complete`, `on-all-stories-complete`, `on-complete`, `on-final-regression-fail`, and more). Use them to trigger deployments, send notifications, or integrate with external systems.
+Lifecycle hooks, defined in `.nax/hooks.json` (project) and `~/.nax/hooks.json` (global) — not in `config.json` — fire at key points (`on-start`, `on-story-complete`, `on-all-stories-complete`, `on-workflow-start`, `on-workflow-step`, `on-workflow-publish`, `on-complete`, `on-final-regression-fail`, and more). Use them to trigger deployments, send notifications, or integrate with external systems.
 
 See [Hooks Guide](https://github.com/nathapp-io/nax/blob/main/docs/guides/hooks.md).
 

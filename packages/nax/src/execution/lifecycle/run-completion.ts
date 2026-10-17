@@ -19,7 +19,7 @@
  * functions receive it BY REFERENCE and read `deps.X` at call time.
  */
 
-import type { NaxConfig } from "@/config";
+import { isWorkflowMode, type NaxConfig } from "@/config";
 import { purgeStaleManifests } from "@/context/engine";
 import { fireHook } from "@/hooks";
 import type { HooksConfig } from "@/hooks/types";
@@ -27,6 +27,7 @@ import type { InteractionChain } from "@/interaction";
 import { getSafeLogger } from "@/logger";
 import type { McpAdoptionSummary } from "@/mcp/adoption";
 import type { StoryMetrics } from "@/metrics";
+import { pipelineEventBus, type RunCompletedEvent } from "@/pipeline/event-bus";
 import type { PRD } from "@/prd";
 import type { DispatchContext } from "@/runtime/dispatch-context";
 import type { DeferredReviewResult } from "../deferred-review";
@@ -107,6 +108,15 @@ export interface RunCompletionOptions extends DispatchContext {
    * error propagates, so it is never lost.
    */
   deferRunCompleteLog?: boolean;
+  /**
+   * Do not emit `run:completed` yet. Independent of `deferRunCompleteLog`: either may be set
+   * without the other. The caller emits the held-back event itself (via
+   * `RunCompletionResult.emitRunCompleted`) once the end phase has closed, so reporters, the
+   * events log, the TUI and the on-complete hook all see the whole run rather than the
+   * stories-only figures. If a later phase here throws, the event is emitted — with the figures
+   * this phase holds — before the error propagates, so it is never lost (US-001).
+   */
+  deferRunCompletedEvent?: boolean;
 }
 
 /**
@@ -124,6 +134,10 @@ export interface RunCompleteFinal {
   totalCost: number;
   /** False when the feature workflow did not pass; the line's `success` follows it. Always true in pipeline mode. */
   workflowPassed: boolean;
+  /** The PR the end phase opened, when it opened one. */
+  url?: string;
+  /** Why the end phase did not pass. Once the end phase is closed this is always set (`[]` on a pass). */
+  reasons?: readonly string[];
 }
 
 export interface RunCompletionResult {
@@ -148,6 +162,29 @@ export interface RunCompletionResult {
   pluginGateFailed: boolean;
   /** Present only when `deferRunCompleteLog` was set: writes the held-back `run.complete` line. */
   logRunComplete?: (final: RunCompleteFinal) => void;
+  /**
+   * Present only when `deferRunCompletedEvent` was set: emits the held-back `run:completed`
+   * with the caller's whole-run figures. Call it exactly once, after the end phase has closed
+   * (US-001 wires it to the same exactly-once gate as `logRunComplete`).
+   */
+  emitRunCompleted?: (final: RunCompleteFinal) => void;
+}
+
+/**
+ * The deferred `run:completed`: the payload phase 5 built (story counts, fallback aggregate and
+ * the phase-3 `errorCostUsd`) with the caller's whole-run figures overlaid on it. `url` and
+ * `reasons` ride along only when the caller supplied them, so a fallback emission carries
+ * neither rather than an empty claim (US-001).
+ */
+function withWholeRunFigures(base: RunCompletedEvent, final: RunCompleteFinal): RunCompletedEvent {
+  return {
+    ...base,
+    durationMs: final.durationMs,
+    totalCost: final.totalCost,
+    workflowPassed: final.workflowPassed,
+    ...(final.url !== undefined ? { url: final.url } : {}),
+    ...(final.reasons !== undefined ? { reasons: final.reasons } : {}),
+  };
 }
 
 /**
@@ -188,7 +225,7 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
   await teardownRunSessions({ options, deps: _runCompletionDeps });
 
   // Phase 5 — run:completed event with real story counts (RL-002) + metrics save
-  const { finalCounts } = await emitRunCompletedAndSaveMetrics({
+  const { finalCounts, runCompletedPayload } = await emitRunCompletedAndSaveMetrics({
     options,
     prd,
     allStoryMetrics,
@@ -198,6 +235,15 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
     errorCostField: costs.errorCostField,
     logger,
   });
+
+  /**
+   * The deferred `run:completed` (US-001): the phase-5 payload with the caller's whole-run
+   * figures overlaid on it. Handed to the caller on a clean completion, and used by the catch
+   * below when a later phase rejects before the caller ever receives it.
+   */
+  const emitRunCompleted = (final: RunCompleteFinal): void => {
+    pipelineEventBus.emit(withWholeRunFigures(runCompletedPayload, final));
+  };
 
   // Phase 6 — purge stale session scratch (AC-20) + stale manifests (US-002)
   await purgeStaleRunArtifacts({
@@ -256,6 +302,19 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
   } catch (err) {
     // The held-back line would never reach its caller: write it, as of now, before the error goes up.
     if (options.deferRunCompleteLog) logComplete();
+    if (options.deferRunCompletedEvent) {
+      // Same for the held-back event. The end phase never ran, so there is no verdict to report:
+      // emit the figures this phase holds, and report a failure in workflow mode — the workflow
+      // that was promised did not pass — while pipeline mode has no workflow to fail (US-001).
+      // Drained before the error propagates so async subscribers are not cut short.
+      emitRunCompleted({
+        durationMs,
+        storiesDurationMs: durationMs,
+        totalCost: costs.reportedTotal,
+        workflowPassed: !isWorkflowMode(config),
+      });
+      await pipelineEventBus.drain();
+    }
     throw err;
   }
 
@@ -273,5 +332,6 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
     },
     pluginGateFailed,
     ...(options.deferRunCompleteLog ? { logRunComplete: logComplete } : {}),
+    ...(options.deferRunCompletedEvent ? { emitRunCompleted } : {}),
   };
 }

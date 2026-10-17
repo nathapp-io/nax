@@ -126,6 +126,7 @@ describe("runCompletionPhase — Duration in workflow mode (nax#2491)", () => {
         featureWorkflowDurationMs: FEATURE_MS,
         totalCost: 4.25,
         workflowPassed: true,
+        reasons: [],
       },
     ]);
   });

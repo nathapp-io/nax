@@ -1,4 +1,5 @@
 /** Wires the feature machine to the real steps, the result.json sink and the status block (spec §7). */
+import { pipelineEventBus } from "@/pipeline/event-bus";
 import { adjudicateResidual } from "./adjudicate";
 import { createLiveWorkflowAdvisor, FEATURE_SCOPE } from "./advisor-live";
 import { flaggedCount } from "./approval";
@@ -95,7 +96,13 @@ export function buildFeatureEnv(fc: FeatureContext, input: WorkflowFeatureInput,
       }),
     ledger,
     artifact: (name, value) => writeFeatureArtifact(fc, name, value),
-    step: (step, record) => input.statusWriter?.setWorkflowStatus?.(workflowStatusBlock(ctx.stories, step, record)),
+    step: (step, record) => {
+      input.statusWriter?.setWorkflowStatus?.(workflowStatusBlock(ctx.stories, step, record));
+      // US-003: the machine's terminal `sink.step("done", ...)` is its exit, not a step a hook should
+      // start, so it carries no event. The machine calls this before `costStop`, so a step the run's
+      // cost limit then skips has already sent its `workflow:step`.
+      if (step !== "done") pipelineEventBus.emit({ type: "workflow:step", step });
+    },
   };
   return {
     steps,

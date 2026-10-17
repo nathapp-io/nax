@@ -81,26 +81,26 @@ describe("runEndPhase (P4-R16)", () => {
   test("workflow mode: runWorkflowFeature instead of finish; passed flows out", async () => {
     _endPhaseDeps.resolveBranch = async () => "feat/x";
     const { d, finish, workflow } = deps({ passed: false, outcome: "draft", reasons: ["CI failed"] });
-    expect(await runEndPhase(opts(WORKFLOW), d)).toBe(false);
+    expect((await runEndPhase(opts(WORKFLOW), d))?.passed).toBe(false);
     expect(finish).toHaveLength(0);
     expect(workflow[0]).toMatchObject({ feature: "f", workdir: "/repo", branch: "feat/x", runId: "run-1" });
   });
 
   test("workflow mode: skipped (null) -> true; a throw -> false (P4-R13)", async () => {
     _endPhaseDeps.resolveBranch = async () => "feat/x";
-    expect(await runEndPhase(opts(WORKFLOW), deps(null).d)).toBe(true);
-    expect(await runEndPhase(opts(WORKFLOW), deps(new Error("boom")).d)).toBe(false);
+    expect((await runEndPhase(opts(WORKFLOW), deps(null).d))?.passed).toBe(true);
+    expect((await runEndPhase(opts(WORKFLOW), deps(new Error("boom")).d))?.passed).toBe(false);
   });
 
   test("workflow mode: a WORKFLOW_ABORTED throw logs a distinct info message and returns false", async () => {
     _endPhaseDeps.resolveBranch = async () => "feat/x";
     const aborted = new NaxError("Run aborted during the feature workflow", "WORKFLOW_ABORTED", { stage: "workflow" });
     await withInfoSpy(async (info) => {
-      expect(await runEndPhase(opts(WORKFLOW), deps(aborted).d)).toBe(false);
+      expect((await runEndPhase(opts(WORKFLOW), deps(aborted).d))?.passed).toBe(false);
       expect(info.mock.calls.some((c) => String(c[1]).includes("Feature workflow aborted"))).toBe(true);
     });
     await withWarnSpy(async (warn) => {
-      expect(await runEndPhase(opts(WORKFLOW), deps(aborted).d)).toBe(false);
+      expect((await runEndPhase(opts(WORKFLOW), deps(aborted).d))?.passed).toBe(false);
       expect(warn.mock.calls).toHaveLength(0);
     });
   });
@@ -108,7 +108,7 @@ describe("runEndPhase (P4-R16)", () => {
   test("workflow mode: an ordinary throw still warns 'Feature workflow failed'", async () => {
     _endPhaseDeps.resolveBranch = async () => "feat/x";
     await withWarnSpy(async (warn) => {
-      expect(await runEndPhase(opts(WORKFLOW), deps(new Error("boom")).d)).toBe(false);
+      expect((await runEndPhase(opts(WORKFLOW), deps(new Error("boom")).d))?.passed).toBe(false);
       expect(warn.mock.calls.some((c) => String(c[1]).includes("Feature workflow failed"))).toBe(true);
     });
   });
@@ -117,8 +117,58 @@ describe("runEndPhase (P4-R16)", () => {
     _endPhaseDeps.resolveBranch = async () => "feat/x";
     const { d, workflow } = deps({ passed: true, outcome: "ready", reasons: [] });
     // nax#2550: the workflow did not run, so the run is not reported as a workflow success.
-    expect(await runEndPhase(opts(WORKFLOW, { exitReason: "aborted" }), d)).toBe(false);
+    expect((await runEndPhase(opts(WORKFLOW, { exitReason: "aborted" }), d))?.passed).toBe(false);
     expect(workflow).toHaveLength(0);
+  });
+
+  describe("runEndPhase end-phase outcome (US-001)", () => {
+    test("AC-8: a passed workflow carries its url and reasons through", async () => {
+      _endPhaseDeps.resolveBranch = async () => "feat/x";
+      const { d } = deps({
+        passed: true,
+        outcome: "ready",
+        url: "https://github.com/o/r/pull/295",
+        reasons: [],
+      });
+      expect(await runEndPhase(opts(WORKFLOW), d)).toEqual({
+        passed: true,
+        url: "https://github.com/o/r/pull/295",
+        reasons: [],
+      });
+    });
+
+    test("AC-9: a skipped workflow (null) passes with no reasons and no url", async () => {
+      _endPhaseDeps.resolveBranch = async () => "feat/x";
+      const outcome = await runEndPhase(opts(WORKFLOW), deps(null).d);
+      expect(outcome).toEqual({ passed: true, reasons: [] });
+      expect(Object.hasOwn(outcome ?? {}, "url")).toBe(false);
+    });
+
+    test("AC-10: a thrown workflow fails with the message in its reasons", async () => {
+      _endPhaseDeps.resolveBranch = async () => "feat/x";
+      expect(await runEndPhase(opts(WORKFLOW), deps(new Error("boom")).d)).toEqual({
+        passed: false,
+        reasons: ["feature workflow failed: boom"],
+      });
+    });
+
+    test("AC-11: a WORKFLOW_ABORTED throw is reported as an aborted run", async () => {
+      _endPhaseDeps.resolveBranch = async () => "feat/x";
+      const aborted = new NaxError("Run aborted during the feature workflow", "WORKFLOW_ABORTED", {
+        stage: "workflow",
+      });
+      expect(await runEndPhase(opts(WORKFLOW), deps(aborted).d)).toEqual({ passed: false, reasons: ["run aborted"] });
+    });
+
+    test("AC-12: an already-aborted run is reported as an aborted run without starting the workflow", async () => {
+      _endPhaseDeps.resolveBranch = async () => "feat/x";
+      const { d, workflow } = deps({ passed: true, outcome: "ready", reasons: [] });
+      expect(await runEndPhase(opts(WORKFLOW, { exitReason: "aborted" }), d)).toEqual({
+        passed: false,
+        reasons: ["run aborted"],
+      });
+      expect(workflow).toHaveLength(0);
+    });
   });
 
   describe("runEndPhase hand-off figure (L4)", () => {

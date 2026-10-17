@@ -395,8 +395,9 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     // Workflow mode clamps --parallel to sequential (the executor already warned), so classify the clamped value.
     isSequential: !((effectiveParallelCount(options.config, options.parallel, () => {}) ?? 0) > 1),
     interactionChain: options.interactionChain,
-    // run.complete is written after the end phase (finish / feature workflow), when the whole duration is known (nax#2491, nax#2494).
+    // run.complete and run:completed follow the end phase (finish / feature workflow), when the whole duration is known (nax#2491, nax#2494).
     deferRunCompleteLog: true,
+    deferRunCompletedEvent: true,
   });
 
   const { runCompletedAt, finalCounts, reportedTotal, pluginGateFailed } = completionResult;
@@ -495,7 +496,10 @@ async function finishRun(
   completionResult: RunCompletionResult,
   logger: ReturnType<typeof getSafeLogger>,
 ) {
-  const gate = createRunCompleteGate(completionResult.logRunComplete);
+  const gate = createRunCompleteGate((final) => {
+    completionResult.logRunComplete?.(final);
+    completionResult.emitRunCompleted?.(final);
+  });
   try {
     // Write feature-level status (SFC-002).
     // Use reportedTotal (cost-aggregator-corrected) instead of the legacy
@@ -581,5 +585,7 @@ async function finishRun(
         workflowPassed: !workflow,
       };
     });
+    // Awaits hook delivery on the rejection path too (bounded by the bus's settle deadline).
+    await pipelineEventBus.drain();
   }
 }

@@ -113,6 +113,8 @@ function buildEnv(ctx: HookContext): Record<string, string> {
   if (ctx.pluginName) env.NAX_PLUGIN_NAME = escapeEnvValue(ctx.pluginName);
   if (ctx.actionName) env.NAX_ACTION_NAME = escapeEnvValue(ctx.actionName);
   if (ctx.url) env.NAX_RESULT_URL = escapeEnvValue(ctx.url);
+  if (ctx.step) env.NAX_STEP = escapeEnvValue(ctx.step);
+  if (ctx.ci) env.NAX_CI = escapeEnvValue(ctx.ci);
 
   return env;
 }

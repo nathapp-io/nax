@@ -18,6 +18,9 @@ export const HOOK_EVENTS = [
   "on-error",
   "on-final-regression-fail",
   "on-post-run-action",
+  "on-workflow-start",
+  "on-workflow-step",
+  "on-workflow-publish",
 ] as const;
 
 /** All supported hook events */
@@ -83,4 +86,8 @@ export interface HookContext {
   actionName?: string;
   /** Optional result URL produced by a post-run action. */
   url?: string;
+  /** Feature-workflow step the event names (on-workflow-start, on-workflow-step) */
+  step?: string;
+  /** CI state the feature workflow finished with (on-workflow-publish) */
+  ci?: string;
 }

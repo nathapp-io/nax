@@ -253,7 +253,7 @@ export async function cleanupRun(options: RunCleanupOptions): Promise<void> {
   const durationMs = Date.now() - startTime;
 
   // Fire onRunEnd for reporters only on abnormal exits (failure/abort/SIGTERM).
-  // On the success path, run:completed is emitted by run-completion.ts and the
+  // On the success path, run:completed is emitted after the end phase by runner-completion.ts and the
   // reporters.ts subscriber handles onRunEnd via the event — so we skip the
   // direct call to avoid duplicate notifications.
   if (!options.runCompleted) {

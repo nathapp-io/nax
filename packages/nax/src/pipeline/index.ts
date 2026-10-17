@@ -16,6 +16,9 @@ export type {
   StorySkippedEvent,
   StoryStartedEvent,
   StoryStepEvent,
+  WorkflowPublishedEvent,
+  WorkflowStartedEvent,
+  WorkflowStepEvent,
 } from "./event-bus";
 export { PipelineEventBus, pipelineEventBus } from "./event-bus";
 export type { PipelineEvents, RunSummary } from "./events";
