@@ -234,6 +234,11 @@ session.
 - If the home cannot be prepared, nax logs one warning and the session runs on
   the operator's own gemini home rather than failing to open.
 
+**ACP permission rules.** What `execution.permissionProfile` and `execution.permissions.<stage>.allow / deny / ask`
+mean for an ACP agent — which rules are translated into the agent's own config, how a shell command
+under the reviewer (`review`) profile is decided, and what an agent's own configuration can still
+override — is in [Permissions — ACP agents](permissions.md#acp-agents).
+
 **Declaring a model newer than the catalog (nax#1982).** When the provider's model
 exists on models.dev but not in nax's pinned `@earendil-works/pi-ai` snapshot, name
 it explicitly rather than waiting on a dependency bump:

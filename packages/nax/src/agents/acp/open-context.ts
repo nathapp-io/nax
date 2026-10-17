@@ -5,8 +5,12 @@
  * prompt (no instructions), registers no tools (B5) and enforces the turn
  * deadline itself, so turnTimeoutSeconds is informational. Model and effort
  * come from the model spec (§6.7, D2-a); the startup and teardown deadlines
- * become initializeTimeoutMs and cancelGraceMs (§7.2, D3-i).
+ * become initializeTimeoutMs and cancelGraceMs (§7.2, D3-i). nax's resolved
+ * rule lists ride along as the backend's `rules`, and its per-agent policy
+ * files are written under `<globalConfigDir>/acp` (`stateDir`;
+ * SPEC-cursor-pi-acp-read-only US-005).
  */
+import { join } from "node:path";
 import {
   type BackendOpenContext,
   createFileTranscriptStore,
@@ -18,6 +22,7 @@ import {
   type TranscriptStore,
 } from "@nathapp/nax-agent";
 import type { AcpAgentName, AcpBackendOptions, AcpProcessHooks } from "@nathapp/nax-agent-acp/client";
+import { globalConfigDir } from "@/config/paths";
 import { buildAllowedEnv } from "../shared/env";
 import { type AcpProfile, acpProfileFor } from "./profile-map";
 import { finalizeAcpSurface } from "./provider-embedder";
@@ -45,6 +50,24 @@ export const DEFAULT_CLOSE_DEADLINE_MS = 10_000;
 const BACKEND_MAX_INITIALIZE_MS = 3_600_000;
 const BACKEND_MAX_CANCEL_GRACE_MS = 600_000;
 
+/**
+ * nax's per-agent rule-policy files live outside the workdir, under the global
+ * config dir the backend cannot read for itself (SPEC-cursor-pi-acp-read-only
+ * US-004/US-005): `<globalConfigDir>/acp/<agent>/…`.
+ */
+function acpStateDir(): string {
+  return join(globalConfigDir(), "acp");
+}
+
+/** nax's resolved rule lists, as the backend's rules; a stage that configures none forwards empty lists. */
+function rulesOf(opts: OpenSessionOpts): NonNullable<AcpBackendOptions["rules"]> {
+  return {
+    allow: opts.resolvedPermissions.toolGrants ?? [],
+    deny: opts.resolvedPermissions.denyRules ?? [],
+    ask: opts.resolvedPermissions.askRules ?? [],
+  };
+}
+
 export function backendOptions(
   agent: AcpAgentName,
   opts: OpenSessionOpts,
@@ -63,6 +86,11 @@ export function backendOptions(
       BACKEND_MAX_INITIALIZE_MS,
     ),
     cancelGraceMs: Math.min(opts.trackedSpawnDeadlineMs ?? DEFAULT_CLOSE_DEADLINE_MS, BACKEND_MAX_CANCEL_GRACE_MS),
+    // Forwarded verbatim: the backend's own option validator rejects a rule it
+    // cannot use (an empty pattern list, say) rather than nax dropping it here,
+    // where a dropped rule would silently widen a read-only profile.
+    rules: rulesOf(opts),
+    stateDir: acpStateDir(),
     ...(onProcess === undefined ? {} : { onProcess }),
   };
 }

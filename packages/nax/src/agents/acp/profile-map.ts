@@ -2,12 +2,16 @@
  * nax's resolved permission mode + the op's declared tools -> the nax-agent-acp
  * session profile (S4b spec §6.4, nax#2444 D2, nax#2500). Pure. Three tiers: a
  * declaration with a file-write tool keeps the mode's profile; command tools
- * without a file-write tool open `review` (read-only files, commands only
- * inside a sandbox); anything else opens `read`. The profile is never wider
- * than the mode. The per-agent fail-closed rule (no `read` on pi until #2372)
- * lives in the backend, which rejects the open with
- * AGENT_SESSION_CAPABILITY_UNSUPPORTED; this map never widens a profile to make
- * an open succeed (D2-i). Profile `ask` is never produced.
+ * without a file-write tool open `review` (read-only files, and a shell command
+ * decided by the operator's Bash rules where the agent has no nax sandbox);
+ * anything else opens `read`. The profile is never wider
+ * than the mode. An agent with no read-only enforcement — no registry entry, or
+ * an entry without one — is refused by the backend, which rejects the open with
+ * AGENT_SESSION_CAPABILITY_UNSUPPORTED instead of opening an unenforced session;
+ * this map never widens a profile to make an open succeed (D2-i). Profile `ask`
+ * is never produced. pi has its own enforcement (its `--tools` allowlist plus the
+ * shell gate, SPEC-cursor-pi-acp-read-only US-004), so `read` is no longer
+ * refused for it.
  */
 import type { ResolvedPermissions } from "@/config/permissions";
 
