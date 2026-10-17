@@ -119,7 +119,11 @@ describe("completeWithFallback model re-resolution (nax#1739)", () => {
     await manager.completeAsWithFallback("codex", "hi", { ...BASE_OPTS, modelDef: CODEX_MODEL, modelDefFor });
 
     expect(seen).toHaveLength(1);
-    expect(seen[0].modelDef).toEqual(CODEX_MODEL);
+    // US-002 (codex-acp-read-only) injects codex's launch mode onto the primary
+    // hop's model def, so the dispatched def is the input plus INITIAL_AGENT_MODE
+    // — not the bare constant. The point of this case (the resolver is never
+    // consulted — nothing re-resolved the model) is unchanged.
+    expect(seen[0].modelDef).toEqual({ ...CODEX_MODEL, env: { INITIAL_AGENT_MODE: "workspace-write" } });
     expect(modelDefFor).not.toHaveBeenCalled();
   });
 

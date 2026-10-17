@@ -4,8 +4,8 @@
  * declaration with a file-write tool keeps the mode's profile; command tools
  * without a file-write tool open `review` (read-only files, commands only
  * inside a sandbox); anything else opens `read`. The profile is never wider
- * than the mode. The per-agent fail-closed rule (no `read` on codex, opencode,
- * gemini or pi until #2372) lives in the backend, which rejects the open with
+ * than the mode. The per-agent fail-closed rule (no `read` on opencode, gemini
+ * or pi until #2372) lives in the backend, which rejects the open with
  * AGENT_SESSION_CAPABILITY_UNSUPPORTED; this map never widens a profile to make
  * an open succeed (D2-i). Profile `ask` is never produced.
  */

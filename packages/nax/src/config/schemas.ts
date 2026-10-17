@@ -34,6 +34,7 @@ import {
   AcceptanceConfigSchema,
   AgentConfigSchema,
   CuratorConfigSchema,
+  DEFAULT_AGENT_CODEX_ACP_CONFIG,
   DEFAULT_AGENT_IDLE_WATCHDOG_CONFIG,
   DEFAULT_AGENT_TIMEOUT_RETRY_CONFIG,
   GenerateConfigSchema,
@@ -370,6 +371,7 @@ export const NaxConfigSchema = z
         promptRetries: 0,
         trackedSpawnDeadlineMs: 10_000,
         trackedSpawnStartupDeadlineMs: 30_000,
+        codex: { ...DEFAULT_AGENT_CODEX_ACP_CONFIG },
       },
       native: {
         instructionFileName: DEFAULT_INSTRUCTION_FILE_NAME,

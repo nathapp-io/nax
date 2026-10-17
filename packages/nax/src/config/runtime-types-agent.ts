@@ -100,6 +100,15 @@ export interface AgentAcpConfig {
    * (createSession/loadSession/applyReasoningEffort) (default: 30000). #1583.
    */
   trackedSpawnStartupDeadlineMs?: number;
+  /**
+   * codex-only launch settings (US-002): what codex's `full` profile means, and
+   * whether the session gets its own codex home (sharing only `auth.json`).
+   * Both default when unset — see `DEFAULT_AGENT_CODEX_ACP_CONFIG`.
+   */
+  codex?: {
+    isolateHome?: boolean;
+    fullMode?: "workspace-write" | "agent-full-access";
+  };
 }
 
 /**
