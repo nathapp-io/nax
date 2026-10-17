@@ -145,11 +145,46 @@ The `agent` block is the canonical source of truth for agent selection and avail
 | `agent.usageAudit` | `enabled: false` | Writes every agent round trip's usage to a file (default dir `<outputDir>/usage`). |
 | `agent.transcriptAudit` | `enabled: false`, `maxRetained: 200` | Archives each native session transcript on close, keeping the newest `maxRetained` per feature. `dir` must be absolute (default `<outputDir>/transcript-audit`). |
 | `agent.acp.promptRetries` | `0` | ACP only. Retries a prompt on a transient fault inside nax's ACP turn loop, only when the failed attempt produced no output; backoff `min(1000 * 2^n, 10000)` ms. |
+| `agent.acp.codex.fullMode` | `"workspace-write"` | codex only. What codex's `full` profile means: `"workspace-write"` runs codex inside its own OS sandbox and nax approves every escalation codex requests, `"agent-full-access"` removes the sandbox and the requests. Injected as `INITIAL_AGENT_MODE` on every codex session. The narrower profiles are unaffected — `permissionProfile: "safe"` (`read`) and the sandboxed reviewer (`review`) still switch codex to its `read-only` mode. |
+| `agent.acp.codex.isolateHome` | `false` | codex only. Give the session its own codex home (`~/.nax/acp/codex-home`) and point `CODEX_HOME` at it, so the operator's `~/.codex/config.toml` — hooks, MCP servers, plugins — stays out of the session. It shares exactly one file, `auth.json`, symlinked back to the operator's codex home, so a token refresh in either home is seen by both. Nothing else is copied. An operator's own `CODEX_HOME` in the model's `env` wins. |
 | `agent.native.transportRetry.maxAttempts` | `3` | Native only. Total attempts for one round trip when the provider stalls or reports itself overloaded. `1` disables retry. |
 | `agent.native.transportRetry.baseDelayMs` | `2000` | Native only. Equal-jitter exponential backoff base, capped by the turn's remaining budget. |
 | `agent.native.catalogOverrides` | `[]` | Native only. Explicit catalog entries for model ids newer than the bundled pi-ai snapshot. Provider-scoped; each entry is a **complete** record — `id`, `protocol`, `contextWindow`, optional `maxTokens`, `supportsTools`, `thinkingLevels`, and `pricing` in nax-ai's `input`/`output`/`cacheRead`/`cacheWrite` per-1M vocabulary. An entry may also carry provider-wide `baseUrl` and `headers` (nax#2019) — see the warning below. Applied below every pin route (tier entries, literal `{agent, model}` pins, fallback rungs). The client is built once per process, so keep one list. See [nax-ai surface](../architecture/nax-ai-surface.md#context-window). |
 
 **Scope — what this controls.** Only the *availability* retry layer (auth / 429 / service down). Transport retries (broken socket, stale session) stay on the same agent inside the adapter. Agent-internal retries (a stalled stream or a 502/503 inside one call) stay on the same agent too, in the spawned agent process on ACP and in the native turn loop on native — see `agent.acp.promptRetries` and `agent.native.transportRetry` above. Payload-shape retries (JSON parse fail) stay on the same agent inside the caller. See [Agents — How fallback works](agents.md#how-fallback-works) for the full split.
+
+**codex launch settings (US-002).** codex is the one ACP agent whose `full`
+profile is configurable, and the one whose own config directory leaks into a nax
+session. Both are set through two environment variables nax injects on the model
+def it hands the agent process:
+
+```json
+"agent": {
+  "acp": {
+    "promptRetries": 0,
+    "codex": { "fullMode": "workspace-write", "isolateHome": false }
+  }
+}
+```
+
+- `codex.fullMode` (default `"workspace-write"`) chooses what `full` means.
+  `"workspace-write"` leaves codex inside its own OS sandbox and has nax approve
+  each escalation codex requests; `"agent-full-access"` runs codex with no
+  sandbox and no requests. It is injected as `INITIAL_AGENT_MODE` on **every**
+  codex session, whatever the profile — but a narrower profile still switches
+  codex to its `read-only` mode afterwards, so this setting never widens
+  `permissionProfile: "safe"` or the sandboxed reviewer.
+- `codex.isolateHome` (default `false`) gives the session its own codex home at
+  `~/.nax/acp/codex-home` and points `CODEX_HOME` at it, so the operator's
+  `~/.codex/config.toml` — hooks, MCP servers, plugins — does not reach the
+  session. It shares exactly one file back: `auth.json`, symlinked to the
+  operator's own codex home, so a token refresh in either home is visible to
+  both. No other codex config is copied. If the home cannot be prepared, nax logs
+  one warning and the session runs on the operator's codex home rather than
+  failing to open.
+- An operator's own `CODEX_HOME` / `INITIAL_AGENT_MODE` in
+  `models.<agent>.<tier>.env` wins over both keys — a pinned value is a
+  deliberate override.
 
 **Declaring a model newer than the catalog (nax#1982).** When the provider's model
 exists on models.dev but not in nax's pinned `@earendil-works/pi-ai` snapshot, name

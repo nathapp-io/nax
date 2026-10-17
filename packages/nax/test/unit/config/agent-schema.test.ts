@@ -163,7 +163,42 @@ describe("AgentConfigSchema", () => {
       promptRetries: 0,
       trackedSpawnDeadlineMs: 10_000,
       trackedSpawnStartupDeadlineMs: 30_000,
+      codex: { isolateHome: false, fullMode: "workspace-write" },
     });
+  });
+
+  // US-002 (codex-acp-read-only): agent.acp.codex decides what codex's `full`
+  // profile means and whether the session gets its own codex home.
+  test("AC-1: agent.acp.codex defaults when agent.acp is unset", () => {
+    expect(NaxConfigSchema.parse({}).agent?.acp?.codex).toEqual({
+      isolateHome: false,
+      fullMode: "workspace-write",
+    });
+    expect(NaxConfigSchema.parse({ agent: { acp: {} } }).agent?.acp?.codex).toEqual({
+      isolateHome: false,
+      fullMode: "workspace-write",
+    });
+  });
+
+  test("AC-2: agent.acp.codex.fullMode accepts agent-full-access; isolateHome keeps its default", () => {
+    const codex = NaxConfigSchema.parse({ agent: { acp: { codex: { fullMode: "agent-full-access" } } } }).agent?.acp
+      ?.codex;
+    expect(codex?.fullMode).toBe("agent-full-access");
+    expect(codex?.isolateHome).toBe(false);
+  });
+
+  test("AC-3: an unknown fullMode fails validation with an issue path ending in fullMode", () => {
+    const result = NaxConfigSchema.safeParse({ agent: { acp: { codex: { fullMode: "danger" } } } });
+    expect(result.success).toBe(false);
+    const paths = result.success ? [] : result.error.issues.map((issue) => issue.path.join("."));
+    expect(paths.some((path) => path.endsWith("fullMode"))).toBe(true);
+  });
+
+  test("AC-4: a non-boolean isolateHome fails validation with an issue path ending in isolateHome", () => {
+    const result = NaxConfigSchema.safeParse({ agent: { acp: { codex: { isolateHome: "yes" } } } });
+    expect(result.success).toBe(false);
+    const paths = result.success ? [] : result.error.issues.map((issue) => issue.path.join("."));
+    expect(paths.some((path) => path.endsWith("isolateHome"))).toBe(true);
   });
 
   test("agent.idleWatchdog defaults to enabled", () => {

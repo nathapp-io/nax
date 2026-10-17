@@ -167,6 +167,23 @@ export const CLAUDE_CONFIG_OPTIONS: readonly SessionConfigOption[] = [
   },
 ];
 
+/** codex-acp's session config as the fake offers it: a `mode` select with the four codex modes. */
+export const CODEX_CONFIG_OPTIONS: readonly SessionConfigOption[] = [
+  {
+    id: "mode",
+    name: "Mode",
+    category: "mode",
+    type: "select",
+    currentValue: "agent",
+    options: [
+      { value: "read-only", name: "Read only" },
+      { value: "workspace-write", name: "Workspace write" },
+      { value: "agent", name: "Agent" },
+      { value: "agent-full-access", name: "Agent (full access)" },
+    ],
+  },
+];
+
 /** The script one launch runs: `relaunch` overrides every launch after the first (S4-6 D6-l). */
 export function scriptFor(script: FakeScript, launchIndex: number): FakeScript {
   return launchIndex > 0 && script.relaunch !== undefined ? { ...script, ...script.relaunch } : script;

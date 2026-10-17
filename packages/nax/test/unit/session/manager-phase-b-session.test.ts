@@ -1,6 +1,14 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { assertDefined, makeAgentAdapter, makeNaxConfig, makeTurnResult } from "@test/helpers";
-import type { OpenSessionOpts, SessionHandle } from "@/agents/types";
+import {
+  assertDefined,
+  makeAgentAdapter,
+  makeNaxConfig,
+  makeTurnResult,
+  stubCodexAcpEnvDeps,
+  withDepsRestore,
+} from "@test/helpers";
+import { _codexAcpEnvDeps, isolatedCodexHomeDir } from "@/agents/shared/codex-acp-env";
+import type { AgentAdapter, OpenSessionOpts, SessionHandle } from "@/agents/types";
 import { NaxError } from "@/errors";
 import { _sessionManagerDeps, SessionManager } from "@/session/manager";
 import type { NameForRequest, OpenSessionRequest } from "@/session/types";
@@ -266,6 +274,83 @@ describe("openSession()", () => {
 
     resolveFirst();
     await first;
+  });
+});
+
+// ─── openSession() — codex ACP env (US-002) ───────────────────────────────────
+
+describe("openSession() — codex ACP env (US-002)", () => {
+  withDepsRestore(_codexAcpEnvDeps);
+
+  /** Capture every open call's options so the model def can be inspected. */
+  function capturingAdapter(captured: OpenSessionOpts[], agentName: string): AgentAdapter {
+    return makeAgentAdapter({
+      openSession: mock(async (name: string, opts: OpenSessionOpts) => {
+        captured.push(opts);
+        return { id: name, agentName } satisfies SessionHandle;
+      }),
+    });
+  }
+
+  test("AC-19: codex opens with CODEX_HOME and INITIAL_AGENT_MODE from agent.acp.codex", async () => {
+    stubCodexAcpEnvDeps();
+    const captured: OpenSessionOpts[] = [];
+    const config = makeNaxConfig({
+      agent: { acp: { codex: { isolateHome: true, fullMode: "agent-full-access" } } },
+    });
+    const sm = new SessionManager({ getAdapter: () => capturingAdapter(captured, "codex"), config });
+
+    await sm.openSession("nax-codex-full", makeOpenRequest({ agentName: "codex" }));
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0].modelDef.env?.CODEX_HOME).toBe(isolatedCodexHomeDir());
+    expect(captured[0].modelDef.env?.INITIAL_AGENT_MODE).toBe("agent-full-access");
+  });
+
+  test("AC-20: codex with no config anywhere still opens, on the schema default mode and no CODEX_HOME", async () => {
+    stubCodexAcpEnvDeps();
+    const captured: OpenSessionOpts[] = [];
+    const sm = new SessionManager({ getAdapter: () => capturingAdapter(captured, "codex") });
+
+    await sm.openSession("nax-codex-default", makeOpenRequest({ agentName: "codex" }));
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0].modelDef.env?.INITIAL_AGENT_MODE).toBe("workspace-write");
+    expect("CODEX_HOME" in (captured[0].modelDef.env ?? {})).toBe(false);
+  });
+
+  test("AC-21: isolateHome does not touch a non-codex agent's model def", async () => {
+    const deps = stubCodexAcpEnvDeps();
+    const captured: OpenSessionOpts[] = [];
+    const config = makeNaxConfig({
+      agent: { acp: { codex: { isolateHome: true, fullMode: "agent-full-access" } } },
+    });
+    const sm = new SessionManager({ getAdapter: () => capturingAdapter(captured, "claude"), config });
+
+    await sm.openSession("nax-claude-isolated", makeOpenRequest({ agentName: "claude" }));
+
+    expect(captured).toHaveLength(1);
+    expect("CODEX_HOME" in (captured[0].modelDef.env ?? {})).toBe(false);
+    expect("INITIAL_AGENT_MODE" in (captured[0].modelDef.env ?? {})).toBe(false);
+    expect(deps.mkdir).not.toHaveBeenCalled();
+    expect(deps.symlink).not.toHaveBeenCalled();
+  });
+
+  test("US-002: the request's config wins over the manager's for codex settings", async () => {
+    stubCodexAcpEnvDeps();
+    const captured: OpenSessionOpts[] = [];
+    const managerConfig = makeNaxConfig({
+      agent: { acp: { codex: { isolateHome: false, fullMode: "workspace-write" } } },
+    });
+    const requestConfig = makeNaxConfig({
+      agent: { acp: { codex: { isolateHome: false, fullMode: "agent-full-access" } } },
+    });
+    const sm = new SessionManager({ getAdapter: () => capturingAdapter(captured, "codex"), config: managerConfig });
+
+    await sm.openSession("nax-codex-request-config", makeOpenRequest({ agentName: "codex", config: requestConfig }));
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0].modelDef.env?.INITIAL_AGENT_MODE).toBe("agent-full-access");
   });
 });
 

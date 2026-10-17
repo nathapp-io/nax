@@ -42,6 +42,7 @@ import { type OpenedAcp, openAcpSession } from "#src/client/open";
 import { type AcpBackendOptions, type ResolvedAcpOptions, resolveAcpOptions } from "#src/client/options";
 import { decidePermission } from "#src/client/permissions";
 import { race } from "#src/client/race";
+import type { AgentRegistryEntry } from "#src/client/registry";
 import { canRestore, type Restore, storedSessionOf } from "#src/client/resume";
 import { createToolCalls } from "#src/client/tool-calls";
 import { createToolHost, newToolHostToken, type ToolHost } from "#src/client/tool-host";
@@ -125,14 +126,24 @@ export function toolHostFor(
   return _acpBackendDeps.createToolHost(calls, token, toolHostOptions(ctx));
 }
 
-/** Permission requests and elicitations, decided by profile with the session's redaction set. */
-function routerFor(ctx: BackendOpenContext, secrets: readonly string[]): InboundRouter {
+/**
+ * Permission requests and elicitations, decided by profile with the session's
+ * redaction set. nax#2372: the embedder sandbox joins the permission context only
+ * for an agent that actually receives it (one with a pre-approval channel); for any
+ * other, a policy there would approve an escalation the agent never sandboxed.
+ */
+function routerFor(
+  ctx: BackendOpenContext,
+  secrets: readonly string[],
+  entry: AgentRegistryEntry | undefined,
+): InboundRouter {
+  const sandbox = entry?.preApproval !== undefined && ctx.sandbox?.kind === "policy" ? ctx.sandbox.policy : undefined;
   const base = {
     profile: ctx.profile,
     asks: ctx.asks,
     secrets,
     cwd: ctx.workdir,
-    ...(ctx.sandbox?.kind === "policy" ? { sandbox: ctx.sandbox.policy } : {}),
+    ...(sandbox === undefined ? {} : { sandbox }),
   };
   return createInboundRouter(
     (request, signal) => decidePermission(request, { ...base, signal }),
@@ -151,7 +162,7 @@ async function connect(
   const tokens = token === undefined ? retiredTokens : [...retiredTokens, token];
   const options = withTokens(base, tokens);
   const gone = new AbortController();
-  const router = routerFor(ctx, options.secrets);
+  const router = routerFor(ctx, options.secrets, options.entry);
   const host = toolHostFor(ctx, router, options.secrets, token);
   const acp = await openAcpSession(options, ctx, router.handlers, _acpBackendDeps.launch, host, restore).catch(
     async (err: unknown) => {

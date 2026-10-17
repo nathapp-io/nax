@@ -17,6 +17,7 @@ export { assertDefined, firstCall } from "./assert-defined";
 export { assertCaughtInstanceOf, assertNaxError } from "./assert-nax-error";
 export { makeMockCallContext } from "./call-context";
 export { type CallOpStubOptions, DEFAULT_AGENT_ENVELOPE, makeCallOp, makeScriptedCallOp } from "./call-op";
+export { type CodexAcpEnvDeps, stubCodexAcpEnvDeps } from "./codex-acp-deps";
 export {
   GUARD_HIGH_ANSWER,
   GUARD_LOW_ANSWER,

@@ -337,6 +337,18 @@ export const AgentSpinBreakerConfigSchema = z
     path: ["stopAfterRepeats"],
   });
 
+/** Stable default for `agent.acp.codex` (US-002). Shared by the schema's inner
+ *  default, both literal `agent.acp` defaults, and `codexAcpSettings`, so an
+ *  unset config, a partially set one and a runtime fallback can never disagree
+ *  (same pattern as DEFAULT_AGENT_TIMEOUT_RETRY_CONFIG). */
+export const DEFAULT_AGENT_CODEX_ACP_CONFIG: {
+  isolateHome: boolean;
+  fullMode: "workspace-write" | "agent-full-access";
+} = {
+  isolateHome: false,
+  fullMode: "workspace-write",
+};
+
 const AgentAcpConfigSchema = z.object({
   promptRetries: z.number().int().min(0).max(5).default(0),
   /**
@@ -353,6 +365,20 @@ const AgentAcpConfigSchema = z.object({
    * do not lower it toward the teardown deadline.
    */
   trackedSpawnStartupDeadlineMs: z.number().int().positive().default(30_000),
+  /**
+   * codex-only launch settings (US-002). codex is the one ACP agent whose
+   * `full` profile is genuinely configurable — `workspace-write` keeps its own
+   * OS sandbox and asks nax to approve each escalation, `agent-full-access`
+   * removes the sandbox and the requests. `isolateHome` gives the session its
+   * own codex home (sharing only `auth.json`) so the operator's
+   * `~/.codex/config.toml` hooks, MCP servers and plugins stay out of it.
+   */
+  codex: z
+    .object({
+      isolateHome: z.boolean().default(false),
+      fullMode: z.enum(["workspace-write", "agent-full-access"]).default("workspace-write"),
+    })
+    .default({ ...DEFAULT_AGENT_CODEX_ACP_CONFIG }),
 });
 
 /**
@@ -429,6 +455,7 @@ export const AgentConfigSchema = z.object({
     promptRetries: 0,
     trackedSpawnDeadlineMs: 10_000,
     trackedSpawnStartupDeadlineMs: 30_000,
+    codex: { ...DEFAULT_AGENT_CODEX_ACP_CONFIG },
   }),
   native: AgentNativeConfigSchema.default({
     instructionFileName: DEFAULT_INSTRUCTION_FILE_NAME,

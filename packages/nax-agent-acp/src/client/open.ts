@@ -44,7 +44,7 @@ import { agentGoneError, type LaunchedAgent, type LaunchFn, pickCandidate } from
 import type { AcpProcessHooks, ResolvedAcpOptions } from "#src/client/options";
 import { claudeSessionMeta } from "#src/client/pre-approval";
 import { race } from "#src/client/race";
-import type { LaunchCandidate } from "#src/client/registry";
+import type { AgentRegistryEntry, LaunchCandidate } from "#src/client/registry";
 import {
   isUsableSessionId,
   type Restore,
@@ -188,7 +188,7 @@ async function establish(o: Opening): Promise<OpenedAcp> {
     resume: o.restore !== undefined,
   });
   if (unmet !== undefined) throw capabilityUnsupported(unmet.capability, unmet.reason);
-  const sandbox = sandboxFor(o.ctx);
+  const sandbox = sandboxFor(o.ctx, o.options.entry);
   const setup = await sessionSetup(o, sandbox);
   const session =
     o.restore === undefined
@@ -214,8 +214,14 @@ async function newSession(o: Opening, setup: SessionSetup): Promise<Established>
   return { agentSessionId: created.sessionId, cwd: o.ctx.workdir, configOptions: created.configOptions ?? [] };
 }
 
-/** nax#2500: review/full sessions with an embedder sandbox; an unusable one refuses the open. */
-function sandboxFor(ctx: BackendOpenContext): SandboxPolicy | undefined {
+/**
+ * nax#2500: review/full sessions with an embedder sandbox; an unusable one refuses
+ * the open. nax#2372: only an agent that receives the sandbox (one with a
+ * pre-approval channel — Claude) gets it; for any other the embedder sandbox is
+ * ignored, so an unusable one does not refuse an open it was never meant for.
+ */
+function sandboxFor(ctx: BackendOpenContext, entry: AgentRegistryEntry | undefined): SandboxPolicy | undefined {
+  if (entry?.preApproval === undefined) return undefined;
   if (ctx.profile !== "review" && ctx.profile !== "full") return undefined;
   if (ctx.sandbox === undefined) return undefined;
   if (ctx.sandbox.kind === "unavailable") {

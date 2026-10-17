@@ -111,6 +111,7 @@ export {
   AgentRoutingConfigSchema,
   AgentRoutingProfileSchema,
   CuratorRetentionConfigSchema,
+  DEFAULT_AGENT_CODEX_ACP_CONFIG,
   DEFAULT_AGENT_IDLE_WATCHDOG_CONFIG,
   DEFAULT_AGENT_SPIN_BREAKER_CONFIG,
   DEFAULT_AGENT_TIMEOUT_RETRY_CONFIG,
