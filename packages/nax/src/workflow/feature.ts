@@ -6,6 +6,7 @@
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { formatDuration } from "@/log-format";
 import { getSafeLogger } from "@/logger";
+import { pipelineEventBus, type WorkflowPublishedEvent } from "@/pipeline/event-bus";
 import { FEATURE_SCOPE } from "./advisor-live";
 import { featurePassed } from "./approval";
 import { specPathFor } from "./brief";
@@ -66,6 +67,22 @@ function resultOf(rec: WorkflowFeatureRecord): WorkflowFeatureResult {
     passed: rec.passed ?? false,
     outcome: rec.outcome ?? "local-only",
     ...(rec.url ? { url: rec.url } : {}),
+    reasons: rec.reasons,
+  };
+}
+
+/**
+ * US-003: the final record as a bus event. Same defaults as `resultOf` — a record with no outcome
+ * published nothing beyond the branch, and a record with no verdict did not pass — plus the CI state
+ * and PR url, each omitted when the record has none.
+ */
+function publishedEvent(rec: WorkflowFeatureRecord): WorkflowPublishedEvent {
+  return {
+    type: "workflow:published",
+    outcome: rec.outcome ?? "local-only",
+    ...(rec.ci ? { ci: rec.ci } : {}),
+    ...(rec.url ? { url: rec.url } : {}),
+    passed: rec.passed ?? false,
     reasons: rec.reasons,
   };
 }
@@ -205,7 +222,12 @@ async function runInContext(
     preflight: await newestPreflight(fc.featureDir),
     specPath: await specPathFor(fc.feature, fc.projectDir),
   });
+  // US-003: preparation succeeded and `record.step` is where the machine will start — the resumed
+  // step when there is one. Emitted here, immediately before the machine, and never on the
+  // already-finished, dry-run or aborted returns above.
+  pipelineEventBus.emit({ type: "workflow:started", step: record.step });
   const final = await _featureRunDeps.runFeatureMachine(env);
   logComplete(stories, final);
+  pipelineEventBus.emit(publishedEvent(final));
   return resultOf(final);
 }

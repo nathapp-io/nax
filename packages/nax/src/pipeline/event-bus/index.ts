@@ -219,6 +219,37 @@ export interface PostRunPhaseCompletedEvent {
   details?: RunPhaseDetails;
 }
 
+/**
+ * US-003: the feature workflow is about to run, starting at `step`. `step` is a plain string rather
+ * than `FeatureStep` so this bus takes no dependency on `@/workflow`; it names the step the resumed
+ * (or fresh) record actually starts at, never an assumed `repo-gates`.
+ */
+export interface WorkflowStartedEvent {
+  type: "workflow:started";
+  step: string;
+}
+
+/** US-003: the feature workflow entered `step` — every step but the terminal `done`. */
+export interface WorkflowStepEvent {
+  type: "workflow:step";
+  step: string;
+}
+
+/**
+ * US-003: the feature workflow published. `outcome` carries the record's outcome (`"local-only"`
+ * when it has none) and `passed` its verdict (`false` when it has none) — the same defaults the
+ * run result uses. `ci` and `url` are absent when the record has none, and `reasons` says why it
+ * did not pass.
+ */
+export interface WorkflowPublishedEvent {
+  type: "workflow:published";
+  outcome: string;
+  ci?: string;
+  url?: string;
+  passed: boolean;
+  reasons: readonly string[];
+}
+
 /** Discriminated union of all pipeline events. */
 export type PipelineEvent =
   | StoryStartedEvent
@@ -237,7 +268,10 @@ export type PipelineEvent =
   | StoryStepEvent
   | StoryPhaseCompletedEvent
   | PostRunPhaseStartedEvent
-  | PostRunPhaseCompletedEvent;
+  | PostRunPhaseCompletedEvent
+  | WorkflowStartedEvent
+  | WorkflowStepEvent
+  | WorkflowPublishedEvent;
 
 export type PipelineEventType = PipelineEvent["type"];
 
