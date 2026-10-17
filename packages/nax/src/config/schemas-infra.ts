@@ -349,6 +349,15 @@ export const DEFAULT_AGENT_CODEX_ACP_CONFIG: {
   fullMode: "workspace-write",
 };
 
+/** Stable default for `agent.acp.opencode` (US-002, opencode-acp-read-only).
+ *  Shared by the schema's inner default, both literal `agent.acp` defaults and
+ *  `opencodeAcpSettings`, for the same reason as the codex constant above. */
+export const DEFAULT_AGENT_OPENCODE_ACP_CONFIG: {
+  isolateConfig: boolean;
+} = {
+  isolateConfig: false,
+};
+
 const AgentAcpConfigSchema = z.object({
   promptRetries: z.number().int().min(0).max(5).default(0),
   /**
@@ -379,6 +388,20 @@ const AgentAcpConfigSchema = z.object({
       fullMode: z.enum(["workspace-write", "agent-full-access"]).default("workspace-write"),
     })
     .default({ ...DEFAULT_AGENT_CODEX_ACP_CONFIG }),
+  /**
+   * opencode-only launch settings (US-002, opencode-acp-read-only). `isolateConfig`
+   * points `OPENCODE_CONFIG_DIR` at an empty nax-owned directory, so the
+   * operator's own `~/.config/opencode` — plugins (code that runs inside the
+   * opencode process), MCP servers, agents, providers — stays out of a nax
+   * session. Credentials live in opencode's data dir, not its config dir, so an
+   * isolated session still authenticates. Off by default: an isolated config dir
+   * hides a provider that is only defined in the operator's config.
+   */
+  opencode: z
+    .object({
+      isolateConfig: z.boolean().default(false),
+    })
+    .default({ ...DEFAULT_AGENT_OPENCODE_ACP_CONFIG }),
 });
 
 /**
@@ -456,6 +479,7 @@ export const AgentConfigSchema = z.object({
     trackedSpawnDeadlineMs: 10_000,
     trackedSpawnStartupDeadlineMs: 30_000,
     codex: { ...DEFAULT_AGENT_CODEX_ACP_CONFIG },
+    opencode: { ...DEFAULT_AGENT_OPENCODE_ACP_CONFIG },
   }),
   native: AgentNativeConfigSchema.default({
     instructionFileName: DEFAULT_INSTRUCTION_FILE_NAME,

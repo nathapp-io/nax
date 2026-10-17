@@ -109,6 +109,15 @@ export interface AgentAcpConfig {
     isolateHome?: boolean;
     fullMode?: "workspace-write" | "agent-full-access";
   };
+  /**
+   * opencode-only launch settings (US-002, opencode-acp-read-only): whether the
+   * session gets its own, empty config dir so the operator's plugins, MCP
+   * servers, agents and providers stay out. Defaults when unset — see
+   * `DEFAULT_AGENT_OPENCODE_ACP_CONFIG`.
+   */
+  opencode?: {
+    isolateConfig?: boolean;
+  };
 }
 
 /**

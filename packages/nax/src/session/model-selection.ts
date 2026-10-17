@@ -8,23 +8,23 @@
 
 import type { SessionModel } from "@nathapp/nax-agent";
 import { toSessionModel } from "../agents/session-model-mapping";
-import { type CodexAcpSettings, withCodexAcpEnv } from "../agents/shared/codex-acp-env";
+import { type AcpEnvSettings, withAcpEnv } from "../agents/shared/acp-env";
 import type { ModelDef, ModelTier } from "../config/schema";
 
 /**
- * Re-exported for `SessionManager.openSession`, which needs the codex settings
+ * Re-exported for `SessionManager.openSession`, which needs the ACP env settings
  * alongside the model selection they parameterise. That file sits at its
  * 650-line grandfathered ceiling and cannot take a second import statement, so
  * both symbols travel on the import it already has from this module.
  */
-export { codexAcpSettings } from "../agents/shared/codex-acp-env";
+export { acpEnvSettings } from "../agents/shared/acp-env";
 
 export interface ModelSelection {
   modelDef: ModelDef;
   modelTier?: ModelTier;
   /**
    * Agent the model is being selected for. Optional because the two-argument
-   * `selectModel` form is the only caller that needs it — codex's env injection
+   * `selectModel` form is the only caller that needs it — every ACP launch env
    * is keyed on the agent name (US-002).
    */
   agentName?: string;
@@ -41,15 +41,16 @@ export interface ModelSelection {
  * The `ModelDef` becomes the contract's `SessionModel` here; this is where
  * config pricing is converted for session opens.
  *
- * `codex`, when supplied, is the resolved `agent.acp.codex` block: the config
- * def first passes through `withCodexAcpEnv`, so a codex session opens with its
- * `INITIAL_AGENT_MODE` (and optionally an isolated `CODEX_HOME`). Called with
- * one argument this behaves exactly as before (US-002).
+ * `acp`, when supplied, is the resolved `agent.acp` block: the config def first
+ * passes through `withAcpEnv`, so a session opens with every ACP agent's launch
+ * env applied (codex's `INITIAL_AGENT_MODE` and optionally an isolated
+ * `CODEX_HOME`; opencode's `OPENCODE_CONFIG_DIR` when isolated). Called with one
+ * argument this behaves exactly as before (US-002).
  */
 export function selectModel(
   opts: ModelSelection,
-  codex?: CodexAcpSettings,
+  acp?: AcpEnvSettings,
 ): { modelDef: SessionModel; modelTier?: string } {
-  const modelDef = codex === undefined ? opts.modelDef : withCodexAcpEnv(opts.modelDef, opts.agentName, codex);
+  const modelDef = acp === undefined ? opts.modelDef : withAcpEnv(opts.modelDef, opts.agentName, acp);
   return { modelDef: toSessionModel(modelDef), ...(opts.modelTier ? { modelTier: opts.modelTier } : {}) };
 }

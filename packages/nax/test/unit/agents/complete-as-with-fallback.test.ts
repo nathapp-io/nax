@@ -14,12 +14,14 @@ import {
   makeMockAgentManager,
   makeNaxConfig,
   stubCodexAcpEnvDeps,
+  stubOpencodeAcpEnvDeps,
   withDepsRestore,
 } from "@test/helpers";
 import { AgentManager } from "@/agents/manager";
 import { type CompleteAsWithFallbackInput, completeAsWithFallback } from "@/agents/manager-complete-as";
 import type { AgentCompleteOutcome } from "@/agents/manager-types";
 import { _codexAcpEnvDeps, isolatedCodexHomeDir } from "@/agents/shared/codex-acp-env";
+import { _opencodeAcpEnvDeps, isolatedOpencodeConfigDir } from "@/agents/shared/opencode-acp-env";
 import type { AgentAdapter, CompleteResult, ResolvedCompleteOptions } from "@/agents/types";
 import { DispatchEventBus } from "@/runtime/dispatch-events";
 
@@ -192,5 +194,72 @@ describe("completeAsWithFallback — codex ACP env (US-002)", () => {
     expect(forwarded[0].modelDef.env).toEqual({});
     expect(deps.mkdir).not.toHaveBeenCalled();
     expect(deps.symlink).not.toHaveBeenCalled();
+  });
+});
+
+// ─── US-002: the opencode env rides on the same model def (opencode-acp-read-only) ───
+
+describe("completeAsWithFallback — opencode ACP env (US-002)", () => {
+  withDepsRestore(_opencodeAcpEnvDeps);
+  withDepsRestore(_codexAcpEnvDeps);
+
+  /** The envelope `completeAsWithFallback` needs, capturing the options it forwards. */
+  function capturingInput(config: ReturnType<typeof makeNaxConfig>): {
+    input: CompleteAsWithFallbackInput;
+    forwarded: ResolvedCompleteOptions[];
+  } {
+    const forwarded: ResolvedCompleteOptions[] = [];
+    return {
+      forwarded,
+      input: {
+        config,
+        dispatchEvents: new DispatchEventBus(),
+        completeWithFallback: async (_prompt, options): Promise<AgentCompleteOutcome> => {
+          forwarded.push(options);
+          return {
+            result: { output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 },
+            fallbacks: [],
+            dispatchesCompleted: 1,
+          };
+        },
+      },
+    };
+  }
+
+  test("AC-36: forwards a model def carrying OPENCODE_CONFIG_DIR when the config isolates", async () => {
+    stubOpencodeAcpEnvDeps();
+    stubCodexAcpEnvDeps();
+    const { input, forwarded } = capturingInput(
+      makeNaxConfig({ agent: { acp: { opencode: { isolateConfig: true } } } }),
+    );
+
+    await completeAsWithFallback(input, "opencode", "hi", OPTS);
+
+    expect(forwarded).toHaveLength(1);
+    expect(forwarded[0].modelDef.env?.OPENCODE_CONFIG_DIR).toBe(isolatedOpencodeConfigDir());
+  });
+
+  test("AC-37: the per-call config wins over the manager's for opencode settings", async () => {
+    stubOpencodeAcpEnvDeps();
+    stubCodexAcpEnvDeps();
+    const { input, forwarded } = capturingInput(
+      makeNaxConfig({ agent: { acp: { opencode: { isolateConfig: false } } } }),
+    );
+    const callConfig = makeNaxConfig({ agent: { acp: { opencode: { isolateConfig: true } } } });
+
+    await completeAsWithFallback(input, "opencode", "hi", { ...OPTS, config: callConfig });
+
+    expect(forwarded[0].modelDef.env?.OPENCODE_CONFIG_DIR).toBe(isolatedOpencodeConfigDir());
+  });
+
+  test("US-002: isolateConfig false forwards the model def untouched", async () => {
+    const deps = stubOpencodeAcpEnvDeps();
+    stubCodexAcpEnvDeps();
+    const { input, forwarded } = capturingInput(makeNaxConfig({}));
+
+    await completeAsWithFallback(input, "opencode", "hi", OPTS);
+
+    expect(forwarded[0].modelDef.env).toEqual({});
+    expect(deps.mkdir).not.toHaveBeenCalled();
   });
 });
