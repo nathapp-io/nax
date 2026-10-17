@@ -484,6 +484,7 @@ export {
   writeSpill,
   writeTool,
 } from "#src/tools/index";
+export { compileArgvPattern, matchesArgvPattern, type CompiledPattern } from "#src/tools/policy-match";
 export {
   EMPTY_OWNED_PATHS_POLICY,
   type OwnedBashCandidate,

@@ -99,6 +99,7 @@ type CommandLauncherOptions
 type CommandSafetyRow
 type CommandShadow
 type CommandShadowOptions
+type CompiledPattern
 type CompleteCallOptions
 type CostSource
 type CreateAgentSessionOptions
@@ -310,6 +311,7 @@ capStrings
 chainAskLinks
 classifyExec
 clearApprovalsTaint
+compileArgvPattern
 compileToolPolicy
 configureCredentials
 createAgentSession
@@ -369,6 +371,7 @@ listProviderModels
 listStoredProviders
 loginProviderIds
 maskForPrompt
+matchesArgvPattern
 mcpRuleAdmits
 namespacedToolName
 narrowGrants
