@@ -1,7 +1,7 @@
 # nax-agent-acp — ACP backend for nax-agent sessions
 
 `@nathapp/nax-agent-acp` lets the nax-agent session API drive external coding agents
-(Claude Code first-class; Codex and OpenCode registered with every profile — Codex's read-only ones on its own `read-only` mode, OpenCode's by an injected permission config; Gemini CLI and pi registered for `full`/`ask` only) over ACP, the
+(Claude Code first-class; Codex, Gemini CLI, OpenCode, Cursor and pi registered with every profile — Codex's read-only ones on its own `read-only` mode, Gemini's on its `plan` mode, OpenCode's by an injected permission config, Cursor's and pi's by policy files nax writes under `stateDir`) over ACP, the
 Agent Client Protocol. It is nax-agent's own ACP client on `@agentclientprotocol/sdk`.
 Design: `docs/superpowers/specs/2026-10-05-s4-acp-backend-design.md`.
 
@@ -32,18 +32,21 @@ maintainer-run and billed, and never run in CI.
 
 | Module | Role |
 |:-------|:-----|
-| `options.ts`, `env.ts` | zod options; agent env allowlist and redaction set |
-| `registry.ts` | per-agent launch, mode, pre-approval and auth data; Claude, codex and opencode declare `readOnly` (codex via its own `read-only` mode; opencode via `readOnly.launchEnv`, which sets `OPENCODE_CONFIG_CONTENT` to the `OPENCODE_{NONE,READ,REVIEW}_CONFIG` permission allowlist; neither has a pre-approval channel, nax#2372) |
+| `options.ts`, `env.ts` | zod options (`rules`: the caller's resolved `allow` / `deny` / `ask` lists; `stateDir`: absolute dir for policy files); agent env allowlist and redaction set |
+| `registry.ts` | per-agent launch, mode, pre-approval and auth data; Claude, codex and opencode declare `readOnly` (codex via its own `read-only` mode; opencode via `readOnly.launchEnv`, which sets `OPENCODE_CONFIG_CONTENT` to the `OPENCODE_{NONE,READ,REVIEW}_CONFIG` permission allowlist; neither has a pre-approval channel, nax#2372); gemini via its `plan` mode; cursor (`cursor-agent acp`) via mode `ask` plus `readOnly.policy: "cursor"`; pi via `readOnly.policy: "pi"` (no mode). `readOnly.policy` names the per-agent rule translation in `rule-policy.ts` |
+| `rule-policy.ts` | the caller's rules as each agent's own policy, under none/read/review only: `opencodePermissionConfig` (no rules = the registry configs byte for byte), `cursorCliConfig` (`cli-config.json`), `piToolArgs` (`--tools` / `--no-tools`, plus the shell gate extension under `review` with a `Bash` allow rule). Only unconditional `Read` / `Glob` / `Grep` denies are translated; no allow rule ever is. `policyLaunchEnv` returns the launch env (`OPENCODE_CONFIG_CONTENT`, `CURSOR_CONFIG_DIR`, `PI_ACP_PI_COMMAND`) and replaces `launchEnvFor` in `open.ts` |
+| `policy-files.ts` | Cursor's config dir and pi's wrapper and gate extension under `stateDir`: content-addressed (16 hex of SHA-256), dirs 0700, written atomically on every launch (Cursor rewrites its own config); a failed write refuses the open; `_policyFilesDeps` test seam |
+| `shell-rules.ts` | the `review` shell decision for agents without the embedder sandbox: `shellCommandOf` reads the raw command (opencode `rawInput.command`, Cursor the backticked title, pi the gate's confirm message, `PI_SHELL_GATE_TITLE`), `shellRuleVerdict` lexes it with nax-agent's `lexBashCommand` and matches nax-agent's argv matcher. Deny on a lexer refusal, a redirect, an opaque token, or any segment no `Bash` allow matches; `ask` counts as deny. `PI_SHELL_GATE_SOURCE` is the pi extension |
 | `launch.ts` | process-group spawn, ndjson stream, stderr tail, `agentGoneError` |
 | `connection.ts` | one SDK `ClientApp` per process; outbound requests |
-| `capabilities.ts` | capability record, requirement checks, config options; `modeFor` / `launchEnvFor` (the mode and the launch env a profile selects) |
-| `open.ts` | open sequence; kills the agent on any failure. Every launch (new, resume, reconnect) uses `{ ...options.env, ...launchEnvFor(profile, entry) }`, so a read-only enforcement variable always beats the caller's |
+| `capabilities.ts` | capability record, requirement checks, config options; `modeFor` / `launchEnvFor` (the mode and the launch env a profile selects); `isReadOnlyProfile`; `resolveModelValue` (exact offered id, else for Cursor the unique `<name>[` prefix; ambiguous refuses) |
+| `open.ts` | open sequence; kills the agent on any failure. Every launch (new, resume, reconnect) uses `{ ...options.env, ...policyLaunchEnv(profile, options) }`, so a read-only enforcement variable always beats the caller's |
 | `turn.ts`, `events.ts`, `inbound.ts` | prompt turn and abort; the turn's event collector (also counts policy denials); inbound routing (updates, permissions, elicitations) by turn and session. A prompt the agent stops `cancelled` right after a deny is continued in the same turn, at most `MAX_DENIED_CONTINUATIONS` times (nax#2582: codex offers only `cancel` as a reject) |
 | `stream-scrub.ts` | session secrets scrubbed from streamed agent text, holding back only a possible secret's start |
 | `tool-events.ts` | `tool_call` / `tool_result` from ACP tool updates: sent when used, one result per call |
 | `usage.ts` | per-turn tokens (summed over a turn's prompts, `sumUsage`); the session's cost meter over cumulative reported cost |
 | `elicitation.ts` | `elicitation/create` forms asked one field at a time as questions |
-| `permissions.ts` | §6.4 decision per permission request, by profile; only `*_once` options. The embedder sandbox joins the decision only for an agent with a pre-approval channel (Claude), never codex (nax#2372) |
+| `permissions.ts` | §6.4 decision per permission request, by profile; only `*_once` options. The embedder sandbox joins the decision only for an agent with a pre-approval channel (Claude), never codex (nax#2372). Under `review` without that sandbox, a shell request is decided by `shell-rules.ts` (`SHELL_RULE_REASON` on allow, else `REVIEW_NO_SANDBOX_REASON`); an allowed command runs on the host, unsandboxed (nax#2589) |
 | `tool-display.ts`, `text.ts` | what a person sees of a tool call; control-strip, secret scrub, caps |
 | `tool-host.ts` | loopback MCP server for embedder tools: gate (Host, Origin, token, body cap), one stateless MCP server per request |
 | `tool-calls.ts` | tools/list (every tool `readOnlyHint: true`, #2365) and tools/call: turn check, 8-call cap, `always` approval, run under the turn signal |
