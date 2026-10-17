@@ -109,6 +109,10 @@ function sourceGeminiDir(): string {
  * an entry and is never replaced. `settings.json` is the exception and is
  * rewritten on every call: it is generated content, not a borrowed file.
  *
+ * Every nax process on the machine shares this home, so a link a sibling
+ * process created between our check and our own `symlink` is accepted rather
+ * than failing preparation (`linkOrAcceptConcurrentLink`).
+ *
  * Nothing else is created. The point is a home with **no** `policies/`, no
  * extensions and no `mcpServers`, so no operator approval can reach a nax
  * session.
@@ -132,8 +136,34 @@ function linkSharedCredentialFiles(geminiDir: string): void {
     if (_geminiAcpEnvDeps.entryExists(linkPath)) continue;
     const sourcePath = join(sourceDir, fileName);
     if (!_geminiAcpEnvDeps.fileExists(sourcePath)) continue;
-    _geminiAcpEnvDeps.symlink(sourcePath, linkPath);
+    linkOrAcceptConcurrentLink(sourcePath, linkPath);
   }
+}
+
+/**
+ * Link one credential file, tolerating the concurrent nax process that got
+ * there first.
+ *
+ * The isolated home is shared by every nax process on the machine, and
+ * create-if-absent is two syscalls: two processes can both see the entry absent
+ * above and then both `symlink`, and the loser gets `EEXIST`. The loser's link
+ * is exactly the one the winner made — confirmed by the `entryExists` check,
+ * which also keeps a *non*-race `EEXIST` (a directory in the way, say) from
+ * being swallowed — so preparation continues. Every other failure (EACCES,
+ * ENOSPC, a source that vanished mid-flight) is a real one and still reaches
+ * `withGeminiAcpEnv`'s fail-open.
+ */
+function linkOrAcceptConcurrentLink(sourcePath: string, linkPath: string): void {
+  try {
+    _geminiAcpEnvDeps.symlink(sourcePath, linkPath);
+  } catch (err) {
+    if (!isAlreadyExists(err) || !_geminiAcpEnvDeps.entryExists(linkPath)) throw err;
+  }
+}
+
+/** `EEXIST` — the entry was created between our `lstat` and our `symlink`. */
+function isAlreadyExists(err: unknown): boolean {
+  return typeof err === "object" && err !== null && "code" in err && err.code === "EEXIST";
 }
 
 /**

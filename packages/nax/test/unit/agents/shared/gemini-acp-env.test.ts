@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, mock, test } from "bun:test";
-import { readFileSync, readlinkSync, symlinkSync, writeFileSync } from "node:fs";
+import { lstatSync, readFileSync, readlinkSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { stubGeminiAcpEnvDeps, withDepsRestore, withTempDir } from "@test/helpers";
 import {
@@ -58,6 +58,26 @@ function makeDef(env?: Record<string, string>): {
   env?: Record<string, string>;
 } {
   return env === undefined ? { provider: "gemini", model: "m" } : { provider: "gemini", model: "m", env };
+}
+
+/**
+ * The genuine `EEXIST` node throws when a second `symlink` races the first,
+ * produced by the real filesystem (a second `symlinkSync` onto a path that now
+ * exists) rather than hand-built, so the concurrency fix is checked against the
+ * real error and its `code` rather than a stand-in.
+ */
+function realEexistError(dir: string): Error {
+  const target = join(dir, "other-process-target.json");
+  const path = join(dir, "raced-entry.json");
+  symlinkSync(target, path);
+  try {
+    symlinkSync(target, path);
+  } catch (err) {
+    // The genuine node failure — `EEXIST`, `code` and all — not a stand-in.
+    if (err instanceof Error && err.message.includes("EEXIST")) return err;
+    throw err;
+  }
+  throw new Error("expected the second symlinkSync to fail with EEXIST");
 }
 
 /** The filesystem deps: everything `withGeminiAcpEnv` must not touch when it does nothing. */
@@ -205,6 +225,100 @@ describe("prepareIsolatedGeminiHome", () => {
       userPath("gemini-credentials.json"),
       isolatedPath("gemini-credentials.json"),
     );
+  });
+
+  test("B1: a credential link lost to a concurrent nax process (EEXIST) does not fail preparation", async () => {
+    await withTempDir(async (dir) => {
+      const eexist = realEexistError(dir);
+      const racedEntry = isolatedPath("oauth_creds.json");
+      let otherProcessWon = false;
+      const deps = stubGeminiAcpEnvDeps({
+        // Our absent-entry check runs before the other process's link lands;
+        // the confirmation after the failed symlink runs after it.
+        entryExists: mock((path: string): boolean => path === racedEntry && otherProcessWon),
+        symlink: mock((_target: string, path: string): void => {
+          if (path !== racedEntry) return;
+          otherProcessWon = true;
+          throw eexist;
+        }),
+      });
+
+      expect(prepareIsolatedGeminiHome()).toBe(isolatedGeminiHomeDir());
+
+      // The loser keeps going: the other credential is still linked and the
+      // settings file is still written, so preparation is not skipped.
+      expect(deps.symlink).toHaveBeenCalledTimes(2);
+      expect(deps.symlink).toHaveBeenCalledWith(
+        userPath("gemini-credentials.json"),
+        isolatedPath("gemini-credentials.json"),
+      );
+      expect(deps.writeText).toHaveBeenCalledWith(isolatedPath("settings.json"), ISOLATED_OAUTH_SETTINGS);
+    });
+  });
+
+  test("B1: the real deps tolerate the EEXIST a concurrent process causes", async () => {
+    await withTempDir(async (dir) => {
+      const sourceGeminiDir = join(dir, GEMINI_DIR);
+      _geminiAcpEnvDeps.mkdir(sourceGeminiDir);
+      writeFileSync(join(sourceGeminiDir, "oauth_creds.json"), "{}\n");
+      writeFileSync(join(sourceGeminiDir, "settings.json"), GOOGLE_LOGIN_SETTINGS);
+
+      // The isolated home itself is global state (shared by every nax process
+      // on the machine), so this test gives itself one inside the temp dir
+      // rather than leaving links behind in the run's real one.
+      const globalDirBefore = process.env.NAX_GLOBAL_CONFIG_DIR;
+      process.env.NAX_GLOBAL_CONFIG_DIR = join(dir, "global-nax");
+      try {
+        const racedEntry = isolatedPath("oauth_creds.json");
+        // The other nax process's link, already in the shared isolated home.
+        _geminiAcpEnvDeps.mkdir(isolatedGeminiDir());
+        symlinkSync(join(sourceGeminiDir, "oauth_creds.json"), racedEntry);
+
+        const realEntryExists = _geminiAcpEnvDeps.entryExists;
+        let oauthChecks = 0;
+        Object.assign(_geminiAcpEnvDeps, {
+          env: (name: string): string | undefined => (name === "GEMINI_CLI_HOME" ? dir : undefined),
+          // Only the absent-entry check runs before that link lands; the
+          // confirmation after the real, failed `symlink` sees the real entry.
+          entryExists: (path: string): boolean =>
+            path === racedEntry && oauthChecks++ === 0 ? false : realEntryExists(path),
+        });
+
+        expect(prepareIsolatedGeminiHome()).toBe(isolatedGeminiHomeDir());
+
+        // The other process's link is untouched and preparation still finished.
+        expect(lstatSync(racedEntry).isSymbolicLink()).toBe(true);
+        expect(readlinkSync(racedEntry)).toBe(join(sourceGeminiDir, "oauth_creds.json"));
+        expect(readFileSync(isolatedPath("settings.json"), "utf8")).toBe(ISOLATED_OAUTH_SETTINGS);
+      } finally {
+        if (globalDirBefore === undefined) delete process.env.NAX_GLOBAL_CONFIG_DIR;
+        else process.env.NAX_GLOBAL_CONFIG_DIR = globalDirBefore;
+      }
+    });
+  });
+
+  test("B1: an EEXIST whose destination is still absent stays a real failure", async () => {
+    await withTempDir(async (dir) => {
+      const eexist = realEexistError(dir);
+      stubGeminiAcpEnvDeps({
+        entryExists: mock((_path: string): boolean => false),
+        symlink: mock((_target: string, _path: string): void => {
+          throw eexist;
+        }),
+      });
+
+      expect(() => prepareIsolatedGeminiHome()).toThrow("EEXIST");
+    });
+  });
+
+  test("B1: a link failure that is not EEXIST still propagates", () => {
+    stubGeminiAcpEnvDeps({
+      symlink: mock((_target: string, _path: string): void => {
+        throw new Error("EACCES: permission denied");
+      }),
+    });
+
+    expect(() => prepareIsolatedGeminiHome()).toThrow("EACCES");
   });
 
   const NO_AUTH_TYPE_CASES: Array<[string, string | undefined]> = [
@@ -377,6 +491,39 @@ describe("withGeminiAcpEnv", () => {
     const [, data] = warn.mock.calls[0];
     expect(data?.geminiHome).toBe(isolatedGeminiHomeDir());
     expect(data?.error).toContain("EACCES");
+  });
+
+  test("B1: the isolated home still reaches the def when a link was lost to a concurrent process", async () => {
+    await withTempDir(async (dir) => {
+      const eexist = realEexistError(dir);
+      const racedEntry = isolatedPath("oauth_creds.json");
+      let otherProcessWon = false;
+      const deps = stubGeminiAcpEnvDeps({
+        entryExists: mock((path: string): boolean => path === racedEntry && otherProcessWon),
+        symlink: mock((_target: string, path: string): void => {
+          if (path !== racedEntry) return;
+          otherProcessWon = true;
+          throw eexist;
+        }),
+      });
+
+      const out = withGeminiAcpEnv(makeDef({ A: "1" }), "gemini", { isolateHome: true });
+
+      expect(out.env).toEqual({ A: "1", GEMINI_CLI_HOME: isolatedGeminiHomeDir() });
+      expect(deps.warn).not.toHaveBeenCalled();
+    });
+  });
+
+  test("B1: a credential link that fails for another reason still fails open with one warn", () => {
+    const deps = stubGeminiAcpEnvDeps({
+      symlink: mock((_target: string, _path: string): void => {
+        throw new Error("EACCES: permission denied");
+      }),
+    });
+    const def = makeDef({ A: "1" });
+
+    expect(withGeminiAcpEnv(def, "gemini", { isolateHome: true })).toBe(def);
+    expect(deps.warn).toHaveBeenCalledTimes(1);
   });
 
   test("AC-39: unparseable source settings still isolate the home, leaving GEMINI_API_KEY auth available", () => {
