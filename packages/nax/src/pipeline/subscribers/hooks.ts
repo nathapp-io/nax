@@ -137,6 +137,37 @@ export function wireHooks(
     }),
   );
 
+  // workflow:started → on-workflow-start
+  unsubs.push(
+    bus.on("workflow:started", (ev) => {
+      return safe("on-workflow-start", () =>
+        fireHook(hooks, "on-workflow-start", hookCtx(feature, { status: "running", step: ev.step }), workdir),
+      );
+    }),
+  );
+
+  // workflow:step → on-workflow-step. No status: the step hook says which step began, not how it went.
+  unsubs.push(
+    bus.on("workflow:step", (ev) => {
+      return safe("on-workflow-step", () =>
+        fireHook(hooks, "on-workflow-step", hookCtx(feature, { step: ev.step }), workdir),
+      );
+    }),
+  );
+
+  // workflow:published → on-workflow-publish
+  unsubs.push(
+    bus.on("workflow:published", (ev) => {
+      const ctx = hookCtx(feature, {
+        status: ev.outcome,
+        ...(ev.ci !== undefined ? { ci: ev.ci } : {}),
+        ...(ev.url !== undefined ? { url: ev.url } : {}),
+        ...(ev.reasons.length > 0 ? { reason: ev.reasons.join("; ") } : {}),
+      });
+      return safe("on-workflow-publish", () => fireHook(hooks, "on-workflow-publish", ctx, workdir));
+    }),
+  );
+
   // run:resumed → on-resume
   unsubs.push(
     bus.on("run:resumed", (_ev) => {

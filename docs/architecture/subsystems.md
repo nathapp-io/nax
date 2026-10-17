@@ -772,7 +772,7 @@ root-only.
 
 ## §27 Hooks & Lifecycle
 
-### Hook Events (12 types)
+### Hook Events (15 types)
 
 `src/hooks/types.ts` (`HOOK_EVENTS`):
 
@@ -790,6 +790,9 @@ root-only.
 | `on-error` | Unrecoverable run error |
 | `on-final-regression-fail` | Post-run regression fails |
 | `on-post-run-action` | A registered post-run action settles (success, failure, skip, or error) |
+| `on-workflow-start` | The feature workflow begins (workflow mode) |
+| `on-workflow-step` | A feature-workflow step begins, the starting step included |
+| `on-workflow-publish` | The feature workflow finished publishing |
 
 ### Hook Definition
 
@@ -826,6 +829,8 @@ interface HookContext {
   pluginName?: string;
   actionName?: string;
   url?: string;
+  step?: string;
+  ci?: string;
 }
 ```
 
