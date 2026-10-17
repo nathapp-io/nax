@@ -7,7 +7,7 @@
  * auth variables, so their requirements fail closed.
  */
 
-export type AcpAgentName = "claude" | "codex" | "gemini" | "opencode" | "pi";
+export type AcpAgentName = "claude" | "codex" | "cursor" | "gemini" | "opencode" | "pi";
 
 export interface LaunchCandidate {
   readonly command: string;
@@ -136,6 +136,23 @@ const REGISTRY: ReadonlyMap<AcpAgentName, AgentRegistryEntry> = new Map([
       // ask keep the launch mode (US-002 sets it from config).
       readOnly: {
         mode: { configId: "mode", value: "read-only" },
+        disallowedTools: [],
+        sessionOptions: {},
+        launchEnv: {},
+      },
+      defaultMode: undefined,
+      preApproval: undefined,
+    }),
+  ],
+  // nax#2372: cursor's own modes do not enforce anything (probed: mode `ask` let a forced
+  // write through, mode `plan` let the model switch back to `agent` and write), so `ask`
+  // only tells the model it is read-only; the real enforcement is its permission config
+  // (US-004). No plan mode is ever used here.
+  [
+    "cursor",
+    entry("cursor", [local("cursor-agent", "acp")], ["CURSOR_API_KEY"], {
+      readOnly: {
+        mode: { configId: "mode", value: "ask" },
         disallowedTools: [],
         sessionOptions: {},
         launchEnv: {},

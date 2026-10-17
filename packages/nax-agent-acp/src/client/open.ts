@@ -25,10 +25,12 @@ import {
   type CapabilityRecord,
   effortOptionId,
   launchEnvFor,
+  MODEL_ID_MAX_CHARS,
   modeFor,
   modelOptionId,
   offersValue,
   readOnlyFor,
+  resolveModelValue,
   selectValues,
   unmetRequirement,
 } from "#src/client/capabilities";
@@ -284,27 +286,38 @@ async function applyMode(o: Opening, sessionId: string, offers: SessionOffers): 
 
 /** At most this many offered ids, each cleaned and capped, go into a model refusal (agent-supplied text). */
 const MAX_OFFERED_MODELS = 50;
-const MAX_MODEL_ID_CHARS = 100;
+
+/** The model ids the config options offer, raw: category "model" values in offer order. */
+function configModelIds(offers: SessionOffers): string[] {
+  return offers.configOptions.filter((option) => option.category === "model").flatMap((option) => selectValues(option));
+}
 
 /** The model ids a refusal names: the config options' ids first, then the legacy `models` block's, capped. */
 function offeredModels(offers: SessionOffers, secrets: readonly string[]): string[] {
-  const fromOptions = offers.configOptions
-    .filter((option) => option.category === "model")
-    .flatMap((option) => selectValues(option));
-  return [...fromOptions, ...offers.modelIds]
+  return [...configModelIds(offers), ...offers.modelIds]
     .slice(0, MAX_OFFERED_MODELS)
-    .map((id) => cleanLabel(id, secrets, MAX_MODEL_ID_CHARS) ?? "")
+    .map((id) => cleanLabel(id, secrets, MODEL_ID_MAX_CHARS) ?? "")
     .filter((id) => id !== "");
 }
 
 /**
  * The requested model: through a config option when one offers it (the ACP 1.x way),
  * else through the legacy session/set_model; an agent offering it in neither refuses
- * the open, naming every id it does offer.
+ * the open, naming every id it does offer. The requested name is first resolved against
+ * the offered ids (resolveModelValue), so a settings-carrying id (Cursor) can be named
+ * by its bare form; the config options' ids are used when there are any, else the
+ * legacy block's.
  */
 async function applyModel(o: Opening, sessionId: string, offers: SessionOffers): Promise<SessionOffers> {
-  const model = o.options.model;
-  if (model === undefined) return offers;
+  const requested = o.options.model;
+  if (requested === undefined) return offers;
+  const fromOptions = configModelIds(offers);
+  const model = resolveModelValue(
+    o.options.agentName,
+    fromOptions.length > 0 ? fromOptions : offers.modelIds,
+    requested,
+    o.options.secrets,
+  );
   const configId = modelOptionId(offers.configOptions, model);
   if (configId !== undefined) {
     const set = await step(

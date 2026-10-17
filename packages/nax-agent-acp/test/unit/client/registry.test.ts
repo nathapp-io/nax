@@ -9,8 +9,38 @@ import {
 } from "#src/client/registry";
 
 describe("ACP agent registry (S4 spec §6.10)", () => {
-  test("registers exactly the five agents", () => {
-    expect([...ACP_AGENT_NAMES]).toEqual(["claude", "codex", "gemini", "opencode", "pi"]);
+  test("registers exactly the six agents, cursor after codex", () => {
+    expect([...ACP_AGENT_NAMES]).toEqual(["claude", "codex", "cursor", "gemini", "opencode", "pi"]);
+  });
+
+  test("cursor: launch candidates and auth env; read-only mode ask, no default mode, no pre-approval", () => {
+    expect(registryEntry("cursor")).toEqual({
+      name: "cursor",
+      launch: [{ command: "cursor-agent", args: ["acp"] }],
+      readOnly: {
+        mode: { configId: "mode", value: "ask" },
+        disallowedTools: [],
+        sessionOptions: {},
+        launchEnv: {},
+      },
+      defaultMode: undefined,
+      preApproval: undefined,
+      authEnv: ["CURSOR_API_KEY"],
+    });
+  });
+
+  test("cursor: none, read and review are enforced by its ask mode", () => {
+    expect(registryEntry("cursor")?.readOnly).toEqual({
+      mode: { configId: "mode", value: "ask" },
+      disallowedTools: [],
+      sessionOptions: {},
+      launchEnv: {},
+    });
+  });
+
+  test("cursor declares no default mode and no pre-approval channel", () => {
+    expect(registryEntry("cursor")?.defaultMode).toBeUndefined();
+    expect(registryEntry("cursor")?.preApproval).toBeUndefined();
   });
 
   test("claude: local adapter first, pinned npx fallback, read-only enforcement, default mode, pre-approval, auth env", () => {

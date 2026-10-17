@@ -7,6 +7,6 @@ test("the contract suite runs on Node, not Bun", () => {
 });
 
 test("the registry loads and answers on Node", () => {
-  expect(ACP_AGENT_NAMES).toHaveLength(5);
+  expect(ACP_AGENT_NAMES).toHaveLength(6);
   expect(registryEntry("claude")?.preApproval).toBe("claudeCode.allowedTools");
 });

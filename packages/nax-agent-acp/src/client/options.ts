@@ -87,7 +87,7 @@ const customAgent = z.strictObject({
 });
 const SCHEMA = z
   .strictObject({
-    agent: z.union([z.enum(["claude", "codex", "gemini", "opencode", "pi"]), customAgent]),
+    agent: z.union([z.enum(["claude", "codex", "cursor", "gemini", "opencode", "pi"]), customAgent]),
     allowUnsandboxed: z.literal(true),
     model: z.string().min(1).optional(),
     effort: z.string().min(1).optional(),
