@@ -271,7 +271,9 @@ only place an ACP shell command is decided. `none` and `read` never run one: ope
   token is opaque (a `$`-expansion whose runtime value nax cannot know) — a redirect is refused even
   when an allow rule names the command. Otherwise every segment must match a pattern of some
   `Bash(...)` **allow** rule, and no segment may match a `Bash` deny or `ask` pattern. Matching is
-  the native per-token prefix match, so `Bash(bun test *)` admits `bun test` and
+  the native per-token prefix match, so `Bash(bun test)` admits `bun test` and
+  `bun test src/x.test.ts`. Each pattern word matches one command word, and `*` within a word does
+  not cross `/`: `Bash(bun test *)` admits `bun test x.test.ts` but not `bun test` or
   `bun test src/x.test.ts`. `ask` counts as a deny here: nobody answers an ACP read-only session.
 - **An allowed command runs on the host, unsandboxed.** nax decides the command *string* the agent
   reported and nothing else: no OS sandbox wraps opencode, Cursor or pi shell commands, and the
