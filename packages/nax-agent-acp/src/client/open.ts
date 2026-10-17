@@ -24,6 +24,7 @@ import {
   buildCapabilityRecord,
   type CapabilityRecord,
   effortOptionId,
+  launchEnvFor,
   modeFor,
   modelOptionId,
   offersValue,
@@ -107,7 +108,10 @@ export async function openAcpSession(
 ): Promise<OpenedAcp> {
   if (ctx.openSignal.aborted) throw closedDuringOpen(ctx.sessionId);
   const candidate = chooseLaunch(options);
-  const launched = launch({ command: candidate.command, args: candidate.args, cwd: ctx.workdir, env: options.env });
+  // nax#2372: the profile's enforcement env (opencode's permission policy) wins over the
+  // caller's, so a model's own OPENCODE_CONFIG_CONTENT cannot weaken a read-only session.
+  const env = { ...options.env, ...launchEnvFor(ctx.profile, options.entry) };
+  const launched = launch({ command: candidate.command, args: candidate.args, cwd: ctx.workdir, env });
   watchProcess(options.onProcess, launched);
   const link = openConnection(launched.target, handlers);
   void launched.exited.then(() =>

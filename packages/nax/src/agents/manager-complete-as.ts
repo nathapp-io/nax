@@ -11,7 +11,7 @@ import {
   resolveFinalDispatch,
 } from "./manager-dispatch";
 import type { AgentCompleteOutcome } from "./manager-types";
-import { codexAcpSettings, withCodexAcpEnv } from "./shared/codex-acp-env";
+import { acpEnvSettings, withAcpEnv } from "./shared/acp-env";
 import type { CompleteOptions, ResolvedCompleteOptions } from "./types";
 
 export interface CompleteAsWithFallbackInput {
@@ -32,12 +32,13 @@ export async function completeAsWithFallback(
 ): Promise<AgentCompleteOutcome> {
   const stage = options.pipelineStage ?? "complete";
   const { resolvedPermissions, augmented, sessionName } = buildCompleteCallPreamble({
-    // US-002: the codex env (INITIAL_AGENT_MODE, optionally CODEX_HOME) rides on
-    // the model def, resolved from the same per-call-over-config precedence
+    // US-002: every ACP agent's launch env (codex's INITIAL_AGENT_MODE and
+    // optionally CODEX_HOME; opencode's OPENCODE_CONFIG_DIR when isolated) rides
+    // on the model def, resolved from the same per-call-over-config precedence
     // `buildCompleteCallPreamble` uses for permissions.
     options: {
       ...options,
-      modelDef: withCodexAcpEnv(options.modelDef, agentName, codexAcpSettings(options.config ?? input.config)),
+      modelDef: withAcpEnv(options.modelDef, agentName, acpEnvSettings(options.config ?? input.config)),
     },
     config: input.config,
     stage,

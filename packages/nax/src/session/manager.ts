@@ -19,7 +19,7 @@ import { getLogger } from "../logger";
 import { decideReuse } from "./endpoint-identity";
 import { _sessionManagerDeps, persistDescriptor, resolveProjectDirFromScratchDir } from "./manager-deps";
 import { DEFAULT_ORPHAN_TTL_MS, sweepOrphansImpl } from "./manager-sweep";
-import { codexAcpSettings, selectModel } from "./model-selection";
+import { acpEnvSettings, selectModel } from "./model-selection";
 import { formatSessionName } from "./naming";
 import { openSessionExtras } from "./open-session-extras";
 import { selectNativeTurnConfig } from "./turn-config-selection";
@@ -446,7 +446,7 @@ export class SessionManager implements ISessionManager {
       workdir: opts.workdir,
       resolvedPermissions,
       ...selectNativeTurnConfig(opts.config ?? this._config),
-      ...selectModel(opts, codexAcpSettings(opts.config ?? this._config)),
+      ...selectModel(opts, acpEnvSettings(opts.config ?? this._config)),
       timeoutSeconds: opts.timeoutSeconds,
       onPidSpawned: this._pidRegistry ? (pid) => this._pidRegistry?.register(pid) : undefined,
       onPidExited: this._pidRegistry ? (pid) => this._pidRegistry?.unregister(pid) : undefined,

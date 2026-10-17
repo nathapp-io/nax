@@ -5,9 +5,11 @@ import {
   makeNaxConfig,
   makeTurnResult,
   stubCodexAcpEnvDeps,
+  stubOpencodeAcpEnvDeps,
   withDepsRestore,
 } from "@test/helpers";
 import { _codexAcpEnvDeps, isolatedCodexHomeDir } from "@/agents/shared/codex-acp-env";
+import { _opencodeAcpEnvDeps, isolatedOpencodeConfigDir } from "@/agents/shared/opencode-acp-env";
 import type { AgentAdapter, OpenSessionOpts, SessionHandle } from "@/agents/types";
 import { NaxError } from "@/errors";
 import { _sessionManagerDeps, SessionManager } from "@/session/manager";
@@ -351,6 +353,64 @@ describe("openSession() — codex ACP env (US-002)", () => {
 
     expect(captured).toHaveLength(1);
     expect(captured[0].modelDef.env?.INITIAL_AGENT_MODE).toBe("agent-full-access");
+  });
+});
+
+// ─── openSession() — opencode ACP env (US-002, opencode-acp-read-only) ────────
+
+describe("openSession() — opencode ACP env (US-002)", () => {
+  withDepsRestore(_opencodeAcpEnvDeps);
+  withDepsRestore(_codexAcpEnvDeps);
+
+  /** Capture every open call's options so the model def can be inspected. */
+  function capturingAdapter(captured: OpenSessionOpts[], agentName: string): AgentAdapter {
+    return makeAgentAdapter({
+      openSession: mock(async (name: string, opts: OpenSessionOpts) => {
+        captured.push(opts);
+        return { id: name, agentName } satisfies SessionHandle;
+      }),
+    });
+  }
+
+  test("AC-33: opencode opens with OPENCODE_CONFIG_DIR when agent.acp.opencode.isolateConfig is true", async () => {
+    stubOpencodeAcpEnvDeps();
+    stubCodexAcpEnvDeps();
+    const captured: OpenSessionOpts[] = [];
+    const config = makeNaxConfig({ agent: { acp: { opencode: { isolateConfig: true } } } });
+    const sm = new SessionManager({ getAdapter: () => capturingAdapter(captured, "opencode"), config });
+
+    await sm.openSession("nax-opencode-isolated", makeOpenRequest({ agentName: "opencode" }));
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0].modelDef.env?.OPENCODE_CONFIG_DIR).toBe(isolatedOpencodeConfigDir());
+  });
+
+  test("AC-33: isolateConfig false (schema default) leaves the model def to opencode's own config", async () => {
+    const deps = stubOpencodeAcpEnvDeps();
+    stubCodexAcpEnvDeps();
+    const captured: OpenSessionOpts[] = [];
+    const sm = new SessionManager({ getAdapter: () => capturingAdapter(captured, "opencode") });
+
+    await sm.openSession("nax-opencode-default", makeOpenRequest({ agentName: "opencode" }));
+
+    expect(captured[0].modelDef.env).toEqual({});
+    expect(deps.mkdir).not.toHaveBeenCalled();
+  });
+
+  test("AC-34/AC-35: codex keeps its own env and gains no OPENCODE_CONFIG_DIR", async () => {
+    const opencodeDeps = stubOpencodeAcpEnvDeps();
+    stubCodexAcpEnvDeps();
+    const captured: OpenSessionOpts[] = [];
+    const config = makeNaxConfig({
+      agent: { acp: { codex: { fullMode: "agent-full-access" }, opencode: { isolateConfig: true } } },
+    });
+    const sm = new SessionManager({ getAdapter: () => capturingAdapter(captured, "codex"), config });
+
+    await sm.openSession("nax-codex-with-opencode-config", makeOpenRequest({ agentName: "codex" }));
+
+    expect(captured[0].modelDef.env?.INITIAL_AGENT_MODE).toBe("agent-full-access");
+    expect("OPENCODE_CONFIG_DIR" in (captured[0].modelDef.env ?? {})).toBe(false);
+    expect(opencodeDeps.mkdir).not.toHaveBeenCalled();
   });
 });
 

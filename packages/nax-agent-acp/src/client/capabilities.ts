@@ -68,8 +68,11 @@ export function buildCapabilityRecord(
 }
 
 /** none, read and review (nax#2500) run with the agent's own write tools removed. */
-const isReadOnlyProfile = (profile: AgentSessionProfile): boolean =>
+const isReadOnlyProfile = (profile: AgentSessionProfile): profile is "none" | "read" | "review" =>
   profile === "none" || profile === "read" || profile === "review";
+
+/** No injected environment: the common answer for full, ask and every mode-only agent. */
+const NO_LAUNCH_ENV: Readonly<Record<string, string>> = Object.freeze({});
 
 /** The first requirement this agent cannot meet, or undefined. The model is checked after session/new. */
 export function unmetRequirement(record: CapabilityRecord, req: Requirements): UnmetRequirement | undefined {
@@ -135,4 +138,18 @@ export function readOnlyFor(
 /** The mode a profile selects (§6.4 layer 1): the read-only entry's for none/read, the default mode otherwise. */
 export function modeFor(profile: AgentSessionProfile, entry: AgentRegistryEntry | undefined): ModeSetting | undefined {
   return isReadOnlyProfile(profile) ? entry?.readOnly?.mode : entry?.defaultMode;
+}
+
+/**
+ * The environment a profile adds to the agent process (nax#2372): opencode's
+ * permission policy for none/read/review, `{}` for every other profile and for any
+ * agent that enforces read-only another way. The caller spreads this over its own
+ * env, so the enforcement value cannot be weakened by a caller-supplied variable.
+ */
+export function launchEnvFor(
+  profile: AgentSessionProfile,
+  entry: AgentRegistryEntry | undefined,
+): Readonly<Record<string, string>> {
+  if (!isReadOnlyProfile(profile)) return NO_LAUNCH_ENV;
+  return entry?.readOnly?.launchEnv[profile] ?? NO_LAUNCH_ENV;
 }

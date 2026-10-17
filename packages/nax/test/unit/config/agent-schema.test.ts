@@ -164,7 +164,39 @@ describe("AgentConfigSchema", () => {
       trackedSpawnDeadlineMs: 10_000,
       trackedSpawnStartupDeadlineMs: 30_000,
       codex: { isolateHome: false, fullMode: "workspace-write" },
+      opencode: { isolateConfig: false },
     });
+  });
+
+  // US-002 (opencode-acp-read-only): agent.acp.opencode decides whether an
+  // opencode session gets its own, empty config dir.
+  test("AC-1: agent.acp.opencode defaults to { isolateConfig: false } when agent.acp is unset", () => {
+    expect(NaxConfigSchema.parse({}).agent?.acp?.opencode).toEqual({ isolateConfig: false });
+    expect(NaxConfigSchema.parse({ agent: { acp: {} } }).agent?.acp?.opencode).toEqual({ isolateConfig: false });
+  });
+
+  test("AC-2: agent.acp.codex is unaffected by the opencode key's arrival", () => {
+    expect(NaxConfigSchema.parse({}).agent?.acp?.codex).toEqual({
+      isolateHome: false,
+      fullMode: "workspace-write",
+    });
+    expect(NaxConfigSchema.parse({ agent: { acp: { opencode: { isolateConfig: true } } } }).agent?.acp?.codex).toEqual({
+      isolateHome: false,
+      fullMode: "workspace-write",
+    });
+  });
+
+  test("AC-3: a non-boolean isolateConfig fails validation with an issue path ending in isolateConfig", () => {
+    const result = NaxConfigSchema.safeParse({ agent: { acp: { opencode: { isolateConfig: "yes" } } } });
+    expect(result.success).toBe(false);
+    const paths = result.success ? [] : result.error.issues.map((issue) => issue.path.join("."));
+    expect(paths.some((path) => path.endsWith("isolateConfig"))).toBe(true);
+  });
+
+  test("AC-3: opencode.isolateConfig round-trips when true", () => {
+    expect(
+      NaxConfigSchema.parse({ agent: { acp: { opencode: { isolateConfig: true } } } }).agent?.acp?.opencode,
+    ).toEqual({ isolateConfig: true });
   });
 
   // US-002 (codex-acp-read-only): agent.acp.codex decides what codex's `full`
