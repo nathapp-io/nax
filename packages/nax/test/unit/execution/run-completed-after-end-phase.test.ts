@@ -16,7 +16,7 @@ import {
   makeTempDir,
 } from "@test/helpers";
 import { NaxError } from "@/errors";
-import type { RunCompleteFinal, RunCompletionResult } from "@/execution/lifecycle/run-completion";
+import type { RunCompleteFinal, RunCompletionOptions, RunCompletionResult } from "@/execution/lifecycle/run-completion";
 import { _runnerCompletionDeps, type RunnerCompletionOptions, runCompletionPhase } from "@/execution/runner-completion";
 import { _workflowEndReportDeps } from "@/execution/workflow-end-report";
 import { initLogger, resetLogger } from "@/logger";
@@ -77,6 +77,8 @@ function opts(mode: Mode, over: Partial<RunnerCompletionOptions> = {}): RunnerCo
 
 let clock = 0;
 let emitted: RunCompleteFinal[] = [];
+let order: string[] = [];
+let handleOpts: RunCompletionOptions[] = [];
 let emitRunCompleted: ReturnType<typeof mock<(final: RunCompleteFinal) => void>>;
 const base: RunCompletionResult = {
   durationMs: STORIES_MS,
@@ -91,6 +93,7 @@ const origGit = _gitDeps.spawn;
 
 function stubWorkflow(result: Awaited<ReturnType<typeof _runnerCompletionDeps.runWorkflowFeature>>): void {
   _runnerCompletionDeps.runWorkflowFeature = mock(async () => {
+    order.push("end-phase");
     clock += FEATURE_MS;
     return result;
   });
@@ -101,11 +104,20 @@ beforeEach(() => {
   initLogger({ level: "silent" });
   clock = START + STORIES_MS;
   emitted = [];
-  emitRunCompleted = mock((final: RunCompleteFinal) => void emitted.push(final));
+  order = [];
+  handleOpts = [];
+  emitRunCompleted = mock((final: RunCompleteFinal) => {
+    order.push("emit");
+    emitted.push(final);
+  });
   _runnerCompletionDeps.now = () => clock;
-  _runnerCompletionDeps.handleRunCompletion = mock(async () => ({ ...base, emitRunCompleted }));
+  _runnerCompletionDeps.handleRunCompletion = mock(async (o: RunCompletionOptions) => {
+    handleOpts.push(o);
+    return { ...base, emitRunCompleted };
+  });
   stubWorkflow({ passed: true, outcome: "ready", reasons: [] });
   _runnerCompletionDeps.runFinishPhase = mock(async () => {
+    order.push("end-phase");
     clock += FEATURE_MS;
     return null;
   });
@@ -125,8 +137,7 @@ afterEach(() => {
 describe("runCompletionPhase — deferred run:completed in workflow mode", () => {
   test("handleRunCompletion is asked to defer the event", async () => {
     await runCompletionPhase(opts("workflow"));
-    const call = (_runnerCompletionDeps.handleRunCompletion as ReturnType<typeof mock>).mock.calls[0];
-    expect(call?.[0]).toMatchObject({ deferRunCompletedEvent: true });
+    expect(handleOpts[0]).toMatchObject({ deferRunCompletedEvent: true });
   });
 
   test("a passing workflow emits once, after the workflow, with the verdict and the PR url", async () => {
@@ -139,9 +150,7 @@ describe("runCompletionPhase — deferred run:completed in workflow mode", () =>
       durationMs: STORIES_MS + FEATURE_MS,
       totalCost: 4.25,
     });
-    const workflowOrder = (_runnerCompletionDeps.runWorkflowFeature as ReturnType<typeof mock>).mock
-      .invocationCallOrder[0] as number;
-    expect(emitRunCompleted.mock.invocationCallOrder[0]).toBeGreaterThan(workflowOrder);
+    expect(order).toEqual(["end-phase", "emit"]);
   });
 
   test("a draft workflow emits once as not passed, carrying its reasons", async () => {
@@ -188,10 +197,8 @@ describe("runCompletionPhase — deferred run:completed in pipeline mode", () =>
     await runCompletionPhase(opts("pipeline"));
     expect(emitRunCompleted).toHaveBeenCalledTimes(1);
     expect(emitted[0]).toMatchObject({ workflowPassed: true, reasons: [], endPhaseDurationMs: FEATURE_MS });
-    expect("url" in (emitted[0] as object)).toBe(false);
-    const finishOrder = (_runnerCompletionDeps.runFinishPhase as ReturnType<typeof mock>).mock
-      .invocationCallOrder[0] as number;
-    expect(emitRunCompleted.mock.invocationCallOrder[0]).toBeGreaterThan(finishOrder);
+    expect(Object.keys(emitted[0] ?? {})).not.toContain("url");
+    expect(order).toEqual(["end-phase", "emit"]);
   });
 });
 
