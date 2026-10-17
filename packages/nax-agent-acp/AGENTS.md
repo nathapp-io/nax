@@ -23,7 +23,7 @@ These instructions apply to all AI coding agents in this project.
 # nax-agent-acp — ACP backend for nax-agent sessions
 
 `@nathapp/nax-agent-acp` lets the nax-agent session API drive external coding agents
-(Claude Code first-class; Codex registered with every profile, read-only ones on its own `read-only` mode; Gemini CLI, OpenCode, pi registered for `full`/`ask` only) over ACP, the
+(Claude Code first-class; Codex and OpenCode registered with every profile — Codex's read-only ones on its own `read-only` mode, OpenCode's by an injected permission config; Gemini CLI and pi registered for `full`/`ask` only) over ACP, the
 Agent Client Protocol. It is nax-agent's own ACP client on `@agentclientprotocol/sdk`.
 Design: `docs/superpowers/specs/2026-10-05-s4-acp-backend-design.md`.
 
@@ -55,11 +55,11 @@ maintainer-run and billed, and never run in CI.
 | Module | Role |
 |:-------|:-----|
 | `options.ts`, `env.ts` | zod options; agent env allowlist and redaction set |
-| `registry.ts` | per-agent launch, mode, pre-approval and auth data; Claude and codex declare `readOnly` (codex via its own `read-only` mode, no pre-approval channel, nax#2372) |
+| `registry.ts` | per-agent launch, mode, pre-approval and auth data; Claude, codex and opencode declare `readOnly` (codex via its own `read-only` mode; opencode via `readOnly.launchEnv`, which sets `OPENCODE_CONFIG_CONTENT` to the `OPENCODE_{NONE,READ,REVIEW}_CONFIG` permission allowlist; neither has a pre-approval channel, nax#2372) |
 | `launch.ts` | process-group spawn, ndjson stream, stderr tail, `agentGoneError` |
 | `connection.ts` | one SDK `ClientApp` per process; outbound requests |
-| `capabilities.ts` | capability record, requirement checks, config options |
-| `open.ts` | open sequence; kills the agent on any failure |
+| `capabilities.ts` | capability record, requirement checks, config options; `modeFor` / `launchEnvFor` (the mode and the launch env a profile selects) |
+| `open.ts` | open sequence; kills the agent on any failure. Every launch (new, resume, reconnect) uses `{ ...options.env, ...launchEnvFor(profile, entry) }`, so a read-only enforcement variable always beats the caller's |
 | `turn.ts`, `events.ts`, `inbound.ts` | prompt turn and abort; the turn's event collector (also counts policy denials); inbound routing (updates, permissions, elicitations) by turn and session. A prompt the agent stops `cancelled` right after a deny is continued in the same turn, at most `MAX_DENIED_CONTINUATIONS` times (nax#2582: codex offers only `cancel` as a reject) |
 | `stream-scrub.ts` | session secrets scrubbed from streamed agent text, holding back only a possible secret's start |
 | `tool-events.ts` | `tool_call` / `tool_result` from ACP tool updates: sent when used, one result per call |
