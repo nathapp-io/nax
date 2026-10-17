@@ -247,6 +247,10 @@ Export `compileArgvPattern`, `matchesArgvPattern` and the `CompiledPattern` type
 - `packages/nax-agent-acp/test/unit/client/policy-files.test.ts`
 - `packages/nax-agent-acp/test/unit/client/backend-policy.test.ts`
 
+**US-006**
+
+- `packages/nax-agent/test/unit/tools/policy-match-exports.test.ts`
+
 ### Modifies
 
 **US-001**
@@ -296,7 +300,7 @@ None. US-003 adds shell-rules and its tests and changes only source files (permi
 8. [unit] `resolveModelValue("cursor", ["default[]"], "gpt-5.5", [])` returns `"gpt-5.5"`.
 9. [unit] `resolveModelValue("gemini", ["gpt-5.5[context=272k]"], "gpt-5.5", [])` returns `"gpt-5.5"`.
 10. [unit] `resolveModelValue("cursor", ["gpt-5.5-mini[x=1]"], "gpt-5.5", [])` returns `"gpt-5.5"`.
-11. [unit] `resolveModelValue("cursor", ["k[s=SECRET1]", "k[s=2]"], "k", ["SECRET1"])` throws with a message that does not include `SECRET1`.
+11. [unit] `resolveModelValue("cursor", ["k[s=SECRET12]", "k[s=2]"], "k", ["SECRET12"])` throws with a message that does not include `SECRET12` (secrets of 8 or more characters are redacted by `cleanLabel`).
 12. [integration] A Cursor open with `model: "gpt-5.5"`, profile `full`, against a fake offering `CURSOR_CONFIG_OPTIONS` records one `session/set_config_option` call with `configId` `"model"` and `value` `"gpt-5.5[context=272k,reasoning=medium]"`.
 13. [integration] The same open with `model: "claude-sonnet-5-5"` is refused with `AGENT_SESSION_CAPABILITY_UNSUPPORTED`, capability `model`, and the agent process is killed once.
 14. [integration] A Cursor open with `model: "gpt-5.5"`, profile `full`, against a fake offering no config options and a legacy `models` block with ids `default[]` and `gpt-5.5[context=272k]` records one `session/set_model` call with `modelId` `"gpt-5.5[context=272k]"`.
