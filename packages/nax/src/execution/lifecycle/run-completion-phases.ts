@@ -29,7 +29,7 @@ import type { Logger } from "@/logger";
 import { type McpAdoptionSummary, summarizeMcpAdoption, warnZeroAdoption } from "@/mcp";
 import type { StoryMetrics } from "@/metrics";
 import { deriveRunFallbackAggregates, saveRunMetrics } from "@/metrics";
-import { pipelineEventBus } from "@/pipeline/event-bus";
+import { pipelineEventBus, type RunCompletedEvent } from "@/pipeline/event-bus";
 import type { PRD } from "@/prd";
 import { countStories, isComplete, isStalled } from "@/prd";
 import { type CostSnapshot, totalSpendUsd } from "@/runtime";
@@ -168,9 +168,26 @@ export async function teardownRunSessions(input: { options: RunCompletionOptions
 }
 
 /**
+ * What phase 5 hands back: the counts the caller reports, and the `run:completed` event it
+ * would have emitted. With the emit deferred the payload is the emitter's base — the story
+ * counts, the fallback aggregate and the phase-3 `errorCostUsd` — onto which the caller
+ * overlays the whole-run figures (US-001).
+ */
+export interface RunCompletedEmission {
+  finalCounts: ReturnType<typeof countStories>;
+  runCompletedPayload: RunCompletedEvent;
+}
+
+/**
  * Emit run:completed with real story counts (RL-002) and save the run metrics
- * (run-completion phase 5). Metrics saving is best-effort — disk write errors
- * do not fail the run.
+ * (run-completion phase 5). Metrics saving is best-effort — disk write errors do
+ * not fail the run, and it happens whether or not the emit is deferred.
+ *
+ * With `options.deferRunCompletedEvent` the emit is skipped and the event this
+ * phase would have sent is returned instead: the caller emits it once the end
+ * phase has closed, with the whole-run figures overlaid on it (US-001). Deferred,
+ * the metrics record is still written here and rewritten with the whole-run
+ * duration later.
  */
 export async function emitRunCompletedAndSaveMetrics(input: {
   options: RunCompletionOptions;
@@ -181,7 +198,7 @@ export async function emitRunCompletedAndSaveMetrics(input: {
   reportedTotal: number;
   errorCostField: { errorCostUsd?: number };
   logger: Logger | undefined;
-}): Promise<{ finalCounts: ReturnType<typeof countStories> }> {
+}): Promise<RunCompletedEmission> {
   const logger = input.logger;
   const { options, prd, allStoryMetrics, durationMs, runCompletedAt, reportedTotal, errorCostField } = input;
   const { runId, feature, startedAt, storiesCompleted } = options;
@@ -194,10 +211,11 @@ export async function emitRunCompletedAndSaveMetrics(input: {
   // and the saved metrics so consumers see the field only when meaningful.
   const fallbackAggregate = deriveRunFallbackAggregates(allStoryMetrics);
 
-  // Emit run:completed after regression gate with real story counts (RL-002).
-  // Workflow mode: this fires BEFORE the feature workflow, so reporters and the on-complete hook see the
-  // stories-only duration and cost; metrics.json is rewritten with the whole run afterwards (nax#2491).
-  pipelineEventBus.emit({
+  // Emit run:completed after regression gate with real story counts (RL-002), unless the
+  // caller deferred it (US-001): then this payload goes back to handleRunCompletion, which
+  // emits it once the end phase has closed so reporters and the on-complete hook see the
+  // whole run rather than the stories-only figures.
+  const runCompletedPayload: RunCompletedEvent = {
     type: "run:completed",
     totalStories: finalCounts.total,
     passedStories: finalCounts.passed,
@@ -208,10 +226,13 @@ export async function emitRunCompletedAndSaveMetrics(input: {
     totalCost: reportedTotal,
     ...errorCostField,
     ...(fallbackAggregate && { fallback: fallbackAggregate }),
-  });
-  // Drain async subscriber Promises (reporter.onRunEnd file writes, etc.) before
-  // proceeding. Without this, run:completed handlers may not finish before caller returns.
-  await pipelineEventBus.drain();
+  };
+  if (!options.deferRunCompletedEvent) {
+    pipelineEventBus.emit(runCompletedPayload);
+    // Drain async subscriber Promises (reporter.onRunEnd file writes, etc.) before
+    // proceeding. Without this, run:completed handlers may not finish before caller returns.
+    await pipelineEventBus.drain();
+  }
 
   // Save run metrics (best-effort — disk write errors do not fail the run)
   const runMetrics = {
@@ -235,7 +256,7 @@ export async function emitRunCompletedAndSaveMetrics(input: {
     logger?.warn("run.complete", "Failed to save run metrics", { error: String(err) });
   }
 
-  return { finalCounts };
+  return { finalCounts, runCompletedPayload };
 }
 
 /**

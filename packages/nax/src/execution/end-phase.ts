@@ -3,6 +3,10 @@
  * workflow in workflow mode. Finish is fail-open (a throw is logged and the run is
  * unaffected); a feature workflow throw marks the run unsuccessful. Split out of
  * runner-completion.ts to keep it under the file-size limit.
+ *
+ * Workflow mode returns an `EndPhaseOutcome` — the verdict, the PR url and the reasons
+ * behind it — rather than a bare boolean, so a caller can report *why* the run did not
+ * pass (US-001). Pipeline mode has no verdict and still returns `undefined`.
  */
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { isWorkflowMode } from "@/config";
@@ -20,6 +24,20 @@ export interface EndPhaseDeps {
   runWorkflowFeature(input: WorkflowFeatureInput): Promise<WorkflowFeatureResult | null>;
   /** The run clock; Date.now when absent. */
   now?(): number;
+}
+
+/**
+ * How the end phase closed the run. Workflow mode only — pipeline mode has no
+ * verdict to report, so `runEndPhase` returns `undefined` there.
+ *
+ * `reasons` is always set once the end phase is closed (`[]` on a pass), so a
+ * consumer can report "passed, for no stated reason" without guessing. `url` is
+ * present only when the end phase produced one.
+ */
+export interface EndPhaseOutcome {
+  passed: boolean;
+  url?: string;
+  reasons: readonly string[];
 }
 
 /**
@@ -80,6 +98,9 @@ async function resolveBranch(workdir: string): Promise<string> {
 
 export const _endPhaseDeps = { resolveBranch };
 
+/** The one reason every "the workflow never ran, or was cut short" arm reports (US-001). */
+const ABORTED_REASON = "run aborted";
+
 async function runFinish(options: RunnerCompletionOptions, deps: EndPhaseDeps, branch: string): Promise<void> {
   try {
     await deps.runFinishPhase({
@@ -104,11 +125,15 @@ async function runFinish(options: RunnerCompletionOptions, deps: EndPhaseDeps, b
   }
 }
 
-async function runWorkflowEnd(options: RunnerCompletionOptions, deps: EndPhaseDeps, branch: string): Promise<boolean> {
+async function runWorkflowEnd(
+  options: RunnerCompletionOptions,
+  deps: EndPhaseDeps,
+  branch: string,
+): Promise<EndPhaseOutcome> {
   if (options.exitReason === "aborted" || options.abortSignal?.aborted) {
     getSafeLogger()?.info("workflow", "Feature workflow skipped — the run was aborted", { storyId: "_run" });
     // nax#2550: the workflow did not run, so it cannot be reported as passed.
-    return false;
+    return { passed: false, reasons: [ABORTED_REASON] };
   }
   try {
     const result = await deps.runWorkflowFeature({
@@ -125,25 +150,35 @@ async function runWorkflowEnd(options: RunnerCompletionOptions, deps: EndPhaseDe
       statusWriter: options.statusWriter,
       storiesDurationMs: (deps.now ?? Date.now)() - options.startTime,
     });
-    return result?.passed ?? true;
+    return {
+      passed: result?.passed ?? true,
+      ...(result?.url !== undefined ? { url: result.url } : {}),
+      reasons: result?.reasons ?? [],
+    };
   } catch (err) {
     if (err instanceof NaxError && err.code === "WORKFLOW_ABORTED") {
       getSafeLogger()?.info("workflow", "Feature workflow aborted — run marked unsuccessful", {
         storyId: "_run",
         error: errorMessage(err),
       });
-      return false;
+      return { passed: false, reasons: [ABORTED_REASON] };
     }
     getSafeLogger()?.warn("workflow", "Feature workflow failed — run marked unsuccessful", {
       storyId: "_run",
       error: errorMessage(err),
     });
-    return false;
+    return { passed: false, reasons: [`feature workflow failed: ${errorMessage(err)}`] };
   }
 }
 
-/** undefined in pipeline mode; workflow mode: whether the feature workflow passed (P4-R13). */
-export async function runEndPhase(options: RunnerCompletionOptions, deps: EndPhaseDeps): Promise<boolean | undefined> {
+/**
+ * undefined in pipeline mode; workflow mode: the feature workflow's verdict — whether it passed,
+ * the PR url it produced and why it did not (P4-R13, US-001).
+ */
+export async function runEndPhase(
+  options: RunnerCompletionOptions,
+  deps: EndPhaseDeps,
+): Promise<EndPhaseOutcome | undefined> {
   const branch = await _endPhaseDeps.resolveBranch(options.workdir);
   if (isWorkflowMode(options.config)) return runWorkflowEnd(options, deps, branch);
   await runFinish(options, deps, branch);

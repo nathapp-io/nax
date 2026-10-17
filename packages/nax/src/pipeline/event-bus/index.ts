@@ -106,6 +106,18 @@ export interface RunCompletedEvent {
    * events writer, TUI) should treat it as an optional enrichment.
    */
   fallback?: RunFallbackAggregate;
+  /**
+   * Whether the run's workflow passed. Absent on an immediate emission — the end phase
+   * has not run yet, so there is no verdict to report and `false` would be a claim nobody
+   * made. Present when the event is emitted after the end phase closed, and on the fallback
+   * emission that reports a late phase's failure: `false` in workflow mode, whose workflow
+   * did not pass, and `true` in pipeline mode, which has no workflow to fail (US-001).
+   */
+  workflowPassed?: boolean;
+  /** The PR the end phase opened, when it opened one. */
+  url?: string;
+  /** Why the end phase did not pass. Empty on a pass; absent when no verdict was observed. */
+  reasons?: readonly string[];
 }
 
 export interface HumanReviewRequestedEvent {

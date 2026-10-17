@@ -206,7 +206,10 @@ export async function runEndPhaseReported(
   clock: { readonly now: () => number; readonly gate: RunCompleteGate },
 ): Promise<EndPhaseReport> {
   const endStartedAt = clock.now();
-  const workflowPassed = await runEndPhase(options, deps);
+  // US-001 changed runEndPhase's workflow-mode return to the full outcome; this report reads only
+  // the verdict, and threading `url` / `reasons` through to `RunCompleteFinal` is US-002's.
+  const outcome = await runEndPhase(options, deps);
+  const workflowPassed = outcome?.passed;
   const input: CloseInput = {
     gate: clock.gate,
     workflowPassed: workflowPassed ?? true,
