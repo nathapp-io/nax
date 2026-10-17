@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createCostMeter, tokenUsageOf, turnSpend, usageEvent } from "#src/client/usage";
+import { createCostMeter, sumUsage, tokenUsageOf, turnSpend, usageEvent } from "#src/client/usage";
 
 const usd = (amount: number) => ({ amount, currency: "USD" });
 
@@ -173,5 +173,30 @@ describe("createCostMeter: a seeded baseline (S4-6 D6-a)", () => {
 
   test("no seed is 0", () => {
     expect(createCostMeter().baseline()).toBe(0);
+  });
+});
+
+describe("sumUsage (nax#2582: one turn, several prompts)", () => {
+  test("each count is summed; a count only one side reports is kept", () => {
+    expect(
+      sumUsage(
+        { totalTokens: 15, inputTokens: 10, outputTokens: 5 },
+        { totalTokens: 7, inputTokens: 4, outputTokens: 3, cachedReadTokens: 2 },
+      ),
+    ).toEqual({ totalTokens: 22, inputTokens: 14, outputTokens: 8, cachedReadTokens: 2 });
+  });
+
+  test("a missing side yields the other; both missing yields undefined", () => {
+    const one = { totalTokens: 1, inputTokens: 1, outputTokens: 0 };
+    expect(sumUsage(undefined, one)).toEqual(one);
+    expect(sumUsage(one, null)).toEqual(one);
+    expect(sumUsage(undefined, undefined)).toBeUndefined();
+  });
+
+  test("a non-count value counts as absent", () => {
+    expect(sumUsage({ inputTokens: -3, outputTokens: 2 }, { inputTokens: 4, outputTokens: "x" }) as unknown).toEqual({
+      inputTokens: 4,
+      outputTokens: 2,
+    });
   });
 });

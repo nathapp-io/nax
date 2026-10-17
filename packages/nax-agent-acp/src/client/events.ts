@@ -38,6 +38,10 @@ export interface TurnCollector {
   settle(response: PromptResponse): TurnSpend;
   /** The turn's agent message text, scrubbed (turn_end.output). */
   output(): string;
+  /** A permission request of this turn was answered with a deny (nax#2582). */
+  noteDenial(): void;
+  /** Denials answered so far in this turn. */
+  denials(): number;
 }
 
 type DeltaType = "text_delta" | "thinking_delta";
@@ -103,6 +107,7 @@ export function createTurnCollector(emit: TurnEventSink | undefined, options: Co
   let done = false;
   let spend: TurnSpend | undefined;
   let received = false;
+  let denials = 0;
   const receipt = (): void => {
     if (received) return;
     received = true;
@@ -159,5 +164,9 @@ export function createTurnCollector(emit: TurnEventSink | undefined, options: Co
       return spend;
     },
     output: () => scrubSecrets(parts.join(""), secrets),
+    noteDenial() {
+      denials += 1;
+    },
+    denials: () => denials,
   };
 }

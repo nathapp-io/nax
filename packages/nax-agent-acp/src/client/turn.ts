@@ -9,6 +9,13 @@
  * the thrown reason; past that the process group is killed
  * and the session is marked disconnected. The facade reports cancelled or timed_out
  * from the signal, so after an abort this throws the signal's reason.
+ *
+ * nax#2582: an agent may answer a denied permission request by cancelling its own
+ * turn (codex-acp's sandbox escalation offers only `cancel` as a reject). When a
+ * prompt stops "cancelled", the turn signal has not aborted, and the turn denied a
+ * request during that prompt, the same turn sends DENIED_CONTINUATION_PROMPT, at
+ * most MAX_DENIED_CONTINUATIONS times; the prompts' usage is summed into the one
+ * TurnResult. Past the bound the turn ends ACP_STOP_CANCELLED as before.
  */
 import type { PromptResponse } from "@agentclientprotocol/sdk";
 import { attachTurnSpend, type FailedTurnSpend, NaxError, type TurnResult } from "@nathapp/nax-agent";
@@ -17,6 +24,7 @@ import { promptRequestError, rpcErrorOf, stopReasonError } from "#src/client/err
 import type { TurnCollector } from "#src/client/events";
 import { agentGoneError, type LaunchedAgent } from "#src/client/launch";
 import { race } from "#src/client/race";
+import { sumUsage, tokenUsageOf } from "#src/client/usage";
 
 export interface TurnState {
   readonly link: AcpLink;
@@ -41,31 +49,75 @@ const NO_RESPONSE_SPEND: FailedTurnSpend = Object.freeze({
   costSource: "unpriced",
 });
 
+/** Follow-up prompts one turn may send after a deny made the agent cancel (nax#2582). */
+export const MAX_DENIED_CONTINUATIONS = 2;
+
+export const DENIED_CONTINUATION_PROMPT =
+  "A permission request you made was denied by this session's permission policy, and the denial stopped your turn. " +
+  "Continue the same task without that action. Do not request that permission again; if the task cannot be " +
+  "finished without it, say so in your reply.";
+
 export async function runPromptTurn(state: TurnState, input: TurnInput): Promise<TurnResult> {
+  let text = input.text;
+  let carried: PromptResponse["usage"];
+  for (let continuation = 0; ; continuation += 1) {
+    const denialsBefore = input.collector.denials();
+    const response = await promptOnce(state, input, text, carried);
+    const usage = sumUsage(carried, response.usage);
+    const continueAfterDenial =
+      response.stopReason === "cancelled" &&
+      !input.signal.aborted &&
+      input.collector.denials() > denialsBefore &&
+      continuation < MAX_DENIED_CONTINUATIONS;
+    if (!continueAfterDenial) return resultOf({ ...response, usage }, input.collector, continuation + 1);
+    carried = usage;
+    text = DENIED_CONTINUATION_PROMPT;
+  }
+}
+
+/**
+ * One session/prompt. A failed request throws with the tokens of the prompts this turn
+ * already answered and no cost (the cost reading moves to the next turn); an abort
+ * throws with the spend of every prompt this turn answered.
+ */
+async function promptOnce(
+  state: TurnState,
+  input: TurnInput,
+  text: string,
+  carried: PromptResponse["usage"],
+): Promise<PromptResponse> {
   const pending = state.link.prompt({
     sessionId: state.agentSessionId,
-    prompt: [{ type: "text", text: input.text }],
+    prompt: [{ type: "text", text }],
   });
   const outcome = await race(pending, { signal: input.signal });
   switch (outcome.kind) {
     case "ok":
-      return resultOf(outcome.value, input.collector);
+      return outcome.value;
     case "failed": {
       const error = await promptFailure(state, outcome.error);
-      attachTurnSpend(error, NO_RESPONSE_SPEND);
+      attachTurnSpend(
+        error,
+        carried === undefined ? NO_RESPONSE_SPEND : { ...NO_RESPONSE_SPEND, tokenUsage: tokenUsageOf(carried) },
+      );
       throw error;
     }
     default: {
       const response = await cancelTurn(state, pending);
       const reason = abortReason(input.signal);
       // #2367: an answer inside the grace still reports what the turn spent.
-      attachTurnSpend(reason, response === undefined ? NO_RESPONSE_SPEND : input.collector.settle(response));
+      attachTurnSpend(
+        reason,
+        response === undefined
+          ? NO_RESPONSE_SPEND
+          : input.collector.settle({ ...response, usage: sumUsage(carried, response.usage) }),
+      );
       throw reason;
     }
   }
 }
 
-function resultOf(response: PromptResponse, collector: TurnCollector): TurnResult {
+function resultOf(response: PromptResponse, collector: TurnCollector, prompts: number): TurnResult {
   const spend = collector.settle(response);
   if (response.stopReason !== "end_turn") {
     const error = stopReasonError(String(response.stopReason));
@@ -77,7 +129,7 @@ function resultOf(response: PromptResponse, collector: TurnCollector): TurnResul
     tokenUsage: spend.tokenUsage,
     estimatedCostUsd: spend.costUsd,
     costSource: spend.costSource,
-    internalRoundTrips: 1,
+    internalRoundTrips: prompts,
   };
 }
 

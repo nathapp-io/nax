@@ -21,7 +21,7 @@ DO NOT EDIT MANUALLY — run `nax generate` to regenerate.
 # nax-agent-acp — ACP backend for nax-agent sessions
 
 `@nathapp/nax-agent-acp` lets the nax-agent session API drive external coding agents
-(Claude Code first-class; Codex, Gemini CLI, OpenCode, pi registered) over ACP, the
+(Claude Code first-class; Codex registered with every profile, read-only ones on its own `read-only` mode; Gemini CLI, OpenCode, pi registered for `full`/`ask` only) over ACP, the
 Agent Client Protocol. It is nax-agent's own ACP client on `@agentclientprotocol/sdk`.
 Design: `docs/superpowers/specs/2026-10-05-s4-acp-backend-design.md`.
 
@@ -53,17 +53,17 @@ maintainer-run and billed, and never run in CI.
 | Module | Role |
 |:-------|:-----|
 | `options.ts`, `env.ts` | zod options; agent env allowlist and redaction set |
-| `registry.ts` | per-agent launch, mode, pre-approval and auth data |
+| `registry.ts` | per-agent launch, mode, pre-approval and auth data; Claude and codex declare `readOnly` (codex via its own `read-only` mode, no pre-approval channel, nax#2372) |
 | `launch.ts` | process-group spawn, ndjson stream, stderr tail, `agentGoneError` |
 | `connection.ts` | one SDK `ClientApp` per process; outbound requests |
 | `capabilities.ts` | capability record, requirement checks, config options |
 | `open.ts` | open sequence; kills the agent on any failure |
-| `turn.ts`, `events.ts`, `inbound.ts` | prompt turn and abort; the turn's event collector; inbound routing (updates, permissions, elicitations) by turn and session |
+| `turn.ts`, `events.ts`, `inbound.ts` | prompt turn and abort; the turn's event collector (also counts policy denials); inbound routing (updates, permissions, elicitations) by turn and session. A prompt the agent stops `cancelled` right after a deny is continued in the same turn, at most `MAX_DENIED_CONTINUATIONS` times (nax#2582: codex offers only `cancel` as a reject) |
 | `stream-scrub.ts` | session secrets scrubbed from streamed agent text, holding back only a possible secret's start |
 | `tool-events.ts` | `tool_call` / `tool_result` from ACP tool updates: sent when used, one result per call |
-| `usage.ts` | per-turn tokens; the session's cost meter over cumulative reported cost |
+| `usage.ts` | per-turn tokens (summed over a turn's prompts, `sumUsage`); the session's cost meter over cumulative reported cost |
 | `elicitation.ts` | `elicitation/create` forms asked one field at a time as questions |
-| `permissions.ts` | §6.4 decision per permission request, by profile; only `*_once` options |
+| `permissions.ts` | §6.4 decision per permission request, by profile; only `*_once` options. The embedder sandbox joins the decision only for an agent with a pre-approval channel (Claude), never codex (nax#2372) |
 | `tool-display.ts`, `text.ts` | what a person sees of a tool call; control-strip, secret scrub, caps |
 | `tool-host.ts` | loopback MCP server for embedder tools: gate (Host, Origin, token, body cap), one stateless MCP server per request |
 | `tool-calls.ts` | tools/list (every tool `readOnlyHint: true`, #2365) and tools/call: turn check, 8-call cap, `always` approval, run under the turn signal |

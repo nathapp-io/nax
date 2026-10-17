@@ -7,7 +7,8 @@
  * elicitation handler with the binding's signal, which aborts when the turn is
  * cancelled, times out or loses its process, and when the binding is released
  * (D3-d, D5-k). A permission request first announces its tool call on the turn's
- * events (D5-c). Any other request (no turn, another session, a request-scoped
+ * events (D5-c); a deny answered while the turn is live is counted on its
+ * collector (nax#2582). Any other request (no turn, another session, a request-scoped
  * elicitation, more than MAX_PENDING_DECISIONS pending at once) is answered locally,
  * a permission rejected and an elicitation cancelled, and raises no event; each
  * reason is logged once per session and kind (D3-c). Releasing a binding aborts its
@@ -23,7 +24,7 @@ import type {
 import { getLogger } from "@nathapp/nax-agent";
 import type { InboundHandlers } from "#src/client/connection";
 import type { TurnCollector } from "#src/client/events";
-import { rejectLocally } from "#src/client/permissions";
+import { isDenial, rejectLocally } from "#src/client/permissions";
 import { isRecord } from "#src/client/text";
 
 /** Concurrent permission requests and elicitations one turn may hold; further ones are answered locally. */
@@ -131,7 +132,18 @@ export function createInboundRouter(
           return rejectLocally(request);
         }
         if (!admitted.signal.aborted) admitted.collector.announce(request.toolCall);
-        return track(admitted, decide(request, admitted.signal).catch(cancelled));
+        let decided = true;
+        const answer = await track(
+          admitted,
+          decide(request, admitted.signal).catch(() => {
+            decided = false;
+            return cancelled();
+          }),
+        );
+        // nax#2582: the turn learns of its policy denials, so a cancel they cause can be
+        // continued; a decider fault is not a policy denial.
+        if (decided && !admitted.signal.aborted && isDenial(request, answer)) admitted.collector.noteDenial();
+        return answer;
       },
       onElicitation: async (request) => {
         const admitted = admit(sessionOf(request));

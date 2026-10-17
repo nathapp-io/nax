@@ -10,7 +10,7 @@
  * the agent's counter restarted, so the raw reading is the turn's cost. No reading:
  * costUsd 0, "unpriced", baseline kept.
  */
-import type { PromptResponse } from "@agentclientprotocol/sdk";
+import type { PromptResponse, Usage } from "@agentclientprotocol/sdk";
 import type { TokenUsage, TurnEvent } from "@nathapp/nax-agent";
 import { isRecord } from "#src/client/text";
 
@@ -80,6 +80,28 @@ export function createCostMeter(initialBaseline = 0): CostMeter {
     },
     baseline: () => baseline,
   };
+}
+
+const USAGE_COUNTS = [
+  "totalTokens",
+  "inputTokens",
+  "outputTokens",
+  "thoughtTokens",
+  "cachedReadTokens",
+  "cachedWriteTokens",
+] as const;
+
+/** Two prompts' ACP usage as one (nax#2582): each count summed; a count neither reports stays absent. */
+export function sumUsage(first: unknown, second: unknown): Usage | undefined {
+  if (!isRecord(first)) return isRecord(second) ? (second as Usage) : undefined;
+  if (!isRecord(second)) return first as Usage;
+  const sum: Record<string, number> = {};
+  for (const key of USAGE_COUNTS) {
+    const a = count(first[key]);
+    const b = count(second[key]);
+    if (a !== undefined || b !== undefined) sum[key] = (a ?? 0) + (b ?? 0);
+  }
+  return sum as unknown as Usage;
 }
 
 export function turnSpend(response: PromptResponse, meter: CostMeter): TurnSpend {
