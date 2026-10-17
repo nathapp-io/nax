@@ -165,6 +165,39 @@ describe("AgentConfigSchema", () => {
       trackedSpawnStartupDeadlineMs: 30_000,
       codex: { isolateHome: false, fullMode: "workspace-write" },
       opencode: { isolateConfig: false },
+      gemini: { isolateHome: false },
+    });
+  });
+
+  // US-002 (gemini-acp-read-only): agent.acp.gemini decides whether a gemini
+  // session gets its own home, sharing only the operator's credentials.
+  test("AC-1: agent.acp.gemini defaults to { isolateHome: false } when agent.acp is unset", () => {
+    expect(NaxConfigSchema.parse({}).agent?.acp?.gemini).toEqual({ isolateHome: false });
+    expect(NaxConfigSchema.parse({ agent: { acp: {} } }).agent?.acp?.gemini).toEqual({ isolateHome: false });
+  });
+
+  test("AC-2: codex and opencode keep their existing defaults when agent.acp is unset", () => {
+    const acp = NaxConfigSchema.parse({}).agent?.acp;
+    expect(acp?.codex).toEqual({ isolateHome: false, fullMode: "workspace-write" });
+    expect(acp?.opencode).toEqual({ isolateConfig: false });
+  });
+
+  test("AC-2: setting agent.acp.gemini leaves codex and opencode untouched", () => {
+    const acp = NaxConfigSchema.parse({ agent: { acp: { gemini: { isolateHome: true } } } }).agent?.acp;
+    expect(acp?.codex).toEqual({ isolateHome: false, fullMode: "workspace-write" });
+    expect(acp?.opencode).toEqual({ isolateConfig: false });
+  });
+
+  test("AC-3: a non-boolean gemini.isolateHome fails validation with an issue path ending in isolateHome", () => {
+    const result = NaxConfigSchema.safeParse({ agent: { acp: { gemini: { isolateHome: "yes" } } } });
+    expect(result.success).toBe(false);
+    const paths = result.success ? [] : result.error.issues.map((issue) => issue.path.join("."));
+    expect(paths.some((path) => path.endsWith("isolateHome"))).toBe(true);
+  });
+
+  test("AC-3: gemini.isolateHome round-trips when true", () => {
+    expect(NaxConfigSchema.parse({ agent: { acp: { gemini: { isolateHome: true } } } }).agent?.acp?.gemini).toEqual({
+      isolateHome: true,
     });
   });
 

@@ -5,10 +5,12 @@ import {
   makeNaxConfig,
   makeTurnResult,
   stubCodexAcpEnvDeps,
+  stubGeminiAcpEnvDeps,
   stubOpencodeAcpEnvDeps,
   withDepsRestore,
 } from "@test/helpers";
 import { _codexAcpEnvDeps, isolatedCodexHomeDir } from "@/agents/shared/codex-acp-env";
+import { _geminiAcpEnvDeps, isolatedGeminiHomeDir } from "@/agents/shared/gemini-acp-env";
 import { _opencodeAcpEnvDeps, isolatedOpencodeConfigDir } from "@/agents/shared/opencode-acp-env";
 import type { AgentAdapter, OpenSessionOpts, SessionHandle } from "@/agents/types";
 import { NaxError } from "@/errors";
@@ -411,6 +413,65 @@ describe("openSession() — opencode ACP env (US-002)", () => {
     expect(captured[0].modelDef.env?.INITIAL_AGENT_MODE).toBe("agent-full-access");
     expect("OPENCODE_CONFIG_DIR" in (captured[0].modelDef.env ?? {})).toBe(false);
     expect(opencodeDeps.mkdir).not.toHaveBeenCalled();
+  });
+});
+
+// ─── openSession() — gemini ACP env (US-002, gemini-acp-read-only) ────────────
+
+describe("openSession() — gemini ACP env (US-002)", () => {
+  withDepsRestore(_geminiAcpEnvDeps);
+  withDepsRestore(_codexAcpEnvDeps);
+  withDepsRestore(_opencodeAcpEnvDeps);
+
+  /** Capture every open call's options so the model def can be inspected. */
+  function capturingAdapter(captured: OpenSessionOpts[], agentName: string): AgentAdapter {
+    return makeAgentAdapter({
+      openSession: mock(async (name: string, opts: OpenSessionOpts) => {
+        captured.push(opts);
+        return { id: name, agentName } satisfies SessionHandle;
+      }),
+    });
+  }
+
+  test("AC-38: gemini opens with GEMINI_CLI_HOME when agent.acp.gemini.isolateHome is true", async () => {
+    stubGeminiAcpEnvDeps();
+    stubCodexAcpEnvDeps();
+    stubOpencodeAcpEnvDeps();
+    const captured: OpenSessionOpts[] = [];
+    const config = makeNaxConfig({ agent: { acp: { gemini: { isolateHome: true } } } });
+    const sm = new SessionManager({ getAdapter: () => capturingAdapter(captured, "gemini"), config });
+
+    await sm.openSession("nax-gemini-isolated", makeOpenRequest({ agentName: "gemini" }));
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0].modelDef.env?.GEMINI_CLI_HOME).toBe(isolatedGeminiHomeDir());
+  });
+
+  test("AC-38: isolateHome false (schema default) leaves the model def on the operator's gemini home", async () => {
+    const deps = stubGeminiAcpEnvDeps();
+    stubCodexAcpEnvDeps();
+    stubOpencodeAcpEnvDeps();
+    const captured: OpenSessionOpts[] = [];
+    const sm = new SessionManager({ getAdapter: () => capturingAdapter(captured, "gemini") });
+
+    await sm.openSession("nax-gemini-default", makeOpenRequest({ agentName: "gemini" }));
+
+    expect(captured[0].modelDef.env ?? {}).toEqual({});
+    expect(deps.mkdir).not.toHaveBeenCalled();
+  });
+
+  test("AC-38: another agent's session prepares no gemini home", async () => {
+    const deps = stubGeminiAcpEnvDeps();
+    stubCodexAcpEnvDeps();
+    stubOpencodeAcpEnvDeps();
+    const captured: OpenSessionOpts[] = [];
+    const config = makeNaxConfig({ agent: { acp: { gemini: { isolateHome: true } } } });
+    const sm = new SessionManager({ getAdapter: () => capturingAdapter(captured, "claude"), config });
+
+    await sm.openSession("nax-claude-with-gemini-isolated", makeOpenRequest({ agentName: "claude" }));
+
+    expect("GEMINI_CLI_HOME" in (captured[0].modelDef.env ?? {})).toBe(false);
+    expect(deps.mkdir).not.toHaveBeenCalled();
   });
 });
 

@@ -148,6 +148,7 @@ The `agent` block is the canonical source of truth for agent selection and avail
 | `agent.acp.codex.fullMode` | `"workspace-write"` | codex only. What codex's `full` profile means: `"workspace-write"` runs codex inside its own OS sandbox and nax approves every escalation codex requests, `"agent-full-access"` removes the sandbox and the requests. Injected as `INITIAL_AGENT_MODE` on every codex session. The narrower profiles are unaffected — `permissionProfile: "safe"` (`read`) and the sandboxed reviewer (`review`) still switch codex to its `read-only` mode. |
 | `agent.acp.codex.isolateHome` | `false` | codex only. Give the session its own codex home (`~/.nax/acp/codex-home`) and point `CODEX_HOME` at it, so the operator's `~/.codex/config.toml` — hooks, MCP servers, plugins — stays out of the session. It shares exactly one file, `auth.json`, symlinked back to the operator's codex home, so a token refresh in either home is seen by both. Nothing else is copied. An operator's own `CODEX_HOME` in the model's `env` wins. |
 | `agent.acp.opencode.isolateConfig` | `false` | opencode only. Point the session at an empty nax-owned config dir (`~/.nax/acp/opencode-config`) via `OPENCODE_CONFIG_DIR`, so the operator's own `~/.config/opencode` — plugins (code that runs inside the opencode process), MCP servers, agents and providers — stays out of the session. Nothing is copied into it, and credentials still load: opencode keeps them in its data dir, not its config dir. An operator's own `OPENCODE_CONFIG_DIR` in the model's `env` wins, and no dir is created for it. Off by default, because an isolated config dir also hides a provider that is only defined in the operator's config. |
+| `agent.acp.gemini.isolateHome` | `false` | gemini only. Point the session at a nax-owned gemini home (`~/.nax/acp/gemini-home`) via `GEMINI_CLI_HOME`, so the operator's own gemini config — saved "Always Allow" approvals in `policies/auto-saved.toml`, user policies, installed extensions and MCP servers — stays out of the session. The isolated home links exactly two files back, `oauth_creds.json` and `gemini-credentials.json`, so a credential refreshed in either home is seen by both, and its `settings.json` carries only `security.auth.selectedType`, the field that says *which* stored credential to use. Nothing else is copied. An operator's own `GEMINI_CLI_HOME` in the model's `env` wins, and nax then prepares nothing. Off by default. |
 | `agent.native.transportRetry.maxAttempts` | `3` | Native only. Total attempts for one round trip when the provider stalls or reports itself overloaded. `1` disables retry. |
 | `agent.native.transportRetry.baseDelayMs` | `2000` | Native only. Equal-jitter exponential backoff base, capped by the turn's remaining budget. |
 | `agent.native.catalogOverrides` | `[]` | Native only. Explicit catalog entries for model ids newer than the bundled pi-ai snapshot. Provider-scoped; each entry is a **complete** record — `id`, `protocol`, `contextWindow`, optional `maxTokens`, `supportsTools`, `thinkingLevels`, and `pricing` in nax-ai's `input`/`output`/`cacheRead`/`cacheWrite` per-1M vocabulary. An entry may also carry provider-wide `baseUrl` and `headers` (nax#2019) — see the warning below. Applied below every pin route (tier entries, literal `{agent, model}` pins, fallback rungs). The client is built once per process, so keep one list. See [nax-ai surface](../architecture/nax-ai-surface.md#context-window). |
@@ -165,7 +166,8 @@ below):
   "acp": {
     "promptRetries": 0,
     "codex": { "fullMode": "workspace-write", "isolateHome": false },
-    "opencode": { "isolateConfig": false }
+    "opencode": { "isolateConfig": false },
+    "gemini": { "isolateHome": false }
   }
 }
 ```
@@ -206,6 +208,31 @@ session inherits all of it unless `OPENCODE_CONFIG_DIR` points somewhere else.
   a pinned value is a deliberate override, and nax then creates no directory.
 - If the directory cannot be created, nax logs one warning and the session runs
   on the operator's own opencode config rather than failing to open.
+
+**gemini launch settings (US-002).** gemini reads its whole user-scoped config
+from one home (`GEMINI_CLI_HOME`, default `~`): `settings.json`, its policy
+files (`policies/auto-saved.toml` holds every "Always Allow" the operator ever
+granted), installed extensions, MCP servers and skills. Those policy tiers are
+ranked, and the operator's user tier outranks the default tier a nax `read`
+session relies on — so the operator's own approvals can loosen a read-only nax
+session.
+
+- `gemini.isolateHome` (default `false`) points `GEMINI_CLI_HOME` at
+  `~/.nax/acp/gemini-home`, which borrows exactly two files from the operator's
+  home — `oauth_creds.json` (Google login) and `gemini-credentials.json` (stored
+  key), symlinked so a credential refreshed in either home is seen by both — and
+  writes a `settings.json` carrying only `security.auth.selectedType`, the field
+  that tells gemini *which* stored credential to use. No policies, extensions,
+  MCP servers, skills or history are copied or translated, so no operator
+  approval reaches the session. (gemini's file keychain derives its key from the
+  host and user, not the file's path, so the linked credential still decrypts.)
+- If the operator's `settings.json` cannot be parsed, no isolated `settings.json`
+  is written and gemini falls back to its own auth default — `GEMINI_API_KEY`
+  from the environment.
+- An operator's own `GEMINI_CLI_HOME` in `models.<agent>.<tier>.env` wins — a
+  pinned value is a deliberate override, and nax then prepares nothing.
+- If the home cannot be prepared, nax logs one warning and the session runs on
+  the operator's own gemini home rather than failing to open.
 
 **Declaring a model newer than the catalog (nax#1982).** When the provider's model
 exists on models.dev but not in nax's pinned `@earendil-works/pi-ai` snapshot, name

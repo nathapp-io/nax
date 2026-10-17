@@ -8,6 +8,7 @@ import { isAbsolute } from "node:path";
 import { DEFAULT_INSTRUCTION_FILE_NAME, isInstructionFileName } from "@nathapp/nax-agent/internal";
 import { z } from "zod";
 import { DEFAULT_AGENT_NAME, DEFAULT_AGENT_PROTOCOL } from "./agent-defaults";
+import { AgentGeminiAcpConfigSchema, DEFAULT_AGENT_GEMINI_ACP_CONFIG } from "./schemas-acp-agents";
 import { ConfiguredModelSchema, ModelTierSchema, ProviderCatalogOverrideSchema } from "./schemas-model";
 
 export const PlanConfigSchema = z.object({
@@ -402,6 +403,8 @@ const AgentAcpConfigSchema = z.object({
       isolateConfig: z.boolean().default(false),
     })
     .default({ ...DEFAULT_AGENT_OPENCODE_ACP_CONFIG }),
+  /** gemini-only launch settings (US-002, gemini-acp-read-only) — see `schemas-acp-agents.ts`. */
+  gemini: AgentGeminiAcpConfigSchema,
 });
 
 /**
@@ -480,6 +483,7 @@ export const AgentConfigSchema = z.object({
     trackedSpawnStartupDeadlineMs: 30_000,
     codex: { ...DEFAULT_AGENT_CODEX_ACP_CONFIG },
     opencode: { ...DEFAULT_AGENT_OPENCODE_ACP_CONFIG },
+    gemini: { ...DEFAULT_AGENT_GEMINI_ACP_CONFIG },
   }),
   native: AgentNativeConfigSchema.default({
     instructionFileName: DEFAULT_INSTRUCTION_FILE_NAME,

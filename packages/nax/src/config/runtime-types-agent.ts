@@ -118,6 +118,16 @@ export interface AgentAcpConfig {
   opencode?: {
     isolateConfig?: boolean;
   };
+  /**
+   * gemini-only launch settings (US-002, gemini-acp-read-only): whether the
+   * session gets its own gemini home — linking only the operator's credentials
+   * and carrying only `security.auth.selectedType` — so the operator's saved
+   * approvals, policies, extensions and MCP servers stay out. Defaults when
+   * unset — see `DEFAULT_AGENT_GEMINI_ACP_CONFIG`.
+   */
+  gemini?: {
+    isolateHome?: boolean;
+  };
 }
 
 /**
