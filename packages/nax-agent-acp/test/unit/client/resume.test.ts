@@ -132,10 +132,27 @@ describe("checkRestored (spec §6.9 step 3, S4-6 D6-d, D6-k)", () => {
     expect(checkRestored(restore, "resume", JSON.parse('{"sessionId": "a-1"}'))).toEqual({
       agentSessionId: "a-1",
       cwd: "/w",
-      configOptions: [],
+      offers: { configOptions: [], modeIds: [], modelIds: [] },
       restoredWith: "resume",
     });
-    expect(checkRestored(restore, "load", { configOptions: options }).configOptions).toEqual(options);
+    expect(checkRestored(restore, "load", { configOptions: options }).offers).toEqual({
+      configOptions: options,
+      modeIds: [],
+      modelIds: [],
+    });
+  });
+
+  test("a legacy modes and models answer: its blocks are offered beside the config options", () => {
+    // The `models` block is outside the SDK's response schema; the agent sends it anyway.
+    const answer = {
+      modes: { availableModes: [{ id: "default", name: "Default" }], currentModeId: "default" },
+      models: { availableModels: [{ modelId: "auto", name: "Auto" }], currentModelId: "auto" },
+    };
+    expect(checkRestored(restore, "load", answer).offers).toEqual({
+      configOptions: [],
+      modeIds: ["default"],
+      modelIds: ["auto"],
+    });
   });
 
   test("another id echoed: AGENT_SESSION_TURN_FAILED, detail identity", () => {
@@ -144,8 +161,12 @@ describe("checkRestored (spec §6.9 step 3, S4-6 D6-d, D6-k)", () => {
     expect(err.context).toMatchObject({ detail: "identity" });
   });
 
-  test("a load answered with null: no config options (D6-k)", () => {
-    expect(checkRestored(restore, "load", JSON.parse("null")).configOptions).toEqual([]);
+  test("a load answered with null: no config options and no legacy offers (D6-k)", () => {
+    expect(checkRestored(restore, "load", JSON.parse("null")).offers).toEqual({
+      configOptions: [],
+      modeIds: [],
+      modelIds: [],
+    });
   });
 });
 

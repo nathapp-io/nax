@@ -13,6 +13,7 @@ import {
   type CreateElicitationRequest,
   type McpServer,
   methods,
+  type NewSessionResponse,
   type PermissionOption,
   PROTOCOL_VERSION,
   type PromptResponse,
@@ -34,6 +35,9 @@ import type {
 } from "./script.ts";
 
 const DEFAULT_TURN: FakeTurn = { steps: [{ kind: "text", text: "ok" }] };
+
+/** The legacy model method (Gemini): outside the SDK's method table, so the fake declares it here. */
+const SET_MODEL_METHOD = "session/set_model";
 
 interface PromptState {
   readonly cancelled: Promise<void>;
@@ -226,13 +230,41 @@ function checkRestore(script: FakeScript, ownId: string, requested: string): voi
   if (!(script.knownSessions ?? [ownId]).includes(requested)) throw RequestError.resourceNotFound(requested);
 }
 
-/** A resume/load answer. Claude's adapter also echoes the session id, outside the protocol's schema (D6-d). */
-function restoredResponse(script: FakeScript, configOptions: readonly SessionConfigOption[]): ResumeSessionResponse {
-  const response = {
+/**
+ * The legacy `modes` and `models` blocks (Gemini) ride along with the SDK's own
+ * answer fields: `models` is outside the response types, so the object is widened.
+ */
+type LegacyBlocks = { readonly models?: Readonly<Record<string, unknown>> };
+
+function withLegacyBlocks<T extends object>(script: FakeScript, answer: T): T & LegacyBlocks {
+  return script.models === undefined ? answer : { ...answer, models: script.models };
+}
+
+/** A session/new answer with the script's config options and its legacy mode and model blocks. */
+function newSessionAnswer(
+  script: FakeScript,
+  sessionId: string,
+  configOptions: readonly SessionConfigOption[],
+): NewSessionResponse & LegacyBlocks {
+  const answer: NewSessionResponse = {
+    sessionId,
     ...(script.configOptions === undefined ? {} : { configOptions: [...configOptions] }),
+    ...(script.modes === undefined ? {} : { modes: script.modes }),
+  };
+  return withLegacyBlocks(script, answer);
+}
+
+/** A resume/load answer. Claude's adapter also echoes the session id, outside the protocol's schema (D6-d). */
+function restoredResponse(
+  script: FakeScript,
+  configOptions: readonly SessionConfigOption[],
+): ResumeSessionResponse & LegacyBlocks {
+  const response: ResumeSessionResponse = {
+    ...(script.configOptions === undefined ? {} : { configOptions: [...configOptions] }),
+    ...(script.modes === undefined ? {} : { modes: script.modes }),
     ...(script.restoredSessionId === undefined ? {} : { sessionId: script.restoredSessionId }),
   };
-  return response;
+  return withLegacyBlocks(script, response);
 }
 
 /** session/load's history replay: updates, then optionally one permission request. */
@@ -259,56 +291,73 @@ export function buildFakeAgent(script: FakeScript, hooks: FakeHooks): AgentApp {
   let promptCount = 0;
   let prompt: PromptState | undefined;
   let mcpServers: readonly McpServer[] = [];
-  return agent({ name: "fake-agent" })
-    .onRequest(methods.agent.initialize, async (ctx) => {
-      hooks.record("initialize", ctx.params);
-      if (script.hangInitialize === true) return never();
-      if (script.initializeFailure !== undefined) throw rpcError(script.initializeFailure);
-      return {
-        protocolVersion: script.protocolVersion ?? PROTOCOL_VERSION,
-        agentCapabilities: script.capabilities ?? {},
-        ...(script.agentInfo === undefined ? {} : { agentInfo: script.agentInfo }),
-      };
-    })
-    .onRequest(methods.agent.session.new, async (ctx) => {
-      hooks.record("session/new", ctx.params);
-      mcpServers = ctx.params.mcpServers;
-      if (script.newSessionFailure !== undefined) throw rpcError(script.newSessionFailure);
-      return { sessionId, ...(script.configOptions === undefined ? {} : { configOptions }) };
-    })
-    .onRequest(methods.agent.session.resume, async (ctx) => {
-      hooks.record("session/resume", ctx.params);
-      mcpServers = ctx.params.mcpServers ?? [];
-      checkRestore(script, sessionId, ctx.params.sessionId);
-      return restoredResponse(script, configOptions);
-    })
-    .onRequest(methods.agent.session.load, async (ctx) => {
-      hooks.record("session/load", ctx.params);
-      mcpServers = ctx.params.mcpServers;
-      checkRestore(script, sessionId, ctx.params.sessionId);
-      await replay(script, ctx.params.sessionId, ctx.client, hooks);
-      return restoredResponse(script, configOptions);
-    })
-    .onRequest(methods.agent.session.setConfigOption, async (ctx) => {
-      hooks.record("session/set_config_option", ctx.params);
-      if (!configOptions.some((option) => option.id === ctx.params.configId)) {
-        throw RequestError.invalidParams(undefined, `unknown config option ${ctx.params.configId}`);
-      }
-      return { configOptions };
-    })
-    .onRequest(methods.agent.session.prompt, async (ctx) => {
-      hooks.record("session/prompt", ctx.params);
-      const turn = turns[Math.min(promptCount, turns.length - 1)] ?? DEFAULT_TURN;
-      promptCount += 1;
-      prompt = newPromptState(mcpServers);
-      return runTurn(turn, ctx.params.sessionId, ctx.client, prompt, hooks);
-    })
-    .onRequest(methods.agent.session.close, async (ctx) => {
-      hooks.record("session/close", ctx.params);
-      return {};
-    })
-    .onNotification(methods.agent.session.cancel, (ctx) => {
-      hooks.record("session/cancel", ctx.params);
-      prompt?.markCancelled();
-    });
+  return (
+    agent({ name: "fake-agent" })
+      .onRequest(methods.agent.initialize, async (ctx) => {
+        hooks.record("initialize", ctx.params);
+        if (script.hangInitialize === true) return never();
+        if (script.initializeFailure !== undefined) throw rpcError(script.initializeFailure);
+        return {
+          protocolVersion: script.protocolVersion ?? PROTOCOL_VERSION,
+          agentCapabilities: script.capabilities ?? {},
+          ...(script.agentInfo === undefined ? {} : { agentInfo: script.agentInfo }),
+        };
+      })
+      .onRequest(methods.agent.session.new, async (ctx) => {
+        hooks.record("session/new", ctx.params);
+        mcpServers = ctx.params.mcpServers;
+        if (script.newSessionFailure !== undefined) throw rpcError(script.newSessionFailure);
+        return newSessionAnswer(script, sessionId, configOptions);
+      })
+      .onRequest(methods.agent.session.resume, async (ctx) => {
+        hooks.record("session/resume", ctx.params);
+        mcpServers = ctx.params.mcpServers ?? [];
+        checkRestore(script, sessionId, ctx.params.sessionId);
+        return restoredResponse(script, configOptions);
+      })
+      .onRequest(methods.agent.session.load, async (ctx) => {
+        hooks.record("session/load", ctx.params);
+        mcpServers = ctx.params.mcpServers;
+        checkRestore(script, sessionId, ctx.params.sessionId);
+        await replay(script, ctx.params.sessionId, ctx.client, hooks);
+        return restoredResponse(script, configOptions);
+      })
+      .onRequest(methods.agent.session.setConfigOption, async (ctx) => {
+        hooks.record("session/set_config_option", ctx.params);
+        if (!configOptions.some((option) => option.id === ctx.params.configId)) {
+          throw RequestError.invalidParams(undefined, `unknown config option ${ctx.params.configId}`);
+        }
+        return { configOptions };
+      })
+      .onRequest(methods.agent.session.setMode, async (ctx) => {
+        hooks.record("session/set_mode", ctx.params);
+        if (script.setModeFailure !== undefined) throw rpcError(script.setModeFailure);
+        return {};
+      })
+      // session/set_model is not in the SDK's method table: a custom method, params recorded as they arrive.
+      .onRequest<unknown, unknown>(
+        SET_MODEL_METHOD,
+        (params: unknown) => params,
+        async (ctx) => {
+          hooks.record(SET_MODEL_METHOD, ctx.params);
+          if (script.setModelFailure !== undefined) throw rpcError(script.setModelFailure);
+          return {};
+        },
+      )
+      .onRequest(methods.agent.session.prompt, async (ctx) => {
+        hooks.record("session/prompt", ctx.params);
+        const turn = turns[Math.min(promptCount, turns.length - 1)] ?? DEFAULT_TURN;
+        promptCount += 1;
+        prompt = newPromptState(mcpServers);
+        return runTurn(turn, ctx.params.sessionId, ctx.client, prompt, hooks);
+      })
+      .onRequest(methods.agent.session.close, async (ctx) => {
+        hooks.record("session/close", ctx.params);
+        return {};
+      })
+      .onNotification(methods.agent.session.cancel, (ctx) => {
+        hooks.record("session/cancel", ctx.params);
+        prompt?.markCancelled();
+      })
+  );
 }
