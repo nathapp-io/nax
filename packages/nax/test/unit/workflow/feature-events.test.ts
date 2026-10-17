@@ -6,6 +6,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import {
+  assertNaxError,
   cleanupTempDir,
   makeFeatureContext,
   makeNaxConfig,
@@ -258,8 +259,8 @@ describe("runWorkflowFeature workflow:published (US-003)", () => {
       () => null,
       (err: unknown) => err,
     );
-    expect(rejected).toBeInstanceOf(NaxError);
-    expect((rejected as NaxError).code).toBe("WORKFLOW_ABORTED");
+    assertNaxError(rejected, "WORKFLOW_ABORTED rejection");
+    expect(rejected.code).toBe("WORKFLOW_ABORTED");
     expect(ofType("workflow:started")).toHaveLength(1);
     expect(ofType("workflow:published")).toEqual([]);
   });
