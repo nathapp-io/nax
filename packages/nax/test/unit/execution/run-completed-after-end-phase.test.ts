@@ -21,8 +21,8 @@ import { _runnerCompletionDeps, type RunnerCompletionOptions, runCompletionPhase
 import { _workflowEndReportDeps } from "@/execution/workflow-end-report";
 import { getSafeLogger, initLogger, resetLogger } from "@/logger";
 import { pipelineEventBus } from "@/pipeline/event-bus";
-import { markTrusted } from "@/trust";
 import { wireHooks } from "@/pipeline/subscribers/hooks";
+import { markTrusted } from "@/trust";
 import { _gitDeps } from "@/utils/git";
 
 const EMPTY_SNAPSHOT = {

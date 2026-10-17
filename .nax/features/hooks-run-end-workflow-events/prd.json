@@ -3,7 +3,7 @@
   "feature": "hooks-run-end-workflow-events",
   "branchName": "feat/hooks-run-end-workflow-events",
   "createdAt": "2026-10-18T00:00:00Z",
-  "updatedAt": "2026-10-17T10:43:48.377Z",
+  "updatedAt": "2026-10-17T10:43:51.610Z",
   "userStories": [
     {
       "id": "US-001",
@@ -138,7 +138,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "claude",
         "initialProfileId": "claude-sonnet",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/execution/workflow-end-report.ts",
@@ -189,7 +191,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "3e8aa296b77d222f45e71f2dfd2e580d614967cd"
     },
     {
       "id": "US-003",
