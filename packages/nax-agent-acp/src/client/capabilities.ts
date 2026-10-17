@@ -70,7 +70,7 @@ export function buildCapabilityRecord(
 }
 
 /** none, read and review (nax#2500) run with the agent's own write tools removed. */
-const isReadOnlyProfile = (profile: AgentSessionProfile): profile is "none" | "read" | "review" =>
+export const isReadOnlyProfile = (profile: AgentSessionProfile): profile is "none" | "read" | "review" =>
   profile === "none" || profile === "read" || profile === "review";
 
 /** No injected environment: the common answer for full, ask and every mode-only agent. */

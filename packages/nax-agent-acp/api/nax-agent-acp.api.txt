@@ -6,7 +6,9 @@ ACP_STOP_CODES
 type AcpAgentName
 type AcpAgentSpec
 type AcpBackendOptions
+type AcpPermissionRules
 type AcpProcessHooks
+type AcpRule
 type AcpStopCode
 type AgentRegistryEntry
 type LaunchCandidateKind

@@ -24,7 +24,6 @@ import {
   buildCapabilityRecord,
   type CapabilityRecord,
   effortOptionId,
-  launchEnvFor,
   MODEL_ID_MAX_CHARS,
   modeFor,
   modelOptionId,
@@ -55,6 +54,7 @@ import {
   restoreSession,
   type SessionSetup,
 } from "#src/client/resume";
+import { policyLaunchEnv } from "#src/client/rule-policy";
 import { type SessionOffers, sessionOffers } from "#src/client/session-offers";
 import { cleanLabel } from "#src/client/text";
 import type { ToolHost } from "#src/client/tool-host";
@@ -111,9 +111,11 @@ export async function openAcpSession(
 ): Promise<OpenedAcp> {
   if (ctx.openSignal.aborted) throw closedDuringOpen(ctx.sessionId);
   const candidate = chooseLaunch(options);
-  // nax#2372: the profile's enforcement env (opencode's permission policy) wins over the
-  // caller's, so a model's own OPENCODE_CONFIG_CONTENT cannot weaken a read-only session.
-  const env = { ...options.env, ...launchEnvFor(ctx.profile, options.entry) };
+  // nax#2372: the profile's enforcement env (opencode's permission policy, translated from
+  // the caller's read-tool deny rules) wins over the caller's, so a model's own
+  // OPENCODE_CONFIG_CONTENT cannot weaken a read-only session. A rejection here refuses the
+  // open before anything is launched (rule-policy.ts, US-004).
+  const env = { ...options.env, ...(await policyLaunchEnv(ctx.profile, options)) };
   const launched = launch({ command: candidate.command, args: candidate.args, cwd: ctx.workdir, env });
   watchProcess(options.onProcess, launched);
   const link = openConnection(launched.target, handlers);

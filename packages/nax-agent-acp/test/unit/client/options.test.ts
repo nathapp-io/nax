@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { resolveAcpOptions } from "#src/client/options";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { acpBackend } from "#src/client/backend";
+import { type AcpBackendOptions, resolveAcpOptions } from "#src/client/options";
 import { ACP_AGENT_NAMES, registryEntry } from "#src/client/registry";
+import { NO_RULES } from "#src/client/rule-policy";
 import { sessionError, thrown } from "#test/helpers/errors";
 
 const SOURCE = { PATH: "/usr/bin", ANTHROPIC_API_KEY: "sk-ant-test-0123456789", AWS_SECRET_ACCESS_KEY: "x" };
@@ -142,4 +146,66 @@ describe("resolveAcpOptions: onProcess (S4b spec §8)", () => {
       });
     },
   );
+});
+
+const OPENCODE = { agent: "opencode", allowUnsandboxed: true } as const;
+
+describe("resolveAcpOptions: rules and stateDir (SPEC-cursor-pi-acp-read-only US-002)", () => {
+  test("rules default to none and stateDir to the package's temp directory", () => {
+    const resolved = resolveAcpOptions(OPENCODE, SOURCE);
+    expect(resolved.rules).toEqual(NO_RULES);
+    expect(resolved.stateDir).toBe(join(tmpdir(), "nax-agent-acp"));
+  });
+
+  test("rules are kept with the absent lists empty, and an absolute stateDir is kept", () => {
+    const resolved = resolveAcpOptions(
+      { ...OPENCODE, rules: { allow: [{ tool: "Bash", patterns: ["git status*"] }] }, stateDir: "/s" },
+      SOURCE,
+    );
+    expect(resolved.rules).toEqual({ allow: [{ tool: "Bash", patterns: ["git status*"] }], deny: [], ask: [] });
+    expect(resolved.stateDir).toBe("/s");
+  });
+
+  test("a relative stateDir is AGENT_SESSION_INVALID_OPTIONS at stateDir", () => {
+    expect(invalid({ ...OPENCODE, stateDir: "relative/dir" })).toEqual({
+      code: "AGENT_SESSION_INVALID_OPTIONS",
+      path: "stateDir",
+    });
+  });
+
+  test.each<[string, unknown, string]>([
+    ["an empty pattern list", { allow: [{ tool: "Bash", patterns: [] }] }, "rules.allow.0"],
+    ["a non-string pattern element", { deny: [{ tool: "Read", patterns: [3] }] }, "rules.deny.0"],
+    ["an unknown rules key", { ask: [], unknown: true }, "rules"],
+    ["a rule without a tool", { allow: [{ patterns: ["*"] }] }, "rules.allow.0"],
+  ])("%s is AGENT_SESSION_INVALID_OPTIONS inside rules", (_label, rules, prefix) => {
+    const err = sessionError(thrown(() => resolveAcpOptions({ ...OPENCODE, rules }, SOURCE)));
+    expect(err.code).toBe("AGENT_SESSION_INVALID_OPTIONS");
+    expect(String(err.context?.path)).toStartWith(prefix);
+  });
+
+  test("acpBackend rejects a relative stateDir before anything else", () => {
+    const err = sessionError(thrown(() => acpBackend({ ...OPENCODE, stateDir: "relative/dir" })));
+    expect(err.code).toBe("AGENT_SESSION_INVALID_OPTIONS");
+    expect(err.context).toMatchObject({ path: "stateDir" });
+  });
+
+  test("acpBackend rejects a rule whose patterns are empty", () => {
+    const err = sessionError(
+      thrown(() => acpBackend({ ...OPENCODE, rules: { allow: [{ tool: "Bash", patterns: [] }] } })),
+    );
+    expect(err.code).toBe("AGENT_SESSION_INVALID_OPTIONS");
+    expect(String(err.context?.path)).toStartWith("rules.allow.0");
+  });
+
+  // A number where a pattern string belongs has no TypeScript spelling: the zod schema is
+  // the gate for it, so the fixture is data rather than a cast (test/ escapes are ratcheted).
+  const untypedRules = (json: string): NonNullable<AcpBackendOptions["rules"]> => JSON.parse(json);
+
+  test("acpBackend rejects a rule whose patterns hold a non-string", () => {
+    const rules = untypedRules('{"deny":[{"tool":"Read","patterns":[3]}]}');
+    const err = sessionError(thrown(() => acpBackend({ ...OPENCODE, rules })));
+    expect(err.code).toBe("AGENT_SESSION_INVALID_OPTIONS");
+    expect(String(err.context?.path)).toStartWith("rules.deny.0");
+  });
 });

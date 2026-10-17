@@ -22,6 +22,7 @@ describe("ACP agent registry (S4 spec §6.10)", () => {
         disallowedTools: [],
         sessionOptions: {},
         launchEnv: {},
+        policy: undefined,
       },
       defaultMode: undefined,
       preApproval: undefined,
@@ -35,6 +36,7 @@ describe("ACP agent registry (S4 spec §6.10)", () => {
       disallowedTools: [],
       sessionOptions: {},
       launchEnv: {},
+      policy: undefined,
     });
   });
 
@@ -55,6 +57,7 @@ describe("ACP agent registry (S4 spec §6.10)", () => {
         disallowedTools: ["Write", "Edit", "MultiEdit", "NotebookEdit", "EnterPlanMode"],
         sessionOptions: { settingSources: [], allowDangerouslySkipPermissions: false },
         launchEnv: {},
+        policy: undefined,
       },
       defaultMode: { configId: "mode", value: "default" },
       preApproval: "claudeCode.allowedTools",
@@ -85,6 +88,7 @@ describe("ACP agent registry (S4 spec §6.10)", () => {
         disallowedTools: [],
         sessionOptions: {},
         launchEnv: {},
+        policy: undefined,
       },
       defaultMode: undefined,
       preApproval: undefined,
@@ -98,6 +102,7 @@ describe("ACP agent registry (S4 spec §6.10)", () => {
       disallowedTools: [],
       sessionOptions: {},
       launchEnv: {},
+      policy: undefined,
     });
   });
 
@@ -118,6 +123,7 @@ describe("ACP agent registry (S4 spec §6.10)", () => {
         disallowedTools: [],
         sessionOptions: {},
         launchEnv: {},
+        policy: undefined,
       },
       defaultMode: undefined,
       preApproval: undefined,
@@ -138,6 +144,7 @@ describe("ACP agent registry (S4 spec §6.10)", () => {
           read: { OPENCODE_CONFIG_CONTENT: OPENCODE_READ_CONFIG },
           review: { OPENCODE_CONFIG_CONTENT: OPENCODE_REVIEW_CONFIG },
         },
+        policy: "opencode",
       },
       defaultMode: undefined,
       preApproval: undefined,
@@ -148,6 +155,13 @@ describe("ACP agent registry (S4 spec §6.10)", () => {
   test("opencode declares no default mode and no pre-approval channel", () => {
     expect(registryEntry("opencode")?.defaultMode).toBeUndefined();
     expect(registryEntry("opencode")?.preApproval).toBeUndefined();
+  });
+
+  test("only opencode names a rule-policy translator (SPEC-cursor-pi-acp-read-only US-002)", () => {
+    expect(registryEntry("opencode")?.readOnly?.policy).toBe("opencode");
+    for (const name of ["claude", "codex", "cursor", "gemini"] as const) {
+      expect(registryEntry(name)?.readOnly?.policy).toBeUndefined();
+    }
   });
 
   test("opencode: none denies every tool", () => {
