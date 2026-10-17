@@ -2,7 +2,7 @@
  * run:completed is deferred past the end phase (finish / feature workflow) and emitted through the
  * same exactly-once gate as run.complete, with the whole-run figures and the end-phase verdict.
  */
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { join } from "node:path";
 import {
   cleanupTempDir,
@@ -19,8 +19,9 @@ import { NaxError } from "@/errors";
 import type { RunCompleteFinal, RunCompletionOptions, RunCompletionResult } from "@/execution/lifecycle/run-completion";
 import { _runnerCompletionDeps, type RunnerCompletionOptions, runCompletionPhase } from "@/execution/runner-completion";
 import { _workflowEndReportDeps } from "@/execution/workflow-end-report";
-import { initLogger, resetLogger } from "@/logger";
+import { getSafeLogger, initLogger, resetLogger } from "@/logger";
 import { pipelineEventBus } from "@/pipeline/event-bus";
+import { markTrusted } from "@/trust";
 import { wireHooks } from "@/pipeline/subscribers/hooks";
 import { _gitDeps } from "@/utils/git";
 
@@ -281,6 +282,7 @@ describe("runCompletionPhase — rejection paths", () => {
       const envFile = join(dir, "env.txt");
       const script = join(dir, "record.sh");
       await Bun.write(script, `#!/bin/sh\nenv | grep '^NAX_' > "$1"\n`);
+      markTrusted(dir);
       wireHooks(
         pipelineEventBus,
         { hooks: { "on-complete": { command: `sh ${script} ${envFile}`, enabled: true } } },
@@ -330,6 +332,21 @@ describe("runCompletionPhase — rejection paths", () => {
       throw new Error("close failed");
     });
     await expect(runCompletionPhase(o)).rejects.toThrow("close failed");
+    expect(emitRunCompleted).toHaveBeenCalledTimes(1);
+    expect(emitted[0]).toMatchObject({ workflowPassed: true });
+  });
+
+  test("a writeExitSummary rejection after finishRun propagates without a second event", async () => {
+    // writeExitSummary swallows its write error and logs a warning; a warning that itself throws is the one way it rejects.
+    const logger = getSafeLogger();
+    if (!logger) throw new Error("logger not initialised");
+    const origWarn = logger.warn.bind(logger);
+    spyOn(logger, "warn").mockImplementation((stage, message, data) => {
+      if (message === "Failed to write exit summary") throw new Error("exit summary failed");
+      origWarn(stage, message, data);
+    });
+    const o = opts("workflow", { logFilePath: join(WORKDIR, "missing-dir", "run.jsonl") });
+    await expect(runCompletionPhase(o)).rejects.toThrow("exit summary failed");
     expect(emitRunCompleted).toHaveBeenCalledTimes(1);
     expect(emitted[0]).toMatchObject({ workflowPassed: true });
   });

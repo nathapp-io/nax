@@ -8,6 +8,7 @@ import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import type { LoadedHooksConfig } from "@/hooks";
 import { PipelineEventBus, type RunCompletedEvent } from "@/pipeline/event-bus";
 import { wireHooks } from "@/pipeline/subscribers/hooks";
+import { markTrusted } from "@/trust";
 
 const BASE_EVENT: RunCompletedEvent = {
   type: "run:completed",
@@ -31,6 +32,7 @@ beforeEach(async () => {
   const hooks: LoadedHooksConfig = {
     hooks: { "on-complete": { command: `sh ${script} ${envFile}`, enabled: true } },
   };
+  markTrusted(dir);
   bus = new PipelineEventBus();
   wireHooks(bus, hooks, dir, "feat");
 });
