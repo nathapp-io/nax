@@ -56,6 +56,7 @@ import {
 } from "#src/client/resume";
 import { policyLaunchEnv } from "#src/client/rule-policy";
 import { type SessionOffers, sessionOffers } from "#src/client/session-offers";
+import { startupBannerOf } from "#src/client/startup-banner";
 import { cleanLabel } from "#src/client/text";
 import type { ToolHost } from "#src/client/tool-host";
 
@@ -68,6 +69,8 @@ export interface OpenedAcp {
   readonly cwd: string;
   /** How a stored session was restored (§6.9); undefined for a new session. */
   readonly restoredWith?: RestoredWith;
+  /** The startup banner session/new announced (nax#2591); turns drop it from their output. */
+  readonly startupBanner?: string;
 }
 
 interface Opening {
@@ -85,6 +88,7 @@ interface Established {
   readonly cwd: string;
   readonly offers: SessionOffers;
   readonly restoredWith?: RestoredWith;
+  readonly startupBanner?: string;
 }
 
 function chooseLaunch(options: ResolvedAcpOptions): LaunchCandidate {
@@ -199,7 +203,7 @@ async function establish(o: Opening): Promise<OpenedAcp> {
   if (unmet !== undefined) throw capabilityUnsupported(unmet.capability, unmet.reason);
   const sandbox = sandboxFor(o.ctx, o.options.entry);
   const setup = await sessionSetup(o, sandbox);
-  const session =
+  const session: Established =
     o.restore === undefined
       ? await newSession(o, setup)
       : await restoreSession(o.restore, record, setup, o.link, (label, request) => step(o, label, request));
@@ -214,13 +218,20 @@ async function establish(o: Opening): Promise<OpenedAcp> {
     agentSessionId: session.agentSessionId,
     cwd: session.cwd,
     ...(session.restoredWith === undefined ? {} : { restoredWith: session.restoredWith }),
+    ...(session.startupBanner === undefined ? {} : { startupBanner: session.startupBanner }),
   };
 }
 
 async function newSession(o: Opening, setup: SessionSetup): Promise<Established> {
   const created = await step(o, "session/new", o.link.newSession({ cwd: o.ctx.workdir, ...setup }));
   if (!isUsableSessionId(created.sessionId)) throw backendUnavailable("session/new returned no usable session id");
-  return { agentSessionId: created.sessionId, cwd: o.ctx.workdir, offers: sessionOffers(created) };
+  const startupBanner = startupBannerOf(created);
+  return {
+    agentSessionId: created.sessionId,
+    cwd: o.ctx.workdir,
+    offers: sessionOffers(created),
+    ...(startupBanner === undefined ? {} : { startupBanner }),
+  };
 }
 
 /**

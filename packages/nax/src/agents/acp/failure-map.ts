@@ -76,6 +76,9 @@ const ROWS: Readonly<Record<string, Row>> = {
   ACP_STOP_MAX_TOKENS: { outcome: "fail-incomplete", category: "quality", retryable: false },
   ACP_STOP_MAX_TURN_REQUESTS: { outcome: "fail-incomplete", category: "quality", retryable: false },
   ACP_STOP_REFUSAL: { outcome: "fail-quality", category: "quality", retryable: false },
+  // nax#2591: the agent did nothing and reported no tokens, as when its model call fails at the
+  // provider (pi-acp on a 402): one fresh-session retry, then a swap to the fallback agent.
+  ACP_EMPTY_TURN: { outcome: "fail-service-down", category: "availability", retryable: false },
 };
 
 const UNKNOWN: Row = { outcome: "fail-unknown", category: "quality", retryable: false };

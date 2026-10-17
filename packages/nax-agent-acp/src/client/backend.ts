@@ -290,6 +290,7 @@ async function sendTurn(s: AcpSession, prompt: string, opts: SendTurnOpts): Prom
     secrets: live.options.secrets,
     meter: live.meter,
     ...(onReceipt === undefined ? {} : { onReceipt }),
+    ...(live.acp.startupBanner === undefined ? {} : { startupBanner: live.acp.startupBanner }),
   });
   const release = live.router.attach(live.acp.agentSessionId, collector, AbortSignal.any([signal, live.gone.signal]));
   try {

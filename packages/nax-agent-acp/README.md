@@ -31,7 +31,9 @@ What to know:
   `inheritEnv: true` hands it your whole environment instead, credentials included.
 - **Instructions** are prepended to the first prompt only; ACP has no system prompt.
 - **Stop reasons.** A turn that stops for anything but `end_turn` ends `errored` with
-  an `ACP_STOP_*` code (`ACP_STOP_CODES`).
+  an `ACP_STOP_*` code (`ACP_STOP_CODES`). An `end_turn` with no reply text, thought or
+  tool call and no tokens ends `errored` with `ACP_EMPTY_TURN`: an agent that swallows
+  its model call's failure ends a turn this way (pi-acp on a provider error).
 - **Model and effort.** `model` and `effort` are set through `session/set_config_option`,
   after the profile's mode: the model only when the agent offers it (else
   `AGENT_SESSION_CAPABILITY_UNSUPPORTED`), the effort through the agent's `thought_level`

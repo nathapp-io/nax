@@ -16,11 +16,15 @@
  * request during that prompt, the same turn sends DENIED_CONTINUATION_PROMPT, at
  * most MAX_DENIED_CONTINUATIONS times; the prompts' usage is summed into the one
  * TurnResult. Past the bound the turn ends ACP_STOP_CANCELLED as before.
+ *
+ * nax#2591: an end_turn that showed no work and reported no tokens throws
+ * ACP_EMPTY_TURN: an agent that swallows its model call's failure (pi-acp on a
+ * provider 402) answers end_turn, and the turn must not read as completed.
  */
 import type { PromptResponse } from "@agentclientprotocol/sdk";
 import { attachTurnSpend, type FailedTurnSpend, NaxError, type TurnResult } from "@nathapp/nax-agent";
 import type { AcpLink } from "#src/client/connection";
-import { promptRequestError, rpcErrorOf, stopReasonError } from "#src/client/errors";
+import { emptyTurnError, promptRequestError, rpcErrorOf, stopReasonError } from "#src/client/errors";
 import type { TurnCollector } from "#src/client/events";
 import { agentGoneError, type LaunchedAgent } from "#src/client/launch";
 import { race } from "#src/client/race";
@@ -119,8 +123,9 @@ async function promptOnce(
 
 function resultOf(response: PromptResponse, collector: TurnCollector, prompts: number): TurnResult {
   const spend = collector.settle(response);
-  if (response.stopReason !== "end_turn") {
-    const error = stopReasonError(String(response.stopReason));
+  const idle = !collector.worked() && spend.tokenUsage.inputTokens === 0 && spend.tokenUsage.outputTokens === 0;
+  if (response.stopReason !== "end_turn" || idle) {
+    const error = response.stopReason === "end_turn" ? emptyTurnError() : stopReasonError(String(response.stopReason));
     attachTurnSpend(error, spend);
     throw error;
   }

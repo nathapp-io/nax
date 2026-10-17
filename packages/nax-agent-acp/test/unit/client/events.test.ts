@@ -193,3 +193,62 @@ describe("createTurnCollector: onReceipt (#2364)", () => {
     expect(() => collector.onUpdate(say("hi"))).not.toThrow();
   });
 });
+
+describe("createTurnCollector: startup banner and worked() (nax#2591)", () => {
+  const BANNER = "pi v0.84.3\n---\n## Skills\n- none\n";
+
+  test("the agent's startup banner chunk is dropped: no delta, not output, not receipt", () => {
+    const events: TurnEvent[] = [];
+    let receipts = 0;
+    const collector = createTurnCollector((e) => events.push(e), {
+      startupBanner: BANNER,
+      onReceipt: () => receipts++,
+    });
+    collector.onUpdate(say(BANNER));
+    collector.finish();
+    expect(events).toEqual([]);
+    expect(collector.output()).toBe("");
+    expect(receipts).toBe(0);
+    expect(collector.worked()).toBe(false);
+  });
+
+  test("text after the banner is the output; text that only contains the banner is kept", () => {
+    const events: TurnEvent[] = [];
+    const collector = createTurnCollector((e) => events.push(e), { startupBanner: BANNER });
+    collector.onUpdate(say(BANNER));
+    collector.onUpdate(say("answer"));
+    collector.onUpdate(say(`${BANNER}!`));
+    collector.finish();
+    expect(collector.output()).toBe(`answer${BANNER}!`);
+    expect(events.map((e) => e.type)).toEqual(["text_delta", "text_delta"]);
+  });
+
+  test("worked() is false with nothing or only usage and session updates", () => {
+    const { collector } = setup();
+    expect(collector.worked()).toBe(false);
+    collector.onUpdate({ sessionUpdate: "usage_update", used: 1, size: 2 });
+    collector.onUpdate({ sessionUpdate: "current_mode_update", currentModeId: "default" });
+    collector.onUpdate(say(""));
+    expect(collector.worked()).toBe(false);
+  });
+
+  test.each<[string, (c: ReturnType<typeof createTurnCollector>) => void]>([
+    ["text", (c) => c.onUpdate(say("hi"))],
+    ["a thought", (c) => c.onUpdate(think("hm"))],
+    [
+      "a non-text reply",
+      (c) =>
+        c.onUpdate({
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "resource_link", uri: "file:///a.txt", name: "a.txt" },
+        }),
+    ],
+    ["a tool call", (c) => c.onUpdate({ sessionUpdate: "tool_call", toolCallId: "c1", title: "Read" })],
+    ["a tool call update", (c) => c.onUpdate({ sessionUpdate: "tool_call_update", toolCallId: "c1" })],
+    ["an announced tool call", (c) => c.announce({ toolCallId: "c1", title: "Edit" })],
+  ])("worked() is true after %s", (_, act) => {
+    const { collector } = setup();
+    act(collector);
+    expect(collector.worked()).toBe(true);
+  });
+});

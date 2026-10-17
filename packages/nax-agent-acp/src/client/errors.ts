@@ -145,3 +145,17 @@ export function stopReasonError(stopReason: string): NaxError {
     { stage: "acp", stopReason: shown },
   );
 }
+
+/**
+ * nax#2591: an end_turn that showed no work (no reply text, thought or tool call)
+ * and reported no tokens. An agent that swallows its model call's failure ends the
+ * turn this way (pi-acp on a provider 402), so it is a failure, not an empty answer.
+ */
+export function emptyTurnError(): NaxError {
+  return new NaxError(
+    "The ACP agent ended the turn without a reply, a tool call or any tokens; its model call likely failed " +
+      "(check the agent's provider, credit and model)",
+    "ACP_EMPTY_TURN",
+    { stage: "acp", stopReason: "end_turn" },
+  );
+}

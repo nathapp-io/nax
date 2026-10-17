@@ -250,6 +250,7 @@ function newSessionAnswer(
     sessionId,
     ...(script.configOptions === undefined ? {} : { configOptions: [...configOptions] }),
     ...(script.modes === undefined ? {} : { modes: script.modes }),
+    ...(script.newSessionMeta === undefined ? {} : { _meta: { ...script.newSessionMeta } }),
   };
   return withLegacyBlocks(script, answer);
 }

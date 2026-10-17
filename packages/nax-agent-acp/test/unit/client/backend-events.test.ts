@@ -471,3 +471,58 @@ describe("elicitation end to end (spec §6.8; D5-i to D5-l, Review Focus 2 and 3
     expect(find(events, "tool_result")).toMatchObject({ callId: "toolu_9", isError: false, preview: "3 pass" });
   });
 });
+
+describe("a turn that did nothing fails, the startup banner is not output (nax#2591)", () => {
+  const BANNER = "pi v0.84.3\n---\n## Skills\n- none\n";
+  const pi: FakeScript = {
+    agentInfo: { name: "pi-acp", version: "0.0.34" },
+    newSessionMeta: { piAcp: { startupInfo: BANNER } },
+  };
+  const banner: FakeStep = { kind: "text", text: BANNER };
+
+  test("pi's provider failure: only the banner, no tokens, end_turn -> errored ACP_EMPTY_TURN", async () => {
+    const o = await open([{ steps: [banner] }], { script: pi });
+    const events = await driveTurn(o.session, "go");
+    expect(texts(events, "text_delta")).toEqual([]);
+    expect(endOf(events)).toMatchObject({
+      status: "errored",
+      error: { code: "ACP_EMPTY_TURN" },
+      usage: { inputTokens: 0, outputTokens: 0 },
+      costSource: "unpriced",
+    });
+  });
+
+  test("any agent: end_turn with no reply, no tool call and no tokens -> errored ACP_EMPTY_TURN", async () => {
+    const o = await open([{ steps: [] }]);
+    expect(endOf(await driveTurn(o.session, "go"))).toMatchObject({
+      status: "errored",
+      error: { code: "ACP_EMPTY_TURN" },
+    });
+  });
+
+  test("pi's first turn with a reply: completed, and the output is the reply without the banner", async () => {
+    const o = await open([{ steps: [banner, { kind: "text", text: "done" }] }], { script: pi });
+    const events = await driveTurn(o.session, "go");
+    expect(texts(events, "text_delta")).toEqual(["done"]);
+    expect(endOf(events)).toMatchObject({ status: "completed", output: "done" });
+  });
+
+  test("a turn with reported tokens but no text still completes", async () => {
+    const o = await open([{ steps: [], usage: { totalTokens: 9, inputTokens: 4, outputTokens: 5 } }]);
+    expect(endOf(await driveTurn(o.session, "go"))).toMatchObject({ status: "completed", output: "" });
+  });
+
+  test("a turn whose only work is a thought, with no tokens, still completes", async () => {
+    const o = await open([
+      { steps: [update({ sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "hm" } })] },
+    ]);
+    expect(endOf(await driveTurn(o.session, "go"))).toMatchObject({ status: "completed" });
+  });
+
+  test("a turn whose only work is a tool call still completes", async () => {
+    const o = await open([
+      { steps: [update({ sessionUpdate: "tool_call", toolCallId: "c1", title: "Read", status: "completed" })] },
+    ]);
+    expect(endOf(await driveTurn(o.session, "go"))).toMatchObject({ status: "completed" });
+  });
+});

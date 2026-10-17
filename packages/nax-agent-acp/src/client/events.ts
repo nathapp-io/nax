@@ -11,6 +11,11 @@
  * turn-content update or the settle, so the backend knows its instructions arrived
  * (#2364). Nothing is emitted after finish(). The
  * sink is the facade's; a throw from it is contained.
+ *
+ * nax#2591: the agent's startup banner (pi-acp's `startupInfo`, sent as one message
+ * chunk that lands in the first turn) is dropped whole: it is not the agent's reply
+ * and does not show the agent read the prompt. worked() tells whether the turn showed
+ * any work: a non-empty reply or thought chunk (any non-text content counts), or a tool call.
  */
 import type { PromptResponse, SessionUpdate } from "@agentclientprotocol/sdk";
 import type { TurnEvent, TurnEventSink } from "@nathapp/nax-agent";
@@ -26,6 +31,8 @@ export interface CollectorOptions {
   readonly meter?: CostMeter;
   /** Called once, when the turn first shows the agent has the prompt: a turn-content update or the prompt's response (#2364). */
   readonly onReceipt?: () => void;
+  /** The session's startup banner, from session/new (nax#2591): a message chunk of exactly this text is dropped. */
+  readonly startupBanner?: string;
 }
 
 export interface TurnCollector {
@@ -42,6 +49,8 @@ export interface TurnCollector {
   noteDenial(): void;
   /** Denials answered so far in this turn. */
   denials(): number;
+  /** The turn showed work: reply text, a thought or a tool call (nax#2591). */
+  worked(): boolean;
 }
 
 type DeltaType = "text_delta" | "thinking_delta";
@@ -79,6 +88,29 @@ function containedSink(emit: TurnEventSink | undefined): (event: TurnEvent) => v
   };
 }
 
+/** Update kinds that show the agent worked on the prompt (nax#2591); usage and plans alone do not. */
+const WORK_KINDS: ReadonlySet<string> = new Set([
+  "agent_message_chunk",
+  "agent_thought_chunk",
+  "tool_call",
+  "tool_call_update",
+]);
+
+function isBanner(update: SessionUpdate, banner: string | undefined): boolean {
+  return (
+    banner !== undefined &&
+    update.sessionUpdate === "agent_message_chunk" &&
+    update.content.type === "text" &&
+    update.content.text === banner
+  );
+}
+
+function showsWork(update: SessionUpdate): boolean {
+  if (!WORK_KINDS.has(update.sessionUpdate)) return false;
+  if (update.sessionUpdate !== "agent_message_chunk" && update.sessionUpdate !== "agent_thought_chunk") return true;
+  return update.content.type !== "text" || update.content.text !== "";
+}
+
 /**
  * Update kinds that prove the agent is working on the prompt (#2364). An allowlist:
  * session-level updates (commands, mode, config, session info) and replayed history
@@ -108,6 +140,7 @@ export function createTurnCollector(emit: TurnEventSink | undefined, options: Co
   let spend: TurnSpend | undefined;
   let received = false;
   let denials = 0;
+  let worked = false;
   const receipt = (): void => {
     if (received) return;
     received = true;
@@ -146,12 +179,15 @@ export function createTurnCollector(emit: TurnEventSink | undefined, options: Co
   };
   return {
     onUpdate(update) {
-      if (done) return;
+      if (done || isBanner(update, options.startupBanner)) return;
       if (RECEIPT_KINDS.has(update.sessionUpdate)) receipt();
+      if (showsWork(update)) worked = true;
       route(update);
     },
     announce(toolCall) {
-      if (!done) tools.announce(toolCall);
+      if (done) return;
+      worked = true;
+      tools.announce(toolCall);
     },
     finish,
     settle(response) {
@@ -168,5 +204,6 @@ export function createTurnCollector(emit: TurnEventSink | undefined, options: Co
       denials += 1;
     },
     denials: () => denials,
+    worked: () => worked,
   };
 }
