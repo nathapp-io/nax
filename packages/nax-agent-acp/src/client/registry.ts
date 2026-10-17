@@ -31,6 +31,13 @@ export interface ModeSetting {
 export interface ReadOnlyEnforcement {
   /** The mode set for none/read/review; undefined means nax sets no mode for them. */
   readonly mode: ModeSetting | undefined;
+  /**
+   * The mode set under `review` instead of `mode` when an operator Bash allow rule
+   * makes nax decide shell requests (nax#2592). For an agent whose read-only mode
+   * tells the model it cannot run commands, so it never asks; enforcement stays with
+   * the agent's permission config and nax's shell decision. Absent: `mode` throughout.
+   */
+  readonly reviewShellMode?: ModeSetting;
   /** Agent tools removed from the session under none/read/review. */
   readonly disallowedTools: readonly string[];
   /** Extra agent options under none/read/review, merged into the pre-approval channel's options. */
@@ -73,6 +80,9 @@ function freezeReadOnly(readOnly: ReadOnlyEnforcement | undefined): ReadOnlyEnfo
   const mode = readOnly.mode === undefined ? undefined : Object.freeze({ ...readOnly.mode });
   return Object.freeze({
     mode,
+    ...(readOnly.reviewShellMode === undefined
+      ? {}
+      : { reviewShellMode: Object.freeze({ ...readOnly.reviewShellMode }) }),
     disallowedTools: Object.freeze([...readOnly.disallowedTools]),
     sessionOptions: Object.freeze(Object.fromEntries(options)),
     launchEnv: Object.freeze(Object.fromEntries(launchEnv)),
@@ -157,12 +167,15 @@ const REGISTRY: ReadonlyMap<AcpAgentName, AgentRegistryEntry> = new Map([
   // write through, mode `plan` let the model switch back to `agent` and write), so `ask`
   // only tells the model it is read-only; the real enforcement is its permission config
   // (US-004: an isolated cli-config.json, pointed at by CURSOR_CONFIG_DIR). No plan mode
-  // is ever used here.
+  // is ever used here. nax#2592: `ask` also makes the model refuse to try a shell command,
+  // so review with an operator Bash allow rule runs in `agent`: writes stay denied by the
+  // permission config, and nax decides every shell request (shell-rules.ts).
   [
     "cursor",
     entry("cursor", [local("cursor-agent", "acp")], ["CURSOR_API_KEY"], {
       readOnly: {
         mode: { configId: "mode", value: "ask" },
+        reviewShellMode: { configId: "mode", value: "agent" },
         disallowedTools: [],
         sessionOptions: {},
         launchEnv: {},

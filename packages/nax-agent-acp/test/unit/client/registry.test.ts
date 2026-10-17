@@ -19,6 +19,7 @@ describe("ACP agent registry (S4 spec §6.10)", () => {
       launch: [{ command: "cursor-agent", args: ["acp"] }],
       readOnly: {
         mode: { configId: "mode", value: "ask" },
+        reviewShellMode: { configId: "mode", value: "agent" },
         disallowedTools: [],
         sessionOptions: {},
         launchEnv: {},
@@ -33,6 +34,7 @@ describe("ACP agent registry (S4 spec §6.10)", () => {
   test("cursor: none, read and review are enforced by its ask mode and its permission config", () => {
     expect(registryEntry("cursor")?.readOnly).toEqual({
       mode: { configId: "mode", value: "ask" },
+      reviewShellMode: { configId: "mode", value: "agent" },
       disallowedTools: [],
       sessionOptions: {},
       launchEnv: {},
