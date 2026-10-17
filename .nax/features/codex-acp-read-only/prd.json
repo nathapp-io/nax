@@ -3,7 +3,7 @@
   "feature": "codex-acp-read-only",
   "branchName": "feat/codex-acp-read-only",
   "createdAt": "2026-10-17T00:00:00.000Z",
-  "updatedAt": "2026-10-17T03:42:17.332Z",
+  "updatedAt": "2026-10-17T04:23:11.412Z",
   "userStories": [
     {
       "id": "US-001",
@@ -139,8 +139,8 @@
         "codex"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -152,7 +152,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "native",
         "initialProfileId": "native-deepseek",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/session/model-selection.ts",
@@ -222,7 +224,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "d6e400f343df1109ec87218c193d2b20bdb0730b"
     }
   ],
   "analysis": "Codex slice of nathapp-io/nax#2372. Two independent stories in two packages.\n\nUS-001 (packages/nax-agent-acp): codex-acp already offers a `mode` config option (read-only, workspace-write, agent, agent-full-access). Today the `codex` registry entry (src/client/registry.ts) has no `readOnly`, so `unmetRequirement` (src/client/capabilities.ts) refuses `read`/`review` with AGENT_SESSION_CAPABILITY_UNSUPPORTED. Fix: give codex `readOnly: { mode: { configId: \"mode\", value: \"read-only\" }, disallowedTools: [], sessionOptions: {} }`, leave `defaultMode` and `preApproval` undefined, and let `entry()` accept readOnly without a pre-approval channel (rewrite the ReadOnlyEnforcement doc comment). modeFor/applyMode are unchanged: none/read/review -> readOnly.mode; full/ask -> entry.defaultMode (undefined for codex, so no set_config_option for mode).\nSandbox leak: `sandboxFor` (src/client/open.ts) and `routerFor` (src/client/backend.ts) hand the embedder sandbox policy to `decidePermission` for every agent. codex never receives that policy (only Claude gets it via `_meta` / claudeSessionMeta), so under `review` an `execute` request would be allowed once as if sandboxed. Gate both on `entry?.preApproval`: sandboxFor(ctx, entry) returns undefined WITHOUT refusing when entry?.preApproval is undefined (so an `unavailable` sandbox no longer refuses codex review/full); routerFor(ctx, secrets, entry) adds `sandbox` to the permission context only when entry?.preApproval is defined and ctx.sandbox.kind === \"policy\". Callers pass `o.options.entry` (open sequence) and `options.entry` (connect()). decidePermission itself is unchanged: with ctx.sandbox undefined, a review `execute` is rejected with REVIEW_NO_SANDBOX_REASON; under full, file edits outside cwd are allowed with FULL_REASON (codex gets no stricter rule: the 'not too tight' ruling). Claude behaviour must not change (AC 13, 14).\nExisting tests that break and must be updated (see Modifies): registry.test.ts (codex leaves the 'no read-only, no pre-approval' table; the 'only an agent with a pre-approval channel declares read-only' test is replaced by 'every readOnly entry has non-empty readOnly.mode'), capabilities.test.ts (readOnlyFor undefined check moves to gemini), backend-permissions.test.ts ('%s on an agent without a read-only mode: refused after initialize' switches agent codex -> gemini). Add exported CODEX_CONFIG_OPTIONS to test/fixtures/fake-agent/script.ts beside CLAUDE_CONFIG_OPTIONS (mode select, category `mode`, values read-only/workspace-write/agent/agent-full-access, current `agent`). New integration tests go in test/unit/client/backend-codex.test.ts, following the inMemoryAgent + createAgentSession pattern in backend-permissions.test.ts.\n\nUS-002 (packages/nax): add config `agent.acp.codex = { isolateHome: boolean=false, fullMode: \"workspace-write\"|\"agent-full-access\"=\"workspace-write\" }` to AgentAcpConfigSchema (src/config/schemas-infra.ts, including its literal .default({...})), the literal acp default in src/config/schemas.ts, and the acp runtime type in src/config/runtime-types-agent.ts. New module src/agents/shared/codex-acp-env.ts (must live under src/agents/shared/, because src/agents/acp/ may not import config: check-adapter-no-config-import.sh) with CodexAcpSettings, codexAcpSettings (undefined-tolerant, precedent: src/config/tracked-spawn-deadlines.ts), isolatedCodexHomeDir (join(globalConfigDir(),\"acp\",\"codex-home\")), prepareIsolatedCodexHome (mkdir recursive + symlink auth.json from $CODEX_HOME or ~/.codex, lstat semantics for the existing-entry check, fileExists via stat for source), withCodexAcpEnv (pure, returns a NEW def for agent \"codex\"; same reference for any other agent), and the _codexAcpEnvDeps test seam. INITIAL_AGENT_MODE=fullMode is set for every codex session; CODEX_HOME only when isolateHome; model-env values already present win; mkdir/symlink failure => one warn, no CODEX_HOME, still INITIAL_AGENT_MODE (fail open).\nWiring at the two places a model def enters an agent call: selectModel(opts, codex?) in src/session/model-selection.ts (ModelSelection gains optional agentName; one-arg call unchanged), called from SessionManager.openSession in src/session/manager.ts, where the single line `...selectModel(opts)` becomes `...selectModel(opts, codexAcpSettings(opts.config ?? this._config))` (manager.ts is at grandfathered size 650: replace one line, add none). completeAsWithFallback in src/agents/manager-complete-as.ts passes `{ ...options, modelDef: withCodexAcpEnv(options.modelDef, agentName, codexAcpSettings(options.config ?? input.config)) }` to buildCompleteCallPreamble (per-call config wins). manager-dispatch.ts (597/600 lines) must not be touched. Env flows through toSessionModel -> backendEnv(opts.modelDef.env) in src/agents/acp/open-context.ts -> buildAllowedEnv step 5 to the agent process, so no ACP-layer change is needed.\nAlso: update the profile-map.ts header comment (remove codex from the agents refused `read` until #2372; no code change), update agent-schema.test.ts 'agent.acp has no transport key after S4b-5' expected default to include the codex object, document both keys in docs/guides/configuration.md beside agent.acp.promptRetries (defaults, what fullMode chooses, isolateHome shares only auth.json).\nRisks: file-size ratchets (manager.ts 650, manager-dispatch.ts 597/600) - do not grow; split tests across files if needed; existing tests that pin exact acp defaults; _deps restore idiom in tests (restore _codexAcpEnvDeps in afterEach); never bare `bun test`, run package test scripts. Packages are versioned in lockstep; no releases/version bumps in this feature.\nThe two stories are independent (no dependencies); US-001 touches only nax-agent-acp, US-002 only nax.",
