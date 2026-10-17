@@ -23,17 +23,20 @@ export interface ModeSetting {
 /**
  * How profiles none, read and review are enforced on this agent (§6.4 layer 1, as
  * revised by the 2026-10-07 fix bundle). An agent may enforce read-only through its
- * mode alone (codex-acp's `read-only`, nax#2372); `disallowedTools` and
- * `sessionOptions` go through the pre-approval channel and are empty for an agent
- * that has none.
+ * mode alone (codex-acp's `read-only`, nax#2372) or through variables injected into
+ * its process environment (opencode's `OPENCODE_CONFIG_CONTENT` permission policy);
+ * `disallowedTools` and `sessionOptions` go through the pre-approval channel and are
+ * empty for an agent that has none.
  */
 export interface ReadOnlyEnforcement {
-  /** The mode set for none/read/review. */
-  readonly mode: ModeSetting;
+  /** The mode set for none/read/review; undefined means nax sets no mode for them. */
+  readonly mode: ModeSetting | undefined;
   /** Agent tools removed from the session under none/read/review. */
   readonly disallowedTools: readonly string[];
   /** Extra agent options under none/read/review, merged into the pre-approval channel's options. */
   readonly sessionOptions: Readonly<Record<string, unknown>>;
+  /** Extra agent process environment under none/read/review, by profile; {} when the agent needs none. */
+  readonly launchEnv: Readonly<Partial<Record<"none" | "read" | "review", Readonly<Record<string, string>>>>>;
 }
 
 export interface AgentRegistryEntry {
@@ -59,12 +62,32 @@ function freezeReadOnly(readOnly: ReadOnlyEnforcement | undefined): ReadOnlyEnfo
     key,
     Array.isArray(value) ? Object.freeze([...value]) : value,
   ]);
+  const launchEnv = Object.entries(readOnly.launchEnv).map(([profile, env]) => [profile, Object.freeze({ ...env })]);
+  // A mode-less agent (opencode, nax#2372) sets no mode at all: there is nothing to copy.
+  const mode = readOnly.mode === undefined ? undefined : Object.freeze({ ...readOnly.mode });
   return Object.freeze({
-    mode: Object.freeze({ ...readOnly.mode }),
+    mode,
     disallowedTools: Object.freeze([...readOnly.disallowedTools]),
     sessionOptions: Object.freeze(Object.fromEntries(options)),
+    launchEnv: Object.freeze(Object.fromEntries(launchEnv)),
   });
 }
+
+// opencode's permission policy, injected as `OPENCODE_CONFIG_CONTENT` (its highest-rank
+// config source). Rules are last-match-wins over { action, resource }, so the catch-all
+// deny comes first and each allowance after it. A denied tool is removed from opencode's
+// catalog, so the model never sees it.
+
+/** none: no tool at all. */
+export const OPENCODE_NONE_CONFIG = JSON.stringify({ permission: { "*": "deny" } });
+/** read: only opencode's read tools. */
+export const OPENCODE_READ_CONFIG = JSON.stringify({
+  permission: { "*": "deny", read: "allow", glob: "allow", grep: "allow", list: "allow" },
+});
+/** review: the read tools, plus shell commands asked of nax (decided by the review rule). */
+export const OPENCODE_REVIEW_CONFIG = JSON.stringify({
+  permission: { "*": "deny", read: "allow", glob: "allow", grep: "allow", list: "allow", bash: "ask" },
+});
 
 function entry(
   name: AcpAgentName,
@@ -97,6 +120,7 @@ const REGISTRY: ReadonlyMap<AcpAgentName, AgentRegistryEntry> = new Map([
           mode: { configId: "mode", value: "default" },
           disallowedTools: ["Write", "Edit", "MultiEdit", "NotebookEdit", "EnterPlanMode"],
           sessionOptions: { settingSources: [], allowDangerouslySkipPermissions: false },
+          launchEnv: {},
         },
         defaultMode: { configId: "mode", value: "default" },
         preApproval: "claudeCode.allowedTools",
@@ -110,13 +134,39 @@ const REGISTRY: ReadonlyMap<AcpAgentName, AgentRegistryEntry> = new Map([
       // sandbox, read-only filesystem, no network, every escalation asked of us). It has
       // no pre-approval channel, so no settings and no removed tools ride along; full and
       // ask keep the launch mode (US-002 sets it from config).
-      readOnly: { mode: { configId: "mode", value: "read-only" }, disallowedTools: [], sessionOptions: {} },
+      readOnly: {
+        mode: { configId: "mode", value: "read-only" },
+        disallowedTools: [],
+        sessionOptions: {},
+        launchEnv: {},
+      },
       defaultMode: undefined,
       preApproval: undefined,
     }),
   ],
   ["gemini", entry("gemini", [local("gemini", "--acp")], ["GEMINI_API_KEY"])],
-  ["opencode", entry("opencode", [local("opencode", "acp")], [])],
+  // nax#2372: opencode has no read-only mode (its `plan` agent still runs shell and web
+  // tools). Enforcement is its own permission config, injected per profile as an env
+  // variable: opencode denies every tool, then allows its read tools back for read and
+  // review, and under review asks nax about each shell command. No mode is set, and it
+  // has no pre-approval channel (embedder tools stay unsupported).
+  [
+    "opencode",
+    entry("opencode", [local("opencode", "acp")], [], {
+      readOnly: {
+        mode: undefined,
+        disallowedTools: [],
+        sessionOptions: {},
+        launchEnv: {
+          none: { OPENCODE_CONFIG_CONTENT: OPENCODE_NONE_CONFIG },
+          read: { OPENCODE_CONFIG_CONTENT: OPENCODE_READ_CONFIG },
+          review: { OPENCODE_CONFIG_CONTENT: OPENCODE_REVIEW_CONFIG },
+        },
+      },
+      defaultMode: undefined,
+      preApproval: undefined,
+    }),
+  ],
   // Exact pin: a tilde range does not pin 0.0.x.
   ["pi", entry("pi", [local("pi-acp"), npx("pi-acp@0.0.34")], [])],
 ]);

@@ -4,6 +4,7 @@ import {
   buildCapabilityRecord,
   type CapabilityRecord,
   effortOptionId,
+  launchEnvFor,
   modeFor,
   modelOptionId,
   offersValue,
@@ -11,7 +12,12 @@ import {
   selectValues,
   unmetRequirement,
 } from "#src/client/capabilities";
-import { registryEntry } from "#src/client/registry";
+import {
+  OPENCODE_NONE_CONFIG,
+  OPENCODE_READ_CONFIG,
+  OPENCODE_REVIEW_CONFIG,
+  registryEntry,
+} from "#src/client/registry";
 
 const CLAUDE = registryEntry("claude");
 
@@ -188,6 +194,49 @@ describe("codex read-only profiles through its own mode (nax#2372)", () => {
 
   test.each(["read", "review"] as const)("no unmet requirement for profile %p", (profile) => {
     expect(unmetRequirement(codexRecord, { profile, toolCount: 0, resume: false })).toBeUndefined();
+  });
+});
+
+describe("opencode read-only profiles through an injected launch env (nax#2372)", () => {
+  const OPENCODE = registryEntry("opencode");
+  const RECORDS = {
+    none: { OPENCODE_CONFIG_CONTENT: OPENCODE_NONE_CONFIG },
+    read: { OPENCODE_CONFIG_CONTENT: OPENCODE_READ_CONFIG },
+    review: { OPENCODE_CONFIG_CONTENT: OPENCODE_REVIEW_CONFIG },
+  } as const;
+
+  test.each(["none", "read", "review"] as const)("launchEnvFor(%p) is the profile's permission config", (profile) => {
+    expect(launchEnvFor(profile, OPENCODE)).toEqual(RECORDS[profile]);
+  });
+
+  test.each(["none", "read", "review"] as const)("modeFor(%p) is undefined: opencode needs no mode", (profile) => {
+    expect(modeFor(profile, OPENCODE)).toBeUndefined();
+  });
+
+  test("launchEnvFor adds nothing for full, ask, an agent without enforcement or no entry at all", () => {
+    expect(launchEnvFor("full", OPENCODE)).toEqual({});
+    expect(launchEnvFor("ask", OPENCODE)).toEqual({});
+    expect(launchEnvFor("read", registryEntry("claude"))).toEqual({});
+    expect(launchEnvFor("read", registryEntry("gemini"))).toEqual({});
+    expect(launchEnvFor("read", undefined)).toEqual({});
+  });
+
+  test("readOnlyFor still hands the enforcement to the pre-approval channel under review", () => {
+    expect(readOnlyFor("review", OPENCODE)).toBe(OPENCODE?.readOnly);
+  });
+
+  /** An initialize response with no MCP capabilities (opencode never delivers embedder tools). */
+  const BARE_INIT: InitializeResponse = { protocolVersion: 1 };
+  const opencodeRecord: CapabilityRecord = buildCapabilityRecord(BARE_INIT, OPENCODE);
+
+  test.each(["read", "review"] as const)("no unmet requirement for profile %p", (profile) => {
+    expect(unmetRequirement(opencodeRecord, { profile, toolCount: 0, resume: false })).toBeUndefined();
+  });
+
+  test("embedder tools are still refused: opencode has no pre-approval channel", () => {
+    expect(unmetRequirement(opencodeRecord, { profile: "read", toolCount: 1, resume: false })?.capability).toBe(
+      "tools",
+    );
   });
 });
 

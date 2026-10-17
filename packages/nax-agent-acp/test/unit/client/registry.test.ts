@@ -4,6 +4,9 @@ import {
   type AcpAgentName,
   isAcpAgentName,
   type LaunchCandidate,
+  OPENCODE_NONE_CONFIG,
+  OPENCODE_READ_CONFIG,
+  OPENCODE_REVIEW_CONFIG,
   registryEntry,
 } from "#src/client/registry";
 
@@ -23,6 +26,7 @@ describe("ACP agent registry (S4 spec §6.10)", () => {
         mode: { configId: "mode", value: "default" },
         disallowedTools: ["Write", "Edit", "MultiEdit", "NotebookEdit", "EnterPlanMode"],
         sessionOptions: { settingSources: [], allowDangerouslySkipPermissions: false },
+        launchEnv: {},
       },
       defaultMode: { configId: "mode", value: "default" },
       preApproval: "claudeCode.allowedTools",
@@ -32,7 +36,6 @@ describe("ACP agent registry (S4 spec §6.10)", () => {
 
   test.each<[AcpAgentName, LaunchCandidate[], string[]]>([
     ["gemini", [{ command: "gemini", args: ["--acp"] }], ["GEMINI_API_KEY"]],
-    ["opencode", [{ command: "opencode", args: ["acp"] }], []],
     [
       "pi",
       [
@@ -59,11 +62,88 @@ describe("ACP agent registry (S4 spec §6.10)", () => {
         { command: "codex-acp", args: [] },
         { command: "npx", args: ["-y", "@agentclientprotocol/codex-acp@~2.1.1"] },
       ],
-      readOnly: { mode: { configId: "mode", value: "read-only" }, disallowedTools: [], sessionOptions: {} },
+      readOnly: {
+        mode: { configId: "mode", value: "read-only" },
+        disallowedTools: [],
+        sessionOptions: {},
+        launchEnv: {},
+      },
       defaultMode: undefined,
       preApproval: undefined,
       authEnv: ["OPENAI_API_KEY"],
     });
+  });
+
+  test("opencode: launch candidates and auth env; read-only enforcement by injected permission config", () => {
+    expect(registryEntry("opencode")).toEqual({
+      name: "opencode",
+      launch: [{ command: "opencode", args: ["acp"] }],
+      readOnly: {
+        mode: undefined,
+        disallowedTools: [],
+        sessionOptions: {},
+        launchEnv: {
+          none: { OPENCODE_CONFIG_CONTENT: OPENCODE_NONE_CONFIG },
+          read: { OPENCODE_CONFIG_CONTENT: OPENCODE_READ_CONFIG },
+          review: { OPENCODE_CONFIG_CONTENT: OPENCODE_REVIEW_CONFIG },
+        },
+      },
+      defaultMode: undefined,
+      preApproval: undefined,
+      authEnv: [],
+    });
+  });
+
+  test("opencode declares no default mode and no pre-approval channel", () => {
+    expect(registryEntry("opencode")?.defaultMode).toBeUndefined();
+    expect(registryEntry("opencode")?.preApproval).toBeUndefined();
+  });
+
+  test("opencode: none denies every tool", () => {
+    expect(JSON.parse(OPENCODE_NONE_CONFIG)).toEqual({ permission: { "*": "deny" } });
+  });
+
+  test("opencode: read allows the read tools after the catch-all deny, in that order (last match wins)", () => {
+    expect(Object.keys(JSON.parse(OPENCODE_READ_CONFIG).permission)).toEqual(["*", "read", "glob", "grep", "list"]);
+    expect(JSON.parse(OPENCODE_READ_CONFIG).permission).toEqual({
+      "*": "deny",
+      read: "allow",
+      glob: "allow",
+      grep: "allow",
+      list: "allow",
+    });
+  });
+
+  test("opencode: review also asks nax about shell commands, last", () => {
+    expect(Object.keys(JSON.parse(OPENCODE_REVIEW_CONFIG).permission)).toEqual([
+      "*",
+      "read",
+      "glob",
+      "grep",
+      "list",
+      "bash",
+    ]);
+    expect(JSON.parse(OPENCODE_REVIEW_CONFIG).permission).toEqual({
+      "*": "deny",
+      read: "allow",
+      glob: "allow",
+      grep: "allow",
+      list: "allow",
+      bash: "ask",
+    });
+  });
+
+  test("claude and codex add no launch env for a read-only profile", () => {
+    expect(registryEntry("claude")?.readOnly?.launchEnv).toEqual({});
+    expect(registryEntry("codex")?.readOnly?.launchEnv).toEqual({});
+  });
+
+  test("opencode's launch env is frozen, down to each profile's record", () => {
+    const launchEnv = registryEntry("opencode")?.readOnly?.launchEnv;
+    expect(Object.isFrozen(launchEnv)).toBe(true);
+    expect(Object.isFrozen(launchEnv?.read)).toBe(true);
+    expect(Object.isFrozen(launchEnv?.none)).toBe(true);
+    expect(Object.isFrozen(launchEnv?.review)).toBe(true);
   });
 
   test("pi's npx fallback pins an exact version (a tilde does not pin 0.0.x)", () => {
@@ -92,12 +172,18 @@ describe("ACP agent registry (S4 spec §6.10)", () => {
     expect(Object.isFrozen(ACP_AGENT_NAMES)).toBe(true);
   });
 
-  test("every entry declaring read-only enforcement sets a mode (nax#2372)", () => {
+  test("every entry with read-only enforcement sets a mode or a launch env for none, read and review", () => {
     for (const name of ACP_AGENT_NAMES) {
-      const entry = registryEntry(name);
-      if (entry?.readOnly === undefined) continue;
-      expect(entry.readOnly.mode.configId).not.toBe("");
-      expect(entry.readOnly.mode.value).not.toBe("");
+      const readOnly = registryEntry(name)?.readOnly;
+      if (readOnly === undefined) continue;
+      if (readOnly.mode !== undefined) {
+        expect(readOnly.mode.configId).not.toBe("");
+        expect(readOnly.mode.value).not.toBe("");
+        continue;
+      }
+      for (const profile of ["none", "read", "review"] as const) {
+        expect(Object.keys(readOnly.launchEnv[profile] ?? {})).not.toHaveLength(0);
+      }
     }
   });
 });
