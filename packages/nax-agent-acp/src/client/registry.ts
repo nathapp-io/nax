@@ -40,7 +40,7 @@ export interface AgentRegistryEntry {
   readonly name: AcpAgentName;
   /** Tried in order; the first command found wins (S4-2 launch). */
   readonly launch: readonly LaunchCandidate[];
-  /** How profiles `none` and `read` are enforced; undefined means those profiles are unsupported (§6.4). */
+  /** How profiles `none`, `read` and `review` are enforced; undefined means those profiles are unsupported (§6.4). */
   readonly readOnly: ReadOnlyEnforcement | undefined;
   /** Mode for profiles `ask` and `full`; undefined means the agent's own default is kept. */
   readonly defaultMode: ModeSetting | undefined;
