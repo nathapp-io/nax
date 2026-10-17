@@ -9,7 +9,7 @@
 import { describe, expect, test } from "bun:test";
 import { mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { assertDefined, withTempDir } from "@test/helpers";
+import { assertDefined, makeAdviceDecision, withTempDir, writeTrustedDecision } from "@test/helpers";
 import { Command } from "commander";
 import { _workflowForgeDeps, registerWorkflowCommand, type WorkflowCliDeps, type WorkflowForgeDeps } from "@/cli";
 import type { ForgeDeps, ForgeRunResult } from "@/forge";
@@ -234,6 +234,45 @@ describe("nax workflow record --json", () => {
       await record(h.deps, wfDeps(), ["-f", FEATURE, "--decisions", decisions, "--json", "-d", dir]);
       expect(emittedJson(h.out).unruled).toEqual(["B2"]);
       expect(h.codes).toEqual([0]);
+    });
+  });
+
+  test("#2578: rulings on a trusted advisor decision and a story-level cannot-verify line are recorded", async () => {
+    await withTempDir(async (dir) => {
+      const runDir = await writeRun(dir, open(["B1"]));
+      const outputDir = join(dir, "out");
+      const trusted = makeAdviceDecision({
+        id: "D-2",
+        action: { type: "waive", reason: "low risk" },
+        auditRef: `advisor-audit/${FEATURE}/D-2.json`,
+      });
+      await writeTrustedDecision(dir, FEATURE, outputDir, trusted);
+      await Bun.write(join(runDir, "ledger.md"), "US-001: cannot-verify: Redis TTL\n");
+      const extra: DecisionEntry[] = [
+        { id: "D-2", kind: "advisor", disposition: "verified", reason: "read src/a.ts:3; the risk is as stated" },
+        { id: "US-001:cv1", kind: "cannot-verify", disposition: "verified", reason: "ran the TTL test: 3 passed" },
+      ];
+      const decisions = await writeDecisions(dir, [ENTRY_B1, ...extra]);
+      const h = harness();
+      const forge = { ...wfDeps(), resolveOutputDir: async () => outputDir };
+      await record(h.deps, forge, ["-f", FEATURE, "--decisions", decisions, "--json", "-d", dir]);
+      expect(h.codes).toEqual([0]);
+      expect(emittedJson(h.out).unruled).toEqual([]);
+      expect((await readSidecar(runDir)).decisions).toEqual([ENTRY_B1, ...extra]);
+    });
+  });
+
+  test("#2578: an advisor id that is neither open nor in the advisor ledger is still refused", async () => {
+    await withTempDir(async (dir) => {
+      const runDir = await writeRun(dir, open(["B1"]));
+      const decisions = await writeDecisions(dir, [
+        { id: "D-9", kind: "advisor", disposition: "verified", reason: "no such decision" },
+      ]);
+      const h = harness();
+      await record(h.deps, wfDeps(), ["-f", FEATURE, "--decisions", decisions, "--json", "-d", dir]);
+      expect(h.codes).toEqual([1]);
+      expect(emittedJson(h.out)).toEqual({ error: "unknown item D-9; open items: B1" });
+      expect(await sidecarNames(runDir)).toEqual([]);
     });
   });
 

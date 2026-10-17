@@ -8,9 +8,9 @@
 import { describe, expect, test } from "bun:test";
 import { mkdir, readdir, utimes } from "node:fs/promises";
 import { join } from "node:path";
-import { withTempDir } from "@test/helpers";
+import { makeAdviceDecision, withTempDir, writeTrustedDecision } from "@test/helpers";
 import { Command } from "commander";
-import { registerWorkflowCommand, type WorkflowCliDeps } from "@/cli";
+import { _workflowForgeDeps, registerWorkflowCommand, type WorkflowCliDeps, type WorkflowForgeDeps } from "@/cli";
 import type { WorkflowFeatureRecord, WorkflowResultFile } from "@/workflow";
 import { newFeatureRecord } from "@/workflow/feature-record";
 import { newStoryRecord } from "@/workflow/result";
@@ -287,6 +287,81 @@ describe("nax workflow status (read-only)", () => {
       const h = harness();
       await run(h.deps, ["-f", FEATURE, "--json", "-d", dir]);
       expect(await snapshot(dir)).toEqual(before);
+    });
+  });
+});
+
+/** Where the trusted advisor decisions' audit artifacts are written, and where the command looks. */
+const outDir = (dir: string): string => join(dir, "out");
+
+/** The real forge deps, with the output directory pointed at the fixture's. */
+const forgeFor = (dir: string): WorkflowForgeDeps => ({
+  ..._workflowForgeDeps,
+  resolveOutputDir: async () => outDir(dir),
+});
+
+async function runIn(dir: string, deps: WorkflowCliDeps, argv: string[]): Promise<void> {
+  const program = new Command();
+  registerWorkflowCommand(program, deps, forgeFor(dir));
+  await program.parseAsync(["node", "nax", "workflow", "status", ...argv]);
+}
+
+/** One trusted advisor decision and one run ledger line, where #2578's supplementary items come from. */
+async function writeSupplementarySources(dir: string, runDir: string): Promise<void> {
+  const decision = makeAdviceDecision({
+    id: "D-2",
+    kind: "finish-approval",
+    action: { type: "approve" },
+    rationale: "gates green",
+    auditRef: `advisor-audit/${FEATURE}/D-2.json`,
+  });
+  await writeTrustedDecision(dir, FEATURE, outDir(dir), decision);
+  await Bun.write(join(runDir, "ledger.md"), "US-001: cannot-verify: Redis TTL\n");
+}
+
+const SUPPLEMENTARY = [
+  { id: "D-2", kind: "advisor", issue: "finish-approval approve: gates green" },
+  { id: "US-001:cv1", kind: "cannot-verify", issue: "Redis TTL" },
+];
+
+const READY = { featureWorkflow: featureRecord({ outcome: "ready", passed: true }) };
+
+describe("nax workflow status supplementary items (#2578)", () => {
+  test("--json lists them apart from openItems, and they do not change a ready run's exit code", async () => {
+    await withTempDir(async (dir) => {
+      await writeSupplementarySources(dir, await writeResult(dir, "r1", READY));
+      const h = harness();
+      await runIn(dir, h.deps, ["-f", FEATURE, "--json", "-d", dir]);
+      const report = emittedJson(h.out);
+      expect(report.openItems).toEqual([]);
+      expect(report.supplementaryItems).toEqual(SUPPLEMENTARY);
+      expect(h.codes).toEqual([0]);
+    });
+  });
+
+  test("--json prints an empty list when there are none", async () => {
+    await withTempDir(async (dir) => {
+      await writeResult(dir, "r1", DRAFT);
+      const h = harness();
+      await runIn(dir, h.deps, ["-f", FEATURE, "--json", "-d", dir]);
+      expect(emittedJson(h.out).supplementaryItems).toEqual([]);
+      expect(h.codes).toEqual([2]);
+    });
+  });
+
+  test("plain output lists them after the open items, under their own heading", async () => {
+    await withTempDir(async (dir) => {
+      await writeSupplementarySources(dir, await writeResult(dir, "r1", DRAFT));
+      const h = harness();
+      await runIn(dir, h.deps, ["-f", FEATURE, "-d", dir]);
+      expect(h.out).toEqual([
+        "auth: draft https://gh/pr/7",
+        "- [advisor] D-1 — advisor held: x",
+        "Also to verify (not blocking):",
+        "- [advisor] D-2 — finish-approval approve: gates green",
+        "- [cannot-verify] US-001:cv1 — Redis TTL",
+      ]);
+      expect(h.codes).toEqual([2]);
     });
   });
 });

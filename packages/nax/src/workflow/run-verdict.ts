@@ -17,6 +17,7 @@ import { validateFeatureName } from "@/utils/feature-name";
 import { buildOpenItems, buildVerdict } from "./open-items";
 import { workflowFeatureDir } from "./paths";
 import { readResult, runDirsNewestFirst, storyStatesFrom } from "./result";
+import { loadSupplementaryItems } from "./supplementary-items";
 import type { OpenItem, WorkflowFeatureRecord, WorkflowResultFile } from "./types";
 
 /** The newest readable run of a feature, with everything the workflow commands read off it. */
@@ -30,6 +31,8 @@ export interface LoadedRun {
   readonly openItems: readonly OpenItem[];
   /** The record's own reasons, as written. */
   readonly reasons: readonly string[];
+  /** #2578: advisor decisions and story-level cannot-verify lines a ruling may name; never blocking. */
+  readonly supplementaryItems: readonly OpenItem[];
 }
 
 /**
@@ -78,7 +81,11 @@ function noResult(feature: string): NaxError {
  * The newest readable run of `feature` under `dir`, or the error that says why there is none.
  * Validates the feature name first, so nothing is read for a name that could escape the tree.
  */
-export async function loadRunVerdict(dir: string, feature: string): Promise<LoadedRun> {
+export async function loadRunVerdict(
+  dir: string,
+  feature: string,
+  resolveOutputDir: (dir: string) => Promise<string>,
+): Promise<LoadedRun> {
   validateFeatureName(feature);
   const found = await newestResult(dir, feature);
   if (!found) throw noResult(feature);
@@ -86,13 +93,15 @@ export async function loadRunVerdict(dir: string, feature: string): Promise<Load
   if (!record) throw notStarted(feature, found.runId);
   const filled = fillStoryStates(record, found.result);
   const verdict = buildVerdict(filled);
+  // A run that never published has no verdict, but its stories still say what is open (AC-13).
+  const openItems = verdict?.openItems ?? buildOpenItems(filled);
   return {
     runId: found.runId,
     runDir: found.runDir,
     result: found.result,
     record,
-    // A run that never published has no verdict, but its stories still say what is open (AC-13).
-    openItems: verdict?.openItems ?? buildOpenItems(filled),
+    openItems,
     reasons: record.reasons,
+    supplementaryItems: await loadSupplementaryItems(dir, feature, openItems, await resolveOutputDir(dir)),
   };
 }

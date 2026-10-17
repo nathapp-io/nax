@@ -277,14 +277,14 @@ function reportOf(input: {
 /** The whole command, in the spec's order: every refusal happens before a check runs. */
 async function promote(opts: WorkflowPromoteOptions, forgeDeps: WorkflowForgeDeps): Promise<WorkflowPromoteReport> {
   validateFeatureName(opts.feature);
-  const loaded = await loadRunVerdict(opts.dir, opts.feature);
+  const loaded = await loadRunVerdict(opts.dir, opts.feature, forgeDeps.resolveOutputDir);
   const url = draftUrl(loaded, opts.feature);
   const forge = await draftForge(forgeDeps, opts.dir, url);
   const expectedSha = await headSha(forgeDeps.forge, opts.dir);
   const found = await newestSidecar(loaded.runDir);
   // B2: a sidecar the run's own items do not own is refused before a check runs and before any write:
   // its entries are what the tick, the evidence comment and the `promoted` record are built from.
-  if (found) checkEntriesAgainstItems(found.sidecar.decisions, loaded.openItems);
+  if (found) checkEntriesAgainstItems(found.sidecar.decisions, loaded.openItems, loaded.supplementaryItems);
   const checks = [itemsRuled(loaded, found), await ciGreen({ forgeDeps, forge, url, dir: opts.dir, expectedSha })];
   const target: PromoteTarget = { opts, loaded, url, forge, forgeDeps, found };
   if (!opts.yes || !allPassed(checks)) return reportOf({ target, checks, promoted: false, actions: [] });

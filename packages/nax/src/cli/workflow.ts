@@ -60,10 +60,13 @@ export interface WorkflowStatusReport {
   readonly workflowPassed?: boolean;
   readonly reasons: readonly string[];
   readonly openItems: readonly OpenItem[];
+  /** #2578: items a finisher rules on that `openItems` does not hold; they never change the exit code. */
+  readonly supplementaryItems: readonly OpenItem[];
 }
 
 const NOT_PUBLISHED = "not published";
 const NO_ITEMS = "No open items.";
+const SUPPLEMENTARY_HEADING = "Also to verify (not blocking):";
 
 /**
  * The report of the newest readable run. The run, its record and the open items all come from
@@ -83,12 +86,13 @@ function reportFor(dir: string, feature: string, loaded: LoadedRun): WorkflowSta
     ...(record.url === undefined ? {} : { url: record.url }),
     reasons: record.reasons,
     openItems: loaded.openItems,
+    supplementaryItems: loaded.supplementaryItems,
   };
 }
 
 /** The verdict of the newest readable run, or the error that says why there is none. */
-async function buildReport(dir: string, feature: string): Promise<WorkflowStatusReport> {
-  return reportFor(dir, feature, await loadRunVerdict(dir, feature));
+async function buildReport(dir: string, feature: string, forgeDeps: WorkflowForgeDeps): Promise<WorkflowStatusReport> {
+  return reportFor(dir, feature, await loadRunVerdict(dir, feature, forgeDeps.resolveOutputDir));
 }
 
 /** 0 only when the feature is ready with nothing open; anything else needs a human. */
@@ -96,23 +100,26 @@ function exitCodeFor(report: WorkflowStatusReport): number {
   return report.outcome === "ready" && report.openItems.length === 0 ? 0 : 2;
 }
 
+const itemLine = (item: OpenItem): string => `- [${item.kind}] ${item.id} — ${item.issue}`;
+
 function printPlain(report: WorkflowStatusReport, deps: WorkflowCliDeps): void {
   const outcome = report.outcome ?? NOT_PUBLISHED;
   deps.log(`${report.feature}: ${outcome}${report.url ? ` ${report.url}` : ""}`);
-  if (report.openItems.length === 0) {
-    deps.log(NO_ITEMS);
-    return;
-  }
-  for (const item of report.openItems) deps.log(`- [${item.kind}] ${item.id} — ${item.issue}`);
+  if (report.openItems.length === 0) deps.log(NO_ITEMS);
+  for (const item of report.openItems) deps.log(itemLine(item));
+  if (report.supplementaryItems.length === 0) return;
+  deps.log(SUPPLEMENTARY_HEADING);
+  for (const item of report.supplementaryItems) deps.log(itemLine(item));
 }
 
 /** Prints the verdict (or, with `--json`, `{"error": …}`) and returns the exit code. */
 export async function workflowStatusCommand(
   opts: WorkflowStatusOptions,
   deps: WorkflowCliDeps = _workflowCliDeps,
+  forgeDeps: WorkflowForgeDeps = _workflowForgeDeps,
 ): Promise<number> {
   try {
-    const report = await buildReport(opts.dir, opts.feature);
+    const report = await buildReport(opts.dir, opts.feature, forgeDeps);
     if (opts.json) deps.log(JSON.stringify(report));
     else printPlain(report, deps);
     return exitCodeFor(report);
@@ -147,7 +154,9 @@ export function registerWorkflowCommand(
     .option("-d, --dir <path>", "Project directory", process.cwd())
     .option("--json", "Emit one machine-readable JSON document", false)
     .action((o: { dir: string; feature: string; json?: boolean }) =>
-      guarded(deps, () => workflowStatusCommand({ dir: o.dir, feature: o.feature, json: o.json === true }, deps)),
+      guarded(deps, () =>
+        workflowStatusCommand({ dir: o.dir, feature: o.feature, json: o.json === true }, deps, forgeDeps),
+      ),
     );
   group
     .command("record")

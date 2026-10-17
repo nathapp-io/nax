@@ -2,7 +2,10 @@
  * Advisor fixtures — complete `AdviceQuestion` / `AdviceDecision` defaults so a
  * test sets only the fields it asserts on, without a partial-object cast.
  */
+import { appendFile, mkdir } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import type { AdviceDecision, AdviceQuestion } from "@/advisor";
+import { ledgerPath } from "@/advisor";
 
 export function makeAdviceQuestion(overrides: Partial<AdviceQuestion> = {}): AdviceQuestion {
   return {
@@ -34,4 +37,20 @@ export function makeAdviceDecision(overrides: Partial<AdviceDecision> = {}): Adv
     auditRef: "advisor-audit/feat/D-1.json",
     ...overrides,
   };
+}
+
+/**
+ * Appends `decision` to the feature's advisor ledger and writes the audit artifact that makes
+ * `readTrustedDecisions` accept it: `<outputDir>/<auditRef>` recording this very decision.
+ */
+export async function writeTrustedDecision(
+  repoRoot: string,
+  feature: string,
+  outputDir: string,
+  decision: AdviceDecision,
+): Promise<void> {
+  const ledger = ledgerPath(repoRoot, feature);
+  await mkdir(dirname(ledger), { recursive: true });
+  await appendFile(ledger, `${JSON.stringify(decision)}\n`);
+  await Bun.write(join(outputDir, decision.auditRef), JSON.stringify({ result: { decision } }));
 }

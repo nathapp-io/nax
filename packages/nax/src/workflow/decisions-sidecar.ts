@@ -156,9 +156,17 @@ function openIds(items: readonly OpenItem[]): string {
  * exception is an entry of kind `ci` or `minor`: the finishing tool tracks live CI checks and
  * fix-now minors that the run's verdict does not list, so those two kinds may name an id that is no
  * open item. When such an entry does name one, the kind comparison still applies.
+ *
+ * An entry may also name a `supplementary` item (#2578): an advisor decision or a story-level
+ * cannot-verify line the finishing tool rules on although the verdict does not list it. The kind
+ * comparison applies to those too; the unknown-id message still names only the open items.
  */
-export function checkEntriesAgainstItems(entries: readonly DecisionEntry[], items: readonly OpenItem[]): void {
-  const byId = new Map(items.map((item) => [item.id, item] as const));
+export function checkEntriesAgainstItems(
+  entries: readonly DecisionEntry[],
+  items: readonly OpenItem[],
+  supplementary: readonly OpenItem[] = [],
+): void {
+  const byId = new Map([...supplementary, ...items].map((item) => [item.id, item] as const));
   for (const entry of entries) {
     const item = byId.get(entry.id);
     if (item === undefined) {
