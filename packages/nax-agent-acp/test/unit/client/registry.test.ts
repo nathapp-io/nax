@@ -31,14 +31,6 @@ describe("ACP agent registry (S4 spec §6.10)", () => {
   });
 
   test.each<[AcpAgentName, LaunchCandidate[], string[]]>([
-    [
-      "codex",
-      [
-        { command: "codex-acp", args: [] },
-        { command: "npx", args: ["-y", "@agentclientprotocol/codex-acp@~2.1.1"] },
-      ],
-      ["OPENAI_API_KEY"],
-    ],
     ["gemini", [{ command: "gemini", args: ["--acp"] }], ["GEMINI_API_KEY"]],
     ["opencode", [{ command: "opencode", args: ["acp"] }], []],
     [
@@ -57,6 +49,20 @@ describe("ACP agent registry (S4 spec §6.10)", () => {
       defaultMode: undefined,
       preApproval: undefined,
       authEnv,
+    });
+  });
+
+  test("codex: launch candidates and auth env; read-only mode enforcement, no default mode, no pre-approval (nax#2372)", () => {
+    expect(registryEntry("codex")).toEqual({
+      name: "codex",
+      launch: [
+        { command: "codex-acp", args: [] },
+        { command: "npx", args: ["-y", "@agentclientprotocol/codex-acp@~2.1.1"] },
+      ],
+      readOnly: { mode: { configId: "mode", value: "read-only" }, disallowedTools: [], sessionOptions: {} },
+      defaultMode: undefined,
+      preApproval: undefined,
+      authEnv: ["OPENAI_API_KEY"],
     });
   });
 
@@ -86,10 +92,12 @@ describe("ACP agent registry (S4 spec §6.10)", () => {
     expect(Object.isFrozen(ACP_AGENT_NAMES)).toBe(true);
   });
 
-  test("only an agent with a pre-approval channel declares read-only enforcement", () => {
+  test("every entry declaring read-only enforcement sets a mode (nax#2372)", () => {
     for (const name of ACP_AGENT_NAMES) {
       const entry = registryEntry(name);
-      if (entry?.readOnly !== undefined) expect(entry.preApproval).toBeDefined();
+      if (entry?.readOnly === undefined) continue;
+      expect(entry.readOnly.mode.configId).not.toBe("");
+      expect(entry.readOnly.mode.value).not.toBe("");
     }
   });
 });

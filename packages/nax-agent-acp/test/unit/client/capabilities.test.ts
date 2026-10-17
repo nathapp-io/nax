@@ -158,7 +158,7 @@ describe("config options", () => {
     expect(readOnlyFor("read", CLAUDE)).toBe(CLAUDE?.readOnly);
     expect(readOnlyFor("ask", CLAUDE)).toBeUndefined();
     expect(modeFor("ask", registryEntry("codex"))).toBeUndefined();
-    expect(readOnlyFor("none", registryEntry("codex"))).toBeUndefined();
+    expect(readOnlyFor("none", registryEntry("gemini"))).toBeUndefined();
     expect(modeFor("full", undefined)).toBeUndefined();
   });
 
@@ -168,6 +168,26 @@ describe("config options", () => {
     expect(unmetRequirement(customRecord, { profile: "review", toolCount: 0, resume: false })?.capability).toBe(
       "profile",
     );
+  });
+});
+
+describe("codex read-only profiles through its own mode (nax#2372)", () => {
+  const CODEX = registryEntry("codex");
+  const READ_ONLY = { configId: "mode", value: "read-only" };
+  /** An initialize response with no MCP capabilities (codex never delivers embedder tools). */
+  const BARE_INIT: InitializeResponse = { protocolVersion: 1 };
+  const codexRecord: CapabilityRecord = buildCapabilityRecord(BARE_INIT, CODEX);
+
+  test.each(["read", "none", "review"] as const)("modeFor(%p) is codex's read-only mode", (profile) => {
+    expect(modeFor(profile, CODEX)).toEqual(READ_ONLY);
+  });
+
+  test.each(["full", "ask"] as const)("modeFor(%p) leaves codex's launch mode alone", (profile) => {
+    expect(modeFor(profile, CODEX)).toBeUndefined();
+  });
+
+  test.each(["read", "review"] as const)("no unmet requirement for profile %p", (profile) => {
+    expect(unmetRequirement(codexRecord, { profile, toolCount: 0, resume: false })).toBeUndefined();
   });
 });
 
