@@ -69,6 +69,7 @@ export {
 } from "./finish-machine";
 export { makeFixCycleResult, makeIteration } from "./fix-cycle-result";
 export { waitForFile } from "./fs";
+export { type GeminiAcpEnvDeps, stubGeminiAcpEnvDeps } from "./gemini-acp-deps";
 export { type MockInteractionChain, makeInteractionChain } from "./interaction-chain";
 export {
   type CLIInternals,

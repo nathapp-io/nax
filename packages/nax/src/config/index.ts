@@ -95,6 +95,7 @@ export {
   resolveTierMembership,
   toPricing,
 } from "./schema";
+export { DEFAULT_AGENT_GEMINI_ACP_CONFIG } from "./schemas-acp-agents";
 export { ADVISOR_DEFAULTS, isAdvisorCallerEnabled, resolveAdvisorConfig } from "./schemas-advisor";
 export type { CommandSafetyConfig } from "./schemas-command-safety";
 export { CommandSafetyConfigSchema } from "./schemas-command-safety";

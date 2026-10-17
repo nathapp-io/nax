@@ -14,6 +14,8 @@ export interface InMemoryAgent {
   readonly launch: LaunchFn;
   readonly requests: readonly LaunchRequest[];
   callsTo(method: string): readonly unknown[];
+  /** Every recorded request, in the order the agent received them across all launches. */
+  recorded(): readonly FakeRecord[];
   kills(): number;
   terminations(): number;
   crash(code?: number): void;
@@ -64,6 +66,7 @@ export function inMemoryAgent(
     launch,
     requests,
     callsTo: (method) => calls.filter((call) => call.method === method).map((call) => call.params),
+    recorded: () => [...calls],
     kills: () => counts.kills,
     terminations: () => counts.terminations,
     crash: (code = 1) => endLatest({ code, signal: null }),

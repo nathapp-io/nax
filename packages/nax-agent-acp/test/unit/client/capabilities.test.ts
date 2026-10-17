@@ -164,7 +164,7 @@ describe("config options", () => {
     expect(readOnlyFor("read", CLAUDE)).toBe(CLAUDE?.readOnly);
     expect(readOnlyFor("ask", CLAUDE)).toBeUndefined();
     expect(modeFor("ask", registryEntry("codex"))).toBeUndefined();
-    expect(readOnlyFor("none", registryEntry("gemini"))).toBeUndefined();
+    expect(readOnlyFor("none", registryEntry("pi"))).toBeUndefined();
     expect(modeFor("full", undefined)).toBeUndefined();
   });
 
@@ -194,6 +194,26 @@ describe("codex read-only profiles through its own mode (nax#2372)", () => {
 
   test.each(["read", "review"] as const)("no unmet requirement for profile %p", (profile) => {
     expect(unmetRequirement(codexRecord, { profile, toolCount: 0, resume: false })).toBeUndefined();
+  });
+});
+
+describe("gemini read-only profiles through its plan mode (nax#2372)", () => {
+  const GEMINI = registryEntry("gemini");
+  const PLAN = { configId: "mode", value: "plan" };
+  /** An initialize response with no MCP capabilities (gemini never delivers embedder tools). */
+  const BARE_INIT: InitializeResponse = { protocolVersion: 1 };
+  const geminiRecord: CapabilityRecord = buildCapabilityRecord(BARE_INIT, GEMINI);
+
+  test.each(["read", "none", "review"] as const)("modeFor(%p) is gemini's plan mode", (profile) => {
+    expect(modeFor(profile, GEMINI)).toEqual(PLAN);
+  });
+
+  test("modeFor(full) leaves gemini's launch mode alone", () => {
+    expect(modeFor("full", GEMINI)).toBeUndefined();
+  });
+
+  test.each(["read", "review"] as const)("no unmet requirement for profile %p", (profile) => {
+    expect(unmetRequirement(geminiRecord, { profile, toolCount: 0, resume: false })).toBeUndefined();
   });
 });
 

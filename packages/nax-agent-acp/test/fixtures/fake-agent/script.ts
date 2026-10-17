@@ -8,6 +8,7 @@ import type {
   ElicitationSchema,
   PermissionOptionKind,
   SessionConfigOption,
+  SessionModeState,
   SessionUpdate,
   StopReason,
   ToolCallUpdate,
@@ -111,6 +112,14 @@ export interface FakeScript {
   /** Default "fake-session-1". */
   readonly sessionId?: string;
   readonly configOptions?: readonly SessionConfigOption[];
+  /** The legacy `modes` block session/new and the restore answers return (session/set_mode, Gemini). */
+  readonly modes?: SessionModeState;
+  /** The legacy `models` block session/new and the restore answers return: outside the SDK's schemas, so a plain record. */
+  readonly models?: Readonly<Record<string, unknown>>;
+  /** session/set_mode fails with this JSON-RPC error. */
+  readonly setModeFailure?: RpcFailure;
+  /** session/set_model fails with this JSON-RPC error. */
+  readonly setModelFailure?: RpcFailure;
   /** Turns in order; the last repeats. Default: one turn replying "ok". */
   readonly turns?: readonly FakeTurn[];
   /** Subprocess only: variables whose presence the "start" record reports. */
@@ -183,6 +192,26 @@ export const CODEX_CONFIG_OPTIONS: readonly SessionConfigOption[] = [
     ],
   },
 ];
+
+/** Gemini's session modes as its `session/new` answer carries them, without config options. */
+export const GEMINI_SESSION_MODES: SessionModeState = {
+  availableModes: [
+    { id: "default", name: "Default" },
+    { id: "autoEdit", name: "Auto Edit" },
+    { id: "yolo", name: "YOLO" },
+    { id: "plan", name: "Plan" },
+  ],
+  currentModeId: "default",
+};
+
+/** Gemini's session models as its `session/new` answer carries them, without config options. */
+export const GEMINI_SESSION_MODELS: Readonly<Record<string, unknown>> = {
+  availableModels: [
+    { modelId: "auto", name: "Auto" },
+    { modelId: "gemini-3-flash-preview", name: "Gemini 3 Flash Preview" },
+  ],
+  currentModelId: "auto",
+};
 
 /** The script one launch runs: `relaunch` overrides every launch after the first (S4-6 D6-l). */
 export function scriptFor(script: FakeScript, launchIndex: number): FakeScript {

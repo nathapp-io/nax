@@ -11,7 +11,7 @@
  * bounded by initializeTimeoutMs (D-c) and by openSignal: close() during open
  * rejects AGENT_SESSION_CLOSED.
  */
-import { type ClientCapabilities, PROTOCOL_VERSION, type SessionConfigOption } from "@agentclientprotocol/sdk";
+import { type ClientCapabilities, PROTOCOL_VERSION } from "@agentclientprotocol/sdk";
 import {
   type AgentSessionProfile,
   type BackendOpenContext,
@@ -53,6 +53,7 @@ import {
   restoreSession,
   type SessionSetup,
 } from "#src/client/resume";
+import { type SessionOffers, sessionOffers } from "#src/client/session-offers";
 import { cleanLabel } from "#src/client/text";
 import type { ToolHost } from "#src/client/tool-host";
 
@@ -80,7 +81,7 @@ interface Opening {
 interface Established {
   readonly agentSessionId: string;
   readonly cwd: string;
-  readonly configOptions: readonly SessionConfigOption[];
+  readonly offers: SessionOffers;
   readonly restoredWith?: RestoredWith;
 }
 
@@ -198,7 +199,7 @@ async function establish(o: Opening): Promise<OpenedAcp> {
     o.restore === undefined
       ? await newSession(o, setup)
       : await restoreSession(o.restore, record, setup, o.link, (label, request) => step(o, label, request));
-  await applyConfig(o, session.agentSessionId, session.configOptions);
+  await applyConfig(o, session.agentSessionId, session.offers);
   if (o.restore === undefined) {
     await o.ctx.transcriptStore.save(o.ctx.sessionId, initialDoc(o, record, session.agentSessionId));
   }
@@ -215,7 +216,7 @@ async function establish(o: Opening): Promise<OpenedAcp> {
 async function newSession(o: Opening, setup: SessionSetup): Promise<Established> {
   const created = await step(o, "session/new", o.link.newSession({ cwd: o.ctx.workdir, ...setup }));
   if (!isUsableSessionId(created.sessionId)) throw backendUnavailable("session/new returned no usable session id");
-  return { agentSessionId: created.sessionId, cwd: o.ctx.workdir, configOptions: created.configOptions ?? [] };
+  return { agentSessionId: created.sessionId, cwd: o.ctx.workdir, offers: sessionOffers(created) };
 }
 
 /**
@@ -255,64 +256,81 @@ async function sessionSetup(o: Opening, sandbox: SandboxPolicy | undefined): Pro
 }
 
 /** §6.3 step 5: the profile's mode, then the model, then the effort (S4b). Only values the agent offered are set. */
-async function applyConfig(o: Opening, sessionId: string, offered: readonly SessionConfigOption[]): Promise<void> {
-  const afterMode = await applyMode(o, sessionId, offered);
+async function applyConfig(o: Opening, sessionId: string, offers: SessionOffers): Promise<void> {
+  const afterMode = await applyMode(o, sessionId, offers);
   const afterModel = await applyModel(o, sessionId, afterMode);
   await applyEffort(o, sessionId, afterModel);
 }
 
-async function applyMode(
-  o: Opening,
-  sessionId: string,
-  offered: readonly SessionConfigOption[],
-): Promise<readonly SessionConfigOption[]> {
+/**
+ * The profile's mode. A config option offering the value is used first (the ACP 1.x
+ * way); an agent that offers it only in its legacy `modes` block (Gemini) gets
+ * session/set_mode, whose request carries the mode id alone and no config id. A mode
+ * neither offers refuses the open.
+ */
+async function applyMode(o: Opening, sessionId: string, offers: SessionOffers): Promise<SessionOffers> {
   const mode = modeFor(o.ctx.profile, o.options.entry);
-  if (mode === undefined) return offered;
-  if (!offersValue(offered, mode.configId, mode.value)) {
-    throw capabilityUnsupported("profile", `the agent does not offer ${mode.configId} "${mode.value}"`);
+  if (mode === undefined) return offers;
+  if (offersValue(offers.configOptions, mode.configId, mode.value)) {
+    const set = await step(o, "session/set_config_option", o.link.setConfigOption({ sessionId, ...mode }));
+    return { ...offers, configOptions: set.configOptions ?? offers.configOptions };
   }
-  const set = await step(o, "session/set_config_option", o.link.setConfigOption({ sessionId, ...mode }));
-  return set.configOptions ?? offered;
+  if (offers.modeIds.includes(mode.value)) {
+    await step(o, "session/set_mode", o.link.setMode({ sessionId, modeId: mode.value }));
+    return offers;
+  }
+  throw capabilityUnsupported("profile", `the agent does not offer ${mode.configId} "${mode.value}"`);
 }
 
 /** At most this many offered ids, each cleaned and capped, go into a model refusal (agent-supplied text). */
 const MAX_OFFERED_MODELS = 50;
 const MAX_MODEL_ID_CHARS = 100;
 
-function offeredModels(offered: readonly SessionConfigOption[], secrets: readonly string[]): string[] {
-  return offered
+/** The model ids a refusal names: the config options' ids first, then the legacy `models` block's, capped. */
+function offeredModels(offers: SessionOffers, secrets: readonly string[]): string[] {
+  const fromOptions = offers.configOptions
     .filter((option) => option.category === "model")
-    .flatMap((option) => selectValues(option))
+    .flatMap((option) => selectValues(option));
+  return [...fromOptions, ...offers.modelIds]
     .slice(0, MAX_OFFERED_MODELS)
     .map((id) => cleanLabel(id, secrets, MAX_MODEL_ID_CHARS) ?? "")
     .filter((id) => id !== "");
 }
 
-async function applyModel(
-  o: Opening,
-  sessionId: string,
-  offered: readonly SessionConfigOption[],
-): Promise<readonly SessionConfigOption[]> {
+/**
+ * The requested model: through a config option when one offers it (the ACP 1.x way),
+ * else through the legacy session/set_model; an agent offering it in neither refuses
+ * the open, naming every id it does offer.
+ */
+async function applyModel(o: Opening, sessionId: string, offers: SessionOffers): Promise<SessionOffers> {
   const model = o.options.model;
-  if (model === undefined) return offered;
-  const configId = modelOptionId(offered, model);
-  if (configId === undefined) {
-    const ids = offeredModels(offered, o.options.secrets);
-    throw capabilityUnsupported(
-      "model",
-      `the agent offers no model option "${model}"; offered: ${ids.length === 0 ? "(none)" : ids.join(", ")}`,
-      { offered: ids },
+  if (model === undefined) return offers;
+  const configId = modelOptionId(offers.configOptions, model);
+  if (configId !== undefined) {
+    const set = await step(
+      o,
+      "session/set_config_option",
+      o.link.setConfigOption({ sessionId, configId, value: model }),
     );
+    return { ...offers, configOptions: set.configOptions ?? offers.configOptions };
   }
-  const set = await step(o, "session/set_config_option", o.link.setConfigOption({ sessionId, configId, value: model }));
-  return set.configOptions ?? offered;
+  if (offers.modelIds.includes(model)) {
+    await step(o, "session/set_model", o.link.setModel({ sessionId, modelId: model }));
+    return offers;
+  }
+  const ids = offeredModels(offers, o.options.secrets);
+  throw capabilityUnsupported(
+    "model",
+    `the agent offers no model option "${model}"; offered: ${ids.length === 0 ? "(none)" : ids.join(", ")}`,
+    { offered: ids },
+  );
 }
 
 /** S4b spec §6.7: an effort the agent does not offer is skipped with a warning, as acpx does. */
-async function applyEffort(o: Opening, sessionId: string, offered: readonly SessionConfigOption[]): Promise<void> {
+async function applyEffort(o: Opening, sessionId: string, offers: SessionOffers): Promise<void> {
   const effort = o.options.effort;
   if (effort === undefined) return;
-  const configId = effortOptionId(offered, o.options.agentName, effort);
+  const configId = effortOptionId(offers.configOptions, o.options.agentName, effort);
   if (configId === undefined) {
     getLogger().warn("acp", "The agent offers no effort option for this value; effort skipped", {
       agent: o.options.agentName,

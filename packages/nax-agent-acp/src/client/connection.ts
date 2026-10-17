@@ -28,8 +28,13 @@ import {
   type SessionNotification,
   type SetSessionConfigOptionRequest,
   type SetSessionConfigOptionResponse,
+  type SetSessionModeRequest,
+  type SetSessionModeResponse,
 } from "@agentclientprotocol/sdk";
 import type { LaunchTarget } from "#src/client/launch";
+
+/** The legacy model method (Gemini); ACP 1.x's method table does not carry it. */
+export const SET_MODEL_METHOD = "session/set_model";
 
 export interface InboundHandlers {
   onUpdate(notification: SessionNotification): void;
@@ -43,6 +48,10 @@ export interface AcpLink {
   resumeSession(params: ResumeSessionRequest): Promise<ResumeSessionResponse>;
   loadSession(params: LoadSessionRequest): Promise<LoadSessionResponse>;
   setConfigOption(params: SetSessionConfigOptionRequest): Promise<SetSessionConfigOptionResponse>;
+  /** The legacy mode method an agent offering only a `modes` block understands (Gemini). */
+  setMode(params: SetSessionModeRequest): Promise<SetSessionModeResponse>;
+  /** The legacy model method (`SET_MODEL_METHOD`), whose answer carries nothing nax reads. */
+  setModel(params: { readonly sessionId: string; readonly modelId: string }): Promise<unknown>;
   prompt(params: PromptRequest): Promise<PromptResponse>;
   cancel(sessionId: string): Promise<void>;
   closeSession(sessionId: string): Promise<void>;
@@ -66,6 +75,8 @@ export function openConnection(target: LaunchTarget, handlers: InboundHandlers):
     resumeSession: (params) => agent.request(methods.agent.session.resume, params),
     loadSession: (params) => agent.request(methods.agent.session.load, params),
     setConfigOption: (params) => agent.request(methods.agent.session.setConfigOption, params),
+    setMode: (params) => agent.request(methods.agent.session.setMode, params),
+    setModel: (params) => agent.request(SET_MODEL_METHOD, params),
     prompt: (params) => agent.request(methods.agent.session.prompt, params),
     cancel: (sessionId) => agent.notify(methods.agent.session.cancel, { sessionId }),
     closeSession: async (sessionId) => {

@@ -12,17 +12,13 @@
  */
 import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
-import type {
-  LoadSessionResponse,
-  McpServer,
-  ResumeSessionResponse,
-  SessionConfigOption,
-} from "@agentclientprotocol/sdk";
+import type { LoadSessionResponse, McpServer, ResumeSessionResponse } from "@agentclientprotocol/sdk";
 import { AgentSessionError, type BackendOpenContext, NaxError, type TranscriptDoc } from "@nathapp/nax-agent";
 import type { CapabilityRecord } from "#src/client/capabilities";
 import type { AcpLink } from "#src/client/connection";
 import { capabilityUnsupported } from "#src/client/errors";
 import type { ResolvedAcpOptions } from "#src/client/options";
+import { type SessionOffers, sessionOffers } from "#src/client/session-offers";
 import { isRecord } from "#src/client/text";
 
 /** An agent session id longer than this is not trusted (S4-2 Review Focus 5). */
@@ -42,7 +38,8 @@ export type RestoredWith = "resume" | "load";
 export interface RestoredSession {
   readonly agentSessionId: string;
   readonly cwd: string;
-  readonly configOptions: readonly SessionConfigOption[];
+  /** What the resume/load answer offers a profile: config options and the legacy blocks (session-offers.ts). */
+  readonly offers: SessionOffers;
   readonly restoredWith: RestoredWith;
 }
 
@@ -118,7 +115,7 @@ export function storedSessionOf(doc: TranscriptDoc, ctx: BackendOpenContext, opt
   return { agentSessionId: acp.agentSessionId, cwd: acp.cwd, costUsd: costOf(acp.costUsd) };
 }
 
-/** §6.9 step 3 (D6-d): an echoed id must be the stored one. A null answer (D6-k) has no config options. */
+/** §6.9 step 3 (D6-d): an echoed id must be the stored one. A null answer (D6-k) offers nothing. */
 export function checkRestored(
   restore: Restore,
   via: RestoredWith,
@@ -135,7 +132,7 @@ export function checkRestored(
   return {
     agentSessionId: restore.agentSessionId,
     cwd: restore.cwd,
-    configOptions: isRecord(raw) ? (response.configOptions ?? []) : [],
+    offers: sessionOffers(raw),
     restoredWith: via,
   };
 }

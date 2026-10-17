@@ -1,9 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   ACP_AGENT_NAMES,
-  type AcpAgentName,
   isAcpAgentName,
-  type LaunchCandidate,
   OPENCODE_NONE_CONFIG,
   OPENCODE_READ_CONFIG,
   OPENCODE_REVIEW_CONFIG,
@@ -34,25 +32,48 @@ describe("ACP agent registry (S4 spec §6.10)", () => {
     });
   });
 
-  test.each<[AcpAgentName, LaunchCandidate[], string[]]>([
-    ["gemini", [{ command: "gemini", args: ["--acp"] }], ["GEMINI_API_KEY"]],
-    [
-      "pi",
-      [
+  test("pi: launch candidates and auth env; no read-only enforcement, no pre-approval", () => {
+    expect(registryEntry("pi")).toEqual({
+      name: "pi",
+      launch: [
         { command: "pi-acp", args: [] },
         { command: "npx", args: ["-y", "pi-acp@0.0.34"] },
       ],
-      [],
-    ],
-  ])("%s: launch candidates and auth env; no read-only enforcement, no pre-approval", (name, launch, authEnv) => {
-    expect(registryEntry(name)).toEqual({
-      name,
-      launch,
       readOnly: undefined,
       defaultMode: undefined,
       preApproval: undefined,
-      authEnv,
+      authEnv: [],
     });
+  });
+
+  test("gemini: launch candidates and auth env", () => {
+    expect(registryEntry("gemini")).toEqual({
+      name: "gemini",
+      launch: [{ command: "gemini", args: ["--acp"] }],
+      readOnly: {
+        mode: { configId: "mode", value: "plan" },
+        disallowedTools: [],
+        sessionOptions: {},
+        launchEnv: {},
+      },
+      defaultMode: undefined,
+      preApproval: undefined,
+      authEnv: ["GEMINI_API_KEY"],
+    });
+  });
+
+  test("gemini: none, read and review are enforced by its plan mode", () => {
+    expect(registryEntry("gemini")?.readOnly).toEqual({
+      mode: { configId: "mode", value: "plan" },
+      disallowedTools: [],
+      sessionOptions: {},
+      launchEnv: {},
+    });
+  });
+
+  test("gemini declares no default mode and no pre-approval channel", () => {
+    expect(registryEntry("gemini")?.defaultMode).toBeUndefined();
+    expect(registryEntry("gemini")?.preApproval).toBeUndefined();
   });
 
   test("codex: launch candidates and auth env; read-only mode enforcement, no default mode, no pre-approval (nax#2372)", () => {

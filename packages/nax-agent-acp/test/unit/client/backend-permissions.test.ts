@@ -135,13 +135,13 @@ describe("profiles none and read (spec §6.4)", () => {
   test.each(["read", "none"] as const)(
     "%s on an agent without a read-only mode: refused after initialize",
     async (profile) => {
-      // gemini has no read-only enforcement; codex does now (nax#2372) and is not the subject here.
+      // pi has no read-only enforcement; gemini enforces it through plan mode now (nax#2372).
       const fake = inMemoryAgent({});
       _acpBackendDeps.launch = fake.launch;
       const err = sessionError(
         await rejection(
           createAgentSession({
-            backend: acpBackend({ agent: "gemini", allowUnsandboxed: true, command: "fake-gemini" }),
+            backend: acpBackend({ agent: "pi", allowUnsandboxed: true, command: "fake-pi" }),
             profile,
             ...(profile === "none" ? {} : { workdir }),
             transcriptStore: createMemoryTranscriptStore(),

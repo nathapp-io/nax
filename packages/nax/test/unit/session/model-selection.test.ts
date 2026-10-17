@@ -37,7 +37,11 @@ describe("selectModel", () => {
   test("US-002: the settings argument adds the codex env to the SessionModel def", () => {
     const out = selectModel(
       { modelDef: { provider: "openai", model: "gpt", env: { A: "1" } }, agentName: "codex" },
-      { codex: { isolateHome: false, fullMode: "agent-full-access" }, opencode: { isolateConfig: false } },
+      {
+        codex: { isolateHome: false, fullMode: "agent-full-access" },
+        opencode: { isolateConfig: false },
+        gemini: { isolateHome: false },
+      },
     );
 
     expect(out.modelDef.env).toEqual({ A: "1", INITIAL_AGENT_MODE: "agent-full-access" });
@@ -46,7 +50,11 @@ describe("selectModel", () => {
   test("US-002: settings for a non-codex agent leave the model def alone", () => {
     const out = selectModel(
       { modelDef: { provider: "anthropic", model: "claude-haiku", env: {} }, agentName: "claude" },
-      { codex: { isolateHome: true, fullMode: "agent-full-access" }, opencode: { isolateConfig: false } },
+      {
+        codex: { isolateHome: true, fullMode: "agent-full-access" },
+        opencode: { isolateConfig: false },
+        gemini: { isolateHome: false },
+      },
     );
 
     expect(out.modelDef.env).toEqual({});

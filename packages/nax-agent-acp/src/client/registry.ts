@@ -144,7 +144,22 @@ const REGISTRY: ReadonlyMap<AcpAgentName, AgentRegistryEntry> = new Map([
       preApproval: undefined,
     }),
   ],
-  ["gemini", entry("gemini", [local("gemini", "--acp")], ["GEMINI_API_KEY"])],
+  // nax#2372: gemini's `plan` mode is its read-only mode (read tools only, no shell
+  // tool). It has no pre-approval channel, so no settings and no removed tools ride
+  // along; full and ask keep the launch mode.
+  [
+    "gemini",
+    entry("gemini", [local("gemini", "--acp")], ["GEMINI_API_KEY"], {
+      readOnly: {
+        mode: { configId: "mode", value: "plan" },
+        disallowedTools: [],
+        sessionOptions: {},
+        launchEnv: {},
+      },
+      defaultMode: undefined,
+      preApproval: undefined,
+    }),
+  ],
   // nax#2372: opencode has no read-only mode (its `plan` agent still runs shell and web
   // tools). Enforcement is its own permission config, injected per profile as an env
   // variable: opencode denies every tool, then allows its read tools back for read and
