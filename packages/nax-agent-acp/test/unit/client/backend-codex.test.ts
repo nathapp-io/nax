@@ -279,6 +279,14 @@ describe("a deny that makes the agent cancel its turn is continued (nax#2582)", 
     expect(prompts(o)).toHaveLength(2);
   });
 
+  test("a denied request is work: an empty, unpriced continuation still completes (nax#2591)", async () => {
+    const o = await open("read", {
+      script: { turns: [{ steps: [RUN], stopReason: "cancelled" }, { steps: [] }] },
+    });
+    expect(endOf(await driveTurn(o.session, "write a file"))).toMatchObject({ status: "completed", output: "" });
+    expect(prompts(o)).toHaveLength(2);
+  });
+
   test(`bounded: after ${MAX_DENIED_CONTINUATIONS} continuations the turn ends ACP_STOP_CANCELLED`, async () => {
     const o = await open("read", { script: { turns: [DENIED_THEN_CANCELLED] } });
     const events = await driveTurn(o.session, "write a file");

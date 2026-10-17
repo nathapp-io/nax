@@ -109,6 +109,8 @@ export interface FakeScript {
   readonly hangInitialize?: boolean;
   readonly initializeFailure?: RpcFailure;
   readonly newSessionFailure?: RpcFailure;
+  /** The `_meta` session/new answers with (pi-acp's `piAcp.startupInfo`, nax#2591). */
+  readonly newSessionMeta?: Readonly<Record<string, unknown>>;
   /** Default "fake-session-1". */
   readonly sessionId?: string;
   readonly configOptions?: readonly SessionConfigOption[];

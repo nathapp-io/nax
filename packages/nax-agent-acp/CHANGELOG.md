@@ -3,6 +3,14 @@
 All notable changes to `@nathapp/nax-agent-acp` are recorded here. Versions move in
 step with `@nathapp/nax-agent`.
 
+## [Unreleased]
+
+- A turn that ends `end_turn` with no reply text, thought or tool call and no tokens now
+  ends `errored` with `ACP_EMPTY_TURN`, instead of `completed` with an empty answer. pi-acp
+  ends a turn this way when pi's model call fails at the provider (nax#2591).
+- pi-acp's startup banner (`_meta.piAcp.startupInfo` on `session/new`) is no longer part of
+  the first turn's output or text deltas (nax#2591).
+
 ## [0.90.1] - 2026-10-17
 
 - No changes in this package. Released in lockstep with the other nax packages.

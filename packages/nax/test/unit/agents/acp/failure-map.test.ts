@@ -100,6 +100,7 @@ describe("classifyTurnFailure: the §7.1 code rows (S4b-3)", () => {
     ["max tokens", new NaxError("t", "ACP_STOP_MAX_TOKENS"), "fail-incomplete", "quality", false],
     ["max turn requests", new NaxError("t", "ACP_STOP_MAX_TURN_REQUESTS"), "fail-incomplete", "quality", false],
     ["refusal", new NaxError("r", "ACP_STOP_REFUSAL"), "fail-quality", "quality", false],
+    ["empty turn (nax#2591)", new NaxError("e", "ACP_EMPTY_TURN"), "fail-service-down", "availability", false],
     [
       "turn failed",
       new NaxError("f", "AGENT_SESSION_TURN_FAILED", { rpcCode: -32603 }),
