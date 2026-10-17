@@ -126,9 +126,14 @@ export function wireHooks(
   // run:completed → on-complete
   unsubs.push(
     bus.on("run:completed", (ev) => {
-      return safe("on-complete", () =>
-        fireHook(hooks, "on-complete", hookCtx(feature, { status: "complete", cost: ev.totalCost ?? 0 }), workdir),
-      );
+      // Emitted after the end phase: a workflow that did not pass reports failed, with why and the PR.
+      const ctx = hookCtx(feature, {
+        status: ev.workflowPassed === false ? "failed" : "complete",
+        cost: ev.totalCost ?? 0,
+        ...(ev.reasons?.length ? { reason: ev.reasons.join("; ") } : {}),
+        ...(ev.url !== undefined ? { url: ev.url } : {}),
+      });
+      return safe("on-complete", () => fireHook(hooks, "on-complete", ctx, workdir));
     }),
   );
 

@@ -126,6 +126,7 @@ describe("runCompletionPhase — Duration in pipeline mode (nax#2494)", () => {
         endPhaseDurationMs: FINISH_MS,
         totalCost: 4.25,
         workflowPassed: true,
+        reasons: [],
       },
     ]);
   });

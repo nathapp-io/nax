@@ -37,7 +37,7 @@ Integrate notifications, CI triggers, or custom scripts via lifecycle hooks.
 | `on-session-end` | An agent session ends (per-session teardown) |
 | `on-all-stories-complete` | All stories passed — regression gate pending *(v0.34.0)* |
 | `on-final-regression-fail` | Deferred regression failed after rectification *(v0.34.0)* |
-| `on-complete` | Everything finished and verified (including regression gate) |
+| `on-complete` | The run finished: fires after the end phase (finish or the feature workflow), with whole-run cost |
 | `on-error` | Unhandled error terminates the run |
 | `on-post-run-action` | A post-run plugin action succeeds, fails, skips, or throws |
 
@@ -51,7 +51,7 @@ on-start
        └─ on-all-stories-complete                            ← all stories done
             └─ deferred regression gate (if enabled)
                  └─ on-final-regression-fail                 ← if regression fails
-       └─ on-complete                                        ← everything verified
+       └─ on-complete                                        ← after the end phase
             └─ on-post-run-action                            ← once per action during cleanup
 ```
 
@@ -68,18 +68,20 @@ Each hook receives context via `NAX_*` environment variables and full JSON on st
 | `NAX_EVENT` | Event name (e.g., `on-story-complete`) |
 | `NAX_FEATURE` | Feature name |
 | `NAX_STORY_ID` | Current story ID (if applicable) |
-| `NAX_STATUS` | Status (`pass`, `fail`, `paused`, `error`) |
-| `NAX_REASON` | Reason for pause or error |
+| `NAX_STATUS` | Status (`pass`, `fail`, `paused`, `error`; `complete` or `failed` for `on-complete`) |
+| `NAX_REASON` | Reason for pause or error; for `on-complete`, the end-phase reasons joined with `; ` |
 | `NAX_COST` | Accumulated cost in USD |
 | `NAX_MODEL` | Current model |
 | `NAX_AGENT` | Current agent |
 | `NAX_ITERATION` | Current iteration number |
 | `NAX_PLUGIN_NAME` | Plugin that owns the settled post-run action |
 | `NAX_ACTION_NAME` | Settled post-run action name |
-| `NAX_RESULT_URL` | URL returned by the action, when present |
+| `NAX_RESULT_URL` | URL returned by the action, or the PR the end phase opened (`on-complete`), when present |
 
 For `on-post-run-action`, `NAX_STATUS` is one of `succeeded`, `failed`, `skipped`, or `error`. `NAX_REASON`
 contains the action message, skip reason, or thrown error. The hook is non-blocking and fires exactly once for every
 registered action, including actions whose `shouldRun()` returns `false`.
+
+For `on-complete`, the hook fires once, after the end phase, so `NAX_COST` is the whole-run cost (the finish or feature workflow spend included). `NAX_STATUS` is `complete`, or `failed` when the feature workflow did not pass. On a failed workflow `NAX_REASON` carries the reasons joined with `; `; `NAX_RESULT_URL` carries the PR when one was opened. Neither variable is set when there is nothing to report, nor when an earlier step of the completion phase failed before the end phase closed.
 
 **Global vs project hooks:** Global hooks (`~/.nax/hooks.json`) fire alongside project hooks. Set `"skipGlobal": true` in your project `hooks.json` to disable global hooks.
