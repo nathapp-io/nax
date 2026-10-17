@@ -3,7 +3,7 @@
   "feature": "hooks-run-end-workflow-events",
   "branchName": "feat/hooks-run-end-workflow-events",
   "createdAt": "2026-10-18T00:00:00Z",
-  "updatedAt": "2026-10-17T10:58:17.079Z",
+  "updatedAt": "2026-10-17T11:19:18.901Z",
   "userStories": [
     {
       "id": "US-001",
@@ -224,8 +224,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -237,7 +237,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "native",
         "initialProfileId": "native-deepseek",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/feature.ts",
@@ -271,7 +273,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "778273412dbf8f60a104ed8ef41799baf9cc4c6d"
     },
     {
       "id": "US-004",
