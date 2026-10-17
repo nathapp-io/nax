@@ -10,6 +10,7 @@ import {
   type AgentSessionProfile,
   createAgentSession,
   createMemoryTranscriptStore,
+  resumeAgentSession,
 } from "@nathapp/nax-agent";
 import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
 import { _acpBackendDeps, acpBackend } from "#src/client/backend";
@@ -44,6 +45,7 @@ interface OpenOptions {
   readonly profile?: AgentSessionProfile;
   readonly model?: string;
   readonly script?: FakeScript;
+  readonly rules?: AcpBackendOptions["rules"];
 }
 
 interface Opened {
@@ -51,12 +53,13 @@ interface Opened {
   readonly session: AgentSession;
 }
 
-function backendFor(agent: AcpBackendOptions["agent"], model: string | undefined) {
+function backendFor(agent: AcpBackendOptions["agent"], options: OpenOptions) {
   return acpBackend({
     agent,
     allowUnsandboxed: true,
     command: `fake-${typeof agent === "string" ? agent : agent.name}`,
-    ...(model === undefined ? {} : { model }),
+    ...(options.model === undefined ? {} : { model: options.model }),
+    ...(options.rules === undefined ? {} : { rules: options.rules }),
   });
 }
 
@@ -66,7 +69,7 @@ function launched(profile: AgentSessionProfile, options: OpenOptions) {
   const fake = inMemoryAgent({ agentInfo: { name: `${String(agent)}-acp`, version: "1.0.0" }, ...options.script });
   _acpBackendDeps.launch = fake.launch;
   const opened = createAgentSession({
-    backend: backendFor(agent, options.model),
+    backend: backendFor(agent, options),
     profile,
     workdir,
     transcriptStore: createMemoryTranscriptStore(),
@@ -219,5 +222,52 @@ describe("a Cursor read-only profile runs in its ask mode (US-001)", () => {
   test("AC-19: profile full sets no mode at all", async () => {
     const o = await open("full", { script: { configOptions: CURSOR_CONFIG_OPTIONS } });
     expect(configCallsFor(o, ["mode"])).toEqual([]);
+  });
+});
+
+describe("Cursor review with an operator Bash allow rule runs in agent mode (nax#2592)", () => {
+  const BASH_ALLOW: AcpBackendOptions["rules"] = { allow: [{ tool: "Bash", patterns: ["echo *"] }] };
+
+  test("review + Bash allow sets mode agent exactly once", async () => {
+    const o = await open("review", { rules: BASH_ALLOW, script: { configOptions: CURSOR_CONFIG_OPTIONS } });
+    expect(configCallsFor(o, ["mode"])).toEqual([{ sessionId: AGENT_SESSION_ID, configId: "mode", value: "agent" }]);
+  });
+
+  test("review without a Bash allow rule keeps mode ask", async () => {
+    const o = await open("review", { script: { configOptions: CURSOR_CONFIG_OPTIONS } });
+    expect(configCallsFor(o, ["mode"])).toEqual([{ sessionId: AGENT_SESSION_ID, configId: "mode", value: "ask" }]);
+  });
+
+  test("a resumed review session with a Bash allow rule sets mode agent again", async () => {
+    const script: FakeScript = { configOptions: CURSOR_CONFIG_OPTIONS, capabilities: { loadSession: true } };
+    const store = createMemoryTranscriptStore();
+    const first = inMemoryAgent({ agentInfo: { name: "cursor-acp", version: "1.0.0" }, ...script });
+    _acpBackendDeps.launch = first.launch;
+    const opened = await createAgentSession({
+      backend: backendFor("cursor", { rules: BASH_ALLOW }),
+      profile: "review",
+      workdir,
+      transcriptStore: store,
+      sessionId: "s-1",
+    });
+    await opened.close();
+    const fake = inMemoryAgent({ agentInfo: { name: "cursor-acp", version: "1.0.0" }, ...script });
+    _acpBackendDeps.launch = fake.launch;
+    const session = await resumeAgentSession("s-1", {
+      backend: backendFor("cursor", { rules: BASH_ALLOW }),
+      profile: "review",
+      workdir,
+      transcriptStore: store,
+    });
+    sessions.push(session);
+    expect(fake.callsTo("session/load")).toHaveLength(1);
+    expect(configCallsFor({ fake, session }, ["mode"])).toEqual([
+      { sessionId: AGENT_SESSION_ID, configId: "mode", value: "agent" },
+    ]);
+  });
+
+  test("read + Bash allow keeps mode ask", async () => {
+    const o = await open("read", { rules: BASH_ALLOW, script: { configOptions: CURSOR_CONFIG_OPTIONS } });
+    expect(configCallsFor(o, ["mode"])).toEqual([{ sessionId: AGENT_SESSION_ID, configId: "mode", value: "ask" }]);
   });
 });

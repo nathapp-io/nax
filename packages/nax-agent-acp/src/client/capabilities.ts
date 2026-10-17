@@ -9,6 +9,7 @@ import type { InitializeResponse, SessionConfigOption } from "@agentclientprotoc
 import type { AgentSessionProfile } from "@nathapp/nax-agent";
 import { capabilityUnsupported } from "#src/client/errors";
 import type { AgentRegistryEntry, ModeSetting, ReadOnlyEnforcement } from "#src/client/registry";
+import type { AcpPermissionRules } from "#src/client/rule-policy";
 import { cleanLabel } from "#src/client/text";
 
 const LABEL_MAX_CHARS = 200;
@@ -166,9 +167,30 @@ export function readOnlyFor(
   return isReadOnlyProfile(profile) ? entry?.readOnly : undefined;
 }
 
-/** The mode a profile selects (§6.4 layer 1): the read-only entry's for none/read, the default mode otherwise. */
-export function modeFor(profile: AgentSessionProfile, entry: AgentRegistryEntry | undefined): ModeSetting | undefined {
-  return isReadOnlyProfile(profile) ? entry?.readOnly?.mode : entry?.defaultMode;
+/**
+ * Whether nax decides this profile's shell requests by the operator's Bash rules:
+ * only `review` has a shell tool to police, and only when a Bash allow rule could
+ * ever allow a command (an unconditional allow is not needed: each command is asked
+ * of nax, shell-rules.ts). `read` keeps no shell tool, `none` no tool. It gates pi's
+ * shell gate (rule-policy.ts) and Cursor's review mode (nax#2372, nax#2592).
+ */
+export function reviewDecidesShell(profile: AgentSessionProfile, rules: AcpPermissionRules | undefined): boolean {
+  return profile === "review" && (rules?.allow.some((rule) => rule.tool === "Bash") ?? false);
+}
+
+/**
+ * The mode a profile selects (§6.4 layer 1): the read-only entry's for none/read/review,
+ * the default mode otherwise. Under `review` with a Bash allow rule, an entry's
+ * `reviewShellMode` wins (nax#2592).
+ */
+export function modeFor(
+  profile: AgentSessionProfile,
+  entry: AgentRegistryEntry | undefined,
+  rules?: AcpPermissionRules,
+): ModeSetting | undefined {
+  if (!isReadOnlyProfile(profile)) return entry?.defaultMode;
+  const shellMode = reviewDecidesShell(profile, rules) ? entry?.readOnly?.reviewShellMode : undefined;
+  return shellMode ?? entry?.readOnly?.mode;
 }
 
 /**

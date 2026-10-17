@@ -9,6 +9,7 @@ import {
   modelOptionId,
   offersValue,
   readOnlyFor,
+  reviewDecidesShell,
   selectValues,
   unmetRequirement,
 } from "#src/client/capabilities";
@@ -18,6 +19,7 @@ import {
   OPENCODE_REVIEW_CONFIG,
   registryEntry,
 } from "#src/client/registry";
+import type { AcpPermissionRules } from "#src/client/rule-policy";
 
 const CLAUDE = registryEntry("claude");
 
@@ -293,5 +295,37 @@ describe("effortOptionId (S4b spec §6.7, §8)", () => {
 
   test("an inherited object key is not an agent fallback", () => {
     expect(effortOptionId([select("toString", undefined, ["high"])], "toString", "high")).toBeUndefined();
+  });
+});
+
+describe("Cursor review with operator Bash rules runs in agent mode (nax#2592)", () => {
+  const CURSOR = registryEntry("cursor");
+  const ASK = { configId: "mode", value: "ask" };
+  const AGENT = { configId: "mode", value: "agent" };
+  const rules = (over: Partial<AcpPermissionRules>): AcpPermissionRules => ({ allow: [], deny: [], ask: [], ...over });
+  const BASH_ALLOW = rules({ allow: [{ tool: "Bash", patterns: ["echo *"] }] });
+
+  test("review with a Bash allow rule: agent mode, so the model asks nax instead of refusing to try", () => {
+    expect(modeFor("review", CURSOR, BASH_ALLOW)).toEqual(AGENT);
+    expect(reviewDecidesShell("review", BASH_ALLOW)).toBe(true);
+  });
+
+  test.each<[string, AcpPermissionRules | undefined]>([
+    ["no rules", undefined],
+    ["only a Bash deny", rules({ deny: [{ tool: "Bash", patterns: ["rm *"] }] })],
+    ["only a Bash ask", rules({ ask: [{ tool: "Bash", patterns: ["git *"] }] })],
+    ["a Read allow", rules({ allow: [{ tool: "Read", patterns: ["*"] }] })],
+  ])("review with %s keeps ask mode", (_, given) => {
+    expect(modeFor("review", CURSOR, given)).toEqual(ASK);
+  });
+
+  test.each(["none", "read"] as const)("%p keeps ask mode even with a Bash allow rule", (profile) => {
+    expect(modeFor(profile, CURSOR, BASH_ALLOW)).toEqual(ASK);
+    expect(reviewDecidesShell(profile, BASH_ALLOW)).toBe(false);
+  });
+
+  test("full sets no mode, and an agent without reviewShellMode keeps its read-only mode", () => {
+    expect(modeFor("full", CURSOR, BASH_ALLOW)).toBeUndefined();
+    expect(modeFor("review", registryEntry("gemini"), BASH_ALLOW)).toEqual({ configId: "mode", value: "plan" });
   });
 });

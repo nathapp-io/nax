@@ -5,6 +5,12 @@ step with `@nathapp/nax-agent`.
 
 ## [Unreleased]
 
+- Cursor under `review` runs in its `agent` mode when the caller has a `Bash` allow rule,
+  instead of `ask`, whose prompt made the model refuse to try any shell command, so the
+  operator's allowed commands never reached nax. Writes stay denied by the isolated
+  `cli-config.json`, and nax still decides every shell request (nax#2592). In `agent` mode the
+  model does try to write, so a repository `.cursor/cli.json` that allows writes (already a known,
+  documented override) now lets them land.
 - A turn that ends `end_turn` with no reply text, thought or tool call and no tokens now
   ends `errored` with `ACP_EMPTY_TURN`, instead of `completed` with an empty answer. pi-acp
   ends a turn this way when pi's model call fails at the provider (nax#2591).

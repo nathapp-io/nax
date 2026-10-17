@@ -12,7 +12,7 @@
  * a path-scoped or non-deny rule is left to the native matcher.
  */
 import type { AgentSessionProfile } from "@nathapp/nax-agent";
-import { isReadOnlyProfile, launchEnvFor } from "#src/client/capabilities";
+import { isReadOnlyProfile, launchEnvFor, reviewDecidesShell } from "#src/client/capabilities";
 import type { ResolvedAcpOptions } from "#src/client/options";
 import { writeCursorPolicy, writePiFile } from "#src/client/policy-files";
 import { OPENCODE_NONE_CONFIG, OPENCODE_READ_CONFIG, OPENCODE_REVIEW_CONFIG } from "#src/client/registry";
@@ -77,9 +77,6 @@ export function opencodePermissionConfig(profile: "none" | "read" | "review", ru
   return JSON.stringify({ permission });
 }
 
-/** The only tool whose rules can allow a shell command (shell-rules.ts, US-003). */
-const BASH_TOOL = "Bash";
-
 /** Cursor's write and web tools, denied in every read-only profile and in this order. */
 const CURSOR_DENIES: readonly string[] = Object.freeze(["Write(**)", "Delete(**)", "Mcp(*:*)", "WebFetch(*)"]);
 
@@ -114,17 +111,6 @@ const PI_TOOLS: readonly (readonly [string, ReadTool])[] = Object.freeze([
 const PI_GATE_ARG = "-e";
 
 /**
- * Whether this profile runs its shell commands through nax's own gate: only
- * `review` has a shell tool to police, and only when an operator Bash rule could
- * ever allow a command (an unconditional allow is not needed — the gate asks
- * about each command and nax decides it, shell-rules.ts). `read` keeps no shell
- * tool at all, and `none` keeps no tool.
- */
-function usesShellGate(profile: "none" | "read" | "review", rules: AcpPermissionRules): boolean {
-  return profile === "review" && rules.allow.some((rule) => rule.tool === BASH_TOOL);
-}
-
-/**
  * pi's `--tools` arguments (SPEC US-004): `--no-tools` under `none`, else pi's
  * read tools in a fixed order minus the ones an unconditional deny removed.
  * `Glob` owns pi's `find` and `ls`. Under `review` with a Bash allow rule, `bash`
@@ -138,7 +124,7 @@ export function piToolArgs(
 ): readonly string[] {
   if (profile === "none") return ["--no-tools"];
   const readTools = PI_TOOLS.filter(([, tool]) => !denied(rules, tool)).map(([name]) => name);
-  const gated = usesShellGate(profile, rules);
+  const gated = reviewDecidesShell(profile, rules);
   const tools = gated ? [...readTools, "bash"] : readTools;
   if (tools.length === 0) return ["--no-tools"];
   return [...(gated ? [PI_GATE_ARG, gatePath] : []), "--tools", tools.join(",")];
@@ -171,7 +157,7 @@ async function piLaunchEnv(
   profile: "none" | "read" | "review",
 ): Promise<Readonly<Record<string, string>>> {
   const rules = options.rules;
-  const gate = usesShellGate(profile, rules)
+  const gate = reviewDecidesShell(profile, rules)
     ? await writePiFile(options.stateDir, "shell-gate", PI_SHELL_GATE_SOURCE, PI_GATE_MODE)
     : "";
   const command = options.env.PI_ACP_PI_COMMAND ?? PI_DEFAULT_COMMAND;

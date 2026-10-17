@@ -277,8 +277,9 @@ only place an ACP shell command is decided. `none` and `read` never run one: ope
   `bun test src/x.test.ts`. `ask` counts as a deny here: nobody answers an ACP read-only session.
 - **An allowed command runs on the host, unsandboxed.** nax decides the command *string* the agent
   reported and nothing else: no OS sandbox wraps opencode, Cursor or pi shell commands, and the
-  agent's other tools are governed by the read-tool translation and the agent's own mode, not by
-  this gate. Writing a `Bash(...)` allow rule is a decision to trust that command's text.
+  agent's other tools are governed by the read-tool translation and the agent's own config or
+  mode, not by this gate. For Cursor that is the isolated config alone: with a `Bash(...)` allow
+  rule, Cursor's `review` session runs in its `agent` mode (below), which restricts nothing. Writing a `Bash(...)` allow rule is a decision to trust that command's text.
 - **Under `review` with no `Bash(...)` allow rule**, no command can ever be allowed: opencode
   (`bash: "ask"`) and Cursor ask nax about each one and are refused, and pi is not given a shell
   tool at all.
@@ -292,6 +293,13 @@ only place an ACP shell command is decided. `none` and `read` never run one: ope
   a repository's own `.cursor/cli.json` rules merge with the isolated config nax plants, their
   allow rules overriding its denies. nax neither detects nor refuses either one; the enforcement is
   as strong as the Cursor configuration on the machine.
+- **A `Bash(...)` allow rule puts Cursor's `review` session in `agent` mode** (nax#2592). Cursor's
+  `ask` mode tells the model it cannot run commands, so it never asked nax and the allow rules had
+  no effect. Without a `Bash` allow rule, and under `none` and `read`, Cursor stays in `ask`. Neither
+  mode enforces anything; the isolated config's denies and nax's shell decision do. In `agent` mode
+  the model does try to write: an edit is refused by the isolated config's `Write(**)` deny, unless a
+  repository `.cursor/cli.json` allows writes (above), in which case it lands with no permission
+  request. Review such a repository with Cursor only without `Bash(...)` allow rules, or not at all.
 - **pi has no permission system of its own**, so nax writes a small pi extension that turns every
   `bash` call into a confirm prompt; pi-acp hands that prompt to nax as a permission request and nax
   answers it with the rule decision above. pi's own installed extensions still load — their tools
