@@ -101,7 +101,12 @@ function gateExcerpts(input: WorkflowPrBodyInput): string {
 /** Open items are shown in full unless the whole body would exceed PR_BODY_MAX_CHARS (#2496). */
 const FULL_TEXT = Number.MAX_SAFE_INTEGER;
 
-function openItemLine(item: OpenItem, chars = FULL_TEXT): string {
+/**
+ * One item's checklist line — `- [ ] **<id>** …` — the line `nax workflow promote` ticks when the
+ * item's ruling is written. Exported for the promote tests' fixture, which builds a draft PR body
+ * with the same writer `publish` uses rather than a copy of its format.
+ */
+export function openItemLine(item: OpenItem, chars = FULL_TEXT): string {
   if (item.kind === "gate")
     return `- [ ] **${safeInline(item.id, chars)}** (gate) — final gate ${safeInline(item.id, chars)} is red; see the excerpt under Gates and CI`;
   const where = item.file ? ` \`${safeCode(item.file, chars)}${item.line !== undefined ? `:${item.line}` : ""}\`` : "";

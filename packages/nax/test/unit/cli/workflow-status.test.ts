@@ -292,9 +292,9 @@ describe("nax workflow status (read-only)", () => {
 });
 
 describe("nax workflow registration", () => {
-  test("AC-15: the cli barrel exports the group and its status subcommand", () => {
+  test("AC-15: the cli barrel exports the group and its subcommands", () => {
     const group = registerWorkflowCommand(new Command());
     expect(group.name()).toBe("workflow");
-    expect(group.commands.map((c) => c.name())).toEqual(["status"]);
+    expect(group.commands.map((c) => c.name())).toEqual(["status", "record", "promote"]);
   });
 });

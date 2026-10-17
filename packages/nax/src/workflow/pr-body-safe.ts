@@ -10,8 +10,10 @@
  * Scope: this lives in the workflow body path on purpose. `escapeInline` is shared with
  * `nax finish`'s findings sections, whose bodies are a different surface and are left as they are.
  */
-import { escapeInline, escapeTableCell } from "@/finish";
 import { redactSecrets } from "@/logger";
+// The leaf, not the `@/finish` barrel: the barrel loads `src/finish/context.ts`, which imports
+// `@/cli`, and that would close a runtime import cycle onto this module (US-003).
+import { escapeInline, escapeTableCell } from "../finish/pr/escape";
 
 const ZERO_WIDTH_SPACE = "​";
 

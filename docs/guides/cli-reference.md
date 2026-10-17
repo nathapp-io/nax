@@ -286,6 +286,209 @@ The command is mode-independent — it reads config and runs commands, and touch
 
 ---
 
+### `nax workflow`
+
+Read the verdict of a feature's newest workflow run, record a human's rulings for the items the run
+left open, and check whether the run's draft PR can be promoted. All three subcommands read the same
+tree a workflow-mode run writes — `.nax/features/<feature>/workflow/<runId>/` — and take the same two
+global flags:
+
+| Flag | Description |
+|:-----|:------------|
+| `-f, --feature <name>` | Feature name (required) |
+| `-d, --dir <path>` | Project directory (default: the current directory) |
+| `--json` | Print exactly one JSON object to stdout — the report, or `{"error": "<message>"}` when the command fails |
+
+Without `--json` an error goes to stderr instead. Exit `1` means nax could not answer.
+
+#### `nax workflow status -f <name>`
+
+Print the verdict of the feature's newest readable run: the outcome, the PR url, and every item the
+run still leaves open, with the evidence in full.
+
+```bash
+nax workflow status -f auth
+nax workflow status -f auth --json
+```
+
+```
+auth: draft https://github.com/acme/app/pull/7
+- [advisor] D-1 — advisor held: the migration path is unverified
+- [story] US-004 — US-004 ended complete-gate-open: red: lint
+```
+
+Plain output is the first line `<feature>: <outcome> <url>` — `not published` when the run never
+reached publish — then one line per open item, or `No open items.`
+
+**Exit codes:**
+
+| Exit | Meaning |
+|:-----|:--------|
+| `0` | The feature is `ready` with nothing open |
+| `1` | nax could not answer: invalid feature name, no workflow result for the feature, or a run that never started its feature steps |
+| `2` | Anything else — the run is a draft, not published, or still has an open item. A finishing script reads this as "a human is needed" |
+
+#### `nax workflow record -f <name> --decisions <file>`
+
+Validate a human's rulings against the run's open-item ids and write them to the run's decisions
+sidecar (`<runId>/decisions-<timestamp>.json`, next to that run's `result.json`).
+
+```bash
+nax workflow record -f auth --decisions rulings.json          # record rulings
+nax workflow record -f auth --outcome abandoned               # change the outcome only
+nax workflow record -f auth --outcome promoted --json         # after the PR is ready
+```
+
+`--decisions` names a JSON **array** of entries, not an object:
+
+```json
+[
+  { "id": "B1", "kind": "finding", "disposition": "fixed", "reason": "retry path fixed", "sha": "a1b2c3d" },
+  { "id": "B2", "kind": "finding", "disposition": "waived", "reason": "accepted risk for this release" }
+]
+```
+
+| Field | Allowed values |
+|:------|:---------------|
+| `id` | The id of an open item the run listed. An entry of kind `ci` or `minor` may name an id the run did not list (the finishing tool tracks live checks and fix-now minors itself) |
+| `kind` | `finding`, `advisor`, `gate`, `ci`, `story`, `cannot-verify`, `minor`, `reason`. A run item of kind `ruling` is an `advisor` entry |
+| `disposition` | `fixed`, `waived`, `confirmed`, `overridden`, `verified`. `fixed` requires `sha`; the other four allow none |
+| `sha` | 7 to 40 hex characters. Its shape is checked; the commit's existence is not |
+| `reason` | One non-empty line |
+
+`--outcome` is one of `pending`, `promoted`, `verified-ready` or `abandoned` and is written to the
+sidecar as-is. `promoted` and `verified-ready` claim the PR itself is where it should be, so they are
+refused unless the run's record has a PR url, a forge is detected and the forge reports the PR as
+**not** a draft. The forge must report a boolean draft flag — `isDraft` on GitHub, `draft` (or
+GitLab's older `work_in_progress`) on GitLab; an answer that carries none is a read failure
+(`cannot read PR <ref>: the forge reported no <flag> boolean`), never a ready PR. Neither outcome
+re-runs the checks `nax workflow promote` makes: recording an outcome is a human's statement, and
+those checks gate the writes to the forge.
+
+Everything is validated before the first byte is written, and every refusal leaves the run directory
+exactly as it was. Validation order: the feature name; that at least one of `--decisions` and
+`--outcome` was given; the outcome's vocabulary; loading the newest run; the decisions file (read,
+parsed, and every entry checked against the run's open items); the PR read for `promoted` and
+`verified-ready`; and only then the write. A run with no sidecar gets exactly one, created from the
+entries; a run with one has the incoming entries merged into it by id — a re-ruled entry replaces
+itself in place, keeping its position — and the same file is rewritten. A sidecar the command reads
+back is validated as a whole before it is trusted or rewritten: a file that is not a decisions
+sidecar, whose entries do not validate, or whose entries name an item the run does not own (except a
+`ci` or `minor` entry) is refused with `invalid decisions sidecar <path>: <detail>` or
+`unknown item <id>; open items: <ids>`, and the file is left byte for byte. `--outcome` alone cannot
+create a sidecar: there would be nothing to rule.
+
+Plain output names the file that changed, then lists whatever is still unruled:
+
+```
+auth: recorded 1 decision(s) in .nax/features/auth/workflow/r1/decisions-2026-10-13T09-12-00-417Z.json; outcome pending
+unruled: B2
+```
+
+`--json` prints `{ "feature", "runId", "sidecar", "outcome", "decisions", "unruled" }`, where
+`sidecar` is the path relative to `--dir`, `decisions` is the entry count after the write and
+`unruled` lists the open item ids the sidecar names no entry for. Unruled items do not change the
+exit code.
+
+**Exit codes:** `0` on success, `1` on any refusal — nothing to record, an unknown outcome, an
+unreadable or invalid decisions file, an entry naming no open item or the wrong kind, no decisions
+sidecar to apply an outcome to, and the `promoted` / `verified-ready` PR refusals.
+
+#### `nax workflow promote -f <name> [--yes]`
+
+Check whether the feature's draft PR can be promoted, and report what stops it when it cannot. The
+rules a finishing tool would otherwise re-derive on every run live here: the run must still be a
+draft, its PR must still be a draft, every open item must carry a ruling, and the checks on the
+pushed head must be green.
+
+```bash
+nax workflow promote -f auth             # report the two checks
+nax workflow promote -f auth --json
+nax workflow promote -f auth --yes       # promote, once every check passes
+```
+
+| Flag | Description |
+|:-----|:------------|
+| `--yes` | Promote the PR once every check passes — the four actions below. Without it `promote` reports the checks and writes nothing, and so does a `--yes` run whose checks fail |
+
+Validation, in order, each refusing with exit `1` and writing nothing: the feature name; the newest
+readable run; the record's `outcome` must be `draft`; the record must carry a PR url; a forge must be
+detected for `--dir`; and the forge must report the PR as a draft — an already-ready PR is refused,
+never promoted twice. The forge must report a boolean draft flag (`isDraft` on GitHub, `draft` or
+GitLab's older `work_in_progress` on GitLab); an answer that carries none is a read failure, not a
+ready PR. The run's newest decisions sidecar is then validated and its entries checked against the
+run's open items — a hand-edited or unowned ruling is refused before any check runs, so it can never
+reach the PR body or the evidence comment. `promote` reads the PR but ignores the sidecar's own
+outcome, `abandoned` included: the sidecar records what a human decided, not what the forge now holds.
+
+Then both checks run, and neither short-circuits the other:
+
+| Check | Passes when | Fails with |
+|:------|:------------|:-----------|
+| `items-ruled` | Every open item id of the run's verdict has an entry in the run's newest decisions sidecar — vacuously, when nothing is open | `no ruling recorded for <ids>`, or `no decisions recorded; run nax workflow record` when the run has no sidecar at all |
+| `ci-green` | The checks on the pushed head are green | `ci <outcome>: <detail>`. `no-checks`, `pending`, `unavailable`, `failed` and `conflicting` all fail |
+
+The open items come from the run's own verdict, so a `ci` item written at publish time still needs a
+ruling even when the checks are green now. `ci-green` reads HEAD (`git rev-parse HEAD`) and binds the
+report to it: a green poll for a different commit is `unavailable`, never green. A HEAD that cannot be
+read is a `1`, not a check failure.
+
+##### With `--yes`
+
+`--yes` with both checks passing is what promotes. The four actions run in this order, each awaited
+before the next starts and stopping at the first forge command that exits non-zero:
+
+| Action | What it does | Skipped when |
+|:-------|:-------------|:-------------|
+| `tick` | Reads the PR body again immediately before writing — so an edit made while the checks ran is not reverted — ticks every ruled item's checklist line and rewrites the body | No line ticked: no ruled item still has its `- [ ] **<id>**` line in the body |
+| `comment` | Posts one evidence comment built from the sidecar's entries | The sidecar has no entries |
+| `ready` | Marks the PR ready: `gh pr ready` / `glab mr update --ready` | Never |
+| `record` | Rewrites the run's newest decisions sidecar to `outcome: "promoted"` with the PR url, creating an empty-decisions one when the run has none | Never |
+
+`tick` changes only the first line of each matched checklist entry; every other line of the body,
+indented continuations included, is written back verbatim. The sidecar's own `outcome` is overwritten
+whatever it was, `abandoned` included, and a sidecar the run already has keeps its entries, its
+reasons and its file name.
+
+A forge command that fails stops the promotion there: exit `1` with
+`promote stopped at <action>: <stderr or exit code>`, the earlier actions already applied. Only the
+last action writes the sidecar, so a run that stops earlier leaves its `outcome` as it was, and the
+recovery for a failure at `ready` is `nax workflow record --outcome promoted` once the PR really is
+ready. A re-run before that ticks idempotently — an already-ticked line is left alone — and posts a
+second evidence comment: the actions are not de-duplicated.
+
+Plain output is one line per check, one line per action when `--yes` ran, then the result line:
+
+```
+pass  items-ruled
+pass  ci-green
+tick  done
+comment  done
+ready  done
+record  done
+promoted https://github.com/acme/app/pull/7
+```
+
+Without `--yes` the action lines do not appear and the result line is the dry run's
+`ready to promote; rerun with --yes`.
+
+`--json` prints `{ "feature", "runId", "url", "dryRun", "promoted", "checks", "actions" }`, where
+`checks` holds the two checks in the order above with their `passed` flag and their `detail`, and
+`actions` holds each action with its `done` / `skipped` status in the order it ran.
+
+**Exit codes:**
+
+| Exit | Meaning |
+|:-----|:--------|
+| `0` | Both checks passed |
+| `1` | nax could not answer: invalid feature name, no workflow result for the feature, a run that never started its feature steps, a record that is not a draft, no PR url, no forge, an already-ready PR, a HEAD that cannot be read, or a `--yes` forge write that failed (`promote stopped at <action>: <detail>`) |
+| `2` | A check failed — an open item has no ruling, or CI is not green on the pushed head. Nothing is written, even with `--yes` |
+
+The sidecar is git-ignored and left uncommitted. None of the three subcommands commits, pushes or
+waits for CI.
+
+---
+
 ### `nax precheck -f <name>`
 
 Validate your project is ready to run — checks git, PRD, CLI tools, deps, test/lint/typecheck scripts.
