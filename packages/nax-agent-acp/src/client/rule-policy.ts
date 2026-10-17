@@ -14,7 +14,9 @@
 import type { AgentSessionProfile } from "@nathapp/nax-agent";
 import { isReadOnlyProfile, launchEnvFor } from "#src/client/capabilities";
 import type { ResolvedAcpOptions } from "#src/client/options";
+import { writeCursorPolicy, writePiFile } from "#src/client/policy-files";
 import { OPENCODE_NONE_CONFIG, OPENCODE_READ_CONFIG, OPENCODE_REVIEW_CONFIG } from "#src/client/registry";
+import { PI_SHELL_GATE_SOURCE } from "#src/client/shell-rules";
 
 export interface AcpRule {
   readonly tool: string;
@@ -75,13 +77,118 @@ export function opencodePermissionConfig(profile: "none" | "read" | "review", ru
   return JSON.stringify({ permission });
 }
 
+/** The only tool whose rules can allow a shell command (shell-rules.ts, US-003). */
+const BASH_TOOL = "Bash";
+
+/** Cursor's write and web tools, denied in every read-only profile and in this order. */
+const CURSOR_DENIES: readonly string[] = Object.freeze(["Write(**)", "Delete(**)", "Mcp(*:*)", "WebFetch(*)"]);
+
 /**
- * The environment the profile's rules add to the agent process (SPEC US-002), the
- * one seam every launch goes through — a new session, a resume and a reconnect.
- * An agent whose entry names no policy keeps its `launchEnv` untouched, so its
- * env is exactly what it was before rules existed; a custom agent has no entry
- * and gets nothing. The caller spreads this over its own env, so neither the
- * caller nor a model can weaken the enforcement value.
+ * Cursor's isolated permission config (SPEC US-004). Cursor's own modes enforce
+ * nothing, so this file is the whole enforcement: `Read(**)` is allowed unless an
+ * unconditional Read deny removes it (and then joins the deny list), writes, MCP
+ * and the web are denied, and shell is denied under `read` and absent under
+ * `review`, where Cursor asks the client about every command and nax decides it
+ * (shell-rules.ts). `none` ignores the rules: everything is denied there, and no
+ * rule can widen it.
+ */
+export function cursorCliConfig(profile: "none" | "read" | "review", rules: AcpPermissionRules): string {
+  const readDenied = profile === "none" || denied(rules, "Read");
+  /** review leaves shell unlisted: every command is asked of the client, and nax answers (US-003). */
+  const deny = [...CURSOR_DENIES, ...(profile === "review" ? [] : ["Shell(*)"]), ...(readDenied ? ["Read(**)"] : [])];
+  return JSON.stringify({
+    version: 1,
+    permissions: { allow: readDenied ? [] : ["Read(**)"], deny },
+    approvalMode: "allowlist",
+  });
+}
+
+/** pi's tools in the order `--tools` lists them, and the read tool each one serves. */
+const PI_TOOLS: readonly (readonly [string, ReadTool])[] = Object.freeze([
+  Object.freeze(["read", "Read"] as const),
+  Object.freeze(["grep", "Grep"] as const),
+  Object.freeze(["find", "Glob"] as const),
+  Object.freeze(["ls", "Glob"] as const),
+]);
+
+const PI_GATE_ARG = "-e";
+
+/**
+ * Whether this profile runs its shell commands through nax's own gate: only
+ * `review` has a shell tool to police, and only when an operator Bash rule could
+ * ever allow a command (an unconditional allow is not needed — the gate asks
+ * about each command and nax decides it, shell-rules.ts). `read` keeps no shell
+ * tool at all, and `none` keeps no tool.
+ */
+function usesShellGate(profile: "none" | "read" | "review", rules: AcpPermissionRules): boolean {
+  return profile === "review" && rules.allow.some((rule) => rule.tool === BASH_TOOL);
+}
+
+/**
+ * pi's `--tools` arguments (SPEC US-004): `--no-tools` under `none`, else pi's
+ * read tools in a fixed order minus the ones an unconditional deny removed.
+ * `Glob` owns pi's `find` and `ls`. Under `review` with a Bash allow rule, `bash`
+ * is appended after the read tools and the gate extension is loaded first, so
+ * every command goes through the nax shell gate.
+ */
+export function piToolArgs(
+  profile: "none" | "read" | "review",
+  rules: AcpPermissionRules,
+  gatePath: string,
+): readonly string[] {
+  if (profile === "none") return ["--no-tools"];
+  const readTools = PI_TOOLS.filter(([, tool]) => !denied(rules, tool)).map(([name]) => name);
+  const gated = usesShellGate(profile, rules);
+  const tools = gated ? [...readTools, "bash"] : readTools;
+  if (tools.length === 0) return ["--no-tools"];
+  return [...(gated ? [PI_GATE_ARG, gatePath] : []), "--tools", tools.join(",")];
+}
+
+/** The gate extension is nax's own source, readable by the user alone; the wrapper has to be executable. */
+const PI_GATE_MODE = 0o600;
+const PI_WRAPPER_MODE = 0o700;
+/** pi-acp's own default when the caller names no executable. */
+const PI_DEFAULT_COMMAND = "pi";
+
+/** One `sh` word, single-quoted; a `'` inside becomes `'\''`. */
+function shQuote(word: string): string {
+  return `'${word.replaceAll("'", "'\\''")}'`;
+}
+
+/** The wrapper `PI_ACP_PI_COMMAND` names: exec pi with the profile's arguments, forwarding the caller's own. */
+function piWrapper(command: string, args: readonly string[]): string {
+  return `#!/bin/sh\nexec ${[command, ...args].map(shQuote).join(" ")} "$@"\n`;
+}
+
+/**
+ * pi's launch env: the gate extension when one is needed, then the wrapper that
+ * runs pi with the profile's `--tools` (or `--no-tools`). The caller's own
+ * `PI_ACP_PI_COMMAND` names the executable to wrap, so a caller can point nax at
+ * a pi build without weakening the enforcement.
+ */
+async function piLaunchEnv(
+  options: ResolvedAcpOptions,
+  profile: "none" | "read" | "review",
+): Promise<Readonly<Record<string, string>>> {
+  const rules = options.rules;
+  const gate = usesShellGate(profile, rules)
+    ? await writePiFile(options.stateDir, "shell-gate", PI_SHELL_GATE_SOURCE, PI_GATE_MODE)
+    : "";
+  const command = options.env.PI_ACP_PI_COMMAND ?? PI_DEFAULT_COMMAND;
+  const body = piWrapper(command, piToolArgs(profile, rules, gate));
+  return Object.freeze({ PI_ACP_PI_COMMAND: await writePiFile(options.stateDir, "wrapper", body, PI_WRAPPER_MODE) });
+}
+
+/**
+ * The environment the profile's rules add to the agent process (SPEC US-002,
+ * extended by US-004), the one seam every launch goes through — a new session, a
+ * resume and a reconnect. An agent whose entry names no policy keeps its
+ * `launchEnv` untouched, so its env is exactly what it was before rules existed;
+ * a custom agent has no entry and gets nothing. Cursor and pi read their policy
+ * from files under the state directory, written here before anything is spawned:
+ * a file that cannot be written refuses the open (policy-files.ts). The caller
+ * spreads this over its own env, so neither the caller nor a model can weaken the
+ * enforcement value.
  */
 export async function policyLaunchEnv(
   profile: AgentSessionProfile,
@@ -89,9 +196,16 @@ export async function policyLaunchEnv(
 ): Promise<Readonly<Record<string, string>>> {
   const entry = options.entry;
   if (!isReadOnlyProfile(profile)) return launchEnvFor(profile, entry);
-  if (entry?.readOnly?.policy === "opencode") {
-    return Object.freeze({ OPENCODE_CONFIG_CONTENT: opencodePermissionConfig(profile, options.rules) });
+  switch (entry?.readOnly?.policy) {
+    case "opencode":
+      return Object.freeze({ OPENCODE_CONFIG_CONTENT: opencodePermissionConfig(profile, options.rules) });
+    case "cursor":
+      return Object.freeze({
+        CURSOR_CONFIG_DIR: await writeCursorPolicy(options.stateDir, cursorCliConfig(profile, options.rules)),
+      });
+    case "pi":
+      return piLaunchEnv(options, profile);
+    default:
+      return launchEnvFor(profile, entry);
   }
-  // Cursor and pi build their environment from files under stateDir (US-004).
-  return launchEnvFor(profile, entry);
 }

@@ -12,7 +12,14 @@ import {
   OPENCODE_REVIEW_CONFIG,
   registryEntry,
 } from "#src/client/registry";
-import { type AcpPermissionRules, NO_RULES, opencodePermissionConfig, policyLaunchEnv } from "#src/client/rule-policy";
+import {
+  type AcpPermissionRules,
+  cursorCliConfig,
+  NO_RULES,
+  opencodePermissionConfig,
+  piToolArgs,
+  policyLaunchEnv,
+} from "#src/client/rule-policy";
 
 const READ = { tool: "Read", patterns: ["*"] } as const;
 const GLOB = { tool: "Glob", patterns: ["*"] } as const;
@@ -139,5 +146,106 @@ describe("policyLaunchEnv: which profile and entry get a policy", () => {
       rules: denyRead,
     });
     expect(await policyLaunchEnv("read", options)).toEqual({});
+  });
+
+  test.each(["full", "ask"] as const)("%s: cursor and pi add no policy env", async (profile) => {
+    for (const agent of ["cursor", "pi"] as const) {
+      const options = resolveAcpOptions({ agent, allowUnsandboxed: true, rules: denyRead, stateDir: "/state" });
+      expect(await policyLaunchEnv(profile, options)).toEqual({});
+    }
+  });
+});
+
+/** Cursor's deny list, in the order nax writes it: the write and web tools, then shell, then Read. */
+const CURSOR_WRITE_DENIES = ["Write(**)", "Delete(**)", "Mcp(*:*)", "WebFetch(*)"];
+
+describe("cursorCliConfig: Cursor's isolated permission config (SPEC US-004)", () => {
+  test("AC-1: read allows Read, denies every write and web tool, and denies shell", () => {
+    expect(JSON.parse(cursorCliConfig("read", NO_RULES))).toEqual({
+      version: 1,
+      permissions: { allow: ["Read(**)"], deny: [...CURSOR_WRITE_DENIES, "Shell(*)"] },
+      approvalMode: "allowlist",
+    });
+  });
+
+  test("AC-2: review leaves shell unlisted, so every command is asked of the client", () => {
+    expect(JSON.parse(cursorCliConfig("review", NO_RULES)).permissions).toEqual({
+      allow: ["Read(**)"],
+      deny: [...CURSOR_WRITE_DENIES],
+    });
+  });
+
+  test("AC-3: none allows nothing and denies Read on top of shell", () => {
+    expect(JSON.parse(cursorCliConfig("none", NO_RULES)).permissions).toEqual({
+      allow: [],
+      deny: [...CURSOR_WRITE_DENIES, "Shell(*)", "Read(**)"],
+    });
+  });
+
+  test("AC-4: an unconditional Read deny drops the allowance and joins the deny list", () => {
+    expect(JSON.parse(cursorCliConfig("review", rules({ deny: [READ] }))).permissions).toEqual({
+      allow: [],
+      deny: [...CURSOR_WRITE_DENIES, "Read(**)"],
+    });
+  });
+
+  test("AC-5: Bash and Write rules are not translated", () => {
+    const allowed = rules({
+      allow: [
+        { tool: "Bash", patterns: ["*"] },
+        { tool: "Write", patterns: ["*"] },
+      ],
+    });
+    expect(cursorCliConfig("review", allowed)).toBe(cursorCliConfig("review", NO_RULES));
+  });
+
+  test("none ignores the rules: a Read allow cannot widen it", () => {
+    const allowed = rules({ allow: [READ], deny: [] });
+    expect(cursorCliConfig("none", allowed)).toBe(cursorCliConfig("none", NO_RULES));
+  });
+
+  test.each([
+    ["a path-scoped Read deny", { tool: "Read", patterns: ["src/**"] }],
+    ["a Read ask rule", undefined],
+  ])("%s leaves the allowance alone", (_label, rule) => {
+    const input = rule === undefined ? rules({ ask: [READ] }) : rules({ deny: [rule] });
+    expect(cursorCliConfig("read", input)).toBe(cursorCliConfig("read", NO_RULES));
+  });
+});
+
+describe("piToolArgs: pi's tool allowlist and its shell gate (SPEC US-004)", () => {
+  test("AC-6: read keeps pi's read tools", () => {
+    expect(piToolArgs("read", NO_RULES, "/g.ts")).toEqual(["--tools", "read,grep,find,ls"]);
+  });
+
+  test("AC-7: none removes every tool", () => {
+    expect(piToolArgs("none", NO_RULES, "/g.ts")).toEqual(["--no-tools"]);
+  });
+
+  test("AC-8: review drops both of Glob's tools and appends bash behind the gate", () => {
+    const input = rules({ allow: [{ tool: "Bash", patterns: ["git *"] }], deny: [GLOB] });
+    expect(piToolArgs("review", input, "/g.ts")).toEqual(["-e", "/g.ts", "--tools", "read,grep,bash"]);
+  });
+
+  test("AC-9: a Bash allow rule adds no shell under read", () => {
+    const input = rules({ allow: [{ tool: "Bash", patterns: ["*"] }] });
+    expect(piToolArgs("read", input, "/g.ts")).toEqual(["--tools", "read,grep,find,ls"]);
+  });
+
+  test("AC-10: review with every read tool denied and no Bash rule has no tool at all", () => {
+    expect(piToolArgs("review", rules({ deny: [READ, GLOB, GREP] }), "/g.ts")).toEqual(["--no-tools"]);
+  });
+
+  test("AC-29: review with every read tool denied keeps bash alone, behind the gate", () => {
+    const input = rules({ allow: [{ tool: "Bash", patterns: ["ls *"] }], deny: [READ, GLOB, GREP] });
+    expect(piToolArgs("review", input, "/g.ts")).toEqual(["-e", "/g.ts", "--tools", "bash"]);
+  });
+
+  test("review: a Read deny drops read and keeps grep, find and ls", () => {
+    expect(piToolArgs("review", rules({ deny: [READ] }), "/g.ts")).toEqual(["--tools", "grep,find,ls"]);
+  });
+
+  test("review: a Grep deny drops grep alone", () => {
+    expect(piToolArgs("review", rules({ deny: [GREP] }), "/g.ts")).toEqual(["--tools", "read,find,ls"]);
   });
 });

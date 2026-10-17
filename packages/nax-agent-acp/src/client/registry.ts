@@ -156,7 +156,8 @@ const REGISTRY: ReadonlyMap<AcpAgentName, AgentRegistryEntry> = new Map([
   // nax#2372: cursor's own modes do not enforce anything (probed: mode `ask` let a forced
   // write through, mode `plan` let the model switch back to `agent` and write), so `ask`
   // only tells the model it is read-only; the real enforcement is its permission config
-  // (US-004). No plan mode is ever used here.
+  // (US-004: an isolated cli-config.json, pointed at by CURSOR_CONFIG_DIR). No plan mode
+  // is ever used here.
   [
     "cursor",
     entry("cursor", [local("cursor-agent", "acp")], ["CURSOR_API_KEY"], {
@@ -165,8 +166,7 @@ const REGISTRY: ReadonlyMap<AcpAgentName, AgentRegistryEntry> = new Map([
         disallowedTools: [],
         sessionOptions: {},
         launchEnv: {},
-        // US-004 sets this to "cursor"; its permission config denies writes and asks about shell.
-        policy: undefined,
+        policy: "cursor",
       },
       defaultMode: undefined,
       preApproval: undefined,
@@ -215,7 +215,25 @@ const REGISTRY: ReadonlyMap<AcpAgentName, AgentRegistryEntry> = new Map([
     }),
   ],
   // Exact pin: a tilde range does not pin 0.0.x.
-  ["pi", entry("pi", [local("pi-acp"), npx("pi-acp@0.0.34")], [])],
+  // nax#2372, US-004: pi has no mode and no permission config of its own. Read-only is
+  // its own tool allowlist (`--tools` / `--no-tools`) plus, under review, the gate
+  // extension that turns every bash call into a confirm prompt nax decides
+  // (rule-policy.ts, shell-rules.ts). Both are written per launch and named by the
+  // wrapper PI_ACP_PI_COMMAND points at.
+  [
+    "pi",
+    entry("pi", [local("pi-acp"), npx("pi-acp@0.0.34")], [], {
+      readOnly: {
+        mode: undefined,
+        disallowedTools: [],
+        sessionOptions: {},
+        launchEnv: {},
+        policy: "pi",
+      },
+      defaultMode: undefined,
+      preApproval: undefined,
+    }),
+  ],
 ]);
 
 export const ACP_AGENT_NAMES: readonly AcpAgentName[] = Object.freeze([...REGISTRY.keys()]);
