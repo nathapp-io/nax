@@ -363,6 +363,16 @@ describe("denials are counted on the turn's collector (nax#2582)", () => {
     await release();
   });
 
+  test("a decider fault answered cancelled is not counted", async () => {
+    const router = createInboundRouter(async () => {
+      throw new Error("decider bug");
+    });
+    const collector = createTurnCollector(undefined);
+    router.attach("s1", collector, IDLE);
+    expect(await router.handlers.onPermission(request("s1"))).toEqual(CANCELLED);
+    expect(collector.denials()).toBe(0);
+  });
+
   test("a deny answered after the turn aborted is not counted", async () => {
     const router = createInboundRouter(recordingDecider(untilAborted).decide);
     const collector = createTurnCollector(undefined);

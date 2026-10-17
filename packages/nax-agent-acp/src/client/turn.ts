@@ -24,7 +24,7 @@ import { promptRequestError, rpcErrorOf, stopReasonError } from "#src/client/err
 import type { TurnCollector } from "#src/client/events";
 import { agentGoneError, type LaunchedAgent } from "#src/client/launch";
 import { race } from "#src/client/race";
-import { sumUsage } from "#src/client/usage";
+import { sumUsage, tokenUsageOf } from "#src/client/usage";
 
 export interface TurnState {
   readonly link: AcpLink;
@@ -76,8 +76,9 @@ export async function runPromptTurn(state: TurnState, input: TurnInput): Promise
 }
 
 /**
- * One session/prompt. A failed request throws with no spend (its reading moves to the
- * next turn); an abort throws with the spend of every prompt this turn answered.
+ * One session/prompt. A failed request throws with the tokens of the prompts this turn
+ * already answered and no cost (the cost reading moves to the next turn); an abort
+ * throws with the spend of every prompt this turn answered.
  */
 async function promptOnce(
   state: TurnState,
@@ -95,7 +96,10 @@ async function promptOnce(
       return outcome.value;
     case "failed": {
       const error = await promptFailure(state, outcome.error);
-      attachTurnSpend(error, NO_RESPONSE_SPEND);
+      attachTurnSpend(
+        error,
+        carried === undefined ? NO_RESPONSE_SPEND : { ...NO_RESPONSE_SPEND, tokenUsage: tokenUsageOf(carried) },
+      );
       throw error;
     }
     default: {

@@ -132,9 +132,17 @@ export function createInboundRouter(
           return rejectLocally(request);
         }
         if (!admitted.signal.aborted) admitted.collector.announce(request.toolCall);
-        const answer = await track(admitted, decide(request, admitted.signal).catch(cancelled));
-        // nax#2582: the turn learns of its own denials, so a cancel they cause can be continued.
-        if (!admitted.signal.aborted && isDenial(request, answer)) admitted.collector.noteDenial();
+        let decided = true;
+        const answer = await track(
+          admitted,
+          decide(request, admitted.signal).catch(() => {
+            decided = false;
+            return cancelled();
+          }),
+        );
+        // nax#2582: the turn learns of its policy denials, so a cancel they cause can be
+        // continued; a decider fault is not a policy denial.
+        if (decided && !admitted.signal.aborted && isDenial(request, answer)) admitted.collector.noteDenial();
         return answer;
       },
       onElicitation: async (request) => {

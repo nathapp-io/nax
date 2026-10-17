@@ -320,6 +320,40 @@ describe("a deny that makes the agent cancel its turn is continued (nax#2582)", 
     expect(prompts(o)).toHaveLength(1);
   });
 
+  test("a caller cancel during the continuation: cancelled, with both prompts' tokens", async () => {
+    const o = await open("read", {
+      script: {
+        turns: [
+          DENIED_THEN_CANCELLED,
+          {
+            steps: [{ kind: "awaitCancel" }],
+            stopReason: "cancelled",
+            usage: { totalTokens: 3, inputTokens: 2, outputTokens: 1 },
+          },
+        ],
+      },
+    });
+    const events = await driveTurn(o.session, "go", (event) => {
+      if (event.type === "approval_resolved") setTimeout(() => o.session.cancel(), 20);
+    });
+    expect(prompts(o)).toHaveLength(2);
+    expect(endOf(events)).toMatchObject({ status: "cancelled", usage: { inputTokens: 12, outputTokens: 6 } });
+  });
+
+  test("a failed continuation prompt: errored, keeping the first prompt's tokens", async () => {
+    const o = await open("read", {
+      script: {
+        turns: [DENIED_THEN_CANCELLED, { steps: [{ kind: "fail", failure: { code: -32603, message: "overloaded" } }] }],
+      },
+    });
+    const events = await driveTurn(o.session, "go");
+    expect(endOf(events)).toMatchObject({
+      status: "errored",
+      error: { code: "AGENT_SESSION_TURN_FAILED" },
+      usage: { inputTokens: 10, outputTokens: 5 },
+    });
+  });
+
   test("a turn the caller cancels after a denial is not continued", async () => {
     const o = await open("read", {
       script: { turns: [{ steps: [EDIT, { kind: "awaitCancel" }], stopReason: "cancelled" }] },
