@@ -40,9 +40,8 @@ import { createInboundRouter, type InboundRouter } from "#src/client/inbound";
 import { type LaunchFn, launchAgent } from "#src/client/launch";
 import { type OpenedAcp, openAcpSession } from "#src/client/open";
 import { type AcpBackendOptions, type ResolvedAcpOptions, resolveAcpOptions } from "#src/client/options";
-import { decidePermission } from "#src/client/permissions";
+import { decidePermission, type PermissionContext } from "#src/client/permissions";
 import { race } from "#src/client/race";
-import type { AgentRegistryEntry } from "#src/client/registry";
 import { canRestore, type Restore, storedSessionOf } from "#src/client/resume";
 import { createToolCalls } from "#src/client/tool-calls";
 import { createToolHost, newToolHostToken, type ToolHost } from "#src/client/tool-host";
@@ -131,18 +130,19 @@ export function toolHostFor(
  * redaction set. nax#2372: the embedder sandbox joins the permission context only
  * for an agent that actually receives it (one with a pre-approval channel); for any
  * other, a policy there would approve an escalation the agent never sandboxed.
+ * US-003: the agent's name (which raw field carries a shell command) and the
+ * session's rules join it too, so review with no sandbox can adjudicate a command.
  */
-function routerFor(
-  ctx: BackendOpenContext,
-  secrets: readonly string[],
-  entry: AgentRegistryEntry | undefined,
-): InboundRouter {
+function routerFor(ctx: BackendOpenContext, options: ResolvedAcpOptions): InboundRouter {
+  const entry = options.entry;
   const sandbox = entry?.preApproval !== undefined && ctx.sandbox?.kind === "policy" ? ctx.sandbox.policy : undefined;
-  const base = {
+  const base: Omit<PermissionContext, "signal"> = {
     profile: ctx.profile,
     asks: ctx.asks,
-    secrets,
+    secrets: options.secrets,
     cwd: ctx.workdir,
+    agentName: options.agentName,
+    rules: options.rules,
     ...(sandbox === undefined ? {} : { sandbox }),
   };
   return createInboundRouter(
@@ -162,7 +162,7 @@ async function connect(
   const tokens = token === undefined ? retiredTokens : [...retiredTokens, token];
   const options = withTokens(base, tokens);
   const gone = new AbortController();
-  const router = routerFor(ctx, options.secrets, options.entry);
+  const router = routerFor(ctx, options);
   const host = toolHostFor(ctx, router, options.secrets, token);
   const acp = await openAcpSession(options, ctx, router.handlers, _acpBackendDeps.launch, host, restore).catch(
     async (err: unknown) => {

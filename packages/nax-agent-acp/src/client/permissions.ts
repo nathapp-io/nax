@@ -1,7 +1,9 @@
 /**
  * session/request_permission by profile (S4 spec §6.4 layer 2). none and read
  * reject every request; review allows commands (kind execute) only when a
- * sandbox policy is present (fail closed) and rejects the rest; under review and full a sandbox network request follows the sandbox
+ * sandbox policy is present (fail closed) or an operator Bash rule allows the
+ * command itself (shell-rules.ts, SPEC-cursor-pi-acp-read-only US-003), and
+ * rejects the rest; under review and full a sandbox network request follows the sandbox
  * network policy (open: allow, allow-list: deny); full allows it; ask puts it in front of the caller through
  * asks.requestApproval and answer(). Only options the agent offered are chosen,
  * and only the *_once kinds: allow_always would outlive the session. Auto-decisions
@@ -14,6 +16,8 @@
 import type { RequestPermissionRequest, RequestPermissionResponse } from "@agentclientprotocol/sdk";
 import type { AgentSessionProfile, SandboxPolicy, SessionAskPort } from "@nathapp/nax-agent";
 import { editTargets, firstOutsidePolicy, OUTSIDE_WRITE_ROOTS_REASON, WRITE_KINDS } from "#src/client/edit-targets";
+import { type AcpPermissionRules, NO_RULES } from "#src/client/rule-policy";
+import { SHELL_RULE_REASON, shellCommandOf, shellRuleVerdict } from "#src/client/shell-rules";
 import { isRecord } from "#src/client/text";
 import { describeToolCall, type ToolCallDisplay } from "#src/client/tool-display";
 
@@ -52,6 +56,13 @@ export interface PermissionContext {
   readonly sandbox?: SandboxPolicy;
   /** nax#2500: the session cwd, for resolving relative edit targets (R4). */
   readonly cwd?: string;
+  /**
+   * The ACP agent's name (US-003): which raw field carries a shell command. Absent
+   * reads `rawInput.command`, the field every agent but pi and Cursor uses.
+   */
+  readonly agentName?: string;
+  /** nax's rules for this stage (US-003). Absent: no Bash rule allows anything. */
+  readonly rules?: AcpPermissionRules;
 }
 
 export interface OfferedOptions {
@@ -132,17 +143,7 @@ export async function decidePermission(
       auto(readOnlyReason(ctx.profile), "deny");
       return rejectWith(offered);
     case "review":
-      if (display.tool !== "execute") {
-        auto(readOnlyReason(ctx.profile), "deny");
-        return rejectWith(offered);
-      }
-      if (ctx.sandbox === undefined) {
-        auto(REVIEW_NO_SANDBOX_REASON, "deny");
-        return rejectWith(offered);
-      }
-      if (offered.allowOnce === undefined) return denyNoAllowOnce(offered, auto);
-      auto(REVIEW_EXECUTE_REASON, "allow");
-      return selected(offered.allowOnce);
+      return decideReview(request, display, offered, auto, ctx);
     case "full":
       return decideFull(request, display, offered, auto, ctx);
     case "ask":
@@ -157,6 +158,44 @@ export async function decidePermission(
       auto(UNKNOWN_PROFILE_REASON, "deny");
       return rejectWith(offered);
   }
+}
+
+/**
+ * review (SPEC-cursor-pi-acp-read-only US-003): a command may run when a sandbox
+ * holds it (Claude, nax#2500) or when the operator's own Bash rules allow the
+ * raw command. With no sandbox the rules are the whole decision — a command nax
+ * cannot read, a redirect, an opaque token, no allow rule, or an ask rule all
+ * deny — and everything that is not a command stays read-only.
+ */
+function decideReview(
+  request: RequestPermissionRequest,
+  display: ToolCallDisplay,
+  offered: OfferedOptions,
+  auto: AutoDecide,
+  ctx: PermissionContext,
+): RequestPermissionResponse {
+  if (ctx.sandbox !== undefined) {
+    if (display.tool !== "execute") {
+      auto(readOnlyReason(ctx.profile), "deny");
+      return rejectWith(offered);
+    }
+    if (offered.allowOnce === undefined) return denyNoAllowOnce(offered, auto);
+    auto(REVIEW_EXECUTE_REASON, "allow");
+    return selected(offered.allowOnce);
+  }
+  const command = shellCommandOf(ctx.agentName ?? "", request.toolCall);
+  if (command === undefined) {
+    // An execute request with no derivable command fails closed; anything else was never a command.
+    auto(display.tool === "execute" ? REVIEW_NO_SANDBOX_REASON : readOnlyReason(ctx.profile), "deny");
+    return rejectWith(offered);
+  }
+  if (shellRuleVerdict(command, ctx.rules ?? NO_RULES) === "deny") {
+    auto(REVIEW_NO_SANDBOX_REASON, "deny");
+    return rejectWith(offered);
+  }
+  if (offered.allowOnce === undefined) return denyNoAllowOnce(offered, auto);
+  auto(SHELL_RULE_REASON, "allow");
+  return selected(offered.allowOnce);
 }
 
 /**
