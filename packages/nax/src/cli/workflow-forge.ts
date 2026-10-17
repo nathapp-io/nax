@@ -11,7 +11,10 @@
  * `bun run check:import-cycles`. HEAD is read through `forge.run(["git", "rev-parse", "HEAD"], …)`
  * instead (US-004).
  */
+import { basename } from "node:path";
+import { loadConfig } from "@/config";
 import { defaultForgeDeps, type ForgeDeps } from "@/forge";
+import { projectOutputDir } from "@/runtime";
 import { waitForChecks } from "../workflow/ci-wait";
 
 export interface WorkflowForgeDeps {
@@ -25,6 +28,11 @@ export interface WorkflowForgeDeps {
    * poll loop.
    */
   readonly waitForChecks: typeof waitForChecks;
+  /**
+   * The project's output directory, where the advisor's audit artifacts live (#2578): a ledger
+   * decision counts only when its artifact there records it. Resolved as `nax advisor` resolves it.
+   */
+  readonly resolveOutputDir: (dir: string) => Promise<string>;
 }
 
 /** The real forge, clock and CI wait: the running process's CLIs, the wall clock and a live poll. */
@@ -32,4 +40,8 @@ export const _workflowForgeDeps: WorkflowForgeDeps = {
   forge: defaultForgeDeps,
   now: () => new Date(),
   waitForChecks,
+  resolveOutputDir: async (dir) => {
+    const config = await loadConfig(dir).catch(() => null);
+    return projectOutputDir(config?.name?.trim() || basename(dir), config?.outputDir);
+  },
 };

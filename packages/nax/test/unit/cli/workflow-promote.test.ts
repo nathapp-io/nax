@@ -8,6 +8,7 @@
  * argv the forge stub received and the exit code.
  */
 import { describe, expect, test } from "bun:test";
+import { join } from "node:path";
 import {
   assertDefined,
   checkOf,
@@ -24,8 +25,26 @@ import {
 } from "@test/helpers";
 import { Command } from "commander";
 import { registerWorkflowCommand, workflowPromoteCommand } from "@/cli";
+import { writeSidecar } from "@/workflow/decisions-sidecar";
 
 const FEATURE = PROMOTE_FEATURE;
+
+describe("nax workflow promote with supplementary rulings (#2578)", () => {
+  test("a sidecar that rules on a story-level cannot-verify line passes the re-check", async () => {
+    await withTempDir(async (dir) => {
+      const fx = await makePromoteFixture(dir);
+      await Bun.write(join(fx.runDir, "ledger.md"), "US-001: cannot-verify: Redis TTL\n");
+      const sidecar = await fx.sidecar();
+      assertDefined(sidecar, "the fixture's sidecar");
+      assertDefined(fx.sidecarPath, "the fixture's sidecar path");
+      const cv = { id: "US-001:cv1", kind: "cannot-verify", disposition: "verified", reason: "ran it" } as const;
+      await writeSidecar(fx.sidecarPath, { ...sidecar, decisions: [...sidecar.decisions, cv] });
+      await fx.run(["--json"]);
+      expect(checkOf(emittedJson(fx.out), "items-ruled").passed).toBe(true);
+      expect(fx.codes).toEqual([0]);
+    });
+  });
+});
 
 describe("nax workflow promote --json (the dry run)", () => {
   test("AC-1: a draft run with a ruled item and green checks exits 0 with the dry-run report", async () => {

@@ -220,6 +220,41 @@ describe("checkEntriesAgainstItems", () => {
       ),
     ).not.toThrow();
   });
+
+  test("#2578: an advisor entry may name a supplementary advisor decision", () => {
+    const supplementary = [openItem("D-2", "advisor")];
+    const entries = [entry({ id: "D-2", kind: "advisor", disposition: "verified", sha: undefined })];
+    expect(() => checkEntriesAgainstItems(entries, [openItem("B1", "finding")], supplementary)).not.toThrow();
+  });
+
+  test("#2578: a cannot-verify entry may name a story-level cannot-verify line", () => {
+    const supplementary = [openItem("US-001:cv1", "cannot-verify")];
+    const entries = [entry({ id: "US-001:cv1", kind: "cannot-verify", disposition: "verified", sha: undefined })];
+    expect(() => checkEntriesAgainstItems(entries, [], supplementary)).not.toThrow();
+  });
+
+  test("#2578: a supplementary id under the wrong kind is refused with the kind message", () => {
+    const supplementary = [openItem("D-2", "advisor")];
+    expect(invalidMessage(() => checkEntriesAgainstItems([entry({ id: "D-2" })], [], supplementary))).toBe(
+      "decision D-2 has kind finding but the open item is advisor",
+    );
+  });
+
+  test("#2578: an open item wins over a supplementary item with the same id", () => {
+    const supplementary = [openItem("B1", "advisor")];
+    const entries = [entry({ id: "B1", kind: "advisor", disposition: "verified", sha: undefined })];
+    expect(invalidMessage(() => checkEntriesAgainstItems(entries, [openItem("B1", "finding")], supplementary))).toBe(
+      "decision B1 has kind advisor but the open item is finding",
+    );
+  });
+
+  test("#2578: an id in neither list still names only the open ids", () => {
+    const supplementary = [openItem("D-2", "advisor")];
+    const entries = [entry({ id: "D-9", kind: "advisor", disposition: "verified", sha: undefined })];
+    expect(invalidMessage(() => checkEntriesAgainstItems(entries, [openItem("B1", "finding")], supplementary))).toBe(
+      "unknown item D-9; open items: B1",
+    );
+  });
 });
 
 describe("mergeDecisions", () => {

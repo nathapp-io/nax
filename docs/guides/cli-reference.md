@@ -320,6 +320,20 @@ auth: draft https://github.com/acme/app/pull/7
 Plain output is the first line `<feature>: <outcome> <url>` — `not published` when the run never
 reached publish — then one line per open item, or `No open items.`
 
+**Supplementary items.** Some things a finishing tool rules on are not open items. One is every
+trusted advisor decision of the feature that is not already an open item: the decisions nax applied
+without asking, and on a ready run the approved finish-approval. A ledger line counts only when its
+audit artifact in the project output directory records it. The other is the story loops'
+cannot-verify lines from the run ledgers. A cannot-verify line's id is `<storyId>:cv<n>`, numbering
+that story's lines from 1 across the feature's runs, oldest first. A later run only appends, so an
+id keeps naming its line; deleting a run directory renumbers them.
+
+They are listed after the open items under `Also to verify (not blocking):`, and in `--json` as
+`supplementaryItems` (always present, possibly empty). They never change the exit code. `nax
+workflow record` accepts rulings that name them, and `nax workflow promote` accepts a sidecar that
+holds such rulings but does not require them. A source that cannot be read adds no items and logs a
+warning; it never fails the command.
+
 **Exit codes:**
 
 | Exit | Meaning |
@@ -350,7 +364,7 @@ nax workflow record -f auth --outcome promoted --json         # after the PR is 
 
 | Field | Allowed values |
 |:------|:---------------|
-| `id` | The id of an open item the run listed. An entry of kind `ci` or `minor` may name an id the run did not list (the finishing tool tracks live checks and fix-now minors itself) |
+| `id` | The id of an open item the run listed, or of a supplementary item (`nax workflow status`). An entry of kind `ci` or `minor` may name an id the run did not list (the finishing tool tracks live checks and fix-now minors itself) |
 | `kind` | `finding`, `advisor`, `gate`, `ci`, `story`, `cannot-verify`, `minor`, `reason`. A run item of kind `ruling` is an `advisor` entry |
 | `disposition` | `fixed`, `waived`, `confirmed`, `overridden`, `verified`. `fixed` requires `sha`; the other four allow none |
 | `sha` | 7 to 40 hex characters. Its shape is checked; the commit's existence is not |
@@ -374,7 +388,7 @@ entries; a run with one has the incoming entries merged into it by id — a re-r
 itself in place, keeping its position — and the same file is rewritten. A sidecar the command reads
 back is validated as a whole before it is trusted or rewritten: a file that is not a decisions
 sidecar, whose entries do not validate, or whose entries name an item the run does not own (except a
-`ci` or `minor` entry) is refused with `invalid decisions sidecar <path>: <detail>` or
+supplementary item, or a `ci` or `minor` entry) is refused with `invalid decisions sidecar <path>: <detail>` or
 `unknown item <id>; open items: <ids>`, and the file is left byte for byte. `--outcome` alone cannot
 create a sidecar: there would be nothing to rule.
 

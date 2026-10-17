@@ -169,7 +169,7 @@ function updatedSidecar(existing: DecisionsSidecar, input: WriteInput): Decision
 async function writeRecorded(input: WriteInput): Promise<Written> {
   const found = await newestSidecar(input.loaded.runDir);
   if (found) {
-    checkEntriesAgainstItems(found.sidecar.decisions, input.loaded.openItems);
+    checkEntriesAgainstItems(found.sidecar.decisions, input.loaded.openItems, input.loaded.supplementaryItems);
     const sidecar = updatedSidecar(found.sidecar, input);
     await writeSidecar(found.path, sidecar);
     return { path: found.path, sidecar };
@@ -200,9 +200,9 @@ async function record(opts: WorkflowRecordOptions, forgeDeps: WorkflowForgeDeps)
   validateFeatureName(opts.feature);
   const outcome = outcomeOf(opts);
   const ctx: RecordContext = { dir: opts.dir, forgeDeps };
-  const loaded = await loadRunVerdict(opts.dir, opts.feature);
+  const loaded = await loadRunVerdict(opts.dir, opts.feature, forgeDeps.resolveOutputDir);
   const entries = opts.decisions === undefined ? [] : await readDecisionsFile(opts.decisions);
-  checkEntriesAgainstItems(entries, loaded.openItems);
+  checkEntriesAgainstItems(entries, loaded.openItems, loaded.supplementaryItems);
   const prUrl =
     outcome !== undefined && PR_OUTCOMES.includes(outcome) ? await readyPrUrl(outcome, loaded, ctx) : undefined;
   const written = await writeRecorded({ opts, loaded, entries, outcome, prUrl, now: forgeDeps.now() });
