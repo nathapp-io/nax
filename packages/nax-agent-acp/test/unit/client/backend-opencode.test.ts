@@ -16,6 +16,7 @@ import { _acpBackendDeps, acpBackend } from "#src/client/backend";
 import type { AcpBackendOptions } from "#src/client/options";
 import { REVIEW_NO_SANDBOX_REASON, readOnlyReason } from "#src/client/permissions";
 import { OPENCODE_NONE_CONFIG, OPENCODE_READ_CONFIG, OPENCODE_REVIEW_CONFIG } from "#src/client/registry";
+import { opencodePermissionConfig } from "#src/client/rule-policy";
 import { CODEX_CONFIG_OPTIONS, type FakeScript, type PermissionStep } from "#test/fixtures/fake-agent/script";
 import { rejection, sessionError } from "#test/helpers/errors";
 import { type InMemoryAgent, inMemoryAgent } from "#test/helpers/in-memory-launch";
@@ -62,6 +63,8 @@ interface OpenOptions {
   readonly tools?: readonly EmbedderTool[];
   /** The backend options' env (nax's model def env). */
   readonly env?: Readonly<Record<string, string>>;
+  /** nax's permission rules, as nax passes them from the resolved stage permissions. */
+  readonly rules?: AcpBackendOptions["rules"];
 }
 
 interface Opened {
@@ -82,6 +85,7 @@ async function open(profile: AgentSessionProfile, options: OpenOptions = {}): Pr
     allowUnsandboxed: true,
     command: `fake-${agent}`,
     ...(options.env === undefined ? {} : { env: options.env }),
+    ...(options.rules === undefined ? {} : { rules: options.rules }),
   });
   const session = await createAgentSession({
     backend: options.sandbox === undefined ? backend : withSandbox(backend, options.sandbox),
@@ -117,6 +121,20 @@ const RUN: PermissionStep = {
   options: ["allow_once", "reject_once"],
   toolCall: { kind: "execute", title: "Run tests", rawInput: { command: "bun test ./x" } },
 };
+
+/** nax's rule grammar: a Read deny rule denies every Read, Glob and Grep pattern alike. */
+const readDenyRules = (): AcpBackendOptions["rules"] => ({
+  allow: [],
+  deny: [{ tool: "Read", patterns: ["*"] }],
+  ask: [],
+});
+
+/** What opencode gets for a read profile once Read is denied outright: read and list drop out. */
+const TRANSLATED_READ_CONFIG = opencodePermissionConfig("read", {
+  allow: [],
+  deny: [{ tool: "Read", patterns: ["*"] }],
+  ask: [],
+});
 
 const LOOKUP: EmbedderTool = {
   name: "lookup",
@@ -163,6 +181,48 @@ describe("opencode enforces none/read/review with an injected permission config 
   });
 });
 
+describe("opencode's launch env is translated from the caller's read-tool deny rules (SPEC US-002)", () => {
+  test("read with a Read deny rule launches with the translated permission config", async () => {
+    const o = await open("read", { rules: readDenyRules() });
+    expect(launchEnv(o).OPENCODE_CONFIG_CONTENT).toBe(TRANSLATED_READ_CONFIG);
+    // The translation really happened: read and list are gone, glob and grep stay.
+    expect(TRANSLATED_READ_CONFIG).not.toBe(OPENCODE_READ_CONFIG);
+    expect(JSON.parse(TRANSLATED_READ_CONFIG).permission).toEqual({ "*": "deny", glob: "allow", grep: "allow" });
+  });
+
+  test("read: a path-scoped or non-read rule changes nothing", async () => {
+    const o = await open("read", {
+      rules: { allow: [{ tool: "Read", patterns: ["*"] }], deny: [{ tool: "Grep", patterns: ["src/**"] }], ask: [] },
+    });
+    expect(launchEnv(o).OPENCODE_CONFIG_CONTENT).toBe(OPENCODE_READ_CONFIG);
+  });
+
+  test("read: the translated value beats the caller's own OPENCODE_CONFIG_CONTENT", async () => {
+    const o = await open("read", { env: { OPENCODE_CONFIG_CONTENT: "{}" }, rules: readDenyRules() });
+    expect(launchEnv(o).OPENCODE_CONFIG_CONTENT).toBe(TRANSLATED_READ_CONFIG);
+  });
+
+  test.each(["full", "ask"] as const)("%s: no enforcement env at all, whatever the rules", async (profile) => {
+    const o = await open(profile, { rules: readDenyRules() });
+    expect(launchEnv(o).OPENCODE_CONFIG_CONTENT).toBeUndefined();
+  });
+
+  test("none: a read-tool deny rule changes nothing (every tool is already denied)", async () => {
+    const o = await open("none", { rules: readDenyRules() });
+    expect(launchEnv(o).OPENCODE_CONFIG_CONTENT).toBe(OPENCODE_NONE_CONFIG);
+  });
+
+  test("review: a Read deny rule drops read and list, keeping the asking shell", async () => {
+    const o = await open("review", { rules: readDenyRules() });
+    expect(JSON.parse(launchEnv(o).OPENCODE_CONFIG_CONTENT ?? "").permission).toEqual({
+      "*": "deny",
+      glob: "allow",
+      grep: "allow",
+      bash: "ask",
+    });
+  });
+});
+
 describe("the injected permission config survives a reconnect (S4-6 D6-g)", () => {
   const RESUMABLE: FakeScript = {
     agentInfo: { name: "opencode-acp", version: "2.0.27" },
@@ -181,6 +241,20 @@ describe("the injected permission config survives a reconnect (S4-6 D6-g)", () =
     expect(o.fake.requests).toHaveLength(2);
     expect(launchEnv(o).OPENCODE_CONFIG_CONTENT).toBe(OPENCODE_READ_CONFIG);
     expect(o.fake.requests[1]?.env.OPENCODE_CONFIG_CONTENT).toBe(OPENCODE_READ_CONFIG);
+  });
+
+  test("read with a Read deny rule: the relaunch carries the translated permission config (SPEC US-002)", async () => {
+    const o = await open("read", {
+      rules: readDenyRules(),
+      script: { ...RESUMABLE, relaunch: { turns: [{ steps: [{ kind: "text", text: "back" }] }] } },
+    });
+    await driveTurn(o.session, "one");
+    o.fake.crash();
+    await tick();
+    expect(endOf(await driveTurn(o.session, "two"))).toMatchObject({ status: "completed", output: "back" });
+    expect(o.fake.requests).toHaveLength(2);
+    expect(o.fake.requests[0]?.env.OPENCODE_CONFIG_CONTENT).toBe(TRANSLATED_READ_CONFIG);
+    expect(o.fake.requests[1]?.env.OPENCODE_CONFIG_CONTENT).toBe(TRANSLATED_READ_CONFIG);
   });
 });
 

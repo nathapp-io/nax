@@ -15,3 +15,4 @@ export type { AcpAgentSpec, AcpBackendOptions, AcpProcessHooks } from "#src/clie
 export { TOOL_HOST_SERVER_NAME } from "#src/client/pre-approval";
 export type { AcpAgentName, AgentRegistryEntry } from "#src/client/registry";
 export { registryEntry } from "#src/client/registry";
+export type { AcpPermissionRules, AcpRule } from "#src/client/rule-policy";

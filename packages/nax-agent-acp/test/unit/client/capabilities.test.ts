@@ -164,7 +164,8 @@ describe("config options", () => {
     expect(readOnlyFor("read", CLAUDE)).toBe(CLAUDE?.readOnly);
     expect(readOnlyFor("ask", CLAUDE)).toBeUndefined();
     expect(modeFor("ask", registryEntry("codex"))).toBeUndefined();
-    expect(readOnlyFor("none", registryEntry("pi"))).toBeUndefined();
+    // A custom agent has no registry entry: no enforcement, and nothing to resolve (US-004).
+    expect(readOnlyFor("none", undefined)).toBeUndefined();
     expect(modeFor("full", undefined)).toBeUndefined();
   });
 

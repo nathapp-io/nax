@@ -25,6 +25,7 @@ nax agents
 | Claude Code | `claude-agent-acp` (or `npx @agentclientprotocol/claude-agent-acp`) | Set `agent.default: "claude"` |
 | OpenCode | `opencode acp` | Set `agent.default: "opencode"` |
 | Codex | `codex-acp` (or `npx @agentclientprotocol/codex-acp`) | Set `agent.default: "codex"` |
+| Cursor Agent | `cursor-agent acp` | Set `agent.default: "cursor"` |
 | Gemini CLI | `gemini --acp` | Set `agent.default: "gemini"` |
 | Pi Coding Agent | `pi-acp` (or `npx pi-acp`) | Set `agent.default: "pi"` |
 | Aider | — | Known name with no ACP launcher; it fails at session open |

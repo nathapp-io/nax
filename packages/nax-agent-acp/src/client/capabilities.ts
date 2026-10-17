@@ -7,7 +7,9 @@
  */
 import type { InitializeResponse, SessionConfigOption } from "@agentclientprotocol/sdk";
 import type { AgentSessionProfile } from "@nathapp/nax-agent";
+import { capabilityUnsupported } from "#src/client/errors";
 import type { AgentRegistryEntry, ModeSetting, ReadOnlyEnforcement } from "#src/client/registry";
+import { cleanLabel } from "#src/client/text";
 
 const LABEL_MAX_CHARS = 200;
 
@@ -68,7 +70,7 @@ export function buildCapabilityRecord(
 }
 
 /** none, read and review (nax#2500) run with the agent's own write tools removed. */
-const isReadOnlyProfile = (profile: AgentSessionProfile): profile is "none" | "read" | "review" =>
+export const isReadOnlyProfile = (profile: AgentSessionProfile): profile is "none" | "read" | "review" =>
   profile === "none" || profile === "read" || profile === "review";
 
 /** No injected environment: the common answer for full, ask and every mode-only agent. */
@@ -104,6 +106,35 @@ export function offersValue(options: readonly SessionConfigOption[], configId: s
 /** The id of the agent's model option (category "model") that offers `model`. */
 export function modelOptionId(options: readonly SessionConfigOption[], model: string): string | undefined {
   return options.find((option) => option.category === "model" && selectValues(option).includes(model))?.id;
+}
+
+/** At most this many characters of an agent-supplied model id go into a refusal (agent text). */
+export const MODEL_ID_MAX_CHARS = 100;
+
+/**
+ * The model value to set (SPEC-cursor-pi-acp-read-only US-001). Cursor's model ids carry
+ * their settings (`gpt-5.5[context=272k,reasoning=medium]`, Auto is `default[]`), so a
+ * configured bare name matches no offered id exactly: the one offered id that starts with
+ * `requested + "["` is used instead. Two or more are ambiguous and refuse the open, naming
+ * each; none, another agent's name and an exact offer all keep `requested`, so the caller's
+ * existing "not offered" refusal follows.
+ */
+export function resolveModelValue(
+  agentName: string,
+  offered: readonly string[],
+  requested: string,
+  secrets: readonly string[],
+): string {
+  if (agentName !== "cursor" || offered.includes(requested)) return requested;
+  const matches = offered.filter((id) => id.startsWith(`${requested}[`));
+  if (matches.length <= 1) {
+    const [only] = matches;
+    return only ?? requested;
+  }
+  const named = matches.map((id) => cleanLabel(id, secrets, MODEL_ID_MAX_CHARS) ?? "").filter((id) => id !== "");
+  throw capabilityUnsupported("model", `"${requested}" matches several offered models: ${named.join(", ")}`, {
+    offered: named,
+  });
 }
 
 /** Per-agent effort option ids, tried when no option has category "thought_level" (nax's EFFORT_OPTION_BY_AGENT). */

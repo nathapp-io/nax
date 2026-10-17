@@ -6,7 +6,14 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeNaxConfig } from "@test/helpers";
 import { _acpDeps, AcpAgentAdapter } from "@/agents/acp";
-import { _registryTestAdapters, checkAgentHealth, createAgentRegistry, getInstalledAgents } from "@/agents/registry";
+import {
+  _registryTestAdapters,
+  acpAdapterFor,
+  checkAgentHealth,
+  createAgentRegistry,
+  getInstalledAgents,
+  KNOWN_AGENT_NAMES,
+} from "@/agents/registry";
 import type { NaxConfig } from "@/config/schema";
 import { DEFAULT_CONFIG } from "@/config/schema";
 import { logActiveProtocol } from "@/execution/lifecycle/run-initialization";
@@ -33,6 +40,11 @@ describe("createAgentRegistry — protocol selection", () => {
     expect(
       createAgentRegistry(makeNaxConfig({ agent: { protocol: "acp" } })).getAgent("unknown-agent-xyz"),
     ).toBeUndefined();
+  });
+
+  test("cursor is a known agent name and routes to its ACP adapter (SPEC US-005 AC-7, AC-8)", () => {
+    expect(KNOWN_AGENT_NAMES).toContain("cursor");
+    expect(acpAdapterFor("cursor").name).toBe("cursor");
   });
 
   test("resolves the protocol field from config", () => {

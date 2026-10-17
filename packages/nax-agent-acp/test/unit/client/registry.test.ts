@@ -9,8 +9,40 @@ import {
 } from "#src/client/registry";
 
 describe("ACP agent registry (S4 spec §6.10)", () => {
-  test("registers exactly the five agents", () => {
-    expect([...ACP_AGENT_NAMES]).toEqual(["claude", "codex", "gemini", "opencode", "pi"]);
+  test("registers exactly the six agents, cursor after codex", () => {
+    expect([...ACP_AGENT_NAMES]).toEqual(["claude", "codex", "cursor", "gemini", "opencode", "pi"]);
+  });
+
+  test("cursor: launch candidates and auth env; read-only mode ask, its permission config as policy, no default mode, no pre-approval", () => {
+    expect(registryEntry("cursor")).toEqual({
+      name: "cursor",
+      launch: [{ command: "cursor-agent", args: ["acp"] }],
+      readOnly: {
+        mode: { configId: "mode", value: "ask" },
+        disallowedTools: [],
+        sessionOptions: {},
+        launchEnv: {},
+        policy: "cursor",
+      },
+      defaultMode: undefined,
+      preApproval: undefined,
+      authEnv: ["CURSOR_API_KEY"],
+    });
+  });
+
+  test("cursor: none, read and review are enforced by its ask mode and its permission config", () => {
+    expect(registryEntry("cursor")?.readOnly).toEqual({
+      mode: { configId: "mode", value: "ask" },
+      disallowedTools: [],
+      sessionOptions: {},
+      launchEnv: {},
+      policy: "cursor",
+    });
+  });
+
+  test("cursor declares no default mode and no pre-approval channel", () => {
+    expect(registryEntry("cursor")?.defaultMode).toBeUndefined();
+    expect(registryEntry("cursor")?.preApproval).toBeUndefined();
   });
 
   test("claude: local adapter first, pinned npx fallback, read-only enforcement, default mode, pre-approval, auth env", () => {
@@ -25,6 +57,7 @@ describe("ACP agent registry (S4 spec §6.10)", () => {
         disallowedTools: ["Write", "Edit", "MultiEdit", "NotebookEdit", "EnterPlanMode"],
         sessionOptions: { settingSources: [], allowDangerouslySkipPermissions: false },
         launchEnv: {},
+        policy: undefined,
       },
       defaultMode: { configId: "mode", value: "default" },
       preApproval: "claudeCode.allowedTools",
@@ -32,14 +65,20 @@ describe("ACP agent registry (S4 spec §6.10)", () => {
     });
   });
 
-  test("pi: launch candidates and auth env; no read-only enforcement, no pre-approval", () => {
+  test("pi: launch candidates and auth env; read-only by its own tool allowlist and shell gate (US-004)", () => {
     expect(registryEntry("pi")).toEqual({
       name: "pi",
       launch: [
         { command: "pi-acp", args: [] },
         { command: "npx", args: ["-y", "pi-acp@0.0.34"] },
       ],
-      readOnly: undefined,
+      readOnly: {
+        mode: undefined,
+        disallowedTools: [],
+        sessionOptions: {},
+        launchEnv: {},
+        policy: "pi",
+      },
       defaultMode: undefined,
       preApproval: undefined,
       authEnv: [],
@@ -55,6 +94,7 @@ describe("ACP agent registry (S4 spec §6.10)", () => {
         disallowedTools: [],
         sessionOptions: {},
         launchEnv: {},
+        policy: undefined,
       },
       defaultMode: undefined,
       preApproval: undefined,
@@ -68,6 +108,7 @@ describe("ACP agent registry (S4 spec §6.10)", () => {
       disallowedTools: [],
       sessionOptions: {},
       launchEnv: {},
+      policy: undefined,
     });
   });
 
@@ -88,6 +129,7 @@ describe("ACP agent registry (S4 spec §6.10)", () => {
         disallowedTools: [],
         sessionOptions: {},
         launchEnv: {},
+        policy: undefined,
       },
       defaultMode: undefined,
       preApproval: undefined,
@@ -108,6 +150,7 @@ describe("ACP agent registry (S4 spec §6.10)", () => {
           read: { OPENCODE_CONFIG_CONTENT: OPENCODE_READ_CONFIG },
           review: { OPENCODE_CONFIG_CONTENT: OPENCODE_REVIEW_CONFIG },
         },
+        policy: "opencode",
       },
       defaultMode: undefined,
       preApproval: undefined,
@@ -118,6 +161,15 @@ describe("ACP agent registry (S4 spec §6.10)", () => {
   test("opencode declares no default mode and no pre-approval channel", () => {
     expect(registryEntry("opencode")?.defaultMode).toBeUndefined();
     expect(registryEntry("opencode")?.preApproval).toBeUndefined();
+  });
+
+  test("the agents whose read-only profile is built from the rules name a policy translator (US-002, US-004)", () => {
+    expect(registryEntry("opencode")?.readOnly?.policy).toBe("opencode");
+    expect(registryEntry("cursor")?.readOnly?.policy).toBe("cursor");
+    expect(registryEntry("pi")?.readOnly?.policy).toBe("pi");
+    for (const name of ["claude", "codex", "gemini"] as const) {
+      expect(registryEntry(name)?.readOnly?.policy).toBeUndefined();
+    }
   });
 
   test("opencode: none denies every tool", () => {
@@ -193,10 +245,11 @@ describe("ACP agent registry (S4 spec §6.10)", () => {
     expect(Object.isFrozen(ACP_AGENT_NAMES)).toBe(true);
   });
 
-  test("every entry with read-only enforcement sets a mode or a launch env for none, read and review", () => {
+  test("every entry with read-only enforcement sets a mode, a launch env for none, read and review, or a policy", () => {
     for (const name of ACP_AGENT_NAMES) {
       const readOnly = registryEntry(name)?.readOnly;
       if (readOnly === undefined) continue;
+      if (readOnly.policy !== undefined) continue;
       if (readOnly.mode !== undefined) {
         expect(readOnly.mode.configId).not.toBe("");
         expect(readOnly.mode.value).not.toBe("");

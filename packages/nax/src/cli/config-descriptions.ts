@@ -332,7 +332,7 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   // Agent protocol
   agent: "Agent protocol configuration (ACP-003)",
   "agent.protocol": "Protocol for agent communication: 'acp' (default) | 'native' | 'hybrid'",
-  "agent.acp": "ACP agent transport settings (claude, codex, opencode, gemini, pi)",
+  "agent.acp": "ACP agent transport settings (claude, codex, cursor, opencode, gemini, pi)",
   "agent.native.instructionFileName":
     "Repository instruction filename (default: AGENTS.md). Custom Markdown basenames load without AGENTS/CLAUDE fallbacks.",
   "agent.native.catalogOverrides":

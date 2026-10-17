@@ -24,11 +24,12 @@ import {
   buildCapabilityRecord,
   type CapabilityRecord,
   effortOptionId,
-  launchEnvFor,
+  MODEL_ID_MAX_CHARS,
   modeFor,
   modelOptionId,
   offersValue,
   readOnlyFor,
+  resolveModelValue,
   selectValues,
   unmetRequirement,
 } from "#src/client/capabilities";
@@ -53,6 +54,7 @@ import {
   restoreSession,
   type SessionSetup,
 } from "#src/client/resume";
+import { policyLaunchEnv } from "#src/client/rule-policy";
 import { type SessionOffers, sessionOffers } from "#src/client/session-offers";
 import { cleanLabel } from "#src/client/text";
 import type { ToolHost } from "#src/client/tool-host";
@@ -109,9 +111,11 @@ export async function openAcpSession(
 ): Promise<OpenedAcp> {
   if (ctx.openSignal.aborted) throw closedDuringOpen(ctx.sessionId);
   const candidate = chooseLaunch(options);
-  // nax#2372: the profile's enforcement env (opencode's permission policy) wins over the
-  // caller's, so a model's own OPENCODE_CONFIG_CONTENT cannot weaken a read-only session.
-  const env = { ...options.env, ...launchEnvFor(ctx.profile, options.entry) };
+  // nax#2372: the profile's enforcement env (opencode's permission policy, translated from
+  // the caller's read-tool deny rules) wins over the caller's, so a model's own
+  // OPENCODE_CONFIG_CONTENT cannot weaken a read-only session. A rejection here refuses the
+  // open before anything is launched (rule-policy.ts, US-004).
+  const env = { ...options.env, ...(await policyLaunchEnv(ctx.profile, options)) };
   const launched = launch({ command: candidate.command, args: candidate.args, cwd: ctx.workdir, env });
   watchProcess(options.onProcess, launched);
   const link = openConnection(launched.target, handlers);
@@ -284,27 +288,38 @@ async function applyMode(o: Opening, sessionId: string, offers: SessionOffers): 
 
 /** At most this many offered ids, each cleaned and capped, go into a model refusal (agent-supplied text). */
 const MAX_OFFERED_MODELS = 50;
-const MAX_MODEL_ID_CHARS = 100;
+
+/** The model ids the config options offer, raw: category "model" values in offer order. */
+function configModelIds(offers: SessionOffers): string[] {
+  return offers.configOptions.filter((option) => option.category === "model").flatMap((option) => selectValues(option));
+}
 
 /** The model ids a refusal names: the config options' ids first, then the legacy `models` block's, capped. */
 function offeredModels(offers: SessionOffers, secrets: readonly string[]): string[] {
-  const fromOptions = offers.configOptions
-    .filter((option) => option.category === "model")
-    .flatMap((option) => selectValues(option));
-  return [...fromOptions, ...offers.modelIds]
+  return [...configModelIds(offers), ...offers.modelIds]
     .slice(0, MAX_OFFERED_MODELS)
-    .map((id) => cleanLabel(id, secrets, MAX_MODEL_ID_CHARS) ?? "")
+    .map((id) => cleanLabel(id, secrets, MODEL_ID_MAX_CHARS) ?? "")
     .filter((id) => id !== "");
 }
 
 /**
  * The requested model: through a config option when one offers it (the ACP 1.x way),
  * else through the legacy session/set_model; an agent offering it in neither refuses
- * the open, naming every id it does offer.
+ * the open, naming every id it does offer. The requested name is first resolved against
+ * the offered ids (resolveModelValue), so a settings-carrying id (Cursor) can be named
+ * by its bare form; the config options' ids are used when there are any, else the
+ * legacy block's.
  */
 async function applyModel(o: Opening, sessionId: string, offers: SessionOffers): Promise<SessionOffers> {
-  const model = o.options.model;
-  if (model === undefined) return offers;
+  const requested = o.options.model;
+  if (requested === undefined) return offers;
+  const fromOptions = configModelIds(offers);
+  const model = resolveModelValue(
+    o.options.agentName,
+    fromOptions.length > 0 ? fromOptions : offers.modelIds,
+    requested,
+    o.options.secrets,
+  );
   const configId = modelOptionId(offers.configOptions, model);
   if (configId !== undefined) {
     const set = await step(

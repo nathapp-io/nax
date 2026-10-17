@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { type CodingTool, createMemoryTranscriptStore, type OpenSessionOpts } from "@nathapp/nax-agent";
+import { join } from "node:path";
+import {
+  AgentSessionError,
+  type CodingTool,
+  createMemoryTranscriptStore,
+  type OpenSessionOpts,
+} from "@nathapp/nax-agent";
+import { acpBackend } from "@nathapp/nax-agent-acp/client";
+import { assertCaughtInstanceOf, makeNaxConfig } from "@test/helpers";
 import { createAskPort } from "@/agents/acp/ask-port";
 import {
   acpOpenSummary,
@@ -11,6 +19,9 @@ import {
   transcriptStoreFor,
 } from "@/agents/acp/open-context";
 import { createTurnSlot } from "@/agents/acp/turn-slot";
+import { globalConfigDir } from "@/config/paths";
+import { resolvePermissions } from "@/config/permissions";
+import { PermissionsBlockSchema } from "@/config/schemas-execution";
 
 const OPTS: OpenSessionOpts = {
   agentName: "claude",
@@ -111,6 +122,87 @@ describe("backendOptions: effort and deadlines (spec §6.7, §7.2)", () => {
       trackedSpawnDeadlineMs: 9_000_000,
     });
     expect(options).toMatchObject({ initializeTimeoutMs: 3_600_000, cancelGraceMs: 600_000 });
+  });
+});
+
+/**
+ * SPEC-cursor-pi-acp-read-only US-005: a safe-profile review stage that allows exactly one Bash
+ * command. The block is written with the key a caller uses (`allow`) and parsed by the schema that
+ * declares it — `ExecutionConfig` (`src/config/runtime-types.ts`) still lists only the legacy
+ * `allowedTools`, so a literal here would be checked against the narrower hand-written type (the
+ * same gap `test/unit/config/inert-bash-stages.test.ts` documents).
+ */
+const SAFE_REVIEW = makeNaxConfig({
+  execution: {
+    permissionProfile: "safe",
+    permissions: PermissionsBlockSchema.parse({ review: { allow: ["Bash(git status*)"] } }),
+  },
+});
+
+describe("backendOptions: permission rules (SPEC US-005)", () => {
+  test("AC-1: the resolved grants, denies and asks are forwarded as the backend's rules", () => {
+    const options = backendOptions("opencode", {
+      ...OPTS,
+      resolvedPermissions: {
+        mode: "approve-reads",
+        bashApproval: "gated",
+        toolGrants: [{ tool: "Read", patterns: ["*"] }],
+        denyRules: [{ tool: "Bash", patterns: ["git push*"] }],
+        askRules: [{ tool: "Bash", patterns: ["npm test*"] }],
+      },
+    });
+    expect(options.rules).toEqual({
+      allow: [{ tool: "Read", patterns: ["*"] }],
+      deny: [{ tool: "Bash", patterns: ["git push*"] }],
+      ask: [{ tool: "Bash", patterns: ["npm test*"] }],
+    });
+  });
+
+  test("AC-2: a stage that configures no rules forwards three empty lists", () => {
+    const options = backendOptions("opencode", {
+      ...OPTS,
+      resolvedPermissions: { mode: "approve-reads", bashApproval: "gated" },
+    });
+    expect(options.rules).toEqual({ allow: [], deny: [], ask: [] });
+  });
+
+  test("AC-3: the rule-policy state directory is nax's own global ACP directory", () => {
+    expect(backendOptions("cursor", OPTS).stateDir).toBe(join(globalConfigDir(), "acp"));
+  });
+
+  test("AC-9: the fields this story does not touch keep their values", () => {
+    expect(backendOptions("opencode", OPTS)).toMatchObject({
+      agent: "opencode",
+      allowUnsandboxed: true,
+      inheritEnv: false,
+      initializeTimeoutMs: 30_000,
+      cancelGraceMs: 10_000,
+    });
+  });
+
+  test("AC-4: a safe-profile review stage's resolved rules open a cursor backend", () => {
+    const options = backendOptions("cursor", {
+      ...OPTS,
+      resolvedPermissions: resolvePermissions(SAFE_REVIEW, "review"),
+    });
+    expect(options.rules?.allow).toContainEqual({ tool: "Bash", patterns: ["git status*"] });
+    expect(() => acpBackend(options)).not.toThrow();
+  });
+
+  test("AC-10: a malformed deny rule is refused by the backend, not silently dropped", () => {
+    const opts: OpenSessionOpts = {
+      ...OPTS,
+      resolvedPermissions: { ...OPTS.resolvedPermissions, denyRules: [{ tool: "Read", patterns: [] }] },
+    };
+    let caught: unknown;
+    try {
+      acpBackend(backendOptions("opencode", opts));
+    } catch (err) {
+      caught = err;
+    }
+    assertCaughtInstanceOf(caught, AgentSessionError, "acpBackend rejection");
+    expect(caught.code).toBe("AGENT_SESSION_INVALID_OPTIONS");
+    expect(String(caught.context?.path).startsWith("rules.deny.0")).toBe(true);
   });
 });
 

@@ -33,6 +33,13 @@ const ENTRIES: Readonly<Record<string, AcpEntry>> = Object.freeze({
     supportedTiers: ["fast", "balanced"],
     maxContextTokens: 128_000,
   },
+  cursor: {
+    agent: "cursor",
+    binary: "cursor-agent",
+    displayName: "Cursor Agent (ACP)",
+    supportedTiers: ["fast", "balanced", "powerful"],
+    maxContextTokens: 200_000,
+  },
   gemini: {
     agent: "gemini",
     binary: "gemini",

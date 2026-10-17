@@ -11,6 +11,8 @@ Two consumers read that one resolution:
   ACP. It is a blanket posture, not a per-call gate.
 - **The declarative grants** (`allow` / `deny` / `ask` rules) are what nax's own native
   coding tools enforce per call. `Bash`, `Exec`, `Read`, `Git` and the rest are checked here.
+  An ACP session receives the same three lists, where a subset of them is translated into the
+  agent's own config or decided by nax itself — see [ACP agents](#acp-agents).
 - **The bash approval mode** (`raw` / `gated` / `escalate`, [ADR-030](../adr/ADR-030-bash-approval-modes.md))
   decides how a `Bash` command string is adjudicated. It rides on the same resolution as
   `bashApproval`; see [Bash approval modes](#bash-approval-modes).
@@ -219,6 +221,86 @@ expressible in config.
 built-in pattern list of its own, and derives nothing from `quality.commands`. Under `gated` /
 `escalate` a shell command runs only where a human wrote a `Bash(...)` allow rule for that
 stage; under the default `raw`, the op's own `Bash` declaration is what admits it.
+
+## ACP agents
+
+An ACP session is a separate agent process with its own tools, so nax does not gate each call the
+way it gates a native coding tool. What it does instead is hand the resolution to the session:
+the resolved mode, and the three rule lists as the backend's `allow` / `deny` / `ask`
+(`SessionManager.openSession` → `backendOptions` → `acpBackend`,
+`packages/nax/src/agents/acp/open-context.ts`). Any per-agent policy file the backend writes lands
+under `~/.nax/acp/` (`stateDir`). `bashApproval` rides along on the resolution but plays no part
+here: the ACP decision below reads the `Bash(...)` rules only.
+
+Two things then happen, and they are worth keeping apart — **read-tool deny translation**, which
+each rule-capable agent's own config carries, and the **Bash decision**, which nax makes itself.
+
+### Read-tool deny translation
+
+Only one shape is translated: an *unconditional* deny (`Tool(*)` — a rule whose patterns contain
+`*`) of `Read`, `Glob` or `Grep`, and only under the read-only profiles (`read` and `review`;
+`none` ignores the rules entirely). Every other rule is ignored by this translation — a
+path-scoped `Read(src/**)` deny, a `Write` or `Git` rule, `Exec`, `RunCommand` and `Mcp(...)`
+change nothing on the agent's side. That direction is safe: a read-only profile already runs with
+the agent's write tools removed, so no rule can widen it.
+
+| nax deny rule | opencode | Cursor | pi |
+|:--|:--|:--|:--|
+| none of these | its read config, byte-identical | `Read(**)` allowed | `--tools read,grep,find,ls` |
+| `Read` | drops `read` and `list` | its read allowance is dropped and `Read(**)` joins the deny list | drops `read` |
+| `Glob` | drops `glob` | no change (Cursor has no glob entry) | drops `find` and `ls` |
+| `Grep` | drops `grep` | no change | drops `grep` |
+
+Claude, codex and gemini translate nothing here: their read-only enforcement is their own mode (a
+reduced tool set, codex's OS sandbox, gemini's plan mode) and nax does not rewrite it. No `allow`
+rule is ever translated into an agent's config — an agent that matches command *text* knows
+nothing of redirects, which is why the decision below belongs to nax rather than to the agent.
+
+### The Bash decision under `review`
+
+`review` is the one profile that keeps a shell tool (a reviewer op declares `Bash`), and it is the
+only place an ACP shell command is decided. `none` and `read` never run one: opencode loses its
+`bash` entry, Cursor keeps `Shell(*)` in its deny list, pi's `--tools` list carries no `bash`, and
+`none` has no tool at all.
+
+- **Claude keeps its sandboxed review.** Claude is the agent nax forwards its sandbox policy to, so
+  an `execute` request there is allowed inside that sandbox, exactly as before.
+- **Every other agent is decided by the operator's `Bash(...)` rules.** The command the agent asks
+  about is lexed by the same lexer a native session uses, and nax refuses without running it when
+  the lexer refuses the command, when it yields no segment, when any segment redirects, or when any
+  token is opaque (a `$`-expansion whose runtime value nax cannot know) — a redirect is refused even
+  when an allow rule names the command. Otherwise every segment must match a pattern of some
+  `Bash(...)` **allow** rule, and no segment may match a `Bash` deny or `ask` pattern. Matching is
+  the native per-token prefix match, so `Bash(bun test)` admits `bun test` and
+  `bun test src/x.test.ts`. Each pattern word matches one command word, and `*` within a word does
+  not cross `/`: `Bash(bun test *)` admits `bun test x.test.ts` but not `bun test` or
+  `bun test src/x.test.ts`. `ask` counts as a deny here: nobody answers an ACP read-only session.
+- **An allowed command runs on the host, unsandboxed.** nax decides the command *string* the agent
+  reported and nothing else: no OS sandbox wraps opencode, Cursor or pi shell commands, and the
+  agent's other tools are governed by the read-tool translation and the agent's own mode, not by
+  this gate. Writing a `Bash(...)` allow rule is a decision to trust that command's text.
+- **Under `review` with no `Bash(...)` allow rule**, no command can ever be allowed: opencode
+  (`bash: "ask"`) and Cursor ask nax about each one and are refused, and pi is not given a shell
+  tool at all.
+
+### Cursor and pi specifics
+
+- **Cursor reports the command after its own hooks rewrote it.** The request carries the command in
+  the tool call's title, in backticks (`` `git status --short` ``), and nax matches that text — the
+  string it received, not the string the model wrote. A hook from the operator's own Cursor
+  configuration can therefore change what is matched (a probe saw `ls` arrive as `rtk ls -la`), and
+  a repository's own `.cursor/cli.json` rules merge with the isolated config nax plants, their
+  allow rules overriding its denies. nax neither detects nor refuses either one; the enforcement is
+  as strong as the Cursor configuration on the machine.
+- **pi has no permission system of its own**, so nax writes a small pi extension that turns every
+  `bash` call into a confirm prompt; pi-acp hands that prompt to nax as a permission request and nax
+  answers it with the rule decision above. pi's own installed extensions still load — their tools
+  are filtered by `--tools`, their code still runs — so the pi extension set is part of the trust
+  boundary too.
+
+**With no rules configured nothing changes for any supported agent**: no `Read` / `Glob` / `Grep`
+deny means the agent keeps its read config byte for byte, and no `Bash(...)` allow rule means no
+command of an ACP agent runs under `review`, which is what it was before this section existed.
 
 ## `ask`, and the approval gate
 

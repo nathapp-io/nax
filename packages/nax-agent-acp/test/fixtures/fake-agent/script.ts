@@ -193,6 +193,35 @@ export const CODEX_CONFIG_OPTIONS: readonly SessionConfigOption[] = [
   },
 ];
 
+/** Cursor's session config as the fake offers it: a `mode` select and a `model` select of settings-carrying ids. */
+export const CURSOR_CONFIG_OPTIONS: readonly SessionConfigOption[] = [
+  {
+    id: "mode",
+    name: "Mode",
+    category: "mode",
+    type: "select",
+    currentValue: "agent",
+    options: [
+      { value: "agent", name: "Agent" },
+      { value: "plan", name: "Plan" },
+      { value: "ask", name: "Ask" },
+    ],
+  },
+  {
+    id: "model",
+    name: "Model",
+    category: "model",
+    type: "select",
+    currentValue: "default[]",
+    options: [
+      { value: "default[]", name: "Auto" },
+      { value: "claude-sonnet-5-5[context=300k,reasoning_effort=high]", name: "Claude Sonnet 5.5 (high)" },
+      { value: "claude-sonnet-5-5[context=300k,reasoning_effort=low]", name: "Claude Sonnet 5.5 (low)" },
+      { value: "gpt-5.5[context=272k,reasoning=medium]", name: "GPT-5.5 (medium)" },
+    ],
+  },
+];
+
 /** Gemini's session modes as its `session/new` answer carries them, without config options. */
 export const GEMINI_SESSION_MODES: SessionModeState = {
   availableModes: [

@@ -7,7 +7,7 @@
  * auth variables, so their requirements fail closed.
  */
 
-export type AcpAgentName = "claude" | "codex" | "gemini" | "opencode" | "pi";
+export type AcpAgentName = "claude" | "codex" | "cursor" | "gemini" | "opencode" | "pi";
 
 export interface LaunchCandidate {
   readonly command: string;
@@ -37,6 +37,12 @@ export interface ReadOnlyEnforcement {
   readonly sessionOptions: Readonly<Record<string, unknown>>;
   /** Extra agent process environment under none/read/review, by profile; {} when the agent needs none. */
   readonly launchEnv: Readonly<Partial<Record<"none" | "read" | "review", Readonly<Record<string, string>>>>>;
+  /**
+   * The rule-policy translator that builds this agent's launch env from nax's
+   * permission rules (rule-policy.ts); undefined means the agent's env is the
+   * `launchEnv` above, whatever the rules.
+   */
+  readonly policy: "opencode" | "cursor" | "pi" | undefined;
 }
 
 export interface AgentRegistryEntry {
@@ -70,6 +76,7 @@ function freezeReadOnly(readOnly: ReadOnlyEnforcement | undefined): ReadOnlyEnfo
     disallowedTools: Object.freeze([...readOnly.disallowedTools]),
     sessionOptions: Object.freeze(Object.fromEntries(options)),
     launchEnv: Object.freeze(Object.fromEntries(launchEnv)),
+    policy: readOnly.policy,
   });
 }
 
@@ -121,6 +128,7 @@ const REGISTRY: ReadonlyMap<AcpAgentName, AgentRegistryEntry> = new Map([
           disallowedTools: ["Write", "Edit", "MultiEdit", "NotebookEdit", "EnterPlanMode"],
           sessionOptions: { settingSources: [], allowDangerouslySkipPermissions: false },
           launchEnv: {},
+          policy: undefined,
         },
         defaultMode: { configId: "mode", value: "default" },
         preApproval: "claudeCode.allowedTools",
@@ -139,6 +147,26 @@ const REGISTRY: ReadonlyMap<AcpAgentName, AgentRegistryEntry> = new Map([
         disallowedTools: [],
         sessionOptions: {},
         launchEnv: {},
+        policy: undefined,
+      },
+      defaultMode: undefined,
+      preApproval: undefined,
+    }),
+  ],
+  // nax#2372: cursor's own modes do not enforce anything (probed: mode `ask` let a forced
+  // write through, mode `plan` let the model switch back to `agent` and write), so `ask`
+  // only tells the model it is read-only; the real enforcement is its permission config
+  // (US-004: an isolated cli-config.json, pointed at by CURSOR_CONFIG_DIR). No plan mode
+  // is ever used here.
+  [
+    "cursor",
+    entry("cursor", [local("cursor-agent", "acp")], ["CURSOR_API_KEY"], {
+      readOnly: {
+        mode: { configId: "mode", value: "ask" },
+        disallowedTools: [],
+        sessionOptions: {},
+        launchEnv: {},
+        policy: "cursor",
       },
       defaultMode: undefined,
       preApproval: undefined,
@@ -155,6 +183,7 @@ const REGISTRY: ReadonlyMap<AcpAgentName, AgentRegistryEntry> = new Map([
         disallowedTools: [],
         sessionOptions: {},
         launchEnv: {},
+        policy: undefined,
       },
       defaultMode: undefined,
       preApproval: undefined,
@@ -164,7 +193,9 @@ const REGISTRY: ReadonlyMap<AcpAgentName, AgentRegistryEntry> = new Map([
   // tools). Enforcement is its own permission config, injected per profile as an env
   // variable: opencode denies every tool, then allows its read tools back for read and
   // review, and under review asks nax about each shell command. No mode is set, and it
-  // has no pre-approval channel (embedder tools stay unsupported).
+  // has no pre-approval channel (embedder tools stay unsupported). The launch env below
+  // is what an operator with no read-tool deny rule gets; `policy: "opencode"` lets
+  // rule-policy.ts translate an unconditional deny of Read, Glob or Grep instead.
   [
     "opencode",
     entry("opencode", [local("opencode", "acp")], [], {
@@ -177,13 +208,32 @@ const REGISTRY: ReadonlyMap<AcpAgentName, AgentRegistryEntry> = new Map([
           read: { OPENCODE_CONFIG_CONTENT: OPENCODE_READ_CONFIG },
           review: { OPENCODE_CONFIG_CONTENT: OPENCODE_REVIEW_CONFIG },
         },
+        policy: "opencode",
       },
       defaultMode: undefined,
       preApproval: undefined,
     }),
   ],
   // Exact pin: a tilde range does not pin 0.0.x.
-  ["pi", entry("pi", [local("pi-acp"), npx("pi-acp@0.0.34")], [])],
+  // nax#2372, US-004: pi has no mode and no permission config of its own. Read-only is
+  // its own tool allowlist (`--tools` / `--no-tools`) plus, under review, the gate
+  // extension that turns every bash call into a confirm prompt nax decides
+  // (rule-policy.ts, shell-rules.ts). Both are written per launch and named by the
+  // wrapper PI_ACP_PI_COMMAND points at.
+  [
+    "pi",
+    entry("pi", [local("pi-acp"), npx("pi-acp@0.0.34")], [], {
+      readOnly: {
+        mode: undefined,
+        disallowedTools: [],
+        sessionOptions: {},
+        launchEnv: {},
+        policy: "pi",
+      },
+      defaultMode: undefined,
+      preApproval: undefined,
+    }),
+  ],
 ]);
 
 export const ACP_AGENT_NAMES: readonly AcpAgentName[] = Object.freeze([...REGISTRY.keys()]);

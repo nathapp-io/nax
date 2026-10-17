@@ -3,7 +3,8 @@
  * option fails at acpBackend() and never at open. allowUnsandboxed is checked
  * first: anything but `true` is AGENT_SESSION_SANDBOX_UNAVAILABLE (R7).
  */
-import { isAbsolute } from "node:path";
+import { tmpdir } from "node:os";
+import { isAbsolute, join } from "node:path";
 import { AgentSessionError } from "@nathapp/nax-agent";
 import { z } from "zod";
 import { buildAgentEnv, secretValues } from "#src/client/env";
@@ -14,9 +15,13 @@ import {
   type LaunchCandidate,
   registryEntry,
 } from "#src/client/registry";
+import { type AcpPermissionRules, type AcpRule, NO_RULES } from "#src/client/rule-policy";
 
 export const DEFAULT_CANCEL_GRACE_MS = 10_000;
 export const DEFAULT_INITIALIZE_TIMEOUT_MS = 60_000;
+
+/** Where rule-policy files go when the caller names no directory (rule-policy.ts, US-004 writes them). */
+export const DEFAULT_STATE_DIR = join(tmpdir(), "nax-agent-acp");
 
 export type AcpAgentSpec =
   | AcpAgentName
@@ -40,6 +45,14 @@ export interface AcpBackendOptions {
   readonly env?: Readonly<Record<string, string>>;
   /** Default false: the allowlist only. true hands the whole process.env to the agent. */
   readonly inheritEnv?: boolean;
+  /** nax's permission rules, translated into the agent's own config where the agent supports it. */
+  readonly rules?: {
+    readonly allow?: readonly AcpRule[];
+    readonly deny?: readonly AcpRule[];
+    readonly ask?: readonly AcpRule[];
+  };
+  /** Where an agent's rule-policy files are written; absolute. Defaults to DEFAULT_STATE_DIR. */
+  readonly stateDir?: string;
   /** Overrides the registry's launch command (a bare name or an absolute path). */
   readonly command?: string;
   readonly args?: readonly string[];
@@ -62,6 +75,10 @@ export interface ResolvedAcpOptions {
   readonly launch: AcpLaunch;
   readonly model: string | undefined;
   readonly effort: string | undefined;
+  /** The rules translated into the agent's own config; NO_RULES when the caller has none. */
+  readonly rules: AcpPermissionRules;
+  /** The directory an agent's rule-policy files go in (absolute). */
+  readonly stateDir: string;
   readonly env: Readonly<Record<string, string>>;
   /** Values redacted from every agent excerpt (D-g). */
   readonly secrets: readonly string[];
@@ -85,14 +102,25 @@ const customAgent = z.strictObject({
   command,
   args: z.array(plain).optional(),
 });
+/** One `Tool(pattern, …)` grant: a tool name and at least one pattern. */
+const ruleSchema = z.strictObject({ tool: plain.min(1), patterns: z.array(plain).min(1) });
+const rulesSchema = z.strictObject({
+  allow: z.array(ruleSchema).optional(),
+  deny: z.array(ruleSchema).optional(),
+  ask: z.array(ruleSchema).optional(),
+});
+/** Rule-policy files are written outside the workdir, so the caller must be explicit about where. */
+const stateDirSchema = plain.refine(isAbsolute, "must be an absolute path");
 const SCHEMA = z
   .strictObject({
-    agent: z.union([z.enum(["claude", "codex", "gemini", "opencode", "pi"]), customAgent]),
+    agent: z.union([z.enum(["claude", "codex", "cursor", "gemini", "opencode", "pi"]), customAgent]),
     allowUnsandboxed: z.literal(true),
     model: z.string().min(1).optional(),
     effort: z.string().min(1).optional(),
     env: z.record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/), plain).optional(),
     inheritEnv: z.boolean().optional(),
+    rules: rulesSchema.optional(),
+    stateDir: stateDirSchema.optional(),
     command: command.optional(),
     args: z.array(plain).optional(),
     cancelGraceMs: z.number().int().positive().max(600_000).optional(),
@@ -111,6 +139,21 @@ type ParsedOptions = z.output<typeof SCHEMA>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** A frozen copy of one parsed rule; the caller's arrays never reach the resolved options. */
+function freezeRule(rule: { readonly tool: string; readonly patterns: readonly string[] }): AcpRule {
+  return Object.freeze({ tool: rule.tool, patterns: Object.freeze([...rule.patterns]) });
+}
+
+/** The caller's rules with every absent list empty, deeply frozen; NO_RULES when there are none. */
+function freezeRules(input: z.output<typeof rulesSchema> | undefined): AcpPermissionRules {
+  if (input === undefined) return NO_RULES;
+  return Object.freeze({
+    allow: Object.freeze((input.allow ?? []).map(freezeRule)),
+    deny: Object.freeze((input.deny ?? []).map(freezeRule)),
+    ask: Object.freeze((input.ask ?? []).map(freezeRule)),
+  });
 }
 
 function launchOf(data: ParsedOptions, entry: AgentRegistryEntry | undefined): AcpLaunch {
@@ -148,6 +191,8 @@ function resolved(
     launch: launchOf(data, entry),
     model: data.model,
     effort: data.effort,
+    rules: freezeRules(data.rules),
+    stateDir: data.stateDir ?? DEFAULT_STATE_DIR,
     env: Object.freeze(env),
     secrets: Object.freeze([...secretValues(env)]),
     cancelGraceMs: data.cancelGraceMs ?? DEFAULT_CANCEL_GRACE_MS,
