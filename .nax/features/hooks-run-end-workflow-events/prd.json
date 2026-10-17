@@ -3,7 +3,7 @@
   "feature": "hooks-run-end-workflow-events",
   "branchName": "feat/hooks-run-end-workflow-events",
   "createdAt": "2026-10-18T00:00:00Z",
-  "updatedAt": "2026-10-17T10:43:51.610Z",
+  "updatedAt": "2026-10-17T10:58:17.079Z",
   "userStories": [
     {
       "id": "US-001",
@@ -125,8 +125,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
