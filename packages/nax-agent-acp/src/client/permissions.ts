@@ -77,6 +77,15 @@ export function offeredOptions(request: RequestPermissionRequest): OfferedOption
   };
 }
 
+/** A deny: `cancelled`, or a selected option the agent offered as a reject kind (nax#2582). */
+export function isDenial(request: RequestPermissionRequest, response: RequestPermissionResponse): boolean {
+  if (response.outcome.outcome === "cancelled") return true;
+  const { optionId } = response.outcome;
+  const options: readonly unknown[] = Array.isArray(request.options) ? request.options : [];
+  const chosen = options.find((option) => isRecord(option) && option.optionId === optionId);
+  return isRecord(chosen) && (chosen.kind === "reject_once" || chosen.kind === "reject_always");
+}
+
 const cancelled = (): RequestPermissionResponse => ({ outcome: { outcome: "cancelled" } });
 const selected = (optionId: string): RequestPermissionResponse => ({ outcome: { outcome: "selected", optionId } });
 

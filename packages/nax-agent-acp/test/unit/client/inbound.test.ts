@@ -347,3 +347,30 @@ describe("createInboundRouter: a permission request announces its tool call (S4-
     await release();
   });
 });
+
+describe("denials are counted on the turn's collector (nax#2582)", () => {
+  test.each([
+    ["a reject", REJECT, 1],
+    ["cancelled", CANCELLED, 1],
+    ["an allow", ALLOW, 0],
+  ] as const)("%s answer: %d denial(s)", async (_name, answer, count) => {
+    const { decide } = recordingDecider(async () => answer);
+    const router = createInboundRouter(decide);
+    const collector = createTurnCollector(undefined);
+    const release = router.attach("s1", collector, IDLE);
+    expect(await router.handlers.onPermission(request("s1"))).toEqual(answer);
+    expect(collector.denials()).toBe(count);
+    await release();
+  });
+
+  test("a deny answered after the turn aborted is not counted", async () => {
+    const router = createInboundRouter(recordingDecider(untilAborted).decide);
+    const collector = createTurnCollector(undefined);
+    const turn = new AbortController();
+    router.attach("s1", collector, turn.signal);
+    const pending = router.handlers.onPermission(request("s1"));
+    turn.abort();
+    expect(await pending).toEqual(CANCELLED);
+    expect(collector.denials()).toBe(0);
+  });
+});

@@ -16,6 +16,7 @@ import {
   ASK_REASON,
   decidePermission,
   FULL_REASON,
+  isDenial,
   NO_ALLOW_ONCE_REASON,
   offeredOptions,
   REVIEW_NO_SANDBOX_REASON,
@@ -90,6 +91,26 @@ describe("offeredOptions and rejectLocally", () => {
     expect(offeredOptions(malformed)).toEqual({});
     const noList: RequestPermissionRequest = JSON.parse('{"sessionId":"s","toolCall":null,"options":null}');
     expect(rejectLocally(noList)).toEqual(CANCELLED);
+  });
+});
+
+describe("isDenial (nax#2582)", () => {
+  const req = request(["allow_once", "allow_always", "reject_once", "reject_always"]);
+  test.each([
+    ["allow_once", false],
+    ["allow_always", false],
+    ["reject_once", true],
+    ["reject_always", true],
+  ] as const)("a selected %s option: %s", (kind, denied) => {
+    expect(isDenial(req, selected(kind))).toBe(denied);
+  });
+
+  test("cancelled is a denial", () => {
+    expect(isDenial(req, CANCELLED)).toBe(true);
+  });
+
+  test("an option id the agent never offered is not a denial", () => {
+    expect(isDenial(req, { outcome: { outcome: "selected", optionId: "opt-unknown" } })).toBe(false);
   });
 });
 

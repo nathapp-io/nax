@@ -15,6 +15,7 @@ import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
 import { _acpBackendDeps, acpBackend } from "#src/client/backend";
 import type { AcpBackendOptions } from "#src/client/options";
 import { FULL_REASON, REVIEW_EXECUTE_REASON, REVIEW_NO_SANDBOX_REASON, readOnlyReason } from "#src/client/permissions";
+import { DENIED_CONTINUATION_PROMPT, MAX_DENIED_CONTINUATIONS } from "#src/client/turn";
 import {
   CLAUDE_CONFIG_OPTIONS,
   CODEX_CONFIG_OPTIONS,
@@ -23,7 +24,7 @@ import {
 } from "#test/fixtures/fake-agent/script";
 import { rejection, sessionError } from "#test/helpers/errors";
 import { type InMemoryAgent, inMemoryAgent } from "#test/helpers/in-memory-launch";
-import { driveTurn } from "#test/helpers/session-events";
+import { driveTurn, endOf } from "#test/helpers/session-events";
 
 const realLaunch = _acpBackendDeps.launch;
 const sessions: AgentSession[] = [];
@@ -232,6 +233,102 @@ describe("codex runs the read-only profiles on its own read-only mode (nax#2372)
     );
     expect(err.code).toBe("AGENT_SESSION_CAPABILITY_UNSUPPORTED");
     expect(err.context).toMatchObject({ capability: "tools" });
+  });
+});
+
+describe("a deny that makes the agent cancel its turn is continued (nax#2582)", () => {
+  /** codex-acp's sandbox escalation: its only reject_once option is `cancel`, which stops the turn. */
+  const DENIED_THEN_CANCELLED = {
+    steps: [{ kind: "text", text: "trying " }, RUN],
+    stopReason: "cancelled",
+    usage: { totalTokens: 15, inputTokens: 10, outputTokens: 5 },
+  } as const;
+  const prompts = (o: Opened) => o.fake.callsTo("session/prompt") as { prompt: { text: string }[] }[];
+
+  test("read: the turn continues with one follow-up prompt, completes, and reports both prompts' tokens", async () => {
+    const o = await open("read", {
+      script: {
+        turns: [
+          DENIED_THEN_CANCELLED,
+          {
+            steps: [{ kind: "text", text: "done without it" }],
+            usage: { totalTokens: 7, inputTokens: 4, outputTokens: 3, cachedReadTokens: 2 },
+          },
+        ],
+      },
+    });
+    const events = await driveTurn(o.session, "write a file");
+    expect(prompts(o).map((p) => p.prompt[0]?.text)).toEqual([
+      expect.stringContaining("write a file"),
+      DENIED_CONTINUATION_PROMPT,
+    ]);
+    expect(find(events, "approval_resolved")).toMatchObject({ decision: "deny", decidedBy: "profile" });
+    expect(endOf(events)).toMatchObject({
+      status: "completed",
+      output: "trying done without it",
+      usage: { inputTokens: 14, outputTokens: 8, cacheReadTokens: 2 },
+    });
+    expect(events.filter((e) => e.type === "usage")).toHaveLength(1);
+  });
+
+  test("review: a denied execute request that cancels the turn is continued too", async () => {
+    const o = await open("review", {
+      script: { turns: [DENIED_THEN_CANCELLED, { steps: [{ kind: "text", text: "reviewed" }] }] },
+    });
+    expect(endOf(await driveTurn(o.session, "review it"))).toMatchObject({ status: "completed" });
+    expect(prompts(o)).toHaveLength(2);
+  });
+
+  test(`bounded: after ${MAX_DENIED_CONTINUATIONS} continuations the turn ends ACP_STOP_CANCELLED`, async () => {
+    const o = await open("read", { script: { turns: [DENIED_THEN_CANCELLED] } });
+    const events = await driveTurn(o.session, "write a file");
+    expect(endOf(events)).toMatchObject({ status: "errored", error: { code: "ACP_STOP_CANCELLED" } });
+    expect(prompts(o)).toHaveLength(1 + MAX_DENIED_CONTINUATIONS);
+  });
+
+  test("the bound is per turn: the next turn starts with a fresh count", async () => {
+    const o = await open("read", {
+      script: {
+        turns: [
+          ...Array.from({ length: 1 + MAX_DENIED_CONTINUATIONS }, () => DENIED_THEN_CANCELLED),
+          DENIED_THEN_CANCELLED,
+          { steps: [{ kind: "text", text: "ok" }] },
+        ],
+      },
+    });
+    expect(endOf(await driveTurn(o.session, "one"))).toMatchObject({ status: "errored" });
+    expect(endOf(await driveTurn(o.session, "two"))).toMatchObject({ status: "completed" });
+  });
+
+  test("a cancelled stop with no denial is not continued", async () => {
+    const o = await open("read", {
+      script: { turns: [{ steps: [{ kind: "text", text: "x" }], stopReason: "cancelled" }] },
+    });
+    expect(endOf(await driveTurn(o.session, "go"))).toMatchObject({
+      status: "errored",
+      error: { code: "ACP_STOP_CANCELLED" },
+    });
+    expect(prompts(o)).toHaveLength(1);
+  });
+
+  test("a cancelled stop after an allowed request is not continued", async () => {
+    const o = await open("full", {
+      script: { turns: [{ steps: [RUN], stopReason: "cancelled" }] },
+    });
+    expect(endOf(await driveTurn(o.session, "go"))).toMatchObject({ error: { code: "ACP_STOP_CANCELLED" } });
+    expect(answers(o)).toEqual([{ outcome: "selected", optionId: "opt-allow_once" }]);
+    expect(prompts(o)).toHaveLength(1);
+  });
+
+  test("a turn the caller cancels after a denial is not continued", async () => {
+    const o = await open("read", {
+      script: { turns: [{ steps: [EDIT, { kind: "awaitCancel" }], stopReason: "cancelled" }] },
+    });
+    const events = await driveTurn(o.session, "go", (event) => {
+      if (event.type === "approval_resolved") o.session.cancel();
+    });
+    expect(endOf(events)).toMatchObject({ status: "cancelled" });
+    expect(prompts(o)).toHaveLength(1);
   });
 });
 
