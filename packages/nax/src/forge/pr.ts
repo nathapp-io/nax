@@ -33,12 +33,14 @@ export function viewArgv(forge: ForgeKind, branch: string, githubFields: string)
  * transient API error both exit non-zero, and treating that as a green light let
  * two concurrent runs each open a PR. Throwing makes the caller decide, and the
  * safe decision is to skip.
+ *
+ * `glab mr list` has no `--state` flag: it lists open MRs unless told otherwise (nax#2598).
  */
 export async function hasOpenPr(forge: ForgeKind, branch: string, deps: ForgeDeps, cwd: string): Promise<boolean> {
   const cmd =
     forge === "github"
       ? ["gh", "pr", "list", "--head", branch, "--state", "open", "--json", "number"]
-      : ["glab", "mr", "list", "--source-branch", branch, "--state", "opened", "--output", "json"];
+      : ["glab", "mr", "list", "--source-branch", branch, "--output", "json"];
   const result = await deps.run(cmd, { cwd });
   if (result.exitCode !== 0) {
     throw new NaxError(

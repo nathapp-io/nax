@@ -66,6 +66,15 @@ describe("hasOpenPr", () => {
     expect(hasOpenPr("github", "feat/x", d, "/repo")).rejects.toThrow("auth required");
   });
 
+  // nax#2598: `glab mr list` has no `--state` flag (it lists open MRs by default), so passing
+  // one made every GitLab call exit non-zero and the workflow never opened its draft MR.
+  test("lists open MRs with flags glab accepts", async () => {
+    const captured: string[][] = [];
+    const d = deps(() => ({ exitCode: 0, stdout: "[]", stderr: "" }), captured);
+    await hasOpenPr("gitlab", "feat/x", d, "/repo");
+    expect(captured).toEqual([["glab", "mr", "list", "--source-branch", "feat/x", "--output", "json"]]);
+  });
+
   test("false when the forge returns unparseable output", async () => {
     const d = deps(() => ({ exitCode: 0, stdout: "not json", stderr: "" }));
     expect(await hasOpenPr("github", "feat/x", d, "/repo")).toBe(false);

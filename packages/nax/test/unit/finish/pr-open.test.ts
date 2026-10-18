@@ -1,6 +1,19 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { openDraftFinishPr, openOrPromotePr, parseView, updatePrBody } from "@/finish";
 import type { ForgeDeps } from "@/forge";
+import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
+
+afterEach(() => {
+  resetLogger();
+});
+
+function captureLogs(): LogEntry[] {
+  const entries: LogEntry[] = [];
+  resetLogger();
+  initLogger({ level: "info", headless: true, useChalk: false });
+  addSink((entry) => entries.push(entry));
+  return entries;
+}
 
 function depsFor(handler: (cmd: string[]) => { exitCode: number; stdout?: string; stderr?: string }): {
   deps: ForgeDeps;
@@ -73,6 +86,33 @@ describe("openDraftFinishPr", () => {
       cmd.includes("list") ? { exitCode: 0, stdout: "[]" } : { exitCode: 1, stderr: "rate limited" },
     );
     await expect(openDraftFinishPr(args, deps)).resolves.toBeNull();
+  });
+
+  // nax#2598: a draft that was never opened left only a URL-less log line behind.
+  test("warns with the forge error when the PR list call fails", async () => {
+    const entries = captureLogs();
+    const { deps } = depsFor(() => ({ exitCode: 1, stderr: "Unknown flag: --state." }));
+    await openDraftFinishPr(args, deps);
+    const warn = entries.find((e) => e.level === "warn" && e.message === "Draft PR/MR not opened");
+    expect(warn?.data).toMatchObject({ branch: "feat/demo", forge: "github" });
+    expect(String(warn?.data?.error)).toContain("Unknown flag: --state.");
+  });
+
+  test("warns with the forge error when creation fails", async () => {
+    const entries = captureLogs();
+    const { deps } = depsFor((cmd) =>
+      cmd.includes("list") ? { exitCode: 0, stdout: "[]" } : { exitCode: 1, stderr: "rate limited" },
+    );
+    await openDraftFinishPr(args, deps);
+    const warn = entries.find((e) => e.level === "warn" && e.message === "Draft PR/MR not opened");
+    expect(warn?.data).toMatchObject({ branch: "feat/demo", error: "rate limited" });
+  });
+
+  test("does not warn when a PR is already open", async () => {
+    const entries = captureLogs();
+    const { deps } = depsFor(() => ({ exitCode: 0, stdout: '[{"number":1}]' }));
+    await openDraftFinishPr(args, deps);
+    expect(entries.filter((e) => e.level === "warn")).toEqual([]);
   });
 });
 
