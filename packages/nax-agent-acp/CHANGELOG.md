@@ -3,8 +3,19 @@
 All notable changes to `@nathapp/nax-agent-acp` are recorded here. Versions move in
 step with `@nathapp/nax-agent`.
 
-## [Unreleased]
+## [0.90.2] - 2026-10-18
 
+- Shell sandbox for opencode, Cursor and pi under `review` (nax#2589). With the new
+  `shellSandbox` option and a session sandbox policy, every shell command those agents run
+  is rewritten into `<runtime> <runner> -- <policy file> <command>` and allowed with
+  `REVIEW_EXECUTE_REASON`, as for Claude. The rewrite happens through a nax-written pi
+  extension that wraps `bash` at spawn, an opencode V2 plugin (opencode runs with
+  `OPENCODE_DISABLE_PROJECT_CONFIG=1`, and nax carries the repo's `AGENTS.md` into its config
+  dir), and a Cursor `preToolUse` hook under a nax-owned `HOME`, where nax also verifies the
+  exact wrapper. `Bash` deny and ask rules still reject a matching command. An unavailable
+  sandbox keeps the previous behaviour. Known limitations (documented in the permissions
+  guide): extensions, plugins or hooks that run after nax's can rewrite a command, and only
+  shell commands are sandboxed.
 - Cursor under `review` runs in its `agent` mode when the caller has a `Bash` allow rule,
   instead of `ask`, whose prompt made the model refuse to try any shell command, so the
   operator's allowed commands never reached nax. Writes stay denied by the isolated
