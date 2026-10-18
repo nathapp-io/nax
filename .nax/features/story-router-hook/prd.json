@@ -3,7 +3,7 @@
   "feature": "story-router-hook",
   "branchName": "feat/story-router-hook",
   "createdAt": "2026-10-16T00:00:00.000Z",
-  "updatedAt": "2026-10-18T14:07:00.862Z",
+  "updatedAt": "2026-10-18T14:15:10.909Z",
   "userStories": [
     {
       "id": "US-001",
@@ -168,14 +168,17 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "A focused stage/helper integration uses existing dependency injection and warnOnce patterns; ordered guards and the legacy-router skip flag are explicit, bounded behavior."
+        "reasoning": "A focused stage/helper integration uses existing dependency injection and warnOnce patterns; ordered guards and the legacy-router skip flag are explicit, bounded behavior.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/pipeline/stages/routing.ts",
@@ -199,7 +202,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "4fe964e06a6eef719532d2cbb5220ff1865f6741"
     },
     {
       "id": "US-004",
