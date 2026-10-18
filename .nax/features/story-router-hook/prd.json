@@ -3,7 +3,7 @@
   "feature": "story-router-hook",
   "branchName": "feat/story-router-hook",
   "createdAt": "2026-10-16T00:00:00.000Z",
-  "updatedAt": "2026-10-18T13:54:46.472Z",
+  "updatedAt": "2026-10-18T14:07:00.862Z",
   "userStories": [
     {
       "id": "US-001",
@@ -97,14 +97,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "The bounded timer race, outcome mapping and optional plugin-loop guard are localized additions using the existing RoutingStrategy contract; tdd-simple can verify fail-open behavior and legacy no-options routing without a new subsystem."
+        "reasoning": "The bounded timer race, outcome mapping and optional plugin-loop guard are localized additions using the existing RoutingStrategy contract; tdd-simple can verify fail-open behavior and legacy no-options routing without a new subsystem.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/routing/router.ts",
@@ -133,7 +136,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "0dc0be07e7efb13bdc9e39a2fe6adc7b4ebaddc8"
     },
     {
       "id": "US-003",
