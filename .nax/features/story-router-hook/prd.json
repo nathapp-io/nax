@@ -3,7 +3,7 @@
   "feature": "story-router-hook",
   "branchName": "feat/story-router-hook",
   "createdAt": "2026-10-16T00:00:00.000Z",
-  "updatedAt": "2026-10-18T14:15:10.909Z",
+  "updatedAt": "2026-10-18T14:25:46.326Z",
   "userStories": [
     {
       "id": "US-001",
@@ -243,14 +243,17 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Extends the existing stage helper and PRD write-back with a small outcome-to-audit/log mapping, preserving the current persistence gate and using established logging patterns."
+        "reasoning": "Extends the existing stage helper and PRD write-back with a small outcome-to-audit/log mapping, preserving the current persistence gate and using established logging patterns.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/pipeline/stages/routing-story-router.ts",
@@ -276,7 +279,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "9f3252c63a5d04aedfb6665bd97daac28b571768"
     },
     {
       "id": "US-005",
