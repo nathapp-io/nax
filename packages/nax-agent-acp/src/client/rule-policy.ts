@@ -15,6 +15,7 @@ import { relative } from "node:path";
 import type { AgentSessionProfile } from "@nathapp/nax-agent";
 import { isReadOnlyProfile, launchEnvFor, reviewDecidesShell } from "#src/client/capabilities";
 import type { ResolvedAcpOptions } from "#src/client/options";
+import { piSandboxGateSource } from "#src/client/pi-sandbox";
 import { writeCursorPolicy, writePiFile, writeStateFile } from "#src/client/policy-files";
 import { OPENCODE_NONE_CONFIG, OPENCODE_READ_CONFIG, OPENCODE_REVIEW_CONFIG } from "#src/client/registry";
 import { PI_SHELL_GATE_SOURCE } from "#src/client/shell-rules";
@@ -123,13 +124,20 @@ export function piToolArgs(
   profile: "none" | "read" | "review",
   rules: AcpPermissionRules,
   gatePath: string,
+  sandbox?: { extensions: "user" | "none" },
 ): readonly string[] {
   if (profile === "none") return ["--no-tools"];
   const readTools = PI_TOOLS.filter(([, tool]) => !denied(rules, tool)).map(([name]) => name);
-  const gated = reviewDecidesShell(profile, rules);
+  const sandboxed = profile === "review" && sandbox !== undefined;
+  const gated = sandboxed || reviewDecidesShell(profile, rules);
   const tools = gated ? [...readTools, "bash"] : readTools;
   if (tools.length === 0) return ["--no-tools"];
-  return [...(gated ? [PI_GATE_ARG, gatePath] : []), "--tools", tools.join(",")];
+  return [
+    ...(sandboxed && sandbox.extensions === "none" ? ["--no-extensions"] : []),
+    ...(gated ? [PI_GATE_ARG, gatePath] : []),
+    "--tools",
+    tools.join(","),
+  ];
 }
 
 /** The gate extension is nax's own source, readable by the user alone; the wrapper has to be executable. */
@@ -154,11 +162,17 @@ async function piLaunchEnv(
   profile: "none" | "read" | "review",
 ): Promise<Readonly<Record<string, string>>> {
   const rules = options.rules;
-  const gate = reviewDecidesShell(profile, rules)
-    ? await writePiFile(options.stateDir, "shell-gate", PI_SHELL_GATE_SOURCE, PI_GATE_MODE)
-    : "";
+  const plan = profile === "review" && options.shellSandboxPlan?.agent === "pi" ? options.shellSandboxPlan : undefined;
+  const gate = plan
+    ? await writePiFile(options.stateDir, "sandbox-gate", piSandboxGateSource(plan.prefix), PI_GATE_MODE)
+    : reviewDecidesShell(profile, rules)
+      ? await writePiFile(options.stateDir, "shell-gate", PI_SHELL_GATE_SOURCE, PI_GATE_MODE)
+      : "";
   const command = options.env.PI_ACP_PI_COMMAND ?? PI_DEFAULT_COMMAND;
-  const body = piWrapper(command, piToolArgs(profile, rules, gate));
+  const body = piWrapper(
+    command,
+    piToolArgs(profile, rules, gate, plan ? { extensions: plan.piExtensions } : undefined),
+  );
   return Object.freeze({ PI_ACP_PI_COMMAND: await writePiFile(options.stateDir, "wrapper", body, PI_WRAPPER_MODE) });
 }
 

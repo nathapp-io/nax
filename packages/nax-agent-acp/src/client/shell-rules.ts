@@ -27,7 +27,7 @@ export const PI_SHELL_GATE_TITLE = "nax: run shell command";
 /** The only tool whose rules can allow a command: `Exec` and `RunCommand` are not applied to ACP agents. */
 const BASH_TOOL = "Bash";
 /** The reason the gate extension blocks a bash call with, both when nobody can answer and when they said no. */
-const PI_SHELL_GATE_REJECTED = "nax: shell command rejected";
+export const PI_SHELL_GATE_REJECTED = "nax: shell command rejected";
 
 /**
  * The pi extension that gives pi a permission system (SPEC US-003): pi-acp hands

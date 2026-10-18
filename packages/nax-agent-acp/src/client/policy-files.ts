@@ -27,10 +27,14 @@ export interface PolicyFileDeps {
 
 export const _policyFilesDeps: PolicyFileDeps = { mkdir, writeFile, chmod, rename };
 
-/** The two pi files: the gate extension pi loads, and the wrapper `PI_ACP_PI_COMMAND` names. */
-export type PiPolicyFile = "shell-gate" | "wrapper";
+/** pi's rule or sandbox gate extension, and the wrapper `PI_ACP_PI_COMMAND` names. */
+export type PiPolicyFile = "shell-gate" | "wrapper" | "sandbox-gate";
 
-const PI_EXTENSIONS: Readonly<Record<PiPolicyFile, string>> = Object.freeze({ "shell-gate": ".ts", wrapper: ".sh" });
+const PI_EXTENSIONS: Readonly<Record<PiPolicyFile, string>> = Object.freeze({
+  "shell-gate": ".ts",
+  wrapper: ".sh",
+  "sandbox-gate": ".ts",
+});
 
 /** Nothing here is readable by another user: the directory is ours, the policy files are ours. */
 const DIR_MODE = 0o700;
@@ -94,7 +98,5 @@ export async function writePiFile(
   content: string,
   mode: number,
 ): Promise<string> {
-  const target = join(stateDir, "pi", `${name}-${digest(content)}${PI_EXTENSIONS[name]}`);
-  await writeAtomic(target, content, mode);
-  return target;
+  return writeStateFile(stateDir, join("pi", `${name}-${digest(content)}${PI_EXTENSIONS[name]}`), content, mode);
 }
