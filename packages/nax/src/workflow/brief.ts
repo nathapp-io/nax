@@ -101,11 +101,16 @@ async function resolveRulesIndex(sc: StepContext): Promise<WorkflowBriefInput["r
 }
 
 export async function writeBrief(sc: StepContext): Promise<void> {
-  const [spec, redBase, decisions, rulesIndex] = await Promise.all([
+  const [spec, redBase, decisions, rulesIndex, projectContextOverride] = await Promise.all([
     loadSpec(sc),
     redBaseDependencies(sc),
     loadDecisions(sc),
     resolveRulesIndex(sc),
+    // US-007: a throw here fails the step rather than writing a brief without the
+    // override. The file was validated at run start, so reaching this arm means it
+    // disappeared mid-run — and a brief that silently omits what the operator
+    // configured is the failure mode the run-start check exists to prevent.
+    _workflowDeps.loadProjectContextOverride(sc.config),
   ]);
   const text = buildWorkflowBrief({
     storyId: sc.story.id,
@@ -119,6 +124,7 @@ export async function writeBrief(sc: StepContext): Promise<void> {
     ...(sc.contextMarkdown ? { storyContext: sc.contextMarkdown } : {}),
     ...(sc.featureContextMarkdown ? { featureContext: sc.featureContextMarkdown } : {}),
     ...(rulesIndex ? { rulesIndex } : {}),
+    ...(projectContextOverride !== undefined ? { projectContextOverride } : {}),
     ...(sc.constitution ? { constitution: sc.constitution } : {}),
     rulings: rulingsForStory(decisions, sc.story.id),
     redBaseDependencies: redBase,

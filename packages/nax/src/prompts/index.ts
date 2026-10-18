@@ -50,6 +50,9 @@ export type { PackageSummary, PlanningPromptParts } from "./builders/plan-builde
 export { PlanPromptBuilder } from "./builders/plan-builder";
 // Prior iterations prompt block — ADR-022 §8; replaces legacy carry-forward blocks.
 export { buildPriorIterationsBlock } from "./builders/prior-iterations-builder";
+// US-007 (SPEC-lazy-rules-delivery) — the run's project-context override section,
+// carried by the story brief and the branch review package.
+export { buildProjectContextSection } from "./builders/project-context-builder";
 export type { FailureRecord, RectifierTrigger, ReviewFinding } from "./builders/rectifier-builder";
 // Rectifier prompt builder — cross-domain rectification for TDD, verify, and review triggers.
 export { CONTRADICTION_ESCAPE_HATCH, RectifierPromptBuilder } from "./builders/rectifier-builder";

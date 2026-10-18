@@ -24,13 +24,29 @@
 
 import { stat } from "node:fs/promises";
 import type { LoopHandlerSet } from "@nathapp/nax-agent/internal";
-import { isWorkflowMode, type NaxConfig } from "@/config";
+import { resolveDefaultAgent } from "@/agents";
+import { isWorkflowMode, NATIVE_AGENT_NAME, type NaxConfig } from "@/config";
+import { loadProjectContextOverride } from "@/context/project-context-override";
 import { createRuleDeliveryHandlers } from "@/context/rules/rule-delivery";
 import { NaxError } from "@/errors";
+import { getLogger } from "@/logger";
+
+/**
+ * US-007 — the one line a `mode: "replace"` run with a non-native default agent is told.
+ *
+ * `replace` is a native-session behaviour: no other agent goes through
+ * `instructionOptionsForSession`, so no other agent can be told to skip the
+ * repository's instruction files — saying so is the difference between an
+ * operator believing the mode applied and knowing it did not.
+ */
+const REPLACE_NATIVE_ONLY =
+  'context.projectContext.mode is "replace": the mode applies to native sessions only, and other agents still load the repository\'s own instruction files.';
 
 export const _runRulesSetupDeps: {
   /** Directory existence probe for `context.rules.overrideDir`. */
   dirExists: (path: string) => Promise<boolean>;
+  /** US-007 — the run's project-context file, read once at run start to validate it. */
+  loadProjectContextOverride: typeof loadProjectContextOverride;
   /** US-005 — the native rule-delivery handlers the run registers. */
   createRuleDeliveryHandlers: typeof createRuleDeliveryHandlers;
 } = {
@@ -46,8 +62,29 @@ export const _runRulesSetupDeps: {
       return false;
     }
   },
+  loadProjectContextOverride,
   createRuleDeliveryHandlers,
 };
+
+/**
+ * US-007 — validate `context.projectContext.file` and warn when `replace` cannot apply.
+ *
+ * The read is the validation: the loader throws
+ * `PROJECT_CONTEXT_FILE_NOT_FOUND` / `PROJECT_CONTEXT_FILE_TOO_LARGE`, and both
+ * must stop the run before any story starts rather than surfacing later as a
+ * brief quietly missing its context. The warning comes after it, so a run that is
+ * about to fail for a different reason is not also told about a mode it never
+ * reached.
+ */
+async function validateProjectContext(config: NaxConfig): Promise<void> {
+  const projectContext = config.context?.projectContext;
+  if (projectContext?.file === undefined) return;
+  await _runRulesSetupDeps.loadProjectContextOverride(config);
+  if (projectContext.mode !== "replace") return;
+  const agent = resolveDefaultAgent(config);
+  if (agent === NATIVE_AGENT_NAME) return;
+  getLogger().warn("run-setup", REPLACE_NATIVE_ONLY, { agent, file: projectContext.file });
+}
 
 /** Validates both overrides (throws before returning); returns the set for configureLoopHandlers. */
 export async function configureRunRules(input: {
@@ -65,6 +102,7 @@ export async function configureRunRules(input: {
       overrideDir,
     });
   }
+  await validateProjectContext(input.config);
   return withRuleDeliveryHandlers(input.config, input.workdir, input.pluginHandlers, overrideDir);
 }
 

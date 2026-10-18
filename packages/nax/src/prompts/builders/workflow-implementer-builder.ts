@@ -1,5 +1,6 @@
 /** A5 workflow mode: the story brief and every implementer-session prompt (spec §6). */
 
+import { buildProjectContextSection } from "./project-context-builder";
 import { buildRulesIndexSection, type RulesIndexEntry } from "./rules-index-builder";
 
 export interface WorkflowPromptFinding {
@@ -30,6 +31,13 @@ export interface WorkflowBriefInput {
    * `delivery: "push"`, where the v2 orchestrator carries the bodies instead.
    */
   readonly rulesIndex?: { readonly entries: readonly RulesIndexEntry[]; readonly shownAutomatically: boolean };
+  /**
+   * US-007: `context.projectContext.file`, verbatim. Rendered after
+   * "## Feature context" — the feature's own context, then the run's
+   * organisation/job context, then the repository's constitution (`constitution`
+   * below, under "## Project rules").
+   */
+  readonly projectContextOverride?: string;
   readonly constitution?: string;
   readonly rulings: readonly string[];
   readonly redBaseDependencies: readonly { readonly storyId: string; readonly reason: string }[];
@@ -86,6 +94,7 @@ export function buildWorkflowBrief(input: WorkflowBriefInput): string {
     section("Story context", input.storyContext),
     input.rulesIndex ? buildRulesIndexSection(input.rulesIndex) : "",
     section("Feature context", input.featureContext),
+    buildProjectContextSection(input.projectContextOverride),
     section("Project rules", input.constitution),
     section("Report", `Write your report to ${input.reportPath}.`),
   ]
