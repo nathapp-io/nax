@@ -3,7 +3,60 @@
  * Extracted from schemas.ts to stay within the 600-line file limit.
  */
 
+import { homedir } from "node:os";
+import { isAbsolute, join } from "node:path";
 import { z } from "zod";
+
+/**
+ * A run-level override path (`context.rules.overrideDir`,
+ * `context.projectContext.file`).
+ *
+ * Absolute, or `~/`-prefixed and expanded here. A relative value is rejected at
+ * this layer on purpose: config is read from global, project and profile layers
+ * while the process may have been started in any directory, so a relative path
+ * would silently resolve against whatever cwd the run inherited. The CLI path
+ * (`bin/run-action.ts`) therefore joins `nax run`'s workdir onto a relative
+ * `--rules-dir` / `--context-file` before it lands here, and passes an absolute
+ * or `~/` value through unchanged.
+ */
+const OverridePathSchema = z
+  .string()
+  .min(1)
+  .refine((value) => isAbsolute(value) || value.startsWith("~/"), {
+    message: "must be an absolute path or start with '~/'",
+  })
+  .transform((value) => (value.startsWith("~/") ? join(homedir(), value.slice(2)) : value));
+
+/** Run-level rules override (US-002). */
+const RulesOverrideConfigBase = z.object({
+  /**
+   * Rule delivery for workflow mode. "index" (default) lists the rules in the
+   * brief and lets the native rule-delivery handlers push a body when a
+   * governing file is read or written; "push" restores the pre-feature
+   * behaviour (the v2 orchestrator carries every rule body in the brief).
+   */
+  delivery: z.enum(["index", "push"]).default("index"),
+  /** Absolute (or `~/`) directory of override rules, laid out like `.nax/rules/`. */
+  overrideDir: OverridePathSchema.optional(),
+  /** "merge" (default) adds the override rules to the repo's; "replace" drops them. */
+  overrideMode: z.enum(["merge", "replace"]).default("merge"),
+});
+
+/**
+ * Object-level defaults are derived by re-parsing the schema, never hand-written
+ * — see the note on `TestCoverageConfigSchema` above and on `ContextConfigSchema`.
+ */
+const RulesOverrideConfigSchema = RulesOverrideConfigBase.default(() => RulesOverrideConfigBase.parse({}));
+
+/** Run-level project-context override (US-002). */
+const ProjectContextConfigBase = z.object({
+  /** Absolute (or `~/`) Markdown file appended to (or replacing) the brief's project context. */
+  file: OverridePathSchema.optional(),
+  /** "append" (default) keeps the feature context; "replace" drops it in favour of the file. */
+  mode: z.enum(["append", "replace"]).default("append"),
+});
+
+const ProjectContextConfigSchema = ProjectContextConfigBase.default(() => ProjectContextConfigBase.parse({}));
 
 const TestCoverageConfigBase = z.object({
   enabled: z.boolean().default(true),
@@ -302,4 +355,8 @@ export const ContextConfigSchema = z.object({
   featureEngine: FeatureContextEngineConfigSchema.optional(),
   /** Context Engine settings (Phase 6: enabled by default) */
   v2: ContextV2ConfigSchema,
+  /** Run-level rules override (US-002) — root-only, pinned by `pinRootOnlyKeys`. */
+  rules: RulesOverrideConfigSchema,
+  /** Run-level project-context override (US-002) — root-only, pinned by `pinRootOnlyKeys`. */
+  projectContext: ProjectContextConfigSchema,
 });

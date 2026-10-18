@@ -39,6 +39,7 @@ export {
   runDeferredRegression,
   type StorySnapshot,
 } from "./run-regression";
+export { _runRulesSetupDeps, configureRunRules } from "./run-rules-setup";
 // Warnings re-exported here so consumers can reach them through the lifecycle
 // barrel without reaching into run-setup.ts (or the leaf warnings module).
 export {

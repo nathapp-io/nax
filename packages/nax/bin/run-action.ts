@@ -31,6 +31,7 @@ import { basename, join } from "node:path";
 
 import chalk from "chalk";
 import { planCommand, promptForConfirmation, resolveRunProfileOverride, runReplanLoop } from "../src/cli";
+import { resolveContextCliOverrides } from "../src/cli/run-context-overrides";
 import { applyMaxIterationsFlag, type MaxIterationsFlag, parseMaxIterationsFlag } from "../src/cli/run-max-iterations";
 import { resolveUseHeadless } from "../src/cli/run-mode";
 import { parseParallelFlag } from "../src/cli/run-parallel";
@@ -69,6 +70,10 @@ export interface RunActionOptions {
   compare?: string;
   fresh?: boolean;
   resume?: boolean | string;
+  /** US-002: run-level rules override directory (absolute, `~/`-prefixed, or relative to the run's workdir). */
+  rulesDir?: string;
+  /** US-002: run-level project-context file (same path rules as `rulesDir`). */
+  contextFile?: string;
 }
 
 export type LoadedPrd = Awaited<ReturnType<typeof loadPRD>>;
@@ -275,6 +280,14 @@ export async function resolveRunProjectContext(
     : cliProfiles;
   if (profileOverride && profileOverride.length > 0) {
     cliOverrides.profile = profileOverride;
+  }
+  // US-002: --rules-dir / --context-file become `context.rules.overrideDir` and
+  // `context.projectContext.file`. They are additive CLI overrides, so the
+  // config's own value is replaced only when the flag was actually passed. The
+  // mapping lives in src/cli/run-context-overrides.ts so it is unit-testable.
+  const contextOverrides = resolveContextCliOverrides(workdir, options);
+  if (contextOverrides !== undefined) {
+    cliOverrides.context = contextOverrides;
   }
   return { naxDir, cliOverrides };
 }

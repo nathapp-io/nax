@@ -22,6 +22,14 @@ export const ROOT_ONLY_EXECUTION_KEYS = [
 
 const ROOT_ONLY = new Set<string>(ROOT_ONLY_EXECUTION_KEYS);
 
+/**
+ * The two `context` sub-keys the run's operator owns (US-002): the run-level
+ * rules override and the run-level project-context file. They are pinned
+ * sub-key by sub-key rather than by replacing the whole `context` block — every
+ * other `context.*` key (`v2` above all) is genuinely per-package tunable.
+ */
+const ROOT_ONLY_CONTEXT_KEYS = ["rules", "projectContext"] as const;
+
 /** Typed form, for callers holding a parsed config (runtime/packages.ts). Silent. */
 export function pinRootOnlyKeys(merged: NaxConfig, root: NaxConfig): NaxConfig {
   const { auth: _packageAuth, advisor: _packageAdvisor, workflow: _packageWorkflow, ...rootOnlyMerged } = merged;
@@ -30,6 +38,11 @@ export function pinRootOnlyKeys(merged: NaxConfig, root: NaxConfig): NaxConfig {
     ...(root.auth === undefined ? {} : { auth: root.auth }),
     ...(root.advisor === undefined ? {} : { advisor: root.advisor }),
     ...(root.workflow === undefined ? {} : { workflow: root.workflow }),
+    context: {
+      ...merged.context,
+      rules: root.context.rules,
+      projectContext: root.context.projectContext,
+    },
     execution: {
       ...merged.execution,
       mode: root.execution.mode,
@@ -64,6 +77,24 @@ export function pinRootOnlyKeysRaw(
   const pinned = Object.fromEntries(
     ROOT_ONLY_EXECUTION_KEYS.flatMap((k) => (rootExecution[k] === undefined ? [] : [[k, rootExecution[k]]])),
   );
+  // US-002: `context.rules` / `context.projectContext` are pinned individually,
+  // so the rest of the package's `context` block (v2, testCoverage, …) survives
+  // the merge untouched. A raw config with no `context` key gets none — there is
+  // nothing to override, and adding one would put root's values into a layer
+  // that never asked for them. The record is total by construction, so a third
+  // pinned key cannot be added without giving it a root value here.
+  const rawContext = isRecord(raw.context) ? raw.context : null;
+  const rootContextValues: Record<(typeof ROOT_ONLY_CONTEXT_KEYS)[number], unknown> = {
+    rules: root.context.rules,
+    projectContext: root.context.projectContext,
+  };
+  const pinnedContext: Record<string, unknown> = {};
+  for (const key of ROOT_ONLY_CONTEXT_KEYS) {
+    if (rawContext !== null && key in rawContext && !Bun.deepEquals(rawContext[key], rootContextValues[key])) {
+      onIgnored(`context.${key} is root-only; the value set for package "${packageDir}" is ignored`);
+      pinnedContext[key] = rootContextValues[key];
+    }
+  }
   if (Object.hasOwn(raw, "auth") && !Bun.deepEquals(raw.auth, root.auth)) {
     onIgnored(`auth is root-only; the value set for package "${packageDir}" is ignored`);
   }
@@ -78,6 +109,7 @@ export function pinRootOnlyKeysRaw(
     ...(root.auth === undefined ? {} : { auth: root.auth }),
     ...(root.advisor === undefined ? {} : { advisor: root.advisor }),
     ...(root.workflow === undefined ? {} : { workflow: root.workflow }),
+    ...(rawContext === null ? {} : { context: { ...rawContext, ...pinnedContext } }),
     execution: { ...rest, ...pinned },
   };
 }

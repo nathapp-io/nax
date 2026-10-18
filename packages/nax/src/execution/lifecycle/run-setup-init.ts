@@ -42,6 +42,7 @@ import { NAX_BUILD_INFO, NAX_COMMIT, NAX_VERSION } from "@/version";
 import { releaseFeatureLock } from "../feature-lock";
 import { releaseLock } from "../helpers";
 import type { StatusWriter } from "../status-writer";
+import { configureRunRules } from "./run-rules-setup";
 import { warnProfileMismatch, warnUnreferencedAgentModels } from "./run-setup-warnings";
 import { wipeScratchpad } from "./scratchpad-wipe";
 
@@ -177,7 +178,12 @@ export async function initializeAfterLock(options: InitializeAfterLockOptions): 
     // must reach the native loop's turns; a session on any other agent ignores
     // them. (A plan session builds its own runtime and never calls loadPlugins,
     // so it receives none.)
-    runtime.sessionManager.configureLoopHandlers(pluginRegistry.getLoopHandlers());
+    // US-002: `configureRunRules` owns the run-start validation of the rules
+    // override and returns the set unchanged at this story; every branch stays
+    // in that module so this function's complexity baseline does not grow.
+    runtime.sessionManager.configureLoopHandlers(
+      await configureRunRules({ config, workdir, pluginHandlers: pluginRegistry.getLoopHandlers() }),
+    );
 
     // Log plugins loaded
     logger?.info("plugins", `Loaded ${pluginRegistry.plugins.length} plugins`, {

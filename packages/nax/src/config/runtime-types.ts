@@ -409,6 +409,8 @@ export type {
   ContextAutoDetectConfig,
   ContextConfig,
   ContextPluginProviderConfig,
+  ContextProjectContextConfig,
+  ContextRulesOverrideConfig,
   ContextV2Config,
   ContextV2PullConfig,
   ContextV2RulesConfig,
