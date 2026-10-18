@@ -328,6 +328,7 @@ async function finishPr(
     outcome: ready ? "ready" : "draft",
     ci: ci.outcome,
     reasons: finalReasons,
+    ...(ready ? { advisorFilesRead: approval?.inspectedFiles?.length ?? 0 } : {}),
     openItems: buildOpenItems(openItemRecord(parts, ci, approval, finalReasons)),
   });
   try {

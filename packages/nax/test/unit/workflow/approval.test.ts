@@ -234,6 +234,26 @@ describe("askApproval returns the advisor decision (US-001)", () => {
     };
   }
 
+  test.each([
+    ["AC-8", "D-1", true, []],
+    ["AC-9", "D-1", true, undefined],
+    ["AC-21", "D-2", false, ["src/a.ts"]],
+  ] as const)("inspected files %s", async (_ac, id, approved, files) => {
+    const fields = files === undefined ? {} : { inspectedFiles: [...files] };
+    const out = await askApproval(
+      answering({
+        decision: makeAdviceDecision({
+          id,
+          action: approved ? { type: "approve" } : { type: "hold", reason: "risky" },
+          rationale: approved ? "clean" : "risky",
+          ...fields,
+        }),
+      }),
+      { feature: "f", evidence: [] },
+    );
+    expect(out).toEqual({ approved, rationale: approved ? "clean" : "advisor held: risky", decisionId: id, ...fields });
+  });
+
   test("AC-1: an approve decision returns its id", async () => {
     const out = await askApproval(
       answering({ decision: makeAdviceDecision({ id: "D-7", action: { type: "approve" }, rationale: "clean" }) }),

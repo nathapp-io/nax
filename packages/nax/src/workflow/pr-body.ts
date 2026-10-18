@@ -33,6 +33,7 @@ export interface WorkflowPrBodyFacts {
 }
 
 export interface WorkflowPrBodyInput extends WorkflowPrBodyFacts {
+  readonly advisorFilesRead?: number;
   readonly outcome: FeatureOutcome;
   readonly ci: FeatureCiState;
   readonly reasons: readonly string[];
@@ -55,7 +56,14 @@ function list(items: readonly string[], chars = ITEM_CHARS): string {
 
 function summary(input: WorkflowPrBodyInput): string {
   const n = input.stories.length;
-  const head = `Workflow mode (A5) implemented ${n} ${n === 1 ? "story" : "stories"} for **${safeInline(input.feature)}**. Outcome: **${input.outcome}**.`;
+  let head = `Workflow mode (A5) implemented ${n} ${n === 1 ? "story" : "stories"} for **${safeInline(input.feature)}**. Outcome: **${input.outcome}**.`;
+  if (input.outcome === "ready" && input.advisorFilesRead !== undefined) {
+    head += `\n\n${
+      input.advisorFilesRead === 0
+        ? "The advisor approved from the evidence alone: it listed no files it opened."
+        : `The advisor opened ${input.advisorFilesRead} file(s) before approving.`
+    }`;
+  }
   return input.reasons.length > 0 ? `${head}\n\nNot ready because:\n${list(input.reasons)}` : head;
 }
 

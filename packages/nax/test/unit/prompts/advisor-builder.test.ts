@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { AdviceDecision, AdviceQuestion } from "@/advisor";
 import { buildMenu } from "@/advisor";
 import { buildAdvisorPrompt } from "@/prompts";
+import { FINISH_APPROVAL_READ_RULE } from "@/prompts/builders/advisor-builder";
 
 const question: AdviceQuestion = {
   id: "Q-1",
@@ -65,5 +66,33 @@ describe("buildAdvisorPrompt", () => {
     });
     expect(p).not.toContain("PRD-BODY");
     expect(p).toContain(question.summary);
+  });
+});
+
+const READ_RULE =
+  "Before you approve, open at least the changed file you judge riskiest. Use the changed files and the base commit the evidence names, when it names them. List every file you opened in inspectedFiles.";
+describe("advisor read instructions", () => {
+  test.each([
+    ["AC-14", "finish-approval", false],
+    ["AC-17", "finish-approval", true],
+    ["AC-18", "finish-judgment", false],
+  ] as const)("%s", (_ac, kind, continuation) => {
+    const prompt = buildAdvisorPrompt({
+      question: { ...question, kind },
+      continuation,
+      specPath: "s",
+      prdText: "{}",
+      priorDecisions: [],
+    });
+    expect(FINISH_APPROVAL_READ_RULE).toBe(READ_RULE);
+    if (kind === "finish-approval") expect(prompt).toContain(READ_RULE);
+    else expect(prompt).not.toContain(READ_RULE);
+  });
+  test.each([false, true])("AC-19 contract on continuation=%p", (continuation) => {
+    const prompt = buildAdvisorPrompt({ question, continuation, specPath: "s", prdText: "{}", priorDecisions: [] });
+    expect(prompt).toContain('"inspectedFiles": ["path"]');
+    expect(prompt).toContain(
+      'List every file you opened in "inspectedFiles"; an empty list means you ruled from the evidence alone.',
+    );
   });
 });

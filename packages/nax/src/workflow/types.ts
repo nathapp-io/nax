@@ -178,6 +178,7 @@ export interface StorySummary {
  * keeps the decision id so the verdict can cite the ruling, not only the prose it produced.
  */
 export interface ApprovalOutcome {
+  readonly inspectedFiles?: readonly string[];
   readonly approved: boolean;
   readonly rationale: string;
   /** The `AdviceDecision.id` the outcome came from; absent when the advisor answered nothing or threw. */

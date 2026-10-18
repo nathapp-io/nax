@@ -89,6 +89,7 @@ export function decisionDraftFor(
       : {}),
     chosenOptionId: option.id,
     action,
+    ...(reply.inspectedFiles !== undefined ? { inspectedFiles: reply.inspectedFiles } : {}),
     rationale: reply.rationale,
     confidence: reply.confidence,
     reversible: reply.reversible,
