@@ -77,6 +77,7 @@ export interface AdvisorReply {
   instruction?: string;
   reason?: string;
   newText?: string;
+  inspectedFiles?: string[];
   rationale: string;
   confidence: AdviceConfidence;
   reversible: boolean;
@@ -91,6 +92,7 @@ export interface AdviceDecision {
   dedupeKey?: string;
   chosenOptionId: string;
   action: AdviceAction;
+  inspectedFiles?: string[];
   rationale: string;
   confidence: AdviceConfidence;
   reversible: boolean;

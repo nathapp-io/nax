@@ -126,3 +126,30 @@ describe("adviseOp", () => {
     expect(adviseOp.keepOpen?.(input, makeCtx())).toBe(false);
   });
 });
+
+describe("advisor inspected files", () => {
+  test.each([
+    ["AC-1", { inspectedFiles: ["src/a.ts", "src/b.ts"] }, ["src/a.ts", "src/b.ts"]],
+    ["AC-2", { inspectedFiles: [] }, []],
+    ["AC-3", {}, undefined],
+    ["AC-4", { inspectedFiles: "src/a.ts" }, undefined],
+    ["AC-5", { inspectedFiles: ["src/a.ts", 3, "", "  "] }, ["src/a.ts"]],
+    ["preserves nonblank text", { inspectedFiles: [" src/a.ts "] }, [" src/a.ts "]],
+  ])("%s", (_ac, fields, expected) => {
+    const result = validateAdvisorReply(
+      {
+        optionId: "A",
+        rationale: "clean",
+        confidence: "high",
+        reversible: true,
+        needsHumanConfirm: false,
+        ...fields,
+      },
+      [{ id: "A", type: "approve", label: "Approve" }],
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.error);
+    if (expected === undefined) expect(result.reply).not.toHaveProperty("inspectedFiles");
+    else expect(result.reply).toHaveProperty("inspectedFiles", expected);
+  });
+});

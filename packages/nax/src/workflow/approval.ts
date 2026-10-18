@@ -154,9 +154,10 @@ export async function askApproval(
     const { decision, fallbackReason } = await advisor.advise(draft);
     // US-001: a decision that exists carries its id; neither an unavailable advisor nor a throw does.
     if (!decision) return { approved: false, rationale: `advisor unavailable: ${fallbackReason ?? "no decision"}` };
+    const files = decision.inspectedFiles !== undefined ? { inspectedFiles: decision.inspectedFiles } : {};
     return decision.action.type === "approve"
-      ? { approved: true, rationale: decision.rationale, decisionId: decision.id }
-      : { approved: false, rationale: `advisor held: ${decision.rationale}`, decisionId: decision.id };
+      ? { approved: true, rationale: decision.rationale, decisionId: decision.id, ...files }
+      : { approved: false, rationale: `advisor held: ${decision.rationale}`, decisionId: decision.id, ...files };
   } catch (err) {
     getSafeLogger()?.warn("workflow", "Approval advisor failed — the PR stays a draft", {
       storyId: "_run",

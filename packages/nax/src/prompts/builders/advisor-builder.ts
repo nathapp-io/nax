@@ -38,6 +38,9 @@ export function advisorDecisionsBlock(decisions: readonly AdviceDecision[]): str
   return `## Decisions so far (stay consistent with these)\n${lines.join("\n")}`;
 }
 
+export const FINISH_APPROVAL_READ_RULE =
+  "Before you approve, open at least the changed file you judge riskiest. Use the changed files and the base commit the evidence names, when it names them. List every file you opened in inspectedFiles.";
+
 export function advisorQuestionBlock(q: AdviceQuestion): string {
   const evidence = q.evidence.map((e) => `- (${e.source}${e.ref ? ` ${e.ref}` : ""}) ${e.text}`).join("\n");
   const menu = q.options.map((o) => `${o.id}. [${o.type}] ${o.label}`).join("\n");
@@ -46,15 +49,17 @@ export function advisorQuestionBlock(q: AdviceQuestion): string {
     q.summary,
     `### Evidence\n${evidence}`,
     `### Options — choose exactly one\n${menu}`,
+    ...(q.kind === "finish-approval" ? [FINISH_APPROVAL_READ_RULE] : []),
   ].join("\n\n");
 }
 
 const CONTRACT = `## Reply
 End your reply with exactly one fenced JSON block:
 \`\`\`json
-{"optionId": "A", "instruction": "...", "reason": "...", "newText": "...", "rationale": "...", "confidence": "high|medium|low", "reversible": true, "needsHumanConfirm": false}
+{"optionId": "A", "instruction": "...", "reason": "...", "newText": "...", "rationale": "...", "confidence": "high|medium|low", "reversible": true, "needsHumanConfirm": false, "inspectedFiles": ["path"]}
 \`\`\`
-Include "instruction" for fix/retry/retarget, "reason" for waive/escalate-tier/defer/hold, "newText" for supersede. "rationale" is always required.`;
+Include "instruction" for fix/retry/retarget, "reason" for waive/escalate-tier/defer/hold, "newText" for supersede. "rationale" is always required.
+List every file you opened in "inspectedFiles"; an empty list means you ruled from the evidence alone.`;
 
 export function buildAdvisorPrompt(input: AdvisorPromptInput): string {
   if (input.continuation) return [advisorQuestionBlock(input.question), CONTRACT].join("\n\n");

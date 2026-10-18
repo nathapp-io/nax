@@ -50,6 +50,15 @@ function optionalText(raw: Record<string, unknown>, key: string): string | undef
   return typeof raw[key] === "string" ? (raw[key] as string) : undefined;
 }
 
+function inspectedFilesOf(raw: Record<string, unknown>): Pick<AdvisorReply, "inspectedFiles"> {
+  if (!Array.isArray(raw.inspectedFiles)) return {};
+  return {
+    inspectedFiles: raw.inspectedFiles.filter(
+      (entry): entry is string => typeof entry === "string" && entry.trim() !== "",
+    ),
+  };
+}
+
 export function validateAdvisorReply(
   value: unknown,
   options: readonly AdviceOption[],
@@ -84,6 +93,7 @@ export function validateAdvisorReply(
     ok: true,
     reply: {
       ...reply,
+      ...inspectedFilesOf(raw),
       ...(instruction ? { instruction } : {}),
       ...(reason ? { reason } : {}),
       ...(newText ? { newText } : {}),

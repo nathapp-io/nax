@@ -378,3 +378,26 @@ describe("buildWorkflowPrBody — agent-sourced text is redacted and neutralised
     expect(body).toContain("```\nerror at line 5 in a.ts\n```");
   });
 });
+
+describe("advisor read disclosure", () => {
+  test.each([
+    ["AC-10", "ready", 0, "The advisor approved from the evidence alone: it listed no files it opened."],
+    ["AC-11", "ready", 3, "The advisor opened 3 file(s) before approving."],
+    ["AC-12", "ready", undefined, undefined],
+    ["AC-13", "draft", 0, undefined],
+  ] as const)("%s", (_ac, outcome, count, expected) => {
+    const body = buildWorkflowPrBody({
+      ...input,
+      outcome,
+      reasons: [],
+      ...(count === undefined ? {} : { advisorFilesRead: count }),
+    });
+    const summary = body.split("## Summary")[1]?.split("## ")[0];
+    expect(summary).toBeDefined();
+    if (expected) expect(summary).toContain(expected);
+    else {
+      expect(body).not.toContain("The advisor approved from the evidence alone");
+      expect(body).not.toContain("before approving.");
+    }
+  });
+});
