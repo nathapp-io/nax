@@ -1,6 +1,8 @@
 import type { NaxConfig } from "@/config";
 import type { Logger } from "@/logger";
 import type { UserStory } from "@/prd";
+import type { consultStoryRouter } from "@/routing";
+import type { PipelineContext } from "../types";
 
 /** Usability also controls whether legacy plugin routers must be skipped. */
 export function isStoryRouterUsable(config: NaxConfig, storyId: string, logger: Logger): boolean {
@@ -20,4 +22,17 @@ export function isStoryRouterUsable(config: NaxConfig, storyId: string, logger: 
 /** Keep eligibility separate from usability: retries still skip legacy routers. */
 export function shouldConsultStoryRouter(usable: boolean, story: UserStory): boolean {
   return usable && (story.escalations?.length ?? 0) === 0 && story.routing?.routerDecision === undefined;
+}
+
+/** Consult eligible stories, returning usability independently of story eligibility. */
+export async function consultEligibleStoryRouter(
+  ctx: PipelineContext,
+  consult: typeof consultStoryRouter,
+  logger: Logger,
+): Promise<boolean> {
+  const usable = isStoryRouterUsable(ctx.config, ctx.story.id, logger);
+  if (shouldConsultStoryRouter(usable, ctx.story)) {
+    await consult(ctx.story, ctx.config, ctx.plugins, ctx);
+  }
+  return usable;
 }

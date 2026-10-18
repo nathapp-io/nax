@@ -26,7 +26,7 @@ import {
 import { resolveTestFilePatterns } from "@/test-runners";
 import { packageDirRelative } from "@/utils/paths";
 import type { PipelineContext, PipelineStage, RoutingResult, StageResult } from "../types";
-import { isStoryRouterUsable, shouldConsultStoryRouter } from "./routing-story-router";
+import { consultEligibleStoryRouter } from "./routing-story-router";
 
 export const routingStage: PipelineStage = {
   name: "routing",
@@ -39,10 +39,7 @@ export const routingStage: PipelineStage = {
     // fresh Map per createRuntime() call — so it already starts empty for
     // this run. No explicit clear-on-first-story step is needed here.
 
-    const routerUsable = isStoryRouterUsable(ctx.config, ctx.story.id, logger);
-    if (shouldConsultStoryRouter(routerUsable, ctx.story)) {
-      await _routingDeps.consultStoryRouter(ctx.story, ctx.config, ctx.plugins, ctx);
-    }
+    const routerUsable = await consultEligibleStoryRouter(ctx, _routingDeps.consultStoryRouter, logger);
 
     // Usable story routers must not also apply picks through the legacy chain.
     const decision = await _routingDeps.resolveRouting(ctx.story, ctx.config, ctx.plugins, ctx, {
