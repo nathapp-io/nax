@@ -35,6 +35,63 @@ function configWithCommands(commands: NaxConfig["quality"]["commands"]): NaxConf
 }
 
 describe("resolveGateCommands", () => {
+  test("US-003 AC-1: root test wins over a different package test", async () => {
+    _qualityGateDeps.loadConfig = async () => configWithCommands({ test: "root test" });
+    _qualityGateDeps.loadPackageOverride = async () => ({
+      quality: { ...DEFAULT_CONFIG.quality, commands: { test: "bun test apps/web" } },
+    });
+    expect(await resolveGateCommands("/repo", ["apps/web"])).toEqual([
+      { name: "test", command: "root test", cwd: "/repo" },
+    ]);
+  });
+
+  test("US-003 AC-3: root test leaves overlay-only build configured", async () => {
+    _qualityGateDeps.loadConfig = async () => configWithCommands({ test: "root test" });
+    _qualityGateDeps.loadPackageOverride = async () => ({
+      quality: { ...DEFAULT_CONFIG.quality, commands: { build: "bun run build" } },
+    });
+    expect(await resolveGateCommands("/repo", ["pkg"])).toEqual([
+      { name: "test", command: "root test", cwd: "/repo" },
+      { name: "build@pkg", command: "bun run build", cwd: "/repo/pkg" },
+    ]);
+  });
+
+  test.each([{ lint: "   " }, { lint: [" ", ""] }, { lint: [] }])(
+    "US-003 AC-5: blank root lint %j permits overlay lint",
+    async ({ lint }) => {
+      _qualityGateDeps.loadConfig = async () =>
+        configWithCommands({ lint: typeof lint === "string" ? lint : [...lint] });
+      _qualityGateDeps.loadPackageOverride = async () => ({
+        quality: { ...DEFAULT_CONFIG.quality, commands: { lint: "biome lint" } },
+      });
+      expect(await resolveGateCommands("/repo", ["pkg"])).toEqual([
+        { name: "lint@pkg", command: "biome lint", cwd: "/repo/pkg" },
+      ]);
+    },
+  );
+
+  test("US-003 AC-6: skips package tests while preserving package order for lint", async () => {
+    _qualityGateDeps.loadConfig = async () => configWithCommands({ test: "root test" });
+    _qualityGateDeps.loadPackageOverride = async () => ({
+      quality: { ...DEFAULT_CONFIG.quality, commands: { test: "pkg test", lint: "pkg lint" } },
+    });
+    expect((await resolveGateCommands("/repo", ["pkg-b", "pkg-a"])).map((c) => c.name)).toEqual([
+      "test",
+      "lint@pkg-b",
+      "lint@pkg-a",
+    ]);
+  });
+
+  test("US-003 AC-10: a nonblank root array configures lint", async () => {
+    _qualityGateDeps.loadConfig = async () => configWithCommands({ lint: ["biome lint", "tsc --noEmit"] });
+    _qualityGateDeps.loadPackageOverride = async () => ({
+      quality: { ...DEFAULT_CONFIG.quality, commands: { lint: "pkg lint" } },
+    });
+    expect(await resolveGateCommands("/repo", ["pkg"])).toEqual([
+      { name: "lint", command: ["biome lint", "tsc --noEmit"], cwd: "/repo" },
+    ]);
+  });
+
   test.each([{ lint: "" }, { lint: "   " }, { lint: ["  "] }, { lint: [] }])(
     "US-007 AC10-11: blank command %j produces no gate",
     async ({ lint }) => {
@@ -70,7 +127,7 @@ describe("resolveGateCommands", () => {
 
   test("a package overlay that sets only one gate does not fan out the root's other gates for that package", async () => {
     // Regression for the fan-out bug: root has all four gates configured, the
-    // package overlay sets only `test`. Only `test@pkg` may appear -- picking
+    // package overlay sets only `test`. Root test wins; picking
     // up build/typecheck/lint from a merged config would re-run them a second
     // time under the package's cwd.
     _qualityGateDeps.loadConfig = async () =>
@@ -82,7 +139,7 @@ describe("resolveGateCommands", () => {
 
     const commands = await resolveGateCommands("/repo", ["apps/web"]);
 
-    expect(commands.map((c) => c.name)).toEqual(["build", "typecheck", "lint", "test", "test@apps/web"]);
+    expect(commands.map((c) => c.name)).toEqual(["build", "typecheck", "lint", "test"]);
   });
 
   test("a profile-layered root command is picked up (single-file read is gone)", async () => {
@@ -189,15 +246,7 @@ describe("resolveGateCommands", () => {
 
     const commands = await resolveGateCommands("/repo", ["pkg-b", "pkg-a"]);
 
-    expect(commands.map((c) => c.name)).toEqual([
-      "build",
-      "typecheck",
-      "test",
-      "build@pkg-b",
-      "lint@pkg-b",
-      "build@pkg-a",
-      "lint@pkg-a",
-    ]);
+    expect(commands.map((c) => c.name)).toEqual(["build", "typecheck", "test", "lint@pkg-b", "lint@pkg-a"]);
   });
 });
 

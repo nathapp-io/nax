@@ -14,7 +14,9 @@
  * package's commands only when that package's own overlay file actually sets
  * `quality.commands` — a package that merely inherits the root commands is
  * already covered by the root run, and fanning it out would re-run the whole
- * suite once per such package.
+ * suite once per such package. Root commands win per gate key: even an
+ * explicit package command is skipped when the root configures that key;
+ * overlays still supply gates the root leaves unconfigured.
  */
 import { join } from "node:path";
 import type { QualityCommandSpec } from "@nathapp/nax-agent/internal";
@@ -161,13 +163,12 @@ function overlayCommandsOf(override: Partial<NaxConfig> | null): QualityCommands
  * configured" for a gate the config sets, and silently dropped it from a full
  * run (whole-branch review B1).
  *
- * An *overlay* gate is identified by the run it makes instead — `cwd`,
- * `command` and `setup`, never the gate key — so an overlay that repeats a run
- * already scheduled (the same key verbatim from the same directory, an
- * overlay's own `build` and `typecheck` sharing one command, or a run a root
- * gate already makes) counts as one run, while a different command or a
- * different `e2eSetup` from the same directory is a genuinely different gate
- * and both survive (whole-branch review B1 residual).
+ * An *overlay* gate is considered only when the root leaves its key
+ * unconfigured, regardless of command, cwd or setup differences. Remaining
+ * overlay gates are identified by the run they make — `cwd`, `command` and
+ * `setup`, never the gate key. An overlay's own keys sharing a run, or a run
+ * another root key already makes, count as one run. Different setup remains
+ * a distinct run for these fallback gates (whole-branch review B1 residual).
  */
 export async function resolveGateCommands(repoRoot: string, packageDirs: string[]): Promise<GateCommand[]> {
   /**
@@ -223,6 +224,8 @@ export async function resolveGateCommands(repoRoot: string, packageDirs: string[
       // second run of every gate the package never actually overrode.
       const command = overlayCommands[gate];
       if (!isConfigured(command)) continue;
+      // Root coverage wins per key before considering overlay run identity.
+      if (isConfigured(rootCommands[gate])) continue;
       const setupCommands = Object.hasOwn(overlayCommands, "e2eSetup")
         ? overlayCommands
         : { ...overlayCommands, e2eSetup: rootCommands.e2eSetup };

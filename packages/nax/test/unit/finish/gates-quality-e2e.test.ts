@@ -116,21 +116,20 @@ describe("resolveGateCommands — e2e", () => {
     ]);
   });
 
-  test("AC-6: same e2e command and cwd but different e2eSetup keeps both gates", async () => {
+  test("US-003 AC-7: root e2e wins even with different overlay setup", async () => {
     _qualityGateDeps.loadConfig = async () =>
       rootCommands({ e2e: "bunx playwright test", e2eSetup: "docker compose up -d" });
     _qualityGateDeps.loadPackageOverride = async (_repoRoot, packageDir) => {
       // "." resolves to the root's own cwd ("/repo/." === "/repo"), so the two
-      // gates differ only by their setup -- the dedupe key must include it.
+      // gates differ only by setup -- root precedence still skips the overlay.
       expect(packageDir).toBe(".");
       return overlayCommands({ e2e: "bunx playwright test", e2eSetup: "docker compose -f other.yml up -d" });
     };
 
     const commands = await resolveGateCommands("/repo", ["."]);
 
-    expect(commands.map((c) => ({ name: c.name, cwd: c.cwd, setup: c.setup }))).toEqual([
-      { name: "e2e", cwd: "/repo", setup: "docker compose up -d" },
-      { name: "e2e@.", cwd: "/repo", setup: "docker compose -f other.yml up -d" },
+    expect(commands).toEqual([
+      { name: "e2e", command: "bunx playwright test", cwd: "/repo", setup: "docker compose up -d" },
     ]);
   });
 });
