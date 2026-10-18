@@ -3,7 +3,7 @@
   "feature": "acp-shell-sandbox",
   "branchName": "feat/acp-shell-sandbox",
   "createdAt": "2026-10-18T00:00:00Z",
-  "updatedAt": "2026-10-18T04:21:54.356Z",
+  "updatedAt": "2026-10-18T04:26:25.019Z",
   "userStories": [
     {
       "id": "US-001",
@@ -188,14 +188,17 @@
         "US-001",
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Generated tool override combines a session permission gate, first-registration behavior and spawn-time enforcement; security-critical integration requires strict TDD isolation."
+        "reasoning": "Generated tool override combines a session permission gate, first-registration behavior and spawn-time enforcement; security-critical integration requires strict TDD isolation.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent-acp/src/client/rule-policy.ts",
@@ -217,7 +220,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "c543785e92c7ef70150f301feb1e90f9a71dfd5c"
     },
     {
       "id": "US-004",
