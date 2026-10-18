@@ -40,6 +40,7 @@ export {
   isConfinedTestRun,
   runConfinedFiles,
   SANDBOX_UNAVAILABLE_EXIT,
+  SANDBOXED_ENV,
   USAGE_EXIT,
 } from "./confined";
 export { makeContextBundle, makeContextManifest } from "./context-bundle";

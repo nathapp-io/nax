@@ -12,16 +12,20 @@
  * there while `makeTempDir()` — which resolves through `os.tmpdir()`, and so
  * through `$TMPDIR` — passes.
  *
- * `isConfinedTestRun()` tells a test whether it is running under that runner. A
- * test that needs something the sandbox withholds (a nested sandbox launch, a
- * setuid probe like `ps`, the shared `/tmp/nax` parent) skips itself on its
- * answer, so the suite stays honest instead of red where the sandbox is absent.
+ * `isConfinedTestRun()` recognizes that runner or a session sandbox marked
+ * `NAX_SANDBOXED=1`. A test that needs something the sandbox withholds (a nested
+ * sandbox launch, a setuid probe like `ps`, the shared `/tmp/nax` parent) skips
+ * itself on its answer, so the suite stays honest instead of red where the
+ * sandbox is absent.
  */
 
 import { resolve } from "node:path";
 
 /** The marker the runner exports so a test can tell it is running confined. */
 export const CONFINED_TEST_ENV = "NAX_TEST_CONFINED";
+
+/** Advisory marker exported by nax's session sandbox, not an authorization check. */
+export const SANDBOXED_ENV = "NAX_SANDBOXED";
 
 /** No usable sandbox backend: no test ran, and nax never falls back unsandboxed. */
 export const SANDBOX_UNAVAILABLE_EXIT = 3;
@@ -59,11 +63,11 @@ export const _confinedDeps = {
  * runner's own package, where the file lives beside the script that sets the
  * marker.
  *
- * True only when this process is the confined test runner; any other value
- * reads as a normal run.
+ * True when either the confined runner or session sandbox marker is exactly
+ * "1"; other values do not mark a run as confined.
  */
 export function isConfinedTestRun(): boolean {
-  return process.env[CONFINED_TEST_ENV] === "1";
+  return process.env[CONFINED_TEST_ENV] === "1" || process.env[SANDBOXED_ENV] === "1";
 }
 
 /** Run the runner CLI with this package's frame and return its exit code unchanged. */

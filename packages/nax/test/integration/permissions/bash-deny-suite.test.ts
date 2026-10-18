@@ -607,7 +607,7 @@ describe.each([...SHADOW_VARIANTS])("shadow=%s", (variant) => {
 });
 
 describe("composite: escalate + sandbox + shadow (review test gap 1)", () => {
-  test("the prompt, the shadow and the wrapped launch all see the same command bytes", async () => {
+  test("the prompt and shadow see original bytes; only the backend sees the sandbox marker", async () => {
     const command = `printf '%s\\n' "a  b" > out.txt`;
     const asked: string[] = [];
     const askResolver = chainAskLinks([
@@ -636,8 +636,8 @@ describe("composite: escalate + sandbox + shadow (review test gap 1)", () => {
     expect(asked).toEqual([command]);
     // The shadow observed the same bytes right after policy.check.
     expect(observed[0]?.[1].command).toBe(command);
-    // SandboxWrapRequest carries the command directly (`command`), not behind a
-    // `spec` wrapper -- the backend's wrap saw the identical bytes too.
-    expect(backend.calls[0]?.command).toBe(command);
+    // Only the backend transport receives the sandbox marker prefix; policy
+    // and shadow above still observe the agent's unprefixed command.
+    expect(backend.calls[0]?.command).toBe(`export NAX_SANDBOXED=1; ${command}`);
   });
 });
