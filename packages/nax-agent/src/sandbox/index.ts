@@ -5,6 +5,7 @@ export {
   type CommandLauncherOptions,
   createCommandLauncher,
   DISABLED_SANDBOX_STATE,
+  SANDBOXED_ENV,
 } from "./launcher.ts";
 export {
   denialHintLine,

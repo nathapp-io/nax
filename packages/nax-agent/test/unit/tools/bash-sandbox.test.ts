@@ -66,7 +66,7 @@ describe("Bash through the launcher", () => {
     expect(r.content).toContain("exit 0");
     expect(r.audit).toEqual({
       executed: ["/bin/sh", "-c", "echo hi"],
-      sandbox: { backend: "srt", wrapped: true, argv: ["/bin/sh", "-c", "echo hi"] },
+      sandbox: { backend: "srt", wrapped: true, argv: ["/bin/sh", "-c", "export NAX_SANDBOXED=1; echo hi"] },
       exitCode: 0,
     });
     expect(backend.calls[0]?.cwd).toBe(root);

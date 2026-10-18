@@ -450,10 +450,27 @@ describe("probeConfinedSandbox lifecycle", () => {
 
 describe("isConfinedTestRun", () => {
   const saved = process.env[CONFINED_TEST_ENV];
+  const sandboxed = process.env.NAX_SANDBOXED;
+  beforeEach(() => {
+    delete process.env[CONFINED_TEST_ENV];
+    delete process.env.NAX_SANDBOXED;
+  });
 
   afterEach(() => {
+    if (sandboxed === undefined) delete process.env.NAX_SANDBOXED;
+    else process.env.NAX_SANDBOXED = sandboxed;
     if (saved === undefined) delete process.env[CONFINED_TEST_ENV];
     else process.env[CONFINED_TEST_ENV] = saved;
+  });
+
+  test("marker AC-10: sandbox marker alone is confined", () => {
+    process.env.NAX_SANDBOXED = "1";
+    expect(isConfinedTestRun()).toBe(true);
+  });
+
+  test("marker AC-13: sandbox marker true is not confined", () => {
+    process.env.NAX_SANDBOXED = "true";
+    expect(isConfinedTestRun()).toBe(false);
   });
 
   test("AC-18: true when NAX_TEST_CONFINED is '1'", () => {
@@ -479,6 +496,7 @@ describe("confined fixtures", () => {
   function runFixture(fixture: string, marker: string | undefined): { code: number; stdout: string; stderr: string } {
     const env = { ...process.env };
     delete env[CONFINED_TEST_ENV];
+    delete env.NAX_SANDBOXED;
     if (marker !== undefined) env[CONFINED_TEST_ENV] = marker;
     const proc = Bun.spawnSync(["bun", "test", fixture], { cwd: PACKAGE_DIR, stdout: "pipe", stderr: "pipe", env });
     return { code: proc.exitCode, stdout: proc.stdout.toString(), stderr: proc.stderr.toString() };

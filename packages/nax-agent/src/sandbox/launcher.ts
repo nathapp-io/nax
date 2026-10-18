@@ -26,6 +26,7 @@ import type {
   SandboxState,
 } from "./types.ts";
 
+export const SANDBOXED_ENV = "NAX_SANDBOXED";
 export const DISABLED_SANDBOX_STATE: SandboxState = { kind: "disabled" };
 
 export const _launcherDeps = {
@@ -72,10 +73,11 @@ function shellSingleQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
-/** `export TMPDIR=… TMP=… TEMP=…; ` — the prefix a wrapped command carries, since srt replaces the child env. */
-function tmpEnvPrefix(tmpDir: string): string {
+/** Every wrapped command carries the marker; srt replaces the child env. */
+function tmpEnvPrefix(tmpDir: string | undefined): string {
+  if (tmpDir === undefined) return `export ${SANDBOXED_ENV}=1; `;
   const q = shellSingleQuote(tmpDir);
-  return `export TMPDIR=${q} TMP=${q} TEMP=${q}; `;
+  return `export ${SANDBOXED_ENV}=1 TMPDIR=${q} TMP=${q} TEMP=${q}; `;
 }
 
 /** The TMPDIR/TMP/TEMP overlay for an unwrapped run; the request's own env wins per key. */
@@ -129,12 +131,13 @@ async function runWrapped(
   const rawCommand = req.spec.kind === "shell" ? req.spec.command : quoteArgvForShell(req.spec.argv);
   // srt replaces the child environment wholesale, so a TMPDIR override cannot
   // ride an `env` overlay — it has to be part of the shell command itself.
+  // The prefix always carries NAX_SANDBOXED=1, even without a TMPDIR override.
   // Other overlay keys DO survive: the live suite proves it (`AGENT=1` reaches
   // a wrapped child — see test/integration/sandbox/sandbox-live.test.ts
   // "US-004 — the AGENT=1 overlay reaches a wrapped child"). `executed` below
   // stays the unprefixed logical argv, so the ledger records what the agent
   // wrote, not this shim.
-  const command = env.tmpDir !== undefined ? `${tmpEnvPrefix(env.tmpDir)}${rawCommand}` : rawCommand;
+  const command = `${tmpEnvPrefix(env.tmpDir)}${rawCommand}`;
   const shell = req.spec.kind === "shell" ? req.spec.shell : "/bin/sh";
   const commandId = _launcherDeps.newCommandId();
   let argv: readonly string[];

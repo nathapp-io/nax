@@ -220,6 +220,7 @@ type ResolvedPermissions
 type ResolvedProviderTools
 type RuleContext
 type RuleResult
+SANDBOXED_ENV
 SCRATCHPAD_DIR
 SPILL_DIR
 SYSTEMONE_MODEL_LABEL
@@ -653,6 +654,7 @@ type ResolvedSpinBreakerSettings
 type RunArgvOptions
 type RunCommandExecOptions
 type RunCommandToolOptions
+SANDBOXED_ENV
 SANDBOX_GLOB_CHARS
 SCRATCHPAD_DIR
 SECRET_VALUE_PATTERNS

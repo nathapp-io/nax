@@ -12,6 +12,8 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
+import { SANDBOXED_ENV } from "@nathapp/nax-agent";
+import * as helpers from "@test/helpers";
 import {
   _confinedDeps,
   CONFINED_TEST_ENV,
@@ -25,15 +27,37 @@ import {
 const A_TEST_PATH = "./test/unit/execution/pid-registry.test.ts";
 
 describe("isConfinedTestRun", () => {
-  let previous: string | undefined;
+  const markers = [CONFINED_TEST_ENV, "NAX_SANDBOXED"] as const;
+  let previous: (string | undefined)[];
 
   beforeEach(() => {
-    previous = process.env[CONFINED_TEST_ENV];
+    previous = markers.map((marker) => process.env[marker]);
+    for (const marker of markers) delete process.env[marker];
   });
 
   afterEach(() => {
-    if (previous === undefined) delete process.env[CONFINED_TEST_ENV];
-    else process.env[CONFINED_TEST_ENV] = previous;
+    for (const [index, marker] of markers.entries()) {
+      const value = previous[index];
+      if (value === undefined) delete process.env[marker];
+      else process.env[marker] = value;
+    }
+  });
+
+  test("sandbox AC-1: returns true with only NAX_SANDBOXED=1", () => {
+    process.env.NAX_SANDBOXED = "1";
+
+    expect(isConfinedTestRun()).toBe(true);
+  });
+
+  test("sandbox AC-3: returns false with only NAX_SANDBOXED=0", () => {
+    process.env.NAX_SANDBOXED = "0";
+
+    expect(isConfinedTestRun()).toBe(false);
+  });
+
+  test("sandbox AC-4: the public helper constant agrees with nax-agent", () => {
+    expect(helpers.SANDBOXED_ENV).toBe("NAX_SANDBOXED");
+    expect(helpers.SANDBOXED_ENV).toBe(SANDBOXED_ENV);
   });
 
   test("AC-1: returns true when NAX_TEST_CONFINED is '1'", () => {

@@ -1,11 +1,18 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeFeatureContext } from "@test/helpers";
+import { makeFeatureContext, makeNaxConfig } from "@test/helpers";
+import { DEFAULT_CONFIG } from "@/config";
+import { _qualityGateDeps, resolveGateCommands } from "@/finish";
+import type { GateCommand } from "@/finish/gates/quality";
 import { qualityLogsAreQuiet } from "@/quality/log-scope";
 import { _featureDeps } from "@/workflow/feature-deps";
 import { gateExcerpt, runRepoGates } from "@/workflow/repo-gates";
 
 const original = { ..._featureDeps };
-afterEach(() => Object.assign(_featureDeps, original));
+const originalQuality = { ..._qualityGateDeps };
+afterEach(() => {
+  Object.assign(_featureDeps, original);
+  Object.assign(_qualityGateDeps, originalQuality);
+});
 
 describe("gateExcerpt", () => {
   test("the named gate's chunk, without its header line", () => {
@@ -23,6 +30,29 @@ describe("gateExcerpt", () => {
 });
 
 describe("runRepoGates", () => {
+  test("US-003 AC-9: real resolver sends only root test to the workflow gate runner", async () => {
+    const fc = makeFeatureContext({ packageDirs: ["packages/api"] });
+    const seen: GateCommand[][] = [];
+    _featureDeps.resolveGateCommands = resolveGateCommands;
+    _qualityGateDeps.loadConfig = async (root) => {
+      expect(root).toBe(fc.projectDir);
+      return makeNaxConfig({ quality: { commands: { test: "root test" } } });
+    };
+    _qualityGateDeps.loadPackageOverride = async (root, packageDir) => {
+      expect(root).toBe(fc.projectDir);
+      expect(packageDir).toBe("packages/api");
+      return { quality: { ...DEFAULT_CONFIG.quality, commands: { test: "api test" } } };
+    };
+    _featureDeps.runQualityGates = async (_root, commands) => {
+      seen.push(commands);
+      return { passed: true, ran: commands.map((c) => c.name), failing: [], output: "" };
+    };
+
+    await runRepoGates(fc);
+
+    expect(seen).toEqual([[{ name: "test", command: "root test", cwd: fc.projectDir }]]);
+  });
+
   test("runs the gates inside the quiet-quality scope (the step line says the result)", async () => {
     let quiet: boolean | undefined;
     _featureDeps.resolveGateCommands = async () => [];
