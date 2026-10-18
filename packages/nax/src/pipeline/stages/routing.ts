@@ -114,7 +114,7 @@ export const routingStage: PipelineStage = {
       ctx.story.routing?.initialProfileId ?? (neverEscalated ? ctx.story.routing?.agentProfileId : undefined);
     const initialModelTier =
       ctx.story.routing?.initialModelTier ??
-      (neverEscalated && ctx.story.routing?.initialModelPin === undefined ? routing.modelTier : undefined);
+      (canSeedInitialModelTier(ctx.story.routing, neverEscalated) ? routing.modelTier : undefined);
 
     ctx.story.routing = {
       ...(ctx.story.routing ?? {}),
@@ -219,6 +219,11 @@ export const routingStage: PipelineStage = {
     return { action: "continue" };
   },
 };
+
+/** A literal-pin origin must not also acquire a derived tier during write-back. */
+function canSeedInitialModelTier(routing: PipelineContext["story"]["routing"], neverEscalated: boolean): boolean {
+  return neverEscalated && routing?.initialModelPin === undefined;
+}
 
 /**
  * Swappable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
