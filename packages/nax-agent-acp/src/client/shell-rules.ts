@@ -124,6 +124,16 @@ function segmentAllowed(segment: BashSegment, rules: AcpPermissionRules): boolea
   return !anyPatternMatches(rules.deny, argv) && !anyPatternMatches(rules.ask, argv);
 }
 
+/** Explicit deny/ask rules still bind inside the sandbox; lexer refusals remain sandboxed. */
+export function shellRuleBlocks(command: string, rules: AcpPermissionRules): boolean {
+  const lexed = lexBashCommand(command);
+  if (lexed.kind !== "ok") return false;
+  return lexed.segments.some((segment) => {
+    const argv = segment.tokens.map((token) => token.text);
+    return anyPatternMatches(rules.deny, argv) || anyPatternMatches(rules.ask, argv);
+  });
+}
+
 /** "allow" only when the lexer read the whole command and every segment is allowed. */
 export function shellRuleVerdict(command: string, rules: AcpPermissionRules): "allow" | "deny" {
   const lexed = lexBashCommand(command);

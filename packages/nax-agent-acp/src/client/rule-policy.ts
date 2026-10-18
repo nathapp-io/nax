@@ -11,10 +11,11 @@
  * widen it. Bash rules are applied by nax itself (shell-rules.ts, US-003), and
  * a path-scoped or non-deny rule is left to the native matcher.
  */
+import { relative } from "node:path";
 import type { AgentSessionProfile } from "@nathapp/nax-agent";
 import { isReadOnlyProfile, launchEnvFor, reviewDecidesShell } from "#src/client/capabilities";
 import type { ResolvedAcpOptions } from "#src/client/options";
-import { writeCursorPolicy, writePiFile } from "#src/client/policy-files";
+import { writeCursorPolicy, writePiFile, writeStateFile } from "#src/client/policy-files";
 import { OPENCODE_NONE_CONFIG, OPENCODE_READ_CONFIG, OPENCODE_REVIEW_CONFIG } from "#src/client/registry";
 import { PI_SHELL_GATE_SOURCE } from "#src/client/shell-rules";
 import { shellQuote } from "#src/client/shell-sandbox";
@@ -176,6 +177,10 @@ export async function policyLaunchEnv(
   profile: AgentSessionProfile,
   options: ResolvedAcpOptions,
 ): Promise<Readonly<Record<string, string>>> {
+  const plan = options.shellSandboxPlan;
+  if (plan !== undefined) {
+    await writeStateFile(options.stateDir, relative(options.stateDir, plan.policyFile), plan.policyContent, 0o600);
+  }
   const entry = options.entry;
   if (!isReadOnlyProfile(profile)) return launchEnvFor(profile, entry);
   switch (entry?.readOnly?.policy) {

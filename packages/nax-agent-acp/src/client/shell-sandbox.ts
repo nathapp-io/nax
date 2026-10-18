@@ -37,6 +37,25 @@ export function shellQuote(word: string): string {
   return `'${word.replaceAll("'", "'\\''")}'`;
 }
 
+/** Always wrap, including commands that already resemble a wrapper. */
+export function wrapForSandbox(prefix: string, command: string): string {
+  return prefix + shellQuote(command);
+}
+
+/** The suffix must be exactly one POSIX single-quoted word, not shell syntax. */
+export function isSandboxWrapped(prefix: string, command: string): boolean {
+  return command.startsWith(prefix) && /^'(?:[^']|'\\'')*'$/.test(command.slice(prefix.length));
+}
+
+/** Reuse the actual quoting implementation in each generated agent hook. */
+export function sandboxWrapSnippet(prefix: string): string {
+  return `const NAX_SANDBOX_PREFIX = ${JSON.stringify(prefix)};
+function naxSandboxWrap(command) {
+  return NAX_SANDBOX_PREFIX + (${shellQuote.toString()})(command);
+}
+`;
+}
+
 async function credentialPath(path: string): Promise<string | undefined> {
   try {
     return await _shellSandboxDeps.realpath(path);

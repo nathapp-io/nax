@@ -68,6 +68,18 @@ async function writeAtomic(target: string, content: string, mode: number): Promi
   }
 }
 
+/** Write a nax-owned file under the state directory through the shared atomic writer. */
+export async function writeStateFile(
+  stateDir: string,
+  relPath: string,
+  content: string,
+  mode: number,
+): Promise<string> {
+  const target = join(stateDir, relPath);
+  await writeAtomic(target, content, mode);
+  return target;
+}
+
 /** Cursor's isolated config: `<stateDir>/cursor/<h>/cli-config.json`. Returns the directory to point CURSOR_CONFIG_DIR at. */
 export async function writeCursorPolicy(stateDir: string, content: string): Promise<string> {
   const dir = join(stateDir, "cursor", digest(content));
