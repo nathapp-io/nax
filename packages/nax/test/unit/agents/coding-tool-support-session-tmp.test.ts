@@ -9,13 +9,25 @@
  * and every real Bash command would keep writing into the shared `/tmp`.
  *
  * Driven from `resolveCodingToolSupport` to `runtime.callTool("Bash", …)` with
- * the launcher's process and mkdir dependencies stubbed. This tests dispatch
- * wiring without requiring write access to the host's shared `/tmp/nax`.
- * The temp-root selector is pinned so the expected path is host-independent.
+ * `_launcherDeps.runArgv` stubbed, so no command is really executed (the
+ * session directory itself is still created by the launcher, and removed in
+ * afterEach).
+ *
+ * US-001 moved the run root under a shared `/tmp/nax` parent, so the test pins
+ * the host (`/tmp/nax` absent) through the `_sessionTmpDeps` seam: without the
+ * pin the expected path would depend on the machine, and comparing TMPDIR with
+ * `sessionTmpDir(...)` would only prove the two calls agree with each other.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { _launcherDeps, _resetSandboxRegistryForTests, _sessionTmpDeps } from "@nathapp/nax-agent/internal";
-import { cleanupTempDir, makeNaxConfig, makeTempDir, stubSessionTmpDeps, withDepsRestore } from "@test/helpers";
+import { _launcherDeps, _resetSandboxRegistryForTests, _sessionTmpDeps, runTmpRoot } from "@nathapp/nax-agent/internal";
+import {
+  cleanupTempDir,
+  isConfinedTestRun,
+  makeNaxConfig,
+  makeTempDir,
+  stubSessionTmpDeps,
+  withDepsRestore,
+} from "@test/helpers";
 import { resolveCodingToolSupport } from "@/agents/coding-tool-support-resolve";
 
 let root: string;
@@ -31,7 +43,7 @@ afterEach(() => {
 const bashConfig = () => {
   const execution: Record<string, unknown> = {
     bashApproval: "raw",
-    permissions: { run: { allowedTools: ["Bash(echo *)"] } },
+    permissions: { run: { allow: ["Bash(echo *)"] } },
     sandbox: { enabled: false },
   };
   return makeNaxConfig({ execution });
@@ -50,16 +62,28 @@ describe("resolveCodingToolSupport — per-session TMPDIR (US-004)", () => {
   withDepsRestore(_launcherDeps);
   withDepsRestore(_sessionTmpDeps);
 
-  const createdDirs: string[] = [];
+  // US-001: with `/tmp/nax` absent the parent is `/tmp/nax`, so the run root of
+  // `r1` is `/tmp/nax/r1` on every machine. `runRoot` is captured while the stub
+  // is in place, so the cleanup can still name the directory the launcher made.
+  let runRoot: string;
+  let usedRunRoot: boolean;
   beforeEach(() => {
     stubSessionTmpDeps(_sessionTmpDeps, { parent: "ENOENT" });
-    createdDirs.length = 0;
-    _launcherDeps.mkdir = async (path) => {
-      createdDirs.push(path);
-    };
+    runRoot = runTmpRoot("r1");
+    usedRunRoot = false;
+  });
+  afterEach(() => {
+    if (usedRunRoot) cleanupTempDir(runRoot);
   });
 
-  test("US-004 AC12: a Bash call runs with TMPDIR at the run's session directory", async () => {
+  // Class C: the launcher creates `<runRoot>/<sessionName>` under the shared
+  // `/tmp/nax` parent before it exports `TMPDIR` (`src/sandbox/launcher.ts`:
+  // `ensureTmpDir` drops the override when the mkdir fails), and a confined
+  // sandbox denies every write under `/tmp`. Skipped there rather than stubbed:
+  // the TMPDIR this asserts is the one the launcher created.
+  const skipConfined = test.skipIf(isConfinedTestRun());
+  skipConfined("US-004 AC12: a Bash call runs with TMPDIR at the run's session directory", async () => {
+    usedRunRoot = true;
     const calls = recordingRunArgv();
 
     const support = await resolveCodingToolSupport({
@@ -80,7 +104,6 @@ describe("resolveCodingToolSupport — per-session TMPDIR (US-004)", () => {
     // The ledger session name is `US-001-implementer`, scoped under the run's
     // own root — `sessionTmpDirUnder("/tmp/nax/r1", "US-001-implementer")` under
     // the pinned layout, so a flat `/tmp/nax-r1` root fails here.
-    expect(createdDirs).toEqual(["/tmp/nax/r1/US-001-implementer"]);
     expect(calls[0]?.env?.TMPDIR).toBe("/tmp/nax/r1/US-001-implementer");
   });
 
@@ -101,7 +124,6 @@ describe("resolveCodingToolSupport — per-session TMPDIR (US-004)", () => {
 
     expect(outcome?.kind).toBe("ok");
     expect(calls).toHaveLength(1);
-    expect(createdDirs).toEqual([]);
     expect(calls[0]?.env?.TMPDIR).toBeUndefined();
   });
 });
