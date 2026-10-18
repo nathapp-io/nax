@@ -3,7 +3,7 @@
   "feature": "sandbox-marker-and-root-gates",
   "branchName": "feat/sandbox-marker-and-root-gates",
   "createdAt": "2026-10-18T00:00:00Z",
-  "updatedAt": "2026-10-18T07:41:35.290Z",
+  "updatedAt": "2026-10-18T07:49:07.898Z",
   "userStories": [
     {
       "id": "US-001",
@@ -125,14 +125,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "A standard helper/barrel change with exact environment semantics, an existing byte-expectation adjustment and one bounded child-process proof. It consumes an advisory marker without changing session lifecycle or permission/access-control decisions."
+        "reasoning": "A standard helper/barrel change with exact environment semantics, an existing byte-expectation adjustment and one bounded child-process proof. It consumes an advisory marker without changing session lifecycle or permission/access-control decisions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/test/helpers/confined.ts",
@@ -170,7 +173,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "fc10e90fdc3186c432265ea2a63aeecc92879f33"
     },
     {
       "id": "US-003",
