@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildWorkflowStoryReviewPrompt,
+  buildWorkflowBranchReviewPrompt,
   WORKFLOW_ENUMERATION_INSTRUCTION,
   WORKFLOW_QUALITY_CHECKLIST,
 } from "@/prompts";
@@ -9,13 +10,15 @@ import {
 const CHECKLIST = `## Code-quality checklist
 Judge the changed code against each class. Report only what you can quote from a file.
 - Concurrency and atomicity: a check and the write it guards in separate statements or transactions; two writers racing on one row, slot or counter; shared mutable state without synchronisation.
+- State loss: a write that replaces a whole record, map entry or file that other code also fills, so the fields this write did not set are dropped; a reset, retry or migration that discards state still in use.
 - Data-store semantics: the collation or case-sensitivity of identity and unique columns; uniqueness enforced only in code, not by the store; transaction boundaries; column types and widths against the values written.
 - Production wiring: an in-memory, fake or test stand-in on a production path where the project provides a shared implementation (an id or sequence generator, cache, lock, queue, storage).
 - Test isolation: a test that depends on state another test created; ordering dependence; shared mutable fixtures; globals, environment or files not restored.
 - Input safety: untrusted keys used for object lookup (inherited keys such as __proto__ or constructor); unbounded lengths or sizes reaching storage; unvalidated input reaching a query, path or command.
 - Performance: a database or network call per item inside a loop on a batch path; serial awaits that could be one batched call.
 - Error handling: a swallowed failure; a result or exit code never checked; a default substituted on error so the caller cannot tell empty from broken.
-- Reachability: a list with no way past its first page; a state a user or caller cannot reach or leave.`;
+- Reachability: a list with no way past its first page; a state a user or caller cannot reach or leave.
+A state loss a caller can reach is a critical or important finding, never minor; if you cannot quote it, put it in cannotVerify.`;
 
 const storyReview = buildWorkflowStoryReviewPrompt({
   briefPath: "b.md",
@@ -23,6 +26,20 @@ const storyReview = buildWorkflowStoryReviewPrompt({
   packagePath: "p.diff",
   concerns: [],
 });
+
+const branchReview = buildWorkflowBranchReviewPrompt({
+  prdPath: "prd.json",
+  packagePath: "branch.diff",
+  range: "base..HEAD",
+  stories: [],
+  minors: [],
+  parked: [],
+  cannotVerify: [],
+  gateFindings: [],
+});
+
+const STATE_LOSS_LINE = "- State loss: a write that replaces a whole record, map entry or file that other code also fills, so the fields this write did not set are dropped; a reset, retry or migration that discards state still in use.";
+const STATE_LOSS_SEVERITY = "A state loss a caller can reach is a critical or important finding, never minor; if you cannot quote it, put it in cannotVerify.";
 
 describe("WORKFLOW_QUALITY_CHECKLIST", () => {
   test("is the checklist text verbatim (AC-1)", () => {
@@ -45,6 +62,25 @@ describe("the story review prompt embeds the shared checklist", () => {
 
   test("includes the enumeration instruction (AC-4)", () => {
     expect(storyReview).toContain(WORKFLOW_ENUMERATION_INSTRUCTION);
+  });
+
+  test("includes State loss guidance (AC-2)", () => {
+    expect(storyReview).toContain(STATE_LOSS_LINE);
+  });
+
+  test("includes the reachable state-loss severity rule for an unquotable concern (AC-4)", () => {
+    const prompt = buildWorkflowStoryReviewPrompt({
+      briefPath: "b.md",
+      reportPath: "r.md",
+      packagePath: "p.diff",
+      concerns: ["Possible state loss without a quotable excerpt"],
+    });
+    expect(prompt).toContain(STATE_LOSS_SEVERITY);
+    expect(prompt).toContain("Possible state loss without a quotable excerpt");
+  });
+
+  test("branch review embeds the reachable state-loss severity rule (AC-3)", () => {
+    expect(branchReview).toContain(STATE_LOSS_SEVERITY);
   });
 
   test("keeps the observed-excerpt rule for critical and important findings (AC-5)", () => {
