@@ -31,6 +31,7 @@ export const _sandboxExecDeps: {
   createBackend(network: z.infer<typeof policyFileSchema>["policy"]["network"]): SandboxBackend;
   cwd(): string;
   env(): Record<string, string | undefined>;
+  // nax-git-env-allow: Generic sandbox argv seam; caller supplies the policy-filtered command environment.
   spawn(argv: readonly string[], opts: { cwd: string; env: Record<string, string> }): ExecChild;
   onSignal(signal: "SIGINT" | "SIGTERM", handler: () => void): void;
   stderr(line: string): void;
@@ -40,6 +41,7 @@ export const _sandboxExecDeps: {
   cwd: () => process.cwd(),
   env: () => process.env,
   spawn: (argv, opts) => {
+    // nax-git-env-allow: Backend-produced sandbox argv must inherit opts.env after policy credential stripping and HOME restoration.
     const child = Bun.spawn([...argv], { ...opts, stdin: "inherit", stdout: "inherit", stderr: "inherit" });
     return {
       exited: child.exited.then((exitCode) => ({ exitCode, signal: child.signalCode })),
@@ -71,6 +73,7 @@ async function runChild(
   opts: { cwd: string; env: Record<string, string> },
   backend: SandboxBackend,
 ): Promise<number> {
+  // nax-git-env-allow: Run sandbox backend argv with the already policy-filtered opts.env, not a Git-specific environment.
   const child = _sandboxExecDeps.spawn(argv, opts);
   const interrupt = () => child.kill("SIGINT");
   const terminate = () => child.kill("SIGTERM");
