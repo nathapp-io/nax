@@ -26,7 +26,7 @@ import {
 import { resolveTestFilePatterns } from "@/test-runners";
 import { packageDirRelative } from "@/utils/paths";
 import type { PipelineContext, PipelineStage, RoutingResult, StageResult } from "../types";
-import { consultEligibleStoryRouter, recordStoryRouterDecision } from "./routing-story-router";
+import { applyStoryRouterPick, consultEligibleStoryRouter, recordStoryRouterDecision } from "./routing-story-router";
 
 export const routingStage: PipelineStage = {
   name: "routing",
@@ -45,7 +45,8 @@ export const routingStage: PipelineStage = {
     const decision = await _routingDeps.resolveRouting(ctx.story, ctx.config, ctx.plugins, ctx, {
       skipPluginRouters: consultation.usable,
     });
-    const routerAuditPatch = recordStoryRouterDecision(ctx.story.id, consultation, logger);
+    const applied = applyStoryRouterPick(ctx, consultation, decision);
+    const routerAuditPatch = recordStoryRouterDecision(ctx.story.id, { ...consultation, applied }, logger);
 
     // @design: BUG-032 / Open Item B / #1522 — the profile target seeds the starting
     // rung, a genuine escalation is preserved, and a stale leftover tier is not.
@@ -111,7 +112,9 @@ export const routingStage: PipelineStage = {
     const initialAgent = ctx.story.routing?.initialAgent ?? (neverEscalated ? routing.agent : undefined);
     const initialProfileId =
       ctx.story.routing?.initialProfileId ?? (neverEscalated ? ctx.story.routing?.agentProfileId : undefined);
-    const initialModelTier = ctx.story.routing?.initialModelTier ?? (neverEscalated ? routing.modelTier : undefined);
+    const initialModelTier =
+      ctx.story.routing?.initialModelTier ??
+      (neverEscalated && ctx.story.routing?.initialModelPin === undefined ? routing.modelTier : undefined);
 
     ctx.story.routing = {
       ...(ctx.story.routing ?? {}),

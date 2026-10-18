@@ -1,7 +1,8 @@
+import { resolveAgentAssignment, resolveDefaultAgent } from "@/agents";
 import type { NaxConfig } from "@/config";
 import type { Logger } from "@/logger";
 import type { StoryRouterDecision, StoryRouting, UserStory } from "@/prd";
-import type { consultStoryRouter, StoryRouterOutcome } from "@/routing";
+import type { consultStoryRouter, RoutingDecision, StoryRouterOutcome } from "@/routing";
 import type { PipelineContext } from "../types";
 
 /** Usability also controls whether legacy plugin routers must be skipped. */
@@ -29,6 +30,42 @@ interface StoryRouterConsultation {
   mode?: "shadow" | "apply";
   plannedProfileId?: string;
   outcome?: StoryRouterOutcome;
+  applied?: boolean;
+}
+
+/** Rebase the starting profile before operating-tier resolution can retain an old rung. */
+export function applyStoryRouterPick(
+  ctx: PipelineContext,
+  consultation: StoryRouterConsultation,
+  classification: RoutingDecision,
+): boolean {
+  const { outcome, mode, plannedProfileId } = consultation;
+  if (mode !== "apply" || outcome?.kind !== "picked") return false;
+  if ((ctx.config.routing.router?.precedence ?? "router") === "plan" && plannedProfileId !== undefined) return false;
+  const { config, story } = ctx;
+  const assignment = resolveAgentAssignment(
+    outcome.profileId,
+    config.routing.agents,
+    story.id,
+    config.models,
+    resolveDefaultAgent(config),
+  );
+  if (!assignment) return false;
+  const routing: StoryRouting = { ...classification, ...story.routing };
+  delete routing.modelTier;
+  delete routing.profileModelTier;
+  delete routing.profileModelPin;
+  delete routing.initialModelTier;
+  delete routing.initialModelPin;
+  story.routing = {
+    ...routing,
+    ...assignment,
+    initialAgent: assignment.agent,
+    initialProfileId: assignment.agentProfileId,
+    ...(assignment.profileModelTier !== undefined && { initialModelTier: assignment.profileModelTier }),
+    ...(assignment.profileModelPin !== undefined && { initialModelPin: assignment.profileModelPin }),
+  };
+  return true;
 }
 
 /** Snapshot the plan before invoking plugin code; eligibility is independent of usability. */
@@ -71,7 +108,7 @@ export function recordStoryRouterDecision(
     ...(outcome.kind !== "declined" && { profileId: outcome.profileId }),
     ...(outcome.kind === "picked" && outcome.confidence !== undefined && { confidence: outcome.confidence }),
     ...(plannedProfileId !== undefined && { plannedProfileId }),
-    applied: false,
+    applied: consultation.applied === true,
     decidedAt: new Date().toISOString(),
   };
   logStoryRouterDecision(storyId, { decision, latencyMs: outcome.latencyMs }, logger);
