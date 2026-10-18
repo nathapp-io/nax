@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { stubOpencodeAcpEnvDeps, withDepsRestore } from "@test/helpers";
 import { acpEnvSettings } from "@/agents/shared/acp-env";
 import { _opencodeAcpEnvDeps, isolatedOpencodeConfigDir } from "@/agents/shared/opencode-acp-env";
+import { DEFAULT_AGENT_ACP_SHELL_SANDBOX_CONFIG } from "@/config";
 import { selectModel } from "@/session/model-selection";
 
 withDepsRestore(_opencodeAcpEnvDeps);
@@ -41,6 +42,7 @@ describe("selectModel", () => {
         codex: { isolateHome: false, fullMode: "agent-full-access" },
         opencode: { isolateConfig: false },
         gemini: { isolateHome: false },
+        shellSandbox: { ...DEFAULT_AGENT_ACP_SHELL_SANDBOX_CONFIG, mode: "off" },
       },
     );
 
@@ -54,6 +56,7 @@ describe("selectModel", () => {
         codex: { isolateHome: true, fullMode: "agent-full-access" },
         opencode: { isolateConfig: false },
         gemini: { isolateHome: false },
+        shellSandbox: { ...DEFAULT_AGENT_ACP_SHELL_SANDBOX_CONFIG, mode: "off" },
       },
     );
 

@@ -14,7 +14,11 @@ import { z } from "zod";
 import { DEFAULT_AGENT_NAME, DEFAULT_AGENT_PROTOCOL, DEFAULT_MODEL_MAPS } from "./agent-defaults";
 import type { ModelsConfig } from "./schema-types";
 import { classifyModelSelector } from "./schema-types";
-import { DEFAULT_AGENT_GEMINI_ACP_CONFIG } from "./schemas-acp-agents";
+import {
+  DEFAULT_AGENT_ACP_SHELL_SANDBOX_CONFIG,
+  DEFAULT_AGENT_GEMINI_ACP_CONFIG,
+  DEFAULT_AGENT_OPENCODE_ACP_CONFIG,
+} from "./schemas-acp-agents";
 import { AdvisorConfigObjectSchema } from "./schemas-advisor";
 import { AuthConfigSchema } from "./schemas-auth";
 import { ContextConfigSchema } from "./schemas-context";
@@ -37,7 +41,6 @@ import {
   CuratorConfigSchema,
   DEFAULT_AGENT_CODEX_ACP_CONFIG,
   DEFAULT_AGENT_IDLE_WATCHDOG_CONFIG,
-  DEFAULT_AGENT_OPENCODE_ACP_CONFIG,
   DEFAULT_AGENT_TIMEOUT_RETRY_CONFIG,
   GenerateConfigSchema,
   HooksConfigSchema,
@@ -376,6 +379,7 @@ export const NaxConfigSchema = z
         codex: { ...DEFAULT_AGENT_CODEX_ACP_CONFIG },
         opencode: { ...DEFAULT_AGENT_OPENCODE_ACP_CONFIG },
         gemini: { ...DEFAULT_AGENT_GEMINI_ACP_CONFIG },
+        shellSandbox: { ...DEFAULT_AGENT_ACP_SHELL_SANDBOX_CONFIG },
       },
       native: {
         instructionFileName: DEFAULT_INSTRUCTION_FILE_NAME,

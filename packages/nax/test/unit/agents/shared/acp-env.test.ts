@@ -14,6 +14,7 @@ import { acpEnvSettings, withAcpEnv } from "@/agents/shared/acp-env";
 import { _codexAcpEnvDeps } from "@/agents/shared/codex-acp-env";
 import { _geminiAcpEnvDeps, isolatedGeminiHomeDir } from "@/agents/shared/gemini-acp-env";
 import { _opencodeAcpEnvDeps, isolatedOpencodeConfigDir } from "@/agents/shared/opencode-acp-env";
+import { DEFAULT_AGENT_ACP_SHELL_SANDBOX_CONFIG } from "@/config";
 
 withDepsRestore(_codexAcpEnvDeps);
 withDepsRestore(_opencodeAcpEnvDeps);
@@ -44,6 +45,7 @@ describe("acpEnvSettings", () => {
       codex: { isolateHome: false, fullMode: "agent-full-access" },
       opencode: { isolateConfig: true },
       gemini: { isolateHome: true },
+      shellSandbox: DEFAULT_AGENT_ACP_SHELL_SANDBOX_CONFIG,
     });
   });
 
@@ -52,6 +54,7 @@ describe("acpEnvSettings", () => {
       codex: { isolateHome: false, fullMode: "workspace-write" },
       opencode: { isolateConfig: false },
       gemini: { isolateHome: false },
+      shellSandbox: DEFAULT_AGENT_ACP_SHELL_SANDBOX_CONFIG,
     });
   });
 
@@ -76,6 +79,7 @@ describe("withAcpEnv", () => {
       codex: { isolateHome: false, fullMode: "workspace-write" },
       opencode: { isolateConfig: true },
       gemini: { isolateHome: false },
+      shellSandbox: { ...DEFAULT_AGENT_ACP_SHELL_SANDBOX_CONFIG, mode: "off" },
     });
 
     expect(out.env.INITIAL_AGENT_MODE).toBe("workspace-write");
@@ -93,6 +97,7 @@ describe("withAcpEnv", () => {
       codex: { isolateHome: true, fullMode: "agent-full-access" },
       opencode: { isolateConfig: true },
       gemini: { isolateHome: false },
+      shellSandbox: { ...DEFAULT_AGENT_ACP_SHELL_SANDBOX_CONFIG, mode: "off" },
     });
 
     expect(out.env.OPENCODE_CONFIG_DIR).toBe(isolatedOpencodeConfigDir());
@@ -111,6 +116,7 @@ describe("withAcpEnv", () => {
       codex: { isolateHome: true, fullMode: "agent-full-access" },
       opencode: { isolateConfig: true },
       gemini: { isolateHome: true },
+      shellSandbox: { ...DEFAULT_AGENT_ACP_SHELL_SANDBOX_CONFIG, mode: "off" },
     });
 
     expect(out.env.GEMINI_CLI_HOME).toBe(isolatedGeminiHomeDir());
@@ -128,6 +134,7 @@ describe("withAcpEnv", () => {
       codex: { isolateHome: false, fullMode: "workspace-write" },
       opencode: { isolateConfig: false },
       gemini: { isolateHome: true },
+      shellSandbox: { ...DEFAULT_AGENT_ACP_SHELL_SANDBOX_CONFIG, mode: "off" },
     });
 
     expect(out.env.INITIAL_AGENT_MODE).toBe("workspace-write");

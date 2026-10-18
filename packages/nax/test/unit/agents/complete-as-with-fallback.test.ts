@@ -252,14 +252,15 @@ describe("completeAsWithFallback — opencode ACP env (US-002)", () => {
     expect(forwarded[0].modelDef.env?.OPENCODE_CONFIG_DIR).toBe(isolatedOpencodeConfigDir());
   });
 
-  test("US-002: isolateConfig false forwards the model def untouched", async () => {
+  test("US-006 AC-19: isolateConfig false preserves operator config with sandbox carrier", async () => {
     const deps = stubOpencodeAcpEnvDeps();
     stubCodexAcpEnvDeps();
     const { input, forwarded } = capturingInput(makeNaxConfig({}));
 
     await completeAsWithFallback(input, "opencode", "hi", OPTS);
 
-    expect(forwarded[0].modelDef.env).toEqual({});
+    expect(forwarded[0].modelDef.env).not.toHaveProperty("OPENCODE_CONFIG_DIR");
+    expect(forwarded[0].modelDef.env).toHaveProperty("NAX_ACP_SHELL_SANDBOX");
     expect(deps.mkdir).not.toHaveBeenCalled();
   });
 });

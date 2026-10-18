@@ -95,7 +95,12 @@ export {
   resolveTierMembership,
   toPricing,
 } from "./schema";
-export { DEFAULT_AGENT_GEMINI_ACP_CONFIG } from "./schemas-acp-agents";
+export {
+  AgentAcpShellSandboxConfigSchema,
+  DEFAULT_AGENT_ACP_SHELL_SANDBOX_CONFIG,
+  DEFAULT_AGENT_GEMINI_ACP_CONFIG,
+  DEFAULT_AGENT_OPENCODE_ACP_CONFIG,
+} from "./schemas-acp-agents";
 export { ADVISOR_DEFAULTS, isAdvisorCallerEnabled, resolveAdvisorConfig } from "./schemas-advisor";
 export type { CommandSafetyConfig } from "./schemas-command-safety";
 export { CommandSafetyConfigSchema } from "./schemas-command-safety";
@@ -114,7 +119,6 @@ export {
   CuratorRetentionConfigSchema,
   DEFAULT_AGENT_CODEX_ACP_CONFIG,
   DEFAULT_AGENT_IDLE_WATCHDOG_CONFIG,
-  DEFAULT_AGENT_OPENCODE_ACP_CONFIG,
   DEFAULT_AGENT_SPIN_BREAKER_CONFIG,
   DEFAULT_AGENT_TIMEOUT_RETRY_CONFIG,
   RoutingConfigSchema,
