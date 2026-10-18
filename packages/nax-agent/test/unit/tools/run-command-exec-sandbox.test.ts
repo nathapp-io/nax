@@ -57,10 +57,10 @@ describe("Exec through the launcher", () => {
     expect(result.audit?.sandbox).toEqual({
       backend: "srt",
       wrapped: true,
-      argv: ["/bin/sh", "-c", "'bun' '--version'"],
+      argv: ["/bin/sh", "-c", "export NAX_SANDBOXED=1; 'bun' '--version'"],
     });
     // The wrapped argv the backend built is the argv that was handed to the spawn.
-    expect(seen[0]?.argv).toEqual(["/bin/sh", "-c", "'bun' '--version'"]);
+    expect(seen[0]?.argv).toEqual(["/bin/sh", "-c", "export NAX_SANDBOXED=1; 'bun' '--version'"]);
     expect(seen[0]?.cwd).toBe(join(root, "packages", "app"));
   });
 });

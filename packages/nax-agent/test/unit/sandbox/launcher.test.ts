@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import * as packageRoot from "#src/index";
+import * as sandboxBarrel from "#src/sandbox/index";
 import { _launcherDeps, createCommandLauncher, DISABLED_SANDBOX_STATE, type SandboxPolicy } from "#src/sandbox/index";
 import { cleanupTempDir, makeFakeSandboxBackend, makeTempDir, withDepsRestore } from "#test/helpers/index";
 
@@ -13,6 +15,61 @@ const available = { kind: "available", backend: "srt", network: "open" } as cons
 
 describe("createCommandLauncher", () => {
   withDepsRestore(_launcherDeps);
+
+  test("marker AC-8/9: public exports agree", () => {
+    expect("SANDBOXED_ENV" in packageRoot).toBe(true);
+    expect("SANDBOXED_ENV" in sandboxBarrel).toBe(true);
+    expect(Reflect.get(packageRoot, "SANDBOXED_ENV")).toBe("NAX_SANDBOXED");
+    expect(Reflect.get(sandboxBarrel, "SANDBOXED_ENV")).toBe(Reflect.get(packageRoot, "SANDBOXED_ENV"));
+  });
+
+  test.each([available, DISABLED_SANDBOX_STATE, { kind: "unavailable", backend: "srt", reason: "no bwrap" } as const])(
+    "marker AC-4/5/6: %j only wrapped children are marked",
+    async (state) => {
+      const saved = process.env.NAX_SANDBOXED;
+      const confined = process.env.NAX_TEST_CONFINED;
+      delete process.env.NAX_SANDBOXED;
+      delete process.env.NAX_TEST_CONFINED;
+      try {
+        const result = await createCommandLauncher({
+          state,
+          backend: makeFakeSandboxBackend("enforce"),
+          policyFor: async (r) => policy(r),
+        }).run({
+          spec: { kind: "shell", shell: "/bin/sh", command: "printenv NAX_SANDBOXED" },
+          root,
+          cwd: root,
+          timeoutMs: 5000,
+          stripEnvVars: [],
+        });
+        expect(result.stdout.trim()).toBe(state.kind === "available" ? "1" : "");
+        expect(result.sandbox.wrapped).toBe(state.kind === "available");
+      } finally {
+        if (saved === undefined) delete process.env.NAX_SANDBOXED;
+        else process.env.NAX_SANDBOXED = saved;
+        if (confined === undefined) delete process.env.NAX_TEST_CONFINED;
+        else process.env.NAX_TEST_CONFINED = confined;
+      }
+    },
+  );
+
+  test("marker AC-3/7: quoted argv output and logical shell identity", async () => {
+    const backend = makeFakeSandboxBackend("enforce");
+    const wrapped = createCommandLauncher({ state: available, backend, policyFor: async (r) => policy(r) });
+    const request = {
+      spec: { kind: "shell", shell: "/bin/sh", command: "echo hi" } as const,
+      root,
+      cwd: root,
+      timeoutMs: 5000,
+      stripEnvVars: [],
+    };
+    const a = await wrapped.run(request);
+    const b = await createCommandLauncher({ state: DISABLED_SANDBOX_STATE }).run(request);
+    expect(a.executed).toEqual(b.executed);
+    const result = await wrapped.run({ ...request, spec: { kind: "argv", argv: ["echo", "a b"] } });
+    expect(backend.calls[1]?.command).toBe("export NAX_SANDBOXED=1; 'echo' 'a b'");
+    expect(result.stdout.trim()).toBe("a b");
+  });
 
   test("disabled: byte-identical runArgv arguments to today's Bash spawn", async () => {
     const calls: unknown[] = [];
@@ -67,7 +124,12 @@ describe("createCommandLauncher", () => {
     });
     expect(r.stdout.trim()).toBe("hi");
     expect(r.executed).toEqual(["/bin/sh", "-c", "echo hi"]);
-    expect(r.sandbox).toEqual({ backend: "srt", wrapped: true, argv: ["/bin/sh", "-c", "echo hi"] });
+    expect(r.sandbox).toEqual({
+      backend: "srt",
+      wrapped: true,
+      argv: ["/bin/sh", "-c", "export NAX_SANDBOXED=1; echo hi"],
+    });
+    expect(backend.calls[0]?.command).toBe("export NAX_SANDBOXED=1; echo hi");
     expect(backend.finished).toBe(1);
   });
 
@@ -122,7 +184,7 @@ describe("createCommandLauncher", () => {
       timeoutMs: 5000,
       stripEnvVars: [],
     });
-    expect(backend.calls[0]?.command).toBe("'echo' 'a b' '$(id)'");
+    expect(backend.calls[0]?.command).toBe("export NAX_SANDBOXED=1; 'echo' 'a b' '$(id)'");
     expect(r.stdout.trim()).toBe("a b $(id)");
   });
 
@@ -193,7 +255,7 @@ describe("createCommandLauncher", () => {
       backend: "srt",
       wrapped: true,
       denialHint: true,
-      argv: ["/bin/sh", "-c", "echo 'x: Operation not permitted' >&2; exit 1"],
+      argv: ["/bin/sh", "-c", "export NAX_SANDBOXED=1; echo 'x: Operation not permitted' >&2; exit 1"],
     });
   });
 

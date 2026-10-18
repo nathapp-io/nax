@@ -252,6 +252,7 @@ export {
   createCommandLauncher,
   createSrtBackend,
   DISABLED_SANDBOX_STATE,
+  SANDBOXED_ENV,
   defaultTempRoots,
   denialHintLine,
   type GitLayout,

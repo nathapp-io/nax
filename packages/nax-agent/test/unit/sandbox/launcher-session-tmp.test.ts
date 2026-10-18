@@ -103,7 +103,9 @@ describe("createCommandLauncher — per-session TMPDIR (US-004)", () => {
       tmpDir,
     }).run(shellRequest("echo hi"));
 
-    expect(backend.calls[0]?.command).toBe(`export TMPDIR='${tmpDir}' TMP='${tmpDir}' TEMP='${tmpDir}'; echo hi`);
+    expect(backend.calls[0]?.command).toBe(
+      `export NAX_SANDBOXED=1 TMPDIR='${tmpDir}' TMP='${tmpDir}' TEMP='${tmpDir}'; echo hi`,
+    );
   });
 
   test("US-004 AC7: executed stays the logical argv of the unprefixed command", async () => {

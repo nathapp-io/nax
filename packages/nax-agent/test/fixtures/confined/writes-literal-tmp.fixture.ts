@@ -19,9 +19,9 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
-import { isConfinedTestRun } from "#test/helpers/index";
+import { CONFINED_TEST_ENV } from "#test/helpers/index";
 
-test.skipIf(!isConfinedTestRun())("writes under a literal /tmp path", () => {
+test.skipIf(process.env[CONFINED_TEST_ENV] !== "1")("writes under a literal /tmp path", () => {
   const path = `/tmp/nax-confined-probe-${randomUUID()}`;
   writeFileSync(path, "written\n");
   try {

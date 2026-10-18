@@ -17,9 +17,9 @@
  */
 import { expect, test } from "bun:test";
 import { join } from "node:path";
-import { cleanupTempDir, isConfinedTestRun, makeTempDir } from "#test/helpers/index";
+import { CONFINED_TEST_ENV, cleanupTempDir, makeTempDir } from "#test/helpers/index";
 
-test.skipIf(!isConfinedTestRun())("writes under makeTempDir()", async () => {
+test.skipIf(process.env[CONFINED_TEST_ENV] !== "1")("writes under makeTempDir()", async () => {
   const dir = makeTempDir("nax-confined-fixture-");
   try {
     await Bun.write(join(dir, "wrote.txt"), "written\n");
