@@ -14,6 +14,7 @@
 import { relative } from "node:path";
 import type { AgentSessionProfile } from "@nathapp/nax-agent";
 import { isReadOnlyProfile, launchEnvFor, reviewDecidesShell } from "#src/client/capabilities";
+import { opencodeSandboxEnv } from "#src/client/opencode-sandbox";
 import type { ResolvedAcpOptions } from "#src/client/options";
 import { piSandboxGateSource } from "#src/client/pi-sandbox";
 import { writeCursorPolicy, writePiFile, writeStateFile } from "#src/client/policy-files";
@@ -199,6 +200,9 @@ export async function policyLaunchEnv(
   if (!isReadOnlyProfile(profile)) return launchEnvFor(profile, entry);
   switch (entry?.readOnly?.policy) {
     case "opencode":
+      if (profile === "review" && plan?.agent === "opencode") {
+        return opencodeSandboxEnv(plan, opencodePermissionConfig(profile, options.rules), options.env);
+      }
       return Object.freeze({ OPENCODE_CONFIG_CONTENT: opencodePermissionConfig(profile, options.rules) });
     case "cursor":
       return Object.freeze({
