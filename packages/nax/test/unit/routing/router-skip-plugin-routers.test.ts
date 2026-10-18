@@ -1,6 +1,5 @@
 import { afterEach, expect, mock, spyOn, test } from "bun:test";
-import { makeDispatchContext } from "@test/helpers/dispatch-context";
-import { makeStory } from "@test/helpers/mock-story";
+import { makeDispatchContext, makeStory } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { PluginRegistry } from "@/plugins/registry";
 import { type RoutingDecision, resolveRouting } from "@/routing";

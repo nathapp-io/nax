@@ -1,8 +1,5 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { makeDispatchContext } from "@test/helpers/dispatch-context";
-import { makeFakeClock } from "@test/helpers/fake-clock";
-import { makeStory } from "@test/helpers/mock-story";
-import { withTimerSpy } from "@test/helpers/timer-spy";
+import { makeDispatchContext, makeFakeClock, makeStory, withTimerSpy } from "@test/helpers";
 import { DEFAULT_CONFIG, type NaxConfig } from "@/config";
 import { PluginRegistry } from "@/plugins/registry";
 import type { RoutingDecision, RoutingStrategy } from "@/routing";
