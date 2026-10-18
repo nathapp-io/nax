@@ -3,7 +3,7 @@
 All notable changes to `@nathapp/nax-agent-acp` are recorded here. Versions move in
 step with `@nathapp/nax-agent`.
 
-## [Unreleased]
+## [0.90.2] - 2026-10-18
 
 - Cursor under `review` runs in its `agent` mode when the caller has a `Bash` allow rule,
   instead of `ask`, whose prompt made the model refuse to try any shell command, so the
