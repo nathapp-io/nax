@@ -131,6 +131,7 @@ export {
   TierConfigSchema,
 } from "./schemas-model";
 export { AdversarialReviewConfigSchema, ReviewConfigSchema, SemanticReviewConfigSchema } from "./schemas-review";
+export { StoryRouterConfigSchema } from "./schemas-router";
 export {
   ExecutionModeSchema,
   isWorkflowMode,

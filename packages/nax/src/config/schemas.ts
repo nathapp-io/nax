@@ -150,6 +150,7 @@ export const NaxConfigSchema = z
         timeoutMs: 30000,
       },
       agents: { enabled: true, strategy: "off", profiles: [] },
+      router: { mode: "off", precedence: "router", timeoutMs: 5_000 },
     }),
     execution: ExecutionConfigSchema.default({
       mode: "workflow",

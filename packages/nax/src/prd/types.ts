@@ -78,6 +78,24 @@ export interface StructuredFailure {
   agentProfileId?: string;
 }
 
+/** Persisted audit of a story router consultation. */
+export interface StoryRouterDecision {
+  mode: "shadow" | "apply";
+  /** RoutingStrategy.name of the router consulted */
+  router: string;
+  outcome: "picked" | "declined" | "unknown-profile";
+  /** The router's pick; present for "picked" and "unknown-profile" */
+  profileId?: string;
+  /** Present only for "picked", and only for a finite number in [0, 1] */
+  confidence?: number;
+  /** Profile before consultation; absent when the plan set none */
+  plannedProfileId?: string;
+  /** True when apply wrote the pick as the starting profile, even if unchanged */
+  applied: boolean;
+  /** ISO-8601 timestamp */
+  decidedAt: string;
+}
+
 /** Routing metadata per story */
 export interface StoryRouting {
   complexity: Complexity;
@@ -113,6 +131,8 @@ export interface StoryRouting {
   initialProfileId?: string;
   /** Agent at first route — written once, not overwritten by escalation */
   initialAgent?: string;
+  /** Audit of the story router's decision, when consulted */
+  routerDecision?: StoryRouterDecision;
   /** Profile id that produced the current agent assignment */
   agentProfileId?: string;
   /** Model tier from the matched agent profile's target — set at plan time, used to bias routing tier selection */

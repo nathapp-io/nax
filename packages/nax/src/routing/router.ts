@@ -157,6 +157,7 @@ export async function resolveRouting(
   config: NaxConfig,
   plugins: PluginRegistry | undefined,
   dispatchContext: DispatchContext,
+  options?: { skipPluginRouters?: boolean },
 ): Promise<RoutingDecision> {
   const logger = getSafeLogger();
   const { callOp, classifyRouteOp } = await import("@/operations");
@@ -176,21 +177,20 @@ export async function resolveRouting(
     };
   }
 
-  // 1. Plugin routers — highest priority
-  if (plugins) {
-    for (const pluginRouter of plugins.getRouters()) {
-      try {
-        const decision = await pluginRouter.route(story, {
-          ...runtimeContext,
-          config,
-        } as RoutingContext);
-        if (decision !== null) return decision;
-      } catch (err) {
-        logger?.warn("routing", `Plugin router "${pluginRouter.name}" failed`, {
-          storyId: story.id,
-          error: (err as Error).message,
-        });
-      }
+  // 1. Plugin routers — highest priority (unless already consulted by the caller)
+  const pluginRouters = options?.skipPluginRouters ? [] : (plugins?.getRouters() ?? []);
+  for (const pluginRouter of pluginRouters) {
+    try {
+      const decision = await pluginRouter.route(story, {
+        ...runtimeContext,
+        config,
+      } as RoutingContext);
+      if (decision !== null) return decision;
+    } catch (err) {
+      logger?.warn("routing", `Plugin router "${pluginRouter.name}" failed`, {
+        storyId: story.id,
+        error: (err as Error).message,
+      });
     }
   }
 
