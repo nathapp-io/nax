@@ -56,6 +56,7 @@ export type {
   EscalationAttempt,
   PersistedRepoScopedFix,
   PRD,
+  StoryRouterDecision,
   StoryRouting,
   StoryStatus,
   StructuredFailure,

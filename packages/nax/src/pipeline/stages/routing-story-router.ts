@@ -1,7 +1,7 @@
 import type { NaxConfig } from "@/config";
 import type { Logger } from "@/logger";
-import type { UserStory } from "@/prd";
-import type { consultStoryRouter } from "@/routing";
+import type { StoryRouterDecision, UserStory } from "@/prd";
+import type { consultStoryRouter, StoryRouterOutcome } from "@/routing";
 import type { PipelineContext } from "../types";
 
 /** Usability also controls whether legacy plugin routers must be skipped. */
@@ -24,15 +24,74 @@ export function shouldConsultStoryRouter(usable: boolean, story: UserStory): boo
   return usable && (story.escalations?.length ?? 0) === 0 && story.routing?.routerDecision === undefined;
 }
 
-/** Consult eligible stories, returning usability independently of story eligibility. */
+interface StoryRouterConsultation {
+  usable: boolean;
+  mode?: "shadow" | "apply";
+  plannedProfileId?: string;
+  outcome?: StoryRouterOutcome;
+}
+
+/** Snapshot the plan before invoking plugin code; eligibility is independent of usability. */
 export async function consultEligibleStoryRouter(
   ctx: PipelineContext,
   consult: typeof consultStoryRouter,
   logger: Logger,
-): Promise<boolean> {
+): Promise<StoryRouterConsultation> {
   const usable = isStoryRouterUsable(ctx.config, ctx.story.id, logger);
-  if (shouldConsultStoryRouter(usable, ctx.story)) {
-    await consult(ctx.story, ctx.config, ctx.plugins, ctx);
+  const mode = ctx.config.routing.router?.mode ?? "off";
+  if (!shouldConsultStoryRouter(usable, ctx.story) || mode === "off") return { usable };
+  const plannedProfileId = ctx.story.routing?.agentProfileId;
+  const outcome = await consult(ctx.story, ctx.config, ctx.plugins, ctx);
+  return { usable, mode, plannedProfileId, outcome };
+}
+
+/** Transient failures are logged but deliberately not memoized, so a later pass retries. */
+export function recordStoryRouterDecision(
+  storyId: string,
+  consultation: StoryRouterConsultation,
+  logger: Logger,
+): StoryRouterDecision | undefined {
+  const { outcome, mode, plannedProfileId } = consultation;
+  if (!outcome || outcome.kind === "no-router" || !mode) return undefined;
+  if (outcome.kind === "error" || outcome.kind === "timeout") {
+    logger.warn("routing", "routing.router.failed", {
+      storyId,
+      mode,
+      router: outcome.router,
+      outcome: outcome.kind,
+      ...(outcome.kind === "error" && { message: outcome.message }),
+      latencyMs: outcome.latencyMs,
+    });
+    return undefined;
   }
-  return usable;
+  const decision: StoryRouterDecision = {
+    mode,
+    router: outcome.router,
+    outcome: outcome.kind,
+    ...(outcome.kind !== "declined" && { profileId: outcome.profileId }),
+    ...(outcome.kind === "picked" && outcome.confidence !== undefined && { confidence: outcome.confidence }),
+    ...(plannedProfileId !== undefined && { plannedProfileId }),
+    applied: false,
+    decidedAt: new Date().toISOString(),
+  };
+  logStoryRouterDecision(storyId, { decision, latencyMs: outcome.latencyMs }, logger);
+  return decision;
+}
+
+function logStoryRouterDecision(
+  storyId: string,
+  { decision, latencyMs }: { decision: StoryRouterDecision; latencyMs: number },
+  logger: Logger,
+): void {
+  logger.info("routing", "routing.router.decision", {
+    storyId,
+    mode: decision.mode,
+    router: decision.router,
+    outcome: decision.outcome,
+    plannedProfileId: decision.plannedProfileId,
+    routerProfileId: decision.profileId,
+    confidence: decision.confidence,
+    applied: decision.applied,
+    latencyMs,
+  });
 }

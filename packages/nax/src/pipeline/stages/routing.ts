@@ -26,7 +26,7 @@ import {
 import { resolveTestFilePatterns } from "@/test-runners";
 import { packageDirRelative } from "@/utils/paths";
 import type { PipelineContext, PipelineStage, RoutingResult, StageResult } from "../types";
-import { consultEligibleStoryRouter } from "./routing-story-router";
+import { consultEligibleStoryRouter, recordStoryRouterDecision } from "./routing-story-router";
 
 export const routingStage: PipelineStage = {
   name: "routing",
@@ -39,12 +39,13 @@ export const routingStage: PipelineStage = {
     // fresh Map per createRuntime() call — so it already starts empty for
     // this run. No explicit clear-on-first-story step is needed here.
 
-    const routerUsable = await consultEligibleStoryRouter(ctx, _routingDeps.consultStoryRouter, logger);
+    const consultation = await consultEligibleStoryRouter(ctx, _routingDeps.consultStoryRouter, logger);
 
     // Usable story routers must not also apply picks through the legacy chain.
     const decision = await _routingDeps.resolveRouting(ctx.story, ctx.config, ctx.plugins, ctx, {
-      skipPluginRouters: routerUsable,
+      skipPluginRouters: consultation.usable,
     });
+    const routerDecision = recordStoryRouterDecision(ctx.story.id, consultation, logger);
 
     // @design: BUG-032 / Open Item B / #1522 — the profile target seeds the starting
     // rung, a genuine escalation is preserved, and a stale leftover tier is not.
@@ -124,6 +125,7 @@ export const routingStage: PipelineStage = {
       ...(initialAgent !== undefined && { initialAgent }),
       ...(initialProfileId !== undefined && { initialProfileId }),
       ...(initialModelTier !== undefined && { initialModelTier }),
+      ...(routerDecision !== undefined && { routerDecision }),
     };
     // BUG-36: gate on skipPrdPersistence like completion.ts does — without this,
     // a worktree pipeline that now carries prdPath (routing/rectification re-use
