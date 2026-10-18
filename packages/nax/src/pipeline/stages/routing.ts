@@ -18,6 +18,7 @@ import { savePRD } from "@/prd";
 import {
   complexityToModelTier,
   complexityToRungAgent,
+  consultStoryRouter,
   isSecurityCriticalStory,
   resolveOperatingTier,
   resolveRouting,
@@ -25,6 +26,7 @@ import {
 import { resolveTestFilePatterns } from "@/test-runners";
 import { packageDirRelative } from "@/utils/paths";
 import type { PipelineContext, PipelineStage, RoutingResult, StageResult } from "../types";
+import { isStoryRouterUsable, shouldConsultStoryRouter } from "./routing-story-router";
 
 export const routingStage: PipelineStage = {
   name: "routing",
@@ -37,8 +39,15 @@ export const routingStage: PipelineStage = {
     // fresh Map per createRuntime() call — so it already starts empty for
     // this run. No explicit clear-on-first-story step is needed here.
 
-    // Classify story via resolveRouting() (plugin routers > LLM > keyword)
-    const decision = await _routingDeps.resolveRouting(ctx.story, ctx.config, ctx.plugins, ctx);
+    const routerUsable = isStoryRouterUsable(ctx.config, ctx.story.id, logger);
+    if (shouldConsultStoryRouter(routerUsable, ctx.story)) {
+      await _routingDeps.consultStoryRouter(ctx.story, ctx.config, ctx.plugins, ctx);
+    }
+
+    // Usable story routers must not also apply picks through the legacy chain.
+    const decision = await _routingDeps.resolveRouting(ctx.story, ctx.config, ctx.plugins, ctx, {
+      skipPluginRouters: routerUsable,
+    });
 
     // @design: BUG-032 / Open Item B / #1522 — the profile target seeds the starting
     // rung, a genuine escalation is preserved, and a stale leftover tier is not.
@@ -213,6 +222,7 @@ export const routingStage: PipelineStage = {
  * Swappable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
  */
 export const _routingDeps = {
+  consultStoryRouter,
   resolveRouting,
   complexityToModelTier,
   isGreenfieldStory,
