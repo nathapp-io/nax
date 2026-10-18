@@ -8,11 +8,13 @@ for native coding tools by `packages/nax-agent/src/tools/` (the `@nathapp/nax-ag
 Two consumers read that one resolution:
 
 - **The permission mode** (`approve-all` / `approve-reads`) is what a CLI agent receives over
-  ACP. It is a blanket posture, not a per-call gate.
+  ACP. It is a blanket posture, supplemented by the review shell sandbox and per-command
+  decisions below (with only deny-or-Bash-rule decisions when that sandbox is off or unavailable).
 - **The declarative grants** (`allow` / `deny` / `ask` rules) are what nax's own native
   coding tools enforce per call. `Bash`, `Exec`, `Read`, `Git` and the rest are checked here.
   An ACP session receives the same three lists, where a subset of them is translated into the
-  agent's own config or decided by nax itself — see [ACP agents](#acp-agents).
+  agent's own config or decided by nax itself, with shell commands sandboxed under `review`
+  when available — see [ACP agents](#acp-agents).
 - **The bash approval mode** (`raw` / `gated` / `escalate`, [ADR-030](../adr/ADR-030-bash-approval-modes.md))
   decides how a `Bash` command string is adjudicated. It rides on the same resolution as
   `bashApproval`; see [Bash approval modes](#bash-approval-modes).
@@ -265,7 +267,7 @@ only place an ACP shell command is decided. `none` and `read` never run one: ope
 
 - **Claude keeps its sandboxed review.** Claude is the agent nax forwards its sandbox policy to, so
   an `execute` request there is allowed inside that sandbox, exactly as before.
-- **Every other agent is decided by the operator's `Bash(...)` rules.** The command the agent asks
+- **When the shell sandbox is off or unavailable, other agents are decided by the operator's `Bash(...)` rules.** The command the agent asks
   about is lexed by the same lexer a native session uses, and nax refuses without running it when
   the lexer refuses the command, when it yields no segment, when any segment redirects, or when any
   token is opaque (a `$`-expansion whose runtime value nax cannot know) — a redirect is refused even
@@ -275,16 +277,74 @@ only place an ACP shell command is decided. `none` and `read` never run one: ope
   `bun test src/x.test.ts`. Each pattern word matches one command word, and `*` within a word does
   not cross `/`: `Bash(bun test *)` admits `bun test x.test.ts` but not `bun test` or
   `bun test src/x.test.ts`. `ask` counts as a deny here: nobody answers an ACP read-only session.
-- **An allowed command runs on the host, unsandboxed.** nax decides the command *string* the agent
+- **With the shell sandbox off or unavailable, a Bash-rule-allowed command runs on the host, unsandboxed.** nax decides the command *string* the agent
   reported and nothing else: no OS sandbox wraps opencode, Cursor or pi shell commands, and the
   agent's other tools are governed by the read-tool translation and the agent's own config or
   mode, not by this gate. For Cursor that is the isolated config alone: with a `Bash(...)` allow
   rule, Cursor's `review` session runs in its `agent` mode (below), which restricts nothing. Writing a `Bash(...)` allow rule is a decision to trust that command's text.
-- **Under `review` with no `Bash(...)` allow rule**, no command can ever be allowed: opencode
+- **Under `review`, with the shell sandbox off or unavailable and no `Bash(...)` allow rule**, no command can ever be allowed: opencode
   (`bash: "ask"`) and Cursor ask nax about each one and are refused, and pi is not given a shell
   tool at all.
 
-### Cursor and pi specifics
+### Shell sandbox under `review`
+
+By default, opencode, Cursor and pi shell commands run through `nax sandbox exec --
+<policy-file> <command>` when the session has an available OS sandbox. Only shell commands
+are sandboxed, not the whole agent process. No Bash allow rule is needed on this path;
+parseable commands still honor Bash deny and ask rules. A command the Bash lexer refuses
+is not checked against those rules, but still runs inside the sandbox.
+
+- **pi:** a nax extension keeps the confirmation gate and replaces the bash tool with one
+  whose spawn hook wraps the final command. Later extensions can rewrite a command after
+  approval; it remains wrapped at spawn. With the sandbox off/unavailable, the Bash-rule
+  verdict binds only the text confirmed before that rewrite.
+- **opencode:** a nax V2 `execute.before` plugin wraps shell/bash commands. Project config
+  is disabled; nax carries `AGENTS.md` instructions and preserves the operator's providers
+  and MCP settings. User file plugins are not copied into the isolated config directory.
+- **Cursor:** a fail-closed `preToolUse` hook under a nax-owned HOME rewrites commands;
+  review uses `agent` mode so the model will try shell commands. nax checks the exact wrapper
+  in the permission request. The runner restores the real HOME for the command and strips
+  credential environment variables. On macOS the agent HOME links `Library/Keychains` for login.
+
+Controls under `agent.acp.shellSandbox`:
+
+| Key | Default | Alternatives |
+|:--|:--|:--|
+| `mode` | `auto` | `off` restores deny-or-Bash-rule behavior, including unsandboxed operator allowances. An unavailable sandbox does the same. |
+| `pi.extensions` | `user` | `none` disables user extensions, while keeping nax's gate. |
+| `opencode.projectConfig` | `disable` | `keep` opts opencode out of the shell sandbox and keeps the old rule path. |
+| `cursor.onUnwrapped` | `rules` | `deny` refuses any command that fails the exact-wrapper check; `rules` tries the old Bash-rule decision, which can allow an unsandboxed command. |
+
+The session policy controls write roots, denied reads/writes and networking. Network is
+**open by default**: absent `allowedDomains` means unrestricted, not an empty allowlist.
+An explicit `[]` denies network destinations; `allowLocalBinding: true` permits local binding.
+The runner uses nax-agent's srt backend, not the srt CLI, whose schema cannot express that
+open-network default. Invalid policy files and wrap/platform failures refuse with exit 126.
+
+**Known limitations:**
+
+- Trusted workspace Cursor hooks (`.cursor/hooks.json`, `.claude/settings.json`), opencode
+  and pi project code, and every agent's non-shell tools run outside this sandbox. A Cursor
+  hook changing nax's wrapper is caught by `onUnwrapped`. This is not whole-agent isolation.
+- Operator opencode V2 plugins named in `opencode.json` can register after nax's hook and
+  undo wrapping; the permission request carries the original command, so nax cannot detect it.
+- Operator Cursor hooks (`~/.cursor/hooks.json`, `~/.claude/settings.json`) and opencode
+  file plugins are not copied into the isolated HOME/config directory and do not run there.
+- Linux Cursor file credentials have no verified deny-read path. macOS login is in the
+  keychain, which commands cannot reach. Cursor login under the isolated HOME on Linux is
+  unverified; the Keychains link is macOS-only.
+- SIGKILL of the runner (including an agent timeout) cannot be forwarded: its child continues
+  until it exits on its own. SIGINT and SIGTERM are forwarded.
+- Windows and hosts without `/bin/bash` are unsupported: wrappers assume POSIX and the
+  runner fixes its shell to `/bin/bash`.
+- Embedded hosts and compiled single binaries where `Bun.main` is not nax's CLI entry are
+  unsupported by the runner command construction.
+- opencode's `CLAUDE.md` fallback is not carried; repositories with only that file lose
+  those instructions (nax carries `AGENTS.md` only).
+- Each wrapped command pays nax CLI startup latency; it is measured in the maintainer's
+  live check, not budgeted here. No real-agent/live billed check runs in the test suite.
+
+### Cursor and pi specifics (shell sandbox off or unavailable)
 
 - **Cursor reports the command after its own hooks rewrote it.** The request carries the command in
   the tool call's title, in backticks (`` `git status --short` ``), and nax matches that text — the
@@ -306,7 +366,7 @@ only place an ACP shell command is decided. `none` and `read` never run one: ope
   are filtered by `--tools`, their code still runs — so the pi extension set is part of the trust
   boundary too.
 
-**With no rules configured nothing changes for any supported agent**: no `Read` / `Glob` / `Grep`
+**With the shell sandbox off or unavailable, no rules configured means nothing changes**: no `Read` / `Glob` / `Grep`
 deny means the agent keeps its read config byte for byte, and no `Bash(...)` allow rule means no
 command of an ACP agent runs under `review`, which is what it was before this section existed.
 

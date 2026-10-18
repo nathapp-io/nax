@@ -70,6 +70,7 @@ import {
   runsListCommand,
   runsShowCommand,
   runTrustGate,
+  sandboxExecCommand,
   sandboxProbeCommand,
   specLintCommand,
 } from "../src/cli";
@@ -946,6 +947,13 @@ sandboxCmd
   .option("--json", "Emit machine-readable JSON to stdout", false)
   .action(async (options: { json?: boolean }) => {
     process.exit(await sandboxProbeCommand({ json: options.json }));
+  });
+
+sandboxCmd
+  .command("exec <policy-file> <command>")
+  .description("Run one command inside the OS sandbox using a strict policy file")
+  .action(async (policyFile: string, command: string) => {
+    process.exit(await sandboxExecCommand(policyFile, command));
   });
 
 // ── approvals ─────────────────────────────────────────

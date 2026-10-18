@@ -890,6 +890,28 @@ Credentials are global: `auth` is read only from `~/.nax/config.json` and settin
 
 ---
 
+### `nax sandbox exec`
+
+Run one shell command using a versioned sandbox policy file (normally invoked by ACP hooks):
+
+```bash
+nax sandbox exec -- <policy-file> <command>
+nax sandbox exec -- /tmp/policy.json 'bun test test/unit/example.test.ts'
+```
+
+Pass the command as one quoted argument. `--` ends option parsing, including for commands
+beginning with `-`. The strict JSON contract is `{ version: 1, home?, stripEnv, policy }`;
+`policy` requires string arrays `writeRoots`, `denyWrite`, `denyRead`, and `network` with
+optional `allowedDomains` and `allowLocalBinding: true`. Unknown fields at any level fail
+closed. Absent `allowedDomains` means open network, unlike an empty list.
+
+The runner restores `home` when present, removes every `stripEnv` variable, uses `/bin/bash`
+inside the srt backend, and inherits command stdio. It reads no project config or trust gate
+and writes no stdout of its own. Exit status is the command's status, or `128 + signal` when
+killed by signal. Missing/unreadable/invalid policy, unavailable sandbox, or wrap failures
+print `nax sandbox exec: <reason>` on stderr and exit **126**, without running the command.
+SIGINT/SIGTERM are forwarded; SIGKILL cannot be. See [shell sandbox controls and limitations](permissions.md#shell-sandbox-under-review).
+
 ### `nax sandbox probe`
 
 Check whether the default `srt` OS sandbox can enforce its write deny on this machine. The command probes afresh and does not read project configuration.
