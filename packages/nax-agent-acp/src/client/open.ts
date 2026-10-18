@@ -284,7 +284,7 @@ async function applyConfig(o: Opening, sessionId: string, offers: SessionOffers)
  * neither offers refuses the open.
  */
 async function applyMode(o: Opening, sessionId: string, offers: SessionOffers): Promise<SessionOffers> {
-  const mode = modeFor(o.ctx.profile, o.options.entry, o.options.rules);
+  const mode = modeFor(o.ctx.profile, o.options.entry, o.options.rules, o.options.shellSandboxPlan !== undefined);
   if (mode === undefined) return offers;
   if (offersValue(offers.configOptions, mode.configId, mode.value)) {
     const set = await step(o, "session/set_config_option", o.link.setConfigOption({ sessionId, ...mode }));

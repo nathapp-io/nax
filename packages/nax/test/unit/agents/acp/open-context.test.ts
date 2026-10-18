@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { join } from "node:path";
 import {
   AgentSessionError,
@@ -10,6 +10,7 @@ import { acpBackend } from "@nathapp/nax-agent-acp/client";
 import { assertCaughtInstanceOf, makeNaxConfig } from "@test/helpers";
 import { createAskPort } from "@/agents/acp/ask-port";
 import {
+  _openContextDeps,
   acpOpenSummary,
   backendEnv,
   backendOptions,
@@ -22,6 +23,7 @@ import { createTurnSlot } from "@/agents/acp/turn-slot";
 import { globalConfigDir } from "@/config/paths";
 import { resolvePermissions } from "@/config/permissions";
 import { PermissionsBlockSchema } from "@/config/schemas-execution";
+import { getLogger, initLogger, resetLogger } from "@/logger";
 
 const OPTS: OpenSessionOpts = {
   agentName: "claude",
@@ -380,5 +382,70 @@ describe("acpOpenSummary (nax#2500 observability)", () => {
   test("a read session reports no sandbox even when one is supplied", () => {
     const summary = acpOpenSummary({ ...OPTS, declaredTools: ["Read"], sandbox: { kind: "policy", policy } });
     expect(summary).toEqual({ profile: "read", sandbox: "none" });
+  });
+});
+
+describe("US-006 backend shell sandbox carrier", () => {
+  const controls = {
+    pi: { extensions: "user" },
+    opencode: { projectConfig: "disable" },
+    cursor: { onUnwrapped: "rules" },
+  } as const;
+  function carrierOpts(value: string): OpenSessionOpts {
+    return { ...OPTS, modelDef: { ...OPTS.modelDef, env: { A: "1", NAX_ACP_SHELL_SANDBOX: value } } };
+  }
+
+  test("AC-10/AC-11: lifts valid controls with deterministic runner and removes only the carrier", () => {
+    const deps = _openContextDeps;
+    const original = { ...deps };
+    try {
+      Object.assign(deps, { execPath: () => "/bin/bun", entry: () => "/opt/nax/nax.js" });
+      const opts = carrierOpts(JSON.stringify(controls));
+      const result = backendOptions("opencode", opts);
+      expect(result.shellSandbox).toEqual({
+        runtime: "/bin/bun",
+        runner: ["/opt/nax/nax.js", "sandbox", "exec", "--"],
+        ...controls,
+      });
+      expect(result.env).not.toHaveProperty("NAX_ACP_SHELL_SANDBOX");
+      expect(result.env?.A).toBe("1");
+      expect(opts.modelDef.env).toHaveProperty("NAX_ACP_SHELL_SANDBOX");
+    } finally {
+      Object.assign(deps, original);
+    }
+  });
+
+  test("AC-12: no carrier leaves shellSandbox absent", () => {
+    expect(backendOptions("opencode", OPTS)).not.toHaveProperty("shellSandbox");
+  });
+
+  test.each([
+    "{not json",
+    '{"pi":{"extensions":"x"},"opencode":{"projectConfig":"disable"},"cursor":{"onUnwrapped":"rules"}}',
+    "null",
+    "{}",
+    "[]",
+    "",
+  ])("AC-13/AC-14/AC-16: invalid carrier %s warns without exposing env data", (value) => {
+    initLogger({ level: "silent" });
+    const warn = spyOn(getLogger(), "warn").mockImplementation(() => {});
+    try {
+      const result = backendOptions("opencode", carrierOpts(value));
+      expect(result).not.toHaveProperty("shellSandbox");
+      expect(result.env).not.toHaveProperty("NAX_ACP_SHELL_SANDBOX");
+      expect(result.env?.A).toBe("1");
+      expect(warn).toHaveBeenCalledTimes(1);
+      // A static diagnostic cannot expose JSON contents, env values, or parse-error excerpts.
+      expect(warn.mock.calls[0]).toEqual(["acp", "[acp] Invalid shell sandbox carrier; ignoring sandbox settings"]);
+    } finally {
+      warn.mockRestore();
+      resetLogger();
+    }
+  });
+
+  test("AC-15: the lifted cursor option passes the real backend schema", () => {
+    const options = backendOptions("cursor", carrierOpts(JSON.stringify(controls)));
+    expect(options).toHaveProperty("shellSandbox");
+    expect(() => acpBackend(options)).not.toThrow();
   });
 });

@@ -141,6 +141,7 @@ export {
   runsListCommand,
   runsShowCommand,
 } from "./runs";
+export { _sandboxExecDeps, sandboxExecCommand } from "./sandbox-exec";
 export {
   _sandboxProbeCmdDeps,
   type SandboxProbeOptions,

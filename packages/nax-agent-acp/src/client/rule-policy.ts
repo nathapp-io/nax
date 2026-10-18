@@ -11,12 +11,17 @@
  * widen it. Bash rules are applied by nax itself (shell-rules.ts, US-003), and
  * a path-scoped or non-deny rule is left to the native matcher.
  */
+import { relative } from "node:path";
 import type { AgentSessionProfile } from "@nathapp/nax-agent";
 import { isReadOnlyProfile, launchEnvFor, reviewDecidesShell } from "#src/client/capabilities";
+import { cursorSandboxEnv } from "#src/client/cursor-sandbox";
+import { opencodeSandboxEnv } from "#src/client/opencode-sandbox";
 import type { ResolvedAcpOptions } from "#src/client/options";
-import { writeCursorPolicy, writePiFile } from "#src/client/policy-files";
+import { piSandboxGateSource } from "#src/client/pi-sandbox";
+import { writeCursorPolicy, writePiFile, writeStateFile } from "#src/client/policy-files";
 import { OPENCODE_NONE_CONFIG, OPENCODE_READ_CONFIG, OPENCODE_REVIEW_CONFIG } from "#src/client/registry";
 import { PI_SHELL_GATE_SOURCE } from "#src/client/shell-rules";
+import { shellQuote } from "#src/client/shell-sandbox";
 
 export interface AcpRule {
   readonly tool: string;
@@ -121,13 +126,20 @@ export function piToolArgs(
   profile: "none" | "read" | "review",
   rules: AcpPermissionRules,
   gatePath: string,
+  sandbox?: { extensions: "user" | "none" },
 ): readonly string[] {
   if (profile === "none") return ["--no-tools"];
   const readTools = PI_TOOLS.filter(([, tool]) => !denied(rules, tool)).map(([name]) => name);
-  const gated = reviewDecidesShell(profile, rules);
+  const sandboxed = profile === "review" && sandbox !== undefined;
+  const gated = sandboxed || reviewDecidesShell(profile, rules);
   const tools = gated ? [...readTools, "bash"] : readTools;
   if (tools.length === 0) return ["--no-tools"];
-  return [...(gated ? [PI_GATE_ARG, gatePath] : []), "--tools", tools.join(",")];
+  return [
+    ...(sandboxed && sandbox.extensions === "none" ? ["--no-extensions"] : []),
+    ...(gated ? [PI_GATE_ARG, gatePath] : []),
+    "--tools",
+    tools.join(","),
+  ];
 }
 
 /** The gate extension is nax's own source, readable by the user alone; the wrapper has to be executable. */
@@ -136,14 +148,9 @@ const PI_WRAPPER_MODE = 0o700;
 /** pi-acp's own default when the caller names no executable. */
 const PI_DEFAULT_COMMAND = "pi";
 
-/** One `sh` word, single-quoted; a `'` inside becomes `'\''`. */
-function shQuote(word: string): string {
-  return `'${word.replaceAll("'", "'\\''")}'`;
-}
-
 /** The wrapper `PI_ACP_PI_COMMAND` names: exec pi with the profile's arguments, forwarding the caller's own. */
 function piWrapper(command: string, args: readonly string[]): string {
-  return `#!/bin/sh\nexec ${[command, ...args].map(shQuote).join(" ")} "$@"\n`;
+  return `#!/bin/sh\nexec ${[command, ...args].map(shellQuote).join(" ")} "$@"\n`;
 }
 
 /**
@@ -157,11 +164,17 @@ async function piLaunchEnv(
   profile: "none" | "read" | "review",
 ): Promise<Readonly<Record<string, string>>> {
   const rules = options.rules;
-  const gate = reviewDecidesShell(profile, rules)
-    ? await writePiFile(options.stateDir, "shell-gate", PI_SHELL_GATE_SOURCE, PI_GATE_MODE)
-    : "";
+  const plan = profile === "review" && options.shellSandboxPlan?.agent === "pi" ? options.shellSandboxPlan : undefined;
+  const gate = plan
+    ? await writePiFile(options.stateDir, "sandbox-gate", piSandboxGateSource(plan.prefix), PI_GATE_MODE)
+    : reviewDecidesShell(profile, rules)
+      ? await writePiFile(options.stateDir, "shell-gate", PI_SHELL_GATE_SOURCE, PI_GATE_MODE)
+      : "";
   const command = options.env.PI_ACP_PI_COMMAND ?? PI_DEFAULT_COMMAND;
-  const body = piWrapper(command, piToolArgs(profile, rules, gate));
+  const body = piWrapper(
+    command,
+    piToolArgs(profile, rules, gate, plan ? { extensions: plan.piExtensions } : undefined),
+  );
   return Object.freeze({ PI_ACP_PI_COMMAND: await writePiFile(options.stateDir, "wrapper", body, PI_WRAPPER_MODE) });
 }
 
@@ -180,15 +193,23 @@ export async function policyLaunchEnv(
   profile: AgentSessionProfile,
   options: ResolvedAcpOptions,
 ): Promise<Readonly<Record<string, string>>> {
+  const plan = options.shellSandboxPlan;
+  if (plan !== undefined) {
+    await writeStateFile(options.stateDir, relative(options.stateDir, plan.policyFile), plan.policyContent, 0o600);
+  }
   const entry = options.entry;
   if (!isReadOnlyProfile(profile)) return launchEnvFor(profile, entry);
   switch (entry?.readOnly?.policy) {
     case "opencode":
+      if (profile === "review" && plan?.agent === "opencode") {
+        return opencodeSandboxEnv(plan, opencodePermissionConfig(profile, options.rules), options.env);
+      }
       return Object.freeze({ OPENCODE_CONFIG_CONTENT: opencodePermissionConfig(profile, options.rules) });
-    case "cursor":
-      return Object.freeze({
-        CURSOR_CONFIG_DIR: await writeCursorPolicy(options.stateDir, cursorCliConfig(profile, options.rules)),
-      });
+    case "cursor": {
+      const configDir = await writeCursorPolicy(options.stateDir, cursorCliConfig(profile, options.rules));
+      if (profile === "review" && plan?.agent === "cursor") return cursorSandboxEnv(plan, configDir);
+      return Object.freeze({ CURSOR_CONFIG_DIR: configDir });
+    }
     case "pi":
       return piLaunchEnv(options, profile);
     default:

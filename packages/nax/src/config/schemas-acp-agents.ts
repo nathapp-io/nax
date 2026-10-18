@@ -33,3 +33,40 @@ export const AgentGeminiAcpConfigSchema = z
     isolateHome: z.boolean().default(false),
   })
   .default({ ...DEFAULT_AGENT_GEMINI_ACP_CONFIG });
+
+/** Stable default for `agent.acp.opencode` (US-002, opencode-acp-read-only).
+ *  Shared by the schema's inner default, both literal `agent.acp` defaults and
+ *  `opencodeAcpSettings`, for the same reason as the gemini constant above. */
+export const DEFAULT_AGENT_OPENCODE_ACP_CONFIG: {
+  isolateConfig: boolean;
+} = {
+  isolateConfig: false,
+};
+
+/** Default-on shell sandbox controls for ACP agents without their own sandbox. */
+export const DEFAULT_AGENT_ACP_SHELL_SANDBOX_CONFIG: {
+  mode: "auto" | "off";
+  pi: { extensions: "user" | "none" };
+  opencode: { projectConfig: "disable" | "keep" };
+  cursor: { onUnwrapped: "rules" | "deny" };
+} = {
+  mode: "auto",
+  pi: { extensions: "user" },
+  opencode: { projectConfig: "disable" },
+  cursor: { onUnwrapped: "rules" },
+};
+
+export const AgentAcpShellSandboxConfigSchema = z
+  .object({
+    mode: z.enum(["auto", "off"]).default(DEFAULT_AGENT_ACP_SHELL_SANDBOX_CONFIG.mode),
+    pi: z
+      .object({ extensions: z.enum(["user", "none"]).default("user") })
+      .default(DEFAULT_AGENT_ACP_SHELL_SANDBOX_CONFIG.pi),
+    opencode: z
+      .object({ projectConfig: z.enum(["disable", "keep"]).default("disable") })
+      .default(DEFAULT_AGENT_ACP_SHELL_SANDBOX_CONFIG.opencode),
+    cursor: z
+      .object({ onUnwrapped: z.enum(["rules", "deny"]).default("rules") })
+      .default(DEFAULT_AGENT_ACP_SHELL_SANDBOX_CONFIG.cursor),
+  })
+  .default(DEFAULT_AGENT_ACP_SHELL_SANDBOX_CONFIG);

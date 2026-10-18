@@ -157,7 +157,7 @@ describe("AgentConfigSchema", () => {
     expect(() => NaxConfigSchema.parse({ agent: { acp: { promptRetries: 6 } } })).toThrow();
   });
 
-  test("agent.acp has no transport key after S4b-5", () => {
+  test("US-006 AC-21: agent.acp includes the full shellSandbox default block", () => {
     const result = NaxConfigSchema.parse({});
     expect(result.agent?.acp).toEqual({
       promptRetries: 0,
@@ -166,6 +166,12 @@ describe("AgentConfigSchema", () => {
       codex: { isolateHome: false, fullMode: "workspace-write" },
       opencode: { isolateConfig: false },
       gemini: { isolateHome: false },
+      shellSandbox: {
+        mode: "auto",
+        pi: { extensions: "user" },
+        opencode: { projectConfig: "disable" },
+        cursor: { onUnwrapped: "rules" },
+      },
     });
   });
 

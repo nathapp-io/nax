@@ -43,6 +43,7 @@ import { type AcpBackendOptions, type ResolvedAcpOptions, resolveAcpOptions } fr
 import { decidePermission, type PermissionContext } from "#src/client/permissions";
 import { race } from "#src/client/race";
 import { canRestore, type Restore, storedSessionOf } from "#src/client/resume";
+import { shellSandboxPlan } from "#src/client/shell-sandbox";
 import { createToolCalls } from "#src/client/tool-calls";
 import { createToolHost, newToolHostToken, type ToolHost } from "#src/client/tool-host";
 import { runPromptTurn, type TurnState } from "#src/client/turn";
@@ -144,6 +145,15 @@ function routerFor(ctx: BackendOpenContext, options: ResolvedAcpOptions): Inboun
     agentName: options.agentName,
     rules: options.rules,
     ...(sandbox === undefined ? {} : { sandbox }),
+    ...(options.shellSandboxPlan === undefined
+      ? {}
+      : {
+          shellSandbox: {
+            prefix: options.shellSandboxPlan.prefix,
+            verify: options.shellSandboxPlan.verify,
+            onUnwrapped: options.shellSandboxPlan.onUnwrapped,
+          },
+        }),
   };
   return createInboundRouter(
     (request, signal) => decidePermission(request, { ...base, signal }),
@@ -160,7 +170,9 @@ async function connect(
 ): Promise<Live> {
   const token = ctx.tools.length > 0 ? newToolHostToken() : undefined;
   const tokens = token === undefined ? retiredTokens : [...retiredTokens, token];
-  const options = withTokens(base, tokens);
+  const tokenOptions = withTokens(base, tokens);
+  const plan = await shellSandboxPlan(ctx.profile, tokenOptions, ctx.sandbox, ctx.workdir);
+  const options = Object.freeze({ ...tokenOptions, ...(plan === undefined ? {} : { shellSandboxPlan: plan }) });
   const gone = new AbortController();
   const router = routerFor(ctx, options);
   const host = toolHostFor(ctx, router, options.secrets, token);

@@ -12,7 +12,7 @@
  * would have to be remembered at each call site. Here the callers pass one
  * settings object and get one def back.
  *
- * Composition order (codex, then opencode, then gemini) is fixed in
+ * Composition order (codex, then opencode, then gemini, then shell sandbox) is fixed in
  * `withAcpEnv` only. The injections are independent in both directions: each one
  * returns the def untouched for the other agents' names, so no ordering hazard
  * exists, but the order is still written down once rather than left to each
@@ -20,6 +20,7 @@
  */
 
 import type { NaxConfig } from "@/config";
+import { type AcpShellSandboxSettings, acpShellSandboxSettings, withAcpShellSandboxEnv } from "./acp-shell-sandbox-env";
 import { type CodexAcpSettings, codexAcpSettings, withCodexAcpEnv } from "./codex-acp-env";
 import { type GeminiAcpSettings, geminiAcpSettings, withGeminiAcpEnv } from "./gemini-acp-env";
 import { type OpencodeAcpSettings, opencodeAcpSettings, withOpencodeAcpEnv } from "./opencode-acp-env";
@@ -28,14 +29,16 @@ export interface AcpEnvSettings {
   readonly codex: CodexAcpSettings;
   readonly opencode: OpencodeAcpSettings;
   readonly gemini: GeminiAcpSettings;
+  readonly shellSandbox: AcpShellSandboxSettings;
 }
 
-/** Settings from config.agent.acp, one entry per agent that injects env. */
+/** Settings from config.agent.acp, one entry per injecting concern. */
 export function acpEnvSettings(config: Pick<NaxConfig, "agent"> | undefined): AcpEnvSettings {
   return {
     codex: codexAcpSettings(config),
     opencode: opencodeAcpSettings(config),
     gemini: geminiAcpSettings(config),
+    shellSandbox: acpShellSandboxSettings(config),
   };
 }
 
@@ -51,5 +54,6 @@ export function withAcpEnv<T extends { env?: Record<string, string> }>(
 ): T {
   const codexApplied = withCodexAcpEnv(def, agentName, settings.codex);
   const opencodeApplied = withOpencodeAcpEnv(codexApplied, agentName, settings.opencode);
-  return withGeminiAcpEnv(opencodeApplied, agentName, settings.gemini);
+  const geminiApplied = withGeminiAcpEnv(opencodeApplied, agentName, settings.gemini);
+  return withAcpShellSandboxEnv(geminiApplied, agentName, settings.shellSandbox);
 }

@@ -128,6 +128,12 @@ export interface AgentAcpConfig {
   gemini?: {
     isolateHome?: boolean;
   };
+  shellSandbox?: {
+    mode?: "auto" | "off";
+    pi?: { extensions?: "user" | "none" };
+    opencode?: { projectConfig?: "disable" | "keep" };
+    cursor?: { onUnwrapped?: "rules" | "deny" };
+  };
 }
 
 /**

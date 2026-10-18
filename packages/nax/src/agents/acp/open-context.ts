@@ -22,7 +22,9 @@ import {
   type TranscriptStore,
 } from "@nathapp/nax-agent";
 import type { AcpAgentName, AcpBackendOptions, AcpProcessHooks } from "@nathapp/nax-agent-acp/client";
+import { z } from "zod";
 import { globalConfigDir } from "@/config/paths";
+import { getSafeLogger } from "@/logger";
 import { buildAllowedEnv } from "../shared/env";
 import { type AcpProfile, acpProfileFor } from "./profile-map";
 import { finalizeAcpSurface } from "./provider-embedder";
@@ -68,6 +70,45 @@ function rulesOf(opts: OpenSessionOpts): NonNullable<AcpBackendOptions["rules"]>
   };
 }
 
+const SHELL_SANDBOX_ENV = "NAX_ACP_SHELL_SANDBOX";
+const ShellSandboxCarrierSchema = z
+  .object({
+    pi: z.object({ extensions: z.enum(["user", "none"]) }).strict(),
+    opencode: z.object({ projectConfig: z.enum(["disable", "keep"]) }).strict(),
+    cursor: z.object({ onUnwrapped: z.enum(["rules", "deny"]) }).strict(),
+  })
+  .strict();
+
+/** CLI runner location; embedded hosts and compiled binaries are outside this contract. */
+export const _openContextDeps: { execPath: () => string; entry: () => string } = {
+  execPath: () => process.execPath,
+  entry: () => Bun.main,
+};
+
+function shellSandboxFromCarrier(value: string | undefined): AcpBackendOptions["shellSandbox"] {
+  if (value === undefined) return undefined;
+  try {
+    const parsed = ShellSandboxCarrierSchema.parse(JSON.parse(value));
+    return {
+      runtime: _openContextDeps.execPath(),
+      runner: [_openContextDeps.entry(), "sandbox", "exec", "--"],
+      ...parsed,
+    };
+  } catch {
+    // Never log the value or parse error: either can contain secret-bearing env data.
+    getSafeLogger()?.warn("acp", "[acp] Invalid shell sandbox carrier; ignoring sandbox settings");
+    return undefined;
+  }
+}
+
+/** The private carrier never reaches an agent process, valid or otherwise. */
+function launchOptions(modelEnv: OpenSessionOpts["modelDef"]["env"]): Pick<AcpBackendOptions, "env" | "shellSandbox"> {
+  const env = backendEnv(modelEnv);
+  delete env[SHELL_SANDBOX_ENV];
+  const shellSandbox = shellSandboxFromCarrier(modelEnv?.[SHELL_SANDBOX_ENV]);
+  return { env, ...(shellSandbox === undefined ? {} : { shellSandbox }) };
+}
+
 export function backendOptions(
   agent: AcpAgentName,
   opts: OpenSessionOpts,
@@ -79,7 +120,7 @@ export function backendOptions(
     allowUnsandboxed: true,
     ...(model === "" ? {} : { model }),
     ...(effort === undefined ? {} : { effort }),
-    env: backendEnv(opts.modelDef.env),
+    ...launchOptions(opts.modelDef.env),
     inheritEnv: false,
     initializeTimeoutMs: Math.min(
       opts.trackedSpawnStartupDeadlineMs ?? DEFAULT_STARTUP_DEADLINE_MS,

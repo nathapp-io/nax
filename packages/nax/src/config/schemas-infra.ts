@@ -8,7 +8,13 @@ import { isAbsolute } from "node:path";
 import { DEFAULT_INSTRUCTION_FILE_NAME, isInstructionFileName } from "@nathapp/nax-agent/internal";
 import { z } from "zod";
 import { DEFAULT_AGENT_NAME, DEFAULT_AGENT_PROTOCOL } from "./agent-defaults";
-import { AgentGeminiAcpConfigSchema, DEFAULT_AGENT_GEMINI_ACP_CONFIG } from "./schemas-acp-agents";
+import {
+  AgentAcpShellSandboxConfigSchema,
+  AgentGeminiAcpConfigSchema,
+  DEFAULT_AGENT_ACP_SHELL_SANDBOX_CONFIG,
+  DEFAULT_AGENT_GEMINI_ACP_CONFIG,
+  DEFAULT_AGENT_OPENCODE_ACP_CONFIG,
+} from "./schemas-acp-agents";
 import { ConfiguredModelSchema, ModelTierSchema, ProviderCatalogOverrideSchema } from "./schemas-model";
 
 export const PlanConfigSchema = z.object({
@@ -350,15 +356,6 @@ export const DEFAULT_AGENT_CODEX_ACP_CONFIG: {
   fullMode: "workspace-write",
 };
 
-/** Stable default for `agent.acp.opencode` (US-002, opencode-acp-read-only).
- *  Shared by the schema's inner default, both literal `agent.acp` defaults and
- *  `opencodeAcpSettings`, for the same reason as the codex constant above. */
-export const DEFAULT_AGENT_OPENCODE_ACP_CONFIG: {
-  isolateConfig: boolean;
-} = {
-  isolateConfig: false,
-};
-
 const AgentAcpConfigSchema = z.object({
   promptRetries: z.number().int().min(0).max(5).default(0),
   /**
@@ -405,6 +402,7 @@ const AgentAcpConfigSchema = z.object({
     .default({ ...DEFAULT_AGENT_OPENCODE_ACP_CONFIG }),
   /** gemini-only launch settings (US-002, gemini-acp-read-only) — see `schemas-acp-agents.ts`. */
   gemini: AgentGeminiAcpConfigSchema,
+  shellSandbox: AgentAcpShellSandboxConfigSchema,
 });
 
 /**
@@ -484,6 +482,7 @@ export const AgentConfigSchema = z.object({
     codex: { ...DEFAULT_AGENT_CODEX_ACP_CONFIG },
     opencode: { ...DEFAULT_AGENT_OPENCODE_ACP_CONFIG },
     gemini: { ...DEFAULT_AGENT_GEMINI_ACP_CONFIG },
+    shellSandbox: { ...DEFAULT_AGENT_ACP_SHELL_SANDBOX_CONFIG },
   }),
   native: AgentNativeConfigSchema.default({
     instructionFileName: DEFAULT_INSTRUCTION_FILE_NAME,

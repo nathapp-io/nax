@@ -17,7 +17,8 @@ import type { RequestPermissionRequest, RequestPermissionResponse } from "@agent
 import type { AgentSessionProfile, SandboxPolicy, SessionAskPort } from "@nathapp/nax-agent";
 import { editTargets, firstOutsidePolicy, OUTSIDE_WRITE_ROOTS_REASON, WRITE_KINDS } from "#src/client/edit-targets";
 import { type AcpPermissionRules, NO_RULES } from "#src/client/rule-policy";
-import { SHELL_RULE_REASON, shellCommandOf, shellRuleVerdict } from "#src/client/shell-rules";
+import { SHELL_RULE_REASON, shellCommandOf, shellRuleBlocks, shellRuleVerdict } from "#src/client/shell-rules";
+import { isSandboxWrapped } from "#src/client/shell-sandbox";
 import { isRecord } from "#src/client/text";
 import { describeToolCall, type ToolCallDisplay } from "#src/client/tool-display";
 
@@ -28,6 +29,8 @@ export const FULL_REASON = 'profile "full" allows every permission request';
 export const UNKNOWN_PROFILE_REASON = "unknown profile";
 export const REVIEW_EXECUTE_REASON = 'profile "review" allows commands';
 export const REVIEW_NO_SANDBOX_REASON = 'profile "review" runs commands only inside the sandbox';
+export const REVIEW_UNWRAPPED_REASON = "the command did not arrive in nax's sandbox wrapper";
+export const SHELL_RULE_BLOCKED_REASON = 'a "Bash" deny or ask rule matches the command';
 export const NETWORK_OPEN_REASON = "the sandbox network is open";
 export const NETWORK_LISTED_REASON = "the sandbox network is an allow-list";
 /** claude-agent-acp 0.85.1 surfaces the SDK's sandbox network callback as a tool call titled with its tool name. */
@@ -63,6 +66,7 @@ export interface PermissionContext {
   readonly agentName?: string;
   /** nax's rules for this stage (US-003). Absent: no Bash rule allows anything. */
   readonly rules?: AcpPermissionRules;
+  readonly shellSandbox?: { prefix: string; verify: boolean; onUnwrapped: "rules" | "deny" };
 }
 
 export interface OfferedOptions {
@@ -174,6 +178,7 @@ function decideReview(
   auto: AutoDecide,
   ctx: PermissionContext,
 ): RequestPermissionResponse {
+  if (ctx.shellSandbox !== undefined) return decideSandboxedShell(request, display, offered, auto, ctx);
   if (ctx.sandbox !== undefined) {
     if (display.tool !== "execute") {
       auto(readOnlyReason(ctx.profile), "deny");
@@ -194,6 +199,38 @@ function decideReview(
     return rejectWith(offered);
   }
   if (offered.allowOnce === undefined) return denyNoAllowOnce(offered, auto);
+  auto(SHELL_RULE_REASON, "allow");
+  return selected(offered.allowOnce);
+}
+
+/** Shell sandbox approvals precede the legacy sandbox/rule-only paths. */
+export function decideSandboxedShell(
+  request: RequestPermissionRequest,
+  display: ToolCallDisplay,
+  offered: OfferedOptions,
+  auto: AutoDecide,
+  ctx: PermissionContext,
+): RequestPermissionResponse {
+  const plan = ctx.shellSandbox;
+  const command = shellCommandOf(ctx.agentName ?? "", request.toolCall);
+  const deny = (reason: string): RequestPermissionResponse => {
+    auto(reason, "deny");
+    return rejectWith(offered);
+  };
+  if (command === undefined) {
+    return deny(display.tool === "execute" ? REVIEW_NO_SANDBOX_REASON : readOnlyReason(ctx.profile));
+  }
+  if (offered.allowOnce === undefined) return denyNoAllowOnce(offered, auto);
+  const wrapped = plan !== undefined && isSandboxWrapped(plan.prefix, command);
+  // The verifier guarantees one quoted word; decode only its POSIX apostrophe escapes.
+  const inner = wrapped && plan?.verify ? command.slice(plan.prefix.length + 1, -1).replaceAll("'\\''", "'") : command;
+  if (shellRuleBlocks(inner, ctx.rules ?? NO_RULES)) return deny(SHELL_RULE_BLOCKED_REASON);
+  if (plan !== undefined && (!plan.verify || wrapped)) {
+    auto(REVIEW_EXECUTE_REASON, "allow");
+    return selected(offered.allowOnce);
+  }
+  if (plan?.onUnwrapped === "deny") return deny(REVIEW_UNWRAPPED_REASON);
+  if (shellRuleVerdict(command, ctx.rules ?? NO_RULES) === "deny") return deny(REVIEW_NO_SANDBOX_REASON);
   auto(SHELL_RULE_REASON, "allow");
   return selected(offered.allowOnce);
 }

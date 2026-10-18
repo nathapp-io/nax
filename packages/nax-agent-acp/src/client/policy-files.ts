@@ -27,17 +27,21 @@ export interface PolicyFileDeps {
 
 export const _policyFilesDeps: PolicyFileDeps = { mkdir, writeFile, chmod, rename };
 
-/** The two pi files: the gate extension pi loads, and the wrapper `PI_ACP_PI_COMMAND` names. */
-export type PiPolicyFile = "shell-gate" | "wrapper";
+/** pi's rule or sandbox gate extension, and the wrapper `PI_ACP_PI_COMMAND` names. */
+export type PiPolicyFile = "shell-gate" | "wrapper" | "sandbox-gate";
 
-const PI_EXTENSIONS: Readonly<Record<PiPolicyFile, string>> = Object.freeze({ "shell-gate": ".ts", wrapper: ".sh" });
+const PI_EXTENSIONS: Readonly<Record<PiPolicyFile, string>> = Object.freeze({
+  "shell-gate": ".ts",
+  wrapper: ".sh",
+  "sandbox-gate": ".ts",
+});
 
 /** Nothing here is readable by another user: the directory is ours, the policy files are ours. */
 const DIR_MODE = 0o700;
 const CURSOR_CONFIG_MODE = 0o600;
 
 /** The content-addressed part of a policy path. */
-function digest(content: string): string {
+export function digest(content: string): string {
   return createHash("sha256").update(content).digest("hex").slice(0, 16);
 }
 
@@ -68,6 +72,18 @@ async function writeAtomic(target: string, content: string, mode: number): Promi
   }
 }
 
+/** Write a nax-owned file under the state directory through the shared atomic writer. */
+export async function writeStateFile(
+  stateDir: string,
+  relPath: string,
+  content: string,
+  mode: number,
+): Promise<string> {
+  const target = join(stateDir, relPath);
+  await writeAtomic(target, content, mode);
+  return target;
+}
+
 /** Cursor's isolated config: `<stateDir>/cursor/<h>/cli-config.json`. Returns the directory to point CURSOR_CONFIG_DIR at. */
 export async function writeCursorPolicy(stateDir: string, content: string): Promise<string> {
   const dir = join(stateDir, "cursor", digest(content));
@@ -82,7 +98,5 @@ export async function writePiFile(
   content: string,
   mode: number,
 ): Promise<string> {
-  const target = join(stateDir, "pi", `${name}-${digest(content)}${PI_EXTENSIONS[name]}`);
-  await writeAtomic(target, content, mode);
-  return target;
+  return writeStateFile(stateDir, join("pi", `${name}-${digest(content)}${PI_EXTENSIONS[name]}`), content, mode);
 }

@@ -27,7 +27,7 @@ export const PI_SHELL_GATE_TITLE = "nax: run shell command";
 /** The only tool whose rules can allow a command: `Exec` and `RunCommand` are not applied to ACP agents. */
 const BASH_TOOL = "Bash";
 /** The reason the gate extension blocks a bash call with, both when nobody can answer and when they said no. */
-const PI_SHELL_GATE_REJECTED = "nax: shell command rejected";
+export const PI_SHELL_GATE_REJECTED = "nax: shell command rejected";
 
 /**
  * The pi extension that gives pi a permission system (SPEC US-003): pi-acp hands
@@ -122,6 +122,16 @@ function segmentAllowed(segment: BashSegment, rules: AcpPermissionRules): boolea
   const argv = segment.tokens.map((token) => token.text);
   if (!anyPatternMatches(rules.allow, argv)) return false;
   return !anyPatternMatches(rules.deny, argv) && !anyPatternMatches(rules.ask, argv);
+}
+
+/** Explicit deny/ask rules still bind inside the sandbox; lexer refusals remain sandboxed. */
+export function shellRuleBlocks(command: string, rules: AcpPermissionRules): boolean {
+  const lexed = lexBashCommand(command);
+  if (lexed.kind !== "ok") return false;
+  return lexed.segments.some((segment) => {
+    const argv = segment.tokens.map((token) => token.text);
+    return anyPatternMatches(rules.deny, argv) || anyPatternMatches(rules.ask, argv);
+  });
 }
 
 /** "allow" only when the lexer read the whole command and every segment is allowed. */

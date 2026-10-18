@@ -395,7 +395,15 @@ describe("openSession() — opencode ACP env (US-002)", () => {
 
     await sm.openSession("nax-opencode-default", makeOpenRequest({ agentName: "opencode" }));
 
-    expect(captured[0].modelDef.env).toEqual({});
+    expect(captured[0].modelDef.env).not.toHaveProperty("OPENCODE_CONFIG_DIR");
+    // US-006 AC-9 / AC-20: default-on carrier is independent of isolateConfig.
+    expect(captured[0].modelDef.env?.NAX_ACP_SHELL_SANDBOX).toBe(
+      JSON.stringify({
+        pi: { extensions: "user" },
+        opencode: { projectConfig: "disable" },
+        cursor: { onUnwrapped: "rules" },
+      }),
+    );
     expect(deps.mkdir).not.toHaveBeenCalled();
   });
 

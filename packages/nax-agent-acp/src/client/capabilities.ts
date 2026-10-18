@@ -187,9 +187,13 @@ export function modeFor(
   profile: AgentSessionProfile,
   entry: AgentRegistryEntry | undefined,
   rules?: AcpPermissionRules,
+  shellSandboxed?: boolean,
 ): ModeSetting | undefined {
   if (!isReadOnlyProfile(profile)) return entry?.defaultMode;
-  const shellMode = reviewDecidesShell(profile, rules) ? entry?.readOnly?.reviewShellMode : undefined;
+  const shellMode =
+    reviewDecidesShell(profile, rules) || (profile === "review" && shellSandboxed === true)
+      ? entry?.readOnly?.reviewShellMode
+      : undefined;
   return shellMode ?? entry?.readOnly?.mode;
 }
 
