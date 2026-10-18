@@ -1,0 +1,378 @@
+{
+  "project": "nax-monorepo",
+  "feature": "story-router-hook",
+  "branchName": "feat/story-router-hook",
+  "createdAt": "2026-10-16T00:00:00.000Z",
+  "updatedAt": "2026-10-18T14:36:07.245Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Router config and types",
+      "description": "**Goal** — Add the opt-in routing.router configuration and the additive decision/audit types used by the story-router hook.\n\n**Motivation** — A per-story decision made by a dedicated router (a small classifier, a rules engine, or a learned model) has no way in.\n\n**Approach** — Config: `routing.router`\n\n```json\n{\n  \"routing\": {\n    \"router\": {\n      \"mode\": \"shadow\",\n      \"precedence\": \"router\",\n      \"timeoutMs\": 5000\n    }\n  }\n}\n```\n\n| Key | Values | Default | Meaning |\n|:---|:---|:---|:---|\n| `mode` | `\"off\"` \\| `\"shadow\"` \\| `\"apply\"` | `\"off\"` | `off`: never consult. `shadow`: consult, record, log, never apply. `apply`: consult and apply per `precedence`. |\n| `precedence` | `\"router\"` \\| `\"plan\"` | `\"router\"` | Only read in `apply` mode. `router`: the router's pick replaces plan's. `plan`: the router's pick is applied only when plan set no `agentProfileId`. |\n| `timeoutMs` | integer > 0 | `5000` | Upper bound on one router call. |\n\nThe block is optional; omitting it is the same as `mode: \"off\"`. The schema lives in a new file\n`src/config/schemas-router.ts` (`StoryRouterConfigSchema`), because `src/config/schemas-infra.ts`\nis 594 lines against the 600-line source limit. `RoutingConfigSchema` gains one field,\n`router: StoryRouterConfigSchema.prefault({})` (Zod 4: `.default({})` would skip the inner field\ndefaults, as noted in `src/config/schemas-advisor.ts`). The router picks among the profiles in\n`routing.agents.profiles`; it adds no profile list of its own.\n\nIntegration:\n\n**`RoutingConfigSchema`**, `src/config/schemas-infra.ts` (US-001)\n- Baseline: `z.object({ strategy, llm, agents })`\n- Target: the same, plus `router: StoryRouterConfigSchema.prefault({})`, imported from `./schemas-router`.\n\n**Root `routing` default**, `src/config/schemas.ts:143` (US-001)\n- Baseline: `routing: RoutingConfigSchema.default({ strategy: \"keyword\", llm: {...}, agents: {...} })`\n- Target: the same literal, plus `router: { mode: \"off\", precedence: \"router\", timeoutMs: 5000 }`.\n  Zod 4 returns a `.default(literal)` value without parsing it, so without this entry\n  `DEFAULT_CONFIG.routing.router` would be undefined despite the child's `.prefault({})`.\n\n**`RoutingConfig` interface**, `src/config/runtime-types.ts:467` (US-001)\n- Baseline: `{ strategy; llm?; agents? }`\n- Target: the same, plus `router?: StoryRouterConfig` (type imported from `./schemas-router`).\n  `NaxConfig.routing` is this hand-written interface, so code reads `config.routing.router?.mode`\n  and `config.routing.agents?.enabled` (both optional at the type level).\n\n**`RoutingDecision`**, `src/routing/decision.ts` (US-001)\n- Baseline: `{ complexity, modelTier, testStrategy, reasoning, agent?, agentProfileId? }`\n- Target: the same, plus `confidence?: number` (a router's confidence in `agentProfileId`, 0..1).\n\n**`StoryRouting`**, `src/prd/types.ts` (US-001)\n- Target: the existing interface, plus `routerDecision?: StoryRouterDecision`.\n\nAdd `StoryRouterConfigSchema` in `src/config/schemas-router.ts`, wire it into\n`RoutingConfigSchema` as `routing.router` with `.prefault({})`, add `router` to the root `routing`\ndefault literal in `src/config/schemas.ts` and to the `RoutingConfig` interface in\n`src/config/runtime-types.ts`, add `RoutingDecision.confidence` (`src/routing/decision.ts`),\nadd the `StoryRouterDecision` type and `StoryRouting.routerDecision`, and document the three keys\nin `FIELD_DESCRIPTIONS`.\n\nPatterns to follow: `src/config/schemas-mcp.ts` and `src/config/schemas-model.ts` for a schema in\nits own file. Existing PRDs need no migration; a story without `routerDecision` is consulted on its next routing pass when the router is enabled.\n\n**Scope** — In: schema/default wiring, hand-written config interface, optional routing confidence and persisted audit types, CLI field descriptions and their behavioral tests. Out: consultation/timeout implementation (US-002), stage guards (US-003), audit write-back/logging (US-004), profile application (US-005). User documentation under `docs/guides/` for `routing.router` is a manual follow-up after merge; no story edits `docs/`.\n\n**Interface** —\n```typescript\n// src/config/schemas-router.ts (US-001)\nexport const StoryRouterConfigSchema = z.object({\n  mode: z.enum([\"off\", \"shadow\", \"apply\"]).default(\"off\"),\n  precedence: z.enum([\"router\", \"plan\"]).default(\"router\"),\n  timeoutMs: z.number().int().positive().default(5000),\n});\nexport type StoryRouterConfig = z.infer<typeof StoryRouterConfigSchema>;\n\n// src/prd/types.ts (US-001)\nexport interface StoryRouterDecision {\n  mode: \"shadow\" | \"apply\";\n  /** RoutingStrategy.name of the router consulted */\n  router: string;\n  outcome: \"picked\" | \"declined\" | \"unknown-profile\";\n  /** The router's pick; present for \"picked\" and \"unknown-profile\" */\n  profileId?: string;\n  /** Present only for \"picked\", and only when the router returned a finite number in [0, 1] */\n  confidence?: number;\n  /** story.routing.agentProfileId as it was before the router ran; absent when plan set none */\n  plannedProfileId?: string;\n  /** true when the apply step wrote the router's pick as the starting profile (even if it equals plannedProfileId) */\n  applied: boolean;\n  /** ISO-8601 timestamp */\n  decidedAt: string;\n}\n```\n\n`RoutingDecision.confidence`, `StoryRouterDecision`, `StoryRouting.routerDecision` and `RoutingConfig.router` are type-only additions, verified by the normal typecheck pipeline, not separate acceptance gates.",
+      "acceptanceCriteria": [
+        "[unit] RoutingConfigSchema.parse({ strategy: \"keyword\" }).router.mode equals \"off\".",
+        "[unit] RoutingConfigSchema.parse({ strategy: \"keyword\" }).router.precedence equals \"router\".",
+        "[unit] RoutingConfigSchema.parse({ strategy: \"keyword\" }).router.timeoutMs equals 5000.",
+        "[unit] DEFAULT_CONFIG.routing.router.mode equals \"off\".",
+        "[unit] RoutingConfigSchema.safeParse({ strategy: \"keyword\", router: { mode: \"auto\" } }).success is false.",
+        "[unit] RoutingConfigSchema.safeParse({ strategy: \"keyword\", router: { precedence: \"first\" } }).success is false.",
+        "[unit] RoutingConfigSchema.safeParse({ strategy: \"keyword\", router: { timeoutMs: 0 } }).success is false.",
+        "[unit] RoutingConfigSchema.parse({ strategy: \"keyword\", router: { mode: \"apply\", precedence: \"plan\", timeoutMs: 1500 } }).router equals { mode: \"apply\", precedence: \"plan\", timeoutMs: 1500 }.",
+        "[unit] RoutingConfigSchema.parse({ strategy: \"keyword\", router: { mode: \"shadow\" } }).router equals { mode: \"shadow\", precedence: \"router\", timeoutMs: 5000 }.",
+        "[unit] StoryRouterConfigSchema imported from src/config/schemas-router.ts parses {} to { mode: \"off\", precedence: \"router\", timeoutMs: 5000 }.",
+        "[unit] FIELD_DESCRIPTIONS[\"routing.router.mode\"] is a non-empty string that names off, shadow and apply.",
+        "[unit] FIELD_DESCRIPTIONS[\"routing.router.precedence\"] is a non-empty string that names router and plan.",
+        "[unit] FIELD_DESCRIPTIONS[\"routing.router.timeoutMs\"] is a non-empty string."
+      ],
+      "tags": [
+        "routing",
+        "config",
+        "story-router-hook"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Additive schema, default literal and type changes across several files use established patterns; the main risk is Zod 4 default short-circuiting, not a new architectural abstraction.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/config/schemas-infra.ts",
+        "packages/nax/src/config/schemas.ts",
+        "packages/nax/src/config/runtime-types.ts",
+        "packages/nax/src/prd/types.ts",
+        "packages/nax/src/cli/config-descriptions.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/config/schemas-router.ts",
+        "packages/nax/test/unit/config/schemas-router.test.ts"
+      ],
+      "suggestedCriteria": [
+        "RoutingConfigSchema.safeParse({ strategy: \"keyword\", router: { timeoutMs: -1 } }).success is false.",
+        "RoutingConfigSchema.safeParse({ strategy: \"keyword\", router: { timeoutMs: 1.5 } }).success is false.",
+        "DEFAULT_CONFIG.routing.router.precedence equals \"router\".",
+        "DEFAULT_CONFIG.routing.router.timeoutMs equals 5000."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "28f9525b69d2b04cc1d405a7c74f74d9d47fbc5c"
+    },
+    {
+      "id": "US-002",
+      "title": "consultStoryRouter",
+      "description": "**Goal** — Add bounded, fail-open consultation of the first plugin story router and an optional legacy-plugin skip flag on resolveRouting.\n\n**Motivation** — nax can already load plugin routers (`PluginExtensions.router`), but they never run for a planned story.\n\n**Approach** — The router is the existing plugin extension point, `PluginExtensions.router` (a `RoutingStrategy`).\nNo new plugin interface. The router's returned `RoutingDecision.agentProfileId` is the only field\nthe hook applies, plus the new optional `RoutingDecision.confidence`. The router's `complexity`,\n`modelTier` and `testStrategy` are not applied to a planned story. Only the FIRST router in\n`PluginRegistry.getRouters()` order is consulted.\n\nConsultation is deterministic code in nax (no LLM call of its own). The decision a router makes is\nentirely the plugin's business.\n\n### `consultStoryRouter` pipeline (US-002)\n\nChecked in this order. The first step that produces an outcome ends the call:\n\n1. `plugins` is undefined, or `plugins.getRouters()` is empty: return `{ kind: \"no-router\" }`.\n2. Call `route(story, { ...context, config })` on the first router only, racing it against\n   `config.routing.router.timeoutMs`. The timer wins: return `timeout`. The call throws or rejects:\n   return `error` with the error's message.\n3. The router returns `null`, or a decision with no non-empty `agentProfileId`: return `declined`.\n4. `agentProfileId` is not the `id` of any entry in `config.routing.agents.profiles`: return\n   `unknown-profile`. This does not fall back to `routing.agents.default`.\n5. Otherwise return `picked`. `confidence` is copied only when it is a finite number in [0, 1];\n   otherwise it is omitted. `reasoning` is the decision's `reasoning`.\n\n`latencyMs` is measured from just before `route` is called until the outcome is known.\n\n**`resolveRouting`**, `src/routing/router.ts` (US-002)\n- Baseline: `resolveRouting(story, config, plugins, dispatchContext): Promise<RoutingDecision>`\n- Target: `resolveRouting(story, config, plugins, dispatchContext, options?: { skipPluginRouters?: boolean }): Promise<RoutingDecision>`.\n  With `skipPluginRouters: true`, step 1 (plugin routers) is skipped; every other step is unchanged.\n\nSymbols this feature reads but does not change:\n\n- `PluginRegistry.getRouters(): RoutingStrategy[]`: `src/plugins/registry.ts:199`\n- `RoutingStrategy.route(story, context: RoutingContext)`: `src/routing/router.ts:54`\n- `resolveAgentAssignment(selectedProfileId, agentRouting, storyId, models, defaultAgent)`:\n  `src/agents/shared/agent-profile-resolver.ts`. Note that it falls back to `routing.agents.default`\n  for an unknown id. The router path must not reach that fallback (see US-002 and US-004).\n\nFailure handling for this producer:\n\n| Condition | Behaviour |\n|:---|:---|\n| No router plugin registered | Fail open: no decision, no log line, routing as today |\n| Router throws or rejects | Fail open: plan routing used; `warn` `routing.router.failed`; not persisted, so retried on the next routing pass |\n| Router exceeds `timeoutMs` | Fail open: plan routing used; `warn` `routing.router.failed`; not persisted, so retried on the next routing pass |\n| Router declines (null, or no `agentProfileId`) | Plan routing used; decision persisted as `declined` |\n| Router picks an id not in `routing.agents.profiles` | Plan routing used; never `routing.agents.default`; persisted as `unknown-profile` |\n| Router returns `confidence` outside [0, 1], or not a finite number | Confidence omitted from the outcome and the persisted decision |\n\nThe router never blocks or fails a run. The timeout race uses a cancellable timer that does not\noutlive the call (see the `setTimeout` exception in `.nax/rules/forbidden-patterns-source.md`).\n\nCreate `src/routing/story-router.ts` implementing the consult pipeline (first router only,\ntimeout, error capture, declined, unknown-profile, confidence filtering), export it from the\n`src/routing` barrel, and add the `skipPluginRouters` option to `resolveRouting`.\n\n**Scope** — In: pure consultation outcomes, safe timer lifecycle, first-router allowlist validation, confidence filtering, barrel exports and the optional resolveRouting flag with default-compatible behavior. Out: stage eligibility/warnings and passing the flag (US-003), persisting outcomes and emitting the failure/decision logs described above (US-004), applying assignments (US-005). This feature ships no router implementation; it adds only the hook that consults a plugin router registered through `PluginExtensions.router`. Only the first router returned by `PluginRegistry.getRouters()` is consulted; chaining or voting across several router plugins is not supported. The run-time agent classifier selected by `routing.agents.strategy: \"llm\"` is unchanged by this feature. The parallel pre-dispatch routing callers in `src/execution/unified-executor-parallel-dispatch.ts` keep calling `resolveRouting` without options and do not consult the story router; only the routing stage does.\n\n**Interface** —\n```typescript\n// src/routing/story-router.ts (US-002), exported from the src/routing barrel\nexport type StoryRouterOutcome =\n  | { kind: \"no-router\" }\n  | { kind: \"picked\"; router: string; profileId: string; confidence?: number; reasoning: string; latencyMs: number }\n  | { kind: \"declined\"; router: string; latencyMs: number }\n  | { kind: \"unknown-profile\"; router: string; profileId: string; latencyMs: number }\n  | { kind: \"error\"; router: string; message: string; latencyMs: number }\n  | { kind: \"timeout\"; router: string; latencyMs: number };\n\nexport async function consultStoryRouter(\n  story: UserStory,\n  config: NaxConfig,\n  plugins: PluginRegistry | undefined,\n  context: DispatchContext,\n): Promise<StoryRouterOutcome>;\n```\n\nTarget resolveRouting signature:\n```typescript\nresolveRouting(story, config, plugins, dispatchContext, options?: { skipPluginRouters?: boolean }): Promise<RoutingDecision>\n```",
+      "acceptanceCriteria": [
+        "[unit] consultStoryRouter returns { kind: \"no-router\" } when plugins is undefined.",
+        "[unit] consultStoryRouter returns { kind: \"no-router\" } when plugins.getRouters() returns an empty array.",
+        "[unit] When the first router's route returns a decision with agentProfileId: \"native-luna\" and routing.agents.profiles contains a profile with id \"native-luna\", consultStoryRouter returns an outcome with kind: \"picked\" and profileId: \"native-luna\".",
+        "[unit] The picked outcome's router equals the consulted RoutingStrategy.name.",
+        "[unit] When the decision carries confidence: 0.82, the picked outcome's confidence equals 0.82.",
+        "[unit] When the decision carries confidence: 1.5, the picked outcome has no confidence property.",
+        "[unit] When the decision carries confidence: Number.NaN, the picked outcome has no confidence property.",
+        "[unit] When route returns null, consultStoryRouter returns an outcome with kind: \"declined\".",
+        "[unit] When route returns a decision without agentProfileId, consultStoryRouter returns an outcome with kind: \"declined\".",
+        "[unit] When route returns agentProfileId: \"no-such-profile\" and routing.agents.default names an existing profile, consultStoryRouter returns { kind: \"unknown-profile\", profileId: \"no-such-profile\" } (plus router and latencyMs), not the default profile.",
+        "[unit] When route throws new Error(\"router down\"), consultStoryRouter resolves to an outcome with kind: \"error\" and message: \"router down\".",
+        "[unit] When route returns a promise that never settles and routing.router.timeoutMs is 50, consultStoryRouter resolves to an outcome with kind: \"timeout\".",
+        "[unit] When two routers are registered, only the first router's route is called.",
+        "[unit] route is called with the story passed to consultStoryRouter and a context whose config is the config passed to consultStoryRouter.",
+        "[unit] When consultStoryRouter imported from the src/routing barrel (@/routing) is called with plugins undefined, it returns a Promise resolving to { kind: \"no-router\" }.",
+        "[unit] resolveRouting(story, config, plugins, ctx, { skipPluginRouters: true }) for a story without routing.complexity does not call the registered router's route.",
+        "[unit] resolveRouting(story, config, plugins, ctx) with no options argument for a story without routing.complexity still calls the registered router's route once."
+      ],
+      "tags": [
+        "routing",
+        "plugins",
+        "story-router-hook"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "The bounded timer race, outcome mapping and optional plugin-loop guard are localized additions using the existing RoutingStrategy contract; tdd-simple can verify fail-open behavior and legacy no-options routing without a new subsystem.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/routing/router.ts",
+        "packages/nax/src/routing/index.ts",
+        "packages/nax/src/plugins/registry.ts",
+        "packages/nax/src/agents/shared/agent-profile-resolver.ts",
+        "packages/nax/test/unit/routing/routing-strategies.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/routing/story-router.ts",
+        "packages/nax/test/unit/routing/story-router.test.ts",
+        "packages/nax/test/unit/routing/router-skip-plugin-routers.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When route returns confidence equal to 0 or 1 for a known profile, the picked outcome retains that confidence value.",
+        "When route returns confidence equal to -0.1, Infinity or -Infinity for a known profile, the picked outcome has no confidence property.",
+        "When route returns agentProfileId: \"\", consultStoryRouter returns an outcome with kind: \"declined\".",
+        "When route rejects asynchronously with new Error(\"router down\"), consultStoryRouter resolves to an error outcome with message: \"router down\".",
+        "When the first router declines and a second router would pick a valid profile, consultStoryRouter returns declined without calling the second router.",
+        "When route returns a valid pick with reasoning: \"cheap classifier pick\", the picked outcome's reasoning equals \"cheap classifier pick\".",
+        "When route returns a valid pick, the picked outcome's latencyMs is a finite nonnegative number.",
+        "When a router resolves with a pick after the timeout has won, the completed consultStoryRouter result remains timeout.",
+        "When resolveRouting receives { skipPluginRouters: false } for an unplanned story, it still calls the registered router's route once."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "0dc0be07e7efb13bdc9e39a2fe6adc7b4ebaddc8"
+    },
+    {
+      "id": "US-003",
+      "title": "Consult guards in the routing stage",
+      "description": "**Goal** — Consult the injectable story-router helper only for eligible first-attempt stories and prevent the legacy plugin chain from applying shadow picks.\n\n**Motivation** — Plan's choice is made once, by the plan model, with the whole feature in view.\n\n**Approach** — ### Consult guards and the plugin-router flag (US-003)\n\n`routingStage.execute` reads the block with optional chaining (`config.routing.router?.mode`); an\nabsent block behaves as `mode: \"off\"`. The router is **usable** when `mode` is not `\"off\"`,\n`config.routing.agents?.enabled` is true, and `config.routing.agents?.profiles` is non-empty. When\n`mode` is not `\"off\"` but the router is not usable, the stage warns once per run through\n`logger.warnOnce(\"routing\", \"Story router enabled but routing.agents is disabled or has no profiles\", { storyId,\n... })` and does not consult.\n\nThe stage consults only when ALL of these hold, checked in this order:\n\n1. The router is usable.\n2. `story.escalations` is empty.\n3. `story.routing?.routerDecision` is undefined.\n\nThe stage passes `{ skipPluginRouters: <router is usable> }` to `resolveRouting`. While the router\nis usable, plugin routers act only as story routers. They no longer feed `resolveRouting` step 1\nfor unplanned stories, because that would apply a shadow-mode pick. When the router is off or not\nusable, step 1 runs exactly as today.\n\n| Condition | Behaviour |\n|:---|:---|\n| `mode` not `off` but `routing.agents` disabled or without profiles | Router not consulted; warn once per run; plugin routers keep feeding `resolveRouting` step 1 |\n\nWire `consultStoryRouter` into `routingStage.execute` behind the usable-router check and the\ntwo per-story guards, warn once when enabled but not usable, and pass `skipPluginRouters` to\n`resolveRouting`. The helper logic lives in a new `src/pipeline/stages/routing-story-router.ts`.\n\nStage integration order, with downstream record/apply work owned by US-004/US-005:\n\n**`routingStage.execute`**, `src/pipeline/stages/routing.ts` (US-003, US-004, US-005)\n- Target: before calling `resolveRouting`, run the consult guards and consult (US-003), then pass\n  `{ skipPluginRouters: <router is usable> }` to `resolveRouting`, then record and log the decision\n  (US-004) and apply the pick (US-005) before `resolveOperatingTier` runs. `_routingDeps` gains\n  `consultStoryRouter`.\n\nPatterns to follow: `_routingDeps` in `src/pipeline/stages/routing.ts` for injectable dependencies;\n`logger.warnOnce` (as in `agent-profile-resolver.ts`) for a once-per-run warning.\n\nSeams:\n\n- US-002 produces `consultStoryRouter`; US-003 consumes it. Seam ACs in US-003 (consulted once\n  with the story in shadow and in apply mode; consulted again after an `error`): stub\n  `_routingDeps.consultStoryRouter` and trigger `routingStage.execute`. The guarded re-trigger\n  (not consulted again after a persisted pick) is in US-004, which owns persistence.\n- US-002 produces the `skipPluginRouters` option; US-003 consumes it. Seam ACs in US-003 (the\n  three `skipPluginRouters` ACs): stub `_routingDeps.resolveRouting`, trigger\n  `routingStage.execute`, and assert the options argument.\n\nAC fixture: All ACs use `routing.agents` with `enabled: true` and profiles `native-deepseek` (native, balanced),\n`native-luna` (native, fast) and `claude-haiku` (claude, fast), a stubbed\n`_routingDeps.consultStoryRouter`, and a story with no `escalations` whose plan routing has\n`agentProfileId: \"native-deepseek\"`, unless the AC says otherwise.\n\n**Scope** — In: new stage helper, optional-safe usability check, ordered eligibility guards, once-per-run configuration warning, dependency injection and fifth-argument seam tests. Out: implementing consultation outcomes (US-002), persistence and persisted-pick re-trigger assertions (US-004), applying any profile (US-005). The router is never consulted again for a story once `story.routing.routerDecision` is persisted or once the story has any escalation record. The parallel pre-dispatch routing callers in `src/execution/unified-executor-parallel-dispatch.ts` keep calling `resolveRouting` without options and do not consult the story router; only the routing stage does.\n\n**Interface** — Consume the upstream function without changing its contract:\n```typescript\nexport async function consultStoryRouter(\n  story: UserStory,\n  config: NaxConfig,\n  plugins: PluginRegistry | undefined,\n  context: DispatchContext,\n): Promise<StoryRouterOutcome>;\n```\nPass `{ skipPluginRouters: <router is usable> }` as the fifth argument to `resolveRouting`; expose `consultStoryRouter` on `_routingDeps`. No new public helper signature is mandated for `routing-story-router.ts`.",
+      "acceptanceCriteria": [
+        "[unit] With routing.router.mode: \"off\", routingStage.execute does not call _routingDeps.consultStoryRouter.",
+        "[unit] With a config whose routing has no router key, routingStage.execute completes with action: \"continue\" and does not call _routingDeps.consultStoryRouter.",
+        "[unit] With routing.router.mode: \"shadow\" and a story with no routing.routerDecision, routingStage.execute calls _routingDeps.consultStoryRouter once with ctx.story.",
+        "[unit] With routing.router.mode: \"apply\" and a story with no routing.routerDecision, routingStage.execute calls _routingDeps.consultStoryRouter once with ctx.story.",
+        "[unit] With routing.router.mode: \"shadow\" and the stub returning error on the first call, a second routingStage.execute on the same story calls _routingDeps.consultStoryRouter again.",
+        "[unit] With routing.router.mode: \"shadow\" and a story whose escalations has one entry, routingStage.execute does not call _routingDeps.consultStoryRouter.",
+        "[unit] With routing.router.mode: \"apply\" and a story whose escalations has one entry, routingStage.execute does not call _routingDeps.consultStoryRouter.",
+        "[unit] With routing.router.mode: \"shadow\" and routing.agents.profiles empty, routingStage.execute does not call _routingDeps.consultStoryRouter.",
+        "[unit] With routing.router.mode: \"shadow\" and routing.agents.enabled: false, routingStage.execute does not call _routingDeps.consultStoryRouter.",
+        "[unit] With routing.router.mode: \"shadow\" and routing.agents.profiles empty, routingStage.execute logs a warning with message Story router enabled but routing.agents is disabled or has no profiles.",
+        "[unit] With routing.router.mode: \"shadow\" and routing.agents.profiles empty, the Story router enabled but routing.agents is disabled or has no profiles warning has storyId as the first key of its data.",
+        "[unit] With routing.router.mode: \"shadow\" and routing.agents.profiles empty, running routingStage.execute for two different stories in one run logs the Story router enabled but routing.agents is disabled or has no profiles warning once.",
+        "[unit] With routing.router.mode: \"shadow\", routingStage.execute calls _routingDeps.resolveRouting with a fifth argument equal to { skipPluginRouters: true }.",
+        "[unit] With routing.router.mode: \"off\", routingStage.execute calls _routingDeps.resolveRouting with a fifth argument equal to { skipPluginRouters: false }.",
+        "[unit] With routing.router.mode: \"shadow\" and routing.agents.enabled: false, routingStage.execute calls _routingDeps.resolveRouting with a fifth argument equal to { skipPluginRouters: false }."
+      ],
+      "tags": [
+        "routing",
+        "pipeline",
+        "story-router-hook"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A focused stage/helper integration uses existing dependency injection and warnOnce patterns; ordered guards and the legacy-router skip flag are explicit, bounded behavior.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/pipeline/stages/routing.ts",
+        "packages/nax/src/routing/story-router.ts",
+        "packages/nax/src/logger/logger.ts",
+        "packages/nax/test/unit/pipeline/stages/routing-profile-tier.test.ts",
+        "packages/nax/src/prd/types.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/pipeline/stages/routing-story-router.ts",
+        "packages/nax/test/unit/pipeline/stages/routing-story-router-guards.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When routing.router.mode is \"apply\" and routing.agents is absent, routingStage.execute returns { action: \"continue\" } without consulting the story router.",
+        "When the router is usable but the story has an escalation record, routingStage.execute still passes { skipPluginRouters: true } to resolveRouting.",
+        "When the router is usable but the story already has routerDecision, routingStage.execute still passes { skipPluginRouters: true } to resolveRouting.",
+        "When routing.router.mode is \"apply\" with enabled agents and nonempty profiles, routingStage.execute passes { skipPluginRouters: true } to resolveRouting.",
+        "When the router is usable and routingStage.execute consults it, _routingDeps.consultStoryRouter receives ctx.config, ctx.plugins and ctx as its remaining arguments."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "4fe964e06a6eef719532d2cbb5220ff1865f6741"
+    },
+    {
+      "id": "US-004",
+      "title": "Record and log the router's decision",
+      "description": "**Goal** — Persist auditable story-router outcomes through the stage's existing PRD write-back and emit structured decision/failure logs, completing shadow mode.\n\n**Motivation** — This feature is the separate, complementary hook that lets a project plug in its own router and compare it against plan in shadow mode before trusting it.\n\n**Approach** — ### Record and log step (US-004)\n\nAfter `consultStoryRouter` returns:\n\n| Outcome | `routerDecision` persisted? | Log |\n|:---|:---|:---|\n| `no-router` | no | none |\n| `error` | no; consulted again on the next routing pass | `warn`, message `routing.router.failed`, data `outcome: \"error\"` and the message |\n| `timeout` | no; consulted again on the next routing pass | `warn`, message `routing.router.failed`, data `outcome: \"timeout\"` |\n| `declined` | yes, `outcome: \"declined\"`, `applied: false` | `info`, message `routing.router.decision` |\n| `unknown-profile` | yes, `outcome: \"unknown-profile\"`, `profileId` recorded, `applied: false` | `info`, message `routing.router.decision` |\n| `picked` | yes; `applied: false` in `shadow`, per the precedence table in `apply` (US-005) | `info`, message `routing.router.decision` |\n\nEvery persisted decision records `mode`, `router`, `plannedProfileId` (the story's\n`agentProfileId` before the router ran), and `decidedAt`. The decision is attached to\n`ctx.story.routing` in the stage's existing write-back, so `routing` always carries `complexity`,\n`testStrategy` and `reasoning` (an unplanned story gets them from `resolveRouting` first). It is\nsaved by the stage's existing `savePRD` call, under the existing `skipPrdPersistence` gate. The\n`routing.router.decision` data is `{ storyId, mode, router, outcome, plannedProfileId,\nrouterProfileId, confidence, applied, latencyMs }`, with `storyId` first.\n\nPersist `routerDecision` per the outcome table in the stage's write-back, and log\n`routing.router.decision` or `routing.router.failed`. Shadow mode is complete after this story.\n\nFailure handling:\n\n| Condition | Behaviour |\n|:---|:---|\n| No router plugin registered | Fail open: no decision, no log line, routing as today |\n| Router throws or rejects | Fail open: plan routing used; `warn` `routing.router.failed`; not persisted, so retried on the next routing pass |\n| Router exceeds `timeoutMs` | Fail open: plan routing used; `warn` `routing.router.failed`; not persisted, so retried on the next routing pass |\n| Router declines (null, or no `agentProfileId`) | Plan routing used; decision persisted as `declined` |\n| Router picks an id not in `routing.agents.profiles` | Plan routing used; never `routing.agents.default`; persisted as `unknown-profile` |\n| Router returns `confidence` outside [0, 1], or not a finite number | Confidence omitted from the outcome and the persisted decision |\n\nUS-001 produces `StoryRouting.routerDecision`; US-004 writes it and US-005 sets `applied`. Extend `src/pipeline/stages/routing-story-router.ts` created by US-003; do not create a second persistence path. Snapshot plannedProfileId before the router runs. Optional profileId is for picked/unknown-profile only; confidence is for picked only and only when provided by the filtered producer outcome. The router's reasoning is not substituted for the story's classification reasoning.\n\nAC fixture: All ACs use the US-003 profiles, `routing.router.mode: \"shadow\"`, a stubbed\n`_routingDeps.consultStoryRouter`, and a story whose plan routing has `agentProfileId:\n\"native-deepseek\"`, unless the AC says otherwise. The **shadow luna pick** setup means the stub\nreturns `picked` with `profileId: \"native-luna\"` and `router: \"test-router\"`. US-003 profiles are `native-deepseek` (native, balanced), `native-luna` (native, fast) and `claude-haiku` (claude, fast), with routing.agents.enabled true.\n\n**Scope** — In: picked/declined/unknown-profile audit record creation, absent optional fields, timestamp and original plan audit, info/warn logs, retry behavior for transient failures, persistence under the existing gate, and persisted-decision consult suppression. Out: consultation algorithm (US-002), eligibility/skip-flag production (US-003), changing the starting assignment and setting applied=true under precedence (US-005). The router is never consulted again for a story once `story.routing.routerDecision` is persisted or once the story has any escalation record. A per-run summary of the starting-profile distribution is tracked in nax#2606 and is not part of this feature.\n\n**Interface** — Write the type produced by US-001:\n```typescript\nexport interface StoryRouterDecision {\n  mode: \"shadow\" | \"apply\";\n  /** RoutingStrategy.name of the router consulted */\n  router: string;\n  outcome: \"picked\" | \"declined\" | \"unknown-profile\";\n  /** The router's pick; present for \"picked\" and \"unknown-profile\" */\n  profileId?: string;\n  /** Present only for \"picked\", and only when the router returned a finite number in [0, 1] */\n  confidence?: number;\n  /** story.routing.agentProfileId as it was before the router ran; absent when plan set none */\n  plannedProfileId?: string;\n  /** true when the apply step wrote the router's pick as the starting profile (even if it equals plannedProfileId) */\n  applied: boolean;\n  /** ISO-8601 timestamp */\n  decidedAt: string;\n}\n```\nAttach it as `StoryRouting.routerDecision?: StoryRouterDecision` in the existing stage write-back. Log decision data `{ storyId, mode, router, outcome, plannedProfileId, routerProfileId, confidence, applied, latencyMs }` at info under `routing.router.decision`; error/timeout at warn under `routing.router.failed`.",
+      "acceptanceCriteria": [
+        "[unit] In the shadow luna pick setup, ctx.story.routing.agentProfileId is still \"native-deepseek\" after routingStage.execute.",
+        "[unit] In the shadow luna pick setup, ctx.story.routing.routerDecision.applied is false.",
+        "[unit] In the shadow luna pick setup, ctx.story.routing.routerDecision.mode is \"shadow\".",
+        "[unit] In the shadow luna pick setup, ctx.story.routing.routerDecision.profileId is \"native-luna\".",
+        "[unit] In the shadow luna pick setup, ctx.story.routing.routerDecision.plannedProfileId is \"native-deepseek\".",
+        "[unit] In the shadow luna pick setup, ctx.story.routing.routerDecision.router is \"test-router\".",
+        "[unit] In the shadow luna pick setup, Date.parse(ctx.story.routing.routerDecision.decidedAt) is a finite number.",
+        "[unit] When the stub returns picked with confidence: 0.7, ctx.story.routing.routerDecision.confidence is 0.7.",
+        "[unit] When the stub returns picked with no confidence, ctx.story.routing.routerDecision has no confidence property.",
+        "[unit] When the stub returns declined, ctx.story.routing.routerDecision.outcome is \"declined\".",
+        "[unit] When the stub returns unknown-profile with profileId: \"no-such-profile\", ctx.story.routing.routerDecision.outcome is \"unknown-profile\".",
+        "[unit] When the stub returns unknown-profile with profileId: \"no-such-profile\", ctx.story.routing.routerDecision.profileId is \"no-such-profile\".",
+        "[unit] When the stub returns error, ctx.story.routing.routerDecision is undefined after routingStage.execute.",
+        "[unit] When the stub returns timeout, ctx.story.routing.routerDecision is undefined after routingStage.execute.",
+        "[unit] When the stub returns no-router, ctx.story.routing.routerDecision is undefined after routingStage.execute.",
+        "[unit] In the shadow luna pick setup, routingStage.execute logs at info level a message routing.router.decision whose data has applied: false.",
+        "[unit] The routing.router.decision log entry from the shadow luna pick setup has storyId as the first key of its data.",
+        "[unit] When the stub returns error with message: \"router down\", routingStage.execute logs at warn level a message routing.router.failed whose data has outcome: \"error\".",
+        "[unit] When the stub returns timeout, routingStage.execute logs at warn level a message routing.router.failed whose data has outcome: \"timeout\".",
+        "[unit] When the stub returns no-router, routingStage.execute logs neither routing.router.decision nor routing.router.failed.",
+        "[unit] In the shadow luna pick setup with ctx.prdPath set, _routingDeps.savePRD is called with a PRD whose story carries routing.routerDecision.profileId equal to \"native-luna\".",
+        "[unit] In the shadow luna pick setup, a second routingStage.execute on the same story does not call _routingDeps.consultStoryRouter again.",
+        "[unit] In the shadow luna pick setup with a story that has no plan routing (no routing.complexity), ctx.story.routing.complexity after routingStage.execute equals the complexity returned by _routingDeps.resolveRouting."
+      ],
+      "tags": [
+        "routing",
+        "pipeline",
+        "observability",
+        "story-router-hook"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Extends the existing stage helper and PRD write-back with a small outcome-to-audit/log mapping, preserving the current persistence gate and using established logging patterns.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/pipeline/stages/routing-story-router.ts",
+        "packages/nax/src/pipeline/stages/routing.ts",
+        "packages/nax/src/prd/types.ts",
+        "packages/nax/test/unit/pipeline/stages/routing-persistence.test.ts",
+        "packages/nax/src/prd/save.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/pipeline/stages/routing-story-router-persistence.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When the stub returns timeout and the story remains un-escalated, a second routingStage.execute on the same story calls _routingDeps.consultStoryRouter again.",
+        "When the stub returns declined, a second routingStage.execute on the same story does not call _routingDeps.consultStoryRouter again.",
+        "When the stub returns unknown-profile, a second routingStage.execute on the same story does not call _routingDeps.consultStoryRouter again.",
+        "When ctx.skipPrdPersistence is true and ctx.prdPath is set, routingStage.execute does not call _routingDeps.savePRD for the shadow luna pick.",
+        "When the stub returns error with message: \"router down\", the routing.router.failed log data includes message: \"router down\".",
+        "When an unplanned story receives a persisted router decision, its plannedProfileId property is absent.",
+        "When an error or timeout outcome is returned, routingStage.execute leaves the planned agentProfileId unchanged.",
+        "When the shadow luna pick has confidence: 0.7 and latencyMs: 12, the routing.router.decision log data includes routerProfileId: \"native-luna\", confidence: 0.7 and latencyMs: 12."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "9f3252c63a5d04aedfb6665bd97daac28b571768"
+    },
+    {
+      "id": "US-005",
+      "title": "Apply the router's pick",
+      "description": "**Goal** — Apply a known router pick under the configured precedence and rebase the story's starting agent/rung before operating-tier resolution.\n\n**Motivation** — The routing stage then seeds the starting rung from plan's `profileModelTier` through `resolveOperatingTier()`, so plan's profile choice is final for the first attempt.\n\n**Approach** — ### Apply step (US-005)\n\nOnly for a `picked` outcome in `apply` mode:\n\n| `precedence` | plan set `agentProfileId`? | Applied? |\n|:---|:---|:---|\n| `router` | yes (including the same id the router picked) | yes |\n| `router` | no | yes |\n| `plan` | yes | no (recorded, `applied: false`) |\n| `plan` | no | yes |\n\n`applied` means the apply step wrote the router's pick as the story's starting profile, even when\nthe pick equals `plannedProfileId`.\n\nApplying resolves the picked id with `resolveAgentAssignment(pickedId, config.routing.agents,\nstory.id, config.models, resolveDefaultAgent(config))`. Step 4 of the consult pipeline guarantees\nthat the id exists, so the default-profile fallback is never reached. It then updates\n`ctx.story.routing`:\n\n1. Removes `modelTier`, `profileModelTier`, `profileModelPin`, `initialModelTier` and\n   `initialModelPin`.\n2. Writes `agent`, `agentProfileId` and `initialAgent`, `initialProfileId` from the assignment.\n3. Writes `profileModelTier` and `initialModelTier` when the assignment carries a tier, or\n   `profileModelPin` and `initialModelPin` when it carries a literal model.\n\nStep 1 matters because `resolveOperatingTier` treats a persisted `modelTier` that ranks above the\ncandidate on `tierOrder` as an escalation and keeps it (`operating-tier.ts:88-91`). The step also\nstops a plan-time pin or tier from outliving a router pick of the other kind. `complexity`,\n`initialComplexity`, `testStrategy` and `reasoning` are never changed by the apply step. For an unplanned\nstory the apply step runs after `resolveRouting` has produced those fields; it may build a\npartial `routing` object that the stage's existing write-back then completes with `complexity`,\n`testStrategy` and `reasoning`.\n\nIn `apply` mode, apply a `picked` outcome per the precedence table, clearing and rewriting the\nstarting-rung fields. Extend `src/pipeline/stages/routing-story-router.ts` from US-003/US-004 and integrate application after resolveRouting but before resolveOperatingTier. Capture `plannedProfileId` before consultation and retain it on the audit record even when applying. US-004 already owns writing `StoryRouting.routerDecision`; this story sets its `applied` value to the actual apply result and logs that result through the existing decision log. Default precedence is `router`.\n\nSymbols this feature reads but does not change:\n\n- `resolveAgentAssignment(selectedProfileId, agentRouting, storyId, models, defaultAgent)`:\n  `src/agents/shared/agent-profile-resolver.ts`. Note that it falls back to `routing.agents.default`\n  for an unknown id. The router path must not reach that fallback (see US-002 and US-004).\n- `resolveOperatingTier(input)`: `src/routing/operating-tier.ts:78`. It treats a persisted\n  `story.routing.modelTier` that ranks above the candidate as an escalation and keeps it.\n- `finalizePrdRouting(...)`: `src/plan/strategies/finalize-routing.ts`, the existing pattern for\n  writing `agent`, `agentProfileId`, `profileModelTier`/`profileModelPin` and the `initial*` fields.\n\nAC fixture: All ACs use the US-003 profiles, `routing.router.mode: \"apply\"`, a stubbed\n`_routingDeps.consultStoryRouter`, and `autoMode.escalation.tierOrder` set to the agent-rung\nladder `[{tier: \"fast\", agent: \"native\"}, {tier: \"fast\", agent: \"claude\"}, {tier: \"balanced\",\nagent: \"native\"}, {tier: \"powerful\", agent: \"native\"}, {tier: \"balanced\", agent: \"claude\"}]`. The\nstory's plan routing has `agentProfileId: \"native-deepseek\"`, `agent: \"native\"`,\n`profileModelTier: \"balanced\"`, `initialModelTier: \"balanced\"` and a persisted\n`modelTier: \"balanced\"`, unless the AC says otherwise. Named setups:\n\n- **router haiku pick**: `precedence: \"router\"`, stub returns `picked` with `profileId: \"claude-haiku\"`.\n- **router pin pick**: `precedence: \"router\"`, stub picks a profile for which `resolveAgentAssignment` returns a `profileModelPin` (its `target.model` is a literal model id, not a tier name).\n- **plan haiku pick**: `precedence: \"plan\"`, stub returns `picked` with `profileId: \"claude-haiku\"`.\n- **plan unprofiled luna pick**: `precedence: \"plan\"`, a story whose plan routing has no `agentProfileId`, stub returns `picked` with `profileId: \"native-luna\"`.\n- **router unplanned luna pick**: `precedence: \"router\"`, a story with no plan routing (no `routing.complexity`), stub returns `picked` with `profileId: \"native-luna\"`.\n\nUS-003 profiles are `native-deepseek` (native, balanced), `native-luna` (native, fast), and `claude-haiku` (claude, fast), with routing.agents.enabled true and no escalation records. Use configured literal-pin profiles for the pin scenarios.\n\n**Scope** — In: apply-only known picks, all four precedence cases, same-id application semantics, clearing old persisted/model-origin selectors, assignment-derived agent and tier/pin writes, audit applied=true/false, and unplanned classification preservation. Out: changing the consult producer (US-002), stage guards (US-003), audit/log protocol or persistence ownership (US-004). The story router never changes a story's `complexity`, `initialComplexity`, `testStrategy` or `reasoning`; it changes only the starting agent profile. Changing the plan-time agent-profile selection procedure in `OneShotPromptBuilder.agentProfileInstruction()` is tracked in nax#2606 and is not part of this feature. The `story.start` preview built by `buildPreviewRouting` in `src/execution/executor-types.ts` is not changed: for a story the router has not consulted yet, the first `story.start` line can announce plan's rung while the routing stage runs the router's rung.\n\n**Interface** — Use the existing resolver invocation verbatim:\n```typescript\nresolveAgentAssignment(pickedId, config.routing.agents,\nstory.id, config.models, resolveDefaultAgent(config))\n```\nConsume `StoryRouterOutcome`'s `picked` variant and update `StoryRouterDecision.applied`; do not introduce a new plugin or resolver interface.",
+      "acceptanceCriteria": [
+        "[unit] In the router haiku pick setup, ctx.story.routing.agentProfileId is \"claude-haiku\" after routingStage.execute.",
+        "[unit] In the router haiku pick setup, ctx.story.routing.agent is \"claude\".",
+        "[unit] In the router haiku pick setup, ctx.routing.modelTier is \"fast\", although plan persisted modelTier: \"balanced\".",
+        "[unit] In the router haiku pick setup, ctx.story.routing.profileModelTier is \"fast\".",
+        "[unit] In the router haiku pick setup, ctx.story.routing.initialProfileId is \"claude-haiku\".",
+        "[unit] In the router haiku pick setup, ctx.story.routing.initialAgent is \"claude\".",
+        "[unit] In the router haiku pick setup, ctx.story.routing.initialModelTier is \"fast\".",
+        "[unit] In the router haiku pick setup, ctx.story.routing.routerDecision.applied is true.",
+        "[unit] In the router haiku pick setup, ctx.story.routing.routerDecision.plannedProfileId is \"native-deepseek\".",
+        "[unit] In the router haiku pick setup, routingStage.execute logs at info level a message routing.router.decision whose data has applied: true.",
+        "[unit] In the router pin pick setup, ctx.story.routing.profileModelPin equals the picked profile's target.model.",
+        "[unit] In the router pin pick setup, ctx.story.routing.profileModelTier is undefined.",
+        "[unit] In the router pin pick setup, ctx.story.routing.initialModelPin equals the picked profile's target.model.",
+        "[unit] With precedence: \"router\", a story whose plan routing has profileModelPin and initialModelPin set and no profileModelTier, and the stub returning picked with profileId: \"claude-haiku\", ctx.story.routing.initialModelPin is undefined after routingStage.execute.",
+        "[unit] In the plan haiku pick setup, ctx.story.routing.agentProfileId stays \"native-deepseek\".",
+        "[unit] In the plan haiku pick setup, ctx.story.routing.routerDecision.applied is false.",
+        "[unit] In the plan unprofiled luna pick setup, ctx.story.routing.agentProfileId is \"native-luna\".",
+        "[unit] In the plan unprofiled luna pick setup, ctx.story.routing.routerDecision.applied is true.",
+        "[unit] With precedence: \"router\" and the stub returning picked with profileId: \"native-deepseek\" (the same id plan set), ctx.story.routing.routerDecision.applied is true.",
+        "[unit] With precedence: \"router\" and the stub returning declined, ctx.story.routing.agentProfileId stays \"native-deepseek\".",
+        "[unit] With precedence: \"router\", routing.agents.default: \"native-luna\", and the stub returning unknown-profile, ctx.story.routing.agentProfileId stays \"native-deepseek\".",
+        "[unit] In the router unplanned luna pick setup, ctx.story.routing.agentProfileId is \"native-luna\".",
+        "[unit] In the router unplanned luna pick setup, ctx.story.routing.complexity equals the complexity returned by _routingDeps.resolveRouting."
+      ],
+      "tags": [
+        "routing",
+        "pipeline",
+        "agent-profiles",
+        "story-router-hook"
+      ],
+      "dependencies": [
+        "US-004"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Application extends the existing helper and stage with deterministic precedence and field rewrites while reusing unchanged assignment and operating-tier resolvers; tdd-simple can exercise stale-tier, cross-agent and tier/pin cases through the established stage dependency seam.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/pipeline/stages/routing-story-router.ts",
+        "packages/nax/src/routing/operating-tier.ts",
+        "packages/nax/src/agents/shared/agent-profile-resolver.ts",
+        "packages/nax/src/plan/strategies/finalize-routing.ts",
+        "packages/nax/test/unit/pipeline/stages/routing-initial-model-tier.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/pipeline/stages/routing-story-router-apply.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When applying a picked profile, ctx.story.routing.initialComplexity retains its pre-router value.",
+        "When applying a picked profile to a planned story with greenfield detection disabled, ctx.story.routing.testStrategy retains its pre-router value.",
+        "When applying a picked profile to a planned story with greenfield detection disabled, ctx.story.routing.reasoning retains its pre-router value rather than the router's reasoning.",
+        "When switching from a plan-time literal pin to the claude-haiku tier profile, ctx.story.routing.profileModelPin is undefined.",
+        "When a router haiku pick is persisted through savePRD, the saved story carries agentProfileId: \"claude-haiku\" and routerDecision.applied: true.",
+        "When plan precedence retains the planned profile, ctx.story.routing.initialAgent retains its pre-router value.",
+        "When apply mode receives an error or timeout outcome, ctx.story.routing.agentProfileId stays \"native-deepseek\".",
+        "When shadow mode receives a picked profile for a different agent, ctx.story.routing.initialAgent retains the planned initial agent."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "31aef1d62b4d9c9bee890f1f0a9163dbb51cffcb"
+    }
+  ],
+  "analysis": "This is an additive enhancement to @nathapp/nax, not a greenfield project. All five binding stories run in packages/nax, in the exact dependency chain US-001 -> US-002 -> US-003 -> US-004 -> US-005. No other workspace package needs modification. Graph-first navigation was unavailable because this session exposes no codebase-memory MCP tools; findings below come from direct source reads and text searches. No implementation or test execution was performed while drafting this PRD.\n\nCurrent architecture and gap: packages/nax/src/routing/router.ts:34 defines RoutingContext as DispatchContext plus the full NaxConfig, and :54 defines the existing synchronous-or-asynchronous RoutingStrategy.route contract. PluginExtensions.router already uses that contract (packages/nax/src/plugins/types.ts:122); PluginRegistry.getRouters() returns registered routers in load order (packages/nax/src/plugins/registry.ts:192-204). There is no need for a new plugin interface, classifier implementation, or LLM operation. resolveRouting starts at packages/nax/src/routing/router.ts:155. Its PRD short circuit at :169-180 returns existing complexity/testStrategy/reasoning before plugins run; its legacy plugin loop at :184-201 takes the first non-null result, catches plugin errors, and continues through subsequent routers. LLM/cache and keyword fallback begin at :204 and :275. US-002 must only optionally skip that plugin loop, preserving step 0 and every other fallback, including legacy multi-router behavior when the option is absent or false. The deprecated routeStory wrapper at :285-291 must continue working without options. Other live callers are packages/nax/src/execution/unified-executor-parallel-dispatch.ts:170 and :369; they intentionally remain unchanged and do not consult the new hook.\n\nConfiguration and types (US-001): RoutingConfigSchema currently consists of strategy, optional llm, and defaulted agents (packages/nax/src/config/schemas-infra.ts:141-145). That file is 594 lines, so add the router schema in its own new schemas-router.ts and keep the import/field integration small. Agent profile schema and optional agent-routing configuration are already defined in schemas-infra.ts:83-139; profiles remain the only allowlist for the hook. ModelTierSchema accepts any nonempty string, not a closed tier enum (packages/nax/src/config/schemas-model.ts:240), so literal model profile targets are supported and must not be mistaken for tier names. The Zod 4 prefault pattern is explicitly documented in packages/nax/src/config/schemas-advisor.ts:1-4. The outer routing default is a literal at packages/nax/src/config/schemas.ts:143-154; it must independently gain the complete router default, because .default bypasses child parsing. DEFAULT_CONFIG is derived from NaxConfigSchema.parse({}) and cast to the hand-written NaxConfig (packages/nax/src/config/defaults.ts:8-11). NaxConfig.routing is the hand-written RoutingConfig interface (packages/nax/src/config/runtime-types.ts:467-475 and :518), not automatically inferred from the routing schema. Add router?: StoryRouterConfig there and use optional access in consumers, including hand-built configs that omit router or agents. runtime-types.ts is already 590 lines, so avoid unnecessary growth. RoutingDecision is a small separate interface at packages/nax/src/routing/decision.ts:4-13; add only optional confidence. StoryRouting and its required classification fields are at packages/nax/src/prd/types.ts:88-143; add StoryRouterDecision and the optional routerDecision property without changing existing origin/escalation field semantics except for the explicit first-attempt rebase in US-005. FIELD_DESCRIPTIONS has the routing descriptions at packages/nax/src/cli/config-descriptions.ts:53-60; add exactly the three required router leaf descriptions. packages/nax/test/unit/cli/config-descriptions.test.ts:28-48 checks that documented routing keys exist in the schema and does not pin a closed routing shape. Type-only contract additions are checked by the normal typecheck pipeline, not by artificial runtime ACs.\n\nConsultation implementation (US-002): Create packages/nax/src/routing/story-router.ts and expose its function/type from packages/nax/src/routing/index.ts, whose existing routing exports are at :19-32. Use the full existing DispatchContext (packages/nax/src/runtime/dispatch-context.ts:20-25) and call only getRouters()[0] with route(story, { ...context, config }). Classify synchronous throws and asynchronous rejections alike as an error outcome; a null/missing/empty profile id is declined, and an unrecognized id is unknown-profile without consulting agents.default. The allowlist check must precede profile resolution: resolveAgentAssignment deliberately falls back to the default profile for unknown ids (packages/nax/src/agents/shared/agent-profile-resolver.ts:16-42), and that fallback is explicitly forbidden for the new router path. Filter confidence to finite numbers in the inclusive range [0, 1]; omit invalid values rather than writing undefined-valued properties. Measure latency from immediately before invocation to knowing the outcome, including failure and timeout. Race asynchronous router work against the configured positive timeout and cancel the timer in every exit path; .nax/rules/forbidden-patterns-source.md:42 explicitly permits setTimeout when its handle must be cancelled via clearTimeout, with a call-site explanation. The timeout bounds waiting; the existing plugin interface has no new cancellation argument, so do not claim to abort arbitrary plugin work. Attach rejection handling so late completion/rejection after a timeout cannot fail the run. No LLM work is introduced by nax itself.\n\nStage wiring (US-003): packages/nax/src/pipeline/stages/routing.ts:41 currently calls _routingDeps.resolveRouting with four arguments. Its swappable dependencies are at :215-221. Add consultStoryRouter to this dependency seam, and put the usable-router check, ordered consult guards and stage helpers into the new packages/nax/src/pipeline/stages/routing-story-router.ts. Treat an absent mode as off, not as an enabled mode merely because undefined !== 'off'. Usability requires enabled mode, agents.enabled === true and nonempty profiles, but does not depend on a plugin actually being registered or on eligibility of this particular story. Check usability, no escalations, then no persisted routerDecision; do not use attempts as a replacement guard. The fifth resolveRouting argument must be { skipPluginRouters: usable } even when consultation was skipped for an escalation or persisted decision, otherwise a shadow pick could leak through the old unplanned-story classification loop. When mode is enabled but profiles/agent-routing are unusable, do not consult, warn once and retain legacy plugin routing by passing false. Logger.warnOnce is per Logger instance/run and demotes repetitions to debug (packages/nax/src/logger/logger.ts:323-348); avoid a story-specific discriminator so the warning is once per run, not once per story, and put storyId first in its data.\n\nPersistence and observability (US-004): Snapshot story.routing.agentProfileId before consultation as plannedProfileId; never derive it from an assignment already rewritten by the hook. Persist only picked, declined and unknown-profile outcomes. Error, timeout and no-router leave routerDecision absent; errors/timeouts therefore permit a later routing pass to consult again while the story remains un-escalated. The stage's normal write-back at packages/nax/src/pipeline/stages/routing.ts:101-131 already fills required complexity, initialComplexity, testStrategy, reasoning, operating modelTier and origin fields. Attach the audit record through that write-back, including for an initially unplanned story, rather than replacing classification with a partial object. Use its existing savePRD call and skipPrdPersistence gate at :132-139; that gate prevents concurrent worktree workers from clobbering the shared PRD. savePRD serializes the full PRD after stripping propagated exclusions (packages/nax/src/prd/save.ts:16-19). loadPRD reads JSON directly and only normalizes runtime/story fields, preserving routing metadata (packages/nax/src/prd/index.ts:86-146); no migration or persisted-PRD validator extension is necessary. validateStory is a separate plan/LLM-output normalizer which intentionally forces clean runtime state and reconstructs routing (packages/nax/src/prd/schema-story.ts:42-103), not the disk reload path; do not add runtime audit data to LLM output handling. Decision logging must use the exact message/data contract with storyId first, routerProfileId in log data versus profileId on the persisted record, no latency persistence, and valid ISO decidedAt. Error logs include the router's error message. Shadow mode must leave the selected profile untouched.\n\nApplying and rung correctness (US-005): Insert application after normal classification has returned but before resolveOperatingTier, which currently runs at packages/nax/src/pipeline/stages/routing.ts:52-66. resolveOperatingTier uses profileTier before the derived tier and preserves a higher-ranked previousTier even without escalation records (packages/nax/src/routing/operating-tier.ts:78-98). Thus merely changing agentProfileId/profileModelTier would still execute the old balanced rung; clear persisted modelTier as well as both old profile tier/pin and initial tier/pin fields before installing the picked assignment. Rebase agent, agentProfileId, initialAgent and initialProfileId deliberately on this first, un-escalated attempt, including when the pick equals the planned id. resolveAgentAssignment already uses classifyModelSelector to distinguish literal pins from tiers and returns mutually exclusive assignment fields (packages/nax/src/agents/shared/agent-profile-resolver.ts:45-70). Resolve it through the existing agent barrel with the canonical resolveDefaultAgent(config), not local model-name heuristics or a hardcoded agent. The existing plan finalization pattern writes these fields at packages/nax/src/plan/strategies/finalize-routing.ts:35-60, but its first-write preservation must not be blindly copied: the router explicitly resets starting origin fields. Ensure the stage's initialModelTier fallback at routing.ts:108 does not accidentally resurrect a stale plan tier or undermine tier/pin switching. Classification fields complexity, initialComplexity, testStrategy and reasoning are not rewritten by the apply helper. Plan precedence is based on the pre-consult plannedProfileId, not a profile inferred during later resolveRouting. Only known picked ids in apply mode can reach assignment resolution; declines, unknown ids, errors and shadow results must never apply even when agents.default exists. Do not modify resolveOperatingTier or the resolver themselves. Existing greenfield behavior after routing.ts:145 is unrelated and should remain unchanged; disable greenfield detection in isolated hook tests to avoid confusing its independent testStrategy override with router behavior.\n\nTesting and seams: Use bun:test with repository helpers (makeStory, makeNaxConfig, logger capture), stub/restore _routingDeps rather than mock.module, and exercise routingStage.execute for every cross-story seam. Existing packages/nax/test/unit/pipeline/stages/routing-profile-tier.test.ts:26-99 demonstrates stage context construction and dependency replacement; it is already 768 lines, so new guard/apply tests should live in focused new files instead of overflowing its 800-line limit. routing-persistence.test.ts:26-150 covers classification write-back and savePRD, and routing-initial-model-tier.test.ts:33-115 covers initial-rung persistence. Existing routing-strategies.test.ts:43-109 covers parsing/decision validation, not this consult hook; llm-batch-route.test.ts:98 onward exercises resolveRouting's runtime cache, which the new option must not disturb. Add focused schema/default tests, consult/timeout tests, legacy plugin-option tests, and separate stage guard, persistence/logging, and application suites as each story lands. US-003 stubs the producer helper and asserts its call and the fifth resolveRouting argument; US-004 owns persisted-once behavior, not US-003; US-005 owns applied=true. Keep every spec AC in its specified story. Additional hardening assertions are suggestedCriteria only. Follow docs/architecture/ARCHITECTURE.md:167-184 (600-line source hard limit, small functions, _deps and structured logging) and the timer exception above. Use package-scoped targeted commands such as bun test test/unit/routing/story-router.test.ts --timeout=30000 from packages/nax; never bare bun test. Normal typecheck/lint/test pipeline gates are not acceptance criteria. Coverage is a separate CI gate and should be checked after test additions according to package instructions.\n\nCompatibility and rollout: Omitting routing.router or setting off preserves today's classification, plugin chain and starting assignment; every new type field and the resolveRouting options parameter is additive/optional. Existing PRDs need no migration and become eligible on the next stage routing pass when enabled, provided no escalation or persisted routerDecision exists. Shadow provides a safe audit-first rollout; apply defaults to router precedence, with explicit plan precedence available. The first story.start preview and parallel pre-dispatch routing remain deliberately unchanged, so preview and execution may show different starting rungs on first consultation. Source architecture docs note workflow is now the default execution mode (docs/architecture/ARCHITECTURE.md:149); this spec nevertheless explicitly targets routingStage, so do not broaden the work to add workflow callers. No router implementation, plan selection change, distribution summary, guide edit, dependency upgrade, package release, new permission behavior or cross-package API change belongs to this feature. The spec's 'Modifies: None' is a statement about existing closed-world test assertions requiring no adjustment, not a prohibition against the explicitly listed source modifications. Refine-pass self-audit: Enumerated and matched all 91 stated spec ACs one-to-one in their original stories: US-001 ACs 1-13, US-002 ACs 1-17, US-003 ACs 1-15, US-004 ACs 1-23 and US-005 ACs 1-23. Kept regression qualifiers including unplanned/no routing.complexity, the unknown-profile default-not-used clause, the persisted balanced tier despite the fast router pick, the same-id application case, and pin-to-tier preconditions. US-002 AC15 now observes the exported helper returning a Promise resolving to no-router rather than merely declaring it importable/async; its original export and async-call assertions remain intact. All ACs are observable through schema results, promises, calls, logs or state. Every story already contains mandatory negative-path ACs: invalid config in US-001, consult errors/timeouts/unknown ids in US-002, disabled/empty/escalated guards in US-003, unpersisted failures in US-004 and non-applied declined/unknown picks in US-005. Existing default/off behavior is anchored in US-001/US-003, no-options legacy plugin behavior in US-002, shadow profile preservation in US-004, and retained plan/classification behavior in US-005. All 11 feature exclusions and every spec-recommended context file are retained, within the five-file limit; output files do not appear in their own context lists. The five binding ids, workdirs and dependency edges are unchanged, with no dangling ids. No description contradicts its story's ACs, and no spec AC was moved into suggestedCriteria. Re-reading the existing resolver, routing stage and timer contract supports medium/tdd-simple for US-002 and US-005: both are localized additions over existing interfaces, not changes to assignment, operating-tier or persistence subsystems. Extra hardening remains suggested rather than additional mandatory scope. Done means the five code increments implement the specified opt-in hook, bounded fail-open consultation, audit persistence/logs, guards and starting-rung precedence while retaining the excluded paths unchanged.",
+  "outOfScope": [
+    "This feature ships no router implementation; it adds only the hook that consults a plugin router registered through `PluginExtensions.router`.",
+    "Changing the plan-time agent-profile selection procedure in `OneShotPromptBuilder.agentProfileInstruction()` is tracked in nax#2606 and is not part of this feature.",
+    "A per-run summary of the starting-profile distribution is tracked in nax#2606 and is not part of this feature.",
+    "Only the first router returned by `PluginRegistry.getRouters()` is consulted; chaining or voting across several router plugins is not supported.",
+    "The router is never consulted again for a story once `story.routing.routerDecision` is persisted or once the story has any escalation record.",
+    "The story router never changes a story's `complexity`, `initialComplexity`, `testStrategy` or `reasoning`; it changes only the starting agent profile.",
+    "The run-time agent classifier selected by `routing.agents.strategy: \"llm\"` is unchanged by this feature.",
+    "The `story.start` preview built by `buildPreviewRouting` in `src/execution/executor-types.ts` is not changed: for a story the router has not consulted yet, the first `story.start` line can announce plan's rung while the routing stage runs the router's rung.",
+    "The parallel pre-dispatch routing callers in `src/execution/unified-executor-parallel-dispatch.ts` keep calling `resolveRouting` without options and do not consult the story router; only the routing stage does.",
+    "Existing PRDs need no migration; a story without `routerDecision` is consulted on its next routing pass when the router is enabled.",
+    "User documentation under `docs/guides/` for `routing.router` is a manual follow-up after merge; no story edits `docs/`."
+  ],
+  "routingProfile": "native-codex"
+}

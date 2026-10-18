@@ -31,6 +31,7 @@ import type {
 import type { AuthConfig } from "./schemas-auth";
 import type { CommandSafetyConfig } from "./schemas-command-safety";
 import type { AgentRoutingConfig } from "./schemas-infra";
+import type { StoryRouterConfig } from "./schemas-router";
 
 export interface EscalationEntry {
   from: string;
@@ -471,6 +472,8 @@ export interface RoutingConfig {
   llm?: LlmRoutingConfig;
   /** Agent routing settings (plan-time agent selection) */
   agents?: AgentRoutingConfig;
+  /** Opt-in story router settings */
+  router?: StoryRouterConfig;
 }
 
 /** Prompt overrides config (PB-003) */

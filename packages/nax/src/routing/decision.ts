@@ -10,4 +10,6 @@ export interface RoutingDecision {
   agent?: string;
   /** Profile id that produced the agent choice — for audit and metrics */
   agentProfileId?: string;
+  /** Router confidence in agentProfileId, in [0, 1]. */
+  confidence?: number;
 }

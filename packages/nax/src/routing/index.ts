@@ -1,3 +1,6 @@
+export type { StoryRouterOutcome } from "./story-router";
+export { consultStoryRouter } from "./story-router";
+
 // Core types
 
 export type { ComplexityMapping } from "./calibrate/band-stats";

@@ -51,6 +51,10 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   // Routing
   routing: "Model routing strategy configuration",
   "routing.strategy": "Routing strategy: keyword | llm",
+  "routing.router.mode": "Story router mode: off (default), shadow (record only), apply (apply per precedence)",
+  "routing.router.precedence":
+    "In apply mode: router (default) replaces the plan profile; plan preserves an existing plan profile",
+  "routing.router.timeoutMs": "Positive integer timeout for one story router call in milliseconds (default 5000)",
   "routing.llm": "LLM-based routing settings",
   "routing.llm.model":
     'Model selector for routing decisions. Accepts a tier string (for example "fast") or an explicit object like { agent: "codex", model: "gpt-5.4" }.',

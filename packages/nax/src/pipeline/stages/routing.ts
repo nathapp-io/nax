@@ -18,6 +18,7 @@ import { savePRD } from "@/prd";
 import {
   complexityToModelTier,
   complexityToRungAgent,
+  consultStoryRouter,
   isSecurityCriticalStory,
   resolveOperatingTier,
   resolveRouting,
@@ -25,6 +26,7 @@ import {
 import { resolveTestFilePatterns } from "@/test-runners";
 import { packageDirRelative } from "@/utils/paths";
 import type { PipelineContext, PipelineStage, RoutingResult, StageResult } from "../types";
+import { applyStoryRouterPick, consultEligibleStoryRouter, recordStoryRouterDecision } from "./routing-story-router";
 
 export const routingStage: PipelineStage = {
   name: "routing",
@@ -37,8 +39,14 @@ export const routingStage: PipelineStage = {
     // fresh Map per createRuntime() call — so it already starts empty for
     // this run. No explicit clear-on-first-story step is needed here.
 
-    // Classify story via resolveRouting() (plugin routers > LLM > keyword)
-    const decision = await _routingDeps.resolveRouting(ctx.story, ctx.config, ctx.plugins, ctx);
+    const consultation = await consultEligibleStoryRouter(ctx, _routingDeps.consultStoryRouter, logger);
+
+    // Usable story routers must not also apply picks through the legacy chain.
+    const decision = await _routingDeps.resolveRouting(ctx.story, ctx.config, ctx.plugins, ctx, {
+      skipPluginRouters: consultation.usable,
+    });
+    const applied = applyStoryRouterPick(ctx, consultation, decision);
+    const routerAuditPatch = recordStoryRouterDecision(ctx.story.id, { ...consultation, applied }, logger);
 
     // @design: BUG-032 / Open Item B / #1522 — the profile target seeds the starting
     // rung, a genuine escalation is preserved, and a stale leftover tier is not.
@@ -104,7 +112,9 @@ export const routingStage: PipelineStage = {
     const initialAgent = ctx.story.routing?.initialAgent ?? (neverEscalated ? routing.agent : undefined);
     const initialProfileId =
       ctx.story.routing?.initialProfileId ?? (neverEscalated ? ctx.story.routing?.agentProfileId : undefined);
-    const initialModelTier = ctx.story.routing?.initialModelTier ?? (neverEscalated ? routing.modelTier : undefined);
+    const initialModelTier =
+      ctx.story.routing?.initialModelTier ??
+      (canSeedInitialModelTier(ctx.story.routing, neverEscalated) ? routing.modelTier : undefined);
 
     ctx.story.routing = {
       ...(ctx.story.routing ?? {}),
@@ -118,6 +128,7 @@ export const routingStage: PipelineStage = {
       ...(initialAgent !== undefined && { initialAgent }),
       ...(initialProfileId !== undefined && { initialProfileId }),
       ...(initialModelTier !== undefined && { initialModelTier }),
+      ...routerAuditPatch,
     };
     // BUG-36: gate on skipPrdPersistence like completion.ts does — without this,
     // a worktree pipeline that now carries prdPath (routing/rectification re-use
@@ -209,10 +220,16 @@ export const routingStage: PipelineStage = {
   },
 };
 
+/** A literal-pin origin must not also acquire a derived tier during write-back. */
+function canSeedInitialModelTier(routing: PipelineContext["story"]["routing"], neverEscalated: boolean): boolean {
+  return neverEscalated && routing?.initialModelPin === undefined;
+}
+
 /**
  * Swappable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
  */
 export const _routingDeps = {
+  consultStoryRouter,
   resolveRouting,
   complexityToModelTier,
   isGreenfieldStory,

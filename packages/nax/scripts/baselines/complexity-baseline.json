@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-10-16T11:39:33.081Z",
+  "updatedAt": "2026-10-18T14:02:35.833Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": { "collectStats": 27 },
@@ -131,7 +131,7 @@
     "src/review/lint-parsing/strategies/ruff-annotated.ts": { "parseRuffAnnotated": 26 },
     "src/review/recurrence-demotion.ts": { "classifyRecurrence": 27 },
     "src/review/truncation.ts": { "looksLikeTruncatedJson": 22 },
-    "src/routing/router.ts": { "resolveRouting": 45 },
+    "src/routing/router.ts": { "resolveRouting": 43 },
     "src/runtime/index.ts": { "createRuntime": 28 },
     "src/runtime/middleware/cost.ts": { "=>": 44, "=>#2": 25 },
     "src/runtime/middleware/idle-watchdog/index.ts": { "=>": 37 },
