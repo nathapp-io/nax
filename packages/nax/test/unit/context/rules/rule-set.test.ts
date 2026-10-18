@@ -239,6 +239,51 @@ describe("resolveRuleSet — override layer", () => {
       });
     });
   });
+
+  // B2: the relative path of a rule file is derived from the configured
+  // directory, so a spelling the glob's own `join` normalizes away — most
+  // commonly a trailing separator — must not cost a nested rule its path.
+  test.each([
+    ["a trailing separator", (dir: string) => `${dir}/`],
+    ["a doubled trailing separator", (dir: string) => `${dir}//`],
+    ["a trailing './' segment", (dir: string) => `${dir}/./`],
+  ])("AC-4: nested override rules keep their relative paths with %s", async (_label, respell) => {
+    await withTempDir(async (repoRoot) => {
+      await withTempDir(async (overrideDir) => {
+        await seedFiles(overrideDir, {
+          "a/shared.md": "## Shared\n\nA-BODY",
+          "b/shared.md": "## Shared\n\nB-BODY",
+        });
+
+        const set = await resolveRuleSet({
+          repoRoot,
+          packageDir: repoRoot,
+          overrideDir: respell(overrideDir),
+        });
+
+        // Both survive as distinct rules, each naming its own file.
+        expect(set.rules.map((r) => r.ruleId)).toEqual(["a/shared", "b/shared"]);
+        expect(set.rules.map((r) => r.content)).toEqual(["## Shared\n\nA-BODY", "## Shared\n\nB-BODY"]);
+        expect(set.rules.map((r) => r.displayPath)).toEqual([
+          join(overrideDir, "a/shared.md"),
+          join(overrideDir, "b/shared.md"),
+        ]);
+      });
+    });
+  });
+
+  test("AC-4: the equivalent spellings of one override directory resolve to the same rules", async () => {
+    await withTempDir(async (repoRoot) => {
+      await withTempDir(async (overrideDir) => {
+        await seedFiles(overrideDir, { "a/shared.md": "## Shared\n\nA-BODY" });
+
+        const plain = await resolveRuleSet({ repoRoot, packageDir: repoRoot, overrideDir });
+        const respelled = await resolveRuleSet({ repoRoot, packageDir: repoRoot, overrideDir: `${overrideDir}//.` });
+
+        expect(respelled.rules).toEqual(plain.rules);
+      });
+    });
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

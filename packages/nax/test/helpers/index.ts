@@ -90,6 +90,7 @@ export {
   loopHandlerEntry,
   outcomeText,
   seedPackage,
+  seedPackageRule,
   seedRule,
   toolCall,
 } from "./loop-handlers";

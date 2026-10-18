@@ -143,6 +143,15 @@ describe("writeBrief — the project-context override (AC-8)", () => {
 
     expect(await Bun.file(sc.briefPath).text()).not.toContain(HEADING);
   });
+
+  test("a configured file holding only whitespace still writes the section, verbatim", async () => {
+    stubWorkflowLoader(async () => "   \n\n");
+    const sc = briefContext(makeNaxConfig({ context: { projectContext: { file: "/abs/blank.md" } } }));
+
+    await writeBrief(sc);
+
+    expect(await Bun.file(sc.briefPath).text()).toContain(`${HEADING}\n\n   \n\n\n`);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -28,8 +28,10 @@
  *   - **Run-scoped caches.** `findPackageDir` is cached by directory and each
  *     package's rule set by package, for the life of the run: matching a file
  *     in a package the run has already touched does no file I/O.
- *   - **Per-session delivery.** Delivered rule ids live in a map keyed by
- *     `sessionName`, so two concurrent sessions each see a body once.
+ *   - **Per-session delivery.** Delivered rule identities — the rule's file
+ *     (`ruleIdentity`), not its id — live in a map keyed by `sessionName`, so
+ *     two concurrent sessions each see a body once, and a same-id rule in
+ *     another layer or package is still delivered on its own.
  *     `before_compaction` drops one session's entry — a session that has just
  *     had its transcript summarised has also lost the turn that carried the
  *     body.
@@ -127,7 +129,7 @@ const ROOT_PACKAGE = "";
 
 interface DeliveryState {
   readonly input: RuleDeliveryInput;
-  /** Every rule the handler knows, by rule id — the displayPath lookup set. */
+  /** Every rule the handler knows, by delivery identity — the displayPath lookup set. */
   readonly knownRules: Map<string, ResolvedRule>;
   /** `findPackageDir` results, by directory. */
   readonly packageDirByDir: Map<string, Promise<string | undefined>>;
@@ -135,10 +137,25 @@ interface DeliveryState {
   readonly ruleSetByPackage: Map<string, Promise<readonly ResolvedRule[]>>;
   /** The per-file resolver's answer for the file that seeded a package. */
   readonly seededRules: Map<string, readonly ResolvedRule[]>;
-  /** Delivered rule ids, by session name. */
+  /** Delivered rule identities, by session name. */
   readonly deliveredBySession: Map<string, Set<string>>;
   /** The root package's rule set, loaded once per run. */
   rootWarm?: Promise<void>;
+}
+
+/**
+ * What one delivery is keyed on: the file the rule's text lives in.
+ *
+ * Not the rule id. Layers merge by id, so a repo rule and a package's own rule
+ * of the same id are one entry in one package's set — but they are two files
+ * with two bodies, and a session that has seen the repo one has not seen the
+ * package's. A cross-package branch review or fix session reads and writes
+ * files from both, and keying on the id lets the second rule pass undelivered.
+ * `displayPath` is the identity both the resolver and the review map
+ * (`review-rules-map.ts`) already use for exactly this reason.
+ */
+function ruleIdentity(rule: ResolvedRule): string {
+  return rule.displayPath;
 }
 
 function createState(input: RuleDeliveryInput): DeliveryState {
@@ -154,7 +171,8 @@ function createState(input: RuleDeliveryInput): DeliveryState {
 
 function remember(state: DeliveryState, rules: readonly ResolvedRule[]): void {
   for (const rule of rules) {
-    if (!state.knownRules.has(rule.ruleId)) state.knownRules.set(rule.ruleId, rule);
+    const identity = ruleIdentity(rule);
+    if (!state.knownRules.has(identity)) state.knownRules.set(identity, rule);
   }
 }
 
@@ -166,15 +184,15 @@ function sessionRules(state: DeliveryState, sessionName: string): Set<string> {
   return created;
 }
 
-function isDelivered(state: DeliveryState, sessionName: string, ruleId: string): boolean {
-  return state.deliveredBySession.get(sessionName)?.has(ruleId) ?? false;
+function isDelivered(state: DeliveryState, sessionName: string, rule: ResolvedRule): boolean {
+  return state.deliveredBySession.get(sessionName)?.has(ruleIdentity(rule)) ?? false;
 }
 
 function markDelivered(state: DeliveryState, sessionName: string, rules: readonly ResolvedRule[]): void {
   remember(state, rules);
   if (rules.length === 0) return;
   const delivered = sessionRules(state, sessionName);
-  for (const rule of rules) delivered.add(rule.ruleId);
+  for (const rule of rules) delivered.add(ruleIdentity(rule));
 }
 
 /** Drop one session's delivered state; a compaction makes its bodies new again. */
@@ -340,13 +358,17 @@ async function governingRules(state: DeliveryState, rel: string): Promise<readon
   const packageRules = await packageRuleSet(state, packageRel ?? ROOT_PACKAGE, packageRel, rel);
   const matched = packageRules.filter((rule) => ruleMatchesScopeFiles([...(rule.appliesTo ?? [])], [rel]));
   const seeded = state.seededRules.get(rel);
-  return seeded === undefined ? matched : dedupeById([...seeded, ...matched]);
+  return seeded === undefined ? matched : dedupeByIdentity([...seeded, ...matched]);
 }
 
-function dedupeById(rules: readonly ResolvedRule[]): ResolvedRule[] {
-  const byId = new Map<string, ResolvedRule>();
-  for (const rule of rules) if (!byId.has(rule.ruleId)) byId.set(rule.ruleId, rule);
-  return [...byId.values()];
+/** Keyed by delivery identity, so two same-id rules of different packages both survive. */
+function dedupeByIdentity(rules: readonly ResolvedRule[]): ResolvedRule[] {
+  const byIdentity = new Map<string, ResolvedRule>();
+  for (const rule of rules) {
+    const identity = ruleIdentity(rule);
+    if (!byIdentity.has(identity)) byIdentity.set(identity, rule);
+  }
+  return [...byIdentity.values()];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -387,7 +409,7 @@ async function runBeforeTool(
     if (path.rel === undefined || isNaxPath(path.rel)) return { kind: "allow" };
 
     const undelivered = (await governingRules(state, path.rel)).filter(
-      (rule) => !isDelivered(state, ctx.sessionName, rule.ruleId),
+      (rule) => !isDelivered(state, ctx.sessionName, rule),
     );
     return undelivered.length === 0 ? { kind: "allow" } : deliver(state, ctx, path.rel, undelivered, mode);
   } catch (err) {

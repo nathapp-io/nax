@@ -67,7 +67,6 @@ async function appendReviewRules(fc: FeatureContext, packagePath: string, paths:
  */
 async function appendProjectContextOverride(fc: FeatureContext, packagePath: string): Promise<void> {
   const override = await _workflowDeps.loadProjectContextOverride(fc.config);
-  if (override === undefined) return;
   const section = buildProjectContextSection(override);
   if (section === "") return;
   const file = Bun.file(packagePath);

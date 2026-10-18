@@ -84,15 +84,24 @@ describe("buildWorkflowBrief — the project-context override section (AC-7)", (
 
   test("no override emits no heading, and the brief is otherwise unchanged", () => {
     const withOut = buildWorkflowBrief({ ...briefInput, featureContext: "FEATURE" });
-    const withEmpty = buildWorkflowBrief({ ...briefInput, featureContext: "FEATURE", projectContextOverride: "" });
 
     expect(withOut).not.toContain(HEADING);
-    expect(withEmpty).not.toContain(HEADING);
     expect(withOut).toContain("## Feature context");
     expect(withOut).toContain("# Brief: US-007");
   });
 
-  test("a whitespace-only override is not a section", () => {
-    expect(buildWorkflowBrief({ ...briefInput, projectContextOverride: "   \n\n" })).not.toContain(HEADING);
+  test("a configured but empty override still carries its heading", () => {
+    const withEmpty = buildWorkflowBrief({ ...briefInput, featureContext: "FEATURE", projectContextOverride: "" });
+
+    // "configured" is the presence of a file, not the size of its content: the
+    // operator asked for the section, and an empty file renders as one.
+    expect(withEmpty).toContain(HEADING);
+    expect(withEmpty).toContain(`${HEADING}\n\n\n`);
+  });
+
+  test("a whitespace-only override is a section, with its content verbatim", () => {
+    const body = "   \n\n";
+
+    expect(buildWorkflowBrief({ ...briefInput, projectContextOverride: body })).toContain(`${HEADING}\n\n${body}\n`);
   });
 });

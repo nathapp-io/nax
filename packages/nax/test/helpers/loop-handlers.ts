@@ -116,3 +116,12 @@ export async function seedRule(root: string, rel: string, content: string): Prom
 export async function seedPackage(root: string, packageRel: string): Promise<void> {
   await Bun.write(join(root, packageRel, "package.json"), `{"name":"${packageRel}"}`);
 }
+
+/**
+ * Write one rule file at `<root>/<packageRel>/.nax/rules/<rel>` — the package
+ * layer `resolveRuleSet` lays over the repo layer. `seedRule` cannot express it:
+ * its `<rel>` would have to climb back out of `.nax/rules/`.
+ */
+export async function seedPackageRule(root: string, packageRel: string, rel: string, content: string): Promise<void> {
+  await Bun.write(join(root, packageRel, ".nax", "rules", rel), content);
+}

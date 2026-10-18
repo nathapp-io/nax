@@ -21,6 +21,7 @@ import {
   handlerContext,
   outcomeText,
   seedPackage,
+  seedPackageRule,
   seedRule,
   withInfoSpy,
   withTempDir,
@@ -270,6 +271,90 @@ describe("before_tool — path handling", () => {
       for (const payload of payloads) {
         expect(await callBeforeTool(set, payload, ctx)).toEqual({ kind: "allow" });
       }
+    });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Rule identity: the rule's own file, not its rule id
+// ─────────────────────────────────────────────────────────────────────────────
+
+const API_PACKAGE = "packages/api";
+const WEB_PACKAGE = "packages/web";
+const API_PATH = `${API_PACKAGE}/src/a.ts`;
+const WEB_PATH = `${WEB_PACKAGE}/src/a.ts`;
+const ROOT_PATH = "src/root.ts";
+const REPO_SHARED_BODY = "REPO-SHARED-BODY";
+const API_SHARED_BODY = "API-PACKAGE-SHARED-BODY";
+const WEB_SHARED_BODY = "WEB-PACKAGE-SHARED-BODY";
+
+/** A repo rule `shared` governing a root file, and a package rule of the same id in `packages/api`. */
+async function seedRepoAndPackageShared(repoRoot: string): Promise<void> {
+  await seedPackage(repoRoot, API_PACKAGE);
+  await seedRule(repoRoot, "shared.md", `---\nappliesTo:\n  - ${ROOT_PATH}\n---\n\n${REPO_SHARED_BODY}\n`);
+  await seedPackageRule(
+    repoRoot,
+    API_PACKAGE,
+    "shared.md",
+    `---\nappliesTo:\n  - src/a.ts\n---\n\n${API_SHARED_BODY}\n`,
+  );
+}
+
+/** One id, one file per sibling package, each governing that package's own `src/a.ts`. */
+async function seedSiblingShared(repoRoot: string): Promise<void> {
+  for (const [packageRel, body] of [
+    [API_PACKAGE, API_SHARED_BODY],
+    [WEB_PACKAGE, WEB_SHARED_BODY],
+  ] as const) {
+    await seedPackage(repoRoot, packageRel);
+    await seedPackageRule(repoRoot, packageRel, "shared.md", `---\nappliesTo:\n  - src/a.ts\n---\n\n${body}\n`);
+  }
+}
+
+describe("before_tool — delivery identity is the rule's file, not its rule id", () => {
+  test("a repo rule and a package rule sharing an id are delivered separately in one session", async () => {
+    await withTempDir(async (repoRoot) => {
+      await seedRepoAndPackageShared(repoRoot);
+      const set = handlersFor(repoRoot);
+      const ctx = handlerContext({ role: "wf-implementer", sessionName: "sess-identity" });
+
+      const rootRead = await callBeforeTool(set, read(ROOT_PATH), ctx);
+      expect(outcomeText(rootRead)).toContain(REPO_SHARED_BODY);
+
+      const packageRead = await callBeforeTool(set, read(API_PATH), ctx);
+
+      expect(packageRead.kind).toBe("nudge");
+      expect(outcomeText(packageRead)).toContain(API_SHARED_BODY);
+    });
+  });
+
+  test("a Write in that package is blocked once, with the package rule's own body", async () => {
+    await withTempDir(async (repoRoot) => {
+      await seedRepoAndPackageShared(repoRoot);
+      const set = handlersFor(repoRoot);
+      const ctx = handlerContext({ role: "wf-branch-fix", sessionName: "sess-identity-write" });
+
+      await callBeforeTool(set, read(ROOT_PATH), ctx);
+      const outcome = await callBeforeTool(set, write(API_PATH), ctx);
+
+      expect(outcome.kind).toBe("block");
+      expect(outcomeText(outcome)).toContain(API_SHARED_BODY);
+      expect(await callBeforeTool(set, write(API_PATH), ctx)).toEqual({ kind: "allow" });
+    });
+  });
+
+  test("two sibling packages' same-id rules are each delivered in one session", async () => {
+    await withTempDir(async (repoRoot) => {
+      await seedSiblingShared(repoRoot);
+      const set = handlersFor(repoRoot);
+      const ctx = handlerContext({ role: "wf-branch-review", sessionName: "sess-siblings" });
+
+      expect(outcomeText(await callBeforeTool(set, read(API_PATH), ctx))).toContain(API_SHARED_BODY);
+
+      const second = await callBeforeTool(set, read(WEB_PATH), ctx);
+
+      expect(second.kind).toBe("nudge");
+      expect(outcomeText(second)).toContain(WEB_SHARED_BODY);
     });
   });
 });

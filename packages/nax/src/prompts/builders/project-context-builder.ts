@@ -14,16 +14,20 @@
 const PROJECT_CONTEXT_HEADING = "## Project context (run override)";
 
 /**
- * The "## Project context (run override)" section, or "" when there is nothing to
- * show.
+ * The "## Project context (run override)" section, or "" when no file is
+ * configured.
  *
  * Deliberately not `section()` in `workflow-implementer-builder.ts`: that helper
  * trims its body, and this body is the operator's file verbatim
- * (SPEC-lazy-rules-delivery § Project-context override section). Only the decision
- * whether to render at all looks at whitespace — a file that holds nothing but
- * blank lines would otherwise add a heading with no content under it.
+ * (SPEC-lazy-rules-delivery § Project-context override section).
+ *
+ * Emptiness is decided by the presence of the file, not by its content: the
+ * section is what tells the agent a run-level context exists at all, and
+ * whether `context.projectContext.file` is empty is the operator's business,
+ * not a reason to drop it. A whitespace-only or empty body still renders its
+ * heading. Nothing configured (`undefined`) renders nothing.
  */
 export function buildProjectContextSection(projectContextOverride: string | undefined): string {
-  if (projectContextOverride === undefined || projectContextOverride.trim() === "") return "";
+  if (projectContextOverride === undefined) return "";
   return `${PROJECT_CONTEXT_HEADING}\n\n${projectContextOverride}\n`;
 }

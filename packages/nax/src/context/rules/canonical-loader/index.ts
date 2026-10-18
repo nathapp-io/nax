@@ -20,7 +20,7 @@
  * See: docs/specs/SPEC-context-engine-v2.md §Canonical rules delivery
  */
 
-import { basename, join } from "node:path";
+import { basename, join, posix } from "node:path";
 import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import { getLogger } from "@/logger";
@@ -436,6 +436,27 @@ export async function loadCanonicalRules(
 }
 
 /**
+ * The rules directory spelled as a prefix for the paths `globInDir` returns.
+ *
+ * `globInDir` yields `join(dir, rel)`: posix separators, and never a trailing
+ * separator, however the directory itself was spelled. A configured override
+ * directory ending in `/` (or carrying a `./` segment, or a `\\`) would
+ * otherwise match no prefix at all, and every nested rule would fall back to
+ * its basename — two packages' `a/shared.md` would share one rule id, and the
+ * resolver would name one of them twice (US-001 AC-4).
+ */
+function rulesDirPrefix(rulesDir: string): string {
+  const normalized = posix.normalize(rulesDir.replaceAll("\\", "/"));
+  return normalized.endsWith("/") ? normalized : `${normalized}/`;
+}
+
+/** A rule file's path relative to its rules directory, or its basename when it lies outside it. */
+function rulePathRelativeTo(filePath: string, prefix: string): string {
+  const normalized = posix.normalize(filePath.replaceAll("\\", "/"));
+  return normalized.startsWith(prefix) ? normalized.slice(prefix.length) : basename(normalized);
+}
+
+/**
  * Load all `.md` files from an arbitrary canonical rules directory — `.nax/rules/`
  * under a workdir, or a run-level override directory with the same layout.
  *
@@ -449,15 +470,9 @@ export async function loadCanonicalRulesFromDir(
 ): Promise<CanonicalRule[]> {
   const logger = _canonicalLoaderDeps.getLogger();
 
+  const prefix = rulesDirPrefix(rulesDir);
   const allFilePaths = _canonicalLoaderDeps.globInDir(rulesDir);
-  const filePaths = allFilePaths.filter((filePath) => {
-    const normalized = filePath.replaceAll("\\", "/");
-    const normalizedRulesDir = rulesDir.replaceAll("\\", "/");
-    const relativePath = normalized.startsWith(`${normalizedRulesDir}/`)
-      ? normalized.slice(normalizedRulesDir.length + 1)
-      : basename(normalized);
-    return relativePath.split("/").length <= 2;
-  });
+  const filePaths = allFilePaths.filter((filePath) => rulePathRelativeTo(filePath, prefix).split("/").length <= 2);
   if (allFilePaths.length > filePaths.length) {
     logger.warn("canonical-loader", "Ignoring canonical rule files deeper than one level", {
       ignoredCount: allFilePaths.length - filePaths.length,
@@ -472,11 +487,7 @@ export async function loadCanonicalRulesFromDir(
   const frontmatterIssues: RulesFrontmatterIssue[] = [];
 
   for (const filePath of filePaths) {
-    const normalizedPath = filePath.replaceAll("\\", "/");
-    const normalizedRulesDir = rulesDir.replaceAll("\\", "/");
-    const relativePath = normalizedPath.startsWith(`${normalizedRulesDir}/`)
-      ? normalizedPath.slice(normalizedRulesDir.length + 1)
-      : basename(normalizedPath);
+    const relativePath = rulePathRelativeTo(filePath, prefix);
     const fileName = basename(filePath);
     let content: string;
     try {
