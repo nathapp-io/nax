@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { makeFakeSandboxBackend } from "@test/helpers/sandbox";
+import { makeFakeSandboxBackend } from "@test/helpers";
 import { _sandboxExecDeps as deps, sandboxExecCommand } from "@/cli/sandbox-exec";
 
 const original = { ...deps };

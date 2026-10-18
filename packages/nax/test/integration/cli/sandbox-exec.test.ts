@@ -1,7 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { join } from "node:path";
-import { makeFakeSandboxBackend } from "@test/helpers/sandbox";
-import { cleanupTempDir, makeTempDir } from "@test/helpers/temp";
+import { cleanupTempDir, makeFakeSandboxBackend, makeTempDir } from "@test/helpers";
 import { _sandboxExecDeps as deps, sandboxExecCommand } from "@/cli/sandbox-exec";
 
 const original = { ...deps };
