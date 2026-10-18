@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
-  buildWorkflowStoryReviewPrompt,
   buildWorkflowBranchReviewPrompt,
+  buildWorkflowStoryReviewPrompt,
   WORKFLOW_ENUMERATION_INSTRUCTION,
   WORKFLOW_QUALITY_CHECKLIST,
 } from "@/prompts";
@@ -38,8 +38,10 @@ const branchReview = buildWorkflowBranchReviewPrompt({
   gateFindings: [],
 });
 
-const STATE_LOSS_LINE = "- State loss: a write that replaces a whole record, map entry or file that other code also fills, so the fields this write did not set are dropped; a reset, retry or migration that discards state still in use.";
-const STATE_LOSS_SEVERITY = "A state loss a caller can reach is a critical or important finding, never minor; if you cannot quote it, put it in cannotVerify.";
+const STATE_LOSS_LINE =
+  "- State loss: a write that replaces a whole record, map entry or file that other code also fills, so the fields this write did not set are dropped; a reset, retry or migration that discards state still in use.";
+const STATE_LOSS_SEVERITY =
+  "A state loss a caller can reach is a critical or important finding, never minor; if you cannot quote it, put it in cannotVerify.";
 
 describe("WORKFLOW_QUALITY_CHECKLIST", () => {
   test("is the checklist text verbatim (AC-1)", () => {
