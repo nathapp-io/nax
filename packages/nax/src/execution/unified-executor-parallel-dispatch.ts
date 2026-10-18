@@ -201,6 +201,7 @@ async function runManyStoryParallelBatch(
           activeStories: [...active],
         }),
       pipelineContext: {
+        plugins: ctx.pluginRegistry,
         config: ctx.config,
         rootConfig: ctx.config,
         prd,
