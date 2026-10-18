@@ -45,7 +45,7 @@ export const routingStage: PipelineStage = {
     const decision = await _routingDeps.resolveRouting(ctx.story, ctx.config, ctx.plugins, ctx, {
       skipPluginRouters: consultation.usable,
     });
-    const routerDecision = recordStoryRouterDecision(ctx.story.id, consultation, logger);
+    const routerAuditPatch = recordStoryRouterDecision(ctx.story.id, consultation, logger);
 
     // @design: BUG-032 / Open Item B / #1522 — the profile target seeds the starting
     // rung, a genuine escalation is preserved, and a stale leftover tier is not.
@@ -125,7 +125,7 @@ export const routingStage: PipelineStage = {
       ...(initialAgent !== undefined && { initialAgent }),
       ...(initialProfileId !== undefined && { initialProfileId }),
       ...(initialModelTier !== undefined && { initialModelTier }),
-      ...(routerDecision !== undefined && { routerDecision }),
+      ...routerAuditPatch,
     };
     // BUG-36: gate on skipPrdPersistence like completion.ts does — without this,
     // a worktree pipeline that now carries prdPath (routing/rectification re-use

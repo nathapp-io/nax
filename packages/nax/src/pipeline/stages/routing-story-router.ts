@@ -1,6 +1,6 @@
 import type { NaxConfig } from "@/config";
 import type { Logger } from "@/logger";
-import type { StoryRouterDecision, UserStory } from "@/prd";
+import type { StoryRouterDecision, StoryRouting, UserStory } from "@/prd";
 import type { consultStoryRouter, StoryRouterOutcome } from "@/routing";
 import type { PipelineContext } from "../types";
 
@@ -45,14 +45,14 @@ export async function consultEligibleStoryRouter(
   return { usable, mode, plannedProfileId, outcome };
 }
 
-/** Transient failures are logged but deliberately not memoized, so a later pass retries. */
+/** Return a write-back patch; transient failures are logged but leave routing untouched for retries. */
 export function recordStoryRouterDecision(
   storyId: string,
   consultation: StoryRouterConsultation,
   logger: Logger,
-): StoryRouterDecision | undefined {
+): Pick<StoryRouting, "routerDecision"> {
   const { outcome, mode, plannedProfileId } = consultation;
-  if (!outcome || outcome.kind === "no-router" || !mode) return undefined;
+  if (!outcome || outcome.kind === "no-router" || !mode) return {};
   if (outcome.kind === "error" || outcome.kind === "timeout") {
     logger.warn("routing", "routing.router.failed", {
       storyId,
@@ -62,7 +62,7 @@ export function recordStoryRouterDecision(
       ...(outcome.kind === "error" && { message: outcome.message }),
       latencyMs: outcome.latencyMs,
     });
-    return undefined;
+    return {};
   }
   const decision: StoryRouterDecision = {
     mode,
@@ -75,7 +75,7 @@ export function recordStoryRouterDecision(
     decidedAt: new Date().toISOString(),
   };
   logStoryRouterDecision(storyId, { decision, latencyMs: outcome.latencyMs }, logger);
-  return decision;
+  return { routerDecision: decision };
 }
 
 function logStoryRouterDecision(
