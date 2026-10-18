@@ -24,12 +24,15 @@
 
 import { stat } from "node:fs/promises";
 import type { LoopHandlerSet } from "@nathapp/nax-agent/internal";
-import type { NaxConfig } from "@/config";
+import { isWorkflowMode, type NaxConfig } from "@/config";
+import { createRuleDeliveryHandlers } from "@/context/rules/rule-delivery";
 import { NaxError } from "@/errors";
 
 export const _runRulesSetupDeps: {
   /** Directory existence probe for `context.rules.overrideDir`. */
   dirExists: (path: string) => Promise<boolean>;
+  /** US-005 — the native rule-delivery handlers the run registers. */
+  createRuleDeliveryHandlers: typeof createRuleDeliveryHandlers;
 } = {
   /**
    * Deliberately not `Bun.file(dir).exists()`: that reports `false` for a
@@ -43,6 +46,7 @@ export const _runRulesSetupDeps: {
       return false;
     }
   },
+  createRuleDeliveryHandlers,
 };
 
 /** Validates both overrides (throws before returning); returns the set for configureLoopHandlers. */
@@ -61,5 +65,35 @@ export async function configureRunRules(input: {
       overrideDir,
     });
   }
-  return input.pluginHandlers;
+  return withRuleDeliveryHandlers(input.config, input.workdir, input.pluginHandlers, overrideDir);
+}
+
+/**
+ * US-005 — append the native rule-delivery handlers to the plugin set.
+ *
+ * Two conditions gate the append. Under `context.rules.delivery: "push"` the
+ * brief carries every rule body again, so a handler would deliver the same text
+ * a second time; in pipeline mode nothing runs the native loop these handlers
+ * belong to. In both cases the plugin registry's own set is returned by
+ * identity, which is what US-002 pinned.
+ *
+ * The append is deliberately AFTER the plugin entries: `dispatchBeforeTool`
+ * keeps the last nudge, so a plugin that nudges a governed call cannot suppress
+ * the rule text — and a plugin block still short-circuits the chain, because a
+ * block is the dispatcher's verdict rather than a chained decision.
+ */
+function withRuleDeliveryHandlers(
+  config: NaxConfig,
+  workdir: string,
+  pluginHandlers: LoopHandlerSet,
+  overrideDir: string | undefined,
+): LoopHandlerSet {
+  if (!isWorkflowMode(config)) return pluginHandlers;
+  if ((config.context?.rules?.delivery ?? "index") !== "index") return pluginHandlers;
+  const handlers = _runRulesSetupDeps.createRuleDeliveryHandlers({
+    repoRoot: workdir,
+    ...(overrideDir !== undefined && { overrideDir }),
+    overrideMode: config.context?.rules?.overrideMode ?? "merge",
+  });
+  return [...pluginHandlers, ...handlers];
 }

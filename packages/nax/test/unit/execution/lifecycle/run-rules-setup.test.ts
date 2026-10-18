@@ -7,6 +7,11 @@
  * fail-closed: the operator asked for those rules, and a run that silently
  * proceeded without them would look identical to a run that honoured them.
  *
+ * US-005 extends the same call: under workflow mode with
+ * `context.rules.delivery: "index"` the native rule-delivery handlers are
+ * appended after the plugin entries. `push` — and pipeline mode — still return
+ * the registry's own set *by identity*, which is the invariant US-002 pinned.
+ *
  * The existence probe is a `_deps` seam, so these tests never touch the disk —
  * the integration file drives it for real through `initializeAfterLock`.
  */
@@ -14,6 +19,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { LoopHandlerSet } from "@nathapp/nax-agent/internal";
 import { assertNaxError, makeNaxConfig, makeSparseNaxConfig } from "@test/helpers";
+import { RULE_DELIVERY_PLUGIN } from "@/context/rules/rule-delivery";
 import { _runRulesSetupDeps, configureRunRules } from "@/execution/lifecycle/run-rules-setup";
 
 const REAL_DIR_EXISTS = _runRulesSetupDeps.dirExists;
@@ -40,11 +46,11 @@ function configWithOverrideDir(overrideDir: string | undefined, delivery: "index
 }
 
 describe("configureRunRules — passing the plugin set through (US-002)", () => {
-  test("returns the plugin registry's own set by identity when no overrideDir is configured", async () => {
+  test("delivery 'push' returns the plugin registry's own set by identity", async () => {
     const asked = stubDirExists(true);
 
     const out = await configureRunRules({
-      config: configWithOverrideDir(undefined),
+      config: configWithOverrideDir(undefined, "push"),
       workdir: "/repo",
       pluginHandlers: PLUGIN_HANDLERS,
     });
@@ -53,16 +59,32 @@ describe("configureRunRules — passing the plugin set through (US-002)", () => 
     expect(asked).toEqual([]);
   });
 
-  test("returns the plugin registry's own set by identity when the overrideDir exists", async () => {
+  test("delivery 'push' returns the plugin registry's own set by identity when the overrideDir exists", async () => {
     stubDirExists(true);
 
     const out = await configureRunRules({
-      config: configWithOverrideDir("/abs/org-rules"),
+      config: configWithOverrideDir("/abs/org-rules", "push"),
       workdir: "/repo",
       pluginHandlers: PLUGIN_HANDLERS,
     });
 
     expect(out).toBe(PLUGIN_HANDLERS);
+  });
+
+  test("delivery 'index' appends the rule-delivery handlers after the plugin entries (US-005)", async () => {
+    stubDirExists(true);
+
+    const out = await configureRunRules({
+      config: configWithOverrideDir(undefined),
+      workdir: "/repo",
+      pluginHandlers: PLUGIN_HANDLERS,
+    });
+
+    expect(out[0]).toBe(PLUGIN_HANDLERS[0]);
+    expect(out.slice(PLUGIN_HANDLERS.length).map((entry) => entry.plugin)).toEqual([
+      RULE_DELIVERY_PLUGIN,
+      RULE_DELIVERY_PLUGIN,
+    ]);
   });
 
   test("probes exactly the configured overrideDir", async () => {
@@ -128,7 +150,10 @@ describe("configureRunRules — RULES_OVERRIDE_DIR_NOT_FOUND (US-002)", () => {
 
     const out = await configureRunRules({ config: sparse, workdir: "/repo", pluginHandlers: PLUGIN_HANDLERS });
 
-    expect(out).toBe(PLUGIN_HANDLERS);
+    // An unparsed config still reads as workflow mode with the schema's default
+    // delivery, so the plugin entry leads and the two handlers follow it.
+    expect(out[0]).toBe(PLUGIN_HANDLERS[0]);
+    expect(out).toHaveLength(PLUGIN_HANDLERS.length + 2);
     expect(asked).toEqual([]);
   });
 });

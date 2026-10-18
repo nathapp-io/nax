@@ -7,7 +7,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import type { ResolvedRule } from "@/context/rules/rule-set";
-import { buildRulesIndexSection, toRulesIndexEntry } from "@/prompts";
+import { buildRuleDeliveryText, buildRulesIndexSection, toRulesIndexEntry } from "@/prompts";
 
 /** A `ResolvedRule` with only the fields an index entry reads. */
 function resolvedRule(partial: Partial<ResolvedRule> & { ruleId: string }): ResolvedRule {
@@ -274,5 +274,86 @@ describe("toRulesIndexEntry", () => {
     );
     expect(entry.ruleId).toBe("f");
     expect(entry.description).toBe("F");
+  });
+});
+
+describe("buildRuleDeliveryText", () => {
+  test("AC-1: names the path and renders each delivered rule under a '### <id> (<path>)' heading", () => {
+    const text = buildRuleDeliveryText({
+      path: "packages/nax/src/foo.ts",
+      delivered: [resolvedRule({ ruleId: "r", content: "RULE-BODY\n" })],
+      listedOnly: [],
+      mode: "read",
+    });
+
+    expect(text.startsWith("Rules that apply to packages/nax/src/foo.ts:")).toBe(true);
+    expect(text).toContain("### r (.nax/rules/r.md)");
+    expect(text).toContain("RULE-BODY");
+  });
+
+  test("AC-1: an override rule's absolute display path is the heading's parenthetical", () => {
+    const text = buildRuleDeliveryText({
+      path: "packages/nax/src/foo.ts",
+      delivered: [
+        resolvedRule({
+          ruleId: "org-logging",
+          source: "override",
+          displayPath: "/abs/org-rules/org-logging.md",
+          content: "ORG-BODY\n",
+        }),
+      ],
+      listedOnly: [],
+      mode: "read",
+    });
+
+    expect(text).toContain("### org-logging (/abs/org-rules/org-logging.md)");
+  });
+
+  test("AC-4: write mode ends with the refuse-once retry sentence", () => {
+    const text = buildRuleDeliveryText({
+      path: "packages/nax/src/foo.ts",
+      delivered: [resolvedRule({ ruleId: "r", content: "RULE-BODY\n" })],
+      listedOnly: [],
+      mode: "write",
+    });
+
+    expect(text.trimEnd().endsWith("No files were changed. Review these rules and retry the tool call.")).toBe(true);
+  });
+
+  test("AC-1: read mode does not carry the retry sentence", () => {
+    const text = buildRuleDeliveryText({
+      path: "packages/nax/src/foo.ts",
+      delivered: [resolvedRule({ ruleId: "r", content: "RULE-BODY\n" })],
+      listedOnly: [],
+      mode: "read",
+    });
+
+    expect(text).not.toContain("No files were changed");
+  });
+
+  test("AC-15: rules past the cap are listed by id and path, with no body", () => {
+    const text = buildRuleDeliveryText({
+      path: "packages/nax/src/foo.ts",
+      delivered: [resolvedRule({ ruleId: "shown", content: "SHOWN-BODY\n" })],
+      listedOnly: [resolvedRule({ ruleId: "listed", content: "LISTED-BODY\n" })],
+      mode: "read",
+    });
+
+    expect(text).toContain("Also applies (not shown, open the file): listed (.nax/rules/listed.md)");
+    expect(text).not.toContain("LISTED-BODY");
+    expect(text).toContain("SHOWN-BODY");
+  });
+
+  test("AC-4: the retry sentence follows the listed-only lines in write mode", () => {
+    const text = buildRuleDeliveryText({
+      path: "packages/nax/src/foo.ts",
+      delivered: [resolvedRule({ ruleId: "shown", content: "SHOWN-BODY\n" })],
+      listedOnly: [resolvedRule({ ruleId: "listed", content: "LISTED-BODY\n" })],
+      mode: "write",
+    });
+
+    expect(text.indexOf("Also applies (not shown, open the file): listed")).toBeLessThan(
+      text.indexOf("No files were changed."),
+    );
   });
 });

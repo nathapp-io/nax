@@ -28,6 +28,7 @@ import {
   makeStory,
   makeTempDir,
 } from "@test/helpers";
+import { RULE_DELIVERY_PLUGIN } from "@/context/rules/rule-delivery";
 import type { InitializeAfterLockDeps, InitializeAfterLockResult } from "@/execution/lifecycle/run-setup-init";
 import { initializeAfterLock } from "@/execution/lifecycle/run-setup-init";
 
@@ -150,14 +151,21 @@ describe("US-004 — initializeAfterLock: delivering the loaded loop handlers", 
 
     expect(configure).toHaveBeenCalledTimes(1);
     const set = deliveredSet(configure);
-    // The delivered array IS the registry's own set — not a re-derived one.
-    expect(set).toBe(result.pluginRegistry.getLoopHandlers());
-    expect(set).toHaveLength(1);
+    // US-005: the delivered set STARTS with the registry's own entries, in
+    // order and by identity — the rule-delivery handlers are appended after
+    // them, they do not replace or re-derive them.
+    const pluginSet = result.pluginRegistry.getLoopHandlers();
+    expect(set.length).toBeGreaterThan(pluginSet.length);
+    for (const [index, entry] of pluginSet.entries()) {
+      expect(set[index]).toBe(entry);
+    }
     const delivered = set[0];
     assertDefined(delivered, "the delivered loop-handler entry");
     expect(delivered.plugin).toBe(LOOP_HANDLER_PLUGIN);
     expect(delivered.event).toBe("before_turn");
     expect(typeof delivered.handler).toBe("function");
+    // Every later entry is one of US-005's.
+    expect(set.slice(pluginSet.length).every((entry) => entry.plugin === RULE_DELIVERY_PLUGIN)).toBe(true);
   });
 
   test("AC10 (boundary): a plugin providing something else contributes no entry", async () => {
@@ -170,6 +178,9 @@ describe("US-004 — initializeAfterLock: delivering the loaded loop handlers", 
 
     expect(configure).toHaveBeenCalledTimes(1);
     const set = deliveredSet(configure);
-    expect(set.map((entry) => entry.plugin)).toEqual([LOOP_HANDLER_PLUGIN]);
+    // Exactly one entry is not the rule-delivery pair — the plugin's.
+    expect(set.filter((entry) => entry.plugin !== RULE_DELIVERY_PLUGIN).map((entry) => entry.plugin)).toEqual([
+      LOOP_HANDLER_PLUGIN,
+    ]);
   });
 });

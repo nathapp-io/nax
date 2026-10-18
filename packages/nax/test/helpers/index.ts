@@ -81,6 +81,18 @@ export {
   webhookInternals,
 } from "./interaction-internals";
 export { makeLinkWithCosts } from "./link-with-costs";
+export {
+  beforeCompactionPayload,
+  beforeToolPayload,
+  callBeforeCompaction,
+  callBeforeTool,
+  handlerContext,
+  loopHandlerEntry,
+  outcomeText,
+  seedPackage,
+  seedRule,
+  toolCall,
+} from "./loop-handlers";
 export { type MockMergeEngine, makeMergeEngine } from "./merge-engine";
 export { makeAgentAdapter } from "./mock-agent-adapter";
 export { createMockAgentManager, makeMockAgentManager } from "./mock-agent-manager";
