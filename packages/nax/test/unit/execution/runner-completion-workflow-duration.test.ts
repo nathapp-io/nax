@@ -133,8 +133,9 @@ describe("runCompletionPhase — Duration in workflow mode (nax#2491)", () => {
 
   test("handleRunCompletion is asked to hold run.complete back", async () => {
     await runCompletionPhase(opts("workflow"));
-    const call = (_runnerCompletionDeps.handleRunCompletion as ReturnType<typeof mock>).mock.calls[0];
-    expect(call?.[0]).toMatchObject({ deferRunCompleteLog: true });
+    expect(_runnerCompletionDeps.handleRunCompletion).toHaveBeenCalledWith(
+      expect.objectContaining({ deferRunCompleteLog: true }),
+    );
   });
 
   test("the saved metrics record is rewritten with the whole-run duration and both parts (M1)", async () => {

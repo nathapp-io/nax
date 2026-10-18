@@ -114,15 +114,18 @@ test("AC-8 list failure still warns", async () => {
   );
 });
 test.each([
-  ["AC-9", "native", { ...AUTH, outcome: "fail-rate-limit" } as AdapterFailure, "balanced", undefined],
+  ["AC-9", "native", { ...AUTH, outcome: "fail-rate-limit" }, "balanced", undefined],
   ["AC-10", "claude", AUTH, "fast", undefined],
   ["unknown provider", "native", AUTH, undefined, "unknown/model"],
-] as const)("%s ignores irrelevant failures", async (_ac, agent, failure, tier, model) => {
-  const { manager } = setup();
-  await manager.reportAuthFailure(agent, failure, tier, model);
-  expect(logger.warn).not.toHaveBeenCalled();
-  expect(manager.authRelogins()).toEqual([]);
-});
+] satisfies [string, string, AdapterFailure, string | undefined, string | undefined][])(
+  "%s ignores irrelevant failures",
+  async (_ac, agent, failure, tier, model) => {
+    const { manager } = setup();
+    await manager.reportAuthFailure(agent, failure, tier, model);
+    expect(logger.warn).not.toHaveBeenCalled();
+    expect(manager.authRelogins()).toEqual([]);
+  },
+);
 test("AC-12 replaces provider notice after fingerprint change", async () => {
   const { manager } = setup();
   await manager.reportAuthFailure("native", AUTH, "balanced");

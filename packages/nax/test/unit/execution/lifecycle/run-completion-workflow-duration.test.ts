@@ -18,7 +18,7 @@ import { handleRunCompletion } from "@/execution";
 import { logRunCompletion } from "@/execution/lifecycle/run-completion-phases";
 import { addSink, getSafeLogger, initLogger, type LogEntry, resetLogger } from "@/logger";
 import { pipelineEventBus } from "@/pipeline";
-import { countStories, type PRD, type UserStory } from "@/prd";
+import { countStories, type PRD } from "@/prd";
 import { type CostSnapshot, createNoOpCostAggregator, type ICostAggregator } from "@/runtime";
 
 const WORKDIR = `/tmp/nax-test-run-completion-wf-duration-${randomUUID()}`;
@@ -32,7 +32,7 @@ function prd(): PRD {
     updatedAt: new Date().toISOString(),
     userStories: [
       makeStory({ id: "US-001", title: "t", description: "d", status: "passed", passes: true, attempts: 1 }),
-    ] as UserStory[],
+    ],
   };
 }
 

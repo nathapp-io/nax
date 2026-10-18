@@ -39,6 +39,17 @@ export interface CallOpStubOptions {
 }
 
 /**
+ * The one `unknown → O` conversion these stand-ins need. `callOp` is generic in
+ * `O` and the caller picks it, so no test-side value can prove the envelope is
+ * one: the cast has to live somewhere, and it lives here rather than at each
+ * site. It carries the `test-ratchet-allow` marker, so the cast ratchet counts
+ * it as `ratchetAllow` (baselined) instead of `looseCast`.
+ */
+function asOpResult<O>(value: unknown): O {
+  return value as unknown as O; // test-ratchet-allow: as-unknown-as
+}
+
+/**
  * A `callOp` stand-in whose result is scripted for EVERY op, deterministic ones
  * included (unlike {@link makeCallOp}, which runs deterministic ops for real).
  * `respond` may throw to script a failing dispatch. The one `O` cast lives here
@@ -47,10 +58,8 @@ export interface CallOpStubOptions {
 export function makeScriptedCallOp(
   respond: (op: { name: string; kind: string }, input: unknown, ctx: CallContext) => unknown,
 ) {
-  return async <I, O, C>(ctx: CallContext, op: Operation<I, O, C>, input: I): Promise<O> => {
-    const value: unknown = respond(op, input, ctx);
-    return value as O;
-  };
+  return async <I, O, C>(ctx: CallContext, op: Operation<I, O, C>, input: I): Promise<O> =>
+    asOpResult<O>(respond(op, input, ctx));
 }
 
 /**
@@ -66,6 +75,6 @@ export function makeCallOp(options: CallOpStubOptions = {}) {
     if (op.kind === "deterministic") return op.execute(input, ctx);
     const value = next ? next() : fallback;
     if (value instanceof Error) throw value;
-    return value as unknown as O; // test-ratchet-allow: as-unknown-as
+    return asOpResult<O>(value);
   };
 }

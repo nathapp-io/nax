@@ -368,7 +368,8 @@ describe("workflowContextStage — provider fetch throws (AC-10, AC-11, AC-12)",
       await workflowContextStage.execute(makeCtx());
 
       expect(warnSpy).toHaveBeenCalledTimes(1);
-      const data = warnSpy.mock.calls[0]?.[2] as Record<string, unknown>;
+      // `Logger.warn`'s data parameter is already `Record<string, unknown>`, so no cast.
+      const data = warnSpy.mock.calls[0]?.[2] ?? {};
       expect(Object.keys(data)[0]).toBe("storyId");
       expect(data.storyId).toBe("US-004");
     });
