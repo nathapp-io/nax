@@ -17,6 +17,8 @@ import {
 } from "#src/client/registry";
 import { type AcpPermissionRules, type AcpRule, NO_RULES } from "#src/client/rule-policy";
 
+import type { ShellSandboxPlan } from "#src/client/shell-sandbox";
+
 export const DEFAULT_CANCEL_GRACE_MS = 10_000;
 export const DEFAULT_INITIALIZE_TIMEOUT_MS = 60_000;
 
@@ -53,6 +55,14 @@ export interface AcpBackendOptions {
   };
   /** Where an agent's rule-policy files are written; absolute. Defaults to DEFAULT_STATE_DIR. */
   readonly stateDir?: string;
+  /** Optional command-only sandbox; the agent process still runs on the host. */
+  readonly shellSandbox?: {
+    readonly runtime: string;
+    readonly runner: readonly string[];
+    readonly pi?: { readonly extensions?: "user" | "none" };
+    readonly opencode?: { readonly projectConfig?: "disable" | "keep" };
+    readonly cursor?: { readonly onUnwrapped?: "rules" | "deny" };
+  };
   /** Overrides the registry's launch command (a bare name or an absolute path). */
   readonly command?: string;
   readonly args?: readonly string[];
@@ -79,6 +89,16 @@ export interface ResolvedAcpOptions {
   readonly rules: AcpPermissionRules;
   /** The directory an agent's rule-policy files go in (absolute). */
   readonly stateDir: string;
+  readonly shellSandbox:
+    | {
+        readonly runtime: string;
+        readonly runner: readonly string[];
+        readonly piExtensions: "user" | "none";
+        readonly opencodeProjectConfig: "disable" | "keep";
+        readonly cursorOnUnwrapped: "rules" | "deny";
+      }
+    | undefined;
+  readonly shellSandboxPlan?: ShellSandboxPlan;
   readonly env: Readonly<Record<string, string>>;
   /** Values redacted from every agent excerpt (D-g). */
   readonly secrets: readonly string[];
@@ -121,6 +141,15 @@ const SCHEMA = z
     inheritEnv: z.boolean().optional(),
     rules: rulesSchema.optional(),
     stateDir: stateDirSchema.optional(),
+    shellSandbox: z
+      .strictObject({
+        runtime: stateDirSchema,
+        runner: z.array(plain).min(1),
+        pi: z.strictObject({ extensions: z.enum(["user", "none"]).optional() }).optional(),
+        opencode: z.strictObject({ projectConfig: z.enum(["disable", "keep"]).optional() }).optional(),
+        cursor: z.strictObject({ onUnwrapped: z.enum(["rules", "deny"]).optional() }).optional(),
+      })
+      .optional(),
     command: command.optional(),
     args: z.array(plain).optional(),
     cancelGraceMs: z.number().int().positive().max(600_000).optional(),
@@ -153,6 +182,17 @@ function freezeRules(input: z.output<typeof rulesSchema> | undefined): AcpPermis
     allow: Object.freeze((input.allow ?? []).map(freezeRule)),
     deny: Object.freeze((input.deny ?? []).map(freezeRule)),
     ask: Object.freeze((input.ask ?? []).map(freezeRule)),
+  });
+}
+
+function freezeShellSandbox(input: ParsedOptions["shellSandbox"]): ResolvedAcpOptions["shellSandbox"] {
+  if (input === undefined) return undefined;
+  return Object.freeze({
+    runtime: input.runtime,
+    runner: Object.freeze([...input.runner]),
+    piExtensions: input.pi?.extensions ?? "user",
+    opencodeProjectConfig: input.opencode?.projectConfig ?? "disable",
+    cursorOnUnwrapped: input.cursor?.onUnwrapped ?? "rules",
   });
 }
 
@@ -193,6 +233,7 @@ function resolved(
     effort: data.effort,
     rules: freezeRules(data.rules),
     stateDir: data.stateDir ?? DEFAULT_STATE_DIR,
+    shellSandbox: freezeShellSandbox(data.shellSandbox),
     env: Object.freeze(env),
     secrets: Object.freeze([...secretValues(env)]),
     cancelGraceMs: data.cancelGraceMs ?? DEFAULT_CANCEL_GRACE_MS,

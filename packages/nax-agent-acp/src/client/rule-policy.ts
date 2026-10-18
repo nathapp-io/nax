@@ -17,6 +17,7 @@ import type { ResolvedAcpOptions } from "#src/client/options";
 import { writeCursorPolicy, writePiFile } from "#src/client/policy-files";
 import { OPENCODE_NONE_CONFIG, OPENCODE_READ_CONFIG, OPENCODE_REVIEW_CONFIG } from "#src/client/registry";
 import { PI_SHELL_GATE_SOURCE } from "#src/client/shell-rules";
+import { shellQuote } from "#src/client/shell-sandbox";
 
 export interface AcpRule {
   readonly tool: string;
@@ -136,14 +137,9 @@ const PI_WRAPPER_MODE = 0o700;
 /** pi-acp's own default when the caller names no executable. */
 const PI_DEFAULT_COMMAND = "pi";
 
-/** One `sh` word, single-quoted; a `'` inside becomes `'\''`. */
-function shQuote(word: string): string {
-  return `'${word.replaceAll("'", "'\\''")}'`;
-}
-
 /** The wrapper `PI_ACP_PI_COMMAND` names: exec pi with the profile's arguments, forwarding the caller's own. */
 function piWrapper(command: string, args: readonly string[]): string {
-  return `#!/bin/sh\nexec ${[command, ...args].map(shQuote).join(" ")} "$@"\n`;
+  return `#!/bin/sh\nexec ${[command, ...args].map(shellQuote).join(" ")} "$@"\n`;
 }
 
 /**

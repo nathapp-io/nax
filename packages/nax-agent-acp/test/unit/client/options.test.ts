@@ -148,6 +148,60 @@ describe("resolveAcpOptions: onProcess (S4b spec §8)", () => {
   );
 });
 
+const SHELL = { runtime: "/usr/local/bin/bun", runner: ["/opt/nax/nax.js", "sandbox", "exec"] };
+
+describe("resolveAcpOptions: shellSandbox", () => {
+  test("AC-1 defaults and frozen detached settings", () => {
+    const result = resolveAcpOptions({ agent: "pi", allowUnsandboxed: true, shellSandbox: SHELL }, {});
+    expect(result.shellSandbox).toEqual({
+      ...SHELL,
+      piExtensions: "user",
+      opencodeProjectConfig: "disable",
+      cursorOnUnwrapped: "rules",
+    });
+    expect(Object.isFrozen(result.shellSandbox)).toBe(true);
+    expect(Object.isFrozen(result.shellSandbox?.runner)).toBe(true);
+    expect(result.shellSandbox?.runner).not.toBe(SHELL.runner);
+    expect(result).not.toHaveProperty("shellSandboxPlan");
+  });
+  test("AC-2 explicit knobs", () => {
+    const result = resolveAcpOptions(
+      {
+        agent: "pi",
+        allowUnsandboxed: true,
+        shellSandbox: {
+          ...SHELL,
+          pi: { extensions: "none" },
+          opencode: { projectConfig: "keep" },
+          cursor: { onUnwrapped: "deny" },
+        },
+      },
+      {},
+    );
+    expect(result.shellSandbox).toEqual({
+      ...SHELL,
+      piExtensions: "none",
+      opencodeProjectConfig: "keep",
+      cursorOnUnwrapped: "deny",
+    });
+  });
+  test("AC-3 absent settings", () => {
+    expect(resolveAcpOptions({ agent: "pi", allowUnsandboxed: true }, {}).shellSandbox).toBeUndefined();
+  });
+  test.each([
+    ["AC-4", { ...SHELL, runtime: "bun" }, "shellSandbox.runtime"],
+    ["AC-5", { ...SHELL, runner: [] }, "shellSandbox.runner"],
+    ["AC-6 cursor", { ...SHELL, cursor: { onUnwrapped: "allow" } }, "shellSandbox.cursor.onUnwrapped"],
+    ["AC-6 pi", { ...SHELL, pi: { extensions: "invalid" } }, "shellSandbox.pi.extensions"],
+    ["AC-6 opencode", { ...SHELL, opencode: { projectConfig: "invalid" } }, "shellSandbox.opencode.projectConfig"],
+  ])("%s rejects invalid settings", (_ac, shellSandbox, path) => {
+    expect(invalid({ agent: "pi", allowUnsandboxed: true, shellSandbox })).toEqual({
+      code: "AGENT_SESSION_INVALID_OPTIONS",
+      path,
+    });
+  });
+});
+
 const OPENCODE = { agent: "opencode", allowUnsandboxed: true } as const;
 
 describe("resolveAcpOptions: rules and stateDir (SPEC-cursor-pi-acp-read-only US-002)", () => {

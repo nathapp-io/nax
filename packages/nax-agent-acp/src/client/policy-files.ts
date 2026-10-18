@@ -37,7 +37,7 @@ const DIR_MODE = 0o700;
 const CURSOR_CONFIG_MODE = 0o600;
 
 /** The content-addressed part of a policy path. */
-function digest(content: string): string {
+export function digest(content: string): string {
   return createHash("sha256").update(content).digest("hex").slice(0, 16);
 }
 
