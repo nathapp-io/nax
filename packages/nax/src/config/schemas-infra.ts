@@ -16,6 +16,7 @@ import {
   DEFAULT_AGENT_OPENCODE_ACP_CONFIG,
 } from "./schemas-acp-agents";
 import { ConfiguredModelSchema, ModelTierSchema, ProviderCatalogOverrideSchema } from "./schemas-model";
+import { StoryRouterConfigSchema } from "./schemas-router";
 
 export const PlanConfigSchema = z.object({
   model: ConfiguredModelSchema,
@@ -143,6 +144,7 @@ export type AgentRoutingConfig = z.infer<typeof AgentRoutingConfigSchema>;
 export const RoutingConfigSchema = z.object({
   strategy: z.enum(["keyword", "llm"]),
   llm: LlmRoutingConfigSchema.optional(),
+  router: StoryRouterConfigSchema.prefault({}),
   agents: AgentRoutingConfigSchema.default({ enabled: true, strategy: "off", profiles: [] }),
 });
 
