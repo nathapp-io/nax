@@ -3,7 +3,7 @@
   "feature": "acp-shell-sandbox",
   "branchName": "feat/acp-shell-sandbox",
   "createdAt": "2026-10-18T00:00:00Z",
-  "updatedAt": "2026-10-18T04:36:34.808Z",
+  "updatedAt": "2026-10-18T04:48:35.635Z",
   "userStories": [
     {
       "id": "US-001",
@@ -405,14 +405,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Cross-module default-on access-control configuration crosses a validated private env boundary into session backend options while preserving adapter isolation and existing config invariants."
+        "reasoning": "Cross-module default-on access-control configuration crosses a validated private env boundary into session backend options while preserving adapter isolation and existing config invariants.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/agents/acp/open-context.ts",
@@ -455,7 +458,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "652e64db4e5ac518e35ca83b562aa3f3cef12022"
     },
     {
       "id": "US-007",
