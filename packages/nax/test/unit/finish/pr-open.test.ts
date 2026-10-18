@@ -92,9 +92,9 @@ describe("openDraftFinishPr", () => {
   test("warns with the forge error when the PR list call fails", async () => {
     const entries = captureLogs();
     const { deps } = depsFor(() => ({ exitCode: 1, stderr: "Unknown flag: --state." }));
-    await openDraftFinishPr(args, deps);
+    await openDraftFinishPr({ ...args, forge: "gitlab" }, deps);
     const warn = entries.find((e) => e.level === "warn" && e.message === "Draft PR/MR not opened");
-    expect(warn?.data).toMatchObject({ branch: "feat/demo", forge: "github" });
+    expect(warn?.data).toMatchObject({ branch: "feat/demo", forge: "gitlab" });
     expect(String(warn?.data?.error)).toContain("Unknown flag: --state.");
   });
 
