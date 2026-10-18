@@ -3,7 +3,7 @@
   "feature": "acp-shell-sandbox",
   "branchName": "feat/acp-shell-sandbox",
   "createdAt": "2026-10-18T00:00:00Z",
-  "updatedAt": "2026-10-18T04:15:36.288Z",
+  "updatedAt": "2026-10-18T04:21:54.356Z",
   "userStories": [
     {
       "id": "US-001",
@@ -118,14 +118,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "The existing connect, router, policyLaunchEnv and modeFor seams bound the cross-module integration; exact wrapper checks and operator-rule enforcement still require strict three-session TDD for access control."
+        "reasoning": "The existing connect, router, policyLaunchEnv and modeFor seams bound the cross-module integration; exact wrapper checks and operator-rule enforcement still require strict three-session TDD for access control.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent-acp/src/client/permissions.ts",
@@ -147,7 +150,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "fecb12344fccaa3b9119bd090622209a84046457"
     },
     {
       "id": "US-003",
