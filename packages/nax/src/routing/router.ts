@@ -178,20 +178,19 @@ export async function resolveRouting(
   }
 
   // 1. Plugin routers — highest priority (unless already consulted by the caller)
-  if (plugins && !options?.skipPluginRouters) {
-    for (const pluginRouter of plugins.getRouters()) {
-      try {
-        const decision = await pluginRouter.route(story, {
-          ...runtimeContext,
-          config,
-        } as RoutingContext);
-        if (decision !== null) return decision;
-      } catch (err) {
-        logger?.warn("routing", `Plugin router "${pluginRouter.name}" failed`, {
-          storyId: story.id,
-          error: (err as Error).message,
-        });
-      }
+  const pluginRouters = options?.skipPluginRouters ? [] : (plugins?.getRouters() ?? []);
+  for (const pluginRouter of pluginRouters) {
+    try {
+      const decision = await pluginRouter.route(story, {
+        ...runtimeContext,
+        config,
+      } as RoutingContext);
+      if (decision !== null) return decision;
+    } catch (err) {
+      logger?.warn("routing", `Plugin router "${pluginRouter.name}" failed`, {
+        storyId: story.id,
+        error: (err as Error).message,
+      });
     }
   }
 
