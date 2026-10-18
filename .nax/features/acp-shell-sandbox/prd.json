@@ -3,7 +3,7 @@
   "feature": "acp-shell-sandbox",
   "branchName": "feat/acp-shell-sandbox",
   "createdAt": "2026-10-18T00:00:00Z",
-  "updatedAt": "2026-10-18T04:26:25.019Z",
+  "updatedAt": "2026-10-18T04:31:17.637Z",
   "userStories": [
     {
       "id": "US-001",
@@ -260,14 +260,17 @@
         "US-001",
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Agent plugin injection changes the enforcement trust boundary and config discovery, with instruction restoration and reconnect integration; access control requires strict isolated TDD."
+        "reasoning": "Agent plugin injection changes the enforcement trust boundary and config discovery, with instruction restoration and reconnect integration; access control requires strict isolated TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent-acp/src/client/rule-policy.ts",
@@ -289,7 +292,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "676d54ae7dffd75878435037c474b06a1f727f99"
     },
     {
       "id": "US-005",
