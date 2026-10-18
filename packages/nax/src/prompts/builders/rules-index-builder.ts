@@ -92,6 +92,51 @@ export function buildRulesIndexSection(input: {
   return `${INDEX_HEADING}\n\nThis repository's rules. ${intro} Open a rule's file to read it sooner.\n\n${lines.join("\n")}\n`;
 }
 
+/** US-006 — the changed-file section's fixed heading and its one instruction. */
+const CHANGED_FILES_HEADING = "## Rules for the changed files";
+const CHANGED_FILES_INTRO = "Read a rule's file before you judge the changed code against it.";
+/** At most this many example paths per line; the count carries the rest. */
+const MAX_EXAMPLE_PATHS = 3;
+
+/** One rule and the changed files it governs (US-006); `paths` are in diff order. */
+export interface ChangedFileRuleGroup {
+  readonly rule: RulesIndexEntry;
+  readonly paths: readonly string[];
+}
+
+/**
+ * One line of the changed-file section: the rule, its file, how many changed
+ * files it governs and up to `MAX_EXAMPLE_PATHS` of them.
+ *
+ * The counter reads `changed files` at every count, including 1: the File Format
+ * in SPEC-lazy-rules-delivery § Changed-file rules section is verbatim, and this
+ * label is part of it. An empty group still renders its count, so the line never
+ * ends in a dangling example list.
+ */
+function toChangedFileLine(group: ChangedFileRuleGroup): string {
+  const examples = group.paths.slice(0, MAX_EXAMPLE_PATHS);
+  const exampleText = examples.length > 0 ? `, e.g. ${examples.join(", ")}` : "";
+  return `- \`${group.rule.ruleId}\` (${group.rule.displayPath}): ${group.paths.length} changed files${exampleText}`;
+}
+
+/**
+ * The "## Rules for the changed files" section a review package carries (US-006).
+ *
+ * A large branch matches most of a repository's rules, and a reviewer that has to
+ * be told about all of them reads none of them. This section names the rule files
+ * that govern the surviving changed files and never a body: the reviewer opens the
+ * file it needs. Ids, display paths, counts and example paths only, and the section
+ * is omitted entirely (`""`) when no rule governs a changed file.
+ *
+ * The caller's group order is preserved — groups arrive in diff order of the file
+ * that first matched each rule — and the caller's arrays are not sorted in place.
+ */
+export function buildChangedFileRulesSection(groups: readonly ChangedFileRuleGroup[]): string {
+  if (groups.length === 0) return "";
+  const lines = groups.map(toChangedFileLine);
+  return `${CHANGED_FILES_HEADING}\n\n${CHANGED_FILES_INTRO}\n\n${lines.join("\n")}\n`;
+}
+
 /**
  * The delivered-rule text (US-005): what a native session is handed when it
  * reads a governed file, or when it tries to write one whose rule it has not

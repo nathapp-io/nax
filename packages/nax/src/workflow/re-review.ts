@@ -22,7 +22,11 @@ export async function runReReview(
   });
   const outcome = await underReviewLimit(
     sc,
-    () => writeReviewPackage(sc.projectDir, fixBase, packagePath),
+    async () => {
+      // US-006: the writer now returns the surviving changed paths; a re-review package
+      // carries no changed-file rules section, so the result is discarded here.
+      await writeReviewPackage(sc.projectDir, fixBase, packagePath);
+    },
     (signal) =>
       _workflowDeps.callOp({ ...sc.callCtx, ...(signal ? { signal } : {}) }, workflowReReviewOp, {
         prompt,

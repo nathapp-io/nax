@@ -36,6 +36,22 @@ export function branchReviewModel(fc: FeatureContext): ConfiguredModel | undefin
   return fc.workflow.models.branchReview ?? fc.config.finish?.reviewers?.quality ?? undefined;
 }
 
+/**
+ * US-006: append the "Rules for the changed files" section to the branch package.
+ *
+ * `delivery: "index"` only — see `appendReviewRules` in `story-review.ts` for why
+ * (the run's config is read defensively, and a throw is a skipped review).
+ */
+async function appendReviewRules(fc: FeatureContext, packagePath: string, paths: readonly string[]): Promise<void> {
+  const rules = fc.config.context?.rules;
+  if ((rules?.delivery ?? "index") !== "index") return;
+  await _workflowDeps.appendChangedFileRules(packagePath, paths, {
+    repoRoot: fc.projectDir,
+    ...(rules?.overrideDir !== undefined && { overrideDir: rules.overrideDir }),
+    overrideMode: rules?.overrideMode ?? "merge",
+  });
+}
+
 export async function runBranchReview(
   fc: FeatureContext,
   input: { seed: string; specPath?: string; preflightPath?: string; facts: BranchReviewFacts },
@@ -58,6 +74,8 @@ export async function runBranchReview(
     async () => {
       const paths = await writeBranchReviewPackage(fc.projectDir, input.seed, packagePath);
       requiredFiles = await reviewRequiredFiles(paths, fc);
+      // US-006: the reviewer learns which rule files govern what it must read.
+      await appendReviewRules(fc, packagePath, paths);
     },
     (signal) =>
       _workflowDeps.callOp({ ...fc.callCtx, ...(signal ? { signal } : {}) }, workflowBranchReviewOp, {
@@ -89,7 +107,11 @@ export async function runBranchReReview(
   const model = branchReviewModel(fc);
   const outcome = await underReviewLimit(
     fc,
-    () => writeReviewPackage(fc.projectDir, input.fixBase, packagePath),
+    async () => {
+      // US-006: the writer now returns the surviving changed paths; a re-review package
+      // carries no changed-file rules section, so the result is discarded here.
+      await writeReviewPackage(fc.projectDir, input.fixBase, packagePath);
+    },
     (signal) =>
       _workflowDeps.callOp({ ...fc.callCtx, ...(signal ? { signal } : {}) }, workflowReReviewOp, {
         prompt,

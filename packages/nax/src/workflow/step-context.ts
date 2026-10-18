@@ -17,6 +17,7 @@ import type { ISessionManager } from "@/session/types";
 import { type ResolvedTestPatterns, resolveTestFilePatterns } from "@/test-runners";
 import { autoCommitIfDirty, gitWithTimeout } from "@/utils/git";
 import type { NaxIgnoreIndex } from "@/utils/path-filters";
+import { appendChangedFileRules } from "./review-rules-map";
 
 export interface StepContext {
   readonly callCtx: CallContext;
@@ -64,5 +65,7 @@ export const _workflowDeps = {
   resolveTestPatterns: resolveTestFilePatterns,
   /** US-003: the rule set behind the brief's rules index (and US-005/006 consumers). */
   resolveRuleSet,
+  /** US-006: the "## Rules for the changed files" section a review package carries. */
+  appendChangedFileRules,
   now: (): number => Date.now(),
 };
