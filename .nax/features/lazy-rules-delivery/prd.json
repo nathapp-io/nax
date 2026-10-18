@@ -3,7 +3,7 @@
   "feature": "lazy-rules-delivery",
   "branchName": "feat/lazy-rules-delivery",
   "createdAt": "2026-10-18T00:00:00.000Z",
-  "updatedAt": "2026-10-18T15:07:54.956Z",
+  "updatedAt": "2026-10-18T15:33:43.660Z",
   "userStories": [
     {
       "id": "US-001",
@@ -425,8 +425,8 @@
         "US-003",
         "US-005"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -438,7 +438,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "native",
         "initialProfileId": "native-deepseek",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/story-review.ts",
@@ -463,7 +465,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "7e5e52cd9014a812a7eb238bdcd821d06202d013"
     },
     {
       "id": "US-007",
