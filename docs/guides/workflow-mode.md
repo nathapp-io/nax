@@ -37,7 +37,9 @@ A run has two levels:
    scoped re-review each, adjudication, final gates, and publishing.
 
 Gates are deterministic. The LLM reviewers and the advisor decide what to fix and what to defer. Nothing in
-the workflow merges a pull request.
+the workflow merges a pull request. In a monorepo the repo gates run the root `quality.commands` once per gate
+key; a package overlay supplies only a gate the root leaves unconfigured (see
+[Monorepo Support](monorepo.md#repo-gates-the-root-wins-per-gate)).
 
 ### Per-story loop
 

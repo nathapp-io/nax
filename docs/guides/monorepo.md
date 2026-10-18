@@ -55,6 +55,23 @@ A package config may also set `"profile"` (a name or list) to overlay per-packag
 }
 ```
 
+### Repo Gates: the Root Wins per Gate
+
+A package's `quality.commands` set the commands its **stories** run. The **repo gates** (the
+workflow's repo and final gates, the finish phase's gates, and `nax gates run`) run the root
+`quality.commands`, resolved per gate key (`build`, `typecheck`, `lint`, `test`, `e2e`):
+
+- A key the root configures runs once, from the repo root. A package overlay's command for that
+  key is not run as a repo gate.
+- A key the root leaves unconfigured (unset, or blank) falls back to each touched package's
+  overlay, run from that package as `<gate>@<package>`. A repo whose gates live only in package
+  overlays is still checked. `nax gates run` resolves the root only.
+
+So write each root command to cover the whole workspace (`bun run --filter '*' test`,
+`turbo run test`). A package check the root command skips (for example a firmware suite the
+root `test` filters out) is no longer a repo gate once the root configures that key: add it to
+the root command.
+
 ### Per-Package Stories
 
 In your `prd.json`, set `workdir` on each story to point to the package:

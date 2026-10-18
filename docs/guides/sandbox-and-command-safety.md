@@ -73,6 +73,12 @@ and every path in it is literal and realpath-resolved.
 | **Unreadable** | `~/.ssh`, `~/.aws`, `~/.config/gcloud`, `~/.docker/config.json`, `~/.netrc`, `~/.npmrc`, `~/.pypirc`, `~/.git-credentials`, `~/.config/gh`, nax's own `credentials*` files; `filesystem.denyRead` |
 | **Network** | unrestricted unless `network.allowedDomains` is set |
 
+Every command the sandbox wraps runs with `NAX_SANDBOXED=1` in its environment (an unwrapped
+command, with the sandbox disabled or unavailable, does not). It tells a test suite it is
+running inside a nax session sandbox, so a test that needs what the sandbox withholds (a nested
+sandbox launch, the shared `/tmp/nax` parent) can skip instead of failing; nax's own suites read
+it through `isConfinedTestRun()`. It is advisory, not a security boundary: any command can set it.
+
 The file tools (Write, Edit, Delete, GitCommit) apply the same `.nax/` rule in-process, with
 one addition the sandbox cannot express: a test file directly inside a feature directory (the
 acceptance and suggested tests, or a custom `acceptance.testPath`) stays writable, because
