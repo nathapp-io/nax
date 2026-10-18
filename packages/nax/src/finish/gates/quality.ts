@@ -139,6 +139,11 @@ function overlayCommandsOf(override: Partial<NaxConfig> | null): QualityCommands
   return commands !== undefined && Object.keys(commands).length > 0 ? commands : undefined;
 }
 
+/** Overlay setup inherits the root unless the overlay explicitly names e2eSetup. */
+function overlaySetupCommands(root: QualityCommands, overlay: QualityCommands): QualityCommands {
+  return Object.hasOwn(overlay, "e2eSetup") ? overlay : { ...overlay, e2eSetup: root.e2eSetup };
+}
+
 /**
  * Every gate command this repo actually configures, layered (fixes F2).
  *
@@ -226,10 +231,7 @@ export async function resolveGateCommands(repoRoot: string, packageDirs: string[
       if (!isConfigured(command)) continue;
       // Root coverage wins per key before considering overlay run identity.
       if (isConfigured(rootCommands[gate])) continue;
-      const setupCommands = Object.hasOwn(overlayCommands, "e2eSetup")
-        ? overlayCommands
-        : { ...overlayCommands, e2eSetup: rootCommands.e2eSetup };
-      const setup = setupFor(setupCommands, gate);
+      const setup = setupFor(overlaySetupCommands(rootCommands, overlayCommands), gate);
       // The package's own gate key is not part of the identity: an overlay
       // asking for a run the repo is already about to make is one run.
       if (seenRuns.has(runKey(packageCwd, command, setup))) continue;
