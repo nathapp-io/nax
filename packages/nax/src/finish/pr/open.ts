@@ -9,9 +9,11 @@
  * body and the create command from disagreeing about it — and so I/O arrives
  * as `ForgeDeps` rather than a module-level `_prDeps` seam.
  */
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import type { ForgeDeps, ForgeKind } from "@/forge";
 import { extractUrl, hasOpenPr, openPr, viewArgv } from "@/forge";
+import { getSafeLogger } from "@/logger";
 
 /** `ForgeDeps` carries no `warn` — this is `updatePrBody`'s own injectable seam, so its
  * non-fatal-failure tests can assert a warning fired instead of only "did not throw". */
@@ -199,6 +201,9 @@ export async function updatePrBody(
  * subprocess) rather than merely returning a non-zero exit — both are wrapped
  * in the same try/catch so this function's "never throws" contract (D4.5)
  * holds regardless of which step failed.
+ *
+ * A failure is still logged (nax#2598): a draft that never opened leaves the CI wait polling a
+ * PR that does not exist, and without the warning nothing in the run log says why.
  */
 export async function openDraftFinishPr(
   args: { workdir: string; branch: string; title: string; body: string; forge: ForgeKind },
@@ -212,8 +217,19 @@ export async function openDraftFinishPr(
       deps,
       args.workdir,
     );
+    if (!result.success) warnDraftNotOpened(args, result.message);
     return result.success && result.url ? { url: result.url } : null;
-  } catch {
+  } catch (err) {
+    warnDraftNotOpened(args, errorMessage(err));
     return null;
   }
+}
+
+function warnDraftNotOpened(args: { branch: string; forge: ForgeKind }, error: string): void {
+  getSafeLogger()?.warn("finish", "Draft PR/MR not opened", {
+    storyId: "_run",
+    branch: args.branch,
+    forge: args.forge,
+    error,
+  });
 }
