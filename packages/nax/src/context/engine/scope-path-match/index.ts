@@ -153,6 +153,38 @@ export function frameAppliesTo(rule: CanonicalRule, packageWorkdir: string): Can
 }
 
 /**
+ * Returns true when the rule's `appliesTo:` frontmatter (file-scope filter)
+ * matches at least one entry in the effective scope-file set. Fail-open: a rule
+ * with no `appliesTo:` always matches, and an empty/absent scope set admits
+ * every rule unconditionally (see ProviderScopingReport.appliesToInertCount for
+ * visibility).
+ *
+ * Keyed on `request.scopeFiles` (rule-scoping), not `request.touchedFiles` —
+ * scopeFiles is the resolved evidence set, touchedFiles is content-fetch input.
+ *
+ * Lives here (moved from `static-rules.ts` for US-001) so the rule-set resolver
+ * can share the matcher without importing the provider that imports it: a
+ * provider -> rule-set -> provider edge would close a runtime cycle, and the
+ * selection/attribution agreement this function exists to guarantee (PR #2099
+ * follow-up 8) is exactly what a second copy would put back at risk.
+ */
+export function ruleMatchesScopeFiles(appliesTo: string[] | undefined, scopeFiles: string[] | undefined): boolean {
+  if (!appliesTo || appliesTo.length === 0) return true;
+  if (!scopeFiles || scopeFiles.length === 0) return true;
+
+  const files = scopeFiles.map((f) => normalizePath(f));
+  return appliesTo.some((pattern) => {
+    const normalizedPattern = normalizePath(pattern);
+    // Literal (no glob metacharacter): anchor exactly — the same rule
+    // effectiveness.ts's pathMatchesScope applies, so a rule cannot be admitted
+    // for selection and then denied attribution (#2091 / follow-up 8).
+    return files.some((file) =>
+      isGlobScopePath(normalizedPattern) ? globToRegex(normalizedPattern).test(file) : normalizedPattern === file,
+    );
+  });
+}
+
+/**
  * Returns true when a rule's `paths:` frontmatter (package-scope filter) matches
  * the current package directory relative to the repo root.
  * Rules with no `paths:` field are global and always match.

@@ -424,17 +424,30 @@ export interface LoadCanonicalRulesOptions {
 
 /**
  * Load all `.md` files from `.nax/rules/` under the given workdir.
- * Files are sorted alphabetically to ensure deterministic ordering.
- *
- * Throws NeutralityLintError if any file contains banned markers.
- * Returns an empty array if the `.nax/rules/` directory does not exist.
+ * The depth cap, frontmatter policy and `lintForNeutrality` all live in
+ * `loadCanonicalRulesFromDir`; this only supplies the directory, so a run-level
+ * override directory (US-001) is loaded by exactly the same rules.
  */
 export async function loadCanonicalRules(
   workdir: string,
   options: LoadCanonicalRulesOptions = {},
 ): Promise<CanonicalRule[]> {
+  return loadCanonicalRulesFromDir(join(workdir, CANONICAL_RULES_DIR), options);
+}
+
+/**
+ * Load all `.md` files from an arbitrary canonical rules directory — `.nax/rules/`
+ * under a workdir, or a run-level override directory with the same layout.
+ *
+ * Files are sorted alphabetically to ensure deterministic ordering.
+ * Throws NeutralityLintError if any file contains banned markers.
+ * Returns an empty array if `rulesDir` does not exist.
+ */
+export async function loadCanonicalRulesFromDir(
+  rulesDir: string,
+  options: LoadCanonicalRulesOptions = {},
+): Promise<CanonicalRule[]> {
   const logger = _canonicalLoaderDeps.getLogger();
-  const rulesDir = join(workdir, CANONICAL_RULES_DIR);
 
   const allFilePaths = _canonicalLoaderDeps.globInDir(rulesDir);
   const filePaths = allFilePaths.filter((filePath) => {
