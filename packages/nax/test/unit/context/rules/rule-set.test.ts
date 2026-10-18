@@ -164,6 +164,29 @@ describe("resolveRuleSet — override layer", () => {
     });
   });
 
+  test("AC-6: replace mode never calls the repo/package loader", async () => {
+    const repoWorkdirs: string[] = [];
+    const set = await resolveRuleSet(
+      {
+        repoRoot: "/repo",
+        packageDir: "/repo/packages/api",
+        storyWorkdir: API_PACKAGE,
+        overrideDir: "/override",
+        overrideMode: "replace",
+      },
+      {
+        loadRepoRules: async (workdir: string) => {
+          repoWorkdirs.push(workdir);
+          return [{ fileName: "repo.md", content: "REPO-BODY" }];
+        },
+        loadDirRules: async () => [{ fileName: "org.md", content: "ORG-BODY" }],
+      },
+    );
+
+    expect(repoWorkdirs).toEqual([]);
+    expect(set.rules.map((r) => r.ruleId)).toEqual(["org"]);
+  });
+
   test("AC-7: an override rule whose paths: excludes the story's package is dropped", async () => {
     await withTempDir(async (repoRoot) => {
       await withTempDir(async (overrideDir) => {
