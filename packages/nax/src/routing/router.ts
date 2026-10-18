@@ -157,6 +157,7 @@ export async function resolveRouting(
   config: NaxConfig,
   plugins: PluginRegistry | undefined,
   dispatchContext: DispatchContext,
+  options?: { skipPluginRouters?: boolean },
 ): Promise<RoutingDecision> {
   const logger = getSafeLogger();
   const { callOp, classifyRouteOp } = await import("@/operations");
@@ -176,8 +177,8 @@ export async function resolveRouting(
     };
   }
 
-  // 1. Plugin routers — highest priority
-  if (plugins) {
+  // 1. Plugin routers — highest priority (unless already consulted by the caller)
+  if (plugins && !options?.skipPluginRouters) {
     for (const pluginRouter of plugins.getRouters()) {
       try {
         const decision = await pluginRouter.route(story, {
