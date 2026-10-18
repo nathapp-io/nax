@@ -1,5 +1,7 @@
 /** A5 workflow mode: the story brief and every implementer-session prompt (spec §6). */
 
+import { buildRulesIndexSection, type RulesIndexEntry } from "./rules-index-builder";
+
 export interface WorkflowPromptFinding {
   readonly id: string;
   readonly kind: string;
@@ -23,6 +25,11 @@ export interface WorkflowBriefInput {
   readonly specExcerpts: readonly string[];
   readonly storyContext?: string;
   readonly featureContext?: string;
+  /**
+   * US-003: the repository's rules as an index. Omitted (and empty) under
+   * `delivery: "push"`, where the v2 orchestrator carries the bodies instead.
+   */
+  readonly rulesIndex?: { readonly entries: readonly RulesIndexEntry[]; readonly shownAutomatically: boolean };
   readonly constitution?: string;
   readonly rulings: readonly string[];
   readonly redBaseDependencies: readonly { readonly storyId: string; readonly reason: string }[];
@@ -77,6 +84,7 @@ export function buildWorkflowBrief(input: WorkflowBriefInput): string {
     section("Rulings in force", list(input.rulings, "")),
     redBase,
     section("Story context", input.storyContext),
+    input.rulesIndex ? buildRulesIndexSection(input.rulesIndex) : "",
     section("Feature context", input.featureContext),
     section("Project rules", input.constitution),
     section("Report", `Write your report to ${input.reportPath}.`),

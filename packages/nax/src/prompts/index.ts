@@ -58,6 +58,10 @@ export type { SemanticReviewPromptOptions } from "./builders/review-builder";
 // Review prompt builder — semantic review prompt construction.
 export { ReviewPromptBuilder } from "./builders/review-builder";
 export { reviewerCommandsSection } from "./builders/reviewer-commands-section";
+export type { RulesIndexEntry } from "./builders/rules-index-builder";
+// US-003 (SPEC-lazy-rules-delivery) — the rules index section of a workflow brief.
+// US-005 and US-006 add the delivered-rule and changed-file sections here.
+export { buildRulesIndexSection, toRulesIndexEntry } from "./builders/rules-index-builder";
 // Setup prompt builder — LLM-driven nax init config generation.
 export { SetupPromptBuilder } from "./builders/setup-builder";
 export { buildSourceRootsSection } from "./builders/source-roots-builder";

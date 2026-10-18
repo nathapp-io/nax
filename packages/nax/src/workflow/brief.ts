@@ -3,7 +3,8 @@ import { mkdir } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
 import type { AdviceDecision } from "@/advisor";
 import { getLogger } from "@/logger";
-import { buildWorkflowBrief } from "@/prompts";
+import { buildWorkflowBrief, toRulesIndexEntry, type WorkflowBriefInput } from "@/prompts";
+import { storyWorkdir } from "@/utils/path-frame";
 import { collectStoryRecords } from "./feature-record";
 import { rulingsForStory } from "./rulings";
 import { _workflowDeps, type StepContext } from "./step-context";
@@ -73,8 +74,39 @@ async function loadDecisions(sc: StepContext): Promise<AdviceDecision[]> {
   }
 }
 
+/**
+ * US-003: the brief's rules index.
+ *
+ * Resolved only under `delivery: "index"` (the default). `"push"` restores the
+ * pre-feature behaviour, where the v2 orchestrator carries every rule body in
+ * `featureContext` instead — resolving a set the brief would not print is work
+ * with no consumer.
+ */
+async function resolveRulesIndex(sc: StepContext): Promise<WorkflowBriefInput["rulesIndex"]> {
+  const rules = sc.config.context?.rules;
+  if ((rules?.delivery ?? "index") !== "index") return undefined;
+  const set = await _workflowDeps.resolveRuleSet({
+    repoRoot: sc.projectDir,
+    packageDir: sc.workdir,
+    storyWorkdir: storyWorkdir(sc.story),
+    ...(rules?.overrideDir !== undefined && { overrideDir: rules.overrideDir }),
+    overrideMode: rules?.overrideMode ?? "merge",
+  });
+  return {
+    entries: set.rules.map(toRulesIndexEntry),
+    // Only a native session gets the bodies pushed at it by the rule-delivery
+    // handlers, so only it is told the text arrives on its own.
+    shownAutomatically: sc.callCtx.agentName === "native",
+  };
+}
+
 export async function writeBrief(sc: StepContext): Promise<void> {
-  const [spec, redBase, decisions] = await Promise.all([loadSpec(sc), redBaseDependencies(sc), loadDecisions(sc)]);
+  const [spec, redBase, decisions, rulesIndex] = await Promise.all([
+    loadSpec(sc),
+    redBaseDependencies(sc),
+    loadDecisions(sc),
+    resolveRulesIndex(sc),
+  ]);
   const text = buildWorkflowBrief({
     storyId: sc.story.id,
     title: sc.story.title,
@@ -86,6 +118,7 @@ export async function writeBrief(sc: StepContext): Promise<void> {
     specExcerpts: spec.excerpts,
     ...(sc.contextMarkdown ? { storyContext: sc.contextMarkdown } : {}),
     ...(sc.featureContextMarkdown ? { featureContext: sc.featureContextMarkdown } : {}),
+    ...(rulesIndex ? { rulesIndex } : {}),
     ...(sc.constitution ? { constitution: sc.constitution } : {}),
     rulings: rulingsForStory(decisions, sc.story.id),
     redBaseDependencies: redBase,
