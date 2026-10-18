@@ -14,6 +14,7 @@
 import { relative } from "node:path";
 import type { AgentSessionProfile } from "@nathapp/nax-agent";
 import { isReadOnlyProfile, launchEnvFor, reviewDecidesShell } from "#src/client/capabilities";
+import { cursorSandboxEnv } from "#src/client/cursor-sandbox";
 import { opencodeSandboxEnv } from "#src/client/opencode-sandbox";
 import type { ResolvedAcpOptions } from "#src/client/options";
 import { piSandboxGateSource } from "#src/client/pi-sandbox";
@@ -204,10 +205,11 @@ export async function policyLaunchEnv(
         return opencodeSandboxEnv(plan, opencodePermissionConfig(profile, options.rules), options.env);
       }
       return Object.freeze({ OPENCODE_CONFIG_CONTENT: opencodePermissionConfig(profile, options.rules) });
-    case "cursor":
-      return Object.freeze({
-        CURSOR_CONFIG_DIR: await writeCursorPolicy(options.stateDir, cursorCliConfig(profile, options.rules)),
-      });
+    case "cursor": {
+      const configDir = await writeCursorPolicy(options.stateDir, cursorCliConfig(profile, options.rules));
+      if (profile === "review" && plan?.agent === "cursor") return cursorSandboxEnv(plan, configDir);
+      return Object.freeze({ CURSOR_CONFIG_DIR: configDir });
+    }
     case "pi":
       return piLaunchEnv(options, profile);
     default:
