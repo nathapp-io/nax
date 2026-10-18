@@ -12,7 +12,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
-import { SANDBOXED_ENV as AGENT_SANDBOXED_ENV } from "@nathapp/nax-agent";
+import { SANDBOXED_ENV } from "@nathapp/nax-agent";
 import * as helpers from "@test/helpers";
 import {
   _confinedDeps,
@@ -57,7 +57,7 @@ describe("isConfinedTestRun", () => {
 
   test("sandbox AC-4: the public helper constant agrees with nax-agent", () => {
     expect(helpers.SANDBOXED_ENV).toBe("NAX_SANDBOXED");
-    expect(helpers.SANDBOXED_ENV).toBe(AGENT_SANDBOXED_ENV);
+    expect(helpers.SANDBOXED_ENV).toBe(SANDBOXED_ENV);
   });
 
   test("AC-1: returns true when NAX_TEST_CONFINED is '1'", () => {
