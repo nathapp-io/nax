@@ -6,6 +6,7 @@
 import { adjudicateResidual } from "./adjudicate";
 import { isFlaggedRuling, type WorkflowAdvisor } from "./advisor";
 import { deriveEndState } from "./close";
+import { ledgerCannotVerify } from "./gate-timing";
 import type { ImplementOutcome, ImplementTurn } from "./implement";
 import { type LedgerWriteOptions, ledgerText } from "./ledger";
 import { runNoWorkLadder } from "./no-work";
@@ -199,7 +200,7 @@ async function review(env: StoryLoopEnv, s: LoopState): Promise<void> {
       await env.sink.ledger(ledgerText.reviewSkipped(`story review: ${out.why}`), NO_MIRROR);
       return;
     }
-    for (const item of out.verdict.cannotVerify) await env.sink.ledger(ledgerText.note(`cannot-verify: ${item}`));
+    await ledgerCannotVerify(env.sink, out.verdict.cannotVerify);
     await deferMinors(env, s, out.verdict.findings);
     s.reviewOpen = s.assign(out.verdict.findings.filter(isBlocking));
     const minors = out.verdict.findings.filter((f) => !isBlocking(f));

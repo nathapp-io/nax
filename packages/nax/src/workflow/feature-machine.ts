@@ -16,6 +16,7 @@ import type { BranchFixOutcome } from "./branch-fix";
 import { dropKnownRestatements, type FeatureLimits, nextBranchFixRound } from "./branch-fix-rounds";
 import type { BranchReviewFacts } from "./branch-review";
 import type { PublishOutcome } from "./finalize";
+import { ledgerCannotVerify } from "./gate-timing";
 import { type LedgerWriteOptions, ledgerText } from "./ledger";
 import type { LedgerItem } from "./ledger-items";
 import { absorbReReviewVerdict } from "./re-review-absorb";
@@ -221,7 +222,7 @@ async function branchReviewStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Pr
     await env.sink.ledger(ledgerText.reviewSkipped(`branch review: ${out.why}`), NO_MIRROR);
     return { reviewRan: false, step: "branch-fix" };
   }
-  for (const item of out.verdict.cannotVerify) await env.sink.ledger(ledgerText.note(`cannot-verify: ${item}`));
+  const cannotVerify = await ledgerCannotVerify(env.sink, out.verdict.cannotVerify);
   // US-003: the files the verdict did not read. Nothing else records them — the step line names the
   // findings, not the coverage — so the note is mirrored to the run log as well, in the same words
   // `publish` uses for the reason that keeps the PR a draft.
@@ -237,7 +238,7 @@ async function branchReviewStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Pr
   log.done(`spec ${out.verdict.spec}, quality ${out.verdict.quality} - ${describeFindings([...findings, ...minors])}`);
   return {
     reviewRan: true,
-    cannotVerify: out.verdict.cannotVerify,
+    cannotVerify,
     ...(unread.length > 0 ? { reviewUnread: unread } : {}),
     reviewOpen: findings,
     nextFindingId,
