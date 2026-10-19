@@ -106,10 +106,15 @@ describe("feature machine graph wiring", () => {
 
     const failing = makeFeatureMachineHarness({});
     const failure = new Error("repo gates failed");
+    const persisted = [failing.env.record];
+    failing.env.sink.update = async (record) => {
+      persisted.push(record);
+    };
     failing.env.steps.repoGates = async () => {
       throw failure;
     };
     await expect(runFeatureMachine(failing.env)).rejects.toBe(failure);
+    expect(persisted.at(-1)?.step).toBe("repo-gates");
     expect(failing.updates).toEqual([]);
     expect(failing.stepsSeen).toEqual(["repo-gates"]);
   });
@@ -141,6 +146,9 @@ describe("feature machine graph wiring", () => {
 
   test("resumed branch-fix retains lastHead when post-commit HEAD reads fail", async () => {
     const { env, updates, calls } = makeFeatureMachineHarness({});
+    const entries: { level: string; stage: string; message: string; data?: Record<string, unknown> }[] = [];
+    initLogger({ level: "info", suppressConsole: true });
+    addSink((entry) => entries.push(entry));
     const record = {
       ...env.record,
       step: "branch-fix" as const,
@@ -166,6 +174,7 @@ describe("feature machine graph wiring", () => {
     expect(result.step).toBe("done");
     expect(updates.length).toBeGreaterThan(0);
     expect(updates.every((update) => update.lastHead === "h0")).toBe(true);
+    expect(entries.some((entry) => entry.stage === "step-graph")).toBe(false);
   });
 
   test("engine rejects an undeclared output from a test-local graph copy", async () => {
