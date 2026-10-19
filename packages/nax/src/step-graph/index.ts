@@ -10,6 +10,8 @@
  *
  * Spec: docs/specs/SPEC-step-graph-g1-engine.md.
  */
+
+export { runStepGraph } from "./run";
 export {
   type CostStop,
   ENGINE_KEYS,
