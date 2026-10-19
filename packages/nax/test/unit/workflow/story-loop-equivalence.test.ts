@@ -373,6 +373,10 @@ const AGENT_METHODS: readonly string[] = ["implement", "storyReview", "reReview"
 const fixTurns = (turns: readonly ImplementTurn[]): Extract<ImplementTurn, { kind: "fix" }>[] =>
   turns.filter((turn): turn is Extract<ImplementTurn, { kind: "fix" }> => turn.kind === "fix");
 
+/** Narrows a trace call's untyped first arg to a fix turn; the recorder keeps seam args as unknown. */
+const isFixTurn = (value: unknown): value is Extract<ImplementTurn, { kind: "fix" }> =>
+  typeof value === "object" && value !== null && "kind" in value && value.kind === "fix";
+
 const NO_STATUS: ImplementOutcome = {
   reply: { status: "DONE", commits: [], testSummary: "", interrupted: false, noStatusBlock: true },
   autoCommitted: false,
@@ -447,8 +451,7 @@ describe("red-gates-then-green", () => {
     const trace = await recordStoryTrace("red-gates-then-green", h);
     // The fix turn, not the initial implement: the property is that the *fix* precedes the review.
     const fixCall = trace.events.findIndex(
-      (event) =>
-        event.kind === "call" && event.method === "implement" && (event.args[0] as ImplementTurn).kind === "fix",
+      (event) => event.kind === "call" && event.method === "implement" && isFixTurn(event.args[0]),
     );
     const reviewCall = trace.events.findIndex((event) => event.kind === "call" && event.method === "storyReview");
     expect(fixCall).toBeGreaterThan(-1);
