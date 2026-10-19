@@ -29,15 +29,15 @@ function refusal(message: string, code: string, node: string, extra: Record<stri
 /**
  * Step 2: the node `id` names, or `STEP_GRAPH_UNKNOWN_NODE` when the graph has none.
  *
- * `id` is a persisted cursor, so it is runtime data: an inherited key (`constructor`,
- * `__proto__`, `toString`) would otherwise be read as a node the graph declares and then fail
- * with a `TypeError` on `node.run`. Only an *own* key of `graph.nodes` is a node id.
+ * `id` is a persisted cursor, so it is runtime data. Ownership is checked *before* the read:
+ * `graph.nodes[id]` on an inherited key would otherwise run that property's accessor — and its
+ * error — before the runner could report `STEP_GRAPH_UNKNOWN_NODE`, and an inherited plain value
+ * (`constructor`, `__proto__`, `toString`) would be taken for a node and fail later with a
+ * `TypeError` on `node.run`. Only an *own* key of `graph.nodes` is a node id.
  */
 function nodeOf<S extends GraphState<N>, E, N extends string>(graph: StepGraph<S, E, N>, id: N): StepNode<S, E, N> {
-  const node = graph.nodes[id];
-  if (node === undefined || !Object.hasOwn(graph.nodes, id)) {
-    throw refusal(`step graph has no node "${id}"`, "STEP_GRAPH_UNKNOWN_NODE", id);
-  }
+  const node = Object.hasOwn(graph.nodes, id) ? graph.nodes[id] : undefined;
+  if (node === undefined) throw refusal(`step graph has no node "${id}"`, "STEP_GRAPH_UNKNOWN_NODE", id);
   return node;
 }
 

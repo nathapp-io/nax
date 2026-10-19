@@ -208,6 +208,22 @@ function wideHooks(steps: string[], persisted: GraphState<string>[]): WideHooks 
   };
 }
 
+/** The cursor the inherited-accessor cases name; no graph declares it. */
+const INHERITED_CURSOR = "inherited";
+
+/**
+ * A graph whose `nodes` table carries an accessor for {@link INHERITED_CURSOR} on its *prototype*,
+ * so a lookup of that cursor runs the accessor — or its throw — unless the runner checks ownership
+ * before it reads. A graph declaring one ordinary node `a` keeps the graph valid.
+ */
+function protoAccessorGraph(getter: () => StepNode<GraphState<string>, TestEnv, string>): WideGraph {
+  const proto = Object.defineProperty({}, INHERITED_CURSOR, { configurable: true, get: getter });
+  const nodes: Record<string, StepNode<GraphState<string>, TestEnv, string>> = Object.assign(Object.create(proto), {
+    a: wideNode(),
+  });
+  return { start: "a", end: ["done"], nodes };
+}
+
 /** A counter clock: `now()` returns 0, `step`, 2×`step` …, and counts how often it was read. */
 function counterClock(step = 5): { now: () => number; reads: () => number } {
   let tick = 0;
@@ -571,6 +587,40 @@ describe("runStepGraph: a node id that shadows a prototype key (F1)", () => {
 
     expect(result.timings["constructor"]).toBe(5);
     expect(Object.keys(result.timings)).toEqual(["constructor"]);
+  });
+});
+
+describe("runStepGraph: an inherited accessor on the node table (F1)", () => {
+  test("rejects the cursor without ever reading the accessor", async () => {
+    const runs: string[] = [];
+    const graph = protoAccessorGraph(() => {
+      runs.push("getter");
+      return wideNode();
+    });
+
+    const rejection = await caught(
+      runStepGraph(graph, ENV, { step: INHERITED_CURSOR, timings: {} }, wideHooks([], []), options()),
+    );
+
+    assertNaxError(rejection, "runStepGraph rejection");
+    expect(rejection.code).toBe("STEP_GRAPH_UNKNOWN_NODE");
+    expect(rejection.context?.node).toBe(INHERITED_CURSOR);
+    expect(runs).toEqual([]);
+  });
+
+  test("rejects the cursor with its own error rather than the accessor's", async () => {
+    const inherited = new Error("inherited getter ran");
+    const graph = protoAccessorGraph(() => {
+      throw inherited;
+    });
+
+    const rejection = await caught(
+      runStepGraph(graph, ENV, { step: INHERITED_CURSOR, timings: {} }, wideHooks([], []), options()),
+    );
+
+    assertNaxError(rejection, "runStepGraph rejection");
+    expect(rejection.code).toBe("STEP_GRAPH_UNKNOWN_NODE");
+    expect(rejection).not.toBe(inherited);
   });
 });
 
