@@ -284,7 +284,11 @@ describe("resume", () => {
     expect(calls).not.toContain("branchReview");
     // AC-22: the fix ran, so final-gates re-runs the gates — once, and only after the re-review.
     expect(calls.filter((call) => call === "repoGates")).toHaveLength(1);
-    expect(calls.indexOf("repoGates")).toBeGreaterThan(calls.indexOf("branchReReview"));
+    // Both calls must exist: indexOf -1 from a skipped re-review would pass the order check vacuously.
+    const rereviewAt = calls.findIndex((call) => call === "branchReReview");
+    const gatesAt = calls.findIndex((call) => call === "repoGates");
+    expect(rereviewAt).toBeGreaterThan(-1);
+    expect(gatesAt).toBeGreaterThan(rereviewAt);
     await compareWithGolden(trace);
   });
 });
