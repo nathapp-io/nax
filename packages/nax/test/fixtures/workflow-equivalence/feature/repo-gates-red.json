@@ -1,0 +1,691 @@
+{
+  "scenario": "repo-gates-red",
+  "machine": "feature",
+  "events": [
+    {
+      "kind": "step",
+      "step": "repo-gates"
+    },
+    {
+      "args": [],
+      "kind": "call",
+      "method": "repoGates"
+    },
+    {
+      "kind": "return",
+      "method": "repoGates",
+      "value": {
+        "findings": [
+          {
+            "issue": "repo gate lint failed: 3 problems",
+            "kind": "gate",
+            "severity": "important"
+          }
+        ],
+        "summary": {
+          "failing": ["lint"],
+          "ran": ["build", "lint", "test"]
+        }
+      }
+    },
+    {
+      "data": {
+        "durationMs": 0,
+        "step": "repo-gates",
+        "storyId": "_run"
+      },
+      "kind": "log",
+      "level": "info",
+      "message": "repo-gates red (lint)  <dur>"
+    },
+    {
+      "kind": "ledger",
+      "options": {
+        "mirror": false
+      },
+      "text": "repo gates red: lint"
+    },
+    {
+      "kind": "update",
+      "record": {
+        "fixRan": false,
+        "gateFindings": [
+          {
+            "id": "B1",
+            "issue": "repo gate lint failed: 3 problems",
+            "kind": "gate",
+            "severity": "important"
+          }
+        ],
+        "minors": [],
+        "newMinors": [],
+        "nextFindingId": 2,
+        "reasons": [],
+        "repoGates": {
+          "failing": ["lint"],
+          "ran": ["build", "lint", "test"]
+        },
+        "reviewOpen": [],
+        "reviewRan": false,
+        "rulings": [],
+        "seed": "seed0",
+        "startedAt": "t",
+        "step": "branch-review",
+        "timings": {
+          "repo-gates": 5
+        },
+        "tokensByRole": {}
+      }
+    },
+    {
+      "kind": "step",
+      "step": "branch-review"
+    },
+    {
+      "data": {
+        "step": "branch-review",
+        "storyId": "_run"
+      },
+      "kind": "log",
+      "level": "info",
+      "message": "branch-review start"
+    },
+    {
+      "args": [
+        "seed0",
+        {
+          "cannotVerify": [],
+          "gateFindings": [
+            {
+              "id": "B1",
+              "issue": "repo gate lint failed: 3 problems",
+              "kind": "gate",
+              "severity": "important"
+            }
+          ],
+          "minors": [],
+          "parked": [],
+          "repoGates": {
+            "failing": ["lint"],
+            "ran": ["build", "lint", "test"]
+          },
+          "stories": [
+            {
+              "id": "US-001",
+              "state": "complete"
+            }
+          ]
+        }
+      ],
+      "kind": "call",
+      "method": "branchReview"
+    },
+    {
+      "kind": "return",
+      "method": "branchReview",
+      "value": {
+        "ran": true,
+        "verdict": {
+          "cannotVerify": [],
+          "findings": [],
+          "inspectedFiles": [],
+          "minorTriage": [],
+          "quality": "approved",
+          "spec": "pass"
+        }
+      }
+    },
+    {
+      "kind": "artifact",
+      "name": "branch-review.json",
+      "value": {
+        "cannotVerify": [],
+        "findings": [],
+        "inspectedFiles": [],
+        "minorTriage": [],
+        "quality": "approved",
+        "spec": "pass"
+      }
+    },
+    {
+      "data": {
+        "durationMs": 0,
+        "step": "branch-review",
+        "storyId": "_run"
+      },
+      "kind": "log",
+      "level": "info",
+      "message": "branch-review: spec pass, quality approved - no findings  <dur>"
+    },
+    {
+      "kind": "update",
+      "record": {
+        "cannotVerify": [],
+        "fixRan": false,
+        "gateFindings": [
+          {
+            "id": "B1",
+            "issue": "repo gate lint failed: 3 problems",
+            "kind": "gate",
+            "severity": "important"
+          }
+        ],
+        "minors": [],
+        "newMinors": [],
+        "nextFindingId": 2,
+        "reasons": [],
+        "repoGates": {
+          "failing": ["lint"],
+          "ran": ["build", "lint", "test"]
+        },
+        "reviewOpen": [],
+        "reviewRan": true,
+        "rulings": [],
+        "seed": "seed0",
+        "startedAt": "t",
+        "step": "branch-fix",
+        "timings": {
+          "branch-review": 5,
+          "repo-gates": 5
+        },
+        "tokensByRole": {}
+      }
+    },
+    {
+      "kind": "step",
+      "step": "branch-fix"
+    },
+    {
+      "args": [],
+      "kind": "call",
+      "method": "head"
+    },
+    {
+      "kind": "return",
+      "method": "head",
+      "value": "h2"
+    },
+    {
+      "kind": "ledger",
+      "options": {
+        "mirror": false
+      },
+      "text": "branch fix: 1 item(s): B1"
+    },
+    {
+      "data": {
+        "step": "branch-fix",
+        "storyId": "_run"
+      },
+      "kind": "log",
+      "level": "info",
+      "message": "branch-fix start"
+    },
+    {
+      "args": [
+        [
+          {
+            "id": "B1",
+            "issue": "repo gate lint failed: 3 problems",
+            "kind": "gate",
+            "severity": "important"
+          }
+        ]
+      ],
+      "kind": "call",
+      "method": "branchFix"
+    },
+    {
+      "kind": "return",
+      "method": "branchFix",
+      "value": {
+        "autoCommitted": false,
+        "dirty": false,
+        "reply": {
+          "commits": [],
+          "interrupted": false,
+          "status": "DONE",
+          "testSummary": ""
+        }
+      }
+    },
+    {
+      "data": {
+        "durationMs": 0,
+        "step": "branch-fix",
+        "storyId": "_run"
+      },
+      "kind": "log",
+      "level": "info",
+      "message": "branch-fix: B1  <dur>"
+    },
+    {
+      "args": [],
+      "kind": "call",
+      "method": "head"
+    },
+    {
+      "kind": "return",
+      "method": "head",
+      "value": "h3"
+    },
+    {
+      "kind": "update",
+      "record": {
+        "cannotVerify": [],
+        "fixBase": "h2",
+        "fixRan": true,
+        "fixRounds": 1,
+        "gateFindings": [
+          {
+            "id": "B1",
+            "issue": "repo gate lint failed: 3 problems",
+            "kind": "gate",
+            "severity": "important"
+          }
+        ],
+        "lastHead": "h3",
+        "minors": [],
+        "newMinors": [],
+        "nextFindingId": 2,
+        "reasons": [],
+        "repoGates": {
+          "failing": ["lint"],
+          "ran": ["build", "lint", "test"]
+        },
+        "reviewOpen": [],
+        "reviewRan": true,
+        "rulings": [],
+        "seed": "seed0",
+        "startedAt": "t",
+        "step": "branch-rereview",
+        "timings": {
+          "branch-fix": 5,
+          "branch-review": 5,
+          "repo-gates": 5
+        },
+        "tokensByRole": {}
+      }
+    },
+    {
+      "kind": "step",
+      "step": "branch-rereview"
+    },
+    {
+      "kind": "update",
+      "record": {
+        "cannotVerify": [],
+        "fixBase": "h2",
+        "fixRan": true,
+        "fixRounds": 1,
+        "gateFindings": [
+          {
+            "id": "B1",
+            "issue": "repo gate lint failed: 3 problems",
+            "kind": "gate",
+            "severity": "important"
+          }
+        ],
+        "lastHead": "h3",
+        "minors": [],
+        "newMinors": [],
+        "nextFindingId": 2,
+        "reasons": [],
+        "repoGates": {
+          "failing": ["lint"],
+          "ran": ["build", "lint", "test"]
+        },
+        "reviewOpen": [],
+        "reviewRan": true,
+        "rulings": [],
+        "seed": "seed0",
+        "startedAt": "t",
+        "step": "adjudicate",
+        "timings": {
+          "branch-fix": 5,
+          "branch-rereview": 5,
+          "branch-review": 5,
+          "repo-gates": 5
+        },
+        "tokensByRole": {}
+      }
+    },
+    {
+      "kind": "step",
+      "step": "adjudicate"
+    },
+    {
+      "kind": "update",
+      "record": {
+        "cannotVerify": [],
+        "fixBase": "h2",
+        "fixRan": true,
+        "fixRounds": 1,
+        "gateFindings": [
+          {
+            "id": "B1",
+            "issue": "repo gate lint failed: 3 problems",
+            "kind": "gate",
+            "severity": "important"
+          }
+        ],
+        "lastHead": "h3",
+        "minors": [],
+        "newMinors": [],
+        "nextFindingId": 2,
+        "reasons": [],
+        "repoGates": {
+          "failing": ["lint"],
+          "ran": ["build", "lint", "test"]
+        },
+        "reviewOpen": [],
+        "reviewRan": true,
+        "rulings": [],
+        "seed": "seed0",
+        "startedAt": "t",
+        "step": "final-gates",
+        "timings": {
+          "adjudicate": 5,
+          "branch-fix": 5,
+          "branch-rereview": 5,
+          "branch-review": 5,
+          "repo-gates": 5
+        },
+        "tokensByRole": {}
+      }
+    },
+    {
+      "kind": "step",
+      "step": "final-gates"
+    },
+    {
+      "args": [],
+      "kind": "call",
+      "method": "repoGates"
+    },
+    {
+      "kind": "return",
+      "method": "repoGates",
+      "value": {
+        "findings": [],
+        "summary": {
+          "failing": [],
+          "ran": ["build", "test"]
+        }
+      }
+    },
+    {
+      "data": {
+        "durationMs": 0,
+        "step": "final-gates",
+        "storyId": "_run"
+      },
+      "kind": "log",
+      "level": "info",
+      "message": "final-gates green  <dur>"
+    },
+    {
+      "kind": "update",
+      "record": {
+        "cannotVerify": [],
+        "finalGates": {
+          "failing": [],
+          "ran": ["build", "test"]
+        },
+        "fixBase": "h2",
+        "fixRan": true,
+        "fixRounds": 1,
+        "gateFindings": [
+          {
+            "id": "B1",
+            "issue": "repo gate lint failed: 3 problems",
+            "kind": "gate",
+            "severity": "important"
+          }
+        ],
+        "lastHead": "h3",
+        "minors": [],
+        "newMinors": [],
+        "nextFindingId": 2,
+        "reasons": [],
+        "repoGates": {
+          "failing": ["lint"],
+          "ran": ["build", "lint", "test"]
+        },
+        "reviewOpen": [],
+        "reviewRan": true,
+        "rulings": [],
+        "seed": "seed0",
+        "startedAt": "t",
+        "step": "publish",
+        "timings": {
+          "adjudicate": 5,
+          "branch-fix": 5,
+          "branch-rereview": 5,
+          "branch-review": 5,
+          "final-gates": 5,
+          "repo-gates": 5
+        },
+        "tokensByRole": {}
+      }
+    },
+    {
+      "kind": "step",
+      "step": "publish"
+    },
+    {
+      "args": [
+        {
+          "cannotVerify": [],
+          "finalGates": {
+            "failing": [],
+            "ran": ["build", "test"]
+          },
+          "fixBase": "h2",
+          "fixRan": true,
+          "fixRounds": 1,
+          "gateFindings": [
+            {
+              "id": "B1",
+              "issue": "repo gate lint failed: 3 problems",
+              "kind": "gate",
+              "severity": "important"
+            }
+          ],
+          "lastHead": "h3",
+          "minors": [],
+          "newMinors": [],
+          "nextFindingId": 2,
+          "reasons": [],
+          "repoGates": {
+            "failing": ["lint"],
+            "ran": ["build", "lint", "test"]
+          },
+          "reviewOpen": [],
+          "reviewRan": true,
+          "rulings": [],
+          "seed": "seed0",
+          "startedAt": "t",
+          "step": "publish",
+          "timings": {
+            "adjudicate": 5,
+            "branch-fix": 5,
+            "branch-rereview": 5,
+            "branch-review": 5,
+            "final-gates": 5,
+            "repo-gates": 5
+          },
+          "tokensByRole": {}
+        }
+      ],
+      "kind": "call",
+      "method": "publish"
+    },
+    {
+      "kind": "return",
+      "method": "publish",
+      "value": {
+        "ci": "pending",
+        "outcome": "ready",
+        "reasons": [],
+        "url": "https://gh/pr/1"
+      }
+    },
+    {
+      "args": [],
+      "kind": "call",
+      "method": "head"
+    },
+    {
+      "kind": "return",
+      "method": "head",
+      "value": "h5"
+    },
+    {
+      "data": {
+        "durationMs": 0,
+        "step": "publish",
+        "storyId": "_run"
+      },
+      "kind": "log",
+      "level": "info",
+      "message": "publish ready https://gh/pr/1  <dur>"
+    },
+    {
+      "kind": "ledger",
+      "options": {
+        "mirror": false
+      },
+      "text": "feature ready https://gh/pr/1"
+    },
+    {
+      "args": [],
+      "kind": "call",
+      "method": "head"
+    },
+    {
+      "kind": "return",
+      "method": "head",
+      "value": "h5"
+    },
+    {
+      "kind": "update",
+      "record": {
+        "cannotVerify": [],
+        "ci": "pending",
+        "endedAt": "<ts>",
+        "finalGates": {
+          "failing": [],
+          "ran": ["build", "test"]
+        },
+        "fixBase": "h2",
+        "fixRan": true,
+        "fixRounds": 1,
+        "gateFindings": [
+          {
+            "id": "B1",
+            "issue": "repo gate lint failed: 3 problems",
+            "kind": "gate",
+            "severity": "important"
+          }
+        ],
+        "head": "h5",
+        "lastHead": "h5",
+        "minors": [],
+        "newMinors": [],
+        "nextFindingId": 2,
+        "outcome": "ready",
+        "passed": true,
+        "reasons": [],
+        "repoGates": {
+          "failing": ["lint"],
+          "ran": ["build", "lint", "test"]
+        },
+        "reviewOpen": [],
+        "reviewRan": true,
+        "rulings": [],
+        "seed": "seed0",
+        "startedAt": "t",
+        "step": "done",
+        "storyStates": [
+          {
+            "id": "US-001",
+            "state": "complete"
+          }
+        ],
+        "timings": {
+          "adjudicate": 5,
+          "branch-fix": 5,
+          "branch-rereview": 5,
+          "branch-review": 5,
+          "final-gates": 5,
+          "publish": 5,
+          "repo-gates": 5
+        },
+        "tokensByRole": {},
+        "url": "https://gh/pr/1"
+      }
+    },
+    {
+      "kind": "step",
+      "step": "done"
+    }
+  ],
+  "end": {
+    "returned": {
+      "cannotVerify": [],
+      "ci": "pending",
+      "endedAt": "<ts>",
+      "finalGates": {
+        "failing": [],
+        "ran": ["build", "test"]
+      },
+      "fixBase": "h2",
+      "fixRan": true,
+      "fixRounds": 1,
+      "gateFindings": [
+        {
+          "id": "B1",
+          "issue": "repo gate lint failed: 3 problems",
+          "kind": "gate",
+          "severity": "important"
+        }
+      ],
+      "head": "h5",
+      "lastHead": "h5",
+      "minors": [],
+      "newMinors": [],
+      "nextFindingId": 2,
+      "outcome": "ready",
+      "passed": true,
+      "reasons": [],
+      "repoGates": {
+        "failing": ["lint"],
+        "ran": ["build", "lint", "test"]
+      },
+      "reviewOpen": [],
+      "reviewRan": true,
+      "rulings": [],
+      "seed": "seed0",
+      "startedAt": "t",
+      "step": "done",
+      "storyStates": [
+        {
+          "id": "US-001",
+          "state": "complete"
+        }
+      ],
+      "timings": {
+        "adjudicate": 5,
+        "branch-fix": 5,
+        "branch-rereview": 5,
+        "branch-review": 5,
+        "final-gates": 5,
+        "publish": 5,
+        "repo-gates": 5
+      },
+      "tokensByRole": {},
+      "url": "https://gh/pr/1"
+    }
+  }
+}

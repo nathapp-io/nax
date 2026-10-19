@@ -1,0 +1,167 @@
+{
+  "scenario": "resume-mid-fix",
+  "machine": "story",
+  "events": [
+    {
+      "args": [],
+      "kind": "call",
+      "method": "costExceeded"
+    },
+    {
+      "kind": "return",
+      "method": "costExceeded",
+      "value": false
+    },
+    {
+      "kind": "update",
+      "record": {
+        "phase": "gates"
+      }
+    },
+    {
+      "args": [],
+      "kind": "call",
+      "method": "gates"
+    },
+    {
+      "kind": "return",
+      "method": "gates",
+      "value": {
+        "findings": [],
+        "red": false,
+        "states": {
+          "lint": "green",
+          "scoped": "green",
+          "typecheck": "green"
+        }
+      }
+    },
+    {
+      "kind": "update",
+      "record": {
+        "gates": {
+          "lint": "green",
+          "scoped": "green",
+          "typecheck": "green"
+        }
+      }
+    },
+    {
+      "kind": "update",
+      "record": {
+        "phase": "rereview"
+      }
+    },
+    {
+      "data": {
+        "step": "re-review r2",
+        "storyId": "US-001"
+      },
+      "kind": "log",
+      "level": "info",
+      "message": "US-001 re-review r2 start"
+    },
+    {
+      "args": [
+        2,
+        [
+          {
+            "id": "F1",
+            "issue": "issue one",
+            "kind": "spec",
+            "severity": "important"
+          }
+        ],
+        "h1"
+      ],
+      "kind": "call",
+      "method": "reReview"
+    },
+    {
+      "kind": "return",
+      "method": "reReview",
+      "value": {
+        "ran": true,
+        "verdict": {
+          "newFindings": [],
+          "verdicts": [
+            {
+              "addressed": true,
+              "id": "F1",
+              "note": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "data": {
+        "durationMs": 0,
+        "step": "re-review r2",
+        "storyId": "US-001"
+      },
+      "kind": "log",
+      "level": "info",
+      "message": "US-001 re-review r2: F1 addressed  <dur>"
+    },
+    {
+      "kind": "update",
+      "record": {
+        "phase": "suite"
+      }
+    },
+    {
+      "args": [],
+      "kind": "call",
+      "method": "fullSuite"
+    },
+    {
+      "kind": "return",
+      "method": "fullSuite",
+      "value": {
+        "findings": [],
+        "red": false,
+        "states": {
+          "full-suite": "green"
+        }
+      }
+    },
+    {
+      "kind": "update",
+      "record": {
+        "deferredMinors": 0,
+        "nextFindingId": 2,
+        "openFindings": [],
+        "reviewed": true,
+        "unreviewed": false
+      }
+    },
+    {
+      "kind": "update",
+      "record": {
+        "endedAt": "<ts>",
+        "flagged": 0,
+        "phase": "closed",
+        "reason": "clean",
+        "rulings": 0,
+        "state": "complete"
+      }
+    },
+    {
+      "kind": "ledger",
+      "options": {
+        "mirror": false
+      },
+      "text": "complete (2 round(s), clean)"
+    }
+  ],
+  "end": {
+    "returned": {
+      "reason": "clean",
+      "rounds": 2,
+      "rulings": [],
+      "state": "complete",
+      "unreviewed": false
+    }
+  }
+}

@@ -1,0 +1,90 @@
+{
+  "scenario": "cost-exceeded",
+  "machine": "story",
+  "events": [
+    {
+      "kind": "update",
+      "record": {
+        "phase": "implement"
+      }
+    },
+    {
+      "data": {
+        "step": "implementer",
+        "storyId": "US-001"
+      },
+      "kind": "log",
+      "level": "info",
+      "message": "US-001 implementer start"
+    },
+    {
+      "args": [
+        {
+          "kind": "implement"
+        }
+      ],
+      "kind": "call",
+      "method": "implement"
+    },
+    {
+      "kind": "return",
+      "method": "implement",
+      "value": {
+        "autoCommitted": false,
+        "reply": {
+          "commits": [],
+          "interrupted": false,
+          "status": "DONE",
+          "testSummary": ""
+        }
+      }
+    },
+    {
+      "data": {
+        "durationMs": 0,
+        "step": "implementer",
+        "storyId": "US-001"
+      },
+      "kind": "log",
+      "level": "info",
+      "message": "US-001 implementer: DONE  <dur>"
+    },
+    {
+      "args": [],
+      "kind": "call",
+      "method": "costExceeded"
+    },
+    {
+      "kind": "return",
+      "method": "costExceeded",
+      "value": true
+    },
+    {
+      "kind": "update",
+      "record": {
+        "endedAt": "<ts>",
+        "flagged": 0,
+        "phase": "closed",
+        "reason": "cost-limit",
+        "rulings": 0,
+        "state": "complete-gate-open"
+      }
+    },
+    {
+      "kind": "ledger",
+      "options": {
+        "mirror": false
+      },
+      "text": "complete-gate-open (0 round(s), cost-limit)"
+    }
+  ],
+  "end": {
+    "returned": {
+      "reason": "cost-limit",
+      "rounds": 0,
+      "rulings": [],
+      "state": "complete-gate-open",
+      "unreviewed": false
+    }
+  }
+}
