@@ -445,7 +445,11 @@ describe("red-gates-then-green", () => {
   test("AC-21: the red gate's fix turn comes before the story review", async () => {
     const h = redGatesHarness();
     const trace = await recordStoryTrace("red-gates-then-green", h);
-    const fixCall = trace.events.findIndex((event) => event.kind === "call" && event.method === "implement");
+    // The fix turn, not the initial implement: the property is that the *fix* precedes the review.
+    const fixCall = trace.events.findIndex(
+      (event) =>
+        event.kind === "call" && event.method === "implement" && (event.args[0] as ImplementTurn).kind === "fix",
+    );
     const reviewCall = trace.events.findIndex((event) => event.kind === "call" && event.method === "storyReview");
     expect(fixCall).toBeGreaterThan(-1);
     expect(reviewCall).toBeGreaterThan(-1);
