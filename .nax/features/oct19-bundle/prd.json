@@ -3,7 +3,7 @@
   "feature": "oct19-bundle",
   "branchName": "feat/oct19-bundle",
   "createdAt": "2026-10-19T00:00:00.000Z",
-  "updatedAt": "2026-10-19T04:56:15.562Z",
+  "updatedAt": "2026-10-19T05:20:07.110Z",
   "userStories": [
     {
       "id": "US-001",
@@ -237,8 +237,8 @@
         "trust"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -250,7 +250,19 @@
         "profileModelTier": "balanced",
         "initialAgent": "native",
         "initialProfileId": "native-deepseek",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "routerDecision": {
+          "mode": "shadow",
+          "router": "decision-proxy:nax-routing",
+          "outcome": "picked",
+          "profileId": "native-deepseek",
+          "confidence": 0.2400000000000002,
+          "plannedProfileId": "native-deepseek",
+          "applied": false,
+          "decidedAt": "2026-10-19T04:56:19.770Z"
+        }
       },
       "contextFiles": [
         "packages/nax/src/execution/runner-execution.ts",
@@ -293,7 +305,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "15d54d49c21b2ff57981a77da4caf57c1d662b7b"
     },
     {
       "id": "US-004",
