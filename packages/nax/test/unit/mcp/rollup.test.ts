@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { McpWithheldEntry } from "@/mcp";
 import { buildMcpRollup, writeMcpRollup } from "@/mcp/rollup";
 
 const dirs: string[] = [];
@@ -10,12 +11,18 @@ afterEach(async () => {
 });
 
 const at = "2026-09-13T00:00:00.000Z";
+const withheldEntry: McpWithheldEntry = {
+  serverId: "memory",
+  name: "delete_project",
+  reason: "absent-from-lock",
+  lockSource: "project",
+};
 
 describe("buildMcpRollup", () => {
   test("answers 'was this server actually attached?' per server", () => {
     const rollup = buildMcpRollup({
       runId: "r1",
-      withheld: [{ serverId: "memory", name: "delete_project", reason: "absent-from-lock" }],
+      withheld: [withheldEntry],
       events: [
         { kind: "connected", serverId: "memory", workdir: "/a", at, pid: 1, toolCount: 3 },
         { kind: "connected", serverId: "memory", workdir: "/b", at, pid: 2, toolCount: 3 },
@@ -26,7 +33,8 @@ describe("buildMcpRollup", () => {
       { serverId: "memory", workdirs: 2, connected: 2, failed: 0, toolsAdvertised: 3 },
       { serverId: "docs", workdirs: 1, connected: 0, failed: 1, toolsAdvertised: 0 },
     ]);
-    expect(rollup.withheld.length).toBe(1);
+    // Carried through unchanged — the entry now names the lock that withheld it.
+    expect(rollup.withheld).toEqual([withheldEntry]);
   });
 
   test("an empty run rolls up to nothing", () => {
@@ -38,14 +46,7 @@ describe("writeMcpRollup", () => {
   test("writes <outputDir>/mcp/<runId>-servers.json", async () => {
     const dir = await mkdtemp(join(tmpdir(), "nax-mcp-rollup-"));
     dirs.push(dir);
-    await writeMcpRollup(
-      dir,
-      buildMcpRollup({
-        runId: "r1",
-        withheld: [{ serverId: "memory", name: "delete_project", reason: "absent-from-lock" }],
-        events: [],
-      }),
-    );
+    await writeMcpRollup(dir, buildMcpRollup({ runId: "r1", withheld: [withheldEntry], events: [] }));
     expect(await Bun.file(join(dir, "mcp", "r1-servers.json")).exists()).toBe(true);
   });
 

@@ -998,12 +998,13 @@ const mcpCmd = program.command("mcp").description("Manage MCP servers the native
 mcpCmd
   .command("lock")
   .description("Refresh .nax/mcp-lock.json from what each configured server advertises")
-  .action(async () => {
+  .option("--global", "Write the lock to the global config dir instead of the project", false)
+  .action(async (options: { global: boolean }) => {
     // US-003: locking connects to the project's configured MCP servers and
     // writes the lock file — gate the working directory before either.
     await runTrustGate(process.cwd());
     const { runMcpLockCommand } = await import("../src/cli/mcp");
-    await runMcpLockCommand(process.cwd());
+    await runMcpLockCommand(process.cwd(), { global: options.global === true });
   });
 
 // ── routing ──────────────────────────────────────────

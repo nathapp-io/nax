@@ -2,7 +2,18 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { applyLock, mcpLockPath, readMcpLock, schemaHash, writeMcpLock } from "@/mcp/lock";
+import { globalConfigDir } from "@/config";
+import type { McpLockFile, ResolvedMcpLock } from "@/mcp/lock";
+import {
+  applyLock,
+  globalMcpLockPath,
+  mcpLockPath,
+  readMcpLock,
+  resolveMcpLock,
+  schemaHash,
+  writeMcpLock,
+  writeMcpLockAt,
+} from "@/mcp/lock";
 import type { McpToolDescriptor } from "@/mcp/types";
 
 const dirs: string[] = [];
@@ -82,5 +93,99 @@ describe("read/write", () => {
     const dir = await tempDir();
     await Bun.write(mcpLockPath(dir), "{ not json");
     expect(await readMcpLock(dir)).toBeUndefined();
+  });
+});
+
+/** Raw write: the resolver tests must not depend on the writer's canonicalisation. */
+async function writeLockFile(path: string, lock: unknown): Promise<void> {
+  await Bun.write(path, JSON.stringify(lock));
+}
+
+const toolHash = schemaHash({ type: "object" });
+const projectLock: McpLockFile = { version: 1, servers: { memory: { search_graph: toolHash } } };
+const globalLock: McpLockFile = {
+  version: 1,
+  servers: { memory: { search_graph: toolHash, delete_project: toolHash } },
+};
+
+describe("globalMcpLockPath", () => {
+  test("AC-6: defaults to <globalConfigDir>/mcp-lock.json, honouring NAX_GLOBAL_CONFIG_DIR", async () => {
+    const dir = await tempDir();
+    const previous = process.env.NAX_GLOBAL_CONFIG_DIR;
+    process.env.NAX_GLOBAL_CONFIG_DIR = dir;
+    try {
+      expect(globalMcpLockPath()).toBe(join(globalConfigDir(), "mcp-lock.json"));
+      expect(globalMcpLockPath()).toBe(join(dir, "mcp-lock.json"));
+    } finally {
+      if (previous === undefined) delete process.env.NAX_GLOBAL_CONFIG_DIR;
+      else process.env.NAX_GLOBAL_CONFIG_DIR = previous;
+    }
+  });
+
+  test("AC-6: an explicit globalDir wins over the environment", async () => {
+    const dir = await tempDir();
+    expect(globalMcpLockPath(dir)).toBe(join(dir, "mcp-lock.json"));
+  });
+});
+
+describe("resolveMcpLock", () => {
+  test("AC-1: the project lock wins, with source project, even when a global lock exists", async () => {
+    const root = await tempDir();
+    const globalDir = await tempDir();
+    await writeLockFile(mcpLockPath(root), projectLock);
+    await writeLockFile(join(globalDir, "mcp-lock.json"), globalLock);
+
+    expect(await resolveMcpLock(root, globalDir)).toEqual({ ...projectLock, source: "project" });
+  });
+
+  test("AC-2: falls back to the global lock, with source global, when the project has none", async () => {
+    const root = await tempDir();
+    const globalDir = await tempDir();
+    await writeLockFile(join(globalDir, "mcp-lock.json"), globalLock);
+
+    expect(await resolveMcpLock(root, globalDir)).toEqual({ ...globalLock, source: "global" });
+  });
+
+  test("AC-3: a malformed project lock fails closed rather than falling through to the global lock", async () => {
+    const root = await tempDir();
+    const globalDir = await tempDir();
+    await writeLockFile(mcpLockPath(root), { version: 2, servers: {} });
+    await writeLockFile(join(globalDir, "mcp-lock.json"), globalLock);
+
+    expect(await resolveMcpLock(root, globalDir)).toBeUndefined();
+  });
+
+  test("AC-4: a malformed global lock resolves to undefined", async () => {
+    const root = await tempDir();
+    const globalDir = await tempDir();
+    await writeLockFile(join(globalDir, "mcp-lock.json"), "{ not json");
+
+    expect(await resolveMcpLock(root, globalDir)).toBeUndefined();
+  });
+
+  test("AC-5: no project lock and no global lock resolves to undefined", async () => {
+    expect(await resolveMcpLock(await tempDir(), await tempDir())).toBeUndefined();
+  });
+});
+
+describe("writeMcpLockAt", () => {
+  test("AC-13: never serialises the resolver's source field", async () => {
+    const dir = await tempDir();
+    const path = join(dir, "nested", "mcp-lock.json");
+    const resolved: ResolvedMcpLock = { ...globalLock, source: "global" };
+    await writeMcpLockAt(path, resolved);
+
+    const text = await Bun.file(path).text();
+    expect(text).not.toContain("source");
+    expect(JSON.parse(text)).toEqual({ version: 1, servers: globalLock.servers });
+  });
+
+  test("AC-17: writeMcpLock still writes key-sorted version-and-servers JSON with a trailing newline", async () => {
+    const dir = await tempDir();
+    await writeMcpLock(dir, { version: 1, servers: { z: { b: "2", a: "1" }, a: { c: "3" } } });
+
+    expect(await Bun.file(mcpLockPath(dir)).text()).toBe(
+      `${JSON.stringify({ version: 1, servers: { a: { c: "3" }, z: { a: "1", b: "2" } } }, null, 2)}\n`,
+    );
   });
 });
