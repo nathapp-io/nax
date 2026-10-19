@@ -17,7 +17,7 @@ The provider that loads them is `StaticRulesProvider` ([src/context/engine/provi
 
 Subdirectories one level deep are allowed (e.g. `.nax/rules/api/auth.md`); deeper nesting is ignored with a warning.
 
-In a monorepo, package-level rules **overlay** repo-level rules: a file at `apps/api/.nax/rules/foo.md` overrides the repo-level `foo.md` by fileName. Other files merge.
+In a monorepo, package-level rules **overlay** repo-level rules by rule id, the file's path relative to its `.nax/rules/` directory without `.md`: `apps/api/.nax/rules/foo.md` (id `foo`) overrides the repo-level `.nax/rules/foo.md`, but not `.nax/rules/api/foo.md` (id `api/foo`). Other rules merge.
 
 ## File format
 
