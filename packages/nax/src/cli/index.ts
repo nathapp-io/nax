@@ -61,6 +61,13 @@ export {
   listDependentStoryIds,
 } from "./context-fragments";
 export {
+  _costCliDeps,
+  type CostCliDeps,
+  type CostCommandOptions,
+  costCommand,
+  registerCostCommand,
+} from "./cost";
+export {
   _costLedgerQueryDeps,
   COST_GROUP_KEYS,
   type CostGroupKey,

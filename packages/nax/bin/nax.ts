@@ -60,6 +60,7 @@ import {
   promptsInitCommand,
   registerAdvisorCommand,
   registerApprovalsCommand,
+  registerCostCommand,
   registerGatesCommand,
   registerTrustCommand,
   registerWorkflowCommand,
@@ -992,6 +993,11 @@ registerWorkflowCommand(program);
 // `ensureProjectTrusted` (exit 1 on refusal), not `runTrustGate` — exit 2 means
 // "the gates ran and something is not green" here.
 registerGatesCommand(program);
+
+// ── cost ──────────────────────────────────────────────
+// Pure read of the per-call cost ledger: no agent work, no writes, no config
+// beyond the project name that keys the output dir, so no trust gate.
+registerCostCommand(program);
 
 const mcpCmd = program.command("mcp").description("Manage MCP servers the native agent may call tools on");
 
