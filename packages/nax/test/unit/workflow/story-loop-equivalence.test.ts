@@ -145,6 +145,39 @@ describe("makeStoryLoopHarness", () => {
     expect(await h.env.steps.implement(turn)).toBe(custom);
     expect(seen).toEqual([turn]);
   });
+
+  test("a resumed harness accumulates onto its resume record, keeping the fields no patch rewrites", async () => {
+    const resume: WorkflowStoryRecord = {
+      ...newStoryRecord("US-001", 5, "earlier"),
+      round: 2,
+      phase: "rereview",
+      reviewed: true,
+      fixBase: "h1",
+      openFindings: [OPEN_FINDING],
+      nextFindingId: 2,
+      timings: { "story-review": 12 },
+    };
+    const h = makeStoryLoopHarness({ reReviewAllAddressed: [true] }, { resume });
+    // The machine resumes at round 2; its storage must agree, not start a fresh story beside it.
+    expect(await runStoryLoop(h.env)).toMatchObject({ state: "complete", rounds: 2 });
+    expect(h.record()).toMatchObject({
+      round: 2,
+      startedAt: "earlier",
+      maxRounds: 5,
+      timings: { "story-review": 12 },
+      openFindings: [],
+      state: "complete",
+      phase: "closed",
+    });
+    // An independent copy: patching the harness's record never wrote through to the caller's.
+    expect(resume).toMatchObject({
+      round: 2,
+      phase: "rereview",
+      startedAt: "earlier",
+      fixBase: "h1",
+      openFindings: [OPEN_FINDING],
+    });
+  });
 });
 
 describe("recordStoryTrace", () => {

@@ -12,7 +12,15 @@ import { NaxError } from "@/errors";
 import { addSink, initLogger, resetLogger } from "@/logger";
 import type { WorkflowAdvisor } from "@/workflow/advisor";
 import { runStoryLoop, type StoryLoopEnv, type StoryLoopSink, type StoryLoopSteps } from "@/workflow/story-loop";
-import type { TraceEnd, TraceEvent, WorkflowTrace } from "./workflow-trace";
+import {
+  snapshot,
+  snapshotOptions,
+  type TraceEnd,
+  type TraceEvent,
+  tracedAsync,
+  tracedSync,
+  type WorkflowTrace,
+} from "./workflow-trace";
 
 /** What `recordStoryTrace` needs from a scripted harness: the `StoryLoopEnv` the loop runs on. */
 export interface StoryTraceHarness {
@@ -21,46 +29,6 @@ export interface StoryTraceHarness {
 
 /** The run-log stage whose lines a trace keeps; everything else is another module's voice. */
 const WORKFLOW_STAGE = "workflow";
-
-/**
- * A deep copy of a plain data value. The loop passes objects it may replace or extend later (a record
- * patch, a findings list), and a trace must record what a seam was handed, not what it became.
- */
-function snapshot(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map((item) => snapshot(item));
-  if (value === null || typeof value !== "object") return value;
-  const source = value as Record<string, unknown>;
-  const copy: Record<string, unknown> = {};
-  for (const key of Object.keys(source)) copy[key] = snapshot(source[key]);
-  return copy;
-}
-
-/** A call hook: same signature as the seam method, so wrapping keeps synchronous versus asynchronous. */
-function tracedSync<A extends readonly unknown[], R>(
-  method: string,
-  fn: (...args: A) => R,
-  events: TraceEvent[],
-): (...args: A) => R {
-  return (...args: A): R => {
-    events.push({ kind: "call", method, args: args.map((arg) => snapshot(arg)) });
-    const value = fn(...args);
-    events.push({ kind: "return", method, value: snapshot(value) });
-    return value;
-  };
-}
-
-function tracedAsync<A extends readonly unknown[], R>(
-  method: string,
-  fn: (...args: A) => Promise<R>,
-  events: TraceEvent[],
-): (...args: A) => Promise<R> {
-  return async (...args: A): Promise<R> => {
-    events.push({ kind: "call", method, args: args.map((arg) => snapshot(arg)) });
-    const value = await fn(...args);
-    events.push({ kind: "return", method, value: snapshot(value) });
-    return value;
-  };
-}
 
 /**
  * The seam methods the harness actually provides, wrapped. `workProduced` and `modelFor` are optional
@@ -102,7 +70,7 @@ function wrapSink(sink: StoryLoopSink, events: TraceEvent[]): StoryLoopSink {
       await sink.update(patch);
     },
     ledger: async (text, options) => {
-      events.push({ kind: "ledger", text, options });
+      events.push({ kind: "ledger", text, options: snapshotOptions(options) });
       await sink.ledger(text, options);
     },
   };
@@ -129,10 +97,13 @@ export async function recordStoryTrace(scenario: string, harness: StoryTraceHarn
   initLogger({ level: "silent" });
   const unsubscribe = addSink((entry) => {
     if (entry.stage !== WORKFLOW_STAGE) return;
-    events.push({ kind: "log", level: entry.level, message: entry.message, data: entry.data });
+    const data = entry.data === undefined ? undefined : snapshot(entry.data);
+    events.push({ kind: "log", level: entry.level, message: entry.message, data });
   });
   try {
     const returned = await runStoryLoop(env);
+    // `end` keeps the loop's own value rather than a copy: it is the finished outcome, not one of the
+    // interactions the trace pins (AC-8 pins its shape, not an identity).
     return { scenario, machine: "story", events, end: { returned } };
   } catch (err) {
     return { scenario, machine: "story", events, end: { threw: thrownBy(err) } };

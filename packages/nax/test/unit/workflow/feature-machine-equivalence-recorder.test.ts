@@ -7,6 +7,7 @@ import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import {
   assertCaughtInstanceOf,
+  assertDefined,
   compareWithGolden,
   type FeatureMachineScript,
   featureMachineFixtures,
@@ -234,6 +235,49 @@ describe("recordFeatureTrace", () => {
     };
     const trace = await recordFeatureTrace("boom", { env });
     expect(trace.end).toEqual({ threw: { code: null, message: "boom" } });
+  });
+
+  test("a step argument mutated after capture leaves its call event unchanged", async () => {
+    const harness = makeFeatureMachineHarness(CLEAN);
+    const trace = await recordFeatureTrace("mutating-arg", harness);
+    const call = eventsOf(trace, "call").find((event) => event.method === "branchReview");
+    assertDefined(call, "branchReview call event");
+    // The facts' story entries are objects the machine built for this call and keeps no reference to,
+    // so rewriting one after the run can only reach the trace through a shared reference.
+    Object.assign(harness.reviewFacts[0].stories[0], { state: "complete-gate-open" });
+    expect(call.args[1]).toMatchObject({ stories: [{ id: "US-001", state: "complete" }] });
+  });
+
+  test("a returned object mutated after capture leaves its return event unchanged", async () => {
+    const gateRun = { summary: { ran: ["build"], failing: [] as string[] }, findings: [] };
+    const harness = makeFeatureMachineHarness(CLEAN);
+    const env = { ...harness.env, steps: { ...harness.env.steps, repoGates: async () => gateRun } };
+    const trace = await recordFeatureTrace("mutating-return", { env });
+    const expected = { summary: { ran: ["build"], failing: [] }, findings: [] };
+    gateRun.summary.failing.push("lint");
+    const returns = eventsOf(trace, "return").filter((event) => event.method === "repoGates");
+    // The mutation appended no event and rewrote none: the recorded return is a copy.
+    expect(returns).toEqual([{ kind: "return", method: "repoGates", value: expected }]);
+  });
+
+  test("a persisted record mutated after capture leaves its update event unchanged", async () => {
+    const gateRun = { summary: { ran: ["build"], failing: [] as string[] }, findings: [] };
+    const harness = makeFeatureMachineHarness({ gates: [gateRun] });
+    const trace = await recordFeatureTrace("mutating-record", harness);
+    const update = eventsOf(trace, "update")[0];
+    assertDefined(update, "first update event");
+    // The harness's sink kept the machine's record, whose `repoGates` is the summary the step returned.
+    gateRun.summary.failing.push("lint");
+    expect(update.record).toMatchObject({ step: "branch-review", repoGates: { ran: ["build"], failing: [] } });
+  });
+
+  test("an artifact value is the value seen at the call, not the object the sink kept", async () => {
+    const harness = makeFeatureMachineHarness(CLEAN);
+    const trace = await recordFeatureTrace("artifact-copy", harness);
+    const artifact = eventsOf(trace, "artifact")[0];
+    assertDefined(artifact, "artifact event");
+    expect(artifact.value).toEqual(harness.artifacts[artifact.name]);
+    expect(artifact.value).not.toBe(harness.artifacts[artifact.name]);
   });
 });
 

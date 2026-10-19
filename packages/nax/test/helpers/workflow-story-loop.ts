@@ -127,6 +127,20 @@ export interface ReReviewCall {
 const reviewOutcome = (queued: StoryReviewVerdict | null): ReviewOutcome<StoryReviewVerdict> =>
   queued === null ? { ran: false, why: "unparseable reply" } : { ran: true, verdict: queued };
 
+/**
+ * An independent copy of a resume record: a resumed run accumulates onto the record a prior run left,
+ * so the patches must never write through to the caller's object (nor read a field the caller later
+ * changes). The three containers the loop reads as mutable state get their own copies.
+ */
+function copyRecord(record: WorkflowStoryRecord): WorkflowStoryRecord {
+  return {
+    ...record,
+    openFindings: [...record.openFindings],
+    gates: { ...record.gates },
+    timings: { ...record.timings },
+  };
+}
+
 /** An explicit verdict wins; otherwise the next addressed flag; otherwise everything was addressed. */
 function reReviewOutcome(
   findings: readonly WorkflowFinding[],
@@ -154,7 +168,10 @@ export interface StoryLoopHarness {
   readonly reviewGates: (Readonly<Partial<Record<GateName, GateState>>> | undefined)[];
   /** Every re-review as the loop asked for it, in order. */
   readonly reReviews: ReReviewCall[];
-  /** The record as the patches accumulated it. */
+  /**
+   * The record as the patches accumulated it. A resumed harness starts from an independent copy of
+   * its `resume` record, so fields no patch rewrites (round, startedAt, timings) survive.
+   */
   record(): WorkflowStoryRecord;
 }
 
@@ -172,7 +189,13 @@ export function makeStoryLoopHarness(script: StoryLoopScript = {}, over: StoryLo
   const verdicts = [...(script.reReviews ?? [])];
   const addressedFlags = [...(script.reReviewAllAddressed ?? [])];
   let head = 0;
-  let record: WorkflowStoryRecord = newStoryRecord(storyId, maxFixRounds, STARTED_AT);
+  // A resumed story's storage starts where the machine does: from the prior run's unfinished record.
+  // Starting fresh made the sink patches drop every field they do not rewrite (round, startedAt, timings),
+  // so `record()` disagreed with the round the loop resumed from.
+  let record: WorkflowStoryRecord =
+    over.resume === null || over.resume === undefined
+      ? newStoryRecord(storyId, maxFixRounds, STARTED_AT)
+      : copyRecord(over.resume);
   const steps: StoryLoopSteps = {
     implement: async (turn) => {
       turns.push(turn);

@@ -105,29 +105,57 @@ export interface GoldenOptions {
 /** The run-log stage whose lines a trace keeps; everything else is another module's voice. */
 const WORKFLOW_STAGE = "workflow";
 
+/**
+ * A deep copy of a plain data value, taken when the interaction was observed. Both machines keep
+ * using the objects they hand a seam — a scripted gate result, a findings list, a record patch — so a
+ * trace must record what a seam was handed, not what that object later became: mutating an argument,
+ * a returned object or a persisted record after capture leaves the recorded event unchanged.
+ *
+ * The first signature keeps a log line's `data` a `Record<string, unknown>` at its call site; every
+ * other payload lands as `unknown` and is narrowed by the event's own type.
+ */
+export function snapshot(value: Record<string, unknown>): Record<string, unknown>;
+export function snapshot(value: unknown): unknown;
+export function snapshot(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map((item) => snapshot(item));
+  if (value === null || typeof value !== "object") return value;
+  const source = value as Record<string, unknown>;
+  const copy: Record<string, unknown> = {};
+  for (const key of Object.keys(source)) copy[key] = snapshot(source[key]);
+  return copy;
+}
+
+/**
+ * `ledger` is the one seam write whose payload is a flat options object (`LedgerWriteOptions`), so a
+ * spread is its whole copy — and it stays typed, unlike `snapshot`, whose result is `unknown`.
+ */
+export function snapshotOptions(options: LedgerWriteOptions | undefined): LedgerWriteOptions | undefined {
+  return options === undefined ? undefined : { ...options };
+}
+
 /** A call hook: same signature as the seam method, so wrapping keeps sync versus async. */
-function tracedSync<A extends readonly unknown[], R>(
+export function tracedSync<A extends readonly unknown[], R>(
   method: string,
   fn: (...args: A) => R,
   events: TraceEvent[],
 ): (...args: A) => R {
   return (...args: A): R => {
-    events.push({ kind: "call", method, args });
+    events.push({ kind: "call", method, args: args.map((arg) => snapshot(arg)) });
     const value = fn(...args);
-    events.push({ kind: "return", method, value });
+    events.push({ kind: "return", method, value: snapshot(value) });
     return value;
   };
 }
 
-function tracedAsync<A extends readonly unknown[], R>(
+export function tracedAsync<A extends readonly unknown[], R>(
   method: string,
   fn: (...args: A) => Promise<R>,
   events: TraceEvent[],
 ): (...args: A) => Promise<R> {
   return async (...args: A): Promise<R> => {
-    events.push({ kind: "call", method, args });
+    events.push({ kind: "call", method, args: args.map((arg) => snapshot(arg)) });
     const value = await fn(...args);
-    events.push({ kind: "return", method, value });
+    events.push({ kind: "return", method, value: snapshot(value) });
     return value;
   };
 }
@@ -159,11 +187,11 @@ function wrapSteps(steps: FeatureSteps, events: TraceEvent[]): FeatureSteps {
 function wrapSink(sink: FeatureSink, events: TraceEvent[]): FeatureSink {
   return {
     update: async (record) => {
-      events.push({ kind: "update", record });
+      events.push({ kind: "update", record: snapshot(record) });
       await sink.update(record);
     },
     ledger: async (text, options) => {
-      events.push({ kind: "ledger", text, options });
+      events.push({ kind: "ledger", text, options: snapshotOptions(options) });
       await sink.ledger(text, options);
     },
     step: (step, record) => {
@@ -171,7 +199,7 @@ function wrapSink(sink: FeatureSink, events: TraceEvent[]): FeatureSink {
       sink.step(step, record);
     },
     artifact: async (name, value) => {
-      events.push({ kind: "artifact", name, value });
+      events.push({ kind: "artifact", name, value: snapshot(value) });
       await sink.artifact(name, value);
     },
   };
@@ -197,10 +225,13 @@ export async function recordFeatureTrace(scenario: string, harness: FeatureTrace
   initLogger({ level: "silent" });
   const unsubscribe = addSink((entry) => {
     if (entry.stage !== WORKFLOW_STAGE) return;
-    events.push({ kind: "log", level: entry.level, message: entry.message, data: entry.data });
+    const data = entry.data === undefined ? undefined : snapshot(entry.data);
+    events.push({ kind: "log", level: entry.level, message: entry.message, data });
   });
   try {
     const returned = await runFeatureMachine(env);
+    // `end` keeps the machine's own value rather than a copy: it is not a recorded interaction (the
+    // machine hands it back exactly once, when it is already finished), and AC-10 pins the identity.
     return { scenario, machine: "feature", events, end: { returned } };
   } catch (err) {
     return { scenario, machine: "feature", events, end: { threw: thrownBy(err) } };
