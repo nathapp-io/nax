@@ -18,6 +18,13 @@ const REAL = [
   "Full test suite including the 16 PG-backed integration ACs under KODA_DB_TESTS=1 has not yet run (nax runs it after this review): this sandbox has no Docker",
   // Coverage is not one of nax's repository gates.
   "Repository gates (check:all, test:coverage) not yet run",
+  // Code review of the first cut: each of these was dropped although it names a real gap.
+  "Full test suite failed on the previous iteration and has not run since the fix",
+  "Full test suite not yet run: the new cache test needs a running Redis",
+  "Full suite: 3 tests in auth.test.ts are marked pending (test.todo), so AC-4 is not exercised",
+  "Repository gates not yet run; the e2e journey needs Playwright browsers installed",
+  "Full test suite exit=1 last time; not yet re-run",
+  "Repository gates pending: check:all includes a migration drift check that needs a seeded S3 bucket",
   // No gate named, or no timing reason given.
   "The scoped integration test did not complete: `bun run test:scoped x.spec.ts` failed because no test Postgres was available",
   "Full test suite and repo gates beyond lint+typecheck+scoped tests",

@@ -234,7 +234,7 @@ async function branchReviewStep(env: FeatureEnv, rec: WorkflowFeatureRecord): Pr
   const { findings, nextFindingId } = assign(rec, withQualityFloor(out.verdict));
   const minors = out.verdict.findings.filter((f) => !isBlocking(f));
   // #2496: written here, after assign(), so the file and result.json name findings the same way.
-  await env.sink.artifact("branch-review.json", { ...out.verdict, findings: [...findings, ...minors] });
+  await env.sink.artifact("branch-review.json", { ...out.verdict, cannotVerify, findings: [...findings, ...minors] });
   log.done(`spec ${out.verdict.spec}, quality ${out.verdict.quality} - ${describeFindings([...findings, ...minors])}`);
   return {
     reviewRan: true,

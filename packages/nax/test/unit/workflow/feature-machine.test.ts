@@ -59,6 +59,7 @@ describe("runFeatureMachine", () => {
     const h = harness({ review });
     const final = await runFeatureMachine(h.env);
     expect(final.cannotVerify).toEqual(["CI-only path"]);
+    expect(h.artifacts["branch-review.json"]).toMatchObject({ cannotVerify: ["CI-only path"] });
     expect(h.ledger).toContain(
       "cannot-verify dropped (a nax gate covers it): Repository gates after the branch fix have not run yet",
     );

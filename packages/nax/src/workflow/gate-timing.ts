@@ -14,14 +14,18 @@ import { ledgerText } from "./ledger";
 
 const NAX_GATE = /\b(full(?:[- ]package)?(?:[- ]test)?[- ]suite|repo(?:sitory)?(?:-wide|-level)?[- ]gates?)\b/i;
 const NOT_YET =
-  /\b(after (?:this |the )?review|runs? after|runs? only after|not (?:yet )?(?:been )?run|has(?: not|n't) run|have(?: not|n't) run|had not run|not (?:yet )?(?:been )?reached|never reached|not yet|pending|once every story|after all stories|post-review|per (?:the )?workflow)\b/i;
+  /\b(after (?:this |the )?review|runs? after|runs? only after|not (?:yet )?(?:been )?run|has(?: not|n't) run|have(?: not|n't) run|had not run|not (?:yet )?(?:been )?reached|never reached|not yet|once every story|after all stories|post-review)\b/i;
 const EVIDENCE =
-  /(\bexit(?:ed|s)?(?: code)? [1-9]|\bsandbox|\bpostgres|\bdocker|\bdatabase|\bdb-|\bintegration\b|\brefused|\berror|\btime(?:d)? ?out|\bpre-existing|\bunrelated|\b[1-9]\d* (?:fail(?:ed|ures?|s)?)\b|\d+(?:\.\d+)?%|\blive\b|\bnetwork|\bblocked|\babort|coverage)/i;
+  /(\bexit(?:ed|s)?(?: code)?\s*[=:]?\s*[1-9]|\bfail|\bneeds?\b|\brequires?\b|\bdepends? on|\bonly (?:on|in|with)\b|\bskip|\btodo\b|\bcredential|\bbrowser|\bsandbox|\bpostgres|\bdocker|\bdatabase|\bdb-|\bintegration\b|\brefused|\berror|\btime(?:d)? ?out|\bpre-existing|\bunrelated|\d+(?:\.\d+)?%|\blive\b|\bnetwork|\bblocked|\babort|coverage)/i;
 /** Case-sensitive: an errno (`EPERM`), `PG` or `CI` — insensitive, the first would match "every". */
 const EVIDENCE_CODES = /\b(?:E[A-Z]{3,}|PG|CI)\b/;
 
+/** A scoped-run tally ("13 pass, 0 fail") reports nothing failing; it must not read as a failure. */
+const ZERO_FAIL = /\b0 fail(?:ed|ures?|s)?\b/gi;
+
 export function isGateTimingItem(text: string): boolean {
-  return NAX_GATE.test(text) && NOT_YET.test(text) && !EVIDENCE.test(text) && !EVIDENCE_CODES.test(text);
+  const body = text.replace(ZERO_FAIL, "");
+  return NAX_GATE.test(body) && NOT_YET.test(body) && !EVIDENCE.test(body) && !EVIDENCE_CODES.test(body);
 }
 
 export function splitGateTimingItems(items: readonly string[]): { kept: string[]; dropped: string[] } {
