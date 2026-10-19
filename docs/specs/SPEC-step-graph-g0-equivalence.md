@@ -1,4 +1,3 @@
-<!-- spec-writing: completed-through-phase-5 -->
 # SPEC: Workflow equivalence corpus (golden traces for the step-graph port)
 
 ## Summary
@@ -160,7 +159,8 @@ small scripts. They write golden files only to a temp directory, never to the co
 ### US-002: Feature-machine golden scenarios
 Depends on US-001. Workdir: packages/nax.
 
-Adds the feature-machine scenario catalogue `test/unit/workflow/feature-machine-equivalence.test.ts`, built on
+Adds the feature-machine scenario catalogue `test/unit/workflow/feature-machine-equivalence.test.ts` (split by describe
+block into `feature-machine-equivalence-<concern>.test.ts` files if it would pass the 650-line test-file target), built on
 `makeFeatureMachineHarness` and the US-001 recorder. Commits one golden per scenario under
 `test/fixtures/workflow-equivalence/feature/`, generated from the current `runFeatureMachine`.
 
@@ -257,18 +257,18 @@ Feature scenarios (each drives `makeFeatureMachineHarness` with the stated scrip
 3. [unit] `two-fix-rounds`: review with one `important` finding, the first re-review leaves it not addressed, the second addresses it, with `maxBranchFixRounds` 2. Exactly two `branchFix` calls.
 4. [unit] `residual-adjudicated`: review with one `important` finding never addressed across the round cap. An `adjudicate` call occurs with that finding, and the publish step still runs.
 5. [unit] `repo-gates-red`: the first repo-gates run returns a failing `lint` with one gate finding. The first `branchFix` call's argument includes that gate finding, and a ledger event's text contains `repo gates red: lint`.
-6. [unit] `final-gates-repair`: repo gates green, one fix round, then the final gates turn red and a repair round turns them green. The `step` events include `gate-repair`.
+6. [unit] `final-gates-repair`: the three gate runs are green, then red with one gate finding, then green, with one fix round between the first two. The `step` events include `gate-repair`.
 7. [unit] `review-not-ran`: `branchReview` returns `{ ran: false }`. The final record has `reviewRan` false, and a ledger event records the skipped review.
 8. [unit] `rereview-timeout`: the review returns one `important` finding, and the re-review returns `{ ran: false, why: "timeout" }`. The final record has `reReviewSkipped` true.
 9. [unit] `cost-stop-before-review`: `costExceeded` is true from the first agent step. No `branchReview` call occurs, the final record has `costLimited` true, and the publish step runs.
 10. [unit] `cost-stop-before-fix`: the review returns one `important` finding, and `costExceeded` turns true once the `branchReview` call has happened. No `branchFix` call occurs, and the final record has `costLimited` true.
 11. [unit] `aborted`: `aborted` is true from the start. The trace has no `call` events and its `end` is a throw with code `WORKFLOW_ABORTED`.
-12. [unit] `resume-at-rereview`: the harness starts from a record whose `step` is `branch-rereview`, with one open `important` finding, a `fixBase`, `fixRan` true and `fixRounds` 1. The first `step` event is `branch-rereview`, and no `repoGates` or `branchReview` call occurs.
+12. [unit] `resume-at-rereview`: the harness starts from a record whose `step` is `branch-rereview`, with one open `important` finding, a `fixBase`, `fixRan` true and `fixRounds` 1. The first `step` event is `branch-rereview`, no `branchReview` call occurs, and the only `repoGates` call comes after the `branchReReview` call (the `final-gates` step, which re-runs the gates because `fixRan` is true).
 13. [unit] `publish-draft-ci-failed`: publish returns `outcome: "draft"` with `ci: "failed"`. The final record's `outcome` is `draft` and its `ci` is `failed`.
 14. [unit] `publish-local-only`: publish returns `outcome: "local-only"`. The final record's `outcome` is `local-only`.
 15. [unit] `branch-review-empty-seed`: the harness record has an empty `seed`. No `branchReview` call occurs, and a ledger event records the review skipped for no seed.
 16. [unit] `branch-fix-session-failed`: the review returns one `important` finding, and `branchFix` returns `failure: "crashed"` with `autoCommitted` true and `dirty` true. Ledger events record the failed session, the auto-commit and the uncommitted edits.
-17. [unit] `head-unreadable`: the review returns one `important` finding, and `head()` throws. No `branchFix` call occurs, and a ledger event records `branch fix skipped: HEAD could not be read`.
+17. [unit] `head-unreadable`: the review returns one `important` finding, and every `head()` call throws. The scenario passes the harness to `recordFeatureTrace` with `env.steps.head` replaced by a function that throws `new Error("git")` (spread over the harness `env`; the harness file is not edited), so the later HEAD reads also log their warnings into the golden. No `branchFix` call occurs, and a ledger event records `branch fix skipped: HEAD could not be read`.
 18. [unit] `fix-now-minor`: the record carries one deferred minor, and the review triages it `fix-now` with no blocking finding. The first `branchFix` call's argument includes that minor.
 19. [unit] `quality-floor`: the review returns `quality: "changes"` with only a `minor` finding. A `branchFix` call occurs, and its argument includes a finding whose issue is `quality: reviewer reported changes without a finding`.
 
@@ -277,7 +277,7 @@ Feature scenarios (each drives `makeFeatureMachineHarness` with the stated scrip
 Harness and recorder:
 
 1. [unit] The story-loop harness factory in `test/helpers/workflow-story-loop.ts` builds a `StoryLoopEnv` from a script of queued gate results, full-suite results, story-review verdicts (or `null` for not ran), re-review addressed flags, and an implement function. With an empty script, `runStoryLoop` on it returns state `complete` with `rounds` 0.
-2. [unit] `recordStoryTrace(scenarioName, harness)` runs `runStoryLoop` and returns a trace with `machine` `"story"`. Every `StoryLoopSteps` and `WorkflowAdvisor` invocation appears as `call` and `return` events, every `StoryLoopSink.update` and `StoryLoopSink.ledger` call as an `update` or `ledger` event, and every `stage: "workflow"` log line as a `log` event, in order; a `StoryLoopSteps` method the harness does not provide stays absent on the wrapped env.
+2. [unit] `recordStoryTrace(scenarioName, harness)` runs `runStoryLoop` and returns a trace with `machine` `"story"`. Every `StoryLoopSteps` and `WorkflowAdvisor` invocation appears as `call` and `return` events, every `StoryLoopSink.update` and `StoryLoopSink.ledger` call as an `update` or `ledger` event, and every `stage: "workflow"` log line as a `log` event, in order (the sink wrappers are closures that do not rely on `this`, because the loop passes `env.sink.ledger` unbound to `adjudicateResidual`); a `StoryLoopSteps` method the harness does not provide stays absent on the wrapped env.
 3. [unit] For a story trace, `compareWithGolden` reads and writes under `test/fixtures/workflow-equivalence/story/`, and a mismatch fails with the same message shape as a feature trace (scenario name, first differing index, expected and actual event).
 4. [unit] Two `recordStoryTrace` runs from the same script on fresh harnesses serialize identically, including the final `update` patch's `endedAt`, which reads `"<ts>"`.
 5. [unit] When a scripted story step throws a plain `Error` with message `"boom"`, the story trace's `end` is `{ threw: { code: null, message: "boom" } }` and `recordStoryTrace` resolves.
@@ -287,12 +287,12 @@ Story scenarios (each runs through `compareWithGolden` and asserts the property 
 6. [unit] `clean`: green gates, passing review. The outcome is `complete` with `rounds` 0, and exactly one `implement` call, of kind `implement`.
 7. [unit] `red-gates-then-green`: the first gate run has a red `lint` with one gate finding, the second is green. An implement call of kind `fix` occurs before the story review.
 8. [unit] `review-fail-one-round`: the first review fails with one `important` finding, and the re-review addresses it. The outcome is `complete` with `rounds` 1.
-9. [unit] `fresh-after-warm-cap`: four failing reviews, then a pass, with `maxFixRounds` 5. The fix-round turn after round `WARM_ROUND_CAP` carries `fresh: true`.
+9. [unit] `fresh-after-warm-cap`: four failing reviews, then a pass, with `maxFixRounds` 5. The `fix` turns of rounds 1 to 3 carry `fresh: false`, and the round-4 `fix` turn carries `fresh: true`.
 10. [unit] `residual-rulings`: reviews keep failing past `maxFixRounds`, and the advisor's `ruleResidual` rules the open finding. The outcome is `complete-with-rulings`, and a `ruleResidual` call appears in the trace.
 11. [unit] `needs-context-answered`: the implementer replies `NEEDS_CONTEXT` once, and the advisor answers `"try X"`. An implement call of kind `answer` with text `"try X"` follows.
 12. [unit] `review-not-ran`: `storyReview` returns `{ ran: false }`. The outcome's `unreviewed` is true.
 13. [unit] `full-suite-red`: the full suite returns red with one gate finding, every time. The outcome state is `complete-gate-open`.
 14. [unit] `cost-exceeded`: `costExceeded` returns true from the start. Exactly one implement call (kind `implement`) occurs, no `gates` call occurs, and the outcome is `complete-gate-open` with reason `cost-limit`.
 15. [unit] `no-work-restart`: the first implement reply has `noStatusBlock: true` and `workProduced` returns false once, then the warm restart's reply is a normal `DONE`. An implement call of kind `restart` with `fresh: false` follows the first turn, and the outcome is `complete`.
-16. [unit] `resume-mid-fix`: the harness resumes from a record with `round` 2, `reviewed` true, one open finding of kind `spec`, and a `fixBase`, with green gates. No implement call of kind `implement` occurs, and the first agent call is `reReview` with round 2.
+16. [unit] `resume-mid-fix`: with `maxFixRounds` 5, the harness resumes from a record with `round` 2, `reviewed` true, one open finding of kind `spec`, and a `fixBase`, with green gates. No implement call of kind `implement` occurs, and the first agent call is `reReview` with round 2.
 17. [unit] `rereview-new-finding`: the re-review addresses the open finding and adds one new `important` finding, which a later round addresses. The trace's re-review return lists the new finding, and a later `fix` turn includes it.
