@@ -6,6 +6,7 @@ import { getLogger } from "@/logger";
 import { unreadFiles, workflowBranchReviewOp, workflowReReviewOp } from "@/operations";
 import {
   type BranchReviewPromptInput,
+  buildProjectContextSection,
   buildWorkflowBranchReReviewPrompt,
   buildWorkflowBranchReviewPrompt,
 } from "@/prompts";
@@ -36,6 +37,46 @@ export function branchReviewModel(fc: FeatureContext): ConfiguredModel | undefin
   return fc.workflow.models.branchReview ?? fc.config.finish?.reviewers?.quality ?? undefined;
 }
 
+/**
+ * US-006: append the "Rules for the changed files" section to the branch package.
+ *
+ * `delivery: "index"` only — see `appendReviewRules` in `story-review.ts` for why
+ * (the run's config is read defensively, and a throw is a skipped review).
+ */
+async function appendReviewRules(fc: FeatureContext, packagePath: string, paths: readonly string[]): Promise<void> {
+  const rules = fc.config.context?.rules;
+  if ((rules?.delivery ?? "index") !== "index") return;
+  await _workflowDeps.appendChangedFileRules(packagePath, paths, {
+    repoRoot: fc.projectDir,
+    ...(rules?.overrideDir !== undefined && { overrideDir: rules.overrideDir }),
+    overrideMode: rules?.overrideMode ?? "merge",
+  });
+}
+
+/**
+ * US-007: append the "## Project context (run override)" section to the branch package.
+ *
+ * Independent of rules delivery mode and of whether any rule governs a changed
+ * file: `delivery` decides what the *brief* carries, while the configured
+ * project-context file belongs in every package the run builds. The loader
+ * returns `undefined` when no file is configured, so this is a no-op then.
+ *
+ * A throw from the loader is a skipped review, exactly as a failing rules append
+ * is: it happens inside `underReviewLimit`'s package callback, so the reviewer
+ * never sees a package that is missing the context it was promised.
+ */
+async function appendProjectContextOverride(fc: FeatureContext, packagePath: string): Promise<void> {
+  const override = await _workflowDeps.loadProjectContextOverride(fc.config);
+  const section = buildProjectContextSection(override);
+  if (section === "") return;
+  const file = Bun.file(packagePath);
+  const prior = (await file.exists()) ? await file.text() : "";
+  // A blank line before the appended `##` heading, or Markdown renders it as part
+  // of the package's last block — the rule `appendChangedFileRules` applies too.
+  const separator = prior === "" || prior.endsWith("\n\n") ? "" : prior.endsWith("\n") ? "\n" : "\n\n";
+  await Bun.write(packagePath, `${prior}${separator}${section}`);
+}
+
 export async function runBranchReview(
   fc: FeatureContext,
   input: { seed: string; specPath?: string; preflightPath?: string; facts: BranchReviewFacts },
@@ -58,6 +99,10 @@ export async function runBranchReview(
     async () => {
       const paths = await writeBranchReviewPackage(fc.projectDir, input.seed, packagePath);
       requiredFiles = await reviewRequiredFiles(paths, fc);
+      // US-006: the reviewer learns which rule files govern what it must read.
+      await appendReviewRules(fc, packagePath, paths);
+      // US-007: the run's project context, verbatim, whatever the delivery mode.
+      await appendProjectContextOverride(fc, packagePath);
     },
     (signal) =>
       _workflowDeps.callOp({ ...fc.callCtx, ...(signal ? { signal } : {}) }, workflowBranchReviewOp, {
@@ -89,7 +134,11 @@ export async function runBranchReReview(
   const model = branchReviewModel(fc);
   const outcome = await underReviewLimit(
     fc,
-    () => writeReviewPackage(fc.projectDir, input.fixBase, packagePath),
+    async () => {
+      // US-006: the writer now returns the surviving changed paths; a re-review package
+      // carries no changed-file rules section, so the result is discarded here.
+      await writeReviewPackage(fc.projectDir, input.fixBase, packagePath);
+    },
     (signal) =>
       _workflowDeps.callOp({ ...fc.callCtx, ...(signal ? { signal } : {}) }, workflowReReviewOp, {
         prompt,

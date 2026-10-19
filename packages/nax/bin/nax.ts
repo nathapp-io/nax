@@ -218,6 +218,10 @@ program
   .option("--max-cost <usd>", "Override cost limit (USD) for this run — aborts execution when exceeded")
   .option("--dry-run", "Show plan without executing", false)
   .option("--no-context", "Disable context builder (skip file context in prompts)")
+  // US-002: the project-context override flag is --context-file, not --context,
+  // because --no-context above already defines `options.context` as a boolean.
+  .option("--rules-dir <path>", "Override rules directory (absolute, ~/… , or relative to the workdir)")
+  .option("--context-file <path>", "Project-context override file (absolute, ~/… , or relative to the workdir)")
   .option("--no-batch", "Disable story batching (execute all stories individually)")
   .option("--parallel <n>", "Max parallel sessions (omit = sequential)")
   .option("--plan", "Run plan phase first before execution", false)

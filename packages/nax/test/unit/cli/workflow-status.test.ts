@@ -57,7 +57,8 @@ async function writeResult(dir: string, runId: string, file: Partial<WorkflowRes
 /** The JSON object the command printed (its `--json` output is one object on one line). */
 function emittedJson(out: readonly string[]): Record<string, unknown> {
   expect(out).toHaveLength(1);
-  return JSON.parse(out[0] ?? "null") as Record<string, unknown>;
+  // JSON.parse is `any`; the declared return type narrows it, so no cast is needed.
+  return JSON.parse(out[0] ?? "null");
 }
 
 function openItemsOf(report: Record<string, unknown>): { id: string; kind: string; issue: string }[] {
@@ -141,7 +142,7 @@ describe("nax workflow status --json", () => {
       await run(h.deps, ["-f", FEATURE, "--json", "-d", dir]);
       const report = emittedJson(h.out);
       // The AC's precondition: the fixture carries no top-level verdict to fall back on.
-      const written = (await Bun.file(join(workflowDir(dir), "r1", "result.json")).json()) as Record<string, unknown>;
+      const written: Record<string, unknown> = await Bun.file(join(workflowDir(dir), "r1", "result.json")).json();
       expect("verdict" in written).toBe(false);
       expect(openItemsOf(report)).toContainEqual({
         id: "US-002",

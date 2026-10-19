@@ -75,7 +75,7 @@ const ALLOWED_FILES = new Set([
   "src/precheck/checks-warnings.ts",
   "src/bakeoff/preflight.ts",
   "src/context/engine/types.ts",
-  "src/context/engine/scope-path-match.ts",
+  "src/context/engine/scope-path-match/index.ts",
   "src/context/engine/providers/test-coverage.ts",
   "src/context/engine/providers/static-rules.ts",
   "src/context/engine/providers/git-history.ts",

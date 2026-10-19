@@ -6,6 +6,13 @@
 import { createAdvisor, readTrustedDecisions } from "@/advisor";
 import { resolveFeatureSpec } from "@/cli";
 import type { NaxConfig, TierConfig, WorkflowConfig } from "@/config";
+// US-007: the run's project-context override file. Same nested-barrel shape as
+// the rules resolver above — the workflow reads it without importing `@/context`.
+import { loadProjectContextOverride } from "@/context/project-context-override";
+// Nested barrel, reached by exact alias so this module does not pull the
+// `@/context` parent barrel (which re-exports the engine) into the workflow's
+// import graph. US-003 is the first consumer; US-005/US-006 add theirs.
+import { resolveRuleSet } from "@/context/rules/rule-set";
 import { callOp } from "@/operations";
 import type { CallContext, Operation } from "@/operations/types";
 import type { UserStory } from "@/prd";
@@ -13,6 +20,7 @@ import type { ISessionManager } from "@/session/types";
 import { type ResolvedTestPatterns, resolveTestFilePatterns } from "@/test-runners";
 import { autoCommitIfDirty, gitWithTimeout } from "@/utils/git";
 import type { NaxIgnoreIndex } from "@/utils/path-filters";
+import { appendChangedFileRules } from "./review-rules-map";
 
 export interface StepContext {
   readonly callCtx: CallContext;
@@ -58,5 +66,11 @@ export const _workflowDeps = {
   createAdvisor: createAdvisor as typeof createAdvisor,
   readTrustedDecisions: readTrustedDecisions as typeof readTrustedDecisions,
   resolveTestPatterns: resolveTestFilePatterns,
+  /** US-003: the rule set behind the brief's rules index (and US-005/006 consumers). */
+  resolveRuleSet,
+  /** US-006: the "## Rules for the changed files" section a review package carries. */
+  appendChangedFileRules,
+  /** US-007: the run's `context.projectContext.file`, verbatim (`undefined` when unconfigured). */
+  loadProjectContextOverride,
   now: (): number => Date.now(),
 };

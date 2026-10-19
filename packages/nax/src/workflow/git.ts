@@ -155,6 +155,14 @@ function survivingPaths(record: NameStatusRecord): string[] {
 }
 
 /**
+ * The `--name-status -z` query both package writers use, over one range and pathspec:
+ * nax-owned paths (`ALWAYS_EXCLUDED`) never appear in a review package.
+ */
+function nameStatusArgs(range: string, pathspec: readonly string[]): string[] {
+  return ["diff", "--name-status", "-z", range, ...pathspec];
+}
+
+/**
  * The whole-branch review package: commits, --stat and every changed file, **without a diff body**
  * (SPEC-workflow-review-depth § Approach 2, nax#2622). The inline diff kept only the first few of a
  * large branch's files in diff order, so the reviewer could not see most of what changed. The
@@ -169,7 +177,7 @@ export async function writeBranchReviewPackage(projectDir: string, from: string,
   const [log, stat, changes] = await Promise.all([
     _workflowDeps.git(["log", "--oneline", range], projectDir),
     _workflowDeps.git(["diff", "--stat", range, ...pathspec], projectDir),
-    _workflowDeps.git(["diff", "--name-status", "-z", range, ...pathspec], projectDir),
+    _workflowDeps.git(nameStatusArgs(range, pathspec), projectDir),
   ]);
   const failed = [log, stat, changes].find((r) => r.exitCode !== 0);
   if (failed) {
@@ -191,17 +199,26 @@ export async function writeBranchReviewPackage(projectDir: string, from: string,
   return records.flatMap(survivingPaths);
 }
 
-/** One file: commit list, --stat, and the full -U10 diff for from..HEAD (truncated past the review cap). */
-export async function writeReviewPackage(projectDir: string, from: string, path: string): Promise<void> {
+/**
+ * One file: commit list, --stat, and the full -U10 diff for from..HEAD (truncated past the review cap).
+ *
+ * Resolves to the surviving changed paths at HEAD (US-006) — the same
+ * `parseNameStatus(...).flatMap(survivingPaths)` answer `writeBranchReviewPackage` gives, from the
+ * same range and pathspec — which is what the appended "Rules for the changed files" section is
+ * built from. The `--name-only -z` query stays as it is: `omittedFilesSection` reads it, and it
+ * answers a different question (which paths the truncated diff cut).
+ */
+export async function writeReviewPackage(projectDir: string, from: string, path: string): Promise<string[]> {
   const range = `${from}..HEAD`;
   const pathspec = ["--", ".", ...ALWAYS_EXCLUDED];
-  const [log, stat, diff, names] = await Promise.all([
+  const [log, stat, diff, names, changes] = await Promise.all([
     _workflowDeps.git(["log", "--oneline", range], projectDir),
     _workflowDeps.git(["diff", "--stat", range, ...pathspec], projectDir),
     _workflowDeps.git(["diff", `--unified=${DIFF_CONTEXT_LINES}`, range, ...pathspec], projectDir),
     _workflowDeps.git(["diff", "--name-only", "-z", range, ...pathspec], projectDir),
+    _workflowDeps.git(nameStatusArgs(range, pathspec), projectDir),
   ]);
-  const failed = [log, stat, diff, names].find((r) => r.exitCode !== 0);
+  const failed = [log, stat, diff, names, changes].find((r) => r.exitCode !== 0);
   if (failed) {
     const detail = (failed.stderr ?? failed.stdout).trim();
     throw new NaxError(
@@ -217,6 +234,7 @@ export async function writeReviewPackage(projectDir: string, from: string, path:
     path,
     `## Commits (${range})\n${log.stdout.trim() || "(none)"}\n\n## Stat\n${stat.stdout.trim() || "(no changes)"}\n\n## Diff\n${body}\n${omitted}`,
   );
+  return parseNameStatus(changes.stdout).flatMap(survivingPaths);
 }
 
 /** The remote's configured default branch; missing origin/HEAD leaves the static protections in force. */

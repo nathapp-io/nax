@@ -16,6 +16,7 @@ import { optimizerStage } from "./optimizer";
 import { promptStage } from "./prompt";
 import { queueCheckStage } from "./queue-check";
 import { routingStage } from "./routing";
+import { workflowContextStage } from "./workflow-context";
 
 /**
  * Default pipeline stages in execution order (issue #1116: regression stage removed — 8 stages).
@@ -65,8 +66,16 @@ const lazyWorkflowStage: PipelineStage = {
   },
 };
 
+/**
+ * US-004: workflow mode uses `workflowContextStage` in place of `contextStage`.
+ * It keeps the name "context" (the position is the same and callers key on the
+ * name) but fetches only the feature context, without booting the v2
+ * orchestrator whose pull tools were never called. `context.rules.delivery:
+ * "push"` and v2-disabled runs delegate to `contextStage` inside the stage, so
+ * both modes stay reachable from here.
+ */
 function buildWorkflowPipeline(): PipelineStage[] {
-  return [queueCheckStage, routingStage, constitutionStage, contextStage, lazyWorkflowStage, completionStage];
+  return [queueCheckStage, routingStage, constitutionStage, workflowContextStage, lazyWorkflowStage, completionStage];
 }
 
 let _workflowPipeline: PipelineStage[] | undefined;
@@ -121,9 +130,11 @@ export { _acceptanceSetupDeps, acceptanceSetupStage } from "./acceptance-setup";
 export { _completionDeps, completionStage } from "./completion";
 export { constitutionStage } from "./constitution";
 export { _contextStageDeps, contextStage } from "./context";
+export { _contextSessionDeps, allocateStorySession } from "./context-session";
 export { _executionDeps, executionStage } from "./execution";
 export { optimizerStage } from "./optimizer";
 export { promptStage } from "./prompt";
 // Re-export individual stages for custom pipeline construction
 export { queueCheckStage } from "./queue-check";
 export { routingStage } from "./routing";
+export { _workflowContextStageDeps, workflowContextStage } from "./workflow-context";

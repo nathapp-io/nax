@@ -50,6 +50,9 @@ export type { PackageSummary, PlanningPromptParts } from "./builders/plan-builde
 export { PlanPromptBuilder } from "./builders/plan-builder";
 // Prior iterations prompt block — ADR-022 §8; replaces legacy carry-forward blocks.
 export { buildPriorIterationsBlock } from "./builders/prior-iterations-builder";
+// US-007 (SPEC-lazy-rules-delivery) — the run's project-context override section,
+// carried by the story brief and the branch review package.
+export { buildProjectContextSection } from "./builders/project-context-builder";
 export type { FailureRecord, RectifierTrigger, ReviewFinding } from "./builders/rectifier-builder";
 // Rectifier prompt builder — cross-domain rectification for TDD, verify, and review triggers.
 export { CONTRADICTION_ESCAPE_HATCH, RectifierPromptBuilder } from "./builders/rectifier-builder";
@@ -58,6 +61,18 @@ export type { SemanticReviewPromptOptions } from "./builders/review-builder";
 // Review prompt builder — semantic review prompt construction.
 export { ReviewPromptBuilder } from "./builders/review-builder";
 export { reviewerCommandsSection } from "./builders/reviewer-commands-section";
+export type { ChangedFileRuleGroup, RulesIndexEntry } from "./builders/rules-index-builder";
+// US-003 (SPEC-lazy-rules-delivery) — the rules index section of a workflow brief.
+// US-005 and US-006 add the delivered-rule and changed-file sections here.
+// US-005 (SPEC-lazy-rules-delivery) — the delivered-rule text a native session
+// is handed for a governed file. US-006 — the changed-file rules section a
+// review package carries.
+export {
+  buildChangedFileRulesSection,
+  buildRuleDeliveryText,
+  buildRulesIndexSection,
+  toRulesIndexEntry,
+} from "./builders/rules-index-builder";
 // Setup prompt builder — LLM-driven nax init config generation.
 export { SetupPromptBuilder } from "./builders/setup-builder";
 export { buildSourceRootsSection } from "./builders/source-roots-builder";

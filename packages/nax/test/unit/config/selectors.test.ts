@@ -16,14 +16,18 @@ import {
 
 describe("ConfigSelector — Phase 1 selectors", () => {
   describe("new selectors", () => {
-    test("agentManagerConfigSelector picks agent, execution and profile", () => {
+    test("agentManagerConfigSelector picks agent, execution, profile and context", () => {
       const slice = agentManagerConfigSelector.select(DEFAULT_CONFIG);
       expect(slice).toHaveProperty("agent");
       expect(slice).toHaveProperty("execution");
       // #1433 — AgentManager stamps the resolved profile onto dispatch events so
       // cost rows record which overlay was active.
       expect(slice).toHaveProperty("profile");
-      expect(Object.keys(slice).sort()).toEqual(["agent", "execution", "profile"]);
+      // US-007 — `instructionOptionsForSession` reads `context.projectContext`
+      // off the `AgentRunOptions.config` this slice fills, to deny a native
+      // session the repository's root instruction file under `mode: "replace"`.
+      expect(slice).toHaveProperty("context");
+      expect(Object.keys(slice).sort()).toEqual(["agent", "context", "execution", "profile"]);
     });
 
     test.each([

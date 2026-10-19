@@ -54,6 +54,27 @@ export async function writeVerdictSafe(sc: StepContext, file: string, verdict: u
 }
 
 /**
+ * US-006: append the "Rules for the changed files" section to a review package.
+ *
+ * `delivery: "index"` only. `"push"` restores the pre-feature behaviour, where the
+ * v2 orchestrator carries every rule body in the brief and the reviewer needs no
+ * map; resolving one the package would not print is work with no consumer.
+ *
+ * Read defensively (`config.context?.rules?.delivery ?? "index"`): the run's
+ * config is sparse in several tests, and a missing block means the default, not a
+ * crash. A throw here is caught by `underReviewLimit` and is a skipped review.
+ */
+async function appendReviewRules(sc: StepContext, packagePath: string, paths: readonly string[]): Promise<void> {
+  const rules = sc.config.context?.rules;
+  if ((rules?.delivery ?? "index") !== "index") return;
+  await _workflowDeps.appendChangedFileRules(packagePath, paths, {
+    repoRoot: sc.projectDir,
+    ...(rules?.overrideDir !== undefined && { overrideDir: rules.overrideDir }),
+    overrideMode: rules?.overrideMode ?? "merge",
+  });
+}
+
+/**
  * US-006 (nax#2527): `gates` are the story's recorded gate states, so the prompt states what nax
  * already checked. Optional — an existing two-argument caller keeps working and renders `not run`.
  */
@@ -75,7 +96,10 @@ export async function runStoryReview(
   });
   const outcome = await underReviewLimit(
     sc,
-    () => writeReviewPackage(sc.projectDir, sc.base, packagePath),
+    async () => {
+      const paths = await writeReviewPackage(sc.projectDir, sc.base, packagePath);
+      await appendReviewRules(sc, packagePath, paths);
+    },
     (signal) =>
       _workflowDeps.callOp({ ...sc.callCtx, ...(signal ? { signal } : {}) }, workflowStoryReviewOp, {
         prompt,

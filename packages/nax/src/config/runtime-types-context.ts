@@ -174,4 +174,29 @@ export interface ContextConfig {
   featureEngine?: FeatureContextEngineConfig; // Context Engine v1
   /** Context Engine settings (Phase 6: enabled by default) */
   v2: ContextV2Config;
+  /** Run-level rules override (US-002). Root-only: a per-package config cannot change it. */
+  rules: ContextRulesOverrideConfig;
+  /** Run-level project-context override file (US-002). Root-only, like `rules`. */
+  projectContext: ContextProjectContextConfig;
+}
+
+/** `context.rules` (US-002) — run-level rules override. */
+export interface ContextRulesOverrideConfig {
+  /**
+   * Rule delivery in workflow mode. `"index"` (default) lists rules in the brief
+   * and pushes a body on demand; `"push"` restores every body in the brief.
+   */
+  delivery: "index" | "push";
+  /** Absolute (or `~/`-prefixed, expanded at parse) directory laid out like `.nax/rules/`. */
+  overrideDir?: string;
+  /** How override rules combine with the repo's: `"merge"` (default) or `"replace"`. */
+  overrideMode: "merge" | "replace";
+}
+
+/** `context.projectContext` (US-002) — run-level project-context override file. */
+export interface ContextProjectContextConfig {
+  /** Absolute (or `~/`-prefixed, expanded at parse) Markdown file, at most 32,768 bytes. */
+  file?: string;
+  /** How the file combines with the run's project context: `"append"` (default) or `"replace"`. */
+  mode: "append" | "replace";
 }

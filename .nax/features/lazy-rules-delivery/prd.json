@@ -1,0 +1,573 @@
+{
+  "project": "nax-monorepo",
+  "feature": "lazy-rules-delivery",
+  "branchName": "feat/lazy-rules-delivery",
+  "createdAt": "2026-10-18T00:00:00.000Z",
+  "updatedAt": "2026-10-18T16:09:34.459Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Rule-set resolver with override layer",
+      "description": "**Goal** — Resolve one shared repo/package/override rule set for every delivery path while preserving pipeline static-rule behavior.\n\n**Motivation** — Across 2,006 context manifests since 2026-09-20, `static-rules` is 84% of engine tokens, `feature-context` 10%, `git-history` 3% and `code-neighbor` 1.7%.\n\n**Approach** — Verbatim design: \"Layers are applied in order: repo `.nax/rules/`, then package `<pkg>/.nax/rules/`, then the override directory. A later layer replaces an earlier rule with the same rule id. In `replace` mode, only the override layer is used. Override rules are treated like repo-level rules: filtered by `paths:` through `ruleMatchesPackage`, and their literal `appliesTo` entries framed through `frameAppliesTo`.\" \"It finds the file's package (`findPackageDir`), resolves that package's rule set, and keeps the rules whose `appliesTo` matches the file. A rule with no `appliesTo` governs every file.\"\n\n`loadCanonicalRules(workdir, options)`: \"same signature, delegating to a new exported `loadCanonicalRulesFromDir(rulesDir: string, options?: LoadCanonicalRulesOptions): Promise<CanonicalRule[]>`. That function holds today's body, so the depth cap, frontmatter policy and `lintForNeutrality` apply unchanged to any directory.\"\n\n`StaticRulesProvider.fetch`: \"that block becomes one `resolveRuleSet(input, { loadRepoRules: _staticRulesDeps.loadCanonicalRules })` call. Its result carries `rules` plus the pre-filter counts `repoRulesTotal`, `repoRulesMatchedPaths` and `packageRulesCount`, which the `#558` \"none apply\" branch (`:263-270`) keeps reading unchanged. Under `overrideMode: \"replace\"` the repo and package layers are not loaded, so all three counts are 0 and that branch cannot fire. `loadRepoRules` serves BOTH the repo and the package layer, so the existing stubs in six test files keep driving `fetch`. The file-private `canonicalRuleId`, `canonicalRulePath` and `canonicalRulePriority` (`:106-116`) move to the rule-set module and are imported back. The stage, `appliesTo` and budget logic after the block is unchanged. The file is at 591/600 lines, and the extraction must leave it smaller.\"\n\n`StaticRulesProvider` constructor options: \"gains optional `overrideDir?: string` and `overrideMode?: \"merge\" | \"replace\"`, forwarded to `resolveRuleSet`.\" `createDefaultOrchestrator`: \"passes `config.context?.rules?.overrideDir` and `config.context?.rules?.overrideMode` into the `StaticRulesProvider` options.\"\n\nUse `ruleMatchesScopeFiles` with one file and the existing path helpers unchanged; `findPackageDir` returns a repo-relative package identity. Reuse memoized repo loading, independently memoize override-directory loads and evict rejected promises. Avoid a load-time cycle with static-rules when sharing the matcher. New production consumers import the nested barrel by exact alias `@/context/rules/rule-set`. New tests go in new files; do not grow static-rules.test.ts or change its existing loader seam.\n\n**Scope** — In: canonical directory loader extraction, layer merge/filter/frame/display metadata, file governance resolution and static-provider/orchestrator wiring. Out: US-002 owns config/CLI/setup validation; US-003 owns index prompts; US-005 owns native session delivery; US-006 owns review maps; US-007 owns project context. Pipeline mode (`execution.mode: \"pipeline\"`, frozen since 2026-10-16) is unchanged. It keeps `contextStage`, the v2 orchestrator and rule pushing; only the rules override directory reaches it, through `StaticRulesProvider`.\n\n**Interface** — Verbatim TypeScript:\n```typescript\nexport type RuleSource = \"repo\" | \"package\" | \"override\";\nexport interface ResolvedRule extends CanonicalRule {\n  readonly ruleId: string;       // canonicalRuleId(rule)\n  readonly source: RuleSource;\n  readonly displayPath: string;  // \".nax/rules/<rel>\", \"<storyWorkdir>/.nax/rules/<rel>\", or the absolute override path\n}\nexport interface ResolveRuleSetInput {\n  readonly repoRoot: string;\n  readonly packageDir: string;    // absolute; equals repoRoot for the root package\n  readonly storyWorkdir?: string; // repo-relative package frame\n  readonly overrideDir?: string;  // absolute\n  readonly overrideMode?: \"merge\" | \"replace\"; // default \"merge\"\n}\nexport interface RuleLoaders {\n  /** Loads `<workdir>/.nax/rules`, for the repo layer AND the package layer. Default: memoized `loadCanonicalRules` (key: workdir). */\n  readonly loadRepoRules?: (workdir: string) => Promise<CanonicalRule[]>;\n  /** Loads an override directory. Default: memoized `loadCanonicalRulesFromDir` (key: absolute dir). */\n  readonly loadDirRules?: (dir: string) => Promise<CanonicalRule[]>;\n}\nexport interface ResolvedRuleSet {\n  readonly rules: readonly ResolvedRule[];\n  readonly repoRulesTotal: number;        // repo rules before the paths: filter\n  readonly repoRulesMatchedPaths: number; // repo rules after the paths: filter\n  readonly packageRulesCount: number;     // package-layer rules loaded (0 at the root)\n}\nexport function resolveRuleSet(input: ResolveRuleSetInput, loaders?: RuleLoaders): Promise<ResolvedRuleSet>;\nexport interface RulesForFileInput {\n  readonly repoRoot: string;\n  readonly path: string;          // repo-relative, normalized\n  readonly overrideDir?: string;\n  readonly overrideMode?: \"merge\" | \"replace\";\n}\nexport function rulesForFile(input: RulesForFileInput, loaders?: RuleLoaders): Promise<ResolvedRule[]>;\nexport function canonicalRuleId(rule: CanonicalRule): string;\nexport function canonicalRulePath(rule: CanonicalRule): string;\nexport function canonicalRulePriority(rule: CanonicalRule): number;\nexport function loadCanonicalRulesFromDir(rulesDir: string, options?: LoadCanonicalRulesOptions): Promise<CanonicalRule[]>;\n```",
+      "acceptanceCriteria": [
+        "[unit] resolveRuleSet({ repoRoot, packageDir: repoRoot }) on a repo whose .nax/rules/ holds a.md returns rules holding one ResolvedRule with ruleId: \"a\", source: \"repo\" and displayPath: \".nax/rules/a.md\".",
+        "[unit] With repo .nax/rules/x.md and packages/api/.nax/rules/x.md both present, resolveRuleSet({ repoRoot, packageDir: <repoRoot>/packages/api, storyWorkdir: \"packages/api\" }) returns one rule x whose source is \"package\".",
+        "[unit] A repo rule whose paths: is [\"packages/web/*\"] is absent from resolveRuleSet(...).rules for storyWorkdir: \"packages/api\", while repoRulesTotal counts it and repoRulesMatchedPaths does not.",
+        "[unit] With overrideDir holding org.md and overrideMode: \"merge\", resolveRuleSet output includes rule org with source: \"override\" and displayPath equal to the absolute path of org.md.",
+        "[unit] With overrideMode: \"merge\" and an override a.md alongside repo a.md, resolveRuleSet returns exactly one rule a, carrying the override file's content.",
+        "[unit] With overrideMode: \"replace\", resolveRuleSet returns only the override directory's rules while the repo rule directory is non-empty.",
+        "[unit] An override rule whose paths: is [\"packages/web/*\"] is absent from resolveRuleSet output for storyWorkdir: \"packages/api\".",
+        "[unit] Two resolveRuleSet calls with two different overrideDir values each return their own directory's override rules.",
+        "[unit] loadCanonicalRulesFromDir(dir) on a directory containing a file with a banned neutrality marker rejects with NeutralityLintError.",
+        "[unit] An override file with invalid frontmatter is absent from resolveRuleSet output, while the override directory's valid rule is present.",
+        "[unit] rulesForFile({ repoRoot, path: \"packages/api/src/x.ts\" }) includes a rule with no appliesTo and excludes a rule whose appliesTo is [\"packages/web/**/*.ts\"].",
+        "[unit] Given packages/api/.nax/rules/p.md, rulesForFile returns p for packages/api/src/x.ts and not for packages/web/src/x.ts.",
+        "[unit] (seam) With _staticRulesDeps.loadCanonicalRules stubbed to return one rule whose body is STUB-BODY, StaticRulesProvider.fetch(request) for a package request returns a chunk containing STUB-BODY.",
+        "[unit] (seam) In that package request, the _staticRulesDeps.loadCanonicalRules stub receives both request.repoRoot and request.packageDir.",
+        "[unit] (seam) createDefaultOrchestrator(story, config) with context.rules.overrideDir set to a directory holding org.md assembles a bundle with a static-rules chunk containing org.md's body.",
+        "[unit] When an override rule file has invalid frontmatter under the default runtime policy, loadCanonicalRulesFromDir logs a warning for that file before skipping it, just as for a repo rule.",
+        "[unit] With no override configured, no package-layer rules and a repo rule whose appliesTo is [\"src/a.ts\"], StaticRulesProvider.fetch for packageDir: <repoRoot>/packages/api, storyWorkdir: \"packages/api\" and scopeFiles: [\"packages/api/src/a.ts\"] still returns a chunk containing that rule's body, preserving existing package-literal framing when the package has no rules of its own."
+      ],
+      "tags": [
+        "feature",
+        "context",
+        "rules",
+        "refactor",
+        "integration"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "A new shared resolution abstraction crosses loader, provider, package/path framing and memoization while preserving existing pipeline stubs and scoping semantics.",
+        "agentProfileId": "native-deepseek",
+        "agent": "native",
+        "profileModelTier": "balanced",
+        "initialAgent": "native",
+        "initialProfileId": "native-deepseek",
+        "initialModelTier": "balanced",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/context/engine/providers/static-rules.ts",
+        "packages/nax/src/context/rules/canonical-loader/index.ts",
+        "packages/nax/src/context/engine/scope-path-match.ts",
+        "packages/nax/src/context/engine/orchestrator-factory.ts",
+        "packages/nax/src/test-runners/resolver.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/context/rules/rule-set/index.ts",
+        "packages/nax/test/unit/context/rules/rule-set.test.ts",
+        "packages/nax/test/unit/context/engine/providers/static-rules-overrides.test.ts"
+      ],
+      "suggestedCriteria": [
+        "resolveRuleSet with overrideMode: \"replace\" never invokes loadRepoRules and returns repoRulesTotal, repoRulesMatchedPaths and packageRulesCount all equal to 0.",
+        "rulesForFile frames a package-relative literal appliesTo of src/x.ts to packages/api/src/x.ts and does not match packages/web/src/x.ts.",
+        "After a memoized override-directory load rejects once, a later resolution of that directory can return its rules rather than replaying the cached rejection."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "fd395f4122e7b8c610f3f72fb1fe26b66526986b"
+    },
+    {
+      "id": "US-002",
+      "title": "Override config, CLI flags and run-start validation",
+      "description": "**Goal** — Add root-scoped rules/project-context configuration and CLI paths, and validate the rules directory before configuring run handlers.\n\n**Motivation** — An orchestrator that runs `nax run` across many repos cannot supply organisation-wide or per-job rules or project context without committing them into each target repo.\n\n**Approach** — Verbatim design: \"Each is declared as `XBase.default(() => XBase.parse({}))`, like `TestCoverageConfigSchema` (`:23`), because `NaxConfigSchema` re-parses `ContextConfigSchema.parse({})` for its default (`packages/nax/src/config/schemas.ts:349`).\" `pinRootOnlyKeys`: \"returns `context: { ...merged.context, rules: root.context.rules, projectContext: root.context.projectContext }`, leaving every other `context.*` key as merged.\" `pinRootOnlyKeysRaw`: \"when `raw.context.rules` or `raw.context.projectContext` differs from the root value (`Bun.deepEquals`), calls `onIgnored` once naming the key and replaces only that sub-key, spreading the rest of `raw.context` unchanged.\"\n\n`RunActionOptions` gains `rulesDir?: string` and `contextFile?: string`. `resolveRunProjectContext`: \"maps `options.rulesDir` to `cliOverrides.context.rules.overrideDir`, and `options.contextFile` to `cliOverrides.context.projectContext.file`. An absolute or `~/` value passes through unchanged; anything else becomes `join(workdir, value)`.\" The run command \"adds `--rules-dir <path>` and `--context-file <path>`. The project-context flag is NOT `--context`, because `--no-context` (`:220`) already defines `options.context` as a boolean.\"\n\n`initializeAfterLock`: \"`runtime.sessionManager.configureLoopHandlers(await configureRunRules({ config, workdir, pluginHandlers: pluginRegistry.getLoopHandlers() }))`. All new branching lives in `configureRunRules`, because `initializeAfterLock` is baselined at complexity 21 (`scripts/baselines/complexity-baseline.json:73`) and `bun run check:complexity` allows no growth. `InitializeAfterLockDeps` is unchanged.\" At this story's completion configureRunRules returns the original plugin set by identity after validation; US-005 adds handlers, and US-007 adds project-file validation.\n\nVerbatim file-format rules: \"`context.rules.delivery`: `\"index\"` (default) or `\"push\"`. `\"push\"` restores today's workflow behaviour. `contextStage` runs the v2 orchestrator, the brief carries the rule bodies, and no rule-delivery handlers or review-package rules sections are produced.\" \"`context.rules.overrideDir`: optional.\" \"Must be absolute or start with `~/`; `~/` expands to the home directory.\" \"A relative value fails config validation. On the CLI, see `resolveRunProjectContext` above.\" \"The directory has the layout and frontmatter of `.nax/rules/`.\" \"`context.rules.overrideMode`: `\"merge\"` (default) or `\"replace\"`.\" \"`context.projectContext.file`: optional, with the same path rules as `overrideDir`. A Markdown file of at most 32,768 bytes.\" \"`context.projectContext.mode`: `\"append\"` (default) or `\"replace\"`.\" \"All these keys are settable in global config, project config, a profile and on the CLI. The repo is inside nax's trust boundary (`docs/architecture/agent-adapters.md` §17, D-1), so no layer is rejected.\" \"A per-package `.nax/mono/<pkg>/config.json` cannot change them (root-only pinning).\"\n\nFailure handling: \"`overrideDir` configured but missing or not a directory at run start\" → \"`configureRunRules` throws `NaxError` code `RULES_OVERRIDE_DIR_NOT_FOUND` (context `stage: \"run-setup\"`, `overrideDir`) before any story runs. Fail-closed: the operator asked for those rules.\" Validate independently of delivery mode and preserve setup's existing lock cleanup on throw. Add config-descriptions entries. Consumers read the new keys defensively (`config.context?.rules?.delivery ?? \"index\"`), matching the existing `context?.v2?.` reads, so sparse test configs do not throw.\n\n**Scope** — In: new config defaults/path validation/home expansion, selective root-only pinning, flags/CLI path translation, helper and setup integration. Out: US-001 resolves/loads rule content; US-003 renders indexes; US-004 changes workflow context assembly; US-005 adds native handlers; US-007 validates/loads/delivers project-context content and warns about replace mode.\n\n**Interface** — Verbatim TypeScript, introducing only dirExists on the dependency object in this story and adding the annotated entries in their owning downstream stories:\n```typescript\nexport const _runRulesSetupDeps: {\n  dirExists: (path: string) => Promise<boolean>;\n  loadProjectContextOverride: typeof loadProjectContextOverride; // US-007\n  createRuleDeliveryHandlers: typeof createRuleDeliveryHandlers; // US-005\n};\n/** Validates both overrides (throws before returning); returns the set for configureLoopHandlers. */\nexport function configureRunRules(input: { config: NaxConfig; workdir: string; pluginHandlers: LoopHandlerSet }): Promise<LoopHandlerSet>;\n```\nTarget configuration shape:\n```json\n{\n  \"context\": {\n    \"rules\": {\n      \"delivery\": \"index\",\n      \"overrideDir\": \"/abs/path/to/org-rules\",\n      \"overrideMode\": \"merge\"\n    },\n    \"projectContext\": {\n      \"file\": \"~/fleet/contexts/strict-unattended.md\",\n      \"mode\": \"append\"\n    }\n  }\n}\n```",
+      "acceptanceCriteria": [
+        "[unit] NaxConfigSchema.parse({}) yields context.rules.delivery === \"index\".",
+        "[unit] NaxConfigSchema.parse({}) yields context.rules.overrideMode === \"merge\".",
+        "[unit] NaxConfigSchema.parse({}) yields context.projectContext.mode === \"append\".",
+        "[unit] NaxConfigSchema.safeParse with context.rules.overrideDir: \"relative/dir\" returns success: false with an issue at path context.rules.overrideDir.",
+        "[unit] NaxConfigSchema.safeParse with context.rules.overrideDir: \"~/org-rules\" parses overrideDir to join(homedir(), \"org-rules\").",
+        "[unit] NaxConfigSchema.safeParse with context.projectContext.file: \"ctx.md\" returns success: false with an issue at path context.projectContext.file.",
+        "[unit] resolveRunProjectContext(workdir, { feature, rulesDir: \"org-rules\" }) returns cliOverrides.context.rules.overrideDir equal to join(workdir, \"org-rules\").",
+        "[unit] resolveRunProjectContext(workdir, { feature, rulesDir: \"~/r\" }) returns cliOverrides.context.rules.overrideDir equal to \"~/r\".",
+        "[unit] resolveRunProjectContext(workdir, { feature, contextFile: \"/abs/c.md\" }) returns cliOverrides.context.projectContext.file equal to \"/abs/c.md\".",
+        "[integration] (seam) initializeAfterLock with context.rules.delivery: \"push\" and no overrides passes configureLoopHandlers the plugin registry's own set (same identity) returned through configureRunRules.",
+        "[integration] initializeAfterLock with context.rules.overrideDir pointing at a non-existent directory rejects with a NaxError whose code is RULES_OVERRIDE_DIR_NOT_FOUND.",
+        "[integration] In that missing-directory case, configureLoopHandlers is called zero times.",
+        "[cli] nax run --help lists --rules-dir <path>.",
+        "[cli] nax run --help lists --context-file <path>.",
+        "[unit] pinRootOnlyKeys(merged, root) with merged.context.rules.delivery \"push\" and root's \"index\" returns context.rules.delivery === \"index\".",
+        "[unit] pinRootOnlyKeys(merged, root) keeps merged.context.v2.minScore when it differs from root.",
+        "[unit] pinRootOnlyKeysRaw given a package raw config with context.rules.delivery: \"push\" (root \"index\") calls onIgnored once naming context.rules.",
+        "[unit] pinRootOnlyKeysRaw given that raw config with a context.v2 block returns the raw context.v2 block unchanged.",
+        "[integration] configJsonCommand for a project whose .nax/config.json sets context.rules.overrideDir to an absolute path reports that path at context.rules.overrideDir in its JSON output.",
+        "[integration] initializeAfterLock with context.rules.overrideDir pointing to an existing non-directory rejects with NaxError code RULES_OVERRIDE_DIR_NOT_FOUND before any story runs.",
+        "[unit] configureRunRules rejects an unavailable overrideDir with error context containing stage: \"run-setup\" and that overrideDir."
+      ],
+      "tags": [
+        "feature",
+        "config",
+        "cli",
+        "integration",
+        "root-scope"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Cross-layer schema defaults, CLI/profile merging, selective package pinning and fail-closed setup validation require coordinated changes but do not alter permissions or credentials.",
+        "agentProfileId": "native-deepseek",
+        "agent": "native",
+        "profileModelTier": "balanced",
+        "initialAgent": "native",
+        "initialProfileId": "native-deepseek",
+        "initialModelTier": "balanced",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/config/schemas-context.ts",
+        "packages/nax/src/config/root-only-keys.ts",
+        "packages/nax/bin/run-action.ts",
+        "packages/nax/bin/nax.ts",
+        "packages/nax/src/execution/lifecycle/run-setup-init.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/execution/lifecycle/run-rules-setup.ts",
+        "packages/nax/test/unit/config/schemas-context-overrides.test.ts",
+        "packages/nax/test/unit/config/root-only-keys-context.test.ts",
+        "packages/nax/test/integration/run-context-overrides.test.ts",
+        "packages/nax/test/unit/execution/lifecycle/run-rules-setup.test.ts"
+      ],
+      "suggestedCriteria": [
+        "NaxConfigSchema.parse with context.projectContext.file: \"~/fleet/context.md\" returns join(homedir(), \"fleet/context.md\") at context.projectContext.file.",
+        "resolveRunProjectContext with relative rulesDir and contextFile returns both context subobjects without removing its resolved profile overrides.",
+        "pinRootOnlyKeysRaw warns once for a differing context.projectContext value and preserves unrelated raw context keys."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "c85a91a14cab5689a780064fdcc4a5f30702c512"
+    },
+    {
+      "id": "US-003",
+      "title": "Rules index in the brief",
+      "description": "**Goal** — Add a concise, deterministic rules index to story briefs under index delivery; US-004 separately removes the upfront v2 rule-body bundle.\n\n**Motivation** — Across 379 workflow briefs since 2026-10-01, the average brief is 43.7 KB, and 61% of it is the v2 block.\n\n**Approach** — Verbatim design: \"Prompt text lives in a new builder module, `packages/nax/src/prompts/builders/rules-index-builder.ts`, exported from `src/prompts`. That covers the rules index, the delivered rule text and the changed-file rules section, per the Prompt Builder Convention.\" This story introduces only the index functions; downstream US-005/US-006 extend the same module.\n\n`WorkflowBriefInput` / `buildWorkflowBrief`: \"gains optional `rulesIndex?: { entries: readonly RulesIndexEntry[]; shownAutomatically: boolean }` and `projectContextOverride?: string`. They render as \"## Rules index\" (before \"## Feature context\") and \"## Project context (run override)\" (after \"## Feature context\"). The existing \"## Project rules\" section (the constitution) is unchanged.\" Project-context rendering/delivery belongs to US-007; add the rulesIndex field and rendering now.\n\n`writeBrief(sc)`: \"when `sc.config.context?.rules?.delivery` is `\"index\"` (the default), it calls `_workflowDeps.resolveRuleSet({ repoRoot: sc.projectDir, packageDir: sc.workdir, storyWorkdir: storyWorkdir(sc.story), overrideDir, overrideMode })` (`storyWorkdir` from `@/utils/path-frame`) and passes `rulesIndex`, with `shownAutomatically = sc.callCtx.agentName === \"native\"`.\" Add resolveRuleSet to _workflowDeps at this first consumer and import the exact nested barrel `@/context/rules/rule-set`. Consumers read the new keys defensively (`config.context?.rules?.delivery ?? \"index\"`), matching the existing `context?.v2?.` reads, so sparse test configs do not throw.\n\nVerbatim rules-index format:\n```markdown\n## Rules index\n\nThis repository's rules. Each rule's full text is shown to you the first time you read, write or edit a file it applies to. Open a rule's file to read it sooner.\n\n- `forbidden-patterns-source` (.nax/rules/forbidden-patterns-source.md): Forbidden Patterns. Applies to: packages/nax/src/**/*.ts, packages/nax/bin/*.ts, packages/nax-agent/src/**/*.ts\n- `org-logging` (/abs/path/to/org-rules/org-logging.md, override): Logging policy for unattended runs. Applies to: all files\n```\n\n\"With `shownAutomatically: false`, the second sentence is replaced by: \"Before you write or edit a file a rule applies to, read that rule's file.\"\"\n\n- **Line content.** Each line holds the rule id, the display path, `, override` for override-sourced rules, the description and the scope.\n- **Scope.** The `appliesTo` globs joined with `, `, or `all files` when there is no `appliesTo`. Literal entries are shown after `frameAppliesTo`.\n- **Order.** Priority ascending, then rule id.\n- **Empty set.** The section is omitted when the rule set is empty.\n\n`stages:` frontmatter is not applied anywhere in workflow mode, so the index and the hook ignore it. It stays a pipeline-only key.\n\n**Scope** — In: metadata conversion, deterministic builder, brief interface/section, resolver consumer seam and native/ACP wording. Out: US-004 removes workflow v2 rule pushing; US-005 delivers bodies; US-006 adds reviewer maps; US-007 adds the project-context override section. Adding `description:` frontmatter to existing repositories' `.nax/rules/*.md` files is a manual follow-up outside the run. Override-sourced rules are referenced by absolute path. This feature does not guarantee that an ACP agent's permission policy allows reading a path outside the workdir.\n\n**Interface** — Verbatim TypeScript:\n```typescript\nexport interface RulesIndexEntry {\n  readonly ruleId: string;\n  readonly displayPath: string;\n  readonly source: RuleSource;\n  readonly description: string;          // description:, else first heading, else ruleId\n  readonly appliesTo: readonly string[]; // empty = all files\n  readonly priority: number;\n}\nexport function toRulesIndexEntry(rule: ResolvedRule): RulesIndexEntry;\nexport function buildRulesIndexSection(input: { entries: readonly RulesIndexEntry[]; shownAutomatically: boolean }): string;\n```",
+      "acceptanceCriteria": [
+        "[unit] buildRulesIndexSection({ entries, shownAutomatically: true }) returns a string starting with ## Rules index, with one line per entry in the File Format layout.",
+        "[unit] An entry with empty appliesTo renders its scope as Applies to: all files.",
+        "[unit] An entry with source: \"override\" renders , override after its display path; an entry with source: \"repo\" renders none.",
+        "[unit] toRulesIndexEntry(rule) sets description to the frontmatter description: when present, otherwise to the first Markdown heading's text, otherwise to the rule id.",
+        "[unit] Index lines are ordered by priority ascending, then by rule id ascending.",
+        "[unit] buildRulesIndexSection with shownAutomatically: false returns the sentence \"Before you write or edit a file a rule applies to, read that rule's file.\" in place of the sentence beginning \"Each rule's full text is shown to you\".",
+        "[unit] (seam) buildWorkflowBrief with featureContext: \"FEATURE\" and a rulesIndex of one entry places a ## Rules index section before ## Feature context.",
+        "[unit] (seam) buildWorkflowBrief with zero rulesIndex entries emits no ## Rules index heading.",
+        "[integration] writeBrief(sc) with delivery: \"push\" writes no ## Rules index section.",
+        "[integration] (seam) With _workflowDeps.resolveRuleSet stubbed to resolve a ResolvedRuleSet whose rules contains two rules and delivery: \"index\", writeBrief(sc) writes a brief.md whose ## Rules index lists both rule ids.",
+        "[integration] (seam) In that index-mode writeBrief call, the resolver stub receives packageDir: sc.workdir and storyWorkdir: storyWorkdir(sc.story).",
+        "[integration] writeBrief(sc) with sc.callCtx.agentName === \"claude\" writes the \"read that rule's file\" variant; with \"native\", the \"shown to you the first time\" variant.",
+        "[unit] buildWorkflowBrief with constitution: \"EXISTING-CONSTITUTION\" retains that text under ## Project rules when a non-empty rulesIndex is supplied, preserving the existing constitution section."
+      ],
+      "tags": [
+        "feature",
+        "prompts",
+        "rules",
+        "integration"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A pure metadata/prompt builder and straightforward existing brief seam provide additive behavior with deterministic formatting and no native state changes.",
+        "agentProfileId": "native-deepseek",
+        "agent": "native",
+        "profileModelTier": "balanced",
+        "initialAgent": "native",
+        "initialProfileId": "native-deepseek",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/brief.ts",
+        "packages/nax/src/prompts/builders/workflow-implementer-builder.ts",
+        "packages/nax/src/workflow/step-context.ts",
+        "packages/nax/src/context/rules/rule-set/index.ts",
+        "packages/nax/src/prompts/index.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/prompts/builders/rules-index-builder.ts",
+        "packages/nax/test/unit/prompts/builders/rules-index-builder.test.ts",
+        "packages/nax/test/unit/workflow/brief-rules-index.test.ts"
+      ],
+      "suggestedCriteria": [
+        "writeBrief with a sparse config lacking context.rules still emits the rules index for a non-empty resolved set.",
+        "buildRulesIndexSection never includes a rule's body text in its output."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "1581fd5005ac4635d17910fa65d21f5465fe4d8f"
+    },
+    {
+      "id": "US-004",
+      "title": "Workflow context stage without the v2 orchestrator",
+      "description": "**Goal** — Give workflow index mode a feature-only context stage while preserving shared story-session allocation and push/v1 fallback.\n\n**Motivation** — The pull tools are dead: `query_neighbor`, `query_scratch` and `query_feature_context` were called 0 times in 6,394 recorded tool-audit sessions, ever.\n\n**Approach** — Verbatim stage algorithm:\n\n`workflowContextStage.execute(ctx)`, in the new `packages/nax/src/pipeline/stages/workflow-context.ts`:\n1. If `ctx.config.context.v2.enabled` is false, or `context.rules.delivery` is `\"push\"`, it returns `contextStage.execute(ctx)`, which is today's behaviour, v1 path included.\n2. Otherwise it calls `allocateStorySession(ctx)`. It builds a `ContextRequest` with `storyId`, `featureId`, `repoRoot: ctx.projectDir`, `packageDir: ctx.workdir`, `storyWorkdir`, `stage: \"context\"`, `role: \"implementer\"` and `budgetTokens`, each derived as `runV2Path` derives it (`context.ts:176-205`). It calls `_workflowContextStageDeps.featureContextProvider(ctx.story, ctx.config).fetch(request)`.\n3. It joins the returned chunks' `content` with a blank line, in returned order, and sets `ctx.featureContextMarkdown` to the result. The field is left undefined when no chunk returns.\n4. The result is unpacked, as it is today: `feature` is a floor kind (`FLOOR_KINDS`, `packing.ts:54`), so the orchestrator never budgeted it either.\n5. In index mode it does not set `ctx.contextBundle`, `ctx.scopeFiles` or `ctx.resolvedTestPatterns`, and writes no manifest or digest:\n   - `scopeFiles` and `resolvedTestPatterns` are read only by pipeline-mode stages (`prompt.ts:57`, `execution.ts:105`, `stage-assembler.ts:279`).\n   - Without `contextBundle`, workflow `CallContext`s carry none, so `runWithFallback` receives no bundle and an agent swap has no bundle to rebuild. `swap-decision.ts:48-54` already tolerates that case.\n   - `ctx.contextMarkdown` (story context) is set only by `runV1Path` today, so workflow v2 runs lose nothing.\n\n`runV2Path` allocation: \"the block that sets `ctx.sessionId`, `ctx.sessionScratchDir` and `ctx.contextToolRunCounter` moves into an exported `allocateStorySession(ctx)` in a new `context-session.ts`. `runV2Path` and `workflowContextStage` both call it, so workflow gates keep their `sessionScratchDir` (`packages/nax/src/workflow/gates.ts:112`) and `metrics/tracker.ts:311` keeps its run counter.\" Preserve existing sessionManager.create/UUID fallback and the existing _contextStageDeps.uuid seam when reorganizing allocation.\n\n`buildWorkflowPipeline`: \"`contextStage` is replaced by `workflowContextStage`, whose `name` is `\"context\"`. `buildDefaultPipeline` (pipeline mode) is unchanged.\" Reuse FeatureContextProviderV2, not the orchestrator. \"The feature-context provider's `fetch` throws in `workflowContextStage`\" → \"Warn and continue with no feature context, as `runV2Path` does today.\" Put storyId first in warning data. Consumers read the new keys defensively (`config.context?.rules?.delivery ?? \"index\"`), matching the existing `context?.v2?.` reads, so sparse test configs do not throw.\n\n**Scope** — In: shared session allocation, provider dependency seam, workflow stage selection and feature-only fetch/error handling. Out: US-001 resolves rule sets; US-003 renders indexes; US-005 delivers native rules; US-006/US-007 add review/project context. Deleting context engine v2 is deferred until pipeline mode is removed. This feature only stops the workflow pipeline from calling it under `delivery: \"index\"`. In `delivery: \"index\"`, workflow calls carry no `contextBundle`, so an agent swap has no context bundle to rebuild. The pull tools are not offered.\n\n**Interface** — New normative exports are `allocateStorySession(ctx)`, `workflowContextStage` (PipelineStage with name \"context\") and `_workflowContextStageDeps.featureContextProvider(ctx.story, ctx.config)`. Both the old context stage and new workflow stage call the same allocation function; no new allocation ownership or session role is introduced.",
+      "acceptanceCriteria": [
+        "[unit] getWorkflowPipeline() stage names equal [\"queue-check\", \"routing\", \"constitution\", \"context\", \"workflow\", \"completion\"].",
+        "[unit] The context entry returned by getWorkflowPipeline() is workflowContextStage.",
+        "[integration] (seam) workflowContextStage.execute(ctx) with delivery: \"index\" calls _contextStageDeps.createOrchestrator zero times.",
+        "[integration] workflowContextStage.execute(ctx) with delivery: \"index\" leaves ctx.contextBundle undefined.",
+        "[integration] With delivery: \"index\" and _workflowContextStageDeps.featureContextProvider stubbed to return chunks A and B, ctx.featureContextMarkdown equals A's content, a blank line, then B's content.",
+        "[integration] In the same setup, the stub's fetch receives a request with stage: \"context\" and repoRoot: ctx.projectDir.",
+        "[integration] With delivery: \"index\" and no prior sessionScratchDir, workflowContextStage.execute(ctx) sets ctx.sessionId, ctx.sessionScratchDir and ctx.contextToolRunCounter.",
+        "[integration] With delivery: \"push\", workflowContextStage.execute(ctx) calls _contextStageDeps.createOrchestrator once.",
+        "[integration] With context.v2.enabled: false, workflowContextStage.execute(ctx) calls _contextStageDeps.v1FeatureProvider once.",
+        "[integration] When the stubbed provider's fetch throws, workflowContextStage.execute(ctx) returns { action: \"continue\" }.",
+        "[integration] In that throwing case, ctx.featureContextMarkdown is undefined.",
+        "[integration] In that throwing case, exactly one warn is logged, and its data's first key is storyId.",
+        "[unit] allocateStorySession(ctx) on a context that already has sessionScratchDir leaves ctx.sessionScratchDir and ctx.sessionId unchanged."
+      ],
+      "tags": [
+        "feature",
+        "workflow",
+        "context",
+        "sessions",
+        "refactor"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Four production files share the existing allocation block and substitute a direct FeatureContextProviderV2 fetch using established stage contracts; session identity still requires the mandatory strict three-session strategy.",
+        "agentProfileId": "native-deepseek",
+        "agent": "native",
+        "profileModelTier": "balanced",
+        "initialAgent": "native",
+        "initialProfileId": "native-deepseek",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/pipeline/stages/index.ts",
+        "packages/nax/src/pipeline/stages/context.ts",
+        "packages/nax/src/context/engine/providers/feature-context.ts",
+        "packages/nax/test/unit/pipeline/workflow-pipeline.test.ts",
+        "packages/nax/src/pipeline/types.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/pipeline/stages/workflow-context.ts",
+        "packages/nax/src/pipeline/stages/context-session.ts",
+        "packages/nax/test/unit/pipeline/stages/workflow-context.test.ts",
+        "packages/nax/test/unit/pipeline/stages/context-session.test.ts"
+      ],
+      "suggestedCriteria": [
+        "workflowContextStage.execute in index mode leaves ctx.featureContextMarkdown undefined when the provider returns no chunks.",
+        "workflowContextStage.execute in index mode leaves ctx.scopeFiles and ctx.resolvedTestPatterns undefined.",
+        "workflowContextStage.execute in index mode writes neither a context manifest nor a digest.",
+        "Repeated allocateStorySession calls retain the existing contextToolRunCounter object."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "6fadd4e97b4b4975aeb600bf24909ebd469d0366"
+    },
+    {
+      "id": "US-005",
+      "title": "Native rule-delivery loop handlers",
+      "description": "**Goal** — Deliver governing rule bodies on native workflow reads and refuse unseen-rule mutations once, with run-scoped caching and per-session delivery state.\n\n**Motivation** — A native reviewer receives a rule body only for a file it actually reads, once per session, under a per-call cap.\n\n**Approach** — Verbatim design: \"`before_tool` and `before_compaction` loop handlers (`createRuleDeliveryHandlers`), registered after plugin handlers at run setup and scoped by session role.\"\n\n**Role scope of the rule-delivery handler**, read from `LoopHandlerContext.role`:\n- Read nudges apply to `wf-implementer`, `wf-branch-fix`, `wf-story-review`, `wf-rereview` and `wf-branch-review`.\n- Write/Edit blocks apply only to `wf-implementer` and `wf-branch-fix`.\n- Every other role (for example `advisor`), and a context with no role, gets `allow`.\n\nThe handler follows the pattern native already uses for directory-scoped instructions. `createInstructionInteraction` (`packages/nax-agent/src/native/session/instruction-interaction.ts`) refuses a mutation once, with \"No files were changed\", after new guidance is found, and the agent retries. This feature does the same through the public `before_tool` loop event, so it needs no change to `packages/nax-agent`.\n\n**Rule-delivery handler mechanics:**\n- **Path normalization.** The handler normalizes `input.path` before matching. A missing or non-string path gives `allow`. An absolute path inside `repoRoot` is relativized, and the result passes through `posix.normalize` and `normalizePath`, so `./x` and `a/../x` match as `x`. A path that normalizes outside `repoRoot` is outside.\n- **Caching.** It caches `findPackageDir` results by directory and each package's rule set by package, both for the life of the run. After the first call for a given directory, matching does no file I/O.\n- **Rule-file reads.** Before any outside-root or `.nax/` check, the handler compares the normalized path (or the absolute path, for override rules) with the `displayPath`s of the rules it knows. These are every rule `rulesForFile` has returned so far, plus the root package's set from `_ruleDeliveryDeps.resolveRuleSet`, loaded on the handler's first call. A match marks that rule delivered and returns `allow`.\n- **Errors.** It catches every error and returns `allow`, so the native loop wrapper's error path is never taken.\n- **Session state.** Per-session delivered state is a map keyed by `sessionName`. `before_compaction` drops a session's state, and it is not otherwise cleaned during a run.\n- **Batched calls.** Two calls in one batch that both deliver the same rule may each carry it; that is a benign duplicate.\n\nVerbatim failure handling: \"Rule resolution throws inside a rule-delivery handler\" → \"The handler catches it, returns `{ kind: \"allow\" }` (fail-open), logs `logger.warn(\"rules\", ...)` with `storyId` first, and marks nothing delivered.\" \"One call's matching undelivered rules exceed `MAX_RULE_INJECTION_BYTES` (16,384)\" → \"Bodies are included in priority order up to the cap. Later rules are listed by id and path only and stay undelivered, so a later call delivers them. The cap is below half of native's 40,000-byte tool-result limit (`MODEL_MAX_BYTES`, `truncate.ts:28`), which a nudge shares with the file content.\" Use byte measurement, not string length. Match each file independently using the package/directory caches. The allow/nudge/block outcomes above apply to before_tool; before_compaction deletes the named session's delivered state and returns no patch (undefined), as required by its existing BeforeCompactionPatch contract. Both handlers absorb their own errors; do not return a BeforeToolOutcome as a compaction patch.\n\nVerbatim delivery format:\n```markdown\nRules that apply to packages/nax/src/foo.ts:\n\n### forbidden-patterns-source (.nax/rules/forbidden-patterns-source.md)\n<rule body, frontmatter stripped>\n```\n\nRules past the byte cap follow as `Also applies (not shown, open the file): <ruleId> (<displayPath>)` lines. On Write/Edit, the text ends with: \"No files were changed. Review these rules and retry the tool call.\"\n\nExtend the US-003 prompt builder with buildRuleDeliveryText and export it from prompts. Extend configureRunRules with the createRuleDeliveryHandlers dependency and append its set after pluginHandlers only in workflow/index mode; push returns the original plugin set and pipeline gets no rule hooks. Use `isWorkflowMode(config)` and defensive default index reads. Every nudge/block emits one info event rules.delivered with storyId first.\n\nUS-005 owns replacing two existing assertions in test/unit/execution/lifecycle/run-setup-init.test.ts: the delivered set starts with exactly the registry's entries, in order, and every later entry has plugin === \"nax-rules\"; and the delivered entries whose plugin !== \"nax-rules\" are exactly [LOOP_HANDLER_PLUGIN]. Do not weaken the push identity invariant.\n\n**Scope** — In: native run handler pair, role/path checks, once-only delivery, direct rule-file acknowledgement, compaction reset, cap, caches, logging and setup append. Out: US-006 builds changed-file review maps; US-007 loads project-context and root instruction denial. ACP agents get no rule-delivery hook; they receive the rules index and the changed-file rules sections only. Claude in write mode also loads `.claude/rules` natively when the repo exported them; nax does not check that export for drift. Only `Read`, `Write` and `Edit` trigger rule delivery. `Delete`, `Bash`, `RunCommand`, `Git` and other tools neither nudge nor block. Rule `stages:` frontmatter is not applied in workflow mode, by either the rules index or the rule-delivery handlers. No nax-agent source changes. No per-rule delivery telemetry beyond the `rules.delivered` log line. Context manifests are not written for `delivery: \"index\"` workflow assemblies. When a plugin `before_tool` handler and the rule-delivery handler both nudge one call, the native loop keeps only the last nudge (`registry.ts:232`), which is the rule-delivery handler's. Concatenating nudges in the shared chain is not part of this feature. A rule-delivery handler that exceeds the native loop's 10 s plugin deadline is handled by the existing wrapper, which blocks the call once; this feature does not change or re-test that behaviour.\n\n**Interface** — Verbatim TypeScript:\n```typescript\nexport const MAX_RULE_INJECTION_BYTES = 16_384;\nexport const RULE_READ_ROLES: readonly string[];  // wf-implementer, wf-branch-fix, wf-story-review, wf-rereview, wf-branch-review\nexport const RULE_WRITE_ROLES: readonly string[]; // wf-implementer, wf-branch-fix\nexport interface RuleDeliveryInput { readonly repoRoot: string; readonly overrideDir?: string; readonly overrideMode: \"merge\" | \"replace\" }\nexport const _ruleDeliveryDeps: { rulesForFile: typeof rulesForFile; resolveRuleSet: typeof resolveRuleSet };\n/** One before_tool entry and one before_compaction entry, both with plugin \"nax-rules\". */\nexport function createRuleDeliveryHandlers(input: RuleDeliveryInput): LoopHandlerSet;\nexport function buildRuleDeliveryText(input: { path: string; delivered: readonly ResolvedRule[]; listedOnly: readonly ResolvedRule[]; mode: \"read\" | \"write\" }): string;\n```\nProduction imports use `@/context/rules/rule-delivery`, never an internal module path; existing native loop types are consumed through allowed nax-agent exports.",
+      "acceptanceCriteria": [
+        "[unit] For role wf-implementer, the before_tool handler returns { kind: \"nudge\", text } for a Read of packages/nax/src/a.ts governed by rule r, with text containing r's body under a ### r ( heading.",
+        "[unit] A second Read of a path governed only by r in the same sessionName returns { kind: \"allow\" }.",
+        "[unit] A Read of a governed path in a different sessionName returns a nudge carrying r's body.",
+        "[unit] For role wf-implementer, a Write to a path governed by undelivered r returns { kind: \"block\", isError: true } whose content holds r's body and ends with \"No files were changed. Review these rules and retry the tool call.\"",
+        "[unit] Retrying that Write in the same session returns { kind: \"allow\" }.",
+        "[unit] For role wf-branch-fix, an Edit to a path governed by an undelivered rule returns { kind: \"block\" }.",
+        "[unit] For role wf-story-review, a Write to a governed path returns { kind: \"allow\" }.",
+        "[unit] For a context whose role is advisor or absent, a Read of a governed path returns { kind: \"allow\" }.",
+        "[unit] A Read of .nax/features/f/brief.md returns { kind: \"allow\" } while a rule with no appliesTo exists.",
+        "[unit] (seam) With _ruleDeliveryDeps.resolveRuleSet stubbed to resolve a ResolvedRuleSet containing rule r at displayPath /abs/org/r.md (outside repoRoot), a Read of /abs/org/r.md returns { kind: \"allow\" }.",
+        "[unit] (seam) After that direct Read of /abs/org/r.md, a following Write to a path governed only by r returns { kind: \"allow\" }.",
+        "[unit] A Read of ./packages/nax/src/a.ts nudges with the rules governing packages/nax/src/a.ts.",
+        "[unit] A Read of an absolute path outside repoRoot that is no rule's displayPath returns { kind: \"allow\" }.",
+        "[unit] After the before_compaction handler runs for a session, a Read there of a path governed by previously delivered r returns a nudge carrying r's body.",
+        "[unit] When undelivered governing bodies exceed MAX_RULE_INJECTION_BYTES (16,384), the nudge holds bodies in priority order up to the cap and lists the rest as Also applies (not shown, open the file) lines.",
+        "[unit] (seam) With _ruleDeliveryDeps.rulesForFile stubbed to return rule r, a Read of packages/nax/src/a.ts calls the stub once with path: \"packages/nax/src/a.ts\" and the configured repoRoot.",
+        "[unit] Two Read calls of different files in one directory call _ruleDeliveryDeps.rulesForFile's underlying package lookup once in total (the directory and package caches).",
+        "[unit] When _ruleDeliveryDeps.rulesForFile rejects, the handler resolves to { kind: \"allow\" }.",
+        "[unit] In that rejecting case, the handler logs one warn on \"rules\" with storyId as the first data key.",
+        "[unit] After that failure, a following Read of the same path (with the stub now resolving rule r) nudges with r's body, without treating the failed resolution as delivered.",
+        "[unit] Each nudge or block logs one info event rules.delivered whose data's first key is storyId.",
+        "[integration] (seam) With _runRulesSetupDeps.createRuleDeliveryHandlers stubbed to return one entry, initializeAfterLock in workflow mode with delivery: \"index\" calls configureLoopHandlers with a set whose last element is that entry and whose leading elements are exactly the plugin registry's entries.",
+        "[integration] initializeAfterLock with delivery: \"push\" calls configureLoopHandlers with no entry whose plugin is \"nax-rules\".",
+        "[unit] Given two governing rule bodies that each fit MAX_RULE_INJECTION_BYTES but together exceed it, when the first call delivers only the higher-priority body and lists the other, a later qualifying call in that session delivers the listed body because it stayed undelivered."
+      ],
+      "tags": [
+        "feature",
+        "native",
+        "rules",
+        "sessions",
+        "role-checks",
+        "integration"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002",
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Existing public loop events and the instruction-interaction retry precedent bound the design, but role/path matching, per-session delivery, compaction and caches remain multi-module stateful work; role checks and sessions require strict three-session isolation.",
+        "agentProfileId": "native-deepseek",
+        "agent": "native",
+        "profileModelTier": "balanced",
+        "initialAgent": "native",
+        "initialProfileId": "native-deepseek",
+        "initialModelTier": "balanced",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/execution/lifecycle/run-rules-setup.ts",
+        "packages/nax/src/session/loop-handler-forwarding.ts",
+        "packages/nax-agent/src/native/session/loop-events/types.ts",
+        "packages/nax-agent/src/native/session/instruction-interaction.ts",
+        "packages/nax/src/prompts/builders/rules-index-builder.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/context/rules/rule-delivery/index.ts",
+        "packages/nax/test/unit/context/rules/rule-delivery.test.ts",
+        "packages/nax/test/unit/context/rules/rule-delivery-state.test.ts",
+        "packages/nax/test/unit/execution/lifecycle/run-rules-setup-delivery.test.ts"
+      ],
+      "suggestedCriteria": [
+        "Read calls for wf-rereview and wf-branch-review return a nudge for an undelivered governing rule, just as wf-story-review does.",
+        "A missing or non-string input.path causes the before_tool handler to return { kind: \"allow\" }.",
+        "A Read of packages/nax/src/../src/a.ts receives the same governing rules as packages/nax/src/a.ts.",
+        "An absolute path inside repoRoot receives the same governing rules as its repo-relative spelling.",
+        "Delete, Bash, RunCommand and Git calls return allow even when their arguments name a governed path.",
+        "Resetting one session through before_compaction does not reset another session's delivered rules.",
+        "Rules containing multibyte UTF-8 content are selected using their byte sizes rather than JavaScript character counts.",
+        "configureRunRules in pipeline mode returns no nax-rules entries even when delivery defaults to index."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-setup-init.test.ts",
+          "reason": "two tests break under its `makeNaxConfig()` default (workflow mode, `delivery: \"index\"`), because US-005 makes the delivered set the plugin entries followed by the `nax-rules` entries. (1) \"AC10: calls configureLoopHandlers once with the loaded plugin's entry\" asserts `expect(set).toBe(result.pluginRegistry.getLoopHandlers())` and `expect(set).toHaveLength(1)` (`:154-155`). (2) \"AC10 (boundary): a plugin providing something else contributes no entry\" asserts `expect(set.map((entry) => entry.plugin)).toEqual([LOOP_HANDLER_PLUGIN])` (`:173`). US-005 owns replacing them with these invariants: the delivered set starts with exactly the registry's entries, in order, and every later entry has `plugin === \"nax-rules\"`; and the delivered entries whose `plugin !== \"nax-rules\"` are exactly `[LOOP_HANDLER_PLUGIN]`."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "b0d89dff667cdab215491a17e96fdb1bf2d1b15f"
+    },
+    {
+      "id": "US-006",
+      "title": "Changed-file rules sections in review packages",
+      "description": "**Goal** — Tell story and branch reviewers which rules govern surviving changed files without pushing rule bodies.\n\n**Motivation** — A large branch diff can match most of a repo's rules (nax has 13 rule files, 83 KB).\n\n**Approach** — Verbatim design: \"A \"Rules for the changed files\" section appended to each review package (`buildChangedFileRulesSection`).\"\n\n`writeReviewPackage(projectDir, from, path)`: \"returns `Promise<string[]>`. Its existing `--name-only -z` query stays as is, because `omittedFilesSection` (`git.ts:103-114`) reads it. A fifth query, `--name-status -z`, uses the same range and pathspec, so `ALWAYS_EXCLUDED` applies, and the function returns `parseNameStatus(...).flatMap(survivingPaths)`, exactly as `writeBranchReviewPackage` does (`git.ts:166`).\" Include failure checking of the new query in the existing WORKFLOW_REVIEW_PACKAGE_FAILED handling. Existing direct callbacks returning writeReviewPackage into underReviewLimit's Promise<void> callback (re-review.ts and runBranchReReview) must await/discard its new result; preserve their behavior, not new sections.\n\n`runStoryReview` package step: \"inside the same `underReviewLimit` first callback that calls `writeReviewPackage`, and in `delivery: \"index\"` only, calls `_workflowDeps.appendChangedFileRules(packagePath, paths, input)` with the paths `writeReviewPackage` returned.\" `runBranchReview` package step: \"inside the same callback, after `writeBranchReviewPackage` returns `paths`, calls `_workflowDeps.appendChangedFileRules` (index mode).\" Keep existing branch review requiredFiles/coverage logic unchanged. US-007 later appends configured project context in that branch callback.\n\nAdd appendChangedFileRules to _workflowDeps at its first caller. The map calls rulesForFile for each non-.nax changed path with repoRoot and override configuration, groups files per rule, and appends only if at least one rule governs a file. Use the shared resolver rather than duplicating layer or glob logic. Prompt text stays in rules-index-builder.ts and exports through src/prompts.\n\nVerbatim changed-file rules format:\n```markdown\n## Rules for the changed files\n\nRead a rule's file before you judge the changed code against it.\n\n- `forbidden-patterns-source` (.nax/rules/forbidden-patterns-source.md): 14 changed files, e.g. packages/nax/src/a.ts, packages/nax/src/b.ts, packages/nax/src/c.ts\n```\n\n- **Lines.** One line per rule that governs at least one changed file, with at most three example paths in diff order.\n- **Excluded paths.** Paths under a `.nax/` directory are skipped.\n- **Empty section.** It is omitted when no rule governs any changed file.\n\nReview packages carry names only, never bodies. Consumers read the new keys defensively (`config.context?.rules?.delivery ?? \"index\"`), matching the existing `context?.v2?.` reads, so sparse test configs do not throw.\n\n**Scope** — In: changed-file prompt builder, per-file governance map, story package surviving-path return, story/branch append callbacks and compatible void-returning adapters for existing callers. Out: US-005 owns reviewer read-time rule-body delivery; US-007 owns branch project-context content. No new sections in branch/story rereview packages beyond the specified initial story/branch integration.\n\n**Interface** — Verbatim TypeScript:\n```typescript\nexport interface ChangedFileRuleGroup { readonly rule: RulesIndexEntry; readonly paths: readonly string[] } // paths in diff order\nexport function buildChangedFileRulesSection(groups: readonly ChangedFileRuleGroup[]): string;\nexport const _reviewRulesMapDeps: { rulesForFile: typeof rulesForFile };\nexport function appendChangedFileRules(\n  packagePath: string,\n  changedPaths: readonly string[],\n  input: { repoRoot: string; overrideDir?: string; overrideMode: \"merge\" | \"replace\" },\n): Promise<void>;\n```",
+      "acceptanceCriteria": [
+        "[unit] buildChangedFileRulesSection(groups) returns a string starting with ## Rules for the changed files, with one line per group in the File Format layout.",
+        "[unit] A group with five paths renders 5 changed files, e.g. followed by exactly the first three paths in input order.",
+        "[unit] The rendered lines hold rule ids, display paths, counts and example paths, and none of a rule's body text.",
+        "[unit] appendChangedFileRules(packagePath, changedPaths, input) leaves the package file's prior content byte-identical as a prefix of the new content.",
+        "[unit] appendChangedFileRules with changed paths that no rule governs leaves the package file byte-identical.",
+        "[unit] (seam) With _reviewRulesMapDeps.rulesForFile stubbed, appendChangedFileRules calls it once per changed path not under a .nax/ directory, with that path and input.repoRoot.",
+        "[integration] (seam) With _workflowDeps.appendChangedFileRules stubbed and delivery: \"index\", runStoryReview(sc, []) calls it once with <storyDir>/package-0.diff and the paths writeReviewPackage returned.",
+        "[integration] (seam) With _workflowDeps.appendChangedFileRules stubbed and delivery: \"index\", runBranchReview(fc, input) calls it once with the paths writeBranchReviewPackage returned.",
+        "[integration] With delivery: \"push\", runStoryReview does not call _workflowDeps.appendChangedFileRules.",
+        "[integration] With delivery: \"push\", runBranchReview does not call _workflowDeps.appendChangedFileRules.",
+        "[integration] writeReviewPackage(dir, base, path) on a range that adds a.ts and deletes b.ts resolves to [\"a.ts\"].",
+        "[integration] When the added git diff --name-status -z query fails, writeReviewPackage rejects with NaxError code WORKFLOW_REVIEW_PACKAGE_FAILED, preserving the existing review-package failure behavior for its other queries."
+      ],
+      "tags": [
+        "feature",
+        "review",
+        "rules",
+        "git",
+        "integration"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002",
+        "US-003",
+        "US-005"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Shared per-file rule mapping spans git result contracts, existing review-limit callbacks, review coverage and prompt rendering; no permission or session-policy change is introduced here.",
+        "agentProfileId": "native-deepseek",
+        "agent": "native",
+        "profileModelTier": "balanced",
+        "initialAgent": "native",
+        "initialProfileId": "native-deepseek",
+        "initialModelTier": "balanced",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/story-review.ts",
+        "packages/nax/src/workflow/branch-review.ts",
+        "packages/nax/src/workflow/git.ts",
+        "packages/nax/src/prompts/builders/rules-index-builder.ts",
+        "packages/nax/src/context/rules/rule-set/index.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/workflow/review-rules-map.ts",
+        "packages/nax/test/unit/workflow/review-rules-map.test.ts",
+        "packages/nax/test/integration/workflow-review-rules.test.ts",
+        "packages/nax/test/unit/prompts/builders/rules-index-builder-changed-files.test.ts"
+      ],
+      "suggestedCriteria": [
+        "writeReviewPackage returns only the destination path for a rename while preserving its existing omitted-files section content.",
+        "appendChangedFileRules skips packages/api/.nax/config.json as well as root .nax paths.",
+        "When appending changed-file rules throws, runStoryReview returns a skipped-review outcome through underReviewLimit without invoking its review operation.",
+        "When appending changed-file rules throws, runBranchReview returns a skipped-review outcome through underReviewLimit without invoking its review operation."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "7e5e52cd9014a812a7eb238bdcd821d06202d013"
+    },
+    {
+      "id": "US-007",
+      "title": "Project-context override delivery",
+      "description": "**Goal** — Validate and deliver a run's project-context file to briefs and branch review packages, optionally replacing native root instruction autoloading.\n\n**Motivation** — An orchestrator that runs `nax run` across many repos cannot supply organisation-wide or per-job rules or project context without committing them into each target repo.\n\n**Approach** — Verbatim design: \"a **project-context override file** (`nax run --context-file`, `context.projectContext`) that is appended to briefs and branch review packages. In `replace` mode, native sessions also stop auto-loading the repo-root instruction file.\"\n\n`writeBrief(sc)`: \"When a file is configured, it passes `projectContextOverride` from `_workflowDeps.loadProjectContextOverride`.\" `WorkflowBriefInput` / `buildWorkflowBrief`: \"gains optional `rulesIndex?: { entries: readonly RulesIndexEntry[]; shownAutomatically: boolean }` and `projectContextOverride?: string`. They render as \"## Rules index\" (before \"## Feature context\") and \"## Project context (run override)\" (after \"## Feature context\"). The existing \"## Project rules\" section (the constitution) is unchanged.\" The index field already comes from US-003; add only project-context content now.\n\n`runBranchReview` package step: \"inside the same callback, after `writeBranchReviewPackage` returns `paths`, calls `_workflowDeps.appendChangedFileRules` (index mode). When a file is configured, it also appends the project-context override section.\" The configured project-context section is independent of rules delivery mode. Keep it within underReviewLimit's package callback and preserve the prior package content and existing requiredFiles processing. Add loadProjectContextOverride to _workflowDeps and to _runRulesSetupDeps, validating configured content before configureLoopHandlers is called. Production imports use `@/context/project-context-override`, never an internal module path. Prompt construction remains in src/prompts.\n\n`instructionOptionsForSession(agentName, options)`: \"when `options.config.context?.projectContext?.mode === \"replace\"` and a file is set, appends `rootInstructionDenyPaths(fileName)` to `instructionDenyPaths`. `fileName` is the configured `instructionFileName`; the default gives `AGENTS.override.md`, `AGENTS.md` and `CLAUDE.md`. `matchesDenyPaths` anchors on the whole repo-relative path (`packages/nax-agent/src/tools/deny-paths.ts`), and `RepositoryInstructions.load` applies it to every discovered instruction file (`packages/nax-agent/src/native/session/repository-instructions.ts:133`). So a bare `AGENTS.md` denies only the root file, and package-level instruction files still load.\" Preserve the existing non-native return {}.\n\nVerbatim project-context format:\n```markdown\n## Project context (run override)\n\n<file content, verbatim>\n```\n\nVerbatim failure handling:\n- `projectContext.file` missing at run start → `NaxError` code `PROJECT_CONTEXT_FILE_NOT_FOUND` before any story runs.\n- `projectContext.file` larger than 32,768 bytes → `NaxError` code `PROJECT_CONTEXT_FILE_TOO_LARGE` before any story runs. It is never truncated.\n- `projectContext.mode: \"replace\"` while the run's default agent is not `native` → One `logger.warn(\"run-setup\", ...)` at run start saying replace applies to native sessions only and that other agents still load the repository's own instruction files. The run continues.\n\nUse UTF-8 byte size, accept exactly 32,768 bytes and return undefined when no file is configured. The existing workflow brief section(title, body) helper trims body text (workflow-implementer-builder.ts:36); do not use its trimming behavior for the override section. Preserve the configured content verbatim between the new heading and section separators. Use canonical default-agent resolution for the warning, not a hardcoded agent selection. Consumers read the new config keys defensively.\n\n**Scope** — In: project file loader/size errors, setup validation/warning, brief and branch package sections, and native root instruction deny-path extension. Out: US-001 owns rule resolution; US-002 already owns schema/path validation/CLI/root pinning; US-005 owns body-delivery state; US-006 owns rule maps. The project-context override reaches the story brief and the branch review package only. The prompts of `wf-rereview` and `wf-branch-fix` sessions do not change. `projectContext.mode: \"replace\"` stops native sessions from loading the repo-root instruction file only. Package-level instruction files and every ACP agent's native instruction loading are unchanged.\n\n**Interface** — Verbatim TypeScript:\n```typescript\nexport const MAX_PROJECT_CONTEXT_BYTES = 32_768;\nexport function loadProjectContextOverride(config: NaxConfig): Promise<string | undefined>;\nexport function rootInstructionDenyPaths(instructionFileName: string): string[];\n```\nThe final `_runRulesSetupDeps` shape now includes dirExists, loadProjectContextOverride and createRuleDeliveryHandlers; configureRunRules validates both overrides before returning the handler set.",
+      "acceptanceCriteria": [
+        "[unit] loadProjectContextOverride(config) returns the file's content for an existing file of 32,768 bytes.",
+        "[unit] loadProjectContextOverride(config) returns undefined when no file is configured.",
+        "[unit] loadProjectContextOverride(config) rejects with code PROJECT_CONTEXT_FILE_NOT_FOUND for a missing file.",
+        "[unit] loadProjectContextOverride(config) rejects with PROJECT_CONTEXT_FILE_TOO_LARGE for a 32,769-byte file, rather than truncating it.",
+        "[integration] (seam) With _runRulesSetupDeps.loadProjectContextOverride stubbed to reject with code PROJECT_CONTEXT_FILE_NOT_FOUND, initializeAfterLock with context.projectContext.file set rejects with that code.",
+        "[integration] (seam) In that missing-project-context setup case, configureLoopHandlers is called zero times.",
+        "[unit] buildWorkflowBrief with featureContext: \"FEATURE\" and projectContextOverride: \"X-OVERRIDE\" places a ## Project context (run override) section with body X-OVERRIDE after ## Feature context.",
+        "[integration] (seam) With _workflowDeps.loadProjectContextOverride stubbed to return \"X-OVERRIDE\", writeBrief(sc) writes a brief.md with X-OVERRIDE under ## Project context (run override).",
+        "[integration] (seam) With _workflowDeps.loadProjectContextOverride stubbed to return \"X-OVERRIDE\", runBranchReview(fc, input) leaves a package file with ## Project context (run override) followed by X-OVERRIDE.",
+        "[unit] rootInstructionDenyPaths(\"AGENTS.md\") returns [\"AGENTS.override.md\", \"AGENTS.md\", \"CLAUDE.md\"].",
+        "[unit] rootInstructionDenyPaths(\"GUIDE.md\") returns [\"GUIDE.md\"].",
+        "[unit] instructionOptionsForSession(\"native\", options) with projectContext.mode: \"replace\", a configured file and execution.denyPaths: [\"secret/**\"] returns instructionDenyPaths [\"secret/**\", \"AGENTS.override.md\", \"AGENTS.md\", \"CLAUDE.md\"].",
+        "[unit] instructionOptionsForSession(\"native\", options) with mode: \"append\" and execution.denyPaths: [\"secret/**\"] returns instructionDenyPaths [\"secret/**\"].",
+        "[unit] instructionOptionsForSession(\"claude\", options) with mode: \"replace\" returns {}.",
+        "[integration] initializeAfterLock with mode: \"replace\", a configured file and default agent claude logs exactly one warn on run-setup saying replace applies to native sessions only and that other agents still load the repository's own instruction files.",
+        "[integration] initializeAfterLock with mode: \"replace\", a configured file and default agent claude resolves despite that native-only warning.",
+        "[integration] initializeAfterLock with mode: \"replace\", a configured file and default agent native logs no such warn.",
+        "[integration] initializeAfterLock with a projectContext.file larger than 32,768 bytes rejects with PROJECT_CONTEXT_FILE_TOO_LARGE before any story runs."
+      ],
+      "tags": [
+        "feature",
+        "context",
+        "native",
+        "sessions",
+        "instructions",
+        "integration"
+      ],
+      "dependencies": [
+        "US-002",
+        "US-003",
+        "US-005",
+        "US-006"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "File validation and prompt delivery cross setup, briefs and reviews, while native instruction deny paths alter session access/loading behavior and require the strict security/session override.",
+        "agentProfileId": "native-deepseek",
+        "agent": "native",
+        "profileModelTier": "balanced",
+        "initialAgent": "native",
+        "initialProfileId": "native-deepseek",
+        "initialModelTier": "balanced",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/session/instruction-options.ts",
+        "packages/nax/src/workflow/brief.ts",
+        "packages/nax/src/workflow/branch-review.ts",
+        "packages/nax/src/execution/lifecycle/run-rules-setup.ts",
+        "packages/nax/src/prompts/builders/workflow-implementer-builder.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/context/project-context-override/index.ts",
+        "packages/nax/test/unit/context/project-context-override.test.ts",
+        "packages/nax/test/unit/session/instruction-options.test.ts",
+        "packages/nax/test/integration/workflow-project-context.test.ts",
+        "packages/nax/test/unit/execution/lifecycle/run-rules-setup-project-context.test.ts"
+      ],
+      "suggestedCriteria": [
+        "instructionOptionsForSession in replace mode without a configured project-context file leaves instructionDenyPaths unchanged.",
+        "A native replace session denies the repo-root AGENTS.md while still loading packages/api/AGENTS.md.",
+        "Brief and branch package override sections retain the configured file's leading/trailing whitespace and Unicode text verbatim.",
+        "writeBrief and runBranchReview still deliver configured project-context content when context.rules.delivery is push.",
+        "initializeAfterLock with an oversized project-context file calls configureLoopHandlers zero times."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "6e6005483b8dbaa06b84f63ba87c4d5924e979b0"
+    }
+  ],
+  "analysis": "Goal and completion: Close #2377 by replacing workflow-mode rule-body pushing with an indexed, on-demand delivery model, plus run-scoped organisation/job rules and project-context overrides. Completion means the seven binding stories deliver one shared layered resolver to pipeline static rules, workflow briefs, native hooks and review maps; workflow index assemblies use only feature context/dependency fragments; overrides fail closed at setup while native rule-delivery failures fail open. No LLM is needed for any new concern. All implementation changes belong to packages/nax; packages/nax-agent is read-only reference material. Graph-first navigation was unavailable because this session exposes no codebase-memory MCP tools; direct reads and text searches verified the findings below.\n\nExisting rule architecture and impact (US-001): packages/nax/src/context/rules/canonical-loader/index.ts:432 implements loadCanonicalRules(workdir, options), joins CANONICAL_RULES_DIR, caps depth at two relative path components, parses frontmatter, warns/skips invalid runtime frontmatter, strips frontmatter, computes nested ids, aggregates neutrality failures, sorts by priority/code point and optionally budgets. Extract its body unchanged into loadCanonicalRulesFromDir; preserve options and exceptions. packages/nax/src/context/engine/providers/static-rules.ts:106 has the three canonicalRule* helpers, :133 exports ruleMatchesScopeFiles, and :184 begins fetch. The repo paths filter, package framing, overlay by canonical id and priority/code-point sorting are currently inline at :189-260. The #558 empty-match branch at :263 reads pre-filter counts: preserve these through ResolvedRuleSet, with zeros and no repo/package loader calls in override replace mode. _staticRulesDeps.loadCanonicalRules at :51 must remain the seam for BOTH repo and package loads. StaticRulesProvider is 591 lines and must shrink, not grow. Existing stage, appliesTo and section-budget behavior after extraction must remain identical without overrides, including legacy behavior. packages/nax/src/context/engine/orchestrator-factory.ts:42 constructs StaticRulesProvider and :52 supplies its options; this is the pipeline/push override integration. packages/nax/src/context/engine/providers/canonical-rules-cache.ts:19 memoizes promises by workdir and :25 evicts rejections; reuse this behavior for canonical loads and use distinct absolute-directory keys for override loads. Never let one run's override directory contaminate another. Add run-lifetime directory-to-package and package-to-rule-set caching for native matching without retaining rejected resolution results.\n\nPath semantics are regression-sensitive: packages/nax/src/context/engine/scope-path-match.ts:43 normalizePath only normalizes separators/leading ./, so tool-path normalization also needs posix.normalize. :146 frameAppliesTo frames literals, not authored globs, using the story's package identity; do not replace storyWorkdir with a worktree-derived relative path. ruleMatchesPackage is documented at :156 and deliberately treats root requests differently from package requests. Reuse these existing helpers unchanged. packages/nax/src/test-runners/resolver.ts:269 findPackageDir returns a REPO-RELATIVE package directory, not an absolute directory; join it to repoRoot when forming ResolveRuleSetInput.packageDir and use it as storyWorkdir. It checks .nax/mono/<rel>/config.json and package.json/go.mod/pyproject.toml/Cargo.toml while walking parents. rulesForFile must match each actual file, not cache the first file's match result for all files in its directory. Avoid a static-rules -> rule-set -> static-rules load-time cycle when reusing ruleMatchesScopeFiles: the mandated canonicalRule* extraction makes this an important dependency edge; preserve the shared match semantics without introducing parent-barrel cycles.\n\nConfig and setup (US-002): packages/nax/src/config/schemas-context.ts:298 defines ContextConfigSchema; packages/nax/src/config/schemas.ts:349 reparses ContextConfigSchema.parse({}) as its default. Both new subobjects therefore need XBase.default(() => XBase.parse({})), not a partially populated literal default. Validate absolute or ~/ paths, expand home paths during schema parsing, and preserve absent paths. Consumers must tolerate sparse test configs with optional chaining/default index. packages/nax/src/config/root-only-keys.ts:26 pinRootOnlyKeys and :49 pinRootOnlyKeysRaw currently pin execution/auth/advisor/workflow; add only context.rules and context.projectContext while preserving other context subkeys. Raw pinning warns once per differing supplied subkey via Bun.deepEquals. These values remain allowed in global/project/profile/CLI configs within the repository trust boundary. packages/nax/bin/run-action.ts:263 resolveRunProjectContext already builds profile overrides; merge context CLI overrides alongside them without destroying profile precedence. packages/nax/bin/nax.ts:210 defines run; :220 already owns boolean options.context through --no-context, so use --context-file. New keys also need packages/nax/src/cli/config-descriptions.ts entries. packages/nax/src/execution/lifecycle/run-setup-init.ts:180 currently forwards pluginRegistry.getLoopHandlers() directly. Replace only that expression with await configureRunRules; retain InitializeAfterLockDeps, existing lock-release catch at :248 and complexity baseline 21. The helper validates all configured overrides before returning any handler set, including push/pipeline runs; no configureLoopHandlers call may occur on validation failure. packages/nax/src/errors.ts:7 re-exports the shared NaxError, so use existing error construction instead of inventing an error hierarchy. Missing or non-directory override paths use RULES_OVERRIDE_DIR_NOT_FOUND with run-setup context.\n\nBrief/prompt integration (US-003): packages/nax/src/workflow/brief.ts:77 writeBrief gathers spec/red-base/rulings and passes story/feature context to buildWorkflowBrief. packages/nax/src/prompts/builders/workflow-implementer-builder.ts:15 defines WorkflowBriefInput; :51 builds the brief, :80 renders feature context and :81 preserves the constitution as Project rules. Rules index goes before Feature context; project-context override goes after it. Prompt literals belong in src/prompts/builders/rules-index-builder.ts and are exported through packages/nax/src/prompts/index.ts:81. packages/nax/src/workflow/step-context.ts:47 _workflowDeps is the established consumer seam: add resolveRuleSet in US-003, appendChangedFileRules in US-006 and loadProjectContextOverride in US-007 only when first consumed. The index has metadata only, stable priority/id order, framed scopes, override provenance and description fallback. Native and ACP share the index but receive different instructions about automatic delivery.\n\nWorkflow context (US-004): packages/nax/src/pipeline/stages/index.ts:40 buildDefaultPipeline and :68 buildWorkflowPipeline currently share contextStage; only swap workflow's stage and preserve its name context, lazy workflow import and memoized pipeline arrays. packages/nax/src/pipeline/stages/context.ts:74 runV2Path allocates session scratch/id/counter at :76-104, constructs ContextRequest at :176 and assembles at :270; :296 copies pushMarkdown into featureContextMarkdown. Extract allocation to allocateStorySession, preserving existing UUID testability, sessionManager behavior, retry identity and counter behavior for both callers. packages/nax/src/context/engine/providers/feature-context.ts:199 FeatureContextProviderV2 binds story/config and :222 fetch returns context.md chunks then dependency fragments; it is already exported from the engine barrel (:68). Call it directly, preserve returned ordering and join with blank lines without score/budget packing, since feature chunks already have floor behavior. Derive request identity and budget exactly like runV2Path. In index/v2 mode do not produce contextBundle, scopeFiles, resolvedTestPatterns, digest or manifest. Existing CallContext consumers consequently offer no context pull tools and have no bundle to rebuild after an agent swap. Push and v2-disabled cases delegate to today's contextStage, including v1 fallback. Provider failures warn once with storyId first and continue without feature context.\n\nNative loop delivery (US-005): packages/nax/src/session/loop-handler-forwarding.ts:38 buildLoopHandlerTurnOpts returns no handlers for non-native sessions; :62 freezes LoopHandlerContext with sessionName from handle.id and role/story metadata from the descriptor. No nax-agent API changes are necessary. packages/nax-agent/src/native/session/loop-events/types.ts:48 BeforeToolOutcome supports allow, nudge, block and terminate; :158 BeforeCompactionPayload is an existing hook; :215 LoopHandlerContext and :242 LoopHandlerEntry define the run-set contract. Consume these through permitted @nathapp/nax-agent entry points (the existing forwarding module imports loop types from /internal), never cross-package source imports. packages/nax-agent/src/native/session/instruction-interaction.ts:7 is the existing no-mutation/retry precedent. The run-scoped handler pair follows plugin handlers and uses plugin nax-rules. Only Read/Write/Edit qualify. Read scope: wf-implementer/wf-branch-fix/wf-story-review/wf-rereview/wf-branch-review. Mutation scope: wf-implementer/wf-branch-fix only. Unknown/absent roles allow. Normalize paths, check known rule-file reads BEFORE outside-root and .nax exclusions, mark only visible bodies as delivered, and use sessionName maps cleared by before_compaction. The root rule set is learned on the first handler call and every subsequently matched rule expands the known-rule-file set. Prefix Read results; block mutation once with isError and the mandated retry message. The 16,384-byte limit must use bytes, not JS character count, preserve priority order, list overflow ids/paths and leave their bodies undelivered. Batched duplicate deliveries are permitted. Catch resolution failures internally, warn on rules with storyId first, mark nothing and retry successfully later. Each actual delivery logs rules.delivered. Plugin nudge concatenation and native timeout-wrapper changes are explicitly excluded.\n\nReview packages (US-006): packages/nax/src/workflow/git.ts:103 omittedFilesSection relies on the existing --name-only -z query. :122 parseNameStatus and :152 survivingPaths are already used by :166 writeBranchReviewPackage; survivingPaths excludes deletions and keeps rename/copy destinations. :195 writeReviewPackage currently returns Promise<void>; add a fifth --name-status -z query with the same range/pathspec/ALWAYS_EXCLUDED, include its failures in error detection, return surviving paths and preserve existing diff/truncation/omission content. packages/nax/src/workflow/story-review.ts:21 underReviewLimit catches package-write failures and takes writePackage: () => Promise<void>; :78 is the story callback. packages/nax/src/workflow/branch-review.ts:59 is the branch callback and :62 derives requiredFiles: preserve this review-coverage behavior. Append maps inside these callbacks so failures remain within existing review error handling. Important code-vs-spec compatibility discovery: existing callers in packages/nax/src/workflow/re-review.ts:25 and branch-review.ts:92 return writeReviewPackage directly into that Promise<void> callback. After its return-type change, use async callbacks that await and discard the returned paths where no append is specified; otherwise TS can reject Promise<string[]> as Promise<void>. Do not extend rereview prompts or packages beyond specified integrations. Rule maps skip any .nax directory, group actual surviving files by rule, preserve diff example order and contain no bodies. Prior package bytes remain an identical prefix.\n\nProject-context delivery (US-007): packages/nax/src/session/instruction-options.ts:13 returns {} for non-native agents and :22 currently passes configured denyPaths unchanged. Append root instruction deny paths only when a configured file and replace mode coexist; keep denyPaths first, instruction directories/protected paths unchanged and do not deny nested package instruction basenames. Default instruction ordering must be AGENTS.override.md, AGENTS.md, CLAUDE.md; custom GUIDE.md produces only GUIDE.md. Validate configured content through loadProjectContextOverride at setup before handler configuration, return undefined if unset and preserve exact bytes/text in rendered override sections. Enforce 32,768 UTF-8 bytes, accept the boundary, reject larger files without truncation. Project context is appended to briefs and branch review packages independently of rule delivery mode. Replace changes native root autoloading, not the existing brief constitution, feature context, nested instructions or ACP loading. Resolve the default agent through canonical config accessors and warn once during setup for a non-native default.\n\nTests and migration: Existing relevant regressions are test/unit/context/rules/canonical-loader.test.ts; six static-rule suites (static-rules.test.ts, static-rules-us002.test.ts, static-rules-sections.test.ts, static-rules-scoping.test.ts, static-rules-budget-derivation.test.ts and context/engine/scope-path-reconciliation.test.ts); test/unit/config/root-only-keys.test.ts; test/unit/cli/config-json.test.ts; test/unit/pipeline/workflow-pipeline.test.ts:4 (compares stage names and memoization); test/unit/workflow/brief.test.ts:25 (temporary repos and _workflowDeps restoration); test/unit/workflow/branch-review.test.ts and workflow/git.test.ts. Search found no existing instructionOptionsForSession tests; add a dedicated file. New behavior goes in new test files, especially because static-rules.test.ts is already baselined at 837 lines. test/unit/execution/lifecycle/run-setup-init.test.ts:144-174 has two identity/plugin-only assertions that must change in US-005 to plugin-prefix and nax-rules-suffix invariants; push still preserves exact registry-set identity. Use the existing makeStepContext/makeTestStory/makeNaxConfig, temporary-directory helpers and _deps seams, restore overrides after each test, demonstrate red before implementation and keep tests deterministic. Seam tests must stub the producer at the actual consumer entry point named in each AC. Use targeted Bun test paths from packages/nax with explicit timeout, never bare bun test; normal lint/typecheck/tests are pipeline responsibilities, with the separate coverage gate considered after adding files. New nested-barrel modules are consumed only by exact aliases @/context/rules/rule-set, @/context/rules/rule-delivery and @/context/project-context-override. Follow docs/architecture/ARCHITECTURE.md:19-49 for injection, error, prompt and import conventions. No dependency, version, generated-agent-file or nax-agent source changes are needed. Default index is the behavioral migration; delivery push is the operator rollback. Preserve frozen pipeline behavior except its shared override-directory input. Dependency order is US-002 first; US-001 and US-004 then become available; US-003 follows US-001; then US-005, US-006 and US-007. Adversarial refine-pass findings: Re-read the affected config, provider, session-allocation, workflow/git and loop-event contracts. Corrected resolver seam wording to return ResolvedRuleSet rather than imply a bare rule array, and corrected the story-review seam call to supply its required concerns argument ([]), per packages/nax/src/workflow/story-review.ts:59. Section-order tests now explicitly supply featureContext so the existing optional Feature context heading exists. Clarified that before_compaction returns no patch rather than a BeforeToolOutcome, per packages/nax-agent/src/native/session/loop-events/types.ts:158-174,235. Clarified overflow retry delivery for bodies that individually fit the cap, without inventing truncation or guaranteed eventual delivery for an individually oversized body. Added explicit no-override package-framing, unchanged-constitution and fifth-git-query error regressions. The existing brief section helper trims text (packages/nax/src/prompts/builders/workflow-implementer-builder.ts:36), so project-context rendering must bypass that trimming. Existing UUID stubs in packages/nax/test/unit/pipeline/stages/context-request-workdir-fields.test.ts:131, context-digest.test.ts:213, context-us004.test.ts:142 and context-scope-files.test.ts:113 must keep driving the extracted allocation path. Test outputs now mirror source directories and source-module concern names, with multi-module new integrations under test/integration, per .nax/rules/test-architecture.md:45-84. US-004 is medium because it copies an existing allocation block and uses an existing provider across four files; its strict session strategy is still mandatory. US-005 is complex, not expert: its public events and retry precedent already exist, although state, roles and caches require strict three-session isolation. All other routing remains justified by its concrete module scope.\n\nSpec-AC preservation ledger (spec criterion number -> revised acceptanceCriteria position, 1-based; split positions preserve every assertion and qualifying clause): US-001: 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8, 9->9, 10->10, 11->11, 12->12, 13->13+14, 14->15. US-002: 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8, 9->9, 10->10, 11->11, 12->12, 13->13+14, 14->15, 15->16, 16->17, 17->18, 18->19. US-003: 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7+8, 8->9, 9->10+11, 10->12. US-004: 1->1+2, 2->3+4, 3->5, 4->6, 5->7, 6->8, 7->9, 8->10+11, 9->12, 10->13. US-005: 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8, 9->9, 10->10+11, 11->12, 12->13, 13->14, 14->15, 15->16, 16->17, 17->18+19+20, 18->21, 19->22, 20->23. US-006: 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8, 9->9+10, 10->11. US-007: 1->1, 2->2, 3->3+4, 4->5+6, 5->7, 6->8, 7->9, 8->10+11, 9->12, 10->13, 11->14, 12->15+16, 13->17. Thus all 95 numbered criteria remain in their original stories; none were demoted to suggestedCriteria. Same-identity, existing/unchanged values, while-nonempty/valid-rule clauses, directory/package-cache qualification, exact retry sentence, and byte-identical-prefix qualifiers remain with their assertions. No deprecated file-content-check tags occurred.\n\nFailure-table audit, all nine rows retained: missing/non-directory rules -> US-002 positions 11,12,20,21; neutrality -> US-001 position 9; bad frontmatter warn/skip -> US-001 positions 10,16; missing project file -> US-007 positions 3,5,6; oversized project file -> US-007 positions 4,18; non-native replace warning/continue -> US-007 positions 15,16; rule resolution fail-open/warn/mark nothing -> US-005 positions 18,19,20; injection cap and undelivered overflow -> US-005 positions 15,24; feature fetch warn/continue -> US-004 positions 10,11,12. Every story has a negative path: US-001 invalid/filtered rules; US-002 validation/setup rejection; US-003 empty-index/push omission; US-004 fetch failure; US-005 resolution failure and excluded roles/paths; US-006 no matching rule and fifth-query failure; US-007 missing/oversized file and non-native no-op. Every criterion is observable through returned values, thrown errors, logs, file bytes, state or dependency-call observations. Regression anchors cover the loader/provider extraction, selective root pinning, existing constitution, unchanged session identity and push/v1 fallback, plugin prefix/push exclusion, existing package bytes/error code, and existing instruction deny paths. All 14 feature exclusions remain verbatim in their original order in outOfScope, with related boundaries echoed in descriptions. Binding ids, workdirs and dependencies remain unchanged. Every contextFiles list includes the critical spec recommendations within the five-file cap; files created by the owning story remain only in expectedFiles, and upstream-created context files have binding dependency coverage. Optional hardening remains in suggestedCriteria; numbered spec criteria, failure-table rows and explicit backward-compatibility requirements remain in acceptanceCriteria.",
+  "outOfScope": [
+    "Pipeline mode (`execution.mode: \"pipeline\"`, frozen since 2026-10-16) is unchanged. It keeps `contextStage`, the v2 orchestrator and rule pushing; only the rules override directory reaches it, through `StaticRulesProvider`.",
+    "Deleting context engine v2 is deferred until pipeline mode is removed. This feature only stops the workflow pipeline from calling it under `delivery: \"index\"`.",
+    "Rule `stages:` frontmatter is not applied in workflow mode, by either the rules index or the rule-delivery handlers.",
+    "ACP agents get no rule-delivery hook; they receive the rules index and the changed-file rules sections only. Claude in write mode also loads `.claude/rules` natively when the repo exported them; nax does not check that export for drift.",
+    "Override-sourced rules are referenced by absolute path. This feature does not guarantee that an ACP agent's permission policy allows reading a path outside the workdir.",
+    "Only `Read`, `Write` and `Edit` trigger rule delivery. `Delete`, `Bash`, `RunCommand`, `Git` and other tools neither nudge nor block.",
+    "Adding `description:` frontmatter to existing repositories' `.nax/rules/*.md` files is a manual follow-up outside the run.",
+    "The #2042 convention-heavy A/B (`index` vs `push`) is not run by this feature. #2042 stays open for it.",
+    "The project-context override reaches the story brief and the branch review package only. The prompts of `wf-rereview` and `wf-branch-fix` sessions do not change.",
+    "`projectContext.mode: \"replace\"` stops native sessions from loading the repo-root instruction file only. Package-level instruction files and every ACP agent's native instruction loading are unchanged.",
+    "No per-rule delivery telemetry beyond the `rules.delivered` log line. Context manifests are not written for `delivery: \"index\"` workflow assemblies.",
+    "When a plugin `before_tool` handler and the rule-delivery handler both nudge one call, the native loop keeps only the last nudge (`registry.ts:232`), which is the rule-delivery handler's. Concatenating nudges in the shared chain is not part of this feature.",
+    "A rule-delivery handler that exceeds the native loop's 10 s plugin deadline is handled by the existing wrapper, which blocks the call once; this feature does not change or re-test that behaviour.",
+    "In `delivery: \"index\"`, workflow calls carry no `contextBundle`, so an agent swap has no context bundle to rebuild. The pull tools are not offered."
+  ],
+  "routingProfile": "cross-agent"
+}

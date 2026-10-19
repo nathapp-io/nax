@@ -294,6 +294,17 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "context.autoDetect.enabled": "Enable auto-detection of relevant files",
   "context.autoDetect.maxFiles": "Max files to auto-detect",
   "context.autoDetect.traceImports": "Trace imports to find related files",
+  "context.rules": "Run-level rules override (root-only: a per-package config cannot change it)",
+  "context.rules.delivery":
+    'Rule delivery in workflow mode: "index" (default — rules are listed in the brief and their bodies are pushed when a governing file is read or written) or "push" (every rule body is carried in the brief)',
+  "context.rules.overrideDir":
+    "Rules override directory: absolute or ~/-prefixed, laid out like .nax/rules/. Validated at run start; a missing directory fails the run",
+  "context.rules.overrideMode": 'How override rules combine with the repo rules: "merge" (default) or "replace"',
+  "context.projectContext":
+    "Run-level project-context override file (root-only: a per-package config cannot change it)",
+  "context.projectContext.file":
+    "Markdown file delivered as project context: absolute or ~/-prefixed, at most 32768 bytes. Validated at run start",
+  "context.projectContext.mode": 'How the file combines with the run\'s context: "append" (default) or "replace"',
 
   // Optimizer
   optimizer: "Prompt optimizer configuration",

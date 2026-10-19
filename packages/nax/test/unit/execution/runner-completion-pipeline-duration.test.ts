@@ -133,8 +133,9 @@ describe("runCompletionPhase — Duration in pipeline mode (nax#2494)", () => {
 
   test("handleRunCompletion is asked to hold run.complete back", async () => {
     await runCompletionPhase(opts());
-    const call = (_runnerCompletionDeps.handleRunCompletion as ReturnType<typeof mock>).mock.calls[0];
-    expect(call?.[0]).toMatchObject({ deferRunCompleteLog: true });
+    expect(_runnerCompletionDeps.handleRunCompletion).toHaveBeenCalledWith(
+      expect.objectContaining({ deferRunCompleteLog: true }),
+    );
   });
 
   test("the saved metrics record is rewritten with the whole-run duration and the end-phase split", async () => {

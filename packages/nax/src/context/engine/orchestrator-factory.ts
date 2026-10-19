@@ -50,12 +50,19 @@ export function createDefaultOrchestrator(
   // Schema default is `true`; mirror it so the orchestrator matches production
   // resolved config when callers pass partial configs that omit the rules sub-object.
   const enforceBudget = config.context?.v2?.rules?.enforceBudget ?? true;
+  // US-001: the run-level rules override reaches the pipeline through this
+  // provider only — pipeline mode keeps contextStage, the v2 orchestrator and
+  // rule pushing, with the override directory as the single behavioural delta.
+  const overrideDir = config.context?.rules?.overrideDir;
+  const overrideMode = config.context?.rules?.overrideMode;
   const providers: IContextProvider[] = [
     new StaticRulesProvider({
       allowLegacyClaudeMd,
       budgetTokens: rulesBudgetTokens,
       rulesShare,
       enforceBudget,
+      ...(overrideDir !== undefined && { overrideDir }),
+      ...(overrideMode !== undefined && { overrideMode }),
     }),
     new FeatureContextProviderV2(story, config),
   ];

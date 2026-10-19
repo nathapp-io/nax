@@ -73,7 +73,10 @@ export const agentConfigSelector = pickSelector("agent", "agent");
 // "a+b", or "default"). AgentManager stamps it onto dispatch events so cost rows
 // record which overlay was active — profiles repoint agent and model per stage
 // and are otherwise invisible in run artifacts (#1433).
-export const agentManagerConfigSelector = pickSelector("agent-manager", "agent", "execution", "profile");
+// "context" is US-007: `instructionOptionsForSession` derives a native session's
+// root-instruction deny list from `context.projectContext`, and it reads it off
+// the `AgentRunOptions.config` this slice fills.
+export const agentManagerConfigSelector = pickSelector("agent-manager", "agent", "execution", "profile", "context");
 export const interactionConfigSelector = pickSelector("interaction", "interaction");
 export const precheckConfigSelector = pickSelector(
   "precheck",

@@ -15,15 +15,11 @@
  * - `continue`: Always continues (soft failure if context empty)
  */
 
-import { randomUUID } from "node:crypto";
-import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
-import { featureDir } from "@/config";
 import { FeatureContextProvider } from "@/context";
 import {
   type ContextRequest,
   createDefaultOrchestrator,
-  createRunCallCounter,
   deriveProviderWeights,
   estimateAvailableBudgetTokens,
   getStageContextConfig,
@@ -48,6 +44,7 @@ import { storyWorkdir } from "@/utils/path-frame";
 import { packageDirRelative } from "@/utils/paths";
 import { resolveScopeFiles } from "../scope-files";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
+import { _contextSessionDeps, allocateStorySession } from "./context-session";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Injectable deps (for testing)
@@ -57,7 +54,18 @@ export const _contextStageDeps = {
   createOrchestrator: createDefaultOrchestrator,
   loadPlugins: loadPluginProviders,
   v1FeatureProvider: () => new FeatureContextProvider(),
-  uuid: () => randomUUID(),
+  /**
+   * UUID seam for the session-scratch fallback. It forwards to the allocation
+   * module (US-004) rather than holding its own factory, so the single
+   * allocation policy lives in `allocateStorySession` while the long-standing
+   * `_contextStageDeps.uuid` seam keeps reading and writing exactly as before.
+   */
+  get uuid(): () => string {
+    return _contextSessionDeps.uuid;
+  },
+  set uuid(factory: () => string) {
+    _contextSessionDeps.uuid = factory;
+  },
   readDigest: readDigestFile,
   writeDigest: writeDigestFile,
   // US-004: V2 stage derives per-provider weights from the current feature's
@@ -75,34 +83,16 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
   const logger = getLogger();
   const agentName = ctx.routing.agent ?? ctx.agentManager?.getDefault() ?? "claude";
 
-  // Derive the session scratch directory for this pipeline run.
-  // ctx.sessionId is owned by this (context) stage — it pre-allocates a UUID
-  // here so the scratch dir path is stable before the execution stage runs.
-  // Phase 5.5 will migrate ownership to the SessionManager.
-  if (!ctx.sessionScratchDir) {
-    if (ctx.sessionManager && ctx.prd.feature) {
-      const session = ctx.sessionManager.create({
-        role: "implementer",
-        agent: agentName,
-        workdir: ctx.workdir,
-        projectDir: ctx.projectDir,
-        featureName: ctx.prd.feature,
-        storyId: ctx.story.id,
-      });
-      ctx.sessionId = session.id;
-      ctx.sessionScratchDir = session.scratchDir;
-    } else {
-      const sessionId = ctx.sessionId ?? _contextStageDeps.uuid();
-      if (!ctx.sessionId) ctx.sessionId = sessionId;
-      const featureId = ctx.featureDir?.replace(/\/$/, "").split("/").pop() ?? "_unattached";
-      ctx.sessionScratchDir = join(featureDir(ctx.projectDir, featureId), "sessions", sessionId);
-    }
-  }
-  if (!ctx.contextToolRunCounter) {
-    ctx.contextToolRunCounter = createRunCallCounter();
-  }
+  // Session identity (`ctx.sessionId`, `ctx.sessionScratchDir`) and the run
+  // call counter are allocated by the shared US-004 helper, which the workflow
+  // context stage also calls. `ctx.sessionId` is owned by this (context) stage
+  // — it pre-allocates a UUID so the scratch dir path is stable before the
+  // execution stage runs. Phase 5.5 will migrate ownership to the SessionManager.
+  allocateStorySession(ctx);
 
-  // ctx.sessionScratchDir is guaranteed set by the block above.
+  // ctx.sessionScratchDir is set by the allocation helper above whenever the
+  // SessionManager reports one — the SessionManager path can legitimately
+  // report none, hence the guard rather than an assertion.
   const storyScratchDirs = ctx.sessionScratchDir ? [ctx.sessionScratchDir] : [];
 
   // Phase 2: read prior digest for progressive context threading.

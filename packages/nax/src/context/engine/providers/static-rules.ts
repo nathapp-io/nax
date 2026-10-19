@@ -16,17 +16,18 @@
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
-import { type CanonicalRule, DEFAULT_CANONICAL_RULES_BUDGET_TOKENS } from "@/context/rules/canonical-loader";
+import { DEFAULT_CANONICAL_RULES_BUDGET_TOKENS } from "@/context/rules/canonical-loader";
 import { applySectionBudget, priorityToRawScore } from "@/context/rules/rule-budget";
 import type { RuleSection } from "@/context/rules/rule-sections";
 import { splitRuleIntoSections } from "@/context/rules/rule-sections";
+import { canonicalRuleId, canonicalRulePath, type ResolvedRule, resolveRuleSet } from "@/context/rules/rule-set";
 import { getLogger } from "@/logger";
 // Same estimator the section budget uses (via `rule-sections`). A second local
 // `length / 4` here would let a chunk's reported token count disagree with the
 // number the budget admitted it on.
 import { estimateTokens } from "@/optimizer";
 import type { ProviderScopingReport } from "../manifest-types";
-import { frameAppliesTo, globToRegex, isGlobScopePath, normalizePath, ruleMatchesPackage } from "../scope-path-match";
+import { normalizePath, ruleMatchesScopeFiles } from "../scope-path-match";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 import { memoizedLoadCanonicalRules } from "./canonical-rules-cache";
 import { buildBudgetNoticeChunk, buildSectionBudgetPressure } from "./static-rules-budget-notice";
@@ -93,6 +94,17 @@ export interface StaticRulesProviderOptions {
    * Wired from `config.context.v2.rules.enforceBudget` by the default orchestrator. See US-003.
    */
   enforceBudget?: boolean;
+  /**
+   * Absolute directory of run-level override rules (US-001), laid out like
+   * `.nax/rules/`. Wired from `config.context.rules.overrideDir`.
+   */
+  overrideDir?: string;
+  /**
+   * How `overrideDir` combines with the repo and package layers (US-001).
+   * "merge" (default) adds them; "replace" drops the repo and package layers
+   * entirely. Wired from `config.context.rules.overrideMode`.
+   */
+  overrideMode?: "merge" | "replace";
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -103,48 +115,22 @@ function contentHash8(content: string): string {
   return createHash("sha256").update(content).digest("hex").slice(0, 8);
 }
 
-function canonicalRuleId(rule: CanonicalRule): string {
-  return rule.id ?? rule.fileName.replace(/\.md$/i, "");
-}
-
-function canonicalRulePath(rule: CanonicalRule): string {
-  return rule.path ?? rule.fileName;
-}
-
-function canonicalRulePriority(rule: CanonicalRule): number {
-  return rule.priority ?? 100;
-}
+// `canonicalRuleId` and `canonicalRulePath` moved to the rule-set module
+// (`@/context/rules/rule-set`, US-001) — the layer merge is now
+// `resolveRuleSet`'s job, and the provider and the resolver must key rules
+// identically. `canonicalRulePriority` moved with them; nothing here orders
+// rules any more.
 
 // `normalizePath`/`globToRegex` moved to `../scope-path-match` so the matcher
 // below and effectiveness.ts share one implementation. Re-exported here to
 // preserve this module's public surface (the context-engine barrel and
 // effectiveness.ts import them from `./providers/static-rules`).
-export { globToRegex, normalizePath } from "../scope-path-match";
-
-/**
- * Returns true when the rule's `appliesTo:` frontmatter (file-scope filter) matches
- * at least one entry in the effective scope-file set. Fail-open: a rule with no
- * `appliesTo:` always matches, and an empty/absent scope set admits every rule
- * unconditionally (see ProviderScopingReport.appliesToInertCount for visibility).
- *
- * Keyed on `request.scopeFiles` (US — rule-scoping), not `request.touchedFiles` —
- * scopeFiles is the resolved evidence set (US-003), touchedFiles is content-fetch input.
- */
-export function ruleMatchesScopeFiles(appliesTo: string[] | undefined, scopeFiles: string[] | undefined): boolean {
-  if (!appliesTo || appliesTo.length === 0) return true;
-  if (!scopeFiles || scopeFiles.length === 0) return true;
-
-  const files = scopeFiles.map((f) => normalizePath(f));
-  return appliesTo.some((pattern) => {
-    const normalizedPattern = normalizePath(pattern);
-    // Literal (no glob metacharacter): anchor exactly — the same rule
-    // effectiveness.ts's pathMatchesScope applies, so a rule cannot be admitted
-    // for selection and then denied attribution (#2091 / follow-up 8).
-    return files.some((file) =>
-      isGlobScopePath(normalizedPattern) ? globToRegex(normalizedPattern).test(file) : normalizedPattern === file,
-    );
-  });
-}
+//
+// `ruleMatchesScopeFiles` moved there too (US-001): the rule-set resolver must
+// use the same matcher, and importing it from this module would close a
+// provider <-> rule-set runtime cycle. Re-exported for the same reason — the
+// selection/attribution agreement it guarantees is tested through this path.
+export { globToRegex, normalizePath, ruleMatchesScopeFiles } from "../scope-path-match";
 
 /**
  * Returns true when the rule's `stages:` frontmatter includes request.stage.
@@ -156,7 +142,8 @@ function ruleMatchesStage(stages: string[] | undefined, stage: string): boolean 
 }
 
 // `ruleMatchesPackage` moved to `../scope-path-match` (file-size gate — this
-// file was at 624/600 lines after nax#2113's hoist). Re-imported below.
+// file was at 624/600 lines after nax#2113's hoist); the rule-set resolver
+// imports it from there too.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Provider
@@ -170,6 +157,8 @@ export class StaticRulesProvider implements IContextProvider {
   private readonly budgetTokens: number;
   private readonly rulesShare: number;
   private readonly enforceBudget: boolean;
+  private readonly overrideDir: string | undefined;
+  private readonly overrideMode: "merge" | "replace" | undefined;
 
   constructor(options: StaticRulesProviderOptions = {}) {
     this.allowLegacyClaudeMd = options.allowLegacyClaudeMd ?? false;
@@ -179,93 +168,62 @@ export class StaticRulesProvider implements IContextProvider {
     // deliberately left at false so a directly-constructed provider that
     // names no option keeps today's soft behaviour (US-003).
     this.enforceBudget = options.enforceBudget ?? false;
+    // Undefined (rather than a "merge" default) keeps the mode decision in
+    // `resolveRuleSet`, the module both this provider and the native
+    // rule-delivery handlers resolve through (US-001).
+    this.overrideDir = options.overrideDir;
+    this.overrideMode = options.overrideMode;
   }
 
   async fetch(request: ContextRequest): Promise<ContextProviderResult> {
     const logger = getLogger();
 
-    // Phase 5.1 + AC-57: try canonical store first, then overlay package rules if monorepo
+    // Phase 5.1 + AC-57: resolve the canonical repo/package/override rule set.
     try {
-      const repoRulesAll = await _staticRulesDeps.loadCanonicalRules(request.repoRoot);
-
-      // Apply paths: frontmatter filter — repo-level rules with a paths: key only load for matching packages
-      const repoRules = repoRulesAll.filter((rule) =>
-        ruleMatchesPackage(rule.paths, request.repoRoot, request.packageDir, request.storyWorkdir),
+      const ruleSet = await resolveRuleSet(
+        {
+          repoRoot: request.repoRoot,
+          packageDir: request.packageDir,
+          ...(request.storyWorkdir !== undefined && { storyWorkdir: request.storyWorkdir }),
+          ...(this.overrideDir !== undefined && { overrideDir: this.overrideDir }),
+          ...(this.overrideMode !== undefined && { overrideMode: this.overrideMode }),
+        },
+        // `loadRepoRules` drives BOTH the repo and the package layer — the seam
+        // six existing test files stub to keep `fetch` off the real filesystem.
+        { loadRepoRules: _staticRulesDeps.loadCanonicalRules },
       );
+      const mergedRules: readonly ResolvedRule[] = ruleSet.rules;
 
-      if (repoRulesAll.length > 0 && repoRules.length < repoRulesAll.length) {
+      if (ruleSet.repoRulesTotal > 0 && ruleSet.repoRulesMatchedPaths < ruleSet.repoRulesTotal) {
         logger.debug("static-rules", "Package-scope filter applied to repo-level rules", {
           storyId: request.storyId,
-          total: repoRulesAll.length,
-          matched: repoRules.length,
+          total: ruleSet.repoRulesTotal,
+          matched: ruleSet.repoRulesMatchedPaths,
           packageDir: request.packageDir,
         });
       }
 
-      // AC-57: in monorepos, load package-level rules and overlay (package wins on same fileName)
-      //
-      // nax#2113: repo-level rules must be framed too, not only package rules.
-      // A repo-level rule's `appliesTo:` can be authored as a package-relative
-      // literal (e.g. "src/session/session-keeper.ts", meant for one specific
-      // package) just as easily as a package-level rule's can — frameAppliesTo
-      // is idempotent and a no-op at the repo root (toRepoFrame treats "."
-      // as a no-op), so framing every repo-level rule whenever this story is
-      // package-contained cannot regress a rule that was already correctly
-      // repo-rooted or authored as a glob.
-      //
-      // This framing must happen whenever packageDir !== repoRoot, NOT only
-      // inside `if (packageRules.length > 0)`: a monorepo package with no
-      // package-level rules of its own — the common shape — never entered
-      // that inner block, so its repo-level literals stayed unframed and
-      // silently dropped even though `mergedRules` still equalled `repoRules`.
-      // Hoisting this out of the package-rules guard is the fix; leaving it
-      // inside is the exact trap that made the bug look fixed while a
-      // no-package-rules package stayed broken.
-      //
-      // The frame comes from request.storyWorkdir, NOT
-      // relative(request.repoRoot, request.packageDir): under
-      // execution.storyIsolation: "worktree" repoRoot is the main checkout
-      // while packageDir is <root>/.nax-wt/<storyId>/<pkg>, so that
-      // derivation yields ".nax-wt/<storyId>/<pkg>", matches no scope file,
-      // and silently drops the rule (nax#2069 / path-frame C1). The branch
-      // is only entered when packageDir !== repoRoot; pull-tool handlers
-      // pass packageDir as BOTH roots and omit storyWorkdir, so the "."
-      // fallback is their safe case.
-      let mergedRules: CanonicalRule[] = repoRules;
-      let packageRulesCount = 0;
-      if (request.packageDir !== request.repoRoot) {
-        const packageRel = normalizePath(request.storyWorkdir ?? ".");
-        const framedRepoRules = repoRules.map((rule) => frameAppliesTo(rule, packageRel));
-
-        const packageRules = await _staticRulesDeps.loadCanonicalRules(request.packageDir);
-        packageRulesCount = packageRules.length;
-
-        // H8: a package rule's `appliesTo:` literal is package-relative while
-        // scopeFiles and the diff are repo-rooted. Frame it with the owning
-        // package before selection and before it is carried as scopePaths, so
-        // selection and attribution both see the repo frame (#2091 stays fixed).
-        const merged = new Map<string, CanonicalRule>();
-        for (const rule of framedRepoRules) merged.set(canonicalRuleId(rule), rule);
-        for (const rule of packageRules) merged.set(canonicalRuleId(rule), frameAppliesTo(rule, packageRel));
-        mergedRules = [...merged.values()];
-      }
-
-      mergedRules.sort((a, b) => {
-        const priorityDiff = canonicalRulePriority(a) - canonicalRulePriority(b);
-        if (priorityDiff !== 0) return priorityDiff;
-        // CTX-5: code-point comparison, not localeCompare — see digest.ts.
-        const idA = canonicalRuleId(a);
-        const idB = canonicalRuleId(b);
-        return idA < idB ? -1 : idA > idB ? 1 : 0;
-      });
+      // The layer merge, the package frame and the priority/id ordering now live
+      // in `@/context/rules/rule-set` (US-001), shared with the native
+      // rule-delivery handlers (US-005) and the review maps (US-006). The two
+      // invariants that must survive any future edit there are pinned here and
+      // in `static-rules-overrides.test.ts`:
+      //  - repo-level `appliesTo:` literals are framed whenever this story is
+      //    package-contained, NOT only when the package has rules of its own
+      //    (a no-package-rules package is the common monorepo shape, nax#2113);
+      //  - the frame comes from `request.storyWorkdir`, never from
+      //    `relative(repoRoot, packageDir)` — under
+      //    `execution.storyIsolation: "worktree"` that derivation yields
+      //    ".nax-wt/<storyId>/<pkg>", matches no scope file, and silently drops
+      //    the rule (nax#2069 / path-frame C1).
 
       // #558: rules exist but none apply to this package context — skip legacy fallback
-      if (mergedRules.length === 0 && (repoRulesAll.length > 0 || packageRulesCount > 0)) {
+      if (mergedRules.length === 0 && (ruleSet.repoRulesTotal > 0 || ruleSet.packageRulesCount > 0)) {
         logger.warn("static-rules", "Canonical rules found but none apply to this package context", {
           storyId: request.storyId,
-          repoRulesTotal: repoRulesAll.length,
-          repoRulesMatchedPaths: repoRules.length,
-          packageRulesCount,
+          repoRulesTotal: ruleSet.repoRulesTotal,
+          repoRulesMatchedPaths: ruleSet.repoRulesMatchedPaths,
+          packageRulesCount: ruleSet.packageRulesCount,
           repoRoot: request.repoRoot,
           packageDir: request.packageDir,
         });
