@@ -3,7 +3,7 @@
   "feature": "step-graph-g0",
   "branchName": "feat/step-graph-g0",
   "createdAt": "2026-10-26T00:00:00.000Z",
-  "updatedAt": "2026-10-19T10:58:25.737Z",
+  "updatedAt": "2026-10-19T11:05:44.104Z",
   "userStories": [
     {
       "id": "US-001",
@@ -132,14 +132,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "An additive scripted catalogue using the existing harness and upstream recorder, with no new production abstraction or dependency. Most output files are generated JSON fixtures; complexity lies in expressing the prescribed branch paths faithfully."
+        "reasoning": "An additive scripted catalogue using the existing harness and upstream recorder, with no new production abstraction or dependency. Most output files are generated JSON fixtures; complexity lies in expressing the prescribed branch paths faithfully.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/test/helpers/workflow-trace.ts",
@@ -174,7 +177,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "953ef296af3e63b4b188f8eba751e4bc5d94ad84"
     },
     {
       "id": "US-003",
