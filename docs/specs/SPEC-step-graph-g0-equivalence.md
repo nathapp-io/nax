@@ -22,7 +22,7 @@ reorder ledger writes or drop a record update.
 
 Recorded real runs cannot serve as the reference. A run's `result.json` keeps the final record and
 per-step timings, not what each step returned, so there is nothing to replay. The real-run corpus does show
-which paths happen. Across 70 workflow feature runs since v0.88.0, every run visited the full step
+which paths happen. Across 73 workflow feature runs since v0.88.0, every run visited the full step
 sequence:
 - branch-fix rounds: 0 (21 runs), 1 (39), 2 (13);
 - publish outcomes: draft (31) and ready;
@@ -86,7 +86,12 @@ A trace is a JSON object `{ scenario, machine, events, end }`:
   - `{ "kind": "ledger", "text": ..., "options": ... }`;
   - `{ "kind": "artifact", "name": ..., "value": ... }`;
   - `{ "kind": "log", "level": ..., "message": ..., "data": ... }`.
-- `end` is `{ "returned": <value> }` or `{ "threw": { "code": <NaxError code>, "message": <message> } }`.
+- `end` is `{ "returned": <value> }` or `{ "threw": { "code": <NaxError code, or null>, "message": <message> } }`.
+
+Only log entries with `stage: "workflow"` are recorded. Only seam methods the harness actually provides are
+wrapped: an optional method the harness leaves out (`FeatureSteps.modelFor`, `FeatureSteps.flaggedDecisions`,
+`StoryLoopSteps.modelFor`, `StoryLoopSteps.workProduced`) stays absent, because the machines branch on
+whether it exists.
 
 Normalization, applied before serializing and before comparing:
 
@@ -94,18 +99,25 @@ Normalization, applied before serializing and before comparing:
    end of its `message` replaced with `<dur>`, and `data.durationMs` replaced with `0`. No other text changes.
 2. Object keys are serialized in sorted order. Arrays keep their order.
 3. `undefined` object values are omitted, matching `JSON.stringify`.
+4. Any object key named `endedAt` whose value is a string, at any depth, has that value replaced with
+   `"<ts>"`. Both machines stamp it from the wall clock (`publishStep` in `feature-machine.ts`, `closeLoop` in
+   `story-loop.ts`, via `new Date().toISOString()`), and G0 changes no production code to inject a clock.
 
 Golden files live at `packages/nax/test/fixtures/workflow-equivalence/<machine>/<scenario>.json`,
 pretty-printed with two-space indent and a trailing newline.
 
 ### Golden lifecycle
 
+- Signature: `compareWithGolden(trace, options?: { root?: string })`. `root` defaults to
+  `packages/nax/test/fixtures/workflow-equivalence/`; the recorder's own tests pass a temp directory.
 - `compareWithGolden(trace)` reads the golden file for `trace.machine` / `trace.scenario`. A missing golden
   fails the test with a message that names the file and the regeneration variable. It never creates the file.
 - Only when the environment variable `NAX_UPDATE_WORKFLOW_GOLDEN` is `"1"`, `compareWithGolden` writes the
   trace to the golden path instead of comparing.
 - On a mismatch, the failure message names the scenario, the index of the first differing event, and both
-  versions of that event.
+  versions of that event. When one `events` list is a prefix of the other, the index is the shorter length and
+  the missing side is shown as `(none)`. When the events are equal and only `end` differs, the message says
+  `end differs` and shows both.
 - The implementer generates the goldens from the current code (`main`), by running the equivalence tests
   once with the variable set, and commits them. They are the reference the step-graph port is held to.
 
@@ -128,7 +140,7 @@ copied from real run artifacts.
 - Any change under `packages/nax/src/`: G0 is test-only; the step-graph engine and the ports are later phases.
 - Replaying recorded real runs: run artifacts do not keep per-step results, so the catalogue is synthetic.
 - Copying any content from real run artifacts or private repositories into fixtures.
-- Migrating the existing `feature-machine*.test.ts` and `story-loop*.test.ts` files onto the new trace helpers.
+- Migrating the existing `feature-machine*.test.ts` and `story-loop*.test.ts` files onto the new trace helpers, including replacing the inline story harness in `story-loop.test.ts` with the US-003 factory (the duplication is accepted for G0).
 - The pipeline-mode loop and the deprecated `src/finish/` phase: pipeline mode is frozen.
 - The feature-level code around the machines (`buildFeatureEnv`, `runWorkflowFeature`, `workflowStage`, `finalize.ts`, `publish`): the ports keep these seams; they are covered by their own tests.
 - A CI job or script that regenerates goldens: regeneration is a deliberate manual step through `NAX_UPDATE_WORKFLOW_GOLDEN=1`.
@@ -186,6 +198,9 @@ catalogue `test/unit/workflow/story-loop-equivalence.test.ts`. Commits one golde
 
 ### Creates
 
+Each scenario commits one golden `<scenario>.json`; one file per story is listed below as the directory marker.
+
+
 **US-001**
 - `packages/nax/test/helpers/workflow-trace.ts`
 - `packages/nax/test/unit/workflow/feature-machine-equivalence-recorder.test.ts`
@@ -219,16 +234,19 @@ None. US-002 adds new test and fixture files only; it reuses `makeFeatureMachine
 
 ### US-001
 
-1. [unit] `recordFeatureTrace(scenarioName, harness)` runs `runFeatureMachine` on the harness `env` and returns a trace whose `machine` is `"feature"` and whose `events` list, in call order, one `call` event and one `return` event for every `FeatureSteps` method invocation, with the method name and its arguments.
+1. [unit] `recordFeatureTrace(scenarioName, harness)` runs `runFeatureMachine` on the harness `env` and returns a trace whose `machine` is `"feature"` and whose `events` list, in call order, one `call` event and one `return` event for every `FeatureSteps` method invocation, with the method name and its arguments; a `FeatureSteps` method the harness does not provide stays absent on the wrapped env.
 2. [unit] In a trace from `recordFeatureTrace`, every `FeatureSink.step`, `FeatureSink.update`, `FeatureSink.ledger` and `FeatureSink.artifact` call appears as a `step`, `update`, `ledger` or `artifact` event, at its position relative to the step calls.
-3. [unit] A `stage: "workflow"` log entry emitted during `runFeatureMachine` appears in the trace as a `log` event with its level, message and data.
+3. [unit] A `stage: "workflow"` log entry emitted during `runFeatureMachine` appears in the trace as a `log` event with its level, message and data, and a log entry with any other stage does not appear.
 4. [unit] When `runFeatureMachine` returns, the trace's `end` is `{ returned: <the returned record> }`; when it throws a `NaxError`, `end` is `{ threw: { code, message } }` and `recordFeatureTrace` itself resolves rather than rejecting.
-5. [unit] `normalizeTrace` replaces the trailing `formatDuration(data.durationMs)` text of a log message with `<dur>` and sets `data.durationMs` to `0`, and leaves a log message without numeric `data.durationMs` unchanged.
-6. [unit] `normalizeTrace` serializes object keys in sorted order, so two traces that differ only in key insertion order serialize to identical text.
-7. [unit] Calling `recordFeatureTrace` twice on two freshly built harnesses from the same script yields serialized traces that are identical.
-8. [unit] `compareWithGolden(trace)` with no golden file present, and `NAX_UPDATE_WORKFLOW_GOLDEN` unset, throws an error whose message contains the expected golden path and the text `NAX_UPDATE_WORKFLOW_GOLDEN=1`, and no file is created.
-9. [unit] `compareWithGolden(trace)` with `NAX_UPDATE_WORKFLOW_GOLDEN` set to `"1"` writes the normalized trace to `<fixtures root>/feature/<scenario>.json` with two-space indent and a trailing newline.
-10. [unit] `compareWithGolden(trace)` against a golden that differs at one event throws an error naming the scenario, the index of the first differing event, and the expected and actual event.
+5. [unit] When a scripted step throws a plain `Error` with message `"boom"`, the trace's `end` is `{ threw: { code: null, message: "boom" } }` and `recordFeatureTrace` resolves.
+6. [unit] `normalizeTrace` replaces the string value of every `endedAt` key, at any depth of an event or of `end`, with `"<ts>"`, and leaves other string values unchanged.
+7. [unit] `normalizeTrace` replaces the trailing `formatDuration(data.durationMs)` text of a log message with `<dur>` and sets `data.durationMs` to `0`, and leaves a log message without numeric `data.durationMs` unchanged.
+8. [unit] `normalizeTrace` serializes object keys in sorted order, so two traces that differ only in key insertion order serialize to identical text.
+9. [unit] Calling `recordFeatureTrace` twice on two freshly built harnesses from the same script yields serialized traces that are identical.
+10. [unit] `compareWithGolden(trace, { root })` with no golden file present, and `NAX_UPDATE_WORKFLOW_GOLDEN` unset, throws an error whose message contains the expected golden path and the text `NAX_UPDATE_WORKFLOW_GOLDEN=1`, and no file is created.
+11. [unit] `compareWithGolden(trace, { root })` with `NAX_UPDATE_WORKFLOW_GOLDEN` set to `"1"` writes the normalized trace to `<fixtures root>/feature/<scenario>.json` with two-space indent and a trailing newline.
+12. [unit] `compareWithGolden(trace, { root })` against a golden that differs at one event throws an error naming the scenario, the index of the first differing event, and the expected and actual event.
+13. [unit] `compareWithGolden(trace, { root })` against a golden whose `events` equal the trace's but whose `end` differs throws an error containing `end differs`.
 
 ### US-002
 
@@ -241,35 +259,40 @@ Feature scenarios (each drives `makeFeatureMachineHarness` with the stated scrip
 5. [unit] `repo-gates-red`: the first repo-gates run returns a failing `lint` with one gate finding. The first `branchFix` call's argument includes that gate finding, and a ledger event's text contains `repo gates red: lint`.
 6. [unit] `final-gates-repair`: repo gates green, one fix round, then the final gates turn red and a repair round turns them green. The `step` events include `gate-repair`.
 7. [unit] `review-not-ran`: `branchReview` returns `{ ran: false }`. The final record has `reviewRan` false, and a ledger event records the skipped review.
-8. [unit] `rereview-timeout`: the re-review returns `{ ran: false, why: "timeout" }`. The final record has `reReviewSkipped` true.
+8. [unit] `rereview-timeout`: the review returns one `important` finding, and the re-review returns `{ ran: false, why: "timeout" }`. The final record has `reReviewSkipped` true.
 9. [unit] `cost-stop-before-review`: `costExceeded` is true from the first agent step. No `branchReview` call occurs, the final record has `costLimited` true, and the publish step runs.
-10. [unit] `cost-stop-before-fix`: `costExceeded` turns true after the branch review. No `branchFix` call occurs, and the final record has `costLimited` true.
-11. [unit] `aborted`: `aborted` is true. The trace's `end` is a throw with code `WORKFLOW_ABORTED`.
-12. [unit] `resume-at-rereview`: the harness starts from a record whose `step` is `branch-rereview`, with one open finding and a `fixBase`. The first `step` event is `branch-rereview`, and no `repoGates` or `branchReview` call occurs.
+10. [unit] `cost-stop-before-fix`: the review returns one `important` finding, and `costExceeded` turns true once the `branchReview` call has happened. No `branchFix` call occurs, and the final record has `costLimited` true.
+11. [unit] `aborted`: `aborted` is true from the start. The trace has no `call` events and its `end` is a throw with code `WORKFLOW_ABORTED`.
+12. [unit] `resume-at-rereview`: the harness starts from a record whose `step` is `branch-rereview`, with one open `important` finding, a `fixBase`, `fixRan` true and `fixRounds` 1. The first `step` event is `branch-rereview`, and no `repoGates` or `branchReview` call occurs.
 13. [unit] `publish-draft-ci-failed`: publish returns `outcome: "draft"` with `ci: "failed"`. The final record's `outcome` is `draft` and its `ci` is `failed`.
 14. [unit] `publish-local-only`: publish returns `outcome: "local-only"`. The final record's `outcome` is `local-only`.
 15. [unit] `branch-review-empty-seed`: the harness record has an empty `seed`. No `branchReview` call occurs, and a ledger event records the review skipped for no seed.
+16. [unit] `branch-fix-session-failed`: the review returns one `important` finding, and `branchFix` returns `failure: "crashed"` with `autoCommitted` true and `dirty` true. Ledger events record the failed session, the auto-commit and the uncommitted edits.
+17. [unit] `head-unreadable`: the review returns one `important` finding, and `head()` throws. No `branchFix` call occurs, and a ledger event records `branch fix skipped: HEAD could not be read`.
+18. [unit] `fix-now-minor`: the record carries one deferred minor, and the review triages it `fix-now` with no blocking finding. The first `branchFix` call's argument includes that minor.
+19. [unit] `quality-floor`: the review returns `quality: "changes"` with only a `minor` finding. A `branchFix` call occurs, and its argument includes a finding whose issue is `quality: reviewer reported changes without a finding`.
 
 ### US-003
 
 Harness and recorder:
 
 1. [unit] The story-loop harness factory in `test/helpers/workflow-story-loop.ts` builds a `StoryLoopEnv` from a script of queued gate results, full-suite results, story-review verdicts (or `null` for not ran), re-review addressed flags, and an implement function. With an empty script, `runStoryLoop` on it returns state `complete` with `rounds` 0.
-2. [unit] `recordStoryTrace(scenarioName, harness)` runs `runStoryLoop` and returns a trace with `machine` `"story"`. Every `StoryLoopSteps` and `WorkflowAdvisor` invocation appears as `call` and `return` events, and every `StoryLoopSink.update` and `StoryLoopSink.ledger` call as an `update` or `ledger` event, in order.
+2. [unit] `recordStoryTrace(scenarioName, harness)` runs `runStoryLoop` and returns a trace with `machine` `"story"`. Every `StoryLoopSteps` and `WorkflowAdvisor` invocation appears as `call` and `return` events, every `StoryLoopSink.update` and `StoryLoopSink.ledger` call as an `update` or `ledger` event, and every `stage: "workflow"` log line as a `log` event, in order; a `StoryLoopSteps` method the harness does not provide stays absent on the wrapped env.
 3. [unit] For a story trace, `compareWithGolden` reads and writes under `test/fixtures/workflow-equivalence/story/`, and a mismatch fails with the same message shape as a feature trace (scenario name, first differing index, expected and actual event).
-4. [unit] Two `recordStoryTrace` runs from the same script on fresh harnesses serialize identically.
+4. [unit] Two `recordStoryTrace` runs from the same script on fresh harnesses serialize identically, including the final `update` patch's `endedAt`, which reads `"<ts>"`.
+5. [unit] When a scripted story step throws a plain `Error` with message `"boom"`, the story trace's `end` is `{ threw: { code: null, message: "boom" } }` and `recordStoryTrace` resolves.
 
 Story scenarios (each runs through `compareWithGolden` and asserts the property named):
 
-5. [unit] `clean`: green gates, passing review. The outcome is `complete` with `rounds` 0, and exactly one `implement` call, of kind `implement`.
-6. [unit] `red-gates-then-green`: the first gate run has a red `lint`, the second is green. An implement call of kind `fix` occurs before the story review.
-7. [unit] `review-fail-one-round`: the first review fails with one `important` finding, and the re-review addresses it. The outcome is `complete` with `rounds` 1.
-8. [unit] `fresh-after-warm-cap`: four failing reviews, then a pass, with `maxFixRounds` 5. The fix-round turn after round `WARM_ROUND_CAP` carries `fresh: true`.
-9. [unit] `residual-rulings`: reviews keep failing past `maxFixRounds`, and the advisor's `ruleResidual` rules the open finding. The outcome is `complete-with-rulings`, and a `ruleResidual` call appears in the trace.
-10. [unit] `needs-context-answered`: the implementer replies `NEEDS_CONTEXT` once, and the advisor answers `"try X"`. An implement call of kind `answer` with text `"try X"` follows.
-11. [unit] `review-not-ran`: `storyReview` returns `{ ran: false }`. The outcome's `unreviewed` is true.
-12. [unit] `full-suite-red`: the full suite returns red with one gate finding, every time. The outcome state is `complete-gate-open`.
-13. [unit] `cost-exceeded`: `costExceeded` returns true. The trace records that no `fix` turn is sent once the cost is exceeded, and the loop still returns an end state.
-14. [unit] `no-work-restart`: `workProduced` returns false after the first implement turn. An implement call of kind `restart` follows.
-15. [unit] `resume-mid-fix`: the harness resumes from a record with `round` 2, one open finding and a `fixBase`. No implement call of kind `implement` occurs, and the first agent call is a `fix` or a re-review of round 2.
-16. [unit] `rereview-new-finding`: the re-review addresses the open finding and adds one new `important` finding, which a later round addresses. The trace's re-review return lists the new finding, and a later `fix` turn includes it.
+6. [unit] `clean`: green gates, passing review. The outcome is `complete` with `rounds` 0, and exactly one `implement` call, of kind `implement`.
+7. [unit] `red-gates-then-green`: the first gate run has a red `lint` with one gate finding, the second is green. An implement call of kind `fix` occurs before the story review.
+8. [unit] `review-fail-one-round`: the first review fails with one `important` finding, and the re-review addresses it. The outcome is `complete` with `rounds` 1.
+9. [unit] `fresh-after-warm-cap`: four failing reviews, then a pass, with `maxFixRounds` 5. The fix-round turn after round `WARM_ROUND_CAP` carries `fresh: true`.
+10. [unit] `residual-rulings`: reviews keep failing past `maxFixRounds`, and the advisor's `ruleResidual` rules the open finding. The outcome is `complete-with-rulings`, and a `ruleResidual` call appears in the trace.
+11. [unit] `needs-context-answered`: the implementer replies `NEEDS_CONTEXT` once, and the advisor answers `"try X"`. An implement call of kind `answer` with text `"try X"` follows.
+12. [unit] `review-not-ran`: `storyReview` returns `{ ran: false }`. The outcome's `unreviewed` is true.
+13. [unit] `full-suite-red`: the full suite returns red with one gate finding, every time. The outcome state is `complete-gate-open`.
+14. [unit] `cost-exceeded`: `costExceeded` returns true from the start. Exactly one implement call (kind `implement`) occurs, no `gates` call occurs, and the outcome is `complete-gate-open` with reason `cost-limit`.
+15. [unit] `no-work-restart`: the first implement reply has `noStatusBlock: true` and `workProduced` returns false once, then the warm restart's reply is a normal `DONE`. An implement call of kind `restart` with `fresh: false` follows the first turn, and the outcome is `complete`.
+16. [unit] `resume-mid-fix`: the harness resumes from a record with `round` 2, `reviewed` true, one open finding of kind `spec`, and a `fixBase`, with green gates. No implement call of kind `implement` occurs, and the first agent call is `reReview` with round 2.
+17. [unit] `rereview-new-finding`: the re-review addresses the open finding and adds one new `important` finding, which a later round addresses. The trace's re-review return lists the new finding, and a later `fix` turn includes it.
