@@ -177,6 +177,46 @@ function state(step: Id, over: Partial<TestState> = {}): TestState {
   return { step, timings: {}, ...over };
 }
 
+/**
+ * A record open to any key, so a cost-stop patch can name one no interface declares. `__proto__`
+ * is such a key: writing it must store an ordinary field, not run the inherited setter.
+ */
+type OpenState = GraphState<string> & { readonly [key: string]: unknown };
+
+/** The value a `__proto__` cost-stop patch carries: fields that would become *inherited*. */
+const INJECTED = { flag: true };
+
+/**
+ * `a` is an `agent` node whose cost stop patches `__proto__` and sends the run to `b`. `b`'s guard
+ * goes to `x` only if it can *read* `flag` — the inheritance a prototype write would inject into
+ * the record `a` persisted.
+ */
+function protoStopGraph(ran: string[]): StepGraph<OpenState, TestEnv, string> {
+  return {
+    start: "a",
+    end: ["x", "y"],
+    costStopProduces: ["__proto__"],
+    costStop: async () => ({ patch: { ["__proto__"]: INJECTED }, to: "b" }),
+    nodes: {
+      a: {
+        kind: "agent",
+        produces: [],
+        transitions: [{ to: "b" }],
+        run: async () => {
+          ran.push("a");
+          return { patch: {} };
+        },
+      },
+      b: {
+        kind: "pure",
+        produces: [],
+        transitions: [{ to: "x", when: (state) => state.flag === true }, { to: "y" }],
+        run: async () => ({ patch: {} }),
+      },
+    },
+  };
+}
+
 /** The rejection `promise` produced, so a case can assert the run rejected at all. */
 async function caught(promise: Promise<unknown>): Promise<unknown> {
   try {
@@ -280,6 +320,17 @@ describe("runStepGraph: the cost stop (spec step 6)", () => {
     expect(h.runs).toEqual(["a", "b"]);
     expect(h.persisted.map((record) => record.step)).toEqual(["b", "done"]);
     expect(result.costLimited).toBeUndefined();
+
+    // The control run: the same graph, the same spy, and the only difference is `costExceeded`
+    // answering true. Without it the assertion above cannot fail — an absence holds for a runner
+    // that never consults the hook at all — so the pair is what pins the gate (dropped → the first
+    // half sees a call; inverted → the second half sees none).
+    const control = makeHarness();
+    await runStepGraph(graph, ENV, state("a"), control.hooks, options({ costExceeded: () => true }));
+
+    expect(spy.calls.map((call) => call.node)).toEqual(["a"]);
+    expect(control.runs).toEqual([]);
+    expect(control.persisted.map((record) => record.step)).toEqual(["done"]);
   });
 
   test("a destination that is neither a node id nor an end id rejects STEP_GRAPH_UNKNOWN_NODE (AC-5)", async () => {
@@ -349,6 +400,48 @@ describe("runStepGraph: the cost stop (spec step 6)", () => {
     expect(h.persisted[0].timings).toEqual({ a: 5 });
     expect(result.timings).toEqual({ a: 5 });
     expect(tick.reads()).toBe(2);
+  });
+});
+
+describe("runStepGraph: a cost-stop patch that names the prototype (B1)", () => {
+  /** The record the reference run persists, ready for the shared assertions. */
+  async function runProtoStop(): Promise<{ persisted: OpenState[]; ran: string[]; result: OpenState }> {
+    const persisted: OpenState[] = [];
+    const ran: string[] = [];
+    const hooks: StepGraphHooks<OpenState, string> = {
+      persist: async (next) => {
+        persisted.push(next);
+      },
+    };
+
+    const result = await runStepGraph(
+      protoStopGraph(ran),
+      ENV,
+      { step: "a", timings: {} },
+      hooks,
+      options({ costExceeded: () => true }),
+    );
+    return { persisted, ran, result };
+  }
+
+  test("keeps a declared `__proto__` patch as the record's own field", async () => {
+    const { persisted, ran } = await runProtoStop();
+
+    expect(ran).toEqual([]);
+    const record = persisted[0];
+    expect(record.step).toBe("b");
+    expect(Object.hasOwn(record, "__proto__")).toBe(true);
+    expect(Object.getOwnPropertyDescriptor(record, "__proto__")?.value).toBe(INJECTED);
+    expect(Object.getPrototypeOf(record)).toBe(Object.prototype);
+    // The fields of the patched value stay behind the field itself: nothing is inherited.
+    expect(record.flag).toBeUndefined();
+  });
+
+  test("does not let it inject a field the next node's guard can read", async () => {
+    const { result } = await runProtoStop();
+
+    expect(result.flag).toBeUndefined();
+    expect(result.step).toBe("y");
   });
 });
 

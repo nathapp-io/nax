@@ -140,12 +140,18 @@ function nextRecord<S extends GraphState<N>, N extends string>(id: N, outcome: O
  * Step 8: the patch applied key by key, so a key the patch states as `undefined` is *cleared*
  * rather than merged in. The same rule `runFeatureMachine`'s own `applyPatch` follows; the
  * engine copies it rather than importing it, because the workflow is G2's to port.
+ *
+ * A value is written as an **own data property**, never with `next[key] = value`: a declared key
+ * such as `__proto__` has an inherited accessor on `Object.prototype`, so plain assignment would
+ * set the record's prototype instead of storing the field. The patch's output would then vanish
+ * from the persisted record (the next spread copies own properties only) while the record started
+ * inheriting every field of the patched value, which its own guards would read as state.
  */
 function applyPatch<S>(state: S, patch: Partial<S>): S {
   const next: Record<string, unknown> = { ...(state as unknown as Record<string, unknown>) };
   for (const [key, value] of Object.entries(patch)) {
     if (value === undefined) delete next[key];
-    else next[key] = value;
+    else Object.defineProperty(next, key, { value, writable: true, enumerable: true, configurable: true });
   }
   return next as unknown as S;
 }
