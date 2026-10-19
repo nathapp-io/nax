@@ -3,7 +3,7 @@
   "feature": "oct19-bundle",
   "branchName": "feat/oct19-bundle",
   "createdAt": "2026-10-19T00:00:00.000Z",
-  "updatedAt": "2026-10-19T04:42:32.025Z",
+  "updatedAt": "2026-10-19T04:56:15.562Z",
   "userStories": [
     {
       "id": "US-001",
@@ -129,8 +129,8 @@
         "config"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -142,7 +142,19 @@
         "profileModelTier": "balanced",
         "initialAgent": "native",
         "initialProfileId": "native-deepseek",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "routerDecision": {
+          "mode": "shadow",
+          "router": "decision-proxy:nax-routing",
+          "outcome": "picked",
+          "profileId": "native-deepseek",
+          "confidence": 0.4400000000000004,
+          "plannedProfileId": "native-deepseek",
+          "applied": false,
+          "decidedAt": "2026-10-19T04:42:36.132Z"
+        }
       },
       "contextFiles": [
         "packages/nax/src/mcp/lock.ts",
@@ -181,7 +193,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "3118496160623b75161fec65911a5e382d19b2f3"
     },
     {
       "id": "US-003",
