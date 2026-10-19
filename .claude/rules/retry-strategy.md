@@ -1,5 +1,5 @@
 ---
-description: "Where retries live: manager vs op retry tiers, ACP prompt retries, cooldowns as availability expiries, exhaustion paths, abort-signal threading."
+description: "Where retries live: manager vs op retry tiers, ACP prompt retries, cooldowns as availability expiries, exhaustion paths, abort-signal threading"
 paths:
   - "packages/nax/src/agents/**/*.ts"
   - "packages/nax/src/operations/**/*.ts"

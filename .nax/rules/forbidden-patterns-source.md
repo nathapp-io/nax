@@ -1,6 +1,6 @@
 ---
 priority: 5
-description: "Banned APIs and shapes in src/ with their replacements, plus the prompt-builder registry convention (no ad-hoc build*Prompt functions)."
+description: "Banned APIs and shapes in src/ with their replacements, plus the prompt-builder registry convention (no ad-hoc build*Prompt functions)"
 paths:
   - "packages/nax/*"
   - "packages/nax-agent/*"

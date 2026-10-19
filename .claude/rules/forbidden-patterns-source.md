@@ -1,5 +1,5 @@
 ---
-description: "Banned APIs and shapes in src/ with their replacements, plus the prompt-builder registry convention (no ad-hoc build*Prompt functions)."
+description: "Banned APIs and shapes in src/ with their replacements, plus the prompt-builder registry convention (no ad-hoc build*Prompt functions)"
 paths:
   - "packages/nax/src/**/*.ts"
   - "packages/nax/bin/*.ts"

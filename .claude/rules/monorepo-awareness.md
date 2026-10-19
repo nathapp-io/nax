@@ -1,5 +1,5 @@
 ---
-description: "Polyglot monorepo rules: path variable vocabulary, no process.cwd() or hardcoded test patterns/commands, one package resolver, explicit glob cwd, portable paths."
+description: "Polyglot monorepo rules: path variable vocabulary, no process.cwd() or hardcoded test patterns/commands, one package resolver, explicit glob cwd, portable paths"
 paths:
   - "packages/nax/src/**/*.ts"
   - "packages/nax/bin/*.ts"

@@ -73,8 +73,11 @@ For a planned story the hook uses only `agentProfileId` and `confidence`. The ro
 strategy and reasoning never change. Only the first router the plugin registry returns is
 consulted.
 
-While the router is enabled, plugin routers act only as story routers: they no longer classify
-unplanned stories through the regular routing chain, because that would apply a shadow-mode pick.
+While the router is usable (mode not `off`, and `routing.agents` enabled with profiles), the
+routing stage stops plugin routers from classifying unplanned stories through the regular routing
+chain, because that would apply a shadow-mode pick. Two exceptions: when the router is not usable,
+plugin routers classify as before; and parallel pre-dispatch routing still runs the regular chain,
+plugin routers included, whatever the mode.
 
 ## When the router is consulted
 
@@ -88,8 +91,9 @@ seen yet, while the routing stage then runs the router's rung.
 ## What gets recorded
 
 Plan's pick is always kept for audit. A decision is persisted on the story as
-`routing.routerDecision`, with `mode`, `router`, `outcome`, `plannedProfileId` (plan's profile),
-`applied` and `decidedAt`. Each consultation logs:
+`routing.routerDecision`, with `mode`, `router`, `outcome`, `applied` and `decidedAt`, plus
+`plannedProfileId` (plan's profile, when plan set one), `profileId` (the router's pick, for
+`picked` and `unknown-profile`) and `confidence` (when valid). Each persisted decision logs:
 
 ```text
 routing.router.decision  { storyId, mode, router, outcome, plannedProfileId, routerProfileId, confidence, applied, latencyMs }
@@ -100,7 +104,7 @@ routing.router.decision  { storyId, mode, router, outcome, plannedProfileId, rou
 | `picked` | yes | `shadow`: `applied: false`. `apply`: applied per the precedence table below. |
 | `declined` (null, or no `agentProfileId`) | yes | Plan's pick is used. |
 | `unknown-profile` | yes | Plan's pick is used, never `routing.agents.default`. |
-| `error` (threw or rejected) | no | Plan's pick is used; warns `routing.router.failed`; retried on the next routing pass. |
+| `error` (threw or rejected) | no | Plan's pick is used; warns `routing.router.failed` instead of the decision line; retried on the next routing pass. |
 | `timeout` | no | Same as `error`. |
 
 A `confidence` outside 0..1, or not a finite number, is dropped. The router never blocks or fails

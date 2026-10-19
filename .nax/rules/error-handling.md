@@ -1,6 +1,6 @@
 ---
 priority: 15
-description: "NaxError usage: error codes and context, cause chaining, errorMessage(), when to return vs throw, error recovery inside loops."
+description: "NaxError usage: error codes and context, cause chaining, errorMessage(), when to return vs throw, error recovery inside loops"
 paths:
   - "packages/nax/*"
   - "packages/nax-agent/*"

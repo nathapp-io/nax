@@ -1,6 +1,6 @@
 ---
 priority: 35
-description: "Agent adapter layering: the 4 adapter primitives, session naming and roles, agent resolution, permission resolution at the opener, cost-blind leaf code."
+description: "Agent adapter layering: the 4 adapter primitives, session naming and roles, agent resolution, permission resolution at the opener, cost-blind leaf code"
 paths:
   - "packages/nax/*"
   - "packages/nax-agent/*"

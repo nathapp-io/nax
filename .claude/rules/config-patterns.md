@@ -1,5 +1,5 @@
 ---
-description: "Config schema and loading: Zod defaults and validation, global -> project -> CLI layering, agent config shape, deprecated-key migration, config selectors."
+description: "Config schema and loading: Zod defaults and validation, global -> project -> CLI layering, agent config shape, deprecated-key migration, config selectors"
 paths:
   - "packages/nax/src/**/*.ts"
   - "packages/nax/bin/*.ts"

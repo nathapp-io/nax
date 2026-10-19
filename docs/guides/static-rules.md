@@ -256,19 +256,22 @@ still how pipeline mode works. Workflow mode delivers rules lazily by default
 | Where | What it gets |
 |:---|:---|
 | Story brief | A `## Rules index` section: one line per rule with its id, file, `description` and `appliesTo` scope (`all files` when it has none). No rule bodies. |
-| Native workflow sessions, on `Read` | The first read of a file a rule applies to returns the rule's text ahead of the file content. |
+| Workflow sessions (`wf-implementer`, `wf-branch-fix`, `wf-story-review`, `wf-rereview`, `wf-branch-review`) on the native agent, on `Read` | The first read of a file a rule applies to returns the rule's text ahead of the file content. |
 | Native writing sessions (`wf-implementer`, `wf-branch-fix`), on `Write` / `Edit` | A write to a file whose rule the session has not seen yet is refused once, with the rule text and "No files were changed. Review these rules and retry the tool call." The retry goes through. |
 | Story and branch review packages | A "Rules for the changed files" section: each rule with the changed files it governs. Names only, never bodies. |
 | ACP agents | The index and the review sections only. There is no delivery hook. |
 
 Which rules apply follows the same keys as above: `paths:` picks the package, and `appliesTo:`
 picks the files within it. A rule with no `appliesTo` governs every file in its package.
-`stages:` is ignored in workflow mode.
+Write the description without a trailing period; the index line adds one.
+Under `delivery: "index"`, `stages:` is ignored.
 
 A session sees each rule body at most once. After compaction the record is cleared, so a rule is
-delivered again on the next matching call. When the rules matching one call exceed 16 KiB, the
-bodies are included in priority order up to that cap, and the rest are listed by id and path to
-be delivered on a later call. Each delivery logs `rules.delivered`.
+delivered again on the next matching call. The bodies delivered on one call are capped at
+16 KiB: they are taken in priority order, and a rule that does not fit is listed by id and path
+instead (a smaller rule further down can still fit). A listed rule is delivered on a later call
+if it fits then; a single rule body larger than 16 KiB is only ever listed, so keep rules under
+that size. Each delivery logs `rules.delivered`.
 
 **Write a `description` for every rule.** The index is all an agent sees up front, so a good
 description says what decisions the rule governs, not just its topic:
@@ -276,7 +279,7 @@ description says what decisions the rule governs, not just its topic:
 ```yaml
 ---
 priority: 15
-description: "NaxError usage: error codes and context, cause chaining, errorMessage(), when to return vs throw."
+description: "NaxError usage: error codes and context, cause chaining, errorMessage(), when to return vs throw"
 appliesTo:
   - "src/**/*.ts"
 ---
