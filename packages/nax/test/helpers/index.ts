@@ -185,4 +185,22 @@ export {
   prWrites,
 } from "./workflow-promote-fixture";
 export { makeStepContext } from "./workflow-step-context";
+export {
+  compareWithGolden,
+  type FeatureTraceHarness,
+  type GoldenOptions,
+  normalizeTrace,
+  recordFeatureTrace,
+  type TraceArtifactEvent,
+  type TraceCallEvent,
+  type TraceEnd,
+  type TraceEvent,
+  type TraceLedgerEvent,
+  type TraceLogEvent,
+  type TraceMachine,
+  type TraceReturnEvent,
+  type TraceStepEvent,
+  type TraceUpdateEvent,
+  type WorkflowTrace,
+} from "./workflow-trace";
 export { type MockWorktreeManager, makeWorktreeManager } from "./worktree-manager";
