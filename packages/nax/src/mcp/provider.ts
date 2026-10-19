@@ -18,13 +18,31 @@ import type { ProviderTool, ToolProvider } from "@nathapp/nax-agent";
 import { validateProviderId } from "@nathapp/nax-agent";
 import type { McpConfig } from "@/config";
 import { getSafeLogger } from "@/logger";
-import { applyLock, MCP_LOCK_REFRESH_COMMAND, type McpLockFile, readMcpLock } from "./lock";
+import { applyLock, MCP_LOCK_REFRESH_COMMAND, type McpLockFile, resolveMcpLock } from "./lock";
 import type { McpPool } from "./pool";
 
 export interface McpWithheldEntry {
   readonly serverId: string;
   readonly name: string;
   readonly reason: string;
+  /** Which lock decided the withholding; `"none"` when no lock resolved. */
+  readonly lockSource: "project" | "global" | "none";
+}
+
+/**
+ * A lock as a read produced it: `readLock`'s documented return type is a bare
+ * `McpLockFile`, and only `resolveMcpLock` annotates its result with `source`.
+ */
+type LockReadResult = McpLockFile & { readonly source?: "project" | "global" };
+
+/**
+ * Which lock decided a withholding. A stub returning a bare `McpLockFile` can
+ * only stand for the project's own lock, so a lock with no `source` is
+ * attributed to the project.
+ */
+function lockSourceOf(lock: LockReadResult | undefined): McpWithheldEntry["lockSource"] {
+  if (lock === undefined) return "none";
+  return lock.source ?? "project";
 }
 
 export function createMcpProviders(args: {
@@ -32,7 +50,7 @@ export function createMcpProviders(args: {
   pool: McpPool;
   projectRoot: string;
   storyId?: string;
-  /** Seam for tests; defaults to reading `.nax/mcp-lock.json` under projectRoot. */
+  /** Seam for tests; defaults to resolving `.nax/mcp-lock.json` and then the global lock. */
   readLock?: (projectRoot: string) => Promise<McpLockFile | undefined>;
   onWithheld?: (entry: McpWithheldEntry) => void;
 }): readonly ToolProvider[] {
@@ -43,11 +61,11 @@ export function createMcpProviders(args: {
   // read, not on the first hop that happens to reach this server.
   for (const [id] of servers) validateProviderId(id);
 
-  const read = args.readLock ?? readMcpLock;
+  const read: (projectRoot: string) => Promise<LockReadResult | undefined> = args.readLock ?? resolveMcpLock;
   // Memoized: the lock pins a capability surface, which does not change during a
   // run, and a per-hop filesystem read on the dispatch path is pure waste.
-  let lockPromise: Promise<McpLockFile | undefined> | undefined;
-  const lock = (): Promise<McpLockFile | undefined> => (lockPromise ??= read(args.projectRoot));
+  let lockPromise: Promise<LockReadResult | undefined> | undefined;
+  const lock = (): Promise<LockReadResult | undefined> => (lockPromise ??= read(args.projectRoot));
 
   return servers.map(([serverId, server]): ToolProvider => {
     let checkedInstructions = false;
@@ -77,9 +95,11 @@ export function createMcpProviders(args: {
         }
         if (discovered.length === 0) return [];
 
-        const { admitted, withheld } = applyLock((await lock())?.servers[serverId], discovered);
+        const resolved = await lock();
+        const lockSource = lockSourceOf(resolved);
+        const { admitted, withheld } = applyLock(resolved?.servers[serverId], discovered);
         for (const entry of withheld) {
-          args.onWithheld?.({ serverId, name: entry.name, reason: entry.reason });
+          args.onWithheld?.({ serverId, name: entry.name, reason: entry.reason, lockSource });
           // The tool is never advertised, so no call is made and there is no
           // denial to carry a redirect. This log is where the refresh
           // instruction actually reaches a human.
@@ -88,6 +108,7 @@ export function createMcpProviders(args: {
             serverId,
             tool: entry.name,
             reason: entry.reason,
+            lockSource,
             refresh: MCP_LOCK_REFRESH_COMMAND,
           });
         }

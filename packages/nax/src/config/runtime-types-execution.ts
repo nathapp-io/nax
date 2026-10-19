@@ -24,6 +24,20 @@ export interface WorktreeDependenciesConfig {
   timeoutSeconds: number;
 }
 
+/**
+ * One blocking host-side pre-run step (`execution.preRun`, US-003): a shell
+ * command the *host* runs once per run, before baseline capture and story
+ * dispatch, for setup an agent's sandboxed session cannot do (starting a
+ * service the tests need). The optional user timeout is resolved to
+ * `timeoutSeconds` by the schema.
+ */
+export interface PreRunStepConfig {
+  /** Shell command, run with `/bin/sh -c` from the run workdir. */
+  readonly command: string;
+  /** Hard deadline in seconds. */
+  readonly timeoutSeconds: number;
+}
+
 /** Mutation-check config (US-001) — opt-in mutation-testing spot-check. */
 export interface MutationCheckConfig {
   /** Enable mutation-check spot-check after GREEN. Default false. */

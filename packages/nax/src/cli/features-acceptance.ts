@@ -3,6 +3,7 @@ import { join, relative } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { groupStoriesByPackage } from "../acceptance";
 import { findProjectDir, loadConfig, loadPackageOverride } from "../config";
+import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
 import { loadPRD } from "../prd";
 
@@ -34,7 +35,15 @@ export interface AcceptanceGroupResult {
   language?: string;
 }
 
-export type AcceptanceResolutionStatus = "ok" | "disabled" | "no-prd";
+export type AcceptanceResolutionStatus = "ok" | "disabled" | "no-prd" | "error";
+
+/** Structured cause carried by an `error` resolution. */
+export interface AcceptanceResolutionError {
+  /** NaxError code when the thrown error is a NaxError (e.g. "CONFIG_SCHEMA_INVALID"), else "UNKNOWN". */
+  code: string;
+  /** errorMessage(err) of the caught error. */
+  message: string;
+}
 
 /** Result of resolving a feature's acceptance test targets. */
 export interface AcceptanceResolution {
@@ -42,23 +51,41 @@ export interface AcceptanceResolution {
   /** Effective acceptance.enabled for the repo. */
   enabled: boolean;
   groups: AcceptanceGroupResult[];
+  /** Present only when status === "error". */
+  error?: AcceptanceResolutionError;
+}
+
+/** `{ code, message }` for a caught error — "UNKNOWN" when it is not a NaxError. */
+function toResolutionError(err: unknown): AcceptanceResolutionError {
+  return {
+    code: err instanceof NaxError ? err.code : "UNKNOWN",
+    message: errorMessage(err),
+  };
 }
 
 /**
  * Resolve the acceptance test target(s) for a feature, reusing the same SSOT
  * (`groupStoriesByPackage`) that the runtime uses to place and run acceptance
- * tests. Never throws — a missing/malformed PRD or non-nax repo resolves to
- * `no-prd` so callers can branch deterministically.
+ * tests. Never throws — a config that fails to load/validate, a malformed PRD
+ * or a grouping failure resolves to `error` with its `{ code, message }`, and a
+ * genuinely absent PRD resolves to `no-prd`, so callers can branch
+ * deterministically instead of conflating the two.
  *
  * @param featureName - The .nax/features/<name> feature whose acceptance tests to resolve.
  * @param workdir - Absolute path to the project directory (never process.cwd()).
+ * @param configOverrides - Extra loadConfig CLI-layer overrides (e.g. `{ profile: [...] }`).
  */
-export async function resolveFeatureAcceptance(featureName: string, workdir: string): Promise<AcceptanceResolution> {
+export async function resolveFeatureAcceptance(
+  featureName: string,
+  workdir: string,
+  configOverrides?: Record<string, unknown>,
+): Promise<AcceptanceResolution> {
   // The whole body is wrapped so this resolver NEVER throws — it is awaited
   // inline inside resolveFeatureSpec, so a throw here would break the entire
-  // `nax features resolve` command (including spec resolution). Any failure
-  // (invalid/legacy config, malformed PRD, grouping error) degrades to no-prd.
-  // `enabled` is hoisted so the catch reports the last-known value.
+  // `nax features resolve` command (including spec resolution). Every failure
+  // (invalid/legacy config, malformed PRD, grouping error) is reported as
+  // `error` with its cause. `enabled` is hoisted so the catch reports the
+  // last-known value.
   let enabled = true;
   try {
     const naxDir = findProjectDir(workdir);
@@ -67,7 +94,9 @@ export async function resolveFeatureAcceptance(featureName: string, workdir: str
     }
     const repoRoot = join(naxDir, "..");
 
-    const config = await loadConfig(workdir);
+    // Status order (first match wins): no .nax dir > loadConfig throws >
+    // acceptance disabled > no prd.json > loadPRD/grouping throws > ok.
+    const config = await loadConfig(workdir, configOverrides);
     enabled = config.acceptance?.enabled ?? true;
     if (!enabled) {
       return { status: "disabled", enabled: false, groups: [] };
@@ -106,12 +135,15 @@ export async function resolveFeatureAcceptance(featureName: string, workdir: str
     return { status: "ok", enabled, groups };
   } catch (err) {
     // Invalid/legacy config, malformed PRD, or grouping failure. Log so a corrupt
-    // config/PRD is distinguishable from a feature that genuinely has no PRD.
+    // config/PRD is distinguishable in the run log, and report the cause so a
+    // --json consumer can act on it rather than mistaking it for "no PRD".
+    const error = toResolutionError(err);
     getSafeLogger()?.warn("acceptance", "Failed to resolve feature acceptance targets", {
       featureName,
-      cause: errorMessage(err),
+      code: error.code,
+      cause: error.message,
     });
-    return { status: "no-prd", enabled, groups: [] };
+    return { status: "error", enabled, groups: [], error };
   }
 }
 

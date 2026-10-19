@@ -58,6 +58,7 @@ export type TrustSurface =
   | "mcp"
   | "quality-command"
   | "test-command"
+  | "pre-run"
   | "acceptance-command"
   | "package-setup"
   | "worktree-setup";

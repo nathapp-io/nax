@@ -60,6 +60,7 @@ import {
   promptsInitCommand,
   registerAdvisorCommand,
   registerApprovalsCommand,
+  registerCostCommand,
   registerGatesCommand,
   registerTrustCommand,
   registerWorkflowCommand,
@@ -616,7 +617,15 @@ features
   .description("Resolve feature name and spec source deterministically")
   .option("--json", "Emit machine-readable JSON to stdout")
   .option("-d, --dir <path>", "Project directory", process.cwd())
-  .action(async (name: string | undefined, options: { json?: boolean; dir: string }) => {
+  // US-001: same collector and precedence as `run`/`plan`, so a config that
+  // only validates under the profile the PRD was planned with resolves here.
+  .option(
+    "--profile <name>",
+    "Profile(s) to overlay (comma-separated or repeated; later overrides earlier)",
+    collectProfile,
+    [],
+  )
+  .action(async (name: string | undefined, options: { json?: boolean; dir: string; profile: string[] }) => {
     let workdir: string;
     try {
       workdir = validateDirectory(options.dir);
@@ -631,7 +640,7 @@ features
 
     let result: import("../src/cli/features-resolve").ResolveResult;
     try {
-      result = await resolveFeatureSpec(name, workdir);
+      result = await resolveFeatureSpec(name, workdir, { profile: options.profile });
     } catch (err) {
       // Hard error — e.g. invalid feature name (slashes, ..)
       const msg = (err as Error).message ?? "unexpected error";
@@ -985,17 +994,23 @@ registerWorkflowCommand(program);
 // "the gates ran and something is not green" here.
 registerGatesCommand(program);
 
+// ── cost ──────────────────────────────────────────────
+// Pure read of the per-call cost ledger: no agent work, no writes, no config
+// beyond the project name that keys the output dir, so no trust gate.
+registerCostCommand(program);
+
 const mcpCmd = program.command("mcp").description("Manage MCP servers the native agent may call tools on");
 
 mcpCmd
   .command("lock")
   .description("Refresh .nax/mcp-lock.json from what each configured server advertises")
-  .action(async () => {
+  .option("--global", "Write the lock to the global config dir instead of the project", false)
+  .action(async (options: { global: boolean }) => {
     // US-003: locking connects to the project's configured MCP servers and
     // writes the lock file — gate the working directory before either.
     await runTrustGate(process.cwd());
     const { runMcpLockCommand } = await import("../src/cli/mcp");
-    await runMcpLockCommand(process.cwd());
+    await runMcpLockCommand(process.cwd(), { global: options.global === true });
   });
 
 // ── routing ──────────────────────────────────────────

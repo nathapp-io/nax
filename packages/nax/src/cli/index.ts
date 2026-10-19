@@ -60,13 +60,41 @@ export {
   type LoadPRDResult,
   listDependentStoryIds,
 } from "./context-fragments";
+export {
+  _costCliDeps,
+  type CostCliDeps,
+  type CostCommandOptions,
+  costCommand,
+  registerCostCommand,
+} from "./cost";
+export {
+  _costLedgerQueryDeps,
+  COST_GROUP_KEYS,
+  type CostGroupKey,
+  type CostGroupRow,
+  type CostLedgerQueryDeps,
+  type CostLedgerReport,
+  type CostQuery,
+  type CostTotals,
+  listCostLedgerFiles,
+  listProjectOutputDirs,
+  queryCostLedger,
+  resolveCostWindow,
+} from "./cost-ledger-query";
 export type {
   AcceptanceGroupResult,
   AcceptanceResolution,
+  AcceptanceResolutionError,
   AcceptanceResolutionStatus,
 } from "./features-acceptance";
 export { resolveFeatureAcceptance } from "./features-acceptance";
-export type { ResolveResult, ResolveStatus, SpecSource, SpecSourceKind } from "./features-resolve";
+export type {
+  FeatureSpecResolveOptions,
+  ResolveResult,
+  ResolveStatus,
+  SpecSource,
+  SpecSourceKind,
+} from "./features-resolve";
 export { resolveFeatureSpec } from "./features-resolve";
 export {
   _gatesCliDeps,

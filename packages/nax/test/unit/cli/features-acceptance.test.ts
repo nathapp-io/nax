@@ -70,6 +70,20 @@ function writePackageOverride(naxDir: string, packageDir: string, config: Record
   writeFileSync(join(dir, "config.json"), JSON.stringify(config));
 }
 
+/** Writes a config profile under .nax/profiles/<name>.json. */
+function writeProfile(naxDir: string, name: string, config: Record<string, unknown>): void {
+  const dir = join(naxDir, "profiles");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, `${name}.json`), JSON.stringify(config));
+}
+
+/**
+ * A project config that fails schema validation on its own (storyIsolation enum).
+ * `mode: "pipeline"` is kept so a repairing profile is not overridden by workflow
+ * mode, which forces `acceptance.enabled` off.
+ */
+const INVALID_EXECUTION = { execution: { mode: "pipeline", storyIsolation: "bogus" } };
+
 // ---------------------------------------------------------------------------
 // disabled
 // ---------------------------------------------------------------------------
@@ -85,6 +99,16 @@ describe("acceptance disabled", () => {
     expect(result.enabled).toBe(false);
     expect(result.groups).toEqual([]);
   });
+
+  // AC-15: disabled wins over a missing PRD, and carries no error.
+  test("returns status=disabled with no error property when prd.json is absent (AC-15)", async () => {
+    initRepo({ acceptance: { enabled: false } });
+
+    const result = await resolveFeatureAcceptance("feat", tempDir);
+
+    expect(result.status).toBe("disabled");
+    expect(result.error).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -92,7 +116,7 @@ describe("acceptance disabled", () => {
 // ---------------------------------------------------------------------------
 
 describe("no prd.json", () => {
-  test("returns status=no-prd when the feature has no prd.json", async () => {
+  test("returns status=no-prd when the feature has no prd.json (AC-5)", async () => {
     initRepo();
     // No PRD written for "feat".
 
@@ -101,9 +125,12 @@ describe("no prd.json", () => {
     expect(result.status).toBe("no-prd");
     expect(result.enabled).toBe(true);
     expect(result.groups).toEqual([]);
+    expect(result.error).toBeUndefined();
   });
 
-  test("returns status=no-prd when prd.json is malformed (never throws)", async () => {
+  // AC-4: an unparseable PRD is a failure, not an absent PRD — and the
+  // resolver must still never throw (it is awaited inside resolveFeatureSpec).
+  test("returns status=error with groups=[] when prd.json is malformed, never throwing (AC-4)", async () => {
     const naxDir = initRepo();
     const dir = join(naxDir, "features", "feat");
     mkdirSync(dir, { recursive: true });
@@ -111,20 +138,105 @@ describe("no prd.json", () => {
 
     const result = await resolveFeatureAcceptance("feat", tempDir);
 
-    expect(result.status).toBe("no-prd");
+    expect(result.status).toBe("error");
     expect(result.groups).toEqual([]);
   });
 
-  test("degrades to no-prd (never throws) when the config is invalid/legacy", async () => {
-    // A legacy autoMode.defaultAgent key makes loadConfig throw — the resolver
-    // must catch it rather than break the whole `features resolve` command.
+  // AC-17: the caught error's code and message are reported, not swallowed.
+  test("reports the PRD load failure's code and message for a malformed prd.json (AC-17)", async () => {
+    const naxDir = initRepo();
+    const dir = join(naxDir, "features", "feat");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "prd.json"), "{ not valid json");
+
+    const result = await resolveFeatureAcceptance("feat", tempDir);
+
+    expect(result.status).toBe("error");
+    expect(result.groups).toEqual([]);
+    expect(result.error?.code).toBe("PRD_INVALID");
+    expect(result.error?.message).toContain("PRD file is corrupt");
+  });
+
+  // AC-18: an invalid/legacy config no longer degrades to no-prd — the message
+  // names the cause so a --json consumer can act on it.
+  test("returns status=error naming the cause when the config is legacy, never throwing (AC-18)", async () => {
+    // A legacy autoMode.defaultAgent key makes loadConfig throw.
     const naxDir = initRepo({ autoMode: { defaultAgent: "claude" } });
     writePRD(naxDir, "feat", [{ id: "US-001" }]);
 
     const result = await resolveFeatureAcceptance("feat", tempDir);
 
-    expect(result.status).toBe("no-prd");
+    expect(result.status).toBe("error");
     expect(result.groups).toEqual([]);
+    expect(result.error?.code).toBe("CONFIG_LEGACY_AGENT_KEYS");
+    expect(result.error?.message).toContain("legacy agent keys");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// config errors
+// ---------------------------------------------------------------------------
+
+describe("config errors", () => {
+  // AC-1: a schema-invalid project config is an error, not "no PRD" — the PRD
+  // exists and is perfectly readable.
+  test("returns status=error when the config fails schema validation (AC-1)", async () => {
+    const naxDir = initRepo(INVALID_EXECUTION);
+    writePRD(naxDir, "feat", [{ id: "US-001" }]);
+
+    const result = await resolveFeatureAcceptance("feat", tempDir);
+
+    expect(result.status).toBe("error");
+  });
+
+  test("reports error.code CONFIG_SCHEMA_INVALID for a schema-invalid config (AC-2)", async () => {
+    const naxDir = initRepo(INVALID_EXECUTION);
+    writePRD(naxDir, "feat", [{ id: "US-001" }]);
+
+    const result = await resolveFeatureAcceptance("feat", tempDir);
+
+    expect(result.error?.code).toBe("CONFIG_SCHEMA_INVALID");
+  });
+
+  test("reports error.message containing 'Invalid configuration' (AC-3)", async () => {
+    const naxDir = initRepo(INVALID_EXECUTION);
+    writePRD(naxDir, "feat", [{ id: "US-001" }]);
+
+    const result = await resolveFeatureAcceptance("feat", tempDir);
+
+    expect(result.error?.message).toContain("Invalid configuration");
+  });
+
+  // AC-16: the config failure is reported even when there is no PRD to blame.
+  test("reports status=error when loadConfig throws even with no prd.json (AC-16)", async () => {
+    initRepo(INVALID_EXECUTION);
+    // No PRD written for "feat".
+
+    const result = await resolveFeatureAcceptance("feat", tempDir);
+
+    expect(result.status).toBe("error");
+    expect(result.error?.code).toBe("CONFIG_SCHEMA_INVALID");
+    expect(result.error?.message.length).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// profile overrides
+// ---------------------------------------------------------------------------
+
+describe("profile overrides", () => {
+  // AC-7: the configOverrides argument reaches loadConfig's CLI layer, so a
+  // profile that repairs an otherwise-invalid project config resolves.
+  test("resolves ok when a profile overlay makes an invalid config valid (AC-7)", async () => {
+    const naxDir = initRepo(INVALID_EXECUTION);
+    writePRD(naxDir, "feat", [{ id: "US-001" }]);
+    writeProfile(naxDir, "fix", { execution: { storyIsolation: "shared" } });
+
+    const result = await resolveFeatureAcceptance("feat", tempDir, { profile: ["fix"] });
+
+    expect(result.status).toBe("ok");
+    expect(result.error).toBeUndefined();
+    expect(result.groups).toHaveLength(1);
   });
 });
 
@@ -141,6 +253,8 @@ describe("single-package", () => {
 
     expect(result.status).toBe("ok");
     expect(result.enabled).toBe(true);
+    // AC-6: an ok result carries no error.
+    expect(result.error).toBeUndefined();
     expect(result.groups).toHaveLength(1);
     const [group] = result.groups;
     expect(group.packageDir).toBe("");
@@ -223,10 +337,11 @@ describe("monorepo", () => {
 // ---------------------------------------------------------------------------
 
 describe("not a nax repo", () => {
-  test("returns status=no-prd with enabled=true when there is no .nax dir", async () => {
+  test("returns status=no-prd with enabled=true when there is no .nax dir (AC-14)", async () => {
     // tempDir has no .nax — resolveFeatureAcceptance must not throw.
     const result = await resolveFeatureAcceptance("feat", tempDir);
     expect(result.status).toBe("no-prd");
     expect(result.groups).toEqual([]);
+    expect(result.error).toBeUndefined();
   });
 });

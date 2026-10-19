@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { assertDefined } from "@test/helpers";
+import { assertDefined, withWarnSpy } from "@test/helpers";
 import type { McpServerConfig } from "@/config";
 import type { McpLockFile } from "@/mcp/lock";
 import { schemaHash } from "@/mcp/lock";
@@ -94,7 +94,50 @@ describe("createMcpProviders", () => {
     const [provider] = providers;
     assertDefined(provider, "provider");
     expect((await provider.tools("/w")).map((t) => t.localName)).toEqual(["search_graph"]);
-    expect(withheld).toEqual([{ serverId: "memory", name: "delete_project", reason: "absent-from-lock" }]);
+    // AC-16: the seam's documented return type is a bare `McpLockFile`, which can
+    // only have come from the project — the entry is attributed accordingly.
+    expect(withheld).toEqual([
+      { serverId: "memory", name: "delete_project", reason: "absent-from-lock", lockSource: "project" },
+    ]);
+  });
+
+  test("AC-9: an unresolvable lock withholds every tool as lockSource none", async () => {
+    const withheld: McpWithheldEntry[] = [];
+    const [provider] = createMcpProviders({
+      config: { servers: { memory: server } },
+      pool: fakePool(),
+      projectRoot: "/proj",
+      readLock: async () => undefined,
+      onWithheld: (entry) => withheld.push(entry),
+    });
+    assertDefined(provider, "provider");
+    expect(await provider.tools("/w")).toEqual([]);
+    expect(withheld).toEqual([
+      { serverId: "memory", name: "search_graph", reason: "absent-from-lock", lockSource: "none" },
+      { serverId: "memory", name: "delete_project", reason: "absent-from-lock", lockSource: "none" },
+    ]);
+  });
+
+  test("AC-10: the withheld warn log carries the entry's lockSource", async () => {
+    await withWarnSpy(async (warn) => {
+      const withheld: McpWithheldEntry[] = [];
+      const [provider] = createMcpProviders({
+        config: { servers: { memory: server } },
+        pool: fakePool(),
+        projectRoot: "/proj",
+        readLock: async () => ({ version: 1, servers: { memory: { search_graph: hash } }, source: "global" }),
+        onWithheld: (entry) => withheld.push(entry),
+      });
+      assertDefined(provider, "provider");
+      await provider.tools("/w");
+
+      const entry = withheld[0];
+      assertDefined(entry, "withheld entry");
+      expect(entry.lockSource).toBe("global");
+      const call = warn.mock.calls.find((c) => c[0] === "mcp" && String(c[1]).includes("withheld"));
+      assertDefined(call, "withheld warn call");
+      expect((call[2] as { lockSource: string }).lockSource).toBe(entry.lockSource);
+    });
   });
 
   test("a tool whose schema changed is withheld", async () => {
