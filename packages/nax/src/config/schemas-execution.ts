@@ -320,6 +320,24 @@ export const ExecutionConfigSchema = z.object({
     setupCommand: null,
     timeoutSeconds: 300,
   }),
+  /**
+   * Blocking host-side setup steps (US-003): each runs once per run, before the
+   * run-start baseline and before any story is dispatched, from the run workdir
+   * and on the host rather than inside an agent's sandbox — the services a test
+   * suite needs (databases, fixtures) cannot be started by the agent itself.
+   * Sequential; the first non-zero exit or timeout fails the run. Steps must be
+   * idempotent: `nax resume` runs them again.
+   */
+  preRun: z
+    .array(
+      z.object({
+        // Passed verbatim to `/bin/sh -c`, so shell features (pipes, redirects,
+        // env substitution) work — the same trust boundary as quality.commands.
+        command: z.string().min(1, "execution.preRun[].command must be non-empty"),
+        timeoutSeconds: z.number().int().min(1).default(300),
+      }),
+    )
+    .default([]),
   storyIsolation: z.enum(["shared", "worktree"]).default("shared"),
   flakeDetection: FlakeDetectionConfigSchema.default({
     enabled: true,

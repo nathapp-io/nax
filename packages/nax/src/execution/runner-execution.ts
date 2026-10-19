@@ -22,6 +22,7 @@ import type { DeferredReviewResult } from "./deferred-review";
 import { ensureStoryPackageDirs } from "./ensure-package-dirs";
 import type { ExitReason } from "./executor-types";
 import { getAllReadyStories } from "./helpers";
+import { runPreRunSteps } from "./lifecycle/pre-run-steps";
 import { captureRunBaseline } from "./lifecycle/test-baseline-capture";
 import { markNewPackageDirs } from "./new-package-setup";
 import { effectiveParallelCount, effectiveUseBatch } from "./workflow-parallel";
@@ -74,6 +75,34 @@ export interface RunnerExecutionResult {
   deferredReviewStartedAt?: number;
   /** Why the unified executor's loop stopped — forwarded to the completion phase for status reporting. */
   exitReason: ExitReason;
+}
+
+/**
+ * US-003 — run `execution.preRun` before the run-start baseline and before any
+ * story is dispatched, persisting the run as failed before the error propagates.
+ *
+ * Extracted from `runExecutionPhase` rather than inlined: the call site's
+ * try/catch pushed that function past the cognitive-complexity limit (see
+ * `check:complexity`), and a helper is also where the fail-closed policy reads
+ * best — unlike its two neighbours in the phase (package-dir bootstrap and
+ * baseline capture), a pre-run failure must NOT warn and continue.
+ */
+async function runPreRunStepsOrFail(opts: {
+  dryRun: boolean;
+  config: NaxConfig;
+  workdir: string;
+  statusWriter: RunnerExecutionOptions["statusWriter"];
+}): Promise<void> {
+  // A dry run plans without mutating the tree (matches `ensureStoryPackageDirs`
+  // and `captureRunBaseline`), and a pre-run step is a mutation by definition.
+  if (opts.dryRun) return;
+  try {
+    await runPreRunSteps({ steps: opts.config.execution?.preRun ?? [], workdir: opts.workdir });
+  } catch (err) {
+    opts.statusWriter.setRunStatus("failed");
+    await opts.statusWriter.update(0, 0);
+    throw err;
+  }
 }
 
 /**
@@ -154,6 +183,19 @@ export async function runExecutionPhase(
       });
     }
   }
+
+  // US-003 — blocking host-side pre-run steps (`execution.preRun`). Runs once
+  // per run, after the package-dir bootstrap and before the baseline capture.
+  // The guards and the fail-closed failure boundary live in the helper:
+  // inlining them pushed this function past the cognitive-complexity limit
+  // (`check:complexity`) for no readability gain, and the policy is easier to
+  // read next to the steps it applies to.
+  await runPreRunStepsOrFail({
+    dryRun: options.dryRun,
+    config: options.config,
+    workdir: options.workdir,
+    statusWriter: options.statusWriter,
+  });
 
   // US-002 — harness-side capture of the run-start baseline. Runs once before
   // the first story pipeline dispatch; never blocks or fails the run. Feature

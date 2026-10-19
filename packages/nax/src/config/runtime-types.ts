@@ -16,6 +16,7 @@ import type {
   FlakeDetectionConfig,
   InstallConfig,
   MutationCheckConfig,
+  PreRunStepConfig,
   SmartTestRunnerConfig,
   WorktreeDependenciesConfig,
 } from "./runtime-types-execution";
@@ -162,6 +163,7 @@ export interface ExecutionConfig {
   smartTestRunner?: boolean | SmartTestRunnerConfig;
   /** Strategy for preparing fresh git worktrees before story execution. */
   worktreeDependencies: WorktreeDependenciesConfig;
+  preRun: PreRunStepConfig[];
   /** Configured agent binary: claude, codex, opencode, gemini, aider (default: claude) */
   agent?: string;
   /** Git HEAD ref captured before agent ran — passed through pipeline for plugin reviewers (FEAT-010) */

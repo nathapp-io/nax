@@ -203,6 +203,10 @@ export const NaxConfigSchema = z
       // own defaults and leave `execution.commandInterceptor` missing from
       // NaxConfigSchema.parse({}) / DEFAULT_CONFIG.
       commandInterceptor: CommandInterceptorConfigSchema.parse({}),
+      // BUG-20 — derived, not hand-written (same rationale as `bashApproval`
+      // above): a literal here would shadow the field's own default and leave
+      // `execution.preRun` undefined from NaxConfigSchema.parse({}).
+      preRun: ExecutionConfigSchema.shape.preRun.parse(undefined),
     } as unknown as Parameters<typeof ExecutionConfigSchema.default>[0]),
     install: InstallConfigSchema.default({ allowScripts: false }),
     quality: QualityConfigSchema.default({
