@@ -616,7 +616,15 @@ features
   .description("Resolve feature name and spec source deterministically")
   .option("--json", "Emit machine-readable JSON to stdout")
   .option("-d, --dir <path>", "Project directory", process.cwd())
-  .action(async (name: string | undefined, options: { json?: boolean; dir: string }) => {
+  // US-001: same collector and precedence as `run`/`plan`, so a config that
+  // only validates under the profile the PRD was planned with resolves here.
+  .option(
+    "--profile <name>",
+    "Profile(s) to overlay (comma-separated or repeated; later overrides earlier)",
+    collectProfile,
+    [],
+  )
+  .action(async (name: string | undefined, options: { json?: boolean; dir: string; profile: string[] }) => {
     let workdir: string;
     try {
       workdir = validateDirectory(options.dir);
@@ -631,7 +639,7 @@ features
 
     let result: import("../src/cli/features-resolve").ResolveResult;
     try {
-      result = await resolveFeatureSpec(name, workdir);
+      result = await resolveFeatureSpec(name, workdir, { profile: options.profile });
     } catch (err) {
       // Hard error — e.g. invalid feature name (slashes, ..)
       const msg = (err as Error).message ?? "unexpected error";

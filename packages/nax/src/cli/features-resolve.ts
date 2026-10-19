@@ -1,9 +1,10 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
-import { findProjectDir, loadConfig } from "../config";
+import { featureDir as configFeatureDir, findProjectDir, loadConfig } from "../config";
 import { resolveTestFilePatterns } from "../test-runners";
 import { validateFeatureName } from "../utils/feature-name";
 import { type AcceptanceResolution, resolveFeatureAcceptance } from "./features-acceptance";
+import { resolveRunProfileOverride } from "./resolve-run-profile";
 
 export type ResolveStatus = "ok" | "ambiguous" | "missing" | "feature-not-found" | "not-a-nax-repo";
 
@@ -48,16 +49,65 @@ export interface ResolveResult {
   message: string;
 }
 
+/** Profile sources for `resolveFeatureSpec` — mirrors the run's own resolution. */
+export interface FeatureSpecResolveOptions {
+  /** Profile chain from the CLI `--profile` flag(s); comma-separated or repeated. */
+  profile?: string[];
+  /** Profile named by the environment. Defaults to `process.env.NAX_PROFILE`. */
+  envProfile?: string;
+}
+
+/**
+ * Resolve the config overrides a feature's resolution must run under.
+ *
+ * `nax features resolve` has to see the config the run itself would see: a
+ * project whose config only validates under the profile its PRD was planned
+ * with (the PRD's `routingProfile`) otherwise always fails here while `nax run`
+ * succeeds. Precedence is `resolveRunProfileOverride`'s — CLI `--profile` >
+ * `NAX_PROFILE` > PRD `routingProfile` — and an empty chain means "let
+ * loadConfig resolve on its own".
+ */
+async function resolveConfigOverrides(
+  featureName: string,
+  workdir: string,
+  repoRoot: string,
+  opts?: FeatureSpecResolveOptions,
+): Promise<Record<string, unknown> | undefined> {
+  let prdPath: string;
+  try {
+    prdPath = join(configFeatureDir(repoRoot, featureName), "prd.json");
+  } catch {
+    // configFeatureDir() validates the id (SEC-3). A directory under
+    // .nax/features/ that does not look like a feature id (a stray entry
+    // auto-discovery still lists) has no PRD to read, so resolution proceeds
+    // without one — the same tolerance `nax status --features` shows for such an
+    // entry.
+    return undefined;
+  }
+  const chain = await resolveRunProfileOverride({
+    prdPath,
+    projectRoot: workdir,
+    cliProfile: opts?.profile,
+    envProfile: opts?.envProfile ?? process.env.NAX_PROFILE,
+  });
+  return chain && chain.length > 0 ? { profile: chain } : undefined;
+}
+
 /**
  * Resolve the repo's test-file patterns for emission in `nax features resolve`.
  *
  * Never throws — this feeds a CLI whose primary job is spec resolution, so a
  * broken/legacy config degrades to omitting the field rather than failing the
  * whole command (the same rule `resolveFeatureAcceptance` follows).
+ *
+ * @param configOverrides - Extra loadConfig CLI-layer overrides (e.g. `{ profile: [...] }`).
  */
-async function resolveTestPatterns(workdir: string): Promise<TestPatternResolution | undefined> {
+async function resolveTestPatterns(
+  workdir: string,
+  configOverrides?: Record<string, unknown>,
+): Promise<TestPatternResolution | undefined> {
   try {
-    const config = await loadConfig(workdir);
+    const config = await loadConfig(workdir, configOverrides);
     const resolved = await resolveTestFilePatterns(config, workdir);
     return { regex: resolved.regex.map((r) => r.source), resolution: resolved.resolution };
   } catch {
@@ -151,9 +201,16 @@ function discoverCandidates(naxDir: string): string[] {
  *
  * @param name - Feature name, explicit spec path, or undefined (auto-discover).
  * @param workdir - Absolute path to the project directory (never process.cwd()).
+ * @param opts - Profile sources for config resolution. The run's own chain
+ *   (CLI > NAX_PROFILE > PRD `routingProfile`) is adopted so a config that only
+ *   validates under that profile resolves here too.
  * @returns ResolveResult with status, specSource, candidates, checked, message.
  */
-export async function resolveFeatureSpec(name: string | undefined, workdir: string): Promise<ResolveResult> {
+export async function resolveFeatureSpec(
+  name: string | undefined,
+  workdir: string,
+  opts?: FeatureSpecResolveOptions,
+): Promise<ResolveResult> {
   // Step 1: Resolve repo root
   const naxDir = findProjectDir(workdir);
   if (!naxDir) {
@@ -202,12 +259,13 @@ export async function resolveFeatureSpec(name: string | undefined, workdir: stri
     const { source, checked } = await searchSpecSource(naxDir, repoRoot, name);
 
     if (source) {
+      const configOverrides = await resolveConfigOverrides(name, workdir, repoRoot, opts);
       return {
         status: "ok",
         featureName: name,
         specSource: source,
-        acceptance: await resolveFeatureAcceptance(name, workdir),
-        testPatterns: await resolveTestPatterns(workdir),
+        acceptance: await resolveFeatureAcceptance(name, workdir, configOverrides),
+        testPatterns: await resolveTestPatterns(workdir, configOverrides),
         message: `resolved spec: ${source.path}`,
       };
     }
@@ -257,12 +315,13 @@ export async function resolveFeatureSpec(name: string | undefined, workdir: stri
   const onlyName = candidates[0];
   const { source, checked } = await searchSpecSource(naxDir, repoRoot, onlyName);
   if (source) {
+    const configOverrides = await resolveConfigOverrides(onlyName, workdir, repoRoot, opts);
     return {
       status: "ok",
       featureName: onlyName,
       specSource: source,
-      acceptance: await resolveFeatureAcceptance(onlyName, workdir),
-      testPatterns: await resolveTestPatterns(workdir),
+      acceptance: await resolveFeatureAcceptance(onlyName, workdir, configOverrides),
+      testPatterns: await resolveTestPatterns(workdir, configOverrides),
       message: `resolved spec: ${source.path}`,
     };
   }

@@ -63,10 +63,17 @@ export {
 export type {
   AcceptanceGroupResult,
   AcceptanceResolution,
+  AcceptanceResolutionError,
   AcceptanceResolutionStatus,
 } from "./features-acceptance";
 export { resolveFeatureAcceptance } from "./features-acceptance";
-export type { ResolveResult, ResolveStatus, SpecSource, SpecSourceKind } from "./features-resolve";
+export type {
+  FeatureSpecResolveOptions,
+  ResolveResult,
+  ResolveStatus,
+  SpecSource,
+  SpecSourceKind,
+} from "./features-resolve";
 export { resolveFeatureSpec } from "./features-resolve";
 export {
   _gatesCliDeps,
