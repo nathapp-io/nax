@@ -1,4 +1,5 @@
 ---
+description: "Which test command to run: bun run test / test:bail for the full suite, timeout-wrapped scoped bun test, the test:coverage floors and tiers, terminal exit codes."
 paths:
   - "packages/nax/test/**/*.test.ts"
   - "packages/nax-agent/test/**/*.test.ts"

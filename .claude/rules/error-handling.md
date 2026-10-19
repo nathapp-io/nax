@@ -1,4 +1,5 @@
 ---
+description: "NaxError usage: error codes and context, cause chaining, errorMessage(), when to return vs throw, error recovery inside loops."
 paths:
   - "packages/nax/src/**/*.ts"
   - "packages/nax-agent/src/**/*.ts"
