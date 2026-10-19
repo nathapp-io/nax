@@ -168,12 +168,44 @@ function retryGraph(h: Harness, run: TestNode["run"], guard?: () => boolean): Te
 }
 
 /** The run options a case does not script: nothing aborted, a clock stopped at 0. */
-function options(over: Partial<StepGraphRunOptions<Id>> = {}): StepGraphRunOptions<Id> {
+function options<N extends string = Id>(over: Partial<StepGraphRunOptions<N>> = {}): StepGraphRunOptions<N> {
   return { aborted: () => false, now: () => 0, ...over };
 }
 
 function graphState(step: Id, timings: Record<string, number> = {}): TestState {
   return { step, timings };
+}
+
+/**
+ * A graph whose node ids are plain strings, not the fixture `Id` union: the shape a run has when
+ * its cursor arrives from persisted state as untrusted runtime data.
+ */
+type WideGraph = StepGraph<GraphState<string>, TestEnv, string>;
+type WideHooks = StepGraphHooks<GraphState<string>, string>;
+
+/** One `pure` node for a wide graph; `onRun` records that it ran. */
+function wideNode(onRun: () => void = () => {}): StepNode<GraphState<string>, TestEnv, string> {
+  return {
+    kind: "pure",
+    produces: [],
+    transitions: [{ to: "done" }],
+    run: async () => {
+      onRun();
+      return { patch: {} };
+    },
+  };
+}
+
+/** Hooks for a wide graph: records the nodes it stepped and the records it persisted. */
+function wideHooks(steps: string[], persisted: GraphState<string>[]): WideHooks {
+  return {
+    persist: async (next) => {
+      persisted.push(next);
+    },
+    onStep: (id) => {
+      steps.push(id);
+    },
+  };
 }
 
 /** A counter clock: `now()` returns 0, `step`, 2×`step` …, and counts how often it was read. */
@@ -518,6 +550,30 @@ describe("runStepGraph: accumulated timing", () => {
   });
 });
 
+describe("runStepGraph: a node id that shadows a prototype key (F1)", () => {
+  test("records its timing as its own number, not as an inherited value", async () => {
+    const clock = counterClock();
+    const steps: string[] = [];
+    const persisted: GraphState<string>[] = [];
+    const graph: WideGraph = {
+      start: "constructor",
+      end: ["done"],
+      nodes: { ["constructor"]: wideNode() },
+    };
+
+    const result = await runStepGraph(
+      graph,
+      ENV,
+      { step: "constructor", timings: {} },
+      wideHooks(steps, persisted),
+      options({ now: clock.now }),
+    );
+
+    expect(result.timings["constructor"]).toBe(5);
+    expect(Object.keys(result.timings)).toEqual(["constructor"]);
+  });
+});
+
 describe("runStepGraph: an unrecordable cursor", () => {
   test("rejects STEP_GRAPH_UNKNOWN_NODE without running or persisting (AC-6)", async () => {
     const h = makeHarness();
@@ -543,6 +599,27 @@ describe("runStepGraph: an unrecordable cursor", () => {
     expect(rejection.code).toBe("STEP_GRAPH_UNKNOWN_NODE");
     expect(h.runs).toEqual([]);
   });
+
+  test.each(["constructor", "__proto__", "toString", "hasOwnProperty"] as const)(
+    "rejects the inherited object key `%s` as an unknown node (AC-6, F1)",
+    async (cursor) => {
+      const steps: string[] = [];
+      const persisted: GraphState<string>[] = [];
+      let ran = 0;
+      const graph: WideGraph = { start: "a", end: ["done"], nodes: { a: wideNode(() => (ran += 1)) } };
+
+      const rejection = await caught(
+        runStepGraph(graph, ENV, { step: cursor, timings: {} }, wideHooks(steps, persisted), options()),
+      );
+
+      assertNaxError(rejection, "runStepGraph rejection");
+      expect(rejection.code).toBe("STEP_GRAPH_UNKNOWN_NODE");
+      expect(rejection.context?.node).toBe(cursor);
+      expect(steps).toEqual([]);
+      expect(ran).toBe(0);
+      expect(persisted).toEqual([]);
+    },
+  );
 });
 
 describe("runStepGraph: abort", () => {

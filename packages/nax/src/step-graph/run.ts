@@ -26,10 +26,18 @@ function refusal(message: string, code: string, node: string, extra: Record<stri
   return new NaxError(message, code, { stage: "step-graph", node, ...extra });
 }
 
-/** Step 2: the node `id` names, or `STEP_GRAPH_UNKNOWN_NODE` when the graph has none. */
+/**
+ * Step 2: the node `id` names, or `STEP_GRAPH_UNKNOWN_NODE` when the graph has none.
+ *
+ * `id` is a persisted cursor, so it is runtime data: an inherited key (`constructor`,
+ * `__proto__`, `toString`) would otherwise be read as a node the graph declares and then fail
+ * with a `TypeError` on `node.run`. Only an *own* key of `graph.nodes` is a node id.
+ */
 function nodeOf<S extends GraphState<N>, E, N extends string>(graph: StepGraph<S, E, N>, id: N): StepNode<S, E, N> {
   const node = graph.nodes[id];
-  if (node === undefined) throw refusal(`step graph has no node "${id}"`, "STEP_GRAPH_UNKNOWN_NODE", id);
+  if (node === undefined || !Object.hasOwn(graph.nodes, id)) {
+    throw refusal(`step graph has no node "${id}"`, "STEP_GRAPH_UNKNOWN_NODE", id);
+  }
   return node;
 }
 
@@ -68,7 +76,10 @@ function assertExitDeclared<S, E, N extends string>(id: N, node: StepNode<S, E, 
  * record handed in is never mutated.
  */
 function nextRecord<S extends GraphState<N>, N extends string>(patched: S, next: N, id: N, elapsed: number): S {
-  const timings: Record<string, number> = { ...patched.timings, [id]: (patched.timings[id] ?? 0) + elapsed };
+  // `id` is a declared node id, so `timings[id]` may name a key the timing record never held —
+  // and a node id that shadows a prototype key (`constructor`) would read the inherited value.
+  const spent = Object.hasOwn(patched.timings, id) ? patched.timings[id] : 0;
+  const timings: Record<string, number> = { ...patched.timings, [id]: spent + elapsed };
   return { ...patched, step: next, timings } as S;
 }
 
