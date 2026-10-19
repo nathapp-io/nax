@@ -51,6 +51,20 @@ describe("runFeatureMachine", () => {
     expect(h.artifacts["branch-rereview.json"]).toBeDefined();
   });
 
+  test("a branch cannotVerify line that only defers to the repository gates is dropped from the record", async () => {
+    const review: BranchReviewVerdict = {
+      ...PASS,
+      cannotVerify: ["Repository gates after the branch fix have not run yet", "CI-only path"],
+    };
+    const h = harness({ review });
+    const final = await runFeatureMachine(h.env);
+    expect(final.cannotVerify).toEqual(["CI-only path"]);
+    expect(h.artifacts["branch-review.json"]).toMatchObject({ cannotVerify: ["CI-only path"] });
+    expect(h.ledger).toContain(
+      "cannot-verify dropped (a nax gate covers it): Repository gates after the branch fix have not run yet",
+    );
+  });
+
   test("clean branch: no fix, no re-review, no adjudication; final gates reuse step 1", async () => {
     const h = harness({});
     const final = await runFeatureMachine(h.env);

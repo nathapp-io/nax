@@ -189,6 +189,25 @@ describe("runStoryLoop", () => {
     expect(h.ledger).toContain("deferred-minor: nit");
   });
 
+  // A story reviewer that says only "nax runs the suite later" adds an item nax-finish must rule on;
+  // nax records whether the suite ran, so the line is noted, never ledgered as cannot-verify.
+  test("a gate-timing cannotVerify line is noted as dropped; a real one is kept", async () => {
+    const h = harness({
+      review: [
+        {
+          ...pass,
+          cannotVerify: ["Full test suite (nax runs it after review; not yet reached)", "needs the live payments API"],
+        },
+      ],
+    });
+    await runStoryLoop(h.env);
+    expect(h.ledger).toContain("cannot-verify: needs the live payments API");
+    expect(h.ledger).toContain(
+      "cannot-verify dropped (a nax gate covers it): Full test suite (nax runs it after review; not yet reached)",
+    );
+    expect(h.ledger.filter((l) => l.startsWith("cannot-verify: "))).toHaveLength(1);
+  });
+
   // The concern text reached only the story-review prompt; the ledger kept no trace of it.
   test("an implementer DONE_WITH_CONCERNS lands in the ledger with its text", async () => {
     const h = harness({
