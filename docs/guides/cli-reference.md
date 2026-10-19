@@ -102,9 +102,14 @@ Resolve the feature name and spec source deterministically (useful for scripts a
 
 ```bash
 nax features resolve user-auth --json
+nax features resolve user-auth --json --profile cross-agent
 ```
 
-Flags: `--json` (machine-readable output), `-d, --dir <path>`. Exit codes: `0` resolved, `2` needs a human decision (ambiguous, missing, or unknown feature), `1` hard error / not a nax repo.
+Flags: `--json` (machine-readable output), `-d, --dir <path>`, `--profile <name>` (comma-separated or repeated, as for `run` and `plan`). Exit codes: `0` resolved, `2` needs a human decision (ambiguous, missing, or unknown feature), `1` hard error / not a nax repo.
+
+The config is loaded under the same profile chain `nax run` would use: `--profile` > `NAX_PROFILE` > the PRD's `routingProfile`. A project whose config only validates under the profile its PRD was planned with therefore resolves cleanly.
+
+The `acceptance` block reports `status`: `ok`, `disabled`, `no-prd` (no `.nax/` dir, or no `prd.json` for the feature), or `error`. `error` means the config failed to load or the PRD could not be read or grouped; it carries `error: { code, message }` (for example `CONFIG_SCHEMA_INVALID`). An acceptance `error` does not change the exit code, which the top-level `status` still decides.
 
 ---
 
@@ -949,7 +954,52 @@ Refresh `.nax/mcp-lock.json` from what each configured MCP server (`mcp.servers`
 
 ```bash
 nax mcp lock
+nax mcp lock --global    # write ~/.nax/mcp-lock.json instead
 ```
+
+Flags: `--global` writes the lock to the global config dir (`~/.nax`, or `NAX_GLOBAL_CONFIG_DIR`) and prints `Wrote <path>`. A project lock, when present, fully overrides the global lock. See [MCP and interception](mcp-and-interception.md#global-lock).
+
+---
+
+### `nax cost`
+
+Query the cost ledger (`<project output dir>/cost/*.jsonl`) by date range, across every project or one. Read-only: no LLM call, no writes.
+
+```bash
+nax cost --today --by stage
+nax cost --since 2026-10-01 --until 2026-10-19 --by project,model
+nax cost --here --feature oct19-bundle --by story
+nax cost --run <runId> --json
+```
+
+Flags:
+
+| Flag | Meaning |
+|:-----|:--------|
+| `--today` | From 00:00 today. Cannot be combined with `--since` / `--until` |
+| `--since YYYY-MM-DD` | From 00:00 of that day (inclusive) |
+| `--until YYYY-MM-DD` | Through the end of that day (inclusive). Earlier than `--since` gives an empty report, not an error |
+| `--utc` | Read the day boundaries in UTC instead of local time |
+| `--by <keys>` | Comma list of group keys, in order: `model`, `stage`, `role`, `project`, `feature`, `run`, `story`. Omitted = total only |
+| `--project <name>` | Keep only rows whose project key matches (does not change which projects are scanned) |
+| `--here` | Scan only the project at `--dir` instead of every project under `~/.nax` |
+| `--feature <name>` / `--run <runId>` | Keep only rows for that feature / run |
+| `--json` | Print one `CostLedgerReport` JSON document instead of the table |
+| `-d, --dir <path>` | Project directory used by `--here` (default: cwd) |
+
+Output (default):
+
+```
+stage   calls  runs     input   output  cacheRead  cacheWrite  costUsd
+review     62     7   3915157   182324   19921141      512723    10.54
+run        63     7   9339245  1535185  394610425           0     6.68
+plan        8     4    447589   112319    9489752        3932     3.00
+(none)      3     1     88414    36871   16705024           0     0.09
+TOTAL     136    11  13790405  1866699  440726342      516655    20.31
+exact $3.85 / estimated $16.46
+```
+
+Groups are sorted by cost, highest first; a row missing a group field shows `(none)`. A final `skipped <n> unparseable row(s)` line appears only when some ledger lines could not be parsed. Exit codes: `0` report produced (an empty one included), `1` usage error or ledger read failure (`Error: <message>` on stderr). See [Cost ledger](cost-ledger.md).
 
 ---
 
