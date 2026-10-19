@@ -186,6 +186,18 @@ export {
 } from "./workflow-promote-fixture";
 export { makeStepContext } from "./workflow-step-context";
 export {
+  failingReview,
+  makeStoryLoopAdvisor,
+  makeStoryLoopHarness,
+  type ReReviewCall,
+  reReviewVerdict,
+  type StoryLoopHarness,
+  type StoryLoopHarnessOpts,
+  type StoryLoopScript,
+  storyLoopFixtures,
+} from "./workflow-story-loop";
+export { recordStoryTrace, type StoryTraceHarness } from "./workflow-story-trace";
+export {
   compareWithGolden,
   type FeatureTraceHarness,
   type GoldenOptions,

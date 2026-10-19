@@ -1,0 +1,427 @@
+{
+  "scenario": "review-fail-one-round",
+  "machine": "story",
+  "events": [
+    {
+      "kind": "update",
+      "record": {
+        "phase": "implement"
+      }
+    },
+    {
+      "data": {
+        "step": "implementer",
+        "storyId": "US-001"
+      },
+      "kind": "log",
+      "level": "info",
+      "message": "US-001 implementer start"
+    },
+    {
+      "args": [
+        {
+          "kind": "implement"
+        }
+      ],
+      "kind": "call",
+      "method": "implement"
+    },
+    {
+      "kind": "return",
+      "method": "implement",
+      "value": {
+        "autoCommitted": false,
+        "reply": {
+          "commits": [],
+          "interrupted": false,
+          "status": "DONE",
+          "testSummary": ""
+        }
+      }
+    },
+    {
+      "data": {
+        "durationMs": 0,
+        "step": "implementer",
+        "storyId": "US-001"
+      },
+      "kind": "log",
+      "level": "info",
+      "message": "US-001 implementer: DONE  <dur>"
+    },
+    {
+      "args": [],
+      "kind": "call",
+      "method": "costExceeded"
+    },
+    {
+      "kind": "return",
+      "method": "costExceeded",
+      "value": false
+    },
+    {
+      "kind": "update",
+      "record": {
+        "phase": "gates"
+      }
+    },
+    {
+      "args": [],
+      "kind": "call",
+      "method": "gates"
+    },
+    {
+      "kind": "return",
+      "method": "gates",
+      "value": {
+        "findings": [],
+        "red": false,
+        "states": {
+          "lint": "green",
+          "scoped": "green",
+          "typecheck": "green"
+        }
+      }
+    },
+    {
+      "kind": "update",
+      "record": {
+        "gates": {
+          "lint": "green",
+          "scoped": "green",
+          "typecheck": "green"
+        }
+      }
+    },
+    {
+      "kind": "update",
+      "record": {
+        "phase": "review"
+      }
+    },
+    {
+      "data": {
+        "step": "story-review",
+        "storyId": "US-001"
+      },
+      "kind": "log",
+      "level": "info",
+      "message": "US-001 story-review start"
+    },
+    {
+      "args": [
+        [],
+        {
+          "lint": "green",
+          "scoped": "green",
+          "typecheck": "green"
+        }
+      ],
+      "kind": "call",
+      "method": "storyReview"
+    },
+    {
+      "kind": "return",
+      "method": "storyReview",
+      "value": {
+        "ran": true,
+        "verdict": {
+          "cannotVerify": [],
+          "findings": [
+            {
+              "issue": "issue one",
+              "kind": "spec",
+              "severity": "important"
+            }
+          ],
+          "inspectedFiles": [],
+          "quality": "changes",
+          "spec": "fail"
+        }
+      }
+    },
+    {
+      "data": {
+        "durationMs": 0,
+        "step": "story-review",
+        "storyId": "US-001"
+      },
+      "kind": "log",
+      "level": "info",
+      "message": "US-001 story-review: spec fail, quality changes - 1 important (F1 issue one)  <dur>"
+    },
+    {
+      "kind": "update",
+      "record": {
+        "deferredMinors": 0,
+        "nextFindingId": 2,
+        "openFindings": [
+          {
+            "id": "F1",
+            "issue": "issue one",
+            "kind": "spec",
+            "severity": "important"
+          }
+        ],
+        "reviewed": true,
+        "unreviewed": false
+      }
+    },
+    {
+      "args": [],
+      "kind": "call",
+      "method": "costExceeded"
+    },
+    {
+      "kind": "return",
+      "method": "costExceeded",
+      "value": false
+    },
+    {
+      "args": [],
+      "kind": "call",
+      "method": "head"
+    },
+    {
+      "kind": "return",
+      "method": "head",
+      "value": "h1"
+    },
+    {
+      "kind": "ledger",
+      "text": "fix round 1/5 (1 open: F1)"
+    },
+    {
+      "kind": "update",
+      "record": {
+        "fixBase": "h1",
+        "phase": "fix",
+        "round": 1
+      }
+    },
+    {
+      "args": [],
+      "kind": "call",
+      "method": "uncommitted"
+    },
+    {
+      "kind": "return",
+      "method": "uncommitted",
+      "value": []
+    },
+    {
+      "data": {
+        "step": "fix r1",
+        "storyId": "US-001"
+      },
+      "kind": "log",
+      "level": "info",
+      "message": "US-001 fix r1 start"
+    },
+    {
+      "args": [
+        {
+          "findings": [
+            {
+              "id": "F1",
+              "issue": "issue one",
+              "kind": "spec",
+              "severity": "important"
+            }
+          ],
+          "fresh": false,
+          "kind": "fix",
+          "round": 1,
+          "stepUps": 0,
+          "uncommitted": []
+        }
+      ],
+      "kind": "call",
+      "method": "implement"
+    },
+    {
+      "kind": "return",
+      "method": "implement",
+      "value": {
+        "autoCommitted": false,
+        "reply": {
+          "commits": [],
+          "interrupted": false,
+          "status": "DONE",
+          "testSummary": ""
+        }
+      }
+    },
+    {
+      "data": {
+        "durationMs": 0,
+        "step": "fix r1",
+        "storyId": "US-001"
+      },
+      "kind": "log",
+      "level": "info",
+      "message": "US-001 fix r1: DONE  <dur>"
+    },
+    {
+      "args": [],
+      "kind": "call",
+      "method": "costExceeded"
+    },
+    {
+      "kind": "return",
+      "method": "costExceeded",
+      "value": false
+    },
+    {
+      "kind": "update",
+      "record": {
+        "phase": "gates"
+      }
+    },
+    {
+      "args": [],
+      "kind": "call",
+      "method": "gates"
+    },
+    {
+      "kind": "return",
+      "method": "gates",
+      "value": {
+        "findings": [],
+        "red": false,
+        "states": {
+          "lint": "green",
+          "scoped": "green",
+          "typecheck": "green"
+        }
+      }
+    },
+    {
+      "kind": "update",
+      "record": {
+        "gates": {
+          "lint": "green",
+          "scoped": "green",
+          "typecheck": "green"
+        }
+      }
+    },
+    {
+      "kind": "update",
+      "record": {
+        "phase": "rereview"
+      }
+    },
+    {
+      "data": {
+        "step": "re-review r1",
+        "storyId": "US-001"
+      },
+      "kind": "log",
+      "level": "info",
+      "message": "US-001 re-review r1 start"
+    },
+    {
+      "args": [
+        1,
+        [
+          {
+            "id": "F1",
+            "issue": "issue one",
+            "kind": "spec",
+            "severity": "important"
+          }
+        ],
+        "h1"
+      ],
+      "kind": "call",
+      "method": "reReview"
+    },
+    {
+      "kind": "return",
+      "method": "reReview",
+      "value": {
+        "ran": true,
+        "verdict": {
+          "newFindings": [],
+          "verdicts": [
+            {
+              "addressed": true,
+              "id": "F1",
+              "note": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "data": {
+        "durationMs": 0,
+        "step": "re-review r1",
+        "storyId": "US-001"
+      },
+      "kind": "log",
+      "level": "info",
+      "message": "US-001 re-review r1: F1 addressed  <dur>"
+    },
+    {
+      "kind": "update",
+      "record": {
+        "phase": "suite"
+      }
+    },
+    {
+      "args": [],
+      "kind": "call",
+      "method": "fullSuite"
+    },
+    {
+      "kind": "return",
+      "method": "fullSuite",
+      "value": {
+        "findings": [],
+        "red": false,
+        "states": {
+          "full-suite": "green"
+        }
+      }
+    },
+    {
+      "kind": "update",
+      "record": {
+        "deferredMinors": 0,
+        "nextFindingId": 2,
+        "openFindings": [],
+        "reviewed": true,
+        "unreviewed": false
+      }
+    },
+    {
+      "kind": "update",
+      "record": {
+        "endedAt": "<ts>",
+        "flagged": 0,
+        "phase": "closed",
+        "reason": "clean",
+        "rulings": 0,
+        "state": "complete"
+      }
+    },
+    {
+      "kind": "ledger",
+      "options": {
+        "mirror": false
+      },
+      "text": "complete (1 round(s), clean)"
+    }
+  ],
+  "end": {
+    "returned": {
+      "reason": "clean",
+      "rounds": 1,
+      "rulings": [],
+      "state": "complete",
+      "unreviewed": false
+    }
+  }
+}

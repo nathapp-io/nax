@@ -1,0 +1,272 @@
+{
+  "scenario": "needs-context-answered",
+  "machine": "story",
+  "events": [
+    {
+      "kind": "update",
+      "record": {
+        "phase": "implement"
+      }
+    },
+    {
+      "data": {
+        "step": "implementer",
+        "storyId": "US-001"
+      },
+      "kind": "log",
+      "level": "info",
+      "message": "US-001 implementer start"
+    },
+    {
+      "args": [
+        {
+          "kind": "implement"
+        }
+      ],
+      "kind": "call",
+      "method": "implement"
+    },
+    {
+      "kind": "return",
+      "method": "implement",
+      "value": {
+        "autoCommitted": false,
+        "reply": {
+          "commits": [],
+          "concerns": "which API?",
+          "interrupted": false,
+          "status": "NEEDS_CONTEXT",
+          "testSummary": ""
+        }
+      }
+    },
+    {
+      "data": {
+        "durationMs": 0,
+        "step": "implementer",
+        "storyId": "US-001"
+      },
+      "kind": "log",
+      "level": "info",
+      "message": "US-001 implementer: NEEDS_CONTEXT  <dur>"
+    },
+    {
+      "args": [
+        {
+          "concerns": "which API?",
+          "status": "NEEDS_CONTEXT",
+          "storyId": "US-001"
+        }
+      ],
+      "kind": "call",
+      "method": "answerQuestion"
+    },
+    {
+      "kind": "return",
+      "method": "answerQuestion",
+      "value": "try X"
+    },
+    {
+      "kind": "ledger",
+      "text": "implementer NEEDS_CONTEXT: answered by the advisor"
+    },
+    {
+      "data": {
+        "step": "implementer answer",
+        "storyId": "US-001"
+      },
+      "kind": "log",
+      "level": "info",
+      "message": "US-001 implementer answer start"
+    },
+    {
+      "args": [
+        {
+          "kind": "answer",
+          "limit": "implement",
+          "stepUps": 0,
+          "text": "try X"
+        }
+      ],
+      "kind": "call",
+      "method": "implement"
+    },
+    {
+      "kind": "return",
+      "method": "implement",
+      "value": {
+        "autoCommitted": false,
+        "reply": {
+          "commits": [],
+          "interrupted": false,
+          "status": "DONE",
+          "testSummary": ""
+        }
+      }
+    },
+    {
+      "data": {
+        "durationMs": 0,
+        "step": "implementer answer",
+        "storyId": "US-001"
+      },
+      "kind": "log",
+      "level": "info",
+      "message": "US-001 implementer answer: DONE  <dur>"
+    },
+    {
+      "args": [],
+      "kind": "call",
+      "method": "costExceeded"
+    },
+    {
+      "kind": "return",
+      "method": "costExceeded",
+      "value": false
+    },
+    {
+      "kind": "update",
+      "record": {
+        "phase": "gates"
+      }
+    },
+    {
+      "args": [],
+      "kind": "call",
+      "method": "gates"
+    },
+    {
+      "kind": "return",
+      "method": "gates",
+      "value": {
+        "findings": [],
+        "red": false,
+        "states": {
+          "lint": "green",
+          "scoped": "green",
+          "typecheck": "green"
+        }
+      }
+    },
+    {
+      "kind": "update",
+      "record": {
+        "gates": {
+          "lint": "green",
+          "scoped": "green",
+          "typecheck": "green"
+        }
+      }
+    },
+    {
+      "kind": "update",
+      "record": {
+        "phase": "review"
+      }
+    },
+    {
+      "data": {
+        "step": "story-review",
+        "storyId": "US-001"
+      },
+      "kind": "log",
+      "level": "info",
+      "message": "US-001 story-review start"
+    },
+    {
+      "args": [
+        [],
+        {
+          "lint": "green",
+          "scoped": "green",
+          "typecheck": "green"
+        }
+      ],
+      "kind": "call",
+      "method": "storyReview"
+    },
+    {
+      "kind": "return",
+      "method": "storyReview",
+      "value": {
+        "ran": true,
+        "verdict": {
+          "cannotVerify": [],
+          "findings": [],
+          "inspectedFiles": [],
+          "quality": "approved",
+          "spec": "pass"
+        }
+      }
+    },
+    {
+      "data": {
+        "durationMs": 0,
+        "step": "story-review",
+        "storyId": "US-001"
+      },
+      "kind": "log",
+      "level": "info",
+      "message": "US-001 story-review: spec pass, quality approved - no findings  <dur>"
+    },
+    {
+      "kind": "update",
+      "record": {
+        "phase": "suite"
+      }
+    },
+    {
+      "args": [],
+      "kind": "call",
+      "method": "fullSuite"
+    },
+    {
+      "kind": "return",
+      "method": "fullSuite",
+      "value": {
+        "findings": [],
+        "red": false,
+        "states": {
+          "full-suite": "green"
+        }
+      }
+    },
+    {
+      "kind": "update",
+      "record": {
+        "deferredMinors": 0,
+        "nextFindingId": 1,
+        "openFindings": [],
+        "reviewed": true,
+        "unreviewed": false
+      }
+    },
+    {
+      "kind": "update",
+      "record": {
+        "endedAt": "<ts>",
+        "flagged": 0,
+        "phase": "closed",
+        "reason": "clean",
+        "rulings": 0,
+        "state": "complete"
+      }
+    },
+    {
+      "kind": "ledger",
+      "options": {
+        "mirror": false
+      },
+      "text": "complete (0 round(s), clean)"
+    }
+  ],
+  "end": {
+    "returned": {
+      "reason": "clean",
+      "rounds": 0,
+      "rulings": [],
+      "state": "complete",
+      "unreviewed": false
+    }
+  }
+}
