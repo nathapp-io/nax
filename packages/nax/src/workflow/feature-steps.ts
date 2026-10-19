@@ -36,7 +36,6 @@ const DEFAULT_LIMITS: FeatureLimits = {
 };
 const limitsOf = (env: FeatureEnv): FeatureLimits => env.limits ?? DEFAULT_LIMITS;
 
-type Patch = Partial<WorkflowFeatureRecord> & { readonly __exit?: string };
 const costExceeded = (env: FeatureEnv): boolean => env.costExceeded?.() === true;
 
 /** The step line in the log already says it; ledger.md still records it. */
@@ -107,7 +106,10 @@ const featureStep = (label: string, announce = true, bare = false, model?: StepM
 const gatesText = (failing: readonly string[]): string =>
   failing.length > 0 ? `red (${failing.join(", ")})` : "green";
 
-async function repoGatesPatch(env: FeatureEnv, rec: WorkflowFeatureRecord): Promise<Patch> {
+export async function repoGatesStep(
+  env: FeatureEnv,
+  rec: WorkflowFeatureRecord,
+): Promise<StepResult<WorkflowFeatureRecord>> {
   const log = featureStep("repo-gates", false, true);
   const run = await env.steps.repoGates();
   log.done(gatesText(run.summary.failing));
@@ -122,7 +124,7 @@ async function repoGatesPatch(env: FeatureEnv, rec: WorkflowFeatureRecord): Prom
   if (run.summary.failing.length > 0) {
     await env.sink.ledger(ledgerText.note(`repo gates red: ${run.summary.failing.join(", ")}`), NO_MIRROR);
   }
-  return { repoGates: run.summary, gateFindings: findings, nextFindingId, step: "branch-review" };
+  return { patch: { repoGates: run.summary, gateFindings: findings, nextFindingId } };
 }
 
 /**
@@ -137,18 +139,21 @@ function withQualityFloor(verdict: BranchReviewVerdict): WorkflowFindingDraft[] 
   return [{ kind: "quality", severity: "important", issue: QUALITY_CHANGES_ISSUE }];
 }
 
-async function branchReviewPatch(env: FeatureEnv, rec: WorkflowFeatureRecord): Promise<Patch> {
+export async function branchReviewStep(
+  env: FeatureEnv,
+  rec: WorkflowFeatureRecord,
+): Promise<StepResult<WorkflowFeatureRecord>> {
   if (!rec.seed) {
     featureStep("branch-review", false).done("skipped (no seed)");
     await env.sink.ledger(ledgerText.reviewSkipped("branch review: no seed"), NO_MIRROR);
-    return { reviewRan: false, step: "branch-fix" };
+    return { patch: { reviewRan: false } };
   }
   const log = featureStep("branch-review", true, false, env.steps.modelFor?.("branch-review"));
   const out = await env.steps.branchReview(rec.seed, reviewFacts(env, rec));
   if (!out.ran) {
     log.done(`skipped (${out.why})`);
     await env.sink.ledger(ledgerText.reviewSkipped(`branch review: ${out.why}`), NO_MIRROR);
-    return { reviewRan: false, step: "branch-fix" };
+    return { patch: { reviewRan: false } };
   }
   const cannotVerify = await ledgerCannotVerify(env.sink, out.verdict.cannotVerify);
   // US-003: the files the verdict did not read. Nothing else records them — the step line names the
@@ -165,30 +170,34 @@ async function branchReviewPatch(env: FeatureEnv, rec: WorkflowFeatureRecord): P
   await env.sink.artifact("branch-review.json", { ...out.verdict, cannotVerify, findings: [...findings, ...minors] });
   log.done(`spec ${out.verdict.spec}, quality ${out.verdict.quality} - ${describeFindings([...findings, ...minors])}`);
   return {
-    reviewRan: true,
-    cannotVerify,
-    ...(unread.length > 0 ? { reviewUnread: unread } : {}),
-    reviewOpen: findings,
-    nextFindingId,
-    minors: rec.minors.map((m) => ({ ...m, triage: triage.get(m.id) ?? "leave" })),
-    newMinors: [...rec.newMinors, ...minorIssues(restated.kept)],
-    step: "branch-fix",
+    patch: {
+      reviewRan: true,
+      cannotVerify,
+      ...(unread.length > 0 ? { reviewUnread: unread } : {}),
+      reviewOpen: findings,
+      nextFindingId,
+      minors: rec.minors.map((m) => ({ ...m, triage: triage.get(m.id) ?? "leave" })),
+      newMinors: [...rec.newMinors, ...minorIssues(restated.kept)],
+    },
   };
 }
 
-async function branchFixPatch(env: FeatureEnv, rec: WorkflowFeatureRecord): Promise<Patch> {
+export async function branchFixStep(
+  env: FeatureEnv,
+  rec: WorkflowFeatureRecord,
+): Promise<StepResult<WorkflowFeatureRecord>> {
   const round = fixRoundsOf(rec) + 1;
   const toFix = isFollowUpRound(rec)
     ? roundTargets(rec)
     : [...rec.reviewOpen, ...fixNowMinors(rec), ...rec.gateFindings];
-  if (toFix.length === 0) return { step: "branch-rereview", __exit: "nothing-to-fix" };
+  if (toFix.length === 0) return { patch: {}, exit: "nothing-to-fix" };
   const max = limitsOf(env).maxBranchFixRounds;
   if (round > max) {
     // A resume can find a cap lowered under a pending round; the cap wins.
     const why =
       max === 0 ? "workflow.maxBranchFixRounds is 0" : `round ${round} is past workflow.maxBranchFixRounds (${max})`;
     await env.sink.ledger(ledgerText.note(`branch fix skipped: ${why}`), NO_MIRROR);
-    return { step: "adjudicate", __exit: "capped" };
+    return { patch: {}, exit: "capped" };
   }
   // A follow-up round keeps round 1's base, so its re-review sees the whole fix, not just the last edit.
   const fixBase = round > 1 && rec.fixBase ? rec.fixBase : await readHeadSoft(env);
@@ -196,7 +205,7 @@ async function branchFixPatch(env: FeatureEnv, rec: WorkflowFeatureRecord): Prom
     // nax#2550: no base means no re-review of the fix, so no fix runs; the findings go to adjudication
     // as with a round cap, and the run goes on instead of losing the feature workflow to a git blip.
     await env.sink.ledger(ledgerText.note("branch fix skipped: HEAD could not be read"), NO_MIRROR);
-    return { step: "adjudicate", __exit: "no-base" };
+    return { patch: {}, exit: "no-base" };
   }
   await env.sink.ledger(
     ledgerText.note(
@@ -210,7 +219,7 @@ async function branchFixPatch(env: FeatureEnv, rec: WorkflowFeatureRecord): Prom
   if (out.failure) await env.sink.ledger(ledgerText.note(`branch fix session failed: ${out.failure}`), NO_MIRROR);
   if (out.autoCommitted) await env.sink.ledger(ledgerText.note("auto-committed the branch fix's edits"));
   if (out.dirty) await env.sink.ledger(ledgerText.note("branch fix left uncommitted edits: the auto-commit failed"));
-  return { fixBase, fixRan: true, fixRounds: round, step: "branch-rereview", __exit: "fixed" };
+  return { patch: { fixBase, fixRan: true, fixRounds: round }, exit: "fixed" };
 }
 
 /**
@@ -237,18 +246,21 @@ function reReviewText(input: {
   return `${parts.join(", ")}; minors left: ${input.minorsLeft}`;
 }
 
-async function branchReReviewPatch(env: FeatureEnv, rec: WorkflowFeatureRecord): Promise<Patch> {
+export async function branchReReviewStep(
+  env: FeatureEnv,
+  rec: WorkflowFeatureRecord,
+): Promise<StepResult<WorkflowFeatureRecord>> {
   const round = fixRoundsOf(rec);
   const followUp = isFollowUpRound(rec);
   const items = followUp ? roundTargets(rec) : [...rec.reviewOpen, ...fixNowMinors(rec)];
-  if (items.length === 0 || !rec.fixBase) return { step: "adjudicate", __exit: "nothing-to-check" };
+  if (items.length === 0 || !rec.fixBase) return { patch: {}, exit: "nothing-to-check" };
   const log = featureStep(roundLabel("branch-rereview", round), true, false, env.steps.modelFor?.("branch-rereview"));
   const out = await env.steps.branchReReview(items, rec.fixBase);
   if (!out.ran) {
     log.done(`skipped (${out.why})`);
     await env.sink.ledger(ledgerText.reviewSkipped(`branch re-review: ${out.why}`), NO_MIRROR);
     // nax#2550: the fix commits stay unreviewed, and `publish` must say so (a draft, not a ready PR).
-    return { reReviewSkipped: true, step: "adjudicate", __exit: "skipped" };
+    return { patch: { reReviewSkipped: true }, exit: "skipped" };
   }
   // Fail closed: an item the verdicts do not mark addressed stays open, omitted or not.
   const addressed = new Set(out.verdict.verdicts.filter((v) => v.addressed).map((v) => v.id));
@@ -287,48 +299,56 @@ async function branchReReviewPatch(env: FeatureEnv, rec: WorkflowFeatureRecord):
   for (const note of next.notes) await env.sink.ledger(ledgerText.note(note), NO_MIRROR);
   const again = next.targets.length > 0;
   return {
-    reviewOpen: [...absorbed.open, ...findings],
-    nextFindingId,
-    minors,
-    newMinors,
-    fixTargets: again ? next.targets : undefined,
-    step: again ? "branch-fix" : "adjudicate",
-    __exit: again ? "again" : "settled",
+    patch: {
+      reviewOpen: [...absorbed.open, ...findings],
+      nextFindingId,
+      minors,
+      newMinors,
+      fixTargets: again ? next.targets : undefined,
+    },
+    exit: again ? "again" : "settled",
   };
 }
 
-async function adjudicatePatch(env: FeatureEnv, rec: WorkflowFeatureRecord): Promise<Patch> {
-  if (rec.reviewOpen.length === 0) return { step: "final-gates" };
-  return { rulings: await env.steps.adjudicate(rec.reviewOpen), step: "final-gates" };
+export async function adjudicateStep(
+  env: FeatureEnv,
+  rec: WorkflowFeatureRecord,
+): Promise<StepResult<WorkflowFeatureRecord>> {
+  if (rec.reviewOpen.length === 0) return { patch: {} };
+  return { patch: { rulings: await env.steps.adjudicate(rec.reviewOpen) } };
 }
 
-async function finalGatesPatch(env: FeatureEnv, rec: WorkflowFeatureRecord): Promise<Patch> {
+export async function finalGatesStep(
+  env: FeatureEnv,
+  rec: WorkflowFeatureRecord,
+): Promise<StepResult<WorkflowFeatureRecord>> {
   if (!rec.fixRan) {
     featureStep("final-gates", false, true).done(
       `${gatesText(rec.repoGates?.failing ?? [])} (no fix ran; repo-gates reused)`,
     );
-    return { ...(rec.repoGates ? { finalGates: rec.repoGates } : {}), step: "publish", __exit: "reused" };
+    return { patch: rec.repoGates ? { finalGates: rec.repoGates } : {}, exit: "reused" };
   }
   const log = featureStep("final-gates", false, true);
   const run = await env.steps.repoGates();
   log.done(gatesText(run.summary.failing));
   if (run.summary.failing.length === 0)
-    return { finalGates: run.summary, gateRepairFindings: undefined, step: "publish", __exit: "green" };
+    return { patch: { finalGates: run.summary, gateRepairFindings: undefined }, exit: "green" };
   const names = run.summary.failing.join(", ");
   if (run.findings.length > 0 && gateRepairAllowed(env, rec)) {
     await env.sink.ledger(ledgerText.note(`final gates red: ${names} (repairing)`), NO_MIRROR);
-    return { gateRepairFindings: run.findings, step: "gate-repair", __exit: "repair" };
+    return { patch: { gateRepairFindings: run.findings }, exit: "repair" };
   }
   await env.sink.ledger(
     ledgerText.note(`final gates red: ${names} (output in result.json featureWorkflow.finalGateFindings)`),
     NO_MIRROR,
   );
   return {
-    finalGates: run.summary,
-    finalGateFindings: run.findings,
-    gateRepairFindings: undefined,
-    step: "publish",
-    __exit: "red",
+    patch: {
+      finalGates: run.summary,
+      finalGateFindings: run.findings,
+      gateRepairFindings: undefined,
+    },
+    exit: "red",
   };
 }
 
@@ -341,7 +361,10 @@ function gateRepairAllowed(env: FeatureEnv, rec: WorkflowFeatureRecord): boolean
   return wasGreen && (rec.gateRepairRounds ?? 0) < limitsOf(env).finalGateRepairRounds && !costExceeded(env);
 }
 
-async function gateRepairPatch(env: FeatureEnv, rec: WorkflowFeatureRecord): Promise<Patch> {
+export async function gateRepairStep(
+  env: FeatureEnv,
+  rec: WorkflowFeatureRecord,
+): Promise<StepResult<WorkflowFeatureRecord>> {
   const round = (rec.gateRepairRounds ?? 0) + 1;
   const max = limitsOf(env).finalGateRepairRounds;
   if (round > max) {
@@ -350,11 +373,11 @@ async function gateRepairPatch(env: FeatureEnv, rec: WorkflowFeatureRecord): Pro
       ledgerText.note(`gate repair skipped: round ${round} is past workflow.finalGateRepairRounds (${max})`),
       NO_MIRROR,
     );
-    return { step: "final-gates" };
+    return { patch: {} };
   }
   // `G` ids: a gate excerpt is no branch finding, so it never spends the B counter the summary counts.
   const findings = (rec.gateRepairFindings ?? []).map((d, i) => ({ ...d, id: `G${i + 1}` }));
-  if (findings.length === 0) return { gateRepairRounds: round, step: "final-gates" };
+  if (findings.length === 0) return { patch: { gateRepairRounds: round } };
   const list = findings.map((f) => f.id);
   await env.sink.ledger(
     ledgerText.note(`gate repair r${round}: ${findings.length} item(s): ${list.join(", ")}`),
@@ -366,7 +389,7 @@ async function gateRepairPatch(env: FeatureEnv, rec: WorkflowFeatureRecord): Pro
   if (out.failure) await env.sink.ledger(ledgerText.note(`gate repair session failed: ${out.failure}`), NO_MIRROR);
   if (out.autoCommitted) await env.sink.ledger(ledgerText.note("auto-committed the gate repair's edits"));
   if (out.dirty) await env.sink.ledger(ledgerText.note("gate repair left uncommitted edits: the auto-commit failed"));
-  return { gateRepairRounds: round, step: "final-gates" };
+  return { patch: { gateRepairRounds: round } };
 }
 
 /**
@@ -404,7 +427,10 @@ async function readHeadSoft(env: FeatureEnv): Promise<string | undefined> {
   }
 }
 
-async function publishPatch(env: FeatureEnv, rec: WorkflowFeatureRecord): Promise<Patch> {
+export async function publishStep(
+  env: FeatureEnv,
+  rec: WorkflowFeatureRecord,
+): Promise<StepResult<WorkflowFeatureRecord>> {
   const log = featureStep("publish", false, true);
   const out = await env.steps.publish(rec);
   const head = await readHeadSoft(env);
@@ -415,65 +441,28 @@ async function publishPatch(env: FeatureEnv, rec: WorkflowFeatureRecord): Promis
   // its flagged rulings named at run end.
   const flagged = await collectFlaggedDecisions(env);
   return {
-    outcome: out.outcome,
-    ci: out.ci,
-    reasons: out.reasons,
-    ...(out.url ? { url: out.url } : {}),
-    // US-001/B1: these two are *this* publish's facts, so they are written unconditionally. An
-    // absent approval means this publish asked no advisor, and a CI state with no detail is no
-    // detail — `applyPatch` clears what the earlier publish recorded instead of leaving it behind
-    // (the url is deliberately not cleared: the re-publish keeps the PR an earlier one opened).
-    approval: out.approval,
-    ciDetail: out.ciDetail,
-    storyStates: env.facts.stories.map((s) => ({
-      id: s.id,
-      state: s.state,
-      ...(s.reason !== undefined ? { reason: s.reason } : {}),
-    })),
-    ...(head ? { head } : {}),
-    passed: featurePassed({ ...(rec.finalGates ? { finalGates: rec.finalGates } : {}), stories: env.facts.stories }),
-    ...(flagged.length > 0 ? { flaggedDecisions: flagged } : {}),
-    endedAt: new Date().toISOString(),
-    step: "done",
+    patch: {
+      outcome: out.outcome,
+      ci: out.ci,
+      reasons: out.reasons,
+      ...(out.url ? { url: out.url } : {}),
+      // US-001/B1: these two are *this* publish's facts, so they are written unconditionally. An
+      // absent approval means this publish asked no advisor, and a CI state with no detail is no
+      // detail — the patch clears what the earlier publish recorded instead of leaving it behind
+      // (the url is deliberately not cleared: the re-publish keeps the PR an earlier one opened).
+      approval: out.approval,
+      ciDetail: out.ciDetail,
+      storyStates: env.facts.stories.map((s) => ({
+        id: s.id,
+        state: s.state,
+        ...(s.reason !== undefined ? { reason: s.reason } : {}),
+      })),
+      ...(head ? { head } : {}),
+      passed: featurePassed({ ...(rec.finalGates ? { finalGates: rec.finalGates } : {}), stories: env.facts.stories }),
+      ...(flagged.length > 0 ? { flaggedDecisions: flagged } : {}),
+      endedAt: new Date().toISOString(),
+    },
   };
 }
 
-function asResult(patch: Patch): StepResult<WorkflowFeatureRecord> {
-  const { step: _step, __exit, ...rest } = patch;
-  const exit = __exit;
-  return { patch: rest, ...(exit === undefined ? {} : { exit }) };
-}
-
-export const repoGatesStep = async (
-  env: FeatureEnv,
-  rec: WorkflowFeatureRecord,
-): Promise<StepResult<WorkflowFeatureRecord>> => asResult(await repoGatesPatch(env, rec));
-export const branchReviewStep = async (
-  env: FeatureEnv,
-  rec: WorkflowFeatureRecord,
-): Promise<StepResult<WorkflowFeatureRecord>> => asResult(await branchReviewPatch(env, rec));
-export const branchFixStep = async (
-  env: FeatureEnv,
-  rec: WorkflowFeatureRecord,
-): Promise<StepResult<WorkflowFeatureRecord>> => asResult(await branchFixPatch(env, rec));
-export const branchReReviewStep = async (
-  env: FeatureEnv,
-  rec: WorkflowFeatureRecord,
-): Promise<StepResult<WorkflowFeatureRecord>> => asResult(await branchReReviewPatch(env, rec));
-export const adjudicateStep = async (
-  env: FeatureEnv,
-  rec: WorkflowFeatureRecord,
-): Promise<StepResult<WorkflowFeatureRecord>> => asResult(await adjudicatePatch(env, rec));
-export const finalGatesStep = async (
-  env: FeatureEnv,
-  rec: WorkflowFeatureRecord,
-): Promise<StepResult<WorkflowFeatureRecord>> => asResult(await finalGatesPatch(env, rec));
-export const gateRepairStep = async (
-  env: FeatureEnv,
-  rec: WorkflowFeatureRecord,
-): Promise<StepResult<WorkflowFeatureRecord>> => asResult(await gateRepairPatch(env, rec));
-export const publishStep = async (
-  env: FeatureEnv,
-  rec: WorkflowFeatureRecord,
-): Promise<StepResult<WorkflowFeatureRecord>> => asResult(await publishPatch(env, rec));
 export { featureStep, fixNowMinors, isFollowUpRound, NO_MIRROR, readHeadSoft, roundTargets };
