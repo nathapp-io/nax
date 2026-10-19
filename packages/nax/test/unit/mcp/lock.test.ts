@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { globalConfigDir } from "@/config";
+import { globalConfigDir, PROJECT_NAX_DIR } from "@/config";
 import type { McpLockFile, ResolvedMcpLock } from "@/mcp/lock";
 import {
   applyLock,
@@ -165,6 +165,49 @@ describe("resolveMcpLock", () => {
 
   test("AC-5: no project lock and no global lock resolves to undefined", async () => {
     expect(await resolveMcpLock(await tempDir(), await tempDir())).toBeUndefined();
+  });
+
+  // B1: a project lock the lookup cannot resolve is NOT an absent project lock.
+  // `stat` answers ENOENT for a dangling symlink, which read as "no project lock"
+  // and silently widened the grant to the global lock.
+
+  test("B1: a dangling project-lock symlink fails closed instead of adopting the global lock", async () => {
+    const root = await tempDir();
+    const globalDir = await tempDir();
+    await mkdir(join(root, PROJECT_NAX_DIR), { recursive: true });
+    await symlink(join(root, "target-never-written"), mcpLockPath(root));
+    await writeLockFile(join(globalDir, "mcp-lock.json"), globalLock);
+
+    expect(await resolveMcpLock(root, globalDir)).toBeUndefined();
+  });
+
+  test("B1: a lookup that errors (self-referential .nax symlink, ELOOP) fails closed", async () => {
+    const root = await tempDir();
+    const globalDir = await tempDir();
+    // `.nax` points at itself, so resolving any path beneath it is ELOOP — an
+    // unreadable lookup rather than a confirmed absence.
+    await symlink(PROJECT_NAX_DIR, join(root, PROJECT_NAX_DIR));
+    await writeLockFile(join(globalDir, "mcp-lock.json"), globalLock);
+
+    expect(await resolveMcpLock(root, globalDir)).toBeUndefined();
+  });
+
+  test("B1: a directory at the project lock path fails closed", async () => {
+    const root = await tempDir();
+    const globalDir = await tempDir();
+    await mkdir(mcpLockPath(root), { recursive: true });
+    await writeLockFile(join(globalDir, "mcp-lock.json"), globalLock);
+
+    expect(await resolveMcpLock(root, globalDir)).toBeUndefined();
+  });
+
+  test("B1: a genuinely absent project lock still consults the global lock", async () => {
+    const root = await tempDir();
+    const globalDir = await tempDir();
+    await mkdir(join(root, PROJECT_NAX_DIR), { recursive: true });
+    await writeLockFile(join(globalDir, "mcp-lock.json"), globalLock);
+
+    expect(await resolveMcpLock(root, globalDir)).toEqual({ ...globalLock, source: "global" });
   });
 });
 

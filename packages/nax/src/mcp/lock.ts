@@ -17,7 +17,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { globalConfigDir, PROJECT_NAX_DIR } from "@/config";
 import type { McpToolDescriptor } from "./types";
@@ -84,16 +84,36 @@ export async function readMcpLock(projectRoot: string): Promise<McpLockFile | un
 }
 
 /**
- * True for ANY filesystem entry at `path`, file or not. `Bun.file(path).exists()`
- * is false for a directory, which would let a stray directory at the project
- * lock path fall through to the global lock — the one outcome AC-3 forbids.
+ * What a probe of the project lock path can conclude:
+ * `present` (an entry is there, whatever it is), `absent` (`ENOENT` — nothing is
+ * there), or `unreadable` (any other lookup error).
  */
-async function pathExists(path: string): Promise<boolean> {
+type LockPresence = "present" | "absent" | "unreadable";
+
+/** `ENOENT` — the only code that licenses "no project lock; consult the global one". */
+const MISSING_CODE = "ENOENT";
+
+function errorCode(err: unknown): unknown {
+  return typeof err === "object" && err !== null ? Reflect.get(err, "code") : undefined;
+}
+
+/**
+ * Is there an entry at `path`? `lstat`, not `stat`: a dangling symlink at the
+ * project lock path is an entry — the operator's intent to have a project lock,
+ * and the reason `nax mcp lock` will write there — while `stat` reports `ENOENT`
+ * for it and would fall through to the global lock.
+ *
+ * Only `ENOENT` reads as absence. Every other error (`EACCES` on a parent
+ * directory, `ELOOP` from a symlink loop) is `unreadable`, and `resolveMcpLock`
+ * fails closed on it: withholding every tool is a visible failure, whereas
+ * falling through to a broader global grant is a silent widening.
+ */
+async function lockPresence(path: string): Promise<LockPresence> {
   try {
-    await stat(path);
-    return true;
-  } catch {
-    return false;
+    await lstat(path);
+    return "present";
+  } catch (err) {
+    return errorCode(err) === MISSING_CODE ? "absent" : "unreadable";
   }
 }
 
@@ -104,10 +124,14 @@ async function pathExists(path: string): Promise<boolean> {
  * Existence is checked separately from parsing, and deliberately so: a
  * MALFORMED project lock fails closed rather than falling through to the global
  * lock, so a typo in the project file cannot silently swap in a wider grant.
+ * The same applies to a project lock that cannot be looked up at all (B1) — the
+ * global lock is consulted only on a confirmed absence.
  */
 export async function resolveMcpLock(projectRoot: string, globalDir?: string): Promise<ResolvedMcpLock | undefined> {
   const projectPath = mcpLockPath(projectRoot);
-  if (await pathExists(projectPath)) {
+  const presence = await lockPresence(projectPath);
+  if (presence === "unreadable") return undefined;
+  if (presence === "present") {
     const projectLock = await parseLockFile(projectPath);
     return projectLock === undefined ? undefined : { ...projectLock, source: "project" };
   }
