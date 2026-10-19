@@ -60,6 +60,20 @@ export {
   type LoadPRDResult,
   listDependentStoryIds,
 } from "./context-fragments";
+export {
+  _costLedgerQueryDeps,
+  COST_GROUP_KEYS,
+  type CostGroupKey,
+  type CostGroupRow,
+  type CostLedgerQueryDeps,
+  type CostLedgerReport,
+  type CostQuery,
+  type CostTotals,
+  listCostLedgerFiles,
+  listProjectOutputDirs,
+  queryCostLedger,
+  resolveCostWindow,
+} from "./cost-ledger-query";
 export type {
   AcceptanceGroupResult,
   AcceptanceResolution,
