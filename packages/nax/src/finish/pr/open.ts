@@ -70,12 +70,16 @@ async function keepDraftPr(
   deps: ForgeDeps,
 ): Promise<{ status: "draft" | "already-ready"; url?: string }> {
   if (view.exitCode === 0) {
-    const { isDraft, url } = parseView(view.stdout, args.forge);
+    const before = parseView(view.stdout, args.forge);
     // `updatePrBody` swallows failures by design (the PR exists, so a failed
     // metadata write must not discard that state): a failed update here still
     // reports `draft`, and the stale body is only warned about.
-    await updatePrBody(args, deps);
-    return { status: isDraft ? "draft" : "already-ready", url };
+    await updatePrBody({ ...args, keepDraft: before.isDraft }, deps);
+    // nax#2609: report the state the forge holds after the write, so the result never
+    // records a draft that is not there. A failed re-view falls back to the first view.
+    const reView = await deps.run(viewArgv(args.forge, args.branch, "isDraft,url"), { cwd: args.workdir });
+    const after = reView.exitCode === 0 ? parseView(reView.stdout, args.forge) : before;
+    return { status: after.isDraft ? "draft" : "already-ready", url: after.url ?? before.url };
   }
   const created = await openPr(
     args.forge,
@@ -170,15 +174,29 @@ export async function openOrPromotePr(
  * Non-fatal by design: this runs after the PR exists, so a failed metadata
  * write must not throw away that state — the caller's returned status/url
  * stays valid either way.
+ *
+ * `keepDraft` matters on GitLab only (nax#2609): GitLab derives draft state from the
+ * title's `Draft:` prefix, so a plain `--title` write un-drafts the MR unless `--draft`
+ * rides along. `gh pr edit --title` never changes draft state.
  */
 export async function updatePrBody(
-  args: { workdir: string; branch: string; title: string; body: string; forge: ForgeKind },
+  args: { workdir: string; branch: string; title: string; body: string; forge: ForgeKind; keepDraft?: boolean },
   deps: ForgeDeps,
 ): Promise<void> {
   const editCmd =
     args.forge === "github"
       ? ["gh", "pr", "edit", args.branch, "--title", args.title, "--body", args.body]
-      : ["glab", "mr", "update", args.branch, "--title", args.title, "--description", args.body];
+      : [
+          "glab",
+          "mr",
+          "update",
+          args.branch,
+          "--title",
+          args.title,
+          "--description",
+          args.body,
+          ...(args.keepDraft ? ["--draft"] : []),
+        ];
   try {
     const res = await deps.run(editCmd, { cwd: args.workdir });
     if (res.exitCode !== 0) {

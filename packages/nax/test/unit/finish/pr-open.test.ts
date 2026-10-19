@@ -258,4 +258,63 @@ describe("openOrPromotePr keepDraft (A4)", () => {
     const out = await openOrPromotePr(keepArgs("github"), deps);
     expect(out.status).toBe("draft");
   });
+
+  // nax#2609: GitLab derives draft state from the title's `Draft:` prefix, so a plain
+  // `--title` write un-drafts the MR unless the update also carries `--draft`.
+  test("gitlab: the update of an existing draft MR keeps it a draft", async () => {
+    const { deps, calls } = depsFor((cmd) =>
+      cmd.includes("view") ? { exitCode: 0, stdout: '{"draft":true,"web_url":"https://x/mr/9"}' } : { exitCode: 0 },
+    );
+    await openOrPromotePr(keepArgs("gitlab"), deps);
+    expect(calls.filter((c) => c.includes("update"))).toEqual([
+      ["glab", "mr", "update", "feat/demo", "--title", "feat: demo", "--description", "body", "--draft"],
+    ]);
+  });
+
+  test("gitlab: an MR a human marked ready is not demoted", async () => {
+    const { deps, calls } = depsFor((cmd) =>
+      cmd.includes("view") ? { exitCode: 0, stdout: '{"draft":false,"web_url":"https://x/mr/9"}' } : { exitCode: 0 },
+    );
+    const out = await openOrPromotePr(keepArgs("gitlab"), deps);
+    expect(out.status).toBe("already-ready");
+    expect(calls.filter((c) => c.includes("update"))).toEqual([
+      ["glab", "mr", "update", "feat/demo", "--title", "feat: demo", "--description", "body"],
+    ]);
+  });
+
+  test("github: the body edit carries no draft flag", async () => {
+    const { deps, calls } = depsFor((cmd) =>
+      cmd.includes("view") ? { exitCode: 0, stdout: '{"isDraft":true,"url":"https://x/pr/9"}' } : { exitCode: 0 },
+    );
+    await openOrPromotePr(keepArgs("github"), deps);
+    expect(calls.filter((c) => c.includes("edit"))).toEqual([
+      ["gh", "pr", "edit", "feat/demo", "--title", "feat: demo", "--body", "body"],
+    ]);
+  });
+
+  test("the status comes from the PR's state after the update", async () => {
+    let views = 0;
+    const { deps } = depsFor((cmd) => {
+      if (!cmd.includes("view")) return { exitCode: 0 };
+      views += 1;
+      const draft = views === 1;
+      return { exitCode: 0, stdout: `{"draft":${draft},"web_url":"https://x/mr/9"}` };
+    });
+    const out = await openOrPromotePr(keepArgs("gitlab"), deps);
+    expect(views).toBe(2);
+    expect(out).toEqual({ status: "already-ready", url: "https://x/mr/9" });
+  });
+
+  test("a failed re-view falls back to the state seen before the update", async () => {
+    let views = 0;
+    const { deps } = depsFor((cmd) => {
+      if (!cmd.includes("view")) return { exitCode: 0 };
+      views += 1;
+      return views === 1
+        ? { exitCode: 0, stdout: '{"draft":true,"web_url":"https://x/mr/9"}' }
+        : { exitCode: 1, stderr: "network" };
+    });
+    const out = await openOrPromotePr(keepArgs("gitlab"), deps);
+    expect(out).toEqual({ status: "draft", url: "https://x/mr/9" });
+  });
 });
