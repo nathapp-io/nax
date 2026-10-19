@@ -119,7 +119,8 @@ Selected with `execution.mode: "pipeline"`. Each story runs through a staged pip
 | [`nax approvals`](https://github.com/nathapp-io/nax/blob/main/docs/guides/cli-reference.md#nax-approvals-list) | List or revoke remembered command approvals (`list`, `rm`) |
 | `nax advisor` | Inspect, label, and replay advisor decisions (`list`, `label`, `replay`, `import-finish`) |
 | [`nax trust`](https://github.com/nathapp-io/nax/blob/main/docs/guides/cli-reference.md#nax-trust) | Trust or untrust project folders (`list`, `add`, `rm`, `check`) |
-| `nax mcp lock` | Pin configured MCP servers' tool surface to `.nax/mcp-lock.json` |
+| `nax mcp lock` | Pin configured MCP servers' tool surface to `.nax/mcp-lock.json` (`--global`: `~/.nax/mcp-lock.json`, used by projects without their own lock) |
+| [`nax cost`](https://github.com/nathapp-io/nax/blob/main/docs/guides/cli-reference.md#nax-cost) | Query the cost ledger by date range across projects (`--today`, `--since`, `--by stage,model,...`, `--json`) |
 | [`nax config`](https://github.com/nathapp-io/nax/blob/main/docs/guides/cli-reference.md#nax-config) | Display the effective merged config (`--explain`, `--diff`); `nax config profile` manages config profiles |
 | [`nax curator`](https://github.com/nathapp-io/nax/blob/main/docs/guides/cli-reference.md#nax-curator-status) | Inspect, commit, or garbage-collect curator proposals |
 | `nax routing calibrate` | Propose complexity→tier mapping adjustments from run history |

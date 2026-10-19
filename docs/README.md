@@ -49,6 +49,7 @@ description: User guides, architecture references, and specs for nax
 | [Static Rules](guides/static-rules.md) | Authoring and tuning canonical rules (`.nax/rules/`), and how workflow mode delivers them (rules index, delivery hook, run-level overrides) |
 | [Story Router](guides/story-router.md) | Letting a plugin router pick each story's starting agent profile (`routing.router`: off, shadow, apply) |
 | [Context Curator](guides/curator.md) | Post-run proposals for context and rules maintenance (`nax curator`) |
+| [Cost Ledger](guides/cost-ledger.md) | Where run cost is recorded and how to query it by date, project, stage or model (`nax cost`) |
 
 ### Agent tools, permissions and safety
 

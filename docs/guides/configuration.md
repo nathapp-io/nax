@@ -710,6 +710,39 @@ See [Parallel Execution — Sequential Worktree Isolation](parallel-execution.md
 
 ---
 
+### Pre-Run Steps
+
+Agent sessions run inside the OS sandbox, so they cannot start the services a test suite needs (a test database, a fixture server). `execution.preRun` lists setup commands that nax runs on the host instead, once per run, before the run-start baseline and before any story is dispatched:
+
+```json
+{
+  "execution": {
+    "preRun": [
+      { "command": "docker compose -f docker-compose.test.yml up -d --wait", "timeoutSeconds": 180 },
+      { "command": "./scripts/seed-test-db.sh" }
+    ]
+  }
+}
+```
+
+| Key | Default | Description |
+|:----|:--------|:------------|
+| `preRun` | `[]` | Steps run in order, each awaited before the next. Empty = no-op |
+| `preRun[].command` | — | Non-empty string, run with `/bin/sh -c` from the run workdir (repo root). Shell features (pipes, redirects, env substitution) work |
+| `preRun[].timeoutSeconds` | `300` | Positive integer. A step still running at the limit counts as failed |
+
+Behaviour:
+
+- **Fail-closed.** The first step that exits non-zero or times out stops the run with `PRE_RUN_FAILED` (`Pre-run step failed: <command> (exit <code>)` or `(timed out after <n>s)`). Later steps do not run, the run status is `failed`, and no baseline or story runs. There are no retries.
+- **Trust-gated.** The project must be trusted (`nax trust add`); an untrusted project fails with `PROJECT_UNTRUSTED` before the command is spawned. This is the same trust boundary as `quality.commands`.
+- **Both modes, and on resume.** Pipeline and workflow mode both run the steps, and `nax resume` runs them again, so write them to be idempotent (`up -d --wait`, `CREATE ... IF NOT EXISTS`).
+- **Skipped on `--dry-run`.**
+- **Logged** at stage `execution` with `storyId: "_run"`: `Pre-run step completed` (info: `command`, `exitCode`, `durationMs`) or `Pre-run step failed` (error: `command`, `timedOut`, `exitCode` or, on a timeout, `timeoutSeconds`, `durationMs`, and `outputTail`, the last 2000 characters of output).
+
+Lifecycle hooks such as `on-start` ([Hooks](hooks.md)) are unchanged. Use `preRun`, not a hook, for setup the run depends on: a failing step stops the run before any work is measured or attempted.
+
+---
+
 ### Regression Gate and Agent Test-Run Timeout
 
 The regression gate runs the full test suite. Its budget is `execution.regressionGate`:
@@ -1144,5 +1177,7 @@ The `mcp` block declares external MCP servers whose tools the `native` agent may
 | `timeoutMs` | `60000` | Per-call ceiling |
 | `enabled` | `true` | Kill switch that does not invalidate the lock |
 
-Pin each server's advertised tools with `nax mcp lock` (writes `.nax/mcp-lock.json`). See
-[MCP and interception](mcp-and-interception.md).
+Pin each server's advertised tools with `nax mcp lock` (writes `.nax/mcp-lock.json`), or
+`nax mcp lock --global` for a user-level lock at `~/.nax/mcp-lock.json` that applies to every
+project without its own lock. A project lock fully overrides the global one. See
+[MCP and interception](mcp-and-interception.md#the-lockfile).

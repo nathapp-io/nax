@@ -108,6 +108,36 @@ This connects every enabled server once, records each tool's name and input-sche
 into `.nax/mcp-lock.json`, and that file is committed like `bun.lock`. Re-run it whenever
 a server is upgraded; an unchanged server rewrites the file byte-identically.
 
+#### Global lock
+
+A server you configure the same way in every project (in `~/.nax/config.json`) can be
+pinned once for all of them:
+
+```bash
+nax mcp lock --global
+```
+
+This runs the same trust gate and connects the same servers as `nax mcp lock`, but writes
+`~/.nax/mcp-lock.json` (`<globalConfigDir>/mcp-lock.json`; `NAX_GLOBAL_CONFIG_DIR`
+overrides the directory).
+
+At session start nax resolves exactly one lock:
+
+1. If `<project>/.nax/mcp-lock.json` exists, it is the lock, and the global lock is
+   **not** consulted. The project lock overrides the global one wholesale; entries are
+   not merged. A project lock that is malformed or unreadable resolves to no lock, so
+   every MCP tool is withheld (fail closed); nax does not fall back to the global lock.
+2. Otherwise `~/.nax/mcp-lock.json` is the lock, if it exists and is valid.
+3. Otherwise there is no lock and every MCP tool is withheld.
+
+A lock is keyed by server id only. A global entry for `memory` pins whatever server a
+project without its own lock configures under the id `memory`, so keep ids consistent
+across projects, or commit a project lock where a project's server differs.
+
+Each `[provider] <id>__<tool> withheld` warn line, and each `withheld` entry in the MCP
+rollup, carries `lockSource`: `project`, `global`, or `none` (no lock resolved). Use it
+to tell which file needs re-locking.
+
 ### Choose `stages` deliberately
 
 `stages` is narrower than it looks. With `stages: ["run"]` on a two-story feature, only
@@ -398,7 +428,8 @@ them by `runId` or timestamp before comparing.
 |:---|:---|:---|
 | No `[provider] advertised` lines at all | Project dispatches to an ACP agent without a pre-approval channel (only `claude` has one) | Set `agent.protocol: "hybrid"`, `agent.default: "native"`, or use `claude` |
 | Server connects, zero tool calls | Model chose not to use it | Expected on small repos — `Grep` is cheaper there. Not a defect. The run's `mcpAdoption` status block and the end-of-run `[WARN]` make this visible per server |
-| Tools never grantable | No lockfile, or tool absent from it | Run `nax mcp lock`, commit the result |
+| Tools never grantable | No lockfile, or tool absent from it | Run `nax mcp lock`, commit the result (or `nax mcp lock --global` for a global server). `lockSource` on the withheld line names the lock that decided it |
+| Global lock ignored in one project | That project has its own `.nax/mcp-lock.json`, which overrides the global lock wholesale | Re-run `nax mcp lock` in the project, or delete its lock to fall back to the global one |
 | Provider tools silently absent | `safe` profile, or `scoped` with no `Mcp(...)` rule naming them | Set `execution.permissionProfile: "unrestricted"`, or add the stage's `Mcp(...)` rule under `scoped` |
 | Server attaches to nothing | `stages: []`, or `stage:` typo | Set `stages` to real stage names or `["*"]` — and remember `run` ≠ `review`/`verify`/`rectification` |
 | `rtk interceptor state` shows `version: null` | Binary not found or probe failed | `which rtk`; confirm `rtk gain` works (name collision) |
