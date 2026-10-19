@@ -1,0 +1,382 @@
+{
+  "scenario": "resume-at-rereview",
+  "machine": "feature",
+  "events": [
+    {
+      "kind": "step",
+      "step": "branch-rereview"
+    },
+    {
+      "data": {
+        "step": "branch-rereview",
+        "storyId": "_run"
+      },
+      "kind": "log",
+      "level": "info",
+      "message": "branch-rereview start"
+    },
+    {
+      "args": [
+        [
+          {
+            "file": "src/a.ts",
+            "id": "B1",
+            "issue": "issue one",
+            "kind": "spec",
+            "severity": "important"
+          }
+        ],
+        "h1"
+      ],
+      "kind": "call",
+      "method": "branchReReview"
+    },
+    {
+      "kind": "return",
+      "method": "branchReReview",
+      "value": {
+        "ran": true,
+        "verdict": {
+          "newFindings": [],
+          "verdicts": [
+            {
+              "addressed": true,
+              "id": "B1",
+              "note": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "kind": "artifact",
+      "name": "branch-rereview.json",
+      "value": {
+        "newFindings": [],
+        "verdicts": [
+          {
+            "addressed": true,
+            "id": "B1",
+            "note": ""
+          }
+        ]
+      }
+    },
+    {
+      "data": {
+        "durationMs": 0,
+        "step": "branch-rereview",
+        "storyId": "_run"
+      },
+      "kind": "log",
+      "level": "info",
+      "message": "branch-rereview: B1 addressed; minors left: 0  <dur>"
+    },
+    {
+      "kind": "update",
+      "record": {
+        "fixBase": "h1",
+        "fixRan": true,
+        "fixRounds": 1,
+        "gateFindings": [],
+        "minors": [],
+        "newMinors": [],
+        "nextFindingId": 2,
+        "reasons": [],
+        "repoGates": {
+          "failing": [],
+          "ran": ["build", "test"]
+        },
+        "reviewOpen": [],
+        "reviewRan": false,
+        "rulings": [],
+        "seed": "seed0",
+        "startedAt": "t",
+        "step": "adjudicate",
+        "timings": {
+          "branch-rereview": 5
+        },
+        "tokensByRole": {}
+      }
+    },
+    {
+      "kind": "step",
+      "step": "adjudicate"
+    },
+    {
+      "kind": "update",
+      "record": {
+        "fixBase": "h1",
+        "fixRan": true,
+        "fixRounds": 1,
+        "gateFindings": [],
+        "minors": [],
+        "newMinors": [],
+        "nextFindingId": 2,
+        "reasons": [],
+        "repoGates": {
+          "failing": [],
+          "ran": ["build", "test"]
+        },
+        "reviewOpen": [],
+        "reviewRan": false,
+        "rulings": [],
+        "seed": "seed0",
+        "startedAt": "t",
+        "step": "final-gates",
+        "timings": {
+          "adjudicate": 5,
+          "branch-rereview": 5
+        },
+        "tokensByRole": {}
+      }
+    },
+    {
+      "kind": "step",
+      "step": "final-gates"
+    },
+    {
+      "args": [],
+      "kind": "call",
+      "method": "repoGates"
+    },
+    {
+      "kind": "return",
+      "method": "repoGates",
+      "value": {
+        "findings": [],
+        "summary": {
+          "failing": [],
+          "ran": ["build", "test"]
+        }
+      }
+    },
+    {
+      "data": {
+        "durationMs": 0,
+        "step": "final-gates",
+        "storyId": "_run"
+      },
+      "kind": "log",
+      "level": "info",
+      "message": "final-gates green  <dur>"
+    },
+    {
+      "kind": "update",
+      "record": {
+        "finalGates": {
+          "failing": [],
+          "ran": ["build", "test"]
+        },
+        "fixBase": "h1",
+        "fixRan": true,
+        "fixRounds": 1,
+        "gateFindings": [],
+        "minors": [],
+        "newMinors": [],
+        "nextFindingId": 2,
+        "reasons": [],
+        "repoGates": {
+          "failing": [],
+          "ran": ["build", "test"]
+        },
+        "reviewOpen": [],
+        "reviewRan": false,
+        "rulings": [],
+        "seed": "seed0",
+        "startedAt": "t",
+        "step": "publish",
+        "timings": {
+          "adjudicate": 5,
+          "branch-rereview": 5,
+          "final-gates": 5
+        },
+        "tokensByRole": {}
+      }
+    },
+    {
+      "kind": "step",
+      "step": "publish"
+    },
+    {
+      "args": [
+        {
+          "finalGates": {
+            "failing": [],
+            "ran": ["build", "test"]
+          },
+          "fixBase": "h1",
+          "fixRan": true,
+          "fixRounds": 1,
+          "gateFindings": [],
+          "minors": [],
+          "newMinors": [],
+          "nextFindingId": 2,
+          "reasons": [],
+          "repoGates": {
+            "failing": [],
+            "ran": ["build", "test"]
+          },
+          "reviewOpen": [],
+          "reviewRan": false,
+          "rulings": [],
+          "seed": "seed0",
+          "startedAt": "t",
+          "step": "publish",
+          "timings": {
+            "adjudicate": 5,
+            "branch-rereview": 5,
+            "final-gates": 5
+          },
+          "tokensByRole": {}
+        }
+      ],
+      "kind": "call",
+      "method": "publish"
+    },
+    {
+      "kind": "return",
+      "method": "publish",
+      "value": {
+        "ci": "pending",
+        "outcome": "ready",
+        "reasons": [],
+        "url": "https://gh/pr/1"
+      }
+    },
+    {
+      "args": [],
+      "kind": "call",
+      "method": "head"
+    },
+    {
+      "kind": "return",
+      "method": "head",
+      "value": "h3"
+    },
+    {
+      "data": {
+        "durationMs": 0,
+        "step": "publish",
+        "storyId": "_run"
+      },
+      "kind": "log",
+      "level": "info",
+      "message": "publish ready https://gh/pr/1  <dur>"
+    },
+    {
+      "kind": "ledger",
+      "options": {
+        "mirror": false
+      },
+      "text": "feature ready https://gh/pr/1"
+    },
+    {
+      "args": [],
+      "kind": "call",
+      "method": "head"
+    },
+    {
+      "kind": "return",
+      "method": "head",
+      "value": "h3"
+    },
+    {
+      "kind": "update",
+      "record": {
+        "ci": "pending",
+        "endedAt": "<ts>",
+        "finalGates": {
+          "failing": [],
+          "ran": ["build", "test"]
+        },
+        "fixBase": "h1",
+        "fixRan": true,
+        "fixRounds": 1,
+        "gateFindings": [],
+        "head": "h3",
+        "lastHead": "h3",
+        "minors": [],
+        "newMinors": [],
+        "nextFindingId": 2,
+        "outcome": "ready",
+        "passed": true,
+        "reasons": [],
+        "repoGates": {
+          "failing": [],
+          "ran": ["build", "test"]
+        },
+        "reviewOpen": [],
+        "reviewRan": false,
+        "rulings": [],
+        "seed": "seed0",
+        "startedAt": "t",
+        "step": "done",
+        "storyStates": [
+          {
+            "id": "US-001",
+            "state": "complete"
+          }
+        ],
+        "timings": {
+          "adjudicate": 5,
+          "branch-rereview": 5,
+          "final-gates": 5,
+          "publish": 5
+        },
+        "tokensByRole": {},
+        "url": "https://gh/pr/1"
+      }
+    },
+    {
+      "kind": "step",
+      "step": "done"
+    }
+  ],
+  "end": {
+    "returned": {
+      "ci": "pending",
+      "endedAt": "<ts>",
+      "finalGates": {
+        "failing": [],
+        "ran": ["build", "test"]
+      },
+      "fixBase": "h1",
+      "fixRan": true,
+      "fixRounds": 1,
+      "gateFindings": [],
+      "head": "h3",
+      "lastHead": "h3",
+      "minors": [],
+      "newMinors": [],
+      "nextFindingId": 2,
+      "outcome": "ready",
+      "passed": true,
+      "reasons": [],
+      "repoGates": {
+        "failing": [],
+        "ran": ["build", "test"]
+      },
+      "reviewOpen": [],
+      "reviewRan": false,
+      "rulings": [],
+      "seed": "seed0",
+      "startedAt": "t",
+      "step": "done",
+      "storyStates": [
+        {
+          "id": "US-001",
+          "state": "complete"
+        }
+      ],
+      "timings": {
+        "adjudicate": 5,
+        "branch-rereview": 5,
+        "final-gates": 5,
+        "publish": 5
+      },
+      "tokensByRole": {},
+      "url": "https://gh/pr/1"
+    }
+  }
+}

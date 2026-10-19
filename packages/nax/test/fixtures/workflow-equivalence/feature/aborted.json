@@ -1,0 +1,11 @@
+{
+  "scenario": "aborted",
+  "machine": "feature",
+  "events": [],
+  "end": {
+    "threw": {
+      "code": "WORKFLOW_ABORTED",
+      "message": "Run aborted during the feature workflow"
+    }
+  }
+}

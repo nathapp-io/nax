@@ -1,0 +1,509 @@
+{
+  "scenario": "cost-stop-before-fix",
+  "machine": "feature",
+  "events": [
+    {
+      "kind": "step",
+      "step": "repo-gates"
+    },
+    {
+      "args": [],
+      "kind": "call",
+      "method": "repoGates"
+    },
+    {
+      "kind": "return",
+      "method": "repoGates",
+      "value": {
+        "findings": [],
+        "summary": {
+          "failing": [],
+          "ran": ["build", "test"]
+        }
+      }
+    },
+    {
+      "data": {
+        "durationMs": 0,
+        "step": "repo-gates",
+        "storyId": "_run"
+      },
+      "kind": "log",
+      "level": "info",
+      "message": "repo-gates green  <dur>"
+    },
+    {
+      "kind": "update",
+      "record": {
+        "fixRan": false,
+        "gateFindings": [],
+        "minors": [],
+        "newMinors": [],
+        "nextFindingId": 1,
+        "reasons": [],
+        "repoGates": {
+          "failing": [],
+          "ran": ["build", "test"]
+        },
+        "reviewOpen": [],
+        "reviewRan": false,
+        "rulings": [],
+        "seed": "seed0",
+        "startedAt": "t",
+        "step": "branch-review",
+        "timings": {
+          "repo-gates": 5
+        },
+        "tokensByRole": {}
+      }
+    },
+    {
+      "kind": "step",
+      "step": "branch-review"
+    },
+    {
+      "data": {
+        "step": "branch-review",
+        "storyId": "_run"
+      },
+      "kind": "log",
+      "level": "info",
+      "message": "branch-review start"
+    },
+    {
+      "args": [
+        "seed0",
+        {
+          "cannotVerify": [],
+          "gateFindings": [],
+          "minors": [],
+          "parked": [],
+          "repoGates": {
+            "failing": [],
+            "ran": ["build", "test"]
+          },
+          "stories": [
+            {
+              "id": "US-001",
+              "state": "complete"
+            }
+          ]
+        }
+      ],
+      "kind": "call",
+      "method": "branchReview"
+    },
+    {
+      "kind": "return",
+      "method": "branchReview",
+      "value": {
+        "ran": true,
+        "verdict": {
+          "cannotVerify": [],
+          "findings": [
+            {
+              "file": "src/a.ts",
+              "issue": "issue one",
+              "kind": "spec",
+              "severity": "important"
+            }
+          ],
+          "inspectedFiles": [],
+          "minorTriage": [],
+          "quality": "approved",
+          "spec": "fail"
+        }
+      }
+    },
+    {
+      "kind": "artifact",
+      "name": "branch-review.json",
+      "value": {
+        "cannotVerify": [],
+        "findings": [
+          {
+            "file": "src/a.ts",
+            "id": "B1",
+            "issue": "issue one",
+            "kind": "spec",
+            "severity": "important"
+          }
+        ],
+        "inspectedFiles": [],
+        "minorTriage": [],
+        "quality": "approved",
+        "spec": "fail"
+      }
+    },
+    {
+      "data": {
+        "durationMs": 0,
+        "step": "branch-review",
+        "storyId": "_run"
+      },
+      "kind": "log",
+      "level": "info",
+      "message": "branch-review: spec fail, quality approved - 1 important (B1 issue one)  <dur>"
+    },
+    {
+      "kind": "update",
+      "record": {
+        "cannotVerify": [],
+        "fixRan": false,
+        "gateFindings": [],
+        "minors": [],
+        "newMinors": [],
+        "nextFindingId": 2,
+        "reasons": [],
+        "repoGates": {
+          "failing": [],
+          "ran": ["build", "test"]
+        },
+        "reviewOpen": [
+          {
+            "file": "src/a.ts",
+            "id": "B1",
+            "issue": "issue one",
+            "kind": "spec",
+            "severity": "important"
+          }
+        ],
+        "reviewRan": true,
+        "rulings": [],
+        "seed": "seed0",
+        "startedAt": "t",
+        "step": "branch-fix",
+        "timings": {
+          "branch-review": 5,
+          "repo-gates": 5
+        },
+        "tokensByRole": {}
+      }
+    },
+    {
+      "kind": "step",
+      "step": "branch-fix"
+    },
+    {
+      "data": {
+        "durationMs": 0,
+        "step": "branch-fix",
+        "storyId": "_run"
+      },
+      "kind": "log",
+      "level": "info",
+      "message": "branch-fix: skipped (cost limit reached)  <dur>"
+    },
+    {
+      "kind": "ledger",
+      "options": {
+        "mirror": false
+      },
+      "text": "cost limit reached: branch-fix skipped"
+    },
+    {
+      "kind": "update",
+      "record": {
+        "cannotVerify": [],
+        "costLimited": true,
+        "fixRan": false,
+        "gateFindings": [],
+        "minors": [],
+        "newMinors": [],
+        "nextFindingId": 2,
+        "reasons": [],
+        "repoGates": {
+          "failing": [],
+          "ran": ["build", "test"]
+        },
+        "reviewOpen": [
+          {
+            "file": "src/a.ts",
+            "id": "B1",
+            "issue": "issue one",
+            "kind": "spec",
+            "severity": "important"
+          }
+        ],
+        "reviewRan": true,
+        "rulings": [],
+        "seed": "seed0",
+        "startedAt": "t",
+        "step": "final-gates",
+        "timings": {
+          "branch-fix": 5,
+          "branch-review": 5,
+          "repo-gates": 5
+        },
+        "tokensByRole": {}
+      }
+    },
+    {
+      "kind": "step",
+      "step": "final-gates"
+    },
+    {
+      "data": {
+        "durationMs": 0,
+        "step": "final-gates",
+        "storyId": "_run"
+      },
+      "kind": "log",
+      "level": "info",
+      "message": "final-gates green (no fix ran; repo-gates reused)  <dur>"
+    },
+    {
+      "kind": "update",
+      "record": {
+        "cannotVerify": [],
+        "costLimited": true,
+        "finalGates": {
+          "failing": [],
+          "ran": ["build", "test"]
+        },
+        "fixRan": false,
+        "gateFindings": [],
+        "minors": [],
+        "newMinors": [],
+        "nextFindingId": 2,
+        "reasons": [],
+        "repoGates": {
+          "failing": [],
+          "ran": ["build", "test"]
+        },
+        "reviewOpen": [
+          {
+            "file": "src/a.ts",
+            "id": "B1",
+            "issue": "issue one",
+            "kind": "spec",
+            "severity": "important"
+          }
+        ],
+        "reviewRan": true,
+        "rulings": [],
+        "seed": "seed0",
+        "startedAt": "t",
+        "step": "publish",
+        "timings": {
+          "branch-fix": 5,
+          "branch-review": 5,
+          "final-gates": 5,
+          "repo-gates": 5
+        },
+        "tokensByRole": {}
+      }
+    },
+    {
+      "kind": "step",
+      "step": "publish"
+    },
+    {
+      "args": [
+        {
+          "cannotVerify": [],
+          "costLimited": true,
+          "finalGates": {
+            "failing": [],
+            "ran": ["build", "test"]
+          },
+          "fixRan": false,
+          "gateFindings": [],
+          "minors": [],
+          "newMinors": [],
+          "nextFindingId": 2,
+          "reasons": [],
+          "repoGates": {
+            "failing": [],
+            "ran": ["build", "test"]
+          },
+          "reviewOpen": [
+            {
+              "file": "src/a.ts",
+              "id": "B1",
+              "issue": "issue one",
+              "kind": "spec",
+              "severity": "important"
+            }
+          ],
+          "reviewRan": true,
+          "rulings": [],
+          "seed": "seed0",
+          "startedAt": "t",
+          "step": "publish",
+          "timings": {
+            "branch-fix": 5,
+            "branch-review": 5,
+            "final-gates": 5,
+            "repo-gates": 5
+          },
+          "tokensByRole": {}
+        }
+      ],
+      "kind": "call",
+      "method": "publish"
+    },
+    {
+      "kind": "return",
+      "method": "publish",
+      "value": {
+        "ci": "pending",
+        "outcome": "ready",
+        "reasons": [],
+        "url": "https://gh/pr/1"
+      }
+    },
+    {
+      "args": [],
+      "kind": "call",
+      "method": "head"
+    },
+    {
+      "kind": "return",
+      "method": "head",
+      "value": "h3"
+    },
+    {
+      "data": {
+        "durationMs": 0,
+        "step": "publish",
+        "storyId": "_run"
+      },
+      "kind": "log",
+      "level": "info",
+      "message": "publish ready https://gh/pr/1  <dur>"
+    },
+    {
+      "kind": "ledger",
+      "options": {
+        "mirror": false
+      },
+      "text": "feature ready https://gh/pr/1"
+    },
+    {
+      "args": [],
+      "kind": "call",
+      "method": "head"
+    },
+    {
+      "kind": "return",
+      "method": "head",
+      "value": "h3"
+    },
+    {
+      "kind": "update",
+      "record": {
+        "cannotVerify": [],
+        "ci": "pending",
+        "costLimited": true,
+        "endedAt": "<ts>",
+        "finalGates": {
+          "failing": [],
+          "ran": ["build", "test"]
+        },
+        "fixRan": false,
+        "gateFindings": [],
+        "head": "h3",
+        "lastHead": "h3",
+        "minors": [],
+        "newMinors": [],
+        "nextFindingId": 2,
+        "outcome": "ready",
+        "passed": true,
+        "reasons": [],
+        "repoGates": {
+          "failing": [],
+          "ran": ["build", "test"]
+        },
+        "reviewOpen": [
+          {
+            "file": "src/a.ts",
+            "id": "B1",
+            "issue": "issue one",
+            "kind": "spec",
+            "severity": "important"
+          }
+        ],
+        "reviewRan": true,
+        "rulings": [],
+        "seed": "seed0",
+        "startedAt": "t",
+        "step": "done",
+        "storyStates": [
+          {
+            "id": "US-001",
+            "state": "complete"
+          }
+        ],
+        "timings": {
+          "branch-fix": 5,
+          "branch-review": 5,
+          "final-gates": 5,
+          "publish": 5,
+          "repo-gates": 5
+        },
+        "tokensByRole": {},
+        "url": "https://gh/pr/1"
+      }
+    },
+    {
+      "kind": "step",
+      "step": "done"
+    }
+  ],
+  "end": {
+    "returned": {
+      "cannotVerify": [],
+      "ci": "pending",
+      "costLimited": true,
+      "endedAt": "<ts>",
+      "finalGates": {
+        "failing": [],
+        "ran": ["build", "test"]
+      },
+      "fixRan": false,
+      "gateFindings": [],
+      "head": "h3",
+      "lastHead": "h3",
+      "minors": [],
+      "newMinors": [],
+      "nextFindingId": 2,
+      "outcome": "ready",
+      "passed": true,
+      "reasons": [],
+      "repoGates": {
+        "failing": [],
+        "ran": ["build", "test"]
+      },
+      "reviewOpen": [
+        {
+          "file": "src/a.ts",
+          "id": "B1",
+          "issue": "issue one",
+          "kind": "spec",
+          "severity": "important"
+        }
+      ],
+      "reviewRan": true,
+      "rulings": [],
+      "seed": "seed0",
+      "startedAt": "t",
+      "step": "done",
+      "storyStates": [
+        {
+          "id": "US-001",
+          "state": "complete"
+        }
+      ],
+      "timings": {
+        "branch-fix": 5,
+        "branch-review": 5,
+        "final-gates": 5,
+        "publish": 5,
+        "repo-gates": 5
+      },
+      "tokensByRole": {},
+      "url": "https://gh/pr/1"
+    }
+  }
+}
