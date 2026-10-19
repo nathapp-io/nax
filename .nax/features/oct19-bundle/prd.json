@@ -3,7 +3,7 @@
   "feature": "oct19-bundle",
   "branchName": "feat/oct19-bundle",
   "createdAt": "2026-10-19T00:00:00.000Z",
-  "updatedAt": "2026-10-19T05:20:07.110Z",
+  "updatedAt": "2026-10-19T05:44:03.842Z",
   "userStories": [
     {
       "id": "US-001",
@@ -353,8 +353,8 @@
         "cli"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -366,7 +366,19 @@
         "profileModelTier": "balanced",
         "initialAgent": "native",
         "initialProfileId": "native-deepseek",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "routerDecision": {
+          "mode": "shadow",
+          "router": "decision-proxy:nax-routing",
+          "outcome": "picked",
+          "profileId": "native-sol",
+          "confidence": 0.2999999999999998,
+          "plannedProfileId": "native-deepseek",
+          "applied": false,
+          "decidedAt": "2026-10-19T05:20:11.145Z"
+        }
       },
       "contextFiles": [
         "packages/nax/src/runtime/cost-aggregator.ts",
@@ -391,7 +403,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "5d65e7933d20f6ccd15f8d920f67e6d3f851c176"
     },
     {
       "id": "US-005",
