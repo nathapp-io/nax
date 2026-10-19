@@ -223,6 +223,49 @@ describe("costCommand stdout", () => {
     expect(call.query.groupBy).toEqual([]);
     expect(plain.out.filter((line) => line.startsWith("TOTAL"))).toHaveLength(1);
   });
+
+  test("B2: without --by every counter still sits under its own header name", async () => {
+    // Distinct non-zero counters: with the label column missing from the header,
+    // the TOTAL row's cells shift one column left and every number is mislabelled.
+    const h = harness(
+      {},
+      report({
+        total: totals({
+          calls: 2,
+          runs: 1,
+          input: 30,
+          output: 40,
+          cacheRead: 50,
+          cacheWrite: 60,
+          costUsd: 1.25,
+          exactUsd: 1,
+          estimatedUsd: 0.25,
+        }),
+      }),
+    );
+
+    expect(await costCommand({ dir: "/proj" }, h.deps)).toBe(0);
+
+    const header = lineAt(h.out, 0, "the header line");
+    const total = totalLine(h.out);
+    const expected: Readonly<Record<string, string>> = {
+      calls: "2",
+      runs: "1",
+      input: "30",
+      output: "40",
+      cacheRead: "50",
+      cacheWrite: "60",
+      costUsd: "1.25",
+    };
+    for (const [name, value] of Object.entries(expected)) {
+      const columnEnd = header.indexOf(name) + name.length;
+      expect(header.indexOf(name)).toBeGreaterThan(-1);
+      // Every counter column is right-aligned, so the value must end exactly
+      // where its header cell ends. Without the reserved label column, the
+      // `calls` header ends where `TOTAL` does, not where `2` does.
+      expect(total.slice(0, columnEnd)).toEndWith(value);
+    }
+  });
 });
 
 // ─── stderr and the returned code ────────────────────────────────────────────

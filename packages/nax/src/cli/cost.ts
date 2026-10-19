@@ -169,31 +169,42 @@ function numericCells(total: CostTotals): string[] {
   ];
 }
 
-/** The `TOTAL` row: the label under the first group column, blanks under the rest. */
-function totalCells(groupColumns: number, total: CostTotals): string[] {
-  const blanks = Array.from({ length: Math.max(groupColumns - 1, 0) }, () => "");
+/** The `TOTAL` row: the label under the first label column, blanks under the rest. */
+function totalCells(labelColumnCount: number, total: CostTotals): string[] {
+  const blanks = Array.from({ length: Math.max(labelColumnCount - 1, 0) }, () => "");
   return ["TOTAL", ...blanks, ...numericCells(total)];
 }
 
-function tableRows(report: CostLedgerReport, groupBy: readonly CostGroupKey[]): Cells[] {
+function tableRows(report: CostLedgerReport, groupBy: readonly CostGroupKey[], labelColumnCount: number): Cells[] {
   const rows: Cells[] = report.groups.map((row) => [...groupBy.map((key) => row.key[key] ?? ""), ...numericCells(row)]);
-  rows.push(totalCells(groupBy.length, report.total));
+  rows.push(totalCells(labelColumnCount, report.total));
   return rows;
 }
 
-/** Fixed-width table: group columns left-aligned, counters right-aligned. */
-function formatTable(header: Cells, rows: readonly Cells[], groupColumns: number): string[] {
-  const width = header.map((cell, index) => Math.max(cell.length, ...rows.map((row) => row[index].length)));
+/**
+ * The label columns: one per group key, or — with no `--by` — a single reserved
+ * column. The `TOTAL` row always carries a label, so the header needs a cell for
+ * it in the ungrouped case too; without one every counter would sit under the
+ * wrong header name (B2).
+ */
+function labelColumns(groupBy: readonly CostGroupKey[]): CostGroupKey[] | [""] {
+  return groupBy.length === 0 ? [""] : [...groupBy];
+}
+
+/** Fixed-width table: label columns left-aligned, counters right-aligned. */
+function formatTable(header: Cells, rows: readonly Cells[], labelColumnCount: number): string[] {
+  const width = header.map((cell, index) => Math.max(cell.length, ...rows.map((row) => (row[index] ?? "").length)));
   const line = (cells: Cells): string =>
     cells
-      .map((cell, index) => (index < groupColumns ? cell.padEnd(width[index]) : cell.padStart(width[index])))
+      .map((cell, index) => (index < labelColumnCount ? cell.padEnd(width[index]) : cell.padStart(width[index])))
       .join(COLUMN_GAP)
       .trimEnd();
   return [line(header), ...rows.map(line)];
 }
 
 function tableLines(report: CostLedgerReport, groupBy: readonly CostGroupKey[]): string[] {
-  return formatTable([...groupBy, ...NUMERIC_COLUMNS], tableRows(report, groupBy), groupBy.length);
+  const label = labelColumns(groupBy);
+  return formatTable([...label, ...NUMERIC_COLUMNS], tableRows(report, groupBy, label.length), label.length);
 }
 
 /**
