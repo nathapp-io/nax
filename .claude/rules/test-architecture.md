@@ -1,4 +1,5 @@
 ---
+description: "Where tests go: test/ mirrors src/, unit/integration/ui/e2e categories, no standalone bug-fix files, file naming and size splits, temp-dir helpers, _deps mocking"
 paths:
   - "packages/nax/test/**/*.test.ts"
   - "packages/nax-agent/test/**/*.test.ts"

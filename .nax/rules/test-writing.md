@@ -1,5 +1,6 @@
 ---
 priority: 55
+description: "Test-writing lookup: the injectable _deps seams in nax source and the shared TDD helpers; docs/guides/testing-rules.md is the source of truth"
 paths:
   - "packages/nax/*"
   - "packages/nax-agent/*"

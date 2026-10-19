@@ -1,4 +1,5 @@
 ---
+description: "Shared mock factories in test/helpers (agent manager, adapter, config, story, logger, runtime, fake clock); inline mocks of these types are forbidden"
 paths:
   - "packages/nax/test/**/*.test.ts"
   - "packages/nax-agent/test/**/*.test.ts"

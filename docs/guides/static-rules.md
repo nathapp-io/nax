@@ -47,7 +47,7 @@ Frontmatter keys (all optional):
 | `paths` | string \| string[] | none | Globs against the story's package-relative workdir (`request.storyWorkdir`). Rule loads only when the **package** matches. Always-true in single-package repos. |
 | `appliesTo` | string[] | none | Globs against `request.scopeFiles` (see below). Rule loads only when the story touches a matching file. Must be a list. |
 | `stages` | string[] | none | Pipeline stages the rule applies to (e.g. `single-session`, `tdd-test-writer`, `review-semantic`; keys of `STAGE_CONTEXT_MAP` in `src/context/engine/stage-config.ts`). Rule loads only when `request.stage` is listed. Unknown stage names warn but do not reject the rule. In workflow mode the context stage assembles with the stage name `context`, so a rule scoped to strategy stage names may not load there. |
-| `description` | string | none | Free-text label; not used for filtering. |
+| `description` | string | none | One-line summary, shown on the rule's line in the workflow-mode rules index (see [Delivery in workflow mode](#delivery-in-workflow-mode)). Not used for filtering. Without it the index shows the rule's first heading. |
 
 Any other key rejects the file (`RULES_FRONTMATTER_INVALID`). At run time the file is logged as `Invalid rule frontmatter — skipping file` and dropped so one bad rule never aborts a run; `nax rules lint` instead loads strictly, reports every invalid file as an error, and exits non-zero (`RULES_LINT_FAILED`), and the run-start precheck blocks on it. Frontmatter preceded by a BOM, a blank line, or an HTML comment is warned about as *displaced*; an HTML-comment-displaced block is not honored. `nax rules lint` checks a store without running a story.
 
@@ -247,6 +247,84 @@ Steps:
 4. Verify with one story manifest (see Debugging).
 5. Set `allowLegacyClaudeMd: false` and delete `.claude/rules/`.
 
+## Delivery in workflow mode
+
+Everything above describes how the context engine **pushes** rule bodies into a prompt. That is
+still how pipeline mode works. Workflow mode delivers rules lazily by default
+(`context.rules.delivery: "index"`):
+
+| Where | What it gets |
+|:---|:---|
+| Story brief | A `## Rules index` section: one line per rule with its id, file, `description` and `appliesTo` scope (`all files` when it has none). No rule bodies. |
+| Workflow sessions (`wf-implementer`, `wf-branch-fix`, `wf-story-review`, `wf-rereview`, `wf-branch-review`) on the native agent, on `Read` | The first read of a file a rule applies to returns the rule's text ahead of the file content. |
+| Native writing sessions (`wf-implementer`, `wf-branch-fix`), on `Write` / `Edit` | A write to a file whose rule the session has not seen yet is refused once, with the rule text and "No files were changed. Review these rules and retry the tool call." The retry goes through. |
+| Story and branch review packages | A "Rules for the changed files" section: each rule with the changed files it governs. Names only, never bodies. |
+| ACP agents | The index and the review sections only. There is no delivery hook. |
+
+Which rules apply follows the same keys as above: `paths:` picks the package, and `appliesTo:`
+picks the files within it. A rule with no `appliesTo` governs every file in its package.
+Write the description without a trailing period; the index line adds one.
+Under `delivery: "index"`, `stages:` is ignored.
+
+A session sees each rule body at most once. After compaction the record is cleared, so a rule is
+delivered again on the next matching call. The bodies delivered on one call are capped at
+16 KiB: they are taken in priority order, and a rule that does not fit is listed by id and path
+instead (a smaller rule further down can still fit). A listed rule is delivered on a later call
+if it fits then; a single rule body larger than 16 KiB is only ever listed, so keep rules under
+that size. Each delivery logs `rules.delivered`.
+
+**Write a `description` for every rule.** The index is all an agent sees up front, so a good
+description says what decisions the rule governs, not just its topic:
+
+```yaml
+---
+priority: 15
+description: "NaxError usage: error codes and context, cause chaining, errorMessage(), when to return vs throw"
+appliesTo:
+  - "src/**/*.ts"
+---
+```
+
+Set `context.rules.delivery: "push"` to restore the old behaviour in workflow mode: the brief
+carries the rule bodies through the context engine, and there are no delivery hooks or
+review-package rule sections.
+
+### Run-level overrides
+
+Two settings let one run bring its own rules or project guidance, without editing the repo:
+
+```json
+{
+  "context": {
+    "rules": {
+      "delivery": "index",
+      "overrideDir": "~/org-rules",
+      "overrideMode": "merge"
+    },
+    "projectContext": {
+      "file": "~/fleet/contexts/strict-unattended.md",
+      "mode": "append"
+    }
+  }
+}
+```
+
+| Key | Default | Meaning |
+|:---|:---|:---|
+| `context.rules.overrideDir` | none | A directory laid out like `.nax/rules/`. Its rules are added after the repo and package layers, and replace any rule with the same id. Absolute or `~/`-prefixed in config. |
+| `context.rules.overrideMode` | `"merge"` | `"replace"` uses only the override directory's rules. |
+| `context.projectContext.file` | none | A Markdown file (at most 32,768 bytes) appended to every story brief and the branch review package. Same path rules as `overrideDir`. |
+| `context.projectContext.mode` | `"append"` | `"replace"` also stops native sessions from loading the repo-root instruction file (`AGENTS.md` / `CLAUDE.md`). Package-level instruction files and ACP agents are unaffected; nax warns at run start when the default agent is not native. |
+
+On the command line, `nax run --rules-dir <path>` and `nax run --context-file <path>` set the same
+keys; a relative path there is resolved against the workdir. Both are checked at run start, before
+any story runs: a missing override directory fails with `RULES_OVERRIDE_DIR_NOT_FOUND`, and a
+missing or oversized project-context file with `PROJECT_CONTEXT_FILE_NOT_FOUND` or
+`PROJECT_CONTEXT_FILE_TOO_LARGE`. Override rules pass the same neutrality lint as repo rules.
+
+The rules override directory also reaches pipeline mode, through the static-rules provider. The
+project-context file reaches only workflow briefs and the branch review package.
+
 ## Debugging
 
 Inspect what actually shipped to a story:
@@ -281,4 +359,5 @@ Useful events:
 - Loader: [src/context/rules/canonical-loader/index.ts](../../packages/nax/src/context/rules/canonical-loader/index.ts)
 - Frontmatter parser: [src/context/rules/rules-frontmatter.ts](../../packages/nax/src/context/rules/rules-frontmatter.ts)
 - Spec: [docs/specs/SPEC-context-engine-canonical-rules.md](../specs/SPEC-context-engine-canonical-rules.md)
+- Workflow-mode delivery spec: [docs/specs/SPEC-lazy-rules-delivery.md](../specs/SPEC-lazy-rules-delivery.md)
 - Engine guide: [docs/guides/context-engine.md](./context-engine.md)

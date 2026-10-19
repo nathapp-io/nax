@@ -1,5 +1,6 @@
 ---
 priority: 25
+description: "Config schema and loading: Zod defaults and validation, global -> project -> CLI layering, agent config shape, deprecated-key migration, config selectors"
 paths:
   - "packages/nax/*"
   - "packages/nax-agent/*"

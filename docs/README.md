@@ -46,7 +46,8 @@ description: User guides, architecture references, and specs for nax
 |:------|:------------|
 | [Context Engine](guides/context-engine.md) | Seed, configure, extend, and debug the Context Engine v2 |
 | [Context Providers](guides/context-providers.md) | Built-in providers and their `context.v2.providers` configuration |
-| [Static Rules](guides/static-rules.md) | Authoring and tuning canonical rules (`.nax/rules/`) |
+| [Static Rules](guides/static-rules.md) | Authoring and tuning canonical rules (`.nax/rules/`), and how workflow mode delivers them (rules index, delivery hook, run-level overrides) |
+| [Story Router](guides/story-router.md) | Letting a plugin router pick each story's starting agent profile (`routing.router`: off, shadow, apply) |
 | [Context Curator](guides/curator.md) | Post-run proposals for context and rules maintenance (`nax curator`) |
 
 ### Agent tools, permissions and safety

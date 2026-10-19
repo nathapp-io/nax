@@ -525,7 +525,7 @@ Controls how nax classifies story complexity and selects model tier + test strat
 2. **Plugin routers** — registered plugins can override routing per-story
 3. **Strategy fallback** — keyword or LLM depending on `routing.strategy`
 
-> **In practice, PRD routing always wins.** `nax plan` generates `routing.complexity`, `routing.testStrategy`, and `routing.reasoning` for every story in the PRD. Since `resolveRouting()` returns early when these fields are present, the plugin → LLM → keyword chain only fires for hand-written PRDs that omit routing fields.
+> **In practice, PRD routing always wins.** `nax plan` generates `routing.complexity`, `routing.testStrategy`, and `routing.reasoning` for every story in the PRD. Since `resolveRouting()` returns early when these fields are present, the plugin → LLM → keyword chain only fires for hand-written PRDs that omit routing fields. To let a plugin pick the starting agent profile of planned stories too, enable the story router (`routing.router`, off by default); see the [Story Router guide](story-router.md).
 
 **Per-story routing in PRD (set by `nax plan`):**
 

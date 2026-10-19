@@ -129,6 +129,10 @@ The per-story test strategy (`testStrategy` in `prd.json`) and `tdd.strategy` ar
 story loop. The regression gate of the pipeline is replaced by the `full-suite` gate at story level and the
 `final-gates` step at feature level.
 
+Rules are delivered lazily: the brief carries a rules index instead of the rule bodies, and native sessions
+receive a rule's text when they first read or write a file it governs. Set `context.rules.delivery: "push"`
+to restore pushed rules. See [Static Rules: Delivery in workflow mode](static-rules.md#delivery-in-workflow-mode).
+
 ## Advisor
 
 In workflow mode the advisor answers only judgment calls: implementer questions, residual items after the fix
@@ -177,11 +181,16 @@ All keys live under the top-level `workflow` block unless noted.
 | `workflow.timeouts.reviewMs` | 1800000 | Review turn |
 | `workflow.timeouts.ciWaitMs` | 1200000 | Total CI wait |
 | `workflow.timeouts.ciPollMs` | 30000 | CI poll interval |
+| `context.rules.delivery` | `"index"` | `"push"` restores pushed rule bodies; see [Static Rules](static-rules.md#delivery-in-workflow-mode) |
+| `context.rules.overrideDir` / `overrideMode` | unset / `"merge"` | Run-level rules directory (`nax run --rules-dir`) |
+| `context.projectContext.file` / `mode` | unset / `"append"` | Run-level project context (`nax run --context-file`) |
 
 ## Related
 
 - [ADR-034: Workflow Execution Mode](../adr/ADR-034-workflow-execution-mode.md)
 - [Configuration Guide](configuration.md)
+- [Static Rules](static-rules.md)
+- [Story Router](story-router.md)
 - [CLI Reference](cli-reference.md)
 - [Permissions](permissions.md)
 - [Approvals](approvals.md)

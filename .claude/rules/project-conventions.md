@@ -1,4 +1,5 @@
 ---
+description: "Core src conventions: Bun-native APIs, file-size limits, module structure and path aliases, structured logging fields, prompt builders, runtime layering"
 paths:
   - "packages/nax/src/**/*.ts"
   - "packages/nax/bin/*.ts"

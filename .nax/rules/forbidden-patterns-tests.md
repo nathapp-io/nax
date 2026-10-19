@@ -1,5 +1,6 @@
 ---
 priority: 6
+description: "Banned test patterns: files outside sanctioned dirs, fixed sleeps, rm -rf cleanup, real-home .nax paths, spawning nax, inline test-file regexes (use resolveTestFilePatterns)"
 paths:
   - "packages/nax/*"
   - "packages/nax-agent/*"
