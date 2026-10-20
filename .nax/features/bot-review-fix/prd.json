@@ -3,7 +3,7 @@
   "feature": "bot-review-fix",
   "branchName": "feat/bot-review-fix",
   "createdAt": "2026-10-20T00:00:00.000Z",
-  "updatedAt": "2026-10-20T10:13:54.974Z",
+  "updatedAt": "2026-10-20T10:23:36.136Z",
   "userStories": [
     {
       "id": "US-001",
@@ -959,14 +959,17 @@
       "dependencies": [
         "US-014"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Two node additions delegate gate execution and git reads to existing helpers; strict TDD protects the base-config/worktree execution boundary and non-force remote updates."
+        "reasoning": "Two node additions delegate gate execution and git reads to existing helpers; strict TDD protects the base-config/worktree execution boundary and non-force remote updates.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/fix-steps.ts",
@@ -980,7 +983,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "e5508ed6fe3065e875eacb4cdd176fc69a350b22"
     },
     {
       "id": "US-016",
