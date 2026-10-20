@@ -2,12 +2,12 @@ import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import type { ForgeDeps, OwnComment, PrComment, PrInfo, PrRef, PrThread } from "@/forge";
-import { editComment, postInlineComment, postPrComment } from "@/forge";
+import { editComment, postInlineComment, postPrComment, replyToThread } from "@/forge";
 import { getLogger } from "@/logger";
 import type { PrReviewVerdict } from "@/operations/bot-types";
 import type { WorkflowFindingDraft, WorkflowSeverity } from "@/operations/workflow-types";
 import { commentKey, findingKey, threadKey } from "./render";
-import { renderFindingComment, renderReviewSummary } from "./render-comments";
+import { renderFindingComment, renderReviewSummary, renderThreadReply } from "./render-comments";
 
 interface AgreedBase {
   readonly key: string;
@@ -162,14 +162,38 @@ async function postFindings(
   return { inlineFindings, offLine };
 }
 
-async function postSummary(input: PostReviewInput, findings: Awaited<ReturnType<typeof postFindings>>): Promise<void> {
+async function postThreads(input: PostReviewInput): Promise<{ threadsAnswered: number; failed: number }> {
+  let threadsAnswered = 0;
+  let failed = 0;
+  for (const verdict of input.verdict.threads) {
+    const thread = input.threads.find(({ id }) => id === verdict.id);
+    if (!thread) continue; // Never invent a forge target for a stale verdict.
+    const key = threadKey(thread.id);
+    const own = input.own.find((comment) => comment.key === key && comment.threadId === thread.id);
+    try {
+      const body = renderThreadReply(verdict);
+      if (own) await editComment(input.ref, own.comment, body, input.deps, input.cwd);
+      else await replyToThread(input.ref, thread, body, input.deps, input.cwd);
+      threadsAnswered++;
+    } catch (cause) {
+      failed++;
+      getLogger()?.warn("bot-post", "Thread reply failed", { threadId: thread.id, error: errorMessage(cause) });
+    }
+  }
+  return { threadsAnswered, failed };
+}
+
+async function postSummary(
+  input: PostReviewInput,
+  findings: Awaited<ReturnType<typeof postFindings>>,
+  threads: Awaited<ReturnType<typeof postThreads>>,
+): Promise<void> {
   const body = renderReviewSummary({
     headSha: input.info.headSha,
     intent: input.verdict.intent,
     quality: input.verdict.quality,
     ...findings,
-    threadsAnswered: 0,
-    failed: 0,
+    ...threads,
     commentVerdicts: input.verdict.comments.map((verdict) => ({
       verdict,
       author: input.comments.find(({ id }) => id === verdict.id)?.author ?? "unknown",
@@ -187,13 +211,12 @@ async function postSummary(input: PostReviewInput, findings: Awaited<ReturnType<
 export async function postPrReview(input: PostReviewInput): Promise<PostReviewOutcome> {
   await persistArtifact(input);
   const findings = await postFindings(input);
-  // Thread reply writes and their failure accounting are added by US-011.
-  await postSummary(input, findings);
+  const threads = await postThreads(input);
+  await postSummary(input, findings, threads);
   return {
     inlineFindings: findings.inlineFindings,
-    threadsAnswered: 0,
+    ...threads,
     commentsAnswered: input.verdict.comments.length,
     offLine: findings.offLine.length,
-    failed: 0,
   };
 }
