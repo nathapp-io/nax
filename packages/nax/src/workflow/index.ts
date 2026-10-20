@@ -1,5 +1,6 @@
 export type { WorkflowAdvisor } from "./advisor";
 export { defaultWorkflowAdvisor } from "./advisor";
+export { runBranchFix } from "./branch-fix";
 export type { BranchStepContext, PrStepContext, PrStepRef } from "./branch-step-context";
 export type { WorkflowFeatureResult } from "./feature";
 export { runWorkflowFeature } from "./feature";

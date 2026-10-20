@@ -8,6 +8,7 @@ export {
   type PrCheckout,
   preparePrCheckout,
 } from "./checkout";
+export { _fixInputDeps, checkPushAccess, loadLatestReview, toFixFindings } from "./fix-input";
 export { botModel, parseModelOption } from "./models";
 export { fixProtectedPaths, sensitivePaths } from "./path-policy";
 export {
