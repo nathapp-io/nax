@@ -237,7 +237,9 @@
           "get_architecture",
           "search_code",
           "detect_changes",
-          "list_projects"
+          "list_projects",
+          "check_index_coverage",
+          "get_file_outline"
         ]
       }
     }
