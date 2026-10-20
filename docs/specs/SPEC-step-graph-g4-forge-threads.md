@@ -829,6 +829,7 @@ changed step.
 - [unit] `classifyPrTrust` returns `headSha` equal to `info.headSha`.
 - [unit] `classifyPrTrust` on GitHub returns `trusted: true` with reason `author is the current user` when the current user's id equals `info.author.id`.
 - [unit] `classifyPrTrust` on GitHub returns a result whose reasons do not include `author is the current user` when the current user's login equals the author's login but the ids differ.
+- [unit] `classifyPrTrust` on GitLab returns `trusted: true` with reason `author is the current user` when `info.author` has no `id` and the current user's login equals `info.author.login`.
 - [unit] `classifyPrTrust` on GitHub returns `trusted: true` with reason `author has write access` when `repos/<repo>/collaborators/<login>/permission` replies `{"permission": "write"}` for an author who is not the current user.
 - [unit] `classifyPrTrust` on GitHub returns `trusted: true` when the permission reply is `{"permission": "admin"}`.
 - [unit] `classifyPrTrust` on GitHub returns `trusted: false` with reason `author has no write access` when the permission reply is `{"permission": "read"}`.
