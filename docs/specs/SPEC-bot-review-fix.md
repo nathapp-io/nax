@@ -946,7 +946,7 @@ forge.
 
 ### US-010
 
-- [integration] `postPrReview` writes `<stateDir>/bot-review.json` with `version: 1`, the PR number and `info.headSha` before its first forge write.
+- [integration] `postPrReview` writes `<stateDir>/bot-review.json`, a `BotReviewArtifact` for `info.headSha`, before its first forge write.
 - [integration] the artifact's `agreed` holds every finding, of every severity, keyed by `findingKey`.
 - [integration] the artifact's `agreed` holds a thread item keyed by `threadKey`, with the thread's `threadId` and `replyTo`, for a thread verdict `agree`.
 - [integration] the artifact's `agreed` holds no item for a thread verdict `disagree`.
@@ -971,7 +971,7 @@ forge.
 
 ### US-011
 
-- [integration] `runBotReview` on a PR whose `readPrInfo` returns `state: "merged"` returns `{ outcome: "refused", reason: "PR #42 is merged" }` and calls neither `preparePrCheckout` nor `runPrReview`.
+- [integration] `runBotReview` on a PR whose `readPrInfo` returns `state: "merged"` returns `{ outcome: "refused", reason: "PR #42 is merged" }` without calling `preparePrCheckout`.
 - [integration] `runBotReview` calls `ensureProjectTrusted` with the repo root before `resolvePrRef`.
 - [integration] `runBotReview` on a PR that `classifyPrTrust` marks untrusted calls `runPrReview` with `staticMode: true`.
 - [integration] `runBotReview` on a trusted PR calls `runPrReview` with `staticMode: false`.
@@ -993,7 +993,6 @@ forge.
 - [integration] `runBotReview` writes `<stateDir>/bot-state.json` after the review node.
 - [integration] `runBotReview` calls `checkout.dispose()` when `runPrReview` throws.
 - [integration] `runBotReview` that completes returns `outcome: "posted"` with the counts `postPrReview` returned.
-- [unit] `BOT_REVIEW_GRAPH` passes `validateStepGraph` with no errors.
 
 ### US-012
 
@@ -1084,6 +1083,7 @@ forge.
 - [integration] `runBotFix` writes `<stateDir>/bot-state.json` after the `fix` node.
 - [integration] `runBotFix` calls `checkout.dispose()` when a node throws.
 - [unit] `BOT_FIX_GRAPH` passes `validateStepGraph` with no errors.
+- [unit] `BOT_REVIEW_GRAPH` passes `validateStepGraph` with no errors.
 
 ### US-016
 
