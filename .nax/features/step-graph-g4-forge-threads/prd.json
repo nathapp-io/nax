@@ -3,7 +3,7 @@
   "feature": "step-graph-g4-forge-threads",
   "branchName": "feat/step-graph-g4-forge-threads",
   "createdAt": "2026-10-20T00:00:00.000Z",
-  "updatedAt": "2026-10-20T04:29:34.772Z",
+  "updatedAt": "2026-10-20T04:37:41.457Z",
   "userStories": [
     {
       "id": "US-001",
@@ -329,14 +329,17 @@
       "dependencies": [
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Two functions implement bounded identity and collaborator/member checks through ForgeDeps using standard provider branches; access-control classification requires strict three-session isolation."
+        "reasoning": "Two functions implement bounded identity and collaborator/member checks through ForgeDeps using standard provider branches; access-control classification requires strict three-session isolation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/forge/pr-types.ts",
@@ -358,7 +361,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "c7140756c3d348ccc23c307fdbca5e7d8c9ee7c4"
     },
     {
       "id": "US-006",
