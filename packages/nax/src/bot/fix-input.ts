@@ -17,7 +17,13 @@ export const _fixInputDeps = {
 async function readReview(path: string): Promise<BotReviewArtifact | null> {
   try {
     const value: unknown = JSON.parse(await _fixInputDeps.readText(path));
-    if (typeof value !== "object" || value === null || !("version" in value) || value.version !== 1) return null;
+    if (
+      typeof value !== "object" ||
+      value === null ||
+      !("version" in value) ||
+      (value.version !== 1 && value.version !== 2)
+    )
+      return null;
     return value as BotReviewArtifact;
   } catch (cause) {
     // A corrupt or concurrently removed artifact must not hide the other reviews.

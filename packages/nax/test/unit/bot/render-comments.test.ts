@@ -66,6 +66,26 @@ describe("renderThreadReply", () => {
   });
 });
 
+describe("renderEarlierReply", () => {
+  test("US-007 AC-13 marks withdrawals using the supplied thread identity", () => {
+    const body = bot.renderEarlierReply({ id: "T1", status: "withdrawn", reason: "r" }, "T1");
+    expect(parseNaxBotMarker(body)).toEqual({ key: bot.earlierKey("T1") });
+    expect(body).toContain("Withdrawn: r");
+  });
+  test("US-007 AC-14 renders fixed reasons", () => {
+    expect(bot.renderEarlierReply({ id: "T1", status: "fixed", reason: "r" }, "T1")).toContain("Fixed: r");
+  });
+  test.each(["fixed", "withdrawn"] as const)("sanitizes and caps %s reasons using the supplied thread id", (status) => {
+    const reason = `@alice #12 [x](https://e.com) ${"z".repeat(3_000)}`;
+    expect(bot.renderEarlierReply({ id: "verdict-id", status, reason }, "thread-id")).toBe(
+      withNaxBotMarker(
+        `${status === "fixed" ? "Fixed" : "Withdrawn"}: ${bot.safeText(reason, 2_000)}`,
+        bot.earlierKey("thread-id"),
+      ),
+    );
+  });
+});
+
 describe("renderReviewSummary", () => {
   test("omits a line number without a file", () => {
     expect(bot.renderReviewSummary(summary({ offLine: [{ ...finding, line: 5 }] }))).toContain(

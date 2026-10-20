@@ -6,6 +6,7 @@ import { editComment, postInlineComment, postPrComment, replyToThread } from "@/
 import { getLogger } from "@/logger";
 import type { PrReviewVerdict } from "@/operations/bot-types";
 import type { WorkflowFindingDraft, WorkflowSeverity } from "@/operations/workflow-types";
+import type { BotChecks } from "./checks";
 import { commentKey, findingKey, threadKey } from "./render";
 import { renderFindingComment, renderReviewSummary, renderThreadReply } from "./render-comments";
 
@@ -19,7 +20,12 @@ interface AgreedLocation {
 }
 export type AgreedItem =
   | (AgreedBase &
-      AgreedLocation & { readonly kind: "finding"; readonly severity: WorkflowSeverity; readonly suggestion?: string })
+      AgreedLocation & {
+        readonly kind: "finding";
+        readonly severity: WorkflowSeverity;
+        readonly suggestion?: string;
+        readonly decision?: string;
+      })
   | (AgreedBase &
       AgreedLocation & {
         readonly kind: "thread";
@@ -29,8 +35,21 @@ export type AgreedItem =
       })
   | (AgreedBase & { readonly kind: "comment"; readonly reason: string });
 
+export interface BotReviewEvent {
+  readonly type: "finding-withdrawn";
+  readonly key: string;
+  readonly threadId: string;
+  readonly file?: string;
+  readonly line?: number;
+  readonly finding: string;
+  readonly reason: string;
+  readonly disagreedBy: readonly string[];
+}
+
 export interface BotReviewArtifact {
-  readonly version: 1;
+  readonly version: 1 | 2;
+  readonly checks?: BotChecks | null;
+  readonly events?: readonly BotReviewEvent[];
   readonly pr: PrRef;
   readonly headSha: string;
   /** Diagnostic only; not an authorization decision for fixes. */
@@ -40,6 +59,7 @@ export interface BotReviewArtifact {
   readonly agreed: readonly AgreedItem[];
 }
 export interface PostReviewInput {
+  readonly checks?: BotChecks | null;
   readonly ref: PrRef;
   readonly info: PrInfo;
   readonly verdict: PrReviewVerdict;
@@ -66,7 +86,7 @@ export const _postDeps = {
 };
 
 function agreedItems(input: PostReviewInput): AgreedItem[] {
-  const items: AgreedItem[] = input.verdict.findings.map(({ severity, issue, file, line, suggestion }) => ({
+  const items: AgreedItem[] = input.verdict.findings.map(({ severity, issue, file, line, suggestion, decision }) => ({
     key: findingKey({ file, issue }),
     kind: "finding",
     severity,
@@ -74,6 +94,7 @@ function agreedItems(input: PostReviewInput): AgreedItem[] {
     file,
     line,
     suggestion,
+    ...(decision === undefined ? {} : { decision }),
   }));
   for (const verdict of input.verdict.threads) {
     if (verdict.decision !== "agree") continue;
@@ -101,7 +122,9 @@ function agreedItems(input: PostReviewInput): AgreedItem[] {
 
 async function persistArtifact(input: PostReviewInput): Promise<void> {
   const artifact: BotReviewArtifact = {
-    version: 1,
+    version: 2,
+    checks: input.staticMode ? null : (input.checks ?? null),
+    events: [],
     pr: input.ref,
     headSha: input.info.headSha,
     trusted: !input.staticMode,

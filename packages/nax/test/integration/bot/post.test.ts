@@ -78,6 +78,33 @@ afterEach(() => {
 });
 
 describe("postPrReview", () => {
+  test.each([
+    {
+      source: "detected",
+      gates: [{ name: "test", command: "bun run test" }],
+      preRun: [{ command: "bun install", timeoutSeconds: 600 }],
+    },
+    null,
+    undefined,
+  ] satisfies (bot.BotChecks | null | undefined)[])("v2 persists checks %j (US-007 AC-2/3/4)", async (checks) => {
+    await bot.postPrReview({ ...input, ...(checks === undefined ? {} : { checks }) });
+    expect(await artifact()).toHaveProperty("checks", checks ?? null);
+  });
+  test("v2 has empty events with no earlier threads (US-007 AC-5)", async () => {
+    await bot.postPrReview({ ...input, threads: [] });
+    expect(await artifact()).toHaveProperty("events", []);
+  });
+  test.each(["D-1", undefined])("v2 carries only supplied finding decisions: %s (US-007 AC-6/7)", async (decision) => {
+    const findings = [{ ...finding, ...(decision === undefined ? {} : { decision }) }];
+    await bot.postPrReview({ ...input, verdict: { ...input.verdict, findings } });
+    const agreed = (await artifact()).agreed[0];
+    if (decision === undefined) expect(agreed).not.toHaveProperty("decision");
+    else expect(agreed).toHaveProperty("decision", decision);
+  });
+  test("static reviews persist null checks even when supplied", async () => {
+    await bot.postPrReview({ ...input, staticMode: true, checks: { source: "detected", gates: [], preRun: [] } });
+    expect(await artifact()).toHaveProperty("checks", null);
+  });
   test("an off-line finding does not consume the inline dedupe key", async () => {
     const outcome = await bot.postPrReview({
       ...input,
@@ -112,7 +139,7 @@ describe("postPrReview", () => {
   test("AC-1: persists artifact before the first forge write", async () => {
     await bot.postPrReview(input);
     expect(artifacts[0]).toMatchObject({
-      version: 1,
+      version: 2,
       pr: input.ref,
       headSha: input.info.headSha,
       trusted: true,

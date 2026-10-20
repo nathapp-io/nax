@@ -1,9 +1,9 @@
 import { MAX_FORGE_COMMENT_CHARS, withNaxBotMarker } from "@/forge";
-import type { PrIntent, PrTriageDecision, PrTriageVerdict } from "@/operations/bot-types";
+import type { PrEarlierVerdict, PrIntent, PrTriageDecision, PrTriageVerdict } from "@/operations/bot-types";
 import type { WorkflowFindingDraft } from "@/operations/workflow-types";
 // Reuse the safe path leaf without loading workflow's orchestration barrel (as in render.ts).
 import { safeCode } from "../workflow/pr-body-safe";
-import { findingKey, safeText, threadKey } from "./render";
+import { earlierKey, findingKey, safeText, threadKey } from "./render";
 
 const TEXT_LIMIT = 2_000;
 const AUTHOR_LIMIT = 100;
@@ -46,6 +46,12 @@ export function renderThreadReply(verdict: PrTriageVerdict): string {
     `${DECISION_LABELS[verdict.decision]}: ${safeText(verdict.reason, TEXT_LIMIT)}`,
     threadKey(verdict.id),
   );
+}
+
+/** A stable marked reply for a fixed or withdrawn earlier finding. */
+export function renderEarlierReply(verdict: PrEarlierVerdict, threadId: string): string {
+  const label = verdict.status === "fixed" ? "Fixed" : "Withdrawn";
+  return withNaxBotMarker(`${label}: ${safeText(verdict.reason, TEXT_LIMIT)}`, earlierKey(threadId));
 }
 
 function offLineItem(finding: WorkflowFindingDraft): string {

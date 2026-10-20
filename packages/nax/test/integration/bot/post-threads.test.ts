@@ -22,7 +22,7 @@ let stateDir: string;
 let failEndpoint: string | undefined;
 const run = mock(async (argv: string[], _opts: { cwd: string }) => {
   expect(await Bun.file(join(stateDir, "bot-review.json")).json()).toMatchObject({
-    version: 1,
+    version: 2,
     headSha: "abc1234ffff",
   });
   return argv.includes(failEndpoint ?? "never")

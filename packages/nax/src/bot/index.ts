@@ -37,13 +37,15 @@ export {
   _postDeps,
   type AgreedItem,
   type BotReviewArtifact,
+  type BotReviewEvent,
   type PostReviewInput,
   type PostReviewOutcome,
   postPrReview,
 } from "./post";
-export { breakLinks, commentKey, findingKey, safeText, threadKey } from "./render";
+export { breakLinks, commentKey, earlierKey, findingKey, safeText, threadKey } from "./render";
 export {
   type ReviewSummaryInput,
+  renderEarlierReply,
   renderFindingComment,
   renderReviewSummary,
   renderThreadReply,

@@ -72,6 +72,16 @@ describe("threadKey", () => {
   });
 });
 
+describe("earlierKey", () => {
+  test("US-007 AC-11/12 hashes the id deterministically in a separate namespace", () => {
+    const key = bot.earlierKey("T1");
+    expect(key).toMatch(/^e-[0-9a-f]{16}$/);
+    expect(key).toBe(`e-${new Bun.CryptoHasher("sha256").update("T1").digest("hex").slice(0, 16)}`);
+    expect(bot.earlierKey("T1")).toBe(key);
+    expect(key).not.toBe(bot.threadKey("T1"));
+  });
+});
+
 describe("commentKey", () => {
   test("AC-14: hashes the comment id into a valid marker key", () => {
     const key = bot.commentKey("99");

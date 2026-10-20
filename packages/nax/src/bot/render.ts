@@ -30,6 +30,11 @@ export function threadKey(threadId: string): string {
   return `t-${markerHash(threadId)}`;
 }
 
+/** Stable identity for a reply about an earlier finding, distinct from thread triage. */
+export function earlierKey(threadId: string): string {
+  return `e-${markerHash(threadId)}`;
+}
+
 /** Stable identity for a forge comment. */
 export function commentKey(commentId: string): string {
   return `c-${markerHash(commentId)}`;
