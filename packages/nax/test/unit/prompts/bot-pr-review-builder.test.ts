@@ -113,7 +113,8 @@ describe("buildBotPrReviewPrompt", () => {
     const earlier = Array.from({ length: 51 }, (_, i) => ({ ...thread, id: `E${i}` }));
     const result = prompts.buildBotPrReviewPrompt({ ...base, earlier });
     expect(result.match(/### Your earlier finding/g)).toHaveLength(50);
-    expect(result.match(/\nE\d+\n/g)).toEqual(earlier.slice(0, 50).map((value) => `\n${value.id}\n`));
+    const renderedIds = Array.from(result.matchAll(/\nE\d+\n/g), (match) => match[0]);
+    expect(renderedIds).toEqual(earlier.slice(0, 50).map((value) => `\n${value.id}\n`));
     expect(result).not.toContain("\nE50\n");
   });
   test("US-005 AC-15,16: reply contract adds earlier statuses and optional decision", () => {
