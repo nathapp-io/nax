@@ -1,11 +1,11 @@
 /** Repo-scoped fix nodes: one session, then an independent committed-tree safety check. */
 import type { ConfiguredModel, NaxConfig } from "@/config";
-import { resolveGateCommands, runQualityGates } from "@/finish";
 import type { CurrentUser, ForgeDeps, OwnComment, PrInfo, PrRef, PrThread } from "@/forge";
 import type { GraphState, StepResult } from "@/step-graph";
 import { gitWithTimeout } from "@/utils/git";
-import { runBranchFix } from "@/workflow";
 import type { PrStepContext } from "@/workflow/branch-step-context";
+import { resolveGateCommands, runQualityGates } from "../finish/gates/quality";
+import { runBranchFix } from "../workflow/branch-fix";
 import { readHead } from "../workflow/git";
 import { changedPaths, type PrCheckout } from "./checkout";
 import { toFixFindings } from "./fix-input";
