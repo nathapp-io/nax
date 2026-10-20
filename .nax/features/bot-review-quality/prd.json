@@ -3,7 +3,7 @@
   "feature": "bot-review-quality",
   "branchName": "feat/bot-review-quality",
   "createdAt": "2026-10-20T00:00:00Z",
-  "updatedAt": "2026-10-20T16:36:38.498Z",
+  "updatedAt": "2026-10-20T16:45:31.788Z",
   "userStories": [
     {
       "id": "US-001",
@@ -505,14 +505,17 @@
       "dependencies": [
         "US-007"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Ownership-sensitive forge mutations, artifact-before-write agreement and idempotent reply/resolve failure ordering require strict isolated tests."
+        "reasoning": "Ownership-sensitive forge mutations, artifact-before-write agreement and idempotent reply/resolve failure ordering require strict isolated tests.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/post.ts",
@@ -535,7 +538,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "0eb8ce75afa999356fc9b89e133acf79969ed50d"
     },
     {
       "id": "US-009",
