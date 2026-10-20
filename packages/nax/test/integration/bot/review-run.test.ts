@@ -1,17 +1,30 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { join } from "node:path";
-import { makeMockCallContext, makeNaxConfig, makeTestRuntime } from "@test/helpers";
+import { assertDefined, makeMockCallContext, makeNaxConfig, makeTestRuntime } from "@test/helpers";
 import { sensitivePaths } from "@/bot";
+import type { BotChecks, resolveBotChecks } from "@/bot/checks";
 import { _botReviewDeps, BOT_REVIEW_GRAPH, runBotReview } from "@/bot/review-run";
 import { PROJECT_FEATURES_DIR, resolveWorkflowConfig } from "@/config";
+import { NaxError } from "@/errors";
+import type { runPreRunSteps } from "@/execution/lifecycle/pre-run-steps";
 import type { PrComment, PrInfo, PrRef, PrThread } from "@/forge";
 import { withNaxBotMarker } from "@/forge";
 import type { PrReviewVerdict } from "@/operations";
+import { botChecksExtractOp } from "@/operations";
 import { validateStepGraph } from "@/step-graph";
 import type { PrStepContext } from "@/workflow/branch-step-context";
 import { botRunDir } from "@/workflow/paths";
+import { _workflowDeps } from "@/workflow/step-context";
 
 const original = { ..._botReviewDeps };
+const checks: BotChecks = {
+  source: "detected",
+  gates: [{ name: "test", command: "npm run test" }],
+  preRun: [{ command: "npm ci", timeoutSeconds: 600 }],
+};
+const resolveChecks = mock<typeof resolveBotChecks>(async () => checks);
+const preRun = mock<typeof runPreRunSteps>(async () => {});
+const buildContext = mock<typeof _botReviewDeps.buildPrStepContext>();
 const input = { dir: "/repo/sub", pr: 42, profiles: ["a", "b"], interactive: false };
 const ref: PrRef = { forge: "github", host: "example.test", repo: "org/repo", number: 42 };
 const verdict: PrReviewVerdict = {
@@ -99,6 +112,15 @@ beforeEach(() => {
     pr: { forge: "github", number: 42, base: "merge", head: "head" },
   };
   for (const fn of [review, post, prepare, load, create, write, checkoutDispose, contextDispose]) fn.mockClear();
+  resolveChecks.mockClear();
+  resolveChecks.mockImplementation(async () => checks);
+  preRun.mockClear();
+  preRun.mockImplementation(async () => {});
+  buildContext.mockClear();
+  buildContext.mockImplementation(async ({ config: resolved }) => ({
+    ctx: { ...ctx, config: resolved, callCtx: { ...ctx.callCtx, config: resolved } },
+    dispose: contextDispose,
+  }));
   review.mockImplementation(async () => ({ ran: true, verdict }));
   post.mockImplementation(async () => counts);
   contextDispose.mockImplementation(async () => {
@@ -121,7 +143,9 @@ beforeEach(() => {
     preparePrCheckout: prepare,
     loadBotConfig: load,
     createRuntime: create,
-    buildPrStepContext: async () => ({ ctx, dispose: contextDispose }),
+    buildPrStepContext: buildContext,
+    resolveBotChecks: resolveChecks,
+    runPreRunSteps: preRun,
     readCurrentUser: async () => ({ login: "bot" }),
     listReviewThreads: async () => threads,
     listPrComments: async () => comments,
@@ -273,6 +297,7 @@ describe("runBotReview", () => {
       intent: verdict.intent,
       quality: verdict.quality,
       staticMode: false,
+      checksSource: "detected",
     });
   });
   test.each(["config", "context", "post", "persist", "context-dispose", "runtime-close"] as const)(
@@ -335,6 +360,118 @@ describe("runBotReview", () => {
     await runBotReview(input);
     expect(review.mock.calls[0]?.[1]).not.toHaveProperty("prdPath");
   });
+  test("US-011 AC-1/2/5 enables loopback in one shared config without mutating loaded config", async () => {
+    const before = structuredClone(config);
+    await runBotReview(input);
+    const resolved = create.mock.calls[0]?.[0];
+    expect(resolved?.execution.sandbox?.network?.allowLocalBinding).toBe(true);
+    expect(buildContext.mock.calls[0]?.[0].config).toBe(resolved);
+    expect(review.mock.calls[0]?.[0].callCtx.config).toBe(resolved);
+    expect(config).toEqual(before);
+    expect(config.execution.sandbox?.network?.allowLocalBinding).toBeUndefined();
+  });
+  test("US-011 AC-3 preserves explicit false for trusted review", async () => {
+    assertDefined(config.execution.sandbox);
+    config.execution.sandbox.network = { allowLocalBinding: false };
+    await runBotReview(input);
+    expect(create.mock.calls[0]?.[0].execution.sandbox?.network?.allowLocalBinding).toBe(false);
+    expect(buildContext.mock.calls[0]?.[0].config).toBe(create.mock.calls[0]?.[0]);
+  });
+  test.each([undefined, false, true])("US-011 AC-4/5 static preserves loaded loopback %s", async (value) => {
+    assertDefined(config.execution.sandbox);
+    config.execution.sandbox.network = value === undefined ? {} : { allowLocalBinding: value };
+    const before = structuredClone(config);
+    await untrusted();
+    expect(create.mock.calls[0]?.[0].execution.sandbox?.network?.allowLocalBinding).toBe(value);
+    expect(config).toEqual(before);
+  });
+  test("US-011 AC-6/7/8/12/13 resolves base checks once and installs in head checkout", async () => {
+    await runBotReview(input);
+    expect(resolveChecks).toHaveBeenCalledTimes(1);
+    expect(resolveChecks).toHaveBeenCalledWith({
+      repoRoot: "/repo",
+      baseSha: "base",
+      snapshotDir: "/snapshot",
+      hasBaseNax: true,
+      config: create.mock.calls[0]?.[0],
+      extract: expect.any(Function),
+    });
+    expect(preRun).toHaveBeenCalledTimes(1);
+    expect(preRun).toHaveBeenCalledWith({ steps: checks.preRun, workdir: "/checkout" });
+  });
+  test("US-011 AC-9 extraction dispatches operation with input and configured model", async () => {
+    config.bot = { ...config.bot, models: { checks: "balanced" } };
+    const extracted = { gates: [] };
+    const call = spyOn(_workflowDeps, "callOp").mockResolvedValue(extracted);
+    resolveChecks.mockImplementationOnce(async ({ extract }) => {
+      expect(await extract({ fileName: "AGENTS.md", text: "run checks" })).toBe(extracted);
+      return checks;
+    });
+    try {
+      await runBotReview(input);
+      expect(call).toHaveBeenCalledTimes(1);
+      expect(call).toHaveBeenCalledWith(review.mock.calls[0]?.[0].callCtx, botChecksExtractOp, {
+        fileName: "AGENTS.md",
+        text: "run checks",
+        model: "balanced",
+      });
+    } finally {
+      call.mockRestore();
+    }
+  });
+  test("US-011 AC-10/11/18 static skips checks and install and reports null source", async () => {
+    _botReviewDeps.classifyPrTrust = async () => ({ trusted: false, headSha: "head", reasons: ["fork"] });
+    expect(await runBotReview(input)).toMatchObject({ outcome: "posted", staticMode: true, checksSource: null });
+    expect(resolveChecks).not.toHaveBeenCalled();
+    expect(preRun).not.toHaveBeenCalled();
+  });
+  test("US-011 AC-14 awaits install before review", async () => {
+    const started = Promise.withResolvers<void>();
+    const finish = Promise.withResolvers<void>();
+    preRun.mockImplementationOnce(async () => {
+      started.resolve();
+      await finish.promise;
+      events.push("installed");
+    });
+    const running = runBotReview(input);
+    try {
+      // If preparation is skipped, the run finishes and the assertion fails rather than hanging.
+      await Promise.race([started.promise, running]);
+      expect(preRun).toHaveBeenCalledTimes(1);
+      expect(review).not.toHaveBeenCalled();
+    } finally {
+      finish.resolve();
+      await running;
+    }
+    expect(events).toContain("installed");
+    expect(review).toHaveBeenCalledTimes(1);
+  });
+  test("US-011 AC-15 continues review after PRE_RUN_FAILED npm ci", async () => {
+    preRun.mockImplementationOnce(async () => {
+      throw new NaxError("[bot] install failed", "PRE_RUN_FAILED", { stage: "execution", command: "npm ci" });
+    });
+    expect(await runBotReview(input)).toMatchObject({ outcome: "posted" });
+    expect(preRun).toHaveBeenCalledTimes(1);
+    expect(review).toHaveBeenCalledTimes(1);
+  });
+  test.each([
+    new NaxError("[bot] trust refused", "PROJECT_UNTRUSTED", { stage: "execution" }),
+    new Error("unexpected install failure"),
+  ])("US-011 AC-16 propagates unexpected preparation error %s and cleans up", async (failure) => {
+    preRun.mockImplementationOnce(async () => {
+      throw failure;
+    });
+    await expect(runBotReview(input)).rejects.toBe(failure);
+    expect(review).not.toHaveBeenCalled();
+    expect(events.slice(-2)).toEqual(["context-close", "checkout-close"]);
+  });
+  test.each(["config", "agents-md", "claude-md", "detected", "none"] as const)(
+    "US-011 AC-17 returns resolved source %s",
+    async (source) => {
+      resolveChecks.mockResolvedValueOnce({ ...checks, source });
+      expect(await runBotReview(input)).toMatchObject({ outcome: "posted", checksSource: source });
+    },
+  );
   test("graph validates", () => {
     expect(validateStepGraph(BOT_REVIEW_GRAPH)).toEqual({ errors: [] });
   });

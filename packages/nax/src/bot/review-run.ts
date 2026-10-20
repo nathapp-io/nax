@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import { resolveDefaultAgent } from "@/agents";
-import { type ConfiguredModel, PROJECT_FEATURES_DIR } from "@/config";
+import { type ConfiguredModel, DEFAULT_SANDBOX_CONFIG, type NaxConfig, PROJECT_FEATURES_DIR } from "@/config";
 import { NaxError } from "@/errors";
 import {
   classifyPrTrust,
@@ -15,16 +15,19 @@ import {
   readPrInfo,
   resolvePrRef,
 } from "@/forge";
-import type { PrReviewVerdict } from "@/operations";
+import { botChecksExtractOp, type PrReviewVerdict } from "@/operations";
 import { createRuntime } from "@/runtime";
 import { defineStepGraph, type GraphState, runStepGraph, type StepGraph } from "@/step-graph";
 import { ensureProjectTrusted } from "@/trust";
 import { gitWithTimeout } from "@/utils/git";
+import { runPreRunSteps } from "../execution/lifecycle/pre-run-steps";
 import type { PrStepContext } from "../workflow/branch-step-context";
 import { botRunDir } from "../workflow/paths";
 import { buildPrStepContext } from "../workflow/pr-step-context";
+import { _workflowDeps } from "../workflow/step-context";
 import { loadBotConfig } from "./base-config";
 import { type PrCheckout, preparePrCheckout } from "./checkout";
+import { type BotCheckSource, type BotChecks, resolveBotChecks } from "./checks";
 import { botModel } from "./models";
 import { sensitivePaths } from "./path-policy";
 import { type PostReviewInput, type PostReviewOutcome, postPrReview } from "./post";
@@ -54,6 +57,8 @@ export const _botReviewDeps = {
   loadBotConfig,
   createRuntime,
   buildPrStepContext,
+  resolveBotChecks,
+  runPreRunSteps,
   runPrReview,
   postPrReview,
   async writeJson(path: string, value: unknown): Promise<void> {
@@ -68,6 +73,7 @@ export type BotReviewResult =
       readonly intent: PrReviewVerdict["intent"];
       readonly quality: PrReviewVerdict["quality"];
       readonly staticMode: boolean;
+      readonly checksSource: BotCheckSource | null;
     } & PostReviewOutcome)
   | { readonly outcome: "not-reviewed" | "refused"; readonly reason: string };
 
@@ -85,7 +91,11 @@ interface ReviewState extends GraphState<ReviewStep> {
   readonly verdict?: PrReviewVerdict;
   readonly posted?: PostReviewOutcome;
 }
-interface ReviewEnv {
+interface ReviewPreparation {
+  readonly checks: BotChecks | null;
+  readonly preRunFailed?: string;
+}
+interface ReviewEnv extends ReviewPreparation {
   readonly ctx: PrStepContext;
   readonly review: PrReviewInput;
   readonly post: Omit<PostReviewInput, "verdict">;
@@ -166,6 +176,45 @@ interface PreparedReview {
   readonly staticMode: boolean;
 }
 
+function reviewConfig(loaded: NaxConfig, staticMode: boolean): NaxConfig {
+  if (staticMode) return { ...loaded, mcp: { ...loaded.mcp, servers: {} } };
+  const sandbox = loaded.execution.sandbox ?? DEFAULT_SANDBOX_CONFIG;
+  if (sandbox.network?.allowLocalBinding !== undefined) return loaded;
+  return {
+    ...loaded,
+    execution: {
+      ...loaded.execution,
+      sandbox: {
+        ...sandbox,
+        network: { ...sandbox.network, allowLocalBinding: true },
+      },
+    },
+  };
+}
+
+async function prepareReviewChecks(prepared: PreparedReview, ctx: PrStepContext): Promise<ReviewPreparation> {
+  if (prepared.staticMode) return { checks: null };
+  const { repoRoot, checkout } = prepared;
+  const config = ctx.config;
+  const checks = await _botReviewDeps.resolveBotChecks({
+    repoRoot,
+    baseSha: checkout.baseSha,
+    snapshotDir: checkout.snapshotDir,
+    hasBaseNax: checkout.hasBaseNax,
+    config,
+    extract: (input) =>
+      _workflowDeps.callOp(ctx.callCtx, botChecksExtractOp, { ...input, model: config.bot?.models.checks }),
+  });
+  try {
+    await _botReviewDeps.runPreRunSteps({ steps: checks.preRun, workdir: checkout.worktree });
+    return { checks };
+  } catch (err) {
+    if (!(err instanceof NaxError) || err.code !== "PRE_RUN_FAILED") throw err;
+    const command = err.context?.command;
+    return { checks, ...(typeof command === "string" ? { preRunFailed: command } : {}) };
+  }
+}
+
 async function reviewEnvironment(
   input: BotReviewInput,
   prepared: PreparedReview,
@@ -173,12 +222,14 @@ async function reviewEnvironment(
 ): Promise<ReviewEnv> {
   const { repoRoot, ref, info, checkout, staticMode } = prepared;
   const { ctx, stateDir } = context;
+  const preparation = await prepareReviewChecks(prepared, ctx);
   const [items, issues] = await Promise.all([
     triage(ref, repoRoot),
     _botReviewDeps.readLinkedIssues(ref, info.body, _botReviewDeps.forge, repoRoot),
   ]);
   const prdPath = featurePrd(checkout);
   return {
+    ...preparation,
     ctx,
     review: {
       mergeBase: checkout.mergeBase,
@@ -218,6 +269,7 @@ async function executeReview(env: ReviewEnv, runtime: ReturnType<typeof createRu
     intent: state.verdict.intent,
     quality: state.verdict.quality,
     staticMode: env.review.staticMode,
+    checksSource: env.checks?.source ?? null,
   };
 }
 
@@ -225,7 +277,7 @@ async function reviewCheckout(input: BotReviewInput, prepared: PreparedReview): 
   const deps = _botReviewDeps;
   const { repoRoot, ref, info, checkout, staticMode } = prepared;
   const loaded = await deps.loadBotConfig({ snapshotDir: checkout.snapshotDir, profiles: input.profiles });
-  const config = staticMode ? { ...loaded, mcp: { ...loaded.mcp, servers: {} } } : loaded;
+  const config = reviewConfig(loaded, staticMode);
   const runtime = deps.createRuntime(config, repoRoot);
   let context: Awaited<ReturnType<typeof buildPrStepContext>> | undefined;
   try {
