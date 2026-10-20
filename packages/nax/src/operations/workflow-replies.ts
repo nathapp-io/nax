@@ -70,7 +70,7 @@ export function parseImplementerReply(output: string): ImplementerReply {
   };
 }
 
-function toDraft(entry: unknown): WorkflowFindingDraft | null {
+export function toFindingDraft(entry: unknown): WorkflowFindingDraft | null {
   if (!isRecord(entry)) return null;
   const issue = str(entry.issue);
   if (!issue) return null;
@@ -98,7 +98,7 @@ function toDraft(entry: unknown): WorkflowFindingDraft | null {
 }
 
 function drafts(v: unknown): WorkflowFindingDraft[] {
-  return Array.isArray(v) ? v.map(toDraft).filter((d): d is WorkflowFindingDraft => d !== null) : [];
+  return Array.isArray(v) ? v.map(toFindingDraft).filter((d): d is WorkflowFindingDraft => d !== null) : [];
 }
 
 /**

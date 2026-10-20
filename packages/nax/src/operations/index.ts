@@ -32,6 +32,9 @@ export { makeAutofixImplementerStrategy } from "./autofix-implementer-strategy";
 export type { AutofixTestWriterInput, AutofixTestWriterOutput } from "./autofix-test-writer";
 export { testWriterRectifyOp } from "./autofix-test-writer";
 export { makeAutofixTestWriterStrategy } from "./autofix-test-writer-strategy";
+export type { BotPrReviewInput } from "./bot-pr-review";
+export { botPrReviewOp, botPrStaticReviewOp } from "./bot-pr-review";
+export { missingTriage, parsePrReviewReply } from "./bot-pr-review-reply";
 export type { PrIntent, PrReviewVerdict, PrTriageDecision, PrTriageVerdict } from "./bot-types";
 export type { BuildHopCallbackContext } from "./build-hop-callback";
 export { _buildHopCallbackDeps, buildHopCallback } from "./build-hop-callback";
@@ -166,6 +169,7 @@ export {
   parseImplementerReply,
   parseReReviewReply,
   parseStoryReviewReply,
+  toFindingDraft,
   WORKFLOW_INTERRUPT_MARKER,
 } from "./workflow-replies";
 export { isCompleteBranchVerdict, unreadFiles } from "./workflow-review-coverage";
