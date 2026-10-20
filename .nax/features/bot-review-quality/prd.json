@@ -3,7 +3,7 @@
   "feature": "bot-review-quality",
   "branchName": "feat/bot-review-quality",
   "createdAt": "2026-10-20T00:00:00Z",
-  "updatedAt": "2026-10-20T15:26:58.485Z",
+  "updatedAt": "2026-10-20T15:42:46.895Z",
   "userStories": [
     {
       "id": "US-001",
@@ -115,14 +115,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Base-only command provenance is a trusted host-execution boundary; strict isolated tests fake git, extraction and gate resolution and import the new contract through @/bot."
+        "reasoning": "Base-only command provenance is a trusted host-execution boundary; strict isolated tests fake git, extraction and gate resolution and import the new contract through @/bot.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/finish/gates/quality.ts",
@@ -144,7 +147,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "d4bc984828f3f4a22f7ebc1d0a16ed3109b50e61"
     },
     {
       "id": "US-003",
