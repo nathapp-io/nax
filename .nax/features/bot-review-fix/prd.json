@@ -3,7 +3,7 @@
   "feature": "bot-review-fix",
   "branchName": "feat/bot-review-fix",
   "createdAt": "2026-10-20T00:00:00.000Z",
-  "updatedAt": "2026-10-20T08:35:36.599Z",
+  "updatedAt": "2026-10-20T08:44:20.809Z",
   "userStories": [
     {
       "id": "US-001",
@@ -315,14 +315,17 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Prompt-injection boundary for untrusted PR/issue/reviewer text and fix-session requests requires strict isolation despite otherwise pure builder logic."
+        "reasoning": "Prompt-injection boundary for untrusted PR/issue/reviewer text and fix-session requests requires strict isolation despite otherwise pure builder logic.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/operations/workflow-types.ts",
@@ -342,7 +345,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "de6bcfc59159a603320e6ebeff2476b8742820f2"
     },
     {
       "id": "US-006",
