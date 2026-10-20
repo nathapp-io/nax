@@ -16,6 +16,8 @@ export {
 } from "./comments";
 export { defaultForgeDeps } from "./deps";
 export { detectForge, forgeFromRemoteUrl, remoteHost } from "./detect";
+export type { LinkedIssue } from "./issues";
+export { MAX_LINKED_ISSUES, parseClosingRefs, readIssue, readLinkedIssues } from "./issues";
 export { findOwnComments, NAX_BOT_HEADER, parseNaxBotMarker, withNaxBotMarker } from "./marker";
 export type { OpenPrInput, OpenPrResult } from "./pr";
 export { extractUrl, hasOpenPr, openPr, viewArgv } from "./pr";
