@@ -3,7 +3,7 @@
   "feature": "bot-review-quality",
   "branchName": "feat/bot-review-quality",
   "createdAt": "2026-10-20T00:00:00Z",
-  "updatedAt": "2026-10-20T16:45:31.788Z",
+  "updatedAt": "2026-10-20T16:52:17.831Z",
   "userStories": [
     {
       "id": "US-001",
@@ -566,14 +566,17 @@
       "dependencies": [
         "US-008"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Deterministic event projection over existing effective statuses; no access-control decision is added. Assert serialized payloads via fake forge/artifact deps."
+        "reasoning": "Deterministic event projection over existing effective statuses; no access-control decision is added. Assert serialized payloads via fake forge/artifact deps.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/post.ts",
@@ -584,7 +587,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "efaa5509e0a6435cbe3b4d40035e8c0a1e0fd1d0"
     },
     {
       "id": "US-010",
