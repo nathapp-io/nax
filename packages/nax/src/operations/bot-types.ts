@@ -9,10 +9,19 @@ export interface PrTriageVerdict {
   readonly reason: string;
 }
 
+export type PrEarlierStatus = "open" | "fixed" | "withdrawn";
+export interface PrEarlierVerdict {
+  readonly id: string;
+  readonly status: PrEarlierStatus;
+  readonly reason: string;
+}
+export type PrFinding = WorkflowFindingDraft & { readonly decision?: string };
+
 export interface PrReviewVerdict {
   readonly intent: PrIntent;
   readonly quality: "approved" | "changes";
-  readonly findings: readonly WorkflowFindingDraft[];
+  readonly findings: readonly PrFinding[];
+  readonly earlier?: readonly PrEarlierVerdict[];
   readonly threads: readonly PrTriageVerdict[];
   readonly comments: readonly PrTriageVerdict[];
   readonly cannotVerify: readonly string[];

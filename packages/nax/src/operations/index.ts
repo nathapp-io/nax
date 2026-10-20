@@ -37,7 +37,15 @@ export { botChecksExtractOp, parseBotChecksReply } from "./bot-checks-extract";
 export type { BotPrReviewInput } from "./bot-pr-review";
 export { botPrReviewOp, botPrStaticReviewOp } from "./bot-pr-review";
 export { missingTriage, parsePrReviewReply } from "./bot-pr-review-reply";
-export type { PrIntent, PrReviewVerdict, PrTriageDecision, PrTriageVerdict } from "./bot-types";
+export type {
+  PrEarlierStatus,
+  PrEarlierVerdict,
+  PrFinding,
+  PrIntent,
+  PrReviewVerdict,
+  PrTriageDecision,
+  PrTriageVerdict,
+} from "./bot-types";
 export type { BuildHopCallbackContext } from "./build-hop-callback";
 export { _buildHopCallbackDeps, buildHopCallback } from "./build-hop-callback";
 export { _callOpDeps, _runPostParseForTest, callOp } from "./call";

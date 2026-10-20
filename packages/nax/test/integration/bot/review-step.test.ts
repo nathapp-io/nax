@@ -81,6 +81,50 @@ afterEach(() => {
 const packagePath = "/review/artifacts/package-pr.diff";
 
 describe("runPrReview", () => {
+  test("US-006 AC-12/13 forwards earlier ids and renders earlier threads", async () => {
+    await runPrReview(ctx, {
+      ...input,
+      earlier: [{ id: "E1", replyTo: "E1", resolved: false, outdated: false, comments: [] }],
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.op).toBe(botPrReviewOp);
+    expect(calls[0]?.input).toMatchObject({
+      earlierIds: ["E1"],
+      prompt: expect.stringContaining("### Your earlier finding"),
+    });
+  });
+  test("US-006 AC-14/15 forwards decision ids and renders project decisions", async () => {
+    await runPrReview(ctx, { ...input, decisions: [{ id: "D-1", statement: "S" }] });
+    expect(calls[0]?.op).toBe(botPrReviewOp);
+    expect(calls[0]?.input).toMatchObject({
+      decisionIds: ["D-1"],
+      prompt: expect.stringContaining("## Project decisions"),
+    });
+  });
+  test("US-006 AC-16 renders project checks", async () => {
+    await runPrReview(ctx, { ...input, checks: ["bun run test"] });
+    const value = calls[0]?.input;
+    if (typeof value !== "object" || value === null || !("prompt" in value)) throw new Error("missing prompt");
+    expect(value.prompt).toContain("## Project checks");
+    expect(value.prompt).toContain("- bun run test");
+  });
+  test("US-006 AC-17 limits earlier ids to the first 50 rendered threads", async () => {
+    const earlier = Array.from({ length: 51 }, (_, index) => ({
+      id: `E${index + 1}`,
+      replyTo: `E${index + 1}`,
+      resolved: false,
+      outdated: false,
+      comments: [],
+    }));
+    await runPrReview(ctx, { ...input, earlier });
+    expect(calls[0]?.input).toMatchObject({ earlierIds: earlier.slice(0, 50).map((thread) => thread.id) });
+    expect(calls[0]?.input).toMatchObject({ prompt: expect.not.stringContaining("\nE51\n") });
+  });
+  test("US-006 AC-18 defaults absent earlier and decision allowlists to empty", async () => {
+    await runPrReview(ctx, input);
+    expect(calls[0]?.op).toBe(botPrReviewOp);
+    expect(calls[0]?.input).toMatchObject({ earlierIds: [], decisionIds: [] });
+  });
   test.each(["", "*.ts -diff\n"])(
     "static dispatch preserves preimages and deletions with attributes %j",
     async (attributes) => {
