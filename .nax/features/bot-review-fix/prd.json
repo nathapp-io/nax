@@ -3,7 +3,7 @@
   "feature": "bot-review-fix",
   "branchName": "feat/bot-review-fix",
   "createdAt": "2026-10-20T00:00:00.000Z",
-  "updatedAt": "2026-10-20T09:09:28.352Z",
+  "updatedAt": "2026-10-20T09:23:25.188Z",
   "userStories": [
     {
       "id": "US-001",
@@ -573,14 +573,17 @@
         "US-005",
         "US-008"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Publishing untrusted text requires redaction/link-safety preservation while applying stable markers and truncating nested summary lists safely."
+        "reasoning": "Publishing untrusted text requires redaction/link-safety preservation while applying stable markers and truncating nested summary lists safely.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/render.ts",
@@ -595,7 +598,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "f4c3a9e3d0538d82a644287f84f5cf7fbb596031"
     },
     {
       "id": "US-010",
