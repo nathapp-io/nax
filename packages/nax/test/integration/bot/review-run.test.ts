@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:
 import { join } from "node:path";
 import { assertDefined, makeMockCallContext, makeNaxConfig, makeTestRuntime } from "@test/helpers";
 import { sensitivePaths } from "@/bot";
-import type { BotChecks, resolveBotChecks } from "@/bot/checks";
+import { type BotChecks, checkCommands, type resolveBotChecks } from "@/bot/checks";
 import { _botReviewDeps, BOT_REVIEW_GRAPH, runBotReview } from "@/bot/review-run";
 import { PROJECT_FEATURES_DIR, resolveWorkflowConfig } from "@/config";
 import { NaxError } from "@/errors";
@@ -298,6 +298,7 @@ describe("runBotReview", () => {
       quality: verdict.quality,
       staticMode: false,
       checksSource: "detected",
+      artifactPath: join(botRunDir(runtime.outputDir, 42, runtime.runId), "bot-review.json"),
     });
   });
   test.each(["config", "context", "post", "persist", "context-dispose", "runtime-close"] as const)(
@@ -472,6 +473,112 @@ describe("runBotReview", () => {
       expect(await runBotReview(input)).toMatchObject({ outcome: "posted", checksSource: source });
     },
   );
+  test.each([
+    ["AC-1 includes unresolved own finding", "bot", "f-one", false, true],
+    ["AC-2 excludes own summary", "bot", "summary", false, false],
+    ["AC-3 excludes resolved own finding", "bot", "f-one", true, false],
+    ["excludes another author's finding marker", "human", "f-one", false, false],
+    ["excludes invalid marker", "bot", null, false, false],
+  ] as const)("US-012 %s", async (_name, author, key, resolved, included) => {
+    const thread: PrThread = {
+      id: "T",
+      replyTo: "C",
+      resolved,
+      outdated: false,
+      comments: [
+        comment("C", author, key === null ? "<!-- nax-bot:v1 key=f-invalid key -->" : withNaxBotMarker("finding", key)),
+      ],
+    };
+    threads = [thread];
+    await runBotReview(input);
+    expect(review.mock.calls[0]?.[1].earlier).toEqual(included ? [thread] : []);
+  });
+  test("US-012 AC-4 passes resolved check commands", async () => {
+    await runBotReview(input);
+    expect(review.mock.calls[0]?.[1].checks).toEqual(checkCommands(checks));
+  });
+  test.each([
+    [false, [{ id: "D-1", statement: "S" }]],
+    [true, [{ id: "D-1", statement: "S" }]],
+    [false, undefined],
+    [true, undefined],
+  ] as const)("US-012 AC-5/6 forwards decisions or defaults in static mode %s", async (staticMode, decisions) => {
+    if (staticMode)
+      _botReviewDeps.classifyPrTrust = async () => ({ trusted: false, headSha: "head", reasons: ["fork"] });
+    await runBotReview({ ...input, ...(decisions === undefined ? {} : { decisions }) });
+    expect(review.mock.calls[0]?.[1].decisions).toEqual(decisions ?? []);
+  });
+  test("US-012 AC-7/8 forwards all earlier threads beyond the prompt cap and current login", async () => {
+    threads = Array.from(
+      { length: 51 },
+      (_, i): PrThread => ({
+        id: `T-${i}`,
+        replyTo: `C-${i}`,
+        resolved: false,
+        outdated: false,
+        comments: [comment(`C-${i}`, "bot", withNaxBotMarker("finding", `f-${i}`))],
+      }),
+    );
+    await runBotReview(input);
+    expect(post.mock.calls[0]?.[0].earlier).toEqual(threads);
+    expect(post.mock.calls[0]?.[0].login).toBe("bot");
+    expect(review.mock.calls[0]?.[1].earlier).toEqual(threads);
+  });
+  test("US-012 AC-6 defaults omitted decisions to an empty list", async () => {
+    await runBotReview(input);
+    expect(review.mock.calls[0]?.[1].decisions).toEqual([]);
+  });
+  test("US-012 AC-8 forwards the authenticated login", async () => {
+    await runBotReview(input);
+    expect(post.mock.calls[0]?.[0].login).toBe("bot");
+  });
+  test("US-012 AC-9 forwards full resolved checks to posting", async () => {
+    await runBotReview(input);
+    expect(post.mock.calls[0]?.[0].checks).toEqual(checks);
+  });
+  test("US-012 AC-10 forwards failed install command to posting", async () => {
+    preRun.mockRejectedValueOnce(
+      new NaxError("[bot] install failed", "PRE_RUN_FAILED", {
+        stage: "execution",
+        command: "npm ci",
+      }),
+    );
+    await runBotReview(input);
+    expect(post.mock.calls[0]?.[0].preRunFailed).toBe("npm ci");
+    expect(post.mock.calls[0]?.[0].checks).toEqual(checks);
+  });
+  test("US-012 AC-11 static posting gets null checks and prompt gets no commands", async () => {
+    await untrusted();
+    expect(post.mock.calls[0]?.[0].checks).toBeNull();
+    expect(review.mock.calls[0]?.[1].checks).toEqual([]);
+    expect(post.mock.calls[0]?.[0].preRunFailed).toBeUndefined();
+  });
+  test("US-012 AC-12 returns the artifact path", async () => {
+    expect(await runBotReview(input)).toMatchObject({
+      artifactPath: join(botRunDir(runtime.outputDir, 42, runtime.runId), "bot-review.json"),
+    });
+  });
+  test("US-012 AC-13 preserves non-own selection and forge order separately from earlier", async () => {
+    const thread = (id: string, first: PrComment, resolved = false): PrThread => ({
+      id,
+      replyTo: first.id,
+      resolved,
+      outdated: false,
+      comments: [first],
+    });
+    const human = thread("human", comment("human"));
+    const own = thread("own", comment("own", "bot", withNaxBotMarker("finding", "f-own")));
+    const spoofed = thread("spoofed", comment("spoofed", "other", withNaxBotMarker("finding", "f-spoofed")));
+    const unmarked = thread("unmarked", comment("unmarked", "bot"));
+    const replied = {
+      ...thread("replied", comment("first")),
+      comments: [comment("first"), comment("reply", "bot", withNaxBotMarker("reply", "f-reply"))],
+    };
+    threads = [human, own, thread("resolved", comment("resolved"), true), spoofed, unmarked, replied];
+    await runBotReview(input);
+    expect(review.mock.calls[0]?.[1].threads).toEqual([human, spoofed, unmarked, replied]);
+    expect(review.mock.calls[0]?.[1].earlier).toEqual([own]);
+  });
   test("graph validates", () => {
     expect(validateStepGraph(BOT_REVIEW_GRAPH)).toEqual({ errors: [] });
   });

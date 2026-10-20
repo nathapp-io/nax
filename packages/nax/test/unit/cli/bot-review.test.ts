@@ -9,6 +9,7 @@ const posted: BotReviewResult = {
   quality: "changes",
   staticMode: false,
   checksSource: "config",
+  artifactPath: "/artifacts/bot-review.json",
   earlierAnswered: 0,
   inlineFindings: 3,
   threadsAnswered: 2,

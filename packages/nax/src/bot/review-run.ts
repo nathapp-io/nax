@@ -10,6 +10,7 @@ import {
   listReviewThreads,
   ownComments,
   type PrComment,
+  parseNaxBotMarker,
   readCurrentUser,
   readLinkedIssues,
   readPrInfo,
@@ -27,7 +28,8 @@ import { buildPrStepContext } from "../workflow/pr-step-context";
 import { _workflowDeps } from "../workflow/step-context";
 import { loadBotConfig } from "./base-config";
 import { type PrCheckout, preparePrCheckout } from "./checkout";
-import { type BotCheckSource, type BotChecks, resolveBotChecks } from "./checks";
+import { type BotCheckSource, type BotChecks, checkCommands, resolveBotChecks } from "./checks";
+import type { BotDecision } from "./decisions";
 import { botModel } from "./models";
 import { sensitivePaths } from "./path-policy";
 import { type PostReviewInput, type PostReviewOutcome, postPrReview } from "./post";
@@ -74,10 +76,12 @@ export type BotReviewResult =
       readonly quality: PrReviewVerdict["quality"];
       readonly staticMode: boolean;
       readonly checksSource: BotCheckSource | null;
+      readonly artifactPath: string;
     } & PostReviewOutcome)
   | { readonly outcome: "not-reviewed" | "refused"; readonly reason: string };
 
 interface BotReviewInput {
+  readonly decisions?: readonly BotDecision[];
   readonly dir: string;
   readonly pr: number;
   readonly profiles: readonly string[];
@@ -145,7 +149,7 @@ function featurePrd(checkout: PrCheckout): string | undefined {
 async function triage(
   ref: PostReviewInput["ref"],
   cwd: string,
-): Promise<Pick<PostReviewInput, "threads" | "comments" | "own">> {
+): Promise<Required<Pick<PostReviewInput, "threads" | "comments" | "own" | "earlier" | "login">>> {
   const deps = _botReviewDeps;
   const [user, threads, comments] = await Promise.all([
     deps.readCurrentUser(ref, deps.forge, cwd),
@@ -160,6 +164,11 @@ async function triage(
     comment !== undefined && ownComments([comment], user.login).length > 0;
   return {
     own,
+    login: user.login,
+    earlier: threads.filter((thread) => {
+      const first = thread.comments[0];
+      return !thread.resolved && isOwn(first) && parseNaxBotMarker(first?.body ?? "")?.key.startsWith("f-");
+    }),
     threads: threads.filter((thread) => !thread.resolved && !isOwn(thread.comments[0])),
     comments: comments.filter(
       (comment) =>
@@ -237,11 +246,15 @@ async function reviewEnvironment(
       issues,
       threads: items.threads,
       comments: items.comments,
+      earlier: items.earlier,
+      checks: preparation.checks === null ? [] : checkCommands(preparation.checks),
+      decisions: input.decisions ?? [],
       staticMode,
       model: botModel(ctx.config, "review", input.model),
       ...(prdPath === undefined ? {} : { prdPath }),
     },
     post: {
+      ...preparation,
       ref,
       info,
       ...items,
@@ -270,6 +283,7 @@ async function executeReview(env: ReviewEnv, runtime: ReturnType<typeof createRu
     quality: state.verdict.quality,
     staticMode: env.review.staticMode,
     checksSource: env.checks?.source ?? null,
+    artifactPath: join(env.post.stateDir, "bot-review.json"),
   };
 }
 
