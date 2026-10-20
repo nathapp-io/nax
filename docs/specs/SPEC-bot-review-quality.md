@@ -23,6 +23,9 @@ noisy, and `fix` refused any repo without a base-branch `.nax` config. This spec
    caller-supplied decisions file goes into the review (`--decisions <path>`), and `bot-review.json` becomes a
    documented version-2 contract carrying the resolved checks and decision events, starting with
    `finding-withdrawn` (a finding the bot withdrew after a human disagreed in its thread).
+5. **A run log.** `nax bot review` and `nax bot fix` never initialise the logger today, so every warning in the
+   bot code goes to a silent no-op logger. Each run now writes a JSONL log, `bot.jsonl`, next to
+   `bot-review.json`, and the CLI prints its path, so a person or a host such as koda can see what happened.
 
 ## Motivation
 
@@ -41,6 +44,9 @@ First live use, trade-ledger PR #22 (nax#2625, nax#2626):
   reviewer tried failed ("Could not verify" listed all of them), and an empty `.nax-wt/` was left in the repo.
 - The review sandbox blocked loopback listeners, so 62 of 893 tests failed for a sandbox reason, not a code
   reason.
+- Neither command produced a log: `bin/nax.ts` registers `bot` without initialising the logger, so
+  `getLogger()` returns a silent no-op logger and every `warn` in `src/bot/` (failed replies, failed resolves,
+  findings moved off-line) is lost. User ruling (2026-10-20): add the run log to this bundle.
 
 User rulings (2026-10-20): bundle #2625 + #2626 with the review enhancements; the checks order is
 config -> `AGENTS.md`/`CLAUDE.md` (model call is fine) -> auto-detect; the design-decisions item is a prompt
@@ -424,6 +430,36 @@ the full `checks` and `preRunFailed` go to posting with `earlier` and `login` fr
   `"none"`, also print to stderr `nax bot review: no check commands found on the base branch; nax bot fix will refuse`.
 - Exit codes are unchanged (0 posted, 2 not reviewed or refused, 1 error).
 
+### Run log (`src/bot/log.ts`)
+
+```ts
+export interface BotLog { readonly path?: string; close(): Promise<void> }
+export function openBotLog(path: string): BotLog;
+export const _botLogDeps = { addSink, appendFile: (path: string, text: string) => appendFile(path, text) };
+```
+
+- `bin/nax.ts` registers the `bot` group with a `preAction` hook (as it does for `advisor replay`) that calls
+  `initLogger({ level: "silent", useChalk: false })`: the console stays quiet, because stdout carries the
+  command's result lines, but the logger singleton exists so sinks can attach.
+- `openBotLog(path)` registers a sink with `_botLogDeps.addSink` that turns each (already redacted) entry into
+  one line with `formatJsonl` and appends it to `path`, writes chained in order. `close()` unsubscribes the sink
+  and awaits the pending writes. When `addSink` throws `LOGGER_NOT_INITIALIZED` (a host that never initialised
+  the logger, or a test), `openBotLog` returns `{ path: undefined, close: async () => {} }`. A failed append is
+  dropped without throwing.
+- `runBotReview` and `runBotFix` open the log at `join(stateDir, "bot.jsonl")` right after `createRuntime`
+  (where `stateDir = botRunDir(runtime.outputDir, ref.number, runtime.runId)`), and close it in the same
+  `finally` that closes the runtime, before `runtime.close()`.
+- Milestone entries, stage `bot`, level `info` unless noted:
+  - review: `Bot review started` `{ pr, headSha, trusted }`; `Checks resolved` `{ source, commands }` (trusted
+    only, `commands` from `checkCommands`); `Install step failed` (level `warn`) `{ command }`;
+    `Bot review posted` `{ inlineFindings, threadsAnswered, earlierAnswered, failed, intent, quality }`.
+  - fix: `Bot fix started` `{ pr, headSha }`; `Bot fix finished` `{ outcome }` (also for a refusal reached
+    after the log opened, with `outcome: "refused"` and `reason`).
+- Results: the review `posted` result and every fix result produced after the log opened carry
+  `logPath?: string` (omitted when `openBotLog` returned no path). The CLI prints `nax bot review: log <path>`
+  or `nax bot fix: log <path>` to stdout as the last line when `logPath` is set, including on a refusal (exit
+  code unchanged).
+
 ### Checkout cleanup
 
 `cleanup` in `src/bot/checkout.ts`, after removing the worktree, calls `_checkoutDeps.rmdir(<repoRoot>/.nax-wt)`
@@ -451,6 +487,8 @@ once more when the first call rejects with `ENOENT`; any other error, or a secon
 | `.nax-wt` cannot be removed (not empty, missing) | ignored |
 | Worktree directory creation races a `.nax-wt` removal | one retry |
 | Saved review checks have source `none` | `fix` refuses with the no-checks message |
+| No logger initialised when the run starts (embedding host, tests) | no log file; `logPath` omitted; the run continues |
+| Appending a log line fails | the line is dropped; the run continues |
 
 ## Out of Scope
 
@@ -473,11 +511,14 @@ once more when the first call rejects with `ENOENT`; any other error, or a secon
 - An install step whose output is not gitignored (for example `node_modules` in a repo without that ignore) still makes `fix` report a dirty tree, as today's `preRun` does.
 - `fix` does not re-resolve checks when the base branch moved after the review; the saved checks belong to the reviewed head.
 - The review never resolves a thread another person opened (R12).
+- Warnings raised before the runtime exists (PR lookup, trust classification, checkout preparation) are not in `bot.jsonl`; the log starts once the run directory is known.
+- `bot.jsonl` is not uploaded or rotated anywhere; a host reads it from the run directory.
+- The bot log does not echo warnings to the console; the CLI prints the log path instead.
 - User documentation (a `docs/guides/` page on the integration seam, the `bot-review.json` v2 format and the consumer rule for `disagreedBy`, and the `--decisions` entry in `docs/cli-reference.md`) is a manual follow-up after merge.
 
 ## Stories
 
-Fifteen stories, one capability (the `nax bot` review/fix loop); bundling #2625, #2626 and the review
+Sixteen stories, one capability (the `nax bot` review/fix loop); bundling #2625, #2626 and the review
 enhancements is the user's ruling (2026-10-20). Stories are cut to stay at or under the 24-AC cap after
 `nax plan` splits compound ACs. All stories run in `packages/nax`.
 
@@ -579,6 +620,13 @@ No dependencies. Workdir: packages/nax.
 `resolveOwnFindings` (`src/bot/fix-report.ts`) replies `Fixed in <sha7>: ...` on each own agreed finding
 thread before resolving it, and `replyStep` counts those replies.
 
+### US-016: Bot run log
+Depends on US-013, US-014. Workdir: packages/nax.
+
+Adds `openBotLog`, `BotLog` and `_botLogDeps` in `src/bot/log.ts` (exported from `@/bot`), the `preAction`
+logger hook for the `bot` group in `bin/nax.ts`, the log open and close and the milestone entries in
+`runBotReview` and `runBotFix`, `logPath` on their results, and the CLI log line.
+
 ### Context Files
 
 **US-001**
@@ -665,6 +713,13 @@ thread before resolving it, and `replyStep` counts those replies.
 - `packages/nax/src/bot/fix-report.ts`
 - `packages/nax/src/forge/marker.ts`
 
+**US-016**
+- `packages/nax/src/logger/logger.ts`
+- `packages/nax/bin/nax.ts`
+- `packages/nax/src/bot/review-run.ts`
+- `packages/nax/src/bot/fix-run.ts`
+- `packages/nax/src/cli/bot.ts`
+
 ### Creates
 
 **US-001**
@@ -676,6 +731,9 @@ thread before resolving it, and `replyStep` counts those replies.
 
 **US-004**
 - `packages/nax/src/bot/decisions.ts`
+
+**US-016**
+- `packages/nax/src/bot/log.ts`
 
 ### Modifies
 
@@ -717,6 +775,7 @@ thread before resolving it, and `replyStep` counts those replies.
 - US-011 calls `resolveBotChecks` (US-002, US-003) and `runPreRunSteps` through `_botReviewDeps`; its ACs stub both and drive `runBotReview`. Its `extract` closure calls `botChecksExtractOp` (US-001) through `_workflowDeps.callOp`.
 - US-012 passes `earlier`, `login`, `checks` and `preRunFailed` into `postPrReview` (US-007 to US-010) and `earlier`, `checks`, `decisions` into `runPrReview` (US-006); its ACs stub both through `_botReviewDeps`.
 - US-013's CLI calls `loadBotDecisions` (US-004) through `_botCliDeps` and passes the result to `runBotReview` (US-012); its ACs stub `runBotReview` through `_botCliDeps` and drive the commander program built by `registerBotCommand`.
+- US-016's `runBotReview` and `runBotFix` call `openBotLog` through `_botReviewDeps.openBotLog` and `_botFixDeps.openBotLog`; its ACs stub it and drive both runners.
 - US-014 reads `checks` from the version-2 artifact (US-007) and otherwise calls `resolveBotChecks` (US-002, US-003) through `_botFixDeps`; its ACs stub both `loadLatestReview` and `resolveBotChecks` and drive `runBotFix`.
 
 ## Acceptance Criteria
@@ -999,3 +1058,27 @@ and forge calls go through injectable deps and are faked in tests; no test touch
 - [integration] The `replyStep` reply text after `Fixed in <sha7>: ` is the first line of the agreed issue cut to 200 characters.
 - [integration] `replyStep` makes no `resolveThread` call for an own finding thread whose reply failed.
 - [integration] `replyStep` returns `replied` counting the agreed-thread replies plus the own-finding replies.
+
+### US-016
+
+- [unit] `openBotLog(path)` with a logger initialised writes one JSONL line to `path` for a `getLogger().warn("bot", "x")` call.
+- [unit] That line parses as JSON with `level` `"warn"`, `stage` `"bot"` and `message` `"x"`.
+- [unit] `openBotLog(path)` writes an `info` entry even though the initialised logger's console level is `silent`.
+- [unit] `openBotLog(path)` writes entries in the order they were logged.
+- [unit] After `close()` resolves, a later `getLogger().warn` call adds no line to `path`.
+- [unit] `close()` resolves only after every pending append has finished.
+- [unit] `openBotLog(path)` with `addSink` throwing `LOGGER_NOT_INITIALIZED` returns `path` undefined.
+- [unit] A rejected `appendFile` does not make the log call or `close()` throw.
+- [integration] With `_botReviewDeps.openBotLog` stubbed, a trusted `runBotReview` opens the log at `join(stateDir, "bot.jsonl")`.
+- [integration] `runBotReview` closes the log before `runtime.close()`.
+- [integration] `runBotReview` closes the log when the review step throws.
+- [integration] A posted `runBotReview` returns `logPath` equal to the opened log's `path`.
+- [integration] A trusted `runBotReview` logs `Checks resolved` with the resolved `source`.
+- [integration] `runBotReview` logs `Bot review posted` with `inlineFindings`, `intent` and `quality`.
+- [integration] With `_botFixDeps.openBotLog` stubbed, `runBotFix` opens the log at `join(stateDir, "bot.jsonl")` and returns its path as `logPath`.
+- [integration] `runBotFix` refused for no checks logs `Bot fix finished` with `outcome: "refused"` and returns `logPath`.
+- [integration] `runBotFix` refused for a closed PR returns no `logPath`.
+- [cli] A posted review with `logPath: "/x/bot.jsonl"` prints `nax bot review: log /x/bot.jsonl` as its last stdout line.
+- [cli] A fix result with `logPath: "/x/bot.jsonl"` prints `nax bot fix: log /x/bot.jsonl` as its last stdout line.
+- [cli] A refused fix with `logPath` set prints the log line and still exits 2.
+- [cli] Running `nax bot review` through the program built in `bin/nax.ts` initialises the logger before `runBotReview` is called.
