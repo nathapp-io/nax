@@ -3,7 +3,7 @@
   "feature": "bot-review-fix",
   "branchName": "feat/bot-review-fix",
   "createdAt": "2026-10-20T00:00:00.000Z",
-  "updatedAt": "2026-10-20T09:42:53.153Z",
+  "updatedAt": "2026-10-20T09:53:30.555Z",
   "userStories": [
     {
       "id": "US-001",
@@ -762,14 +762,17 @@
         "US-007",
         "US-011"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "The orchestration joins existing forge, checkout, runtime and graph primitives with partial-resource cleanup; authenticated ownership and disabling MCP for untrusted reviews require strict security TDD."
+        "reasoning": "The orchestration joins existing forge, checkout, runtime and graph primitives with partial-resource cleanup; authenticated ownership and disabling MCP for untrusted reviews require strict security TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/feature-graph.ts",
@@ -791,7 +794,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "c019791f99ac646a60c53f758b0726ae048e3602"
     },
     {
       "id": "US-013",
