@@ -3,7 +3,7 @@
   "feature": "step-graph-g4-forge-threads",
   "branchName": "feat/step-graph-g4-forge-threads",
   "createdAt": "2026-10-20T00:00:00.000Z",
-  "updatedAt": "2026-10-20T04:11:19.527Z",
+  "updatedAt": "2026-10-20T04:11:24.944Z",
   "userStories": [
     {
       "id": "US-001",
@@ -182,14 +182,17 @@
         "b1"
       ],
       "dependencies": [],
-      "status": "pending",
+      "status": "failed",
       "passes": false,
-      "attempts": 0,
+      "attempts": 1,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Additive pure contracts and deterministic remote parsing reuse the existing forge detection and injected subprocess interface."
+        "reasoning": "Additive pure contracts and deterministic remote parsing reuse the existing forge detection and injected subprocess interface.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/forge/detect.ts",
@@ -213,7 +216,9 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "be43fd7746ac75b7d441fa208603bb11407d39fd",
+      "failureStage": "workflow"
     },
     {
       "id": "US-004",
