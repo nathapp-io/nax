@@ -3,7 +3,7 @@
   "feature": "bot-review-quality",
   "branchName": "feat/bot-review-quality",
   "createdAt": "2026-10-20T00:00:00Z",
-  "updatedAt": "2026-10-20T17:41:09.563Z",
+  "updatedAt": "2026-10-20T17:51:21.076Z",
   "userStories": [
     {
       "id": "US-001",
@@ -883,14 +883,17 @@
         "US-003",
         "US-007"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Saved-check selection and gate cwd mapping extend the existing preparation/env seams rather than the graph; strict isolation remains required for trusted host execution and push-access ordering."
+        "reasoning": "Saved-check selection and gate cwd mapping extend the existing preparation/env seams rather than the graph; strict isolation remains required for trusted host execution and push-access ordering.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/fix-run.ts",
@@ -922,7 +925,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "dd3a76a7153fa56c8d865aa751a926dbd5fa4ed6"
     },
     {
       "id": "US-015",
