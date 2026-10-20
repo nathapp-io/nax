@@ -9,7 +9,7 @@ import { WORKFLOW_ENUMERATION_INSTRUCTION, WORKFLOW_QUALITY_CHECKLIST } from "./
 
 export interface BranchReviewPromptInput {
   readonly specPath?: string;
-  readonly prdPath: string;
+  readonly prdPath?: string;
   readonly preflightPath?: string;
   readonly packagePath: string;
   /** `<seed>..HEAD`: the commit range every changed file is read through (US-001). */
@@ -73,7 +73,7 @@ export function buildWorkflowBranchReviewPrompt(input: BranchReviewPromptInput):
   const gates = input.gateFindings.length > 0 ? renderWorkflowFindings(input.gateFindings) : NONE;
   return `You are reviewing a whole feature branch. Every story was implemented and reviewed on its own already. Read:
 - the feature spec: ${input.specPath ?? "(no spec file found)"}
-- the PRD (stories and acceptance criteria): ${input.prdPath}${preflight}
+- the PRD (stories and acceptance criteria): ${input.prdPath ?? "(no PRD for this change)"}${preflight}
 - the branch review package (commits, --stat, changed files; no diff is inlined): ${input.packagePath}
 
 ${buildBranchPackageReadingNote(input.range)}
@@ -150,12 +150,16 @@ Reply with only this JSON object:
 
 export function buildWorkflowBranchFixPrompt(input: {
   specPath?: string;
-  prdPath: string;
+  prdPath?: string;
   reportPath: string;
   findings: readonly WorkflowPromptFinding[];
 }): string {
-  const spec = input.specPath ? `the spec (${input.specPath}) and ` : "";
-  return `You are fixing a feature branch after its whole-branch review. Fix every finding in this pass: a later pass, if any, only re-checks what is still open. Read ${spec}the PRD (${input.prdPath}) for what the feature must do.
+  const documents = [
+    ...(input.specPath ? [`the spec (${input.specPath})`] : []),
+    ...(input.prdPath !== undefined ? [`the PRD (${input.prdPath})`] : []),
+  ];
+  const read = documents.length > 0 ? ` Read ${documents.join(" and ")} for what the feature must do.` : "";
+  return `You are fixing a feature branch after its whole-branch review. Fix every finding in this pass: a later pass, if any, only re-checks what is still open.${read}
 
 ## Findings to fix
 ${renderWorkflowFindings(input.findings)}

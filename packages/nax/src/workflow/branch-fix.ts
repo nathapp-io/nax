@@ -9,7 +9,7 @@ import { getSafeLogger } from "@/logger";
 import { workflowBranchFixOp } from "@/operations";
 import { buildWorkflowBranchFixPrompt } from "@/prompts";
 import { FEATURE_SCOPE } from "./advisor-live";
-import type { FeatureContext } from "./feature-context";
+import type { BranchStepContext } from "./branch-step-context";
 import { listUncommitted } from "./git";
 import { _workflowDeps } from "./step-context";
 import type { ImplementerReply, WorkflowFinding } from "./types";
@@ -27,7 +27,7 @@ interface FixSession {
   readonly failure?: string;
 }
 
-async function ensureReport(fc: FeatureContext): Promise<void> {
+async function ensureReport(fc: BranchStepContext): Promise<void> {
   if (await Bun.file(fc.reportPath).exists()) return;
   await Bun.write(fc.reportPath, `# Feature report — ${fc.feature}\n\nThe branch fix appends its section below.\n`);
 }
@@ -37,7 +37,7 @@ async function ensureReport(fc: FeatureContext): Promise<void> {
  * unreadable tree (`listUncommitted` throws, nax#2550) lands in the same catch: it is logged and not
  * reported as dirty, because nothing is known to be left; `publish` fails closed on the same read.
  */
-async function commitLeftovers(fc: FeatureContext): Promise<{ autoCommitted: boolean; dirty: boolean }> {
+async function commitLeftovers(fc: BranchStepContext): Promise<{ autoCommitted: boolean; dirty: boolean }> {
   let hasEdits = false;
   try {
     if ((await listUncommitted(fc.projectDir)).length === 0) return { autoCommitted: false, dirty: false };
@@ -61,7 +61,7 @@ async function commitLeftovers(fc: FeatureContext): Promise<{ autoCommitted: boo
   }
 }
 
-async function runFixSession(fc: FeatureContext, prompt: string): Promise<FixSession> {
+async function runFixSession(fc: BranchStepContext, prompt: string): Promise<FixSession> {
   try {
     const reply = await _workflowDeps.callOp(fc.callCtx, workflowBranchFixOp, {
       prompt,
@@ -76,13 +76,13 @@ async function runFixSession(fc: FeatureContext, prompt: string): Promise<FixSes
 }
 
 export async function runBranchFix(
-  fc: FeatureContext,
+  fc: BranchStepContext,
   input: { specPath?: string; findings: readonly WorkflowFinding[] },
 ): Promise<BranchFixOutcome> {
   await ensureReport(fc);
   const prompt = buildWorkflowBranchFixPrompt({
     ...(input.specPath ? { specPath: input.specPath } : {}),
-    prdPath: fc.prdPath,
+    ...(fc.prdPath !== undefined ? { prdPath: fc.prdPath } : {}),
     reportPath: fc.reportPath,
     findings: input.findings,
   });

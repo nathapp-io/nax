@@ -2,21 +2,23 @@
   "version": 1,
   "servers": {
     "codebase-memory": {
-      "check_index_coverage": "f483bdba47ec1394",
+      "check_index_coverage": "b8b00f9b87cb57ed",
+      "compare_graphs": "87ec262d89f36b82",
       "delete_project": "45dbba3dc46a8289",
-      "detect_changes": "7126992d1eaf555a",
-      "get_architecture": "f0cfa49dc77560be",
-      "get_code_snippet": "a8ab4d77622a0d7e",
-      "get_graph_schema": "45dbba3dc46a8289",
-      "index_repository": "acbd0353cac261f2",
-      "index_status": "7d00631e6b2d47b0",
-      "ingest_traces": "2f5ddb99faddae6f",
-      "list_projects": "e2f8fdae271443de",
-      "manage_adr": "e6153146ee9eed9e",
-      "query_graph": "6ede5c4f555d4db7",
-      "search_code": "406fb786696b3663",
-      "search_graph": "e503dd429cd62d3e",
-      "trace_path": "7db1d3d8215bea76"
+      "detect_changes": "346fbeaa837d5c1f",
+      "get_architecture": "8789f11d147ef052",
+      "get_code_snippet": "1c6007751d6f46ce",
+      "get_file_outline": "0f77ac2e7768c23a",
+      "get_graph_schema": "d86e64c6c3904c45",
+      "index_repository": "0fa32989ec66c700",
+      "index_status": "04b893d10a363a0b",
+      "ingest_traces": "6ef32f649c3c80a8",
+      "list_projects": "a71b4d8af74907af",
+      "manage_adr": "54d93874455b6c3f",
+      "query_graph": "645289466a3a14d0",
+      "search_code": "cc83201b0c64547e",
+      "search_graph": "65e5048e145a8077",
+      "trace_path": "730682166f723d94"
     }
   }
 }
