@@ -70,11 +70,27 @@ function instructionPaths(output: string): string[] {
   return output.split("\0").filter((path) => BASE_PINNED_NAMES.some((name) => basename(path) === name));
 }
 
+async function removePinnedPath(path: string): Promise<void> {
+  try {
+    await _checkoutDeps.rm(path);
+  } catch (cause) {
+    // A head-controlled regular-file parent means this nested path is already absent.
+    if (
+      typeof cause === "object" &&
+      cause !== null &&
+      "code" in cause &&
+      (cause.code === "ENOENT" || cause.code === "ENOTDIR")
+    )
+      return;
+    throw cause;
+  }
+}
+
 async function pinInstructions(worktree: string, baseSha: string): Promise<void> {
   // Remove head links BEFORE any nested path is touched: a PR can make .nax or packages a link.
   await removeSymlinks(worktree);
   for (const path of BASE_PINNED_PATHS) {
-    await _checkoutDeps.rm(join(worktree, path));
+    await removePinnedPath(join(worktree, path));
     const exists = await _checkoutDeps.runGit(["cat-file", "-e", `${baseSha}:${path}`], worktree);
     if (exists.exitCode === 0) await git(["checkout", baseSha, "--", path], worktree);
   }

@@ -110,6 +110,20 @@ describe("preparePrCheckout", () => {
       ),
     ).toBe(false);
   });
+  test.each([
+    [".nax", ".nax/rules"],
+    [".github", ".github/copilot-instructions.md"],
+  ])("F1: review tolerates a regular file named %s in the head", async (parent, pinnedPath) => {
+    await Bun.write(join(repo, parent), "head file");
+    await commit();
+    const prepared = await prepare(true);
+    expect(await Bun.file(join(prepared.worktree, parent)).text()).toBe("head file");
+    const missingCode = await lstat(join(prepared.worktree, pinnedPath)).then(
+      () => "exists",
+      (error: NodeJS.ErrnoException) => error.code,
+    );
+    expect(missingCode).toBe("ENOTDIR");
+  });
   test("AC-17: trusted fix checkout retains head rules", async () => {
     await Bun.write(join(repo, ".nax/rules/evil.md"), "head rule");
     await commit();
