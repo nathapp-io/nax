@@ -53,3 +53,17 @@ describe("checkPushAccess", () => {
     expect(await bot.checkPushAccess("/w", "feat/x")).toEqual({ ok: false, reason: "remote: Permission denied" });
   });
 });
+
+test("push access timeout is diagnostic, not an empty refusal", async () => {
+  bot._fixInputDeps.runGit = async () => ({ exitCode: 1, stdout: "", stderr: "", timedOut: true });
+  expect(await bot.checkPushAccess("/w", "feat/x")).toEqual({ ok: false, reason: "push access probe timed out" });
+});
+test("a vanished artifact mtime does not hide another review", async () => {
+  bot._fixInputDeps.glob = async () => ["vanished", "present"];
+  bot._fixInputDeps.readText = async () => JSON.stringify({ version: 1, headSha: "h" });
+  bot._fixInputDeps.mtimeMs = async (path) => {
+    if (path === "vanished") throw new Error("ENOENT");
+    return 1;
+  };
+  expect(await bot.loadLatestReview("/o", 42, "h")).toMatchObject({ headSha: "h" });
+});

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { resolveDefaultAgent } from "@/agents";
 import type { ConfiguredModel } from "@/config";
 import { NaxError } from "@/errors";
-import { type OwnComment, type PrComment, parseNaxBotMarker } from "@/forge";
+import { ownComments } from "@/forge";
 import { defineStepGraph, runStepGraph, type StepGraph } from "@/step-graph";
 // Import lifecycle/workflow leaves, never their orchestration barrels.
 import { runPreRunSteps } from "../execution/lifecycle/pre-run-steps";
@@ -69,7 +69,7 @@ export const BOT_FIX_GRAPH: StepGraph<BotFixState, BotFixEnv, BotFixStep> = defi
     fix: {
       kind: "agent",
       commits: true,
-      produces: ["agreedCount", "outcome", "fixFailure"],
+      produces: ["agreedCount", "outcome", "fixFailure", "fixDirty"],
       exits: ["nothing", "ran"],
       transitions: [
         { on: "nothing", to: "ready" },
@@ -79,22 +79,22 @@ export const BOT_FIX_GRAPH: StepGraph<BotFixState, BotFixEnv, BotFixStep> = defi
     },
     check: {
       kind: "git",
-      produces: ["changed", "protectedFiles", "outcome"],
-      exits: ["no-change", "protected", "changed"],
+      produces: ["changed", "protectedFiles", "outcome", "recoveryPath"],
+      exits: ["no-change", "protected", "changed", "dirty"],
       transitions: [{ on: "changed", to: "gates" }, { to: "report" }],
       run: (env, state) => _botFixDeps.checkStep(env, state),
     },
     gates: {
       kind: "gate",
-      produces: ["outcome", "failingGates"],
-      exits: ["no-gates", "failed", "passed"],
+      produces: ["outcome", "failingGates", "recoveryPath"],
+      exits: ["no-gates", "failed", "passed", "dirty"],
       transitions: [{ on: "passed", to: "push" }, { to: "report" }],
       run: (env, state) => _botFixDeps.gatesStep(env, state),
     },
     push: {
       kind: "git",
-      produces: ["pushedSha", "outcome"],
-      exits: ["rejected", "pushed"],
+      produces: ["pushedSha", "outcome", "recoveryPath"],
+      exits: ["rejected", "pushed", "dirty"],
       transitions: [{ on: "pushed", to: "reply" }, { to: "report" }],
       run: (env, state) => _botFixDeps.pushStep(env, state),
     },
@@ -129,16 +129,15 @@ type PreparedFix = Pick<BotFixEnv, "repoRoot" | "ref" | "info" | "checkout">;
 async function triage(prepared: PreparedFix): Promise<Pick<BotFixEnv, "user" | "threads" | "own">> {
   const deps = _botFixDeps;
   const { ref, repoRoot } = prepared;
-  const user = await deps.readCurrentUser(ref, deps.forge, repoRoot);
-  const threads = await deps.listReviewThreads(ref, deps.forge, repoRoot);
-  const comments = await deps.listPrComments(ref, deps.forge, repoRoot);
-  const own: OwnComment[] = [];
-  const collect = (comment: PrComment, threadId?: string): void => {
-    const marker = comment.author === user.login ? parseNaxBotMarker(comment.body) : null;
-    if (marker) own.push({ comment, key: marker.key, ...(threadId === undefined ? {} : { threadId }) });
-  };
-  for (const thread of threads) for (const comment of thread.comments) collect(comment, thread.id);
-  for (const comment of comments) collect(comment);
+  const [user, threads, comments] = await Promise.all([
+    deps.readCurrentUser(ref, deps.forge, repoRoot),
+    deps.listReviewThreads(ref, deps.forge, repoRoot),
+    deps.listPrComments(ref, deps.forge, repoRoot),
+  ]);
+  const own = [
+    ...threads.flatMap((thread) => ownComments(thread.comments, user.login, thread.id)),
+    ...ownComments(comments, user.login),
+  ];
   return { user, threads, own };
 }
 

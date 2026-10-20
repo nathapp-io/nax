@@ -8,9 +8,8 @@ import {
   defaultForgeDeps,
   listPrComments,
   listReviewThreads,
-  type OwnComment,
+  ownComments,
   type PrComment,
-  parseNaxBotMarker,
   readCurrentUser,
   readLinkedIssues,
   readPrInfo,
@@ -138,18 +137,17 @@ async function triage(
   cwd: string,
 ): Promise<Pick<PostReviewInput, "threads" | "comments" | "own">> {
   const deps = _botReviewDeps;
-  const user = await deps.readCurrentUser(ref, deps.forge, cwd);
-  const threads = await deps.listReviewThreads(ref, deps.forge, cwd);
-  const comments = await deps.listPrComments(ref, deps.forge, cwd);
-  const own: OwnComment[] = [];
-  const collect = (comment: PrComment, threadId?: string): void => {
-    const marker = comment.author === user.login ? parseNaxBotMarker(comment.body) : null;
-    if (marker) own.push({ comment, key: marker.key, ...(threadId === undefined ? {} : { threadId }) });
-  };
-  for (const thread of threads) for (const comment of thread.comments) collect(comment, thread.id);
-  for (const comment of comments) collect(comment);
+  const [user, threads, comments] = await Promise.all([
+    deps.readCurrentUser(ref, deps.forge, cwd),
+    deps.listReviewThreads(ref, deps.forge, cwd),
+    deps.listPrComments(ref, deps.forge, cwd),
+  ]);
+  const own = [
+    ...threads.flatMap((thread) => ownComments(thread.comments, user.login, thread.id)),
+    ...ownComments(comments, user.login),
+  ];
   const isOwn = (comment: PrComment | undefined): boolean =>
-    comment !== undefined && comment.author === user.login && parseNaxBotMarker(comment.body) !== null;
+    comment !== undefined && ownComments([comment], user.login).length > 0;
   return {
     own,
     threads: threads.filter((thread) => !thread.resolved && !isOwn(thread.comments[0])),
@@ -175,8 +173,10 @@ async function reviewEnvironment(
 ): Promise<ReviewEnv> {
   const { repoRoot, ref, info, checkout, staticMode } = prepared;
   const { ctx, stateDir } = context;
-  const items = await triage(ref, repoRoot);
-  const issues = await _botReviewDeps.readLinkedIssues(ref, info.body, _botReviewDeps.forge, repoRoot);
+  const [items, issues] = await Promise.all([
+    triage(ref, repoRoot),
+    _botReviewDeps.readLinkedIssues(ref, info.body, _botReviewDeps.forge, repoRoot),
+  ]);
   const prdPath = featurePrd(checkout);
   return {
     ctx,

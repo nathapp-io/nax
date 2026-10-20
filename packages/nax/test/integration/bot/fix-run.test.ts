@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
-import { makeBotFixEnv, makeNaxConfig, makeTestRuntime } from "@test/helpers";
+import { makeBotFixDeps, makeBotFixEnv, makeNaxConfig, makeTestRuntime } from "@test/helpers";
 import { _botFixDeps, runBotFix } from "@/bot/fix-run";
 import { NaxError } from "@/errors";
 import { withNaxBotMarker } from "@/forge";
@@ -65,6 +65,7 @@ beforeEach(() => {
     events.push("context-close");
   });
   Object.assign(_botFixDeps, {
+    ...makeBotFixDeps(env, runtime),
     gitToplevel: async () => "/repo",
     ensureProjectTrusted: async () => {
       events.push("trust");
@@ -74,10 +75,8 @@ beforeEach(() => {
       return env.ref;
     },
     readPrInfo: async () => env.info,
-    classifyPrTrust: async () => ({ trusted: true, headSha: env.info.headSha, reasons: [] }),
     preparePrCheckout: prepare,
     loadBotConfig: load,
-    createRuntime: () => runtime,
     buildPrStepContext: async () => ({ ctx: env.ctx, dispose }),
     loadLatestReview: latest,
     checkPushAccess: access,

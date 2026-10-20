@@ -67,6 +67,11 @@ describe("renderThreadReply", () => {
 });
 
 describe("renderReviewSummary", () => {
+  test("omits a line number without a file", () => {
+    expect(bot.renderReviewSummary(summary({ offLine: [{ ...finding, line: 5 }] }))).toContain(
+      "- **Important** Leaks fd",
+    );
+  });
   test("AC-8 marks the summary", () => {
     expect(parseNaxBotMarker(bot.renderReviewSummary(summary()))).toEqual({ key: "summary" });
   });

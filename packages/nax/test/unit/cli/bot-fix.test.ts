@@ -161,7 +161,7 @@ describe("bot fix help and export", () => {
     ]);
     expect(code).toBe(0);
     expect(err).toBe("");
-    expect(out).toContain("fix");
+    expect(out).toMatch(/^\s+fix(?:\s+\[options\])?\s+<pr>/m);
     expect(out).toContain("review");
   }, 30_000);
   test("exports botFixCommand through the public CLI barrel", async () => {

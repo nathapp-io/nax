@@ -46,11 +46,34 @@ beforeEach(() => {
 afterEach(() => Object.assign(_checkoutDeps, original));
 
 describe("botWorktreePath", () => {
+  test.each(["../../../../etc/x", "a/b", "a\\b", ""])("rejects unsafe suffix %s", (suffix) => {
+    expect(() => botWorktreePath("/r", 42, suffix)).toThrow("Invalid checkout suffix");
+  });
   test("AC-1: lives beneath the trusted repo root", () => {
     expect(botWorktreePath("/r", 42, "ab12cd34")).toBe("/r/.nax-wt/bot-pr-42-ab12cd34");
   });
 });
 describe("preparePrCheckout", () => {
+  test("a failed worktree add still unwinds its registration", async () => {
+    const run = _checkoutDeps.runGit;
+    _checkoutDeps.runGit = async (argv, cwd) => {
+      if (argv[0] === "worktree" && argv[1] === "add") return { exitCode: 128, stdout: "", stderr: "partial add" };
+      return run(argv, cwd);
+    };
+    await expect(preparePrCheckout(input)).rejects.toThrow("partial add");
+    expect(calls).toContainEqual({
+      argv: ["worktree", "remove", "--force", botWorktreePath("/r", 42, input.suffix)],
+      cwd: "/r",
+    });
+  });
+  test("a timed out base path read fails instead of silently omitting rules", async () => {
+    const run = _checkoutDeps.runGit;
+    _checkoutDeps.runGit = async (argv, cwd) =>
+      argv[0] === "ls-tree" ? { exitCode: 1, stdout: "", stderr: "", timedOut: true } : run(argv, cwd);
+    await expect(preparePrCheckout({ ...input, pinBaseFiles: true })).rejects.toMatchObject({
+      code: "BOT_CHECKOUT_FAILED",
+    });
+  });
   test.each([
     ["github", "pull/42/head"],
     ["gitlab", "merge-requests/42/head"],

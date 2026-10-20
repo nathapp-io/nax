@@ -78,6 +78,13 @@ afterEach(() => {
 });
 
 describe("postPrReview", () => {
+  test("an off-line finding does not consume the inline dedupe key", async () => {
+    const outcome = await bot.postPrReview({
+      ...input,
+      verdict: { ...input.verdict, findings: [{ ...finding, line: undefined }, finding] },
+    });
+    expect(outcome).toMatchObject({ offLine: 1, inlineFindings: 1 });
+  });
   test("artifact storage failure prevents every forge mutation", async () => {
     const blocker = join(stateDir, "not-a-directory");
     await Bun.write(blocker, "file");

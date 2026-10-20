@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { makeBotFixEnv, makeTestRuntime } from "@test/helpers";
+import { makeBotFixDeps, makeBotFixEnv, makeTestRuntime } from "@test/helpers";
 import { _botFixDeps, runBotFix } from "@/bot/fix-run";
 import type { BotFixState, BotFixStep } from "@/bot/fix-steps";
 import { botRunDir } from "@/workflow/paths";
@@ -17,22 +17,8 @@ beforeEach(() => {
   const env = makeBotFixEnv();
   runtime = makeTestRuntime({ config: env.config });
   Object.assign(_botFixDeps, {
-    gitToplevel: async () => env.repoRoot,
-    ensureProjectTrusted: async () => {},
-    resolvePrRef: async () => env.ref,
+    ...makeBotFixDeps(env, runtime),
     readPrInfo: async () => ({ ...env.info, draft: true }),
-    classifyPrTrust: async () => ({ trusted: true, headSha: env.info.headSha, reasons: [] }),
-    preparePrCheckout: async () => env.checkout,
-    loadBotConfig: async () => env.config,
-    createRuntime: () => runtime,
-    buildPrStepContext: async () => ({ ctx: env.ctx, dispose: async () => {} }),
-    loadLatestReview: async () => env.review,
-    checkPushAccess: async () => ({ ok: true }),
-    runPreRunSteps: async () => {},
-    readCurrentUser: async () => env.user,
-    listReviewThreads: async () => [],
-    listPrComments: async () => [],
-    randomSuffix: () => "graph-test",
     writeJson: async (path: string, value: unknown) => {
       writes.push({ path, value: structuredClone(value) });
     },
@@ -103,6 +89,13 @@ describe("runBotFix graph routing", () => {
       sequence: ["fix", "check", "gates", "push", "report"],
     },
     { ac: "AC-8/9", node: "check", exit: "protected", outcome: "protected", sequence: ["fix", "check", "report"] },
+    {
+      ac: "dirty trees stop before gates and push",
+      node: "check",
+      exit: "dirty",
+      outcome: "dirty",
+      sequence: ["fix", "check", "report"],
+    },
     { ac: "AC-10", node: "check", exit: "no-change", outcome: "no-change", sequence: ["fix", "check", "report"] },
     {
       ac: "AC-11",

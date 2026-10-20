@@ -34,10 +34,14 @@ export interface PrCheckout {
   readonly snapshotDir: string;
   readonly hasBaseNax: boolean;
   readonly changedFiles: string[];
+  /** Keep this checkout as a durable recovery artifact instead of deleting unfinished work. */
+  retain?(): void;
   dispose(): Promise<void>;
 }
 
 export function botWorktreePath(repoRoot: string, n: number, suffix: string): string {
+  if (!/^[A-Za-z0-9_-]+$/.test(suffix))
+    throw new NaxError("[bot] Invalid checkout suffix", "BOT_CHECKOUT_SUFFIX_INVALID", { stage: "bot", suffix });
   return join(repoRoot, ".nax-wt", `bot-pr-${n}-${suffix}`); // nax-worktree-id-allow: Canonical bot PR path, not a story worktree.
 }
 
@@ -56,7 +60,7 @@ async function git(argv: string[], cwd: string): Promise<string> {
 
 /** Compare committed trees, not the base-pinned index. Disabling renames keeps both sides of moves. */
 export async function changedPaths(cwd: string, from: string): Promise<string[]> {
-  return (await git(["diff", "--name-only", "--no-renames", from, "HEAD"], cwd)).split("\n").filter(Boolean);
+  return (await git(["diff", "--name-only", "-z", "--no-renames", from, "HEAD"], cwd)).split("\0").filter(Boolean);
 }
 
 async function removeSymlinks(worktree: string): Promise<void> {
@@ -91,8 +95,8 @@ async function pinInstructions(worktree: string, baseSha: string): Promise<void>
   await removeSymlinks(worktree);
   for (const path of BASE_PINNED_PATHS) {
     await removePinnedPath(join(worktree, path));
-    const exists = await _checkoutDeps.runGit(["cat-file", "-e", `${baseSha}:${path}`], worktree);
-    if (exists.exitCode === 0) await git(["checkout", baseSha, "--", path], worktree);
+    const names = (await git(["ls-tree", "--name-only", "-z", baseSha, "--", path], worktree)).split("\0");
+    if (names.includes(path)) await git(["checkout", baseSha, "--", path], worktree);
   }
   await removeSymlinks(worktree);
   const headFiles = instructionPaths(await git(["ls-files", "-z"], worktree));
@@ -158,14 +162,26 @@ export async function preparePrCheckout(input: {
   let snapshotDir: string | undefined;
   try {
     await _checkoutDeps.ensureGitExcludes(repoRoot);
+    created = true; // Own even a partially registered worktree when add fails.
     await git(["worktree", "add", "--detach", worktree, info.headSha], repoRoot);
-    created = true;
     snapshotDir = await _checkoutDeps.mkdtemp();
     const hasBaseNax = await _checkoutDeps.snapshotBaseNax(repoRoot, baseSha, snapshotDir);
     if (pinBaseFiles) await pinInstructions(worktree, baseSha);
     const changedFiles = await changedPaths(worktree, mergeBase);
     const artifacts = { repoRoot, worktree, snapshotDir };
-    return { worktree, baseSha, mergeBase, snapshotDir, hasBaseNax, changedFiles, dispose: () => cleanup(artifacts) };
+    let retained = false;
+    return {
+      worktree,
+      baseSha,
+      mergeBase,
+      snapshotDir,
+      hasBaseNax,
+      changedFiles,
+      retain: () => {
+        retained = true;
+      },
+      dispose: () => cleanup({ ...artifacts, worktree: retained ? undefined : worktree }),
+    };
   } catch (cause) {
     await cleanup({ repoRoot, worktree: created ? worktree : undefined, snapshotDir });
     throw cause;

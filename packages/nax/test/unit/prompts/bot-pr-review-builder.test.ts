@@ -41,6 +41,20 @@ describe("buildBotPrReviewPrompt", () => {
   ] as const)("%s includes required instruction", (_ac, input, expected) => {
     expect(prompts.buildBotPrReviewPrompt(input)).toContain(expected);
   });
+  test("whitespace-only body has no intent", () => {
+    expect(prompts.buildBotPrReviewPrompt({ ...base, pr: { ...base.pr, body: " \n\t" } })).toContain(
+      "There is no stated intent",
+    );
+  });
+  test.each([
+    { ...thread, path: undefined },
+    { ...thread, line: undefined },
+  ])("renders incomplete thread location", (value) => {
+    const result = prompts.buildBotPrReviewPrompt({ ...base, threads: [value] });
+    expect(result).toContain("T1");
+    expect(result).not.toContain("undefined");
+    expect(result).not.toContain("src/a.ts:9");
+  });
   test("AC-7 omits static prohibition", () => {
     expect(prompts.buildBotPrReviewPrompt(base)).not.toContain(staticLine);
   });

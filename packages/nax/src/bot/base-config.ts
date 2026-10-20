@@ -1,9 +1,10 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { gitSpawnEnv } from "@nathapp/nax-agent/internal";
+import { errorMessage, gitSpawnEnv } from "@nathapp/nax-agent/internal";
 import { loadConfig, type NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
+import { getSafeLogger } from "@/logger";
 import { gitWithTimeout } from "@/utils/git";
 
 async function runCommand(argv: string[], cwd: string): Promise<{ exitCode: number; stdout: string; stderr: string }> {
@@ -14,6 +15,14 @@ async function runCommand(argv: string[], cwd: string): Promise<{ exitCode: numb
     new Response(proc.stderr).text(),
   ]);
   return { exitCode, stdout, stderr };
+}
+
+async function removeTar(tar: string): Promise<void> {
+  try {
+    await rm(tar, { force: true });
+  } catch (cause) {
+    getSafeLogger()?.warn("bot", "Could not remove base archive", { tar, error: errorMessage(cause) });
+  }
 }
 
 export const _baseConfigDeps = {
@@ -29,7 +38,7 @@ export const _baseConfigDeps = {
         });
       }
     } finally {
-      await Bun.file(tar).delete();
+      await removeTar(tar);
     }
   },
   // Keep discovery away from the checkout and the home-scoped global .nax tree.
@@ -39,29 +48,50 @@ export const _baseConfigDeps = {
 
 /** Snapshot the base commit's .nax tree without ever decoding archive bytes as text. */
 export async function snapshotBaseNax(repoRoot: string, baseSha: string, dest: string): Promise<boolean> {
+  const tar = join(dest, "base.tar");
   try {
+    // ls-tree distinguishes a missing path from an invalid commit without localized stderr matching.
+    const tree = await _baseConfigDeps.runGit(["ls-tree", "--name-only", "-z", baseSha, "--", ".nax"], repoRoot);
+    if (tree.exitCode !== 0)
+      throw new NaxError(
+        `[bot] Failed to inspect base config: ${tree.timedOut ? "git timed out" : tree.stderr}`,
+        "BOT_BASE_CONFIG_READ_FAILED",
+        { stage: "bot", baseSha, timedOut: tree.timedOut },
+      );
+    if (!tree.stdout.split("\0").includes(".nax")) return false;
     const result = await _baseConfigDeps.runGit(
       ["archive", "--format=tar", "--output", join(dest, "base.tar"), baseSha, ".nax"],
       repoRoot,
     );
     if (result.exitCode !== 0) {
-      if (result.stderr.includes("did not match any files")) return false;
-      throw new NaxError(`[bot] Failed to archive base config: ${result.stderr}`, "BOT_BASE_CONFIG_READ_FAILED", {
-        stage: "bot",
-        repoRoot,
-        baseSha,
-      });
+      throw new NaxError(
+        `[bot] Failed to archive base config: ${result.timedOut ? "git timed out" : result.stderr}`,
+        "BOT_BASE_CONFIG_READ_FAILED",
+        {
+          stage: "bot",
+          repoRoot,
+          baseSha,
+          timedOut: result.timedOut,
+        },
+      );
     }
     await _baseConfigDeps.extractTar(join(dest, "base.tar"), dest);
     return true;
   } catch (cause) {
-    throw new NaxError(`[bot] Could not snapshot base config at ${baseSha}`, "BOT_BASE_CONFIG_READ_FAILED", {
-      stage: "bot",
-      repoRoot,
-      baseSha,
-      dest,
-      cause,
-    });
+    if (cause instanceof NaxError) throw cause;
+    throw new NaxError(
+      `[bot] Could not snapshot base config at ${baseSha}: ${errorMessage(cause)}`,
+      "BOT_BASE_CONFIG_READ_FAILED",
+      {
+        stage: "bot",
+        repoRoot,
+        baseSha,
+        dest,
+        cause,
+      },
+    );
+  } finally {
+    await removeTar(tar);
   }
 }
 

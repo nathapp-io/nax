@@ -19,11 +19,11 @@ async function replyAgreedThreads(env: BotFixEnv, state: BotFixState): Promise<n
   let replied = 0;
   for (const item of env.review.agreed) {
     if (item.kind !== "thread") continue;
-    const body = withNaxBotMarker(
-      `nax bot fix pushed ${state.pushedSha?.slice(0, SHORT_SHA_LENGTH)} for this thread. Run nax bot review to check it.`,
-      `fix-${item.key}`,
-    );
     try {
+      const body = withNaxBotMarker(
+        `nax bot fix pushed ${state.pushedSha?.slice(0, SHORT_SHA_LENGTH)} for this thread. Run nax bot review to check it.`,
+        `fix-${item.key}`,
+      );
       await _fixReportDeps.replyToThread(env.ref, { replyTo: item.replyTo }, body, env.forge, env.repoRoot);
       replied++;
     } catch (err) {
@@ -90,6 +90,10 @@ function outcomeText(state: BotFixState): string {
       return "No gates are configured on the base branch; nothing pushed.";
     case "gates-failed":
       return `Gates failed: ${(state.failingGates ?? []).join(", ")}; nothing pushed.`;
+    case "dirty":
+      return `The fix tree is dirty or unreadable; nothing pushed. Recovery checkout retained at ${safeCode(state.recoveryPath ?? "unknown")}.`;
+    case "push-unknown":
+      return "The push timed out; remote outcome is unknown. Check the remote before retrying.";
     case "push-rejected":
       return "The push was rejected (the PR changed or access was denied); nothing pushed.";
     default:

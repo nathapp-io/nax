@@ -12,7 +12,14 @@ describe("sensitivePaths", () => {
       "x/.npmrc",
       "bunfig.toml",
     ];
-    expect(bot.sensitivePaths(files)).toEqual(files.filter((file) => file !== "src/a.ts"));
+    expect(bot.sensitivePaths(files)).toEqual([
+      ".nax/config.json",
+      ".github/workflows/ci.yml",
+      "apps/web/package.json",
+      ".gitlab-ci.yml",
+      "x/.npmrc",
+      "bunfig.toml",
+    ]);
   });
   test("AC-2: ignores manifest lookalikes", () => {
     expect(bot.sensitivePaths(["src/package.json.bak"])).toEqual([]);

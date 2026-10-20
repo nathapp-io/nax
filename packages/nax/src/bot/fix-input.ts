@@ -44,7 +44,13 @@ export async function loadLatestReview(
   for (const path of paths) {
     const review = await readReview(path);
     if (review?.headSha !== headSha) continue;
-    const mtime = await _fixInputDeps.mtimeMs(path);
+    let mtime: number;
+    try {
+      mtime = await _fixInputDeps.mtimeMs(path);
+    } catch (cause) {
+      getLogger()?.debug("bot-fix", "Ignoring vanished review artifact", { path, error: errorMessage(cause) });
+      continue;
+    }
     if (mtime > newest) {
       latest = review;
       newest = mtime;
@@ -70,5 +76,12 @@ export async function checkPushAccess(
   headRef: string,
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
   const result = await _fixInputDeps.runGit(["push", "--dry-run", "origin", `HEAD:refs/heads/${headRef}`], worktree);
-  return result.exitCode === 0 ? { ok: true } : { ok: false, reason: result.stderr.split(/\r?\n/, 1)[0] ?? "" };
+  return result.exitCode === 0
+    ? { ok: true }
+    : {
+        ok: false,
+        reason: result.timedOut
+          ? "push access probe timed out"
+          : result.stderr.split(/\r?\n/, 1)[0] || `git exited ${result.exitCode}`,
+      };
 }

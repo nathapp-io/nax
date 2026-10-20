@@ -34,6 +34,22 @@ function thread(author: string, key: string): PrThread {
 afterEach(() => mock.restore());
 
 describe("replyStep", () => {
+  test("invalid persisted marker key cannot prevent later replies or own resolution", async () => {
+    const key = findingKey({ issue: "Leak" });
+    const env = {
+      ...makeBotFixEnv([
+        { ...item, key: "invalid key" },
+        item,
+        { kind: "finding", key, issue: "Leak", severity: "minor" },
+      ]),
+      threads: [thread("bot", key)],
+    };
+    const reply = spyOn(_fixReportDeps, "replyToThread").mockResolvedValue({ id: "next" });
+    const resolve = spyOn(_fixReportDeps, "resolveThread").mockResolvedValue();
+    expect((await replyStep(env, state)).patch).toMatchObject({ replied: 1, resolved: 1 });
+    expect(reply).toHaveBeenCalledTimes(1);
+    expect(resolve).toHaveBeenCalledTimes(1);
+  });
   test("replies to the REST target with pushed sha and fix marker", async () => {
     const env = makeBotFixEnv([item]);
     const reply = spyOn(_fixReportDeps, "replyToThread").mockResolvedValue({ id: "new" });

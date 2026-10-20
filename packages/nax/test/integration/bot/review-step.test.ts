@@ -81,6 +81,45 @@ afterEach(() => {
 const packagePath = "/review/artifacts/package-pr.diff";
 
 describe("runPrReview", () => {
+  test("static dispatch receives real modified preimages and deleted contents without command instructions", async () => {
+    const { makeTempDir, cleanupTempDir } = await import("@test/helpers");
+    const root = makeTempDir("bot-static-");
+    const git = async (...args: string[]) => {
+      const proc = Bun.spawn(["git", ...args], { cwd: root, stdout: "pipe", stderr: "pipe" });
+      const [code, out, err] = await Promise.all([
+        proc.exited,
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+      ]);
+      if (code) throw new Error(err);
+      return out.trim();
+    };
+    try {
+      await git("init");
+      await git("config", "user.name", "Test");
+      await git("config", "user.email", "test@example.com");
+      await Bun.write(join(root, "modified.txt"), "before modification\n");
+      await Bun.write(join(root, "deleted.txt"), "deleted secret behavior\n");
+      await git("add", ".");
+      await git("commit", "-m", "base");
+      const base = await git("rev-parse", "HEAD");
+      await Bun.write(join(root, "modified.txt"), "after modification\n");
+      await git("rm", "deleted.txt");
+      await git("add", ".");
+      await git("commit", "-m", "head");
+      _reviewStepDeps.writeBranchReviewPackage = originalReview.writeBranchReviewPackage;
+      ctx = { ...ctx, projectDir: root, runDir: join(root, "artifacts") };
+      expect(await runPrReview(ctx, { ...input, mergeBase: base, staticMode: true })).toEqual({ ran: true, verdict });
+      const pkg = await Bun.file(join(ctx.runDir, "package-pr.diff")).text();
+      expect(pkg).toContain("-before modification");
+      expect(pkg).toContain("+after modification");
+      expect(pkg).toContain("-deleted secret behavior");
+      expect(pkg).not.toContain("git diff");
+      expect(calls[0]?.op).toBe(botPrStaticReviewOp);
+    } finally {
+      cleanupTempDir(root);
+    }
+  });
   test.each([
     ["AC-1", true, botPrStaticReviewOp],
     ["AC-2", false, botPrReviewOp],

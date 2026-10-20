@@ -51,3 +51,26 @@ export function makeBotFixEnv(agreed: readonly AgreedItem[] = []): BotFixEnv {
     forge: { run: async () => ({ exitCode: 0, stdout: "", stderr: "" }), readText: async () => null },
   };
 }
+
+/** Shared orchestration boundary defaults; tests override only scenario-specific reads and nodes. */
+export function makeBotFixDeps(env: BotFixEnv, runtime: ReturnType<typeof import("./runtime").makeTestRuntime>) {
+  return {
+    gitToplevel: async () => env.repoRoot,
+    ensureProjectTrusted: async () => {},
+    resolvePrRef: async () => env.ref,
+    readPrInfo: async () => env.info,
+    classifyPrTrust: async () => ({ trusted: true, headSha: env.info.headSha, reasons: [] }),
+    preparePrCheckout: async () => env.checkout,
+    loadBotConfig: async () => env.config,
+    createRuntime: () => runtime,
+    buildPrStepContext: async () => ({ ctx: env.ctx, dispose: async () => {} }),
+    loadLatestReview: async () => env.review,
+    checkPushAccess: async (): Promise<{ ok: true }> => ({ ok: true }),
+    runPreRunSteps: async () => {},
+    readCurrentUser: async () => env.user,
+    listReviewThreads: async () => [...env.threads],
+    listPrComments: async () => [],
+    randomSuffix: () => "graph-test",
+    writeJson: async (_path: string, _value: unknown) => {},
+  };
+}

@@ -15,7 +15,7 @@ export interface LinkedIssue {
 
 /** Same-repository closing references only, excluding template comments. */
 export function parseClosingRefs(body: string): number[] {
-  const visible = body.replace(/<!--[\s\S]*?-->/g, "");
+  const visible = body.replace(/<!--[\s\S]*?(?:-->|$)/g, "");
   const pattern = /\b(?:close[sd]?|fix(?:es|ed)?|resolve[sd]?)\b:?\s+#(\d+)/gi;
   const numbers = new Set<number>();
   for (const match of visible.matchAll(pattern)) {
@@ -86,16 +86,18 @@ export async function readIssue(ref: PrRef, number: number, deps: ForgeDeps, cwd
 
 /** Bounded, ordered, best-effort intent reads; one unreadable issue cannot abort review. */
 export async function readLinkedIssues(ref: PrRef, body: string, deps: ForgeDeps, cwd: string): Promise<LinkedIssue[]> {
-  const issues: LinkedIssue[] = [];
-  for (const number of parseClosingRefs(body)) {
-    const context = { host: ref.host, repo: ref.repo, number };
-    try {
-      const issue = await readIssue(ref, number, deps, cwd);
-      if (issue) issues.push(issue);
-      else getLogger()?.warn("forge", "Skipping linked reference: number is a pull request", context);
-    } catch (cause) {
-      getLogger()?.warn("forge", "Skipping unreadable linked issue", { ...context, error: errorMessage(cause) });
-    }
-  }
-  return issues;
+  const issues = await Promise.all(
+    parseClosingRefs(body).map(async (number) => {
+      const context = { host: ref.host, repo: ref.repo, number };
+      try {
+        const issue = await readIssue(ref, number, deps, cwd);
+        if (issue) return issue;
+        getLogger()?.warn("forge", "Skipping linked reference: number is a pull request", context);
+      } catch (cause) {
+        getLogger()?.warn("forge", "Skipping unreadable linked issue", { ...context, error: errorMessage(cause) });
+      }
+      return null;
+    }),
+  );
+  return issues.filter((issue): issue is LinkedIssue => issue !== null);
 }

@@ -1,9 +1,12 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeBotFixEnv } from "@test/helpers";
 import * as bot from "@/bot";
 import type { GateCommand } from "@/finish/gates/quality";
 
 const original = { ...bot._fixStepsDeps };
+beforeEach(() => {
+  bot._fixStepsDeps.runGit = async () => ({ exitCode: 0, stdout: "", stderr: "" });
+});
 afterEach(() => Object.assign(bot._fixStepsDeps, original));
 const state = (): bot.BotFixState => ({ step: "gates", timings: {} });
 const commands = (): GateCommand[] => [
@@ -54,6 +57,18 @@ describe("gatesStep", () => {
 });
 
 describe("pushStep", () => {
+  test("timeout reports unknown remote outcome rather than rejection", async () => {
+    bot._fixStepsDeps.runGit = async (argv) => ({
+      exitCode: argv[0] === "status" ? 0 : 1,
+      stdout: "",
+      stderr: "",
+      timedOut: argv[0] === "push",
+    });
+    expect(await bot.pushStep(makeBotFixEnv(), state())).toMatchObject({
+      exit: "rejected",
+      patch: { outcome: "push-unknown" },
+    });
+  });
   test("AC-11/12/13/14/15 pushes the explicit PR ref without force and records the worktree HEAD", async () => {
     const runGit = mock(async () => ({ exitCode: 0, stdout: "", stderr: "" }));
     const readHead = mock(async () => "pushed-sha");
@@ -62,8 +77,8 @@ describe("pushStep", () => {
     const baseEnv = makeBotFixEnv();
     const env = { ...baseEnv, info: { ...baseEnv.info, headRef: "feat/x" } };
     const result = await bot.pushStep(env, state());
-    expect(runGit).toHaveBeenCalledTimes(1);
-    expect(runGit).toHaveBeenCalledWith(["push", "origin", "HEAD:refs/heads/feat/x"], env.checkout.worktree);
+    expect(runGit).toHaveBeenCalledTimes(2);
+    expect(runGit).toHaveBeenCalledWith(["push", "origin", "HEAD:refs/heads/feat/x"], env.checkout.worktree, 120_000);
     expect(readHead).toHaveBeenCalledTimes(1);
     expect(readHead).toHaveBeenCalledWith(env.checkout.worktree);
     expect(result).toEqual({ exit: "pushed", patch: { pushedSha: "pushed-sha", outcome: "pushed" } });
@@ -71,7 +86,11 @@ describe("pushStep", () => {
   test.each([1, 128])(
     "AC-16/17 exit %s reports rejection without reading or recording a pushed SHA",
     async (exitCode) => {
-      bot._fixStepsDeps.runGit = mock(async () => ({ exitCode, stdout: "", stderr: "rejected" }));
+      bot._fixStepsDeps.runGit = mock(async (argv) => ({
+        exitCode: argv[0] === "status" ? 0 : exitCode,
+        stdout: "",
+        stderr: "rejected",
+      }));
       const readHead = mock(async () => "not-pushed");
       bot._fixStepsDeps.readHead = readHead;
       expect(await bot.pushStep(makeBotFixEnv(), state())).toEqual({

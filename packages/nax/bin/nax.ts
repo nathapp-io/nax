@@ -988,6 +988,8 @@ registerTrustCommand(program);
 // ── workflow ──────────────────────────────────────────
 // Read-only: it reports the verdict a finished run wrote, and reads no config.
 registerWorkflowCommand(program);
+
+// ── bot ───────────────────────────────────────────────
 registerBotCommand(program);
 
 // ── gates ─────────────────────────────────────────────

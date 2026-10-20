@@ -138,3 +138,16 @@ describe("readLinkedIssues", () => {
     ]);
   });
 });
+
+test("linked issue reads start concurrently, are capped, and preserve reference order", async () => {
+  const pending: Array<(result: ForgeRunResult) => void> = [];
+  const deps: ForgeDeps = { run: () => new Promise((resolve) => pending.push(resolve)), readText: async () => null };
+  const result = forge.readLinkedIssues(gh, "Fixes #1 fixes #2 fixes #3 fixes #4 fixes #5 fixes #6", deps, "/repo");
+  expect(pending).toHaveLength(5);
+  for (let i = pending.length - 1; i >= 0; i--) pending[i]?.(ok({ title: `issue ${i + 1}`, body: "" }));
+  expect((await result).map((issue) => issue.number)).toEqual([1, 2, 3, 4, 5]);
+});
+
+test("unterminated template comments hide closing refs", () => {
+  expect(forge.parseClosingRefs("Closes #2 <!-- Fixes #1")).toEqual([2]);
+});

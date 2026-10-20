@@ -123,7 +123,25 @@ describe("_botCliDeps process boundary", () => {
       _botCliDeps.logErr("reason");
       expect(out).toHaveBeenCalledWith("summary\n");
       expect(err).toHaveBeenCalledWith("reason\n");
-      expect(_botCliDeps.isInteractive()).toBe(process.stdin.isTTY === true && process.stdout.isTTY === true);
+      const stdinTty = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+      const stdoutTty = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
+      try {
+        for (const [stdin, stdout, expected] of [
+          [true, true, true],
+          [true, false, false],
+          [false, true, false],
+          [false, false, false],
+        ]) {
+          Object.defineProperty(process.stdin, "isTTY", { value: stdin, configurable: true });
+          Object.defineProperty(process.stdout, "isTTY", { value: stdout, configurable: true });
+          expect(_botCliDeps.isInteractive()).toBe(expected);
+        }
+      } finally {
+        if (stdinTty) Object.defineProperty(process.stdin, "isTTY", stdinTty);
+        else Reflect.deleteProperty(process.stdin, "isTTY");
+        if (stdoutTty) Object.defineProperty(process.stdout, "isTTY", stdoutTty);
+        else Reflect.deleteProperty(process.stdout, "isTTY");
+      }
       expect(() => _botCliDeps.exit(2)).toThrow(sentinel);
       expect(exit).toHaveBeenCalledWith(2);
     } finally {

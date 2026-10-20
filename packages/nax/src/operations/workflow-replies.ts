@@ -102,7 +102,7 @@ function drafts(v: unknown): WorkflowFindingDraft[] {
 }
 
 /**
- * US-004 (nax#2524): the residual of a PARTIAL verdict, sanitised exactly as `toDraft` sanitises a
+ * US-004 (nax#2524): the residual of a PARTIAL verdict, sanitised exactly as `toFindingDraft` sanitises a
  * finding. Anything else — another verdict, a non-object residual, an empty issue — yields nothing, so
  * the finding fails closed to NOT_ADDRESSED and stays open unchanged.
  */

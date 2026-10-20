@@ -132,6 +132,79 @@ describe("preparePrCheckout", () => {
   });
 });
 describe("changedPaths", () => {
+  test("partial commit failure retains unfinished work and stops before gates/push", async () => {
+    const { _fixStepsDeps } = await import("@/bot/fix-steps");
+    const { BOT_FIX_GRAPH, _botFixDeps } = await import("@/bot/fix-run");
+    const { runStepGraph } = await import("@/step-graph");
+    const originalNodes = { ..._botFixDeps };
+    const nodes: string[] = [];
+    _botFixDeps.reportStep = async () => {
+      nodes.push("report");
+      return { patch: {}, exit: "done" };
+    };
+    _botFixDeps.gatesStep = async () => {
+      nodes.push("gates");
+      throw new Error("gates must not run");
+    };
+    _botFixDeps.pushStep = async () => {
+      nodes.push("push");
+      throw new Error("push must not run");
+    };
+    const { makeBotFixEnv } = await import("@test/helpers");
+    const prepared = await prepare();
+    const env = makeBotFixEnv([{ kind: "finding", key: "f-1", issue: "fix", severity: "minor" }]);
+    const realEnv = { ...env, checkout: prepared, info: { ...env.info, headSha: await git(["rev-parse", "HEAD"]) } };
+    const original = _fixStepsDeps.runBranchFix;
+    _fixStepsDeps.runBranchFix = async () => {
+      await Bun.write(join(prepared.worktree, "src/a.ts"), "partial");
+      await git(["add", "."], prepared.worktree);
+      await git(["commit", "-m", "partial fix"], prepared.worktree);
+      await Bun.write(join(prepared.worktree, "src/a.ts"), "complete");
+      return { autoCommitted: false, dirty: true, failure: "leftover commit failed" };
+    };
+    try {
+      const checked = await runStepGraph(
+        BOT_FIX_GRAPH,
+        realEnv,
+        { step: "fix", timings: {} },
+        { persist: async () => {} },
+        { aborted: () => false, now: () => Date.now() },
+      );
+      expect(checked).toMatchObject({
+        step: "done",
+        outcome: "dirty",
+        recoveryPath: prepared.worktree,
+        fixFailure: "leftover commit failed",
+      });
+      expect(nodes).toEqual(["report"]);
+      await prepared.dispose();
+      expect(await Bun.file(join(prepared.worktree, "src/a.ts")).text()).toBe("complete");
+      expect(await git(["show", "HEAD:src/a.ts"], prepared.worktree)).toBe("partial");
+    } finally {
+      _fixStepsDeps.runBranchFix = original;
+      Object.assign(_botFixDeps, originalNodes);
+      await git(["worktree", "remove", "--force", prepared.worktree]);
+      checkout = undefined;
+    }
+  });
+  test.each([".env.é", '.env."quoted"', ".env.line\nbreak", ".github/workflows/é.yml"])(
+    "canonical protected path %s reaches checkStep",
+    async (path) => {
+      const from = await git(["rev-parse", "HEAD"]);
+      await Bun.write(join(repo, path), "forbidden");
+      await commit();
+      const { checkStep } = await import("@/bot/fix-steps");
+      const { makeBotFixEnv } = await import("@test/helpers");
+      const env = makeBotFixEnv();
+      const result = await checkStep(
+        { ...env, checkout: { ...env.checkout, worktree: repo }, info: { ...env.info, headSha: from } },
+        { step: "check", timings: {} },
+      );
+      expect(result).toMatchObject({ exit: "protected", patch: { protectedFiles: [path] } });
+      const { sensitivePaths } = await import("@/bot/path-policy");
+      if (path.startsWith(".github/")) expect(sensitivePaths(await changedPaths(repo, from))).toEqual([path]);
+    },
+  );
   test("AC-11: protected rename reports both old and new names", async () => {
     await Bun.write(join(repo, ".github/workflows/ci.yml"), "workflow");
     const from = await commit();

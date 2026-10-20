@@ -50,7 +50,7 @@ export function renderThreadReply(verdict: PrTriageVerdict): string {
 
 function offLineItem(finding: WorkflowFindingDraft): string {
   const file = finding.file === undefined ? "" : safeCode(finding.file);
-  const line = finding.line === undefined ? "" : `${file ? ":" : ""}${finding.line}`;
+  const line = finding.file === undefined || finding.line === undefined ? "" : `${file ? ":" : ""}${finding.line}`;
   const location = file + line;
   return `- **${severityLabel(finding)}** ${location ? `\`${location}\` ` : ""}${safeText(finding.issue, TEXT_LIMIT)}`;
 }

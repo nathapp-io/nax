@@ -1,9 +1,12 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeBotFixEnv as environment } from "@test/helpers";
 import * as bot from "@/bot";
 import type { ConfiguredModel } from "@/config";
 
 const original = { ...bot._fixStepsDeps };
+beforeEach(() => {
+  bot._fixStepsDeps.runGit = async () => ({ exitCode: 0, stdout: "", stderr: "" });
+});
 afterEach(() => Object.assign(bot._fixStepsDeps, original));
 
 const items: bot.AgreedItem[] = [
@@ -71,6 +74,25 @@ describe("fixStep", () => {
 });
 
 describe("checkStep", () => {
+  test.each(["dirty", "unreadable", "throwing"])(
+    "fails closed on %s status and retains recovery checkout",
+    async (mode) => {
+      const retain = mock(() => {});
+      const env = environment(items);
+      bot._fixStepsDeps.runGit = async () => {
+        if (mode === "throwing") throw new Error("unreadable status");
+        return { exitCode: mode === "unreadable" ? 1 : 0, stdout: mode === "dirty" ? " M src/a.ts\0" : "", stderr: "" };
+      };
+      const changed = mock(async () => ["src/a.ts"]);
+      bot._fixStepsDeps.changedPaths = changed;
+      expect(await bot.checkStep({ ...env, checkout: { ...env.checkout, retain } }, state())).toMatchObject({
+        exit: "dirty",
+        patch: { outcome: "dirty", recoveryPath: "/worktree" },
+      });
+      expect(retain).toHaveBeenCalledTimes(1);
+      expect(changed).not.toHaveBeenCalled();
+    },
+  );
   test("AC-9 compares committed worktree HEAD against the original PR head", async () => {
     const changedPaths = mock(async () => []);
     bot._fixStepsDeps.changedPaths = changedPaths;

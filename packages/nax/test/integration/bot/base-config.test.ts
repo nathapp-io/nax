@@ -50,6 +50,7 @@ describe("snapshotBaseNax", () => {
     await git("add", ".");
     await git("commit", "-m", "empty config base");
     expect(await snapshotBaseNax(repo, await git("rev-parse", "HEAD"), dest)).toBe(false);
+    expect(await Bun.file(join(dest, "base.tar")).exists()).toBe(false);
   });
 });
 

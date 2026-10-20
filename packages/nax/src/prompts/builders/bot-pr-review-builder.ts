@@ -23,7 +23,7 @@ function fence(text: string): string {
 
 function intentLine(input: BotPrReviewPromptInput): string {
   if (input.prdPath !== undefined) return `Intent: the PRD at ${input.prdPath}.`;
-  if (input.pr.body.length > 0 || input.issues.length > 0) {
+  if (input.pr.body.trim().length > 0 || input.issues.length > 0) {
     return "Intent: the PR description and the linked issues below.";
   }
   return 'There is no stated intent: set "intent" to "n/a" and review quality only.';

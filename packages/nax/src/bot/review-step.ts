@@ -21,8 +21,18 @@ export interface PrReviewInput {
   readonly model?: ConfiguredModel;
 }
 
-async function writePackage(ctx: PrStepContext, mergeBase: string, packagePath: string): Promise<void> {
-  const paths = await _reviewStepDeps.writeBranchReviewPackage(ctx.projectDir, mergeBase, packagePath);
+async function writePackage(
+  ctx: PrStepContext,
+  mergeBase: string,
+  packagePath: string,
+  staticMode: boolean,
+): Promise<void> {
+  const paths = await _reviewStepDeps.writeBranchReviewPackage(
+    ctx.projectDir,
+    mergeBase,
+    packagePath,
+    ...(staticMode ? [{ staticMode }] : []),
+  );
   const rules = ctx.config.context?.rules;
   if ((rules?.delivery ?? "index") !== "index") return;
   await _workflowDeps.appendChangedFileRules(packagePath, paths, {
@@ -48,7 +58,7 @@ export async function runPrReview(ctx: PrStepContext, input: PrReviewInput): Pro
   });
   return underReviewLimit(
     ctx,
-    () => writePackage(ctx, input.mergeBase, packagePath),
+    () => writePackage(ctx, input.mergeBase, packagePath, input.staticMode),
     (signal) =>
       _workflowDeps.callOp(
         { ...ctx.callCtx, ...(signal ? { signal } : {}) },

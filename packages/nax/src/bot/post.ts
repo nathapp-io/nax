@@ -142,13 +142,13 @@ async function postFindings(
   const offLine: WorkflowFindingDraft[] = [];
   let inlineFindings = 0;
   for (const finding of input.verdict.findings) {
-    const key = findingKey(finding);
-    if (seen.has(key)) continue;
-    seen.add(key);
     if (!finding.file || finding.line === undefined) {
       offLine.push(finding);
       continue;
     }
+    const key = findingKey(finding);
+    if (seen.has(key)) continue;
+    seen.add(key);
     try {
       await writeFinding(input, finding);
       inlineFindings++;
@@ -177,7 +177,10 @@ async function postThreads(input: PostReviewInput): Promise<{ threadsAnswered: n
       threadsAnswered++;
     } catch (cause) {
       failed++;
-      getLogger()?.warn("bot-post", "Thread reply failed", { threadId: thread.id, error: errorMessage(cause) });
+      getLogger()?.warn("bot-post", own ? "Thread edit failed" : "Thread reply failed", {
+        threadId: thread.id,
+        error: errorMessage(cause),
+      });
     }
   }
   return { threadsAnswered, failed };
