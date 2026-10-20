@@ -3,8 +3,10 @@ import { join } from "node:path";
 import { makeBotFixDeps, makeBotFixEnv, makeNaxConfig, makeTestRuntime } from "@test/helpers";
 import type { resolveBotChecks } from "@/bot/checks";
 import { _botFixDeps, runBotFix } from "@/bot/fix-run";
+import { openBotLog } from "@/bot/log";
 import { NaxError } from "@/errors";
 import { withNaxBotMarker } from "@/forge";
+import { getLogger, initLogger, resetLogger } from "@/logger";
 import { botChecksExtractOp } from "@/operations/bot-checks-extract";
 import { botRunDir } from "@/workflow/paths";
 import { _workflowDeps } from "@/workflow/step-context";
@@ -364,4 +366,93 @@ describe("runBotFix", () => {
       }
     },
   );
+});
+
+describe("US-016 fix logging", () => {
+  test("logs start and successful finish milestones", async () => {
+    resetLogger();
+    initLogger({ level: "silent", useChalk: false });
+    const info = spyOn(getLogger(), "info");
+    try {
+      expect((await runBotFix(input)).outcome).toBe("nothing");
+      expect(info).toHaveBeenCalledWith("bot", "Bot fix started", { pr: 42, headSha: env.info.headSha });
+      expect(info).toHaveBeenCalledWith("bot", "Bot fix finished", { outcome: "nothing" });
+    } finally {
+      info.mockRestore();
+      resetLogger();
+    }
+  });
+  test("closes the sink before runtime when fix throws", async () => {
+    _botFixDeps.openBotLog = () => ({
+      path: "/log",
+      close: async () => {
+        events.push("log-close");
+      },
+    });
+    fix.mockImplementation(async () => {
+      throw new NaxError("fix failed", "TEST_FIX", { stage: "test" });
+    });
+    await expect(runBotFix(input)).rejects.toThrow("fix failed");
+    expect(events).toContain("log-close");
+    expect(events.indexOf("log-close")).toBeLessThan(events.indexOf("runtime-close"));
+  });
+  test("AC-15/16 opens run log and returns path, closing before runtime", async () => {
+    const path = join(botRunDir(runtime.outputDir, env.ref.number, runtime.runId), "bot.jsonl");
+    const open = mock((requested: string) => ({
+      path: requested,
+      close: async () => {
+        events.push("log-close");
+      },
+    }));
+    _botFixDeps.openBotLog = open;
+    expect(await runBotFix(input)).toMatchObject({ outcome: "nothing", logPath: path });
+    expect(open).toHaveBeenCalledWith(path);
+    expect(events.indexOf("log-close")).toBeLessThan(events.indexOf("runtime-close"));
+  });
+  test("AC-17/18 no-check refusal logs outcome and retains path", async () => {
+    resetLogger();
+    initLogger({ level: "silent", useChalk: false });
+    const infoLog = spyOn(getLogger(), "info");
+    _botFixDeps.openBotLog = () => ({ path: "/log", close: async () => {} });
+    resolve.mockImplementation(async () => ({ source: "none", gates: [], preRun: [] }));
+    try {
+      const result = await runBotFix(input);
+      expect(result).toMatchObject({ outcome: "refused", logPath: "/log" });
+      expect(infoLog).toHaveBeenCalledWith(
+        "bot",
+        "Bot fix finished",
+        expect.objectContaining({ outcome: "refused", reason: expect.stringContaining("no check commands") }),
+      );
+    } finally {
+      infoLog.mockRestore();
+      resetLogger();
+    }
+  });
+  test("AC-19 closed PR never opens a log", async () => {
+    _botFixDeps.readPrInfo = async () => ({ ...env.info, state: "closed" });
+    const open = mock(() => ({ path: "/log", close: async () => {} }));
+    _botFixDeps.openBotLog = open;
+    const result = await runBotFix(input);
+    expect(result.outcome).toBe("refused");
+    expect(result).not.toHaveProperty("logPath");
+    expect(open).not.toHaveBeenCalled();
+  });
+  test("AC-24 post-runtime fix without logger omits logPath", async () => {
+    resetLogger();
+    _botFixDeps.openBotLog = openBotLog;
+    const result = await runBotFix(input);
+    expect(result.outcome).toBe("nothing");
+    expect(result).not.toHaveProperty("logPath");
+  });
+});
+
+describe("runBotFix log initialization cleanup", () => {
+  test("closes runtime if opening the sink unexpectedly throws", async () => {
+    const close = spyOn(runtime, "close");
+    _botFixDeps.openBotLog = () => {
+      throw new NaxError("sink failure", "TEST_SINK", { stage: "test" });
+    };
+    await expect(runBotFix(input)).rejects.toThrow("sink failure");
+    expect(close).toHaveBeenCalledTimes(1);
+  });
 });

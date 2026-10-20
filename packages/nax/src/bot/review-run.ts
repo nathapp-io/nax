@@ -16,6 +16,7 @@ import {
   readPrInfo,
   resolvePrRef,
 } from "@/forge";
+import { getLogger } from "@/logger";
 import { botChecksExtractOp, type PrReviewVerdict } from "@/operations";
 import { createRuntime } from "@/runtime";
 import { defineStepGraph, type GraphState, runStepGraph, type StepGraph } from "@/step-graph";
@@ -30,6 +31,7 @@ import { loadBotConfig } from "./base-config";
 import { type PrCheckout, preparePrCheckout } from "./checkout";
 import { type BotCheckSource, type BotChecks, checkCommands, resolveBotChecks } from "./checks";
 import type { BotDecision } from "./decisions";
+import { type BotLog, openBotLog } from "./log";
 import { botModel } from "./models";
 import { sensitivePaths } from "./path-policy";
 import { type PostReviewInput, type PostReviewOutcome, postPrReview } from "./post";
@@ -58,6 +60,7 @@ export const _botReviewDeps = {
   preparePrCheckout,
   loadBotConfig,
   createRuntime,
+  openBotLog,
   buildPrStepContext,
   resolveBotChecks,
   runPreRunSteps,
@@ -77,6 +80,7 @@ export type BotReviewResult =
       readonly staticMode: boolean;
       readonly checksSource: BotCheckSource | null;
       readonly artifactPath: string;
+      readonly logPath?: string;
     } & PostReviewOutcome)
   | { readonly outcome: "not-reviewed" | "refused"; readonly reason: string };
 
@@ -214,12 +218,14 @@ async function prepareReviewChecks(prepared: PreparedReview, ctx: PrStepContext)
     extract: (input) =>
       _workflowDeps.callOp(ctx.callCtx, botChecksExtractOp, { ...input, model: config.bot?.models.checks }),
   });
+  getLogger().info("bot", "Checks resolved", { source: checks.source, commands: checkCommands(checks) });
   try {
     await _botReviewDeps.runPreRunSteps({ steps: checks.preRun, workdir: checkout.worktree });
     return { checks };
   } catch (err) {
     if (!(err instanceof NaxError) || err.code !== "PRE_RUN_FAILED") throw err;
     const command = err.context?.command;
+    getLogger().warn("bot", "Install step failed", { command });
     return { checks, ...(typeof command === "string" ? { preRunFailed: command } : {}) };
   }
 }
@@ -276,6 +282,14 @@ async function executeReview(env: ReviewEnv, runtime: ReturnType<typeof createRu
     { aborted: () => runtime.signal.aborted, now: () => Date.now() },
   );
   if (!state.posted || !state.verdict) return { outcome: "not-reviewed", reason: state.reason ?? "review did not run" };
+  getLogger().info("bot", "Bot review posted", {
+    inlineFindings: state.posted.inlineFindings,
+    threadsAnswered: state.posted.threadsAnswered,
+    earlierAnswered: state.posted.earlierAnswered,
+    failed: state.posted.failed,
+    intent: state.verdict.intent,
+    quality: state.verdict.quality,
+  });
   return {
     outcome: "posted",
     ...state.posted,
@@ -293,8 +307,12 @@ async function reviewCheckout(input: BotReviewInput, prepared: PreparedReview): 
   const loaded = await deps.loadBotConfig({ snapshotDir: checkout.snapshotDir, profiles: input.profiles });
   const config = reviewConfig(loaded, staticMode);
   const runtime = deps.createRuntime(config, repoRoot);
+  const stateDir = botRunDir(runtime.outputDir, ref.number, runtime.runId);
+  let log: BotLog | undefined;
   let context: Awaited<ReturnType<typeof buildPrStepContext>> | undefined;
   try {
+    log = deps.openBotLog(join(stateDir, "bot.jsonl"));
+    getLogger().info("bot", "Bot review started", { pr: ref.number, headSha: info.headSha, trusted: !staticMode });
     context = await deps.buildPrStepContext({
       runtime,
       config,
@@ -302,14 +320,18 @@ async function reviewCheckout(input: BotReviewInput, prepared: PreparedReview): 
       agentName: resolveDefaultAgent(config),
       pr: { forge: ref.forge, number: ref.number, base: checkout.mergeBase, head: info.headSha },
     });
-    const stateDir = botRunDir(runtime.outputDir, ref.number, runtime.runId);
     const env = await reviewEnvironment(input, prepared, { ctx: context.ctx, stateDir });
-    return await executeReview(env, runtime);
+    const result = await executeReview(env, runtime);
+    return result.outcome === "posted" && log.path !== undefined ? { ...result, logPath: log.path } : result;
   } finally {
     try {
       await context?.dispose();
     } finally {
-      await runtime.close();
+      try {
+        await log?.close();
+      } finally {
+        await runtime.close();
+      }
     }
   }
 }

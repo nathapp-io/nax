@@ -3,12 +3,14 @@ import { join } from "node:path";
 import { assertDefined, makeMockCallContext, makeNaxConfig, makeTestRuntime } from "@test/helpers";
 import { sensitivePaths } from "@/bot";
 import { type BotChecks, checkCommands, type resolveBotChecks } from "@/bot/checks";
+import { openBotLog } from "@/bot/log";
 import { _botReviewDeps, BOT_REVIEW_GRAPH, runBotReview } from "@/bot/review-run";
 import { PROJECT_FEATURES_DIR, resolveWorkflowConfig } from "@/config";
 import { NaxError } from "@/errors";
 import type { runPreRunSteps } from "@/execution/lifecycle/pre-run-steps";
 import type { PrComment, PrInfo, PrRef, PrThread } from "@/forge";
 import { withNaxBotMarker } from "@/forge";
+import { getLogger, initLogger, resetLogger } from "@/logger";
 import type { PrReviewVerdict } from "@/operations";
 import { botChecksExtractOp } from "@/operations";
 import { validateStepGraph } from "@/step-graph";
@@ -130,6 +132,7 @@ beforeEach(() => {
     events.push("checkout-close");
   });
   Object.assign(_botReviewDeps, {
+    openBotLog: () => ({ close: async () => {} }),
     gitToplevel: async () => "/repo",
     ensureProjectTrusted: async () => {
       events.push("trust:/repo");
@@ -581,5 +584,93 @@ describe("runBotReview", () => {
   });
   test("graph validates", () => {
     expect(validateStepGraph(BOT_REVIEW_GRAPH)).toEqual({ errors: [] });
+  });
+});
+
+describe("US-016 review logging", () => {
+  test("logs failed install without aborting review", async () => {
+    resetLogger();
+    initLogger({ level: "silent", useChalk: false });
+    const warn = spyOn(getLogger(), "warn");
+    preRun.mockImplementation(async () => {
+      throw new NaxError("install", "PRE_RUN_FAILED", { stage: "test", command: "npm ci" });
+    });
+    try {
+      expect((await runBotReview(input)).outcome).toBe("posted");
+      expect(warn).toHaveBeenCalledWith("bot", "Install step failed", { command: "npm ci" });
+    } finally {
+      warn.mockRestore();
+      resetLogger();
+    }
+  });
+  test("AC-9/10/12/13/14 opens run log, emits milestones and returns path", async () => {
+    resetLogger();
+    initLogger({ level: "silent", useChalk: false });
+    const infoLog = spyOn(getLogger(), "info");
+    const path = join(botRunDir(runtime.outputDir, ref.number, runtime.runId), "bot.jsonl");
+    const open = mock((requested: string) => ({
+      path: requested,
+      close: async () => {
+        events.push("log-close");
+      },
+    }));
+    _botReviewDeps.openBotLog = open;
+    const close = runtime.close.bind(runtime);
+    runtime.close = async () => {
+      events.push("runtime-close");
+      await close();
+    };
+    try {
+      expect(await runBotReview(input)).toMatchObject({ outcome: "posted", logPath: path });
+      expect(open).toHaveBeenCalledWith(path);
+      expect(events.indexOf("log-close")).toBeLessThan(events.indexOf("runtime-close"));
+      expect(infoLog).toHaveBeenCalledWith("bot", "Checks resolved", {
+        source: "detected",
+        commands: checkCommands(checks),
+      });
+      expect(infoLog).toHaveBeenCalledWith("bot", "Bot review started", { pr: 42, headSha: "head", trusted: true });
+      expect(infoLog).toHaveBeenCalledWith(
+        "bot",
+        "Bot review posted",
+        expect.objectContaining({
+          inlineFindings: 2,
+          threadsAnswered: 3,
+          earlierAnswered: 0,
+          failed: 1,
+          intent: "pass",
+          quality: "approved",
+        }),
+      );
+    } finally {
+      infoLog.mockRestore();
+      resetLogger();
+    }
+  });
+  test("AC-11 closes the log when review throws", async () => {
+    const close = mock(async () => {});
+    _botReviewDeps.openBotLog = () => ({ path: "/log", close });
+    review.mockImplementation(async () => {
+      throw new NaxError("review failed", "TEST_REVIEW", { stage: "test" });
+    });
+    await expect(runBotReview(input)).rejects.toThrow("review failed");
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+  test("AC-24 posted review without logger omits logPath", async () => {
+    resetLogger();
+    _botReviewDeps.openBotLog = openBotLog;
+    const result = await runBotReview(input);
+    expect(result.outcome).toBe("posted");
+    expect(result).not.toHaveProperty("logPath");
+  });
+});
+
+describe("runBotReview log initialization cleanup", () => {
+  test("closes runtime if opening the sink unexpectedly throws", async () => {
+    const close = spyOn(runtime, "close");
+    _botReviewDeps.openBotLog = () => {
+      throw new NaxError("sink failure", "TEST_SINK", { stage: "test" });
+    };
+    await expect(runBotReview(input)).rejects.toThrow("sink failure");
+    expect(close).toHaveBeenCalledTimes(1);
   });
 });

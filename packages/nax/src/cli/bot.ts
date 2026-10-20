@@ -3,8 +3,10 @@ import type { Command } from "commander";
 import type { loadBotDecisions, runBotFix, runBotReview } from "@/bot";
 import { parseProfileList } from "@/config";
 import { NaxError } from "@/errors";
+import { initLogger } from "@/logger";
 
 export interface BotCliDeps {
+  initLogger: (options: Parameters<typeof initLogger>[0]) => void;
   log: (message: string) => void;
   logErr: (message: string) => void;
   exit: (code: number) => void;
@@ -17,6 +19,7 @@ export interface BotCliDeps {
 // Load orchestration only on invocation: help stays cheap and the CLI barrel does
 // not close a runtime cycle through bot -> workflow -> cli. Fix remains lazy too.
 export const _botCliDeps: BotCliDeps = {
+  initLogger,
   log: (message) => {
     process.stdout.write(`${message}\n`);
   },
@@ -86,6 +89,7 @@ export async function botReviewCommand(options: BotReviewOptions, deps: BotCliDe
     if (result.checksSource === "none") {
       deps.logErr("nax bot review: no check commands found on the base branch; nax bot fix will refuse");
     }
+    if (result.logPath !== undefined) deps.log(`nax bot review: log ${result.logPath}`);
     return 0;
   });
 }
@@ -95,6 +99,7 @@ export async function botFixCommand(options: BotFixOptions, deps: BotCliDeps = _
     const result = await deps.runBotFix(input);
     if (result.outcome !== "pushed" && result.outcome !== "nothing") {
       deps.logErr("reason" in result ? result.reason : result.outcome);
+      if (result.logPath !== undefined) deps.log(`nax bot fix: log ${result.logPath}`);
       return 2;
     }
     if (result.outcome === "pushed" && !result.pushedSha) {
@@ -106,6 +111,7 @@ export async function botFixCommand(options: BotFixOptions, deps: BotCliDeps = _
     const summary =
       result.outcome === "nothing" ? "nothing to fix" : `pushed ${result.pushedSha?.slice(0, SHORT_SHA_LENGTH)}`;
     deps.log(`nax bot fix: PR #${input.pr} — ${summary}`);
+    if (result.logPath !== undefined) deps.log(`nax bot fix: log ${result.logPath}`);
     return 0;
   });
 }
@@ -125,6 +131,9 @@ function withBotOptions(command: Command): Command {
 /** Register both actions on the existing bot group; help never runs orchestration. */
 export function registerBotCommand(program: Command, deps: BotCliDeps = _botCliDeps): Command {
   const group = program.command("bot").description("Review and fix pull requests with nax");
+  group.hook("preAction", () => {
+    deps.initLogger({ level: "silent", useChalk: false });
+  });
   withBotOptions(group.command("review <pr>").description("Review a pull request and post findings"))
     .option("--decisions <path>", "Caller decisions file")
     .action(async (pr: string, options: Omit<BotReviewOptions, "pr">) => {

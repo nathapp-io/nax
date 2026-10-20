@@ -34,6 +34,7 @@ async function run(args: string[], command = "fix"): Promise<void> {
   const program = new Command().exitOverride().configureOutput({ writeErr: () => {} });
   registerBotCommand(program, {
     ..._botCliDeps,
+    initLogger: () => {},
     log: (message) => {
       stdout.push(message);
     },
@@ -167,5 +168,21 @@ describe("bot fix help and export", () => {
   test("exports botFixCommand through the public CLI barrel", async () => {
     const cli = await import("@/cli");
     expect(Reflect.get(cli, "botFixCommand")).toBeFunction();
+  });
+});
+
+describe("US-016 fix CLI log", () => {
+  test("AC-21 prints log path last on success", async () => {
+    result = { outcome: "nothing", step: "done", timings: {}, logPath: "/x/bot.jsonl" };
+    await run(["7"]);
+    expect(stdout.at(-1)).toBe("nax bot fix: log /x/bot.jsonl");
+    expect(exits).toEqual([0]);
+  });
+  test("AC-22 prints refused log path and preserves exit two", async () => {
+    result = { outcome: "refused", reason: "no checks", logPath: "/x/bot.jsonl" };
+    await run(["7"]);
+    expect(stdout.at(-1)).toBe("nax bot fix: log /x/bot.jsonl");
+    expect(stderr).toEqual(["no checks"]);
+    expect(exits).toEqual([2]);
   });
 });

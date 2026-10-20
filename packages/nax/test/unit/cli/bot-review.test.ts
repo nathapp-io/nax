@@ -21,6 +21,7 @@ const posted: BotReviewResult = {
   offLine: 0,
   failed: 0,
 };
+const initialize = mock(() => {});
 let stdout: string[];
 let stderr: string[];
 let exits: number[];
@@ -39,12 +40,14 @@ beforeEach(() => {
   failure = undefined;
   interactive = false;
   review.mockClear();
+  initialize.mockClear();
 });
 async function run(...args: string[]): Promise<void> {
   const { registerBotCommand, _botCliDeps } = await import("@/cli/bot");
   const program = new Command().exitOverride();
   registerBotCommand(program, {
     ..._botCliDeps,
+    initLogger: initialize,
     log: (message) => {
       stdout.push(message);
     },
@@ -221,4 +224,21 @@ describe("bot CLI help wiring", () => {
     },
     30_000,
   );
+});
+
+describe("US-016 review CLI log", () => {
+  test("AC-20 prints log path last", async () => {
+    result = { ...posted, logPath: "/x/bot.jsonl" };
+    await run("7");
+    expect(stdout.at(-1)).toBe("nax bot review: log /x/bot.jsonl");
+  });
+  test("AC-23 initializes silent logger before review", async () => {
+    review.mockImplementationOnce(async () => {
+      expect(initialize).toHaveBeenCalledWith({ level: "silent", useChalk: false });
+      return posted;
+    });
+    await run("7");
+    expect(review).toHaveBeenCalledTimes(1);
+    expect(exits).toEqual([0]);
+  });
 });

@@ -64,6 +64,7 @@ export function makeBotFixDeps(env: BotFixEnv, runtime: ReturnType<typeof import
     preparePrCheckout: async () => env.checkout,
     loadBotConfig: async () => env.config,
     createRuntime: () => runtime,
+    openBotLog: () => ({ close: async () => {} }),
     buildPrStepContext: async () => ({ ctx: env.ctx, dispose: async () => {} }),
     loadLatestReview: async () => env.review,
     resolveBotChecks: async () => env.checks,
