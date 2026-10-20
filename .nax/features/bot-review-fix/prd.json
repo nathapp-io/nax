@@ -3,7 +3,7 @@
   "feature": "bot-review-fix",
   "branchName": "feat/bot-review-fix",
   "createdAt": "2026-10-20T00:00:00.000Z",
-  "updatedAt": "2026-10-20T10:34:08.771Z",
+  "updatedAt": "2026-10-20T10:44:05.527Z",
   "userStories": [
     {
       "id": "US-001",
@@ -1089,14 +1089,17 @@
         "US-016",
         "US-012"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Preparation spans existing forge trust, checkout, runtime and pre-run APIs with several cleanup-sensitive refusals; access control before host commands and write sessions requires strict security TDD."
+        "reasoning": "Preparation spans existing forge trust, checkout, runtime and pre-run APIs with several cleanup-sensitive refusals; access control before host commands and write sessions requires strict security TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/review-run.ts",
@@ -1118,7 +1121,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "3ab4e45d0ede8ed4d6cbe6a4ec55eda882c5abe6"
     },
     {
       "id": "US-018",
