@@ -3,7 +3,7 @@
   "feature": "bot-review-quality",
   "branchName": "feat/bot-review-quality",
   "createdAt": "2026-10-20T00:00:00Z",
-  "updatedAt": "2026-10-20T16:14:17.763Z",
+  "updatedAt": "2026-10-20T16:28:32.742Z",
   "userStories": [
     {
       "id": "US-001",
@@ -362,14 +362,17 @@
       "dependencies": [
         "US-005"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Existing lenient parsing, allowlist triage and parse-retry closures are extended with parallel optional fields; standard callOp stubs cover propagation without changing dispatch or session lifecycle."
+        "reasoning": "Existing lenient parsing, allowlist triage and parse-retry closures are extended with parallel optional fields; standard callOp stubs cover propagation without changing dispatch or session lifecycle.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/operations/bot-pr-review-reply.ts",
@@ -392,7 +395,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "6e43030377004ebd47fd54f67cee82313bece864"
     },
     {
       "id": "US-007",
