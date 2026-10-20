@@ -37,8 +37,16 @@ export interface BotReviewOptions {
   readonly model?: string;
 }
 
-/** Normalize inputs before orchestration, and keep diagnostics off stdout. */
-export async function botReviewCommand(options: BotReviewOptions, deps: BotCliDeps = _botCliDeps): Promise<number> {
+export type BotFixOptions = BotReviewOptions;
+type BotInput = Parameters<typeof runBotFix>[0];
+const SHORT_SHA_LENGTH = 7;
+
+/** Normalize inputs inside the shared error boundary before any orchestration. */
+async function withBotInput(
+  options: BotReviewOptions,
+  deps: BotCliDeps,
+  action: (input: BotInput) => Promise<number>,
+): Promise<number> {
   try {
     const pr = Number(options.pr);
     if (!/^\d+$/.test(options.pr) || !Number.isSafeInteger(pr) || pr <= 0) {
@@ -46,33 +54,56 @@ export async function botReviewCommand(options: BotReviewOptions, deps: BotCliDe
     }
     const { parseModelOption } = await import("@/bot");
     const model = options.model === undefined ? undefined : parseModelOption(options.model);
-    const result = await deps.runBotReview({
+    return await action({
       pr,
       dir: options.dir,
       profiles: parseProfileList(options.profile),
       model,
       interactive: deps.isInteractive(),
     });
-    if (result.outcome !== "posted") {
-      deps.logErr(result.reason);
-      return 2;
-    }
-    deps.log(
-      `nax bot review: PR #${pr} — ${result.inlineFindings} findings posted, ${result.threadsAnswered} threads answered (intent ${result.intent}, quality ${result.quality})`,
-    );
-    return 0;
   } catch (err) {
     deps.logErr(errorMessage(err));
     return 1;
   }
 }
 
-/** Register review only; the fix action is added by US-020. */
-export function registerBotCommand(program: Command, deps: BotCliDeps = _botCliDeps): Command {
-  const group = program.command("bot").description("Review pull requests with nax");
-  group
-    .command("review <pr>")
-    .description("Review a pull request and post findings")
+/** Review and fix use identical guarded input/error conventions. */
+export async function botReviewCommand(options: BotReviewOptions, deps: BotCliDeps = _botCliDeps): Promise<number> {
+  return withBotInput(options, deps, async (input) => {
+    const result = await deps.runBotReview(input);
+    if (result.outcome !== "posted") {
+      deps.logErr(result.reason);
+      return 2;
+    }
+    deps.log(
+      `nax bot review: PR #${input.pr} — ${result.inlineFindings} findings posted, ${result.threadsAnswered} threads answered (intent ${result.intent}, quality ${result.quality})`,
+    );
+    return 0;
+  });
+}
+
+export async function botFixCommand(options: BotFixOptions, deps: BotCliDeps = _botCliDeps): Promise<number> {
+  return withBotInput(options, deps, async (input) => {
+    const result = await deps.runBotFix(input);
+    if (result.outcome !== "pushed" && result.outcome !== "nothing") {
+      deps.logErr("reason" in result ? result.reason : result.outcome);
+      return 2;
+    }
+    if (result.outcome === "pushed" && !result.pushedSha) {
+      throw new NaxError(`[bot] Missing pushed SHA for PR #${input.pr}`, "BOT_PUSHED_SHA_MISSING", {
+        stage: "bot",
+        pr: input.pr,
+      });
+    }
+    const summary =
+      result.outcome === "nothing" ? "nothing to fix" : `pushed ${result.pushedSha?.slice(0, SHORT_SHA_LENGTH)}`;
+    deps.log(`nax bot fix: PR #${input.pr} — ${summary}`);
+    return 0;
+  });
+}
+
+function withBotOptions(command: Command): Command {
+  return command
     .option("-d, --dir <path>", "Project directory", process.cwd())
     .option(
       "--profile <name>",
@@ -80,10 +111,21 @@ export function registerBotCommand(program: Command, deps: BotCliDeps = _botCliD
       (value: string, previous: string[]) => [...previous, value],
       [],
     )
-    .option("--model <value>", "Model tier or agent:model")
-    .action(async (pr: string, options: Omit<BotReviewOptions, "pr">) => {
-      const code = await botReviewCommand({ ...options, pr }, deps);
-      deps.exit(code);
-    });
+    .option("--model <value>", "Model tier or agent:model");
+}
+
+/** Register both actions on the existing bot group; help never runs orchestration. */
+export function registerBotCommand(program: Command, deps: BotCliDeps = _botCliDeps): Command {
+  const group = program.command("bot").description("Review and fix pull requests with nax");
+  withBotOptions(group.command("review <pr>").description("Review a pull request and post findings")).action(
+    async (pr: string, options: Omit<BotReviewOptions, "pr">) => {
+      deps.exit(await botReviewCommand({ ...options, pr }, deps));
+    },
+  );
+  withBotOptions(group.command("fix <pr>").description("Fix agreed findings and push changes")).action(
+    async (pr: string, options: Omit<BotFixOptions, "pr">) => {
+      deps.exit(await botFixCommand({ ...options, pr }, deps));
+    },
+  );
   return group;
 }
