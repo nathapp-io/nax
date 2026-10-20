@@ -2,11 +2,16 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import { makeNaxConfig } from "@test/helpers";
 import { _baseConfigDeps, loadBotConfig, snapshotBaseNax } from "@/bot";
 import { NaxError } from "@/errors";
+import { gitWithTimeout } from "@/utils/git";
 
 const original = { ..._baseConfigDeps };
 afterEach(() => Object.assign(_baseConfigDeps, original));
 
 describe("snapshotBaseNax", () => {
+  test("F1: default git runner uses the shared timeout and SIGKILL implementation", () => {
+    expect(_baseConfigDeps.runGit).toBe(gitWithTimeout);
+  });
+
   test("AC-6: invalid object names fail with a contextual NaxError", async () => {
     _baseConfigDeps.runGit = mock(async () => ({
       exitCode: 128,

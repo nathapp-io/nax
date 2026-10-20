@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { gitSpawnEnv } from "@nathapp/nax-agent/internal";
 import { loadConfig, type NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
+import { gitWithTimeout } from "@/utils/git";
 
 async function runCommand(argv: string[], cwd: string): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   const proc = Bun.spawn(argv, { cwd, env: gitSpawnEnv(), stdout: "pipe", stderr: "pipe" });
@@ -16,8 +17,8 @@ async function runCommand(argv: string[], cwd: string): Promise<{ exitCode: numb
 }
 
 export const _baseConfigDeps = {
-  // nax-git-env-allow: runCommand applies gitSpawnEnv to every spawned command.
-  runGit: (argv: string[], cwd: string) => runCommand(["git", ...argv], cwd),
+  // Route git through the shared timeout so a wedged archive cannot stall the bot run.
+  runGit: gitWithTimeout,
   async extractTar(tar: string, dest: string): Promise<void> {
     try {
       const result = await runCommand(["tar", "-xf", tar, "-C", dest], dest);
