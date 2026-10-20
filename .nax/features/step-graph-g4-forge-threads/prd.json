@@ -3,7 +3,7 @@
   "feature": "step-graph-g4-forge-threads",
   "branchName": "feat/step-graph-g4-forge-threads",
   "createdAt": "2026-10-20T00:00:00.000Z",
-  "updatedAt": "2026-10-20T04:37:41.457Z",
+  "updatedAt": "2026-10-20T04:44:44.182Z",
   "userStories": [
     {
       "id": "US-001",
@@ -403,14 +403,17 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "One reader module plus its barrel implements deterministic cursor/page loops and payload mappings through the existing ForgeDeps seam, with no new runtime or external integration."
+        "reasoning": "One reader module plus its barrel implements deterministic cursor/page loops and payload mappings through the existing ForgeDeps seam, with no new runtime or external integration.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/forge/pr-types.ts",
@@ -432,7 +435,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "adb0d2d68b5a2789e27d3993db2199ec7a797cc5"
     },
     {
       "id": "US-007",
