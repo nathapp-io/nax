@@ -1,6 +1,6 @@
 import { NaxError } from "@/errors";
 import { encodeProjectPath } from "./pr-read";
-import type { PostedComment, PrRef } from "./pr-types";
+import type { PostedComment, PrInfo, PrRef } from "./pr-types";
 import type { ForgeDeps } from "./types";
 
 export const MAX_FORGE_COMMENT_CHARS = 65_536;
@@ -46,6 +46,102 @@ export async function runForgeWrite(ref: PrRef, argv: string[], deps: ForgeDeps,
   } catch (cause) {
     throw responseError(ref, cause);
   }
+}
+
+export interface InlineCommentInput {
+  readonly path: string;
+  readonly line: number;
+  readonly body: string;
+  readonly headSha: string;
+  readonly diffRefs?: PrInfo["diffRefs"];
+}
+
+function inlineArgv(ref: PrRef, input: InlineCommentInput): string[] {
+  const { path, line, body, headSha, diffRefs } = input;
+  if (ref.forge === "github") {
+    return [
+      "-X",
+      "POST",
+      `repos/${ref.repo}/pulls/${ref.number}/comments`,
+      "-f",
+      `body=${body}`,
+      "-f",
+      `commit_id=${headSha}`,
+      "-f",
+      `path=${path}`,
+      "-F",
+      `line=${line}`,
+      "-f",
+      "side=RIGHT",
+    ];
+  }
+  if (!diffRefs) {
+    throw new NaxError("[forge] GitLab inline comments require diff refs", "FORGE_DIFF_REFS_REQUIRED", {
+      stage: "forge",
+      forge: ref.forge,
+    });
+  }
+  // glab does not nest bracketed field names; GitLab merges query and body parameters.
+  const query = new URLSearchParams({
+    "position[position_type]": "text",
+    "position[base_sha]": diffRefs.baseSha,
+    "position[start_sha]": diffRefs.startSha,
+    "position[head_sha]": diffRefs.headSha,
+    "position[old_path]": path,
+    "position[new_path]": path,
+    "position[new_line]": String(line),
+  });
+  return [
+    "-X",
+    "POST",
+    `projects/${encodeProjectPath(ref.repo)}/merge_requests/${ref.number}/discussions?${query}`,
+    "-f",
+    `body=${body}`,
+  ];
+}
+
+function hasCommentId(value: unknown): value is { id: string | number } {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    "id" in value &&
+    (typeof value.id === "string" || typeof value.id === "number")
+  );
+}
+
+function inlineReply(ref: PrRef, reply: unknown): PostedComment {
+  if (!hasCommentId(reply)) throw responseError(ref);
+  if (ref.forge === "github") {
+    const url = "html_url" in reply ? reply.html_url : undefined;
+    return { id: String(reply.id), ...(typeof url === "string" ? { url } : {}) };
+  }
+  const notes = "notes" in reply ? reply.notes : undefined;
+  if (!Array.isArray(notes) || !hasCommentId(notes[0])) throw responseError(ref);
+  return { id: String(notes[0].id), threadId: String(reply.id) };
+}
+
+/** Post a new-side single-line comment, never retrying the shared write. */
+export async function postInlineComment(
+  ref: PrRef,
+  input: InlineCommentInput,
+  deps: ForgeDeps,
+  cwd: string,
+): Promise<PostedComment> {
+  assertCommentBody(input.body);
+  if (!input.path || !Number.isInteger(input.line) || input.line <= 0) {
+    throw new NaxError(
+      "[forge] Inline comment requires a path and positive integer line",
+      "FORGE_COMMENT_TARGET_INVALID",
+      {
+        stage: "forge",
+        forge: ref.forge,
+        path: input.path,
+        line: input.line,
+      },
+    );
+  }
+  const reply = await runForgeWrite(ref, inlineArgv(ref, input), deps, cwd);
+  return inlineReply(ref, reply);
 }
 
 /** Post one top-level PR/MR comment; string fields must always use raw -f, never file-aware -F. */
