@@ -3,7 +3,7 @@
   "feature": "bot-review-fix",
   "branchName": "feat/bot-review-fix",
   "createdAt": "2026-10-20T00:00:00.000Z",
-  "updatedAt": "2026-10-20T08:17:08.209Z",
+  "updatedAt": "2026-10-20T08:35:36.599Z",
   "userStories": [
     {
       "id": "US-001",
@@ -245,14 +245,17 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Seven ordered git/filesystem stages require rollback and head-race checks, but reuse existing worktree/exclude helpers; base instruction pinning and symlink removal require strict security TDD."
+        "reasoning": "Seven ordered git/filesystem stages require rollback and head-race checks, but reuse existing worktree/exclude helpers; base instruction pinning and symlink removal require strict security TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/base-config.ts",
@@ -276,7 +279,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "a98de7eee44b18527ce0efee89a91d2ce7183e01"
     },
     {
       "id": "US-005",
