@@ -3,7 +3,7 @@
   "feature": "bot-review-quality",
   "branchName": "feat/bot-review-quality",
   "createdAt": "2026-10-20T00:00:00Z",
-  "updatedAt": "2026-10-20T17:51:21.076Z",
+  "updatedAt": "2026-10-20T18:01:42.983Z",
   "userStories": [
     {
       "id": "US-001",
@@ -951,14 +951,17 @@
         "security"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Small report change but ownership-sensitive resolve actions require strict tests proving successful explanatory reply precedes resolve and failed reply never resolves."
+        "reasoning": "Small report change but ownership-sensitive resolve actions require strict tests proving successful explanatory reply precedes resolve and failed reply never resolves.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/fix-report.ts",
@@ -975,7 +978,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "28c5240b503d027e5a1b0ccebae44a3892421f84"
     },
     {
       "id": "US-016",
