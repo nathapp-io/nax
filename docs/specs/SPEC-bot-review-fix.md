@@ -348,7 +348,7 @@ hard-coded `.nax/features` literal); it is that file inside the worktree. Otherw
 ends with `.pem` or `.key`, or starts with `id_rsa`, at any depth.
 
 `breakLinks(text)` inserts a zero-width space (U+200B) after `]` in every `](` and after `:` in every `://`.
-`safeText(text, max)` = `breakLinks(safeInline(text, max))`.
+`safeText(text, max)` = `breakLinks(safeInline(text, max))`, with the result before link breaking strictly at most `max` characters (`safeInline`'s cap appends `…` past `max`, so `safeText` trims to keep the bound).
 
 Marker keys (each passes `withNaxBotMarker`'s key pattern):
 - `findingKey({ file, issue })` = `f-` + the first 16 hex chars of sha256 of `<file or "">\n<issue lower-cased,
@@ -500,7 +500,7 @@ backtick run in its text (minimum three).
 | `gates` | gate | `resolveGateCommands(snapshotDir, [])`, each command's `cwd` replaced by the worktree, then `runQualityGates(worktree, commands)` | `no-gates` (no commands) -> `report`; `failed` -> `report`; `passed` -> `push` |
 | `push` | git | `git push origin HEAD:refs/heads/<headRef>` in the worktree (no force: a rewritten or moved branch is rejected by the remote) | `rejected` (non-zero exit) -> `report`; `pushed` -> `reply` |
 | `reply` | forge | for each agreed `thread` item: `replyToThread` with `withNaxBotMarker("nax bot fix pushed <sha7> for this thread. Run nax bot review to check it.", "fix-" + item.key)`; then `resolveThread` on each own thread (first comment by the current user, marked with a `findingKey` that is among the agreed items) (R12) | -> `ready` |
-| `ready` | forge | when `info.draft`, runs `markReadyArgv(forge, String(n))` through `ForgeDeps.run` with `cwd` = the repo root | -> `report` |
+| `ready` | forge | when `info.draft`, runs `markReadyArgv(env.ref.forge, String(n))` (a `ForgeKind`) through `env.forge.run` with `cwd` = the repo root | -> `report` |
 | `report` | forge | posts or edits (own key `fix-summary`) `renderFixSummary(state)` | -> `done` |
 
 The gate commands come from the base config but must run in the worktree: `resolveGateCommands` schedules root
@@ -1160,7 +1160,7 @@ test touches a real forge.
 - [integration] `replyStep` never calls `resolveThread` on a thread opened by another author, even when that thread was agreed.
 - [integration] `replyStep` never calls `resolveThread` on an own thread whose finding key is not among the agreed items.
 - [integration] `replyStep` with a `replyToThread` that throws still replies to the next agreed thread.
-- [integration] `readyStep` with `info.draft: true` calls `env.forge.run` with `markReadyArgv(forge, "42")` and `cwd` equal to the repo root.
+- [integration] `readyStep` with `info.draft: true` calls `env.forge.run` with `markReadyArgv(env.ref.forge, "42")` and `cwd` equal to the repo root.
 - [integration] `readyStep` with `info.draft: false` makes no forge call and leaves `markedReady` false.
 - [unit] `renderFixSummary` with outcome `pushed`, sha `abcdef12` and `agreedCount: 3` contains `Pushed abcdef1: 3 agreed items fixed in one round; gates passed.`
 - [unit] `renderFixSummary` with outcome `nothing` contains `Nothing to fix: the latest review agreed with no item.`
