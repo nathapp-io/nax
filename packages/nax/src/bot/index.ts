@@ -8,6 +8,15 @@ export {
   type PrCheckout,
   preparePrCheckout,
 } from "./checkout";
+export {
+  _botChecksDeps,
+  type BotCheck,
+  type BotCheckSource,
+  type BotChecks,
+  checkCommands,
+  DERIVED_INSTALL_TIMEOUT_SECONDS,
+  resolveBotChecks,
+} from "./checks";
 export { _fixInputDeps, checkPushAccess, loadLatestReview, toFixFindings } from "./fix-input";
 export { _fixReportDeps, readyStep, renderFixSummary, replyStep, reportStep } from "./fix-report";
 export { _botFixDeps, BOT_FIX_GRAPH, type BotFixResult, runBotFix } from "./fix-run";
