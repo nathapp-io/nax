@@ -3,7 +3,7 @@
   "feature": "bot-review-fix",
   "branchName": "feat/bot-review-fix",
   "createdAt": "2026-10-20T00:00:00.000Z",
-  "updatedAt": "2026-10-20T07:15:16.603Z",
+  "updatedAt": "2026-10-20T07:42:52.241Z",
   "userStories": [
     {
       "id": "US-001",
@@ -37,14 +37,17 @@
         "models"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Additive config wiring and deterministic model precedence using established schema patterns; preserve existing default-key behavior."
+        "reasoning": "Additive config wiring and deterministic model precedence using established schema patterns; preserve existing default-key behavior.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/config/schemas-workflow.ts",
@@ -74,7 +77,11 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "fac3c388efc73368d81ebf38536921bbd0d4c946"
     },
     {
       "id": "US-002",
@@ -133,7 +140,10 @@
         "readIssue on GitLab with description: null returns body: \"\"."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -182,7 +192,10 @@
         "packages/nax/test/integration/bot/base-config.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -251,7 +264,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-005",
@@ -310,7 +326,10 @@
         "buildUntrustedRequestIssue(\"Rename x\", \"reason with ````` inside\") places the reason inside a six-backtick fence."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-006",
@@ -377,7 +396,10 @@
         "botPrStaticReviewOp's exhausted retry returns the last parsed partial verdict when a listed comment id remains unanswered."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-007",
@@ -429,7 +451,10 @@
         "packages/nax/test/integration/bot/review-step.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-008",
@@ -480,7 +505,10 @@
         "packages/nax/test/unit/bot/render.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-009",
@@ -535,7 +563,10 @@
         "packages/nax/test/unit/bot/render-comments.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-010",
@@ -590,7 +621,10 @@
         "packages/nax/test/integration/bot/post.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-011",
@@ -641,7 +675,10 @@
         "packages/nax/test/integration/bot/post-threads.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-012",
@@ -710,7 +747,10 @@
         "runBotReview with --model override \"fast\" passes model: \"fast\" to runPrReview even when bot.models.review is \"powerful\"."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-013",
@@ -768,7 +808,10 @@
         "loadLatestReview returns null when every version-1 artifact belongs to a different head."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-014",
@@ -825,7 +868,10 @@
         "packages/nax/test/integration/bot/fix-check-steps.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-015",
@@ -878,7 +924,10 @@
         "packages/nax/test/integration/bot/gates-push-steps.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-016",
@@ -938,7 +987,10 @@
         "packages/nax/test/integration/bot/fix-report.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-017",
@@ -1002,7 +1054,10 @@
         "runBotFix with an untrusted PR and multiple trust reasons joins them with \"; \" in the refusal reason."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-018",
@@ -1054,7 +1109,10 @@
         "packages/nax/test/unit/bot/graphs.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-019",
@@ -1117,7 +1175,10 @@
         "nax bot review with a not-reviewed result prints that result's reason to stderr."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-020",
@@ -1177,7 +1238,10 @@
         "nax bot fix 42 --model \"\" exits 1 without calling runBotFix."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "Goal and completion: add independent `nax bot review <pr>` and `nax bot fix <pr>` commands for PR QA as the authenticated gh/glab user, not a new bot identity. Review is read-only and produces a structured intent/quality verdict, triages unresolved non-own threads and non-own top-level comments, and renders marked edit-or-post comments. Fix consumes the newest artifact for the exact current head, performs at most one branch-fix session, gates and non-force pushes trusted same-repository code, replies to agreed threads, resolves only nax-opened threads, and marks drafts ready; the user merges. Exactly US-001 through US-020, their specified dependencies and packages/nax workdirs, are binding. Every spec AC is retained under its original story; failure-table behaviors are assigned to the corresponding implementation story. No release or pipeline-mode changes are required.\n\nExploration and conventions: codebase-memory MCP was unavailable in this session, so navigation used direct Read/Grep/Glob. Architecture index docs/architecture/ARCHITECTURE.md:15 establishes focused conventions, dependency injection, errors, testing and security references; docs/architecture/ARCHITECTURE.md:131 freezes deprecated pipeline mode. packages/nax/package.json:2 identifies @nathapp/nax; :15-17 and :53-62 provide typecheck, lint/static gates and wrapped test commands. This is an additive Bun/TypeScript/Commander feature, not a React UI change; the other published packages need no modifications. All external process/filesystem/forge calls use the specified mutable `_deps` seams, restored after tests, rather than mock.module. Use existing @test/helpers fixtures, temp repos and isolated global config. All new public symbols must be exercised through their package module barrel; bot source uses relative leaves for workflow/finish/execution/utils and barrels for forge/step-graph/config/operations/prompts. Keep files within the actual check:file-sizes limit (the spec targets <600 lines; prefer small focused modules and the repo conventions). Quality gates belong in verification, not story ACs. Security-sensitive stories use three-session-tdd.\n\nConfiguration and compatibility: packages/nax/src/config/schemas-workflow.ts:11-18 is the nested ConfiguredModelSchema/prefault pattern; :35 resolves absent workflow blocks for sparse hand-built configs. packages/nax/src/config/schemas.ts:512-517 wires root workflow/MCP schema defaults and is the insertion point for bot: BotConfigSchema.prefault({}). packages/nax/src/config/runtime-types.ts:560-584 already uses one-line inline type imports and is 597 lines long; add bot?: import(\"./runtime-types-bot\").BotConfig without expanding that file. packages/nax/src/config/runtime-types-workflow.ts:8-13 documents the existing branch model fallbacks. Add schema/types exports to the config public surface and descriptions at packages/nax/src/cli/config-descriptions.ts:8. DEFAULT_CONFIG is schema-derived; packages/nax/test/unit/config/defaults.test.ts:292 and :356 maintain NAX_CONFIG_KEYS and assert every default key is listed, so US-001 must add bot without weakening that invariant. Existing configs require no migration, because bot/models prefault to empty objects and model resolution falls back to existing workflow/finish fields before the op default. parseModelOption splits only the first colon; reject an empty value or either empty part using BOT_MODEL_INVALID. Profile parsing already exists at packages/nax/src/config/profile.ts:182; loadBotConfig must pass ordered profiles only to the base snapshot loader, not to gate-command resolution.\n\nForge foundations: packages/nax/src/forge/index.ts:7-40 exposes all B1 read/write/trust/marker APIs but no linked-issue helpers yet. packages/nax/src/forge/pr-types.ts:4-28 defines explicit forge/host/repo/number and immutable PR metadata including diffRefs, headSha, crossRepo; :41-81 distinguishes comment kinds, thread.id versus replyTo, and OwnComment.threadId. packages/nax/src/forge/pr-read.ts:21 resolves a numeric PR against origin; :135 reads metadata with explicit host and encoded GitLab project paths. packages/nax/src/forge/trust.ts:34 reads authenticated identity; :85 classifies cross-repo and permission lookup failures fail-closed. New issues.ts should follow this host/cwd/ForgeDeps discipline, not implicit CLI repo context; ignore GitHub pull_request results, strip HTML example comments before matching closing refs, and skip individual read errors with warn logs. packages/nax/src/forge/comments.ts:6 caps bodies at 65,536 characters, :32 performs a single non-retried API write, :122 handles inline head/diffRefs, :171 replies using replyTo, :189 resolves using id, :213 edits comment-kind-specific endpoints, :238 posts top-level notes. packages/nax/src/forge/marker.ts:7-18 provides the visible **nax bot** header and hidden nax-bot:v1 key; :21-39 makes ownership require both marker and authenticated author. Markers alone from another user never confer ownership. Preserve B1 behavior; tests such as packages/nax/test/unit/forge/comments.test.ts:25 exercise explicit-host fake ForgeDeps, with separate comments-inline.test.ts, comments-threads.test.ts, threads-comments.test.ts and trust.test.ts covering adjacent behavior.\n\nCheckout, trust and artifact boundaries: packages/nax/src/workflow/paths.ts:10-20 holds repo-local agent-visible workflow paths; add botRunDir for durable outputDir/bot/pr-N/runId artifacts without moving workflow artifacts outside the agent root. packages/nax/src/workflow/pr-step-context.ts:41-83 already constructs bot-pr-N labels, runDir, call context, model-independent workflow timeouts and a disposable ask-wiring context; packages/nax/src/workflow/branch-step-context.ts:6-36 defines the reusable branch/PR contracts without requiring a PRD. packages/nax/src/worktree/manager.ts:92-149 reconciles common .git/info/exclude with NAX_GITIGNORE_ENTRIES, uses a lock and warns rather than throws; packages/nax/src/utils/gitignore.ts:53-102 includes .nax-wt and feature artifact exclusions. Call ensureGitExcludes before creating the worktree so branch-fix auto-commit never captures bot session reports. Fetch forge-specific PR refs through origin, compare FETCH_HEAD to metadata before creating any worktree, fetch base, calculate merge-base, create a detached checkout under the trusted repo's .nax-wt, snapshot base .nax via archive-to-file plus tar extraction to an OS-temp directory, and clean up on every failure. Never send binary archive bytes through string stdout or snapshot under the user's home/global config ancestor. Pin review instruction files from base (root policy paths plus special basenames at all depths) and remove tracked symlinks; fix retains trusted head instructions. changedPaths is deliberately a new --no-renames helper, not packages/nax/src/workflow/git.ts:73 changedFilesSince, because both old and new protected paths must be visible for rename checks. Snapshot and worktree cleanup is best-effort and warn-only; durable bot-review.json/bot-state.json must survive disposal. Config loading already has layered validation and profile resolution at packages/nax/src/config/loader.ts:170-264 and :399-439; starting discovery from an isolated snapshot prevents PR-head or ancestor project config from being selected.\n\nImport-cycle risk and minimal migration: packages/nax/src/workflow/step-context.ts:7 value-imports resolveFeatureSpec from @/cli, while workflow/git.ts:8, branch-review.ts:17 and branch-fix.ts:14 reach step-context. Adding cli/index -> cli/bot -> bot -> any such workflow leaf would close a runtime cycle even with leaf-only bot imports. US-004 changes only that import's module path to ../cli/features-resolve; callers and behavior stay unchanged. Existing consumers include workflow briefs and finalization through _workflowDeps.resolveFeatureSpec. The finish barrel also reaches CLI; packages/nax/src/cli/gates.ts:14-23 and workflow/pr-body-safe.ts:17-20 document the established leaf-import avoidance pattern. Do not raise the zero cycle baseline or route bot through @/workflow, @/finish or @/execution. US-001 and independently schedulable US-008 share the new bot/index.ts output: either may create it first with only its available module exports; subsequent edits must preserve the other's exports. US-008 therefore also declares the new barrel among its expected outputs. US-014's spec-recommended context includes the US-008 path policy even though its binding dependency list does not include US-008. The refine instruction requires retaining that context reference; its availability is a known scheduling warning, not permission to invent or change dependencies. The full policy contract is embedded in US-014's description. All dependency IDs exist and every binding dependency/workdir remains unchanged.\n\nReview implementation: packages/nax/src/operations/workflow-replies.ts:78-106 contains private toDraft sanitization, including default severity/kind, positive line and optional acId/observed; export it as toFindingDraft while preserving existing workflow callers, then omit acId for bot findings. packages/nax/src/operations/workflow-branch-review.ts:28-78 is the fresh wf-branch-review operation/retry model; packages/nax/src/operations/workflow-story-review.ts:22 defines REVIEWER_VERIFY_TOOLS as Read/Glob/Grep/Git/Bash. The static bot op must use exactly Read/Glob/Grep and no reviewer command instructions; review-run must independently remove MCP servers before runtime creation, so tools cannot expand the static trust boundary. No new role or direct provider/adapter call is needed. packages/nax/src/agents/retry/parse-retry.ts:13-43 and :90-173 already support output-aware invalid prompts, maxAttempts=2 and parsed exhausted fallbacks. .nax/rules/retry-strategy.md:117-119 already records both bot operations' ruled parse/validate triage-completeness exception; no rules-file rewrite is needed. Missing triage after one retry keeps the last partial verdict, rather than inventing decisions or dropping findings. packages/nax/src/workflow/branch-review.ts:44-52 demonstrates changed-file rule append options; :83-125 shows package writing, underReviewLimit, callOp and the project-context/coverage additions that bot deliberately does NOT reuse. packages/nax/src/workflow/story-review.ts:12-50 defines ReviewOutcome as ran:true/verdict or ran:false/why and suppresses non-abort package/session failures. Mirror that behavior in runPrReview without adding unreadFiles/requiredFiles. The current packages/nax/src/workflow/git.ts:167-180 branch package contains commits/stat/name-status and a reading note, NOT an inline patch body; reuse writeBranchReviewPackage as it exists, despite the .diff filename in the spec, and do not regress its no-nax-owned-path exclusions. Select workflow PRD intent only when exactly one changed PROJECT_FEATURES_DIR/name/prd.json exists.\n\nPrompt and rendering security: fence every PR/issue/reviewer-authored text with one more backtick than its longest run (minimum 3). Keep author content under the explicit Untrusted content disclaimer and never allow it to close a fence. Thread/comment fix requests must use buildUntrustedRequestIssue with independently fenced request and agreement reason. packages/nax/src/workflow/pr-body-safe.ts:25-45 already redacts secrets, breaks mentions/issue references and flattens/caps inline text; bot safeText applies that first and then breaks markdown destinations and URL schemes with U+200B. Paths use safeCode. Finding hashes normalize issue case/whitespace with file retained; thread/comment keys hash ids separately. Marker keys and edit ownership must remain deterministic across review reruns. Render summaries with all specified sections, counts, static warning and sensitive paths; truncate trailing list items using marked-body length and a 512-character reserve, not raw truncation that could destroy the marker or create live markdown. Path policies intentionally differ: package manifests are sensitive to review but allowed in a fix, while secrets/env/key files are fix-protected. No restrictions are added beyond the specified policies.\n\nPosting and fix data: postPrReview durably records every severity of finding plus agree decisions before any forge mutation, so a summary failure still leaves an actionable review artifact. Dedupe inline writes by findingKey, edit only authenticated marked own matches, turn non-inline or failed inline findings into summary entries, continue after thread write errors and write/edit the summary last. US-010 introduces artifact/inline/summary; US-011 extends thread replies and summary content without changing ownership. loadLatestReview uses modification time among parseable version-1 artifacts for the exact head, not run-id ordering or a stale prior head; artifact.trusted is diagnostic only. map thread/comment requests through the untrusted fence builder, retaining location/severity. Check dry-run push access before dependencies or agent work. packages/nax/src/workflow/branch-fix.ts:17-23 reports failure and dirty state; :57-91 calls the op then commits leftovers on non-abort paths. Its optional model forwarding must leave the model key absent when unset; packages/nax/src/operations/workflow-branch-fix.ts:15-36 already accepts that model and applies existing workflow/finish fallbacks. Protect current workflow/no-PRD users through packages/nax/test/unit/workflow/branch-steps-no-prd.test.ts:1-90 and branch-fix.test.ts; do not add a PRD requirement or new self-review loop.\n\nFix safety and graphs: packages/nax/src/finish/gates/quality.ts:181-252 resolves root and explicit package gate commands; :280-322 executes each gate in gate.cwd and treats zero commands as unverified. Resolve only base snapshot root commands with [] and remap EVERY cwd to the checkout; do not run gates in the snapshot or apply CLI profiles to gates. packages/nax/src/execution/lifecycle/pre-run-steps.ts:56-82 runs trusted host pre-run commands sequentially and throws PRE_RUN_FAILED before agent dispatch. Both fix pre-run and gate trust checks are covered by the enclosing repo trust because checkout is inside repoRoot. Reuse markReadyArgv at packages/nax/src/workflow/promote.ts:110-113 through ForgeDeps.run at the original repo root. Fix graph routes nothing directly to ready/report; no-change/protected/no-gates/gates-failed/push-rejected go straight to report and never become success. Only successful non-force push permits thread replies/resolution and ready. Reply failures continue to later threads; only own thread first comments carrying an agreed findingKey may be resolved. The graph is one round with no reviewer grading the fix. packages/nax/src/step-graph/types.ts:10-100 defines state, patch/exit, committing nodes, declared outputs and persist hooks; packages/nax/src/step-graph/validate.ts:98-107 requires costStop for agent nodes. Both bot graphs need no-op costStop returning undefined and costStopProduces: []; this is structural, not a budget feature. packages/nax/src/step-graph/run.ts:80-118 enforces declared outputs/exits and :132-157 owns timings/cursor and clears undefined patch keys. Use the public runStepGraph and do not patch step/timings/lastHead in nodes. packages/nax/src/workflow/feature-graph.ts:22-49 is the existing declarative graph pattern. Fresh run records persist to the durable state directory after each node. Cleanup order is context dispose, runtime close, checkout dispose even on refusals/exceptions after partial construction; structure cleanup to attempt all acquired resources.\n\nCLI, tests and seams: packages/nax/src/cli/workflow.ts:135-201 shows guarded Commander registration with injected log/exit and cwd defaults; packages/nax/bin/nax.ts:66 and :989 import/register the workflow group, adjacent to the new bot registration. packages/nax/src/cli/index.ts:219 re-exports registration. Add review first in US-019, fix in US-020, use one positive-integer validator, repeatable profile accumulation followed by parseProfileList, parseModelOption before calling orchestration and injectable interactivity. Review posted/fix pushed/fix nothing exit 0, refusals and other operational outcomes exit 2, invalid input/errors exit 1. Drive the actual Commander program with _botCliDeps stubs, not handlers alone, plus real local help subprocess tests that never reach forge. Existing packages/nax/test/unit/cli/trust.test.ts:1-80 shows isolation and Commander usage; gates.test.ts is another seam reference. Extend tests by mirrored unit/bot, operations, prompts and integration/bot paths. Reuse packages/nax/test/unit/workflow/pr-step-context.test.ts:1-50 runtime/context fixture patterns, packages/nax/test/unit/agents/retry/parse-retry.test.ts and step-graph/run*.test.ts/validate.test.ts, plus integration/worktree/manager-git-excludes-linked.test.ts for common excludes. US-012 must drive runBotReview with runPrReview/postPrReview stubbed through _botReviewDeps. US-017 must drive preparation refusals through _botFixDeps loadLatestReview/checkPushAccess; US-018 must drive runBotFix with all seven node functions faked through _botFixDeps to prove routing/persistence. US-014 proves resolved model forwarding through _fixStepsDeps.runBranchFix. No tests contact a real forge or load real ~/.nax. Run targeted package-directory bun test <path> with timeout and package typecheck/check:all; coverage is a separate manual CI-equivalent check after adding tests, not an AC. No commands were executed in this drafting session because only file tools are available.\n\nRisk/migration notes: main risks are PR-authored prompt injection, instruction/symlink escape, accidental head config loading, marker spoofing, rename-based protected-path bypass, stale head races, gates running in the wrong directory, and cleanup/state loss. Mitigations are specified above and are behavioral test targets, not new product scope. No schema version bump or data migration is needed; durable artifacts start at version 1, old/malformed/mismatched-head files are ignored. Existing branch-review/branch-fix callers retain defaults and absent optional model semantics. Concurrent review duplication, forge write retry/backoff, live CI checks, sandboxing untrusted fixes, resume, and self-verification are explicitly deferred. Description Scope Out sections separate adjacent stories; the top-level outOfScope preserves every feature-level exclusion verbatim.\n\nRefine-pass audit: enumerated all 327 acceptance-criterion bullets in the supplied spec against this PRD. The following source-ordinal -> current acceptanceCriteria-index inventory covers every bullet (all ranges inclusive, indices one-based within the same story). US-001: 1-17 -> 1-17. US-002: 1-19 -> 1-19. US-003: 1-11 -> 1-11. US-004: 1-3 -> 1-3; 4 -> 4+5; 5-19 -> 6-20. US-005: 1-18 -> 1-18. US-006: 1-22 -> 1-22. US-007: 1-11 -> 1-11; 12 -> 12+13. US-008: 1-14 -> 1-14. US-009: 1-18 -> 1-18. US-010: 1-16 -> 1-16. US-011: 1-13 -> 1-13. US-012: 1-18 -> 1-18; 19 -> 19+20; 20 -> 21; 21 -> 22+23; 22 -> 24. US-013: 1-14 -> 1-14. US-014: 1-17 -> 1-17. US-015: 1-17 -> 1-17. US-016: 1-7 -> 1-7; 8 -> 8+9; 9-20 -> 10-21. US-017: 1-14 -> 1-14; 15 -> 15+16; 16 -> 17; 17 -> 18+19. US-018: 1-5 -> 1-5; 6 -> 6+7; 7 -> 8+9; 8-13 -> 10-15. US-019: 1-11 -> 1-11; 12 -> 12+13; 13 -> 14+15; 14-16 -> 16-18. US-020: 1-10 -> 1-10; 11 -> 11+12; 12 -> 13. Added criteria follow those positions rather than replacing source criteria. In particular the sanitizer's 'as parseBranchReviewReply does', no-model 'even when workflow.models.branchReview is set', existing absence-of-model-key, rename parentheticals, and other trailing regression qualifiers remain attached to their assertions. No deprecated file/grep/verbatim criteria were present to translate.\n\nAudit corrections grounded in code: packages/nax/src/finish/pr/escape.ts:27-34 appends an ellipsis after the requested cap, so blindly composing safeInline(text, 100) would produce 101 characters and violate US-008's existing spec AC. US-008 now explicitly applies a bot-local strict cap before breakLinks, without modifying shared workflow rendering, and its long-text AC uses a concrete link-free input so the pre-link-breaking limit is observable. packages/nax/src/workflow/promote.ts:111 accepts a ForgeKind, not ForgeDeps: US-016's readiness criterion now passes env.ref.forge to markReadyArgv while executing through env.forge.run. packages/nax/src/forge/pr-types.ts:65-78 makes user an object and author a string: ownership compares author to env.user.login. packages/nax/src/forge/comments.ts:171-196 distinguishes replyTo from resolution id. packages/nax/src/forge/marker.ts:18 prepends a header and blank line; US-011's 'second line' criterion now refers to the summary body after that wrapper rather than the second line of the entire marked comment. packages/nax/src/execution/lifecycle/pre-run-steps.ts:44-56 takes one options object, now explicit in US-017's forwarding criterion. packages/nax/src/forge/pr-types.ts:23 and the prompt interface require PrInfo.author.login -> prompt.pr.author, now explicit in US-007. Artifact rejection criteria in US-013 state concrete null/selected-artifact returns. CLI result tests explicitly invoke PR 42 so the required Commander positional argument is not accidentally omitted.\n\nRegression audit additions: US-001 retains NAX_CONFIG_KEYS/default equality invariants; US-004 proves resolveFeatureSpec behavior survives the leaf import; US-006 proves workflow parser acId preservation after sanitizer extraction; US-011 retains artifact-first ordering and inline counts after thread replies; US-013 already retains the no-model-key branch-fix call; US-019 retains the workflow entry in root help; US-020 retains review dispatch after adding fix. No quality-gate criteria were introduced. Complexity was reduced where existing helpers eliminate novel architecture: the only complex stories are checkout, review posting and the review/fix preparation orchestrators; narrow wrappers, nodes and the declarative fix graph are medium. Strict three-session-tdd remains on actual trust, session-capability, protected-path, ownership, credential-redaction and cryptographic-identity boundaries; plain config/forge reads/CLI use tdd-simple.\n\nNegative-path inventory: US-001 invalid model/schema; US-002 failed issue read; US-003 archive/extraction error; US-004 moved head/rollback; US-005 no stated intent and hostile backtick content; US-006 invalid JSON/verdict and exhausted partial triage; US-007 failed review package; US-008 hostile links and oversized text; US-009 failed-post warning and oversized summary; US-010 failed inline post; US-011 failed thread/summary write; US-012 refused or not-reviewed run; US-013 malformed/stale artifact and denied dry-run push; US-014 protected/no-change fix; US-015 no gates, red gates and rejected push; US-016 failed reply and prohibited resolution of others' threads; US-017 trust/refusal/PRE_RUN_FAILED; US-018 failed graph exits; US-019 invalid CLI input/agent error; US-020 refused/red-gate CLI result. Pure builders render degraded or safe output instead of inventing exception contracts.\n\nFailure-table audit (all 21 rows): non-open PR -> US-012/017; moved head -> US-004; unreadable base archive -> US-003; partial checkout failure -> US-004; unreadable linked issue -> US-002; review did not run -> US-012/019; exhausted missing triage -> US-006/011; failed inline post -> US-010/011; failed thread reply -> US-011; failed summary -> US-011/019; cross-repo/untrusted fix -> US-017; no exact-head review -> US-017; absent base config -> US-017; no push access -> US-017; protected edits -> US-014/018/020; no changes -> US-014/018/020; no gates -> US-015/018/020; failed gates -> US-015/018/020; rejected push -> US-015/018/020; failed pre-run -> US-017/020; failed worktree removal -> US-004. All 22 feature-level out-of-scope entries remain unchanged and verbatim in the top-level array; adjacent descriptions echo the relevant boundaries. Spec-recommended context lists are retained, including the explicit US-014/US-008 scheduling caveat above. There are exactly 20 pending stories with the original IDs, workdirs and binding dependency arrays. This was a file-based audit; no runtime test or JSON-parser execution is claimed.",
