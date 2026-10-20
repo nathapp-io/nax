@@ -52,6 +52,7 @@ export interface BotReviewEvent {
   readonly line?: number;
   readonly finding: string;
   readonly reason: string;
+  /** Unverified forge logins; consumers must check artifact trust and commenter permissions. */
   readonly disagreedBy: readonly string[];
 }
 
@@ -197,11 +198,34 @@ async function postEarlier(input: PostReviewInput): Promise<{ earlierAnswered: n
   return { earlierAnswered: input.earlier?.length ?? 0, failed };
 }
 
+function withdrawalEvents(input: PostReviewInput): BotReviewEvent[] {
+  if (input.login === undefined) return [];
+  return effectiveEarlier(input).flatMap(({ thread, key, verdict }) => {
+    if (verdict?.status !== "withdrawn") return [];
+    const disagreedBy = [
+      ...new Set(thread.comments.map(({ author }) => author).filter((author) => author !== input.login)),
+    ];
+    if (disagreedBy.length === 0) return [];
+    return [
+      {
+        type: "finding-withdrawn" as const,
+        key,
+        threadId: thread.id,
+        file: thread.path,
+        line: thread.line,
+        finding: earlierIssue(thread),
+        reason: verdict.reason,
+        disagreedBy,
+      },
+    ];
+  });
+}
+
 async function persistArtifact(input: PostReviewInput): Promise<void> {
   const artifact: BotReviewArtifact = {
     version: 2,
     checks: input.staticMode ? null : (input.checks ?? null),
-    events: [],
+    events: withdrawalEvents(input),
     pr: input.ref,
     headSha: input.info.headSha,
     trusted: !input.staticMode,
