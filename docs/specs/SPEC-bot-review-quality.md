@@ -394,7 +394,8 @@ Trusted review (not static):
    other error propagates.
 
 Static review skips all three (its config only gets the existing MCP strip); `checks` is `null`.
-`input.decisions` (default `[]`) goes to the prompt in both modes. `checkCommands(checks)` goes to the prompt;
+`input.decisions` (default `[]`) goes to the prompt in both modes. `checkCommands(checks)` goes to the prompt
+(`[]` for a static review, whose `checks` is `null`);
 the full `checks` and `preRunFailed` go to posting with `earlier` and `login` from `triage`. The result carries
 `artifactPath = join(stateDir, "bot-review.json")` and `checksSource` (`null` when static).
 
@@ -438,9 +439,10 @@ export function openBotLog(path: string): BotLog;
 export const _botLogDeps = { addSink, appendFile: (path: string, text: string) => appendFile(path, text) };
 ```
 
-- `bin/nax.ts` registers the `bot` group with a `preAction` hook (as it does for `advisor replay`) that calls
-  `initLogger({ level: "silent", useChalk: false })`: the console stays quiet, because stdout carries the
-  command's result lines, but the logger singleton exists so sinks can attach.
+- `registerBotCommand` (`src/cli/bot.ts`) adds a `preAction` hook on the `bot` group that calls
+  `deps.initLogger({ level: "silent", useChalk: false })` (a new `BotCliDeps.initLogger`, implemented in
+  `_botCliDeps` with `initLogger` from `@/logger`): the console stays quiet, because stdout carries the
+  command's result lines, but the logger singleton exists so sinks can attach. `bin/nax.ts` is unchanged.
 - `openBotLog(path)` registers a sink with `_botLogDeps.addSink` that turns each (already redacted) entry into
   one line with `formatJsonl` and appends it to `path`, writes chained in order. `close()` unsubscribes the sink
   and awaits the pending writes. When `addSink` throws `LOGGER_NOT_INITIALIZED` (a host that never initialised
@@ -624,7 +626,7 @@ thread before resolving it, and `replyStep` counts those replies.
 Depends on US-013, US-014. Workdir: packages/nax.
 
 Adds `openBotLog`, `BotLog` and `_botLogDeps` in `src/bot/log.ts` (exported from `@/bot`), the `preAction`
-logger hook for the `bot` group in `bin/nax.ts`, the log open and close and the milestone entries in
+logger hook for the `bot` group in `registerBotCommand` (`src/cli/bot.ts`, through a new `BotCliDeps.initLogger`), the log open and close and the milestone entries in
 `runBotReview` and `runBotFix`, `logPath` on their results, and the CLI log line.
 
 ### Context Files
@@ -715,7 +717,7 @@ logger hook for the `bot` group in `bin/nax.ts`, the log open and close and the 
 
 **US-016**
 - `packages/nax/src/logger/logger.ts`
-- `packages/nax/bin/nax.ts`
+- `packages/nax/test/unit/cli/bot-review.test.ts`
 - `packages/nax/src/bot/review-run.ts`
 - `packages/nax/src/bot/fix-run.ts`
 - `packages/nax/src/cli/bot.ts`
@@ -768,6 +770,10 @@ logger hook for the `bot` group in `bin/nax.ts`, the log open and close and the 
 
 **US-015**
 - `packages/nax/test/integration/bot/fix-report.test.ts` — the resolution tests stub only `resolveThread`, and the reply tests expect `replied: 1` and one `replyToThread` call where an own agreed finding thread is also resolved; `resolveOwnFindings` now replies first, so the resolution tests also stub `replyToThread` to succeed and those reply counts become 2, keeping the invariants that resolution continues after one failed resolve and skips empty, unmarked and resolved threads.
+
+**US-016**
+- `packages/nax/test/integration/bot/review-run.test.ts` — "AC-24 returns posting counts" asserts the whole result with `toEqual`; when an earlier test file in the same process initialised the logger, the real `openBotLog` writes a file and the result gains `logPath`, so the test setup stubs `_botReviewDeps.openBotLog` to return no path, keeping the invariant that the result reports the posting counts, intent, quality and static mode.
+- `packages/nax/test/helpers/bot-fix.ts` — `makeBotFixDeps` builds the fix deps without `openBotLog`; it gains an `openBotLog` stub returning no path, so fix tests never write a real log and whole-result assertions are unchanged.
 
 ### Seams
 
@@ -1081,4 +1087,4 @@ and forge calls go through injectable deps and are faked in tests; no test touch
 - [cli] A posted review with `logPath: "/x/bot.jsonl"` prints `nax bot review: log /x/bot.jsonl` as its last stdout line.
 - [cli] A fix result with `logPath: "/x/bot.jsonl"` prints `nax bot fix: log /x/bot.jsonl` as its last stdout line.
 - [cli] A refused fix with `logPath` set prints the log line and still exits 2.
-- [cli] Running `nax bot review` through the program built in `bin/nax.ts` initialises the logger before `runBotReview` is called.
+- [cli] Running `bot review 7` through the commander program built by `registerBotCommand` with stubbed `_botCliDeps` calls `initLogger` with `{ level: "silent", useChalk: false }` before `runBotReview`.
