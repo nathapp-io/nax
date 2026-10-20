@@ -3,7 +3,7 @@
   "feature": "bot-review-quality",
   "branchName": "feat/bot-review-quality",
   "createdAt": "2026-10-20T00:00:00Z",
-  "updatedAt": "2026-10-20T16:52:17.831Z",
+  "updatedAt": "2026-10-20T17:03:36.031Z",
   "userStories": [
     {
       "id": "US-001",
@@ -623,14 +623,17 @@
       "dependencies": [
         "US-009"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Existing posting/renderer extensions with bounded list output; unit rendering plus fake-forge routing regressions."
+        "reasoning": "Existing posting/renderer extensions with bounded list output; unit rendering plus fake-forge routing regressions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/post.ts",
@@ -648,7 +651,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "e2da48738200dd4ba07c6a1f129cb88ee21c4ace"
     },
     {
       "id": "US-011",
