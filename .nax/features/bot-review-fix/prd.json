@@ -3,7 +3,7 @@
   "feature": "bot-review-fix",
   "branchName": "feat/bot-review-fix",
   "createdAt": "2026-10-20T00:00:00.000Z",
-  "updatedAt": "2026-10-20T08:54:38.780Z",
+  "updatedAt": "2026-10-20T09:02:31.155Z",
   "userStories": [
     {
       "id": "US-001",
@@ -452,14 +452,17 @@
         "US-004",
         "US-006"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "A focused wrapper reuses underReviewLimit and the existing package/rules/callOp seams; strict TDD protects static-session selection and exclusion of head-influenced project context."
+        "reasoning": "A focused wrapper reuses underReviewLimit and the existing package/rules/callOp seams; strict TDD protects static-session selection and exclusion of head-influenced project context.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/branch-review.ts",
@@ -475,7 +478,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "dd6ae4566dd833f1722c6835350068799e57a42a"
     },
     {
       "id": "US-008",
