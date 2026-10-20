@@ -3,6 +3,8 @@ import type { PrEarlierVerdict, PrIntent, PrTriageDecision, PrTriageVerdict } fr
 import type { WorkflowFindingDraft } from "@/operations/workflow-types";
 // Reuse the safe path leaf without loading workflow's orchestration barrel (as in render.ts).
 import { safeCode } from "../workflow/pr-body-safe";
+import type { BotChecks } from "./checks";
+import { checkCommands } from "./checks";
 import { earlierKey, findingKey, safeText, threadKey } from "./render";
 
 const TEXT_LIMIT = 2_000;
@@ -16,6 +18,10 @@ const DECISION_LABELS: Record<PrTriageDecision, string> = {
 };
 
 export interface ReviewSummaryInput {
+  readonly minor?: readonly WorkflowFindingDraft[];
+  readonly earlier?: { readonly open: number; readonly fixed: number; readonly withdrawn: number };
+  readonly checks?: BotChecks | null;
+  readonly preRunFailed?: string;
   readonly headSha: string;
   readonly intent: PrIntent;
   readonly quality: "approved" | "changes";
@@ -70,6 +76,7 @@ function summarySections(input: ReviewSummaryInput): ListSection[] {
   return [
     { heading: "### Sensitive paths changed", items: input.sensitive.map((path) => `- \`${safeCode(path)}\``) },
     { heading: "### Findings not on a changed line", items: input.offLine.map(offLineItem) },
+    { heading: "### Minor findings", items: (input.minor ?? []).map(offLineItem) },
     {
       heading: "### Top-level comments",
       items: input.commentVerdicts.map(
@@ -111,11 +118,41 @@ function boundedSummary(prefix: string[], sections: ListSection[], suffix: strin
   return withNaxBotMarker([...prefix, ...lists, ...notice, ...suffix].join("\n"), "summary");
 }
 
+function readinessLines(input: ReviewSummaryInput): string[] {
+  const lines: string[] = [];
+  if (input.earlier) {
+    const { open, fixed, withdrawn } = input.earlier;
+    const total = open + fixed + withdrawn;
+    if (total > 0)
+      lines.push(`${total} earlier findings re-checked: ${open} still open, ${fixed} fixed, ${withdrawn} withdrawn.`);
+  }
+  if (input.checks?.source === "none") {
+    lines.push(
+      "No check commands found on the base branch, so nax bot fix will refuse. Add quality.commands to .nax/config.json, or list the commands in AGENTS.md or CLAUDE.md.",
+    );
+  } else if (input.checks) {
+    const labels = {
+      config: ".nax/config.json",
+      "agents-md": "AGENTS.md",
+      "claude-md": "CLAUDE.md",
+      detected: "package.json scripts",
+    };
+    lines.push(
+      `Checks (${labels[input.checks.source]}): ${safeText(checkCommands(input.checks).join(", "), TEXT_LIMIT)}.`,
+    );
+  }
+  if (input.preRunFailed !== undefined) {
+    lines.push(`Install step failed (${safeText(input.preRunFailed, TEXT_LIMIT)}); checks may not have run.`);
+  }
+  return lines;
+}
+
 /** Render the ordered review summary, dropping list tails before exceeding the forge budget. */
 export function renderReviewSummary(input: ReviewSummaryInput): string {
   const prefix = [
     `Review of ${input.headSha.slice(0, SHORT_SHA_LENGTH)}: intent ${input.intent}, quality ${input.quality}.`,
     `${input.inlineFindings} inline findings, ${input.threadsAnswered} threads answered, ${input.commentVerdicts.length} comments answered.`,
+    ...readinessLines(input),
   ];
   if (input.staticMode) prefix.push("Untrusted PR: reviewed without running any code.");
   const suffix = input.failed > 0 ? [`Could not post ${input.failed} comments; re-run nax bot review.`] : [];

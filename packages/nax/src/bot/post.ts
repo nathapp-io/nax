@@ -69,6 +69,7 @@ export interface BotReviewArtifact {
   readonly agreed: readonly AgreedItem[];
 }
 export interface PostReviewInput {
+  readonly preRunFailed?: string;
   readonly earlier?: readonly PrThread[];
   readonly login?: string;
   readonly checks?: BotChecks | null;
@@ -261,9 +262,10 @@ async function writeFinding(input: PostReviewInput, finding: WorkflowFindingDraf
 
 async function postFindings(
   input: PostReviewInput,
-): Promise<{ inlineFindings: number; offLine: WorkflowFindingDraft[] }> {
+): Promise<{ inlineFindings: number; offLine: WorkflowFindingDraft[]; minor: WorkflowFindingDraft[] }> {
   const seen = new Set<string>();
   const offLine: WorkflowFindingDraft[] = [];
+  const minor: WorkflowFindingDraft[] = [];
   let inlineFindings = 0;
   for (const finding of input.verdict.findings) {
     if (!finding.file || finding.line === undefined) {
@@ -273,6 +275,10 @@ async function postFindings(
     const key = findingKey(finding);
     if (seen.has(key)) continue;
     seen.add(key);
+    if (finding.severity === "minor" && !input.own.some((own) => own.key === key)) {
+      minor.push(finding);
+      continue;
+    }
     try {
       await writeFinding(input, finding);
       inlineFindings++;
@@ -283,7 +289,7 @@ async function postFindings(
       offLine.push(finding);
     }
   }
-  return { inlineFindings, offLine };
+  return { inlineFindings, offLine, minor };
 }
 
 async function postThreads(input: PostReviewInput): Promise<{ threadsAnswered: number; failed: number }> {
@@ -310,6 +316,12 @@ async function postThreads(input: PostReviewInput): Promise<{ threadsAnswered: n
   return { threadsAnswered, failed };
 }
 
+function earlierCounts(input: PostReviewInput): { open: number; fixed: number; withdrawn: number } {
+  const counts = { open: 0, fixed: 0, withdrawn: 0 };
+  for (const { verdict } of effectiveEarlier(input)) counts[verdict?.status ?? "open"]++;
+  return counts;
+}
+
 async function postSummary(
   input: PostReviewInput,
   findings: Awaited<ReturnType<typeof postFindings>>,
@@ -319,6 +331,9 @@ async function postSummary(
     headSha: input.info.headSha,
     intent: input.verdict.intent,
     quality: input.verdict.quality,
+    earlier: earlierCounts(input),
+    checks: input.staticMode ? null : input.checks,
+    preRunFailed: input.preRunFailed,
     ...findings,
     ...threads,
     commentVerdicts: input.verdict.comments.map((verdict) => ({

@@ -77,6 +77,65 @@ beforeEach(() => {
 });
 afterEach(() => cleanupTempDir(stateDir));
 
+describe("postPrReview minor findings and readiness", () => {
+  const finding = {
+    kind: "quality",
+    severity: "minor",
+    issue: "Small leak",
+    file: "a.ts",
+    line: 3,
+    decision: "D-1",
+  } as const;
+  beforeEach(() => {
+    input = { ...input, verdict: { ...input.verdict, threads: [], findings: [finding] } };
+  });
+  test("US-010 AC-1/5/17: new minor is summary-only and remains agreed with its decision", async () => {
+    const result = await bot.postPrReview(input);
+    expect(run.mock.calls).toHaveLength(1);
+    expect(run.mock.calls[0]?.[0]).toContain(summaryEndpoint);
+    expect(result.inlineFindings).toBe(0);
+    expect(summaryBody()).toContain("### Minor findings\n- **Minor** `a.ts:3` Small leak");
+    const artifact: bot.BotReviewArtifact = await Bun.file(join(stateDir, "bot-review.json")).json();
+    expect(artifact.agreed).toMatchObject([
+      { kind: "finding", severity: "minor", issue: finding.issue, decision: "D-1" },
+    ]);
+  });
+  test("US-010 AC-2: existing minor is edited and counted inline", async () => {
+    const result = await bot.postPrReview({ ...input, own: [{ key: bot.findingKey(finding), comment }] });
+    expect(result.inlineFindings).toBe(1);
+    expect(run.mock.calls[0]?.[0]).toContain("PATCH");
+    expect(run.mock.calls[0]?.[0]).toContain(`body=${bot.renderFindingComment(finding)}`);
+    expect(summaryBody()).not.toContain("### Minor findings");
+  });
+  test("US-010 AC-3: minor without a line stays off-line", async () => {
+    const result = await bot.postPrReview({
+      ...input,
+      verdict: { ...input.verdict, findings: [{ ...finding, line: undefined }] },
+    });
+    expect(result.offLine).toBe(1);
+    expect(summaryBody()).toContain("### Findings not on a changed line\n- **Minor** `a.ts` Small leak");
+    expect(summaryBody()).not.toContain("### Minor findings");
+  });
+  test("US-010 AC-4: critical findings still post inline", async () => {
+    const result = await bot.postPrReview({
+      ...input,
+      verdict: { ...input.verdict, findings: [{ ...finding, severity: "critical" }] },
+    });
+    expect(result.inlineFindings).toBe(1);
+    expect(run.mock.calls[0]?.[0]).toContain("repos/o/r/pulls/7/comments");
+    expect(run.mock.calls[0]?.[0]).toContain("POST");
+  });
+  test("US-010 AC-16/19: summary receives checks and install failure", async () => {
+    await bot.postPrReview({
+      ...input,
+      checks: { source: "config", gates: [{ name: "lint", command: "bun run lint" }], preRun: [] },
+      preRunFailed: "npm ci",
+    });
+    expect(summaryBody()).toContain("Checks (.nax/config.json): bun run lint.");
+    expect(summaryBody()).toContain("Install step failed (npm ci); checks may not have run.");
+  });
+});
+
 describe("postPrReview thread publication", () => {
   test("AC-1: posts a marked reply to the verdict's thread", async () => {
     await bot.postPrReview(input);
@@ -199,7 +258,7 @@ describe("postPrReview thread publication", () => {
   test("AC-15: distinct posted and edited inline findings still count with no threads", async () => {
     const findings = ["First", "Second"].map((issue) => ({
       kind: "quality" as const,
-      severity: "minor" as const,
+      severity: "important" as const,
       issue,
       file: "a.ts",
       line: 3,
@@ -302,6 +361,25 @@ describe("postPrReview earlier findings", () => {
     expect(run.mock.calls[1]?.[0]).toContain("id=T1");
     expect(run.mock.calls[2]?.[0]).toContain(summaryEndpoint);
     expect(await agreed()).toEqual([]);
+  });
+  test("US-010 AC-18: summary receives effective earlier counts", async () => {
+    await bot.postPrReview({
+      ...input,
+      verdict: { ...input.verdict, earlier: [{ id: "T1", status: "fixed", reason: "Done" }] },
+    });
+    expect(summaryBody()).toContain("1 earlier findings re-checked: 0 still open, 1 fixed, 0 withdrawn.");
+  });
+  test("US-010: re-raised and omitted verdicts count as open", async () => {
+    const finding = { kind: "quality", severity: "important", issue: "Leak", file: "old.ts", line: 17 } as const;
+    await bot.postPrReview({
+      ...input,
+      earlier: [
+        { ...earlier, comments: [{ ...earlier.comments[0], body: bot.renderFindingComment(finding) }] },
+        { ...earlier, id: "T2" },
+      ],
+      verdict: { ...input.verdict, findings: [finding], earlier: [{ id: "T1", status: "fixed", reason: "Done" }] },
+    });
+    expect(summaryBody()).toContain("2 earlier findings re-checked: 2 still open, 0 fixed, 0 withdrawn.");
   });
   test("US-008 AC-14: edits an own earlier reply only in the same thread", async () => {
     await bot.postPrReview({
