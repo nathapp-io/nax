@@ -3,7 +3,7 @@
   "feature": "step-graph-g4-forge-threads",
   "branchName": "feat/step-graph-g4-forge-threads",
   "createdAt": "2026-10-20T00:00:00.000Z",
-  "updatedAt": "2026-10-20T04:02:55.161Z",
+  "updatedAt": "2026-10-20T04:11:19.527Z",
   "userStories": [
     {
       "id": "US-001",
@@ -121,14 +121,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "One provider mirrors buildFeatureContext and adds a barrel export; permission ask-resolver and command-shadow wiring requires strict security isolation despite the standard implementation pattern."
+        "reasoning": "One provider mirrors buildFeatureContext and adds a barrel export; permission ask-resolver and command-shadow wiring requires strict security isolation despite the standard implementation pattern.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/branch-step-context.ts",
@@ -151,7 +154,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "9a400f5de90757b026a6b8254135b9c9b408c5be"
     },
     {
       "id": "US-003",
