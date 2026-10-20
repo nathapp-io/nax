@@ -3,7 +3,7 @@
   "feature": "step-graph-g4-forge-threads",
   "branchName": "feat/step-graph-g4-forge-threads",
   "createdAt": "2026-10-20T00:00:00.000Z",
-  "updatedAt": "2026-10-20T05:05:32.235Z",
+  "updatedAt": "2026-10-20T05:13:19.033Z",
   "userStories": [
     {
       "id": "US-001",
@@ -600,14 +600,17 @@
       "dependencies": [
         "US-008"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Provider-specific inline payload encoding must preserve raw untrusted body/path values without file disclosure; strict security isolation is appropriate."
+        "reasoning": "Provider-specific inline payload encoding must preserve raw untrusted body/path values without file disclosure; strict security isolation is appropriate.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/forge/pr-types.ts",
@@ -628,7 +631,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "17bdbd26d0433e25fa2d6d5610ec83d989058b99"
     },
     {
       "id": "US-010",
