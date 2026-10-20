@@ -4,7 +4,6 @@
  * `_workflowDeps.callOp`, so a test fakes the agent in one place.
  */
 import { createAdvisor, readTrustedDecisions } from "@/advisor";
-import { resolveFeatureSpec } from "@/cli";
 import type { NaxConfig, TierConfig, WorkflowConfig } from "@/config";
 // US-007: the run's project-context override file. Same nested-barrel shape as
 // the rules resolver above — the workflow reads it without importing `@/context`.
@@ -20,6 +19,7 @@ import type { ISessionManager } from "@/session/types";
 import { type ResolvedTestPatterns, resolveTestFilePatterns } from "@/test-runners";
 import { autoCommitIfDirty, gitWithTimeout } from "@/utils/git";
 import type { NaxIgnoreIndex } from "@/utils/path-filters";
+import { resolveFeatureSpec } from "../cli/features-resolve";
 import { appendChangedFileRules } from "./review-rules-map";
 
 export interface StepContext {
