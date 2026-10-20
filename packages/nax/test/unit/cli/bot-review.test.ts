@@ -1,7 +1,11 @@
-import { beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { join } from "node:path";
+import { withTempDir } from "@test/helpers";
 import { Command } from "commander";
 import type { BotReviewResult, runBotReview } from "@/bot";
+import { _botCliDeps } from "@/cli/bot";
 import { NaxError } from "@/errors";
+import { defaultForgeDeps } from "@/forge";
 
 const posted: BotReviewResult = {
   outcome: "posted",
@@ -55,6 +59,48 @@ async function run(...args: string[]): Promise<void> {
   });
   await program.parseAsync(["bot", "review", ...args], { from: "user" });
 }
+afterEach(() => mock.restore());
+describe("registerBotCommand review decisions and readiness", () => {
+  test("US-013 AC-1/2 forwards decisions loaded through the lazy dependency", async () => {
+    await withTempDir(async (dir) => {
+      const path = join(dir, "decisions.json");
+      const decisions = [{ id: "D-1", statement: "Keep generated files" }];
+      await Bun.write(path, JSON.stringify({ version: 1, decisions }));
+      const load = spyOn(_botCliDeps, "loadBotDecisions");
+      await run("7", "--decisions", path);
+      expect(load).toHaveBeenCalledWith(path);
+      expect(review).toHaveBeenCalledWith(expect.objectContaining({ decisions }));
+      expect(exits).toEqual([0]);
+    });
+  });
+  test.each(["missing", "invalid"])("US-013 AC-3/4/5/14/15 rejects %s before review or forge", async (kind) => {
+    await withTempDir(async (dir) => {
+      const path = join(dir, "decisions.json");
+      if (kind === "invalid") await Bun.write(path, '{"version":2,"decisions":[]}');
+      const forge = spyOn(defaultForgeDeps, "run");
+      await run("7", "--decisions", path);
+      expect(stderr).toHaveLength(1);
+      if (kind === "missing") expect(stderr[0]).toBe(`[bot] Cannot read decisions file ${path}`);
+      else expect(stderr[0]).toStartWith(`[bot] Invalid decisions file ${path}`);
+      expect(exits).toEqual([1]);
+      expect(review).not.toHaveBeenCalled();
+      expect(forge).not.toHaveBeenCalled();
+    });
+  });
+  test("US-013 AC-6 does not load or forward decisions when omitted", async () => {
+    const load = spyOn(_botCliDeps, "loadBotDecisions");
+    await run("7");
+    expect(load).not.toHaveBeenCalled();
+    expect(review.mock.calls[0]?.[0].decisions).toBeUndefined();
+    expect(review).toHaveBeenCalledTimes(1);
+  });
+  test("US-013 AC-8 warns about absent checks without changing success", async () => {
+    result = { ...posted, checksSource: "none" };
+    await run("7");
+    expect(stderr).toEqual(["nax bot review: no check commands found on the base branch; nax bot fix will refuse"]);
+    expect(exits).toEqual([0]);
+  });
+});
 describe("registerBotCommand review", () => {
   test("AC-1 forwards the PR and current directory", async () => {
     await run("42");
@@ -77,6 +123,7 @@ describe("registerBotCommand review", () => {
     await run("42");
     expect(stdout).toEqual([
       "nax bot review: PR #42 — 3 findings posted, 2 threads answered (intent pass, quality changes)",
+      "nax bot review: artifact /artifacts/bot-review.json",
     ]);
     expect(stderr).toEqual([]);
     expect(exits).toEqual([0]);
