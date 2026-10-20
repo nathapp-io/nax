@@ -6,6 +6,7 @@ export const BotConfigSchema = z.object({
     .object({
       review: ConfiguredModelSchema.optional(),
       fix: ConfiguredModelSchema.optional(),
+      checks: ConfiguredModelSchema.optional(),
     })
     .prefault({}),
 });

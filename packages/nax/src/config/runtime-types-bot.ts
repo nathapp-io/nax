@@ -1,6 +1,8 @@
 import type { ConfiguredModel } from "./schema-types";
 
 export interface BotModelsConfig {
+  /** Instruction-file check extraction model; defaults to fast. */
+  checks?: ConfiguredModel;
   /** Falls back to workflow.models.branchReview, then finish.reviewers.quality. */
   review?: ConfiguredModel;
   /** Falls back to workflow.models.branchFix, then finish.reviewers.fix. */

@@ -66,6 +66,8 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   // Bot
   bot: "Pull request bot review and fix settings",
   "bot.models": "Per-role model overrides for bot commands; --model takes precedence",
+  "bot.models.checks":
+    "Model for extracting check and dependency-install commands from instruction files; defaults to fast",
   "bot.models.review":
     "Bot review model; falls back to workflow.models.branchReview, then finish.reviewers.quality, then the operation default tier",
   "bot.models.fix":
