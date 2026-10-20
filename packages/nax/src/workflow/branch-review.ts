@@ -10,7 +10,7 @@ import {
   buildWorkflowBranchReReviewPrompt,
   buildWorkflowBranchReviewPrompt,
 } from "@/prompts";
-import type { FeatureContext } from "./feature-context";
+import type { BranchStepContext } from "./branch-step-context";
 import { writeBranchReviewPackage, writeReviewPackage } from "./git";
 import { reviewRequiredFiles } from "./review-coverage";
 import { _workflowDeps } from "./step-context";
@@ -24,7 +24,7 @@ export type BranchReviewFacts = Pick<
 >;
 
 /** Feature artifacts are best effort: a write failure is logged and the step goes on. */
-export async function writeFeatureArtifact(fc: FeatureContext, name: string, value: unknown): Promise<void> {
+export async function writeFeatureArtifact(fc: BranchStepContext, name: string, value: unknown): Promise<void> {
   try {
     await Bun.write(join(fc.runDir, name), `${JSON.stringify(value, null, 2)}\n`);
   } catch (err) {
@@ -33,7 +33,7 @@ export async function writeFeatureArtifact(fc: FeatureContext, name: string, val
 }
 
 /** The branch reviewer's model (spec §4): workflow.models.branchReview, then finish.reviewers.quality. */
-export function branchReviewModel(fc: FeatureContext): ConfiguredModel | undefined {
+export function branchReviewModel(fc: BranchStepContext): ConfiguredModel | undefined {
   return fc.workflow.models.branchReview ?? fc.config.finish?.reviewers?.quality ?? undefined;
 }
 
@@ -43,7 +43,7 @@ export function branchReviewModel(fc: FeatureContext): ConfiguredModel | undefin
  * `delivery: "index"` only — see `appendReviewRules` in `story-review.ts` for why
  * (the run's config is read defensively, and a throw is a skipped review).
  */
-async function appendReviewRules(fc: FeatureContext, packagePath: string, paths: readonly string[]): Promise<void> {
+async function appendReviewRules(fc: BranchStepContext, packagePath: string, paths: readonly string[]): Promise<void> {
   const rules = fc.config.context?.rules;
   if ((rules?.delivery ?? "index") !== "index") return;
   await _workflowDeps.appendChangedFileRules(packagePath, paths, {
@@ -65,7 +65,7 @@ async function appendReviewRules(fc: FeatureContext, packagePath: string, paths:
  * is: it happens inside `underReviewLimit`'s package callback, so the reviewer
  * never sees a package that is missing the context it was promised.
  */
-async function appendProjectContextOverride(fc: FeatureContext, packagePath: string): Promise<void> {
+async function appendProjectContextOverride(fc: BranchStepContext, packagePath: string): Promise<void> {
   const override = await _workflowDeps.loadProjectContextOverride(fc.config);
   const section = buildProjectContextSection(override);
   if (section === "") return;
@@ -78,14 +78,14 @@ async function appendProjectContextOverride(fc: FeatureContext, packagePath: str
 }
 
 export async function runBranchReview(
-  fc: FeatureContext,
+  fc: BranchStepContext,
   input: { seed: string; specPath?: string; preflightPath?: string; facts: BranchReviewFacts },
 ): Promise<ReviewOutcome<BranchReviewVerdict>> {
   const packagePath = join(fc.runDir, "package-branch.diff");
   const range = `${input.seed}..HEAD`;
   const prompt = buildWorkflowBranchReviewPrompt({
     ...(input.specPath ? { specPath: input.specPath } : {}),
-    prdPath: fc.prdPath,
+    ...(fc.prdPath !== undefined ? { prdPath: fc.prdPath } : {}),
     ...(input.preflightPath ? { preflightPath: input.preflightPath } : {}),
     packagePath,
     range,
@@ -121,7 +121,7 @@ export async function runBranchReview(
 }
 
 export async function runBranchReReview(
-  fc: FeatureContext,
+  fc: BranchStepContext,
   input: { specPath?: string; findings: readonly WorkflowFinding[]; fixBase: string },
 ): Promise<ReviewOutcome<ReReviewVerdict>> {
   const packagePath = join(fc.runDir, "package-branch-fix.diff");

@@ -1,7 +1,7 @@
 /** Repo gates (spec §7 steps 1 and 6, P4-R5): every configured quality command across the feature's packages. */
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { runQualityQuietly } from "@/quality";
-import type { FeatureContext } from "./feature-context";
+import type { BranchStepContext } from "./branch-step-context";
 import { _featureDeps } from "./feature-deps";
 import type { RepoGateSummary, WorkflowFindingDraft } from "./types";
 
@@ -21,7 +21,7 @@ export function gateExcerpt(output: string, name: string): string {
   return tail.length > GATE_EXCERPT_CHARS ? tail.slice(-GATE_EXCERPT_CHARS) : tail;
 }
 
-export async function runRepoGates(fc: FeatureContext): Promise<RepoGateRun> {
+export async function runRepoGates(fc: BranchStepContext): Promise<RepoGateRun> {
   try {
     const commands = await _featureDeps.resolveGateCommands(fc.projectDir, [...fc.packageDirs]);
     const res = await runQualityQuietly(() => _featureDeps.runQualityGates(fc.projectDir, commands));
