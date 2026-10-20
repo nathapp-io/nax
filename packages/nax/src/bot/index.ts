@@ -9,3 +9,4 @@ export {
   preparePrCheckout,
 } from "./checkout";
 export { botModel, parseModelOption } from "./models";
+export { _reviewStepDeps, type PrReviewInput, runPrReview } from "./review-step";
