@@ -9,6 +9,7 @@ export {
   preparePrCheckout,
 } from "./checkout";
 export { _fixInputDeps, checkPushAccess, loadLatestReview, toFixFindings } from "./fix-input";
+export { _fixReportDeps, readyStep, renderFixSummary, replyStep, reportStep } from "./fix-report";
 export {
   _fixStepsDeps,
   type BotFixEnv,
