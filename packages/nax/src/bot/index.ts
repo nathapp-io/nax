@@ -25,4 +25,5 @@ export {
   renderReviewSummary,
   renderThreadReply,
 } from "./render-comments";
+export { _botReviewDeps, BOT_REVIEW_GRAPH, type BotReviewResult, runBotReview } from "./review-run";
 export { _reviewStepDeps, type PrReviewInput, runPrReview } from "./review-step";
