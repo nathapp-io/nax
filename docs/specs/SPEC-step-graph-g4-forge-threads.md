@@ -65,7 +65,6 @@ export interface BranchStepContext {
   readonly feature: string;
   /** Repo root (git cwd). */
   readonly projectDir: string;
-  readonly outputDir: string;
   /** Where review packages, step artifacts and the report go. */
   readonly runDir: string;
   readonly reportPath: string;
@@ -116,7 +115,8 @@ export async function buildPrStepContext(
 `buildPrStepContext` does, in order:
 
 1. Validate `input.pr`: `number` is a positive integer, `base` and `head` are non-empty strings after trim.
-   Otherwise throw `NaxError` with code `PR_STEP_CONTEXT_INVALID` before anything else runs.
+   Otherwise throw `NaxError` with code `PR_STEP_CONTEXT_INVALID` and context `{ stage: "workflow" }` before
+   anything else runs.
 2. `label = "bot-pr-" + number`.
 3. Build the ask wiring exactly as `buildFeatureContext` does, through
    `_prStepContextDeps.buildRunDispatchAskWiring` with `config` and `rootConfig` both `input.config`,
@@ -127,10 +127,13 @@ export async function buildPrStepContext(
    runtime.packages.resolve(repoRoot)`, `packageDir: repoRoot`, `config`, `agentName`, `featureName: label`,
    `signal` when an abort signal is given, `askResolver` from the wiring, `commandShadow` when the wiring has
    one.
-5. Return the context with `feature: label`, `projectDir: repoRoot`, `outputDir: runtime.outputDir`,
+5. Return the context with `feature: label`, `projectDir: repoRoot`,
    `runDir: workflowRunDir(repoRoot, label, runtime.runId)`, `reportPath: join(runDir, "feature-report.md")`,
    no `prdPath`, `packageDirs: []`, `runSignal` when an abort signal is given, `dryRun: runtime.dryRun === true`,
    `workflow: resolveWorkflowConfig(config)`, and `pr: input.pr`. `dispose` is the wiring's `dispose`.
+
+No branch step reads `pr`: the review range still comes from the step's `seed` input, so B2 passes
+`seed = ctx.pr.base`. `pr` is carried for B2's own steps.
 
 The run dir sits inside the checkout under the feature tree on purpose: agents' file tools read review
 packages from there (nax#2479), and the feature tree's run artifacts are already git-ignored
@@ -230,6 +233,8 @@ export interface PrInfo {
 
 export interface PrTrust {
   readonly trusted: boolean;
+  /** The PR head sha this classification was made for (`info.headSha`). A later push needs a new one. */
+  readonly headSha: string;
   /** Why, in order of the rules applied. Never empty. */
   readonly reasons: readonly string[];
 }
@@ -265,6 +270,11 @@ export interface PostedComment {
   readonly url?: string;
 }
 
+export interface CurrentUser {
+  readonly login: string;
+  readonly id?: number;
+}
+
 export interface OwnComment {
   readonly comment: PrComment;
   /** Set when the comment sits in a review thread. */
@@ -276,11 +286,12 @@ export interface OwnComment {
 ### B1: PR reference, details and trust (`forge/pr-read.ts`, `forge/trust.ts`)
 
 - `repoSlugFromRemoteUrl(remoteUrl: string): string | null` - the path of an origin URL in both git forms
-  (`git@host:owner/repo.git`, `https://host/group/sub/proj.git`), with a trailing `.git` and slashes removed;
-  null when no path remains.
+  (`git@host:owner/repo.git`, `scheme://[user@]host[:port]/group/sub/proj.git`), with a trailing `.git` and
+  slashes removed; null when no path remains. A port is dropped with the host, as `remoteHost` does.
 - `resolvePrRef(number: number, deps: ForgeDeps, cwd: string): Promise<PrRef>` - `detectForge(deps, cwd)`,
   then `git remote get-url origin`, `remoteHost(url)` for `host` and `repoSlugFromRemoteUrl(url)` for `repo`.
-  A null forge, a failed remote read, or a null slug throws `NaxError` `FORGE_PR_REF_UNRESOLVED`. A non-positive
+  A null forge (`detectForge` returned null), a failed remote read, or a null slug throws `NaxError`
+  `FORGE_PR_REF_UNRESOLVED`. A non-positive
   or non-integer `number` throws the same code before any call.
 - `readPrInfo(ref: PrRef, deps, cwd): Promise<PrInfo>`
   - GitHub: `gh api --hostname <host> repos/<repo>/pulls/<number>`. Maps `title`, `body ?? ""`, `html_url`,
@@ -296,17 +307,25 @@ export interface OwnComment {
 - `classifyPrTrust(ref: PrRef, info: PrInfo, deps, cwd): Promise<PrTrust>` - never throws. Rules, in order;
   the first that decides wins:
   1. `info.crossRepo` -> untrusted, reason `head branch is not in the base repository`.
-  2. The current login equals `info.author.login` -> trusted, reason `author is the current user`.
-     GitHub `gh api --hostname <host> user` -> `.login`; GitLab `glab api --hostname <host> user` ->
-     `.username`.
+  2. The author is the current user -> trusted, reason `author is the current user`. The current user comes
+     from `readCurrentUser` (below). When both `info.author.id` and the current user's `id` are known they are
+     compared; otherwise the logins are compared.
   3. The author has write access -> trusted, reason `author has write access`.
      GitHub `gh api --hostname <host> repos/<repo>/collaborators/<login>/permission` -> `.permission` is
      `admin` or `write` (the legacy field maps `maintain` to `write`).
-     GitLab `glab api --hostname <host> projects/<enc>/members/all/<author.id>` -> `.access_level >= 30`.
+     GitLab `glab api --hostname <host> projects/<enc>/members/all/<author.id>` -> `.access_level >= 30`; a
+     lookup that exits non-zero with `404` in its stderr means the author is not a member: rule 4.
   4. Otherwise -> untrusted, reason `author has no write access`.
+  Rule 1 runs first on purpose, so the current user's own PR from a fork is untrusted too (fail closed; B3's
+  `--trust` is the way through). Every result carries `headSha: info.headSha`.
   Any non-zero exit or unparseable reply in rules 2-3 -> untrusted with reason `could not read <what>:
   <stderr, trimmed, first 200 chars>`; a GitLab author with no `id` cannot be looked up and is untrusted the
-  same way. Nothing here reads the PR's title, body, diff or comments: trust comes from forge metadata only
+  same way.
+- `readCurrentUser(ref, deps, cwd): Promise<CurrentUser>` - GitHub `gh api --hostname <host> user` ->
+  `{ login: .login, id: .id }`; GitLab `glab api --hostname <host> user` -> `{ login: .username, id: .id }`. A
+  non-zero exit throws `FORGE_USER_READ_FAILED`; an unparseable reply or a missing login throws
+  `FORGE_RESPONSE_UNPARSEABLE`. `classifyPrTrust` catches both and turns them into a `could not read` reason.
+- Nothing here reads the PR's title, body, diff or comments: trust comes from forge metadata only
   (§5a), and nothing is cached or stored.
 
 ### B1: reading threads and comments (`forge/threads.ts`)
@@ -328,11 +347,14 @@ export interface OwnComment {
     `author = note.author.username`, `createdAt = note.created_at`.
 - `listPrComments(ref, deps, cwd): Promise<PrComment[]>` - top-level comments, not in any thread.
   - GitHub: `gh api --hostname <host> repos/<repo>/issues/<number>/comments?per_page=100&page=<p>` (kind
-    `comment`), then `.../pulls/<number>/reviews?per_page=100&page=<p>` keeping reviews with a non-empty
-    `body` (kind `review`, `createdAt = submitted_at`). Same page loop rule.
+    `comment`: `id = String(id)`, `author = user.login`, `body`, `createdAt = created_at`), then
+    `.../pulls/<number>/reviews?per_page=100&page=<p>` keeping reviews with a non-empty `body` (kind `review`:
+    `id = String(id)`, `author = user.login`, `createdAt = submitted_at`). Same page loop rule. A `user` of
+    null (deleted account) reads as author `ghost`.
   - GitLab: the discussions endpoint above; discussions with `individual_note: true` give their one note
     when it is not `system: true`, kind `comment`.
-- Both: a page loop stops with `NaxError` `FORGE_PAGINATION_LIMIT` after `MAX_FORGE_PAGES = 50` pages; a
+- Both: a page loop stops with `NaxError` `FORGE_PAGINATION_LIMIT` when a 51st page would be needed (GitHub
+  `hasNextPage` still true after page 50, or a full 100-item REST/GitLab page 50); a
   non-zero exit throws `FORGE_THREADS_READ_FAILED` (threads) or `FORGE_COMMENTS_READ_FAILED` (comments); an
   unparseable page throws `FORGE_RESPONSE_UNPARSEABLE`. Items keep the forge's order.
 
@@ -341,9 +363,15 @@ export interface OwnComment {
 Every string field goes on the argv as `-f key=value` (raw field), never `-F`: `gh`/`glab` read `-F
 key=@path` as a file, so a body or path starting with `@` would post a local file. Integers use `-F`.
 
+`glab api` does not nest bracketed field names: `-f position[new_line]=5` is sent as the flat JSON key
+`"position[new_line]"`, which GitLab does not read as a position (checked with glab 1.100.0 against a stub
+server, 2026-10-20). So the GitLab inline comment puts its `position` in the endpoint's query string, built
+with `URLSearchParams` (GitLab merges query and body params), and sends only `-f body=` as a field. `--form`
+is never used: it uploads any value starting with `@` as a file.
+
 | Function | GitHub argv (after `gh api --hostname <host>`) | GitLab argv (after `glab api --hostname <host>`) | Returns |
 |---|---|---|---|
-| `postInlineComment(ref, { path, line, body, headSha, diffRefs? })` | `-X POST repos/<repo>/pulls/<n>/comments -f body= -f commit_id=<headSha> -f path= -F line= -f side=RIGHT` | `-X POST projects/<enc>/merge_requests/<n>/discussions -f body= -f position[position_type]=text -f position[base_sha]= -f position[start_sha]= -f position[head_sha]= -f position[new_path]= -F position[new_line]=` | GitHub `{ id: String(id), url: html_url }`; GitLab `{ id: String(notes[0].id), threadId: id }` |
+| `postInlineComment(ref, { path, line, body, headSha, diffRefs? })` | `-X POST repos/<repo>/pulls/<n>/comments -f body= -f commit_id=<headSha> -f path= -F line= -f side=RIGHT` | `-X POST projects/<enc>/merge_requests/<n>/discussions?<query> -f body=`, where `<query>` is `URLSearchParams` of `position[position_type]=text`, `position[base_sha]`, `position[start_sha]`, `position[head_sha]` (from `diffRefs`), `position[new_path]=<path>`, `position[new_line]=<line>` | GitHub `{ id: String(id), url: html_url }`; GitLab `{ id: String(notes[0].id), threadId: id }` |
 | `postPrComment(ref, body)` | `-X POST repos/<repo>/issues/<n>/comments -f body=` | `-X POST projects/<enc>/merge_requests/<n>/notes -f body=` | `{ id, url? }` |
 | `replyToThread(ref, thread: Pick<PrThread, "replyTo">, body)` | `-X POST repos/<repo>/pulls/<n>/comments/<replyTo>/replies -f body=` | `-X POST projects/<enc>/merge_requests/<n>/discussions/<replyTo>/notes -f body=` | `{ id, url? }` |
 | `resolveThread(ref, thread: Pick<PrThread, "id">)` | `graphql -f query=<resolveReviewThread mutation> -f id=<id>` | `-X PUT projects/<enc>/merge_requests/<n>/discussions/<id> -f resolved=true` | `void` |
@@ -352,8 +380,15 @@ key=@path` as a file, so a body or path starting with `@` would post a local fil
 Checks before any call: an empty or whitespace-only body throws `FORGE_COMMENT_EMPTY`; a body longer than
 `MAX_FORGE_COMMENT_CHARS = 65_536` throws `FORGE_COMMENT_TOO_LONG`; a GitLab inline comment without
 `diffRefs` throws `FORGE_DIFF_REFS_REQUIRED`; editing a GitHub comment of kind `review` throws
-`FORGE_EDIT_UNSUPPORTED`. A non-zero exit throws `FORGE_COMMENT_WRITE_FAILED` with `forge`, `exitCode` and the
-trimmed stderr in the context. Writes are never retried: a retried POST can post twice.
+`FORGE_EDIT_UNSUPPORTED`; an inline `line` that is not a positive integer, or an empty `path`, throws
+`FORGE_COMMENT_TARGET_INVALID`; on GitHub a `replyTo` or comment `id` that is not all digits throws
+`FORGE_ID_INVALID` (it is interpolated into a URL path). The body length is `body.length` (UTF-16 code units,
+which never undercounts characters). A non-zero exit throws `FORGE_COMMENT_WRITE_FAILED` with `stage: "forge"`,
+`forge`, `exitCode` and the trimmed stderr in the context. Writes are never retried: a retried POST can post
+twice.
+
+Every `NaxError` this feature's forge functions throw carries `stage: "forge"` in its context
+(`.nax/rules/error-handling.md`).
 
 Marker (`forge/marker.ts`):
 
@@ -364,9 +399,11 @@ Marker (`forge/marker.ts`):
   comment early).
 - `parseNaxBotMarker(body: string): { key: string } | null` - the key of the last
   `<!-- nax-bot:v1 key=<key> -->` in the body whose key matches the same pattern, else null.
-- `findOwnComments(ref, deps, cwd): Promise<OwnComment[]>` - `listReviewThreads` then `listPrComments`; every
-  comment whose body parses to a marker, with the thread's `id` as `threadId` for thread comments. Thread
-  comments come first, in thread order.
+- `findOwnComments(ref, deps, cwd): Promise<OwnComment[]>` - `readCurrentUser`, then `listReviewThreads`, then
+  `listPrComments`; every comment whose body parses to a marker **and whose author is the current user's
+  login**, with the thread's `id` as `threadId` for thread comments. Thread comments come first, in thread
+  order. Anyone can paste a marker into a comment; only the author check makes it nax bot's own (R7: nax bot
+  posts as the user's login). A failure of any of the three reads propagates.
 
 `forge/index.ts` (the barrel; `check:alias-internals` forbids reaching past it) exports every function,
 constant and type above.
@@ -382,12 +419,17 @@ constant and type above.
 | `readPrInfo`: CLI exits non-zero | throws `FORGE_PR_READ_FAILED` |
 | `readPrInfo`: reply not JSON or missing the head sha | throws `FORGE_RESPONSE_UNPARSEABLE` |
 | `classifyPrTrust`: any lookup fails | untrusted with a `could not read ...` reason; never throws |
+| GitLab member lookup exits non-zero with `404` | untrusted, reason `author has no write access` |
+| `readCurrentUser`: CLI exits non-zero / reply unparseable | throws `FORGE_USER_READ_FAILED` / `FORGE_RESPONSE_UNPARSEABLE` |
+| GitHub REST comment or review with `user: null` | author `ghost` |
 | Thread / comment reads: CLI exits non-zero | throws `FORGE_THREADS_READ_FAILED` / `FORGE_COMMENTS_READ_FAILED` |
 | Thread / comment reads: page not JSON | throws `FORGE_RESPONSE_UNPARSEABLE` |
 | Thread / comment reads: more than 50 pages | throws `FORGE_PAGINATION_LIMIT` |
 | Writes: empty body / body over 65,536 chars | throws `FORGE_COMMENT_EMPTY` / `FORGE_COMMENT_TOO_LONG`, no CLI call |
 | GitLab inline comment without `diffRefs` | throws `FORGE_DIFF_REFS_REQUIRED`, no CLI call |
 | GitHub edit of a `review` comment | throws `FORGE_EDIT_UNSUPPORTED`, no CLI call |
+| Inline `line` not a positive integer, or empty `path` | throws `FORGE_COMMENT_TARGET_INVALID`, no CLI call |
+| GitHub `replyTo` / comment `id` not all digits | throws `FORGE_ID_INVALID`, no CLI call |
 | Writes: CLI exits non-zero | throws `FORGE_COMMENT_WRITE_FAILED`; no retry |
 | Marker key outside `^[A-Za-z0-9._:-]{1,128}$` | throws `FORGE_MARKER_KEY_INVALID` |
 
@@ -407,11 +449,19 @@ constant and type above.
 - Review thread comments past the first 100 in one thread are not read (GitHub GraphQL `comments(first: 100)`).
 - GitLab threads always report `outdated: false`; detecting outdated GitLab positions is not done.
 - Multi-line inline comments (`start_line`, GitLab line ranges) are not supported; an inline comment targets one new-side line.
+- Forge hosts with a port (`git.corp:8443`) are not supported: `remoteHost` drops the port and `glab api --hostname` rejects `host:port`.
+- US-004 only: a trust result is never cached or stored; each call reads the forge again (§5a forbids a standing setting). Re-checking trust after a push is the caller's job, using `PrTrust.headSha`.
+- US-004 only: GitHub organisation team permissions beyond the collaborator permission endpoint are not read.
+- US-008 only: rate-limit back-off and retrying a failed write are not done; a retried POST can post twice.
 - Pipeline mode is frozen: no pipeline-only code is touched.
 - One live check of the forge functions against a throwaway PR is a manual step after merge, with the user's go; no test posts to a real forge.
 - No release is part of this feature.
 
 ## Stories
+
+Nine stories: two for G4 and seven for B1, which is one capability (forge PR access). The bundle of the two is
+the user's ruling (2026-10-20); the stories are cut so each stays near the 24-AC cap after `nax plan` splits
+compound ACs.
 
 ### US-001: Branch steps take a narrow context and accept a missing PRD
 No dependencies. Workdir: packages/nax.
@@ -436,32 +486,43 @@ No dependencies. Workdir: packages/nax.
 Adds the B1 types in `src/forge/pr-types.ts`, and `repoSlugFromRemoteUrl`, `resolvePrRef` and `readPrInfo`
 in `src/forge/pr-read.ts`, for GitHub and GitLab, per Design, exported from `@/forge`.
 
-### US-004: Classify how far a PR's author is trusted
+### US-004: Current user and PR trust classification
 Depends on US-003. Workdir: packages/nax.
 
-Adds `classifyPrTrust` in `src/forge/trust.ts`, for GitHub and GitLab, with the ordered rules and the
-fail-closed behaviour in Design, exported from `@/forge`. It reads `PrRef`, `PrInfo` and `PrTrust` from
-US-003's types.
+Adds `readCurrentUser` and `classifyPrTrust` in `src/forge/trust.ts`, for GitHub and GitLab, with the ordered
+rules and the fail-closed behaviour in Design, exported from `@/forge`.
 
-### US-005: Read review threads and top-level comments
+### US-005: Read review threads
 Depends on US-003. Workdir: packages/nax.
 
-Adds `listReviewThreads`, `listPrComments` and `MAX_FORGE_PAGES` in `src/forge/threads.ts`, for GitHub and
-GitLab, with nax's own page loop, per Design, exported from `@/forge`.
+Adds `listReviewThreads`, `MAX_FORGE_PAGES` and the shared page loop in `src/forge/threads.ts`, for GitHub
+(GraphQL cursor loop) and GitLab (discussions page loop), per Design, exported from `@/forge`.
 
-### US-006: Write to a PR
+### US-006: Read top-level comments
+Depends on US-005. Workdir: packages/nax.
+
+Adds `listPrComments` in `src/forge/threads.ts`, for GitHub (issue comments, then review bodies) and GitLab
+(individual-note discussions), reusing US-005's page loop, per Design, exported from `@/forge`.
+
+### US-007: Post an inline comment, a summary comment and a thread reply
 Depends on US-003. Workdir: packages/nax.
 
-Adds `postInlineComment`, `postPrComment`, `replyToThread`, `resolveThread`, `editComment` and
-`MAX_FORGE_COMMENT_CHARS` in `src/forge/comments.ts`, for GitHub and GitLab, per Design, exported from
-`@/forge`.
+Adds `postInlineComment`, `postPrComment`, `replyToThread`, `MAX_FORGE_COMMENT_CHARS` and the shared body and
+target checks in `src/forge/comments.ts`, for GitHub and GitLab, per Design (GitLab inline position in the
+query string), exported from `@/forge`.
 
-### US-007: The nax bot marker and finding nax bot's own comments
-Depends on US-003, US-005. Workdir: packages/nax.
+### US-008: Resolve a thread and edit a comment
+Depends on US-007. Workdir: packages/nax.
+
+Adds `resolveThread` and `editComment` in `src/forge/comments.ts`, reusing US-007's body checks, plus the
+write-failure behaviour shared by every write, per Design, exported from `@/forge`.
+
+### US-009: The nax bot marker and finding nax bot's own comments
+Depends on US-004, US-005, US-006. Workdir: packages/nax.
 
 Adds `NAX_BOT_HEADER`, `withNaxBotMarker`, `parseNaxBotMarker` and `findOwnComments` in `src/forge/marker.ts`,
-per Design, exported from `@/forge`. `findOwnComments` reads through US-005's `listReviewThreads` and
-`listPrComments`.
+per Design, exported from `@/forge`. `findOwnComments` reads through US-004's `readCurrentUser` and US-005 and
+US-006's `listReviewThreads` and `listPrComments`, and keeps only marked comments by the current user.
 
 ### Context Files
 
@@ -475,9 +536,9 @@ per Design, exported from `@/forge`. `findOwnComments` reads through US-005's `l
 **US-002**
 - `packages/nax/src/workflow/branch-step-context.ts` — created by US-001, used here
 - `packages/nax/src/workflow/feature-context.ts`
-- `packages/nax/test/unit/workflow/feature-context.test.ts`
-- `packages/nax/src/workflow/paths.ts`
-- `packages/nax/src/workflow/index.ts`
+- `packages/nax/src/workflow/branch-review.ts`
+- `packages/nax/src/workflow/step-context.ts`
+- `packages/nax/src/interaction/dispatch-ask.ts`
 
 **US-003**
 - `packages/nax/src/forge/pr.ts`
@@ -500,15 +561,28 @@ per Design, exported from `@/forge`. `findOwnComments` reads through US-005's `l
 
 **US-006**
 - `packages/nax/src/forge/pr-types.ts` — created by US-003, used here
+- `packages/nax/src/forge/threads.ts` — created by US-005, used here
+- `packages/nax/test/unit/forge/threads.test.ts` — created by US-005, used here
+- `packages/nax/src/forge/index.ts`
+
+**US-007**
+- `packages/nax/src/forge/pr-types.ts` — created by US-003, used here
 - `packages/nax/src/forge/pr-read.ts` — created by US-003, used here
 - `packages/nax/src/forge/index.ts`
 - `packages/nax/test/unit/forge/pr.test.ts`
 
-**US-007**
+**US-008**
 - `packages/nax/src/forge/pr-types.ts` — created by US-003, used here
-- `packages/nax/src/forge/threads.ts` — created by US-005, used here
+- `packages/nax/src/forge/comments.ts` — created by US-007, used here
+- `packages/nax/test/unit/forge/comments.test.ts` — created by US-007, used here
 - `packages/nax/src/forge/index.ts`
+
+**US-009**
+- `packages/nax/src/forge/pr-types.ts` — created by US-003, used here
+- `packages/nax/src/forge/trust.ts` — created by US-004, used here
+- `packages/nax/src/forge/threads.ts` — created by US-005, used here
 - `packages/nax/test/unit/forge/threads.test.ts` — created by US-005, used here
+- `packages/nax/src/forge/index.ts`
 
 ### Creates
 
@@ -535,12 +609,21 @@ per Design, exported from `@/forge`. `findOwnComments` reads through US-005's `l
 - `packages/nax/test/unit/forge/threads.test.ts`
 
 **US-006**
+- `packages/nax/test/unit/forge/pr-comments.test.ts`
+
+**US-007**
 - `packages/nax/src/forge/comments.ts`
 - `packages/nax/test/unit/forge/comments.test.ts`
 
-**US-007**
+**US-008**
+- `packages/nax/test/unit/forge/comments-resolve-edit.test.ts`
+
+**US-009**
 - `packages/nax/src/forge/marker.ts`
 - `packages/nax/test/unit/forge/marker.test.ts`
+
+The no-PRD tests sit in new files beside the existing `branch-review`, `branch-fix` and prompt-builder tests on
+purpose: those files are the unchanged-behaviour proof and stay byte-identical.
 
 ### Modifies
 
@@ -557,15 +640,21 @@ per Design, exported from `@/forge`. `findOwnComments` reads through US-005's `l
 - `packages/nax/src/forge/index.ts` — barrel exports the US-003 types and functions.
 
 **US-004**
-- `packages/nax/src/forge/index.ts` — barrel exports `classifyPrTrust`.
+- `packages/nax/src/forge/index.ts` — barrel exports `readCurrentUser` and `classifyPrTrust`.
 
 **US-005**
-- `packages/nax/src/forge/index.ts` — barrel exports `listReviewThreads`, `listPrComments` and `MAX_FORGE_PAGES`.
+- `packages/nax/src/forge/index.ts` — barrel exports `listReviewThreads` and `MAX_FORGE_PAGES`.
 
 **US-006**
-- `packages/nax/src/forge/index.ts` — barrel exports the US-006 functions and `MAX_FORGE_COMMENT_CHARS`.
+- `packages/nax/src/forge/index.ts` — barrel exports `listPrComments`.
 
 **US-007**
+- `packages/nax/src/forge/index.ts` — barrel exports `postInlineComment`, `postPrComment`, `replyToThread` and `MAX_FORGE_COMMENT_CHARS`.
+
+**US-008**
+- `packages/nax/src/forge/index.ts` — barrel exports `resolveThread` and `editComment`.
+
+**US-009**
 - `packages/nax/src/forge/index.ts` — barrel exports `NAX_BOT_HEADER`, `withNaxBotMarker`, `parseNaxBotMarker` and `findOwnComments`.
 
 ### Seams
@@ -573,12 +662,17 @@ per Design, exported from `@/forge`. `findOwnComments` reads through US-005's `l
 - US-002's `buildPrStepContext` produces the `BranchStepContext` US-001 defines; US-002's integration AC drives
   the real `runBranchReview` with a context it built, faking only `_workflowDeps.callOp`.
 - `buildPrStepContext` has no production caller in this feature; B2 is its first.
-- US-004, US-005, US-006 and US-007 consume US-003's `PrRef`; their tests build a `PrRef` by hand and assert the argv
-  each function hands to `ForgeDeps.run`, which is the production boundary of the forge layer.
-- US-007's `findOwnComments` calls US-005's `listReviewThreads` and `listPrComments`; its AC drives it with a
-  mocked `ForgeDeps` that answers both endpoints and asserts both were read.
+- US-004 to US-009 consume US-003's `PrRef`; their tests build a `PrRef` by hand and assert the argv each
+  function hands to `ForgeDeps.run`, which is the production boundary of the forge layer.
+- US-009's `findOwnComments` calls US-004's `readCurrentUser` and US-005/US-006's `listReviewThreads` and
+  `listPrComments`; its ACs drive it with a mocked `ForgeDeps` that answers all three endpoints and assert
+  each was read.
 
 ## Acceptance Criteria
+
+Verification note for every story: tests import each new symbol through its barrel (`@/workflow` or
+`@/forge`), so a missing export fails the story's own tests; `bun run typecheck` and `bun run check:all` (which
+runs `check:alias-internals`) are the static gates.
 
 ### US-001
 
@@ -611,10 +705,10 @@ changed step.
 - [unit] the same call returns a context whose `prdPath` is undefined.
 - [unit] the same call returns a context whose `packageDirs` is an empty array.
 - [unit] the same call returns a context whose `pr` equals the input `pr`.
-- [unit] `buildPrStepContext` calls `_prStepContextDeps.buildRunDispatchAskWiring` once with `stage: "merge"`, `featureName: "bot-pr-42"`, `packageDirs: []`, `projectDir: repoRoot`, `repoRoot: repoRoot` and `runId: runtime.runId`.
+- [unit] `buildPrStepContext` calls `_prStepContextDeps.buildRunDispatchAskWiring` once, with an options object whose `stage` is `merge` and whose `featureName` is `bot-pr-42`.
+- [unit] the options object passed to `buildRunDispatchAskWiring` has `projectDir` and `repoRoot` both equal to the input `repoRoot`, `packageDirs` empty, and `runId` equal to `runtime.runId`.
 - [unit] the returned `callCtx.askResolver` is the wiring's `askResolver`.
 - [unit] when the wiring returns a `commandShadow`, the returned `callCtx.commandShadow` is that `commandShadow`.
-- [unit] the returned `callCtx.featureName` is `bot-pr-42` and `callCtx.packageDir` is `repoRoot`.
 - [unit] calling the returned `dispose` calls the wiring's `dispose` once.
 - [unit] `buildPrStepContext` with an `abortSignal` returns that signal as `runSignal`.
 - [unit] `buildPrStepContext` with an `abortSignal` returns that signal as `callCtx.signal`.
@@ -626,121 +720,156 @@ changed step.
 - [unit] `buildPrStepContext` with `pr.base` of `""` rejects with a `NaxError` whose code is `PR_STEP_CONTEXT_INVALID`.
 - [unit] when `buildRunDispatchAskWiring` rejects with an error, `buildPrStepContext` rejects with that same error.
 - [integration] `runBranchReview` called with a context from `buildPrStepContext` (with `_workflowDeps.callOp` faked) writes `package-branch.diff` under the checkout at `.nax/features/bot-pr-42/workflow/<runId>/`.
-- [unit] `buildPrStepContext` imported from the `@/workflow` barrel is a function.
 
 ### US-003
 
 - [unit] `repoSlugFromRemoteUrl("git@github.com:acme/widgets.git")` returns `acme/widgets`.
 - [unit] `repoSlugFromRemoteUrl("https://gitlab.example.com/group/sub/proj.git/")` returns `group/sub/proj`.
+- [unit] `repoSlugFromRemoteUrl("ssh://git@gitlab.example.com:2222/group/proj.git")` returns `group/proj`.
 - [unit] `repoSlugFromRemoteUrl("https://github.com/")` returns null.
 - [unit] `resolvePrRef(7, deps, cwd)` with a mocked `ForgeDeps` whose `git remote get-url origin` returns `git@gitlab.example.com:group/proj.git` returns `{ forge: "gitlab", host: "gitlab.example.com", repo: "group/proj", number: 7 }`.
-- [unit] `resolvePrRef` rejects with a `NaxError` whose code is `FORGE_PR_REF_UNRESOLVED` when the origin read exits non-zero.
+- [unit] `resolvePrRef` rejects with a `NaxError` whose code is `FORGE_PR_REF_UNRESOLVED` when `detectForge` resolves the forge to null.
+- [unit] `resolvePrRef` rejects with `FORGE_PR_REF_UNRESOLVED` when the origin read exits non-zero.
 - [unit] `resolvePrRef` rejects with `FORGE_PR_REF_UNRESOLVED` when the origin URL yields no slug.
-- [unit] `resolvePrRef(0, deps, cwd)` rejects with `FORGE_PR_REF_UNRESOLVED`.
-- [unit] `resolvePrRef(0, deps, cwd)` makes no `ForgeDeps.run` call.
+- [unit] `resolvePrRef(0, deps, cwd)` rejects with `FORGE_PR_REF_UNRESOLVED` and makes no `ForgeDeps.run` call.
 - [unit] `readPrInfo` for a GitHub `PrRef` runs `gh api --hostname <host> repos/<repo>/pulls/<number>` as its only command.
 - [unit] `readPrInfo` for GitHub maps a reply with `merged_at` set to `state: "merged"`.
 - [unit] `readPrInfo` for GitHub maps a reply with `body: null` to `body: ""`.
 - [unit] `readPrInfo` for GitHub maps `head.sha` to `headSha`.
 - [unit] `readPrInfo` for GitHub returns `crossRepo: true` when `head.repo` is null.
 - [unit] `readPrInfo` for GitHub returns `crossRepo: false` when `head.repo.full_name` equals `base.repo.full_name`.
-- [unit] `readPrInfo` for a GitLab `PrRef` with repo `group/proj` runs `glab api --hostname <host> projects/group%2Fproj/merge_requests/<number>`.
+- [unit] `readPrInfo` for a GitLab `PrRef` with repo `group/proj` runs `glab api --hostname <host> projects/group%2Fproj/merge_requests/<number>` as its only command.
 - [unit] `readPrInfo` for GitLab maps `state: "opened"` to `state: "open"`.
 - [unit] `readPrInfo` for GitLab maps `sha` to `headSha`.
-- [unit] `readPrInfo` for GitLab maps `diff_refs` to `diffRefs` with `baseSha`, `startSha` and `headSha`.
+- [unit] `readPrInfo` for GitLab maps `diff_refs` to a `diffRefs` object holding `baseSha`, `startSha` and `headSha`.
 - [unit] `readPrInfo` for GitLab returns `crossRepo: true` when `source_project_id` differs from `target_project_id`.
 - [unit] `readPrInfo` rejects with `FORGE_PR_READ_FAILED` when the command exits non-zero.
 - [unit] `readPrInfo` rejects with `FORGE_RESPONSE_UNPARSEABLE` when stdout is not JSON.
-- [unit] `resolvePrRef`, `readPrInfo` and `repoSlugFromRemoteUrl` imported from the `@/forge` barrel are functions.
+- [unit] `readPrInfo` for GitHub rejects with `FORGE_RESPONSE_UNPARSEABLE` when the reply has no `head.sha`.
 
 ### US-004
 
+- [unit] `readCurrentUser` for GitHub runs `gh api --hostname <host> user` and returns `{ login, id }` from the reply's `login` and `id`.
+- [unit] `readCurrentUser` for GitLab runs `glab api --hostname <host> user` and returns `login` from the reply's `username`.
+- [unit] `readCurrentUser` rejects with `FORGE_USER_READ_FAILED` when the command exits non-zero.
 - [unit] `classifyPrTrust` with `info.crossRepo: true` returns `trusted: false` with reason `head branch is not in the base repository`.
 - [unit] `classifyPrTrust` with `info.crossRepo: true` makes no `ForgeDeps.run` call.
-- [unit] `classifyPrTrust` on GitHub returns `trusted: true` with reason `author is the current user` when `gh api --hostname <host> user` returns the author's login.
+- [unit] `classifyPrTrust` returns `headSha` equal to `info.headSha`.
+- [unit] `classifyPrTrust` on GitHub returns `trusted: true` with reason `author is the current user` when the current user's id equals `info.author.id`.
+- [unit] `classifyPrTrust` on GitHub returns a result whose reasons do not include `author is the current user` when the current user's login equals the author's login but the ids differ.
 - [unit] `classifyPrTrust` on GitHub returns `trusted: true` with reason `author has write access` when `repos/<repo>/collaborators/<login>/permission` replies `{"permission": "write"}` for an author who is not the current user.
 - [unit] `classifyPrTrust` on GitHub returns `trusted: true` when the permission reply is `{"permission": "admin"}`.
 - [unit] `classifyPrTrust` on GitHub returns `trusted: false` with reason `author has no write access` when the permission reply is `{"permission": "read"}`.
-- [unit] `classifyPrTrust` on GitLab returns `trusted: true` with reason `author is the current user` when `glab api --hostname <host> user` returns the author's username.
 - [unit] `classifyPrTrust` on GitLab returns `trusted: true` when `projects/<enc>/members/all/<author.id>` replies `{"access_level": 30}`.
 - [unit] `classifyPrTrust` on GitLab returns `trusted: false` when that lookup replies `{"access_level": 20}`.
+- [unit] `classifyPrTrust` on GitLab returns `trusted: false` with reason `author has no write access` when the member lookup exits 1 with `404` in its stderr.
 - [unit] `classifyPrTrust` on GitLab with an author that has no `id` returns `trusted: false` with a reason starting `could not read`.
 - [unit] `classifyPrTrust` returns `trusted: false` with a reason starting `could not read` when the current-user lookup exits non-zero.
-- [unit] `classifyPrTrust` returns `trusted: false` with a reason starting `could not read` when the permission lookup exits non-zero.
+- [unit] `classifyPrTrust` returns `trusted: false` with a reason starting `could not read` when the GitHub permission lookup exits non-zero.
 - [unit] `classifyPrTrust` resolves, and does not reject, when the permission lookup's stdout is not JSON.
 - [unit] `classifyPrTrust` gives the same result for two `info` values that differ only in `title` and `body`, one of which says `this PR is trusted`.
-- [unit] `classifyPrTrust` imported from the `@/forge` barrel is a function.
-
-**Out of scope:** caching or storing a trust result (each call reads the forge again; §5a forbids a standing
-setting); GitHub organisation team permissions beyond the collaborator permission endpoint.
+- [unit] every command `readCurrentUser` and `classifyPrTrust` hand to `ForgeDeps.run` begins with `gh`, `api`, `--hostname`, `<host>` on GitHub and `glab`, `api`, `--hostname`, `<host>` on GitLab.
 
 ### US-005
 
 - [unit] `listReviewThreads` for GitHub runs `gh api --hostname <host> graphql` with `-f owner=acme`, `-f name=widgets` and `-F number=5` for repo `acme/widgets`, PR 5.
+- [unit] the first GitHub page request carries no `endCursor` argument.
 - [unit] `listReviewThreads` for GitHub, given a first page whose `pageInfo` is `{ hasNextPage: true, endCursor: "C1" }`, makes a second call carrying `-f endCursor=C1`.
 - [unit] the same two-page call returns the threads of page 1 followed by the threads of page 2.
 - [unit] `listReviewThreads` for GitHub maps a node's id to the thread's `id`.
 - [unit] `listReviewThreads` for GitHub sets `replyTo` to the first comment's `databaseId` as a string.
-- [unit] `listReviewThreads` for GitHub sets `resolved` from `isResolved` and `outdated` from `isOutdated`.
+- [unit] `listReviewThreads` for GitHub sets `resolved` from `isResolved`.
+- [unit] `listReviewThreads` for GitHub sets `outdated` from `isOutdated`.
 - [unit] `listReviewThreads` for GitHub sets `line` from `originalLine` when `line` is null.
 - [unit] `listReviewThreads` for GitHub leaves `line` undefined when `line` and `originalLine` are both null.
 - [unit] `listReviewThreads` for GitHub returns a comment whose `author` is null with author `ghost`.
 - [unit] `listReviewThreads` for GitLab requests `discussions?per_page=100&page=2` after a first page holding 100 items.
 - [unit] `listReviewThreads` for GitLab makes no further request after a page holding fewer than 100 items.
 - [unit] `listReviewThreads` for GitLab returns only discussions with `individual_note: false`.
-- [unit] `listReviewThreads` for GitLab sets both `id` and `replyTo` to the discussion id, and `outdated` to false.
+- [unit] `listReviewThreads` for GitLab sets both `id` and `replyTo` to the discussion id.
+- [unit] `listReviewThreads` for GitLab sets `outdated` to false.
 - [unit] `listReviewThreads` for GitLab takes `path` from the first note's `position.new_path`, falling back to `position.old_path`.
 - [unit] `listReviewThreads` for GitLab takes `line` from the first note's `position.new_line`, falling back to `position.old_line`.
 - [unit] `listReviewThreads` for GitLab leaves notes with `system: true` out of a thread's comments.
-- [unit] `listPrComments` for GitHub returns issue comments as kind `comment`, followed by reviews with a non-empty body as kind `review`.
-- [unit] `listPrComments` for GitHub leaves out a review whose body is `""`.
-- [unit] `listPrComments` for GitLab returns the note of each `individual_note: true` discussion as kind `comment`, leaving out `system: true` notes.
-- [unit] a page loop that would need a 51st page rejects with a `NaxError` whose code is `FORGE_PAGINATION_LIMIT` after exactly 50 page requests.
+- [unit] `listReviewThreads` for GitHub rejects with a `NaxError` whose code is `FORGE_PAGINATION_LIMIT` when page 50 still reports `hasNextPage: true`, after exactly 50 page requests.
 - [unit] `listReviewThreads` rejects with `FORGE_THREADS_READ_FAILED` when a page command exits non-zero.
-- [unit] `listPrComments` rejects with `FORGE_COMMENTS_READ_FAILED` when a page command exits non-zero.
 - [unit] `listReviewThreads` rejects with `FORGE_RESPONSE_UNPARSEABLE` when a page's stdout is not JSON.
-- [unit] no command built by `listReviewThreads` or `listPrComments` has `--paginate` among its arguments.
+- [unit] every command `listReviewThreads` hands to `ForgeDeps.run` begins with `gh`, `api`, `--hostname`, `<host>` on GitHub and `glab`, `api`, `--hostname`, `<host>` on GitLab, and none has `--paginate` among its arguments.
 
 ### US-006
 
-- [unit] `postInlineComment` for GitHub runs `gh api --hostname <host> -X POST repos/<repo>/pulls/<n>/comments` with `-f commit_id=<headSha>`, `-f path=<path>`, `-F line=<line>` and `-f side=RIGHT`.
+- [unit] `listPrComments` for GitHub returns issue comments as kind `comment`, followed by reviews with a non-empty body as kind `review`.
+- [unit] `listPrComments` for GitHub maps an issue comment's `id`, `user.login`, `body` and `created_at` to `id` (as a string), `author`, `body` and `createdAt`.
+- [unit] `listPrComments` for GitHub maps a review's `submitted_at` to `createdAt`.
+- [unit] `listPrComments` for GitHub leaves out a review whose body is `""`.
+- [unit] `listPrComments` for GitHub returns author `ghost` for an issue comment whose `user` is null.
+- [unit] `listPrComments` for GitHub requests `issues/<n>/comments?per_page=100&page=2` after a first page holding 100 items.
+- [unit] `listPrComments` for GitLab returns the note of each `individual_note: true` discussion as kind `comment`.
+- [unit] `listPrComments` for GitLab leaves out a note with `system: true`.
+- [unit] `listPrComments` for GitLab returns no comment for a discussion with `individual_note: false`.
+- [unit] `listPrComments` rejects with a `NaxError` whose code is `FORGE_PAGINATION_LIMIT` when page 50 of a REST endpoint holds 100 items, after exactly 50 requests to that endpoint.
+- [unit] `listPrComments` rejects with `FORGE_COMMENTS_READ_FAILED` when a page command exits non-zero.
+- [unit] `listPrComments` rejects with `FORGE_RESPONSE_UNPARSEABLE` when a page's stdout is not JSON.
+- [unit] every command `listPrComments` hands to `ForgeDeps.run` begins with `gh`, `api`, `--hostname`, `<host>` on GitHub and `glab`, `api`, `--hostname`, `<host>` on GitLab, and none has `--paginate` among its arguments.
+
+### US-007
+
+- [unit] `postInlineComment` for GitHub runs `gh api --hostname <host> -X POST repos/<repo>/pulls/<n>/comments` with `-f commit_id=<headSha>` and `-f side=RIGHT`.
+- [unit] the same GitHub call carries `-f path=<path>` and `-F line=<line>`.
 - [unit] `postInlineComment` for GitHub returns `id` from the reply's `id` as a string and `url` from its `html_url`.
-- [unit] `postInlineComment` for GitLab runs `glab api --hostname <host> -X POST projects/<enc>/merge_requests/<n>/discussions` with `-f position[base_sha]`, `-f position[start_sha]` and `-f position[head_sha]` taken from `diffRefs`, `-f position[new_path]=<path>` and `-F position[new_line]=<line>`.
+- [unit] `postInlineComment` for GitLab runs `glab api --hostname <host> -X POST` on an endpoint `projects/<enc>/merge_requests/<n>/discussions?...` whose query string, parsed with `URLSearchParams`, holds `position[position_type]=text` and the three `position[...sha]` values from `diffRefs`.
+- [unit] the same GitLab endpoint's query string holds `position[new_path]=<path>` and `position[new_line]=<line>`.
+- [unit] the same GitLab call has `-f` immediately followed by `body=<body>`, and no other `-f` or `-F` argument.
 - [unit] `postInlineComment` for GitLab returns `threadId` equal to the discussion id and `id` equal to its first note's id.
 - [unit] `postInlineComment` for GitLab without `diffRefs` rejects with `FORGE_DIFF_REFS_REQUIRED` and makes no `ForgeDeps.run` call.
+- [unit] `postInlineComment` with `line: 0` rejects with `FORGE_COMMENT_TARGET_INVALID` and makes no `ForgeDeps.run` call.
+- [unit] `postInlineComment` with `path: ""` rejects with `FORGE_COMMENT_TARGET_INVALID`.
 - [unit] `postPrComment` for GitHub runs `-X POST repos/<repo>/issues/<n>/comments`.
 - [unit] `postPrComment` for GitLab runs `-X POST projects/<enc>/merge_requests/<n>/notes`.
 - [unit] `replyToThread` for GitHub with `replyTo: "991"` runs `-X POST repos/<repo>/pulls/<n>/comments/991/replies`.
+- [unit] `replyToThread` for GitHub with `replyTo: "12/../x"` rejects with `FORGE_ID_INVALID` and makes no `ForgeDeps.run` call.
 - [unit] `replyToThread` for GitLab with `replyTo: "d1"` runs `-X POST projects/<enc>/merge_requests/<n>/discussions/d1/notes`.
+- [unit] `postPrComment` called with the body `@/etc/passwd` passes `-f` immediately followed by `body=@/etc/passwd`, and no `-F` argument is followed by a `body=` value.
+- [unit] `postPrComment` called with a body of only spaces rejects with `FORGE_COMMENT_EMPTY` and makes no `ForgeDeps.run` call.
+- [unit] `postPrComment` called with a body of 65,537 characters rejects with `FORGE_COMMENT_TOO_LONG` and makes no `ForgeDeps.run` call.
+- [unit] `postPrComment` called with a body of exactly 65,536 characters calls `ForgeDeps.run` once.
+- [unit] every command `postInlineComment`, `postPrComment` and `replyToThread` hand to `ForgeDeps.run` begins with `gh`, `api`, `--hostname`, `<host>` on GitHub and `glab`, `api`, `--hostname`, `<host>` on GitLab.
+
+### US-008
+
 - [unit] `resolveThread` for GitHub runs `gh api --hostname <host> graphql` with a query naming `resolveReviewThread` and `-f id=<thread id>`.
-- [unit] `resolveThread` for GitLab runs `-X PUT projects/<enc>/merge_requests/<n>/discussions/<id>` with `-f resolved=true`.
+- [unit] `resolveThread` for GitLab runs `glab api --hostname <host> -X PUT projects/<enc>/merge_requests/<n>/discussions/<id>` with `-f resolved=true`.
 - [unit] `editComment` for GitHub with kind `comment` runs `-X PATCH repos/<repo>/issues/comments/<id>`.
 - [unit] `editComment` for GitHub with kind `thread` runs `-X PATCH repos/<repo>/pulls/comments/<id>`.
 - [unit] `editComment` for GitHub with kind `review` rejects with `FORGE_EDIT_UNSUPPORTED` and makes no `ForgeDeps.run` call.
-- [unit] `editComment` for GitLab runs `-X PUT projects/<enc>/merge_requests/<n>/notes/<id>` with `-f body=<body>`.
-- [unit] `postPrComment` called with the body `@/etc/passwd` passes `-f` immediately followed by `body=@/etc/passwd`, and no `-F` argument is followed by a `body=` value.
-- [unit] a write called with a body of only spaces rejects with `FORGE_COMMENT_EMPTY` and makes no `ForgeDeps.run` call.
-- [unit] a write called with a body of 65,537 characters rejects with `FORGE_COMMENT_TOO_LONG` and makes no `ForgeDeps.run` call.
-- [unit] a write called with a body of exactly 65,536 characters calls `ForgeDeps.run` once.
-- [unit] a write whose command exits 1 with stderr `HTTP 403` rejects with a `NaxError` whose code is `FORGE_COMMENT_WRITE_FAILED`, after exactly one `ForgeDeps.run` call.
-- [unit] `postInlineComment`, `postPrComment`, `replyToThread`, `resolveThread` and `editComment` imported from the `@/forge` barrel are functions, and `MAX_FORGE_COMMENT_CHARS` equals 65536.
+- [unit] `editComment` for GitHub with an `id` of `"abc"` rejects with `FORGE_ID_INVALID` and makes no `ForgeDeps.run` call.
+- [unit] `editComment` for GitLab runs `glab api --hostname <host> -X PUT projects/<enc>/merge_requests/<n>/notes/<id>` with `-f body=<body>`.
+- [unit] `editComment` called with a body of only spaces rejects with `FORGE_COMMENT_EMPTY` and makes no `ForgeDeps.run` call.
+- [unit] `editComment` called with a body of 65,537 characters rejects with `FORGE_COMMENT_TOO_LONG`.
+- [unit] `postPrComment` whose command exits 1 with stderr `HTTP 403` rejects with a `NaxError` whose code is `FORGE_COMMENT_WRITE_FAILED`, after exactly one `ForgeDeps.run` call.
+- [unit] the `FORGE_COMMENT_WRITE_FAILED` error's context holds `stage: "forge"`, the `forge`, the `exitCode` 1 and the stderr `HTTP 403`.
+- [unit] `resolveThread` whose command exits non-zero rejects with `FORGE_COMMENT_WRITE_FAILED` after exactly one `ForgeDeps.run` call.
+- [unit] `editComment` whose command exits non-zero rejects with `FORGE_COMMENT_WRITE_FAILED` after exactly one `ForgeDeps.run` call.
+- [unit] `replyToThread` whose command exits non-zero rejects with `FORGE_COMMENT_WRITE_FAILED` after exactly one `ForgeDeps.run` call.
+- [unit] `postInlineComment` whose command exits non-zero rejects with `FORGE_COMMENT_WRITE_FAILED` after exactly one `ForgeDeps.run` call.
 
-**Out of scope:** escaping or rendering the body (B2 renders every comment from its schema); retrying a failed
-write (a retried POST can post twice); rate-limit back-off.
-
-### US-007
+### US-009
 
 - [unit] `withNaxBotMarker("hello", "finding:a1")` returns `**nax bot**\n\nhello\n\n<!-- nax-bot:v1 key=finding:a1 -->`.
 - [unit] `withNaxBotMarker("x", "a-->b")` throws a `NaxError` whose code is `FORGE_MARKER_KEY_INVALID`.
 - [unit] `withNaxBotMarker("x", "")` throws a `NaxError` whose code is `FORGE_MARKER_KEY_INVALID`.
+- [unit] `NAX_BOT_HEADER` equals `**nax bot**`.
 - [unit] `parseNaxBotMarker` of a body carrying the markers for keys `k1` then `k2` returns `{ key: "k2" }`.
 - [unit] `parseNaxBotMarker` of a body with no marker returns null.
 - [unit] `parseNaxBotMarker` of the output of `withNaxBotMarker("hello", "finding:a1")` returns `{ key: "finding:a1" }`.
+- [unit] `findOwnComments` with a mocked `ForgeDeps` makes a request to the current-user endpoint.
 - [unit] `findOwnComments` with a mocked `ForgeDeps` makes a request to the review-thread endpoint.
 - [unit] `findOwnComments` with a mocked `ForgeDeps` makes a request to the top-level-comments endpoint.
-- [unit] `findOwnComments` returns only the comments whose body carries a marker.
+- [unit] `findOwnComments` returns a marked comment whose author is the current user's login.
+- [unit] `findOwnComments` leaves out a marked comment whose author is another login.
+- [unit] `findOwnComments` leaves out an unmarked comment by the current user.
 - [unit] `findOwnComments` returns each comment with the `key` its marker carries.
 - [unit] `findOwnComments` returns a marked thread comment with `threadId` equal to its thread's `id`.
 - [unit] `findOwnComments` returns a marked top-level comment with no `threadId`.
 - [unit] `findOwnComments` lists a marked thread comment before a marked top-level comment.
-- [unit] `NAX_BOT_HEADER` imported from the `@/forge` barrel equals `**nax bot**`, and `withNaxBotMarker`, `parseNaxBotMarker` and `findOwnComments` imported from it are functions.
+- [unit] `findOwnComments` rejects with `FORGE_USER_READ_FAILED` when the current-user lookup exits non-zero.
