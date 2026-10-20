@@ -1,6 +1,6 @@
 import { NaxError } from "@/errors";
 import { encodeProjectPath } from "./pr-read";
-import type { PrRef, PrThread } from "./pr-types";
+import type { PrComment, PrRef, PrThread } from "./pr-types";
 import type { ForgeDeps } from "./types";
 
 export const MAX_FORGE_PAGES = 50;
@@ -203,6 +203,75 @@ function gitlabThread(discussion: GitlabDiscussion): PrThread {
         createdAt: note.created_at,
       })),
   };
+}
+
+interface GithubComment {
+  id: number;
+  user: { login: string } | null;
+  body: string;
+  created_at: string;
+}
+interface GithubReview extends Omit<GithubComment, "created_at"> {
+  submitted_at: string;
+}
+
+async function readGithubComments(context: ReadContext): Promise<PrComment[]> {
+  const { ref } = context;
+  const issues = await readForgeRestPages<GithubComment>(context, `repos/${ref.repo}/issues/${ref.number}/comments`);
+  const reviews = await readForgeRestPages<GithubReview>(context, `repos/${ref.repo}/pulls/${ref.number}/reviews`);
+  try {
+    return [
+      ...issues.map(
+        (comment): PrComment => ({
+          id: String(comment.id),
+          kind: "comment",
+          author: comment.user?.login ?? "ghost",
+          body: comment.body,
+          createdAt: comment.created_at,
+        }),
+      ),
+      ...reviews
+        .filter((review) => review.body.length > 0)
+        .map(
+          (review): PrComment => ({
+            id: String(review.id),
+            kind: "review",
+            author: review.user?.login ?? "ghost",
+            body: review.body,
+            createdAt: review.submitted_at,
+          }),
+        ),
+    ];
+  } catch (cause) {
+    throw responseError(ref, cause);
+  }
+}
+
+/** Read top-level comments, followed by nonempty GitHub review bodies, in endpoint/page order. */
+export async function listPrComments(ref: PrRef, deps: ForgeDeps, cwd: string): Promise<PrComment[]> {
+  const context: ReadContext = { ref, deps, cwd, failureCode: "FORGE_COMMENTS_READ_FAILED" };
+  if (ref.forge === "github") return readGithubComments(context);
+  const endpoint = `projects/${encodeProjectPath(ref.repo)}/merge_requests/${ref.number}/discussions`;
+  const discussions = await readForgeRestPages<GitlabDiscussion>(context, endpoint);
+  try {
+    return discussions
+      .filter((discussion) => discussion.individual_note === true)
+      .flatMap((discussion) =>
+        discussion.notes
+          .filter((note) => !note.system)
+          .map(
+            (note): PrComment => ({
+              id: String(note.id),
+              kind: "comment",
+              author: note.author.username,
+              body: note.body,
+              createdAt: note.created_at,
+            }),
+          ),
+      );
+  } catch (cause) {
+    throw responseError(ref, cause);
+  }
 }
 
 /** Read review threads in forge order, using explicit host and bounded, observable page requests. */
