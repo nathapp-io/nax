@@ -4,10 +4,13 @@ import { resolveDefaultAgent } from "@/agents";
 import type { ConfiguredModel } from "@/config";
 import { NaxError } from "@/errors";
 import { ownComments } from "@/forge";
+import { botChecksExtractOp } from "@/operations";
 import { defineStepGraph, runStepGraph, type StepGraph } from "@/step-graph";
 // Import lifecycle/workflow leaves, never their orchestration barrels.
 import { runPreRunSteps } from "../execution/lifecycle/pre-run-steps";
 import { botRunDir } from "../workflow/paths";
+import { _workflowDeps } from "../workflow/step-context";
+import { type BotChecks, resolveBotChecks } from "./checks";
 import { checkPushAccess, loadLatestReview } from "./fix-input";
 import { readyStep, replyStep, reportStep } from "./fix-report";
 import {
@@ -38,6 +41,7 @@ export const _botFixDeps = {
   randomSuffix: _botReviewDeps.randomSuffix,
   writeJson: _botReviewDeps.writeJson,
   loadLatestReview,
+  resolveBotChecks,
   checkPushAccess,
   runPreRunSteps,
   fixStep,
@@ -145,7 +149,7 @@ async function executeFix(
   env: BotFixEnv,
   runtime: ReturnType<typeof _botFixDeps.createRuntime>,
 ): Promise<BotFixResult> {
-  await _botFixDeps.runPreRunSteps({ steps: env.config.execution.preRun ?? [], workdir: env.checkout.worktree });
+  await _botFixDeps.runPreRunSteps({ steps: env.checks.preRun, workdir: env.checkout.worktree });
   const stateDir = botRunDir(runtime.outputDir, env.ref.number, runtime.runId);
   const state = await runStepGraph(
     BOT_FIX_GRAPH,
@@ -160,6 +164,26 @@ async function executeFix(
 }
 
 const SHORT_SHA_LENGTH = 7;
+
+async function fixChecks(
+  env: Pick<BotFixEnv, "repoRoot" | "checkout" | "config" | "ctx" | "review">,
+): Promise<BotChecks> {
+  const { repoRoot, checkout, config, ctx, review } = env;
+  // Saved checks belong to this reviewed head, even if the base has since moved.
+  if (review.version === 2 && review.checks != null) return review.checks;
+  return _botFixDeps.resolveBotChecks({
+    repoRoot,
+    baseSha: checkout.baseSha,
+    snapshotDir: checkout.snapshotDir,
+    hasBaseNax: checkout.hasBaseNax,
+    config,
+    extract: (input) =>
+      _workflowDeps.callOp(ctx.callCtx, botChecksExtractOp, {
+        ...input,
+        model: config.bot?.models.checks,
+      }),
+  });
+}
 
 async function fixCheckout(input: BotFixInput, prepared: PreparedFix): Promise<BotFixResult> {
   const deps = _botFixDeps;
@@ -183,9 +207,16 @@ async function fixCheckout(input: BotFixInput, prepared: PreparedFix): Promise<B
       };
     const access = await deps.checkPushAccess(checkout.worktree, info.headRef);
     if (!access.ok) return { outcome: "refused", reason: `cannot push to ${info.headRef}: ${access.reason}` };
+    const checks = await fixChecks({ ...prepared, ctx: context.ctx, config, review });
+    if (checks.source === "none")
+      return {
+        outcome: "refused",
+        reason:
+          "no check commands found on the base branch; add quality.commands to .nax/config.json, or list the commands in AGENTS.md or CLAUDE.md, then merge it",
+      };
     const items = await triage(prepared);
     return await executeFix(
-      { ...prepared, ...items, ctx: context.ctx, config, review, model: input.model, forge: deps.forge },
+      { ...prepared, ...items, checks, ctx: context.ctx, config, review, model: input.model, forge: deps.forge },
       runtime,
     );
   } finally {
@@ -216,8 +247,6 @@ export async function runBotFix(input: BotFixInput): Promise<BotFixResult> {
     pinBaseFiles: false,
   });
   try {
-    if (!checkout.hasBaseNax)
-      return { outcome: "refused", reason: "the base branch has no nax config; gates cannot run" };
     return await fixCheckout(input, { repoRoot, ref, info, checkout });
   } finally {
     await checkout.dispose();

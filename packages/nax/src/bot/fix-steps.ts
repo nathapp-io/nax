@@ -4,10 +4,11 @@ import type { CurrentUser, ForgeDeps, OwnComment, PrInfo, PrRef, PrThread } from
 import type { GraphState, StepResult } from "@/step-graph";
 import { gitWithTimeout } from "@/utils/git";
 import type { PrStepContext } from "@/workflow/branch-step-context";
-import { resolveGateCommands, runQualityGates } from "../finish/gates/quality";
+import { runQualityGates } from "../finish/gates/quality";
 import { runBranchFix } from "../workflow/branch-fix";
 import { readHead } from "../workflow/git";
 import { changedPaths, type PrCheckout } from "./checkout";
+import type { BotChecks } from "./checks";
 import { toFixFindings } from "./fix-input";
 import { botModel } from "./models";
 import { fixProtectedPaths } from "./path-policy";
@@ -42,6 +43,7 @@ export interface BotFixState extends GraphState<BotFixStep> {
 export interface BotFixEnv {
   readonly ctx: PrStepContext;
   readonly config: NaxConfig;
+  readonly checks: BotChecks;
   readonly ref: PrRef;
   readonly info: PrInfo;
   readonly checkout: PrCheckout;
@@ -59,7 +61,6 @@ const PUSH_TIMEOUT_MS = 120_000;
 export const _fixStepsDeps = {
   runBranchFix,
   changedPaths,
-  resolveGateCommands,
   runQualityGates,
   runGit: gitWithTimeout,
   readHead,
@@ -115,9 +116,9 @@ export async function checkStep(env: BotFixEnv, _state: BotFixState): Promise<St
 export async function gatesStep(env: BotFixEnv, _state: BotFixState): Promise<StepResult<BotFixState>> {
   const unsafe = await unsafeTree(env, _state);
   if (unsafe) return unsafe;
-  const commands = await _fixStepsDeps.resolveGateCommands(env.checkout.snapshotDir, []);
+  const commands = env.checks.gates;
   if (commands.length === 0) return { patch: { outcome: "no-gates" }, exit: "no-gates" };
-  // Resolve from trusted base config, but verify the fixed tree, never the snapshot.
+  // Use the reviewed checks, but verify the fixed tree, never the snapshot.
   const worktreeCommands = commands.map((gate) => ({ ...gate, cwd: env.checkout.worktree }));
   const result = await _fixStepsDeps.runQualityGates(env.checkout.worktree, worktreeCommands);
   if (!result.passed) {

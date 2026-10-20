@@ -8,6 +8,7 @@ export function makeBotFixEnv(agreed: readonly AgreedItem[] = []): BotFixEnv {
   const ref = { forge: "github" as const, host: "github.com", repo: "o/r", number: 42 };
   return {
     config,
+    checks: { source: "config", gates: [], preRun: [] },
     ref,
     repoRoot: "/repo",
     user: { login: "bot" },
@@ -65,6 +66,7 @@ export function makeBotFixDeps(env: BotFixEnv, runtime: ReturnType<typeof import
     createRuntime: () => runtime,
     buildPrStepContext: async () => ({ ctx: env.ctx, dispose: async () => {} }),
     loadLatestReview: async () => env.review,
+    resolveBotChecks: async () => env.checks,
     checkPushAccess: async (): Promise<{ ok: true }> => ({ ok: true }),
     runPreRunSteps: async () => {},
     readCurrentUser: async () => env.user,
