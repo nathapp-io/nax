@@ -9,6 +9,7 @@ export {
   preparePrCheckout,
 } from "./checkout";
 export { _fixInputDeps, checkPushAccess, loadLatestReview, toFixFindings } from "./fix-input";
+export { _fixStepsDeps, type BotFixEnv, type BotFixState, type BotFixStep, checkStep, fixStep } from "./fix-steps";
 export { botModel, parseModelOption } from "./models";
 export { fixProtectedPaths, sensitivePaths } from "./path-policy";
 export {
