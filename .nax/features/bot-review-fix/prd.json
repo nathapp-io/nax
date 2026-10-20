@@ -3,7 +3,7 @@
   "feature": "bot-review-fix",
   "branchName": "feat/bot-review-fix",
   "createdAt": "2026-10-20T00:00:00.000Z",
-  "updatedAt": "2026-10-20T08:02:15.782Z",
+  "updatedAt": "2026-10-20T08:17:08.209Z",
   "userStories": [
     {
       "id": "US-001",
@@ -177,14 +177,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "One archive/config module and a path helper reuse existing git/config seams; strict TDD remains required because selecting base rather than head configuration is an execution trust boundary."
+        "reasoning": "One archive/config module and a path helper reuse existing git/config seams; strict TDD remains required because selecting base rather than head configuration is an execution trust boundary.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/paths.ts",
@@ -200,7 +203,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "6fe84aa84bd6ae65b1795397f70c5ce73dbcbef4"
     },
     {
       "id": "US-004",
