@@ -25,4 +25,5 @@ export type {
 export { findPrTemplate } from "./template";
 export type { BodySection, MergeOptions, TemplateMode } from "./template-merge";
 export { DEFAULT_SECTION_ALIASES, mergeTemplate } from "./template-merge";
+export { classifyPrTrust, readCurrentUser } from "./trust";
 export type { ForgeDeps, ForgeKind, ForgeRunResult } from "./types";
