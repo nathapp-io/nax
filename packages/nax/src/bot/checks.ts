@@ -36,7 +36,7 @@ interface ResolveBotChecksInput {
 }
 
 /** Missing is distinct from an error: only missing AGENTS permits CLAUDE fallback. */
-async function readBaseInstruction(input: ResolveBotChecksInput, fileName: InstructionFile): Promise<string | null> {
+async function baseFileExists(input: ResolveBotChecksInput, fileName: string): Promise<boolean> {
   const { repoRoot, baseSha } = input;
   const tree = await _botChecksDeps.runGit(["ls-tree", "--name-only", "-z", baseSha, "--", fileName], repoRoot);
   if (tree.exitCode !== 0) {
@@ -48,7 +48,12 @@ async function readBaseInstruction(input: ResolveBotChecksInput, fileName: Instr
       timedOut: tree.timedOut,
     });
   }
-  if (!tree.stdout.split("\0").includes(fileName)) return null;
+  return tree.stdout.split("\0").includes(fileName);
+}
+
+async function readBaseFile(input: ResolveBotChecksInput, fileName: string): Promise<string | null> {
+  if (!(await baseFileExists(input, fileName))) return null;
+  const { repoRoot, baseSha } = input;
   const result = await _botChecksDeps.runGit(["show", `${baseSha}:${fileName}`], repoRoot);
   if (result.exitCode !== 0) {
     throw new NaxError(`[bot] Could not read base ${fileName}`, "BOT_CHECKS_READ_FAILED", {
@@ -90,10 +95,10 @@ async function configChecks(input: ResolveBotChecksInput): Promise<BotChecks | n
 async function instructionChecks(input: ResolveBotChecksInput): Promise<BotChecks | null> {
   let fileName: InstructionFile = "AGENTS.md";
   try {
-    let text = await readBaseInstruction(input, fileName);
+    let text = await readBaseFile(input, fileName);
     if (text === null) {
       fileName = "CLAUDE.md";
-      text = await readBaseInstruction(input, fileName);
+      text = await readBaseFile(input, fileName);
     }
     if (text === null) return null;
     if (new TextEncoder().encode(text).byteLength > MAX_INSTRUCTION_BYTES) {
@@ -127,9 +132,69 @@ async function instructionChecks(input: ResolveBotChecksInput): Promise<BotCheck
   }
 }
 
-/** First non-empty trusted tier wins. Detection and lockfile fallback are added separately. */
+// Root JS package scripts only; other languages/workspaces use the explicit tiers.
+const LOCKFILE_COMMANDS = [
+  { path: "bun.lock", prefix: "bun run", install: "bun install --frozen-lockfile" },
+  { path: "bun.lockb", prefix: "bun run", install: "bun install --frozen-lockfile" },
+  { path: "package-lock.json", prefix: "npm run", install: "npm ci" },
+  { path: "pnpm-lock.yaml", prefix: "pnpm run", install: "pnpm install --frozen-lockfile" },
+  { path: "yarn.lock", prefix: "yarn", install: undefined },
+] as const;
+
+async function lockfileCommands(input: ResolveBotChecksInput): Promise<{ prefix: string; install?: string }> {
+  for (const entry of LOCKFILE_COMMANDS) {
+    if ((await readBaseFile(input, entry.path)) !== null) return entry;
+  }
+  return { prefix: "npm run" };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function scriptGates(scripts: Record<string, unknown>, prefix: string): BotCheck[] {
+  return GATE_ORDER.flatMap((name) => {
+    if (!["build", "typecheck", "lint", "test"].includes(name)) return [];
+    const script = name === "typecheck" && typeof scripts.typecheck !== "string" ? "type-check" : name;
+    const value = scripts[script];
+    if (typeof value !== "string" || (name === "test" && value.includes("no test specified"))) return [];
+    return [{ name, command: `${prefix} ${script}` }];
+  });
+}
+
+async function detectedChecks(input: ResolveBotChecksInput): Promise<BotChecks | null> {
+  try {
+    const text = await readBaseFile(input, "package.json");
+    if (text === null) return null;
+    const manifest: unknown = JSON.parse(text);
+    if (!isRecord(manifest) || !isRecord(manifest.scripts)) return null;
+    const { prefix, install } = await lockfileCommands(input);
+    const gates = scriptGates(manifest.scripts, prefix);
+    return gates.length ? { source: "detected", gates, preRun: selectPreRun(input, install) } : null;
+  } catch (cause) {
+    getSafeLogger()?.warn("bot", "Skipping base detected checks", {
+      baseSha: input.baseSha,
+      error: errorMessage(cause),
+    });
+    return null;
+  }
+}
+
+/** First non-empty trusted tier wins; installation falls back independently. */
 export async function resolveBotChecks(input: ResolveBotChecksInput): Promise<BotChecks> {
-  return (await configChecks(input)) ?? (await instructionChecks(input)) ?? { source: "none", gates: [], preRun: [] };
+  const checks = (await configChecks(input)) ?? (await instructionChecks(input)) ?? (await detectedChecks(input));
+  if (!checks) return { source: "none", gates: [], preRun: [] };
+  if (checks.preRun.length || checks.source === "detected") return checks;
+  try {
+    const { install } = await lockfileCommands(input);
+    return { ...checks, preRun: selectPreRun(input, install) };
+  } catch (cause) {
+    getSafeLogger()?.warn("bot", "Skipping base lockfile install", {
+      baseSha: input.baseSha,
+      error: errorMessage(cause),
+    });
+    return checks;
+  }
 }
 
 /** Lists represent multiple shell commands, not argv; setup and preRun are not gates. */
