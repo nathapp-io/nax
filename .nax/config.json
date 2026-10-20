@@ -135,7 +135,7 @@
   "execution": {
     "permissionProfile": "unrestricted",
     "sessionTimeoutSeconds": 7200,
-    "maxStoriesPerFeature": 15,
+    "maxStoriesPerFeature": 20,
     "commandInterceptor": {
       "provider": "rtk",
       "enabled": true,
