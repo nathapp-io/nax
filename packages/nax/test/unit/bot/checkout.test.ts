@@ -41,6 +41,7 @@ beforeEach(() => {
   });
   _checkoutDeps.snapshotBaseNax = mock(async () => true);
   _checkoutDeps.mkdtemp = mock(async () => "/snapshot");
+  _checkoutDeps.reserveWorktree = mock(async () => {});
   _checkoutDeps.rm = mock(async () => {});
 });
 afterEach(() => Object.assign(_checkoutDeps, original));
@@ -54,6 +55,15 @@ describe("botWorktreePath", () => {
   });
 });
 describe("preparePrCheckout", () => {
+  test("a failed exclusive reservation never adds or cleans up a pre-existing path", async () => {
+    const collision = new Error("checkout already exists");
+    _checkoutDeps.reserveWorktree = mock(async () => {
+      throw collision;
+    });
+    await expect(preparePrCheckout(input)).rejects.toBe(collision);
+    expect(calls.some(({ argv }) => argv[0] === "worktree")).toBe(false);
+    expect(_checkoutDeps.rm).not.toHaveBeenCalled();
+  });
   test("a failed worktree add still unwinds its registration", async () => {
     const run = _checkoutDeps.runGit;
     _checkoutDeps.runGit = async (argv, cwd) => {

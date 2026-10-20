@@ -62,6 +62,21 @@ afterEach(async () => {
 });
 
 describe("preparePrCheckout", () => {
+  test("B4: a suffix collision never deletes a retained checkout or recovery work", async () => {
+    const retained = await prepare();
+    retained.retain?.();
+    await Bun.write(join(retained.worktree, "recovery.txt"), "unfinished recovery work");
+    await retained.dispose();
+    try {
+      await expect(prepare()).rejects.toThrow();
+      expect(await Bun.file(join(retained.worktree, "recovery.txt")).text()).toBe("unfinished recovery work");
+      expect(await git(["rev-parse", "HEAD"], retained.worktree)).toBe(await git(["rev-parse", "HEAD"]));
+      expect(await git(["worktree", "list", "--porcelain"])).toContain(retained.worktree);
+    } finally {
+      await git(["worktree", "remove", "--force", retained.worktree]).catch(() => {});
+      checkout = undefined;
+    }
+  });
   test("AC-10/12/19: changed source, shared excludes and complete disposal", async () => {
     await Bun.write(join(repo, "src/a.ts"), "head");
     await commit();

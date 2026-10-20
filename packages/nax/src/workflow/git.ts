@@ -195,8 +195,9 @@ export async function writeBranchReviewPackage(
   }
   let reading = buildBranchPackageReadingNote(range);
   if (options?.staticMode) {
+    // PR attributes must not hide text deletions as binary; never run external diff/textconv drivers.
     const patch = await _workflowDeps.git(
-      ["diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--unified=10", range, ...pathspec],
+      ["diff", "--text", "--no-ext-diff", "--no-textconv", "--no-renames", "--unified=10", range, ...pathspec],
       projectDir,
     );
     if (patch.exitCode !== 0) throw gitReadError("static review diff", patch);

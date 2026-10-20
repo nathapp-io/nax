@@ -1,6 +1,6 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import type { PrInfo, PrRef } from "@/forge";
@@ -20,6 +20,10 @@ export const BASE_PINNED_NAMES = ["AGENTS.md", "CLAUDE.md", "GEMINI.md", "codex.
 
 export const _checkoutDeps = {
   runGit: gitWithTimeout,
+  reserveWorktree: async (path: string): Promise<void> => {
+    await mkdir(dirname(path), { recursive: true });
+    await mkdir(path); // Exclusive: an existing checkout (even an empty directory) is never ours.
+  },
   ensureGitExcludes: (repoRoot: string): Promise<void> => new WorktreeManager().ensureGitExcludes(repoRoot),
   snapshotBaseNax,
   rm: (path: string): Promise<void> => rm(path, { recursive: true, force: true }),
@@ -106,10 +110,17 @@ async function pinInstructions(worktree: string, baseSha: string): Promise<void>
   await removeSymlinks(worktree);
 }
 
-async function cleanup(input: { repoRoot: string; worktree?: string; snapshotDir?: string }): Promise<void> {
+async function cleanup(input: {
+  repoRoot: string;
+  worktree?: string;
+  snapshotDir?: string;
+  failedAdd?: boolean;
+}): Promise<void> {
   const { repoRoot, worktree, snapshotDir } = input;
   const actions = [
     ...(worktree ? [() => git(["worktree", "remove", "--force", worktree], repoRoot)] : []),
+    // Git may have failed before registering our exclusively reserved empty directory.
+    ...(worktree && input.failedAdd ? [() => _checkoutDeps.rm(worktree)] : []),
     ...(snapshotDir ? [() => _checkoutDeps.rm(snapshotDir)] : []),
   ];
   for (const action of actions) {
@@ -159,11 +170,14 @@ export async function preparePrCheckout(input: {
   const { baseSha, mergeBase } = await fetchRefs(input);
   const worktree = botWorktreePath(repoRoot, ref.number, suffix);
   let created = false;
+  let added = false;
   let snapshotDir: string | undefined;
   try {
     await _checkoutDeps.ensureGitExcludes(repoRoot);
-    created = true; // Own even a partially registered worktree when add fails.
+    await _checkoutDeps.reserveWorktree(worktree);
+    created = true; // Only our exclusive reservation grants cleanup ownership on a failed add.
     await git(["worktree", "add", "--detach", worktree, info.headSha], repoRoot);
+    added = true;
     snapshotDir = await _checkoutDeps.mkdtemp();
     const hasBaseNax = await _checkoutDeps.snapshotBaseNax(repoRoot, baseSha, snapshotDir);
     if (pinBaseFiles) await pinInstructions(worktree, baseSha);
@@ -183,7 +197,7 @@ export async function preparePrCheckout(input: {
       dispose: () => cleanup({ ...artifacts, worktree: retained ? undefined : worktree }),
     };
   } catch (cause) {
-    await cleanup({ repoRoot, worktree: created ? worktree : undefined, snapshotDir });
+    await cleanup({ repoRoot, worktree: created ? worktree : undefined, snapshotDir, failedAdd: !added });
     throw cause;
   }
 }
