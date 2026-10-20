@@ -3,7 +3,7 @@
   "feature": "bot-review-fix",
   "branchName": "feat/bot-review-fix",
   "createdAt": "2026-10-20T00:00:00.000Z",
-  "updatedAt": "2026-10-20T09:35:25.256Z",
+  "updatedAt": "2026-10-20T09:42:53.153Z",
   "userStories": [
     {
       "id": "US-001",
@@ -694,14 +694,17 @@
       "dependencies": [
         "US-010"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Thread ownership and target matching control which authenticated comments may be edited; partial forge failures must not corrupt posting counts or ordering."
+        "reasoning": "Thread ownership and target matching control which authenticated comments may be edited; partial forge failures must not corrupt posting counts or ordering.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/post.ts",
@@ -715,7 +718,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "6996f5e30970c875614d5f54bc0caf405d69b7aa"
     },
     {
       "id": "US-012",
