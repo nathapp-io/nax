@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { makeNaxConfig } from "@test/helpers";
 import { _botChecksDeps, checkCommands, DERIVED_INSTALL_TIMEOUT_SECONDS, resolveBotChecks } from "@/bot";
+import { DEFAULT_CONFIG } from "@/config";
 import { initLogger, resetLogger } from "@/logger";
 import type { BotChecksExtractOutput } from "@/operations/bot-checks-extract";
 
 const original = { ..._botChecksDeps };
+const defaultPreRun = structuredClone(DEFAULT_CONFIG.execution.preRun);
 const none = { source: "none", gates: [], preRun: [] } satisfies Awaited<ReturnType<typeof resolveBotChecks>>;
 const extracted: BotChecksExtractOutput = { gates: [{ gate: "test", command: "bun run test" }] };
 let files: Record<string, string>;
@@ -36,6 +38,8 @@ afterEach(() => {
   warn.mockRestore();
   resetLogger();
   Object.assign(_botChecksDeps, original);
+  // Every fixture must leave the shared defaults unchanged for later tests.
+  expect(DEFAULT_CONFIG.execution.preRun).toEqual(defaultPreRun);
 });
 
 function configGates(): void {
@@ -56,12 +60,12 @@ describe("resolveBotChecks", () => {
   });
   test("AC-2: config gates use configured preRun", async () => {
     configGates();
-    input.config.execution.preRun = [{ command: "prepare", timeoutSeconds: 23 }];
+    input.config = makeNaxConfig({ execution: { preRun: [{ command: "prepare", timeoutSeconds: 23 }] } });
     expect((await resolveBotChecks(input)).preRun).toEqual(input.config.execution.preRun);
   });
   test("AC-3: absent base config never resolves config gates or uses config preRun", async () => {
     files["AGENTS.md"] = "checks";
-    input.config.execution.preRun = [{ command: "untrusted defaults", timeoutSeconds: 1 }];
+    input.config = makeNaxConfig({ execution: { preRun: [{ command: "untrusted defaults", timeoutSeconds: 1 }] } });
     expect((await resolveBotChecks(input)).preRun).toEqual([]);
     expect(_botChecksDeps.resolveGateCommands).not.toHaveBeenCalled();
   });
@@ -185,14 +189,14 @@ describe("resolveBotChecks", () => {
   });
   test("config preRun wins even with instruction-file gates", async () => {
     input.hasBaseNax = true;
-    input.config.execution.preRun = [{ command: "configured", timeoutSeconds: 17 }];
+    input.config = makeNaxConfig({ execution: { preRun: [{ command: "configured", timeoutSeconds: 17 }] } });
     files["AGENTS.md"] = "checks";
     input.extract = mock(async () => ({ ...extracted, install: "npm ci" }));
     expect((await resolveBotChecks(input)).preRun).toEqual(input.config.execution.preRun);
   });
   test("preRun alone never produces checks", async () => {
     input.hasBaseNax = true;
-    input.config.execution.preRun = [{ command: "configured", timeoutSeconds: 17 }];
+    input.config = makeNaxConfig({ execution: { preRun: [{ command: "configured", timeoutSeconds: 17 }] } });
     files["AGENTS.md"] = "checks";
     input.extract = mock(async () => ({ gates: [], install: "npm ci" }));
     expect(await resolveBotChecks(input)).toEqual(none);
