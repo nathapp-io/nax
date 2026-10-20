@@ -3,7 +3,7 @@
   "feature": "step-graph-g4-forge-threads",
   "branchName": "feat/step-graph-g4-forge-threads",
   "createdAt": "2026-10-20T00:00:00.000Z",
-  "updatedAt": "2026-10-20T04:22:16.979Z",
+  "updatedAt": "2026-10-20T04:29:34.772Z",
   "userStories": [
     {
       "id": "US-001",
@@ -255,14 +255,17 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Two deterministic provider mappings extend an existing feature file; classification decisions and access checks remain in US-005."
+        "reasoning": "Two deterministic provider mappings extend an existing feature file; classification decisions and access checks remain in US-005.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/forge/pr-types.ts",
@@ -283,7 +286,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "93be404c406d8c223d8e3485c94bf95e03d581be"
     },
     {
       "id": "US-005",
