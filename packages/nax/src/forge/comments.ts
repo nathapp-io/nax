@@ -1,6 +1,6 @@
 import { NaxError } from "@/errors";
 import { encodeProjectPath } from "./pr-read";
-import type { PostedComment, PrInfo, PrRef } from "./pr-types";
+import type { PostedComment, PrComment, PrInfo, PrRef, PrThread } from "./pr-types";
 import type { ForgeDeps } from "./types";
 
 export const MAX_FORGE_COMMENT_CHARS = 65_536;
@@ -142,6 +142,89 @@ export async function postInlineComment(
   }
   const reply = await runForgeWrite(ref, inlineArgv(ref, input), deps, cwd);
   return inlineReply(ref, reply);
+}
+
+const NUMERIC_COMMENT_ID = /^[0-9]+$/;
+const GITLAB_DISCUSSION_ID = /^[A-Za-z0-9_-]{1,64}$/;
+const RESOLVE_REVIEW_THREAD =
+  "mutation($id: ID!) { resolveReviewThread(input: {threadId: $id}) { thread { id isResolved } } }";
+
+/** Validate the entire id, including rejecting a final newline matched before JS's $ anchor. */
+function endpointId(ref: PrRef, id: string, pattern: RegExp): string {
+  if (pattern.exec(id)?.[0] !== id) {
+    throw new NaxError(`[forge] Invalid endpoint id for ${ref.repo}#${ref.number}`, "FORGE_ID_INVALID", {
+      stage: "forge",
+      forge: ref.forge,
+      id,
+    });
+  }
+  return encodeURIComponent(id);
+}
+
+function postedReply(ref: PrRef, reply: unknown): PostedComment {
+  if (!hasCommentId(reply)) throw responseError(ref);
+  const url = "html_url" in reply ? reply.html_url : "web_url" in reply ? reply.web_url : undefined;
+  return { id: String(reply.id), ...(typeof url === "string" ? { url } : {}) };
+}
+
+/** Reply to the reader's reply target, not GitHub's GraphQL thread node id. */
+export async function replyToThread(
+  ref: PrRef,
+  thread: Pick<PrThread, "replyTo">,
+  body: string,
+  deps: ForgeDeps,
+  cwd: string,
+): Promise<PostedComment> {
+  assertCommentBody(body);
+  const id = endpointId(ref, thread.replyTo, ref.forge === "github" ? NUMERIC_COMMENT_ID : GITLAB_DISCUSSION_ID);
+  const endpoint =
+    ref.forge === "github"
+      ? `repos/${ref.repo}/pulls/${ref.number}/comments/${id}/replies`
+      : `projects/${encodeProjectPath(ref.repo)}/merge_requests/${ref.number}/discussions/${id}/notes`;
+  return postedReply(ref, await runForgeWrite(ref, ["-X", "POST", endpoint, "-f", `body=${body}`], deps, cwd));
+}
+
+/** Resolve a review thread; GitHub node ids are raw GraphQL variables, never path segments. */
+export async function resolveThread(
+  ref: PrRef,
+  thread: Pick<PrThread, "id">,
+  deps: ForgeDeps,
+  cwd: string,
+): Promise<void> {
+  const argv =
+    ref.forge === "github"
+      ? ["graphql", "-f", `query=${RESOLVE_REVIEW_THREAD}`, "-f", `id=${thread.id}`]
+      : [
+          "-X",
+          "PUT",
+          `projects/${encodeProjectPath(ref.repo)}/merge_requests/${ref.number}/discussions/${endpointId(ref, thread.id, GITLAB_DISCUSSION_ID)}`,
+          "-f",
+          "resolved=true",
+        ];
+  await runForgeWrite(ref, argv, deps, cwd);
+}
+
+/** Edit a REST comment/note by database id; GitHub review summaries are not editable here. */
+export async function editComment(
+  ref: PrRef,
+  comment: Pick<PrComment, "id" | "kind">,
+  body: string,
+  deps: ForgeDeps,
+  cwd: string,
+): Promise<void> {
+  assertCommentBody(body);
+  if (ref.forge === "github" && comment.kind === "review") {
+    throw new NaxError("[forge] Editing GitHub review summaries is unsupported", "FORGE_EDIT_UNSUPPORTED", {
+      stage: "forge",
+      forge: ref.forge,
+    });
+  }
+  const id = endpointId(ref, comment.id, NUMERIC_COMMENT_ID);
+  const endpoint =
+    ref.forge === "github"
+      ? `repos/${ref.repo}/${comment.kind === "thread" ? "pulls" : "issues"}/comments/${id}`
+      : `projects/${encodeProjectPath(ref.repo)}/merge_requests/${ref.number}/notes/${id}`;
+  await runForgeWrite(ref, ["-X", ref.forge === "github" ? "PATCH" : "PUT", endpoint, "-f", `body=${body}`], deps, cwd);
 }
 
 /** Post one top-level PR/MR comment; string fields must always use raw -f, never file-aware -F. */
