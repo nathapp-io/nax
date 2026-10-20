@@ -58,6 +58,26 @@ describe("replyStep", () => {
     expect(reply).toHaveBeenCalledWith(env.ref, { replyTo: own.replyTo }, body, env.forge, env.repoRoot);
     expect(order).toEqual(["reply", "resolve"]);
   });
+  test.each([
+    [
+      "ghp_ABCDEFGHIJKLMNOP1234567890 @org/team #123 `<tag>` [x](https://e.test) ![img](https://e.test)\nnot included",
+      "[REDACTED] @\u200borg/team #\u200b123 '&lt;tag&gt;' [x]\u200b(https:\u200b//e.test) ![img]\u200b(https:\u200b//e.test)",
+    ],
+    [`${"x".repeat(180)}[x](https://e.test)`, `${"x".repeat(180)}[x]\u200b(https:\u200b//e.test)`.slice(0, 200)],
+  ])("F1: sanitizes own-finding prose and caps the rendered excerpt: %s", async (issue, expected) => {
+    const key = findingKey({ issue });
+    const env = {
+      ...makeBotFixEnv([{ kind: "finding", key, issue, severity: "minor" }]),
+      threads: [thread("bot", key)],
+    };
+    const reply = spyOn(_fixReportDeps, "replyToThread").mockResolvedValue({ id: "new" });
+    const resolve = spyOn(_fixReportDeps, "resolveThread").mockResolvedValue();
+    await replyStep(env, state);
+    expect(reply).toHaveBeenCalledTimes(1);
+    expect(reply.mock.calls[0]?.[2]).toBe(withNaxBotMarker(`Fixed in abcdef1: ${expected}`, `fix-${key}`));
+    expect(expected.length).toBeLessThanOrEqual(200);
+    expect(resolve).toHaveBeenCalledTimes(1);
+  });
   test("AC-5/7: failed own-finding reply warns and skips resolution, continuing to the next thread", async () => {
     const key = findingKey({ issue: "Leak" });
     const own = thread("bot", key);
