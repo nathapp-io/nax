@@ -116,7 +116,7 @@ describe("runBotFix graph routing", () => {
     node: "fix" | "check" | "gates" | "push";
     exit: string;
     outcome: BotFixState["outcome"];
-    sequence: string[];
+    sequence: BotFixStep[];
   }[])("$ac routes $exit safely and returns $outcome (AC-12)", async ({ node, exit, outcome, sequence }) => {
     _botFixDeps[`${node}Step`] = async () => {
       calls.push(node);
