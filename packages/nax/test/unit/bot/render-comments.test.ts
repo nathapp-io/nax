@@ -83,14 +83,29 @@ describe("renderReviewSummary", () => {
       "Untrusted PR: reviewed without running any code.",
     );
   });
+  test.each([
+    ".github/[click](http://evil.example/x).yml",
+    ".github/@alice#12.yml",
+    ".github/`[click](http://evil.example/x)`.yml",
+  ])("keeps hostile path %s inside code spans in both lists", (path) => {
+    const body = bot.renderReviewSummary(
+      summary({
+        sensitive: [path],
+        offLine: [{ ...finding, file: path, line: 8 }],
+      }),
+    );
+    expect(body).toContain(`### Sensitive paths changed\n- \`${safeCode(path)}\``);
+    expect(body).toContain(`- **Important** \`${safeCode(path)}:8\` Leaks fd`);
+    expect(safeCode(path)).not.toContain("`");
+  });
   test("AC-12 lists sensitive paths", () => {
     expect(bot.renderReviewSummary(summary({ sensitive: [".nax/config.json"] }))).toContain(
-      "### Sensitive paths changed\n- .nax/config.json",
+      "### Sensitive paths changed\n- `.nax/config.json`",
     );
   });
   test("AC-13 lists off-line findings with optional locations", () => {
     expect(bot.renderReviewSummary(summary({ offLine: [finding, { ...finding, file: "a.ts", line: 8 }] }))).toContain(
-      "### Findings not on a changed line\n- **Important** Leaks fd\n- **Important** a.ts:8 Leaks fd",
+      "### Findings not on a changed line\n- **Important** Leaks fd\n- **Important** `a.ts:8` Leaks fd",
     );
   });
   test("AC-14 lists top-level triage", () => {
@@ -132,8 +147,8 @@ describe("renderReviewSummary", () => {
     );
     const expected = [
       "Untrusted PR:",
-      `### Sensitive paths changed\n- ${safeCode(path)}`,
-      `### Findings not on a changed line\n- **Important** ${safeCode(path)} ${bot.safeText(text, 2_000)}`,
+      `### Sensitive paths changed\n- \`${safeCode(path)}\``,
+      `### Findings not on a changed line\n- **Important** \`${safeCode(path)}\` ${bot.safeText(text, 2_000)}`,
       `### Top-level comments\n- ${bot.safeText(text, 100)}: Disagree — ${bot.safeText(text, 2_000)}`,
       `### Could not verify\n- ${bot.safeText(text, 2_000)}`,
       "Could not post 1 comments;",
@@ -163,7 +178,7 @@ describe("renderReviewSummary", () => {
     });
     const body = bot.renderReviewSummary(input);
     expect(body.length).toBeLessThanOrEqual(MAX_FORGE_COMMENT_CHARS - 512);
-    expect(body).toContain("- keep.ts");
+    expect(body).toContain("- `keep.ts`");
     expect(body).toContain("- **Important** Leaks fd");
     expect(body).toContain("- bob: Agree — Good point");
     const shown = body.match(/^- x+$/gm)?.length ?? 0;
@@ -181,7 +196,7 @@ describe("renderReviewSummary", () => {
       }),
     );
     expect(body.length).toBeLessThanOrEqual(MAX_FORGE_COMMENT_CHARS - 512);
-    const shown = body.match(/^- x+$/gm)?.length ?? 0;
+    const shown = body.match(/^- `x+`$/gm)?.length ?? 0;
     expect(shown).toBeGreaterThan(0);
     expect(body).toContain(`… and ${1_003 - shown} more not shown.`);
     expect(body).not.toContain("### Findings");

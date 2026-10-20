@@ -52,7 +52,7 @@ function offLineItem(finding: WorkflowFindingDraft): string {
   const file = finding.file === undefined ? "" : safeCode(finding.file);
   const line = finding.line === undefined ? "" : `${file ? ":" : ""}${finding.line}`;
   const location = file + line;
-  return `- **${severityLabel(finding)}** ${location ? `${location} ` : ""}${safeText(finding.issue, TEXT_LIMIT)}`;
+  return `- **${severityLabel(finding)}** ${location ? `\`${location}\` ` : ""}${safeText(finding.issue, TEXT_LIMIT)}`;
 }
 
 interface ListSection {
@@ -62,7 +62,7 @@ interface ListSection {
 
 function summarySections(input: ReviewSummaryInput): ListSection[] {
   return [
-    { heading: "### Sensitive paths changed", items: input.sensitive.map((path) => `- ${safeCode(path)}`) },
+    { heading: "### Sensitive paths changed", items: input.sensitive.map((path) => `- \`${safeCode(path)}\``) },
     { heading: "### Findings not on a changed line", items: input.offLine.map(offLineItem) },
     {
       heading: "### Top-level comments",
