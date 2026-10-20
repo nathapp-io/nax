@@ -28,6 +28,7 @@ export {
   authLoginCommand,
   authRmCommand,
 } from "./auth";
+export { _botCliDeps, type BotCliDeps, type BotReviewOptions, botReviewCommand, registerBotCommand } from "./bot";
 export {
   type ConfigCommandOptions,
   type ConfigJsonOptions,
