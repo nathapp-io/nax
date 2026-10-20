@@ -3,7 +3,7 @@
   "feature": "step-graph-g4-forge-threads",
   "branchName": "feat/step-graph-g4-forge-threads",
   "createdAt": "2026-10-20T00:00:00.000Z",
-  "updatedAt": "2026-10-20T04:44:44.182Z",
+  "updatedAt": "2026-10-20T04:56:57.773Z",
   "userStories": [
     {
       "id": "US-001",
@@ -470,14 +470,17 @@
       "dependencies": [
         "US-006"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Extends the upstream reader module with standard REST mapping and filtering using the already-defined shared page loop."
+        "reasoning": "Extends the upstream reader module with standard REST mapping and filtering using the already-defined shared page loop.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/forge/pr-types.ts",
@@ -498,7 +501,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "383994585c4171b2da360e5bbc6cab45faf94aca"
     },
     {
       "id": "US-008",
