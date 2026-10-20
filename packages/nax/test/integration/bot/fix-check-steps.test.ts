@@ -1,60 +1,11 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { makeMockCallContext, makeNaxConfig } from "@test/helpers";
+import { makeBotFixEnv as environment } from "@test/helpers";
 import * as bot from "@/bot";
 import type { ConfiguredModel } from "@/config";
-import { resolveWorkflowConfig } from "@/config";
 
 const original = { ...bot._fixStepsDeps };
 afterEach(() => Object.assign(bot._fixStepsDeps, original));
 
-function environment(agreed: readonly bot.AgreedItem[] = []): bot.BotFixEnv {
-  const config = makeNaxConfig();
-  const ref = { forge: "github" as const, host: "github.com", repo: "o/r", number: 42 };
-  return {
-    config,
-    ref,
-    repoRoot: "/repo",
-    user: { login: "bot" },
-    threads: [],
-    own: [],
-    ctx: {
-      callCtx: makeMockCallContext(),
-      config,
-      workflow: resolveWorkflowConfig(config),
-      feature: "bot-pr-42",
-      projectDir: "/worktree",
-      runDir: "/run",
-      reportPath: "/run/report.md",
-      packageDirs: [],
-      dryRun: false,
-      pr: { forge: "github", number: 42, base: "base", head: "h1" },
-    },
-    info: {
-      number: 42,
-      title: "PR",
-      body: "",
-      url: "",
-      state: "open",
-      draft: false,
-      author: { login: "alice" },
-      baseRef: "main",
-      headRef: "fix",
-      headSha: "h1",
-      crossRepo: false,
-    },
-    checkout: {
-      worktree: "/worktree",
-      baseSha: "base",
-      mergeBase: "merge",
-      snapshotDir: "/snapshot",
-      hasBaseNax: true,
-      changedFiles: [],
-      dispose: async () => {},
-    },
-    review: { version: 1, pr: ref, headSha: "h1", trusted: true, intent: "pass", quality: "changes", agreed },
-    forge: { run: async () => ({ exitCode: 0, stdout: "", stderr: "" }), readText: async () => null },
-  };
-}
 const items: bot.AgreedItem[] = [
   { kind: "finding", key: "f-1", severity: "minor", issue: "Leak", file: "a.ts" },
   {

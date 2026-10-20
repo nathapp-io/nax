@@ -75,3 +75,25 @@ export async function checkStep(env: BotFixEnv, _state: BotFixState): Promise<St
   }
   return { patch: { changed }, exit: "changed" };
 }
+
+export async function gatesStep(env: BotFixEnv, _state: BotFixState): Promise<StepResult<BotFixState>> {
+  const commands = await _fixStepsDeps.resolveGateCommands(env.checkout.snapshotDir, []);
+  if (commands.length === 0) return { patch: { outcome: "no-gates" }, exit: "no-gates" };
+  // Resolve from trusted base config, but verify the fixed tree, never the snapshot.
+  const worktreeCommands = commands.map((gate) => ({ ...gate, cwd: env.checkout.worktree }));
+  const result = await _fixStepsDeps.runQualityGates(env.checkout.worktree, worktreeCommands);
+  if (!result.passed) {
+    return { patch: { failingGates: result.failing, outcome: "gates-failed" }, exit: "failed" };
+  }
+  return { patch: {}, exit: "passed" };
+}
+
+export async function pushStep(env: BotFixEnv, _state: BotFixState): Promise<StepResult<BotFixState>> {
+  const result = await _fixStepsDeps.runGit(
+    ["push", "origin", `HEAD:refs/heads/${env.info.headRef}`],
+    env.checkout.worktree,
+  );
+  if (result.exitCode !== 0) return { patch: { outcome: "push-rejected" }, exit: "rejected" };
+  const pushedSha = await _fixStepsDeps.readHead(env.checkout.worktree);
+  return { patch: { pushedSha, outcome: "pushed" }, exit: "pushed" };
+}
