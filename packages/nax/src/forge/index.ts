@@ -9,7 +9,7 @@ export { defaultForgeDeps } from "./deps";
 export { detectForge, forgeFromRemoteUrl, remoteHost } from "./detect";
 export type { OpenPrInput, OpenPrResult } from "./pr";
 export { extractUrl, hasOpenPr, openPr, viewArgv } from "./pr";
-export { encodeProjectPath, repoSlugFromRemoteUrl, resolvePrRef } from "./pr-read";
+export { encodeProjectPath, readPrInfo, repoSlugFromRemoteUrl, resolvePrRef } from "./pr-read";
 export type {
   CurrentUser,
   OwnComment,
