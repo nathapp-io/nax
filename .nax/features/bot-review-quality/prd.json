@@ -3,7 +3,7 @@
   "feature": "bot-review-quality",
   "branchName": "feat/bot-review-quality",
   "createdAt": "2026-10-20T00:00:00Z",
-  "updatedAt": "2026-10-20T17:16:33.736Z",
+  "updatedAt": "2026-10-20T17:27:03.174Z",
   "userStories": [
     {
       "id": "US-001",
@@ -750,14 +750,17 @@
         "US-004",
         "US-011"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Wiring plus ownership-sensitive selection determines which threads may be resolved; strict tests drive runner with fake review/post deps and current-user identity."
+        "reasoning": "Wiring plus ownership-sensitive selection determines which threads may be resolved; strict tests drive runner with fake review/post deps and current-user identity.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/review-run.ts",
@@ -780,7 +783,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "c803216b3a6e1e4abe70f02df8fa835d69fb8060"
     },
     {
       "id": "US-013",
