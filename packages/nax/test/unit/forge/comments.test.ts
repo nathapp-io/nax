@@ -88,7 +88,7 @@ describe("postPrComment", () => {
     const { deps, run } = fakeDeps();
     const error = await postError(github, body, deps);
     expect(error.code).toBe("FORGE_COMMENT_EMPTY");
-    expect(error.context.stage).toBe("forge");
+    expect(error.context?.stage).toBe("forge");
     expect(run).not.toHaveBeenCalled();
   });
 
@@ -98,7 +98,7 @@ describe("postPrComment", () => {
       const { deps, run } = fakeDeps();
       const error = await postError(github, body, deps);
       expect(error.code).toBe("FORGE_COMMENT_TOO_LONG");
-      expect(error.context.stage).toBe("forge");
+      expect(error.context?.stage).toBe("forge");
       expect(run).not.toHaveBeenCalled();
     },
   );
@@ -121,15 +121,15 @@ describe("postPrComment", () => {
     const { deps } = fakeDeps({ stdout });
     const error = await postError(github, "summary", deps);
     expect(error.code).toBe("FORGE_RESPONSE_UNPARSEABLE");
-    expect(error.context.stage).toBe("forge");
+    expect(error.context?.stage).toBe("forge");
   });
 
   test("AC-12: rejects non-JSON success output with forge context and cause", async () => {
     const { deps, run } = fakeDeps({ stdout: "not JSON" });
     const error = await postError(github, "summary", deps);
     expect(error.code).toBe("FORGE_RESPONSE_UNPARSEABLE");
-    expect(error.context.stage).toBe("forge");
-    expect(error.context.cause).toBeInstanceOf(SyntaxError);
+    expect(error.context?.stage).toBe("forge");
+    expect(error.context?.cause).toBeInstanceOf(SyntaxError);
     expect(run).toHaveBeenCalledTimes(1);
   });
 });
