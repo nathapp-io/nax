@@ -6,6 +6,7 @@ import type { ForgeDeps } from "./types";
 
 export const NAX_BOT_HEADER = "**nax bot**";
 const MARKER_KEY_PATTERN = "[A-Za-z0-9._:-]{1,128}";
+const markerPattern = () => new RegExp(`<!-- nax-bot:v1 key=(${MARKER_KEY_PATTERN}) -->`, "g");
 const MARKER_KEY = new RegExp(`^${MARKER_KEY_PATTERN}$`);
 
 /** Wrap a comment with a stable visible header and an injection-safe identity marker. */
@@ -19,7 +20,7 @@ export function withNaxBotMarker(body: string, key: string): string {
 
 /** Return the last valid v1 marker; a marker alone does not establish ownership. */
 export function parseNaxBotMarker(body: string): { key: string } | null {
-  const pattern = new RegExp(`<!-- nax-bot:v1 key=(${MARKER_KEY_PATTERN}) -->`, "g");
+  const pattern = markerPattern();
   let result: { key: string } | null = null;
   for (const match of body.matchAll(pattern)) {
     const key = match[1];
@@ -46,4 +47,9 @@ export async function findOwnComments(ref: PrRef, deps: ForgeDeps, cwd: string):
     ...threads.flatMap((thread) => ownComments(thread.comments, user.login, thread.id)),
     ...ownComments(comments, user.login),
   ];
+}
+
+/** Remove valid identity markers using the same grammar as ownership parsing. */
+export function stripNaxBotMarkers(body: string): string {
+  return body.replace(markerPattern(), "");
 }

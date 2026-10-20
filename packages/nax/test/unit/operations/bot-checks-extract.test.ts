@@ -41,7 +41,7 @@ describe("parseBotChecksReply", () => {
     ["AC-12 line feed", { gate: "test", command: "bun\nrun test" }],
     ["AC-13 too long", { gate: "test", command: "x".repeat(301) }],
     ["AC-14 empty", { gate: "test", command: "  " }],
-    ["carriage return", { gate: "test", command: "\rbun test" }],
+    ["carriage return", { gate: "test", command: "bun\rtest" }],
     ["NUL", { gate: "test", command: "bun\0test" }],
     ["non-string", { gate: "test", command: 1 }],
     ["null", null],
@@ -59,7 +59,7 @@ describe("parseBotChecksReply", () => {
       gates: [{ gate: "lint", command: "first" }],
     });
   });
-  test.each(["\rbun install", "bun\ninstall", "bun\0install", " ", "x".repeat(301), 5, null])(
+  test.each(["bun\rinstall", "bun\ninstall", "bun\0install", " ", "x".repeat(301), 5, null])(
     "AC-16: omits invalid install %j",
     (install) => {
       expect(operations.parseBotChecksReply(JSON.stringify({ gates: [], install }))).toEqual({ gates: [] });
@@ -106,4 +106,12 @@ describe("botChecksExtractOp", () => {
   test.each([reply, "not json"])("AC-23: delegates parsing for %s", (output) => {
     expect(operations.botChecksExtractOp.parse(output, input, ctx())).toEqual(operations.parseBotChecksReply(output));
   });
+});
+
+test("trims surrounding newlines before validating commands", () => {
+  expect(
+    operations.parseBotChecksReply(
+      JSON.stringify({ gates: [{ gate: "test", command: "\nbun run test\r\n" }], install: "npm ci\n" }),
+    ),
+  ).toEqual({ gates: [{ gate: "test", command: "bun run test" }], install: "npm ci" });
 });

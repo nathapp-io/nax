@@ -305,6 +305,28 @@ describe("postPrReview earlier findings", () => {
       },
     };
   });
+  test.each([
+    ["missing-marker", "unmarked", "bot"],
+    ["not-finding", withNaxBotMarker("body", "t-thread"), "bot"],
+    ["foreign-author", withNaxBotMarker("body", "f-finding"), "alice"],
+  ])("invalid earlier selection warns (%s) without claiming it answered", async (reason, body, author) => {
+    const warn = spyOn(initLogger({ level: "silent" }), "warn");
+    try {
+      const result = await bot.postPrReview({
+        ...input,
+        earlier: [{ ...earlier, comments: [{ ...comment, body, author }] }],
+      });
+      expect(result.earlierAnswered).toBe(0);
+      expect(warn).toHaveBeenCalledWith("bot-post", "Skipping invalid earlier finding thread", {
+        threadId: "T1",
+        login: "bot",
+        reason,
+      });
+    } finally {
+      warn.mockRestore();
+      resetLogger();
+    }
+  });
   test("US-008 AC-1/2/3/4/5: retains the marked open finding and location without a thread write", async () => {
     await bot.postPrReview(input);
     expect(await agreed()).toEqual([

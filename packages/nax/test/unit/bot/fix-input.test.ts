@@ -67,3 +67,16 @@ test("a vanished artifact mtime does not hide another review", async () => {
   };
   expect(await bot.loadLatestReview("/o", 42, "h")).toMatchObject({ headSha: "h" });
 });
+
+test.each([
+  {},
+  { source: "detected", preRun: [] },
+  { source: "detected", gates: [{ name: "test", command: 42 }], preRun: [] },
+  { source: "detected", gates: [], preRun: [{ command: "npm ci" }] },
+  { source: "invented", gates: [], preRun: [] },
+])("rejects malformed saved checks %j", async (checks) => {
+  bot._fixInputDeps.glob = async () => ["review"];
+  bot._fixInputDeps.readText = async () => JSON.stringify({ version: 2, headSha: "h", checks });
+  bot._fixInputDeps.mtimeMs = async () => 1;
+  expect(await bot.loadLatestReview("/o", 42, "h")).toBeNull();
+});

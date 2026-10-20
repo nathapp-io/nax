@@ -35,41 +35,49 @@ interface ResolveBotChecksInput {
   extract: (input: { fileName: InstructionFile; text: string }) => Promise<BotChecksExtractOutput | null>;
 }
 
-/** Missing is distinct from an error: only missing AGENTS permits CLAUDE fallback. */
 async function baseFileExists(input: ResolveBotChecksInput, fileName: string): Promise<boolean> {
   const { repoRoot, baseSha } = input;
   const tree = await _botChecksDeps.runGit(["ls-tree", "--name-only", "-z", baseSha, "--", fileName], repoRoot);
   if (tree.exitCode !== 0) {
-    throw new NaxError(`[bot] Could not inspect base ${fileName}`, "BOT_CHECKS_READ_FAILED", {
-      stage: "bot",
-      baseSha,
-      fileName,
-      stderr: tree.stderr,
-      timedOut: tree.timedOut,
-    });
+    throw new NaxError(
+      `[bot] Could not inspect base ${fileName}: ${tree.timedOut ? "git timed out" : tree.stderr}`,
+      "BOT_CHECKS_READ_FAILED",
+      {
+        stage: "bot",
+        baseSha,
+        fileName,
+        stderr: tree.stderr,
+        timedOut: tree.timedOut,
+      },
+    );
   }
   return tree.stdout.split("\0").includes(fileName);
 }
 
+/** Missing returns null; inspection/read errors throw and must not permit CLAUDE fallback. */
 async function readBaseFile(input: ResolveBotChecksInput, fileName: string): Promise<string | null> {
   if (!(await baseFileExists(input, fileName))) return null;
   const { repoRoot, baseSha } = input;
   const result = await _botChecksDeps.runGit(["show", `${baseSha}:${fileName}`], repoRoot);
   if (result.exitCode !== 0) {
-    throw new NaxError(`[bot] Could not read base ${fileName}`, "BOT_CHECKS_READ_FAILED", {
-      stage: "bot",
-      baseSha,
-      fileName,
-      stderr: result.stderr,
-      timedOut: result.timedOut,
-    });
+    throw new NaxError(
+      `[bot] Could not read base ${fileName}: ${result.timedOut ? "git timed out" : result.stderr}`,
+      "BOT_CHECKS_READ_FAILED",
+      {
+        stage: "bot",
+        baseSha,
+        fileName,
+        stderr: result.stderr,
+        timedOut: result.timedOut,
+      },
+    );
   }
   return result.stdout;
 }
 
 function selectPreRun(input: ResolveBotChecksInput, install?: string): readonly PreRunStepConfig[] {
   const configured = input.hasBaseNax ? input.config.execution.preRun : undefined;
-  if (configured?.length) return configured;
+  if (configured?.length) return configured.map((step) => ({ ...step }));
   return install ? [{ command: install, timeoutSeconds: DERIVED_INSTALL_TIMEOUT_SECONDS }] : [];
 }
 

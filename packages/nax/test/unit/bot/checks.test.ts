@@ -61,7 +61,10 @@ describe("resolveBotChecks", () => {
   test("AC-2: config gates use configured preRun", async () => {
     configGates();
     input.config = makeNaxConfig({ execution: { preRun: [{ command: "prepare", timeoutSeconds: 23 }] } });
-    expect((await resolveBotChecks(input)).preRun).toEqual(input.config.execution.preRun);
+    const checks = await resolveBotChecks(input);
+    expect(checks.preRun).toEqual([{ command: "prepare", timeoutSeconds: 23 }]);
+    expect(checks.preRun).not.toBe(input.config.execution.preRun);
+    expect(checks.preRun[0]).not.toBe(input.config.execution.preRun?.[0]);
   });
   test("AC-3: absent base config never resolves config gates or uses config preRun", async () => {
     files["AGENTS.md"] = "checks";
@@ -192,7 +195,10 @@ describe("resolveBotChecks", () => {
     input.config = makeNaxConfig({ execution: { preRun: [{ command: "configured", timeoutSeconds: 17 }] } });
     files["AGENTS.md"] = "checks";
     input.extract = mock(async () => ({ ...extracted, install: "npm ci" }));
-    expect((await resolveBotChecks(input)).preRun).toEqual(input.config.execution.preRun);
+    const checks = await resolveBotChecks(input);
+    expect(checks.preRun).toEqual([{ command: "configured", timeoutSeconds: 17 }]);
+    expect(checks.preRun).not.toBe(input.config.execution.preRun);
+    expect(checks.preRun[0]).not.toBe(input.config.execution.preRun?.[0]);
   });
   test("preRun alone never produces checks", async () => {
     input.hasBaseNax = true;
@@ -382,5 +388,13 @@ describe("checkCommands", () => {
         preRun: [],
       }),
     ).toEqual(["bun run test:unit", "bun run test:int", "bun run lint"]);
+  });
+});
+
+test.each([false, true])("git warnings distinguish stderr and timeout (%s)", async (timedOut) => {
+  _botChecksDeps.runGit = mock(async () => ({ exitCode: 128, stdout: "", stderr: "bad revision base-sha", timedOut }));
+  await resolveBotChecks(input);
+  expect(warn.mock.calls[0]?.[2]).toMatchObject({
+    error: expect.stringContaining(timedOut ? "git timed out" : "bad revision base-sha"),
   });
 });

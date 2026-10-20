@@ -34,7 +34,7 @@ import type { BotDecision } from "./decisions";
 import { type BotLog, openBotLog } from "./log";
 import { botModel } from "./models";
 import { sensitivePaths } from "./path-policy";
-import { type PostReviewInput, type PostReviewOutcome, postPrReview } from "./post";
+import { BOT_REVIEW_FILENAME, type PostReviewInput, type PostReviewOutcome, postPrReview } from "./post";
 import { type PrReviewInput, runPrReview } from "./review-step";
 
 export const _botReviewDeps = {
@@ -297,7 +297,7 @@ async function executeReview(env: ReviewEnv, runtime: ReturnType<typeof createRu
     quality: state.verdict.quality,
     staticMode: env.review.staticMode,
     checksSource: env.checks?.source ?? null,
-    artifactPath: join(env.post.stateDir, "bot-review.json"),
+    artifactPath: join(env.post.stateDir, BOT_REVIEW_FILENAME),
   };
 }
 

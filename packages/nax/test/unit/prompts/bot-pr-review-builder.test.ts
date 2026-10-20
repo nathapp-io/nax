@@ -125,7 +125,7 @@ describe("buildBotPrReviewPrompt", () => {
     expect(result).toContain(
       'Answer every earlier finding id exactly once. "open" = the problem is still in the code; "fixed" = the current code no longer has it; "withdrawn" = the finding was wrong or not worth doing, for example after a reply showed why.',
     );
-    expect(result).toContain("optional");
+    expect(result).toContain('The "decision" field is optional.');
   });
   test("whitespace-only body has no intent", () => {
     expect(prompts.buildBotPrReviewPrompt({ ...base, pr: { ...base.pr, body: " \n\t" } })).toContain(
@@ -207,8 +207,9 @@ describe("buildBotTriageRetry", () => {
   test("US-005 AC-17: missing earlier ids have a separate status instruction", () => {
     const result = prompts.buildBotTriageRetry(["T1"], ["E1"]);
     expect(result).toContain("```\nE1\n```");
-    expect(result).toContain("earlier");
-    expect(result).toContain("status");
+    expect(result).toContain(
+      "Include each in the earlier array with a status (open, fixed or withdrawn) and a reason.",
+    );
     expect(result).toContain("T1");
   });
   test("AC-14 names both missing ids", () => {
@@ -231,4 +232,11 @@ describe("buildUntrustedRequestIssue", () => {
   ])("%s fences text independently", (_ac, request, reason, expected) => {
     expect(prompts.buildUntrustedRequestIssue(request, reason)).toContain(expected);
   });
+});
+
+test("earlier-only retry has no empty triage list", () => {
+  const result = prompts.buildBotTriageRetry([], ["E1"]);
+  expect(result).not.toContain("triage for these ids:");
+  expect(result).not.toContain("including these missing ids");
+  expect(result).toContain("earlier array with a status (open, fixed or withdrawn)");
 });

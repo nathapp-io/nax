@@ -31,9 +31,9 @@ function isGate(value: unknown): value is Gate {
 }
 
 function parseCommand(value: unknown): string | undefined {
-  if (typeof value !== "string" || /[\n\r\0]/.test(value)) return undefined;
+  if (typeof value !== "string") return undefined;
   const command = value.trim();
-  return command.length > 0 && command.length <= MAX_COMMAND_LENGTH ? command : undefined;
+  return command.length > 0 && command.length <= MAX_COMMAND_LENGTH && !/[\n\r\0]/.test(command) ? command : undefined;
 }
 
 export function parseBotChecksReply(output: string): BotChecksExtractOutput | null {

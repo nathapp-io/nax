@@ -28,6 +28,7 @@ export {
   buildBotPrReviewPrompt,
   buildBotTriageRetry,
   buildUntrustedRequestIssue,
+  MAX_EARLIER_THREADS,
 } from "./builders/bot-pr-review-builder";
 export type { DecomposePromptInput } from "./builders/decompose-builder";
 // Decompose prompt builder — prompt assembly for nax plan / decompose operations.

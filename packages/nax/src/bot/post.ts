@@ -11,6 +11,7 @@ import {
   postPrComment,
   replyToThread,
   resolveThread,
+  stripNaxBotMarkers,
 } from "@/forge";
 import { getLogger } from "@/logger";
 import type { PrReviewVerdict } from "@/operations/bot-types";
@@ -94,6 +95,8 @@ export interface PostReviewOutcome {
   readonly failed: number;
 }
 
+export const BOT_REVIEW_FILENAME = "bot-review.json";
+
 export const _postDeps = {
   writeArtifact: (path: string, artifact: BotReviewArtifact): Promise<number> =>
     Bun.write(path, `${JSON.stringify(artifact, null, 2)}\n`),
@@ -165,17 +168,34 @@ function effectiveEarlier(input: PostReviewInput) {
 }
 
 function earlierIssue(thread: PrThread): string {
-  return (thread.comments[0]?.body ?? "")
+  return stripNaxBotMarkers(thread.comments[0]?.body ?? "")
     .split("\n")
     .filter((line) => line.trim() !== NAX_BOT_HEADER)
     .join("\n")
-    .replace(/<!-- nax-bot:v1 key=[A-Za-z0-9._:-]{1,128} -->/g, "")
     .trim();
+}
+
+function warnSkippedEarlier(input: PostReviewInput, handledIds: readonly string[]): void {
+  for (const thread of input.earlier ?? []) {
+    if (handledIds.includes(thread.id)) continue;
+    const marker = parseNaxBotMarker(thread.comments[0]?.body ?? "");
+    const reason = !marker ? "missing-marker" : !marker.key.startsWith("f-") ? "not-finding" : "foreign-author";
+    getLogger()?.warn("bot-post", "Skipping invalid earlier finding thread", {
+      threadId: thread.id,
+      login: input.login,
+      reason,
+    });
+  }
 }
 
 async function postEarlier(input: PostReviewInput): Promise<{ earlierAnswered: number; failed: number }> {
   let failed = 0;
-  for (const { thread, verdict } of effectiveEarlier(input)) {
+  const earlier = effectiveEarlier(input);
+  warnSkippedEarlier(
+    input,
+    earlier.map(({ thread }) => thread.id),
+  );
+  for (const { thread, verdict } of earlier) {
     if (!verdict || verdict.status === "open") continue;
     const own = [
       ...input.own,
@@ -196,7 +216,7 @@ async function postEarlier(input: PostReviewInput): Promise<{ earlierAnswered: n
       });
     }
   }
-  return { earlierAnswered: input.earlier?.length ?? 0, failed };
+  return { earlierAnswered: earlier.length, failed };
 }
 
 function withdrawalEvents(input: PostReviewInput): BotReviewEvent[] {
@@ -235,7 +255,7 @@ async function persistArtifact(input: PostReviewInput): Promise<void> {
     agreed: agreedItems(input),
   };
   try {
-    await _postDeps.writeArtifact(join(input.stateDir, "bot-review.json"), artifact);
+    await _postDeps.writeArtifact(join(input.stateDir, BOT_REVIEW_FILENAME), artifact);
   } catch (cause) {
     throw new NaxError(
       `[bot-post] Cannot persist review for ${input.ref.repo}#${input.ref.number}`,

@@ -37,6 +37,7 @@ export { fixProtectedPaths, sensitivePaths } from "./path-policy";
 export {
   _postDeps,
   type AgreedItem,
+  BOT_REVIEW_FILENAME,
   type BotReviewArtifact,
   type BotReviewEvent,
   type PostReviewInput,

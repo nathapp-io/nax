@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { join } from "node:path";
 import { assertDefined, makeMockCallContext, makeNaxConfig, makeTestRuntime } from "@test/helpers";
-import { sensitivePaths } from "@/bot";
+import { _postDeps, postPrReview, sensitivePaths } from "@/bot";
 import { type BotChecks, checkCommands, type resolveBotChecks } from "@/bot/checks";
 import { openBotLog } from "@/bot/log";
 import { _botReviewDeps, BOT_REVIEW_GRAPH, runBotReview } from "@/bot/review-run";
@@ -292,6 +292,24 @@ describe("runBotReview", () => {
     });
     await expect(runBotReview(input)).rejects.toThrow("review failed");
     expect(events.slice(-3)).toEqual(["context-close", "runtime-close", "checkout-close"]);
+  });
+  test("returned artifactPath is the exact path passed to the real artifact writer", async () => {
+    const writeArtifact = spyOn(_postDeps, "writeArtifact").mockResolvedValue(1);
+    post.mockImplementation(async (postInput) =>
+      postPrReview({
+        ...postInput,
+        deps: { ...postInput.deps, run: async () => ({ exitCode: 0, stdout: '{"id":42}', stderr: "" }) },
+      }),
+    );
+    try {
+      const result = await runBotReview(input);
+      expect(result.outcome).toBe("posted");
+      if (result.outcome !== "posted") throw new Error("review did not post");
+      expect(writeArtifact).toHaveBeenCalledTimes(1);
+      expect(writeArtifact.mock.calls[0]?.[0]).toBe(result.artifactPath);
+    } finally {
+      writeArtifact.mockRestore();
+    }
   });
   test("AC-24 returns posting counts", async () => {
     expect(await runBotReview(input)).toEqual({

@@ -16,7 +16,7 @@ export interface BotPrReviewPromptInput {
 }
 
 const MIN_FENCE_LENGTH = 3;
-const MAX_EARLIER_THREADS = 50;
+export const MAX_EARLIER_THREADS = 50;
 
 const CHECKLIST = `## Checklist
 1. Intent: does the change do what the PR description, linked issues or PRD ask, and nothing they rule out?
@@ -122,7 +122,10 @@ export function buildBotTriageRetry(missing: readonly string[], earlierMissing: 
   const earlier = earlierMissing.length
     ? `\nYour reply omitted these earlier finding ids:\n${earlierMissing.map((id) => fence(id)).join("\n")}\nInclude each in the earlier array with a status (open, fixed or withdrawn) and a reason.`
     : "";
-  return `Your reply omitted triage for these ids:\n${missing.map((id) => fence(id)).join("\n")}\nRe-send the whole JSON object, answering every listed thread id and comment id exactly once, including these missing ids.${earlier}`;
+  const triage = missing.length
+    ? `Your reply omitted triage for these ids:\n${missing.map((id) => fence(id)).join("\n")}\nRe-send the whole JSON object, answering every listed thread id and comment id exactly once, including these missing ids.`
+    : "Re-send the whole JSON object, preserving every existing verdict.";
+  return `${triage}${earlier}`;
 }
 
 export function buildUntrustedRequestIssue(request: string, reason: string): string {

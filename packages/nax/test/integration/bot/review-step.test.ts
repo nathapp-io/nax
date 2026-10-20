@@ -1,9 +1,10 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { join } from "node:path";
 import { makeMockCallContext, makeNaxConfig, makeScriptedCallOp } from "@test/helpers";
 import { _reviewStepDeps, runPrReview } from "@/bot";
 import { resolveWorkflowConfig } from "@/config";
 import type { PrInfo } from "@/forge";
+import { initLogger, resetLogger } from "@/logger";
 import { botPrReviewOp, botPrStaticReviewOp, type PrReviewVerdict } from "@/operations";
 import type { PrStepContext } from "@/workflow/branch-step-context";
 import { _workflowDeps } from "@/workflow/step-context";
@@ -116,8 +117,25 @@ describe("runPrReview", () => {
       outdated: false,
       comments: [],
     }));
-    await runPrReview(ctx, { ...input, earlier });
-    expect(calls[0]?.input).toMatchObject({ earlierIds: earlier.slice(0, 50).map((thread) => thread.id) });
+    const debug = spyOn(initLogger({ level: "silent" }), "debug");
+    try {
+      await runPrReview(ctx, { ...input, earlier });
+      expect(debug).toHaveBeenCalledWith("bot", "Earlier findings truncated; omitted threads remain open", {
+        cap: 50,
+        dropped: 1,
+      });
+    } finally {
+      debug.mockRestore();
+      resetLogger();
+    }
+    const value = calls[0]?.input;
+    if (typeof value !== "object" || value === null || !("prompt" in value) || typeof value.prompt !== "string")
+      throw new Error("missing prompt");
+    const renderedIds = [...value.prompt.matchAll(/### Your earlier finding\n```\n([^\n]+)\n```/g)].map(
+      (match) => match[1],
+    );
+    expect(value).toMatchObject({ earlierIds: renderedIds });
+    expect(renderedIds).toEqual(earlier.slice(0, 50).map((thread) => thread.id));
     expect(calls[0]?.input).toMatchObject({ prompt: expect.not.stringContaining("\nE51\n") });
   });
   test("US-006 AC-18 defaults absent earlier and decision allowlists to empty", async () => {

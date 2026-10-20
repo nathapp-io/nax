@@ -1,16 +1,15 @@
 import { join } from "node:path";
 import type { ConfiguredModel } from "@/config";
 import type { LinkedIssue, PrComment, PrInfo, PrThread } from "@/forge";
+import { getSafeLogger } from "@/logger";
 import { botPrReviewOp, botPrStaticReviewOp, type PrReviewVerdict } from "@/operations";
-import { buildBotPrReviewPrompt } from "@/prompts";
+import { buildBotPrReviewPrompt, MAX_EARLIER_THREADS } from "@/prompts";
 import type { PrStepContext } from "../workflow/branch-step-context";
 import { writeBranchReviewPackage } from "../workflow/git";
 import { _workflowDeps } from "../workflow/step-context";
 import { type ReviewOutcome, underReviewLimit } from "../workflow/story-review";
 
 import type { BotDecision } from "./decisions";
-
-const MAX_EARLIER_THREADS = 50;
 
 export const _reviewStepDeps = { writeBranchReviewPackage };
 
@@ -52,6 +51,12 @@ async function writePackage(
 
 /** Review a PR with the shared package-failure, timeout and abort semantics; triage retries live in the op. */
 export async function runPrReview(ctx: PrStepContext, input: PrReviewInput): Promise<ReviewOutcome<PrReviewVerdict>> {
+  const dropped = (input.earlier?.length ?? 0) - MAX_EARLIER_THREADS;
+  if (dropped > 0)
+    getSafeLogger()?.debug("bot", "Earlier findings truncated; omitted threads remain open", {
+      cap: MAX_EARLIER_THREADS,
+      dropped,
+    });
   const packagePath = join(ctx.runDir, "package-pr.diff");
   const prompt = buildBotPrReviewPrompt({
     packagePath,

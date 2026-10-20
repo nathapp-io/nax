@@ -45,7 +45,7 @@ async function resolveOwnFindings(env: BotFixEnv, state: BotFixState): Promise<{
     const item = marker && agreed.get(marker.key);
     if (!item) continue;
     try {
-      const summary = safeText(item.issue.split(/\r?\n/, 1)[0] ?? "", MAX_ISSUE_LENGTH).slice(0, MAX_ISSUE_LENGTH);
+      const summary = safeText(item.issue.split(/\r?\n/, 1)[0] ?? "", MAX_ISSUE_LENGTH);
       const body = withNaxBotMarker(
         `Fixed in ${state.pushedSha?.slice(0, SHORT_SHA_LENGTH)}: ${summary}`,
         `fix-${item.key}`,

@@ -1,10 +1,11 @@
 import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
+import { z } from "zod";
 import { getLogger } from "@/logger";
 import type { WorkflowFinding } from "@/operations/workflow-types";
 import { buildUntrustedRequestIssue } from "@/prompts";
 import { gitWithTimeout } from "@/utils/git";
-import type { AgreedItem, BotReviewArtifact } from "./post";
+import { type AgreedItem, BOT_REVIEW_FILENAME, type BotReviewArtifact } from "./post";
 
 export const _fixInputDeps = {
   runGit: gitWithTimeout,
@@ -13,6 +14,14 @@ export const _fixInputDeps = {
   readText: (path: string): Promise<string> => Bun.file(path).text(),
   mtimeMs: async (path: string): Promise<number> => (await Bun.file(path).stat()).mtimeMs,
 };
+
+// Validate persisted shell inputs before the fix graph trusts them. Legacy artifacts may omit checks.
+const commandSchema = z.union([z.string().trim().min(1), z.array(z.string().trim().min(1)).min(1)]);
+const checksSchema = z.object({
+  source: z.enum(["config", "agents-md", "claude-md", "detected", "none"]),
+  gates: z.array(z.object({ name: z.string().min(1), command: commandSchema, setup: commandSchema.optional() })),
+  preRun: z.array(z.object({ command: z.string().trim().min(1), timeoutSeconds: z.number().positive().finite() })),
+});
 
 async function readReview(path: string): Promise<BotReviewArtifact | null> {
   try {
@@ -24,6 +33,10 @@ async function readReview(path: string): Promise<BotReviewArtifact | null> {
       (value.version !== 1 && value.version !== 2)
     )
       return null;
+    if ("checks" in value && value.checks !== null && !checksSchema.safeParse(value.checks).success) {
+      getLogger()?.warn("bot-fix", "Ignoring review artifact with invalid checks; re-run nax bot review", { path });
+      return null;
+    }
     return value as BotReviewArtifact;
   } catch (cause) {
     // A corrupt or concurrently removed artifact must not hide the other reviews.
@@ -40,7 +53,7 @@ export async function loadLatestReview(
 ): Promise<BotReviewArtifact | null> {
   let paths: string[];
   try {
-    paths = await _fixInputDeps.glob(join("bot", `pr-${prNumber}`, "*", "bot-review.json"), outputDir);
+    paths = await _fixInputDeps.glob(join("bot", `pr-${prNumber}`, "*", BOT_REVIEW_FILENAME), outputDir);
   } catch (cause) {
     if (typeof cause === "object" && cause !== null && "code" in cause && cause.code === "ENOENT") return null;
     throw cause;
