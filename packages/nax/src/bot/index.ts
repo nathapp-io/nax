@@ -10,6 +10,14 @@ export {
 } from "./checkout";
 export { botModel, parseModelOption } from "./models";
 export { fixProtectedPaths, sensitivePaths } from "./path-policy";
+export {
+  _postDeps,
+  type AgreedItem,
+  type BotReviewArtifact,
+  type PostReviewInput,
+  type PostReviewOutcome,
+  postPrReview,
+} from "./post";
 export { breakLinks, commentKey, findingKey, safeText, threadKey } from "./render";
 export {
   type ReviewSummaryInput,
