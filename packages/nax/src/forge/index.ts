@@ -5,6 +5,7 @@
  * barrel, so consumers import from `@/forge` and never `@/forge/detect`.
  */
 
+export { MAX_FORGE_COMMENT_CHARS, postPrComment } from "./comments";
 export { defaultForgeDeps } from "./deps";
 export { detectForge, forgeFromRemoteUrl, remoteHost } from "./detect";
 export type { OpenPrInput, OpenPrResult } from "./pr";
