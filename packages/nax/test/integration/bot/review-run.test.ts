@@ -23,7 +23,14 @@ const verdict: PrReviewVerdict = {
   cannotVerify: [],
   inspectedFiles: [],
 };
-const counts = { inlineFindings: 2, threadsAnswered: 3, commentsAnswered: 4, offLine: 5, failed: 1 };
+const counts = {
+  earlierAnswered: 0,
+  inlineFindings: 2,
+  threadsAnswered: 3,
+  commentsAnswered: 4,
+  offLine: 5,
+  failed: 1,
+};
 const comment = (id: string, author = "human", body = id): PrComment => ({
   id,
   author,

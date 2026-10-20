@@ -8,6 +8,7 @@ const posted: BotReviewResult = {
   intent: "pass",
   quality: "changes",
   staticMode: false,
+  earlierAnswered: 0,
   inlineFindings: 3,
   threadsAnswered: 2,
   commentsAnswered: 0,

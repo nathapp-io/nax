@@ -304,7 +304,14 @@ describe("postPrReview", () => {
       },
       own: [{ key: bot.findingKey(second), comment: { ...comment, kind: "thread" } }],
     });
-    expect(result).toEqual({ inlineFindings: 2, threadsAnswered: 0, commentsAnswered: 1, offLine: 0, failed: 0 });
+    expect(result).toEqual({
+      earlierAnswered: 0,
+      inlineFindings: 2,
+      threadsAnswered: 0,
+      commentsAnswered: 1,
+      offLine: 0,
+      failed: 0,
+    });
   });
   test("summary failure propagates after artifact and inline writes", async () => {
     const failing = mock(async (argv: string[], opts: { cwd: string }) =>
