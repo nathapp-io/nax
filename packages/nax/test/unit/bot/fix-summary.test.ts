@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { type BotFixState, renderFixSummary } from "@/bot";
 import { parseNaxBotMarker } from "@/forge";
+import { safeCode } from "@/workflow/pr-body-safe";
 
 const state: BotFixState = { step: "report", timings: {} };
 
@@ -18,13 +19,31 @@ describe("renderFixSummary", () => {
       renderFixSummary({ ...state, outcome, pushedSha: "abcdef12", agreedCount: 3, failingGates: ["test", "lint"] }),
     ).toContain(expected);
   });
-  test("lists protected paths", () => {
+  test("lists protected paths inside code spans", () => {
     expect(renderFixSummary({ ...state, outcome: "protected", protectedFiles: [".nax/config.json"] })).toContain(
-      "- .nax/config.json",
+      "- `.nax/config.json`",
     );
     expect(renderFixSummary({ ...state, outcome: "protected", protectedFiles: ["a`b\n.ts"] })).not.toContain(
       "a`b\n.ts",
     );
+  });
+  test.each([
+    ".github/[click](http://evil.example/x).yml",
+    ".github/@alice#12.yml",
+    ".github/`[click](http://evil.example/x)`.yml",
+  ])("keeps hostile protected path %s inside code spans", (path) => {
+    const body = renderFixSummary({ ...state, outcome: "protected", protectedFiles: [path] });
+    expect(body).toContain(`- \`${safeCode(path)}\``);
+    expect(safeCode(path)).not.toContain("`");
+  });
+  test.each([
+    "/repo/.nax-wt/[click](http://evil.example/x)",
+    "/repo/.nax-wt/@alice#12",
+    "/repo/.nax-wt/`[click](http://evil.example/x)`",
+  ])("keeps hostile recovery path %s inside code spans", (path) => {
+    const body = renderFixSummary({ ...state, outcome: "dirty", recoveryPath: path });
+    expect(body).toContain(`\`${safeCode(path)}\``);
+    expect(safeCode(path)).not.toContain("`");
   });
   test("includes fix failure", () => {
     expect(renderFixSummary({ ...state, outcome: "no-change", fixFailure: "boom" })).toContain("Fix session: boom");

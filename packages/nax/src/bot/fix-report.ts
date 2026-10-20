@@ -84,14 +84,14 @@ function outcomeText(state: BotFixState): string {
     case "protected":
       return [
         "The fix changed protected files; nothing pushed.",
-        ...(state.protectedFiles ?? []).map((path) => `- ${safeCode(path)}`),
+        ...(state.protectedFiles ?? []).map((path) => `- \`${safeCode(path)}\``),
       ].join("\n");
     case "no-gates":
       return "No gates are configured on the base branch; nothing pushed.";
     case "gates-failed":
       return `Gates failed: ${(state.failingGates ?? []).join(", ")}; nothing pushed.`;
     case "dirty":
-      return `The fix tree is dirty or unreadable; nothing pushed. Recovery checkout retained at ${safeCode(state.recoveryPath ?? "unknown")}.`;
+      return `The fix tree is dirty or unreadable; nothing pushed. Recovery checkout retained at \`${safeCode(state.recoveryPath ?? "unknown")}\`.`;
     case "push-unknown":
       return "The push timed out; remote outcome is unknown. Check the remote before retrying.";
     case "push-rejected":
