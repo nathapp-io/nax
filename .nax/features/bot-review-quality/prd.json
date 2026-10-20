@@ -3,7 +3,7 @@
   "feature": "bot-review-quality",
   "branchName": "feat/bot-review-quality",
   "createdAt": "2026-10-20T00:00:00Z",
-  "updatedAt": "2026-10-20T16:04:37.312Z",
+  "updatedAt": "2026-10-20T16:14:17.763Z",
   "userStories": [
     {
       "id": "US-001",
@@ -305,14 +305,17 @@
       "dependencies": [
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Deterministic additive prompt sections with existing fence helper; assert exact checklist, section order, cap and preserved instructions via prompt barrel."
+        "reasoning": "Deterministic additive prompt sections with existing fence helper; assert exact checklist, section order, cap and preserved instructions via prompt barrel.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/prompts/builders/bot-pr-review-builder.ts",
@@ -323,7 +326,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "e91de43970bec13176fe13319d1ea6d67dffa3c0"
     },
     {
       "id": "US-006",
