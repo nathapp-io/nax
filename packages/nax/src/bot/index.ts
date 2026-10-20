@@ -9,4 +9,6 @@ export {
   preparePrCheckout,
 } from "./checkout";
 export { botModel, parseModelOption } from "./models";
+export { fixProtectedPaths, sensitivePaths } from "./path-policy";
+export { breakLinks, commentKey, findingKey, safeText, threadKey } from "./render";
 export { _reviewStepDeps, type PrReviewInput, runPrReview } from "./review-step";
