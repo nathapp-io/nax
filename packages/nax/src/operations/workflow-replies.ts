@@ -70,7 +70,7 @@ export function parseImplementerReply(output: string): ImplementerReply {
   };
 }
 
-function toDraft(entry: unknown): WorkflowFindingDraft | null {
+export function toFindingDraft(entry: unknown): WorkflowFindingDraft | null {
   if (!isRecord(entry)) return null;
   const issue = str(entry.issue);
   if (!issue) return null;
@@ -98,11 +98,11 @@ function toDraft(entry: unknown): WorkflowFindingDraft | null {
 }
 
 function drafts(v: unknown): WorkflowFindingDraft[] {
-  return Array.isArray(v) ? v.map(toDraft).filter((d): d is WorkflowFindingDraft => d !== null) : [];
+  return Array.isArray(v) ? v.map(toFindingDraft).filter((d): d is WorkflowFindingDraft => d !== null) : [];
 }
 
 /**
- * US-004 (nax#2524): the residual of a PARTIAL verdict, sanitised exactly as `toDraft` sanitises a
+ * US-004 (nax#2524): the residual of a PARTIAL verdict, sanitised exactly as `toFindingDraft` sanitises a
  * finding. Anything else — another verdict, a non-object residual, an empty issue — yields nothing, so
  * the finding fails closed to NOT_ADDRESSED and stays open unchanged.
  */

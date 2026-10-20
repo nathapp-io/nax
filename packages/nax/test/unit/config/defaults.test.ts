@@ -321,6 +321,7 @@ const NAX_CONFIG_KEYS: (keyof NaxConfig)[] = [
   "finish",
   "advisor",
   "workflow",
+  "bot",
   "mcp",
   "reporters",
   "profile",
@@ -351,6 +352,7 @@ describe("schema defaults have no extra keys beyond DEFAULT_CONFIG (AC-3)", () =
 
 describe("every DEFAULT_CONFIG key is a valid NaxConfig top-level key (AC-3)", () => {
   test("all DEFAULT_CONFIG keys exist in NaxConfig", () => {
+    expect(Object.keys(DEFAULT_CONFIG)).toContain("bot");
     const defaultKeys = Object.keys(DEFAULT_CONFIG) as (keyof NaxConfig)[];
     for (const key of defaultKeys) {
       expect(NAX_CONFIG_KEYS).toContain(key);

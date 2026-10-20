@@ -28,7 +28,7 @@ export function parseNaxBotMarker(body: string): { key: string } | null {
   return result;
 }
 
-function ownComments(comments: readonly PrComment[], login: string, threadId?: string): OwnComment[] {
+export function ownComments(comments: readonly PrComment[], login: string, threadId?: string): OwnComment[] {
   return comments.flatMap((comment): OwnComment[] => {
     if (comment.author !== login) return [];
     const marker = parseNaxBotMarker(comment.body);

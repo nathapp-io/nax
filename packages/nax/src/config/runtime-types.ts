@@ -556,6 +556,7 @@ export interface NaxConfig {
   advisor?: import("./runtime-types-advisor").AdvisorConfig;
   /** A5 workflow mode (single implementer + bounded review loop); root-only */
   workflow?: import("./runtime-types-workflow").WorkflowConfig;
+  bot?: import("./runtime-types-bot").BotConfig;
   /** External MCP servers the native agent may call tools on (client only) */
   mcp?: import("./runtime-types-mcp").McpConfig;
   /** Hooks configuration (v0.10) */

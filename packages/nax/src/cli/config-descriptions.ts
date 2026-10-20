@@ -63,6 +63,14 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "routing.llm.mode": "Routing mode: one-shot | per-story | hybrid",
   "routing.llm.timeoutMs": "Timeout for LLM routing call in milliseconds",
 
+  // Bot
+  bot: "Pull request bot review and fix settings",
+  "bot.models": "Per-role model overrides for bot commands; --model takes precedence",
+  "bot.models.review":
+    "Bot review model; falls back to workflow.models.branchReview, then finish.reviewers.quality, then the operation default tier",
+  "bot.models.fix":
+    "Bot fix model; falls back to workflow.models.branchFix, then finish.reviewers.fix, then the operation default tier",
+
   // Workflow (A5)
   workflow:
     "Workflow mode settings (single implementer + bounded review loop). Read only when execution.mode is workflow. Root-only",

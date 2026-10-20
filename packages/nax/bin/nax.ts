@@ -60,6 +60,7 @@ import {
   promptsInitCommand,
   registerAdvisorCommand,
   registerApprovalsCommand,
+  registerBotCommand,
   registerCostCommand,
   registerGatesCommand,
   registerTrustCommand,
@@ -987,6 +988,9 @@ registerTrustCommand(program);
 // ── workflow ──────────────────────────────────────────
 // Read-only: it reports the verdict a finished run wrote, and reads no config.
 registerWorkflowCommand(program);
+
+// ── bot ───────────────────────────────────────────────
+registerBotCommand(program);
 
 // ── gates ─────────────────────────────────────────────
 // Runs the project's configured root quality gates. It gates itself through

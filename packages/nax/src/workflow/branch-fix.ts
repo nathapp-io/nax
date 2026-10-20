@@ -5,6 +5,7 @@
  * still open, so it may never pick them up), and the fix appends its section to feature-report.md.
  */
 import { errorMessage } from "@nathapp/nax-agent/internal";
+import type { ConfiguredModel } from "@/config";
 import { getSafeLogger } from "@/logger";
 import { workflowBranchFixOp } from "@/operations";
 import { buildWorkflowBranchFixPrompt } from "@/prompts";
@@ -61,10 +62,11 @@ async function commitLeftovers(fc: BranchStepContext): Promise<{ autoCommitted: 
   }
 }
 
-async function runFixSession(fc: BranchStepContext, prompt: string): Promise<FixSession> {
+async function runFixSession(fc: BranchStepContext, prompt: string, model?: ConfiguredModel): Promise<FixSession> {
   try {
     const reply = await _workflowDeps.callOp(fc.callCtx, workflowBranchFixOp, {
       prompt,
+      ...(model !== undefined ? { model } : {}),
       timeoutMs: fc.workflow.timeouts.fixMs,
       reportPath: fc.reportPath,
     });
@@ -77,7 +79,7 @@ async function runFixSession(fc: BranchStepContext, prompt: string): Promise<Fix
 
 export async function runBranchFix(
   fc: BranchStepContext,
-  input: { specPath?: string; findings: readonly WorkflowFinding[] },
+  input: { specPath?: string; findings: readonly WorkflowFinding[]; model?: ConfiguredModel },
 ): Promise<BranchFixOutcome> {
   await ensureReport(fc);
   const prompt = buildWorkflowBranchFixPrompt({
@@ -86,6 +88,6 @@ export async function runBranchFix(
     reportPath: fc.reportPath,
     findings: input.findings,
   });
-  const session = await runFixSession(fc, prompt);
+  const session = await runFixSession(fc, prompt, input.model);
   return { ...session, ...(await commitLeftovers(fc)) };
 }

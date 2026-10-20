@@ -92,34 +92,6 @@
       "enabled": true,
       "idleTimeoutSeconds": 1200,
       "toolCallOnlyIdleTimeoutSeconds": 1800
-    },
-    "native": {
-      "catalogOverrides": [
-        {
-          "provider": "opencode-go",
-          "models": [
-            {
-              "id": "deepseek-v4.1-flash",
-              "protocol": "openai-completions",
-              "contextWindow": 1000000,
-              "supportsTools": true,
-              "thinkingLevels": [
-                "off",
-                "low",
-                "high",
-                "max"
-              ],
-              "maxTokens": 384000,
-              "pricing": {
-                "input": 0.15,
-                "output": 0.6,
-                "cacheRead": 0.007,
-                "cacheWrite": 0
-              }
-            }
-          ]
-        }
-      ]
     }
   },
   "routing": {
@@ -135,7 +107,7 @@
   "execution": {
     "permissionProfile": "unrestricted",
     "sessionTimeoutSeconds": 7200,
-    "maxStoriesPerFeature": 15,
+    "maxStoriesPerFeature": 20,
     "commandInterceptor": {
       "provider": "rtk",
       "enabled": true,

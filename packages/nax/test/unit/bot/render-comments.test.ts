@@ -1,0 +1,212 @@
+import { describe, expect, test } from "bun:test";
+import type { ReviewSummaryInput } from "@/bot";
+import * as bot from "@/bot";
+import { MAX_FORGE_COMMENT_CHARS, parseNaxBotMarker, withNaxBotMarker } from "@/forge";
+import type { WorkflowFindingDraft } from "@/operations/workflow-types";
+import { safeCode } from "@/workflow/pr-body-safe";
+
+const finding: WorkflowFindingDraft = { severity: "important", kind: "quality", issue: "Leaks fd" };
+const reply = { id: "T1", decision: "disagree", reason: "Out of scope" } as const;
+const comment = { author: "bob", verdict: { id: "C1", decision: "agree", reason: "Good point" } } as const;
+function summary(overrides: Partial<ReviewSummaryInput> = {}): ReviewSummaryInput {
+  return {
+    headSha: "abc1234ffff",
+    intent: "pass",
+    quality: "approved",
+    inlineFindings: 0,
+    threadsAnswered: 0,
+    offLine: [],
+    commentVerdicts: [],
+    cannotVerify: [],
+    sensitive: [],
+    staticMode: false,
+    failed: 0,
+    ...overrides,
+  };
+}
+
+describe("renderFindingComment", () => {
+  test("AC-1 marks the finding identity", () => {
+    expect(parseNaxBotMarker(bot.renderFindingComment(finding))).toEqual({ key: bot.findingKey(finding) });
+  });
+  test("AC-2 renders severity, kind and issue", () => {
+    expect(bot.renderFindingComment(finding)).toContain("**Important** (quality): Leaks fd");
+  });
+  test("AC-3 renders a suggestion", () => {
+    expect(bot.renderFindingComment({ ...finding, suggestion: "Close it" })).toContain("\n\nSuggestion: Close it");
+  });
+  test("AC-4 breaks issue links", () => {
+    expect(bot.renderFindingComment({ ...finding, issue: "[x](http://e.com)" })).not.toContain("](");
+  });
+  test("sanitizes and caps both issue and suggestion", () => {
+    const text = "@alice #12 [x](http://e.com) " + "z".repeat(3_000);
+    const body = `**Important** (quality): ${bot.safeText(text, 2_000)}\n\nSuggestion: ${bot.safeText(text, 2_000)}`;
+    expect(bot.renderFindingComment({ ...finding, issue: text, suggestion: text })).toBe(
+      withNaxBotMarker(body, bot.findingKey({ issue: text })),
+    );
+  });
+});
+
+describe("renderThreadReply", () => {
+  test("AC-5 renders disagreement", () => {
+    expect(bot.renderThreadReply(reply)).toContain("Disagree: Out of scope");
+  });
+  test("AC-6 marks the thread identity", () => {
+    expect(parseNaxBotMarker(bot.renderThreadReply(reply))).toEqual({ key: bot.threadKey("T1") });
+  });
+  test("AC-7 renders handled decisions", () => {
+    expect(bot.renderThreadReply({ ...reply, decision: "handled" })).toContain("Already handled: ");
+  });
+  test.each(["agree", "disagree", "handled"] as const)("sanitizes %s reasons", (decision) => {
+    const reason = "@alice #12 [x](http://e.com) " + "z".repeat(3_000);
+    const label = { agree: "Agree", disagree: "Disagree", handled: "Already handled" }[decision];
+    expect(bot.renderThreadReply({ ...reply, decision, reason })).toBe(
+      withNaxBotMarker(`${label}: ${bot.safeText(reason, 2_000)}`, bot.threadKey(reply.id)),
+    );
+  });
+});
+
+describe("renderReviewSummary", () => {
+  test("omits a line number without a file", () => {
+    expect(bot.renderReviewSummary(summary({ offLine: [{ ...finding, line: 5 }] }))).toContain(
+      "- **Important** Leaks fd",
+    );
+  });
+  test("AC-8 marks the summary", () => {
+    expect(parseNaxBotMarker(bot.renderReviewSummary(summary()))).toEqual({ key: "summary" });
+  });
+  test("AC-9 renders the abbreviated head and verdict", () => {
+    expect(bot.renderReviewSummary(summary())).toContain("Review of abc1234: intent pass, quality approved.");
+  });
+  test("AC-10 renders posted counts", () => {
+    expect(
+      bot.renderReviewSummary(summary({ inlineFindings: 3, threadsAnswered: 2, commentVerdicts: [comment] })),
+    ).toContain("3 inline findings, 2 threads answered, 1 comments answered.");
+  });
+  test("AC-11 explains static review", () => {
+    expect(bot.renderReviewSummary(summary({ staticMode: true }))).toContain(
+      "Untrusted PR: reviewed without running any code.",
+    );
+  });
+  test.each([
+    ".github/[click](http://evil.example/x).yml",
+    ".github/@alice#12.yml",
+    ".github/`[click](http://evil.example/x)`.yml",
+  ])("keeps hostile path %s inside code spans in both lists", (path) => {
+    const body = bot.renderReviewSummary(
+      summary({
+        sensitive: [path],
+        offLine: [{ ...finding, file: path, line: 8 }],
+      }),
+    );
+    expect(body).toContain(`### Sensitive paths changed\n- \`${safeCode(path)}\``);
+    expect(body).toContain(`- **Important** \`${safeCode(path)}:8\` Leaks fd`);
+    expect(safeCode(path)).not.toContain("`");
+  });
+  test("AC-12 lists sensitive paths", () => {
+    expect(bot.renderReviewSummary(summary({ sensitive: [".nax/config.json"] }))).toContain(
+      "### Sensitive paths changed\n- `.nax/config.json`",
+    );
+  });
+  test("AC-13 lists off-line findings with optional locations", () => {
+    expect(bot.renderReviewSummary(summary({ offLine: [finding, { ...finding, file: "a.ts", line: 8 }] }))).toContain(
+      "### Findings not on a changed line\n- **Important** Leaks fd\n- **Important** `a.ts:8` Leaks fd",
+    );
+  });
+  test("AC-14 lists top-level triage", () => {
+    expect(bot.renderReviewSummary(summary({ commentVerdicts: [comment] }))).toMatch(/^- bob: Agree — Good point$/m);
+  });
+  test("AC-15 lists verification limitations", () => {
+    expect(bot.renderReviewSummary(summary({ cannotVerify: ["No database"] }))).toContain(
+      "### Could not verify\n- No database",
+    );
+  });
+  test("AC-16 reports posting failures", () => {
+    expect(bot.renderReviewSummary(summary({ failed: 2 }))).toContain(
+      "Could not post 2 comments; re-run nax bot review.",
+    );
+  });
+  const largeInput = () =>
+    summary({ offLine: Array.from({ length: 5_000 }, (_, i) => ({ ...finding, issue: `Leak ${i}` })) });
+  test("AC-17 bounds 5,000 findings below the real forge cap and reserve", () => {
+    expect(bot.renderReviewSummary(largeInput()).length).toBeLessThanOrEqual(MAX_FORGE_COMMENT_CHARS - 512);
+  });
+  test("AC-18 ends the list with an accurate omitted count", () => {
+    const body = bot.renderReviewSummary(largeInput());
+    const shown = body.match(/^- \*\*Important\*\*/gm)?.length ?? 0;
+    expect(shown).toBeGreaterThan(0);
+    expect(body).toEndWith(`… and ${5_000 - shown} more not shown.\n\n<!-- nax-bot:v1 key=summary -->`);
+  });
+  test("sanitizes all author text and paths in section order", () => {
+    const text = "@alice #12 [x](http://e.com) " + "z".repeat(3_000);
+    const path = "some`path\nfile.ts";
+    const body = bot.renderReviewSummary(
+      summary({
+        sensitive: [path],
+        offLine: [{ ...finding, file: path, issue: text }],
+        commentVerdicts: [{ author: text, verdict: { ...reply, reason: text } }],
+        cannotVerify: [text],
+        staticMode: true,
+        failed: 1,
+      }),
+    );
+    const expected = [
+      "Untrusted PR:",
+      `### Sensitive paths changed\n- \`${safeCode(path)}\``,
+      `### Findings not on a changed line\n- **Important** \`${safeCode(path)}\` ${bot.safeText(text, 2_000)}`,
+      `### Top-level comments\n- ${bot.safeText(text, 100)}: Disagree — ${bot.safeText(text, 2_000)}`,
+      `### Could not verify\n- ${bot.safeText(text, 2_000)}`,
+      "Could not post 1 comments;",
+    ];
+    let previous = -1;
+    for (const section of expected) {
+      const index = body.indexOf(section);
+      expect(index).toBeGreaterThan(previous);
+      previous = index;
+    }
+  });
+  test("omits empty optional sections and failure messages", () => {
+    expect(bot.renderReviewSummary(summary())).toBe(
+      withNaxBotMarker(
+        "Review of abc1234: intent pass, quality approved.\n0 inline findings, 0 threads answered, 0 comments answered.",
+        "summary",
+      ),
+    );
+  });
+  test("removes later lists before earlier lists without mutating input", () => {
+    const input = summary({
+      sensitive: ["keep.ts"],
+      offLine: [finding],
+      commentVerdicts: [comment],
+      cannotVerify: Array.from({ length: 100 }, () => "x".repeat(2_000)),
+      failed: 2,
+    });
+    const body = bot.renderReviewSummary(input);
+    expect(body.length).toBeLessThanOrEqual(MAX_FORGE_COMMENT_CHARS - 512);
+    expect(body).toContain("- `keep.ts`");
+    expect(body).toContain("- **Important** Leaks fd");
+    expect(body).toContain("- bob: Agree — Good point");
+    const shown = body.match(/^- x+$/gm)?.length ?? 0;
+    expect(body).toContain(`… and ${100 - shown} more not shown.`);
+    expect(body).toContain("Could not post 2 comments;");
+    expect(input.cannotVerify).toHaveLength(100);
+  });
+  test("drops exhausted later sections, retaining earlier path items", () => {
+    const body = bot.renderReviewSummary(
+      summary({
+        sensitive: Array.from({ length: 1_000 }, () => "x".repeat(200)),
+        offLine: [finding],
+        commentVerdicts: [comment],
+        cannotVerify: ["later"],
+      }),
+    );
+    expect(body.length).toBeLessThanOrEqual(MAX_FORGE_COMMENT_CHARS - 512);
+    const shown = body.match(/^- `x+`$/gm)?.length ?? 0;
+    expect(shown).toBeGreaterThan(0);
+    expect(body).toContain(`… and ${1_003 - shown} more not shown.`);
+    expect(body).not.toContain("### Findings");
+    expect(body).not.toContain("### Top-level");
+    expect(body).not.toContain("### Could not verify");
+    expect(parseNaxBotMarker(body)).toEqual({ key: "summary" });
+  });
+});

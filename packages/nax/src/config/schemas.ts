@@ -21,6 +21,7 @@ import {
 } from "./schemas-acp-agents";
 import { AdvisorConfigObjectSchema } from "./schemas-advisor";
 import { AuthConfigSchema } from "./schemas-auth";
+import { BotConfigSchema } from "./schemas-bot";
 import { ContextConfigSchema } from "./schemas-context";
 import {
   AutoModeConfigSchema,
@@ -512,6 +513,7 @@ export const NaxConfigSchema = z
     advisor: AdvisorConfigObjectSchema.prefault({}),
     // A5 workflow mode. Read only when execution.mode === "workflow".
     workflow: WorkflowConfigObjectSchema.prefault({}),
+    bot: BotConfigSchema.prefault({}),
     // Derived, not hand-written — same reason as `context:` above: a literal
     // default here would shadow every inner `.default()` in McpConfigSchema.
     mcp: McpConfigSchema.default(() => McpConfigSchema.parse({})),
