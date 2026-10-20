@@ -3,7 +3,7 @@
   "feature": "bot-review-fix",
   "branchName": "feat/bot-review-fix",
   "createdAt": "2026-10-20T00:00:00.000Z",
-  "updatedAt": "2026-10-20T08:44:20.809Z",
+  "updatedAt": "2026-10-20T08:54:38.780Z",
   "userStories": [
     {
       "id": "US-001",
@@ -387,14 +387,17 @@
       "dependencies": [
         "US-005"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Two additive modules mirror the existing workflow parser/op/retry pattern; strict TDD is required for static tool capabilities and reuse of the guarded reviewer session role."
+        "reasoning": "Two additive modules mirror the existing workflow parser/op/retry pattern; strict TDD is required for static tool capabilities and reuse of the guarded reviewer session role.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/operations/workflow-replies.ts",
@@ -416,7 +419,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "c94faf60d9f1cf754aebe615221ba2703c762f75"
     },
     {
       "id": "US-007",
