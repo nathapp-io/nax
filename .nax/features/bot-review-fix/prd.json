@@ -3,7 +3,7 @@
   "feature": "bot-review-fix",
   "branchName": "feat/bot-review-fix",
   "createdAt": "2026-10-20T00:00:00.000Z",
-  "updatedAt": "2026-10-20T07:42:52.241Z",
+  "updatedAt": "2026-10-20T07:43:01.122Z",
   "userStories": [
     {
       "id": "US-001",
@@ -116,14 +116,17 @@
         "intent"
       ],
       "dependencies": [],
-      "status": "pending",
+      "status": "failed",
       "passes": false,
-      "attempts": 0,
+      "attempts": 1,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Pure reference parsing plus conventional forge reads with bounded fan-out and per-issue error isolation; no new identity or access-control logic."
+        "reasoning": "Pure reference parsing plus conventional forge reads with bounded fan-out and per-issue error isolation; no new identity or access-control logic.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/forge/trust.ts",
@@ -143,7 +146,9 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "106ba799ee5a4cc0e55fa7a14b4da660522836d4",
+      "failureStage": "workflow"
     },
     {
       "id": "US-003",
