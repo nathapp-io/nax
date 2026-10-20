@@ -17,8 +17,9 @@ noisy, and `fix` refused any repo without a base-branch `.nax` config. This spec
    them.
 3. **Checks without a `.nax` config.** Check commands resolve in order: base-branch `.nax/config.json`
    `quality.commands`, then commands extracted by a small model call from the base-branch root `AGENTS.md` or
-   `CLAUDE.md`, then commands detected from the base-branch root `package.json`. The trusted review installs
-   dependencies before it runs, allows loopback listeners, and both commands say up front when no checks exist.
+   `CLAUDE.md`, then commands detected from the base-branch root `package.json`. The trusted review resolves
+   them once, installs dependencies, allows loopback listeners, and saves the resolved checks in its artifact;
+   `fix` runs those same checks. Both commands say up front when no checks exist.
 4. **An open integration seam for third parties** (koda is the first consumer, never named in code): a
    caller-supplied decisions file goes into the review (`--decisions <path>`), and `bot-review.json` becomes a
    documented version-2 contract carrying the resolved checks and decision events, starting with
@@ -57,7 +58,14 @@ All work lands in `packages/nax`. New modules: `src/bot/checks.ts` (check resolu
 `src/prompts/builders/bot-checks-extract-builder.ts` (its prompt). Every new symbol is exported from its
 barrel (`@/bot`, `@/operations`, `@/prompts`). The review and fix graphs (`BOT_REVIEW_GRAPH`,
 `BOT_FIX_GRAPH`) keep their nodes and transitions; the new behaviour lives in preparation (`runBotReview`,
-`runBotFix`), the prompt, the parser, posting and the fix report.
+`runBotFix`), the prompt, the parser, posting and the fix report. New input fields on existing types are
+optional unless stated, so existing callers and fixtures keep compiling.
+
+**Trust ruling (drafter's call, recorded for the user):** check commands and install steps run only for
+trusted PRs (an untrusted review is static; `fix` refuses untrusted PRs), on the host, against the PR head
+tree, exactly like today's `fix` `preRun` and gates. Commands come only from base-branch files, which only repo
+writers control, so they are not shell-sanitised. Head-branch `package.json` lifecycle scripts, `.npmrc` and
+`bunfig.toml` are not pinned to base; that is the same exposure `fix` has today for trusted PRs.
 
 ### Integration
 
@@ -65,18 +73,23 @@ Symbols this spec only reads (verified on `main` @ `3e5a04626`):
 
 - `resolveGateCommands(repoRoot: string, packageDirs: string[]): Promise<GateCommand[]>` and
   `GateCommand { name; command: QualityCommandSpec; cwd; setup? }` in `src/finish/gates/quality.ts`;
-  `GATE_ORDER = ["build", "typecheck", "lint", "test", "e2e"]`.
+  `GATE_ORDER = ["build", "typecheck", "lint", "test", "e2e"]`. `QualityCommandSpec = string | string[]`, where
+  a list means "run every entry" (several commands), not argv.
 - `runPreRunSteps({ steps, workdir })` in `src/execution/lifecycle/pre-run-steps.ts`, throwing `NaxError`
-  `PRE_RUN_FAILED` on the first failing step; `PreRunStepConfig { command: string; timeoutSeconds: number }`.
+  `PRE_RUN_FAILED` (context carries `command`) on the first failing step;
+  `PreRunStepConfig { command: string; timeoutSeconds: number }`.
 - `resolveThread(ref, thread, deps, cwd)`, `replyToThread(ref, { replyTo }, body, deps, cwd)`,
   `editComment`, `postPrComment`, `parseNaxBotMarker`, `withNaxBotMarker`, `NAX_BOT_HEADER = "**nax bot**"`,
   `PrThread`, `PrComment`, `OwnComment`, `CurrentUser` from `@/forge`.
 - `CompleteOperation` (`src/operations/types.ts`), `workflowConfigSelector`, `tryParseLLMJson`,
-  `_workflowDeps.callOp` (`src/workflow/step-context.ts`); `classifyRouteOp` is the pattern for a
-  `kind: "complete"` op.
+  `_workflowDeps.callOp` (`src/workflow/step-context.ts`), which routes a `kind: "complete"` op through
+  `dispatchCompleteOp`; `classifyRouteOp` is the pattern.
+- `buildPrStepContext` (`src/workflow/pr-step-context.ts`) sets `ctx.callCtx.config` to its `config` input;
+  operation dispatch reads `ctx.config` before the runtime's loader (`call-dispatch-prologue.ts`), and the
+  agent shell sandbox policy comes from that config's `execution.sandbox`.
 - `execution.sandbox.network.allowLocalBinding?: boolean` (`packages/nax-agent/src/config/schemas-sandbox.ts`).
-  srt applies it even with an open network: koda's project config sets it with no `allowedDomains` to let its
-  tests start local servers.
+  srt applies it even with an open network (`srt-backend.ts` `srtNetwork`), and Claude ACP passes it through
+  (`claude-sandbox.ts`).
 
 Symbols this spec changes. The baseline exists only to locate the code; it is never the interface to
 implement.
@@ -84,31 +97,43 @@ implement.
 - `triage` (`src/bot/review-run.ts`). Baseline: returns `{ own, threads, comments }` and drops threads whose
   first comment is own. Target: also returns `earlier: PrThread[]` and `login: string`; `threads` is unchanged.
 - `BotPrReviewPromptInput` (`src/prompts/builders/bot-pr-review-builder.ts`). Target adds optional
-  `earlier?: readonly PrThread[]`, `checks?: readonly string[]`, `decisions?: readonly BotDecision[]`.
+  `earlier?: readonly PrThread[]`, `checks?: readonly string[]`, `decisions?: readonly BotDecision[]`
+  (`BotDecision` imported type-only).
 - `PrReviewVerdict` (`src/operations/bot-types.ts`). Target adds `earlier?: readonly PrEarlierVerdict[]` and
-  types `findings` as `readonly PrFinding[]`, where `PrFinding = WorkflowFindingDraft & { readonly decision?:
-  string }`.
+  types `findings` as `readonly PrFinding[]`, with
+  `PrEarlierStatus = "open" | "fixed" | "withdrawn"`,
+  `PrEarlierVerdict { readonly id: string; readonly status: PrEarlierStatus; readonly reason: string }` and
+  `PrFinding = WorkflowFindingDraft & { readonly decision?: string }`.
 - `parsePrReviewReply(output, threadIds, commentIds)` (`src/operations/bot-pr-review-reply.ts`). Target:
   `parsePrReviewReply(output, threadIds, commentIds, extra?: { earlierIds?: readonly string[]; decisionIds?:
-  readonly string[] })`; `missingTriage(verdict, threadIds, commentIds, earlierIds?: readonly string[])`.
+  readonly string[] })`, always returning an `earlier` array (empty when none);
+  `missingTriage(verdict, threadIds, commentIds, earlierIds?: readonly string[])`.
 - `BotPrReviewInput` (`src/operations/bot-pr-review.ts`). Target adds `earlierIds?: readonly string[]` and
-  `decisionIds?: readonly string[]`.
-- `BotReviewArtifact` (`src/bot/post.ts`). Baseline: `version: 1`. Target: `version: 2` plus `checks` and
-  `events` (File Format below).
-- `PostReviewInput` (`src/bot/post.ts`). Target adds `earlier: readonly PrThread[]`, `login: string`,
-  `checks: BotChecksSummary | null`, `preRunFailed?: string`.
+  `decisionIds?: readonly string[]`; the op's `parse`, `retry` `parse` and `validate` closures pass them to
+  `parsePrReviewReply` and `missingTriage`.
+- `PrReviewInput` (`src/bot/review-step.ts`). Target adds optional `earlier?: readonly PrThread[]`,
+  `checks?: readonly string[]`, `decisions?: readonly BotDecision[]`.
+- `AgreedItem` finding variant (`src/bot/post.ts`). Target adds optional `decision?: string`.
+- `BotReviewArtifact` (`src/bot/post.ts`). Baseline: `version: 1`. Target: `version: 1 | 2`, optional
+  `checks?: BotChecks | null` and `events?: readonly BotReviewEvent[]`; `postPrReview` always writes version 2
+  with both fields (File Format below).
+- `PostReviewInput` (`src/bot/post.ts`). Target adds optional `earlier?: readonly PrThread[]`,
+  `login?: string`, `checks?: BotChecks | null`, `preRunFailed?: string`.
 - `PostReviewOutcome`. Target adds `earlierAnswered: number`.
 - `ReviewSummaryInput` (`src/bot/render-comments.ts`). Target adds optional `minor?`, `earlier?`, `checks?`,
   `preRunFailed?` (Rendering below).
 - `BotReviewResult` `posted` variant (`src/bot/review-run.ts`). Target adds `artifactPath: string` and
   `checksSource: BotCheckSource | null`.
 - `BotReviewInput` (`src/bot/review-run.ts`). Target adds `decisions?: readonly BotDecision[]`.
-- `BotFixEnv` (`src/bot/fix-steps.ts`). Target adds `checks: BotChecks`.
+- `BotFixEnv` (`src/bot/fix-steps.ts`). Target adds `checks: BotChecks` (required).
 - `readReview` / `loadLatestReview` (`src/bot/fix-input.ts`). Baseline accepts only `version === 1`. Target
   accepts `1` and `2`.
-- `cleanup` (`src/bot/checkout.ts`). Target removes `<repoRoot>/.nax-wt` when it is empty after the worktree
-  removal.
-- `BotConfigSchema.models` (`src/config/schemas-bot.ts`). Target adds `checks: ConfiguredModelSchema.optional()`.
+- `_checkoutDeps` and `cleanup` (`src/bot/checkout.ts`). Target adds `rmdir: (path) => Promise<void>`
+  (non-recursive) and `cleanup` uses it on `<repoRoot>/.nax-wt` after the worktree removal; `reserveWorktree`
+  retries once when creating the worktree directory fails with `ENOENT`.
+- `BotConfigSchema.models` (`src/config/schemas-bot.ts`) and `BotModelsConfig`. Target adds
+  `checks: ConfiguredModelSchema.optional()` and a `bot.models.checks` entry in `FIELD_DESCRIPTIONS`
+  (`src/cli/config-descriptions.ts`).
 
 ### Check resolution (`src/bot/checks.ts`)
 
@@ -116,7 +141,6 @@ implement.
 export type BotCheckSource = "config" | "agents-md" | "claude-md" | "detected" | "none";
 export interface BotCheck { readonly name: string; readonly command: QualityCommandSpec; readonly setup?: QualityCommandSpec }
 export interface BotChecks { readonly source: BotCheckSource; readonly gates: readonly BotCheck[]; readonly preRun: readonly PreRunStepConfig[] }
-export interface BotChecksSummary { readonly source: BotCheckSource; readonly commands: readonly string[] }
 
 export async function resolveBotChecks(input: {
   repoRoot: string;            // git commands run here
@@ -127,30 +151,38 @@ export async function resolveBotChecks(input: {
   extract: (input: { fileName: "AGENTS.md" | "CLAUDE.md"; text: string }) => Promise<BotChecksExtractOutput | null>;
 }): Promise<BotChecks>;
 
-export function summarizeChecks(checks: BotChecks): BotChecksSummary; // commands = gate commands, string[] joined by " "
+/** One display string per command: a string command as is; each entry of a list command separately. */
+export function checkCommands(checks: BotChecks): string[];
 export const _botChecksDeps = { runGit: gitWithTimeout, resolveGateCommands };
 ```
+
+Reading a base file: existence is checked with `git ls-tree --name-only -z <baseSha> -- <path>` (as
+`snapshotBaseNax` does): a non-zero exit is an error, output without the path means missing. A present file is
+read with `git show <baseSha>:<path>`; a non-zero exit there is an error. An error skips that tier with a
+warning; a missing file just moves on.
 
 Tiers, first non-empty `gates` wins:
 
 1. **config**: only when `hasBaseNax`. `resolveGateCommands(snapshotDir, [])`; each `GateCommand` becomes a
    `BotCheck` without `cwd`. Source `config`.
-2. **instruction file**: read the base-branch root `AGENTS.md` with `git show <baseSha>:AGENTS.md`; when it is
-   absent, read `CLAUDE.md` the same way. Only one file is read (`AGENTS.md` wins when both exist). A file over
-   65,536 bytes skips the tier. Call `extract({ fileName, text })`; its `gates` (in `GATE_ORDER` order,
-   `name` = the gate) become the checks. Source `agents-md` or `claude-md`.
-3. **detected**: parse the base-branch root `package.json` (`git show <baseSha>:package.json`). Scripts map to
-   gates: `build` -> `build`, `typecheck` or `type-check` -> `typecheck` (`typecheck` wins when both exist),
-   `lint` -> `lint`, `test` -> `test`. The run prefix comes from the base-branch root lockfile (read at `baseSha`,
-   never from the worktree), checked in this order: `bun.lock` or `bun.lockb` -> `bun run`, `package-lock.json` -> `npm run`,
-   `pnpm-lock.yaml` -> `pnpm run`, `yarn.lock` -> `yarn`, none -> `npm run`. Command = `<prefix> <script>`.
-   Source `detected`.
+2. **instruction file**: the base-branch root `AGENTS.md`; when it is missing, the root `CLAUDE.md`. Only one
+   file is read (`AGENTS.md` wins when both exist). A file over 65,536 bytes skips the tier with a warning.
+   Call `extract({ fileName, text })`; a rejection or `null` skips the tier with a warning. Its `gates`, ordered
+   by `GATE_ORDER`, become checks with `name` = the gate. Source `agents-md` or `claude-md`.
+3. **detected**: parse the base-branch root `package.json`. Scripts map to gates: `build` -> `build`,
+   `typecheck` or `type-check` -> `typecheck` (`typecheck` wins when both exist), `lint` -> `lint`, `test` ->
+   `test`. A `test` script whose text contains `no test specified` (the `npm init` placeholder) is skipped. The
+   run prefix comes from the base-branch root lockfile, checked in this order: `bun.lock` or `bun.lockb` ->
+   `bun run`, `package-lock.json` -> `npm run`, `pnpm-lock.yaml` -> `pnpm run`, `yarn.lock` -> `yarn`, none ->
+   `npm run`. Command = `<prefix> <script>`. A `package.json` that is not valid JSON, or has no `scripts`
+   object, yields no gates. Source `detected`.
 4. **none**: `{ source: "none", gates: [], preRun: [] }`.
 
-`preRun`, first non-empty wins: `config.execution.preRun` (when `hasBaseNax`); the tier-2 `install` command;
-the lockfile install (`bun.lock`/`bun.lockb` -> `bun install --frozen-lockfile`, `package-lock.json` ->
-`npm ci`, `pnpm-lock.yaml` -> `pnpm install --frozen-lockfile`; `yarn.lock` or no lockfile -> none). A derived
-step uses `timeoutSeconds: 600`. With source `none`, `preRun` is empty.
+`preRun` (only when source is not `none`), first non-empty wins: `config.execution.preRun` (when `hasBaseNax`);
+the tier-2 `install` command (only when the source is that tier); the lockfile install (`bun.lock`/`bun.lockb`
+-> `bun install --frozen-lockfile`, `package-lock.json` -> `npm ci`, `pnpm-lock.yaml` ->
+`pnpm install --frozen-lockfile`; `yarn.lock` or no lockfile -> none). A derived step uses
+`timeoutSeconds: 600`.
 
 ### Extraction op (`src/operations/bot-checks-extract.ts`)
 
@@ -165,28 +197,31 @@ export function parseBotChecksReply(output: string): BotChecksExtractOutput | nu
 ```
 
 - `kind: "complete"`, `name: "bot-checks-extract"`, `stage: "review"`, `config: workflowConfigSelector`,
-  `model: (input) => input.model ?? "fast"`, `parse` = `parseBotChecksReply`. A transient-network retry
-  preset is suggested, not required.
-- `build` uses `buildBotChecksExtractPrompt({ fileName, text })` (`src/prompts/builders/bot-checks-extract-builder.ts`)
-  as the task; the role section is the builder's choice. The prompt tells the model to
-  return only commands the file states for building, typechecking, linting, testing and installing
-  dependencies; never to invent one; to leave out dev servers, deploy, release, publish, database and any
-  command that changes state outside the checkout; and to reply with only
+  `model: (input) => input.model ?? "fast"`, `parse` = `parseBotChecksReply`. A transient-network retry preset
+  is suggested, not required.
+- `build` returns `buildBotChecksExtractPrompt({ fileName, text })`
+  (`src/prompts/builders/bot-checks-extract-builder.ts`) as the task; the role section is the builder's choice.
+  The prompt tells the model to return only commands the file states for building, typechecking, linting,
+  testing and installing dependencies; never to invent one; to leave out dev servers, deploy, release,
+  publish, database and any command that changes state outside the checkout; and to reply with only
   `{"gates":[{"gate":"build|typecheck|lint|test","command":"..."}],"install":"..."}`. The file text is fenced
-  (the same longest-backtick-run fence as `bot-pr-review-builder.ts`) and labelled as data, not instructions.
-- `parseBotChecksReply`: `null` when the reply is not a JSON object or `gates` is not an array. An entry is
-  kept only when `gate` is one of the four names and `command` is a string that, trimmed, is 1-300 characters
-  with no line feed, carriage return or NUL; the first entry per gate wins. `install` is kept under the same
-  command rule, otherwise omitted.
-- The model: `bot.models.checks` from config, else `"fast"`. The review and fix runners pass
-  `model: config.bot?.models.checks`.
+  (a fence longer than the longest backtick run in the text, as in `bot-pr-review-builder.ts`) and labelled as
+  data, not instructions.
+- `parseBotChecksReply` parses with `tryParseLLMJson`; it returns `null` when the reply is not a JSON object or
+  `gates` is not an array. An entry is kept only when `gate` is one of the four names and `command` is a string
+  that, trimmed, is 1-300 characters with no line feed, carriage return or NUL; the trimmed command is kept; the
+  first entry per gate wins. `install` is kept (trimmed) under the same command rule, otherwise omitted.
+- The review and fix runners pass `model: config.bot?.models.checks`.
 
 ### Decisions file (`src/bot/decisions.ts`)
 
 ```ts
 export interface BotDecision { readonly id: string; readonly statement: string; readonly source?: string }
 export async function loadBotDecisions(path: string): Promise<BotDecision[]>;
-export const _decisionsDeps = { readText: (path: string): Promise<string> => Bun.file(path).text(), size: ... };
+export const _decisionsDeps = {
+  fileSize: async (path: string): Promise<number> => (await Bun.file(path).stat()).size,
+  readText: (path: string): Promise<string> => Bun.file(path).text(),
+};
 ```
 
 Format (version 1):
@@ -202,12 +237,17 @@ Format (version 1):
 
 Rules, checked with a zod schema: `version` is `1`; `decisions` is an array of at most 100 entries; `id`
 matches `^[A-Za-z0-9._:-]{1,64}$`; `statement` is 1-2,000 characters; `source` is optional, at most 200
-characters; ids are unique; the file is at most 262,144 bytes. Any violation throws `NaxError`
-`BOT_DECISIONS_INVALID` naming the first problem; a missing or unreadable file throws `BOT_DECISIONS_READ_FAILED`.
+characters; ids are unique; the file is at most 262,144 bytes (checked by `fileSize` before reading). Errors:
+
+- missing or unreadable file: `NaxError` code `BOT_DECISIONS_READ_FAILED`, message
+  `[bot] Cannot read decisions file <path>`.
+- anything else: code `BOT_DECISIONS_INVALID`, message `[bot] Invalid decisions file <path>: <problem>`,
+  where `<problem>` names the first problem (for a duplicate, `duplicate id <id>`).
 
 ### Review prompt (`buildBotPrReviewPrompt`)
 
-New sections, in this order after the intent line and the static-mode line:
+The existing opener line, intent line, static-mode line, untrusted section and the existing `REPLY_TASK`
+instructions stay. New sections, in this order after the intent line and the static-mode line:
 
 1. `## Checklist` (always). Exactly these six numbered items:
    1. `Intent: does the change do what the PR description, linked issues or PRD ask, and nothing they rule out?`
@@ -235,46 +275,57 @@ longer has it; "withdrawn" = the finding was wrong or not worth doing, for examp
 and `Set "decision" on a finding only when it breaks a listed project decision.`
 
 Parsing: `earlier` entries are kept only when `id` is in `earlierIds`, `status` is one of the three values and
-`reason` is a non-empty string; the first entry per id wins. A finding's `decision` is kept only when it is a
-string in `decisionIds`. `missingTriage` also reports `earlierIds` with no verdict, so the existing triage
-retry asks again. `runPrReview` passes `earlierIds = input.earlier.map(t => t.id)` and
-`decisionIds = input.decisions.map(d => d.id)` to the op, and `earlier`, `checks`, `decisions` to the prompt.
+`reason` is a non-empty string (trimmed); the first entry per id wins. A finding's `decision` is kept only when
+it is a string in `decisionIds`; otherwise the finding is kept without it. `missingTriage` also reports
+`earlierIds` with no verdict, so the existing triage retry asks again. `runPrReview` passes
+`earlierIds = (input.earlier ?? []).map(t => t.id)` and `decisionIds = (input.decisions ?? []).map(d => d.id)`
+to the op, and `earlier`, `checks`, `decisions` to the prompt.
 
 ### Earlier findings: selection and posting
 
 Selection (`triage`): `earlier` = threads that are not resolved, whose first comment is own (author is the
 current user login and it carries a valid marker), and whose marker key starts with `f-`.
 
-Posting (`postPrReview`), after `postThreads` and before the summary, for each earlier thread:
+Posting (`postPrReview`), after `postThreads` and before the summary, for each thread in `earlier` (default
+`[]`):
 
-- Its verdict is the matching `verdict.earlier` entry; a thread with no entry is treated as `open`.
+- Its verdict is the matching `verdict.earlier` entry. A thread with no entry is treated as `open`. A thread
+  whose marker key equals the key of a finding in `verdict.findings` is treated as `open` whatever its verdict
+  (the reviewer raised it again; the finding's own write edits that comment as today).
 - `open`: no forge write; it is added to `agreed` as `{ kind: "finding", key: <marker key>, severity, issue,
   file: thread.path, line: thread.line }`, where `issue` is the first comment's body with the `NAX_BOT_HEADER`
   line and the marker comment removed and trimmed, and `severity` is `critical`, `important` or `minor` from a
   leading `**Critical**`, `**Important**` or `**Minor**` in that text (else `important`). An `agreed` entry
-  whose key is already present (a new finding with the same key) is not added twice.
-- `fixed` / `withdrawn`: reply in the thread with `renderEarlierReply(verdict)` =
-  `withNaxBotMarker("Fixed: <reason>" | "Withdrawn: <reason>", earlierKey(thread.id))`, where
-  `earlierKey(id) = "e-" + 16-hex sha256 of id` (`src/bot/render.ts`). An own comment in that thread with that
-  key is edited instead of replying. Then `resolveThread`. A failed reply skips the resolve; either failure
-  adds 1 to `failed` and logs a warning.
-- `earlierAnswered` counts every earlier thread with a verdict (including `open`).
+  whose key is already present is not added twice.
+- `fixed` / `withdrawn`: reply in the thread with `renderEarlierReply(verdict, thread.id)`
+  (`src/bot/render-comments.ts`) = `withNaxBotMarker("Fixed: <reason>" | "Withdrawn: <reason>",
+  earlierKey(thread.id))`, reason through `safeText` with the existing 2,000 cap, where `earlierKey(id) = "e-" +
+  the first 16 hex characters of sha256(id)` (`src/bot/render.ts`). An own comment in that thread with that key
+  is edited instead of replying. Then `resolveThread`. A failed reply skips the resolve; either failure adds 1
+  to `failed` and logs a warning.
+- `earlierAnswered` counts every earlier thread (including `open`).
 
-Events: a `withdrawn` verdict on a thread with at least one comment whose author is not `login` adds
-`{ type: "finding-withdrawn", key, threadId, file?, line?, finding: <issue text as above>, reason,
-disagreedBy: <distinct non-own authors in comment order> }` to the artifact's `events`.
+Events: a `withdrawn` verdict (not overridden to `open`) on a thread with at least one comment whose author is
+not `login` adds `{ type: "finding-withdrawn", key, threadId, file?, line?, finding: <issue text as above>,
+reason, disagreedBy: <distinct non-own authors in comment order> }` to the artifact's `events`. Without
+`login`, no events are written. Consumers must treat `disagreedBy` as unverified forge logins: anyone who can
+comment on the PR can appear there, so a consumer filters on the artifact's `trusted` flag and on the
+commenters' own permissions before storing an event as a decision.
 
 ### Minor findings and the summary (`src/bot/post.ts`, `src/bot/render-comments.ts`)
 
-- `postFindings`: a `minor` finding opens no new inline comment. When an own comment with its key exists, it is
-  still edited. Otherwise the finding is listed in the summary. Minor findings stay in `agreed`.
+- `postFindings`: a `minor` finding with a file and line opens no new inline comment. When an own comment with
+  its key exists, it is still edited and counted in `inlineFindings`. Otherwise it goes to the summary's
+  `### Minor findings` list. A `minor` finding with no file or line goes to the off-line list, as today. Minor
+  findings stay in `agreed`.
+- The agreed item for a new finding carries its `decision` when the parsed finding has one.
 - `ReviewSummaryInput` gains optional `minor?: readonly WorkflowFindingDraft[]`,
-  `earlier?: { open: number; fixed: number; withdrawn: number }`, `checks?: BotChecksSummary | null`,
+  `earlier?: { open: number; fixed: number; withdrawn: number }`, `checks?: BotChecks | null`,
   `preRunFailed?: string`. Rendering:
   - after the two prefix lines, when `earlier` is set and its total is above 0:
     `<total> earlier findings re-checked: <open> still open, <fixed> fixed, <withdrawn> withdrawn.`
-  - when `checks` is set with source other than `none`: `Checks (<label>): <commands joined by ", ">.` with
-    labels `config` -> `.nax/config.json`, `agents-md` -> `AGENTS.md`, `claude-md` -> `CLAUDE.md`,
+  - when `checks` is set with source other than `none`: `Checks (<label>): <checkCommands joined by ", ">.`
+    with labels `config` -> `.nax/config.json`, `agents-md` -> `AGENTS.md`, `claude-md` -> `CLAUDE.md`,
     `detected` -> `package.json scripts`.
   - when `checks` has source `none`: `No check commands found on the base branch, so nax bot fix will refuse.
     Add quality.commands to .nax/config.json, or list the commands in AGENTS.md or CLAUDE.md.`
@@ -282,21 +333,26 @@ disagreedBy: <distinct non-own authors in comment order> }` to the artifact's `e
   - a `### Minor findings` section (same item format as the off-line list) placed after
     `### Findings not on a changed line`; it takes part in the existing length budget.
   - `checks` absent or `null` (static review) renders no checks line.
+- `postSummary` passes `minor`, the earlier counts, `checks` and `preRunFailed`.
 
 ### File format: `bot-review.json` version 2
 
 ```json
 {
   "version": 2,
-  "pr": { "forge": "github", "repo": "o/r", "number": 22 },
+  "pr": { "forge": "github", "host": "github.com", "repo": "o/r", "number": 22 },
   "headSha": "78b2169...",
   "trusted": true,
   "intent": "pass",
   "quality": "changes",
   "agreed": [
-    { "key": "f-0123456789abcdef", "kind": "finding", "severity": "important", "issue": "...", "file": "src/a.ts", "line": 12 }
+    { "key": "f-0123456789abcdef", "kind": "finding", "severity": "important", "issue": "...", "file": "src/a.ts", "line": 12, "decision": "D-12" }
   ],
-  "checks": { "source": "agents-md", "commands": ["bun run lint", "bun run test"] },
+  "checks": {
+    "source": "agents-md",
+    "gates": [{ "name": "lint", "command": "bun run lint" }, { "name": "test", "command": "bun run test" }],
+    "preRun": [{ "command": "bun install --frozen-lockfile", "timeoutSeconds": 600 }]
+  },
   "events": [
     { "type": "finding-withdrawn", "key": "f-0123456789abcdef", "threadId": "PRRT_x", "file": "src/a.ts", "line": 12,
       "finding": "**Important** (quality): ...", "reason": "The reply shows the caller already validates this.",
@@ -305,33 +361,38 @@ disagreedBy: <distinct non-own authors in comment order> }` to the artifact's `e
 }
 ```
 
-`checks` is `null` for a static (untrusted) review. `events` is always present (empty when none). The file
-lives at `<outputDir>/bot/pr-<n>/<runId>/bot-review.json` as today, and `runBotReview` returns its path.
+`checks` is the full `BotChecks` the review resolved, or `null` for a static (untrusted) review. `events` is
+always present (empty when none). The file lives at `<outputDir>/bot/pr-<n>/<runId>/bot-review.json` as today,
+and `runBotReview` returns its path.
 
 ### Review run (`runBotReview`)
 
-Trusted review (not static), after the config loads and before the review session:
+Trusted review (not static):
 
-1. `checks = await _botReviewDeps.resolveBotChecks({ repoRoot, baseSha: checkout.baseSha, snapshotDir,
-   hasBaseNax, config, extract })`, where `extract` calls `_workflowDeps.callOp(ctx.callCtx,
-   botChecksExtractOp, { ...input, model: config.bot?.models.checks })`.
-2. `_botReviewDeps.runPreRunSteps({ steps: checks.preRun, workdir: checkout.worktree })`. A `NaxError`
-   `PRE_RUN_FAILED` is caught: the review continues and `preRunFailed` is the failing step's command (from
-   the error context); any other error propagates.
-3. The config passed to `createRuntime` has `execution.sandbox.network.allowLocalBinding` set to `true` when
-   the loaded value is `undefined`; an explicit `false` is kept. The loaded config object is not mutated.
+1. Right after `loadBotConfig`, build one config object: when the loaded
+   `execution.sandbox.network.allowLocalBinding` is `undefined`, a copy with it set to `true`; an explicit
+   `false` is kept. The loaded object is not mutated. This same object is passed to `createRuntime` and to
+   `buildPrStepContext` (so `ctx.callCtx.config` carries it to the review session).
+2. After `buildPrStepContext`: `checks = await _botReviewDeps.resolveBotChecks({ repoRoot, baseSha:
+   checkout.baseSha, snapshotDir, hasBaseNax, config, extract })`, where `extract` calls
+   `_workflowDeps.callOp(ctx.callCtx, botChecksExtractOp, { ...input, model: config.bot?.models.checks })`.
+3. `_botReviewDeps.runPreRunSteps({ steps: checks.preRun, workdir: checkout.worktree })`. A `NaxError`
+   `PRE_RUN_FAILED` is caught: the review continues and `preRunFailed` is the error context's `command`; any
+   other error propagates.
 
-Static review skips all three; `checks` is `null`. `input.decisions` (default `[]`) goes to the prompt in both
-modes. `summarizeChecks(checks)` goes to the prompt (`checks` commands) and to posting. The result carries
+Static review skips all three (its config only gets the existing MCP strip); `checks` is `null`.
+`input.decisions` (default `[]`) goes to the prompt in both modes. `checkCommands(checks)` goes to the prompt;
+the full `checks` and `preRunFailed` go to posting with `earlier` and `login` from `triage`. The result carries
 `artifactPath = join(stateDir, "bot-review.json")` and `checksSource` (`null` when static).
 
 ### Fix run (`runBotFix`)
 
-- The `hasBaseNax` refusal is removed. After `checkPushAccess` succeeds and before `triage`, `runBotFix` calls
+- The `hasBaseNax` refusal is removed. After `checkPushAccess` succeeds and before `triage`: when the loaded
+  review is version 2 with non-null `checks`, those are the checks; otherwise `runBotFix` calls
   `_botFixDeps.resolveBotChecks` (same inputs as review). Source `none` returns
   `{ outcome: "refused", reason: "no check commands found on the base branch; add quality.commands to .nax/config.json, or list the commands in AGENTS.md or CLAUDE.md, then merge it" }`.
 - `executeFix` runs `runPreRunSteps` with `checks.preRun` (was `config.execution.preRun`).
-- `BotFixEnv.checks` carries the result; `gatesStep` runs `env.checks.gates` mapped to
+- `BotFixEnv.checks` carries the checks; `gatesStep` runs `env.checks.gates` mapped to
   `{ ...gate, cwd: env.checkout.worktree }` and no longer calls `resolveGateCommands`. Empty `gates` still
   yields `no-gates`.
 - `resolveOwnFindings` (`src/bot/fix-report.ts`): before resolving an own agreed finding thread, reply with
@@ -340,28 +401,29 @@ modes. `summarizeChecks(checks)` goes to the prompt (`checks` commands) and to p
 
 ### CLI
 
-- `nax bot review <pr> --decisions <path>`: the CLI loads the file with `loadBotDecisions` before
-  `runBotReview`. On `BOT_DECISIONS_INVALID` or `BOT_DECISIONS_READ_FAILED` it prints the message to stderr and
-  exits 1 without calling `runBotReview`.
+- `nax bot review <pr> --decisions <path>`: the CLI loads the file with `loadBotDecisions` inside the existing
+  error boundary, before `runBotReview`. On an error it prints the error message to stderr (as for every other
+  error) and exits 1 without calling `runBotReview`.
 - On `posted`, after the existing line, print `nax bot review: artifact <artifactPath>`. When `checksSource` is
   `"none"`, also print to stderr `nax bot review: no check commands found on the base branch; nax bot fix will refuse`.
 - Exit codes are unchanged (0 posted, 2 not reviewed or refused, 1 error).
 
 ### Checkout cleanup
 
-`cleanup` in `src/bot/checkout.ts`, after removing the worktree, removes `<repoRoot>/.nax-wt` with a
-non-recursive `rmdir`. A non-empty directory (another bot checkout is live) or a missing one is ignored
-without a warning.
+`cleanup` in `src/bot/checkout.ts`, after removing the worktree, calls `_checkoutDeps.rmdir(<repoRoot>/.nax-wt)`
+(non-recursive). Failures (`ENOTEMPTY`, `EEXIST`, `ENOENT`) are ignored without a warning. Because another
+checkout may be reserving a directory concurrently, `reserveWorktree` retries its `mkdir(dirname)` +
+`mkdir(path)` once when the second `mkdir` fails with `ENOENT`.
 
 ### Failure Handling
 
 | Situation | Behaviour |
 |---|---|
-| `--decisions` file missing or unreadable | CLI exits 1, stderr names `BOT_DECISIONS_READ_FAILED`; no forge call |
-| `--decisions` file fails validation | CLI exits 1, stderr names `BOT_DECISIONS_INVALID` and the first problem; no forge call |
+| `--decisions` file missing or unreadable | CLI exits 1, stderr shows `[bot] Cannot read decisions file <path>`; no forge call |
+| `--decisions` file fails validation | CLI exits 1, stderr shows `[bot] Invalid decisions file <path>: <problem>`; no forge call |
 | Extraction op throws or its reply parses to `null` | the instruction-file tier is skipped with a warning; resolution continues at `detected` |
 | Instruction file larger than 65,536 bytes | the tier is skipped with a warning |
-| `git show` fails for a reason other than a missing path | that tier is skipped with a warning |
+| `git ls-tree` or `git show` fails for a base file | that tier is skipped with a warning |
 | Base `package.json` is not valid JSON or has no `scripts` | the `detected` tier yields no gates |
 | Review install step fails (`PRE_RUN_FAILED`) | the review continues; the summary shows the failed command |
 | Fix install step fails | unchanged: `PRE_RUN_FAILED` propagates |
@@ -370,7 +432,8 @@ without a warning.
 | Reply on an earlier finding fails | no resolve; `failed` + 1; warning |
 | Resolve of an earlier finding fails after the reply | `failed` + 1; warning |
 | `fix` reply before resolve fails | no resolve; warning |
-| Empty `.nax-wt` cannot be removed (not empty, missing) | ignored |
+| `.nax-wt` cannot be removed (not empty, missing) | ignored |
+| Worktree directory creation races a `.nax-wt` removal | one retry |
 
 ## Out of Scope
 
@@ -383,31 +446,35 @@ without a warning.
 - No install step is derived for `yarn.lock` repos, because the frozen-lockfile flag differs across yarn versions.
 - Only the repository-root `AGENTS.md` or `CLAUDE.md` is read for check commands; nested instruction files are not.
 - A static (untrusted) review resolves no checks, runs no install step and keeps the sandbox network config unchanged.
+- `allowLocalBinding` reaches only the native agent and Claude ACP; other ACP agents (codex, opencode, gemini, cursor, pi) keep their own shell sandbox settings, and the srt sandbox stays configured once per process.
+- The `allowLocalBinding` description text in `schemas-sandbox.ts` and `config-descriptions.ts` (which says it matters only with `allowedDomains`) is not corrected here.
 - `nax bot fix` still refuses every untrusted PR; sandboxed gates for untrusted PRs stay deferred.
+- Head-branch `package.json` lifecycle scripts, `.npmrc` and `bunfig.toml` are not pinned to the base branch before the install step or the checks run (trusted PRs only, the same exposure `fix` has today).
+- Extracted check commands are not shell-sanitised; they come only from base-branch files.
 - Minor findings are not threads, so they are not re-checked as earlier findings on the next review.
 - The review never resolves a thread another person opened (R12).
-- User documentation (a `docs/guides/` page on the integration seam and the `bot-review.json` v2 format, and the `--decisions` entry in `docs/cli-reference.md`) is a manual follow-up after merge.
+- User documentation (a `docs/guides/` page on the integration seam, the `bot-review.json` v2 format and the consumer rule for `disagreedBy`, and the `--decisions` entry in `docs/cli-reference.md`) is a manual follow-up after merge.
 
 ## Stories
 
-Ten stories, one capability (the `nax bot` review/fix loop); bundling #2625, #2626 and the review
+Twelve stories, one capability (the `nax bot` review/fix loop); bundling #2625, #2626 and the review
 enhancements is the user's ruling (2026-10-20). Stories are cut to stay at or under the 24-AC cap after
 `nax plan` splits compound ACs. All stories run in `packages/nax`.
 
 ### US-001: Check extraction op
 No dependencies. Workdir: packages/nax.
 
-Adds `bot.models.checks` to `BotConfigSchema` and `BotModelsConfig`, `buildBotChecksExtractPrompt`
-(`src/prompts/builders/bot-checks-extract-builder.ts`, exported from `@/prompts`), and `botChecksExtractOp`,
-`parseBotChecksReply`, `BotChecksExtractInput`, `BotChecksExtractOutput` (`src/operations/bot-checks-extract.ts`,
-exported from `@/operations`).
+Adds `bot.models.checks` to `BotConfigSchema`, `BotModelsConfig` and `FIELD_DESCRIPTIONS`,
+`buildBotChecksExtractPrompt` (`src/prompts/builders/bot-checks-extract-builder.ts`, exported from
+`@/prompts`), and `botChecksExtractOp`, `parseBotChecksReply`, `BotChecksExtractInput`,
+`BotChecksExtractOutput` (`src/operations/bot-checks-extract.ts`, exported from `@/operations`).
 
 ### US-002: Check resolution: config and instruction-file tiers
 Depends on US-001. Workdir: packages/nax.
 
-Adds `resolveBotChecks`, `summarizeChecks`, `BotChecks`, `BotCheck`, `BotCheckSource`, `BotChecksSummary` and
-`_botChecksDeps` in `src/bot/checks.ts`, exported from `@/bot`, with tiers 1, 2 and 4 of "Check resolution" in
-Design and the config and instruction-file `preRun` rules.
+Adds `resolveBotChecks`, `checkCommands`, `BotChecks`, `BotCheck`, `BotCheckSource` and `_botChecksDeps` in
+`src/bot/checks.ts`, exported from `@/bot`, with the base-file reading rule, tiers 1, 2 and 4 of "Check
+resolution" in Design, and the config and instruction-file `preRun` rules.
 
 ### US-003: Check resolution: detected tier and install step
 Depends on US-002. Workdir: packages/nax.
@@ -420,46 +487,58 @@ No dependencies. Workdir: packages/nax.
 
 Adds `loadBotDecisions`, `BotDecision` and `_decisionsDeps` in `src/bot/decisions.ts`, exported from `@/bot`.
 
-### US-005: Review prompt and parser
+### US-005: Review prompt sections
 Depends on US-004. Workdir: packages/nax.
 
-Extends `buildBotPrReviewPrompt` with the checklist, project checks, project decisions and earlier findings
-sections and the new reply fields; extends `PrReviewVerdict` (`PrEarlierVerdict`, `PrFinding`),
-`parsePrReviewReply`, `missingTriage`, `BotPrReviewInput` and `runPrReview` (`src/bot/review-step.ts`) to carry
-`earlier`, `checks` and `decisions`.
+Extends `buildBotPrReviewPrompt` and `BotPrReviewPromptInput` with the checklist, project checks, project
+decisions and earlier findings sections, and the new `earlier` and `decision` reply fields in `REPLY_TASK`.
 
-### US-006: Posting earlier findings and the v2 artifact
-Depends on US-002, US-005. Workdir: packages/nax.
+### US-006: Review reply parsing and the review step
+Depends on US-005. Workdir: packages/nax.
 
-Extends `postPrReview` with earlier-finding verdicts (agreed, reply, resolve), the `finding-withdrawn` event,
-`earlierAnswered`, and artifact version 2 (`checks`, `events`); adds `earlierKey` and `renderEarlierReply`;
-`loadLatestReview` accepts versions 1 and 2.
+Adds `PrEarlierStatus`, `PrEarlierVerdict` and `PrFinding` (`src/operations/bot-types.ts`); extends
+`parsePrReviewReply`, `missingTriage`, `BotPrReviewInput` and the `botPrReviewOp` closures; extends
+`PrReviewInput` and `runPrReview` (`src/bot/review-step.ts`) to carry `earlier`, `checks` and `decisions`.
 
-### US-007: Minor findings and summary lines
-Depends on US-006. Workdir: packages/nax.
+### US-007: Review artifact version 2
+Depends on US-002, US-006. Workdir: packages/nax.
 
-Routes minor findings to the summary in `postFindings`, and extends `ReviewSummaryInput` and
-`renderReviewSummary` with the earlier counts, checks, install-failure lines and the `### Minor findings`
-section; `postSummary` passes them.
+Writes `bot-review.json` version 2 with `checks` and `events` from `postPrReview`, carries a finding's
+`decision` into its agreed item, makes `loadLatestReview` accept versions 1 and 2, and adds `earlierKey`
+(`src/bot/render.ts`) and `renderEarlierReply` (`src/bot/render-comments.ts`).
 
-### US-008: Review run wiring
-Depends on US-003, US-004, US-007. Workdir: packages/nax.
+### US-008: Posting earlier findings
+Depends on US-007. Workdir: packages/nax.
 
-Wires `runBotReview`: `triage` returns `earlier` and `login`; trusted reviews resolve checks, run the install
-step and allow loopback; decisions and checks reach the review and posting; the result carries `artifactPath`
-and `checksSource`.
+Extends `postPrReview` with earlier-finding verdicts (agreed, reply, resolve, re-raised override), the
+`finding-withdrawn` event and `earlierAnswered`, using `earlierKey` and `renderEarlierReply` (US-007).
 
-### US-009: Review CLI and checkout cleanup
+### US-009: Minor findings and summary lines
 Depends on US-008. Workdir: packages/nax.
 
-Adds `--decisions` and the new output lines to `nax bot review` (`src/cli/bot.ts`), and removes an empty
-`.nax-wt` in `cleanup` (`src/bot/checkout.ts`).
+Routes minor findings to the summary in `postFindings`, and extends `ReviewSummaryInput` and
+`renderReviewSummary` with the earlier counts, checks and install-failure lines and the `### Minor findings`
+section; `postSummary` passes them.
 
-### US-010: Fix run: checks, refusal and replies
-Depends on US-003, US-006. Workdir: packages/nax.
+### US-010: Review run wiring
+Depends on US-003, US-004, US-009. Workdir: packages/nax.
 
-Replaces the `hasBaseNax` refusal in `runBotFix` with check resolution and the no-checks refusal, runs
-`checks.preRun`, runs `env.checks.gates` in `gatesStep`, and replies before resolving in `resolveOwnFindings`.
+Wires `runBotReview`: `triage` returns `earlier` and `login`; trusted reviews use one loopback-enabled config,
+resolve checks and run the install step; decisions and checks reach the review and posting; the result carries
+`artifactPath` and `checksSource`.
+
+### US-011: Review CLI and checkout cleanup
+Depends on US-010. Workdir: packages/nax.
+
+Adds `--decisions` and the new output lines to `nax bot review` (`src/cli/bot.ts`), removes an empty `.nax-wt`
+in `cleanup` and adds the reservation retry (`src/bot/checkout.ts`).
+
+### US-012: Fix run: checks, refusal and replies
+Depends on US-003, US-007. Workdir: packages/nax.
+
+Replaces the `hasBaseNax` refusal in `runBotFix` with the review's saved checks or check resolution and the
+no-checks refusal, runs `checks.preRun`, runs `env.checks.gates` in `gatesStep`, and replies before resolving
+in `resolveOwnFindings`.
 
 ### Context Files
 
@@ -468,19 +547,18 @@ Replaces the `hasBaseNax` refusal in `runBotFix` with check resolution and the n
 - `packages/nax/src/operations/types.ts`
 - `packages/nax/src/prompts/builders/bot-pr-review-builder.ts`
 - `packages/nax/src/config/schemas-bot.ts`
-- `packages/nax/src/config/runtime-types-bot.ts`
+- `packages/nax/src/cli/config-descriptions.ts`
 
 **US-002**
 - `packages/nax/src/finish/gates/quality.ts`
 - `packages/nax/src/bot/base-config.ts`
-- `packages/nax/src/bot/checkout.ts`
 - `packages/nax/src/config/runtime-types-execution.ts`
 - `packages/nax/src/utils/git.ts`
+- `packages/nax/src/operations/bot-checks-extract.ts` — created by US-001, read here for `BotChecksExtractOutput`
 
 **US-003**
 - `packages/nax/src/bot/checks.ts` — created by US-002, extended here
 - `packages/nax/src/cli/setup-analyze.ts`
-- `packages/nax/src/utils/git.ts`
 
 **US-004**
 - `packages/nax/src/bot/index.ts`
@@ -488,42 +566,51 @@ Replaces the `hasBaseNax` refusal in `runBotFix` with check resolution and the n
 
 **US-005**
 - `packages/nax/src/prompts/builders/bot-pr-review-builder.ts`
+- `packages/nax/test/unit/prompts/bot-pr-review-builder.test.ts`
+- `packages/nax/src/bot/decisions.ts` — created by US-004, read here for `BotDecision`
+
+**US-006**
 - `packages/nax/src/operations/bot-pr-review-reply.ts`
 - `packages/nax/src/operations/bot-pr-review.ts`
 - `packages/nax/src/operations/bot-types.ts`
 - `packages/nax/src/bot/review-step.ts`
-
-**US-006**
-- `packages/nax/src/bot/post.ts`
-- `packages/nax/src/bot/render.ts`
-- `packages/nax/src/bot/fix-input.ts`
-- `packages/nax/src/forge/marker.ts`
-- `packages/nax/src/bot/checks.ts` — created by US-002, read here for `BotChecksSummary`
+- `packages/nax/test/integration/bot/review-step.test.ts`
 
 **US-007**
+- `packages/nax/src/bot/post.ts`
+- `packages/nax/src/bot/fix-input.ts`
+- `packages/nax/src/bot/render.ts`
+- `packages/nax/src/bot/render-comments.ts`
+- `packages/nax/src/bot/checks.ts` — created by US-002, read here for `BotChecks`
+
+**US-008**
+- `packages/nax/src/bot/post.ts`
+- `packages/nax/src/bot/render.ts`
+- `packages/nax/src/bot/render-comments.ts`
+- `packages/nax/src/forge/marker.ts`
+- `packages/nax/src/forge/pr-types.ts`
+
+**US-009**
 - `packages/nax/src/bot/post.ts`
 - `packages/nax/src/bot/render-comments.ts`
 - `packages/nax/test/unit/bot/render-comments.test.ts`
 
-**US-008**
+**US-010**
 - `packages/nax/src/bot/review-run.ts`
-- `packages/nax/src/bot/review-step.ts`
+- `packages/nax/src/workflow/pr-step-context.ts`
 - `packages/nax/src/execution/lifecycle/pre-run-steps.ts`
 - `packages/nax/src/workflow/step-context.ts`
-- `packages/nax/test/integration/bot/review-run.test.ts`
 
-**US-009**
+**US-011**
 - `packages/nax/src/cli/bot.ts`
 - `packages/nax/src/bot/checkout.ts`
-- `packages/nax/test/unit/cli/bot-review.test.ts`
 - `packages/nax/test/integration/bot/checkout.test.ts`
 
-**US-010**
+**US-012**
 - `packages/nax/src/bot/fix-run.ts`
 - `packages/nax/src/bot/fix-steps.ts`
 - `packages/nax/src/bot/fix-report.ts`
-- `packages/nax/test/integration/bot/fix-run.test.ts`
-- `packages/nax/test/integration/bot/gates-push-steps.test.ts`
+- `packages/nax/src/bot/fix-input.ts`
 
 ### Creates
 
@@ -540,22 +627,39 @@ Replaces the `hasBaseNax` refusal in `runBotFix` with check resolution and the n
 ### Modifies
 
 **US-006**
-- `packages/nax/test/integration/bot/post.test.ts` — the "persists artifact before the first forge write" test asserts `version: 1`; the artifact is now version 2, so the assertion becomes `version: 2` and the invariant (the artifact is written before the first forge write, with pr, headSha, trusted, intent and quality) is unchanged.
-- `packages/nax/test/integration/bot/post-threads.test.ts` — its forge-run mock asserts the persisted artifact matches `version: 1`; the artifact is now version 2, so the matcher becomes `version: 2` and the invariant (the artifact exists before any thread write) is unchanged.
+- `packages/nax/test/unit/operations/bot-pr-review-reply.test.ts` — the parse test asserts the whole verdict with `toEqual` and no `earlier` field; the parser now always returns `earlier` (empty when none), so the expected verdicts gain `earlier: []` and the invariant (thread and comment triage parsed as before) is unchanged.
+
+**US-007**
+- `packages/nax/test/integration/bot/post.test.ts` — "AC-1: persists artifact before the first forge write" asserts `version: 1`; the artifact is now version 2, so the assertion becomes `version: 2`, keeping the invariant that the artifact (pr, headSha, trusted, intent, quality) is written before the first forge write.
+- `packages/nax/test/integration/bot/post-threads.test.ts` — its forge-run mock asserts the persisted artifact matches `version: 1`; the artifact is now version 2, so the matcher becomes `version: 2`, keeping the invariant that the artifact exists before any thread write.
 - `packages/nax/test/integration/bot/fix-input.test.ts` — the "unsupported version" case uses `version: 2`, which is now supported; the case changes to `version: 3`, keeping the invariant that an unknown version is ignored.
 
+**US-008**
+- `packages/nax/test/integration/bot/post.test.ts` — tests asserting the whole `PostReviewOutcome` with `toEqual` (for example the posted-and-edited inline findings test near line 280) have no `earlierAnswered`; with no earlier threads it is `0`, so the expected objects gain `earlierAnswered: 0` and the counts they pin are unchanged.
+- `packages/nax/test/integration/bot/post-threads.test.ts` — tests asserting the whole `PostReviewOutcome` with `toEqual` (for example AC-15) have no `earlierAnswered`; the expected objects gain `earlierAnswered: 0` and the counts they pin are unchanged.
+
+**US-009**
+- `packages/nax/test/integration/bot/post-threads.test.ts` — "AC-15: distinct posted and edited inline findings still count with no threads" uses two `minor` findings and expects one inline POST and one PATCH; minor findings no longer open new inline comments, so its findings become `important`, keeping the invariant that a new finding is posted inline, a finding with an own comment is edited, and both count in `inlineFindings`.
+
 **US-010**
-- `packages/nax/test/integration/bot/fix-run.test.ts` — "AC-7 missing base config refuses and disposes checkout" expects the refusal "the base branch has no nax config; gates cannot run"; that refusal is replaced by check resolution, so the test instead stubs `resolveBotChecks` to return source `none` and expects the no-checks refusal, keeping the invariant that a refusal disposes the checkout and runs no fix session.
+- `packages/nax/test/integration/bot/review-run.test.ts` — "AC-24 returns posting counts" asserts the whole result with `toEqual` and its `counts` mock has no `earlierAnswered`; the result now also carries `artifactPath` and `checksSource`, so the mock gains `earlierAnswered: 0` and the expectation gains those two fields; trusted-path tests also stub `_botReviewDeps.resolveBotChecks` and `_botReviewDeps.runPreRunSteps` in their setup so no real git or install runs; the invariant (the result reports the posting counts, intent, quality and static mode) is unchanged.
+
+**US-011**
+- `packages/nax/test/unit/cli/bot-review.test.ts` — "AC-5/6" asserts stdout is exactly the one summary line and its `posted` fixture lacks `artifactPath`, `checksSource` and `earlierAnswered`; a posted review now prints a second `nax bot review: artifact <path>` line, so the fixture gains those fields and the expected stdout gains that line, keeping the invariant that the summary line is printed first with the same text and exit 0.
+
+**US-012**
+- `packages/nax/test/helpers/bot-fix.ts` — `makeBotFixEnv` builds a `BotFixEnv` without the now-required `checks`, and `makeBotFixDeps` has no `resolveBotChecks`; the helper gains a default `checks` (source `config`, no gates, no preRun) and a `resolveBotChecks` stub returning it, so every fix test keeps running without real git, and the shared fixtures are otherwise unchanged.
+- `packages/nax/test/integration/bot/fix-run.test.ts` — "AC-7 missing base config refuses and disposes checkout" expects "the base branch has no nax config; gates cannot run", which no longer exists: it now stubs `resolveBotChecks` to source `none` and expects the no-checks refusal; "AC-13/14 pre-run uses loaded steps before fix" expects `steps: env.config.execution.preRun` and now expects the resolved `checks.preRun`; the invariants (a refusal disposes the checkout and runs no fix; the install step runs before the fix) are unchanged.
 - `packages/nax/test/integration/bot/gates-push-steps.test.ts` — the gates tests expect `resolveGateCommands` to be called with the snapshot dir and stub its result; `gatesStep` now runs `env.checks.gates`, so the tests set `env.checks` instead, keeping the invariants that gates run with the worktree as cwd and an empty list reports `no-gates`.
-- `packages/nax/test/integration/bot/fix-report.test.ts` — the resolution tests stub only `resolveThread`; `resolveOwnFindings` now replies first, so they also stub `replyToThread` to succeed, keeping the invariant that resolution continues after one failed resolve and skips empty, unmarked and resolved threads.
+- `packages/nax/test/integration/bot/fix-report.test.ts` — the resolution tests stub only `resolveThread`, and the reply tests expect `replied: 1` and one `replyToThread` call where an own agreed finding thread is also resolved; `resolveOwnFindings` now replies first, so the resolution tests also stub `replyToThread` to succeed and those reply counts become 2, keeping the invariants that resolution continues after one failed resolve and skips empty, unmarked and resolved threads.
 
 ### Seams
 
-- US-005's `runPrReview` passes `earlierIds` and `decisionIds` to `botPrReviewOp`; its AC stubs `_workflowDeps.callOp` and drives `runPrReview`.
-- US-008 calls `resolveBotChecks` (US-002, US-003) and `runPreRunSteps` through `_botReviewDeps`; its ACs stub both and drive `runBotReview`. Its `extract` closure calls `botChecksExtractOp` (US-001) through `_workflowDeps.callOp`.
-- US-008 passes `earlier`, `login`, `checks` and `preRunFailed` into `postPrReview` (US-006, US-007); its ACs stub `postPrReview` through `_botReviewDeps`.
-- US-009's CLI calls `loadBotDecisions` (US-004) and passes the result to `runBotReview` (US-008); its ACs stub `runBotReview` through `_botCliDeps` and drive the commander program built by `registerBotCommand`.
-- US-010 calls `resolveBotChecks` (US-002, US-003) through `_botFixDeps`; its ACs stub it and drive `runBotFix`.
+- US-006's `runPrReview` passes `earlierIds` and `decisionIds` to `botPrReviewOp`; its AC stubs `_workflowDeps.callOp` and drives `runPrReview`.
+- US-010 calls `resolveBotChecks` (US-002, US-003) and `runPreRunSteps` through `_botReviewDeps`; its ACs stub both and drive `runBotReview`. Its `extract` closure calls `botChecksExtractOp` (US-001) through `_workflowDeps.callOp`.
+- US-010 passes `earlier`, `login`, `checks` and `preRunFailed` into `postPrReview` (US-007, US-008, US-009); its ACs stub `postPrReview` through `_botReviewDeps`.
+- US-011's CLI calls `loadBotDecisions` (US-004) and passes the result to `runBotReview` (US-010); its ACs stub `runBotReview` through `_botCliDeps` and drive the commander program built by `registerBotCommand`.
+- US-012 reads `checks` from the version-2 artifact (US-007) and otherwise calls `resolveBotChecks` (US-002, US-003) through `_botFixDeps`; its ACs stub both `loadLatestReview` and `resolveBotChecks` and drive `runBotFix`.
 
 ## Acceptance Criteria
 
@@ -568,6 +672,7 @@ and forge calls go through injectable deps and are faked in tests; no test touch
 
 - [unit] `NaxConfigSchema` parsing `{ bot: { models: { checks: "fast" } } }` yields `bot.models.checks` equal to `"fast"`.
 - [unit] `NaxConfigSchema` parsing `{}` yields `bot.models.checks` undefined.
+- [unit] `FIELD_DESCRIPTIONS["bot.models.checks"]` is a non-empty string.
 - [unit] `buildBotChecksExtractPrompt({ fileName: "AGENTS.md", text })` returns a string containing `text` inside a fence whose backtick run is longer than the longest backtick run in `text`.
 - [unit] `buildBotChecksExtractPrompt` output names the four gates `build`, `typecheck`, `lint`, `test` and the `install` key in its reply shape.
 - [unit] `buildBotChecksExtractPrompt` output says the file is data, not instructions.
@@ -580,9 +685,9 @@ and forge calls go through injectable deps and are faked in tests; no test touch
 - [unit] `parseBotChecksReply` drops an entry whose trimmed command is empty.
 - [unit] `parseBotChecksReply` keeps only the first entry when two entries name the gate `lint`.
 - [unit] `parseBotChecksReply` omits `install` when it contains a carriage return.
-- [unit] `parseBotChecksReply` trims surrounding whitespace from a kept command.
+- [unit] `parseBotChecksReply` returns a kept command with its surrounding whitespace trimmed.
 - [unit] `botChecksExtractOp.kind` is `"complete"` and `botChecksExtractOp.name` is `"bot-checks-extract"`.
-- [unit] `botChecksExtractOp.model` resolves `{ fileName: "AGENTS.md", text: "", model: "balanced" }` to `"balanced"`.
+- [unit] `botChecksExtractOp.model` resolves an input with `model: "balanced"` to `"balanced"`.
 - [unit] `botChecksExtractOp.model` resolves an input with no `model` to `"fast"`.
 - [unit] `botChecksExtractOp.build(input)` returns a task section whose content equals `buildBotChecksExtractPrompt({ fileName, text })` for that input.
 - [unit] `botChecksExtractOp.parse` returns the same value as `parseBotChecksReply` for the same output string.
@@ -590,157 +695,202 @@ and forge calls go through injectable deps and are faked in tests; no test touch
 ### US-002
 
 - [unit] `resolveBotChecks` with `hasBaseNax: true` and `resolveGateCommands` returning `[{ name: "lint", command: "bun run lint", cwd: "/snap" }]` returns source `"config"` and gates `[{ name: "lint", command: "bun run lint" }]`.
-- [unit] `resolveBotChecks` with `hasBaseNax: true` and a non-empty `config.execution.preRun` returns that `preRun`.
+- [unit] `resolveBotChecks` with `hasBaseNax: true`, config gates and a non-empty `config.execution.preRun` returns that `preRun`.
 - [unit] `resolveBotChecks` with `hasBaseNax: false` never calls `resolveGateCommands`.
-- [unit] `resolveBotChecks` with `hasBaseNax: true` and `resolveGateCommands` returning `[]` continues to the instruction-file tier.
-- [unit] `resolveBotChecks` reads `AGENTS.md` with `git show <baseSha>:AGENTS.md` in `repoRoot`, never from a worktree path.
+- [unit] `resolveBotChecks` with `hasBaseNax: true` and `resolveGateCommands` returning `[]` calls `extract` when a base `AGENTS.md` exists.
+- [unit] `resolveBotChecks` checks `AGENTS.md` with `git ls-tree` at `baseSha` and reads it with `git show <baseSha>:AGENTS.md`, both run in `repoRoot`.
 - [unit] `resolveBotChecks` with base `AGENTS.md` present and `extract` returning `{ gates: [{ gate: "test", command: "bun run test" }] }` returns source `"agents-md"` and gates `[{ name: "test", command: "bun run test" }]`.
-- [unit] `resolveBotChecks` with no base `AGENTS.md` and base `CLAUDE.md` present calls `extract` with `fileName: "CLAUDE.md"` and returns source `"claude-md"` when gates come back.
+- [unit] `resolveBotChecks` with no base `AGENTS.md` and base `CLAUDE.md` present calls `extract` with `fileName: "CLAUDE.md"`.
+- [unit] `resolveBotChecks` returns source `"claude-md"` when gates come back for `CLAUDE.md`.
 - [unit] `resolveBotChecks` with both files present calls `extract` once, with `fileName: "AGENTS.md"`.
 - [unit] `resolveBotChecks` with a base `AGENTS.md` of 65,537 bytes never calls `extract`.
 - [unit] `resolveBotChecks` with `extract` rejecting and no base `package.json` returns source `"none"`.
 - [unit] `resolveBotChecks` with `extract` resolving `null` and no base `package.json` returns source `"none"`.
-- [unit] `resolveBotChecks` orders instruction-file gates by `GATE_ORDER` (`build`, `typecheck`, `lint`, `test`) whatever order `extract` returns them in.
+- [unit] `resolveBotChecks` with `git ls-tree` exiting non-zero for `AGENTS.md` never calls `extract`.
+- [unit] `resolveBotChecks` orders instruction-file gates as `build`, `typecheck`, `lint`, `test` whatever order `extract` returns them in.
 - [unit] `resolveBotChecks` with instruction-file gates and `extract` `install: "npm ci"` returns `preRun` `[{ command: "npm ci", timeoutSeconds: 600 }]`.
 - [unit] `resolveBotChecks` with nothing found returns `{ source: "none", gates: [], preRun: [] }`.
-- [unit] `resolveBotChecks` with `git show` failing with a non-missing-path error on `AGENTS.md` never calls `extract`.
-- [unit] `summarizeChecks` on gates `[{ name: "test", command: ["bun", "test"] }]` returns `commands` `["bun test"]` and the same `source`.
+- [unit] `checkCommands` on gates `[{ name: "test", command: ["bun run test:unit", "bun run test:int"] }, { name: "lint", command: "bun run lint" }]` returns `["bun run test:unit", "bun run test:int", "bun run lint"]`.
 
 ### US-003
 
-- [unit] `resolveBotChecks` with only a base `package.json` holding scripts `test` and `lint` and a base `bun.lock` returns source `"detected"` and gates `lint` = `bun run lint`, `test` = `bun run test`.
+- [unit] `resolveBotChecks` with only a base `package.json` holding scripts `test` and `lint` and a base `bun.lock` returns source `"detected"`.
+- [unit] In that case the gates are `lint` = `bun run lint` and `test` = `bun run test`, in that order.
 - [unit] `resolveBotChecks` with base scripts `typecheck` and `type-check` maps only `typecheck` to the `typecheck` gate.
-- [unit] `resolveBotChecks` with base `package-lock.json` returns detected commands prefixed `npm run` and `preRun` `[{ command: "npm ci", timeoutSeconds: 600 }]`.
+- [unit] `resolveBotChecks` with a base `test` script `echo "Error: no test specified" && exit 1` and a `lint` script returns no `test` gate.
+- [unit] `resolveBotChecks` with base `package-lock.json` returns detected commands prefixed `npm run`.
+- [unit] `resolveBotChecks` with base `package-lock.json` returns `preRun` `[{ command: "npm ci", timeoutSeconds: 600 }]`.
 - [unit] `resolveBotChecks` with base `pnpm-lock.yaml` returns detected commands prefixed `pnpm run` and `preRun` command `pnpm install --frozen-lockfile`.
+- [unit] `resolveBotChecks` with base `bun.lockb` and no `bun.lock` returns `preRun` command `bun install --frozen-lockfile`.
 - [unit] `resolveBotChecks` with base `yarn.lock` returns detected commands prefixed `yarn` and an empty `preRun`.
 - [unit] `resolveBotChecks` with no base lockfile returns detected commands prefixed `npm run` and an empty `preRun`.
 - [unit] `resolveBotChecks` with base `package.json` that is not valid JSON returns source `"none"`.
-- [unit] `resolveBotChecks` with base `bun.lockb` (and no `bun.lock`) returns `preRun` command `bun install --frozen-lockfile`.
-- [unit] `resolveBotChecks` with `hasBaseNax: true`, a non-empty `config.execution.preRun` and detected gates returns the config `preRun`, not the lockfile install.
+- [unit] `resolveBotChecks` with `git show` exiting non-zero for a present base `package.json` returns source `"none"`.
+- [unit] `resolveBotChecks` with `hasBaseNax: true`, config gates, an empty `config.execution.preRun` and a base `package-lock.json` returns `preRun` `[{ command: "npm ci", timeoutSeconds: 600 }]`.
+- [unit] `resolveBotChecks` with `hasBaseNax: true`, a non-empty `config.execution.preRun` and only detected gates returns the config `preRun`, not the lockfile install.
 
 ### US-004
 
 - [unit] `loadBotDecisions` on a file holding the Design example returns `[{ id: "D-12", statement: "Bot findings on generated files are not reported.", source: "koda memory 9f2c" }]`.
 - [unit] `loadBotDecisions` on `{ "version": 1, "decisions": [] }` returns `[]`.
-- [unit] `loadBotDecisions` on a missing path throws `NaxError` with code `BOT_DECISIONS_READ_FAILED`.
-- [unit] `loadBotDecisions` on text that is not JSON throws code `BOT_DECISIONS_INVALID`.
+- [unit] `loadBotDecisions` on a missing path throws `NaxError` with code `BOT_DECISIONS_READ_FAILED` and message `[bot] Cannot read decisions file <path>`.
+- [unit] `loadBotDecisions` on text that is not JSON throws code `BOT_DECISIONS_INVALID` with a message starting `[bot] Invalid decisions file <path>: `.
 - [unit] `loadBotDecisions` on `{ "version": 2, "decisions": [] }` throws code `BOT_DECISIONS_INVALID`.
 - [unit] `loadBotDecisions` with 101 decisions throws code `BOT_DECISIONS_INVALID`.
 - [unit] `loadBotDecisions` with an id `"has space"` throws code `BOT_DECISIONS_INVALID`.
 - [unit] `loadBotDecisions` with an empty statement throws code `BOT_DECISIONS_INVALID`.
 - [unit] `loadBotDecisions` with a 2,001-character statement throws code `BOT_DECISIONS_INVALID`.
 - [unit] `loadBotDecisions` with a 201-character source throws code `BOT_DECISIONS_INVALID`.
-- [unit] `loadBotDecisions` with two decisions sharing id `D-1` throws code `BOT_DECISIONS_INVALID` with a message naming `D-1`.
-- [unit] `loadBotDecisions` on a file larger than 262,144 bytes throws code `BOT_DECISIONS_INVALID` without parsing it.
+- [unit] `loadBotDecisions` with two decisions sharing id `D-1` throws code `BOT_DECISIONS_INVALID` with a message ending `duplicate id D-1`.
+- [unit] `loadBotDecisions` with `fileSize` reporting 262,145 bytes throws code `BOT_DECISIONS_INVALID` and never calls `readText`.
 
 ### US-005
 
-- [unit] `buildBotPrReviewPrompt` output contains a `## Checklist` heading followed by the six checklist items in Design order, item 6 starting with `Design decisions:`.
+- [unit] `buildBotPrReviewPrompt` output contains a `## Checklist` heading.
+- [unit] `buildBotPrReviewPrompt` output lists the six checklist items in Design order, numbered 1 to 6.
+- [unit] `buildBotPrReviewPrompt` output contains checklist item 6 starting `Design decisions: if the repository has ADRs or architecture docs`.
 - [unit] `buildBotPrReviewPrompt` output contains the line `Do not repeat one of your earlier findings as a new finding.`
+- [unit] `buildBotPrReviewPrompt` output still contains `Answer every listed thread id and comment id exactly once.`
 - [unit] `buildBotPrReviewPrompt` with `checks: ["bun run test"]` contains `## Project checks` and a bullet `bun run test`.
 - [unit] `buildBotPrReviewPrompt` with no `checks` contains no `## Project checks` heading.
-- [unit] `buildBotPrReviewPrompt` with one decision `{ id: "D-1", statement: "S" }` contains `## Project decisions`, the id `D-1` and the statement `S` inside fences.
+- [unit] `buildBotPrReviewPrompt` with one decision `{ id: "D-1", statement: "S" }` contains `## Project decisions`.
+- [unit] In that prompt the id `D-1` and the statement `S` each appear inside a fence.
 - [unit] `buildBotPrReviewPrompt` with no decisions contains no `## Project decisions` heading.
-- [unit] `buildBotPrReviewPrompt` with one earlier thread contains `## Your earlier findings` after the `## Untrusted content` heading, with that thread's id fenced.
+- [unit] `buildBotPrReviewPrompt` with one earlier thread contains `## Your earlier findings` after the `## Untrusted content` heading.
+- [unit] In that prompt the earlier thread's id appears inside a fence.
 - [unit] `buildBotPrReviewPrompt` with no earlier threads contains no `## Your earlier findings` heading.
-- [unit] `buildBotPrReviewPrompt` reply shape names the `earlier` array with statuses `open`, `fixed` and `withdrawn`, and the optional `decision` field on a finding.
+- [unit] `buildBotPrReviewPrompt` reply shape names the `earlier` array with statuses `open`, `fixed` and `withdrawn`.
+- [unit] `buildBotPrReviewPrompt` reply shape names the optional `decision` field on a finding.
+
+### US-006
+
 - [unit] `parsePrReviewReply` with `earlierIds: ["E1"]` and a reply `earlier: [{ id: "E1", status: "fixed", reason: "done" }]` returns `earlier` `[{ id: "E1", status: "fixed", reason: "done" }]`.
 - [unit] `parsePrReviewReply` drops an `earlier` entry whose id is not in `earlierIds`.
 - [unit] `parsePrReviewReply` drops an `earlier` entry whose status is `"stale"`.
 - [unit] `parsePrReviewReply` drops an `earlier` entry whose reason is blank.
 - [unit] `parsePrReviewReply` keeps only the first `earlier` entry for a repeated id.
 - [unit] `parsePrReviewReply` with `decisionIds: ["D-1"]` keeps `decision: "D-1"` on a finding.
-- [unit] `parsePrReviewReply` removes `decision: "D-9"` from a finding when `D-9` is not in `decisionIds`, keeping the finding.
+- [unit] `parsePrReviewReply` keeps a finding with `decision: "D-9"` but without the `decision` field when `D-9` is not in `decisionIds`.
 - [unit] `parsePrReviewReply` called with three arguments returns `earlier` `[]` and parses threads and comments as before.
 - [unit] `missingTriage(verdict, [], [], ["E1", "E2"])` with a verdict answering only `E1` returns `["E2"]`.
-- [integration] With `_workflowDeps.callOp` stubbed, `runPrReview` with `earlier` thread ids `["E1"]` and decisions `[{ id: "D-1", statement: "S" }]` calls `callOp` with `botPrReviewOp` and an input whose `earlierIds` is `["E1"]` and `decisionIds` is `["D-1"]`.
+- [unit] `botPrReviewOp.parse` with input `earlierIds: ["E1"]` keeps an `E1` earlier verdict from the output.
+- [unit] `botPrReviewOp.retry(input)` treats a reply missing the verdict for an `earlierIds` entry as invalid and asks again with a prompt naming that id.
+- [integration] With `_workflowDeps.callOp` stubbed, `runPrReview` with `earlier` thread ids `["E1"]` calls `callOp` with `botPrReviewOp` and an input whose `earlierIds` is `["E1"]`.
+- [integration] With `_workflowDeps.callOp` stubbed, `runPrReview` with decisions `[{ id: "D-1", statement: "S" }]` calls `callOp` with an input whose `decisionIds` is `["D-1"]`.
 - [integration] With `_workflowDeps.callOp` stubbed, `runPrReview` with `checks: ["bun run test"]` passes a prompt containing `## Project checks`.
+- [integration] With `_workflowDeps.callOp` stubbed, `runPrReview` with no `earlier`, `checks` or `decisions` calls `callOp` with `earlierIds` `[]` and `decisionIds` `[]`.
 
-### US-006
+### US-007
 
 - [integration] `postPrReview` writes `bot-review.json` with `version: 2`.
-- [integration] `postPrReview` with `checks: { source: "detected", commands: ["npm run test"] }` writes that object as the artifact `checks`.
+- [integration] `postPrReview` with a full `BotChecks` (source `detected`, one gate, one preRun step) writes that object as the artifact `checks`.
 - [integration] `postPrReview` with `checks: null` writes artifact `checks: null`.
+- [integration] `postPrReview` with no `checks` input writes artifact `checks: null`.
 - [integration] `postPrReview` with no withdrawn verdicts writes artifact `events: []`.
-- [integration] An earlier thread with verdict `open` adds an `agreed` item of kind `finding` with the thread's marker key, path and line, and makes no forge write for that thread.
-- [integration] The `agreed` item for an `open` earlier thread whose first comment is `withNaxBotMarker("**Minor** (quality): Leak", key)` has `issue` `"**Minor** (quality): Leak"` and severity `minor`.
+- [integration] `postPrReview` with a finding carrying `decision: "D-1"` writes its agreed item with `decision: "D-1"`.
+- [integration] `postPrReview` with a finding without `decision` writes its agreed item with no `decision` key.
+- [integration] `loadLatestReview` returns a version-2 artifact whose `headSha` matches.
+- [integration] `loadLatestReview` still returns a version-1 artifact whose `headSha` matches.
+- [integration] `loadLatestReview` ignores an artifact with `version: 3`.
+- [unit] `earlierKey("T1")` returns `"e-"` followed by 16 lowercase hex characters, the same on a second call.
+- [unit] `earlierKey("T1")` differs from `threadKey("T1")`.
+- [unit] `renderEarlierReply({ id: "T1", status: "withdrawn", reason: "r" }, "T1")` parses with `parseNaxBotMarker` to key `earlierKey("T1")`.
+
+### US-008
+
+- [integration] An earlier thread with verdict `open` adds an `agreed` item of kind `finding` with the thread's marker key, path and line.
+- [integration] An earlier thread with verdict `open` gets no forge write.
+- [integration] The `agreed` item for an `open` earlier thread whose first comment is `withNaxBotMarker("**Minor** (quality): Leak", key)` has `issue` `"**Minor** (quality): Leak"`.
+- [integration] That agreed item has severity `minor`.
 - [integration] An `open` earlier thread whose first comment has no severity prefix gets severity `important`.
 - [integration] An earlier thread with no verdict in `verdict.earlier` is treated as `open`.
 - [integration] An `open` earlier thread whose key equals a new finding's key adds no second `agreed` item.
-- [integration] An earlier thread with verdict `fixed` gets a reply whose body is `renderEarlierReply` (`Fixed: <reason>` with marker key `earlierKey(thread.id)`), then a `resolveThread` call for that thread.
+- [integration] An earlier thread with verdict `fixed` whose key equals a new finding's key gets no reply and no `resolveThread` call.
+- [integration] An earlier thread with verdict `fixed` gets a reply whose body is `Fixed: <reason>` with marker key `earlierKey(thread.id)`.
+- [integration] After that reply, `resolveThread` is called for that thread.
 - [integration] An earlier thread with verdict `withdrawn` gets a reply starting `Withdrawn: ` and is then resolved.
 - [integration] When an own comment with key `earlierKey(thread.id)` exists in that thread, `postPrReview` edits it instead of replying.
 - [integration] A failed reply on a `fixed` earlier thread makes no `resolveThread` call and adds 1 to `failed`.
 - [integration] A failed `resolveThread` after a successful reply adds 1 to `failed`.
-- [integration] A `withdrawn` earlier thread with a comment by `alice` (not `login`) writes one event `{ type: "finding-withdrawn", key, threadId, finding, reason, disagreedBy: ["alice"] }` including the thread's file and line.
+- [integration] A `withdrawn` earlier thread with a comment by `alice` (not `login`) writes one `finding-withdrawn` event with the thread's key, id, file, line, finding text, reason and `disagreedBy: ["alice"]`.
 - [integration] A `withdrawn` earlier thread whose comments are all by `login` writes no event.
 - [integration] A `withdrawn` earlier thread with comments by `alice`, `bob`, then `alice` again writes `disagreedBy` `["alice", "bob"]`.
+- [integration] `postPrReview` without `login` writes no events.
 - [integration] `postPrReview` returns `earlierAnswered` equal to the number of earlier threads, counting `open` ones.
-- [unit] `earlierKey("T1")` returns `"e-"` followed by 16 lowercase hex characters, and the same value on a second call.
-- [unit] `earlierKey("T1")` differs from `threadKey("T1")`.
-- [integration] `loadLatestReview` returns a version-2 artifact whose `headSha` matches.
-- [integration] `loadLatestReview` still returns a version-1 artifact whose `headSha` matches.
 
-### US-007
+### US-009
 
 - [integration] `postPrReview` with one `minor` finding on a changed line and no own comment for its key makes no inline post.
-- [integration] `postPrReview` with one `minor` finding whose key has an own comment edits that comment.
+- [integration] `postPrReview` with one `minor` finding whose key has an own comment edits that comment and counts it in `inlineFindings`.
+- [integration] `postPrReview` with one `minor` finding with no line lists it under `### Findings not on a changed line`.
 - [integration] `postPrReview` with one `critical` finding on a changed line posts it inline.
 - [integration] `postPrReview` keeps a `minor` finding in the artifact `agreed`.
 - [unit] `renderReviewSummary` with `minor: [finding]` contains a `### Minor findings` heading followed by that finding's item.
 - [unit] `renderReviewSummary` places `### Minor findings` after `### Findings not on a changed line` when both are present.
 - [unit] `renderReviewSummary` with `earlier: { open: 1, fixed: 2, withdrawn: 0 }` contains `3 earlier findings re-checked: 1 still open, 2 fixed, 0 withdrawn.`
 - [unit] `renderReviewSummary` with `earlier: { open: 0, fixed: 0, withdrawn: 0 }` contains no `earlier findings re-checked` line.
-- [unit] `renderReviewSummary` with `checks: { source: "agents-md", commands: ["bun run lint", "bun run test"] }` contains `Checks (AGENTS.md): bun run lint, bun run test.`
-- [unit] `renderReviewSummary` with `checks` source `detected` uses the label `package.json scripts`.
-- [unit] `renderReviewSummary` with `checks` source `none` contains `No check commands found on the base branch, so nax bot fix will refuse.`
+- [unit] `renderReviewSummary` with agents-md checks of gates `bun run lint` and `bun run test` contains `Checks (AGENTS.md): bun run lint, bun run test.`
+- [unit] `renderReviewSummary` with checks source `detected` uses the label `package.json scripts`.
+- [unit] `renderReviewSummary` with checks source `none` contains `No check commands found on the base branch, so nax bot fix will refuse.`
 - [unit] `renderReviewSummary` with `checks: null` contains no line starting `Checks (` and no `No check commands found` line.
 - [unit] `renderReviewSummary` with `preRunFailed: "npm ci"` contains `Install step failed (npm ci); checks may not have run.`
-- [unit] `renderReviewSummary` with many minor findings stays within `MAX_FORGE_COMMENT_CHARS` and ends the dropped tail with the existing `… and N more not shown.` line.
-- [integration] `postPrReview` passes the minor findings, earlier counts, `checks` and `preRunFailed` to the summary, so the posted summary body contains the checks line for `checks` source `config`.
-
-### US-008
-
-- [integration] With `_botReviewDeps.resolveBotChecks` stubbed, a trusted `runBotReview` calls it once with the checkout's `baseSha`, `snapshotDir` and `hasBaseNax`.
-- [integration] With `resolveBotChecks` stubbed, the `extract` argument it receives calls `_workflowDeps.callOp` with `botChecksExtractOp` and an input carrying the given `fileName` and `text`.
-- [integration] An untrusted (static) `runBotReview` never calls `resolveBotChecks` or `runPreRunSteps`.
-- [integration] A trusted `runBotReview` calls `_botReviewDeps.runPreRunSteps` with the resolved `preRun` and the checkout worktree as `workdir`, before `runPrReview`.
-- [integration] A trusted `runBotReview` whose `runPreRunSteps` throws `PRE_RUN_FAILED` for `npm ci` still calls `runPrReview` and passes `preRunFailed: "npm ci"` to `postPrReview`.
-- [integration] A trusted `runBotReview` whose `runPreRunSteps` throws an error with another code rejects with that error.
-- [integration] A trusted `runBotReview` with a loaded config leaving `allowLocalBinding` unset passes `createRuntime` a config with `execution.sandbox.network.allowLocalBinding` `true`.
-- [integration] A trusted `runBotReview` with a loaded config setting `allowLocalBinding: false` passes `createRuntime` a config keeping `false`.
-- [integration] A static `runBotReview` passes `createRuntime` a config whose `allowLocalBinding` equals the loaded value.
-- [integration] `runBotReview` leaves the object returned by `loadBotConfig` unchanged.
-- [integration] `runBotReview` passes to `runPrReview` an `earlier` list holding an unresolved own thread whose marker key starts with `f-`, and not an own thread keyed `summary`.
-- [integration] `runBotReview` passes no resolved own thread in `earlier`.
-- [integration] `runBotReview` with `decisions: [{ id: "D-1", statement: "S" }]` passes those decisions to `runPrReview`.
-- [integration] `runBotReview` passes `postPrReview` the `earlier` threads, the current user's `login`, and `checks` equal to `summarizeChecks` of the resolved checks.
-- [integration] A static `runBotReview` passes `postPrReview` `checks: null` and returns `checksSource: null`.
-- [integration] A trusted `runBotReview` returns `artifactPath` equal to `join(stateDir, "bot-review.json")` and `checksSource` equal to the resolved source.
-
-### US-009
-
-- [cli] `nax bot review 7 --decisions <file>` with a valid file calls `runBotReview` with the file's decisions.
-- [cli] `nax bot review 7 --decisions <missing>` prints the `BOT_DECISIONS_READ_FAILED` message to stderr, exits 1 and never calls `runBotReview`.
-- [cli] `nax bot review 7 --decisions <invalid>` prints the `BOT_DECISIONS_INVALID` message to stderr, exits 1 and never calls `runBotReview`.
-- [cli] A posted review prints `nax bot review: artifact <artifactPath>` after the existing summary line.
-- [cli] A posted review with `checksSource: "none"` prints `nax bot review: no check commands found on the base branch; nax bot fix will refuse` to stderr and still exits 0.
-- [integration] After `dispose` of the only bot checkout, `<repoRoot>/.nax-wt` no longer exists.
-- [integration] After `dispose` of one of two bot checkouts, `<repoRoot>/.nax-wt` still exists and holds the other checkout.
+- [unit] `renderReviewSummary` with 200 minor findings of 1,900 characters each returns a body no longer than `MAX_FORGE_COMMENT_CHARS` that contains the existing `… and N more not shown.` line.
+- [integration] `postPrReview` with config-source `checks` posts a summary containing `Checks (.nax/config.json):`.
 
 ### US-010
 
-- [integration] `runBotFix` with `hasBaseNax: false` and `resolveBotChecks` stubbed to source `detected` runs the fix graph.
-- [integration] `runBotFix` with `resolveBotChecks` stubbed to source `none` returns `{ outcome: "refused", reason: "no check commands found on the base branch; add quality.commands to .nax/config.json, or list the commands in AGENTS.md or CLAUDE.md, then merge it" }`.
-- [integration] `runBotFix` refused for no checks never calls `fixStep` and disposes the checkout.
-- [integration] `runBotFix` calls `resolveBotChecks` only after `loadLatestReview` returned a review and `checkPushAccess` succeeded.
+- [integration] A trusted `runBotReview` with a loaded config leaving `allowLocalBinding` unset passes `createRuntime` a config with `execution.sandbox.network.allowLocalBinding` `true`.
+- [integration] A trusted `runBotReview` passes `buildPrStepContext` the same config object it passed to `createRuntime`.
+- [integration] A trusted `runBotReview` with a loaded config setting `allowLocalBinding: false` passes `createRuntime` a config keeping `false`.
+- [integration] A static `runBotReview` passes `createRuntime` a config whose `allowLocalBinding` equals the loaded value.
+- [integration] `runBotReview` leaves the object returned by `loadBotConfig` unchanged.
+- [integration] With `_botReviewDeps.resolveBotChecks` stubbed, a trusted `runBotReview` calls it once with the checkout's `baseSha`, `snapshotDir` and `hasBaseNax`.
+- [integration] With `resolveBotChecks` stubbed, the `extract` argument it receives calls `_workflowDeps.callOp` with `botChecksExtractOp` and an input carrying the given `fileName` and `text`.
+- [integration] A static `runBotReview` never calls `resolveBotChecks` or `runPreRunSteps`.
+- [integration] A trusted `runBotReview` calls `_botReviewDeps.runPreRunSteps` with the resolved `preRun` and the checkout worktree as `workdir`, before `runPrReview`.
+- [integration] A trusted `runBotReview` whose `runPreRunSteps` throws `PRE_RUN_FAILED` with context command `npm ci` still calls `runPrReview`.
+- [integration] In that case `postPrReview` receives `preRunFailed: "npm ci"`.
+- [integration] A trusted `runBotReview` whose `runPreRunSteps` throws an error with another code rejects with that error.
+- [integration] `runBotReview` passes to `runPrReview` an `earlier` list holding an unresolved own thread whose marker key starts with `f-`, and not an own thread keyed `summary`.
+- [integration] `runBotReview` passes no resolved own thread in `earlier`.
+- [integration] `runBotReview` passes to `runPrReview` `checks` equal to `checkCommands` of the resolved checks.
+- [integration] `runBotReview` with `decisions: [{ id: "D-1", statement: "S" }]` passes those decisions to `runPrReview`.
+- [integration] `runBotReview` passes `postPrReview` the `earlier` threads, the current user's `login` and the full resolved `checks`.
+- [integration] A static `runBotReview` passes `postPrReview` `checks: null` and returns `checksSource: null`.
+- [integration] A trusted `runBotReview` returns `artifactPath` equal to `join(stateDir, "bot-review.json")`.
+- [integration] A trusted `runBotReview` returns `checksSource` equal to the resolved source.
+
+### US-011
+
+- [cli] `nax bot review 7 --decisions <file>` with a valid file calls `runBotReview` with the file's decisions.
+- [cli] `nax bot review 7 --decisions <missing>` prints `[bot] Cannot read decisions file <missing>` to stderr and exits 1.
+- [cli] `nax bot review 7 --decisions <missing>` never calls `runBotReview`.
+- [cli] `nax bot review 7 --decisions <invalid>` prints a message starting `[bot] Invalid decisions file` to stderr, exits 1 and never calls `runBotReview`.
+- [cli] `nax bot review 7` with no `--decisions` calls `runBotReview` with no decisions.
+- [cli] A posted review prints `nax bot review: artifact <artifactPath>` after the existing summary line.
+- [cli] A posted review with `checksSource: "none"` prints `nax bot review: no check commands found on the base branch; nax bot fix will refuse` to stderr and exits 0.
+- [integration] After `dispose` of the only bot checkout, `<repoRoot>/.nax-wt` no longer exists.
+- [integration] After `dispose` of one of two bot checkouts, `<repoRoot>/.nax-wt` still exists and holds the other checkout.
+- [integration] `cleanup` removes `.nax-wt` through `_checkoutDeps.rmdir`, never through `_checkoutDeps.rm`.
+- [integration] `preparePrCheckout` whose first worktree `mkdir` fails with `ENOENT` retries once and returns a checkout.
+
+### US-012
+
+- [integration] `runBotFix` with `hasBaseNax: false`, a version-2 review with `checks` source `detected`, runs the fix graph without calling `resolveBotChecks`.
+- [integration] `runBotFix` passes the review's saved `checks` to the graph as `env.checks`.
+- [integration] `runBotFix` with a version-1 review calls `resolveBotChecks` with the checkout's `baseSha`, `snapshotDir` and `hasBaseNax`.
+- [integration] `runBotFix` with a version-2 review whose `checks` is `null` calls `resolveBotChecks`.
+- [integration] `runBotFix` with resolved checks of source `none` returns `{ outcome: "refused", reason: "no check commands found on the base branch; add quality.commands to .nax/config.json, or list the commands in AGENTS.md or CLAUDE.md, then merge it" }`.
+- [integration] `runBotFix` refused for no checks never calls `fixStep`.
+- [integration] `runBotFix` refused for no checks disposes the checkout.
 - [integration] `runBotFix` with no review of the head never calls `resolveBotChecks`.
-- [integration] `runBotFix` calls `runPreRunSteps` with the resolved `checks.preRun` and the checkout worktree.
-- [integration] `runBotFix` passes the resolved checks to the graph as `env.checks`.
+- [integration] `runBotFix` whose push-access probe fails never calls `resolveBotChecks`.
+- [integration] `runBotFix` calls `runPreRunSteps` with `checks.preRun` and the checkout worktree.
 - [integration] `gatesStep` with `env.checks.gates` `[{ name: "test", command: "npm run test" }]` calls `runQualityGates` with `[{ name: "test", command: "npm run test", cwd: <worktree> }]`.
 - [integration] `gatesStep` never calls `resolveGateCommands`.
 - [integration] `gatesStep` with `env.checks.gates` empty returns exit `no-gates` with outcome `no-gates`.
-- [integration] `replyStep` replies on an own agreed finding thread with a body starting `Fixed in <sha7>: ` and marker key `fix-<key>` before resolving it.
+- [integration] `replyStep` replies on an own agreed finding thread with a body starting `Fixed in <sha7>: ` and marker key `fix-<key>`.
+- [integration] `replyStep` makes that reply before the `resolveThread` call for the same thread.
 - [integration] The `replyStep` reply text after `Fixed in <sha7>: ` is the first line of the agreed issue cut to 200 characters.
-- [integration] `replyStep` makes no `resolveThread` call for a thread whose reply failed.
+- [integration] `replyStep` makes no `resolveThread` call for an own finding thread whose reply failed.
 - [integration] `replyStep` returns `replied` counting the agreed-thread replies plus the own-finding replies.
