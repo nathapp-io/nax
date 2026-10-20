@@ -17,6 +17,7 @@ export {
   DERIVED_INSTALL_TIMEOUT_SECONDS,
   resolveBotChecks,
 } from "./checks";
+export { _decisionsDeps, type BotDecision, loadBotDecisions } from "./decisions";
 export { _fixInputDeps, checkPushAccess, loadLatestReview, toFixFindings } from "./fix-input";
 export { _fixReportDeps, readyStep, renderFixSummary, replyStep, reportStep } from "./fix-report";
 export { _botFixDeps, BOT_FIX_GRAPH, type BotFixResult, runBotFix } from "./fix-run";
