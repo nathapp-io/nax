@@ -3,7 +3,7 @@
   "feature": "bot-review-fix",
   "branchName": "feat/bot-review-fix",
   "createdAt": "2026-10-20T00:00:00.000Z",
-  "updatedAt": "2026-10-20T09:23:25.188Z",
+  "updatedAt": "2026-10-20T09:35:25.256Z",
   "userStories": [
     {
       "id": "US-001",
@@ -634,14 +634,17 @@
         "US-009",
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Cross-module durable-state-before-write ordering and authenticated marked-comment mutation are security-sensitive; off-line fallback and idempotent target selection require integration tests."
+        "reasoning": "Cross-module durable-state-before-write ordering and authenticated marked-comment mutation are security-sensitive; off-line fallback and idempotent target selection require integration tests.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/forge/comments.ts",
@@ -657,7 +660,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "888b62eec5be3b0faaf94cb291d2a8c6657dc592"
     },
     {
       "id": "US-011",
