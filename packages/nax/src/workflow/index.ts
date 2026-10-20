@@ -5,6 +5,7 @@ export type { WorkflowFeatureResult } from "./feature";
 export { runWorkflowFeature } from "./feature";
 export type { WorkflowFeatureInput } from "./feature-context";
 export { buildOpenItems, buildVerdict } from "./open-items";
+export { botRunDir } from "./paths";
 export type { PrStepContextInput } from "./pr-step-context";
 export { buildPrStepContext } from "./pr-step-context";
 export type { PreflightFile } from "./preflight";

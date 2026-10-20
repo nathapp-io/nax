@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { featureDir } from "@/config";
+import { botRunDir } from "@/workflow";
 import { workflowFeatureDir, workflowRunDir, workflowStoryDir } from "@/workflow/paths";
 
 describe("workflow paths (nax#2479)", () => {
@@ -17,5 +18,11 @@ describe("workflow paths (nax#2479)", () => {
   test("every path stays under the project root, so agent file tools can reach it", () => {
     const story = workflowStoryDir(workflowRunDir("/repo", "auth", "run-1"), "US-001");
     expect(story.startsWith("/repo/")).toBe(true);
+  });
+});
+
+describe("botRunDir", () => {
+  test("AC-1: keeps durable bot state under outputDir", () => {
+    expect(botRunDir("/o", 42, "r1")).toBe("/o/bot/pr-42/r1");
   });
 });

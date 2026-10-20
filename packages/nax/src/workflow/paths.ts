@@ -15,6 +15,11 @@ export function workflowRunDir(projectDir: string, feature: string, runId: strin
   return join(workflowFeatureDir(projectDir, feature), runId);
 }
 
+/** Durable bot state lives outside the disposable checkout's workflow tree. */
+export function botRunDir(outputDir: string, prNumber: number, runId: string): string {
+  return join(outputDir, "bot", `pr-${prNumber}`, runId);
+}
+
 export function workflowStoryDir(runDir: string, storyId: string): string {
   return join(runDir, storyId);
 }
