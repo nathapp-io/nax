@@ -11,8 +11,9 @@
 
 import { NaxError } from "@/errors";
 import { redactSecrets } from "@/logger";
+import { encodeProjectPath } from "./pr-read";
 import type { PrRef } from "./pr-types";
-import type { ForgeDeps } from "./types";
+import type { ForgeDeps, ForgeRunResult } from "./types";
 
 /** One failed CI check, with a bounded excerpt of its log. */
 export interface FailedCheck {
@@ -58,6 +59,21 @@ export function ciExcerpt(log: string): string {
   const kept = lines.slice(Math.max(0, lines.length - CI_EXCERPT_LINES)).join("\n");
   const bounded = kept.length > CI_EXCERPT_CHARS ? kept.slice(-CI_EXCERPT_CHARS) : kept;
   return redactSecrets(bounded);
+}
+
+/**
+ * The excerpt of a CI log that could not be read: the first line of the error
+ * output, so a repair agent sees why the log is missing.
+ */
+function logUnavailableExcerpt(result: ForgeRunResult): string {
+  const firstLine = result.stderr.split("\n")[0]?.trim() ?? "";
+  const reason = redactSecrets(firstLine);
+  return `(log unavailable: ${reason.length > 0 ? reason : "unknown"})`;
+}
+
+/** The excerpt of a CI log: the log itself, or the reason it could not be read. */
+function excerptOf(result: ForgeRunResult): string {
+  return result.exitCode === 0 ? ciExcerpt(result.stdout) : logUnavailableExcerpt(result);
 }
 
 /** One check run as the GitHub check-runs API reports it. */
@@ -143,13 +159,16 @@ async function readCiListing(cmd: string[], deps: ForgeDeps, cwd: string, contex
 /** The check runs of a reply, in reply order. */
 function parseCheckRuns(reply: unknown, context: CiReadContext): GithubCheckRun[] {
   const runs = asRecord(reply)?.check_runs;
-  if (!Array.isArray(runs)) {
-    throw new NaxError("[forge] Invalid check-runs response", "FORGE_CI_READ_FAILED", {
-      stage: "forge",
-      ...context,
-    });
-  }
+  if (!Array.isArray(runs)) throw invalidReply("check-runs", context);
   return runs.map(toCheckRun).filter((run): run is GithubCheckRun => run !== null);
+}
+
+/** A reply that is not the shape the endpoint promises. */
+function invalidReply(what: string, context: CiReadContext): NaxError {
+  return new NaxError(`[forge] Invalid ${what} response`, "FORGE_CI_READ_FAILED", {
+    stage: "forge",
+    ...context,
+  });
 }
 
 /**
@@ -160,13 +179,13 @@ async function readExcerpt(run: GithubCheckRun, ref: PrRef, deps: ForgeDeps, cwd
   const jobId = run.app?.slug === "github-actions" ? run.id : undefined;
   if (jobId === undefined) return ciExcerpt(outputText(run));
   // A GitHub Actions check run carries the job id, so `gh run view` reads that
-  // job's failed log. The "(log unavailable)" excerpt of a failed read lands
-  // with the rest of the error handling.
+  // job's failed log. A log that cannot be read is not an error: the excerpt
+  // says so and the other checks are still read.
   const result = await deps.run(
     ["gh", "run", "view", "--job", String(jobId), "--log-failed", "-R", `${ref.host}/${ref.repo}`],
     { cwd },
   );
-  return ciExcerpt(result.stdout);
+  return excerptOf(result);
 }
 
 /** One failed check, with its bounded excerpt. */
@@ -190,6 +209,127 @@ async function readGithubFailedChecks(
   return Promise.all(failed.map((run) => toFailedCheck(run, ref, deps, cwd)));
 }
 
+/** One GitLab pipeline, as the pipelines API reports it. */
+interface GitlabPipeline {
+  readonly id?: number;
+  readonly sha?: string;
+}
+
+/** One GitLab job, as the jobs API reports it. */
+interface GitlabJob {
+  readonly id?: number;
+  readonly name?: string;
+  readonly web_url?: string;
+  readonly allow_failure?: boolean;
+}
+
+/** Normalize one pipeline, dropping the fields the reply does not carry. */
+function toGitlabPipeline(value: unknown): GitlabPipeline | null {
+  const pipeline = asRecord(value);
+  if (!pipeline) return null;
+  return {
+    id: typeof pipeline.id === "number" ? pipeline.id : undefined,
+    sha: typeof pipeline.sha === "string" ? pipeline.sha : undefined,
+  };
+}
+
+/** Normalize one job, dropping the fields the reply does not carry. */
+function toGitlabJob(value: unknown): GitlabJob | null {
+  const job = asRecord(value);
+  if (!job) return null;
+  return {
+    id: typeof job.id === "number" ? job.id : undefined,
+    name: typeof job.name === "string" ? job.name : undefined,
+    web_url: typeof job.web_url === "string" ? job.web_url : undefined,
+    allow_failure: job.allow_failure === true,
+  };
+}
+
+/** The pipelines of a reply, in reply order. */
+function parsePipelines(reply: unknown, context: CiReadContext): GitlabPipeline[] {
+  if (!Array.isArray(reply)) throw invalidReply("pipelines", context);
+  return reply.map(toGitlabPipeline).filter((pipeline): pipeline is GitlabPipeline => pipeline !== null);
+}
+
+/** The jobs of a reply, in reply order. */
+function parseJobs(reply: unknown, context: CiReadContext): GitlabJob[] {
+  if (!Array.isArray(reply)) throw invalidReply("jobs", context);
+  return reply.map(toGitlabJob).filter((job): job is GitlabJob => job !== null);
+}
+
+/** A job whose log can be read: only a job with an id has a trace to fetch. */
+function hasJobId(job: GitlabJob): job is GitlabJob & { readonly id: number } {
+  return typeof job.id === "number";
+}
+
+/** The pipeline of the requested head, when the merge request has one. */
+function findPipeline(pipelines: readonly GitlabPipeline[], headSha: string): GitlabPipeline | null {
+  return pipelines.find((pipeline) => pipeline.sha === headSha) ?? null;
+}
+
+/** The excerpt of one GitLab job log. */
+async function readGitlabExcerpt(jobId: number, ref: PrRef, deps: ForgeDeps, cwd: string): Promise<string> {
+  const project = encodeProjectPath(ref.repo);
+  const result = await deps.run(["glab", "api", "--hostname", ref.host, `projects/${project}/jobs/${jobId}/trace`], {
+    cwd,
+  });
+  return excerptOf(result);
+}
+
+/** One failed GitLab job, with its bounded excerpt. */
+async function toGitlabFailedCheck(
+  job: GitlabJob & { readonly id: number },
+  ref: PrRef,
+  deps: ForgeDeps,
+  cwd: string,
+): Promise<FailedCheck> {
+  const excerpt = await readGitlabExcerpt(job.id, ref, deps, cwd);
+  const url = job.web_url && job.web_url.length > 0 ? job.web_url : undefined;
+  return { name: job.name ?? "", ...(url === undefined ? {} : { url }), excerpt };
+}
+
+/**
+ * The failed jobs of the pipeline of the head commit.
+ *
+ * The merge request's pipelines are read first, and the first one whose sha is
+ * the head is the pipeline of this commit. A merge request without a pipeline
+ * for the head has no failed check to report.
+ */
+async function readGitlabFailedChecks(
+  ref: PrRef,
+  headSha: string,
+  deps: ForgeDeps,
+  cwd: string,
+): Promise<readonly FailedCheck[]> {
+  const context = { ref, headSha };
+  const project = encodeProjectPath(ref.repo);
+  const pipelinesReply = await readCiListing(
+    ["glab", "api", "--hostname", ref.host, `projects/${project}/merge_requests/${ref.number}/pipelines?per_page=20`],
+    deps,
+    cwd,
+    context,
+  );
+  const pipeline = findPipeline(parsePipelines(pipelinesReply, context), headSha);
+  if (!pipeline || pipeline.id === undefined) return [];
+  const jobsReply = await readCiListing(
+    [
+      "glab",
+      "api",
+      "--hostname",
+      ref.host,
+      `projects/${project}/pipelines/${pipeline.id}/jobs?scope[]=failed&per_page=100`,
+    ],
+    deps,
+    cwd,
+    context,
+  );
+  const jobs = parseJobs(jobsReply, context)
+    .filter((job) => !job.allow_failure)
+    .filter(hasJobId)
+    .slice(0, MAX_FAILED_CHECKS);
+  return Promise.all(jobs.map((job) => toGitlabFailedCheck(job, ref, deps, cwd)));
+}
+
 /**
  * The failed checks of one commit, with a bounded excerpt of each.
  *
@@ -203,6 +343,5 @@ export async function readFailedChecks(
   cwd: string,
 ): Promise<readonly FailedCheck[]> {
   if (ref.forge === "github") return readGithubFailedChecks(ref, headSha, deps, cwd);
-  // GitLab joins the reader with the GitLab half of the forge support.
-  return [];
+  return readGitlabFailedChecks(ref, headSha, deps, cwd);
 }
