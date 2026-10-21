@@ -1,0 +1,161 @@
+import { describe, expect, mock, test } from "bun:test";
+import { withNaxBotMarker } from "@/forge";
+import type { PrComment, PrThread } from "@/forge/pr-types";
+import type { ItemThread, ReadItemThreads } from "@/workflow/item-thread-state";
+import { readItemThreads, settleItemThreads } from "@/workflow/item-thread-state";
+import { renderItemIndex, renderItemOpener, renderRulingEcho } from "@/workflow/item-threads";
+
+const key = "w-B3.12345678";
+const ruling = { itemKey: key, itemId: "B3", disposition: "waived", reason: "ok", by: "alice" } as const;
+const comment = (id: string, body: string, author = "bot"): PrComment => ({
+  id,
+  body,
+  author,
+  kind: "thread",
+  createdAt: "2026-01-01T00:00:00Z",
+});
+const marked = (id: string, body: string, marker: string, author = "bot") =>
+  comment(id, withNaxBotMarker(body, marker), author);
+const opener = (author = "bot") =>
+  marked("1", renderItemOpener({ id: "B3", kind: "finding", issue: "x" }), key, author);
+const echo = () => marked("2", renderRulingEcho(ruling), `wr-waived-${key}`);
+const thread = (...comments: PrComment[]): PrThread => ({
+  id: "thread",
+  replyTo: "1",
+  resolved: false,
+  outdated: false,
+  comments,
+});
+const index = (author = "bot") => marked("index", renderItemIndex({ keys: [key] }), "w-index", author);
+const item = (replies: readonly PrComment[] = [], ruled = true): ItemThread => ({
+  key,
+  itemId: "B3",
+  kind: "finding",
+  thread: thread(opener()),
+  replies,
+  ...(ruled ? { ruling } : {}),
+});
+const read = (entry: ItemThread): ReadItemThreads => ({ index: { keys: [key] }, items: [entry] });
+
+describe("readItemThreads", () => {
+  test("AC-1 ignores a marked opener from another login", async () => {
+    expect(readItemThreads([thread(opener("other"))], [index()], "bot").items).toEqual([]);
+  });
+  test("AC-2 reads the own w-index comment", async () => {
+    const own = index();
+    expect(readItemThreads([], [own], "bot")).toEqual({
+      index: { keys: [key] },
+      indexComment: own,
+      items: [],
+    });
+  });
+  test("AC-3 ignores another login's index", async () => {
+    expect(readItemThreads([], [index("other")], "bot")).toEqual({ items: [] });
+  });
+  test("AC-4 reads only the last own echo", async () => {
+    const earlier = marked("old", renderRulingEcho({ ...ruling, reason: "old" }), `wr-waived-${key}`);
+    const source = thread(opener(), earlier, echo());
+    const result = readItemThreads([source], [index()], "bot");
+    expect(result.items).toEqual([{ key, itemId: "B3", kind: "finding", thread: source, ruling, replies: [] }]);
+  });
+  test("AC-5 keeps non-own replies after the last own comment including the same login unmarked", async () => {
+    const sameLogin = comment("3", "actually reconsider");
+    const other = marked("4", "human marked reply", "note", "alice");
+    const source = thread(opener(), comment("early", "waive", "alice"), echo(), sameLogin, other);
+    expect(readItemThreads([source], [index()], "bot").items[0]?.replies).toEqual([sameLogin, other]);
+  });
+  test.each(["wq-w-B3.12345678-3", "wc-w-B3.12345678"])("last own %s comment is not a ruling", async (marker) => {
+    const result = readItemThreads([thread(opener(), echo(), marked("3", "notice", marker))], [index()], "bot");
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]?.ruling).toBeUndefined();
+  });
+  test("retains unindexed owned threads for publish and ignores empty or malformed threads", async () => {
+    const result = readItemThreads(
+      [thread(), thread(comment("x", "unmarked")), thread(marked("x", "invalid", key)), thread(opener())],
+      [],
+      "bot",
+    );
+    expect(result.items.map((entry) => entry.key)).toEqual([key]);
+  });
+  test.each(["bad echo", renderRulingEcho(ruling)])(
+    "invalid or mismatched echo body %s does not rule",
+    async (body) => {
+      const result = readItemThreads(
+        [thread(opener(), marked("2", body, "wr-waived-w-B4.12345678"))],
+        [index()],
+        "bot",
+      );
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]?.ruling).toBeUndefined();
+    },
+  );
+});
+
+describe("settleItemThreads", () => {
+  test("AC-6 settles a ruled item without replies", async () => {
+    const entry = item();
+    const canRule = mock(async () => true);
+    expect(await settleItemThreads(read(entry), canRule)).toEqual({ settled: [{ ...entry, ruling }], open: [] });
+    expect(canRule).not.toHaveBeenCalled();
+  });
+  test("AC-7 rejected replies do not reopen a ruling", async () => {
+    const reply = comment("3", "reconsider", "outsider");
+    const entry = item([reply]);
+    const canRule = mock(async () => false);
+    expect(await settleItemThreads(read(entry), canRule)).toEqual({ settled: [{ ...entry, ruling }], open: [] });
+    expect(canRule).toHaveBeenCalledWith(reply);
+  });
+  test("AC-8 accepted reply reopens a ruled item and enters kept", async () => {
+    const reply = comment("3", "reconsider", "alice");
+    const entry = item([reply]);
+    expect(await settleItemThreads(read(entry), async () => true)).toEqual({
+      settled: [],
+      open: [{ ...entry, kept: [reply] }],
+    });
+  });
+  test("AC-9 unruled item is open with only accepted replies", async () => {
+    const accepted = comment("4", "waive", "alice");
+    const entry = item([comment("3", "ignore", "outsider"), accepted], false);
+    expect(await settleItemThreads(read(entry), async (reply) => reply.author === "alice")).toEqual({
+      settled: [],
+      open: [{ ...entry, kept: [accepted] }],
+    });
+  });
+  test("AC-10 permission throws deny only that reply and preserve an existing ruling", async () => {
+    const failed = comment("3", "reconsider", "unknown");
+    const entry = item([failed]);
+    const canRule = async (reply: PrComment) => {
+      if (reply === failed) throw new Error("lookup unavailable");
+      return true;
+    };
+    expect(await settleItemThreads(read(entry), canRule)).toEqual({ settled: [{ ...entry, ruling }], open: [] });
+    const accepted = comment("4", "waive", "alice");
+    const unruled = item([failed, accepted], false);
+    expect(await settleItemThreads(read(unruled), canRule)).toEqual({
+      settled: [],
+      open: [{ ...unruled, kept: [accepted] }],
+    });
+  });
+  test("ignores unindexed threads and follows index order", async () => {
+    const first = item([], false);
+    const second = { ...first, key: "w-B4.12345678", itemId: "B4" };
+    const canRule = mock(async () => true);
+    expect(await settleItemThreads({ items: [item([comment("3", "waive")])] }, canRule)).toEqual({
+      settled: [],
+      open: [],
+    });
+    expect(canRule).not.toHaveBeenCalled();
+    const result = await settleItemThreads(
+      { index: { keys: [second.key, key] }, items: [first, second, { ...first, key: "unindexed" }] },
+      canRule,
+    );
+    expect(result.open.map((entry) => entry.key)).toEqual([second.key, key]);
+  });
+  test("resolved without a reply does not rule", async () => {
+    const entry = { ...item([], false), thread: { ...thread(opener()), resolved: true } };
+    expect(await settleItemThreads(read(entry), async () => true)).toEqual({
+      settled: [],
+      open: [{ ...entry, kept: [] }],
+    });
+  });
+});
