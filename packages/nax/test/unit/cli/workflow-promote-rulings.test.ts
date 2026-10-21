@@ -13,6 +13,7 @@ import {
 } from "@test/helpers";
 import { withNaxBotMarker } from "@/forge";
 import { initLogger, resetLogger } from "@/logger";
+import { _loggerDeps, _resetDeferredWarnings } from "@/logger/logger";
 import { itemKey, renderItemIndex, renderItemOpener, renderRulingEcho } from "@/workflow/item-threads";
 import type { OpenItem, WorkflowResultFile } from "@/workflow/types";
 
@@ -103,6 +104,47 @@ function prRulingAnswers(
 }
 
 describe("nax workflow promote PR rulings", () => {
+  test.each(["read", "access"] as const)(
+    "F1: bare CLI preserves %s warnings on stderr without polluting JSON",
+    async (failure) => {
+      resetLogger();
+      _resetDeferredWarnings();
+      const original = { ..._loggerDeps };
+      const exits: (() => void)[] = [];
+      const stderr: string[] = [];
+      Object.assign(_loggerDeps, {
+        onExit: (handler: () => void) => exits.push(handler),
+        writeStderr: (text: string) => stderr.push(text),
+      });
+      try {
+        await withTempDir(async (dir) => {
+          const fx = await makePromoteFixture(dir, {
+            onRun:
+              failure === "read"
+                ? (argv) => (argv.includes("graphql") ? { exitCode: 1, stderr: "offline" } : undefined)
+                : prRulingAnswers([prItem("B1")], { reply: "bob", accessFails: true }),
+          });
+          await fx.run(["--json"]);
+          expect(fx.out).toHaveLength(1);
+          expect(emittedJson(fx.out).prRulings).toEqual(
+            failure === "read"
+              ? { read: false, error: "[forge] Cannot read o/r#7: offline" }
+              : { read: true, count: 0 },
+          );
+          expect(exits).toHaveLength(1);
+          for (const flush of exits) flush();
+          expect(stderr).toHaveLength(1);
+          expect(stderr[0]).toContain("nax warning (workflow-promote):");
+          expect(stderr[0]).toContain(failure === "read" ? "offline" : "lookup unavailable");
+          if (failure === "access") expect(stderr[0]).toContain("bob");
+        });
+      } finally {
+        _resetDeferredWarnings();
+        Object.assign(_loggerDeps, original);
+        resetLogger();
+      }
+    },
+  );
   test("US-016: _run:ci remains sidecar-only even with an indexed settled echo and live green CI", async () => {
     await withTempDir(async (dir) => {
       const ci = { id: "_run:ci", kind: "ci", issue: "CI failed" } as const;
@@ -273,8 +315,7 @@ describe("nax workflow promote PR rulings", () => {
         if (options.accessFails)
           expect(warn).toHaveBeenCalledWith(
             "workflow-promote",
-            expect.stringContaining("access"),
-            expect.objectContaining({ login: "bob", error: expect.stringContaining("lookup unavailable") }),
+            expect.stringMatching(/Reply access lookup failed for bob; denying access: .*lookup unavailable/),
           );
       });
     } finally {
@@ -299,8 +340,7 @@ describe("nax workflow promote PR rulings", () => {
         expect(report.promoted).toBe(hasSidecar);
         expect(warn).toHaveBeenCalledWith(
           "workflow-promote",
-          expect.any(String),
-          expect.objectContaining({ error: "[forge] Cannot read o/r#7: offline" }),
+          expect.stringContaining("using sidecar only: [forge] Cannot read o/r#7: offline"),
         );
       });
     } finally {

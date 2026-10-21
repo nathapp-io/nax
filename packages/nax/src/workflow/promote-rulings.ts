@@ -12,7 +12,7 @@ import {
   readCurrentUser,
   resolvePrRef,
 } from "@/forge";
-import { getLogger } from "@/logger";
+import { warnOrDefer } from "@/logger";
 import { type DecisionEntry, mergeDecisions, parseDecisionEntries, sidecarKindFor } from "./decisions-sidecar";
 import { readItemThreads, type SettledItems, settleItemThreads } from "./item-thread-state";
 import { itemKey } from "./item-threads";
@@ -26,10 +26,10 @@ async function canRule(ref: PrRef, comment: PrComment, context: { deps: ForgeDep
   try {
     return await hasWriteAccess(ref, { login: comment.author, id: comment.authorId }, context.deps, context.cwd);
   } catch (error) {
-    getLogger()?.warn("workflow-promote", "[workflow-promote] Reply access lookup failed; denying access", {
-      login: comment.author,
-      error: errorMessage(error),
-    });
+    warnOrDefer(
+      "workflow-promote",
+      `[workflow-promote] Reply access lookup failed for ${comment.author}; denying access: ${errorMessage(error)}`,
+    );
     return false;
   }
 }
@@ -85,10 +85,10 @@ export async function readPromoteRulings(input: {
     };
   } catch (error) {
     const message = errorMessage(error);
-    getLogger()?.warn("workflow-promote", "[workflow-promote] PR ruling read failed; using sidecar only", {
-      url,
-      error: message,
-    });
+    warnOrDefer(
+      "workflow-promote",
+      `[workflow-promote] PR ruling read failed for ${url}; using sidecar only: ${message}`,
+    );
     return { entries: local, prRulings: { read: false, error: message } };
   }
 }
