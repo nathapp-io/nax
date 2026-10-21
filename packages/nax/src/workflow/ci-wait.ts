@@ -2,8 +2,9 @@
  * CI wait (spec §7.1, P4-R4). Polls the branch's PR/MR checks until they are green,
  * one fails, a conflict is detected, or `timeoutMs` passes. A CLI error is retried; a run of
  * `CI_ERROR_POLL_LIMIT` unreadable polls, or a deadline reached on one, is `unavailable` (nax#2550),
- * never `failed`. A check-less timeout is `no-checks`; slow CI is `pending` (W-R9). `_ciWaitDeps`
- * is the test seam (spawn, sleep, clock).
+ * never `failed`. A check-less timeout is `no-checks`; slow CI is `pending`, which blocks readiness
+ * like every other non-green outcome (strict green, ruled 2026-10-21). `_ciWaitDeps` is the test
+ * seam (spawn, sleep, clock).
  *
  * US-005 (nax#2526): the wait reports its own progress — a start line, a line whenever the check
  * summary changes, a heartbeat at least every `CI_WAIT_HEARTBEAT_MS`, and an end line — so a long
@@ -21,6 +22,16 @@ export type CiWaitOutcome = "green" | "failed" | "pending" | "conflicting" | "no
 export interface CiWaitResult {
   readonly outcome: CiWaitOutcome;
   readonly detail: string;
+}
+
+/**
+ * US-003: the one CI rule. `green` is the only outcome that lets a PR be ready — a CI that is
+ * still pending blocks too (strict green, ruled 2026-10-21). Every readiness decision asks this
+ * one function, so the workflow's own publish and `nax workflow promote` cannot disagree about
+ * whether CI is done (`nax bot fix` joins them in US-005).
+ */
+export function ciAllowsReady(outcome: CiWaitOutcome): boolean {
+  return outcome === "green";
 }
 
 /** Consecutive unreadable polls (CLI error, spawn failure, unparseable output) that end the wait (nax#2550). */

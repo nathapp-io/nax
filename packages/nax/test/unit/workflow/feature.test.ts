@@ -402,6 +402,8 @@ describe("US-002 transient drafts", () => {
     ["AC-6/7", "unavailable", []],
     ["AC-8", "green", ["PR update failed: timeout"]],
     ["AC-9", "green", ["review unread: src/a.ts"]],
+    // US-003 (AC-11): a pending CI keeps the PR a draft, so the draft is published again.
+    ["AC-11", "pending", ["no CI result within 1200000ms"]],
   ] as const)("%s", async (_ac, ci, reasons) => {
     const { input, featureDir } = setup();
     const prior = {
@@ -444,6 +446,27 @@ describe("US-002 transient drafts", () => {
       expect(calls).toEqual(["publish"]);
       expect(result?.url).toBe("old-url");
     }
+  });
+
+  // US-003 (AC-12/AC-13): only the pending CI alone makes the draft retryable. A draft held for a
+  // second reason is finished at this HEAD, so no machine runs.
+  test("AC-12/AC-13: a pending draft with two reasons is already finished: no machine runs", async () => {
+    const { input, envs, featureDir } = setup();
+    const prior = {
+      ...newFeatureRecord({ now: "original", seed: "s", minors: [] }),
+      step: "done" as const,
+      outcome: "draft" as const,
+      ci: "pending" as const,
+      reasons: ["no CI result within 1200000ms", "branch review did not read 1 changed file(s): src/a.ts"],
+      head: "headX",
+      url: "old-url",
+      reviewRan: true,
+      repoGates: { ran: ["test"], failing: [] },
+    };
+    await upsertFeatureRecord(join(featureDir, "r-old"), { runId: "r-old", feature: input.feature }, prior);
+    const result = await runWorkflowFeature(input);
+    expect(result?.outcome).toBe("already-finished");
+    expect(envs).toHaveLength(0);
   });
 
   test("B1: the verdict of a re-publish that asked no advisor lists no earlier hold", async () => {

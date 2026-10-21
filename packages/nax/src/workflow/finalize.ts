@@ -60,8 +60,8 @@ const DETAILED_CI_STATES: ReadonlySet<FeatureCiState> = new Set<FeatureCiState>(
 
 /**
  * US-001: the `ciDetail` a result carries, so the verdict keeps the text the draft marker used. An
- * absent key (not an empty one) for `green`, `pending`, `skipped` and `failed`, whose reasons are
- * fixed sentences — `buildOpenItems` reads presence, not value.
+ * absent key (not an empty one) for `green`, `pending`, `skipped` and `failed` — `pending` keeps
+ * none (US-003), so its open item uses the fallback text, not the wait's own detail.
  */
 function ciDetailFields(ci: CiWaitResult): Pick<PublishOutcome, "ciDetail"> {
   return DETAILED_CI_STATES.has(ci.outcome) ? { ciDetail: ci.detail } : {};
@@ -527,7 +527,7 @@ async function prMode(plan: PublishPlan, input: PublishInput): Promise<PublishOu
   // US-005: a URL the forge did not return is left out rather than invented; the step is still named.
   getSafeLogger()?.info("workflow", `Publish: draft PR${draft?.url ? ` ${draft.url}` : ""}`, { storyId: "_run" });
   const ci = await waitForCi(fc, plan.forge);
-  // An aborted wait reports `pending`, which never blocks readiness: stop before approval or promotion.
+  // An aborted wait reports `pending`, which blocks readiness (US-003): stop before approval or promotion.
   if (fc.runSignal?.aborted) throw abortedError();
   // US-007: a ledger the branch lacks is a readiness reason like any other, so the advisor is never
   // asked to approve a PR citing rulings the branch does not carry.

@@ -18,13 +18,15 @@
  * The workflow leaves are reached by relative path, not through the `@/workflow` barrel, for the
  * reason `src/cli/workflow.ts` gives: that barrel loads `step-context`, which imports `@/cli`. HEAD
  * is read through `forgeDeps.forge.run` rather than `readHead` (`src/workflow/git.ts`) for the same
- * reason, and `src/cli/workflow.ts` is imported type-only, which is erased.
+ * reason, and `src/cli/workflow.ts` is imported type-only, which is erased. US-003's `ciAllowsReady`
+ * comes from the same leaf, for the same reason: the CI rule is one rule, read from one place.
  */
 import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import { detectForge, type ForgeDeps, type ForgeKind, type ForgeRunResult } from "@/forge";
 import { validateFeatureName } from "@/utils/feature-name";
+import { ciAllowsReady } from "../workflow/ci-wait";
 import {
   checkEntriesAgainstItems,
   type DecisionEntry,
@@ -140,7 +142,11 @@ function itemsRuled(loaded: LoadedRun, found: FoundSidecar | null): PromoteCheck
     : { name: "items-ruled", passed: false, detail: `no ruling recorded for ${unruled.join(", ")}` };
 }
 
-/** `ci-green`: the pushed head's checks passed. Anything else — including a mismatch — is a refusal. */
+/**
+ * `ci-green`: the pushed head's checks passed. Anything else — including a mismatch — is a refusal.
+ * US-003: the decision is the one CI rule (`ciAllowsReady`), so promote cannot disagree with the
+ * workflow's own publish about what "ready" means.
+ */
 async function ciGreen(input: {
   readonly forgeDeps: WorkflowForgeDeps;
   readonly forge: ForgeKind;
@@ -154,7 +160,7 @@ async function ciGreen(input: {
     pollMs: PROMOTE_POLL_MS,
     expectedSha: input.expectedSha,
   });
-  return result.outcome === "green"
+  return ciAllowsReady(result.outcome)
     ? { name: "ci-green", passed: true, detail: "" }
     : { name: "ci-green", passed: false, detail: `ci ${result.outcome}: ${result.detail}` };
 }

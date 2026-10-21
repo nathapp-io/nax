@@ -91,6 +91,31 @@ describe("nax workflow promote --json (the dry run)", () => {
 });
 
 describe("nax workflow promote checks", () => {
+  // US-003: the ci-green check asks the one CI rule (`ciAllowsReady`) — a green wait passes, any
+  // other outcome is a refusal that names the wait's own detail.
+  test("AC-9: a green CI wait passes ci-green", async () => {
+    await withTempDir(async (dir) => {
+      const fx = await makePromoteFixture(dir, { ci: { outcome: "green", detail: "all checks passed" } });
+      await fx.run(["--json"]);
+      expect(checkOf(emittedJson(fx.out), "ci-green")).toEqual({ passed: true, detail: "" });
+      expect(fx.codes).toEqual([0]);
+    });
+  });
+
+  test("AC-10: a pending CI wait fails ci-green with the wait's own detail", async () => {
+    await withTempDir(async (dir) => {
+      const fx = await makePromoteFixture(dir, {
+        ci: { outcome: "pending", detail: "no CI result within 1200000ms" },
+      });
+      await fx.run(["--json"]);
+      expect(checkOf(emittedJson(fx.out), "ci-green")).toEqual({
+        passed: false,
+        detail: "ci pending: no CI result within 1200000ms",
+      });
+      expect(fx.codes).toEqual([2]);
+    });
+  });
+
   test("AC-3: an open item the sidecar does not rule fails items-ruled and exits 2", async () => {
     await withTempDir(async (dir) => {
       const fx = await makePromoteFixture(dir, { openItems: ["B1", "B2"], rulings: ["B1"] });

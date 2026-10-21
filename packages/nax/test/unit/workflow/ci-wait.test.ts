@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { ForgeRunResult } from "@/forge";
 import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
-import { _ciWaitDeps, CI_ERROR_POLL_LIMIT, waitForChecks } from "@/workflow/ci-wait";
+import { _ciWaitDeps, CI_ERROR_POLL_LIMIT, ciAllowsReady, waitForChecks } from "@/workflow/ci-wait";
 
 const original = { ..._ciWaitDeps };
 afterEach(() => Object.assign(_ciWaitDeps, original));
@@ -529,4 +529,22 @@ describe("waitForChecks progress log", () => {
     expect(logs.length).toBeGreaterThan(0);
     for (const entry of logs) expect(Object.entries(entry.data ?? {})[0]).toEqual(["storyId", "_run"]);
   });
+});
+
+/**
+ * US-003: the one CI rule. `ciAllowsReady` is the seam every readiness decision shares — the
+ * workflow's own publish and `nax workflow promote` ask it, so "CI pending does not block" cannot
+ * be true in one place and false in another.
+ */
+describe("ciAllowsReady (US-003)", () => {
+  test("AC-1: green allows readiness", () => {
+    expect(ciAllowsReady("green")).toBe(true);
+  });
+
+  test.each(["failed", "pending", "conflicting", "no-checks", "unavailable"] as const)(
+    "AC-2: %s does not allow readiness",
+    (outcome) => {
+      expect(ciAllowsReady(outcome)).toBe(false);
+    },
+  );
 });

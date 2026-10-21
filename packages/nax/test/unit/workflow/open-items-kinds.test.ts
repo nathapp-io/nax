@@ -76,7 +76,16 @@ describe("buildOpenItems: CI items (US-002)", () => {
     expect(items).toEqual([{ id: "_run:ci", kind: "ci", issue: "PR #9 has merge conflicts" }]);
   });
 
-  test.each(["green", "pending", "skipped"] as const)("AC-8: %s adds no ci item", (ci) => {
+  // US-003: strict green — a pending CI is a reason, so it is an open item too.
+  test("AC-8: a pending CI is a ci item", () => {
+    expect(buildOpenItems(rec({ ci: "pending" }))).toContainEqual({
+      id: "_run:ci",
+      kind: "ci",
+      issue: "CI still pending after the wait",
+    });
+  });
+
+  test.each(["green", "skipped"] as const)("AC-8: %s adds no ci item", (ci) => {
     expect(ofKind(buildOpenItems(rec({ ci })), "ci")).toEqual([]);
   });
 });
