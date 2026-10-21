@@ -63,6 +63,7 @@ export interface BotReviewArtifact {
   readonly agreed: readonly AgreedItem[];
 }
 export interface PostReviewInput {
+  readonly unreadFiles?: readonly string[];
   readonly preRunFailed?: string;
   /** CI's verdict on the reviewed head (nax#2631). */
   readonly ci?: CiWaitResult;
@@ -265,6 +266,7 @@ async function postSummary(
       verdict,
       author: input.comments.find(({ id }) => id === verdict.id)?.author ?? "unknown",
     })),
+    unreadFiles: input.unreadFiles,
     cannotVerify: input.verdict.cannotVerify,
     sensitive: input.sensitive,
     staticMode: input.staticMode,

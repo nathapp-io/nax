@@ -18,6 +18,7 @@ const DECISION_LABELS: Record<PrTriageDecision, string> = {
 };
 
 export interface ReviewSummaryInput {
+  readonly unreadFiles?: readonly string[];
   readonly minor?: readonly WorkflowFindingDraft[];
   readonly earlier?: { readonly open: number; readonly fixed: number; readonly withdrawn: number };
   readonly checks?: BotChecks | null;
@@ -75,6 +76,10 @@ interface ListSection {
 
 function summarySections(input: ReviewSummaryInput): ListSection[] {
   return [
+    {
+      heading: "### Review coverage",
+      items: (input.unreadFiles ?? []).map((path) => `Not read by the review: \`${safeCode(path)}\``),
+    },
     { heading: "### Sensitive paths changed", items: input.sensitive.map((path) => `- \`${safeCode(path)}\``) },
     { heading: "### Findings not on a changed line", items: input.offLine.map(offLineItem) },
     { heading: "### Minor findings", items: (input.minor ?? []).map(offLineItem) },

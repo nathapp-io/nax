@@ -4,6 +4,7 @@ import { workflowConfigSelector } from "@/config";
 import type { WorkflowOpConfig } from "@/config/selectors";
 import {
   buildBotTriageRetry,
+  buildWorkflowBranchCoverageRetry,
   buildWorkflowReviewJsonRetry,
   buildWorkflowReviewJsonRetryCondensed,
   reviewerCommandsSection,
@@ -12,9 +13,13 @@ import { STEP_TIMEOUT_MARGIN_MS } from "@/utils/step-signal";
 import { missingTriage, parsePrReviewReply } from "./bot-pr-review-reply";
 import type { PrReviewVerdict } from "./bot-types";
 import type { RunOperation } from "./types";
+import { unreadFiles } from "./workflow-review-coverage";
 import { REVIEWER_VERIFY_TOOLS } from "./workflow-story-review";
 
 export interface BotPrReviewInput {
+  readonly requiredFiles?: readonly string[];
+  readonly repoRoot?: string;
+  readonly range?: string;
   readonly prompt: string;
   readonly timeoutMs: number;
   readonly threadIds: readonly string[];
@@ -43,12 +48,15 @@ export const botPrReviewOp: BotReviewOperation = {
   parse: (output, input) => parsePrReviewReply(output, input.threadIds, input.commentIds, input),
   retry: (input) => {
     const parse = (output: string) => parsePrReviewReply(output, input.threadIds, input.commentIds, input);
+    const missingFiles = (verdict: PrReviewVerdict) =>
+      unreadFiles(input.requiredFiles ?? [], verdict.inspectedFiles, input.repoRoot ?? "");
     return makeParseRetryStrategy({
       parse,
-      // Ruled exception (nax#2532): completeness asks again, but never discards a usable partial verdict.
+      // Ruled exception (nax#2532): triage and file coverage ask again, but never discard a usable partial verdict.
       validate: (parsed) =>
         parsed != null &&
-        missingTriage(parsed as PrReviewVerdict, input.threadIds, input.commentIds, input.earlierIds).length === 0,
+        missingTriage(parsed as PrReviewVerdict, input.threadIds, input.commentIds, input.earlierIds).length === 0 &&
+        missingFiles(parsed as PrReviewVerdict).length === 0,
       maxAttempts: 2,
       reviewerKind: "bot-pr-review",
       prompts: {
@@ -56,8 +64,10 @@ export const botPrReviewOp: BotReviewOperation = {
           const verdict = parse(output);
           const missing = verdict ? missingTriage(verdict, input.threadIds, input.commentIds) : [];
           const earlierMissing = verdict ? missingTriage(verdict, [], [], input.earlierIds) : [];
-          return missing.length > 0 || earlierMissing.length > 0
-            ? buildBotTriageRetry(missing, earlierMissing)
+          if (missing.length > 0 || earlierMissing.length > 0) return buildBotTriageRetry(missing, earlierMissing);
+          const files = verdict ? missingFiles(verdict) : [];
+          return files.length > 0
+            ? buildWorkflowBranchCoverageRetry(input.range ?? "HEAD", files)
             : buildWorkflowReviewJsonRetry();
         },
         truncated: buildWorkflowReviewJsonRetryCondensed,

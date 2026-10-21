@@ -12,6 +12,7 @@ import {
 import { REVIEWER_VERIFY_TOOLS } from "@/operations/workflow-story-review";
 import {
   buildBotTriageRetry,
+  buildWorkflowBranchCoverageRetry,
   buildWorkflowReviewJsonRetry,
   buildWorkflowReviewJsonRetryCondensed,
   reviewerCommandsSection,
@@ -88,6 +89,49 @@ for (const op of [botPrReviewOp, botPrStaticReviewOp]) {
         retry: false,
         fallback: op.parse(partial, value, ctx()),
       });
+    });
+    test("US-015 AC-1–5 coverage retries follow triage, remain optional and retain exhausted findings", () => {
+      if (typeof op.retry !== "function") throw new Error("expected retry resolver");
+      const value = {
+        ...input,
+        commentIds: ["C1"],
+        earlierIds: ["E1"],
+        requiredFiles: ["src/a.ts"],
+        repoRoot: "/checkout",
+        range: "reviewed..HEAD",
+      };
+      const partial = JSON.stringify({
+        ...JSON.parse(reply(["T1", "T2"])),
+        comments: [{ id: "C1", decision: "agree", reason: "yes" }],
+        earlier: [{ id: "E1", status: "open", reason: "still" }],
+      });
+      const strategy = op.retry(value, ctx());
+      if (!strategy || !("shouldRetry" in strategy)) throw new Error("expected strategy");
+      const failure = new ParseValidationError("incomplete");
+      expect(strategy.shouldRetry(failure, 0, retryCtx(partial))).toEqual({
+        retry: true,
+        delayMs: 0,
+        nextPrompt: buildWorkflowBranchCoverageRetry(value.range, ["src/a.ts"]),
+      });
+      const covered = JSON.stringify({ ...JSON.parse(partial), inspectedFiles: ["/checkout/src/a.ts"] });
+      expect(strategy.shouldRetry(failure, 0, retryCtx(covered))).toEqual({ retry: false });
+      for (const [field, expected] of [
+        ["threads", buildBotTriageRetry(["T1", "T2"], [])],
+        ["comments", buildBotTriageRetry(["C1"], [])],
+        ["earlier", buildBotTriageRetry([], ["E1"])],
+      ] as const) {
+        expect(
+          strategy.shouldRetry(failure, 0, retryCtx(JSON.stringify({ ...JSON.parse(partial), [field]: [] }))),
+        ).toEqual({ retry: true, delayMs: 0, nextPrompt: expected });
+      }
+      expect(strategy.shouldRetry(failure, 1, retryCtx(partial))).toEqual({
+        retry: false,
+        fallback: op.parse(partial, value, ctx()),
+      });
+      expect(op.parse(partial, value, ctx())?.findings[0]?.issue).toBe("bug");
+      const optional = op.retry({ ...input, commentIds: ["C1"], earlierIds: ["E1"] }, ctx());
+      if (!optional || !("shouldRetry" in optional)) throw new Error("expected strategy");
+      expect(optional.shouldRetry(failure, 0, retryCtx(partial))).toEqual({ retry: false });
     });
     test("AC-13/14/15 declares bounded tools, config and fresh reviewer role", () => {
       expect(op.tools).toEqual(op === botPrReviewOp ? [...REVIEWER_VERIFY_TOOLS] : ["Read", "Glob", "Grep"]);

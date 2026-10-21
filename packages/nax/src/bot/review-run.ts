@@ -47,6 +47,7 @@ interface BotReviewInput {
 }
 type ReviewStep = "review" | "post" | "done";
 interface ReviewState extends GraphState<ReviewStep> {
+  readonly unreadFiles?: readonly string[];
   readonly reviewRan?: boolean;
   readonly reason?: string;
   readonly verdict?: PrReviewVerdict;
@@ -71,12 +72,14 @@ export const BOT_REVIEW_GRAPH: StepGraph<ReviewState, ReviewEnv, ReviewStep> = d
   nodes: {
     review: {
       kind: "agent",
-      produces: ["reviewRan", "reason", "verdict"],
+      produces: ["reviewRan", "reason", "verdict", "unreadFiles"],
       transitions: [{ to: "post", when: (state) => state.reviewRan === true }, { to: "done" }],
       async run(env) {
         const result = await _botReviewDeps.runPrReview(env.ctx, env.review);
         return {
-          patch: result.ran ? { reviewRan: true, verdict: result.verdict } : { reviewRan: false, reason: result.why },
+          patch: result.ran
+            ? { reviewRan: true, verdict: result.verdict, unreadFiles: result.unreadFiles }
+            : { reviewRan: false, reason: result.why },
         };
       },
     },
@@ -88,7 +91,15 @@ export const BOT_REVIEW_GRAPH: StepGraph<ReviewState, ReviewEnv, ReviewStep> = d
       async run(env, state) {
         if (!state.verdict)
           throw new NaxError("[bot] Missing review verdict", "BOT_REVIEW_VERDICT_MISSING", { stage: "bot" });
-        return { patch: { posted: await _botReviewDeps.postPrReview({ ...env.post, verdict: state.verdict }) } };
+        return {
+          patch: {
+            posted: await _botReviewDeps.postPrReview({
+              ...env.post,
+              verdict: state.verdict,
+              ...(state.unreadFiles?.length && { unreadFiles: state.unreadFiles }),
+            }),
+          },
+        };
       },
     },
   },

@@ -68,6 +68,55 @@ afterEach(() => {
 });
 
 describe("runPrReview", () => {
+  test.each([false, true])(
+    "US-015 AC-6/9 classifies changed paths and reports unread files, static=%s",
+    async (staticMode) => {
+      _reviewStepDeps.writeBranchReviewPackage = async () => [
+        "pkg/main.go",
+        "pkg/main_test.go",
+        "README.md",
+        "settings.json",
+      ];
+      _workflowDeps.resolveTestPatterns = async () => ({
+        regex: [/_test\.go$/],
+        globs: [],
+        testDirs: [],
+        pathspec: [],
+        resolution: "per-package",
+      });
+      const result = await runPrReview(
+        { ...ctx, packageDirs: ["pkg"] },
+        { ...input, rangeBase: "reviewed", staticMode },
+      );
+      expect(calls[0]).toMatchObject({
+        requiredFiles: ["pkg/main.go", "settings.json"],
+        repoRoot: "/checkout",
+        range: "reviewed..HEAD",
+      });
+      expect(result).toMatchObject({ ran: true, unreadFiles: ["pkg/main.go", "settings.json"] });
+    },
+  );
+  test("US-015 AC-9 reports only required paths not inspected", async () => {
+    _workflowDeps.callOp = makeScriptedCallOp(() => ({
+      intent: "pass",
+      quality: "approved",
+      findings: [],
+      threads: [],
+      comments: [],
+      cannotVerify: [],
+      inspectedFiles: ["/checkout/changed"],
+    }));
+    expect(await runPrReview(ctx, input)).not.toHaveProperty("unreadFiles");
+    _reviewStepDeps.writeBranchReviewPackage = async () => ["changed", "unread"];
+    expect(await runPrReview(ctx, input)).toMatchObject({ ran: true, unreadFiles: ["unread"] });
+  });
+  test("US-015 AC-7 omits empty coverage requirements", async () => {
+    _reviewStepDeps.writeBranchReviewPackage = async () => ["README.md"];
+    const result = await runPrReview(ctx, input);
+    expect(result.ran).toBe(true);
+    expect(calls[0]).not.toHaveProperty("requiredFiles");
+    expect(result).not.toHaveProperty("unreadFiles");
+  });
   test("AC-9 rangeBase controls actual package and prompt", async () => {
     const result = await runPrReview(ctx, { ...input, rangeBase: "reviewed" });
     expect(result.ran).toBe(true);
@@ -85,6 +134,8 @@ describe("runPrReview", () => {
     expect(result.ran).toBe(true);
     expect(write).not.toHaveBeenCalled();
     expect(rules).not.toHaveBeenCalled();
+    expect(calls[0]).not.toHaveProperty("requiredFiles");
+    expect(result).not.toHaveProperty("unreadFiles");
     expect(calls[0]).toMatchObject({ threadIds: ["t"], prompt: expect.stringContaining("workflow's branch review") });
   });
   test.each([undefined, false])(
