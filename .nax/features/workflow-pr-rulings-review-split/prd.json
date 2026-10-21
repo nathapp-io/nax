@@ -3,7 +3,7 @@
   "feature": "workflow-pr-rulings-review-split",
   "branchName": "feat/workflow-pr-rulings-review-split",
   "createdAt": "2026-10-21T00:00:00.000Z",
-  "updatedAt": "2026-10-21T13:00:59.497Z",
+  "updatedAt": "2026-10-21T13:12:22.262Z",
   "userStories": [
     {
       "id": "US-001",
@@ -267,14 +267,17 @@
         "US-002",
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "One new posting module composes existing forge/state helpers with a specified fallback order; ordinary failing-first unit tests can cover the bounded best-effort flow."
+        "reasoning": "One new posting module composes existing forge/state helpers with a specified fallback order; ordinary failing-first unit tests can cover the bounded best-effort flow.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/open-items.ts",
@@ -291,7 +294,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "c3942b1e170574c119b96837c194c99a3a4254f9"
     },
     {
       "id": "US-006",
