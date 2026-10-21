@@ -215,6 +215,34 @@ describe("recordPrRulings model replies", () => {
     expect(out.open.map((i) => i.itemId)).toEqual(["B1"]);
     expect(out.asked).toBe(0);
   });
+  test.each(["12345", "abc12", "#4f9a2c1", "a".repeat(41)])(
+    "rejects grounded but non-durable fixed sha %s",
+    async (sha) => {
+      readModel.mockImplementation(async () => verdict({ disposition: "fixed", sha, quote: `build ${sha}` }));
+      const out = await recordPrRulings(input([thread("B1", `Resolved in build ${sha}`)]));
+      expect(out.recorded).toEqual([]);
+      expect(out.open).toHaveLength(1);
+      expect(out.asked).toBe(1);
+      expect(resolve).not.toHaveBeenCalled();
+      expect(tick).toHaveBeenCalledWith(expect.any(String), []);
+    },
+  );
+  test("normalizes padded fixed sha and preserves its echo on the next run", async () => {
+    readModel.mockImplementation(async () =>
+      verdict({ disposition: "fixed", sha: " abc1234 ", quote: "commit abc1234" }),
+    );
+    const t = thread("B1", "Resolved in commit abc1234");
+    const out = await recordPrRulings(input([t]));
+    expect(out.recorded[0]).toMatchObject({ disposition: "fixed", sha: "abc1234" });
+    expect(tick).toHaveBeenCalledWith(expect.any(String), [expect.objectContaining({ sha: "abc1234" })]);
+    const body = post.mock.calls[0]?.[2];
+    assertDefined(body);
+    const next = await recordPrRulings(input([{ ...t, comments: [...t.comments, comment("echo", body, "bot")] }]));
+    expect(next.open).toEqual([]);
+    expect(next.settled[0]?.ruling).toMatchObject({ disposition: "fixed", sha: "abc1234" });
+    expect(next.recorded).toEqual([]);
+    expect(readModel).toHaveBeenCalledTimes(1);
+  });
   test("grounded fixed sha is recorded and ticked", async () => {
     readModel.mockImplementation(async () =>
       verdict({ disposition: "fixed", sha: "abc1234", quote: "commit abc1234" }),

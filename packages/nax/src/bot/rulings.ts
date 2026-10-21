@@ -146,14 +146,15 @@ function modelCandidate(item: OpenRulingItem, entry?: BotRulingReadVerdict["ruli
   const quote = collapse(entry.quote);
   const reason = entry.reason.trim();
   if (!quote || !collapse(reply.body).includes(quote) || !reason || /[\r\n]/.test(reason)) return null;
-  if (entry.disposition === "fixed" && (!entry.sha?.trim() || !reply.body.includes(entry.sha))) return null;
+  const sha = entry.sha?.trim() ?? "";
+  if (entry.disposition === "fixed" && (!/^[a-fA-F0-9]{7,40}$/.test(sha) || !reply.body.includes(sha))) return null;
   return {
     itemKey: item.key,
     itemId: item.itemId,
     disposition: entry.disposition,
     reason,
     by: reply.author,
-    ...(entry.disposition === "fixed" ? { sha: entry.sha } : {}),
+    ...(entry.disposition === "fixed" ? { sha } : {}),
   };
 }
 
