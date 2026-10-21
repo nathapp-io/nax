@@ -2,24 +2,15 @@ import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import type { ForgeDeps, OwnComment, PrComment, PrInfo, PrRef, PrThread } from "@/forge";
-import {
-  editComment,
-  NAX_BOT_HEADER,
-  ownComments,
-  parseNaxBotMarker,
-  postInlineComment,
-  postPrComment,
-  replyToThread,
-  resolveThread,
-  stripNaxBotMarkers,
-} from "@/forge";
+import { editComment, postInlineComment, postPrComment, replyToThread } from "@/forge";
 import { getLogger } from "@/logger";
 import type { PrReviewVerdict } from "@/operations/bot-types";
 import type { WorkflowFindingDraft, WorkflowSeverity } from "@/operations/workflow-types";
 import type { CiWaitResult } from "../workflow/ci-wait";
 import type { BotChecks } from "./checks";
-import { commentKey, earlierKey, findingKey, threadKey } from "./render";
-import { renderEarlierReply, renderFindingComment, renderReviewSummary, renderThreadReply } from "./render-comments";
+import { earlierCounts, earlierIssue, effectiveEarlier, postEarlier, withdrawalEvents } from "./post-earlier";
+import { commentKey, findingKey, threadKey } from "./render";
+import { renderFindingComment, renderReviewSummary, renderThreadReply } from "./render-comments";
 
 interface AgreedBase {
   readonly key: string;
@@ -60,6 +51,7 @@ export interface BotReviewEvent {
 
 export interface BotReviewArtifact {
   readonly version: 1 | 2;
+  readonly rulings?: PostReviewInput["rulings"];
   readonly checks?: BotChecks | null;
   readonly events?: readonly BotReviewEvent[];
   readonly pr: PrRef;
@@ -75,6 +67,8 @@ export interface PostReviewInput {
   /** CI's verdict on the reviewed head (nax#2631). */
   readonly ci?: CiWaitResult;
   readonly earlier?: readonly PrThread[];
+  readonly itemEarlier?: readonly PrThread[];
+  readonly rulings?: { recorded: number; open: number; asked: number };
   readonly login?: string;
   readonly checks?: BotChecks | null;
   readonly ref: PrRef;
@@ -157,97 +151,10 @@ function mergeEarlier(input: PostReviewInput, items: AgreedItem[]): AgreedItem[]
   return items;
 }
 
-/** Keep absent verdicts and re-raised findings open, including threads beyond the prompt cap. */
-function effectiveEarlier(input: PostReviewInput) {
-  const raised = new Set(input.verdict.findings.map(findingKey));
-  return (input.earlier ?? []).flatMap((thread) => {
-    const first = thread.comments[0];
-    const key = parseNaxBotMarker(first?.body ?? "")?.key;
-    // Selection supplies own finding threads; defend against a foreign opener when login is available.
-    if (!key?.startsWith("f-") || (input.login !== undefined && first?.author !== input.login)) return [];
-    const verdict = raised.has(key) ? undefined : input.verdict.earlier?.find(({ id }) => id === thread.id);
-    return [{ thread, key, verdict }];
-  });
-}
-
-function earlierIssue(thread: PrThread): string {
-  return stripNaxBotMarkers(thread.comments[0]?.body ?? "")
-    .split("\n")
-    .filter((line) => line.trim() !== NAX_BOT_HEADER)
-    .join("\n")
-    .trim();
-}
-
-function warnSkippedEarlier(input: PostReviewInput, handledIds: readonly string[]): void {
-  for (const thread of input.earlier ?? []) {
-    if (handledIds.includes(thread.id)) continue;
-    const marker = parseNaxBotMarker(thread.comments[0]?.body ?? "");
-    const reason = !marker ? "missing-marker" : !marker.key.startsWith("f-") ? "not-finding" : "foreign-author";
-    getLogger()?.warn("bot-post", "Skipping invalid earlier finding thread", {
-      threadId: thread.id,
-      login: input.login,
-      reason,
-    });
-  }
-}
-
-async function postEarlier(input: PostReviewInput): Promise<{ earlierAnswered: number; failed: number }> {
-  let failed = 0;
-  const earlier = effectiveEarlier(input);
-  warnSkippedEarlier(
-    input,
-    earlier.map(({ thread }) => thread.id),
-  );
-  for (const { thread, verdict } of earlier) {
-    if (!verdict || verdict.status === "open") continue;
-    const own = [
-      ...input.own,
-      ...(input.login === undefined ? [] : ownComments(thread.comments, input.login, thread.id)),
-    ].find((comment) => comment.key === earlierKey(thread.id) && comment.threadId === thread.id);
-    let action = "reply";
-    try {
-      const body = renderEarlierReply(verdict, thread.id);
-      if (own) await editComment(input.ref, own.comment, body, input.deps, input.cwd);
-      else await replyToThread(input.ref, thread, body, input.deps, input.cwd);
-      action = "resolve";
-      await resolveThread(input.ref, thread, input.deps, input.cwd);
-    } catch (cause) {
-      failed++;
-      getLogger()?.warn("bot-post", `Earlier finding ${action} failed`, {
-        threadId: thread.id,
-        error: errorMessage(cause),
-      });
-    }
-  }
-  return { earlierAnswered: earlier.length, failed };
-}
-
-function withdrawalEvents(input: PostReviewInput): BotReviewEvent[] {
-  if (input.login === undefined) return [];
-  return effectiveEarlier(input).flatMap(({ thread, key, verdict }) => {
-    if (verdict?.status !== "withdrawn") return [];
-    const disagreedBy = [
-      ...new Set(thread.comments.map(({ author }) => author).filter((author) => author !== input.login)),
-    ];
-    if (disagreedBy.length === 0) return [];
-    return [
-      {
-        type: "finding-withdrawn" as const,
-        key,
-        threadId: thread.id,
-        file: thread.path,
-        line: thread.line,
-        finding: earlierIssue(thread),
-        reason: verdict.reason,
-        disagreedBy,
-      },
-    ];
-  });
-}
-
 async function persistArtifact(input: PostReviewInput): Promise<void> {
   const artifact: BotReviewArtifact = {
     version: 2,
+    ...(input.rulings === undefined ? {} : { rulings: input.rulings }),
     checks: input.staticMode ? null : (input.checks ?? null),
     events: withdrawalEvents(input),
     pr: input.ref,
@@ -337,12 +244,6 @@ async function postThreads(input: PostReviewInput): Promise<{ threadsAnswered: n
     }
   }
   return { threadsAnswered, failed };
-}
-
-function earlierCounts(input: PostReviewInput): { open: number; fixed: number; withdrawn: number } {
-  const counts = { open: 0, fixed: 0, withdrawn: 0 };
-  for (const { verdict } of effectiveEarlier(input)) counts[verdict?.status ?? "open"]++;
-  return counts;
 }
 
 async function postSummary(

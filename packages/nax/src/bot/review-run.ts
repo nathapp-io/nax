@@ -37,7 +37,9 @@ import { type BotLog, openBotLog } from "./log";
 import { botModel } from "./models";
 import { sensitivePaths } from "./path-policy";
 import { BOT_REVIEW_FILENAME, type PostReviewInput, type PostReviewOutcome, postPrReview } from "./post";
+import { readReviewRulings } from "./review-rulings";
 import { type PrReviewInput, runPrReview } from "./review-step";
+import { recordPrRulings } from "./rulings";
 
 export const _botReviewDeps = {
   async gitToplevel(dir: string): Promise<string> {
@@ -68,6 +70,7 @@ export const _botReviewDeps = {
   resolveBotChecks,
   runPreRunSteps,
   runPrReview,
+  recordPrRulings,
   postPrReview,
   async writeJson(path: string, value: unknown): Promise<void> {
     await Bun.write(path, `${JSON.stringify(value, null, 2)}\n`);
@@ -157,7 +160,12 @@ function featurePrd(checkout: PrCheckout): string | undefined {
 async function triage(
   ref: PostReviewInput["ref"],
   cwd: string,
-): Promise<Required<Pick<PostReviewInput, "threads" | "comments" | "own" | "earlier" | "login">>> {
+): Promise<
+  Required<Pick<PostReviewInput, "threads" | "comments" | "own" | "earlier" | "login">> & {
+    rawThreads: PostReviewInput["threads"];
+    rawComments: PostReviewInput["comments"];
+  }
+> {
   const deps = _botReviewDeps;
   const [user, threads, comments] = await Promise.all([
     deps.readCurrentUser(ref, deps.forge, cwd),
@@ -171,6 +179,8 @@ async function triage(
   const isOwn = (comment: PrComment | undefined): boolean =>
     comment !== undefined && ownComments([comment], user.login).length > 0;
   return {
+    rawThreads: threads,
+    rawComments: comments,
     own,
     login: user.login,
     earlier: threads.filter((thread) => {
@@ -251,6 +261,21 @@ async function reviewEnvironment(
     // The agent sandbox cannot run the full checks; CI on this exact head can vouch for them (nax#2631).
     _botReviewDeps.readHeadCi({ forge: ref.forge, url: info.url, repoRoot, headSha: info.headSha }),
   ]);
+  const { rawThreads, rawComments, ...triaged } = items;
+  const recorded = await readReviewRulings(
+    {
+      ref,
+      info,
+      login: items.login,
+      threads: rawThreads,
+      comments: rawComments,
+      deps: _botReviewDeps.forge,
+      cwd: repoRoot,
+      staticMode,
+      ctx,
+    },
+    _botReviewDeps.recordPrRulings,
+  );
   const preparation: ReviewPreparation = { ...checks, ci };
   const prdPath = featurePrd(checkout);
   return {
@@ -262,7 +287,7 @@ async function reviewEnvironment(
       issues,
       threads: items.threads,
       comments: items.comments,
-      earlier: items.earlier,
+      earlier: [...items.earlier, ...(recorded.itemEarlier ?? [])],
       checks: preparation.checks === null ? [] : checkCommands(preparation.checks),
       decisions: input.decisions ?? [],
       staticMode,
@@ -274,7 +299,8 @@ async function reviewEnvironment(
       ...preparation,
       ref,
       info,
-      ...items,
+      ...triaged,
+      ...recorded,
       staticMode,
       sensitive: sensitivePaths(checkout.changedFiles),
       stateDir,
