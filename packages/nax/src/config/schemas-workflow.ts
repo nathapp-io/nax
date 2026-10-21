@@ -19,6 +19,7 @@ export const WorkflowConfigObjectSchema = z.object({
   maxFixRounds: z.number().int().min(1).default(5),
   maxBranchFixRounds: z.number().int().min(0).default(2),
   finalGateRepairRounds: z.number().int().min(0).default(1),
+  ciRepairRounds: z.number().int().min(0).default(1),
   preflight: z.boolean().default(true),
   publish: z.enum(["pr", "push", "none"]).default("pr"),
   timeouts: z

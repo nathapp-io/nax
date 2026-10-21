@@ -15,6 +15,11 @@ export interface FeatureLimits {
   readonly maxBranchFixRounds: number;
   /** Repair rounds for final gates the branch fix turned red (`workflow.finalGateRepairRounds`). */
   readonly finalGateRepairRounds: number;
+  /**
+   * Repair rounds for a failed CI on the published PR (`workflow.ciRepairRounds`). Absent reads as
+   * 0: a run whose limits do not name it repairs no CI.
+   */
+  readonly ciRepairRounds?: number;
 }
 
 export interface NextRoundInput {

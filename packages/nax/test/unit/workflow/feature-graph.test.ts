@@ -12,6 +12,7 @@ const NODE_IDS = [
   "adjudicate",
   "final-gates",
   "gate-repair",
+  "ci-repair",
   "publish",
 ] as const;
 type NodeId = (typeof NODE_IDS)[number];
@@ -44,12 +45,14 @@ const expectedTransitions: Record<NodeId, { on?: string; to: FeatureStep }[]> = 
     { on: "red", to: "publish" },
   ],
   "gate-repair": [{ to: "final-gates" }],
-  publish: [{ to: "done" }],
+  "ci-repair": [{ to: "final-gates" }],
+  publish: [{ on: "ci-repair", to: "ci-repair" }, { to: "done" }],
 };
 const expectedExits: Partial<Record<NodeId, string[]>> = {
   "branch-fix": ["nothing-to-fix", "capped", "no-base", "fixed"],
   "branch-rereview": ["nothing-to-check", "skipped", "again", "settled"],
   "final-gates": ["reused", "green", "repair", "red"],
+  publish: ["ci-repair"],
 };
 const expectedProduces: Record<NodeId, string[]> = {
   "repo-gates": ["repoGates", "gateFindings", "nextFindingId"],
@@ -59,6 +62,7 @@ const expectedProduces: Record<NodeId, string[]> = {
   adjudicate: ["rulings"],
   "final-gates": ["finalGates", "finalGateFindings", "gateRepairFindings"],
   "gate-repair": ["gateRepairRounds"],
+  "ci-repair": ["ciRepairRounds", "ciRepairFindings"],
   publish: [
     "outcome",
     "ci",
@@ -70,6 +74,7 @@ const expectedProduces: Record<NodeId, string[]> = {
     "head",
     "passed",
     "flaggedDecisions",
+    "ciRepairFindings",
     "endedAt",
   ],
 };
@@ -87,6 +92,7 @@ describe("FEATURE_GRAPH", () => {
       adjudicate: "agent",
       "final-gates": "gate",
       "gate-repair": "agent",
+      "ci-repair": "agent",
       publish: "forge",
     };
     for (const id of NODE_IDS) {
@@ -101,10 +107,10 @@ describe("FEATURE_GRAPH", () => {
     }
     expect(
       NODE_IDS.filter((id) => nodeFor(id).kind === "agent").toSorted((left, right) => left.localeCompare(right)),
-    ).toEqual(["adjudicate", "branch-fix", "branch-rereview", "branch-review", "gate-repair"]);
+    ).toEqual(["adjudicate", "branch-fix", "branch-rereview", "branch-review", "ci-repair", "gate-repair"]);
     expect(
       NODE_IDS.filter((id) => nodeFor(id).commits === true).toSorted((left, right) => left.localeCompare(right)),
-    ).toEqual(["branch-fix", "gate-repair", "publish"]);
+    ).toEqual(["branch-fix", "ci-repair", "gate-repair", "publish"]);
     expect(FEATURE_GRAPH.costStopProduces).toEqual(["costLimited"]);
   });
 

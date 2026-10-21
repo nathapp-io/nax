@@ -57,6 +57,14 @@ describe("reportWorkflowRun", () => {
     );
   });
 
+  // US-008: a CI repair is a repair like any other, and its rounds are named at run end.
+  test("AC-14: the line names the CI repair rounds", async () => {
+    _workflowEndReportDeps.readSummary = async () => ({ ...view, ciRepairRounds: 2 });
+    await reportWorkflowRun(opts, timing);
+    const line = logs.find((e) => e.message.startsWith("Workflow summary:"));
+    expect(line?.message).toContain("CI repair rounds 2");
+  });
+
   test("no result.json: nothing logged, nothing returned", async () => {
     _workflowEndReportDeps.readSummary = async () => null;
     expect(await reportWorkflowRun(opts, timing)).toBeUndefined();

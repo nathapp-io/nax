@@ -8,13 +8,15 @@
  */
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { WORKFLOW_DEFAULTS } from "@/config";
+import type { FailedCheck } from "@/forge";
 import { getSafeLogger } from "@/logger";
 import type { StepResult } from "@/step-graph";
 import { FEATURE_SCOPE } from "./advisor-live";
 import { describeUnread, featurePassed } from "./approval";
 import { dropKnownRestatements, type FeatureLimits, nextBranchFixRound } from "./branch-fix-rounds";
 import type { BranchReviewFacts } from "./branch-review";
-import type { FeatureEnv } from "./feature-machine";
+import type { FeatureEnv, FeatureSteps } from "./feature-machine";
+import type { PublishOutcome } from "./finalize";
 import { ledgerCannotVerify } from "./gate-timing";
 import { type LedgerWriteOptions, ledgerText } from "./ledger";
 import { absorbReReviewVerdict } from "./re-review-absorb";
@@ -33,6 +35,7 @@ import type {
 const DEFAULT_LIMITS: FeatureLimits = {
   maxBranchFixRounds: WORKFLOW_DEFAULTS.maxBranchFixRounds,
   finalGateRepairRounds: WORKFLOW_DEFAULTS.finalGateRepairRounds,
+  ciRepairRounds: WORKFLOW_DEFAULTS.ciRepairRounds,
 };
 const limitsOf = (env: FeatureEnv): FeatureLimits => env.limits ?? DEFAULT_LIMITS;
 
@@ -322,7 +325,8 @@ export async function finalGatesStep(
   env: FeatureEnv,
   rec: WorkflowFeatureRecord,
 ): Promise<StepResult<WorkflowFeatureRecord>> {
-  if (!rec.fixRan) {
+  // US-007: a CI repair changed the branch since the repo gates were read, so they are read again.
+  if (!rec.fixRan && !rec.ciRepairRounds) {
     featureStep("final-gates", false, true).done(
       `${gatesText(rec.repoGates?.failing ?? [])} (no fix ran; repo-gates reused)`,
     );
@@ -393,6 +397,42 @@ export async function gateRepairStep(
 }
 
 /**
+ * US-007: the CI repair round. The failed checks of the published PR become the findings a
+ * branch-fix session repairs, exactly as the red final gates become the gate repair's findings.
+ * The run then goes back to the final gates, which read the repo's own gates again.
+ */
+export async function ciRepairStep(
+  env: FeatureEnv,
+  rec: WorkflowFeatureRecord,
+): Promise<StepResult<WorkflowFeatureRecord>> {
+  const round = (rec.ciRepairRounds ?? 0) + 1;
+  const max = limitsOf(env).ciRepairRounds ?? 0;
+  if (round > max) {
+    // A resume can find the cap lowered under a pending repair; the CI stays as it is.
+    await env.sink.ledger(
+      ledgerText.note(`CI repair skipped: round ${round} is past workflow.ciRepairRounds (${max})`),
+      NO_MIRROR,
+    );
+    return { patch: {} };
+  }
+  // `C` ids: a CI check is no branch finding, so it never spends the B counter the summary counts.
+  const findings = (rec.ciRepairFindings ?? []).map((d, i) => ({ ...d, id: `C${i + 1}` }));
+  if (findings.length === 0) return { patch: { ciRepairRounds: round } };
+  const list = findings.map((f) => f.id);
+  await env.sink.ledger(
+    ledgerText.note(`CI repair r${round}: ${findings.length} item(s): ${list.join(", ")}`),
+    NO_MIRROR,
+  );
+  const log = featureStep(roundLabel("ci-repair", round), true, false, env.steps.modelFor?.("branch-fix"));
+  const out = await env.steps.branchFix(findings);
+  log.done(`${list.join(" ")}${out.failure ? ` (session failed: ${out.failure})` : ""}`);
+  if (out.failure) await env.sink.ledger(ledgerText.note(`CI repair session failed: ${out.failure}`), NO_MIRROR);
+  if (out.autoCommitted) await env.sink.ledger(ledgerText.note("auto-committed the CI repair's edits"));
+  if (out.dirty) await env.sink.ledger(ledgerText.note("CI repair left uncommitted edits: the auto-commit failed"));
+  return { patch: { ciRepairRounds: round, ciRepairFindings: undefined } };
+}
+
+/**
  * US-005: the ids of the feature's trusted ledger decisions a human still has to confirm. Best
  * effort by design — an unreadable ledger is a warning, never a failed publish — and an empty
  * list means `publishStep` records no field, exactly like an absent step.
@@ -427,6 +467,69 @@ async function readHeadSoft(env: FeatureEnv): Promise<string | undefined> {
   }
 }
 
+/**
+ * US-006: the failed checks of a PR's CI, as the findings the CI repair round repairs. A CI check
+ * is not a repo gate, but it is the same kind of work: make this check pass.
+ */
+function ciRepairFindingsOf(checks: readonly FailedCheck[]): WorkflowFindingDraft[] {
+  return checks.map((check) => ({
+    kind: "gate",
+    severity: "important",
+    issue: `CI check ${check.name} failed:\n${check.excerpt}`,
+    ...(check.url ? { suggestion: `See ${check.url}` } : {}),
+  }));
+}
+
+/**
+ * US-006: read the failed checks of the published PR and turn them into repair findings. An empty
+ * list and a failed read are both "no repair": the ledger says which, and the publish outcome
+ * stands.
+ */
+async function readCiFailuresForRepair(
+  env: FeatureEnv,
+  reader: NonNullable<FeatureSteps["readCiFailures"]>,
+  url: string,
+  head: string,
+): Promise<readonly WorkflowFindingDraft[] | undefined> {
+  let checks: readonly FailedCheck[];
+  try {
+    checks = await reader({ url, head });
+  } catch (err) {
+    await env.sink.ledger(ledgerText.note(`CI logs unavailable: ${errorMessage(err)}`), NO_MIRROR);
+    return undefined;
+  }
+  if (checks.length === 0) {
+    await env.sink.ledger(ledgerText.note(`CI failed but no failed check was found for ${head}`), NO_MIRROR);
+    return undefined;
+  }
+  await env.sink.ledger(
+    ledgerText.note(`CI failed: ${checks.map((check) => check.name).join(", ")} (repairing)`),
+    NO_MIRROR,
+  );
+  return ciRepairFindingsOf(checks);
+}
+
+/**
+ * US-006: whether the published PR's failed CI is worth a repair round, and what to repair.
+ *
+ * Only a draft PR whose CI failed can be repaired, and only while the run has an allowance left
+ * and money to spend. Every other answer is silence: the publish outcome stands as it was.
+ */
+export async function ciRepairDecision(
+  env: FeatureEnv,
+  rec: WorkflowFeatureRecord,
+  out: PublishOutcome,
+  head: string | undefined,
+): Promise<readonly WorkflowFindingDraft[] | undefined> {
+  const reader = env.steps.readCiFailures;
+  if (!reader) return undefined;
+  if (out.outcome !== "draft" || out.ci !== "failed") return undefined;
+  if (!out.url || !head) return undefined;
+  if ((rec.ciRepairRounds ?? 0) >= (limitsOf(env).ciRepairRounds ?? 0)) return undefined;
+  if (costExceeded(env)) return undefined;
+  return await readCiFailuresForRepair(env, reader, out.url, head);
+}
+
 export async function publishStep(
   env: FeatureEnv,
   rec: WorkflowFeatureRecord,
@@ -437,6 +540,10 @@ export async function publishStep(
   const why = out.reasons.length > 0 ? `: ${out.reasons.join("; ")}` : "";
   log.done(`${out.outcome}${out.url ? ` ${out.url}` : ""}${why}`);
   await env.sink.ledger(ledgerText.note(`feature ${out.outcome}${out.url ? ` ${out.url}` : ""}${why}`), NO_MIRROR);
+  // US-006: a draft PR whose CI failed may still be repairable, so the decision reads the failed
+  // checks before the step ends. It never changes the publish outcome itself: the repair is a
+  // separate node, and a run that may not repair keeps the draft it has.
+  const ciFindings = await ciRepairDecision(env, rec, out, head);
   // US-005: collected after publish, whatever it did — a local-only or draft feature still needs
   // its flagged rulings named at run end.
   const flagged = await collectFlaggedDecisions(env);
@@ -460,8 +567,11 @@ export async function publishStep(
       ...(head ? { head } : {}),
       passed: featurePassed({ ...(rec.finalGates ? { finalGates: rec.finalGates } : {}), stories: env.facts.stories }),
       ...(flagged.length > 0 ? { flaggedDecisions: flagged } : {}),
+      // US-006: the repair targets, only when there is a repair to make.
+      ...(ciFindings ? { ciRepairFindings: ciFindings } : {}),
       endedAt: new Date().toISOString(),
     },
+    ...(ciFindings ? { exit: "ci-repair" } : {}),
   };
 }
 

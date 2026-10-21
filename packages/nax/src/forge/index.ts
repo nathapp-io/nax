@@ -5,6 +5,15 @@
  * barrel, so consumers import from `@/forge` and never `@/forge/detect`.
  */
 
+export type { FailedCheck } from "./ci-failures";
+export {
+  CI_EXCERPT_CHARS,
+  CI_EXCERPT_LINES,
+  ciExcerpt,
+  MAX_FAILED_CHECKS,
+  prNumberFromUrl,
+  readFailedChecks,
+} from "./ci-failures";
 export type { InlineCommentInput } from "./comments";
 export {
   editComment,
@@ -20,7 +29,9 @@ export type { LinkedIssue } from "./issues";
 export { MAX_LINKED_ISSUES, parseClosingRefs, readIssue, readLinkedIssues } from "./issues";
 export {
   findOwnComments,
+  hasNaxWorkflowMarker,
   NAX_BOT_HEADER,
+  NAX_WORKFLOW_PR_MARKER,
   ownComments,
   parseNaxBotMarker,
   stripNaxBotMarkers,

@@ -121,10 +121,14 @@ describe("publish CI draft gate (US-002)", () => {
     expect(result).toMatchObject({ outcome: "draft", ci: "unavailable", reasons: [detail] });
   });
 
-  test("slow CI (pending) still asks the advisor (W-R9)", async () => {
-    const { input, asked } = wire({ outcome: "pending", detail: "no CI result within 1200000ms" });
-    await publish(makeFeatureContext(), input);
-    expect(asked).toEqual(["finish-approval"]);
+  // US-003: strict green — a CI that is still pending is a readiness reason, so the PR stays a draft.
+  test("slow CI (pending) keeps the draft and never asks the advisor", async () => {
+    const { input, asked, updated } = wire({ outcome: "pending", detail: "no CI result within 1200000ms" });
+    const result = await publish(makeFeatureContext(), input);
+    expect(asked).toEqual([]);
+    expect(updated[0]?.keepDraft).toBe(true);
+    expect(result.outcome).toBe("draft");
+    expect(result.reasons).toContain("no CI result within 1200000ms");
   });
 
   // nax#2550: a feature workflow stopped at the cost limit never goes ready.

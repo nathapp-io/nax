@@ -89,6 +89,8 @@ export interface WorkflowSummaryView {
   finalGates?: "green" | "red" | undefined;
   /** nax#2548: repair rounds run for final gates the branch fix turned red. Absent when none ran. */
   gateRepairRounds?: number | undefined;
+  /** US-008: repair rounds run for a failed CI on the published PR. Absent when none ran. */
+  ciRepairRounds?: number | undefined;
   publish?: { outcome: string; url?: string; reasons: readonly string[] } | undefined;
   /** US-005: the rulings flagged for a human, plus the command that lists them. Absent when none. */
   flagged?: { ids: readonly string[]; hint: string } | undefined;

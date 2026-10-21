@@ -157,8 +157,8 @@ describe("isPublishableBranch", () => {
 });
 
 describe("publish (P4-R3, P4-R11)", () => {
-  test("happy path: push, draft PR, CI pending, advisor approves -> promoted, ready", async () => {
-    const calls = wire({ ci: "pending" });
+  test("happy path: push, draft PR, CI green, advisor approves -> promoted, ready", async () => {
+    const calls = wire({ ci: "green" });
     const asked: string[] = [];
     const out = await publish(makeFeatureContext(), input({ advisor: advisor(true, asked) }));
     expect(calls.map((c) => c.name)).toEqual(["ledger", "push", "draft", "ci", "ledger", "push", "promote"]);
@@ -168,11 +168,11 @@ describe("publish (P4-R3, P4-R11)", () => {
     expect(calls.at(-1)?.body).toContain("Outcome: **ready**");
     // US-001: the approval outcome, with its decision id, joins the result of a promoted PR.
     const approval = { approved: true, rationale: "clean", decisionId: "D-1" };
-    expect(out).toEqual({ outcome: "ready", ci: "pending", url: "https://gh/pr/7", reasons: [], approval });
+    expect(out).toEqual({ outcome: "ready", ci: "green", url: "https://gh/pr/7", reasons: [], approval });
   });
 
   test("a deterministic reason keeps the draft and never asks the advisor (P4-R10)", async () => {
-    const calls = wire();
+    const calls = wire({ ci: "green" });
     const asked: string[] = [];
     const out = await publish(
       makeFeatureContext(),

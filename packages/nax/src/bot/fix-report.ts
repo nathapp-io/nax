@@ -1,11 +1,21 @@
 /** Repo-scoped post-push forge nodes; a separate review must grade the fixes. */
 import { errorMessage } from "@nathapp/nax-agent/internal";
+import { resolveWorkflowConfig } from "@/config";
 import { NaxError } from "@/errors";
-import { editComment, parseNaxBotMarker, postPrComment, replyToThread, resolveThread, withNaxBotMarker } from "@/forge";
+import {
+  editComment,
+  hasNaxWorkflowMarker,
+  parseNaxBotMarker,
+  postPrComment,
+  replyToThread,
+  resolveThread,
+  withNaxBotMarker,
+} from "@/forge";
 import { getLogger } from "@/logger";
 import type { StepResult } from "@/step-graph";
-import { safeCode } from "../workflow/pr-body-safe";
 // Workflow leaves avoid pulling orchestration dependencies into the bot nodes.
+import { type CiWaitResult, ciAllowsReady, waitForChecks } from "../workflow/ci-wait";
+import { safeCode } from "../workflow/pr-body-safe";
 import { markReadyArgv } from "../workflow/promote";
 import type { BotFixEnv, BotFixState } from "./fix-steps";
 import { safeText } from "./render";
@@ -13,8 +23,10 @@ import { safeText } from "./render";
 const SHORT_SHA_LENGTH = 7;
 const MAX_FAILURE_LENGTH = 500;
 const MAX_ISSUE_LENGTH = 200;
+/** A draft the workflow published is promoted by `nax workflow promote`, never by the bot (US-005). */
+const WORKFLOW_PR_HOLD = "nax workflow PR: promote it with nax workflow promote";
 
-export const _fixReportDeps = { replyToThread, resolveThread, editComment, postPrComment };
+export const _fixReportDeps = { replyToThread, resolveThread, editComment, postPrComment, waitForChecks };
 
 async function replyAgreedThreads(env: BotFixEnv, state: BotFixState): Promise<number> {
   let replied = 0;
@@ -78,8 +90,35 @@ export async function replyStep(env: BotFixEnv, state: BotFixState): Promise<Ste
   return { patch: { replied: replied + own.replied, resolved: own.resolved }, exit: "ready" };
 }
 
-export async function readyStep(env: BotFixEnv, _state: BotFixState): Promise<StepResult<BotFixState>> {
+/**
+ * The CI wait for this PR: the head the fix pushed, or the reviewed head when nothing was pushed.
+ * The wait is the workflow's own, so bot fix and `nax workflow promote` read the same CI.
+ */
+async function waitForCi(env: BotFixEnv, state: BotFixState): Promise<CiWaitResult> {
+  const timeouts = resolveWorkflowConfig(env.config).timeouts;
+  return _fixReportDeps.waitForChecks(env.ref.forge, env.info.url, {
+    cwd: env.repoRoot,
+    timeoutMs: timeouts.ciWaitMs,
+    pollMs: timeouts.ciPollMs,
+    signal: env.ctx.callCtx.runtime.signal,
+    expectedSha: state.pushedSha ?? env.info.headSha,
+  });
+}
+
+/**
+ * Ready the PR only when its CI is green (US-005). A PR the workflow published is left alone — it is
+ * promoted by `nax workflow promote` — and a CI that is not green keeps the draft and says why.
+ */
+export async function readyStep(env: BotFixEnv, state: BotFixState): Promise<StepResult<BotFixState>> {
   if (!env.info.draft) return { patch: { markedReady: false }, exit: "report" };
+  if (hasNaxWorkflowMarker(env.info.body)) {
+    return { patch: { markedReady: false, readyHeld: WORKFLOW_PR_HOLD }, exit: "report" };
+  }
+  const ci = await waitForCi(env, state);
+  env.ctx.callCtx.runtime.signal.throwIfAborted();
+  if (!ciAllowsReady(ci.outcome)) {
+    return { patch: { markedReady: false, readyHeld: `CI ${ci.outcome}: ${ci.detail}` }, exit: "report" };
+  }
   const result = await env.forge.run(markReadyArgv(env.ref.forge, String(env.ref.number)), { cwd: env.repoRoot });
   if (result.exitCode !== 0) {
     throw new NaxError(`[bot-fix] Could not mark ${env.ref.repo}#${env.ref.number} ready`, "BOT_FIX_READY_FAILED", {
@@ -124,6 +163,11 @@ function outcomeText(state: BotFixState): string {
 export function renderFixSummary(state: BotFixState): string {
   const lines = [outcomeText(state)];
   if (state.fixFailure !== undefined) lines.push(`Fix session: ${safeText(state.fixFailure, MAX_FAILURE_LENGTH)}`);
+  // Why the PR is still a draft — a workflow PR, or a CI that is not green — or that it is ready.
+  // The reason carries the CI wait's own detail, which is forge output: it is neutralised and
+  // capped like the fix failure above, so a hostile or noisy detail cannot inject into the comment.
+  if (state.readyHeld !== undefined) lines.push(`Kept as draft: ${safeText(state.readyHeld, MAX_FAILURE_LENGTH)}`);
+  if (state.markedReady === true) lines.push("Marked ready.");
   return withNaxBotMarker(lines.join("\n"), "fix-summary");
 }
 

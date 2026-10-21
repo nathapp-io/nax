@@ -140,6 +140,7 @@ export type FeatureStep =
   | "final-gates"
   | "gate-repair"
   | "publish"
+  | "ci-repair"
   | "done";
 
 /** One runQualityGates pass. Nothing ran = nothing verified (P4-R5). */
@@ -256,6 +257,13 @@ export interface WorkflowFeatureRecord {
   readonly gateRepairFindings?: readonly WorkflowFindingDraft[];
   /** nax#2548: repair rounds run for final gates the branch fix turned red. Absent when none ran. */
   readonly gateRepairRounds?: number;
+  /**
+   * US-006: the failed CI checks of the published PR, as the repair findings the next CI repair
+   * round targets. Absent when no repair was decided.
+   */
+  readonly ciRepairFindings?: readonly WorkflowFindingDraft[];
+  /** US-006: repair rounds run for a failed CI on the published PR. Absent when none ran. */
+  readonly ciRepairRounds?: number;
   readonly ci?: FeatureCiState;
   readonly outcome?: FeatureOutcome;
   readonly reasons: readonly string[];

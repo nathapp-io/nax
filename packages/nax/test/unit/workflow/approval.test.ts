@@ -23,14 +23,14 @@ const story = (id: string, over: Partial<StorySummary> = {}): StorySummary => ({
 });
 const READY: ReadinessFacts = {
   finalGates: { ran: ["build", "test"], failing: [] },
-  ci: "pending",
+  ci: "green",
   stories: [story("US-001")],
   flagged: 0,
   branchReviewRan: true,
 };
 
 describe("readinessReasons (spec §7.8, P4-R6)", () => {
-  test("all conditions hold -> no reasons; CI pending does not block (W-R9)", () => {
+  test("all conditions hold -> no reasons", () => {
     expect(readinessReasons(READY)).toEqual([]);
   });
 
@@ -76,6 +76,14 @@ describe("readinessReasons (spec §7.8, P4-R6)", () => {
   test("AC-9: an unavailable CI with a detail is the only reason", () => {
     expect(readinessReasons({ ...READY, ci: "unavailable", ciDetail: "gh: 502" })).toEqual(["gh: 502"]);
   });
+
+  // US-003: strict green — a CI that is still pending is a reason, so the PR stays a draft.
+  test("AC-7: a pending CI is a readiness reason", () => {
+    expect(readinessReasons({ ...READY, ci: "pending" })).toEqual(["CI still pending after the wait"]);
+    expect(readinessReasons({ ...READY, ci: "pending", ciDetail: "no CI result within 1200000ms" })).toEqual([
+      "no CI result within 1200000ms",
+    ]);
+  });
 });
 
 /** US-001: the CI sentence extracted from `readinessReasons`, so the verdict names the same text. */
@@ -100,7 +108,16 @@ describe("ciReason (US-001)", () => {
     expect(ciReason("unavailable", "gh: auth required")).toBe("gh: auth required");
   });
 
-  test.each(["green", "pending", "skipped"] as const)("AC-8: %s blocks nothing", (ci) => {
+  // US-003: strict green — only a green (or skipped) CI adds no reason; pending blocks.
+  test("AC-3: a pending CI carries the wait's own detail", () => {
+    expect(ciReason("pending", "no CI result within 1200000ms")).toBe("no CI result within 1200000ms");
+  });
+
+  test("AC-4: a pending CI with no detail falls back to its default sentence", () => {
+    expect(ciReason("pending")).toBe("CI still pending after the wait");
+  });
+
+  test.each(["green", "skipped"] as const)("AC-5/AC-6: %s blocks nothing", (ci) => {
     expect(ciReason(ci)).toBeUndefined();
   });
 

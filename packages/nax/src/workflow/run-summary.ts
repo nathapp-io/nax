@@ -87,6 +87,7 @@ export function buildWorkflowRunSummary(
     ...(rec && !rec.reviewRan ? { branchReviewSkipped: { minorsLeft: minorsLeftOf(rec) } } : {}),
     ...(finalGates ? { finalGates: finalGates.failing.length === 0 ? ("green" as const) : ("red" as const) } : {}),
     ...(rec?.gateRepairRounds ? { gateRepairRounds: rec.gateRepairRounds } : {}),
+    ...(rec?.ciRepairRounds ? { ciRepairRounds: rec.ciRepairRounds } : {}),
     ...(rec?.outcome
       ? { publish: { outcome: rec.outcome, ...(rec.url ? { url: rec.url } : {}), reasons: rec.reasons } }
       : {}),

@@ -23,6 +23,7 @@ import { buildOpenItems } from "./open-items";
 import { workflowStoryDir } from "./paths";
 import { buildWorkflowPrBody, extractAssumptions, type WorkflowPrBodyFacts } from "./pr-body";
 import type { PreflightFile } from "./preflight";
+import { repairEvidence } from "./repair-evidence";
 import { _workflowDeps } from "./step-context";
 import type { ApprovalOutcome, FeatureCiState, FeatureOutcome, StorySummary, WorkflowFeatureRecord } from "./types";
 
@@ -60,8 +61,8 @@ const DETAILED_CI_STATES: ReadonlySet<FeatureCiState> = new Set<FeatureCiState>(
 
 /**
  * US-001: the `ciDetail` a result carries, so the verdict keeps the text the draft marker used. An
- * absent key (not an empty one) for `green`, `pending`, `skipped` and `failed`, whose reasons are
- * fixed sentences — `buildOpenItems` reads presence, not value.
+ * absent key (not an empty one) for `green`, `pending`, `skipped` and `failed` — `pending` keeps
+ * none (US-003), so its open item uses the fallback text, not the wait's own detail.
  */
 function ciDetailFields(ci: CiWaitResult): Pick<PublishOutcome, "ciDetail"> {
   return DETAILED_CI_STATES.has(ci.outcome) ? { ciDetail: ci.detail } : {};
@@ -226,12 +227,6 @@ export function approvalEvidence(
   changed: ChangedFilesEvidence,
 ): string[] {
   const r = input.record;
-  // nax#2548: a repair commits after the re-review, so its diff reaches the PR unreviewed.
-  const repaired = r.gateRepairRounds
-    ? [
-        `Gate repair: ${r.gateRepairRounds} round(s) after the final gates went red; the repair diff was not re-reviewed`,
-      ]
-    : [];
   return [
     `Stories: ${input.stories.map((s) => `${s.id} ${s.state} (${s.rounds} round(s))`).join(", ") || "none"}`,
     `Final gates: ${r.finalGates?.ran.join(", ") || "none"}, all green`,
@@ -240,7 +235,8 @@ export function approvalEvidence(
     baseCommitLine(r.seed),
     inventoryLine(changed),
     ...minorLines(minorsLeft),
-    ...repaired,
+    // nax#2548 / US-008: a repair commits after the re-review, so its diff reaches the PR unreviewed.
+    ...repairEvidence(r),
   ];
 }
 
@@ -527,7 +523,7 @@ async function prMode(plan: PublishPlan, input: PublishInput): Promise<PublishOu
   // US-005: a URL the forge did not return is left out rather than invented; the step is still named.
   getSafeLogger()?.info("workflow", `Publish: draft PR${draft?.url ? ` ${draft.url}` : ""}`, { storyId: "_run" });
   const ci = await waitForCi(fc, plan.forge);
-  // An aborted wait reports `pending`, which never blocks readiness: stop before approval or promotion.
+  // An aborted wait reports `pending`, which blocks readiness (US-003): stop before approval or promotion.
   if (fc.runSignal?.aborted) throw abortedError();
   // US-007: a ledger the branch lacks is a readiness reason like any other, so the advisor is never
   // asked to approve a PR citing rulings the branch does not carry.

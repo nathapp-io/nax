@@ -118,7 +118,7 @@ async function setup() {
   };
   _ciWaitDeps.run = async (cmd) =>
     cmd[0] === "gh" && cmd[1] === "pr" && cmd[2] === "checks"
-      ? { exitCode: 8, stdout: '[{"name":"t","state":"PENDING","bucket":"pending"}]', stderr: "" }
+      ? { exitCode: 0, stdout: '[{"name":"t","state":"SUCCESS","bucket":"pass"}]', stderr: "" }
       : { exitCode: 1, stdout: "", stderr: "no checks reported on the 'feat/x' branch" };
 
   const approver: Advisor = {
@@ -174,7 +174,7 @@ async function setup() {
 }
 
 describe("workflow feature end to end", () => {
-  test("review -> one fix -> re-review -> gates -> push -> draft PR -> CI timeout (pending) -> approved -> ready", async () => {
+  test("review -> one fix -> re-review -> gates -> push -> draft PR -> CI green -> approved -> ready", async () => {
     const { input, gh, ops, runDir, pushes, gateRuns } = await setup();
     const result = await runWorkflowFeature(input);
     expect(gateRuns.length).toBeGreaterThanOrEqual(2); // repo gates, then final gates after the fix
@@ -184,7 +184,7 @@ describe("workflow feature end to end", () => {
     expect(gh.some((c) => c.join(" ").startsWith("gh pr create") && c.includes("--draft"))).toBe(true);
     expect(gh.some((c) => c.join(" ").startsWith("gh pr ready"))).toBe(true);
     const record = (await readResult(runDir))?.featureWorkflow;
-    expect(record).toMatchObject({ step: "done", outcome: "ready", ci: "pending", reviewRan: true, fixRan: true });
+    expect(record).toMatchObject({ step: "done", outcome: "ready", ci: "green", reviewRan: true, fixRan: true });
     expect(record?.minors).toEqual([{ id: "M1", storyId: "US-001", text: "rename tmp var", triage: "fix-now" }]);
     for (const f of ["branch-review.json", "branch-rereview.json", "feature-report.md", "package-branch.diff"]) {
       expect(await Bun.file(join(runDir, f)).exists()).toBe(true);

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { makeNaxConfig } from "@test/helpers";
+import { FIELD_DESCRIPTIONS } from "@/cli/config-descriptions";
 import { isWorkflowMode, NaxConfigSchema, resolveWorkflowConfig, WORKFLOW_DEFAULTS } from "@/config";
 import { pinRootOnlyKeysRaw } from "@/config/root-only-keys";
 
@@ -12,6 +13,7 @@ describe("workflow config", () => {
       maxFixRounds: 5,
       maxBranchFixRounds: 2,
       finalGateRepairRounds: 1,
+      ciRepairRounds: 1,
       preflight: true,
       publish: "pr",
       timeouts: {
@@ -77,6 +79,21 @@ describe("workflow config", () => {
 
   test("execution.mode rejects unknown values", () => {
     expect(() => NaxConfigSchema.parse({ execution: { mode: "turbo" } })).toThrow();
+  });
+
+  // US-006: the CI repair allowance of a published PR whose CI failed.
+  test("AC-1: workflow.ciRepairRounds defaults to 1", () => {
+    expect(NaxConfigSchema.parse({}).workflow.ciRepairRounds).toBe(1);
+  });
+
+  test("AC-2: workflow.ciRepairRounds rejects a negative round count", () => {
+    expect(NaxConfigSchema.safeParse({ workflow: { ciRepairRounds: -1 } }).success).toBe(false);
+  });
+
+  test("AC-3: workflow.ciRepairRounds has a non-empty description", () => {
+    const description = FIELD_DESCRIPTIONS["workflow.ciRepairRounds"];
+    expect(description).toBeString();
+    expect(description.trim().length).toBeGreaterThan(0);
   });
 
   test("resolveWorkflowConfig / isWorkflowMode tolerate absent blocks", () => {

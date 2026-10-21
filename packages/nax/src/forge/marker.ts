@@ -5,6 +5,12 @@ import { readCurrentUser } from "./trust";
 import type { ForgeDeps } from "./types";
 
 export const NAX_BOT_HEADER = "**nax bot**";
+export const NAX_WORKFLOW_PR_MARKER = "<!-- nax-workflow:v1 -->";
+
+/** Return whether a PR body contains the exact nax-workflow marker line. */
+export function hasNaxWorkflowMarker(body: string): boolean {
+  return body.split(/\r?\n/).some((line) => line === NAX_WORKFLOW_PR_MARKER);
+}
 const MARKER_KEY_PATTERN = "[A-Za-z0-9._:-]{1,128}";
 const markerPattern = () => new RegExp(`<!-- nax-bot:v1 key=(${MARKER_KEY_PATTERN}) -->`, "g");
 const MARKER_KEY = new RegExp(`^${MARKER_KEY_PATTERN}$`);

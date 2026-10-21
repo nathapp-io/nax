@@ -69,6 +69,24 @@ function harness(failEndpoint?: string) {
 describe("NAX_BOT_HEADER", () => {
   test("AC-4 stable header", () => expect(forge.NAX_BOT_HEADER).toBe("**nax bot**"));
 });
+
+describe("hasNaxWorkflowMarker", () => {
+  test("AC-1 recognizes the workflow marker line", () => {
+    expect(forge.hasNaxWorkflowMarker("<!-- nax-workflow:v1 -->\n\n## Summary")).toBe(true);
+  });
+
+  test("AC-2 returns false when the body has no workflow marker", () => {
+    expect(forge.hasNaxWorkflowMarker("## Summary\n\nno marker")).toBe(false);
+  });
+
+  test("recognizes the workflow marker in a CRLF body", () => {
+    expect(forge.hasNaxWorkflowMarker("<!-- nax-workflow:v1 -->\r\n\r\n## Summary")).toBe(true);
+  });
+
+  test("returns false for a CRLF body without the workflow marker", () => {
+    expect(forge.hasNaxWorkflowMarker("## Summary\r\n\r\nno marker")).toBe(false);
+  });
+});
 describe("withNaxBotMarker", () => {
   test("AC-1 exact marker wrapper", () => {
     expect(forge.withNaxBotMarker("hello", "finding:a1")).toBe(

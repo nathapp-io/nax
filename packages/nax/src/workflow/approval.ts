@@ -44,15 +44,18 @@ const UNREAD_PATHS_SHOWN = 5;
 const CONFLICTING_DEFAULT = "PR has merge conflicts with its base branch";
 const NO_CHECKS_DEFAULT = "no CI check was reported";
 const UNAVAILABLE_DEFAULT = "CI status unavailable";
+/** US-003: the sentence `pending` uses when the CI wait reported no detail of its own. */
+const PENDING_DEFAULT = "CI still pending after the wait";
 
 /**
  * US-001 (nax#2569): the reason one CI state contributes, or `undefined` when it blocks nothing. The
- * three states nax could not observe, or observed as unresolved, carry the CI wait's own `detail` —
+ * four states nax could not observe, or observed as unresolved, carry the CI wait's own `detail` —
  * the wait knows what gh said, and a fixed sentence would lose it. `readinessReasons` and the verdict
  * both call this, so a draft marker and its open item read the same text.
  */
 export function ciReason(ci: FeatureCiState | undefined, detail?: string): string | undefined {
   if (ci === "failed") return "CI failed";
+  if (ci === "pending") return detail ?? PENDING_DEFAULT;
   if (ci === "conflicting") return detail ?? CONFLICTING_DEFAULT;
   if (ci === "no-checks") return detail ?? NO_CHECKS_DEFAULT;
   if (ci === "unavailable") return detail ?? UNAVAILABLE_DEFAULT;
@@ -99,8 +102,9 @@ const RE_REVIEW_SKIPPED = "branch re-review did not run: the fix commits are unr
 const COST_LIMITED = "cost limit reached: the feature workflow stopped before its review and fix steps finished";
 
 /**
- * Why the PR can't be ready, in a stable order; empty = ask the advisor. Slow CI (`pending`) never
- * blocks (W-R9); CI that could not be read (`unavailable`) does, since it was never observed (nax#2550).
+ * Why the PR can't be ready, in a stable order; empty = ask the advisor. Strict green (ruled
+ * 2026-10-21): only a green CI lets the PR be ready — slow CI (`pending`) and CI that could not be
+ * read (`unavailable`) both block, since neither was ever observed to pass (nax#2550).
  */
 export function readinessReasons(f: ReadinessFacts): string[] {
   const unread = f.branchReviewUnread ?? [];

@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { cleanupTempDir, makeFeatureContext, makeScriptedCallOp, makeTempDir } from "@test/helpers";
+import { assertDefined, cleanupTempDir, makeFeatureContext, makeScriptedCallOp, makeTempDir } from "@test/helpers";
 import type { Advisor } from "@/advisor";
+import type { ForgeDeps, PrRef } from "@/forge";
 import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import { type PipelineEvent, pipelineEventBus } from "@/pipeline/event-bus";
+import { _ciFailuresDeps } from "@/workflow/ci-failures";
 import { buildFeatureEnv } from "@/workflow/feature-env";
 import { newFeatureRecord } from "@/workflow/feature-record";
 import { readResult } from "@/workflow/result";
@@ -13,9 +15,11 @@ import { startTokenMeter } from "@/workflow/tokens";
 import { resetToolErrorClaims } from "@/workflow/tool-error-outcome";
 
 const original = { ..._workflowDeps };
+const originalCi = { ..._ciFailuresDeps };
 const dirs: string[] = [];
 afterEach(async () => {
   Object.assign(_workflowDeps, original);
+  Object.assign(_ciFailuresDeps, originalCi);
   await Promise.all(dirs.map(cleanupTempDir));
   dirs.length = 0;
 });
@@ -109,7 +113,15 @@ describe("buildFeatureEnv", () => {
     const { env } = setup(() => ({
       workflow: { ...makeFeatureContext().workflow, maxBranchFixRounds: 4, finalGateRepairRounds: 0 },
     }));
-    expect(env.limits).toEqual({ maxBranchFixRounds: 4, finalGateRepairRounds: 0 });
+    expect(env.limits).toEqual({ maxBranchFixRounds: 4, finalGateRepairRounds: 0, ciRepairRounds: 1 });
+  });
+
+  // US-008: the CI repair cap is a workflow config value, like the other two.
+  test("AC-1: limits carry the configured workflow.ciRepairRounds", () => {
+    const { env } = setup(() => ({
+      workflow: { ...makeFeatureContext().workflow, ciRepairRounds: 3 },
+    }));
+    expect(env.limits).toEqual({ maxBranchFixRounds: 2, finalGateRepairRounds: 1, ciRepairRounds: 3 });
   });
 
   test("sink.step sets the status.json workflow block", () => {
@@ -173,5 +185,56 @@ describe("buildFeatureEnv sink step events (US-003)", () => {
       { step: "publish", stories: { "US-001": { state: "complete", round: 2 } }, outcome: "draft", url: "u" },
     ]);
     expect(stepEvents()).toEqual([{ type: "workflow:step", step: "publish" }]);
+  });
+});
+
+// US-008: the production seam. The publish step reads the failed CI checks of the PR it opened, and
+// the reader is the real forge reader — so these go through `buildFeatureEnv(...).steps`.
+describe("buildFeatureEnv CI failure reader (US-008)", () => {
+  const REF: PrRef = { forge: "github", host: "github.com", repo: "o/r", number: 9 };
+  const PR_URL = "https://github.com/o/r/pull/9";
+  const forgeDeps = (): ForgeDeps => ({
+    run: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
+    readText: async () => null,
+  });
+
+  test("AC-2: the PR number, the forge deps and the project dir resolve the PR ref", async () => {
+    const forge = forgeDeps();
+    const calls: unknown[][] = [];
+    _ciFailuresDeps.forge = forge;
+    _ciFailuresDeps.resolvePrRef = async (number, deps, cwd) => {
+      calls.push([number, deps, cwd]);
+      return REF;
+    };
+    _ciFailuresDeps.readFailedChecks = async () => [];
+    const { env } = setup();
+    assertDefined(env.steps.readCiFailures, "steps.readCiFailures");
+    await env.steps.readCiFailures({ url: PR_URL, head: "abc" });
+    expect(calls).toEqual([[9, forge, "/repo"]]);
+  });
+
+  test("AC-3: the resolved ref, the head, the forge deps and the project dir read the failed checks", async () => {
+    const forge = forgeDeps();
+    const calls: unknown[][] = [];
+    _ciFailuresDeps.forge = forge;
+    _ciFailuresDeps.resolvePrRef = async () => REF;
+    _ciFailuresDeps.readFailedChecks = async (ref, head, deps, cwd) => {
+      calls.push([ref, head, deps, cwd]);
+      return [];
+    };
+    const { env } = setup();
+    assertDefined(env.steps.readCiFailures, "steps.readCiFailures");
+    await env.steps.readCiFailures({ url: PR_URL, head: "abc" });
+    expect(calls).toEqual([[REF, "abc", forge, "/repo"]]);
+  });
+
+  test("AC-4: the failed checks the forge read are what the step returns", async () => {
+    const checks = [{ name: "e2e", url: "u", excerpt: "boom" }];
+    _ciFailuresDeps.forge = forgeDeps();
+    _ciFailuresDeps.resolvePrRef = async () => REF;
+    _ciFailuresDeps.readFailedChecks = async () => checks;
+    const { env } = setup();
+    assertDefined(env.steps.readCiFailures, "steps.readCiFailures");
+    expect(await env.steps.readCiFailures({ url: PR_URL, head: "abc" })).toEqual(checks);
   });
 });
