@@ -5,6 +5,7 @@ import { getSafeLogger } from "@/logger";
 import { botPrReviewOp, botPrStaticReviewOp, type PrReviewVerdict } from "@/operations";
 import { buildBotPrReviewPrompt, MAX_EARLIER_THREADS } from "@/prompts";
 import type { PrStepContext } from "../workflow/branch-step-context";
+import type { CiWaitResult } from "../workflow/ci-wait";
 import { writeBranchReviewPackage } from "../workflow/git";
 import { _workflowDeps } from "../workflow/step-context";
 import { type ReviewOutcome, underReviewLimit } from "../workflow/story-review";
@@ -25,6 +26,8 @@ export interface PrReviewInput {
   readonly prdPath?: string;
   readonly staticMode: boolean;
   readonly model?: ConfiguredModel;
+  /** CI's verdict on the exact head (nax#2631). */
+  readonly ci?: CiWaitResult;
 }
 
 async function writePackage(
@@ -70,6 +73,7 @@ export async function runPrReview(ctx: PrStepContext, input: PrReviewInput): Pro
     decisions: input.decisions,
     ...(input.prdPath !== undefined && { prdPath: input.prdPath }),
     staticMode: input.staticMode,
+    ...(input.ci !== undefined && { ci: input.ci }),
   });
   return underReviewLimit(
     ctx,

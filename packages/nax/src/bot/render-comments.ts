@@ -22,6 +22,7 @@ export interface ReviewSummaryInput {
   readonly earlier?: { readonly open: number; readonly fixed: number; readonly withdrawn: number };
   readonly checks?: BotChecks | null;
   readonly preRunFailed?: string;
+  readonly ci?: { readonly outcome: string; readonly detail: string };
   readonly headSha: string;
   readonly intent: PrIntent;
   readonly quality: "approved" | "changes";
@@ -139,6 +140,11 @@ function readinessLines(input: ReviewSummaryInput): string[] {
     };
     lines.push(
       `Checks (${labels[input.checks.source]}): ${safeText(checkCommands(input.checks).join(", "), TEXT_LIMIT)}.`,
+    );
+  }
+  if (input.ci) {
+    lines.push(
+      `CI on ${input.headSha.slice(0, SHORT_SHA_LENGTH)}: ${input.ci.outcome} (${safeText(input.ci.detail, TEXT_LIMIT)}).`,
     );
   }
   if (input.preRunFailed !== undefined) {

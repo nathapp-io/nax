@@ -295,3 +295,14 @@ describe("renderReviewSummary", () => {
     expect(parseNaxBotMarker(body)).toEqual({ key: "summary" });
   });
 });
+
+describe("renderReviewSummary CI line (nax#2631)", () => {
+  test("names CI's verdict on the reviewed head", () => {
+    expect(bot.renderReviewSummary(summary({ ci: { outcome: "green", detail: "CI checks: 3/3 passed" } }))).toContain(
+      "CI on abc1234: green (CI checks: 3/3 passed).",
+    );
+  });
+  test("no CI read adds no line", () => {
+    expect(bot.renderReviewSummary(summary())).not.toContain("CI on");
+  });
+});

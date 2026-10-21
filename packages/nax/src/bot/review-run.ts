@@ -24,6 +24,7 @@ import { ensureProjectTrusted } from "@/trust";
 import { gitWithTimeout } from "@/utils/git";
 import { runPreRunSteps } from "../execution/lifecycle/pre-run-steps";
 import type { PrStepContext } from "../workflow/branch-step-context";
+import type { CiWaitResult } from "../workflow/ci-wait";
 import { botRunDir } from "../workflow/paths";
 import { buildPrStepContext } from "../workflow/pr-step-context";
 import { _workflowDeps } from "../workflow/step-context";
@@ -31,6 +32,7 @@ import { loadBotConfig } from "./base-config";
 import { type PrCheckout, preparePrCheckout } from "./checkout";
 import { type BotCheckSource, type BotChecks, checkCommands, resolveBotChecks } from "./checks";
 import type { BotDecision } from "./decisions";
+import { readHeadCi } from "./gate-baseline";
 import { type BotLog, openBotLog } from "./log";
 import { botModel } from "./models";
 import { sensitivePaths } from "./path-policy";
@@ -57,6 +59,7 @@ export const _botReviewDeps = {
   listReviewThreads,
   listPrComments,
   readLinkedIssues,
+  readHeadCi,
   preparePrCheckout,
   loadBotConfig,
   createRuntime,
@@ -102,6 +105,7 @@ interface ReviewState extends GraphState<ReviewStep> {
 interface ReviewPreparation {
   readonly checks: BotChecks | null;
   readonly preRunFailed?: string;
+  readonly ci: CiWaitResult;
 }
 interface ReviewEnv extends ReviewPreparation {
   readonly ctx: PrStepContext;
@@ -205,7 +209,10 @@ function reviewConfig(loaded: NaxConfig, staticMode: boolean): NaxConfig {
   };
 }
 
-async function prepareReviewChecks(prepared: PreparedReview, ctx: PrStepContext): Promise<ReviewPreparation> {
+async function prepareReviewChecks(
+  prepared: PreparedReview,
+  ctx: PrStepContext,
+): Promise<Omit<ReviewPreparation, "ci">> {
   if (prepared.staticMode) return { checks: null };
   const { repoRoot, checkout } = prepared;
   const config = ctx.config;
@@ -237,11 +244,14 @@ async function reviewEnvironment(
 ): Promise<ReviewEnv> {
   const { repoRoot, ref, info, checkout, staticMode } = prepared;
   const { ctx, stateDir } = context;
-  const preparation = await prepareReviewChecks(prepared, ctx);
-  const [items, issues] = await Promise.all([
+  const checks = await prepareReviewChecks(prepared, ctx);
+  const [items, issues, ci] = await Promise.all([
     triage(ref, repoRoot),
     _botReviewDeps.readLinkedIssues(ref, info.body, _botReviewDeps.forge, repoRoot),
+    // The agent sandbox cannot run the full checks; CI on this exact head can vouch for them (nax#2631).
+    _botReviewDeps.readHeadCi({ forge: ref.forge, url: info.url, repoRoot, headSha: info.headSha }),
   ]);
+  const preparation: ReviewPreparation = { ...checks, ci };
   const prdPath = featurePrd(checkout);
   return {
     ...preparation,
@@ -256,6 +266,7 @@ async function reviewEnvironment(
       checks: preparation.checks === null ? [] : checkCommands(preparation.checks),
       decisions: input.decisions ?? [],
       staticMode,
+      ci,
       model: botModel(ctx.config, "review", input.model),
       ...(prdPath === undefined ? {} : { prdPath }),
     },

@@ -16,6 +16,7 @@ import {
 import { getLogger } from "@/logger";
 import type { PrReviewVerdict } from "@/operations/bot-types";
 import type { WorkflowFindingDraft, WorkflowSeverity } from "@/operations/workflow-types";
+import type { CiWaitResult } from "../workflow/ci-wait";
 import type { BotChecks } from "./checks";
 import { commentKey, earlierKey, findingKey, threadKey } from "./render";
 import { renderEarlierReply, renderFindingComment, renderReviewSummary, renderThreadReply } from "./render-comments";
@@ -71,6 +72,8 @@ export interface BotReviewArtifact {
 }
 export interface PostReviewInput {
   readonly preRunFailed?: string;
+  /** CI's verdict on the reviewed head (nax#2631). */
+  readonly ci?: CiWaitResult;
   readonly earlier?: readonly PrThread[];
   readonly login?: string;
   readonly checks?: BotChecks | null;
@@ -354,6 +357,7 @@ async function postSummary(
     earlier: earlierCounts(input),
     checks: input.staticMode ? null : input.checks,
     preRunFailed: input.preRunFailed,
+    ...(input.ci === undefined ? {} : { ci: input.ci }),
     ...findings,
     ...threads,
     commentVerdicts: input.verdict.comments.map((verdict) => ({
