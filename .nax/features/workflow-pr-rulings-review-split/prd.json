@@ -3,7 +3,7 @@
   "feature": "workflow-pr-rulings-review-split",
   "branchName": "feat/workflow-pr-rulings-review-split",
   "createdAt": "2026-10-21T00:00:00.000Z",
-  "updatedAt": "2026-10-21T12:43:45.038Z",
+  "updatedAt": "2026-10-21T12:52:03.816Z",
   "userStories": [
     {
       "id": "US-001",
@@ -159,14 +159,17 @@
         "rulings"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "simple",
         "testStrategy": "tdd-simple",
-        "reasoning": "One pure grammar implementation with explicit keyword alternatives and no identity or authorization decision."
+        "reasoning": "One pure grammar implementation with explicit keyword alternatives and no identity or authorization decision.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
       },
       "contextFiles": [
         "packages/nax/src/workflow/decisions-sidecar.ts"
@@ -179,7 +182,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "46e0e94b86e3bfc4e8479bcaef085f18a6fbc816"
     },
     {
       "id": "US-004",
