@@ -3,7 +3,7 @@
   "feature": "workflow-pr-rulings-review-split",
   "branchName": "feat/workflow-pr-rulings-review-split",
   "createdAt": "2026-10-21T00:00:00.000Z",
-  "updatedAt": "2026-10-21T14:13:55.783Z",
+  "updatedAt": "2026-10-21T14:32:10.098Z",
   "userStories": [
     {
       "id": "US-001",
@@ -558,14 +558,17 @@
         "US-008",
         "US-009"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "This extends one existing recorder with a bounded batch and evidence validation using upstream types; strict three-session isolation remains required because untrusted output can settle collaborator-authorized rulings."
+        "reasoning": "This extends one existing recorder with a bounded batch and evidence validation using upstream types; strict three-session isolation remains required because untrusted output can settle collaborator-authorized rulings.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/rulings.ts",
@@ -582,7 +585,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "7d9bcd1315ae501d3b1172619ed3d066106ce148"
     },
     {
       "id": "US-011",
