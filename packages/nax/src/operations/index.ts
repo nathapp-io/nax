@@ -37,6 +37,8 @@ export { botChecksExtractOp, parseBotChecksReply } from "./bot-checks-extract";
 export type { BotPrReviewInput } from "./bot-pr-review";
 export { botPrReviewOp, botPrStaticReviewOp } from "./bot-pr-review";
 export { missingTriage, parsePrReviewReply } from "./bot-pr-review-reply";
+export type { BotRulingReadInput, BotRulingReadVerdict, RulingDisposition } from "./bot-ruling-read";
+export { botRulingReadOp } from "./bot-ruling-read";
 export type {
   PrEarlierStatus,
   PrEarlierVerdict,

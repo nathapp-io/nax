@@ -4,9 +4,10 @@ import { NaxError } from "../errors";
 /** Leave an unset model undefined so the operation can choose its default tier. */
 export function botModel(
   config: NaxConfig,
-  role: "review" | "fix",
+  role: "review" | "fix" | "rulings",
   override?: ConfiguredModel,
 ): ConfiguredModel | undefined {
+  if (role === "rulings") return override ?? config.bot?.models.rulings ?? "fast";
   const workflowRole = role === "review" ? "branchReview" : "branchFix";
   const finishRole = role === "review" ? "quality" : "fix";
   return (
