@@ -5,7 +5,11 @@ import {
   WORKFLOW_REPLY_CONTRACT,
   type WorkflowPromptFinding,
 } from "./workflow-implementer-builder";
-import { WORKFLOW_ENUMERATION_INSTRUCTION, WORKFLOW_QUALITY_CHECKLIST } from "./workflow-quality-checklist";
+import {
+  WORKFLOW_DESIGN_DECISIONS_ITEM,
+  WORKFLOW_ENUMERATION_INSTRUCTION,
+  WORKFLOW_QUALITY_CHECKLIST,
+} from "./workflow-quality-checklist";
 
 export interface BranchReviewPromptInput {
   readonly specPath?: string;
@@ -99,6 +103,7 @@ ${naxCheckedBlock(input.repoGates)}
 - Cross-story integration and contracts: do the stories fit together, do callers and callees agree, is shared state consistent?
 - Reachability: is every new piece wired in and reachable from where the spec says it is used?
 - Consistency and duplication across stories.
+- ${WORKFLOW_DESIGN_DECISIONS_ITEM}
 - Storage against contracts: for every field one story persists and another story reads, writes or validates, the column type and width (as the migration declares it, not only the schema) must hold every value the DTOs, acceptance criteria and API contracts accept.
 - Triage each deferred minor as "fix-now" (cheap and worth doing before the PR) or "leave". Its "minorTriage" entry is its whole verdict: do not repeat a deferred minor as a finding.
 Judge every changed file you read against the checklist below, as well as against the cross-story contracts.

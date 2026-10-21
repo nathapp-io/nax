@@ -113,6 +113,7 @@ export {
 } from "./builders/workflow-implementer-builder";
 // A5 workflow mode — the shared code-quality checklist both reviewer prompts embed (US-001).
 export {
+  WORKFLOW_DESIGN_DECISIONS_ITEM,
   WORKFLOW_ENUMERATION_INSTRUCTION,
   WORKFLOW_QUALITY_CHECKLIST,
 } from "./builders/workflow-quality-checklist";

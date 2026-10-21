@@ -27,6 +27,58 @@ const intent = "Intent: the PR description and the linked issues below.";
 const staticLine = "You cannot run commands in this review: judge from the files alone.";
 
 describe("buildBotPrReviewPrompt", () => {
+  test("US-014 AC-3 uses the shared item 6 plus the bot-only decisions sentence", () => {
+    const result = prompts.buildBotPrReviewPrompt(base);
+    expect(result.split("\n").find((line) => line.startsWith("6. "))).toBe(
+      `6. ${prompts.WORKFLOW_DESIGN_DECISIONS_ITEM} If project decisions are listed below, check the change against them too.`,
+    );
+  });
+  test.each([false, true])("US-014 AC-4,5 quality sections precede untrusted content (static=%s)", (staticMode) => {
+    const result = prompts.buildBotPrReviewPrompt({ ...base, staticMode, conversationOnly: false });
+    expect(result).toContain(prompts.WORKFLOW_QUALITY_CHECKLIST);
+    expect(result).toContain(prompts.WORKFLOW_ENUMERATION_INSTRUCTION);
+    expect(result.indexOf(prompts.WORKFLOW_QUALITY_CHECKLIST)).toBeGreaterThan(
+      result.indexOf("Do not repeat one of your earlier findings as a new finding."),
+    );
+    expect(result.indexOf(prompts.WORKFLOW_ENUMERATION_INSTRUCTION)).toBeGreaterThan(
+      result.indexOf(prompts.WORKFLOW_QUALITY_CHECKLIST),
+    );
+    expect(result.indexOf(prompts.WORKFLOW_ENUMERATION_INSTRUCTION)).toBeLessThan(
+      result.indexOf("## Untrusted content"),
+    );
+  });
+  test.each([false, true])("US-014 AC-6 conversation-only omits quality sections (static=%s)", (staticMode) => {
+    const result = prompts.buildBotPrReviewPrompt({ ...base, staticMode, conversationOnly: true });
+    expect(result).not.toContain(prompts.WORKFLOW_QUALITY_CHECKLIST);
+    expect(result).not.toContain(prompts.WORKFLOW_ENUMERATION_INSTRUCTION);
+    expect(result).toContain(`6. ${prompts.WORKFLOW_DESIGN_DECISIONS_ITEM}`);
+  });
+  test("US-014 AC-9 preserves checklist items 1-5 and the entire task/JSON contract verbatim", () => {
+    const result = prompts.buildBotPrReviewPrompt(base);
+    expect(result.slice(result.indexOf("## Checklist"), result.indexOf("\n6. "))).toBe(`## Checklist
+1. Intent: does the change do what the PR description, linked issues or PRD ask, and nothing they rule out?
+2. Correctness: logic errors, edge cases, error handling, and behaviour on empty, missing or malformed input.
+3. Tests: are the changed behaviours tested, and would the tests fail if the change were reverted?
+4. Security: input validation, injection, secrets, authorization, and unsafe file or shell use.
+5. Project rules: the rules listed for the changed files.`);
+    expect(result.slice(result.lastIndexOf("## Your task"))).toBe(`## Your task
+Review whether the code fulfills the stated intent and assess its quality. List every file you inspected in inspectedFiles.
+Answer every listed thread id and comment id exactly once.
+"agree" = the request is right and the code should change; "disagree" = the request is wrong or not worth doing, with the reason; "handled" = the current code already does it.
+Answer every earlier finding id exactly once. "open" = the problem is still in the code; "fixed" = the current code no longer has it; "withdrawn" = the finding was wrong or not worth doing, for example after a reply showed why.
+Set "decision" on a finding only when it breaks a listed project decision. The "decision" field is optional.
+Reply with only one JSON object:
+{
+  "intent": "pass | fail | n/a",
+  "quality": "approved | changes",
+  "findings": [{ "kind": "spec|quality", "severity": "critical|important|minor", "issue": "...", "file": "src/a.ts", "line": 12, "suggestion": "...", "decision": "<decision id>" }],
+  "earlier": [{ "id": "<thread id>", "status": "open|fixed|withdrawn", "reason": "..." }],
+  "threads": [{ "id": "<thread id>", "decision": "agree|disagree|handled", "reason": "..." }],
+  "comments": [{ "id": "<comment id>", "decision": "agree|disagree|handled", "reason": "..." }],
+  "cannotVerify": ["..."],
+  "inspectedFiles": ["src/a.ts"]
+}`);
+  });
   test("US-013 AC-10 conversation-only limits findings to conversation pointers", () => {
     const result = prompts.buildBotPrReviewPrompt({ ...base, conversationOnly: true });
     expect(result).toContain("The code at this head was reviewed by the workflow's branch review");

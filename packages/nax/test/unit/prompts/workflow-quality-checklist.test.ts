@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   buildWorkflowBranchReviewPrompt,
   buildWorkflowStoryReviewPrompt,
+  WORKFLOW_DESIGN_DECISIONS_ITEM,
   WORKFLOW_ENUMERATION_INSTRUCTION,
   WORKFLOW_QUALITY_CHECKLIST,
 } from "@/prompts";
@@ -42,6 +43,21 @@ const STATE_LOSS_LINE =
   "- State loss: a write that replaces a whole record, map entry or file that other code also fills, so the fields this write did not set are dropped; a reset, retry or migration that discards state still in use.";
 const STATE_LOSS_SEVERITY =
   "A state loss a caller can reach is a critical or important finding, never minor; if you cannot quote it, put it in cannotVerify.";
+
+describe("WORKFLOW_DESIGN_DECISIONS_ITEM", () => {
+  test("US-014 AC-1 names repository decisions and checks only those touching the change", () => {
+    expect(WORKFLOW_DESIGN_DECISIONS_ITEM).toContain("ADRs or architecture docs");
+    expect(WORKFLOW_DESIGN_DECISIONS_ITEM).toContain("docs/adr/ or docs/architecture/");
+    expect(WORKFLOW_DESIGN_DECISIONS_ITEM).toContain("check the change against the decisions that touch it");
+  });
+  test("US-014 AC-2 reviews edited design docs as design changes, not new authority", () => {
+    expect(WORKFLOW_DESIGN_DECISIONS_ITEM).toContain("review that edit as a design change");
+    expect(WORKFLOW_DESIGN_DECISIONS_ITEM).toContain("do not judge the rest of the PR against the edited text");
+  });
+  test("US-014 AC-8 skips repositories without applicable decisions", () => {
+    expect(WORKFLOW_DESIGN_DECISIONS_ITEM).toContain("If there are no decisions to apply, skip this item.");
+  });
+});
 
 describe("WORKFLOW_QUALITY_CHECKLIST", () => {
   test("is the checklist text verbatim (AC-1)", () => {
