@@ -5,6 +5,15 @@
  * barrel, so consumers import from `@/forge` and never `@/forge/detect`.
  */
 
+export type { FailedCheck } from "./ci-failures";
+export {
+  CI_EXCERPT_CHARS,
+  CI_EXCERPT_LINES,
+  ciExcerpt,
+  MAX_FAILED_CHECKS,
+  prNumberFromUrl,
+  readFailedChecks,
+} from "./ci-failures";
 export type { InlineCommentInput } from "./comments";
 export {
   editComment,
