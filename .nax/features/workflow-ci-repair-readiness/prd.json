@@ -3,7 +3,7 @@
   "feature": "workflow-ci-repair-readiness",
   "branchName": "feat/workflow-ci-repair-readiness",
   "createdAt": "2026-10-21T00:00:00Z",
-  "updatedAt": "2026-10-21T06:06:45.857Z",
+  "updatedAt": "2026-10-21T06:30:28.626Z",
   "userStories": [
     {
       "id": "US-001",
@@ -353,8 +353,8 @@
         "US-003",
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -366,7 +366,19 @@
         "profileModelTier": "balanced",
         "initialAgent": "native",
         "initialProfileId": "native-deepseek",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "routerDecision": {
+          "mode": "shadow",
+          "router": "decision-proxy:nax-routing",
+          "outcome": "picked",
+          "profileId": "native-sol",
+          "confidence": 0.5,
+          "plannedProfileId": "native-deepseek",
+          "applied": false,
+          "decidedAt": "2026-10-21T06:06:50.042Z"
+        }
       },
       "contextFiles": [
         "packages/nax/src/bot/fix-report.ts",
@@ -385,7 +397,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "fe79a239d63eb4105aff171ee5d48360dfad76fb"
     },
     {
       "id": "US-006",
