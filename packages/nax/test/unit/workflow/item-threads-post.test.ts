@@ -9,6 +9,7 @@ import type { ItemThreadsInput } from "@/workflow/item-threads-post";
 import { postItemThreads } from "@/workflow/item-threads-post";
 import type { OpenItem } from "@/workflow/types";
 
+const cwds: string[] = [];
 const finding = { id: "B1", kind: "spec", severity: "important", issue: "leak", file: "a.ts", line: 9 } as const;
 const item: OpenItem = { ...finding, kind: "finding" };
 const body = withNaxBotMarker(renderItemOpener(item), itemKey(item));
@@ -61,7 +62,7 @@ function harness(options: { gitlab?: boolean; failures?: number; threadsFail?: b
   const deps: ForgeDeps = {
     readText: async () => null,
     run: async (cmd, opts) => {
-      expect(opts.cwd).toBe("/repo");
+      cwds.push(opts.cwd);
       // These tests assert item-opener mechanics; index writes have their own suite.
       if (cmd.some((arg) => arg.includes("key=w-index"))) return ok({ id: 99 });
       if (cmd.includes("POST")) return post(cmd);
@@ -95,6 +96,7 @@ const outcome = (posted = 0, failed = 0, skipped = 0) => ({ posted, closed: 0, s
 let logs: LogEntry[];
 let removeSink: () => void;
 beforeEach(() => {
+  cwds.length = 0;
   logs = [];
   initLogger({ level: "warn", suppressConsole: true });
   removeSink = addSink((entry) => {
@@ -102,8 +104,17 @@ beforeEach(() => {
   });
 });
 afterEach(() => {
+  expect(cwds.every((cwd) => cwd === "/repo")).toBe(true);
   removeSink();
   resetLogger();
+  expect(
+    logs
+      .filter(
+        (entry) =>
+          String(entry.message).includes("Initial PR read") || String(entry.message).includes("Cannot read PR number"),
+      )
+      .every((entry) => entry.data?.itemId === undefined),
+  ).toBe(true);
 });
 
 describe("postItemThreads", () => {

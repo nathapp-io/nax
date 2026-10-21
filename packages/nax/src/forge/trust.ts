@@ -34,7 +34,9 @@ function isCurrentUser(author: PrInfo["author"], user: CurrentUser): boolean {
 
 function failureDetail(cause: unknown): string {
   const stderr = cause instanceof NaxError ? cause.context?.stderr : undefined;
-  return (typeof stderr === "string" ? stderr : errorMessage(cause)).trim().slice(0, MAX_FAILURE_DETAIL_LENGTH);
+  return (typeof stderr === "string" && stderr.trim() ? stderr : errorMessage(cause))
+    .trim()
+    .slice(0, MAX_FAILURE_DETAIL_LENGTH);
 }
 
 /** Metadata-only, ordered, fail-closed classification. Each call re-reads forge identity and access. */

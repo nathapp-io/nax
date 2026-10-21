@@ -57,6 +57,10 @@ async function glThreads(items: unknown[] = [discussion()]) {
 }
 
 describe("listReviewThreads", () => {
+  test("incomplete nested conversation fails closed rather than hiding a reopening reply", async () => {
+    const truncated = { ...node(), comments: { ...node().comments, pageInfo: { hasNextPage: true } } };
+    await expect(ghThreads([truncated])).rejects.toMatchObject({ code: "FORGE_RESPONSE_UNPARSEABLE" });
+  });
   test("US-001 AC-10 maps each GitLab note author id in order", async () => {
     const notes = [note(), { ...note(), id: 83, author: { username: "alice", id: 8 } }];
     expect((await glThreads([{ ...discussion(), notes }]))[0]?.comments.map((c) => c.authorId)).toEqual([7, 8]);

@@ -302,7 +302,6 @@ async function promote(opts: WorkflowPromoteOptions, forgeDeps: WorkflowForgeDep
     deps: forgeDeps.forge,
     items: loaded.openItems,
     local: found?.sidecar.decisions ?? [],
-    numberFromUrl: forgeDeps.prNumberFromUrl,
   });
   const checks = [
     itemsRuled(loaded, found, rulings.entries),

@@ -77,13 +77,16 @@ export async function settleItemThreads(
 ): Promise<SettledItems> {
   const settled: (ItemThread & { readonly ruling: PrRuling })[] = [];
   const open: (ItemThread & { readonly kept: readonly PrComment[] })[] = [];
-  for (const key of new Set(read.index?.keys ?? [])) {
-    for (const item of read.items.filter((item) => item.key === key)) {
+  const items = [...new Set(read.index?.keys ?? [])].flatMap((key) => read.items.filter((item) => item.key === key));
+  const results = await Promise.all(
+    items.map(async (item) => {
       const accepted = await Promise.all(item.replies.map((reply) => keepReply(reply, canRule)));
-      const kept = item.replies.filter((_, index) => accepted[index]);
-      if (item.ruling && kept.length === 0) settled.push({ ...item, ruling: item.ruling });
-      else open.push({ ...item, kept });
-    }
+      return { item, kept: item.replies.filter((_, index) => accepted[index]) };
+    }),
+  );
+  for (const { item, kept } of results) {
+    if (item.ruling && kept.length === 0) settled.push({ ...item, ruling: item.ruling });
+    else open.push({ ...item, kept });
   }
   return { settled, open };
 }

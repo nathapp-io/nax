@@ -1,6 +1,8 @@
 /** Pure wire formats for durable workflow PR item threads. Posting and ownership live elsewhere. */
 import { createHash } from "node:crypto";
-import { NAX_BOT_HEADER, parseNaxBotMarker } from "@/forge";
+import { NaxError } from "@/errors";
+import { isNaxBotMarkerKey, NAX_BOT_HEADER, parseNaxBotMarker } from "@/forge";
+import { RULING_SHA_PATTERN, RULING_SHA_SOURCE } from "@/utils/ruling-sha";
 import type { Disposition } from "./decisions-sidecar";
 import { safeInline } from "./pr-body-safe";
 import type { OpenItem } from "./types";
@@ -22,9 +24,7 @@ export interface ItemIndex {
 
 const HASH_CHARS = 8;
 const SHORT_SHA_CHARS = 7;
-const MAX_KEY_CHARS = 128;
 const MAX_REPLY_ID_CHARS = 20;
-const ID_PATTERN = /^[A-Za-z0-9._:-]+$/;
 const ITEM_KEY_PATTERN = /^w-([A-Za-z0-9._:-]+)\.[a-f0-9]{8}$/;
 const SHA_PATTERN = /^[a-fA-F0-9]{40}$/;
 const REPLY_INSTRUCTION =
@@ -55,11 +55,7 @@ export function itemKey(item: OpenItem): string {
 }
 
 export function isPostable(item: OpenItem): boolean {
-  return (
-    ID_PATTERN.exec(item.id)?.[0] === item.id &&
-    item.id.length > 0 &&
-    askKey(itemKey(item), "0".repeat(MAX_REPLY_ID_CHARS)).length <= MAX_KEY_CHARS
-  );
+  return isNaxBotMarkerKey(item.id) && isNaxBotMarkerKey(askKey(itemKey(item), "0".repeat(MAX_REPLY_ID_CHARS)));
 }
 
 /** Unwrapped body; callers apply withNaxBotMarker with itemKey(item). */
@@ -80,18 +76,23 @@ function bodyLines(body: string): string[] {
   return lines.slice(2, -2);
 }
 
-export function parseItemOpener(body: string): Pick<OpenItem, "id" | "kind"> | null {
-  const match = /^Open item \*\*([A-Za-z0-9._:-]+)\*\* \(([^)]+)\): /.exec(bodyLines(body)[0] ?? "");
+export function parseItemOpener(body: string): Pick<OpenItem, "id" | "kind" | "issue"> | null {
+  const match = /^Open item \*\*([A-Za-z0-9._:-]+)\*\* \(([^)]+)\): (.*)$/.exec(bodyLines(body)[0] ?? "");
   const kind = match?.[2] ?? "";
-  if (!match?.[1] || !isKind(kind)) return null;
-  return { id: match[1], kind };
+  if (!match?.[1] || !isOpenItemKind(kind)) return null;
+  return { id: match[1], kind, issue: match[3] ?? "" };
 }
 
-function isKind(kind: string): kind is OpenItem["kind"] {
+export function isOpenItemKind(kind: string): kind is OpenItem["kind"] {
   return Object.hasOwn(KIND_NAMES, kind);
 }
 
 export function renderRulingEcho(ruling: PrRuling): string {
+  if (ruling.disposition === "fixed" && (!ruling.sha || !RULING_SHA_PATTERN.test(ruling.sha))) {
+    throw new NaxError("[workflow] Fixed ruling requires a valid sha", "WORKFLOW_RULING_INVALID", {
+      stage: "workflow",
+    });
+  }
   const recorded =
     ruling.disposition === "fixed" ? `fixed in ${ruling.sha?.slice(0, SHORT_SHA_CHARS) ?? ""}` : ruling.disposition;
   return [
@@ -112,8 +113,8 @@ export function parseRulingEcho(key: string, body: string): PrRuling | null {
   const item = ITEM_KEY_PATTERN.exec(keyParts?.[2] ?? "");
   if (marker?.key !== key || !isDisposition(disposition) || !item?.[1]) return null;
   const [recorded, author, instruction, ...extra] = bodyLines(body);
-  const line = /^Recorded: ([a-z]+)(?: in ([a-fA-F0-9]{7,40}))? — (.+)$/.exec(recorded ?? "");
-  const login = /^By @([A-Za-z0-9_-]+)$/.exec(author ?? "")?.[1];
+  const line = new RegExp(`^Recorded: ([a-z]+)(?: in (${RULING_SHA_SOURCE}))? — (.+)$`).exec(recorded ?? "");
+  const login = /^By @([A-Za-z0-9_.-]+)$/.exec(author ?? "")?.[1];
   if (!line || line[1] !== disposition || !line[3]?.trim() || instruction !== CHANGE_INSTRUCTION || extra.length)
     return null;
   if ((disposition === "fixed") !== (line[2] !== undefined)) return null;

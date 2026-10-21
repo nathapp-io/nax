@@ -44,11 +44,14 @@ function parseRulings(output: string, input: BotRulingReadInput): BotRulingReadV
   if (!isRecord(raw) || !Array.isArray(raw.rulings)) return null;
   const ids = new Set(input.items.map((item) => item.id));
   const rulings: BotRulingReadVerdict["rulings"][number][] = [];
+  const seen = new Set<string>();
   for (const entry of raw.rulings) {
     if (!isRecord(entry) || typeof entry.id !== "string" || !ids.has(entry.id) || !isDisposition(entry.disposition))
       continue;
     if (typeof entry.reason !== "string" || typeof entry.quote !== "string") continue;
     if (entry.sha !== undefined && typeof entry.sha !== "string") continue;
+    if (seen.has(entry.id)) return null; // Ambiguous duplicate ids fail closed.
+    seen.add(entry.id);
     rulings.push({
       id: entry.id,
       disposition: entry.disposition,

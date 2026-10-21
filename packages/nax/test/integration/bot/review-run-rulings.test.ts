@@ -225,6 +225,6 @@ describe("runBotReview workflow rulings", () => {
     await runBotReview(input);
     assertDefined(calls[0]);
     expect(calls[0]).toMatchObject({ earlierIds: [...threads.map(({ id }) => id), "finding"] });
-    expect(calls[0]).toMatchObject({ prompt: expect.stringContaining("finding") });
+    expect(calls[0]).toMatchObject({ prompt: expect.stringContaining("Open item **finding** (finding): issue") });
   });
 });

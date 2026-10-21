@@ -159,3 +159,17 @@ describe("settleItemThreads", () => {
     });
   });
 });
+
+test("settlement checks independent items concurrently and returns index order", async () => {
+  const first = item([comment("a", "confirm", "alice")], false);
+  const second = { ...item([comment("b", "confirm", "bob")], false), key: "w-B4.12345678", itemId: "B4" };
+  const calls: string[] = [];
+  const finish: (() => void)[] = [];
+  const pending = settleItemThreads({ index: { keys: [first.key, second.key] }, items: [first, second] }, (reply) => {
+    calls.push(reply.author);
+    return new Promise<boolean>((resolve) => finish.push(() => resolve(true)));
+  });
+  expect(calls).toEqual(["alice", "bob"]);
+  for (const resolve of finish.reverse()) resolve();
+  expect((await pending).open.map((item) => item.itemId)).toEqual(["B3", "B4"]);
+});

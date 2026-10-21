@@ -58,6 +58,7 @@ export type { FakeAgentManagerOptions } from "./fake-agent-manager";
 export { fakeAgentManager } from "./fake-agent-manager";
 export type { FakeClock } from "./fake-clock";
 export { makeFakeClock } from "./fake-clock";
+export { makeFinalizeAdvisor, wireFinalize } from "./finalize";
 export { makeFinding } from "./finding";
 export type { FinishGitModel, MachineHarness, MachineHarnessOpts } from "./finish-machine";
 export {

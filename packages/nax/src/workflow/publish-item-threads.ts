@@ -3,6 +3,7 @@ import { errorMessage } from "@nathapp/nax-agent/internal";
 import { getLogger } from "@/logger";
 import type { FeatureEnv } from "./feature-machine";
 import type { PublishOutcome } from "./finalize";
+import { ledgerText } from "./ledger";
 import type { WorkflowFeatureRecord } from "./types";
 
 async function changedFiles(env: FeatureEnv, seed: string | null): Promise<readonly string[]> {
@@ -45,7 +46,19 @@ export async function postItemThreadsAfterPublish(
     })),
   };
   try {
-    await post({ ...identity, record, url: out.url, head, changedFiles: await changedFiles(env, rec.seed) });
+    const outcome = await post({
+      ...identity,
+      record,
+      url: out.url,
+      head,
+      changedFiles: await changedFiles(env, rec.seed),
+    });
+    await env.sink.ledger(
+      ledgerText.note(
+        `Item threads: posted=${outcome.posted}, closed=${outcome.closed}, skipped=${outcome.skipped}, failed=${outcome.failed}`,
+      ),
+      { mirror: false },
+    );
   } catch (error) {
     getLogger()?.warn("item-threads", "[item-threads] Publish item-thread step failed", {
       feature: identity.feature,

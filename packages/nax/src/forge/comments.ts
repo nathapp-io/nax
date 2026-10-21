@@ -154,6 +154,12 @@ export async function postItemComment(
   cwd: string,
 ): Promise<PostedComment> {
   assertCommentBody(input.body);
+  if (ref.forge === "github" && !input.path.trim()) {
+    throw new NaxError("[forge] Item comment requires a path", "FORGE_COMMENT_TARGET_INVALID", {
+      stage: "forge",
+      path: input.path,
+    });
+  }
   const argv =
     ref.forge === "github"
       ? [

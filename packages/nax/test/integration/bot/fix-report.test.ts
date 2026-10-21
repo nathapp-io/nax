@@ -232,7 +232,7 @@ describe("readyStep", () => {
     const wait = spyOn(_fixReportDeps, "waitForChecks").mockImplementation(() => {
       throw new Error("waitForChecks must not run on a nax-workflow PR");
     });
-    expect(await readyStep(env, state)).toEqual({
+    expect(await readyStep(env, { ...state, pushedSha: env.info.headSha })).toEqual({
       patch: { markedReady: false, readyHeld: "no nax item index on this PR" },
       exit: "report",
     });

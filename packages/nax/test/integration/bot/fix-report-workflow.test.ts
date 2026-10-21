@@ -44,7 +44,7 @@ afterEach(() => mock.restore());
 
 function setup(outcome: RecordRulingsOutcome = complete, comments: PrComment[] = []) {
   const env = makeBotFixDraftEnv({ body: NAX_WORKFLOW_PR_MARKER });
-  const fresh = { ...env.info, headSha: "fresh-head", body: `${NAX_WORKFLOW_PR_MARKER}\n- [x] **B3**` };
+  const fresh = { ...env.info, headSha: env.info.headSha, body: `${NAX_WORKFLOW_PR_MARKER}\n- [x] **B3**` };
   const order: string[] = [];
   const read = spyOn(_fixReportDeps, "readPrInfo").mockResolvedValue(fresh);
   const user = spyOn(_fixReportDeps, "readCurrentUser").mockResolvedValue(env.user);
@@ -71,6 +71,24 @@ function setup(outcome: RecordRulingsOutcome = complete, comments: PrComment[] =
 }
 
 describe("readyStep workflow drafts", () => {
+  test("concurrent push before readiness cannot switch the execution head", async () => {
+    const s = setup();
+    s.read.mockResolvedValue({ ...s.fresh, headSha: "concurrent" });
+    const out = await readyStep(s.env, { ...state, pushedSha: "pushed" });
+    expect(out.patch).toEqual({ markedReady: false, readyHeld: "PR head changed since this execution" });
+    expect(s.wait).not.toHaveBeenCalled();
+    expect(s.run).not.toHaveBeenCalled();
+  });
+  test("head changes during CI hold promotion and CI stays pinned to pushed head", async () => {
+    const s = setup();
+    s.read
+      .mockResolvedValueOnce({ ...s.fresh, headSha: "pushed" })
+      .mockResolvedValue({ ...s.fresh, headSha: "concurrent" });
+    const out = await readyStep(s.env, { ...state, pushedSha: "pushed" });
+    expect(s.wait.mock.calls[0]?.[2]?.expectedSha).toBe("pushed");
+    expect(out.patch.markedReady).toBe(false);
+    expect(s.run).not.toHaveBeenCalled();
+  });
   test("AC-8 fresh PR, user, threads and comments feed recording", async () => {
     const s = setup();
     await readyStep(s.env, state);

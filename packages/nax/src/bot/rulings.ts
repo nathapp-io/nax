@@ -4,20 +4,18 @@ import type { ForgeDeps } from "@/forge";
 import { hasWriteAccess, ownComments, readPrInfo, replyToThread, resolveThread, withNaxBotMarker } from "@/forge";
 import type { PrComment, PrInfo, PrRef } from "@/forge/pr-types";
 import { getLogger } from "@/logger";
+import { RULING_SHA_PATTERN } from "@/utils/ruling-sha";
 import type { BotRulingReadInput, BotRulingReadVerdict } from "../operations/bot-ruling-read";
-import type { DecisionEntry, SidecarKind } from "../workflow/decisions-sidecar";
+import { type DecisionEntry, sidecarKindFor } from "../workflow/decisions-sidecar";
 import type { ItemThread, SettledItems } from "../workflow/item-thread-state";
 // Workflow leaves avoid pulling feature orchestration into the bot recorder.
 import { readItemThreads, settleItemThreads } from "../workflow/item-thread-state";
 import type { ItemIndex, PrRuling } from "../workflow/item-threads";
-import { askKey, renderRulingEcho } from "../workflow/item-threads";
-import { editBodyArgv, tickChecklist } from "../workflow/promote";
+import { askKey, isOpenItemKind, parseItemOpener, renderRulingAsk, renderRulingEcho } from "../workflow/item-threads";
+import { editBodyArgv, hasChecklistItem, tickChecklist } from "../workflow/promote";
 import { parseRulingKeyword } from "../workflow/ruling-keyword";
-import type { OpenItem } from "../workflow/types";
 
 export const MAX_RULING_ITEMS = 20;
-const CLARIFICATION =
-  "I could not read a ruling from that reply. Start a reply with fixed <sha>, waive: <reason>, confirm, override: <reason> or verified.";
 type OpenRulingItem = SettledItems["open"][number];
 
 export interface RecordRulingsInput {
@@ -48,17 +46,6 @@ export const _rulingsDeps = {
   tickChecklist,
   getLogger,
 };
-
-const CHECKLIST_KINDS = {
-  finding: "finding",
-  ruling: "advisor",
-  advisor: "advisor",
-  gate: "gate",
-  ci: "ci",
-  story: "story",
-  "cannot-verify": "cannot-verify",
-  reason: "reason",
-} as const satisfies Record<OpenItem["kind"], SidecarKind>;
 
 function warn(message: string, data: Record<string, unknown>): void {
   _rulingsDeps.getLogger()?.warn("bot-rulings", `[bot-rulings] ${message}`, data);
@@ -113,19 +100,16 @@ async function postEcho(input: RecordRulingsInput, item: ItemThread, ruling: PrR
 }
 
 function checklistEntries(body: string, settled: SettledItems["settled"]): DecisionEntry[] {
-  const lines = body.split("\n");
   return settled.flatMap((item) => {
-    const kind = Object.entries(CHECKLIST_KINDS).find(([name]) => name === item.kind)?.[1];
-    const onChecklist = lines.some(
-      (line) => line.startsWith(`- [ ] **${item.itemId}**`) || line.startsWith(`- [x] **${item.itemId}**`),
-    );
-    if (!kind || !onChecklist) return [];
+    if (!isOpenItemKind(item.kind) || !hasChecklistItem(body, item.itemId)) return [];
+    const kind = sidecarKindFor({ id: item.itemId, kind: item.kind, issue: "" });
     const { disposition, reason, sha } = item.ruling;
     return [{ id: item.itemId, kind, disposition, reason, ...(disposition === "fixed" && sha ? { sha } : {}) }];
   });
 }
 
 async function tickBody(input: RecordRulingsInput, settled: SettledItems["settled"]): Promise<void> {
+  if (!settled.length) return;
   try {
     const current = await _rulingsDeps.readPrInfo(input.ref, input.deps, input.cwd);
     const ticked = _rulingsDeps.tickChecklist(current.body, checklistEntries(current.body, settled));
@@ -147,7 +131,7 @@ function modelCandidate(item: OpenRulingItem, entry?: BotRulingReadVerdict["ruli
   const reason = entry.reason.trim();
   if (!quote || !collapse(reply.body).includes(quote) || !reason || /[\r\n]/.test(reason)) return null;
   const sha = entry.sha?.trim() ?? "";
-  if (entry.disposition === "fixed" && (!/^[a-fA-F0-9]{7,40}$/.test(sha) || !reply.body.includes(sha))) return null;
+  if (entry.disposition === "fixed" && (!RULING_SHA_PATTERN.test(sha) || !reply.body.includes(sha))) return null;
   return {
     itemKey: item.key,
     itemId: item.itemId,
@@ -165,7 +149,7 @@ async function ask(input: RecordRulingsInput, item: OpenRulingItem): Promise<"as
     await _rulingsDeps.replyToThread(
       input.ref,
       item.thread,
-      withNaxBotMarker(CLARIFICATION, key),
+      withNaxBotMarker(renderRulingAsk(), key),
       input.deps,
       input.cwd,
     );
@@ -179,12 +163,9 @@ async function ask(input: RecordRulingsInput, item: OpenRulingItem): Promise<"as
 function modelItems(batch: readonly OpenRulingItem[]): BotRulingReadInput["items"] {
   return batch.flatMap((item) => {
     const reply = item.kept.at(-1);
-    const prefix = `Open item **${item.itemId}** (${item.kind}): `;
-    const issue =
-      item.thread.comments[0]?.body
-        .split(/\r?\n/)
-        .find((line) => line.startsWith(prefix))
-        ?.slice(prefix.length) ?? "";
+    const opener = parseItemOpener(item.thread.comments[0]?.body ?? "");
+    if (!opener) return []; // Only parsed, owned item openers are model inputs.
+    const issue = opener.issue;
     return reply
       ? [{ id: item.itemId, kind: item.kind, issue, reply: { id: reply.id, author: reply.author, body: reply.body } }]
       : [];

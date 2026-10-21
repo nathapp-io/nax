@@ -5,7 +5,9 @@ import { _featureDeps } from "@/workflow/feature-deps";
 import type { FeatureEnv } from "@/workflow/feature-machine";
 import { publishStep } from "@/workflow/feature-steps";
 import type { PublishOutcome } from "@/workflow/finalize";
+import { itemKey } from "@/workflow/item-threads";
 import { type ItemThreadsInput, postItemThreads } from "@/workflow/item-threads-post";
+import { buildOpenItems } from "@/workflow/open-items";
 import { postItemThreadsAfterPublish } from "@/workflow/publish-item-threads";
 
 const URL = "https://github.com/o/r/pull/7";
@@ -185,4 +187,30 @@ describe("publishStep item-thread seam", () => {
     expect(out.patch).toMatchObject({ outcome: "draft", url: URL, ci: "pending", reasons: ["wait"] });
     expect(logs.some((entry) => entry.message.includes("Initial PR read failed"))).toBe(true);
   });
+});
+
+test("publish indexes the same flagged decisions as its persisted record", async () => {
+  const h = harness({ ...published, reasons: ["flagged advisor decision"] });
+  h.env.steps.flaggedDecisions = async () => ["D1"];
+  const out = await publishStep(h.env, h.env.record);
+  const posted = h.inputs[0]?.record;
+  expect(posted?.flaggedDecisions).toEqual(["D1"]);
+  if (!posted) throw new Error("missing publish input");
+  const keys = (record: typeof posted) =>
+    buildOpenItems(record)
+      .filter((item) => item.kind !== "ci")
+      .map(itemKey);
+  expect(keys(posted)).toEqual(keys({ ...h.env.record, ...out.patch }));
+  expect(buildOpenItems(posted).map((item) => item.id)).toContain("D1");
+});
+
+test("publish preserves item-thread failure counts in its ledger", async () => {
+  const h = harness();
+  const lines: string[] = [];
+  h.env.sink.ledger = async (line) => {
+    lines.push(line);
+  };
+  h.env.steps.postItemThreads = async () => ({ posted: 2, closed: 1, skipped: 3, failed: 4 });
+  await publishStep(h.env, h.env.record);
+  expect(lines.some((line) => line.includes("Item threads: posted=2, closed=1, skipped=3, failed=4"))).toBe(true);
 });

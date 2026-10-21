@@ -1,5 +1,5 @@
 /** PR-ruling inputs to the workflow promote command. */
-import { describe, expect, spyOn, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import {
   assertDefined,
@@ -10,9 +10,10 @@ import {
   type PromoteFixtureOptions,
   prWrites,
   withTempDir,
+  withWarnSpy,
 } from "@test/helpers";
 import { withNaxBotMarker } from "@/forge";
-import { initLogger, resetLogger } from "@/logger";
+import { resetLogger } from "@/logger";
 import { _loggerDeps, _resetDeferredWarnings } from "@/logger/logger";
 import { itemKey, renderItemIndex, renderItemOpener, renderRulingEcho } from "@/workflow/item-threads";
 import type { OpenItem, WorkflowResultFile } from "@/workflow/types";
@@ -294,9 +295,7 @@ describe("nax workflow promote PR rulings", () => {
     { permission: "write", accessFails: false, passed: false },
     { permission: "read", accessFails: true, passed: true },
   ])("US-016 AC-6: access $permission, failure $accessFails yields ruled $passed", async (options) => {
-    const logger = initLogger({ level: "silent" });
-    const warn = spyOn(logger, "warn");
-    try {
+    await withWarnSpy(async (warn) => {
       await withTempDir(async (dir) => {
         const fx = await makePromoteFixture(dir, {
           rulings: null,
@@ -318,16 +317,11 @@ describe("nax workflow promote PR rulings", () => {
             expect.stringMatching(/Reply access lookup failed for bob; denying access: .*lookup unavailable/),
           );
       });
-    } finally {
-      warn.mockRestore();
-      resetLogger();
-    }
+    });
   });
 
   test.each([true, false])("US-016 AC-7: PR read failure falls back to sidecar (present: %s)", async (hasSidecar) => {
-    const logger = initLogger({ level: "silent" });
-    const warn = spyOn(logger, "warn");
-    try {
+    await withWarnSpy(async (warn) => {
       await withTempDir(async (dir) => {
         const fx = await makePromoteFixture(dir, {
           rulings: hasSidecar ? ["B1"] : null,
@@ -343,9 +337,6 @@ describe("nax workflow promote PR rulings", () => {
           expect.stringContaining("using sidecar only: [forge] Cannot read o/r#7: offline"),
         );
       });
-    } finally {
-      warn.mockRestore();
-      resetLogger();
-    }
+    });
   });
 });

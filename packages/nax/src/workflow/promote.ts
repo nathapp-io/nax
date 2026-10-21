@@ -24,8 +24,14 @@ const EVIDENCE_HEADING = "## Resolved before ready";
  * interpolated as a plain string, never as a pattern: `B1` therefore cannot match `**B10**`, and an
  * id such as `_run:ci` needs no escaping. `openItemLine` (`pr-body.ts`) writes exactly this prefix.
  */
-function checklistPrefix(id: string): string {
+export function checklistPrefix(id: string): string {
   return `${UNTICKED}**${id}**`;
+}
+
+/** Presentation membership shares the same prefix as ticking. */
+export function hasChecklistItem(body: string, id: string): boolean {
+  const prefix = checklistPrefix(id);
+  return body.split("\n").some((line) => line.startsWith(prefix) || line.startsWith(prefix.replace(UNTICKED, TICKED)));
 }
 
 /**

@@ -127,8 +127,15 @@ ${REVIEW_JSON}`;
  * the first reply's `inspectedFiles` named only the files it opened after the retry prompt, so the
  * whole list has to be sent again, not just the additions.
  */
-export function buildWorkflowBranchCoverageRetry(range: string, missing: readonly string[]): string {
-  return `Your reply parsed, but its inspectedFiles does not cover every changed file. Read each of these with \`git diff ${range} -- <path>\` (or Read it, if the branch added it), and review it:
+export function buildWorkflowBranchCoverageRetry(
+  range: string,
+  missing: readonly string[],
+  staticMode = false,
+): string {
+  const read = staticMode
+    ? "Read each of these with Read (commands are unavailable)"
+    : `Read each of these with \`git diff ${range} -- <path>\` (or Read it, if the branch added it)`;
+  return `Your reply parsed, but its inspectedFiles does not cover every changed file. ${read}, and review it:
 ${missing.map((path) => `- ${path}`).join("\n")}
 
 List in inspectedFiles every file you have read or diffed in this session, not only the new ones.

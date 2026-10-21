@@ -34,7 +34,7 @@ import { openItemLine } from "@/workflow/pr-body";
 
 export const PROMOTE_FEATURE = "auth";
 export const PROMOTE_RUN_ID = "r1";
-export const PROMOTE_URL = "https://gh/pr/7";
+export const PROMOTE_URL = "https://github.com/o/r/pull/7";
 export const PROMOTE_REMOTE = "git@github.com:o/r.git\n";
 export const PROMOTE_NOW = new Date("2026-10-13T09:12:00.417Z");
 export const PROMOTE_SIDECAR_NAME = sidecarFileName(PROMOTE_NOW);
@@ -303,7 +303,6 @@ function forgeDepsFor(recorded: Recorded, body: string, opts: PromoteFixtureOpti
     forge,
     now: () => PROMOTE_NOW,
     waitForChecks,
-    prNumberFromUrl: (url) => (url === PROMOTE_URL ? 7 : _workflowForgeDeps.prNumberFromUrl(url)),
   };
 }
 

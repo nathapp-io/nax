@@ -55,6 +55,7 @@ export async function maintainItemIndex(
     read.indexComment ? editComment(ref, read.indexComment, body, deps, cwd) : postPrComment(ref, body, deps, cwd),
   );
   const outcome = { closed: 0, failed: indexed ? 0 : 1 };
+  if (!indexed) return outcome;
   const current = new Set(keys);
   for (const item of read.items) {
     if (

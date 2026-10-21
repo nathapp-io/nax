@@ -6,7 +6,7 @@ import type { ConfiguredModel } from "@/config";
 import { NaxError } from "@/errors";
 import { hasNaxWorkflowMarker, ownComments } from "@/forge";
 import { getLogger } from "@/logger";
-import { botChecksExtractOp, botRulingReadOp } from "@/operations";
+import { botChecksExtractOp } from "@/operations";
 import { defineStepGraph, runStepGraph, type StepGraph } from "@/step-graph";
 // Import lifecycle/workflow leaves, never their orchestration barrels.
 import { runPreRunSteps } from "../execution/lifecycle/pre-run-steps";
@@ -25,8 +25,8 @@ import {
   pushStep,
 } from "./fix-steps";
 import { type BotLog, openBotLog } from "./log";
-import { botModel } from "./models";
 import { _botReviewDeps } from "./review-run";
+import { rulingModelReader } from "./ruling-reader";
 import { recordPrRulings } from "./rulings";
 
 export const _botFixDeps = {
@@ -171,8 +171,7 @@ async function recordFixRulings(
       comments,
       deps: env.forge,
       cwd: env.repoRoot,
-      readModel: (input) =>
-        _workflowDeps.callOp(env.ctx.callCtx, botRulingReadOp, { ...input, model: botModel(env.config, "rulings") }),
+      readModel: rulingModelReader(env.ctx, env.config),
     });
   } catch (error) {
     getLogger()?.warn("bot-fix", "Could not record PR rulings", { pr: env.ref.number, error: errorMessage(error) });

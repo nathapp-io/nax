@@ -108,7 +108,8 @@ export async function postEarlier(input: PostReviewInput): Promise<{ earlierAnsw
       const body = itemFixed
         ? fixedItemBody({ key, thread, reason: verdict.reason, sha: input.info.headSha })
         : renderEarlierReply(verdict, thread.id);
-      if (own) await editComment(input.ref, own.comment, body, input.deps, input.cwd);
+      if (own && (!itemFixed || thread.comments.at(-1)?.id === own.comment.id))
+        await editComment(input.ref, own.comment, body, input.deps, input.cwd);
       else await replyToThread(input.ref, thread, body, input.deps, input.cwd);
       if (key.startsWith("w-") && verdict.status === "withdrawn") continue;
       action = "resolve";

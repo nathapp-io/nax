@@ -224,7 +224,7 @@ describe("recordPrRulings model replies", () => {
       expect(out.open).toHaveLength(1);
       expect(out.asked).toBe(1);
       expect(resolve).not.toHaveBeenCalled();
-      expect(tick).toHaveBeenCalledWith(expect.any(String), []);
+      expect(tick).not.toHaveBeenCalled();
     },
   );
   test("normalizes padded fixed sha and preserves its echo on the next run", async () => {

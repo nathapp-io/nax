@@ -47,9 +47,9 @@ interface PostingContext {
   readonly anchor?: string;
 }
 
-function warn(itemId: string, message: string, error?: unknown): void {
+function warn(identity: string | { feature: string }, message: string, error?: unknown): void {
   getLogger()?.warn("item-threads", message, {
-    itemId,
+    ...(typeof identity === "string" ? { itemId: identity } : identity),
     ...(error === undefined ? {} : { error: errorMessage(error) }),
   });
 }
@@ -84,18 +84,20 @@ async function postItem(item: OpenItem, context: PostingContext): Promise<boolea
 async function readContext(input: ItemThreadsInput, deps: ForgeDeps) {
   const number = prNumberFromUrl(input.url);
   if (number === null) {
-    warn(input.feature, "[item-threads] Cannot read PR number from URL");
+    warn({ feature: input.feature }, "[item-threads] Cannot read PR number from URL");
     return null;
   }
   try {
     const ref = await resolvePrRef(number, deps, input.projectDir);
     const info = await readPrInfo(ref, deps, input.projectDir);
-    const user = await readCurrentUser(ref, deps, input.projectDir);
-    const threads = await listReviewThreads(ref, deps, input.projectDir);
-    const comments = await listPrComments(ref, deps, input.projectDir);
+    const [user, threads, comments] = await Promise.all([
+      readCurrentUser(ref, deps, input.projectDir),
+      listReviewThreads(ref, deps, input.projectDir),
+      listPrComments(ref, deps, input.projectDir),
+    ]);
     return { ref, info, login: user.login, read: readItemThreads(threads, comments, user.login) };
   } catch (error) {
-    warn(input.feature, "[item-threads] Initial PR read failed; posting nothing", error);
+    warn({ feature: input.feature }, "[item-threads] Initial PR read failed; posting nothing", error);
     return null;
   }
 }

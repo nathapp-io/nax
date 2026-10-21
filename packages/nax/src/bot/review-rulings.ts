@@ -1,13 +1,11 @@
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { hasNaxWorkflowMarker, ownComments, type PrThread } from "@/forge";
 import { getLogger } from "@/logger";
-import { botRulingReadOp } from "@/operations";
 import type { PrStepContext } from "../workflow/branch-step-context";
 import type { ItemIndex } from "../workflow/item-threads";
-import { _workflowDeps } from "../workflow/step-context";
 import type { PrCheckout } from "./checkout";
-import { botModel } from "./models";
 import type { PostReviewInput } from "./post";
+import { rulingModelReader } from "./ruling-reader";
 import type { RecordRulingsInput, RecordRulingsOutcome, recordPrRulings } from "./rulings";
 
 /** Ruling reads are privileged and best-effort; an absent outcome must not invent counts. */
@@ -20,11 +18,7 @@ export async function readReviewRulings(
   try {
     const outcome = await record({
       ...raw,
-      readModel: (value) =>
-        _workflowDeps.callOp(ctx.callCtx, botRulingReadOp, {
-          ...value,
-          model: botModel(ctx.config, "rulings"),
-        }),
+      readModel: rulingModelReader(ctx),
     });
     return {
       reviewedIndex: outcome.index,

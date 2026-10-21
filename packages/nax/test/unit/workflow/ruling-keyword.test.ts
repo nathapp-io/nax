@@ -35,3 +35,7 @@ describe("parseRulingKeyword", () => {
     expect(parseRulingKeyword(text)).toEqual(expected);
   });
 });
+
+test.each(["", "  ", "\n\t\n"])("blank reply %j is conversation", (body) => {
+  expect(parseRulingKeyword(body)).toBeNull();
+});

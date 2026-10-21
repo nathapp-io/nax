@@ -42,7 +42,7 @@ describe("botRulingReadOp", () => {
     expect(built.role.overridable).toBe(false);
   });
   test("AC-10: fenced JSON returns the verdict object, not a bare array", () => {
-    const rulings: BotRulingReadVerdict["rulings"] = [{ ...ruling, disposition: "fixed", sha: "abc123" }, ruling];
+    const rulings: BotRulingReadVerdict["rulings"] = [{ ...ruling, disposition: "fixed", sha: "abc1234" }];
     expect(botRulingReadOp.parse(`\`\`\`json\n${JSON.stringify({ rulings })}\n\`\`\``, input, ctx())).toEqual({
       rulings,
     });
@@ -84,4 +84,8 @@ describe("botRulingReadOp", () => {
   ])("drops malformed ruling %j", (entry) => {
     expect(botRulingReadOp.parse(JSON.stringify({ rulings: [entry] }), input, ctx())).toEqual({ rulings: [] });
   });
+});
+
+test("duplicate item rulings fail closed", () => {
+  expect(botRulingReadOp.parse(JSON.stringify({ rulings: [ruling, ruling] }), input, ctx())).toBeNull();
 });

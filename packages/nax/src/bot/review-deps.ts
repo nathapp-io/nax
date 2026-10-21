@@ -40,7 +40,7 @@ export const _botReviewDeps = {
     });
   },
   async gitToplevel(dir: string): Promise<string> {
-    const result = await gitWithTimeout(["rev-parse", "--show-toplevel"], dir);
+    const result = await _botReviewDeps.runGit(["rev-parse", "--show-toplevel"], dir);
     if (result.exitCode !== 0)
       throw new NaxError("[bot] Cannot resolve repository root", "BOT_REPO_ROOT_FAILED", {
         stage: "bot",

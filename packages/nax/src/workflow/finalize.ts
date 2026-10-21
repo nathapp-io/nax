@@ -366,8 +366,6 @@ function logFinishPr(ready: boolean, url: string | undefined, kept: readonly str
 
 /** What one ledger commit attempt did. */
 interface LedgerCommitResult {
-  /** True when this attempt created a commit. */
-  readonly committed: boolean;
   /** Non-empty ledger lines the branch lacks because the attempt failed; 0 when it landed or the ledger is empty. */
   readonly missingRulings: number;
 }
@@ -400,9 +398,10 @@ function nonEmptyLineCount(text: string): number {
  * committed are exactly the ones the reader of the PR cannot see.
  */
 async function ledgerCommit(fc: FeatureContext): Promise<LedgerCommitResult> {
-  if (fc.dryRun) return { committed: false, missingRulings: 0 };
+  if (fc.dryRun) return { missingRulings: 0 };
   try {
-    return { committed: await _featureDeps.commitLedger(fc.projectDir, fc.feature), missingRulings: 0 };
+    await _featureDeps.commitLedger(fc.projectDir, fc.feature);
+    return { missingRulings: 0 };
   } catch (err) {
     const missingRulings = await ledgerLineCount(fc);
     const message =
@@ -410,7 +409,7 @@ async function ledgerCommit(fc: FeatureContext): Promise<LedgerCommitResult> {
         ? `Advisor ledger commit failed — the branch is missing ${missingRulings} advisor rulings`
         : "Advisor ledger commit failed — publishing continues";
     getSafeLogger()?.warn("workflow", message, { storyId: "_run", error: errorMessage(err) });
-    return { committed: false, missingRulings };
+    return { missingRulings };
   }
 }
 

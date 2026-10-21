@@ -1,5 +1,6 @@
 import type { BotDecision } from "@/bot/decisions";
 import type { LinkedIssue, PrComment, PrThread } from "@/forge";
+import { markdownFence as fence } from "@/utils/markdown-fence";
 import {
   WORKFLOW_DESIGN_DECISIONS_ITEM,
   WORKFLOW_ENUMERATION_INSTRUCTION,
@@ -23,7 +24,6 @@ export interface BotPrReviewPromptInput {
   readonly ci?: { readonly outcome: string; readonly detail: string };
 }
 
-const MIN_FENCE_LENGTH = 3;
 export const MAX_EARLIER_THREADS = 50;
 
 const CHECKLIST = `## Checklist
@@ -70,12 +70,6 @@ function renderDecision(decision: BotDecision): string {
 }
 
 /** Author text can never terminate its enclosing fence, even with embedded Markdown. */
-function fence(text: string): string {
-  let longest = 0;
-  for (const run of text.matchAll(/`+/g)) longest = Math.max(longest, run[0].length);
-  const delimiter = "`".repeat(Math.max(MIN_FENCE_LENGTH, longest + 1));
-  return `${delimiter}\n${text}\n${delimiter}`;
-}
 
 function intentLine(input: BotPrReviewPromptInput): string {
   if (input.prdPath !== undefined) return `Intent: the PRD at ${input.prdPath}.`;

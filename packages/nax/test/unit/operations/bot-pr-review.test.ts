@@ -111,7 +111,7 @@ for (const op of [botPrReviewOp, botPrStaticReviewOp]) {
       expect(strategy.shouldRetry(failure, 0, retryCtx(partial))).toEqual({
         retry: true,
         delayMs: 0,
-        nextPrompt: buildWorkflowBranchCoverageRetry(value.range, ["src/a.ts"]),
+        nextPrompt: buildWorkflowBranchCoverageRetry(value.range, ["src/a.ts"], op === botPrStaticReviewOp),
       });
       const covered = JSON.stringify({ ...JSON.parse(partial), inspectedFiles: ["/checkout/src/a.ts"] });
       expect(strategy.shouldRetry(failure, 0, retryCtx(covered))).toEqual({ retry: false });
@@ -181,3 +181,9 @@ for (const op of [botPrReviewOp, botPrStaticReviewOp]) {
     });
   });
 }
+
+test("coverage rejects incomplete caller context rather than guessing cwd or range", () => {
+  const retry = botPrReviewOp.retry;
+  if (typeof retry !== "function") throw new Error("expected retry");
+  expect(() => retry({ ...input, requiredFiles: ["a.ts"] }, ctx())).toThrow("Coverage requires repoRoot and range");
+});

@@ -17,18 +17,16 @@ import {
   withNaxBotMarker,
 } from "@/forge";
 import { getLogger } from "@/logger";
-import { botRulingReadOp } from "@/operations";
 import type { StepResult } from "@/step-graph";
 // Workflow leaves avoid pulling orchestration dependencies into the bot nodes.
 import { type CiWaitResult, ciAllowsReady, waitForChecks } from "../workflow/ci-wait";
 import { type DecisionEntry, sidecarKindFor } from "../workflow/decisions-sidecar";
+import { isOpenItemKind } from "../workflow/item-threads";
 import { safeCode } from "../workflow/pr-body-safe";
 import { evidenceComment, markReadyArgv } from "../workflow/promote";
-import { _workflowDeps } from "../workflow/step-context";
-import type { OpenItem } from "../workflow/types";
 import type { BotFixEnv, BotFixState } from "./fix-steps";
-import { botModel } from "./models";
 import { safeText } from "./render";
+import { rulingModelReader } from "./ruling-reader";
 import { type RecordRulingsOutcome, recordPrRulings } from "./rulings";
 import { workflowPrReadiness } from "./workflow-ready";
 
@@ -126,19 +124,9 @@ async function waitForCi(env: BotFixEnv, state: Pick<BotFixState, "pushedSha">):
 }
 
 function settledEntries(outcome: RecordRulingsOutcome): DecisionEntry[] {
-  const kinds: readonly OpenItem["kind"][] = [
-    "finding",
-    "ruling",
-    "cannot-verify",
-    "gate",
-    "advisor",
-    "story",
-    "ci",
-    "reason",
-  ];
   return outcome.settled.map((item) => {
-    const kind = kinds.find((kind) => kind === item.kind);
-    if (!kind)
+    const kind = item.kind;
+    if (!isOpenItemKind(kind))
       throw new NaxError("[bot-fix] Unknown evidence item kind", "BOT_FIX_EVIDENCE_INVALID", {
         stage: "bot-fix",
         kind: item.kind,
@@ -170,23 +158,27 @@ async function readReadyRulings(env: BotFixEnv) {
     comments,
     deps: env.forge,
     cwd: env.repoRoot,
-    readModel: (input) =>
-      _workflowDeps.callOp(env.ctx.callCtx, botRulingReadOp, { ...input, model: botModel(env.config, "rulings") }),
+    readModel: rulingModelReader(env.ctx, env.config),
   });
   return { info, user, comments, outcome };
 }
 
-async function workflowReadyHold(env: BotFixEnv): Promise<string | undefined> {
+async function workflowReadyHold(env: BotFixEnv, state: BotFixState): Promise<string | undefined> {
   try {
+    const expectedSha = state.pushedSha ?? env.info.headSha;
     const { info, user, comments, outcome } = await readReadyRulings(env);
+    if (info.headSha !== expectedSha) return "PR head changed since this execution";
     // Green here only bypasses the CI check for the initial item-only decision.
     const items = workflowPrReadiness({ outcome, ci: { outcome: "green", detail: "item preflight" } });
     if (!items.ready) return items.reason;
-    const ci = await waitForCi({ ...env, info }, {});
+    const ci = await waitForCi(env, { pushedSha: expectedSha });
     env.ctx.callCtx.runtime.signal.throwIfAborted();
     const ready = workflowPrReadiness({ outcome, ci });
     if (!ready.ready) return ready.reason;
-    return await writeEvidence(env, outcome, ownComments(comments, user.login));
+    const evidence = await writeEvidence(env, outcome, ownComments(comments, user.login));
+    if (evidence) return evidence;
+    const fresh = await _fixReportDeps.readPrInfo(env.ref, env.forge, env.repoRoot);
+    if (fresh.headSha !== expectedSha) return "PR head changed since this execution";
   } catch (error) {
     env.ctx.callCtx.runtime.signal.throwIfAborted();
     getLogger()?.warn("bot-fix", "Could not read PR rulings", { pr: env.ref.number, error: errorMessage(error) });
@@ -214,7 +206,7 @@ async function writeEvidence(
 export async function readyStep(env: BotFixEnv, state: BotFixState): Promise<StepResult<BotFixState>> {
   if (!env.info.draft) return { patch: { markedReady: false }, exit: "report" };
   if (hasNaxWorkflowMarker(env.info.body)) {
-    const readyHeld = await workflowReadyHold(env);
+    const readyHeld = await workflowReadyHold(env, state);
     if (readyHeld) return { patch: { markedReady: false, readyHeld }, exit: "report" };
   } else {
     const ci = await waitForCi(env, state);

@@ -32,6 +32,7 @@ export { MAX_LINKED_ISSUES, parseClosingRefs, readIssue, readLinkedIssues } from
 export {
   findOwnComments,
   hasNaxWorkflowMarker,
+  isNaxBotMarkerKey,
   NAX_BOT_HEADER,
   NAX_WORKFLOW_PR_MARKER,
   ownComments,

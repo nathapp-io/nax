@@ -16,6 +16,7 @@ import { warnOrDefer } from "@/logger";
 import { type DecisionEntry, mergeDecisions, parseDecisionEntries, sidecarKindFor } from "./decisions-sidecar";
 import { readItemThreads, type SettledItems, settleItemThreads } from "./item-thread-state";
 import { itemKey } from "./item-threads";
+import { CI_ITEM_ID } from "./open-items";
 import type { OpenItem } from "./types";
 
 export type PrRulingsReport =
@@ -35,7 +36,7 @@ async function canRule(ref: PrRef, comment: PrComment, context: { deps: ForgeDep
 }
 
 function entriesFor(items: readonly OpenItem[], settled: SettledItems): DecisionEntry[] {
-  const current = new Map(items.filter((item) => item.id !== "_run:ci").map((item) => [itemKey(item), item]));
+  const current = new Map(items.filter((item) => item.id !== CI_ITEM_ID).map((item) => [itemKey(item), item]));
   const entries = settled.settled.flatMap(({ key, ruling }) => {
     const item = current.get(key);
     return item
@@ -60,20 +61,21 @@ export async function readPromoteRulings(input: {
   readonly deps: ForgeDeps;
   readonly items: readonly OpenItem[];
   readonly local: readonly DecisionEntry[];
-  readonly numberFromUrl?: typeof prNumberFromUrl;
 }): Promise<{ entries: readonly DecisionEntry[]; prRulings: PrRulingsReport }> {
   const { url, cwd, deps, items, local } = input;
   try {
-    const number = (input.numberFromUrl ?? prNumberFromUrl)(url);
+    const number = prNumberFromUrl(url);
     if (number === null)
       throw new NaxError("[workflow-promote] Cannot read PR number", "FORGE_PR_REF_UNRESOLVED", {
         stage: "workflow-promote",
         url,
       });
     const ref = await resolvePrRef(number, deps, cwd);
-    const user = await readCurrentUser(ref, deps, cwd);
-    const threads = await listReviewThreads(ref, deps, cwd);
-    const comments = await listPrComments(ref, deps, cwd);
+    const [user, threads, comments] = await Promise.all([
+      readCurrentUser(ref, deps, cwd),
+      listReviewThreads(ref, deps, cwd),
+      listPrComments(ref, deps, cwd),
+    ]);
     const settled = await settleItemThreads(readItemThreads(threads, comments, user.login), (comment) =>
       canRule(ref, comment, { deps, cwd }),
     );

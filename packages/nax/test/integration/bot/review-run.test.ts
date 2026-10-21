@@ -153,6 +153,7 @@ beforeEach(() => {
     runPreRunSteps: preRun,
     readCurrentUser: async () => ({ login: "bot" }),
     listReviewThreads: async () => threads,
+    recordPrRulings: async () => ({ recorded: [], settled: [], open: [], asked: 0, failed: 0 }),
     listPrComments: async () => comments,
     readLinkedIssues: async () => issues,
     readHeadCi: headCi,

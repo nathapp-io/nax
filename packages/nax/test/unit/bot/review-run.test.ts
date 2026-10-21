@@ -13,3 +13,10 @@ describe("_botReviewDeps.isAncestor", () => {
     expect(runGit).toHaveBeenCalledWith(["merge-base", "--is-ancestor", "ancestor", "head"], "/checkout");
   });
 });
+
+test("gitToplevel uses the same injected git runner as ancestry checks", async () => {
+  const runGit = mock(async () => ({ exitCode: 0, stdout: "/checkout\n", stderr: "" }));
+  _botReviewDeps.runGit = runGit;
+  expect(await _botReviewDeps.gitToplevel("/nested")).toBe("/checkout");
+  expect(runGit).toHaveBeenCalledWith(["rev-parse", "--show-toplevel"], "/nested");
+});

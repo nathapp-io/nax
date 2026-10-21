@@ -15,10 +15,14 @@ const MARKER_KEY_PATTERN = "[A-Za-z0-9._:-]{1,128}";
 const markerPattern = () => new RegExp(`<!-- nax-bot:v1 key=(${MARKER_KEY_PATTERN}) -->`, "g");
 const MARKER_KEY = new RegExp(`^${MARKER_KEY_PATTERN}$`);
 
+export function isNaxBotMarkerKey(key: string): boolean {
+  return MARKER_KEY.exec(key)?.[0] === key;
+}
+
 /** Wrap a comment with a stable visible header and an injection-safe identity marker. */
 export function withNaxBotMarker(body: string, key: string): string {
   // Compare the full match: JavaScript's $ also matches before a final newline.
-  if (MARKER_KEY.exec(key)?.[0] !== key) {
+  if (!isNaxBotMarkerKey(key)) {
     throw new NaxError("[forge] Invalid nax bot marker key", "FORGE_MARKER_KEY_INVALID", { stage: "forge", key });
   }
   return `${NAX_BOT_HEADER}\n\n${body}\n\n<!-- nax-bot:v1 key=${key} -->`;

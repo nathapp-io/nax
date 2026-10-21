@@ -97,3 +97,11 @@ describe("postItemComment", () => {
     });
   });
 });
+
+test.each(["", "  "])("GitHub rejects empty item path %j before I/O", async (path) => {
+  const { deps, run } = fixture("{}");
+  await expect(forge.postItemComment(gh, { ...input, path }, deps, "/repo")).rejects.toMatchObject({
+    code: "FORGE_COMMENT_TARGET_INVALID",
+  });
+  expect(run).not.toHaveBeenCalled();
+});

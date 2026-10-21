@@ -197,3 +197,10 @@ describe("classifyPrTrust", () => {
     expect(trust.reasons[0]).toStartWith("could not read");
   });
 });
+
+test("missing permission fields retain a diagnostic in the fail-closed trust reason", async () => {
+  const { deps } = fixture(ok({ login: "me" }), ok({}));
+  const trust = await classifyPrTrust(gh, info, deps, "/repo");
+  expect(trust.trusted).toBe(false);
+  expect(trust.reasons[0]).toMatch(/^could not read author permissions: .+/);
+});

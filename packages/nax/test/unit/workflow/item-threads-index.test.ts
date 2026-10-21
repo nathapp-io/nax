@@ -196,7 +196,7 @@ describe("postItemThreads index and closing", () => {
       const out = await postItemThreads(input(), h.deps);
       expect(out.failed).toBe(1);
       expect(logs.some((entry) => entry.level === "warn" && typeof entry.data?.itemId === "string")).toBe(true);
-      expect(h.writes).toHaveLength(3);
+      expect(h.writes).toHaveLength(fail === "key=w-index" ? 1 : 3);
     },
   );
 });

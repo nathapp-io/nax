@@ -5,7 +5,7 @@ import type { resolveBotChecks } from "@/bot/checks";
 import { _botFixDeps, runBotFix } from "@/bot/fix-run";
 import { openBotLog } from "@/bot/log";
 import { NaxError } from "@/errors";
-import { NAX_WORKFLOW_PR_MARKER, withNaxBotMarker } from "@/forge";
+import { NAX_WORKFLOW_PR_MARKER, type PrComment, withNaxBotMarker } from "@/forge";
 import { getLogger, initLogger, resetLogger } from "@/logger";
 import { botRulingReadOp } from "@/operations";
 import { botChecksExtractOp } from "@/operations/bot-checks-extract";
@@ -19,6 +19,7 @@ const input = { dir: "/repo/sub", pr: 42, profiles: ["a"], interactive: false };
 let env: ReturnType<typeof makeBotFixEnv>;
 let runtime: ReturnType<typeof makeTestRuntime>;
 let events: string[];
+let topComments: PrComment[];
 const prepare = mock<typeof _botFixDeps.preparePrCheckout>(async () => env.checkout);
 const load = mock<typeof _botFixDeps.loadBotConfig>(async () => env.config);
 const latest = mock<typeof _botFixDeps.loadLatestReview>(async () => env.review);
@@ -36,10 +37,11 @@ const dispose = mock(async () => {
 const write = mock<typeof _botFixDeps.writeJson>(async () => {});
 const user = mock<typeof _botFixDeps.readCurrentUser>(async () => env.user);
 const threads = mock<typeof _botFixDeps.listReviewThreads>(async () => [...env.threads]);
-const comments = mock<typeof _botFixDeps.listPrComments>(async () => []);
+const comments = mock<typeof _botFixDeps.listPrComments>(async () => topComments);
 
 beforeEach(() => {
   events = [];
+  topComments = [];
   env = makeBotFixEnv();
   env = {
     ...env,
@@ -115,11 +117,24 @@ afterEach(async () => {
 
 describe("runBotFix", () => {
   test.each([false, true])("AC-17/18 records marked PR before fix; failure=%s", async (fails) => {
-    env = { ...env, info: { ...env.info, body: NAX_WORKFLOW_PR_MARKER } };
+    topComments = [{ id: "note", kind: "comment", author: "writer", body: "triaged note", createdAt: "" }];
+    env = {
+      ...env,
+      info: { ...env.info, body: NAX_WORKFLOW_PR_MARKER },
+      threads: [
+        {
+          id: "raw",
+          replyTo: "1",
+          resolved: false,
+          outdated: false,
+          comments: [
+            { ...topComments[0], id: "reply", kind: "thread", author: "writer", body: "raw thread", createdAt: "" },
+          ],
+        },
+      ],
+    };
     const record = mock<typeof _botFixDeps.recordPrRulings>(async (args) => {
       events.push("rulings");
-      expect(args.threads).toEqual(env.threads);
-      expect(args.comments).toEqual([]);
       expect(await args.readModel({ items: [] })).toBeNull();
       if (fails) throw new Error("record denied");
       return { recorded: [], settled: [], open: [], asked: 0, failed: 0 };
@@ -130,6 +145,8 @@ describe("runBotFix", () => {
     try {
       expect(await runBotFix(input)).toMatchObject({ outcome: "nothing" });
       expect(record).toHaveBeenCalledTimes(1);
+      expect(record.mock.calls[0]?.[0].threads).toEqual(env.threads);
+      expect(record.mock.calls[0]?.[0].comments).toEqual(topComments);
       expect(events.indexOf("rulings")).toBeLessThan(events.indexOf("fix"));
       expect(fix).toHaveBeenCalledTimes(1);
       expect(call).toHaveBeenCalledWith(env.ctx.callCtx, botRulingReadOp, { items: [], model: "fast" });

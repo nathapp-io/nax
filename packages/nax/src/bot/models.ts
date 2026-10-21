@@ -1,7 +1,7 @@
 import type { ConfiguredModel, NaxConfig } from "../config";
 import { NaxError } from "../errors";
 
-/** Leave an unset model undefined so the operation can choose its default tier. */
+/** Review/fix leave an unset model to the op; rulings default independently to fast. */
 export function botModel(
   config: NaxConfig,
   role: "review" | "fix" | "rulings",

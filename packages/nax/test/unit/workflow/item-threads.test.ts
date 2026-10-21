@@ -67,10 +67,11 @@ describe("renderItemOpener", () => {
 describe("parseItemOpener", () => {
   test("AC-9 recovers identity", async () => {
     const { parseItemOpener, renderItemOpener, itemKey } = await formats();
-    expect(parseItemOpener(renderItemOpener(item))).toEqual({ id: "B3", kind: "finding" });
+    expect(parseItemOpener(renderItemOpener(item))).toEqual({ id: "B3", kind: "finding", issue: item.issue });
     expect(parseItemOpener(withNaxBotMarker(renderItemOpener(item), itemKey(item)))).toEqual({
       id: "B3",
       kind: "finding",
+      issue: item.issue,
     });
     expect(parseItemOpener("Open item **B3** (unknown): x")).toBeNull();
   });
@@ -165,4 +166,15 @@ describe("parseItemIndex", () => {
     ).toBeNull();
     expect((await formats()).parseItemIndex("unrelated")).toBeNull();
   });
+});
+
+test("fixed echoes require a durable SHA", async () => {
+  const { renderRulingEcho } = await formats();
+  expect(() => renderRulingEcho({ ...ruling, disposition: "fixed" })).toThrow();
+});
+
+test("GitLab dotted logins round-trip", async () => {
+  const f = await formats();
+  const value = { ...ruling, by: "john.doe" };
+  expect(f.parseRulingEcho(`wr-waived-${key}`, f.renderRulingEcho(value))).toEqual(value);
 });

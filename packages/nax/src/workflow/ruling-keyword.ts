@@ -1,3 +1,4 @@
+import { RULING_SHA_SOURCE } from "@/utils/ruling-sha";
 import type { Disposition } from "./decisions-sidecar";
 
 export interface RulingKeyword {
@@ -6,7 +7,7 @@ export interface RulingKeyword {
   readonly sha?: string;
 }
 
-const FIXED_PATTERN = /^fixed\s+([a-f\d]{7,40})(?:\s*(?:—|-|:)\s*(.*))?$/i;
+const FIXED_PATTERN = new RegExp(`^fixed\\s+(${RULING_SHA_SOURCE})(?:\\s*(?:—|-|:)\\s*(.*))?$`, "i");
 const REASON_PATTERN = /^(?:waive|waived|override|overridden):\s*(.*)$/i;
 const CONFIRM_PATTERN = /^(?:confirm|confirmed)(?::\s*(.*))?$/i;
 const VERIFY_PATTERN = /^(?:verify|verified)(?::\s*(.*))?$/i;

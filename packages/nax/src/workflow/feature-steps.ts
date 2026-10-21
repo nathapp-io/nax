@@ -538,7 +538,8 @@ export async function publishStep(
   const log = featureStep("publish", false, true);
   const out = await env.steps.publish(rec);
   const head = await readHeadSoft(env);
-  await postItemThreadsAfterPublish(env, rec, out, head);
+  const flagged = await collectFlaggedDecisions(env);
+  await postItemThreadsAfterPublish(env, { ...rec, flaggedDecisions: flagged }, out, head);
   const why = out.reasons.length > 0 ? `: ${out.reasons.join("; ")}` : "";
   log.done(`${out.outcome}${out.url ? ` ${out.url}` : ""}${why}`);
   await env.sink.ledger(ledgerText.note(`feature ${out.outcome}${out.url ? ` ${out.url}` : ""}${why}`), NO_MIRROR);
@@ -548,7 +549,6 @@ export async function publishStep(
   const ciFindings = await ciRepairDecision(env, rec, out, head);
   // US-005: collected after publish, whatever it did — a local-only or draft feature still needs
   // its flagged rulings named at run end.
-  const flagged = await collectFlaggedDecisions(env);
   return {
     patch: {
       outcome: out.outcome,
@@ -568,7 +568,7 @@ export async function publishStep(
       })),
       ...(head ? { head } : {}),
       passed: featurePassed({ ...(rec.finalGates ? { finalGates: rec.finalGates } : {}), stories: env.facts.stories }),
-      ...(flagged.length > 0 ? { flaggedDecisions: flagged } : {}),
+      ...(flagged.length > 0 || rec.flaggedDecisions !== undefined ? { flaggedDecisions: flagged } : {}),
       // US-006: the repair targets, only when there is a repair to make.
       ...(ciFindings ? { ciRepairFindings: ciFindings } : {}),
       endedAt: new Date().toISOString(),

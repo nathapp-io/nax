@@ -16,6 +16,7 @@ import { mkdir, readdir, rename, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { byCodePoint, errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
+import { RULING_SHA_PATTERN as SHA_PATTERN } from "@/utils/ruling-sha";
 import type { OpenItem } from "./types";
 
 export const _sidecarDeps = { mkdir, readdir, rename, unlink };
@@ -61,7 +62,7 @@ const SIDECAR_PREFIX = "decisions-";
 const SIDECAR_SUFFIX = ".json";
 /** Temporary siblings are named `<sidecar>.tmp-<uuid>`: unique per call, and never read as a sidecar. */
 const TMP_INFIX = ".tmp-";
-const SHA_PATTERN = /^[0-9a-fA-F]{7,40}$/;
+
 const KIND_NAMES: ReadonlySet<string> = new Set(SIDECAR_KINDS);
 const DISPOSITION_NAMES: ReadonlySet<string> = new Set(DISPOSITIONS);
 const OUTCOME_NAMES: ReadonlySet<string> = new Set(SIDECAR_OUTCOMES);
