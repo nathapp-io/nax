@@ -262,9 +262,43 @@ describe("readFailedChecks listing errors", () => {
     await expect(promise).rejects.toMatchObject({ code: "FORGE_CI_READ_FAILED", context: { stage: "forge" } });
     expect(calls.map((call) => call.cmd)).toEqual([PIPELINES_ARGV]);
   });
+
+  test.each([
+    ["no id at all", { sha: "abc123" }],
+    ["a non-numeric id", { id: "77", sha: "abc123" }],
+  ])("throws FORGE_CI_READ_FAILED when the head's pipeline has %s", async (_case, entry) => {
+    const { deps, calls } = forgeFixture({ [GL_PIPELINES]: ok([entry]) });
+    const promise = forge.readFailedChecks(gl, "abc123", deps, "/repo");
+    await expect(promise).rejects.toBeInstanceOf(NaxError);
+    await expect(promise).rejects.toMatchObject({ code: "FORGE_CI_READ_FAILED", context: { stage: "forge" } });
+    // The reply is malformed, so no jobs call is made.
+    expect(calls.map((call) => call.cmd)).toEqual([PIPELINES_ARGV]);
+  });
 });
 
 describe("readFailedChecks log errors", () => {
+  test("bounds an unavailable log excerpt to the excerpt limit", async () => {
+    const { deps } = forgeFixture({
+      [GL_PIPELINES]: ok([{ id: 77, sha: "abc123" }]),
+      [GL_JOBS]: ok([{ id: 991, name: "unit" }]),
+      [glTrace(991)]: { exitCode: 1, stdout: "", stderr: "x".repeat(20_000) },
+    });
+    const checks = await forge.readFailedChecks(gl, "abc123", deps, "/repo");
+    const excerpt = checks[0]?.excerpt ?? "";
+    expect(excerpt.startsWith("(log unavailable: ")).toBe(true);
+    expect(excerpt.length).toBeLessThanOrEqual("(log unavailable: )".length + forge.CI_EXCERPT_CHARS);
+  });
+
+  test("strips the ANSI codes of an unavailable log excerpt", async () => {
+    const { deps } = forgeFixture({
+      [GL_PIPELINES]: ok([{ id: 77, sha: "abc123" }]),
+      [GL_JOBS]: ok([{ id: 991, name: "unit" }]),
+      [glTrace(991)]: { exitCode: 1, stdout: "", stderr: `${ESC}[31mboom${ESC}[0m\nmore` },
+    });
+    const checks = await forge.readFailedChecks(gl, "abc123", deps, "/repo");
+    expect(checks[0]?.excerpt).toBe("(log unavailable: boom)");
+  });
+
   test("AC-8 reports an unavailable GitHub job log as the first stderr line", async () => {
     const { deps } = forgeFixture({
       [GH_LISTING]: ok({

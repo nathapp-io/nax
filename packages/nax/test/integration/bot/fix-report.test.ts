@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { makeBotFixDraftEnv, makeBotFixEnv } from "@test/helpers";
+import { makeBotFixDraftEnv, makeBotFixEnv, makeNaxConfig } from "@test/helpers";
 import {
   _fixReportDeps,
   type BotFixState,
@@ -9,7 +9,6 @@ import {
   replyStep,
   reportStep,
 } from "@/bot";
-import { resolveWorkflowConfig } from "@/config";
 import { NAX_WORKFLOW_PR_MARKER, type PrComment, type PrThread, parseNaxBotMarker, withNaxBotMarker } from "@/forge";
 import { initLogger, resetLogger } from "@/logger";
 import { markReadyArgv } from "@/workflow/promote";
@@ -19,6 +18,18 @@ const state: BotFixState = { step: "reply", timings: {}, outcome: "pushed", push
 const nothingState: BotFixState = { step: "ready", timings: {}, outcome: "nothing" };
 /** The one CI answer that lets a draft become ready (US-003). */
 const greenCi = { outcome: "green", detail: "all checks passed" } as const;
+/** CI timeouts that differ from the schema defaults, so a hardcoded wait would fail the AC. */
+const CI_WAIT_MS = 12_345;
+const CI_POLL_MS = 678;
+
+/** A draft PR whose config carries CI timeouts of its own. */
+function draftEnvWithTimeouts(): ReturnType<typeof makeBotFixDraftEnv> {
+  const base = makeBotFixDraftEnv();
+  return {
+    ...base,
+    config: makeNaxConfig({ workflow: { timeouts: { ciWaitMs: CI_WAIT_MS, ciPollMs: CI_POLL_MS } } }),
+  };
+}
 const item = {
   kind: "thread" as const,
   key: "t-1",
@@ -196,7 +207,9 @@ describe("readyStep", () => {
   test("AC-1/2/3: leaves a PR that is not a draft alone", async () => {
     const env = makeBotFixEnv();
     const run = spyOn(env.forge, "run");
-    const wait = spyOn(_fixReportDeps, "waitForChecks");
+    const wait = spyOn(_fixReportDeps, "waitForChecks").mockImplementation(() => {
+      throw new Error("waitForChecks must not run on a PR that is not a draft");
+    });
     expect(await readyStep(env, state)).toEqual({ patch: { markedReady: false }, exit: "report" });
     expect(wait).not.toHaveBeenCalled();
     expect(run).not.toHaveBeenCalled();
@@ -204,7 +217,9 @@ describe("readyStep", () => {
   test("AC-4/5/6: keeps a marked nax-workflow PR a draft", async () => {
     const env = makeBotFixDraftEnv({ body: `${NAX_WORKFLOW_PR_MARKER}\n\n## Summary` });
     const run = spyOn(env.forge, "run");
-    const wait = spyOn(_fixReportDeps, "waitForChecks");
+    const wait = spyOn(_fixReportDeps, "waitForChecks").mockImplementation(() => {
+      throw new Error("waitForChecks must not run on a nax-workflow PR");
+    });
     expect(await readyStep(env, state)).toEqual({
       patch: { markedReady: false, readyHeld: "nax workflow PR: promote it with nax workflow promote" },
       exit: "report",
@@ -227,18 +242,18 @@ describe("readyStep", () => {
     expect(wait.mock.calls[0]?.[2]?.expectedSha).toBe(env.info.headSha);
   });
   test("AC-9: waits with the configured CI timeout", async () => {
-    const env = makeBotFixDraftEnv();
+    const env = draftEnvWithTimeouts();
     const wait = spyOn(_fixReportDeps, "waitForChecks").mockResolvedValue(greenCi);
     spyOn(env.forge, "run").mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
     await readyStep(env, state);
-    expect(wait.mock.calls[0]?.[2]?.timeoutMs).toBe(resolveWorkflowConfig(env.config).timeouts.ciWaitMs);
+    expect(wait.mock.calls[0]?.[2]?.timeoutMs).toBe(CI_WAIT_MS);
   });
   test("AC-10: waits with the configured CI poll interval", async () => {
-    const env = makeBotFixDraftEnv();
+    const env = draftEnvWithTimeouts();
     const wait = spyOn(_fixReportDeps, "waitForChecks").mockResolvedValue(greenCi);
     spyOn(env.forge, "run").mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
     await readyStep(env, state);
-    expect(wait.mock.calls[0]?.[2]?.pollMs).toBe(resolveWorkflowConfig(env.config).timeouts.ciPollMs);
+    expect(wait.mock.calls[0]?.[2]?.pollMs).toBe(CI_POLL_MS);
   });
   test("AC-11/12: keeps the draft and says why when CI failed", async () => {
     const env = makeBotFixDraftEnv();

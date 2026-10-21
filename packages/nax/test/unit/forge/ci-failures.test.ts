@@ -38,6 +38,7 @@ describe("ciExcerpt", () => {
   });
 
   test("AC-7 keeps the last 200 lines of a 500-line log", () => {
+    expect(forge.CI_EXCERPT_LINES).toBe(200);
     const log = Array.from({ length: 500 }, (_, index) => `line ${index + 1}`).join("\n");
     const lines = forge.ciExcerpt(log).split("\n");
     expect(lines).toHaveLength(forge.CI_EXCERPT_LINES);
@@ -46,6 +47,7 @@ describe("ciExcerpt", () => {
   });
 
   test("AC-8 keeps the last 8000 characters of one long line", () => {
+    expect(forge.CI_EXCERPT_CHARS).toBe(8_000);
     const excerpt = forge.ciExcerpt("x".repeat(20_000));
     expect(excerpt).toHaveLength(forge.CI_EXCERPT_CHARS);
     expect(excerpt).toBe("x".repeat(forge.CI_EXCERPT_CHARS));

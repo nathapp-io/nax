@@ -78,6 +78,14 @@ describe("hasNaxWorkflowMarker", () => {
   test("AC-2 returns false when the body has no workflow marker", () => {
     expect(forge.hasNaxWorkflowMarker("## Summary\n\nno marker")).toBe(false);
   });
+
+  test("recognizes the workflow marker in a CRLF body", () => {
+    expect(forge.hasNaxWorkflowMarker("<!-- nax-workflow:v1 -->\r\n\r\n## Summary")).toBe(true);
+  });
+
+  test("returns false for a CRLF body without the workflow marker", () => {
+    expect(forge.hasNaxWorkflowMarker("## Summary\r\n\r\nno marker")).toBe(false);
+  });
 });
 describe("withNaxBotMarker", () => {
   test("AC-1 exact marker wrapper", () => {

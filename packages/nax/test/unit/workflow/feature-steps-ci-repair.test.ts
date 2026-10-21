@@ -17,6 +17,7 @@ import { runFeatureMachine } from "@/workflow/feature-machine";
 import { newFeatureRecord } from "@/workflow/feature-record";
 import * as featureSteps from "@/workflow/feature-steps";
 import type { PublishOutcome } from "@/workflow/finalize";
+import type { LedgerWriteOptions } from "@/workflow/ledger";
 import type { WorkflowFeatureRecord, WorkflowFinding, WorkflowFindingDraft } from "@/workflow/types";
 
 /** The limits of a run that may repair CI once. */
@@ -33,7 +34,15 @@ interface StepHarness {
   /** The ledger writes and the fix session, in the order they happened. */
   readonly order: string[];
   readonly ledger: string[];
+  /** Every ledger write with the options it carried, so the mirroring is pinned too. */
+  readonly writes: readonly LedgerWrite[];
   readonly fixInputs: (readonly WorkflowFinding[])[];
+}
+
+/** One ledger write: its text and the write options the step passed. */
+interface LedgerWrite {
+  readonly text: string;
+  readonly options: LedgerWriteOptions | undefined;
 }
 
 /** The shared harness, with the ledger and the fix session on one ordered list. */
@@ -58,12 +67,14 @@ function stepHarness(
   );
   const order: string[] = [];
   const ledger: string[] = [];
+  const writes: LedgerWrite[] = [];
   const env = {
     ...base.env,
     sink: {
       ...base.env.sink,
-      ledger: async (text: string) => {
+      ledger: async (text: string, options?: LedgerWriteOptions) => {
         ledger.push(text);
+        writes.push({ text, options });
         order.push(`ledger:${text}`);
       },
     },
@@ -75,7 +86,7 @@ function stepHarness(
       },
     },
   };
-  return { env, order, ledger, fixInputs: base.fixInputs };
+  return { env, order, ledger, writes, fixInputs: base.fixInputs };
 }
 
 describe("the CI repair step (US-007)", () => {
@@ -156,6 +167,34 @@ describe("the CI repair step (US-007)", () => {
     const h = stepHarness({});
     const out = await featureSteps.ciRepairStep(h.env, h.env.record);
     expect(out.patch).toEqual({ ciRepairRounds: 1 });
+  });
+});
+
+describe("the CI repair's ledger mirroring (US-007)", () => {
+  /** Whether the ledger write of this text is mirrored into the run log; undefined when it is absent. */
+  const mirrored = (h: StepHarness, text: string): boolean | undefined => {
+    const write = h.writes.find((candidate) => candidate.text === text);
+    if (!write) return undefined;
+    return write.options?.mirror !== false;
+  };
+
+  test("the repair notes are not mirrored, the auto-commit notes are", async () => {
+    const h = stepHarness({
+      findings: [CHECK_E2E],
+      fix: { failure: "the agent died", autoCommitted: true, dirty: true },
+    });
+    await featureSteps.ciRepairStep(h.env, h.env.record);
+    expect(mirrored(h, "CI repair r1: 1 item(s): C1")).toBe(false);
+    expect(mirrored(h, "CI repair session failed: the agent died")).toBe(false);
+    expect(mirrored(h, "auto-committed the CI repair's edits")).toBe(true);
+    expect(mirrored(h, "CI repair left uncommitted edits: the auto-commit failed")).toBe(true);
+  });
+
+  test("a spent round's skip note is not mirrored", async () => {
+    const h = stepHarness({ findings: [CHECK_E2E], rounds: 1, limit: 1 });
+    await featureSteps.ciRepairStep(h.env, h.env.record);
+    const skip = h.writes.find((write) => write.text.startsWith("CI repair skipped:"));
+    expect(skip?.options?.mirror).toBe(false);
   });
 });
 

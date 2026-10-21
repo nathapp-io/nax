@@ -48,13 +48,18 @@ export function prNumberFromUrl(url: string): number | null {
   return Number.isSafeInteger(number) ? number : null;
 }
 
+/** The text of a log without its ANSI colour codes. */
+function stripAnsi(text: string): string {
+  return text.replace(ANSI_CSI, "");
+}
+
 /**
  * A bounded excerpt of a CI log: ANSI colour codes removed, the last
  * `CI_EXCERPT_LINES` lines kept, the last `CI_EXCERPT_CHARS` characters of
  * those kept, and every secret in the result redacted.
  */
 export function ciExcerpt(log: string): string {
-  const plain = log.replace(ANSI_CSI, "");
+  const plain = stripAnsi(log);
   const lines = plain.split("\n");
   const kept = lines.slice(Math.max(0, lines.length - CI_EXCERPT_LINES)).join("\n");
   const bounded = kept.length > CI_EXCERPT_CHARS ? kept.slice(-CI_EXCERPT_CHARS) : kept;
@@ -64,10 +69,16 @@ export function ciExcerpt(log: string): string {
 /**
  * The excerpt of a CI log that could not be read: the first line of the error
  * output, so a repair agent sees why the log is missing.
+ *
+ * The line is bounded like every other excerpt — the ANSI codes stripped, at
+ * most `CI_EXCERPT_CHARS` characters kept — so a one-line error body cannot
+ * reach `FailedCheck.excerpt`, and from there the repair prompt, at whatever
+ * length the child produced.
  */
 function logUnavailableExcerpt(result: ForgeRunResult): string {
-  const firstLine = result.stderr.split("\n")[0]?.trim() ?? "";
-  const reason = redactSecrets(firstLine);
+  const firstLine = stripAnsi(result.stderr.split("\n")[0] ?? "").trim();
+  const bounded = firstLine.length > CI_EXCERPT_CHARS ? firstLine.slice(0, CI_EXCERPT_CHARS) : firstLine;
+  const reason = redactSecrets(bounded);
   return `(log unavailable: ${reason.length > 0 ? reason : "unknown"})`;
 }
 
@@ -310,7 +321,10 @@ async function readGitlabFailedChecks(
     context,
   );
   const pipeline = findPipeline(parsePipelines(pipelinesReply, context), headSha);
-  if (!pipeline || pipeline.id === undefined) return [];
+  // A pipeline without a numeric id cannot be read: the jobs call needs it. The reply is malformed,
+  // so it fails like every other malformed reply instead of reading as "no pipeline for this head".
+  if (!pipeline) return [];
+  if (pipeline.id === undefined) throw invalidReply("pipelines", context);
   const jobsReply = await readCiListing(
     [
       "glab",

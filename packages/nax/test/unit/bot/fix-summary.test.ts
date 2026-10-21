@@ -65,6 +65,23 @@ describe("renderFixSummary", () => {
     const body = renderFixSummary({ ...state, outcome: "nothing", readyHeld: "CI failed: x" });
     expect(body.split("\n")).toContain("Kept as draft: CI failed: x");
   });
+  test("keeps the workflow hold readable", () => {
+    const body = renderFixSummary({
+      ...state,
+      outcome: "nothing",
+      readyHeld: "nax workflow PR: promote it with nax workflow promote",
+    });
+    expect(body.split("\n")).toContain("Kept as draft: nax workflow PR: promote it with nax workflow promote");
+  });
+  test("neutralises and caps the untrusted reason the PR stayed a draft", () => {
+    const body = renderFixSummary({
+      ...state,
+      outcome: "nothing",
+      readyHeld: `CI failed: @alice ${"x".repeat(600)}`,
+    });
+    expect(body).not.toContain("@alice");
+    expect(body).not.toContain("x".repeat(501));
+  });
   test("AC-18: says the PR was marked ready", () => {
     const body = renderFixSummary({ ...state, outcome: "pushed", markedReady: true });
     expect(body.split("\n")).toContain("Marked ready.");

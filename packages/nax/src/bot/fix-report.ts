@@ -162,7 +162,9 @@ export function renderFixSummary(state: BotFixState): string {
   const lines = [outcomeText(state)];
   if (state.fixFailure !== undefined) lines.push(`Fix session: ${safeText(state.fixFailure, MAX_FAILURE_LENGTH)}`);
   // Why the PR is still a draft — a workflow PR, or a CI that is not green — or that it is ready.
-  if (state.readyHeld !== undefined) lines.push(`Kept as draft: ${state.readyHeld}`);
+  // The reason carries the CI wait's own detail, which is forge output: it is neutralised and
+  // capped like the fix failure above, so a hostile or noisy detail cannot inject into the comment.
+  if (state.readyHeld !== undefined) lines.push(`Kept as draft: ${safeText(state.readyHeld, MAX_FAILURE_LENGTH)}`);
   if (state.markedReady === true) lines.push("Marked ready.");
   return withNaxBotMarker(lines.join("\n"), "fix-summary");
 }

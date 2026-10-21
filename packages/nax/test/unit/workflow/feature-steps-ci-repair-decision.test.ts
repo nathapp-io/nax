@@ -18,6 +18,7 @@ import type { FeatureEnv, FeatureSteps } from "@/workflow/feature-machine";
 import { FEATURE_STEPS, newFeatureRecord } from "@/workflow/feature-record";
 import { publishStep } from "@/workflow/feature-steps";
 import type { PublishOutcome } from "@/workflow/finalize";
+import type { LedgerWriteOptions } from "@/workflow/ledger";
 import type { WorkflowFeatureRecord } from "@/workflow/types";
 
 const HEAD = "abc123";
@@ -60,6 +61,8 @@ interface HarnessOpts {
 /** A publish step with only the three seams the CI repair decision reads. */
 function harness(opts: HarnessOpts = {}) {
   const ledger: string[] = [];
+  /** Every ledger write with the options it carried, so the mirroring is pinned too. */
+  const writes: { text: string; options: LedgerWriteOptions | undefined }[] = [];
   const reads: { url: string; head: string }[] = [];
   const checks = opts.checks;
   const steps: FeatureSteps = {
@@ -85,8 +88,9 @@ function harness(opts: HarnessOpts = {}) {
     steps,
     sink: {
       update: async () => {},
-      ledger: async (text) => {
+      ledger: async (text, options) => {
         ledger.push(text);
+        writes.push({ text, options });
       },
       step: () => {},
       artifact: async () => {},
@@ -98,7 +102,7 @@ function harness(opts: HarnessOpts = {}) {
     ...(opts.limits ? { limits: opts.limits } : {}),
     ...(opts.costExceeded ? { costExceeded: () => true } : {}),
   };
-  return { env, ledger, reads };
+  return { env, ledger, writes, reads };
 }
 
 /** How many CI reads the publish step made with these seams. */
@@ -273,6 +277,30 @@ describe("the CI repair decision after publish (US-006)", () => {
     expect("ciRepairFindings" in out.patch).toBe(false);
     // The control: the same seams with the reader wired do read the logs.
     expect(await readsOf({ checks: [E2E], limits: LIMITS })).toBe(1);
+  });
+});
+
+describe("the CI repair decision's ledger mirroring (US-006)", () => {
+  /** Whether the ledger write of this text is mirrored into the run log. */
+  const mirrored = (writes: readonly { text: string; options: LedgerWriteOptions | undefined }[], text: string) =>
+    writes.find((write) => write.text === text)?.options?.mirror;
+
+  test("the repair note is not mirrored", async () => {
+    const h = harness({ checks: [E2E], limits: LIMITS });
+    await publishStep(h.env, h.env.record);
+    expect(mirrored(h.writes, "CI failed: e2e (repairing)")).toBe(false);
+  });
+
+  test("the empty-list note is not mirrored", async () => {
+    const h = harness({ checks: [], limits: LIMITS });
+    await publishStep(h.env, h.env.record);
+    expect(mirrored(h.writes, `CI failed but no failed check was found for ${HEAD}`)).toBe(false);
+  });
+
+  test("the unreadable-log note is not mirrored", async () => {
+    const h = harness({ checks: new Error("nope"), limits: LIMITS });
+    await publishStep(h.env, h.env.record);
+    expect(mirrored(h.writes, "CI logs unavailable: nope")).toBe(false);
   });
 });
 

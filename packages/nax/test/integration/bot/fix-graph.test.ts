@@ -172,7 +172,9 @@ describe("BOT_FIX_GRAPH ready node", () => {
 
   test("AC-21: a marked nax-workflow draft never waits for CI", async () => {
     const env = makeBotFixDraftEnv({ body: `${NAX_WORKFLOW_PR_MARKER}\n\n## Summary` });
-    const wait = spyOn(_fixReportDeps, "waitForChecks");
+    const wait = spyOn(_fixReportDeps, "waitForChecks").mockImplementation(() => {
+      throw new Error("waitForChecks must not run on a nax-workflow PR");
+    });
     nothingRoute();
     const state = await runGraph(env);
     expect(wait).not.toHaveBeenCalled();
