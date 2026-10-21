@@ -19,6 +19,7 @@ import type { FeatureEnv, FeatureSteps } from "./feature-machine";
 import type { PublishOutcome } from "./finalize";
 import { ledgerCannotVerify } from "./gate-timing";
 import { type LedgerWriteOptions, ledgerText } from "./ledger";
+import { postItemThreadsAfterPublish } from "./publish-item-threads";
 import { absorbReReviewVerdict } from "./re-review-absorb";
 import { type RestatedMinor, splitRestatedMinors } from "./restated-minors";
 import { describeFindings, type StepModel, startStep } from "./run-log";
@@ -537,6 +538,7 @@ export async function publishStep(
   const log = featureStep("publish", false, true);
   const out = await env.steps.publish(rec);
   const head = await readHeadSoft(env);
+  await postItemThreadsAfterPublish(env, rec, out, head);
   const why = out.reasons.length > 0 ? `: ${out.reasons.join("; ")}` : "";
   log.done(`${out.outcome}${out.url ? ` ${out.url}` : ""}${why}`);
   await env.sink.ledger(ledgerText.note(`feature ${out.outcome}${out.url ? ` ${out.url}` : ""}${why}`), NO_MIRROR);

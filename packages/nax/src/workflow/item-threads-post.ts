@@ -1,4 +1,4 @@
-/** Publish owned, resolvable threads for open workflow items; index/closing are separate steps. */
+/** Publish owned item threads, maintain their durable index, and close obsolete threads. */
 import { posix } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { PROJECT_FEATURES_DIR } from "@/config";
@@ -19,6 +19,7 @@ import { getLogger } from "@/logger";
 import { _featureDeps } from "./feature-deps";
 import { readItemThreads } from "./item-thread-state";
 import { isPostable, itemKey, renderItemOpener } from "./item-threads";
+import { maintainItemIndex } from "./item-threads-index";
 import { buildOpenItems } from "./open-items";
 import type { OpenItem, WorkflowFeatureRecord } from "./types";
 
@@ -92,7 +93,7 @@ async function readContext(input: ItemThreadsInput, deps: ForgeDeps) {
     const user = await readCurrentUser(ref, deps, input.projectDir);
     const threads = await listReviewThreads(ref, deps, input.projectDir);
     const comments = await listPrComments(ref, deps, input.projectDir);
-    return { ref, info, read: readItemThreads(threads, comments, user.login) };
+    return { ref, info, login: user.login, read: readItemThreads(threads, comments, user.login) };
   } catch (error) {
     warn(input.feature, "[item-threads] Initial PR read failed; posting nothing", error);
     return null;
@@ -110,7 +111,8 @@ export async function postItemThreads(
   const context: PostingContext = { ...snapshot, deps, cwd: input.projectDir, anchor };
   const owned = new Set(snapshot.read.items.map((item) => item.key));
   const outcome = { posted: 0, closed: 0, skipped: 0, failed: 0 };
-  for (const item of buildOpenItems(input.record).filter((item) => item.kind !== "ci")) {
+  const items = buildOpenItems(input.record).filter((item) => item.kind !== "ci");
+  for (const item of items) {
     const key = itemKey(item);
     if (!isPostable(item)) {
       warn(item.id, "[item-threads] Skipping non-postable item");
@@ -124,5 +126,6 @@ export async function postItemThreads(
       outcome.failed++;
     }
   }
-  return outcome;
+  const index = await maintainItemIndex(input, items.map(itemKey), { ...snapshot, deps, cwd: input.projectDir });
+  return { ...outcome, closed: index.closed, failed: outcome.failed + index.failed };
 }

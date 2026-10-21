@@ -62,6 +62,8 @@ function harness(options: { gitlab?: boolean; failures?: number; threadsFail?: b
     readText: async () => null,
     run: async (cmd, opts) => {
       expect(opts.cwd).toBe("/repo");
+      // These tests assert item-opener mechanics; index writes have their own suite.
+      if (cmd.some((arg) => arg.includes("key=w-index"))) return ok({ id: 99 });
       if (cmd.includes("POST")) return post(cmd);
       reads.push(cmd);
       if (cmd[0] === "git")

@@ -8,9 +8,11 @@ import { runBranchReReview, runBranchReview, writeFeatureArtifact } from "./bran
 import { readCiFailuresFor } from "./ci-failures";
 import { costLimitReached } from "./cost-limit";
 import type { FeatureContext, WorkflowFeatureInput } from "./feature-context";
+import { _featureDeps } from "./feature-deps";
 import type { FeatureEnv, FeatureSink, FeatureSteps } from "./feature-machine";
 import { publish } from "./finalize";
 import { changedFilesSince, readHead } from "./git";
+import { postItemThreads } from "./item-threads-post";
 import { appendLedger, type LedgerWriteOptions } from "./ledger";
 import type { LedgerItems } from "./ledger-items";
 import type { PreflightFile } from "./preflight";
@@ -78,6 +80,8 @@ export function buildFeatureEnv(fc: FeatureContext, input: WorkflowFeatureInput,
         advisor,
         preflight: preflightFile,
       }),
+    postItemThreads: (input) =>
+      postItemThreads({ ...input, projectDir: fc.projectDir, feature: fc.feature }, _featureDeps.forge),
     head: () => readHead(fc.projectDir),
     changedFiles: (base) => changedFilesSince(fc.projectDir, base),
     // US-008: the real CI reader, so the publish step can read the failed checks of the PR it opened.
@@ -109,6 +113,7 @@ export function buildFeatureEnv(fc: FeatureContext, input: WorkflowFeatureInput,
   };
   return {
     steps,
+    itemThreadsIdentity: { projectDir: fc.projectDir, feature: fc.feature },
     sink,
     facts: { stories: ctx.stories, parked: ctx.ledgerItems.parked, cannotVerify: ctx.ledgerItems.cannotVerify },
     record: ctx.record,
