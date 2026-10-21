@@ -3,7 +3,7 @@
   "feature": "workflow-pr-rulings-review-split",
   "branchName": "feat/workflow-pr-rulings-review-split",
   "createdAt": "2026-10-21T00:00:00.000Z",
-  "updatedAt": "2026-10-21T13:59:19.747Z",
+  "updatedAt": "2026-10-21T14:13:55.783Z",
   "userStories": [
     {
       "id": "US-001",
@@ -501,14 +501,17 @@
         "US-003",
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Authorization-aware settlement with durable echoes, partial forge failures and checklist writes crosses a PR-promotion security boundary."
+        "reasoning": "Authorization-aware settlement with durable echoes, partial forge failures and checklist writes crosses a PR-promotion security boundary.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/item-thread-state.ts",
@@ -525,7 +528,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "351fca12bafe0175fca318c54bb0b98845744521"
     },
     {
       "id": "US-010",
