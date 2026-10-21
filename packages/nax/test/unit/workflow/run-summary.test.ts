@@ -87,6 +87,22 @@ describe("buildWorkflowRunSummary", () => {
     expect(view).not.toHaveProperty("gateRepairRounds");
   });
 
+  // US-008: the CI repair rounds the feature workflow spent on a failed CI.
+  test("AC-12: the record's CI repair rounds reach the view", () => {
+    const file = resultFile();
+    const rec = file.featureWorkflow;
+    if (!rec) throw new Error("fixture has a feature record");
+    const v = buildWorkflowRunSummary(
+      { ...file, featureWorkflow: { ...rec, ciRepairRounds: 2 } },
+      { storiesDurationMs: 0, featureWorkflowDurationMs: 0 },
+    );
+    expect(v?.ciRepairRounds).toBe(2);
+  });
+
+  test("AC-13: no CI repair rounds, no ciRepairRounds field", () => {
+    expect(view).not.toHaveProperty("ciRepairRounds");
+  });
+
   test("publish outcome and final gates", () => {
     expect(view?.publish).toEqual({ outcome: "local-only", reasons: ["no forge"] });
     expect(view?.finalGates).toBe("green");

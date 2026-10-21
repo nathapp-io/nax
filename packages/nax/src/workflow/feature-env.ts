@@ -5,6 +5,7 @@ import { createLiveWorkflowAdvisor, FEATURE_SCOPE } from "./advisor-live";
 import { flaggedCount } from "./approval";
 import { runBranchFix } from "./branch-fix";
 import { runBranchReReview, runBranchReview, writeFeatureArtifact } from "./branch-review";
+import { readCiFailuresFor } from "./ci-failures";
 import { costLimitReached } from "./cost-limit";
 import type { FeatureContext, WorkflowFeatureInput } from "./feature-context";
 import type { FeatureEnv, FeatureSink, FeatureSteps } from "./feature-machine";
@@ -79,6 +80,8 @@ export function buildFeatureEnv(fc: FeatureContext, input: WorkflowFeatureInput,
       }),
     head: () => readHead(fc.projectDir),
     changedFiles: (base) => changedFilesSince(fc.projectDir, base),
+    // US-008: the real CI reader, so the publish step can read the failed checks of the PR it opened.
+    readCiFailures: (input) => readCiFailuresFor(fc, input),
     // US-005: every trusted decision in the feature's ledger flagged for a human, across all its
     // runs and in ledger order. The throw is the machine's to handle: the step warns and goes on.
     flaggedDecisions: async () =>
@@ -116,6 +119,7 @@ export function buildFeatureEnv(fc: FeatureContext, input: WorkflowFeatureInput,
     limits: {
       maxBranchFixRounds: fc.workflow.maxBranchFixRounds,
       finalGateRepairRounds: fc.workflow.finalGateRepairRounds,
+      ciRepairRounds: fc.workflow.ciRepairRounds,
     },
   };
 }

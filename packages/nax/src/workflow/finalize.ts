@@ -23,6 +23,7 @@ import { buildOpenItems } from "./open-items";
 import { workflowStoryDir } from "./paths";
 import { buildWorkflowPrBody, extractAssumptions, type WorkflowPrBodyFacts } from "./pr-body";
 import type { PreflightFile } from "./preflight";
+import { repairEvidence } from "./repair-evidence";
 import { _workflowDeps } from "./step-context";
 import type { ApprovalOutcome, FeatureCiState, FeatureOutcome, StorySummary, WorkflowFeatureRecord } from "./types";
 
@@ -226,12 +227,6 @@ export function approvalEvidence(
   changed: ChangedFilesEvidence,
 ): string[] {
   const r = input.record;
-  // nax#2548: a repair commits after the re-review, so its diff reaches the PR unreviewed.
-  const repaired = r.gateRepairRounds
-    ? [
-        `Gate repair: ${r.gateRepairRounds} round(s) after the final gates went red; the repair diff was not re-reviewed`,
-      ]
-    : [];
   return [
     `Stories: ${input.stories.map((s) => `${s.id} ${s.state} (${s.rounds} round(s))`).join(", ") || "none"}`,
     `Final gates: ${r.finalGates?.ran.join(", ") || "none"}, all green`,
@@ -240,7 +235,8 @@ export function approvalEvidence(
     baseCommitLine(r.seed),
     inventoryLine(changed),
     ...minorLines(minorsLeft),
-    ...repaired,
+    // nax#2548 / US-008: a repair commits after the re-review, so its diff reaches the PR unreviewed.
+    ...repairEvidence(r),
   ];
 }
 

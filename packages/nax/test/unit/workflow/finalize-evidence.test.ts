@@ -55,6 +55,17 @@ describe("approvalEvidence", () => {
     expect(lines.some((l) => l.startsWith("Gate repair"))).toBe(false);
   });
 
+  // AC-11 (US-008): a CI repair commits after the re-review too, so its diff is unreviewed as well.
+  test("AC-11: a CI repair is named as an unreviewed diff", () => {
+    const lines = approvalEvidence({ record: { ...record, ciRepairRounds: 1 }, stories: [] }, ci, [], NO_FILES);
+    expect(lines).toContain("CI repair: 1 round(s) after CI failed on the PR; the repair diff was not re-reviewed");
+  });
+
+  test("AC-11 control: no CI repair, no CI-repair line", () => {
+    const lines = approvalEvidence({ record, stories: [] }, ci, [], NO_FILES);
+    expect(lines.some((l) => l.startsWith("CI repair"))).toBe(false);
+  });
+
   // AC-1 (nax#2567): the advisor diffs the resolved base itself; it needs the sha, not a branch name.
   test("a resolved seed is named as the diff base", () => {
     const lines = evidenceFor("abc123", { kind: "files", files: ["a.ts", "b.ts"] });
