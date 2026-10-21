@@ -116,4 +116,4 @@ directly inside a retry loop.
 
 Ruled exception (nax#2532): `workflowBranchReviewOp`'s strategy `validate` also requires full file coverage, while `op.parse` stays the lenient shape check. Coverage decides only whether to ask again, never whether the verdict is usable, so an incomplete verdict is kept. Both still share `parseBranchReviewReply` for the shape.
 
-The same exception covers `botPrReviewOp` and `botPrStaticReviewOp` (`nax bot review`): their strategy `validate` also requires every listed thread and comment id to be answered, while `op.parse` (`parsePrReviewReply`) stays the lenient shape check. Triage completeness decides only whether to ask again; a partial verdict is kept.
+The same exception covers `botPrReviewOp` and `botPrStaticReviewOp` (`nax bot review`): their strategy `validate` also requires every listed thread and comment id to be answered and every required file to be covered (`unreadFiles` over `requiredFiles` must be empty), while `op.parse` (`parsePrReviewReply`) stays the lenient shape check. Triage or coverage completeness decides only whether to ask again; a partial verdict is kept.
