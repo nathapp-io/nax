@@ -32,10 +32,20 @@ export { makeAutofixImplementerStrategy } from "./autofix-implementer-strategy";
 export type { AutofixTestWriterInput, AutofixTestWriterOutput } from "./autofix-test-writer";
 export { testWriterRectifyOp } from "./autofix-test-writer";
 export { makeAutofixTestWriterStrategy } from "./autofix-test-writer-strategy";
+export type { BotChecksExtractInput, BotChecksExtractOutput } from "./bot-checks-extract";
+export { botChecksExtractOp, parseBotChecksReply } from "./bot-checks-extract";
 export type { BotPrReviewInput } from "./bot-pr-review";
 export { botPrReviewOp, botPrStaticReviewOp } from "./bot-pr-review";
 export { missingTriage, parsePrReviewReply } from "./bot-pr-review-reply";
-export type { PrIntent, PrReviewVerdict, PrTriageDecision, PrTriageVerdict } from "./bot-types";
+export type {
+  PrEarlierStatus,
+  PrEarlierVerdict,
+  PrFinding,
+  PrIntent,
+  PrReviewVerdict,
+  PrTriageDecision,
+  PrTriageVerdict,
+} from "./bot-types";
 export type { BuildHopCallbackContext } from "./build-hop-callback";
 export { _buildHopCallbackDeps, buildHopCallback } from "./build-hop-callback";
 export { _callOpDeps, _runPostParseForTest, callOp } from "./call";

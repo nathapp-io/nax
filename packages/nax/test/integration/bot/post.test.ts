@@ -4,6 +4,7 @@ import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import type { BotReviewArtifact, PostReviewInput } from "@/bot";
 import * as bot from "@/bot";
 import type { PrComment, PrThread } from "@/forge";
+import { withNaxBotMarker } from "@/forge";
 import type { WorkflowFindingDraft } from "@/operations/workflow-types";
 
 const finding: WorkflowFindingDraft = {
@@ -77,7 +78,94 @@ afterEach(() => {
   cleanupTempDir(stateDir);
 });
 
+function withdrawalInput(authors: readonly string[] = ["alice"]): PostReviewInput {
+  const opener = { ...comment, author: "bot", body: withNaxBotMarker("**Minor** (quality): Leak", "f-original") };
+  return {
+    ...input,
+    login: "bot",
+    earlier: [{ ...thread, comments: [opener, ...authors.map((author) => ({ ...comment, author }))] }],
+    verdict: {
+      ...input.verdict,
+      findings: [],
+      earlier: [{ id: thread.id, status: "withdrawn", reason: "The ownership is intentional" }],
+    },
+  };
+}
+
 describe("postPrReview", () => {
+  test.each([
+    ["AC-1", { type: "finding-withdrawn" }],
+    ["AC-2", { key: "f-original", threadId: "T1" }],
+    ["AC-3", { file: "a.ts", line: 3 }],
+    ["AC-4", { finding: "**Minor** (quality): Leak", reason: "The ownership is intentional" }],
+    ["AC-5", { disagreedBy: ["alice"] }],
+  ])("US-009 %s: persists withdrawal details before forge writes", async (_ac, expected) => {
+    await bot.postPrReview(withdrawalInput());
+    const saved = await artifact();
+    expect(saved.events).toHaveLength(1);
+    expect(saved.events?.[0]).toMatchObject(expected);
+    expect(artifacts[0]?.events).toEqual(saved.events);
+  });
+  test("US-009 AC-7: distinct external authors retain comment order", async () => {
+    await bot.postPrReview(withdrawalInput(["bot", "alice", "bob", "alice", "bot"]));
+    expect((await artifact()).events?.[0]?.disagreedBy).toEqual(["alice", "bob"]);
+  });
+  test.each(["own-only", "fixed", "re-raised", "no-login", "open", "missing-verdict"] as const)(
+    "US-009 suppresses events for %s (AC-6/8/9/10)",
+    async (scenario) => {
+      let review = withdrawalInput(scenario === "own-only" ? ["bot"] : ["alice"]);
+      if (scenario === "no-login") review = { ...review, login: undefined };
+      if (scenario === "fixed" || scenario === "open") {
+        review = {
+          ...review,
+          verdict: { ...review.verdict, earlier: [{ id: thread.id, status: scenario, reason: "Done" }] },
+        };
+      }
+      if (scenario === "missing-verdict") review = { ...review, verdict: { ...review.verdict, earlier: [] } };
+      if (scenario === "re-raised") {
+        const key = bot.findingKey(finding);
+        review = {
+          ...review,
+          earlier: [
+            {
+              ...thread,
+              comments: [{ ...comment, author: "bot", body: withNaxBotMarker("Old finding", key) }, comment],
+            },
+          ],
+          verdict: { ...review.verdict, findings: [finding] },
+        };
+      }
+      await bot.postPrReview(review);
+      expect((await artifact()).events).toEqual([]);
+    },
+  );
+  test.each([
+    {
+      source: "detected",
+      gates: [{ name: "test", command: "bun run test" }],
+      preRun: [{ command: "bun install", timeoutSeconds: 600 }],
+    },
+    null,
+    undefined,
+  ] satisfies (bot.BotChecks | null | undefined)[])("v2 persists checks %j (US-007 AC-2/3/4)", async (checks) => {
+    await bot.postPrReview({ ...input, ...(checks === undefined ? {} : { checks }) });
+    expect(await artifact()).toHaveProperty("checks", checks ?? null);
+  });
+  test("v2 has empty events with no earlier threads (US-007 AC-5)", async () => {
+    await bot.postPrReview({ ...input, threads: [] });
+    expect(await artifact()).toHaveProperty("events", []);
+  });
+  test.each(["D-1", undefined])("v2 carries only supplied finding decisions: %s (US-007 AC-6/7)", async (decision) => {
+    const findings = [{ ...finding, ...(decision === undefined ? {} : { decision }) }];
+    await bot.postPrReview({ ...input, verdict: { ...input.verdict, findings } });
+    const agreed = (await artifact()).agreed[0];
+    if (decision === undefined) expect(agreed).not.toHaveProperty("decision");
+    else expect(agreed).toHaveProperty("decision", decision);
+  });
+  test("static reviews persist null checks even when supplied", async () => {
+    await bot.postPrReview({ ...input, staticMode: true, checks: { source: "detected", gates: [], preRun: [] } });
+    expect(await artifact()).toHaveProperty("checks", null);
+  });
   test("an off-line finding does not consume the inline dedupe key", async () => {
     const outcome = await bot.postPrReview({
       ...input,
@@ -112,7 +200,7 @@ describe("postPrReview", () => {
   test("AC-1: persists artifact before the first forge write", async () => {
     await bot.postPrReview(input);
     expect(artifacts[0]).toMatchObject({
-      version: 1,
+      version: 2,
       pr: input.ref,
       headSha: input.info.headSha,
       trusted: true,
@@ -277,7 +365,14 @@ describe("postPrReview", () => {
       },
       own: [{ key: bot.findingKey(second), comment: { ...comment, kind: "thread" } }],
     });
-    expect(result).toEqual({ inlineFindings: 2, threadsAnswered: 0, commentsAnswered: 1, offLine: 0, failed: 0 });
+    expect(result).toEqual({
+      earlierAnswered: 0,
+      inlineFindings: 2,
+      threadsAnswered: 0,
+      commentsAnswered: 1,
+      offLine: 0,
+      failed: 0,
+    });
   });
   test("summary failure propagates after artifact and inline writes", async () => {
     const failing = mock(async (argv: string[], opts: { cwd: string }) =>

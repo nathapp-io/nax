@@ -37,6 +37,13 @@ async function writeReview(dir: string, run: string, content: unknown, time: num
 }
 
 describe("loadLatestReview", () => {
+  test.each([1, 2] as const)("US-007 AC-8/9 loads exact-head version %i with fields intact", async (version) => {
+    const dir = temp();
+    const review = { ...artifact("h1"), version, ...(version === 2 ? { checks: null, events: [] } : {}) };
+    await writeReview(dir, "only", review, 100);
+    expect(await bot.loadLatestReview(dir, 42, "h1")).toEqual(review);
+    expect(await bot.loadLatestReview(dir, 42, "other")).toBeNull();
+  });
   test("AC-1 returns the newest exact-head artifact regardless of trusted", async () => {
     const dir = temp();
     await writeReview(dir, "old", artifact("h1"), 100);
@@ -52,7 +59,7 @@ describe("loadLatestReview", () => {
   test.each([
     ["AC-3 malformed JSON", "{bad"],
     ["AC-4 missing version", { headSha: "h1" }],
-    ["unsupported version", { version: 2, headSha: "h1" }],
+    ["US-007 AC-10 unsupported version", { version: 3, headSha: "h1" }],
     ["null JSON", "null"],
   ])("ignores %s", async (_label, content) => {
     const dir = temp();
@@ -61,6 +68,39 @@ describe("loadLatestReview", () => {
   });
   test("AC-5 returns null without the PR directory", async () => {
     expect(await bot.loadLatestReview(temp(), 42, "h1")).toBeNull();
+  });
+  test("saved-checks round trip keeps a command list with blank entries", async () => {
+    const dir = temp();
+    const review: bot.BotReviewArtifact = {
+      ...artifact("h1"),
+      version: 2,
+      checks: {
+        source: "config",
+        gates: [{ name: "test", command: ["bun run test", ""] }],
+        preRun: [],
+      },
+      events: [],
+    };
+    await writeReview(dir, "only", review, 100);
+    expect(await bot.loadLatestReview(dir, 42, "h1")).toEqual(review);
+  });
+  test.each([
+    ["all entries blank", ["", " "]],
+    ["empty list", [] as string[]],
+  ])("saved-checks round trip rejects a command list with %s", async (_label, command) => {
+    const dir = temp();
+    await writeReview(
+      dir,
+      "only",
+      {
+        ...artifact("h1"),
+        version: 2,
+        checks: { source: "config", gates: [{ name: "test", command }], preRun: [] },
+        events: [],
+      },
+      100,
+    );
+    expect(await bot.loadLatestReview(dir, 42, "h1")).toBeNull();
   });
 });
 

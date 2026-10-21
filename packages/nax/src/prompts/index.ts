@@ -22,11 +22,13 @@ export { AdversarialReviewPromptBuilder } from "./builders/adversarial-review-bu
 export { type AdvisorBatchPromptInput, buildAdvisorBatchPrompt } from "./builders/advisor-batch-builder";
 // Fix-review prompt builder — verdict-only review of a fix's own delta (ADR-033).
 export { type AdvisorPromptInput, buildAdvisorPrompt } from "./builders/advisor-builder";
+export { type BotChecksExtractPromptInput, buildBotChecksExtractPrompt } from "./builders/bot-checks-extract-builder";
 export {
   type BotPrReviewPromptInput,
   buildBotPrReviewPrompt,
   buildBotTriageRetry,
   buildUntrustedRequestIssue,
+  MAX_EARLIER_THREADS,
 } from "./builders/bot-pr-review-builder";
 export type { DecomposePromptInput } from "./builders/decompose-builder";
 // Decompose prompt builder — prompt assembly for nax plan / decompose operations.

@@ -2,12 +2,23 @@ import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import type { ForgeDeps, OwnComment, PrComment, PrInfo, PrRef, PrThread } from "@/forge";
-import { editComment, postInlineComment, postPrComment, replyToThread } from "@/forge";
+import {
+  editComment,
+  NAX_BOT_HEADER,
+  ownComments,
+  parseNaxBotMarker,
+  postInlineComment,
+  postPrComment,
+  replyToThread,
+  resolveThread,
+  stripNaxBotMarkers,
+} from "@/forge";
 import { getLogger } from "@/logger";
 import type { PrReviewVerdict } from "@/operations/bot-types";
 import type { WorkflowFindingDraft, WorkflowSeverity } from "@/operations/workflow-types";
-import { commentKey, findingKey, threadKey } from "./render";
-import { renderFindingComment, renderReviewSummary, renderThreadReply } from "./render-comments";
+import type { BotChecks } from "./checks";
+import { commentKey, earlierKey, findingKey, threadKey } from "./render";
+import { renderEarlierReply, renderFindingComment, renderReviewSummary, renderThreadReply } from "./render-comments";
 
 interface AgreedBase {
   readonly key: string;
@@ -19,7 +30,12 @@ interface AgreedLocation {
 }
 export type AgreedItem =
   | (AgreedBase &
-      AgreedLocation & { readonly kind: "finding"; readonly severity: WorkflowSeverity; readonly suggestion?: string })
+      AgreedLocation & {
+        readonly kind: "finding";
+        readonly severity: WorkflowSeverity;
+        readonly suggestion?: string;
+        readonly decision?: string;
+      })
   | (AgreedBase &
       AgreedLocation & {
         readonly kind: "thread";
@@ -29,8 +45,22 @@ export type AgreedItem =
       })
   | (AgreedBase & { readonly kind: "comment"; readonly reason: string });
 
+export interface BotReviewEvent {
+  readonly type: "finding-withdrawn";
+  readonly key: string;
+  readonly threadId: string;
+  readonly file?: string;
+  readonly line?: number;
+  readonly finding: string;
+  readonly reason: string;
+  /** Unverified forge logins; consumers must check artifact trust and commenter permissions. */
+  readonly disagreedBy: readonly string[];
+}
+
 export interface BotReviewArtifact {
-  readonly version: 1;
+  readonly version: 1 | 2;
+  readonly checks?: BotChecks | null;
+  readonly events?: readonly BotReviewEvent[];
   readonly pr: PrRef;
   readonly headSha: string;
   /** Diagnostic only; not an authorization decision for fixes. */
@@ -40,6 +70,10 @@ export interface BotReviewArtifact {
   readonly agreed: readonly AgreedItem[];
 }
 export interface PostReviewInput {
+  readonly preRunFailed?: string;
+  readonly earlier?: readonly PrThread[];
+  readonly login?: string;
+  readonly checks?: BotChecks | null;
   readonly ref: PrRef;
   readonly info: PrInfo;
   readonly verdict: PrReviewVerdict;
@@ -53,6 +87,7 @@ export interface PostReviewInput {
   readonly cwd: string;
 }
 export interface PostReviewOutcome {
+  readonly earlierAnswered: number;
   readonly inlineFindings: number;
   readonly threadsAnswered: number;
   readonly commentsAnswered: number;
@@ -60,13 +95,15 @@ export interface PostReviewOutcome {
   readonly failed: number;
 }
 
+export const BOT_REVIEW_FILENAME = "bot-review.json";
+
 export const _postDeps = {
   writeArtifact: (path: string, artifact: BotReviewArtifact): Promise<number> =>
     Bun.write(path, `${JSON.stringify(artifact, null, 2)}\n`),
 };
 
 function agreedItems(input: PostReviewInput): AgreedItem[] {
-  const items: AgreedItem[] = input.verdict.findings.map(({ severity, issue, file, line, suggestion }) => ({
+  const items: AgreedItem[] = input.verdict.findings.map(({ severity, issue, file, line, suggestion, decision }) => ({
     key: findingKey({ file, issue }),
     kind: "finding",
     severity,
@@ -74,6 +111,7 @@ function agreedItems(input: PostReviewInput): AgreedItem[] {
     file,
     line,
     suggestion,
+    ...(decision === undefined ? {} : { decision }),
   }));
   for (const verdict of input.verdict.threads) {
     if (verdict.decision !== "agree") continue;
@@ -96,12 +134,119 @@ function agreedItems(input: PostReviewInput): AgreedItem[] {
     if (!comment) continue;
     items.push({ key: commentKey(comment.id), kind: "comment", issue: comment.body, reason: verdict.reason });
   }
+  return mergeEarlier(input, items);
+}
+
+function mergeEarlier(input: PostReviewInput, items: AgreedItem[]): AgreedItem[] {
+  const seen = new Set(items.map(({ key }) => key));
+  for (const { thread, key, verdict } of effectiveEarlier(input)) {
+    if (verdict?.status !== undefined && verdict.status !== "open") continue;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const issue = earlierIssue(thread);
+    const severity = issue.startsWith("**Critical**")
+      ? "critical"
+      : issue.startsWith("**Minor**")
+        ? "minor"
+        : "important";
+    items.push({ kind: "finding", key, issue, severity, file: thread.path, line: thread.line });
+  }
   return items;
+}
+
+/** Keep absent verdicts and re-raised findings open, including threads beyond the prompt cap. */
+function effectiveEarlier(input: PostReviewInput) {
+  const raised = new Set(input.verdict.findings.map(findingKey));
+  return (input.earlier ?? []).flatMap((thread) => {
+    const first = thread.comments[0];
+    const key = parseNaxBotMarker(first?.body ?? "")?.key;
+    // Selection supplies own finding threads; defend against a foreign opener when login is available.
+    if (!key?.startsWith("f-") || (input.login !== undefined && first?.author !== input.login)) return [];
+    const verdict = raised.has(key) ? undefined : input.verdict.earlier?.find(({ id }) => id === thread.id);
+    return [{ thread, key, verdict }];
+  });
+}
+
+function earlierIssue(thread: PrThread): string {
+  return stripNaxBotMarkers(thread.comments[0]?.body ?? "")
+    .split("\n")
+    .filter((line) => line.trim() !== NAX_BOT_HEADER)
+    .join("\n")
+    .trim();
+}
+
+function warnSkippedEarlier(input: PostReviewInput, handledIds: readonly string[]): void {
+  for (const thread of input.earlier ?? []) {
+    if (handledIds.includes(thread.id)) continue;
+    const marker = parseNaxBotMarker(thread.comments[0]?.body ?? "");
+    const reason = !marker ? "missing-marker" : !marker.key.startsWith("f-") ? "not-finding" : "foreign-author";
+    getLogger()?.warn("bot-post", "Skipping invalid earlier finding thread", {
+      threadId: thread.id,
+      login: input.login,
+      reason,
+    });
+  }
+}
+
+async function postEarlier(input: PostReviewInput): Promise<{ earlierAnswered: number; failed: number }> {
+  let failed = 0;
+  const earlier = effectiveEarlier(input);
+  warnSkippedEarlier(
+    input,
+    earlier.map(({ thread }) => thread.id),
+  );
+  for (const { thread, verdict } of earlier) {
+    if (!verdict || verdict.status === "open") continue;
+    const own = [
+      ...input.own,
+      ...(input.login === undefined ? [] : ownComments(thread.comments, input.login, thread.id)),
+    ].find((comment) => comment.key === earlierKey(thread.id) && comment.threadId === thread.id);
+    let action = "reply";
+    try {
+      const body = renderEarlierReply(verdict, thread.id);
+      if (own) await editComment(input.ref, own.comment, body, input.deps, input.cwd);
+      else await replyToThread(input.ref, thread, body, input.deps, input.cwd);
+      action = "resolve";
+      await resolveThread(input.ref, thread, input.deps, input.cwd);
+    } catch (cause) {
+      failed++;
+      getLogger()?.warn("bot-post", `Earlier finding ${action} failed`, {
+        threadId: thread.id,
+        error: errorMessage(cause),
+      });
+    }
+  }
+  return { earlierAnswered: earlier.length, failed };
+}
+
+function withdrawalEvents(input: PostReviewInput): BotReviewEvent[] {
+  if (input.login === undefined) return [];
+  return effectiveEarlier(input).flatMap(({ thread, key, verdict }) => {
+    if (verdict?.status !== "withdrawn") return [];
+    const disagreedBy = [
+      ...new Set(thread.comments.map(({ author }) => author).filter((author) => author !== input.login)),
+    ];
+    if (disagreedBy.length === 0) return [];
+    return [
+      {
+        type: "finding-withdrawn" as const,
+        key,
+        threadId: thread.id,
+        file: thread.path,
+        line: thread.line,
+        finding: earlierIssue(thread),
+        reason: verdict.reason,
+        disagreedBy,
+      },
+    ];
+  });
 }
 
 async function persistArtifact(input: PostReviewInput): Promise<void> {
   const artifact: BotReviewArtifact = {
-    version: 1,
+    version: 2,
+    checks: input.staticMode ? null : (input.checks ?? null),
+    events: withdrawalEvents(input),
     pr: input.ref,
     headSha: input.info.headSha,
     trusted: !input.staticMode,
@@ -110,7 +255,7 @@ async function persistArtifact(input: PostReviewInput): Promise<void> {
     agreed: agreedItems(input),
   };
   try {
-    await _postDeps.writeArtifact(join(input.stateDir, "bot-review.json"), artifact);
+    await _postDeps.writeArtifact(join(input.stateDir, BOT_REVIEW_FILENAME), artifact);
   } catch (cause) {
     throw new NaxError(
       `[bot-post] Cannot persist review for ${input.ref.repo}#${input.ref.number}`,
@@ -137,9 +282,10 @@ async function writeFinding(input: PostReviewInput, finding: WorkflowFindingDraf
 
 async function postFindings(
   input: PostReviewInput,
-): Promise<{ inlineFindings: number; offLine: WorkflowFindingDraft[] }> {
+): Promise<{ inlineFindings: number; offLine: WorkflowFindingDraft[]; minor: WorkflowFindingDraft[] }> {
   const seen = new Set<string>();
   const offLine: WorkflowFindingDraft[] = [];
+  const minor: WorkflowFindingDraft[] = [];
   let inlineFindings = 0;
   for (const finding of input.verdict.findings) {
     if (!finding.file || finding.line === undefined) {
@@ -149,6 +295,10 @@ async function postFindings(
     const key = findingKey(finding);
     if (seen.has(key)) continue;
     seen.add(key);
+    if (finding.severity === "minor" && !input.own.some((own) => own.key === key)) {
+      minor.push(finding);
+      continue;
+    }
     try {
       await writeFinding(input, finding);
       inlineFindings++;
@@ -159,7 +309,7 @@ async function postFindings(
       offLine.push(finding);
     }
   }
-  return { inlineFindings, offLine };
+  return { inlineFindings, offLine, minor };
 }
 
 async function postThreads(input: PostReviewInput): Promise<{ threadsAnswered: number; failed: number }> {
@@ -186,6 +336,12 @@ async function postThreads(input: PostReviewInput): Promise<{ threadsAnswered: n
   return { threadsAnswered, failed };
 }
 
+function earlierCounts(input: PostReviewInput): { open: number; fixed: number; withdrawn: number } {
+  const counts = { open: 0, fixed: 0, withdrawn: 0 };
+  for (const { verdict } of effectiveEarlier(input)) counts[verdict?.status ?? "open"]++;
+  return counts;
+}
+
 async function postSummary(
   input: PostReviewInput,
   findings: Awaited<ReturnType<typeof postFindings>>,
@@ -195,6 +351,9 @@ async function postSummary(
     headSha: input.info.headSha,
     intent: input.verdict.intent,
     quality: input.verdict.quality,
+    earlier: earlierCounts(input),
+    checks: input.staticMode ? null : input.checks,
+    preRunFailed: input.preRunFailed,
     ...findings,
     ...threads,
     commentVerdicts: input.verdict.comments.map((verdict) => ({
@@ -215,10 +374,14 @@ export async function postPrReview(input: PostReviewInput): Promise<PostReviewOu
   await persistArtifact(input);
   const findings = await postFindings(input);
   const threads = await postThreads(input);
-  await postSummary(input, findings, threads);
+  const earlier = await postEarlier(input);
+  const failed = threads.failed + earlier.failed;
+  await postSummary(input, findings, { ...threads, failed });
   return {
     inlineFindings: findings.inlineFindings,
     ...threads,
+    earlierAnswered: earlier.earlierAnswered,
+    failed,
     commentsAnswered: input.verdict.comments.length,
     offLine: findings.offLine.length,
   };

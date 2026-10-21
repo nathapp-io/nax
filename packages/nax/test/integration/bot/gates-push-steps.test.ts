@@ -14,45 +14,47 @@ const commands = (): GateCommand[] => [
   { name: "e2e", command: "journey-command", setup: "setup-command", cwd: "/snapshot" },
 ];
 
-function fakeGates(passed = true, resolved = commands()) {
-  const resolve = mock(async () => resolved);
+function fakeGates(passed = true) {
   const run = mock(async () => ({ passed, failing: passed ? [] : ["test"], ran: ["test", "e2e"], output: "" }));
-  bot._fixStepsDeps.resolveGateCommands = resolve;
   bot._fixStepsDeps.runQualityGates = run;
-  return { resolve, run };
+  return run;
+}
+function gateEnv() {
+  const env = makeBotFixEnv();
+  return { ...env, checks: { ...env.checks, gates: commands() } };
 }
 
 describe("gatesStep", () => {
-  test("AC-1/2/3 resolves only snapshot root gates and runs every command in the worktree", async () => {
-    const resolved = commands();
-    const { resolve, run } = fakeGates(true, resolved);
-    const env = makeBotFixEnv();
+  test("checks AC-14 runs saved test command in worktree", async () => {
+    const run = fakeGates();
+    const base = makeBotFixEnv();
+    const env = { ...base, checks: { ...base.checks, gates: [{ name: "test", command: "npm run test" }] } };
+    expect(await bot.gatesStep(env, state())).toEqual({ exit: "passed", patch: {} });
+    expect(run).toHaveBeenCalledWith(env.checkout.worktree, [
+      { name: "test", command: "npm run test", cwd: env.checkout.worktree },
+    ]);
+  });
+  test("runs arrays and setup commands with worktree cwd without mutating saved gates", async () => {
+    const run = fakeGates();
+    const env = gateEnv();
     await bot.gatesStep(env, state());
-    expect(resolve).toHaveBeenCalledTimes(1);
-    expect(resolve).toHaveBeenCalledWith(env.checkout.snapshotDir, []);
-    expect(run).toHaveBeenCalledTimes(1);
     expect(run).toHaveBeenCalledWith(
       env.checkout.worktree,
-      resolved.map((gate) => ({ ...gate, cwd: env.checkout.worktree })),
+      commands().map((gate) => ({ ...gate, cwd: env.checkout.worktree })),
     );
-    expect(resolved.map((gate) => gate.cwd)).toEqual(["/snapshot", "/snapshot"]);
+    expect(env.checks.gates).toEqual(commands());
   });
-  test("AC-4/5/6 nothing configured skips the runner and reports no-gates", async () => {
-    const { run } = fakeGates(true, []);
-    const result = await bot.gatesStep(makeBotFixEnv(), state());
+  test("checks AC-15 empty gates skips runner and reports no-gates", async () => {
+    const run = fakeGates();
+    expect(await bot.gatesStep(makeBotFixEnv(), state())).toEqual({ exit: "no-gates", patch: { outcome: "no-gates" } });
     expect(run).not.toHaveBeenCalled();
-    expect(result).toEqual({ exit: "no-gates", patch: { outcome: "no-gates" } });
   });
-  test("AC-7/8/9 red gates report failure and failing names", async () => {
+  test("red gates report failure and failing names", async () => {
     fakeGates(false);
-    expect(await bot.gatesStep(makeBotFixEnv(), state())).toEqual({
+    expect(await bot.gatesStep(gateEnv(), state())).toEqual({
       exit: "failed",
       patch: { failingGates: ["test"], outcome: "gates-failed" },
     });
-  });
-  test("AC-10 green gates return passed without claiming a push", async () => {
-    fakeGates();
-    expect(await bot.gatesStep(makeBotFixEnv(), state())).toEqual({ exit: "passed", patch: {} });
   });
 });
 

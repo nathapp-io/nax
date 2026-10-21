@@ -1,8 +1,8 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { lstat, symlink } from "node:fs/promises";
 import { join } from "node:path";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { changedPaths, type PrCheckout, preparePrCheckout } from "@/bot/checkout";
+import { cleanupTempDir, makeLogger, makeTempDir } from "@test/helpers";
+import { _checkoutDeps, changedPaths, type PrCheckout, preparePrCheckout } from "@/bot/checkout";
 import { resolveFeatureSpec } from "@/cli/features-resolve";
 import { featureDir } from "@/config";
 import type { PrInfo, PrRef } from "@/forge";
@@ -26,7 +26,7 @@ async function commit(): Promise<string> {
   await git(["commit", "-m", "fixture"]);
   return git(["rev-parse", "HEAD"]);
 }
-async function prepare(pinBaseFiles = false): Promise<PrCheckout> {
+async function prepare(pinBaseFiles = false, suffix = "test"): Promise<PrCheckout> {
   const headSha = await git(["rev-parse", "HEAD"]);
   await git(["update-ref", "refs/pull/42/head", headSha]);
   const info: PrInfo = {
@@ -42,7 +42,7 @@ async function prepare(pinBaseFiles = false): Promise<PrCheckout> {
     headSha,
     crossRepo: true,
   };
-  checkout = await preparePrCheckout({ repoRoot: repo, ref, info, suffix: "test", pinBaseFiles });
+  checkout = await preparePrCheckout({ repoRoot: repo, ref, info, suffix, pinBaseFiles });
   return checkout;
 }
 beforeEach(async () => {
@@ -59,8 +59,64 @@ beforeEach(async () => {
 afterEach(async () => {
   await checkout?.dispose();
   cleanupTempDir(repo);
+  mock.restore();
 });
 
+describe("preparePrCheckout parent cleanup and reservation", () => {
+  test("US-013 AC-9/11 removes the empty parent only through rmdir", async () => {
+    const prepared = await prepare();
+    const remove = spyOn(_checkoutDeps, "rmdir");
+    const recursiveRemove = spyOn(_checkoutDeps, "rm");
+    await prepared.dispose();
+    checkout = undefined;
+    const parent = join(repo, ".nax-wt");
+    expect(remove).toHaveBeenCalledWith(parent);
+    expect(recursiveRemove).not.toHaveBeenCalledWith(parent);
+    await expect(lstat(parent)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+  test("US-013 AC-10 preserves another active checkout", async () => {
+    const first = await prepare();
+    const second = await prepare(false, "other");
+    await first.dispose();
+    expect((await lstat(join(repo, ".nax-wt"))).isDirectory()).toBe(true);
+    expect(await git(["rev-parse", "HEAD"], second.worktree)).toBe(await git(["rev-parse", "HEAD"]));
+  });
+  test.each(["ENOTEMPTY", "EEXIST", "ENOENT"])("US-013 AC-16 ignores parent rmdir %s without warning", async (code) => {
+    const prepared = await prepare();
+    const logger = makeLogger();
+    const warn = spyOn(logger, "warn");
+    spyOn(_checkoutDeps, "getLogger").mockReturnValue(logger);
+    const remove = spyOn(_checkoutDeps, "rmdir").mockRejectedValue(Object.assign(new Error(code), { code }));
+    await prepared.dispose();
+    checkout = undefined;
+    expect(remove).toHaveBeenCalledWith(join(repo, ".nax-wt"));
+    expect(warn).not.toHaveBeenCalled();
+  });
+  test("US-013 AC-12 retries a reservation lost to parent cleanup once", async () => {
+    const reserve = _checkoutDeps.reserveWorktree;
+    const calls = spyOn(_checkoutDeps, "reserveWorktree")
+      .mockRejectedValueOnce(Object.assign(new Error("parent vanished"), { code: "ENOENT" }))
+      .mockImplementationOnce(reserve);
+    const prepared = await prepare();
+    expect(calls).toHaveBeenCalledTimes(2);
+    expect(calls.mock.calls[0]).toEqual(calls.mock.calls[1]);
+    expect(await git(["rev-parse", "HEAD"], prepared.worktree)).toBe(await git(["rev-parse", "HEAD"]));
+  });
+  test("US-013 AC-13 never retries a reservation collision", async () => {
+    const error = Object.assign(new Error("collision"), { code: "EEXIST" });
+    const reserve = spyOn(_checkoutDeps, "reserveWorktree").mockRejectedValue(error);
+    await expect(prepare()).rejects.toBe(error);
+    expect(reserve).toHaveBeenCalledTimes(1);
+  });
+  test("US-013 AC-17 propagates the second reservation failure", async () => {
+    const second = Object.assign(new Error("second failure"), { code: "ENOENT" });
+    const reserve = spyOn(_checkoutDeps, "reserveWorktree")
+      .mockRejectedValueOnce(Object.assign(new Error("first failure"), { code: "ENOENT" }))
+      .mockRejectedValueOnce(second);
+    await expect(prepare()).rejects.toBe(second);
+    expect(reserve).toHaveBeenCalledTimes(2);
+  });
+});
 describe("preparePrCheckout", () => {
   test("B4: a suffix collision never deletes a retained checkout or recovery work", async () => {
     const retained = await prepare();

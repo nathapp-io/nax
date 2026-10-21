@@ -1,9 +1,11 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import type { PostReviewInput } from "@/bot";
 import * as bot from "@/bot";
 import type { PrComment, PrThread } from "@/forge";
+import { NAX_BOT_HEADER, withNaxBotMarker } from "@/forge";
+import { initLogger, resetLogger } from "@/logger";
 
 const comment: PrComment = { id: "12", kind: "thread", author: "alice", body: "Fix this", createdAt: "" };
 const threads: PrThread[] = ["T1", "T2", "T3"].map((id, index) => ({
@@ -22,7 +24,7 @@ let stateDir: string;
 let failEndpoint: string | undefined;
 const run = mock(async (argv: string[], _opts: { cwd: string }) => {
   expect(await Bun.file(join(stateDir, "bot-review.json")).json()).toMatchObject({
-    version: 1,
+    version: 2,
     headSha: "abc1234ffff",
   });
   return argv.includes(failEndpoint ?? "never")
@@ -74,6 +76,65 @@ beforeEach(() => {
   };
 });
 afterEach(() => cleanupTempDir(stateDir));
+
+describe("postPrReview minor findings and readiness", () => {
+  const finding = {
+    kind: "quality",
+    severity: "minor",
+    issue: "Small leak",
+    file: "a.ts",
+    line: 3,
+    decision: "D-1",
+  } as const;
+  beforeEach(() => {
+    input = { ...input, verdict: { ...input.verdict, threads: [], findings: [finding] } };
+  });
+  test("US-010 AC-1/5/17: new minor is summary-only and remains agreed with its decision", async () => {
+    const result = await bot.postPrReview(input);
+    expect(run.mock.calls).toHaveLength(1);
+    expect(run.mock.calls[0]?.[0]).toContain(summaryEndpoint);
+    expect(result.inlineFindings).toBe(0);
+    expect(summaryBody()).toContain("### Minor findings\n- **Minor** `a.ts:3` Small leak");
+    const artifact: bot.BotReviewArtifact = await Bun.file(join(stateDir, "bot-review.json")).json();
+    expect(artifact.agreed).toMatchObject([
+      { kind: "finding", severity: "minor", issue: finding.issue, decision: "D-1" },
+    ]);
+  });
+  test("US-010 AC-2: existing minor is edited and counted inline", async () => {
+    const result = await bot.postPrReview({ ...input, own: [{ key: bot.findingKey(finding), comment }] });
+    expect(result.inlineFindings).toBe(1);
+    expect(run.mock.calls[0]?.[0]).toContain("PATCH");
+    expect(run.mock.calls[0]?.[0]).toContain(`body=${bot.renderFindingComment(finding)}`);
+    expect(summaryBody()).not.toContain("### Minor findings");
+  });
+  test("US-010 AC-3: minor without a line stays off-line", async () => {
+    const result = await bot.postPrReview({
+      ...input,
+      verdict: { ...input.verdict, findings: [{ ...finding, line: undefined }] },
+    });
+    expect(result.offLine).toBe(1);
+    expect(summaryBody()).toContain("### Findings not on a changed line\n- **Minor** `a.ts` Small leak");
+    expect(summaryBody()).not.toContain("### Minor findings");
+  });
+  test("US-010 AC-4: critical findings still post inline", async () => {
+    const result = await bot.postPrReview({
+      ...input,
+      verdict: { ...input.verdict, findings: [{ ...finding, severity: "critical" }] },
+    });
+    expect(result.inlineFindings).toBe(1);
+    expect(run.mock.calls[0]?.[0]).toContain("repos/o/r/pulls/7/comments");
+    expect(run.mock.calls[0]?.[0]).toContain("POST");
+  });
+  test("US-010 AC-16/19: summary receives checks and install failure", async () => {
+    await bot.postPrReview({
+      ...input,
+      checks: { source: "config", gates: [{ name: "lint", command: "bun run lint" }], preRun: [] },
+      preRunFailed: "npm ci",
+    });
+    expect(summaryBody()).toContain("Checks (.nax/config.json): bun run lint.");
+    expect(summaryBody()).toContain("Install step failed (npm ci); checks may not have run.");
+  });
+});
 
 describe("postPrReview thread publication", () => {
   test("AC-1: posts a marked reply to the verdict's thread", async () => {
@@ -158,7 +219,14 @@ describe("postPrReview thread publication", () => {
       own: [{ key: bot.threadKey("T1"), threadId: "T1", comment }],
       verdict: { ...input.verdict, comments: [{ id: "12", decision: "disagree", reason: "Out of scope" }] },
     });
-    expect(result).toEqual({ inlineFindings: 0, threadsAnswered: 2, commentsAnswered: 1, offLine: 0, failed: 0 });
+    expect(result).toEqual({
+      earlierAnswered: 0,
+      inlineFindings: 0,
+      threadsAnswered: 2,
+      commentsAnswered: 1,
+      offLine: 0,
+      failed: 0,
+    });
     expect(summaryBody().split("\n")[3]).toBe("0 inline findings, 2 threads answered, 1 comments answered.");
     expect(summaryBody()).toContain("alice: Disagree — Out of scope");
     expect(run.mock.calls).toHaveLength(3);
@@ -190,7 +258,7 @@ describe("postPrReview thread publication", () => {
   test("AC-15: distinct posted and edited inline findings still count with no threads", async () => {
     const findings = ["First", "Second"].map((issue) => ({
       kind: "quality" as const,
-      severity: "minor" as const,
+      severity: "important" as const,
       issue,
       file: "a.ts",
       line: 3,
@@ -200,8 +268,230 @@ describe("postPrReview thread publication", () => {
       verdict: { ...input.verdict, threads: [], findings },
       own: [{ key: bot.findingKey(findings[1]), comment }],
     });
-    expect(result).toEqual({ inlineFindings: 2, threadsAnswered: 0, commentsAnswered: 0, offLine: 0, failed: 0 });
+    expect(result).toEqual({
+      earlierAnswered: 0,
+      inlineFindings: 2,
+      threadsAnswered: 0,
+      commentsAnswered: 0,
+      offLine: 0,
+      failed: 0,
+    });
     expect(run.mock.calls[0]?.[0]).toContain("POST");
     expect(run.mock.calls[1]?.[0]).toContain("PATCH");
+  });
+});
+
+describe("postPrReview earlier findings", () => {
+  const key = "f-earlier";
+  const earlier: PrThread = {
+    ...threads[0],
+    path: "old.ts",
+    line: 17,
+    comments: [{ ...comment, author: "bot", body: withNaxBotMarker("**Minor** (quality): Leak", key) }],
+  };
+  async function agreed() {
+    const artifact: bot.BotReviewArtifact = await Bun.file(join(stateDir, "bot-review.json")).json();
+    return artifact.agreed;
+  }
+  beforeEach(() => {
+    input = {
+      ...input,
+      login: "bot",
+      earlier: [earlier],
+      verdict: {
+        ...input.verdict,
+        threads: [],
+        earlier: [{ id: "T1", status: "open", reason: "Still leaks" }],
+      },
+    };
+  });
+  test.each([
+    ["missing-marker", "unmarked", "bot"],
+    ["not-finding", withNaxBotMarker("body", "t-thread"), "bot"],
+    ["foreign-author", withNaxBotMarker("body", "f-finding"), "alice"],
+  ])("invalid earlier selection warns (%s) without claiming it answered", async (reason, body, author) => {
+    const warn = spyOn(initLogger({ level: "silent" }), "warn");
+    try {
+      const result = await bot.postPrReview({
+        ...input,
+        earlier: [{ ...earlier, comments: [{ ...comment, body, author }] }],
+      });
+      expect(result.earlierAnswered).toBe(0);
+      expect(warn).toHaveBeenCalledWith("bot-post", "Skipping invalid earlier finding thread", {
+        threadId: "T1",
+        login: "bot",
+        reason,
+      });
+    } finally {
+      warn.mockRestore();
+      resetLogger();
+    }
+  });
+  test("US-008 AC-1/2/3/4/5: retains the marked open finding and location without a thread write", async () => {
+    await bot.postPrReview(input);
+    expect(await agreed()).toEqual([
+      { kind: "finding", key, issue: "**Minor** (quality): Leak", severity: "minor", file: "old.ts", line: 17 },
+    ]);
+    expect(run.mock.calls).toHaveLength(1);
+    expect(run.mock.calls[0]?.[0]).toContain(summaryEndpoint);
+  });
+  test.each(["Plain issue", "**Important** Issue", "**Critical** Issue"])(
+    "US-008 AC-6: severity for %s",
+    async (body) => {
+      await bot.postPrReview({
+        ...input,
+        earlier: [{ ...earlier, comments: [{ ...earlier.comments[0], body: withNaxBotMarker(body, key) }] }],
+      });
+      expect(await agreed()).toMatchObject([{ severity: body.startsWith("**Critical**") ? "critical" : "important" }]);
+    },
+  );
+  test.each([{ earlier: undefined }, { earlier: [] }])(
+    "US-008 AC-7: omitted verdict remains open (%j)",
+    async (extra) => {
+      await bot.postPrReview({ ...input, verdict: { ...input.verdict, ...extra } });
+      expect(await agreed()).toMatchObject([{ key, kind: "finding" }]);
+      expect(run.mock.calls).toHaveLength(1);
+    },
+  );
+  test.each(["open", "fixed", "withdrawn"] as const)(
+    "US-008 AC-8/9/10: re-raised finding overrides %s",
+    async (status) => {
+      const finding = { kind: "quality", severity: "important", issue: "Leak", file: "old.ts", line: 17 } as const;
+      const findingMarker = bot.findingKey(finding);
+      const first = { ...earlier.comments[0], body: bot.renderFindingComment(finding) };
+      await bot.postPrReview({
+        ...input,
+        earlier: [{ ...earlier, comments: [first] }],
+        own: [{ key: findingMarker, threadId: earlier.id, comment: first }],
+        verdict: { ...input.verdict, findings: [finding], earlier: [{ id: "T1", status, reason: "Done" }] },
+      });
+      expect(await agreed()).toHaveLength(1);
+      expect((await agreed())[0]?.key).toBe(findingMarker);
+      expect(run.mock.calls).toHaveLength(2);
+      expect(run.mock.calls[0]?.[0]).toContain("PATCH");
+      expect(run.mock.calls[1]?.[0]).toContain(summaryEndpoint);
+    },
+  );
+  test.each(["fixed", "withdrawn"] as const)("US-008 AC-11/12/13: %s replies before resolving", async (status) => {
+    const verdict = { id: "T1", status, reason: "Corrected" };
+    await bot.postPrReview({ ...input, verdict: { ...input.verdict, earlier: [verdict] } });
+    expect(run.mock.calls[0]?.[0]).toContain(replyEndpoint(0));
+    expect(run.mock.calls[0]?.[0]).toContain(`body=${bot.renderEarlierReply(verdict, "T1")}`);
+    expect(bot.renderEarlierReply(verdict, "T1").replace(`${NAX_BOT_HEADER}\n\n`, "")).toStartWith(
+      status === "fixed" ? "Fixed: " : "Withdrawn: ",
+    );
+    expect(run.mock.calls[1]?.[0]).toContain("id=T1");
+    expect(run.mock.calls[2]?.[0]).toContain(summaryEndpoint);
+    expect(await agreed()).toEqual([]);
+  });
+  test("US-010 AC-18: summary receives effective earlier counts", async () => {
+    await bot.postPrReview({
+      ...input,
+      verdict: { ...input.verdict, earlier: [{ id: "T1", status: "fixed", reason: "Done" }] },
+    });
+    expect(summaryBody()).toContain("1 earlier findings re-checked: 0 still open, 1 fixed, 0 withdrawn.");
+  });
+  test("US-010: re-raised and omitted verdicts count as open", async () => {
+    const finding = { kind: "quality", severity: "important", issue: "Leak", file: "old.ts", line: 17 } as const;
+    await bot.postPrReview({
+      ...input,
+      earlier: [
+        { ...earlier, comments: [{ ...earlier.comments[0], body: bot.renderFindingComment(finding) }] },
+        { ...earlier, id: "T2" },
+      ],
+      verdict: { ...input.verdict, findings: [finding], earlier: [{ id: "T1", status: "fixed", reason: "Done" }] },
+    });
+    expect(summaryBody()).toContain("2 earlier findings re-checked: 2 still open, 0 fixed, 0 withdrawn.");
+  });
+  test("US-008 AC-14: edits an own earlier reply only in the same thread", async () => {
+    await bot.postPrReview({
+      ...input,
+      own: [
+        { key: bot.earlierKey("T1"), threadId: "other", comment: { ...comment, id: "98" } },
+        { key: bot.earlierKey("T1"), threadId: "T1", comment: { ...comment, id: "99" } },
+      ],
+      verdict: { ...input.verdict, earlier: [{ id: "T1", status: "fixed", reason: "Done" }] },
+    });
+    expect(run.mock.calls[0]?.[0]).toContain("PATCH");
+    expect(run.mock.calls[0]?.[0]).toContain("repos/o/r/pulls/comments/99");
+    expect(run.mock.calls[1]?.[0]).toContain("id=T1");
+  });
+  test.each(["reply", "resolve"])("US-008 AC-15/16/17/20/21: failed %s counts once and warns", async (stage) => {
+    const logger = initLogger({ level: "silent" });
+    const warn = spyOn(logger, "warn");
+    try {
+      failEndpoint = stage === "reply" ? replyEndpoint(0) : "id=T1";
+      const result = await bot.postPrReview({
+        ...input,
+        verdict: { ...input.verdict, earlier: [{ id: "T1", status: "fixed", reason: "Done" }] },
+      });
+      expect(result.failed).toBe(1);
+      expect(warn).toHaveBeenCalledWith(
+        "bot-post",
+        expect.stringContaining(stage),
+        expect.objectContaining({ threadId: "T1", error: expect.any(String) }),
+      );
+      expect(run.mock.calls).toHaveLength(stage === "reply" ? 2 : 3);
+      if (stage === "reply") expect(run.mock.calls.flatMap(([args]) => args)).not.toContain("id=T1");
+    } finally {
+      warn.mockRestore();
+      resetLogger();
+    }
+  });
+  test("US-008 AC-18: counts every earlier thread including open and failed", async () => {
+    const result = await bot.postPrReview({ ...input, earlier: [earlier, { ...earlier, id: "T2" }] });
+    expect(result.earlierAnswered).toBe(2);
+  });
+  test("retains all 51 findings when only the first 50 have reviewer verdicts", async () => {
+    const many = Array.from({ length: 51 }, (_, index) => ({
+      ...earlier,
+      id: `E${index}`,
+      comments: [{ ...earlier.comments[0], body: withNaxBotMarker("Leak", `f-${index}`) }],
+    }));
+    const result = await bot.postPrReview({
+      ...input,
+      earlier: many,
+      verdict: {
+        ...input.verdict,
+        earlier: many.slice(0, 50).map(({ id }) => ({ id, status: "open", reason: "Still open" })),
+      },
+    });
+    expect(await agreed()).toHaveLength(51);
+    expect((await agreed())[50]?.key).toBe("f-50");
+    expect(result.earlierAnswered).toBe(51);
+    expect(run.mock.calls).toHaveLength(1);
+  });
+  test("never resolves foreign openers or unmarked threads", async () => {
+    await bot.postPrReview({
+      ...input,
+      earlier: [
+        { ...earlier, comments: [{ ...earlier.comments[0], author: "human" }] },
+        { ...earlier, comments: [comment] },
+      ],
+      verdict: { ...input.verdict, earlier: [{ id: "T1", status: "fixed", reason: "Done" }] },
+    });
+    expect(run.mock.calls).toHaveLength(1);
+    expect(await agreed()).toEqual([]);
+  });
+  test("discovers the authenticated user's earlier reply inside the thread", async () => {
+    await bot.postPrReview({
+      ...input,
+      earlier: [
+        {
+          ...earlier,
+          comments: [
+            ...earlier.comments,
+            { ...comment, id: "99", author: "bot", body: withNaxBotMarker("Fixed: old reason", bot.earlierKey("T1")) },
+          ],
+        },
+      ],
+      verdict: { ...input.verdict, earlier: [{ id: "T1", status: "fixed", reason: "Done" }] },
+    });
+    expect(run.mock.calls[0]?.[0]).toContain("repos/o/r/pulls/comments/99");
+    expect(run.mock.calls[1]?.[0]).toContain("id=T1");
+  });
+  test("US-008 AC-19: defaults earlierAnswered to zero", async () => {
+    const result = await bot.postPrReview({ ...input, earlier: undefined });
+    expect(result.earlierAnswered).toBe(0);
   });
 });

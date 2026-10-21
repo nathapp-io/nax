@@ -4,6 +4,17 @@ import type { BotConfig, BotModelsConfig } from "@/config";
 import * as config from "@/config";
 
 describe("NaxConfigSchema bot config", () => {
+  test("US-001 AC-1: preserves the checks model", () => {
+    const models: BotModelsConfig = { checks: "fast" };
+    expect(config.NaxConfigSchema.parse({ bot: { models } })).toHaveProperty("bot.models.checks", "fast");
+  });
+  test("US-001 AC-2: leaves checks unset by default", () => {
+    expect(config.NaxConfigSchema.parse({}).bot.models.checks).toBeUndefined();
+  });
+  test("US-001 AC-3: describes the checks model", () => {
+    expect(FIELD_DESCRIPTIONS["bot.models.checks"]).toBeString();
+    expect(FIELD_DESCRIPTIONS["bot.models.checks"]?.length).toBeGreaterThan(0);
+  });
   test("AC-1: defaults bot.models to an empty object", () => {
     expect(config.NaxConfigSchema.parse({})).toHaveProperty("bot.models", {});
   });

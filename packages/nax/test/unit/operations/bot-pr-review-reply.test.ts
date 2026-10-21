@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { assertDefined } from "@test/helpers";
-import type { PrReviewVerdict, PrTriageVerdict } from "@/operations";
+import type { PrEarlierVerdict, PrReviewVerdict, PrTriageVerdict } from "@/operations";
 import { missingTriage, parseBranchReviewReply, parsePrReviewReply, toFindingDraft } from "@/operations";
 
 const base = { intent: "n/a", quality: "approved" } satisfies Pick<PrReviewVerdict, "intent" | "quality">;
@@ -9,8 +9,61 @@ const parse = (extra: Record<string, unknown> = {}) =>
   parsePrReviewReply(JSON.stringify({ ...base, ...extra }), ["T1", "T2"], ["C1"]);
 
 describe("parsePrReviewReply", () => {
+  const earlier = { id: "E1", status: "fixed", reason: "done" } satisfies PrEarlierVerdict;
+  const withExtra = (value: Record<string, unknown>, extra = { earlierIds: ["E1"], decisionIds: ["D-1"] }) =>
+    parsePrReviewReply(JSON.stringify({ ...base, ...value }), [], [], extra);
+
+  test("US-006 AC-1 keeps an allowlisted earlier verdict and trims its reason", () => {
+    expect(withExtra({ earlier: [{ ...earlier, reason: "  done  " }] })?.earlier).toEqual([earlier]);
+  });
+  test.each([
+    ["AC-2", { ...earlier, id: "unknown" }],
+    ["AC-3", { ...earlier, status: "stale" }],
+    ["AC-4", { ...earlier, reason: " \n " }],
+    ["non-string reason", { ...earlier, reason: 42 }],
+    ["non-string id", { ...earlier, id: 42 }],
+    ["null entry", null],
+  ])("US-006 %s drops invalid earlier entries", (_ac, entry) => {
+    expect(withExtra({ earlier: [entry] })?.earlier).toEqual([]);
+  });
+  test("US-006 AC-5 keeps only the first valid earlier entry per id", () => {
+    expect(
+      withExtra({ earlier: [{ ...earlier, status: "stale" }, earlier, { ...earlier, status: "open" }] })?.earlier,
+    ).toEqual([earlier]);
+  });
+  test.each(["open", "fixed", "withdrawn"])("keeps earlier status %s", (status) => {
+    expect(withExtra({ earlier: [{ ...earlier, status }] })?.earlier).toEqual([{ ...earlier, status }]);
+  });
+  test("US-006 AC-6 keeps an allowlisted decision reference", () => {
+    expect(withExtra({ findings: [{ issue: "bug", decision: "D-1" }] })?.findings[0]).toHaveProperty("decision", "D-1");
+  });
+  test.each(["D-9", 42, null])("US-006 AC-7 keeps the finding without invalid decision %j", (decision) => {
+    const result = withExtra({ findings: [{ issue: "bug", decision }] });
+    expect(result?.findings).toHaveLength(1);
+    expect(result?.findings[0]).toMatchObject({ issue: "bug" });
+    expect(result?.findings[0]).not.toHaveProperty("decision");
+  });
+  test("US-006 AC-8 three arguments preserve thread/comment triage without accepting earlier ids", () => {
+    expect(parse({ earlier: [earlier], threads: [triage], comments: [{ ...triage, id: "C1" }] })).toEqual({
+      ...base,
+      earlier: [],
+      findings: [],
+      threads: [triage],
+      comments: [{ ...triage, id: "C1" }],
+      cannotVerify: [],
+      inspectedFiles: [],
+    });
+  });
   test("AC-1 accepts n/a and defaults optional lists", () => {
-    expect(parse()).toEqual({ ...base, findings: [], threads: [], comments: [], cannotVerify: [], inspectedFiles: [] });
+    expect(parse()).toEqual({
+      ...base,
+      findings: [],
+      earlier: [],
+      threads: [],
+      comments: [],
+      cannotVerify: [],
+      inspectedFiles: [],
+    });
   });
   test.each([
     ["AC-2", { intent: "maybe" }],
@@ -53,6 +106,18 @@ describe("parsePrReviewReply", () => {
 });
 
 describe("missingTriage", () => {
+  test("US-006 AC-9 reports only unanswered earlier ids", () => {
+    const verdict = {
+      ...base,
+      findings: [],
+      threads: [],
+      comments: [],
+      cannotVerify: [],
+      inspectedFiles: [],
+      earlier: [{ id: "E1", status: "fixed" as const, reason: "done" }],
+    };
+    expect(missingTriage(verdict, [], [], ["E1", "E2"])).toEqual(["E2"]);
+  });
   test("AC-12 returns missing threads first, in input order", () => {
     const verdict = parse({ threads: [{ ...triage, id: "T2" }] });
     if (!verdict) throw new Error("expected verdict");

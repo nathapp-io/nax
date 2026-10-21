@@ -19,6 +19,8 @@ export interface BotPrReviewInput {
   readonly timeoutMs: number;
   readonly threadIds: readonly string[];
   readonly commentIds: readonly string[];
+  readonly earlierIds?: readonly string[];
+  readonly decisionIds?: readonly string[];
   readonly model?: ConfiguredModel;
 }
 
@@ -38,21 +40,25 @@ export const botPrReviewOp: BotReviewOperation = {
     role: { id: "role", content: "", overridable: false },
     task: { id: "task", content: input.prompt, overridable: false },
   }),
-  parse: (output, input) => parsePrReviewReply(output, input.threadIds, input.commentIds),
+  parse: (output, input) => parsePrReviewReply(output, input.threadIds, input.commentIds, input),
   retry: (input) => {
-    const parse = (output: string) => parsePrReviewReply(output, input.threadIds, input.commentIds);
+    const parse = (output: string) => parsePrReviewReply(output, input.threadIds, input.commentIds, input);
     return makeParseRetryStrategy({
       parse,
       // Ruled exception (nax#2532): completeness asks again, but never discards a usable partial verdict.
       validate: (parsed) =>
-        parsed != null && missingTriage(parsed as PrReviewVerdict, input.threadIds, input.commentIds).length === 0,
+        parsed != null &&
+        missingTriage(parsed as PrReviewVerdict, input.threadIds, input.commentIds, input.earlierIds).length === 0,
       maxAttempts: 2,
       reviewerKind: "bot-pr-review",
       prompts: {
         invalid: (output) => {
           const verdict = parse(output);
           const missing = verdict ? missingTriage(verdict, input.threadIds, input.commentIds) : [];
-          return missing.length > 0 ? buildBotTriageRetry(missing) : buildWorkflowReviewJsonRetry();
+          const earlierMissing = verdict ? missingTriage(verdict, [], [], input.earlierIds) : [];
+          return missing.length > 0 || earlierMissing.length > 0
+            ? buildBotTriageRetry(missing, earlierMissing)
+            : buildWorkflowReviewJsonRetry();
         },
         truncated: buildWorkflowReviewJsonRetryCondensed,
       },

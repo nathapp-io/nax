@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, rmdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
@@ -27,6 +27,7 @@ export const _checkoutDeps = {
   ensureGitExcludes: (repoRoot: string): Promise<void> => new WorktreeManager().ensureGitExcludes(repoRoot),
   snapshotBaseNax,
   rm: (path: string): Promise<void> => rm(path, { recursive: true, force: true }),
+  rmdir: (path: string): Promise<void> => rmdir(path),
   mkdtemp: (): Promise<string> => mkdtemp(join(tmpdir(), "nax-bot-checkout-")),
   getLogger: getSafeLogger,
 };
@@ -110,6 +111,29 @@ async function pinInstructions(worktree: string, baseSha: string): Promise<void>
   await removeSymlinks(worktree);
 }
 
+function hasErrorCode(cause: unknown, codes: readonly string[]): boolean {
+  return typeof cause === "object" && cause !== null && "code" in cause && codes.includes(String(cause.code));
+}
+
+async function removeWorktreeParent(repoRoot: string): Promise<void> {
+  try {
+    await _checkoutDeps.rmdir(join(repoRoot, ".nax-wt")); // nax-worktree-id-allow: Remove only the empty shared bot checkout parent.
+  } catch (cause) {
+    // Active/retained checkouts and concurrent reservations must never be removed.
+    if (!hasErrorCode(cause, ["ENOTEMPTY", "EEXIST", "ENOENT"])) throw cause;
+  }
+}
+
+async function reserveWorktree(path: string): Promise<void> {
+  try {
+    await _checkoutDeps.reserveWorktree(path);
+  } catch (cause) {
+    if (!hasErrorCode(cause, ["ENOENT"])) throw cause;
+    // Cleanup can remove the parent between the reservation's two mkdir calls.
+    await _checkoutDeps.reserveWorktree(path);
+  }
+}
+
 async function cleanup(input: {
   repoRoot: string;
   worktree?: string;
@@ -121,6 +145,7 @@ async function cleanup(input: {
     ...(worktree ? [() => git(["worktree", "remove", "--force", worktree], repoRoot)] : []),
     // Git may have failed before registering our exclusively reserved empty directory.
     ...(worktree && input.failedAdd ? [() => _checkoutDeps.rm(worktree)] : []),
+    ...(worktree ? [() => removeWorktreeParent(repoRoot)] : []),
     ...(snapshotDir ? [() => _checkoutDeps.rm(snapshotDir)] : []),
   ];
   for (const action of actions) {
@@ -174,7 +199,7 @@ export async function preparePrCheckout(input: {
   let snapshotDir: string | undefined;
   try {
     await _checkoutDeps.ensureGitExcludes(repoRoot);
-    await _checkoutDeps.reserveWorktree(worktree);
+    await reserveWorktree(worktree);
     created = true; // Only our exclusive reservation grants cleanup ownership on a failed add.
     await git(["worktree", "add", "--detach", worktree, info.headSha], repoRoot);
     added = true;

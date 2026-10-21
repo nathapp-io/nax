@@ -36,7 +36,7 @@ describe("safeText", () => {
   });
   test("flattens newlines, escapes HTML and breaks links after the cap", () => {
     expect(bot.safeText("<b>\n[x](https://e.com)", 100)).toBe("&lt;b&gt; [x]\u200b(https:\u200b//e.com)");
-    expect(bot.safeText("](https://a)", 12)).toBe("]\u200b(https:\u200b//a)");
+    expect(bot.safeText("](https://a)", 12)).toBe("]\u200b(https:\u200b//");
   });
   test("reuses shared secret redaction", () => {
     expect(bot.safeText("token ghp_abcdefghijklmnopqrstuvwxyz1234567890", 100)).not.toContain(
@@ -72,6 +72,16 @@ describe("threadKey", () => {
   });
 });
 
+describe("earlierKey", () => {
+  test("US-007 AC-11/12 hashes the id deterministically in a separate namespace", () => {
+    const key = bot.earlierKey("T1");
+    expect(key).toMatch(/^e-[0-9a-f]{16}$/);
+    expect(key).toBe("e-1f93603db53bfad5");
+    expect(bot.earlierKey("T1")).toBe(key);
+    expect(key).not.toBe(bot.threadKey("T1"));
+  });
+});
+
 describe("commentKey", () => {
   test("AC-14: hashes the comment id into a valid marker key", () => {
     const key = bot.commentKey("99");
@@ -79,4 +89,12 @@ describe("commentKey", () => {
     expect(key).toMatch(/^c-[0-9a-f]{16}$/);
     expect(parseNaxBotMarker(withNaxBotMarker("body", key))).toEqual({ key });
   });
+});
+
+test.each([
+  ["b".repeat(8) + "<", 10, "b".repeat(8)],
+  ["b".repeat(9) + "😀", 10, "b".repeat(9)],
+  ["](https://" + "b".repeat(8) + "<", 21, "]\u200b(https:\u200b//" + "b".repeat(8)],
+])("safeText preserves whole escaped tokens for %s", (text, max, expected) => {
+  expect(bot.safeText(text, max)).toBe(expected);
 });

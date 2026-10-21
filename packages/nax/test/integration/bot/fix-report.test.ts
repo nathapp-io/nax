@@ -10,6 +10,7 @@ import {
   reportStep,
 } from "@/bot";
 import { type PrComment, type PrThread, parseNaxBotMarker, withNaxBotMarker } from "@/forge";
+import { initLogger, resetLogger } from "@/logger";
 import { markReadyArgv } from "@/workflow/promote";
 
 const state: BotFixState = { step: "reply", timings: {}, outcome: "pushed", pushedSha: "abcdef12" };
@@ -34,6 +35,76 @@ function thread(author: string, key: string): PrThread {
 afterEach(() => mock.restore());
 
 describe("replyStep", () => {
+  test.each([
+    ["short issue\nignored second line", "short issue"],
+    [`${"x".repeat(205)}\nignored second line`, "x".repeat(200)],
+  ])("AC-1/2/3/4: explains the pushed fix before resolving: %s", async (issue, summary) => {
+    const key = findingKey({ issue });
+    const own = thread("bot", key);
+    const env = { ...makeBotFixEnv([{ kind: "finding", key, issue, severity: "minor" }]), threads: [own] };
+    const order: string[] = [];
+    const reply = spyOn(_fixReportDeps, "replyToThread").mockImplementation(async () => {
+      order.push("reply");
+      return { id: "new" };
+    });
+    spyOn(_fixReportDeps, "resolveThread").mockImplementation(async () => {
+      order.push("resolve");
+    });
+    await replyStep(env, { ...state, pushedSha: "123456789abcdef" });
+    expect(reply).toHaveBeenCalledTimes(1);
+    const body = reply.mock.calls[0]?.[2] ?? "";
+    expect(body).toBe(withNaxBotMarker(`Fixed in 1234567: ${summary}`, `fix-${key}`));
+    expect(parseNaxBotMarker(body)).toEqual({ key: `fix-${key}` });
+    expect(reply).toHaveBeenCalledWith(env.ref, { replyTo: own.replyTo }, body, env.forge, env.repoRoot);
+    expect(order).toEqual(["reply", "resolve"]);
+  });
+  test.each([
+    [
+      "ghp_ABCDEFGHIJKLMNOP1234567890 @org/team #123 `<tag>` [x](https://e.test) ![img](https://e.test)\nnot included",
+      "[REDACTED] @\u200borg/team #\u200b123 '&lt;tag&gt;' [x]\u200b(https:\u200b//e.test) ![img]\u200b(https:\u200b//e.test)",
+    ],
+    [`${"x".repeat(180)}[x](https://e.test)`, `${"x".repeat(180)}[x]\u200b(https:\u200b//e.test)`.slice(0, 200)],
+  ])("F1: sanitizes own-finding prose and caps the rendered excerpt: %s", async (issue, expected) => {
+    const key = findingKey({ issue });
+    const env = {
+      ...makeBotFixEnv([{ kind: "finding", key, issue, severity: "minor" }]),
+      threads: [thread("bot", key)],
+    };
+    const reply = spyOn(_fixReportDeps, "replyToThread").mockResolvedValue({ id: "new" });
+    const resolve = spyOn(_fixReportDeps, "resolveThread").mockResolvedValue();
+    await replyStep(env, state);
+    expect(reply).toHaveBeenCalledTimes(1);
+    expect(reply.mock.calls[0]?.[2]).toBe(withNaxBotMarker(`Fixed in abcdef1: ${expected}`, `fix-${key}`));
+    expect(expected.length).toBeLessThanOrEqual(200);
+    expect(resolve).toHaveBeenCalledTimes(1);
+  });
+  test("AC-5/7: failed own-finding reply warns and skips resolution, continuing to the next thread", async () => {
+    const key = findingKey({ issue: "Leak" });
+    const own = thread("bot", key);
+    const env = {
+      ...makeBotFixEnv([{ kind: "finding", key, issue: "Leak", severity: "minor" }]),
+      threads: [own, { ...own, id: "next", replyTo: "100" }],
+    };
+    const logger = initLogger({ level: "silent" });
+    const warn = spyOn(logger, "warn");
+    try {
+      const reply = spyOn(_fixReportDeps, "replyToThread")
+        .mockRejectedValueOnce(new Error("denied"))
+        .mockResolvedValue({ id: "new" });
+      const resolve = spyOn(_fixReportDeps, "resolveThread").mockResolvedValue();
+      const result = await replyStep(env, state);
+      expect(reply).toHaveBeenCalledTimes(2);
+      expect(resolve).toHaveBeenCalledTimes(1);
+      expect(resolve.mock.calls[0]?.[1].id).toBe("next");
+      expect(result.patch).toMatchObject({ replied: 1, resolved: 1 });
+      expect(warn).toHaveBeenCalledWith("bot-fix", expect.stringContaining("reply"), {
+        threadId: own.id,
+        error: "denied",
+      });
+    } finally {
+      resetLogger();
+    }
+  });
   test("invalid persisted marker key cannot prevent later replies or own resolution", async () => {
     const key = findingKey({ issue: "Leak" });
     const env = {
@@ -46,8 +117,8 @@ describe("replyStep", () => {
     };
     const reply = spyOn(_fixReportDeps, "replyToThread").mockResolvedValue({ id: "next" });
     const resolve = spyOn(_fixReportDeps, "resolveThread").mockResolvedValue();
-    expect((await replyStep(env, state)).patch).toMatchObject({ replied: 1, resolved: 1 });
-    expect(reply).toHaveBeenCalledTimes(1);
+    expect((await replyStep(env, state)).patch).toMatchObject({ replied: 2, resolved: 1 });
+    expect(reply).toHaveBeenCalledTimes(2);
     expect(resolve).toHaveBeenCalledTimes(1);
   });
   test("replies to the REST target with pushed sha and fix marker", async () => {
@@ -73,8 +144,10 @@ describe("replyStep", () => {
       ...makeBotFixEnv([{ kind: "finding", key: agreed ? key : "f-other", issue: "Leak", severity: "minor" }]),
       threads: [thread(author, key)],
     };
+    const reply = spyOn(_fixReportDeps, "replyToThread").mockResolvedValue({ id: "new" });
     const resolve = spyOn(_fixReportDeps, "resolveThread").mockResolvedValue();
     const result = await replyStep(env, state);
+    expect(reply).toHaveBeenCalledTimes(count);
     expect(resolve).toHaveBeenCalledTimes(count);
     if (count) expect(resolve).toHaveBeenCalledWith(env.ref, env.threads[0], env.forge, env.repoRoot);
     expect(result.patch.resolved).toBe(count);
@@ -92,13 +165,15 @@ describe("replyStep", () => {
         { ...own, id: "next" },
       ],
     };
+    const reply = spyOn(_fixReportDeps, "replyToThread").mockResolvedValue({ id: "new" });
     const resolve = spyOn(_fixReportDeps, "resolveThread")
       .mockRejectedValueOnce(new Error("denied"))
       .mockResolvedValue();
     const result = await replyStep(env, state);
     expect(resolve).toHaveBeenCalledTimes(2);
     expect(resolve.mock.calls[1]?.[1].id).toBe("next");
-    expect(result.patch.resolved).toBe(1);
+    expect(reply.mock.calls.map((call) => call[1])).toEqual([{ replyTo: "99" }, { replyTo: "99" }]);
+    expect(result.patch).toMatchObject({ replied: 2, resolved: 1 });
   });
   test("continues replies after a failed write", async () => {
     const env = makeBotFixEnv([item, { ...item, key: "t-2", replyTo: "r2" }]);

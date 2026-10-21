@@ -12,6 +12,7 @@ import { safeText } from "./render";
 
 const SHORT_SHA_LENGTH = 7;
 const MAX_FAILURE_LENGTH = 500;
+const MAX_ISSUE_LENGTH = 200;
 
 export const _fixReportDeps = { replyToThread, resolveThread, editComment, postPrComment };
 
@@ -33,14 +34,31 @@ async function replyAgreedThreads(env: BotFixEnv, state: BotFixState): Promise<n
   return replied;
 }
 
-async function resolveOwnFindings(env: BotFixEnv): Promise<number> {
-  const agreed = new Set(env.review.agreed.filter((item) => item.kind === "finding").map((item) => item.key));
+async function resolveOwnFindings(env: BotFixEnv, state: BotFixState): Promise<{ replied: number; resolved: number }> {
+  const agreed = new Map(env.review.agreed.filter((item) => item.kind === "finding").map((item) => [item.key, item]));
+  let replied = 0;
   let resolved = 0;
   for (const thread of env.threads) {
     const first = thread.comments[0];
     if (!first || first.author !== env.user.login || thread.resolved) continue;
     const marker = parseNaxBotMarker(first.body);
-    if (!marker || !agreed.has(marker.key)) continue;
+    const item = marker && agreed.get(marker.key);
+    if (!item) continue;
+    try {
+      const summary = safeText(item.issue.split(/\r?\n/, 1)[0] ?? "", MAX_ISSUE_LENGTH);
+      const body = withNaxBotMarker(
+        `Fixed in ${state.pushedSha?.slice(0, SHORT_SHA_LENGTH)}: ${summary}`,
+        `fix-${item.key}`,
+      );
+      await _fixReportDeps.replyToThread(env.ref, { replyTo: thread.replyTo }, body, env.forge, env.repoRoot);
+      replied++;
+    } catch (err) {
+      getLogger()?.warn("bot-fix", "Could not reply to own finding thread; skipping resolution", {
+        threadId: thread.id,
+        error: errorMessage(err),
+      });
+      continue;
+    }
     try {
       await _fixReportDeps.resolveThread(env.ref, thread, env.forge, env.repoRoot);
       resolved++;
@@ -51,13 +69,13 @@ async function resolveOwnFindings(env: BotFixEnv): Promise<number> {
       });
     }
   }
-  return resolved;
+  return { replied, resolved };
 }
 
 export async function replyStep(env: BotFixEnv, state: BotFixState): Promise<StepResult<BotFixState>> {
   const replied = await replyAgreedThreads(env, state);
-  const resolved = await resolveOwnFindings(env);
-  return { patch: { replied, resolved }, exit: "ready" };
+  const own = await resolveOwnFindings(env, state);
+  return { patch: { replied: replied + own.replied, resolved: own.resolved }, exit: "ready" };
 }
 
 export async function readyStep(env: BotFixEnv, _state: BotFixState): Promise<StepResult<BotFixState>> {

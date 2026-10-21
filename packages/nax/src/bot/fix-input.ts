@@ -1,10 +1,11 @@
 import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
+import { z } from "zod";
 import { getLogger } from "@/logger";
 import type { WorkflowFinding } from "@/operations/workflow-types";
 import { buildUntrustedRequestIssue } from "@/prompts";
 import { gitWithTimeout } from "@/utils/git";
-import type { AgreedItem, BotReviewArtifact } from "./post";
+import { type AgreedItem, BOT_REVIEW_FILENAME, type BotReviewArtifact } from "./post";
 
 export const _fixInputDeps = {
   runGit: gitWithTimeout,
@@ -14,10 +15,35 @@ export const _fixInputDeps = {
   mtimeMs: async (path: string): Promise<number> => (await Bun.file(path).stat()).mtimeMs,
 };
 
+// Validate persisted shell inputs before the fix graph trusts them. Legacy artifacts may omit checks.
+// List commands follow the canonical gate semantics: blank members are legal (the quality runner
+// drops them at run time) as long as one runnable command remains — see `isConfigured` in gates/quality.ts.
+const commandSchema = z.union([
+  z.string().trim().min(1),
+  z.array(z.string()).refine((entries) => entries.some((entry) => entry.trim().length > 0), {
+    message: "list command has no runnable entry",
+  }),
+]);
+const checksSchema = z.object({
+  source: z.enum(["config", "agents-md", "claude-md", "detected", "none"]),
+  gates: z.array(z.object({ name: z.string().min(1), command: commandSchema, setup: commandSchema.optional() })),
+  preRun: z.array(z.object({ command: z.string().trim().min(1), timeoutSeconds: z.number().positive().finite() })),
+});
+
 async function readReview(path: string): Promise<BotReviewArtifact | null> {
   try {
     const value: unknown = JSON.parse(await _fixInputDeps.readText(path));
-    if (typeof value !== "object" || value === null || !("version" in value) || value.version !== 1) return null;
+    if (
+      typeof value !== "object" ||
+      value === null ||
+      !("version" in value) ||
+      (value.version !== 1 && value.version !== 2)
+    )
+      return null;
+    if ("checks" in value && value.checks !== null && !checksSchema.safeParse(value.checks).success) {
+      getLogger()?.warn("bot-fix", "Ignoring review artifact with invalid checks; re-run nax bot review", { path });
+      return null;
+    }
     return value as BotReviewArtifact;
   } catch (cause) {
     // A corrupt or concurrently removed artifact must not hide the other reviews.
@@ -34,7 +60,7 @@ export async function loadLatestReview(
 ): Promise<BotReviewArtifact | null> {
   let paths: string[];
   try {
-    paths = await _fixInputDeps.glob(join("bot", `pr-${prNumber}`, "*", "bot-review.json"), outputDir);
+    paths = await _fixInputDeps.glob(join("bot", `pr-${prNumber}`, "*", BOT_REVIEW_FILENAME), outputDir);
   } catch (cause) {
     if (typeof cause === "object" && cause !== null && "code" in cause && cause.code === "ENOENT") return null;
     throw cause;

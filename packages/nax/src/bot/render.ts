@@ -1,4 +1,5 @@
 // Reuse the leaf without loading the workflow barrel and its orchestration dependencies.
+import { capEscaped } from "../finish/pr/escape";
 import { safeInline } from "../workflow/pr-body-safe";
 
 const ZERO_WIDTH_SPACE = "\u200b";
@@ -9,10 +10,11 @@ export function breakLinks(text: string): string {
   return text.replace(/\]\(/g, `]${ZERO_WIDTH_SPACE}(`).replace(/:\/\//g, `:${ZERO_WIDTH_SPACE}//`);
 }
 
-/** Shared redaction/neutralisation, strictly capped before inserting link breakers. */
+/** Redact and neutralise, then strictly cap the final text on escaped-token boundaries. */
 export function safeText(text: string, max: number): string {
-  // safeInline's shared cap may append an ellipsis beyond max; keep this correction local.
-  return breakLinks(safeInline(text, max).slice(0, Math.max(0, max)));
+  const rendered = breakLinks(safeInline(text, Number.POSITIVE_INFINITY));
+  const limit = Math.max(0, max);
+  return rendered.length > limit ? capEscaped(rendered, limit).slice(0, -1) : rendered;
 }
 
 function markerHash(text: string): string {
@@ -28,6 +30,11 @@ export function findingKey({ file, issue }: { file?: string; issue: string }): s
 /** Stable identity for a forge review thread. */
 export function threadKey(threadId: string): string {
   return `t-${markerHash(threadId)}`;
+}
+
+/** Stable identity for a reply about an earlier finding, distinct from thread triage. */
+export function earlierKey(threadId: string): string {
+  return `e-${markerHash(threadId)}`;
 }
 
 /** Stable identity for a forge comment. */

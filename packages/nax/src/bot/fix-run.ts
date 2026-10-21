@@ -4,10 +4,14 @@ import { resolveDefaultAgent } from "@/agents";
 import type { ConfiguredModel } from "@/config";
 import { NaxError } from "@/errors";
 import { ownComments } from "@/forge";
+import { getLogger } from "@/logger";
+import { botChecksExtractOp } from "@/operations";
 import { defineStepGraph, runStepGraph, type StepGraph } from "@/step-graph";
 // Import lifecycle/workflow leaves, never their orchestration barrels.
 import { runPreRunSteps } from "../execution/lifecycle/pre-run-steps";
 import { botRunDir } from "../workflow/paths";
+import { _workflowDeps } from "../workflow/step-context";
+import { type BotChecks, resolveBotChecks } from "./checks";
 import { checkPushAccess, loadLatestReview } from "./fix-input";
 import { readyStep, replyStep, reportStep } from "./fix-report";
 import {
@@ -19,6 +23,7 @@ import {
   gatesStep,
   pushStep,
 } from "./fix-steps";
+import { type BotLog, openBotLog } from "./log";
 import { _botReviewDeps } from "./review-run";
 
 export const _botFixDeps = {
@@ -31,6 +36,7 @@ export const _botFixDeps = {
   preparePrCheckout: _botReviewDeps.preparePrCheckout,
   loadBotConfig: _botReviewDeps.loadBotConfig,
   createRuntime: _botReviewDeps.createRuntime,
+  openBotLog,
   buildPrStepContext: _botReviewDeps.buildPrStepContext,
   readCurrentUser: _botReviewDeps.readCurrentUser,
   listReviewThreads: _botReviewDeps.listReviewThreads,
@@ -38,6 +44,7 @@ export const _botFixDeps = {
   randomSuffix: _botReviewDeps.randomSuffix,
   writeJson: _botReviewDeps.writeJson,
   loadLatestReview,
+  resolveBotChecks,
   checkPushAccess,
   runPreRunSteps,
   fixStep,
@@ -56,9 +63,10 @@ interface BotFixInput {
   readonly model?: ConfiguredModel;
   readonly interactive: boolean;
 }
-export type BotFixResult =
+export type BotFixResult = { readonly logPath?: string } & (
   | { readonly outcome: "refused"; readonly reason: string }
-  | (BotFixState & { readonly outcome: NonNullable<BotFixState["outcome"]> });
+  | (BotFixState & { readonly outcome: NonNullable<BotFixState["outcome"]> })
+);
 
 export const BOT_FIX_GRAPH: StepGraph<BotFixState, BotFixEnv, BotFixStep> = defineStepGraph({
   start: "fix",
@@ -145,7 +153,7 @@ async function executeFix(
   env: BotFixEnv,
   runtime: ReturnType<typeof _botFixDeps.createRuntime>,
 ): Promise<BotFixResult> {
-  await _botFixDeps.runPreRunSteps({ steps: env.config.execution.preRun ?? [], workdir: env.checkout.worktree });
+  await _botFixDeps.runPreRunSteps({ steps: env.checks.preRun, workdir: env.checkout.worktree });
   const stateDir = botRunDir(runtime.outputDir, env.ref.number, runtime.runId);
   const state = await runStepGraph(
     BOT_FIX_GRAPH,
@@ -161,13 +169,45 @@ async function executeFix(
 
 const SHORT_SHA_LENGTH = 7;
 
+async function fixChecks(
+  env: Pick<BotFixEnv, "repoRoot" | "checkout" | "config" | "ctx" | "review">,
+): Promise<BotChecks> {
+  const { repoRoot, checkout, config, ctx, review } = env;
+  // Saved checks belong to this reviewed head, even if the base has since moved.
+  if (review.version === 2 && review.checks != null) return review.checks;
+  return _botFixDeps.resolveBotChecks({
+    repoRoot,
+    baseSha: checkout.baseSha,
+    snapshotDir: checkout.snapshotDir,
+    hasBaseNax: checkout.hasBaseNax,
+    config,
+    extract: (input) =>
+      _workflowDeps.callOp(ctx.callCtx, botChecksExtractOp, {
+        ...input,
+        model: config.bot?.models.checks,
+      }),
+  });
+}
+
+function finishFix(result: BotFixResult, log: BotLog): BotFixResult {
+  getLogger().info("bot", "Bot fix finished", {
+    outcome: result.outcome,
+    ...(result.outcome === "refused" ? { reason: result.reason } : {}),
+  });
+  return log.path === undefined ? result : { ...result, logPath: log.path };
+}
+
 async function fixCheckout(input: BotFixInput, prepared: PreparedFix): Promise<BotFixResult> {
   const deps = _botFixDeps;
   const { repoRoot, ref, info, checkout } = prepared;
   const config = await deps.loadBotConfig({ snapshotDir: checkout.snapshotDir, profiles: input.profiles });
   const runtime = deps.createRuntime(config, repoRoot);
+  const stateDir = botRunDir(runtime.outputDir, ref.number, runtime.runId);
+  let log: BotLog | undefined;
   let context: Awaited<ReturnType<typeof deps.buildPrStepContext>> | undefined;
   try {
+    log = deps.openBotLog(join(stateDir, "bot.jsonl"));
+    getLogger().info("bot", "Bot fix started", { pr: ref.number, headSha: info.headSha });
     context = await deps.buildPrStepContext({
       runtime,
       config,
@@ -177,22 +217,43 @@ async function fixCheckout(input: BotFixInput, prepared: PreparedFix): Promise<B
     });
     const review = await deps.loadLatestReview(runtime.outputDir, ref.number, info.headSha);
     if (!review)
-      return {
-        outcome: "refused",
-        reason: `no nax bot review of head ${info.headSha.slice(0, SHORT_SHA_LENGTH)}; run nax bot review ${ref.number} first`,
-      };
+      return finishFix(
+        {
+          outcome: "refused",
+          reason: `no nax bot review of head ${info.headSha.slice(0, SHORT_SHA_LENGTH)}; run nax bot review ${ref.number} first`,
+        },
+        log,
+      );
     const access = await deps.checkPushAccess(checkout.worktree, info.headRef);
-    if (!access.ok) return { outcome: "refused", reason: `cannot push to ${info.headRef}: ${access.reason}` };
+    if (!access.ok)
+      return finishFix({ outcome: "refused", reason: `cannot push to ${info.headRef}: ${access.reason}` }, log);
+    const checks = await fixChecks({ ...prepared, ctx: context.ctx, config, review });
+    if (checks.source === "none")
+      return finishFix(
+        {
+          outcome: "refused",
+          reason:
+            "no check commands found on the base branch; add quality.commands to .nax/config.json, or list the commands in AGENTS.md or CLAUDE.md, then merge it",
+        },
+        log,
+      );
     const items = await triage(prepared);
-    return await executeFix(
-      { ...prepared, ...items, ctx: context.ctx, config, review, model: input.model, forge: deps.forge },
-      runtime,
+    return finishFix(
+      await executeFix(
+        { ...prepared, ...items, checks, ctx: context.ctx, config, review, model: input.model, forge: deps.forge },
+        runtime,
+      ),
+      log,
     );
   } finally {
     try {
       await context?.dispose();
     } finally {
-      await runtime.close();
+      try {
+        await log?.close();
+      } finally {
+        await runtime.close();
+      }
     }
   }
 }
@@ -216,8 +277,6 @@ export async function runBotFix(input: BotFixInput): Promise<BotFixResult> {
     pinBaseFiles: false,
   });
   try {
-    if (!checkout.hasBaseNax)
-      return { outcome: "refused", reason: "the base branch has no nax config; gates cannot run" };
     return await fixCheckout(input, { repoRoot, ref, info, checkout });
   } finally {
     await checkout.dispose();

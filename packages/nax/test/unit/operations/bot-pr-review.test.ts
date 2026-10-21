@@ -2,7 +2,13 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { makeNaxConfig, makeTestRuntime, opSelector } from "@test/helpers";
 import { ParseValidationError } from "@/agents/retry";
 import { workflowConfigSelector } from "@/config";
-import { type BotPrReviewInput, botPrReviewOp, botPrStaticReviewOp, parsePrReviewReply } from "@/operations";
+import {
+  type BotPrReviewInput,
+  botPrReviewOp,
+  botPrStaticReviewOp,
+  type PrEarlierVerdict,
+  parsePrReviewReply,
+} from "@/operations";
 import { REVIEWER_VERIFY_TOOLS } from "@/operations/workflow-story-review";
 import {
   buildBotTriageRetry,
@@ -40,6 +46,49 @@ const retryCtx = (lastOutput: string) => ({
 
 for (const op of [botPrReviewOp, botPrStaticReviewOp]) {
   describe(op.name, () => {
+    test("US-006 AC-10 parse forwards earlier and decision allowlists", () => {
+      const value = { ...input, earlierIds: ["E1"], decisionIds: ["D-1"] };
+      const earlier = [{ id: "E1", status: "fixed", reason: "done" }] satisfies PrEarlierVerdict[];
+      const output = JSON.stringify({
+        intent: "pass",
+        quality: "changes",
+        earlier,
+        findings: [{ issue: "bug", decision: "D-1" }],
+      });
+      expect(op.parse(output, value, ctx())?.earlier).toEqual(earlier);
+      expect(op.parse(output, value, ctx())?.findings[0]).toHaveProperty("decision", "D-1");
+    });
+    test("US-006 AC-11 retries missing earlier ids separately and retains partial verdict on exhaustion", () => {
+      if (typeof op.retry !== "function") throw new Error("expected retry resolver");
+      const value = { ...input, earlierIds: ["E1"], decisionIds: ["D-1"] };
+      const strategy = op.retry(value, ctx());
+      if (!strategy || !("shouldRetry" in strategy)) throw new Error("expected retry strategy");
+      const failure = new ParseValidationError("incomplete");
+      const partial = reply(["T1", "T2"]);
+      expect(strategy.shouldRetry(failure, 0, retryCtx(partial))).toEqual({
+        retry: true,
+        delayMs: 0,
+        nextPrompt: buildBotTriageRetry([], ["E1"]),
+      });
+      const complete = JSON.stringify({
+        ...JSON.parse(partial),
+        earlier: [{ id: "E1", status: "fixed", reason: "done" }],
+        findings: [{ issue: "bug", decision: "D-1" }],
+      });
+      expect(strategy.shouldRetry(failure, 0, retryCtx(complete))).toEqual({ retry: false });
+      const incomplete = JSON.stringify({ ...JSON.parse(complete), threads: [] });
+      expect(strategy.shouldRetry(failure, 1, retryCtx(incomplete))).toMatchObject({
+        retry: false,
+        fallback: {
+          earlier: [{ id: "E1", status: "fixed", reason: "done" }],
+          findings: [{ issue: "bug", decision: "D-1" }],
+        },
+      });
+      expect(strategy.shouldRetry(failure, 1, retryCtx(partial))).toEqual({
+        retry: false,
+        fallback: op.parse(partial, value, ctx()),
+      });
+    });
     test("AC-13/14/15 declares bounded tools, config and fresh reviewer role", () => {
       expect(op.tools).toEqual(op === botPrReviewOp ? [...REVIEWER_VERIFY_TOOLS] : ["Read", "Glob", "Grep"]);
       expect(op.session).toEqual({ role: "wf-branch-review", lifetime: "fresh" });

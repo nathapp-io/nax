@@ -1,9 +1,10 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { join } from "node:path";
 import { makeMockCallContext, makeNaxConfig, makeScriptedCallOp } from "@test/helpers";
 import { _reviewStepDeps, runPrReview } from "@/bot";
 import { resolveWorkflowConfig } from "@/config";
 import type { PrInfo } from "@/forge";
+import { initLogger, resetLogger } from "@/logger";
 import { botPrReviewOp, botPrStaticReviewOp, type PrReviewVerdict } from "@/operations";
 import type { PrStepContext } from "@/workflow/branch-step-context";
 import { _workflowDeps } from "@/workflow/step-context";
@@ -81,6 +82,67 @@ afterEach(() => {
 const packagePath = "/review/artifacts/package-pr.diff";
 
 describe("runPrReview", () => {
+  test("US-006 AC-12/13 forwards earlier ids and renders earlier threads", async () => {
+    await runPrReview(ctx, {
+      ...input,
+      earlier: [{ id: "E1", replyTo: "E1", resolved: false, outdated: false, comments: [] }],
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.op).toBe(botPrReviewOp);
+    expect(calls[0]?.input).toMatchObject({
+      earlierIds: ["E1"],
+      prompt: expect.stringContaining("### Your earlier finding"),
+    });
+  });
+  test("US-006 AC-14/15 forwards decision ids and renders project decisions", async () => {
+    await runPrReview(ctx, { ...input, decisions: [{ id: "D-1", statement: "S" }] });
+    expect(calls[0]?.op).toBe(botPrReviewOp);
+    expect(calls[0]?.input).toMatchObject({
+      decisionIds: ["D-1"],
+      prompt: expect.stringContaining("## Project decisions"),
+    });
+  });
+  test("US-006 AC-16 renders project checks", async () => {
+    await runPrReview(ctx, { ...input, checks: ["bun run test"] });
+    const value = calls[0]?.input;
+    if (typeof value !== "object" || value === null || !("prompt" in value)) throw new Error("missing prompt");
+    expect(value.prompt).toContain("## Project checks");
+    expect(value.prompt).toContain("- bun run test");
+  });
+  test("US-006 AC-17 limits earlier ids to the first 50 rendered threads", async () => {
+    const earlier = Array.from({ length: 51 }, (_, index) => ({
+      id: `E${index + 1}`,
+      replyTo: `E${index + 1}`,
+      resolved: false,
+      outdated: false,
+      comments: [],
+    }));
+    const debug = spyOn(initLogger({ level: "silent" }), "debug");
+    try {
+      await runPrReview(ctx, { ...input, earlier });
+      expect(debug).toHaveBeenCalledWith("bot", "Earlier findings truncated; omitted threads remain open", {
+        cap: 50,
+        dropped: 1,
+      });
+    } finally {
+      debug.mockRestore();
+      resetLogger();
+    }
+    const value = calls[0]?.input;
+    if (typeof value !== "object" || value === null || !("prompt" in value) || typeof value.prompt !== "string")
+      throw new Error("missing prompt");
+    const renderedIds = [...value.prompt.matchAll(/### Your earlier finding\n```\n([^\n]+)\n```/g)].map(
+      (match) => match[1],
+    );
+    expect(value).toMatchObject({ earlierIds: renderedIds });
+    expect(renderedIds).toEqual(earlier.slice(0, 50).map((thread) => thread.id));
+    expect(calls[0]?.input).toMatchObject({ prompt: expect.not.stringContaining("\nE51\n") });
+  });
+  test("US-006 AC-18 defaults absent earlier and decision allowlists to empty", async () => {
+    await runPrReview(ctx, input);
+    expect(calls[0]?.op).toBe(botPrReviewOp);
+    expect(calls[0]?.input).toMatchObject({ earlierIds: [], decisionIds: [] });
+  });
   test.each(["", "*.ts -diff\n"])(
     "static dispatch preserves preimages and deletions with attributes %j",
     async (attributes) => {

@@ -66,7 +66,92 @@ describe("renderThreadReply", () => {
   });
 });
 
+describe("renderEarlierReply", () => {
+  test("US-007 AC-13 marks withdrawals using the supplied thread identity", () => {
+    const body = bot.renderEarlierReply({ id: "T1", status: "withdrawn", reason: "r" }, "T1");
+    expect(parseNaxBotMarker(body)).toEqual({ key: bot.earlierKey("T1") });
+    expect(body).toContain("Withdrawn: r");
+  });
+  test("US-007 AC-14 renders fixed reasons", () => {
+    expect(bot.renderEarlierReply({ id: "T1", status: "fixed", reason: "r" }, "T1")).toContain("Fixed: r");
+  });
+  test.each(["fixed", "withdrawn"] as const)("sanitizes and caps %s reasons using the supplied thread id", (status) => {
+    const reason = `@alice #12 [x](https://e.com) ${"z".repeat(3_000)}`;
+    expect(bot.renderEarlierReply({ id: "verdict-id", status, reason }, "thread-id")).toBe(
+      withNaxBotMarker(
+        `${status === "fixed" ? "Fixed" : "Withdrawn"}: ${bot.safeText(reason, 2_000)}`,
+        bot.earlierKey("thread-id"),
+      ),
+    );
+  });
+});
+
 describe("renderReviewSummary", () => {
+  test("US-010 AC-6/7: minor items follow off-line findings", () => {
+    const body = bot.renderReviewSummary(
+      summary({ offLine: [finding], minor: [{ ...finding, severity: "minor", file: "a.ts", line: 8 }] }),
+    );
+    expect(body).toContain("### Minor findings\n- **Minor** `a.ts:8` Leaks fd");
+    expect(body.indexOf("### Minor findings")).toBeGreaterThan(body.indexOf("### Findings not on a changed line"));
+  });
+  test("US-010 AC-8: renders earlier counts after the two prefix lines", () => {
+    const body = bot.renderReviewSummary(summary({ earlier: { open: 1, fixed: 2, withdrawn: 0 } }));
+    expect(body.split("\n")[4]).toBe("3 earlier findings re-checked: 1 still open, 2 fixed, 0 withdrawn.");
+  });
+  test("US-010 AC-9: omits zero earlier counts", () => {
+    expect(bot.renderReviewSummary(summary({ earlier: { open: 0, fixed: 0, withdrawn: 0 } }))).not.toContain(
+      "earlier findings re-checked",
+    );
+  });
+  test.each([
+    ["agents-md", "AGENTS.md"],
+    ["detected", "package.json scripts"],
+    ["config", ".nax/config.json"],
+    ["claude-md", "CLAUDE.md"],
+  ] as const)("US-010 AC-10/11: labels %s checks", (source, label) => {
+    expect(
+      bot.renderReviewSummary(
+        summary({
+          checks: {
+            source,
+            gates: [
+              { name: "lint", command: "bun run lint" },
+              { name: "test", command: ["bun run test"] },
+            ],
+            preRun: [],
+          },
+        }),
+      ),
+    ).toContain(`Checks (${label}): bun run lint, bun run test.`);
+  });
+  test("US-010 AC-12: explains missing checks", () => {
+    expect(bot.renderReviewSummary(summary({ checks: { source: "none", gates: [], preRun: [] } }))).toContain(
+      "No check commands found on the base branch, so nax bot fix will refuse. Add quality.commands to .nax/config.json, or list the commands in AGENTS.md or CLAUDE.md.",
+    );
+  });
+  test.each([null, undefined])("US-010 AC-13: absent checks %s render no readiness line", (checks) => {
+    const body = bot.renderReviewSummary(summary({ checks }));
+    expect(body).not.toMatch(/^Checks \(/m);
+    expect(body).not.toContain("No check commands found");
+  });
+  test("US-010 AC-14: reports install failure", () => {
+    expect(bot.renderReviewSummary(summary({ preRunFailed: "npm ci" }))).toContain(
+      "Install step failed (npm ci); checks may not have run.",
+    );
+  });
+  test("US-010 AC-15: budgets minor items with an accurate omission notice", () => {
+    const minor = Array.from({ length: 200 }, () => ({
+      ...finding,
+      severity: "minor" as const,
+      issue: "x".repeat(1_900),
+    }));
+    const body = bot.renderReviewSummary(summary({ minor }));
+    expect(body.length).toBeLessThanOrEqual(MAX_FORGE_COMMENT_CHARS);
+    const shown = body.match(/^- \*\*Minor\*\*/gm)?.length ?? 0;
+    expect(shown).toBeGreaterThan(0);
+    expect(body).toContain(`… and ${200 - shown} more not shown.`);
+    expect(minor).toHaveLength(200);
+  });
   test("omits a line number without a file", () => {
     expect(bot.renderReviewSummary(summary({ offLine: [{ ...finding, line: 5 }] }))).toContain(
       "- **Important** Leaks fd",
