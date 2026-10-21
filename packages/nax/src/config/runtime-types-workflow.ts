@@ -36,6 +36,10 @@ export interface WorkflowConfig {
    * was green (nax#2548); 0 publishes the red gates as before.
    */
   finalGateRepairRounds: number;
+  /**
+   * Repair rounds when the published PR's CI failed (US-006); 0 publishes the failed CI as before.
+   */
+  ciRepairRounds: number;
   preflight: boolean;
   /** What publishing does after the final gates. Optional so a hand-built config reads as the `pr` default. */
   publish?: WorkflowPublishMode;

@@ -16,6 +16,7 @@ export const FEATURE_STEPS: readonly FeatureStep[] = [
   "final-gates",
   "gate-repair",
   "publish",
+  "ci-repair",
   "done",
 ];
 

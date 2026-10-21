@@ -1,4 +1,5 @@
 import { NaxError } from "@/errors";
+import type { FailedCheck } from "@/forge";
 import { runStepGraph, type StepGraphHooks, type StepGraphRunOptions } from "@/step-graph";
 import type { BranchFixOutcome } from "./branch-fix";
 import type { FeatureLimits } from "./branch-fix-rounds";
@@ -38,6 +39,11 @@ export interface FeatureSteps {
    * Optional: absent means the run collects nothing and the record keeps no ids.
    */
   flaggedDecisions?(): Promise<readonly string[]>;
+  /**
+   * US-006: the failed checks of the published PR's CI, for the CI repair decision. Optional:
+   * absent means the run cannot read CI logs, so it repairs no CI.
+   */
+  readCiFailures?(input: { url: string; head: string }): Promise<readonly FailedCheck[]>;
 }
 
 export interface FeatureSink {

@@ -1,4 +1,5 @@
 /** A scripted `FeatureEnv` for `runFeatureMachine` tests: every step records its call and input. */
+import type { FailedCheck } from "@/forge";
 import type { BranchFixOutcome } from "@/workflow/branch-fix";
 import type { BranchReviewFacts } from "@/workflow/branch-review";
 import type { FeatureEnv, FeatureLimits, FeatureSteps } from "@/workflow/feature-machine";
@@ -48,6 +49,16 @@ export interface FeatureMachineScript {
    * caller that predates the field keeps the outcome it had.
    */
   published?: PublishOutcome;
+  /**
+   * US-006: the outcomes successive `publish` calls return. The last entry repeats, so a run that
+   * publishes more than once keeps the last outcome. Absent leaves the fixed `PUBLISHED`.
+   */
+  publishedSeq?: PublishOutcome[];
+  /**
+   * US-006: the failed checks the `readCiFailures` step returns; an `Error` rejects the read.
+   * Absent wires no reader at all, so the run repairs no CI.
+   */
+  ciFailures?: readonly FailedCheck[] | Error;
 }
 
 export interface FeatureMachineHarnessOpts {
@@ -74,8 +85,12 @@ export function makeFeatureMachineHarness(script: FeatureMachineScript, over: Fe
   const reviewFacts: BranchReviewFacts[] = [];
   const reReviewInputs: (readonly WorkflowFinding[])[] = [];
   const adjudicated: (readonly WorkflowFinding[])[] = [];
+  const ciFailureInputs: { url: string; head: string }[] = [];
   const gates = [...(script.gates ?? [])];
   const reReviewQueue = [...(script.reReviews ?? [])];
+  const publishQueue = [...(script.publishedSeq ?? [])];
+  const ciFailures = script.ciFailures;
+  let lastPublished: PublishOutcome | undefined;
   let clock = 0;
   const steps: FeatureSteps = {
     repoGates: async () => {
@@ -115,7 +130,13 @@ export function makeFeatureMachineHarness(script: FeatureMachineScript, over: Fe
     },
     publish: async () => {
       calls.push("publish");
-      return script.published ?? PUBLISHED;
+      const next = publishQueue.shift();
+      if (next !== undefined) {
+        lastPublished = next;
+        return next;
+      }
+      // The last entry repeats, so a run that publishes more than once keeps its last outcome.
+      return lastPublished ?? script.published ?? PUBLISHED;
     },
     head: async () => `h${calls.length}`,
     changedFiles: async () => {
@@ -123,6 +144,16 @@ export function makeFeatureMachineHarness(script: FeatureMachineScript, over: Fe
       if (script.changed instanceof Error) throw script.changed;
       return script.changed ?? [];
     },
+    ...(ciFailures !== undefined
+      ? {
+          readCiFailures: async (input: { url: string; head: string }) => {
+            calls.push("readCiFailures");
+            ciFailureInputs.push(input);
+            if (ciFailures instanceof Error) throw ciFailures;
+            return ciFailures;
+          },
+        }
+      : {}),
   };
   const env: FeatureEnv = {
     steps,
@@ -147,5 +178,17 @@ export function makeFeatureMachineHarness(script: FeatureMachineScript, over: Fe
     ...(over.limits ? { limits: over.limits } : {}),
     ...(over.costExceeded ? { costExceeded: () => over.costExceeded?.(calls) === true } : {}),
   };
-  return { env, calls, ledger, artifacts, stepsSeen, updates, fixInputs, reviewFacts, reReviewInputs, adjudicated };
+  return {
+    env,
+    calls,
+    ledger,
+    artifacts,
+    stepsSeen,
+    updates,
+    fixInputs,
+    reviewFacts,
+    reReviewInputs,
+    adjudicated,
+    ciFailureInputs,
+  };
 }

@@ -89,6 +89,8 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
     "Max branch-fix rounds after the feature's branch review in workflow mode (default 2); each round fixes the findings still open or introduced by the last fix, then re-reviews them. 0 skips the branch fix and sends findings to adjudication",
   "workflow.finalGateRepairRounds":
     "Max repair rounds when the final repo gates turn red after a branch fix while the first repo-gate pass was green (default 1); 0 publishes the red gates without a repair",
+  "workflow.ciRepairRounds":
+    "Max repair rounds when the CI of the published pull request failed (default 1); each round repairs the failed checks, then the gates and the publish run again. 0 publishes the failed CI without a repair",
   "workflow.preflight": "Run the workflow preflight checks before implementing (default true)",
   "workflow.publish":
     'What publishing does after the final gates: "pr" (default) pushes, opens or promotes the PR and waits for CI; "push" pushes and waits for CI but opens no PR (the caller owns the PR); "none" pushes nothing and stays local. Root-only',
