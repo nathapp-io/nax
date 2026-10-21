@@ -144,6 +144,41 @@ export async function postInlineComment(
   return inlineReply(ref, reply);
 }
 
+export type ItemCommentInput = Pick<InlineCommentInput, "path" | "body" | "headSha">;
+
+/** Open a resolvable item thread without anchoring to a diff line. */
+export async function postItemComment(
+  ref: PrRef,
+  input: ItemCommentInput,
+  deps: ForgeDeps,
+  cwd: string,
+): Promise<PostedComment> {
+  assertCommentBody(input.body);
+  const argv =
+    ref.forge === "github"
+      ? [
+          "-X",
+          "POST",
+          `repos/${ref.repo}/pulls/${ref.number}/comments`,
+          "-f",
+          `body=${input.body}`,
+          "-f",
+          `commit_id=${input.headSha}`,
+          "-f",
+          `path=${input.path}`,
+          "-f",
+          "subject_type=file",
+        ]
+      : [
+          "-X",
+          "POST",
+          `projects/${encodeProjectPath(ref.repo)}/merge_requests/${ref.number}/discussions`,
+          "-f",
+          `body=${input.body}`,
+        ];
+  return inlineReply(ref, await runForgeWrite(ref, argv, deps, cwd));
+}
+
 const NUMERIC_COMMENT_ID = /^[0-9]+$/;
 const GITLAB_DISCUSSION_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const RESOLVE_REVIEW_THREAD =

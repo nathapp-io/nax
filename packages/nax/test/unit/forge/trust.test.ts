@@ -64,6 +64,16 @@ describe("readCurrentUser", () => {
 });
 
 describe("classifyPrTrust", () => {
+  test("US-001 AC-8 trusts a different author with write access", async () => {
+    const { deps } = fixture(ok({ login: "me", id: 1 }), ok({ permission: "write" }));
+    expect(await classifyPrTrust(gh, info, deps, "/repo")).toEqual(result(true, "author has write access"));
+  });
+  test("US-001 AC-9 permission failure preserves fail-closed reason", async () => {
+    const { deps } = fixture(ok({ login: "me", id: 1 }), fail("403 Forbidden"));
+    expect(await classifyPrTrust(gh, info, deps, "/repo")).toEqual(
+      result(false, "could not read author permissions: 403 Forbidden"),
+    );
+  });
   test("AC-6 AC-7 AC-8 rejects even own fork before any I/O and carries head SHA", async () => {
     const { deps, calls } = fixture();
     expect(await classifyPrTrust(gh, { ...info, crossRepo: true }, deps, "/repo")).toEqual(

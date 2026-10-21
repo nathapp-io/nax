@@ -5,6 +5,7 @@
  * barrel, so consumers import from `@/forge` and never `@/forge/detect`.
  */
 
+export { hasWriteAccess } from "./access";
 export type { FailedCheck } from "./ci-failures";
 export {
   CI_EXCERPT_CHARS,
@@ -14,11 +15,12 @@ export {
   prNumberFromUrl,
   readFailedChecks,
 } from "./ci-failures";
-export type { InlineCommentInput } from "./comments";
+export type { InlineCommentInput, ItemCommentInput } from "./comments";
 export {
   editComment,
   MAX_FORGE_COMMENT_CHARS,
   postInlineComment,
+  postItemComment,
   postPrComment,
   replyToThread,
   resolveThread,

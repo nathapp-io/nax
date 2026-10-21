@@ -44,6 +44,8 @@ export interface PrComment {
   readonly id: string;
   readonly kind: PrCommentKind;
   readonly author: string;
+  /** GitLab note author id; unset on GitHub. */
+  readonly authorId?: number;
   readonly body: string;
   readonly createdAt: string;
 }
@@ -63,7 +65,7 @@ export interface PrThread {
 
 export interface PostedComment {
   readonly id: string;
-  /** GitLab inline comment: the discussion it opened. */
+  /** GitLab thread comment: the discussion it opened. */
   readonly threadId?: string;
   readonly url?: string;
 }

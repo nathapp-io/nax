@@ -21,7 +21,7 @@ const note = () => ({
   id: 81,
   system: false,
   resolved: true,
-  author: { username: "bot" },
+  author: { username: "bot", id: 7 },
   body: "note",
   created_at: "today",
   position: { new_path: "new.ts", old_path: "old.ts", new_line: 12, old_line: 8 },
@@ -57,6 +57,16 @@ async function glThreads(items: unknown[] = [discussion()]) {
 }
 
 describe("listReviewThreads", () => {
+  test("US-001 AC-10 maps each GitLab note author id in order", async () => {
+    const notes = [note(), { ...note(), id: 83, author: { username: "alice", id: 8 } }];
+    expect((await glThreads([{ ...discussion(), notes }]))[0]?.comments.map((c) => c.authorId)).toEqual([7, 8]);
+  });
+  test("US-001 AC-12 GitHub leaves authorId unset", async () => {
+    const comments = (await ghThreads())[0]?.comments;
+    expect(comments).toHaveLength(1);
+    expect(comments?.[0]?.authorId).toBeUndefined();
+    expect(comments?.[0]).not.toHaveProperty("authorId");
+  });
   test("AC-1 explicit GitHub host, owner and name", async () => {
     const h = harness([ghPage()]);
     await forge.listReviewThreads(github, h.deps, "/repo");
@@ -140,7 +150,7 @@ describe("listReviewThreads", () => {
   });
   test("AC-20 system notes excluded with stable note ids", async () => {
     expect((await glThreads())[0]?.comments).toEqual([
-      { id: "81", kind: "thread", author: "bot", body: "note", createdAt: "today" },
+      { id: "81", kind: "thread", author: "bot", authorId: 7, body: "note", createdAt: "today" },
     ]);
   });
   test("AC-21 stops at exactly 50 GitHub requests", async () => {

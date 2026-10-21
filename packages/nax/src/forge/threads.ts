@@ -107,7 +107,7 @@ export interface GitlabDiscussion {
     id: number;
     system: boolean;
     resolved?: boolean;
-    author: { username: string };
+    author: { username: string; id: number };
     body: string;
     created_at: string;
     position?: {
@@ -199,6 +199,7 @@ function gitlabThread(discussion: GitlabDiscussion): PrThread {
         id: String(note.id),
         kind: "thread",
         author: note.author.username,
+        authorId: note.author.id,
         body: note.body,
         createdAt: note.created_at,
       })),
@@ -264,6 +265,7 @@ export async function listPrComments(ref: PrRef, deps: ForgeDeps, cwd: string): 
               id: String(note.id),
               kind: "comment",
               author: note.author.username,
+              authorId: note.author.id,
               body: note.body,
               createdAt: note.created_at,
             }),
