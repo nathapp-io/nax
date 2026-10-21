@@ -325,7 +325,8 @@ export async function finalGatesStep(
   env: FeatureEnv,
   rec: WorkflowFeatureRecord,
 ): Promise<StepResult<WorkflowFeatureRecord>> {
-  if (!rec.fixRan) {
+  // US-007: a CI repair changed the branch since the repo gates were read, so they are read again.
+  if (!rec.fixRan && !rec.ciRepairRounds) {
     featureStep("final-gates", false, true).done(
       `${gatesText(rec.repoGates?.failing ?? [])} (no fix ran; repo-gates reused)`,
     );
@@ -393,6 +394,42 @@ export async function gateRepairStep(
   if (out.autoCommitted) await env.sink.ledger(ledgerText.note("auto-committed the gate repair's edits"));
   if (out.dirty) await env.sink.ledger(ledgerText.note("gate repair left uncommitted edits: the auto-commit failed"));
   return { patch: { gateRepairRounds: round } };
+}
+
+/**
+ * US-007: the CI repair round. The failed checks of the published PR become the findings a
+ * branch-fix session repairs, exactly as the red final gates become the gate repair's findings.
+ * The run then goes back to the final gates, which read the repo's own gates again.
+ */
+export async function ciRepairStep(
+  env: FeatureEnv,
+  rec: WorkflowFeatureRecord,
+): Promise<StepResult<WorkflowFeatureRecord>> {
+  const round = (rec.ciRepairRounds ?? 0) + 1;
+  const max = limitsOf(env).ciRepairRounds ?? 0;
+  if (round > max) {
+    // A resume can find the cap lowered under a pending repair; the CI stays as it is.
+    await env.sink.ledger(
+      ledgerText.note(`CI repair skipped: round ${round} is past workflow.ciRepairRounds (${max})`),
+      NO_MIRROR,
+    );
+    return { patch: {} };
+  }
+  // `C` ids: a CI check is no branch finding, so it never spends the B counter the summary counts.
+  const findings = (rec.ciRepairFindings ?? []).map((d, i) => ({ ...d, id: `C${i + 1}` }));
+  if (findings.length === 0) return { patch: { ciRepairRounds: round } };
+  const list = findings.map((f) => f.id);
+  await env.sink.ledger(
+    ledgerText.note(`CI repair r${round}: ${findings.length} item(s): ${list.join(", ")}`),
+    NO_MIRROR,
+  );
+  const log = featureStep(roundLabel("ci-repair", round), true, false, env.steps.modelFor?.("branch-fix"));
+  const out = await env.steps.branchFix(findings);
+  log.done(`${list.join(" ")}${out.failure ? ` (session failed: ${out.failure})` : ""}`);
+  if (out.failure) await env.sink.ledger(ledgerText.note(`CI repair session failed: ${out.failure}`), NO_MIRROR);
+  if (out.autoCommitted) await env.sink.ledger(ledgerText.note("auto-committed the CI repair's edits"));
+  if (out.dirty) await env.sink.ledger(ledgerText.note("CI repair left uncommitted edits: the auto-commit failed"));
+  return { patch: { ciRepairRounds: round, ciRepairFindings: undefined } };
 }
 
 /**

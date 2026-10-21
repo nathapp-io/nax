@@ -5,6 +5,7 @@ import {
   branchFixStep,
   branchReReviewStep,
   branchReviewStep,
+  ciRepairStep,
   featureStep,
   finalGatesStep,
   fixNowMinors,
@@ -80,6 +81,15 @@ export const FEATURE_GRAPH: StepGraph<WorkflowFeatureRecord, FeatureEnv, Feature
       transitions: [{ to: "final-gates" }],
       run: gateRepairStep,
     },
+    // US-007: the CI repair of a draft PR whose CI failed. The repair is a committing agent node,
+    // so the run reads the repo gates again before it publishes the repaired branch.
+    "ci-repair": {
+      kind: "agent",
+      commits: true,
+      produces: ["ciRepairRounds", "ciRepairFindings"],
+      transitions: [{ to: "final-gates" }],
+      run: ciRepairStep,
+    },
     publish: {
       kind: "forge",
       commits: true,
@@ -94,9 +104,11 @@ export const FEATURE_GRAPH: StepGraph<WorkflowFeatureRecord, FeatureEnv, Feature
         "head",
         "passed",
         "flaggedDecisions",
+        "ciRepairFindings",
         "endedAt",
       ],
-      transitions: [{ to: "done" }],
+      exits: ["ci-repair"],
+      transitions: [{ on: "ci-repair", to: "ci-repair" }, { to: "done" }],
       run: publishStep,
     },
   },
@@ -121,5 +133,6 @@ function hasAgentWork(step: FeatureStep, rec: WorkflowFeatureRecord): boolean {
       Boolean(rec.fixBase)
     );
   if (step === "adjudicate") return rec.reviewOpen.length > 0;
+  if (step === "ci-repair") return (rec.ciRepairFindings?.length ?? 0) > 0;
   return step === "gate-repair" && (rec.gateRepairFindings?.length ?? 0) > 0;
 }
