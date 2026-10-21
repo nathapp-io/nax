@@ -5,8 +5,9 @@ import type { resolveBotChecks } from "@/bot/checks";
 import { _botFixDeps, runBotFix } from "@/bot/fix-run";
 import { openBotLog } from "@/bot/log";
 import { NaxError } from "@/errors";
-import { withNaxBotMarker } from "@/forge";
+import { NAX_WORKFLOW_PR_MARKER, withNaxBotMarker } from "@/forge";
 import { getLogger, initLogger, resetLogger } from "@/logger";
+import { botRulingReadOp } from "@/operations";
 import { botChecksExtractOp } from "@/operations/bot-checks-extract";
 import { botRunDir } from "@/workflow/paths";
 import { _workflowDeps } from "@/workflow/step-context";
@@ -113,6 +114,32 @@ afterEach(async () => {
 });
 
 describe("runBotFix", () => {
+  test.each([false, true])("AC-17/18 records marked PR before fix; failure=%s", async (fails) => {
+    env = { ...env, info: { ...env.info, body: NAX_WORKFLOW_PR_MARKER } };
+    const record = mock<typeof _botFixDeps.recordPrRulings>(async (args) => {
+      events.push("rulings");
+      expect(args.threads).toEqual(env.threads);
+      expect(args.comments).toEqual([]);
+      expect(await args.readModel({ items: [] })).toBeNull();
+      if (fails) throw new Error("record denied");
+      return { recorded: [], settled: [], open: [], asked: 0, failed: 0 };
+    });
+    _botFixDeps.recordPrRulings = record;
+    const call = spyOn(_workflowDeps, "callOp").mockResolvedValue(null);
+    const warn = spyOn(getLogger(), "warn");
+    try {
+      expect(await runBotFix(input)).toMatchObject({ outcome: "nothing" });
+      expect(record).toHaveBeenCalledTimes(1);
+      expect(events.indexOf("rulings")).toBeLessThan(events.indexOf("fix"));
+      expect(fix).toHaveBeenCalledTimes(1);
+      expect(call).toHaveBeenCalledWith(env.ctx.callCtx, botRulingReadOp, { items: [], model: "fast" });
+      if (fails)
+        expect(warn).toHaveBeenCalledWith("bot-fix", "Could not record PR rulings", { pr: 42, error: "record denied" });
+    } finally {
+      warn.mockRestore();
+      call.mockRestore();
+    }
+  });
   test("checks AC-1/2/3 saved detected checks run without base config even after base moves", async () => {
     env = {
       ...env,

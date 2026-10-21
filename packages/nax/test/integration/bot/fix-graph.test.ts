@@ -172,6 +172,17 @@ describe("BOT_FIX_GRAPH ready node", () => {
 
   test("AC-21: a marked nax-workflow draft never waits for CI", async () => {
     const env = makeBotFixDraftEnv({ body: `${NAX_WORKFLOW_PR_MARKER}\n\n## Summary` });
+    spyOn(_fixReportDeps, "readPrInfo").mockResolvedValue(env.info);
+    spyOn(_fixReportDeps, "readCurrentUser").mockResolvedValue(env.user);
+    spyOn(_fixReportDeps, "listReviewThreads").mockResolvedValue([]);
+    spyOn(_fixReportDeps, "listPrComments").mockResolvedValue([]);
+    spyOn(_fixReportDeps, "recordPrRulings").mockResolvedValue({
+      recorded: [],
+      settled: [],
+      open: [],
+      asked: 0,
+      failed: 0,
+    });
     const wait = spyOn(_fixReportDeps, "waitForChecks").mockImplementation(() => {
       throw new Error("waitForChecks must not run on a nax-workflow PR");
     });
@@ -179,6 +190,6 @@ describe("BOT_FIX_GRAPH ready node", () => {
     const state = await runGraph(env);
     expect(wait).not.toHaveBeenCalled();
     expect(state.markedReady).toBe(false);
-    expect(state.readyHeld).toBe("nax workflow PR: promote it with nax workflow promote");
+    expect(state.readyHeld).toBe("no nax item index on this PR");
   });
 });
