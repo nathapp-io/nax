@@ -3,7 +3,7 @@
   "feature": "workflow-pr-rulings-review-split",
   "branchName": "feat/workflow-pr-rulings-review-split",
   "createdAt": "2026-10-21T00:00:00.000Z",
-  "updatedAt": "2026-10-21T15:45:35.439Z",
+  "updatedAt": "2026-10-21T15:59:22.905Z",
   "userStories": [
     {
       "id": "US-001",
@@ -876,14 +876,17 @@
         "US-013",
         "US-014"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Coverage selection and lenient retry results must flow across op, package creation, graph state and forge summary without discarding partial findings."
+        "reasoning": "Coverage selection and lenient retry results must flow across op, package creation, graph state and forge summary without discarding partial findings.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/operations/bot-pr-review.ts",
@@ -902,7 +905,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "b592f67a34eb85ecad9616ed4ca499730c3b0aa3"
     },
     {
       "id": "US-016",
