@@ -591,7 +591,7 @@ described in Integration.
 - `packages/nax/test/unit/forge/threads-comments.test.ts` — GitLab note fixtures and expectations gain the author `id` and `authorId`; the invariant: ordering and every other field are unchanged.
 
 **US-005**
-- `packages/nax/test/unit/workflow/finalize.test.ts` — the test asserting a second `commitAndPush` after the approval ("Ledger push failed" warning) and any call-order expectation that includes a post-approval `ledger`/`push` pair are removed or replaced: after an approval there is no further `commitLedger` or `commitAndPush` call. The invariant: the pre-CI ledger commit and push are unchanged. New tests go in `finalize-approval-push.test.ts`; this file must not grow (it is at 797 of 800 lines).
+- `packages/nax/test/unit/workflow/finalize.test.ts` — the test asserting a second `commitAndPush` after the approval ("Ledger push failed" warning) and any call-order expectation that includes a post-approval `ledger`/`push` pair are removed or replaced: after an approval there is no further `commitLedger` or `commitAndPush` call. The invariant: the pre-CI ledger commit and push are unchanged. New tests go in the new approval-push test file this story creates; this file must not grow (it is at 797 of 800 lines).
 
 **US-008**
 - `packages/nax/test/integration/bot/review-run.test.ts` — stubs of the review deps now also see a `recordPrRulings` dep; tests of unmarked PRs assert it is not called and that `earlier` is unchanged. The invariant: unmarked PRs see exactly today's `earlier` and posting.
