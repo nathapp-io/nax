@@ -246,11 +246,11 @@ describe("recordPrRulings", () => {
     const out = await recordPrRulings(input());
     expect(out.index).toEqual({ keys: [key], reviewedHead: "a".repeat(40) });
   });
-  test("newest kept nonkeyword does not fall back to an older keyword or invoke model", async () => {
+  test("newest kept nonkeyword does not fall back to an older keyword when model is unavailable", async () => {
     const out = await recordPrRulings(input([thread(opener(), reply(), reply("please reconsider"))]));
     expect(post).not.toHaveBeenCalled();
     expect(out.open).toHaveLength(1);
-    expect(readModel).not.toHaveBeenCalled();
+    expect(readModel).toHaveBeenCalledTimes(1);
   });
   test("ignores newest nonwriter reply and uses newest writer reply", async () => {
     access.mockImplementation(async (...args) => args[1].login === "alice");

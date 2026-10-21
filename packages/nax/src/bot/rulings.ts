@@ -1,39 +1,24 @@
 /** Record collaborator rulings durably on the PR; body ticks are best-effort presentation only. */
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { ForgeDeps } from "@/forge";
-import { hasWriteAccess, readPrInfo, replyToThread, resolveThread, withNaxBotMarker } from "@/forge";
+import { hasWriteAccess, ownComments, readPrInfo, replyToThread, resolveThread, withNaxBotMarker } from "@/forge";
 import type { PrComment, PrInfo, PrRef } from "@/forge/pr-types";
 import { getLogger } from "@/logger";
-import type { DecisionEntry, Disposition, SidecarKind } from "../workflow/decisions-sidecar";
+import type { BotRulingReadInput, BotRulingReadVerdict } from "../operations/bot-ruling-read";
+import type { DecisionEntry, SidecarKind } from "../workflow/decisions-sidecar";
 import type { ItemThread, SettledItems } from "../workflow/item-thread-state";
 // Workflow leaves avoid pulling feature orchestration into the bot recorder.
 import { readItemThreads, settleItemThreads } from "../workflow/item-thread-state";
 import type { ItemIndex, PrRuling } from "../workflow/item-threads";
-import { renderRulingEcho } from "../workflow/item-threads";
+import { askKey, renderRulingEcho } from "../workflow/item-threads";
 import { editBodyArgv, tickChecklist } from "../workflow/promote";
 import { parseRulingKeyword } from "../workflow/ruling-keyword";
 import type { OpenItem } from "../workflow/types";
 
-/** Structural seam until the model-read operation owns these types at integration. */
-export interface BotRulingReadInput {
-  readonly items: readonly {
-    readonly id: string;
-    readonly kind: string;
-    readonly issue: string;
-    readonly reply: { readonly id: string; readonly author: string; readonly body: string };
-  }[];
-  readonly model?: string;
-}
-
-export interface BotRulingReadVerdict {
-  readonly rulings: readonly {
-    readonly id: string;
-    readonly disposition: Disposition | "none";
-    readonly reason: string;
-    readonly quote: string;
-    readonly sha?: string;
-  }[];
-}
+export const MAX_RULING_ITEMS = 20;
+const CLARIFICATION =
+  "I could not read a ruling from that reply. Start a reply with fixed <sha>, waive: <reason>, confirm, override: <reason> or verified.";
+type OpenRulingItem = SettledItems["open"][number];
 
 export interface RecordRulingsInput {
   readonly ref: PrRef;
@@ -55,7 +40,14 @@ export interface RecordRulingsOutcome {
   readonly failed: number;
 }
 
-export const _rulingsDeps = { hasWriteAccess, readPrInfo, replyToThread, resolveThread, tickChecklist, getLogger };
+export const _rulingsDeps = {
+  hasWriteAccess,
+  readPrInfo,
+  replyToThread,
+  resolveThread,
+  tickChecklist,
+  getLogger,
+};
 
 const CHECKLIST_KINDS = {
   finding: "finding",
@@ -147,6 +139,89 @@ async function tickBody(input: RecordRulingsInput, settled: SettledItems["settle
   }
 }
 
+function modelCandidate(item: OpenRulingItem, entry?: BotRulingReadVerdict["rulings"][number]): PrRuling | null {
+  const reply = item.kept.at(-1);
+  if (!reply || !entry || entry.disposition === "none") return null;
+  const collapse = (text: string) => text.replace(/\s+/g, " ").trim();
+  const quote = collapse(entry.quote);
+  const reason = entry.reason.trim();
+  if (!quote || !collapse(reply.body).includes(quote) || !reason || /[\r\n]/.test(reason)) return null;
+  if (entry.disposition === "fixed" && (!entry.sha?.trim() || !reply.body.includes(entry.sha))) return null;
+  return {
+    itemKey: item.key,
+    itemId: item.itemId,
+    disposition: entry.disposition,
+    reason,
+    by: reply.author,
+    ...(entry.disposition === "fixed" ? { sha: entry.sha } : {}),
+  };
+}
+
+async function ask(input: RecordRulingsInput, item: OpenRulingItem): Promise<"asked" | "failed" | "existing"> {
+  const key = askKey(item.key, item.kept.at(-1)?.id ?? "");
+  if (ownComments(item.thread.comments, input.login).some((own) => own.key === key)) return "existing";
+  try {
+    await _rulingsDeps.replyToThread(
+      input.ref,
+      item.thread,
+      withNaxBotMarker(CLARIFICATION, key),
+      input.deps,
+      input.cwd,
+    );
+    return "asked";
+  } catch (error) {
+    warn("Could not post ruling clarification", { itemId: item.itemId, error: errorMessage(error) });
+    return "failed";
+  }
+}
+
+function modelItems(batch: readonly OpenRulingItem[]): BotRulingReadInput["items"] {
+  return batch.flatMap((item) => {
+    const reply = item.kept.at(-1);
+    const prefix = `Open item **${item.itemId}** (${item.kind}): `;
+    const issue =
+      item.thread.comments[0]?.body
+        .split(/\r?\n/)
+        .find((line) => line.startsWith(prefix))
+        ?.slice(prefix.length) ?? "";
+    return reply
+      ? [{ id: item.itemId, kind: item.kind, issue, reply: { id: reply.id, author: reply.author, body: reply.body } }]
+      : [];
+  });
+}
+
+async function readModelCandidates(input: RecordRulingsInput, open: SettledItems["open"]) {
+  const batch = open
+    .filter((item) => {
+      const reply = item.kept.at(-1);
+      return reply && !parseRulingKeyword(reply.body);
+    })
+    .slice(0, MAX_RULING_ITEMS);
+  const candidates = new Map<OpenRulingItem, PrRuling>();
+  const result = { candidates, asked: 0, failed: 0 };
+  if (!batch.length) return result;
+  let verdict: BotRulingReadVerdict | null;
+  try {
+    verdict = await input.readModel({ items: modelItems(batch) });
+  } catch (error) {
+    warn("Could not read model rulings", { error: errorMessage(error) });
+    return result;
+  }
+  if (!verdict) return result;
+  for (const item of batch) {
+    const ruling = modelCandidate(
+      item,
+      verdict.rulings.find((entry) => entry.id === item.itemId),
+    );
+    if (ruling) candidates.set(item, ruling);
+    else {
+      const posted = await ask(input, item);
+      if (posted !== "existing") result[posted]++;
+    }
+  }
+  return result;
+}
+
 /** Only successful echoes count as newly recorded; resolution failure never undoes an echo. */
 export async function recordPrRulings(input: RecordRulingsInput): Promise<RecordRulingsOutcome> {
   const read = readItemThreads(input.threads, input.comments, input.login);
@@ -154,18 +229,22 @@ export async function recordPrRulings(input: RecordRulingsInput): Promise<Record
   const settled = [...initial.settled];
   const open: SettledItems["open"][number][] = [];
   const recorded: PrRuling[] = [];
-  let failed = 0;
+  const model = await readModelCandidates(input, initial.open);
+  let failed = model.failed;
   for (const item of initial.settled) {
     if (!item.thread.resolved) await resolve(input, item);
   }
   for (const item of initial.open) {
     const newest = item.kept.at(-1);
     const keyword = newest ? parseRulingKeyword(newest.body) : null;
-    if (!keyword || !newest) {
+    const ruling: PrRuling | undefined =
+      keyword && newest
+        ? { ...keyword, itemKey: item.key, itemId: item.itemId, by: newest.author }
+        : model.candidates.get(item);
+    if (!ruling) {
       open.push(item);
       continue;
     }
-    const ruling: PrRuling = { ...keyword, itemKey: item.key, itemId: item.itemId, by: newest.author };
     if (!(await postEcho(input, item, ruling))) {
       open.push(item);
       failed++;
@@ -176,5 +255,5 @@ export async function recordPrRulings(input: RecordRulingsInput): Promise<Record
     await resolve(input, item);
   }
   await tickBody(input, settled);
-  return { ...(read.index ? { index: read.index } : {}), recorded, settled, open, asked: 0, failed };
+  return { ...(read.index ? { index: read.index } : {}), recorded, settled, open, asked: model.asked, failed };
 }
