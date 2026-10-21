@@ -3,7 +3,7 @@
   "feature": "workflow-ci-repair-readiness",
   "branchName": "feat/workflow-ci-repair-readiness",
   "createdAt": "2026-10-21T00:00:00Z",
-  "updatedAt": "2026-10-21T06:00:24.939Z",
+  "updatedAt": "2026-10-21T06:06:45.857Z",
   "userStories": [
     {
       "id": "US-001",
@@ -269,8 +269,8 @@
         "small-feat"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -282,7 +282,19 @@
         "profileModelTier": "fast",
         "initialAgent": "native",
         "initialProfileId": "native-luna",
-        "initialModelTier": "fast"
+        "initialModelTier": "fast",
+        "initialComplexity": "medium",
+        "modelTier": "fast",
+        "routerDecision": {
+          "mode": "shadow",
+          "router": "decision-proxy:nax-routing",
+          "outcome": "picked",
+          "profileId": "native-sol",
+          "confidence": 0.56,
+          "plannedProfileId": "native-luna",
+          "applied": false,
+          "decidedAt": "2026-10-21T06:00:29.436Z"
+        }
       },
       "contextFiles": [
         "packages/nax/src/forge/marker.ts",
@@ -299,7 +311,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "258b9f99fda24ee2a3f13f707441865ce28d34c8"
     },
     {
       "id": "US-005",
