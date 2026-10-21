@@ -1,6 +1,7 @@
 /** The workflow PR body (spec §7 step 9). Separate from finish's body; reuses its advisor section and escapes. */
 import type { AdviceDecision } from "@/advisor";
 import { buildAdvisorSection } from "@/finish";
+import { NAX_WORKFLOW_PR_MARKER } from "@/forge";
 import { redactedExcerpt, safeBlock, safeCell, safeCode, safeInline } from "./pr-body-safe";
 import type { PreflightFile } from "./preflight";
 import type {
@@ -183,10 +184,11 @@ export const PR_BODY_MAX_CHARS = 60_000;
 const TRUNCATED_POINTER = "Open items truncated to fit the PR body; full text in result.json verdict.openItems";
 
 export function buildWorkflowPrBody(input: WorkflowPrBodyInput): string {
-  const full = assemble(input, beforeReady(input));
+  const prefix = `${NAX_WORKFLOW_PR_MARKER}\n\n`;
+  const full = `${prefix}${assemble(input, beforeReady(input))}`;
   if (full.length <= PR_BODY_MAX_CHARS) return full;
   const ready = beforeReady(input, ITEM_CHARS);
-  const capped = assemble(input, ready ? `${ready}\n\n${TRUNCATED_POINTER}` : null);
+  const capped = `${prefix}${assemble(input, ready ? `${ready}\n\n${TRUNCATED_POINTER}` : null)}`;
   if (capped.length <= PR_BODY_MAX_CHARS) return capped;
   const tail = `\n\n${TRUNCATED_POINTER}`;
   return `${capped.slice(0, PR_BODY_MAX_CHARS - tail.length)}${tail}`;

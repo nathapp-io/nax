@@ -29,7 +29,9 @@ export type { LinkedIssue } from "./issues";
 export { MAX_LINKED_ISSUES, parseClosingRefs, readIssue, readLinkedIssues } from "./issues";
 export {
   findOwnComments,
+  hasNaxWorkflowMarker,
   NAX_BOT_HEADER,
+  NAX_WORKFLOW_PR_MARKER,
   ownComments,
   parseNaxBotMarker,
   stripNaxBotMarkers,

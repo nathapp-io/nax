@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { makeAdviceDecision } from "@test/helpers";
+import { NAX_WORKFLOW_PR_MARKER } from "@/forge";
 import {
   buildWorkflowPrBody,
   extractAssumptions,
@@ -47,6 +48,29 @@ const input: WorkflowPrBodyInput = {
 
 describe("buildWorkflowPrBody", () => {
   const body = buildWorkflowPrBody(input);
+
+  test("AC-3 starts with the workflow marker and Summary", () => {
+    expect(buildWorkflowPrBody(input).startsWith(`${NAX_WORKFLOW_PR_MARKER}\n\n## Summary`)).toBe(true);
+  });
+
+  test("AC-4 and AC-5 retain the marker and size cap after truncation", () => {
+    const oversized = buildWorkflowPrBody({
+      ...input,
+      minorsLeft: Array.from({ length: 50 }, () => "m".repeat(299)),
+      rulings: Array.from({ length: 50 }, () => ({
+        findingId: "B",
+        action: "defer" as const,
+        text: "t".repeat(299),
+        why: "w".repeat(299),
+        costIfWrong: "c",
+        source: "advisor" as const,
+      })),
+      assumptions: Array.from({ length: 50 }, () => ({ storyId: "S", text: "a".repeat(699) })),
+      openItems: [held],
+    });
+    expect(oversized.startsWith(NAX_WORKFLOW_PR_MARKER)).toBe(true);
+    expect(oversized.length).toBe(PR_BODY_MAX_CHARS);
+  });
 
   test("every section in order", () => {
     const order = [
