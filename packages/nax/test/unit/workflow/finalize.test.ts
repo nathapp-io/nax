@@ -161,7 +161,7 @@ describe("publish (P4-R3, P4-R11)", () => {
     const calls = wire({ ci: "green" });
     const asked: string[] = [];
     const out = await publish(makeFeatureContext(), input({ advisor: advisor(true, asked) }));
-    expect(calls.map((c) => c.name)).toEqual(["ledger", "push", "draft", "ci", "ledger", "push", "promote"]);
+    expect(calls.map((c) => c.name)).toEqual(["ledger", "push", "draft", "ci", "promote"]);
     expect(calls.find((c) => c.name === "push")?.arg).toEqual(["/repo", "feat/x"]);
     expect(asked).toEqual(["finish-approval"]);
     expect(calls.at(-1)?.keepDraft).toBe(false);
@@ -432,7 +432,7 @@ describe("publish modes (US-002)", () => {
   test("AC-17: a workflow config without publish follows the pr path", async () => {
     const calls = wire({ ci: "green" });
     const out = await publish(withMode(makeFeatureContext(), null), input());
-    expect(calls.map((c) => c.name)).toEqual(["ledger", "push", "draft", "ci", "ledger", "push", "promote"]);
+    expect(calls.map((c) => c.name)).toEqual(["ledger", "push", "draft", "ci", "promote"]);
     expect(out).toMatchObject({ outcome: "ready", ci: "green" });
   });
 });
@@ -451,28 +451,25 @@ describe("publish commits the ledger (US-003)", () => {
     expect(ledger).toBeLessThan(calls.findIndex((c) => c.name === "push"));
   });
 
-  test("AC-6: an approval that added a ledger line pushes it again, before promoting", async () => {
+  test("AC-6: approval does not add a post-CI ledger commit or push", async () => {
     const calls = wire({ ci: "green" });
     const out = await publish(makeFeatureContext(), input());
-    expect(names(calls)).toEqual(["ledger", "push", "draft", "ci", "ledger", "push", "promote"]);
-    expect(calls.filter((c) => c.name === "push")[1]?.skipCommit).toBe(true);
+    expect(names(calls)).toEqual(["ledger", "push", "draft", "ci", "promote"]);
     expect(out.outcome).toBe("ready");
   });
 
-  test("AC-7: an approval that added no ledger line does not push again", async () => {
-    const calls = wire({ ci: "green", ledger: [true, false] });
+  test("AC-7: there is no approval-time ledger commit when no ruling is added", async () => {
+    const calls = wire({ ci: "green", ledger: [true] });
     const out = await publish(makeFeatureContext(), input());
-    // Two ledger commits were attempted (one before the push, one after the approval)...
-    expect(calls.filter((c) => c.name === "ledger")).toHaveLength(2);
-    // ...but the second made no commit, so there is nothing to push again.
+    expect(calls.filter((c) => c.name === "ledger")).toHaveLength(1);
     expect(calls.filter((c) => c.name === "push")).toHaveLength(1);
     expect(out.outcome).toBe("ready");
   });
 
-  test("AC-8: a held approval still pushes its ledger line before keeping the draft", async () => {
+  test("AC-8: a held approval keeps the draft without another ledger push", async () => {
     const calls = wire({ ci: "green" });
     const out = await publish(makeFeatureContext(), input({ advisor: advisor(false) }));
-    expect(names(calls)).toEqual(["ledger", "push", "draft", "ci", "ledger", "push", "promote"]);
+    expect(names(calls)).toEqual(["ledger", "push", "draft", "ci", "promote"]);
     expect(calls.at(-1)?.keepDraft).toBe(true);
     expect(out).toMatchObject({ outcome: "draft", reasons: ["advisor held: risky"] });
   });
@@ -490,15 +487,10 @@ describe("publish commits the ledger (US-003)", () => {
     expect(calls.at(-1)?.keepDraft).toBe(true);
   });
 
-  test("AC-10: a failed second push does not stop the promotion", async () => {
+  test("AC-10: there is no second push that can fail after approval", async () => {
     const calls = wire({ ci: "green", pushThrowsAt: 2 });
-    const out = await withWarnSpy(async (warnSpy) => {
-      const res = await publish(makeFeatureContext(), input());
-      const warns = warnSpy.mock.calls.filter((c) => (c[2] as { storyId?: string } | undefined)?.storyId === "_run");
-      expect(warns).toHaveLength(1);
-      expect(warns[0]?.[1]).toContain("Ledger push failed");
-      return res;
-    });
+    const out = await publish(makeFeatureContext(), input());
+    expect(calls.filter((c) => c.name === "push")).toHaveLength(1);
     expect(calls.at(-1)?.name).toBe("promote");
     expect(calls.at(-1)?.keepDraft).toBe(false);
     expect(out).toMatchObject({ outcome: "ready", ci: "green" });

@@ -18,7 +18,7 @@ import type { CiWaitResult } from "./ci-wait";
 import { parseClosingIssues } from "./closing-issues";
 import type { FeatureContext } from "./feature-context";
 import { _featureDeps } from "./feature-deps";
-import { changedFilesSince, ledgerCommitMessage, listUncommitted, readDefaultBranch, readHead } from "./git";
+import { changedFilesSince, listUncommitted, readDefaultBranch, readHead } from "./git";
 import { buildOpenItems } from "./open-items";
 import { workflowStoryDir } from "./paths";
 import { buildWorkflowPrBody, extractAssumptions, type WorkflowPrBodyFacts } from "./pr-body";
@@ -423,26 +423,6 @@ function ledgerMissingReason(missingRulings: number): string {
   return `${LEDGER_MISSING_PREFIX} the branch is missing ${missingRulings} advisor rulings`;
 }
 
-/**
- * After the approval: `askApproval` appended the `finish-approval` ruling, and that line needs its own
- * commit *and* its own push — the first push already happened. A second push that fails is logged, not
- * fatal: the PR is promoted on the CI result observed before the approval (US-003).
- *
- * Its ledger commit is silent about missing rulings on purpose: `prMode` already recorded the reason
- * for the first one, and this call cannot change a draft the advisor has since approved.
- */
-async function pushLedger(fc: FeatureContext): Promise<void> {
-  if (!(await ledgerCommit(fc)).committed) return;
-  try {
-    await _featureDeps.commitAndPush(fc.projectDir, fc.branch, ledgerCommitMessage(fc.feature), { skipCommit: true });
-  } catch (err) {
-    getSafeLogger()?.warn("workflow", "Ledger push failed — the PR is still promoted", {
-      storyId: "_run",
-      error: errorMessage(err),
-    });
-  }
-}
-
 /** The CI wait both publishing modes share; the timeout and poll interval come from the workflow config. */
 async function waitForCi(fc: FeatureContext, forge: ForgeKind): Promise<CiWaitResult> {
   let expectedSha: string | undefined;
@@ -494,8 +474,8 @@ async function pushMode(plan: PublishPlan): Promise<PublishOutcome> {
 }
 
 /**
- * `pr` mode: the ledger commit, the push, the draft PR, the CI wait, the approval (which appends its
- * own ruling and so gets the ledger committed and pushed again), then promote or keep the draft.
+ * `pr` mode: commit the ledger, push the branch, open the draft PR, wait for CI, ask for approval,
+ * then promote or keep the draft. The approved head is the same head whose CI was observed.
  */
 async function prMode(plan: PublishPlan, input: PublishInput): Promise<PublishOutcome> {
   const fc = plan.fc;
@@ -542,8 +522,6 @@ async function prMode(plan: PublishPlan, input: PublishInput): Promise<PublishOu
       evidence: approvalEvidence(input, ci, body.minorsLeft, changed),
     });
   }
-  // A deterministic reason means the advisor is never asked, so there is no second ledger line either.
-  if (approval) await pushLedger(fc);
   const parts: PrParts = {
     pr,
     body,
