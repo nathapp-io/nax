@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { makeBotFixDraftEnv, makeBotFixEnv, makeNaxConfig } from "@test/helpers";
+import { makeBotFixDraftEnv, makeBotFixEnv, makeNaxConfig, makeTestRuntime } from "@test/helpers";
 import {
   _fixReportDeps,
   type BotFixState,
@@ -11,6 +11,7 @@ import {
 } from "@/bot";
 import { NAX_WORKFLOW_PR_MARKER, type PrComment, type PrThread, parseNaxBotMarker, withNaxBotMarker } from "@/forge";
 import { initLogger, resetLogger } from "@/logger";
+import { _ciWaitDeps } from "@/workflow/ci-wait";
 import { markReadyArgv } from "@/workflow/promote";
 
 const state: BotFixState = { step: "reply", timings: {}, outcome: "pushed", pushedSha: "abcdef12" };
@@ -283,6 +284,45 @@ describe("readyStep", () => {
     expect(await readyStep(env, state)).toEqual({ patch: { markedReady: true }, exit: "report" });
     expect(wait).toHaveBeenCalledTimes(1);
     expect(run).toHaveBeenCalledWith(markReadyArgv(forge, "42"), { cwd: env.repoRoot });
+  });
+  test("aborting during the first CI polling delay stops polling and never marks ready", async () => {
+    const controller = new AbortController();
+    const base = draftEnvWithTimeouts();
+    const runtime = makeTestRuntime({ parentSignal: controller.signal });
+    const env = { ...base, ctx: { ...base.ctx, callCtx: { ...base.ctx.callCtx, runtime } } };
+    let clock = 0;
+    spyOn(_ciWaitDeps, "now").mockImplementation(() => clock);
+    spyOn(_ciWaitDeps, "schedule").mockImplementation(() => () => {});
+    const sleep = spyOn(_ciWaitDeps, "sleep").mockImplementation(async (ms) => {
+      clock += ms;
+      controller.abort();
+    });
+    const checks = spyOn(_ciWaitDeps, "run").mockImplementation(async (cmd) => {
+      const stdout =
+        cmd[2] === "view"
+          ? JSON.stringify({ mergeable: "MERGEABLE", headRefOid: state.pushedSha })
+          : JSON.stringify([{ name: "test", bucket: controller.signal.aborted ? "pass" : "pending" }]);
+      return { exitCode: 0, stdout, stderr: "" };
+    });
+    const run = spyOn(env.forge, "run");
+    await expect(readyStep(env, state)).rejects.toMatchObject({ name: "AbortError" });
+    expect(sleep).toHaveBeenCalledTimes(1);
+    expect(checks.mock.calls.filter(([cmd]) => cmd[2] === "checks")).toHaveLength(1);
+    expect(run).not.toHaveBeenCalled();
+  });
+  test("an abort when CI turns green still prevents the readiness write", async () => {
+    const controller = new AbortController();
+    const base = makeBotFixDraftEnv();
+    const runtime = makeTestRuntime({ parentSignal: controller.signal });
+    const env = { ...base, ctx: { ...base.ctx, callCtx: { ...base.ctx.callCtx, runtime } } };
+    const wait = spyOn(_fixReportDeps, "waitForChecks").mockImplementation(async () => {
+      controller.abort();
+      return greenCi;
+    });
+    const run = spyOn(env.forge, "run");
+    await expect(readyStep(env, state)).rejects.toMatchObject({ name: "AbortError" });
+    expect(wait.mock.calls[0]?.[2]?.signal).toBe(runtime.signal);
+    expect(run).not.toHaveBeenCalled();
   });
   test("AC-16: rejects failed readiness writes without claiming success", async () => {
     const env = makeBotFixDraftEnv();

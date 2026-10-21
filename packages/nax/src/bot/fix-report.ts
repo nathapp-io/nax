@@ -100,6 +100,7 @@ async function waitForCi(env: BotFixEnv, state: BotFixState): Promise<CiWaitResu
     cwd: env.repoRoot,
     timeoutMs: timeouts.ciWaitMs,
     pollMs: timeouts.ciPollMs,
+    signal: env.ctx.callCtx.runtime.signal,
     expectedSha: state.pushedSha ?? env.info.headSha,
   });
 }
@@ -114,6 +115,7 @@ export async function readyStep(env: BotFixEnv, state: BotFixState): Promise<Ste
     return { patch: { markedReady: false, readyHeld: WORKFLOW_PR_HOLD }, exit: "report" };
   }
   const ci = await waitForCi(env, state);
+  env.ctx.callCtx.runtime.signal.throwIfAborted();
   if (!ciAllowsReady(ci.outcome)) {
     return { patch: { markedReady: false, readyHeld: `CI ${ci.outcome}: ${ci.detail}` }, exit: "report" };
   }
