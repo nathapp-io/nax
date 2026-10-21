@@ -237,6 +237,29 @@ async function writeRulings(
 
 const draftPrView = (body: string): string => JSON.stringify({ isDraft: true, body, url: PROMOTE_URL });
 
+/** New read-only API answers; existing detection/view/write answers remain untouched. */
+function emptyPrReads(cmd: readonly string[]): Partial<ForgeRunResult> {
+  if (cmd[1] !== "api") return {};
+  if (cmd.at(-1) === "user") return { stdout: '{"login":"nax"}' };
+  if (cmd.includes("graphql"))
+    return {
+      stdout: JSON.stringify({
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                nodes: [],
+                pageInfo: { hasNextPage: false, endCursor: null },
+              },
+            },
+          },
+        },
+      }),
+    };
+  if (/\/(comments|reviews)\?/.test(cmd.at(-1) ?? "")) return { stdout: "[]" };
+  return {};
+}
+
 /** The forge stub: detection, HEAD and `pr view` answer from `opts`, everything else is inert. */
 function forgeDepsFor(recorded: Recorded, body: string, opts: PromoteFixtureOptions): WorkflowForgeDeps {
   const views =
@@ -260,7 +283,7 @@ function forgeDepsFor(recorded: Recorded, body: string, opts: PromoteFixtureOpti
         taken += 1;
         return answer(view);
       }
-      return answer({});
+      return answer(emptyPrReads(cmd));
     },
     readText: async () => null,
   };
@@ -275,7 +298,13 @@ function forgeDepsFor(recorded: Recorded, body: string, opts: PromoteFixtureOpti
     });
     return opts.ci ?? PROMOTE_GREEN;
   };
-  return { ..._workflowForgeDeps, forge, now: () => PROMOTE_NOW, waitForChecks };
+  return {
+    ..._workflowForgeDeps,
+    forge,
+    now: () => PROMOTE_NOW,
+    waitForChecks,
+    prNumberFromUrl: (url) => (url === PROMOTE_URL ? 7 : _workflowForgeDeps.prNumberFromUrl(url)),
+  };
 }
 
 function harness(

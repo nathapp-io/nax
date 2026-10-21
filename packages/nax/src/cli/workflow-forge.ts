@@ -13,13 +13,15 @@
  */
 import { basename } from "node:path";
 import { loadConfig } from "@/config";
-import { defaultForgeDeps, type ForgeDeps } from "@/forge";
+import { defaultForgeDeps, type ForgeDeps, prNumberFromUrl } from "@/forge";
 import { projectOutputDir } from "@/runtime";
 import { waitForChecks } from "../workflow/ci-wait";
 
 export interface WorkflowForgeDeps {
   /** Runs `git`, `gh` and `glab` for the command. */
   readonly forge: ForgeDeps;
+  /** Canonical URL reader; injectable for fixtures with synthetic PR URLs. */
+  readonly prNumberFromUrl: typeof prNumberFromUrl;
   /** The clock behind the sidecar's `resumedAt` and its file name. */
   readonly now: () => Date;
   /**
@@ -38,6 +40,7 @@ export interface WorkflowForgeDeps {
 /** The real forge, clock and CI wait: the running process's CLIs, the wall clock and a live poll. */
 export const _workflowForgeDeps: WorkflowForgeDeps = {
   forge: defaultForgeDeps,
+  prNumberFromUrl,
   now: () => new Date(),
   waitForChecks,
   resolveOutputDir: async (dir) => {

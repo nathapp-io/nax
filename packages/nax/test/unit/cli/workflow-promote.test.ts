@@ -57,6 +57,7 @@ describe("nax workflow promote --json (the dry run)", () => {
         url: PROMOTE_URL,
         dryRun: true,
         promoted: false,
+        prRulings: { read: true, count: 0 },
         checks: [
           { name: "items-ruled", passed: true, detail: "" },
           { name: "ci-green", passed: true, detail: "" },
