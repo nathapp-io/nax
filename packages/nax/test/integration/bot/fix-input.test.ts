@@ -69,6 +69,39 @@ describe("loadLatestReview", () => {
   test("AC-5 returns null without the PR directory", async () => {
     expect(await bot.loadLatestReview(temp(), 42, "h1")).toBeNull();
   });
+  test("saved-checks round trip keeps a command list with blank entries", async () => {
+    const dir = temp();
+    const review: bot.BotReviewArtifact = {
+      ...artifact("h1"),
+      version: 2,
+      checks: {
+        source: "config",
+        gates: [{ name: "test", command: ["bun run test", ""] }],
+        preRun: [],
+      },
+      events: [],
+    };
+    await writeReview(dir, "only", review, 100);
+    expect(await bot.loadLatestReview(dir, 42, "h1")).toEqual(review);
+  });
+  test.each([
+    ["all entries blank", ["", " "]],
+    ["empty list", [] as string[]],
+  ])("saved-checks round trip rejects a command list with %s", async (_label, command) => {
+    const dir = temp();
+    await writeReview(
+      dir,
+      "only",
+      {
+        ...artifact("h1"),
+        version: 2,
+        checks: { source: "config", gates: [{ name: "test", command }], preRun: [] },
+        events: [],
+      },
+      100,
+    );
+    expect(await bot.loadLatestReview(dir, 42, "h1")).toBeNull();
+  });
 });
 
 describe("runBranchFix model forwarding", () => {

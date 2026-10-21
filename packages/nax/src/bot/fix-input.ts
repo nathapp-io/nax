@@ -16,7 +16,14 @@ export const _fixInputDeps = {
 };
 
 // Validate persisted shell inputs before the fix graph trusts them. Legacy artifacts may omit checks.
-const commandSchema = z.union([z.string().trim().min(1), z.array(z.string().trim().min(1)).min(1)]);
+// List commands follow the canonical gate semantics: blank members are legal (the quality runner
+// drops them at run time) as long as one runnable command remains — see `isConfigured` in gates/quality.ts.
+const commandSchema = z.union([
+  z.string().trim().min(1),
+  z.array(z.string()).refine((entries) => entries.some((entry) => entry.trim().length > 0), {
+    message: "list command has no runnable entry",
+  }),
+]);
 const checksSchema = z.object({
   source: z.enum(["config", "agents-md", "claude-md", "detected", "none"]),
   gates: z.array(z.object({ name: z.string().min(1), command: commandSchema, setup: commandSchema.optional() })),
