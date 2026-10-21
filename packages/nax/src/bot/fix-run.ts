@@ -116,7 +116,7 @@ export const BOT_FIX_GRAPH: StepGraph<BotFixState, BotFixEnv, BotFixStep> = defi
     },
     ready: {
       kind: "forge",
-      produces: ["markedReady"],
+      produces: ["markedReady", "readyHeld"],
       exits: ["report"],
       transitions: [{ to: "report" }],
       run: (env, state) => _botFixDeps.readyStep(env, state),

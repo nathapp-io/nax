@@ -53,6 +53,20 @@ export function makeBotFixEnv(agreed: readonly AgreedItem[] = []): BotFixEnv {
   };
 }
 
+/** A draft PR: the only PR shape the bot fix ready step acts on (US-005). */
+export function makeBotFixDraftEnv(overrides: { body?: string; url?: string } = {}): BotFixEnv {
+  const base = makeBotFixEnv();
+  return {
+    ...base,
+    info: {
+      ...base.info,
+      draft: true,
+      body: overrides.body ?? "",
+      url: overrides.url ?? "https://github.com/o/r/pull/42",
+    },
+  };
+}
+
 /** Shared orchestration boundary defaults; tests override only scenario-specific reads and nodes. */
 export function makeBotFixDeps(env: BotFixEnv, runtime: ReturnType<typeof import("./runtime").makeTestRuntime>) {
   return {

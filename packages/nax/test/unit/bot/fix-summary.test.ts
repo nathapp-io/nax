@@ -61,4 +61,12 @@ describe("renderFixSummary", () => {
   test("marks the summary identity", () => {
     expect(parseNaxBotMarker(renderFixSummary({ ...state, outcome: "nothing" }))).toEqual({ key: "fix-summary" });
   });
+  test("AC-17: says why the PR stayed a draft", () => {
+    const body = renderFixSummary({ ...state, outcome: "nothing", readyHeld: "CI failed: x" });
+    expect(body.split("\n")).toContain("Kept as draft: CI failed: x");
+  });
+  test("AC-18: says the PR was marked ready", () => {
+    const body = renderFixSummary({ ...state, outcome: "pushed", markedReady: true });
+    expect(body.split("\n")).toContain("Marked ready.");
+  });
 });

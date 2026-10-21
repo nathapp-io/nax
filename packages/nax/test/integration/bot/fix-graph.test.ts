@@ -1,8 +1,11 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { join } from "node:path";
-import { makeBotFixDeps, makeBotFixEnv, makeTestRuntime } from "@test/helpers";
+import { makeBotFixDeps, makeBotFixDraftEnv, makeBotFixEnv, makeTestRuntime } from "@test/helpers";
+import { _fixReportDeps, BOT_FIX_GRAPH, type BotFixEnv, readyStep } from "@/bot";
 import { _botFixDeps, runBotFix } from "@/bot/fix-run";
 import type { BotFixState, BotFixStep } from "@/bot/fix-steps";
+import { NAX_WORKFLOW_PR_MARKER } from "@/forge";
+import { runStepGraph } from "@/step-graph";
 import { botRunDir } from "@/workflow/paths";
 
 const original = { ..._botFixDeps };
@@ -53,6 +56,7 @@ beforeEach(() => {
   };
 });
 afterEach(async () => {
+  mock.restore();
   Object.assign(_botFixDeps, original);
   await runtime.close();
 });
@@ -134,5 +138,45 @@ describe("runBotFix graph routing", () => {
     };
     expect(await runBotFix(input)).toMatchObject({ outcome: "no-change" });
     expect(calls).toEqual(["fix", "check", "report"]);
+  });
+});
+
+describe("BOT_FIX_GRAPH ready node", () => {
+  /** The `nothing` route: the fix found nothing to fix, so the ready step is the next node. */
+  function nothingRoute(): void {
+    _botFixDeps.fixStep = async () => ({ patch: { agreedCount: 0, outcome: "nothing" }, exit: "nothing" });
+  }
+
+  /** The graph, run for real — the ready step is the production one, not a stub. */
+  function runGraph(env: BotFixEnv): Promise<BotFixState> {
+    _botFixDeps.readyStep = readyStep;
+    return runStepGraph(
+      BOT_FIX_GRAPH,
+      env,
+      { step: "fix", timings: {} },
+      { persist: async () => {} },
+      { aborted: () => false, now: () => 0 },
+    );
+  }
+
+  test("AC-19/20: a failed CI keeps the draft and never marks it ready", async () => {
+    const env = makeBotFixDraftEnv();
+    spyOn(_fixReportDeps, "waitForChecks").mockResolvedValue({ outcome: "failed", detail: "a check failed" });
+    const run = spyOn(env.forge, "run");
+    nothingRoute();
+    const state = await runGraph(env);
+    expect(state.markedReady).toBe(false);
+    expect(state.readyHeld).toBe("CI failed: a check failed");
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  test("AC-21: a marked nax-workflow draft never waits for CI", async () => {
+    const env = makeBotFixDraftEnv({ body: `${NAX_WORKFLOW_PR_MARKER}\n\n## Summary` });
+    const wait = spyOn(_fixReportDeps, "waitForChecks");
+    nothingRoute();
+    const state = await runGraph(env);
+    expect(wait).not.toHaveBeenCalled();
+    expect(state.markedReady).toBe(false);
+    expect(state.readyHeld).toBe("nax workflow PR: promote it with nax workflow promote");
   });
 });

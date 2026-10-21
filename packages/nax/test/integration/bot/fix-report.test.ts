@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { makeBotFixEnv } from "@test/helpers";
+import { makeBotFixDraftEnv, makeBotFixEnv } from "@test/helpers";
 import {
   _fixReportDeps,
   type BotFixState,
@@ -9,11 +9,16 @@ import {
   replyStep,
   reportStep,
 } from "@/bot";
-import { type PrComment, type PrThread, parseNaxBotMarker, withNaxBotMarker } from "@/forge";
+import { resolveWorkflowConfig } from "@/config";
+import { NAX_WORKFLOW_PR_MARKER, type PrComment, type PrThread, parseNaxBotMarker, withNaxBotMarker } from "@/forge";
 import { initLogger, resetLogger } from "@/logger";
 import { markReadyArgv } from "@/workflow/promote";
 
 const state: BotFixState = { step: "reply", timings: {}, outcome: "pushed", pushedSha: "abcdef12" };
+/** The `nothing` route: the fix pushed nothing, so there is no pushed head to wait on. */
+const nothingState: BotFixState = { step: "ready", timings: {}, outcome: "nothing" };
+/** The one CI answer that lets a draft become ready (US-003). */
+const greenCi = { outcome: "green", detail: "all checks passed" } as const;
 const item = {
   kind: "thread" as const,
   key: "t-1",
@@ -188,24 +193,87 @@ describe("replyStep", () => {
 });
 
 describe("readyStep", () => {
-  test("rejects failed readiness writes without claiming success", async () => {
-    const base = makeBotFixEnv();
-    const env = { ...base, info: { ...base.info, draft: true } };
-    spyOn(env.forge, "run").mockResolvedValue({ exitCode: 1, stdout: "", stderr: "denied" });
-    await expect(readyStep(env, state)).rejects.toMatchObject({ code: "BOT_FIX_READY_FAILED" });
-  });
-  test.each(["github", "gitlab"] as const)("marks a %s draft ready in repo root", async (forge) => {
-    const base = makeBotFixEnv();
-    const env = { ...base, ref: { ...base.ref, forge }, info: { ...base.info, draft: true } };
-    const run = spyOn(env.forge, "run").mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
-    expect(await readyStep(env, state)).toEqual({ patch: { markedReady: true }, exit: "report" });
-    expect(run).toHaveBeenCalledWith(markReadyArgv(forge, "42"), { cwd: env.repoRoot });
-  });
-  test("does not call forge or claim readiness for a non-draft", async () => {
+  test("AC-1/2/3: leaves a PR that is not a draft alone", async () => {
     const env = makeBotFixEnv();
     const run = spyOn(env.forge, "run");
+    const wait = spyOn(_fixReportDeps, "waitForChecks");
     expect(await readyStep(env, state)).toEqual({ patch: { markedReady: false }, exit: "report" });
+    expect(wait).not.toHaveBeenCalled();
     expect(run).not.toHaveBeenCalled();
+  });
+  test("AC-4/5/6: keeps a marked nax-workflow PR a draft", async () => {
+    const env = makeBotFixDraftEnv({ body: `${NAX_WORKFLOW_PR_MARKER}\n\n## Summary` });
+    const run = spyOn(env.forge, "run");
+    const wait = spyOn(_fixReportDeps, "waitForChecks");
+    expect(await readyStep(env, state)).toEqual({
+      patch: { markedReady: false, readyHeld: "nax workflow PR: promote it with nax workflow promote" },
+      exit: "report",
+    });
+    expect(wait).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
+  });
+  test("AC-7: waits for CI on the pushed head", async () => {
+    const env = makeBotFixDraftEnv();
+    const wait = spyOn(_fixReportDeps, "waitForChecks").mockResolvedValue(greenCi);
+    spyOn(env.forge, "run").mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+    await readyStep(env, state);
+    expect(wait.mock.calls[0]?.[2]?.expectedSha).toBe("abcdef12");
+  });
+  test("AC-8: waits for CI on the reviewed head when nothing was pushed", async () => {
+    const env = makeBotFixDraftEnv();
+    const wait = spyOn(_fixReportDeps, "waitForChecks").mockResolvedValue(greenCi);
+    spyOn(env.forge, "run").mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+    await readyStep(env, nothingState);
+    expect(wait.mock.calls[0]?.[2]?.expectedSha).toBe(env.info.headSha);
+  });
+  test("AC-9: waits with the configured CI timeout", async () => {
+    const env = makeBotFixDraftEnv();
+    const wait = spyOn(_fixReportDeps, "waitForChecks").mockResolvedValue(greenCi);
+    spyOn(env.forge, "run").mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+    await readyStep(env, state);
+    expect(wait.mock.calls[0]?.[2]?.timeoutMs).toBe(resolveWorkflowConfig(env.config).timeouts.ciWaitMs);
+  });
+  test("AC-10: waits with the configured CI poll interval", async () => {
+    const env = makeBotFixDraftEnv();
+    const wait = spyOn(_fixReportDeps, "waitForChecks").mockResolvedValue(greenCi);
+    spyOn(env.forge, "run").mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+    await readyStep(env, state);
+    expect(wait.mock.calls[0]?.[2]?.pollMs).toBe(resolveWorkflowConfig(env.config).timeouts.ciPollMs);
+  });
+  test("AC-11/12: keeps the draft and says why when CI failed", async () => {
+    const env = makeBotFixDraftEnv();
+    spyOn(_fixReportDeps, "waitForChecks").mockResolvedValue({ outcome: "failed", detail: "a check failed" });
+    const run = spyOn(env.forge, "run");
+    expect(await readyStep(env, state)).toEqual({
+      patch: { markedReady: false, readyHeld: "CI failed: a check failed" },
+      exit: "report",
+    });
+    expect(run).not.toHaveBeenCalled();
+  });
+  test("AC-13: keeps the draft while CI is pending", async () => {
+    const env = makeBotFixDraftEnv();
+    spyOn(_fixReportDeps, "waitForChecks").mockResolvedValue({
+      outcome: "pending",
+      detail: "no CI result within 1200000ms",
+    });
+    const result = await readyStep(env, state);
+    expect(result.patch.markedReady).toBe(false);
+    expect(result.patch.readyHeld).toStartWith("CI pending: ");
+  });
+  test.each(["github", "gitlab"] as const)("AC-14/15: marks a green %s draft ready in repo root", async (forge) => {
+    const base = makeBotFixDraftEnv();
+    const env = { ...base, ref: { ...base.ref, forge } };
+    const wait = spyOn(_fixReportDeps, "waitForChecks").mockResolvedValue(greenCi);
+    const run = spyOn(env.forge, "run").mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+    expect(await readyStep(env, state)).toEqual({ patch: { markedReady: true }, exit: "report" });
+    expect(wait).toHaveBeenCalledTimes(1);
+    expect(run).toHaveBeenCalledWith(markReadyArgv(forge, "42"), { cwd: env.repoRoot });
+  });
+  test("AC-16: rejects failed readiness writes without claiming success", async () => {
+    const env = makeBotFixDraftEnv();
+    spyOn(_fixReportDeps, "waitForChecks").mockResolvedValue(greenCi);
+    spyOn(env.forge, "run").mockResolvedValue({ exitCode: 1, stdout: "", stderr: "denied" });
+    await expect(readyStep(env, state)).rejects.toMatchObject({ code: "BOT_FIX_READY_FAILED" });
   });
 });
 
