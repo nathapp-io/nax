@@ -16,6 +16,8 @@ export const _reviewStepDeps = { writeBranchReviewPackage };
 
 export interface PrReviewInput {
   readonly mergeBase: string;
+  readonly rangeBase?: string;
+  readonly conversationOnly?: boolean;
   readonly info: PrInfo;
   readonly issues: readonly LinkedIssue[];
   readonly threads: readonly PrThread[];
@@ -61,9 +63,11 @@ export async function runPrReview(ctx: PrStepContext, input: PrReviewInput): Pro
       dropped,
     });
   const packagePath = join(ctx.runDir, "package-pr.diff");
+  const rangeBase = input.rangeBase ?? input.mergeBase;
   const prompt = buildBotPrReviewPrompt({
     packagePath,
-    range: `${input.mergeBase}..HEAD`,
+    range: `${rangeBase}..HEAD`,
+    conversationOnly: input.conversationOnly,
     pr: { number: input.info.number, title: input.info.title, body: input.info.body, author: input.info.author.login },
     issues: input.issues,
     threads: input.threads,
@@ -77,7 +81,9 @@ export async function runPrReview(ctx: PrStepContext, input: PrReviewInput): Pro
   });
   return underReviewLimit(
     ctx,
-    () => writePackage(ctx, input.mergeBase, packagePath, input.staticMode),
+    async () => {
+      if (!input.conversationOnly) await writePackage(ctx, rangeBase, packagePath, input.staticMode);
+    },
     (signal) =>
       _workflowDeps.callOp(
         { ...ctx.callCtx, ...(signal ? { signal } : {}) },

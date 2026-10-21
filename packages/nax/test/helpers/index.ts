@@ -16,6 +16,7 @@ export { makeAgentResult } from "./agent-result";
 export { assertDefined, firstCall } from "./assert-defined";
 export { assertCaughtInstanceOf, assertNaxError } from "./assert-nax-error";
 export { makeBotFixDeps, makeBotFixDraftEnv, makeBotFixEnv } from "./bot-fix";
+export { makeBotReviewDeps } from "./bot-review";
 export { makeMockCallContext } from "./call-context";
 export { type CallOpStubOptions, DEFAULT_AGENT_ENVELOPE, makeCallOp, makeScriptedCallOp } from "./call-op";
 export { type CodexAcpEnvDeps, stubCodexAcpEnvDeps } from "./codex-acp-deps";

@@ -4,6 +4,7 @@ import type { LinkedIssue, PrComment, PrThread } from "@/forge";
 export interface BotPrReviewPromptInput {
   readonly packagePath: string;
   readonly range: string;
+  readonly conversationOnly?: boolean;
   readonly pr: { readonly number: number; readonly title: string; readonly body: string; readonly author: string };
   readonly issues: readonly LinkedIssue[];
   readonly threads: readonly PrThread[];
@@ -110,7 +111,9 @@ Reply with only one JSON object:
 
 export function buildBotPrReviewPrompt(input: BotPrReviewPromptInput): string {
   return [
-    `Review pull request #${input.pr.number} (range ${input.range}, diff package ${input.packagePath}).`,
+    input.conversationOnly
+      ? `Review the conversation on pull request #${input.pr.number}. The code at this head was reviewed by the workflow's branch review. Findings may come only from what a thread, comment or earlier finding points at. Do not perform a fresh general code review.`
+      : `Review pull request #${input.pr.number} (range ${input.range}, diff package ${input.packagePath}).`,
     intentLine(input),
     ...(input.staticMode ? ["You cannot run commands in this review: judge from the files alone."] : []),
     ...projectSections(input),

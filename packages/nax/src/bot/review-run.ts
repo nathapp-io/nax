@@ -1,82 +1,29 @@
-import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import { resolveDefaultAgent } from "@/agents";
 import { type ConfiguredModel, DEFAULT_SANDBOX_CONFIG, type NaxConfig, PROJECT_FEATURES_DIR } from "@/config";
 import { NaxError } from "@/errors";
-import {
-  classifyPrTrust,
-  defaultForgeDeps,
-  listPrComments,
-  listReviewThreads,
-  ownComments,
-  type PrComment,
-  parseNaxBotMarker,
-  readCurrentUser,
-  readLinkedIssues,
-  readPrInfo,
-  resolvePrRef,
-} from "@/forge";
+import { ownComments, type PrComment, parseNaxBotMarker } from "@/forge";
 import { getLogger } from "@/logger";
 import { botChecksExtractOp, type PrReviewVerdict } from "@/operations";
-import { createRuntime } from "@/runtime";
+import type { createRuntime } from "@/runtime";
 import { defineStepGraph, type GraphState, runStepGraph, type StepGraph } from "@/step-graph";
-import { ensureProjectTrusted } from "@/trust";
-import { gitWithTimeout } from "@/utils/git";
-import { runPreRunSteps } from "../execution/lifecycle/pre-run-steps";
 import type { PrStepContext } from "../workflow/branch-step-context";
 import type { CiWaitResult } from "../workflow/ci-wait";
 import { botRunDir } from "../workflow/paths";
-import { buildPrStepContext } from "../workflow/pr-step-context";
+import type { buildPrStepContext } from "../workflow/pr-step-context";
 import { _workflowDeps } from "../workflow/step-context";
-import { loadBotConfig } from "./base-config";
-import { type PrCheckout, preparePrCheckout } from "./checkout";
-import { type BotCheckSource, type BotChecks, checkCommands, resolveBotChecks } from "./checks";
+import type { PrCheckout } from "./checkout";
+import { type BotCheckSource, type BotChecks, checkCommands } from "./checks";
 import type { BotDecision } from "./decisions";
-import { readHeadCi } from "./gate-baseline";
-import { type BotLog, openBotLog } from "./log";
+import type { BotLog } from "./log";
 import { botModel } from "./models";
 import { sensitivePaths } from "./path-policy";
-import { BOT_REVIEW_FILENAME, type PostReviewInput, type PostReviewOutcome, postPrReview } from "./post";
-import { readReviewRulings } from "./review-rulings";
-import { type PrReviewInput, runPrReview } from "./review-step";
-import { recordPrRulings } from "./rulings";
+import { BOT_REVIEW_FILENAME, type PostReviewInput, type PostReviewOutcome } from "./post";
+import { _botReviewDeps } from "./review-deps";
+import { readReviewRulings, reviewRange } from "./review-rulings";
+import type { PrReviewInput } from "./review-step";
 
-export const _botReviewDeps = {
-  async gitToplevel(dir: string): Promise<string> {
-    const result = await gitWithTimeout(["rev-parse", "--show-toplevel"], dir);
-    if (result.exitCode !== 0)
-      throw new NaxError("[bot] Cannot resolve repository root", "BOT_REPO_ROOT_FAILED", {
-        stage: "bot",
-        dir,
-        stderr: result.stderr,
-      });
-    return result.stdout.trim();
-  },
-  ensureProjectTrusted,
-  forge: defaultForgeDeps,
-  resolvePrRef,
-  readPrInfo,
-  classifyPrTrust,
-  readCurrentUser,
-  listReviewThreads,
-  listPrComments,
-  readLinkedIssues,
-  readHeadCi,
-  preparePrCheckout,
-  loadBotConfig,
-  createRuntime,
-  openBotLog,
-  buildPrStepContext,
-  resolveBotChecks,
-  runPreRunSteps,
-  runPrReview,
-  recordPrRulings,
-  postPrReview,
-  async writeJson(path: string, value: unknown): Promise<void> {
-    await Bun.write(path, `${JSON.stringify(value, null, 2)}\n`);
-  },
-  randomSuffix: (): string => randomBytes(4).toString("hex"),
-};
+export { _botReviewDeps } from "./review-deps";
 
 export type BotReviewResult =
   | ({
@@ -262,7 +209,7 @@ async function reviewEnvironment(
     _botReviewDeps.readHeadCi({ forge: ref.forge, url: info.url, repoRoot, headSha: info.headSha }),
   ]);
   const { rawThreads, rawComments, ...triaged } = items;
-  const recorded = await readReviewRulings(
+  const { reviewedIndex, ...recorded } = await readReviewRulings(
     {
       ref,
       info,
@@ -283,6 +230,7 @@ async function reviewEnvironment(
     ctx,
     review: {
       mergeBase: checkout.mergeBase,
+      ...(await reviewRange({ index: reviewedIndex, checkout, head: info.headSha }, _botReviewDeps.isAncestor)),
       info,
       issues,
       threads: items.threads,

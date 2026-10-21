@@ -27,6 +27,19 @@ const intent = "Intent: the PR description and the linked issues below.";
 const staticLine = "You cannot run commands in this review: judge from the files alone.";
 
 describe("buildBotPrReviewPrompt", () => {
+  test("US-013 AC-10 conversation-only limits findings to conversation pointers", () => {
+    const result = prompts.buildBotPrReviewPrompt({ ...base, conversationOnly: true });
+    expect(result).toContain("The code at this head was reviewed by the workflow's branch review");
+    expect(result).toContain("Findings may come only from what a thread, comment or earlier finding points at");
+    expect(result).toContain("Answer every listed thread id and comment id exactly once.");
+  });
+  test("US-013 AC-11 conversation-only names neither range nor package", () => {
+    const result = prompts.buildBotPrReviewPrompt({ ...base, conversationOnly: true, staticMode: true });
+    expect(result).not.toContain(base.range);
+    expect(result).not.toContain(base.packagePath);
+    expect(result).not.toContain("diff package");
+    expect(result).toContain(staticLine);
+  });
   test.each([
     ["AC-1", base, "Review pull request #42 (range m..HEAD, diff package /p.diff)."],
     ["AC-2", { ...base, prdPath: "/w/.nax/features/f/prd.json" }, "Intent: the PRD at /w/.nax/features/f/prd.json."],

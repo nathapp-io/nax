@@ -3,7 +3,9 @@ import { hasNaxWorkflowMarker, ownComments, type PrThread } from "@/forge";
 import { getLogger } from "@/logger";
 import { botRulingReadOp } from "@/operations";
 import type { PrStepContext } from "../workflow/branch-step-context";
+import type { ItemIndex } from "../workflow/item-threads";
 import { _workflowDeps } from "../workflow/step-context";
+import type { PrCheckout } from "./checkout";
 import { botModel } from "./models";
 import type { PostReviewInput } from "./post";
 import type { RecordRulingsInput, RecordRulingsOutcome, recordPrRulings } from "./rulings";
@@ -12,7 +14,7 @@ import type { RecordRulingsInput, RecordRulingsOutcome, recordPrRulings } from "
 export async function readReviewRulings(
   input: Omit<RecordRulingsInput, "readModel"> & { staticMode: boolean; ctx: PrStepContext },
   record: typeof recordPrRulings,
-): Promise<Pick<PostReviewInput, "itemEarlier" | "rulings">> {
+): Promise<Pick<PostReviewInput, "itemEarlier" | "rulings"> & { reviewedIndex?: ItemIndex }> {
   const { staticMode, ctx, ...raw } = input;
   if (staticMode || !hasNaxWorkflowMarker(raw.info.body)) return {};
   try {
@@ -25,6 +27,7 @@ export async function readReviewRulings(
         }),
     });
     return {
+      reviewedIndex: outcome.index,
       itemEarlier: rulingEarlier(outcome, raw.login),
       rulings: { recorded: outcome.recorded.length, open: outcome.open.length, asked: outcome.asked },
     };
@@ -49,4 +52,30 @@ export function rulingEarlier(outcome: RecordRulingsOutcome, login: string): PrT
       },
     ];
   });
+}
+
+/** Only the privileged recorder's validated provenance can narrow a code review. */
+export async function reviewRange(
+  input: { index?: ItemIndex; checkout: PrCheckout; head: string },
+  isAncestor: (dir: string, ancestor: string, head: string) => Promise<boolean>,
+): Promise<{ rangeBase: string; conversationOnly?: boolean }> {
+  const { index, checkout, head } = input;
+  const full = { rangeBase: checkout.mergeBase };
+  const reviewedHead = index?.reviewedHead;
+  const reviewedBase = index?.reviewedBase;
+  if (
+    !reviewedHead ||
+    !reviewedBase ||
+    !/^[a-fA-F0-9]{40}$/.test(reviewedHead) ||
+    !/^[a-fA-F0-9]{40}$/.test(reviewedBase)
+  )
+    return full;
+  try {
+    if (!(await isAncestor(checkout.worktree, reviewedHead, head))) return full;
+    if (!(await isAncestor(checkout.worktree, reviewedBase, checkout.mergeBase))) return full;
+    return reviewedHead === head ? { rangeBase: reviewedHead, conversationOnly: true } : { rangeBase: reviewedHead };
+  } catch (error) {
+    getLogger().warn("bot", "Could not check reviewed ancestry; reviewing full range", { error: errorMessage(error) });
+    return full;
+  }
 }

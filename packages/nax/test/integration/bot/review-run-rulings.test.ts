@@ -1,9 +1,8 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { assertDefined, makeMockCallContext, makeNaxConfig, makeScriptedCallOp, makeTestRuntime } from "@test/helpers";
+import { assertDefined, makeBotReviewDeps, makeNaxConfig, makeScriptedCallOp, makeTestRuntime } from "@test/helpers";
 import { _botReviewDeps, runBotReview } from "@/bot/review-run";
 import { _reviewStepDeps, runPrReview } from "@/bot/review-step";
 import type { RecordRulingsOutcome, recordPrRulings } from "@/bot/rulings";
-import { resolveWorkflowConfig } from "@/config";
 import { NAX_WORKFLOW_PR_MARKER, type PrComment, type PrInfo, type PrThread, withNaxBotMarker } from "@/forge";
 import { getLogger, initLogger, resetLogger } from "@/logger";
 import { botRulingReadOp, type PrReviewVerdict } from "@/operations";
@@ -88,47 +87,13 @@ beforeEach(() => {
   review.mockClear();
   post.mockClear();
   Object.assign(_botReviewDeps, {
-    gitToplevel: async () => "/repo",
-    ensureProjectTrusted: async () => {},
-    resolvePrRef: async () => ref,
-    readPrInfo: async () => info,
-    classifyPrTrust: async () => ({ trusted: true, headSha: info.headSha, reasons: [] }),
-    preparePrCheckout: async () => {
-      order.push("checkout");
-      return {
-        worktree: "/checkout",
-        snapshotDir: "/snapshot",
-        baseSha: "base",
-        mergeBase: "merge",
-        hasBaseNax: true,
-        changedFiles: [],
-        dispose: async () => {},
-      };
-    },
-    loadBotConfig: async () => config,
-    createRuntime: () => runtime,
-    openBotLog: () => ({ close: async () => {} }),
-    buildPrStepContext: async () => ({
-      ctx: {
-        config,
-        workflow: resolveWorkflowConfig(config),
-        callCtx: makeMockCallContext({ runtime }),
-        projectDir: "/checkout",
-        runDir: "/artifacts",
-        reportPath: "/report",
-        feature: "bot",
-        packageDirs: [],
-        dryRun: false,
-      },
-      dispose: async () => {},
+    ...makeBotReviewDeps({
+      config,
+      runtime,
+      info: () => info,
+      threads: () => threads,
+      onCheckout: () => order.push("checkout"),
     }),
-    resolveBotChecks: async () => ({ source: "detected", gates: [], preRun: [] }),
-    runPreRunSteps: async () => {},
-    readCurrentUser: async () => ({ login: "bot" }),
-    listReviewThreads: async () => threads,
-    listPrComments: async () => [],
-    readLinkedIssues: async () => [],
-    readHeadCi: async () => ({ outcome: "green", detail: "ok" }),
     recordPrRulings: record,
     runPrReview: review,
     postPrReview: post,
