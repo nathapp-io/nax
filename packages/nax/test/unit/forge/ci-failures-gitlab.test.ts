@@ -299,6 +299,23 @@ describe("readFailedChecks log errors", () => {
     expect(checks[0]?.excerpt).toBe("(log unavailable: boom)");
   });
 
+  test("redacts a credential whose closing delimiter crosses the excerpt boundary", async () => {
+    // The unavailable excerpt keeps the first CI_EXCERPT_CHARS characters of
+    // the line, so the cut lands on the credential's closing '@': without it
+    // the URL matcher cannot see the password, and the excerpt would carry it
+    // in cleartext.
+    const credential = "postgres://alice:synthetic_password_123@db.example";
+    const stderr = `${"x".repeat(forge.CI_EXCERPT_CHARS - credential.indexOf("@"))}${credential}`;
+    const { deps } = forgeFixture({
+      [GL_PIPELINES]: ok([{ id: 77, sha: "abc123" }]),
+      [GL_JOBS]: ok([{ id: 991, name: "unit" }]),
+      [glTrace(991)]: { exitCode: 1, stdout: "", stderr },
+    });
+    const checks = await forge.readFailedChecks(gl, "abc123", deps, "/repo");
+    expect(checks[0]?.excerpt).not.toContain("synthetic_password_123");
+    expect(checks[0]?.excerpt).toContain("[REDACTED]");
+  });
+
   test("AC-8 reports an unavailable GitHub job log as the first stderr line", async () => {
     const { deps } = forgeFixture({
       [GH_LISTING]: ok({

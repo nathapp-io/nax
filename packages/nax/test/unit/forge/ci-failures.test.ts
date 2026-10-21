@@ -58,6 +58,18 @@ describe("ciExcerpt", () => {
     expect(excerpt).not.toContain("ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789");
   });
 
+  test("redacts a credential whose closing delimiter crosses the excerpt boundary", () => {
+    // The excerpt keeps the last CI_EXCERPT_CHARS characters, so the cut lands
+    // inside the credential: without its closing '@' the URL matcher cannot
+    // see the password, and the excerpt would carry it in cleartext.
+    const credential = "postgres://alice:synthetic_password_123@db.example";
+    const cut = credential.indexOf(":") + 1;
+    const log = `${credential}${"x".repeat(forge.CI_EXCERPT_CHARS + cut - credential.length)}`;
+    const excerpt = forge.ciExcerpt(log);
+    expect(excerpt).not.toContain("synthetic_password_123");
+    expect(excerpt).toContain("[REDACTED]");
+  });
+
   test("keeps a short log whole", () => {
     expect(forge.ciExcerpt("one\ntwo\nthree")).toBe("one\ntwo\nthree");
   });

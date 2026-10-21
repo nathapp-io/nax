@@ -151,8 +151,11 @@ export async function readFailedChecks(
 
 - **`prNumberFromUrl`:** the number after `/pull/` (GitHub) or `/merge_requests/` (GitLab), optionally followed
   by `/`, `?` or `#`. It returns `null` for anything else.
-- **`ciExcerpt`:** removes ANSI CSI escape sequences (ESC `[` ... final byte), keeps the last `CI_EXCERPT_LINES`
-  lines, then the last `CI_EXCERPT_CHARS` characters, then applies `redactSecrets`.
+- **`ciExcerpt`:** removes ANSI CSI escape sequences (ESC `[` ... final byte), applies `redactSecrets` to the
+  whole log, then keeps the last `CI_EXCERPT_LINES` lines and the last `CI_EXCERPT_CHARS` characters of those.
+  The redaction runs before the bounds: a bound that cuts a credential's closing delimiter (the `@` of a
+  `postgres://user:pass@host` URL) leaves the matcher without the signal it needs, and the password would
+  reach the excerpt in cleartext.
 - **GitHub:**
   1. Call `["gh", "api", "--hostname", ref.host, "repos/<repo>/commits/<headSha>/check-runs?per_page=100&filter=latest"]`.
      The reply is `{ check_runs: [{ id, name, conclusion, html_url, app: { slug }, output: { title, summary, text } }] }`.
@@ -175,7 +178,9 @@ export async function readFailedChecks(
      is the job's `web_url`, and `name` is its `name`.
 - **Errors:**
   - A per-check log call that exits non-zero gives the excerpt `(log unavailable: <first stderr line>)`. It is
-    not an error.
+    not an error. The line is ANSI-stripped, redacted and then bounded to `CI_EXCERPT_CHARS` characters, in
+    that order: redacting after the bound could leave a credential whose closing delimiter the bound cut, and
+    the password would reach the excerpt in cleartext.
   - A listing call (check-runs, pipelines or jobs) that exits non-zero, or whose reply does not parse, throws
     `NaxError` code `FORGE_CI_READ_FAILED`.
 
@@ -479,6 +484,7 @@ Verification note for every story:
 - [unit] `ciExcerpt`, given a 500-line log, returns its last `CI_EXCERPT_LINES` (200) lines.
 - [unit] `ciExcerpt`, given a single line of 20,000 characters, returns its last `CI_EXCERPT_CHARS` (8,000) characters.
 - [unit] `ciExcerpt`, given a log line `token ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789`, returns text that does not include `ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789`.
+- [unit] `ciExcerpt`, given a log whose `postgres://alice:synthetic_password_123@db.example` credential straddles the `CI_EXCERPT_CHARS` boundary, returns text that does not include `synthetic_password_123`.
 - [unit] `readFailedChecks` on a GitHub `PrRef` (host `github.com`, repo `o/r`) with head `abc123` calls `deps.run` first with `["gh", "api", "--hostname", "github.com", "repos/o/r/commits/abc123/check-runs?per_page=100&filter=latest"]`.
 - [unit] `readFailedChecks` on GitHub returns a `FailedCheck` for each check run whose conclusion is `failure`, `timed_out`, `action_required` or `cancelled`, and none for a conclusion of `success`, `skipped`, `neutral` or `null`.
 - [unit] `readFailedChecks` on GitHub with seven failed check runs returns the first five, in reply order.
@@ -494,6 +500,7 @@ Verification note for every story:
 - [unit] `readFailedChecks` on GitLab drops a failed job with `allow_failure: true`.
 - [unit] `readFailedChecks` on GitLab reads each kept job's log with `["glab", "api", "--hostname", "gitlab.com", "projects/g%2Fp/jobs/<id>/trace"]`, and returns the job's `name`, its `web_url` as `url`, and the excerpt.
 - [unit] `readFailedChecks` returns the excerpt `(log unavailable: boom)` for a check whose log call exits `1` with stderr `"boom\nmore"`, and still returns the other checks.
+- [unit] `readFailedChecks`, for a check whose log call exits non-zero and whose stderr line carries a `postgres://alice:synthetic_password_123@db.example` credential across the `CI_EXCERPT_CHARS` boundary, returns an excerpt that does not include `synthetic_password_123`.
 - [unit] `readFailedChecks` throws a `NaxError` with code `FORGE_CI_READ_FAILED` when the first listing call exits non-zero.
 - [unit] `readFailedChecks` throws a `NaxError` with code `FORGE_CI_READ_FAILED` when the first listing call returns stdout that is not JSON.
 

@@ -54,16 +54,20 @@ function stripAnsi(text: string): string {
 }
 
 /**
- * A bounded excerpt of a CI log: ANSI colour codes removed, the last
- * `CI_EXCERPT_LINES` lines kept, the last `CI_EXCERPT_CHARS` characters of
- * those kept, and every secret in the result redacted.
+ * A bounded excerpt of a CI log: ANSI colour codes removed, every secret in
+ * the log redacted, the last `CI_EXCERPT_LINES` lines kept and the last
+ * `CI_EXCERPT_CHARS` characters of those kept.
+ *
+ * The redaction runs over the whole log, before the bounds. A bound that cuts
+ * a credential's closing delimiter — the `@` of a `postgres://user:pass@host`
+ * URL — leaves the matcher without the signal it needs, and the password
+ * would reach the excerpt, and from there the repair prompt, in cleartext.
  */
 export function ciExcerpt(log: string): string {
-  const plain = stripAnsi(log);
-  const lines = plain.split("\n");
+  const redacted = redactSecrets(stripAnsi(log));
+  const lines = redacted.split("\n");
   const kept = lines.slice(Math.max(0, lines.length - CI_EXCERPT_LINES)).join("\n");
-  const bounded = kept.length > CI_EXCERPT_CHARS ? kept.slice(-CI_EXCERPT_CHARS) : kept;
-  return redactSecrets(bounded);
+  return kept.length > CI_EXCERPT_CHARS ? kept.slice(-CI_EXCERPT_CHARS) : kept;
 }
 
 /**
@@ -74,12 +78,16 @@ export function ciExcerpt(log: string): string {
  * most `CI_EXCERPT_CHARS` characters kept — so a one-line error body cannot
  * reach `FailedCheck.excerpt`, and from there the repair prompt, at whatever
  * length the child produced.
+ *
+ * The redaction runs over the whole first line, before the bound: a bound
+ * that cuts a credential's closing delimiter leaves the matcher without the
+ * signal it needs, and the password would reach the excerpt in cleartext.
  */
 function logUnavailableExcerpt(result: ForgeRunResult): string {
   const firstLine = stripAnsi(result.stderr.split("\n")[0] ?? "").trim();
-  const bounded = firstLine.length > CI_EXCERPT_CHARS ? firstLine.slice(0, CI_EXCERPT_CHARS) : firstLine;
-  const reason = redactSecrets(bounded);
-  return `(log unavailable: ${reason.length > 0 ? reason : "unknown"})`;
+  const reason = redactSecrets(firstLine);
+  const bounded = reason.length > CI_EXCERPT_CHARS ? reason.slice(0, CI_EXCERPT_CHARS) : reason;
+  return `(log unavailable: ${bounded.length > 0 ? bounded : "unknown"})`;
 }
 
 /** The excerpt of a CI log: the log itself, or the reason it could not be read. */
