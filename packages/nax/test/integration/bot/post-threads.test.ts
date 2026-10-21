@@ -134,6 +134,16 @@ describe("postPrReview minor findings and readiness", () => {
     expect(summaryBody()).toContain("Checks (.nax/config.json): bun run lint.");
     expect(summaryBody()).toContain("Install step failed (npm ci); checks may not have run.");
   });
+  test("nax#2631: the summary states CI on the reviewed head and passes cannot-verify lines through", async () => {
+    const line = "Live GitHub API behaviour was not verified.";
+    await bot.postPrReview({
+      ...input,
+      ci: { outcome: "green", detail: "CI checks: 15/15 passed, 0 pending" },
+      verdict: { ...input.verdict, cannotVerify: [line] },
+    });
+    expect(summaryBody()).toContain(": green (CI checks: 15/15 passed, 0 pending).");
+    expect(summaryBody()).toContain(line);
+  });
 });
 
 describe("postPrReview thread publication", () => {

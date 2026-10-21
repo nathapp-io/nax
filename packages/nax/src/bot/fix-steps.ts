@@ -1,15 +1,19 @@
 /** Repo-scoped fix nodes: one session, then an independent committed-tree safety check. */
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { ConfiguredModel, NaxConfig } from "@/config";
 import type { CurrentUser, ForgeDeps, OwnComment, PrInfo, PrRef, PrThread } from "@/forge";
+import { getLogger } from "@/logger";
 import type { GraphState, StepResult } from "@/step-graph";
 import { gitWithTimeout } from "@/utils/git";
 import type { PrStepContext } from "@/workflow/branch-step-context";
-import { runQualityGates } from "../finish/gates/quality";
+import { type GateCommand, runQualityGates } from "../finish/gates/quality";
 import { runBranchFix } from "../workflow/branch-fix";
+import type { CiWaitOutcome } from "../workflow/ci-wait";
 import { readHead } from "../workflow/git";
 import { changedPaths, type PrCheckout } from "./checkout";
 import type { BotChecks } from "./checks";
 import { toFixFindings } from "./fix-input";
+import { failingOnHead, logGateFailure, readHeadCi } from "./gate-baseline";
 import { botModel } from "./models";
 import { fixProtectedPaths } from "./path-policy";
 import type { BotReviewArtifact } from "./post";
@@ -24,12 +28,17 @@ export interface BotFixState extends GraphState<BotFixStep> {
     | "protected"
     | "no-gates"
     | "gates-failed"
+    | "baseline-red"
     | "push-rejected"
     | "push-unknown"
     | "dirty";
   readonly changed?: readonly string[];
   readonly protectedFiles?: readonly string[];
   readonly failingGates?: readonly string[];
+  /** Of `failingGates`, those that fail on the unmodified PR head too; absent when the head could not be checked out. */
+  readonly baselineFailing?: readonly string[];
+  /** CI's verdict on the exact PR head, read once when a gate failed. */
+  readonly ciOutcome?: CiWaitOutcome;
   readonly pushedSha?: string;
   readonly replied?: number;
   readonly resolved?: number;
@@ -64,6 +73,8 @@ export const _fixStepsDeps = {
   runBranchFix,
   changedPaths,
   runQualityGates,
+  failingOnHead,
+  readHeadCi,
   runGit: gitWithTimeout,
   readHead,
 };
@@ -122,11 +133,37 @@ export async function gatesStep(env: BotFixEnv, _state: BotFixState): Promise<St
   if (commands.length === 0) return { patch: { outcome: "no-gates" }, exit: "no-gates" };
   // Use the reviewed checks, but verify the fixed tree, never the snapshot.
   const worktreeCommands = commands.map((gate) => ({ ...gate, cwd: env.checkout.worktree }));
-  const result = await _fixStepsDeps.runQualityGates(env.checkout.worktree, worktreeCommands);
-  if (!result.passed) {
-    return { patch: { failingGates: result.failing, outcome: "gates-failed" }, exit: "failed" };
-  }
+  const result = await _fixStepsDeps.runQualityGates(env.checkout.worktree, worktreeCommands, {
+    onGate: logGateFailure("fix"),
+  });
+  if (!result.passed) return { patch: await classifyRedGates(env, worktreeCommands, result.failing), exit: "failed" };
   return { patch: {}, exit: "passed" };
+}
+
+/** A red gate is the fix's only when the unmodified head passes it (nax#2631). */
+async function classifyRedGates(
+  env: BotFixEnv,
+  gates: GateCommand[],
+  failing: readonly string[],
+): Promise<Partial<BotFixState>> {
+  const { info, checkout, ref, repoRoot } = env;
+  const red = gates.filter((gate) => failing.includes(gate.name));
+  const [ci, baselineFailing] = await Promise.all([
+    _fixStepsDeps.readHeadCi({ forge: ref.forge, url: info.url, repoRoot, headSha: info.headSha }),
+    _fixStepsDeps.failingOnHead(checkout.worktree, info.headSha, red).catch((err) => {
+      getLogger()?.warn("bot-fix", "Baseline gate run failed; the red gates stay attributed to the fix", {
+        error: errorMessage(err),
+      });
+      return undefined;
+    }),
+  ]);
+  const preExisting = baselineFailing !== undefined && failing.every((name) => baselineFailing.includes(name));
+  return {
+    failingGates: failing,
+    ...(baselineFailing === undefined ? {} : { baselineFailing }),
+    ciOutcome: ci.outcome,
+    outcome: preExisting ? "baseline-red" : "gates-failed",
+  };
 }
 
 export async function pushStep(env: BotFixEnv, _state: BotFixState): Promise<StepResult<BotFixState>> {

@@ -66,6 +66,8 @@ type Poll =
   | {
       readonly state: "green" | "failed" | "waiting";
       readonly summary?: string;
+      /** Every reported check with its bucket; only a one-shot read reports it (nax#2631). */
+      readonly checks?: string;
       readonly sha?: string;
       readonly mismatch?: string;
     }
@@ -124,8 +126,11 @@ function classifyGh(r: ForgeRunResult): Poll {
   const checks = ghChecks(parsed.value);
   if (checks.length === 0) return { state: "waiting" };
   const summary = `CI checks: ${ghSummary(checks)}`;
-  if (checks.some((c) => GH_FAILED.has(c.bucket))) return { state: "failed", summary };
-  return checks.every((c) => GH_OK.has(c.bucket)) ? { state: "green", summary } : { state: "waiting", summary };
+  const listed = checks.map((c) => `${c.name} (${c.bucket})`).join(", ");
+  if (checks.some((c) => GH_FAILED.has(c.bucket))) return { state: "failed", summary, checks: listed };
+  return checks.every((c) => GH_OK.has(c.bucket))
+    ? { state: "green", summary, checks: listed }
+    : { state: "waiting", summary, checks: listed };
 }
 
 /** GitLab can expose the commit on either pipeline object. */
@@ -155,7 +160,9 @@ function classifyGlab(r: ForgeRunResult): Poll {
     const sha = glabPipelineSha(parsed.value);
     return waiting.state === "conflicting" ? waiting : { state: "green", summary, sha };
   }
-  return GL_FAILED.has(status) ? { state: "failed", summary } : glabWaiting(parsed.value, summary);
+  return GL_FAILED.has(status)
+    ? { state: "failed", summary, sha: glabPipelineSha(parsed.value) }
+    : glabWaiting(parsed.value, summary);
 }
 
 function conflictPoll(base: unknown): Poll {
@@ -397,4 +404,75 @@ export async function waitForChecks(
   } finally {
     cancelHeartbeat();
   }
+}
+
+/** The PR's current head, for a GitHub red read; `undefined` when it cannot be read (fail open, as green does). */
+async function ghHeadSha(prRef: string, cwd: string): Promise<string | undefined> {
+  try {
+    const r = await _ciWaitDeps.run(["gh", "pr", "view", prRef, "--json", "headRefOid"], { cwd });
+    const parsed = r.exitCode === 0 ? parseJson(r.stdout) : { ok: false as const };
+    return parsed.ok && isRecord(parsed.value) && typeof parsed.value.headRefOid === "string"
+      ? parsed.value.headRefOid
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function onceDetail(poll: { readonly summary?: string; readonly checks?: string }, fallback: string): string {
+  const summary = poll.summary ?? fallback;
+  return poll.checks ? `${summary}; checks: ${poll.checks}` : summary;
+}
+
+/**
+ * One read of the PR's checks, never a wait and no progress lines (nax#2631): a caller judging one
+ * exact head (bot review, a bot fix baseline) needs CI's verdict now, not CI's eventual one. Green
+ * and red are both bound to `expectedSha`; checks for another head are `unavailable`, never this
+ * head's verdict. The detail carries the check names, so a reader can tell what CI actually ran.
+ */
+export async function readChecksOnce(
+  forge: ForgeKind,
+  prRef: string,
+  opts: { readonly cwd: string; readonly expectedSha: string },
+): Promise<CiWaitResult> {
+  const poll = await pollOnce(forge, prRef, opts.cwd);
+  switch (poll.state) {
+    case "error":
+      return { outcome: "unavailable", detail: `CI status unavailable: ${poll.detail}` };
+    case "unavailable":
+    case "conflicting":
+      return { outcome: poll.state, detail: poll.detail };
+    case "waiting":
+      return poll.summary === undefined
+        ? { outcome: "no-checks", detail: "no CI check reported for this head yet" }
+        : { outcome: "pending", detail: onceDetail(poll, "") };
+    case "green":
+      return verdictForHead(forge, prRef, opts, { ...poll, state: "green" });
+    case "failed":
+      return verdictForHead(forge, prRef, opts, { ...poll, state: "failed" });
+  }
+}
+
+/** A green or red read is this head's verdict only when the checks report this head. */
+async function verdictForHead(
+  forge: ForgeKind,
+  prRef: string,
+  opts: { readonly cwd: string; readonly expectedSha: string },
+  poll: {
+    readonly state: "green" | "failed";
+    readonly summary?: string;
+    readonly checks?: string;
+    readonly sha?: string;
+  },
+): Promise<CiWaitResult> {
+  const sha = poll.sha ?? (forge === "github" ? await ghHeadSha(prRef, opts.cwd) : undefined);
+  if (sha !== undefined && sha !== opts.expectedSha) {
+    return {
+      outcome: "unavailable",
+      detail: `checks report ${sha.slice(0, 8)} but HEAD is ${opts.expectedSha.slice(0, 8)}`,
+    };
+  }
+  return poll.state === "green"
+    ? { outcome: "green", detail: onceDetail(poll, "all checks passed") }
+    : { outcome: "failed", detail: onceDetail(poll, "a check failed") };
 }

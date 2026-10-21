@@ -4,9 +4,9 @@
   "files": {
     "includes": [
       "**",
-      "!**/.worktrees/**",
-      "!**/.claude/worktrees/**",
-      "!**/.nax-wt/**"
+      "!.worktrees/**",
+      "!.claude/worktrees/**",
+      "!.nax-wt/**"
     ]
   },
   "assist": {

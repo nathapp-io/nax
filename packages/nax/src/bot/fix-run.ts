@@ -94,7 +94,7 @@ export const BOT_FIX_GRAPH: StepGraph<BotFixState, BotFixEnv, BotFixStep> = defi
     },
     gates: {
       kind: "gate",
-      produces: ["outcome", "failingGates", "recoveryPath"],
+      produces: ["outcome", "failingGates", "baselineFailing", "ciOutcome", "recoveryPath"],
       exits: ["no-gates", "failed", "passed", "dirty"],
       transitions: [{ on: "passed", to: "push" }, { to: "report" }],
       run: (env, state) => _botFixDeps.gatesStep(env, state),

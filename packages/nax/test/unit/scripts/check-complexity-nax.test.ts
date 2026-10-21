@@ -10,11 +10,12 @@ describe("biome.json", () => {
 
   // A story worktree carries its own copy of biome.json; unexcluded, Biome finds
   // it as a nested root config and aborts `lint` in the main checkout (#1934).
+  // Anchored: a leading `**/` also matches a checkout that itself lives in one (#2631).
   test("excludes nax's own story worktrees", () => {
     const worktree = storyWorktreePath(REPO, deriveStoryWorktreeId("feature", "US-001"));
     const worktreeDir = relative(REPO, worktree).split(sep)[0];
 
-    expect(includes).toContain(`!**/${worktreeDir}/**`);
+    expect(includes).toContain(`!${worktreeDir}/**`);
   });
 });
 

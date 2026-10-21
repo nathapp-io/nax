@@ -62,6 +62,8 @@ let comments: PrComment[];
 let changedFiles: string[];
 const review = mock<typeof _botReviewDeps.runPrReview>(async () => ({ ran: true, verdict }));
 const post = mock<typeof _botReviewDeps.postPrReview>(async () => counts);
+const ci = { outcome: "green" as const, detail: "CI checks: 2/2 passed" };
+const headCi = mock<typeof _botReviewDeps.readHeadCi>(async () => ci);
 const checkoutDispose = mock(async () => {});
 const contextDispose = mock(async () => {});
 const prepare = mock<typeof _botReviewDeps.preparePrCheckout>(async () => ({
@@ -153,6 +155,7 @@ beforeEach(() => {
     listReviewThreads: async () => threads,
     listPrComments: async () => comments,
     readLinkedIssues: async () => issues,
+    readHeadCi: headCi,
     runPrReview: review,
     postPrReview: post,
     writeJson: write,
@@ -256,6 +259,13 @@ describe("runBotReview", () => {
     changedFiles = [`${PROJECT_FEATURES_DIR}/one/prd.json`, `${PROJECT_FEATURES_DIR}/two/prd.json`];
     await runBotReview(input);
     expect(review.mock.calls[0]?.[1]).not.toHaveProperty("prdPath");
+  });
+  test("nax#2631 reads CI once for the exact head and gives it to the review and the summary", async () => {
+    headCi.mockClear();
+    await runBotReview(input);
+    expect(headCi).toHaveBeenCalledWith({ forge: ref.forge, url: info.url, repoRoot: "/repo", headSha: info.headSha });
+    expect(review.mock.calls.at(-1)?.[1].ci).toEqual(ci);
+    expect(post.mock.calls.at(-1)?.[0].ci).toEqual(ci);
   });
   test("AC-17 forwards sensitive paths", async () => {
     await runBotReview(input);

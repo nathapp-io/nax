@@ -2,7 +2,7 @@
   "$schema": "https://biomejs.dev/schemas/2.5.10/schema.json",
   "root": true,
   "files": {
-    "includes": ["packages/**", "!**/.worktrees/**", "!**/.claude/worktrees/**", "!**/.nax-wt/**", "!**/node_modules/**", "!**/dist/**"]
+    "includes": ["packages/**", "!.worktrees/**", "!.claude/worktrees/**", "!.nax-wt/**", "!packages/**/.worktrees/**", "!packages/**/.claude/worktrees/**", "!packages/**/.nax-wt/**", "!**/node_modules/**", "!**/dist/**"]
   },
   "linter": {
     "domains": {
