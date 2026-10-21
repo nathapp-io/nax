@@ -227,3 +227,42 @@ describe("reportStep", () => {
     expect(post).not.toHaveBeenCalled();
   });
 });
+
+describe("renderFixSummary gate baseline (nax#2631)", () => {
+  const red = (patch: Partial<BotFixState>): BotFixState => ({
+    step: "report",
+    timings: {},
+    failingGates: ["lint", "test"],
+    ...patch,
+  });
+
+  test("baseline-red with CI green blames the bot checkout, not the fix", () => {
+    const out = renderFixSummary(
+      red({ outcome: "baseline-red", baselineFailing: ["lint", "test"], ciOutcome: "green" }),
+    );
+    expect(out).toContain("Gates failed: lint, test.");
+    expect(out).toContain("They fail on the unmodified PR head in the bot checkout too, while CI is green on it");
+    expect(out).toContain("so the bot checkout differs from CI and these gates cannot judge the fix");
+  });
+  test("baseline-red with CI red says the failure predates the fix", () => {
+    const out = renderFixSummary(
+      red({ outcome: "baseline-red", baselineFailing: ["lint", "test"], ciOutcome: "failed" }),
+    );
+    expect(out).toContain("CI is red on it too: the failure predates the fix");
+  });
+  test("baseline-red without a CI result names CI's state", () => {
+    const out = renderFixSummary(
+      red({ outcome: "baseline-red", baselineFailing: ["lint", "test"], ciOutcome: "pending" }),
+    );
+    expect(out).toContain("CI has no result for it (pending)");
+  });
+  test("gates-failed names the gates that were already red on the head", () => {
+    const out = renderFixSummary(red({ outcome: "gates-failed", baselineFailing: ["lint"], ciOutcome: "green" }));
+    expect(out).toContain("Gates failed: lint, test; nothing pushed.");
+    expect(out).toContain("Already red on the unmodified PR head: lint.");
+  });
+  test("gates-failed with a green head adds nothing", () => {
+    const out = renderFixSummary(red({ outcome: "gates-failed", baselineFailing: [], ciOutcome: "green" }));
+    expect(out).not.toContain("Already red");
+  });
+});

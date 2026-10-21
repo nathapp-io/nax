@@ -91,6 +91,15 @@ export async function readyStep(env: BotFixEnv, _state: BotFixState): Promise<St
   return { patch: { markedReady: true }, exit: "report" };
 }
 
+/** Why every red gate is not the fix's: CI's verdict on the same head decides (nax#2631). */
+function baselineText(ci: BotFixState["ciOutcome"]): string {
+  const head = "They fail on the unmodified PR head in the bot checkout too";
+  if (ci === "green")
+    return `${head}, while CI is green on it, so the bot checkout differs from CI and these gates cannot judge the fix.`;
+  if (ci === "failed") return `${head}, and CI is red on it too: the failure predates the fix.`;
+  return `${head}; CI has no result for it (${ci ?? "unknown"}).`;
+}
+
 function outcomeText(state: BotFixState): string {
   switch (state.outcome) {
     case "pushed":
@@ -107,7 +116,14 @@ function outcomeText(state: BotFixState): string {
     case "no-gates":
       return "No gates are configured on the base branch; nothing pushed.";
     case "gates-failed":
-      return `Gates failed: ${(state.failingGates ?? []).join(", ")}; nothing pushed.`;
+      return [
+        `Gates failed: ${(state.failingGates ?? []).join(", ")}; nothing pushed.`,
+        ...(state.baselineFailing?.length
+          ? [`Already red on the unmodified PR head: ${state.baselineFailing.join(", ")}.`]
+          : []),
+      ].join(" ");
+    case "baseline-red":
+      return `Gates failed: ${(state.failingGates ?? []).join(", ")}. ${baselineText(state.ciOutcome)} Nothing pushed.`;
     case "dirty":
       return `The fix tree is dirty or unreadable; nothing pushed. Recovery checkout retained at \`${safeCode(state.recoveryPath ?? "unknown")}\`.`;
     case "push-unknown":

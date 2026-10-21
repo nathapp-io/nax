@@ -31,6 +31,7 @@ export {
   gatesStep,
   pushStep,
 } from "./fix-steps";
+export { _gateBaselineDeps, failingOnHead, logGateFailure, readHeadCi } from "./gate-baseline";
 export { _botLogDeps, type BotLog, openBotLog } from "./log";
 export { botModel, parseModelOption } from "./models";
 export { fixProtectedPaths, sensitivePaths } from "./path-policy";

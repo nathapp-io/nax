@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeBotFixEnv } from "@test/helpers";
 import * as bot from "@/bot";
 import type { GateCommand } from "@/finish/gates/quality";
+import type { CiWaitOutcome } from "@/workflow/ci-wait";
 
 const original = { ...bot._fixStepsDeps };
 beforeEach(() => {
@@ -30,9 +31,11 @@ describe("gatesStep", () => {
     const base = makeBotFixEnv();
     const env = { ...base, checks: { ...base.checks, gates: [{ name: "test", command: "npm run test" }] } };
     expect(await bot.gatesStep(env, state())).toEqual({ exit: "passed", patch: {} });
-    expect(run).toHaveBeenCalledWith(env.checkout.worktree, [
-      { name: "test", command: "npm run test", cwd: env.checkout.worktree },
-    ]);
+    expect(run).toHaveBeenCalledWith(
+      env.checkout.worktree,
+      [{ name: "test", command: "npm run test", cwd: env.checkout.worktree }],
+      { onGate: expect.any(Function) },
+    );
   });
   test("runs arrays and setup commands with worktree cwd without mutating saved gates", async () => {
     const run = fakeGates();
@@ -41,6 +44,7 @@ describe("gatesStep", () => {
     expect(run).toHaveBeenCalledWith(
       env.checkout.worktree,
       commands().map((gate) => ({ ...gate, cwd: env.checkout.worktree })),
+      { onGate: expect.any(Function) },
     );
     expect(env.checks.gates).toEqual(commands());
   });
@@ -51,10 +55,63 @@ describe("gatesStep", () => {
   });
   test("red gates report failure and failing names", async () => {
     fakeGates(false);
+    fakeBaseline(undefined);
     expect(await bot.gatesStep(gateEnv(), state())).toEqual({
       exit: "failed",
-      patch: { failingGates: ["test"], outcome: "gates-failed" },
+      patch: { failingGates: ["test"], ciOutcome: "green", outcome: "gates-failed" },
     });
+  });
+});
+
+function fakeBaseline(failing: readonly string[] | undefined, ci: CiWaitOutcome = "green") {
+  const onHead = mock(async (_worktree: string, _headSha: string, _gates: GateCommand[]) => failing);
+  bot._fixStepsDeps.failingOnHead = onHead;
+  bot._fixStepsDeps.readHeadCi = async () => ({ outcome: ci, detail: "" });
+  return onHead;
+}
+
+describe("gatesStep baseline (nax#2631)", () => {
+  test("re-runs only the failing gates on the unmodified head", async () => {
+    fakeGates(false);
+    const onHead = fakeBaseline(["test"]);
+    const env = gateEnv();
+    await bot.gatesStep(env, state());
+    expect(onHead).toHaveBeenCalledWith(env.checkout.worktree, env.info.headSha, [
+      { ...commands()[0], cwd: env.checkout.worktree },
+    ]);
+  });
+  test("a gate red on the unmodified head too is baseline-red, with CI's verdict on that head", async () => {
+    fakeGates(false);
+    fakeBaseline(["test"], "green");
+    expect(await bot.gatesStep(gateEnv(), state())).toEqual({
+      exit: "failed",
+      patch: { failingGates: ["test"], baselineFailing: ["test"], ciOutcome: "green", outcome: "baseline-red" },
+    });
+  });
+  test("a gate green on the unmodified head stays the fix's failure", async () => {
+    fakeGates(false);
+    fakeBaseline([], "failed");
+    expect(await bot.gatesStep(gateEnv(), state())).toEqual({
+      exit: "failed",
+      patch: { failingGates: ["test"], baselineFailing: [], ciOutcome: "failed", outcome: "gates-failed" },
+    });
+  });
+  test("a baseline run that throws leaves the plain gate failure", async () => {
+    fakeGates(false);
+    fakeBaseline(undefined);
+    bot._fixStepsDeps.failingOnHead = async () => {
+      throw new Error("spawn failed");
+    };
+    expect(await bot.gatesStep(gateEnv(), state())).toEqual({
+      exit: "failed",
+      patch: { failingGates: ["test"], ciOutcome: "green", outcome: "gates-failed" },
+    });
+  });
+  test("passing gates read neither CI nor the head", async () => {
+    fakeGates(true);
+    const onHead = fakeBaseline(["test"]);
+    expect(await bot.gatesStep(gateEnv(), state())).toEqual({ exit: "passed", patch: {} });
+    expect(onHead).not.toHaveBeenCalled();
   });
 });
 
