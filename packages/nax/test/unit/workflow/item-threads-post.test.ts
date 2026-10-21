@@ -22,20 +22,47 @@ const input = (over: Partial<ItemThreadsInput> = {}): ItemThreadsInput => ({
   ...over,
 });
 
+function threadReply(author?: string) {
+  const nodes = author
+    ? [
+        {
+          id: "T",
+          isResolved: false,
+          isOutdated: false,
+          path: "a.ts",
+          line: 9,
+          comments: { nodes: [{ databaseId: 1, author: { login: author }, body, createdAt: "t" }] },
+        },
+      ]
+    : [];
+  return { data: { repository: { pullRequest: { reviewThreads: { nodes, pageInfo: { hasNextPage: false } } } } } };
+}
+
+function prReply(gitlab = false) {
+  return gitlab
+    ? {
+        sha: "head",
+        author: { username: "author" },
+        diff_refs: { base_sha: "base", start_sha: "start", head_sha: "head" },
+      }
+    : { head: { sha: "head", ref: "feature" }, base: { ref: "main" }, user: { login: "author" } };
+}
+
 function harness(options: { gitlab?: boolean; failures?: number; threadsFail?: boolean; own?: string } = {}) {
   const writes: string[][] = [];
   const reads: string[][] = [];
   let failures = options.failures ?? 0;
+  const ok = (value: unknown) => ({ exitCode: 0, stdout: JSON.stringify(value), stderr: "" });
+  const post = (cmd: string[]) => {
+    writes.push(cmd);
+    if (failures-- > 0) throw new Error("post rejected");
+    return ok(options.gitlab ? { id: "discussion", notes: [{ id: 1 }] } : { id: 1 });
+  };
   const deps: ForgeDeps = {
     readText: async () => null,
     run: async (cmd, opts) => {
       expect(opts.cwd).toBe("/repo");
-      const ok = (value: unknown) => ({ exitCode: 0, stdout: JSON.stringify(value), stderr: "" });
-      if (cmd.includes("POST")) {
-        writes.push(cmd);
-        if (failures-- > 0) throw new Error("post rejected");
-        return ok(options.gitlab ? { id: "discussion", notes: [{ id: 1 }] } : { id: 1 });
-      }
+      if (cmd.includes("POST")) return post(cmd);
       reads.push(cmd);
       if (cmd[0] === "git")
         return {
@@ -46,32 +73,10 @@ function harness(options: { gitlab?: boolean; failures?: number; threadsFail?: b
       if (cmd.includes("user")) return ok({ login: "bot", username: "bot", id: 1 });
       if (cmd.includes("graphql")) {
         if (options.threadsFail) throw new Error("threads unreadable");
-        const nodes = options.own
-          ? [
-              {
-                id: "T",
-                isResolved: false,
-                isOutdated: false,
-                path: "a.ts",
-                line: 9,
-                comments: { nodes: [{ databaseId: 1, author: { login: options.own }, body, createdAt: "t" }] },
-              },
-            ]
-          : [];
-        return ok({
-          data: { repository: { pullRequest: { reviewThreads: { nodes, pageInfo: { hasNextPage: false } } } } },
-        });
+        return ok(threadReply(options.own));
       }
       if (cmd.some((arg) => arg.includes("?per_page="))) return ok([]);
-      return ok(
-        options.gitlab
-          ? {
-              sha: "head",
-              author: { username: "author" },
-              diff_refs: { base_sha: "base", start_sha: "start", head_sha: "head" },
-            }
-          : { head: { sha: "head", ref: "feature" }, base: { ref: "main" }, user: { login: "author" } },
-      );
+      return ok(prReply(options.gitlab));
     },
   };
   return { deps, writes, reads };
