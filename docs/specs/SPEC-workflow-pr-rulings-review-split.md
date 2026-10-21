@@ -822,7 +822,7 @@ described in Integration, and reports `prRulings`.
 - [unit] `buildBotRulingReadPrompt` tells the model to answer `none` when the reply's meaning is not clear.
 - [unit] `buildBotRulingReadPrompt` tells the model to copy `quote` verbatim from the reply.
 - [unit] `botRulingReadOp` is importable from `@/operations`, has `kind` `complete`, and takes its model from `input.model`.
-- [unit] `botRulingReadOp.parse` of a fenced JSON reply returns the rulings array.
+- [unit] `botRulingReadOp.parse` of a fenced JSON reply returns a `BotRulingReadVerdict` whose `rulings` array holds the parsed entries.
 - [unit] `botRulingReadOp.parse` drops an entry whose id is not one of the input item ids.
 - [unit] `botRulingReadOp.parse` drops an entry whose disposition is not in the union.
 - [unit] `botRulingReadOp.parse` returns null for a reply with no JSON object.
