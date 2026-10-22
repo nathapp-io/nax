@@ -16,6 +16,7 @@ import { _workflowDeps } from "../workflow/step-context";
 import type { PrCheckout } from "./checkout";
 import { listCiConfigFiles } from "./checkout-state";
 import { type BotCheckSource, type BotChecks, checkCommands } from "./checks";
+import { type BotCostEnv, botCostEnv } from "./cost";
 import type { BotDecision } from "./decisions";
 import { featureIntentPaths } from "./intent";
 import type { BotLog } from "./log";
@@ -31,6 +32,8 @@ export { _botReviewDeps } from "./review-deps";
 export type BotReviewResult =
   | ({
       readonly outcome: "posted";
+      readonly spentUsd?: number;
+      readonly limitUsd?: number;
       readonly intent: PrReviewVerdict["intent"];
       readonly quality: PrReviewVerdict["quality"];
       readonly staticMode: boolean;
@@ -40,7 +43,8 @@ export type BotReviewResult =
     } & PostReviewOutcome)
   | { readonly outcome: "not-reviewed" | "refused"; readonly reason: string };
 
-interface BotReviewInput {
+export interface BotReviewInput {
+  readonly costLimitUsd?: number;
   readonly decisions?: readonly BotDecision[];
   readonly dir: string;
   readonly pr: number;
@@ -62,6 +66,7 @@ interface ReviewPreparation {
   readonly ci: CiWaitResult;
 }
 interface ReviewEnv extends ReviewPreparation {
+  readonly cost: BotCostEnv;
   readonly ctx: PrStepContext;
   readonly review: PrReviewInput;
   readonly post: Omit<PostReviewInput, "verdict">;
@@ -70,8 +75,17 @@ interface ReviewEnv extends ReviewPreparation {
 export const BOT_REVIEW_GRAPH: StepGraph<ReviewState, ReviewEnv, ReviewStep> = defineStepGraph({
   start: "review",
   end: ["done"],
-  costStopProduces: [],
-  costStop: async () => undefined,
+  costStopProduces: ["reviewRan", "reason"],
+  costStop: async (node, _state, env) =>
+    node === "review"
+      ? {
+          patch: {
+            reviewRan: false,
+            reason: `cost limit reached: ${env.cost.spentUsd().toFixed(2)} of ${env.cost.limitUsd.toFixed(2)} USD`,
+          },
+          to: "done",
+        }
+      : undefined,
   nodes: {
     review: {
       kind: "agent",
@@ -201,7 +215,7 @@ async function prepareReviewChecks(
 async function reviewEnvironment(
   input: BotReviewInput,
   prepared: PreparedReview,
-  context: { ctx: PrStepContext; stateDir: string },
+  context: { ctx: PrStepContext; stateDir: string; cost: BotCostEnv },
 ): Promise<ReviewEnv> {
   const { repoRoot, ref, info, checkout, staticMode } = prepared;
   const { ctx, stateDir } = context;
@@ -240,6 +254,7 @@ async function reviewEnvironment(
       });
   return {
     ...preparation,
+    cost: context.cost,
     ctx,
     review: {
       mergeBase: checkout.mergeBase,
@@ -278,7 +293,11 @@ async function executeReview(env: ReviewEnv, runtime: ReturnType<typeof createRu
     env,
     { step: "review", timings: {} },
     { persist: (value) => _botReviewDeps.writeJson(join(env.post.stateDir, "bot-state.json"), value) },
-    { aborted: () => runtime.signal.aborted, now: () => Date.now() },
+    {
+      aborted: () => runtime.signal.aborted,
+      now: () => Date.now(),
+      costExceeded: () => env.cost.spentUsd() >= env.cost.limitUsd,
+    },
   );
   if (!state.posted || !state.verdict) return { outcome: "not-reviewed", reason: state.reason ?? "review did not run" };
   getLogger().info("bot", "Bot review posted", {
@@ -291,6 +310,8 @@ async function executeReview(env: ReviewEnv, runtime: ReturnType<typeof createRu
   });
   return {
     outcome: "posted",
+    spentUsd: env.cost.spentUsd(),
+    limitUsd: env.cost.limitUsd,
     ...state.posted,
     intent: state.verdict.intent,
     quality: state.verdict.quality,
@@ -320,7 +341,11 @@ async function reviewCheckout(input: BotReviewInput, prepared: PreparedReview): 
       agentName: resolveDefaultAgent(config),
       pr: { forge: ref.forge, number: ref.number, base: checkout.mergeBase, head: info.headSha },
     });
-    const env = await reviewEnvironment(input, prepared, { ctx: context.ctx, stateDir });
+    const env = await reviewEnvironment(input, prepared, {
+      ctx: context.ctx,
+      stateDir,
+      cost: botCostEnv(config, runtime, input.costLimitUsd),
+    });
     const result = await executeReview(env, runtime);
     return result.outcome === "posted" && log.path !== undefined ? { ...result, logPath: log.path } : result;
   } finally {

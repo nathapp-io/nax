@@ -36,7 +36,10 @@ export interface BotFixState extends GraphState<BotFixStep> {
     | "push-rejected"
     | "push-unknown"
     | "dirty"
-    | "setup-failed";
+    | "setup-failed"
+    | "cost-limit";
+  readonly costSpentUsd?: number;
+  readonly costLimitUsd?: number;
   readonly gateTails?: readonly { name: string; tail: string }[];
   readonly gateRepairRounds?: number;
   readonly repairMode?: "repair" | "prepare";

@@ -2,7 +2,7 @@
 import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { resolveDefaultAgent } from "@/agents";
-import { type ConfiguredModel, DEFAULT_CONFIG } from "@/config";
+import type { ConfiguredModel } from "@/config";
 import { NaxError } from "@/errors";
 import { hasNaxWorkflowMarker, ownComments } from "@/forge";
 import { getLogger } from "@/logger";
@@ -13,6 +13,7 @@ import { runPreRunSteps } from "../execution/lifecycle/pre-run-steps";
 import { botRunDir } from "../workflow/paths";
 import { _workflowDeps } from "../workflow/step-context";
 import { type BotChecks, resolveBotChecks } from "./checks";
+import { botCostEnv } from "./cost";
 import { checkPushAccess, loadLatestReview } from "./fix-input";
 import { readyStep, replyStep, reportStep } from "./fix-report";
 import {
@@ -66,7 +67,8 @@ export const _botFixDeps = {
   reportStep,
 };
 
-interface BotFixInput {
+export interface BotFixInput {
+  readonly costLimitUsd?: number;
   readonly dir: string;
   readonly pr: number;
   readonly profiles: readonly string[];
@@ -75,14 +77,24 @@ interface BotFixInput {
 }
 export type BotFixResult = { readonly logPath?: string } & (
   | { readonly outcome: "refused"; readonly reason: string }
-  | (BotFixState & { readonly outcome: NonNullable<BotFixState["outcome"]> })
+  | (BotFixState & {
+      readonly outcome: NonNullable<BotFixState["outcome"]>;
+      readonly spentUsd?: number;
+      readonly limitUsd?: number;
+    })
 );
 
 export const BOT_FIX_GRAPH: StepGraph<BotFixState, BotFixEnv, BotFixStep> = defineStepGraph({
   start: "fix",
   end: ["done"],
-  costStopProduces: [],
-  costStop: async () => undefined,
+  costStopProduces: ["outcome", "costSpentUsd", "costLimitUsd"],
+  costStop: async (node, _state, env) =>
+    node === "fix" || node === "repair"
+      ? {
+          patch: { outcome: "cost-limit", costSpentUsd: env.cost.spentUsd(), costLimitUsd: env.cost.limitUsd },
+          to: "report",
+        }
+      : undefined,
   nodes: {
     fix: {
       kind: "agent",
@@ -226,11 +238,15 @@ async function executeFix(
     env,
     initial,
     { persist: (value) => _botFixDeps.writeJson(join(stateDir, "bot-state.json"), value) },
-    { aborted: () => runtime.signal.aborted, now: () => Date.now() },
+    {
+      aborted: () => runtime.signal.aborted,
+      now: () => Date.now(),
+      costExceeded: () => env.cost.spentUsd() >= env.cost.limitUsd,
+    },
   );
   if (!state.outcome)
     throw new NaxError("[bot-fix] Missing graph outcome", "BOT_FIX_OUTCOME_MISSING", { stage: "bot-fix" });
-  return { ...state, outcome: state.outcome };
+  return { ...state, outcome: state.outcome, spentUsd: env.cost.spentUsd(), limitUsd: env.cost.limitUsd };
 }
 
 const SHORT_SHA_LENGTH = 7;
@@ -327,11 +343,7 @@ async function fixCheckout(input: BotFixInput, prepared: PreparedFix): Promise<B
       review,
       model: input.model,
       forge: deps.forge,
-      // US-009 replaces this seam with runtime spend accounting and the graph costStop.
-      cost: {
-        limitUsd: config.bot?.costLimit ?? DEFAULT_CONFIG.bot?.costLimit ?? Number.POSITIVE_INFINITY,
-        spentUsd: () => 0,
-      },
+      cost: botCostEnv(config, runtime, input.costLimitUsd),
     };
     await recordFixRulings(env, items.comments);
     try {

@@ -241,6 +241,8 @@ function baselineText(ci: BotFixState["ciOutcome"]): string {
 
 function outcomeText(state: BotFixState): string {
   switch (state.outcome) {
+    case "cost-limit":
+      return `Cost limit reached: ${state.costSpentUsd?.toFixed(2)} of ${state.costLimitUsd?.toFixed(2)} USD; nothing pushed.`;
     case "setup-failed":
       return `Setup failed at \`${safeCode(state.setupFailed ?? "unknown")}\`; nothing ran.`;
     case "pushed":

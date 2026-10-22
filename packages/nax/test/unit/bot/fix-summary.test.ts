@@ -8,6 +8,11 @@ import { safeCode } from "@/workflow/pr-body-safe";
 const state: BotFixState = { step: "report", timings: {} };
 
 describe("renderFixSummary", () => {
+  test("AC-14 renders the cost boundary with two decimal places", () => {
+    expect(renderFixSummary({ ...state, outcome: "cost-limit", costSpentUsd: 1.5, costLimitUsd: 1 })).toContain(
+      "Cost limit reached: 1.50 of 1.00 USD; nothing pushed.",
+    );
+  });
   test("US-008 AC-9 reports tracked prepare changes", () => {
     expect(renderFixSummary({ ...state, outcome: "prepare-touched-tracked" })).toContain(
       "The prepare turn changed tracked files; nothing pushed.",

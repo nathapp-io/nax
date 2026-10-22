@@ -332,6 +332,8 @@ describe("runBotReview", () => {
   test("AC-24 returns posting counts", async () => {
     expect(await runBotReview(input)).toEqual({
       outcome: "posted",
+      spentUsd: expect.any(Number),
+      limitUsd: expect.any(Number),
       ...counts,
       intent: verdict.intent,
       quality: verdict.quality,
