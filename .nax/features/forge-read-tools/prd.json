@@ -3,7 +3,7 @@
   "feature": "forge-read-tools",
   "branchName": "feat/forge-read-tools",
   "createdAt": "2026-10-22T00:00:00.000Z",
-  "updatedAt": "2026-10-22T16:45:03.809Z",
+  "updatedAt": "2026-10-22T16:53:58.764Z",
   "userStories": [
     {
       "id": "US-001",
@@ -455,14 +455,17 @@
       "dependencies": [
         "US-007"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Deterministic view algorithms reuse already-established authorization, sanitization and cache boundaries without changing access policy."
+        "reasoning": "Deterministic view algorithms reuse already-established authorization, sanitization and cache boundaries without changing access policy.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/forge-tools/log-tool.ts",
@@ -478,7 +481,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "0da021debc7e86d6e5d2c024fe4d1480119b950e"
     },
     {
       "id": "US-009",
