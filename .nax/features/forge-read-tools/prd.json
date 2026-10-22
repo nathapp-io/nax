@@ -3,7 +3,7 @@
   "feature": "forge-read-tools",
   "branchName": "feat/forge-read-tools",
   "createdAt": "2026-10-22T00:00:00.000Z",
-  "updatedAt": "2026-10-22T15:35:01.358Z",
+  "updatedAt": "2026-10-22T15:43:11.570Z",
   "userStories": [
     {
       "id": "US-001",
@@ -99,14 +99,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Bounded deterministic excerpt composition using the upstream sanitized reader, without new access-control decisions."
+        "reasoning": "Bounded deterministic excerpt composition using the upstream sanitized reader, without new access-control decisions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/forge/ci-failures.ts",
@@ -118,7 +121,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "1f125a35c0c93156f7bd4636a286535b5a0c5a85"
     },
     {
       "id": "US-003",
