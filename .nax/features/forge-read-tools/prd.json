@@ -3,7 +3,7 @@
   "feature": "forge-read-tools",
   "branchName": "feat/forge-read-tools",
   "createdAt": "2026-10-22T00:00:00.000Z",
-  "updatedAt": "2026-10-22T17:04:17.448Z",
+  "updatedAt": "2026-10-22T17:11:47.673Z",
   "userStories": [
     {
       "id": "US-001",
@@ -575,14 +575,17 @@
       "dependencies": [
         "US-009"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Standard selection and rendering on shared helpers, but writer-role authorization and fail-closed comment exposure require strict security TDD."
+        "reasoning": "Standard selection and rendering on shared helpers, but writer-role authorization and fail-closed comment exposure require strict security TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/forge/threads.ts",
@@ -603,7 +606,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "5d107107140a88924f8cdf382c4bb302c7ddc466"
     },
     {
       "id": "US-011",
