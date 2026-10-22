@@ -8,6 +8,11 @@ import { safeCode } from "@/workflow/pr-body-safe";
 const state: BotFixState = { step: "report", timings: {} };
 
 describe("renderFixSummary", () => {
+  test("US-011 AC-11 identifies the reused fix with a seven-character sha", () => {
+    expect(renderFixSummary({ ...state, outcome: "protected", reusedFix: "abcdef1234567890" })).toContain(
+      "Reused the saved fix abcdef1; no new fix session.",
+    );
+  });
   test("AC-14 renders the cost boundary with two decimal places", () => {
     expect(renderFixSummary({ ...state, outcome: "cost-limit", costSpentUsd: 1.5, costLimitUsd: 1 })).toContain(
       "Cost limit reached: 1.50 of 1.00 USD; nothing pushed.",

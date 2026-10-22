@@ -284,6 +284,10 @@ function outcomeText(state: BotFixState): string {
 
 export function renderFixSummary(state: BotFixState): string {
   const lines = [outcomeText(state)];
+  if (state.reusedFix)
+    lines.push(
+      `Reused the saved fix ${safeText(state.reusedFix.slice(0, SHORT_SHA_LENGTH), SHORT_SHA_LENGTH)}; no new fix session.`,
+    );
   if (state.repairMode !== undefined)
     lines.push(`Repair turn: ${state.repairMode}, round ${state.gateRepairRounds ?? 0}.`);
   if (state.repairSkippedForCost) lines.push("Repair turn skipped: cost limit reached.");

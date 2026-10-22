@@ -1,4 +1,4 @@
-/** Repo-scoped trusted, exact-head fix orchestration. Every invocation is fresh. */
+/** Repo-scoped trusted, exact-head fix orchestration with optional saved-commit reuse. */
 import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { resolveDefaultAgent } from "@/agents";
@@ -30,7 +30,7 @@ import { repairStep } from "./repair-step";
 import { _botReviewDeps } from "./review-run";
 import { rulingModelReader } from "./ruling-reader";
 import { recordPrRulings } from "./rulings";
-import { clearSavedFix, persistSavedFix, readSavedFix, saveFix } from "./saved-fix";
+import { clearSavedFix, persistSavedFix, readSavedFix, reuseSavedFix, saveFix } from "./saved-fix";
 
 export const _botFixDeps = {
   gitToplevel: _botReviewDeps.gitToplevel,
@@ -70,6 +70,7 @@ export const _botFixDeps = {
 };
 
 export interface BotFixInput {
+  readonly fresh?: boolean;
   readonly costLimitUsd?: number;
   readonly dir: string;
   readonly pr: number;
@@ -220,8 +221,9 @@ async function recordFixRulings(
 async function executeFix(
   env: BotFixEnv,
   runtime: ReturnType<typeof _botFixDeps.createRuntime>,
+  fresh?: boolean,
 ): Promise<BotFixResult> {
-  let initial: BotFixState = { step: "fix", timings: {} };
+  let initial = await reuseSavedFix({ env, outputDir: runtime.outputDir, fresh, savedFix: _botFixDeps.savedFix });
   try {
     await _botFixDeps.runPreRunSteps({ steps: env.checks.preRun, workdir: env.checkout.worktree });
   } catch (error) {
@@ -349,7 +351,7 @@ async function fixCheckout(input: BotFixInput, prepared: PreparedFix): Promise<B
     };
     await recordFixRulings(env, items.comments);
     try {
-      const result = await executeFix(env, runtime);
+      const result = await executeFix(env, runtime, input.fresh);
       if (result.outcome !== "refused")
         await persistSavedFix({ env, state: result, outputDir: runtime.outputDir, savedFix: deps.savedFix });
       return finishFix(result, log);

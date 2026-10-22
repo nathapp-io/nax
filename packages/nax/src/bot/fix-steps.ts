@@ -58,6 +58,7 @@ export interface BotFixState extends GraphState<BotFixStep> {
   readonly markedReady?: boolean;
   /** Why the PR stayed a draft (US-005): a workflow PR, or a CI that is not green. */
   readonly readyHeld?: string;
+  readonly reusedFix?: string;
   readonly fixSha?: string;
   readonly fixFailure?: string;
   readonly agreedCount?: number;

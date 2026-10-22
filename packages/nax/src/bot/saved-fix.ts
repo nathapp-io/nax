@@ -102,14 +102,65 @@ async function savedSha(env: BotFixEnv, state: BotFixState): Promise<string | un
   return head === env.info.headSha ? state.fixSha : head;
 }
 
+type SavedFixAccess = { read: typeof readSavedFix; clear: typeof clearSavedFix };
+
+async function verifiedSavedFix(location: SavedFixLocation, entry: SavedFix): Promise<boolean> {
+  const result = await _savedFixDeps.runGit(
+    ["rev-parse", "--verify", `${savedFixRef(location.prNumber)}^{commit}`],
+    location.repoRoot,
+  );
+  if (result.exitCode === 0 && result.stdout.trim() === entry.sha) return true;
+  logFailure("reuse invalid", location.prNumber, result.stderr || "saved ref does not resolve to the saved sha");
+  return false;
+}
+
+/** Best-effort reuse only; the graph must still perform its independent tree check and gates. */
+export async function reuseSavedFix(input: {
+  env: BotFixEnv;
+  outputDir: string;
+  fresh?: boolean;
+  savedFix: SavedFixAccess;
+}): Promise<BotFixState> {
+  const { env, outputDir, fresh, savedFix } = input;
+  const initial: BotFixState = { step: "fix", timings: {} };
+  const location = { repoRoot: env.repoRoot, outputDir, prNumber: env.ref.number };
+  try {
+    const entry = fresh ? null : await savedFix.read(outputDir, env.ref.number);
+    // A null read includes malformed files. Clearing is idempotent for missing files too.
+    if (!entry || entry.headSha !== env.info.headSha || !(await verifiedSavedFix(location, entry))) {
+      await savedFix.clear(location);
+      return initial;
+    }
+    const keys = env.review.agreed.map((item) => item.key).sort();
+    if (JSON.stringify([...entry.agreedKeys].sort()) !== JSON.stringify(keys)) return initial;
+    const result = await _savedFixDeps.runGit(["checkout", "--detach", entry.sha], env.checkout.worktree);
+    if (result.exitCode !== 0) {
+      logFailure("checkout", env.ref.number, result.stderr || `git exited ${result.exitCode}`);
+      return initial;
+    }
+    return { step: "check", timings: {}, reusedFix: entry.sha, fixSha: entry.sha, agreedCount: keys.length };
+  } catch (error) {
+    logFailure("reuse", env.ref.number, error);
+    return initial;
+  }
+}
+
 /** Called only after the graph, while its checkout and logger are still alive. */
 export async function persistSavedFix(input: {
   env: BotFixEnv;
   state: BotFixState;
   outputDir: string;
-  savedFix: { save: typeof saveFix };
+  savedFix: { save: typeof saveFix; clear?: typeof clearSavedFix };
 }): Promise<void> {
   const { env, state, outputDir, savedFix } = input;
+  if (state.outcome === "pushed") {
+    try {
+      await savedFix.clear?.({ repoRoot: env.repoRoot, outputDir, prNumber: env.ref.number });
+    } catch (error) {
+      logFailure("clear", env.ref.number, error);
+    }
+    return;
+  }
   const outcome = SavedFixSchema.shape.outcome.safeParse(state.outcome);
   if (!outcome.success || !state.fixSha || state.fixSha === env.info.headSha) return;
   try {
