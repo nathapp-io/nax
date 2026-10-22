@@ -25,6 +25,7 @@ import {
   gatesStep,
   pushStep,
 } from "./fix-steps";
+import { botGit } from "./git";
 import { type BotLog, openBotLog } from "./log";
 import { repairStep } from "./repair-step";
 import { _botReviewDeps } from "./review-run";
@@ -361,7 +362,7 @@ async function fixCheckout(input: BotFixInput, prepared: PreparedFix): Promise<B
       ...prepared,
       ...items,
       checks,
-      ctx: context.ctx,
+      ctx: { ...context.ctx, runGit: botGit },
       config,
       review,
       model: input.model,

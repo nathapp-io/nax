@@ -4,7 +4,7 @@
  * Covers monorepo subdir guard: workdir = git root, workdir = subdir (monorepo), and unrelated dir.
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { gitSpawnEnv } from "@nathapp/nax-agent/internal";
@@ -22,7 +22,52 @@ import { _gitDeps, autoCommitIfDirty, registerBeforeAutoCommit } from "@/utils/g
 describe("autoCommitIfDirty", () => {
   const calls: { cmd: string[]; cwd?: string }[] = [];
 
-  withDepsRestore(_gitDeps, ["spawn"]);
+  withDepsRestore(_gitDeps, ["spawn", "getSafeLogger"]);
+
+  test.each([false, true])("injected runner owns every git call; deleted nax path=%s", async (deleted) => {
+    const spawn = mock(makeSpawn(() => "").spawn);
+    _gitDeps.spawn = spawn;
+    const run = mock(async (args: string[]) => ({
+      stdout:
+        args[0] === "rev-parse"
+          ? "/repo\n"
+          : args[0] === "status"
+            ? ` M source.txt\n${deleted ? " D .nax/features/x/prd.json\n" : ""}`
+            : "",
+      stderr: "",
+      exitCode: args.includes("--cached") ? 1 : 0,
+    }));
+    await autoCommitIfDirty("/repo", "workflow", "wf-branch-fix", "_run", undefined, false, run);
+    expect(run.mock.calls.map(([args]) => args[0])).toContain("status");
+    expect(run.mock.calls.map(([args]) => args[0])).toContain("add");
+    expect(run.mock.calls.map(([args]) => args[0])).toContain("commit");
+    if (deleted) {
+      expect(run).toHaveBeenCalledWith(["cat-file", "-e", "HEAD:.nax/features/x/prd.json"], "/repo");
+      expect(run).toHaveBeenCalledWith(["checkout", "--", ".nax/features/x/prd.json"], "/repo");
+    }
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  test("injected commit failure logs context and resolves best-effort", async () => {
+    const logger = makeLogger();
+    _gitDeps.getSafeLogger = () => logger;
+    _gitDeps.spawn = makeSpawn(() => "").spawn;
+    const run = mock(async (args: string[]) => ({
+      stdout: args[0] === "rev-parse" ? "/repo\n" : args[0] === "status" ? " M source.txt\n" : "",
+      stderr: args[0] === "commit" ? "commit denied" : "",
+      exitCode: args[0] === "commit" || args.includes("--cached") ? 1 : 0,
+    }));
+    await expect(
+      autoCommitIfDirty("/repo", "workflow", "wf-branch-fix", "_run", undefined, false, run),
+    ).resolves.toBeUndefined();
+    expect(run.mock.calls.some(([args]) => args[0] === "commit")).toBe(true);
+    expect(logger.error).toHaveBeenCalledWith("workflow", "auto-commit: git commit failed or timed out", {
+      storyId: "_run",
+      role: "wf-branch-fix",
+      exitCode: 1,
+      stderr: "commit denied",
+    });
+  });
   beforeEach(() => {
     calls.length = 0;
   });

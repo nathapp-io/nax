@@ -226,6 +226,7 @@ export function registerBeforeAutoCommit(hook: AutoCommitHook): () => void {
  *   with any unrelated dirty file, because `git add -A` is unscoped. The refusal
  *   lives here rather than at each call site so a caller added later inherits it
  *   instead of silently reintroducing the bug. Sourced from `runtime.dryRun`.
+ * @param runGit - Runner for all git calls, including restore and staging helpers.
  */
 export async function autoCommitIfDirty(
   workdir: string,
@@ -234,6 +235,7 @@ export async function autoCommitIfDirty(
   storyId: string,
   blockedWorktrees?: ReadonlySet<string>,
   dryRun?: boolean,
+  runGit: typeof gitWithTimeout = gitWithTimeout,
 ): Promise<void> {
   const logger = _gitDeps.getSafeLogger();
   if (dryRun === true) {
@@ -252,7 +254,7 @@ export async function autoCommitIfDirty(
     // Without this, a workdir nested inside another git repo (e.g. a temp dir
     // created inside the nax repo during tests) would cause git to walk up and
     // commit files from the parent repo instead.
-    const { stdout: topLevelOut } = await gitWithTimeout(["rev-parse", "--show-toplevel"], workdir);
+    const { stdout: topLevelOut } = await runGit(["rev-parse", "--show-toplevel"], workdir);
     const gitRoot = topLevelOut.trim();
 
     // Normalize paths to handle symlinks (e.g. /tmp → /private/tmp on macOS)
@@ -302,7 +304,7 @@ export async function autoCommitIfDirty(
       }
     }
 
-    const { stdout: statusOutput } = await gitWithTimeout(["status", "--porcelain"], workdir);
+    const { stdout: statusOutput } = await runGit(["status", "--porcelain"], workdir);
 
     if (!statusOutput.trim()) return;
 
@@ -315,7 +317,7 @@ export async function autoCommitIfDirty(
     // Repair agent-deleted .nax/ state before staging; see nax-path-restore.ts.
     await restoreDeletedNaxPaths(statusOutput, {
       gitRoot: realGitRoot,
-      run: gitWithTimeout,
+      run: runGit,
       logger,
       stage,
       role,
@@ -334,7 +336,7 @@ export async function autoCommitIfDirty(
     // Use a longer budget and log (not throw — still best-effort) on failure.
     // Never a bare `git add -A`, nor a commit with nothing staged: both run status inside gitlinks (#2210).
     const addOpts = { flags: ["-A"], timeoutMs: AUTO_COMMIT_GIT_TIMEOUT_MS };
-    const { exitCode: addExit, stderr: addStderr } = await gitlinkSafeAdd(gitWithTimeout, realGitRoot, addOpts);
+    const { exitCode: addExit, stderr: addStderr } = await gitlinkSafeAdd(runGit, realGitRoot, addOpts);
     if (addExit !== 0) {
       logger?.error(stage, "auto-commit: git add -A failed or timed out", {
         storyId,
@@ -345,13 +347,13 @@ export async function autoCommitIfDirty(
       return;
     }
 
-    const staged = await hasStagedChanges(gitWithTimeout, realGitRoot, AUTO_COMMIT_GIT_TIMEOUT_MS);
+    const staged = await hasStagedChanges(runGit, realGitRoot, AUTO_COMMIT_GIT_TIMEOUT_MS);
     if (staged !== true) {
       logger?.debug(stage, "auto-commit: nothing staged; skipping commit", { storyId, role, staged });
       return;
     }
 
-    const { exitCode: commitExit, stderr: commitStderr } = await gitWithTimeout(
+    const { exitCode: commitExit, stderr: commitStderr } = await runGit(
       ["commit", "-m", `chore(${storyId}): auto-commit after ${role} session`],
       workdir,
       AUTO_COMMIT_GIT_TIMEOUT_MS,
