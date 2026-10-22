@@ -58,6 +58,7 @@ export async function runBotFixCycle(
 ): Promise<BotFixCycleResult> {
   const fix = await deps.runBotFix(input);
   if (fix.outcome !== "pushed" || !input.rereview) return { fix };
+  let review: BotReviewResult | undefined;
   try {
     if (!fix.pushedSha)
       throw new NaxError("[bot-fix] Pushed result is missing pushedSha", "BOT_PUSH_SHA_MISSING", { stage: "bot-fix" });
@@ -71,11 +72,15 @@ export async function runBotFixCycle(
       };
     const remaining = (input.costLimitUsd ?? fix.limitUsd ?? botCostLimit(DEFAULT_CONFIG)) - (fix.spentUsd ?? 0);
     if (remaining <= 0) return { fix, skipped: `cost limit reached; run nax bot review ${ref.number}` };
-    const review = await deps.runBotReview({ ...input, costLimitUsd: remaining });
+    review = await deps.runBotReview({ ...input, costLimitUsd: remaining });
     if (review.outcome !== "posted") return { fix, review };
-    const ready = await deps.runBotFix({ ...input, readyOnly: true, costLimitUsd: remaining - (review.spentUsd ?? 0) });
+    const readyBudget = remaining - (review.spentUsd ?? 0);
+    // Exhaustion is an expected internal boundary, not an invalid external limit.
+    if (readyBudget <= 0)
+      return { fix, review, skipped: `cost limit reached; readiness skipped; run nax bot fix ${ref.number}` };
+    const ready = await deps.runBotFix({ ...input, readyOnly: true, costLimitUsd: readyBudget });
     return { fix, review, ready };
   } catch (error) {
-    return { fix, skipped: errorMessage(error) };
+    return { fix, ...(review ? { review } : {}), skipped: errorMessage(error) };
   }
 }

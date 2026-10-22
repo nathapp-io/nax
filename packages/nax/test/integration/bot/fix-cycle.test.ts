@@ -81,6 +81,21 @@ describe("runBotFixCycle", () => {
     expect(await runBotFixCycle(input, deps)).toEqual({ fix, skipped: "cost limit reached; run nax bot review 42" });
     expect(deps.runBotReview).not.toHaveBeenCalled();
   });
+  test.each([5, 6])(
+    "review spending %s USD exhausts the remaining budget without losing its result",
+    async (spentUsd) => {
+      const { deps } = fixture();
+      const review = { ...posted, spentUsd };
+      deps.runBotReview.mockResolvedValue(review);
+      expect(await runBotFixCycle(input, deps)).toEqual({
+        fix: pushed,
+        review,
+        skipped: "cost limit reached; readiness skipped; run nax bot fix 42",
+      });
+      expect(deps.runBotReview).toHaveBeenCalledWith({ ...input, costLimitUsd: 5 });
+      expect(deps.runBotFix).toHaveBeenCalledTimes(1);
+    },
+  );
   test("AC-10 not-reviewed ends the cycle", async () => {
     const { deps } = fixture();
     const review: BotReviewResult = { outcome: "not-reviewed", reason: "no review" };
@@ -98,7 +113,11 @@ describe("runBotFixCycle", () => {
           throw new Error("chained failure");
         });
       else deps[step].mockRejectedValue(new Error("chained failure"));
-      expect(await runBotFixCycle(input, deps)).toEqual({ fix: pushed, skipped: "chained failure" });
+      expect(await runBotFixCycle(input, deps)).toEqual({
+        fix: pushed,
+        ...(step === "ready" ? { review: posted } : {}),
+        skipped: "chained failure",
+      });
     },
   );
   test("explicit override wins over fix limit", async () => {
