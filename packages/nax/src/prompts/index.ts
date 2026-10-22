@@ -50,6 +50,7 @@ export {
 } from "./builders/finish-review-builder";
 export type { FixReviewPromptInput } from "./builders/fix-review-builder";
 export { buildFixReviewPrompt } from "./builders/fix-review-builder";
+export { buildForgeReadInstructions } from "./builders/forge-read-builder";
 export type { NbfWorthCheckPromptInput } from "./builders/nbf-worth-check-builder";
 export { buildNbfWorthCheckPrompt } from "./builders/nbf-worth-check-builder";
 export type { OneShotRole } from "./builders/one-shot-builder";
