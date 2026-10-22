@@ -34,6 +34,7 @@ export function makeBotReviewDeps(input: {
     },
     loadBotConfig: async () => config,
     createRuntime: () => runtime,
+    setupBotRuntime: async () => {},
     openBotLog: () => ({ close: async () => {} }),
     buildPrStepContext: async () => ({
       ctx: {

@@ -23,6 +23,7 @@ import { openBotLog } from "./log";
 import { postPrReview } from "./post";
 import { runPrReview } from "./review-step";
 import { recordPrRulings } from "./rulings";
+import { setupBotRuntime } from "./run-setup";
 
 export const _botReviewDeps = {
   runGit: gitWithTimeout,
@@ -62,6 +63,7 @@ export const _botReviewDeps = {
   preparePrCheckout,
   loadBotConfig,
   createRuntime,
+  setupBotRuntime,
   openBotLog,
   buildPrStepContext,
   resolveBotChecks,

@@ -134,6 +134,7 @@ beforeEach(() => {
     events.push("checkout-close");
   });
   Object.assign(_botReviewDeps, {
+    setupBotRuntime: mock(async () => {}),
     openBotLog: () => ({ close: async () => {} }),
     gitToplevel: async () => "/repo",
     ensureProjectTrusted: async () => {

@@ -308,6 +308,7 @@ async function reviewCheckout(input: BotReviewInput, prepared: PreparedReview): 
   let context: Awaited<ReturnType<typeof buildPrStepContext>> | undefined;
   try {
     log = deps.openBotLog(join(stateDir, "bot.jsonl"));
+    await deps.setupBotRuntime(runtime, config, checkout.worktree);
     getLogger().info("bot", "Bot review started", { pr: ref.number, headSha: info.headSha, trusted: !staticMode });
     context = await deps.buildPrStepContext({
       runtime,

@@ -39,6 +39,7 @@ export const _botFixDeps = {
   preparePrCheckout: _botReviewDeps.preparePrCheckout,
   loadBotConfig: _botReviewDeps.loadBotConfig,
   createRuntime: _botReviewDeps.createRuntime,
+  setupBotRuntime: _botReviewDeps.setupBotRuntime,
   openBotLog,
   buildPrStepContext: _botReviewDeps.buildPrStepContext,
   readCurrentUser: _botReviewDeps.readCurrentUser,
@@ -236,6 +237,7 @@ async function fixCheckout(input: BotFixInput, prepared: PreparedFix): Promise<B
   let context: Awaited<ReturnType<typeof deps.buildPrStepContext>> | undefined;
   try {
     log = deps.openBotLog(join(stateDir, "bot.jsonl"));
+    await deps.setupBotRuntime(runtime, config, checkout.worktree);
     getLogger().info("bot", "Bot fix started", { pr: ref.number, headSha: info.headSha });
     context = await deps.buildPrStepContext({
       runtime,
