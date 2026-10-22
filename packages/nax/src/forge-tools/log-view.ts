@@ -36,7 +36,11 @@ export function logViewResult(
   const view = selectView(lines, options);
   const first = view.indices.at(0);
   const last = view.indices.at(-1);
-  const entries = view.indices.map((index) => `${index + 1}: ${lines[index]}`.slice(0, FORGE_LOG_LINE_CHARS));
+  const entries = view.indices.map((index) =>
+    Array.from(`${index + 1}: ${lines[index]}`)
+      .slice(0, FORGE_LOG_LINE_CHARS)
+      .join(""),
+  );
   const partial =
     check.status === "in_progress"
       ? "job still running: this log is partial"

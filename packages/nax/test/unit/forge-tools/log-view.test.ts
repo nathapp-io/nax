@@ -12,6 +12,11 @@ describe("logViewResult", () => {
     expect(content).toContain("1 of 1 matches");
     expect(numbered(content)).toEqual([`1: ${"x".repeat(FORGE_LOG_LINE_CHARS - 3)}`]);
   });
+  test.each([{}, { from: 1 }, { search: "😀" }])("line cap preserves emoji in view %j", (view) => {
+    const content = logViewResult("😀".repeat(FORGE_LOG_LINE_CHARS), check, { ...view, maxBytes: 10_000 });
+    expect(numbered(content)).toEqual([`1: ${"😀".repeat(FORGE_LOG_LINE_CHARS - 3)}`]);
+    expect(Buffer.from(content, "utf8").toString("utf8")).toBe(content);
+  });
   test.each(["", "\n"])("empty and single blank logs have correct bounds (%j)", (text) => {
     const content = logViewResult(text, check, { from: 2, maxBytes: 10_000 });
     expect(numbered(content)).toEqual([]);
