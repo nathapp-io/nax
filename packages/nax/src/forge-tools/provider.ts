@@ -5,6 +5,7 @@ import type { ForgeDeps, PrRef } from "@/forge";
 import { prNumberFromUrl, type WriterCheck, writerCheck } from "@/forge";
 import { getLogger } from "@/logger";
 import { buildForgeReadInstructions } from "@/prompts";
+import { commentsTool } from "./comment-tools";
 import { FORGE_READ_PROVIDER_ID } from "./constants";
 import { _forgeToolsDeps } from "./deps";
 import { logTool } from "./log-tool";
@@ -48,6 +49,7 @@ export function createForgeReadProvider(binding: ForgeReadBinding): ToolProvider
     checksTool(binding, resolveRef),
     logTool(binding, resolveRef),
     threadsTool(binding, resolveRef, checkWriter),
+    commentsTool(binding, resolveRef, checkWriter),
   ];
   return {
     id: FORGE_READ_PROVIDER_ID,
