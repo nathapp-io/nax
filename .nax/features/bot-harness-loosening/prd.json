@@ -3,7 +3,7 @@
   "feature": "bot-harness-loosening",
   "branchName": "feat/bot-harness-loosening",
   "createdAt": "2026-10-22T00:00:00.000Z",
-  "updatedAt": "2026-10-22T06:37:30.146Z",
+  "updatedAt": "2026-10-22T06:51:40.321Z",
   "userStories": [
     {
       "id": "US-001",
@@ -560,14 +560,17 @@
       "dependencies": [
         "US-007"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "New budget abstraction spans two graphs, runtime snapshots and backward-compatible result/input types."
+        "reasoning": "New budget abstraction spans two graphs, runtime snapshots and backward-compatible result/input types.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/step-graph/run.ts",
@@ -590,7 +593,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "f7b3a45e6dcb49de7f120d5c3f6161c1c5c755c3"
     },
     {
       "id": "US-010",
