@@ -37,6 +37,13 @@ afterEach(() => {
 });
 
 describe("prepare mode", () => {
+  test("failed status reports an unreadable boundary rather than a proven tracked change", async () => {
+    _fixStepsDeps.runGit = async () => ({ exitCode: 1, stdout: "", stderr: "timeout" });
+    expect(await repairStep(envFor(), state())).toMatchObject({
+      exit: "out-of-scope",
+      patch: { outcome: "prepare-touched-tracked", prepareTreeUnreadable: true, fixSha: "fix" },
+    });
+  });
   test("AC-1 baseline-red with green CI and rounds left enters repair", async () => {
     expect(await gatesStep(envFor(), state({ step: "gates" }))).toMatchObject({
       exit: "repair",
@@ -57,7 +64,7 @@ describe("prepare mode", () => {
     const env = envFor();
     expect(await repairStep(env, state())).toEqual({
       exit: "ran",
-      patch: { repairMode: "prepare", gateRepairRounds: 1 },
+      patch: { repairMode: "prepare", gateRepairRounds: 1, fixSha: "fix" },
     });
     expect(_fixStepsDeps.runGit).toHaveBeenCalledWith(
       ["status", "--porcelain", "--untracked-files=no"],
@@ -119,7 +126,7 @@ describe("prepare mode", () => {
     };
     expect(await repairStep(envFor(), state({ outcome: "gates-failed" }))).toEqual({
       exit: "ran",
-      patch: { repairMode: "repair", gateRepairRounds: 1 },
+      patch: { repairMode: "repair", gateRepairRounds: 1, fixSha: "committed" },
     });
     expect(_fixStepsDeps.runGit).not.toHaveBeenCalled();
   });

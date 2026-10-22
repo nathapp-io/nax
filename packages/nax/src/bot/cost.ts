@@ -11,6 +11,11 @@ export interface BotCostEnv {
 export function botCostLimit(config: NaxConfig, override?: number): number {
   const limit = override ?? config.bot?.costLimit ?? DEFAULT_CONFIG.bot?.costLimit;
   if (limit === undefined) throw new NaxError("[bot] Missing cost limit", "BOT_COST_LIMIT_MISSING", { stage: "bot" });
+  if (!Number.isFinite(limit) || limit <= 0)
+    throw new NaxError("[bot] Cost limit must be positive and finite", "BOT_COST_LIMIT_INVALID", {
+      stage: "bot",
+      limit,
+    });
   return limit;
 }
 

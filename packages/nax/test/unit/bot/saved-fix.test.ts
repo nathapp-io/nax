@@ -1,6 +1,8 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { makeBotFixEnv } from "@test/helpers";
 import { _savedFixDeps, clearSavedFix, persistSavedFix, readSavedFix, saveFix } from "@/bot/saved-fix";
+
+import { getLogger } from "@/logger";
 
 const original = { ..._savedFixDeps };
 afterEach(() => Object.assign(_savedFixDeps, original));
@@ -17,6 +19,26 @@ const entry = {
 const location = { outputDir: "/output", repoRoot: "/repo", prNumber: 42 };
 
 describe("readSavedFix", () => {
+  test("missing entry is silent but unreadable and corrupt entries warn", async () => {
+    const warn = spyOn(getLogger(), "warn");
+    try {
+      _savedFixDeps.readText = async () => {
+        throw Object.assign(new Error("missing"), { code: "ENOENT" });
+      };
+      expect(await readSavedFix("/output", 42)).toBeNull();
+      expect(warn).not.toHaveBeenCalled();
+      _savedFixDeps.readText = async () => {
+        throw Object.assign(new Error("denied"), { code: "EACCES" });
+      };
+      expect(await readSavedFix("/output", 42)).toBeNull();
+      expect(warn).toHaveBeenCalledTimes(1);
+      _savedFixDeps.readText = async () => "{}";
+      expect(await readSavedFix("/output", 42)).toBeNull();
+      expect(warn).toHaveBeenCalledTimes(2);
+    } finally {
+      warn.mockRestore();
+    }
+  });
   test("AC-15 returns a valid version 1 entry", async () => {
     _savedFixDeps.readText = async () => JSON.stringify(entry);
     expect(await readSavedFix("/output", 42)).toEqual(entry);
@@ -59,7 +81,7 @@ describe("persistSavedFix", () => {
       env,
       state: { step: "done", timings: {}, ...state },
       outputDir: "/output",
-      savedFix: { save },
+      savedFix: { save, clear: async () => {} },
     });
     expect(runGit).not.toHaveBeenCalled();
     expect(save).not.toHaveBeenCalled();
@@ -72,7 +94,7 @@ describe("persistSavedFix", () => {
       env,
       state: { step: "done", timings: {}, outcome: "baseline-red", fixSha: sha },
       outputDir: "/output",
-      savedFix: { save },
+      savedFix: { save, clear: async () => {} },
     });
     expect(save).not.toHaveBeenCalled();
   });
@@ -89,7 +111,7 @@ describe("persistSavedFix", () => {
         env,
         state: { step: "done", timings: {}, outcome, fixSha: sha },
         outputDir: "/output",
-        savedFix: { save },
+        savedFix: { save, clear: async () => {} },
       });
       expect(save).toHaveBeenCalledTimes(1);
       expect(save.mock.calls[0]).toEqual([location, expect.objectContaining({ sha, headSha, outcome })]);
@@ -104,6 +126,7 @@ describe("persistSavedFix", () => {
         state: { step: "done", timings: {}, outcome: "cost-limit", fixSha: sha },
         outputDir: "/output",
         savedFix: {
+          clear: async () => {},
           save: async () => {
             throw new Error("save failed");
           },

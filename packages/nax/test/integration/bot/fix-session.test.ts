@@ -110,6 +110,28 @@ describe("fixStep PR session", () => {
 });
 
 describe("runBotFix durable session report", () => {
+  test.each([false, true])("report presence is injectable without a report on disk: %s", async (exists) => {
+    const root = makeTempDir("bot-report-probe-");
+    dirs.push(root);
+    const base = makeBotFixEnv();
+    const env = { ...base, ctx: { ...base.ctx, reportPath: "/virtual/session-report.md" } };
+    const runtime = makeTestRuntime({ config: env.config });
+    runtimes.push(runtime);
+    const fileExists = mock(async () => exists);
+    const copyFile = mock(async () => {});
+    Object.assign(_botFixDeps, makeBotFixDeps(env, runtime), {
+      fileExists,
+      copyFile,
+      fixStep: async () => ({ patch: { outcome: "nothing" }, exit: "nothing" }),
+      readyStep: async () => ({ patch: {}, exit: "report" }),
+      reportStep: async () => ({ patch: {}, exit: "done" }),
+    });
+    expect(await runBotFix({ dir: root, pr: 42, profiles: [], interactive: false })).toMatchObject({
+      outcome: "nothing",
+    });
+    expect(fileExists).toHaveBeenCalledWith(env.ctx.reportPath);
+    expect(copyFile).toHaveBeenCalledTimes(exists ? 1 : 0);
+  });
   test.each([false, true])(
     "F1 preserves report before disposal after a node throws; copy fails=%s",
     async (copyFails) => {
@@ -138,6 +160,7 @@ describe("runBotFix durable session report", () => {
         await originalRun.copyFile(from, to);
       });
       Object.assign(_botFixDeps, makeBotFixDeps(env, runtime), {
+        fileExists: originalRun.fileExists,
         copyFile: copy,
         fixStep: async () => {
           await Bun.write(env.ctx.reportPath, "# Fix before check failure\n");
@@ -182,6 +205,7 @@ describe("runBotFix durable session report", () => {
       await originalRun.copyFile(from, to);
     });
     Object.assign(_botFixDeps, makeBotFixDeps(env, runtime), {
+      fileExists: originalRun.fileExists,
       copyFile: copy,
       fixStep: async () => {
         if (mode !== "missing") await Bun.write(env.ctx.reportPath, "# Session fix\n");

@@ -56,7 +56,7 @@ export async function readSavedFix(outputDir: string, prNumber: number): Promise
   try {
     return SavedFixSchema.parse(JSON.parse(await _savedFixDeps.readText(savedFixPath(outputDir, prNumber))));
   } catch (error) {
-    logFailure("read", prNumber, error);
+    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) logFailure("read", prNumber, error);
     return null;
   }
 }
@@ -150,12 +150,12 @@ export async function persistSavedFix(input: {
   env: BotFixEnv;
   state: BotFixState;
   outputDir: string;
-  savedFix: { save: typeof saveFix; clear?: typeof clearSavedFix };
+  savedFix: { save: typeof saveFix; clear: typeof clearSavedFix };
 }): Promise<void> {
   const { env, state, outputDir, savedFix } = input;
   if (state.outcome === "pushed") {
     try {
-      await savedFix.clear?.({ repoRoot: env.repoRoot, outputDir, prNumber: env.ref.number });
+      await savedFix.clear({ repoRoot: env.repoRoot, outputDir, prNumber: env.ref.number });
     } catch (error) {
       logFailure("clear", env.ref.number, error);
     }

@@ -82,8 +82,8 @@ export async function runPrReview(ctx: PrStepContext, input: PrReviewInput): Pro
     checks: input.checks,
     decisions: input.decisions,
     ...(input.prdPath !== undefined && { prdPath: input.prdPath }),
-    specPath: input.specPath,
-    checkoutState: input.checkoutState,
+    ...(input.specPath !== undefined && { specPath: input.specPath }),
+    ...(input.checkoutState !== undefined && { checkoutState: input.checkoutState }),
     staticMode: input.staticMode,
     ...(input.ci !== undefined && { ci: input.ci }),
   });

@@ -50,6 +50,7 @@ export const _botFixDeps = {
   listPrComments: _botReviewDeps.listPrComments,
   randomSuffix: _botReviewDeps.randomSuffix,
   writeJson: _botReviewDeps.writeJson,
+  fileExists: (path: string): Promise<boolean> => Bun.file(path).exists(),
   copyFile: async (from: string, to: string): Promise<void> => {
     await Bun.write(to, Bun.file(from));
   },
@@ -114,7 +115,15 @@ export const BOT_FIX_GRAPH: StepGraph<BotFixState, BotFixEnv, BotFixStep> = defi
     repair: {
       kind: "agent",
       commits: true,
-      produces: ["gateRepairRounds", "repairMode", "outcome", "fixFailure", "fixDirty"],
+      produces: [
+        "gateRepairRounds",
+        "repairMode",
+        "outcome",
+        "fixFailure",
+        "fixDirty",
+        "fixSha",
+        "prepareTreeUnreadable",
+      ],
       exits: ["ran", "out-of-scope"],
       transitions: [
         { on: "ran", to: "check" },
@@ -137,6 +146,7 @@ export const BOT_FIX_GRAPH: StepGraph<BotFixState, BotFixEnv, BotFixStep> = defi
         "baselineFailing",
         "ciOutcome",
         "recoveryPath",
+        "fixSha",
         "gateTails",
         "repairSkippedForCost",
       ],
@@ -292,7 +302,7 @@ function finishFix(result: BotFixResult, log: BotLog): BotFixResult {
 
 async function preserveFixReport(reportPath: string, stateDir: string): Promise<void> {
   try {
-    if (!(await Bun.file(reportPath).exists())) return;
+    if (!(await _botFixDeps.fileExists(reportPath))) return;
     await _botFixDeps.copyFile(reportPath, join(stateDir, "fix-report.md"));
   } catch (error) {
     getLogger()?.warn("bot-fix", "Could not preserve fix session report", {

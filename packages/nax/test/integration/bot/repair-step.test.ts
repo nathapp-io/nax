@@ -2,10 +2,12 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeBotFixEnv, makeNaxConfig } from "@test/helpers";
 import { _botFixDeps, BOT_FIX_GRAPH } from "@/bot/fix-run";
 import { _fixStepsDeps, type BotFixState, checkStep, gatesStep } from "@/bot/fix-steps";
+import { _savedFixDeps, persistSavedFix } from "@/bot/saved-fix";
 import { gateOutputTail } from "@/finish/gates/quality";
 import { runStepGraph } from "@/step-graph";
 
 const original = { ..._fixStepsDeps };
+const savedOriginal = { ..._savedFixDeps };
 const graphOriginal = { ..._botFixDeps };
 const state = (patch: Partial<BotFixState> = {}): BotFixState => ({ step: "gates", timings: {}, ...patch });
 function envFor(rounds = 1, spent = 0) {
@@ -34,6 +36,7 @@ beforeEach(() => {
 afterEach(() => {
   Object.assign(_fixStepsDeps, original);
   Object.assign(_botFixDeps, graphOriginal);
+  Object.assign(_savedFixDeps, savedOriginal);
 });
 
 describe("gatesStep repair eligibility", () => {
@@ -44,6 +47,7 @@ describe("gatesStep repair eligibility", () => {
     expect(await gatesStep(envFor(0), state())).toEqual({
       exit: "failed",
       patch: {
+        fixSha: "fix-sha",
         failingGates: ["test"],
         baselineFailing: [],
         ciOutcome: "green",
@@ -116,7 +120,7 @@ describe("repairStep", () => {
         ],
       }),
     );
-    expect(result).toEqual({ exit: "ran", patch: { gateRepairRounds: 3, repairMode: "repair" } });
+    expect(result).toEqual({ exit: "ran", patch: { gateRepairRounds: 3, repairMode: "repair", fixSha: "fix-sha" } });
     expect(_fixStepsDeps.runBranchFix).toHaveBeenCalledWith(env.ctx, {
       findings: [],
       model: undefined,
@@ -125,6 +129,7 @@ describe("repairStep", () => {
     const prompt = run.mock.calls[0]?.[1].prompt ?? "";
     expect(prompt).toContain("lint broke");
     expect(prompt).toContain("holds the fix commit");
+    expect(prompt).toContain(`PR head ${env.info.headSha.slice(0, 7)}`);
   });
   test.each([
     { failure: "session failed", dirty: false },
@@ -206,5 +211,41 @@ describe("BOT_FIX_GRAPH repair loop", () => {
     expect(events).toEqual(["fix", "check", "gates", "repair", "check", "gates", ...(green ? ["push"] : [])]);
     expect(result.outcome).toBe(green ? "pushed" : "gates-failed");
     expect(result.gateRepairRounds).toBe(1);
+  });
+});
+
+describe("repair commit retention across baseline and prepare", () => {
+  test.each(["failed baseline restore", "later prepare violation"])("retains repaired HEAD after %s", async (path) => {
+    const env = envFor(2);
+    let head = "a".repeat(40);
+    const repaired = "b".repeat(40);
+    _fixStepsDeps.readHead = async () => head;
+    _fixStepsDeps.runBranchFix = async () => {
+      head = repaired;
+      return { dirty: false, autoCommitted: false };
+    };
+    let current = state({ outcome: "gates-failed", fixSha: head });
+    const repair = await _botFixDeps.repairStep(env, current);
+    expect(repair.patch?.fixSha).toBe(repaired);
+    current = { ...current, ...repair.patch };
+    _fixStepsDeps.failingOnHead = async () => {
+      if (path === "failed baseline restore") head = env.info.headSha;
+      return ["test"];
+    };
+    const gates = await gatesStep(env, current);
+    current = { ...current, ...gates.patch };
+    if (path === "later prepare violation") {
+      _fixStepsDeps.runBranchFix = async () => {
+        head = "c".repeat(40);
+        return { dirty: false, autoCommitted: false };
+      };
+      const prepare = await _botFixDeps.repairStep(env, current);
+      current = { ...current, ...prepare.patch };
+      expect(current.outcome).toBe("prepare-touched-tracked");
+    }
+    _savedFixDeps.runGit = async () => ({ exitCode: 0, stdout: head, stderr: "" });
+    const save = mock(async () => {});
+    await persistSavedFix({ env, state: current, outputDir: "/output", savedFix: { save, clear: async () => {} } });
+    expect(save).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ sha: repaired }));
   });
 });

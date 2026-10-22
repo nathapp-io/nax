@@ -103,7 +103,7 @@ describe("bot runtime setup wiring", () => {
       const agent = mock(async () => {
         throw new Error("agent must not run");
       });
-      Object.assign(_botFixDeps, { fixStep: agent });
+      _fixStepsDeps.runBranchFix = agent;
       Object.assign(_botReviewDeps, { runPrReview: agent });
       for (const code of [
         "CREDENTIALS_MISSING",

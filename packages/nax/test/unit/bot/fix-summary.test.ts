@@ -8,6 +8,16 @@ import { safeCode } from "@/workflow/pr-body-safe";
 const state: BotFixState = { step: "report", timings: {} };
 
 describe("renderFixSummary", () => {
+  test.each([{ costSpentUsd: 1 }, { costLimitUsd: 5 }, {}])("rejects incomplete cost-stop state %j", (cost) => {
+    expect(() => renderFixSummary({ ...state, outcome: "cost-limit", ...cost })).toThrow(
+      expect.objectContaining({ code: "BOT_FIX_OUTCOME_MISSING" }),
+    );
+  });
+  test("reports an unreadable prepare tree without claiming changes", () => {
+    const summary = renderFixSummary({ ...state, outcome: "prepare-touched-tracked", prepareTreeUnreadable: true });
+    expect(summary).toContain("could not be read");
+    expect(summary).not.toContain("changed tracked files");
+  });
   test("US-011 AC-11 identifies the reused fix with a seven-character sha", () => {
     expect(renderFixSummary({ ...state, outcome: "protected", reusedFix: "abcdef1234567890" })).toContain(
       "Reused the saved fix abcdef1; no new fix session.",

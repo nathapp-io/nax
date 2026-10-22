@@ -6,6 +6,11 @@ import { NaxError } from "@/errors";
 import { createNoOpCostAggregator } from "@/runtime";
 
 describe("botCostLimit", () => {
+  test.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])("rejects invalid override %s", (limit) => {
+    expect(() => botCostLimit(makeNaxConfig(), limit)).toThrow(
+      expect.objectContaining({ code: "BOT_COST_LIMIT_INVALID" }),
+    );
+  });
   test("AC-7 override takes precedence", () => {
     expect(botCostLimit(makeNaxConfig({ bot: { costLimit: 7 } }), 2)).toBe(2);
   });

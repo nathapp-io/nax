@@ -13,6 +13,7 @@ export {
   type BotCheck,
   type BotCheckSource,
   type BotChecks,
+  barCommands,
   checkCommands,
   DERIVED_INSTALL_TIMEOUT_SECONDS,
   resolveBotChecks,

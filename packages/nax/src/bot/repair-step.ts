@@ -29,7 +29,7 @@ export async function repairStep(env: BotFixEnv, state: BotFixState): Promise<St
     bar: barCommands(env.checks),
     checkoutState: renderCheckoutState({
       phase: "after-fix",
-      headSha: headBefore,
+      headSha: env.info.headSha,
       setup: env.checks.preRun.map((step) => step.command),
       ciFiles: await listCiConfigFiles(env.checkout.worktree),
     }),
@@ -43,18 +43,31 @@ export async function repairStep(env: BotFixEnv, state: BotFixState): Promise<St
   const patch: Partial<BotFixState> = {
     gateRepairRounds: (state.gateRepairRounds ?? 0) + 1,
     repairMode,
+    fixSha: headBefore,
     ...(result.failure !== undefined ? { fixFailure: result.failure } : {}),
     ...(result.dirty ? { fixDirty: true } : {}),
   };
-  if (repairMode === "prepare" && (await prepareTouchedTracked(env, headBefore))) {
-    return { patch: { ...patch, outcome: "prepare-touched-tracked" }, exit: "out-of-scope" };
+  if (repairMode === "prepare") {
+    const boundary = await prepareBoundary(env, headBefore);
+    if (boundary)
+      return {
+        patch: { ...patch, outcome: "prepare-touched-tracked", prepareTreeUnreadable: boundary === "unreadable" },
+        exit: "out-of-scope",
+      };
+  } else {
+    const fixSha = await _fixStepsDeps.readHead(env.checkout.worktree).catch((error) => {
+      getLogger()?.warn("bot-fix", "Could not read repaired HEAD; keeping the prior recovery commit", { error });
+      return headBefore;
+    });
+    return { patch: { ...patch, fixSha }, exit: "ran" };
   }
   return { patch, exit: "ran" };
 }
 
-async function prepareTouchedTracked(env: BotFixEnv, headBefore: string): Promise<boolean> {
-  if ((await _fixStepsDeps.readHead(env.checkout.worktree)) !== headBefore) return true;
+async function prepareBoundary(env: BotFixEnv, headBefore: string): Promise<"changed" | "unreadable" | undefined> {
+  if ((await _fixStepsDeps.readHead(env.checkout.worktree)) !== headBefore) return "changed";
   const status = await _fixStepsDeps.runGit(["status", "--porcelain", "--untracked-files=no"], env.checkout.worktree);
   // An unreadable tree cannot establish that prepare respected the tracked-file boundary.
-  return status.exitCode !== 0 || status.stdout !== "";
+  if (status.exitCode !== 0) return "unreadable";
+  return status.stdout !== "" ? "changed" : undefined;
 }

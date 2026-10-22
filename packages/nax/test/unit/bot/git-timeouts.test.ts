@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { makeBotFixEnv } from "@test/helpers";
-import * as checkoutModule from "@/bot/checkout";
-import { _checkoutDeps, preparePrCheckout } from "@/bot/checkout";
+import { _checkoutDeps, BOT_GIT_NETWORK_TIMEOUT_MS, preparePrCheckout } from "@/bot/checkout";
 import { _fixInputDeps, checkPushAccess } from "@/bot/fix-input";
 import { renderFixSummary } from "@/bot/fix-report";
 import { _gateBaselineDeps, failingOnHead } from "@/bot/gate-baseline";
@@ -18,7 +17,7 @@ afterEach(() => {
 
 describe("bot slow git timeouts", () => {
   test("AC-6 exports the shared 120 second timeout", () => {
-    expect(Reflect.get(checkoutModule, "BOT_GIT_NETWORK_TIMEOUT_MS")).toBe(120_000);
+    expect(BOT_GIT_NETWORK_TIMEOUT_MS).toBe(120_000);
   });
   test("AC-7/8 extends both fetches and worktree add, not other git commands", async () => {
     const env = makeBotFixEnv();

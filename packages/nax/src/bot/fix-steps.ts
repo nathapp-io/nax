@@ -43,6 +43,7 @@ export interface BotFixState extends GraphState<BotFixStep> {
   readonly costSpentUsd?: number;
   readonly costLimitUsd?: number;
   readonly gateTails?: readonly { name: string; tail: string }[];
+  readonly prepareTreeUnreadable?: boolean;
   readonly gateRepairRounds?: number;
   readonly repairMode?: "repair" | "prepare";
   readonly repairSkippedForCost?: boolean;
@@ -191,7 +192,15 @@ export async function gatesStep(env: BotFixEnv, _state: BotFixState): Promise<St
     },
   });
   if (!result.passed) {
-    const patch = await classifyRedGates(env, worktreeCommands, result.failing);
+    // Snapshot the recoverable commit before baseline checkout can move HEAD.
+    const fixSha = await _fixStepsDeps.readHead(env.checkout.worktree).catch((error) => {
+      getLogger()?.warn("bot-fix", "Could not snapshot HEAD before baseline", { error: errorMessage(error) });
+      return _state.fixSha;
+    });
+    const patch = {
+      ...(await classifyRedGates(env, worktreeCommands, result.failing)),
+      ...(fixSha !== undefined ? { fixSha } : {}),
+    };
     const gateTails = result.failing.map((name) => ({ name, tail: tails.get(name) ?? "(no output captured)" }));
     return repairDecision(env, _state, { ...patch, gateTails });
   }

@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { makeNaxConfig } from "@test/helpers";
-import { _botChecksDeps, checkCommands, DERIVED_INSTALL_TIMEOUT_SECONDS, resolveBotChecks } from "@/bot";
-import * as checksModule from "@/bot/checks";
+import { _botChecksDeps, barCommands, checkCommands, DERIVED_INSTALL_TIMEOUT_SECONDS, resolveBotChecks } from "@/bot";
 import { DEFAULT_CONFIG } from "@/config";
 import { initLogger, resetLogger } from "@/logger";
 import type { BotChecksExtractOutput } from "@/operations/bot-checks-extract";
@@ -9,7 +8,7 @@ import type { BotChecksExtractOutput } from "@/operations/bot-checks-extract";
 describe("barCommands", () => {
   test("AC-16: flattens string and list gate commands in order", () => {
     expect(
-      checksModule.barCommands({
+      barCommands({
         source: "config",
         preRun: [],
         gates: [
@@ -21,7 +20,7 @@ describe("barCommands", () => {
   });
   test("AC-17: setup is flattened and annotated before its own gate", () => {
     expect(
-      checksModule.barCommands({
+      barCommands({
         source: "config",
         preRun: [{ command: "not a gate", timeoutSeconds: 60 }],
         gates: [
@@ -39,7 +38,7 @@ describe("barCommands", () => {
     ]);
   });
   test("empty gates yield no commands", () => {
-    expect(checksModule.barCommands({ source: "none", gates: [], preRun: [] })).toEqual([]);
+    expect(barCommands({ source: "none", gates: [], preRun: [] })).toEqual([]);
   });
 });
 

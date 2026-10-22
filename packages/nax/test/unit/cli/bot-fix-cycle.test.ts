@@ -154,7 +154,7 @@ describe("botFixCommand cycle", () => {
   test("AC-9 lazy dependency delegates through the bot barrel", async () => {
     const spy = spyOn(bot, "runBotFixCycle").mockResolvedValue({ fix: pushed });
     const input = { pr: 42, dir: "/repo", profiles: [], interactive: false, rereview: true, fresh: false };
-    const delegate = Reflect.get(_botCliDeps, "runBotFixCycle");
+    const delegate = _botCliDeps.runBotFixCycle;
     expect(delegate).toBeFunction();
     expect(await delegate(input)).toEqual({ fix: pushed });
     expect(spy).toHaveBeenCalledWith(input);

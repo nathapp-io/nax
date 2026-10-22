@@ -242,7 +242,11 @@ function baselineText(ci: BotFixState["ciOutcome"]): string {
 function outcomeText(state: BotFixState): string {
   switch (state.outcome) {
     case "cost-limit":
-      return `Cost limit reached: ${state.costSpentUsd?.toFixed(2)} of ${state.costLimitUsd?.toFixed(2)} USD; nothing pushed.`;
+      if (state.costSpentUsd === undefined || state.costLimitUsd === undefined)
+        throw new NaxError("[bot-fix] Cannot report cost limit without spend and limit", "BOT_FIX_OUTCOME_MISSING", {
+          stage: "bot-fix",
+        });
+      return `Cost limit reached: ${state.costSpentUsd.toFixed(2)} of ${state.costLimitUsd.toFixed(2)} USD; nothing pushed.`;
     case "setup-failed":
       return `Setup failed at \`${safeCode(state.setupFailed ?? "unknown")}\`; nothing ran.`;
     case "pushed":
@@ -266,7 +270,9 @@ function outcomeText(state: BotFixState): string {
           : []),
       ].join(" ");
     case "prepare-touched-tracked":
-      return "The prepare turn changed tracked files; nothing pushed.";
+      return state.prepareTreeUnreadable
+        ? "The prepare tree could not be read; nothing pushed."
+        : "The prepare turn changed tracked files; nothing pushed.";
     case "baseline-red":
       return `Gates failed: ${(state.failingGates ?? []).join(", ")}. ${baselineText(state.ciOutcome)} Nothing pushed.`;
     case "dirty":

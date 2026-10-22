@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
 import { makeBotFixEnv } from "@test/helpers";
-import { _fixCycleDeps, runBotFixCycle } from "@/bot/fix-cycle";
+import { _fixCycleDeps, PR_HEAD_WAIT_MS, runBotFixCycle } from "@/bot/fix-cycle";
 import type { BotFixInput, BotFixResult } from "@/bot/fix-run";
 import type { BotReviewResult } from "@/bot/review-run";
 
@@ -42,6 +42,13 @@ function fixture(fix: BotFixResult = pushed) {
   return { deps, ready, env };
 }
 describe("runBotFixCycle", () => {
+  test("missing pushed SHA fails before polling and preserves push", async () => {
+    const fix = { ...pushed, pushedSha: undefined };
+    const { deps } = fixture(fix);
+    expect(await runBotFixCycle(input, deps)).toEqual({ fix, skipped: "[bot-fix] Pushed result is missing pushedSha" });
+    expect(deps.waitForPrHead).not.toHaveBeenCalled();
+    expect(deps.gitToplevel).not.toHaveBeenCalled();
+  });
   test.each(["nothing", "disabled"])("AC-1/2 %s returns only fix", async (mode) => {
     const fix: BotFixResult = mode === "nothing" ? { step: "done", timings: {}, outcome: "nothing" } : pushed;
     const { deps } = fixture(fix);
@@ -64,7 +71,7 @@ describe("runBotFixCycle", () => {
     deps.waitForPrHead.mockResolvedValue(false);
     expect(await runBotFixCycle(input, deps)).toEqual({
       fix: pushed,
-      skipped: "PR head did not reach abcdef1 within 60 s; run nax bot review 42",
+      skipped: `PR head did not reach abcdef1 within ${PR_HEAD_WAIT_MS / 1_000} s; run nax bot review 42`,
     });
     expect(deps.runBotReview).not.toHaveBeenCalled();
   });
