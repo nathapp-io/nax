@@ -4,7 +4,7 @@ import type { ToolResultParts } from "./types";
 function render(parts: ToolResultParts, entries: readonly string[], dropped: number): string {
   return [
     ...parts.header,
-    markdownFence(entries.join("\n")),
+    markdownFence([...(parts.fencedHeader ?? []), ...entries].join("\n")),
     ...parts.footer,
     ...(dropped > 0 ? [`[truncated: ${dropped} entries not shown]`] : []),
   ].join("\n");

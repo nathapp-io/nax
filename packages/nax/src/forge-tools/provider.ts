@@ -6,6 +6,7 @@ import { prNumberFromUrl } from "@/forge";
 import { buildForgeReadInstructions } from "@/prompts";
 import { FORGE_READ_PROVIDER_ID } from "./constants";
 import { _forgeToolsDeps } from "./deps";
+import { logTool } from "./log-tool";
 import { checksTool, prTool } from "./pr-tools";
 import type { ForgeReadBinding } from "./types";
 
@@ -25,7 +26,7 @@ function sharedReference(binding: ForgeReadBinding): () => Promise<PrRef> {
 
 export function createForgeReadProvider(binding: ForgeReadBinding): ToolProvider {
   const resolveRef = sharedReference(binding);
-  const tools = [prTool(binding, resolveRef), checksTool(binding, resolveRef)];
+  const tools = [prTool(binding, resolveRef), checksTool(binding, resolveRef), logTool(binding, resolveRef)];
   return {
     id: FORGE_READ_PROVIDER_ID,
     kind: "static",
