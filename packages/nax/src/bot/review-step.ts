@@ -27,6 +27,8 @@ export interface PrReviewInput {
   readonly checks?: readonly string[];
   readonly decisions?: readonly BotDecision[];
   readonly prdPath?: string;
+  readonly specPath?: string;
+  readonly checkoutState?: string;
   readonly staticMode: boolean;
   readonly model?: ConfiguredModel;
   /** CI's verdict on the exact head (nax#2631). */
@@ -80,6 +82,8 @@ export async function runPrReview(ctx: PrStepContext, input: PrReviewInput): Pro
     checks: input.checks,
     decisions: input.decisions,
     ...(input.prdPath !== undefined && { prdPath: input.prdPath }),
+    specPath: input.specPath,
+    checkoutState: input.checkoutState,
     staticMode: input.staticMode,
     ...(input.ci !== undefined && { ci: input.ci }),
   });

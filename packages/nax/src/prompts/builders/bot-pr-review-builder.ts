@@ -19,6 +19,8 @@ export interface BotPrReviewPromptInput {
   readonly checks?: readonly string[];
   readonly decisions?: readonly BotDecision[];
   readonly prdPath?: string;
+  readonly specPath?: string;
+  readonly checkoutState?: string;
   readonly staticMode: boolean;
   /** CI's verdict on the exact head (nax#2631); the agent sandbox cannot run the full checks itself. */
   readonly ci?: { readonly outcome: string; readonly detail: string };
@@ -47,6 +49,7 @@ function projectSections(input: BotPrReviewPromptInput): string[] {
     sections.push(
       `## Project checks\nThese are the project's check commands. Prefer running them, scoped to the changed files where you can:\n${input.checks.map((command) => `- ${command}`).join("\n")}`,
     );
+  if (input.checkoutState !== undefined) sections.push(`## Checkout state\n${input.checkoutState}`);
   if (input.ci) sections.push(ciSection(input.ci));
   if (input.decisions?.length)
     sections.push(
@@ -72,7 +75,11 @@ function renderDecision(decision: BotDecision): string {
 /** Author text can never terminate its enclosing fence, even with embedded Markdown. */
 
 function intentLine(input: BotPrReviewPromptInput): string {
-  if (input.prdPath !== undefined) return `Intent: the PRD at ${input.prdPath}.`;
+  const documents = [
+    ...(input.prdPath !== undefined ? [`the PRD at ${input.prdPath}`] : []),
+    ...(input.specPath !== undefined ? [`the spec at ${input.specPath}`] : []),
+  ];
+  if (documents.length) return `Intent: ${documents.join(" and ")}.`;
   if (input.pr.body.trim().length > 0 || input.issues.length > 0) {
     return "Intent: the PR description and the linked issues below.";
   }

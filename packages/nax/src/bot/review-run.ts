@@ -1,10 +1,11 @@
 import { join } from "node:path";
 import { resolveDefaultAgent } from "@/agents";
-import { type ConfiguredModel, DEFAULT_SANDBOX_CONFIG, type NaxConfig, PROJECT_FEATURES_DIR } from "@/config";
+import { type ConfiguredModel, DEFAULT_SANDBOX_CONFIG, type NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
 import { ownComments, type PrComment, parseNaxBotMarker } from "@/forge";
 import { getLogger } from "@/logger";
 import { botChecksExtractOp, type PrReviewVerdict } from "@/operations";
+import { renderCheckoutState } from "@/prompts";
 import type { createRuntime } from "@/runtime";
 import { defineStepGraph, type GraphState, runStepGraph, type StepGraph } from "@/step-graph";
 import type { PrStepContext } from "../workflow/branch-step-context";
@@ -13,8 +14,10 @@ import { botRunDir } from "../workflow/paths";
 import type { buildPrStepContext } from "../workflow/pr-step-context";
 import { _workflowDeps } from "../workflow/step-context";
 import type { PrCheckout } from "./checkout";
+import { listCiConfigFiles } from "./checkout-state";
 import { type BotCheckSource, type BotChecks, checkCommands } from "./checks";
 import type { BotDecision } from "./decisions";
+import { featureIntentPaths } from "./intent";
 import type { BotLog } from "./log";
 import { botModel } from "./models";
 import { sensitivePaths } from "./path-policy";
@@ -104,16 +107,6 @@ export const BOT_REVIEW_GRAPH: StepGraph<ReviewState, ReviewEnv, ReviewStep> = d
     },
   },
 });
-
-function featurePrd(checkout: PrCheckout): string | undefined {
-  const prefix = `${PROJECT_FEATURES_DIR}/`;
-  const paths = checkout.changedFiles.filter((path) => {
-    if (!path.startsWith(prefix)) return false;
-    const parts = path.slice(prefix.length).split("/");
-    return parts.length === 2 && parts[0] !== "" && parts[0] !== "." && parts[0] !== ".." && parts[1] === "prd.json";
-  });
-  return paths.length === 1 ? join(checkout.worktree, paths[0] ?? "") : undefined;
-}
 
 async function triage(
   ref: PostReviewInput["ref"],
@@ -235,7 +228,16 @@ async function reviewEnvironment(
     _botReviewDeps.recordPrRulings,
   );
   const preparation: ReviewPreparation = { ...checks, ci };
-  const prdPath = featurePrd(checkout);
+  const intent = featureIntentPaths(checkout);
+  const checkoutState = staticMode
+    ? undefined
+    : renderCheckoutState({
+        phase: "fresh",
+        headSha: info.headSha,
+        setup: preparation.checks?.preRun.map((step) => step.command) ?? [],
+        setupFailed: preparation.preRunFailed,
+        ciFiles: await listCiConfigFiles(checkout.worktree),
+      });
   return {
     ...preparation,
     ctx,
@@ -252,7 +254,8 @@ async function reviewEnvironment(
       staticMode,
       ci,
       model: botModel(ctx.config, "review", input.model),
-      ...(prdPath === undefined ? {} : { prdPath }),
+      ...intent,
+      ...(checkoutState !== undefined && { checkoutState }),
     },
     post: {
       ...preparation,

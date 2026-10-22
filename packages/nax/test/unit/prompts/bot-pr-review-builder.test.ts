@@ -27,6 +27,28 @@ const intent = "Intent: the PR description and the linked issues below.";
 const staticLine = "You cannot run commands in this review: judge from the files alone.";
 
 describe("buildBotPrReviewPrompt", () => {
+  test.each([[[]], [["project-check"]]])("US-003 AC-6/7 checkout state follows checks or checklist (%j)", (checks) => {
+    const result = prompts.buildBotPrReviewPrompt({ ...base, checks, checkoutState: "fresh checkout details" });
+    expect(result).toContain("## Checkout state\nfresh checkout details");
+    expect(result.indexOf("## Checkout state")).toBeGreaterThan(
+      result.indexOf(checks.length ? "## Project checks" : prompts.WORKFLOW_ENUMERATION_INSTRUCTION),
+    );
+    expect(result.indexOf("## Checkout state")).toBeLessThan(result.indexOf("## Untrusted content"));
+  });
+  test("US-003 AC-8 omits absent checkout state", () => {
+    expect(prompts.buildBotPrReviewPrompt(base)).not.toContain("## Checkout state");
+  });
+  test("US-003 AC-9 names PRD and spec on intent line in order", () => {
+    const result = prompts.buildBotPrReviewPrompt({ ...base, prdPath: "/prd.json", specPath: "/spec.md" });
+    expect(result.split("\n").find((line) => line.startsWith("Intent:"))).toBe(
+      "Intent: the PRD at /prd.json and the spec at /spec.md.",
+    );
+  });
+  test("US-003 spec alone supplies intent", () => {
+    expect(prompts.buildBotPrReviewPrompt({ ...base, specPath: "/spec.md" })).toContain(
+      "Intent: the spec at /spec.md.",
+    );
+  });
   test("US-014 AC-3 uses the shared item 6 plus the bot-only decisions sentence", () => {
     const result = prompts.buildBotPrReviewPrompt(base);
     expect(result.split("\n").find((line) => line.startsWith("6. "))).toBe(
