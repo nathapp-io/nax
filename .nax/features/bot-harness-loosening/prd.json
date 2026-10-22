@@ -3,7 +3,7 @@
   "feature": "bot-harness-loosening",
   "branchName": "feat/bot-harness-loosening",
   "createdAt": "2026-10-22T00:00:00.000Z",
-  "updatedAt": "2026-10-22T07:07:37.436Z",
+  "updatedAt": "2026-10-22T07:21:31.297Z",
   "userStories": [
     {
       "id": "US-001",
@@ -692,14 +692,17 @@
       "dependencies": [
         "US-010"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Reuses US-010's persistence seam for deterministic head/key/ref comparisons, one detached checkout and standard graph-entry/cleanup branches without changing authorization."
+        "reasoning": "Reuses US-010's persistence seam for deterministic head/key/ref comparisons, one detached checkout and standard graph-entry/cleanup branches without changing authorization.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/fix-run.ts",
@@ -715,7 +718,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "6decb8eed82b56e157d448bcc3f0969de4d492ed"
     },
     {
       "id": "US-012",
