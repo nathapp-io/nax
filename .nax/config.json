@@ -108,6 +108,11 @@
     "permissionProfile": "unrestricted",
     "sessionTimeoutSeconds": 7200,
     "maxStoriesPerFeature": 20,
+    "sandbox": {
+      "network": {
+        "allowLocalBinding": true
+      }
+    },
     "commandInterceptor": {
       "provider": "rtk",
       "enabled": true,
