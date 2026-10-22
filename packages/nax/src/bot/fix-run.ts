@@ -70,6 +70,7 @@ export const _botFixDeps = {
 };
 
 export interface BotFixInput {
+  readonly readyOnly?: boolean;
   readonly fresh?: boolean;
   readonly costLimitUsd?: number;
   readonly dir: string;
@@ -162,7 +163,7 @@ export const BOT_FIX_GRAPH: StepGraph<BotFixState, BotFixEnv, BotFixStep> = defi
       kind: "forge",
       produces: ["markedReady", "readyHeld"],
       exits: ["report"],
-      transitions: [{ to: "report" }],
+      transitions: [{ to: "done", when: (state) => state.readyOnly === true }, { to: "report" }],
       run: (env, state) => _botFixDeps.readyStep(env, state),
     },
     report: {
@@ -218,12 +219,9 @@ async function recordFixRulings(
   }
 }
 
-async function executeFix(
-  env: BotFixEnv,
-  runtime: ReturnType<typeof _botFixDeps.createRuntime>,
-  fresh?: boolean,
-): Promise<BotFixResult> {
-  let initial = await reuseSavedFix({ env, outputDir: runtime.outputDir, fresh, savedFix: _botFixDeps.savedFix });
+async function initialFixState(env: BotFixEnv, outputDir: string, input: BotFixInput): Promise<BotFixState> {
+  if (input.readyOnly) return { step: "ready", timings: {}, readyOnly: true, outcome: "ready-pass" };
+  let initial = await reuseSavedFix({ env, outputDir, fresh: input.fresh, savedFix: _botFixDeps.savedFix });
   try {
     await _botFixDeps.runPreRunSteps({ steps: env.checks.preRun, workdir: env.checkout.worktree });
   } catch (error) {
@@ -236,6 +234,15 @@ async function executeFix(
     });
     initial = { step: "report", timings: {}, outcome: "setup-failed", setupFailed };
   }
+  return initial;
+}
+
+async function executeFix(
+  env: BotFixEnv,
+  runtime: ReturnType<typeof _botFixDeps.createRuntime>,
+  input: BotFixInput,
+): Promise<BotFixResult> {
+  const initial = await initialFixState(env, runtime.outputDir, input);
   const stateDir = botRunDir(runtime.outputDir, env.ref.number, runtime.runId);
   const state = await runStepGraph(
     BOT_FIX_GRAPH,
@@ -324,9 +331,11 @@ async function fixCheckout(input: BotFixInput, prepared: PreparedFix): Promise<B
         },
         log,
       );
-    const access = await deps.checkPushAccess(checkout.worktree, info.headRef);
-    if (!access.ok)
-      return finishFix({ outcome: "refused", reason: `cannot push to ${info.headRef}: ${access.reason}` }, log);
+    if (!input.readyOnly) {
+      const access = await deps.checkPushAccess(checkout.worktree, info.headRef);
+      if (!access.ok)
+        return finishFix({ outcome: "refused", reason: `cannot push to ${info.headRef}: ${access.reason}` }, log);
+    }
     const checks = await fixChecks({ ...prepared, ctx: context.ctx, config, review });
     if (checks.source === "none")
       return finishFix(
@@ -351,8 +360,8 @@ async function fixCheckout(input: BotFixInput, prepared: PreparedFix): Promise<B
     };
     await recordFixRulings(env, items.comments);
     try {
-      const result = await executeFix(env, runtime, input.fresh);
-      if (result.outcome !== "refused")
+      const result = await executeFix(env, runtime, input);
+      if (!input.readyOnly && result.outcome !== "refused")
         await persistSavedFix({ env, state: result, outputDir: runtime.outputDir, savedFix: deps.savedFix });
       return finishFix(result, log);
     } finally {

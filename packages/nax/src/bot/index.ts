@@ -18,6 +18,14 @@ export {
   resolveBotChecks,
 } from "./checks";
 export { _decisionsDeps, type BotDecision, loadBotDecisions } from "./decisions";
+export {
+  _fixCycleDeps,
+  type BotFixCycleResult,
+  PR_HEAD_POLL_MS,
+  PR_HEAD_WAIT_MS,
+  runBotFixCycle,
+  waitForPrHead,
+} from "./fix-cycle";
 export { _fixInputDeps, checkPushAccess, loadLatestReview, toFixFindings } from "./fix-input";
 export { _fixReportDeps, readyStep, renderFixSummary, replyStep, reportStep } from "./fix-report";
 export { _botFixDeps, BOT_FIX_GRAPH, type BotFixInput, type BotFixResult, runBotFix } from "./fix-run";

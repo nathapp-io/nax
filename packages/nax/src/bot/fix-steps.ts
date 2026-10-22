@@ -24,7 +24,9 @@ import type { BotReviewArtifact } from "./post";
 export type BotFixStep = "fix" | "repair" | "check" | "gates" | "push" | "reply" | "ready" | "report" | "done";
 
 export interface BotFixState extends GraphState<BotFixStep> {
+  readonly readyOnly?: boolean;
   readonly outcome?:
+    | "ready-pass"
     | "pushed"
     | "nothing"
     | "no-change"
