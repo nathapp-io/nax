@@ -1,4 +1,5 @@
 /** Wires the feature machine to the real steps, the result.json sink and the status block (spec §7). */
+import { forgeReadProviderForUrl } from "@/forge-tools";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import { adjudicateResidual } from "./adjudicate";
 import { createLiveWorkflowAdvisor, FEATURE_SCOPE } from "./advisor-live";
@@ -68,7 +69,16 @@ export function buildFeatureEnv(fc: FeatureContext, input: WorkflowFeatureInput,
       toolErrors("branch-review", () =>
         runBranchReview(fc, { seed, ...spec, ...(ctx.preflight ? { preflightPath: ctx.preflight.path } : {}), facts }),
       ),
-    branchFix: (findings) => toolErrors("branch-fix", () => runBranchFix(fc, { ...spec, findings })),
+    branchFix: (findings, opts) =>
+      toolErrors("branch-fix", () =>
+        runBranchFix(fc, {
+          ...spec,
+          findings,
+          ...(opts?.prUrl
+            ? { toolProviders: [forgeReadProviderForUrl(opts.prUrl, _featureDeps.forge, fc.projectDir)] }
+            : {}),
+        }),
+      ),
     branchReReview: (findings, fixBase) =>
       toolErrors("branch-rereview", () => runBranchReReview(fc, { ...spec, findings, fixBase })),
     adjudicate: (items) => adjudicateResidual(live, { storyId: FEATURE_SCOPE, items, redGates: [] }, ledger),

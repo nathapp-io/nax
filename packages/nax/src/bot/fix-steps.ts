@@ -2,6 +2,7 @@
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { type ConfiguredModel, DEFAULT_CONFIG, type NaxConfig } from "@/config";
 import type { CurrentUser, ForgeDeps, OwnComment, PrInfo, PrRef, PrThread } from "@/forge";
+import { createForgeReadProvider } from "@/forge-tools";
 import { getLogger } from "@/logger";
 import { buildBotPrFixPrompt, renderCheckoutState } from "@/prompts";
 import type { GraphState, StepResult } from "@/step-graph";
@@ -120,6 +121,7 @@ export async function fixStep(env: BotFixEnv, _state: BotFixState): Promise<Step
     findings,
     model: botModel(env.config, "fix", env.model),
     prompt,
+    toolProviders: [createForgeReadProvider({ resolveRef: async () => env.ref, deps: env.forge, cwd: env.repoRoot })],
   });
   const fixSha = await readFixHead(env);
   return {

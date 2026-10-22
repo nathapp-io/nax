@@ -425,7 +425,7 @@ export async function ciRepairStep(
     NO_MIRROR,
   );
   const log = featureStep(roundLabel("ci-repair", round), true, false, env.steps.modelFor?.("branch-fix"));
-  const out = await env.steps.branchFix(findings);
+  const out = await (rec.url ? env.steps.branchFix(findings, { prUrl: rec.url }) : env.steps.branchFix(findings));
   log.done(`${list.join(" ")}${out.failure ? ` (session failed: ${out.failure})` : ""}`);
   if (out.failure) await env.sink.ledger(ledgerText.note(`CI repair session failed: ${out.failure}`), NO_MIRROR);
   if (out.autoCommitted) await env.sink.ledger(ledgerText.note("auto-committed the CI repair's edits"));

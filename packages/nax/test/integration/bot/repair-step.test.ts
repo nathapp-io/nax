@@ -124,6 +124,7 @@ describe("repairStep", () => {
     expect(_fixStepsDeps.runBranchFix).toHaveBeenCalledWith(env.ctx, {
       findings: [],
       model: undefined,
+      toolProviders: [expect.objectContaining({ id: "nax-forge" })],
       prompt: expect.stringContaining("test broke"),
     });
     const prompt = run.mock.calls[0]?.[1].prompt ?? "";
