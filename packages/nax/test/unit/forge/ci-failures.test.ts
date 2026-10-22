@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { NaxError } from "@/errors";
 import type { ForgeDeps, PrRef } from "@/forge";
 import * as forge from "@/forge";
+import { CI_ANNOTATION_CHARS, CI_ANNOTATION_LINES } from "@/forge/job-log";
 
 const ESC = "\u001b";
 
@@ -112,7 +113,105 @@ function githubFixture(runs: readonly CheckRun[], logs: Readonly<Record<string, 
   return { deps, calls };
 }
 
+const ANNOTATION_HEADER = "GitHub Actions error annotations:";
+const TAIL_SEPARATOR = "\n\nLog tail:\n";
+
+async function actionsExcerpt(log: string): Promise<string> {
+  const { deps } = githubFixture([checkRun({ id: 991, app: { slug: "github-actions" } })], { "991": log });
+  const checks = await forge.readFailedChecks(gh, "abc123", deps, "/repo");
+  expect(checks).toHaveLength(1);
+  return checks[0]?.excerpt ?? "";
+}
+
+function annotationBlock(excerpt: string): string {
+  expect(excerpt).toContain(TAIL_SEPARATOR);
+  return excerpt.split(TAIL_SEPARATOR)[0] ?? "";
+}
+
+function middleErrorLog(): { log: string; error: string } {
+  const error = "2026-10-22T13:21:21.2513942Z ##[error]command (apps/runner) bun run test exited (1)";
+  const lines = Array.from({ length: 3_000 }, (_, index) => `line ${index + 1}`);
+  lines[1_499] = error;
+  return { log: `${lines.join("\n")}\n`, error };
+}
+
+function longAnnotations(): string[] {
+  return Array.from({ length: 20 }, (_, index) => `##[error]${index}:`.padEnd(300, "x"));
+}
+
+function largeTailLog(): string {
+  return `##[error]failed\n${`${"x".repeat(200)}\n`.repeat(100)}last log line\n`;
+}
+
 describe("readFailedChecks", () => {
+  test("US-002 AC-1 leads with timestamped annotations from the middle of the log", async () => {
+    const { log, error } = middleErrorLog();
+    expect((await actionsExcerpt(log)).startsWith(`${ANNOTATION_HEADER}\n${error}\n`)).toBe(true);
+  });
+
+  test("US-002 AC-2 follows annotations with the tail and final non-empty line", async () => {
+    const excerpt = await actionsExcerpt(middleErrorLog().log);
+    expect(excerpt).toContain(TAIL_SEPARATOR);
+    expect(excerpt.split(TAIL_SEPARATOR)[1]?.trimEnd().endsWith("line 3000")).toBe(true);
+  });
+
+  test("US-002 AC-3 keeps ciExcerpt for an unannotated Actions log", async () => {
+    const log = Array.from({ length: 3_000 }, (_, index) => `line ${index}`).join("\n");
+    expect(await actionsExcerpt(log)).toBe(forge.ciExcerpt(log));
+  });
+
+  test("US-002 AC-4 keeps only the first 20 annotation lines in order", async () => {
+    const lines = Array.from({ length: 30 }, (_, index) => `##[error]annotation ${index + 1}`);
+    const block = annotationBlock(await actionsExcerpt(lines.join("\n")));
+    expect(CI_ANNOTATION_LINES).toBe(20);
+    expect(block.split("\n")).toEqual([ANNOTATION_HEADER, ...lines.slice(0, 20)]);
+    expect(block).not.toContain(lines[20] ?? "missing annotation");
+  });
+
+  test("US-002 AC-5 bounds the annotation block including its header", async () => {
+    const block = annotationBlock(await actionsExcerpt(longAnnotations().join("\n")));
+    expect(CI_ANNOTATION_CHARS).toBe(2_000);
+    expect(block.length).toBeLessThanOrEqual(CI_ANNOTATION_CHARS);
+  });
+
+  test("US-002 AC-6 drops overflowing annotation lines whole", async () => {
+    const lines = longAnnotations();
+    const block = annotationBlock(await actionsExcerpt(lines.join("\n")));
+    expect(block.split("\n")).toEqual([ANNOTATION_HEADER, ...lines.slice(0, 6)]);
+  });
+
+  test("US-002 AC-7 cuts a single oversized first annotation to the block budget", async () => {
+    const line = "##[error]".padEnd(5_000, "x");
+    const block = annotationBlock(await actionsExcerpt(line));
+    expect(block).toBe(`${ANNOTATION_HEADER}\n${line}`.slice(0, CI_ANNOTATION_CHARS));
+  });
+
+  test("US-002 AC-8 budgets annotations, separators and tail together", async () => {
+    const excerpt = await actionsExcerpt(largeTailLog());
+    expect(excerpt).toContain(TAIL_SEPARATOR);
+    expect(excerpt.length).toBeLessThanOrEqual(forge.CI_EXCERPT_CHARS);
+  });
+
+  test("US-002 AC-9 preserves the last non-empty line with a trailing newline", async () => {
+    const excerpt = await actionsExcerpt(largeTailLog());
+    expect(excerpt).toContain(TAIL_SEPARATOR);
+    expect(excerpt.trimEnd().split("\n").at(-1)).toBe("last log line");
+  });
+
+  test("uses sanitized whole-job text before bounding annotations", async () => {
+    const line = `${ESC}[31m##[error] postgres://alice:synthetic_password_123@db${ESC}[0m`;
+    const excerpt = await actionsExcerpt(`\uFEFF${line}\nlast line\n`);
+    expect(annotationBlock(excerpt)).toContain("##[error] [REDACTED]db");
+    expect(excerpt).not.toContain("synthetic_password_123");
+    expect(excerpt).not.toContain(ESC);
+    expect(excerpt).not.toContain("\uFEFF");
+  });
+
+  test("drops the entire suffix once a later annotation exceeds the budget", async () => {
+    const excerpt = await actionsExcerpt(`##[error]first\n${"##[error]".padEnd(5_000, "x")}\n##[error]third`);
+    expect(annotationBlock(excerpt)).toBe(`${ANNOTATION_HEADER}\n##[error]first`);
+  });
+
   test("AC-10 reads the check runs of the head commit first", async () => {
     const { deps, calls } = githubFixture([]);
     await forge.readFailedChecks(gh, "abc123", deps, "/repo");

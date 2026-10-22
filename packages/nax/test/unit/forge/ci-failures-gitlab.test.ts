@@ -84,6 +84,18 @@ function forgeFixture(replies: Readonly<Record<string, FakeReply>>) {
 }
 
 describe("readFailedChecks on GitLab", () => {
+  test("US-002 AC-10 keeps ciExcerpt for a GitLab trace containing annotations", async () => {
+    const text = `##[error]failed\n${"trace line\n".repeat(3_000)}last line\n`;
+    const { deps } = forgeFixture({
+      [GL_PIPELINES]: ok([{ id: 77, sha: "abc123" }]),
+      [GL_JOBS]: ok([{ id: 991, name: "unit" }]),
+      [glTrace(991)]: log(text),
+    });
+    const checks = await forge.readFailedChecks(gl, "abc123", deps, "/repo");
+    expect(checks).toHaveLength(1);
+    expect(checks[0]?.excerpt).toBe(forge.ciExcerpt(text));
+  });
+
   test("AC-1 reads the pipelines of the merge request first", async () => {
     const { deps, calls } = forgeFixture({ [GL_PIPELINES]: ok([]) });
     await forge.readFailedChecks(gl, "abc123", deps, "/repo");
@@ -278,6 +290,18 @@ describe("readFailedChecks listing errors", () => {
 });
 
 describe("readFailedChecks log errors", () => {
+  test("US-002 AC-11 preserves unavailable Actions logs instead of composing blocks", async () => {
+    const { deps } = forgeFixture({
+      [GH_LISTING]: ok({
+        check_runs: [{ id: 991, name: "build", conclusion: "failure", app: { slug: "github-actions" } }],
+      }),
+      [ghJobLog(991)]: { exitCode: 1, stdout: "##[error]partial output", stderr: "boom" },
+    });
+    expect(await forge.readFailedChecks(gh, "abc123", deps, "/repo")).toEqual([
+      { name: "build", excerpt: "(log unavailable: boom)", logUnavailable: true },
+    ]);
+  });
+
   test.each([gh, gl])("US-001 marks unavailable logs on $forge (AC-12/13/15/16)", async (ref) => {
     const { deps } = forgeFixture({
       [GH_LISTING]: ok({

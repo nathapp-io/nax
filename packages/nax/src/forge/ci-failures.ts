@@ -12,7 +12,7 @@
 import { NaxError } from "@/errors";
 import { redactSecrets } from "@/logger";
 import type { JobLogRead } from "./job-log";
-import { CI_EXCERPT_CHARS, readJobLog, stripAnsi } from "./job-log";
+import { CI_ANNOTATION_CHARS, CI_ANNOTATION_LINES, CI_EXCERPT_CHARS, readJobLog, stripAnsi } from "./job-log";
 import { encodeProjectPath } from "./pr-read";
 import type { PrRef } from "./pr-types";
 import type { ForgeDeps } from "./types";
@@ -63,10 +63,39 @@ export function ciExcerpt(log: string): string {
   return kept.length > CI_EXCERPT_CHARS ? kept.slice(-CI_EXCERPT_CHARS) : kept;
 }
 
+const ANNOTATION_HEADER = "GitHub Actions error annotations:";
+const LOG_TAIL_SEPARATOR = "\n\nLog tail:\n";
+
+/** Select a bounded prefix of annotation lines from an already sanitized log. */
+function annotationBlock(log: string): string | null {
+  let block = ANNOTATION_HEADER;
+  let count = 0;
+  for (const line of log.split("\n")) {
+    if (!line.includes("##[error]")) continue;
+    const next = `${block}\n${line}`;
+    if (next.length > CI_ANNOTATION_CHARS) {
+      if (count === 0) return next.slice(0, CI_ANNOTATION_CHARS);
+      break;
+    }
+    block = next;
+    if (++count === CI_ANNOTATION_LINES) break;
+  }
+  return count === 0 ? null : block;
+}
+
+/** Lead with Actions errors while spending the remaining budget on the log's end. */
+function actionsExcerpt(log: string): string {
+  const annotations = annotationBlock(log);
+  const tail = ciExcerpt(log);
+  if (annotations === null) return tail;
+  const prefix = `${annotations}${LOG_TAIL_SEPARATOR}`;
+  return prefix + tail.slice(-(CI_EXCERPT_CHARS - prefix.length));
+}
+
 /** Preserve unreadability as metadata, not just human-facing text. */
-function logExcerpt(result: JobLogRead): Pick<FailedCheck, "excerpt" | "logUnavailable"> {
+function logExcerpt(result: JobLogRead, actions = false): Pick<FailedCheck, "excerpt" | "logUnavailable"> {
   return result.ok
-    ? { excerpt: ciExcerpt(result.text) }
+    ? { excerpt: actions ? actionsExcerpt(result.text) : ciExcerpt(result.text) }
     : { excerpt: `(log unavailable: ${result.reason})`, logUnavailable: true };
 }
 
@@ -177,7 +206,7 @@ async function readExcerpt(
 ): Promise<Pick<FailedCheck, "excerpt" | "logUnavailable">> {
   const jobId = run.app?.slug === "github-actions" ? run.id : undefined;
   if (jobId === undefined) return { excerpt: ciExcerpt(outputText(run)) };
-  return logExcerpt(await readJobLog(ref, String(jobId), deps, cwd));
+  return logExcerpt(await readJobLog(ref, String(jobId), deps, cwd), true);
 }
 
 /** One failed check, with its bounded excerpt. */
