@@ -1,8 +1,8 @@
 import type { ProviderTool } from "@nathapp/nax-agent";
 import type { ForgeCheck, JobLogRead, PrRef } from "@/forge";
-import { FORGE_LOG_DEFAULT_LINES, FORGE_LOG_LINE_CHARS, FORGE_LOG_MAX_LINES } from "./constants";
+import { FORGE_LOG_DEFAULT_LINES, FORGE_LOG_MAX_LINES } from "./constants";
 import { _forgeToolsDeps } from "./deps";
-import { fitToolResult } from "./fit-result";
+import { logViewResult } from "./log-view";
 import { wrapForgeTool } from "./tool";
 import type { ForgeReadBinding } from "./types";
 
@@ -47,34 +47,6 @@ function validateLogInput(input: Record<string, unknown>): string | undefined {
   return unknown === undefined ? undefined : `[forge-tools] Unexpected field: ${unknown}`;
 }
 
-function tailResult(text: string, check: ForgeCheck, options: { count: number; maxBytes: number }): string {
-  const { count, maxBytes } = options;
-  const lines = text.split("\n");
-  if (lines.at(-1) === "") lines.pop();
-  const start = Math.max(0, lines.length - count);
-  const entries = lines
-    .slice(start)
-    .map((line, index) => `${start + index + 1}: ${line}`.slice(0, FORGE_LOG_LINE_CHARS));
-  const partial =
-    check.status === "in_progress"
-      ? "job still running: this log is partial"
-      : "job not completed: this log is partial";
-  return fitToolResult(
-    {
-      header: ["Job log", `showing lines ${entries.length ? start + 1 : 0}-${lines.length} of ${lines.length}`],
-      fencedHeader: {
-        identity: `check: ${check.id} | status: ${check.status}`,
-        detail: ` | name: ${check.name}${check.conclusion ? ` | conclusion: ${check.conclusion}` : ""}`,
-      },
-      entryPrefix: (entry) => entry.slice(0, entry.indexOf(": ") + 2),
-      entries,
-      footer: check.status === "completed" ? [] : [partial],
-    },
-    maxBytes,
-    "end",
-  );
-}
-
 /** PR-bound reads: fresh head authorization always precedes the provider-local cache. */
 export function logTool(binding: ForgeReadBinding, resolveRef: () => Promise<PrRef>): ProviderTool {
   const completed = new Map<string, Promise<JobLogRead>>();
@@ -98,7 +70,7 @@ export function logTool(binding: ForgeReadBinding, resolveRef: () => Promise<PrR
   return wrapForgeTool(
     {
       localName: "log",
-      description: "Read the tail of a job log belonging to the bound PR's current head.",
+      description: "Search literal text, page from a line, or tail a job log belonging to the bound PR's current head.",
       inputSchema: LOG_INPUT_SCHEMA,
       validate: validateLogInput,
       async read(ref, input, ctx) {
@@ -114,8 +86,14 @@ export function logTool(binding: ForgeReadBinding, resolveRef: () => Promise<PrR
         if (!check.hasJobLog) return { isError: true, content: `[forge-tools] Check ${id} has no job log` };
         const result = await readLog(ref, check);
         if (!result.ok) return { isError: true, content: result.reason };
-        const count = typeof input.lines === "number" ? input.lines : FORGE_LOG_DEFAULT_LINES;
-        return { content: tailResult(result.text, check, { count, maxBytes: ctx.maxBytes }) };
+        return {
+          content: logViewResult(result.text, check, {
+            search: typeof input.search === "string" ? input.search : undefined,
+            from: typeof input.from === "number" ? input.from : undefined,
+            lines: typeof input.lines === "number" ? input.lines : undefined,
+            maxBytes: ctx.maxBytes,
+          }),
+        };
       },
     },
     resolveRef,

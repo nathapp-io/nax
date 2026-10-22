@@ -41,6 +41,68 @@ beforeEach(() => {
 afterEach(() => Object.assign(_forgeToolsDeps, original));
 
 describe("log tool", () => {
+  test.each([
+    {
+      ac: "1",
+      text: Array.from({ length: 30 }, (_, i) => `line ${i + 1}`).join("\n"),
+      input: { from: 10, lines: 5 },
+      expected: Array.from({ length: 5 }, (_, i) => `${i + 10}: line ${i + 10}`),
+      summary: "showing lines 10-14 of 30",
+    },
+    {
+      ac: "2",
+      text: Array(10).fill("line").join("\n"),
+      input: { from: 50 },
+      expected: [],
+      summary: "showing lines 0-0 of 10",
+    },
+    {
+      ac: "3",
+      text: "fail x\n(fail) x\nother",
+      input: { search: "(FAIL)" },
+      expected: ["2: (fail) x"],
+      summary: "1 of 1 matches",
+    },
+    {
+      ac: "4",
+      text: Array.from({ length: 70 }, (_, i) => `match ${i + 1}`).join("\n"),
+      input: { search: "match" },
+      expected: Array.from({ length: 50 }, (_, i) => `${i + 1}: match ${i + 1}`),
+      summary: "50 of 70 matches",
+    },
+    {
+      ac: "5",
+      text: "match\nother\nmatch",
+      input: { search: "match", from: 3 },
+      expected: ["1: match", "3: match"],
+      summary: "2 of 2 matches",
+    },
+    {
+      ac: "6",
+      text: Array(10).fill("match").join("\n"),
+      input: { search: "match", lines: 3 },
+      expected: Array.from({ length: 10 }, (_, i) => `${i + 1}: match`),
+      summary: "10 of 10 matches",
+    },
+  ])("US-008 AC-$ac selects numbered view", async ({ text, input, expected, summary }) => {
+    _forgeToolsDeps.readJobLog = mock(async (): Promise<JobLogRead> => ({ ok: true, text }));
+    const result = await (await tool()).run({ check: "7", ...input }, ctx);
+    expect(result.content.split("\n").filter((line) => /^\d+: /.test(line))).toEqual(expected);
+    expect(result.content).toContain(summary);
+  });
+  test("US-008 AC-11 fits pages by dropping end lines", async () => {
+    _forgeToolsDeps.readJobLog = mock(
+      async (): Promise<JobLogRead> => ({
+        ok: true,
+        text: Array.from({ length: 100 }, (_, i) => `entry-${i + 1}`).join("\n"),
+      }),
+    );
+    const result = await (await tool()).run({ check: "7", from: 10, lines: 80 }, { ...ctx, maxBytes: 250 });
+    expect(Buffer.byteLength(result.content)).toBeLessThanOrEqual(250);
+    expect(result.content.split("\n").filter((line) => /^\d+: /.test(line))[0]).toBe("10: entry-10");
+    expect(result.content).not.toContain("89: entry-89");
+    expect(result.content).toContain("[truncated:");
+  });
   test("AC-1 advertises nax-forge__log", async () => {
     const resolved = await resolveProviderTools([createForgeReadProvider(binding)], "run", ctx.root);
     expect(resolved.tools.map((entry) => entry.name)).toContain("nax-forge__log");
@@ -138,6 +200,7 @@ describe("log tool", () => {
     ["search", { check: "7", search: "" }],
     ["search", { check: "7", search: 2 }],
     ["from", { check: "7", from: 0 }],
+    ["from", { check: "7", from: 2.5 }],
     ["from", { check: "7", from: "1" }],
     ["from", { check: "7", from: 2.5, search: "valid" }],
     ["repo", { check: "7", repo: "other" }],
