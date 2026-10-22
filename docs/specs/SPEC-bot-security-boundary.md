@@ -1,4 +1,3 @@
-<!-- spec-writing: completed-through-phase-5 -->
 # SPEC: Bot security boundary (hooks, base binding, writer-only fix items)
 
 ## Summary
@@ -52,11 +51,13 @@ repo and is fixed before it is described.
    `["git", "-c", ...]` argv literal in `git.ts` carries `// nax-git-env-allow: handed to gitWithTimeout, which
    hardens it` for `check-git-spawn-env.ts`.
 2. **Hook-free leftover commit (S1).** `autoCommitIfDirty` gains an optional seventh parameter
-   `runGit: typeof gitWithTimeout` (default `gitWithTimeout`) used for every git call it makes, including the
-   `gitlinkSafeAdd` and `hasStagedChanges` runners. `BranchStepContext` gains `readonly runGit?: typeof
+   `runGit: typeof gitWithTimeout` (default `gitWithTimeout`) used for every git call it makes: `rev-parse`, `status`, the `restoreDeletedNaxPaths`
+   runner (its `git checkout -- <path>` fires `post-checkout`), the `gitlinkSafeAdd` and `hasStagedChanges` runners,
+   and `commit`. `BranchStepContext` gains `readonly runGit?: typeof
    gitWithTimeout`; `commitLeftovers` (`src/workflow/branch-fix.ts`) passes `fc.runGit` as that seventh argument.
-   `runBotFix` sets `runGit: botGit` on the step context it builds. Workflow runs leave it unset, so they behave as
-   today.
+   `fixCheckout` (`src/bot/fix-run.ts`) puts `ctx: { ...context.ctx, runGit: botGit }` into the fix env, so both the
+   fix step and the repair step (which share `env.ctx`) commit hook-free; the shared `buildPrStepContext` is
+   unchanged. Workflow runs leave `runGit` unset, so they behave as today.
 3. **Run-unique refs (S2).** `preparePrCheckout` reserves its worktree directory **before** fetching, so the suffix
    is owned by this run, then runs one fetch with two forced refspecs into `refs/nax-bot/pr-<n>/checkout-<suffix>/head`
    and `.../base` and reads both with `rev-parse`. The head check (`BOT_PR_HEAD_MOVED`) still compares with
@@ -66,8 +67,9 @@ repo and is fixed before it is described.
 4. **Writer-only fix items (S3).** A new module `src/bot/writers.ts` exports `writerCheck`, a per-login cached
    wrapper of `hasWriteAccess` where a failed check counts as "not a writer" (fail closed) and is reported through an
    injected `warn` sink, and `readWriters`, which returns the logins with write access among the authors of the
-   comments it is given, forwarding each comment's `authorId`. `triage` gives `readWriters` only comments that are
-   not the bot's own (`isOwn`: marker plus login), so the bot's replies never count. `PostReviewInput` gains
+   comments it is given, forwarding each comment's `authorId`. `triage` gives `readWriters` only the kept threads' openers and
+   the kept top-level comments; both already exclude the bot's own (`isOwn`: marker plus login), so the bot's
+   replies never count and repliers cost no permission call. `PostReviewInput` gains
    `writers`. In `agreedItems` an agreed thread is a fix item only when its opener (`thread.comments[0]`) is a
    writer — the item text is the opener's — and an agreed top-level comment only when its author is a writer. An
    agreed thread or comment that fails the check is still answered, with a "not queued" note; disagree and handled
@@ -99,14 +101,18 @@ Changed. The baseline only locates the code; the target is the interface to impl
   `{ head: "refs/nax-bot/pr-<n>/checkout-<suffix>/head", base: "refs/nax-bot/pr-<n>/checkout-<suffix>/base" }`.
 - `preparePrCheckout` (`src/bot/checkout.ts`), signature unchanged. Baseline order: fetch, path, excludes, reserve,
   `worktree add`. Target order: path (validates the suffix), `ensureGitExcludes`, reserve, fetch into
-  `checkoutRefs`, `worktree add`, snapshot, pin. `cleanup` deletes both refs when the reservation was ours.
+  `checkoutRefs`, `worktree add`, snapshot, pin. `cleanup` takes a separate `refs` field: `dispose()` always passes it (also when retained), the failure path
+  passes it only when `created` is true. The failure path runs `worktree remove` only when `worktree add` was
+  attempted, so a fetch failure or a moved head logs no spurious removal warning. `update-ref -d` of a ref that was
+  never created exits 0.
 - `pushStep` (`src/bot/fix-steps.ts`). Target argv: `push --no-verify origin HEAD:refs/heads/<headRef>`.
 - `checkPushAccess` (`src/bot/fix-input.ts`). Target argv: `push --dry-run --no-verify origin HEAD:refs/heads/<headRef>`.
 - `autoCommitIfDirty(workdir, stage, role, storyId, blockedWorktrees?, dryRun?, runGit?)` (`src/utils/git.ts`):
   new optional seventh parameter, default `gitWithTimeout`.
 - `BranchStepContext` (`src/workflow/branch-step-context.ts`) gains `readonly runGit?: typeof gitWithTimeout`.
 - `commitLeftovers` (`src/workflow/branch-fix.ts`, file-local) passes `fc.runGit` as the seventh argument.
-- `runBotFix` (`src/bot/fix-run.ts`) builds its step context with `runGit: botGit`.
+- `fixCheckout` (`src/bot/fix-run.ts`, file-local) stores `{ ...context.ctx, runGit: botGit }` as the env's `ctx`;
+  `buildPrStepContext` (`src/workflow/pr-step-context.ts`) is unchanged.
 - `fixChecks` (`src/bot/fix-run.ts`, file-local). Baseline `review.version === 2`; target `review.version >= 2`.
 - `PostReviewInput` (`src/bot/post.ts`) gains `readonly writers?: ReadonlySet<string>`; absent means empty, so no
   thread or comment qualifies.
@@ -117,15 +123,16 @@ Changed. The baseline only locates the code; the target is the interface to impl
 - `ReviewSummaryInput.commentVerdicts` entries gain `readonly notQueued?: boolean`; a flagged entry's line ends with
   ` (not queued for fix: author has no write access)`.
 - `triage` (`src/bot/review-run.ts`, file-local) also returns `writers` = `readWriters` over the kept threads'
-  non-own comments and the kept top-level comments, with `writerCheck` built on `_botReviewDeps.hasWriteAccess` and a
+  openers (`thread.comments[0]`) and the kept top-level comments (only those authors decide anything), with `writerCheck` built on `_botReviewDeps.hasWriteAccess` and a
   `warn` writing `getSafeLogger()?.warn("bot", "Could not check commenter permission", { login, error })`.
 - `_botReviewDeps` gains `hasWriteAccess` (from `@/forge`).
 - `readReview` (`src/bot/fix-input.ts`, file-local) accepts versions 1, 2 and 3. For versions 1 and 2 with an array
   `agreed`, it returns the artifact with `agreed` filtered to `kind === "finding"` and, when it removed any, calls
   `getLogger()?.warn("bot-fix", "Dropped unchecked thread and comment items from an older review; re-run nax bot
   review", { path, dropped })`. A missing or non-array `agreed` is returned unchanged.
-- `permissionReader` (`src/bot/rulings.ts`, file-local) returns `writerCheck(...)` built on
-  `_rulingsDeps.hasWriteAccess`, whose `warn` calls the existing `warn("Could not check ruling permission", { login,
+- `permissionReader` (`src/bot/rulings.ts`, file-local) returns `(comment) => check({ login: comment.author, id:
+  comment.authorId })` where `check = writerCheck(...)` is built on a closure that reads `_rulingsDeps.hasWriteAccess`
+  at call time (tests swap it), whose `warn` calls the existing `warn("Could not check ruling permission", { login,
   error })` helper (stage `bot-rulings`, `_rulingsDeps.getLogger`).
 
 ### New modules
@@ -203,7 +210,7 @@ Both are exported from `src/bot/index.ts`, with `botGit`, `BOT_GIT_HOOKS_OFF` an
 
 ## Stories
 
-Five stories in `packages/nax`, one boundary: PR content must not act with the user's privileges.
+Six stories in `packages/nax`, one boundary: PR content must not act with the user's privileges.
 
 ### US-001: Bot git runs no hooks
 No dependencies. Workdir: packages/nax.
@@ -215,7 +222,7 @@ default at `botGit`, and adds `--no-verify` to `pushStep` and `checkPushAccess`.
 Depends on US-001. Workdir: packages/nax.
 
 Adds the optional `runGit` parameter to `autoCommitIfDirty`, `BranchStepContext.runGit`, passes it from
-`commitLeftovers`, and sets `runGit: botGit` in `runBotFix`'s step context.
+`commitLeftovers`, and sets `runGit: botGit` on the fix env's `ctx` in `fixCheckout`.
 
 ### US-003: Checkout fetches into run-unique refs
 Depends on US-001. Workdir: packages/nax.
@@ -223,15 +230,20 @@ Depends on US-001. Workdir: packages/nax.
 Adds `checkoutRefs` (exported from `src/bot/index.ts`), reserves the worktree before fetching, fetches into the
 unique refs and deletes them on dispose and on failure.
 
-### US-004: Writer check and writer-gated agreed items
+### US-004: Writer check module
 No dependencies. Workdir: packages/nax.
 
-Adds `src/bot/writers.ts` (`writerCheck`, `readWriters`, `type WriterCheck`, exported from `src/bot/index.ts`),
-`PostReviewInput.writers`, the gate in `agreedItems`, the "not queued" thread reply and summary line, artifact
-version 3, and `permissionReader` delegating to `writerCheck`.
+Adds `src/bot/writers.ts` (`writerCheck`, `readWriters`, `type WriterCheck`, exported from `src/bot/index.ts`) and
+makes `permissionReader` delegate to `writerCheck`.
 
-### US-005: Review computes writers; fix reads version 3 and drops unchecked items
+### US-005: Writer-gated agreed items
 Depends on US-004. Workdir: packages/nax.
+
+Adds `PostReviewInput.writers`, the gate in `agreedItems`, the "not queued" thread reply and summary line, and
+artifact version 3.
+
+### US-006: Review computes writers; fix reads version 3 and drops unchecked items
+Depends on US-005. Workdir: packages/nax.
 
 `triage` computes `writers` and passes them to `postPrReview`; `_botReviewDeps.hasWriteAccess`; `readReview` accepts
 version 3 and filters versions 1 and 2; `fixChecks` reuses saved checks for version 2 and above.
@@ -249,7 +261,8 @@ version 3 and filters versions 1 and 2; `fixChecks` reuses saved checks for vers
 - `packages/nax/src/utils/git.ts` — `autoCommitIfDirty`
 - `packages/nax/src/workflow/branch-fix.ts` — `commitLeftovers`, `runBranchFix`
 - `packages/nax/src/workflow/branch-step-context.ts` — `BranchStepContext`
-- `packages/nax/src/bot/fix-run.ts` — `runBotFix`, the `buildPrStepContext` call
+- `packages/nax/src/bot/fix-run.ts` — `fixCheckout`, the `buildPrStepContext` call
+- `packages/nax/src/utils/nax-path-restore.ts` — `restoreDeletedNaxPaths` and its `run` option
 - `packages/nax/src/bot/git.ts` — created by US-001, used here
 
 **US-003**
@@ -258,12 +271,14 @@ version 3 and filters versions 1 and 2; `fixChecks` reuses saved checks for vers
 - `packages/nax/test/integration/bot/checkout.test.ts` — real-repo fixture with `refs/pull/42/head`
 
 **US-004**
-- `packages/nax/src/bot/post.ts` — `agreedItems`, `postThreads`, `postSummary`, `persistArtifact`, `PostReviewInput`
-- `packages/nax/src/bot/render-comments.ts` — `renderThreadReply`, `renderReviewSummary`
 - `packages/nax/src/bot/rulings.ts` — `permissionReader`, `_rulingsDeps`, `warn`
 - `packages/nax/src/forge/access.ts` — `hasWriteAccess`
 
 **US-005**
+- `packages/nax/src/bot/post.ts` — `agreedItems`, `postThreads`, `postSummary`, `persistArtifact`, `PostReviewInput`
+- `packages/nax/src/bot/render-comments.ts` — `renderThreadReply`, `renderReviewSummary`
+
+**US-006**
 - `packages/nax/src/bot/review-run.ts` — `triage`, `reviewEnvironment`
 - `packages/nax/src/bot/review-deps.ts` — `_botReviewDeps`
 - `packages/nax/src/bot/fix-input.ts` — `readReview`, `loadLatestReview`
@@ -284,6 +299,9 @@ version 3 and filters versions 1 and 2; `fixChecks` reuses saved checks for vers
 - `packages/nax/src/bot/writers.ts`
 - `packages/nax/test/unit/bot/writers.test.ts`
 
+**US-006**
+- `packages/nax/test/integration/bot/review-run-writers.test.ts`
+
 ### Modifies
 
 **US-001**
@@ -297,12 +315,12 @@ version 3 and filters versions 1 and 2; `fixChecks` reuses saved checks for vers
 - `packages/nax/test/unit/bot/checkout.test.ts` — "thrown removal and snapshot cleanup errors are both nonfatal" expects `logger.warn` twice; the two ref deletions add two more cleanup actions, so the expected count becomes 4 when the stubbed `runGit` throws for every call. Cleanup stays nonfatal.
 - `packages/nax/test/unit/bot/git-timeouts.test.ts` — the fetch stub distinguishes head from base by the fetched argument; it becomes keyed on the `rev-parse` ref name. The list of slow calls (fetch, fetch, worktree add) expected to carry the network timeout becomes two entries (the single fetch and worktree add); the timeout invariant is unchanged.
 
-**US-004**
+**US-005**
 - `packages/nax/test/integration/bot/post.test.ts` — AC-1 expects artifact version 2; it becomes version 3. AC-3/4 (agreeing thread `T1`) and AC-5 (agreeing comment `12`) record those items with no writer information; each input gains `writers` holding that thread's opener or comment's author, and the expected items are unchanged.
 - `packages/nax/test/integration/bot/post-threads.test.ts` — the `run` mock asserts the artifact is version 2 on every forge write; it becomes version 3. The tests that expect the plain `renderThreadReply(verdicts[0])` body for the agreeing thread `T1` gain `writers` holding `T1`'s opener, so the body stays the plain reply.
 - `packages/nax/test/unit/bot/post-rulings.test.ts` — "without changing artifact version" expects version 2; it becomes version 3. The invariant that recording rulings does not otherwise change the artifact shape is unchanged.
 
-**US-005**
+**US-006**
 - `packages/nax/test/integration/bot/fix-input.test.ts` — "US-007 AC-10 unsupported version" uses version 3 as the unsupported example; it becomes version 4.
 - `packages/nax/test/unit/bot/fix-input.test.ts` — the version 1 artifact fixture without `agreed` stays accepted unchanged; tests that read version 1 or 2 artifacts with thread or comment items now see only their findings.
 - `packages/nax/test/integration/bot/review-run.test.ts` — its hand-built `_botReviewDeps` stub gains `hasWriteAccess: async () => true`, so the review never spawns `gh` for permissions and its existing agreed items are kept.
@@ -311,9 +329,9 @@ version 3 and filters versions 1 and 2; `fixChecks` reuses saved checks for vers
 ### Seams
 
 - US-001 → US-002, US-003: `botGit` (US-001) is the runner US-002 sets on the fix step context and the default
-  `_checkoutDeps.runGit` that US-003's fetch and ref cleanup use. US-002's seam AC enters at `runBotFix`.
-- US-004 → US-005: `readWriters` and `writerCheck` (US-004) are called by `triage` (US-005); `post.writers` (US-004
-  input) is filled by `reviewEnvironment` (US-005). US-005's seam ACs enter at `runBotReview`.
+  `_checkoutDeps.runGit` that US-003's fetch and ref cleanup use. US-002's seam ACs enter at `runBotFix`.
+- US-004 → US-006: `readWriters` and `writerCheck` (US-004) are called by `triage` (US-006).
+- US-005 → US-006: `post.writers` (US-005 input) is filled by `reviewEnvironment` (US-006). US-006's seam ACs enter at `runBotReview`.
 
 ## Acceptance Criteria
 
@@ -323,8 +341,8 @@ version 3 and filters versions 1 and 2; `fixChecks` reuses saved checks for vers
 - [unit] `botGit(["status", "--porcelain"], dir)` spawns `["git", "-c", "core.hooksPath=/dev/null", "status", "--ignore-submodules=dirty", "--porcelain"]`, so the submodule hardening still applies after the `-c` pair.
 - [unit] `botGit` passes its `timeoutMs` argument through: with a spawn stub that never exits and `timeoutMs` 50, the result has `timedOut` true.
 - [unit] `_checkoutDeps.runGit`, `_fixInputDeps.runGit`, `_fixStepsDeps.runGit`, `_gateBaselineDeps.runGit`, `_savedFixDeps.runGit`, `_botReviewDeps.runGit`, `_botChecksDeps.runGit` and `_baseConfigDeps.runGit` each equal `botGit` by identity.
-- [integration] In a real repo whose `.git/config` sets `core.hooksPath` to the relative `.husky/_` and whose committed executable `.husky/_/post-checkout`, `.husky/_/reference-transaction` and `.husky/_/pre-push` append to a marker file outside the repo, `preparePrCheckout` for a PR head at `refs/pull/42/head` completes and the marker file does not exist.
-- [integration] In the same fixture, `pushStep` pushing the checkout to a local bare `origin` succeeds with outcome `pushed` and the marker file does not exist.
+- [integration] In a real repo whose `origin` is a separate bare repository holding `main` and `refs/pull/42/head`, whose `.git/config` sets `core.hooksPath` to the relative `.husky/_`, and whose committed executable `.husky/_/post-checkout`, `.husky/_/reference-transaction` and `.husky/_/pre-push` append to a marker file outside the repo, `preparePrCheckout` for a PR head at `refs/pull/42/head` completes and the marker file does not exist.
+- [integration] In the same fixture, `pushStep` pushing the checkout to `origin` succeeds with outcome `pushed` and the marker file does not exist.
 - [integration] In the same fixture, `saveFix` writing the saved-fix ref leaves the marker file absent.
 - [integration] In the same fixture, `failingOnHead` checking out the head and back to the fix commit leaves the marker file absent.
 - [integration] Control case: in the same fixture, `gitWithTimeout(["worktree", "add", "--detach", <dir>, "HEAD"], repo)` creates the marker file, proving the fixture's hooks are live.
@@ -337,8 +355,11 @@ version 3 and filters versions 1 and 2; `fixChecks` reuses saved checks for vers
 - [unit] `autoCommitIfDirty` called without a seventh argument on a dirty tree spawns its git calls through `_gitDeps.spawn` as before (regression pin).
 - [unit] `runBranchFix` with a step context whose `runGit` is a stub and a dirty tree after the fix session calls `_workflowDeps.autoCommitIfDirty` with that stub as its seventh argument.
 - [unit] `runBranchFix` with a step context without `runGit` calls `_workflowDeps.autoCommitIfDirty` with `undefined` as its seventh argument.
-- [integration] `runBotFix` passes `runBranchFix` a step context whose `runGit` is `botGit` by identity.
+- [integration] `runBotFix`, with `_botFixDeps.buildPrStepContext` stubbed to return a context without `runGit`, calls `_fixStepsDeps.runBranchFix` with a context whose `runGit` is `botGit` by identity.
+- [integration] On a red-gate repair round, `runBotFix` also calls the repair's `runBranchFix` with a context whose `runGit` is `botGit` by identity.
+- [unit] `autoCommitIfDirty` with a seventh argument `run` stub and a status listing ` D .nax/features/x/prd.json` sends the restoring `checkout` call to `run`, and `_gitDeps.spawn` is never called.
 - [integration] In a real repo whose `.git/config` sets `core.hooksPath` to the relative `.husky/_` with executable `pre-commit`, `commit-msg` and `post-commit` hooks that write a marker file, `autoCommitIfDirty(worktree, "workflow", "wf-branch-fix", "_run", undefined, false, botGit)` commits a leftover edit (the new commit exists) and the marker file does not exist.
+- [integration] In that fixture with an executable `post-checkout` hook, deleting a tracked `.nax/` file and calling `autoCommitIfDirty` with `botGit` restores the file and leaves the marker file absent.
 - [integration] Control case: in that fixture, `autoCommitIfDirty` without the seventh argument creates the marker file.
 
 ### US-003
@@ -368,6 +389,10 @@ version 3 and filters versions 1 and 2; `fixChecks` reuses saved checks for vers
 - [unit] `readWriters` over comments by `alice`, `mallory` and `bob`, with a check that is `true` for `alice` and `bob`, returns a set equal to `{ "alice", "bob" }`.
 - [unit] `readWriters` passes each comment's `authorId` as `id`: a GitLab comment by `carol` with `authorId` 9 reaches the check as `{ login: "carol", id: 9 }`.
 - [unit] `readWriters` with the real `hasWriteAccess` on a GitLab `PrRef` and a comment without `authorId` returns a set without that author.
+- [integration] `recordPrRulings` with `_rulingsDeps.hasWriteAccess` rejecting for a replier treats that reply as a non-writer and logs, through `_rulingsDeps.getLogger`, stage `bot-rulings` with data containing `{ login, error }` (regression pin).
+
+### US-005
+
 - [integration] `postPrReview` with an agreeing thread whose opener is not in `writers` records no `thread` item in the artifact's `agreed`.
 - [integration] `postPrReview` with an agreeing thread opened by a non-writer and replied to by a login in `writers` records no `thread` item.
 - [integration] `postPrReview` with an agreeing thread whose opener is in `writers` records the `thread` item with `issue` equal to the opener's comment body.
@@ -375,17 +400,20 @@ version 3 and filters versions 1 and 2; `fixChecks` reuses saved checks for vers
 - [integration] `postPrReview` with an agreeing top-level comment whose author is in `writers` records the `comment` item with key `commentKey(<id>)`.
 - [integration] `postPrReview` with `writers` absent records no `thread` or `comment` items and still records its `finding` items.
 - [integration] For an agreeing thread whose opener is not a writer, `postPrReview` still replies on the thread with a body containing ``Not queued for `nax bot fix` ``.
+- [integration] For an agreeing thread whose opener is a writer, the reply body equals `renderThreadReply` of the verdict without the `notQueued` option.
+- [integration] For an agreeing top-level comment whose author is a writer, its `### Top-level comments` line has no `not queued` suffix.
+- [integration] An agreeing verdict for a thread with zero comments records no `thread` item, and its reply carries no `notQueued` note.
+- [integration] An agreeing verdict whose comment id is absent from `input.comments` records no `comment` item and its summary line carries no `notQueued` suffix.
 - [integration] For a disagreeing thread whose opener is not a writer, the reply body equals `renderThreadReply` of the verdict without the `notQueued` option.
 - [integration] For an agreeing top-level comment whose author is not a writer, the posted summary's `### Top-level comments` line for it ends with `(not queued for fix: author has no write access)`.
 - [integration] The artifact `postPrReview` writes has `version` 3.
 - [unit] `renderThreadReply({ id: "T1", decision: "agree", reason: "Valid" }, { notQueued: true })` keeps the `nax-bot` marker key `threadKey("T1")`.
-- [integration] `recordPrRulings` with `_rulingsDeps.hasWriteAccess` rejecting for a replier treats that reply as a non-writer and logs, through `_rulingsDeps.getLogger`, stage `bot-rulings` with data containing `{ login, error }` (regression pin).
 
-### US-005
+### US-006
 
 - [integration] `runBotReview` on a trusted PR, with `_botReviewDeps.hasWriteAccess` stubbed to `false` for `mallory`, a top-level comment by `mallory`, and a review verdict agreeing with it, writes a `bot-review.json` whose `agreed` has no `comment` item.
 - [integration] `runBotReview` with `_botReviewDeps.hasWriteAccess` stubbed to `true` for `alice`, a thread opened by `alice`, and a verdict agreeing with it, writes a `bot-review.json` whose `agreed` holds a `thread` item for that thread.
-- [integration] `runBotReview` calls `_botReviewDeps.hasWriteAccess` once per distinct author login across threads and top-level comments, and never for the bot's own login.
+- [integration] `runBotReview` calls `_botReviewDeps.hasWriteAccess` once per distinct login among thread openers and top-level comment authors, never for a thread replier who opened nothing, and never for the bot's own login.
 - [integration] `runBotReview` on a re-run where a non-writer's thread already holds the bot's own marked "Not queued" reply, with `hasWriteAccess` resolving `true` for the bot login, still writes no `thread` item for it.
 - [integration] `runBotReview` on an untrusted (static) PR also gates agreed comments: a non-writer's agreed comment is not in `agreed`.
 - [integration] When `_botReviewDeps.hasWriteAccess` rejects for every login, `runBotReview` still posts the review and its artifact has only `finding` items.
@@ -395,4 +423,4 @@ version 3 and filters versions 1 and 2; `fixChecks` reuses saved checks for vers
 - [unit] `loadLatestReview` for a version 3 artifact returns its `thread` and `comment` items unchanged.
 - [unit] `loadLatestReview` ignores an artifact with `version` 4.
 - [integration] `runBotFix` given a version 3 review at the head with saved `checks` never calls `_botFixDeps.resolveBotChecks`.
-- [integration] `runBotFix` given a version 2 review whose only agreed item is a `comment` ends with outcome `nothing` and starts no fix session.
+- [integration] `runBotFix` with the real `loadLatestReview` (only `_fixInputDeps.glob`, `readText` and `mtimeMs` stubbed) reading a version 2 review at the head whose only agreed item is a `comment` ends with outcome `nothing` and starts no fix session.
