@@ -3,7 +3,7 @@
   "feature": "bot-harness-loosening",
   "branchName": "feat/bot-harness-loosening",
   "createdAt": "2026-10-22T00:00:00.000Z",
-  "updatedAt": "2026-10-22T06:51:40.321Z",
+  "updatedAt": "2026-10-22T07:07:37.436Z",
   "userStories": [
     {
       "id": "US-001",
@@ -627,14 +627,17 @@
         "US-008",
         "US-009"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "New schema/artifact/ref abstraction with outcome-dependent SHA selection and best-effort cleanup integration."
+        "reasoning": "New schema/artifact/ref abstraction with outcome-dependent SHA selection and best-effort cleanup integration.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/fix-run.ts",
@@ -657,7 +660,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "b15477cc9115d0cd6074d5aa608bdfacee3550b9"
     },
     {
       "id": "US-011",
