@@ -3,7 +3,7 @@
   "feature": "bot-security-boundary",
   "branchName": "feat/bot-security-boundary",
   "createdAt": "2026-10-22T00:00:00.000Z",
-  "updatedAt": "2026-10-22T11:46:25.608Z",
+  "updatedAt": "2026-10-22T11:58:44.256Z",
   "userStories": [
     {
       "id": "US-001",
@@ -187,14 +187,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Security-sensitive base binding requires concurrent-process isolation, exclusive ownership and failure-safe worktree/ref lifecycle changes; strict isolated TDD is warranted."
+        "reasoning": "Security-sensitive base binding requires concurrent-process isolation, exclusive ownership and failure-safe worktree/ref lifecycle changes; strict isolated TDD is warranted.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/checkout.ts",
@@ -217,7 +220,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "b876bb2854635116663dcac64033c23f958a9129"
     },
     {
       "id": "US-004",
