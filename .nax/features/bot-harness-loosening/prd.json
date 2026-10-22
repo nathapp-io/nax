@@ -3,7 +3,7 @@
   "feature": "bot-harness-loosening",
   "branchName": "feat/bot-harness-loosening",
   "createdAt": "2026-10-22T00:00:00.000Z",
-  "updatedAt": "2026-10-22T06:13:25.519Z",
+  "updatedAt": "2026-10-22T06:24:11.638Z",
   "userStories": [
     {
       "id": "US-001",
@@ -438,14 +438,17 @@
         "US-001",
         "US-006"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Adds a committing agent-session loop across graph declarations/state/reporting with HEAD safety checks; session paths require strict isolated TDD."
+        "reasoning": "Adds a committing agent-session loop across graph declarations/state/reporting with HEAD safety checks; session paths require strict isolated TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/fix-steps.ts",
@@ -472,7 +475,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "b9326e37296925707666f469598018c3bd8d469b"
     },
     {
       "id": "US-008",
