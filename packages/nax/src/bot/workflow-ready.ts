@@ -8,6 +8,8 @@ export function workflowPrReadiness(input: { outcome?: RecordRulingsOutcome; ci:
   const { outcome, ci } = input;
   if (!outcome) return { ready: false, reason: "rulings could not be read" };
   if (!outcome.index) return { ready: false, reason: "no nax item index on this PR" };
+  if (outcome.unindexed?.length)
+    return { ready: false, reason: `incomplete item publication: ${outcome.unindexed.length} unindexed item(s)` };
   const present = new Set([...outcome.settled, ...outcome.open].map((item) => item.key));
   const missing = outcome.index.keys
     .filter((key) => !present.has(key))

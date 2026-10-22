@@ -166,13 +166,16 @@ async function readReadyRulings(env: BotFixEnv) {
 async function workflowReadyHold(env: BotFixEnv, state: BotFixState): Promise<string | undefined> {
   try {
     const expectedSha = state.pushedSha ?? env.info.headSha;
-    const { info, user, comments, outcome } = await readReadyRulings(env);
-    if (info.headSha !== expectedSha) return "PR head changed since this execution";
+    const initial = await readReadyRulings(env);
+    if (initial.info.headSha !== expectedSha) return "PR head changed since this execution";
     // Green here only bypasses the CI check for the initial item-only decision.
-    const items = workflowPrReadiness({ outcome, ci: { outcome: "green", detail: "item preflight" } });
+    const items = workflowPrReadiness({ outcome: initial.outcome, ci: { outcome: "green", detail: "item preflight" } });
     if (!items.ready) return items.reason;
     const ci = await waitForCi(env, { pushedSha: expectedSha });
     env.ctx.callCtx.runtime.signal.throwIfAborted();
+    // Rulings and index membership can change without a push while CI runs.
+    const { info, user, comments, outcome } = await readReadyRulings(env);
+    if (info.headSha !== expectedSha) return "PR head changed since this execution";
     const ready = workflowPrReadiness({ outcome, ci });
     if (!ready.ready) return ready.reason;
     const evidence = await writeEvidence(env, outcome, ownComments(comments, user.login));

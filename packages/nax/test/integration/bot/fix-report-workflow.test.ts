@@ -89,6 +89,52 @@ describe("readyStep workflow drafts", () => {
     expect(out.patch.markedReady).toBe(false);
     expect(s.run).not.toHaveBeenCalled();
   });
+  test("a collaborator reopening an item during CI holds readiness without stale evidence", async () => {
+    const s = setup();
+    s.wait.mockImplementation(async () => {
+      s.record.mockResolvedValue({ ...complete, settled: [], open: [{ ...item, kept: [] }] });
+      return green;
+    });
+    expect((await readyStep(s.env, state)).patch).toEqual({
+      markedReady: false,
+      readyHeld: "1 open item(s): B3",
+    });
+    expect(s.list).toHaveBeenCalledTimes(2);
+    expect(s.notes).toHaveBeenCalledTimes(2);
+    expect(s.post).not.toHaveBeenCalled();
+    expect(s.edit).not.toHaveBeenCalled();
+    expect(s.run).not.toHaveBeenCalled();
+  });
+  test("evidence uses the rulings and own comments refreshed after CI", async () => {
+    const s = setup();
+    const refreshed = {
+      ...complete,
+      settled: complete.settled.map((entry) => ({
+        ...entry,
+        ruling: { ...entry.ruling, reason: "rechecked after CI" },
+      })),
+    };
+    s.wait.mockImplementation(async () => {
+      s.record.mockResolvedValue(refreshed);
+      s.notes.mockResolvedValue([comment]);
+      return green;
+    });
+    expect((await readyStep(s.env, state)).patch.markedReady).toBe(true);
+    expect(s.record).toHaveBeenCalledTimes(2);
+    expect(s.post).not.toHaveBeenCalled();
+    expect(s.edit).toHaveBeenCalledWith(
+      s.env.ref,
+      comment,
+      withNaxBotMarker(
+        evidenceComment([
+          { id: "B3", kind: "advisor", disposition: "fixed", reason: "rechecked after CI", sha: "abcdef12" },
+        ]),
+        "w-evidence",
+      ),
+      s.env.forge,
+      s.env.repoRoot,
+    );
+  });
   test("AC-8 fresh PR, user, threads and comments feed recording", async () => {
     const s = setup();
     await readyStep(s.env, state);
@@ -110,6 +156,16 @@ describe("readyStep workflow drafts", () => {
     const s = setup({ ...empty, index: { keys: [item.key] }, open: [{ ...item, kept: [] }] });
     expect((await readyStep(s.env, state)).patch).toEqual({ markedReady: false, readyHeld: "1 open item(s): B3" });
     expect(s.wait).not.toHaveBeenCalled();
+    expect(s.run).not.toHaveBeenCalled();
+  });
+  test("incomplete publication holds even when all indexed items are settled", async () => {
+    const s = setup({ ...complete, unindexed: ["w-new.12345678"] });
+    expect((await readyStep(s.env, state)).patch).toEqual({
+      markedReady: false,
+      readyHeld: "incomplete item publication: 1 unindexed item(s)",
+    });
+    expect(s.wait).not.toHaveBeenCalled();
+    expect(s.post).not.toHaveBeenCalled();
     expect(s.run).not.toHaveBeenCalled();
   });
   test("AC-10 settled items wait, post exact evidence then ready", async () => {

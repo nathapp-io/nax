@@ -9,7 +9,7 @@ import type { BotRulingReadInput, BotRulingReadVerdict } from "../operations/bot
 import { type DecisionEntry, sidecarKindFor } from "../workflow/decisions-sidecar";
 import type { ItemThread, SettledItems } from "../workflow/item-thread-state";
 // Workflow leaves avoid pulling feature orchestration into the bot recorder.
-import { readItemThreads, settleItemThreads } from "../workflow/item-thread-state";
+import { readItemThreads, settleItemThreads, unindexedItemKeys } from "../workflow/item-thread-state";
 import type { ItemIndex, PrRuling } from "../workflow/item-threads";
 import { askKey, isOpenItemKind, parseItemOpener, renderRulingAsk, renderRulingEcho } from "../workflow/item-threads";
 import { editBodyArgv, hasChecklistItem, tickChecklist } from "../workflow/promote";
@@ -31,6 +31,8 @@ export interface RecordRulingsInput {
 
 export interface RecordRulingsOutcome {
   readonly index?: ItemIndex;
+  /** Owned threads omitted from the index without a durable obsolete-thread closure. */
+  readonly unindexed?: readonly string[];
   readonly recorded: readonly PrRuling[];
   readonly settled: SettledItems["settled"];
   readonly open: SettledItems["open"];
@@ -237,5 +239,14 @@ export async function recordPrRulings(input: RecordRulingsInput): Promise<Record
     await resolve(input, item);
   }
   await tickBody(input, settled);
-  return { ...(read.index ? { index: read.index } : {}), recorded, settled, open, asked: model.asked, failed };
+  const unindexed = unindexedItemKeys(read, input.login);
+  return {
+    ...(read.index ? { index: read.index } : {}),
+    ...(unindexed.length ? { unindexed } : {}),
+    recorded,
+    settled,
+    open,
+    asked: model.asked,
+    failed,
+  };
 }

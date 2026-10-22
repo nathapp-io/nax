@@ -2,7 +2,7 @@ import { describe, expect, mock, test } from "bun:test";
 import { withNaxBotMarker } from "@/forge";
 import type { PrComment, PrThread } from "@/forge/pr-types";
 import type { ItemThread, ReadItemThreads } from "@/workflow/item-thread-state";
-import { readItemThreads, settleItemThreads } from "@/workflow/item-thread-state";
+import { readItemThreads, settleItemThreads, unindexedItemKeys } from "@/workflow/item-thread-state";
 import { renderItemIndex, renderItemOpener, renderRulingEcho } from "@/workflow/item-threads";
 
 const key = "w-B3.12345678";
@@ -89,6 +89,20 @@ describe("readItemThreads", () => {
       expect(result.items[0]?.ruling).toBeUndefined();
     },
   );
+});
+
+describe("unindexedItemKeys", () => {
+  test.each([false, true])("unindexed thread holds even when forge resolved is %s or a ruling exists", (resolved) => {
+    const source = { ...thread(opener(), echo()), resolved };
+    const read = readItemThreads([source], [marked("index", renderItemIndex({ keys: [] }), "w-index")], "bot");
+    expect(unindexedItemKeys(read, "bot")).toEqual([key]);
+    expect(unindexedItemKeys({ ...read, index: { keys: [key] } }, "bot")).toEqual([]);
+  });
+  test.each(["bot", "other"])("only own durable closure explains an omitted thread (%s)", (author) => {
+    const closed = marked("closed", "No longer open", `wc-${key}`, author);
+    const read = readItemThreads([thread(opener(), closed)], [], "bot");
+    expect(unindexedItemKeys(read, "bot")).toEqual(author === "bot" ? [] : [key]);
+  });
 });
 
 describe("settleItemThreads", () => {

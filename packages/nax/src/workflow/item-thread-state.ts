@@ -1,7 +1,7 @@
 import { ownComments } from "@/forge";
 import type { PrComment, PrThread } from "@/forge/pr-types";
 import type { ItemIndex, PrRuling } from "./item-threads";
-import { parseItemIndex, parseItemOpener, parseRulingEcho } from "./item-threads";
+import { closedKey, parseItemIndex, parseItemOpener, parseRulingEcho } from "./item-threads";
 
 export interface ItemThread {
   readonly key: string;
@@ -59,6 +59,18 @@ export function readItemThreads(
     return item ? [item] : [];
   });
   return { items, ...(indexComment ? { indexComment } : {}), ...(index ? { index } : {}) };
+}
+
+/** An index write can fail after posting threads. Only durable own closures explain omissions. */
+export function unindexedItemKeys(read: ReadItemThreads, login: string): readonly string[] {
+  const indexed = new Set(read.index?.keys ?? []);
+  return read.items
+    .filter(
+      (item) =>
+        !indexed.has(item.key) &&
+        !ownComments(item.thread.comments, login).some(({ key }) => key === closedKey(item.key)),
+    )
+    .map((item) => item.key);
 }
 
 async function keepReply(comment: PrComment, canRule: (c: PrComment) => Promise<boolean>): Promise<boolean> {

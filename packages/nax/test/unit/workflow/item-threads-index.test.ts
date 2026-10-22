@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import type { ForgeDeps } from "@/forge";
+import { recordPrRulings } from "@/bot/rulings";
+import { workflowPrReadiness } from "@/bot/workflow-ready";
+import type { ForgeDeps, PrComment, PrThread } from "@/forge";
 import { withNaxBotMarker } from "@/forge";
 import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import { newFeatureRecord } from "@/workflow/feature-record";
-import { itemKey, parseItemIndex, renderItemIndex, renderItemOpener } from "@/workflow/item-threads";
+import { itemKey, parseItemIndex, renderItemIndex, renderItemOpener, renderRulingEcho } from "@/workflow/item-threads";
 import { type ItemThreadsInput, postItemThreads } from "@/workflow/item-threads-post";
 import { buildOpenItems } from "@/workflow/open-items";
 import type { WorkflowFeatureRecord } from "@/workflow/types";
@@ -112,6 +114,60 @@ describe("postItemThreads index and closing", () => {
     expect(h.indexWrite()).toContain("POST");
     expect(h.indexWrite()).toContain("repos/o/r/issues/7/comments");
     expect(h.index()).toEqual({ keys: [] });
+  });
+  test.each([false, true])("failed index edit holds readiness with a previous settled index (%s)", async (settled) => {
+    const prior = settled ? marked(renderItemIndex({ keys: [oldKey] })) : oldIndex;
+    const h = harness({ index: prior, fail: "key=w-index", threads: settled });
+    const source = input({ reviewOpen: [finding] });
+    expect(await postItemThreads(source, h.deps)).toMatchObject({ posted: 1, failed: 1 });
+    const note = (id: string, body: string): PrComment => ({ id, kind: "thread", author: "bot", body, createdAt: "t" });
+    const postedBody = h.writes[0]?.find((arg) => arg.startsWith("body="))?.slice(5);
+    expect(postedBody).toBeDefined();
+    const thread: PrThread = {
+      id: "T",
+      replyTo: "10",
+      resolved: false,
+      outdated: false,
+      comments: [note("10", postedBody ?? "")],
+    };
+    const previous = note("9", prior);
+    const ruling = { itemKey: oldKey, itemId: oldItem.id, disposition: "waived", reason: "ok", by: "writer" } as const;
+    const old: PrThread = {
+      ...thread,
+      id: "old",
+      resolved: true,
+      comments: [
+        note("1", marked(renderItemOpener(oldItem), oldKey)),
+        note("2", marked(renderRulingEcho(ruling), `wr-waived-${oldKey}`)),
+      ],
+    };
+    const outcome = await recordPrRulings({
+      ref: { forge: "github", host: "github.com", repo: "o/r", number: 7 },
+      info: {
+        number: 7,
+        title: "demo",
+        state: "open",
+        crossRepo: false,
+        url: source.url,
+        headSha: HEAD,
+        headRef: "feature",
+        baseRef: "main",
+        body: "",
+        draft: true,
+        author: { login: "author" },
+      },
+      login: "bot",
+      threads: [...(settled ? [old] : []), thread],
+      comments: [previous],
+      deps: h.deps,
+      cwd: "/repo",
+      readModel: async () => null,
+    });
+    expect(outcome.settled).toHaveLength(settled ? 1 : 0);
+    expect(workflowPrReadiness({ outcome, ci: { outcome: "green", detail: "passed" } })).toEqual({
+      ready: false,
+      reason: "incomplete item publication: 1 unindexed item(s)",
+    });
   });
   test("AC-2 edits the own index in place", async () => {
     const h = harness({ index: oldIndex });
