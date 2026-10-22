@@ -29,6 +29,8 @@ export { defaultForgeDeps } from "./deps";
 export { detectForge, forgeFromRemoteUrl, remoteHost } from "./detect";
 export type { LinkedIssue } from "./issues";
 export { MAX_LINKED_ISSUES, parseClosingRefs, readIssue, readLinkedIssues } from "./issues";
+export type { JobLogRead } from "./job-log";
+export { CI_ANNOTATION_CHARS, CI_ANNOTATION_LINES, readJobLog, stripAnsi } from "./job-log";
 export {
   findOwnComments,
   hasNaxWorkflowMarker,

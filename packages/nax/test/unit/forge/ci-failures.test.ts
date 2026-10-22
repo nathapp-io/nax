@@ -103,10 +103,9 @@ function githubFixture(runs: readonly CheckRun[], logs: Readonly<Record<string, 
   const deps: ForgeDeps = {
     run: async (cmd, opts) => {
       calls.push({ cmd, cwd: opts.cwd });
-      if (cmd[1] === "api") return { exitCode: 0, stdout: JSON.stringify({ check_runs: runs }), stderr: "" };
-      const jobIndex = cmd.indexOf("--job");
-      const jobId = jobIndex >= 0 ? (cmd[jobIndex + 1] ?? "") : "";
-      return { exitCode: 0, stdout: logs[jobId] ?? "", stderr: "" };
+      const jobId = /actions\/jobs\/(\d+)\/logs$/.exec(cmd.at(-1) ?? "")?.[1];
+      if (cmd[1] === "api" && jobId !== undefined) return { exitCode: 0, stdout: logs[jobId] ?? "", stderr: "" };
+      return { exitCode: 0, stdout: JSON.stringify({ check_runs: runs }), stderr: "" };
     },
     readText: async () => null,
   };
@@ -149,7 +148,15 @@ describe("readFailedChecks", () => {
   test("AC-14 reads the job log of a GitHub Actions check run", async () => {
     const { deps, calls } = githubFixture([checkRun({ id: 991, app: { slug: "github-actions" } })]);
     await forge.readFailedChecks(gh, "abc123", deps, "/repo");
-    expect(calls[1]?.cmd).toEqual(["gh", "run", "view", "--job", "991", "--log-failed", "-R", "github.com/o/r"]);
+    expect(calls[1]?.cmd).toEqual([
+      "gh",
+      "api",
+      "--allow-escape-sequences",
+      "--hostname",
+      "github.com",
+      "repos/o/r/actions/jobs/991/logs",
+    ]);
+    expect(calls.some((call) => call.cmd[1] === "run")).toBe(false);
   });
 
   test("AC-15 returns the Actions log as a bounded excerpt", async () => {
@@ -159,6 +166,7 @@ describe("readFailedChecks", () => {
     expect(checks[0]?.excerpt).toBe(forge.ciExcerpt(log));
     expect(checks[0]?.excerpt).toContain("boom");
     expect(checks[0]?.excerpt).not.toContain(ESC);
+    expect(checks[0]).not.toHaveProperty("logUnavailable");
   });
 
   test("AC-16 returns the html_url of the check run", async () => {

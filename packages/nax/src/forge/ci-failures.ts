@@ -11,9 +11,13 @@
 
 import { NaxError } from "@/errors";
 import { redactSecrets } from "@/logger";
+import type { JobLogRead } from "./job-log";
+import { CI_EXCERPT_CHARS, readJobLog, stripAnsi } from "./job-log";
 import { encodeProjectPath } from "./pr-read";
 import type { PrRef } from "./pr-types";
-import type { ForgeDeps, ForgeRunResult } from "./types";
+import type { ForgeDeps } from "./types";
+
+export { CI_EXCERPT_CHARS } from "./job-log";
 
 /** One failed CI check, with a bounded excerpt of its log. */
 export interface FailedCheck {
@@ -21,19 +25,13 @@ export interface FailedCheck {
   /** Where the check lives, when the forge reports it. */
   readonly url?: string;
   readonly excerpt: string;
+  readonly logUnavailable?: true;
 }
 
 /** How many failed checks one read returns. */
 export const MAX_FAILED_CHECKS = 5;
 /** How many log lines one excerpt keeps. */
 export const CI_EXCERPT_LINES = 200;
-/** How many characters one excerpt keeps. */
-export const CI_EXCERPT_CHARS = 8_000;
-
-/** ANSI CSI sequences: ESC `[`, parameter and intermediate bytes, one final byte. */
-// biome-ignore lint/suspicious/noControlCharactersInRegex: matching the ESC (0x1b) control byte is the point — ANSI colour codes must be stripped
-const ANSI_CSI = /\u001b\[[\x20-\x3f]*[\x40-\x7e]/g;
-
 /** The pull-request number in a forge URL: `/pull/<n>` (GitHub) or `/merge_requests/<n>` (GitLab). */
 const PR_NUMBER = /\/(?:pull|merge_requests)\/(\d+)(?=[/?#]|$)/;
 
@@ -46,11 +44,6 @@ export function prNumberFromUrl(url: string): number | null {
   if (!match) return null;
   const number = Number(match[1]);
   return Number.isSafeInteger(number) ? number : null;
-}
-
-/** The text of a log without its ANSI colour codes. */
-function stripAnsi(text: string): string {
-  return text.replace(ANSI_CSI, "");
 }
 
 /**
@@ -70,29 +63,11 @@ export function ciExcerpt(log: string): string {
   return kept.length > CI_EXCERPT_CHARS ? kept.slice(-CI_EXCERPT_CHARS) : kept;
 }
 
-/**
- * The excerpt of a CI log that could not be read: the first line of the error
- * output, so a repair agent sees why the log is missing.
- *
- * The line is bounded like every other excerpt — the ANSI codes stripped, at
- * most `CI_EXCERPT_CHARS` characters kept — so a one-line error body cannot
- * reach `FailedCheck.excerpt`, and from there the repair prompt, at whatever
- * length the child produced.
- *
- * The redaction runs over the whole first line, before the bound: a bound
- * that cuts a credential's closing delimiter leaves the matcher without the
- * signal it needs, and the password would reach the excerpt in cleartext.
- */
-function logUnavailableExcerpt(result: ForgeRunResult): string {
-  const firstLine = stripAnsi(result.stderr.split("\n")[0] ?? "").trim();
-  const reason = redactSecrets(firstLine);
-  const bounded = reason.length > CI_EXCERPT_CHARS ? reason.slice(0, CI_EXCERPT_CHARS) : reason;
-  return `(log unavailable: ${bounded.length > 0 ? bounded : "unknown"})`;
-}
-
-/** The excerpt of a CI log: the log itself, or the reason it could not be read. */
-function excerptOf(result: ForgeRunResult): string {
-  return result.exitCode === 0 ? ciExcerpt(result.stdout) : logUnavailableExcerpt(result);
+/** Preserve unreadability as metadata, not just human-facing text. */
+function logExcerpt(result: JobLogRead): Pick<FailedCheck, "excerpt" | "logUnavailable"> {
+  return result.ok
+    ? { excerpt: ciExcerpt(result.text) }
+    : { excerpt: `(log unavailable: ${result.reason})`, logUnavailable: true };
 }
 
 /** One check run as the GitHub check-runs API reports it. */
@@ -194,24 +169,22 @@ function invalidReply(what: string, context: CiReadContext): NaxError {
  * The excerpt of one failed check: the job log for a GitHub Actions run, the
  * check-run output for every other app.
  */
-async function readExcerpt(run: GithubCheckRun, ref: PrRef, deps: ForgeDeps, cwd: string): Promise<string> {
+async function readExcerpt(
+  run: GithubCheckRun,
+  ref: PrRef,
+  deps: ForgeDeps,
+  cwd: string,
+): Promise<Pick<FailedCheck, "excerpt" | "logUnavailable">> {
   const jobId = run.app?.slug === "github-actions" ? run.id : undefined;
-  if (jobId === undefined) return ciExcerpt(outputText(run));
-  // A GitHub Actions check run carries the job id, so `gh run view` reads that
-  // job's failed log. A log that cannot be read is not an error: the excerpt
-  // says so and the other checks are still read.
-  const result = await deps.run(
-    ["gh", "run", "view", "--job", String(jobId), "--log-failed", "-R", `${ref.host}/${ref.repo}`],
-    { cwd },
-  );
-  return excerptOf(result);
+  if (jobId === undefined) return { excerpt: ciExcerpt(outputText(run)) };
+  return logExcerpt(await readJobLog(ref, String(jobId), deps, cwd));
 }
 
 /** One failed check, with its bounded excerpt. */
 async function toFailedCheck(run: GithubCheckRun, ref: PrRef, deps: ForgeDeps, cwd: string): Promise<FailedCheck> {
-  const excerpt = await readExcerpt(run, ref, deps, cwd);
+  const log = await readExcerpt(run, ref, deps, cwd);
   const url = run.html_url && run.html_url.length > 0 ? run.html_url : undefined;
-  return { name: run.name ?? "", ...(url === undefined ? {} : { url }), excerpt };
+  return { name: run.name ?? "", ...(url === undefined ? {} : { url }), ...log };
 }
 
 /** The failed checks of one GitHub commit, in reply order. */
@@ -286,15 +259,6 @@ function findPipeline(pipelines: readonly GitlabPipeline[], headSha: string): Gi
   return pipelines.find((pipeline) => pipeline.sha === headSha) ?? null;
 }
 
-/** The excerpt of one GitLab job log. */
-async function readGitlabExcerpt(jobId: number, ref: PrRef, deps: ForgeDeps, cwd: string): Promise<string> {
-  const project = encodeProjectPath(ref.repo);
-  const result = await deps.run(["glab", "api", "--hostname", ref.host, `projects/${project}/jobs/${jobId}/trace`], {
-    cwd,
-  });
-  return excerptOf(result);
-}
-
 /** One failed GitLab job, with its bounded excerpt. */
 async function toGitlabFailedCheck(
   job: GitlabJob & { readonly id: number },
@@ -302,9 +266,9 @@ async function toGitlabFailedCheck(
   deps: ForgeDeps,
   cwd: string,
 ): Promise<FailedCheck> {
-  const excerpt = await readGitlabExcerpt(job.id, ref, deps, cwd);
+  const log = logExcerpt(await readJobLog(ref, String(job.id), deps, cwd));
   const url = job.web_url && job.web_url.length > 0 ? job.web_url : undefined;
-  return { name: job.name ?? "", ...(url === undefined ? {} : { url }), excerpt };
+  return { name: job.name ?? "", ...(url === undefined ? {} : { url }), ...log };
 }
 
 /**

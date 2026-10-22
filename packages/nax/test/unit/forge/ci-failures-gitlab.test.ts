@@ -25,7 +25,8 @@ const glTrace = (jobId: number): string => `glab api --hostname gitlab.com proje
 
 /** The argv of the GitHub listing and of one GitHub Actions job log. */
 const GH_LISTING = "gh api --hostname github.com repos/o/r/commits/abc123/check-runs?per_page=100&filter=latest";
-const ghJobLog = (jobId: number): string => `gh run view --job ${jobId} --log-failed -R github.com/o/r`;
+const ghJobLog = (jobId: number): string =>
+  `gh api --allow-escape-sequences --hostname github.com repos/o/r/actions/jobs/${jobId}/logs`;
 
 /** The exact argv the GitLab pipelines listing must use. */
 const PIPELINES_ARGV = [
@@ -277,6 +278,21 @@ describe("readFailedChecks listing errors", () => {
 });
 
 describe("readFailedChecks log errors", () => {
+  test.each([gh, gl])("US-001 marks unavailable logs on $forge (AC-12/13/15/16)", async (ref) => {
+    const { deps } = forgeFixture({
+      [GH_LISTING]: ok({
+        check_runs: [{ id: 991, name: "build", conclusion: "failure", app: { slug: "github-actions" } }],
+      }),
+      [GL_PIPELINES]: ok([{ id: 77, sha: "abc123" }]),
+      [GL_JOBS]: ok([{ id: 991, name: "build" }]),
+      [ghJobLog(991)]: { exitCode: 1, stdout: "", stderr: "boom" },
+      [glTrace(991)]: { exitCode: 1, stdout: "", stderr: "boom" },
+    });
+    const checks = await forge.readFailedChecks(ref, "abc123", deps, "/repo");
+    expect(checks[0]?.excerpt).toBe("(log unavailable: boom)");
+    expect(checks[0]).toHaveProperty("logUnavailable", true);
+  });
+
   test("bounds an unavailable log excerpt to the excerpt limit", async () => {
     const { deps } = forgeFixture({
       [GL_PIPELINES]: ok([{ id: 77, sha: "abc123" }]),
