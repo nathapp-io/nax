@@ -3,7 +3,7 @@
   "feature": "bot-security-boundary",
   "branchName": "feat/bot-security-boundary",
   "createdAt": "2026-10-22T00:00:00.000Z",
-  "updatedAt": "2026-10-22T12:07:28.483Z",
+  "updatedAt": "2026-10-22T12:15:48.200Z",
   "userStories": [
     {
       "id": "US-001",
@@ -309,14 +309,17 @@
       "dependencies": [
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Two production modules add set-membership gates, optional rendering flags and an artifact version using existing posting paths; access-control decisions require strict isolated three-session TDD despite this bounded scope."
+        "reasoning": "Two production modules add set-membership gates, optional rendering flags and an artifact version using existing posting paths; access-control decisions require strict isolated three-session TDD despite this bounded scope.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/post.ts",
@@ -343,7 +346,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "7da1f48cc03b2458c7f1024017d6fee82a1f4f6f"
     },
     {
       "id": "US-006",
