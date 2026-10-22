@@ -19,6 +19,8 @@ export interface BuildContext<C> {
 }
 
 export interface CallContext {
+  /** Call-local providers, appended after runtime providers for run-kind dispatches. */
+  readonly toolProviders?: readonly import("@nathapp/nax-agent").ToolProvider[];
   readonly instructionDirectories?: readonly string[];
   /** Resolved story acceptance guidance, shared with fix-role sessions. */
   readonly acceptanceExecution?: import("../acceptance").AcceptanceExecution[];
