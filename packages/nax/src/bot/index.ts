@@ -4,7 +4,9 @@ export {
   BASE_PINNED_NAMES,
   BASE_PINNED_PATHS,
   botWorktreePath,
+  type CheckoutRefs,
   changedPaths,
+  checkoutRefs,
   type PrCheckout,
   preparePrCheckout,
 } from "./checkout";

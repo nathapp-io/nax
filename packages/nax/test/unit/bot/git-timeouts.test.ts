@@ -19,12 +19,10 @@ describe("bot slow git timeouts", () => {
   test("AC-6 exports the shared 120 second timeout", () => {
     expect(BOT_GIT_NETWORK_TIMEOUT_MS).toBe(120_000);
   });
-  test("AC-7/8 extends both fetches and worktree add, not other git commands", async () => {
+  test("AC-7/8 extends the combined fetch and worktree add, not other git commands", async () => {
     const env = makeBotFixEnv();
-    let fetched = env.info.headSha;
     const run = mock<typeof _checkoutDeps.runGit>(async (argv) => {
-      if (argv[0] === "fetch") fetched = argv[2] === env.info.baseRef ? "base" : env.info.headSha;
-      return ok(argv[0] === "rev-parse" ? fetched : "");
+      return ok(argv[0] === "rev-parse" ? (argv[1]?.endsWith("/base") ? "base" : env.info.headSha) : "");
     });
     Object.assign(_checkoutDeps, {
       runGit: run,
@@ -46,7 +44,7 @@ describe("bot slow git timeouts", () => {
     const slow = run.mock.calls.filter(
       ([argv]) => argv[0] === "fetch" || (argv[0] === "worktree" && argv[1] === "add"),
     );
-    expect(slow).toHaveLength(3);
+    expect(slow).toHaveLength(2);
     for (const call of slow) expect(call[2]).toBe(120_000);
     for (const call of run.mock.calls.filter((call) => !slow.includes(call))) expect(call[2]).toBeUndefined();
   });
