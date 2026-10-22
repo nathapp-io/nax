@@ -3,7 +3,7 @@
   "feature": "bot-harness-loosening",
   "branchName": "feat/bot-harness-loosening",
   "createdAt": "2026-10-22T00:00:00.000Z",
-  "updatedAt": "2026-10-22T05:43:48.182Z",
+  "updatedAt": "2026-10-22T05:54:49.283Z",
   "userStories": [
     {
       "id": "US-001",
@@ -298,14 +298,17 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Pure prompt composition and command flattening reuse established fencing/constants without changing trust or session handling."
+        "reasoning": "Pure prompt composition and command flattening reuse established fencing/constants without changing trust or session handling.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/prompts/builders/workflow-branch-builder.ts",
@@ -322,7 +325,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "7b69723920bdb8fc5fc8090de223471547f9f7d4"
     },
     {
       "id": "US-006",
