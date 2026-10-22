@@ -3,6 +3,7 @@ import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { ConfiguredModel, NaxConfig } from "@/config";
 import type { CurrentUser, ForgeDeps, OwnComment, PrInfo, PrRef, PrThread } from "@/forge";
 import { getLogger } from "@/logger";
+import { buildBotPrFixPrompt, renderCheckoutState } from "@/prompts";
 import type { GraphState, StepResult } from "@/step-graph";
 import { gitWithTimeout } from "@/utils/git";
 import type { PrStepContext } from "@/workflow/branch-step-context";
@@ -11,9 +12,11 @@ import { runBranchFix } from "../workflow/branch-fix";
 import type { CiWaitOutcome } from "../workflow/ci-wait";
 import { readHead } from "../workflow/git";
 import { changedPaths, type PrCheckout } from "./checkout";
-import type { BotChecks } from "./checks";
+import { listCiConfigFiles } from "./checkout-state";
+import { type BotChecks, barCommands } from "./checks";
 import { toFixFindings } from "./fix-input";
 import { failingOnHead, logGateFailure, readHeadCi } from "./gate-baseline";
+import { featureIntentPaths } from "./intent";
 import { botModel } from "./models";
 import { fixProtectedPaths } from "./path-policy";
 import type { BotReviewArtifact } from "./post";
@@ -47,6 +50,7 @@ export interface BotFixState extends GraphState<BotFixStep> {
   readonly markedReady?: boolean;
   /** Why the PR stayed a draft (US-005): a workflow PR, or a CI that is not green. */
   readonly readyHeld?: string;
+  readonly fixSha?: string;
   readonly fixFailure?: string;
   readonly agreedCount?: number;
   readonly fixDirty?: boolean;
@@ -84,18 +88,49 @@ export const _fixStepsDeps = {
 export async function fixStep(env: BotFixEnv, _state: BotFixState): Promise<StepResult<BotFixState>> {
   const agreedCount = env.review.agreed.length;
   if (agreedCount === 0) return { patch: { agreedCount, outcome: "nothing" }, exit: "nothing" };
-  const result = await _fixStepsDeps.runBranchFix(env.ctx, {
-    findings: toFixFindings(env.review.agreed),
-    model: botModel(env.config, "fix", env.model),
+  const findings = toFixFindings(env.review.agreed);
+  const prompt = buildBotPrFixPrompt({
+    mode: "fix",
+    pr: env.info,
+    ...featureIntentPaths(env.checkout),
+    findings,
+    bar: barCommands(env.checks),
+    checkoutState: renderCheckoutState({
+      phase: "fresh",
+      headSha: env.info.headSha,
+      setup: env.checks.preRun.map((step) => step.command),
+      ciFiles: await listCiConfigFiles(env.checkout.worktree),
+    }),
+    reportPath: env.ctx.reportPath,
   });
+  const result = await _fixStepsDeps.runBranchFix(env.ctx, {
+    findings,
+    model: botModel(env.config, "fix", env.model),
+    prompt,
+  });
+  const fixSha = await readFixHead(env);
   return {
     patch: {
       agreedCount,
+      ...(fixSha !== undefined ? { fixSha } : {}),
       ...(result.dirty ? { fixDirty: true } : {}),
       ...(result.failure !== undefined ? { fixFailure: result.failure } : {}),
     },
     exit: "ran",
   };
+}
+
+async function readFixHead(env: BotFixEnv): Promise<string | undefined> {
+  try {
+    return await _fixStepsDeps.readHead(env.checkout.worktree);
+  } catch (error) {
+    getLogger()?.warn("bot-fix", "Could not read HEAD after fix session", {
+      pr: env.info.number,
+      worktree: env.checkout.worktree,
+      error: errorMessage(error),
+    });
+    return undefined;
+  }
 }
 
 /** Never verify or push a different tree from HEAD. Retain the registered checkout for recovery. */

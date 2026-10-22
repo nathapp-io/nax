@@ -47,6 +47,9 @@ export const _botFixDeps = {
   listPrComments: _botReviewDeps.listPrComments,
   randomSuffix: _botReviewDeps.randomSuffix,
   writeJson: _botReviewDeps.writeJson,
+  copyFile: async (from: string, to: string): Promise<void> => {
+    await Bun.write(to, Bun.file(from));
+  },
   loadLatestReview,
   resolveBotChecks,
   checkPushAccess,
@@ -82,7 +85,7 @@ export const BOT_FIX_GRAPH: StepGraph<BotFixState, BotFixEnv, BotFixStep> = defi
     fix: {
       kind: "agent",
       commits: true,
-      produces: ["agreedCount", "outcome", "fixFailure", "fixDirty"],
+      produces: ["agreedCount", "outcome", "fixFailure", "fixDirty", "fixSha"],
       exits: ["nothing", "ran"],
       transitions: [
         { on: "nothing", to: "ready" },
@@ -239,6 +242,19 @@ function finishFix(result: BotFixResult, log: BotLog): BotFixResult {
   return log.path === undefined ? result : { ...result, logPath: log.path };
 }
 
+async function preserveFixReport(reportPath: string, stateDir: string): Promise<void> {
+  try {
+    if (!(await Bun.file(reportPath).exists())) return;
+    await _botFixDeps.copyFile(reportPath, join(stateDir, "fix-report.md"));
+  } catch (error) {
+    getLogger()?.warn("bot-fix", "Could not preserve fix session report", {
+      reportPath,
+      stateDir,
+      error: errorMessage(error),
+    });
+  }
+}
+
 async function fixCheckout(input: BotFixInput, prepared: PreparedFix): Promise<BotFixResult> {
   const deps = _botFixDeps;
   const { repoRoot, ref, info, checkout } = prepared;
@@ -292,7 +308,9 @@ async function fixCheckout(input: BotFixInput, prepared: PreparedFix): Promise<B
       forge: deps.forge,
     };
     await recordFixRulings(env, items.comments);
-    return finishFix(await executeFix(env, runtime), log);
+    const result = await executeFix(env, runtime);
+    await preserveFixReport(env.ctx.reportPath, stateDir);
+    return finishFix(result, log);
   } finally {
     try {
       await context?.dispose();

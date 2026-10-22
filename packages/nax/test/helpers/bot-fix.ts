@@ -90,5 +90,6 @@ export function makeBotFixDeps(env: BotFixEnv, runtime: ReturnType<typeof import
     listPrComments: async () => [],
     randomSuffix: () => "graph-test",
     writeJson: async (_path: string, _value: unknown) => {},
+    copyFile: async (_from: string, _to: string) => {},
   };
 }
