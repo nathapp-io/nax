@@ -214,3 +214,11 @@ test("publish preserves item-thread failure counts in its ledger", async () => {
   await publishStep(h.env, h.env.record);
   expect(lines.some((line) => line.includes("Item threads: posted=2, closed=1, skipped=3, failed=4"))).toBe(true);
 });
+
+test("nax#2646: threads cite the pushed head; the record keeps local HEAD past the ruling's commit", async () => {
+  const pushedHead = "b".repeat(40);
+  const h = harness({ ...published, outcome: "ready", ci: "green", reasons: [], pushedHead });
+  const out = await publishStep(h.env, h.env.record);
+  expect(h.inputs[0]?.head).toBe(pushedHead);
+  expect(out.patch?.head).toBe(HEAD);
+});

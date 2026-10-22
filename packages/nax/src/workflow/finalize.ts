@@ -7,7 +7,7 @@
  */
 import { isAbsolute, join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
-import { type AdviceDecision, type Advisor, ledgerPath } from "@/advisor";
+import type { AdviceDecision, Advisor } from "@/advisor";
 import type { WorkflowPublishMode } from "@/config";
 import { NaxError } from "@/errors";
 import { sanitizeTitle } from "@/finish";
@@ -23,6 +23,7 @@ import { buildOpenItems } from "./open-items";
 import { workflowStoryDir } from "./paths";
 import { buildWorkflowPrBody, extractAssumptions, type WorkflowPrBodyFacts } from "./pr-body";
 import type { PreflightFile } from "./preflight";
+import { commitApprovalRuling, ledgerCommit, ledgerReasons } from "./publish-ledger";
 import { repairEvidence } from "./repair-evidence";
 import { _workflowDeps } from "./step-context";
 import type { ApprovalOutcome, FeatureCiState, FeatureOutcome, StorySummary, WorkflowFeatureRecord } from "./types";
@@ -50,6 +51,11 @@ export interface PublishOutcome {
    * three states whose reason is built from it. Absent for every other state.
    */
   readonly ciDetail?: string;
+  /**
+   * nax#2646: the pushed head, present only when the approval ruling's local commit moved HEAD past it.
+   * Item threads and CI reads cite it, so they never name a sha the forge does not have.
+   */
+  readonly pushedHead?: string;
 }
 
 /** The CI states whose readiness reason is the wait's own `detail` rather than a fixed sentence. */
@@ -364,66 +370,14 @@ function logFinishPr(ready: boolean, url: string | undefined, kept: readonly str
   getSafeLogger()?.info("workflow", line, { storyId: "_run" });
 }
 
-/** What one ledger commit attempt did. */
-interface LedgerCommitResult {
-  /** Non-empty ledger lines the branch lacks because the attempt failed; 0 when it landed or the ledger is empty. */
-  readonly missingRulings: number;
-}
-
-const LEDGER_MISSING_PREFIX = "advisor ledger not committed:";
-
-/** Non-empty lines in the feature's ledger on disk; 0 when it is absent or unreadable. */
-async function ledgerLineCount(fc: FeatureContext): Promise<number> {
-  try {
-    const file = Bun.file(ledgerPath(fc.projectDir, fc.feature));
-    return (await file.exists()) ? nonEmptyLineCount(await file.text()) : 0;
-  } catch {
-    return 0;
-  }
-}
-
-/** A blank line is not a ruling, so only non-empty lines count. */
-function nonEmptyLineCount(text: string): number {
-  return text.split("\n").filter((line) => line.trim() !== "").length;
-}
-
 /**
- * The ledger-only commit, fail-open (US-003). The rulings the PR body cites have to be on the pushed
- * branch, but a git failure or a locked index must never change what publishing does — so a throw is
- * logged and read as "no commit was made".
- *
- * US-007 (nax#2534): the failure is now loud about its consequence. A ledger the branch does not carry
- * means the PR cites rulings nothing backs up, so the caller turns `missingRulings` into a readiness
- * reason and the PR stays a draft. The count is the ledger on disk, since the lines that were never
- * committed are exactly the ones the reader of the PR cannot see.
+ * The CI wait both publishing modes share; the timeout and poll interval come from the workflow config.
+ * `pushedHead` is the HEAD the wait was bound to, absent when it could not be read.
  */
-async function ledgerCommit(fc: FeatureContext): Promise<LedgerCommitResult> {
-  if (fc.dryRun) return { missingRulings: 0 };
-  try {
-    await _featureDeps.commitLedger(fc.projectDir, fc.feature);
-    return { missingRulings: 0 };
-  } catch (err) {
-    const missingRulings = await ledgerLineCount(fc);
-    const message =
-      missingRulings > 0
-        ? `Advisor ledger commit failed — the branch is missing ${missingRulings} advisor rulings`
-        : "Advisor ledger commit failed — publishing continues";
-    getSafeLogger()?.warn("workflow", message, { storyId: "_run", error: errorMessage(err) });
-    return { missingRulings };
-  }
-}
-
-/** The readiness reason a failed ledger commit contributes; empty when the commit landed or had nothing to commit. */
-function ledgerReasons(ledger: LedgerCommitResult): string[] {
-  return ledger.missingRulings > 0 ? [ledgerMissingReason(ledger.missingRulings)] : [];
-}
-
-function ledgerMissingReason(missingRulings: number): string {
-  return `${LEDGER_MISSING_PREFIX} the branch is missing ${missingRulings} advisor rulings`;
-}
-
-/** The CI wait both publishing modes share; the timeout and poll interval come from the workflow config. */
-async function waitForCi(fc: FeatureContext, forge: ForgeKind): Promise<CiWaitResult> {
+async function waitForCi(
+  fc: FeatureContext,
+  forge: ForgeKind,
+): Promise<{ readonly ci: CiWaitResult; readonly pushedHead?: string }> {
   let expectedSha: string | undefined;
   try {
     expectedSha = (await readHead(fc.projectDir)) || undefined;
@@ -433,13 +387,14 @@ async function waitForCi(fc: FeatureContext, forge: ForgeKind): Promise<CiWaitRe
       error: errorMessage(err),
     });
   }
-  return _featureDeps.waitForChecks(forge, fc.branch, {
+  const ci = await _featureDeps.waitForChecks(forge, fc.branch, {
     cwd: fc.projectDir,
     ...(expectedSha ? { expectedSha } : {}),
     timeoutMs: fc.workflow.timeouts.ciWaitMs,
     pollMs: fc.workflow.timeouts.ciPollMs,
     ...(fc.runSignal ? { signal: fc.runSignal } : {}),
   });
+  return expectedSha ? { ci, pushedHead: expectedSha } : { ci };
 }
 
 /** Everything a pushing mode needs: the facts, the dirty tree and the target-less base reasons. */
@@ -462,7 +417,7 @@ async function pushMode(plan: PublishPlan): Promise<PublishOutcome> {
   if (pushFailed) {
     return { outcome: "local-only", ci: "skipped", reasons: [...plan.base, ...ledgerReasons(ledger), pushFailed] };
   }
-  const ci = await waitForCi(plan.fc, plan.forge);
+  const { ci } = await waitForCi(plan.fc, plan.forge);
   if (plan.fc.runSignal?.aborted) throw abortedError();
   const reasons = [
     ...readinessReasons({ ...plan.facts, ci: ci.outcome, ciDetail: ci.detail }),
@@ -501,7 +456,7 @@ async function prMode(plan: PublishPlan, input: PublishInput): Promise<PublishOu
   );
   // US-005: a URL the forge did not return is left out rather than invented; the step is still named.
   getSafeLogger()?.info("workflow", `Publish: draft PR${draft?.url ? ` ${draft.url}` : ""}`, { storyId: "_run" });
-  const ci = await waitForCi(fc, plan.forge);
+  const { ci, pushedHead } = await waitForCi(fc, plan.forge);
   // An aborted wait reports `pending`, which blocks readiness (US-003): stop before approval or promotion.
   if (fc.runSignal?.aborted) throw abortedError();
   // US-007: a ledger the branch lacks is a readiness reason like any other, so the advisor is never
@@ -528,7 +483,8 @@ async function prMode(plan: PublishPlan, input: PublishInput): Promise<PublishOu
     stories: input.stories,
     ...(draft?.url ? { draftUrl: draft.url } : {}),
   };
-  return finishPr(fc, parts, ci, reasons, approval);
+  const out = await finishPr(fc, parts, ci, reasons, approval);
+  return (await commitApprovalRuling(fc, approval, pushedHead)) ? { ...out, pushedHead } : out;
 }
 
 export async function publish(fc: FeatureContext, input: PublishInput): Promise<PublishOutcome> {

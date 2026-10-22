@@ -538,15 +538,17 @@ export async function publishStep(
   const log = featureStep("publish", false, true);
   const out = await env.steps.publish(rec);
   const head = await readHeadSoft(env);
+  // nax#2646: threads and CI reads cite the pushed head; the record keeps local HEAD, the ruling's commit included.
+  const published = out.pushedHead ?? head;
   const flagged = await collectFlaggedDecisions(env);
-  await postItemThreadsAfterPublish(env, { ...rec, flaggedDecisions: flagged }, out, head);
+  await postItemThreadsAfterPublish(env, { ...rec, flaggedDecisions: flagged }, out, published);
   const why = out.reasons.length > 0 ? `: ${out.reasons.join("; ")}` : "";
   log.done(`${out.outcome}${out.url ? ` ${out.url}` : ""}${why}`);
   await env.sink.ledger(ledgerText.note(`feature ${out.outcome}${out.url ? ` ${out.url}` : ""}${why}`), NO_MIRROR);
   // US-006: a draft PR whose CI failed may still be repairable, so the decision reads the failed
   // checks before the step ends. It never changes the publish outcome itself: the repair is a
   // separate node, and a run that may not repair keeps the draft it has.
-  const ciFindings = await ciRepairDecision(env, rec, out, head);
+  const ciFindings = await ciRepairDecision(env, rec, out, published);
   // US-005: collected after publish, whatever it did — a local-only or draft feature still needs
   // its flagged rulings named at run end.
   return {
