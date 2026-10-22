@@ -49,7 +49,9 @@ export interface RunDispatchOptionsParams {
  */
 function runtimeDispatchFields(ctx: CallContext) {
   const { runtime } = ctx;
-  const providers = [...runtime.toolProviders, ...(ctx.toolProviders ?? [])];
+  const providers = ctx.toolProviders?.length
+    ? [...runtime.toolProviders, ...ctx.toolProviders]
+    : runtime.toolProviders;
   return {
     ...(providers.length > 0 ? { providers } : {}),
     ...(runtime.commandInterceptor !== undefined ? { commandInterceptor: runtime.commandInterceptor } : {}),

@@ -20,6 +20,7 @@ describe("buildRunDispatchOptions — call-scoped providers", () => {
     { runtimeProviders: [a], callProviders: [b], expected: [a, b] },
     { runtimeProviders: [], callProviders: [b], expected: [b] },
     { runtimeProviders: [a], callProviders: undefined, expected: [a] },
+    { runtimeProviders: [a], callProviders: [], expected: [a] },
     { runtimeProviders: [], callProviders: [], expected: undefined },
     { runtimeProviders: [], callProviders: undefined, expected: undefined },
   ])("merges providers without mutating shared state: %j", ({ runtimeProviders, callProviders, expected }) => {
@@ -50,6 +51,9 @@ describe("buildRunDispatchOptions — call-scoped providers", () => {
     expect("providers" in result).toBe(expected !== undefined);
     expect(runtime.toolProviders).toEqual(runtimeProviders);
     expect(ctx.toolProviders).toBe(callProviders);
+    if (runtimeProviders.length > 0 && !callProviders?.length) {
+      expect(result.providers).toBe(runtime.toolProviders);
+    }
   });
 });
 
