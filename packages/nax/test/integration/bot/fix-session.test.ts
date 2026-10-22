@@ -110,6 +110,51 @@ describe("fixStep PR session", () => {
 });
 
 describe("runBotFix durable session report", () => {
+  test.each([false, true])(
+    "F1 preserves report before disposal after a node throws; copy fails=%s",
+    async (copyFails) => {
+      const root = makeTempDir("bot-fix-node-error-");
+      dirs.push(root);
+      const base = makeBotFixEnv(items);
+      const events: string[] = [];
+      const env = {
+        ...base,
+        checks: { ...base.checks, gates: [{ name: "test", command: "check" }] },
+        ctx: { ...base.ctx, reportPath: join(root, "session/report.md") },
+        checkout: {
+          ...base.checkout,
+          dispose: async () => {
+            events.push("dispose");
+          },
+        },
+      };
+      const runtime = makeTestRuntime({ config: env.config });
+      runtimes.push(runtime);
+      const target = join(botRunDir(runtime.outputDir, 42, runtime.runId), "fix-report.md");
+      const failure = new Error("diff read failed");
+      const copy = mock(async (from: string, to: string) => {
+        events.push("copy");
+        if (copyFails) throw new Error("copy denied");
+        await originalRun.copyFile(from, to);
+      });
+      Object.assign(_botFixDeps, makeBotFixDeps(env, runtime), {
+        copyFile: copy,
+        fixStep: async () => {
+          await Bun.write(env.ctx.reportPath, "# Fix before check failure\n");
+          events.push("fix");
+          return { patch: { agreedCount: 1 }, exit: "ran" };
+        },
+        checkStep: async () => {
+          events.push("check");
+          throw failure;
+        },
+      });
+      await expect(runBotFix({ dir: root, pr: 42, profiles: [], interactive: false })).rejects.toBe(failure);
+      expect(copy).toHaveBeenCalledWith(env.ctx.reportPath, target);
+      expect(events).toEqual(["fix", "check", "copy", "dispose"]);
+      if (!copyFails) expect(await Bun.file(target).text()).toBe("# Fix before check failure\n");
+    },
+  );
   test.each(["present", "missing", "copy-fails"] as const)("AC-10/11/12/14 report %s", async (mode) => {
     const root = makeTempDir("bot-fix-report-");
     dirs.push(root);

@@ -308,9 +308,11 @@ async function fixCheckout(input: BotFixInput, prepared: PreparedFix): Promise<B
       forge: deps.forge,
     };
     await recordFixRulings(env, items.comments);
-    const result = await executeFix(env, runtime);
-    await preserveFixReport(env.ctx.reportPath, stateDir);
-    return finishFix(result, log);
+    try {
+      return finishFix(await executeFix(env, runtime), log);
+    } finally {
+      await preserveFixReport(env.ctx.reportPath, stateDir);
+    }
   } finally {
     try {
       await context?.dispose();
