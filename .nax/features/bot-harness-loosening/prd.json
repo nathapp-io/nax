@@ -3,7 +3,7 @@
   "feature": "bot-harness-loosening",
   "branchName": "feat/bot-harness-loosening",
   "createdAt": "2026-10-22T00:00:00.000Z",
-  "updatedAt": "2026-10-22T05:30:00.493Z",
+  "updatedAt": "2026-10-22T05:43:48.182Z",
   "userStories": [
     {
       "id": "US-001",
@@ -231,14 +231,17 @@
         "errors"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Graph-entry error handling and timeout plumbing are standard; the touched checkPushAccess refusal gate makes the security override require strict isolated TDD."
+        "reasoning": "Graph-entry error handling and timeout plumbing are standard; the touched checkPushAccess refusal gate makes the security override require strict isolated TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/fix-run.ts",
@@ -261,7 +264,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "1e748d2d23b1a57b7b1244e73dcbc8c5f99bfd7b"
     },
     {
       "id": "US-005",
